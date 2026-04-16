@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "StormPath",
+    "slug": "stormpath",
+    "version": "0.0.1",
+    "orientation": "default",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": false,
+    "scheme": "stormpath",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.routecc.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.routecc.app"
+    },
+    "plugins": [
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsImpl": "mapbox",
+          "RNMapboxMapsDownloadToken": "MAPBOX_DOWNLOADS_TOKEN"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "7f244ed3-5ca4-4810-aaf1-4b62762924e0"
+      }
+    },
+    "owner": "ap77"
+  }
+}

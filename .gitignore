@@ -1,0 +1,15 @@
+# Dependencies & builds
+web/node_modules/
+web/dist/
+mobile/node_modules/
+mobile/dist/
+mobile/.expo/
+
+# Secrets — never commit real keys
+**/.env
+**/.env.*
+!**/.env.example
+
+*.log
+.DS_Store
+Thumbs.db

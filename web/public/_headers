@@ -1,0 +1,3 @@
+# Netlify: allow Geolocation on this site (same origin only)
+/*
+  Permissions-Policy: geolocation=(self)
