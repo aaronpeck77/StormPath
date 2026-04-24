@@ -11,7 +11,6 @@ import {
 import type { ReactNode } from "react";
 import { Capacitor } from "@capacitor/core";
 import { KeepAwake } from "@capacitor-community/keep-awake";
-import { lngLatInNorthAmerica } from "./config/mapRegion";
 import { getWebEnv } from "./config/env";
 import { useFusedSituation } from "./hooks/useFusedSituation";
 import { useSavedPlaces } from "./hooks/useSavedPlaces";
