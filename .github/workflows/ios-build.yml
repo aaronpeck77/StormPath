@@ -82,6 +82,7 @@ jobs:
       # ── 9. Build the Xcode archive ───────────────────────────────────────────
       - name: Build archive
         run: |
+          set -o pipefail
           xcodebuild archive \
             -workspace web/ios/App/App.xcworkspace \
             -scheme App \
@@ -91,12 +92,13 @@ jobs:
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="iPhone Distribution" \
-            | xcpretty
+            CODE_SIGNING_REQUIRED=YES \
+            2>&1 | tee /tmp/xcodebuild.log | grep -E "error:|warning:|archive"
 
       # ── 10. Export the IPA ────────────────────────────────────────────────────
       - name: Export IPA
         run: |
-          cat > "$RUNNER_TEMP/ExportOptions.plist" << 'EOF'
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -111,17 +113,17 @@ jobs:
           </plist>
           EOF
 
+          set -o pipefail
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/StormPath.xcarchive" \
             -exportPath "$RUNNER_TEMP/export" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-            | xcpretty
+            2>&1 | tee /tmp/export.log | grep -E "error:|warning:|Export"
 
       # ── 11. Upload to TestFlight ──────────────────────────────────────────────
       - name: Upload to TestFlight
         run: |
-          # Write the App Store Connect API key to a temp file
-          ASC_KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          ASC_KEY_PATH="$RUNNER_TEMP/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8"
           echo "${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}" | base64 --decode > "$ASC_KEY_PATH"
 
           xcrun altool --upload-app \
@@ -129,7 +131,7 @@ jobs:
             --file "$RUNNER_TEMP/export/App.ipa" \
             --apiKey "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" \
             --apiIssuer "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}" \
-            --apiKey-file "$ASC_KEY_PATH"
+            --private-key-path "$ASC_KEY_PATH"
 
       # ── 12. Save IPA as a build artifact (optional — handy for debugging) ────
       - name: Upload IPA artifact
