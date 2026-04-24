@@ -12,7 +12,7 @@
 #   APPLE_TEAM_ID                10-character Team ID from developer.apple.com
 #   APP_STORE_CONNECT_API_KEY_ID        Key ID from App Store Connect → Keys
 #   APP_STORE_CONNECT_ISSUER_ID         Issuer ID from the same page
-#   APP_STORE_CONNECT_API_KEY_CONTENT   Base64-encoded .p8 API key file
+#   APP_STORE_CONNECT_API_KEY_CONTENT   The .p8 file: paste full PEM *or* base64 of the file
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: iOS Build & TestFlight
@@ -142,23 +142,10 @@ jobs:
       # ── 11. Upload to TestFlight ──────────────────────────────────────────────
       - name: Upload to TestFlight
         env:
-          ASC_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
         run: |
-          KEY_FILE=~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
-          mkdir -p ~/.appstoreconnect/private_keys
-
-          # Strip certutil wrapper headers (-----BEGIN/END CERTIFICATE-----) and
-          # Windows carriage returns before decoding, so the secret works whether
-          # the user included those headers or not.
-          echo "$ASC_KEY_CONTENT" \
-            | grep -v "^-----" \
-            | grep -v "CertUtil" \
-            | tr -d '\r' \
-            | base64 --decode > "$KEY_FILE"
-
-          # Verify the decoded file looks like a PEM key (first line should be -----BEGIN)
-          echo "Key file first line: $(head -1 $KEY_FILE)"
-          echo "Key file size: $(wc -c < $KEY_FILE) bytes"
+          python3 .github/scripts/write-appstore-connect-key.py
 
           xcrun altool --upload-app \
             --type ios \
