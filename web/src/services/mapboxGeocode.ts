@@ -1,11 +1,9 @@
-import { lngLatInNorthAmerica, NORTH_AMERICA_BOUNDS } from "../config/mapRegion";
 import type { LngLat } from "../nav/types";
 
 export type GeocodeHit = { lngLat: LngLat; placeName: string };
 
 export type AutocompleteHit = { id: string; lngLat: LngLat; placeName: string };
 
-const GEOCODE_COUNTRIES = "us,ca";
 
 type MbxFeature = {
   id: string;
@@ -34,10 +32,6 @@ function addForwardCommon(
   if (opts.autocomplete) url.searchParams.set("autocomplete", "true");
   url.searchParams.set("types", opts.types);
   url.searchParams.set("limit", String(opts.limit));
-  url.searchParams.set("country", GEOCODE_COUNTRIES);
-  const [w, s] = NORTH_AMERICA_BOUNDS[0];
-  const [e, n] = NORTH_AMERICA_BOUNDS[1];
-  url.searchParams.set("bbox", `${w},${s},${e},${n}`);
   if (opts.proximity) {
     const [plng, plat] = opts.proximity;
     url.searchParams.set("proximity", `${plng},${plat}`);
@@ -132,7 +126,7 @@ async function forwardFeaturesForQuery(
 function featureToAutocompleteHit(f: MbxFeature, q: string): AutocompleteHit | null {
   if (!f.center || !f.id) return null;
   const [lng, lat] = f.center;
-  if (!lngLatInNorthAmerica(lng, lat)) return null;
+  void lat; // used implicitly via destructuring
   return {
     id: f.id,
     lngLat: [lng, lat],
@@ -156,7 +150,6 @@ export async function mapboxForwardGeocode(
   for (const f of features) {
     if (!f.center) continue;
     const [lng, lat] = f.center;
-    if (!lngLatInNorthAmerica(lng, lat)) continue;
     return {
       lngLat: [lng, lat],
       placeName: f.place_name ?? q,
@@ -220,20 +213,17 @@ export async function mapboxAutocomplete(
   return out;
 }
 
-/** Reverse geocode a dropped pin (US & Canada). */
+/** Reverse geocode a dropped pin. */
 export async function mapboxReverseGeocode(
   lng: number,
   lat: number,
   accessToken: string
 ): Promise<GeocodeHit | null> {
-  if (!lngLatInNorthAmerica(lng, lat)) return null;
-
   const url = new URL(
     `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${lng},${lat}`)}.json`
   );
   url.searchParams.set("access_token", accessToken);
   url.searchParams.set("limit", "1");
-  url.searchParams.set("country", GEOCODE_COUNTRIES);
 
   const res = await fetch(url.toString());
   if (!res.ok) return null;
@@ -243,7 +233,6 @@ export async function mapboxReverseGeocode(
   const f = data.features?.[0];
   if (!f?.center) return null;
   const [flng, flat] = f.center;
-  if (!lngLatInNorthAmerica(flng, flat)) return null;
   return {
     lngLat: [flng, flat],
     placeName: f.place_name ?? `${lat.toFixed(4)}, ${lng.toFixed(4)}`,

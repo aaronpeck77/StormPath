@@ -5,7 +5,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
  * Replace "com.YOURNAME.stormpath" before running `npx cap add ios`.
  */
 const config: CapacitorConfig = {
-  appId: "com.YOURNAME.stormpath",
+  appId: "com.aaronpeck.stormpath",
   appName: "StormPath",
   webDir: "dist",
   plugins: {

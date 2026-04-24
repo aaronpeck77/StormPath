@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import type { RouteAlert } from "../nav/routeAlerts";
 import type { LngLat, NavRoute } from "../nav/types";
 import type { SavedPlace } from "../nav/savedPlaces";
-import { NORTH_AMERICA_BOUNDS } from "../config/mapRegion";
 import { closestPointOnPolyline } from "../nav/routeGeometry";
 import { getWebEnv } from "../config/env";
 import {
@@ -748,7 +747,6 @@ export function DriveMap({
       center: [-98.5, 39.8],
       zoom: 4,
       attributionControl: false,
-      maxBounds: NORTH_AMERICA_BOUNDS,
       dragRotate: true,
       touchPitch: true,
       scrollZoom: true,
@@ -1074,15 +1072,8 @@ export function DriveMap({
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
-    const inBounds = (lng: number, lat: number) =>
-      lng >= NORTH_AMERICA_BOUNDS[0][0]! &&
-      lng <= NORTH_AMERICA_BOUNDS[1][0]! &&
-      lat >= NORTH_AMERICA_BOUNDS[0][1]! &&
-      lat <= NORTH_AMERICA_BOUNDS[1][1]!;
-
     const click = (e: mapboxgl.MapMouseEvent) => {
       const { lng, lat } = e.lngLat;
-      if (!inBounds(lng, lat)) return;
 
       /* Consume taps on the route corridor so they don’t move the destination pin; hazard details are via Hazards + progress strip. */
       if (routes.length > 0) {

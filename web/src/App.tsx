@@ -747,11 +747,6 @@ export default function App() {
         window.setTimeout(() => setTapHint(null), 8000);
         return;
       }
-      if (!lngLatInNorthAmerica(lng, lat)) {
-        setTapHint("Pick a point in the US or Canada.");
-        window.setTimeout(() => setTapHint(null), 4000);
-        return;
-      }
       setAllowAutocomplete(false);
       setSuggestions([]);
       setSuggestLoading(false);
