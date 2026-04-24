@@ -46,11 +46,16 @@ jobs:
         working-directory: web
 
       # ── 4. Build the web app ─────────────────────────────────────────────────
-      - name: Build web app
-        run: npm run build
+      - name: TypeScript check
+        run: npx tsc --noEmit
         working-directory: web
         env:
-          # Forward any build-time secrets that the Vite config needs
+          VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
+
+      - name: Build web app
+        run: npx vite build
+        working-directory: web
+        env:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
 
       # ── 5. Sync web assets into the Xcode project ────────────────────────────
