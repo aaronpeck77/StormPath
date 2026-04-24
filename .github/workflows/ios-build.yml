@@ -73,11 +73,15 @@ jobs:
 
       # ── 7. Provisioning profile ───────────────────────────────────────────────
       - name: Install provisioning profile
+        id: profile
         run: |
           PP_PATH="$RUNNER_TEMP/StormPath.mobileprovision"
           echo "${{ secrets.APPLE_PROVISIONING_PROFILE }}" | base64 --decode > "$PP_PATH"
+          # Extract UUID so xcodebuild can find the profile by name
+          UUID=$(security cms -D -i "$PP_PATH" | plutil -extract UUID raw -)
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp "$PP_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/
+          cp "$PP_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/"$UUID".mobileprovision
+          echo "uuid=$UUID" >> $GITHUB_OUTPUT
 
       # ── 8. Set build number to the GitHub run number (always increments) ─────
       - name: Set build number
@@ -98,6 +102,7 @@ jobs:
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="iPhone Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="${{ steps.profile.outputs.uuid }}" \
             CODE_SIGNING_REQUIRED=YES \
             2>&1 | tee /tmp/xcodebuild.log | grep -E "error:|warning:|archive"
 
