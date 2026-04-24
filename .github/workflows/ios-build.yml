@@ -109,6 +109,7 @@ jobs:
       # ── 10. Export the IPA ────────────────────────────────────────────────────
       - name: Export IPA
         run: |
+          PROFILE_UUID="${{ steps.profile.outputs.uuid }}"
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -120,6 +121,13 @@ jobs:
             <string>${{ secrets.APPLE_TEAM_ID }}</string>
             <key>uploadSymbols</key>
             <true/>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.aaronpeck.stormpath</key>
+              <string>$PROFILE_UUID</string>
+            </dict>
           </dict>
           </plist>
           EOF
