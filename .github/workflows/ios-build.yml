@@ -141,11 +141,24 @@ jobs:
 
       # ── 11. Upload to TestFlight ──────────────────────────────────────────────
       - name: Upload to TestFlight
+        env:
+          ASC_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
         run: |
-          # altool discovers the key automatically when placed in this standard location
+          KEY_FILE=~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
           mkdir -p ~/.appstoreconnect/private_keys
-          echo "${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}" | base64 --decode \
-            > ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
+
+          # Strip certutil wrapper headers (-----BEGIN/END CERTIFICATE-----) and
+          # Windows carriage returns before decoding, so the secret works whether
+          # the user included those headers or not.
+          echo "$ASC_KEY_CONTENT" \
+            | grep -v "^-----" \
+            | grep -v "CertUtil" \
+            | tr -d '\r' \
+            | base64 --decode > "$KEY_FILE"
+
+          # Verify the decoded file looks like a PEM key (first line should be -----BEGIN)
+          echo "Key file first line: $(head -1 $KEY_FILE)"
+          echo "Key file size: $(wc -c < $KEY_FILE) bytes"
 
           xcrun altool --upload-app \
             --type ios \
