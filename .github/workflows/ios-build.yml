@@ -63,6 +63,11 @@ jobs:
         run: npx cap sync ios
         working-directory: web
 
+      # ── 5b. Install CocoaPods dependencies (generates App.xcworkspace) ───────
+      - name: Pod install
+        run: pod install
+        working-directory: web/ios/App
+
       # ── 6. Apple code-signing certificate ───────────────────────────────────
       - name: Import distribution certificate
         uses: apple-actions/import-codesign-certs@v3
