@@ -9,21 +9,9 @@ export type WeatherOverlay = Record<
 
 export type TrafficOverlay = Record<string, MapboxTrafficLeg | null | undefined>;
 
-/**
- * Congestion-aware delay: when Mapbox says heavy/severe but delay-vs-typical is low
- * (because this congestion is "normal" for this time slot), we still surface a meaningful
- * delay so the driver sees it. This is a floor, not a replacement.
- */
-function effectiveDelayMinutes(
-  delayVsTypical: number,
-  congestion: CongestionLevel
-): number {
-  const congestionFloor =
-    congestion === "severe" ? 14 :
-    congestion === "heavy" ? 8 :
-    congestion === "moderate" ? 3 :
-    0;
-  return Math.max(delayVsTypical, congestionFloor);
+/** Use Mapbox delay-vs-typical directly to avoid over-reporting routine slowdown. */
+function effectiveDelayMinutes(delayVsTypical: number, _congestion: CongestionLevel): number {
+  return Math.max(0, delayVsTypical);
 }
 
 /**
@@ -81,7 +69,7 @@ export function buildFusedSnapshot(
   if (hasWx) parts.push("Weather from OpenWeather (samples along each route).");
   else parts.push("Weather: not loaded.");
   if (hasTraffic) parts.push("Drive times use Mapbox live traffic along the route shape.");
-  else parts.push("Live traffic: add Mapbox token; ORS alone has no real-time congestion.");
+  else parts.push("Live traffic: add a Mapbox token — static ETA has no real-time congestion.");
 
   return {
     updatedAt: Date.now(),

@@ -23,7 +23,7 @@ export function trafficHintForScoredRoute(
   fetchDone: boolean
 ): { text: string; live: boolean } {
   if (s.hasLiveTrafficEstimate) {
-    if (s.trafficDelayMinutes >= 1) {
+    if (s.trafficDelayMinutes >= 10) {
       const d = formatDelayVersusBaseline(s.trafficDelayMinutes);
       return { text: d ? `${d} traffic` : "clear", live: true };
     }

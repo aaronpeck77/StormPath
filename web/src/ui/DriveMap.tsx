@@ -6,7 +6,6 @@ import type { RouteAlert } from "../nav/routeAlerts";
 import type { LngLat, NavRoute } from "../nav/types";
 import type { SavedPlace } from "../nav/savedPlaces";
 import { NORTH_AMERICA_BOUNDS } from "../config/mapRegion";
-import { isMapBasemapDaytime } from "../map/mapBasemapDaytime";
 import { closestPointOnPolyline } from "../nav/routeGeometry";
 import { getWebEnv } from "../config/env";
 import {
@@ -57,8 +56,55 @@ export type TrafficBypassCompareCallout = {
 const MAP_STYLE_DAY = "mapbox://styles/mapbox/streets-v12";
 const MAP_STYLE_NIGHT = "mapbox://styles/mapbox/dark-v11";
 
-function currentMapStyle(): string {
-  return isMapBasemapDaytime() ? MAP_STYLE_DAY : MAP_STYLE_NIGHT;
+/** Four visual phases driven by local time. */
+type MapPhase = "sunrise" | "day" | "sunset" | "night";
+
+function currentMapPhase(): MapPhase {
+  const now = new Date();
+  const min = now.getHours() * 60 + now.getMinutes();
+  if (min >= 330 && min < 390) return "sunrise"; // 5:30–6:30
+  if (min >= 390 && min < 1110) return "day";    // 6:30–18:30
+  if (min >= 1110 && min < 1170) return "sunset"; // 18:30–19:30
+  return "night";
+}
+
+function currentMapStyle(phase?: MapPhase): string {
+  return (phase ?? currentMapPhase()) === "night" ? MAP_STYLE_NIGHT : MAP_STYLE_DAY;
+}
+
+/** Mapbox light position & color for each phase.
+ *  position = [radial, azimuthal-deg, polar-deg]
+ *  azimuthal: 0=N, 90=E, 180=S, 270=W
+ *  polar: 0=overhead, 90=horizon (larger = longer shadows)
+ */
+function sceneLightForPhase(phase: MapPhase): {
+  anchor: "map" | "viewport";
+  position: [number, number, number];
+  color: string;
+  intensity: number;
+} {
+  switch (phase) {
+    case "sunrise":
+      // Sun low in the east → long westward shadows
+      return { anchor: "map", position: [1.5, 90, 76], color: "#ffb060", intensity: 0.72 };
+    case "day":
+      // Sun high in the south → short shadows
+      return { anchor: "map", position: [1.5, 180, 28], color: "white", intensity: 0.5 };
+    case "sunset":
+      // Sun low in the west → long eastward shadows
+      return { anchor: "map", position: [1.5, 270, 76], color: "#ff7030", intensity: 0.72 };
+    case "night":
+      return { anchor: "map", position: [1.5, 210, 55], color: "#6677aa", intensity: 0.22 };
+  }
+}
+
+function buildingColorForPhase(phase: MapPhase): string {
+  switch (phase) {
+    case "sunrise": return "#e8c080";
+    case "day":     return "#d4d4d8";
+    case "sunset":  return "#e89060";
+    case "night":   return "#1a1c22";
+  }
 }
 
 function isNarrowPhoneViewport(): boolean {
@@ -664,8 +710,8 @@ export function DriveMap({
   const token = getWebEnv().mapboxToken;
   const [mapReady, setMapReady] = useState(false);
   const [mapResumeTick, setMapResumeTick] = useState(0);
-  const [daytime, setDaytime] = useState(isMapBasemapDaytime);
-  const activeStyleRef = useRef(currentMapStyle());
+  const [mapPhase, setMapPhase] = useState(currentMapPhase);
+  const activeStyleRef = useRef(currentMapStyle(mapPhase));
   const trafficConditionsOnMapRef = useRef(trafficConditionsOnMap);
   trafficConditionsOnMapRef.current = trafficConditionsOnMap;
 
@@ -807,17 +853,17 @@ export function DriveMap({
   }, [mapReady, stormBrowseBoundsReporting, onStormBrowseBoundsChange]);
 
   useEffect(() => {
-    const id = window.setInterval(() => setDaytime(isMapBasemapDaytime()), 60_000);
+    const id = window.setInterval(() => setMapPhase(currentMapPhase()), 60_000);
     return () => window.clearInterval(id);
   }, []);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
-    if (!daytime) {
+    if (mapPhase === "night") {
       requestAnimationFrame(() => brightenNightMapLabels(map));
     }
-  }, [daytime, mapReady]);
+  }, [mapPhase, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -843,7 +889,7 @@ export function DriveMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const want = daytime ? MAP_STYLE_DAY : MAP_STYLE_NIGHT;
+    const want = currentMapStyle(mapPhase);
     if (want === activeStyleRef.current) return;
     activeStyleRef.current = want;
     setMapReady(false);
@@ -853,7 +899,7 @@ export function DriveMap({
     const onStyle = () => setMapReady(true);
     map.once("style.load", onStyle);
     return () => { map.off("style.load", onStyle); };
-  }, [daytime]);
+  }, [mapPhase]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -886,7 +932,7 @@ export function DriveMap({
           type: "fill-extrusion",
           minzoom: 14,
           paint: {
-            "fill-extrusion-color": daytime ? "#d4d4d8" : "#1a1c22",
+            "fill-extrusion-color": buildingColorForPhase(mapPhase),
             "fill-extrusion-height": ["get", "height"],
             "fill-extrusion-base": ["get", "min_height"],
             "fill-extrusion-opacity": 0.6,
@@ -895,7 +941,26 @@ export function DriveMap({
         labelLayerId
       );
     }
-  }, [mapReady, daytime]);
+  }, [mapReady, mapPhase]);
+
+  /** Keep 3D building color in sync when phase changes after the layer is already live. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (!map.getLayer("3d-buildings")) return;
+    try {
+      map.setPaintProperty("3d-buildings", "fill-extrusion-color", buildingColorForPhase(mapPhase));
+    } catch { /* layer not ready */ }
+  }, [mapReady, mapPhase]);
+
+  /** Move the sun: low east at sunrise, high south during day, low west at sunset, dim night. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded()) return;
+    try {
+      map.setLight(sceneLightForPhase(mapPhase));
+    } catch { /* style race */ }
+  }, [mapReady, mapPhase]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1088,6 +1153,16 @@ export function DriveMap({
     let lastTs = performance.now();
     const OFF_LINE_SNAP_M = 95;
 
+    // GPS fix history for constant-velocity interpolation between samples.
+    // Instead of lurching toward each new raw fix, we lerp from prevFix→curFix
+    // at a steady pace, with slight dead-reckoning past curFix while waiting
+    // for the next sample.  A small exponential polish on top handles micro-jitter.
+    type Fix = { lng: number; lat: number; t: number };
+    let prevFix: Fix | null = null;
+    let curFix: Fix | null = t0 ? { lng: t0[0], lat: t0[1], t: performance.now() } : null;
+    let lastSeenLng = t0?.[0] ?? NaN;
+    let lastSeenLat = t0?.[1] ?? NaN;
+
     const loop = () => {
       const t = userLngLatRef.current;
       if (t) {
@@ -1095,22 +1170,41 @@ export function DriveMap({
         const dt = Math.min(0.12, (now - lastTs) / 1000);
         lastTs = now;
 
-        let targetLng = t[0];
-        let targetLat = t[1];
+        // Detect a new GPS sample arriving.
+        if (t[0] !== lastSeenLng || t[1] !== lastSeenLat) {
+          prevFix = curFix;
+          curFix = { lng: t[0], lat: t[1], t: now };
+          lastSeenLng = t[0];
+          lastSeenLat = t[1];
+        }
+
+        // Compute interpolated/dead-reckoned position between the two most
+        // recent fixes.  Cap at 1.25× the interval so we don't coast too far.
+        let targetLng: number;
+        let targetLat: number;
+        if (prevFix && curFix && curFix.t > prevFix.t) {
+          const interval = curFix.t - prevFix.t;
+          const alpha = Math.min((now - prevFix.t) / interval, 1.25);
+          targetLng = prevFix.lng + (curFix.lng - prevFix.lng) * alpha;
+          targetLat = prevFix.lat + (curFix.lat - prevFix.lat) * alpha;
+        } else {
+          targetLng = curFix?.lng ?? t[0];
+          targetLat = curFix?.lat ?? t[1];
+        }
+
+        // Snap to the route polyline when close enough.
         const geom = puckSnapGeomRef.current;
         if (geom) {
-          const snap = closestPointOnPolyline(t, geom);
+          const snap = closestPointOnPolyline([targetLng, targetLat], geom);
           if (snap.lateralMetersApprox < OFF_LINE_SNAP_M) {
             targetLng = snap.lngLat[0]!;
             targetLat = snap.lngLat[1]!;
           }
         }
 
-        const s = speedMpsRef.current ?? 0;
-        /* Seconds to mostly catch the target: shorter = snappier, longer = silkier. */
-        const tau = s > 12 ? 0.11 : s > 6 ? 0.16 : s > 2 ? 0.24 : 0.34;
-        const blend = 1 - Math.exp(-dt / tau);
-
+        // Tight exponential polish — the lerp above handles the coarse motion;
+        // this only irons out sub-frame residuals.
+        const blend = 1 - Math.exp(-dt / 0.07);
         const cur = marker.getLngLat();
         marker.setLngLat([
           cur.lng + (targetLng - cur.lng) * blend,
@@ -2101,7 +2195,12 @@ export function DriveMap({
     );
   }
 
-  return <div ref={containerRef} className="drive-map" />;
+  return (
+    <>
+      <div ref={containerRef} className="drive-map" />
+      <div className={`map-phase-tint${mapPhase === "sunrise" || mapPhase === "sunset" ? ` map-phase-tint--${mapPhase}` : ""}`} />
+    </>
+  );
 }
 
 export default DriveMap;

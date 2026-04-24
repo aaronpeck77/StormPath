@@ -1,0 +1,141 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# StormPath — iOS Build & TestFlight Upload
+#
+# Triggers:
+#   • Every push to the "main" branch
+#   • Manually from Actions tab (workflow_dispatch)
+#
+# Required GitHub Secrets (Settings → Secrets and variables → Actions):
+#   APPLE_CERTIFICATE            Base64-encoded .p12 distribution certificate
+#   APPLE_CERTIFICATE_PASSWORD   Password set when exporting the .p12
+#   APPLE_PROVISIONING_PROFILE   Base64-encoded .mobileprovision file
+#   APPLE_TEAM_ID                10-character Team ID from developer.apple.com
+#   APP_STORE_CONNECT_API_KEY_ID        Key ID from App Store Connect → Keys
+#   APP_STORE_CONNECT_ISSUER_ID         Issuer ID from the same page
+#   APP_STORE_CONNECT_API_KEY_CONTENT   Base64-encoded .p8 API key file
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: iOS Build & TestFlight
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      # ── 1. Source code ───────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Node + npm cache ──────────────────────────────────────────────────
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      # ── 3. Install JS deps ───────────────────────────────────────────────────
+      - name: Install dependencies
+        run: npm ci
+        working-directory: web
+
+      # ── 4. Build the web app ─────────────────────────────────────────────────
+      - name: Build web app
+        run: npm run build
+        working-directory: web
+        env:
+          # Forward any build-time secrets that the Vite config needs
+          VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
+
+      # ── 5. Sync web assets into the Xcode project ────────────────────────────
+      - name: Capacitor sync
+        run: npx cap sync ios
+        working-directory: web
+
+      # ── 6. Apple code-signing certificate ───────────────────────────────────
+      - name: Import distribution certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      # ── 7. Provisioning profile ───────────────────────────────────────────────
+      - name: Install provisioning profile
+        run: |
+          PP_PATH="$RUNNER_TEMP/StormPath.mobileprovision"
+          echo "${{ secrets.APPLE_PROVISIONING_PROFILE }}" | base64 --decode > "$PP_PATH"
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp "$PP_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/
+
+      # ── 8. Set build number to the GitHub run number (always increments) ─────
+      - name: Set build number
+        run: |
+          cd web/ios/App
+          agvtool new-version -all ${{ github.run_number }}
+
+      # ── 9. Build the Xcode archive ───────────────────────────────────────────
+      - name: Build archive
+        run: |
+          xcodebuild archive \
+            -workspace web/ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -archivePath "$RUNNER_TEMP/StormPath.xcarchive" \
+            -destination "generic/platform=iOS" \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="iPhone Distribution" \
+            | xcpretty
+
+      # ── 10. Export the IPA ────────────────────────────────────────────────────
+      - name: Export IPA
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store</string>
+            <key>teamID</key>
+            <string>${{ secrets.APPLE_TEAM_ID }}</string>
+            <key>uploadSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/StormPath.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            | xcpretty
+
+      # ── 11. Upload to TestFlight ──────────────────────────────────────────────
+      - name: Upload to TestFlight
+        run: |
+          # Write the App Store Connect API key to a temp file
+          ASC_KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          echo "${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}" | base64 --decode > "$ASC_KEY_PATH"
+
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$RUNNER_TEMP/export/App.ipa" \
+            --apiKey "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" \
+            --apiIssuer "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}" \
+            --apiKey-file "$ASC_KEY_PATH"
+
+      # ── 12. Save IPA as a build artifact (optional — handy for debugging) ────
+      - name: Upload IPA artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: StormPath-${{ github.run_number }}.ipa
+          path: ${{ runner.temp }}/export/App.ipa
+          retention-days: 14

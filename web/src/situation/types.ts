@@ -6,7 +6,7 @@ export type HazardKind = "closure" | "incident" | "lowVisibility" | "restriction
 export interface RouteSituationSlice {
   routeId: string;
   role: RouteRole;
-  /** Congestion vs static ORS ETA when Mapbox traffic is available; otherwise 0 */
+  /** Congestion vs static baseline ETA when Mapbox traffic is available; otherwise 0 */
   trafficDelayMinutes: number;
   /** Mapbox driving-traffic duration when fetched; null if unavailable */
   mapboxDurationMinutes: number | null;

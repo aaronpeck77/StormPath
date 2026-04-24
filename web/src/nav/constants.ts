@@ -16,17 +16,52 @@ export const SAVED_ROUTE_AVG_KMH = 45;
  */
 
 /** Minutes of traffic delay before surfacing a full "delay" alert card. */
-/** Strip + “traffic-delay” corridor: show when Mapbox delay is at least this many minutes vs typical. */
-export const TRAFFIC_DELAY_ALERT_MINUTES = 2;
+/** Strip + "traffic-delay" corridor: show only for serious delay vs typical. */
+export const TRAFFIC_DELAY_ALERT_MINUTES = 10;
 
 /** Minutes of traffic delay for a softer "traffic" card (live estimate required). */
-export const TRAFFIC_SOFT_ALERT_MINUTES = 1;
+export const TRAFFIC_SOFT_ALERT_MINUTES = 8;
 
 /** Minutes of delay before the traffic alert also prompts reroute. */
-export const TRAFFIC_PROMPT_REROUTE_MINUTES = 4;
+export const TRAFFIC_PROMPT_REROUTE_MINUTES = 10;
 
 /** Progress-strip shows a faint traffic pip at this threshold. */
-export const TRAFFIC_STRIP_SOFT_MINUTES = 0.5;
+export const TRAFFIC_STRIP_SOFT_MINUTES = 8;
+
+/**
+ * Relative threshold: any delay ≥ this fraction of remaining trip time is
+ * treated as significant, even if it's below the absolute minute floor.
+ * Example: a +6 min delay on a 25 min commute = 24 % → fires; same delay on a
+ * 5 hr trip = 2 % → ignored. Use `isSignificantTrafficDelay` below.
+ */
+export const TRAFFIC_DELAY_RELATIVE_FRACTION = 0.15;
+
+/** Below this remaining-trip duration the relative-fraction rule is skipped (avoids "0.5 min on a 1 min trip" noise). */
+export const TRAFFIC_DELAY_RELATIVE_MIN_REMAINING_MIN = 8;
+
+/**
+ * Returns true when a traffic delay (in minutes) is significant relative to the
+ * remaining trip duration. Delay is "significant" if EITHER:
+ *  - it exceeds the absolute minute floor, OR
+ *  - it exceeds `TRAFFIC_DELAY_RELATIVE_FRACTION` of the remaining trip time
+ *    (and the trip is long enough to make the ratio meaningful).
+ */
+export function isSignificantTrafficDelay(
+  delayMin: number,
+  remainingMin: number | null | undefined,
+  absoluteFloor: number = TRAFFIC_DELAY_ALERT_MINUTES,
+): boolean {
+  if (!Number.isFinite(delayMin) || delayMin <= 0) return false;
+  if (delayMin >= absoluteFloor) return true;
+  if (
+    remainingMin != null &&
+    Number.isFinite(remainingMin) &&
+    remainingMin >= TRAFFIC_DELAY_RELATIVE_MIN_REMAINING_MIN
+  ) {
+    return delayMin >= remainingMin * TRAFFIC_DELAY_RELATIVE_FRACTION;
+  }
+  return false;
+}
 
 /** Radar intensity that triggers a "heavy weather" alert. */
 export const RADAR_HEAVY_THRESHOLD = 0.72;

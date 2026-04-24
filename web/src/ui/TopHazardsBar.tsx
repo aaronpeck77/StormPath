@@ -66,7 +66,7 @@ function trafficOneLine(
   if (!trafficFetchDone) return "Traffic: loading…";
   if (trafficForRoute?.hasLiveTrafficEstimate) {
     const x =
-      delay >= 2
+      delay >= 10
         ? `~${formatDelayVersusBaseline(delay)} vs baseline`
         : "no major slowdown on corridor";
     return `Traffic: ${t.text} · ${x}`;

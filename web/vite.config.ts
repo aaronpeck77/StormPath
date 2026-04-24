@@ -11,6 +11,10 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(appVersion),
   },
   plugins: [react()],
+  /* Capacitor loads the built HTML from the device filesystem, so all asset
+     paths must be relative (no leading /).  This has no effect on the Netlify
+     web build because Netlify serves from the root anyway. */
+  base: "./",
   build: {
     rollupOptions: {
       output: {

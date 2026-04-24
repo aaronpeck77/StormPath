@@ -5,13 +5,13 @@ import type { PresetId } from "./presets";
 
 export interface ScoredRoute {
   route: NavRoute;
-  /** Minutes: Mapbox live traffic when available, else ORS baseline */
+  /** Minutes: Mapbox live traffic when available, else static baseline ETA */
   effectiveEtaMinutes: number;
-  /** OpenRoute static ETA (minutes) */
-  orsBaselineMinutes: number;
+  /** Static baseline ETA from the route (minutes) */
+  baselineEtaMinutes: number;
   /** Mapbox live traffic succeeded for this route */
   hasLiveTrafficEstimate: boolean;
-  /** Minutes of delay vs ORS when live traffic is available */
+  /** Minutes of delay vs static baseline when live traffic is available */
   trafficDelayMinutes: number;
   /** 0–1 fused “stress” for coloring inactive legs */
   stressScore: number;
@@ -59,12 +59,12 @@ export function scoreTrip(
     const parts: string[] = [];
     if (hasLiveTrafficEstimate) {
       parts.push(`~${formatEtaDuration(effectiveEtaMinutes)} drive (Mapbox traffic)`);
-      if (trafficDelay > 0.5) {
+      if (trafficDelay >= 10) {
         const d = formatDelayVersusBaseline(trafficDelay);
         if (d) parts.push(`${d} vs static route`);
       }
     } else {
-      parts.push(`~${formatEtaDuration(route.baseEtaMinutes)} ORS (no live traffic)`);
+      parts.push(`~${formatEtaDuration(route.baseEtaMinutes)} static ETA (no live traffic)`);
     }
     if (radar > 0.2) parts.push(`precip weight ${Math.round(radar * 100)}%`);
     if (hazards.length) parts.push(`${hazards.length} road note(s)`);
@@ -85,7 +85,7 @@ export function scoreTrip(
     return {
       route,
       effectiveEtaMinutes,
-      orsBaselineMinutes: route.baseEtaMinutes,
+      baselineEtaMinutes: route.baseEtaMinutes,
       hasLiveTrafficEstimate,
       trafficDelayMinutes: trafficDelay,
       stressScore: stress,

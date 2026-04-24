@@ -1,15 +1,25 @@
 {
   "name": "stormpath-web",
   "private": true,
-  "version": "0.7.5",
+  "version": "0.7.9",
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cap:sync": "npx cap sync ios",
+    "build:ios": "npm run build && npx cap sync ios"
   },
   "dependencies": {
-    "mapbox-gl": "^3.8.0",
+    "@capacitor-community/keep-awake": "^8.0.1",
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
+    "@capacitor/geolocation": "^8.2.0",
+    "@capacitor/ios": "^8.3.1",
+    "mapbox-gl": "^3.22.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

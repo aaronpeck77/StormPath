@@ -186,7 +186,7 @@ export function TurnBanner({ visible, steps, activeIndex, metersToManeuverEnd }:
           </span>
           <div className="turn-banner-text">
             <span className="turn-banner-street">No turn list for this route</span>
-            <span className="turn-banner-dist">Use an OpenRoute key for step-by-step</span>
+            <span className="turn-banner-dist">Add a Mapbox token for step-by-step turns</span>
           </div>
         </div>
       </div>

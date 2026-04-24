@@ -105,7 +105,7 @@ export function RouteCycleButton({
     .join(" · ");
   const hint =
     items.length < 2
-      ? `${title}. OpenRoute returned one distinct path here; other variants matched this geometry.`
+      ? `${title}. Only one distinct path here — other variants matched this geometry.`
       : `${title}. Tap for next route.`;
   const fullTitle = detail ? `${hint} — ${detail}` : hint;
 

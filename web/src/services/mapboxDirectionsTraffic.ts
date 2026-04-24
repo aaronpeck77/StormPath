@@ -31,6 +31,8 @@ export type MapboxTrafficLeg = {
   congestionSummary: CongestionLevel;
   /** True when any segment on this leg has a closure annotation. */
   hasClosure: boolean;
+  /** Approximate position of near-stopped traffic along the leg (0..1), if detected. */
+  nearStopFraction: number | null;
 };
 
 type DirectionsRoute = {
@@ -78,6 +80,28 @@ function summarizeCongestion(route: DirectionsRoute): CongestionLevel {
   if ((severe + heavy) / total >= 0.12 || heavy >= 4) return "heavy";
   if ((severe + heavy + moderate) / total >= 0.2) return "moderate";
   return "low";
+}
+
+function detectNearStopFraction(route: DirectionsRoute): number | null {
+  let total = 0;
+  let firstNearStop: number | null = null;
+  for (const leg of route.legs ?? []) {
+    const congestion = leg.annotation?.congestion_numeric ?? [];
+    const closures = leg.annotation?.closure ?? [];
+    const segCount = Math.max(congestion.length, closures.length);
+    if (segCount <= 0) continue;
+    for (let i = 0; i < segCount; i++) {
+      const c = congestion[i];
+      const nearStopByCongestion = typeof c === "number" && c >= 90;
+      const nearStopByClosure = closures[i] === true;
+      if ((nearStopByCongestion || nearStopByClosure) && firstNearStop == null) {
+        firstNearStop = total + i;
+      }
+    }
+    total += segCount;
+  }
+  if (firstNearStop == null || total <= 0) return null;
+  return Math.max(0, Math.min(1, (firstNearStop + 0.5) / total));
 }
 
 async function fetchDirectionsOnce(
@@ -131,6 +155,7 @@ async function fetchDirectionsOnce(
     delayVsTypicalMinutes: delayMin,
     congestionSummary: summarizeCongestion(route),
     hasClosure,
+    nearStopFraction: detectNearStopFraction(route),
   };
 }
 

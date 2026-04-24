@@ -35,7 +35,7 @@ if errorlevel 1 (
 
 echo.
 echo  Step 3/4 - Copying build to a temp folder (avoids OneDrive "pending")...
-set "NETLIFY_OUT=%LOCALAPPDATA%\Temp\RouteCommandCenter-Netlify"
+set "NETLIFY_OUT=%LOCALAPPDATA%\Temp\StormPath2-Netlify"
 if exist "%NETLIFY_OUT%" rmdir /s /q "%NETLIFY_OUT%"
 mkdir "%NETLIFY_OUT%" 2>nul
 robocopy "%~dp0dist" "%NETLIFY_OUT%" /E /NFL /NDL /NJH /NJS /NC /NS

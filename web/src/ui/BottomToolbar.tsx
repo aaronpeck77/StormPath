@@ -32,7 +32,7 @@ type Props = {
   postedMph: number;
   onStop: () => void;
   hasTrip: boolean;
-  /** ★ in route/topdown planning: hidden only while navigating with an active route (saves bar space in drive) */
+  /** ★ in route / map (topdown): shown while navigating; hidden in drive only (saves bar space) */
   showSavedPlacesButton: boolean;
   /** Rt/Mp/Dr cycle — set false to hide entirely */
   showViewCycleButton?: boolean;
@@ -205,7 +205,8 @@ export function BottomToolbar({
                 <span className="nav-mode-cycle__hint">view</span>
               </button>
             )}
-            {!driveNavUi && !mapNavUi && showRadarButton && (
+            {/* Rad: route + map (topdown) while navigating; hidden in drive to save bar space */}
+            {!driveNavUi && showRadarButton && (
               <button
                 type="button"
                 title={

@@ -9,6 +9,8 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
+import { Capacitor } from "@capacitor/core";
+import { KeepAwake } from "@capacitor-community/keep-awake";
 import { lngLatInNorthAmerica } from "./config/mapRegion";
 import { getWebEnv } from "./config/env";
 import { useFusedSituation } from "./hooks/useFusedSituation";
@@ -25,7 +27,6 @@ import { tripPlanFromSavedRoute } from "./nav/planFromSavedRoute";
 import type { SavedRoute } from "./nav/savedRoutes";
 import type { LngLat, RouteTurnStep, TripPlan } from "./nav/types";
 import { pickSuggestedActive, scoreTrip } from "./scoring/scoreRoutes";
-import { buildTripFromOpenRoute, collectRouteVariants } from "./services/openRouteDirections";
 import { buildTripFromMapbox, collectMapboxRouteVariants } from "./services/mapboxDirectionsRouter";
 import {
   mapboxAutocomplete,
@@ -50,7 +51,6 @@ import { layoutStripAlerts } from "./nav/stripAlertLayout";
 import {
   bearingAlongRouteAhead,
   closestAlongRouteMeters,
-  chordFractionToAlongMeters,
   haversineMeters,
   pointAtAlongMeters,
   polylineLengthMeters,
@@ -96,8 +96,6 @@ import { estimatePostedSpeedMph } from "./ui/DriveHud";
 import { formatDelayMinutes, formatEtaDuration } from "./ui/formatEta";
 import { StormAdvisoryBar } from "./ui/StormAdvisoryBar";
 import { ActivityStatusPill } from "./ui/ActivityStatusPill";
-import { HazardControlsStrip } from "./ui/HazardControlsStrip";
-import { DriveRouteInfoStrip } from "./ui/DriveRouteInfoStrip";
 import { AboutSheet } from "./ui/AboutSheet";
 import { TrafficBypassComparePanel } from "./ui/TrafficBypassComparePanel";
 import type { TrafficBypassCompareCallout } from "./ui/DriveMap";
@@ -141,10 +139,6 @@ import {
 } from "./preferredAreaRoutes";
 import "./App.css";
 
-function clamp01(x: number): number {
-  return Math.max(0, Math.min(1, x));
-}
-
 type PendingSave =
   | null
   | {
@@ -174,7 +168,7 @@ const MB_TRAFFIC_LINE_SNAP_NOTICE = "Mapbox traffic-aware line";
 /** Route mode: refresh B/C alternates only (primary leg unchanged). */
 const NAV_ROUTE_ALT_REFRESH_MS = 26_000;
 /** Throttle between auto-reroute attempts when still far off the polyline (keep low for quick recovery). */
-const NAV_SEVERE_OFF_ROUTE_THROTTLE_MS = 2_800;
+const NAV_SEVERE_OFF_ROUTE_THROTTLE_MS = 1_200;
 /** Snap drawn line to Mapbox’s road network when live delay vs ORS is huge or Mapbox can’t trace the ORS path. */
 const MAPBOX_LINE_SNAP_DELAY_MIN = 10;
 /** Applies to both “heavy delay” and untraceable polyline — avoids GPS-driven snap loops in drive/topdown. */
@@ -485,6 +479,17 @@ export default function App() {
   const [navigationStarted, setNavigationStarted] = useState(false);
   const navigationStartedRef = useRef(navigationStarted);
   navigationStartedRef.current = navigationStarted;
+
+  /** Keep the screen on while navigating on device; allow sleep when done. */
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    if (navigationStarted) {
+      void KeepAwake.keepAwake();
+    } else {
+      void KeepAwake.allowSleep();
+    }
+  }, [navigationStarted]);
+
   const destLngLatRef = useRef(destLngLat);
   destLngLatRef.current = destLngLat;
   const [viewMode, setViewMode] = useState<MapViewMode>("route");
@@ -618,17 +623,6 @@ export default function App() {
             setTapHint(built.snapNotice);
             window.setTimeout(() => setTapHint(null), 8500);
           }
-        } else if (env.orsApiKey) {
-          const built = await buildTripFromOpenRoute(env.orsApiKey, userLngLat, end, {
-            origin: "Your location",
-            destination: label,
-          });
-          p = built.plan;
-          destForMap = built.routeDestination;
-          if (built.snapNotice) {
-            setTapHint(built.snapNotice);
-            window.setTimeout(() => setTapHint(null), 8500);
-          }
         } else {
           p = buildMockTripBetween(userLngLat, end, label);
         }
@@ -664,14 +658,14 @@ export default function App() {
         setRouting(false);
       }
     },
-    [userLngLat, env.mapboxToken, env.orsApiKey, resetNavigationPlanning, payFrequentRoutes]
+    [userLngLat, env.mapboxToken, resetNavigationPlanning, payFrequentRoutes]
   );
 
   /** Recompute routes from current GPS to the same destination without stopping navigation. */
   const recalcRouteFromHere = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (!userLngLat || !destLngLat) return;
-    if ((env.mapboxToken || env.orsApiKey) && !isOnline) {
+    if (env.mapboxToken && !isOnline) {
         if (!opts?.silent) {
           setTapHint("Offline: route refresh unavailable.");
           window.setTimeout(() => setTapHint(null), 3500);
@@ -687,14 +681,6 @@ export default function App() {
         let rerouteSnapNotice: string | undefined;
         if (env.mapboxToken) {
           const built = await buildTripFromMapbox(env.mapboxToken, userLngLat, destLngLat, {
-            origin: "Your location",
-            destination: destinationLabel.trim() || "Destination",
-          });
-          p = built.plan;
-          destForMap = built.routeDestination;
-          rerouteSnapNotice = built.snapNotice;
-        } else if (env.orsApiKey) {
-          const built = await buildTripFromOpenRoute(env.orsApiKey, userLngLat, destLngLat, {
             origin: "Your location",
             destination: destinationLabel.trim() || "Destination",
           });
@@ -743,7 +729,7 @@ export default function App() {
         setRouting(false);
       }
     },
-    [userLngLat, destLngLat, env.mapboxToken, env.orsApiKey, destinationLabel, computeRoutes, isOnline, resetNavigationPlanning]
+    [userLngLat, destLngLat, env.mapboxToken, destinationLabel, computeRoutes, isOnline, resetNavigationPlanning]
   );
 
   const handleMapClick = useCallback(
@@ -1264,7 +1250,7 @@ export default function App() {
   const refreshAlternateRoutesOnly = useCallback(async () => {
     if (!navigationStarted || viewMode !== "route") return;
     if (!userLngLat || !destLngLat) return;
-    if ((env.mapboxToken || env.orsApiKey) && !isOnline) return;
+    if (env.mapboxToken && !isOnline) return;
     const primaryId = orderedRouteIds[0];
     if (!primaryId || plan.routes.length < 2) return;
     const epochAtStart = routeGraphEpochRef.current;
@@ -1272,11 +1258,6 @@ export default function App() {
     try {
       if (env.mapboxToken) {
         const fresh = await collectMapboxRouteVariants(env.mapboxToken, userLngLat, destLngLat);
-        if (fresh.length === 0) return;
-        if (epochAtStart !== routeGraphEpochRef.current) return;
-        setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, fresh));
-      } else if (env.orsApiKey) {
-        const fresh = await collectRouteVariants(env.orsApiKey, userLngLat, destLngLat);
         if (fresh.length === 0) return;
         if (epochAtStart !== routeGraphEpochRef.current) return;
         setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, fresh));
@@ -1302,7 +1283,6 @@ export default function App() {
     orderedRouteIds,
     plan.routes.length,
     env.mapboxToken,
-    env.orsApiKey,
     destinationLabel,
   ]);
 
@@ -1392,7 +1372,7 @@ export default function App() {
 
   const stormRoadDetailRows = useMemo(() => {
     if (!guidanceRoute?.geometry?.length || !guidanceSlice) return [];
-    const rows: { label: string; text: ReactNode }[] = [];
+    const rows: { label: string; text: ReactNode; actionLabel?: string; onAction?: () => void }[] = [];
     const mapbox = Boolean(env.mapboxToken);
 
     if (mapbox) {
@@ -1434,16 +1414,24 @@ export default function App() {
           ),
         });
 
-        if (delay >= 1) {
+        if (delay >= 10 || tLeg?.nearStopFraction != null || tLeg?.hasClosure) {
           rows.push({
             label: "Delay",
             text: (
               <>
-                <strong>+{formatDelayMinutes(delay)}</strong>{" "}
+                <strong>
+                  {tLeg?.hasClosure || tLeg?.nearStopFraction != null
+                    ? "Severe slowdown ahead"
+                    : `+${formatDelayMinutes(delay)}`}
+                </strong>{" "}
                 <span className="storm-advisory-bar__road-muted">
-                  {congLevel === "heavy" || congLevel === "severe"
-                    ? "— slowdowns visible on map overlay"
-                    : "vs typical for this time"}
+                  {tLeg?.hasClosure
+                    ? "— closure/blocked segment detected"
+                    : tLeg?.nearStopFraction != null
+                      ? "— near-stopped traffic detected"
+                      : congLevel === "heavy" || congLevel === "severe"
+                        ? "— severe slowdown on corridor"
+                        : "vs typical for this time"}
                 </span>
               </>
             ),
@@ -1626,7 +1614,7 @@ export default function App() {
         scored.find((s) => s.route.id === lineFocusId),
         Boolean(env.mapboxToken),
         trafficFetchDone,
-        { corridorWeatherDetail }
+        { corridorWeatherDetail, trafficLeg: (lineFocusId ? trafficOverlay?.[lineFocusId] : null) ?? null }
       ),
     [
       guidanceRoute?.geometry,
@@ -1644,7 +1632,7 @@ export default function App() {
   const showTrafficCorridorOnRoute = isPlus && roadAdvisoryDetailOn && settingTrafficEnabled;
   const showRoadNoticesOnRoute = isPlus && roadAdvisoryDetailOn;
 
-  const radarBands = useRadarBandsAlongRoute(Boolean(radarMapOverlayOn && isPlus), guidanceRoute?.geometry);
+  useRadarBandsAlongRoute(Boolean(radarMapOverlayOn && isPlus), guidanceRoute?.geometry);
 
   /** Road impacts + traffic checkbox + Plus + Traffic setting: corridor traffic on route / strip; otherwise hide traffic segments. */
   const routeAlerts = useMemo(() => {
@@ -2188,8 +2176,8 @@ export default function App() {
   }, [guidanceRouteId]);
 
   /** Lateral distance to polyline — lower = flag off-route sooner so auto-reroute fires faster. */
-  const OFF_ROUTE_SEVERE_ENTER_M = 68;
-  const OFF_ROUTE_SEVERE_EXIT_M = 30;
+  const OFF_ROUTE_SEVERE_ENTER_M = 40;
+  const OFF_ROUTE_SEVERE_EXIT_M = 18;
 
   useEffect(() => {
     if (!navigationStarted || !guidanceRoute?.geometry?.length || !userLngLat || !destLngLat) {
@@ -2225,21 +2213,21 @@ export default function App() {
     }
 
     // Fast-path reroute: if you’re drifting away from the line, reroute sooner (don’t wait for “severe”).
-    const OFF_ROUTE_FAST_ENTER_M = 38;
+    const OFF_ROUTE_FAST_ENTER_M = 20;
     const FAST_SAMPLE_MAX_AGE_MS = 2_200;
-    const FAST_REROUTE_THROTTLE_MS = 1_400;
+    const FAST_REROUTE_THROTTLE_MS = 600;
     const driftingAway =
       prev != null &&
       now - prev.t < FAST_SAMPLE_MAX_AGE_MS &&
       lat > OFF_ROUTE_FAST_ENTER_M &&
-      lat - prev.lateralM > 10;
+      lat - prev.lateralM > 5;
     if (
       settingAutoRerouteEnabled &&
       navigationStarted &&
       !routing &&
       driftingAway &&
       now - lastSevereAutoRecalcMsRef.current > FAST_REROUTE_THROTTLE_MS &&
-      ((env.mapboxToken || env.orsApiKey) ? isOnline : true)
+      (env.mapboxToken ? isOnline : true)
     ) {
       lastSevereAutoRecalcMsRef.current = now;
       void recalcRouteFromHere({ silent: true });
@@ -2254,7 +2242,6 @@ export default function App() {
     routing,
     settingAutoRerouteEnabled,
     env.mapboxToken,
-    env.orsApiKey,
     isOnline,
   ]);
 
@@ -2280,7 +2267,7 @@ export default function App() {
     if (!settingAutoRerouteEnabled) return;
     if (!navigationStarted || !offRouteSevere) return;
     if (routing) return;
-    if ((env.mapboxToken || env.orsApiKey) && !isOnline) return;
+    if (env.mapboxToken && !isOnline) return;
     const now = Date.now();
     if (now - lastSevereAutoRecalcMsRef.current < NAV_SEVERE_OFF_ROUTE_THROTTLE_MS) return;
     lastSevereAutoRecalcMsRef.current = now;
@@ -2292,7 +2279,6 @@ export default function App() {
     routing,
     recalcRouteFromHere,
     env.mapboxToken,
-    env.orsApiKey,
     isOnline,
   ]);
 
@@ -2529,9 +2515,13 @@ export default function App() {
       if (!plan.routes.some((r) => r.id === id)) return;
       const i = orderedRouteIds.indexOf(id);
       if (i >= 0) setPreviewLegIndex(i);
+      if (navigationStarted && viewMode === "route") {
+        setRouteSlotOrder((prev) => slotOrderAfterSelect(prev.length ? prev : planRouteIds, id));
+        setPreviewLegIndex(0);
+      }
       if (!navigationStarted || viewMode === "route") setFitTrigger((n) => n + 1);
     },
-    [plan.routes, orderedRouteIds, navigationStarted, viewMode]
+    [plan.routes, orderedRouteIds, navigationStarted, viewMode, planRouteIds]
   );
 
   /** Make this leg the primary (slot A / blue); used after Go, hazard “use this route”, and bypass. */
@@ -2896,6 +2886,114 @@ export default function App() {
     discardRouteRecording();
   }, [discardRouteRecording]);
 
+  const handleOpenRouteView = useCallback(() => {
+    setViewMode("route");
+    setFitTrigger((n) => n + 1);
+  }, []);
+
+  const handleInspectTrafficStop = useCallback(() => {
+    const trafficAlert = routeAlerts.find(
+      (a) =>
+        a.corridorKind === "traffic" &&
+        (a.id === "traffic-delay" || /stopped|closure|blocked|jam/i.test(`${a.title} ${a.detail}`))
+    );
+    if (trafficAlert) {
+      setMapFocus({
+        kind: "hazardOverview",
+        hazardLng: trafficAlert.lngLat[0]!,
+        hazardLat: trafficAlert.lngLat[1]!,
+      });
+      return;
+    }
+    if (guidanceRoute?.geometry?.length) {
+      const tLeg = trafficOverlay?.[guidanceRouteId];
+      const p = pointAlongPolyline(guidanceRoute.geometry, tLeg?.nearStopFraction ?? 0.38);
+      if (p) {
+        setMapFocus({
+          kind: "hazardOverview",
+          hazardLng: p[0],
+          hazardLat: p[1],
+        });
+      }
+    }
+  }, [routeAlerts, guidanceRoute?.geometry, trafficOverlay, guidanceRouteId]);
+
+  const advisoryRoadDetailRows = useMemo(() => {
+    const rows = [...stormRoadDetailRows];
+    const betterRoute = suggestedRouteId && suggestedRouteId !== guidanceRouteId ? suggestedRouteId : null;
+    const betterRouteEta = betterRoute
+      ? scored.find((s) => s.route.id === betterRoute)?.effectiveEtaMinutes ?? null
+      : null;
+    const tLeg = trafficOverlay?.[guidanceRouteId];
+    const hasTrafficStop = Boolean(tLeg?.nearStopFraction != null || tLeg?.hasClosure);
+
+    if (navigationStarted) {
+      rows.unshift({
+        label: "Trip status",
+        text: (
+          <>
+            <strong>{driveEtaMinutes != null ? `${formatEtaDuration(driveEtaMinutes)} to go` : "Trip active"}</strong>{" "}
+            <span className="storm-advisory-bar__road-muted">
+              {driveEtaMinutes != null ? "on current route" : "ETA updating"}
+            </span>
+          </>
+        ),
+        actionLabel: "Route view",
+        onAction: handleOpenRouteView,
+      });
+    }
+
+    if (hasTrafficStop) {
+      rows.push({
+        label: "Traffic stop",
+        text: <strong>Stopped/blocked traffic detected on your route</strong>,
+        actionLabel: "Show stop",
+        onAction: handleInspectTrafficStop,
+      });
+      if (env.mapboxToken && userLngLat && destLngLat && guidanceRoute?.geometry?.length) {
+        rows.push({
+          label: "Bypass",
+          text: <strong>Reroute options available around this slowdown</strong>,
+          actionLabel: "Reroute options",
+          onAction: () => void handleTrafficBypassFromHere(),
+        });
+      }
+    }
+
+    if (betterRoute) {
+      rows.push({
+        label: "Better route",
+        text: (
+          <>
+            <strong>{betterRoute.toUpperCase()}</strong>{" "}
+            <span className="storm-advisory-bar__road-muted">
+              {betterRouteEta != null ? `may save about ${formatEtaDuration(Math.max(1, Math.round((driveEtaMinutes ?? betterRouteEta) - betterRouteEta)))}.` : "worth checking now."}
+            </span>
+          </>
+        ),
+        actionLabel: "Open route view",
+        onAction: handleOpenRouteView,
+      });
+    }
+
+    return rows;
+  }, [
+    stormRoadDetailRows,
+    suggestedRouteId,
+    guidanceRouteId,
+    scored,
+    trafficOverlay,
+    navigationStarted,
+    driveEtaMinutes,
+    handleOpenRouteView,
+    handleInspectTrafficStop,
+    env.mapboxToken,
+    userLngLat,
+    destLngLat,
+    guidanceRoute?.geometry,
+    handleTrafficBypassFromHere,
+  ]);
+
   /** Busy message for the always-visible activity chip (null → shows muted Idle). */
   const activityBusyLabel = useMemo(() => {
     const trafficBusy =
@@ -3030,36 +3128,6 @@ export default function App() {
                     glanceable={navigationStarted && viewMode === "drive"}
                   />
                   {showStormAdvisoryChrome ? (
-                    <HazardControlsStrip
-                      statusSlot={
-                        driveModeUi ? (
-                          <DriveRouteInfoStrip
-                            busyLabel={activityBusyLabel}
-                            routeLine={driveRouteAheadLine}
-                            onOpenDetails={() => onStormBarExpandedChange(!stormBarExpanded)}
-                            advisoryExpanded={stormBarExpanded}
-                          />
-                        ) : (
-                          <ActivityStatusPill busyLabel={activityBusyLabel} />
-                        )
-                      }
-                      sessionOn={stormSessionOn}
-                      onSessionToggle={onStormSessionToggle}
-                      roadDetailEnabled={roadAdvisoryDetailOn}
-                      onRoadDetailToggle={onRoadAdvisoryDetailToggle}
-                      hideLayerToggles={driveModeUi}
-                      advisoryExpanded={stormBarExpanded}
-                      onAdvisoryToggle={() => onStormBarExpandedChange(!stormBarExpanded)}
-                      peekBadge={stormHazardPeekBadge}
-                      hasSessionError={Boolean(stormError && stormSessionOn)}
-                      errorTitle={stormError}
-                    />
-                  ) : (
-                    <div className="nav-top-activity-pill-wrap nav-top-activity-pill-wrap--solo">
-                      <ActivityStatusPill busyLabel={activityBusyLabel} />
-                    </div>
-                  )}
-                  {showStormAdvisoryChrome && (
                     <StormAdvisoryBar
                       featureEnabled
                       sessionOn={stormSessionOn}
@@ -3079,12 +3147,20 @@ export default function App() {
                       roadDetailEnabled={roadAdvisoryDetailOn}
                       onRoadDetailToggle={onRoadAdvisoryDetailToggle}
                       hasGuidanceRoute={Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2)}
-                      roadDetailRows={stormRoadDetailRows}
+                      roadDetailRows={advisoryRoadDetailRows}
                       barExpanded={stormBarExpanded}
                       onBarExpandedChange={onStormBarExpandedChange}
-                      hideHeadToggles={driveModeUi}
+                      hideHeadToggles={false}
                       onNwsAlertClick={handleAdvisoryNwsClick}
+                      peekBadge={stormHazardPeekBadge}
+                      hasSessionError={Boolean(stormError && stormSessionOn)}
+                      busyLabel={activityBusyLabel}
+                      driveRouteAheadLine={driveModeUi ? driveRouteAheadLine : null}
                     />
+                  ) : (
+                    <div className="nav-top-activity-pill-wrap nav-top-activity-pill-wrap--solo">
+                      <ActivityStatusPill busyLabel={activityBusyLabel} />
+                    </div>
                   )}
                 </div>
               </div>
@@ -3181,22 +3257,32 @@ export default function App() {
             focusedRouteId={lineFocusId}
             alerts={routeHazardSheet.alerts}
             alternateRouteAvailable={Boolean(alternateBypassRouteId)}
+            bypassCompareAvailable={Boolean(
+              env.mapboxToken && userLngLat && destLngLat && guidanceRoute
+            )}
+            bypassBusy={bypassBusy}
             onClose={() => setRouteHazardSheet(null)}
             onTryAlternateRoute={() => {
               handleTryAlternateRoute();
               setRouteHazardSheet(null);
+            }}
+            onCompareReroutes={() => {
+              setRouteHazardSheet(null);
+              void handleTrafficBypassFromHere();
             }}
             onOpenRouteView={() => {
               setViewMode("route");
               setRouteHazardSheet(null);
             }}
             onShowOnMap={(alert) => {
+              /* Close the sheet first, drop into map view, and frame the hazard. */
+              setRouteHazardSheet(null);
+              if (viewMode === "drive") setViewMode("topdown");
               setMapFocus({
                 kind: "hazardOverview",
                 hazardLng: alert.lngLat[0]!,
                 hazardLat: alert.lngLat[1]!,
               });
-              setRouteHazardSheet(null);
             }}
             onSelectThisRoute={(id) => {
               handlePromoteRouteToPrimary(id);

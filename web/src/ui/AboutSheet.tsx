@@ -80,7 +80,7 @@ export function AboutSheet({
       settings.gpsHighRefreshEnabled ? "high" : "normal"
     }`,
     `Landscape UI: ${settings.landscapeSideHand === "left" ? "left hand" : "right hand"}`,
-    `Providers: mapbox=${env.mapboxToken ? "on" : "off"}, ors=${env.orsApiKey ? "on" : "off"}, openweather=${
+    `Providers: mapbox=${env.mapboxToken ? "on" : "off"}, openweather=${
       env.openWeatherApiKey ? "on" : "off"
     }`,
   ];
@@ -368,17 +368,17 @@ export function AboutSheet({
               <div className="about-sheet__tier-preview-btns">
                 <button
                   type="button"
-                  className={`about-sheet__tier-preview-btn${settings.landscapeSideHand === "right" ? " about-sheet__tier-preview-btn--active" : ""}`}
-                  onClick={() => onSettings({ ...settings, landscapeSideHand: "right" })}
-                >
-                  Right
-                </button>
-                <button
-                  type="button"
                   className={`about-sheet__tier-preview-btn${settings.landscapeSideHand === "left" ? " about-sheet__tier-preview-btn--active" : ""}`}
                   onClick={() => onSettings({ ...settings, landscapeSideHand: "left" })}
                 >
                   Left
+                </button>
+                <button
+                  type="button"
+                  className={`about-sheet__tier-preview-btn${settings.landscapeSideHand === "right" ? " about-sheet__tier-preview-btn--active" : ""}`}
+                  onClick={() => onSettings({ ...settings, landscapeSideHand: "right" })}
+                >
+                  Right
                 </button>
               </div>
               <p className="about-sheet__tier-preview-hint">
@@ -393,8 +393,8 @@ export function AboutSheet({
           <details className="about-sheet__panel about-sheet__details">
             <summary>Privacy, safety &amp; data</summary>
             <p className="about-sheet__p">
-              <strong>Data:</strong> Map/traffic features may use Mapbox; directions may use OpenRouteService; weather
-              samples OpenWeather; US alerts via NWS (api.weather.gov). What runs depends on your keys and region.
+              <strong>Data:</strong> Map, routing, and traffic use Mapbox when configured; weather samples OpenWeather;
+              US alerts via NWS (api.weather.gov). What runs depends on your keys and region.
             </p>
             <p className="about-sheet__p">
               <strong>Privacy:</strong> Location is for position, routing, and conditions while you use the app. Plus
@@ -405,21 +405,21 @@ export function AboutSheet({
               while driving; use a passenger or pull over.
             </p>
             <p className="about-sheet__p">
-              {env.privacyPolicyUrl ? (
-                <a href={env.privacyPolicyUrl} target="_blank" rel="noreferrer">
-                  Privacy Policy
-                </a>
-              ) : (
-                <>Privacy link not set</>
-              )}
+              <a
+                href={env.privacyPolicyUrl || "/privacy.html"}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Privacy Policy
+              </a>
               {" · "}
-              {env.termsUrl ? (
-                <a href={env.termsUrl} target="_blank" rel="noreferrer">
-                  Terms
-                </a>
-              ) : (
-                <>Terms not set</>
-              )}
+              <a
+                href={env.termsUrl || "/terms.html"}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Terms
+              </a>
               {" · "}
               {env.supportUrl ? (
                 <a href={env.supportUrl} target="_blank" rel="noreferrer">

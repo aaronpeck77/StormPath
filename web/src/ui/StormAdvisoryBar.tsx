@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { sortWeatherAlertsBySeverity, type NormalizedWeatherAlert } from "../weatherAlerts";
 import { nwsIssuedByLine, nwsWhatIsHappening, nwsWhatToDo } from "../weatherAlerts/nwsDriveSummary";
+import type { DriveAheadLine, DriveAheadRadarTier } from "../nav/driveRouteAhead";
+import { formatDriveAheadBrief } from "../nav/driveRouteAhead";
 
-export type StormRoadDetailRow = { label: string; text: ReactNode };
+export type StormRoadDetailRow = {
+  label: string;
+  text: ReactNode;
+  actionLabel?: string;
+  onAction?: () => void;
+};
 
 type SharedProps = {
   featureEnabled: boolean;
@@ -28,6 +35,15 @@ export type StormAdvisoryBarProps = SharedProps & {
   onBarExpandedChange: (expanded: boolean) => void;
   hideHeadToggles?: boolean;
   onNwsAlertClick?: (alert: NormalizedWeatherAlert) => void;
+  /** Hazards-button rollup count (NWS overlaps + at-location); null = hide. */
+  peekBadge?: number | null;
+  /** Optional hazard status severity: drives the collapsed preview border color. */
+  peekSeverity?: "none" | "info" | "warn" | "severe" | null;
+  hasSessionError?: boolean;
+  /** Short "doing something" label (NWS loading, traffic fetching…). Surfaced in preview. */
+  busyLabel?: string | null;
+  /** Drive-mode route-ahead summary (radar tier + brief text). Surfaced in preview when driving. */
+  driveRouteAheadLine?: DriveAheadLine | null;
 };
 
 function fmtEnds(ends: string | null): string | null {
@@ -79,7 +95,8 @@ function weatherAdviceDriving(
 
 function nwsAlertCard(
   a: NormalizedWeatherAlert,
-  tier: "crosses" | "atLocation"
+  tier: "crosses" | "atLocation",
+  onClick?: (alert: NormalizedWeatherAlert) => void
 ): ReactNode {
   const endsLabel = fmtEnds(a.ends);
   const what = nwsWhatIsHappening(a);
@@ -117,7 +134,23 @@ function nwsAlertCard(
   if (tier === "crosses") {
     return (
       <li key={a.id} className="storm-advisory-bar__nws-item storm-advisory-bar__nws-item--crosses">
-        <span className="storm-advisory-bar__nws-item-badge">On route</span>
+        <button type="button" className="storm-advisory-bar__ticker" title="Open this alert" onClick={() => onClick?.(a)}>
+          <span className="storm-advisory-bar__nws-item-badge">On route</span>
+          <div className="storm-advisory-bar__nws-item-body">
+            {primary}
+            {kindRow}
+            {issuedMeta}
+            {endsRow}
+            {action}
+          </div>
+        </button>
+      </li>
+    );
+  }
+  return (
+    <li key={a.id} className="storm-advisory-bar__nws-item storm-advisory-bar__nws-item--nearby">
+      <button type="button" className="storm-advisory-bar__ticker" title="Open this alert" onClick={() => onClick?.(a)}>
+        <span className="storm-advisory-bar__nws-item-badge">At your position</span>
         <div className="storm-advisory-bar__nws-item-body">
           {primary}
           {kindRow}
@@ -125,19 +158,7 @@ function nwsAlertCard(
           {endsRow}
           {action}
         </div>
-      </li>
-    );
-  }
-  return (
-    <li key={a.id} className="storm-advisory-bar__nws-item storm-advisory-bar__nws-item--nearby">
-      <span className="storm-advisory-bar__nws-item-badge">At your position</span>
-      <div className="storm-advisory-bar__nws-item-body">
-        {primary}
-        {kindRow}
-        {issuedMeta}
-        {endsRow}
-        {action}
-      </div>
+      </button>
     </li>
   );
 }
@@ -162,6 +183,11 @@ export function StormAdvisoryBar({
   onBarExpandedChange,
   hideHeadToggles = false,
   onNwsAlertClick,
+  peekBadge = null,
+  peekSeverity = null,
+  hasSessionError = false,
+  busyLabel = null,
+  driveRouteAheadLine = null,
 }: StormAdvisoryBarProps) {
   if (!featureEnabled) return null;
   void corridorAlerts;
@@ -193,6 +219,10 @@ export function StormAdvisoryBar({
     [displayNwsList, crossingSorted.length]
   );
   const [tickerIdx, setTickerIdx] = useState(0);
+  const hasTrafficStop = useMemo(
+    () => roadDetailRows.some((r) => /traffic stop|closure/i.test(r.label)),
+    [roadDetailRows]
+  );
   useEffect(() => {
     setTickerIdx(0);
   }, [tickerMessages.length]);
@@ -204,11 +234,101 @@ export function StormAdvisoryBar({
     return () => window.clearInterval(id);
   }, [tickerMessages.length, sessionOn, loading, error]);
 
-  if (!barExpanded) return null;
+  /** Map DriveAhead radar tier into an advisory severity bucket. */
+  const driveTierSev = (t: DriveAheadRadarTier | null | undefined): "none" | "info" | "warn" | "severe" => {
+    if (t === "red") return "severe";
+    if (t === "orange" || t === "yellow") return "warn";
+    if (t === "green" || t === "blue") return "info";
+    return "none";
+  };
+
+  /** Derive a "hazard tone" for the border of the preview bar + count badge. */
+  const effectiveSeverity: "none" | "info" | "warn" | "severe" =
+    peekSeverity ??
+    (hasSessionError
+      ? "severe"
+      : crossingSorted.length > 0 || hasTrafficStop
+        ? "severe"
+        : atLocationSorted.length > 0 || trafficDelayMinutes >= 8
+          ? "warn"
+          : driveTierSev(driveRouteAheadLine?.radarTier) === "severe"
+            ? "severe"
+            : driveTierSev(driveRouteAheadLine?.radarTier) === "warn"
+              ? "warn"
+              : tickerMessages.length > 0
+                ? "info"
+                : "none");
+
+  if (!barExpanded) {
+    const activeTicker = tickerMessages[tickerIdx];
+    /* Priority for the collapsed one-liner:
+     *   1. Live NWS/hazard ticker message
+     *   2. Traffic delay summary
+     *   3. Drive-mode route-ahead brief (radar)
+     *   4. Session error
+     *   5. Busy label
+     *   6. Placeholder
+     */
+    let previewLabel: ReactNode = null;
+    let previewBadgeLabel: string | null = null;
+    if (activeTicker) {
+      previewLabel = activeTicker.text;
+      previewBadgeLabel = activeTicker.badge;
+    } else if (trafficDelayMinutes >= 8) {
+      previewLabel = `Traffic delay +${Math.round(trafficDelayMinutes)} min on route`;
+      previewBadgeLabel = "Traffic";
+    } else if (driveRouteAheadLine) {
+      previewLabel = formatDriveAheadBrief(driveRouteAheadLine);
+      previewBadgeLabel = "Route ahead";
+    } else if (hasSessionError) {
+      previewLabel = "Hazards alert service unavailable — tap for details";
+    } else if (busyLabel) {
+      previewLabel = busyLabel;
+      previewBadgeLabel = "Working";
+    } else {
+      previewLabel = "No active hazards — tap for advisory";
+    }
+    return (
+      <button
+        type="button"
+        className={`storm-advisory-bar storm-advisory-bar--preview storm-advisory-bar--sev-${effectiveSeverity}${hasSessionError ? " storm-advisory-bar--err" : ""}`}
+        id="storm-advisory-panel"
+        role="region"
+        aria-label="Storm, weather, and road advisory — tap to expand"
+        aria-expanded={false}
+        aria-controls="storm-advisory-panel"
+        onPointerDownCapture={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onBarExpandedChange(true);
+        }}
+        title={hasSessionError ? "Hazards feed error — tap to open" : "Tap to open hazards advisory"}
+      >
+        {previewBadgeLabel ? (
+          <span className="storm-advisory-bar__preview-ticker-badge">{previewBadgeLabel}</span>
+        ) : null}
+        <span className="storm-advisory-bar__preview-text">{previewLabel}</span>
+        {tickerMessages.length > 1 && (
+          <span className="storm-advisory-bar__preview-count">
+            {tickerIdx + 1}/{tickerMessages.length}
+          </span>
+        )}
+        {peekBadge != null && peekBadge > 0 && (
+          <span className="storm-advisory-bar__preview-badge" aria-label={`${peekBadge} active hazards`}>
+            {peekBadge}
+          </span>
+        )}
+        <span className="storm-advisory-bar__preview-chevron" aria-hidden>
+          ▸
+        </span>
+      </button>
+    );
+  }
 
   return (
     <div
-      className="storm-advisory-bar"
+      className={`storm-advisory-bar storm-advisory-bar--sev-${effectiveSeverity}${hasSessionError ? " storm-advisory-bar--err" : ""}`}
       id="storm-advisory-panel"
       role="region"
       aria-label="Storm, weather, and road advisory"
@@ -235,6 +355,15 @@ export function StormAdvisoryBar({
             </span>
           </button>
           <span className="storm-advisory-bar__title">Advisory</span>
+          {peekBadge != null && peekBadge > 0 && (
+            <span
+              className="storm-advisory-bar__head-badge"
+              aria-label={`${peekBadge} active hazards`}
+              title={`${peekBadge} active hazards`}
+            >
+              {peekBadge}
+            </span>
+          )}
         </div>
         {!hideHeadToggles && (
           <div className="storm-advisory-bar__toggles">
@@ -249,6 +378,26 @@ export function StormAdvisoryBar({
           </div>
         )}
       </div>
+
+      {(busyLabel || driveRouteAheadLine) && (
+        <div className="storm-advisory-bar__now-row" aria-live="polite">
+          {busyLabel && (
+            <span className="storm-advisory-bar__now-chip storm-advisory-bar__now-chip--busy">
+              <span className="storm-advisory-bar__now-dot" aria-hidden />
+              {busyLabel}
+            </span>
+          )}
+          {driveRouteAheadLine && (
+            <span
+              className={`storm-advisory-bar__now-chip storm-advisory-bar__now-chip--ahead storm-advisory-bar__now-chip--tier-${driveRouteAheadLine.radarTier}`}
+              title="Route ahead — radar / traffic brief"
+            >
+              <span className="storm-advisory-bar__now-tag">Route ahead</span>
+              <span className="storm-advisory-bar__now-text">{formatDriveAheadBrief(driveRouteAheadLine)}</span>
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="storm-advisory-bar__weather-block">
         <p className="storm-advisory-bar__weather-title">Weather (NWS)</p>
@@ -314,7 +463,7 @@ export function StormAdvisoryBar({
                     aria-label="NWS warnings on your route"
                   >
                     <ul className="storm-advisory-bar__nws-list storm-advisory-bar__nws-list--crosses">
-                      {displayNwsList.map((a) => nwsAlertCard(a, displayNwsTier))}
+                      {displayNwsList.map((a) => nwsAlertCard(a, displayNwsTier, onNwsAlertClick))}
                     </ul>
                   </div>
                 )}
@@ -345,12 +494,34 @@ export function StormAdvisoryBar({
               {roadDetailRows.map((row, i) => (
                 <div key={`${row.label}-${i}`} className="storm-advisory-bar__road-row">
                   <dt>{row.label}</dt>
-                  <dd>{row.text}</dd>
+                  <dd>
+                    {row.onAction ? (
+                      <button
+                        type="button"
+                        className="storm-advisory-bar__ticker"
+                        onClick={row.onAction}
+                        title={row.actionLabel ?? "Open"}
+                      >
+                        {row.text}
+                      </button>
+                    ) : (
+                      row.text
+                    )}
+                    {row.onAction && (
+                      <button
+                        type="button"
+                        className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
+                        onClick={row.onAction}
+                      >
+                        {row.actionLabel ?? "Open"}
+                      </button>
+                    )}
+                  </dd>
                 </div>
               ))}
             </dl>
           )}
-          {trafficDelayMinutes >= 4 && onTrafficReroute && (
+          {(trafficDelayMinutes >= 10 || hasTrafficStop) && onTrafficReroute && (
             <p className="storm-advisory-bar__actions">
               <button
                 type="button"

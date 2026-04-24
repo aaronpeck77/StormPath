@@ -6,7 +6,7 @@ export const EMPTY_TRIP: TripPlan = {
   routes: [],
 };
 
-/** Two curved polylines when OpenRoute key is not set */
+/** Two curved polylines when no Mapbox token (demo routing) */
 export function buildMockTripBetween(
   start: LngLat,
   end: LngLat,

@@ -5,6 +5,14 @@ mobile/node_modules/
 mobile/dist/
 mobile/.expo/
 
+# Capacitor — commit the ios/ project so GitHub Actions can build it,
+# but exclude Xcode derived data and CocoaPods (restored at build time).
+web/ios/App/Pods/
+web/ios/App/App.xcworkspace/xcuserdata/
+web/ios/App/App.xcodeproj/xcuserdata/
+web/ios/App/DerivedData/
+web/ios/.xcode.env.local
+
 # Secrets — never commit real keys
 **/.env
 **/.env.*

@@ -35,7 +35,7 @@ export function FusePanel({ snap, scored, activeRouteId }: Props) {
                       ? `, ${formatDelayVersusBaseline(slice.trafficDelayMinutes)} vs static`
                       : ""
                   }`
-                : `Traffic: ORS only (~${formatEtaDuration(active.route.baseEtaMinutes)}) — add Mapbox for live`}
+                : `Traffic: static ETA only (~${formatEtaDuration(active.route.baseEtaMinutes)}) — add Mapbox for live`}
             </li>
             <li>Weather weight on map: {Math.round(slice.radarIntensity * 100)}%</li>
             <li className="fuse-forecast">{slice.forecastHeadline}</li>

@@ -56,6 +56,31 @@ type DirectionsResponse = {
   }[];
 };
 
+/**
+ * Mapbox returns HTTP 403 + "Forbidden" when the **public** token’s URL allow-list does not include
+ * the page origin (common on a phone: Netlify URL vs LAN dev URL). Secret tokens also 403 from the browser.
+ */
+function mapboxDirectionsErrorFromResponse(
+  res: Response,
+  data: DirectionsResponse
+): Error {
+  const detail = (data.message ?? data.code ?? res.statusText ?? "unknown").trim();
+  const status = res.status;
+  if (status === 403 || /forbidden/i.test(detail)) {
+    return new Error(
+      "Mapbox blocked routing (403). Open mapbox.com → Account → Tokens → your public token → " +
+        "URL restrictions: add this site’s exact origin (e.g. https://*.netlify.app/* or your custom domain). " +
+        "If you open the app from your PC’s LAN IP (http://192.168.x.x:5173), add that URL too."
+    );
+  }
+  if (status === 401) {
+    return new Error(
+      "Mapbox token rejected (401). Check VITE_MAPBOX_TOKEN — use a **public** token with Directions + Geocoding scopes."
+    );
+  }
+  return new Error(`Mapbox Directions ${status}: ${detail}`);
+}
+
 function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteTurnStep[] {
   const out: RouteTurnStep[] = [];
   for (const leg of route.legs ?? []) {
@@ -143,9 +168,7 @@ async function fetchMapboxDirections(
   const data = (await res.json()) as DirectionsResponse;
 
   if (!res.ok || (data.code && data.code !== "Ok")) {
-    throw new Error(
-      `Mapbox Directions ${res.status}: ${data.message ?? data.code ?? "unknown error"}`
-    );
+    throw mapboxDirectionsErrorFromResponse(res, data);
   }
   return data;
 }
@@ -408,8 +431,7 @@ export type BuildTripFromMapboxResult = {
 };
 
 /**
- * Build A/B/C trip from Mapbox Directions. Falls through to the same `TripPlan` shape
- * so App.tsx can use it as a drop-in replacement for `buildTripFromOpenRoute`.
+ * Build A/B/C trip from Mapbox Directions (same `TripPlan` shape as the mock router).
  */
 export async function buildTripFromMapbox(
   accessToken: string,
