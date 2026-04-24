@@ -24,6 +24,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>StormPath uses your location to show where you are on the map, follow your route, and give turn-by-turn directions while the app is open.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>StormPath can use your location in the background so navigation and your position on the map keep working if you lock the screen or switch apps briefly. You can change this in Settings.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
