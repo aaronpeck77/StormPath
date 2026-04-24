@@ -142,15 +142,16 @@ jobs:
       # ── 11. Upload to TestFlight ──────────────────────────────────────────────
       - name: Upload to TestFlight
         run: |
-          ASC_KEY_PATH="$RUNNER_TEMP/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8"
-          echo "${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}" | base64 --decode > "$ASC_KEY_PATH"
+          # altool discovers the key automatically when placed in this standard location
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}" | base64 --decode \
+            > ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
 
           xcrun altool --upload-app \
             --type ios \
             --file "$RUNNER_TEMP/export/App.ipa" \
             --apiKey "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" \
-            --apiIssuer "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}" \
-            --private-key-path "$ASC_KEY_PATH"
+            --apiIssuer "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}"
 
       # ── 12. Save IPA as a build artifact (optional — handy for debugging) ────
       - name: Upload IPA artifact
