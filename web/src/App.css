@@ -1,5 +1,10 @@
 /* ——— Phone-first dark chrome (map + search + right rail) ——— */
 
+:root {
+  --sp-safe-top: env(safe-area-inset-top, 0px);
+  --sp-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 .app-shell {
   min-height: 100vh;
   margin: 0;

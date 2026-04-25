@@ -754,6 +754,10 @@ export default function App() {
       const pinLabel = `Pin · ${lat.toFixed(3)}°, ${lng.toFixed(3)}°`;
       setDestinationLabel(pinLabel);
       setSearchText(pinLabel);
+      /* Jump to route-planning view immediately so the driver can choose A/B/C as soon as data lands. */
+      setViewMode("route");
+      setFitTrigger((n) => n + 1);
+      setSearchExpanded(false);
 
       /*
        * Route Directions ASAP — do not block on reverse geocode (that was adding a full round-trip
@@ -1790,7 +1794,6 @@ export default function App() {
    * Long legs: sliding window follows `userAlongM` so older segments scroll away as you drive.
    */
   const progressCalloutItems = useMemo(() => {
-    if (!isPlus) return [];
     const g = guidanceRoute?.geometry;
     if (!g?.length) return [];
     const totalM = polylineLengthMeters(g);
@@ -1836,7 +1839,6 @@ export default function App() {
       },
     ];
   }, [
-    isPlus,
     guidanceRoute,
     orderedRouteIds,
     guidanceRoute?.geometry,
@@ -1996,10 +1998,10 @@ export default function App() {
     if (plan.routes.length > 0) setStormBrowseBounds(null);
   }, [plan.routes.length]);
 
-  /** US NWS active alerts: Plus only. No route = viewport/GPS/national browse; with route = corridor `?point=` fetch. */
+  /** US NWS active alerts. No route = viewport/GPS/national browse; with route = corridor `?point=` fetch. */
   useEffect(() => {
     if (routing) return;
-    const stormFeatureOn = isPlus && settingStormEnabled;
+    const stormFeatureOn = settingStormEnabled;
     if (!stormFeatureOn || !env.stormAdvisoryEnabled || !stormSessionOn) {
       stormMapHasDisplayableRef.current = false;
       setStormBrowseBounds(null);
@@ -2076,7 +2078,6 @@ export default function App() {
     env.stormAdvisoryEnabled,
     stormSessionOn,
     stormRouteGeomKey,
-    isPlus,
     settingStormEnabled,
     isOnline,
     plan.routes.length,
@@ -2303,7 +2304,7 @@ export default function App() {
   const showCompactDest = routeActive && !searchExpanded;
 
   /** Plus: storm bar + map padding even with no trip yet (browse NWS / explore). */
-  const showStormAdvisoryChrome = isPlus && env.stormAdvisoryEnabled && settingStormEnabled;
+  const showStormAdvisoryChrome = env.stormAdvisoryEnabled && settingStormEnabled;
 
   /** NWS polygons containing current position when the route polyline may not register an intersection. */
   const stormNwsPuckInside = useMemo(() => {
@@ -2613,7 +2614,11 @@ export default function App() {
 
   const handleQuickReportIssue = useCallback(() => {
     const to = env.supportEmail?.trim();
-    if (!to) return;
+    if (!to) {
+      const site = env.supportUrl?.trim();
+      if (site) window.open(site, "_blank", "noopener,noreferrer");
+      return;
+    }
     const subject = encodeURIComponent(`StormPath quick issue report (${__APP_VERSION__})`);
     const quickDiag = [
       `App: StormPath ${__APP_VERSION__}`,
@@ -2626,7 +2631,7 @@ export default function App() {
       `Describe what happened:\n\nExpected:\n\nWhat you were doing (route/area/time):\n\nQuick diagnostics:\n${quickDiag}\n`
     );
     window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
-  }, [env.supportEmail, viewMode, navigationStarted, destLngLat]);
+  }, [env.supportEmail, env.supportUrl, viewMode, navigationStarted, destLngLat]);
 
   const handleProgressStripCorridorClick = useCallback((alert: RouteAlert) => {
     if (!lineFocusId) return;
@@ -2999,7 +3004,6 @@ export default function App() {
 
     const stormBusy =
       stormLoading &&
-      isPlus &&
       settingStormEnabled &&
       env.stormAdvisoryEnabled &&
       stormSessionOn;
@@ -3020,7 +3024,6 @@ export default function App() {
     env.mapboxToken,
     isOnline,
     stormLoading,
-    isPlus,
     settingStormEnabled,
     env.stormAdvisoryEnabled,
     stormSessionOn,
@@ -3069,7 +3072,7 @@ export default function App() {
             corridorRouteGeometry={guidanceRoute?.geometry}
             recordingGeometry={recordingActive ? recordingPathPreview : undefined}
             weatherAlertGeoJson={
-              isPlus && settingStormEnabled && env.stormAdvisoryEnabled && stormSessionOn
+              settingStormEnabled && env.stormAdvisoryEnabled && stormSessionOn
                 ? stormMapGeoJsonForMap ?? stormMapGeoJson
                 : null
             }
@@ -3089,8 +3092,7 @@ export default function App() {
             )}
             onDriveCameraBearingDeg={handleDriveCameraBearingDeg}
             stormBrowseBoundsReporting={Boolean(
-              isPlus &&
-                settingStormEnabled &&
+              settingStormEnabled &&
                 env.stormAdvisoryEnabled &&
                 stormSessionOn &&
                 plan.routes.length === 0
@@ -3164,65 +3166,63 @@ export default function App() {
                 className={`nav-route-progress-rail${progressCalloutsOpen && progressCalloutItems.length > 0 ? " nav-route-progress-rail--callouts-open" : ""}`}
               >
                 <div className="nav-route-progress-rail__inner">
-                  {isPlus && (
-                    <div
-                      className={`route-progress-callout-rail-cluster${
+                  <div
+                    className={`route-progress-callout-rail-cluster${
+                      progressCalloutsOpen && progressCalloutItems.length > 0
+                        ? " route-progress-callout-rail-cluster--open"
+                        : ""
+                    }`}
+                  >
+                    {progressCalloutsOpen && progressCalloutItems.length > 0 && (
+                      <div
+                        className="route-progress-callout-panel route-progress-callout-panel--rail route-progress-callout-panel--with-docked-toggle"
+                        role="list"
+                        aria-label="Progress bar segments"
+                      >
+                        <div className="route-progress-callout-panel__track" ref={progressCalloutTrackRef}>
+                          {progressCalloutItems.map((it) => (
+                            <div
+                              key={it.key}
+                              className="route-progress-callout-panel__line"
+                              role="listitem"
+                              title={it.tooltip}
+                            >
+                              <span
+                                className="route-progress-callout-panel__dot"
+                                style={{ backgroundColor: it.color }}
+                              />
+                              <div className="route-progress-callout-panel__line-body">
+                                <div className="route-progress-callout-panel__title-row">
+                                  <span className="route-progress-callout-panel__title">{it.title}</span>
+                                  <span className="route-progress-callout-panel__along">{it.alongPct}%</span>
+                                </div>
+                                <p className="route-progress-callout-panel__summary">{it.summary}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className={`route-progress-callout-toggle${
+                        progressCalloutsOpen ? " route-progress-callout-toggle--on" : ""
+                      }${
                         progressCalloutsOpen && progressCalloutItems.length > 0
-                          ? " route-progress-callout-rail-cluster--open"
+                          ? " route-progress-callout-toggle--docked"
                           : ""
                       }`}
+                      aria-pressed={progressCalloutsOpen}
+                      title={
+                        progressCalloutsOpen
+                          ? "Hide strip labels"
+                          : "Show labels for colored segments on the progress bar"
+                      }
+                      onClick={() => setProgressCalloutsOpen((o) => !o)}
                     >
-                      {progressCalloutsOpen && progressCalloutItems.length > 0 && (
-                        <div
-                          className="route-progress-callout-panel route-progress-callout-panel--rail route-progress-callout-panel--with-docked-toggle"
-                          role="list"
-                          aria-label="Progress bar segments"
-                        >
-                          <div className="route-progress-callout-panel__track" ref={progressCalloutTrackRef}>
-                            {progressCalloutItems.map((it) => (
-                              <div
-                                key={it.key}
-                                className="route-progress-callout-panel__line"
-                                role="listitem"
-                                title={it.tooltip}
-                              >
-                                <span
-                                  className="route-progress-callout-panel__dot"
-                                  style={{ backgroundColor: it.color }}
-                                />
-                                <div className="route-progress-callout-panel__line-body">
-                                  <div className="route-progress-callout-panel__title-row">
-                                    <span className="route-progress-callout-panel__title">{it.title}</span>
-                                    <span className="route-progress-callout-panel__along">{it.alongPct}%</span>
-                                  </div>
-                                  <p className="route-progress-callout-panel__summary">{it.summary}</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        className={`route-progress-callout-toggle${
-                          progressCalloutsOpen ? " route-progress-callout-toggle--on" : ""
-                        }${
-                          progressCalloutsOpen && progressCalloutItems.length > 0
-                            ? " route-progress-callout-toggle--docked"
-                            : ""
-                        }`}
-                        aria-pressed={progressCalloutsOpen}
-                        title={
-                          progressCalloutsOpen
-                            ? "Hide strip labels"
-                            : "Show labels for colored segments on the progress bar"
-                        }
-                        onClick={() => setProgressCalloutsOpen((o) => !o)}
-                      >
-                        ⧉
-                      </button>
-                    </div>
-                  )}
+                      ⧉
+                    </button>
+                  </div>
                   <RouteProgressStrip
                     layout="side"
                     geometry={guidanceRoute.geometry}
@@ -3408,7 +3408,7 @@ export default function App() {
               closures.
             </div>
             <div className="nav-safety-banner__actions">
-              {env.supportEmail ? (
+              {env.supportEmail || env.supportUrl ? (
                 <button type="button" className="nav-safety-banner__btn nav-safety-banner__btn--ghost" onClick={handleQuickReportIssue}>
                   Report issue
                 </button>

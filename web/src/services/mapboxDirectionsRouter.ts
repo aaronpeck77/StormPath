@@ -181,14 +181,6 @@ function sortRoutesByDurationAsc(
     .sort((a, b) => (a.duration ?? 0) - (b.duration ?? 0));
 }
 
-function sortRoutesByDurationDesc(
-  routes: NonNullable<DirectionsResponse["routes"]>
-): NonNullable<DirectionsResponse["routes"]> {
-  return [...routes]
-    .filter((r) => r.geometry?.coordinates?.length && r.duration != null && Number.isFinite(r.duration))
-    .sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0));
-}
-
 function maxGeometryIndexInLeg(leg: {
   steps?: { intersections?: { geometry_index?: number }[] }[];
 }): number | null {
@@ -330,7 +322,9 @@ function collectRouteNoticesWithAlong(
  * Up to 3 traffic-aware routes:
  * - **Main** — fastest typical path (major roads when faster).
  * - **No interstate** — `exclude=motorway` when available, else next-best alternate.
- * - **Scenic** — longest distinct option (often more local / scenic vs Main).
+ * - **No town** — prefers fewer turns / arterial feel, while capping ETA inflation.
+ *
+ * For short in-town trips, we intentionally return only A/B (speed-focused) to keep choices quick.
  *
  * Latency: long trips can take several seconds per Directions call. We **always** complete the
  * primary `alternatives=true` request first and build A/B/C from that pool when possible. The
@@ -342,7 +336,9 @@ export async function collectMapboxRouteVariants(
   start: LngLat,
   end: LngLat
 ): Promise<NavRoute[]> {
-  const MAX_SCENIC_DURATION_FACTOR = 1.35;
+  const MAX_NO_TOWN_DURATION_FACTOR = 1.6;
+  const LOCAL_TRIP_MAX_DISTANCE_M = 18_000;
+  const LOCAL_TRIP_MAX_DURATION_S = 22 * 60;
 
   const primaryData = await fetchMapboxDirections(accessToken, start, end, {
     alternatives: true,
@@ -382,17 +378,32 @@ export async function collectMapboxRouteVariants(
     const usedGeoms: LngLat[][] = [navA.geometry];
     if (out[1]) usedGeoms.push(out[1].geometry);
 
-    const scenicMaxDur = (aRaw.duration ?? 0) * MAX_SCENIC_DURATION_FACTOR;
-    const cRaw = sortRoutesByDurationDesc(mergedRaw).find((r) => {
-      if (typeof r.duration === "number" && scenicMaxDur > 0 && r.duration > scenicMaxDur) return false;
-      const coords = r.geometry?.coordinates;
-      if (!coords?.length) return false;
-      const g = coords.map(([lng, lat]) => [lng, lat] as LngLat);
-      return !usedGeoms.some((ug) => geometryNearlySame(ug, g));
-    });
+    const noTownMaxDur = (aRaw.duration ?? 0) * MAX_NO_TOWN_DURATION_FACTOR;
+    const routeStepCount = (r: NonNullable<DirectionsResponse["routes"]>[0]): number =>
+      (r.legs ?? []).reduce((n, leg) => n + (leg.steps?.length ?? 0), 0);
+    const turnDensityPerKm = (r: NonNullable<DirectionsResponse["routes"]>[0]): number => {
+      const km = Math.max(0.6, (r.distance ?? 0) / 1000);
+      return routeStepCount(r) / km;
+    };
+    const durationFactor = (r: NonNullable<DirectionsResponse["routes"]>[0]): number => {
+      const aDur = Math.max(1, aRaw.duration ?? 1);
+      return Math.max(1, (r.duration ?? aDur) / aDur);
+    };
+    const noTownScore = (r: NonNullable<DirectionsResponse["routes"]>[0]): number =>
+      turnDensityPerKm(r) * 0.78 + durationFactor(r) * 0.22;
+
+    const cRaw = [...mergedRaw]
+      .filter((r) => {
+        if (typeof r.duration === "number" && noTownMaxDur > 0 && r.duration > noTownMaxDur) return false;
+        const coords = r.geometry?.coordinates;
+        if (!coords?.length) return false;
+        const g = coords.map(([lng, lat]) => [lng, lat] as LngLat);
+        return !usedGeoms.some((ug) => geometryNearlySame(ug, g));
+      })
+      .sort((x, y) => noTownScore(x) - noTownScore(y))[0];
 
     if (cRaw) {
-      const navC = routeFromDirectionsApi(cRaw, "r-c", "balanced", "Scenic");
+      const navC = routeFromDirectionsApi(cRaw, "r-c", "balanced", "No town");
       if (navC && !out.some((existing) => geometryNearlySame(existing.geometry, navC.geometry))) {
         out.push(navC);
       }
@@ -403,6 +414,10 @@ export async function collectMapboxRouteVariants(
 
   /* Fast path: alternates in the first response often yield 2–3 routes with zero extra HTTP. */
   let out = mergePools([]);
+  const straightLineM = haversineMeters(start, end);
+  const aDurationS = primarySorted[0]?.duration ?? Number.POSITIVE_INFINITY;
+  const localTrip = straightLineM <= LOCAL_TRIP_MAX_DISTANCE_M || aDurationS <= LOCAL_TRIP_MAX_DURATION_S;
+  if (localTrip) return out.slice(0, Math.min(2, out.length));
   if (out.length >= 2) {
     return out;
   }

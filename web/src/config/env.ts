@@ -15,9 +15,11 @@ export function getWebEnv() {
       (import.meta.env.DEV ? "/weather-gov" : "https://api.weather.gov"),
     privacyPolicyUrl: (import.meta.env.VITE_PRIVACY_POLICY_URL as string | undefined)?.trim() ?? "",
     termsUrl: (import.meta.env.VITE_TERMS_URL as string | undefined)?.trim() ?? "",
-    supportUrl: (import.meta.env.VITE_SUPPORT_URL as string | undefined)?.trim() ?? "",
+    supportUrl: (import.meta.env.VITE_SUPPORT_URL as string | undefined)?.trim() || "/support.html",
     supportEmail: (import.meta.env.VITE_SUPPORT_EMAIL as string | undefined)?.trim() ?? "",
     upgradeUrl: (import.meta.env.VITE_UPGRADE_URL as string | undefined)?.trim() ?? "",
-    manageSubscriptionUrl: (import.meta.env.VITE_MANAGE_SUBSCRIPTION_URL as string | undefined)?.trim() ?? "",
+    manageSubscriptionUrl:
+      (import.meta.env.VITE_MANAGE_SUBSCRIPTION_URL as string | undefined)?.trim() ||
+      "https://apps.apple.com/account/subscriptions",
   };
 }

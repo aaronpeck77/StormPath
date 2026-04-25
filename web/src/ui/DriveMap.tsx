@@ -253,6 +253,21 @@ function isLandscapeHandLeft(): boolean {
   return Boolean(document.querySelector(".app-shell--landscape-hand-left"));
 }
 
+function cssPxVar(name: string): number {
+  if (typeof window === "undefined") return 0;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  if (!v) return 0;
+  const n = Number.parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function safeAreaInsetsPx(): { top: number; bottom: number } {
+  return {
+    top: Math.max(0, cssPxVar("--sp-safe-top")),
+    bottom: Math.max(0, cssPxVar("--sp-safe-bottom")),
+  };
+}
+
 type RouteViewAxis = "eastWest" | "northSouth" | "diagonal";
 
 function routeViewAxis(
@@ -302,10 +317,11 @@ function routeFitPadding(
   const stormTop = stormBarTopExtraPx(stormBarVisible, stormBarExpanded);
   const rightNeed = ROUTE_RIGHT_RAIL_PX + ROUTE_RIGHT_RAIL_GAP_PX;
   if (isNarrowPhoneViewport()) {
+    const safe = safeAreaInsetsPx();
     /* Tighter top inset; pull right inset toward the progress rail so L/R balance matches the rail. */
     return {
-      top: Math.max(138, 198 - ROUTE_FIT_TOP_TRIM_PX) + stormTop,
-      bottom: 148,
+      top: Math.max(128, 182 - ROUTE_FIT_TOP_TRIM_PX) + stormTop + Math.min(6, safe.top * 0.25),
+      bottom: 164 + Math.min(34, safe.bottom),
       left: Math.max(p.left, 22),
       right: Math.max(88, rightNeed),
     };
@@ -522,7 +538,11 @@ type Props = {
   onSearchPickMarkerClick?: (id: string) => void;
 };
 
-const EXPLORE_IDLE_MS = 10_000;
+/**
+ * Planning/browse modes: keep manual pan/zoom control much longer before auto-recenter so
+ * users can freely browse far away areas (other countries/continents) without snap-back.
+ */
+const EXPLORE_IDLE_MS = 120_000;
 /** Drive mode: return to follow-cam sooner after the user pans/zooms the map. */
 const DRIVE_EXPLORE_IDLE_MS = 4_000;
 /** Blend route/GPS bearing frame-to-frame (reduces jitter at segment joins). */
@@ -1816,6 +1836,35 @@ export function DriveMap({
       essential: true,
     });
   }, [mapReady, viewMode, routes.length, userLngLat]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || viewMode !== "route") return;
+    if (routes.length > 0 || navigationStarted) return;
+    if (userExploringRef.current) return;
+    const u = userLngLatRef.current;
+    if (!u || !destLngLat) return;
+    const b = new mapboxgl.LngLatBounds();
+    b.extend(u);
+    b.extend(destLngLat);
+    map.fitBounds(b, {
+      padding: routeFitPadding(stormBarVisible, stormBarExpanded, [], null),
+      maxZoom: ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM,
+      duration: 260,
+      pitch: 0,
+      bearing: 0,
+      essential: true,
+    });
+  }, [
+    mapReady,
+    viewMode,
+    routes.length,
+    navigationStarted,
+    destLngLat,
+    fitTrigger,
+    stormBarVisible,
+    stormBarExpanded,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
