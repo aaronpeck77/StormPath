@@ -625,6 +625,7 @@ export default function App() {
         } else {
           p = buildMockTripBetween(userLngLat, end, label);
         }
+        p = !isPlus && p.routes.length > 2 ? { ...p, routes: p.routes.slice(0, 2) } : p;
         if (epochAtStart !== routeGraphEpochRef.current) return;
         setPlan(p);
         if (payFrequentRoutes) {
@@ -657,7 +658,7 @@ export default function App() {
         setRouting(false);
       }
     },
-    [userLngLat, env.mapboxToken, resetNavigationPlanning, payFrequentRoutes]
+    [userLngLat, env.mapboxToken, resetNavigationPlanning, payFrequentRoutes, isPlus]
   );
 
   /** Recompute routes from current GPS to the same destination without stopping navigation. */
@@ -689,6 +690,7 @@ export default function App() {
         } else {
           p = buildMockTripBetween(userLngLat, destLngLat, destinationLabel.trim() || "Destination");
         }
+        p = !isPlus && p.routes.length > 2 ? { ...p, routes: p.routes.slice(0, 2) } : p;
         if (epochAtStart !== routeGraphEpochRef.current) return;
         setPlan(p);
         setDestLngLat(destForMap);
@@ -728,7 +730,7 @@ export default function App() {
         setRouting(false);
       }
     },
-    [userLngLat, destLngLat, env.mapboxToken, destinationLabel, computeRoutes, isOnline, resetNavigationPlanning]
+    [userLngLat, destLngLat, env.mapboxToken, destinationLabel, computeRoutes, isOnline, resetNavigationPlanning, isPlus]
   );
 
   const handleMapClick = useCallback(
@@ -1998,10 +2000,10 @@ export default function App() {
     if (plan.routes.length > 0) setStormBrowseBounds(null);
   }, [plan.routes.length]);
 
-  /** US NWS active alerts. No route = viewport/GPS/national browse; with route = corridor `?point=` fetch. */
+  /** US NWS active alerts: Plus only. No route = viewport/GPS/national browse; with route = corridor `?point=` fetch. */
   useEffect(() => {
     if (routing) return;
-    const stormFeatureOn = settingStormEnabled;
+    const stormFeatureOn = isPlus && settingStormEnabled;
     if (!stormFeatureOn || !env.stormAdvisoryEnabled || !stormSessionOn) {
       stormMapHasDisplayableRef.current = false;
       setStormBrowseBounds(null);
@@ -2078,6 +2080,7 @@ export default function App() {
     env.stormAdvisoryEnabled,
     stormSessionOn,
     stormRouteGeomKey,
+    isPlus,
     settingStormEnabled,
     isOnline,
     plan.routes.length,
@@ -2304,7 +2307,7 @@ export default function App() {
   const showCompactDest = routeActive && !searchExpanded;
 
   /** Plus: storm bar + map padding even with no trip yet (browse NWS / explore). */
-  const showStormAdvisoryChrome = env.stormAdvisoryEnabled && settingStormEnabled;
+  const showStormAdvisoryChrome = isPlus && env.stormAdvisoryEnabled && settingStormEnabled;
 
   /** NWS polygons containing current position when the route polyline may not register an intersection. */
   const stormNwsPuckInside = useMemo(() => {
@@ -3004,6 +3007,7 @@ export default function App() {
 
     const stormBusy =
       stormLoading &&
+      isPlus &&
       settingStormEnabled &&
       env.stormAdvisoryEnabled &&
       stormSessionOn;
@@ -3024,6 +3028,7 @@ export default function App() {
     env.mapboxToken,
     isOnline,
     stormLoading,
+    isPlus,
     settingStormEnabled,
     env.stormAdvisoryEnabled,
     stormSessionOn,
@@ -3072,7 +3077,7 @@ export default function App() {
             corridorRouteGeometry={guidanceRoute?.geometry}
             recordingGeometry={recordingActive ? recordingPathPreview : undefined}
             weatherAlertGeoJson={
-              settingStormEnabled && env.stormAdvisoryEnabled && stormSessionOn
+              isPlus && settingStormEnabled && env.stormAdvisoryEnabled && stormSessionOn
                 ? stormMapGeoJsonForMap ?? stormMapGeoJson
                 : null
             }
@@ -3092,7 +3097,8 @@ export default function App() {
             )}
             onDriveCameraBearingDeg={handleDriveCameraBearingDeg}
             stormBrowseBoundsReporting={Boolean(
-              settingStormEnabled &&
+              isPlus &&
+                settingStormEnabled &&
                 env.stormAdvisoryEnabled &&
                 stormSessionOn &&
                 plan.routes.length === 0
@@ -3161,7 +3167,7 @@ export default function App() {
                 </div>
               </div>
             </div>
-            {guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2 && (
+            {isPlus && guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2 && (
               <div
                 className={`nav-route-progress-rail${progressCalloutsOpen && progressCalloutItems.length > 0 ? " nav-route-progress-rail--callouts-open" : ""}`}
               >

@@ -48,8 +48,8 @@ export function AboutSheet({
 }: Props) {
   const subscribedTier = useMemo(() => getPayTier(), [open, payTierPreview]);
   const dev = import.meta.env.DEV;
-  /** Production ignores local “preview” so a leftover dev flag cannot skew the shipped UI. */
-  const effectiveTier = dev ? (payTierPreview ?? subscribedTier) : subscribedTier;
+  /** Temporary tester override so Basic/Plus can be validated in TestFlight before paywall wiring. */
+  const effectiveTier = payTierPreview ?? subscribedTier;
   const tierLabel = effectiveTier === "plus" ? "Plus" : "Basic";
   const plus = effectiveTier === "plus";
   const subscribedLabel = subscribedTier === "plus" ? "Plus" : "Basic";
@@ -129,9 +129,9 @@ export function AboutSheet({
           </div>
         </dl>
 
-        {dev ? (
+        {
           <div className="about-sheet__tier-preview about-sheet__panel" role="group" aria-label="Preview app tier">
-            <p className="about-sheet__tier-preview-label">Preview UI as</p>
+            <p className="about-sheet__tier-preview-label">Testing tier override</p>
             <div className="about-sheet__tier-preview-btns">
               <button
                 type="button"
@@ -156,10 +156,10 @@ export function AboutSheet({
               </button>
             </div>
             <p className="about-sheet__tier-preview-hint">
-              Preview only — tap <strong>My plan</strong> to reset. Subscribed above is always your real tier.
+              Temporary testing control — tap <strong>My plan</strong> to reset. Subscribed above is your real tier.
             </p>
           </div>
-        ) : null}
+        }
 
         <div className="about-sheet__scroll">
           <section className="about-sheet__panel">
