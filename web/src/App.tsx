@@ -3040,13 +3040,15 @@ export default function App() {
         basemapNight ? " app-shell--basemap-night" : ""
       }${settingLandscapeSideHand === "left" ? " app-shell--landscape-hand-left" : ""}`}
     >
-      <div
-        className="stormpath-build-stamp"
-        title="If this text does not match the build your assistant just set, the page is stale — hard refresh or restart dev server."
-        aria-label={`StormPath build ${STORMPATH_CLIENT_BUILD}`}
-      >
-        {STORMPATH_CLIENT_BUILD}
-      </div>
+      {import.meta.env.DEV ? (
+        <div
+          className="stormpath-build-stamp"
+          title="If this text does not match the build your assistant just set, the page is stale — hard refresh or restart dev server."
+          aria-label={`StormPath build ${STORMPATH_CLIENT_BUILD}`}
+        >
+          {STORMPATH_CLIENT_BUILD}
+        </div>
+      ) : null}
       <div className="map-stage map-bleed">
         <div className="map-canvas">
           <Suspense fallback={<div className="drive-map" />}>
