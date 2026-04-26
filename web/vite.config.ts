@@ -5,10 +5,13 @@ import react from "@vitejs/plugin-react";
 
 const pkgPath = fileURLToPath(new URL("./package.json", import.meta.url));
 const { version: appVersion } = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version: string };
+/** New on each `vite` / `vite build` run — shown in dev so you know the bundle was rebuilt. */
+const buildId = new Date().toISOString().replace("T", " ").slice(0, 16);
 
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
+    __BUILD_ID__: JSON.stringify(buildId),
   },
   plugins: [react()],
   /* Capacitor loads the built HTML from the device filesystem, so all asset

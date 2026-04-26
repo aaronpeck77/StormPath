@@ -55,16 +55,12 @@ export type TrafficBypassCompareCallout = {
 const MAP_STYLE_DAY = "mapbox://styles/mapbox/streets-v12";
 const MAP_STYLE_NIGHT = "mapbox://styles/mapbox/dark-v11";
 
-/** Four visual phases driven by local time. */
-type MapPhase = "sunrise" | "day" | "sunset" | "night";
+/** Day vs night for style + 3D lighting (local time). */
+type MapPhase = "day" | "night";
 
 function currentMapPhase(): MapPhase {
-  const now = new Date();
-  const min = now.getHours() * 60 + now.getMinutes();
-  if (min >= 330 && min < 390) return "sunrise"; // 5:30–6:30
-  if (min >= 390 && min < 1110) return "day";    // 6:30–18:30
-  if (min >= 1110 && min < 1170) return "sunset"; // 18:30–19:30
-  return "night";
+  const h = new Date().getHours();
+  return h >= 6 && h < 20 ? "day" : "night";
 }
 
 function currentMapStyle(phase?: MapPhase): string {
@@ -82,28 +78,15 @@ function sceneLightForPhase(phase: MapPhase): {
   color: string;
   intensity: number;
 } {
-  switch (phase) {
-    case "sunrise":
-      // Sun low in the east → long westward shadows
-      return { anchor: "map", position: [1.5, 90, 76], color: "#ffb060", intensity: 0.72 };
-    case "day":
-      // Sun high in the south → short shadows
-      return { anchor: "map", position: [1.5, 180, 28], color: "white", intensity: 0.5 };
-    case "sunset":
-      // Sun low in the west → long eastward shadows
-      return { anchor: "map", position: [1.5, 270, 76], color: "#ff7030", intensity: 0.72 };
-    case "night":
-      return { anchor: "map", position: [1.5, 210, 55], color: "#6677aa", intensity: 0.22 };
+  if (phase === "night") {
+    return { anchor: "map", position: [1.5, 210, 55], color: "#6677aa", intensity: 0.22 };
   }
+  // Day: sun high, short shadows
+  return { anchor: "map", position: [1.5, 180, 28], color: "white", intensity: 0.5 };
 }
 
 function buildingColorForPhase(phase: MapPhase): string {
-  switch (phase) {
-    case "sunrise": return "#e8c080";
-    case "day":     return "#d4d4d8";
-    case "sunset":  return "#e89060";
-    case "night":   return "#1a1c22";
-  }
+  return phase === "night" ? "#1a1c22" : "#d4d4d8";
 }
 
 function isNarrowPhoneViewport(): boolean {
@@ -306,7 +289,8 @@ function routeFitPadding(
   stormBarVisible: boolean,
   stormBarExpanded: boolean,
   routes: NavRoute[],
-  primaryRouteId?: string | null
+  primaryRouteId?: string | null,
+  progressRailVisible = true
 ): {
   top: number;
   bottom: number;
@@ -315,15 +299,17 @@ function routeFitPadding(
 } {
   const p = MAIN_MAP_ROUTE_PADDING;
   const stormTop = stormBarTopExtraPx(stormBarVisible, stormBarExpanded);
-  const rightNeed = ROUTE_RIGHT_RAIL_PX + ROUTE_RIGHT_RAIL_GAP_PX;
+  const rightNeed = progressRailVisible ? ROUTE_RIGHT_RAIL_PX + ROUTE_RIGHT_RAIL_GAP_PX : 18;
+  const planningOverview = !progressRailVisible;
   if (isNarrowPhoneViewport()) {
     const safe = safeAreaInsetsPx();
-    /* Tighter top inset; pull right inset toward the progress rail so L/R balance matches the rail. */
+    const sidePad = Math.max(p.left, 22);
+    /* Before Go there is no progress rail, so keep the route overview centered in the full map width. */
     return {
       top: Math.max(128, 182 - ROUTE_FIT_TOP_TRIM_PX) + stormTop + Math.min(6, safe.top * 0.25),
       bottom: 164 + Math.min(34, safe.bottom),
-      left: Math.max(p.left, 22),
-      right: Math.max(88, rightNeed),
+      left: sidePad,
+      right: planningOverview ? sidePad : Math.max(88, rightNeed),
     };
   }
   if (isLandscapeViewport()) {
@@ -375,7 +361,7 @@ function routeFitPadding(
     top: Math.max(128, p.top + stormTop - ROUTE_FIT_TOP_TRIM_PX),
     bottom: p.bottom,
     left: p.left,
-    right: Math.max(p.right, rightNeed),
+    right: planningOverview ? p.left : Math.max(p.right, rightNeed),
   };
 }
 
@@ -404,10 +390,11 @@ function hazardOverviewFitPadding(): mapboxgl.PaddingOptions {
 
 function driveCameraEaseOptions(
   stormBarVisible: boolean,
-  stormBarExpanded: boolean
+  stormBarExpanded: boolean,
+  progressRailVisible: boolean
 ): { padding: mapboxgl.PaddingOptions; offset: [number, number] } {
   const stormTop = stormBarTopExtraPx(stormBarVisible, stormBarExpanded);
-  const rightNeed = ROUTE_RIGHT_RAIL_PX + ROUTE_RIGHT_RAIL_GAP_PX;
+  const rightNeed = progressRailVisible ? ROUTE_RIGHT_RAIL_PX + ROUTE_RIGHT_RAIL_GAP_PX : 18;
   /*
    * Landscape + side-T chrome: bottom dock and top strip sit on the right half only.
    * Portrait-style bottom/top padding is far too tall for ~360–430px viewport height and
@@ -421,7 +408,7 @@ function driveCameraEaseOptions(
     const railPad = Math.max(72, rightNeed + 14);
     const topPad = Math.max(52, 44 + Math.round(stormTop * 0.45));
     const bottomPad = Math.max(36, 48);
-    const yOff = Math.min(88, Math.max(44, Math.round(vh * 0.14)));
+    const yOff = Math.min(104, Math.max(54, Math.round(vh * 0.17)));
     if (handLeft) {
       return {
         padding: {
@@ -430,7 +417,7 @@ function driveCameraEaseOptions(
           left: rightChrome,
           right: railPad,
         },
-        offset: [-10, yOff],
+        offset: [progressRailVisible ? -10 : -2, yOff],
       };
     }
     return {
@@ -440,7 +427,7 @@ function driveCameraEaseOptions(
         left: railPad,
         right: rightChrome,
       },
-      offset: [10, yOff],
+      offset: [progressRailVisible ? 10 : 2, yOff],
     };
   }
   if (isNarrowPhoneViewport()) {
@@ -456,7 +443,7 @@ function driveCameraEaseOptions(
        * +X: nudge follow point right — padding is wider on the right (progress rail), so the geometric
        * “center” of the padded frame reads visually left; offset corrects toward screen center.
        */
-      offset: [20, 104],
+      offset: [20, 152],
     };
   }
   return {
@@ -466,7 +453,7 @@ function driveCameraEaseOptions(
       left: 16,
       right: Math.max(96, rightNeed),
     },
-    offset: [24, 175],
+    offset: [24, 238],
   };
 }
 
@@ -536,6 +523,8 @@ type Props = {
   /** Multi-result destination search: temporary pins until the user picks one. */
   searchPickMarkers?: { id: string; lngLat: LngLat; label: string }[] | null;
   onSearchPickMarkerClick?: (id: string) => void;
+  /** Right-side route progress rail visibility affects camera/right padding. */
+  progressRailVisible?: boolean;
 };
 
 /**
@@ -547,6 +536,8 @@ const EXPLORE_IDLE_MS = 120_000;
 const DRIVE_EXPLORE_IDLE_MS = 4_000;
 /** Blend route/GPS bearing frame-to-frame (reduces jitter at segment joins). */
 const DRIVE_ROUTE_BEARING_SMOOTH = 0.22;
+/** Top-down map view: nudge puck slightly right of visual center to balance the side rail/chrome. */
+const TOPDOWN_PUCK_OFFSET_PX: [number, number] = [24, 0];
 
 /**
  * Drive (3D) view: small extra horizontal nudge on the marker icon; main lateral balance is
@@ -570,6 +561,7 @@ function regionalPlanningZoom(): number {
 const ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM = 10.85;
 /** Planning “My location” / recenter — street-level framing. */
 const ROUTE_VIEW_PLANNING_STREET_ZOOM = 14.2;
+const ZERO_MAP_PADDING: mapboxgl.PaddingOptions = { top: 0, bottom: 0, left: 0, right: 0 };
 
 function smoothDriveBearingDeg(prev: number | null, raw: number, alpha: number): number {
   if (prev == null || !Number.isFinite(prev)) return raw;
@@ -682,6 +674,7 @@ export function DriveMap({
   activityTrailGeoJson = null,
   searchPickMarkers = null,
   onSearchPickMarkerClick,
+  progressRailVisible = true,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -714,6 +707,7 @@ export function DriveMap({
   navigationStartedRef.current = navigationStarted;
   const userExploringRef = useRef(false);
   const exploreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastForcedPlanningFitTriggerRef = useRef<number | null>(null);
   const driveCamBearingSmoothedRef = useRef<number | null>(null);
   const onMapFocusCompleteRef = useRef(onMapFocusComplete);
   onMapFocusCompleteRef.current = onMapFocusComplete;
@@ -971,7 +965,7 @@ export function DriveMap({
     } catch { /* layer not ready */ }
   }, [mapReady, mapPhase]);
 
-  /** Move the sun: low east at sunrise, high south during day, low west at sunset, dim night. */
+  /** Day vs night: sun position and intensity for 3D buildings. */
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
@@ -1147,6 +1141,7 @@ export function DriveMap({
       map.flyTo({
         center: userLngLat,
         zoom: regionalPlanningZoom(),
+        padding: ZERO_MAP_PADDING,
         essential: true,
         duration: 1200,
       });
@@ -1832,6 +1827,7 @@ export function DriveMap({
       zoom: regionalPlanningZoom(),
       pitch: 0,
       bearing: 0,
+      padding: ZERO_MAP_PADDING,
       duration: 520,
       essential: true,
     });
@@ -1848,7 +1844,7 @@ export function DriveMap({
     b.extend(u);
     b.extend(destLngLat);
     map.fitBounds(b, {
-      padding: routeFitPadding(stormBarVisible, stormBarExpanded, [], null),
+      padding: routeFitPadding(stormBarVisible, stormBarExpanded, [], null, progressRailVisible),
       maxZoom: ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM,
       duration: 260,
       pitch: 0,
@@ -1864,6 +1860,7 @@ export function DriveMap({
     fitTrigger,
     stormBarVisible,
     stormBarExpanded,
+    progressRailVisible,
   ]);
 
   useEffect(() => {
@@ -1882,6 +1879,7 @@ export function DriveMap({
       zoom: Math.max(ROUTE_VIEW_PLANNING_STREET_ZOOM, map.getZoom()),
       pitch: 0,
       bearing: 0,
+      padding: ZERO_MAP_PADDING,
       duration: 480,
       essential: true,
     });
@@ -1898,6 +1896,16 @@ export function DriveMap({
     const map = mapRef.current;
     if (!map || !mapReady || viewMode !== "route" || routes.length === 0) return;
 
+    const forcePlanningFit = !navigationStarted;
+    if (!navigationStarted && fitTrigger !== lastForcedPlanningFitTriggerRef.current) {
+      lastForcedPlanningFitTriggerRef.current = fitTrigger;
+      userExploringRef.current = false;
+      if (exploreTimerRef.current) {
+        clearTimeout(exploreTimerRef.current);
+        exploreTimerRef.current = null;
+      }
+    }
+
     const flatten = () => {
       map.easeTo({ pitch: 0, bearing: 0, duration: 240, essential: true });
     };
@@ -1905,7 +1913,7 @@ export function DriveMap({
     let pendingFlatten: (() => void) | null = null;
 
     const doPlanningFit = () => {
-      if (userExploringRef.current) return;
+      if (userExploringRef.current && !forcePlanningFit) return;
       const u = userLngLatRef.current;
       if (pendingFlatten) {
         map.off("moveend", pendingFlatten);
@@ -1917,7 +1925,7 @@ export function DriveMap({
         u,
         destLngLat,
         {
-          ...routeFitPadding(stormBarVisible, stormBarExpanded, routes, lineFocusId),
+          ...routeFitPadding(stormBarVisible, stormBarExpanded, routes, lineFocusId, progressRailVisible),
         },
         routeFitMaxZoomCeiling(routes, lineFocusId),
         {
@@ -1949,7 +1957,7 @@ export function DriveMap({
         routes,
         u,
         destLngLat,
-        { ...routeFitPadding(stormBarVisible, stormBarExpanded, routes, lineFocusId) },
+        { ...routeFitPadding(stormBarVisible, stormBarExpanded, routes, lineFocusId, progressRailVisible) },
         routeFitMaxZoomCeiling(routes, lineFocusId),
         lineFocusId,
         routeFitZoomBias(routes, lineFocusId)
@@ -1983,6 +1991,7 @@ export function DriveMap({
     stormBarVisible,
     stormBarExpanded,
     lineFocusId,
+    progressRailVisible,
   ]);
 
   const canCameraFollow = Boolean(userLngLat && (navigationStarted || routes.length > 0));
@@ -1993,7 +2002,11 @@ export function DriveMap({
     if (userExploringRef.current) return;
 
     if (viewMode === "drive") {
-      const { padding, offset } = driveCameraEaseOptions(stormBarVisible, stormBarExpanded);
+      const { padding, offset } = driveCameraEaseOptions(
+        stormBarVisible,
+        stormBarExpanded,
+        progressRailVisible
+      );
       const raw =
         driveRouteBearingDeg != null
           ? driveRouteBearingDeg
@@ -2025,9 +2038,58 @@ export function DriveMap({
     driveRouteBearingDeg,
     navigationStarted,
     mapResumeTick,
+    fitTrigger,
     stormBarVisible,
     stormBarExpanded,
+    progressRailVisible,
   ]);
+
+  /** On Go: clear "user exploring" so the drive camera is not stuck; nudge follow + size after nav chrome. */
+  const wasNavRef = useRef(false);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady) return;
+    if (navigationStarted && !wasNavRef.current) {
+      userExploringRef.current = false;
+      if (exploreTimerRef.current) {
+        clearTimeout(exploreTimerRef.current);
+        exploreTimerRef.current = null;
+      }
+      setMapResumeTick((n) => n + 1);
+      if (map) {
+        requestAnimationFrame(() => {
+          try {
+            map.resize();
+          } catch {
+            /* map disposed */
+          }
+        });
+      }
+    }
+    wasNavRef.current = navigationStarted;
+  }, [mapReady, navigationStarted]);
+
+  /**
+   * Rt / T / Dr: switching back to drive after top-down (or a layout shift) can leave the canvas
+   * sized to a stale box — the puck and follow camera sit wrong until a resize. Double-rAF + bump
+   * so {@link canCameraFollow} run re-runs after the real layout.
+   */
+  useEffect(() => {
+    if (viewMode !== "drive" || !navigationStarted || !mapReady) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const raf0 = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          map.resize();
+        } catch {
+          /* map disposed */
+        }
+        setMapResumeTick((n) => n + 1);
+      });
+    });
+    return () => cancelAnimationFrame(raf0);
+  }, [viewMode, navigationStarted, mapReady]);
 
   /** Report map bearing while driving so the dock compass can keep N aligned with true north. */
   useEffect(() => {
@@ -2071,14 +2133,22 @@ export function DriveMap({
 
     if (!prevTopdownRef.current) {
       prevTopdownRef.current = true;
-      map.jumpTo({
+      map.easeTo({
         center: userLngLat,
         zoom: topdownZoomRef.current,
         pitch: 0,
         bearing: 0,
+        offset: TOPDOWN_PUCK_OFFSET_PX,
+        duration: 0,
+        essential: true,
       });
     } else {
-      map.setCenter(userLngLat);
+      map.easeTo({
+        center: userLngLat,
+        offset: TOPDOWN_PUCK_OFFSET_PX,
+        duration: 0,
+        essential: true,
+      });
     }
   }, [mapReady, viewMode, canCameraFollow, userLngLat, topdownZoomRef, mapResumeTick]);
 
@@ -2235,12 +2305,7 @@ export function DriveMap({
     );
   }
 
-  return (
-    <>
-      <div ref={containerRef} className="drive-map" />
-      <div className={`map-phase-tint${mapPhase === "sunrise" || mapPhase === "sunset" ? ` map-phase-tint--${mapPhase}` : ""}`} />
-    </>
-  );
+  return <div ref={containerRef} className="drive-map" />;
 }
 
 export default DriveMap;

@@ -1,4 +1,5 @@
 import type { LngLat } from "../nav/types";
+import { fetchWithTimeout, MAPBOX_TRAFFIC_TIMEOUT_MS } from "../utils/fetchResilient";
 
 /** Mapbox Directions API limit for coordinates in one request. */
 const MAPBOX_MAX_COORDS = 25;
@@ -116,7 +117,11 @@ async function fetchDirectionsOnce(
   url.searchParams.set("overview", "false");
   url.searchParams.set("annotations", "congestion_numeric");
 
-  const res = await fetch(url.toString());
+  const res = await fetchWithTimeout({
+    input: url.toString(),
+    init: { method: "GET" },
+    timeoutMs: MAPBOX_TRAFFIC_TIMEOUT_MS,
+  });
   const data = (await res.json()) as DirectionsResponse;
 
   if (!res.ok) {

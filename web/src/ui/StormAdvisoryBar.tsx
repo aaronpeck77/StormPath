@@ -1,8 +1,71 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  ADVISORY_WEATHER_UPGRADES_COMING_SOON,
+  SITEBIBLE_AD_BAR,
+  type AdvisoryPromoLine,
+} from "../config/advisoryPromo";
 import { sortWeatherAlertsBySeverity, type NormalizedWeatherAlert } from "../weatherAlerts";
 import { nwsIssuedByLine, nwsWhatIsHappening, nwsWhatToDo } from "../weatherAlerts/nwsDriveSummary";
 import type { DriveAheadLine, DriveAheadRadarTier } from "../nav/driveRouteAhead";
 import { formatDriveAheadBrief } from "../nav/driveRouteAhead";
+
+/** One-line target when static (no scroll); longer text scrolls inside the bar first. */
+const PREVIEW_MAX_STATIC = 40;
+
+function clipOneLine(s: string, max = PREVIEW_MAX_STATIC): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, Math.max(0, max - 1))}…`;
+}
+
+/** Renders a single preview line: short copy fits; longer copy scrolls left so you can read it. */
+function AdvisoryPreviewMessage({ raw }: { raw: string }) {
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const innerRef = useRef<HTMLSpanElement>(null);
+  const plain = raw.replace(/\s+/g, " ").trim();
+
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    const inner = innerRef.current;
+    if (!wrap || !inner) return;
+    let anim: Animation | undefined;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        inner.style.transform = "translateX(0)";
+        const need = inner.scrollWidth - wrap.clientWidth;
+        if (plain.length <= PREVIEW_MAX_STATIC || need <= 1) return;
+        const duration = Math.min(14_000, Math.max(2_400, need * 32));
+        anim = inner.animate(
+          [{ transform: "translateX(0px)" }, { transform: `translateX(-${need}px)` }],
+          { duration, easing: "linear", fill: "forwards" }
+        );
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+      anim?.cancel();
+    };
+  }, [plain]);
+
+  if (plain.length <= PREVIEW_MAX_STATIC) {
+    return (
+      <span className="storm-advisory-bar__preview-text" title={plain}>
+        {clipOneLine(plain)}
+      </span>
+    );
+  }
+  return (
+    <span className="storm-advisory-bar__preview-text storm-advisory-bar__preview-text--scroll" title={plain}>
+      <span ref={wrapRef} className="storm-advisory-bar__preview-clip">
+        <span ref={innerRef} className="storm-advisory-bar__preview-clip-inner">
+          {plain}
+        </span>
+      </span>
+    </span>
+  );
+}
 
 export type StormRoadDetailRow = {
   label: string;
@@ -39,11 +102,17 @@ export type StormAdvisoryBarProps = SharedProps & {
   peekBadge?: number | null;
   /** Optional hazard status severity: drives the collapsed preview border color. */
   peekSeverity?: "none" | "info" | "warn" | "severe" | null;
-  hasSessionError?: boolean;
   /** Short "doing something" label (NWS loading, traffic fetching…). Surfaced in preview. */
   busyLabel?: string | null;
   /** Drive-mode route-ahead summary (radar tier + brief text). Surfaced in preview when driving. */
   driveRouteAheadLine?: DriveAheadLine | null;
+  /** Plus: full NWS + road tools. Basic: life-safety NWS, connectivity, and promo rotation. */
+  advisoryTier?: "plus" | "basic";
+  /** Subscription/entitlement state for copy (distinct from current advisoryTier rendering mode). */
+  ownsPlus?: boolean;
+  promoLines?: AdvisoryPromoLine[];
+  /** Browser / PWA online flag — surfaced for Basic. */
+  isOnline?: boolean;
 };
 
 function fmtEnds(ends: string | null): string | null {
@@ -185,9 +254,12 @@ export function StormAdvisoryBar({
   onNwsAlertClick,
   peekBadge = null,
   peekSeverity = null,
-  hasSessionError = false,
   busyLabel = null,
   driveRouteAheadLine = null,
+  advisoryTier = "plus",
+  ownsPlus = false,
+  promoLines = [],
+  isOnline = true,
 }: StormAdvisoryBarProps) {
   if (!featureEnabled) return null;
   void corridorAlerts;
@@ -208,7 +280,7 @@ export function StormAdvisoryBar({
     () =>
       displayNwsList.map((a) => {
         const primary = nwsWhatIsHappening(a).replace(/\s+/g, " ").trim();
-        const short = primary.length > 96 ? `${primary.slice(0, 95)}…` : primary;
+        const short = primary.length > 70 ? `${primary.slice(0, 69)}…` : primary;
         return {
           id: a.id,
           text: short || (a.event?.trim() || "Weather alert"),
@@ -219,6 +291,11 @@ export function StormAdvisoryBar({
     [displayNwsList, crossingSorted.length]
   );
   const [tickerIdx, setTickerIdx] = useState(0);
+  const [promoIdx, setPromoIdx] = useState(0);
+  const [previewIdx, setPreviewIdx] = useState(0);
+  const [loadSlow, setLoadSlow] = useState(false);
+  const showErrorState = Boolean(error?.trim());
+  const nwsContentReady = !loading && !showErrorState;
   const hasTrafficStop = useMemo(
     () => roadDetailRows.some((r) => /traffic stop|closure/i.test(r.label)),
     [roadDetailRows]
@@ -227,12 +304,104 @@ export function StormAdvisoryBar({
     setTickerIdx(0);
   }, [tickerMessages.length]);
   useEffect(() => {
-    if (tickerMessages.length <= 1 || !sessionOn || loading || error) return;
+    setPromoIdx(0);
+  }, [advisoryTier, promoLines.length]);
+  useEffect(() => {
+    if (!loading) {
+      setLoadSlow(false);
+      return;
+    }
+    const t = window.setTimeout(() => setLoadSlow(true), 12_000);
+    return () => {
+      clearTimeout(t);
+    };
+  }, [loading]);
+  useEffect(() => {
+    if (tickerMessages.length <= 1) return;
     const id = window.setInterval(() => {
       setTickerIdx((v) => (v + 1) % tickerMessages.length);
-    }, 3000);
+    }, 5500);
     return () => window.clearInterval(id);
-  }, [tickerMessages.length, sessionOn, loading, error]);
+  }, [tickerMessages.length]);
+  useEffect(() => {
+    if (promoLines.length <= 1) return;
+    const id = window.setInterval(() => {
+      setPromoIdx((v) => (v + 1) % promoLines.length);
+    }, 10_000);
+    return () => window.clearInterval(id);
+  }, [promoLines.length]);
+
+  const defaultPreviewText =
+    advisoryTier === "basic"
+      ? ownsPlus
+        ? "No urgent warnings. Tap for details."
+        : "No life-safety warnings here — tap for details"
+      : "No hazards in view — tap for advisory";
+  const activeTicker = tickerMessages[tickerIdx];
+  const previewItems = useMemo(() => {
+    const out: { badge: string | null; raw: string }[] = [];
+    if (!isOnline) {
+      out.push({ badge: "Offline", raw: "No network. Reconnect to refresh the map and advisories." });
+    }
+    if (showErrorState && (error || "").trim()) {
+      out.push({ badge: "Error", raw: (error || "").trim() });
+    }
+    if (loading) {
+      out.push({ badge: "Load", raw: "Loading NWS…" });
+      if (loadSlow) {
+        out.push({ badge: "Load", raw: "NWS is slow. Open the panel for the full error or retry later." });
+      }
+    }
+    if (hasGuidanceRoute) {
+      out.push({ badge: "Drive", raw: "Route is set. You can drive while data keeps updating." });
+    }
+    out.push({ badge: "App", raw: SITEBIBLE_AD_BAR });
+    if (busyLabel) {
+      out.push({ badge: "Work", raw: busyLabel });
+    }
+    if (activeTicker) {
+      out.push({ badge: activeTicker.badge, raw: activeTicker.text });
+    }
+    if (advisoryTier !== "basic" && trafficDelayMinutes >= 8) {
+      out.push({
+        badge: "Traffic",
+        raw: `Traffic +${Math.round(trafficDelayMinutes)} min on route`,
+      });
+    }
+    if (advisoryTier !== "basic" && driveRouteAheadLine) {
+      out.push({ badge: "Ahead", raw: formatDriveAheadBrief(driveRouteAheadLine) });
+    }
+    for (const p of promoLines) {
+      if (p.id === "sitebible") continue;
+      out.push({ badge: "Info", raw: clipOneLine(p.text, 64) });
+    }
+    if (out.length === 0) out.push({ badge: null, raw: defaultPreviewText });
+    return out;
+  }, [
+    isOnline,
+    showErrorState,
+    error,
+    loading,
+    loadSlow,
+    hasGuidanceRoute,
+    busyLabel,
+    activeTicker,
+    advisoryTier,
+    trafficDelayMinutes,
+    driveRouteAheadLine,
+    promoLines,
+    defaultPreviewText,
+  ]);
+  useEffect(() => {
+    setPreviewIdx(0);
+  }, [previewItems.length]);
+  useEffect(() => {
+    if (previewItems.length <= 1) return;
+    const id = window.setInterval(() => {
+      setPreviewIdx((v) => (v + 1) % previewItems.length);
+    }, 10_000);
+    return () => window.clearInterval(id);
+  }, [previewItems.length]);
 
   /** Map DriveAhead radar tier into an advisory severity bucket. */
   const driveTierSev = (t: DriveAheadRadarTier | null | undefined): "none" | "info" | "warn" | "severe" => {
@@ -245,53 +414,34 @@ export function StormAdvisoryBar({
   /** Derive a "hazard tone" for the border of the preview bar + count badge. */
   const effectiveSeverity: "none" | "info" | "warn" | "severe" =
     peekSeverity ??
-    (hasSessionError
-      ? "severe"
-      : crossingSorted.length > 0 || hasTrafficStop
+    (!isOnline
+      ? "warn"
+      : showErrorState
         ? "severe"
-        : atLocationSorted.length > 0 || trafficDelayMinutes >= 8
-          ? "warn"
-          : driveTierSev(driveRouteAheadLine?.radarTier) === "severe"
+        : loading
+          ? loadSlow
+            ? "warn"
+            : "info"
+          : crossingSorted.length > 0 || hasTrafficStop
             ? "severe"
-            : driveTierSev(driveRouteAheadLine?.radarTier) === "warn"
+            : atLocationSorted.length > 0 || trafficDelayMinutes >= 8
               ? "warn"
-              : tickerMessages.length > 0
-                ? "info"
-                : "none");
+              : driveTierSev(driveRouteAheadLine?.radarTier) === "severe"
+                ? "severe"
+                : driveTierSev(driveRouteAheadLine?.radarTier) === "warn"
+                  ? "warn"
+                  : tickerMessages.length > 0
+                    ? "info"
+                    : promoLines.length > 0
+                      ? "info"
+                      : "none");
 
   if (!barExpanded) {
-    const activeTicker = tickerMessages[tickerIdx];
-    /* Priority for the collapsed one-liner:
-     *   1. Live NWS/hazard ticker message
-     *   2. Traffic delay summary
-     *   3. Drive-mode route-ahead brief (radar)
-     *   4. Session error
-     *   5. Busy label
-     *   6. Placeholder
-     */
-    let previewLabel: ReactNode = null;
-    let previewBadgeLabel: string | null = null;
-    if (activeTicker) {
-      previewLabel = activeTicker.text;
-      previewBadgeLabel = activeTicker.badge;
-    } else if (trafficDelayMinutes >= 8) {
-      previewLabel = `Traffic delay +${Math.round(trafficDelayMinutes)} min on route`;
-      previewBadgeLabel = "Traffic";
-    } else if (driveRouteAheadLine) {
-      previewLabel = formatDriveAheadBrief(driveRouteAheadLine);
-      previewBadgeLabel = "Route ahead";
-    } else if (hasSessionError) {
-      previewLabel = "Hazards alert service unavailable — tap for details";
-    } else if (busyLabel) {
-      previewLabel = busyLabel;
-      previewBadgeLabel = "Working";
-    } else {
-      previewLabel = "No active hazards — tap for advisory";
-    }
+    const activePreview = previewItems[previewIdx % previewItems.length]!;
     return (
       <button
         type="button"
-        className={`storm-advisory-bar storm-advisory-bar--preview storm-advisory-bar--sev-${effectiveSeverity}${hasSessionError ? " storm-advisory-bar--err" : ""}`}
+        className={`storm-advisory-bar storm-advisory-bar--preview storm-advisory-bar--sev-${effectiveSeverity}${showErrorState ? " storm-advisory-bar--err" : ""}`}
         id="storm-advisory-panel"
         role="region"
         aria-label="Storm, weather, and road advisory — tap to expand"
@@ -303,15 +453,15 @@ export function StormAdvisoryBar({
           e.stopPropagation();
           onBarExpandedChange(true);
         }}
-        title={hasSessionError ? "Hazards feed error — tap to open" : "Tap to open hazards advisory"}
+        title={activePreview.raw}
       >
-        {previewBadgeLabel ? (
-          <span className="storm-advisory-bar__preview-ticker-badge">{previewBadgeLabel}</span>
+        {activePreview.badge ? (
+          <span className="storm-advisory-bar__preview-ticker-badge">{activePreview.badge}</span>
         ) : null}
-        <span className="storm-advisory-bar__preview-text">{previewLabel}</span>
-        {tickerMessages.length > 1 && (
+        <AdvisoryPreviewMessage raw={activePreview.raw} />
+        {previewItems.length > 1 && (
           <span className="storm-advisory-bar__preview-count">
-            {tickerIdx + 1}/{tickerMessages.length}
+            {previewIdx + 1}/{previewItems.length}
           </span>
         )}
         {peekBadge != null && peekBadge > 0 && (
@@ -328,7 +478,7 @@ export function StormAdvisoryBar({
 
   return (
     <div
-      className={`storm-advisory-bar storm-advisory-bar--sev-${effectiveSeverity}${hasSessionError ? " storm-advisory-bar--err" : ""}`}
+      className={`storm-advisory-bar storm-advisory-bar--sev-${effectiveSeverity}${showErrorState ? " storm-advisory-bar--err" : ""}`}
       id="storm-advisory-panel"
       role="region"
       aria-label="Storm, weather, and road advisory"
@@ -379,6 +529,28 @@ export function StormAdvisoryBar({
         )}
       </div>
 
+      <div className="storm-advisory-bar__basic-strip" aria-label="Connection and tips">
+        <span
+          className={`storm-advisory-bar__conn${isOnline ? " storm-advisory-bar__conn--on" : " storm-advisory-bar__conn--off"}`}
+        >
+          {isOnline ? "Online" : "Offline"}
+        </span>
+        {promoLines.length > 0 && (
+          <div className="storm-advisory-bar__promo" aria-live="polite">
+            {(() => {
+              const line = promoLines[promoIdx % promoLines.length]!;
+              return line.href ? (
+                <a className="storm-advisory-bar__promo-link" href={line.href} target="_blank" rel="noreferrer">
+                  {line.text}
+                </a>
+              ) : (
+                <span className="storm-advisory-bar__promo-text">{line.text}</span>
+              );
+            })()}
+          </div>
+        )}
+      </div>
+
       {(busyLabel || driveRouteAheadLine) && (
         <div className="storm-advisory-bar__now-row" aria-live="polite">
           {busyLabel && (
@@ -400,82 +572,109 @@ export function StormAdvisoryBar({
       )}
 
       <div className="storm-advisory-bar__weather-block">
-        <p className="storm-advisory-bar__weather-title">Weather (NWS)</p>
-        {!sessionOn && (
-          <p className="storm-advisory-bar__muted storm-advisory-bar__nws-hint">
-            Turn on <strong>NWS polygons</strong> to load warnings, map shading, and route highlights.
-          </p>
-        )}
-        {sessionOn && (
-          <>
-            {loading && <p className="storm-advisory-bar__muted">Loading NWS active alerts…</p>}
-            {error && (
-              <p className="storm-advisory-bar__err" role="alert">
-                {error}
-              </p>
-            )}
-            {!loading && !error && (
+        <p className="storm-advisory-bar__weather-title">
+          {advisoryTier === "basic" ? "Life-safety warnings (NWS)" : "Weather (NWS)"}
+        </p>
+        <p className="storm-advisory-bar__muted storm-advisory-bar__nws-hint">{ADVISORY_WEATHER_UPGRADES_COMING_SOON}</p>
+        {advisoryTier === "basic" && (
+          <p className="storm-advisory-bar__muted storm-advisory-bar__basic-upsell">
+            {ownsPlus ? (
               <>
-                {crossingSorted.length > 0 ? (
-                  <p className="storm-advisory-bar__nws-hero storm-advisory-bar__nws-hero--cross">
-                    <span className="storm-advisory-bar__nws-hero-main">
-                      <strong>{crossingSorted.length}</strong>
-                      {crossingSorted.length === 1 ? " warning crosses" : " warnings cross"} your route
-                    </span>
-                  </p>
-                ) : atLocationSorted.length > 0 ? (
-                  <p className="storm-advisory-bar__nws-hero storm-advisory-bar__nws-hero--cross">
-                    <span className="storm-advisory-bar__nws-hero-main">
-                      <strong>{atLocationSorted.length}</strong>
-                      {atLocationSorted.length === 1
-                        ? " NWS alert at your position"
-                        : " NWS alerts at your position"}{" "}
-                      <span className="storm-advisory-bar__muted">(route may not show an intersection)</span>
-                    </span>
-                  </p>
-                ) : (
-                  <p className="storm-advisory-bar__muted storm-advisory-bar__radar-note">
-                    No NWS warning polygons on your route line. Map radar may still show precipitation.
-                  </p>
-                )}
-                {displayNwsList.length > 0 && (
-                  <div className="storm-advisory-bar__ticker-wrap">
-                    <button
-                      type="button"
-                      className="storm-advisory-bar__ticker"
-                      title="Open this alert"
-                      onClick={() => onNwsAlertClick?.(tickerMessages[tickerIdx]!.alert)}
-                    >
-                      <span className="storm-advisory-bar__ticker-badge">{tickerMessages[tickerIdx]?.badge}</span>
-                      <span className="storm-advisory-bar__ticker-text">{tickerMessages[tickerIdx]?.text}</span>
-                      {tickerMessages.length > 1 && (
-                        <span className="storm-advisory-bar__ticker-count">
-                          {tickerIdx + 1}/{tickerMessages.length}
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                )}
-                {displayNwsList.length > 0 && (
-                  <div
-                    className="storm-advisory-bar__nws-scroll"
-                    role="region"
-                    aria-label="NWS warnings on your route"
-                  >
-                    <ul className="storm-advisory-bar__nws-list storm-advisory-bar__nws-list--crosses">
-                      {displayNwsList.map((a) => nwsAlertCard(a, displayNwsTier, onNwsAlertClick))}
-                    </ul>
-                  </div>
-                )}
-                <p className="storm-advisory-bar__advice storm-advisory-bar__advice--weather">
-                  {weatherAdviceDriving(
-                    crossingSorted.length > 0,
-                    crossingSorted.length === 0 && atLocationSorted.length > 0,
-                    trafficDelayMinutes
-                  )}
-                </p>
+                Life-safety alerts stay on. Turn on <strong>NWS polygons</strong> and{" "}
+                <strong>Road impacts &amp; traffic</strong> to receive full Plus advisory data.
+              </>
+            ) : (
+              <>
+                Basic shows the most urgent warnings (tornado, flash flood, tsunami, etc.).{" "}
+                <strong>Upgrade to Plus</strong> for the full NWS map, traffic, and weather along your route.
               </>
             )}
+          </p>
+        )}
+        {loading && (
+          <p className="storm-advisory-bar__muted" aria-live="polite">
+            Loading NWS active alerts…
+          </p>
+        )}
+        {loadSlow && loading && (
+          <p className="storm-advisory-bar__muted" aria-live="polite">
+            This is taking longer than usual. The public weather service may be slow or your connection may be weak.
+          </p>
+        )}
+        {error && (
+          <p className="storm-advisory-bar__err" role="alert">
+            {error}
+          </p>
+        )}
+        {advisoryTier === "plus" && !sessionOn && (
+          <p className="storm-advisory-bar__muted storm-advisory-bar__nws-hint">
+            Turn on <strong>NWS polygons</strong> to load full warnings, map shading, and route highlights.
+          </p>
+        )}
+        {nwsContentReady && (
+          <>
+            {crossingSorted.length > 0 ? (
+              <p className="storm-advisory-bar__nws-hero storm-advisory-bar__nws-hero--cross">
+                <span className="storm-advisory-bar__nws-hero-main">
+                  <strong>{crossingSorted.length}</strong>
+                  {crossingSorted.length === 1 ? " warning crosses" : " warnings cross"} your route
+                </span>
+              </p>
+            ) : atLocationSorted.length > 0 ? (
+              <p className="storm-advisory-bar__nws-hero storm-advisory-bar__nws-hero--cross">
+                <span className="storm-advisory-bar__nws-hero-main">
+                  <strong>{atLocationSorted.length}</strong>
+                  {atLocationSorted.length === 1
+                    ? " NWS alert at your position"
+                    : " NWS alerts at your position"}{" "}
+                  <span className="storm-advisory-bar__muted">(route may not show an intersection)</span>
+                </span>
+              </p>
+            ) : (
+              <p className="storm-advisory-bar__muted storm-advisory-bar__radar-note">
+                {advisoryTier === "basic"
+                  ? ownsPlus
+                    ? "No life-safety-class warnings in this area. Turn on NWS polygons to receive full advisory feed data."
+                    : "No life-safety-class warnings in this area. Upgrade to Plus for the full NWS list and map shading."
+                  : "No NWS warning polygons on your route line. Map radar may still show precipitation."}
+              </p>
+            )}
+            {displayNwsList.length > 0 && (
+              <div className="storm-advisory-bar__ticker-wrap">
+                <button
+                  type="button"
+                  className="storm-advisory-bar__ticker"
+                  title="Open this alert"
+                  onClick={() => onNwsAlertClick?.(tickerMessages[tickerIdx]!.alert)}
+                >
+                  <span className="storm-advisory-bar__ticker-badge">{tickerMessages[tickerIdx]?.badge}</span>
+                  <span className="storm-advisory-bar__ticker-text">{tickerMessages[tickerIdx]?.text}</span>
+                  {tickerMessages.length > 1 && (
+                    <span className="storm-advisory-bar__ticker-count">
+                      {tickerIdx + 1}/{tickerMessages.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
+            {displayNwsList.length > 0 && (
+              <div
+                className="storm-advisory-bar__nws-scroll"
+                role="region"
+                aria-label="NWS warnings on your route"
+              >
+                <ul className="storm-advisory-bar__nws-list storm-advisory-bar__nws-list--crosses">
+                  {displayNwsList.map((a) => nwsAlertCard(a, displayNwsTier, onNwsAlertClick))}
+                </ul>
+              </div>
+            )}
+            <p className="storm-advisory-bar__advice storm-advisory-bar__advice--weather">
+              {weatherAdviceDriving(
+                crossingSorted.length > 0,
+                crossingSorted.length === 0 && atLocationSorted.length > 0,
+                trafficDelayMinutes
+              )}
+            </p>
           </>
         )}
       </div>

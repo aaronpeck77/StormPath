@@ -78,6 +78,11 @@ export function RouteCycleButton({
   onSelect,
   detail,
   className = "",
+  /**
+   * When the focused route id is not present in `items` (e.g. brief desync),
+   * use this A/B/C slot (0, 1, 2) to pick label + color. Must match `items` order.
+   */
+  activeSlotIndex = null,
 }: {
   items: RoutePickItem[];
   selectedId: string;
@@ -85,15 +90,21 @@ export function RouteCycleButton({
   /** Extra line (e.g. distance · strategy) */
   detail?: string;
   className?: string;
+  activeSlotIndex?: number | null;
 }) {
   if (items.length === 0) return null;
 
-  const idx = Math.max(0, items.findIndex((it) => it.id === selectedId));
-  const current = items[idx]!;
+  const fromId = items.findIndex((it) => it.id === selectedId);
+  const safeSlot =
+    activeSlotIndex != null && activeSlotIndex >= 0
+      ? Math.min(activeSlotIndex, Math.max(0, items.length - 1))
+      : null;
+  const currentIndex = fromId >= 0 ? fromId : safeSlot ?? 0;
+  const current = items[currentIndex]!;
 
   const cycle = () => {
     if (items.length < 2) return;
-    const next = (idx + 1) % items.length;
+    const next = (currentIndex + 1) % items.length;
     onSelect(items[next]!.id);
   };
 

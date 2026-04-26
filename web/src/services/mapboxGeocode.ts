@@ -1,4 +1,5 @@
 import type { LngLat } from "../nav/types";
+import { fetchWithTimeout, MAPBOX_GEOCODE_TIMEOUT_MS } from "../utils/fetchResilient";
 
 export type GeocodeHit = { lngLat: LngLat; placeName: string };
 
@@ -50,10 +51,18 @@ async function fetchForwardFeatures(
 ): Promise<MbxFeature[]> {
   const url = buildPlacesUrl(q);
   addForwardCommon(url, accessToken, opts);
-  const res = await fetch(url.toString());
-  if (!res.ok) return [];
-  const data = (await res.json()) as { features?: MbxFeature[] };
-  return data.features ?? [];
+  try {
+    const res = await fetchWithTimeout({
+      input: url.toString(),
+      init: { method: "GET" },
+      timeoutMs: MAPBOX_GEOCODE_TIMEOUT_MS,
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { features?: MbxFeature[] };
+    return data.features ?? [];
+  } catch {
+    return [];
+  }
 }
 
 /** Single forward request (city-only searches stay one call). */
@@ -225,7 +234,16 @@ export async function mapboxReverseGeocode(
   url.searchParams.set("access_token", accessToken);
   url.searchParams.set("limit", "1");
 
-  const res = await fetch(url.toString());
+  let res: Response;
+  try {
+    res = await fetchWithTimeout({
+      input: url.toString(),
+      init: { method: "GET" },
+      timeoutMs: MAPBOX_GEOCODE_TIMEOUT_MS,
+    });
+  } catch {
+    return null;
+  }
   if (!res.ok) return null;
   const data = (await res.json()) as {
     features?: { center: [number, number]; place_name?: string }[];

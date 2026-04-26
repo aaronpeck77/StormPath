@@ -35,6 +35,8 @@ npm install
 npm run dev
 ```
 
+**iOS (Capacitor) — TestFlight & App Store:** the Xcode project is under `web/ios/`. Full checklist: [`web/docs/IOS_APP_STORE.md`](web/docs/IOS_APP_STORE.md) (signing, GitHub Actions, App Store Connect).
+
 With `VITE_ORS_API_KEY` set, the app replaces mock geometry with **three ORS routes** between demo start/end (see `App.tsx`). With OpenWeather set, **forecast text and precip hint** feed the fuse panel; traffic/incident/radar tiles remain mocked until those adapters exist.
 
 ## Run mobile

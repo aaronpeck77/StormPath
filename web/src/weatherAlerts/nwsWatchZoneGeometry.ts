@@ -5,7 +5,7 @@
  * winter, fire, flood, etc. never drew even when active.
  */
 
-import { expandBbox, rankNwsSeverity } from "./geometryOverlap";
+import { rankNwsSeverity } from "./geometryOverlap";
 import type { NormalizedWeatherAlert } from "./types";
 import { extractPolygonalGeometry, mergePolygonalParts } from "./nwsGeometry";
 import { stateCodesTouchingCorridorBbox } from "./usStateBBox";
@@ -100,7 +100,8 @@ async function fetchZonePolygon(
 function alertIntersectsCorridor(
   geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon,
   corridor: { west: number; south: number; east: number; north: number },
-  padDeg: number
+  padDeg: number,
+  extraWestPad: number = 0
 ): boolean {
   const coords: GeoJSON.Position[] =
     geometry.type === "Polygon"
@@ -120,7 +121,10 @@ function alertIntersectsCorridor(
     north = Math.max(north, lat);
   }
   const ab = { west, south, east, north };
-  const [w, s, e, n] = expandBbox(corridor.west, corridor.south, corridor.east, corridor.north, padDeg);
+  const w = corridor.west - padDeg - extraWestPad;
+  const s = corridor.south - padDeg;
+  const e = corridor.east + padDeg;
+  const n = corridor.north + padDeg;
   return !(ab.east < w || ab.west > e || ab.north < s || ab.south > n);
 }
 
@@ -130,17 +134,19 @@ export async function resolveGeometryForUgcBackedAlerts(
   corridorPadDeg: number,
   nwsApiBase: string,
   userAgent: string,
-  maxAlerts: number = MAX_UGC_ZONE_RESOLVE_ALERTS
+  maxAlerts: number = MAX_UGC_ZONE_RESOLVE_ALERTS,
+  /** Extra padding on the west side for upwind NWS context (see {@link nwsUsProvider}). */
+  corridorExtraWestPad: number = 0
 ): Promise<Map<string, GeoJSON.Polygon | GeoJSON.MultiPolygon>> {
   const out = new Map<string, GeoJSON.Polygon | GeoJSON.MultiPolygon>();
 
-  const [cw, cs, ce, cn] = expandBbox(
-    corridor.west,
-    corridor.south,
-    corridor.east,
-    corridor.north,
-    corridorPadDeg + 2.5
-  );
+  const ext = corridorPadDeg + 2.5;
+  const [cw, cs, ce, cn] = [
+    corridor.west - ext - corridorExtraWestPad,
+    corridor.south - ext,
+    corridor.east + ext,
+    corridor.north + ext,
+  ];
   const corridorStates = stateCodesTouchingCorridorBbox({ west: cw, south: cs, east: ce, north: cn });
 
   const candidates: { raw: NwsFeature; alert: NormalizedWeatherAlert; urls: string[] }[] = [];
@@ -171,7 +177,7 @@ export async function resolveGeometryForUgcBackedAlerts(
 
   const uniqueUrls = [...new Set(toResolve.flatMap((t) => t.urls))];
   const cache = new Map<string, GeoJSON.Polygon | GeoJSON.MultiPolygon | null>();
-  const chunkSize = 12;
+  const chunkSize = 4;
   for (let i = 0; i < uniqueUrls.length; i += chunkSize) {
     const chunk = uniqueUrls.slice(i, i + chunkSize);
     await Promise.all(
@@ -181,6 +187,9 @@ export async function resolveGeometryForUgcBackedAlerts(
         cache.set(url, g);
       })
     );
+    if (i + chunkSize < uniqueUrls.length) {
+      await new Promise((r) => setTimeout(r, 80));
+    }
   }
 
   for (const { alert, urls } of toResolve) {
@@ -191,7 +200,7 @@ export async function resolveGeometryForUgcBackedAlerts(
     }
     const merged = mergePolygonalParts(parts);
     if (!merged) continue;
-    if (!alertIntersectsCorridor(merged, corridor, corridorPadDeg)) continue;
+    if (!alertIntersectsCorridor(merged, corridor, corridorPadDeg, corridorExtraWestPad)) continue;
     out.set(alert.id, merged);
   }
 

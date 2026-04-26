@@ -7,7 +7,7 @@ import {
 import { haversineMeters, slicePolylineBetweenAlong } from "../nav/routeGeometry";
 import { sliceRouteAhead } from "../nav/routeRemaining";
 import type { LngLat, NavRoute } from "../nav/types";
-import { stormOverlapLineFeatures } from "../weatherAlerts/geometryOverlap";
+import { polylineBbox, stormOverlapLineFeatures } from "../weatherAlerts/geometryOverlap";
 import { FOCUSED_ROUTE_LINE_WIDTH, routePickSlotHex } from "./mapRouteStyle";
 
 const ROUTE_COND_LEGACY_LAYER = "route-condition-markers-circles";
@@ -320,6 +320,22 @@ function maxZoomForBoundsSpanMeters(spanM: number): number {
   return 11.6;
 }
 
+/** Per-point extend is O(n) — long country routes block the main thread. Use a bbox for huge lines. */
+const BOUNDS_EXTEND_VERTEX_BUDGET = 320;
+
+function extendBoundsWithPolyline(b: mapboxgl.LngLatBounds, geometry: LngLat[] | null | undefined): void {
+  if (!geometry?.length) return;
+  if (geometry.length > BOUNDS_EXTEND_VERTEX_BUDGET) {
+    const box = polylineBbox(geometry);
+    if (box) {
+      b.extend([box.west, box.south]);
+      b.extend([box.east, box.north]);
+    }
+    return;
+  }
+  for (const c of geometry) b.extend(c);
+}
+
 export type FitMapToTripOptions = {
   /** After fitBounds finishes (no extra pan — keeps start/end on the padded edges). */
   onAfterFit?: () => void;
@@ -349,15 +365,15 @@ export function fitMapToTrip(
   if (onlyId) {
     const one = routes.find((r) => r.id === onlyId);
     if (one?.geometry?.length) {
-      for (const c of one.geometry) b.extend(c as [number, number]);
+      extendBoundsWithPolyline(b, one.geometry);
     } else {
       for (const r of routes) {
-        for (const c of r.geometry) b.extend(c as [number, number]);
+        extendBoundsWithPolyline(b, r.geometry);
       }
     }
   } else {
     for (const r of routes) {
-      for (const c of r.geometry) b.extend(c as [number, number]);
+      extendBoundsWithPolyline(b, r.geometry);
     }
   }
 
@@ -393,11 +409,11 @@ export function fitMapToRemainingRoutes(
   const primary = primaryRouteId ? routes.find((r) => r.id === primaryRouteId) : null;
   if (primary?.geometry?.length) {
     const ahead = sliceRouteAhead(primary.geometry, userLngLat);
-    for (const c of ahead) b.extend(c as [number, number]);
+    extendBoundsWithPolyline(b, ahead);
   } else {
     for (const r of routes) {
       const ahead = sliceRouteAhead(r.geometry, userLngLat);
-      for (const c of ahead) b.extend(c as [number, number]);
+      extendBoundsWithPolyline(b, ahead);
     }
   }
 

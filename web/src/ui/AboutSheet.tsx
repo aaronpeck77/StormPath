@@ -112,6 +112,10 @@ export function AboutSheet({
             </dd>
           </div>
           <div className="about-sheet__meta-row">
+            <dt>Build</dt>
+            <dd title="Build timestamp from Vite define (__BUILD_ID__)">{__BUILD_ID__}</dd>
+          </div>
+          <div className="about-sheet__meta-row">
             <dt>Plan</dt>
             <dd>
               {tierLabel}
@@ -254,7 +258,8 @@ export function AboutSheet({
               <summary>What Plus adds</summary>
               <ul className="about-sheet__bullets" aria-label="Plus features">
                 <li>
-                  <strong>NWS</strong> storm polygons, route overlap, hazard details
+                  <strong>NWS</strong> — full storm map, every active warning, route overlap, and hazard details (Basic is
+                  life-safety-only on the strip)
                 </li>
                 <li>
                   <strong>Traffic</strong> overlay + bypass tools (Mapbox)
@@ -288,16 +293,21 @@ export function AboutSheet({
               </span>
             </label>
 
-            <label className={`about-sheet__setting${plus ? "" : " disabled"}`}>
+            <label className="about-sheet__setting">
               <input
                 type="checkbox"
-                checked={plus ? settings.stormEnabled : false}
-                disabled={!plus}
+                checked={settings.stormEnabled}
                 onChange={(e) => onSettings({ ...settings, stormEnabled: e.target.checked })}
               />
               <span>
-                <strong>Storm polygons</strong> (NWS) — map overlap + route highlights while navigating{" "}
-                {!plus ? <em>(Plus)</em> : null}
+                <strong>Storm advisory bar</strong> (NWS) —{" "}
+                {plus ? (
+                  <>full warning map, route overlap, and hazard details</>
+                ) : (
+                  <>
+                    life-safety warnings (tornado, flash flood, etc.), online status, and app updates on the strip
+                  </>
+                )}
               </span>
             </label>
 
@@ -436,18 +446,19 @@ export function AboutSheet({
           <section className="about-sheet__panel">
             <h3 className="about-sheet__h3">Support diagnostics</h3>
             <p className="about-sheet__p">
-              If you contact support, include diagnostics (no personal info, just app configuration).
+              Send bug reports, suggestions, feature requests, or general feedback. Include diagnostics (no personal
+              info, just app configuration) so we can help faster.
             </p>
             <label className="about-sheet__setting about-sheet__setting--stack">
               <span>
-                <strong>Your message</strong> (what happened, expected result, route/location context)
+                <strong>Your message</strong> (problem report, suggestion/request, or how StormPath is doing)
               </span>
               <textarea
                 className="about-sheet__support-note"
                 value={supportNote}
                 onChange={(e) => setSupportNote(e.target.value)}
                 rows={4}
-                placeholder="Example: Route rerouted into closed road near downtown around 6:40 PM."
+                placeholder="Example: Route rerouted into a closed road near downtown around 6:40 PM; also requesting avoid unpaved roads."
               />
             </label>
             <div className="about-sheet__upgrade-actions">
@@ -479,7 +490,7 @@ export function AboutSheet({
                   window.location.href = `mailto:${supportEmail}?subject=${subject}&body=${body}`;
                 }}
               >
-                Email support with diagnostics
+                Email feedback with diagnostics
               </button>
             </div>
             <p className="about-sheet__p">

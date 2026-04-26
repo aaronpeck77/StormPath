@@ -12,6 +12,7 @@ import {
   samplesOverlappingChunk,
 } from "./routeChunkWeather";
 import { buildStormBandCalloutBlock, etaMinutesIntoTrip, squeezeForSummary } from "./progressCalloutCopy";
+import { formatDelayMinutesForUi } from "./trafficNarrative";
 
 function limitWxLines(lines: string[], maxLines: number, maxChars: number): string {
   return lines
@@ -89,9 +90,8 @@ function isSeriousHazardKind(kind: HazardKind): boolean {
 function isSeriousAlert(a: RouteAlert): boolean {
   if (a.severity >= 78) return true;
   if (a.corridorKind === "hazard" && a.severity >= 60) return true;
-  if (a.corridorKind === "traffic" && a.severity >= 68) return true;
+  if (a.corridorKind === "traffic" && a.severity >= 80) return true;
   if (a.corridorKind === "weather" && a.severity >= 70) return true;
-  if (a.id === "traffic-delay") return true;
   return false;
 }
 
@@ -117,6 +117,11 @@ export function buildRouteChunkCalloutList(opts: {
   stripTint: string;
   /** Corridor NWS alerts — used to name storm-band rows (WHAT / impacts, not just “Moderate”). */
   stormNwsAlerts?: NormalizedWeatherAlert[];
+  /**
+   * Same line as Road impacts & traffic (advisory) — do not re-derive from slice here.
+   * When set, used on the route-start chunk instead of `Traffic delay ~N min vs free-flow`.
+   */
+  progressTrafficLine?: string | null;
 }): RouteChunkCalloutItem[] {
   const {
     geometry,
@@ -129,6 +134,7 @@ export function buildRouteChunkCalloutList(opts: {
     stormBands,
     stripTint,
     stormNwsAlerts,
+    progressTrafficLine,
   } = opts;
 
   if (totalM < 1 || geometry.length < 2) return [];
@@ -214,8 +220,14 @@ export function buildRouteChunkCalloutList(opts: {
     }
 
     const roadParts: string[] = [];
-    if (isStart && delay > 0) {
-      roadParts.push(`Traffic delay ~${Math.round(delay)} min vs free-flow`);
+    if (isStart) {
+      if (progressTrafficLine) {
+        roadParts.push(progressTrafficLine);
+      } else if (delay > 0) {
+        roadParts.push(
+          `+${formatDelayMinutesForUi(delay)} min vs free-flow${delay < 0.5 ? " (very small overall)" : ""}`
+        );
+      }
     }
     if (routineHz.length) {
       roadParts.push(routineHz.slice(0, 3).map((h) => h.summary).join("; "));
@@ -235,7 +247,9 @@ export function buildRouteChunkCalloutList(opts: {
       "Conditions this segment:",
       wxLines.join("\n"),
       fc ? `\nFull route timeline:\n${fc}` : "",
-      delay ? `Mapbox delay (whole route): ~${Math.round(delay)} min` : "",
+      delay > 0
+        ? `Mapbox delay (whole route): +${formatDelayMinutesForUi(delay)} min vs free-flow`
+        : "",
       hzFull.length ? `Road notices:\n${hzFull.map((h) => h.summary).join("\n")}` : "",
       segAlerts.length
         ? `Strip / map:\n${segAlerts.map((a) => `${a.title}\n${a.detail.trim()}`).join("\n\n")}`

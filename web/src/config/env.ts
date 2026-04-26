@@ -21,5 +21,7 @@ export function getWebEnv() {
     manageSubscriptionUrl:
       (import.meta.env.VITE_MANAGE_SUBSCRIPTION_URL as string | undefined)?.trim() ||
       "https://apps.apple.com/account/subscriptions",
+    /** Shown in the Basic advisory promo rotation (other apps you ship). */
+    siteBibleUrl: (import.meta.env.VITE_SITEBIBLE_URL as string | undefined)?.trim() ?? "",
   };
 }

@@ -1,6 +1,7 @@
 import type { RouteAlert } from "./routeAlerts";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { nwsWhatIsHappening, nwsWhatToDo } from "../weatherAlerts/nwsDriveSummary";
+import { formatDelayMinutesForUi } from "./trafficNarrative";
 
 /** Soft cap for the one-line panel summary; full text lives in the `title` tooltip. */
 const SUMMARY_MAX = 118;
@@ -110,7 +111,7 @@ export function buildCorridorCalloutBlock(
   if (a.corridorKind === "traffic") {
     const d = opts.trafficDelayMinutes;
     if (d != null && Number.isFinite(d) && d > 0) {
-      bits.push(`Delay vs free-flow: ~${Math.round(d)} min`);
+      bits.push(`Delay vs free-flow: +${formatDelayMinutesForUi(d)} min`);
     }
   }
 

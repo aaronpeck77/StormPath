@@ -1,5 +1,6 @@
 import type { LngLat, RouteTurnStep } from "../nav/types";
 import { shortenTurnInstruction } from "../nav/turnInstructionShort";
+import { fetchWithTimeout, MAPBOX_DIRECTIONS_TIMEOUT_MS } from "../utils/fetchResilient";
 
 type MbCoord = [number, number];
 
@@ -77,7 +78,16 @@ export async function fetchMapboxTrafficAlternatives(
   url.searchParams.set("overview", "full");
   url.searchParams.set("steps", "true");
 
-  const res = await fetch(url.toString());
+  let res: Response;
+  try {
+    res = await fetchWithTimeout({
+      input: url.toString(),
+      init: { method: "GET" },
+      timeoutMs: MAPBOX_DIRECTIONS_TIMEOUT_MS,
+    });
+  } catch {
+    return null;
+  }
   const data = (await res.json()) as DirectionsResponse;
 
   if (!res.ok) {
@@ -130,7 +140,16 @@ export async function fetchMapboxSurgicalBypass(
   url.searchParams.set("steps", "true");
   url.searchParams.set("exclude", "motorway");
 
-  const res = await fetch(url.toString());
+  let res: Response;
+  try {
+    res = await fetchWithTimeout({
+      input: url.toString(),
+      init: { method: "GET" },
+      timeoutMs: MAPBOX_DIRECTIONS_TIMEOUT_MS,
+    });
+  } catch {
+    return null;
+  }
   const data = (await res.json()) as DirectionsResponse;
 
   if (!res.ok) {
@@ -176,7 +195,16 @@ export async function fetchMapboxDrivingTrafficRoute(
   url.searchParams.set("overview", "full");
   url.searchParams.set("steps", "true");
 
-  const res = await fetch(url.toString());
+  let res: Response;
+  try {
+    res = await fetchWithTimeout({
+      input: url.toString(),
+      init: { method: "GET" },
+      timeoutMs: MAPBOX_DIRECTIONS_TIMEOUT_MS,
+    });
+  } catch {
+    return null;
+  }
   const data = (await res.json()) as DirectionsResponse;
 
   if (!res.ok) {

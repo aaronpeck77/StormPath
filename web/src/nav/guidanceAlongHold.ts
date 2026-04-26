@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { closestAlongRouteMeters } from "./routeGeometry";
 import type { LngLat } from "./types";
 
@@ -25,11 +25,19 @@ export function useAlongRouteMetersHeldWhenOffLine(
     holdRef.current = 0;
   }
 
+  const closest = useMemo(() => {
+    if (!geometry?.length || !pos) return null;
+    return closestAlongRouteMeters(pos, geometry);
+  }, [pos?.[0], pos?.[1], sig]);
+
   if (!geometry?.length || !pos) {
     return 0;
   }
 
-  const { alongMeters, lateralMetersApprox } = closestAlongRouteMeters(pos, geometry);
+  if (!closest) {
+    return holdRef.current;
+  }
+  const { alongMeters, lateralMetersApprox } = closest;
   if (lateralMetersApprox <= LATERAL_TRUST_M) {
     holdRef.current = alongMeters;
     return alongMeters;

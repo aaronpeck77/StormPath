@@ -4,8 +4,17 @@ import {
   cumulativeLengthToVertex,
   haversineMeters,
   polylineLengthMeters,
+  subsamplePolylineVertexBudget,
 } from "../nav/routeGeometry";
 import { shortenTurnInstruction } from "../nav/turnInstructionShort";
+import {
+  fetchWithTimeout,
+  isAbortError,
+  isFetchTimeoutError,
+  isRetryableFetchError,
+  isRetryableHttpStatus,
+  MAPBOX_DIRECTIONS_TIMEOUT_MS,
+} from "../utils/fetchResilient";
 
 type MbCoord = [number, number];
 
@@ -81,10 +90,14 @@ function mapboxDirectionsErrorFromResponse(
   return new Error(`Mapbox Directions ${status}: ${detail}`);
 }
 
+/** Mapbox can return thousands of micro-steps on cross-country legs — enough for any US drive. */
+const MAX_TURN_STEPS = 5000;
+
 function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteTurnStep[] {
   const out: RouteTurnStep[] = [];
-  for (const leg of route.legs ?? []) {
+  legLoop: for (const leg of route.legs ?? []) {
     for (const step of leg.steps ?? []) {
+      if (out.length >= MAX_TURN_STEPS) break legLoop;
       const rawInstr =
         (typeof step.maneuver?.instruction === "string" && step.maneuver.instruction.trim()) ||
         (typeof step.name === "string" && step.name.trim()) ||
@@ -119,6 +132,70 @@ function geometryNearlySame(a: LngLat[], b: LngLat[]): boolean {
   return Math.abs(la - lb) / Math.max(la, lb) < 0.011;
 }
 
+/** Cross-country `overview=full` lines are huge; keep the nav/map payload small. */
+const MAX_STORED_GEOMETRY_VERTICES = 3500;
+const GEOM_COMPARE_MAX_VERTICES = 200;
+
+function rescaledNoticeAlongMeters(
+  along: (number | undefined)[] | undefined,
+  full: LngLat[],
+  out: LngLat[]
+): (number | undefined)[] | undefined {
+  if (!along) return along;
+  const fLen = polylineLengthMeters(full);
+  const oLen = polylineLengthMeters(out);
+  if (fLen < 1e-3 || oLen < 1e-3) return along;
+  const s = oLen / fLen;
+  return along.map((m) =>
+    m != null && Number.isFinite(m) && m >= 0 ? m * s : m
+  );
+}
+
+/** O(200) per side — for mergePools only (don’t use full 10k+ vertex lines). */
+function sameRouteShapeLine(a: LngLat[], b: LngLat[]): boolean {
+  if (a.length < 2 || b.length < 2) return false;
+  return geometryNearlySame(
+    a.length > GEOM_COMPARE_MAX_VERTICES
+      ? subsamplePolylineVertexBudget(a, GEOM_COMPARE_MAX_VERTICES)
+      : a,
+    b.length > GEOM_COMPARE_MAX_VERTICES
+      ? subsamplePolylineVertexBudget(b, GEOM_COMPARE_MAX_VERTICES)
+      : b
+  );
+}
+
+/**
+ * Spaced samples along the raw API coordinate list — avoids O(N) map copy when only checking if
+ * two options are the same shape (merge A/B/C).
+ */
+function coordsToLightLine(coords: MbCoord[], maxPoints: number): LngLat[] {
+  if (coords.length < 2) return [];
+  if (coords.length <= maxPoints) {
+    return coords.map(([lng, lat]) => [lng, lat] as LngLat);
+  }
+  const last = coords.length - 1;
+  const out: LngLat[] = [];
+  for (let i = 0; i < maxPoints; i++) {
+    const t = maxPoints === 1 ? 0 : i / (maxPoints - 1);
+    const idx = Math.min(last, Math.round(t * last));
+    const c = coords[idx]!;
+    out.push([c[0]!, c[1]!]);
+  }
+  const deduped: LngLat[] = [];
+  for (const p of out) {
+    const prev = deduped[deduped.length - 1];
+    if (prev && prev[0] === p[0] && prev[1] === p[1]) continue;
+    deduped.push(p);
+  }
+  if (deduped.length >= 2) return deduped;
+  const a = coords[0]!;
+  const b = coords[last]!;
+  return [
+    [a[0]!, a[1]!] as LngLat,
+    [b[0]!, b[1]!] as LngLat,
+  ];
+}
+
 function routeFromDirectionsApi(
   r: NonNullable<DirectionsResponse["routes"]>[0],
   id: string,
@@ -132,16 +209,21 @@ function routeFromDirectionsApi(
   if (durSec == null || !Number.isFinite(durSec)) return null;
 
   const { texts: notices, alongMeters: noticeAlong } = collectRouteNoticesWithAlong(r, geometry);
+  const displayGeometry =
+    geometry.length > MAX_STORED_GEOMETRY_VERTICES
+      ? subsamplePolylineVertexBudget(geometry, MAX_STORED_GEOMETRY_VERTICES)
+      : geometry;
+  const alongForDisplay = rescaledNoticeAlongMeters(noticeAlong, geometry, displayGeometry);
 
   return {
     id,
     role,
     label,
-    geometry,
+    geometry: displayGeometry,
     baseEtaMinutes: Math.max(1, durSec / 60),
     turnSteps: parseSteps(r),
     routeNotices: notices.length ? notices : undefined,
-    routeNoticeAlongMeters: notices.length ? noticeAlong : undefined,
+    routeNoticeAlongMeters: notices.length ? alongForDisplay : undefined,
   };
 }
 
@@ -149,7 +231,8 @@ async function fetchMapboxDirections(
   accessToken: string,
   start: LngLat,
   end: LngLat,
-  opts: { alternatives: boolean; excludeMotorway: boolean }
+  opts: { alternatives: boolean; excludeMotorway: boolean; includeDetails?: boolean },
+  signal?: AbortSignal
 ): Promise<DirectionsResponse> {
   const o = `${start[0].toFixed(5)},${start[1].toFixed(5)}`;
   const d = `${end[0].toFixed(5)},${end[1].toFixed(5)}`;
@@ -159,18 +242,44 @@ async function fetchMapboxDirections(
   url.searchParams.set("access_token", accessToken);
   if (opts.alternatives) url.searchParams.set("alternatives", "true");
   url.searchParams.set("geometries", "geojson");
-  url.searchParams.set("overview", "full");
-  url.searchParams.set("steps", "true");
-  url.searchParams.set("annotations", "closure");
+  url.searchParams.set("overview", opts.includeDetails === false ? "simplified" : "full");
+  url.searchParams.set("steps", opts.includeDetails === false ? "false" : "true");
+  if (opts.includeDetails !== false) {
+    url.searchParams.set("annotations", "closure");
+  }
   if (opts.excludeMotorway) url.searchParams.set("exclude", "motorway");
 
-  const res = await fetch(url.toString());
-  const data = (await res.json()) as DirectionsResponse;
-
-  if (!res.ok || (data.code && data.code !== "Ok")) {
-    throw mapboxDirectionsErrorFromResponse(res, data);
+  let lastHttp: { res: Response; data: DirectionsResponse } | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    try {
+      const res = await fetchWithTimeout({
+        input: url.toString(),
+        init: { method: "GET" },
+        timeoutMs: MAPBOX_DIRECTIONS_TIMEOUT_MS,
+        externalSignal: signal,
+      });
+      const data = (await res.json()) as DirectionsResponse;
+      if (!res.ok || (data.code && data.code !== "Ok")) {
+        lastHttp = { res, data };
+        if (attempt === 0 && isRetryableHttpStatus(res.status)) {
+          await new Promise<void>((r) => setTimeout(r, 550));
+          continue;
+        }
+        throw mapboxDirectionsErrorFromResponse(res, data);
+      }
+      return data;
+    } catch (e) {
+      if (isAbortError(e) || isFetchTimeoutError(e)) throw e;
+      if (attempt === 0 && isRetryableFetchError(e)) {
+        await new Promise<void>((r) => setTimeout(r, 550));
+        continue;
+      }
+      throw e;
+    }
   }
-  return data;
+  if (lastHttp) throw mapboxDirectionsErrorFromResponse(lastHttp.res, lastHttp.data);
+  throw new Error("Mapbox Directions: request failed");
 }
 
 function sortRoutesByDurationAsc(
@@ -327,25 +436,84 @@ function collectRouteNoticesWithAlong(
  * For short in-town trips, we intentionally return only A/B (speed-focused) to keep choices quick.
  *
  * Latency: long trips can take several seconds per Directions call. We **always** complete the
- * primary `alternatives=true` request first and build A/B/C from that pool when possible. The
- * exclude-motorway request runs only if we still need another distinct leg (usually a single-route
- * response), so typical multi-alternative responses avoid a second round-trip entirely.
+ * primary `alternatives=true` request first and build A/B/C from that pool when possible. When a
+ * second `exclude=motorway` call is needed, Plus builds start it **in parallel** with the primary
+ * (then abort it if the primary already yielded enough alternates), so worst-case latency is
+ * ~max(primary, secondary) instead of primary+secondary.
  */
 export async function collectMapboxRouteVariants(
   accessToken: string,
   start: LngLat,
-  end: LngLat
+  end: LngLat,
+  opts?: {
+    signal?: AbortSignal;
+    allowLocalTripThirdRoute?: boolean;
+    preferThreeRoutes?: boolean;
+    includeDetails?: boolean;
+  }
 ): Promise<NavRoute[]> {
+  const signal = opts?.signal;
+  const allowLocalTripThirdRoute = Boolean(opts?.allowLocalTripThirdRoute);
+  const preferThreeRoutes = Boolean(opts?.preferThreeRoutes);
+  const includeDetails = opts?.includeDetails !== false;
   const MAX_NO_TOWN_DURATION_FACTOR = 1.6;
   const LOCAL_TRIP_MAX_DISTANCE_M = 18_000;
   const LOCAL_TRIP_MAX_DURATION_S = 22 * 60;
 
+  type MbRoutes = NonNullable<DirectionsResponse["routes"]>;
+  const abortSignalAny = (
+    AbortSignal as unknown as { any?: (signals: AbortSignal[]) => AbortSignal }
+  ).any;
+  const canSpecSecondary =
+    preferThreeRoutes &&
+    allowLocalTripThirdRoute &&
+    typeof abortSignalAny === "function";
+
+  let secondaryAbort: AbortController | null = null;
+  let secondaryP: Promise<DirectionsResponse> | null = null;
+  if (canSpecSecondary) {
+    secondaryAbort = new AbortController();
+    const secSig = signal ? abortSignalAny([signal, secondaryAbort.signal]) : secondaryAbort.signal;
+    secondaryP = fetchMapboxDirections(
+      accessToken,
+      start,
+      end,
+      { alternatives: true, excludeMotorway: true, includeDetails },
+      secSig
+    ).catch((e) => {
+      if (isAbortError(e)) return { routes: [] as MbRoutes };
+      return { routes: [] as MbRoutes };
+    });
+  }
+
   const primaryData = await fetchMapboxDirections(accessToken, start, end, {
     alternatives: true,
     excludeMotorway: false,
-  });
+    includeDetails,
+  }, signal);
 
   const primarySorted = sortRoutesByDurationAsc(primaryData.routes ?? []);
+
+  const targetPrimaryCount = preferThreeRoutes ? 3 : 2;
+  const primaryOnly = primarySorted
+    .slice(0, targetPrimaryCount)
+    .map((r, i) =>
+      routeFromDirectionsApi(
+        r,
+        `r-${String.fromCharCode(97 + i)}`,
+        i === 0 ? "fastest" : i === 1 ? "hazardSmart" : "balanced",
+        i === 0 ? "Main" : i === 1 ? "Alternate" : "Third route"
+      )
+    )
+    .filter((r): r is NavRoute => r != null);
+  /*
+   * First paint wins: if Mapbox already gave enough alternatives in the primary call, return them.
+   * Do not block route view on no-motorway / no-town refinement; traffic/weather/enrichment happens later.
+   */
+  if (primaryOnly.length >= targetPrimaryCount) {
+    secondaryAbort?.abort();
+    return primaryOnly;
+  }
 
   const mergePools = (
     noMwSorted: NonNullable<DirectionsResponse["routes"]>
@@ -361,22 +529,22 @@ export async function collectMapboxRouteVariants(
 
     const bRaw =
       noMwSorted.find((r) => {
-        const coords = r.geometry?.coordinates;
-        if (!coords?.length) return false;
-        const g = coords.map(([lng, lat]) => [lng, lat] as LngLat);
-        return !geometryNearlySame(g, navA.geometry);
+        const c = r.geometry?.coordinates;
+        if (!c?.length) return false;
+        const gLight = coordsToLightLine(c, GEOM_COMPARE_MAX_VERTICES);
+        return !sameRouteShapeLine(gLight, navA.geometry);
       }) ?? primarySorted[1];
 
     if (bRaw) {
       const navB = routeFromDirectionsApi(bRaw, "r-b", "hazardSmart", "No interstate");
-      if (navB && !geometryNearlySame(navB.geometry, navA.geometry)) {
+      if (navB && !sameRouteShapeLine(navB.geometry, navA.geometry)) {
         out.push(navB);
       }
     }
 
     const mergedRaw = [...primarySorted, ...noMwSorted];
-    const usedGeoms: LngLat[][] = [navA.geometry];
-    if (out[1]) usedGeoms.push(out[1].geometry);
+    const usedForDistinct: LngLat[][] = [navA.geometry];
+    if (out[1]) usedForDistinct.push(out[1].geometry);
 
     const noTownMaxDur = (aRaw.duration ?? 0) * MAX_NO_TOWN_DURATION_FACTOR;
     const routeStepCount = (r: NonNullable<DirectionsResponse["routes"]>[0]): number =>
@@ -395,16 +563,16 @@ export async function collectMapboxRouteVariants(
     const cRaw = [...mergedRaw]
       .filter((r) => {
         if (typeof r.duration === "number" && noTownMaxDur > 0 && r.duration > noTownMaxDur) return false;
-        const coords = r.geometry?.coordinates;
-        if (!coords?.length) return false;
-        const g = coords.map(([lng, lat]) => [lng, lat] as LngLat);
-        return !usedGeoms.some((ug) => geometryNearlySame(ug, g));
+        const c = r.geometry?.coordinates;
+        if (!c?.length) return false;
+        const gLight = coordsToLightLine(c, GEOM_COMPARE_MAX_VERTICES);
+        return !usedForDistinct.some((ug) => sameRouteShapeLine(ug, gLight));
       })
       .sort((x, y) => noTownScore(x) - noTownScore(y))[0];
 
     if (cRaw) {
       const navC = routeFromDirectionsApi(cRaw, "r-c", "balanced", "No town");
-      if (navC && !out.some((existing) => geometryNearlySame(existing.geometry, navC.geometry))) {
+      if (navC && !out.some((existing) => sameRouteShapeLine(existing.geometry, navC.geometry))) {
         out.push(navC);
       }
     }
@@ -417,19 +585,29 @@ export async function collectMapboxRouteVariants(
   const straightLineM = haversineMeters(start, end);
   const aDurationS = primarySorted[0]?.duration ?? Number.POSITIVE_INFINITY;
   const localTrip = straightLineM <= LOCAL_TRIP_MAX_DISTANCE_M || aDurationS <= LOCAL_TRIP_MAX_DURATION_S;
-  if (localTrip) return out.slice(0, Math.min(2, out.length));
-  if (out.length >= 2) {
+  if (localTrip && !allowLocalTripThirdRoute) {
+    secondaryAbort?.abort();
+    return out.slice(0, Math.min(2, out.length));
+  }
+  if (out.length >= 2 && (!preferThreeRoutes || out.length >= 3)) {
+    secondaryAbort?.abort();
     return out;
   }
 
-  /* Rare: only one drivable path in the first response — fetch no-motorway variants to split B/C. */
-  let noMwSorted: NonNullable<DirectionsResponse["routes"]> = [];
+  /* Rare: only one drivable path in the first response — merge no-motorway variants to split B/C. */
+  let noMwSorted: MbRoutes = [];
   try {
-    const noMwData = await fetchMapboxDirections(accessToken, start, end, {
-      alternatives: true,
-      excludeMotorway: true,
-    });
-    noMwSorted = sortRoutesByDurationAsc(noMwData.routes ?? []);
+    if (secondaryP) {
+      const noMwData = await secondaryP;
+      noMwSorted = sortRoutesByDurationAsc(noMwData.routes ?? []);
+    } else {
+      const noMwData = await fetchMapboxDirections(accessToken, start, end, {
+        alternatives: true,
+        excludeMotorway: true,
+        includeDetails,
+      }, signal);
+      noMwSorted = sortRoutesByDurationAsc(noMwData.routes ?? []);
+    }
   } catch {
     /* keep empty — return whatever merge produced */
   }
@@ -455,9 +633,15 @@ export async function buildTripFromMapbox(
   labels: { origin: string; destination: string } = {
     origin: "Start",
     destination: "Destination",
+  },
+  opts?: {
+    signal?: AbortSignal;
+    allowLocalTripThirdRoute?: boolean;
+    preferThreeRoutes?: boolean;
+    includeDetails?: boolean;
   }
 ): Promise<BuildTripFromMapboxResult> {
-  const routes = await collectMapboxRouteVariants(accessToken, start, end);
+  const routes = await collectMapboxRouteVariants(accessToken, start, end, opts);
 
   if (routes.length === 0) {
     throw new Error(

@@ -1048,25 +1048,6 @@
   touch-action: none;
 }
 
-/* Sunrise / sunset warm color wash over the map.
-   Sibling of .drive-map inside .map-canvas (position:absolute, inset:0). */
-.map-phase-tint {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 1;
-  background: transparent;
-  transition: background-color 90s linear;
-}
-
-.map-phase-tint--sunrise {
-  background: rgba(255, 148, 48, 0.10);
-}
-
-.map-phase-tint--sunset {
-  background: rgba(255, 88, 20, 0.13);
-}
-
 /* Mapbox logo + ©: default corners, bottom safe inset (same on web and phone — sits in strip under floating chrome) */
 .map-stage.map-bleed .mapboxgl-ctrl-bottom-left {
   margin-bottom: 0 !important;
@@ -2611,6 +2592,22 @@
   color: #e2e8f0;
 }
 
+.storm-advisory-bar__preview-text--scroll {
+  text-overflow: clip;
+}
+
+.storm-advisory-bar__preview-clip {
+  display: block;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.storm-advisory-bar__preview-clip-inner {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+}
+
 .storm-advisory-bar__preview-count {
   flex-shrink: 0;
   font-size: 0.52rem;
@@ -2823,6 +2820,64 @@
 
 .storm-advisory-bar__toggle input {
   accent-color: #f59e0b;
+}
+
+.storm-advisory-bar__basic-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 12px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.storm-advisory-bar__conn {
+  flex: 0 0 auto;
+  font-size: 0.52rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.storm-advisory-bar__conn--on {
+  color: #bbf7d0;
+  background: rgba(22, 101, 52, 0.45);
+  border: 1px solid rgba(74, 222, 128, 0.45);
+}
+
+.storm-advisory-bar__conn--off {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.4);
+  border: 1px solid rgba(248, 113, 113, 0.45);
+}
+
+.storm-advisory-bar__promo {
+  flex: 1 1 200px;
+  min-width: 0;
+  font-size: 0.66rem;
+  line-height: 1.35;
+  color: #e2e8f0;
+}
+
+.storm-advisory-bar__promo-link {
+  color: #7dd3fc;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.storm-advisory-bar__promo-text {
+  color: #cbd5e1;
+}
+
+.storm-advisory-bar__basic-upsell {
+  margin: 0 0 8px;
+  font-size: 0.62rem;
+  line-height: 1.35;
 }
 
 .storm-advisory-bar__weather-block {
@@ -4555,40 +4610,6 @@
   background-clip: text;
 }
 
-.turn-strip-idle__tagline {
-  position: relative;
-  overflow: hidden;
-  margin: 0;
-  font-size: clamp(0.68rem, 1.9vw, 0.82rem);
-  font-weight: 650;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #64748b;
-}
-
-/* Quick one-shot light reflection across tagline (paired with bolt gleam in SVG) */
-.turn-strip-idle__tagline::after {
-  content: "";
-  position: absolute;
-  top: -1px;
-  bottom: -1px;
-  left: 0;
-  width: min(42%, 9rem);
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.05) 26%,
-    rgba(255, 255, 255, 0.92) 49%,
-    rgba(186, 230, 253, 0.65) 58%,
-    transparent 100%
-  );
-  transform: translateX(-130%);
-  pointer-events: none;
-  mix-blend-mode: screen;
-  opacity: 0;
-  animation: storm-idle-intro-tagline-gleam 0.52s cubic-bezier(0.25, 0.92, 0.32, 1) 1.28s forwards;
-}
-
 @supports (background-clip: text) or (-webkit-background-clip: text) {
   .turn-strip-idle__storm,
   .turn-strip-idle__path {
@@ -4747,20 +4768,6 @@
   }
 }
 
-@keyframes storm-idle-intro-tagline-gleam {
-  0% {
-    transform: translateX(-130%);
-    opacity: 0;
-  }
-  6% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateX(300%);
-    opacity: 0;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .storm-idle-art,
   .storm-idle-art__bolt,
@@ -4772,11 +4779,6 @@
   }
 
   .storm-idle-art__bolt-gleam-rect {
-    animation: none;
-    opacity: 0;
-  }
-
-  .turn-strip-idle__tagline::after {
     animation: none;
     opacity: 0;
   }

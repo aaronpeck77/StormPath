@@ -6,7 +6,8 @@
 
 import { getWebEnv } from "../config/env";
 import type { LngLat } from "../nav/types";
-import { expandBbox, polylineBbox, bboxIntersects } from "./geometryOverlap";
+import { pointAlongPolyline } from "../ui/geometryAlong";
+import { polylineBbox, bboxIntersects } from "./geometryOverlap";
 import { extractPolygonalGeometry } from "./nwsGeometry";
 import type { NormalizedWeatherAlert, WeatherAlertFetchResult, WeatherAlertProviderId } from "./types";
 import { NWS_TEST_ALERT, NWS_TEST_ALERT_ENABLED } from "./nwsTestAlert";
@@ -87,24 +88,37 @@ function featureBBox(g: GeoJSON.Polygon | GeoJSON.MultiPolygon): {
 function alertIntersectsCorridor(
   a: NormalizedWeatherAlert,
   corridor: { west: number; south: number; east: number; north: number },
-  pad: number
+  pad: number,
+  extraWestPad: number = 0
 ): boolean {
   if (!a.geometry) {
     return false;
   }
   const ab = featureBBox(a.geometry);
   if (!ab) return false;
-  const [w, s, e, n] = expandBbox(corridor.west, corridor.south, corridor.east, corridor.north, pad);
-  return bboxIntersects(ab, { west: w, south: s, east: e, north: n });
+  const box = {
+    west: corridor.west - pad - extraWestPad,
+    south: corridor.south - pad,
+    east: corridor.east + pad,
+    north: corridor.north + pad,
+  };
+  return bboxIntersects(ab, box);
 }
 
-const NWS_FETCH_TIMEOUT_MS = 15_000;
+const NWS_FETCH_TIMEOUT_MS = 22_000;
 const NWS_RETRY_DELAY_MS = 3_000;
-const NWS_MAX_RETRIES = 2;
+const NWS_MAX_RETRIES = 3;
+
+/** Avoid hammering NWS with 8–12 parallel `?point=` calls (rate limits + flaky mobile). */
+const NWS_POINT_FETCH_CONCURRENCY = 2;
+const NWS_POINT_INTER_BATCH_MS = 120;
 
 const NWS_PAD_DEG = 0.9;
+/** Wider on the upwind (west) side: synoptic weather and storm motion often approach from the west. */
+const NWS_CORRIDOR_EXTRA_WEST_DEG = 0.5;
+const NWS_UPWIND_SAMPLE_LNG_OFFSET_DEG = 0.45;
 
-/** North America bounds (matches mapRegion) — browse mode keeps polygons in this view. */
+/** North America bounds (matches mapRegion) — used only for NWS `point=` range checks and legacy browse. */
 const NA_BROWSE_CORRIDOR = { west: -175, south: 15, east: -48, north: 72 };
 
 /** Along active routes, use several small `?point=` requests instead of one national dump. */
@@ -136,6 +150,13 @@ async function fetchWithRetry(
       const res = await fetch(url, { headers, signal: ctrl.signal });
       clearTimeout(timer);
       if (res.ok) return res;
+      if (res.status === 429 && attempt < retries) {
+        const ra = res.headers.get("Retry-After");
+        const sec = ra ? parseInt(ra, 10) : NaN;
+        const fromHeader = Number.isFinite(sec) && sec > 0 ? sec * 1000 : NWS_RETRY_DELAY_MS * (attempt + 1);
+        await new Promise((r) => setTimeout(r, Math.min(fromHeader, 30_000)));
+        continue;
+      }
       if (res.status >= 500 && attempt < retries) {
         lastError = new Error(`NWS ${res.status}`);
         await new Promise((r) => setTimeout(r, NWS_RETRY_DELAY_MS * (attempt + 1)));
@@ -158,7 +179,10 @@ async function fetchWithRetry(
       if (e instanceof DOMException && e.name === "AbortError") {
         lastError = new Error("NWS request timed out — the weather service may be slow.");
       } else if (e instanceof TypeError) {
-        lastError = new Error("Could not reach NWS weather service. Check your connection.");
+        // Failed to fetch — DNS, TLS, dropped cell, CORS, or ad/vpn blocking; not always "user offline".
+        lastError = new Error(
+          "Could not reach the NWS service. Try Wi‑Fi, wait a moment, or try again. Heavy traffic to the public weather API is sometimes throttled."
+        );
       } else {
         lastError = e;
       }
@@ -169,7 +193,9 @@ async function fetchWithRetry(
     }
   }
   if (lastError instanceof Error) throw lastError;
-  throw new Error("Could not reach NWS weather service. Check your connection.");
+  throw new Error(
+    "Could not reach the NWS service. Try Wi‑Fi, wait a moment, or try again. Heavy traffic to the public weather API is sometimes throttled."
+  );
 }
 
 function sampleLngLatAlongRoute(route: LngLat[], maxPoints: number): LngLat[] {
@@ -188,6 +214,28 @@ function sampleLngLatAlongRoute(route: LngLat[], maxPoints: number): LngLat[] {
     deduped.push(p);
   }
   return deduped.length ? deduped : out;
+}
+
+function mergeDedupePointSamples(sets: LngLat[][]): LngLat[] {
+  const out: LngLat[] = [];
+  for (const set of sets) {
+    for (const p of set) {
+      if (out.some((q) => Math.hypot(p[0]! - q[0]!, p[1]! - q[1]!) < 0.0004)) continue;
+      out.push(p);
+    }
+  }
+  return out;
+}
+
+function upwindProbeSamplesOffRoute(route: LngLat[]): LngLat[] {
+  if (route.length < 2) return [];
+  const at = [0.22, 0.5, 0.78] as const;
+  const out: LngLat[] = [];
+  for (const t of at) {
+    const p = pointAlongPolyline(route, t);
+    if (p) out.push([p[0]! - NWS_UPWIND_SAMPLE_LNG_OFFSET_DEG, p[1]!] as LngLat);
+  }
+  return out;
 }
 
 /** Active alerts affecting a single lat/lng — small payload vs. national `alerts/active`. */
@@ -261,6 +309,11 @@ export type NwsBrowseBounds = {
 
 export type BuildNwsResultOptions = {
   maxUgcZoneAlerts?: number;
+  /**
+   * Extra padding (degrees) on the **west** side of the corridor box only, on top of `padDeg`.
+   * Improves overlap with upwind systems without widening the full NA browse.
+   */
+  corridorExtraWestPadDeg?: number;
   /** Fires after inline NWS polygons are known, before zone-URL geometry resolution (UGC tail). */
   onBeforeUgc?: (partial: WeatherAlertFetchResult) => void;
 };
@@ -328,12 +381,19 @@ async function mergeNwsPointSamples(
   if (validSamples.length === 0) return [];
 
   // Do not let one bad point (400, transient NWS hiccup, etc.) blank the entire route’s alert set.
-  const settled = await Promise.allSettled(
-    validSamples.map(([lng, lat]) => fetchNwsFeaturesAtPoint(lat, lng, userAgent))
-  );
+  // Throttle: many parallel point requests can trigger 429s or "Failed to fetch" on mobile.
   const pointResults: NwsFeature[][] = [];
-  for (const s of settled) {
-    if (s.status === "fulfilled") pointResults.push(s.value);
+  for (let i = 0; i < validSamples.length; i += NWS_POINT_FETCH_CONCURRENCY) {
+    const batch = validSamples.slice(i, i + NWS_POINT_FETCH_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      batch.map(([lng, lat]) => fetchNwsFeaturesAtPoint(lat, lng, userAgent))
+    );
+    for (const s of settled) {
+      if (s.status === "fulfilled") pointResults.push(s.value);
+    }
+    if (i + NWS_POINT_FETCH_CONCURRENCY < validSamples.length) {
+      await new Promise((r) => setTimeout(r, NWS_POINT_INTER_BATCH_MS));
+    }
   }
   const merged = new Map<string, NwsFeature>();
   let idx = 0;
@@ -364,6 +424,7 @@ async function buildResultFromRawFeatures(
   options?: BuildNwsResultOptions
 ): Promise<WeatherAlertFetchResult> {
   const maxUgc = options?.maxUgcZoneAlerts ?? MAX_UGC_ZONE_RESOLVE_ALERTS;
+  const extraWest = options?.corridorExtraWestPadDeg ?? 0;
   const normalized: NormalizedWeatherAlert[] = [];
   const mapFeatures: GeoJSON.Feature[] = [];
   const ugcCandidates: { raw: NwsFeature; alert: NormalizedWeatherAlert }[] = [];
@@ -372,7 +433,7 @@ async function buildResultFromRawFeatures(
     const a = normalizeFeature(f, i);
     if (!a) return;
     if (a.geometry) {
-      if (!alertIntersectsCorridor(a, corridor, padDeg)) return;
+      if (!alertIntersectsCorridor(a, corridor, padDeg, extraWest)) return;
       normalized.push(a);
       mapFeatures.push({
         type: "Feature",
@@ -405,7 +466,8 @@ async function buildResultFromRawFeatures(
     padDeg,
     nwsBase,
     userAgent,
-    maxUgc
+    maxUgc,
+    extraWest
   );
 
   for (const { alert } of ugcCandidates) {
@@ -430,7 +492,7 @@ async function buildResultFromRawFeatures(
   if (
     NWS_TEST_ALERT_ENABLED &&
     NWS_TEST_ALERT.geometry &&
-    alertIntersectsCorridor(NWS_TEST_ALERT, corridor, padDeg) &&
+    alertIntersectsCorridor(NWS_TEST_ALERT, corridor, padDeg, extraWest) &&
     !normalized.some((a) => a.id === NWS_TEST_ALERT.id)
   ) {
     normalized.push(NWS_TEST_ALERT);
@@ -468,12 +530,18 @@ export async function fetchNwsAlertsForRouteCorridor(
     return { alerts: [], mapGeoJson: { type: "FeatureCollection", features: [] } };
   }
 
-  const samples = sampleLngLatAlongRoute(route, ROUTE_POINT_SAMPLE_COUNT);
+  const along = sampleLngLatAlongRoute(route, ROUTE_POINT_SAMPLE_COUNT);
+  const upwind = upwindProbeSamplesOffRoute(route);
+  const samples = mergeDedupePointSamples([upwind, along]);
   const features = await mergeNwsPointSamples(samples, userAgent);
   // Fallback: if point sampling yields nothing (or NWS rejects some points), fetch the active feed and
   // filter down to just corridor-intersecting alerts. Heavier, but avoids “no polygons” on known storm routes.
   const effective = features.length ? features : await fetchNwsActiveAlertsFeatures(userAgent);
-  return buildResultFromRawFeatures(effective, corridor, userAgent, NWS_PAD_DEG, buildOptions);
+  const routeOpts: BuildNwsResultOptions = {
+    corridorExtraWestPadDeg: NWS_CORRIDOR_EXTRA_WEST_DEG,
+    ...buildOptions,
+  };
+  return buildResultFromRawFeatures(effective, corridor, userAgent, NWS_PAD_DEG, routeOpts);
 }
 
 /**

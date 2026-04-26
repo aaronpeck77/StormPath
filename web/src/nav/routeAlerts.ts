@@ -8,14 +8,8 @@ import type { ScoredRoute } from "../scoring/scoreRoutes";
 import type { MapboxTrafficLeg } from "../services/mapboxDirectionsTraffic";
 import type { RouteSituationSlice } from "../situation/types";
 import { pointAlongPolyline } from "../ui/geometryAlong";
-import { formatDelayVersusBaseline } from "../ui/formatEta";
-import { trafficHintForScoredRoute } from "../ui/TopGuidanceRouteInfo";
-import {
-  FALLBACK_LNGLAT,
-  isSignificantTrafficDelay,
-  MAX_STRIP_ALERTS,
-  RADAR_HEAVY_THRESHOLD,
-} from "./constants";
+import { FALLBACK_LNGLAT, MAX_STRIP_ALERTS, RADAR_HEAVY_THRESHOLD } from "./constants";
+import { unifiedTrafficNarrative } from "./trafficNarrative";
 
 /** Drives map + progress-strip segment color (distinct from destination dots). */
 export type RouteAlertCorridorKind = "weather" | "hazard" | "notice" | "traffic";
@@ -79,8 +73,8 @@ export function buildRouteAlerts(
   userLngLat: LngLat | null,
   slice: RouteSituationSlice | undefined,
   trafficForRoute: ScoredRoute | undefined,
-  mapboxForTraffic: boolean,
-  trafficFetchDone: boolean,
+  _mapboxForTraffic: boolean,
+  _trafficFetchDone: boolean,
   opts?: BuildRouteAlertsOpts
 ): RouteAlert[] {
   const list: RouteAlert[] = [];
@@ -91,44 +85,18 @@ export function buildRouteAlerts(
   const extraWx = opts?.corridorWeatherDetail?.trim() ?? "";
   const mergedWx = [extraWx, forecast].filter(Boolean).join(" · ").replace(/\s+/g, " ").trim();
 
-  const t = trafficForRoute
-    ? trafficHintForScoredRoute(trafficForRoute, mapboxForTraffic, trafficFetchDone)
-    : { text: "—", live: false };
-
-  /* Traffic: serious absolute delay, OR a meaningful fraction of remaining trip,
-     OR a near-stop / closure stretch. The relative-fraction rule lets short
-     trips (e.g. a 25 min commute with +6 min) still surface delays that the
-     absolute floor would miss. */
   const trafficLeg = opts?.trafficLeg ?? null;
-  const hasStoppedTraffic = trafficLeg?.nearStopFraction != null;
-  const hasClosure = trafficLeg?.hasClosure === true;
   const remainingMin =
-    trafficLeg?.mapboxDurationMinutes ??
-    trafficForRoute?.effectiveEtaMinutes ??
-    null;
-  const significantDelay = isSignificantTrafficDelay(delay, remainingMin);
-  if (significantDelay || hasStoppedTraffic || hasClosure) {
+    trafficLeg?.mapboxDurationMinutes ?? trafficForRoute?.effectiveEtaMinutes ?? null;
+  const hasLiveTraffic = Boolean(slice?.hasLiveTrafficEstimate && trafficLeg);
+  const trafficStory = unifiedTrafficNarrative(delay, trafficLeg, hasLiveTraffic, remainingMin);
+  if (trafficStory.shouldAddCorridorAlert) {
     const chordT = trafficLeg?.nearStopFraction ?? 0.38;
-    const baseDelaySeverity = Math.min(82, 52 + delay * 2.2);
-    const sev = hasClosure || hasStoppedTraffic ? Math.max(86, baseDelaySeverity) : baseDelaySeverity;
-    const delayVs = formatDelayVersusBaseline(delay);
-    const title = hasClosure
-      ? "Stopped traffic / closure on route"
-      : hasStoppedTraffic
-        ? "Stopped traffic on route"
-        : delayVs != null && delayVs !== ""
-          ? `${delayVs} traffic delay on route`
-          : `Traffic delay (${Math.round(delay * 10) / 10} min slower)`;
-    const detail = hasClosure
-      ? "Live traffic data indicates a closure or blocked segment ahead."
-      : hasStoppedTraffic
-        ? "Live traffic samples show near-stopped flow in this corridor."
-        : t.text;
     list.push({
       id: "traffic-delay",
-      severity: sev,
-      title,
-      detail,
+      severity: trafficStory.mapSeverity,
+      title: trafficStory.mapTitle,
+      detail: trafficStory.mapDetail,
       lngLat: fallbackPoint(geometry, userLngLat, chordT),
       zoom: 12.4,
       alongMeters: alongM(geometry, chordT),

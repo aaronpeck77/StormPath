@@ -1,4 +1,5 @@
 import type { LngLat } from "../nav/types";
+import { fetchWithTimeout, OPENWEATHER_TIMEOUT_MS } from "../utils/fetchResilient";
 
 /** Free-tier friendly: current weather at a point (lat, lon). */
 export async function fetchCurrentWeatherHeadline(
@@ -12,7 +13,11 @@ export async function fetchCurrentWeatherHeadline(
   url.searchParams.set("appid", apiKey);
   url.searchParams.set("units", "imperial");
 
-  const res = await fetch(url.toString());
+  const res = await fetchWithTimeout({
+    input: url.toString(),
+    init: { method: "GET" },
+    timeoutMs: OPENWEATHER_TIMEOUT_MS,
+  });
   if (!res.ok) {
     const t = await res.text();
     throw new Error(`OpenWeather ${res.status}: ${t.slice(0, 160)}`);
@@ -44,7 +49,11 @@ export async function fetchForecastWindowHeadline(
   url.searchParams.set("units", "imperial");
   url.searchParams.set("cnt", "8");
 
-  const res = await fetch(url.toString());
+  const res = await fetchWithTimeout({
+    input: url.toString(),
+    init: { method: "GET" },
+    timeoutMs: OPENWEATHER_TIMEOUT_MS,
+  });
   if (!res.ok) {
     const t = await res.text();
     throw new Error(`OpenWeather forecast ${res.status}: ${t.slice(0, 160)}`);
@@ -104,36 +113,52 @@ export async function weatherForecastAlongRoute(
   });
 
   const uniqueIdxs = [...uniqueIdxMap.keys()];
-  const rawResults = await Promise.all(
-    uniqueIdxs.map(async (gIdx) => {
-      const [lng, lat] = geometry[gIdx]!;
-      try {
-        const url = new URL("https://api.openweathermap.org/data/2.5/forecast");
-        url.searchParams.set("lat", String(lat));
-        url.searchParams.set("lon", String(lng));
-        url.searchParams.set("appid", apiKey);
-        url.searchParams.set("units", "imperial");
-        url.searchParams.set("cnt", "8");
+  /* One request at a time: on weak cell, parallel bursts often fail or stall. */
+  const rawResults: {
+    gIdx: number;
+    forecast: {
+      dt?: number;
+      main?: { temp?: number };
+      weather?: { description?: string }[];
+      pop?: number;
+      clouds?: { all?: number };
+      rain?: { "3h"?: number };
+      snow?: { "3h"?: number };
+    }[];
+    error: boolean;
+  }[] = [];
+  for (const gIdx of uniqueIdxs) {
+    const [lng, lat] = geometry[gIdx]!;
+    try {
+      const url = new URL("https://api.openweathermap.org/data/2.5/forecast");
+      url.searchParams.set("lat", String(lat));
+      url.searchParams.set("lon", String(lng));
+      url.searchParams.set("appid", apiKey);
+      url.searchParams.set("units", "imperial");
+      url.searchParams.set("cnt", "8");
 
-        const res = await fetch(url.toString());
-        if (!res.ok) throw new Error(`${res.status}`);
-        const data = (await res.json()) as {
-          list?: {
-            dt?: number;
-            main?: { temp?: number };
-            weather?: { description?: string }[];
-            pop?: number;
-            clouds?: { all?: number };
-            rain?: { "3h"?: number };
-            snow?: { "3h"?: number };
-          }[];
-        };
-        return { gIdx, forecast: data.list ?? [], error: false };
-      } catch {
-        return { gIdx, forecast: [] as typeof Array.prototype, error: true };
-      }
-    })
-  );
+      const res = await fetchWithTimeout({
+        input: url.toString(),
+        init: { method: "GET" },
+        timeoutMs: OPENWEATHER_TIMEOUT_MS,
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = (await res.json()) as {
+        list?: {
+          dt?: number;
+          main?: { temp?: number };
+          weather?: { description?: string }[];
+          pop?: number;
+          clouds?: { all?: number };
+          rain?: { "3h"?: number };
+          snow?: { "3h"?: number };
+        }[];
+      };
+      rawResults.push({ gIdx, forecast: data.list ?? [], error: false });
+    } catch {
+      rawResults.push({ gIdx, forecast: [], error: true });
+    }
+  }
 
   const resultMap = new Map(rawResults.map((r) => [r.gIdx, r]));
 
@@ -230,14 +255,19 @@ export async function weatherHintSamplesAlongPolyline(
   const uniqueIdxs = [...new Set(idxs)];
 
   const byIdx = new Map<number, { headline: string; precipHint: number }>();
-  const results = await Promise.all(
-    uniqueIdxs.map(async (i) => {
-      const [lng, lat] = geometry[i]!;
+  const results: { headline: string; precipHint: number }[] = [];
+  for (const i of uniqueIdxs) {
+    const [lng, lat] = geometry[i]!;
+    try {
       const r = await fetchCurrentWeatherHeadline(apiKey, lat, lng);
       byIdx.set(i, r);
-      return r;
-    })
-  );
+      results.push(r);
+    } catch {
+      const fallback = { headline: "conditions", precipHint: 0 };
+      byIdx.set(i, fallback);
+      results.push(fallback);
+    }
+  }
 
   const precipHint = results.reduce((m, r) => Math.max(m, r.precipHint), 0);
   const headline = results.map((r) => r.headline).join(" · ");

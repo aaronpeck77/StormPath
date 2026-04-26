@@ -49,7 +49,6 @@ export function TopGuidanceBar({
                 <span className="turn-strip-idle__storm">Storm</span>
                 <span className="turn-strip-idle__path">Path</span>
               </div>
-              <p className="turn-strip-idle__tagline">Weather-aware navigation</p>
             </div>
           </div>
           {!isPlus && (
