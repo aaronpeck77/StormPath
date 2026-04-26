@@ -4,8 +4,9 @@
  * Tier inventory: `docs/PAY_TIERS.md`
  *
  * **Development (`vite` / `import.meta.env.DEV`):** defaults to **Plus** so everything is on.
- * To test **Basic** in dev: `localStorage.setItem("stormpath-pay-tier-override", "free")` then refresh (or set
- * `VITE_PAY_TIER` / Netlify env for production-shaped builds).
+ * To test **Basic** in dev: About → **Developer — test pay tier** → Basic, or set
+ * `localStorage.setItem(PAY_TIER_OVERRIDE_LS_KEY, "free")` (or set `VITE_PAY_TIER` / Netlify for production-shaped
+ * builds).
  *
  * **Production build (Netlify / phone):** defaults to **Basic** unless `VITE_PAY_TIER=plus` in the build env
  * (and in Netlify **Site configuration → Environment variables**) or `localStorage stormpath-pay-tier-override` = `plus`.
@@ -15,11 +16,12 @@
  */
 export type PayTier = "free" | "plus";
 
-const LS_OVERRIDE = "stormpath-pay-tier-override";
+/** `localStorage` key — dev About toggle and manual QA use the same mechanism as production. */
+export const PAY_TIER_OVERRIDE_LS_KEY = "stormpath-pay-tier-override";
 
 export function getPayTier(): PayTier {
   try {
-    const o = localStorage.getItem(LS_OVERRIDE)?.toLowerCase();
+    const o = localStorage.getItem(PAY_TIER_OVERRIDE_LS_KEY)?.toLowerCase();
     if (o === "plus" || o === "pro") return "plus";
     if (o === "free") return "free";
   } catch {

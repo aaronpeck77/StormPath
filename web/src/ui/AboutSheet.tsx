@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { getPayTier } from "../billing/payFeatures";
+import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
 import { getWebEnv } from "../config/env";
 
 type ActivityTrailPanel = {
@@ -15,6 +15,10 @@ type ActivityTrailPanel = {
 type Props = {
   open: boolean;
   onClose: () => void;
+  /** Bumped from App after dev tier override so `getPayTier()` is reflected in About without reload. */
+  payTierProbeKey?: number;
+  /** Dev (`vite`) only — run after mutating {@link PAY_TIER_OVERRIDE_LS_KEY} so the app re-reads tier. */
+  onDevPayTierOverride?: () => void;
   /** Plus: sparse GPS dot history on this device — stats + map overlay toggle */
   activityTrail?: ActivityTrailPanel | null;
   settings: {
@@ -37,15 +41,29 @@ type Props = {
 export function AboutSheet({
   open,
   onClose,
+  payTierProbeKey = 0,
+  onDevPayTierOverride,
   activityTrail = null,
   settings,
   onSettings,
 }: Props) {
   const dev = import.meta.env.DEV;
   /** Same tier source as the rest of the app (`getPayTier` — build env + optional LS override). */
-  const tier = useMemo(() => getPayTier(), [open]);
+  const tier = useMemo(() => getPayTier(), [open, payTierProbeKey]);
   const tierLabel = tier === "plus" ? "Plus" : "Basic";
   const plus = tier === "plus";
+  /** Dev LS override for button highlight (same key as {@link getPayTier}). */
+  const devPayTierOverrideMode = useMemo((): "none" | "free" | "plus" => {
+    if (!dev) return "none";
+    try {
+      const v = localStorage.getItem(PAY_TIER_OVERRIDE_LS_KEY)?.toLowerCase();
+      if (v === "free") return "free";
+      if (v === "plus" || v === "pro") return "plus";
+    } catch {
+      /* ignore */
+    }
+    return "none";
+  }, [dev, open, payTierProbeKey]);
   const env = useMemo(() => getWebEnv(), []);
   const [supportNote, setSupportNote] = useState("");
 
@@ -113,6 +131,71 @@ export function AboutSheet({
             <dd>{tierLabel}</dd>
           </div>
         </dl>
+
+        {dev && onDevPayTierOverride ? (
+          <div
+            className="about-sheet__tier-preview about-sheet__panel"
+            role="group"
+            aria-label="Developer pay tier override"
+          >
+            <p className="about-sheet__tier-preview-label">Developer — test pay tier</p>
+            <div className="about-sheet__tier-preview-btns">
+              <button
+                type="button"
+                className={`about-sheet__tier-preview-btn${
+                  devPayTierOverrideMode === "free" ? " about-sheet__tier-preview-btn--active" : ""
+                }`}
+                onClick={() => {
+                  try {
+                    localStorage.setItem(PAY_TIER_OVERRIDE_LS_KEY, "free");
+                  } catch {
+                    /* ignore */
+                  }
+                  onDevPayTierOverride();
+                }}
+              >
+                Basic
+              </button>
+              <button
+                type="button"
+                className={`about-sheet__tier-preview-btn${
+                  devPayTierOverrideMode === "plus" ? " about-sheet__tier-preview-btn--active" : ""
+                }`}
+                onClick={() => {
+                  try {
+                    localStorage.setItem(PAY_TIER_OVERRIDE_LS_KEY, "plus");
+                  } catch {
+                    /* ignore */
+                  }
+                  onDevPayTierOverride();
+                }}
+              >
+                Plus
+              </button>
+              <button
+                type="button"
+                className={`about-sheet__tier-preview-btn${
+                  devPayTierOverrideMode === "none" ? " about-sheet__tier-preview-btn--active" : ""
+                }`}
+                onClick={() => {
+                  try {
+                    localStorage.removeItem(PAY_TIER_OVERRIDE_LS_KEY);
+                  } catch {
+                    /* ignore */
+                  }
+                  onDevPayTierOverride();
+                }}
+              >
+                Build default
+              </button>
+            </div>
+            <p className="about-sheet__tier-preview-hint">
+              Sets <code className="saved-drawer-code">{PAY_TIER_OVERRIDE_LS_KEY}</code> — same as manual QA. Not
+              shown in production builds. <strong>Build default</strong> removes the override (Vite dev → Plus unless{" "}
+              <code className="saved-drawer-code">VITE_PAY_TIER</code> says otherwise).
+            </p>
+          </div>
+        ) : null}
 
         <div className="about-sheet__scroll">
           <section className="about-sheet__panel">

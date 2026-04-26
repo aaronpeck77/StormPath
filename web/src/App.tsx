@@ -213,8 +213,11 @@ export default function App() {
       return false;
     }
   }, []);
-  /** Plus vs Basic from build env / `stormpath-pay-tier-override` only — same source everywhere (no UI preview). */
-  const isPlus = getPayTier() === "plus";
+  /** Bumped when dev About changes `PAY_TIER_OVERRIDE_LS_KEY` so `getPayTier()` is re-read without reload. */
+  const [payTierProbeKey, setPayTierProbeKey] = useState(0);
+  const reprobePayTier = useCallback(() => setPayTierProbeKey((n) => n + 1), []);
+  /** Plus vs Basic from `getPayTier()` (build env + optional LS override) — identical in dev and production. */
+  const isPlus = useMemo(() => getPayTier() === "plus", [payTierProbeKey]);
   const advisoryPromoLines = useMemo(
     () => (isPlus ? buildAdvisoryPromoLines(env, isPlus) : buildBasicNavAdvisoryPromoLines(env)),
     [env, isPlus]
@@ -3755,6 +3758,8 @@ export default function App() {
       <AboutSheet
         open={aboutOpen}
         onClose={() => setAboutOpen(false)}
+        payTierProbeKey={payTierProbeKey}
+        onDevPayTierOverride={import.meta.env.DEV ? reprobePayTier : undefined}
         activityTrail={activityTrailAboutPanel}
         settings={{
           radarEnabled: settingRadarEnabled,
