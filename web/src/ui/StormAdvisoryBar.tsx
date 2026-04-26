@@ -338,7 +338,7 @@ export function StormAdvisoryBar({
   }, [promoLines.length]);
 
   const defaultPreviewText = basicNavAdvisoryMode
-    ? "Navigation and radar — tap for status and tips."
+    ? "Status bar — tap for connection, tips, and Plus info (no weather alerts on Basic)."
     : advisoryTier === "basic"
       ? ownsPlus
         ? "No urgent warnings. Tap for details."
@@ -471,7 +471,11 @@ export function StormAdvisoryBar({
         className={`storm-advisory-bar storm-advisory-bar--preview storm-advisory-bar--sev-${effectiveSeverity}${showErrorState ? " storm-advisory-bar--err" : ""}`}
         id="storm-advisory-panel"
         role="region"
-        aria-label={basicNavAdvisoryMode ? "Advisory — tap to expand" : "Storm, weather, and road advisory — tap to expand"}
+        aria-label={
+          basicNavAdvisoryMode
+            ? "Status bar — connection and tips, tap to expand"
+            : "Storm, weather, and road advisory — tap to expand"
+        }
         aria-expanded={false}
         aria-controls="storm-advisory-panel"
         onPointerDownCapture={(e) => e.stopPropagation()}
@@ -508,7 +512,7 @@ export function StormAdvisoryBar({
       className={`storm-advisory-bar storm-advisory-bar--sev-${effectiveSeverity}${showErrorState ? " storm-advisory-bar--err" : ""}`}
       id="storm-advisory-panel"
       role="region"
-      aria-label={basicNavAdvisoryMode ? "Advisory" : "Storm, weather, and road advisory"}
+      aria-label={basicNavAdvisoryMode ? "Status bar — connection and tips" : "Storm, weather, and road advisory"}
     >
       <div className="storm-advisory-bar__head">
         <div className="storm-advisory-bar__head-leading">
@@ -523,15 +527,15 @@ export function StormAdvisoryBar({
             }}
             aria-expanded={true}
             aria-controls="storm-advisory-panel"
-            title="Close storm advisory"
-            aria-label="Close storm advisory"
+            title={basicNavAdvisoryMode ? "Close status bar" : "Close storm advisory"}
+            aria-label={basicNavAdvisoryMode ? "Close status bar" : "Close storm advisory"}
           >
             <span className="storm-advisory-bar__collapse-icon storm-advisory-bar__collapse-icon--narrow">Done</span>
             <span className="storm-advisory-bar__collapse-icon storm-advisory-bar__collapse-icon--wide" aria-hidden>
               ◀
             </span>
           </button>
-          <span className="storm-advisory-bar__title">Advisory</span>
+          <span className="storm-advisory-bar__title">{basicNavAdvisoryMode ? "Status" : "Advisory"}</span>
           {peekBadge != null && peekBadge > 0 && (
             <span
               className="storm-advisory-bar__head-badge"
@@ -556,7 +560,17 @@ export function StormAdvisoryBar({
         )}
       </div>
 
-      <div className="storm-advisory-bar__basic-strip" aria-label="Connection and tips">
+      {basicNavAdvisoryMode && (
+        <p className="storm-advisory-bar__muted storm-advisory-bar__basic-tier-desc">
+          Online/offline and tips. Use the <strong>Rad</strong> map control for radar. Basic does not load NWS
+          warnings or forecast text here.
+        </p>
+      )}
+
+      <div
+        className="storm-advisory-bar__basic-strip"
+        aria-label={basicNavAdvisoryMode ? "Connection status and app tips" : "Connection and tips"}
+      >
         <span
           className={`storm-advisory-bar__conn${isOnline ? " storm-advisory-bar__conn--on" : " storm-advisory-bar__conn--off"}`}
         >

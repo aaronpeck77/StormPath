@@ -258,8 +258,8 @@ export function AboutSheet({
               <summary>What Plus adds</summary>
               <ul className="about-sheet__bullets" aria-label="Plus features">
                 <li>
-                  <strong>NWS</strong> — full storm map, every active warning, route overlap, and hazard details (Basic is
-                  life-safety-only on the strip)
+                  <strong>NWS</strong> — full storm map, every active warning, route overlap, and hazard details (Plus
+                  only; Basic uses navigation, radar, and the status strip — no in-app weather feeds)
                 </li>
                 <li>
                   <strong>Traffic</strong> overlay + bypass tools (Mapbox)
@@ -300,12 +300,15 @@ export function AboutSheet({
                 onChange={(e) => onSettings({ ...settings, stormEnabled: e.target.checked })}
               />
               <span>
-                <strong>Storm advisory bar</strong> (NWS) —{" "}
                 {plus ? (
-                  <>full warning map, route overlap, and hazard details</>
+                  <>
+                    <strong>Storm &amp; advisory bar</strong> (NWS) — full warning map, route overlap, and hazard
+                    details when the session tools are on
+                  </>
                 ) : (
                   <>
-                    life-safety warnings (tornado, flash flood, etc.), online status, and app updates on the strip
+                    <strong>Status strip</strong> — online/offline, tips, and Plus info. Basic does not load NWS or
+                    forecast data; use the <strong>Rad</strong> control for radar on the map
                   </>
                 )}
               </span>
