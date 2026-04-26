@@ -53,7 +53,7 @@ export function TopGuidanceBar({
           </div>
           {!isPlus && (
             <p className="turn-strip-idle__ad">
-              Navigation &amp; radar — <strong>Plus</strong> adds live NWS maps, traffic, and route tools.
+              Navigation &amp; radar — <strong>Plus</strong> adds live traffic, the full advisory map, and route tools.
             </p>
           )}
         </div>

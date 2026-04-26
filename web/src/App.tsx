@@ -114,7 +114,7 @@ import {
   filterMapGeoJsonToBasicEmergencies,
   nwsAlertIsBasicEmergency,
 } from "./weatherAlerts/basicEmergencyFilter";
-import { buildAdvisoryPromoLines } from "./config/advisoryPromo";
+import { buildAdvisoryPromoLines, buildBasicNavAdvisoryPromoLines } from "./config/advisoryPromo";
 import { getPayTier, type PayTier } from "./billing/payFeatures";
 import type { FrequentRouteCluster } from "./frequentRoutes/types";
 import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
@@ -242,7 +242,10 @@ export default function App() {
   }, []);
   const effectivePayTier = payTierPreview ?? getPayTier();
   const isPlus = effectivePayTier === "plus";
-  const advisoryPromoLines = useMemo(() => buildAdvisoryPromoLines(env, isPlus), [env, isPlus]);
+  const advisoryPromoLines = useMemo(
+    () => (isPlus ? buildAdvisoryPromoLines(env, isPlus) : buildBasicNavAdvisoryPromoLines(env)),
+    [env, isPlus]
+  );
   /** `?demo=bypass` replay / simulated delay — Plus only (matches Traffic bypass). */
   const demoBypassTrafficJamPlus = demoBypassTrafficJam && isPlus;
   const demoBypassTrafficJamPlusRef = useRef(false);
@@ -1128,7 +1131,7 @@ export default function App() {
       setWeatherOverlay(undefined);
       return;
     }
-    if (!isOnline || !settingWeatherHintsEnabled || !env.openWeatherApiKey || !routes.length) {
+    if (!isPlus || !isOnline || !settingWeatherHintsEnabled || !env.openWeatherApiKey || !routes.length) {
       setWeatherOverlay(undefined);
       return;
     }
@@ -1182,6 +1185,7 @@ export default function App() {
     isOnline,
     routing,
     navigationStarted,
+    isPlus,
   ]);
 
   const trafficRefreshRef = useRef(0);
@@ -1198,10 +1202,18 @@ export default function App() {
       setTrafficFetchDone(true);
       return;
     }
-    if (!isOnline || !settingTrafficEnabled || !env.mapboxToken || !routes.length) {
+    if (!isPlus || !isOnline || !settingTrafficEnabled || !env.mapboxToken || !routes.length) {
       console.info(
         "[traffic] skipping fetch —",
-        !isOnline ? "offline" : !settingTrafficEnabled ? "setting OFF" : !env.mapboxToken ? "no token" : "no routes"
+        !isPlus
+          ? "basic tier"
+          : !isOnline
+            ? "offline"
+            : !settingTrafficEnabled
+              ? "setting OFF"
+              : !env.mapboxToken
+                ? "no token"
+                : "no routes"
       );
       setTrafficOverlay(undefined);
       setTrafficFetchDone(true);
@@ -1253,16 +1265,17 @@ export default function App() {
     trafficRefreshKey,
     routing,
     navigationStarted,
+    isPlus,
   ]);
 
   useEffect(() => {
-    if (!planRoutesKeyStable || !settingTrafficEnabled || !navigationStarted) return;
+    if (!planRoutesKeyStable || !settingTrafficEnabled || !navigationStarted || !isPlus) return;
     const id = window.setInterval(() => {
       trafficRefreshRef.current += 1;
       setTrafficRefreshKey(trafficRefreshRef.current);
     }, 90_000);
     return () => window.clearInterval(id);
-  }, [planRoutesKeyStable, settingTrafficEnabled, navigationStarted]);
+  }, [planRoutesKeyStable, settingTrafficEnabled, navigationStarted, isPlus]);
 
   const snap = useFusedSituation(plan, weatherOverlay, trafficOverlay);
   const scored = useMemo(() => scoreTrip(plan, snap, "balanced"), [plan, snap]);
@@ -1775,7 +1788,7 @@ export default function App() {
   const showTrafficCorridorOnRoute = isPlus && roadAdvisoryDetailOn && settingTrafficEnabled;
   const showRoadNoticesOnRoute = isPlus && roadAdvisoryDetailOn;
 
-  useRadarBandsAlongRoute(Boolean(radarMapOverlayOn && isPlus), guidanceRoute?.geometry);
+  useRadarBandsAlongRoute(Boolean(radarMapOverlayOn), guidanceRoute?.geometry);
 
   /** Road impacts + traffic checkbox + Plus + Traffic setting: corridor traffic on route / strip; otherwise hide traffic segments. */
   const routeAlerts = useMemo(() => {
@@ -2158,7 +2171,7 @@ export default function App() {
   /** US NWS: only after Go — active (slot A) route corridor + upwind (west) context. No national or viewport browse. */
   useEffect(() => {
     if (routing) return;
-    if (!env.stormAdvisoryEnabled || !advisoryLifeSafetyOn) {
+    if (!isPlus || !env.stormAdvisoryEnabled || !advisoryLifeSafetyOn) {
       stormMapHasDisplayableRef.current = false;
       setStormMapGeoJson(null);
       setStormCorridorAlerts([]);
@@ -2226,6 +2239,7 @@ export default function App() {
       window.clearInterval(id);
     };
   }, [
+    isPlus,
     env.stormAdvisoryEnabled,
     nwsNavCorridorGeomKey,
     navigationStarted,
@@ -3134,6 +3148,7 @@ export default function App() {
   /** Busy message for the always-visible activity chip (null → shows muted Idle). */
   const activityBusyLabel = useMemo(() => {
     const trafficBusy =
+      isPlus &&
       navigationStarted &&
       plan.routes.length > 0 &&
       !trafficFetchDone &&
@@ -3161,6 +3176,7 @@ export default function App() {
     isOnline,
     stormLoading,
     advisoryLifeSafetyOn,
+    isPlus,
   ]);
 
   return (
@@ -3235,7 +3251,7 @@ export default function App() {
             activityTrailGeoJson={activityTrailGeoJsonForMap}
             searchPickMarkers={searchPickMarkersForMap}
             onSearchPickMarkerClick={searchPickMarkersForMap ? handleSearchPickFromMap : undefined}
-            progressRailVisible={navigationStarted}
+            progressRailVisible={navigationStarted && isPlus}
           />
           </Suspense>
         </div>
@@ -3292,6 +3308,7 @@ export default function App() {
                       ownsPlus={isPlus}
                       promoLines={advisoryPromoLines}
                       isOnline={isOnline}
+                      basicNavAdvisoryMode={!isPlus}
                     />
                   ) : isPlus ? (
                     <div className="nav-top-activity-pill-wrap nav-top-activity-pill-wrap--solo">
@@ -3302,7 +3319,10 @@ export default function App() {
                 </div>
               </div>
             </div>
-            {navigationStarted && progressRailRoute?.geometry && progressRailRoute.geometry.length >= 2 && (
+            {navigationStarted &&
+              isPlus &&
+              progressRailRoute?.geometry &&
+              progressRailRoute.geometry.length >= 2 && (
               <div
                 className={`nav-route-progress-rail${progressCalloutsOpen && progressCalloutItems.length > 0 ? " nav-route-progress-rail--callouts-open" : ""}`}
               >
@@ -3579,8 +3599,12 @@ export default function App() {
             aria-live="polite"
           >
             {driveModeUi
-              ? "Offline — cached route; no live traffic, weather, or storm updates."
-              : "Offline — showing last route. Live updates paused (traffic, weather, storm)."}
+              ? isPlus
+                ? "Offline — cached route; no live traffic, weather, or storm updates."
+                : "Offline — cached route; map and radar may be limited until you reconnect."
+              : isPlus
+                ? "Offline — showing last route. Live updates paused (traffic, weather, storm)."
+                : "Offline — showing last route. Reconnect for map tiles and radar."}
           </div>
         )}
 

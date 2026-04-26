@@ -57,3 +57,31 @@ export function buildAdvisoryPromoLines(
 
   return lines;
 }
+
+/** Basic tier: navigation + radar only — no weather-upgrade or NWS-oriented promo copy. */
+export function buildBasicNavAdvisoryPromoLines(env: ReturnType<typeof getWebEnv>): AdvisoryPromoLine[] {
+  const lines: AdvisoryPromoLine[] = [
+    {
+      id: "sitebible",
+      text: SITEBIBLE_AD_BAR,
+      href: env.siteBibleUrl || undefined,
+    },
+  ];
+  if (env.upgradeUrl) {
+    lines.push({
+      id: "sp-plus-nav-radar",
+      text: "StormPath Plus adds live traffic, the full hazard map, and tools along your route.",
+      href: env.upgradeUrl,
+    });
+  } else {
+    lines.push({
+      id: "sp-plus-nav-radar",
+      text: "StormPath Plus adds live traffic, the full hazard map, and tools along your route.",
+    });
+  }
+  lines.push({
+    id: "tip-net-basic",
+    text: "Tip: routes and map tiles load faster on Wi‑Fi or stronger cell signal.",
+  });
+  return lines;
+}

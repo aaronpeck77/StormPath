@@ -113,6 +113,11 @@ export type StormAdvisoryBarProps = SharedProps & {
   promoLines?: AdvisoryPromoLine[];
   /** Browser / PWA online flag — surfaced for Basic. */
   isOnline?: boolean;
+  /**
+   * Basic (nav + radar only): keep the advisory strip for status and tips, but omit NWS/weather panels
+   * and preview rotation that references forecasts, NWS loads, or hazard lists.
+   */
+  basicNavAdvisoryMode?: boolean;
 };
 
 function fmtEnds(ends: string | null): string | null {
@@ -260,6 +265,7 @@ export function StormAdvisoryBar({
   ownsPlus = false,
   promoLines = [],
   isOnline = true,
+  basicNavAdvisoryMode = false,
 }: StormAdvisoryBarProps) {
   if (!featureEnabled) return null;
   void corridorAlerts;
@@ -331,14 +337,33 @@ export function StormAdvisoryBar({
     return () => window.clearInterval(id);
   }, [promoLines.length]);
 
-  const defaultPreviewText =
-    advisoryTier === "basic"
+  const defaultPreviewText = basicNavAdvisoryMode
+    ? "Navigation and radar — tap for status and tips."
+    : advisoryTier === "basic"
       ? ownsPlus
         ? "No urgent warnings. Tap for details."
         : "No life-safety warnings here — tap for details"
       : "No hazards in view — tap for advisory";
   const activeTicker = tickerMessages[tickerIdx];
   const previewItems = useMemo(() => {
+    if (basicNavAdvisoryMode) {
+      const out: { badge: string | null; raw: string }[] = [];
+      if (!isOnline) {
+        out.push({
+          badge: "Offline",
+          raw: "No network. Reconnect to refresh map tiles and radar.",
+        });
+      }
+      if (hasGuidanceRoute) {
+        out.push({ badge: "Nav", raw: "Route is set — tap Go when you are ready to drive." });
+      }
+      if (busyLabel) out.push({ badge: "Work", raw: busyLabel });
+      for (const p of promoLines) {
+        out.push({ badge: "Info", raw: clipOneLine(p.text, 64) });
+      }
+      if (out.length === 0) out.push({ badge: null, raw: defaultPreviewText });
+      return out;
+    }
     const out: { badge: string | null; raw: string }[] = [];
     if (!isOnline) {
       out.push({ badge: "Offline", raw: "No network. Reconnect to refresh the map and advisories." });
@@ -378,6 +403,7 @@ export function StormAdvisoryBar({
     if (out.length === 0) out.push({ badge: null, raw: defaultPreviewText });
     return out;
   }, [
+    basicNavAdvisoryMode,
     isOnline,
     showErrorState,
     error,
@@ -412,29 +438,30 @@ export function StormAdvisoryBar({
   };
 
   /** Derive a "hazard tone" for the border of the preview bar + count badge. */
-  const effectiveSeverity: "none" | "info" | "warn" | "severe" =
-    peekSeverity ??
-    (!isOnline
-      ? "warn"
-      : showErrorState
-        ? "severe"
-        : loading
-          ? loadSlow
-            ? "warn"
-            : "info"
-          : crossingSorted.length > 0 || hasTrafficStop
-            ? "severe"
-            : atLocationSorted.length > 0 || trafficDelayMinutes >= 8
+  const effectiveSeverity: "none" | "info" | "warn" | "severe" = basicNavAdvisoryMode
+    ? peekSeverity ?? (!isOnline ? "warn" : busyLabel ? "info" : "none")
+    : peekSeverity ??
+      (!isOnline
+        ? "warn"
+        : showErrorState
+          ? "severe"
+          : loading
+            ? loadSlow
               ? "warn"
-              : driveTierSev(driveRouteAheadLine?.radarTier) === "severe"
-                ? "severe"
-                : driveTierSev(driveRouteAheadLine?.radarTier) === "warn"
-                  ? "warn"
-                  : tickerMessages.length > 0
-                    ? "info"
-                    : promoLines.length > 0
+              : "info"
+            : crossingSorted.length > 0 || hasTrafficStop
+              ? "severe"
+              : atLocationSorted.length > 0 || trafficDelayMinutes >= 8
+                ? "warn"
+                : driveTierSev(driveRouteAheadLine?.radarTier) === "severe"
+                  ? "severe"
+                  : driveTierSev(driveRouteAheadLine?.radarTier) === "warn"
+                    ? "warn"
+                    : tickerMessages.length > 0
                       ? "info"
-                      : "none");
+                      : promoLines.length > 0
+                        ? "info"
+                        : "none");
 
   if (!barExpanded) {
     const activePreview = previewItems[previewIdx % previewItems.length]!;
@@ -444,7 +471,7 @@ export function StormAdvisoryBar({
         className={`storm-advisory-bar storm-advisory-bar--preview storm-advisory-bar--sev-${effectiveSeverity}${showErrorState ? " storm-advisory-bar--err" : ""}`}
         id="storm-advisory-panel"
         role="region"
-        aria-label="Storm, weather, and road advisory — tap to expand"
+        aria-label={basicNavAdvisoryMode ? "Advisory — tap to expand" : "Storm, weather, and road advisory — tap to expand"}
         aria-expanded={false}
         aria-controls="storm-advisory-panel"
         onPointerDownCapture={(e) => e.stopPropagation()}
@@ -481,7 +508,7 @@ export function StormAdvisoryBar({
       className={`storm-advisory-bar storm-advisory-bar--sev-${effectiveSeverity}${showErrorState ? " storm-advisory-bar--err" : ""}`}
       id="storm-advisory-panel"
       role="region"
-      aria-label="Storm, weather, and road advisory"
+      aria-label={basicNavAdvisoryMode ? "Advisory" : "Storm, weather, and road advisory"}
     >
       <div className="storm-advisory-bar__head">
         <div className="storm-advisory-bar__head-leading">
@@ -551,7 +578,7 @@ export function StormAdvisoryBar({
         )}
       </div>
 
-      {(busyLabel || driveRouteAheadLine) && (
+      {(busyLabel || (!basicNavAdvisoryMode && driveRouteAheadLine)) && (
         <div className="storm-advisory-bar__now-row" aria-live="polite">
           {busyLabel && (
             <span className="storm-advisory-bar__now-chip storm-advisory-bar__now-chip--busy">
@@ -559,7 +586,7 @@ export function StormAdvisoryBar({
               {busyLabel}
             </span>
           )}
-          {driveRouteAheadLine && (
+          {!basicNavAdvisoryMode && driveRouteAheadLine && (
             <span
               className={`storm-advisory-bar__now-chip storm-advisory-bar__now-chip--ahead storm-advisory-bar__now-chip--tier-${driveRouteAheadLine.radarTier}`}
               title="Route ahead — radar / traffic brief"
@@ -571,6 +598,7 @@ export function StormAdvisoryBar({
         </div>
       )}
 
+      {!basicNavAdvisoryMode && (
       <div className="storm-advisory-bar__weather-block">
         <p className="storm-advisory-bar__weather-title">
           {advisoryTier === "basic" ? "Life-safety warnings (NWS)" : "Weather (NWS)"}
@@ -678,6 +706,7 @@ export function StormAdvisoryBar({
           </>
         )}
       </div>
+      )}
 
       {roadDetailEnabled && (
         <div className="storm-advisory-bar__road-block">
