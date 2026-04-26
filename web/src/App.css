@@ -4805,6 +4805,14 @@
   opacity: 0.95;
 }
 
+.turn-strip-idle__ad--basic {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  min-width: 0;
+}
+
 /* NWS + Road + activity + Hazards — one row; shared control height */
 .hazard-controls-strip {
   --hazard-strip-row-h: 34px;

@@ -1809,23 +1809,16 @@ export default function App() {
     !trafficBypassCompare;
 
   /**
-   * Dr: keep only the active leg on the main map. Alternates are distracting while driving and are only
-   * useful when the user is in a tactical reroute flow (traffic bypass prompt).
+   * Dr: only the chosen (focused) leg on the map — alternates stay in Rt / Map views. Full set only while
+   * picking among A/B/C in traffic bypass compare.
    */
   const driveMapRoutes = useMemo(() => {
-    if (!navigationStarted || viewMode !== "drive") return plan.routes;
-    if (showTrafficBypassCta || trafficBypassCompare != null) return plan.routes;
+    if (viewMode !== "drive") return plan.routes;
+    if (trafficBypassCompare != null) return plan.routes;
     const active = plan.routes.find((r) => r.id === guidanceRouteId);
     if (active) return [active];
     return plan.routes.length ? [plan.routes[0]!] : [];
-  }, [
-    navigationStarted,
-    viewMode,
-    showTrafficBypassCta,
-    trafficBypassCompare,
-    guidanceRouteId,
-    plan.routes,
-  ]);
+  }, [viewMode, trafficBypassCompare, guidanceRouteId, plan.routes]);
   const progressRailRoute = guidanceRoute ?? driveMapRoutes[0] ?? plan.routes[0];
 
   /** Map pins during bypass compare — stagger along each polyline so labels don’t stack. */
