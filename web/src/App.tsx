@@ -242,6 +242,11 @@ export default function App() {
   }, []);
   const effectivePayTier = payTierPreview ?? getPayTier();
   const isPlus = effectivePayTier === "plus";
+  /**
+   * Progress rail is a Plus-only feature: use real build/subscription tier in production so About “preview
+   * as Plus” cannot unlock it on Basic (TestFlight). In dev, `getPayTier()` is forced Plus — follow preview.
+   */
+  const progressRailPlus = import.meta.env.DEV ? isPlus : getPayTier() === "plus";
   const advisoryPromoLines = useMemo(
     () => (isPlus ? buildAdvisoryPromoLines(env, isPlus) : buildBasicNavAdvisoryPromoLines(env)),
     [env, isPlus]
@@ -3320,7 +3325,7 @@ export default function App() {
               </div>
             </div>
             {navigationStarted &&
-              isPlus &&
+              progressRailPlus &&
               progressRailRoute?.geometry &&
               progressRailRoute.geometry.length >= 2 && (
               <div

@@ -474,7 +474,7 @@ export function StormAdvisoryBar({
         aria-label={
           basicNavAdvisoryMode
             ? "Status bar — connection and tips, tap to expand"
-            : "Storm, weather, and road advisory — tap to expand"
+            : "Advisory — weather, hazards, and road status (tap to expand)"
         }
         aria-expanded={false}
         aria-controls="storm-advisory-panel"
@@ -512,7 +512,9 @@ export function StormAdvisoryBar({
       className={`storm-advisory-bar storm-advisory-bar--sev-${effectiveSeverity}${showErrorState ? " storm-advisory-bar--err" : ""}`}
       id="storm-advisory-panel"
       role="region"
-      aria-label={basicNavAdvisoryMode ? "Status bar — connection and tips" : "Storm, weather, and road advisory"}
+      aria-label={
+        basicNavAdvisoryMode ? "Status bar — connection and tips" : "Advisory — weather, hazards, and road status"
+      }
     >
       <div className="storm-advisory-bar__head">
         <div className="storm-advisory-bar__head-leading">
@@ -527,8 +529,8 @@ export function StormAdvisoryBar({
             }}
             aria-expanded={true}
             aria-controls="storm-advisory-panel"
-            title={basicNavAdvisoryMode ? "Close status bar" : "Close storm advisory"}
-            aria-label={basicNavAdvisoryMode ? "Close status bar" : "Close storm advisory"}
+            title={basicNavAdvisoryMode ? "Close status bar" : "Close advisory"}
+            aria-label={basicNavAdvisoryMode ? "Close status bar" : "Close advisory"}
           >
             <span className="storm-advisory-bar__collapse-icon storm-advisory-bar__collapse-icon--narrow">Done</span>
             <span className="storm-advisory-bar__collapse-icon storm-advisory-bar__collapse-icon--wide" aria-hidden>

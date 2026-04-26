@@ -52,6 +52,8 @@ export function AboutSheet({
   const effectiveTier = payTierPreview ?? subscribedTier;
   const tierLabel = effectiveTier === "plus" ? "Plus" : "Basic";
   const plus = effectiveTier === "plus";
+  /** Actual Plus entitlement — settings copy must not follow UI tier preview (avoids “Plus” labels on Basic). */
+  const subscribedPlus = subscribedTier === "plus";
   const subscribedLabel = subscribedTier === "plus" ? "Plus" : "Basic";
   const env = useMemo(() => getWebEnv(), []);
   const [supportNote, setSupportNote] = useState("");
@@ -300,10 +302,10 @@ export function AboutSheet({
                 onChange={(e) => onSettings({ ...settings, stormEnabled: e.target.checked })}
               />
               <span>
-                {plus ? (
+                {subscribedPlus ? (
                   <>
-                    <strong>Storm &amp; advisory bar</strong> (NWS) — full warning map, route overlap, and hazard
-                    details when the session tools are on
+                    <strong>Advisory bar</strong> (NWS) — warning map, route overlap, and hazard details when NWS session
+                    tools are on
                   </>
                 ) : (
                   <>
