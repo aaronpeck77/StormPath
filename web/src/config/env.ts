@@ -23,5 +23,12 @@ export function getWebEnv() {
       "https://apps.apple.com/account/subscriptions",
     /** Shown in the Basic advisory promo rotation (other apps you ship). */
     siteBibleUrl: (import.meta.env.VITE_SITEBIBLE_URL as string | undefined)?.trim() ?? "",
+    /**
+     * About → Basic / Plus / Build default tier override (uses `PAY_TIER_OVERRIDE_LS_KEY`). On in dev and in
+     * production **unless** `VITE_PAY_TIER_TEST_PANEL=false` — turn off before App Store / paywall.
+     */
+    payTierTestPanel:
+      import.meta.env.DEV ||
+      String(import.meta.env.VITE_PAY_TIER_TEST_PANEL ?? "").toLowerCase() !== "false",
   };
 }

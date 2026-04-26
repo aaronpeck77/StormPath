@@ -4,7 +4,7 @@
  * Tier inventory: `docs/PAY_TIERS.md`
  *
  * **Development (`vite` / `import.meta.env.DEV`):** defaults to **Plus** so everything is on.
- * To test **Basic** in dev: About → **Developer — test pay tier** → Basic, or set
+ * To test **Basic**: About → **Test pay tier** → Basic (when the panel is enabled), or set
  * `localStorage.setItem(PAY_TIER_OVERRIDE_LS_KEY, "free")` (or set `VITE_PAY_TIER` / Netlify for production-shaped
  * builds).
  *

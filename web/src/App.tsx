@@ -3759,7 +3759,7 @@ export default function App() {
         open={aboutOpen}
         onClose={() => setAboutOpen(false)}
         payTierProbeKey={payTierProbeKey}
-        onDevPayTierOverride={import.meta.env.DEV ? reprobePayTier : undefined}
+        onPayTierOverride={env.payTierTestPanel ? reprobePayTier : undefined}
         activityTrail={activityTrailAboutPanel}
         settings={{
           radarEnabled: settingRadarEnabled,
