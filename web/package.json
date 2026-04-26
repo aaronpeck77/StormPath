@@ -1,7 +1,7 @@
 {
   "name": "stormpath-web",
   "private": true,
-  "version": "0.7.30",
+  "version": "0.7.31",
   "type": "module",
   "engines": {
     "node": ">=20.0.0"

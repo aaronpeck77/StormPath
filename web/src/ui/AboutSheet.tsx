@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { getPayTier, type PayTier } from "../billing/payFeatures";
+import { getPayTier } from "../billing/payFeatures";
 import { getWebEnv } from "../config/env";
 
 type ActivityTrailPanel = {
@@ -15,9 +15,6 @@ type ActivityTrailPanel = {
 type Props = {
   open: boolean;
   onClose: () => void;
-  /** Preview Basic vs Plus UI (does not change subscription; persists until My plan). */
-  payTierPreview: PayTier | null;
-  onPayTierPreviewChange: (tier: PayTier | null) => void;
   /** Plus: sparse GPS dot history on this device — stats + map overlay toggle */
   activityTrail?: ActivityTrailPanel | null;
   settings: {
@@ -40,21 +37,15 @@ type Props = {
 export function AboutSheet({
   open,
   onClose,
-  payTierPreview,
-  onPayTierPreviewChange,
   activityTrail = null,
   settings,
   onSettings,
 }: Props) {
-  const subscribedTier = useMemo(() => getPayTier(), [open, payTierPreview]);
   const dev = import.meta.env.DEV;
-  /** Temporary tester override so Basic/Plus can be validated in TestFlight before paywall wiring. */
-  const effectiveTier = payTierPreview ?? subscribedTier;
-  const tierLabel = effectiveTier === "plus" ? "Plus" : "Basic";
-  const plus = effectiveTier === "plus";
-  /** Actual Plus entitlement — settings copy must not follow UI tier preview (avoids “Plus” labels on Basic). */
-  const subscribedPlus = subscribedTier === "plus";
-  const subscribedLabel = subscribedTier === "plus" ? "Plus" : "Basic";
+  /** Same tier source as the rest of the app (`getPayTier` — build env + optional LS override). */
+  const tier = useMemo(() => getPayTier(), [open]);
+  const tierLabel = tier === "plus" ? "Plus" : "Basic";
+  const plus = tier === "plus";
   const env = useMemo(() => getWebEnv(), []);
   const [supportNote, setSupportNote] = useState("");
 
@@ -76,7 +67,7 @@ export function AboutSheet({
 
   const diagnosticsLines = [
     `StormPath ${__APP_VERSION__}${dev ? " (dev)" : ""}`,
-    `Plan: ${tierLabel}${payTierPreview != null ? " (preview)" : ""}`,
+    `Plan: ${tierLabel}`,
     `Online: ${typeof navigator === "undefined" ? "unknown" : navigator.onLine ? "yes" : "no"}`,
     `Voice: ${settings.voiceGuidanceEnabled ? "on" : "off"}, GPS refresh: ${
       settings.gpsHighRefreshEnabled ? "high" : "normal"
@@ -119,53 +110,9 @@ export function AboutSheet({
           </div>
           <div className="about-sheet__meta-row">
             <dt>Plan</dt>
-            <dd>
-              {tierLabel}
-              {dev && payTierPreview != null && (
-                <span className="about-sheet__preview-badge" title="Preview only — not your subscription">
-                  {" "}
-                  (preview)
-                </span>
-              )}
-            </dd>
-          </div>
-          <div className="about-sheet__meta-row">
-            <dt>Subscribed</dt>
-            <dd>{subscribedLabel}</dd>
+            <dd>{tierLabel}</dd>
           </div>
         </dl>
-
-        {
-          <div className="about-sheet__tier-preview about-sheet__panel" role="group" aria-label="Preview app tier">
-            <p className="about-sheet__tier-preview-label">Testing tier override</p>
-            <div className="about-sheet__tier-preview-btns">
-              <button
-                type="button"
-                className={`about-sheet__tier-preview-btn${payTierPreview === null ? " about-sheet__tier-preview-btn--active" : ""}`}
-                onClick={() => onPayTierPreviewChange(null)}
-              >
-                My plan
-              </button>
-              <button
-                type="button"
-                className={`about-sheet__tier-preview-btn${payTierPreview === "free" ? " about-sheet__tier-preview-btn--active" : ""}`}
-                onClick={() => onPayTierPreviewChange("free")}
-              >
-                Basic
-              </button>
-              <button
-                type="button"
-                className={`about-sheet__tier-preview-btn${payTierPreview === "plus" ? " about-sheet__tier-preview-btn--active" : ""}`}
-                onClick={() => onPayTierPreviewChange("plus")}
-              >
-                Plus
-              </button>
-            </div>
-            <p className="about-sheet__tier-preview-hint">
-              Temporary testing control — tap <strong>My plan</strong> to reset. Subscribed above is your real tier.
-            </p>
-          </div>
-        }
 
         <div className="about-sheet__scroll">
           <section className="about-sheet__panel">
@@ -302,7 +249,7 @@ export function AboutSheet({
                 onChange={(e) => onSettings({ ...settings, stormEnabled: e.target.checked })}
               />
               <span>
-                {subscribedPlus ? (
+                {plus ? (
                   <>
                     <strong>Advisory bar</strong> (NWS) — warning map, route overlap, and hazard details when NWS session
                     tools are on

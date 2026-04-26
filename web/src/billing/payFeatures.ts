@@ -4,8 +4,8 @@
  * Tier inventory: `docs/PAY_TIERS.md`
  *
  * **Development (`vite` / `import.meta.env.DEV`):** defaults to **Plus** so everything is on.
- * To test **Basic** in dev: use About → Preview UI as Basic (stored as `stormpath-pay-tier-ui-preview`), or
- * `localStorage.setItem("stormpath-pay-tier-override", "free")` then refresh for a full-tier override.
+ * To test **Basic** in dev: `localStorage.setItem("stormpath-pay-tier-override", "free")` then refresh (or set
+ * `VITE_PAY_TIER` / Netlify env for production-shaped builds).
  *
  * **Production build (Netlify / phone):** defaults to **Basic** unless `VITE_PAY_TIER=plus` in the build env
  * (and in Netlify **Site configuration → Environment variables**) or `localStorage stormpath-pay-tier-override` = `plus`.

@@ -684,12 +684,6 @@
   text-align: right;
 }
 
-.about-sheet__preview-badge {
-  font-weight: 600;
-  font-size: 0.72em;
-  color: #a78bfa;
-}
-
 .about-sheet__tier-preview {
   margin: 0 0 8px;
   /* padding/border/radius: .about-sheet__panel */

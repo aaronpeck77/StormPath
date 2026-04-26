@@ -115,7 +115,7 @@ import {
   nwsAlertIsBasicEmergency,
 } from "./weatherAlerts/basicEmergencyFilter";
 import { buildAdvisoryPromoLines, buildBasicNavAdvisoryPromoLines } from "./config/advisoryPromo";
-import { getPayTier, type PayTier } from "./billing/payFeatures";
+import { getPayTier } from "./billing/payFeatures";
 import type { FrequentRouteCluster } from "./frequentRoutes/types";
 import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
 import { useFrequentRouteLearning } from "./hooks/useFrequentRouteLearning";
@@ -202,20 +202,6 @@ function isNarrowPhoneViewport(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(max-width: 520px)").matches;
 }
 
-/** About-sheet tier preview only; does not change billing. Persisted so closing About does not snap back to Plus in dev. */
-const PAY_TIER_UI_PREVIEW_LS = "stormpath-pay-tier-ui-preview";
-
-function readStoredPayTierUiPreview(): PayTier | null {
-  try {
-    const v = localStorage.getItem(PAY_TIER_UI_PREVIEW_LS)?.toLowerCase();
-    if (v === "free") return "free";
-    if (v === "plus" || v === "pro") return "plus";
-  } catch {
-    /* ignore */
-  }
-  return null;
-}
-
 export default function App() {
   applyStormLayerStorageMigrations();
   const env = useMemo(() => getWebEnv(), []);
@@ -227,26 +213,8 @@ export default function App() {
       return false;
     }
   }, []);
-  /** `null` = use real subscription tier; Basic/Plus overlay from About (persisted in localStorage). */
-  const [payTierPreview, setPayTierPreviewState] = useState<PayTier | null>(() =>
-    typeof window === "undefined" ? null : readStoredPayTierUiPreview()
-  );
-  const setPayTierPreview = useCallback((tier: PayTier | null) => {
-    setPayTierPreviewState(tier);
-    try {
-      if (tier == null) localStorage.removeItem(PAY_TIER_UI_PREVIEW_LS);
-      else localStorage.setItem(PAY_TIER_UI_PREVIEW_LS, tier);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-  const effectivePayTier = payTierPreview ?? getPayTier();
-  const isPlus = effectivePayTier === "plus";
-  /**
-   * Progress rail is a Plus-only feature: use real build/subscription tier in production so About “preview
-   * as Plus” cannot unlock it on Basic (TestFlight). In dev, `getPayTier()` is forced Plus — follow preview.
-   */
-  const progressRailPlus = import.meta.env.DEV ? isPlus : getPayTier() === "plus";
+  /** Plus vs Basic from build env / `stormpath-pay-tier-override` only — same source everywhere (no UI preview). */
+  const isPlus = getPayTier() === "plus";
   const advisoryPromoLines = useMemo(
     () => (isPlus ? buildAdvisoryPromoLines(env, isPlus) : buildBasicNavAdvisoryPromoLines(env)),
     [env, isPlus]
@@ -3325,7 +3293,7 @@ export default function App() {
               </div>
             </div>
             {navigationStarted &&
-              progressRailPlus &&
+              isPlus &&
               progressRailRoute?.geometry &&
               progressRailRoute.geometry.length >= 2 && (
               <div
@@ -3787,8 +3755,6 @@ export default function App() {
       <AboutSheet
         open={aboutOpen}
         onClose={() => setAboutOpen(false)}
-        payTierPreview={payTierPreview}
-        onPayTierPreviewChange={setPayTierPreview}
         activityTrail={activityTrailAboutPanel}
         settings={{
           radarEnabled: settingRadarEnabled,
