@@ -1808,17 +1808,13 @@ export default function App() {
     trafficBypassContext != null &&
     !trafficBypassCompare;
 
-  /**
-   * Dr: only the chosen (focused) leg on the map — alternates stay in Rt / Map views. Full set only while
-   * picking among A/B/C in traffic bypass compare.
-   */
+  /** Dr: only the chosen (focused) leg on the map — alternates stay in Rt / Map views. */
   const driveMapRoutes = useMemo(() => {
     if (viewMode !== "drive") return plan.routes;
-    if (trafficBypassCompare != null) return plan.routes;
     const active = plan.routes.find((r) => r.id === guidanceRouteId);
     if (active) return [active];
     return plan.routes.length ? [plan.routes[0]!] : [];
-  }, [viewMode, trafficBypassCompare, guidanceRouteId, plan.routes]);
+  }, [viewMode, guidanceRouteId, plan.routes]);
   const progressRailRoute = guidanceRoute ?? driveMapRoutes[0] ?? plan.routes[0];
 
   /** Map pins during bypass compare — stagger along each polyline so labels don’t stack. */
@@ -3704,6 +3700,7 @@ export default function App() {
                         <RouteCycleButton
                           items={routePickItems}
                           selectedId={lineFocusId}
+                          cycleOrderIds={planRouteIds}
                           activeSlotIndex={viewMode === "route" ? previewLegIndex : null}
                           onSelect={handlePreviewRouteSelect}
                           detail={routeDockDetail}

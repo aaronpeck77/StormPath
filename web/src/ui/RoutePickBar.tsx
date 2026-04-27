@@ -79,6 +79,11 @@ export function RouteCycleButton({
   detail,
   className = "",
   /**
+   * Optional fixed cycle sequence (by route id). Useful when display order can be re-ranked
+   * after each select, but tap-to-cycle should still walk a stable A→B→C path.
+   */
+  cycleOrderIds,
+  /**
    * When the focused route id is not present in `items` (e.g. brief desync),
    * use this A/B/C slot (0, 1, 2) to pick label + color. Must match `items` order.
    */
@@ -90,6 +95,8 @@ export function RouteCycleButton({
   /** Extra line (e.g. distance · strategy) */
   detail?: string;
   className?: string;
+  /** Preferred cycle order by route id; ids not present in `items` are ignored. */
+  cycleOrderIds?: string[];
   activeSlotIndex?: number | null;
 }) {
   if (items.length === 0) return null;
@@ -101,11 +108,21 @@ export function RouteCycleButton({
       : null;
   const currentIndex = fromId >= 0 ? fromId : safeSlot ?? 0;
   const current = items[currentIndex]!;
+  const cycleSequence =
+    cycleOrderIds && cycleOrderIds.length > 0
+      ? cycleOrderIds.filter((id) => items.some((it) => it.id === id))
+      : items.map((it) => it.id);
 
   const cycle = () => {
     if (items.length < 2) return;
-    const next = (currentIndex + 1) % items.length;
-    onSelect(items[next]!.id);
+    if (cycleSequence.length < 2) {
+      const next = (currentIndex + 1) % items.length;
+      onSelect(items[next]!.id);
+      return;
+    }
+    const idx = cycleSequence.indexOf(current.id);
+    const nextId = cycleSequence[(idx >= 0 ? idx + 1 : 1) % cycleSequence.length]!;
+    onSelect(nextId);
   };
 
   const title = items
