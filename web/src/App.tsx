@@ -102,7 +102,11 @@ import { TrafficBypassComparePanel } from "./ui/TrafficBypassComparePanel";
 import type { TrafficBypassCompareCallout } from "./ui/DriveMap";
 import { pointAlongPolyline } from "./ui/geometryAlong";
 import { NWS_REQUEST_USER_AGENT } from "./config/nwsUserAgent";
-import { fetchNwsAlertsForRouteCorridor } from "./weatherAlerts/nwsUsProvider";
+import {
+  fetchNwsAlertsForBrowseViewport,
+  fetchNwsAlertsForRouteCorridor,
+  nwsBrowseBoundsAroundLngLat,
+} from "./weatherAlerts/nwsUsProvider";
 import {
   computeRouteOverlapWithAlerts,
   pointInAnyPolygonGeometry,
@@ -1529,6 +1533,12 @@ export default function App() {
     return pointAtAlongMeters(guidanceRoute.geometry, demoPlaybackAlongM);
   }, [demoBypassTrafficJamPlus, demoPlaybackAlongM, guidanceRoute?.geometry, userLngLat]);
 
+  const effectiveUserLngLatRef = useRef(effectiveUserLngLat);
+  effectiveUserLngLatRef.current = effectiveUserLngLat;
+
+  /** Bumps NWS effect when GPS becomes available for browse mode (no Go yet). */
+  const nwsBrowseLocationReady = Boolean(effectiveUserLngLat);
+
   /** Keeps progress-bar fill from snapping to ~0 when the active polyline is replaced (reroute). */
   const tripOdometerM = useSessionOdometerMeters(
     effectiveUserLngLat,
@@ -2133,19 +2143,13 @@ export default function App() {
     stormMapHasDisplayableRef.current = Boolean(stormMapGeoJson?.features?.length);
   }, [stormMapGeoJson]);
 
-  /** US NWS: only after Go — active (slot A) route corridor + upwind (west) context. No national or viewport browse. */
+  /**
+   * US NWS: after Go — active (slot A) route corridor + upwind context. Before Go — viewport browse
+   * around GPS so Storm/NWS is not permanently empty (was effectively 0% unless navigating).
+   */
   useEffect(() => {
     if (routing) return;
     if (!isPlus || !env.stormAdvisoryEnabled || !advisoryLifeSafetyOn) {
-      stormMapHasDisplayableRef.current = false;
-      setStormMapGeoJson(null);
-      setStormCorridorAlerts([]);
-      setStormOverlapping([]);
-      setStormError(null);
-      setStormLoading(false);
-      return;
-    }
-    if (!navigationStarted) {
       stormMapHasDisplayableRef.current = false;
       setStormMapGeoJson(null);
       setStormCorridorAlerts([]);
@@ -2159,6 +2163,29 @@ export default function App() {
       return;
     }
 
+    if (!navigationStarted && !effectiveUserLngLat) {
+      stormMapHasDisplayableRef.current = false;
+      setStormMapGeoJson(null);
+      setStormCorridorAlerts([]);
+      setStormOverlapping([]);
+      setStormError(null);
+      setStormLoading(false);
+      return;
+    }
+
+    if (navigationStarted) {
+      const g = nwsNavCorridorGeomRef.current;
+      if (!g || g.length < 2) {
+        stormMapHasDisplayableRef.current = false;
+        setStormMapGeoJson(null);
+        setStormCorridorAlerts([]);
+        setStormOverlapping([]);
+        setStormError(null);
+        setStormLoading(false);
+        return;
+      }
+    }
+
     const genAtStart = ++nwsFetchGenRef.current;
     let cancelled = false;
 
@@ -2167,24 +2194,48 @@ export default function App() {
       if (!stormMapHasDisplayableRef.current) setStormLoading(true);
       setStormError(null);
 
-      const geom = nwsNavCorridorGeomRef.current;
-      if (!geom || geom.length < 2) {
-        if (cancelled || nwsFetchGenRef.current !== genAtStart) return;
-        setStormCorridorAlerts([]);
-        setStormMapGeoJson(null);
-        setStormOverlapping([]);
-        setStormError(null);
-        setStormLoading(false);
-        return;
-      }
-
       try {
-        const corridor = await fetchNwsAlertsForRouteCorridor(geom, NWS_REQUEST_USER_AGENT);
-        if (cancelled || nwsFetchGenRef.current !== genAtStart) return;
-        setStormCorridorAlerts(corridor.alerts);
-        setStormMapGeoJson(corridor.mapGeoJson);
-        const o = computeRouteOverlapWithAlerts(geom, corridor.alerts);
-        setStormOverlapping(corridor.alerts.filter((a) => o.overlappingIds.includes(a.id)));
+        if (navigationStarted) {
+          const geom = nwsNavCorridorGeomRef.current;
+          if (!geom || geom.length < 2) {
+            if (!cancelled && nwsFetchGenRef.current === genAtStart) {
+              setStormCorridorAlerts([]);
+              setStormMapGeoJson(null);
+              setStormOverlapping([]);
+              setStormError(null);
+              setStormLoading(false);
+            }
+            return;
+          }
+          const corridor = await fetchNwsAlertsForRouteCorridor(geom, NWS_REQUEST_USER_AGENT);
+          if (cancelled || nwsFetchGenRef.current !== genAtStart) return;
+          setStormCorridorAlerts(corridor.alerts);
+          setStormMapGeoJson(corridor.mapGeoJson);
+          const o = computeRouteOverlapWithAlerts(geom, corridor.alerts);
+          setStormOverlapping(corridor.alerts.filter((a) => o.overlappingIds.includes(a.id)));
+        } else {
+          const p = effectiveUserLngLatRef.current;
+          if (!p) {
+            if (!cancelled && nwsFetchGenRef.current === genAtStart) {
+              setStormCorridorAlerts([]);
+              setStormMapGeoJson(null);
+              setStormOverlapping([]);
+              setStormError(null);
+              setStormLoading(false);
+            }
+            return;
+          }
+          const [lng, lat] = p;
+          const bounds = nwsBrowseBoundsAroundLngLat(lng, lat);
+          const corridor = await fetchNwsAlertsForBrowseViewport(bounds, NWS_REQUEST_USER_AGENT);
+          if (cancelled || nwsFetchGenRef.current !== genAtStart) return;
+          setStormCorridorAlerts(corridor.alerts);
+          setStormMapGeoJson(corridor.mapGeoJson);
+          const atUser = corridor.alerts.filter(
+            (a) => a.geometry && pointInAnyPolygonGeometry(lng, lat, a.geometry)
+          );
+          setStormOverlapping(atUser);
+        }
       } catch (e) {
         if (!cancelled && nwsFetchGenRef.current === genAtStart) {
           setStormError(e instanceof Error ? e.message : String(e));
@@ -2213,6 +2264,7 @@ export default function App() {
     isOnline,
     plan.routes.length,
     routing,
+    nwsBrowseLocationReady,
   ]);
 
   /**
