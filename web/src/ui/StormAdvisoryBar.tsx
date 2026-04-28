@@ -5,6 +5,7 @@ import {
   type AdvisoryPromoLine,
 } from "../config/advisoryPromo";
 import { sortWeatherAlertsBySeverity, type NormalizedWeatherAlert } from "../weatherAlerts";
+import { nwsAlertIsBasicEmergency } from "../weatherAlerts/basicEmergencyFilter";
 import { nwsIssuedByLine, nwsWhatIsHappening, nwsWhatToDo } from "../weatherAlerts/nwsDriveSummary";
 import type { DriveAheadLine, DriveAheadRadarTier } from "../nav/driveRouteAhead";
 import { formatDriveAheadBrief } from "../nav/driveRouteAhead";
@@ -134,6 +135,7 @@ function fmtEnds(ends: string | null): string | null {
 function weatherAdviceDriving(
   hasRouteOverlap: boolean,
   hasAtLocation: boolean,
+  hasNearCorridorOnly: boolean,
   trafficDelayMinutes: number
 ): ReactNode {
   if (hasRouteOverlap) {
@@ -149,6 +151,15 @@ function weatherAdviceDriving(
       <>
         <strong>Your position is inside an NWS alert polygon</strong>, but your plotted route may not intersect it on
         our map (geometry / sampling). <strong>Assume local conditions apply</strong> — read what is happening below.
+      </>
+    );
+  }
+  if (hasNearCorridorOnly) {
+    return (
+      <>
+        <strong>NWS warnings overlap your route region</strong>, but our line did not register a polygon crossing
+        (narrow warnings, map/router geometry, or sampling). <strong>Use radar and local reports</strong> — listed
+        alerts still apply nearby.
       </>
     );
   }
@@ -169,7 +180,7 @@ function weatherAdviceDriving(
 
 function nwsAlertCard(
   a: NormalizedWeatherAlert,
-  tier: "crosses" | "atLocation",
+  tier: "crosses" | "atLocation" | "nearCorridor",
   onClick?: (alert: NormalizedWeatherAlert) => void
 ): ReactNode {
   const endsLabel = fmtEnds(a.ends);
@@ -210,6 +221,22 @@ function nwsAlertCard(
       <li key={a.id} className="storm-advisory-bar__nws-item storm-advisory-bar__nws-item--crosses">
         <button type="button" className="storm-advisory-bar__ticker" title="Open this alert" onClick={() => onClick?.(a)}>
           <span className="storm-advisory-bar__nws-item-badge">On route</span>
+          <div className="storm-advisory-bar__nws-item-body">
+            {primary}
+            {kindRow}
+            {issuedMeta}
+            {endsRow}
+            {action}
+          </div>
+        </button>
+      </li>
+    );
+  }
+  if (tier === "nearCorridor") {
+    return (
+      <li key={a.id} className="storm-advisory-bar__nws-item storm-advisory-bar__nws-item--nearby">
+        <button type="button" className="storm-advisory-bar__ticker" title="Open this alert" onClick={() => onClick?.(a)}>
+          <span className="storm-advisory-bar__nws-item-badge">Near route</span>
           <div className="storm-advisory-bar__nws-item-body">
             {primary}
             {kindRow}
@@ -268,7 +295,12 @@ export function StormAdvisoryBar({
   basicNavAdvisoryMode = false,
 }: StormAdvisoryBarProps) {
   if (!featureEnabled) return null;
-  void corridorAlerts;
+
+  /** Corridor-scoped NWS list from the provider — overlaps route bbox; may exist when polyline overlap is empty. */
+  const corridorPool = useMemo(() => {
+    if (advisoryTier === "basic") return corridorAlerts.filter(nwsAlertIsBasicEmergency);
+    return corridorAlerts;
+  }, [advisoryTier, corridorAlerts]);
 
   const crossingSorted = useMemo(
     () => sortWeatherAlertsBySeverity(overlappingAlerts),
@@ -280,21 +312,48 @@ export function StormAdvisoryBar({
     [nwsAtLocationAlerts]
   );
 
-  const displayNwsList = crossingSorted.length > 0 ? crossingSorted : atLocationSorted;
-  const displayNwsTier = crossingSorted.length > 0 ? ("crosses" as const) : ("atLocation" as const);
+  const nearCorridorSorted = useMemo(() => {
+    const skip = new Set<string>();
+    for (const a of overlappingAlerts) skip.add(a.id);
+    for (const a of nwsAtLocationAlerts) skip.add(a.id);
+    return sortWeatherAlertsBySeverity(corridorPool.filter((a) => !skip.has(a.id)));
+  }, [corridorPool, overlappingAlerts, nwsAtLocationAlerts]);
+
+  const displayNwsTier: "crosses" | "atLocation" | "nearCorridor" =
+    crossingSorted.length > 0
+      ? "crosses"
+      : atLocationSorted.length > 0
+        ? "atLocation"
+        : nearCorridorSorted.length > 0
+          ? "nearCorridor"
+          : "crosses";
+
+  const displayNwsList =
+    crossingSorted.length > 0
+      ? crossingSorted
+      : atLocationSorted.length > 0
+        ? atLocationSorted
+        : nearCorridorSorted;
+
   const tickerMessages = useMemo(
     () =>
       displayNwsList.map((a) => {
         const primary = nwsWhatIsHappening(a).replace(/\s+/g, " ").trim();
         const short = primary.length > 70 ? `${primary.slice(0, 69)}…` : primary;
+        const badge =
+          displayNwsTier === "crosses"
+            ? "On route"
+            : displayNwsTier === "atLocation"
+              ? "At your position"
+              : "Near route";
         return {
           id: a.id,
           text: short || (a.event?.trim() || "Weather alert"),
           alert: a,
-          badge: crossingSorted.length > 0 ? "On route" : "At your position",
+          badge,
         };
       }),
-    [displayNwsList, crossingSorted.length]
+    [displayNwsList, displayNwsTier]
   );
   const [tickerIdx, setTickerIdx] = useState(0);
   const [promoIdx, setPromoIdx] = useState(0);
@@ -674,6 +733,19 @@ export function StormAdvisoryBar({
                   <span className="storm-advisory-bar__muted">(route may not show an intersection)</span>
                 </span>
               </p>
+            ) : nearCorridorSorted.length > 0 ? (
+              <p className="storm-advisory-bar__nws-hero storm-advisory-bar__nws-hero--cross">
+                <span className="storm-advisory-bar__nws-hero-main">
+                  <strong>{nearCorridorSorted.length}</strong>
+                  {nearCorridorSorted.length === 1
+                    ? " NWS warning near your route corridor"
+                    : " NWS warnings near your route corridor"}
+                  <span className="storm-advisory-bar__muted">
+                    {" "}
+                    (polygons may not intersect your drawn line — listed below)
+                  </span>
+                </span>
+              </p>
             ) : (
               <p className="storm-advisory-bar__muted storm-advisory-bar__radar-note">
                 {advisoryTier === "basic"
@@ -716,6 +788,9 @@ export function StormAdvisoryBar({
               {weatherAdviceDriving(
                 crossingSorted.length > 0,
                 crossingSorted.length === 0 && atLocationSorted.length > 0,
+                crossingSorted.length === 0 &&
+                  atLocationSorted.length === 0 &&
+                  nearCorridorSorted.length > 0,
                 trafficDelayMinutes
               )}
             </p>

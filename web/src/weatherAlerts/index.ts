@@ -13,11 +13,12 @@ export {
   rankNwsSeverity,
   sortWeatherAlertsBySeverity,
 } from "./geometryOverlap";
-export type { BuildNwsResultOptions, NwsBrowseBounds } from "./nwsUsProvider";
+export type { BuildNwsResultOptions, NwsBrowseBounds, NwsRouteCorridorsMergedOutcome } from "./nwsUsProvider";
 export {
   fetchNwsAlertsForBrowseViewport,
   fetchNwsAlertsForNorthAmericaBrowse,
   fetchNwsAlertsForRouteCorridor,
+  fetchNwsAlertsForRouteCorridorsMerged,
   mergeWeatherAlertFetchResults,
   nwsBrowseBoundsAroundLngLat,
 } from "./nwsUsProvider";

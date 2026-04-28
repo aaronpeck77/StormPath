@@ -17,6 +17,7 @@ import {
 } from "./nwsWatchZoneGeometry";
 import { nwsMapKindFromEvent } from "./nwsMapKind";
 import { nwsApiRequestHeaders } from "./nwsClientHeaders";
+import { nwsHttpGet, resolveNwsRequestUrl } from "./nwsHttpGet";
 
 /**
  * Do not use `limit=` — NWS returns 400 ("limit is not recognized").
@@ -148,7 +149,11 @@ async function fetchWithRetry(
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), NWS_FETCH_TIMEOUT_MS);
     try {
-      const res = await fetch(url, { headers, signal: ctrl.signal });
+      const res = await nwsHttpGet(url, headers, {
+        signal: ctrl.signal,
+        connectTimeout: NWS_FETCH_TIMEOUT_MS,
+        readTimeout: NWS_FETCH_TIMEOUT_MS,
+      });
       clearTimeout(timer);
       if (res.ok) return res;
       if (res.status === 429 && attempt < retries) {
@@ -180,9 +185,9 @@ async function fetchWithRetry(
       if (e instanceof DOMException && e.name === "AbortError") {
         lastError = new Error("NWS request timed out — the weather service may be slow.");
       } else if (e instanceof TypeError) {
-        // Failed to fetch — DNS, TLS, dropped cell, CORS, or ad/vpn blocking; not always "user offline".
+        const hint = resolveNwsRequestUrl(url).slice(0, 110);
         lastError = new Error(
-          "Could not reach the NWS service. Try Wi‑Fi, wait a moment, or try again. Heavy traffic to the public weather API is sometimes throttled."
+          `Could not reach NWS (${hint}). Try Wi‑Fi or open the advisory panel for details.`
         );
       } else {
         lastError = e;
@@ -529,6 +534,44 @@ export function mergeWeatherAlertFetchResults(results: WeatherAlertFetchResult[]
   return {
     alerts: [...alertById.values()],
     mapGeoJson: { type: "FeatureCollection", features: [...featureById.values()] },
+  };
+}
+
+export type NwsRouteCorridorsMergedOutcome = {
+  result: WeatherAlertFetchResult;
+  /** Set when one or more legs failed while others succeeded (`Promise.all` would have dropped everything). */
+  partialErrors?: string[];
+};
+
+/**
+ * Fetch NWS for each route leg and merge. Runs legs **sequentially** (easier on mobile / rate limits than
+ * parallel bursts). One failing leg does not cancel the merge.
+ */
+export async function fetchNwsAlertsForRouteCorridorsMerged(
+  geoms: LngLat[][],
+  userAgent: string,
+  buildOptions?: BuildNwsResultOptions
+): Promise<NwsRouteCorridorsMergedOutcome> {
+  if (geoms.length === 0) {
+    return {
+      result: { alerts: [], mapGeoJson: { type: "FeatureCollection", features: [] } },
+    };
+  }
+  const ok: WeatherAlertFetchResult[] = [];
+  const errs: string[] = [];
+  for (const g of geoms) {
+    try {
+      ok.push(await fetchNwsAlertsForRouteCorridor(g, userAgent, buildOptions));
+    } catch (e) {
+      errs.push(e instanceof Error ? e.message : String(e));
+    }
+  }
+  if (ok.length === 0) {
+    throw new Error(errs.length ? `NWS: ${errs.join(" | ")}` : "NWS: all corridor fetches failed");
+  }
+  return {
+    result: mergeWeatherAlertFetchResults(ok),
+    partialErrors: errs.length ? errs : undefined,
   };
 }
 

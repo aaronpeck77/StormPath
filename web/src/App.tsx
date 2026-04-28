@@ -52,6 +52,7 @@ import {
   bearingAlongRouteAhead,
   closestAlongRouteMeters,
   haversineMeters,
+  initialBearingDegrees,
   pointAtAlongMeters,
   polylineLengthMeters,
   slicePolylineBetweenAlong,
@@ -104,8 +105,7 @@ import { pointAlongPolyline } from "./ui/geometryAlong";
 import { NWS_REQUEST_USER_AGENT } from "./config/nwsUserAgent";
 import {
   fetchNwsAlertsForBrowseViewport,
-  fetchNwsAlertsForRouteCorridor,
-  mergeWeatherAlertFetchResults,
+  fetchNwsAlertsForRouteCorridorsMerged,
   nwsBrowseBoundsAroundLngLat,
 } from "./weatherAlerts/nwsUsProvider";
 import {
@@ -461,6 +461,8 @@ export default function App() {
   const altRoutesFetchAbortRef = useRef<AbortController | null>(null);
   /** Invalidates in-flight NWS fetches when storm deps change so stale responses cannot repopulate the map. */
   const nwsFetchGenRef = useRef(0);
+  /** Avoid overlapping `run()` ticks (interval + slow network) leaving loading stuck. */
+  const nwsFetchInFlightRef = useRef(false);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [routing, setRouting] = useState(false);
   const routingRef = useRef(routing);
@@ -582,7 +584,7 @@ export default function App() {
       "tier:", tierLabel,
       "| mapboxToken:", env.mapboxToken ? "YES" : "NO",
       "| stormAdvisory:", env.stormAdvisoryEnabled,
-      "| nws:", import.meta.env.DEV ? "dev-proxy" : "api.weather.gov",
+      "| nwsBase:", env.nwsApiBase,
       "| trafficEnabled:", settingTrafficEnabled,
       "| weatherHints:", settingWeatherHintsEnabled,
       "| online:", isOnline
@@ -1705,13 +1707,33 @@ export default function App() {
 
   /** Drive camera: align with polyline ahead (not device heading — often missing / wrong in-car). */
   const driveRouteBearingDeg = useMemo(() => {
-    if (!driveModeUi || !effectiveUserLngLat || !guidanceRoute?.geometry || guidanceRoute.geometry.length < 2) {
+    const geometry = guidanceRoute?.geometry;
+    if (!driveModeUi || !effectiveUserLngLat || !geometry || geometry.length < 2) {
       return null;
     }
-    const b = bearingAlongRouteAhead(effectiveUserLngLat, guidanceRoute.geometry);
+    let b: number | null = null;
+    /**
+     * While navigating, prefer along-route progress for camera bearing so we keep a forward-looking heading
+     * and avoid occasional 180-degree flips from closest-point projection onto a segment behind the vehicle.
+     */
+    if (navigationStarted && Number.isFinite(userAlongGuidanceM)) {
+      const totalM = polylineLengthMeters(geometry);
+      if (totalM > 1) {
+        const fromAlongM = Math.max(0, Math.min(totalM, userAlongGuidanceM));
+        const toAlongM = Math.min(totalM, fromAlongM + 72);
+        const fromPt = pointAtAlongMeters(geometry, fromAlongM);
+        const toPt = pointAtAlongMeters(geometry, Math.max(toAlongM, fromAlongM + 0.5));
+        if (haversineMeters(fromPt, toPt) >= 2.5) {
+          b = initialBearingDegrees(fromPt, toPt);
+        }
+      }
+    }
+    if (b == null) {
+      b = bearingAlongRouteAhead(effectiveUserLngLat, geometry);
+    }
     // Guard: after reroute / U-turn, the closest-point projection can pick a segment behind you,
     // flipping the camera ~180°. If device heading is available, prefer it when bearings disagree strongly.
-    if (b != null && heading != null && speedMps != null && speedMps > 4.5) {
+    if (b != null && heading != null && speedMps != null && speedMps > 2.2) {
       const norm = (d: number) => ((d % 360) + 360) % 360;
       const a = norm(b);
       const h = norm(heading);
@@ -1719,7 +1741,16 @@ export default function App() {
       if (diff > 70) return null; // fall back to device heading in DriveMap
     }
     return b;
-  }, [driveModeUi, effectiveUserLngLat, guidanceRoute?.geometry, guidanceRoute?.id, heading, speedMps]);
+  }, [
+    driveModeUi,
+    effectiveUserLngLat,
+    guidanceRoute?.geometry,
+    guidanceRoute?.id,
+    heading,
+    speedMps,
+    navigationStarted,
+    userAlongGuidanceM,
+  ]);
 
   /** Full-route ETA from scoring; scale by remaining distance while navigating so it tracks progress. */
   const driveEtaMinutes = useMemo(() => {
@@ -1905,17 +1936,15 @@ export default function App() {
     return stormMapGeoJson;
   }, [stormMapGeoJson, driveModeUi, nwsNavCorridorGeom, nwsNavCorridorGeomKey, stormCorridorAlerts]);
 
-  /** Map NWS layer: full set only when Plus detail is on; otherwise life-safety-class only. */
+  /** Map NWS layer: full set when Plus storm detail is on; otherwise prefer life-safety polygons but never hide a successful fetch. */
   const driveMapWeatherAlertGeoJson = useMemo(() => {
     if (!advisoryLifeSafetyOn) return null;
     const base = stormMapGeoJsonForMap ?? stormMapGeoJson;
-    if (!base) return null;
+    if (!base?.features?.length) return null;
     if (advisoryPlusDetailOn) return base;
     const filtered = filterMapGeoJsonToBasicEmergencies(base, stormCorridorAlerts);
     if (filtered?.features?.length) return filtered;
-    // Watches / borderline products can be filtered to zero while NWS still returned useful polygons.
-    if (base.features.length > 0 && stormCorridorAlerts.length > 0) return base;
-    return null;
+    return base;
   }, [advisoryLifeSafetyOn, advisoryPlusDetailOn, stormMapGeoJsonForMap, stormMapGeoJson, stormCorridorAlerts]);
 
   const stormProgressBands = useMemo(() => {
@@ -2175,7 +2204,8 @@ export default function App() {
    * viewport browse (same as empty-map storm context).
    */
   useEffect(() => {
-    if (!isPlus || !env.stormAdvisoryEnabled || !advisoryLifeSafetyOn) {
+    /** NWS is not Plus-gated — Basic still needs life-safety alerts; UI filters detail elsewhere. */
+    if (!env.stormAdvisoryEnabled || !advisoryLifeSafetyOn) {
       stormMapHasDisplayableRef.current = false;
       setStormMapGeoJson(null);
       setStormCorridorAlerts([]);
@@ -2184,10 +2214,15 @@ export default function App() {
       setStormLoading(false);
       return;
     }
-    if (!isOnline) {
+    /** Matches Settings → Storm; sibling effect clears state when this turns off — do not poll NWS. */
+    if (!settingStormEnabled) {
       setStormLoading(false);
       return;
     }
+    /**
+     * Do not gate NWS on `navigator.onLine`. WKWebView / iOS often misreports offline while Mapbox and
+     * HTTPS APIs still work; blocking here showed “no NWS” forever on some devices.
+     */
 
     const routeGeoms = plan.routes
       .map((r) => r.geometry)
@@ -2207,10 +2242,20 @@ export default function App() {
 
     const genAtStart = ++nwsFetchGenRef.current;
     let cancelled = false;
+    /** If primary routing is still computing, retry soon instead of waiting for the 120s interval. */
+    let routingRetryTimer: ReturnType<typeof window.setTimeout> | null = null;
 
     const run = async () => {
       if (nwsFetchGenRef.current !== genAtStart) return;
-      if (routingRef.current) return;
+      if (nwsFetchInFlightRef.current) return;
+      if (routingRef.current) {
+        routingRetryTimer = window.setTimeout(() => {
+          routingRetryTimer = null;
+          if (!cancelled && nwsFetchGenRef.current === genAtStart) void run();
+        }, 450);
+        return;
+      }
+      nwsFetchInFlightRef.current = true;
       if (!stormMapHasDisplayableRef.current) setStormLoading(true);
       setStormError(null);
 
@@ -2221,10 +2266,13 @@ export default function App() {
           .filter((g): g is LngLat[] => Boolean(g && g.length >= 2));
 
         if (geoms.length > 0) {
-          const results = await Promise.all(
-            geoms.map((g) => fetchNwsAlertsForRouteCorridor(g, NWS_REQUEST_USER_AGENT))
+          const { result: merged, partialErrors } = await fetchNwsAlertsForRouteCorridorsMerged(
+            geoms,
+            NWS_REQUEST_USER_AGENT
           );
-          const merged = mergeWeatherAlertFetchResults(results);
+          if (import.meta.env.DEV && partialErrors?.length) {
+            console.warn("[StormPath NWS] Some route legs failed (others merged):", partialErrors);
+          }
           if (cancelled || nwsFetchGenRef.current !== genAtStart) return;
           setStormCorridorAlerts(merged.alerts);
           setStormMapGeoJson(merged.mapGeoJson);
@@ -2242,7 +2290,6 @@ export default function App() {
               setStormMapGeoJson(null);
               setStormOverlapping([]);
               setStormError(null);
-              setStormLoading(false);
             }
             return;
           }
@@ -2265,23 +2312,24 @@ export default function App() {
           setStormOverlapping([]);
         }
       } finally {
-        if (!cancelled && nwsFetchGenRef.current === genAtStart) setStormLoading(false);
+        nwsFetchInFlightRef.current = false;
+        setStormLoading(false);
       }
     };
     void run();
     const id = window.setInterval(run, 120_000);
     return () => {
       cancelled = true;
+      if (routingRetryTimer != null) window.clearTimeout(routingRetryTimer);
       nwsFetchGenRef.current += 1;
       window.clearInterval(id);
+      setStormLoading(false);
     };
   }, [
-    isPlus,
     env.stormAdvisoryEnabled,
     nwsPlanRoutesGeomKey,
     advisoryLifeSafetyOn,
     settingStormEnabled,
-    isOnline,
     plan.routes.length,
     routing,
     nwsBrowseLocationReady,

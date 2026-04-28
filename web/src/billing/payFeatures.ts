@@ -1,3 +1,5 @@
+import { Capacitor } from "@capacitor/core";
+
 /**
  * Subscription / pay tier — single place to gate Plus features.
  *
@@ -8,8 +10,9 @@
  * `localStorage.setItem(PAY_TIER_OVERRIDE_LS_KEY, "free")` (or set `VITE_PAY_TIER` / Netlify for production-shaped
  * builds).
  *
- * **Production build (Netlify / phone):** defaults to **Basic** unless `VITE_PAY_TIER=plus` in the build env
- * (and in Netlify **Site configuration → Environment variables**) or `localStorage stormpath-pay-tier-override` = `plus`.
+ * **Production web (Netlify):** defaults to **Basic** unless `VITE_PAY_TIER=plus` or `localStorage` override.
+ * **Capacitor iOS/Android:** defaults to **Plus** when `VITE_PAY_TIER` is unset so TestFlight/NWS/traffic work
+ * before billing is wired; set `VITE_PAY_TIER=free` to test Basic on device.
  *
  * **Plus** unlocks storm/NWS advisory UI, traffic overlay, weather hints, auto re-route, and frequent-route learning.
  * **Basic** is navigation + radar only (no storm polygons, no traffic APIs, no hazard “road & traffic” toggles).
@@ -29,7 +32,9 @@ export function getPayTier(): PayTier {
   }
   const v = (import.meta.env.VITE_PAY_TIER as string | undefined)?.toLowerCase();
   if (v === "plus" || v === "pro") return "plus";
+  if (v === "free") return "free";
   if (import.meta.env.DEV) return "plus";
+  if (Capacitor.isNativePlatform()) return "plus";
   return "free";
 }
 

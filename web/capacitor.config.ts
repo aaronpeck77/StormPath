@@ -9,6 +9,10 @@ const config: CapacitorConfig = {
   appName: "StormPath",
   webDir: "dist",
   plugins: {
+    /** Keep `false`: global fetch patching can break Mapbox. NWS uses {@link CapacitorHttp.request} in code. */
+    CapacitorHttp: {
+      enabled: false,
+    },
     Geolocation: {
       // iOS permissions are declared in ios/App/App/Info.plist (added automatically
       // by `npx cap add ios`).  The strings below are what iOS shows the user.

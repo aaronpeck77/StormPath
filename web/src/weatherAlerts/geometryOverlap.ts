@@ -104,9 +104,9 @@ export function pointInAnyPolygonGeometry(
   return pointInMultiPolygon(lng, lat, g);
 }
 
-const SAMPLE_EVERY_M = 2000;
-/** Cap point-in-polygon checks along a route (cross-country polylines). */
-const POLYLINE_INTERSECT_MAX_STEPS = 52;
+/** Dense enough for long highway legs; capped so cross-country routes stay bounded. */
+const POLYLINE_INTERSECT_MIN_STEP_M = 850;
+const POLYLINE_INTERSECT_MAX_SAMPLES = 220;
 
 /**
  * True if any sample along the polyline lies inside the polygon (after bbox precheck).
@@ -127,7 +127,10 @@ export function polylineIntersectsPolygon(
   if (total < 50) {
     return pointInAnyPolygonGeometry(route[0]![0], route[0]![1], geometry);
   }
-  const step = Math.max(SAMPLE_EVERY_M, Math.ceil(total / POLYLINE_INTERSECT_MAX_STEPS));
+  const step = Math.max(
+    POLYLINE_INTERSECT_MIN_STEP_M,
+    Math.ceil(total / POLYLINE_INTERSECT_MAX_SAMPLES)
+  );
   for (let m = 0; m <= total; m += step) {
     const p = pointAtAlongMeters(route, Math.min(m, total - 0.01));
     if (pointInAnyPolygonGeometry(p[0], p[1], geometry)) return true;
