@@ -509,6 +509,29 @@ async function buildResultFromRawFeatures(
   };
 }
 
+/** Dedupe by alert id when fetching NWS separately for each alternate route (A/B/C). */
+export function mergeWeatherAlertFetchResults(results: WeatherAlertFetchResult[]): WeatherAlertFetchResult {
+  if (results.length === 0) {
+    return { alerts: [], mapGeoJson: { type: "FeatureCollection", features: [] } };
+  }
+  if (results.length === 1) return results[0]!;
+  const alertById = new Map<string, NormalizedWeatherAlert>();
+  const featureById = new Map<string, GeoJSON.Feature>();
+  for (const res of results) {
+    for (const a of res.alerts) {
+      alertById.set(a.id, a);
+    }
+    for (const f of res.mapGeoJson.features) {
+      const id = String((f.properties as { id?: string } | undefined)?.id ?? "");
+      if (id) featureById.set(id, f);
+    }
+  }
+  return {
+    alerts: [...alertById.values()],
+    mapGeoJson: { type: "FeatureCollection", features: [...featureById.values()] },
+  };
+}
+
 /**
  * Fetch active US alerts and keep those whose bbox intersects an expanded corridor around the route.
  * Uses several `alerts/active?point=` calls along the polyline (small responses) instead of one national feed.

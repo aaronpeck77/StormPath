@@ -18,5 +18,6 @@ export {
   fetchNwsAlertsForBrowseViewport,
   fetchNwsAlertsForNorthAmericaBrowse,
   fetchNwsAlertsForRouteCorridor,
+  mergeWeatherAlertFetchResults,
   nwsBrowseBoundsAroundLngLat,
 } from "./nwsUsProvider";

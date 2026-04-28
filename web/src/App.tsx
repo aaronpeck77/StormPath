@@ -105,6 +105,7 @@ import { NWS_REQUEST_USER_AGENT } from "./config/nwsUserAgent";
 import {
   fetchNwsAlertsForBrowseViewport,
   fetchNwsAlertsForRouteCorridor,
+  mergeWeatherAlertFetchResults,
   nwsBrowseBoundsAroundLngLat,
 } from "./weatherAlerts/nwsUsProvider";
 import {
@@ -1392,8 +1393,24 @@ export default function App() {
     return `${g.length}:${a[0].toFixed(4)},${a[1].toFixed(4)}→${b[0].toFixed(4)},${b[1].toFixed(4)}`;
   }, [nwsNavCorridorGeom]);
 
+  /** Invalidates NWS polling when any A/B/C geometry changes (before or after Go). */
+  const nwsPlanRoutesGeomKey = useMemo(() => {
+    return plan.routes
+      .map((r) => {
+        const g = r.geometry;
+        if (!g?.length) return `${r.id}:0`;
+        const a = g[0]!;
+        const b = g[g.length - 1]!;
+        return `${r.id}:${g.length}:${a[0].toFixed(4)},${a[1].toFixed(4)}→${b[0].toFixed(4)},${b[1].toFixed(4)}`;
+      })
+      .join("|");
+  }, [plan.routes]);
+
   const nwsNavCorridorGeomRef = useRef<LngLat[] | undefined>(undefined);
   nwsNavCorridorGeomRef.current = nwsNavCorridorGeom;
+
+  const planRoutesRef = useRef(plan.routes);
+  planRoutesRef.current = plan.routes;
 
   /** Route view while navigating: refresh B/C from current GPS; keep primary (slot A) geometry unchanged. */
   const refreshAlternateRoutesOnly = useCallback(async () => {
@@ -1941,7 +1958,7 @@ export default function App() {
     if (!navigationStarted) {
       const pt = totalM > 0 ? Math.min(1, Math.max(0, userAlongGuidanceM / totalM)) : 0.5;
       const b = buildSimpleCalloutBlock("Route conditions", [
-        "Press Go to load live traffic, weather, and NWS for your active route (primary leg).",
+        "NWS loads with your A/B/C routes. Press Go for live traffic and weather on the active leg.",
       ]);
       return [
         {
@@ -2144,8 +2161,9 @@ export default function App() {
   }, [stormMapGeoJson]);
 
   /**
-   * US NWS: after Go — active (slot A) route corridor + upwind context. Before Go — viewport browse
-   * around GPS so Storm/NWS is not permanently empty (was effectively 0% unless navigating).
+   * US NWS: starts once A/B/C polylines exist (same time as route preview). Merges corridor results for
+   * every planned leg. Traffic stays gated on Go elsewhere. If there is no trip yet, falls back to GPS
+   * viewport browse (same as empty-map storm context).
    */
   useEffect(() => {
     if (routing) return;
@@ -2163,7 +2181,13 @@ export default function App() {
       return;
     }
 
-    if (!navigationStarted && !effectiveUserLngLat) {
+    const routeGeoms = plan.routes
+      .map((r) => r.geometry)
+      .filter((g): g is LngLat[] => Boolean(g && g.length >= 2));
+    const hasRouteCorridors = routeGeoms.length > 0;
+    const canBrowseWithoutRoutes = !hasRouteCorridors && Boolean(effectiveUserLngLat);
+
+    if (!hasRouteCorridors && !canBrowseWithoutRoutes) {
       stormMapHasDisplayableRef.current = false;
       setStormMapGeoJson(null);
       setStormCorridorAlerts([]);
@@ -2171,19 +2195,6 @@ export default function App() {
       setStormError(null);
       setStormLoading(false);
       return;
-    }
-
-    if (navigationStarted) {
-      const g = nwsNavCorridorGeomRef.current;
-      if (!g || g.length < 2) {
-        stormMapHasDisplayableRef.current = false;
-        setStormMapGeoJson(null);
-        setStormCorridorAlerts([]);
-        setStormOverlapping([]);
-        setStormError(null);
-        setStormLoading(false);
-        return;
-      }
     }
 
     const genAtStart = ++nwsFetchGenRef.current;
@@ -2195,24 +2206,25 @@ export default function App() {
       setStormError(null);
 
       try {
-        if (navigationStarted) {
-          const geom = nwsNavCorridorGeomRef.current;
-          if (!geom || geom.length < 2) {
-            if (!cancelled && nwsFetchGenRef.current === genAtStart) {
-              setStormCorridorAlerts([]);
-              setStormMapGeoJson(null);
-              setStormOverlapping([]);
-              setStormError(null);
-              setStormLoading(false);
-            }
-            return;
-          }
-          const corridor = await fetchNwsAlertsForRouteCorridor(geom, NWS_REQUEST_USER_AGENT);
+        const routesSnapshot = planRoutesRef.current;
+        const geoms = routesSnapshot
+          .map((r) => r.geometry)
+          .filter((g): g is LngLat[] => Boolean(g && g.length >= 2));
+
+        if (geoms.length > 0) {
+          const results = await Promise.all(
+            geoms.map((g) => fetchNwsAlertsForRouteCorridor(g, NWS_REQUEST_USER_AGENT))
+          );
+          const merged = mergeWeatherAlertFetchResults(results);
           if (cancelled || nwsFetchGenRef.current !== genAtStart) return;
-          setStormCorridorAlerts(corridor.alerts);
-          setStormMapGeoJson(corridor.mapGeoJson);
-          const o = computeRouteOverlapWithAlerts(geom, corridor.alerts);
-          setStormOverlapping(corridor.alerts.filter((a) => o.overlappingIds.includes(a.id)));
+          setStormCorridorAlerts(merged.alerts);
+          setStormMapGeoJson(merged.mapGeoJson);
+          const overlappingIds = new Set<string>();
+          for (const g of geoms) {
+            const o = computeRouteOverlapWithAlerts(g, merged.alerts);
+            for (const id of o.overlappingIds) overlappingIds.add(id);
+          }
+          setStormOverlapping(merged.alerts.filter((a) => overlappingIds.has(a.id)));
         } else {
           const p = effectiveUserLngLatRef.current;
           if (!p) {
@@ -2257,8 +2269,7 @@ export default function App() {
   }, [
     isPlus,
     env.stormAdvisoryEnabled,
-    nwsNavCorridorGeomKey,
-    navigationStarted,
+    nwsPlanRoutesGeomKey,
     advisoryLifeSafetyOn,
     settingStormEnabled,
     isOnline,
