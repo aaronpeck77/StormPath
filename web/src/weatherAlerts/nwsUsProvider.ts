@@ -16,6 +16,7 @@ import {
   resolveGeometryForUgcBackedAlerts,
 } from "./nwsWatchZoneGeometry";
 import { nwsMapKindFromEvent } from "./nwsMapKind";
+import { nwsApiRequestHeaders } from "./nwsClientHeaders";
 
 /**
  * Do not use `limit=` — NWS returns 400 ("limit is not recognized").
@@ -285,11 +286,7 @@ async function fetchNwsFeaturesAtPoint(
 
   const base = getWebEnv().nwsApiBase.replace(/\/$/, "");
   const url = `${base}/alerts/active?point=${p.lat},${p.lng}`;
-  const headers: Record<string, string> = {
-    Accept: "application/geo+json, application/json",
-    "User-Agent": userAgent,
-  };
-  const res = await fetchWithRetry(url, headers);
+  const res = await fetchWithRetry(url, nwsApiRequestHeaders(userAgent));
   const data = (await res.json()) as GeoJSON.FeatureCollection;
   return (data.features ?? []) as NwsFeature[];
 }
@@ -407,11 +404,7 @@ async function mergeNwsPointSamples(
 }
 
 async function fetchNwsActiveAlertsFeatures(userAgent: string): Promise<NwsFeature[]> {
-  const headers: Record<string, string> = {
-    Accept: "application/geo+json, application/json",
-    "User-Agent": userAgent,
-  };
-  const res = await fetchWithRetry(nwsActiveAlertsUrl(), headers);
+  const res = await fetchWithRetry(nwsActiveAlertsUrl(), nwsApiRequestHeaders(userAgent));
   const data = (await res.json()) as GeoJSON.FeatureCollection;
   return (data.features ?? []) as NwsFeature[];
 }
@@ -573,11 +566,7 @@ export async function fetchNwsAlertsForNorthAmericaBrowse(
   userAgent: string,
   buildOptions?: BuildNwsResultOptions
 ): Promise<WeatherAlertFetchResult> {
-  const headers: Record<string, string> = {
-    Accept: "application/geo+json, application/json",
-    "User-Agent": userAgent,
-  };
-  const res = await fetchWithRetry(nwsActiveAlertsUrl(), headers);
+  const res = await fetchWithRetry(nwsActiveAlertsUrl(), nwsApiRequestHeaders(userAgent));
   const data = (await res.json()) as GeoJSON.FeatureCollection;
   const features = (data.features ?? []) as NwsFeature[];
   return buildResultFromRawFeatures(features, NA_BROWSE_CORRIDOR, userAgent, NWS_PAD_DEG, {

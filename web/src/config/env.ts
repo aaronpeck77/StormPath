@@ -8,7 +8,8 @@ export function getWebEnv() {
     stormAdvisoryEnabled: import.meta.env.VITE_STORM_ADVISORY_ENABLED !== "false",
     /**
      * Optional origin/path for NWS `alerts/active` (no trailing slash). Dev defaults to `/weather-gov` (Vite proxy).
-     * In production, set to a same-origin proxy if browsers block cross-origin NWS calls.
+     * A same-origin proxy (or legacy env) is optional: direct NWS fetches work if requests avoid
+     * a non-allowed CORS preflight (see nwsClientHeaders). Dev still defaults to the Vite proxy.
      */
     nwsApiBase:
       (import.meta.env.VITE_NWS_API_BASE as string | undefined)?.trim() ||

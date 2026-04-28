@@ -9,6 +9,7 @@ import { rankNwsSeverity } from "./geometryOverlap";
 import type { NormalizedWeatherAlert } from "./types";
 import { extractPolygonalGeometry, mergePolygonalParts } from "./nwsGeometry";
 import { stateCodesTouchingCorridorBbox } from "./usStateBBox";
+import { nwsApiRequestHeaders } from "./nwsClientHeaders";
 
 /** Prefer resolving these first when over the per-refresh cap (same as old narrow list). */
 const NWS_CONVECTIVE_PRIORITY_EVENTS = new Set([
@@ -80,10 +81,7 @@ async function fetchZonePolygon(
   const timer = setTimeout(() => ctrl.abort(), ZONE_FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
-      headers: {
-        Accept: "application/geo+json, application/json",
-        "User-Agent": userAgent,
-      },
+      headers: nwsApiRequestHeaders(userAgent),
       signal: ctrl.signal,
     });
     clearTimeout(timer);
