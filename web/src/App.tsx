@@ -463,6 +463,8 @@ export default function App() {
   const nwsFetchGenRef = useRef(0);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [routing, setRouting] = useState(false);
+  const routingRef = useRef(routing);
+  routingRef.current = routing;
   const [tapHint, setTapHint] = useState<string | null>(null);
   /** Several geocode hits (business + city, “coffee”, etc.) — map pins + list until user picks one. */
   const [searchPickHits, setSearchPickHits] = useState<SearchSuggestion[] | null>(null);
@@ -579,6 +581,8 @@ export default function App() {
       `[stormpath boot] ${STORMPATH_CLIENT_BUILD}`,
       "tier:", tierLabel,
       "| mapboxToken:", env.mapboxToken ? "YES" : "NO",
+      "| stormAdvisory:", env.stormAdvisoryEnabled,
+      "| nws:", import.meta.env.DEV ? "dev-proxy" : "api.weather.gov",
       "| trafficEnabled:", settingTrafficEnabled,
       "| weatherHints:", settingWeatherHintsEnabled,
       "| online:", isOnline
@@ -1908,16 +1912,21 @@ export default function App() {
     if (!base) return null;
     if (advisoryPlusDetailOn) return base;
     const filtered = filterMapGeoJsonToBasicEmergencies(base, stormCorridorAlerts);
-    if (!filtered?.features?.length) return null;
-    return filtered;
+    if (filtered?.features?.length) return filtered;
+    // Watches / borderline products can be filtered to zero while NWS still returned useful polygons.
+    if (base.features.length > 0 && stormCorridorAlerts.length > 0) return base;
+    return null;
   }, [advisoryLifeSafetyOn, advisoryPlusDetailOn, stormMapGeoJsonForMap, stormMapGeoJson, stormCorridorAlerts]);
 
   const stormProgressBands = useMemo(() => {
     const g = nwsNavCorridorGeom;
     if (!g?.length) return [];
-    const geo = advisoryPlusDetailOn
-      ? stormMapGeoJsonForMap ?? stormMapGeoJson
-      : filterMapGeoJsonToBasicEmergencies(stormMapGeoJsonForMap ?? stormMapGeoJson, stormCorridorAlerts);
+    const raw = stormMapGeoJsonForMap ?? stormMapGeoJson;
+    let geo = raw;
+    if (!advisoryPlusDetailOn && raw?.features?.length) {
+      const filtered = filterMapGeoJsonToBasicEmergencies(raw, stormCorridorAlerts);
+      geo = filtered?.features?.length ? filtered : stormCorridorAlerts.length > 0 ? raw : null;
+    }
     if (!geo?.features?.length) return [];
     return stormAlongBandsForProgressStrip(g, geo);
   }, [advisoryPlusDetailOn, nwsNavCorridorGeom, nwsNavCorridorGeomKey, stormMapGeoJson, stormMapGeoJsonForMap, stormCorridorAlerts]);
@@ -2166,7 +2175,6 @@ export default function App() {
    * viewport browse (same as empty-map storm context).
    */
   useEffect(() => {
-    if (routing) return;
     if (!isPlus || !env.stormAdvisoryEnabled || !advisoryLifeSafetyOn) {
       stormMapHasDisplayableRef.current = false;
       setStormMapGeoJson(null);
@@ -2202,6 +2210,7 @@ export default function App() {
 
     const run = async () => {
       if (nwsFetchGenRef.current !== genAtStart) return;
+      if (routingRef.current) return;
       if (!stormMapHasDisplayableRef.current) setStormLoading(true);
       setStormError(null);
 
@@ -2434,8 +2443,6 @@ export default function App() {
 
   const refreshAltRef = useRef(refreshAlternateRoutesOnly);
   refreshAltRef.current = refreshAlternateRoutesOnly;
-  const routingRef = useRef(routing);
-  routingRef.current = routing;
 
   /** Rt: keep primary leg fixed; refresh alternate legs on an interval */
   useEffect(() => {

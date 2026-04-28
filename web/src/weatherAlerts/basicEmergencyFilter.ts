@@ -13,7 +13,9 @@ export function nwsAlertIsBasicEmergency(a: NormalizedWeatherAlert): boolean {
   if (!ev) return false;
 
   if (/tornado warning/i.test(ev)) return true;
+  if (/tornado watch/i.test(ev)) return true;
   if (/severe thunderstorm warning/i.test(ev)) return true;
+  if (/severe thunderstorm watch/i.test(ev)) return true;
   if (/extreme wind warning/i.test(ev)) return true;
   if (/snow squall warning/i.test(ev)) return true;
   if (/blizzard warning/i.test(ev)) return true;
