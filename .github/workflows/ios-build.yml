@@ -26,6 +26,12 @@ jobs:
   build-ios:
     runs-on: macos-latest
     timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Quieter Action-step deprecation warnings until third-party actions ship Node 24 runtimes.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       # ── 1. Source code ───────────────────────────────────────────────────────
@@ -93,6 +99,8 @@ jobs:
       - name: Build archive
         run: |
           set -o pipefail
+          # Last command must be this pipeline — its exit status becomes the step status (do not add a
+          # separate `exit ${PIPESTATUS[0]}` line; `bash -e` / shell quirks can interfere).
           xcodebuild archive \
             -project web/ios/App/App.xcodeproj \
             -scheme App \
@@ -105,8 +113,6 @@ jobs:
             PROVISIONING_PROFILE_SPECIFIER="${{ steps.profile.outputs.uuid }}" \
             CODE_SIGNING_REQUIRED=YES \
             2>&1 | tee /tmp/xcodebuild.log
-          # Do not pipe to grep: with pipefail, grep exits 1 when it matches nothing and fails a good build.
-          exit "${PIPESTATUS[0]}"
 
       # ── 10. Export the IPA ────────────────────────────────────────────────────
       - name: Export IPA
@@ -140,7 +146,6 @@ jobs:
             -exportPath "$RUNNER_TEMP/export" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
             2>&1 | tee /tmp/export.log
-          exit "${PIPESTATUS[0]}"
 
       # ── 11. Upload to TestFlight ──────────────────────────────────────────────
       - name: Upload to TestFlight
