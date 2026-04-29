@@ -1943,13 +1943,13 @@ export default function App() {
       return id && ids.has(id);
     });
     if (filtered.length > 0) {
-      return { type: "FeatureCollection" as const, features: filtered };
+      return { type: "FeatureCollection", features: filtered } as GeoJSON.FeatureCollection;
     }
     return undefined;
   }, [stormMapGeoJson, driveModeUi, nwsNavCorridorGeom, nwsNavCorridorGeomKey, stormCorridorAlerts]);
 
   /** Map NWS layer: full set when Plus storm detail is on; otherwise prefer life-safety polygons but never hide a successful fetch. */
-  const driveMapWeatherAlertGeoJson = useMemo(() => {
+  const driveMapWeatherAlertGeoJson = useMemo((): GeoJSON.FeatureCollection | null => {
     if (!advisoryLifeSafetyOn) return null;
     const base = stormMapGeoJsonForMap ?? stormMapGeoJson;
     if (!base?.features?.length) return null;
@@ -1968,7 +1968,7 @@ export default function App() {
           return fid === id;
         });
       });
-      return { type: "FeatureCollection", features: merged };
+      return { type: "FeatureCollection", features: merged } as GeoJSON.FeatureCollection;
     }
     return base;
   }, [
@@ -1984,7 +1984,7 @@ export default function App() {
     const g = nwsNavCorridorGeom;
     if (!g?.length) return [];
     const raw = stormMapGeoJsonForMap ?? stormMapGeoJson;
-    let geo = raw;
+    let geo: GeoJSON.FeatureCollection | null = raw ?? null;
     if (!advisoryPlusDetailOn && raw?.features?.length) {
       const filtered = filterMapGeoJsonToBasicEmergencies(raw, stormCorridorAlerts);
       geo = filtered?.features?.length ? filtered : stormCorridorAlerts.length > 0 ? raw : null;

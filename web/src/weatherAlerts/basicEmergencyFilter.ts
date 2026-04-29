@@ -50,5 +50,5 @@ export function filterMapGeoJsonToBasicEmergencies(
     const id = String((f.properties as { id?: string } | undefined)?.id ?? "");
     return id && allow.has(id);
   });
-  return { type: "FeatureCollection", features };
+  return { type: "FeatureCollection", features } as GeoJSON.FeatureCollection;
 }
