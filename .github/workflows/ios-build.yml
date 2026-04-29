@@ -30,11 +30,11 @@ jobs:
     steps:
       # ── 1. Source code ───────────────────────────────────────────────────────
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # ── 2. Node + npm cache ──────────────────────────────────────────────────
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "npm"
@@ -104,7 +104,9 @@ jobs:
             CODE_SIGN_IDENTITY="iPhone Distribution" \
             PROVISIONING_PROFILE_SPECIFIER="${{ steps.profile.outputs.uuid }}" \
             CODE_SIGNING_REQUIRED=YES \
-            2>&1 | tee /tmp/xcodebuild.log | grep -E "error:|warning:|archive"
+            2>&1 | tee /tmp/xcodebuild.log
+          # Do not pipe to grep: with pipefail, grep exits 1 when it matches nothing and fails a good build.
+          exit "${PIPESTATUS[0]}"
 
       # ── 10. Export the IPA ────────────────────────────────────────────────────
       - name: Export IPA
@@ -137,7 +139,8 @@ jobs:
             -archivePath "$RUNNER_TEMP/StormPath.xcarchive" \
             -exportPath "$RUNNER_TEMP/export" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-            2>&1 | tee /tmp/export.log | grep -E "error:|warning:|Export"
+            2>&1 | tee /tmp/export.log
+          exit "${PIPESTATUS[0]}"
 
       # ── 11. Upload to TestFlight ──────────────────────────────────────────────
       - name: Upload to TestFlight
@@ -156,7 +159,7 @@ jobs:
       # ── 12. Save IPA as a build artifact (optional — handy for debugging) ────
       - name: Upload IPA artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: StormPath-${{ github.run_number }}.ipa
           path: ${{ runner.temp }}/export/App.ipa
