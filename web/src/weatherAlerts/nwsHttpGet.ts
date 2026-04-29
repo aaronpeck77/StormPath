@@ -11,14 +11,18 @@ export function resolveNwsRequestUrl(url: string): string {
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
   if (url.startsWith("/weather-gov")) {
     /**
-     * Browser dev (`npm run dev`): keep same-origin `/weather-gov` so Vite’s proxy applies (see
-     * `vite.config.ts`). Rewriting here forces a cross-origin hit to api.weather.gov and CORS blocks it.
-     * Capacitor / static hosts: no proxy — use the real API origin.
+     * Vite dev (`npm run dev`): keep same-origin `/weather-gov` so the dev-server proxy applies (see
+     * `vite.config.ts`). Rewriting to `https://api.weather.gov` here makes the **browser** hit NWS
+     * cross-origin — usually blocked by CORS — which is why TestFlight worked but localhost dev did not.
+     *
+     * Use `import.meta.env.DEV` as well as `!Capacitor.isNativePlatform()` so we never rely on a
+     * single signal if Capacitor loads oddly in a desktop browser tab.
+     *
+     * Capacitor live-reload / native: rewrite to https for native HTTP or WKWebView fetch.
      */
-    if (Capacitor.isNativePlatform()) {
-      return `https://api.weather.gov${url.slice("/weather-gov".length)}`;
-    }
-    return url;
+    const useViteProxy = import.meta.env.DEV && !Capacitor.isNativePlatform();
+    if (useViteProxy) return url;
+    return `https://api.weather.gov${url.slice("/weather-gov".length)}`;
   }
   if (typeof window !== "undefined" && url.startsWith("/")) {
     return `${window.location.origin}${url}`;

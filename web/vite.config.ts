@@ -44,4 +44,15 @@ export default defineConfig({
       },
     },
   },
+  /** Same proxy as `server` — only applies if requests use `/weather-gov` (e.g. `VITE_NWS_API_BASE=/weather-gov`). */
+  preview: {
+    proxy: {
+      "/weather-gov": {
+        target: "https://api.weather.gov",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/weather-gov/, ""),
+      },
+    },
+  },
 });
