@@ -69,6 +69,33 @@ jobs:
         run: npx cap sync ios
         working-directory: web
 
+      # ── 5b. Xcode / iOS SDK (App Store minimum) ─────────────────────────────
+      # Default selected Xcode on the runner is 16.x (iOS 18 SDK). Apple rejects uploads built with
+      # that SDK when they require iOS 26+ / Xcode 26+. Runner images ship Xcode 26.x side-by-side:
+      # https://github.com/actions/runner-images/blob/main/images/macos/macos-15-Readme.md
+      - name: Select Xcode 26 (iOS 26 SDK)
+        run: |
+          set -euo pipefail
+          DEV=""
+          for APP in \
+            "/Applications/Xcode_26.3.app" \
+            "/Applications/Xcode_26.2.app" \
+            "/Applications/Xcode_26.1.1.app" \
+            "/Applications/Xcode_26.0.1.app"
+          do
+            if [[ -d "$APP" ]]; then
+              DEV="$APP/Contents/Developer"
+              break
+            fi
+          done
+          if [[ -z "$DEV" ]]; then
+            echo "No Xcode 26.x app found under /Applications. Paths may differ — see runner-images macOS README."
+            ls -la /Applications/ | grep -i xcode || true
+            exit 1
+          fi
+          sudo xcode-select -s "$DEV"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
 
       # ── 6. Apple code-signing certificate ───────────────────────────────────
       - name: Import distribution certificate
