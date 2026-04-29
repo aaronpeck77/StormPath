@@ -1932,8 +1932,8 @@ export default function App() {
    * Rt/Mp: full corridor/browse polygons.
    * Dr: show only polygons that directly intersect the active route.
    */
-  const stormMapGeoJsonForMap = useMemo(() => {
-    if (!stormMapGeoJson?.features?.length) return null;
+  const stormMapGeoJsonForMap = useMemo<GeoJSON.FeatureCollection | undefined>(() => {
+    if (!stormMapGeoJson?.features?.length) return undefined;
     const g = nwsNavCorridorGeom;
     if (!driveModeUi || !g?.length) return stormMapGeoJson;
     const o = computeRouteOverlapWithAlerts(g, stormCorridorAlerts);
@@ -1945,7 +1945,7 @@ export default function App() {
     if (filtered.length > 0) {
       return { type: "FeatureCollection" as const, features: filtered };
     }
-    return null;
+    return undefined;
   }, [stormMapGeoJson, driveModeUi, nwsNavCorridorGeom, nwsNavCorridorGeomKey, stormCorridorAlerts]);
 
   /** Map NWS layer: full set when Plus storm detail is on; otherwise prefer life-safety polygons but never hide a successful fetch. */
