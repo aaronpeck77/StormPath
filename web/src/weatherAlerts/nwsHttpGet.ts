@@ -10,7 +10,15 @@ export const NWS_HTTP_DEFAULT_TIMEOUT_MS = 22_000;
 export function resolveNwsRequestUrl(url: string): string {
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
   if (url.startsWith("/weather-gov")) {
-    return `https://api.weather.gov${url.slice("/weather-gov".length)}`;
+    /**
+     * Browser dev (`npm run dev`): keep same-origin `/weather-gov` so Vite’s proxy applies (see
+     * `vite.config.ts`). Rewriting here forces a cross-origin hit to api.weather.gov and CORS blocks it.
+     * Capacitor / static hosts: no proxy — use the real API origin.
+     */
+    if (Capacitor.isNativePlatform()) {
+      return `https://api.weather.gov${url.slice("/weather-gov".length)}`;
+    }
+    return url;
   }
   if (typeof window !== "undefined" && url.startsWith("/")) {
     return `${window.location.origin}${url}`;
