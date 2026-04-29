@@ -8,12 +8,14 @@ function computeNwsApiBase(): string {
   if (custom) return custom;
   /** Capacitor has no Vite proxy — relative `/weather-gov` breaks native HTTP and WKWebView fetch. */
   if (Capacitor.isNativePlatform()) return "https://api.weather.gov";
+  const host = typeof window !== "undefined" ? window.location.hostname : "";
+  const isLocalhost = host === "localhost" || host === "127.0.0.1" || host === "::1";
   /**
    * Browser `npm run dev`: same-origin `/weather-gov` → Vite proxies to api.weather.gov (avoids CORS).
    * `npm run build` / deployed web: direct HTTPS. For local `vite preview`, base is also HTTPS unless you set
    * `VITE_NWS_API_BASE=/weather-gov` in `.env.local` (then use preview proxy in `vite.config.ts`).
    */
-  if (import.meta.env.DEV) return "/weather-gov";
+  if (import.meta.env.DEV || isLocalhost) return "/weather-gov";
   return "https://api.weather.gov";
 }
 

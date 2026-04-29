@@ -1575,7 +1575,19 @@ export default function App() {
     const mapbox = Boolean(env.mapboxToken);
 
     if (mapbox) {
-      if (!settingTrafficEnabled) {
+      if (!isPlus) {
+        rows.push({
+          label: "Traffic",
+          text: (
+            <>
+              <strong>Plus feature</strong>{" "}
+              <span className="storm-advisory-bar__road-muted">
+                Live route traffic delay and lane-level stops require Plus.
+              </span>
+            </>
+          ),
+        });
+      } else if (!settingTrafficEnabled) {
         rows.push({
           label: "Traffic",
           text: (
@@ -1625,9 +1637,10 @@ export default function App() {
           label: "Traffic",
           text: (
             <>
-              <strong>API error</strong>{" "}
+              <strong>Traffic unavailable</strong>{" "}
               <span className="storm-advisory-bar__road-muted">
-                — Mapbox couldn’t trace this path (token scope, or ORS line doesn’t match drivable roads).
+                — Mapbox could not trace this path right now (token scope, transient API issue, or route
+                geometry mismatch). Route guidance still works.
               </span>
             </>
           ),
@@ -1916,9 +1929,8 @@ export default function App() {
   }, [progressStripAlerts, guidanceRoute?.geometry, userAlongGuidanceM]);
 
   /**
-   * Rt/Mp: full corridor/browse polygons. Dr + Plus: prefer polygons overlapping the active leg.
-   * If overlap → feature id mapping yields nothing (edge cases), fall back to corridor data so the map
-   * doesn’t go blank while the strip still shows alerts.
+   * Rt/Mp: full corridor/browse polygons.
+   * Dr: show only polygons that directly intersect the active route.
    */
   const stormMapGeoJsonForMap = useMemo(() => {
     if (!stormMapGeoJson?.features?.length) return null;
@@ -1933,7 +1945,7 @@ export default function App() {
     if (filtered.length > 0) {
       return { type: "FeatureCollection" as const, features: filtered };
     }
-    return stormMapGeoJson;
+    return null;
   }, [stormMapGeoJson, driveModeUi, nwsNavCorridorGeom, nwsNavCorridorGeomKey, stormCorridorAlerts]);
 
   /** Map NWS layer: full set when Plus storm detail is on; otherwise prefer life-safety polygons but never hide a successful fetch. */
@@ -1942,10 +1954,31 @@ export default function App() {
     const base = stormMapGeoJsonForMap ?? stormMapGeoJson;
     if (!base?.features?.length) return null;
     if (advisoryPlusDetailOn) return base;
+    const onRouteIds = new Set(stormOverlapping.map((a) => a.id));
     const filtered = filterMapGeoJsonToBasicEmergencies(base, stormCorridorAlerts);
-    if (filtered?.features?.length) return filtered;
+    if (filtered?.features?.length) {
+      // Keep route-overlapping polygons visible even if not "basic emergency" class (e.g. minor flooding),
+      // so advisory cards and map geometry never disagree while driving.
+      const merged = base.features.filter((f) => {
+        const id = String((f.properties as { id?: string } | undefined)?.id ?? "");
+        if (!id) return false;
+        if (onRouteIds.has(id)) return true;
+        return filtered.features.some((ff) => {
+          const fid = String((ff.properties as { id?: string } | undefined)?.id ?? "");
+          return fid === id;
+        });
+      });
+      return { type: "FeatureCollection", features: merged };
+    }
     return base;
-  }, [advisoryLifeSafetyOn, advisoryPlusDetailOn, stormMapGeoJsonForMap, stormMapGeoJson, stormCorridorAlerts]);
+  }, [
+    advisoryLifeSafetyOn,
+    advisoryPlusDetailOn,
+    stormMapGeoJsonForMap,
+    stormMapGeoJson,
+    stormCorridorAlerts,
+    stormOverlapping,
+  ]);
 
   const stormProgressBands = useMemo(() => {
     const g = nwsNavCorridorGeom;
