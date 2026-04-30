@@ -1604,6 +1604,18 @@ export default function App() {
             </>
           ),
         });
+      } else if (!navigationStarted) {
+        rows.push({
+          label: "Traffic",
+          text: (
+            <>
+              <strong>Tap Go</strong>{" "}
+              <span className="storm-advisory-bar__road-muted">
+                Live delay, ETA, and corridor traffic load after navigation starts.
+              </span>
+            </>
+          ),
+        });
       } else if (!trafficFetchDone) {
         rows.push({ label: "Traffic", text: <strong>Fetching live data…</strong> });
       } else if (guidanceSlice.hasLiveTrafficEstimate) {
@@ -1669,6 +1681,7 @@ export default function App() {
     guidanceRouteId,
     guidanceSlice,
     isPlus,
+    navigationStarted,
     scored,
     settingTrafficEnabled,
     trafficFetchDone,
@@ -1758,6 +1771,20 @@ export default function App() {
     }
     if (b == null) {
       b = bearingAlongRouteAhead(effectiveUserLngLat, geometry, lookAheadM);
+    }
+    if (b != null && navigationStarted && geometry.length >= 2) {
+      const norm = (d: number) => ((d % 360) + 360) % 360;
+      const start = geometry[0]!;
+      const end = geometry[geometry.length - 1]!;
+      const dStart = haversineMeters(effectiveUserLngLat, start);
+      const dEnd = haversineMeters(effectiveUserLngLat, end);
+      const farEnd = dStart >= dEnd ? start : end;
+      const towardFarEnd = initialBearingDegrees(effectiveUserLngLat, farEnd);
+      const diffFromFarEnd = Math.abs(((norm(b) - norm(towardFarEnd) + 540) % 360) - 180); // 0..180
+      // If route tangent is clearly opposite the trip direction, rotate it 180 so north/up isn't inverted.
+      if (diffFromFarEnd > 120) {
+        b = norm(b + 180);
+      }
     }
     // Guard: after reroute / U-turn, polyline bearing can be ~180° from course. Only then fall back
     // to GPS heading in DriveMap. Highway course noise often disagrees 40–60° with smooth polyline
@@ -3441,6 +3468,7 @@ export default function App() {
                       promoLines={advisoryPromoLines}
                       isOnline={isOnline}
                       basicNavAdvisoryMode={!isPlus}
+                      navigationStarted={navigationStarted}
                     />
                   ) : isPlus ? (
                     <div className="nav-top-activity-pill-wrap nav-top-activity-pill-wrap--solo">

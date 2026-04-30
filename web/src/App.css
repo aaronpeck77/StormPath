@@ -2514,6 +2514,307 @@
   color: #f1f5f9;
 }
 
+/* Expanded panel (tap advisory): larger type, fewer nested “cards”, driver-first scanning */
+.storm-advisory-bar--expanded {
+  font-size: clamp(1rem, 3.7vw, 1.15rem);
+  line-height: 1.45;
+  padding: 18px 14px 14px;
+  margin-top: 6px;
+}
+
+/* Clear the turn / StormPath strip — expanded panel sits fully below guidance */
+.nav-top-route-rail__main:has(.storm-advisory-bar--expanded) {
+  gap: max(14px, 1.25vh);
+}
+
+/* Hazards then road — single column, no inner clipping scroll (full list visible at once). */
+.storm-advisory-bar__panels-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.storm-advisory-bar__panels-scroll > .storm-advisory-bar__weather-block,
+.storm-advisory-bar__panels-scroll > .storm-advisory-bar__road-block {
+  margin-top: 0;
+  min-width: 0;
+}
+
+.storm-advisory-bar__pre-go-hint {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: #e2e8f0;
+  background: rgba(30, 58, 138, 0.4);
+  border: 1px solid rgba(96, 165, 250, 0.35);
+}
+
+.storm-advisory-bar__pre-go-hint strong {
+  color: #bfdbfe;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__head {
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.storm-advisory-bar__head-title-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__head-leading {
+  flex: 1;
+  min-width: 0;
+  align-items: flex-start;
+}
+
+.storm-advisory-bar__toggles--stacked {
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.storm-advisory-bar__toggles--stacked .storm-advisory-bar__toggle {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__toggles {
+  margin-left: 0;
+  padding-top: 0;
+  border-top: none;
+  width: auto;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__title {
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__toggle {
+  font-size: 1.02rem;
+  font-weight: 650;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__toggle input {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__basic-tier-desc,
+.storm-advisory-bar--expanded .storm-advisory-bar__muted,
+.storm-advisory-bar--expanded .storm-advisory-bar__status-line {
+  font-size: 1rem;
+  line-height: 1.42;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__basic-strip {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 10px 12px;
+  font-size: 1rem;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__promo {
+  flex: none;
+  width: 100%;
+}
+
+.storm-advisory-bar__offline-note {
+  margin: 0;
+  width: 100%;
+  font-size: inherit;
+  line-height: 1.38;
+  color: #fecaca;
+}
+
+.storm-advisory-bar__offline-note strong {
+  color: #fca5a5;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__now-chip {
+  font-size: 0.96rem;
+  padding: 8px 11px;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__now-tag {
+  font-size: 0.8rem;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__weather-block {
+  margin-top: 0;
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.72);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  box-shadow: none;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__weather-title {
+  margin: 0 0 6px;
+  font-size: 1.08rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: #fde68a;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__nws-hero {
+  font-size: 1.06rem;
+  margin-bottom: 6px;
+}
+
+/* Show full hazard list — avoid nested scroll hiding alerts */
+.storm-advisory-bar--expanded .storm-advisory-bar__nws-scroll {
+  max-height: none;
+  margin-top: 6px;
+  overflow: visible;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__nws-item--crosses,
+.storm-advisory-bar--expanded .storm-advisory-bar__nws-item--nearby {
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.storm-advisory-bar__nws-card {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.38);
+  border-left-width: 5px;
+  border-left-color: rgba(251, 191, 36, 0.85);
+  background: rgba(15, 23, 42, 0.88);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.storm-advisory-bar__nws-card:hover {
+  background: rgba(30, 41, 59, 0.92);
+}
+
+.storm-advisory-bar__nws-card:focus-visible {
+  outline: 2px solid rgba(251, 191, 36, 0.85);
+  outline-offset: 2px;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__nws-item-title {
+  font-size: 1.04rem;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__nws-item-primary {
+  font-size: 0.98rem;
+  margin-bottom: 4px;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__nws-item-meta,
+.storm-advisory-bar--expanded .storm-advisory-bar__nws-item-action {
+  font-size: 0.9rem;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__nws-item-action {
+  margin-top: 4px;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__nws-item-badge {
+  font-size: 0.68rem;
+  padding: 3px 7px;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__nws-list--crosses .storm-advisory-bar__nws-item--crosses + .storm-advisory-bar__nws-item--crosses {
+  margin-top: 6px;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__advice--weather {
+  font-size: 0.98rem;
+  line-height: 1.32;
+  padding-left: 10px;
+  border-left-width: 4px;
+  margin-top: 8px;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__road-block {
+  margin-top: 0;
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(125, 211, 252, 0.22);
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__road-title {
+  font-size: 1.05rem;
+  letter-spacing: 0.03em;
+  text-transform: none;
+  font-weight: 800;
+  color: #bae6fd;
+  margin-bottom: 4px;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__road-dl--driver-stack {
+  gap: 8px;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__road-dl--driver-stack .storm-advisory-bar__road-row {
+  gap: 4px;
+  padding-bottom: 8px;
+}
+
+.storm-advisory-bar__road-dl--driver-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.storm-advisory-bar__road-dl--driver-stack .storm-advisory-bar__road-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 14px;
+  margin: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.storm-advisory-bar__road-dl--driver-stack .storm-advisory-bar__road-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__road-row dt {
+  font-size: 0.88rem;
+  letter-spacing: 0.06em;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__road-row dd {
+  font-size: 1.05rem;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__btn--traffic {
+  font-size: 1.02rem;
+  padding: 10px 14px;
+}
+
 /* Severity-driven border so the bar visually inherits the retired hazard-button color. */
 .storm-advisory-bar--sev-none {
   border-color: rgba(148, 163, 184, 0.35);
@@ -2874,28 +3175,6 @@
   border: 1px solid rgba(148, 163, 184, 0.35);
 }
 
-.storm-advisory-bar__conn {
-  flex: 0 0 auto;
-  font-size: 0.52rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 3px 8px;
-  border-radius: 999px;
-}
-
-.storm-advisory-bar__conn--on {
-  color: #bbf7d0;
-  background: rgba(22, 101, 52, 0.45);
-  border: 1px solid rgba(74, 222, 128, 0.45);
-}
-
-.storm-advisory-bar__conn--off {
-  color: #fecaca;
-  background: rgba(127, 29, 29, 0.4);
-  border: 1px solid rgba(248, 113, 113, 0.45);
-}
-
 .storm-advisory-bar__promo {
   flex: 1 1 200px;
   min-width: 0;
@@ -2936,6 +3215,38 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #fcd34d;
+}
+
+.storm-advisory-bar__hazard-ahead-note {
+  margin: 0 0 8px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.58);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: #e2e8f0;
+}
+
+.storm-advisory-bar__hazard-ahead-note strong {
+  color: #f8fafc;
+}
+
+.storm-advisory-bar__hazard-ahead-note--yellow {
+  border-color: rgba(234, 179, 8, 0.65);
+  background: rgba(202, 138, 4, 0.22);
+}
+
+.storm-advisory-bar__hazard-ahead-note--orange {
+  border-color: rgba(249, 115, 22, 0.7);
+  background: rgba(234, 88, 12, 0.25);
+  color: #fff7ed;
+}
+
+.storm-advisory-bar__hazard-ahead-note--red {
+  border-color: rgba(220, 38, 38, 0.8);
+  background: rgba(185, 28, 28, 0.3);
+  color: #fee2e2;
 }
 
 .storm-advisory-bar__nws-hero {
@@ -7735,6 +8046,11 @@
     gap: 4px;
   }
 
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left)
+    .nav-top-route-rail__main:has(.storm-advisory-bar--expanded) {
+    gap: max(12px, 1.4vh);
+  }
+
   .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-top-cluster .top-guidance-bar {
     padding: 5px 8px 6px;
     gap: 5px;
@@ -7841,6 +8157,11 @@
 
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-top-route-rail__main {
     gap: 4px;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left
+    .nav-top-route-rail__main:has(.storm-advisory-bar--expanded) {
+    gap: max(12px, 1.4vh);
   }
 
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-top-cluster .top-guidance-bar {
