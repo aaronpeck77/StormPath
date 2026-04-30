@@ -132,8 +132,11 @@ function geometryNearlySame(a: LngLat[], b: LngLat[]): boolean {
   return Math.abs(la - lb) / Math.max(la, lb) < 0.011;
 }
 
-/** Cross-country `overview=full` lines are huge; keep the nav/map payload small. */
-const MAX_STORED_GEOMETRY_VERTICES = 3500;
+/**
+ * Cross-country `overview=full` lines are huge; keep payload bounded, but preserve enough vertices
+ * so rendered turns stay attached to real roads on long interstate drives (esp. TestFlight/native).
+ */
+const MAX_STORED_GEOMETRY_VERTICES = 12000;
 const GEOM_COMPARE_MAX_VERTICES = 200;
 
 function rescaledNoticeAlongMeters(
