@@ -2646,7 +2646,7 @@
 }
 
 .storm-advisory-bar--expanded .storm-advisory-bar__now-chip {
-  font-size: 0.96rem;
+  font-size: 0.92rem;
   padding: 8px 11px;
 }
 
@@ -2665,7 +2665,7 @@
 
 .storm-advisory-bar--expanded .storm-advisory-bar__weather-title {
   margin: 0 0 6px;
-  font-size: 1.08rem;
+  font-size: 1.02rem;
   font-weight: 800;
   letter-spacing: 0.02em;
   text-transform: none;
@@ -2673,7 +2673,7 @@
 }
 
 .storm-advisory-bar--expanded .storm-advisory-bar__nws-hero {
-  font-size: 1.06rem;
+  font-size: 1rem;
   margin-bottom: 6px;
 }
 
@@ -2719,17 +2719,22 @@
 }
 
 .storm-advisory-bar--expanded .storm-advisory-bar__nws-item-title {
-  font-size: 1.04rem;
+  font-size: 0.98rem;
 }
 
 .storm-advisory-bar--expanded .storm-advisory-bar__nws-item-primary {
-  font-size: 0.98rem;
-  margin-bottom: 4px;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  margin-bottom: 2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .storm-advisory-bar--expanded .storm-advisory-bar__nws-item-meta,
 .storm-advisory-bar--expanded .storm-advisory-bar__nws-item-action {
-  font-size: 0.9rem;
+  font-size: 0.82rem;
 }
 
 .storm-advisory-bar--expanded .storm-advisory-bar__nws-item-action {
@@ -2762,7 +2767,7 @@
 }
 
 .storm-advisory-bar--expanded .storm-advisory-bar__road-title {
-  font-size: 1.05rem;
+  font-size: 1rem;
   letter-spacing: 0.03em;
   text-transform: none;
   font-weight: 800;
@@ -2800,13 +2805,13 @@
 }
 
 .storm-advisory-bar--expanded .storm-advisory-bar__road-row dt {
-  font-size: 0.88rem;
+  font-size: 0.84rem;
   letter-spacing: 0.06em;
 }
 
 .storm-advisory-bar--expanded .storm-advisory-bar__road-row dd {
-  font-size: 1.05rem;
-  line-height: 1.4;
+  font-size: 0.98rem;
+  line-height: 1.38;
   margin: 0;
 }
 
@@ -3223,9 +3228,24 @@
   border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.35);
   background: rgba(15, 23, 42, 0.58);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   line-height: 1.4;
   color: #e2e8f0;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__now-chip--ahead {
+  display: flex;
+  align-items: flex-start;
+  max-width: 100%;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__now-chip--ahead .storm-advisory-bar__now-text {
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: clip;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .storm-advisory-bar__hazard-ahead-note strong {

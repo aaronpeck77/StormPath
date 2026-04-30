@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { SITEBIBLE_AD_BAR, type AdvisoryPromoLine } from "../config/advisoryPromo";
 import { sortWeatherAlertsBySeverity, type NormalizedWeatherAlert } from "../weatherAlerts";
-import { nwsGlanceSummary, nwsWhatToDo } from "../weatherAlerts/nwsDriveSummary";
+import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
 import type { DriveAheadLine, DriveAheadRadarTier } from "../nav/driveRouteAhead";
 import { formatDriveAheadBrief } from "../nav/driveRouteAhead";
 
@@ -170,9 +170,6 @@ function nwsAlertCard(
 ): ReactNode {
   const endsLabel = fmtEnds(a.ends);
   const glance = nwsGlanceSummary(a);
-  const todoRaw = nwsWhatToDo(a);
-  const todo =
-    todoRaw.length > 88 ? `${todoRaw.slice(0, 87).replace(/\s+$/, "").trim()}…` : todoRaw;
   const titleRow = (
     <div className="storm-advisory-bar__nws-item-title">
       <strong>{a.event}</strong>
@@ -191,10 +188,7 @@ function nwsAlertCard(
         Ends <strong>{endsLabel}</strong>
       </div>
     ) : null;
-  const action =
-    todo.length > 0 ? (
-      <div className="storm-advisory-bar__nws-item-action">{todo}</div>
-    ) : null;
+  const action = null;
   if (tier === "crosses") {
     return (
       <li key={a.id} className="storm-advisory-bar__nws-item storm-advisory-bar__nws-item--crosses">
@@ -280,12 +274,14 @@ export function StormAdvisoryBar({
   );
 
   const displayNwsTier: "crosses" | "atLocation" =
-    crossingSorted.length > 0 ? "crosses" : "atLocation";
+    hasGuidanceRoute ? "crosses" : crossingSorted.length > 0 ? "crosses" : "atLocation";
 
   const displayNwsList =
-    crossingSorted.length > 0
+    hasGuidanceRoute
       ? crossingSorted
-      : atLocationSorted;
+      : crossingSorted.length > 0
+        ? crossingSorted
+        : atLocationSorted;
 
   const tickerMessages = useMemo(
     () =>
@@ -673,7 +669,7 @@ export function StormAdvisoryBar({
                         {crossingSorted.length === 1 ? "warning on your route" : "warnings on your route"}
                       </span>
                     </p>
-                  ) : atLocationSorted.length > 0 ? (
+                  ) : !hasGuidanceRoute && atLocationSorted.length > 0 ? (
                     <p className="storm-advisory-bar__nws-hero storm-advisory-bar__nws-hero--cross">
                       <span className="storm-advisory-bar__nws-hero-main">
                         <strong>{atLocationSorted.length}</strong>
@@ -686,7 +682,9 @@ export function StormAdvisoryBar({
                         ? ownsPlus
                           ? "No urgent-class warnings here. Turn on NWS polygons for the full feed."
                           : "No urgent-class warnings here. Plus adds full NWS on the map."
-                        : "No warning zones on your route line. Radar may still show rain or snow."}
+                        : hasGuidanceRoute
+                          ? "No warning zones on your route line."
+                          : "No warning zones here. Radar may still show rain or snow."}
                     </p>
                   )}
                   {displayNwsList.length > 0 && (

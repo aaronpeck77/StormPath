@@ -1611,7 +1611,7 @@ export default function App() {
             <>
               <strong>Tap Go</strong>{" "}
               <span className="storm-advisory-bar__road-muted">
-                Live delay, ETA, and corridor traffic load after navigation starts.
+                Live delay and corridor traffic load after navigation starts.
               </span>
             </>
           ),
@@ -1635,18 +1635,6 @@ export default function App() {
           rows.push({ label: "Traffic", text: <strong>Live traffic is updating…</strong> });
         }
 
-        if (guidanceSlice.mapboxDurationMinutes != null) {
-          const eta = guidanceSlice.mapboxDurationMinutes;
-          rows.push({
-            label: "ETA",
-            text: (
-              <>
-                <strong>~{formatEtaDuration(eta)}</strong>{" "}
-                <span className="storm-advisory-bar__road-muted">w/ traffic</span>
-              </>
-            ),
-          });
-        }
       } else {
         rows.push({
           label: "Traffic",
@@ -1772,20 +1760,6 @@ export default function App() {
     if (b == null) {
       b = bearingAlongRouteAhead(effectiveUserLngLat, geometry, lookAheadM);
     }
-    if (b != null && navigationStarted && geometry.length >= 2) {
-      const norm = (d: number) => ((d % 360) + 360) % 360;
-      const start = geometry[0]!;
-      const end = geometry[geometry.length - 1]!;
-      const dStart = haversineMeters(effectiveUserLngLat, start);
-      const dEnd = haversineMeters(effectiveUserLngLat, end);
-      const farEnd = dStart >= dEnd ? start : end;
-      const towardFarEnd = initialBearingDegrees(effectiveUserLngLat, farEnd);
-      const diffFromFarEnd = Math.abs(((norm(b) - norm(towardFarEnd) + 540) % 360) - 180); // 0..180
-      // If route tangent is clearly opposite the trip direction, rotate it 180 so north/up isn't inverted.
-      if (diffFromFarEnd > 120) {
-        b = norm(b + 180);
-      }
-    }
     // Guard: after reroute / U-turn, polyline bearing can be ~180° from course. Only then fall back
     // to GPS heading in DriveMap. Highway course noise often disagrees 40–60° with smooth polyline
     // bearing; the old 70° threshold constantly dropped route bearing and rotated the map off the line.
@@ -1794,7 +1768,7 @@ export default function App() {
       const a = norm(b);
       const h = norm(heading);
       const diff = Math.abs(((a - h + 540) % 360) - 180); // 0..180
-      if (diff > 135) return null; // fall back to device heading in DriveMap
+      if (diff > 170) return null; // only trust heading fallback on near-opposite mismatches
     }
     return b;
   }, [
@@ -3254,20 +3228,13 @@ export default function App() {
       : null;
     const tLeg = trafficOverlay?.[guidanceRouteId];
     const hasTrafficStop = Boolean(tLeg?.nearStopFraction != null || tLeg?.hasClosure);
-
-    if (navigationStarted) {
-      rows.unshift({
-        label: "Trip status",
-        text: (
-          <>
-            <strong>{driveEtaMinutes != null ? `${formatEtaDuration(driveEtaMinutes)} to go` : "Trip active"}</strong>{" "}
-            <span className="storm-advisory-bar__road-muted">
-              {driveEtaMinutes != null ? "on current route" : "ETA updating"}
-            </span>
-          </>
-        ),
-      });
-    }
+    const incidentLikeAlert = routeAlerts.find((a) => {
+      if (a.corridorKind === "traffic" && a.id !== "traffic-delay") return true;
+      if (a.corridorKind !== "hazard") return false;
+      return /\b(accident|crash|incident|closure|closed|blocked|lane\s*closure|work\s*zone|construction)\b/i.test(
+        `${a.title} ${a.detail}`
+      );
+    });
 
     if (hasTrafficStop) {
       rows.push({
@@ -3275,6 +3242,17 @@ export default function App() {
         text: <strong>Stopped/blocked traffic detected on your route</strong>,
         actionLabel: "Show stop",
         onAction: handleInspectTrafficStop,
+      });
+    }
+    if (incidentLikeAlert) {
+      rows.push({
+        label: "Traffic alert",
+        text: (
+          <>
+            <strong>{incidentLikeAlert.detail || incidentLikeAlert.title}</strong>{" "}
+            <span className="storm-advisory-bar__road-muted">— possible slowdown on route.</span>
+          </>
+        ),
       });
     }
 
@@ -3299,7 +3277,7 @@ export default function App() {
     guidanceRouteId,
     scored,
     trafficOverlay,
-    navigationStarted,
+    routeAlerts,
     driveEtaMinutes,
     handleInspectTrafficStop,
   ]);
