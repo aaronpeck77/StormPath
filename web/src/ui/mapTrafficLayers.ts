@@ -7,8 +7,9 @@ export const MAPBOX_TRAFFIC_LAYER_IDS = [
 ] as const;
 
 /**
- * Mapbox Traffic v1 — only slowdowns and closures (no free-flow / low-congestion paint).
- * Yellow = moderate, orange = heavy, red = severe, purple dashed = closed.
+ * Mapbox Traffic v1 — emphasize real slowdowns, not routine signal delays.
+ * Moderate (often stoplights / urban noise) is hidden. Orange = heavy jam only;
+ * red = severe; purple dashed = closed / construction-style closures.
  */
 export function ensureMapboxTrafficConditionLayers(map: Map): void {
   if (map.getSource("mapbox-traffic")) return;
@@ -24,36 +25,20 @@ export function ensureMapboxTrafficConditionLayers(map: Map): void {
     "source-layer": "traffic",
   };
 
-  const width = ["interpolate", ["linear"], ["zoom"], 9, 1.8, 12, 3, 16, 6];
+  const widthHeavy = ["interpolate", ["linear"], ["zoom"], 9, 1.4, 12, 2.6, 16, 5];
 
   map.addLayer({
     ...base,
     id: "mapbox-traffic-congestion-mh",
-    filter: [
-      "match",
-      ["get", "congestion"],
-      "moderate",
-      true,
-      "heavy",
-      true,
-      false,
-    ],
+    filter: ["==", ["get", "congestion"], "heavy"],
     paint: {
-      "line-width": width as never,
-      "line-opacity": 0.8,
-      "line-color": [
-        "match",
-        ["get", "congestion"],
-        "moderate",
-        "#eab308",
-        "heavy",
-        "#ea580c",
-        "#eab308",
-      ],
+      "line-width": widthHeavy as never,
+      "line-opacity": 0.58,
+      "line-color": "#c2410c",
     },
   });
 
-  const widthSevere = ["interpolate", ["linear"], ["zoom"], 9, 3, 12, 4.5, 16, 8];
+  const widthSevere = ["interpolate", ["linear"], ["zoom"], 9, 2.2, 12, 3.4, 16, 6];
 
   map.addLayer({
     ...base,
@@ -61,7 +46,7 @@ export function ensureMapboxTrafficConditionLayers(map: Map): void {
     filter: ["==", ["get", "congestion"], "severe"],
     paint: {
       "line-width": widthSevere as never,
-      "line-opacity": 0.9,
+      "line-opacity": 0.68,
       "line-color": "#dc2626",
     },
   });

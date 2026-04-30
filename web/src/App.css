@@ -2505,12 +2505,12 @@
   max-width: 100%;
   box-sizing: border-box;
   margin-top: 4px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-radius: 10px;
   background: rgba(15, 23, 42, 0.92);
   border: 1px solid rgba(251, 191, 36, 0.22);
-  font-size: 0.54rem;
-  line-height: 1.4;
+  font-size: 0.56rem;
+  line-height: 1.45;
   color: #f1f5f9;
 }
 
@@ -2543,9 +2543,9 @@
   gap: 8px;
   width: 100%;
   margin-top: 4px;
-  padding: 6px 10px;
+  padding: 9px 12px;
   font: inherit;
-  font-size: 0.64rem;
+  font-size: 0.72rem;
   font-weight: 600;
   text-align: left;
   color: #f1f5f9;
@@ -2557,11 +2557,50 @@
   appearance: none;
   border-width: 1px;
   border-style: solid;
-  min-height: 34px;
+  min-height: 42px;
+  line-height: 1.35;
 }
 
 .storm-advisory-bar--preview:hover {
   background: rgba(15, 23, 42, 0.96);
+}
+
+/* Severity tint behind the preview message (parent has .storm-advisory-bar--sev-*). */
+.storm-advisory-bar__preview-message-wrap {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.storm-advisory-bar--preview.storm-advisory-bar--sev-none .storm-advisory-bar__preview-message-wrap {
+  background: rgba(51, 65, 85, 0.55);
+  border-color: rgba(148, 163, 184, 0.28);
+}
+
+.storm-advisory-bar--preview.storm-advisory-bar--sev-info .storm-advisory-bar__preview-message-wrap {
+  background: rgba(30, 64, 175, 0.42);
+  border-color: rgba(96, 165, 250, 0.45);
+}
+
+.storm-advisory-bar--preview.storm-advisory-bar--sev-warn .storm-advisory-bar__preview-message-wrap {
+  background: rgba(154, 52, 18, 0.48);
+  border-color: rgba(251, 191, 36, 0.55);
+}
+
+.storm-advisory-bar--preview.storm-advisory-bar--sev-severe .storm-advisory-bar__preview-message-wrap {
+  background: rgba(127, 29, 29, 0.52);
+  border-color: rgba(252, 165, 165, 0.55);
+}
+
+.storm-advisory-bar--preview.storm-advisory-bar--err .storm-advisory-bar__preview-message-wrap {
+  background: rgba(127, 29, 29, 0.58);
+  border-color: rgba(254, 202, 202, 0.55);
 }
 
 .storm-advisory-bar__preview-ticker-badge {
@@ -2976,9 +3015,9 @@
 }
 
 .storm-advisory-bar__ticker-text {
-  font-size: 0.58rem;
-  line-height: 1.2;
-  font-weight: 700;
+  font-size: 0.68rem;
+  line-height: 1.28;
+  font-weight: 750;
   color: #fef9c3;
   white-space: nowrap;
   overflow: hidden;
@@ -3046,11 +3085,11 @@
   flex: 1;
 }
 
-/* Actual hazard (storms, fog, wind…) — read before product name + severity */
+/* One-line hazard gist under the product title */
 .storm-advisory-bar__nws-item-primary {
-  font-size: 0.72rem;
-  line-height: 1.32;
-  font-weight: 750;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  font-weight: 720;
   color: #fef9c3;
   margin-bottom: 6px;
 }
@@ -3064,10 +3103,15 @@
 }
 
 .storm-advisory-bar__nws-item-title {
-  font-size: 0.6rem;
-  line-height: 1.25;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  font-size: 0.72rem;
+  line-height: 1.28;
   font-weight: 800;
   color: #fff7ed;
+  margin-bottom: 4px;
 }
 
 .storm-advisory-bar__nws-item-sev {
@@ -3078,8 +3122,8 @@
 
 .storm-advisory-bar__nws-item-action {
   margin-top: 6px;
-  font-size: 0.58rem;
-  line-height: 1.38;
+  font-size: 0.64rem;
+  line-height: 1.35;
   font-weight: 650;
   color: #e0f2fe;
 }

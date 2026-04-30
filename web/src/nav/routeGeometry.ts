@@ -205,19 +205,24 @@ export function pointAtAlongMeters(geometry: LngLat[], alongMeters: number): Lng
   return geometry[geometry.length - 1]!;
 }
 
-/** Meters ahead on the polyline to sample direction (stable turn-to-turn). */
+/** Default meters ahead on the polyline to sample direction (stable turn-to-turn). */
 const ROUTE_BEARING_LOOKAHEAD_M = 52;
 
 /**
  * Bearing along the route in the direction of travel: from the closest point on the line
- * toward a point ~{@link ROUTE_BEARING_LOOKAHEAD_M} ahead. Use for drive camera (not device compass).
+ * toward a point `lookAheadM` ahead. Use for drive camera (not device compass).
  */
-export function bearingAlongRouteAhead(user: LngLat, geometry: LngLat[]): number | null {
+export function bearingAlongRouteAhead(
+  user: LngLat,
+  geometry: LngLat[],
+  lookAheadM: number = ROUTE_BEARING_LOOKAHEAD_M
+): number | null {
   if (geometry.length < 2) return null;
+  const la = Math.max(8, Math.min(280, lookAheadM));
   const { alongMeters } = closestPointOnPolyline(user, geometry);
   const total = polylineLengthMeters(geometry);
   if (total < 1) return null;
-  const targetAlong = Math.min(alongMeters + ROUTE_BEARING_LOOKAHEAD_M, total);
+  const targetAlong = Math.min(alongMeters + la, total);
   const fromPt = pointAtAlongMeters(geometry, alongMeters);
   const toPt = pointAtAlongMeters(geometry, Math.max(targetAlong, alongMeters + 0.5));
   if (haversineMeters(fromPt, toPt) < 2.5) {

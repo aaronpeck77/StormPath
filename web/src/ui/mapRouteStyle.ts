@@ -24,7 +24,7 @@ export function routePickSlotHex(slotIndex: number): string {
 /** Focused leg on main map: bright green, semi-transparent so base map stays readable */
 export const FOCUSED_ROUTE_LINE_COLOR = "#4ade80";
 export const FOCUSED_ROUTE_LINE_OPACITY = 0.55;
-export const FOCUSED_ROUTE_LINE_WIDTH = 7;
+export const FOCUSED_ROUTE_LINE_WIDTH = 8;
 
 export function routeHex(route: NavRoute): string {
   if (route.id === "r-a" || route.id.startsWith("r-a")) return ROUTE_A_COLOR;

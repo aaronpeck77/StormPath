@@ -56,122 +56,118 @@ export function unifiedTrafficNarrative(
 
   if (leg.hasClosure) {
     return {
-      advisoryHeadline: "Closure or blocked segment on route",
+      advisoryHeadline: "Road closed or blocked ahead",
       advisorySubtext:
-        d >= 0.1
-          ? `About +${formatDelayMinutesForUi(d)} min vs free-flow (if passable)`
-          : "Detour or alternate may be required — check the map",
+        d >= 0.1 ? `~+${formatDelayMinutesForUi(d)} min vs free-flow` : "Detour may be required",
       showAdvisoryDelayRow: true,
-      progressStartLine: `Closure / blocked — +${formatDelayMinutesForUi(d)} min vs free-flow (Mapbox)`,
+      progressStartLine: `Blocked — +${formatDelayMinutesForUi(d)} min vs free-flow`,
       shouldAddCorridorAlert: true,
       mapTitle: "Closure on route",
-      mapDetail: "Live traffic data indicates a closure or blocked segment ahead.",
+      mapDetail: "Blocked or closed segment ahead on the corridor.",
       mapSeverity: 90,
     };
   }
 
   if (leg.nearStopFraction != null) {
     return {
-      advisoryHeadline: "Near-stopped traffic in the corridor",
-      advisorySubtext: d >= 0.1 ? `+${formatDelayMinutesForUi(d)} min vs free-flow, route-wide` : null,
+      advisoryHeadline: "Slow / stopped traffic ahead",
+      advisorySubtext: d >= 0.1 ? `+${formatDelayMinutesForUi(d)} min vs free-flow` : null,
       showAdvisoryDelayRow: d >= 0.1,
-      progressStartLine: `Near-stopped in places — +${formatDelayMinutesForUi(d)} min vs free-flow`,
+      progressStartLine: `Near-stopped — +${formatDelayMinutesForUi(d)} min`,
       shouldAddCorridorAlert: true,
-      mapTitle: "Very slow traffic on route",
-      mapDetail: "Live traffic samples show near-stopped flow in this corridor.",
+      mapTitle: "Very slow on route",
+      mapDetail: "Traffic nearly stopped in part of the corridor.",
       mapSeverity: 86,
     };
   }
 
   if (d < 0.05 && (c === "low" || c === "unknown")) {
     return {
-      advisoryHeadline: "No meaningful delay vs free-flow",
-      advisorySubtext: "Moving for typical conditions on this shape",
+      advisoryHeadline: "Clear — little delay",
+      advisorySubtext: "Typical flow for this path",
       showAdvisoryDelayRow: false,
       progressStartLine: null,
       shouldAddCorridorAlert: false,
-      mapTitle: "No meaningful delay on route",
-      mapDetail: "No notable delay compared to the free-flow baseline for this path.",
+      mapTitle: "Little delay",
+      mapDetail: "No notable delay vs free-flow baseline.",
       mapSeverity: 28,
     };
   }
 
   if (heavySegmentsButMildTotal) {
-    const congHint =
-      c === "severe" ? "Mapbox: severe congestion in some segments" : "Mapbox: heavy congestion in some segments";
+    const congHint = c === "severe" ? "Severe spots" : "Heavy spots";
     return {
-      advisoryHeadline: "Slower in some spots — small route-wide cost",
-      advisorySubtext: `+${formatDelayMinutesForUi(d)} min total vs free-flow. ${congHint}.`,
+      advisoryHeadline: "Patchy slowdowns — small overall delay",
+      advisorySubtext: `+${formatDelayMinutesForUi(d)} min total. ${congHint} on the line.`,
       showAdvisoryDelayRow: true,
-      progressStartLine: `+${formatDelayMinutesForUi(d)} min vs free-flow — ${c === "severe" ? "severe" : "heavy"} congestion in places (not whole trip)`,
+      progressStartLine: `+${formatDelayMinutesForUi(d)} min — ${c === "severe" ? "severe" : "heavy"} in places`,
       shouldAddCorridorAlert: d >= 0.08 || sig,
-      mapTitle: `${formatDelayMinutesForUi(d)} min added — heavy spots on corridor`,
-      mapDetail:
-        "Route-wide delay is modest, but live traffic data shows very slow or stopped segments in places — watch the map.",
+      mapTitle: `+${formatDelayMinutesForUi(d)} min — heavy stretches`,
+      mapDetail: "Some segments very slow; whole-trip delay is still small.",
       mapSeverity: Math.min(78, 52 + d * 5),
     };
   }
 
   if (d < 1) {
     return {
-      advisoryHeadline: d < 0.3 ? "Light / minimal delay" : "Mild delay vs free-flow",
+      advisoryHeadline: d < 0.3 ? "Light delay" : "Mild delay",
       advisorySubtext: d >= 0.05 ? `+${formatDelayMinutesForUi(d)} min` : null,
       showAdvisoryDelayRow: d >= 0.05,
-      progressStartLine: d >= 0.05 ? `+${formatDelayMinutesForUi(d)} min vs free-flow` : null,
+      progressStartLine: d >= 0.05 ? `+${formatDelayMinutesForUi(d)} min` : null,
       shouldAddCorridorAlert: sig || d >= 0.4,
-      mapTitle: "Mild traffic delay on route",
-      mapDetail: `About +${formatDelayMinutesForUi(d)} min longer than the free-flow baseline for this path.`,
+      mapTitle: "Mild delay",
+      mapDetail: `~+${formatDelayMinutesForUi(d)} min vs free-flow.`,
       mapSeverity: 54,
     };
   }
 
   if (d < 4) {
     return {
-      advisoryHeadline: "Moderate delay vs free-flow",
+      advisoryHeadline: "Moderate delay",
       advisorySubtext: `+${formatDelayMinutesForUi(d)} min`,
       showAdvisoryDelayRow: true,
-      progressStartLine: `+${formatDelayMinutesForUi(d)} min vs free-flow`,
+      progressStartLine: `+${formatDelayMinutesForUi(d)} min`,
       shouldAddCorridorAlert: true,
-      mapTitle: "Moderate traffic delay on route",
-      mapDetail: `About +${formatDelayMinutesForUi(d)} min longer than the free-flow baseline for this path.`,
+      mapTitle: "Moderate delay",
+      mapDetail: `~+${formatDelayMinutesForUi(d)} min vs free-flow.`,
       mapSeverity: 64,
     };
   }
 
   if (d < 8) {
     return {
-      advisoryHeadline: "Slower than typical on this route",
-      advisorySubtext: `+${formatDelayMinutesForUi(d)} min vs free-flow — noticeable delay`,
+      advisoryHeadline: "Slower than usual",
+      advisorySubtext: `+${formatDelayMinutesForUi(d)} min`,
       showAdvisoryDelayRow: true,
-      progressStartLine: `+${formatDelayMinutesForUi(d)} min vs free-flow`,
+      progressStartLine: `+${formatDelayMinutesForUi(d)} min`,
       shouldAddCorridorAlert: true,
-      mapTitle: "Slower than typical (traffic delay)",
-      mapDetail: `About +${formatDelayMinutesForUi(d)} min of delay on this trip vs free-flow conditions.`,
+      mapTitle: "Noticeable delay",
+      mapDetail: `~+${formatDelayMinutesForUi(d)} min on this leg.`,
       mapSeverity: 72,
     };
   }
 
   if (d < 15) {
     return {
-      advisoryHeadline: "Heavy delay on route",
-      advisorySubtext: `+${formatDelayMinutesForUi(d)} min vs free-flow`,
+      advisoryHeadline: "Heavy delay",
+      advisorySubtext: `+${formatDelayMinutesForUi(d)} min`,
       showAdvisoryDelayRow: true,
-      progressStartLine: `+${formatDelayMinutesForUi(d)} min vs free-flow — heavy`,
+      progressStartLine: `+${formatDelayMinutesForUi(d)} min — heavy`,
       shouldAddCorridorAlert: true,
-      mapTitle: "Heavy traffic delay on route",
-      mapDetail: `Substantial delay: about +${formatDelayMinutesForUi(d)} min vs free-flow baseline.`,
+      mapTitle: "Heavy delay",
+      mapDetail: `~+${formatDelayMinutesForUi(d)} min vs free-flow.`,
       mapSeverity: 82,
     };
   }
 
   return {
-    advisoryHeadline: "Severe / very heavy delay on route",
-    advisorySubtext: `+${formatDelayMinutesForUi(d)} min vs free-flow`,
+    advisoryHeadline: "Major delay",
+    advisorySubtext: `+${formatDelayMinutesForUi(d)} min`,
     showAdvisoryDelayRow: true,
-    progressStartLine: `+${formatDelayMinutesForUi(d)} min vs free-flow — very heavy`,
+    progressStartLine: `+${formatDelayMinutesForUi(d)} min — severe`,
     shouldAddCorridorAlert: true,
-    mapTitle: "Severe traffic delay on route",
-    mapDetail: `Very long delay: about +${formatDelayMinutesForUi(d)} min compared to the free-flow baseline for this path.`,
+    mapTitle: "Severe delay",
+    mapDetail: `Very long delay (~+${formatDelayMinutesForUi(d)} min).`,
     mapSeverity: 88,
   };
 }

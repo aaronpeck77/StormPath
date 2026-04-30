@@ -5,7 +5,7 @@ import {
   type AdvisoryPromoLine,
 } from "../config/advisoryPromo";
 import { sortWeatherAlertsBySeverity, type NormalizedWeatherAlert } from "../weatherAlerts";
-import { nwsIssuedByLine, nwsWhatIsHappening, nwsWhatToDo } from "../weatherAlerts/nwsDriveSummary";
+import { nwsGlanceSummary, nwsIssuedByLine, nwsWhatToDo } from "../weatherAlerts/nwsDriveSummary";
 import type { DriveAheadLine, DriveAheadRadarTier } from "../nav/driveRouteAhead";
 import { formatDriveAheadBrief } from "../nav/driveRouteAhead";
 
@@ -173,24 +173,23 @@ function nwsAlertCard(
   onClick?: (alert: NormalizedWeatherAlert) => void
 ): ReactNode {
   const endsLabel = fmtEnds(a.ends);
-  const what = nwsWhatIsHappening(a);
-  const todo = nwsWhatToDo(a);
+  const glance = nwsGlanceSummary(a);
+  const todoRaw = nwsWhatToDo(a);
+  const todo =
+    todoRaw.length > 130 ? `${todoRaw.slice(0, 129).replace(/\s+$/, "").trim()}…` : todoRaw;
   const issuedLine = nwsIssuedByLine(a.headline);
-  /* Hazard first — not “Special Weather Statement Moderate” without substance */
-  const primary = (
-    <div className="storm-advisory-bar__nws-item-primary">{what}</div>
-  );
-  const kindRow = (
+  const titleRow = (
     <div className="storm-advisory-bar__nws-item-title">
       <strong>{a.event}</strong>
       {a.severity ? (
-        <>
-          {" "}
-          <span className="storm-advisory-bar__nws-item-sev">{a.severity}</span>
-        </>
+        <span className="storm-advisory-bar__nws-item-sev">{a.severity}</span>
       ) : null}
     </div>
   );
+  const detailRow =
+    glance.length > 0 ? (
+      <div className="storm-advisory-bar__nws-item-primary">{glance}</div>
+    ) : null;
   const issuedMeta =
     issuedLine.length > 0 ? (
       <div className="storm-advisory-bar__nws-item-issued">{issuedLine}</div>
@@ -211,8 +210,8 @@ function nwsAlertCard(
         <button type="button" className="storm-advisory-bar__ticker" title="Open this alert" onClick={() => onClick?.(a)}>
           <span className="storm-advisory-bar__nws-item-badge">On route</span>
           <div className="storm-advisory-bar__nws-item-body">
-            {primary}
-            {kindRow}
+            {titleRow}
+            {detailRow}
             {issuedMeta}
             {endsRow}
             {action}
@@ -226,8 +225,8 @@ function nwsAlertCard(
       <button type="button" className="storm-advisory-bar__ticker" title="Open this alert" onClick={() => onClick?.(a)}>
         <span className="storm-advisory-bar__nws-item-badge">At your position</span>
         <div className="storm-advisory-bar__nws-item-body">
-          {primary}
-          {kindRow}
+          {titleRow}
+          {detailRow}
           {issuedMeta}
           {endsRow}
           {action}
@@ -291,15 +290,14 @@ export function StormAdvisoryBar({
   const tickerMessages = useMemo(
     () =>
       displayNwsList.map((a) => {
-        const primary = nwsWhatIsHappening(a).replace(/\s+/g, " ").trim();
-        const short = primary.length > 70 ? `${primary.slice(0, 69)}…` : primary;
+        const g = nwsGlanceSummary(a);
         const badge =
           displayNwsTier === "crosses"
             ? "On route"
             : "At your position";
         return {
           id: a.id,
-          text: short || (a.event?.trim() || "Weather alert"),
+          text: g || (a.event?.trim() || "Weather alert"),
           alert: a,
           badge,
         };
@@ -499,7 +497,9 @@ export function StormAdvisoryBar({
         {activePreview.badge ? (
           <span className="storm-advisory-bar__preview-ticker-badge">{activePreview.badge}</span>
         ) : null}
-        <AdvisoryPreviewMessage raw={activePreview.raw} />
+        <span className="storm-advisory-bar__preview-message-wrap">
+          <AdvisoryPreviewMessage raw={activePreview.raw} />
+        </span>
         {previewItems.length > 1 && (
           <span className="storm-advisory-bar__preview-count">
             {previewIdx + 1}/{previewItems.length}

@@ -107,6 +107,25 @@ export function nwsWhatIsHappening(a: NormalizedWeatherAlert): string {
   return trunc(a.event.trim() || "Weather alert", 120);
 }
 
+/**
+ * Very short line for advisory ticker / list glance — event + one clause when distinct.
+ * Keeps driving UI readable without paragraph-length CAP text.
+ */
+export function nwsGlanceSummary(a: NormalizedWeatherAlert): string {
+  const full = nwsWhatIsHappening(a).replace(/\s+/g, " ").trim();
+  const ev = (a.event || "").trim();
+  if (!full) return trunc(ev || "Weather alert", 56);
+  const first = full.split(/[.;]/)[0]?.trim() ?? full;
+  if (!ev) return trunc(first, 56);
+  const evL = ev.toLowerCase();
+  const firstL = first.toLowerCase();
+  if (firstL.startsWith(evL) || firstL.includes(evL.slice(0, Math.min(14, evL.length)))) {
+    return trunc(first, 56);
+  }
+  const combo = `${ev}: ${first}`;
+  return trunc(combo, 56);
+}
+
 /** One short line for “issued …” — optional subline in UI (not the hazard). */
 export function nwsIssuedByLine(headline: string): string {
   const h = headline.trim();

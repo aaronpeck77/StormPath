@@ -58,7 +58,10 @@ import {
   slicePolylineBetweenAlong,
 } from "./nav/routeGeometry";
 import { bannerPrimaryStepIndex } from "./nav/bannerPrimaryStep";
-import { useAlongRouteMetersHeldWhenOffLine } from "./nav/guidanceAlongHold";
+import {
+  GUIDANCE_HOLD_LATERAL_MAX_M,
+  useAlongRouteMetersHeldWhenOffLine,
+} from "./nav/guidanceAlongHold";
 import { activeTurnStepIndexAlong, turnStepAlongBounds } from "./nav/turnStepAlong";
 import { formatRouteDistanceMi, routeConsiderationSummary } from "./nav/routeSummary";
 import { pickDriveAheadCandidate } from "./nav/driveAheadPick";
@@ -1724,16 +1727,28 @@ export default function App() {
     if (!driveModeUi || !effectiveUserLngLat || !geometry || geometry.length < 2) {
       return null;
     }
+    /** Longer lookahead at highway speeds stabilizes tangent on straightaways (sparse vertices). */
+    const lookAheadM = Math.min(
+      220,
+      Math.max(72, 72 + (speedMps != null && speedMps > 0 ? speedMps * 5.5 : 0))
+    );
+    const lateralOk =
+      closestAlongRouteMeters(effectiveUserLngLat, geometry).lateralMetersApprox <=
+      GUIDANCE_HOLD_LATERAL_MAX_M;
+
     let b: number | null = null;
     /**
-     * While navigating, prefer along-route progress for camera bearing so we keep a forward-looking heading
-     * and avoid occasional 180-degree flips from closest-point projection onto a segment behind the vehicle.
+     * While navigating *and* GPS is near the corridor, sample bearing from held along-route progress
+     * so we avoid closest-point flips onto a segment behind the vehicle.
+     * If lateral error is high (common on wide interstates), held {@link userAlongGuidanceM} stops
+     * advancing — sampling direction from that stale arc skews the camera vs the visible route; use
+     * live closest-point tangent ({@link bearingAlongRouteAhead}) instead.
      */
-    if (navigationStarted && Number.isFinite(userAlongGuidanceM)) {
+    if (navigationStarted && lateralOk && Number.isFinite(userAlongGuidanceM)) {
       const totalM = polylineLengthMeters(geometry);
       if (totalM > 1) {
         const fromAlongM = Math.max(0, Math.min(totalM, userAlongGuidanceM));
-        const toAlongM = Math.min(totalM, fromAlongM + 72);
+        const toAlongM = Math.min(totalM, fromAlongM + lookAheadM);
         const fromPt = pointAtAlongMeters(geometry, fromAlongM);
         const toPt = pointAtAlongMeters(geometry, Math.max(toAlongM, fromAlongM + 0.5));
         if (haversineMeters(fromPt, toPt) >= 2.5) {
@@ -1742,16 +1757,17 @@ export default function App() {
       }
     }
     if (b == null) {
-      b = bearingAlongRouteAhead(effectiveUserLngLat, geometry);
+      b = bearingAlongRouteAhead(effectiveUserLngLat, geometry, lookAheadM);
     }
-    // Guard: after reroute / U-turn, the closest-point projection can pick a segment behind you,
-    // flipping the camera ~180°. If device heading is available, prefer it when bearings disagree strongly.
+    // Guard: after reroute / U-turn, polyline bearing can be ~180° from course. Only then fall back
+    // to GPS heading in DriveMap. Highway course noise often disagrees 40–60° with smooth polyline
+    // bearing; the old 70° threshold constantly dropped route bearing and rotated the map off the line.
     if (b != null && heading != null && speedMps != null && speedMps > 2.2) {
       const norm = (d: number) => ((d % 360) + 360) % 360;
       const a = norm(b);
       const h = norm(heading);
       const diff = Math.abs(((a - h + 540) % 360) - 180); // 0..180
-      if (diff > 70) return null; // fall back to device heading in DriveMap
+      if (diff > 135) return null; // fall back to device heading in DriveMap
     }
     return b;
   }, [

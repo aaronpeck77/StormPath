@@ -25,7 +25,8 @@ export type RouteConditionHighlightOpts = {
 /**
  * Colored segments on the active route (weather vs hazard vs notice) plus NWS polygon intersections.
  * Not circle markers — avoids confusion with destination / saved-place dots.
- * Call {@link bringMapboxTrafficLayersToFront} and {@link bringRouteHitLayersToTop} after.
+ * Call {@link bringMapboxTrafficLayersToFront}, {@link bringRouteVisualLinesAboveTraffic},
+ * then {@link bringRouteHitLayersToTop} (DriveMap batches these in one helper).
  */
 export function applyRouteConditionHighlights(
   map: mapboxgl.Map,
@@ -167,10 +168,39 @@ export function visibleRouteIdsForHitLayers(
   return routes.map((r) => r.id);
 }
 
-/** Keep invisible hit targets above traffic / radar so route taps still resolve. */
-export function bringRouteHitLayersToTop(map: mapboxgl.Map, routeIds: string[]) {
+/**
+ * Draw route polylines above Mapbox traffic overlays so A/B/C lines stay readable.
+ * {@link bringMapboxTrafficLayersToFront} moves traffic to the top of the stack; call this after it,
+ * then {@link bringRouteHitLayersToTop}. Optional corridor highlight follows the same route geometry.
+ */
+export function bringRouteVisualLinesAboveTraffic(
+  map: mapboxgl.Map,
+  routeIds: string[],
+  layerPrefix = "route"
+) {
   for (const id of routeIds) {
-    const lid = `route-${id}-line-hit`;
+    const lid = `${layerPrefix}-${id}-line`;
+    if (map.getLayer(lid)) {
+      try {
+        map.moveLayer(lid);
+      } catch {
+        /* style teardown */
+      }
+    }
+  }
+  if (map.getLayer(ROUTE_COND_HIGHLIGHT_LINE)) {
+    try {
+      map.moveLayer(ROUTE_COND_HIGHLIGHT_LINE);
+    } catch {
+      /* style teardown */
+    }
+  }
+}
+
+/** Keep invisible hit targets above traffic / radar so route taps still resolve. */
+export function bringRouteHitLayersToTop(map: mapboxgl.Map, routeIds: string[], layerPrefix = "route") {
+  for (const id of routeIds) {
+    const lid = `${layerPrefix}-${id}-line-hit`;
     if (map.getLayer(lid)) {
       try {
         map.moveLayer(lid);

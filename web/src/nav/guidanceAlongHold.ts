@@ -6,7 +6,9 @@ import type { LngLat } from "./types";
  * When GPS is far from the route polyline, closest-point projection can jump **ahead** on the line
  * (parallel roads, interchanges). Hold the last trusted along-distance until the fix is back on the corridor.
  */
-const LATERAL_TRUST_M = 52;
+/** Max lateral distance (m) from polyline for live along-route progress; matches drive-camera polyline trust. */
+export const GUIDANCE_HOLD_LATERAL_MAX_M = 52;
+const LATERAL_TRUST_M = GUIDANCE_HOLD_LATERAL_MAX_M;
 
 export function useAlongRouteMetersHeldWhenOffLine(
   pos: LngLat | null,

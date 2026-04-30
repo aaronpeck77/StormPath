@@ -16,6 +16,7 @@ import {
   applyRouteConditionHighlights,
   applyRoutesToMap,
   bringRouteHitLayersToTop,
+  bringRouteVisualLinesAboveTraffic,
   fitMapToRemainingRoutes,
   fitMapToTrip,
   routeIdFromRouteHitLayerId,
@@ -27,6 +28,17 @@ import {
   ensureMapboxTrafficConditionLayers,
   setMapboxTrafficLayersVisible,
 } from "./mapTrafficLayers";
+
+/** Mapbox traffic is moved to the top of the layer stack; route lines must be lifted above it again. */
+function liftTrafficThenRoutesThenHits(
+  map: mapboxgl.Map,
+  routeIds: string[],
+  layerPrefix = "route"
+) {
+  bringMapboxTrafficLayersToFront(map);
+  bringRouteVisualLinesAboveTraffic(map, routeIds, layerPrefix);
+  bringRouteHitLayersToTop(map, routeIds, layerPrefix);
+}
 import {
   animateRainViewerDualCrossfade,
   ensureRainViewerRadarDual,
@@ -203,9 +215,9 @@ function brightenNightMapLabels(map: mapboxgl.Map): void {
 /** Extra top padding when full storm advisory bar is expanded under the guidance bar. */
 const ROUTE_FIT_STORM_BAR_EXTRA_TOP_PX = 72;
 /** Smaller top inset when only the left “Storm” peek control is shown. */
-const ROUTE_FIT_STORM_BAR_PEEK_TOP_PX = 40;
-/** Phone collapsed: slim NWS row + Details — less map padding than the old full-width chip. */
-const ROUTE_FIT_STORM_BAR_PHONE_COMPACT_TOP_PX = 26;
+const ROUTE_FIT_STORM_BAR_PEEK_TOP_PX = 46;
+/** Phone collapsed: preview strip under guidance — keep in sync with `.storm-advisory-bar--preview` height. */
+const ROUTE_FIT_STORM_BAR_PHONE_COMPACT_TOP_PX = 34;
 
 /** Progress rail width + gap. */
 const ROUTE_RIGHT_RAIL_PX = 56;
@@ -1311,8 +1323,7 @@ export function DriveMap({
           isOverviewPip: false,
         }
       );
-      bringMapboxTrafficLayersToFront(map);
-      bringRouteHitLayersToTop(
+      liftTrafficThenRoutesThenHits(
         map,
         visibleRouteIdsForHitLayers([], lineFocusId, navigationStarted, viewMode, false)
       );
@@ -1348,8 +1359,7 @@ export function DriveMap({
           isOverviewPip: false,
         }
       );
-      bringMapboxTrafficLayersToFront(map);
-      bringRouteHitLayersToTop(
+      liftTrafficThenRoutesThenHits(
         map,
         visibleRouteIdsForHitLayers(routes, lineFocusId, navigationStarted, viewMode, false)
       );
@@ -1377,8 +1387,7 @@ export function DriveMap({
     if (!map || !mapReady) return;
 
     const liftHits = () => {
-      bringMapboxTrafficLayersToFront(map);
-      bringRouteHitLayersToTop(
+      liftTrafficThenRoutesThenHits(
         map,
         visibleRouteIdsForHitLayers(routes, lineFocusId, navigationStarted, viewMode, false)
       );
@@ -1448,8 +1457,7 @@ export function DriveMap({
     if (!map || !mapReady) return;
 
     const liftHits = () => {
-      bringMapboxTrafficLayersToFront(map);
-      bringRouteHitLayersToTop(
+      liftTrafficThenRoutesThenHits(
         map,
         visibleRouteIdsForHitLayers(routes, lineFocusId, navigationStarted, viewMode, false)
       );
@@ -1501,8 +1509,7 @@ export function DriveMap({
     if (!map || !mapReady) return;
     const sync = () => {
       applyWeatherAlertLayers(map, weatherAlertGeoJson ?? null);
-      bringMapboxTrafficLayersToFront(map);
-      bringRouteHitLayersToTop(
+      liftTrafficThenRoutesThenHits(
         map,
         visibleRouteIdsForHitLayers(routes, lineFocusId, navigationStarted, viewMode, false)
       );
@@ -1684,8 +1691,7 @@ export function DriveMap({
         routeGeometry: focusGeom,
         stormGeoJson: weatherAlertGeoJson,
       });
-      bringMapboxTrafficLayersToFront(map);
-      bringRouteHitLayersToTop(
+      liftTrafficThenRoutesThenHits(
         map,
         visibleRouteIdsForHitLayers(routes, lineFocusId, navigationStarted, viewMode, false)
       );
@@ -1721,7 +1727,9 @@ export function DriveMap({
     const liftRouteHits = () => {
       const { routes: rts, lineFocusId: lid, navigationStarted: nav, viewMode: vm } =
         routesForHitRef.current;
-      bringRouteHitLayersToTop(map, visibleRouteIdsForHitLayers(rts, lid, nav, vm, false));
+      const ids = visibleRouteIdsForHitLayers(rts, lid, nav, vm, false);
+      bringRouteVisualLinesAboveTraffic(map, ids, "route");
+      bringRouteHitLayersToTop(map, ids, "route");
     };
 
     const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

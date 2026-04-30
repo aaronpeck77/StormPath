@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { NORTH_AMERICA_BOUNDS } from "../config/mapRegion";
 import type { NavRoute } from "../nav/types";
 import { applyRoutesToMap, fitMapToRemainingRoutes, fitMapToTrip } from "./mapRouteLayers";
+import { bringRouteVisualLinesAboveTraffic } from "./mapRouteLayers";
 import {
   bringMapboxTrafficLayersToFront,
   ensureMapboxTrafficConditionLayers,
@@ -113,6 +114,11 @@ export function RouteOverviewPip({
       "pip-route"
     );
     bringMapboxTrafficLayersToFront(map);
+    bringRouteVisualLinesAboveTraffic(
+      map,
+      routes.map((r) => r.id),
+      "pip-route"
+    );
   }, [ready, routes, lineFocusId, suggestedRouteId, orderedRouteIds, navigationStarted]);
 
   useEffect(() => {

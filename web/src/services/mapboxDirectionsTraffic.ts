@@ -93,7 +93,8 @@ function detectNearStopFraction(route: DirectionsRoute): number | null {
     if (segCount <= 0) continue;
     for (let i = 0; i < segCount; i++) {
       const c = congestion[i];
-      const nearStopByCongestion = typeof c === "number" && c >= 90;
+      /* 96+ ≈ nearly stopped; 90 catches many signalized intersections */
+      const nearStopByCongestion = typeof c === "number" && c >= 96;
       const nearStopByClosure = closures[i] === true;
       if ((nearStopByCongestion || nearStopByClosure) && firstNearStop == null) {
         firstNearStop = total + i;
