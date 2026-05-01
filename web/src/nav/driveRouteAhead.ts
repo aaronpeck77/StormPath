@@ -1,4 +1,4 @@
-import type { RouteAlert } from "./routeAlerts";
+import type { RouteImpact, RouteImpactCategory } from "./routeImpacts";
 
 const MI = 1609.344;
 /** Ignore corridor marks right under the puck; look a bit forward. */
@@ -34,151 +34,90 @@ export type DriveAheadLine = {
   radarTier: DriveAheadRadarTier;
 };
 
-function norm(s: string): string {
-  return s.toLowerCase();
+/* ─── Impact-based drive-ahead builder ─────────────────────────── */
+
+function impactKind(category: RouteImpactCategory): DriveAheadKind {
+  switch (category) {
+    case "weather":
+    case "winter":
+    case "wind":
+    case "flooding":
+    case "visibility":
+      return "weather";
+    case "traffic":
+      return "traffic";
+    case "closure":
+    case "incident":
+    case "construction":
+      return "road";
+    default:
+      return "road";
+  }
 }
 
-/** NWS headline / band severity → radar tier. */
-export function radarTierFromNwsSeverity(sev: string): DriveAheadRadarTier {
-  const t = norm(sev);
-  if (/\bwarning\b|severe|extreme|emergency|tornado|hurricane/.test(t)) return "red";
-  if (/\bwatch\b/.test(t)) return "orange";
-  if (/\badvisory\b/.test(t)) return "yellow";
-  if (/statement|special\s+weather|short\s+term/.test(t)) return "green";
-  return "yellow";
-}
-
-function radarTierFromWeatherAlert(title: string, severity: number): DriveAheadRadarTier {
-  const t = norm(title);
-  if (/ice|freez|sleet|blizzard|snow\s|winter\s|cold\s+advisory/.test(t)) return "blue";
-  if (/thunder|tornado|severe|extreme|flash\s+flood|hurricane/.test(t)) return "red";
-  if (/heavy\s+rain|flood\s+watch|flood\s+warning/.test(t)) return "orange";
-  if (/rain|shower|drizzle|wet|precip/.test(t)) return "green";
-  if (severity >= 75) return "orange";
-  if (severity >= 55) return "yellow";
+function impactRadarTier(impact: RouteImpact): DriveAheadRadarTier {
+  if (impact.severity === "avoid") return "red";
+  if (impact.severity === "serious") {
+    if (impact.category === "winter" || impact.category === "flooding") return "blue";
+    return "orange";
+  }
+  if (impact.severity === "caution") return "yellow";
   return "green";
 }
 
-/** One line for drive strip: title + human detail (delay text, hazard summary, wx blurb). */
-function corridorHeadlineForDriveAhead(a: RouteAlert): string {
-  const detail = (a.detail ?? "").replace(/\s+/g, " ").trim();
-  const ttl = (a.title ?? "").trim();
-
-  if (a.corridorKind === "traffic") {
-    if (a.id === "traffic-delay") {
-      return ttl.length > 64 ? `${ttl.slice(0, 62)}…` : ttl;
-    }
-    if (detail && detail !== "—" && !/^clear$/i.test(detail)) {
-      const d = detail.length > 42 ? `${detail.slice(0, 40)}…` : detail;
-      return `${ttl} · ${d}`;
-    }
-    return ttl;
-  }
-
-  if (a.corridorKind === "hazard" && detail.length > 2) {
-    const head = ttl.length > 22 ? `${ttl.slice(0, 20)}…` : ttl;
-    const d = detail.length > 46 ? `${detail.slice(0, 44)}…` : detail;
-    return `${head} — ${d}`;
-  }
-
-  if ((a.corridorKind === "weather" || a.id === "radar") && detail.length > 2) {
-    const d = detail.length > 50 ? `${detail.slice(0, 48)}…` : detail;
-    return `${ttl}: ${d}`;
-  }
-
-  return ttl.length > 56 ? `${ttl.slice(0, 54)}…` : ttl;
+function impactPriorityForAhead(impact: RouteImpact): number {
+  let pri = 0;
+  if (impact.driverAction === "rerouteRecommended") pri += 5;
+  else if (impact.driverAction === "rerouteAvailable") pri += 3;
+  if (impact.severity === "avoid") pri += 5;
+  else if (impact.severity === "serious") pri += 3;
+  else if (impact.severity === "caution") pri += 1;
+  if (impact.category === "closure" || impact.category === "incident") pri += 1;
+  return pri;
 }
 
-function radarTierFromCorridorAlert(a: RouteAlert): DriveAheadRadarTier {
-  if (a.corridorKind === "traffic") {
-    if (a.severity >= 78) return "orange";
-    if (a.severity >= 55) return "yellow";
-    return "green";
-  }
-  if (a.corridorKind === "hazard") {
-    if (a.severity >= 82) return "red";
-    if (a.severity >= 64) return "orange";
-    return "yellow";
-  }
-  if (a.corridorKind === "weather") {
-    return radarTierFromWeatherAlert(a.title, a.severity);
-  }
-  if (a.corridorKind === "notice") {
-    return a.severity >= 50 ? "yellow" : "green";
-  }
-  return "yellow";
+function fmtImpactHeadline(i: RouteImpact, distanceM: number, planEtaMinutes: number | null | undefined, totalM: number): string {
+  const head = i.driverHeadline;
+  const eta = etaAheadLabel(distanceM, totalM, planEtaMinutes);
+  const dist = fmtMi(distanceM);
+  if (eta) return `${head} · ${dist} (${eta})`;
+  return `${head} · ${dist} ahead`;
 }
 
 /**
- * One glanceable line for drive UI: nearest meaningful weather / hazard / traffic **ahead** on the polyline.
+ * Build the glanceable “Road Ahead” line directly from the unified `RouteImpact[]`.
+ * Prefers impacts the driver should act on (reroute-recommended), then nearest serious / caution.
  */
-export function buildDriveRouteAheadLine(opts: {
-  totalM: number;
+export function buildDriveRouteAheadFromImpacts(opts: {
+  impacts: RouteImpact[];
+  totalMeters: number;
   userAlongM: number;
   planEtaMinutes: number | null | undefined;
-  stormBands: { startM: number; endM: number; severity?: string }[];
-  laidOutAlerts: RouteAlert[];
 }): DriveAheadLine | null {
-  const { totalM, userAlongM, planEtaMinutes, stormBands, laidOutAlerts } = opts;
-  if (totalM <= 1 || !Number.isFinite(userAlongM)) return null;
+  const { impacts, totalMeters, userAlongM, planEtaMinutes } = opts;
+  if (totalMeters <= 1 || !Number.isFinite(userAlongM)) return null;
 
-  const ua = Math.max(0, Math.min(totalM, userAlongM));
-
-  const bands = [...stormBands].sort((a, b) => a.startM - b.startM);
-
-  for (const b of bands) {
-    if (ua + 15 >= b.startM && ua - 15 <= b.endM) {
-      const sev = b.severity?.trim() || "Advisory";
-      return {
-        text: `NWS ${sev} — in this segment`,
-        kind: "nws",
-        radarTier: radarTierFromNwsSeverity(sev),
-      };
-    }
+  /** Impact whose band currently covers the driver. */
+  const inside = impacts.find(
+    (i) =>
+      i.startMeters <= userAlongM + 12 &&
+      i.endMeters >= userAlongM - 12 &&
+      i.endMeters > i.startMeters
+  );
+  if (inside) {
+    return {
+      text: `${inside.driverHeadline} — in this segment`,
+      kind: impactKind(inside.category),
+      radarTier: impactRadarTier(inside),
+    };
   }
 
-  type Cand = {
-    text: string;
-    kind: DriveAheadKind;
-    distM: number;
-    pri: number;
-    radarTier: DriveAheadRadarTier;
-  };
+  type Cand = { impact: RouteImpact; distM: number; pri: number };
   const cands: Cand[] = [];
-
-  for (const b of bands) {
-    if (b.startM <= ua + AHEAD_MIN_M * 0.25) continue;
-    const d = b.startM - ua;
-    if (d < AHEAD_MIN_M * 0.5) continue;
-    const sev = b.severity?.trim() || "Warning";
-    const eta = etaAheadLabel(d, totalM, planEtaMinutes);
-    cands.push({
-      text: eta
-        ? `NWS ${sev} · ${fmtMi(d)} (${eta})`
-        : `NWS ${sev} · ${fmtMi(d)} ahead`,
-      kind: "nws",
-      distM: d,
-      pri: 4,
-      radarTier: radarTierFromNwsSeverity(sev),
-    });
-  }
-
-  for (const a of laidOutAlerts) {
-    if (a.alongMeters < ua + AHEAD_MIN_M * 0.4) continue;
-    const d = a.alongMeters - ua;
-    if (d < AHEAD_MIN_M * 0.5) continue;
-    const head = corridorHeadlineForDriveAhead(a);
-    const eta = etaAheadLabel(d, totalM, planEtaMinutes);
-    const kind: DriveAheadKind =
-      a.corridorKind === "traffic" ? "traffic" : a.corridorKind === "hazard" ? "road" : "weather";
-    const pri = a.corridorKind === "traffic" ? 3 : a.corridorKind === "hazard" ? 5 : 2;
-    cands.push({
-      text: eta ? `${head} · ${fmtMi(d)} (${eta})` : `${head} · ${fmtMi(d)}`,
-      kind,
-      distM: d,
-      pri,
-      radarTier: radarTierFromCorridorAlert(a),
-    });
+  for (const i of impacts) {
+    const ahead = i.distanceAheadMeters;
+    if (ahead == null || ahead <= AHEAD_MIN_M * 0.5) continue;
+    cands.push({ impact: i, distM: ahead, pri: impactPriorityForAhead(i) });
   }
 
   if (cands.length === 0) {
@@ -187,7 +126,11 @@ export function buildDriveRouteAheadLine(opts: {
 
   cands.sort((a, b) => (a.distM !== b.distM ? a.distM - b.distM : b.pri - a.pri));
   const top = cands[0]!;
-  return { text: top.text, kind: top.kind, radarTier: top.radarTier };
+  return {
+    text: fmtImpactHeadline(top.impact, top.distM, planEtaMinutes, totalMeters),
+    kind: impactKind(top.impact.category),
+    radarTier: impactRadarTier(top.impact),
+  };
 }
 
 const BRIEF_MAX = 62;

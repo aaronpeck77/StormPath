@@ -586,6 +586,64 @@ const ROUTE_RECORDING_SRC = "route-recording-preview";
 const ROUTE_RECORDING_LAYER = "route-recording-preview-line";
 const ACTIVITY_TRAIL_SRC = "stormpath-activity-trail";
 const ACTIVITY_TRAIL_LAYER = "stormpath-activity-trail-dots";
+const SAVED_PLACE_DOT_MIN_ZOOM = 7;
+const SAVED_PLACE_DOT_FULL_ZOOM = 12.5;
+const SAVED_PLACE_DOT_MIN_SIZE_PX = 5;
+const SAVED_PLACE_DOT_FULL_SIZE_PX = 14;
+
+type SelectableMapPoi = {
+  lngLat: LngLat;
+  label: string;
+};
+
+function savedPlaceDotSizeForZoom(zoom: number): { sizePx: number; borderPx: number } {
+  const t = Math.max(
+    0,
+    Math.min(1, (zoom - SAVED_PLACE_DOT_MIN_ZOOM) / (SAVED_PLACE_DOT_FULL_ZOOM - SAVED_PLACE_DOT_MIN_ZOOM))
+  );
+  return {
+    sizePx: SAVED_PLACE_DOT_MIN_SIZE_PX + (SAVED_PLACE_DOT_FULL_SIZE_PX - SAVED_PLACE_DOT_MIN_SIZE_PX) * t,
+    borderPx: 1 + t,
+  };
+}
+
+function selectablePoiLayerIds(map: mapboxgl.Map): string[] {
+  return (
+    map
+      .getStyle()
+      .layers?.filter((layer) => {
+        if (layer.type !== "symbol") return false;
+        const sourceLayer = String((layer as { "source-layer"?: unknown })["source-layer"] ?? "");
+        return layer.id.toLowerCase().includes("poi") || sourceLayer.toLowerCase().includes("poi");
+      })
+      .map((layer) => layer.id)
+      .filter((id) => map.getLayer(id)) ?? []
+  );
+}
+
+function featurePointLngLat(feature: mapboxgl.MapboxGeoJSONFeature): LngLat | null {
+  const geometry = feature.geometry as { type?: string; coordinates?: unknown } | null;
+  if (geometry?.type !== "Point" || !Array.isArray(geometry.coordinates)) return null;
+  const [lng, lat] = geometry.coordinates;
+  if (typeof lng !== "number" || typeof lat !== "number") return null;
+  return [lng, lat];
+}
+
+function featureLabel(feature: mapboxgl.MapboxGeoJSONFeature): string {
+  const props = feature.properties as Record<string, unknown> | null;
+  const label = props?.name_en ?? props?.name ?? props?.name_script;
+  return typeof label === "string" && label.trim() ? label.trim() : "Map place";
+}
+
+function selectablePoiAtPoint(map: mapboxgl.Map, point: mapboxgl.PointLike): SelectableMapPoi | null {
+  const layers = selectablePoiLayerIds(map);
+  if (layers.length === 0) return null;
+  const feature = map.queryRenderedFeatures(point, { layers })[0];
+  if (!feature) return null;
+  const lngLat = featurePointLngLat(feature);
+  if (!lngLat) return null;
+  return { lngLat, label: featureLabel(feature) };
+}
 
 function mapEventFromUser(e: unknown): boolean {
   if (!e || typeof e !== "object") return false;
@@ -602,6 +660,12 @@ function makeDestEl(): HTMLDivElement {
   const el = document.createElement("div");
   el.className = "map-dest-marker";
   el.setAttribute("aria-label", "Destination");
+  return el;
+}
+
+function makePoiHoverEl(): HTMLDivElement {
+  const el = document.createElement("div");
+  el.className = "map-poi-hover-target";
   return el;
 }
 
@@ -690,6 +754,7 @@ export function DriveMap({
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const puckMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const destMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const poiHoverMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const bypassCompareMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const onTrafficBypassCompareFlagPickRef = useRef(onTrafficBypassCompareFlagPick);
   onTrafficBypassCompareFlagPickRef.current = onTrafficBypassCompareFlagPick;
@@ -1097,8 +1162,6 @@ export function DriveMap({
     if (!map || !mapReady) return;
 
     const click = (e: mapboxgl.MapMouseEvent) => {
-      const { lng, lat } = e.lngLat;
-
       /* Consume taps on the route corridor so they don’t move the destination pin; hazard details are via Hazards + progress strip. */
       if (routes.length > 0) {
         const hideAltsOnMainDrive = navigationStarted && viewMode === "drive";
@@ -1116,6 +1179,12 @@ export function DriveMap({
       }
 
       if (!allowDestinationPick) return;
+      const poi = selectablePoiAtPoint(map, e.point);
+      if (poi) {
+        onClickRef.current(poi.lngLat[0], poi.lngLat[1]);
+        return;
+      }
+      const { lng, lat } = e.lngLat;
       onClickRef.current(lng, lat);
     };
     map.on("click", click);
@@ -1123,6 +1192,45 @@ export function DriveMap({
       map.off("click", click);
     };
   }, [mapReady, allowDestinationPick, routes, lineFocusId, navigationStarted, viewMode]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    const clearHover = () => {
+      map.getCanvas().style.cursor = "";
+      poiHoverMarkerRef.current?.remove();
+      poiHoverMarkerRef.current = null;
+    };
+
+    const mousemove = (e: mapboxgl.MapMouseEvent) => {
+      if (!allowDestinationPick) {
+        clearHover();
+        return;
+      }
+      const poi = selectablePoiAtPoint(map, e.point);
+      if (!poi) {
+        clearHover();
+        return;
+      }
+      map.getCanvas().style.cursor = "pointer";
+      if (!poiHoverMarkerRef.current) {
+        poiHoverMarkerRef.current = new mapboxgl.Marker({
+          element: makePoiHoverEl(),
+          anchor: "center",
+        }).addTo(map);
+      }
+      poiHoverMarkerRef.current.setLngLat(poi.lngLat).getElement().setAttribute("aria-label", poi.label);
+    };
+
+    map.on("mousemove", mousemove);
+    map.on("mouseleave", clearHover);
+    return () => {
+      map.off("mousemove", mousemove);
+      map.off("mouseleave", clearHover);
+      clearHover();
+    };
+  }, [mapReady, allowDestinationPick]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2213,10 +2321,10 @@ export function DriveMap({
     }
 
     const applyScale = () => {
-      const z = map.getZoom();
-      const s = Math.max(0.15, Math.min(1, (z - 2.5) / 12.5));
+      const { sizePx, borderPx } = savedPlaceDotSizeForZoom(map.getZoom());
       for (const { el } of existing.values()) {
-        el.style.transform = `scale(${s})`;
+        el.style.setProperty("--saved-place-dot-size", `${sizePx.toFixed(2)}px`);
+        el.style.setProperty("--saved-place-dot-border", `${borderPx.toFixed(2)}px`);
       }
     };
 

@@ -44,7 +44,12 @@ import {
   weatherHintSamplesAlongPolyline,
 } from "./services/openWeatherClient";
 import type { RouteAlert } from "./nav/routeAlerts";
-import { augmentAlertsForProgressStrip, buildRouteAlerts } from "./nav/routeAlerts";
+import { augmentAlertsForProgressStrip } from "./nav/routeAlerts";
+import {
+  buildRouteImpacts,
+  routeImpactToRouteAlert,
+  type RouteImpact,
+} from "./nav/routeImpacts";
 import { buildSimpleCalloutBlock } from "./nav/progressCalloutCopy";
 import { buildRouteChunkCalloutList } from "./nav/routeProgressChunkList";
 import { layoutStripAlerts } from "./nav/stripAlertLayout";
@@ -64,8 +69,7 @@ import {
 } from "./nav/guidanceAlongHold";
 import { activeTurnStepIndexAlong, turnStepAlongBounds } from "./nav/turnStepAlong";
 import { formatRouteDistanceMi, routeConsiderationSummary } from "./nav/routeSummary";
-import { pickDriveAheadCandidate } from "./nav/driveAheadPick";
-import { buildDriveRouteAheadLine } from "./nav/driveRouteAhead";
+import { buildDriveRouteAheadFromImpacts } from "./nav/driveRouteAhead";
 import { computeTrafficBypassOffer } from "./nav/trafficBypassOffer";
 import { unifiedTrafficNarrative } from "./nav/trafficNarrative";
 import {
@@ -73,6 +77,7 @@ import {
   ARRIVAL_DEST_RADIUS_M,
   ARRIVAL_IDLE_CLEAR_MS,
   ARRIVAL_STATIONARY_MAX_SPEED_MPS,
+  DRIVE_AHEAD_WINDOW_M,
 } from "./nav/constants";
 import type { TrafficOverlay, WeatherOverlay } from "./situation/fusedSnapshot";
 import type { MapFocusRequest, MapViewMode } from "./ui/driveMapTypes";
@@ -170,6 +175,8 @@ type TrafficBypassCompareState = {
   etaC: number | null;
   hasB: boolean;
   hasC: boolean;
+  /** From the underlying `RouteImpact` confidence — softens compare panel copy when low. */
+  confidence: "low" | "medium" | "high";
 };
 
 const MB_TRAFFIC_LINE_SNAP_NOTICE = "Mapbox traffic-aware line";
@@ -1829,65 +1836,111 @@ export default function App() {
     return bits.join(" · ").replace(/\s+/g, " ").trim();
   }, [lineFocusId, guidanceSlice?.forecastHeadline, weatherOverlay]);
 
-  const routeAlertsBuilt = useMemo(
-    () => {
-      if (!navigationStarted) return [];
-      return buildRouteAlerts(
-        guidanceRoute?.geometry,
-        effectiveUserLngLat,
-        guidanceSlice,
-        scored.find((s) => s.route.id === lineFocusId),
-        Boolean(env.mapboxToken),
-        trafficFetchDone,
-        { corridorWeatherDetail, trafficLeg: (lineFocusId ? trafficOverlay?.[lineFocusId] : null) ?? null }
-      );
-    },
-    [
-      navigationStarted,
-      guidanceRoute?.geometry,
-      effectiveUserLngLat,
-      guidanceSlice,
-      scored,
-      lineFocusId,
-      env.mapboxToken,
-      trafficFetchDone,
-      corridorWeatherDetail,
-    ]
-  );
-
   /** Strip + map corridors: honor the Road checkbox — do not force “on” in drive (that hid toggles but left layers active). */
   const showTrafficCorridorOnRoute = isPlus && roadAdvisoryDetailOn && settingTrafficEnabled;
   const showRoadNoticesOnRoute = isPlus && roadAdvisoryDetailOn;
+  /** Weather impacts (NWS / heavy radar) on the strip + map are gated by the storm session toggle. */
+  const showWeatherImpactsOnRoute = advisoryLifeSafetyOn && (advisoryPlusDetailOn || stormCorridorAlerts.length > 0);
 
   useRadarBandsAlongRoute(Boolean(radarMapOverlayOn), guidanceRoute?.geometry);
 
-  /** Road impacts + traffic checkbox + Plus + Traffic setting: corridor traffic on route / strip; otherwise hide traffic segments. */
-  const routeAlerts = useMemo(() => {
-    let base = routeAlertsBuilt;
-    /* Keep weather under NWS/radar surfaces; Road impacts should remain road + traffic only. */
-    base = base.filter((a) => a.corridorKind !== "weather");
-    if (!showTrafficCorridorOnRoute) {
-      base = base.filter((a) => a.corridorKind !== "traffic");
+  const stormMapGeoJsonForMap = useMemo<GeoJSON.FeatureCollection | undefined>(() => {
+    if (!stormMapGeoJson?.features?.length) return undefined;
+    const g = nwsNavCorridorGeom;
+    if (!driveModeUi || !g?.length) return stormMapGeoJson;
+    const o = computeRouteOverlapWithAlerts(g, stormCorridorAlerts);
+    const ids = new Set(o.overlappingIds);
+    const filtered = stormMapGeoJson.features.filter((f) => {
+      const id = String((f.properties as { id?: string } | undefined)?.id ?? "");
+      return id && ids.has(id);
+    });
+    if (filtered.length > 0) {
+      return { type: "FeatureCollection", features: filtered } as GeoJSON.FeatureCollection;
     }
-    if (!showRoadNoticesOnRoute) {
-      base = base.filter((a) => a.corridorKind !== "hazard" && a.corridorKind !== "notice");
+    return undefined;
+  }, [stormMapGeoJson, driveModeUi, nwsNavCorridorGeom, nwsNavCorridorGeomKey, stormCorridorAlerts]);
+
+  const stormProgressBands = useMemo(() => {
+    const g = nwsNavCorridorGeom;
+    if (!g?.length) return [];
+    const raw = stormMapGeoJsonForMap ?? stormMapGeoJson;
+    let geo: GeoJSON.FeatureCollection | null = raw ?? null;
+    if (!advisoryPlusDetailOn && raw?.features?.length) {
+      const filtered = filterMapGeoJsonToBasicEmergencies(raw, stormCorridorAlerts);
+      geo = filtered?.features?.length ? filtered : stormCorridorAlerts.length > 0 ? raw : null;
     }
-    return base;
+    if (!geo?.features?.length) return [];
+    return stormAlongBandsForProgressStrip(g, geo);
+  }, [advisoryPlusDetailOn, nwsNavCorridorGeom, nwsNavCorridorGeomKey, stormMapGeoJson, stormMapGeoJsonForMap, stormCorridorAlerts]);
+
+  /**
+   * Unified Road Ahead model — every surface (drive status, advisory bar, progress rail, map highlights, bypass)
+   * reads from the same `RouteImpact[]`, so weather, traffic, closures, and incidents can never disagree.
+   */
+  const routeImpacts = useMemo<RouteImpact[]>(() => {
+    if (!navigationStarted) return [];
+    const totalM = guidanceRoute?.geometry?.length ? polylineLengthMeters(guidanceRoute.geometry) : 0;
+    return buildRouteImpacts({
+      geometry: guidanceRoute?.geometry,
+      userLngLat: effectiveUserLngLat,
+      userAlongM: totalM > 0 ? userAlongGuidanceM : 0,
+      planEtaMinutes: guidanceRoute?.baseEtaMinutes,
+      slice: guidanceSlice,
+      trafficForRoute: scored.find((s) => s.route.id === lineFocusId),
+      trafficLeg: (lineFocusId ? trafficOverlay?.[lineFocusId] : null) ?? null,
+      corridorWeatherDetail,
+      nwsBands: stormProgressBands.map((b) => ({
+        startM: b.startM,
+        endM: b.endM,
+        severity: b.severity ?? "Moderate",
+      })),
+      nwsAlerts: stormCorridorAlerts,
+    });
   }, [
-    routeAlertsBuilt,
-    showTrafficCorridorOnRoute,
-    showRoadNoticesOnRoute,
+    navigationStarted,
+    guidanceRoute?.geometry,
+    guidanceRoute?.baseEtaMinutes,
+    effectiveUserLngLat,
+    userAlongGuidanceM,
+    guidanceSlice,
+    scored,
+    lineFocusId,
+    trafficOverlay,
+    corridorWeatherDetail,
+    stormProgressBands,
+    stormCorridorAlerts,
   ]);
 
-  const trafficBypassContext = useMemo(
+  /** Filter impacts by the same UI toggles that gated the legacy alert list. */
+  const routeImpactsForUi = useMemo(() => {
+    return routeImpacts.filter((i) => {
+      if (i.category === "traffic") return showTrafficCorridorOnRoute;
+      if (i.category === "closure" || i.category === "incident" || i.category === "construction") {
+        return showRoadNoticesOnRoute;
+      }
+      // Weather impacts (NWS / radar) — gated by storm session detail.
+      return showWeatherImpactsOnRoute;
+    });
+  }, [routeImpacts, showTrafficCorridorOnRoute, showRoadNoticesOnRoute, showWeatherImpactsOnRoute]);
+
+  /**
+   * Project unified impacts back to the legacy `RouteAlert` shape so existing surfaces (progress strip,
+   * map highlights, corridor sheet) keep working unchanged.
+   *
+   * NWS-source weather impacts are drawn elsewhere as `stormProgressBands` / map polygons, so we drop
+   * them from the corridor list to avoid double-drawing the same area in two color systems.
+   * Radar-source weather impacts pass through — fixing the prior mismatch where heavy rain on the
+   * route was silently filtered out of the progress strip.
+   */
+  const routeAlerts = useMemo(
     () =>
-      computeTrafficBypassOffer(
-        guidanceRoute?.geometry,
-        effectiveUserLngLat,
-        routeAlerts,
-        trafficDelayMinutesForBypass
-      ),
-    [guidanceRoute?.geometry, effectiveUserLngLat, routeAlerts, trafficDelayMinutesForBypass]
+      routeImpactsForUi.filter((i) => i.source !== "nws").map(routeImpactToRouteAlert),
+    [routeImpactsForUi]
+  );
+
+  const trafficBypassContext = useMemo(
+    () => computeTrafficBypassOffer(routeImpactsForUi, trafficDelayMinutesForBypass),
+    [routeImpactsForUi, trafficDelayMinutesForBypass]
   );
 
   const showTrafficBypassCta =
@@ -1952,22 +2005,6 @@ export default function App() {
    * Rt/Mp: full corridor/browse polygons.
    * Dr: show only polygons that directly intersect the active route.
    */
-  const stormMapGeoJsonForMap = useMemo<GeoJSON.FeatureCollection | undefined>(() => {
-    if (!stormMapGeoJson?.features?.length) return undefined;
-    const g = nwsNavCorridorGeom;
-    if (!driveModeUi || !g?.length) return stormMapGeoJson;
-    const o = computeRouteOverlapWithAlerts(g, stormCorridorAlerts);
-    const ids = new Set(o.overlappingIds);
-    const filtered = stormMapGeoJson.features.filter((f) => {
-      const id = String((f.properties as { id?: string } | undefined)?.id ?? "");
-      return id && ids.has(id);
-    });
-    if (filtered.length > 0) {
-      return { type: "FeatureCollection", features: filtered } as GeoJSON.FeatureCollection;
-    }
-    return undefined;
-  }, [stormMapGeoJson, driveModeUi, nwsNavCorridorGeom, nwsNavCorridorGeomKey, stormCorridorAlerts]);
-
   /** Map NWS layer: full set when Plus storm detail is on; otherwise prefer life-safety polygons but never hide a successful fetch. */
   const driveMapWeatherAlertGeoJson = useMemo((): GeoJSON.FeatureCollection | null => {
     if (!advisoryLifeSafetyOn) return null;
@@ -2000,40 +2037,25 @@ export default function App() {
     stormOverlapping,
   ]);
 
-  const stormProgressBands = useMemo(() => {
-    const g = nwsNavCorridorGeom;
-    if (!g?.length) return [];
-    const raw = stormMapGeoJsonForMap ?? stormMapGeoJson;
-    let geo: GeoJSON.FeatureCollection | null = raw ?? null;
-    if (!advisoryPlusDetailOn && raw?.features?.length) {
-      const filtered = filterMapGeoJsonToBasicEmergencies(raw, stormCorridorAlerts);
-      geo = filtered?.features?.length ? filtered : stormCorridorAlerts.length > 0 ? raw : null;
-    }
-    if (!geo?.features?.length) return [];
-    return stormAlongBandsForProgressStrip(g, geo);
-  }, [advisoryPlusDetailOn, nwsNavCorridorGeom, nwsNavCorridorGeomKey, stormMapGeoJson, stormMapGeoJsonForMap, stormCorridorAlerts]);
-
-  /** Drive HUD: NWS + corridor alerts ahead (Plus gets NWS bands; corridor alerts for all tiers). */
+  /** Drive HUD: unified Road Ahead — same RouteImpact list as map / strip / bypass. */
   const driveRouteAheadLine = useMemo(() => {
     if (!driveModeUi) return null;
     const g = guidanceRoute?.geometry;
     if (!g?.length) return null;
-    const totalM = polylineLengthMeters(g);
-    if (totalM <= 1) return null;
-    return buildDriveRouteAheadLine({
-      totalM,
+    const totalMeters = polylineLengthMeters(g);
+    if (totalMeters <= 1) return null;
+    return buildDriveRouteAheadFromImpacts({
+      impacts: routeImpactsForUi,
+      totalMeters,
       userAlongM: userAlongGuidanceM,
       planEtaMinutes: guidanceRoute?.baseEtaMinutes,
-      stormBands: stormProgressBands,
-      laidOutAlerts: mapAlongRouteAlerts,
     });
   }, [
     driveModeUi,
     guidanceRoute?.geometry,
     guidanceRoute?.baseEtaMinutes,
     userAlongGuidanceM,
-    stormProgressBands,
-    mapAlongRouteAlerts,
+    routeImpactsForUi,
   ]);
 
   /**
@@ -2580,22 +2602,28 @@ export default function App() {
   useEffect(() => {
     if (!navigationStarted || viewMode !== "drive") return;
     if (!guidanceRoute?.geometry?.length || !userLngLat) return;
-    const pick = pickDriveAheadCandidate(
-      true,
-      guidanceRoute.geometry,
-      userLngLat,
-      routeAlerts,
-      { seriousOnly: true }
+    /* Auto fly-to a serious upcoming impact (storm, closure, blocked crash). Reads from the unified
+     * impact list so weather is included alongside road incidents — earlier picks were RouteAlert-only and
+     * missed serious NWS warnings. */
+    const candidate = routeImpactsForUi.find(
+      (i) =>
+        (i.severity === "avoid" || i.severity === "serious") &&
+        (i.driverAction === "rerouteRecommended" ||
+          i.driverAction === "rerouteAvailable" ||
+          i.driverAction === "prepare") &&
+        i.distanceAheadMeters != null &&
+        i.distanceAheadMeters > 0 &&
+        i.distanceAheadMeters <= DRIVE_AHEAD_WINDOW_M
     );
-    if (!pick) return;
-    if (seriousHazardAutoFlewRef.current.has(pick.alert.id)) return;
-    seriousHazardAutoFlewRef.current.add(pick.alert.id);
+    if (!candidate) return;
+    if (seriousHazardAutoFlewRef.current.has(candidate.id)) return;
+    seriousHazardAutoFlewRef.current.add(candidate.id);
     setMapFocus({
       kind: "hazardOverview",
-      hazardLng: pick.alert.lngLat[0]!,
-      hazardLat: pick.alert.lngLat[1]!,
+      hazardLng: candidate.lngLat[0]!,
+      hazardLat: candidate.lngLat[1]!,
     });
-  }, [navigationStarted, viewMode, guidanceRoute?.geometry, guidanceRouteId, userLngLat, routeAlerts]);
+  }, [navigationStarted, viewMode, guidanceRoute?.geometry, guidanceRouteId, userLngLat, routeImpactsForUi]);
 
   /** Rt + Mp: explore / plan on the map; Dr is follow-cam — keep tap-to-dest and ★ off there. */
   const mapPlanningUi = viewMode === "route" || viewMode === "topdown";
@@ -2996,12 +3024,23 @@ export default function App() {
     const MI = 1_609.34;
 
     try {
-      const trafficAlert = routeAlerts.find(
-        (a) => (a.id === "traffic-delay" || a.id === "traffic") && a.promptRerouteAhead
+      /* Anchor the surgical bypass on the strongest reroute-worthy impact (traffic / closure) ahead.
+       * If we don't have a confident anchor, fall back to ~38% of remaining route. */
+      const anchorImpact = routeImpactsForUi.find(
+        (i) =>
+          (i.category === "traffic" || i.category === "closure" || i.category === "incident") &&
+          (i.driverAction === "rerouteRecommended" || i.driverAction === "rerouteAvailable") &&
+          i.confidence !== "low"
       );
-      const jamAlongM = trafficAlert?.alongMeters ?? totalM * 0.38;
+      const jamAlongM = anchorImpact?.alongMeters ?? totalM * 0.38;
 
-      const [fullRerouteP, surgicalP] = await Promise.all([
+      /* Fair ETA comparison: re-fetch live A duration from current position along the remaining
+       * polyline, in parallel with B (alternate) and C (surgical bypass). All three then come from
+       * fresh Mapbox live traffic data, so the compare panel doesn't pit a stale A baseline against
+       * fresh B/C numbers. */
+      const remainingPolyline = slicePolylineBetweenAlong(geom, Math.max(0, userAlongGuidanceM), totalM);
+
+      const [fullRerouteP, surgicalP, liveAFromHereP] = await Promise.all([
         fetchMapboxTrafficAlternatives(env.mapboxToken, userLngLat, destLngLat),
         (async (): Promise<{
           geometry: LngLat[];
@@ -3038,6 +3077,9 @@ export default function App() {
             notice: "Side-road bypass around traffic (exit \u2192 rejoin).",
           };
         })(),
+        remainingPolyline.length >= 2
+          ? fetchMapboxTrafficAlongPolyline(env.mapboxToken, remainingPolyline)
+          : Promise.resolve(null),
       ]);
 
       const alts = fullRerouteP;
@@ -3087,14 +3129,23 @@ export default function App() {
         }));
       }
 
+      /* Use the live remaining-from-here ETA for A so all three options share the same baseline.
+       * If the live fetch failed, fall back to the static plan ETA so the panel still has a number. */
+      const liveAEtaMin = liveAFromHereP?.mapboxDurationMinutes;
+      const etaA =
+        typeof liveAEtaMin === "number" && Number.isFinite(liveAEtaMin) && liveAEtaMin > 0
+          ? Math.max(1, Math.round(liveAEtaMin))
+          : Math.round(guidanceRoute.baseEtaMinutes);
+
       setFitTrigger((n) => n + 1);
       setTrafficBypassCompare({
         headline: trafficBypassContext?.headline ?? "Traffic ahead",
-        etaA: Math.round(guidanceRoute.baseEtaMinutes),
+        etaA,
         etaB: bestFull ? Math.round(bestFull.durationMinutes) : null,
         etaC: surgicalP ? surgicalP.baseEtaMinutes : null,
         hasB: Boolean(bestFull),
         hasC: Boolean(surgicalP),
+        confidence: trafficBypassContext?.confidence ?? "medium",
       });
       setViewMode("topdown");
     } catch {
@@ -3109,7 +3160,8 @@ export default function App() {
     userLngLat,
     destLngLat,
     guidanceRoute,
-    routeAlerts,
+    routeImpactsForUi,
+    userAlongGuidanceM,
     trafficBypassContext,
   ]);
 
@@ -3806,6 +3858,7 @@ export default function App() {
               etaC={trafficBypassCompare.etaC}
               hasB={trafficBypassCompare.hasB}
               hasC={trafficBypassCompare.hasC}
+              confidence={trafficBypassCompare.confidence}
               onPick={handleTrafficBypassComparePick}
               onCancel={handleTrafficBypassCompareCancel}
             />

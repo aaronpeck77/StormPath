@@ -69,12 +69,19 @@ async function startNativeWatch(
 
 // ─── Web (browser geolocation) ────────────────────────────────────────────────
 
-/** Fast first fix (Wi‑Fi / coarse / cache ok). */
+/** Fast first fix (Wi‑Fi / coarse / cache ok). Often returns **network / IP** position with huge
+ * `accuracy` (10–80+ km) — e.g. a regional POP that geocodes to “Chicago” even when you’re elsewhere.
+ * The watch path uses high accuracy next; {@link LOCATION_DEFER_MS} hides that wrong first blink. */
 const GEO_PRIME_OPTS: PositionOptions = {
   enableHighAccuracy: false,
   maximumAge: 300_000,
   timeout: 90_000,
 };
+
+/** Accuracy worse than ~12 km ⇒ treat as non-GPS coarse (IP / stale cell estimate). Prefer waiting for {@link watchOpts}. */
+const MAX_FIRST_FIX_ACCURACY_M = 12_000;
+/** If the first readings are vague only, publish the least-bad coarse fix after this long so the puck still moves. */
+const LOCATION_DEFER_MS = 12_000;
 
 function watchOpts(highRefresh: boolean): PositionOptions {
   return {
@@ -141,6 +148,13 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
     let watchId = 0;
     let fixReceived = false;
     let rearmTimer = 0;
+    let deferFirstTimer = 0;
+    let vagueFallbackPos: GeolocationPosition | null = null;
+
+    const isTooVagueForInstantShow = (pos: GeolocationPosition): boolean => {
+      const acc = pos.coords.accuracy;
+      return !Number.isFinite(acc) || acc <= 0 || acc > MAX_FIRST_FIX_ACCURACY_M;
+    };
 
     const flush = (pos: GeolocationPosition) => {
       lastFlushRef.current = Date.now();
@@ -157,11 +171,40 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
       );
     };
 
+    const publishFirstFix = (pos: GeolocationPosition) => {
+      fixReceived = true;
+      vagueFallbackPos = null;
+      if (deferFirstTimer) {
+        window.clearTimeout(deferFirstTimer);
+        deferFirstTimer = 0;
+      }
+      flush(pos);
+    };
+
     const onOk = (pos: GeolocationPosition) => {
       if (cancelled) return;
       if (!fixReceived) {
-        fixReceived = true;
-        flush(pos);
+        if (isTooVagueForInstantShow(pos)) {
+          /* Keep coarse / IP guesses off the puck until GPS or Wi‑Fi triangulation narrows —
+           * otherwise the dot “teleports” to a random metro (often ~right state, wrong city). */
+          const prev = vagueFallbackPos;
+          if (
+            !prev ||
+            prev.coords.accuracy > pos.coords.accuracy ||
+            (!Number.isFinite(prev.coords.accuracy) && Number.isFinite(pos.coords.accuracy))
+          ) {
+            vagueFallbackPos = pos;
+          }
+          if (!deferFirstTimer) {
+            deferFirstTimer = window.setTimeout(() => {
+              deferFirstTimer = 0;
+              if (cancelled || fixReceived) return;
+              publishFirstFix(vagueFallbackPos ?? pos);
+            }, LOCATION_DEFER_MS);
+          }
+          return;
+        }
+        publishFirstFix(pos);
         return;
       }
       const elapsed = Date.now() - lastFlushRef.current;
@@ -189,6 +232,11 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
     const onErr = (e: GeolocationPositionError) => {
       if (cancelled) return;
       if (e.code === e.PERMISSION_DENIED) {
+        if (deferFirstTimer) {
+          window.clearTimeout(deferFirstTimer);
+          deferFirstTimer = 0;
+        }
+        vagueFallbackPos = null;
         setError(
           "Location blocked: tap the lock icon in the address bar (or Site settings) and allow Location for this site."
         );
@@ -227,6 +275,8 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
     return () => {
       cancelled = true;
       window.clearTimeout(failsafe);
+      window.clearTimeout(deferFirstTimer);
+      deferFirstTimer = 0;
       window.clearTimeout(rafRef.current);
       window.clearTimeout(rearmTimer);
       rafRef.current = 0;

@@ -7,6 +7,9 @@ export type TrafficBypassComparePanelProps = {
   etaC: number | null;
   hasB: boolean;
   hasC: boolean;
+  /** When confidence is `low` the panel softens labels (e.g. "Try local bypass") so we don't imply
+   * a guaranteed exit/rejoin against an uncertain jam anchor. */
+  confidence?: "low" | "medium" | "high";
   onPick: (routeId: "r-a" | "r-b" | "r-c") => void;
   onCancel: () => void;
 };
@@ -33,7 +36,8 @@ type Option = {
 };
 
 export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps) {
-  const { headline, etaA, etaB, etaC, hasB, hasC, onPick, onCancel } = props;
+  const { headline, etaA, etaB, etaC, hasB, hasC, confidence = "medium", onPick, onCancel } = props;
+  const lowConfidence = confidence === "low";
 
   /* Order matters: A (stay) = always shown; C (local bypass) = surgical detour near the jam;
    * B (alternate route) = full reroute. The user wants to visually compare all three
@@ -43,7 +47,9 @@ export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps)
       id: "r-a",
       badge: "A",
       title: "Stay on route",
-      desc: "Hold current plan; drive through the slowdown",
+      desc: lowConfidence
+        ? "Hold current plan; ETA from live traffic on this line"
+        : "Hold current plan; drive through the slowdown",
       eta: etaA,
       deltaLabel: null,
       disabled: false,
@@ -51,8 +57,10 @@ export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps)
     {
       id: "r-c",
       badge: "C",
-      title: "Local bypass",
-      desc: "Exit before jam, rejoin after it clears",
+      title: lowConfidence ? "Try local bypass" : "Local bypass",
+      desc: lowConfidence
+        ? "Side-road detour near the corridor — exit/rejoin not guaranteed"
+        : "Exit before jam, rejoin after it clears",
       eta: etaC,
       deltaLabel: hasC ? savingsShortVsA(etaA, etaC) : null,
       disabled: !hasC,

@@ -6502,16 +6502,24 @@
 
 /* Saved places on map */
 .saved-place-dot {
-  width: 14px;
-  height: 14px;
+  width: var(--saved-place-dot-size, 14px);
+  height: var(--saved-place-dot-size, 14px);
   border-radius: 50%;
-  border: 2px solid #fff;
+  border: var(--saved-place-dot-border, 2px) solid #fff;
   background: linear-gradient(145deg, #c084fc, #7c3aed);
   box-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
   cursor: pointer;
   padding: 0;
   transform-origin: center center;
   display: block;
+}
+
+.saved-place-dot:hover,
+.saved-place-dot:focus-visible {
+  background: linear-gradient(145deg, #e9d5ff, #8b5cf6);
+  box-shadow:
+    0 0 0 7px rgba(168, 85, 247, 0.2),
+    0 2px 12px rgba(0, 0, 0, 0.58);
 }
 
 .saved-place-dot:focus-visible {
@@ -6533,9 +6541,29 @@
   display: block;
 }
 
+.map-search-pick-dot:hover,
+.map-search-pick-dot:focus-visible {
+  background: linear-gradient(145deg, #fed7aa, #f97316);
+  box-shadow:
+    0 0 0 8px rgba(249, 115, 22, 0.22),
+    0 2px 12px rgba(0, 0, 0, 0.6);
+}
+
 .map-search-pick-dot:focus-visible {
   outline: 2px solid #fed7aa;
   outline-offset: 2px;
+}
+
+.map-poi-hover-target {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  background: rgba(59, 130, 246, 0.2);
+  box-shadow:
+    0 0 0 7px rgba(59, 130, 246, 0.2),
+    0 2px 12px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
 }
 
 /* Saved destinations drawer */
