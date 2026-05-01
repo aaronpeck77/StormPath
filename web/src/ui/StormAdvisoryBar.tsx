@@ -4,7 +4,7 @@ import { sortWeatherAlertsBySeverity, type NormalizedWeatherAlert } from "../wea
 import { nwsAlertIsBasicEmergency } from "../weatherAlerts/basicEmergencyFilter";
 import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
 import type { DriveAheadLine, DriveAheadRadarTier } from "../nav/driveRouteAhead";
-import { formatDriveAheadBrief } from "../nav/driveRouteAhead";
+import { formatDriveAheadBrief, formatMinutesAsHoursMinutes } from "../nav/driveRouteAhead";
 
 /** One-line target when static (no scroll); longer text scrolls inside the bar first. */
 const PREVIEW_MAX_STATIC = 40;
@@ -146,8 +146,8 @@ function formatHazardAheadMeta(
     }
   }
   if (etaAheadMinutes != null && Number.isFinite(etaAheadMinutes) && etaAheadMinutes >= 0.5) {
-    const min = Math.max(1, Math.round(etaAheadMinutes));
-    bits.push(navigationStarted ? `≈ ${min} min` : `≈ ${min} min (plan)`);
+    const dur = formatMinutesAsHoursMinutes(etaAheadMinutes);
+    bits.push(navigationStarted ? `≈ ${dur}` : `≈ ${dur} (plan)`);
   }
   if (bits.length === 0) return null;
   return bits.join(" · ");
@@ -465,7 +465,7 @@ export function StormAdvisoryBar({
     if (advisoryTier !== "basic" && trafficDelayMinutes >= 8) {
       out.push({
         badge: "Traffic",
-        raw: `Traffic +${Math.round(trafficDelayMinutes)} min on route`,
+        raw: `Traffic +${formatMinutesAsHoursMinutes(trafficDelayMinutes)} on route`,
       });
     }
     if (advisoryTier !== "basic" && driveRouteAheadLine) {

@@ -12,12 +12,19 @@ function fmtMi(m: number): string {
   return `${Math.round(mi)} mi`;
 }
 
+/** Rounded total minutes as `0 hr 45 min` or `1 hr 12 min` (always hours + minutes). */
+export function formatMinutesAsHoursMinutes(totalMinutes: number): string {
+  const total = Math.max(1, Math.round(totalMinutes));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return `${h} hr ${m} min`;
+}
+
 function etaAheadLabel(distM: number, totalM: number, planEtaMinutes: number | null | undefined): string | null {
   if (planEtaMinutes == null || !Number.isFinite(planEtaMinutes) || totalM <= 0) return null;
   const t = Math.max(0, Math.min(1, distM / totalM));
-  const m = Math.max(1, Math.round(planEtaMinutes * t));
-  if (m < 92) return `~${m} min`;
-  return `~${(m / 60).toFixed(1)} hr`;
+  const mins = Math.max(1, Math.round(planEtaMinutes * t));
+  return `~${formatMinutesAsHoursMinutes(mins)}`;
 }
 
 export type DriveAheadKind = "nws" | "traffic" | "road" | "weather" | "none";
