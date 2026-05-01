@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { SITEBIBLE_AD_BAR, type AdvisoryPromoLine } from "../config/advisoryPromo";
 import { sortWeatherAlertsBySeverity, type NormalizedWeatherAlert } from "../weatherAlerts";
+import { nwsAlertIsBasicEmergency } from "../weatherAlerts/basicEmergencyFilter";
 import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
 import type { DriveAheadLine, DriveAheadRadarTier } from "../nav/driveRouteAhead";
 import { formatDriveAheadBrief } from "../nav/driveRouteAhead";
@@ -87,6 +88,8 @@ type SharedProps = {
   onRoadDetailToggle: (on: boolean) => void;
   hasGuidanceRoute: boolean;
   roadDetailRows: StormRoadDetailRow[];
+  /** Nearest-first along-route impacts (weather, road, traffic) for the advisory timeline. */
+  roadHazardTimeline?: Array<{ id: string; headline: string; detail: string; severity: string }> | null;
 };
 
 export type StormAdvisoryBarProps = SharedProps & {
@@ -165,7 +168,7 @@ function weatherAdviceDriving(
 
 function nwsAlertCard(
   a: NormalizedWeatherAlert,
-  tier: "crosses" | "atLocation",
+  tier: "crosses" | "atLocation" | "urgent",
   onClick?: (alert: NormalizedWeatherAlert) => void
 ): ReactNode {
   const endsLabel = fmtEnds(a.ends);
@@ -189,16 +192,24 @@ function nwsAlertCard(
       </div>
     ) : null;
   const action = null;
-  if (tier === "crosses") {
+  const badge =
+    tier === "urgent" ? "Urgent" : tier === "crosses" ? "On route" : "Here";
+  const liClass =
+    tier === "urgent"
+      ? "storm-advisory-bar__nws-item storm-advisory-bar__nws-item--urgent"
+      : tier === "crosses"
+        ? "storm-advisory-bar__nws-item storm-advisory-bar__nws-item--crosses"
+        : "storm-advisory-bar__nws-item storm-advisory-bar__nws-item--nearby";
+  if (tier === "crosses" || tier === "urgent") {
     return (
-      <li key={a.id} className="storm-advisory-bar__nws-item storm-advisory-bar__nws-item--crosses">
+      <li key={a.id} className={liClass}>
         <button
           type="button"
           className="storm-advisory-bar__nws-card"
           title="Open this alert"
           onClick={() => onClick?.(a)}
         >
-          <span className="storm-advisory-bar__nws-item-badge">On route</span>
+          <span className="storm-advisory-bar__nws-item-badge">{badge}</span>
           <div className="storm-advisory-bar__nws-item-body">
             {titleRow}
             {detailRow}
@@ -210,14 +221,14 @@ function nwsAlertCard(
     );
   }
   return (
-    <li key={a.id} className="storm-advisory-bar__nws-item storm-advisory-bar__nws-item--nearby">
+    <li key={a.id} className={liClass}>
       <button
         type="button"
         className="storm-advisory-bar__nws-card"
         title="Open this alert"
         onClick={() => onClick?.(a)}
       >
-        <span className="storm-advisory-bar__nws-item-badge">Here</span>
+        <span className="storm-advisory-bar__nws-item-badge">{badge}</span>
         <div className="storm-advisory-bar__nws-item-body">
           {titleRow}
           {detailRow}
@@ -245,6 +256,7 @@ export function StormAdvisoryBar({
   onRoadDetailToggle,
   hasGuidanceRoute,
   roadDetailRows,
+  roadHazardTimeline = null,
   barExpanded,
   onBarExpandedChange,
   hideHeadToggles = false,
@@ -282,6 +294,24 @@ export function StormAdvisoryBar({
       : crossingSorted.length > 0
         ? crossingSorted
         : atLocationSorted;
+
+  const lifeSafetyNwsAlerts = useMemo(() => {
+    const map = new Map<string, NormalizedWeatherAlert>();
+    for (const a of [...crossingSorted, ...atLocationSorted]) {
+      if (nwsAlertIsBasicEmergency(a)) map.set(a.id, a);
+    }
+    return sortWeatherAlertsBySeverity([...map.values()]);
+  }, [crossingSorted, atLocationSorted]);
+
+  const lifeSafetyIds = useMemo(() => new Set(lifeSafetyNwsAlerts.map((a) => a.id)), [lifeSafetyNwsAlerts]);
+
+  const routineNwsList = useMemo(
+    () =>
+      advisoryTier === "basic"
+        ? displayNwsList
+        : displayNwsList.filter((a) => !lifeSafetyIds.has(a.id)),
+    [advisoryTier, displayNwsList, lifeSafetyIds]
+  );
 
   const tickerMessages = useMemo(
     () =>
@@ -581,23 +611,12 @@ export function StormAdvisoryBar({
         </div>
       )}
 
-      {(busyLabel || (!basicNavAdvisoryMode && driveRouteAheadLine)) && (
+      {busyLabel && (
         <div className="storm-advisory-bar__now-row" aria-live="polite">
-          {busyLabel && (
-            <span className="storm-advisory-bar__now-chip storm-advisory-bar__now-chip--busy">
-              <span className="storm-advisory-bar__now-dot" aria-hidden />
-              {busyLabel}
-            </span>
-          )}
-          {!basicNavAdvisoryMode && driveRouteAheadLine && (
-            <span
-              className={`storm-advisory-bar__now-chip storm-advisory-bar__now-chip--ahead storm-advisory-bar__now-chip--tier-${driveRouteAheadLine.radarTier}`}
-              title="Route ahead — radar / traffic brief"
-            >
-              <span className="storm-advisory-bar__now-tag">Route ahead</span>
-              <span className="storm-advisory-bar__now-text">{formatDriveAheadBrief(driveRouteAheadLine)}</span>
-            </span>
-          )}
+          <span className="storm-advisory-bar__now-chip storm-advisory-bar__now-chip--busy">
+            <span className="storm-advisory-bar__now-dot" aria-hidden />
+            {busyLabel}
+          </span>
         </div>
       )}
 
@@ -609,18 +628,23 @@ export function StormAdvisoryBar({
               your planned route.
             </p>
           )}
+          {!basicNavAdvisoryMode && advisoryTier === "plus" && lifeSafetyNwsAlerts.length > 0 && (
+            <div className="storm-advisory-bar__emergency-strip" role="region" aria-label="Urgent warnings">
+              <p className="storm-advisory-bar__emergency-strip-title">Time-sensitive — review first</p>
+              <ul className="storm-advisory-bar__nws-list storm-advisory-bar__nws-list--urgent">
+                {lifeSafetyNwsAlerts.map((a) => nwsAlertCard(a, "urgent", onNwsAlertClick))}
+              </ul>
+            </div>
+          )}
+
           {!basicNavAdvisoryMode && (
-            <div className="storm-advisory-bar__weather-block">
+            <div className="storm-advisory-bar__road-hazards storm-advisory-bar__weather-block">
               <p className="storm-advisory-bar__weather-title">
-                {advisoryTier === "basic" ? "Urgent warnings" : "Hazards ahead"}
+                {advisoryTier === "basic" ? "Urgent warnings" : "Road hazards"}
               </p>
-              {driveRouteAheadLine && (driveRouteAheadLine.kind === "traffic" || driveRouteAheadLine.kind === "road") && (
-                <p
-                  className={`storm-advisory-bar__hazard-ahead-note storm-advisory-bar__hazard-ahead-note--${driveRouteAheadLine.radarTier}`}
-                  aria-live="polite"
-                >
-                  <strong>{driveRouteAheadLine.kind === "traffic" ? "Traffic ahead" : "Road hazard ahead"}:</strong>{" "}
-                  {formatDriveAheadBrief(driveRouteAheadLine)}
+              {advisoryTier === "plus" && hasGuidanceRoute && (
+                <p className="storm-advisory-bar__road-hazards-sub">
+                  Along your route, <strong>nearest first</strong> — same order as the progress bar.
                 </p>
               )}
               {advisoryTier === "basic" && displayNwsList.length === 0 && !loading && (
@@ -660,98 +684,74 @@ export function StormAdvisoryBar({
                   Turn on <strong>NWS polygons</strong> for shaded zones on the map.
                 </p>
               )}
-              {nwsContentReady && (
-                <>
-                  {crossingSorted.length > 0 ? (
-                    <p className="storm-advisory-bar__nws-hero storm-advisory-bar__nws-hero--cross">
-                      <span className="storm-advisory-bar__nws-hero-main">
-                        <strong>{crossingSorted.length}</strong>{" "}
-                        {crossingSorted.length === 1 ? "warning on your route" : "warnings on your route"}
-                      </span>
-                    </p>
-                  ) : !hasGuidanceRoute && atLocationSorted.length > 0 ? (
-                    <p className="storm-advisory-bar__nws-hero storm-advisory-bar__nws-hero--cross">
-                      <span className="storm-advisory-bar__nws-hero-main">
-                        <strong>{atLocationSorted.length}</strong>
-                        {atLocationSorted.length === 1 ? " alert where you are" : " alerts where you are"}
-                      </span>
-                    </p>
-                  ) : (
-                    <p className="storm-advisory-bar__muted storm-advisory-bar__radar-note">
-                      {advisoryTier === "basic"
-                        ? ownsPlus
-                          ? "No urgent-class warnings here. Turn on NWS polygons for the full feed."
-                          : "No urgent-class warnings here. Plus adds full NWS on the map."
-                        : hasGuidanceRoute
-                          ? "No warning zones on your route line."
-                          : "No warning zones here. Radar may still show rain or snow."}
-                    </p>
-                  )}
-                  {displayNwsList.length > 0 && (
+              {(roadHazardTimeline?.length ?? 0) > 0 ? (
+                <div
+                  className="storm-advisory-bar__hazard-timeline"
+                  role="list"
+                  aria-label="Conditions along your route"
+                >
+                  {roadHazardTimeline!.map((row) => (
                     <div
-                      className="storm-advisory-bar__nws-scroll"
-                      role="region"
-                      aria-label="NWS warnings on your route"
+                      key={row.id}
+                      className={`storm-advisory-bar__hazard-timeline-row storm-advisory-bar__hazard-timeline-row--sev-${row.severity}`}
+                      role="listitem"
                     >
-                      <ul className="storm-advisory-bar__nws-list storm-advisory-bar__nws-list--crosses">
-                        {displayNwsList.map((a) => nwsAlertCard(a, displayNwsTier, onNwsAlertClick))}
-                      </ul>
-                    </div>
-                  )}
-                  {navigationStarted && (
-                    <p className="storm-advisory-bar__advice storm-advisory-bar__advice--weather">
-                      {weatherAdviceDriving(
-                        crossingSorted.length > 0,
-                        crossingSorted.length === 0 && atLocationSorted.length > 0,
-                        trafficDelayMinutes
-                      )}
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {roadDetailEnabled && (
-            <div className="storm-advisory-bar__road-block">
-              <p className="storm-advisory-bar__road-title">Road &amp; traffic</p>
-              {!hasGuidanceRoute ? (
-                <p className="storm-advisory-bar__muted">
-                  <strong>Add a route</strong> to see delay and notes.
-                </p>
-              ) : roadDetailRows.length === 0 ? (
-                <p className="storm-advisory-bar__muted">Nothing extra on this route.</p>
-              ) : (
-                <dl className="storm-advisory-bar__road-dl storm-advisory-bar__road-dl--driver-stack">
-                  {roadDetailRows.map((row, i) => (
-                    <div key={`${row.label}-${i}`} className="storm-advisory-bar__road-row">
-                      <dt>{row.label}</dt>
-                      <dd>
-                        {row.onAction ? (
-                          <button
-                            type="button"
-                            className="storm-advisory-bar__ticker"
-                            onClick={row.onAction}
-                            title={row.actionLabel ?? "Open"}
-                          >
-                            {row.text}
-                          </button>
-                        ) : (
-                          row.text
-                        )}
-                        {row.onAction && (
-                          <button
-                            type="button"
-                            className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
-                            onClick={row.onAction}
-                          >
-                            {row.actionLabel ?? "Open"}
-                          </button>
-                        )}
-                      </dd>
+                      <div className="storm-advisory-bar__hazard-timeline-head">{row.headline}</div>
+                      {row.detail ? (
+                        <p className="storm-advisory-bar__hazard-timeline-detail">{row.detail}</p>
+                      ) : null}
                     </div>
                   ))}
-                </dl>
+                </div>
+              ) : hasGuidanceRoute && nwsContentReady && advisoryTier === "plus" ? (
+                <p className="storm-advisory-bar__muted storm-advisory-bar__status-line">
+                  No along-route hazard strip right now — NWS and radar below may still apply.
+                </p>
+              ) : null}
+              {roadDetailEnabled && (
+                <>
+                  <p className="storm-advisory-bar__road-title storm-advisory-bar__road-title--nested">
+                    Traffic &amp; corridor
+                  </p>
+                  {!hasGuidanceRoute ? (
+                    <p className="storm-advisory-bar__muted">
+                      <strong>Add a route</strong> to see delay and notes.
+                    </p>
+                  ) : roadDetailRows.length === 0 ? (
+                    <p className="storm-advisory-bar__muted">Nothing extra on this route.</p>
+                  ) : (
+                    <dl className="storm-advisory-bar__road-dl storm-advisory-bar__road-dl--driver-stack">
+                      {roadDetailRows.map((row, i) => (
+                        <div key={`${row.label}-${i}`} className="storm-advisory-bar__road-row">
+                          <dt>{row.label}</dt>
+                          <dd>
+                            {row.onAction ? (
+                              <button
+                                type="button"
+                                className="storm-advisory-bar__ticker"
+                                onClick={row.onAction}
+                                title={row.actionLabel ?? "Open"}
+                              >
+                                {row.text}
+                              </button>
+                            ) : (
+                              row.text
+                            )}
+                            {row.onAction && (
+                              <button
+                                type="button"
+                                className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
+                                onClick={row.onAction}
+                              >
+                                {row.actionLabel ?? "Open"}
+                              </button>
+                            )}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                </>
               )}
               {(trafficDelayMinutes >= 10 || hasTrafficStop) && onTrafficReroute && (
                 <p className="storm-advisory-bar__actions">
@@ -765,6 +765,63 @@ export function StormAdvisoryBar({
                     {trafficRerouteBusy ? "Finding route…" : "Reroute for traffic"}
                   </button>
                 </p>
+              )}
+              {nwsContentReady && (
+                <>
+                  {routineNwsList.length > 0 ? (
+                    hasGuidanceRoute ? (
+                      <p className="storm-advisory-bar__nws-hero storm-advisory-bar__nws-hero--cross">
+                        <span className="storm-advisory-bar__nws-hero-main">
+                          <strong>{routineNwsList.length}</strong>{" "}
+                          {advisoryTier === "plus" && lifeSafetyNwsAlerts.length > 0
+                            ? routineNwsList.length === 1
+                              ? "more NWS product on your route"
+                              : "more NWS products on your route"
+                            : routineNwsList.length === 1
+                              ? "warning on your route"
+                              : "warnings on your route"}
+                        </span>
+                      </p>
+                    ) : (
+                      <p className="storm-advisory-bar__nws-hero storm-advisory-bar__nws-hero--cross">
+                        <span className="storm-advisory-bar__nws-hero-main">
+                          <strong>{routineNwsList.length}</strong>
+                          {routineNwsList.length === 1 ? " alert where you are" : " alerts where you are"}
+                        </span>
+                      </p>
+                    )
+                  ) : advisoryTier === "plus" && lifeSafetyNwsAlerts.length > 0 ? null : (
+                    <p className="storm-advisory-bar__muted storm-advisory-bar__radar-note">
+                      {advisoryTier === "basic"
+                        ? ownsPlus
+                          ? "No urgent-class warnings here. Turn on NWS polygons for the full feed."
+                          : "No urgent-class warnings here. Plus adds full NWS on the map."
+                        : hasGuidanceRoute
+                          ? "No NWS zones on your route line."
+                          : "No NWS zones here. Radar may still show rain or snow."}
+                    </p>
+                  )}
+                  {routineNwsList.length > 0 && (
+                    <div
+                      className="storm-advisory-bar__nws-scroll"
+                      role="region"
+                      aria-label="NWS on your route"
+                    >
+                      <ul className="storm-advisory-bar__nws-list storm-advisory-bar__nws-list--crosses">
+                        {routineNwsList.map((a) => nwsAlertCard(a, displayNwsTier, onNwsAlertClick))}
+                      </ul>
+                    </div>
+                  )}
+                  {navigationStarted && (
+                    <p className="storm-advisory-bar__advice storm-advisory-bar__advice--weather">
+                      {weatherAdviceDriving(
+                        crossingSorted.length > 0,
+                        crossingSorted.length === 0 && atLocationSorted.length > 0,
+                        trafficDelayMinutes
+                      )}
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}

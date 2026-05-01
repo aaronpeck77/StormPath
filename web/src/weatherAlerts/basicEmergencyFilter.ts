@@ -24,7 +24,9 @@ export function nwsAlertIsBasicEmergency(a: NormalizedWeatherAlert): boolean {
   if (/flash flood warning/i.test(ev) && sev >= 3) return true;
   if (/tsunami warning/i.test(ev)) return true;
   if (/hurricane warning|typhoon warning|tropical storm warning/i.test(ev)) return true;
+  if (/hurricane watch|typhoon watch|tropical storm watch/i.test(ev)) return true;
   if (/storm surge warning/i.test(ev)) return true;
+  if (/earthquake/i.test(ev)) return true;
   if (/civil emergency message|law enforcement warning|nuclear power plant|hazardous materials|911/i.test(ev))
     return true;
 

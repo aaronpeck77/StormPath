@@ -1923,6 +1923,22 @@ export default function App() {
     });
   }, [routeImpacts, showTrafficCorridorOnRoute, showRoadNoticesOnRoute, showWeatherImpactsOnRoute]);
 
+  /** Advisory panel: impacts ordered like the progress rail (nearest first). */
+  const advisoryRoadHazardTimeline = useMemo(() => {
+    return [...routeImpactsForUi]
+      .sort((a, b) => {
+        const da = a.distanceAheadMeters ?? a.alongMeters;
+        const db = b.distanceAheadMeters ?? b.alongMeters;
+        return da - db;
+      })
+      .map((i) => ({
+        id: i.id,
+        headline: i.driverHeadline,
+        detail: (i.roadEffect || i.detail || "").trim(),
+        severity: i.severity,
+      }));
+  }, [routeImpactsForUi]);
+
   /**
    * Project unified impacts back to the legacy `RouteAlert` shape so existing surfaces (progress strip,
    * map highlights, corridor sheet) keep working unchanged.
@@ -3520,6 +3536,7 @@ export default function App() {
                       onRoadDetailToggle={onRoadAdvisoryDetailToggle}
                       hasGuidanceRoute={Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2)}
                       roadDetailRows={advisoryRoadDetailRows}
+                      roadHazardTimeline={advisoryRoadHazardTimeline}
                       barExpanded={stormBarExpanded}
                       onBarExpandedChange={onStormBarExpandedChange}
                       hideHeadToggles={!isPlus}
