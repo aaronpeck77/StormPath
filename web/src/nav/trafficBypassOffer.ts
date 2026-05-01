@@ -24,7 +24,8 @@ export type TrafficBypassOffer = {
  * Prefers traffic / closure / incident impacts the driver should act on, with at least medium
  * confidence so we don't push a strong "reroute recommended" prompt off a low-confidence anchor.
  */
-function pickBypassImpact(impacts: RouteImpact[]): RouteImpact | null {
+/** Nearest reroute-worthy traffic / closure / incident / construction ahead (excludes low-confidence). */
+export function pickTrafficBypassAnchorImpact(impacts: RouteImpact[]): RouteImpact | null {
   let best: RouteImpact | null = null;
   let bestAhead = Infinity;
   for (const i of impacts) {
@@ -50,7 +51,7 @@ export function computeTrafficBypassOffer(
   impacts: RouteImpact[],
   trafficDelayMinutes: number
 ): TrafficBypassOffer | null {
-  const anchor = pickBypassImpact(impacts);
+  const anchor = pickTrafficBypassAnchorImpact(impacts);
   if (anchor) {
     const cat: TrafficBypassOffer["category"] =
       anchor.category === "traffic" ||

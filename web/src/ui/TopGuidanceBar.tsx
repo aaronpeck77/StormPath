@@ -1,5 +1,4 @@
 import type { RouteTurnStep } from "../nav/types";
-import type { DriveNextHazardAhead } from "../nav/driveRouteAhead";
 import { TurnBanner } from "./TurnBanner";
 import { StormIdleIllustration } from "./StormIdleIllustration";
 
@@ -14,8 +13,6 @@ type Props = {
   metersToManeuverEnd?: number | null;
   /** Drive mode: larger icon + type for at-a-glance reading. */
   glanceable?: boolean;
-  /** Next along-route hazard (weather / road / anchored traffic) with distance + ETA. */
-  nextHazardAhead?: DriveNextHazardAhead | null;
 };
 
 export function TopGuidanceBar({
@@ -25,7 +22,6 @@ export function TopGuidanceBar({
   activeTurnIndex,
   metersToManeuverEnd,
   glanceable = false,
-  nextHazardAhead = null,
 }: Props) {
   return (
     <div
@@ -34,27 +30,12 @@ export function TopGuidanceBar({
       aria-label="Turn-by-turn"
     >
       {hasRoute ? (
-        <>
-          <TurnBanner
-            visible
-            steps={turnSteps}
-            activeIndex={activeTurnIndex}
-            metersToManeuverEnd={metersToManeuverEnd}
-          />
-          {glanceable && nextHazardAhead ? (
-            <div
-              className={`top-guidance-bar__next-hazard top-guidance-bar__next-hazard--sev-${nextHazardAhead.severity}`}
-              role="status"
-              aria-label={`Next hazard: ${nextHazardAhead.title}`}
-            >
-              <span className="top-guidance-bar__next-hazard-label">Next</span>
-              <span className="top-guidance-bar__next-hazard-title">{nextHazardAhead.title}</span>
-              {nextHazardAhead.sub ? (
-                <span className="top-guidance-bar__next-hazard-sub">{nextHazardAhead.sub}</span>
-              ) : null}
-            </div>
-          ) : null}
-        </>
+        <TurnBanner
+          visible
+          steps={turnSteps}
+          activeIndex={activeTurnIndex}
+          metersToManeuverEnd={metersToManeuverEnd}
+        />
       ) : (
         <div className="turn-strip-idle" role="status" aria-label="StormPath">
           <div className="turn-strip-idle__hero">

@@ -72,8 +72,12 @@ import {
 } from "./nav/guidanceAlongHold";
 import { activeTurnStepIndexAlong, turnStepAlongBounds } from "./nav/turnStepAlong";
 import { formatRouteDistanceMi, routeConsiderationSummary } from "./nav/routeSummary";
-import { buildDriveRouteAheadFromImpacts, pickDriveNextHazardAhead } from "./nav/driveRouteAhead";
-import { computeTrafficBypassOffer } from "./nav/trafficBypassOffer";
+import { buildDriveRouteAheadFromImpacts } from "./nav/driveRouteAhead";
+import {
+  approachBannerShowsBypass,
+  pickDriveApproachBannerImpact,
+} from "./nav/driveHazardApproachPreview";
+import { computeTrafficBypassOffer, pickTrafficBypassAnchorImpact } from "./nav/trafficBypassOffer";
 import { unifiedTrafficNarrative } from "./nav/trafficNarrative";
 import {
   ARRIVAL_BG_CLEAR_MIN_MS,
@@ -108,6 +112,7 @@ import { RouteProgressStrip } from "./ui/RouteProgressStrip";
 import { estimatePostedSpeedMph } from "./ui/DriveHud";
 import { formatEtaDuration } from "./ui/formatEta";
 import { StormAdvisoryBar } from "./ui/StormAdvisoryBar";
+import { DriveHazardApproachBanner } from "./ui/DriveHazardApproachBanner";
 import { ActivityStatusPill } from "./ui/ActivityStatusPill";
 import { AboutSheet } from "./ui/AboutSheet";
 import { TrafficBypassComparePanel } from "./ui/TrafficBypassComparePanel";
@@ -515,6 +520,7 @@ export default function App() {
   const [savedDrawerOpen, setSavedDrawerOpen] = useState(false);
   const [bypassBusy, setBypassBusy] = useState(false);
   const [trafficBypassCompare, setTrafficBypassCompare] = useState<TrafficBypassCompareState | null>(null);
+  const [driveApproachDismissedIds, setDriveApproachDismissedIds] = useState(() => new Set<string>());
   const [demoPlaybackAlongM, setDemoPlaybackAlongM] = useState<number | null>(null);
   const [offRouteSevere, setOffRouteSevere] = useState(false);
   /** Hysteresis: latched true until lateral drops below exit threshold (avoids flapping at one distance). */
@@ -2080,26 +2086,14 @@ export default function App() {
     routeImpactsForUi,
   ]);
 
-  /** Drive view: next credible hazard along the line (distance + ETA), color-coded by severity. */
-  const driveNextHazardAhead = useMemo(() => {
-    if (!navigationStarted || viewMode !== "drive" || !guidanceRoute?.geometry?.length) return null;
-    const totalM = guidanceRouteLengthM;
-    if (totalM <= 1) return null;
-    return pickDriveNextHazardAhead({
-      impacts: routeImpactsForUi,
-      userAlongM: userAlongGuidanceM,
-      totalMeters: totalM,
-      planEtaMinutes: guidanceRoute.baseEtaMinutes,
-    });
-  }, [
-    navigationStarted,
-    viewMode,
-    guidanceRoute?.geometry,
-    guidanceRouteLengthM,
-    guidanceRoute?.baseEtaMinutes,
-    userAlongGuidanceM,
-    routeImpactsForUi,
-  ]);
+  const driveApproachBannerImpact = useMemo(() => {
+    if (!driveModeUi) return null;
+    return pickDriveApproachBannerImpact(routeImpactsForUi, driveApproachDismissedIds);
+  }, [driveModeUi, routeImpactsForUi, driveApproachDismissedIds]);
+
+  useEffect(() => {
+    setDriveApproachDismissedIds(new Set());
+  }, [navigationStarted, guidanceRouteId]);
 
   /**
    * Route broken into distance/time chunks (start at bottom of panel, destination toward top).
@@ -2229,6 +2223,18 @@ export default function App() {
     }
     setFitTrigger((n) => n + 1);
   }, []);
+
+  const handleDriveApproachMoreInfo = useCallback(
+    (impact: RouteImpact) => {
+      if (!guidanceRouteId) return;
+      setStormBarExpanded(true);
+      setRouteHazardSheet({
+        routeId: guidanceRouteId,
+        alerts: [routeImpactToRouteAlert(impact)],
+      });
+    },
+    [guidanceRouteId]
+  );
 
   useEffect(() => {
     try {
@@ -3069,13 +3075,13 @@ export default function App() {
     try {
       /* Anchor the surgical bypass on the strongest reroute-worthy impact (traffic / closure) ahead.
        * If we don't have a confident anchor, fall back to ~38% of remaining route. */
-      const anchorImpact = routeImpactsForUi.find(
-        (i) =>
-          (i.category === "traffic" || i.category === "closure" || i.category === "incident") &&
-          (i.driverAction === "rerouteRecommended" || i.driverAction === "rerouteAvailable") &&
-          i.confidence !== "low"
-      );
-      const jamAlongM = anchorImpact?.alongMeters ?? totalM * 0.38;
+      const anchorImpact = pickTrafficBypassAnchorImpact(routeImpactsForUi);
+      const jamAlongM =
+        anchorImpact?.alongMeters ??
+        Math.min(
+          totalM - 50,
+          userAlongGuidanceM + Math.max(600, (totalM - userAlongGuidanceM) * 0.32)
+        );
 
       /* Fair ETA comparison: re-fetch live A duration from current position along the remaining
        * polyline, in parallel with B (alternate) and C (surgical bypass). All three then come from
@@ -3535,7 +3541,6 @@ export default function App() {
                     activeTurnIndex={bannerTurnIndex}
                     metersToManeuverEnd={metersToBannerManeuver}
                     glanceable={navigationStarted && viewMode === "drive"}
-                    nextHazardAhead={driveNextHazardAhead}
                   />
                   {showStormAdvisoryChrome ? (
                     <StormAdvisoryBar
@@ -3586,7 +3591,25 @@ export default function App() {
                       <ActivityStatusPill busyLabel={activityBusyLabel} />
                     </div>
                   ) : null}
-                  
+                  {driveModeUi && driveApproachBannerImpact ? (
+                    <DriveHazardApproachBanner
+                      impact={driveApproachBannerImpact}
+                      onDismiss={() => {
+                        const id = driveApproachBannerImpact.id;
+                        setDriveApproachDismissedIds((prev) => new Set(prev).add(id));
+                      }}
+                      onMoreInfo={handleDriveApproachMoreInfo}
+                      onBypass={
+                        showTrafficBypassCta && approachBannerShowsBypass(driveApproachBannerImpact)
+                          ? () => void handleTrafficBypassFromHere()
+                          : undefined
+                      }
+                      bypassBusy={bypassBusy}
+                      showBypass={Boolean(
+                        showTrafficBypassCta && approachBannerShowsBypass(driveApproachBannerImpact)
+                      )}
+                    />
+                  ) : null}
                 </div>
               </div>
             </div>
