@@ -1540,6 +1540,16 @@ export default function App() {
   const turnSteps = guidanceRoute?.turnSteps ?? [];
   const guidanceSlice = snap.routes.find((r) => r.routeId === guidanceRouteId);
 
+  /** Map NWS fill: intersect polygons with this polyline only (active leg before Go, slot A after Go). */
+  const nwsMapOverlapRouteGeom = useMemo((): LngLat[] | undefined => {
+    if (navigationStarted) {
+      const g = nwsNavCorridorGeom;
+      return g && g.length >= 2 ? g : undefined;
+    }
+    const g = guidanceRoute?.geometry;
+    return g && g.length >= 2 ? g : undefined;
+  }, [navigationStarted, nwsNavCorridorGeom, guidanceRoute?.geometry]);
+
   const liveTrafficNarrative = useMemo(() => {
     if (!guidanceSlice || !guidanceRoute) return null;
     const tLeg = trafficOverlay?.[guidanceRouteId] ?? null;
@@ -1844,34 +1854,32 @@ export default function App() {
 
   useRadarBandsAlongRoute(Boolean(radarMapOverlayOn), guidanceRoute?.geometry);
 
-  const stormMapGeoJsonForMap = useMemo<GeoJSON.FeatureCollection | undefined>(() => {
+  const stormMapGeoJsonForMap = useMemo((): GeoJSON.FeatureCollection | undefined => {
     if (!stormMapGeoJson?.features?.length) return undefined;
-    const g = nwsNavCorridorGeom;
-    if (!driveModeUi || !g?.length) return stormMapGeoJson;
+    const g = nwsMapOverlapRouteGeom;
+    if (!g?.length) return undefined;
     const o = computeRouteOverlapWithAlerts(g, stormCorridorAlerts);
     const ids = new Set(o.overlappingIds);
     const filtered = stormMapGeoJson.features.filter((f) => {
       const id = String((f.properties as { id?: string } | undefined)?.id ?? "");
       return id && ids.has(id);
     });
-    if (filtered.length > 0) {
-      return { type: "FeatureCollection", features: filtered } as GeoJSON.FeatureCollection;
-    }
-    return undefined;
-  }, [stormMapGeoJson, driveModeUi, nwsNavCorridorGeom, nwsNavCorridorGeomKey, stormCorridorAlerts]);
+    return { type: "FeatureCollection", features: filtered } as GeoJSON.FeatureCollection;
+  }, [stormMapGeoJson, nwsMapOverlapRouteGeom, stormCorridorAlerts]);
 
   const stormProgressBands = useMemo(() => {
     const g = nwsNavCorridorGeom;
     if (!g?.length) return [];
-    const raw = stormMapGeoJsonForMap ?? stormMapGeoJson;
-    let geo: GeoJSON.FeatureCollection | null = raw ?? null;
-    if (!advisoryPlusDetailOn && raw?.features?.length) {
+    const raw = stormMapGeoJsonForMap;
+    if (raw === undefined) return [];
+    let geo: GeoJSON.FeatureCollection | null = raw;
+    if (!advisoryPlusDetailOn && raw.features.length > 0) {
       const filtered = filterMapGeoJsonToBasicEmergencies(raw, stormCorridorAlerts);
       geo = filtered?.features?.length ? filtered : stormCorridorAlerts.length > 0 ? raw : null;
     }
     if (!geo?.features?.length) return [];
     return stormAlongBandsForProgressStrip(g, geo);
-  }, [advisoryPlusDetailOn, nwsNavCorridorGeom, nwsNavCorridorGeomKey, stormMapGeoJson, stormMapGeoJsonForMap, stormCorridorAlerts]);
+  }, [advisoryPlusDetailOn, nwsNavCorridorGeom, nwsNavCorridorGeomKey, stormMapGeoJsonForMap, stormCorridorAlerts]);
 
   /**
    * Unified Road Ahead model — every surface (drive status, advisory bar, progress rail, map highlights, bypass)
@@ -2020,14 +2028,14 @@ export default function App() {
   }, [progressStripAlerts, guidanceRoute?.geometry, userAlongGuidanceM]);
 
   /**
-   * Rt/Mp: full corridor/browse polygons.
-   * Dr: show only polygons that directly intersect the active route.
+   * Map NWS polygons: only alerts whose geometry intersects the active route polyline
+   * ({@link nwsMapOverlapRouteGeom}). No nationwide corridor fill before a route exists.
    */
-  /** Map NWS layer: full set when Plus storm detail is on; otherwise prefer life-safety polygons but never hide a successful fetch. */
   const driveMapWeatherAlertGeoJson = useMemo((): GeoJSON.FeatureCollection | null => {
     if (!advisoryLifeSafetyOn) return null;
-    const base = stormMapGeoJsonForMap ?? stormMapGeoJson;
-    if (!base?.features?.length) return null;
+    if (stormMapGeoJsonForMap === undefined) return null;
+    const base = stormMapGeoJsonForMap;
+    if (!base.features.length) return null;
     if (advisoryPlusDetailOn) return base;
     const onRouteIds = new Set(stormOverlapping.map((a) => a.id));
     const filtered = filterMapGeoJsonToBasicEmergencies(base, stormCorridorAlerts);
@@ -2046,14 +2054,7 @@ export default function App() {
       return { type: "FeatureCollection", features: merged } as GeoJSON.FeatureCollection;
     }
     return base;
-  }, [
-    advisoryLifeSafetyOn,
-    advisoryPlusDetailOn,
-    stormMapGeoJsonForMap,
-    stormMapGeoJson,
-    stormCorridorAlerts,
-    stormOverlapping,
-  ]);
+  }, [advisoryLifeSafetyOn, advisoryPlusDetailOn, stormMapGeoJsonForMap, stormCorridorAlerts, stormOverlapping]);
 
   /** Drive HUD: unified Road Ahead — same RouteImpact list as map / strip / bypass. */
   const driveRouteAheadLine = useMemo(() => {
