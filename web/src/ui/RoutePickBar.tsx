@@ -4,6 +4,8 @@ import { formatEtaDuration } from "./formatEta";
 export type RoutePickItem = {
   id: string;
   letter: string;
+  /** Router label, e.g. Main / Alternate — shown on the cycle control */
+  routeLabel: string;
   etaMinutes: number;
   suggested: boolean;
   softPath: boolean;
@@ -56,10 +58,10 @@ export function RouteTripleToggle({
             }}
             title={
               it.suggested
-                ? `Route ${it.letter}: ~${it.etaMinutes} min — suggested for conditions`
+                ? `${it.routeLabel} (slot ${it.letter}): ~${it.etaMinutes} min — suggested for conditions`
                 : it.softPath
-                  ? `Route ${it.letter}: ~${it.etaMinutes} min — no interstate`
-                  : `Route ${it.letter}: ~${it.etaMinutes} min`
+                  ? `${it.routeLabel} (slot ${it.letter}): ~${it.etaMinutes} min — no interstate`
+                  : `${it.routeLabel} (slot ${it.letter}): ~${it.etaMinutes} min`
             }
             onClick={() => onSelect(it.id)}
           >
@@ -128,7 +130,7 @@ export function RouteCycleButton({
   const title = items
     .map(
       (it) =>
-        `Route ${it.letter} ~${formatEtaDuration(it.etaMinutes)}${it.suggested ? " (suggested)" : ""}`
+        `${it.routeLabel} (${it.letter}) ~${formatEtaDuration(it.etaMinutes)}${it.suggested ? " (suggested)" : ""}`
     )
     .join(" · ");
   const hint =
@@ -150,22 +152,24 @@ export function RouteCycleButton({
         .join(" ")}
       style={{
         borderColor: current.color,
-        background: "#f8fafc",
-        color: "#0f172a",
-        textShadow: "none",
-        boxShadow: "none",
+        backgroundColor: hexToRgba(current.color, 0.48),
+        color: "#f8fafc",
+        textShadow: "0 1px 2px rgba(15, 23, 42, 0.35)",
+        boxShadow: `inset 0 0 0 1px ${hexToRgba(current.color, 0.65)}`,
       }}
       title={fullTitle}
       aria-label={
         items.length < 2
-          ? `Route ${current.letter}, about ${formatEtaDuration(current.etaMinutes)}. Only one distinct route for this trip.`
-          : `Route ${current.letter}, about ${formatEtaDuration(current.etaMinutes)}. Tap to switch route.`
+          ? `${current.routeLabel}, slot ${current.letter}, about ${formatEtaDuration(current.etaMinutes)}. Only one distinct route for this trip.`
+          : `${current.routeLabel}, slot ${current.letter}, about ${formatEtaDuration(current.etaMinutes)}. Tap to switch route.`
       }
       onClick={cycle}
       disabled={items.length < 2}
     >
-      <span className="nav-route-cycle-btn__label">Route {current.letter}</span>
-      <span className="nav-route-cycle-btn__eta">~{formatEtaDuration(current.etaMinutes)}</span>
+      <span className="nav-route-cycle-btn__label">{current.routeLabel}</span>
+      <span className="nav-route-cycle-btn__eta">
+        {current.letter} · ~{formatEtaDuration(current.etaMinutes)}
+      </span>
       {detail ? <span className="nav-route-cycle-btn__detail">{detail}</span> : null}
     </button>
   );

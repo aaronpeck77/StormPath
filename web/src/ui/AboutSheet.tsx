@@ -393,8 +393,8 @@ export function AboutSheet({
                 onChange={(e) => onSettings({ ...settings, voiceGuidanceEnabled: e.target.checked })}
               />
               <span>
-                <strong>Voice prompts</strong> — speak the next maneuver in <strong>Dr</strong> mode (device
-                text-to-speech). Use a passenger or pull over to change settings.
+                <strong>Voice prompts</strong> — speak the next maneuver while <strong>Go</strong> navigation is on
+                (any view; device text-to-speech). Use a passenger or pull over to change settings.
               </span>
             </label>
 

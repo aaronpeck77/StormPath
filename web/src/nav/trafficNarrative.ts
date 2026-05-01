@@ -23,8 +23,12 @@ export type UnifiedTrafficNarrative = {
 
 export function formatDelayMinutesForUi(delayMin: number): string {
   const d = Math.max(0, delayMin);
-  if (d < 0.05) return "under 1";
-  if (d < 0.95) return "under 1";
+  /* Sub-minute: show a real fraction so vague “under 1 min” doesn’t hide values like 0.4 min. */
+  if (d < 0.05) return "less than 1";
+  if (d < 1) {
+    const t = Math.round(d * 10) / 10;
+    return t < 0.1 ? "less than 1" : String(t).replace(/\.0$/, "");
+  }
   if (d < 10) return d < 2 ? d.toFixed(1).replace(/\.0$/, "") : String(Math.round(d));
   return String(Math.round(d));
 }
@@ -96,14 +100,16 @@ export function unifiedTrafficNarrative(
 
   if (heavySegmentsButMildTotal) {
     const congHint = c === "severe" ? "Severe spots" : "Heavy spots";
+    const delayBit = formatDelayMinutesForUi(d);
     return {
       advisoryHeadline: "Patchy slowdowns — small overall delay",
-      advisorySubtext: `+${formatDelayMinutesForUi(d)} min total. ${congHint} on the line.`,
+      advisorySubtext: `+${delayBit} min vs free-flow (whole route). ${congHint} on the line.`,
       showAdvisoryDelayRow: true,
-      progressStartLine: `+${formatDelayMinutesForUi(d)} min — ${c === "severe" ? "severe" : "heavy"} in places`,
+      progressStartLine: `+${delayBit} min — ${c === "severe" ? "severe" : "heavy"} in places`,
       shouldAddCorridorAlert: d >= 0.08 || sig,
-      mapTitle: `+${formatDelayMinutesForUi(d)} min — heavy stretches`,
-      mapDetail: "Some segments very slow; whole-trip delay is still small.",
+      /* Short label if shown without headline; corridor UI uses advisoryHeadline for the title. */
+      mapTitle: `Heavy traffic in places (~+${delayBit} min vs free-flow)`,
+      mapDetail: "Some segments are very congested; extra time on the whole trip is still small.",
       mapSeverity: Math.min(78, 52 + d * 5),
     };
   }

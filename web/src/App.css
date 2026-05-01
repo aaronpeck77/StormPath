@@ -417,6 +417,8 @@
   display: flex;
   flex-direction: column;
   --rail-panel-gap: 7px;
+  /* Progress-callout panel starts below the top guidance/advisory cluster. */
+  --progress-callout-top-reserve: 112px;
   /* Height reserved above map bottom for the bottom chrome stack (dock + toolbar). */
   --nav-dock-above-safe: 164px;
   /* Drive view uses a shorter bottom stack; let the progress rail extend lower. */
@@ -1383,27 +1385,33 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  color: #0f172a;
-  text-shadow: none;
+  /* Color comes from inline styles (per-route tint + light text) */
   box-sizing: border-box;
   overflow: hidden;
   gap: 0;
 }
 
 .nav-bottom-dock__route-toggle-slot .nav-route-cycle-btn__label {
-  font-size: 0.68rem;
-  color: #0f172a;
+  font-size: 0.62rem;
+  color: inherit;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.05;
 }
 
 .nav-bottom-dock__route-toggle-slot .nav-route-cycle-btn__eta {
-  font-size: 0.6rem;
-  color: #1e293b;
-  opacity: 1;
+  font-size: 0.54rem;
+  color: inherit;
+  opacity: 0.92;
   font-weight: 800;
+  line-height: 1.05;
 }
 
 .nav-bottom-dock__route-toggle-slot .nav-route-cycle-btn__detail {
-  color: #334155;
+  color: inherit;
+  opacity: 0.82;
   display: block;
   width: 100%;
   max-width: 100%;
@@ -1414,9 +1422,9 @@
   -webkit-line-clamp: unset;
   line-clamp: unset;
   -webkit-box-orient: unset;
-  font-size: 0.45rem;
+  font-size: 0.42rem;
   font-weight: 650;
-  line-height: 1.1;
+  line-height: 1.05;
 }
 
 .nav-route-cycle-btn__detail {
@@ -2284,8 +2292,22 @@
 .route-progress-callout-panel--rail {
   position: relative;
   width: 100%;
-  height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 6px);
-  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 6px);
+  height: min(
+    68dvh,
+    calc(
+      100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) -
+        var(--nav-dock-above-safe-current, var(--nav-dock-above-safe)) -
+        var(--progress-callout-top-reserve, 112px) - 14px
+    )
+  );
+  max-height: min(
+    68dvh,
+    calc(
+      100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) -
+        var(--nav-dock-above-safe-current, var(--nav-dock-above-safe)) -
+        var(--progress-callout-top-reserve, 112px) - 14px
+    )
+  );
   margin: 0;
   padding: 6px 10px 8px 10px;
   border-radius: 8px;
@@ -2298,6 +2320,9 @@
   color: rgba(226, 232, 240, 0.92);
   text-align: left;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -2307,7 +2332,8 @@
 
 .route-progress-callout-panel__track {
   width: 100%;
-  height: 100%;
+  flex: 1 1 auto;
+  height: auto;
   min-height: 120px;
   display: flex;
   flex-direction: column;
@@ -2316,6 +2342,7 @@
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 .route-progress-callout-panel__line {
@@ -7952,6 +7979,10 @@
  * Default = right hand (rail left). Settings → Left hand mirrors edge + gutters.
  */
 @media (orientation: landscape) {
+  .app-shell.nav-fullmap {
+    --progress-callout-top-reserve: 12px;
+  }
+
   /* Gutter from physical edge to where the map / bottom chrome should start (matches progress rail column width). */
   .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) {
     /* Narrow band for vertical strip + safe inset (map + bottom chrome use wider “T” body). */

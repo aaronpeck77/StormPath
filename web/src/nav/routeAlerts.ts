@@ -92,11 +92,12 @@ export function buildRouteAlerts(
   const trafficStory = unifiedTrafficNarrative(delay, trafficLeg, hasLiveTraffic, remainingMin);
   if (trafficStory.shouldAddCorridorAlert) {
     const chordT = trafficLeg?.nearStopFraction ?? 0.38;
+    const detailGlue = [trafficStory.advisorySubtext, trafficStory.mapDetail].filter(Boolean).join(" ");
     list.push({
       id: "traffic-delay",
       severity: trafficStory.mapSeverity,
-      title: trafficStory.mapTitle,
-      detail: trafficStory.mapDetail,
+      title: trafficStory.advisoryHeadline,
+      detail: detailGlue.replace(/\s+/g, " ").trim() || trafficStory.mapDetail,
       lngLat: fallbackPoint(geometry, userLngLat, chordT),
       zoom: 12.4,
       alongMeters: alongM(geometry, chordT),

@@ -5,10 +5,11 @@ const MI = 1609.344;
 const AHEAD_MIN_M = 80;
 
 function fmtMi(m: number): string {
-  if (m < 0) return "0";
+  if (m < 0) return "0 mi";
   const mi = m / MI;
   if (mi < 0.2) return "<0.2 mi";
-  return mi < 10 ? mi.toFixed(1) : String(Math.round(mi));
+  if (mi < 10) return `${mi.toFixed(1)} mi`;
+  return `${Math.round(mi)} mi`;
 }
 
 function etaAheadLabel(distM: number, totalM: number, planEtaMinutes: number | null | undefined): string | null {

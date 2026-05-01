@@ -443,29 +443,28 @@ function driveCameraEaseOptions(
     };
   }
   if (isNarrowPhoneViewport()) {
+    /** Match left/right so the follow point sits on the horizontal screen center (rail overlays the gutter). */
+    const sidePad = Math.max(12, Math.max(104, rightNeed));
     return {
       padding: {
         top: 172 + stormTop,
         bottom: 156,
-        left: 12,
-        right: Math.max(104, rightNeed),
+        left: sidePad,
+        right: sidePad,
       },
-      /*
-       * +Y: focal point lower on screen → more road ahead above the puck.
-       * +X: nudge follow point right — padding is wider on the right (progress rail), so the geometric
-       * “center” of the padded frame reads visually left; offset corrects toward screen center.
-       */
-      offset: [20, 152],
+      /* +Y: focal point lower on screen → more road ahead above the puck. */
+      offset: [0, 152],
     };
   }
+  const sidePadWide = Math.max(16, Math.max(96, rightNeed));
   return {
     padding: {
       top: 268 + stormTop,
       bottom: 176,
-      left: 16,
-      right: Math.max(96, rightNeed),
+      left: sidePadWide,
+      right: sidePadWide,
     },
-    offset: [24, 238],
+    offset: [0, 238],
   };
 }
 
@@ -552,10 +551,9 @@ const DRIVE_ROUTE_BEARING_SMOOTH = 0.22;
 const TOPDOWN_PUCK_OFFSET_PX: [number, number] = [24, 0];
 
 /**
- * Drive (3D) view: small extra horizontal nudge on the marker icon; main lateral balance is
- * {@link driveCameraEaseOptions} offset.x (padding is asymmetric for the progress rail).
+ * Drive (3D) view: lateral balance comes from symmetric horizontal padding in
+ * {@link driveCameraEaseOptions} (portrait); marker stays on the route line.
  */
-/** Keep centered on the route line; asymmetric padding is handled by the camera, not the icon. */
 const DRIVE_PUCK_MARKER_OFFSET_PX: [number, number] = [0, 0];
 
 /** Route (Rt): start with regional / state context; user zooms or taps My location for street level. */

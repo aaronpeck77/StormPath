@@ -1505,9 +1505,12 @@ export default function App() {
         const eta = s
           ? Math.round(s.effectiveEtaMinutes)
           : Math.max(1, Math.round(route.baseEtaMinutes));
+        const letter = String.fromCharCode(65 + Math.min(slot, 25));
+        const routeLabel = route.label.trim() || `Route ${letter}`;
         return {
           id: route.id,
-          letter: String.fromCharCode(65 + Math.min(slot, 25)),
+          letter,
+          routeLabel,
           etaMinutes: eta,
           suggested: routeId === suggestedRouteId,
           softPath: route.role === "hazardSmart",
@@ -1713,7 +1716,7 @@ export default function App() {
 
   useTurnVoiceGuidance({
     enabled: settingVoiceGuidanceEnabled,
-    navigating: navigationStarted && viewMode === "drive",
+    navigating: navigationStarted,
     activeTurnIndex: bannerTurnIndex,
     instruction: bannerTurnInstruction,
     metersToManeuverEnd: metersToBannerManeuver,
@@ -3223,9 +3226,24 @@ export default function App() {
   const advisoryRoadDetailRows = useMemo(() => {
     const rows = [...stormRoadDetailRows];
     const betterRoute = suggestedRouteId && suggestedRouteId !== guidanceRouteId ? suggestedRouteId : null;
-    const betterRouteEta = betterRoute
-      ? scored.find((s) => s.route.id === betterRoute)?.effectiveEtaMinutes ?? null
-      : null;
+    /** ETA minutes comparable to {@link driveEtaMinutes}: full trip before Go; remaining while navigating. */
+    const etaForRoadTrafficComparison = (routeId: string): number | null => {
+      const s = scored.find((x) => x.route.id === routeId);
+      if (!s) return null;
+      const full = Math.round(s.effectiveEtaMinutes);
+      if (!navigationStarted) return full;
+      if (routeId === guidanceRouteId && driveEtaMinutes != null) return driveEtaMinutes;
+      const geom = plan.routes.find((r) => r.id === routeId)?.geometry;
+      if (!geom?.length || !effectiveUserLngLat) return full;
+      const totalM = polylineLengthMeters(geom);
+      if (totalM <= 1) return full;
+      const along = Math.max(
+        0,
+        Math.min(totalM, closestAlongRouteMeters(effectiveUserLngLat, geom).alongMeters)
+      );
+      const frac = Math.max(0, totalM - along) / totalM;
+      return Math.max(1, Math.round(full * frac));
+    };
     const tLeg = trafficOverlay?.[guidanceRouteId];
     const hasTrafficStop = Boolean(tLeg?.nearStopFraction != null || tLeg?.hasClosure);
     const incidentLikeAlert = routeAlerts.find((a) => {
@@ -3257,14 +3275,27 @@ export default function App() {
     }
 
     if (betterRoute) {
+      const curEta = etaForRoadTrafficComparison(guidanceRouteId);
+      const altEta = etaForRoadTrafficComparison(betterRoute);
+      let betterRouteNote: string;
+      if (curEta != null && altEta != null) {
+        const deltaMin = curEta - altEta;
+        if (deltaMin >= 3) {
+          betterRouteNote = `may save about ${formatEtaDuration(deltaMin)}.`;
+        } else if (deltaMin <= -3) {
+          betterRouteNote = `about ${formatEtaDuration(-deltaMin)} longer — suggested for lower stress / fewer hazards.`;
+        } else {
+          betterRouteNote = "similar ETA — suggested for calmer conditions; compare A/B/C in Rt view.";
+        }
+      } else {
+        betterRouteNote = "worth checking now.";
+      }
       rows.push({
         label: "Better route",
         text: (
           <>
             <strong>{betterRoute.toUpperCase()}</strong>{" "}
-            <span className="storm-advisory-bar__road-muted">
-              {betterRouteEta != null ? `may save about ${formatEtaDuration(Math.max(1, Math.round((driveEtaMinutes ?? betterRouteEta) - betterRouteEta)))}.` : "worth checking now."}
-            </span>
+            <span className="storm-advisory-bar__road-muted">{betterRouteNote}</span>
           </>
         ),
       });
@@ -3280,6 +3311,9 @@ export default function App() {
     routeAlerts,
     driveEtaMinutes,
     handleInspectTrafficStop,
+    navigationStarted,
+    effectiveUserLngLat,
+    plan.routes,
   ]);
 
   /** Busy message for the always-visible activity chip (null → shows muted Idle). */

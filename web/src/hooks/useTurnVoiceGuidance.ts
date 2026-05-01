@@ -11,7 +11,7 @@ type Params = {
 };
 
 /**
- * Hands-free spoken maneuvers in drive mode (Web Speech API).
+ * Hands-free spoken maneuvers while navigating (Web Speech API), any map view.
  * Speaks when the step index changes, and once more when very close (“Now…”).
  */
 export function useTurnVoiceGuidance(p: Params): void {
