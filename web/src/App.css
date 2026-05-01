@@ -2620,6 +2620,15 @@
   line-height: 1.28;
 }
 
+.storm-advisory-bar__hazard-timeline-meta {
+  margin-top: 3px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #93c5fd;
+  line-height: 1.3;
+}
+
 .storm-advisory-bar__hazard-timeline-detail {
   margin: 4px 0 0;
   font-size: 0.86rem;
@@ -2877,6 +2886,10 @@
 
 .storm-advisory-bar--expanded .storm-advisory-bar__hazard-timeline-detail {
   font-size: 0.95rem;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__hazard-timeline-meta {
+  font-size: 0.9rem;
 }
 
 .storm-advisory-bar--expanded .storm-advisory-bar__advice--weather {

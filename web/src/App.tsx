@@ -1936,6 +1936,8 @@ export default function App() {
         headline: i.driverHeadline,
         detail: (i.roadEffect || i.detail || "").trim(),
         severity: i.severity,
+        distanceAheadMeters: i.distanceAheadMeters,
+        etaAheadMinutes: i.etaAheadMinutes,
       }));
   }, [routeImpactsForUi]);
 

@@ -89,7 +89,14 @@ type SharedProps = {
   hasGuidanceRoute: boolean;
   roadDetailRows: StormRoadDetailRow[];
   /** Nearest-first along-route impacts (weather, road, traffic) for the advisory timeline. */
-  roadHazardTimeline?: Array<{ id: string; headline: string; detail: string; severity: string }> | null;
+  roadHazardTimeline?: Array<{
+    id: string;
+    headline: string;
+    detail: string;
+    severity: string;
+    distanceAheadMeters: number | null;
+    etaAheadMinutes: number | null;
+  }> | null;
 };
 
 export type StormAdvisoryBarProps = SharedProps & {
@@ -120,6 +127,31 @@ export type StormAdvisoryBarProps = SharedProps & {
   /** After Go: live traffic / corridor road data; before Go, copy explains preview vs live. */
   navigationStarted: boolean;
 };
+
+const METERS_PER_MILE = 1609.34;
+
+/** Distance and ETA for one timeline row (plan ETA when not yet navigating). */
+function formatHazardAheadMeta(
+  distanceAheadMeters: number | null,
+  etaAheadMinutes: number | null,
+  navigationStarted: boolean
+): string | null {
+  const bits: string[] = [];
+  if (distanceAheadMeters != null && Number.isFinite(distanceAheadMeters)) {
+    if (distanceAheadMeters < 80) {
+      bits.push("Now — on your path");
+    } else {
+      const mi = distanceAheadMeters / METERS_PER_MILE;
+      bits.push(mi < 10 ? `${mi.toFixed(1)} mi ahead` : `${Math.round(mi)} mi ahead`);
+    }
+  }
+  if (etaAheadMinutes != null && Number.isFinite(etaAheadMinutes) && etaAheadMinutes >= 0.5) {
+    const min = Math.max(1, Math.round(etaAheadMinutes));
+    bits.push(navigationStarted ? `≈ ${min} min` : `≈ ${min} min (plan)`);
+  }
+  if (bits.length === 0) return null;
+  return bits.join(" · ");
+}
 
 function fmtEnds(ends: string | null): string | null {
   if (!ends) return null;
@@ -690,18 +722,28 @@ export function StormAdvisoryBar({
                   role="list"
                   aria-label="Conditions along your route"
                 >
-                  {roadHazardTimeline!.map((row) => (
-                    <div
-                      key={row.id}
-                      className={`storm-advisory-bar__hazard-timeline-row storm-advisory-bar__hazard-timeline-row--sev-${row.severity}`}
-                      role="listitem"
-                    >
-                      <div className="storm-advisory-bar__hazard-timeline-head">{row.headline}</div>
-                      {row.detail ? (
-                        <p className="storm-advisory-bar__hazard-timeline-detail">{row.detail}</p>
-                      ) : null}
-                    </div>
-                  ))}
+                  {roadHazardTimeline!.map((row) => {
+                    const aheadMeta = formatHazardAheadMeta(
+                      row.distanceAheadMeters,
+                      row.etaAheadMinutes,
+                      navigationStarted
+                    );
+                    return (
+                      <div
+                        key={row.id}
+                        className={`storm-advisory-bar__hazard-timeline-row storm-advisory-bar__hazard-timeline-row--sev-${row.severity}`}
+                        role="listitem"
+                      >
+                        <div className="storm-advisory-bar__hazard-timeline-head">{row.headline}</div>
+                        {aheadMeta ? (
+                          <div className="storm-advisory-bar__hazard-timeline-meta">{aheadMeta}</div>
+                        ) : null}
+                        {row.detail ? (
+                          <p className="storm-advisory-bar__hazard-timeline-detail">{row.detail}</p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : hasGuidanceRoute && nwsContentReady && advisoryTier === "plus" ? (
                 <p className="storm-advisory-bar__muted storm-advisory-bar__status-line">
