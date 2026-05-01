@@ -2,7 +2,7 @@ import type { RouteImpact } from "./routeImpacts";
 import { compareRouteImpactPriority } from "./routeImpacts";
 import { METERS_PER_MILE } from "./constants";
 
-/** ~2 mi — show a short heads-up when the hazard is within this distance but not yet passed. */
+/** ~2 mi — show a short heads-up when the hazard is within this distance but not yet passed (any nav view). */
 export const DRIVE_HAZARD_APPROACH_PREVIEW_METERS = 2 * METERS_PER_MILE;
 
 const PASSED_CLEAR_METERS = 90;

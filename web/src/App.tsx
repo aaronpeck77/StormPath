@@ -2086,10 +2086,15 @@ export default function App() {
     routeImpactsForUi,
   ]);
 
+  /** Same ~2 mi heads-up in Rt / Map / Dr while navigating — not drive-only. */
+  const hazardApproachAlertsActive =
+    navigationStarted &&
+    Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
+
   const driveApproachBannerImpact = useMemo(() => {
-    if (!driveModeUi) return null;
+    if (!hazardApproachAlertsActive) return null;
     return pickDriveApproachBannerImpact(routeImpactsForUi, driveApproachDismissedIds);
-  }, [driveModeUi, routeImpactsForUi, driveApproachDismissedIds]);
+  }, [hazardApproachAlertsActive, routeImpactsForUi, driveApproachDismissedIds]);
 
   useEffect(() => {
     setDriveApproachDismissedIds(new Set());
@@ -3591,7 +3596,7 @@ export default function App() {
                       <ActivityStatusPill busyLabel={activityBusyLabel} />
                     </div>
                   ) : null}
-                  {driveModeUi && driveApproachBannerImpact ? (
+                  {hazardApproachAlertsActive && driveApproachBannerImpact ? (
                     <DriveHazardApproachBanner
                       impact={driveApproachBannerImpact}
                       onDismiss={() => {
