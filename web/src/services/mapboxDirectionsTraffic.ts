@@ -34,6 +34,8 @@ export type MapboxTrafficLeg = {
   hasClosure: boolean;
   /** Approximate position of near-stopped traffic along the leg (0..1), if detected. */
   nearStopFraction: number | null;
+  /** First segment at/above heavy congestion along the sampled path (0..1), if any. */
+  firstHeavyCongestionFraction: number | null;
 };
 
 type DirectionsRoute = {
@@ -106,6 +108,26 @@ function detectNearStopFraction(route: DirectionsRoute): number | null {
   return Math.max(0, Math.min(1, (firstNearStop + 0.5) / total));
 }
 
+/** First segment with congestion ≥ 60 (heavy-ish) — anchors delay to a real place on the polyline. */
+function detectFirstHeavyCongestionFraction(route: DirectionsRoute): number | null {
+  let total = 0;
+  let firstHeavy: number | null = null;
+  for (const leg of route.legs ?? []) {
+    const congestion = leg.annotation?.congestion_numeric ?? [];
+    const segCount = congestion.length;
+    if (segCount <= 0) continue;
+    for (let i = 0; i < segCount; i++) {
+      const c = congestion[i];
+      if (typeof c === "number" && c >= 60 && firstHeavy == null) {
+        firstHeavy = total + i;
+      }
+    }
+    total += segCount;
+  }
+  if (firstHeavy == null || total <= 0) return null;
+  return Math.max(0, Math.min(1, (firstHeavy + 0.5) / total));
+}
+
 async function fetchDirectionsOnce(
   path: string,
   accessToken: string
@@ -162,6 +184,7 @@ async function fetchDirectionsOnce(
     congestionSummary: summarizeCongestion(route),
     hasClosure,
     nearStopFraction: detectNearStopFraction(route),
+    firstHeavyCongestionFraction: detectFirstHeavyCongestionFraction(route),
   };
 }
 
@@ -170,6 +193,13 @@ async function fetchDirectionsOnce(
  * Delay is computed against Mapbox's own free-flow baseline (duration_typical), not ORS.
  * Retries with fewer samples if Mapbox rejects the request (e.g. NoRoute).
  */
+/** Best Mapbox-derived fraction along the sampled path for map / fly-to (near-stop wins). */
+export function trafficCongestionAnchorFraction(leg: MapboxTrafficLeg | null | undefined): number | null {
+  if (!leg) return null;
+  if (leg.nearStopFraction != null) return leg.nearStopFraction;
+  return leg.firstHeavyCongestionFraction ?? null;
+}
+
 export async function fetchMapboxTrafficAlongPolyline(
   accessToken: string,
   geometry: LngLat[]

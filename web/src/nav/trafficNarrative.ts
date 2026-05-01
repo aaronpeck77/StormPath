@@ -101,12 +101,15 @@ export function unifiedTrafficNarrative(
   if (heavySegmentsButMildTotal) {
     const congHint = c === "severe" ? "Severe spots" : "Heavy spots";
     const delayBit = formatDelayMinutesForUi(d);
+    const hasSegmentAnchor =
+      leg.nearStopFraction != null || leg.firstHeavyCongestionFraction != null;
     return {
       advisoryHeadline: "Patchy slowdowns — small overall delay",
       advisorySubtext: `+${delayBit} min vs free-flow (whole route). ${congHint} on the line.`,
       showAdvisoryDelayRow: true,
       progressStartLine: `+${delayBit} min — ${c === "severe" ? "severe" : "heavy"} in places`,
-      shouldAddCorridorAlert: d >= 0.08 || sig,
+      /* Avoid a map “jam ahead” pin when we only have route-wide delay + summary, no segment anchor. */
+      shouldAddCorridorAlert: (d >= 0.08 || sig) && (hasSegmentAnchor || d >= 5),
       /* Short label if shown without headline; corridor UI uses advisoryHeadline for the title. */
       mapTitle: `Heavy traffic in places (~+${delayBit} min vs free-flow)`,
       mapDetail: "Some segments are very congested; extra time on the whole trip is still small.",

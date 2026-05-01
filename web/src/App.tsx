@@ -33,7 +33,10 @@ import {
   mapboxGeocodeSearch,
   mapboxReverseGeocode,
 } from "./services/mapboxGeocode";
-import { fetchMapboxTrafficAlongPolyline } from "./services/mapboxDirectionsTraffic";
+import {
+  fetchMapboxTrafficAlongPolyline,
+  trafficCongestionAnchorFraction,
+} from "./services/mapboxDirectionsTraffic";
 import {
   fetchMapboxDrivingTrafficRoute,
   fetchMapboxSurgicalBypass,
@@ -69,7 +72,7 @@ import {
 } from "./nav/guidanceAlongHold";
 import { activeTurnStepIndexAlong, turnStepAlongBounds } from "./nav/turnStepAlong";
 import { formatRouteDistanceMi, routeConsiderationSummary } from "./nav/routeSummary";
-import { buildDriveRouteAheadFromImpacts } from "./nav/driveRouteAhead";
+import { buildDriveRouteAheadFromImpacts, pickDriveNextHazardAhead } from "./nav/driveRouteAhead";
 import { computeTrafficBypassOffer } from "./nav/trafficBypassOffer";
 import { unifiedTrafficNarrative } from "./nav/trafficNarrative";
 import {
@@ -2077,6 +2080,27 @@ export default function App() {
     routeImpactsForUi,
   ]);
 
+  /** Drive view: next credible hazard along the line (distance + ETA), color-coded by severity. */
+  const driveNextHazardAhead = useMemo(() => {
+    if (!navigationStarted || viewMode !== "drive" || !guidanceRoute?.geometry?.length) return null;
+    const totalM = guidanceRouteLengthM;
+    if (totalM <= 1) return null;
+    return pickDriveNextHazardAhead({
+      impacts: routeImpactsForUi,
+      userAlongM: userAlongGuidanceM,
+      totalMeters: totalM,
+      planEtaMinutes: guidanceRoute.baseEtaMinutes,
+    });
+  }, [
+    navigationStarted,
+    viewMode,
+    guidanceRoute?.geometry,
+    guidanceRouteLengthM,
+    guidanceRoute?.baseEtaMinutes,
+    userAlongGuidanceM,
+    routeImpactsForUi,
+  ]);
+
   /**
    * Route broken into distance/time chunks (start at bottom of panel, destination toward top).
    * Long legs: sliding window follows `userAlongM` so older segments scroll away as you drive.
@@ -3283,7 +3307,9 @@ export default function App() {
     }
     if (guidanceRoute?.geometry?.length) {
       const tLeg = trafficOverlay?.[guidanceRouteId];
-      const p = pointAlongPolyline(guidanceRoute.geometry, tLeg?.nearStopFraction ?? 0.38);
+      const anchor = trafficCongestionAnchorFraction(tLeg ?? null);
+      if (anchor == null) return;
+      const p = pointAlongPolyline(guidanceRoute.geometry, anchor);
       if (p) {
         setMapFocus({
           kind: "hazardOverview",
@@ -3509,6 +3535,7 @@ export default function App() {
                     activeTurnIndex={bannerTurnIndex}
                     metersToManeuverEnd={metersToBannerManeuver}
                     glanceable={navigationStarted && viewMode === "drive"}
+                    nextHazardAhead={driveNextHazardAhead}
                   />
                   {showStormAdvisoryChrome ? (
                     <StormAdvisoryBar

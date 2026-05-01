@@ -5021,6 +5021,71 @@
   letter-spacing: 0.06em;
 }
 
+/* Drive: next along-route hazard (credible spatial impacts only — see pickDriveNextHazardAhead). */
+.top-guidance-bar__next-hazard {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-top: 4px;
+  padding: 6px 10px 7px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.78);
+  font-size: clamp(0.62rem, 2.2vw, 0.78rem);
+  line-height: 1.28;
+}
+
+.top-guidance-bar__next-hazard-label {
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.82em;
+  opacity: 0.9;
+}
+
+.top-guidance-bar__next-hazard-title {
+  font-weight: 750;
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.top-guidance-bar__next-hazard-sub {
+  width: 100%;
+  font-weight: 650;
+  color: #cbd5e1;
+  font-size: 0.94em;
+}
+
+.top-guidance-bar__next-hazard--sev-info {
+  border-color: rgba(59, 130, 246, 0.55);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.12) inset;
+}
+
+.top-guidance-bar__next-hazard--sev-caution {
+  border-color: rgba(234, 179, 8, 0.65);
+  box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.15) inset;
+}
+
+.top-guidance-bar__next-hazard--sev-serious {
+  border-color: rgba(234, 88, 12, 0.75);
+}
+
+.top-guidance-bar__next-hazard--sev-avoid {
+  border-color: rgba(220, 38, 38, 0.85);
+  background: rgba(40, 12, 12, 0.55);
+}
+
+.nav-top-cluster .top-guidance-bar__next-hazard {
+  margin-top: 3px;
+  padding: 5px 8px 6px;
+  font-size: 0.58rem;
+}
+
+.nav-top-cluster .top-guidance-bar__next-hazard-sub {
+  font-size: 0.95em;
+}
+
 .turn-strip-idle {
   display: flex;
   flex-direction: column;

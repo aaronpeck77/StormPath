@@ -344,8 +344,17 @@ function buildTrafficImpact(opts: {
   const story = unifiedTrafficNarrative(delay, trafficLeg, hasLive, remainingMin);
   if (!story.shouldAddCorridorAlert) return null;
 
-  const chordT = trafficLeg?.nearStopFraction ?? 0.38;
-  const along = totalMeters * chordT;
+  const anchorT =
+    trafficLeg?.nearStopFraction ??
+    trafficLeg?.firstHeavyCongestionFraction ??
+    null;
+  /** No Mapbox segment anchor and not a closure → skip spatial traffic (avoids bogus “ahead” pins). */
+  if (anchorT == null && !trafficLeg?.hasClosure) return null;
+
+  const along =
+    anchorT != null
+      ? totalMeters * anchorT
+      : Math.min(totalMeters - 50, userAlongM + Math.min(5000, Math.max(400, (totalMeters - userAlongM) * 0.25)));
   const aheadM = Math.max(0, along - userAlongM);
   const eta =
     totalMeters > 0 && opts.planEtaMinutes != null && Number.isFinite(opts.planEtaMinutes)
@@ -354,12 +363,11 @@ function buildTrafficImpact(opts: {
 
   const sev = trafficNumericToSeverity(story.mapSeverity, Boolean(trafficLeg?.hasClosure));
   const significant = isSignificantTrafficDelay(delay, remainingMin);
-  /* Confidence: high when we have a real near-stop anchor; medium when overall delay is only inferred from the polyline. */
   const confidence: RouteImpactConfidence = trafficLeg?.hasClosure
     ? "high"
     : trafficLeg?.nearStopFraction != null
       ? "high"
-      : hasLive
+      : trafficLeg?.firstHeavyCongestionFraction != null
         ? "medium"
         : "low";
 

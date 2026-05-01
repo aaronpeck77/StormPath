@@ -83,6 +83,13 @@ function impactPriorityForAhead(impact: RouteImpact): number {
   return pri;
 }
 
+/** Mapbox traffic without a segment anchor is “low” — do not treat it as a precise ahead hazard. */
+function includeImpactForDriveAheadSpatial(i: RouteImpact): boolean {
+  if (i.source !== "mapboxTraffic") return true;
+  if (i.confidence !== "low") return true;
+  return i.driverAction === "rerouteRecommended";
+}
+
 function fmtImpactHeadline(i: RouteImpact, distanceM: number, planEtaMinutes: number | null | undefined, totalM: number): string {
   const head = i.driverHeadline;
   const eta = etaAheadLabel(distanceM, totalM, planEtaMinutes);
@@ -122,6 +129,7 @@ export function buildDriveRouteAheadFromImpacts(opts: {
   type Cand = { impact: RouteImpact; distM: number; pri: number };
   const cands: Cand[] = [];
   for (const i of impacts) {
+    if (!includeImpactForDriveAheadSpatial(i)) continue;
     const ahead = i.distanceAheadMeters;
     if (ahead == null || ahead <= AHEAD_MIN_M * 0.5) continue;
     cands.push({ impact: i, distM: ahead, pri: impactPriorityForAhead(i) });
@@ -145,6 +153,59 @@ const BRIEF_MAX = 62;
 /**
  * Short primary line for the drive status strip (full detail stays in Hazards panel).
  */
+export type DriveNextHazardAhead = {
+  title: string;
+  sub: string | null;
+  severity: RouteImpact["severity"];
+};
+
+/**
+ * Next spatial hazard for drive HUD (nearest first). Skips low-confidence Mapbox traffic so we do not
+ * promise a slowdown at a mile marker we cannot support.
+ */
+export function pickDriveNextHazardAhead(opts: {
+  impacts: RouteImpact[];
+  userAlongM: number;
+  totalMeters: number;
+  planEtaMinutes: number | null | undefined;
+}): DriveNextHazardAhead | null {
+  const { impacts, userAlongM, totalMeters, planEtaMinutes } = opts;
+  if (totalMeters <= 1 || !Number.isFinite(userAlongM)) return null;
+
+  const inside = impacts.find(
+    (i) =>
+      i.startMeters <= userAlongM + 12 &&
+      i.endMeters >= userAlongM - 12 &&
+      i.endMeters > i.startMeters
+  );
+  if (inside) {
+    return {
+      title: inside.driverHeadline,
+      sub: "On this segment",
+      severity: inside.severity,
+    };
+  }
+
+  type Cand = { impact: RouteImpact; distM: number; pri: number };
+  const cands: Cand[] = [];
+  for (const i of impacts) {
+    if (!includeImpactForDriveAheadSpatial(i)) continue;
+    const ahead = i.distanceAheadMeters;
+    if (ahead == null || ahead <= AHEAD_MIN_M * 0.5) continue;
+    cands.push({ impact: i, distM: ahead, pri: impactPriorityForAhead(i) });
+  }
+  if (cands.length === 0) return null;
+  cands.sort((a, b) => (a.distM !== b.distM ? a.distM - b.distM : b.pri - a.pri));
+  const top = cands[0]!;
+  const eta = etaAheadLabel(top.distM, totalMeters, planEtaMinutes);
+  const sub = eta ? `${fmtMi(top.distM)} · ${eta}` : `${fmtMi(top.distM)}`;
+  return {
+    title: top.impact.driverHeadline,
+    sub,
+    severity: top.impact.severity,
+  };
+}
+
 export function formatDriveAheadBrief(line: DriveAheadLine): string {
   if (line.kind === "none") {
     return "Ahead: no flagged hazards";
