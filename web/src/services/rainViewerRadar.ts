@@ -13,7 +13,7 @@ export const RAINVIEWER_RADAR_MAX_ZOOM = 7;
  * Total time per step ≈ RAINVIEWER_RADAR_CROSSFADE_MS + this value.
  * @see mapRadarLayer RAINVIEWER_RADAR_CROSSFADE_MS
  */
-export const RAINVIEWER_ANIMATION_DWELL_MS = 420;
+export const RAINVIEWER_ANIMATION_DWELL_MS = 160;
 
 type Manifest = {
   host?: string;

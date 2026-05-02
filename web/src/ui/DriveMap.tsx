@@ -65,7 +65,44 @@ export type TrafficBypassCompareCallout = {
 };
 
 const MAP_STYLE_DAY = "mapbox://styles/mapbox/streets-v12";
-const MAP_STYLE_NIGHT = "mapbox://styles/mapbox/dark-v11";
+
+/**
+ * Night basemap preset — persists under {@link NIGHT_MAP_STYLE_LS_KEY}.
+ * URL override on load: `?mapNight=neutral` | `navigation` | `streets` (aliases: `dark`, `nav`, `day`).
+ *
+ * - **neutral** (default): `dark-v11` — cool gray/blue, no green navigation tint.
+ * - **navigation**: `navigation-night-v1` — driver-focused contrast (often reads teal/green).
+ * - **streets**: same as daytime `streets-v12` — brightest; fine if you dislike dark tiles.
+ */
+type NightBasemapPreset = "neutral" | "navigation" | "streets";
+
+const NIGHT_MAP_STYLE_LS_KEY = "stormpath-map-night-style";
+
+function nightBasemapStyleUrl(preset: NightBasemapPreset): string {
+  switch (preset) {
+    case "navigation":
+      return "mapbox://styles/mapbox/navigation-night-v1";
+    case "streets":
+      return MAP_STYLE_DAY;
+    default:
+      return "mapbox://styles/mapbox/dark-v11";
+  }
+}
+
+function parseNightBasemapPreset(): NightBasemapPreset {
+  if (typeof window === "undefined") return "neutral";
+  try {
+    const q = new URLSearchParams(window.location.search).get("mapNight");
+    if (q === "navigation" || q === "nav") return "navigation";
+    if (q === "streets" || q === "day") return "streets";
+    if (q === "neutral" || q === "dark") return "neutral";
+    const ls = localStorage.getItem(NIGHT_MAP_STYLE_LS_KEY);
+    if (ls === "navigation" || ls === "streets" || ls === "neutral") return ls;
+  } catch {
+    /* ignore */
+  }
+  return "neutral";
+}
 
 /** Day vs night for style + 3D lighting (local time). */
 type MapPhase = "day" | "night";
@@ -75,8 +112,9 @@ function currentMapPhase(): MapPhase {
   return h >= 6 && h < 20 ? "day" : "night";
 }
 
-function currentMapStyle(phase?: MapPhase): string {
-  return (phase ?? currentMapPhase()) === "night" ? MAP_STYLE_NIGHT : MAP_STYLE_DAY;
+function currentMapStyle(phase: MapPhase | undefined, nightPreset: NightBasemapPreset): string {
+  const ph = phase ?? currentMapPhase();
+  return ph === "night" ? nightBasemapStyleUrl(nightPreset) : MAP_STYLE_DAY;
 }
 
 /** Mapbox light position & color for each phase.
@@ -91,14 +129,14 @@ function sceneLightForPhase(phase: MapPhase): {
   intensity: number;
 } {
   if (phase === "night") {
-    return { anchor: "map", position: [1.5, 210, 55], color: "#6677aa", intensity: 0.22 };
+    return { anchor: "map", position: [1.5, 210, 55], color: "#8899cc", intensity: 0.34 };
   }
   // Day: sun high, short shadows
   return { anchor: "map", position: [1.5, 180, 28], color: "white", intensity: 0.5 };
 }
 
 function buildingColorForPhase(phase: MapPhase): string {
-  return phase === "night" ? "#1a1c22" : "#d4d4d8";
+  return phase === "night" ? "#2a2e38" : "#d4d4d8";
 }
 
 function isNarrowPhoneViewport(): boolean {
@@ -191,20 +229,37 @@ function buildStormHoverPopupContent(feats: mapboxgl.MapboxGeoJSONFeature[]): HT
   return root;
 }
 
-/** Dark basemap: stronger labels (NWS + night driving). */
-function brightenNightMapLabels(map: mapboxgl.Map): void {
+/** Dark/navigation night basemaps: stronger labels + slightly bolder road lines (skipped for `streets` preset). */
+function applyNightBasemapReadability(map: mapboxgl.Map): void {
   const layers = map.getStyle()?.layers;
   if (!layers) return;
   for (const layer of layers) {
-    if (layer.type !== "symbol") continue;
-    const layout = layer.layout as Record<string, unknown> | undefined;
-    if (layout?.["text-field"] == null) continue;
+    if (layer.type === "symbol") {
+      const layout = layer.layout as Record<string, unknown> | undefined;
+      if (layout?.["text-field"] == null) continue;
+      try {
+        map.setPaintProperty(layer.id, "text-opacity", 1);
+        const haloW = map.getPaintProperty(layer.id, "text-halo-width");
+        if (haloW == null || (typeof haloW === "number" && haloW < 0.85)) {
+          map.setPaintProperty(layer.id, "text-halo-color", "rgba(0,0,0,0.92)");
+          map.setPaintProperty(layer.id, "text-halo-width", 1.45);
+        }
+      } catch {
+        /* data-driven paint */
+      }
+      continue;
+    }
+    if (layer.type !== "line") continue;
+    const src = "source" in layer ? (layer as { source?: string }).source : undefined;
+    const sourceLayer =
+      "source-layer" in layer ? (layer as { "source-layer"?: string })["source-layer"] : undefined;
+    if (src !== "composite" || sourceLayer !== "road") continue;
+    const lid = layer.id.toLowerCase();
+    if (lid.includes("traffic") || lid.includes("route")) continue;
     try {
-      map.setPaintProperty(layer.id, "text-opacity", 1);
-      const haloW = map.getPaintProperty(layer.id, "text-halo-width");
-      if (haloW == null || (typeof haloW === "number" && haloW < 0.75)) {
-        map.setPaintProperty(layer.id, "text-halo-color", "rgba(0,0,0,0.9)");
-        map.setPaintProperty(layer.id, "text-halo-width", 1.35);
+      const op = map.getPaintProperty(layer.id, "line-opacity");
+      if (typeof op === "number" && op > 0 && op < 1) {
+        map.setPaintProperty(layer.id, "line-opacity", Math.min(1, op * 1.12 + 0.06));
       }
     } catch {
       /* data-driven paint */
@@ -528,6 +583,8 @@ type Props = {
   }) => void;
   /** Traffic bypass compare: pins on each route with ETA / savings — only in topdown compare. */
   trafficBypassCompareCallouts?: TrafficBypassCompareCallout[] | null;
+  /** Highlights the map flag that matches the bottom-panel selection before confirm. */
+  trafficBypassCompareSelectedRouteId?: string | null;
   onTrafficBypassCompareFlagPick?: (routeId: string) => void;
   /** Plus: sparse GPS dots over weeks/months (see About → Activity trail). */
   activityTrailGeoJson?: GeoJSON.FeatureCollection | null;
@@ -545,8 +602,8 @@ type Props = {
 const EXPLORE_IDLE_MS = 120_000;
 /** Drive mode: return to follow-cam sooner after the user pans/zooms the map. */
 const DRIVE_EXPLORE_IDLE_MS = 4_000;
-/** Blend route/GPS bearing frame-to-frame (reduces jitter at segment joins). */
-const DRIVE_ROUTE_BEARING_SMOOTH = 0.22;
+/** ~1/e time constant (seconds) for drive camera bearing toward route/GPS heading (rAF loop). */
+const DRIVE_CAMERA_BEARING_TC_S = 0.42;
 /** Top-down map view: nudge puck slightly right of visual center to balance the side rail/chrome. */
 const TOPDOWN_PUCK_OFFSET_PX: [number, number] = [24, 0];
 
@@ -682,11 +739,15 @@ function makeTrafficBypassCompareFlagEl(
   etaMinutes: number,
   savingsVsAMinutes: number | null,
   routeId: string,
+  selectedRouteId: string | null,
   onPick: (id: string) => void
 ): HTMLButtonElement {
   const el = document.createElement("button");
   el.type = "button";
-  el.className = `map-bypass-compare-flag map-bypass-compare-flag--${slot.toLowerCase()}`;
+  const selected = selectedRouteId != null && selectedRouteId === routeId;
+  el.className = `map-bypass-compare-flag map-bypass-compare-flag--${slot.toLowerCase()}${
+    selected ? " map-bypass-compare-flag--selected" : ""
+  }`;
   el.setAttribute("aria-label", `Route ${slot}, about ${Math.round(etaMinutes)} minutes`);
   const slotEl = document.createElement("span");
   slotEl.className = "map-bypass-compare-flag__slot";
@@ -744,6 +805,7 @@ export function DriveMap({
   stormBrowseBoundsReporting = false,
   onStormBrowseBoundsChange,
   trafficBypassCompareCallouts = null,
+  trafficBypassCompareSelectedRouteId = null,
   onTrafficBypassCompareFlagPick,
   activityTrailGeoJson = null,
   searchPickMarkers = null,
@@ -795,11 +857,23 @@ export function DriveMap({
   const routesForHitRef = useRef({ routes, lineFocusId, navigationStarted, viewMode });
   routesForHitRef.current = { routes, lineFocusId, navigationStarted, viewMode };
 
+  const headingRef = useRef(heading);
+  headingRef.current = heading;
+  const driveRouteBearingDegRef = useRef(driveRouteBearingDeg);
+  driveRouteBearingDegRef.current = driveRouteBearingDeg;
+  const stormBarVisibleRef = useRef(stormBarVisible);
+  stormBarVisibleRef.current = stormBarVisible;
+  const stormBarExpandedRef = useRef(stormBarExpanded);
+  stormBarExpandedRef.current = stormBarExpanded;
+  const progressRailVisibleRef = useRef(progressRailVisible);
+  progressRailVisibleRef.current = progressRailVisible;
+
   const token = getWebEnv().mapboxToken;
   const [mapReady, setMapReady] = useState(false);
   const [mapResumeTick, setMapResumeTick] = useState(0);
+  const [nightBasemapPreset] = useState<NightBasemapPreset>(parseNightBasemapPreset);
   const [mapPhase, setMapPhase] = useState(currentMapPhase);
-  const activeStyleRef = useRef(currentMapStyle(mapPhase));
+  const activeStyleRef = useRef(currentMapStyle(mapPhase, nightBasemapPreset));
   const trafficConditionsOnMapRef = useRef(trafficConditionsOnMap);
   trafficConditionsOnMapRef.current = trafficConditionsOnMap;
 
@@ -829,7 +903,7 @@ export function DriveMap({
     if (!containerRef.current || !token || mapRef.current) return;
 
     mapboxgl.accessToken = token;
-    activeStyleRef.current = currentMapStyle();
+    activeStyleRef.current = currentMapStyle(currentMapPhase(), nightBasemapPreset);
     const map = new mapboxgl.Map({
       container: containerRef.current,
       style: activeStyleRef.current,
@@ -897,6 +971,14 @@ export function DriveMap({
   }, [token]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(NIGHT_MAP_STYLE_LS_KEY, nightBasemapPreset);
+    } catch {
+      /* ignore */
+    }
+  }, [nightBasemapPreset]);
+
+  useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !stormBrowseBoundsReporting || !onStormBrowseBoundsChange) return;
 
@@ -947,10 +1029,9 @@ export function DriveMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
-    if (mapPhase === "night") {
-      requestAnimationFrame(() => brightenNightMapLabels(map));
-    }
-  }, [mapPhase, mapReady]);
+    if (mapPhase !== "night" || nightBasemapPreset === "streets") return;
+    requestAnimationFrame(() => applyNightBasemapReadability(map));
+  }, [mapPhase, mapReady, nightBasemapPreset]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -976,7 +1057,7 @@ export function DriveMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const want = currentMapStyle(mapPhase);
+    const want = currentMapStyle(mapPhase, nightBasemapPreset);
     if (want === activeStyleRef.current) return;
     activeStyleRef.current = want;
     setMapReady(false);
@@ -986,7 +1067,7 @@ export function DriveMap({
     const onStyle = () => setMapReady(true);
     map.once("style.load", onStyle);
     return () => { map.off("style.load", onStyle); };
-  }, [mapPhase]);
+  }, [mapPhase, nightBasemapPreset]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1334,6 +1415,51 @@ export function DriveMap({
           cur.lng + (targetLng - cur.lng) * blend,
           cur.lat + (targetLat - cur.lat) * blend,
         ]);
+
+        /* Drive camera must track the smoothed puck — not raw GPS `easeTo` — or the map lurches while the puck glides. */
+        const map = mapRef.current;
+        if (
+          map &&
+          map.isStyleLoaded() &&
+          viewModeRef.current === "drive" &&
+          navigationStartedRef.current &&
+          userLngLatRef.current &&
+          !userExploringRef.current
+        ) {
+          const { padding, offset } = driveCameraEaseOptions(
+            stormBarVisibleRef.current,
+            stormBarExpandedRef.current,
+            progressRailVisibleRef.current
+          );
+          const rawBrg =
+            driveRouteBearingDegRef.current != null
+              ? driveRouteBearingDegRef.current
+              : headingRef.current != null
+                ? headingRef.current
+                : map.getBearing();
+          const alphaBrg = 1 - Math.exp(-dt / DRIVE_CAMERA_BEARING_TC_S);
+          driveCamBearingSmoothedRef.current = smoothDriveBearingDeg(
+            driveCamBearingSmoothedRef.current,
+            rawBrg,
+            alphaBrg
+          );
+          const pos = marker.getLngLat();
+          try {
+            /* `easeTo` supports `offset` (drive focal point); `jumpTo` does not in our Mapbox typings. Duration 0 = per-frame snap. */
+            map.easeTo({
+              center: [pos.lng, pos.lat],
+              zoom: 16.35,
+              pitch: 58,
+              bearing: driveCamBearingSmoothedRef.current,
+              padding,
+              offset,
+              duration: 0,
+              essential: true,
+            });
+          } catch {
+            /* style race */
+          }
+        }
       }
       raf = requestAnimationFrame(loop);
     };
@@ -1391,6 +1517,7 @@ export function DriveMap({
         c.etaMinutes,
         c.savingsVsAMinutes,
         c.routeId,
+        trafficBypassCompareSelectedRouteId ?? null,
         onPick
       );
       const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" })
@@ -1404,7 +1531,7 @@ export function DriveMap({
       }
       bypassCompareMarkersRef.current = [];
     };
-  }, [mapReady, trafficBypassCompareCallouts]);
+  }, [mapReady, trafficBypassCompareCallouts, trafficBypassCompareSelectedRouteId]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1857,7 +1984,7 @@ export function DriveMap({
           const incoming: "a" | "b" = visible === "a" ? "b" : "a";
           const url = tileUrlFromHostAndPath(host, cells[nextIdx]!.path);
           setRainViewerRadarTilesOnSource(map, incoming, url);
-          await waitForRainViewerSideLoaded(map, incoming, 3500);
+          await waitForRainViewerSideLoaded(map, incoming, 1400);
           if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
           const from =
             visible === "a" ? { a: o, b: 0 } : { a: 0, b: o };
@@ -2109,54 +2236,6 @@ export function DriveMap({
   ]);
 
   const canCameraFollow = Boolean(userLngLat && (navigationStarted || routes.length > 0));
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !userLngLat || !canCameraFollow) return;
-    if (userExploringRef.current) return;
-
-    if (viewMode === "drive") {
-      const { padding, offset } = driveCameraEaseOptions(
-        stormBarVisible,
-        stormBarExpanded,
-        progressRailVisible
-      );
-      const raw =
-        driveRouteBearingDeg != null
-          ? driveRouteBearingDeg
-          : heading != null
-            ? heading
-            : map.getBearing();
-      driveCamBearingSmoothedRef.current = smoothDriveBearingDeg(
-        driveCamBearingSmoothedRef.current,
-        raw,
-        DRIVE_ROUTE_BEARING_SMOOTH
-      );
-      map.easeTo({
-        center: userLngLat,
-        zoom: 16.35,
-        pitch: 58,
-        bearing: driveCamBearingSmoothedRef.current,
-        padding,
-        offset,
-        duration: 420,
-        essential: true,
-      });
-    }
-  }, [
-    mapReady,
-    viewMode,
-    canCameraFollow,
-    userLngLat,
-    heading,
-    driveRouteBearingDeg,
-    navigationStarted,
-    mapResumeTick,
-    fitTrigger,
-    stormBarVisible,
-    stormBarExpanded,
-    progressRailVisible,
-  ]);
 
   /** On Go: clear "user exploring" so the drive camera is not stuck; nudge follow + size after nav chrome. */
   const wasNavRef = useRef(false);

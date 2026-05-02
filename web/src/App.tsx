@@ -185,6 +185,8 @@ type TrafficBypassCompareState = {
   hasC: boolean;
   /** From the underlying `RouteImpact` confidence — softens compare panel copy when low. */
   confidence: "low" | "medium" | "high";
+  /** Chosen A/B/C leg; promotion + drive view happen on explicit confirm, not on first tap. */
+  selectedLeg: "r-a" | "r-b" | "r-c" | null;
 };
 
 const MB_TRAFFIC_LINE_SNAP_NOTICE = "Mapbox traffic-aware line";
@@ -514,12 +516,16 @@ export default function App() {
   const destLngLatRef = useRef(destLngLat);
   destLngLatRef.current = destLngLat;
   const [viewMode, setViewMode] = useState<MapViewMode>("route");
+  /** Restore Rt / Dr / map if user cancels bypass compare without picking a line. */
+  const viewModeBeforeTrafficBypassRef = useRef<MapViewMode | null>(null);
 
   const driveModeUi = navigationStarted && viewMode === "drive";
   /** NWS polygons + fetches follow the user’s NWS toggle everywhere (including drive — no auto-on). */
   const [savedDrawerOpen, setSavedDrawerOpen] = useState(false);
   const [bypassBusy, setBypassBusy] = useState(false);
   const [trafficBypassCompare, setTrafficBypassCompare] = useState<TrafficBypassCompareState | null>(null);
+  const trafficBypassCompareRef = useRef<TrafficBypassCompareState | null>(null);
+  trafficBypassCompareRef.current = trafficBypassCompare;
   const [driveApproachDismissedIds, setDriveApproachDismissedIds] = useState(() => new Set<string>());
   const [demoPlaybackAlongM, setDemoPlaybackAlongM] = useState<number | null>(null);
   const [offRouteSevere, setOffRouteSevere] = useState(false);
@@ -582,7 +588,7 @@ export default function App() {
   /** Which A/B/C slot is highlighted in route view (0..n-1). Separate from slot 0 so the cycle can reach all legs. */
   const [previewLegIndex, setPreviewLegIndex] = useState(0);
 
-  /** Matches Mapbox dark-v11 window — stronger chrome borders when the basemap is night. */
+  /** Matches Mapbox night basemap window — stronger chrome borders when the basemap is night. */
   const [basemapNight, setBasemapNight] = useState(() => !isMapBasemapDaytime());
   useEffect(() => {
     const sync = () => setBasemapNight(!isMapBasemapDaytime());
@@ -2921,19 +2927,26 @@ export default function App() {
     [plan.routes, planRouteIds]
   );
 
-  const handleTrafficBypassComparePick = useCallback(
-    (id: "r-a" | "r-b" | "r-c") => {
-      handlePromoteRouteToPrimary(id);
-      setTrafficBypassCompare(null);
-      setViewMode("drive");
-      setFitTrigger((n) => n + 1);
-    },
-    [handlePromoteRouteToPrimary]
-  );
+  const handleTrafficBypassCompareSelect = useCallback((id: "r-a" | "r-b" | "r-c") => {
+    setTrafficBypassCompare((prev) => (prev ? { ...prev, selectedLeg: id } : null));
+  }, []);
+
+  const handleTrafficBypassCompareConfirm = useCallback(() => {
+    const prev = trafficBypassCompareRef.current;
+    const id = prev?.selectedLeg;
+    if (!id) return;
+    handlePromoteRouteToPrimary(id);
+    setTrafficBypassCompare(null);
+    viewModeBeforeTrafficBypassRef.current = null;
+    setViewMode("drive");
+    setFitTrigger((n) => n + 1);
+  }, [handlePromoteRouteToPrimary]);
 
   const handleTrafficBypassCompareCancel = useCallback(() => {
     setTrafficBypassCompare(null);
-    setViewMode("drive");
+    const restore = viewModeBeforeTrafficBypassRef.current;
+    viewModeBeforeTrafficBypassRef.current = null;
+    setViewMode(restore ?? "drive");
     setFitTrigger((n) => n + 1);
   }, []);
 
@@ -2952,6 +2965,28 @@ export default function App() {
   const resetDemoPlaybackAlongRoute = useCallback(() => {
     setDemoPlaybackAlongM(null);
   }, []);
+
+  /** `?demo=bypass`: open A/B/C compare without Mapbox — uses current plan lines for map flags only. */
+  const openDemoTrafficBypassCompareMock = useCallback(() => {
+    if (!demoBypassTrafficJamPlus || !navigationStarted) return;
+    if (trafficBypassCompareRef.current) return;
+    const gr = guidanceRoute;
+    if (!gr?.geometry?.length) return;
+    viewModeBeforeTrafficBypassRef.current = viewMode;
+    const base = Math.max(8, Math.round(gr.baseEtaMinutes ?? 30));
+    setTrafficBypassCompare({
+      headline: "Demo: mock bypass compare (no network)",
+      etaA: base,
+      etaB: Math.max(6, base - 4),
+      etaC: Math.max(6, base - 2),
+      hasB: true,
+      hasC: true,
+      confidence: "medium",
+      selectedLeg: null,
+    });
+    setViewMode("topdown");
+    setFitTrigger((n) => n + 1);
+  }, [demoBypassTrafficJamPlus, navigationStarted, guidanceRoute, viewMode]);
 
   const handleGo = () => {
     const chosen = orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? primaryRouteId;
@@ -3070,7 +3105,10 @@ export default function App() {
 
   const handleTrafficBypassFromHere = useCallback(async () => {
     if (!isPlus) return;
-    if (!env.mapboxToken || !userLngLat || !destLngLat || !guidanceRoute?.geometry?.length) return;
+    const originLngLat =
+      demoBypassTrafficJamPlus && effectiveUserLngLat ? effectiveUserLngLat : userLngLat;
+    if (!env.mapboxToken || !originLngLat || !destLngLat || !guidanceRoute?.geometry?.length) return;
+    viewModeBeforeTrafficBypassRef.current = viewMode;
     const epochAtStart = routeGraphEpochRef.current;
     setBypassBusy(true);
     const geom = guidanceRoute.geometry;
@@ -3095,7 +3133,7 @@ export default function App() {
       const remainingPolyline = slicePolylineBetweenAlong(geom, Math.max(0, userAlongGuidanceM), totalM);
 
       const [fullRerouteP, surgicalP, liveAFromHereP] = await Promise.all([
-        fetchMapboxTrafficAlternatives(env.mapboxToken, userLngLat, destLngLat),
+        fetchMapboxTrafficAlternatives(env.mapboxToken, originLngLat, destLngLat),
         (async (): Promise<{
           geometry: LngLat[];
           baseEtaMinutes: number;
@@ -3142,6 +3180,7 @@ export default function App() {
         .sort((a, b) => a.durationMinutes - b.durationMinutes)[0];
 
       if (!bestFull && !surgicalP) {
+        viewModeBeforeTrafficBypassRef.current = null;
         setTapHint("No alternate routes available right now. Try again closer to the slowdown.");
         window.setTimeout(() => setTapHint(null), 6000);
         return;
@@ -3200,9 +3239,11 @@ export default function App() {
         hasB: Boolean(bestFull),
         hasC: Boolean(surgicalP),
         confidence: trafficBypassContext?.confidence ?? "medium",
+        selectedLeg: null,
       });
       setViewMode("topdown");
     } catch {
+      viewModeBeforeTrafficBypassRef.current = null;
       setTapHint("Bypass request failed.");
       window.setTimeout(() => setTapHint(null), 5000);
     } finally {
@@ -3212,11 +3253,14 @@ export default function App() {
     isPlus,
     env.mapboxToken,
     userLngLat,
+    effectiveUserLngLat,
+    demoBypassTrafficJamPlus,
     destLngLat,
     guidanceRoute,
     routeImpactsForUi,
     userAlongGuidanceM,
     trafficBypassContext,
+    viewMode,
   ]);
 
   /** Stop navigation and clear the trip (single “cancel everything” control). */
@@ -3462,7 +3506,9 @@ export default function App() {
     <div
       className={`app-shell nav-fullmap${navigationStarted && viewMode === "drive" ? " nav-drive-ui" : ""}${
         basemapNight ? " app-shell--basemap-night" : ""
-      }${settingLandscapeSideHand === "left" ? " app-shell--landscape-hand-left" : ""}`}
+      }${settingLandscapeSideHand === "left" ? " app-shell--landscape-hand-left" : ""}${
+        radarMapOverlayOn && radarFrameUtcSec != null ? " nav-radar-frame-time-visible" : ""
+      }`}
     >
       {import.meta.env.DEV ? (
         <div
@@ -3522,9 +3568,10 @@ export default function App() {
             stormBrowseBoundsReporting={false}
             onStormBrowseBoundsChange={undefined}
             trafficBypassCompareCallouts={trafficBypassCompareCallouts}
+            trafficBypassCompareSelectedRouteId={trafficBypassCompare?.selectedLeg ?? null}
             onTrafficBypassCompareFlagPick={
               trafficBypassCompare
-                ? (id) => handleTrafficBypassComparePick(id as "r-a" | "r-b" | "r-c")
+                ? (id) => handleTrafficBypassCompareSelect(id as "r-a" | "r-b" | "r-c")
                 : undefined
             }
             activityTrailGeoJson={activityTrailGeoJsonForMap}
@@ -3910,8 +3957,10 @@ export default function App() {
         {demoBypassTrafficJamPlus && driveModeUi && navigationStarted && (
           <div className="nav-demo-bypass-banner" role="status" aria-live="polite">
             <span className="nav-demo-bypass-banner__text">
-              Plus demo: URL <code>?demo=bypass</code> simulates heavy delay so Traffic bypass is offered. Advance steps the
-              puck along your route (replay); Reset returns to live GPS.
+              Plus demo: add <code>?demo=bypass</code> to the URL. That injects heavy corridor delay so the Traffic bypass
+              control appears (needs Road detail + Traffic on, same as production). <strong>Advance</strong> moves the puck
+              along the route; live bypass uses that position. <strong>Mock compare</strong> skips Mapbox and only tests the
+              A/B/C panel + map flags on your current lines.
             </span>
             <div className="nav-demo-bypass-banner__actions">
               <button type="button" className="nav-demo-bypass-banner__btn" onClick={advanceDemoPlaybackAlongRoute}>
@@ -3919,6 +3968,14 @@ export default function App() {
               </button>
               <button type="button" className="nav-demo-bypass-banner__btn" onClick={resetDemoPlaybackAlongRoute}>
                 Reset puck
+              </button>
+              <button
+                type="button"
+                className="nav-demo-bypass-banner__btn"
+                onClick={openDemoTrafficBypassCompareMock}
+                disabled={Boolean(trafficBypassCompare)}
+              >
+                Mock compare
               </button>
             </div>
           </div>
@@ -3934,7 +3991,9 @@ export default function App() {
               hasB={trafficBypassCompare.hasB}
               hasC={trafficBypassCompare.hasC}
               confidence={trafficBypassCompare.confidence}
-              onPick={handleTrafficBypassComparePick}
+              selectedLeg={trafficBypassCompare.selectedLeg}
+              onSelect={handleTrafficBypassCompareSelect}
+              onConfirm={handleTrafficBypassCompareConfirm}
               onCancel={handleTrafficBypassCompareCancel}
             />
           )}

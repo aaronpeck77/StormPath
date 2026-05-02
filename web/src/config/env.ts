@@ -33,7 +33,9 @@ export function getWebEnv() {
     privacyPolicyUrl: (import.meta.env.VITE_PRIVACY_POLICY_URL as string | undefined)?.trim() ?? "",
     termsUrl: (import.meta.env.VITE_TERMS_URL as string | undefined)?.trim() ?? "",
     supportUrl: (import.meta.env.VITE_SUPPORT_URL as string | undefined)?.trim() || "/support.html",
-    supportEmail: (import.meta.env.VITE_SUPPORT_EMAIL as string | undefined)?.trim() ?? "",
+    /** Default inbox when `VITE_SUPPORT_EMAIL` is unset (override in `.env` / host env if needed). */
+    supportEmail:
+      (import.meta.env.VITE_SUPPORT_EMAIL as string | undefined)?.trim() || "stormpath@yahoo.com",
     upgradeUrl: (import.meta.env.VITE_UPGRADE_URL as string | undefined)?.trim() ?? "",
     manageSubscriptionUrl:
       (import.meta.env.VITE_MANAGE_SUBSCRIPTION_URL as string | undefined)?.trim() ||

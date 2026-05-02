@@ -517,7 +517,7 @@ export function AboutSheet({
                 type="button"
                 className="about-sheet__upgrade-link about-sheet__btn"
                 disabled={!supportEmail}
-                title={supportEmail ? `Email ${supportEmail}` : "Set VITE_SUPPORT_EMAIL to enable"}
+                title={supportEmail ? `Email ${supportEmail}` : "Support email not configured"}
                 onClick={() => {
                   if (!supportEmail) return;
                   const subject = encodeURIComponent(`StormPath support (${__APP_VERSION__})`);
@@ -536,7 +536,7 @@ export function AboutSheet({
                   Sends to <strong>{supportEmail}</strong> through your default email app.
                 </>
               ) : (
-                <>Support email not set (add VITE_SUPPORT_EMAIL).</>
+                <>Support email not configured for this build.</>
               )}
             </p>
           </section>

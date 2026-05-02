@@ -580,25 +580,6 @@ export function StormAdvisoryBar({
     >
       <div className="storm-advisory-bar__head">
         <div className="storm-advisory-bar__head-leading">
-          <button
-            type="button"
-            className="storm-advisory-bar__collapse-btn"
-            onPointerDownCapture={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onBarExpandedChange(false);
-            }}
-            aria-expanded={true}
-            aria-controls="storm-advisory-panel"
-            title={basicNavAdvisoryMode ? "Close status bar" : "Close advisory"}
-            aria-label={basicNavAdvisoryMode ? "Close status bar" : "Close advisory"}
-          >
-            <span className="storm-advisory-bar__collapse-icon storm-advisory-bar__collapse-icon--narrow">Done</span>
-            <span className="storm-advisory-bar__collapse-icon storm-advisory-bar__collapse-icon--wide" aria-hidden>
-              ◀
-            </span>
-          </button>
           <div className="storm-advisory-bar__head-title-stack">
             <span className="storm-advisory-bar__title">{basicNavAdvisoryMode ? "Status" : "Advisory"}</span>
             {peekBadge != null && peekBadge > 0 && (
@@ -624,6 +605,25 @@ export function StormAdvisoryBar({
             </label>
           </div>
         )}
+        <button
+          type="button"
+          className="storm-advisory-bar__collapse-btn"
+          onPointerDownCapture={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onBarExpandedChange(false);
+          }}
+          aria-expanded={true}
+          aria-controls="storm-advisory-panel"
+          title={basicNavAdvisoryMode ? "Close status bar" : "Close advisory"}
+          aria-label={basicNavAdvisoryMode ? "Close status bar" : "Close advisory"}
+        >
+          <span className="storm-advisory-bar__collapse-icon storm-advisory-bar__collapse-icon--narrow">Done</span>
+          <span className="storm-advisory-bar__collapse-icon storm-advisory-bar__collapse-icon--wide" aria-hidden>
+            ◀
+          </span>
+        </button>
       </div>
 
       {basicNavAdvisoryMode && (

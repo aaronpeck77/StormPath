@@ -423,7 +423,13 @@
   --nav-dock-above-safe: 164px;
   /* Drive view uses a shorter bottom stack; let the progress rail extend lower. */
   --nav-dock-above-safe-current: var(--nav-dock-above-safe);
-  /* Shorter unrotated strip width = shorter vertical bar; clears about row + radar clock on the right */
+  /*
+   * Progress rail foot: inset from viewport bottom so the strip ends just above the bottom chrome.
+   * Planning (route / map): clears address + search row. Drive: shorter stack (no address bar) → longer rail.
+   */
+  /* From viewport bottom to strip foot: toolbar + chrome gap + margin above the address row (tune if overlap). */
+  --nav-progress-rail-foot-inset: 134px;
+  /* Shorter unrotated strip width = shorter vertical bar; legacy trim used in map fit padding */
   --nav-progress-strip-bottom-trim: 68px;
   /* Room under the command bar for Mapbox logo/© (controls use z-index above the stack; strip can stay thin). */
   --attribution-strip-h: 18px;
@@ -446,6 +452,13 @@
 
 .app-shell.nav-fullmap.nav-drive-ui {
   --nav-dock-above-safe-current: 132px;
+  /* Drive: compass/about + ETA toolbar — must clear the bottom trip bar (was too short; rail overlapped ETA strip). */
+  --nav-progress-rail-foot-inset: 78px;
+}
+
+/* Radar mosaic clock in the about row — needs more clearance above the address pill + progress rail foot */
+.app-shell.nav-fullmap.nav-radar-frame-time-visible:not(.nav-drive-ui) {
+  --nav-progress-rail-foot-inset: 156px;
 }
 
 /* About — own row above address; left-aligned with search + route below */
@@ -2186,13 +2199,12 @@
   gap: 6px;
 }
 
-/* Right edge: column 2 — below top stack, full remaining height to above bottom dock */
+/* Right edge: column 2 — fill map band; foot stays var(--nav-progress-rail-foot-inset) above bottom chrome */
 .nav-route-progress-rail {
   grid-column: 2;
   grid-row: 2;
   justify-self: end;
-  /* Start at top of map band (just under hazard row); stretch made the strip sit mid-map */
-  align-self: start;
+  align-self: stretch;
   width: 56px;
   min-width: 48px;
   max-width: 64px;
@@ -2202,13 +2214,13 @@
   justify-content: stretch;
   /* Inset from the physical right bezel — was flush against the edge */
   padding-right: max(14px, calc(10px + env(safe-area-inset-right)));
-  padding-bottom: calc(var(--nav-dock-above-safe-current, var(--nav-dock-above-safe)) + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--nav-progress-rail-foot-inset, 134px) + env(safe-area-inset-bottom));
   box-sizing: border-box;
   pointer-events: none;
 }
 
 .nav-route-progress-rail__inner {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   min-height: 0;
   width: 100%;
   position: relative;
@@ -2221,6 +2233,9 @@
   padding-top: 2px;
   overflow: visible;
   pointer-events: auto;
+  /* Strip length = this box height; 100cqh sizes the rotated bar to the rail column */
+  container-type: size;
+  container-name: progress-rail;
 }
 
 /* Callouts open: keep rail width — cluster is position:absolute so it never steals space from the strip */
@@ -2274,11 +2289,12 @@
   flex-shrink: 0;
 }
 
-/* When panel is open, park ⧉ on the panel’s top-left so it doesn’t sit between panel and strip */
+/* When panel is open, park ⧉ on the panel’s top-right (same side as closed state next to the strip) */
 .route-progress-callout-toggle--docked {
   position: absolute;
   top: 4px;
-  left: 4px;
+  right: 4px;
+  left: auto;
   z-index: 8;
 }
 
@@ -2435,7 +2451,6 @@
   max-width: 100%;
 }
 
-/* Side layout: do not stretch the strip’s layout box to full rail height — rotation + flex-grow looked “low” */
 .nav-route-progress-rail__inner > .route-progress-strip--side {
   flex: 0 0 auto;
   align-self: flex-end;
@@ -2673,7 +2688,7 @@
 .storm-advisory-bar--expanded .storm-advisory-bar__head {
   flex-direction: row;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 10px;
   flex-wrap: wrap;
 }
@@ -2711,6 +2726,11 @@
   padding-top: 0;
   border-top: none;
   width: auto;
+}
+
+/* Done / collapse — trailing edge (thumb reach); title + toggles stay left */
+.storm-advisory-bar--expanded .storm-advisory-bar__collapse-btn {
+  margin-left: auto;
 }
 
 .storm-advisory-bar--expanded .storm-advisory-bar__title {
@@ -3866,41 +3886,26 @@
 }
 
 /*
- * Drive rail: pivot at top-right (red / destination cap). -90° hangs the bar *down* from that corner;
- * 90° sent it the other way. Unrotated width = vertical span (dvh, not cqh).
- * --nav-progress-strip-bottom-trim lifts the foot to ~top of .map-about-row so radar time doesn’t overlap.
+ * Drive rail: pivot at top-right. -90° hangs the bar down. Unrotated `width` = vertical span after rotate.
+ * Do NOT cap with 200px — that limited the bar to ~2.5" tall. Use full rail column height (100cqh).
  */
 .nav-route-progress-rail .route-progress-strip--side {
-  /*
-   * Trim the foot so the strip just clears the route-select row (the highest
-   * item that can cover the bar). The full dock-above-safe stack includes the
-   * About row (small "i" button, left-aligned, safe to overlay) → so we only
-   * subtract ~40 px from the trim to reclaim that About row's vertical slot
-   * for the bar. Result: strip ends just above the top of the route-select /
-   * search row, not above the whole bottom chrome.
-   */
-  width: min(
-    86dvh,
-    calc(
-      100dvh - 200px
-        - max(
-          var(--nav-progress-strip-bottom-trim, 68px),
-          calc(var(--nav-dock-above-safe-current, var(--nav-dock-above-safe, 164px)) - 40px)
-        )
-    )
-  );
-  max-width: min(
-    86dvh,
-    calc(
-      100dvh - 200px
-        - max(
-          var(--nav-progress-strip-bottom-trim, 68px),
-          calc(var(--nav-dock-above-safe-current, var(--nav-dock-above-safe, 164px)) - 40px)
-        )
-    )
-  );
+  width: 100cqh;
+  max-width: none;
   transform: rotate(-90deg);
   transform-origin: right top;
+}
+
+@supports not (container-type: size) {
+  .nav-route-progress-rail .route-progress-strip--side {
+    width: min(
+      88dvh,
+      calc(
+        100dvh - var(--nav-progress-rail-foot-inset, 134px) - max(88px, env(safe-area-inset-top, 0px)) - 8px
+      )
+    );
+    max-width: none;
+  }
 }
 
 .nav-route-progress-rail .route-progress-strip--side .route-progress-strip__track-wrap {
@@ -7183,10 +7188,16 @@
     --nav-dock-above-safe-current: var(--nav-dock-above-safe);
     /* Match home-indicator inset only — avoids an extra empty band under the toolbar + attribution. */
     --nav-bottom-reserved: env(safe-area-inset-bottom, 0px);
+    --nav-progress-rail-foot-inset: 124px;
   }
 
   .app-shell.nav-fullmap.nav-drive-ui {
     --nav-dock-above-safe-current: 122px;
+    --nav-progress-rail-foot-inset: 72px;
+  }
+
+  .app-shell.nav-fullmap.nav-radar-frame-time-visible:not(.nav-drive-ui) {
+    --nav-progress-rail-foot-inset: 144px;
   }
 
   .nav-bottom-stack {
@@ -7207,11 +7218,6 @@
     bottom: env(safe-area-inset-bottom, 0px) !important;
     /* Progress rail still needs inset; “My location” moved into bottom chrome */
     right: calc(64px + max(6px, env(safe-area-inset-right)) + 8px) !important;
-  }
-
-  /* Trip progress rail: ends above the bottom chrome stack. */
-  .nav-route-progress-rail {
-    padding-bottom: calc(var(--nav-dock-above-safe-current, var(--nav-dock-above-safe)) + env(safe-area-inset-bottom));
   }
 
   .nav-bottom-toolbar {
@@ -7976,6 +7982,20 @@
   background: rgba(255, 255, 255, 0.16);
 }
 
+.traffic-bypass-compare__hint {
+  margin: 0 0 8px;
+  padding: 0 2px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #94a3b8;
+}
+
+.traffic-bypass-compare__hint strong {
+  color: #e2e8f0;
+  font-weight: 800;
+}
+
 .traffic-bypass-compare__grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -8084,6 +8104,40 @@
 .traffic-bypass-compare__card-delta {
   font-weight: 700;
   color: #cbd5e1;
+}
+
+.traffic-bypass-compare__card--selected {
+  box-shadow: inset 0 0 0 2px rgba(248, 250, 252, 0.9), 0 0 0 1px rgba(248, 250, 252, 0.35);
+}
+
+.traffic-bypass-compare__footer {
+  margin-top: 8px;
+}
+
+.traffic-bypass-compare__confirm {
+  appearance: none;
+  width: 100%;
+  border: 1px solid rgba(96, 165, 250, 0.55);
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.35), rgba(37, 99, 235, 0.28));
+  color: #f8fafc;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.traffic-bypass-compare__confirm:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.48), rgba(37, 99, 235, 0.4));
+  border-color: rgba(147, 197, 253, 0.75);
+}
+
+.traffic-bypass-compare__confirm:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
 }
 
 /* Narrow phones: stack vertically so each card stays readable */
@@ -8206,6 +8260,11 @@
   color: #fde047;
 }
 
+.map-bypass-compare-flag--selected {
+  border-color: rgba(248, 250, 252, 0.88);
+  box-shadow: 0 0 0 2px rgba(248, 250, 252, 0.4), 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+
 /*
  * Landscape / side view — portrait unchanged.
  * Sideways “T”: vertical progress on the far edge; turn + NWS + roads share one short top band (like portrait, denser);
@@ -8268,10 +8327,12 @@
     padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
   }
 
-  .app-shell.nav-fullmap .nav-route-progress-rail .route-progress-strip--side {
-    width: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 6px);
-    max-width: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 6px);
+  /* Drive: bottom ETA strip still spans the gutter — use foot inset, not the landscape “minimal” padding. */
+  .app-shell.nav-fullmap.nav-drive-ui .nav-route-progress-rail {
+    padding-bottom: calc(var(--nav-progress-rail-foot-inset) + env(safe-area-inset-bottom, 0px));
   }
+
+  /* Strip length: same 100cqh as portrait — inner is sized by stretched rail column. */
 
   /* ── Right-handed (default): full-height rail left; top chrome only row 1 of map column (T top) ── */
   .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-drive-overlay-stack {

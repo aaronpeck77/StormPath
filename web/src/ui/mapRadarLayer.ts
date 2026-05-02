@@ -1,4 +1,4 @@
-import type { Map, RasterTileSource } from "mapbox-gl";
+import type { Map, MapSourceDataEvent, RasterTileSource } from "mapbox-gl";
 import { RAINVIEWER_RADAR_MAX_ZOOM } from "../services/rainViewerRadar";
 
 /** Legacy single-buffer ids (removed when using dual buffer). */
@@ -20,7 +20,7 @@ export const RAINVIEWER_RADAR_VISIBLE_OPACITY = 0.62;
  * Crossfade duration between dual raster layers (ms). Uses layer opacity, not Mapbox tile fade,
  * so per-tile fade is set to 0 on both layers.
  */
-export const RAINVIEWER_RADAR_CROSSFADE_MS = 720;
+export const RAINVIEWER_RADAR_CROSSFADE_MS = 380;
 
 /** Legacy: crossfade when only one source and tile URLs change (unused by animated dual path). */
 export const RAINVIEWER_RASTER_FADE_MS = 520;
@@ -141,7 +141,7 @@ function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
-/** After setTiles, wait until Mapbox finishes fetching (or timeout). */
+/** After setTiles, wait until Mapbox finishes fetching (or timeout). Uses `sourcedata` for earlier resolve than `idle` alone. */
 export function waitForRainViewerSideLoaded(
   map: Map,
   which: "a" | "b",
@@ -154,20 +154,26 @@ export function waitForRainViewerSideLoaded(
       if (finished) return;
       finished = true;
       map.off("idle", onIdle);
+      map.off("sourcedata", onSourceData);
       clearTimeout(t);
       resolve();
     };
-    const onIdle = () => {
+    const tryResolve = () => {
       try {
         if (map.getSource(sourceId) && map.isSourceLoaded(sourceId)) cleanup();
       } catch {
         cleanup();
       }
     };
+    const onIdle = () => tryResolve();
+    const onSourceData = (e: MapSourceDataEvent) => {
+      if (e.sourceId === sourceId) tryResolve();
+    };
     const t = setTimeout(cleanup, timeoutMs);
     map.on("idle", onIdle);
+    map.on("sourcedata", onSourceData);
     map.triggerRepaint();
-    queueMicrotask(onIdle);
+    queueMicrotask(tryResolve);
   });
 }
 
