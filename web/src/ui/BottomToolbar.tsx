@@ -147,6 +147,7 @@ export function BottomToolbar({
             className="nav-bottom-bypass-chip__btn"
             disabled={bypassBusy}
             onClick={onTrafficBypass}
+            title="Compare alternate routes"
           >
             {bypassBusy ? "Bypass…" : "Traffic bypass"}
           </button>

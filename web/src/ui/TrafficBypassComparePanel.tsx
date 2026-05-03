@@ -93,7 +93,7 @@ export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps)
 
   return (
     <div
-      className="traffic-bypass-compare traffic-bypass-compare--compact"
+      className="traffic-bypass-compare"
       role="dialog"
       aria-modal="true"
       aria-label="Traffic bypass options"
@@ -113,12 +113,7 @@ export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps)
           ×
         </button>
       </div>
-      <p className="traffic-bypass-compare__hint">
-        {"Pick "}
-        <strong>A</strong>, <strong>B</strong>, or <strong>C</strong>, then tap <strong>Return to drive</strong> to use
-        that line and close the map compare.
-      </p>
-      <div className="traffic-bypass-compare__grid" role="list">
+      <div className="traffic-bypass-compare__grid" role="list" aria-label="A, B, or C — then confirm">
         {options.map((opt) => (
           <button
             key={opt.id}

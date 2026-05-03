@@ -75,7 +75,7 @@ import { formatRouteDistanceMi, routeConsiderationSummary } from "./nav/routeSum
 import { buildDriveRouteAheadFromImpacts } from "./nav/driveRouteAhead";
 import {
   approachBannerShowsBypass,
-  pickDriveApproachBannerImpact,
+  pickDriveApproachBanner,
 } from "./nav/driveHazardApproachPreview";
 import { computeTrafficBypassOffer, pickTrafficBypassAnchorImpact } from "./nav/trafficBypassOffer";
 import { unifiedTrafficNarrative } from "./nav/trafficNarrative";
@@ -544,6 +544,10 @@ export default function App() {
   trafficBypassCompareRef.current = trafficBypassCompare;
   const [driveApproachDismissedIds, setDriveApproachDismissedIds] = useState(() => new Set<string>());
   const [demoPlaybackAlongM, setDemoPlaybackAlongM] = useState<number | null>(null);
+  /** When true, demo puck glides along the active leg at ~posted limit speed (`?demo=bypass` + Plus). */
+  const [demoPlaybackPlaying, setDemoPlaybackPlaying] = useState(false);
+  const demoPlaybackAlongRef = useRef<number | null>(null);
+  demoPlaybackAlongRef.current = demoPlaybackAlongM;
   const [offRouteSevere, setOffRouteSevere] = useState(false);
   /** Hysteresis: latched true until lateral drops below exit threshold (avoids flapping at one distance). */
   const offRouteLatchedRef = useRef(false);
@@ -2118,6 +2122,50 @@ export default function App() {
 
   const postedMph = estimatePostedSpeedMph(speedMph, turnSteps, activeTurnIndex);
 
+  /** Cruise demo puck along the active route polyline at ~posted speed (see `toggleDemoPlaybackPlaying`). */
+  useEffect(() => {
+    if (!demoPlaybackPlaying || !demoBypassTrafficJamPlus || !navigationStarted) return;
+    const g = guidanceRoute?.geometry;
+    if (!g?.length) {
+      setDemoPlaybackPlaying(false);
+      return;
+    }
+    const totalM = polylineLengthMeters(g);
+    if (totalM < 2) {
+      setDemoPlaybackPlaying(false);
+      return;
+    }
+    const mph = postedMph > 0 ? postedMph : 35;
+    const mPerSec = (mph * 1609.344) / 3600;
+    let last = performance.now();
+    let raf = 0;
+    const step = (now: number) => {
+      const dtSec = Math.min(0.28, Math.max(0, (now - last) / 1000));
+      last = now;
+      const prev = demoPlaybackAlongRef.current;
+      const cur =
+        prev ??
+        (userLngLatRef.current ? closestAlongRouteMeters(userLngLatRef.current, g).alongMeters : totalM * 0.12);
+      const next = Math.min(totalM - 0.5, cur + mPerSec * dtSec);
+      demoPlaybackAlongRef.current = next;
+      setDemoPlaybackAlongM(next);
+      if (next >= totalM - 0.55) {
+        setDemoPlaybackPlaying(false);
+        return;
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [
+    demoPlaybackPlaying,
+    demoBypassTrafficJamPlus,
+    navigationStarted,
+    guidanceRoute?.geometry,
+    guidanceRouteId,
+    postedMph,
+  ]);
+
   const progressStripAlerts = useMemo(() => augmentAlertsForProgressStrip(routeAlerts), [routeAlerts]);
 
   /** Map line highlights: same corridor layout as the progress strip (traffic, weather, road notices). */
@@ -2184,9 +2232,9 @@ export default function App() {
     navigationStarted &&
     Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
 
-  const driveApproachBannerImpact = useMemo(() => {
+  const driveApproachBannerPick = useMemo(() => {
     if (!hazardApproachAlertsActive) return null;
-    return pickDriveApproachBannerImpact(routeImpactsForUi, driveApproachDismissedIds);
+    return pickDriveApproachBanner(routeImpactsForUi, driveApproachDismissedIds);
   }, [hazardApproachAlertsActive, routeImpactsForUi, driveApproachDismissedIds]);
 
   useEffect(() => {
@@ -2897,6 +2945,7 @@ export default function App() {
     setBypassBusy(false);
     setRouting(false);
     setTrafficBypassCompare(null);
+    setDemoPlaybackPlaying(false);
     setDemoPlaybackAlongM(null);
     void clearActiveTripCache();
   };
@@ -3042,19 +3091,15 @@ export default function App() {
     setFitTrigger((n) => n + 1);
   }, []);
 
-  const advanceDemoPlaybackAlongRoute = useCallback(() => {
+  const toggleDemoPlaybackPlaying = useCallback(() => {
     if (!demoBypassTrafficJamPlus || !guidanceRoute?.geometry?.length) return;
     const g = guidanceRoute.geometry;
-    const totalM = polylineLengthMeters(g);
-    if (totalM < 2) return;
-    const pos = userLngLatRef.current;
-    const cur =
-      demoPlaybackAlongM ??
-      (pos ? closestAlongRouteMeters(pos, g).alongMeters : totalM * 0.12);
-    setDemoPlaybackAlongM(Math.min(totalM - 0.5, cur + 420));
-  }, [demoBypassTrafficJamPlus, guidanceRoute?.geometry, demoPlaybackAlongM]);
+    if (polylineLengthMeters(g) < 2) return;
+    setDemoPlaybackPlaying((p) => !p);
+  }, [demoBypassTrafficJamPlus, guidanceRoute]);
 
   const resetDemoPlaybackAlongRoute = useCallback(() => {
+    setDemoPlaybackPlaying(false);
     setDemoPlaybackAlongM(null);
   }, []);
 
@@ -3736,22 +3781,28 @@ export default function App() {
                       <ActivityStatusPill busyLabel={activityBusyLabel} />
                     </div>
                   ) : null}
-                  {hazardApproachAlertsActive && driveApproachBannerImpact ? (
+                  {hazardApproachAlertsActive && driveApproachBannerPick ? (
                     <DriveHazardApproachBanner
-                      impact={driveApproachBannerImpact}
+                      phase={driveApproachBannerPick.phase}
+                      impact={driveApproachBannerPick.impact}
                       onDismiss={() => {
-                        const id = driveApproachBannerImpact.id;
-                        setDriveApproachDismissedIds((prev) => new Set(prev).add(id));
+                        const id = driveApproachBannerPick.impact.id;
+                        const key = driveApproachBannerPick.phase === "early" ? `e:${id}` : `n:${id}`;
+                        setDriveApproachDismissedIds((prev) => new Set(prev).add(key));
                       }}
                       onMoreInfo={handleDriveApproachMoreInfo}
                       onBypass={
-                        showTrafficBypassCta && approachBannerShowsBypass(driveApproachBannerImpact)
+                        driveApproachBannerPick.phase === "near" &&
+                        showTrafficBypassCta &&
+                        approachBannerShowsBypass(driveApproachBannerPick.impact)
                           ? () => void handleTrafficBypassFromHere()
                           : undefined
                       }
                       bypassBusy={bypassBusy}
                       showBypass={Boolean(
-                        showTrafficBypassCta && approachBannerShowsBypass(driveApproachBannerImpact)
+                        driveApproachBannerPick.phase === "near" &&
+                          showTrafficBypassCta &&
+                          approachBannerShowsBypass(driveApproachBannerPick.impact)
                       )}
                     />
                   ) : null}
@@ -4048,29 +4099,33 @@ export default function App() {
         )}
 
         {demoBypassTrafficJamPlus && driveModeUi && navigationStarted && (
-          <div className="nav-demo-bypass-banner" role="status" aria-live="polite">
-            <span className="nav-demo-bypass-banner__text">
-              Plus demo: add <code>?demo=bypass</code> to the URL. That injects heavy corridor delay so the Traffic bypass
-              control appears (needs Road detail + Traffic on, same as production). <strong>Advance</strong> moves the puck
-              along the route; live bypass uses that position. <strong>Mock compare</strong> skips Mapbox and only tests the
-              A/B/C panel + map flags on your current lines.
-            </span>
-            <div className="nav-demo-bypass-banner__actions">
-              <button type="button" className="nav-demo-bypass-banner__btn" onClick={advanceDemoPlaybackAlongRoute}>
-                Advance
-              </button>
-              <button type="button" className="nav-demo-bypass-banner__btn" onClick={resetDemoPlaybackAlongRoute}>
-                Reset puck
-              </button>
-              <button
-                type="button"
-                className="nav-demo-bypass-banner__btn"
-                onClick={openDemoTrafficBypassCompareMock}
-                disabled={Boolean(trafficBypassCompare)}
-              >
-                Mock compare
-              </button>
+          <div className="nav-demo-bypass-banner" role="region" aria-label="Plus traffic bypass demo tools">
+            <div className="nav-demo-bypass-banner__top">
+              <span className="nav-demo-bypass-banner__short">Demo</span>
+              <div className="nav-demo-bypass-banner__actions">
+                <button type="button" className="nav-demo-bypass-banner__btn" onClick={toggleDemoPlaybackPlaying}>
+                  {demoPlaybackPlaying ? "Pause" : "Play"}
+                </button>
+                <button type="button" className="nav-demo-bypass-banner__btn" onClick={resetDemoPlaybackAlongRoute}>
+                  Reset puck
+                </button>
+                <button
+                  type="button"
+                  className="nav-demo-bypass-banner__btn"
+                  onClick={openDemoTrafficBypassCompareMock}
+                  disabled={Boolean(trafficBypassCompare)}
+                >
+                  Mock compare
+                </button>
+              </div>
             </div>
+            <details className="nav-demo-bypass-banner__details">
+              <summary className="nav-demo-bypass-banner__summary">Demo notes</summary>
+              <div className="nav-demo-bypass-banner__text">
+                URL flag <code>?demo=bypass</code>. <strong>Play</strong> moves the puck at estimated MPH from turn text.{" "}
+                <strong>Mock compare</strong> = A/B/C UI only, no Mapbox bypass fetch.
+              </div>
+            </details>
           </div>
         )}
 
