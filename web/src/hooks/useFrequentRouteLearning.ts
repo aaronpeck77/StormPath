@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LngLat } from "../nav/types";
-import { tryAppendActivitySample } from "../frequentRoutes/activitySamples";
+import {
+  ACTIVITY_MIN_SAMPLES_RANK,
+  rankFrequentClustersByTrailCentroid,
+  tryAppendActivitySample,
+} from "../frequentRoutes/activitySamples";
 import {
   loadFrequentRouteClusters,
   mergeTripIntoClusters,
@@ -101,10 +105,13 @@ export function useFrequentRouteLearning(opts: {
     []
   );
 
-  const suggestedClusters = clusters
-    .filter((c) => c.count >= 2)
-    .sort((a, b) => b.lastSeen - a.lastSeen)
-    .slice(0, 8);
+  const suggestedClusters = useMemo(() => {
+    const base = clusters
+      .filter((c) => c.count >= 2)
+      .sort((a, b) => b.lastSeen - a.lastSeen)
+      .slice(0, 8);
+    return rankFrequentClustersByTrailCentroid(base, opts.payUnlocked && learnEnabled, ACTIVITY_MIN_SAMPLES_RANK);
+  }, [clusters, learnEnabled, opts.payUnlocked]);
 
   return {
     suggestedClusters,

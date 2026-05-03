@@ -1,5 +1,6 @@
 import { haversineMeters } from "../nav/routeGeometry";
 import type { LngLat } from "../nav/types";
+import type { FrequentRouteCluster } from "./types";
 
 const STORAGE_KEY = "stormpath-activity-samples-v1";
 /** Throttle: at most one stored dot per interval while moving (keeps months of history under localStorage limits). */
@@ -7,6 +8,11 @@ const MIN_INTERVAL_MS = 3 * 60 * 1000;
 /** Ignore micro-moves between samples */
 const MIN_MOVE_M = 75;
 const MAX_SAMPLES = 22_000;
+
+/** Enough trail dots to frame the map in route planning (no destination yet). */
+export const ACTIVITY_MIN_SAMPLES_PLANNING_MAP = 12;
+/** Enough dots to bias search / frequent-route ordering toward your usual area. */
+export const ACTIVITY_MIN_SAMPLES_RANK = 8;
 
 export const ACTIVITY_SAMPLES_UPDATED_EVENT = "stormpath-activity-samples-updated";
 
@@ -146,4 +152,90 @@ export function activitySamplesToGeoJson(samples: ActivitySample[]): GeoJSON.Fea
       },
     })),
   };
+}
+
+/** Mean lat/lng — fine for local driving regions. */
+function trailCentroidLngLat(minSamples: number): LngLat | null {
+  const list = loadRaw();
+  if (list.length < minSamples) return null;
+  let slng = 0;
+  let slat = 0;
+  for (const s of list) {
+    slng += s.lng;
+    slat += s.lat;
+  }
+  const n = list.length;
+  return [slng / n, slat / n];
+}
+
+/**
+ * SW / NE corners for map.fitBounds when framing “where you usually drive” (planning, no route).
+ * Returns null until there are enough dots.
+ */
+export function getActivityTrailPlanningBounds(
+  minSamples: number
+): [[number, number], [number, number]] | null {
+  const list = loadRaw();
+  if (list.length < minSamples) return null;
+  let minLng = Infinity;
+  let minLat = Infinity;
+  let maxLng = -Infinity;
+  let maxLat = -Infinity;
+  for (const s of list) {
+    if (s.lng < minLng) minLng = s.lng;
+    if (s.lat < minLat) minLat = s.lat;
+    if (s.lng > maxLng) maxLng = s.lng;
+    if (s.lat > maxLat) maxLat = s.lat;
+  }
+  const spanLng = maxLng - minLng;
+  const spanLat = maxLat - minLat;
+  const padLng = Math.max(0.018, spanLng * 0.12);
+  const padLat = Math.max(0.015, spanLat * 0.12);
+  return [
+    [minLng - padLng, minLat - padLat],
+    [maxLng + padLng, maxLat + padLat],
+  ];
+}
+
+/**
+ * Re-rank search suggestions so places nearer your activity centroid appear first (ties keep input order).
+ * No-op if learning trail is too sparse or `enabled` is false.
+ */
+export function rankSearchSuggestionsByTrailCentroid<T extends { lngLat: LngLat }>(
+  items: T[],
+  enabled: boolean,
+  minTrailSamples = 8
+): T[] {
+  if (!enabled || items.length <= 1) return items;
+  const c = trailCentroidLngLat(minTrailSamples);
+  if (!c) return items;
+  return [...items]
+    .map((item, i) => ({
+      item,
+      i,
+      d: haversineMeters(item.lngLat, c),
+    }))
+    .sort((a, b) => (a.d !== b.d ? a.d - b.d : a.i - b.i))
+    .map((x) => x.item);
+}
+
+/**
+ * After sorting frequent clusters by recency, nudge order so clusters in your usual area float up when `lastSeen` ties.
+ */
+export function rankFrequentClustersByTrailCentroid(
+  clusters: FrequentRouteCluster[],
+  enabled: boolean,
+  minTrailSamples = 8
+): FrequentRouteCluster[] {
+  if (!enabled || clusters.length <= 1) return clusters;
+  const c = trailCentroidLngLat(minTrailSamples);
+  if (!c) return clusters;
+  const mid = (cl: FrequentRouteCluster): LngLat => [
+    (cl.centerStart[0]! + cl.centerEnd[0]!) / 2,
+    (cl.centerStart[1]! + cl.centerEnd[1]!) / 2,
+  ];
+  return [...clusters].sort((a, b) => {
+    if (b.lastSeen !== a.lastSeen) return b.lastSeen - a.lastSeen;
+    return haversineMeters(mid(a), c) - haversineMeters(mid(b), c);
+  });
 }

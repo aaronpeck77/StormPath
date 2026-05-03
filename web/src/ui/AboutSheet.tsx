@@ -81,6 +81,11 @@ export function AboutSheet({
     setSupportNote("");
   }, [open]);
 
+  const [activityTrailClearStep, setActivityTrailClearStep] = useState<"idle" | "confirm">("idle");
+  useEffect(() => {
+    if (!open) setActivityTrailClearStep("idle");
+  }, [open]);
+
   if (!open) return null;
 
   const diagnosticsLines = [
@@ -117,14 +122,10 @@ export function AboutSheet({
         <dl className="about-sheet__meta about-sheet__panel">
           <div className="about-sheet__meta-row">
             <dt>Version</dt>
-            <dd title="From package.json at build time">
+            <dd title="From package.json at build time — bump web/package.json to confirm you’re on the latest bundle">
               {__APP_VERSION__}
               {dev ? " (development)" : ""}
             </dd>
-          </div>
-          <div className="about-sheet__meta-row">
-            <dt>Build</dt>
-            <dd title="Build timestamp from Vite define (__BUILD_ID__)">{__BUILD_ID__}</dd>
           </div>
           <div className="about-sheet__meta-row">
             <dt>Plan</dt>
@@ -241,14 +242,16 @@ export function AboutSheet({
             <section className="about-sheet__panel">
               <h3 className="about-sheet__h3">Activity trail</h3>
               <p className="about-sheet__p">
-                Sparse GPS dots (≈every few min while moving) when <strong>Learn repeated trips</strong> is on — map
-                overlay in About. Separate from commute polyline detection.
+                With <strong>Learn repeated trips</strong> on, StormPath saves sparse GPS dots (about every few minutes
+                while you move) to learn where you usually drive. That helps <strong>frame the map</strong> around your
+                area, <strong>rank search suggestions</strong> nearer places you know, and show the cyan overlay below.
+                Trip detection for “frequent routes” uses a separate path.
               </p>
               <details className="about-sheet__details about-sheet__details--inline">
                 <summary>How it works</summary>
                 <p className="about-sheet__p">
-                  Saved ★ → Frequent routes must have learning enabled. Dots accrue only with the app open; older points
-                  drop when storage is full (~22k).
+                  Dots accrue only with the app open; older points drop when storage is full (~22k). Frequent-route rows
+                  in Saved still need similar drives at least twice.
                 </p>
               </details>
               <dl className="about-sheet__meta">
@@ -276,13 +279,45 @@ export function AboutSheet({
                   onChange={(e) => activityTrail.onShowOnMapChange(e.target.checked)}
                 />
                 <span>
-                  <strong>Show dots on map</strong> (cyan, zoom in to see density)
+                  <strong>Show activity dots on map</strong> — cyan trail of where you’ve been (zoom in to see density)
                 </span>
               </label>
-              <div className="about-sheet__upgrade-actions">
-                <button type="button" className="about-sheet__upgrade-link" onClick={() => activityTrail.onClear()}>
-                  Clear all trail data on this device
-                </button>
+              <div className="about-sheet__trail-clear">
+                {activityTrailClearStep === "idle" ? (
+                  <button
+                    type="button"
+                    className="about-sheet__trail-clear-btn"
+                    onClick={() => setActivityTrailClearStep("confirm")}
+                  >
+                    Clear all trail data on this device
+                  </button>
+                ) : (
+                  <div className="about-sheet__trail-clear-panel" role="alert">
+                    <p className="about-sheet__trail-clear-text">
+                      Erase all saved GPS dots on this device? Map framing and search ranking that use your trail will
+                      reset. This can’t be undone.
+                    </p>
+                    <div className="about-sheet__trail-clear-row">
+                      <button
+                        type="button"
+                        className="about-sheet__trail-clear-cancel"
+                        onClick={() => setActivityTrailClearStep("idle")}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="about-sheet__trail-clear-confirm-btn"
+                        onClick={() => {
+                          activityTrail.onClear();
+                          setActivityTrailClearStep("idle");
+                        }}
+                      >
+                        Erase trail data
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
           )}

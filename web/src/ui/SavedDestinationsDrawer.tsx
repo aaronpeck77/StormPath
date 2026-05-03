@@ -189,7 +189,11 @@ export function SavedDestinationsDrawer({
                         checked={frequentRoutesLearnEnabled}
                         onChange={(e) => onFrequentRoutesLearnEnabled(e.target.checked)}
                       />
-                      <span>Learn repeated trips on this device</span>
+                      <span>
+                        <strong>Learn repeated trips</strong> on this device — detects similar drives for suggestions
+                        below, saves sparse GPS for your usual area (map framing + search ranking), optional cyan trail in
+                        About.
+                      </span>
                     </label>
                     <p className="saved-drawer-route-hint saved-drawer-route-hint--tight">
                       After you drive a similar path at least twice while the app is open, a row appears below. Learning pauses

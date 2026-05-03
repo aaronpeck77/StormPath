@@ -588,6 +588,10 @@ type Props = {
   onTrafficBypassCompareFlagPick?: (routeId: string) => void;
   /** Plus: sparse GPS dots over weeks/months (see About → Activity trail). */
   activityTrailGeoJson?: GeoJSON.FeatureCollection | null;
+  /**
+   * Plus + learn: SW/NE corners covering stored activity — with user position, frames route planning before a destination.
+   */
+  activityTrailPlanningBounds?: [[number, number], [number, number]] | null;
   /** Multi-result destination search: temporary pins until the user picks one. */
   searchPickMarkers?: { id: string; lngLat: LngLat; label: string }[] | null;
   onSearchPickMarkerClick?: (id: string) => void;
@@ -808,6 +812,7 @@ export function DriveMap({
   trafficBypassCompareSelectedRouteId = null,
   onTrafficBypassCompareFlagPick,
   activityTrailGeoJson = null,
+  activityTrailPlanningBounds = null,
   searchPickMarkers = null,
   onSearchPickMarkerClick,
   progressRailVisible = true,
@@ -2063,16 +2068,32 @@ export function DriveMap({
     if (!userLngLat || userExploringRef.current) return;
     if (routeEmptyPlanningRef.current) return;
     routeEmptyPlanningRef.current = true;
-    map.easeTo({
-      center: userLngLat,
-      zoom: regionalPlanningZoom(),
-      pitch: 0,
-      bearing: 0,
-      padding: ZERO_MAP_PADDING,
-      duration: 520,
-      essential: true,
-    });
-  }, [mapReady, viewMode, routes.length, userLngLat]);
+    const tb = activityTrailPlanningBounds;
+    if (tb) {
+      const b = new mapboxgl.LngLatBounds();
+      b.extend(userLngLat);
+      b.extend(tb[0]);
+      b.extend(tb[1]);
+      map.fitBounds(b, {
+        padding: 48,
+        maxZoom: 11.2,
+        duration: 520,
+        pitch: 0,
+        bearing: 0,
+        essential: true,
+      });
+    } else {
+      map.easeTo({
+        center: userLngLat,
+        zoom: regionalPlanningZoom(),
+        pitch: 0,
+        bearing: 0,
+        padding: ZERO_MAP_PADDING,
+        duration: 520,
+        essential: true,
+      });
+    }
+  }, [mapReady, viewMode, routes.length, userLngLat, activityTrailPlanningBounds]);
 
   useEffect(() => {
     const map = mapRef.current;

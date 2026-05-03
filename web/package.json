@@ -1,7 +1,7 @@
 {
   "name": "stormpath-web",
   "private": true,
-  "version": "0.7.36",
+  "version": "0.7.39",
   "type": "module",
   "engines": {
     "node": ">=20.0.0"
@@ -11,7 +11,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "cap:sync": "npx cap sync ios",
-    "build:ios": "npm run build && npx cap sync ios"
+    "sync:ios-version": "node scripts/sync-ios-version.mjs",
+    "build:ios": "npm run build && npm run sync:ios-version && npx cap sync ios"
   },
   "dependencies": {
     "@capacitor-community/keep-awake": "^8.0.1",

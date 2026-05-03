@@ -142,14 +142,24 @@ import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
 import { useFrequentRouteLearning } from "./hooks/useFrequentRouteLearning";
 import { isMapBasemapDaytime } from "./map/mapBasemapDaytime";
 import {
+  ACTIVITY_MIN_SAMPLES_PLANNING_MAP,
+  ACTIVITY_MIN_SAMPLES_RANK,
   ACTIVITY_SAMPLES_UPDATED_EVENT,
   activitySamplesToGeoJson,
   clearActivitySamples,
+  getActivityTrailPlanningBounds,
   getActivityTrailStats,
   loadActivitySamples,
+  rankSearchSuggestionsByTrailCentroid,
 } from "./frequentRoutes/activitySamples";
 import { BYPASS_HEAVY_DELAY_MINUTES } from "./nav/constants";
-import { clearActiveTripCache, saveActiveTripToCache } from "./tripCache";
+import {
+  clearActiveTripCache,
+  loadActiveTripFromCache,
+  MAX_TRIP_CACHE_AGE_MS,
+  saveActiveTripToCache,
+  isRestorableActiveTripEntry,
+} from "./tripCache";
 import { loadRecentSearchSuggestions, recordRecentSearch } from "./recentSearches";
 import {
   areaKeyFromLngLat,
@@ -307,6 +317,12 @@ export default function App() {
     window.addEventListener(ACTIVITY_SAMPLES_UPDATED_EVENT, on);
     return () => window.removeEventListener(ACTIVITY_SAMPLES_UPDATED_EVENT, on);
   }, []);
+
+  const rankSearchSuggestionsWithTrail = useCallback(
+    (items: SearchSuggestion[]) =>
+      rankSearchSuggestionsByTrailCentroid(items, Boolean(isPlus && learnEnabled), ACTIVITY_MIN_SAMPLES_RANK),
+    [isPlus, learnEnabled]
+  );
 
   /** Map (top-down) follow mode: a few zoom levels wider than route overview for corridor context. */
   const topdownZoomRef = useRef(11.75);
@@ -997,11 +1013,11 @@ export default function App() {
     setSearchEditing(true);
     const t = searchText.trim();
     if (isNarrowPhoneViewport() && t.length <= 1) {
-      setSuggestions(loadRecentSearchSuggestions());
+      setSuggestions(rankSearchSuggestionsWithTrail(loadRecentSearchSuggestions()));
     }
     setSuggestLoading(false);
     setAllowAutocomplete(true);
-  }, [searchText]);
+  }, [searchText, rankSearchSuggestionsWithTrail]);
 
   const handleSearchFieldEndEditing = useCallback(() => {
     setSearchEditing(false);
@@ -1039,13 +1055,13 @@ export default function App() {
     setSearchEditing(true);
     setSearchText("");
     if (isNarrowPhoneViewport()) {
-      setSuggestions(loadRecentSearchSuggestions());
+      setSuggestions(rankSearchSuggestionsWithTrail(loadRecentSearchSuggestions()));
     } else {
       setSuggestions([]);
     }
     setSuggestLoading(false);
     setAllowAutocomplete(true);
-  }, []);
+  }, [rankSearchSuggestionsWithTrail]);
 
   useEffect(
     () => () => {
@@ -1102,7 +1118,7 @@ export default function App() {
 
     if (q.length < 2) {
       if (narrow && searchEditing) {
-        setSuggestions(loadRecentSearchSuggestions());
+        setSuggestions(rankSearchSuggestionsWithTrail(loadRecentSearchSuggestions()));
         setSuggestLoading(false);
         return;
       }
@@ -1124,13 +1140,22 @@ export default function App() {
       const prox = userLngLatRef.current ?? undefined;
       void mapboxAutocomplete(q, env.mapboxToken, limit, prox).then((hits) => {
         if (seq !== searchAutocompleteSeqRef.current) return;
-        setSuggestions(hits.slice(0, limit));
+        setSuggestions(rankSearchSuggestionsWithTrail(hits.slice(0, limit)));
         setSuggestLoading(false);
       });
     }, 280);
     return () => window.clearTimeout(t);
     /* userLngLat omitted: GPS updates ~400ms would cancel this debounce and flash the list every tick. */
-  }, [searchText, env.mapboxToken, allowAutocomplete, searchExpanded, plan.routes.length, searchEditing]);
+  }, [
+    searchText,
+    env.mapboxToken,
+    allowAutocomplete,
+    searchExpanded,
+    plan.routes.length,
+    searchEditing,
+    rankSearchSuggestionsWithTrail,
+    activityTrailTick,
+  ]);
 
   const planRef = useRef(plan);
   planRef.current = plan;
@@ -1299,10 +1324,72 @@ export default function App() {
 
   const lastTripCacheSaveMsRef = useRef(0);
 
+  /** One-shot restore after reload / cold start — must run before relying on network for the same trip. */
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const entry = await loadActiveTripFromCache();
+      if (cancelled || !entry) return;
+      if (!isRestorableActiveTripEntry(entry)) {
+        void clearActiveTripCache();
+        return;
+      }
+      const ageMs = Date.now() - entry.savedAtMs;
+      if (!Number.isFinite(ageMs) || ageMs > MAX_TRIP_CACHE_AGE_MS || ageMs < -60_000) {
+        void clearActiveTripCache();
+        return;
+      }
+      let planNext = entry.plan;
+      if (!isPlus && planNext.routes.length > 2) {
+        planNext = { ...planNext, routes: planNext.routes.slice(0, 2) };
+      }
+      const planIds = planNext.routes.map((r) => r.id);
+      const slotNext = isFullSlotPermutation(entry.routeSlotOrder, planIds)
+        ? entry.routeSlotOrder
+        : reconcileSlotOrderWithPlan(entry.routeSlotOrder, planIds);
+      const nRoutes = planNext.routes.length;
+      const previewNext =
+        nRoutes > 0 ? Math.min(Math.max(0, entry.previewLegIndex), nRoutes - 1) : 0;
+      let viewNext = entry.viewMode;
+      if (!entry.navigationStarted && viewNext === "drive") {
+        viewNext = "route";
+      }
+      setPlan(planNext);
+      setDestLngLat(entry.destLngLat);
+      setDestinationLabel(entry.destinationLabel);
+      setSearchText(entry.destinationLabel);
+      setNavigationStarted(entry.navigationStarted);
+      setViewMode(viewNext);
+      setRouteSlotOrder(slotNext);
+      setPreviewLegIndex(previewNext);
+      setSearchExpanded(false);
+      setAllowAutocomplete(false);
+      setRouteError(null);
+      setSuggestLoading(false);
+      setSuggestions([]);
+      setFitTrigger((n) => n + 1);
+      lastTripCacheSaveMsRef.current = Date.now();
+    })();
+    return () => {
+      cancelled = true;
+    };
+    /* Restore once at boot; `isPlus` is intentionally first-paint only so tier overrides mid-session do not replay cache. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const ids = plan.routes.map((r) => r.id);
-    setRouteSlotOrder(ids);
-    setPreviewLegIndex(0);
+    if (!ids.length) return;
+    let resetPreview = false;
+    setRouteSlotOrder((prev) => {
+      if (isFullSlotPermutation(prev, ids)) return prev;
+      resetPreview = true;
+      return [...ids];
+    });
+    setPreviewLegIndex((prev) => {
+      if (resetPreview) return 0;
+      return Math.min(Math.max(0, prev), ids.length - 1);
+    });
   }, [planRoutesKey]);
 
   useEffect(() => {
@@ -2777,6 +2864,11 @@ export default function App() {
     };
   }, [isPlus, activityTrailMapOn, activityTrailTick]);
 
+  const activityTrailPlanningBounds = useMemo(() => {
+    if (!isPlus || !learnEnabled) return null;
+    return getActivityTrailPlanningBounds(ACTIVITY_MIN_SAMPLES_PLANNING_MAP);
+  }, [isPlus, learnEnabled, activityTrailTick]);
+
   const clearRoute = () => {
     routeGraphEpochRef.current += 1;
     routeMainFetchAbortRef.current?.abort();
@@ -3513,8 +3605,8 @@ export default function App() {
       {import.meta.env.DEV ? (
         <div
           className="stormpath-build-stamp"
-          title="If this text does not match the build your assistant just set, the page is stale — hard refresh or restart dev server."
-          aria-label={`StormPath build ${STORMPATH_CLIENT_BUILD}`}
+          title="From package.json. Bump web/package.json version and restart dev server if this didn’t change after your edit."
+          aria-label={`StormPath version ${STORMPATH_CLIENT_BUILD}`}
         >
           {STORMPATH_CLIENT_BUILD}
         </div>
@@ -3575,6 +3667,7 @@ export default function App() {
                 : undefined
             }
             activityTrailGeoJson={activityTrailGeoJsonForMap}
+            activityTrailPlanningBounds={activityTrailPlanningBounds}
             searchPickMarkers={searchPickMarkersForMap}
             onSearchPickMarkerClick={searchPickMarkersForMap ? handleSearchPickFromMap : undefined}
             progressRailVisible={navigationStarted && isPlus}
