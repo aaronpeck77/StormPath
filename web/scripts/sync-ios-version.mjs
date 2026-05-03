@@ -3,6 +3,10 @@
  * so TestFlight / Settings match the in-app semver from Vite (__APP_VERSION__).
  *
  * Build number = major*1_000_000 + minor*1000 + patch (monotonic with semver bumps).
+ *
+ * Important: iOS compares MARKETING_VERSION when offering TestFlight/App Store updates.
+ * If you ever shipped 1.0, do not ship 0.x next — testers on 1.0 will not see 0.x as an update
+ * (0.7 < 1.0). Bump to at least 1.0.1 (or 2.0.0) before the next upload.
  */
 import fs from "fs";
 import path from "path";
