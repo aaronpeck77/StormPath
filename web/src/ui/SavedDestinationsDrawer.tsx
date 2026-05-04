@@ -87,18 +87,20 @@ export function SavedDestinationsDrawer({
 
           <div className="saved-drawer-panes">
             <section className="saved-drawer-pane" aria-labelledby="saved-places-heading">
-              <div className="saved-drawer-pane__chrome">
-                <p id="saved-places-heading" className="saved-drawer-section-label">
-                  Places
-                </p>
-                {onSaveCurrent && currentDestLngLat && (
-                  <button type="button" className="saved-drawer-save-current" onClick={onSaveCurrent}>
-                    Save current destination
-                    {currentDestLabel ? ` (${currentDestLabel})` : ""}
-                  </button>
-                )}
-              </div>
-              <div className="saved-drawer-pane__scroll">
+              <div className="saved-drawer-pane__card">
+                <header className="saved-drawer-pane__chrome">
+                  <p id="saved-places-heading" className="saved-drawer-section-label">
+                    Places
+                  </p>
+                  <p className="saved-drawer-pane__kicker">Saved pins on the map — Go sets destination only.</p>
+                  {onSaveCurrent && currentDestLngLat && (
+                    <button type="button" className="saved-drawer-save-current" onClick={onSaveCurrent}>
+                      Save current destination
+                      {currentDestLabel ? ` (${currentDestLabel})` : ""}
+                    </button>
+                  )}
+                </header>
+                <div className="saved-drawer-pane__scroll" role="region" aria-label="Saved places list">
                 <ul className="saved-drawer-list saved-drawer-list--embedded">
                   {places.length === 0 && (
                     <li className="saved-drawer-empty">
@@ -110,16 +112,19 @@ export function SavedDestinationsDrawer({
                     <SavedRow key={p.id} place={p} onGo={onGo} onRename={onRename} onDelete={onDelete} />
                   ))}
                 </ul>
+                </div>
               </div>
             </section>
 
             <section className="saved-drawer-pane" aria-labelledby="saved-routes-heading">
-              <div className="saved-drawer-pane__chrome">
-                <p id="saved-routes-heading" className="saved-drawer-section-label">
-                  Saved routes
-                </p>
-              </div>
-              <div className="saved-drawer-pane__scroll">
+              <div className="saved-drawer-pane__card">
+                <header className="saved-drawer-pane__chrome">
+                  <p id="saved-routes-heading" className="saved-drawer-section-label">
+                    Saved routes
+                  </p>
+                  <p className="saved-drawer-pane__kicker">Full path kept — record or save from the map.</p>
+                </header>
+                <div className="saved-drawer-pane__scroll" role="region" aria-label="Saved routes and tools">
                 <p className="saved-drawer-route-hint saved-drawer-route-hint--pane-top">
                   Save the line on the map, or record a drive when the router won’t follow your road. Use{" "}
                   <strong>Rev</strong> on a saved route to flip direction.
@@ -156,17 +161,26 @@ export function SavedDestinationsDrawer({
                     />
                   ))}
                 </ul>
+                </div>
               </div>
             </section>
 
             <section className="saved-drawer-pane" aria-labelledby="saved-frequent-heading">
-              <div className="saved-drawer-pane__chrome saved-drawer-pane__chrome--inline">
-                <p id="saved-frequent-heading" className="saved-drawer-section-label">
-                  Frequent routes
-                </p>
-                <span className="saved-drawer-pane__badge">Plus</span>
-              </div>
-              <div className="saved-drawer-pane__scroll saved-drawer-pane__scroll--frequent">
+              <div className="saved-drawer-pane__card">
+                <header className="saved-drawer-pane__chrome saved-drawer-pane__chrome--inline">
+                  <div className="saved-drawer-pane__title-stack">
+                    <p id="saved-frequent-heading" className="saved-drawer-section-label">
+                      Frequent routes
+                    </p>
+                    <p className="saved-drawer-pane__kicker">Repeat trips detected on this device.</p>
+                  </div>
+                  <span className="saved-drawer-pane__badge">Plus</span>
+                </header>
+                <div
+                  className="saved-drawer-pane__scroll saved-drawer-pane__scroll--frequent"
+                  role="region"
+                  aria-label="Frequent route learning and suggestions"
+                >
                 {!payFrequentRoutes && (
                   <div className="saved-drawer-frequent-upsell">
                     <p className="saved-drawer-frequent-lead">
@@ -207,23 +221,27 @@ export function SavedDestinationsDrawer({
                         </li>
                       )}
                       {frequentRouteSuggestions.map((c) => (
-                        <li key={c.id} className="saved-drawer-row saved-drawer-row--learn">
-                          <span className="saved-drawer-name">
-                            Similar trip · {c.count}×
-                            <span className="saved-drawer-learn-meta">
-                              Last: {new Date(c.lastSeen).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                        <li key={c.id} className="saved-drawer-row saved-drawer-row--tile saved-drawer-row--learn">
+                          <div className="saved-drawer-tile-head">
+                            <span className="saved-drawer-tile-title">Similar trip · {c.count}×</span>
+                            <p className="saved-drawer-tile-sub saved-drawer-learn-meta">
+                              Last:{" "}
+                              {new Date(c.lastSeen).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                            </p>
+                          </div>
+                          <button type="button" className="saved-drawer-tile-primary" onClick={() => onTryFrequentRoute(c)}>
+                            Use suggestion
+                          </button>
+                          <div className="saved-drawer-tile-meta" role="group" aria-label="Suggestion actions">
+                            <button type="button" className="saved-drawer-tile-link" onClick={() => onSaveFrequentRoute(c)}>
+                              Save as route
+                            </button>
+                            <span className="saved-drawer-tile-meta-sep" aria-hidden>
+                              ·
                             </span>
-                          </span>
-                          <div className="saved-drawer-actions">
-                            <button type="button" className="saved-drawer-mini" onClick={() => onTryFrequentRoute(c)}>
-                              Use
-                            </button>
-                            <button type="button" className="saved-drawer-mini" onClick={() => onSaveFrequentRoute(c)}>
-                              Save
-                            </button>
                             <button
                               type="button"
-                              className="saved-drawer-mini danger"
+                              className="saved-drawer-tile-link danger"
                               onClick={() => onDismissFrequentRoute(c.id)}
                             >
                               Dismiss
@@ -234,6 +252,7 @@ export function SavedDestinationsDrawer({
                     </ul>
                   </>
                 )}
+                </div>
               </div>
             </section>
           </div>
@@ -241,6 +260,15 @@ export function SavedDestinationsDrawer({
       </div>
     </>
   );
+}
+
+/** One-line coordinates (no geocode — data is only lat/lng). */
+function formatLngLatLine(lngLat: LngLat): string {
+  const lng = lngLat[0]!;
+  const lat = lngLat[1]!;
+  const ns = lat >= 0 ? "N" : "S";
+  const ew = lng >= 0 ? "E" : "W";
+  return `${Math.abs(lat).toFixed(4)}° ${ns}, ${Math.abs(lng).toFixed(4)}° ${ew}`;
 }
 
 function SavedRow({
@@ -267,42 +295,63 @@ function SavedRow({
   };
 
   return (
-    <li className="saved-drawer-row">
+    <li className="saved-drawer-row saved-drawer-row--tile">
       {editing ? (
-        <div className="saved-drawer-edit">
-          <input
-            className="saved-drawer-input"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commit();
-              if (e.key === "Escape") {
-                setDraft(place.name);
-                setEditing(false);
-              }
-            }}
-            aria-label="Place name"
-          />
-          <button type="button" className="saved-drawer-mini" onClick={commit}>
-            OK
+        <div className="saved-drawer-tile-edit">
+          <label className="saved-drawer-tile-label" htmlFor={`saved-place-edit-${place.id}`}>
+            Place name
+          </label>
+          <div className="saved-drawer-edit saved-drawer-edit--tile">
+            <input
+              id={`saved-place-edit-${place.id}`}
+              className="saved-drawer-input"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commit();
+                if (e.key === "Escape") {
+                  setDraft(place.name);
+                  setEditing(false);
+                }
+              }}
+              aria-label="Place name"
+            />
+            <button type="button" className="saved-drawer-mini" onClick={commit}>
+              Save
+            </button>
+          </div>
+          <button type="button" className="saved-drawer-tile-link" onClick={() => setEditing(false)}>
+            Cancel
           </button>
         </div>
       ) : (
-        <span className="saved-drawer-name">{place.name}</span>
-      )}
-      <div className="saved-drawer-actions">
-        <button type="button" className="saved-drawer-mini" onClick={() => onGo(place.lngLat, place.name)}>
-          Go
-        </button>
-        {!editing && (
-          <button type="button" className="saved-drawer-mini" onClick={() => setEditing(true)}>
-            Rename
+        <>
+          <div className="saved-drawer-tile-head">
+            <span className="saved-drawer-tile-title">{place.name}</span>
+            <p className="saved-drawer-tile-coords" title="Saved pin location (no street lookup)">
+              {formatLngLatLine(place.lngLat)}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="saved-drawer-tile-primary"
+            onClick={() => onGo(place.lngLat, place.name)}
+          >
+            Set destination and plan route
           </button>
-        )}
-        <button type="button" className="saved-drawer-mini danger" onClick={() => onDelete(place.id)}>
-          Delete
-        </button>
-      </div>
+          <div className="saved-drawer-tile-meta" role="group" aria-label="Place actions">
+            <button type="button" className="saved-drawer-tile-link" onClick={() => setEditing(true)}>
+              Edit name
+            </button>
+            <span className="saved-drawer-tile-meta-sep" aria-hidden>
+              ·
+            </span>
+            <button type="button" className="saved-drawer-tile-link danger" onClick={() => onDelete(place.id)}>
+              Remove
+            </button>
+          </div>
+        </>
+      )}
     </li>
   );
 }
@@ -320,6 +369,7 @@ function SavedRouteRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(route.name);
+  const nPts = route.geometry.length;
 
   useEffect(() => {
     setDraft(route.name);
@@ -331,50 +381,73 @@ function SavedRouteRow({
   };
 
   return (
-    <li className="saved-drawer-row">
+    <li className="saved-drawer-row saved-drawer-row--tile">
       {editing ? (
-        <div className="saved-drawer-edit">
-          <input
-            className="saved-drawer-input"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commit();
-              if (e.key === "Escape") {
-                setDraft(route.name);
-                setEditing(false);
-              }
-            }}
-            aria-label="Route name"
-          />
-          <button type="button" className="saved-drawer-mini" onClick={commit}>
-            OK
+        <div className="saved-drawer-tile-edit">
+          <label className="saved-drawer-tile-label" htmlFor={`saved-route-edit-${route.id}`}>
+            Route label
+          </label>
+          <div className="saved-drawer-edit saved-drawer-edit--tile">
+            <input
+              id={`saved-route-edit-${route.id}`}
+              className="saved-drawer-input"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commit();
+                if (e.key === "Escape") {
+                  setDraft(route.name);
+                  setEditing(false);
+                }
+              }}
+              aria-label="Route name"
+            />
+            <button type="button" className="saved-drawer-mini" onClick={commit}>
+              Save
+            </button>
+          </div>
+          <button type="button" className="saved-drawer-tile-link" onClick={() => setEditing(false)}>
+            Cancel
           </button>
         </div>
       ) : (
-        <span className="saved-drawer-name">{route.name}</span>
-      )}
-      <div className="saved-drawer-actions">
-        <button type="button" className="saved-drawer-mini" onClick={() => onGo(route)}>
-          Use
-        </button>
-        <button
-          type="button"
-          className="saved-drawer-mini"
-          title="Same path, opposite direction — destination becomes the original start"
-          onClick={() => onGo(route, { reverse: true })}
-        >
-          Rev
-        </button>
-        {!editing && (
-          <button type="button" className="saved-drawer-mini" onClick={() => setEditing(true)}>
-            Rename
+        <>
+          <div className="saved-drawer-tile-head">
+            <span className="saved-drawer-tile-title">{route.name}</span>
+            <p className="saved-drawer-tile-sub">
+              To <strong>{route.destinationLabel}</strong>
+              {nPts >= 2 ? (
+                <span className="saved-drawer-tile-sub-meta"> · {nPts.toLocaleString()} points on path</span>
+              ) : null}
+            </p>
+            <p className="saved-drawer-tile-coords" title="Route end coordinates">
+              {formatLngLatLine(route.destinationLngLat)}
+            </p>
+          </div>
+          <button type="button" className="saved-drawer-tile-primary" onClick={() => onGo(route)}>
+            Use this saved route
           </button>
-        )}
-        <button type="button" className="saved-drawer-mini danger" onClick={() => onDelete(route.id)}>
-          Delete
-        </button>
-      </div>
+          <button
+            type="button"
+            className="saved-drawer-tile-secondary"
+            title="Same shape on the map, opposite direction — the old destination becomes your start."
+            onClick={() => onGo(route, { reverse: true })}
+          >
+            Reverse direction
+          </button>
+          <div className="saved-drawer-tile-meta" role="group" aria-label="Route actions">
+            <button type="button" className="saved-drawer-tile-link" onClick={() => setEditing(true)}>
+              Edit name
+            </button>
+            <span className="saved-drawer-tile-meta-sep" aria-hidden>
+              ·
+            </span>
+            <button type="button" className="saved-drawer-tile-link danger" onClick={() => onDelete(route.id)}>
+              Remove
+            </button>
+          </div>
+        </>
+      )}
     </li>
   );
 }

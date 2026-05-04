@@ -2297,10 +2297,22 @@ export default function App() {
     if (chunkItems.length > 0) return chunkItems;
 
     const pt = totalM > 0 ? Math.min(1, Math.max(0, userAlongGuidanceM / totalM)) : 0.5;
-    const b = buildSimpleCalloutBlock("Route conditions", [
-      "No weather samples yet — set OpenWeather key to load corridor conditions.",
-      "Road and traffic still come from Mapbox / route notices when enabled.",
-    ]);
+    const hasStormUi =
+      Boolean(stormProgressBands?.length) ||
+      Boolean(stormCorridorAlerts?.length) ||
+      Boolean(progressStripAlerts?.length);
+    const b = buildSimpleCalloutBlock(
+      "Route conditions",
+      hasStormUi
+        ? [
+            "NWS / storm corridor is active on the map and strip below.",
+            "OpenWeather (optional) adds sampled corridor headlines when a key is configured.",
+          ]
+        : [
+            "No OpenWeather corridor samples yet — add a key for sampled conditions along the line.",
+            "Road and traffic still come from Mapbox / route notices when enabled.",
+          ]
+    );
     return [
       {
         key: "callout-fallback",

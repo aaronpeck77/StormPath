@@ -7059,40 +7059,79 @@
   padding-right: 2px;
 }
 
-/* Three equal bands: Places | Saved routes | Frequent (Plus) — each with its own scroll body */
+/* Three bands: Places | Saved routes | Frequent — each pane is a card (header + scroll well). */
 .saved-drawer-panes {
   flex: 1 1 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .saved-drawer-pane {
   flex: 1 1 0;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+}
+
+/* Card shell: fixed chrome row + one scroll body so the three areas read as separate panels */
+.saved-drawer-pane__card {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  /* Clear frame around each of the three scroll areas */
+  border: 2px solid rgba(138, 180, 248, 0.28);
+  background: linear-gradient(180deg, rgba(30, 32, 38, 0.95) 0%, rgba(12, 13, 16, 0.92) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 2px 12px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
 }
 
 .saved-drawer-pane__chrome {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  padding: 10px 12px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.28);
 }
 
 .saved-drawer-pane__chrome .saved-drawer-section-label {
   margin: 0;
 }
 
+.saved-drawer-pane__kicker {
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: #7c8490;
+  letter-spacing: 0.01em;
+}
+
+.saved-drawer-pane__title-stack {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .saved-drawer-pane__chrome--inline {
   flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-wrap: nowrap;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 6px 12px;
+  gap: 10px 14px;
+}
+
+.saved-drawer-pane__chrome--inline .saved-drawer-pane__badge {
+  margin-top: 2px;
 }
 
 .saved-drawer-pane__badge {
@@ -7111,15 +7150,35 @@
 
 .saved-drawer-pane__scroll {
   flex: 1 1 0;
-  min-height: 64px;
+  min-height: 72px;
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.24);
-  padding: 8px 10px 10px;
+  border: none;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.22);
+  padding: 10px 12px 12px;
   box-sizing: border-box;
+  /* Scroll well: inset strip so it reads as distinct from the header */
+  box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.35);
+}
+
+@media (min-width: 720px) and (min-height: 420px) {
+  .saved-drawer-panes {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .saved-drawer-pane {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  .saved-drawer {
+    height: min(82vh, 640px);
+    max-height: min(82vh, 640px);
+  }
 }
 
 .saved-drawer-pane__scroll .saved-drawer-save-current {
@@ -7245,16 +7304,11 @@
   margin-bottom: 6px;
 }
 
-.saved-drawer-row--learn {
-  padding: 8px 0;
-}
-
 .saved-drawer-learn-meta {
-  display: block;
-  margin-top: 2px;
-  font-size: 0.65rem;
+  margin: 0;
+  font-size: 0.68rem;
   font-weight: 500;
-  color: #64748b;
+  color: #7c8490;
   letter-spacing: 0.02em;
 }
 
@@ -7302,6 +7356,148 @@
   gap: 8px;
   padding: 10px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Bordered tile for each saved place / route / suggestion row */
+.saved-drawer-row--tile {
+  padding: 0;
+  margin-bottom: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(8, 9, 11, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+  border-bottom: none;
+}
+
+.saved-drawer-row--tile:last-child {
+  margin-bottom: 0;
+}
+
+.saved-drawer-tile-head {
+  padding: 10px 12px 0;
+}
+
+.saved-drawer-tile-title {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #e8eaed;
+  line-height: 1.25;
+}
+
+.saved-drawer-tile-sub {
+  margin: 6px 0 0;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: #9aa0a6;
+}
+
+.saved-drawer-tile-sub strong {
+  color: #c4c7cc;
+  font-weight: 650;
+}
+
+.saved-drawer-tile-sub-meta {
+  font-weight: 500;
+  color: #7c8490;
+}
+
+.saved-drawer-tile-coords {
+  margin: 4px 0 0;
+  font-size: 0.68rem;
+  font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  letter-spacing: 0.02em;
+  color: #7c8aa0;
+  line-height: 1.35;
+}
+
+.saved-drawer-tile-primary {
+  display: block;
+  width: calc(100% - 24px);
+  margin: 10px 12px 0;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #7aa7f3, #5b8def);
+  color: #0a0b0d;
+  font-size: 0.8rem;
+  font-weight: 750;
+  cursor: pointer;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.saved-drawer-tile-primary:active {
+  transform: scale(0.99);
+}
+
+.saved-drawer-tile-secondary {
+  display: block;
+  width: calc(100% - 24px);
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(138, 180, 248, 0.35);
+  background: rgba(138, 180, 248, 0.08);
+  color: #a8c7fa;
+  font-size: 0.76rem;
+  font-weight: 650;
+  cursor: pointer;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.saved-drawer-tile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 4px;
+  padding: 10px 12px 12px;
+  margin-top: 2px;
+}
+
+.saved-drawer-tile-meta-sep {
+  color: #5c6370;
+  font-size: 0.75rem;
+  user-select: none;
+}
+
+.saved-drawer-tile-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #8ab4f8;
+  font-size: 0.76rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.saved-drawer-tile-link.danger {
+  color: #f87171;
+}
+
+.saved-drawer-tile-edit {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.saved-drawer-tile-label {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7c8490;
+}
+
+.saved-drawer-edit--tile {
+  width: 100%;
 }
 
 .saved-drawer-name {

@@ -43,7 +43,8 @@ export function unifiedTrafficNarrative(
   const c = leg?.congestionSummary ?? "unknown";
   const rem = remainingTripMin;
   const sig = isSignificantTrafficDelay(d, rem);
-  const heavySegmentsButMildTotal = (c === "heavy" || c === "severe") && d < 5;
+  /** Mapbox can label the corridor "severe" while whole-route delay is tiny — only use patchy-copy when delay is meaningful. */
+  const heavySegmentsButMildTotal = (c === "heavy" || c === "severe") && d >= 1 && d < 5;
 
   if (!hasLive || !leg) {
     return {
@@ -107,7 +108,8 @@ export function unifiedTrafficNarrative(
       advisoryHeadline: "Patchy slowdowns — small overall delay",
       advisorySubtext: `+${delayBit} min vs free-flow (whole route). ${congHint} on the line.`,
       showAdvisoryDelayRow: true,
-      progressStartLine: `+${delayBit} min — ${c === "severe" ? "severe" : "heavy"} in places`,
+      /* One factual line: delay + segment tone; avoid duplicating "severe" vs "small delay" in two places. */
+      progressStartLine: `+${delayBit} min — patchy congestion`,
       /* Avoid a map “jam ahead” pin when we only have route-wide delay + summary, no segment anchor. */
       shouldAddCorridorAlert: (d >= 0.08 || sig) && (hasSegmentAnchor || d >= 5),
       /* Short label if shown without headline; corridor UI uses advisoryHeadline for the title. */

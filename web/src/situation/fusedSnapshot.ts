@@ -34,7 +34,8 @@ export function buildFusedSnapshot(
       ? effectiveDelayMinutes(leg!.delayVsTypicalMinutes, leg!.congestionSummary)
       : 0;
     const radarIntensity = ow ? Math.min(1, Math.max(0, ow.precipHint)) : 0;
-    const forecastHeadline = ow?.headline ?? "No weather data (set OpenWeather key to sample along the route).";
+    /* Empty when OpenWeather is off — NWS/radar copy lives elsewhere; avoid implying "no weather" on the route. */
+    const forecastHeadline = ow?.headline?.trim() ?? "";
 
     const alongList = r.routeNoticeAlongMeters;
     const hazards = (r.routeNotices ?? []).map((summary, i) => {

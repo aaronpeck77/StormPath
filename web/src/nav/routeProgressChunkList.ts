@@ -182,8 +182,8 @@ export function buildRouteChunkCalloutList(opts: {
     } else if (segSamples.length > 0) {
       wxLines = segSamples.map((s) => compactWxHeadline(s.headline)).filter(Boolean);
     } else {
-      const fallback = wx?.headline?.trim() || fc || "No weather sample for this segment";
-      wxLines = [compactWxHeadline(fallback)];
+      const fallback = wx?.headline?.trim() || fc;
+      wxLines = fallback ? [compactWxHeadline(fallback)] : [];
     }
 
     const hzFull = hazardsInSegmentFull(slice?.hazards, startM, endM);
@@ -238,7 +238,9 @@ export function buildRouteChunkCalloutList(opts: {
 
     const wxBlock = limitWxLines(wxLines, 5, 96);
     const secondary = roadParts.length ? roadParts.join(" · ") : "";
-    const summary = secondary ? `${wxBlock}\n\n${squeezeForSummary(secondary, 140)}` : wxBlock;
+    const squeezed = secondary ? squeezeForSummary(secondary, 140) : "";
+    const summary =
+      wxBlock && squeezed ? `${wxBlock}\n\n${squeezed}` : wxBlock || squeezed || "…";
 
     const tooltipParts: string[] = [
       title,

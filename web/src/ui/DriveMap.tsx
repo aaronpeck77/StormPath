@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RouteAlert } from "../nav/routeAlerts";
 import type { LngLat, NavRoute } from "../nav/types";
 import type { SavedPlace } from "../nav/savedPlaces";
-import { closestPointOnPolyline } from "../nav/routeGeometry";
+import { closestPointOnPolyline, pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
 import { getWebEnv } from "../config/env";
 import {
   fetchRainViewerRadarFrames,
@@ -1322,6 +1322,11 @@ export function DriveMap({
     const map = mapRef.current;
     if (!map || !mapReady || !userLngLat) return;
 
+    /* While navigating, the RAF loop owns puck motion — skip so GPS ticks do not re-run flyTo logic (dev gets many re-renders). */
+    if (navigationStarted && puckMarkerRef.current) {
+      return;
+    }
+
     if (!puckMarkerRef.current) {
       puckMarkerRef.current = new mapboxgl.Marker({
         element: makePuckEl(),
@@ -1361,7 +1366,14 @@ export function DriveMap({
 
     let raf = 0;
     let lastTs = performance.now();
-    const OFF_LINE_SNAP_M = 95;
+    /** Hysteresis: snap in when close, stay snapped until clearly off-route — avoids jitter at the threshold. */
+    const SNAP_IN_M = 88;
+    const SNAP_OUT_M = 118;
+    let snapLatched = false;
+    let lastGeomKey = "";
+    let snapRouteTotalM = 0;
+    /** Low-pass `alongMeters` while snapped — closest-point slides along vertices every frame otherwise. */
+    let snappedAlongSmooth: number | null = null;
 
     // GPS fix history for constant-velocity interpolation between samples.
     // Instead of lurching toward each new raw fix, we lerp from prevFix→curFix
@@ -1402,19 +1414,54 @@ export function DriveMap({
           targetLat = curFix?.lat ?? t[1];
         }
 
-        // Snap to the route polyline when close enough.
+        // Snap to the route polyline when close enough (hysteresis reduces threshold flicker).
         const geom = puckSnapGeomRef.current;
-        if (geom) {
-          const snap = closestPointOnPolyline([targetLng, targetLat], geom);
-          if (snap.lateralMetersApprox < OFF_LINE_SNAP_M) {
-            targetLng = snap.lngLat[0]!;
-            targetLat = snap.lngLat[1]!;
+        if (geom && geom.length >= 2) {
+          const g0 = geom[0]!;
+          const geomKey = `${geom.length}:${g0[0].toFixed(5)},${g0[1].toFixed(5)}`;
+          if (geomKey !== lastGeomKey) {
+            lastGeomKey = geomKey;
+            snapLatched = false;
+            snappedAlongSmooth = null;
+            snapRouteTotalM = polylineLengthMeters(geom);
           }
+          const snap = closestPointOnPolyline([targetLng, targetLat], geom);
+          const latM = snap.lateralMetersApprox;
+          const applyAlongSmooth = (along: number) => {
+            const clamped = Math.max(0, Math.min(snapRouteTotalM, along));
+            const pt = pointAtAlongMeters(geom, clamped);
+            targetLng = pt[0]!;
+            targetLat = pt[1]!;
+          };
+          if (snapLatched) {
+            if (latM <= SNAP_OUT_M) {
+              const rawAlong = snap.alongMeters;
+              if (snappedAlongSmooth == null) snappedAlongSmooth = rawAlong;
+              else {
+                const alphaAlong = 1 - Math.exp(-dt / 0.24);
+                snappedAlongSmooth += (rawAlong - snappedAlongSmooth) * alphaAlong;
+              }
+              applyAlongSmooth(snappedAlongSmooth);
+            } else {
+              snapLatched = false;
+              snappedAlongSmooth = null;
+            }
+          } else if (latM < SNAP_IN_M) {
+            snapLatched = true;
+            snappedAlongSmooth = snap.alongMeters;
+            applyAlongSmooth(snappedAlongSmooth);
+          } else {
+            snappedAlongSmooth = null;
+          }
+        } else {
+          snapLatched = false;
+          snappedAlongSmooth = null;
         }
 
         // Tight exponential polish — the lerp above handles the coarse motion;
-        // this only irons out sub-frame residuals.
-        const blend = 1 - Math.exp(-dt / 0.07);
+        // Slightly slower blend while route-snapped to damp remaining sub-pixel noise.
+        const blendTc = snapLatched ? 0.11 : 0.07;
+        const blend = 1 - Math.exp(-dt / blendTc);
         const cur = marker.getLngLat();
         marker.setLngLat([
           cur.lng + (targetLng - cur.lng) * blend,
@@ -1470,8 +1517,11 @@ export function DriveMap({
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [navigationStarted, mapReady]);
+    /* Boolean(userLngLat): when nav starts before GPS / restore, first RAF run can bail (no marker).
+     * After the puck effect creates the marker, we must re-arm RAF without listing coords (avoids GPS jitter resets). */
+  }, [navigationStarted, mapReady, Boolean(userLngLat)]);
 
+  /* Omit userLngLat from deps — GPS ticks would re-run Mapbox marker alignment every frame and jitter the puck. */
   useEffect(() => {
     const marker = puckMarkerRef.current;
     if (!marker) return;
@@ -1485,7 +1535,7 @@ export function DriveMap({
     } catch {
       /* older mapbox */
     }
-  }, [navigationStarted, viewMode, mapReady, userLngLat]);
+  }, [navigationStarted, viewMode, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2315,9 +2365,29 @@ export function DriveMap({
       return;
     }
     let rafId = 0;
+    let lastSent: number | null = null;
+    let lastSentAt = 0;
+    const minIntervalMs = 110;
+    const minDeltaDeg = 0.4;
+    const smallestBearingDelta = (a: number, b: number) => {
+      let d = Math.abs(a - b) % 360;
+      if (d > 180) d = 360 - d;
+      return d;
+    };
     const push = () => {
       rafId = 0;
-      report(map.getBearing());
+      const deg = map.getBearing();
+      const now = performance.now();
+      if (
+        lastSent != null &&
+        smallestBearingDelta(deg, lastSent) < minDeltaDeg &&
+        now - lastSentAt < minIntervalMs
+      ) {
+        return;
+      }
+      lastSent = deg;
+      lastSentAt = now;
+      report(deg);
     };
     const schedule = () => {
       if (rafId) return;
