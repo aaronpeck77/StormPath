@@ -66,10 +66,7 @@ import {
   slicePolylineBetweenAlong,
 } from "./nav/routeGeometry";
 import { bannerPrimaryStepIndex } from "./nav/bannerPrimaryStep";
-import {
-  GUIDANCE_HOLD_LATERAL_MAX_M,
-  useAlongRouteMetersHeldWhenOffLine,
-} from "./nav/guidanceAlongHold";
+import { useAlongRouteMetersHeldWhenOffLine } from "./nav/guidanceAlongHold";
 import { activeTurnStepIndexAlong, turnStepAlongBounds } from "./nav/turnStepAlong";
 import { formatRouteDistanceMi, routeConsiderationSummary } from "./nav/routeSummary";
 import { buildDriveRouteAheadFromImpacts } from "./nav/driveRouteAhead";
@@ -624,8 +621,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const buildLabel = import.meta.env.DEV ? "dev (local)" : STORMPATH_CLIENT_BUILD;
     console.info(
-      `[stormpath boot] ${STORMPATH_CLIENT_BUILD}`,
+      `[stormpath boot] ${buildLabel}`,
       "tier:", tierLabel,
       "| mapboxToken:", env.mapboxToken ? "YES" : "NO",
       "| stormAdvisory:", env.stormAdvisoryEnabled,
@@ -1854,27 +1852,28 @@ export default function App() {
     if (!driveModeUi || !effectiveUserLngLat || !geometry || geometry.length < 2) {
       return null;
     }
-    /** Longer lookahead at highway speeds stabilizes tangent on straightaways (sparse vertices). */
+    /** Slightly shorter max lookahead than before — long chords across tight corners skewed tangent. */
     const lookAheadM = Math.min(
-      220,
-      Math.max(72, 72 + (speedMps != null && speedMps > 0 ? speedMps * 5.5 : 0))
+      155,
+      Math.max(42, 42 + (speedMps != null && speedMps > 0 ? speedMps * 4.5 : 0))
     );
-    const lateralOk =
-      closestAlongRouteMeters(effectiveUserLngLat, geometry).lateralMetersApprox <=
-      GUIDANCE_HOLD_LATERAL_MAX_M;
+    /** If GPS is this far from the point on the line at held progress, use live closest-point tangent. */
+    const OFF_ROUTE_FOR_CAMERA_TANGENT_M = 168;
 
+    const totalM = polylineLengthMeters(geometry);
     let b: number | null = null;
+
     /**
-     * While navigating *and* GPS is near the corridor, sample bearing from held along-route progress
-     * so we avoid closest-point flips onto a segment behind the vehicle.
-     * If lateral error is high (common on wide interstates), held {@link userAlongGuidanceM} stops
-     * advancing — sampling direction from that stale arc skews the camera vs the visible route; use
-     * live closest-point tangent ({@link bearingAlongRouteAhead}) instead.
+     * While navigating, prefer tangent from **held** along-route progress (same hold as ETA / strip).
+     * That avoids closest-point jumping onto parallel ramps / the wrong side of a fork, which flipped
+     * the camera. Only when the vehicle is clearly far from that anchor do we use live
+     * {@link bearingAlongRouteAhead}.
      */
-    if (navigationStarted && lateralOk && Number.isFinite(userAlongGuidanceM)) {
-      const totalM = polylineLengthMeters(geometry);
-      if (totalM > 1) {
-        const fromAlongM = Math.max(0, Math.min(totalM, userAlongGuidanceM));
+    if (navigationStarted && Number.isFinite(userAlongGuidanceM) && totalM > 1) {
+      const fromAlongM = Math.max(0, Math.min(totalM, userAlongGuidanceM));
+      const heldAnchor = pointAtAlongMeters(geometry, fromAlongM);
+      const distToHeld = haversineMeters(effectiveUserLngLat, heldAnchor);
+      if (distToHeld <= OFF_ROUTE_FOR_CAMERA_TANGENT_M) {
         const toAlongM = Math.min(totalM, fromAlongM + lookAheadM);
         const fromPt = pointAtAlongMeters(geometry, fromAlongM);
         const toPt = pointAtAlongMeters(geometry, Math.max(toAlongM, fromAlongM + 0.5));
@@ -1886,23 +1885,12 @@ export default function App() {
     if (b == null) {
       b = bearingAlongRouteAhead(effectiveUserLngLat, geometry, lookAheadM);
     }
-    // Guard: after reroute / U-turn, polyline bearing can be ~180° from course. Only then fall back
-    // to GPS heading in DriveMap. Highway course noise often disagrees 40–60° with smooth polyline
-    // bearing; the old 70° threshold constantly dropped route bearing and rotated the map off the line.
-    if (b != null && heading != null && speedMps != null && speedMps > 2.2) {
-      const norm = (d: number) => ((d % 360) + 360) % 360;
-      const a = norm(b);
-      const h = norm(heading);
-      const diff = Math.abs(((a - h + 540) % 360) - 180); // 0..180
-      if (diff > 170) return null; // only trust heading fallback on near-opposite mismatches
-    }
     return b;
   }, [
     driveModeUi,
     effectiveUserLngLat,
     guidanceRoute?.geometry,
     guidanceRoute?.id,
-    heading,
     speedMps,
     navigationStarted,
     userAlongGuidanceM,
@@ -2276,7 +2264,9 @@ export default function App() {
     const planEta = guidanceRoute?.baseEtaMinutes ?? null;
     const stripTint =
       guidanceRoute != null
-        ? routePickSlotHex(routeSlotIndexFor(guidanceRoute.id, orderedRouteIds))
+        ? navigationStarted
+          ? routePickSlotHex(0)
+          : routePickSlotHex(routeSlotIndexFor(guidanceRoute.id, orderedRouteIds))
         : "#94a3b8";
     const wxSamples = weatherOverlay?.[guidanceRouteId]?.samples;
 
@@ -2866,11 +2856,12 @@ export default function App() {
     return ids.size;
   }, [advisoryLifeSafetyOn, advisoryPlusDetailOn, stormLoading, stormError, stormOverlapping, stormNwsPuckInside]);
 
-  /** Same A/B/C slot color as the focused route line on the map (see routeSlotIndexFor / applyRoutesToMap). */
+  /** Matches map: planning uses A/B/C preview; after Go the active leg reads as primary blue. */
   const progressStripRouteColor = useMemo(() => {
     if (!guidanceRoute) return routePickSlotHex(0);
+    if (navigationStarted) return routePickSlotHex(0);
     return routePickSlotHex(routeSlotIndexFor(guidanceRoute.id, orderedRouteIds));
-  }, [guidanceRoute, orderedRouteIds]);
+  }, [guidanceRoute, orderedRouteIds, navigationStarted]);
 
   const showOffRouteManualBanner =
     offRouteSevere &&
@@ -3662,10 +3653,10 @@ export default function App() {
       {import.meta.env.DEV ? (
         <div
           className="stormpath-build-stamp"
-          title="From package.json. Bump web/package.json version and restart dev server if this didn’t change after your edit."
-          aria-label={`StormPath version ${STORMPATH_CLIENT_BUILD}`}
+          title="Local Vite dev. Marketing / store version is not kept in sync here; bump package.json only when cutting a release."
+          aria-label="Development mode"
         >
-          {STORMPATH_CLIENT_BUILD}
+          Dev
         </div>
       ) : null}
       <div className="map-stage map-bleed">

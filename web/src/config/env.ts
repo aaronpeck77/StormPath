@@ -43,11 +43,11 @@ export function getWebEnv() {
     /** Shown in the Basic advisory promo rotation (other apps you ship). */
     siteBibleUrl: (import.meta.env.VITE_SITEBIBLE_URL as string | undefined)?.trim() ?? "",
     /**
-     * About → Basic / Plus / Build default tier override (uses `PAY_TIER_OVERRIDE_LS_KEY`). On in dev and in
-     * production **unless** `VITE_PAY_TIER_TEST_PANEL=false` — turn off before App Store / paywall.
+     * About → “Test pay tier” (uses `PAY_TIER_OVERRIDE_LS_KEY`). **On** in Vite dev. **Off** in production
+     * builds unless you set `VITE_PAY_TIER_TEST_PANEL=true` (e.g. internal QA APK/IPA only — not App Store review).
      */
     payTierTestPanel:
       import.meta.env.DEV ||
-      String(import.meta.env.VITE_PAY_TIER_TEST_PANEL ?? "").toLowerCase() !== "false",
+      String(import.meta.env.VITE_PAY_TIER_TEST_PANEL ?? "").toLowerCase() === "true",
   };
 }

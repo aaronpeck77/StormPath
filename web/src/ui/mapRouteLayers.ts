@@ -14,7 +14,8 @@ const ROUTE_COND_LEGACY_LAYER = "route-condition-markers-circles";
 const ROUTE_COND_LEGACY_SRC = "route-condition-markers";
 
 const ROUTE_COND_HIGHLIGHT_SRC = "route-condition-highlights-src";
-const ROUTE_COND_HIGHLIGHT_LINE = "route-condition-highlights-line";
+/** Wide halo under route legs — hazard/storm colors frame the line instead of covering it */
+const ROUTE_COND_HIGHLIGHT_CASING = "route-condition-highlights-casing";
 
 export type RouteConditionHighlightOpts = {
   alerts: RouteAlert[] | undefined;
@@ -22,9 +23,21 @@ export type RouteConditionHighlightOpts = {
   stormGeoJson: GeoJSON.FeatureCollection | null | undefined;
 };
 
+/** Zoom-dependent halo width so the blue route core (~4–8px) stays readable at all scales */
+const ROUTE_COND_CASING_WIDTH: mapboxgl.ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  9,
+  14,
+  12,
+  18,
+  16,
+  22,
+];
+
 /**
- * Colored segments on the active route (weather vs hazard vs notice) plus NWS polygon intersections.
- * Not circle markers — avoids confusion with destination / saved-place dots.
+ * Hazard / weather / NWS overlap segments as a colored outline under the route line (not a solid overlay).
  * Call {@link bringMapboxTrafficLayersToFront}, {@link bringRouteVisualLinesAboveTraffic},
  * then {@link bringRouteHitLayersToTop} (DriveMap batches these in one helper).
  */
@@ -32,6 +45,10 @@ export function applyRouteConditionHighlights(
   map: mapboxgl.Map,
   { alerts, routeGeometry, stormGeoJson }: RouteConditionHighlightOpts
 ) {
+  /* Former solid overlay on top of the route — remove if present (e.g. HMR). */
+  const legacyOverlay = "route-condition-highlights-line";
+  if (map.getLayer(legacyOverlay)) map.removeLayer(legacyOverlay);
+
   if (map.getLayer(ROUTE_COND_LEGACY_LAYER)) map.removeLayer(ROUTE_COND_LEGACY_LAYER);
   if (map.getSource(ROUTE_COND_LEGACY_SRC)) map.removeSource(ROUTE_COND_LEGACY_SRC);
 
@@ -61,7 +78,7 @@ export function applyRouteConditionHighlights(
   const data: GeoJSON.FeatureCollection = { type: "FeatureCollection", features };
 
   if (features.length === 0) {
-    if (map.getLayer(ROUTE_COND_HIGHLIGHT_LINE)) map.removeLayer(ROUTE_COND_HIGHLIGHT_LINE);
+    if (map.getLayer(ROUTE_COND_HIGHLIGHT_CASING)) map.removeLayer(ROUTE_COND_HIGHLIGHT_CASING);
     if (map.getSource(ROUTE_COND_HIGHLIGHT_SRC)) map.removeSource(ROUTE_COND_HIGHLIGHT_SRC);
     return;
   }
@@ -69,18 +86,53 @@ export function applyRouteConditionHighlights(
   if (!map.getSource(ROUTE_COND_HIGHLIGHT_SRC)) {
     map.addSource(ROUTE_COND_HIGHLIGHT_SRC, { type: "geojson", data });
     map.addLayer({
-      id: ROUTE_COND_HIGHLIGHT_LINE,
+      id: ROUTE_COND_HIGHLIGHT_CASING,
       type: "line",
       source: ROUTE_COND_HIGHLIGHT_SRC,
       paint: {
         "line-color": ["get", "lineHex"] as never,
-        "line-width": ["interpolate", ["linear"], ["zoom"], 9, 5, 12, 8, 16, 12],
-        "line-opacity": 0.9,
+        "line-width": ROUTE_COND_CASING_WIDTH,
+        "line-opacity": 0.92,
       },
       layout: { "line-cap": "round", "line-join": "round" },
     });
   } else {
     (map.getSource(ROUTE_COND_HIGHLIGHT_SRC) as mapboxgl.GeoJSONSource).setData(data);
+    if (!map.getLayer(ROUTE_COND_HIGHLIGHT_CASING)) {
+      map.addLayer({
+        id: ROUTE_COND_HIGHLIGHT_CASING,
+        type: "line",
+        source: ROUTE_COND_HIGHLIGHT_SRC,
+        paint: {
+          "line-color": ["get", "lineHex"] as never,
+          "line-width": ROUTE_COND_CASING_WIDTH,
+          "line-opacity": 0.92,
+        },
+        layout: { "line-cap": "round", "line-join": "round" },
+      });
+    }
+  }
+}
+
+/** Place hazard halo directly under the lowest route leg line (above traffic). */
+export function positionRouteConditionCasingBelowRouteLines(
+  map: mapboxgl.Map,
+  routeIds: string[],
+  layerPrefix = "route"
+) {
+  if (!map.getLayer(ROUTE_COND_HIGHLIGHT_CASING)) return;
+  const layers = map.getStyle()?.layers;
+  if (!layers?.length) return;
+  for (const layer of layers) {
+    const lid = layer.id;
+    if (routeIds.some((rid) => lid === `${layerPrefix}-${rid}-line`)) {
+      try {
+        map.moveLayer(ROUTE_COND_HIGHLIGHT_CASING, lid);
+      } catch {
+        /* style race */
+      }
+      return;
+    }
   }
 }
 
@@ -157,11 +209,11 @@ export function routeIdFromRouteHitLayerId(layerId: string): string | null {
 export function visibleRouteIdsForHitLayers(
   routes: NavRoute[],
   lineFocusId: string,
-  navigationStarted: boolean,
   viewMode: MapViewMode,
   isOverviewPip = false
 ): string[] {
-  const hideAltsOnMainDrive = navigationStarted && viewMode === "drive" && !isOverviewPip;
+  /* Drive (Dr) view: always the active leg only — Rt / Mp show A/B/C for picking. */
+  const hideAltsOnMainDrive = viewMode === "drive" && !isOverviewPip;
   if (hideAltsOnMainDrive) {
     return routes.filter((r) => r.id === lineFocusId).map((r) => r.id);
   }
@@ -188,13 +240,7 @@ export function bringRouteVisualLinesAboveTraffic(
       }
     }
   }
-  if (map.getLayer(ROUTE_COND_HIGHLIGHT_LINE)) {
-    try {
-      map.moveLayer(ROUTE_COND_HIGHLIGHT_LINE);
-    } catch {
-      /* style teardown */
-    }
-  }
+  positionRouteConditionCasingBelowRouteLines(map, routeIds, layerPrefix);
 }
 
 /** Keep invisible hit targets above traffic / radar so route taps still resolve. */
@@ -233,7 +279,7 @@ export function applyRoutesToMap(
   const viewMode = opts?.viewMode ?? "route";
   const isOverviewPip = opts?.isOverviewPip ?? false;
 
-  const hideAltsOnMainDrive = navigationStarted && viewMode === "drive" && !isOverviewPip;
+  const hideAltsOnMainDrive = viewMode === "drive" && !isOverviewPip;
   const routesToDraw = hideAltsOnMainDrive
     ? routes.filter((r) => r.id === lineFocusId)
     : routes;
@@ -268,8 +314,8 @@ export function applyRoutesToMap(
       lineWidth = isFocus ? 7 : isSuggested ? 5 : 4;
       lineOpacity = isFocus ? 0.82 : isSuggested ? 0.55 : 0.38;
     } else {
-      /* Navigating: same A=blue / B=green / C=orange as planning (focus is always slot 0). */
-      lineColor = slotHex;
+      /* Navigating: the active guidance leg is always “primary” blue; alts keep A/B/C hue if visible. */
+      lineColor = isFocus ? routePickSlotHex(0) : slotHex;
       lineWidth = isFocus ? FOCUSED_ROUTE_LINE_WIDTH : isSuggested ? 5 : 4;
       lineOpacity = isFocus ? 0.78 : 0.44;
     }

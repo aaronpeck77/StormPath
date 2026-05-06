@@ -36,6 +36,7 @@ These are build-time env vars (`web/.env` or hosting dashboard). Rebuild after c
 
 ## Development vs production
 
-- **`npm run dev`:** `getPayTier()` returns **Plus** by default so you can verify Plus behavior without env keys.
-- **Test Basic in dev:** in the browser console: `localStorage.setItem("stormpath-pay-tier-override","free")` then reload. Clear with `removeItem("stormpath-pay-tier-override")` to go back to dev-default Plus.
-- **Production build:** tier is **Basic** unless `VITE_PAY_TIER=plus` / `pro` or you wire real billing into `getPayTier()`.
+- **`npm run dev` / Capacitor live reload (`import.meta.env.DEV`):** `getPayTier()` returns **Plus** by default so you can verify Plus behavior without env keys.
+- **Test Basic in dev:** About → **Test pay tier** → Basic, or `localStorage.setItem("stormpath-pay-tier-override","free")` then reload. Clear override with `removeItem("stormpath-pay-tier-override")` to go back to dev-default Plus.
+- **Production build (`vite build`, App Store / Play):** tier is **Basic** unless `VITE_PAY_TIER=plus` / `pro`, native entitlement (see `docs/MOBILE_STORE_RELEASE.md`), or LS override. **Capacitor no longer defaults everyone to Plus.**
+- **About “Test pay tier” panel:** **Off** in production unless `VITE_PAY_TIER_TEST_PANEL=true` (use only for internal QA builds).

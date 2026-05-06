@@ -607,7 +607,7 @@ const EXPLORE_IDLE_MS = 120_000;
 /** Drive mode: return to follow-cam sooner after the user pans/zooms the map. */
 const DRIVE_EXPLORE_IDLE_MS = 4_000;
 /** ~1/e time constant (seconds) for drive camera bearing toward route/GPS heading (rAF loop). */
-const DRIVE_CAMERA_BEARING_TC_S = 0.42;
+const DRIVE_CAMERA_BEARING_TC_S = 0.58;
 /** Top-down map view: nudge puck slightly right of visual center to balance the side rail/chrome. */
 const TOPDOWN_PUCK_OFFSET_PX: [number, number] = [24, 0];
 
@@ -634,12 +634,22 @@ const ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM = 10.85;
 const ROUTE_VIEW_PLANNING_STREET_ZOOM = 14.2;
 const ZERO_MAP_PADDING: mapboxgl.PaddingOptions = { top: 0, bottom: 0, left: 0, right: 0 };
 
+/** Max camera bearing change per frame (deg) — kills wild spins when route tangent jumps near forks / turns. */
+const DRIVE_CAMERA_BEARING_MAX_STEP_DEG = 11;
+
 function smoothDriveBearingDeg(prev: number | null, raw: number, alpha: number): number {
   if (prev == null || !Number.isFinite(prev)) return raw;
+  if (!Number.isFinite(raw)) return prev;
   let d = raw - prev;
   while (d > 180) d -= 360;
   while (d < -180) d += 360;
-  const next = prev + d * alpha;
+  /* Break ±180° ambiguity (both directions equal) so we never pick an arbitrary flip axis. */
+  if (d > 179) d = 179;
+  if (d < -179) d = -179;
+  let step = d * alpha;
+  if (step > DRIVE_CAMERA_BEARING_MAX_STEP_DEG) step = DRIVE_CAMERA_BEARING_MAX_STEP_DEG;
+  if (step < -DRIVE_CAMERA_BEARING_MAX_STEP_DEG) step = -DRIVE_CAMERA_BEARING_MAX_STEP_DEG;
+  const next = prev + step;
   return ((next % 360) + 360) % 360;
 }
 
@@ -851,6 +861,12 @@ export function DriveMap({
   const exploreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastForcedPlanningFitTriggerRef = useRef<number | null>(null);
   const driveCamBearingSmoothedRef = useRef<number | null>(null);
+  /** Reuse stable padding/offset for drive follow — fresh objects every frame can confuse Mapbox camera updates. */
+  const driveCamEaseOptsCacheRef = useRef<{
+    key: string;
+    padding: mapboxgl.PaddingOptions;
+    offset: [number, number];
+  } | null>(null);
   const onMapFocusCompleteRef = useRef(onMapFocusComplete);
   onMapFocusCompleteRef.current = onMapFocusComplete;
   const onRadarFrameUtcSecRef = useRef(onRadarFrameUtcSec);
@@ -859,8 +875,8 @@ export function DriveMap({
   onDriveCameraBearingDegRef.current = onDriveCameraBearingDeg;
   const onStormBrowseBoundsRef = useRef(onStormBrowseBoundsChange);
   onStormBrowseBoundsRef.current = onStormBrowseBoundsChange;
-  const routesForHitRef = useRef({ routes, lineFocusId, navigationStarted, viewMode });
-  routesForHitRef.current = { routes, lineFocusId, navigationStarted, viewMode };
+  const routesForHitRef = useRef({ routes, lineFocusId, viewMode });
+  routesForHitRef.current = { routes, lineFocusId, viewMode };
 
   const headingRef = useRef(heading);
   headingRef.current = heading;
@@ -1250,7 +1266,7 @@ export function DriveMap({
     const click = (e: mapboxgl.MapMouseEvent) => {
       /* Consume taps on the route corridor so they don’t move the destination pin; hazard details are via Hazards + progress strip. */
       if (routes.length > 0) {
-        const hideAltsOnMainDrive = navigationStarted && viewMode === "drive";
+        const hideAltsOnMainDrive = viewMode === "drive";
         const hitLayerIds = routes
           .filter((r) => !hideAltsOnMainDrive || r.id === lineFocusId)
           .map((r) => `route-${r.id}-line-hit`)
@@ -1406,7 +1422,7 @@ export function DriveMap({
         let targetLat: number;
         if (prevFix && curFix && curFix.t > prevFix.t) {
           const interval = curFix.t - prevFix.t;
-          const alpha = Math.min((now - prevFix.t) / interval, 1.25);
+          const alpha = Math.min((now - prevFix.t) / interval, 1.06);
           targetLng = prevFix.lng + (curFix.lng - prevFix.lng) * alpha;
           targetLat = prevFix.lat + (curFix.lat - prevFix.lat) * alpha;
         } else {
@@ -1438,7 +1454,7 @@ export function DriveMap({
               const rawAlong = snap.alongMeters;
               if (snappedAlongSmooth == null) snappedAlongSmooth = rawAlong;
               else {
-                const alphaAlong = 1 - Math.exp(-dt / 0.24);
+                const alphaAlong = 1 - Math.exp(-dt / 0.32);
                 snappedAlongSmooth += (rawAlong - snappedAlongSmooth) * alphaAlong;
               }
               applyAlongSmooth(snappedAlongSmooth);
@@ -1460,7 +1476,7 @@ export function DriveMap({
 
         // Tight exponential polish — the lerp above handles the coarse motion;
         // Slightly slower blend while route-snapped to damp remaining sub-pixel noise.
-        const blendTc = snapLatched ? 0.11 : 0.07;
+        const blendTc = snapLatched ? 0.145 : 0.095;
         const blend = 1 - Math.exp(-dt / blendTc);
         const cur = marker.getLngLat();
         marker.setLngLat([
@@ -1478,11 +1494,20 @@ export function DriveMap({
           userLngLatRef.current &&
           !userExploringRef.current
         ) {
-          const { padding, offset } = driveCameraEaseOptions(
-            stormBarVisibleRef.current,
-            stormBarExpandedRef.current,
-            progressRailVisibleRef.current
-          );
+          const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
+          const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;
+          const easeKey = `${stormBarVisibleRef.current}|${stormBarExpandedRef.current}|${progressRailVisibleRef.current}|${wx}x${wy}`;
+          let easeCached = driveCamEaseOptsCacheRef.current;
+          if (!easeCached || easeCached.key !== easeKey) {
+            const o = driveCameraEaseOptions(
+              stormBarVisibleRef.current,
+              stormBarExpandedRef.current,
+              progressRailVisibleRef.current
+            );
+            easeCached = { key: easeKey, padding: o.padding, offset: o.offset };
+            driveCamEaseOptsCacheRef.current = easeCached;
+          }
+          const { padding, offset } = easeCached;
           const rawBrg =
             driveRouteBearingDegRef.current != null
               ? driveRouteBearingDegRef.current
@@ -1497,17 +1522,15 @@ export function DriveMap({
           );
           const pos = marker.getLngLat();
           try {
-            /* `easeTo` supports `offset` (drive focal point); `jumpTo` does not in our Mapbox typings. Duration 0 = per-frame snap. */
-            map.easeTo({
+            /* `jumpTo` avoids ease/shift internals that `easeTo(..., duration: 0)` still touches — smoother follow under the puck. */
+            map.jumpTo({
               center: [pos.lng, pos.lat],
               zoom: 16.35,
               pitch: 58,
               bearing: driveCamBearingSmoothedRef.current,
               padding,
               offset,
-              duration: 0,
-              essential: true,
-            });
+            } as mapboxgl.CameraOptions & { offset?: [number, number] });
           } catch {
             /* style race */
           }
@@ -1613,7 +1636,7 @@ export function DriveMap({
       );
       liftTrafficThenRoutesThenHits(
         map,
-        visibleRouteIdsForHitLayers([], lineFocusId, navigationStarted, viewMode, false)
+        visibleRouteIdsForHitLayers([], lineFocusId, viewMode, false)
       );
     };
 
@@ -1649,7 +1672,7 @@ export function DriveMap({
       );
       liftTrafficThenRoutesThenHits(
         map,
-        visibleRouteIdsForHitLayers(routes, lineFocusId, navigationStarted, viewMode, false)
+        visibleRouteIdsForHitLayers(routes, lineFocusId, viewMode, false)
       );
     };
 
@@ -1677,7 +1700,7 @@ export function DriveMap({
     const liftHits = () => {
       liftTrafficThenRoutesThenHits(
         map,
-        visibleRouteIdsForHitLayers(routes, lineFocusId, navigationStarted, viewMode, false)
+        visibleRouteIdsForHitLayers(routes, lineFocusId, viewMode, false)
       );
     };
 
@@ -1747,7 +1770,7 @@ export function DriveMap({
     const liftHits = () => {
       liftTrafficThenRoutesThenHits(
         map,
-        visibleRouteIdsForHitLayers(routes, lineFocusId, navigationStarted, viewMode, false)
+        visibleRouteIdsForHitLayers(routes, lineFocusId, viewMode, false)
       );
     };
 
@@ -1799,7 +1822,7 @@ export function DriveMap({
       applyWeatherAlertLayers(map, weatherAlertGeoJson ?? null);
       liftTrafficThenRoutesThenHits(
         map,
-        visibleRouteIdsForHitLayers(routes, lineFocusId, navigationStarted, viewMode, false)
+        visibleRouteIdsForHitLayers(routes, lineFocusId, viewMode, false)
       );
     };
     if (map.isStyleLoaded()) sync();
@@ -1981,7 +2004,7 @@ export function DriveMap({
       });
       liftTrafficThenRoutesThenHits(
         map,
-        visibleRouteIdsForHitLayers(routes, lineFocusId, navigationStarted, viewMode, false)
+        visibleRouteIdsForHitLayers(routes, lineFocusId, viewMode, false)
       );
     };
 
@@ -2013,9 +2036,8 @@ export function DriveMap({
     };
 
     const liftRouteHits = () => {
-      const { routes: rts, lineFocusId: lid, navigationStarted: nav, viewMode: vm } =
-        routesForHitRef.current;
-      const ids = visibleRouteIdsForHitLayers(rts, lid, nav, vm, false);
+      const { routes: rts, lineFocusId: lid, viewMode: vm } = routesForHitRef.current;
+      const ids = visibleRouteIdsForHitLayers(rts, lid, vm, false);
       bringRouteVisualLinesAboveTraffic(map, ids, "route");
       bringRouteHitLayersToTop(map, ids, "route");
     };
@@ -2209,7 +2231,8 @@ export function DriveMap({
     if (!map || !mapReady || viewMode !== "route" || routes.length === 0) return;
 
     const forcePlanningFit = !navigationStarted;
-    if (!navigationStarted && fitTrigger !== lastForcedPlanningFitTriggerRef.current) {
+    /* Any App-driven refit (reroute, slot change, etc.) must win over stale "user exploring" from pan/zoom. */
+    if (fitTrigger !== lastForcedPlanningFitTriggerRef.current) {
       lastForcedPlanningFitTriggerRef.current = fitTrigger;
       userExploringRef.current = false;
       if (exploreTimerRef.current) {
@@ -2305,6 +2328,31 @@ export function DriveMap({
     lineFocusId,
     progressRailVisible,
   ]);
+
+  /**
+   * Rt / T / Dr: programmatic camera must not stay blocked by `userExploringRef` (set on pan/zoom).
+   * Without this, users see a zoomed-out or wrong framing until another gesture clears explore mode.
+   */
+  useEffect(() => {
+    if (!mapReady) return;
+    userExploringRef.current = false;
+    if (exploreTimerRef.current) {
+      clearTimeout(exploreTimerRef.current);
+      exploreTimerRef.current = null;
+    }
+    const map = mapRef.current;
+    const raf0 = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          map?.resize();
+        } catch {
+          /* map disposed */
+        }
+        setMapResumeTick((n) => n + 1);
+      });
+    });
+    return () => cancelAnimationFrame(raf0);
+  }, [mapReady, viewMode]);
 
   const canCameraFollow = Boolean(userLngLat && (navigationStarted || routes.length > 0));
 

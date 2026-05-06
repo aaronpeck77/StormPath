@@ -122,7 +122,13 @@ export function AboutSheet({
         <dl className="about-sheet__meta about-sheet__panel">
           <div className="about-sheet__meta-row">
             <dt>Version</dt>
-            <dd title="From package.json at build time — bump web/package.json to confirm you’re on the latest bundle">
+            <dd
+              title={
+                dev
+                  ? "Local dev: this value may lag; it is not updated on every dev session."
+                  : "From package.json at build time — bump web/package.json to confirm you’re on the latest bundle"
+              }
+            >
               {__APP_VERSION__}
               {dev ? " (development)" : ""}
             </dd>
@@ -192,9 +198,9 @@ export function AboutSheet({
             </div>
             <p className="about-sheet__tier-preview-hint">
               Sets <code className="saved-drawer-code">{PAY_TIER_OVERRIDE_LS_KEY}</code> (same as{" "}
-              <code className="saved-drawer-code">getPayTier()</code>). Shipped on by default; before App Store / paywall,
-              set build env <code className="saved-drawer-code">VITE_PAY_TIER_TEST_PANEL=false</code> to hide this
-              block. <strong>Build default</strong> removes the override (dev → Plus unless{" "}
+              <code className="saved-drawer-code">getPayTier()</code>). Shown in Vite dev, or in production only when{" "}
+              <code className="saved-drawer-code">VITE_PAY_TIER_TEST_PANEL=true</code> (internal QA). Store review
+              builds should leave that unset. <strong>Build default</strong> removes the override (dev → Plus unless{" "}
               <code className="saved-drawer-code">VITE_PAY_TIER</code> says otherwise).
             </p>
           </div>

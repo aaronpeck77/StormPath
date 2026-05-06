@@ -9,10 +9,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:testflight": "tsc --noEmit && vite build --mode testflight",
     "preview": "vite preview",
     "cap:sync": "npx cap sync ios",
     "sync:ios-version": "node scripts/sync-ios-version.mjs",
-    "build:ios": "npm run build && npm run sync:ios-version && npx cap sync ios"
+    "build:ios": "npm run build && npm run sync:ios-version && npx cap sync ios",
+    "build:ios:testflight": "npm run build:testflight && npm run sync:ios-version && npx cap sync ios"
   },
   "dependencies": {
     "@capacitor-community/keep-awake": "^8.0.1",
