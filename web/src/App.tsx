@@ -2899,6 +2899,8 @@ export default function App() {
       spanDays: s.spanDays,
       oldestLabel: fmt(s.oldest),
       newestLabel: fmt(s.newest),
+      learnEnabled,
+      onLearnEnabledChange: (on: boolean) => setLearnEnabled(on),
       showOnMap: activityTrailMapOn,
       onShowOnMapChange: (on: boolean) => {
         setActivityTrailMapOn(on);
@@ -2913,7 +2915,7 @@ export default function App() {
         setActivityTrailTick((n) => n + 1);
       },
     };
-  }, [isPlus, activityTrailMapOn, activityTrailTick]);
+  }, [isPlus, activityTrailMapOn, activityTrailTick, learnEnabled, setLearnEnabled]);
 
   const activityTrailPlanningBounds = useMemo(() => {
     if (!isPlus || !learnEnabled) return null;

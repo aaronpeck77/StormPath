@@ -475,7 +475,8 @@ function driveCameraEaseOptions(
     const railPad = Math.max(72, rightNeed + 14);
     const topPad = Math.max(52, 44 + Math.round(stormTop * 0.45));
     const bottomPad = Math.max(36, 48);
-    const yOff = Math.min(104, Math.max(54, Math.round(vh * 0.17)));
+    /* Drive “25-yard line”: puck closer to the bottom dock, more road ahead overhead. */
+    const yOff = Math.min(140, Math.max(72, Math.round(vh * 0.22)));
     if (handLeft) {
       return {
         padding: {
@@ -507,8 +508,11 @@ function driveCameraEaseOptions(
         left: sidePad,
         right: sidePad,
       },
-      /* +Y: focal point lower on screen → more road ahead above the puck. */
-      offset: [0, 152],
+      /*
+       * +Y: focal point lower on screen → more road ahead above the puck.
+       * Drive “25-yard line”: puck sits ~25% above the bottom dock instead of mid-screen.
+       */
+      offset: [0, 224],
     };
   }
   const sidePadWide = Math.max(16, Math.max(96, rightNeed));
@@ -519,7 +523,7 @@ function driveCameraEaseOptions(
       left: sidePadWide,
       right: sidePadWide,
     },
-    offset: [0, 238],
+    offset: [0, 320],
   };
 }
 
@@ -1522,15 +1526,20 @@ export function DriveMap({
           );
           const pos = marker.getLngLat();
           try {
-            /* `jumpTo` avoids ease/shift internals that `easeTo(..., duration: 0)` still touches — smoother follow under the puck. */
-            map.jumpTo({
+            /*
+             * `easeTo` honors `offset` (drive focal point); `jumpTo` silently drops it.
+             * `duration: 0` skips animation, so this is effectively an immediate snap.
+             */
+            map.easeTo({
               center: [pos.lng, pos.lat],
               zoom: 16.35,
               pitch: 58,
               bearing: driveCamBearingSmoothedRef.current,
               padding,
               offset,
-            } as mapboxgl.CameraOptions & { offset?: [number, number] });
+              duration: 0,
+              essential: true,
+            });
           } catch {
             /* style race */
           }
