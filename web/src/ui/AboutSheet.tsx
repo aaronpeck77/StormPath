@@ -115,36 +115,38 @@ export function AboutSheet({
         aria-modal="true"
         aria-labelledby="about-sheet-title"
       >
-        <div className="about-sheet__panel about-sheet__panel--intro">
-          <h2 id="about-sheet-title" className="about-sheet__title">
-            StormPath
-          </h2>
-          <p className="about-sheet__tagline">Multi-route driving navigation and live conditions along your trip.</p>
-        </div>
-
-        <dl className="about-sheet__meta about-sheet__panel">
-          <div className="about-sheet__meta-row">
-            <dt>Version</dt>
-            <dd
+        <header className="about-sheet__header">
+          <div className="about-sheet__header-title">
+            <h2 id="about-sheet-title" className="about-sheet__title">
+              StormPath
+            </h2>
+            <p className="about-sheet__tagline">Multi-route driving with live conditions on your route.</p>
+          </div>
+          <div className="about-sheet__header-meta">
+            <span
+              className="about-sheet__chip"
               title={
                 dev
                   ? "Local dev: this value may lag; it is not updated on every dev session."
                   : "From package.json at build time — bump web/package.json to confirm you’re on the latest bundle"
               }
             >
-              {__APP_VERSION__}
-              {dev ? " (development)" : ""}
-            </dd>
+              v{__APP_VERSION__}
+              {dev ? " · dev" : ""}
+            </span>
+            <span
+              className={`about-sheet__chip about-sheet__chip--tier${
+                plus ? " about-sheet__chip--plus" : " about-sheet__chip--basic"
+              }`}
+            >
+              {tierLabel}
+            </span>
           </div>
-          <div className="about-sheet__meta-row">
-            <dt>Plan</dt>
-            <dd>{tierLabel}</dd>
-          </div>
-        </dl>
+        </header>
 
         {onPayTierOverride ? (
           <div
-            className="about-sheet__tier-preview about-sheet__panel"
+            className="about-sheet__tier-preview about-sheet__panel about-sheet__panel--devtools"
             role="group"
             aria-label="Test pay tier override"
           >
@@ -209,8 +211,8 @@ export function AboutSheet({
           </div>
         ) : null}
 
-        <div className="about-sheet__scroll">
-          <section className="about-sheet__panel">
+        <div className="about-sheet__sections">
+          <section className="about-sheet__panel about-sheet__panel--subscription">
             <h3 className="about-sheet__h3">Subscription</h3>
             <p className="about-sheet__p">
               You can manage or cancel anytime. Changes apply at the end of the billing period.
@@ -248,7 +250,7 @@ export function AboutSheet({
           </section>
 
           {!plus && (
-            <details className="about-sheet__panel about-sheet__details">
+            <details className="about-sheet__panel about-sheet__panel--subscription about-sheet__details">
               <summary>What Plus adds</summary>
               <ul className="about-sheet__bullets" aria-label="Plus features">
                 <li>
@@ -272,9 +274,8 @@ export function AboutSheet({
             </details>
           )}
 
-          <section className="about-sheet__panel">
+          <section className="about-sheet__panel about-sheet__panel--settings">
             <h3 className="about-sheet__h3">Settings</h3>
-            <div className="about-sheet__settings-scroll">
             <div className="about-sheet__settings">
             <label className="about-sheet__setting">
               <input
@@ -370,7 +371,11 @@ export function AboutSheet({
               </span>
             </label>
 
-            <div className="about-sheet__tier-preview about-sheet__panel" role="group" aria-label="Side view handedness">
+            <div
+              className="about-sheet__tier-preview about-sheet__panel about-sheet__panel--settings-inset"
+              role="group"
+              aria-label="Side view handedness"
+            >
               <p className="about-sheet__tier-preview-label">Side view (landscape) — dominant hand</p>
               <div className="about-sheet__tier-preview-btns">
                 <button
@@ -394,11 +399,10 @@ export function AboutSheet({
               </p>
             </div>
             </div>
-            </div>
           </section>
 
           {plus && activityTrail && (
-            <section className="about-sheet__panel">
+            <section className="about-sheet__panel about-sheet__panel--activity">
               <h3 className="about-sheet__h3">Activity trail</h3>
               <label className="about-sheet__setting">
                 <input
@@ -492,7 +496,7 @@ export function AboutSheet({
             </section>
           )}
 
-          <details className="about-sheet__panel about-sheet__details">
+          <details className="about-sheet__panel about-sheet__panel--privacy about-sheet__details">
             <summary>Privacy, safety &amp; data</summary>
             <p className="about-sheet__p">
               <strong>Data:</strong> Map, routing, and traffic use Mapbox when configured; weather samples OpenWeather;
@@ -535,7 +539,7 @@ export function AboutSheet({
             </p>
           </details>
 
-          <section className="about-sheet__panel">
+          <section className="about-sheet__panel about-sheet__panel--support">
             <h3 className="about-sheet__h3">Support diagnostics</h3>
             <p className="about-sheet__p">
               Send bug reports, suggestions, feature requests, or general feedback. Include diagnostics (no personal

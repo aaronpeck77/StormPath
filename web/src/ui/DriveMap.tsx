@@ -590,6 +590,11 @@ type Props = {
   /** Highlights the map flag that matches the bottom-panel selection before confirm. */
   trafficBypassCompareSelectedRouteId?: string | null;
   onTrafficBypassCompareFlagPick?: (routeId: string) => void;
+  /**
+   * Hazard the user is being asked to plan around — drives both the on-map pin and the tighter
+   * compare camera fit (so A/B/C visibly fork at the hazard instead of an end-to-end overview).
+   */
+  trafficBypassCompareHazardLngLat?: LngLat | null;
   /** Plus: sparse GPS dots over weeks/months (see About → Activity trail). */
   activityTrailGeoJson?: GeoJSON.FeatureCollection | null;
   /**
@@ -744,6 +749,20 @@ function makePoiHoverEl(): HTMLDivElement {
   return el;
 }
 
+function makeBypassHazardEl(): HTMLDivElement {
+  const wrap = document.createElement("div");
+  wrap.className = "map-bypass-hazard-pin";
+  wrap.setAttribute("aria-hidden", "true");
+  const dot = document.createElement("span");
+  dot.className = "map-bypass-hazard-pin__dot";
+  dot.textContent = "!";
+  const ring = document.createElement("span");
+  ring.className = "map-bypass-hazard-pin__pulse";
+  wrap.appendChild(ring);
+  wrap.appendChild(dot);
+  return wrap;
+}
+
 function trafficBypassSavingsLabel(savingsVsAMinutes: number | null): string {
   if (savingsVsAMinutes == null) return "Baseline";
   const d = Math.round(savingsVsAMinutes);
@@ -825,6 +844,7 @@ export function DriveMap({
   trafficBypassCompareCallouts = null,
   trafficBypassCompareSelectedRouteId = null,
   onTrafficBypassCompareFlagPick,
+  trafficBypassCompareHazardLngLat = null,
   activityTrailGeoJson = null,
   activityTrailPlanningBounds = null,
   searchPickMarkers = null,
@@ -837,6 +857,7 @@ export function DriveMap({
   const destMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const poiHoverMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const bypassCompareMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  const bypassHazardMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const onTrafficBypassCompareFlagPickRef = useRef(onTrafficBypassCompareFlagPick);
   onTrafficBypassCompareFlagPickRef.current = onTrafficBypassCompareFlagPick;
   const savedMarkerMapRef = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLButtonElement }>>(new Map());
@@ -1619,6 +1640,38 @@ export function DriveMap({
       bypassCompareMarkersRef.current = [];
     };
   }, [mapReady, trafficBypassCompareCallouts, trafficBypassCompareSelectedRouteId]);
+
+  /**
+   * Hazard pin during the bypass-compare flow — a pulsing red dot at the impact's lng/lat so the
+   * driver can see what they're being asked to plan around alongside the A/B/C ETA flags.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    const lngLat = trafficBypassCompareHazardLngLat;
+    if (!lngLat) {
+      bypassHazardMarkerRef.current?.remove();
+      bypassHazardMarkerRef.current = null;
+      return;
+    }
+
+    if (!bypassHazardMarkerRef.current) {
+      bypassHazardMarkerRef.current = new mapboxgl.Marker({
+        element: makeBypassHazardEl(),
+        anchor: "center",
+      })
+        .setLngLat(lngLat)
+        .addTo(map);
+    } else {
+      bypassHazardMarkerRef.current.setLngLat(lngLat);
+    }
+
+    return () => {
+      bypassHazardMarkerRef.current?.remove();
+      bypassHazardMarkerRef.current = null;
+    };
+  }, [mapReady, trafficBypassCompareHazardLngLat]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2472,6 +2525,29 @@ export function DriveMap({
 
     if (userExploringRef.current) return;
 
+    /* Bypass compare: frame the hazard + driver instead of centering on the user, so A/B/C
+     * visibly fork around the hazard and the chooser at the bottom matches what's on the map. */
+    if (trafficBypassCompareHazardLngLat) {
+      prevTopdownRef.current = true;
+      const b = new mapboxgl.LngLatBounds();
+      b.extend(userLngLat);
+      b.extend(trafficBypassCompareHazardLngLat);
+      for (const r of routes) {
+        const g = r.geometry;
+        if (!g?.length) continue;
+        for (const pt of g) b.extend(pt as [number, number]);
+      }
+      map.fitBounds(b, {
+        padding: hazardOverviewFitPadding(),
+        duration: 600,
+        maxZoom: 13.4,
+        pitch: 0,
+        bearing: 0,
+        essential: true,
+      });
+      return;
+    }
+
     if (!prevTopdownRef.current) {
       prevTopdownRef.current = true;
       map.easeTo({
@@ -2491,7 +2567,16 @@ export function DriveMap({
         essential: true,
       });
     }
-  }, [mapReady, viewMode, canCameraFollow, userLngLat, topdownZoomRef, mapResumeTick]);
+  }, [
+    mapReady,
+    viewMode,
+    canCameraFollow,
+    userLngLat,
+    topdownZoomRef,
+    mapResumeTick,
+    trafficBypassCompareHazardLngLat,
+    routes,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;

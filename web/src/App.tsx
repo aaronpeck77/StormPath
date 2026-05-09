@@ -70,11 +70,12 @@ import { useAlongRouteMetersHeldWhenOffLine } from "./nav/guidanceAlongHold";
 import { activeTurnStepIndexAlong, turnStepAlongBounds } from "./nav/turnStepAlong";
 import { formatRouteDistanceMi, routeConsiderationSummary } from "./nav/routeSummary";
 import { buildDriveRouteAheadFromImpacts } from "./nav/driveRouteAhead";
-import {
-  approachBannerShowsBypass,
-  pickDriveApproachBanner,
-} from "./nav/driveHazardApproachPreview";
+import { pickDriveApproachBanner } from "./nav/driveHazardApproachPreview";
 import { computeTrafficBypassOffer, pickTrafficBypassAnchorImpact } from "./nav/trafficBypassOffer";
+import {
+  computeSurgicalBypassWindow,
+  earlyApproachMaxMetersForSpeed,
+} from "./nav/surgicalBypassWindow";
 import { unifiedTrafficNarrative } from "./nav/trafficNarrative";
 import {
   ARRIVAL_BG_CLEAR_MIN_MS,
@@ -194,6 +195,10 @@ type TrafficBypassCompareState = {
   confidence: "low" | "medium" | "high";
   /** Chosen A/B/C leg; promotion + drive view happen on explicit confirm, not on first tap. */
   selectedLeg: "r-a" | "r-b" | "r-c" | null;
+  /** Anchor the compare camera + on-map pin to the hazard the driver is being asked to plan around. */
+  hazardLngLat: LngLat | null;
+  /** Distance from the user along the active route to the hazard (m); drives the tight fit. */
+  hazardAlongMeters: number | null;
 };
 
 const MB_TRAFFIC_LINE_SNAP_NOTICE = "Mapbox traffic-aware line";
@@ -237,7 +242,11 @@ function isNarrowPhoneViewport(): boolean {
 export default function App() {
   applyStormLayerStorageMigrations();
   const env = useMemo(() => getWebEnv(), []);
+  /** Demo tools (mock banner, mock close hazard, mock compare) are dev-only. The `?demo=bypass`
+   *  URL flag still has to be present, but we additionally hard-gate on `import.meta.env.DEV` so
+   *  TestFlight / production builds can never surface the demo strip even if the flag leaks in. */
   const demoBypassTrafficJam = useMemo(() => {
+    if (!import.meta.env.DEV) return false;
     if (typeof window === "undefined") return false;
     try {
       return new URLSearchParams(window.location.search).get("demo") === "bypass";
@@ -543,6 +552,11 @@ export default function App() {
   const [demoPlaybackAlongM, setDemoPlaybackAlongM] = useState<number | null>(null);
   /** When true, demo puck glides along the active leg at ~posted limit speed (`?demo=bypass` + Plus). */
   const [demoPlaybackPlaying, setDemoPlaybackPlaying] = useState(false);
+  /** When true, fabricate a fake reroute-eligible impact ~1.4 mi ahead so the approach banner appears
+   *  for testing — only honored under `?demo=bypass` + Plus + navigating. Tapping the banner in this
+   *  mode opens the mock compare panel (no Mapbox network call). */
+  const [demoApproachBannerOn, setDemoApproachBannerOn] = useState(false);
+  const [demoCloseHazardOn, setDemoCloseHazardOn] = useState(false);
   const demoPlaybackAlongRef = useRef<number | null>(null);
   demoPlaybackAlongRef.current = demoPlaybackAlongM;
   const [offRouteSevere, setOffRouteSevere] = useState(false);
@@ -2156,14 +2170,19 @@ export default function App() {
 
   const progressStripAlerts = useMemo(() => augmentAlertsForProgressStrip(routeAlerts), [routeAlerts]);
 
-  /** Map line highlights: same corridor layout as the progress strip (traffic, weather, road notices). */
+  /**
+   * Map line highlights — paint each corridor alert at its real along-route position.
+   *
+   * The progress strip uses {@link layoutStripAlerts} to bunch marks into the “ahead” half so
+   * they’re visible on a small bar; that re-anchoring is wrong for the map, where it makes the
+   * orange halo slide down the route as the puck advances. Map highlights stay anchored to the
+   * actual hazard location (or the impact center for non-spatial alerts) instead.
+   */
   const mapAlongRouteAlerts = useMemo(() => {
     const g = guidanceRoute?.geometry;
     if (!g?.length) return [];
-    const totalM = polylineLengthMeters(g);
-    if (totalM <= 0) return [];
-    return layoutStripAlerts(progressStripAlerts, g, userAlongGuidanceM, totalM);
-  }, [progressStripAlerts, guidanceRoute?.geometry, userAlongGuidanceM]);
+    return progressStripAlerts;
+  }, [progressStripAlerts, guidanceRoute?.geometry]);
 
   /**
    * Map NWS polygons: only alerts whose geometry intersects the active route polyline
@@ -2220,10 +2239,77 @@ export default function App() {
     navigationStarted &&
     Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
 
+  /**
+   * Demo (`?demo=bypass` + Plus): fabricate a high-confidence rerouteRecommended impact ~1.4 mi
+   * ahead so we can test the approach banner UI without a real-world hazard. Tapping this banner
+   * routes to {@link openDemoTrafficBypassCompareMock} so the full flow works without Mapbox calls.
+   */
+  const demoApproachBannerImpact = useMemo<RouteImpact | null>(() => {
+    if (!demoBypassTrafficJamPlus) return null;
+    /* "Close hazard" wins when both demos are on so we can verify the adaptive next-exit window. */
+    const usingClose = demoCloseHazardOn;
+    if (!usingClose && !demoApproachBannerOn) return null;
+    const g = guidanceRoute?.geometry;
+    if (!g?.length) return null;
+    const totalM = polylineLengthMeters(g);
+    const userAlong = Number.isFinite(userAlongGuidanceM) ? userAlongGuidanceM : 0;
+    /* Close = 0.6 mi ahead (forces the surgical-bypass tier into "next-exit"). Far = 1.4 mi. */
+    const aheadDistMi = usingClose ? 0.6 : 1.4;
+    const ahead = Math.min(totalM - 100, userAlong + aheadDistMi * 1609.344);
+    const distAhead = Math.max(0, ahead - userAlong);
+    if (distAhead <= 200) return null;
+    return {
+      id: usingClose ? "demo-close-hazard" : "demo-approach-banner",
+      category: "traffic",
+      severity: "serious",
+      confidence: "high",
+      source: "mapboxTraffic",
+      lngLat: pointAtAlongMeters(g, ahead),
+      alongMeters: ahead,
+      startMeters: ahead,
+      endMeters: ahead,
+      distanceAheadMeters: distAhead,
+      etaAheadMinutes: null,
+      driverHeadline: usingClose
+        ? "Demo: hazard right ahead"
+        : "Demo: heavy traffic ahead",
+      driverAction: "rerouteRecommended",
+      roadEffect: usingClose
+        ? "Demo only — tests close-in next-exit bypass behavior."
+        : "Demo only — tap to test the bypass options flow.",
+      detail: usingClose
+        ? "Mock close hazard ~0.6 mi ahead to exercise the adaptive surgical bypass."
+        : "Mock impact to drive the approach banner / compare-panel UI without a real-world hazard.",
+      numericSeverity: 80,
+    };
+  }, [
+    demoBypassTrafficJamPlus,
+    demoApproachBannerOn,
+    demoCloseHazardOn,
+    guidanceRoute?.geometry,
+    userAlongGuidanceM,
+  ]);
+
   const driveApproachBannerPick = useMemo(() => {
     if (!hazardApproachAlertsActive) return null;
-    return pickDriveApproachBanner(routeImpactsForUi, driveApproachDismissedIds);
-  }, [hazardApproachAlertsActive, routeImpactsForUi, driveApproachDismissedIds]);
+    if (demoApproachBannerImpact) {
+      return {
+        impact: demoApproachBannerImpact,
+        phase: "near" as const,
+      };
+    }
+    return pickDriveApproachBanner(
+      routeImpactsForUi,
+      driveApproachDismissedIds,
+      earlyApproachMaxMetersForSpeed(speedMps)
+    );
+  }, [
+    hazardApproachAlertsActive,
+    demoApproachBannerImpact,
+    routeImpactsForUi,
+    driveApproachDismissedIds,
+    speedMps,
+  ]);
 
   useEffect(() => {
     setDriveApproachDismissedIds(new Set());
@@ -2371,18 +2457,6 @@ export default function App() {
     }
     setFitTrigger((n) => n + 1);
   }, []);
-
-  const handleDriveApproachMoreInfo = useCallback(
-    (impact: RouteImpact) => {
-      if (!guidanceRouteId) return;
-      setStormBarExpanded(true);
-      setRouteHazardSheet({
-        routeId: guidanceRouteId,
-        alerts: [routeImpactToRouteAlert(impact)],
-      });
-    },
-    [guidanceRouteId]
-  );
 
   useEffect(() => {
     try {
@@ -3116,6 +3190,9 @@ export default function App() {
     if (!gr?.geometry?.length) return;
     viewModeBeforeTrafficBypassRef.current = viewMode;
     const base = Math.max(8, Math.round(gr.baseEtaMinutes ?? 30));
+    const totalM = polylineLengthMeters(gr.geometry);
+    const userAlong = Number.isFinite(userAlongGuidanceM) ? userAlongGuidanceM : 0;
+    const mockJamAlong = Math.min(totalM - 50, userAlong + Math.max(800, (totalM - userAlong) * 0.32));
     setTrafficBypassCompare({
       headline: "Demo: mock bypass compare (no network)",
       etaA: base,
@@ -3125,10 +3202,12 @@ export default function App() {
       hasC: true,
       confidence: "medium",
       selectedLeg: null,
+      hazardLngLat: pointAtAlongMeters(gr.geometry, mockJamAlong),
+      hazardAlongMeters: mockJamAlong,
     });
     setViewMode("topdown");
     setFitTrigger((n) => n + 1);
-  }, [demoBypassTrafficJamPlus, navigationStarted, guidanceRoute, viewMode]);
+  }, [demoBypassTrafficJamPlus, navigationStarted, guidanceRoute, viewMode, userAlongGuidanceM]);
 
   const handleGo = () => {
     const chosen = orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? primaryRouteId;
@@ -3245,7 +3324,12 @@ export default function App() {
     [guidanceRoute?.geometry, lineFocusId, userAlongGuidanceM]
   );
 
-  const handleTrafficBypassFromHere = useCallback(async () => {
+  const handleTrafficBypassFromHere = useCallback(async (opts?: {
+    /** Override the jam anchor (m along route). Used by demo paths that need a deterministic point. */
+    anchorAlongMeters?: number;
+    /** Override the lng/lat shown for the hazard pin. Falls back to the route geometry at the anchor. */
+    anchorLngLat?: LngLat;
+  }) => {
     if (!isPlus) return;
     const originLngLat =
       demoBypassTrafficJamPlus && effectiveUserLngLat ? effectiveUserLngLat : userLngLat;
@@ -3255,13 +3339,16 @@ export default function App() {
     setBypassBusy(true);
     const geom = guidanceRoute.geometry;
     const totalM = polylineLengthMeters(geom);
-    const MI = 1_609.34;
 
     try {
       /* Anchor the surgical bypass on the strongest reroute-worthy impact (traffic / closure) ahead.
-       * If we don't have a confident anchor, fall back to ~38% of remaining route. */
-      const anchorImpact = pickTrafficBypassAnchorImpact(routeImpactsForUi);
+       * If we don't have a confident anchor, fall back to ~38% of remaining route. Demo paths can
+       * inject an explicit anchor via `opts.anchorAlongMeters` to test the close-hazard tier. */
+      const anchorImpact = opts?.anchorAlongMeters == null
+        ? pickTrafficBypassAnchorImpact(routeImpactsForUi)
+        : null;
       const jamAlongM =
+        opts?.anchorAlongMeters ??
         anchorImpact?.alongMeters ??
         Math.min(
           totalM - 50,
@@ -3281,10 +3368,16 @@ export default function App() {
           baseEtaMinutes: number;
           turnSteps: { instruction: string; distanceM?: number }[];
           notice: string;
+          framing: "plenty" | "tight" | "nextExit";
         } | null> => {
-          const exitM = Math.max(0, jamAlongM - 2 * MI);
-          const rejoinM = Math.min(totalM, jamAlongM + 3 * MI);
-          if (rejoinM - exitM < 1 * MI) return null;
+          const window = computeSurgicalBypassWindow({
+            userAlongMeters: userAlongGuidanceM,
+            jamAlongMeters: jamAlongM,
+            totalMeters: totalM,
+            speedMps,
+          });
+          if (!window) return null;
+          const { exitMeters: exitM, rejoinMeters: rejoinM, framing } = window;
           const exitPt = pointAtAlongMeters(geom, exitM);
           const rejoinPt = pointAtAlongMeters(geom, rejoinM);
           const seg = await fetchMapboxSurgicalBypass(env.mapboxToken, exitPt, rejoinPt);
@@ -3300,15 +3393,29 @@ export default function App() {
           const baseEta = guidanceRoute.baseEtaMinutes;
           const splicedEta = baseEta * preRatio + seg.durationMinutes + baseEta * postRatio;
 
+          /* Driver-facing intro line for the bypass leg — "tap next exit" copy when we're
+           * close enough to the jam that the driver needs to commit on the next available ramp. */
+          const intro =
+            framing === "nextExit"
+              ? "Take the next exit / turn off the route to start the bypass"
+              : "Continue on current route to exit";
+          const notice =
+            framing === "nextExit"
+              ? "Tight bypass: next exit, side roads around the slowdown, rejoin past it."
+              : framing === "tight"
+                ? "Bypass: leave before the slowdown, rejoin past it."
+                : "Side-road bypass around traffic (exit \u2192 rejoin).";
+
           return {
             geometry: spliced,
             baseEtaMinutes: Math.max(1, Math.round(splicedEta)),
             turnSteps: [
-              ...(pre.length ? [{ instruction: "Continue on current route to exit" }] : []),
+              ...(pre.length ? [{ instruction: intro }] : []),
               ...seg.turnSteps,
               ...(post.length ? [{ instruction: "Rejoin highway and continue to destination" }] : []),
             ],
-            notice: "Side-road bypass around traffic (exit \u2192 rejoin).",
+            notice,
+            framing,
           };
         })(),
         remainingPolyline.length >= 2
@@ -3349,7 +3456,10 @@ export default function App() {
             if (r.id === "r-c" && surgicalP) {
               return {
                 ...r,
-                label: "Scenic · bypass",
+                label:
+                  surgicalP.framing === "nextExit"
+                    ? "Next exit · bypass"
+                    : "Scenic · bypass",
                 geometry: surgicalP.geometry,
                 baseEtaMinutes: surgicalP.baseEtaMinutes,
                 turnSteps: surgicalP.turnSteps,
@@ -3382,6 +3492,9 @@ export default function App() {
         hasC: Boolean(surgicalP),
         confidence: trafficBypassContext?.confidence ?? "medium",
         selectedLeg: null,
+        hazardLngLat:
+          opts?.anchorLngLat ?? anchorImpact?.lngLat ?? pointAtAlongMeters(geom, jamAlongM),
+        hazardAlongMeters: jamAlongM,
       });
       setViewMode("topdown");
     } catch {
@@ -3716,6 +3829,7 @@ export default function App() {
                 ? (id) => handleTrafficBypassCompareSelect(id as "r-a" | "r-b" | "r-c")
                 : undefined
             }
+            trafficBypassCompareHazardLngLat={trafficBypassCompare?.hazardLngLat ?? null}
             activityTrailGeoJson={activityTrailGeoJsonForMap}
             activityTrailPlanningBounds={activityTrailPlanningBounds}
             searchPickMarkers={searchPickMarkersForMap}
@@ -3786,29 +3900,50 @@ export default function App() {
                       <ActivityStatusPill busyLabel={activityBusyLabel} />
                     </div>
                   ) : null}
-                  {hazardApproachAlertsActive && driveApproachBannerPick ? (
+                  {hazardApproachAlertsActive &&
+                  driveApproachBannerPick &&
+                  (showTrafficBypassCta ||
+                    driveApproachBannerPick.impact.id === "demo-approach-banner" ||
+                    driveApproachBannerPick.impact.id === "demo-close-hazard") ? (
                     <DriveHazardApproachBanner
                       phase={driveApproachBannerPick.phase}
                       impact={driveApproachBannerPick.impact}
                       onDismiss={() => {
                         const id = driveApproachBannerPick.impact.id;
+                        if (id === "demo-approach-banner") {
+                          setDemoApproachBannerOn(false);
+                          return;
+                        }
+                        if (id === "demo-close-hazard") {
+                          setDemoCloseHazardOn(false);
+                          return;
+                        }
                         const key = driveApproachBannerPick.phase === "early" ? `e:${id}` : `n:${id}`;
                         setDriveApproachDismissedIds((prev) => new Set(prev).add(key));
                       }}
-                      onMoreInfo={handleDriveApproachMoreInfo}
-                      onBypass={
-                        driveApproachBannerPick.phase === "near" &&
-                        showTrafficBypassCta &&
-                        approachBannerShowsBypass(driveApproachBannerPick.impact)
-                          ? () => void handleTrafficBypassFromHere()
-                          : undefined
-                      }
-                      bypassBusy={bypassBusy}
-                      showBypass={Boolean(
-                        driveApproachBannerPick.phase === "near" &&
-                          showTrafficBypassCta &&
-                          approachBannerShowsBypass(driveApproachBannerPick.impact)
-                      )}
+                      onPlanAround={() => {
+                        const id = driveApproachBannerPick.impact.id;
+                        if (id === "demo-approach-banner") {
+                          setDemoApproachBannerOn(false);
+                          openDemoTrafficBypassCompareMock();
+                          return;
+                        }
+                        /* Close-hazard demo runs the *real* bypass pipeline against the live route so
+                         * we can validate the adaptive next-exit window end-to-end (not the mock compare).
+                         * We pass the demo impact's anchor explicitly because it isn't in routeImpactsForUi. */
+                        if (id === "demo-close-hazard") {
+                          const closeAnchor = driveApproachBannerPick.impact.alongMeters;
+                          const closeLngLat = driveApproachBannerPick.impact.lngLat;
+                          setDemoCloseHazardOn(false);
+                          void handleTrafficBypassFromHere({
+                            anchorAlongMeters: closeAnchor,
+                            anchorLngLat: closeLngLat,
+                          });
+                          return;
+                        }
+                        void handleTrafficBypassFromHere();
+                      }}
+                      busy={bypassBusy}
                     />
                   ) : null}
                 </div>
@@ -4117,6 +4252,28 @@ export default function App() {
                 <button
                   type="button"
                   className="nav-demo-bypass-banner__btn"
+                  onClick={() => {
+                    setDemoApproachBannerOn((v) => !v);
+                    if (demoCloseHazardOn) setDemoCloseHazardOn(false);
+                  }}
+                  disabled={Boolean(trafficBypassCompare)}
+                >
+                  {demoApproachBannerOn && !demoCloseHazardOn ? "Hide banner" : "Mock banner"}
+                </button>
+                <button
+                  type="button"
+                  className="nav-demo-bypass-banner__btn"
+                  onClick={() => {
+                    setDemoCloseHazardOn((v) => !v);
+                    if (demoApproachBannerOn) setDemoApproachBannerOn(false);
+                  }}
+                  disabled={Boolean(trafficBypassCompare)}
+                >
+                  {demoCloseHazardOn ? "Hide close" : "Mock close hazard"}
+                </button>
+                <button
+                  type="button"
+                  className="nav-demo-bypass-banner__btn"
                   onClick={openDemoTrafficBypassCompareMock}
                   disabled={Boolean(trafficBypassCompare)}
                 >
@@ -4128,7 +4285,10 @@ export default function App() {
               <summary className="nav-demo-bypass-banner__summary">Demo notes</summary>
               <div className="nav-demo-bypass-banner__text">
                 URL flag <code>?demo=bypass</code>. <strong>Play</strong> moves the puck at estimated MPH from turn text.{" "}
-                <strong>Mock compare</strong> = A/B/C UI only, no Mapbox bypass fetch.
+                <strong>Mock banner</strong> shows the approach strip with a fake impact ~1.4 mi ahead — tap it to jump
+                to the mock compare. <strong>Mock close hazard</strong> drops one ~0.6 mi ahead so the surgical bypass
+                runs in its <em>next-exit</em> tier (tighter exit/rejoin window). <strong>Mock compare</strong> opens
+                the A/B/C panel directly (no Mapbox call).
               </div>
             </details>
           </div>

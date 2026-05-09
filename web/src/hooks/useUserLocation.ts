@@ -12,6 +12,56 @@ export type LocationDetail = {
   error: string | null;
 };
 
+/**
+ * Dev escape hatch: pin a known lng/lat for dev / testing when the browser can't get a real GPS fix.
+ *
+ * Sources (highest priority first):
+ *   1. URL hash:    `#devloc=LAT,LNG`  (also accepts `?devloc=LAT,LNG`)
+ *   2. localStorage `stormpath-dev-location` set to `"LAT,LNG"`
+ *
+ * When set, the hook publishes that position immediately and skips browser geolocation entirely.
+ * Only consulted in `import.meta.env.DEV`. To disable, clear the URL param / LS key.
+ */
+const DEV_LOCATION_LS_KEY = "stormpath-dev-location";
+
+function parseLatLngString(s: string | null | undefined): LngLat | null {
+  if (!s) return null;
+  const m = s.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+  if (!m) return null;
+  const lat = Number(m[1]);
+  const lng = Number(m[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return [lng, lat];
+}
+
+function readDevLocationOverride(): LngLat | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const fromHash = window.location.hash.startsWith("#")
+      ? new URLSearchParams(window.location.hash.slice(1))
+      : null;
+    const raw = fromHash?.get("devloc") ?? params.get("devloc");
+    const fromUrl = parseLatLngString(raw);
+    if (fromUrl) {
+      try {
+        localStorage.setItem(DEV_LOCATION_LS_KEY, `${fromUrl[1]},${fromUrl[0]}`);
+      } catch {
+        /* private mode */
+      }
+      return fromUrl;
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    return parseLatLngString(localStorage.getItem(DEV_LOCATION_LS_KEY));
+  } catch {
+    return null;
+  }
+}
+
 export type UserLocationOptions = {
   /** Prefer fresher fixes (more battery). Off = allow up to ~2s cached positions. */
   highRefresh?: boolean;
@@ -144,6 +194,19 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
       return;
     }
 
+    // Dev-only static override (URL param / localStorage). Bypass the browser provider entirely so
+    // an IP-geocoded "Chicago" guess can't sneak in over the held coords.
+    if (import.meta.env.DEV) {
+      const override = readDevLocationOverride();
+      if (override) {
+        setError(null);
+        setLngLat(override);
+        setHeading(null);
+        setSpeedMps(null);
+        return;
+      }
+    }
+
     let cancelled = false;
     let watchId = 0;
     let fixReceived = false;
@@ -260,7 +323,11 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
       }, 30_000);
     };
 
-    navigator.geolocation.getCurrentPosition(onOk, onErr, GEO_PRIME_OPTS);
+    // In dev, skip the coarse "prime" call — it's the one that returns the IP / Wi‑Fi-geocoded
+    // fix (often a regional metro like Chicago). Production keeps it for fast first paint.
+    if (!import.meta.env.DEV) {
+      navigator.geolocation.getCurrentPosition(onOk, onErr, GEO_PRIME_OPTS);
+    }
     startWatch();
 
     const failsafe = window.setTimeout(() => {

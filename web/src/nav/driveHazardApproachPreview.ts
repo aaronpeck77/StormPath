@@ -23,31 +23,30 @@ function shortTitle(raw: string, max = 52): string {
 }
 
 /**
- * High-trust hazards only: road work / crashes / anchored slow traffic, and strong NWS / radar.
- * (Avoids vague corridor delay and low-confidence traffic pins.)
+ * Banner is the entry point to the A/B/C bypass-compare flow, so it only fires for road events
+ * we can plausibly route around (traffic, closure, incident, construction) with a real driver
+ * action available. Weather (NWS / radar) is intentionally excluded — it's already covered by
+ * the advisory bar and rerouting around weather isn't useful, so a banner there would just be
+ * a redundant duplicate.
  */
 export function impactQualifiesForDriveApproachBanner(i: RouteImpact): boolean {
   const ahead = i.distanceAheadMeters;
   if (ahead == null || ahead <= PASSED_CLEAR_METERS) return false;
 
-  if (i.category === "closure" || i.category === "incident" || i.category === "construction") {
-    return i.confidence !== "low" || i.severity === "serious" || i.severity === "avoid";
+  if (
+    i.category !== "traffic" &&
+    i.category !== "closure" &&
+    i.category !== "incident" &&
+    i.category !== "construction"
+  ) {
+    return false;
   }
-  if (i.category === "traffic" && i.source === "mapboxTraffic") {
-    if (i.confidence === "low") return false;
-    return (
-      i.driverAction === "rerouteRecommended" ||
-      i.driverAction === "rerouteAvailable" ||
-      i.confidence === "high"
-    );
-  }
-  if (i.source === "nws") {
-    return i.severity === "serious" || i.severity === "avoid";
-  }
-  if (i.source === "radar") {
-    return i.severity === "serious" || i.severity === "avoid";
-  }
-  return false;
+
+  if (i.confidence === "low") return false;
+
+  return (
+    i.driverAction === "rerouteRecommended" || i.driverAction === "rerouteAvailable"
+  );
 }
 
 export function approachBannerTitle(i: RouteImpact): string {
@@ -63,25 +62,13 @@ export function approachBannerShowsBypass(i: RouteImpact): boolean {
 }
 
 /**
- * Major hazards only, for the **early** band (between near max and ~5 mi): interstate-style
- * stopped/slow traffic, hard road blocks, strong NWS/radar — not generic corridor delay.
+ * Stricter early band (≈2–5 mi out): only the strongest reroute-recommended road events.
+ * Same road-only scope as the near band, just gated harder so we don't alarm the driver
+ * 5 minutes before a problem we'd merely "watch".
  */
 export function impactQualifiesForEarlyMajorApproach(i: RouteImpact): boolean {
-  const ahead = i.distanceAheadMeters;
-  if (ahead == null || ahead <= PASSED_CLEAR_METERS) return false;
-
-  if (i.severity === "avoid" || i.severity === "serious") return true;
-
-  if (i.category === "traffic" && i.source === "mapboxTraffic") {
-    if (i.confidence === "low") return false;
-    return i.driverAction === "rerouteRecommended";
-  }
-
-  if (i.category === "closure" || i.category === "incident" || i.category === "construction") {
-    return i.driverAction === "rerouteRecommended" || i.driverAction === "rerouteAvailable";
-  }
-
-  return false;
+  if (!impactQualifiesForDriveApproachBanner(i)) return false;
+  return i.driverAction === "rerouteRecommended" || i.severity === "avoid";
 }
 
 export type DriveApproachBannerPhase = "early" | "near";
@@ -104,11 +91,15 @@ function sortApproachCandidates(candidates: RouteImpact[]): RouteImpact | null {
 }
 
 /**
- * Prefer **near** (~2 mi) when anything qualifies; otherwise **early** (~2–5 mi) for major hazards only.
+ * Prefer **near** (~2 mi) when anything qualifies; otherwise **early** (~2–5 mi, more at
+ * highway speeds) for major hazards only. The early-band ceiling is speed-aware: at 65 mph,
+ * a 5 mi warning is only ~4.5 minutes — not enough lead time to decide and exit. Caller can
+ * pass live `speedMps` to widen the early band up to ~8 mi for interstate speeds.
  */
 export function pickDriveApproachBanner(
   impacts: RouteImpact[],
-  dismissedIds: ReadonlySet<string>
+  dismissedIds: ReadonlySet<string>,
+  earlyMaxMeters: number = DRIVE_HAZARD_APPROACH_EARLY_MAX_METERS
 ): DriveApproachBannerPick | null {
   const nearDismissed = (id: string) =>
     dismissedIds.has(`n:${id}`) || dismissedIds.has(id);
@@ -123,12 +114,13 @@ export function pickDriveApproachBanner(
   const near = sortApproachCandidates(nearList);
   if (near) return { impact: near, phase: "near" };
 
+  const earlyCeiling = Math.max(DRIVE_HAZARD_APPROACH_EARLY_MAX_METERS, earlyMaxMeters);
   const earlyList = impacts.filter((i) => {
     if (!impactQualifiesForEarlyMajorApproach(i)) return false;
     if (dismissedIds.has(`e:${i.id}`)) return false;
     const a = i.distanceAheadMeters;
     if (a == null) return false;
-    return a > DRIVE_HAZARD_APPROACH_NEAR_MAX_METERS && a <= DRIVE_HAZARD_APPROACH_EARLY_MAX_METERS;
+    return a > DRIVE_HAZARD_APPROACH_NEAR_MAX_METERS && a <= earlyCeiling;
   });
   const early = sortApproachCandidates(earlyList);
   if (early) return { impact: early, phase: "early" };

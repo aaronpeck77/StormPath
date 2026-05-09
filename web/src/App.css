@@ -613,7 +613,7 @@
   top: max(10px, env(safe-area-inset-top, 0px));
   bottom: max(10px, env(safe-area-inset-bottom, 0px));
   z-index: 48;
-  /* Taller sheet — most content lives in .about-sheet__scroll */
+  /* Single-scroll sheet: outer .about-sheet scrolls; sticky header stays pinned */
   max-height: min(92dvh, 720px);
   display: flex;
   flex-direction: column;
@@ -628,9 +628,42 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Compact sticky header — title + version/plan chips, replaces the two old top panels */
+.about-sheet__header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 10px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(180deg, rgba(28, 32, 40, 0.98), rgba(20, 24, 30, 0.98));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.about-sheet__header-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.about-sheet__header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
 .about-sheet__title {
-  margin: 0 0 4px;
-  font-size: 1.15rem;
+  margin: 0;
+  font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   color: #e8eaed;
@@ -638,34 +671,111 @@
 
 .about-sheet__tagline {
   margin: 0;
-  font-size: 0.78rem;
-  line-height: 1.4;
+  font-size: 0.72rem;
+  line-height: 1.3;
   color: #9aa0a6;
 }
 
+.about-sheet__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.32);
+  color: #cbd5e1;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.about-sheet__chip--tier {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.about-sheet__chip--plus {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(37, 99, 235, 0.22);
+  color: #dbeafe;
+}
+
+.about-sheet__chip--basic {
+  border-color: rgba(148, 163, 184, 0.45);
+  background: rgba(51, 65, 85, 0.45);
+  color: #e2e8f0;
+}
+
+/*
+ * iOS-style grouped: each section is a soft-gray rounded container with comfortable padding,
+ * preceded by a small uppercase eyebrow title that floats above the container (no per-section
+ * stripes / colors / gradients — quiet and consistent).
+ */
 .about-sheet__panel {
-  margin: 0 0 8px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  background: rgba(0, 0, 0, 0.18);
+  position: relative;
+  margin: 24px 0 0;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.085);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 4px 14px rgba(0, 0, 0, 0.28);
   box-sizing: border-box;
 }
 
-.about-sheet__panel--intro {
-  padding-bottom: 11px;
+.about-sheet__sections .about-sheet__panel:first-child {
+  margin-top: 18px;
 }
 
-.about-sheet__panel--intro .about-sheet__title {
-  margin-bottom: 6px;
-}
-
-.about-sheet__scroll .about-sheet__panel:last-child {
+.about-sheet__sections .about-sheet__panel:last-child {
   margin-bottom: 0;
 }
 
-.about-sheet__panel .about-sheet__h3:first-child {
-  margin-top: 0;
+/* Section title sits above the container as an uppercase eyebrow. */
+.about-sheet__panel > .about-sheet__h3 {
+  position: absolute;
+  top: -8px;
+  left: 6px;
+  transform: translateY(-100%);
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #cbd5e1;
+  pointer-events: none;
+  background: transparent;
+}
+
+/* `<details>` panels: same eyebrow effect on the summary, but it must remain interactive. */
+.about-sheet__panel.about-sheet__details > summary {
+  cursor: pointer;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #cbd5e1;
+}
+
+.about-sheet__panel.about-sheet__details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.about-sheet__panel.about-sheet__details[open] > summary {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Inset card (handedness selector inside Settings) — darker than its parent so it reads as nested. */
+.about-sheet__panel--settings-inset {
+  margin: 14px 0 0;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.32);
+  box-shadow: none;
 }
 
 .about-sheet__meta {
@@ -701,8 +811,12 @@
 
 .about-sheet__tier-preview {
   margin: 0 0 8px;
-  /* padding/border/radius: .about-sheet__panel */
-  background: rgba(99, 102, 241, 0.1);
+  /* padding/border/radius: .about-sheet__panel — keep default soft-gray bg from the iOS group */
+}
+
+/* "Test pay tier" devtools panel sitting between the header and the scrolling sections */
+.about-sheet__panel--devtools {
+  margin: 18px 0 14px;
 }
 
 .about-sheet__tier-preview-label {
@@ -744,74 +858,23 @@
   color: #64748b;
 }
 
-.about-sheet__scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  margin-bottom: 8px;
-  padding-right: 2px;
+/* Whole sheet is the only scroll container — no nested scrollers */
+.about-sheet__sections {
   display: flex;
   flex-direction: column;
   gap: 0;
 }
 
 @media (orientation: landscape) {
-  /* Side view: use one outer scroller to avoid nested-scroll traps. */
   .about-sheet {
     max-height: calc(
       100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 20px
     );
   }
-
-  .about-sheet__scroll {
-    overflow-y: visible;
-    flex: 0 0 auto;
-    min-height: auto;
-  }
-
-  .about-sheet__settings-scroll {
-    max-height: none;
-  }
-}
-
-/* Long checkbox list scrolls inside the sheet */
-.about-sheet__settings-scroll {
-  max-height: min(38vh, 300px);
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  padding: 2px 4px 2px 0;
-  margin: 2px 0 0;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.12);
-}
-
-.about-sheet__details {
-  margin: 0 0 8px;
-}
-
-.about-sheet__details > summary {
-  cursor: pointer;
-  list-style: none;
-  margin: 0;
-  padding: 2px 0;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #94a3b8;
-  user-select: none;
 }
 
 .about-sheet__details > summary::-webkit-details-marker {
   display: none;
-}
-
-.about-sheet__details[open] > summary {
-  margin-bottom: 6px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .about-sheet__details .about-sheet__p + .about-sheet__p {
@@ -820,29 +883,32 @@
 
 /* Nested details inside another panel (e.g. Activity trail) */
 .about-sheet__details--inline {
-  margin: 6px 0 4px;
-  padding: 6px 8px;
+  margin: 8px 0 4px;
+  padding: 8px 10px;
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .about-sheet__details--inline > summary {
-  font-size: 0.68rem;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.7rem;
+  font-weight: 700;
   letter-spacing: 0.04em;
+  color: #94a3b8;
+  user-select: none;
 }
 
+/* Default eyebrow style for h3 outside panels (kept as fallback). Inside .about-sheet__panel, the
+ * floating absolute-positioned rule above wins via specificity. */
 .about-sheet__h3 {
-  margin: 8px 0 5px;
+  margin: 0;
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #94a3b8;
-}
-
-.about-sheet__h3:first-child {
-  margin-top: 0;
 }
 
 .about-sheet__p {
@@ -5184,18 +5250,39 @@
   padding-left: 7px;
 }
 
-.drive-hazard-approach--strip .drive-hazard-approach__title {
+.drive-hazard-approach__copy {
   flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  line-height: 1.05;
+}
+
+.drive-hazard-approach--strip .drive-hazard-approach__title {
   margin: 0;
   font-weight: 800;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .drive-hazard-approach--strip .drive-hazard-approach__title--early {
   font-weight: 750;
+}
+
+.drive-hazard-approach__hint {
+  margin: 0;
+  font-size: 0.52rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(226, 232, 240, 0.78);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .drive-hazard-approach__strip-actions {
@@ -8692,6 +8779,65 @@
 .map-bypass-compare-flag--selected {
   border-color: rgba(248, 250, 252, 0.88);
   box-shadow: 0 0 0 2px rgba(248, 250, 252, 0.4), 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+
+/* Hazard pin shown only while the bypass-compare panel is open — pulsing red dot at the impact. */
+.map-bypass-hazard-pin {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.map-bypass-hazard-pin__dot {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #dc2626;
+  color: #fff8f8;
+  font-weight: 900;
+  font-size: 0.78rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fef2f2;
+  box-shadow: 0 4px 14px rgba(127, 29, 29, 0.55);
+  z-index: 2;
+}
+
+.map-bypass-hazard-pin__pulse {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(220, 38, 38, 0.55);
+  z-index: 1;
+  animation: map-bypass-hazard-pin-pulse 1.6s ease-out infinite;
+}
+
+@keyframes map-bypass-hazard-pin-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  90%,
+  100% {
+    transform: scale(2.7);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-bypass-hazard-pin__pulse {
+    animation: none;
+    transform: scale(1.5);
+    opacity: 0.35;
+  }
 }
 
 /*
