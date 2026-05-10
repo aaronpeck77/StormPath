@@ -3,7 +3,19 @@ import { fetchWithTimeout, MAPBOX_GEOCODE_TIMEOUT_MS } from "../utils/fetchResil
 
 export type GeocodeHit = { lngLat: LngLat; placeName: string };
 
-export type AutocompleteHit = { id: string; lngLat: LngLat; placeName: string };
+export type AutocompleteHit = {
+  id: string;
+  /* For Search Box suggestions, this is a placeholder until /retrieve resolves. Geocoder hits
+   * always have real coords here. Use `mapboxId` presence to detect the deferred case. */
+  lngLat: LngLat;
+  placeName: string;
+  /** Secondary line — e.g. "1234 N Main St, Decatur, IL 62526" shown under the business name. */
+  secondary?: string;
+  /** Mapbox Search Box id; when set, the picker MUST call /retrieve before using `lngLat`. */
+  mapboxId?: string;
+  /** poi | address | place | locality | neighborhood | street | unknown — drives the row icon. */
+  featureType?: string;
+};
 
 
 type MbxFeature = {
@@ -27,6 +39,9 @@ function addForwardCommon(
     types: string;
     limit: number;
     proximity?: LngLat;
+    /* ISO 3166-1 alpha-2 country codes — when set, Mapbox restricts results to these countries.
+     * We pass the user's continent country list so a search in Illinois can't surface London/Moscow. */
+    countries?: readonly string[];
   }
 ) {
   url.searchParams.set("access_token", accessToken);
@@ -36,6 +51,9 @@ function addForwardCommon(
   if (opts.proximity) {
     const [plng, plat] = opts.proximity;
     url.searchParams.set("proximity", `${plng},${plat}`);
+  }
+  if (opts.countries && opts.countries.length > 0) {
+    url.searchParams.set("country", opts.countries.join(","));
   }
 }
 
@@ -47,6 +65,7 @@ async function fetchForwardFeatures(
     types: string;
     limit: number;
     proximity?: LngLat;
+    countries?: readonly string[];
   }
 ): Promise<MbxFeature[]> {
   const url = buildPlacesUrl(q);
@@ -69,7 +88,7 @@ async function fetchForwardFeatures(
 async function broadForwardFeatures(
   q: string,
   accessToken: string,
-  opts: { autocomplete?: boolean; limit: number; proximity?: LngLat }
+  opts: { autocomplete?: boolean; limit: number; proximity?: LngLat; countries?: readonly string[] }
 ): Promise<MbxFeature[]> {
   return fetchForwardFeatures(q, accessToken, {
     ...opts,
@@ -85,7 +104,7 @@ async function broadForwardFeatures(
 async function mergedForwardFeatures(
   q: string,
   accessToken: string,
-  opts: { autocomplete?: boolean; limit: number; proximity?: LngLat }
+  opts: { autocomplete?: boolean; limit: number; proximity?: LngLat; countries?: readonly string[] }
 ): Promise<MbxFeature[]> {
   const lim = Math.max(opts.limit, 5);
   const fetchLimit = Math.min(25, lim + 12);
@@ -124,7 +143,7 @@ async function mergedForwardFeatures(
 async function forwardFeaturesForQuery(
   q: string,
   accessToken: string,
-  opts: { autocomplete?: boolean; limit: number; proximity?: LngLat }
+  opts: { autocomplete?: boolean; limit: number; proximity?: LngLat; countries?: readonly string[] }
 ): Promise<MbxFeature[]> {
   const words = q.trim().split(/\s+/).filter(Boolean);
   /* Two requests only when the query looks like a business + place (saves quota on "Chicago"-only). */
@@ -146,7 +165,7 @@ function featureToAutocompleteHit(f: MbxFeature, q: string): AutocompleteHit | n
 export async function mapboxForwardGeocode(
   query: string,
   accessToken: string,
-  opts?: { proximity?: LngLat }
+  opts?: { proximity?: LngLat; countries?: readonly string[] }
 ): Promise<GeocodeHit | null> {
   const q = query.trim();
   if (!q) return null;
@@ -154,6 +173,7 @@ export async function mapboxForwardGeocode(
   const features = await forwardFeaturesForQuery(q, accessToken, {
     limit: 5,
     proximity: opts?.proximity,
+    countries: opts?.countries,
   });
 
   for (const f of features) {
@@ -173,7 +193,7 @@ export async function mapboxForwardGeocode(
 export async function mapboxGeocodeSearch(
   query: string,
   accessToken: string,
-  opts?: { proximity?: LngLat; limit?: number }
+  opts?: { proximity?: LngLat; limit?: number; countries?: readonly string[] }
 ): Promise<AutocompleteHit[]> {
   const q = query.trim();
   if (!q) return [];
@@ -182,6 +202,7 @@ export async function mapboxGeocodeSearch(
     autocomplete: false,
     limit,
     proximity: opts?.proximity,
+    countries: opts?.countries,
   });
   const out: AutocompleteHit[] = [];
   const seenCoord = new Set<string>();
@@ -202,7 +223,8 @@ export async function mapboxAutocomplete(
   query: string,
   accessToken: string,
   limit = 5,
-  proximity?: LngLat
+  proximity?: LngLat,
+  countries?: readonly string[]
 ): Promise<AutocompleteHit[]> {
   const q = query.trim();
   if (q.length < 2) return [];
@@ -211,6 +233,7 @@ export async function mapboxAutocomplete(
     autocomplete: true,
     limit,
     proximity,
+    countries,
   });
 
   const out: AutocompleteHit[] = [];

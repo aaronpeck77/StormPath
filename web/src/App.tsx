@@ -33,6 +33,12 @@ import {
   mapboxGeocodeSearch,
   mapboxReverseGeocode,
 } from "./services/mapboxGeocode";
+import { geocodeCountriesForFix } from "./services/continents";
+import {
+  mapboxSearchBoxSuggest,
+  mapboxSearchBoxRetrieve,
+  mintSearchBoxSessionToken,
+} from "./services/mapboxSearchBox";
 import {
   fetchMapboxTrafficAlongPolyline,
   trafficCongestionAnchorFraction,
@@ -237,6 +243,29 @@ function applyStormLayerStorageMigrations(): void {
 
 function isNarrowPhoneViewport(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(max-width: 520px)").matches;
+}
+
+/**
+ * Compact distance label for the search-suggestion secondary line. Returns "" when input is null
+ * so callers can use `||` to fall through to the address text.
+ *
+ *   25 m  → "25 m"           (or "82 ft" in US)
+ *   180 m → "0.1 mi"         (US — under a quarter mile reads better in feet but we keep it short)
+ *   1.2 km → "1.2 km" / "0.7 mi"
+ *   45 km → "45 km"  / "28 mi"
+ */
+function formatDistanceShort(meters: number | null, useMiles: boolean): string {
+  if (meters == null || !Number.isFinite(meters) || meters < 0) return "";
+  if (useMiles) {
+    const miles = meters / 1609.344;
+    if (miles < 0.1) return `${Math.round(meters * 3.28084)} ft`;
+    if (miles < 10) return `${miles.toFixed(1)} mi`;
+    return `${Math.round(miles)} mi`;
+  }
+  if (meters < 950) return `${Math.round(meters)} m`;
+  const km = meters / 1000;
+  if (km < 10) return `${km.toFixed(1)} km`;
+  return `${Math.round(km)} km`;
 }
 
 export default function App() {
@@ -493,6 +522,24 @@ export default function App() {
   const [suggestLoading, setSuggestLoading] = useState(false);
   /** Invalidates in-flight autocomplete when the query changes so stale results do not flash in. */
   const searchAutocompleteSeqRef = useRef(0);
+  /** Mapbox Search Box session token. One UUID is minted lazily on first autocomplete and reused
+   * across every keystroke + the final /retrieve so suggest+retrieve are billed as a single
+   * transaction. Reset to null when the user closes the search bar or commits a destination. */
+  const searchBoxSessionTokenRef = useRef<string | null>(null);
+  const ensureSearchBoxSessionToken = useCallback((): string => {
+    if (!searchBoxSessionTokenRef.current) {
+      searchBoxSessionTokenRef.current = mintSearchBoxSessionToken();
+    }
+    return searchBoxSessionTokenRef.current;
+  }, []);
+  const resetSearchBoxSessionToken = useCallback(() => {
+    searchBoxSessionTokenRef.current = null;
+  }, []);
+  /* Whenever the search bar collapses, end the current Search Box session so the next typing
+   * session starts fresh (and Mapbox bills it independently). */
+  useEffect(() => {
+    if (!searchExpanded) searchBoxSessionTokenRef.current = null;
+  }, [searchExpanded]);
   /** Lets suggestion taps win over blur before parent clears the list. */
   const searchBlurClearTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   /** Bumped on Stop/clear — in-flight route fetches must not call setPlan after the user cleared the trip. */
@@ -934,19 +981,52 @@ export default function App() {
         window.setTimeout(() => setTapHint(null), 8000);
         return;
       }
+      let lngLat = hit.lngLat;
+      let placeName = hit.placeName;
+      /* Search Box suggestions don't carry coordinates — resolve them now via /retrieve so the
+       * destination flow downstream sees a real lng/lat. We reuse the same session token that
+       * was minted for /suggest so Mapbox bills the autocomplete + retrieve as one transaction. */
+      if (hit.mapboxId) {
+        if (!env.mapboxToken) {
+          setTapHint("Mapbox token needed to look up that place.");
+          window.setTimeout(() => setTapHint(null), 4000);
+          return;
+        }
+        setRouting(true);
+        const sessionToken = ensureSearchBoxSessionToken();
+        const retrieved = await mapboxSearchBoxRetrieve(hit.mapboxId, env.mapboxToken, sessionToken);
+        setRouting(false);
+        if (!retrieved) {
+          setTapHint("Couldn't fetch that place's coordinates. Try another match or hit search.");
+          window.setTimeout(() => setTapHint(null), 6000);
+          return;
+        }
+        lngLat = retrieved.lngLat;
+        placeName = retrieved.placeName;
+        /* Session is consumed on retrieve — start a fresh token next time the user types. */
+        resetSearchBoxSessionToken();
+      }
       setSearchPickHits(null);
       searchPickQueryRef.current = null;
-      recordRecentSearch(hit.placeName, hit.lngLat);
+      recordRecentSearch(placeName, lngLat);
       setAllowAutocomplete(true);
       setSuggestions([]);
-      setSearchText(hit.placeName);
-      setDestinationLabel(hit.placeName);
-      setDestLngLat(hit.lngLat);
+      setSearchText(placeName);
+      setDestinationLabel(placeName);
+      setDestLngLat(lngLat);
       setViewMode("route");
       setSearchExpanded(false);
-      await computeRoutes(hit.lngLat, hit.placeName);
+      await computeRoutes(lngLat, placeName);
     },
-    [userLngLat, computeRoutes, locationError, recordRecentSearch]
+    [
+      userLngLat,
+      computeRoutes,
+      locationError,
+      recordRecentSearch,
+      env.mapboxToken,
+      ensureSearchBoxSessionToken,
+      resetSearchBoxSessionToken,
+    ]
   );
 
   const handleSearchPickFromMap = useCallback(
@@ -979,6 +1059,9 @@ export default function App() {
     const hits = await mapboxGeocodeSearch(q, env.mapboxToken, {
       proximity: userLngLat ?? undefined,
       limit: 12,
+      /* Scope to the user's continent so a typo doesn't surface London/Moscow/Sydney for a US
+       * driver. `null` (no GPS yet, or ocean cell) → undefined → no filter (full world). */
+      countries: geocodeCountriesForFix(userLngLat) ?? undefined,
     });
     setRouting(false);
     if (hits.length === 0) {
@@ -1154,11 +1237,56 @@ export default function App() {
       setSuggestions([]);
       setSuggestLoading(true);
       const prox = userLngLatRef.current ?? undefined;
-      void mapboxAutocomplete(q, env.mapboxToken, limit, prox).then((hits) => {
-        if (seq !== searchAutocompleteSeqRef.current) return;
-        setSuggestions(rankSearchSuggestionsWithTrail(hits.slice(0, limit)));
-        setSuggestLoading(false);
-      });
+      const countries = geocodeCountriesForFix(userLngLatRef.current) ?? undefined;
+      /* Search Box has much deeper local-business coverage than Geocoding v5. We try it first
+       * and only fall back to the geocoder when Search Box returns nothing (rare network glitch
+       * or off-the-grid query). The session token batches every keystroke + the final /retrieve
+       * into one Mapbox-billed transaction. */
+      const sessionToken = ensureSearchBoxSessionToken();
+      void mapboxSearchBoxSuggest(q, env.mapboxToken, sessionToken, {
+        proximity: prox,
+        countries,
+        limit,
+      })
+        .then(async (sbHits) => {
+          if (seq !== searchAutocompleteSeqRef.current) return null;
+          if (sbHits.length > 0) {
+            /* North America defaults to miles for distance display, everywhere else metric. */
+            const useMiles =
+              !!prox && (geocodeCountriesForFix(prox) ?? []).some((c) => c === "us" || c === "ca");
+            const out: SearchSuggestion[] = sbHits.map((s) => {
+              /* Compose the secondary line as "1.2 mi · 1234 Main St, Decatur, IL" so users can
+               * verify the closest-first ordering at a glance. Distance shows even when the
+               * formatted address is missing (rare). */
+              const distLabel = formatDistanceShort(s.distanceMeters, useMiles);
+              const secondary =
+                distLabel && s.placeFormatted
+                  ? `${distLabel} · ${s.placeFormatted}`
+                  : distLabel || s.placeFormatted;
+              return {
+                id: s.mapboxId,
+                /* Real lng/lat is fetched on pick via /retrieve. We stash a placeholder here so
+                 * the row renders; handlePickSuggestion checks `mapboxId` to decide which path. */
+                lngLat: prox ?? [0, 0],
+                placeName: s.name,
+                secondary,
+                mapboxId: s.mapboxId,
+                featureType: s.featureType,
+              };
+            });
+            return out;
+          }
+          /* Fallback to Geocoding v5 — keeps the user unblocked if Search Box hiccups. */
+          const fb = await mapboxAutocomplete(q, env.mapboxToken, limit, prox, countries);
+          if (seq !== searchAutocompleteSeqRef.current) return null;
+          return fb;
+        })
+        .then((hits) => {
+          if (hits == null) return;
+          if (seq !== searchAutocompleteSeqRef.current) return;
+          setSuggestions(rankSearchSuggestionsWithTrail(hits.slice(0, limit)));
+          setSuggestLoading(false);
+        });
     }, 280);
     return () => window.clearTimeout(t);
     /* userLngLat omitted: GPS updates ~400ms would cancel this debounce and flash the list every tick. */
@@ -2039,23 +2167,59 @@ export default function App() {
     });
   }, [routeImpacts, showTrafficCorridorOnRoute, showRoadNoticesOnRoute, showWeatherImpactsOnRoute]);
 
-  /** Advisory panel: impacts ordered like the progress rail (nearest first). */
-  const advisoryRoadHazardTimeline = useMemo(() => {
-    return [...routeImpactsForUi]
-      .sort((a, b) => {
-        const da = a.distanceAheadMeters ?? a.alongMeters;
-        const db = b.distanceAheadMeters ?? b.alongMeters;
-        return da - db;
-      })
-      .map((i) => ({
-        id: i.id,
-        headline: i.driverHeadline,
-        detail: (i.roadEffect || i.detail || "").trim(),
-        severity: i.severity,
-        distanceAheadMeters: i.distanceAheadMeters,
-        etaAheadMinutes: i.etaAheadMinutes,
-      }));
+  /** Advisory panel: impacts ordered like the progress rail (nearest first). Carries the full
+   *  RouteImpact fields the bar needs to split rows by source/category and to slot severe NWS
+   *  bands into the storm strip (source-attribution + start/end-meters). */
+  const advisoryRouteImpacts = useMemo(() => {
+    return [...routeImpactsForUi].sort((a, b) => {
+      const da = a.distanceAheadMeters ?? a.alongMeters;
+      const db = b.distanceAheadMeters ?? b.alongMeters;
+      return da - db;
+    });
   }, [routeImpactsForUi]);
+
+  /** Severe / extreme NWS warnings that cross the active route, projected to a storm-strip band.
+   *  We pair each NWS-source impact with its raw alert (by id) so the strip caption can show the
+   *  expiration time, which is on the NWS alert and not duplicated on the impact. */
+  const advisoryStormStripBands = useMemo(() => {
+    const totalM = guidanceRouteLengthM;
+    if (totalM <= 0) return [] as Array<{
+      id: string;
+      event: string;
+      severity: "info" | "caution" | "serious" | "avoid";
+      startMeters: number;
+      endMeters: number;
+      expiresIso: string | null;
+      alertId: string | null;
+    }>;
+    /* Only `stormOverlapping` matters — these are alerts whose polygon crosses the route line.
+     * Puck-inside alerts don't generate startMeters/endMeters bands on the route, so they wouldn't
+     * appear in the strip anyway. */
+    const allRawAlerts = stormOverlapping;
+    return advisoryRouteImpacts
+      .filter((i) => i.source === "nws" && (i.severity === "serious" || i.severity === "avoid"))
+      .filter((i) => i.endMeters > i.startMeters)
+      .map((i) => {
+        /* The NWS RouteImpact id is `nws-${index}` so we can't reverse-map. Instead match on the
+         * event substring against raw alerts; falls back to the impact's own headline. */
+        let matched: NormalizedWeatherAlert | null = null;
+        for (const a of allRawAlerts) {
+          if (a.event && i.driverHeadline.toLowerCase().includes(a.event.toLowerCase())) {
+            matched = a;
+            break;
+          }
+        }
+        return {
+          id: i.id,
+          event: matched?.event ?? i.driverHeadline,
+          severity: i.severity,
+          startMeters: i.startMeters,
+          endMeters: i.endMeters,
+          expiresIso: matched?.ends ?? null,
+          alertId: matched?.id ?? null,
+        };
+      });
+  }, [advisoryRouteImpacts, guidanceRouteLengthM, stormOverlapping]);
 
   /**
    * Project unified impacts back to the legacy `RouteAlert` shape so existing surfaces (progress strip,
@@ -3880,7 +4044,12 @@ export default function App() {
                       onRoadDetailToggle={onRoadAdvisoryDetailToggle}
                       hasGuidanceRoute={Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2)}
                       roadDetailRows={advisoryRoadDetailRows}
-                      roadHazardTimeline={advisoryRoadHazardTimeline}
+                      routeImpacts={advisoryRouteImpacts}
+                      stormStripBands={advisoryStormStripBands}
+                      routeTotalMeters={guidanceRouteLengthM}
+                      userAlongMeters={Number.isFinite(userAlongGuidanceM) ? userAlongGuidanceM : 0}
+                      planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
+                      driveEtaMinutes={driveEtaMinutes ?? null}
                       barExpanded={stormBarExpanded}
                       onBarExpandedChange={onStormBarExpandedChange}
                       hideHeadToggles={!isPlus}
@@ -4337,6 +4506,16 @@ export default function App() {
                 </div>
               ) : (
                 <div className="nav-bottom-dock__plan-stack">
+                  {/* About row hosts the round 'i' info button on the left and, when there are
+                   * routes to cycle, the route-select button inline to its right. The route-select
+                   * button is sized to fit the strip between the 'i' and the dock's right edge —
+                   * which is itself flush against the vertical progress rail — so adding the
+                   * select button doesn't push the rail narrower. */}
+                  {/* About row hosts the round 'i' info button on the left, plus an inline
+                   * action slot to its right. The slot shows route-select while a route is
+                   * loaded, or "My location" while planning (no routes yet). Both share the
+                   * same height + right inset so the dock keeps a single horizontal control
+                   * strip clear of the vertical progress rail. */}
                   <div className="nav-bottom-dock__about-row">
                     <button
                       type="button"
@@ -4347,7 +4526,30 @@ export default function App() {
                     >
                       i
                     </button>
-                    {radarMapOverlayOn && radarFrameTimeLabel ? (
+                    {viewMode === "route" && routePickItems.length >= 1 ? (
+                      <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
+                        <RouteCycleButton
+                          items={routePickItems}
+                          selectedId={lineFocusId}
+                          cycleOrderIds={planRouteIds}
+                          activeSlotIndex={viewMode === "route" ? previewLegIndex : null}
+                          onSelect={handlePreviewRouteSelect}
+                          detail={routeDockDetail}
+                        />
+                      </div>
+                    ) : (viewMode === "route" || viewMode === "topdown") &&
+                      plan.routes.length === 0 &&
+                      userLngLat ? (
+                      <button
+                        type="button"
+                        className="nav-recenter-puck-btn nav-recenter-puck-btn--dock nav-recenter-puck-btn--inline"
+                        title="Center map on your location"
+                        aria-label="Center map on your location"
+                        onClick={() => setRecenterPlanningPuckTick((n) => n + 1)}
+                      >
+                        My location
+                      </button>
+                    ) : radarMapOverlayOn && radarFrameTimeLabel ? (
                       <div
                         className="nav-radar-frame-time-dock"
                         aria-live="polite"
@@ -4391,30 +4593,9 @@ export default function App() {
                         )}
                       </div>
                     </div>
-                    {(viewMode === "route" || viewMode === "topdown") && plan.routes.length === 0 && userLngLat && (
-                      <button
-                        type="button"
-                        className="nav-recenter-puck-btn nav-recenter-puck-btn--dock"
-                        title="Center map on your location"
-                        aria-label="Center map on your location"
-                        onClick={() => setRecenterPlanningPuckTick((n) => n + 1)}
-                      >
-                        My location
-                      </button>
-                    )}
-                    {viewMode === "route" && routePickItems.length >= 1 && (
-                      <div className="nav-bottom-dock__route-toggle-slot">
-                        <RouteCycleButton
-                          items={routePickItems}
-                          selectedId={lineFocusId}
-                          cycleOrderIds={planRouteIds}
-                          activeSlotIndex={viewMode === "route" ? previewLegIndex : null}
-                          onSelect={handlePreviewRouteSelect}
-                          detail={routeDockDetail}
-                        />
-                      </div>
-                    )}
                   </div>
+                  {/* Action row removed — both "My location" (planning) and the route-cycle
+                   * button (route loaded) now live inline on the about-row above the search. */}
                 </div>
               )}
             </div>

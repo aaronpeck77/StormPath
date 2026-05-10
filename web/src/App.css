@@ -503,6 +503,25 @@
   pointer-events: none;
 }
 
+/* Action row beneath the search: hosts the My-location and / or Route-cycle button on its own
+ * line so the search bar can use the full dock width. Equal-flex children give each button room
+ * to render label + ETA + detail at a readable size instead of squeezed-into-110px text. */
+.nav-bottom-dock__actions-row {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: stretch;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin-top: 6px;
+  pointer-events: none;
+}
+
+.nav-bottom-dock__actions-row > * {
+  pointer-events: auto;
+}
+
 /* Smaller, glassy — planning row defaults left; landscape full map tucks “i” to the trailing edge. */
 .map-about-btn {
   position: relative;
@@ -1087,6 +1106,141 @@
   transform: translateY(1px);
 }
 
+/* ───── Map key (legend) — color/chrome cheat sheet inside About sheet ───── */
+.about-sheet__panel--map-key .map-key__group {
+  margin-top: 10px;
+}
+
+.map-key__intro {
+  margin-top: 6px;
+  margin-bottom: 8px;
+  color: #cbd5e1;
+}
+
+.map-key__rows {
+  list-style: none;
+  margin: 4px 0 2px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.map-key__row {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  align-items: start;
+  gap: 10px;
+  padding: 6px 4px;
+}
+
+.map-key__row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.map-key__row-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  line-height: 1.2;
+}
+
+.map-key__row-blurb {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  line-height: 1.35;
+}
+
+/* Swatches */
+.map-key__swatch {
+  display: inline-block;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.map-key__swatch--line {
+  width: 26px;
+  height: 6px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.map-key__swatch--dashed {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      currentColor 0,
+      currentColor 5px,
+      transparent 5px,
+      transparent 9px
+    ) !important;
+  /* The currentColor trick relies on the inline `background` color falling through; force via color. */
+}
+
+.map-key__swatch--dashed[style*="background"] {
+  /* Re-style: keep the inline color but apply the dashed pattern using it. */
+  background-image: repeating-linear-gradient(
+    90deg,
+    currentColor 0,
+    currentColor 5px,
+    transparent 5px,
+    transparent 9px
+  );
+}
+
+.map-key__swatch--casing {
+  position: relative;
+  width: 26px;
+  height: 12px;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.map-key__swatch-casing-bg {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+}
+
+.map-key__swatch-casing-fg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 4px;
+  background: #1a73e8;
+  border-radius: 2px;
+}
+
+.map-key__swatch--polygon {
+  width: 26px;
+  height: 14px;
+  border-radius: 3px;
+  border-width: 1.5px;
+  border-style: solid;
+}
+
+.map-key__swatch--pin {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  margin-left: 6px;
+}
+
+.map-key__swatch--block {
+  width: 26px;
+  height: 14px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
 .about-sheet__setting {
   display: flex;
   align-items: flex-start;
@@ -1207,6 +1361,36 @@
   justify-content: center;
   max-width: min(11rem, 42vw);
   white-space: nowrap;
+}
+
+/* In the new full-width actions row, give My location plenty of room and bump the label so it
+ * isn't ~8 px high anymore. Flex grows it to fill its share of the row when alone, or split with
+ * the route-cycle button when both are present. */
+.nav-recenter-puck-btn--actions {
+  flex: 1 1 0;
+  max-width: none;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 0 16px;
+}
+
+/* Inline placement on the about-row — mirrors the inline route-cycle slot so "My location"
+ * (shown while planning, no route yet) and the route-cycle button (shown once a route is
+ * loaded) are visually interchangeable: same height as the round 'i' info button on the left,
+ * same horizontal stretch into the strip, same right gutter clear of the progress rail. */
+.nav-recenter-puck-btn.nav-recenter-puck-btn--inline {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: none;
+  height: 34px;
+  min-height: 34px;
+  max-height: 34px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
 }
 
 .nav-recenter-puck-btn:active {
@@ -1548,6 +1732,151 @@
   max-height: var(--nav-chrome-control, 44px);
 }
 
+/* Override the fixed 6.9 rem footprint when the cycle button lives in the dedicated actions row.
+ * Doubled-class selector boosts specificity above the phone-width media query rule lower in the
+ * file that pins the standard slot to 6.75 rem (otherwise that rule would win on phones). */
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--actions {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  justify-content: stretch;
+}
+
+.nav-bottom-dock__route-toggle-slot--actions .nav-route-cycle-btn {
+  width: 100%;
+  padding: 4px 10px;
+}
+
+.nav-bottom-dock__route-toggle-slot--actions .nav-route-cycle-btn__label {
+  font-size: 0.88rem;
+  line-height: 1.15;
+}
+
+.nav-bottom-dock__route-toggle-slot--actions .nav-route-cycle-btn__eta {
+  font-size: 0.74rem;
+  line-height: 1.15;
+}
+
+.nav-bottom-dock__route-toggle-slot--actions .nav-route-cycle-btn__detail {
+  font-size: 0.66rem;
+  line-height: 1.2;
+  margin-top: 1px;
+}
+
+/* Inline placement on the about-row: the slot fills the strip to the right of the 'i' info
+ * button, clamped on the right by the about-row's right reservation (see rule below) so the
+ * button never slides under the vertical progress rail column on the right edge of the map.
+ * Height matches `.map-about-btn` (34 px) so the row reads as a single horizontal control
+ * strip with both controls flush at the top and bottom. */
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: 34px;
+  min-height: 34px;
+  max-height: 34px;
+  justify-content: stretch;
+}
+
+/* Reserve the rightmost ~56 px of the about-row so the inline action slot doesn't sit under
+ * the vertical progress rail column. The rail's outer column is 56 px wide and aligns with
+ * the physical right edge; the bottom-stack already contributes max(8 px, safe-area-inset-right)
+ * of right padding, so we only need to make up the remainder plus a small visual gap. Scoped
+ * to the about-row so the search row and toolbar (which sit below the rail's foot inset) keep
+ * their full-width reach. Matches both inline variants: route-cycle (route loaded) and
+ * recenter-puck/My location (planning view). */
+.nav-bottom-dock__plan-stack
+  > .nav-bottom-dock__about-row:has(.nav-bottom-dock__route-toggle-slot--inline),
+.nav-bottom-dock__plan-stack
+  > .nav-bottom-dock__about-row:has(.nav-recenter-puck-btn--inline) {
+  padding-right: calc(56px - max(8px, env(safe-area-inset-right, 0px)) + 4px);
+}
+
+/* Doubled-class selectors below: a single `.--inline` ancestor would tie at specificity 0,2,0
+ * with the phone-width media query rules near the bottom of the file (which come later in
+ * source order and would therefore win the cascade on phones, reverting the inline placement
+ * back to the narrow stacked footprint). Doubling the slot class lifts these to 0,3,0 so the
+ * inline variant wins everywhere, including TestFlight. */
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-cycle-btn {
+  width: 100%;
+  /* Base .nav-route-cycle-btn caps width at 5.5 rem for the small stacked variants — explicitly
+   * unlock here so the inline button stretches across the about-row strip. */
+  min-width: 0;
+  max-width: none;
+  height: 34px;
+  min-height: 34px;
+  max-height: 34px;
+  /* Two-row grid inside the 34 px button so all three pieces render in full instead of being
+   * ellipsized:
+   *   row 1: [road label]  [letter · ETA]   ← left + right of the top line
+   *   row 2: [distance · strategy ────────] ← full-width bottom line
+   * Letting the columns size to their content (auto) means no ellipsis, no info loss; the
+   * about-row already reserves enough horizontal space for the typical strings (~22 chars top,
+   * ~16 chars bottom). */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  justify-content: stretch;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 0;
+  padding: 3px 10px;
+  text-align: left;
+  overflow: hidden;
+  /* Match .map-about-btn corner radius for visual symmetry across the row. */
+  border-radius: 9px;
+}
+
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-cycle-btn__label {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.15;
+  /* Allow the road label to be the full string — no ellipsis. If extreme labels overflow they
+   * will simply shrink the .nav-route-cycle-btn__eta chunk via auto-track sizing. */
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-cycle-btn__eta {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1.15;
+  white-space: nowrap;
+  /* No left border in the grid layout — the column gap supplies enough visual separation
+   * without a divider that would otherwise float between the two grid rows. */
+  padding-left: 0;
+  border-left: none;
+  /* Justify-self: end so "A · ~25 min" hugs the right edge of the top row. */
+  justify-self: end;
+}
+
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-cycle-btn__detail {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.15;
+  margin-top: 0;
+  white-space: nowrap;
+  /* Detail can be the longest piece (e.g. "12 mi · weather-aware"); allow normal flow with no
+   * ellipsis. The about-row's right inset reserves enough space for the common strings. */
+  overflow: visible;
+  text-overflow: clip;
+  opacity: 0.94;
+  padding-left: 0;
+  border-left: none;
+}
+
 .nav-bottom-dock__route-toggle-slot .nav-route-cycle-btn {
   width: 100%;
   min-width: 0;
@@ -1755,27 +2084,35 @@
   position: relative;
 }
 
+/* Suggestions list flows out of the search dock as one continuous panel — no nested card chrome.
+ * The negative horizontal margin escapes .nav-search-dock's `padding: 0 10px` so suggestion rows
+ * extend edge-to-edge of the dock instead of leaving a wasted strip on the left and right. */
 .nav-search-suggestions {
   list-style: none;
-  margin: 0;
+  margin: 0 -10px;
   padding: 0;
   max-height: 40vh;
   overflow-y: auto;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(12, 14, 18, 0.98);
+  -webkit-overflow-scrolling: touch;
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
-/* Narrow phones keep suggestions mounted while empty (recents UX) — no top gap until there are rows */
+/* Hairline divider above the suggestion list mirrors the row dividers between suggestions — gives
+ * a clear visual break between the input and the list without a heavy panel border. */
 .nav-search-suggestions:not(:empty) {
-  margin-top: 8px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .nav-search-suggestion {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 10px 12px;
+  /* Wider horizontal padding now that we extend edge-to-edge — keeps tap targets generous on phones. */
+  padding: 11px 14px;
   border: none;
   background: transparent;
   color: #e8eaed;
@@ -1799,6 +2136,34 @@
   cursor: default;
   color: #9aa0a6;
   font-size: 0.78rem;
+}
+
+/* Two-line suggestion: business / place name on top, full street address below in a quieter
+ * tone. Search Box returns the address as `place_formatted` so users can pick the right local
+ * store from a list of duplicate names without opening each. */
+.nav-search-suggestion__primary {
+  display: block;
+  font-weight: 600;
+  color: #e8eaed;
+}
+
+.nav-search-suggestion__secondary {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: #9aa0a6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* POI rows get a tiny pin glyph before the name so businesses are scannable in a mixed list.
+ * (No left-accent stripe — that styling is forbidden in this app.) */
+.nav-search-suggestion--poi .nav-search-suggestion__primary::before {
+  content: "📍 ";
+  margin-right: 2px;
+  filter: hue-rotate(-15deg);
 }
 
 .nav-footer-card {
@@ -2719,16 +3084,452 @@
 }
 
 /* Expanded panel (tap advisory): larger type, fewer nested “cards”, driver-first scanning */
+/* Anchor wrap: keeps the preview row in flow at its natural cluster position. The expanded
+ * panel renders as a sibling positioned absolutely so it floats over the progress rail
+ * (and the rest of the map) instead of pushing the cluster's row 2 down — which previously
+ * compressed the right-edge progress bar. */
+.storm-advisory-bar-anchor {
+  position: relative;
+  width: 100%;
+  z-index: 12;
+}
+
 .storm-advisory-bar--expanded {
   font-size: clamp(1rem, 3.7vw, 1.15rem);
   line-height: 1.45;
   padding: 18px 14px 14px;
-  margin-top: 6px;
+  /* Use position: fixed with viewport-relative coords. Top / left / right are set as CSS variables
+   * by a JS layout effect that measures the preview button's bounding rect — this guarantees the
+   * three edges align perfectly with the collapsed preview behind it. The bottom is anchored to
+   * a fixed distance above the viewport bottom (clears the i-button + safe-area-inset-bottom), so
+   * the panel reaches as far down as it can without the cluster's top offset confusing the math. */
+  position: fixed !important;
+  top: var(--storm-advisory-anchor-top, calc(env(safe-area-inset-top, 0px) + 56px)) !important;
+  /* Use the JS-measured anchor when available, but fall back to *generous* insets so the panel
+   * always sits clearly inside the viewport even before measurement runs. The max(14px, ...)
+   * clamps any too-small JS measurement to a safe 14px floor. */
+  left: max(14px, var(--storm-advisory-anchor-left, max(14px, env(safe-area-inset-left, 0px)))) !important;
+  right: max(14px, var(--storm-advisory-anchor-right, max(14px, env(safe-area-inset-right, 0px)))) !important;
+  bottom: var(--storm-advisory-bottom-inset, 60px) !important;
+  /* CRITICAL: the base .storm-advisory-bar rule sets width: 100% (for the preview button). When
+   * inherited here, position: fixed + left + right + width: 100% over-constrains the box and the
+   * browser drops the `right` value in LTR, making the panel span viewport_width past `left`
+   * (i.e. it visibly runs off the right edge). Force width back to auto so left + right
+   * determine the panel's size. Same fix for max-width which is also 100% on the base. */
+  width: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  z-index: 14;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Pure-downward drop shadow — negative spread + matching blur means the shadow never extends
+   * horizontally past the panel's actual edges (was reading as "panel spilling off-screen right"). */
+  box-shadow: 0 4px 10px -8px rgba(0, 0, 0, 0.6);
+}
+
+/* When the advisory bar is expanded, lift the cluster above the right-side progress rail so the
+ * fixed-position panel + its tap targets stack on top of the rail's ⧉ toggle (which sits at
+ * z-index 8 inside its own stacking context, currently at z 6 of the overlay-stack grid). */
+.nav-top-cluster:has(.storm-advisory-bar--expanded) {
+  z-index: 16;
+}
+
+/* Visual cue when the preview button is the close-tap target while expanded. */
+.storm-advisory-bar--preview-active {
+  opacity: 0.9;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__sections-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 4px;
+  margin-top: 8px;
+}
+
+/* Stage A: per-section card. Mirrors the iOS-grouped feel from the About sheet. */
+.storm-advisory-bar__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 12px 10px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.36);
+}
+
+.storm-advisory-bar__section--now {
+  background: rgba(69, 10, 10, 0.55);
+  border-color: rgba(248, 113, 113, 0.7);
+}
+
+.storm-advisory-bar__section--weather {
+  background: rgba(15, 23, 42, 0.62);
+  border-color: rgba(96, 165, 250, 0.5);
+}
+
+.storm-advisory-bar__section--roads {
+  background: rgba(15, 23, 42, 0.62);
+  border-color: rgba(251, 191, 36, 0.5);
+}
+
+.storm-advisory-bar__section--suggestion {
+  background: rgba(15, 23, 42, 0.62);
+  border-color: rgba(74, 222, 128, 0.5);
+}
+
+.storm-advisory-bar__section-title {
+  margin: 0;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #cbd5e1;
+}
+
+.storm-advisory-bar__section--now .storm-advisory-bar__section-title {
+  color: #fecaca;
+}
+
+.storm-advisory-bar__section-source {
+  margin: 4px 0 0;
+  font-size: 0.66rem;
+  color: #64748b;
+  font-style: italic;
+}
+
+.storm-advisory-bar__section-status,
+.storm-advisory-bar__section-hint {
+  margin: 0;
+}
+
+/* Now section — life-safety NWS cards */
+.storm-advisory-bar__now-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.storm-advisory-bar__now-card {
+  display: block;
+}
+
+.storm-advisory-bar__now-card-btn {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(127, 29, 29, 0.85), rgba(69, 10, 10, 0.95));
+  border: 1px solid rgba(252, 165, 165, 0.55);
+  color: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.storm-advisory-bar__now-card-btn:hover {
+  border-color: rgba(254, 202, 202, 0.75);
+}
+
+.storm-advisory-bar__now-card-icon {
+  flex-shrink: 0;
+  font-size: 1.2rem;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.storm-advisory-bar__now-card-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.storm-advisory-bar__now-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.storm-advisory-bar__now-card-sev {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fee2e2;
+}
+
+.storm-advisory-bar__now-card-detail {
+  font-size: 0.78rem;
+  color: #fee2e2;
+}
+
+.storm-advisory-bar__now-card-meta {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Impact rows — flat list inside a section. No per-row card / no accent stripe.
+ * Severity is signalled by a small colored dot before the headline and an inline
+ * severity pill on the right. Rows are separated by hairlines. */
+.storm-advisory-bar__impact-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.storm-advisory-bar__impact-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.storm-advisory-bar__impact-row:first-child {
+  border-top: none;
+  padding-top: 4px;
+}
+
+.storm-advisory-bar__impact-row--tappable {
+  cursor: pointer;
+}
+
+.storm-advisory-bar__impact-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.storm-advisory-bar__impact-headline {
+  flex: 1 1 auto;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+/* Severity dot — drawn via ::before instead of a panel border. */
+.storm-advisory-bar__impact-headline::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: middle;
+  background: rgba(148, 163, 184, 0.6);
+}
+
+.storm-advisory-bar__impact-row--sev-info .storm-advisory-bar__impact-headline::before {
+  background: #60a5fa;
+}
+.storm-advisory-bar__impact-row--sev-caution .storm-advisory-bar__impact-headline::before {
+  background: #fbbf24;
+}
+.storm-advisory-bar__impact-row--sev-serious .storm-advisory-bar__impact-headline::before {
+  background: #f97316;
+}
+.storm-advisory-bar__impact-row--sev-avoid .storm-advisory-bar__impact-headline::before {
+  background: #dc2626;
+}
+
+.storm-advisory-bar__impact-source {
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.storm-advisory-bar__impact-meta {
+  font-size: 0.74rem;
+  color: #94a3b8;
+  padding-left: 17px; /* aligns under headline text past the dot */
+}
+
+.storm-advisory-bar__impact-detail {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #cbd5e1;
+  padding-left: 17px;
+}
+
+/* Suggestion section row — flat (no card, no accent stripe). */
+.storm-advisory-bar__suggestion-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 4px 0;
+}
+
+.storm-advisory-bar__suggestion-label {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #86efac;
+}
+
+.storm-advisory-bar__suggestion-text {
+  flex: 1 1 auto;
+  font-size: 0.84rem;
+  color: #f1f5f9;
+}
+
+/* ───── Storm strip (Stage C) ───── */
+.route-storm-strip {
+  margin: 4px 0 8px;
+}
+
+.route-storm-strip__btn {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(20, 6, 6, 0.65);
+  border: 1px solid rgba(252, 165, 165, 0.45);
+  color: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.route-storm-strip--sev-serious .route-storm-strip__btn {
+  border-color: rgba(249, 115, 22, 0.7);
+  background: rgba(120, 53, 15, 0.55);
+}
+.route-storm-strip--sev-avoid .route-storm-strip__btn {
+  border-color: rgba(220, 38, 38, 1);
+  background: rgba(127, 29, 29, 0.65);
+}
+
+.route-storm-strip--passed .route-storm-strip__btn {
+  opacity: 0.55;
+}
+
+.route-storm-strip__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-size: 0.84rem;
+}
+
+.route-storm-strip__icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.route-storm-strip__rail {
+  position: relative;
+  width: 100%;
+  height: 32px;
+  margin: 4px 0 6px;
+}
+
+.route-storm-strip__track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 6px;
+  transform: translateY(-50%);
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 3px;
+}
+
+.route-storm-strip__band {
+  position: absolute;
+  top: 50%;
+  height: 12px;
+  transform: translateY(-50%);
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(220, 38, 38, 0.85), rgba(249, 115, 22, 0.85));
+  box-shadow: 0 0 6px rgba(220, 38, 38, 0.45);
+}
+
+.route-storm-strip--sev-serious .route-storm-strip__band {
+  background: linear-gradient(90deg, rgba(249, 115, 22, 0.85), rgba(251, 191, 36, 0.85));
+  box-shadow: 0 0 4px rgba(249, 115, 22, 0.4);
+}
+
+.route-storm-strip__you {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45);
+  transform: translate(-50%, -50%);
+  transition: left 800ms ease-out;
+}
+
+.route-storm-strip__endmarks {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.route-storm-strip__endmark {
+  position: absolute;
+  bottom: -2px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(203, 213, 225, 0.85);
+}
+
+.route-storm-strip__endmark--start {
+  left: 0;
+}
+
+.route-storm-strip__endmark--end {
+  right: 0;
+}
+
+.route-storm-strip__caption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.route-storm-strip__caption-primary {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.route-storm-strip__caption-secondary {
+  font-size: 0.66rem;
+  color: rgba(255, 255, 255, 0.65);
+  font-style: italic;
 }
 
 /* Clear the turn / StormPath strip — expanded panel sits fully below guidance */
+/* Expanded bar floats out of flow now (position: absolute on .storm-advisory-bar--expanded),
+ * so the cluster's gap shouldn't grow when the bar opens — keep tight. */
 .nav-top-route-rail__main:has(.storm-advisory-bar--expanded) {
-  gap: max(14px, 1.25vh);
+  gap: 0;
 }
 
 /* Hazards then road — single column, no inner clipping scroll (full list visible at once). */
@@ -2893,6 +3694,28 @@
 /* Done / collapse — trailing edge (thumb reach); title + toggles stay left */
 .storm-advisory-bar--expanded .storm-advisory-bar__collapse-btn {
   margin-left: auto;
+}
+
+/* Push the stacked NWS / Road toggles to their own row directly under the Advisory title.
+ * The expanded panel is now narrower (left/right insets) so right-aligning the toggles next
+ * to the title was clipping under the title's last letter. order: 3 + flex-basis: 100% pairs
+ * with the head's `flex-wrap: wrap` so:
+ *   row 1: [Advisory title]   ………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………… [Done]
+ *   row 2: [☐ NWS polygons]
+ *          [☐ Road impacts & traffic] */
+.storm-advisory-bar--expanded .storm-advisory-bar__toggles--stacked {
+  order: 3;
+  flex-basis: 100%;
+  width: 100%;
+  margin: 6px 0 0;
+  padding-top: 8px;
+  align-items: flex-start;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__toggles--stacked .storm-advisory-bar__toggle {
+  justify-content: flex-start;
+  text-align: left;
 }
 
 .storm-advisory-bar--expanded .storm-advisory-bar__title {
@@ -3077,8 +3900,6 @@
 .storm-advisory-bar--expanded .storm-advisory-bar__advice--weather {
   font-size: 0.98rem;
   line-height: 1.32;
-  padding-left: 10px;
-  border-left-width: 4px;
   margin-top: 8px;
 }
 
@@ -3178,9 +3999,13 @@
   gap: 8px;
   width: 100%;
   margin-top: 4px;
-  padding: 9px 12px;
+  /* A little more vertical padding now that the inner pill is gone — gives the larger message
+   * room to breathe without making the whole bar taller than the surrounding turn / progress strip. */
+  padding: 11px 14px;
   font: inherit;
-  font-size: 0.72rem;
+  /* Bumped from 0.72rem — was reading as squint-tiny at a glance. clamp() keeps it responsive on
+   * narrow phones (~14px) up to mid-width (~16px). */
+  font-size: clamp(0.88rem, 2.6vw, 1rem);
   font-weight: 600;
   text-align: left;
   color: #f1f5f9;
@@ -3192,50 +4017,43 @@
   appearance: none;
   border-width: 1px;
   border-style: solid;
-  min-height: 42px;
-  line-height: 1.35;
+  min-height: 46px;
+  line-height: 1.32;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .storm-advisory-bar--preview:hover {
   background: rgba(15, 23, 42, 0.96);
 }
 
-/* Severity tint behind the preview message (parent has .storm-advisory-bar--sev-*). */
+/* Single-surface design: the inner span is now layout-only — no background, border, or padding.
+ * The severity tint lives on the outer button below so the message uses the full bar width. */
 .storm-advisory-bar__preview-message-wrap {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
   min-width: 0;
-  padding: 5px 10px;
-  border-radius: 8px;
-  background: rgba(30, 41, 59, 0.65);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.storm-advisory-bar--preview.storm-advisory-bar--sev-none .storm-advisory-bar__preview-message-wrap {
-  background: rgba(51, 65, 85, 0.55);
-  border-color: rgba(148, 163, 184, 0.28);
+/* Severity-tinted backgrounds applied directly to the preview button (no inner pill). */
+.storm-advisory-bar--preview.storm-advisory-bar--sev-none {
+  background: rgba(30, 41, 59, 0.92);
 }
 
-.storm-advisory-bar--preview.storm-advisory-bar--sev-info .storm-advisory-bar__preview-message-wrap {
-  background: rgba(30, 64, 175, 0.42);
-  border-color: rgba(96, 165, 250, 0.45);
+.storm-advisory-bar--preview.storm-advisory-bar--sev-info {
+  background: rgba(23, 47, 110, 0.88);
 }
 
-.storm-advisory-bar--preview.storm-advisory-bar--sev-warn .storm-advisory-bar__preview-message-wrap {
-  background: rgba(154, 52, 18, 0.48);
-  border-color: rgba(251, 191, 36, 0.55);
+.storm-advisory-bar--preview.storm-advisory-bar--sev-warn {
+  background: rgba(120, 53, 24, 0.88);
 }
 
-.storm-advisory-bar--preview.storm-advisory-bar--sev-severe .storm-advisory-bar__preview-message-wrap {
-  background: rgba(127, 29, 29, 0.52);
-  border-color: rgba(252, 165, 165, 0.55);
+.storm-advisory-bar--preview.storm-advisory-bar--sev-severe {
+  background: rgba(120, 25, 25, 0.9);
 }
 
-.storm-advisory-bar--preview.storm-advisory-bar--err .storm-advisory-bar__preview-message-wrap {
-  background: rgba(127, 29, 29, 0.58);
-  border-color: rgba(254, 202, 202, 0.55);
+.storm-advisory-bar--preview.storm-advisory-bar--err {
+  background: rgba(120, 25, 25, 0.92);
 }
 
 .storm-advisory-bar__preview-ticker-badge {
@@ -3827,8 +4645,6 @@
 
 .storm-advisory-bar__advice--weather {
   color: #fef9c3;
-  border-left: 3px solid rgba(251, 191, 36, 0.65);
-  padding-left: 8px;
   margin-top: 10px;
   font-size: 0.58rem;
   line-height: 1.4;
@@ -5208,46 +6024,30 @@
   max-height: 2.1rem;
 }
 
-.drive-hazard-approach--strip.drive-hazard-approach--early {
-  border-left-width: 4px;
-  border-left-style: solid;
-  padding-left: 6px;
+/* Severity is conveyed via a dot before the title (see ::before below) — never a colored
+ * left-stripe on the panel. See .cursor/rules/no-left-accent-panels.mdc. */
+.drive-hazard-approach__title::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 7px;
+  vertical-align: middle;
+  background: rgba(148, 163, 184, 0.6);
 }
 
-.drive-hazard-approach--strip.drive-hazard-approach--early.drive-hazard-approach--sev-info {
-  border-left-color: rgba(59, 130, 246, 0.95);
+.drive-hazard-approach--sev-info .drive-hazard-approach__title::before {
+  background: #60a5fa;
 }
-
-.drive-hazard-approach--strip.drive-hazard-approach--early.drive-hazard-approach--sev-caution {
-  border-left-color: rgba(234, 179, 8, 0.95);
+.drive-hazard-approach--sev-caution .drive-hazard-approach__title::before {
+  background: #fbbf24;
 }
-
-.drive-hazard-approach--strip.drive-hazard-approach--early.drive-hazard-approach--sev-serious {
-  border-left-color: rgba(249, 115, 22, 0.95);
+.drive-hazard-approach--sev-serious .drive-hazard-approach__title::before {
+  background: #f97316;
 }
-
-.drive-hazard-approach--strip.drive-hazard-approach--early.drive-hazard-approach--sev-avoid {
-  border-left-color: rgba(239, 68, 68, 0.95);
-}
-
-.drive-hazard-approach--strip.drive-hazard-approach--near.drive-hazard-approach--sev-info {
-  border-left: 3px solid rgba(59, 130, 246, 0.85);
-  padding-left: 7px;
-}
-
-.drive-hazard-approach--strip.drive-hazard-approach--near.drive-hazard-approach--sev-caution {
-  border-left: 3px solid rgba(234, 179, 8, 0.85);
-  padding-left: 7px;
-}
-
-.drive-hazard-approach--strip.drive-hazard-approach--near.drive-hazard-approach--sev-serious {
-  border-left: 3px solid rgba(249, 115, 22, 0.9);
-  padding-left: 7px;
-}
-
-.drive-hazard-approach--strip.drive-hazard-approach--near.drive-hazard-approach--sev-avoid {
-  border-left: 3px solid rgba(239, 68, 68, 0.92);
-  padding-left: 7px;
+.drive-hazard-approach--sev-avoid .drive-hazard-approach__title::before {
+  background: #dc2626;
 }
 
 .drive-hazard-approach__copy {
@@ -7136,6 +7936,195 @@
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.45);
   overflow: hidden;
   box-sizing: border-box;
+}
+
+/* Full-screen variant — used by the new home + drill-in layout so each section view has the
+ * entire screen to display its rows (no more three panes fighting for ~600 px of height). */
+.saved-drawer.saved-drawer--full {
+  top: 0;
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+  padding-top: calc(10px + env(safe-area-inset-top, 0px));
+}
+
+/* Body uses the entire space below the header — single scroll context per drill-in view. */
+.saved-drawer-body--full {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 2px;
+  padding-bottom: 6px;
+}
+
+/* Back arrow — sits to the left of the title in drill-in views. */
+.saved-drawer-back {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8eaed;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  /* Pull the title left so the layout reads "[‹] Title  …………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………… [×]". */
+  margin-right: -2px;
+}
+
+.saved-drawer.saved-drawer--full .saved-drawer-head {
+  /* Larger, page-style header with bigger title for the full-screen sheet. */
+  align-items: center;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 4px;
+}
+
+.saved-drawer.saved-drawer--full .saved-drawer-title {
+  flex: 1;
+  font-size: 1.15rem;
+}
+
+/* Home view container: comfortable spacing above the section tiles. */
+.saved-drawer-home {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 6px 0 12px;
+}
+
+.saved-drawer-home-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.saved-drawer-home-tile-item {
+  list-style: none;
+}
+
+/* Big, easy-to-tap section row — full width, prominent label, count chip, chevron affordance. */
+.saved-drawer-home-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 16px 16px 14px;
+  border: 1px solid rgba(138, 180, 248, 0.28);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(36, 39, 46, 0.95) 0%, rgba(20, 22, 26, 0.92) 100%);
+  color: #e8eaed;
+  text-align: left;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 2px 12px rgba(0, 0, 0, 0.35);
+  transition: background 0.15s ease, transform 0.05s ease, border-color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  appearance: none;
+}
+
+.saved-drawer-home-tile:hover {
+  border-color: rgba(138, 180, 248, 0.5);
+  background: linear-gradient(180deg, rgba(46, 51, 60, 0.96) 0%, rgba(24, 27, 32, 0.94) 100%);
+}
+
+.saved-drawer-home-tile:active {
+  transform: scale(0.995);
+}
+
+.saved-drawer-home-tile__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.saved-drawer-home-tile__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: #e8eaed;
+  letter-spacing: 0.005em;
+}
+
+/* Pill on the right shows the row count for that section at a glance. */
+.saved-drawer-home-tile__count {
+  flex-shrink: 0;
+  min-width: 28px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(138, 180, 248, 0.12);
+  border: 1px solid rgba(138, 180, 248, 0.32);
+  color: #a8c7fa;
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-align: center;
+}
+
+/* "Plus" badge replaces the count when the user is on the free tier (no count to show yet). */
+.saved-drawer-home-tile__badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fde68a;
+  background: rgba(251, 191, 36, 0.14);
+  border: 1px solid rgba(251, 191, 36, 0.32);
+}
+
+.saved-drawer-home-tile__chevron {
+  flex-shrink: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: rgba(168, 199, 250, 0.65);
+  line-height: 1;
+}
+
+.saved-drawer-home-tile__hint {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: #9aa0a6;
+}
+
+/* Drill-in section page — single scroll context, generous spacing, no nested cards. */
+.saved-drawer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0 12px;
+}
+
+.saved-drawer-section-kicker {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #9aa0a6;
+}
+
+/* Larger, full-width primary actions on the section page. */
+.saved-drawer-save-current--full {
+  padding: 14px 14px;
+  font-size: 0.92rem;
+  border-radius: 12px;
+}
+
+/* Single full-width list — no embedded card frame, since the section IS the page. */
+.saved-drawer-list--full {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 .saved-drawer-body {

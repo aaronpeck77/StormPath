@@ -102,7 +102,7 @@ export function SearchBar({
               <button
                 type="button"
                 role="option"
-                className="nav-search-suggestion"
+                className={`nav-search-suggestion${h.featureType === "poi" ? " nav-search-suggestion--poi" : ""}`}
                 onPointerDown={(e) => {
                   // Keep focus on input so the suggestion list doesn't disappear mid-tap.
                   e.preventDefault();
@@ -110,7 +110,10 @@ export function SearchBar({
                 onClick={() => onPickSuggestion?.(h)}
                 disabled={suggestionsLoading && t.length >= 2}
               >
-                {h.placeName}
+                <span className="nav-search-suggestion__primary">{h.placeName}</span>
+                {h.secondary && (
+                  <span className="nav-search-suggestion__secondary">{h.secondary}</span>
+                )}
               </button>
             </li>
           ))}

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RouteAlert } from "../nav/routeAlerts";
 import type { LngLat, NavRoute } from "../nav/types";
 import type { SavedPlace } from "../nav/savedPlaces";
-import { closestPointOnPolyline, pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
+import { closestPointOnPolyline, haversineMeters, pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
 import { getWebEnv } from "../config/env";
 import {
   fetchRainViewerRadarFrames,
@@ -1426,6 +1426,35 @@ export function DriveMap({
     let lastSeenLng = t0?.[0] ?? NaN;
     let lastSeenLat = t0?.[1] ?? NaN;
 
+    /* Apparent-speed estimate from consecutive fixes — robust fallback for the case where iOS
+     * Core Location reports `speed = -1` (unknown). On a phone at rest, `pos.coords.speed` is
+     * frequently null/-1, so we can't rely on the reported value alone to detect "stationary".
+     * Tracks distance over the last ~6 s of fixes; treat below 0.7 m/s (~1.5 mph) as stationary. */
+    type FixSample = { lng: number; lat: number; t: number };
+    const fixSamples: FixSample[] = [];
+    const FIX_WINDOW_MS = 6_000;
+    let apparentSpeedMps: number | null = null;
+    const recomputeApparentSpeed = (now: number) => {
+      while (fixSamples.length > 1 && now - fixSamples[0]!.t > FIX_WINDOW_MS) fixSamples.shift();
+      if (fixSamples.length < 2) {
+        apparentSpeedMps = null;
+        return;
+      }
+      let dist = 0;
+      for (let i = 1; i < fixSamples.length; i += 1) {
+        const a = fixSamples[i - 1]!;
+        const b = fixSamples[i]!;
+        dist += haversineMeters([a.lng, a.lat], [b.lng, b.lat]);
+      }
+      const span = (fixSamples[fixSamples.length - 1]!.t - fixSamples[0]!.t) / 1000;
+      apparentSpeedMps = span > 0 ? dist / span : null;
+    };
+
+    /* Skip Mapbox marker / camera writes when the change is sub-meter — Mapbox repaints on every
+     * setLngLat, and at 60 fps even noise far below 1 m can manifest as visible vibration. */
+    const NOOP_LNGLAT_DELTA = 0.000005; /* ~0.55 m at the equator; smaller north of 45° */
+    let lastBearingApplied = NaN;
+
     const loop = () => {
       const t = userLngLatRef.current;
       if (t) {
@@ -1439,15 +1468,18 @@ export function DriveMap({
           curFix = { lng: t[0], lat: t[1], t: now };
           lastSeenLng = t[0];
           lastSeenLat = t[1];
+          fixSamples.push({ lng: t[0], lat: t[1], t: now });
+          recomputeApparentSpeed(now);
         }
 
-        // Compute interpolated/dead-reckoned position between the two most
-        // recent fixes.  Cap at 1.25× the interval so we don't coast too far.
+        // Compute interpolated position between the two most recent fixes.
+        // Cap alpha at 1.0 so we don't overshoot curFix and then have to correct backward when
+        // the next fix arrives — that's the per-second micro-backward "twitch" users perceive.
         let targetLng: number;
         let targetLat: number;
         if (prevFix && curFix && curFix.t > prevFix.t) {
           const interval = curFix.t - prevFix.t;
-          const alpha = Math.min((now - prevFix.t) / interval, 1.06);
+          const alpha = Math.min((now - prevFix.t) / interval, 1.0);
           targetLng = prevFix.lng + (curFix.lng - prevFix.lng) * alpha;
           targetLat = prevFix.lat + (curFix.lat - prevFix.lat) * alpha;
         } else {
@@ -1499,15 +1531,42 @@ export function DriveMap({
           snappedAlongSmooth = null;
         }
 
-        // Tight exponential polish — the lerp above handles the coarse motion;
-        // Slightly slower blend while route-snapped to damp remaining sub-pixel noise.
-        const blendTc = snapLatched ? 0.145 : 0.095;
+        /* Tight exponential polish — the lerp above handles coarse motion. Stationary detection
+         * keeps the puck steady when parked at a light or stopped in traffic: GPS still wobbles
+         * 5–10 m even when the vehicle isn't moving, and at 1 Hz that wobble looks like a twitch
+         * unless we lengthen the smoothing time constant dramatically.
+         *
+         * iOS Core Location frequently reports `speed = -1` (unknown) at low speeds, which arrives
+         * here as `null`. We fall back to apparent speed measured directly from consecutive fixes
+         * so stationary mode still triggers when the device-reported speed is missing. */
+        const reportedSp = speedMpsRef.current;
+        const effSp =
+          reportedSp != null && reportedSp >= 0
+            ? reportedSp
+            : apparentSpeedMps != null
+              ? apparentSpeedMps
+              : null;
+        const isStationary = effSp != null && effSp < 0.7;
+        const isCrawling = effSp != null && effSp >= 0.7 && effSp < 2.0;
+        /* TC = how long it takes the puck to converge to the target. Longer = more damping.
+         *   stationary  → 2.4s   (heavy damping — pin the puck through GPS wobble while parked)
+         *   crawling    → 0.32s  (light damping in stop-and-go traffic)
+         *   snapped     → 0.145s (existing tuning)
+         *   free / fast → 0.095s (existing tuning) */
+        const blendTc = isStationary ? 2.4 : isCrawling ? 0.32 : snapLatched ? 0.145 : 0.095;
         const blend = 1 - Math.exp(-dt / blendTc);
         const cur = marker.getLngLat();
-        marker.setLngLat([
-          cur.lng + (targetLng - cur.lng) * blend,
-          cur.lat + (targetLat - cur.lat) * blend,
-        ]);
+        const nextLng = cur.lng + (targetLng - cur.lng) * blend;
+        const nextLat = cur.lat + (targetLat - cur.lat) * blend;
+        /* Skip the write when the change is sub-half-meter — keeps Mapbox from repainting the
+         * marker (and the follow camera) at 60 fps for sub-pixel deltas. This is the difference
+         * between "occasionally settling toward a new fix" and "vibrating in place". */
+        const moved =
+          Math.abs(nextLng - cur.lng) > NOOP_LNGLAT_DELTA ||
+          Math.abs(nextLat - cur.lat) > NOOP_LNGLAT_DELTA;
+        if (moved) {
+          marker.setLngLat([nextLng, nextLat]);
+        }
 
         /* Drive camera must track the smoothed puck — not raw GPS `easeTo` — or the map lurches while the puck glides. */
         const map = mapRef.current;
@@ -1546,23 +1605,39 @@ export function DriveMap({
             alphaBrg
           );
           const pos = marker.getLngLat();
-          try {
-            /*
-             * `easeTo` honors `offset` (drive focal point); `jumpTo` silently drops it.
-             * `duration: 0` skips animation, so this is effectively an immediate snap.
-             */
-            map.easeTo({
-              center: [pos.lng, pos.lat],
-              zoom: 16.35,
-              pitch: 58,
-              bearing: driveCamBearingSmoothedRef.current,
-              padding,
-              offset,
-              duration: 0,
-              essential: true,
-            });
-          } catch {
-            /* style race */
+          /* Mirror the marker's no-op guard for the camera. Without this, easeTo runs every
+           * frame even when target ≈ current, and Mapbox repaints — even sub-pixel deltas in
+           * float math show up as a visible vibration. */
+          const camCenter = map.getCenter();
+          const bearingDelta = Number.isFinite(lastBearingApplied)
+            ? Math.abs(driveCamBearingSmoothedRef.current - lastBearingApplied)
+            : Infinity;
+          const camMoved =
+            !moved
+              ? false
+              : Math.abs(camCenter.lng - pos.lng) > NOOP_LNGLAT_DELTA ||
+                Math.abs(camCenter.lat - pos.lat) > NOOP_LNGLAT_DELTA;
+          const bearingMoved = bearingDelta > 0.05; /* deg — finer than the eye can see when stopped */
+          if (camMoved || bearingMoved) {
+            try {
+              /*
+               * `easeTo` honors `offset` (drive focal point); `jumpTo` silently drops it.
+               * `duration: 0` skips animation, so this is effectively an immediate snap.
+               */
+              map.easeTo({
+                center: [pos.lng, pos.lat],
+                zoom: 16.35,
+                pitch: 58,
+                bearing: driveCamBearingSmoothedRef.current,
+                padding,
+                offset,
+                duration: 0,
+                essential: true,
+              });
+              lastBearingApplied = driveCamBearingSmoothedRef.current;
+            } catch {
+              /* style race */
+            }
           }
         }
       }

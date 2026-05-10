@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
 import { getWebEnv } from "../config/env";
+import { MapKeyPanel } from "./MapKeyPanel";
 
 type ActivityTrailPanel = {
   count: number;
@@ -400,6 +401,8 @@ export function AboutSheet({
             </div>
             </div>
           </section>
+
+          <MapKeyPanel />
 
           {plus && activityTrail && (
             <section className="about-sheet__panel about-sheet__panel--activity">

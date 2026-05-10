@@ -4,6 +4,12 @@ import type { SavedRoute } from "../nav/savedRoutes";
 import type { LngLat } from "../nav/types";
 import type { FrequentRouteCluster } from "../frequentRoutes/types";
 
+/* The drawer is a full-screen sheet with a "home" landing page and three drill-in pages
+ * (Places / Saved routes / Frequent routes). Each drill-in page gets the entire screen to
+ * itself so the rows have plenty of room to read at a glance, and the previous nested-scroll
+ * problem (three crammed sections sharing 88vh) goes away. */
+type DrawerView = "home" | "places" | "routes" | "frequent";
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -60,205 +66,281 @@ export function SavedDestinationsDrawer({
   onSaveFrequentRoute,
   onDismissFrequentRoute,
 }: Props) {
+  /* Drill-in navigation. Resets to "home" each time the drawer opens so users always land
+   * on the section index instead of wherever they were last time. */
+  const [view, setView] = useState<DrawerView>("home");
+  useEffect(() => {
+    if (open) setView("home");
+  }, [open]);
+
   if (!open) return null;
+
+  const headerTitle =
+    view === "home"
+      ? "Saved"
+      : view === "places"
+        ? "Places"
+        : view === "routes"
+          ? "Saved routes"
+          : "Frequent routes";
+
+  const placeCount = places.length;
+  const routeCount = savedRoutes.length;
+  const frequentCount = payFrequentRoutes ? frequentRouteSuggestions.length : 0;
 
   return (
     <>
       <div className="saved-drawer-scrim" role="presentation" onClick={onClose} />
-      <div className="saved-drawer" role="dialog" aria-labelledby="saved-drawer-title">
+      <div className="saved-drawer saved-drawer--full" role="dialog" aria-labelledby="saved-drawer-title">
         <div className="saved-drawer-head">
+          {view !== "home" && (
+            <button
+              type="button"
+              className="saved-drawer-back"
+              onClick={() => setView("home")}
+              aria-label="Back to Saved"
+              title="Back"
+            >
+              ‹
+            </button>
+          )}
           <h2 id="saved-drawer-title" className="saved-drawer-title">
-            Saved
+            {headerTitle}
           </h2>
           <button type="button" className="saved-drawer-x" onClick={onClose} aria-label="Close">
             ×
           </button>
         </div>
 
-        <div className="saved-drawer-body">
-          <label className="saved-drawer-toggle">
-            <input
-              type="checkbox"
-              checked={showOnMap}
-              onChange={(e) => onToggleShowOnMap(e.target.checked)}
-            />
-            <span>Show place pins on map</span>
-          </label>
+        <div className="saved-drawer-body saved-drawer-body--full">
+          {view === "home" && (
+            <div className="saved-drawer-home">
+              <label className="saved-drawer-toggle">
+                <input
+                  type="checkbox"
+                  checked={showOnMap}
+                  onChange={(e) => onToggleShowOnMap(e.target.checked)}
+                />
+                <span>Show place pins on map</span>
+              </label>
 
-          <div className="saved-drawer-panes">
-            <section className="saved-drawer-pane" aria-labelledby="saved-places-heading">
-              <div className="saved-drawer-pane__card">
-                <header className="saved-drawer-pane__chrome">
-                  <p id="saved-places-heading" className="saved-drawer-section-label">
-                    Places
-                  </p>
-                  <p className="saved-drawer-pane__kicker">Saved pins on the map — Go sets destination only.</p>
-                  {onSaveCurrent && currentDestLngLat && (
-                    <button type="button" className="saved-drawer-save-current" onClick={onSaveCurrent}>
-                      Save current destination
-                      {currentDestLabel ? ` (${currentDestLabel})` : ""}
-                    </button>
-                  )}
-                </header>
-                <div className="saved-drawer-pane__scroll" role="region" aria-label="Saved places list">
-                <ul className="saved-drawer-list saved-drawer-list--embedded">
-                  {places.length === 0 && (
-                    <li className="saved-drawer-empty">
-                      No saved places yet. Set a destination and build a route, then tap ★ and use{" "}
-                      <strong>Save current destination</strong> before you hit Go.
-                    </li>
-                  )}
-                  {places.map((p) => (
-                    <SavedRow key={p.id} place={p} onGo={onGo} onRename={onRename} onDelete={onDelete} />
-                  ))}
-                </ul>
-                </div>
-              </div>
-            </section>
+              <ul className="saved-drawer-home-list" role="list">
+                <HomeTile
+                  label="Places"
+                  count={placeCount}
+                  hint="Saved pins on the map — tap one to set it as a destination."
+                  onClick={() => setView("places")}
+                />
+                <HomeTile
+                  label="Saved routes"
+                  count={routeCount}
+                  hint="Full driven paths you can replay or reverse."
+                  onClick={() => setView("routes")}
+                />
+                <HomeTile
+                  label="Frequent routes"
+                  count={frequentCount}
+                  hint={
+                    payFrequentRoutes
+                      ? "Repeat trips detected on this device."
+                      : "Plus — repeat-trip learning and suggestions."
+                  }
+                  badge={payFrequentRoutes ? null : "Plus"}
+                  onClick={() => setView("frequent")}
+                />
+              </ul>
+            </div>
+          )}
 
-            <section className="saved-drawer-pane" aria-labelledby="saved-routes-heading">
-              <div className="saved-drawer-pane__card">
-                <header className="saved-drawer-pane__chrome">
-                  <p id="saved-routes-heading" className="saved-drawer-section-label">
-                    Saved routes
-                  </p>
-                  <p className="saved-drawer-pane__kicker">Full path kept — record or save from the map.</p>
-                </header>
-                <div className="saved-drawer-pane__scroll" role="region" aria-label="Saved routes and tools">
-                <p className="saved-drawer-route-hint saved-drawer-route-hint--pane-top">
-                  Save the line on the map, or record a drive when the router won’t follow your road. Use{" "}
-                  <strong>Rev</strong> on a saved route to flip direction.
-                </p>
-                {onStartRecordingPath && (
-                  <button
-                    type="button"
-                    className="saved-drawer-save-current saved-drawer-save-current--record"
-                    onClick={onStartRecordingPath}
-                  >
-                    Record driven path (GPS)
-                  </button>
-                )}
-                {recordingActive && (
-                  <p className="saved-drawer-recording-note" role="status">
-                    Recording — use the bar above the toolbar to stop &amp; save or discard.
-                  </p>
-                )}
-                {onSaveCurrentRoute && (
-                  <button type="button" className="saved-drawer-save-current" onClick={onSaveCurrentRoute}>
-                    Save active route
-                  </button>
-                )}
-                <p className="saved-drawer-pane__subhead">Your routes</p>
-                <ul className="saved-drawer-list saved-drawer-list--embedded">
-                  {savedRoutes.length === 0 && <li className="saved-drawer-empty">No saved routes yet.</li>}
-                  {savedRoutes.map((r) => (
-                    <SavedRouteRow
-                      key={r.id}
-                      route={r}
-                      onGo={onGoSavedRoute}
-                      onRename={onRenameSavedRoute}
-                      onDelete={onDeleteSavedRoute}
-                    />
-                  ))}
-                </ul>
-                </div>
-              </div>
-            </section>
-
-            <section className="saved-drawer-pane" aria-labelledby="saved-frequent-heading">
-              <div className="saved-drawer-pane__card">
-                <header className="saved-drawer-pane__chrome saved-drawer-pane__chrome--inline">
-                  <div className="saved-drawer-pane__title-stack">
-                    <p id="saved-frequent-heading" className="saved-drawer-section-label">
-                      Frequent routes
-                    </p>
-                    <p className="saved-drawer-pane__kicker">Repeat trips detected on this device.</p>
-                  </div>
-                  <span className="saved-drawer-pane__badge">Plus</span>
-                </header>
-                <div
-                  className="saved-drawer-pane__scroll saved-drawer-pane__scroll--frequent"
-                  role="region"
-                  aria-label="Frequent route learning and suggestions"
+          {view === "places" && (
+            <section className="saved-drawer-section" aria-label="Saved places">
+              {onSaveCurrent && currentDestLngLat && (
+                <button
+                  type="button"
+                  className="saved-drawer-save-current saved-drawer-save-current--full"
+                  onClick={onSaveCurrent}
                 >
-                {!payFrequentRoutes && (
-                  <div className="saved-drawer-frequent-upsell">
-                    <p className="saved-drawer-frequent-lead">
-                      <strong>Plus</strong> can notice trips you drive often and suggest them here. Everything stays on this
-                      device.
-                    </p>
-                    <p className="saved-drawer-route-hint saved-drawer-frequent-meta">
-                      Production: subscribe or set <code className="saved-drawer-code">VITE_PAY_TIER=plus</code>. Dev is
-                      usually Plus; to preview this screen set{" "}
-                      <code className="saved-drawer-code">stormpath-pay-tier-override</code> to{" "}
-                      <code className="saved-drawer-code">free</code>. See <code className="saved-drawer-code">docs/PAY_TIERS.md</code>.
-                    </p>
-                  </div>
+                  Save current destination
+                  {currentDestLabel ? ` (${currentDestLabel})` : ""}
+                </button>
+              )}
+              <p className="saved-drawer-section-kicker">Tap any place to set it as your destination and plan a route.</p>
+              <ul className="saved-drawer-list saved-drawer-list--full">
+                {places.length === 0 && (
+                  <li className="saved-drawer-empty">
+                    No saved places yet. Set a destination and build a route, then tap ★ and use{" "}
+                    <strong>Save current destination</strong> before you hit Go.
+                  </li>
                 )}
-                {payFrequentRoutes && (
-                  <>
-                    <label className="saved-drawer-toggle saved-drawer-toggle--learn">
-                      <input
-                        type="checkbox"
-                        checked={frequentRoutesLearnEnabled}
-                        onChange={(e) => onFrequentRoutesLearnEnabled(e.target.checked)}
-                      />
-                      <span>
-                        <strong>Learn repeated trips</strong> on this device — detects similar drives for suggestions
-                        below, saves sparse GPS for your usual area (map framing + search ranking), optional cyan trail in
-                        About.
-                      </span>
-                    </label>
-                    <p className="saved-drawer-route-hint saved-drawer-route-hint--tight">
-                      After you drive a similar path at least twice while the app is open, a row appears below. Learning pauses
-                      when you leave the tab.
-                    </p>
-                    <p className="saved-drawer-pane__subhead">Suggestions</p>
-                    <ul className="saved-drawer-list saved-drawer-list--embedded">
-                      {frequentRouteSuggestions.length === 0 && (
-                        <li className="saved-drawer-empty">
-                          No suggestions yet. Turn learning on and drive the same commute or errand route twice.
-                        </li>
-                      )}
-                      {frequentRouteSuggestions.map((c) => (
-                        <li key={c.id} className="saved-drawer-row saved-drawer-row--tile saved-drawer-row--learn">
-                          <div className="saved-drawer-tile-head">
-                            <span className="saved-drawer-tile-title">Similar trip · {c.count}×</span>
-                            <p className="saved-drawer-tile-sub saved-drawer-learn-meta">
-                              Last:{" "}
-                              {new Date(c.lastSeen).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                            </p>
-                          </div>
-                          <button type="button" className="saved-drawer-tile-primary" onClick={() => onTryFrequentRoute(c)}>
-                            Use suggestion
-                          </button>
-                          <div className="saved-drawer-tile-meta" role="group" aria-label="Suggestion actions">
-                            <button type="button" className="saved-drawer-tile-link" onClick={() => onSaveFrequentRoute(c)}>
-                              Save as route
-                            </button>
-                            <span className="saved-drawer-tile-meta-sep" aria-hidden>
-                              ·
-                            </span>
-                            <button
-                              type="button"
-                              className="saved-drawer-tile-link danger"
-                              onClick={() => onDismissFrequentRoute(c.id)}
-                            >
-                              Dismiss
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-                </div>
-              </div>
+                {places.map((p) => (
+                  <SavedRow key={p.id} place={p} onGo={onGo} onRename={onRename} onDelete={onDelete} />
+                ))}
+              </ul>
             </section>
-          </div>
+          )}
+
+          {view === "routes" && (
+            <section className="saved-drawer-section" aria-label="Saved routes">
+              <p className="saved-drawer-section-kicker">
+                Save the line on the map, or record a drive when the router won’t follow your road. Use{" "}
+                <strong>Rev</strong> on a saved route to flip direction.
+              </p>
+              {onStartRecordingPath && (
+                <button
+                  type="button"
+                  className="saved-drawer-save-current saved-drawer-save-current--record saved-drawer-save-current--full"
+                  onClick={onStartRecordingPath}
+                >
+                  Record driven path (GPS)
+                </button>
+              )}
+              {recordingActive && (
+                <p className="saved-drawer-recording-note" role="status">
+                  Recording — use the bar above the toolbar to stop &amp; save or discard.
+                </p>
+              )}
+              {onSaveCurrentRoute && (
+                <button
+                  type="button"
+                  className="saved-drawer-save-current saved-drawer-save-current--full"
+                  onClick={onSaveCurrentRoute}
+                >
+                  Save active route
+                </button>
+              )}
+              <p className="saved-drawer-pane__subhead">Your routes</p>
+              <ul className="saved-drawer-list saved-drawer-list--full">
+                {savedRoutes.length === 0 && <li className="saved-drawer-empty">No saved routes yet.</li>}
+                {savedRoutes.map((r) => (
+                  <SavedRouteRow
+                    key={r.id}
+                    route={r}
+                    onGo={onGoSavedRoute}
+                    onRename={onRenameSavedRoute}
+                    onDelete={onDeleteSavedRoute}
+                  />
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {view === "frequent" && (
+            <section className="saved-drawer-section" aria-label="Frequent routes">
+              {!payFrequentRoutes && (
+                <div className="saved-drawer-frequent-upsell">
+                  <p className="saved-drawer-frequent-lead">
+                    <strong>Plus</strong> can notice trips you drive often and suggest them here. Everything stays on
+                    this device.
+                  </p>
+                  <p className="saved-drawer-route-hint saved-drawer-frequent-meta">
+                    Production: subscribe or set <code className="saved-drawer-code">VITE_PAY_TIER=plus</code>. Dev is
+                    usually Plus; to preview this screen set{" "}
+                    <code className="saved-drawer-code">stormpath-pay-tier-override</code> to{" "}
+                    <code className="saved-drawer-code">free</code>. See{" "}
+                    <code className="saved-drawer-code">docs/PAY_TIERS.md</code>.
+                  </p>
+                </div>
+              )}
+              {payFrequentRoutes && (
+                <>
+                  <label className="saved-drawer-toggle saved-drawer-toggle--learn">
+                    <input
+                      type="checkbox"
+                      checked={frequentRoutesLearnEnabled}
+                      onChange={(e) => onFrequentRoutesLearnEnabled(e.target.checked)}
+                    />
+                    <span>
+                      <strong>Learn repeated trips</strong> on this device — detects similar drives for suggestions
+                      below, saves sparse GPS for your usual area (map framing + search ranking), optional cyan trail in
+                      About.
+                    </span>
+                  </label>
+                  <p className="saved-drawer-route-hint saved-drawer-route-hint--tight">
+                    After you drive a similar path at least twice while the app is open, a row appears below. Learning
+                    pauses when you leave the tab.
+                  </p>
+                  <p className="saved-drawer-pane__subhead">Suggestions</p>
+                  <ul className="saved-drawer-list saved-drawer-list--full">
+                    {frequentRouteSuggestions.length === 0 && (
+                      <li className="saved-drawer-empty">
+                        No suggestions yet. Turn learning on and drive the same commute or errand route twice.
+                      </li>
+                    )}
+                    {frequentRouteSuggestions.map((c) => (
+                      <li key={c.id} className="saved-drawer-row saved-drawer-row--tile saved-drawer-row--learn">
+                        <div className="saved-drawer-tile-head">
+                          <span className="saved-drawer-tile-title">Similar trip · {c.count}×</span>
+                          <p className="saved-drawer-tile-sub saved-drawer-learn-meta">
+                            Last:{" "}
+                            {new Date(c.lastSeen).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="saved-drawer-tile-primary"
+                          onClick={() => onTryFrequentRoute(c)}
+                        >
+                          Use suggestion
+                        </button>
+                        <div className="saved-drawer-tile-meta" role="group" aria-label="Suggestion actions">
+                          <button type="button" className="saved-drawer-tile-link" onClick={() => onSaveFrequentRoute(c)}>
+                            Save as route
+                          </button>
+                          <span className="saved-drawer-tile-meta-sep" aria-hidden>
+                            ·
+                          </span>
+                          <button
+                            type="button"
+                            className="saved-drawer-tile-link danger"
+                            onClick={() => onDismissFrequentRoute(c.id)}
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </section>
+          )}
         </div>
       </div>
     </>
+  );
+}
+
+/** Big tappable home tile that drills into one of the three sections. */
+function HomeTile({
+  label,
+  count,
+  hint,
+  badge,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  hint: string;
+  badge?: string | null;
+  onClick: () => void;
+}) {
+  return (
+    <li className="saved-drawer-home-tile-item">
+      <button type="button" className="saved-drawer-home-tile" onClick={onClick}>
+        <span className="saved-drawer-home-tile__row">
+          <span className="saved-drawer-home-tile__label">{label}</span>
+          {badge ? (
+            <span className="saved-drawer-home-tile__badge">{badge}</span>
+          ) : (
+            <span className="saved-drawer-home-tile__count">{count}</span>
+          )}
+          <span className="saved-drawer-home-tile__chevron" aria-hidden>
+            ›
+          </span>
+        </span>
+        <span className="saved-drawer-home-tile__hint">{hint}</span>
+      </button>
+    </li>
   );
 }
 

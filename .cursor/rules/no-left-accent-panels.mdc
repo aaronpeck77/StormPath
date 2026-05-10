@@ -1,0 +1,73 @@
+---
+description: Banned UI pattern in StormPath — never use rounded panels with a colored left-border accent stripe. Convey severity via a dot or pill instead.
+globs: web/**/*.{css,tsx}
+alwaysApply: false
+---
+
+# Banned: rounded panels with a colored left-border accent stripe
+
+The user has asked repeatedly for this pattern to stop. Do **not** use it anywhere in this app. It keeps showing up because it's a familiar iOS/Tailwind idiom — but it is rejected here on sight.
+
+## What's banned
+
+A rounded background container that uses `border-left: <px> solid <color>` (or `border-left-color`) to indicate severity / category / route id.
+
+```css
+/* ❌ BAD — rejected pattern */
+.something {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  border-left: 3px solid var(--severity-color);
+}
+
+.something--sev-serious { border-left-color: rgba(249, 115, 22, 0.95); }
+.something--sev-avoid   { border-left-color: rgba(220, 38, 38, 1); }
+```
+
+Variants that are **also banned**:
+
+- `border-left-width` + `border-left-color` set on a rounded panel.
+- A `box-shadow` whose offset is purely on the X axis used as a faux left stripe (e.g. `box-shadow: -3px 0 0 <color>`).
+- A `::before` pseudo that draws a tall colored vertical bar at the left edge of a rounded card.
+
+## What to use instead
+
+Convey severity / category with a **small dot or pill inline with the text**, not as a panel chrome element. Rows are flat — separated by hairlines or whitespace — and the panel itself either has a uniform border or no border.
+
+```css
+/* ✅ GOOD — severity dot before the headline. No panel border-left. */
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.row__headline::before {
+  content: "";
+  display: inline-block;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: middle;
+  background: rgba(148, 163, 184, 0.6);
+}
+
+.row--sev-serious .row__headline::before { background: #f97316; }
+.row--sev-avoid   .row__headline::before { background: #dc2626; }
+```
+
+Other acceptable severity treatments:
+
+- A small uppercase severity pill (`SERIOUS`, `AVOID`) next to a source pill on the row.
+- A subtle full-row background tint (e.g. `background: rgba(127, 29, 29, 0.18)`) — uniform, no edge stripe.
+- A full uniform border on a section-level card grouping (not a per-row card).
+
+## Allowed exceptions
+
+- 1px subtle borders used as **vertical column dividers** between two adjacent layout columns (e.g. inside a turn banner where "current turn | next turn" sit side-by-side). These are dividers, not accent stripes.
+- The `top-guidance-route-info-seg` chip's `border-left: 3px solid var(--route-line)` where the color *is the route's identity* (A blue / B orange / C green) and there is no severity meaning. This is functional, not decorative — keep it but do not duplicate the pattern elsewhere.
+
+If unsure, **do not add the pattern**. Ask first.
