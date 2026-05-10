@@ -3208,6 +3208,28 @@
   margin: 0;
 }
 
+/* NWS status note — single source of truth for "why is the NWS area empty?". Sits at the top of
+ * the Weather section when there are no NWS rows to show. Pill-style "NWS · …" prefix is part of
+ * the text itself; no panel border or left accent stripe (banned per project rules). */
+.storm-advisory-bar__nws-status {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+/* Warn variant — used for offline / error states so the "couldn't fetch" cases catch the eye
+ * without escalating to a hard red. Uniform border tint; no edge stripe. */
+.storm-advisory-bar__nws-status.storm-advisory-bar__nws-status--warn {
+  background: rgba(120, 53, 15, 0.32);
+  border-color: rgba(245, 158, 11, 0.55);
+  color: #fde68a;
+}
+
 /* Now section — life-safety NWS cards */
 .storm-advisory-bar__now-list {
   list-style: none;

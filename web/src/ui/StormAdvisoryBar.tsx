@@ -141,6 +141,13 @@ export type StormAdvisoryBarProps = SharedProps & {
   basicNavAdvisoryMode?: boolean;
   /** After Go: live traffic / corridor road data; before Go, copy explains preview vs live. */
   navigationStarted: boolean;
+  /**
+   * Compact "right now" weather string for the preview rotator (e.g.
+   * `72°F · Wind 8 mph · Partly cloudy`). Provided by the App when an OpenWeather key is set
+   * and we have a position; null otherwise. Always shown — works on both Plus and Basic so
+   * drivers see a quick read of conditions at a glance.
+   */
+  nowcastLine?: string | null;
 };
 
 const METERS_PER_MILE = 1609.34;
@@ -339,9 +346,9 @@ export function StormAdvisoryBar({
   isOnline = true,
   basicNavAdvisoryMode = false,
   navigationStarted,
+  nowcastLine = null,
 }: StormAdvisoryBarProps) {
   if (!featureEnabled) return null;
-  void corridorAlerts;
 
   const crossingSorted = useMemo(
     () => sortWeatherAlertsBySeverity(overlappingAlerts),
@@ -411,6 +418,69 @@ export function StormAdvisoryBar({
   const hasNow = nowAtLocation.length > 0 || nowCrossing.length > 0;
   /* Show WEATHER when there are weather impacts OR storm strips OR we're loading weather data. */
   const hasWeather = weatherImpacts.length > 0 || (stormStripBands?.length ?? 0) > 0;
+
+  /* Single, clear NWS status note for the Weather section's NWS area. Shown only when there are
+   * no NWS-derived rows on the panel — once impacts are visible, they speak for themselves. The
+   * goal: when a user opens the advisory and sees no NWS info, they always know *why*. */
+  const nwsStatusMessage: { tone: "muted" | "warn"; text: string } | null = useMemo(() => {
+    if (weatherImpacts.length > 0 || (stormStripBands?.length ?? 0) > 0) return null;
+    if (!isOnline) {
+      return {
+        tone: "warn",
+        text: "NWS · Offline — alerts will refresh once you're back online.",
+      };
+    }
+    const errMsg = (error ?? "").trim();
+    if (errMsg) {
+      return {
+        tone: "warn",
+        text: "NWS · Couldn't reach api.weather.gov. Try again in a moment.",
+      };
+    }
+    if (loading) {
+      return {
+        tone: "muted",
+        text:
+          !navigationStarted && hasGuidanceRoute
+            ? "NWS · Loading alerts for your planned route…"
+            : "NWS · Loading active alerts near you…",
+      };
+    }
+    if (!hasGuidanceRoute) {
+      return corridorAlerts.length === 0
+        ? {
+            tone: "muted",
+            text: "NWS · No active alerts near your position right now. Skies look clear.",
+          }
+        : {
+            tone: "muted",
+            text: `NWS · ${corridorAlerts.length} active alert${
+              corridorAlerts.length === 1 ? "" : "s"
+            } nearby — add a route to see which ones might cross it.`,
+          };
+    }
+    if (corridorAlerts.length === 0) {
+      return {
+        tone: "muted",
+        text: "NWS · No active alerts in this area right now. Looks like a nice day to drive.",
+      };
+    }
+    return {
+      tone: "muted",
+      text: `NWS · ${corridorAlerts.length} active alert${
+        corridorAlerts.length === 1 ? "" : "s"
+      } nearby, but none cross your route.`,
+    };
+  }, [
+    weatherImpacts.length,
+    stormStripBands,
+    isOnline,
+    error,
+    loading,
+    navigationStarted,
+    hasGuidanceRoute,
+    corridorAlerts.length,
+  ]);
   /* Show ROADS when there are road impacts, traffic narrative rows, or a reroute CTA condition. */
   const hasTrafficStop = useMemo(
     () => roadDetailRows.some((r) => /traffic stop|closure/i.test(r.label)),
@@ -477,6 +547,11 @@ export function StormAdvisoryBar({
           raw: "No network. Reconnect to refresh map tiles and radar.",
         });
       }
+      /* Compact current-conditions read — first slot in the rotator (after offline state) so
+       * drivers immediately see the temp / wind / precip read on Basic too. */
+      if (nowcastLine) {
+        out.push({ badge: "Now", raw: nowcastLine });
+      }
       if (hasGuidanceRoute) {
         out.push({ badge: "Nav", raw: "Route is set — tap Go when you are ready to drive." });
       }
@@ -495,6 +570,12 @@ export function StormAdvisoryBar({
     }
     if (showErrorState && (error || "").trim()) {
       out.push({ badge: "Error", raw: (error || "").trim() });
+    }
+    /* Compact "right now" reading — temperature, wind, precip near your position. Surfaced near
+     * the top of the rotator so it's seen even when other items are queued behind it. Stays in
+     * the cycle with everything else (5–10 s per slot) instead of fighting for permanent space. */
+    if (nowcastLine) {
+      out.push({ badge: "Now", raw: nowcastLine });
     }
     if (loading) {
       if (!navigationStarted && hasGuidanceRoute) {
@@ -524,7 +605,8 @@ export function StormAdvisoryBar({
       out.push({ badge: "Ahead", raw: formatDriveAheadBrief(driveRouteAheadLine) });
     }
     /* Only inject promos / app blurbs when the rotator has nothing of substance (no alerts, no busy,
-     * no ticker, no traffic, no road-ahead). Avoids the "ad reel" feeling when something is happening. */
+     * no ticker, no traffic, no road-ahead, no nowcast). Avoids the "ad reel" feeling when there is
+     * actual real-world info to surface. */
     const hasSubstantive =
       !isOnline ||
       showErrorState ||
@@ -532,7 +614,8 @@ export function StormAdvisoryBar({
       Boolean(busyLabel) ||
       Boolean(activeTicker) ||
       trafficDelayMinutes >= 8 ||
-      Boolean(driveRouteAheadLine);
+      Boolean(driveRouteAheadLine) ||
+      Boolean(nowcastLine);
     if (!hasSubstantive) {
       if (hasGuidanceRoute) {
         out.push({
@@ -566,6 +649,7 @@ export function StormAdvisoryBar({
     driveRouteAheadLine,
     promoLines,
     defaultPreviewText,
+    nowcastLine,
   ]);
   useEffect(() => {
     setPreviewIdx(0);
@@ -841,8 +925,11 @@ export function StormAdvisoryBar({
           </section>
         )}
 
-        {/* ───── WEATHER along your route ───── Storm strip(s) for severe NWS overlaps + impact rows. */}
-        {!basicNavAdvisoryMode && (hasWeather || (loading && hasGuidanceRoute)) && (
+        {/* ───── WEATHER along your route ───── Storm strip(s) for severe NWS overlaps + impact rows.
+         *  We render this section whenever we're not in basic-only mode so the NWS status note is
+         *  always visible — that way "no data" never looks like a bug. The user can see the reason
+         *  (offline, error, loading, no alerts in area, or alerts nearby that miss the route). */}
+        {!basicNavAdvisoryMode && (
           <section className="storm-advisory-bar__section storm-advisory-bar__section--weather">
             <p className="storm-advisory-bar__section-title">Weather along your route</p>
 
@@ -868,19 +955,25 @@ export function StormAdvisoryBar({
                 />
               ))}
 
-            {/* Loading message — section-scoped so it doesn't repeat in the rotator and at the bottom. */}
-            {loading && weatherImpacts.length === 0 && (
-              <p className="storm-advisory-bar__muted storm-advisory-bar__section-status" aria-live="polite">
-                {!navigationStarted && hasGuidanceRoute
-                  ? "Loading NWS for your planned route…"
-                  : "Loading weather alerts…"}
+            {/* Single NWS status note — always present when there's nothing to show, with copy that
+             * matches the actual reason (offline / error / loading / no alerts in area / no overlap
+             * with route). Replaces the three earlier fragmented messages. */}
+            {nwsStatusMessage && (
+              <p
+                className={`storm-advisory-bar__nws-status${
+                  nwsStatusMessage.tone === "warn" ? " storm-advisory-bar__nws-status--warn" : ""
+                }`}
+                aria-live="polite"
+              >
+                {nwsStatusMessage.text}
               </p>
             )}
 
-            {/* Hint when polygons are off and there's nothing to show. */}
+            {/* Hint when polygons are off and there's nothing to show. Kept secondary to the NWS
+             * status above so users hear the "why" first, then the actionable tip. */}
             {advisoryTier === "plus" && !sessionOn && weatherImpacts.length === 0 && !loading && (
               <p className="storm-advisory-bar__muted storm-advisory-bar__section-hint">
-                Turn on <strong>NWS polygons</strong> for shaded zones on the map.
+                Turn on <strong>NWS polygons</strong> above for shaded zones on the map.
               </p>
             )}
 
@@ -894,15 +987,6 @@ export function StormAdvisoryBar({
                 {weatherImpacts.map((i) => impactRow(i, navigationStarted))}
               </div>
             )}
-
-            {weatherImpacts.length === 0 &&
-              (stormStripBands?.length ?? 0) === 0 &&
-              !loading &&
-              hasGuidanceRoute && (
-                <p className="storm-advisory-bar__muted storm-advisory-bar__section-status">
-                  No weather impact on your route line right now.
-                </p>
-              )}
 
             <p className="storm-advisory-bar__section-source">Sources: NWS · Radar · OpenWeather</p>
           </section>

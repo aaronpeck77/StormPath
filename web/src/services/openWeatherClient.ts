@@ -36,6 +36,141 @@ export async function fetchCurrentWeatherHeadline(
   return { headline, precipHint };
 }
 
+/** Compact "right now" reading at a single point — drives the advisory bar's nowcast line. */
+export type CurrentNowcast = {
+  /** Air temperature, °F (rounded). */
+  tempF: number;
+  /** Apparent temperature ("feels like") from OpenWeather, °F (rounded). Combines wind chill / heat index. */
+  feelsLikeF: number;
+  /** Sustained wind, mph (rounded). */
+  windMph: number;
+  /** Wind gust, mph (rounded) — null when not reported. */
+  windGustMph: number | null;
+  /** Short condition description, e.g. "partly cloudy", "light rain". */
+  conditions: string;
+  /** Inches of liquid-equivalent precip in the last hour (rain or snow). 0 when dry. */
+  precipInPerHr: number;
+  /** Relative humidity, 0..100 (rounded). null when missing. */
+  humidityPct: number | null;
+  /** When this snapshot was fetched (ms epoch). */
+  fetchedAtMs: number;
+};
+
+/**
+ * Pulls the OpenWeather "current" endpoint and projects it down to just the fields the advisory
+ * bar's compact nowcast line needs. Cheap to call (single point) so we do this on a slow timer
+ * (every ~10 min) regardless of whether a route is loaded.
+ */
+export async function fetchCurrentNowcast(
+  apiKey: string,
+  lat: number,
+  lon: number
+): Promise<CurrentNowcast> {
+  const url = new URL("https://api.openweathermap.org/data/2.5/weather");
+  url.searchParams.set("lat", String(lat));
+  url.searchParams.set("lon", String(lon));
+  url.searchParams.set("appid", apiKey);
+  url.searchParams.set("units", "imperial");
+
+  const res = await fetchWithTimeout({
+    input: url.toString(),
+    init: { method: "GET" },
+    timeoutMs: OPENWEATHER_TIMEOUT_MS,
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`OpenWeather nowcast ${res.status}: ${t.slice(0, 160)}`);
+  }
+  const data = (await res.json()) as {
+    weather?: { description?: string; main?: string }[];
+    main?: { temp?: number; feels_like?: number; humidity?: number };
+    wind?: { speed?: number; gust?: number };
+    rain?: { "1h"?: number };
+    snow?: { "1h"?: number };
+  };
+
+  const tempF = Math.round(data.main?.temp ?? 0);
+  /* feels_like already accounts for both wind chill (cold + wind) and heat index (hot + humidity)
+   * via OpenWeather's apparent-temperature model, so we don't need to re-compute either ourselves. */
+  const feelsLikeF = Math.round(data.main?.feels_like ?? data.main?.temp ?? 0);
+  const windMph = Math.round(data.wind?.speed ?? 0);
+  const gustRaw = data.wind?.gust;
+  const windGustMph =
+    gustRaw != null && Number.isFinite(gustRaw) ? Math.round(gustRaw) : null;
+  /* Convert mm/hr → in/hr (OpenWeather reports rain/snow in mm regardless of `units=imperial`). */
+  const rainMmHr = data.rain?.["1h"] ?? 0;
+  const snowMmHr = data.snow?.["1h"] ?? 0;
+  const precipInPerHr = (rainMmHr + snowMmHr) / 25.4;
+  const conditions = (data.weather?.[0]?.description ?? "conditions").toLowerCase();
+  const humidityPct =
+    data.main?.humidity != null && Number.isFinite(data.main.humidity)
+      ? Math.round(data.main.humidity)
+      : null;
+
+  return {
+    tempF,
+    feelsLikeF,
+    windMph,
+    windGustMph,
+    conditions,
+    precipInPerHr,
+    humidityPct,
+    fetchedAtMs: Date.now(),
+  };
+}
+
+/**
+ * Compose the compact one-line summary the advisory bar's preview banner shows.
+ * Examples:
+ *   "72°F · Wind 8 mph · Partly cloudy"
+ *   "28°F · Feels 18°F · Wind 14 mph · Snow 0.05 in/hr"
+ *   "94°F · Feels 102°F · Humid · Wind 6 mph"
+ *
+ * Rules:
+ *   - Always lead with current temp.
+ *   - Show "Feels NN°F" when |feels - temp| ≥ 4°F or when very cold (< 35°F) or very hot (≥ 90°F).
+ *   - Always show wind (it's a small number; usually short).
+ *   - Add precip rate when ≥ 0.01 in/hr.
+ *   - Fall back to a short conditions clause when there's room.
+ */
+export function formatNowcastLine(now: CurrentNowcast): string {
+  const parts: string[] = [];
+  parts.push(`${now.tempF}\u00b0F`);
+
+  const dt = Math.abs(now.feelsLikeF - now.tempF);
+  const isCold = now.tempF < 35;
+  const isHot = now.tempF >= 90;
+  if (dt >= 4 || isCold || isHot) {
+    parts.push(`Feels ${now.feelsLikeF}\u00b0F`);
+  }
+
+  if (now.windMph >= 1) {
+    if (now.windGustMph != null && now.windGustMph >= now.windMph + 8) {
+      parts.push(`Wind ${now.windMph} g${now.windGustMph} mph`);
+    } else {
+      parts.push(`Wind ${now.windMph} mph`);
+    }
+  }
+
+  if (now.precipInPerHr >= 0.01) {
+    /* Use 2 decimals when light, 1 when heavier, so the number always reads cleanly. */
+    const fmt = now.precipInPerHr < 0.1 ? now.precipInPerHr.toFixed(2) : now.precipInPerHr.toFixed(1);
+    /* Pick rain vs snow word from conditions when possible; default to "Precip". */
+    const isSnow = /snow|sleet|flurr/i.test(now.conditions);
+    parts.push(`${isSnow ? "Snow" : "Rain"} ${fmt} in/hr`);
+  }
+
+  /* Add a short conditions clause as the tail when nothing more important is competing. We keep
+   * total banner copy short so the preview stays readable at a glance. */
+  if (parts.length < 4 && now.conditions && !/conditions/.test(now.conditions)) {
+    /* Capitalize first letter for visual symmetry with the rest of the parts. */
+    const c = now.conditions.charAt(0).toUpperCase() + now.conditions.slice(1);
+    parts.push(c);
+  }
+
+  return parts.join(" \u00b7 ");
+}
+
 /** Next ~6–9 hours at a point (3-hour steps). Free tier `forecast`. */
 export async function fetchForecastWindowHeadline(
   apiKey: string,

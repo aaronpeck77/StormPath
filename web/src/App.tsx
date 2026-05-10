@@ -49,8 +49,11 @@ import {
   fetchMapboxTrafficAlternatives,
 } from "./services/mapboxRouteAlternatives";
 import {
+  fetchCurrentNowcast,
+  formatNowcastLine,
   weatherForecastAlongRoute,
   weatherHintSamplesAlongPolyline,
+  type CurrentNowcast,
 } from "./services/openWeatherClient";
 import type { RouteAlert } from "./nav/routeAlerts";
 import { augmentAlertsForProgressStrip } from "./nav/routeAlerts";
@@ -1304,6 +1307,75 @@ export default function App() {
   const planRef = useRef(plan);
   planRef.current = plan;
   const planRoutesKeyStable = useMemo(() => plan.routes.map((r) => r.id).join("|"), [plan.routes]);
+
+  /* "Right now" point reading near the user — drives the advisory bar's compact nowcast line.
+   * Independent of the route weather overlay above: this fires whenever we have a position,
+   * even before a route is loaded. Throttled to ~10 min, plus an extra refresh when the user
+   * moves more than ~25 km from the last sample. */
+  const [currentNowcast, setCurrentNowcast] = useState<CurrentNowcast | null>(null);
+  const lastNowcastFixRef = useRef<{ lng: number; lat: number; tMs: number } | null>(null);
+  useEffect(() => {
+    if (!isOnline) return;
+    if (!env.openWeatherApiKey) return;
+    if (!userLngLat) return;
+    const [lng, lat] = userLngLat;
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+
+    const NOW_REFRESH_MS = 10 * 60 * 1000;
+    const NOW_FAR_M = 25_000;
+    const last = lastNowcastFixRef.current;
+    const now = Date.now();
+    if (last) {
+      const farEnough =
+        haversineMeters([last.lng, last.lat], [lng, lat]) >= NOW_FAR_M;
+      const ageMs = now - last.tMs;
+      if (!farEnough && ageMs < NOW_REFRESH_MS) return;
+    }
+    /* Optimistically claim the "fetched at" slot now so we don't double-fire while in flight. */
+    lastNowcastFixRef.current = { lng, lat, tMs: now };
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const nc = await fetchCurrentNowcast(env.openWeatherApiKey, lat, lng);
+        if (!cancelled) setCurrentNowcast(nc);
+      } catch {
+        /* Soft fail: keep the previous reading visible (or none) so the banner doesn't flicker. */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    /* userLngLat is intentionally a dependency so re-fetches happen on big moves; the throttle
+     * inside the effect prevents minute-by-minute storms while you sit still or drive locally. */
+  }, [userLngLat, isOnline, env.openWeatherApiKey]);
+
+  /* Slow background refresh — every 10 min — even if userLngLat hasn't changed. Picks up
+   * temperature drift, wind shifts, light precip. */
+  useEffect(() => {
+    if (!isOnline) return;
+    if (!env.openWeatherApiKey) return;
+    if (!userLngLat) return;
+    const id = window.setInterval(() => {
+      const [lng, lat] = userLngLat;
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+      lastNowcastFixRef.current = { lng, lat, tMs: Date.now() };
+      void (async () => {
+        try {
+          const nc = await fetchCurrentNowcast(env.openWeatherApiKey, lat, lng);
+          setCurrentNowcast(nc);
+        } catch {
+          /* Soft fail; keep previous reading. */
+        }
+      })();
+    }, 10 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [userLngLat, isOnline, env.openWeatherApiKey]);
+
+  const advisoryNowcastLine = useMemo(() => {
+    if (!currentNowcast) return null;
+    return formatNowcastLine(currentNowcast);
+  }, [currentNowcast]);
 
   useEffect(() => {
     const routes = planRef.current.routes;
@@ -4063,6 +4135,7 @@ export default function App() {
                       isOnline={isOnline}
                       basicNavAdvisoryMode={!isPlus}
                       navigationStarted={navigationStarted}
+                      nowcastLine={advisoryNowcastLine}
                     />
                   ) : isPlus ? (
                     <div className="nav-top-activity-pill-wrap nav-top-activity-pill-wrap--solo">
