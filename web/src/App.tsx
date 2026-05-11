@@ -122,6 +122,8 @@ import { StormAdvisoryBar } from "./ui/StormAdvisoryBar";
 import { DriveHazardApproachBanner } from "./ui/DriveHazardApproachBanner";
 import { ActivityStatusPill } from "./ui/ActivityStatusPill";
 import { AboutSheet } from "./ui/AboutSheet";
+import { Coachmarks } from "./ui/Coachmarks";
+import { resetAllCoachmarks } from "./ui/coachmarks/firstLaunchSteps";
 import { TrafficBypassComparePanel } from "./ui/TrafficBypassComparePanel";
 import type { TrafficBypassCompareCallout } from "./ui/DriveMap";
 import { pointAlongPolyline } from "./ui/geometryAlong";
@@ -386,6 +388,19 @@ export default function App() {
   } = useRouteRecorder();
   const [pendingSave, setPendingSave] = useState<PendingSave>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
+  /* Contextual one-shot coachmarks — the {@link Coachmarks} component watches for its
+   * tracked targets to become visible and pops a single "Tip" card next to each the first
+   * time the user encounters it. Persistence + queue logic live entirely in that component;
+   * App.tsx just owns the replay-key bump used by About → Help → Replay quick tour. */
+  const [coachmarksReplayKey, setCoachmarksReplayKey] = useState(0);
+  const handleReplayCoachmarks = () => {
+    resetAllCoachmarks();
+    setAboutOpen(false);
+    /* Bump on next tick so the About sheet's exit animation has started before the queue
+     * begins measuring elements (avoids the queue picking the About sheet's own contents
+     * as a "visible target"). */
+    window.setTimeout(() => setCoachmarksReplayKey((k) => k + 1), 350);
+  };
 
   const [recordedSuggestName, setRecordedSuggestName] = useState("");
   const [recordedEndLabel, setRecordedEndLabel] = useState("Recorded destination");
@@ -4734,7 +4749,10 @@ export default function App() {
           setTapHint(`Settings updated (${tierLabel}).`);
           window.setTimeout(() => setTapHint(null), 2500);
         }}
+        onReplayCoachmarks={handleReplayCoachmarks}
       />
+
+      <Coachmarks replayKey={coachmarksReplayKey} />
     </div>
   );
 }

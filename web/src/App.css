@@ -1004,6 +1004,44 @@
   cursor: pointer;
 }
 
+/* Help section — short copy + a single ghost button to replay the first-launch coachmarks. */
+.about-sheet__muted-line {
+  margin: 0 0 10px;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.about-sheet__help-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.about-sheet__btn--ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(30, 41, 59, 0.55);
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.about-sheet__btn--ghost:hover {
+  background: rgba(30, 41, 59, 0.78);
+  border-color: rgba(148, 163, 184, 0.55);
+}
+
+.about-sheet__btn--ghost:active {
+  transform: scale(0.98);
+}
+
 .about-sheet__upgrade-muted {
   color: #94a3b8;
   font-size: 0.78rem;
@@ -6289,7 +6327,9 @@
   letter-spacing: -0.03em;
 }
 
-/* Wordmark: cool sky / ice — same family as NWS (blue) + path accent (cyan) */
+/* Wordmark: cool sky / ice — same family as NWS (blue) + path accent (cyan) by default.
+ * Seasonal variants below override the gradient stops so the wordmark colors track the
+ * currently-rendered illustration (rain in spring/summer/fall, snow in winter). */
 .turn-strip-idle__storm {
   color: #e2e8f0;
   background-image: linear-gradient(118deg, #f8fafc 0%, #cbd5e1 45%, #94a3b8 100%);
@@ -6302,6 +6342,38 @@
   background-image: linear-gradient(118deg, #bae6fd 0%, #38bdf8 55%, #0ea5e9 100%);
   -webkit-background-clip: text;
   background-clip: text;
+}
+
+/* ── Spring: fresh greens + soft sky-blue ── */
+.turn-strip-idle--season-spring .turn-strip-idle__storm {
+  background-image: linear-gradient(118deg, #f0fdf4 0%, #bbf7d0 50%, #86efac 100%);
+}
+.turn-strip-idle--season-spring .turn-strip-idle__path {
+  background-image: linear-gradient(118deg, #a7f3d0 0%, #4ade80 50%, #22c55e 100%);
+}
+
+/* ── Summer: warm sun + bright sky ── */
+.turn-strip-idle--season-summer .turn-strip-idle__storm {
+  background-image: linear-gradient(118deg, #fefce8 0%, #fde68a 50%, #fbbf24 100%);
+}
+.turn-strip-idle--season-summer .turn-strip-idle__path {
+  background-image: linear-gradient(118deg, #bae6fd 0%, #38bdf8 55%, #0284c7 100%);
+}
+
+/* ── Fall: amber / copper / russet ── */
+.turn-strip-idle--season-fall .turn-strip-idle__storm {
+  background-image: linear-gradient(118deg, #fef3c7 0%, #fcd34d 50%, #d97706 100%);
+}
+.turn-strip-idle--season-fall .turn-strip-idle__path {
+  background-image: linear-gradient(118deg, #fdba74 0%, #ea580c 55%, #b91c1c 100%);
+}
+
+/* ── Winter: silver + ice-blue ── */
+.turn-strip-idle--season-winter .turn-strip-idle__storm {
+  background-image: linear-gradient(118deg, #ffffff 0%, #e2e8f0 50%, #94a3b8 100%);
+}
+.turn-strip-idle--season-winter .turn-strip-idle__path {
+  background-image: linear-gradient(118deg, #e0f2fe 0%, #7dd3fc 55%, #0ea5e9 100%);
 }
 
 @supports (background-clip: text) or (-webkit-background-clip: text) {
@@ -6462,13 +6534,91 @@
   }
 }
 
+/* ── Snow (winter only) ──
+ * Two parallax layers fall slower than rain with a subtle horizontal drift, so the cloud
+ * reads as a calm snowfall rather than a thunderstorm. Per-flake delay offsets are taken
+ * from the same nth-child wells the rain uses so the layout reads as natural variation. */
+.storm-idle-art__snow--back circle {
+  animation: storm-idle-snow-fall 6.5s ease-in-out infinite;
+}
+
+.storm-idle-art__snow--front circle {
+  animation: storm-idle-snow-fall 4.6s ease-in-out infinite;
+}
+
+.storm-idle-art__snow--back circle:nth-child(odd) {
+  animation-duration: 7.2s;
+}
+
+.storm-idle-art__snow--front circle:nth-child(odd) {
+  animation-duration: 5.1s;
+}
+
+.storm-idle-art__snow--back circle:nth-child(3n) {
+  animation-delay: -1.8s;
+}
+
+.storm-idle-art__snow--back circle:nth-child(3n + 1) {
+  animation-delay: -3.5s;
+}
+
+.storm-idle-art__snow--front circle:nth-child(3n) {
+  animation-delay: -1.2s;
+}
+
+.storm-idle-art__snow--front circle:nth-child(3n + 1) {
+  animation-delay: -2.7s;
+}
+
+.storm-idle-art__snow--front circle:nth-child(5n) {
+  animation-delay: -3.3s;
+}
+
+@keyframes storm-idle-snow-fall {
+  0% {
+    transform: translate(0px, -14px);
+    opacity: 0.2;
+  }
+  10% {
+    opacity: 1;
+  }
+  35% {
+    transform: translate(3px, 8px);
+  }
+  60% {
+    transform: translate(-2px, 18px);
+  }
+  100% {
+    transform: translate(2px, 32px);
+    opacity: 0.4;
+  }
+}
+
+/* ── Per-season cloud hue tweaks ──
+ * Subtle warm/cool filter so the same cloud shape reads as the right time of year. The
+ * filter applies to the cloud group only, leaving rain / snow / bolt color logic alone. */
+.storm-idle-art--season-spring .storm-idle-art__cloud {
+  filter: hue-rotate(-8deg) saturate(0.92) brightness(1.04);
+}
+.storm-idle-art--season-summer .storm-idle-art__cloud {
+  filter: brightness(1.08) saturate(0.85);
+}
+.storm-idle-art--season-fall .storm-idle-art__cloud {
+  filter: hue-rotate(18deg) saturate(0.95) brightness(0.96);
+}
+.storm-idle-art--season-winter .storm-idle-art__cloud {
+  filter: hue-rotate(-6deg) saturate(0.55) brightness(1.06);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .storm-idle-art,
   .storm-idle-art__bolt,
   .storm-idle-art__bolt-halo,
   .storm-idle-art__rain-shimmer-wrap,
   .storm-idle-art__rain--back line,
-  .storm-idle-art__rain--front line {
+  .storm-idle-art__rain--front line,
+  .storm-idle-art__snow--back circle,
+  .storm-idle-art__snow--front circle {
     animation: none;
   }
 
@@ -6483,7 +6633,9 @@
   }
 
   .storm-idle-art__rain--back line,
-  .storm-idle-art__rain--front line {
+  .storm-idle-art__rain--front line,
+  .storm-idle-art__snow--back circle,
+  .storm-idle-art__snow--front circle {
     opacity: 1;
     transform: none;
   }
@@ -10161,5 +10313,247 @@
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .stormpath-build-stamp {
     right: max(6px, env(safe-area-inset-right));
     left: auto;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * First-launch coachmarks — sequential walk-through over 4 UI elements.
+ * Layered above everything else (z-index 9000+) so the cards float above the
+ * map, advisory bar, progress rail, and bottom dock. The card position is set
+ * inline by the React component (top/left in viewport pixels).
+ * ──────────────────────────────────────────────────────────────────────────── */
+.coachmarks {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  /* No layout-blocking layer here — the dim is created by the highlight's own outer
+   * box-shadow (the "spotlight" trick), which means the target element itself is the only
+   * crisp, undimmed pixel on screen and stays fully tappable while the tour is up. */
+  pointer-events: none;
+}
+
+/* Fallback dim ONLY used when a step has no resolvable target (e.g. progress rail before
+ * a route is set). No blur — the user explicitly wanted to be able to see the underlying
+ * UI clearly. */
+.coachmarks__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  animation: coachmarks-backdrop-in 200ms ease-out;
+}
+
+@keyframes coachmarks-backdrop-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Highlight / spotlight around the target UI element. The 9999px outer box-shadow dims
+ * everything OUTSIDE this rect; the inner area stays unobscured so the user can clearly see
+ * (and even tap) the actual button being explained. The bright cyan ring + soft glow draws
+ * the eye to it. Animations only modulate the ring colors, not the dim amount, so the
+ * underlying UI never flickers. */
+.coachmarks__highlight {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 9999px rgba(0, 0, 0, 0.62),
+    0 0 0 3px rgba(125, 211, 252, 1),
+    0 0 26px 8px rgba(56, 189, 248, 0.85);
+  transition: top 180ms ease, left 180ms ease, width 180ms ease, height 180ms ease;
+  animation: coachmarks-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes coachmarks-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 9999px rgba(0, 0, 0, 0.62),
+      0 0 0 3px rgba(125, 211, 252, 1),
+      0 0 26px 8px rgba(56, 189, 248, 0.85);
+  }
+  50% {
+    box-shadow:
+      0 0 0 9999px rgba(0, 0, 0, 0.62),
+      0 0 0 4px rgba(186, 230, 253, 1),
+      0 0 38px 14px rgba(125, 211, 252, 1);
+  }
+}
+
+/* Outer wrapper handles the absolute positioning + the optional translateY(-100%) used to
+ * anchor "above"-side cards by their bottom edge. Keeping the transform on the wrapper
+ * prevents the card's own entry animation (which animates `transform`) from clobbering the
+ * anchor offset. */
+.coachmarks__card-wrap {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.coachmarks__card-wrap--anchor-bottom {
+  transform: translateY(-100%);
+}
+
+/* The coachmark card — dark glass to match the rest of the chrome, with a small triangle
+ * arrow pointing at the target on the appropriate side. */
+.coachmarks__card {
+  position: relative;
+  pointer-events: auto;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 14px;
+  padding: 14px 16px 12px;
+  color: #e2e8f0;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-family: inherit;
+  animation: coachmarks-card-in 240ms cubic-bezier(0.2, 0.8, 0.4, 1) both;
+}
+
+@keyframes coachmarks-card-in {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Triangle arrow. Built with a borders-only block so it inherits the card's tint without
+ * needing a separate color variable. Hidden when the card falls back to centered (no
+ * known target side). */
+.coachmarks__card::before {
+  content: "";
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 8px solid transparent;
+  pointer-events: none;
+}
+
+.coachmarks__card--side-above::before {
+  bottom: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-top-color: rgba(15, 23, 42, 0.96);
+}
+
+.coachmarks__card--side-below::before {
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-bottom-color: rgba(15, 23, 42, 0.96);
+}
+
+.coachmarks__card--side-left::before {
+  right: -16px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-left-color: rgba(15, 23, 42, 0.96);
+}
+
+.coachmarks__card--side-right::before {
+  left: -16px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-right-color: rgba(15, 23, 42, 0.96);
+}
+
+/* Tiny "Tip" eyebrow label — sets expectation that this is a one-time, dismissable hint
+ * rather than a modal blocker. */
+.coachmarks__tip-label {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.18);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  color: #7dd3fc;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.coachmarks__title {
+  margin: 0 0 6px;
+  font-size: 0.96rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #f1f5f9;
+}
+
+.coachmarks__body {
+  margin: 0 0 12px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #cbd5e1;
+}
+
+.coachmarks__actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Single-button (Got it only) variant — right-aligned so the tap target sits near the
+ * thumb on portrait phones. */
+.coachmarks__actions--single {
+  justify-content: flex-end;
+}
+
+.coachmarks__btn {
+  border-radius: 8px;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 90ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.coachmarks__btn:active {
+  transform: scale(0.97);
+}
+
+.coachmarks__btn--secondary {
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+.coachmarks__btn--secondary:hover {
+  color: #cbd5e1;
+}
+
+.coachmarks__btn--primary {
+  padding: 8px 14px;
+  border: 1px solid rgba(56, 189, 248, 0.6);
+  background: linear-gradient(118deg, #0ea5e9 0%, #0284c7 100%);
+  color: #f8fafc;
+  font-size: 0.86rem;
+  letter-spacing: 0.02em;
+  box-shadow: 0 2px 10px rgba(8, 145, 178, 0.4);
+}
+
+.coachmarks__btn--primary:hover {
+  background: linear-gradient(118deg, #38bdf8 0%, #0ea5e9 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coachmarks__backdrop,
+  .coachmarks__highlight,
+  .coachmarks__card {
+    animation: none;
   }
 }

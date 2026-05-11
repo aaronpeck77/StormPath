@@ -37,6 +37,9 @@ type Props = {
     landscapeSideHand: "right" | "left";
   };
   onSettings: (next: Props["settings"]) => void;
+  /** Replays the first-launch coachmark walk-through. Resets the suppression flag and asks
+   * App.tsx to show the tour again. About sheet closes itself before the tour starts. */
+  onReplayCoachmarks?: () => void;
 };
 
 /**
@@ -50,6 +53,7 @@ export function AboutSheet({
   activityTrail = null,
   settings,
   onSettings,
+  onReplayCoachmarks,
 }: Props) {
   const dev = import.meta.env.DEV;
   /** Same tier source as the rest of the app (`getPayTier` — build env + optional LS override). */
@@ -403,6 +407,26 @@ export function AboutSheet({
           </section>
 
           <MapKeyPanel />
+
+          {onReplayCoachmarks && (
+            <section className="about-sheet__panel about-sheet__panel--help">
+              <h3 className="about-sheet__h3">Help</h3>
+              <p className="about-sheet__muted-line">
+                Forgot what a button does? Re-arm the in-app tips and they'll explain each
+                piece of UI again the first time you see it (advisory bar, view-cycle
+                button, route progress rail, and the i info button).
+              </p>
+              <div className="about-sheet__help-actions">
+                <button
+                  type="button"
+                  className="about-sheet__btn about-sheet__btn--ghost"
+                  onClick={onReplayCoachmarks}
+                >
+                  Show tips again
+                </button>
+              </div>
+            </section>
+          )}
 
           {plus && activityTrail && (
             <section className="about-sheet__panel about-sheet__panel--activity">

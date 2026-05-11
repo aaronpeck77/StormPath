@@ -1,11 +1,26 @@
+import type { Season } from "./seasonTheme";
+
 /**
  * Idle strip — bundled SVG. Layer order: cloud → lightning → rain (on top) → shimmer.
- * Rain motion via App.css (`.storm-idle-art__rain--*`).
+ *
+ * Seasonal variants:
+ *   - winter: snowflakes fall instead of rain; lightning bolt dims to a quiet glow so the
+ *     scene reads as a calm snowfall instead of a thunderstorm. Cloud tint shifts cooler.
+ *   - spring / summer / fall: rain (current animation) — seasonal cloud + wordmark colors
+ *     do the talking. CSS handles the per-season tints via the season class on the parent.
+ *
+ * Rain motion via App.css (`.storm-idle-art__rain--*`); snow motion via App.css
+ * (`.storm-idle-art__snow--*`).
  */
-export function StormIdleIllustration() {
+export function StormIdleIllustration({
+  season = "summer",
+}: {
+  season?: Season;
+}) {
+  const isWinter = season === "winter";
   return (
     <svg
-      className="storm-idle-art"
+      className={`storm-idle-art storm-idle-art--season-${season}`}
       viewBox="0 0 300 140"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
@@ -50,7 +65,8 @@ export function StormIdleIllustration() {
         </linearGradient>
       </defs>
 
-      {/* Cloud — sits behind bolt + rain */}
+      {/* Cloud — sits behind bolt + rain. Seasonal hue tweaks live in App.css via the
+       *  storm-idle-art--season-* class on the root <svg>. */}
       <g className="storm-idle-art__cloud">
         <ellipse cx="150" cy="78" rx="94" ry="32" fill="url(#storm-idle-cloud-base)" opacity={0.98} />
         <ellipse cx="58" cy="68" rx="36" ry="30" fill="url(#storm-idle-cloud-top)" />
@@ -65,61 +81,103 @@ export function StormIdleIllustration() {
         />
       </g>
 
-      {/* Lightning — under rain so drops read in front */}
-      <path
-        className="storm-idle-art__bolt-halo"
-        d="M 148 14 L 122 54 L 148 54 L 112 118 L 138 66 L 106 66 L 148 14 Z"
-        fill="#fde047"
-        opacity={0.45}
-      />
-      <path
-        className="storm-idle-art__bolt"
-        d="M 148 14 L 122 54 L 148 54 L 112 118 L 138 66 L 106 66 L 148 14 Z"
-        fill="url(#storm-idle-bolt)"
-        stroke="#0f172a"
-        strokeWidth={0.95}
-        strokeLinejoin="round"
-      />
-      {/* One-shot intro gleam across bolt (timed in App.css) */}
-      <g clipPath="url(#storm-idle-bolt-clip)" className="storm-idle-art__bolt-gleam-wrap">
-        <rect
-          className="storm-idle-art__bolt-gleam-rect"
-          x="-180"
-          y="0"
-          width="140"
-          height="140"
-          fill="url(#storm-idle-intro-gleam)"
-        />
-      </g>
+      {/* Lightning — under rain so drops read in front. Hidden in winter (calm snowfall feel). */}
+      {!isWinter && (
+        <>
+          <path
+            className="storm-idle-art__bolt-halo"
+            d="M 148 14 L 122 54 L 148 54 L 112 118 L 138 66 L 106 66 L 148 14 Z"
+            fill="#fde047"
+            opacity={0.45}
+          />
+          <path
+            className="storm-idle-art__bolt"
+            d="M 148 14 L 122 54 L 148 54 L 112 118 L 138 66 L 106 66 L 148 14 Z"
+            fill="url(#storm-idle-bolt)"
+            stroke="#0f172a"
+            strokeWidth={0.95}
+            strokeLinejoin="round"
+          />
+          {/* One-shot intro gleam across bolt (timed in App.css) */}
+          <g clipPath="url(#storm-idle-bolt-clip)" className="storm-idle-art__bolt-gleam-wrap">
+            <rect
+              className="storm-idle-art__bolt-gleam-rect"
+              x="-180"
+              y="0"
+              width="140"
+              height="140"
+              fill="url(#storm-idle-intro-gleam)"
+            />
+          </g>
+        </>
+      )}
 
-      {/* Rain — steeper diagonals (falling); bright strokes so they read on dark chrome */}
-      <g className="storm-idle-art__rain storm-idle-art__rain--back" opacity={0.62}>
-        <line x1="62" y1="86" x2="58" y2="106" stroke="#a5f3fc" strokeWidth={1.45} strokeLinecap="round" />
-        <line x1="84" y1="84" x2="78" y2="106" stroke="#67e8f9" strokeWidth={1.35} strokeLinecap="round" />
-        <line x1="108" y1="88" x2="102" y2="110" stroke="#cffafe" strokeWidth={1.4} strokeLinecap="round" />
-        <line x1="138" y1="82" x2="132" y2="104" stroke="#a5f3fc" strokeWidth={1.32} strokeLinecap="round" />
-        <line x1="176" y1="86" x2="170" y2="108" stroke="#67e8f9" strokeWidth={1.38} strokeLinecap="round" />
-        <line x1="210" y1="84" x2="204" y2="106" stroke="#cffafe" strokeWidth={1.4} strokeLinecap="round" />
-        <line x1="236" y1="88" x2="232" y2="110" stroke="#a5f3fc" strokeWidth={1.42} strokeLinecap="round" />
-        <line x1="154" y1="90" x2="148" y2="112" stroke="#a5f3fc" strokeWidth={1.35} strokeLinecap="round" />
-      </g>
-      <g className="storm-idle-art__rain storm-idle-art__rain--front" opacity={0.98}>
-        <line x1="64" y1="90" x2="58" y2="118" stroke="#e0f2fe" strokeWidth={2.2} strokeLinecap="round" />
-        <line x1="88" y1="94" x2="80" y2="124" stroke="#67e8f9" strokeWidth={2.05} strokeLinecap="round" />
-        <line x1="112" y1="92" x2="104" y2="122" stroke="#e0f2fe" strokeWidth={2.15} strokeLinecap="round" />
-        <line x1="134" y1="96" x2="126" y2="124" stroke="#22d3ee" strokeWidth={2} strokeLinecap="round" />
-        <line x1="158" y1="94" x2="152" y2="120" stroke="#cffafe" strokeWidth={1.95} strokeLinecap="round" />
-        <line x1="182" y1="98" x2="176" y2="128" stroke="#e0f2fe" strokeWidth={2} strokeLinecap="round" />
-        <line x1="206" y1="92" x2="200" y2="120" stroke="#67e8f9" strokeWidth={2.1} strokeLinecap="round" />
-        <line x1="228" y1="96" x2="224" y2="124" stroke="#e0f2fe" strokeWidth={2.05} strokeLinecap="round" />
-        <line x1="72" y1="100" x2="66" y2="130" stroke="#67e8f9" strokeWidth={2} strokeLinecap="round" />
-        <line x1="96" y1="100" x2="90" y2="130" stroke="#e0f2fe" strokeWidth={2} strokeLinecap="round" />
-        <line x1="120" y1="100" x2="114" y2="132" stroke="#22d3ee" strokeWidth={2} strokeLinecap="round" />
-        <line x1="144" y1="96" x2="138" y2="126" stroke="#e0f2fe" strokeWidth={2.05} strokeLinecap="round" />
-        <line x1="168" y1="102" x2="162" y2="132" stroke="#cffafe" strokeWidth={1.95} strokeLinecap="round" />
-        <line x1="192" y1="98" x2="188" y2="128" stroke="#e0f2fe" strokeWidth={2.05} strokeLinecap="round" />
-        <line x1="216" y1="100" x2="210" y2="132" stroke="#67e8f9" strokeWidth={2} strokeLinecap="round" />
-      </g>
+      {isWinter ? (
+        /* Winter — snowflakes (pale circles) fall slower than rain, with a gentle horizontal
+         * sway. Two layers (back + front) for parallax depth, like the rain. */
+        <>
+          <g className="storm-idle-art__snow storm-idle-art__snow--back" opacity={0.78}>
+            <circle cx="62" cy="86" r="2" fill="#e0f2fe" />
+            <circle cx="84" cy="84" r="1.6" fill="#cffafe" />
+            <circle cx="108" cy="88" r="2.1" fill="#f0f9ff" />
+            <circle cx="138" cy="82" r="1.7" fill="#e0f2fe" />
+            <circle cx="176" cy="86" r="1.9" fill="#cffafe" />
+            <circle cx="210" cy="84" r="2" fill="#f0f9ff" />
+            <circle cx="236" cy="88" r="1.8" fill="#e0f2fe" />
+            <circle cx="154" cy="90" r="1.7" fill="#cffafe" />
+          </g>
+          <g className="storm-idle-art__snow storm-idle-art__snow--front" opacity={1}>
+            <circle cx="64" cy="92" r="2.6" fill="#ffffff" />
+            <circle cx="88" cy="98" r="2.4" fill="#f0f9ff" />
+            <circle cx="112" cy="94" r="2.7" fill="#ffffff" />
+            <circle cx="134" cy="100" r="2.4" fill="#f0f9ff" />
+            <circle cx="158" cy="96" r="2.5" fill="#ffffff" />
+            <circle cx="182" cy="100" r="2.6" fill="#f0f9ff" />
+            <circle cx="206" cy="94" r="2.5" fill="#ffffff" />
+            <circle cx="228" cy="98" r="2.6" fill="#f0f9ff" />
+            <circle cx="72" cy="106" r="2.4" fill="#ffffff" />
+            <circle cx="96" cy="110" r="2.5" fill="#e0f2fe" />
+            <circle cx="120" cy="108" r="2.6" fill="#ffffff" />
+            <circle cx="144" cy="112" r="2.4" fill="#f0f9ff" />
+            <circle cx="168" cy="110" r="2.5" fill="#ffffff" />
+            <circle cx="192" cy="114" r="2.5" fill="#e0f2fe" />
+            <circle cx="216" cy="112" r="2.4" fill="#ffffff" />
+          </g>
+        </>
+      ) : (
+        /* Rain — steeper diagonals (falling); bright strokes so they read on dark chrome.
+         * Spring / summer / fall share the rain shape; tint differences are handled in
+         * App.css via the storm-idle-art--season-* class on the root <svg>. */
+        <>
+          <g className="storm-idle-art__rain storm-idle-art__rain--back" opacity={0.62}>
+            <line x1="62" y1="86" x2="58" y2="106" stroke="#a5f3fc" strokeWidth={1.45} strokeLinecap="round" />
+            <line x1="84" y1="84" x2="78" y2="106" stroke="#67e8f9" strokeWidth={1.35} strokeLinecap="round" />
+            <line x1="108" y1="88" x2="102" y2="110" stroke="#cffafe" strokeWidth={1.4} strokeLinecap="round" />
+            <line x1="138" y1="82" x2="132" y2="104" stroke="#a5f3fc" strokeWidth={1.32} strokeLinecap="round" />
+            <line x1="176" y1="86" x2="170" y2="108" stroke="#67e8f9" strokeWidth={1.38} strokeLinecap="round" />
+            <line x1="210" y1="84" x2="204" y2="106" stroke="#cffafe" strokeWidth={1.4} strokeLinecap="round" />
+            <line x1="236" y1="88" x2="232" y2="110" stroke="#a5f3fc" strokeWidth={1.42} strokeLinecap="round" />
+            <line x1="154" y1="90" x2="148" y2="112" stroke="#a5f3fc" strokeWidth={1.35} strokeLinecap="round" />
+          </g>
+          <g className="storm-idle-art__rain storm-idle-art__rain--front" opacity={0.98}>
+            <line x1="64" y1="90" x2="58" y2="118" stroke="#e0f2fe" strokeWidth={2.2} strokeLinecap="round" />
+            <line x1="88" y1="94" x2="80" y2="124" stroke="#67e8f9" strokeWidth={2.05} strokeLinecap="round" />
+            <line x1="112" y1="92" x2="104" y2="122" stroke="#e0f2fe" strokeWidth={2.15} strokeLinecap="round" />
+            <line x1="134" y1="96" x2="126" y2="124" stroke="#22d3ee" strokeWidth={2} strokeLinecap="round" />
+            <line x1="158" y1="94" x2="152" y2="120" stroke="#cffafe" strokeWidth={1.95} strokeLinecap="round" />
+            <line x1="182" y1="98" x2="176" y2="128" stroke="#e0f2fe" strokeWidth={2} strokeLinecap="round" />
+            <line x1="206" y1="92" x2="200" y2="120" stroke="#67e8f9" strokeWidth={2.1} strokeLinecap="round" />
+            <line x1="228" y1="96" x2="224" y2="124" stroke="#e0f2fe" strokeWidth={2.05} strokeLinecap="round" />
+            <line x1="72" y1="100" x2="66" y2="130" stroke="#67e8f9" strokeWidth={2} strokeLinecap="round" />
+            <line x1="96" y1="100" x2="90" y2="130" stroke="#e0f2fe" strokeWidth={2} strokeLinecap="round" />
+            <line x1="120" y1="100" x2="114" y2="132" stroke="#22d3ee" strokeWidth={2} strokeLinecap="round" />
+            <line x1="144" y1="96" x2="138" y2="126" stroke="#e0f2fe" strokeWidth={2.05} strokeLinecap="round" />
+            <line x1="168" y1="102" x2="162" y2="132" stroke="#cffafe" strokeWidth={1.95} strokeLinecap="round" />
+            <line x1="192" y1="98" x2="188" y2="128" stroke="#e0f2fe" strokeWidth={2.05} strokeLinecap="round" />
+            <line x1="216" y1="100" x2="210" y2="132" stroke="#67e8f9" strokeWidth={2} strokeLinecap="round" />
+          </g>
+        </>
+      )}
 
       <g clipPath="url(#storm-idle-rain-clip)">
         <g className="storm-idle-art__rain-shimmer-wrap">
