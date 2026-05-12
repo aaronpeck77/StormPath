@@ -1329,6 +1329,11 @@ export default function App() {
    * moves more than ~25 km from the last sample. */
   const [currentNowcast, setCurrentNowcast] = useState<CurrentNowcast | null>(null);
   const lastNowcastFixRef = useRef<{ lng: number; lat: number; tMs: number } | null>(null);
+  /* Track transient failures separately from the last successful sample. The old code
+   * "claimed" the throttle slot before the request finished, which meant one dropped
+   * OpenWeather call could suppress the local-weather line for the next 10 minutes. */
+  const lastNowcastFailureRef = useRef<{ lng: number; lat: number; tMs: number } | null>(null);
+  const nowcastFetchInFlightRef = useRef(false);
   useEffect(() => {
     if (!isOnline) return;
     if (!env.openWeatherApiKey) return;
@@ -1338,24 +1343,37 @@ export default function App() {
 
     const NOW_REFRESH_MS = 10 * 60 * 1000;
     const NOW_FAR_M = 25_000;
+    const NOW_FAIL_RETRY_MS = 90 * 1000;
+    const NOW_FAIL_RETRY_MOVE_M = 5_000;
     const last = lastNowcastFixRef.current;
     const now = Date.now();
     if (last) {
-      const farEnough =
-        haversineMeters([last.lng, last.lat], [lng, lat]) >= NOW_FAR_M;
+      const farEnough = haversineMeters([last.lng, last.lat], [lng, lat]) >= NOW_FAR_M;
       const ageMs = now - last.tMs;
       if (!farEnough && ageMs < NOW_REFRESH_MS) return;
     }
-    /* Optimistically claim the "fetched at" slot now so we don't double-fire while in flight. */
-    lastNowcastFixRef.current = { lng, lat, tMs: now };
+    const lastFailure = lastNowcastFailureRef.current;
+    if (lastFailure) {
+      const movedEnough =
+        haversineMeters([lastFailure.lng, lastFailure.lat], [lng, lat]) >= NOW_FAIL_RETRY_MOVE_M;
+      const ageMs = now - lastFailure.tMs;
+      if (!movedEnough && ageMs < NOW_FAIL_RETRY_MS) return;
+    }
+    if (nowcastFetchInFlightRef.current) return;
 
     let cancelled = false;
     void (async () => {
+      nowcastFetchInFlightRef.current = true;
       try {
         const nc = await fetchCurrentNowcast(env.openWeatherApiKey, lat, lng);
+        lastNowcastFixRef.current = { lng, lat, tMs: nc.fetchedAtMs };
+        lastNowcastFailureRef.current = null;
         if (!cancelled) setCurrentNowcast(nc);
       } catch {
+        lastNowcastFailureRef.current = { lng, lat, tMs: Date.now() };
         /* Soft fail: keep the previous reading visible (or none) so the banner doesn't flicker. */
+      } finally {
+        nowcastFetchInFlightRef.current = false;
       }
     })();
     return () => {
@@ -1374,13 +1392,19 @@ export default function App() {
     const id = window.setInterval(() => {
       const [lng, lat] = userLngLat;
       if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
-      lastNowcastFixRef.current = { lng, lat, tMs: Date.now() };
+      if (nowcastFetchInFlightRef.current) return;
       void (async () => {
+        nowcastFetchInFlightRef.current = true;
         try {
           const nc = await fetchCurrentNowcast(env.openWeatherApiKey, lat, lng);
+          lastNowcastFixRef.current = { lng, lat, tMs: nc.fetchedAtMs };
+          lastNowcastFailureRef.current = null;
           setCurrentNowcast(nc);
         } catch {
+          lastNowcastFailureRef.current = { lng, lat, tMs: Date.now() };
           /* Soft fail; keep previous reading. */
+        } finally {
+          nowcastFetchInFlightRef.current = false;
         }
       })();
     }, 10 * 60 * 1000);

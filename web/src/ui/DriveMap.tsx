@@ -368,19 +368,26 @@ function routeFitPadding(
   const stormTop = stormBarTopExtraPx(stormBarVisible, stormBarExpanded);
   const rightNeed = progressRailVisible ? ROUTE_RIGHT_RAIL_PX + ROUTE_RIGHT_RAIL_GAP_PX : 18;
   const planningOverview = !progressRailVisible;
+  const axis = routeViewAxis(routes, primaryRouteId);
   if (isNarrowPhoneViewport()) {
     const safe = safeAreaInsetsPx();
     const sidePad = Math.max(p.left, 22);
+    /* Portrait / planning view now has the route-select button in the about row above the
+     * address bar. Give tall north/south fits a little more air at the bottom so the lower
+     * route endpoint / pin doesn't sit right on top of that button. */
+    const planningBottom =
+      164 +
+      Math.min(34, safe.bottom) +
+      (planningOverview && axis === "northSouth" ? 28 : 0);
     /* Before Go there is no progress rail, so keep the route overview centered in the full map width. */
     return {
       top: Math.max(128, 182 - ROUTE_FIT_TOP_TRIM_PX) + stormTop + Math.min(6, safe.top * 0.25),
-      bottom: 164 + Math.min(34, safe.bottom),
+      bottom: planningBottom,
       left: sidePad,
       right: planningOverview ? sidePad : Math.max(88, rightNeed),
     };
   }
   if (isLandscapeViewport()) {
-    const axis = routeViewAxis(routes, primaryRouteId);
     const handLeft = isLandscapeHandLeft();
     const vw = typeof window !== "undefined" ? window.innerWidth : 1280;
     const nearEdge = Math.max(ROUTE_FIT_EDGE_INSET_PX, 10);

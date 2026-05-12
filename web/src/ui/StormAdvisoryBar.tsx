@@ -551,12 +551,17 @@ export function StormAdvisoryBar({
        * drivers immediately see the temp / wind / precip read on Basic too. */
       if (nowcastLine) {
         out.push({ badge: "Now", raw: nowcastLine });
+      } else {
+        /* If weather is temporarily unavailable, keep the first visible fallback useful instead
+         * of leading with the generic route-status line. */
+        out.push({ badge: "App", raw: SITEBIBLE_AD_BAR });
       }
       if (hasGuidanceRoute) {
         out.push({ badge: "Nav", raw: "Route is set — tap Go when you are ready to drive." });
       }
       if (busyLabel) out.push({ badge: "Work", raw: busyLabel });
       for (const p of promoLines) {
+        if (!nowcastLine && p.id === "sitebible") continue;
         out.push({ badge: "Info", raw: clipOneLine(p.text, 64) });
       }
       if (out.length === 0) out.push({ badge: null, raw: defaultPreviewText });
@@ -617,6 +622,7 @@ export function StormAdvisoryBar({
       Boolean(driveRouteAheadLine) ||
       Boolean(nowcastLine);
     if (!hasSubstantive) {
+      out.push({ badge: "App", raw: SITEBIBLE_AD_BAR });
       if (hasGuidanceRoute) {
         out.push({
           badge: "Drive",
@@ -625,7 +631,6 @@ export function StormAdvisoryBar({
             : "Route is set — tap Go for live traffic and corridor alerts.",
         });
       }
-      out.push({ badge: "App", raw: SITEBIBLE_AD_BAR });
       for (const p of promoLines) {
         if (p.id === "sitebible") continue;
         out.push({ badge: "Info", raw: clipOneLine(p.text, 64) });
