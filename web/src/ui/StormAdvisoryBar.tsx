@@ -372,6 +372,16 @@ export function StormAdvisoryBar({
     return crossingSorted.filter(nwsAlertIsBasicEmergency);
   }, [crossingSorted]);
 
+  /* AT-YOUR-POSITION (non-urgent): NWS alerts whose polygon contains the user but which aren't
+   * life-safety (e.g. Wind Advisory, Blowing Dust Advisory, Dense Fog Advisory). The collapsed
+   * bar's ticker already rotates through these — without a panel surface, the bar would say
+   * "Wind Advisory at your position" while the panel said "no active alerts in this area",
+   * which is confusing. We show these in WEATHER as a compact list so the two views agree. */
+  const atLocationOther = useMemo(
+    () => atLocationSorted.filter((a) => !nwsAlertIsBasicEmergency(a)),
+    [atLocationSorted]
+  );
+
   /* WEATHER: weather-bucket impacts that AREN'T already promoted to NOW. We dedupe by impact id —
    * a single Tornado Warning is in NOW only, not also in WEATHER. */
   const weatherImpacts = useMemo(() => {
@@ -416,14 +426,27 @@ export function StormAdvisoryBar({
 
   /* Show NOW when there is a real urgency. Empty otherwise. */
   const hasNow = nowAtLocation.length > 0 || nowCrossing.length > 0;
-  /* Show WEATHER when there are weather impacts OR storm strips OR we're loading weather data. */
-  const hasWeather = weatherImpacts.length > 0 || (stormStripBands?.length ?? 0) > 0;
+  /* Show WEATHER when there are weather impacts, storm strips, non-urgent at-location alerts,
+   * or we're loading weather data. The at-location entry covers the "Wind Advisory at your
+   * position" case, which previously had no panel surface. */
+  const hasWeather =
+    weatherImpacts.length > 0 ||
+    (stormStripBands?.length ?? 0) > 0 ||
+    atLocationOther.length > 0;
 
   /* Single, clear NWS status note for the Weather section's NWS area. Shown only when there are
    * no NWS-derived rows on the panel — once impacts are visible, they speak for themselves. The
    * goal: when a user opens the advisory and sees no NWS info, they always know *why*. */
   const nwsStatusMessage: { tone: "muted" | "warn"; text: string } | null = useMemo(() => {
-    if (weatherImpacts.length > 0 || (stormStripBands?.length ?? 0) > 0) return null;
+    /* Suppress the status note when the section already has substantive content — including the
+     * at-location list we render below for non-urgent advisories at the user's position. */
+    if (
+      weatherImpacts.length > 0 ||
+      (stormStripBands?.length ?? 0) > 0 ||
+      atLocationOther.length > 0
+    ) {
+      return null;
+    }
     if (!isOnline) {
       return {
         tone: "warn",
@@ -474,6 +497,7 @@ export function StormAdvisoryBar({
   }, [
     weatherImpacts.length,
     stormStripBands,
+    atLocationOther.length,
     isOnline,
     error,
     loading,
@@ -567,8 +591,10 @@ export function StormAdvisoryBar({
       if (out.length === 0) out.push({ badge: null, raw: defaultPreviewText });
       return out;
     }
-    /* Plus rotator: only show app-promo content when nothing real is going on. Keeps the bar
-     * from looking like an ad reel when there are actual conditions to talk about. */
+    /* Plus rotator: substantive items first (offline / error / Now / loading / busy / ticker /
+     * traffic / ahead) so any real condition is the first thing a driver sees. App-promo and
+     * filler content are appended at the END so they still cycle in over a long session, but
+     * never crowd ahead of a hazard or current-conditions reading. */
     const out: { badge: string | null; raw: string }[] = [];
     if (!isOnline) {
       out.push({ badge: "Offline", raw: "No network. Reconnect to refresh the map and advisories." });
@@ -609,32 +635,24 @@ export function StormAdvisoryBar({
     if (advisoryTier !== "basic" && driveRouteAheadLine) {
       out.push({ badge: "Ahead", raw: formatDriveAheadBrief(driveRouteAheadLine) });
     }
-    /* Only inject promos / app blurbs when the rotator has nothing of substance (no alerts, no busy,
-     * no ticker, no traffic, no road-ahead, no nowcast). Avoids the "ad reel" feeling when there is
-     * actual real-world info to surface. */
-    const hasSubstantive =
-      !isOnline ||
-      showErrorState ||
-      loading ||
-      Boolean(busyLabel) ||
-      Boolean(activeTicker) ||
-      trafficDelayMinutes >= 8 ||
-      Boolean(driveRouteAheadLine) ||
-      Boolean(nowcastLine);
-    if (!hasSubstantive) {
-      out.push({ badge: "App", raw: SITEBIBLE_AD_BAR });
-      if (hasGuidanceRoute) {
-        out.push({
-          badge: "Drive",
-          raw: navigationStarted
-            ? "Route is set. Data keeps updating while you drive."
-            : "Route is set — tap Go for live traffic and corridor alerts.",
-        });
-      }
-      for (const p of promoLines) {
-        if (p.id === "sitebible") continue;
-        out.push({ badge: "Info", raw: clipOneLine(p.text, 64) });
-      }
+    /* Filler / promo tail. Always present in the rotation so the SiteBible blurb and the route-
+     * status hint show up over time, but appended after substantive items so they never pre-empt
+     * a hazard or "Now" line. The "Drive" hint is only shown when there is no active ticker /
+     * traffic / ahead — once those exist, the user already knows the route is set. */
+    const hasRouteContext =
+      Boolean(activeTicker) || trafficDelayMinutes >= 8 || Boolean(driveRouteAheadLine);
+    out.push({ badge: "App", raw: SITEBIBLE_AD_BAR });
+    if (hasGuidanceRoute && !hasRouteContext) {
+      out.push({
+        badge: "Drive",
+        raw: navigationStarted
+          ? "Route is set. Data keeps updating while you drive."
+          : "Route is set — tap Go for live traffic and corridor alerts.",
+      });
+    }
+    for (const p of promoLines) {
+      if (p.id === "sitebible") continue;
+      out.push({ badge: "Info", raw: clipOneLine(p.text, 64) });
     }
     if (out.length === 0) out.push({ badge: null, raw: defaultPreviewText });
     return out;
@@ -980,6 +998,54 @@ export function StormAdvisoryBar({
               <p className="storm-advisory-bar__muted storm-advisory-bar__section-hint">
                 Turn on <strong>NWS polygons</strong> above for shaded zones on the map.
               </p>
+            )}
+
+            {/* Non-urgent NWS alerts at the user's position (Wind Advisory, Blowing Dust Advisory,
+             *  Dense Fog Advisory, etc.). These don't generate route-corridor bands, so they're
+             *  invisible to the impact list and progress rail by design — but the collapsed bar
+             *  rotates them through "At your position", and we want the panel to agree. */}
+            {atLocationOther.length > 0 && (
+              <ul
+                className="storm-advisory-bar__here-list"
+                role="list"
+                aria-label="NWS advisories at your position"
+              >
+                {atLocationOther.map((a) => {
+                  const glance = nwsGlanceSummary(a);
+                  const ends = fmtEnds(a.ends);
+                  return (
+                    <li
+                      key={a.id}
+                      className="storm-advisory-bar__here-item"
+                    >
+                      <button
+                        type="button"
+                        className="storm-advisory-bar__here-btn"
+                        onClick={() => onNwsAlertClick?.(a)}
+                        aria-label={`${a.event} — open details`}
+                      >
+                        <span className="storm-advisory-bar__here-pill" aria-hidden>
+                          At you
+                        </span>
+                        <span className="storm-advisory-bar__here-body">
+                          <span className="storm-advisory-bar__here-title">
+                            <strong>{a.event}</strong>
+                            {a.severity ? (
+                              <span className="storm-advisory-bar__here-sev">{a.severity}</span>
+                            ) : null}
+                          </span>
+                          {glance ? (
+                            <span className="storm-advisory-bar__here-detail">{glance}</span>
+                          ) : null}
+                          {ends ? (
+                            <span className="storm-advisory-bar__here-meta">ends {ends}</span>
+                          ) : null}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
 
             {/* Per-impact rows for non-severe weather (advisories, watches, radar bands, OW samples). */}

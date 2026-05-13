@@ -1334,6 +1334,22 @@ export default function App() {
    * OpenWeather call could suppress the local-weather line for the next 10 minutes. */
   const lastNowcastFailureRef = useRef<{ lng: number; lat: number; tMs: number } | null>(null);
   const nowcastFetchInFlightRef = useRef(false);
+  /* Note: an outer `userLngLatRef` is maintained at component top so the slow background
+   * interval below can sample the latest position without putting userLngLat in its dep
+   * array. With userLngLat in the deps, the interval was torn down and re-created every GPS
+   * tick (~400 ms while driving) and never reached its 10-minute mark. */
+  /* Mounted flag for safe state updates after async completion. We deliberately do NOT cancel
+   * mid‑flight requests on every userLngLat tick — that's what was happening before, and on
+   * TestFlight (constant GPS updates + slower cell vs. dev wifi) it meant the OpenWeather
+   * response would arrive into a closure where `cancelled = true`, silently dropping the
+   * "Now" line. nowcastFetchInFlightRef already prevents stacked fetches. */
+  const nowcastMountedRef = useRef(true);
+  useEffect(() => {
+    nowcastMountedRef.current = true;
+    return () => {
+      nowcastMountedRef.current = false;
+    };
+  }, []);
   useEffect(() => {
     if (!isOnline) return;
     if (!env.openWeatherApiKey) return;
@@ -1361,14 +1377,13 @@ export default function App() {
     }
     if (nowcastFetchInFlightRef.current) return;
 
-    let cancelled = false;
     void (async () => {
       nowcastFetchInFlightRef.current = true;
       try {
         const nc = await fetchCurrentNowcast(env.openWeatherApiKey, lat, lng);
         lastNowcastFixRef.current = { lng, lat, tMs: nc.fetchedAtMs };
         lastNowcastFailureRef.current = null;
-        if (!cancelled) setCurrentNowcast(nc);
+        if (nowcastMountedRef.current) setCurrentNowcast(nc);
       } catch {
         lastNowcastFailureRef.current = { lng, lat, tMs: Date.now() };
         /* Soft fail: keep the previous reading visible (or none) so the banner doesn't flicker. */
@@ -1376,21 +1391,21 @@ export default function App() {
         nowcastFetchInFlightRef.current = false;
       }
     })();
-    return () => {
-      cancelled = true;
-    };
     /* userLngLat is intentionally a dependency so re-fetches happen on big moves; the throttle
      * inside the effect prevents minute-by-minute storms while you sit still or drive locally. */
   }, [userLngLat, isOnline, env.openWeatherApiKey]);
 
   /* Slow background refresh — every 10 min — even if userLngLat hasn't changed. Picks up
-   * temperature drift, wind shifts, light precip. */
+   * temperature drift, wind shifts, light precip. Note: deps are intentionally stable
+   * (no userLngLat) so the timer survives GPS ticks and actually reaches its 10‑min mark.
+   * Position is read from userLngLatRef when the interval fires. */
   useEffect(() => {
     if (!isOnline) return;
     if (!env.openWeatherApiKey) return;
-    if (!userLngLat) return;
     const id = window.setInterval(() => {
-      const [lng, lat] = userLngLat;
+      const cur = userLngLatRef.current;
+      if (!cur) return;
+      const [lng, lat] = cur;
       if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
       if (nowcastFetchInFlightRef.current) return;
       void (async () => {
@@ -1399,7 +1414,7 @@ export default function App() {
           const nc = await fetchCurrentNowcast(env.openWeatherApiKey, lat, lng);
           lastNowcastFixRef.current = { lng, lat, tMs: nc.fetchedAtMs };
           lastNowcastFailureRef.current = null;
-          setCurrentNowcast(nc);
+          if (nowcastMountedRef.current) setCurrentNowcast(nc);
         } catch {
           lastNowcastFailureRef.current = { lng, lat, tMs: Date.now() };
           /* Soft fail; keep previous reading. */
@@ -1409,7 +1424,7 @@ export default function App() {
       })();
     }, 10 * 60 * 1000);
     return () => window.clearInterval(id);
-  }, [userLngLat, isOnline, env.openWeatherApiKey]);
+  }, [isOnline, env.openWeatherApiKey]);
 
   const advisoryNowcastLine = useMemo(() => {
     if (!currentNowcast) return null;

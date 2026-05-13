@@ -3343,6 +3343,91 @@
   color: rgba(255, 255, 255, 0.7);
 }
 
+/* "At your position" list (non-urgent NWS advisories — Wind / Blowing Dust / Dense Fog / etc.).
+ * Distinct from the urgent NOW cards: muted amber, no warning glyph, lower contrast border. The
+ * goal is "informational" not "alarming" — these sit inside the WEATHER section, between the
+ * route storm strip and the per-impact list, so the panel agrees with the bar's "At your
+ * position" ticker entries. */
+.storm-advisory-bar__here-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.storm-advisory-bar__here-item {
+  display: block;
+}
+
+.storm-advisory-bar__here-btn {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(120, 53, 15, 0.55), rgba(69, 26, 3, 0.7));
+  border: 1px solid rgba(252, 211, 77, 0.35);
+  color: #fef3c7;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.storm-advisory-bar__here-btn:hover {
+  border-color: rgba(253, 224, 71, 0.6);
+}
+
+.storm-advisory-bar__here-pill {
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fde68a;
+  margin-top: 1px;
+}
+
+.storm-advisory-bar__here-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.storm-advisory-bar__here-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: #fff;
+}
+
+.storm-advisory-bar__here-sev {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  color: #fde68a;
+}
+
+.storm-advisory-bar__here-detail {
+  font-size: 0.78rem;
+  color: #fef3c7;
+}
+
+.storm-advisory-bar__here-meta {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
 /* Impact rows — flat list inside a section. No per-row card / no accent stripe.
  * Severity is signalled by a small colored dot before the headline and an inline
  * severity pill on the right. Rows are separated by hairlines. */
