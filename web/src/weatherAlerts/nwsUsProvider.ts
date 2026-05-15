@@ -279,8 +279,11 @@ async function fetchRouteCorridorRawFeatures(
   nationalFeatures?: NwsFeature[] | null
 ): Promise<NwsFeature[]> {
   const pointFeatures = await mergeNwsPointSamples(samples, userAgent);
+  /* `null` is used when the merge-level national fetch failed — must still retry here.
+   * Previously only `undefined` triggered a fetch, so one dropped national pull meant we
+   * never merged polygons and the UI showed “clear skies” all day. */
   let national = nationalFeatures;
-  if (national === undefined) {
+  if (national == null) {
     try {
       national = await fetchNwsActiveAlertsFeatures(userAgent);
     } catch {
@@ -628,11 +631,11 @@ export async function fetchNwsAlertsForRouteCorridorsMerged(
     };
   }
   /** One national pull for the whole A/B/C merge — reused per leg so we don't triple-fetch. */
-  let nationalFeatures: NwsFeature[] | null = null;
+  let nationalFeatures: NwsFeature[] | undefined;
   try {
     nationalFeatures = await fetchNwsActiveAlertsFeatures(userAgent);
   } catch {
-    nationalFeatures = null;
+    nationalFeatures = undefined;
   }
   const ok: WeatherAlertFetchResult[] = [];
   const errs: string[] = [];
@@ -693,7 +696,15 @@ export async function fetchNwsAlertsForBrowseViewport(
     return fetchNwsAlertsForNorthAmericaBrowse(userAgent, buildOptions);
   }
   const samples = sampleGridLngLat(b, BROWSE_VIEWPORT_GRID_POINTS);
-  const features = await mergeNwsPointSamples(samples, userAgent);
+  /* Same as route mode: point grid alone misses polygon-only products between samples;
+   * merge with one national active feed (deduped + bbox-filtered in buildResult). */
+  let nationalFeatures: NwsFeature[] | undefined;
+  try {
+    nationalFeatures = await fetchNwsActiveAlertsFeatures(userAgent);
+  } catch {
+    nationalFeatures = undefined;
+  }
+  const features = await fetchRouteCorridorRawFeatures(samples, userAgent, nationalFeatures);
   return buildResultFromRawFeatures(features, b, userAgent, NWS_PAD_DEG, {
     maxUgcZoneAlerts: NWS_BROWSE_MAX_UGC_ZONE_ALERTS,
     ...buildOptions,
