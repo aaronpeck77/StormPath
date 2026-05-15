@@ -6,6 +6,7 @@
 
 import { getWebEnv } from "../config/env";
 import type { LngLat } from "../nav/types";
+import { pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
 import { pointAlongPolyline } from "../ui/geometryAlong";
 import { polylineBbox, bboxIntersects } from "./geometryOverlap";
 import { extractPolygonalGeometry } from "./nwsGeometry";
@@ -125,6 +126,9 @@ const NA_BROWSE_CORRIDOR = { west: -175, south: 15, east: -48, north: 72 };
 
 /** Along active routes, use several small `?point=` requests instead of one national dump. */
 const ROUTE_POINT_SAMPLE_COUNT = 8;
+const ROUTE_POINT_SAMPLE_COUNT_LONG = 14;
+/** Routes longer than this get more distance-based samples (storms between sparse vertices). */
+const ROUTE_LONG_SAMPLE_THRESHOLD_M = 80_000;
 
 /** Browse: grid of `?point=` calls inside the visible area (fast vs national `alerts/active`). */
 const BROWSE_VIEWPORT_GRID_POINTS = 12;
@@ -204,7 +208,17 @@ async function fetchWithRetry(
   );
 }
 
-function sampleLngLatAlongRoute(route: LngLat[], maxPoints: number): LngLat[] {
+function dedupeNearbyLngLat(points: LngLat[]): LngLat[] {
+  const deduped: LngLat[] = [];
+  for (const p of points) {
+    if (deduped.some((q) => Math.hypot(p[0]! - q[0]!, p[1]! - q[1]!) < 0.0004)) continue;
+    deduped.push(p);
+  }
+  return deduped;
+}
+
+/** Vertex-index sampling — fast fallback for very short polylines. */
+function sampleLngLatAlongRouteVertices(route: LngLat[], maxPoints: number): LngLat[] {
   if (route.length === 0) return [];
   if (route.length <= maxPoints) return [...route];
   const last = route.length - 1;
@@ -214,12 +228,68 @@ function sampleLngLatAlongRoute(route: LngLat[], maxPoints: number): LngLat[] {
     const idx = Math.min(last, Math.round(t * last));
     out.push(route[idx]!);
   }
-  const deduped: LngLat[] = [];
-  for (const p of out) {
-    if (deduped.some((q) => Math.hypot(p[0]! - q[0]!, p[1]! - q[1]!) < 0.0004)) continue;
-    deduped.push(p);
+  return dedupeNearbyLngLat(out.length ? out : [route[0]!]);
+}
+
+/**
+ * Sample along route **distance** (not vertex index) so a storm cell between two widely
+ * spaced polyline corners is still queried via `alerts/active?point=`.
+ */
+function sampleLngLatAlongRoute(route: LngLat[], maxPoints: number): LngLat[] {
+  if (route.length === 0) return [];
+  if (route.length < 2) return [...route];
+  const totalM = polylineLengthMeters(route);
+  if (totalM < 1_500) return sampleLngLatAlongRouteVertices(route, maxPoints);
+  const out: LngLat[] = [];
+  for (let i = 0; i < maxPoints; i++) {
+    const t = maxPoints === 1 ? 0 : i / (maxPoints - 1);
+    const m = t * totalM;
+    out.push(pointAtAlongMeters(route, Math.min(m, Math.max(0, totalM - 0.5))));
   }
-  return deduped.length ? deduped : out;
+  return dedupeNearbyLngLat(out);
+}
+
+function routePointSampleCount(route: LngLat[]): number {
+  const totalM = polylineLengthMeters(route);
+  return totalM >= ROUTE_LONG_SAMPLE_THRESHOLD_M ? ROUTE_POINT_SAMPLE_COUNT_LONG : ROUTE_POINT_SAMPLE_COUNT;
+}
+
+function mergeFeatureListsDeduped(lists: NwsFeature[][]): NwsFeature[] {
+  const merged = new Map<string, NwsFeature>();
+  let idx = 0;
+  for (const list of lists) {
+    for (const f of list) {
+      const key = featureDedupeKey(f, idx++);
+      if (!merged.has(key)) merged.set(key, f);
+    }
+  }
+  return [...merged.values()];
+}
+
+/**
+ * Point samples are fast but can miss polygons between nodes. When point sampling returns
+ * *anything*, we used to skip the national feed entirely — that produced “clear skies” on
+ * routes through active severe weather when the sparse samples hit only benign products.
+ * Merge point hits with one national `alerts/active` pass (deduped); corridor filtering
+ * in {@link buildResultFromRawFeatures} keeps the payload bounded.
+ */
+async function fetchRouteCorridorRawFeatures(
+  samples: LngLat[],
+  userAgent: string,
+  nationalFeatures?: NwsFeature[] | null
+): Promise<NwsFeature[]> {
+  const pointFeatures = await mergeNwsPointSamples(samples, userAgent);
+  let national = nationalFeatures;
+  if (national === undefined) {
+    try {
+      national = await fetchNwsActiveAlertsFeatures(userAgent);
+    } catch {
+      national = [];
+    }
+  }
+  if (!national?.length) return pointFeatures;
+  if (!pointFeatures.length) return national;
+  return mergeFeatureListsDeduped([pointFeatures, national]);
 }
 
 function mergeDedupePointSamples(sets: LngLat[][]): LngLat[] {
@@ -557,11 +627,18 @@ export async function fetchNwsAlertsForRouteCorridorsMerged(
       result: { alerts: [], mapGeoJson: { type: "FeatureCollection", features: [] } },
     };
   }
+  /** One national pull for the whole A/B/C merge — reused per leg so we don't triple-fetch. */
+  let nationalFeatures: NwsFeature[] | null = null;
+  try {
+    nationalFeatures = await fetchNwsActiveAlertsFeatures(userAgent);
+  } catch {
+    nationalFeatures = null;
+  }
   const ok: WeatherAlertFetchResult[] = [];
   const errs: string[] = [];
   for (const g of geoms) {
     try {
-      ok.push(await fetchNwsAlertsForRouteCorridor(g, userAgent, buildOptions));
+      ok.push(await fetchNwsAlertsForRouteCorridor(g, userAgent, buildOptions, nationalFeatures));
     } catch (e) {
       errs.push(e instanceof Error ? e.message : String(e));
     }
@@ -582,20 +659,19 @@ export async function fetchNwsAlertsForRouteCorridorsMerged(
 export async function fetchNwsAlertsForRouteCorridor(
   route: LngLat[],
   userAgent: string,
-  buildOptions?: BuildNwsResultOptions
+  buildOptions?: BuildNwsResultOptions,
+  /** When merging A/B/C, pass one shared national feature list to avoid redundant fetches. */
+  nationalFeatures?: NwsFeature[] | null
 ): Promise<WeatherAlertFetchResult> {
   const corridor = polylineBbox(route);
   if (!corridor) {
     return { alerts: [], mapGeoJson: { type: "FeatureCollection", features: [] } };
   }
 
-  const along = sampleLngLatAlongRoute(route, ROUTE_POINT_SAMPLE_COUNT);
+  const along = sampleLngLatAlongRoute(route, routePointSampleCount(route));
   const upwind = upwindProbeSamplesOffRoute(route);
   const samples = mergeDedupePointSamples([upwind, along]);
-  const features = await mergeNwsPointSamples(samples, userAgent);
-  // Fallback: if point sampling yields nothing (or NWS rejects some points), fetch the active feed and
-  // filter down to just corridor-intersecting alerts. Heavier, but avoids “no polygons” on known storm routes.
-  const effective = features.length ? features : await fetchNwsActiveAlertsFeatures(userAgent);
+  const effective = await fetchRouteCorridorRawFeatures(samples, userAgent, nationalFeatures);
   const routeOpts: BuildNwsResultOptions = {
     corridorExtraWestPadDeg: NWS_CORRIDOR_EXTRA_WEST_DEG,
     ...buildOptions,
