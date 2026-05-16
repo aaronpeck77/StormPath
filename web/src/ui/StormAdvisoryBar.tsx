@@ -6,7 +6,8 @@ import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
 import type { DriveAheadLine, DriveAheadRadarTier } from "../nav/driveRouteAhead";
 import { formatDriveAheadBrief, formatMinutesAsHoursMinutes } from "../nav/driveRouteAhead";
 import type { RouteImpact, RouteImpactSeverity } from "../nav/routeImpacts";
-import { RouteStormStrip } from "./RouteStormStrip";
+import { RouteHazardTimeline, impactToTimelineItem } from "./RouteHazardTimeline";
+import type { TimelineItem } from "./RouteHazardTimeline";
 
 /** One-line target when static (no scroll); longer text scrolls inside the bar first. */
 const PREVIEW_MAX_STATIC = 40;
@@ -82,6 +83,11 @@ export type StormStripBand = {
   expiresIso: string | null;
   /** NWS alert id (when matched) so the bar can wire a tap → alert detail handler. */
   alertId: string | null;
+  /**
+   * Whether the route actually crosses the polygon vs. just being within the NWS corridor
+   * buffer (~45 km).  When false the strip shows "Nearby" instead of enter/exit timing.
+   */
+  crossesRoute?: boolean;
 };
 
 type SharedProps = {
@@ -150,30 +156,6 @@ export type StormAdvisoryBarProps = SharedProps & {
   nowcastLine?: string | null;
 };
 
-const METERS_PER_MILE = 1609.34;
-
-/** Distance and ETA for one timeline row (plan ETA when not yet navigating). */
-function formatHazardAheadMeta(
-  distanceAheadMeters: number | null,
-  etaAheadMinutes: number | null,
-  navigationStarted: boolean
-): string | null {
-  const bits: string[] = [];
-  if (distanceAheadMeters != null && Number.isFinite(distanceAheadMeters)) {
-    if (distanceAheadMeters < 80) {
-      bits.push("Now — on your path");
-    } else {
-      const mi = distanceAheadMeters / METERS_PER_MILE;
-      bits.push(mi < 10 ? `${mi.toFixed(1)} mi ahead` : `${Math.round(mi)} mi ahead`);
-    }
-  }
-  if (etaAheadMinutes != null && Number.isFinite(etaAheadMinutes) && etaAheadMinutes >= 0.5) {
-    const dur = formatMinutesAsHoursMinutes(etaAheadMinutes);
-    bits.push(navigationStarted ? `≈ ${dur}` : `≈ ${dur} (plan)`);
-  }
-  if (bits.length === 0) return null;
-  return bits.join(" · ");
-}
 
 function fmtEnds(ends: string | null): string | null {
   if (!ends) return null;
@@ -210,65 +192,6 @@ function impactSectionBucket(i: RouteImpact): "weather" | "road" {
   }
 }
 
-function impactSourceLabel(s: RouteImpact["source"]): string {
-  switch (s) {
-    case "nws":
-      return "NWS";
-    case "radar":
-      return "Radar";
-    case "mapboxTraffic":
-      return "Mapbox traffic";
-    case "mapboxIncident":
-      return "Mapbox incident";
-    case "routeNotice":
-      return "Route notice";
-    case "fused":
-      return "Combined";
-    default:
-      return "Internal";
-  }
-}
-
-/**
- * Severity-tinted card for one weather/road impact in the unified along-route timeline.
- * Replaces the old "hazard timeline row" — now adds a small source pill.
- */
-function impactRow(
-  i: RouteImpact,
-  navigationStarted: boolean,
-  onClick?: () => void
-): ReactNode {
-  const aheadMeta = formatHazardAheadMeta(i.distanceAheadMeters, i.etaAheadMinutes, navigationStarted);
-  const detail = (i.roadEffect || i.detail || "").trim();
-  return (
-    <div
-      key={i.id}
-      className={`storm-advisory-bar__impact-row storm-advisory-bar__impact-row--sev-${i.severity}${
-        onClick ? " storm-advisory-bar__impact-row--tappable" : ""
-      }`}
-      role={onClick ? "button" : "listitem"}
-      tabIndex={onClick ? 0 : undefined}
-      onClick={onClick}
-      onKeyDown={
-        onClick
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onClick();
-              }
-            }
-          : undefined
-      }
-    >
-      <div className="storm-advisory-bar__impact-head">
-        <span className="storm-advisory-bar__impact-headline">{i.driverHeadline}</span>
-        <span className="storm-advisory-bar__impact-source">{impactSourceLabel(i.source)}</span>
-      </div>
-      {aheadMeta ? <div className="storm-advisory-bar__impact-meta">{aheadMeta}</div> : null}
-      {detail ? <p className="storm-advisory-bar__impact-detail">{detail}</p> : null}
-    </div>
-  );
-}
 
 /** Compact urgent card for the NOW section — life-safety NWS at the user's position. */
 function urgentNwsCard(
@@ -382,12 +305,19 @@ export function StormAdvisoryBar({
     [atLocationSorted]
   );
 
-  /* WEATHER: weather-bucket impacts that AREN'T already promoted to NOW. We dedupe by impact id —
-   * a single Tornado Warning is in NOW only, not also in WEATHER. */
-  const weatherImpacts = useMemo(() => {
+  /* ROUTE-CROSSING (non-urgent): NWS alerts whose polygon intersects the planned route but are
+   * not life-safety (e.g. Flood Advisory, Flood Warning, Special Weather Statement, Wind Advisory).
+   * Life-safety crossing alerts are already in NOW. These live in WEATHER so the user sees what
+   * is actually on their route even before pressing Go. */
+  const crossingOther = useMemo(
+    () => crossingSorted.filter((a) => !nwsAlertIsBasicEmergency(a)),
+    [crossingSorted]
+  );
+
+  /* WEATHER: weather-bucket impacts that AREN'T already promoted to NOW. */
+  const allWeatherImpacts = useMemo(() => {
     if (!routeImpacts?.length) return [];
     const promoted = new Set<string>();
-    /* NWS alert ids → matching impact ids: impacts derived from a NOW alert share the headline. */
     const nowEvents = new Set([
       ...nowAtLocation.map((a) => a.event.toLowerCase()),
       ...nowCrossing.map((a) => a.event.toLowerCase()),
@@ -396,17 +326,20 @@ export function StormAdvisoryBar({
       if (i.source !== "nws") continue;
       const headline = i.driverHeadline.toLowerCase();
       for (const ev of nowEvents) {
-        if (ev && headline.includes(ev)) {
-          promoted.add(i.id);
-          break;
-        }
+        if (ev && headline.includes(ev)) { promoted.add(i.id); break; }
       }
     }
     return routeImpacts.filter((i) => impactSectionBucket(i) === "weather" && !promoted.has(i.id));
   }, [routeImpacts, nowAtLocation, nowCrossing]);
 
-  /* ROADS: traffic / closure / incident / construction impacts. The live traffic narrative from
-   * `roadDetailRows` is folded in as a single highlight row above the impact list. */
+  /* Split weather into radar vs other (NWS handled separately by RouteAlertGroupPanel). */
+  const radarImpacts = useMemo(
+    () => allWeatherImpacts.filter((i) => i.source === "radar"),
+    [allWeatherImpacts]
+  );
+  const weatherImpacts = allWeatherImpacts; // kept for hasWeather gate
+
+  /* ROADS: traffic / closure / incident / construction impacts. */
   const roadImpacts = useMemo(() => {
     if (!routeImpacts?.length) return [];
     return routeImpacts.filter((i) => impactSectionBucket(i) === "road");
@@ -432,7 +365,8 @@ export function StormAdvisoryBar({
   const hasWeather =
     weatherImpacts.length > 0 ||
     (stormStripBands?.length ?? 0) > 0 ||
-    atLocationOther.length > 0;
+    atLocationOther.length > 0 ||
+    crossingOther.length > 0; // fallback when route length unavailable so strips can't render
 
   /* Single, clear NWS status note for the Weather section's NWS area. Shown only when there are
    * no NWS-derived rows on the panel — once impacts are visible, they speak for themselves. The
@@ -443,7 +377,8 @@ export function StormAdvisoryBar({
     if (
       weatherImpacts.length > 0 ||
       (stormStripBands?.length ?? 0) > 0 ||
-      atLocationOther.length > 0
+      atLocationOther.length > 0 ||
+      crossingOther.length > 0
     ) {
       return null;
     }
@@ -498,6 +433,7 @@ export function StormAdvisoryBar({
     weatherImpacts.length,
     stormStripBands,
     atLocationOther.length,
+    crossingOther.length,
     isOnline,
     error,
     loading,
@@ -740,13 +676,27 @@ export function StormAdvisoryBar({
     promoLines.length,
   ]);
 
-  /* Resolve a band's onClick by looking up the matching alert by id. */
+  /* All NWS alerts available for band enrichment. */
+  const allAlerts = useMemo(
+    () => [...overlappingAlerts, ...nwsAtLocationAlerts],
+    [overlappingAlerts, nwsAtLocationAlerts]
+  );
+
+  /* Resolve a band's onClick and extra info by looking up the matching alert by id. */
   const stripBandClick = (band: StormStripBand): (() => void) | undefined => {
     if (!band.alertId || !onNwsAlertClick) return undefined;
-    const all = [...overlappingAlerts, ...nwsAtLocationAlerts];
-    const matched = all.find((a) => a.id === band.alertId);
+    const matched = allAlerts.find((a) => a.id === band.alertId);
     if (!matched) return undefined;
     return () => onNwsAlertClick(matched);
+  };
+
+  const stripBandDetail = (band: StormStripBand): { severityLabel: string | null; detail: string | null } => {
+    const matched = band.alertId ? allAlerts.find((a) => a.id === band.alertId) : null;
+    if (!matched) return { severityLabel: null, detail: null };
+    return {
+      severityLabel: matched.severity ?? null,
+      detail: nwsGlanceSummary(matched) ?? null,
+    };
   };
 
   const activePreview = previewItems[previewIdx % previewItems.length]!;
@@ -948,243 +898,142 @@ export function StormAdvisoryBar({
           </section>
         )}
 
-        {/* ───── WEATHER along your route ───── Storm strip(s) for severe NWS overlaps + impact rows.
-         *  We render this section whenever we're not in basic-only mode so the NWS status note is
-         *  always visible — that way "no data" never looks like a bug. The user can see the reason
-         *  (offline, error, loading, no alerts in area, or alerts nearby that miss the route). */}
-        {!basicNavAdvisoryMode && (
-          <section className="storm-advisory-bar__section storm-advisory-bar__section--weather">
-            <p className="storm-advisory-bar__section-title">Weather along your route</p>
+        {/* ───── UNIFIED ROUTE HAZARD TIMELINE ───────────────────────────────────
+         *  A single Gantt-style graph where the route is the x-axis and every
+         *  hazard category (NWS, Radar, Road) is its own labeled track.
+         *  A shared YOU line moves left→right as the driver progresses; storm
+         *  bands shift as NWS updates arrive.  All timing, distances, and
+         *  context are in the legend rows below the graph.
+         * ─────────────────────────────────────────────────────────────────────── */}
+        {!basicNavAdvisoryMode && (() => {
+          /* Build unified item list combining NWS strip bands + radar + road impacts. */
+          const timelineItems: TimelineItem[] = [];
 
-            {/* Severe NWS strip(s) — one per band. Tap to open the matched alert. */}
-            {(stormStripBands?.length ?? 0) > 0 &&
-              routeTotalMeters > 0 &&
-              stormStripBands!.map((band) => (
-                <RouteStormStrip
-                  key={band.id}
-                  band={{
-                    id: band.id,
-                    event: band.event,
-                    severity: band.severity,
-                    startMeters: band.startMeters,
-                    endMeters: band.endMeters,
-                    expiresIso: band.expiresIso,
-                    onClick: stripBandClick(band),
-                  }}
+          if (routeTotalMeters > 0 && (stormStripBands?.length ?? 0) > 0) {
+            for (const band of stormStripBands!) {
+              const extra = stripBandDetail(band);
+              timelineItems.push({
+                id: band.id,
+                track: "nws",
+                label: band.event,
+                severity: band.severity,
+                startMeters: band.startMeters,
+                endMeters: band.endMeters,
+                detailLine: extra.detail ?? null,
+                expiresIso: band.expiresIso,
+                crossesRoute: band.crossesRoute !== false,
+                onClick: stripBandClick(band),
+              });
+            }
+          }
+
+          for (const imp of radarImpacts) {
+            timelineItems.push(impactToTimelineItem(imp));
+          }
+          for (const imp of roadImpacts) {
+            timelineItems.push(impactToTimelineItem(imp));
+          }
+
+          const hasTimeline = timelineItems.length > 0 && routeTotalMeters > 0;
+
+          return (
+            <div className="storm-advisory-bar__dashboard">
+              {/* ── Unified timeline ── */}
+              {hasTimeline && (
+                <RouteHazardTimeline
+                  items={timelineItems}
                   totalMeters={routeTotalMeters}
                   userAlongMeters={userAlongMeters}
                   planEtaMinutes={planEtaMinutes}
                   driveEtaMinutes={driveEtaMinutes}
+                  showRerouteCta={showRerouteCta}
+                  onReroute={onTrafficReroute}
+                  rerouteBusy={trafficRerouteBusy}
                 />
-              ))}
-
-            {/* Single NWS status note — always present when there's nothing to show, with copy that
-             * matches the actual reason (offline / error / loading / no alerts in area / no overlap
-             * with route). Replaces the three earlier fragmented messages. */}
-            {nwsStatusMessage && (
-              <p
-                className={`storm-advisory-bar__nws-status${
-                  nwsStatusMessage.tone === "warn" ? " storm-advisory-bar__nws-status--warn" : ""
-                }`}
-                aria-live="polite"
-              >
-                {nwsStatusMessage.text}
-              </p>
-            )}
-
-            {/* Hint when polygons are off and there's nothing to show. Kept secondary to the NWS
-             * status above so users hear the "why" first, then the actionable tip. */}
-            {advisoryTier === "plus" && !sessionOn && weatherImpacts.length === 0 && !loading && (
-              <p className="storm-advisory-bar__muted storm-advisory-bar__section-hint">
-                Turn on <strong>NWS polygons</strong> above for shaded zones on the map.
-              </p>
-            )}
-
-            {/* Non-urgent NWS alerts at the user's position (Wind Advisory, Blowing Dust Advisory,
-             *  Dense Fog Advisory, etc.). These don't generate route-corridor bands, so they're
-             *  invisible to the impact list and progress rail by design — but the collapsed bar
-             *  rotates them through "At your position", and we want the panel to agree. */}
-            {atLocationOther.length > 0 && (
-              <ul
-                className="storm-advisory-bar__here-list"
-                role="list"
-                aria-label="NWS advisories at your position"
-              >
-                {atLocationOther.map((a) => {
-                  const glance = nwsGlanceSummary(a);
-                  const ends = fmtEnds(a.ends);
-                  return (
-                    <li
-                      key={a.id}
-                      className="storm-advisory-bar__here-item"
-                    >
-                      <button
-                        type="button"
-                        className="storm-advisory-bar__here-btn"
-                        onClick={() => onNwsAlertClick?.(a)}
-                        aria-label={`${a.event} — open details`}
-                      >
-                        <span className="storm-advisory-bar__here-pill" aria-hidden>
-                          At you
-                        </span>
-                        <span className="storm-advisory-bar__here-body">
-                          <span className="storm-advisory-bar__here-title">
-                            <strong>{a.event}</strong>
-                            {a.severity ? (
-                              <span className="storm-advisory-bar__here-sev">{a.severity}</span>
-                            ) : null}
-                          </span>
-                          {glance ? (
-                            <span className="storm-advisory-bar__here-detail">{glance}</span>
-                          ) : null}
-                          {ends ? (
-                            <span className="storm-advisory-bar__here-meta">ends {ends}</span>
-                          ) : null}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-
-            {/* Per-impact rows for non-severe weather (advisories, watches, radar bands, OW samples). */}
-            {weatherImpacts.length > 0 && (
-              <div
-                className="storm-advisory-bar__impact-list"
-                role="list"
-                aria-label="Weather along your route"
-              >
-                {weatherImpacts.map((i) => impactRow(i, navigationStarted))}
-              </div>
-            )}
-
-            <p className="storm-advisory-bar__section-source">Sources: NWS · Radar · OpenWeather</p>
-          </section>
-        )}
-
-        {/* ───── ROADS & HAZARDS along your route ───── Mapbox traffic + closures/incidents/construction. */}
-        {!basicNavAdvisoryMode && hasRoads && (
-          <section className="storm-advisory-bar__section storm-advisory-bar__section--roads">
-            <p className="storm-advisory-bar__section-title">Roads &amp; hazards along your route</p>
-
-            {!hasGuidanceRoute && (
-              <p className="storm-advisory-bar__muted">
-                <strong>Add a route</strong> to see corridor traffic and notes.
-              </p>
-            )}
-
-            {hasGuidanceRoute && trafficNarrativeRows.length > 0 && (
-              <dl className="storm-advisory-bar__road-dl storm-advisory-bar__road-dl--driver-stack">
-                {trafficNarrativeRows.map((row, i) => (
-                  <div key={`${row.label}-${i}`} className="storm-advisory-bar__road-row">
-                    <dt>{row.label}</dt>
-                    <dd>
-                      {row.onAction ? (
-                        <button
-                          type="button"
-                          className="storm-advisory-bar__ticker"
-                          onClick={row.onAction}
-                          title={row.actionLabel ?? "Open"}
-                        >
-                          {row.text}
-                        </button>
-                      ) : (
-                        row.text
-                      )}
-                      {row.onAction && (
-                        <button
-                          type="button"
-                          className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
-                          onClick={row.onAction}
-                        >
-                          {row.actionLabel ?? "Open"}
-                        </button>
-                      )}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-
-            {roadImpacts.length > 0 && (
-              <div
-                className="storm-advisory-bar__impact-list"
-                role="list"
-                aria-label="Road impacts along your route"
-              >
-                {roadImpacts.map((i) => impactRow(i, navigationStarted))}
-              </div>
-            )}
-
-            <p className="storm-advisory-bar__section-source">Sources: Mapbox traffic · NWS road events</p>
-          </section>
-        )}
-
-        {/* ───── ROUTE SUGGESTION ───── A real alternate exists, or a reroute-around-traffic CTA. */}
-        {!basicNavAdvisoryMode && hasSuggestion && (
-          <section className="storm-advisory-bar__section storm-advisory-bar__section--suggestion">
-            <p className="storm-advisory-bar__section-title">Route suggestion</p>
-
-            {betterRouteRow && (
-              <div className="storm-advisory-bar__suggestion-row">
-                <span className="storm-advisory-bar__suggestion-label">{betterRouteRow.label}</span>
-                <span className="storm-advisory-bar__suggestion-text">{betterRouteRow.text}</span>
-                {betterRouteRow.onAction && (
-                  <button
-                    type="button"
-                    className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
-                    onClick={betterRouteRow.onAction}
-                  >
-                    {betterRouteRow.actionLabel ?? "Open"}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {showRerouteCta && (
-              <p className="storm-advisory-bar__actions">
-                <button
-                  type="button"
-                  className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
-                  onClick={onTrafficReroute}
-                  disabled={trafficRerouteBusy}
-                  title="Find a faster route around current traffic"
-                >
-                  {trafficRerouteBusy ? "Finding route…" : "Reroute around traffic"}
-                </button>
-              </p>
-            )}
-
-            <p className="storm-advisory-bar__section-source">Source: Route analysis · Mapbox traffic</p>
-          </section>
-        )}
-
-        {/* Basic-tier upsell stays at the bottom when nothing else is shown. */}
-        {basicNavAdvisoryMode === false &&
-          advisoryTier === "basic" &&
-          weatherImpacts.length === 0 &&
-          roadImpacts.length === 0 &&
-          !loading && (
-            <p className="storm-advisory-bar__muted storm-advisory-bar__basic-upsell">
-              {ownsPlus ? (
-                <>
-                  Turn on <strong>NWS polygons</strong> and <strong>Road impacts</strong> for full data.
-                </>
-              ) : (
-                <>
-                  Basic shows the most urgent products. <strong>Plus</strong> adds full NWS and road tools.
-                </>
               )}
-            </p>
-          )}
 
-        {/* Empty state when nothing qualifies for any section. */}
-        {!hasNow && !hasWeather && !hasRoads && !hasSuggestion && !loading && !basicNavAdvisoryMode && (
-          <p className="storm-advisory-bar__muted storm-advisory-bar__section-status">
-            No advisories on your route right now.
-          </p>
-        )}
+              {/* NWS status note — when nothing is visible yet */}
+              {nwsStatusMessage && (
+                <p
+                  className={`storm-advisory-bar__nws-status${
+                    nwsStatusMessage.tone === "warn" ? " storm-advisory-bar__nws-status--warn" : ""
+                  }`}
+                  aria-live="polite"
+                >
+                  {nwsStatusMessage.text}
+                </p>
+              )}
+
+              {/* Non-urgent at-position NWS advisories (Wind Advisory, Dense Fog…) */}
+              {atLocationOther.length > 0 && (
+                <ul className="storm-advisory-bar__here-list" role="list" aria-label="NWS advisories at your position">
+                  {atLocationOther.map((a) => {
+                    const glance = nwsGlanceSummary(a);
+                    const ends = fmtEnds(a.ends);
+                    return (
+                      <li key={a.id} className="storm-advisory-bar__here-item">
+                        <button
+                          type="button"
+                          className="storm-advisory-bar__here-btn"
+                          onClick={() => onNwsAlertClick?.(a)}
+                          aria-label={`${a.event} — open details`}
+                        >
+                          <span className="storm-advisory-bar__here-pill" aria-hidden>At you</span>
+                          <span className="storm-advisory-bar__here-body">
+                            <span className="storm-advisory-bar__here-title">
+                              <strong>{a.event}</strong>
+                              {a.severity ? <span className="storm-advisory-bar__here-sev">{a.severity}</span> : null}
+                            </span>
+                            {glance ? <span className="storm-advisory-bar__here-detail">{glance}</span> : null}
+                            {ends ? <span className="storm-advisory-bar__here-meta">ends {ends}</span> : null}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              {/* Better route suggestion */}
+              {betterRouteRow && (
+                <div className="storm-advisory-bar__suggestion-row">
+                  <span className="storm-advisory-bar__suggestion-label">{betterRouteRow.label}</span>
+                  <span className="storm-advisory-bar__suggestion-text">{betterRouteRow.text}</span>
+                  {betterRouteRow.onAction && (
+                    <button
+                      type="button"
+                      className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
+                      onClick={betterRouteRow.onAction}
+                    >
+                      {betterRouteRow.actionLabel ?? "Open"}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {advisoryTier === "plus" && !sessionOn && !loading && (stormStripBands?.length ?? 0) === 0 && (
+                <p className="storm-advisory-bar__muted storm-advisory-bar__section-hint">
+                  Turn on <strong>NWS polygons</strong> above for shaded zones on the map.
+                </p>
+              )}
+
+              {basicNavAdvisoryMode === false && advisoryTier === "basic" &&
+                weatherImpacts.length === 0 && roadImpacts.length === 0 && !loading && (
+                <p className="storm-advisory-bar__muted storm-advisory-bar__basic-upsell">
+                  {ownsPlus
+                    ? <>Turn on <strong>NWS polygons</strong> and <strong>Road impacts</strong> for full data.</>
+                    : <>Basic shows the most urgent products. <strong>Plus</strong> adds full NWS and road tools.</>}
+                </p>
+              )}
+
+              {!hasNow && !hasWeather && !hasRoads && !hasSuggestion && !loading && (
+                <p className="storm-advisory-bar__muted storm-advisory-bar__section-status">
+                  No advisories on your route right now.
+                </p>
+              )}
+            </div>
+          );
+        })()}
           </div>
         </div>
       )}

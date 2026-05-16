@@ -13,7 +13,7 @@
  * a real contact via the env var.
  */
 const DEFAULT_NWS_USER_AGENT =
-  "StormPath/1.0 (+https://stormpath.netlify.app/ contact via in-app About → Support)";
+  "StormPath/1.0 (+https://stormpath.netlify.app/ contact via in-app About > Support)";
 
 const fromEnv = (import.meta.env.VITE_WEATHER_ALERT_USER_AGENT as string | undefined)?.trim();
 

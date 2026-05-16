@@ -20,7 +20,8 @@ export const RAINVIEWER_RADAR_VISIBLE_OPACITY = 0.62;
  * Crossfade duration between dual raster layers (ms). Uses layer opacity, not Mapbox tile fade,
  * so per-tile fade is set to 0 on both layers.
  */
-export const RAINVIEWER_RADAR_CROSSFADE_MS = 380;
+/** Long blend so radar appears to flow between snapshots rather than snap. ~3 s per frame. */
+export const RAINVIEWER_RADAR_CROSSFADE_MS = 2800;
 
 /** Legacy: crossfade when only one source and tile URLs change (unused by animated dual path). */
 export const RAINVIEWER_RASTER_FADE_MS = 520;
@@ -83,6 +84,13 @@ function addRasterPair(
     type: "raster",
     tiles: [tileUrlTemplate],
     tileSize: 256,
+    /**
+     * Prevent Mapbox from fetching z=0..2 "overview" tiles on source creation.
+     * Those world-level tiles are never visible and trigger a burst of requests
+     * that hits RainViewer's rate limit, especially when both A and B sources
+     * load simultaneously at startup.
+     */
+    minzoom: 3,
     maxzoom: RAINVIEWER_RADAR_MAX_ZOOM,
     attribution:
       'Radar © <a href="https://www.rainviewer.com/" target="_blank" rel="noreferrer">RainViewer</a>',
@@ -197,8 +205,8 @@ export function animateRainViewerDualCrossfade(
       }
       const t = Math.min(1, (now - start) / durationMs);
       const e = easeInOutCubic(t);
-      const oa = from.a + (to.a - from.a) * e;
-      const ob = from.b + (to.b - from.b) * e;
+      const oa = Math.max(0, Math.min(1, from.a + (to.a - from.a) * e));
+      const ob = Math.max(0, Math.min(1, from.b + (to.b - from.b) * e));
       setRainViewerRadarDualOpacity(map, oa, ob);
       if (t < 1) requestAnimationFrame(tick);
       else resolve();

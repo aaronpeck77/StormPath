@@ -22,7 +22,11 @@ import {
   routeIdFromRouteHitLayerId,
   visibleRouteIdsForHitLayers,
 } from "./mapRouteLayers";
-import { applyWeatherAlertLayers, WEATHER_ALERTS_NWS_FILL_LAYER_ID } from "./mapWeatherAlertLayers";
+import {
+  applyWeatherAlertLayers,
+  positionWeatherAlertLayersAboveRadar,
+  WEATHER_ALERTS_NWS_FILL_LAYER_ID,
+} from "./mapWeatherAlertLayers";
 import {
   bringMapboxTrafficLayersToFront,
   ensureMapboxTrafficConditionLayers,
@@ -36,6 +40,7 @@ function liftTrafficThenRoutesThenHits(
   layerPrefix = "route"
 ) {
   bringMapboxTrafficLayersToFront(map);
+  positionWeatherAlertLayersAboveRadar(map);
   bringRouteVisualLinesAboveTraffic(map, routeIds, layerPrefix);
   bringRouteHitLayersToTop(map, routeIds, layerPrefix);
 }
@@ -2171,6 +2176,7 @@ export function DriveMap({
     let cancelled = false;
     let manifestTimer: ReturnType<typeof setInterval> | null = null;
     let radarLoopGeneration = 0;
+    let lastRadarPathsKey = "";
 
     const clearTimers = () => {
       if (manifestTimer) {
@@ -2190,34 +2196,62 @@ export function DriveMap({
 
     type RadarCell = { path: string; time: number };
 
+    /**
+     * Load the next frame on the hidden side. With the long crossfade approach the bench side
+     * loads during the ~2.8 s blend — plenty of time even on slow connections.
+     */
+    const prewarmFrame = (which: "a" | "b", url: string): Promise<void> => {
+      setRainViewerRadarTilesOnSource(map, which, url);
+      return waitForRainViewerSideLoaded(map, which, RAINVIEWER_RADAR_CROSSFADE_MS + 1000);
+    };
+
     const runRadarFrameLoop = (loopGen: number, host: string, cells: RadarCell[]) => {
       const o = RAINVIEWER_RADAR_VISIBLE_OPACITY;
       void (async () => {
         let visible: "a" | "b" = "a";
         let idx = 0;
+
+        /* Prime bench side after source A has had time to load — avoids the startup
+         * burst where both sources request tiles simultaneously and hit RainViewer's
+         * rate limit.  1.5 s is enough for A tiles to arrive before B starts. */
+        if (cells.length > 1) {
+          const nextUrl = tileUrlFromHostAndPath(host, cells[1]!.path);
+          await sleep(1500);
+          if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
+          setRainViewerRadarTilesOnSource(map, "b", nextUrl);
+        }
+
         while (
           !cancelled &&
           loopGen === radarLoopGeneration &&
           cells.length > 1 &&
           mapRef.current === map
         ) {
-          const nextIdx = (idx + 1) % cells.length;
-          const incoming: "a" | "b" = visible === "a" ? "b" : "a";
-          const url = tileUrlFromHostAndPath(host, cells[nextIdx]!.path);
-          setRainViewerRadarTilesOnSource(map, incoming, url);
-          await waitForRainViewerSideLoaded(map, incoming, 1400);
+          /* Show the current frame for its full dwell; bench is loading in parallel. */
+          await sleep(RAINVIEWER_ANIMATION_DWELL_MS);
           if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
-          const from =
-            visible === "a" ? { a: o, b: 0 } : { a: 0, b: o };
+
+          /* Cross-fade to the bench (whether tiles finished or not — partial is still smooth). */
+          const incoming: "a" | "b" = visible === "a" ? "b" : "a";
+          const from = visible === "a" ? { a: o, b: 0 } : { a: 0, b: o };
           const to = visible === "a" ? { a: 0, b: o } : { a: o, b: 0 };
           await animateRainViewerDualCrossfade(map, from, to, RAINVIEWER_RADAR_CROSSFADE_MS);
           if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
+
           visible = incoming;
-          idx = nextIdx;
+          idx = (idx + 1) % cells.length;
           onRadarFrameUtcSecRef.current?.(cells[idx]!.time);
           bringMapboxTrafficLayersToFront(map);
           liftRouteHits();
-          await sleep(RAINVIEWER_ANIMATION_DWELL_MS);
+
+          /* While this frame is on screen, start warming the next one on the bench.
+           * Small delay before pre-warm so successive tile batches don't overlap
+           * and trigger RainViewer rate-limits. */
+          const nextIdx = (idx + 1) % cells.length;
+          const nextUrl = tileUrlFromHostAndPath(host, cells[nextIdx]!.path);
+          await sleep(400);
+          if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
+          void prewarmFrame(incoming === "a" ? "b" : "a", nextUrl);
         }
       })();
     };
@@ -2244,10 +2278,16 @@ export function DriveMap({
       }
       const host = pack.host;
       const cells: RadarCell[] = pack.frames.map((f) => ({ path: f.path, time: f.time }));
+      const pathsKey = cells.map((c) => c.path).join("|");
+      if (pathsKey === lastRadarPathsKey && map.getSource("rainviewer-radar-a")) {
+        return;
+      }
+      lastRadarPathsKey = pathsKey;
       const url0 = tileUrlFromHostAndPath(host, cells[0]!.path);
       radarLoopGeneration += 1;
       const myGen = radarLoopGeneration;
       ensureRainViewerRadarDual(map, url0);
+      positionWeatherAlertLayersAboveRadar(map);
       bringMapboxTrafficLayersToFront(map);
       liftRouteHits();
       onRadarFrameUtcSecRef.current?.(cells[0]!.time);

@@ -25,6 +25,10 @@ export type NormalizedWeatherAlert = {
   geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   /** Human-readable area from source */
   areaDesc: string;
+  /** Storm cell motion bearing, degrees clockwise from north (Severe Thunderstorm / Tornado warnings only). */
+  stormMotionDeg: number | null;
+  /** Storm cell motion speed in mph at time of warning issuance. */
+  stormMotionMph: number | null;
 };
 
 export type WeatherAlertFetchResult = {

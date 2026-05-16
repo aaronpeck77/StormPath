@@ -10,6 +10,7 @@ export type {
 } from "./types";
 export {
   computeRouteOverlapWithAlerts,
+  filterAlertsAffectingRoute,
   rankNwsSeverity,
   sortWeatherAlertsBySeverity,
 } from "./geometryOverlap";

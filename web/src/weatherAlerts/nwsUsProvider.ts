@@ -1,4 +1,4 @@
-/**
+﻿/**
  * US-only: NOAA / National Weather Service active alerts (api.weather.gov).
  * Requires a descriptive User-Agent (see NWS API terms).
  * Future: add `EuMeteoProvider` etc. behind the same NormalizedWeatherAlert shape.
@@ -32,6 +32,65 @@ function nwsActiveAlertsUrl(): string {
 
 type NwsFeature = GeoJSON.Feature<GeoJSON.Geometry | null, Record<string, unknown>>;
 
+/** Cardinal / intercardinal direction names → degrees clockwise from north. */
+const CARDINAL_BEARING: Record<string, number> = {
+  N: 0, NNE: 22.5, NE: 45, ENE: 67.5,
+  E: 90, ESE: 112.5, SE: 135, SSE: 157.5,
+  S: 180, SSW: 202.5, SW: 225, WSW: 247.5,
+  W: 270, WNW: 292.5, NW: 315, NNW: 337.5,
+  NORTH: 0, NORTHEAST: 45, EAST: 90, SOUTHEAST: 135,
+  SOUTH: 180, SOUTHWEST: 225, WEST: 270, NORTHWEST: 315,
+};
+
+/**
+ * Parse NWS StormMotion parameter text into a numeric bearing + speed.
+ * Handles formats like:
+ *   "SW at 30 MPH"
+ *   "SW at 25 MPH (225 degrees at 25 MPH)"
+ *   "270 degrees at 30 MPH"
+ *   "SOUTHWEST AT 30 MPH"
+ */
+function parseStormMotion(text: string): { bearingDeg: number; speedMph: number } | null {
+  if (!text) return null;
+  const t = text.trim();
+
+  // Parenthetical explicit degrees take priority: "(225 degrees at 25 MPH)"
+  const parenMatch = /\((\d+(?:\.\d+)?)\s*(?:degrees?|°)\s+at\s+([\d.]+)\s*(?:MPH|KPH|KT)/i.exec(t);
+  if (parenMatch) {
+    return { bearingDeg: parseFloat(parenMatch[1]!), speedMph: parseFloat(parenMatch[2]!) };
+  }
+
+  // Plain degrees: "270 degrees at 30 MPH"
+  const degMatch = /^(\d+(?:\.\d+)?)\s*(?:degrees?|°)\s+at\s+([\d.]+)\s*(?:MPH|KPH|KT)/i.exec(t);
+  if (degMatch) {
+    return { bearingDeg: parseFloat(degMatch[1]!), speedMph: parseFloat(degMatch[2]!) };
+  }
+
+  // Cardinal direction: "SW at 30 MPH" or "SOUTHWEST AT 30 MPH"
+  const cardMatch = /^([A-Z]{1,9})\s+at\s+([\d.]+)\s*(?:MPH|KPH|KT)/i.exec(t);
+  if (cardMatch) {
+    const bearing = CARDINAL_BEARING[cardMatch[1]!.toUpperCase()];
+    if (bearing !== undefined) {
+      return { bearingDeg: bearing, speedMph: parseFloat(cardMatch[2]!) };
+    }
+  }
+
+  return null;
+}
+
+/** Extract the first StormMotion string from NWS alert parameters, if present. */
+function extractStormMotion(
+  p: Record<string, unknown>
+): { bearingDeg: number; speedMph: number } | null {
+  const params = p.parameters;
+  if (!params || typeof params !== "object") return null;
+  const motionArr = (params as Record<string, unknown>).StormMotion;
+  if (!Array.isArray(motionArr) || !motionArr.length) return null;
+  const raw = motionArr[0];
+  if (typeof raw !== "string") return null;
+  return parseStormMotion(raw);
+}
+
 function normalizeFeature(f: NwsFeature, index: number): NormalizedWeatherAlert | null {
   const p = f.properties ?? {};
   const id = typeof p.id === "string" ? p.id : `nws-${index}`;
@@ -45,6 +104,7 @@ function normalizeFeature(f: NwsFeature, index: number): NormalizedWeatherAlert 
   const areaDesc = typeof p.areaDesc === "string" ? p.areaDesc : "";
 
   const geometry = extractPolygonalGeometry(f.geometry ?? null);
+  const motion = extractStormMotion(p);
 
   return {
     id,
@@ -59,6 +119,8 @@ function normalizeFeature(f: NwsFeature, index: number): NormalizedWeatherAlert 
     ends,
     geometry,
     areaDesc,
+    stormMotionDeg: motion?.bearingDeg ?? null,
+    stormMotionMph: motion?.speedMph ?? null,
   };
 }
 
@@ -278,23 +340,33 @@ async function fetchRouteCorridorRawFeatures(
   userAgent: string,
   nationalFeatures?: NwsFeature[] | null
 ): Promise<NwsFeature[]> {
+  /* When we have the full national feed, skip point sampling entirely — the national feed
+   * contains every active US alert and corridor filtering in buildResultFromRawFeatures
+   * bounds the result. Point samples are only a fallback when the national pull failed. */
+  if (nationalFeatures != null && nationalFeatures.length > 0) {
+    return nationalFeatures;
+  }
+
+  /* National feed unavailable — fall back to point-by-point corridor sampling. */
   const pointFeatures = await mergeNwsPointSamples(samples, userAgent);
-  /* `null` is used when the merge-level national fetch failed — must still retry here.
-   * Previously only `undefined` triggered a fetch, so one dropped national pull meant we
-   * never merged polygons and the UI showed “clear skies” all day. */
-  let national = nationalFeatures;
-  if (national == null) {
+
+  /* nationalFeatures === undefined means the top-level merge fetch was skipped (single-leg
+   * call site) — try the national feed now before returning point-only results. */
+  if (nationalFeatures === undefined) {
+    let national: NwsFeature[] = [];
     try {
       national = await fetchNwsActiveAlertsFeatures(userAgent);
     } catch {
       national = [];
     }
+    if (national.length > 0) {
+      if (!pointFeatures.length) return national;
+      return mergeFeatureListsDeduped([pointFeatures, national]);
+    }
   }
-  if (!national?.length) return pointFeatures;
-  if (!pointFeatures.length) return national;
-  return mergeFeatureListsDeduped([pointFeatures, national]);
-}
 
+  return pointFeatures;
+}
 function mergeDedupePointSamples(sets: LngLat[][]): LngLat[] {
   const out: LngLat[] = [];
   for (const set of sets) {
@@ -481,10 +553,43 @@ async function mergeNwsPointSamples(
   return [...merged.values()];
 }
 
-async function fetchNwsActiveAlertsFeatures(userAgent: string): Promise<NwsFeature[]> {
-  const res = await fetchWithRetry(nwsActiveAlertsUrl(), nwsApiRequestHeaders(userAgent));
-  const data = (await res.json()) as GeoJSON.FeatureCollection;
-  return (data.features ?? []) as NwsFeature[];
+/**
+ * Fetch the national NWS active-alerts feed.
+ *
+ * Unlike `fetchWithRetry`, the AbortController here stays alive through
+ * `res.json()` so a stalled body download (large payload during heavy wx) is
+ * also cancelled.  `fetchWithRetry` clears its timer right after `fetch()`
+ * resolves (headers only), leaving the body read unguarded.
+ */
+async function fetchNwsActiveAlertsFeatures(userAgent: string, retries = NWS_MAX_RETRIES): Promise<NwsFeature[]> {
+  const url = resolveNwsRequestUrl(nwsActiveAlertsUrl());
+  const headers = nwsApiRequestHeaders(userAgent);
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl = new AbortController();
+    // Keep timer alive through body read — NWS national feed can be several MB
+    const timer = setTimeout(() => ctrl.abort(), NWS_FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { headers, signal: ctrl.signal });
+      if (!res.ok) throw new Error(`NWS HTTP ${res.status}`);
+      const data = (await res.json()) as GeoJSON.FeatureCollection; // signal still active
+      clearTimeout(timer);
+      return (data.features ?? []) as NwsFeature[];
+    } catch (e) {
+      clearTimeout(timer);
+      const isAbort = e instanceof DOMException && e.name === "AbortError";
+      if (import.meta.env.DEV) console.warn("[NWS national] attempt", attempt, isAbort ? "TIMED OUT" : e);
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, NWS_RETRY_DELAY_MS * (attempt + 1)));
+        lastError = isAbort ? new Error("NWS request timed out — the weather service may be slow.") : e;
+        continue;
+      }
+      if (isAbort) throw new Error("NWS request timed out — the weather service may be slow.");
+      throw e;
+    }
+  }
+  if (lastError instanceof Error) throw lastError;
+  throw new Error("Could not reach the NWS service.");
 }
 
 async function buildResultFromRawFeatures(
@@ -515,6 +620,8 @@ async function buildResultFromRawFeatures(
           headline: a.headline,
           severity: a.severity,
           kind: nwsMapKindFromEvent(a.event),
+          motionDeg: a.stormMotionDeg ?? null,
+          motionMph: a.stormMotionMph ?? null,
         },
         geometry: a.geometry,
       });
@@ -555,6 +662,8 @@ async function buildResultFromRawFeatures(
         headline: merged.headline,
         severity: merged.severity,
         kind: nwsMapKindFromEvent(merged.event),
+        motionDeg: merged.stormMotionDeg ?? null,
+        motionMph: merged.stormMotionMph ?? null,
       },
       geometry,
     });
@@ -576,6 +685,8 @@ async function buildResultFromRawFeatures(
         headline: NWS_TEST_ALERT.headline,
         severity: NWS_TEST_ALERT.severity,
         kind: nwsMapKindFromEvent(NWS_TEST_ALERT.event),
+        motionDeg: NWS_TEST_ALERT.stormMotionDeg ?? null,
+        motionMph: NWS_TEST_ALERT.stormMotionMph ?? null,
       },
       geometry: NWS_TEST_ALERT.geometry,
     });
@@ -633,8 +744,12 @@ export async function fetchNwsAlertsForRouteCorridorsMerged(
   /** One national pull for the whole A/B/C merge — reused per leg so we don't triple-fetch. */
   let nationalFeatures: NwsFeature[] | undefined;
   try {
+    if (import.meta.env.DEV) console.log("[NWS national] fetching alerts/active...");
+    const t0 = Date.now();
     nationalFeatures = await fetchNwsActiveAlertsFeatures(userAgent);
-  } catch {
+    if (import.meta.env.DEV) console.log("[NWS national] got", nationalFeatures.length, "features in", Date.now() - t0, "ms");
+  } catch (e) {
+    if (import.meta.env.DEV) console.error("[NWS national] FAILED:", e);
     nationalFeatures = undefined;
   }
   const ok: WeatherAlertFetchResult[] = [];
@@ -719,9 +834,7 @@ export async function fetchNwsAlertsForNorthAmericaBrowse(
   userAgent: string,
   buildOptions?: BuildNwsResultOptions
 ): Promise<WeatherAlertFetchResult> {
-  const res = await fetchWithRetry(nwsActiveAlertsUrl(), nwsApiRequestHeaders(userAgent));
-  const data = (await res.json()) as GeoJSON.FeatureCollection;
-  const features = (data.features ?? []) as NwsFeature[];
+  const features = await fetchNwsActiveAlertsFeatures(userAgent);
   return buildResultFromRawFeatures(features, NA_BROWSE_CORRIDOR, userAgent, NWS_PAD_DEG, {
     maxUgcZoneAlerts: NWS_BROWSE_MAX_UGC_ZONE_ALERTS,
     ...buildOptions,

@@ -4,15 +4,6 @@ import { Geolocation } from "@capacitor/geolocation";
 import type { LngLat } from "../nav/types";
 import { fetchWithTimeout } from "../utils/fetchResilient";
 
-export type LocationDetail = {
-  lngLat: LngLat | null;
-  /** degrees, 0 = north, clockwise; null if unknown */
-  heading: number | null;
-  /** meters per second; null if unknown */
-  speedMps: number | null;
-  error: string | null;
-};
-
 /**
  * Dev escape hatch: pin a known lng/lat for dev / testing when the browser can't get a real GPS fix.
  *
@@ -69,6 +60,35 @@ export function getDevLocationOverrideLngLat(): LngLat | null {
   return readDevLocationOverride();
 }
 
+/** DEV: drop pinned coords so the browser can supply real GPS again. */
+export function clearDevLocationOverride(): void {
+  try {
+    localStorage.removeItem(DEV_LOCATION_LS_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export type LocationFixSource =
+  | "native"
+  | "browser"
+  | "dev-pin"
+  | "dev-ip"
+  | null;
+
+export type LocationDetail = {
+  lngLat: LngLat | null;
+  /** degrees, 0 = north, clockwise; null if unknown */
+  heading: number | null;
+  /** meters per second; null if unknown */
+  speedMps: number | null;
+  error: string | null;
+  /** How the current fix was obtained (dev diagnostics). */
+  fixSource: LocationFixSource;
+  /** Last reported horizontal accuracy (m), when the browser provides it. */
+  accuracyM: number | null;
+};
+
 export type UserLocationOptions = {
   /** Prefer fresher fixes (more battery). Off = allow up to ~2s cached positions. */
   highRefresh?: boolean;
@@ -79,9 +99,9 @@ const THROTTLE_MS = 400;
 
 /**
  * Dev-only: approximate lat/lng from the client’s public IP (HTTPS JSON, no API key).
- * Used when the page is **not** a secure context (e.g. `http://192.168.x.x:5173` — browsers
- * block `navigator.geolocation` entirely) or when GPS/permission never succeeds after a delay.
- * Accuracy is metro-level only; good enough to exercise routing/NWS on a desktop.
+ * Used only when the page is **not** a secure context (e.g. `http://192.168.x.x:5173`) — browsers
+ * block `navigator.geolocation` there entirely. Never used on `http://localhost` or https:// where
+ * real GPS must win (an earlier secure-context timer here caused a stable wrong-city dot).
  */
 async function fetchDevApproximateLngLatFromPublicLookup(): Promise<LngLat | null> {
   try {
@@ -181,6 +201,8 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
   const [heading, setHeading] = useState<number | null>(null);
   const [speedMps, setSpeedMps] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fixSource, setFixSource] = useState<LocationFixSource>(null);
+  const [accuracyM, setAccuracyM] = useState<number | null>(null);
 
   const lastFlushRef = useRef(0);
   const pendingRef = useRef<GeolocationPosition | null>(null);
@@ -199,6 +221,8 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
         (lng, lat, hdg, spd) => {
           if (cancelled) return;
           setError(null);
+          setFixSource("native");
+          setAccuracyM(null);
           setLngLat([lng, lat]);
           setHeading(hdg);
           setSpeedMps(spd);
@@ -229,6 +253,8 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
       const override = readDevLocationOverride();
       if (override) {
         setError(null);
+        setFixSource("dev-pin");
+        setAccuracyM(null);
         setLngLat(override);
         setHeading(null);
         setSpeedMps(null);
@@ -236,8 +262,7 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
       }
     }
 
-    /* `http://192.168.x.x:5173` is NOT a secure context — Chromium never exposes Geolocation
-     * (no prompt, no OS “last used” update). Only `http://localhost` / https:// qualify. */
+    /* `http://192.168.x.x:5173` is NOT a secure context — Chromium never exposes Geolocation. */
     if (!secure) {
       if (!import.meta.env.DEV) {
         setError(
@@ -256,6 +281,8 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
               "[useUserLocation] dev: non-secure origin — using approximate network center for map testing (not GPS)."
             );
             setError(null);
+            setFixSource("dev-ip");
+            setAccuracyM(null);
             setLngLat(p);
             setHeading(null);
             setSpeedMps(null);
@@ -293,6 +320,9 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
       lastFlushRef.current = Date.now();
       pendingRef.current = null;
       setError(null);
+      setFixSource("browser");
+      const acc = pos.coords.accuracy;
+      setAccuracyM(Number.isFinite(acc) && acc > 0 ? acc : null);
       setLngLat([pos.coords.longitude, pos.coords.latitude]);
       setHeading(
         pos.coords.heading != null && !Number.isNaN(pos.coords.heading)
@@ -373,7 +403,7 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
         const base =
           "Location blocked: tap the lock icon in the address bar (or Site settings) and allow Location for this site.";
         const devHint = import.meta.env.DEV
-          ? " If you are in Cursor's Simple Browser or another embedded preview, open the same URL in Chrome or Edge. On http://localhost, an approximate dev position loads in ~9s if GPS stays blocked."
+          ? " If you’re in Cursor’s Simple Browser or another embedded preview, open the same URL in Chrome or Edge — those often block geolocation."
           : "";
         setError(base + devHint);
         return;
@@ -406,29 +436,6 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
     if (typeof queueMicrotask === "function") queueMicrotask(runPrime);
     else window.setTimeout(runPrime, 0);
 
-    let devIpFallbackTimer = 0;
-
-    const tryDevNetworkFallback = async () => {
-      if (cancelled || fixReceived || !import.meta.env.DEV) return;
-      const p = await fetchDevApproximateLngLatFromPublicLookup();
-      if (cancelled || fixReceived) return;
-      if (!p) return;
-      console.info(
-        "[useUserLocation] dev: GPS still unavailable — using approximate network center so you can test the app (metro-level accuracy)."
-      );
-      fixReceived = true;
-      if (deferFirstTimer) {
-        window.clearTimeout(deferFirstTimer);
-        deferFirstTimer = 0;
-      }
-      vagueFallbackPos = null;
-      window.clearTimeout(failsafe);
-      setError(null);
-      setLngLat(p);
-      setHeading(null);
-      setSpeedMps(null);
-    };
-
     const failsafe = window.setTimeout(() => {
       if (cancelled || fixReceived) return;
       setError(
@@ -438,12 +445,9 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
       );
     }, 95_000);
 
-    devIpFallbackTimer = window.setTimeout(() => void tryDevNetworkFallback(), 8_500);
-
     return () => {
       cancelled = true;
       window.clearTimeout(failsafe);
-      window.clearTimeout(devIpFallbackTimer);
       window.clearTimeout(deferFirstTimer);
       deferFirstTimer = 0;
       window.clearTimeout(rafRef.current);
@@ -455,5 +459,5 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
     };
   }, [enabled, highRefresh]);
 
-  return { lngLat, heading, speedMps, error: error || null };
+  return { lngLat, heading, speedMps, error: error || null, fixSource, accuracyM };
 }

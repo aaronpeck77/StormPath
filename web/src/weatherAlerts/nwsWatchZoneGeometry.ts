@@ -10,7 +10,7 @@ import type { NormalizedWeatherAlert } from "./types";
 import { extractPolygonalGeometry, mergePolygonalParts } from "./nwsGeometry";
 import { stateCodesTouchingCorridorBbox } from "./usStateBBox";
 import { nwsApiRequestHeaders } from "./nwsClientHeaders";
-import { nwsHttpGet } from "./nwsHttpGet";
+import { resolveNwsRequestUrl } from "./nwsHttpGet";
 
 /** Prefer resolving these first when over the per-refresh cap (same as old narrow list). */
 const NWS_CONVECTIVE_PRIORITY_EVENTS = new Set([
@@ -78,17 +78,16 @@ async function fetchZonePolygon(
   url: string,
   userAgent: string
 ): Promise<GeoJSON.Polygon | GeoJSON.MultiPolygon | null> {
+  const resolved = resolveNwsRequestUrl(url);
+  const headers = nwsApiRequestHeaders(userAgent);
   const ctrl = new AbortController();
+  // Keep timer alive through res.json() — body read must also be bounded.
   const timer = setTimeout(() => ctrl.abort(), ZONE_FETCH_TIMEOUT_MS);
   try {
-    const res = await nwsHttpGet(url, nwsApiRequestHeaders(userAgent), {
-      signal: ctrl.signal,
-      connectTimeout: ZONE_FETCH_TIMEOUT_MS,
-      readTimeout: ZONE_FETCH_TIMEOUT_MS,
-    });
+    const res = await fetch(resolved, { headers, signal: ctrl.signal });
+    if (!res.ok) { clearTimeout(timer); return null; }
+    const data = (await res.json()) as GeoJSON.Feature; // signal still active
     clearTimeout(timer);
-    if (!res.ok) return null;
-    const data = (await res.json()) as GeoJSON.Feature;
     if (data.type !== "Feature" || !data.geometry) return null;
     return extractPolygonalGeometry(data.geometry);
   } catch {

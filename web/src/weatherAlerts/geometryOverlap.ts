@@ -141,6 +141,86 @@ export function polylineIntersectsPolygon(
 
 const OVERLAP_VERTEX_CAP = 160;
 
+function geometryBbox(
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon
+): { west: number; south: number; east: number; north: number } | null {
+  const outer =
+    geometry.type === "Polygon" ? geometry.coordinates[0] : geometry.coordinates[0]?.[0];
+  return outer?.length ? ringBbox(outer) : null;
+}
+
+/**
+ * True when a point is inside the polygon or within ~`bufferM` of its outer bbox (warnings
+ * “ahead” on the corridor often sit just beside a sparse route polyline).
+ */
+export function pointNearPolygonGeometry(
+  lng: number,
+  lat: number,
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon,
+  bufferM: number
+): boolean {
+  if (pointInAnyPolygonGeometry(lng, lat, geometry)) return true;
+  const b = geometryBbox(geometry);
+  if (!b) return false;
+  const cosLat = Math.cos((lat * Math.PI) / 180);
+  const latM = Math.max(0, b.south - lat, lat - b.north) * 111_000;
+  const lngM = Math.max(0, b.west - lng, lng - b.east) * 111_000 * Math.max(0.25, cosLat);
+  return Math.hypot(latM, lngM) <= bufferM;
+}
+
+/**
+ * Route intersects the polygon, or passes within `lateralBufferM` (default ~28 mi) — captures
+ * Severe Thunderstorm Warning areas you are entering before rain appears on radar.
+ */
+export function polylineNearPolygon(
+  route: LngLat[],
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon,
+  lateralBufferM = 45_000
+): boolean {
+  if (route.length < 2) return false;
+  if (polylineIntersectsPolygon(route, geometry)) return true;
+  const pb = geometryBbox(geometry);
+  const rb = polylineBbox(route);
+  if (!pb || !rb) return false;
+  const padDeg = lateralBufferM / 111_000;
+  const [rw, rs, re, rn] = expandBbox(rb.west, rb.south, rb.east, rb.north, padDeg);
+  if (!bboxIntersects({ west: rw, south: rs, east: re, north: rn }, pb)) return false;
+  const total = polylineLengthMeters(route);
+  const step = Math.max(
+    POLYLINE_INTERSECT_MIN_STEP_M,
+    Math.ceil(total / POLYLINE_INTERSECT_MAX_SAMPLES)
+  );
+  for (let m = 0; m <= total; m += step) {
+    const p = pointAtAlongMeters(route, Math.min(m, total - 0.01));
+    if (pointNearPolygonGeometry(p[0]!, p[1]!, geometry, lateralBufferM)) return true;
+  }
+  const last = route[route.length - 1]!;
+  return pointNearPolygonGeometry(last[0], last[1], geometry, lateralBufferM);
+}
+
+/** Alerts that touch the route or sit on the corridor ahead (not only strict polyline ∩ polygon). */
+export function filterAlertsAffectingRoute(
+  route: LngLat[],
+  alerts: NormalizedWeatherAlert[],
+  lateralBufferM = 45_000
+): NormalizedWeatherAlert[] {
+  if (!route.length || !alerts.length) return [];
+  const overlap = computeRouteOverlapWithAlerts(route, alerts);
+  const ids = new Set(overlap.overlappingIds);
+  const out: NormalizedWeatherAlert[] = [];
+  for (const a of alerts) {
+    if (ids.has(a.id)) {
+      out.push(a);
+      continue;
+    }
+    if (a.geometry && polylineNearPolygon(route, a.geometry, lateralBufferM)) {
+      ids.add(a.id);
+      out.push(a);
+    }
+  }
+  return out;
+}
+
 export function computeRouteOverlapWithAlerts(
   route: LngLat[],
   alerts: NormalizedWeatherAlert[]
@@ -374,4 +454,83 @@ export function stormAlongBandsForProgressStrip(
   if (runStart !== null) flush(samples[samples.length - 1]!);
 
   return bands;
+}
+
+/** Average-coordinate centroid of the first ring of a Polygon/MultiPolygon. */
+export function polygonApproxCentroid(g: GeoJSON.Polygon | GeoJSON.MultiPolygon): [number, number] {
+  const ring = g.type === "Polygon" ? g.coordinates[0] : g.coordinates[0]?.[0];
+  if (!ring?.length) return [0, 0];
+  let sumLng = 0, sumLat = 0;
+  for (const [lng, lat] of ring) { sumLng += lng!; sumLat += lat!; }
+  return [sumLng / ring.length, sumLat / ring.length];
+}
+
+/** Return the along-route distance (meters) of the sample point closest to `lngLat`. */
+export function closestAlongMeters(route: LngLat[], lngLat: LngLat): number {
+  const total = polylineLengthMeters(route);
+  const step = Math.max(STORM_ROUTE_SAMPLE_STEP_M, Math.ceil(total / STORM_ROUTE_MAX_SAMPLES));
+  let bestDist = Infinity;
+  let bestM = total / 2;
+  for (let m = 0; m <= total; m += step) {
+    const mm = Math.min(m, total);
+    const p = pointAtAlongMeters(route, mm);
+    const dlng = p[0] - lngLat[0], dlat = p[1] - lngLat[1];
+    const d2 = dlng * dlng + dlat * dlat;
+    if (d2 < bestDist) { bestDist = d2; bestM = mm; }
+  }
+  return bestM;
+}
+
+/** Minimum strip half-width (meters) used when the polygon clips the route so thinly that
+ *  point sampling misses the intersection. Represents ~5 km on each side. */
+const FALLBACK_STRIP_HALF_M = 5_000;
+
+/**
+ * Find where a single alert polygon intersects the route — returns `{ startM, endM }`.
+ * Returns `null` only if the route truly doesn't pass through or near the polygon.
+ *
+ * Unlike {@link stormAlongBandsForProgressStrip} this is per-alert so multiple overlapping
+ * alerts each get their own independent start/end meters for strip rendering.
+ *
+ * When point-sampling misses a thin polygon clip (route barely enters/exits within one
+ * sample interval), falls back to a centroid-based estimate so every intersecting alert
+ * still gets a visible strip.
+ */
+export function alertRouteIntersectionMeters(
+  route: LngLat[],
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon
+): { startM: number; endM: number } | null {
+  if (route.length < 2) return null;
+  const total = polylineLengthMeters(route);
+  if (total < 15) return null;
+
+  const step = Math.max(STORM_ROUTE_SAMPLE_STEP_M, Math.ceil(total / STORM_ROUTE_MAX_SAMPLES));
+  const samples: number[] = [];
+  for (let m = 0; m <= total; m += step) samples.push(Math.min(m, total));
+  if (samples[samples.length - 1]! < total) samples.push(total);
+
+  let startM: number | null = null;
+  let endM: number | null = null;
+
+  for (const mm of samples) {
+    const p = pointAtAlongMeters(route, mm);
+    if (pointInAnyPolygonGeometry(p[0], p[1], geometry)) {
+      if (startM === null) startM = mm;
+      endM = mm;
+    }
+  }
+
+  if (startM !== null && endM !== null && endM > startM + 5) {
+    return { startM, endM };
+  }
+
+  // Sampling missed the intersection (polygon clips route too thinly).
+  // Fall back: place a strip centred on the route point closest to the polygon centroid.
+  if (!polylineIntersectsPolygon(route, geometry)) return null;
+  const centroid = polygonApproxCentroid(geometry);
+  const midM = closestAlongMeters(route, centroid as LngLat);
+  return {
+    startM: Math.max(0, midM - FALLBACK_STRIP_HALF_M),
+    endM: Math.min(total, midM + FALLBACK_STRIP_HALF_M),
+  };
 }

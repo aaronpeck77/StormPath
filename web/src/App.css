@@ -1,4 +1,214 @@
-/* ——— Phone-first dark chrome (map + search + right rail) ——— */
+/* ??? Phone-first dark chrome (map + search + right rail) ??? */
+}
+/* --- RouteHazardTimeline (.rhtz) ------------------------------------------- */
+/*
+ * No legend text ? the graph IS the information. Band width = how long
+ * you'll spend inside the hazard zone. Scrolls horizontally on narrow screens.
+ *
+ *  NWS   ??[------FLOOD------]??????[---SPEC WX---]??
+ *  Radar ???????[--------RAIN--------]???????????????
+ *  Road  ?[TFC]?????????????????????????????????????
+ *        ?YOU   15mi   30mi   45mi   60mi       DEST
+ */
+
+.rhtz {
+  margin: 4px 0 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(8, 12, 24, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  color: #fff;
+}
+
+.rhtz__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.rhtz__header-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.rhtz__header-dest {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+/* Horizontal scroll container */
+.rhtz__scroll-wrap {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+
+.rhtz__scroll-wrap::-webkit-scrollbar {
+  height: 3px;
+}
+.rhtz__scroll-wrap::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.18);
+  border-radius: 2px;
+}
+
+/* Inner graph ? min-width keeps bands readable */
+.rhtz__graph-inner {
+  position: relative;
+  min-width: 520px;
+  padding-bottom: 2px;
+}
+
+/* YOU vertical line spans all track rows */
+.rhtz__you-line {
+  position: absolute;
+  top: 0;
+  bottom: 28px;
+  width: 2px;
+  background: #3b82f6;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.7);
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 4;
+  transform: translateX(-50%);
+}
+
+/* Track row */
+.rhtz__row {
+  display: flex;
+  align-items: stretch;
+  height: 40px;
+  margin-bottom: 4px;
+}
+
+.rhtz__row-label {
+  width: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.48);
+  user-select: none;
+}
+
+.rhtz__row-rail {
+  flex: 1;
+  position: relative;
+}
+
+.rhtz__rail-bg {
+  position: absolute;
+  inset: 0;
+  background: rgba(148, 163, 184, 0.09);
+  border-radius: 4px;
+}
+
+/* Hazard band ? WIDTH = distance you will spend in the hazard zone */
+.rhtz__band {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 4px;
+  opacity: 0.9;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  cursor: default;
+  transition: filter 150ms, opacity 150ms;
+}
+
+.rhtz__band[role="button"] { cursor: pointer; }
+.rhtz__band[role="button"]:hover,
+.rhtz__band[role="button"]:focus-visible {
+  filter: brightness(1.18);
+  opacity: 1;
+}
+
+.rhtz__band--passed {
+  opacity: 0.22 !important;
+  filter: grayscale(0.8);
+}
+
+.rhtz__band--nearby {
+  background: transparent !important;
+  border: 2px dashed;
+  opacity: 0.55;
+}
+
+/* Inline label ? only shown when band is wide enough */
+.rhtz__band-label {
+  padding: 0 5px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  user-select: none;
+  color: rgba(0,0,0,0.7);
+}
+.rhtz__band--avoid   .rhtz__band-label,
+.rhtz__band--serious .rhtz__band-label { color: rgba(255,255,255,0.9); }
+
+/* Distance axis */
+.rhtz__axis {
+  display: flex;
+  height: 24px;
+  margin-top: 2px;
+}
+
+.rhtz__axis-spacer {
+  flex-shrink: 0;
+  display: block;
+}
+
+.rhtz__axis-ticks {
+  flex: 1;
+  position: relative;
+}
+
+.rhtz__axis-tick {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 0.66rem;
+  color: rgba(255,255,255,0.32);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.rhtz__axis-you {
+  position: absolute;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #60a5fa;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.rhtz__axis-dest {
+  position: absolute;
+  right: 0;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: rgba(255,255,255,0.38);
+}
+
+.rhtz__reroute {
+  margin: 8px 0 0;
+  padding: 0;
+}
+/* ??? Phone-first dark chrome (map + search + right rail) ??? */
 
 :root {
   --sp-safe-top: env(safe-area-inset-top, 0px);
@@ -13,7 +223,7 @@
   color: #e8eaed;
 }
 
-/* Dark Mapbox basemap (7p–6a local): thin light rims — must beat .app-shell.nav-fullmap chrome vars */
+/* Dark Mapbox basemap (7p?6a local): thin light rims ? must beat .app-shell.nav-fullmap chrome vars */
 .app-shell--basemap-night .map-about-btn {
   border-color: rgba(255, 255, 255, 0.5);
 }
@@ -31,7 +241,7 @@
   border-color: rgba(255, 255, 255, 0.44);
 }
 
-/* Dev-only — semver from package.json (bump version to verify fresh bundle) */
+/* Dev-only ? semver from package.json (bump version to verify fresh bundle) */
 .stormpath-build-stamp {
   position: fixed;
   right: max(6px, env(safe-area-inset-right));
@@ -53,7 +263,7 @@
   -webkit-user-select: text;
 }
 
-/* Standalone busy pill when storm/hazard row is hidden — one centered row under the turn strip */
+/* Standalone busy pill when storm/hazard row is hidden ? one centered row under the turn strip */
 .nav-top-activity-pill-wrap--solo {
   width: 100%;
   display: flex;
@@ -66,7 +276,7 @@
   pointer-events: none;
 }
 
-/* Activity chip — same visual family as NWS / Road (rounded rect, inset highlight) */
+/* Activity chip ? same visual family as NWS / Road (rounded rect, inset highlight) */
 .hazard-controls-strip > .app-activity-pill {
   flex: 1 1 0;
   align-self: center;
@@ -78,7 +288,7 @@
   box-sizing: border-box;
 }
 
-/* Drive ahead strip — radar-style tiers; fused with Hazards in .hazard-controls-strip--drive-unified */
+/* Drive ahead strip ? radar-style tiers; fused with Hazards in .hazard-controls-strip--drive-unified */
 .hazard-controls-strip > .drive-route-info-strip {
   flex: 1 1 0;
   align-self: stretch;
@@ -133,7 +343,7 @@
   animation: app-activity-pill-pulse 1.1s ease-in-out infinite;
 }
 
-/* Reflectivity-style: red (extreme) → orange → yellow → green (rain) → blue (ice) → clear */
+/* Reflectivity-style: red (extreme) ? orange ? yellow ? green (rain) ? blue (ice) ? clear */
 .hazard-controls-strip > .drive-route-info-strip--radar-clear {
   background: linear-gradient(180deg, rgba(55, 65, 75, 0.96), rgba(38, 45, 55, 0.94));
   border-color: rgba(100, 116, 139, 0.55);
@@ -153,7 +363,7 @@
 }
 
 .hazard-controls-strip > .drive-route-info-strip--radar-green {
-  /* Rain / light–moderate */
+  /* Rain / light?moderate */
   background: linear-gradient(180deg, #15803d 0%, #166534 50%, #14532d 100%);
   border-color: rgba(134, 239, 172, 0.45);
   color: #f0fdf4;
@@ -212,7 +422,7 @@
   color: #b8c5d4;
 }
 
-/* Drive: one fused row — ahead strip (left) + Hazards (right), shared height */
+/* Drive: one fused row ? ahead strip (left) + Hazards (right), shared height */
 .hazard-controls-strip--drive-unified {
   gap: 0;
   align-items: stretch;
@@ -344,7 +554,7 @@
   color: #8b8b93;
 }
 
-/* NWS polygon hover (desktop): quick glance, then fades — .storm-hover-popup on Mapbox Popup */
+/* NWS polygon hover (desktop): quick glance, then fades ? .storm-hover-popup on Mapbox Popup */
 .mapboxgl-popup.storm-hover-popup {
   transition: opacity 0.48s ease;
 }
@@ -425,15 +635,15 @@
   --nav-dock-above-safe-current: var(--nav-dock-above-safe);
   /*
    * Progress rail foot: inset from viewport bottom so the strip ends just above the bottom chrome.
-   * Planning (route / map): clears address + search row. Drive: shorter stack (no address bar) → longer rail.
+   * Planning (route / map): clears address + search row. Drive: shorter stack (no address bar) ? longer rail.
    */
   /* From viewport bottom to strip foot: toolbar + chrome gap + margin above the address row (tune if overlap). */
   --nav-progress-rail-foot-inset: 134px;
   /* Shorter unrotated strip width = shorter vertical bar; legacy trim used in map fit padding */
   --nav-progress-strip-bottom-trim: 68px;
-  /* Room under the command bar for Mapbox logo/© (controls use z-index above the stack; strip can stay thin). */
+  /* Room under the command bar for Mapbox logo/� (controls use z-index above the stack; strip can stay thin). */
   --attribution-strip-h: 18px;
-  /* Padding under .nav-bottom-stack — keeps toolbar/search above the logo (Mapbox z-index above stack). */
+  /* Padding under .nav-bottom-stack ? keeps toolbar/search above the logo (Mapbox z-index above stack). */
   --nav-bottom-reserved: calc(2px + env(safe-area-inset-bottom, 0px) + var(--attribution-strip-h, 18px));
   /* Route PiP: snug under top cluster (overridden when .nav-top-cluster present) */
   --pip-top: calc(max(8px, env(safe-area-inset-top)) + 86px + var(--rail-panel-gap));
@@ -452,16 +662,16 @@
 
 .app-shell.nav-fullmap.nav-drive-ui {
   --nav-dock-above-safe-current: 132px;
-  /* Drive: compass/about + ETA toolbar — must clear the bottom trip bar (was too short; rail overlapped ETA strip). */
+  /* Drive: compass/about + ETA toolbar ? must clear the bottom trip bar (was too short; rail overlapped ETA strip). */
   --nav-progress-rail-foot-inset: 78px;
 }
 
-/* Radar mosaic clock in the about row — needs more clearance above the address pill + progress rail foot */
+/* Radar mosaic clock in the about row ? needs more clearance above the address pill + progress rail foot */
 .app-shell.nav-fullmap.nav-radar-frame-time-visible:not(.nav-drive-ui) {
   --nav-progress-rail-foot-inset: 156px;
 }
 
-/* About — own row above address; left-aligned with search + route below */
+/* About ? own row above address; left-aligned with search + route below */
 .nav-bottom-dock__plan-stack {
   display: flex;
   flex-direction: column;
@@ -492,7 +702,7 @@
   min-width: 0;
 }
 
-/* Address + My location + route: one row — equal control height; flex-start so open suggestions don’t vertically center the side buttons */
+/* Address + My location + route: one row ? equal control height; flex-start so open suggestions don?t vertically center the side buttons */
 .nav-bottom-dock__search-myloc-row {
   display: flex;
   flex-direction: row;
@@ -522,7 +732,7 @@
   pointer-events: auto;
 }
 
-/* Smaller, glassy — planning row defaults left; landscape full map tucks “i” to the trailing edge. */
+/* Smaller, glassy ? planning row defaults left; landscape full map tucks ?i? to the trailing edge. */
 .map-about-btn {
   position: relative;
   z-index: 1;
@@ -559,7 +769,7 @@
   outline: none;
 }
 
-/* Drive: compass above the glass “i” — dial rotates so N matches true north on the map */
+/* Drive: compass above the glass ?i? ? dial rotates so N matches true north on the map */
 .nav-bottom-dock__drive-about-stack {
   display: flex;
   flex-direction: column;
@@ -647,7 +857,7 @@
   -webkit-overflow-scrolling: touch;
 }
 
-/* Compact sticky header — title + version/plan chips, replaces the two old top panels */
+/* Compact sticky header ? title + version/plan chips, replaces the two old top panels */
 .about-sheet__header {
   position: sticky;
   top: 0;
@@ -728,7 +938,7 @@
 /*
  * iOS-style grouped: each section is a soft-gray rounded container with comfortable padding,
  * preceded by a small uppercase eyebrow title that floats above the container (no per-section
- * stripes / colors / gradients — quiet and consistent).
+ * stripes / colors / gradients ? quiet and consistent).
  */
 .about-sheet__panel {
   position: relative;
@@ -787,7 +997,7 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-/* Inset card (handedness selector inside Settings) — darker than its parent so it reads as nested. */
+/* Inset card (handedness selector inside Settings) ? darker than its parent so it reads as nested. */
 .about-sheet__panel--settings-inset {
   margin: 14px 0 0;
   padding: 12px;
@@ -830,7 +1040,7 @@
 
 .about-sheet__tier-preview {
   margin: 0 0 8px;
-  /* padding/border/radius: .about-sheet__panel — keep default soft-gray bg from the iOS group */
+  /* padding/border/radius: .about-sheet__panel ? keep default soft-gray bg from the iOS group */
 }
 
 /* "Test pay tier" devtools panel sitting between the header and the scrolling sections */
@@ -877,7 +1087,7 @@
   color: #64748b;
 }
 
-/* Whole sheet is the only scroll container — no nested scrollers */
+/* Whole sheet is the only scroll container ? no nested scrollers */
 .about-sheet__sections {
   display: flex;
   flex-direction: column;
@@ -1004,7 +1214,7 @@
   cursor: pointer;
 }
 
-/* Help section — short copy + a single ghost button to replay the first-launch coachmarks. */
+/* Help section ? short copy + a single ghost button to replay the first-launch coachmarks. */
 .about-sheet__muted-line {
   margin: 0 0 10px;
   color: #94a3b8;
@@ -1048,7 +1258,7 @@
   font-weight: 650;
 }
 
-/* Activity trail — small clear control (kept narrow + right-aligned to avoid accidental hits) */
+/* Activity trail ? small clear control (kept narrow + right-aligned to avoid accidental hits) */
 .about-sheet__trail-clear {
   margin-top: 12px;
   display: flex;
@@ -1144,7 +1354,7 @@
   transform: translateY(1px);
 }
 
-/* ───── Map key (legend) — color/chrome cheat sheet inside About sheet ───── */
+/* ????? Map key (legend) ? color/chrome cheat sheet inside About sheet ????? */
 .about-sheet__panel--map-key .map-key__group {
   margin-top: 10px;
 }
@@ -1361,7 +1571,7 @@
   min-height: 100vh;
   height: 100dvh;
   min-height: 100dvh;
-  /* Shows under inset map-canvas on phones where bottom chrome doesn’t cover tiles */
+  /* Shows under inset map-canvas on phones where bottom chrome doesn?t cover tiles */
   background: #0a0b0d;
 }
 
@@ -1371,7 +1581,7 @@
   z-index: 0;
 }
 
-/* Route planning — My location in dock beside address (right edge = bottom panel) */
+/* Route planning ? My location in dock beside address (right edge = bottom panel) */
 .nav-recenter-puck-btn {
   box-sizing: border-box;
   min-height: var(--nav-chrome-control, 44px);
@@ -1413,7 +1623,7 @@
   padding: 0 16px;
 }
 
-/* Inline placement on the about-row — mirrors the inline route-cycle slot so "My location"
+/* Inline placement on the about-row ? mirrors the inline route-cycle slot so "My location"
  * (shown while planning, no route yet) and the route-cycle button (shown once a route is
  * loaded) are visually interchangeable: same height as the round 'i' info button on the left,
  * same horizontal stretch into the strip, same right gutter clear of the progress rail. */
@@ -1441,7 +1651,7 @@
   touch-action: none;
 }
 
-/* Mapbox logo + ©: default corners, bottom safe inset (same on web and phone — sits in strip under floating chrome) */
+/* Mapbox logo + �: default corners, bottom safe inset (same on web and phone ? sits in strip under floating chrome) */
 .map-stage.map-bleed .mapboxgl-ctrl-bottom-left {
   margin-bottom: 0 !important;
   /* Sit in the reserved strip under the command bar (same intent as --nav-bottom-reserved). */
@@ -1451,7 +1661,7 @@
   top: auto !important;
   transform: none !important;
   transform-origin: unset !important;
-  /* Above .nav-bottom-stack (6) so logo/© stay visible in the strip under the command bar */
+  /* Above .nav-bottom-stack (6) so logo/� stay visible in the strip under the command bar */
   z-index: 8;
 }
 
@@ -1459,7 +1669,7 @@
   margin-bottom: 0 !important;
   bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - 4px)) !important;
   left: auto !important;
-  /* Keep Mapbox attribution “i” clear of the vertical progress rail on the right. */
+  /* Keep Mapbox attribution ?i? clear of the vertical progress rail on the right. */
   right: calc(64px + max(6px, env(safe-area-inset-right)) + 8px) !important;
   top: auto !important;
   transform: none !important;
@@ -1517,6 +1727,19 @@
 
 .nav-toast code {
   font-size: 0.75rem;
+}
+
+.nav-toast-inline-btn {
+  margin-left: 0.35rem;
+  padding: 0.15rem 0.5rem;
+  font: inherit;
+  font-size: 0.85em;
+  font-weight: 600;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  cursor: pointer;
 }
 
 .nav-offline-banner {
@@ -1594,7 +1817,7 @@
   color: #cbd5e1;
 }
 
-/* Bottom: search (left) stacked above full-width toolbar — never overlap */
+/* Bottom: search (left) stacked above full-width toolbar ? never overlap */
 .nav-bottom-stack {
   position: absolute;
   left: 0;
@@ -1617,7 +1840,7 @@
   pointer-events: auto;
 }
 
-/* Search + toolbar column: don’t turn the whole tall stack into one mouse trap when suggestions open */
+/* Search + toolbar column: don?t turn the whole tall stack into one mouse trap when suggestions open */
 .nav-bottom-stack > .nav-bottom-chrome-wrap {
   pointer-events: none;
 }
@@ -1710,7 +1933,7 @@
   pointer-events: none;
 }
 
-/* Don’t use `> * { auto }` — it overrides .nav-bottom-dock__plan-stack { none } and blocks the map. */
+/* Don?t use `> * { auto }` ? it overrides .nav-bottom-dock__plan-stack { none } and blocks the map. */
 .nav-bottom-dock > .nav-bottom-dock__about-row {
   pointer-events: auto;
 }
@@ -1839,7 +2062,7 @@
  * inline variant wins everywhere, including TestFlight. */
 .nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-cycle-btn {
   width: 100%;
-  /* Base .nav-route-cycle-btn caps width at 5.5 rem for the small stacked variants — explicitly
+  /* Base .nav-route-cycle-btn caps width at 5.5 rem for the small stacked variants ? explicitly
    * unlock here so the inline button stretches across the about-row strip. */
   min-width: 0;
   max-width: none;
@@ -1848,8 +2071,8 @@
   max-height: 34px;
   /* Two-row grid inside the 34 px button so all three pieces render in full instead of being
    * ellipsized:
-   *   row 1: [road label]  [letter · ETA]   ← left + right of the top line
-   *   row 2: [distance · strategy ────────] ← full-width bottom line
+   *   row 1: [road label]  [letter � ETA]   ? left + right of the top line
+   *   row 2: [distance � strategy ????????] ? full-width bottom line
    * Letting the columns size to their content (auto) means no ellipsis, no info loss; the
    * about-row already reserves enough horizontal space for the typical strings (~22 chars top,
    * ~16 chars bottom). */
@@ -1875,7 +2098,7 @@
   font-size: 0.78rem;
   font-weight: 800;
   line-height: 1.15;
-  /* Allow the road label to be the full string — no ellipsis. If extreme labels overflow they
+  /* Allow the road label to be the full string ? no ellipsis. If extreme labels overflow they
    * will simply shrink the .nav-route-cycle-btn__eta chunk via auto-track sizing. */
   white-space: nowrap;
   overflow: visible;
@@ -1889,11 +2112,11 @@
   font-weight: 800;
   line-height: 1.15;
   white-space: nowrap;
-  /* No left border in the grid layout — the column gap supplies enough visual separation
+  /* No left border in the grid layout ? the column gap supplies enough visual separation
    * without a divider that would otherwise float between the two grid rows. */
   padding-left: 0;
   border-left: none;
-  /* Justify-self: end so "A · ~25 min" hugs the right edge of the top row. */
+  /* Justify-self: end so "A � ~25 min" hugs the right edge of the top row. */
   justify-self: end;
 }
 
@@ -1906,7 +2129,7 @@
   line-height: 1.15;
   margin-top: 0;
   white-space: nowrap;
-  /* Detail can be the longest piece (e.g. "12 mi · weather-aware"); allow normal flow with no
+  /* Detail can be the longest piece (e.g. "12 mi � weather-aware"); allow normal flow with no
    * ellipsis. The about-row's right inset reserves enough space for the common strings. */
   overflow: visible;
   text-overflow: clip;
@@ -2122,7 +2345,7 @@
   position: relative;
 }
 
-/* Suggestions list flows out of the search dock as one continuous panel — no nested card chrome.
+/* Suggestions list flows out of the search dock as one continuous panel ? no nested card chrome.
  * The negative horizontal margin escapes .nav-search-dock's `padding: 0 10px` so suggestion rows
  * extend edge-to-edge of the dock instead of leaving a wasted strip on the left and right. */
 .nav-search-suggestions {
@@ -2137,7 +2360,7 @@
   background: transparent;
 }
 
-/* Hairline divider above the suggestion list mirrors the row dividers between suggestions — gives
+/* Hairline divider above the suggestion list mirrors the row dividers between suggestions ? gives
  * a clear visual break between the input and the list without a heavy panel border. */
 .nav-search-suggestions:not(:empty) {
   margin-top: 6px;
@@ -2149,7 +2372,7 @@
   display: block;
   width: 100%;
   text-align: left;
-  /* Wider horizontal padding now that we extend edge-to-edge — keeps tap targets generous on phones. */
+  /* Wider horizontal padding now that we extend edge-to-edge ? keeps tap targets generous on phones. */
   padding: 11px 14px;
   border: none;
   background: transparent;
@@ -2197,9 +2420,9 @@
 }
 
 /* POI rows get a tiny pin glyph before the name so businesses are scannable in a mixed list.
- * (No left-accent stripe — that styling is forbidden in this app.) */
+ * (No left-accent stripe ? that styling is forbidden in this app.) */
 .nav-search-suggestion--poi .nav-search-suggestion__primary::before {
-  content: "📍 ";
+  content: "?? ";
   margin-right: 2px;
   filter: hue-rotate(-15deg);
 }
@@ -2312,7 +2535,7 @@
   border: 1px solid #f5c6c4;
 }
 
-/* Fuse / details — light */
+/* Fuse / details ? light */
 .fuse-panel-compact {
   padding: 4px 0 0;
 }
@@ -2700,7 +2923,7 @@
   margin-top: 6px;
 }
 
-/* Top turn/weather + full-height right progress rail — map stays tappable outside these */
+/* Top turn/weather + full-height right progress rail ? map stays tappable outside these */
 .nav-drive-overlay-stack {
   position: absolute;
   left: 0;
@@ -2736,7 +2959,7 @@
   box-sizing: border-box;
   width: 100%;
   background: transparent;
-  /* Pinch/scroll on the map — avoid browser/page zoom starting from the guidance stack */
+  /* Pinch/scroll on the map ? avoid browser/page zoom starting from the guidance stack */
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -2746,7 +2969,7 @@
   pointer-events: auto;
 }
 
-/* Turn + storm + hint — full width under turn bubble */
+/* Turn + storm + hint ? full width under turn bubble */
 .nav-top-route-rail {
   width: 100%;
   min-width: 0;
@@ -2764,7 +2987,7 @@
   gap: 6px;
 }
 
-/* Right edge: column 2 — fill map band; foot stays var(--nav-progress-rail-foot-inset) above bottom chrome */
+/* Right edge: column 2 ? fill map band; foot stays var(--nav-progress-rail-foot-inset) above bottom chrome */
 .nav-route-progress-rail {
   grid-column: 2;
   grid-row: 2;
@@ -2777,7 +3000,7 @@
   display: flex;
   flex-direction: column;
   justify-content: stretch;
-  /* Inset from the physical right bezel — was flush against the edge */
+  /* Inset from the physical right bezel ? was flush against the edge */
   padding-right: max(14px, calc(10px + env(safe-area-inset-right)));
   padding-bottom: calc(var(--nav-progress-rail-foot-inset, 134px) + env(safe-area-inset-bottom));
   box-sizing: border-box;
@@ -2794,7 +3017,7 @@
   /* Anchor strip to the viewport-right edge; centering made the long rotated bar spill left */
   align-items: flex-end;
   justify-content: flex-start;
-  /* Match .route-progress-callout-toggle { top: 2px } so strip top lines up with ⧉ tab */
+  /* Match .route-progress-callout-toggle { top: 2px } so strip top lines up with ? tab */
   padding-top: 2px;
   overflow: visible;
   pointer-events: auto;
@@ -2803,17 +3026,17 @@
   container-name: progress-rail;
 }
 
-/* Callouts open: keep rail width — cluster is position:absolute so it never steals space from the strip */
+/* Callouts open: keep rail width ? cluster is position:absolute so it never steals space from the strip */
 .nav-route-progress-rail--callouts-open {
   z-index: 6;
   position: relative;
 }
 
-/* ⧉ + optional panel (default: rail on right edge): open = wide box extending left toward map */
+/* ? + optional panel (default: rail on right edge): open = wide box extending left toward map */
 .route-progress-callout-rail-cluster {
   position: absolute;
   top: 2px;
-  /* Nudge toward map so the closed-state control doesn’t crowd the rotated strip */
+  /* Nudge toward map so the closed-state control doesn?t crowd the rotated strip */
   left: -10px;
   z-index: 7;
   pointer-events: none;
@@ -2826,7 +3049,7 @@
 
 .route-progress-callout-rail-cluster--open {
   left: auto;
-  /* Hug the strip — panel aligns with bar marks */
+  /* Hug the strip ? panel aligns with bar marks */
   right: 100%;
   width: min(300px, min(76vw, calc(100vw - 88px)));
   z-index: 6;
@@ -2854,7 +3077,7 @@
   flex-shrink: 0;
 }
 
-/* When panel is open, park ⧉ on the panel’s top-right (same side as closed state next to the strip) */
+/* When panel is open, park ? on the panel?s top-right (same side as closed state next to the strip) */
 .route-progress-callout-toggle--docked {
   position: absolute;
   top: 4px;
@@ -2977,6 +3200,38 @@
   color: rgba(148, 163, 184, 0.95);
 }
 
+.route-progress-callout-panel__route-wide {
+  margin-bottom: 0;
+  padding-bottom: 0.15rem;
+}
+
+.route-progress-callout-panel__divider {
+  display: block;
+  width: 100%;
+  height: 0;
+  margin: 0.55rem 0 0.45rem;
+  padding: 0;
+  border: none;
+  border-top: 2px solid rgba(148, 163, 184, 0.55);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.route-progress-callout-panel__line--route-wide {
+  background: rgba(15, 23, 42, 0.04);
+  border-radius: 8px;
+  padding: 0.2rem 0.15rem;
+}
+
+.route-progress-callout-panel__timeline-label {
+  margin: 0 0 0.4rem;
+  padding: 0 0.1rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(15, 23, 42, 0.45);
+}
+
 .route-progress-callout-panel__summary {
   margin: 0;
   font-weight: 550;
@@ -3008,7 +3263,7 @@
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
 }
 
-/* Don’t clamp side-rail strip to rail width (56px) — that collapsed the rotated bar to a nub */
+/* Don?t clamp side-rail strip to rail width (56px) ? that collapsed the rotated bar to a nub */
 .nav-route-progress-rail__inner > .route-progress-strip:not(.route-progress-strip--side) {
   flex: 1 1 auto;
   min-height: 0;
@@ -3021,7 +3276,7 @@
   align-self: flex-end;
 }
 
-/* US NWS — vertical left tab when collapsed; expanded bar spans full width under turn strip. */
+/* US NWS ? vertical left tab when collapsed; expanded bar spans full width under turn strip. */
 .storm-advisory-bar-wrap {
   display: flex;
   flex-direction: column;
@@ -3048,7 +3303,7 @@
   display: inline;
 }
 
-/* Sideways “Storm” tab on the left edge */
+/* Sideways ?Storm? tab on the left edge */
 .storm-advisory-bar__peek--side {
   flex-shrink: 0;
   display: flex;
@@ -3059,7 +3314,7 @@
   width: 44px;
   min-height: 80px;
   padding: 8px 6px;
-  /* Match the bar’s pill feel — don’t hug the screen edge. */
+  /* Match the bar?s pill feel ? don?t hug the screen edge. */
   margin-left: 0;
   border-radius: 10px;
   border: 1px solid rgba(251, 191, 36, 0.35);
@@ -3121,10 +3376,10 @@
   color: #f1f5f9;
 }
 
-/* Expanded panel (tap advisory): larger type, fewer nested “cards”, driver-first scanning */
+/* Expanded panel (tap advisory): larger type, fewer nested ?cards?, driver-first scanning */
 /* Anchor wrap: keeps the preview row in flow at its natural cluster position. The expanded
  * panel renders as a sibling positioned absolutely so it floats over the progress rail
- * (and the rest of the map) instead of pushing the cluster's row 2 down — which previously
+ * (and the rest of the map) instead of pushing the cluster's row 2 down ? which previously
  * compressed the right-edge progress bar. */
 .storm-advisory-bar-anchor {
   position: relative;
@@ -3137,7 +3392,7 @@
   line-height: 1.45;
   padding: 18px 14px 14px;
   /* Use position: fixed with viewport-relative coords. Top / left / right are set as CSS variables
-   * by a JS layout effect that measures the preview button's bounding rect — this guarantees the
+   * by a JS layout effect that measures the preview button's bounding rect ? this guarantees the
    * three edges align perfectly with the collapsed preview behind it. The bottom is anchored to
    * a fixed distance above the viewport bottom (clears the i-button + safe-area-inset-bottom), so
    * the panel reaches as far down as it can without the cluster's top offset confusing the math. */
@@ -3161,13 +3416,13 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* Pure-downward drop shadow — negative spread + matching blur means the shadow never extends
+  /* Pure-downward drop shadow ? negative spread + matching blur means the shadow never extends
    * horizontally past the panel's actual edges (was reading as "panel spilling off-screen right"). */
   box-shadow: 0 4px 10px -8px rgba(0, 0, 0, 0.6);
 }
 
 /* When the advisory bar is expanded, lift the cluster above the right-side progress rail so the
- * fixed-position panel + its tap targets stack on top of the rail's ⧉ toggle (which sits at
+ * fixed-position panel + its tap targets stack on top of the rail's ? toggle (which sits at
  * z-index 8 inside its own stacking context, currently at z 6 of the overlay-stack grid). */
 .nav-top-cluster:has(.storm-advisory-bar--expanded) {
   z-index: 16;
@@ -3246,8 +3501,8 @@
   margin: 0;
 }
 
-/* NWS status note — single source of truth for "why is the NWS area empty?". Sits at the top of
- * the Weather section when there are no NWS rows to show. Pill-style "NWS · …" prefix is part of
+/* NWS status note ? single source of truth for "why is the NWS area empty?". Sits at the top of
+ * the Weather section when there are no NWS rows to show. Pill-style "NWS � ?" prefix is part of
  * the text itself; no panel border or left accent stripe (banned per project rules). */
 .storm-advisory-bar__nws-status {
   margin: 4px 0 0;
@@ -3260,7 +3515,7 @@
   line-height: 1.35;
 }
 
-/* Warn variant — used for offline / error states so the "couldn't fetch" cases catch the eye
+/* Warn variant ? used for offline / error states so the "couldn't fetch" cases catch the eye
  * without escalating to a hard red. Uniform border tint; no edge stripe. */
 .storm-advisory-bar__nws-status.storm-advisory-bar__nws-status--warn {
   background: rgba(120, 53, 15, 0.32);
@@ -3268,7 +3523,7 @@
   color: #fde68a;
 }
 
-/* Now section — life-safety NWS cards */
+/* Now section ? life-safety NWS cards */
 .storm-advisory-bar__now-list {
   list-style: none;
   margin: 0;
@@ -3343,9 +3598,9 @@
   color: rgba(255, 255, 255, 0.7);
 }
 
-/* "At your position" list (non-urgent NWS advisories — Wind / Blowing Dust / Dense Fog / etc.).
+/* "At your position" list (non-urgent NWS advisories ? Wind / Blowing Dust / Dense Fog / etc.).
  * Distinct from the urgent NOW cards: muted amber, no warning glyph, lower contrast border. The
- * goal is "informational" not "alarming" — these sit inside the WEATHER section, between the
+ * goal is "informational" not "alarming" ? these sit inside the WEATHER section, between the
  * route storm strip and the per-impact list, so the panel agrees with the bar's "At your
  * position" ticker entries. */
 .storm-advisory-bar__here-list {
@@ -3428,7 +3683,7 @@
   color: rgba(255, 255, 255, 0.65);
 }
 
-/* Impact rows — flat list inside a section. No per-row card / no accent stripe.
+/* Impact rows ? flat list inside a section. No per-row card / no accent stripe.
  * Severity is signalled by a small colored dot before the headline and an inline
  * severity pill on the right. Rows are separated by hairlines. */
 .storm-advisory-bar__impact-list {
@@ -3466,7 +3721,7 @@
   color: #f1f5f9;
 }
 
-/* Severity dot — drawn via ::before instead of a panel border. */
+/* Severity dot ? drawn via ::before instead of a panel border. */
 .storm-advisory-bar__impact-headline::before {
   content: "";
   display: inline-block;
@@ -3513,7 +3768,7 @@
   padding-left: 17px;
 }
 
-/* Suggestion section row — flat (no card, no accent stripe). */
+/* Suggestion section row ? flat (no card, no accent stripe). */
 .storm-advisory-bar__suggestion-row {
   display: flex;
   flex-wrap: wrap;
@@ -3536,7 +3791,7 @@
   color: #f1f5f9;
 }
 
-/* ───── Storm strip (Stage C) ───── */
+/* ????? Storm strip (Stage C) ????? */
 .route-storm-strip {
   margin: 4px 0 8px;
 }
@@ -3670,14 +3925,654 @@
   font-style: italic;
 }
 
-/* Clear the turn / StormPath strip — expanded panel sits fully below guidance */
+/* ??? RouteAlertGroupPanel ?????????????????????????????????????????????????? */
+
+.route-alert-group {
+  margin: 4px 0 8px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(20, 6, 6, 0.65);
+  border: 1px solid rgba(252, 165, 165, 0.4);
+  color: #fff;
+}
+
+.route-alert-group--sev-serious {
+  border-color: rgba(249, 115, 22, 0.65);
+  background: rgba(120, 53, 15, 0.55);
+}
+
+.route-alert-group--sev-avoid {
+  border-color: rgba(220, 38, 38, 0.9);
+  background: rgba(127, 29, 29, 0.65);
+}
+
+.route-alert-group--sev-caution {
+  border-color: rgba(234, 179, 8, 0.55);
+  background: rgba(66, 32, 6, 0.55);
+}
+
+.route-alert-group--sev-info {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.route-alert-group__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.route-alert-group__header-label {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.route-alert-group__header-source {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.route-alert-group__divider {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 10px 0;
+}
+
+.route-alert-group__item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  cursor: default;
+}
+
+.route-alert-group__item[role="button"] {
+  cursor: pointer;
+}
+
+.route-alert-group__item--passed {
+  opacity: 0.5;
+}
+
+.route-alert-group__item-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.route-alert-group__item-icon {
+  font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.route-alert-group__item-event {
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.route-alert-group__item-sev {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  opacity: 0.9;
+}
+
+.route-alert-group__item-detail {
+  margin: 0;
+  font-size: 0.76rem;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.4;
+}
+
+/* Mini progress rail ? thinner than the full RouteStormStrip rail */
+.route-alert-group__item-rail {
+  position: relative;
+  width: 100%;
+  height: 28px;
+  margin: 3px 0 4px;
+}
+
+.route-alert-group__rail-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 5px;
+  transform: translateY(-50%);
+  background: rgba(148, 163, 184, 0.22);
+  border-radius: 3px;
+}
+
+.route-alert-group__rail-band {
+  position: absolute;
+  top: 50%;
+  height: 10px;
+  transform: translateY(-50%);
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(220, 38, 38, 0.85), rgba(249, 115, 22, 0.85));
+  box-shadow: 0 0 5px rgba(220, 38, 38, 0.4);
+}
+
+.route-alert-group__rail-band--serious {
+  background: linear-gradient(90deg, rgba(249, 115, 22, 0.85), rgba(251, 191, 36, 0.85));
+  box-shadow: 0 0 4px rgba(249, 115, 22, 0.4);
+}
+
+.route-alert-group__rail-band--caution {
+  background: linear-gradient(90deg, rgba(234, 179, 8, 0.85), rgba(253, 224, 71, 0.85));
+  box-shadow: 0 0 4px rgba(234, 179, 8, 0.35);
+}
+
+.route-alert-group__rail-band--info {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.8), rgba(96, 165, 250, 0.8));
+  box-shadow: 0 0 4px rgba(59, 130, 246, 0.35);
+}
+
+.route-alert-group__rail-you {
+  position: absolute;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4);
+  transform: translate(-50%, -50%);
+  transition: left 800ms ease-out;
+}
+
+.route-alert-group__rail-endmarks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.route-alert-group__rail-endmark {
+  position: absolute;
+  bottom: -1px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(203, 213, 225, 0.75);
+}
+
+.route-alert-group__rail-endmark--start { left: 0; }
+.route-alert-group__rail-endmark--end { right: 0; }
+
+.route-alert-group__item-timing {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.route-alert-group__item-expires {
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.route-alert-group__footer {
+  margin: 10px 0 0;
+  font-size: 0.64rem;
+  color: rgba(255, 255, 255, 0.42);
+  font-style: italic;
+}
+
+/* ??? RouteImpactGroupPanel ?????????????????????????????????????????????????? */
+
+.route-impact-group {
+  margin: 4px 0 8px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  color: #fff;
+}
+
+/* Radar ? blue-tinted */
+.route-impact-group--radar {
+  background: rgba(10, 20, 40, 0.65);
+  border: 1px solid rgba(96, 165, 250, 0.4);
+}
+/* Roads ? neutral slate */
+.route-impact-group--road {
+  background: rgba(15, 20, 30, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+/* Severity overrides for card border */
+.route-impact-group--sev-avoid { border-color: rgba(220, 38, 38, 0.85); }
+.route-impact-group--sev-serious { border-color: rgba(249, 115, 22, 0.65); }
+.route-impact-group--sev-caution { border-color: rgba(234, 179, 8, 0.5); }
+
+.route-impact-group__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9px;
+  gap: 8px;
+}
+
+.route-impact-group__header-label {
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.route-impact-group__header-count {
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.65);
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+
+.route-impact-group__divider {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  margin: 9px 0;
+}
+
+.route-impact-group__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.route-impact-group__item--tappable {
+  cursor: pointer;
+}
+
+.route-impact-group__item--passed {
+  opacity: 0.48;
+}
+
+.route-impact-group__item-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.route-impact-group__item-icon {
+  font-size: 0.9rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.route-impact-group__item-headline {
+  font-size: 0.83rem;
+  font-weight: 700;
+}
+
+.route-impact-group__item-detail {
+  margin: 0;
+  font-size: 0.73rem;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.4;
+}
+
+/* Mini progress rail ? same approach as route-alert-group */
+.route-impact-group__rail {
+  position: relative;
+  width: 100%;
+  height: 26px;
+  margin: 3px 0 3px;
+}
+
+.route-impact-group__rail-track {
+  position: absolute;
+  left: 0; right: 0; top: 50%;
+  height: 5px;
+  transform: translateY(-50%);
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 3px;
+}
+
+.route-impact-group__rail-band {
+  position: absolute;
+  top: 50%;
+  height: 9px;
+  transform: translateY(-50%);
+  border-radius: 3px;
+}
+
+.route-impact-group__rail-band--avoid {
+  background: linear-gradient(90deg, rgba(220, 38, 38, 0.9), rgba(185, 28, 28, 0.9));
+  box-shadow: 0 0 5px rgba(220, 38, 38, 0.45);
+}
+.route-impact-group__rail-band--serious {
+  background: linear-gradient(90deg, rgba(249, 115, 22, 0.85), rgba(234, 88, 12, 0.85));
+  box-shadow: 0 0 4px rgba(249, 115, 22, 0.4);
+}
+.route-impact-group__rail-band--caution {
+  background: linear-gradient(90deg, rgba(234, 179, 8, 0.85), rgba(202, 138, 4, 0.85));
+  box-shadow: 0 0 4px rgba(234, 179, 8, 0.35);
+}
+.route-impact-group__rail-band--info {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.8), rgba(37, 99, 235, 0.8));
+  box-shadow: 0 0 4px rgba(59, 130, 246, 0.35);
+}
+
+.route-impact-group__rail-you {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.4);
+  transform: translate(-50%, -50%);
+  transition: left 800ms ease-out;
+}
+
+.route-impact-group__rail-endmarks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.route-impact-group__rail-endmark {
+  position: absolute;
+  bottom: -1px;
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(203, 213, 225, 0.65);
+}
+.route-impact-group__rail-endmark--start { left: 0; }
+.route-impact-group__rail-endmark--end { right: 0; }
+
+.route-impact-group__item-timing {
+  font-size: 0.73rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.route-impact-group__footer {
+  margin: 8px 0 0;
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.38);
+  font-style: italic;
+}
+
+/* ??? Dashboard / timeline container ???????????????????????????????????????? */
+
+.storm-advisory-bar__dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 2px;
+}
+
+.storm-advisory-bar__sections-scroll {
+  padding: 6px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+/* ??? RouteHazardTimeline (.rhtz) ??????????????????????????????????????????? */
+/*
+ * Unified Gantt-style timeline:
+ *
+ *  ????????????????????????????????????????????????????
+ *  ? Route ahead                            DEST ?    ?
+ *  ? NWS   ???????[===FLOOD===]?????[==SPEC WX==]??? ?
+ *  ? Radar ???????[=====RAIN=======]???????????????? ?
+ *  ? Road  ?[TFC]??????????????????????????????????? ?
+ *  ?       ?YOU    15mi    30mi    45mi      DEST      ?
+ *  ????????????????????????????????????????????????????
+ *  ? ? Flood Advisory � Enter in 12 min � 8.2 mi      ?
+ *  ? ? Spec Wx Statement � Nearby � strong winds      ?
+ *  ? ?? Heavy rain on route � Enter in 22 min         ?
+ *  ? ?? Traffic delay � 2.1 mi ahead � +8 min         ?
+ *  ????????????????????????????????????????????????????
+ */
+
+.rhtz {
+  margin: 4px 0 6px;
+  padding: 11px 13px 10px;
+  border-radius: 10px;
+  background: rgba(10, 14, 26, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #fff;
+}
+
+.rhtz__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 9px;
+}
+
+.rhtz__header-title {
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.rhtz__header-dest {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* ?? Graph area ?? */
+.rhtz__graph {
+  position: relative;
+  /* let the YOU-line calc work relative to this container */
+}
+
+/* YOU vertical line ? spans all rows, absolutely positioned. */
+.rhtz__you-line {
+  position: absolute;
+  top: 0;
+  /* stop 26px from bottom ? above the axis labels */
+  bottom: 26px;
+  width: 2px;
+  background: #3b82f6;
+  box-shadow: 0 0 7px rgba(59, 130, 246, 0.65);
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 4;
+  transform: translateX(-50%);
+}
+
+/* Track row */
+.rhtz__row {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  gap: 0;
+  margin-bottom: 3px;
+}
+
+.rhtz__row-label {
+  width: 48px;
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: right;
+  padding-right: 8px;
+  user-select: none;
+}
+
+.rhtz__row-rail {
+  flex: 1;
+  position: relative;
+  height: 100%;
+}
+
+.rhtz__rail-bg {
+  position: absolute;
+  left: 0; right: 0;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  background: rgba(148, 163, 184, 0.14);
+  border-radius: 2px;
+}
+
+/* Colored hazard band */
+.rhtz__band {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 3px;
+  opacity: 0.88;
+  cursor: default;
+  transition: opacity 200ms;
+}
+
+.rhtz__band[role="button"] {
+  cursor: pointer;
+}
+
+.rhtz__band[role="button"]:hover {
+  opacity: 1;
+  filter: brightness(1.15);
+}
+
+.rhtz__band--passed {
+  opacity: 0.28 !important;
+  filter: grayscale(0.7);
+}
+
+/* Nearby (not crossing) ? dashed outline instead of solid fill */
+.rhtz__band--nearby {
+  opacity: 0.5;
+  background: transparent !important;
+  border: 2px dashed currentColor;
+}
+
+/* Distance axis */
+.rhtz__axis {
+  display: flex;
+  align-items: flex-start;
+  height: 20px;
+  margin-top: 3px;
+}
+
+.rhtz__axis-spacer {
+  flex-shrink: 0;
+  display: block;
+}
+
+.rhtz__axis-ticks {
+  flex: 1;
+  position: relative;
+  height: 18px;
+}
+
+/* Mile ticks removed ? only YOU and DEST shown */
+.rhtz__axis-you {
+  position: absolute;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #60a5fa;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.rhtz__axis-dest {
+  position: absolute;
+  right: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* ?? Detail cards ? readable info for each hazard block ?? */
+.rhtz__cards {
+  margin-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rhtz__card {
+  padding: 10px 12px;
+  border-left: 4px solid #60a5fa;
+  border-radius: 0 8px 8px 0;
+  background: rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: default;
+}
+
+.rhtz__card--tappable {
+  cursor: pointer;
+}
+
+.rhtz__card--tappable:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.rhtz__card--passed {
+  opacity: 0.4;
+}
+
+.rhtz__card-name {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #fff;
+}
+
+.rhtz__card-detail {
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1.4;
+}
+
+.rhtz__card-timing {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+  line-height: 1.3;
+}
+
+.rhtz__reroute {
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+/* ??????????????????????????????????????????????????????????????????????????? */
+
+/* Clear the turn / StormPath strip ? expanded panel sits fully below guidance */
 /* Expanded bar floats out of flow now (position: absolute on .storm-advisory-bar--expanded),
- * so the cluster's gap shouldn't grow when the bar opens — keep tight. */
+ * so the cluster's gap shouldn't grow when the bar opens ? keep tight. */
 .nav-top-route-rail__main:has(.storm-advisory-bar--expanded) {
   gap: 0;
 }
 
-/* Hazards then road — single column, no inner clipping scroll (full list visible at once). */
+/* Hazards then road ? single column, no inner clipping scroll (full list visible at once). */
 .storm-advisory-bar__panels-scroll {
   display: flex;
   flex-direction: column;
@@ -3836,7 +4731,7 @@
   width: auto;
 }
 
-/* Done / collapse — trailing edge (thumb reach); title + toggles stay left */
+/* Done / collapse ? trailing edge (thumb reach); title + toggles stay left */
 .storm-advisory-bar--expanded .storm-advisory-bar__collapse-btn {
   margin-left: auto;
 }
@@ -3845,9 +4740,9 @@
  * The expanded panel is now narrower (left/right insets) so right-aligning the toggles next
  * to the title was clipping under the title's last letter. order: 3 + flex-basis: 100% pairs
  * with the head's `flex-wrap: wrap` so:
- *   row 1: [Advisory title]   ………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………… [Done]
- *   row 2: [☐ NWS polygons]
- *          [☐ Road impacts & traffic] */
+ *   row 1: [Advisory title]   ???????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????? [Done]
+ *   row 2: [? NWS polygons]
+ *          [? Road impacts & traffic] */
 .storm-advisory-bar--expanded .storm-advisory-bar__toggles--stacked {
   order: 3;
   flex-basis: 100%;
@@ -3941,7 +4836,7 @@
   margin-bottom: 6px;
 }
 
-/* Show full hazard list — avoid nested scroll hiding alerts */
+/* Show full hazard list ? avoid nested scroll hiding alerts */
 .storm-advisory-bar--expanded .storm-advisory-bar__nws-scroll {
   max-height: none;
   margin-top: 6px;
@@ -4125,7 +5020,7 @@
   box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.18) inset;
 }
 .storm-advisory-bar--sev-warn {
-  /* Amber – matches the retired Hazards shield */
+  /* Amber ? matches the retired Hazards shield */
   border-color: #b45309;
   box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.45) inset;
 }
@@ -4137,18 +5032,18 @@
   border-color: #b91c1c;
 }
 
-/* Collapsed "preview" advisory bar — single-row tappable strip in route/map/drive. */
+/* Collapsed "preview" advisory bar ? single-row tappable strip in route/map/drive. */
 .storm-advisory-bar--preview {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
   margin-top: 4px;
-  /* A little more vertical padding now that the inner pill is gone — gives the larger message
+  /* A little more vertical padding now that the inner pill is gone ? gives the larger message
    * room to breathe without making the whole bar taller than the surrounding turn / progress strip. */
   padding: 11px 14px;
   font: inherit;
-  /* Bumped from 0.72rem — was reading as squint-tiny at a glance. clamp() keeps it responsive on
+  /* Bumped from 0.72rem ? was reading as squint-tiny at a glance. clamp() keeps it responsive on
    * narrow phones (~14px) up to mid-width (~16px). */
   font-size: clamp(0.88rem, 2.6vw, 1rem);
   font-weight: 600;
@@ -4171,7 +5066,7 @@
   background: rgba(15, 23, 42, 0.96);
 }
 
-/* Single-surface design: the inner span is now layout-only — no background, border, or padding.
+/* Single-surface design: the inner span is now layout-only ? no background, border, or padding.
  * The severity tint lives on the outer button below so the message uses the full bar width. */
 .storm-advisory-bar__preview-message-wrap {
   flex: 1 1 auto;
@@ -5009,8 +5904,8 @@
 }
 
 /*
- * Drive rail: pivot at top-right. -90° hangs the bar down. Unrotated `width` = vertical span after rotate.
- * Do NOT cap with 200px — that limited the bar to ~2.5" tall. Use full rail column height (100cqh).
+ * Drive rail: pivot at top-right. -90� hangs the bar down. Unrotated `width` = vertical span after rotate.
+ * Do NOT cap with 200px ? that limited the bar to ~2.5" tall. Use full rail column height (100cqh).
  */
 .nav-route-progress-rail .route-progress-strip--side {
   width: 100cqh;
@@ -5118,7 +6013,7 @@
   opacity: 0.32;
 }
 
-/* Weather / hazard / NWS spans — same colors as map route highlights (no text labels). */
+/* Weather / hazard / NWS spans ? same colors as map route highlights (no text labels). */
 .route-progress-strip__corridor-band {
   position: absolute;
   top: 0;
@@ -5468,7 +6363,7 @@
   color: #80868b;
 }
 
-/* ~3-line scrollable “event wheel” */
+/* ~3-line scrollable ?event wheel? */
 .top-hazards-bar--compact {
   flex: 0 0 auto;
 }
@@ -5680,7 +6575,7 @@
 }
 
 .nav-top-cluster .turn-banner-next-instr {
-  /* Route view top banner: keep “next” as readable as primary. */
+  /* Route view top banner: keep ?next? as readable as primary. */
   font-size: 0.82rem;
   font-weight: 750;
 }
@@ -6095,13 +6990,13 @@
   min-height: 0;
 }
 
-/* Do not override grid — plain flex here stacked primary+next vertically and wasted the right half */
+/* Do not override grid ? plain flex here stacked primary+next vertically and wasted the right half */
 .top-guidance-bar--turn-only .turn-banner.turn-banner--split {
   display: grid;
   align-content: center;
 }
 
-/* Drive (Dr): glanceable row — balance icon size vs street / highway text (two lines when needed) */
+/* Drive (Dr): glanceable row ? balance icon size vs street / highway text (two lines when needed) */
 .top-guidance-bar--glanceable .turn-banner-icon {
   font-size: clamp(1.4rem, 5vw, 1.85rem);
   line-height: 1;
@@ -6134,7 +7029,7 @@
 }
 
 .top-guidance-bar--glanceable .turn-banner-next-instr {
-  /* Match primary — room for street names + interstate shields */
+  /* Match primary ? room for street names + interstate shields */
   font-size: clamp(0.76rem, 2.65vw, 0.98rem);
   font-weight: 780;
   line-height: 1.28;
@@ -6149,7 +7044,7 @@
   letter-spacing: 0.06em;
 }
 
-/* Drive: slim strip under advisory — single row, translucent so turn / advisory state stays readable. */
+/* Drive: slim strip under advisory ? single row, translucent so turn / advisory state stays readable. */
 .drive-hazard-approach.drive-hazard-approach--strip {
   display: flex;
   flex-direction: row;
@@ -6169,7 +7064,7 @@
   max-height: 2.1rem;
 }
 
-/* Severity is conveyed via a dot before the title (see ::before below) — never a colored
+/* Severity is conveyed via a dot before the title (see ::before below) ? never a colored
  * left-stripe on the panel. See .cursor/rules/no-left-accent-panels.mdc. */
 .drive-hazard-approach__title::before {
   content: "";
@@ -6323,7 +7218,7 @@
   width: 100%;
 }
 
-/* Idle hero — art left; wordmark centered in the strip (1fr | auto | 1fr grid) */
+/* Idle hero ? art left; wordmark centered in the strip (1fr | auto | 1fr grid) */
 .turn-strip-idle__hero {
   position: relative;
   display: grid;
@@ -6412,7 +7307,7 @@
   letter-spacing: -0.03em;
 }
 
-/* Wordmark: cool sky / ice — same family as NWS (blue) + path accent (cyan) by default.
+/* Wordmark: cool sky / ice ? same family as NWS (blue) + path accent (cyan) by default.
  * Seasonal variants below override the gradient stops so the wordmark colors track the
  * currently-rendered illustration (rain in spring/summer/fall, snow in winter). */
 .turn-strip-idle__storm {
@@ -6429,7 +7324,7 @@
   background-clip: text;
 }
 
-/* ── Spring: fresh greens + soft sky-blue ── */
+/* ?? Spring: fresh greens + soft sky-blue ?? */
 .turn-strip-idle--season-spring .turn-strip-idle__storm {
   background-image: linear-gradient(118deg, #f0fdf4 0%, #bbf7d0 50%, #86efac 100%);
 }
@@ -6437,7 +7332,7 @@
   background-image: linear-gradient(118deg, #a7f3d0 0%, #4ade80 50%, #22c55e 100%);
 }
 
-/* ── Summer: warm sun + bright sky ── */
+/* ?? Summer: warm sun + bright sky ?? */
 .turn-strip-idle--season-summer .turn-strip-idle__storm {
   background-image: linear-gradient(118deg, #fefce8 0%, #fde68a 50%, #fbbf24 100%);
 }
@@ -6445,7 +7340,7 @@
   background-image: linear-gradient(118deg, #bae6fd 0%, #38bdf8 55%, #0284c7 100%);
 }
 
-/* ── Fall: amber / copper / russet ── */
+/* ?? Fall: amber / copper / russet ?? */
 .turn-strip-idle--season-fall .turn-strip-idle__storm {
   background-image: linear-gradient(118deg, #fef3c7 0%, #fcd34d 50%, #d97706 100%);
 }
@@ -6453,7 +7348,7 @@
   background-image: linear-gradient(118deg, #fdba74 0%, #ea580c 55%, #b91c1c 100%);
 }
 
-/* ── Winter: silver + ice-blue ── */
+/* ?? Winter: silver + ice-blue ?? */
 .turn-strip-idle--season-winter .turn-strip-idle__storm {
   background-image: linear-gradient(118deg, #ffffff 0%, #e2e8f0 50%, #94a3b8 100%);
 }
@@ -6469,7 +7364,7 @@
   }
 }
 
-/* Bundled idle storm SVG — lightning flash, rain shimmer sweep (no cloud bob) */
+/* Bundled idle storm SVG ? lightning flash, rain shimmer sweep (no cloud bob) */
 .storm-idle-art {
   display: block;
   overflow: visible;
@@ -6505,7 +7400,7 @@
   will-change: transform;
 }
 
-/* Falling rain — looped translate so drops read as motion (staggered per line) */
+/* Falling rain ? looped translate so drops read as motion (staggered per line) */
 .storm-idle-art__rain--back line {
   animation: storm-idle-rain-fall 1.05s linear infinite;
 }
@@ -6619,7 +7514,7 @@
   }
 }
 
-/* ── Snow (winter only) ──
+/* ?? Snow (winter only) ??
  * Two parallax layers fall slower than rain with a subtle horizontal drift, so the cloud
  * reads as a calm snowfall rather than a thunderstorm. Per-flake delay offsets are taken
  * from the same nth-child wells the rain uses so the layout reads as natural variation. */
@@ -6679,7 +7574,7 @@
   }
 }
 
-/* ── Per-season cloud hue tweaks ──
+/* ?? Per-season cloud hue tweaks ??
  * Subtle warm/cool filter so the same cloud shape reads as the right time of year. The
  * filter applies to the cloud group only, leaving rain / snow / bolt color logic alone. */
 .storm-idle-art--season-spring .storm-idle-art__cloud {
@@ -6743,7 +7638,7 @@
   min-width: 0;
 }
 
-/* NWS + Road + activity + Hazards — one row; shared control height */
+/* NWS + Road + activity + Hazards ? one row; shared control height */
 .hazard-controls-strip {
   --hazard-strip-row-h: 34px;
   display: flex;
@@ -6775,7 +7670,7 @@
   user-select: none;
 }
 
-/* NWS — weather / advisory maps (sky & water): cool blue */
+/* NWS ? weather / advisory maps (sky & water): cool blue */
 .hazard-controls-strip__nws > span {
   color: #e0f2fe;
   background: linear-gradient(180deg, rgba(30, 64, 175, 0.92), rgba(29, 78, 216, 0.88));
@@ -6789,7 +7684,7 @@
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.15) inset, 0 1px 3px rgba(0, 0, 0, 0.22);
 }
 
-/* Road — surface / corridor (asphalt slate), distinct from NWS blue */
+/* Road ? surface / corridor (asphalt slate), distinct from NWS blue */
 .hazard-controls-strip__road > span {
   color: #f4f4f5;
   background: linear-gradient(180deg, rgba(63, 63, 70, 0.95), rgba(82, 82, 91, 0.92));
@@ -7167,7 +8062,7 @@
   color: #8ab4f8;
 }
 
-/* Direction symbols (unicode arrows): fake a bolder stroke — most fonts don’t ship a heavy weight. */
+/* Direction symbols (unicode arrows): fake a bolder stroke ? most fonts don?t ship a heavy weight. */
 .turn-banner-icon,
 .turn-banner-icon--next {
   font-weight: 900;
@@ -7204,7 +8099,7 @@
   overflow: hidden;
 }
 
-/* Compact road refs — interstate-style badge + US / state route (larger for glanceability) */
+/* Compact road refs ? interstate-style badge + US / state route (larger for glanceability) */
 .turn-banner-street .road-shield,
 .turn-banner-next-instr .road-shield,
 .turn-banner-next-peek-text .road-shield {
@@ -7288,7 +8183,7 @@
   font-weight: 650;
 }
 
-/* Route overview PiP — map lines + puck only */
+/* Route overview PiP ? map lines + puck only */
 .route-overview-pip-wrap {
   position: absolute;
   top: var(--pip-top, calc(max(8px, env(safe-area-inset-top)) + 120px));
@@ -7356,7 +8251,7 @@
   gap: 0;
 }
 
-/* Radar frame clock: right side of top dock row — clear of search / route controls */
+/* Radar frame clock: right side of top dock row ? clear of search / route controls */
 .nav-radar-frame-time-dock {
   flex: 1;
   min-width: 0;
@@ -7374,7 +8269,7 @@
   text-overflow: ellipsis;
 }
 
-/* Bottom toolbar: Spd/Lim | Rt/Dr/Mp/Rad/(★)/Stop — Rad hidden while navigating in drive */
+/* Bottom toolbar: Spd/Lim | Rt/Dr/Mp/Rad/(?)/Stop ? Rad hidden while navigating in drive */
 .nav-bottom-toolbar {
   display: flex;
   flex-direction: column;
@@ -7409,7 +8304,7 @@
   min-width: 0;
 }
 
-/* Route view: with ★ hidden after route set, re-center the button cluster in the panel. */
+/* Route view: with ? hidden after route set, re-center the button cluster in the panel. */
 .nav-bottom-toolbar--route .nav-bottom-toolbar__main {
   grid-template-columns: 1fr auto 1fr;
 }
@@ -7487,7 +8382,7 @@
   min-width: 0;
 }
 
-/* Stacked: ETA + arrival clock (top), time remaining (bottom) — same weight/size. */
+/* Stacked: ETA + arrival clock (top), time remaining (bottom) ? same weight/size. */
 .nav-bottom-toolbar__drive-eta-compact {
   display: flex;
   flex-direction: column;
@@ -7518,7 +8413,7 @@
   color: rgba(226, 232, 240, 0.92);
 }
 
-/* Electric blue — arrival clock only */
+/* Electric blue ? arrival clock only */
 .nav-bottom-toolbar__drive-eta-clock {
   font-weight: 800;
   color: #38c8ff;
@@ -7549,7 +8444,7 @@
   justify-content: flex-end;
 }
 
-/* Drive nav: no Rad button — use freed width for slightly larger live stats (map nav shows Rad next to Mp) */
+/* Drive nav: no Rad button ? use freed width for slightly larger live stats (map nav shows Rad next to Mp) */
 .nav-bottom-toolbar--drive .nav-bottom-stats-row--lead,
 .nav-bottom-toolbar--mapnav .nav-bottom-stats-row--lead {
   gap: 8px;
@@ -7633,7 +8528,7 @@
     justify-content: center;
   }
 
-  /* Don’t force ETA/Arrive to the far right on wide screens. */
+  /* Don?t force ETA/Arrive to the far right on wide screens. */
   .nav-bottom-toolbar__right {
     margin-left: 0;
   }
@@ -7702,7 +8597,7 @@
   gap: 5px;
 }
 
-/* Segmented A | B | C — ETA in title tooltip only */
+/* Segmented A | B | C ? ETA in title tooltip only */
 .nav-route-toggle {
   display: inline-flex;
   flex-direction: row;
@@ -7734,7 +8629,7 @@
   box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.42);
 }
 
-/* Single route control: tap cycles A (blue) → B (green) → C (orange) */
+/* Single route control: tap cycles A (blue) ? B (green) ? C (orange) */
 .nav-route-cycle-btn {
   flex-shrink: 0;
   display: flex;
@@ -7783,7 +8678,7 @@
   justify-content: center;
 }
 
-/* Stop lives in the modes row while navigating — match control height */
+/* Stop lives in the modes row while navigating ? match control height */
 .nav-bottom-toolbar__modes .nav-bottom-tool--stop {
   height: var(--nav-chrome-control, 44px);
   min-height: var(--nav-chrome-control, 44px);
@@ -7952,7 +8847,7 @@
   color: #9aa0a6;
 }
 
-/* Heuristic vs estimated limit — subtle red + soft pulse (honors reduced motion) */
+/* Heuristic vs estimated limit ? subtle red + soft pulse (honors reduced motion) */
 .nav-bottom-stat-v--speed-over {
   color: #f87171;
   text-shadow: 0 0 6px rgba(248, 113, 113, 0.35);
@@ -8095,7 +8990,7 @@
 }
 
 /* Saved destinations drawer */
-/* Name sheet (save place / save route) — above drawer */
+/* Name sheet (save place / save route) ? above drawer */
 .name-sheet-scrim {
   position: fixed;
   inset: 0;
@@ -8197,7 +9092,7 @@
   box-sizing: border-box;
 }
 
-/* Full-screen variant — used by the new home + drill-in layout so each section view has the
+/* Full-screen variant ? used by the new home + drill-in layout so each section view has the
  * entire screen to display its rows (no more three panes fighting for ~600 px of height). */
 .saved-drawer.saved-drawer--full {
   top: 0;
@@ -8207,7 +9102,7 @@
   padding-top: calc(10px + env(safe-area-inset-top, 0px));
 }
 
-/* Body uses the entire space below the header — single scroll context per drill-in view. */
+/* Body uses the entire space below the header ? single scroll context per drill-in view. */
 .saved-drawer-body--full {
   flex: 1 1 0;
   min-height: 0;
@@ -8217,7 +9112,7 @@
   padding-bottom: 6px;
 }
 
-/* Back arrow — sits to the left of the title in drill-in views. */
+/* Back arrow ? sits to the left of the title in drill-in views. */
 .saved-drawer-back {
   width: 36px;
   height: 36px;
@@ -8229,7 +9124,7 @@
   line-height: 1;
   cursor: pointer;
   padding: 0;
-  /* Pull the title left so the layout reads "[‹] Title  …………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………… [×]". */
+  /* Pull the title left so the layout reads "[?] Title  ???????????????????????????????????????????????????????????????????????????????????????????????????????? [�]". */
   margin-right: -2px;
 }
 
@@ -8267,7 +9162,7 @@
   list-style: none;
 }
 
-/* Big, easy-to-tap section row — full width, prominent label, count chip, chevron affordance. */
+/* Big, easy-to-tap section row ? full width, prominent label, count chip, chevron affordance. */
 .saved-drawer-home-tile {
   display: flex;
   flex-direction: column;
@@ -8354,7 +9249,7 @@
   color: #9aa0a6;
 }
 
-/* Drill-in section page — single scroll context, generous spacing, no nested cards. */
+/* Drill-in section page ? single scroll context, generous spacing, no nested cards. */
 .saved-drawer-section {
   display: flex;
   flex-direction: column;
@@ -8376,7 +9271,7 @@
   border-radius: 12px;
 }
 
-/* Single full-width list — no embedded card frame, since the section IS the page. */
+/* Single full-width list ? no embedded card frame, since the section IS the page. */
 .saved-drawer-list--full {
   list-style: none;
   margin: 0;
@@ -8396,7 +9291,7 @@
   padding-right: 2px;
 }
 
-/* Three bands: Places | Saved routes | Frequent — each pane is a card (header + scroll well). */
+/* Three bands: Places | Saved routes | Frequent ? each pane is a card (header + scroll well). */
 .saved-drawer-panes {
   flex: 1 1 0;
   min-height: 0;
@@ -8882,13 +9777,13 @@
   border-color: rgba(248, 113, 113, 0.35);
 }
 
-/* ——— Phones & narrow viewports (stacked top + smaller chrome) ——— */
+/* ??? Phones & narrow viewports (stacked top + smaller chrome) ??? */
 @media (max-width: 520px) {
   .app-shell.nav-fullmap {
     --rail-panel-gap: 5px;
     --nav-dock-above-safe: 154px;
     --nav-dock-above-safe-current: var(--nav-dock-above-safe);
-    /* Match home-indicator inset only — avoids an extra empty band under the toolbar + attribution. */
+    /* Match home-indicator inset only ? avoids an extra empty band under the toolbar + attribution. */
     --nav-bottom-reserved: env(safe-area-inset-bottom, 0px);
     --nav-progress-rail-foot-inset: 124px;
   }
@@ -8918,7 +9813,7 @@
 
   .map-stage.map-bleed .mapboxgl-ctrl-bottom-right {
     bottom: env(safe-area-inset-bottom, 0px) !important;
-    /* Progress rail still needs inset; “My location” moved into bottom chrome */
+    /* Progress rail still needs inset; ?My location? moved into bottom chrome */
     right: calc(64px + max(6px, env(safe-area-inset-right)) + 8px) !important;
   }
 
@@ -9017,7 +9912,7 @@
     z-index: 8;
   }
 
-  /* Don’t let the main column shrink / clip storm UI (iOS flex + overflow quirks). */
+  /* Don?t let the main column shrink / clip storm UI (iOS flex + overflow quirks). */
   .nav-top-route-rail__main {
     flex: 0 0 auto;
     min-height: 0;
@@ -9025,8 +9920,8 @@
   }
 
   /*
-   * Phone collapsed: slim row (NWS checkbox + Details). Hide the large “Storm” chip.
-   * Expanded: scrollable panel + “Done” instead of ◀.
+   * Phone collapsed: slim row (NWS checkbox + Details). Hide the large ?Storm? chip.
+   * Expanded: scrollable panel + ?Done? instead of ?.
    */
   .storm-advisory-bar-wrap--collapsed {
     align-items: stretch;
@@ -9364,7 +10259,7 @@
     -webkit-overflow-scrolling: touch;
   }
 
-  /* Rt / Mp planning: allow wrap so Stop + Go aren’t stuck in a horizontal scroller off-screen. */
+  /* Rt / Mp planning: allow wrap so Stop + Go aren?t stuck in a horizontal scroller off-screen. */
   .nav-bottom-toolbar:not(.nav-bottom-toolbar--drive) {
     flex-wrap: wrap;
     justify-content: center;
@@ -9613,7 +10508,7 @@
   }
 }
 
-/* Traffic bypass compare — short dock so map + route lines stay visible above */
+/* Traffic bypass compare ? short dock so map + route lines stay visible above */
 .traffic-bypass-compare {
   display: flex;
   flex-direction: column;
@@ -9839,7 +10734,7 @@
   cursor: not-allowed;
 }
 
-/* Narrow: one horizontal row + scroll — never stack three tall cards over the map */
+/* Narrow: one horizontal row + scroll ? never stack three tall cards over the map */
 @media (max-width: 520px) {
   .traffic-bypass-compare {
     max-height: min(34dvh, 260px);
@@ -9872,7 +10767,7 @@
   }
 }
 
-/* Plus: ?demo=bypass — replay / simulated delay banner (above bottom toolbar z-index 6) */
+/* Plus: ?demo=bypass ? replay / simulated delay banner (above bottom toolbar z-index 6) */
 .nav-demo-bypass-banner {
   position: absolute;
   left: max(8px, env(safe-area-inset-left));
@@ -9927,13 +10822,13 @@
 }
 
 .nav-demo-bypass-banner__summary::after {
-  content: " ▸";
+  content: " ?";
   font-size: 0.55rem;
   opacity: 0.85;
 }
 
 .nav-demo-bypass-banner__details[open] .nav-demo-bypass-banner__summary::after {
-  content: " ▾";
+  content: " ?";
 }
 
 .nav-demo-bypass-banner__text {
@@ -9970,7 +10865,7 @@
   cursor: pointer;
 }
 
-/* Traffic bypass compare — map flags (ETA + savings vs A) */
+/* Traffic bypass compare ? map flags (ETA + savings vs A) */
 .map-bypass-compare-flag {
   display: flex;
   flex-direction: column;
@@ -10029,7 +10924,7 @@
   box-shadow: 0 0 0 2px rgba(248, 250, 252, 0.4), 0 4px 18px rgba(0, 0, 0, 0.45);
 }
 
-/* Hazard pin shown only while the bypass-compare panel is open — pulsing red dot at the impact. */
+/* Hazard pin shown only while the bypass-compare panel is open ? pulsing red dot at the impact. */
 .map-bypass-hazard-pin {
   position: relative;
   width: 24px;
@@ -10089,10 +10984,10 @@
 }
 
 /*
- * Landscape / side view — portrait unchanged.
- * Sideways “T”: vertical progress on the far edge; turn + NWS + roads share one short top band (like portrait, denser);
+ * Landscape / side view ? portrait unchanged.
+ * Sideways ?T?: vertical progress on the far edge; turn + NWS + roads share one short top band (like portrait, denser);
  * map + routes fill the T stem + body. Bottom dock aligns to that map gutter only (not a wide empty margin).
- * Default = right hand (rail left). Settings → Left hand mirrors edge + gutters.
+ * Default = right hand (rail left). Settings ? Left hand mirrors edge + gutters.
  */
 @media (orientation: landscape) {
   .app-shell.nav-fullmap {
@@ -10101,7 +10996,7 @@
 
   /* Gutter from physical edge to where the map / bottom chrome should start (matches progress rail column width). */
   .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) {
-    /* Narrow band for vertical strip + safe inset (map + bottom chrome use wider “T” body). */
+    /* Narrow band for vertical strip + safe inset (map + bottom chrome use wider ?T? body). */
     --sp-landscape-map-inset-start: max(
       64px,
       calc(48px + max(8px, calc(6px + env(safe-area-inset-left, 0px))))
@@ -10115,7 +11010,7 @@
     );
   }
 
-  /* Bottom “i” row: flush to trailing edge of chrome so it stays clear of the map T / progress gutter. */
+  /* Bottom ?i? row: flush to trailing edge of chrome so it stays clear of the map T / progress gutter. */
   .app-shell.nav-fullmap .nav-bottom-dock__about-row {
     justify-content: flex-end;
   }
@@ -10128,7 +11023,7 @@
     order: 1;
   }
 
-  /* Left-handed: bottom chrome hugs physical left — put “i” on outer edge (away from map / progress rail). */
+  /* Left-handed: bottom chrome hugs physical left ? put ?i? on outer edge (away from map / progress rail). */
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row {
     justify-content: flex-start;
   }
@@ -10143,21 +11038,21 @@
 
   /*
    * Progress rail: portrait reserves huge padding-bottom + short strip for dock under the bar.
-   * Landscape T puts dock on the map side — full stack height + long strip. Keep default
+   * Landscape T puts dock on the map side ? full stack height + long strip. Keep default
    * strip align-self:flex-end so transform-origin:right top + rotate(-90deg) stays on the left edge.
    */
   .app-shell.nav-fullmap .nav-route-progress-rail {
     padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
   }
 
-  /* Drive: bottom ETA strip still spans the gutter — use foot inset, not the landscape “minimal” padding. */
+  /* Drive: bottom ETA strip still spans the gutter ? use foot inset, not the landscape ?minimal? padding. */
   .app-shell.nav-fullmap.nav-drive-ui .nav-route-progress-rail {
     padding-bottom: calc(var(--nav-progress-rail-foot-inset) + env(safe-area-inset-bottom, 0px));
   }
 
-  /* Strip length: same 100cqh as portrait — inner is sized by stretched rail column. */
+  /* Strip length: same 100cqh as portrait ? inner is sized by stretched rail column. */
 
-  /* ── Right-handed (default): full-height rail left; top chrome only row 1 of map column (T top) ── */
+  /* ?? Right-handed (default): full-height rail left; top chrome only row 1 of map column (T top) ?? */
   .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-drive-overlay-stack {
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
@@ -10249,7 +11144,7 @@
     font-size: 0.5rem;
   }
 
-  /* ⧉ tab: just outside the strip (right of rotated bar / red destination end); panel opens further right */
+  /* ? tab: just outside the strip (right of rotated bar / red destination end); panel opens further right */
   .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .route-progress-callout-rail-cluster {
     top: 2px;
     left: 100%;
@@ -10275,7 +11170,7 @@
     left: auto !important;
   }
 
-  /* ── Left-handed: mirror T (rail full height on right; top band row 1 col 1; map inset from end) ── */
+  /* ?? Left-handed: mirror T (rail full height on right; top band row 1 col 1; map inset from end) ?? */
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-drive-overlay-stack {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: auto minmax(0, 1fr);
@@ -10401,24 +11296,24 @@
   }
 }
 
-/* ────────────────────────────────────────────────────────────────────────────
- * First-launch coachmarks — sequential walk-through over 4 UI elements.
+/* ????????????????????????????????????????????????????????????????????????????
+ * First-launch coachmarks ? sequential walk-through over 4 UI elements.
  * Layered above everything else (z-index 9000+) so the cards float above the
  * map, advisory bar, progress rail, and bottom dock. The card position is set
  * inline by the React component (top/left in viewport pixels).
- * ──────────────────────────────────────────────────────────────────────────── */
+ * ???????????????????????????????????????????????????????????????????????????? */
 .coachmarks {
   position: fixed;
   inset: 0;
   z-index: 9000;
-  /* No layout-blocking layer here — the dim is created by the highlight's own outer
+  /* No layout-blocking layer here ? the dim is created by the highlight's own outer
    * box-shadow (the "spotlight" trick), which means the target element itself is the only
    * crisp, undimmed pixel on screen and stays fully tappable while the tour is up. */
   pointer-events: none;
 }
 
 /* Fallback dim ONLY used when a step has no resolvable target (e.g. progress rail before
- * a route is set). No blur — the user explicitly wanted to be able to see the underlying
+ * a route is set). No blur ? the user explicitly wanted to be able to see the underlying
  * UI clearly. */
 .coachmarks__backdrop {
   position: absolute;
@@ -10483,7 +11378,7 @@
   transform: translateY(-100%);
 }
 
-/* The coachmark card — dark glass to match the rest of the chrome, with a small triangle
+/* The coachmark card ? dark glass to match the rest of the chrome, with a small triangle
  * arrow pointing at the target on the appropriate side. */
 .coachmarks__card {
   position: relative;
@@ -10551,7 +11446,7 @@
   border-right-color: rgba(15, 23, 42, 0.96);
 }
 
-/* Tiny "Tip" eyebrow label — sets expectation that this is a one-time, dismissable hint
+/* Tiny "Tip" eyebrow label ? sets expectation that this is a one-time, dismissable hint
  * rather than a modal blocker. */
 .coachmarks__tip-label {
   display: inline-block;
@@ -10589,7 +11484,7 @@
   gap: 8px;
 }
 
-/* Single-button (Got it only) variant — right-aligned so the tap target sits near the
+/* Single-button (Got it only) variant ? right-aligned so the tap target sits near the
  * thumb on portrait phones. */
 .coachmarks__actions--single {
   justify-content: flex-end;

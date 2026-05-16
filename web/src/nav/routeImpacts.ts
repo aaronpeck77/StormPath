@@ -261,6 +261,8 @@ function buildNwsImpacts(opts: {
 
 /* ─── Radar / heavy precip (no NWS overlay) ─────────────────────── */
 
+export type RadarMosaicSample = { t: number; intensity: number };
+
 function buildRadarImpact(opts: {
   geometry: LngLat[] | undefined;
   radarIntensity: number;
@@ -270,11 +272,14 @@ function buildRadarImpact(opts: {
   planEtaMinutes: number | null | undefined;
   totalMeters: number;
   userLngLat: LngLat | null;
-  /** Skip when the route already has an NWS band (NWS is more authoritative). */
+  /** Skip single mid-route card when NWS bands already cover the corridor. */
   hasNwsBand: boolean;
+  /** Optional along-route fraction from RainViewer mosaic (0..1). */
+  alongFraction?: number;
+  idSuffix?: string;
 }): RouteImpact | null {
   const { radarIntensity, hasNwsBand, geometry, totalMeters } = opts;
-  if (hasNwsBand) return null;
+  if (hasNwsBand && opts.alongFraction == null) return null;
   if (radarIntensity < RADAR_SOFT_THRESHOLD) return null;
 
   const veryHeavy = radarIntensity >= 0.9;
@@ -283,7 +288,10 @@ function buildRadarImpact(opts: {
   const action: RouteImpactAction =
     radarIntensity >= RADAR_REROUTE_THRESHOLD ? "prepare" : heavy ? "slow" : "watch";
 
-  const alongM = totalMeters * 0.52;
+  const alongM =
+    opts.alongFraction != null && Number.isFinite(opts.alongFraction)
+      ? totalMeters * Math.max(0, Math.min(1, opts.alongFraction))
+      : totalMeters * 0.52;
   const aheadM = Math.max(0, alongM - opts.userAlongM);
   const eta =
     totalMeters > 0 && opts.planEtaMinutes != null && Number.isFinite(opts.planEtaMinutes)
@@ -296,7 +304,7 @@ function buildRadarImpact(opts: {
     "Precipitation in the corridor";
 
   return {
-    id: "radar",
+    id: opts.idSuffix ? `radar-${opts.idSuffix}` : "radar",
     category: "weather",
     severity: sev,
     confidence: "medium",
@@ -541,7 +549,44 @@ export type BuildRouteImpactsOpts = {
   nwsBands: NwsBandForImpact[];
   /** NWS alerts overlapping the corridor — used to pick a real event title for each band. */
   nwsAlerts: NormalizedWeatherAlert[];
+  /** RainViewer mosaic samples along the route (same tiles as the map overlay). */
+  radarMosaicSamples?: RadarMosaicSample[];
 };
+
+function buildRadarMosaicSegmentImpacts(opts: {
+  geometry: LngLat[] | undefined;
+  samples: RadarMosaicSample[];
+  forecastHeadline: string;
+  corridorWeatherDetail: string;
+  userAlongM: number;
+  planEtaMinutes: number | null | undefined;
+  totalMeters: number;
+  userLngLat: LngLat | null;
+  hasNwsBand: boolean;
+}): RouteImpact[] {
+  const { samples, totalMeters, hasNwsBand } = opts;
+  if (!samples.length || totalMeters <= 0) return [];
+  const out: RouteImpact[] = [];
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i]!;
+    if (s.intensity < RADAR_SOFT_THRESHOLD) continue;
+    const impact = buildRadarImpact({
+      geometry: opts.geometry,
+      radarIntensity: s.intensity,
+      forecastHeadline: opts.forecastHeadline,
+      corridorWeatherDetail: opts.corridorWeatherDetail,
+      userAlongM: opts.userAlongM,
+      planEtaMinutes: opts.planEtaMinutes,
+      totalMeters,
+      userLngLat: opts.userLngLat,
+      hasNwsBand,
+      alongFraction: s.t,
+      idSuffix: `seg-${i}`,
+    });
+    if (impact) out.push(impact);
+  }
+  return out;
+}
 
 export function buildRouteImpacts(opts: BuildRouteImpactsOpts): RouteImpact[] {
   const {
@@ -555,10 +600,15 @@ export function buildRouteImpacts(opts: BuildRouteImpactsOpts): RouteImpact[] {
     corridorWeatherDetail = "",
     nwsBands,
     nwsAlerts,
+    radarMosaicSamples = [],
   } = opts;
 
   const totalMeters = geometry?.length ? polylineLengthMeters(geometry) : 0;
-  const radarIntensity = slice?.radarIntensity ?? 0;
+  const mosaicMax =
+    radarMosaicSamples.length > 0
+      ? Math.max(...radarMosaicSamples.map((s) => s.intensity))
+      : 0;
+  const radarIntensity = Math.max(slice?.radarIntensity ?? 0, mosaicMax);
   const forecastHeadline = slice?.forecastHeadline ?? "";
 
   const list: RouteImpact[] = [];
@@ -574,18 +624,34 @@ export function buildRouteImpacts(opts: BuildRouteImpactsOpts): RouteImpact[] {
   });
   list.push(...nwsImpacts);
 
-  const radarImpact = buildRadarImpact({
+  const hasNwsBand = nwsImpacts.length > 0;
+  const mosaicSegments = buildRadarMosaicSegmentImpacts({
     geometry,
-    radarIntensity,
+    samples: radarMosaicSamples,
     forecastHeadline,
     corridorWeatherDetail,
     userAlongM,
     planEtaMinutes,
     totalMeters,
     userLngLat,
-    hasNwsBand: nwsImpacts.length > 0,
+    hasNwsBand,
   });
-  if (radarImpact) list.push(radarImpact);
+  if (mosaicSegments.length > 0) {
+    list.push(...mosaicSegments);
+  } else {
+    const radarImpact = buildRadarImpact({
+      geometry,
+      radarIntensity,
+      forecastHeadline,
+      corridorWeatherDetail,
+      userAlongM,
+      planEtaMinutes,
+      totalMeters,
+      userLngLat,
+      hasNwsBand,
+    });
+    if (radarImpact) list.push(radarImpact);
+  }
 
   const trafficImpact = buildTrafficImpact({
     geometry,
