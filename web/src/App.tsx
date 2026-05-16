@@ -2252,12 +2252,10 @@ export default function App() {
   /** NWS polygons + route bands: corridor alerts that touch or sit ahead of the active leg (~28 mi buffer). */
   const nwsAlertsAffectingActiveRoute = useMemo(() => {
     const g = nwsMapOverlapRouteGeom;
-    if (!g?.length) return stormCorridorAlerts;
-    const along = filterAlertsAffectingRoute(g, stormCorridorAlerts);
-    if (along.length > 0) return along;
-    /* Corridor fetch is already route-scoped; if strict geometry tests miss, still map-draw alerts we have. */
-    const withGeom = stormCorridorAlerts.filter((a) => a.geometry);
-    return withGeom.length > 0 ? withGeom : along;
+    // No route → nothing is "on your route". Return empty so the advisory panel
+    // stays clear and map display falls through to its own independent fallback.
+    if (!g?.length) return [] as typeof stormCorridorAlerts;
+    return filterAlertsAffectingRoute(g, stormCorridorAlerts);
   }, [stormCorridorAlerts, nwsMapOverlapRouteGeom]);
 
   const stormMapGeoJsonForMap = useMemo((): GeoJSON.FeatureCollection | undefined => {

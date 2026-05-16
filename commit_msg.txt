@@ -1,5 +1,11 @@
-fix(web): no NWS polygons in browse mode; fix WebGL errors from layer teardown
+fix(web): advisory only shows alerts that actually intersect the route
 
-- Revert browse-mode polygon rendering (polygons should only show with a route)
-- Fix WebGL GL_INVALID_OPERATION errors by keeping alert layers alive with empty
-  GeoJSON instead of removing and re-adding them when collection flips to null
+nwsAlertsAffectingActiveRoute was falling back to all corridor alerts when
+no route was set, and to all corridor-alerts-with-geometry when the strict
+intersection test returned nothing. Both paths caused unrelated nearby alerts
+to appear in the advisory panel and hazard timeline as if they were on the route.
+
+Now returns empty when there is no route, and strictly the intersecting alerts
+when a route exists. The map polygon display retains its own independent
+fallback in stormMapGeoJsonForMap so polygons still render on the map for
+alerts whose polygons are thin enough to be missed by sparse route sampling.
