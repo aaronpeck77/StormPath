@@ -323,11 +323,11 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
       }, 30_000);
     };
 
-    // In dev, skip the coarse "prime" call — it's the one that returns the IP / Wi‑Fi-geocoded
-    // fix (often a regional metro like Chicago). Production keeps it for fast first paint.
-    if (!import.meta.env.DEV) {
-      navigator.geolocation.getCurrentPosition(onOk, onErr, GEO_PRIME_OPTS);
-    }
+    /* Prime with a coarse / cached fix so permission + first callback happen quickly; many
+     * desktop browsers are slow to deliver the first watchPosition update without it.
+     * Vague IP / Wi‑Fi guesses still stay off the puck until {@link LOCATION_DEFER_MS} or a
+     * tighter-accuracy watch fix — see {@link isTooVagueForInstantShow}. */
+    navigator.geolocation.getCurrentPosition(onOk, onErr, GEO_PRIME_OPTS);
     startWatch();
 
     const failsafe = window.setTimeout(() => {
