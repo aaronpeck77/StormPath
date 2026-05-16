@@ -26,7 +26,8 @@ export default defineConfig({
   },
   server: {
     /* Lets you open the dev URL from your phone on the same Wi‑Fi (e.g. http://192.168.x.x:5173).
-       Geolocation on that URL still needs HTTPS — use your deployed build or a local HTTPS proxy. */
+       That URL is not a “secure context”: browsers block navigator.geolocation entirely — use
+       http://localhost:5173 on the PC, HTTPS, or the dev-only network fallback in useUserLocation. */
     host: true,
     /** Always use this port. If dev “moves” to 5174/5175, another process was still bound to 5173. */
     port: 5173,

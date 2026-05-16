@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import type { LngLat } from "../nav/types";
+import { fetchWithTimeout } from "../utils/fetchResilient";
 
 export type LocationDetail = {
   lngLat: LngLat | null;
@@ -75,6 +76,31 @@ export type UserLocationOptions = {
 
 /** Cap React state updates to avoid effect pile-up on older phones. */
 const THROTTLE_MS = 400;
+
+/**
+ * Dev-only: approximate lat/lng from the client’s public IP (HTTPS JSON, no API key).
+ * Used when the page is **not** a secure context (e.g. `http://192.168.x.x:5173` — browsers
+ * block `navigator.geolocation` entirely) or when GPS/permission never succeeds after a delay.
+ * Accuracy is metro-level only; good enough to exercise routing/NWS on a desktop.
+ */
+async function fetchDevApproximateLngLatFromPublicLookup(): Promise<LngLat | null> {
+  try {
+    const res = await fetchWithTimeout({
+      input: "https://ipapi.co/json/",
+      init: { method: "GET", credentials: "omit" },
+      timeoutMs: 12_000,
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as { latitude?: unknown; longitude?: unknown };
+    const lat = typeof j.latitude === "number" ? j.latitude : Number(j.latitude);
+    const lng = typeof j.longitude === "number" ? j.longitude : Number(j.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+    return [lng, lat];
+  } catch {
+    return null;
+  }
+}
 
 // ─── Native (Capacitor iOS) ───────────────────────────────────────────────────
 
@@ -195,10 +221,7 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
     }
 
     // ── Web / PWA path (browser geolocation) ─────────────────────────────────
-    if (!navigator.geolocation) {
-      setError("This browser does not support location.");
-      return;
-    }
+    const secure = typeof window !== "undefined" && window.isSecureContext;
 
     // Dev-only static override (URL param / localStorage). Bypass the browser provider entirely so
     // an IP-geocoded "Chicago" guess can't sneak in over the held coords.
@@ -211,6 +234,47 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
         setSpeedMps(null);
         return;
       }
+    }
+
+    /* `http://192.168.x.x:5173` is NOT a secure context — Chromium never exposes Geolocation
+     * (no prompt, no OS “last used” update). Only `http://localhost` / https:// qualify. */
+    if (!secure) {
+      if (!import.meta.env.DEV) {
+        setError(
+          "GPS needs a secure page: use https://… or http://localhost:5173 — not a plain http://192.168… address (the browser blocks geolocation there)."
+        );
+        return;
+      }
+      let cancelledInsecure = false;
+      const t = window.setTimeout(() => {
+        void (async () => {
+          if (cancelledInsecure) return;
+          const p = await fetchDevApproximateLngLatFromPublicLookup();
+          if (cancelledInsecure) return;
+          if (p) {
+            console.info(
+              "[useUserLocation] dev: non-secure origin — using approximate network center for map testing (not GPS)."
+            );
+            setError(null);
+            setLngLat(p);
+            setHeading(null);
+            setSpeedMps(null);
+          } else {
+            setError(
+              "This dev URL is not a secure context, so the browser blocks GPS. Open http://localhost:5173 on this PC (not the 192.168… link), or use HTTPS. Dev network-location fallback also failed — check connectivity."
+            );
+          }
+        })();
+      }, 400);
+      return () => {
+        cancelledInsecure = true;
+        window.clearTimeout(t);
+      };
+    }
+
+    if (!navigator.geolocation) {
+      setError("This browser does not support location.");
+      return;
     }
 
     let cancelled = false;
@@ -309,7 +373,7 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
         const base =
           "Location blocked: tap the lock icon in the address bar (or Site settings) and allow Location for this site.";
         const devHint = import.meta.env.DEV
-          ? " If you’re in Cursor’s Simple Browser or another embedded preview, open the same URL in Chrome or Edge — those often block geolocation."
+          ? " If you are in Cursor's Simple Browser or another embedded preview, open the same URL in Chrome or Edge. On http://localhost, an approximate dev position loads in ~9s if GPS stays blocked."
           : "";
         setError(base + devHint);
         return;
@@ -342,6 +406,29 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
     if (typeof queueMicrotask === "function") queueMicrotask(runPrime);
     else window.setTimeout(runPrime, 0);
 
+    let devIpFallbackTimer = 0;
+
+    const tryDevNetworkFallback = async () => {
+      if (cancelled || fixReceived || !import.meta.env.DEV) return;
+      const p = await fetchDevApproximateLngLatFromPublicLookup();
+      if (cancelled || fixReceived) return;
+      if (!p) return;
+      console.info(
+        "[useUserLocation] dev: GPS still unavailable — using approximate network center so you can test the app (metro-level accuracy)."
+      );
+      fixReceived = true;
+      if (deferFirstTimer) {
+        window.clearTimeout(deferFirstTimer);
+        deferFirstTimer = 0;
+      }
+      vagueFallbackPos = null;
+      window.clearTimeout(failsafe);
+      setError(null);
+      setLngLat(p);
+      setHeading(null);
+      setSpeedMps(null);
+    };
+
     const failsafe = window.setTimeout(() => {
       if (cancelled || fixReceived) return;
       setError(
@@ -351,9 +438,12 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
       );
     }, 95_000);
 
+    devIpFallbackTimer = window.setTimeout(() => void tryDevNetworkFallback(), 8_500);
+
     return () => {
       cancelled = true;
       window.clearTimeout(failsafe);
+      window.clearTimeout(devIpFallbackTimer);
       window.clearTimeout(deferFirstTimer);
       deferFirstTimer = 0;
       window.clearTimeout(rafRef.current);
