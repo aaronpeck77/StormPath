@@ -1,0 +1,5 @@
+fix(web): no NWS polygons in browse mode; fix WebGL errors from layer teardown
+
+- Revert browse-mode polygon rendering (polygons should only show with a route)
+- Fix WebGL GL_INVALID_OPERATION errors by keeping alert layers alive with empty
+  GeoJSON instead of removing and re-adding them when collection flips to null

@@ -200,16 +200,11 @@ export function applyWeatherAlertLayers(
   }
   const beforeId = firstVisibleRouteLineId(map);
 
-  if (collection == null) {
-    if (map.getLayer(MOTION_LAYER)) map.removeLayer(MOTION_LAYER);
-    if (map.getSource(MOTION_SRC)) map.removeSource(MOTION_SRC);
-    if (map.getLayer(FILL)) map.removeLayer(FILL);
-    if (map.getLayer(LINE)) map.removeLayer(LINE);
-    if (map.getSource(SRC)) map.removeSource(SRC);
-    return;
-  }
-
-  const hasFeatures = collection.features.length > 0;
+  // Treat null as empty — keep layers alive so Mapbox doesn't tear down and
+  // rebuild the WebGL buffers every time the collection flips to/from null
+  // (which caused repeated GL_INVALID_OPERATION errors).
+  const effective = collection ?? EMPTY_ALERT_FC;
+  const hasFeatures = effective.features.length > 0;
 
   // ── Polygon fill + outline ───────────────────────────────────────────────
   if (!hasFeatures) {
@@ -220,7 +215,7 @@ export function applyWeatherAlertLayers(
   }
 
   if (!map.getSource(SRC)) {
-    map.addSource(SRC, { type: "geojson", data: collection });
+    map.addSource(SRC, { type: "geojson", data: effective });
     const fillLayer: FillLayer = {
       id: FILL,
       type: "fill",
@@ -250,11 +245,11 @@ export function applyWeatherAlertLayers(
       map.addLayer(lineLayer);
     }
   } else {
-    (map.getSource(SRC) as GeoJSONSource).setData(collection);
+    (map.getSource(SRC) as GeoJSONSource).setData(effective);
   }
 
   // ── Storm motion arrows ──────────────────────────────────────────────────
-  const arrows = buildMotionArrowCollection(collection);
+  const arrows = buildMotionArrowCollection(effective);
   if (arrows.features.length > 0) {
     applyMotionArrows(map, arrows, beforeId);
   } else {

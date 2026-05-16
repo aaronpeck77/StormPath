@@ -2597,15 +2597,8 @@ export default function App() {
       );
     }
     if (!advisoryLifeSafetyOn || !settingStormEnabled) return null;
+    if (!nwsMapOverlapRouteGeom?.length) return null;
     if (!stormCorridorAlerts.length && !stormMapGeoJson?.features?.length) return null;
-
-    // Browse mode (no route): show all corridor alert polygons directly.
-    if (!nwsMapOverlapRouteGeom?.length) {
-      const withGeom = stormCorridorAlerts.filter((a) => a.geometry);
-      if (withGeom.length) return mapGeoJsonFromAlerts(withGeom);
-      if (stormMapGeoJson?.features?.length) return stormMapGeoJson;
-      return null;
-    }
 
     const base = stormMapGeoJsonForMap;
     if (base?.features.length) return base;
