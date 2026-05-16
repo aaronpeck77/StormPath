@@ -18,7 +18,7 @@ import { useSavedRoutes } from "./hooks/useSavedRoutes";
 import { useRouteRecorder } from "./hooks/useRouteRecorder";
 import { useTurnVoiceGuidance } from "./hooks/useTurnVoiceGuidance";
 import { useSessionOdometerMeters } from "./hooks/useSessionOdometerMeters";
-import { useUserLocation } from "./hooks/useUserLocation";
+import { useUserLocation, getDevLocationOverrideLngLat } from "./hooks/useUserLocation";
 import { useRadarBandsAlongRoute } from "./hooks/useRadarBandsAlongRoute";
 import { buildMockTripBetween, EMPTY_TRIP } from "./nav/emptyTrip";
 import { mergePlanPreservingPrimary } from "./nav/mergePlanRoutes";
@@ -327,6 +327,7 @@ export default function App() {
   const { lngLat: userLngLat, heading, speedMps, error: locationError } = useUserLocation(true, {
     highRefresh: settingGpsHighRefreshEnabled,
   });
+  const devLocOverrideLngLat = import.meta.env.DEV ? getDevLocationOverrideLngLat() : null;
   const userLngLatRef = useRef(userLngLat);
   userLngLatRef.current = userLngLat;
   const speedMpsRef = useRef(speedMps);
@@ -4467,6 +4468,13 @@ export default function App() {
         {!env.mapboxToken && (
           <div className="nav-toast nav-toast-warn" role="status">
             Add <code>VITE_MAPBOX_TOKEN</code> in <code>web/.env</code>.
+          </div>
+        )}
+
+        {import.meta.env.DEV && devLocOverrideLngLat && (
+          <div className="nav-toast nav-toast-warn" role="status">
+            <strong>Dev pinned location</strong> — the browser never asks for GPS. Remove <code>#devloc=…</code> from the
+            URL or delete localStorage <code>stormpath-dev-location</code> to test real geolocation again.
           </div>
         )}
 

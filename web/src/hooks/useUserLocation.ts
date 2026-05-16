@@ -62,6 +62,12 @@ function readDevLocationOverride(): LngLat | null {
   }
 }
 
+/** DEV only: pinned coords from `#devloc=` / `?devloc=` / `stormpath-dev-location` (browser GPS skipped). */
+export function getDevLocationOverrideLngLat(): LngLat | null {
+  if (!import.meta.env.DEV) return null;
+  return readDevLocationOverride();
+}
+
 export type UserLocationOptions = {
   /** Prefer fresher fixes (more battery). Off = allow up to ~2s cached positions. */
   highRefresh?: boolean;
@@ -326,12 +332,15 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
       }, 30_000);
     };
 
-    /* Prime with a coarse / cached fix so permission + first callback happen quickly; many
-     * desktop browsers are slow to deliver the first watchPosition update without it.
-     * Vague IP / Wi‑Fi guesses still stay off the puck until {@link LOCATION_DEFER_MS} or a
-     * tighter-accuracy watch fix — see {@link isTooVagueForInstantShow}. */
-    navigator.geolocation.getCurrentPosition(onOk, onErr, GEO_PRIME_OPTS);
+    /* Start watch first, then prime on the next microtask. Two simultaneous getCurrentPosition +
+     * watchPosition calls can confuse some Chromium builds (permission / first-fix ordering). */
     startWatch();
+    const runPrime = () => {
+      if (cancelled) return;
+      navigator.geolocation.getCurrentPosition(onOk, onErr, GEO_PRIME_OPTS);
+    };
+    if (typeof queueMicrotask === "function") queueMicrotask(runPrime);
+    else window.setTimeout(runPrime, 0);
 
     const failsafe = window.setTimeout(() => {
       if (cancelled || fixReceived) return;
