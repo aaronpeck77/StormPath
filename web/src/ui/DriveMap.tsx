@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RouteAlert } from "../nav/routeAlerts";
 import type { LngLat, NavRoute } from "../nav/types";
 import type { SavedPlace } from "../nav/savedPlaces";
-import { closestPointOnPolyline, haversineMeters, pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
+import { buildCumulativeDistances, closestPointOnPolyline, closestPointOnPolylineWindowed, haversineMeters, pointAtAlongMeters } from "../nav/routeGeometry";
 import { getWebEnv } from "../config/env";
 import {
   fetchRainViewerRadarFrames,
@@ -585,6 +585,12 @@ type Props = {
   recenterPlanningPuckTick?: number;
   /** While navigating, smooth the puck along this polyline (closest point) when GPS is near the line. */
   puckSnapGeometry?: LngLat[] | null;
+  /**
+   * Best-known along-route distance (meters) for the user — used to seed the puck snap window so
+   * the first closest-point search doesn't scan the full geometry and risk latching onto a parallel
+   * segment far ahead of the user's real position.
+   */
+  snapSeedMeters?: number | null;
   /** Colored road traffic (Mapbox traffic-v1); mirrors Hazards → Road & traffic checkbox. Default off. */
   trafficConditionsOnMap?: boolean;
   /** Drive mode: live map bearing (degrees) for a north-fixed compass in the chrome. */
@@ -849,6 +855,7 @@ export function DriveMap({
   stormBarExpanded = true,
   recenterPlanningPuckTick = 0,
   puckSnapGeometry = null,
+  snapSeedMeters = null,
   trafficConditionsOnMap = false,
   onDriveCameraBearingDeg,
   stormBrowseBoundsReporting = false,
@@ -888,6 +895,9 @@ export function DriveMap({
   const puckSnapGeomRef = useRef<LngLat[] | null>(null);
   puckSnapGeomRef.current =
     navigationStarted && puckSnapGeometry && puckSnapGeometry.length >= 2 ? puckSnapGeometry : null;
+  const snapSeedMetersRef = useRef<number | null>(null);
+  snapSeedMetersRef.current = (snapSeedMeters != null && Number.isFinite(snapSeedMeters) && snapSeedMeters >= 0)
+    ? snapSeedMeters : null;
   const speedMpsRef = useRef<number | null>(null);
   speedMpsRef.current = speedMps;
   const viewModeRef = useRef(viewMode);
@@ -1422,9 +1432,13 @@ export function DriveMap({
     /** Hysteresis: snap in when close, stay snapped until clearly off-route — avoids jitter at the threshold. */
     const SNAP_IN_M = 88;
     const SNAP_OUT_M = 118;
+    const SNAP_BACK_M  = 500;   // how far behind last snap to search (handles reversing / u-turn)
+    const SNAP_AHEAD_M = 3500;  // how far ahead to search (fast freeway ~60 s worth at 200 km/h)
     let snapLatched = false;
     let lastGeomKey = "";
     let snapRouteTotalM = 0;
+    /** Pre-built cumulative distances for the current snap geometry — built once per geometry change. */
+    let snapCumDist: Float64Array | null = null;
     /** Low-pass `alongMeters` while snapped — closest-point slides along vertices every frame otherwise. */
     let snappedAlongSmooth: number | null = null;
 
@@ -1508,9 +1522,24 @@ export function DriveMap({
             lastGeomKey = geomKey;
             snapLatched = false;
             snappedAlongSmooth = null;
-            snapRouteTotalM = polylineLengthMeters(geom);
+            snapCumDist = buildCumulativeDistances(geom);
+            snapRouteTotalM = snapCumDist[geom.length - 1] ?? 0;
           }
-          const snap = closestPointOnPolyline([targetLng, targetLat], geom);
+          // Windowed search: after the first snap we know roughly where we are,
+          // so only scan a small window around the last position.  This is orders
+          // of magnitude faster on long routes and also prevents the scan from
+          // matching a parallel segment far ahead of the user.
+          //
+          // If we haven't snapped yet, seed the window from the guidance along-meters
+          // passed in via snapSeedMetersRef rather than doing a full-route scan —
+          // this avoids latching onto a closer-but-wrong parallel segment far ahead.
+          const searchCenter = snappedAlongSmooth ?? snapSeedMetersRef.current;
+          const snap = (snapCumDist && searchCenter != null)
+            ? closestPointOnPolylineWindowed(
+                [targetLng, targetLat], geom, snapCumDist,
+                searchCenter, SNAP_BACK_M, SNAP_AHEAD_M,
+              )
+            : closestPointOnPolyline([targetLng, targetLat], geom);
           const latM = snap.lateralMetersApprox;
           const applyAlongSmooth = (along: number) => {
             const clamped = Math.max(0, Math.min(snapRouteTotalM, along));
@@ -1629,8 +1658,13 @@ export function DriveMap({
               ? false
               : Math.abs(camCenter.lng - pos.lng) > NOOP_LNGLAT_DELTA ||
                 Math.abs(camCenter.lat - pos.lat) > NOOP_LNGLAT_DELTA;
-          const bearingMoved = bearingDelta > 0.05; /* deg — finer than the eye can see when stopped */
-          if (camMoved || bearingMoved) {
+          const bearingMoved = bearingDelta > 0.05;
+          /* When entering drive view the pitch/zoom may be totally wrong (e.g. flat topdown).
+           * Force an easeTo if pitch or zoom are far from drive targets so the view snaps in
+           * even when the puck hasn't moved relative to the camera center. */
+          const pitchOff = Math.abs(map.getPitch() - 58) > 1;
+          const zoomOff  = Math.abs(map.getZoom()  - 16.35) > 0.3;
+          if (camMoved || bearingMoved || pitchOff || zoomOff) {
             try {
               /*
                * `easeTo` honors `offset` (drive focal point); `jumpTo` silently drops it.

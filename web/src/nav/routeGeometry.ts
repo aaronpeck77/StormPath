@@ -185,6 +185,98 @@ export function closestPointOnPolyline(
   return { lngLat: bestLngLat, alongMeters: bestAlong, lateralMetersApprox: bestLat };
 }
 
+/**
+ * Pre-computed cumulative distances for fast windowed closest-point searches.
+ * cum[i] = total distance from point 0 to point i (meters).
+ * Build once per geometry, then pass to closestPointOnPolylineWindowed.
+ */
+export function buildCumulativeDistances(geometry: LngLat[]): Float64Array {
+  const cum = new Float64Array(geometry.length);
+  for (let i = 1; i < geometry.length; i++) {
+    cum[i] = cum[i - 1]! + haversineMeters(geometry[i - 1]!, geometry[i]!);
+  }
+  return cum;
+}
+
+/**
+ * Like `closestPointOnPolyline` but only searches segments within
+ * [centerM - backM, centerM + aheadM], using the pre-built cumulative distance
+ * array to binary-search for the segment range.  Orders of magnitude faster on
+ * long routes because only O(window / avg_segment_len) segments are checked
+ * instead of the entire polyline.
+ *
+ * The window should be wide enough to cover the maximum distance the user can
+ * travel between calls (backM ≥ 300 m, aheadM ≥ 2000 m is typical for drive).
+ */
+export function closestPointOnPolylineWindowed(
+  user: LngLat,
+  geometry: LngLat[],
+  cumDist: Float64Array,
+  centerM: number,
+  backM: number,
+  aheadM: number,
+): { lngLat: LngLat; alongMeters: number; lateralMetersApprox: number } {
+  const n = geometry.length;
+  if (n < 2) return closestPointOnPolyline(user, geometry);
+
+  const fromM = Math.max(0, centerM - backM);
+  const toM = Math.min(cumDist[n - 1]!, centerM + aheadM);
+
+  // Binary search: last vertex index where cumDist <= fromM (= segment start).
+  let lo = 0, hi = n - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (cumDist[mid]! <= fromM) lo = mid; else hi = mid - 1;
+  }
+  const startIdx = Math.max(0, lo);
+
+  // Binary search: first vertex index where cumDist >= toM (= segment end).
+  lo = 0; hi = n - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (cumDist[mid]! < toM) lo = mid + 1; else hi = mid;
+  }
+  const endIdx = Math.min(n - 2, lo);
+
+  if (startIdx > endIdx) return closestPointOnPolyline(user, geometry);
+
+  let bestAlong = cumDist[startIdx]!;
+  let bestLngLat: LngLat = geometry[startIdx]!;
+  let bestLat = 1e12;
+
+  for (let i = startIdx; i <= endIdx; i++) {
+    const A = geometry[i]!;
+    const B = geometry[i + 1]!;
+    const segLen = cumDist[i + 1]! - cumDist[i]!;
+    const midLat = ((A[1] + B[1]) / 2) * (Math.PI / 180);
+    const cos = Math.cos(midLat) * 111_320;
+    const mLat = 111_320;
+    const ax = A[0]! * cos;
+    const ay = A[1]! * mLat;
+    const bx = B[0]! * cos;
+    const by = B[1]! * mLat;
+    const px = user[0]! * cos;
+    const py = user[1]! * mLat;
+    const abx = bx - ax;
+    const aby = by - ay;
+    const apx = px - ax;
+    const apy = py - ay;
+    const ab2 = abx * abx + aby * aby;
+    const tt = ab2 < 1e-12 ? 0 : Math.max(0, Math.min(1, (apx * abx + apy * aby) / ab2));
+    const qx = ax + tt * abx;
+    const qy = ay + tt * aby;
+    const dist = Math.hypot(px - qx, py - qy);
+    const along = cumDist[i]! + tt * segLen;
+    if (dist < bestLat) {
+      bestLat = dist;
+      bestAlong = along;
+      bestLngLat = [qx / cos, qy / mLat];
+    }
+  }
+
+  return { lngLat: bestLngLat, alongMeters: bestAlong, lateralMetersApprox: bestLat };
+}
+
 /** Point on the polyline at `alongMeters` from the start (clamped to ends). */
 export function pointAtAlongMeters(geometry: LngLat[], alongMeters: number): LngLat {
   if (geometry.length === 0) return FALLBACK_LNGLAT;

@@ -2597,8 +2597,15 @@ export default function App() {
       );
     }
     if (!advisoryLifeSafetyOn || !settingStormEnabled) return null;
-    if (!nwsMapOverlapRouteGeom?.length) return null;
     if (!stormCorridorAlerts.length && !stormMapGeoJson?.features?.length) return null;
+
+    // Browse mode (no route): show all corridor alert polygons directly.
+    if (!nwsMapOverlapRouteGeom?.length) {
+      const withGeom = stormCorridorAlerts.filter((a) => a.geometry);
+      if (withGeom.length) return mapGeoJsonFromAlerts(withGeom);
+      if (stormMapGeoJson?.features?.length) return stormMapGeoJson;
+      return null;
+    }
 
     const base = stormMapGeoJsonForMap;
     if (base?.features.length) return base;
@@ -4253,6 +4260,11 @@ export default function App() {
                 ? guidanceRoute.geometry
                 : null
             }
+            snapSeedMeters={
+              Number.isFinite(userAlongGuidanceM) && (userAlongGuidanceM ?? 0) >= 0
+                ? userAlongGuidanceM
+                : null
+            }
             trafficConditionsOnMap={Boolean(
               navigationStarted &&
                 isPlus &&
@@ -4539,19 +4551,24 @@ export default function App() {
             onTryAlternateRoute={() => {
               handleTryAlternateRoute();
               setRouteHazardSheet(null);
+              onStormBarExpandedChange(false);
             }}
             onCompareReroutes={() => {
               setRouteHazardSheet(null);
+              onStormBarExpandedChange(false);
               void handleTrafficBypassFromHere();
             }}
             onOpenRouteView={() => {
               setViewMode("route");
               setRouteHazardSheet(null);
+              onStormBarExpandedChange(false);
             }}
             onShowOnMap={(alert) => {
-              /* Close the sheet first, drop into map view, and frame the hazard. */
+              /* Close the sheet, collapse advisory bar, and frame the hazard on the map. */
               setRouteHazardSheet(null);
+              onStormBarExpandedChange(false);
               if (viewMode === "drive") setViewMode("topdown");
+              else if (viewMode !== "topdown") setViewMode("topdown");
               setMapFocus({
                 kind: "hazardOverview",
                 hazardLng: alert.lngLat[0]!,
