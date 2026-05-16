@@ -300,9 +300,12 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
           deferFirstTimer = 0;
         }
         vagueFallbackPos = null;
-        setError(
-          "Location blocked: tap the lock icon in the address bar (or Site settings) and allow Location for this site."
-        );
+        const base =
+          "Location blocked: tap the lock icon in the address bar (or Site settings) and allow Location for this site.";
+        const devHint = import.meta.env.DEV
+          ? " If you’re in Cursor’s Simple Browser or another embedded preview, open the same URL in Chrome or Edge — those often block geolocation."
+          : "";
+        setError(base + devHint);
         return;
       }
       if (!fixReceived) {
