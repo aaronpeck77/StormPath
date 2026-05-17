@@ -3,39 +3,20 @@ import type { RouteAlert } from "../nav/routeAlerts";
 
 type Props = {
   open: boolean;
-  /** Route leg this tap was on (may differ from active leg while comparing). */
-  routeId: string;
-  focusedRouteId: string;
   alerts: RouteAlert[];
   alternateRouteAvailable: boolean;
-  /** True when a fetch-alternates-and-compare flow is available (traffic stop / delay). */
-  bypassCompareAvailable?: boolean;
   bypassBusy?: boolean;
   onClose: () => void;
   onTryAlternateRoute: () => void;
-  /** Compute three live reroute options (stay / surgical bypass / alternate) and show compare panel. */
-  onCompareReroutes?: () => void;
-  onOpenRouteView: () => void;
-  /** Fit map to this hazard / corridor context */
-  onShowOnMap: (alert: RouteAlert) => void;
-  /** Switch active / navigated leg to the tapped polyline */
-  onSelectThisRoute: (routeId: string) => void;
 };
 
 export function RouteHazardSheet({
   open,
-  routeId,
-  focusedRouteId,
   alerts,
   alternateRouteAvailable,
-  bypassCompareAvailable = false,
   bypassBusy = false,
   onClose,
   onTryAlternateRoute,
-  onCompareReroutes,
-  onOpenRouteView,
-  onShowOnMap,
-  onSelectThisRoute,
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -50,10 +31,6 @@ export function RouteHazardSheet({
 
   const primary = alerts[0];
   const others = alerts.slice(1);
-  const showSwitch = routeId !== focusedRouteId;
-  const primaryIsTraffic =
-    primary != null &&
-    (primary.id === "traffic" || primary.id === "traffic-delay" || /traffic|stopped|closure|jam/i.test(primary.title ?? ""));
 
   return (
     <div className="route-hazard-sheet-backdrop" role="presentation" onClick={onClose}>
@@ -83,38 +60,18 @@ export function RouteHazardSheet({
           </>
         ) : (
           <p className="route-hazard-sheet__detail route-hazard-sheet__detail--muted">
-            Open Hazards or Route view for the full list along your trip.
+            No hazard details for this spot.
           </p>
         )}
         <div className="route-hazard-sheet__actions">
-          {primary && (
-            <button type="button" className="route-hazard-sheet__btn route-hazard-sheet__btn--primary" onClick={() => onShowOnMap(primary)}>
-              Show on map
-            </button>
-          )}
-          {primaryIsTraffic && bypassCompareAvailable && onCompareReroutes ? (
+          {alternateRouteAvailable && (
             <button
               type="button"
               className="route-hazard-sheet__btn route-hazard-sheet__btn--primary"
-              onClick={onCompareReroutes}
+              onClick={onTryAlternateRoute}
               disabled={bypassBusy}
-              title="See 3 reroute options on the map"
             >
-              {bypassBusy ? "Finding options…" : "See 3 reroute options"}
-            </button>
-          ) : (
-            alternateRouteAvailable && (
-              <button type="button" className="route-hazard-sheet__btn" onClick={onTryAlternateRoute}>
-                Try alternate route
-              </button>
-            )
-          )}
-          <button type="button" className="route-hazard-sheet__btn" onClick={onOpenRouteView}>
-            Route view
-          </button>
-          {showSwitch && (
-            <button type="button" className="route-hazard-sheet__btn" onClick={() => onSelectThisRoute(routeId)}>
-              Use this route leg
+              {bypassBusy ? "Finding alternate…" : "Try alternate route"}
             </button>
           )}
           <button type="button" className="route-hazard-sheet__btn route-hazard-sheet__btn--ghost" onClick={onClose}>

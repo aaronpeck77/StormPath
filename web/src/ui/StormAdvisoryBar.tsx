@@ -175,10 +175,11 @@ function impactSectionBucket(i: RouteImpact): "weather" | "road" {
 
 
 /** Compact urgent chip — only for hazards that affect you now or very soon on route. */
-function nwsUrgentChip(
+function nwsChip(
   a: NormalizedWeatherAlert,
   timingLine: string,
-  onClick?: (alert: NormalizedWeatherAlert) => void
+  onClick: ((alert: NormalizedWeatherAlert) => void) | undefined,
+  variant: "urgent" | "secondary"
 ): ReactNode {
   const sevClass =
     a.severity === "Extreme" || /tornado warning/i.test(a.event ?? "")
@@ -190,7 +191,7 @@ function nwsUrgentChip(
     <li key={a.id}>
       <button
         type="button"
-        className={`nws-chip nws-chip--urgent nws-chip--${sevClass}`}
+        className={`nws-chip nws-chip--${variant} nws-chip--${sevClass}`}
         onClick={() => onClick?.(a)}
         aria-label={`${a.event} — ${timingLine} — open details`}
       >
@@ -336,78 +337,6 @@ export function StormAdvisoryBar({
     atLocationOther.length > 0 ||
     crossingOther.length > 0; // fallback when route length unavailable so strips can't render
 
-  /* Single, clear NWS status note for the Weather section's NWS area. Shown only when there are
-   * no NWS-derived rows on the panel — once impacts are visible, they speak for themselves. The
-   * goal: when a user opens the advisory and sees no NWS info, they always know *why*. */
-  const nwsStatusMessage: { tone: "muted" | "warn"; text: string } | null = useMemo(() => {
-    /* Suppress the status note only when we're actually rendering substantive content.
-     * atLocationOther/crossingOther are no longer rendered as explicit cards — only the
-     * timeline shows crossing alerts, so don't suppress based on them alone. */
-    if (
-      weatherImpacts.length > 0 ||
-      (stormStripBands?.length ?? 0) > 0
-    ) {
-      return null;
-    }
-    if (!isOnline) {
-      return {
-        tone: "warn",
-        text: "NWS · Offline — alerts will refresh once you're back online.",
-      };
-    }
-    const errMsg = (error ?? "").trim();
-    if (errMsg) {
-      return {
-        tone: "warn",
-        text: "NWS · Couldn't reach api.weather.gov. Try again in a moment.",
-      };
-    }
-    if (loading) {
-      return {
-        tone: "muted",
-        text:
-          !navigationStarted && hasGuidanceRoute
-            ? "NWS · Loading alerts for your planned route…"
-            : "NWS · Loading active alerts near you…",
-      };
-    }
-    if (!hasGuidanceRoute) {
-      return corridorAlerts.length === 0
-        ? {
-            tone: "muted",
-            text: "NWS · No active alerts near your position right now. Skies look clear.",
-          }
-        : {
-            tone: "muted",
-            text: `NWS · ${corridorAlerts.length} active alert${
-              corridorAlerts.length === 1 ? "" : "s"
-            } nearby — add a route to see which ones might cross it.`,
-          };
-    }
-    if (corridorAlerts.length === 0) {
-      return {
-        tone: "muted",
-        text: "NWS · No active alerts in this area right now. Looks like a nice day to drive.",
-      };
-    }
-    return {
-      tone: "muted",
-      text: `NWS · ${corridorAlerts.length} active alert${
-        corridorAlerts.length === 1 ? "" : "s"
-      } nearby, but none cross your route.`,
-    };
-  }, [
-    weatherImpacts.length,
-    stormStripBands,
-    atLocationOther.length,
-    crossingOther.length,
-    isOnline,
-    error,
-    loading,
-    navigationStarted,
-    hasGuidanceRoute,
-    corridorAlerts.length,
-  ]);
   /* Show ROADS when there are road impacts, traffic narrative rows, or a reroute CTA condition. */
   const hasTrafficStop = useMemo(
     () => roadDetailRows.some((r) => /traffic stop|closure/i.test(r.label)),
@@ -466,6 +395,117 @@ export function StormAdvisoryBar({
     userAlongMeters,
     planEtaMinutes,
     driveEtaMinutes,
+  ]);
+
+  /** Non–life-safety alerts at your position or on the route — shown below the hazard graph. */
+  const panelNwsAlerts = useMemo(() => {
+    const out: { alert: NormalizedWeatherAlert; timingLine: string }[] = [];
+    const seen = new Set(urgentTopAlerts.map((x) => x.alert.id));
+
+    for (const a of atLocationOther) {
+      if (seen.has(a.id) || isAlertExpired(a.ends)) continue;
+      seen.add(a.id);
+      out.push({ alert: a, timingLine: promoteAtPositionAlertToTop().timingLine });
+    }
+
+    for (const a of crossingOther) {
+      if (seen.has(a.id) || isAlertExpired(a.ends)) continue;
+      const band = bandByAlertId.get(a.id);
+      let timingLine = "On your planned route";
+      if (band && routeTotalMeters > 0) {
+        const timing = formatRouteAlertTiming({
+          startMeters: band.startMeters,
+          endMeters: band.endMeters,
+          userAlongMeters,
+          totalMeters: routeTotalMeters,
+          planEtaMinutes,
+          driveEtaMinutes,
+          expiresIso: band.expiresIso,
+          crossesRoute: band.crossesRoute,
+        });
+        timingLine = timing.timingLine;
+      }
+      seen.add(a.id);
+      out.push({ alert: a, timingLine });
+    }
+
+    return out;
+  }, [
+    urgentTopAlerts,
+    atLocationOther,
+    crossingOther,
+    bandByAlertId,
+    routeTotalMeters,
+    userAlongMeters,
+    planEtaMinutes,
+    driveEtaMinutes,
+  ]);
+
+  /* Single, clear NWS status note when the panel has no NWS rows yet. */
+  const nwsStatusMessage: { tone: "muted" | "warn"; text: string } | null = useMemo(() => {
+    if (
+      weatherImpacts.length > 0 ||
+      (stormStripBands?.length ?? 0) > 0 ||
+      atLocationSorted.length > 0 ||
+      panelNwsAlerts.length > 0 ||
+      urgentTopAlerts.length > 0
+    ) {
+      return null;
+    }
+    if (!isOnline) {
+      return {
+        tone: "warn",
+        text: "NWS · Offline — alerts will refresh once you're back online.",
+      };
+    }
+    const errMsg = (error ?? "").trim();
+    if (errMsg) {
+      return {
+        tone: "warn",
+        text: "NWS · Couldn't reach api.weather.gov. Try again in a moment.",
+      };
+    }
+    if (loading) {
+      return {
+        tone: "muted",
+        text:
+          !navigationStarted && hasGuidanceRoute
+            ? "NWS · Loading alerts for your planned route…"
+            : "NWS · Loading active alerts near you…",
+      };
+    }
+    if (!hasGuidanceRoute) {
+      return corridorAlerts.length === 0
+        ? {
+            tone: "muted",
+            text: "NWS · No active alerts near your position right now. Skies look clear.",
+          }
+        : {
+            tone: "muted",
+            text: `NWS · ${corridorAlerts.length} active alert${
+              corridorAlerts.length === 1 ? "" : "s"
+            } nearby — add a route to see which ones might cross it.`,
+          };
+    }
+    if (corridorAlerts.length === 0) {
+      return {
+        tone: "muted",
+        text: "NWS · No active alerts in this area right now. Looks like a nice day to drive.",
+      };
+    }
+    return null;
+  }, [
+    weatherImpacts.length,
+    stormStripBands,
+    atLocationSorted.length,
+    panelNwsAlerts.length,
+    urgentTopAlerts.length,
+    isOnline,
+    error,
+    loading,
+    navigationStarted,
+    hasGuidanceRoute,
+    corridorAlerts.length,
   ]);
 
   const hasNow = urgentTopAlerts.length > 0;
@@ -527,12 +567,14 @@ export function StormAdvisoryBar({
         currentNowcast?.fetchedAtMs,
         minutePrecipForecast?.fetchedAt
       ),
+      nwsAtLocation: atLocationSorted.length ? atLocationSorted : null,
     });
   }, [
     forecastAreaLabel,
     nowcastLine,
     minutePrecipForecast,
     currentNowcast?.fetchedAtMs,
+    atLocationSorted,
   ]);
 
   const previewItems = useMemo(() => {
@@ -955,11 +997,14 @@ export function StormAdvisoryBar({
       )}
 
       <div className="storm-advisory-bar__sections-scroll">
-        {(currentNowcast || minutePrecipForecast) && forecastAreaLabel ? (
+        {forecastAreaLabel &&
+        (currentNowcast || minutePrecipForecast || atLocationSorted.length > 0) ? (
           <AdvisoryLocalForecast
             areaLabel={forecastAreaLabel}
             nowcast={currentNowcast}
             minutePrecip={minutePrecipForecast}
+            locationAlerts={atLocationSorted}
+            onLocationAlertClick={onNwsAlertClick}
           />
         ) : null}
 
@@ -974,7 +1019,7 @@ export function StormAdvisoryBar({
         {urgentTopAlerts.length > 0 && (
           <ul className="nws-chips nws-chips--urgent" role="list" aria-label="Urgent weather affecting you now">
             {urgentTopAlerts.map(({ alert, timingLine }) =>
-              nwsUrgentChip(alert, timingLine, onNwsAlertClick)
+              nwsChip(alert, timingLine, onNwsAlertClick, "urgent")
             )}
           </ul>
         )}
@@ -1058,6 +1103,17 @@ export function StormAdvisoryBar({
                 </p>
               )}
 
+              {panelNwsAlerts.length > 0 && (
+                <ul
+                  className="nws-chips nws-chips--secondary"
+                  role="list"
+                  aria-label="Weather alerts at your position or on your route"
+                >
+                  {panelNwsAlerts.map(({ alert, timingLine }) =>
+                    nwsChip(alert, timingLine, onNwsAlertClick, "secondary")
+                  )}
+                </ul>
+              )}
 
               {/* Better route suggestion */}
               {betterRouteRow && (
@@ -1096,7 +1152,10 @@ export function StormAdvisoryBar({
                 !hasRoads &&
                 !hasSuggestion &&
                 !loading &&
-                !(forecastAreaLabel && (currentNowcast || minutePrecipForecast)) && (
+                !(
+                  forecastAreaLabel &&
+                  (currentNowcast || minutePrecipForecast || atLocationSorted.length > 0)
+                ) && (
                 <p className="storm-advisory-bar__muted storm-advisory-bar__section-status">
                   {hasGuidanceRoute
                     ? "No advisories on your route right now."

@@ -4707,6 +4707,45 @@
   min-width: 0;
 }
 
+.adv-forecast__block--nws {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+}
+
+.adv-forecast__nws-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.adv-forecast__nws-row {
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(234, 88, 12, 0.35);
+  background: rgba(124, 45, 18, 0.35);
+  color: #fed7aa;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.adv-forecast__nws-row--static {
+  cursor: default;
+}
+
+.adv-forecast__nws-row:active {
+  filter: brightness(1.12);
+}
+
 .adv-forecast__axis {
   display: flex;
   justify-content: space-between;

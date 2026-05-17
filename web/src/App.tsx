@@ -180,6 +180,7 @@ import {
   alertRouteIntersectionMeters,
   polygonApproxCentroid,
   closestAlongMeters,
+  sortWeatherAlertsBySeverity,
 } from "./weatherAlerts/geometryOverlap";
 import { mapGeoJsonFromAlerts } from "./weatherAlerts/mapGeoJsonFromAlerts";
 import {
@@ -2452,6 +2453,24 @@ export default function App() {
     return filterAlertsAffectingRoute(g, stormCorridorAlerts);
   }, [stormCorridorAlerts, nwsMapOverlapRouteGeom]);
 
+  /** Polygons containing GPS — surfaced even when the route line misses the geometry. */
+  const stormNwsPuckInside = useMemo(() => {
+    const p = effectiveUserLngLat;
+    if (!p?.length || !stormCorridorAlerts.length) return [];
+    const [lng, lat] = p;
+    return stormCorridorAlerts.filter(
+      (a) => a.geometry && pointInAnyPolygonGeometry(lng, lat, a.geometry)
+    );
+  }, [effectiveUserLngLat, stormCorridorAlerts]);
+
+  /** Route corridor + at-your-position alerts for advisory timeline and chips. */
+  const nwsAlertsForGuidanceAdvisory = useMemo(() => {
+    const byId = new Map<string, NormalizedWeatherAlert>();
+    for (const a of nwsAlertsAffectingActiveRoute) byId.set(a.id, a);
+    for (const a of stormNwsPuckInside) byId.set(a.id, a);
+    return sortWeatherAlertsBySeverity([...byId.values()]);
+  }, [nwsAlertsAffectingActiveRoute, stormNwsPuckInside]);
+
   const stormMapGeoJsonForMap = useMemo((): GeoJSON.FeatureCollection | undefined => {
     const g = nwsMapOverlapRouteGeom;
     if (!g?.length) return undefined;
@@ -2591,7 +2610,7 @@ export default function App() {
    *  expiration time, which is on the NWS alert and not duplicated on the impact. */
   const advisoryStormStripBands = useMemo(() => {
     const totalM = guidanceRouteLengthM;
-    if (totalM <= 0 || !nwsAlertsAffectingActiveRoute.length) return [] as Array<{
+    if (totalM <= 0 || !nwsAlertsForGuidanceAdvisory.length) return [] as Array<{
       id: string; event: string;
       severity: "info" | "caution" | "serious" | "avoid";
       startMeters: number; endMeters: number;
@@ -2606,13 +2625,14 @@ export default function App() {
       id: string; event: string;
       severity: "info" | "caution" | "serious" | "avoid";
       startMeters: number; endMeters: number;
-      expiresIso: string | null; alertId: string | null;
+      expiresIso: string | null;
+      alertId: string | null;
       crossesRoute: boolean;
     }> = [];
 
     const NEARBY_HALF_M = 8_000; // strip half-width for near-but-not-crossing alerts
 
-    for (const alert of nwsAlertsAffectingActiveRoute) {
+    for (const alert of nwsAlertsForGuidanceAdvisory) {
       const rawSev = alert.severity ?? "Moderate";
       const sev: "info" | "caution" | "serious" | "avoid" =
         rawSev === "Extreme" ? "avoid"
@@ -2659,7 +2679,12 @@ export default function App() {
     }
 
     return bands;
-  }, [nwsAlertsAffectingActiveRoute, guidanceRouteLengthM, guidanceRoute?.geometry, nwsNavCorridorGeom]);
+  }, [
+    nwsAlertsForGuidanceAdvisory,
+    guidanceRouteLengthM,
+    guidanceRoute?.geometry,
+    nwsNavCorridorGeom,
+  ]);
 
   /**
    * Project unified impacts back to the legacy `RouteAlert` shape so existing surfaces (progress strip,
@@ -3557,33 +3582,18 @@ export default function App() {
   /** Advisory strip always available for Plus life-safety; Basic follows Storm setting. */
   const showStormAdvisoryChrome = advisoryLifeSafetyOn;
 
-  /** NWS polygons containing current position when the route polyline may not register an intersection. */
-  const stormNwsPuckInside = useMemo(() => {
-    const p = effectiveUserLngLat;
-    if (!p?.length || !stormCorridorAlerts.length) return [];
-    const [lng, lat] = p;
-    return stormCorridorAlerts.filter(
-      (a) => a.geometry && pointInAnyPolygonGeometry(lng, lat, a.geometry)
-    );
-  }, [effectiveUserLngLat, stormCorridorAlerts]);
-
   const stormHazardPeekBadge = useMemo(() => {
     if (!advisoryLifeSafetyOn || stormLoading || stormError) return null;
     const ids = new Set<string>();
     /* Route-crossing alerts (polygons on your planned route) — shown when Plus detail is on
      * so the badge matches what the advisory panel is actually surfacing. */
-    const routeCrossing = advisoryPlusDetailOn
-      ? nwsAlertsAffectingActiveRoute
-      : nwsAlertsAffectingActiveRoute.filter(nwsAlertIsBasicEmergency);
-    for (const a of routeCrossing) ids.add(a.id);
-    /* Puck-inside alerts — your GPS position is inside these polygons. */
-    const atPuck = advisoryPlusDetailOn
-      ? stormNwsPuckInside
-      : stormNwsPuckInside.filter(nwsAlertIsBasicEmergency);
-    for (const a of atPuck) ids.add(a.id);
+    const forBadge = advisoryPlusDetailOn
+      ? nwsAlertsForGuidanceAdvisory
+      : nwsAlertsForGuidanceAdvisory.filter(nwsAlertIsBasicEmergency);
+    for (const a of forBadge) ids.add(a.id);
     if (ids.size === 0) return null;
     return ids.size;
-  }, [advisoryLifeSafetyOn, advisoryPlusDetailOn, stormLoading, stormError, nwsAlertsAffectingActiveRoute, stormNwsPuckInside]);
+  }, [advisoryLifeSafetyOn, advisoryPlusDetailOn, stormLoading, stormError, nwsAlertsForGuidanceAdvisory]);
 
   /** Matches map: planning uses A/B/C preview; after Go the active leg reads as primary blue. */
   const progressStripRouteColor = useMemo(() => {
@@ -3896,27 +3906,6 @@ export default function App() {
   const flushMapFocus = useCallback(() => {
     setMapFocus(null);
   }, []);
-
-  const focusMapOnRouteAlert = useCallback(
-    (alert: RouteAlert) => {
-      if (viewMode === "drive") setViewMode("topdown");
-      if (alert.polygonBounds) {
-        setMapFocus({
-          kind: "polygonFit",
-          sw: alert.polygonBounds[0],
-          ne: alert.polygonBounds[1],
-        });
-      } else {
-        setMapFocus({
-          kind: "hazardEvent",
-          hazardLng: alert.lngLat[0]!,
-          hazardLat: alert.lngLat[1]!,
-          zoom: alert.zoom,
-        });
-      }
-    },
-    [viewMode]
-  );
 
   /** Close hazard sheet + advisory panel, then run (helps WKWebView apply view/focus changes). */
   const runAfterHazardSheetAction = useCallback(
@@ -4552,10 +4541,8 @@ export default function App() {
                       corridorAlerts={stormCorridorAlerts}
                       overlappingAlerts={
                         advisoryPlusDetailOn
-                          ? nwsAlertsAffectingActiveRoute
-                          : (navigationStarted ? nwsAlertsAffectingActiveRoute : stormOverlapping).filter(
-                              nwsAlertIsBasicEmergency
-                            )
+                          ? nwsAlertsForGuidanceAdvisory
+                          : nwsAlertsForGuidanceAdvisory.filter(nwsAlertIsBasicEmergency)
                       }
                       nwsAtLocationAlerts={
                         advisoryPlusDetailOn
@@ -4778,69 +4765,60 @@ export default function App() {
             )}
           </div>
 
-        {routeHazardSheet && (
-          <RouteHazardSheet
-            open
-            routeId={routeHazardSheet.routeId}
-            focusedRouteId={lineFocusId}
-            alerts={routeHazardSheet.alerts}
-            alternateRouteAvailable={Boolean(
-              alternateBypassRouteId ||
-                (routeHazardSheet.alerts[0]?.corridorKind === "weather" &&
-                  isPlus &&
-                  env.mapboxToken &&
-                  userLngLat &&
-                  destLngLat)
-            )}
-            bypassCompareAvailable={Boolean(
-              env.mapboxToken && userLngLat && destLngLat && guidanceRoute
-            )}
-            bypassBusy={bypassBusy}
-            onClose={() => setRouteHazardSheet(null)}
-            onTryAlternateRoute={() => {
-              const primary = routeHazardSheet.alerts[0];
-              runAfterHazardSheetAction(() => {
-                if (primary) focusMapOnRouteAlert(primary);
-                if (primary?.corridorKind === "weather" && destLngLat && isPlus && userLngLat && env.mapboxToken) {
-                  if (alternateBypassRouteId) {
+        {routeHazardSheet && (() => {
+          const primary = routeHazardSheet.alerts[0];
+          const primaryIsTraffic =
+            primary != null &&
+            (primary.id === "traffic" ||
+              primary.id === "traffic-delay" ||
+              /traffic|stopped|closure|jam/i.test(primary.title ?? ""));
+          const canTryAlternate = Boolean(
+            alternateBypassRouteId ||
+              (primary?.corridorKind === "weather" &&
+                isPlus &&
+                env.mapboxToken &&
+                userLngLat &&
+                destLngLat) ||
+              (primaryIsTraffic && env.mapboxToken && userLngLat && destLngLat && guidanceRoute)
+          );
+          return (
+            <RouteHazardSheet
+              open
+              alerts={routeHazardSheet.alerts}
+              alternateRouteAvailable={canTryAlternate}
+              bypassBusy={bypassBusy}
+              onClose={() => setRouteHazardSheet(null)}
+              onTryAlternateRoute={() => {
+                runAfterHazardSheetAction(() => {
+                  if (primaryIsTraffic && env.mapboxToken && userLngLat && destLngLat && guidanceRoute) {
+                    void handleTrafficBypassFromHere();
+                    return;
+                  }
+                  if (
+                    primary?.corridorKind === "weather" &&
+                    destLngLat &&
+                    isPlus &&
+                    userLngLat &&
+                    env.mapboxToken
+                  ) {
+                    if (alternateBypassRouteId) {
+                      handleTryAlternateRoute();
+                    } else {
+                      void computeRoutes(destLngLat, destinationLabel.trim() || "Destination", {
+                        preserveNavigation: true,
+                      });
+                    }
+                  } else if (alternateBypassRouteId) {
                     handleTryAlternateRoute();
                   } else {
-                    void computeRoutes(destLngLat, destinationLabel.trim() || "Destination", {
-                      preserveNavigation: true,
-                    });
+                    setTapHint("No other route loaded — replan from your destination to see alternates.");
+                    window.setTimeout(() => setTapHint(null), 5500);
                   }
-                } else if (alternateBypassRouteId) {
-                  handleTryAlternateRoute();
-                } else {
-                  setTapHint("No other route loaded — open Rt view or replan from your destination.");
-                  window.setTimeout(() => setTapHint(null), 5500);
-                }
-                setViewMode("route");
-                setFitTrigger((n) => n + 1);
-              });
-            }}
-            onCompareReroutes={() => {
-              runAfterHazardSheetAction(() => {
-                void handleTrafficBypassFromHere();
-              });
-            }}
-            onOpenRouteView={() => {
-              runAfterHazardSheetAction(() => {
-                setViewMode("route");
-                setFitTrigger((n) => n + 1);
-              });
-            }}
-            onShowOnMap={(alert) => {
-              runAfterHazardSheetAction(() => {
-                focusMapOnRouteAlert(alert);
-              });
-            }}
-            onSelectThisRoute={(id) => {
-              handlePromoteRouteToPrimary(id);
-              setRouteHazardSheet(null);
-            }}
-          />
-        )}
+                });
+              }}
+            />
+          );
+        })()}
 
         <SavedDestinationsDrawer
           open={savedDrawerOpen}

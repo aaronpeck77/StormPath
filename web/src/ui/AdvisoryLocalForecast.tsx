@@ -2,6 +2,8 @@ import { useMemo } from "react";
 import type { CurrentNowcast } from "../services/openWeatherClient";
 import { formatNowcastLine } from "../services/openWeatherClient";
 import type { MinutePrecipForecast } from "../services/tomorrowIo";
+import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
+import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
 import {
   formatForecastUpdatedAt,
   formatMinutePrecipNowLine,
@@ -37,10 +39,19 @@ type Props = {
   areaLabel: string;
   nowcast?: CurrentNowcast | null;
   minutePrecip?: MinutePrecipForecast | null;
+  /** NWS polygons containing your current position. */
+  locationAlerts?: NormalizedWeatherAlert[];
+  onLocationAlertClick?: (alert: NormalizedWeatherAlert) => void;
 };
 
 /** Local weather in the expanded advisory bar — area, update time, now + next hour. */
-export function AdvisoryLocalForecast({ areaLabel, nowcast, minutePrecip }: Props) {
+export function AdvisoryLocalForecast({
+  areaLabel,
+  nowcast,
+  minutePrecip,
+  locationAlerts = [],
+  onLocationAlertClick,
+}: Props) {
   const nowLine = nowcast
     ? formatNowcastLine(nowcast)
     : minutePrecip?.now
@@ -48,7 +59,8 @@ export function AdvisoryLocalForecast({ areaLabel, nowcast, minutePrecip }: Prop
       : null;
   const hasNow = Boolean(nowLine);
   const hasHour = Boolean(minutePrecip?.minutes.length);
-  if (!hasNow && !hasHour) return null;
+  const hasNws = locationAlerts.length > 0;
+  if (!hasNow && !hasHour && !hasNws) return null;
   const hourSummary = minutePrecip ? minutePrecipSummary(minutePrecip) : null;
   const metaUpdated = useMemo(() => {
     const ms = latestForecastFetchedAtMs(nowcast?.fetchedAtMs, minutePrecip?.fetchedAt);
@@ -76,6 +88,37 @@ export function AdvisoryLocalForecast({ areaLabel, nowcast, minutePrecip }: Prop
         </div>
         {metaUpdated ? <span className="adv-forecast__updated">{metaUpdated}</span> : null}
       </header>
+
+      {hasNws ? (
+        <div className="adv-forecast__block adv-forecast__block--nws">
+          <div className="adv-forecast__block-head">
+            <span className="adv-forecast__block-label">Active NWS alerts</span>
+            <span className="adv-forecast__block-meta">At your position · NWS</span>
+          </div>
+          <ul className="adv-forecast__nws-list" role="list">
+            {locationAlerts.map((a) => {
+              const summary = nwsGlanceSummary(a);
+              const label = a.event?.trim() || "Weather alert";
+              const body = summary ? `${label} — ${summary}` : label;
+              return (
+                <li key={a.id}>
+                  {onLocationAlertClick ? (
+                    <button
+                      type="button"
+                      className="adv-forecast__nws-row"
+                      onClick={() => onLocationAlertClick(a)}
+                    >
+                      {body}
+                    </button>
+                  ) : (
+                    <p className="adv-forecast__nws-row adv-forecast__nws-row--static">{body}</p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
 
       {hasNow && nowLine ? (
         <div className="adv-forecast__block">

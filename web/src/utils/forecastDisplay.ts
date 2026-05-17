@@ -1,4 +1,5 @@
 import type { MinutePrecipForecast, MinutePrecipNowSnapshot } from "../services/tomorrowIo";
+import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 
 /** Short place label for forecast headers (Mapbox `place_name` is often a full address). */
 export function shortenPlaceNameForForecast(placeName: string): string {
@@ -80,18 +81,31 @@ export type LocalForecastBannerItem = {
   localMeta: { area: string; updated: string | null };
 };
 
+/** One-line NWS hint for the collapsed Local rotator slot. */
+export function nwsAtLocationBannerHint(alerts: NormalizedWeatherAlert[]): string | null {
+  if (!alerts.length) return null;
+  const top = alerts[0]!;
+  const ev = top.event?.trim() || "Weather alert";
+  if (alerts.length === 1) return `${ev} · at your location`;
+  return `${ev} +${alerts.length - 1} more · at your location`;
+}
+
 /** Single rotator slot: local area + freshness + compact conditions (banner only). */
 export function buildLocalForecastBannerItem(opts: {
   areaLabel: string;
   nowcastLine: string | null;
   minutePrecip?: MinutePrecipForecast | null;
   fetchedAtMs: number | null;
+  /** Active NWS polygons at your GPS (shown after conditions). */
+  nwsAtLocation?: NormalizedWeatherAlert[] | null;
 }): LocalForecastBannerItem | null {
   const parts: string[] = [];
   if (opts.nowcastLine) parts.push(truncateBannerText(opts.nowcastLine, 48));
   if (opts.minutePrecip?.minutes.length) {
     parts.push(minutePrecipBannerHint(opts.minutePrecip));
   }
+  const nwsLine = opts.nwsAtLocation?.length ? nwsAtLocationBannerHint(opts.nwsAtLocation) : null;
+  if (nwsLine) parts.push(truncateBannerText(nwsLine, 52));
   if (!parts.length) return null;
   return {
     badge: "Local",
