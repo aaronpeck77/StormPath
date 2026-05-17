@@ -599,7 +599,7 @@ type Props = {
    * segment far ahead of the user's real position.
    */
   snapSeedMeters?: number | null;
-  /** Colored road traffic (Mapbox traffic-v1); mirrors Hazards → Road & traffic checkbox. Default off. */
+  /** Colored road traffic (Mapbox traffic-v1); mirrors Hazards → Road & traffic checkbox. */
   trafficConditionsOnMap?: boolean;
   /** Drive mode: live map bearing (degrees) for a north-fixed compass in the chrome. */
   onDriveCameraBearingDeg?: (deg: number | null) => void;

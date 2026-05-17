@@ -117,6 +117,21 @@ import {
 import type { TrafficOverlay, WeatherOverlay } from "./situation/fusedSnapshot";
 import type { MapFocusRequest, MapViewMode } from "./ui/driveMapTypes";
 import { STORMPATH_CLIENT_BUILD } from "./buildStamp";
+import {
+  applyLayerStartupMigrations,
+  readNwsSessionOn,
+  readRadarOverlayOn,
+  readRadarSettingOn,
+  readRoadAdvisoryDetailOn,
+  readStormSettingOn,
+  readTrafficSettingOn,
+  writeNwsSessionOn,
+  writeRadarOverlayOn,
+  writeRadarSettingOn,
+  writeRoadAdvisoryDetailOn,
+  writeStormSettingOn,
+  writeTrafficSettingOn,
+} from "./layerStartupPrefs";
 
 const DriveMap = lazy(() => import("./ui/DriveMap"));
 import { SearchBar } from "./ui/SearchBar";
@@ -258,32 +273,6 @@ const MAPBOX_LINE_SNAP_COOLDOWN_MS = 45_000;
 /** Best-effort cap for IndexedDB writes while still capturing route refreshes. */
 const TRIP_CACHE_MIN_SAVE_INTERVAL_MS = 20_000;
 
-/** v2: first visit — radar overlay + road/traffic strip off. */
-const LAYER_DEFAULTS_MIGRATION_KEY = "stormpath-layer-defaults-v2";
-/** v3: v2 skipped after first run, but some profiles still had `stormpath-radar-overlay-on` stuck at "1" — force off once. */
-const RADAR_OVERLAY_DEFAULT_V3_KEY = "stormpath-radar-overlay-default-v3";
-/** v4: weather-first redesign — radar on by default for all users. */
-const RADAR_OVERLAY_DEFAULT_V4_KEY = "stormpath-radar-overlay-default-v4";
-
-function applyStormLayerStorageMigrations(): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (localStorage.getItem(LAYER_DEFAULTS_MIGRATION_KEY) !== "1") {
-      localStorage.setItem("stormpath-road-advisory-detail", "0");
-      localStorage.setItem(LAYER_DEFAULTS_MIGRATION_KEY, "1");
-    }
-    // v3 forced radar off once — superseded by v4.
-    if (localStorage.getItem(RADAR_OVERLAY_DEFAULT_V4_KEY) !== "1") {
-      // Weather-first: turn radar on for all existing users on first run of this version.
-      localStorage.setItem("stormpath-radar-overlay-on", "1");
-      localStorage.setItem(RADAR_OVERLAY_DEFAULT_V3_KEY, "1");
-      localStorage.setItem(RADAR_OVERLAY_DEFAULT_V4_KEY, "1");
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
 function isNarrowPhoneViewport(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(max-width: 520px)").matches;
 }
@@ -312,7 +301,7 @@ function formatDistanceShort(meters: number | null, useMiles: boolean): string {
 }
 
 export default function App() {
-  applyStormLayerStorageMigrations();
+  applyLayerStartupMigrations();
   const env = useMemo(() => getWebEnv(), []);
   /** Demo tools (mock banner, mock close hazard, mock compare) are dev-only. The `?demo=bypass`
    *  URL flag still has to be present, but we additionally hard-gate on `import.meta.env.DEV` so
@@ -453,54 +442,19 @@ export default function App() {
   const [recordedEndLabel, setRecordedEndLabel] = useState("Recorded destination");
   const [recordedStartLabel, setRecordedStartLabel] = useState("Start of path");
 
-  const [stormSessionOn, setStormSessionOn] = useState(() => {
-    try {
-      const v = localStorage.getItem("storm-advisory-session");
-      if (v === "off") return false;
-    } catch {
-      /* ignore */
-    }
-    return true;
-  });
+  const [stormSessionOn, setStormSessionOn] = useState(readNwsSessionOn);
 
   /** Never persisted — each route session starts closed; cleared when the plan changes or the trip is stopped. */
   const [progressCalloutsOpen, setProgressCalloutsOpen] = useState(false);
   const progressCalloutTrackRef = useRef<HTMLDivElement | null>(null);
   const progressCalloutWasOpenRef = useRef(false);
 
-  /** Road & traffic overlay: default off when unset (turn on from strip or Hazard panel). */
-  const [roadAdvisoryDetailOn, setRoadAdvisoryDetailOn] = useState(() => {
-    try {
-      const v = localStorage.getItem("stormpath-road-advisory-detail");
-      if (v === "0") return false;
-      if (v === "1") return true;
-    } catch {
-      /* ignore */
-    }
-    return false;
-  });
+  /** Road & traffic overlay (Hazards strip + map traffic colors). Default on until user turns off. */
+  const [roadAdvisoryDetailOn, setRoadAdvisoryDetailOn] = useState(readRoadAdvisoryDetailOn);
 
   // Settings (persisted): toggles that actually reduce background API calls.
-  const [settingStormEnabled, setSettingStormEnabled] = useState(() => {
-    try {
-      const v = localStorage.getItem("stormpath-setting-storm-enabled");
-      if (v === "0" || v === "false") return false;
-      if (v === "1" || v === "true") return true;
-    } catch {
-      /* ignore */
-    }
-    return true;
-  });
-  const [settingTrafficEnabled, setSettingTrafficEnabled] = useState(() => {
-    try {
-      const v = localStorage.getItem("stormpath-setting-traffic-enabled");
-      if (v === "0" || v === "false") return false;
-      if (v === "1" || v === "true") return true;
-    } catch {
-      /* ignore */
-    }
-    return false;
-  });
+  const [settingStormEnabled, setSettingStormEnabled] = useState(readStormSettingOn);
+  const [settingTrafficEnabled, setSettingTrafficEnabled] = useState(readTrafficSettingOn);
   const [settingWeatherHintsEnabled, setSettingWeatherHintsEnabled] = useState(() => {
     try {
       const v = localStorage.getItem("stormpath-setting-weather-hints-enabled");
@@ -521,16 +475,7 @@ export default function App() {
     }
     return true;
   });
-  const [settingRadarEnabled, setSettingRadarEnabled] = useState(() => {
-    try {
-      const v = localStorage.getItem("stormpath-setting-radar-enabled");
-      if (v === "0" || v === "false") return false;
-      if (v === "1" || v === "true") return true;
-    } catch {
-      /* ignore */
-    }
-    return true;
-  });
+  const [settingRadarEnabled, setSettingRadarEnabled] = useState(readRadarSettingOn);
   const [settingVoiceGuidanceEnabled, setSettingVoiceGuidanceEnabled] = useState(() => {
     try {
       const v = localStorage.getItem("stormpath-setting-voice-guided");
@@ -700,22 +645,9 @@ export default function App() {
     alerts: RouteAlert[];
   } | null>(null);
   /** Map overlay (toolbar Rad). Default ON — weather-first app design. */
-  const [showRadar, setShowRadar] = useState(() => {
-    try {
-      const o = localStorage.getItem("stormpath-radar-overlay-on");
-      if (o === "0" || o === "false") return false;
-      if (o === "1" || o === "true") return true;
-    } catch {
-      /* ignore */
-    }
-    return true; // default ON
-  });
+  const [showRadar, setShowRadar] = useState(readRadarOverlayOn);
   useEffect(() => {
-    try {
-      localStorage.setItem("stormpath-radar-overlay-on", showRadar ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
+    writeRadarOverlayOn(showRadar);
   }, [showRadar]);
   /** Radar visible in all modes except drive (too distracting at street level). */
   const radarMapOverlayOn = showRadar && !driveModeUi;
@@ -3098,20 +3030,12 @@ export default function App() {
 
   const onStormSessionToggle = useCallback((on: boolean) => {
     setStormSessionOn(on);
-    try {
-      localStorage.setItem("storm-advisory-session", on ? "on" : "off");
-    } catch {
-      /* ignore */
-    }
+    writeNwsSessionOn(on);
   }, []);
 
   const onRoadAdvisoryDetailToggle = useCallback((on: boolean) => {
     setRoadAdvisoryDetailOn(on);
-    try {
-      localStorage.setItem("stormpath-road-advisory-detail", on ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
+    writeRoadAdvisoryDetailOn(on);
   }, []);
 
   const onStormBarExpandedChange = useCallback((expanded: boolean) => {
@@ -3125,11 +3049,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    try {
-      localStorage.setItem("stormpath-setting-storm-enabled", settingStormEnabled ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
+    writeStormSettingOn(settingStormEnabled);
     if (!settingStormEnabled) {
       // Ensure we stop storm polling immediately.
       stormMapHasDisplayableRef.current = false;
@@ -3148,11 +3068,7 @@ export default function App() {
   }, [settingStormEnabled]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem("stormpath-setting-traffic-enabled", settingTrafficEnabled ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
+    writeTrafficSettingOn(settingTrafficEnabled);
     if (!settingTrafficEnabled) setTrafficOverlay(undefined);
   }, [settingTrafficEnabled]);
 
@@ -3174,12 +3090,11 @@ export default function App() {
   }, [settingAutoRerouteEnabled]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem("stormpath-setting-radar-enabled", settingRadarEnabled ? "1" : "0");
-    } catch {
-      /* ignore */
+    writeRadarSettingOn(settingRadarEnabled);
+    if (!settingRadarEnabled) {
+      setShowRadar(false);
+      writeRadarOverlayOn(false);
     }
-    if (!settingRadarEnabled) setShowRadar(false);
   }, [settingRadarEnabled]);
 
   useEffect(() => {
@@ -3725,7 +3640,6 @@ export default function App() {
     seriousHazardAutoFlewRef.current.clear();
     resetNavigationPlanning();
     setViewMode("route");
-    setShowRadar(false);
     setRouteHazardSheet(null);
     setMapFocus(null);
     setBypassBusy(false);
@@ -4525,8 +4439,7 @@ export default function App() {
                 : null
             }
             trafficConditionsOnMap={Boolean(
-              navigationStarted &&
-                isPlus &&
+              isPlus &&
                 roadAdvisoryDetailOn &&
                 settingTrafficEnabled &&
                 Boolean(env.mapboxToken)
@@ -5304,8 +5217,15 @@ export default function App() {
         }}
         onSettings={(next) => {
           setSettingRadarEnabled(next.radarEnabled);
+          writeRadarSettingOn(next.radarEnabled);
+          if (!next.radarEnabled) {
+            setShowRadar(false);
+            writeRadarOverlayOn(false);
+          }
           setSettingStormEnabled(next.stormEnabled);
+          writeStormSettingOn(next.stormEnabled);
           setSettingTrafficEnabled(next.trafficEnabled);
+          writeTrafficSettingOn(next.trafficEnabled);
           setSettingWeatherHintsEnabled(next.weatherHintsEnabled);
           setSettingAutoRerouteEnabled(next.autoRerouteEnabled);
           setSettingVoiceGuidanceEnabled(next.voiceGuidanceEnabled);
