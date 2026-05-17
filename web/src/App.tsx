@@ -2331,12 +2331,19 @@ export default function App() {
     guidanceRoute?.geometry
   );
 
-  // ── Tomorrow.io (only while weather UI is open — free tier ~25 req/hr) ───────
+  // ── Tomorrow.io (free tier ~25 req/hr) — always at your position when browsing without a route ──
   const tioApiKey = env.tomorrowIoApiKey;
+  const hasPlannedRoute = Boolean(
+    destLngLat && plan.routes.some((r) => r.geometry && r.geometry.length >= 2)
+  );
   const tioFetchEnabled =
     isPlus &&
     Boolean(tioApiKey) &&
-    (stormBarExpanded || corridorForecastOpen || navigationStarted);
+    Boolean(effectiveUserLngLat) &&
+    (!hasPlannedRoute ||
+      stormBarExpanded ||
+      corridorForecastOpen ||
+      navigationStarted);
   const tioMinutePrecip = useTomorrowMinutePrecip(
     tioApiKey,
     effectiveUserLngLat ?? null,

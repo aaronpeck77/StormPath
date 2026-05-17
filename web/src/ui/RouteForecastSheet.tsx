@@ -114,11 +114,19 @@ export function RouteForecastSheet({
         <header className="cfs-sheet__header">
           <div>
             <h2 id="cfs-title" className="cfs-sheet__title">
-              Corridor forecast
+              {hasTrip ? "Corridor forecast" : "Local forecast"}
             </h2>
             <p className="cfs-sheet__subtitle">
-              Weather along <strong>{originLabel}</strong> → <strong>{destinationLabel || "destination"}</strong>
-              {navigationStarted ? " · navigating" : hasTrip ? " · planned route" : ""}
+              {hasTrip ? (
+                <>
+                  Weather along <strong>{originLabel}</strong> → <strong>{destinationLabel || "destination"}</strong>
+                  {navigationStarted ? " · navigating" : " · planned route"}
+                </>
+              ) : (
+                <>
+                  At <strong>{originLabel}</strong> — set a destination for weather along your drive
+                </>
+              )}
             </p>
           </div>
           <button type="button" className="cfs-sheet__close" onClick={onClose} aria-label="Close corridor forecast">

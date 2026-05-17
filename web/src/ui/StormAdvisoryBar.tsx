@@ -881,7 +881,7 @@ export function StormAdvisoryBar({
             )}
           </div>
         </div>
-        {onOpenCorridorForecast && !basicNavAdvisoryMode && hasGuidanceRoute ? (
+        {onOpenCorridorForecast && !basicNavAdvisoryMode && forecastAreaLabel ? (
           <button
             type="button"
             className="storm-advisory-bar__forecast-btn"
@@ -892,7 +892,7 @@ export function StormAdvisoryBar({
               onOpenCorridorForecast();
             }}
           >
-            Route forecast
+            {hasGuidanceRoute ? "Route forecast" : "Local forecast"}
           </button>
         ) : null}
         {!hideHeadToggles && (
@@ -1091,9 +1091,18 @@ export function StormAdvisoryBar({
                 </p>
               )}
 
-              {!hasNow && !hasWeather && !hasRoads && !hasSuggestion && !loading && (
+              {!hasNow &&
+                !hasWeather &&
+                !hasRoads &&
+                !hasSuggestion &&
+                !loading &&
+                !(forecastAreaLabel && (currentNowcast || minutePrecipForecast)) && (
                 <p className="storm-advisory-bar__muted storm-advisory-bar__section-status">
-                  No advisories on your route right now.
+                  {hasGuidanceRoute
+                    ? "No advisories on your route right now."
+                    : forecastAreaLabel
+                      ? "Local weather is shown above. Set a destination for route hazards and corridor forecast."
+                      : "Allow location to see weather at your position."}
                 </p>
               )}
             </div>
