@@ -12,6 +12,7 @@ import {
   RAINVIEWER_ANIMATION_DWELL_MS,
   tileUrlFromHostAndPath,
 } from "../services/rainViewerRadar";
+import { isRainViewerRateLimited } from "../services/rainViewerTileFetch";
 import {
   applyRouteConditionHighlights,
   applyRoutesToMap,
@@ -2050,6 +2051,7 @@ export function DriveMap({
 
     const run = async () => {
       try {
+        if (isRainViewerRateLimited()) return;
         if (!map.isStyleLoaded()) return;
         const b = map.getBounds();
         if (!b) return;
@@ -2372,9 +2374,9 @@ export function DriveMap({
         /* Prime bench side after source A has had time to load — avoids the startup
          * burst where both sources request tiles simultaneously and hit RainViewer's
          * rate limit.  1.5 s is enough for A tiles to arrive before B starts. */
-        if (cells.length > 1) {
+        if (cells.length > 1 && !isRainViewerRateLimited()) {
           const nextUrl = tileUrlFromHostAndPath(host, cells[1]!.path);
-          await sleep(1500);
+          await sleep(3000);
           if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
           setRainViewerRadarTilesOnSource(map, "b", nextUrl);
         }
@@ -2383,6 +2385,7 @@ export function DriveMap({
           !cancelled &&
           loopGen === radarLoopGeneration &&
           cells.length > 1 &&
+          !isRainViewerRateLimited() &&
           mapRef.current === map
         ) {
           /* Show the current frame for its full dwell; bench is loading in parallel. */
@@ -2407,9 +2410,11 @@ export function DriveMap({
            * and trigger RainViewer rate-limits. */
           const nextIdx = (idx + 1) % cells.length;
           const nextUrl = tileUrlFromHostAndPath(host, cells[nextIdx]!.path);
-          await sleep(400);
+          await sleep(1200);
           if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
-          void prewarmFrame(incoming === "a" ? "b" : "a", nextUrl);
+          if (!isRainViewerRateLimited()) {
+            void prewarmFrame(incoming === "a" ? "b" : "a", nextUrl);
+          }
         }
       })();
     };
@@ -2449,7 +2454,9 @@ export function DriveMap({
       bringMapboxTrafficLayersToFront(map);
       liftRouteHits();
       onRadarFrameUtcSecRef.current?.(cells[0]!.time);
-      if (cells.length > 1) runRadarFrameLoop(myGen, host, cells);
+      if (cells.length > 1 && !isRainViewerRateLimited()) {
+        runRadarFrameLoop(myGen, host, cells.slice(-2));
+      }
     };
 
     void loadManifest();

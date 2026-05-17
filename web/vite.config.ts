@@ -32,13 +32,25 @@ export default defineConfig({
     /** Always use this port. If dev “moves” to 5174/5175, another process was still bound to 5173. */
     port: 5173,
     strictPort: true,
-    /* Same-origin NWS fetches in dev (avoids CORS when testing from phone on LAN). */
+    /* Same-origin proxies in dev (NWS + RainViewer — avoids CORS / 429 error noise). */
     proxy: {
       "/weather-gov": {
         target: "https://api.weather.gov",
         changeOrigin: true,
         secure: true,
         rewrite: (path) => path.replace(/^\/weather-gov/, ""),
+      },
+      "/rainviewer-api": {
+        target: "https://api.rainviewer.com",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/rainviewer-api/, ""),
+      },
+      "/rainviewer-tiles": {
+        target: "https://tilecache.rainviewer.com",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/rainviewer-tiles/, ""),
       },
     },
   },
@@ -50,6 +62,18 @@ export default defineConfig({
         changeOrigin: true,
         secure: true,
         rewrite: (path) => path.replace(/^\/weather-gov/, ""),
+      },
+      "/rainviewer-api": {
+        target: "https://api.rainviewer.com",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/rainviewer-api/, ""),
+      },
+      "/rainviewer-tiles": {
+        target: "https://tilecache.rainviewer.com",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/rainviewer-tiles/, ""),
       },
     },
   },

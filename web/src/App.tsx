@@ -1560,7 +1560,15 @@ export default function App() {
             }
           }
 
-          if (wantTomorrowCorridor && tioKey && !longTrip && !ac.signal.aborted) {
+          /* One Tomorrow.io call per overlay refresh (primary leg only) — free tier is 25 req/hr. */
+          const primaryRouteId = routes[0]?.id;
+          if (
+            wantTomorrowCorridor &&
+            tioKey &&
+            !longTrip &&
+            !ac.signal.aborted &&
+            r.id === primaryRouteId
+          ) {
             try {
               const wps = buildTimelinesWaypointsForGeometry(r.geometry, driveSpeed);
               if (wps?.length) {
@@ -3238,7 +3246,7 @@ export default function App() {
     if (import.meta.env.DEV) console.log("[NWS] effect: routes=", plan.routes.length, "withGeom=", routeGeoms.length, "hasCorridors=", hasRouteCorridors, "canBrowse=", canBrowseWithoutRoutes);
 
     if (!hasRouteCorridors && !canBrowseWithoutRoutes) {
-      if (import.meta.env.DEV) console.error("[NWS] BLOCKED gate3: no route geom + no GPS");
+      if (import.meta.env.DEV) console.debug("[NWS] skipped: no route yet and no GPS fix");
       stormMapHasDisplayableRef.current = false;
       setStormMapGeoJson(null);
       setStormCorridorAlerts([]);

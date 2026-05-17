@@ -11,9 +11,12 @@
 
 import type { LngLat } from "../nav/types";
 import { pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
+import { enqueueTomorrowIoPost } from "./tomorrowIoClient";
 
 const BASE_URL = "https://api.tomorrow.io/v4/timelines";
 const TIMEOUT_MS = 10_000;
+
+export { isTomorrowIoRateLimited } from "./tomorrowIoClient";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,7 +69,7 @@ export type RouteForecast = {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async function postTimelines(
+async function postTimelinesOnce(
   apiKey: string,
   body: Record<string, unknown>,
   signal?: AbortSignal
@@ -96,6 +99,14 @@ async function postTimelines(
     clearTimeout(timeoutId);
     throw e;
   }
+}
+
+function postTimelines(
+  apiKey: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<unknown> {
+  return enqueueTomorrowIoPost(apiKey, body, (sig) => postTimelinesOnce(apiKey, body, sig ?? signal), signal);
 }
 
 /** Converts Tomorrow.io weatherCode to a short human label. */

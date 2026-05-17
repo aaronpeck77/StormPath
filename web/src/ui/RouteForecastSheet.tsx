@@ -216,7 +216,10 @@ export function RouteForecastSheet({
           <section className="cfs-panel" aria-label="Along your route">
             <h3 className="cfs-panel__h">Along your route</h3>
             {!forecastDataAvailable ? (
-              <p className="cfs-muted">Add a Tomorrow.io API key to load corridor hourly forecast.</p>
+              <p className="cfs-muted">
+                Corridor forecast needs a Tomorrow.io API key in this build. On TestFlight, add{" "}
+                <strong>VITE_TOMORROW_IO_API_KEY</strong> as a GitHub Actions secret and rebuild.
+              </p>
             ) : forecastsLoading && !along.length ? (
               <p className="cfs-muted">Loading corridor forecast…</p>
             ) : along.length === 0 ? (

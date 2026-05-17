@@ -7,6 +7,7 @@ import {
   tileXY,
 } from "../services/radarPolylineIntensity";
 import { fetchRainViewerRadarFrames, tileUrlFromHostAndPath } from "../services/rainViewerRadar";
+import { isRainViewerRateLimited } from "../services/rainViewerTileFetch";
 import { pointAlongPolyline } from "../ui/geometryAlong";
 
 type RadarSample = { t: number; intensity: number };
@@ -39,6 +40,7 @@ export function useRadarBandsAlongRoute(
     let cancelled = false;
 
     const run = async () => {
+      if (isRainViewerRateLimited()) return;
       const k = geomKey;
       lastKeyRef.current = k;
 
@@ -89,7 +91,7 @@ export function useRadarBandsAlongRoute(
     };
 
     void run();
-    const id = window.setInterval(run, 180_000);
+    const id = window.setInterval(run, 300_000);
     return () => {
       cancelled = true;
       window.clearInterval(id);

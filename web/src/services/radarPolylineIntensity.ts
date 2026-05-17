@@ -1,5 +1,6 @@
 import type { LngLat } from "../nav/types";
 import { pointAlongPolyline } from "../ui/geometryAlong";
+import { fetchRadarTileRgba } from "./rainViewerTileFetch";
 
 export const RADAR_MOSAIC_SAMPLE_ZOOM = 7;
 
@@ -60,24 +61,7 @@ export function tileXY(lng: number, lat: number, z: number): { x: number; y: num
   return { x, y, px, py };
 }
 
-export async function fetchRadarTileRgba(url: string): Promise<Uint8ClampedArray | null> {
-  try {
-    const res = await fetch(url, { mode: "cors" });
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    const bmp = await createImageBitmap(blob);
-    const canvas = document.createElement("canvas");
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return null;
-    ctx.drawImage(bmp, 0, 0);
-    const img = ctx.getImageData(0, 0, 256, 256);
-    return img.data;
-  } catch {
-    return null;
-  }
-}
+export { fetchRadarTileRgba, isRainViewerRateLimited } from "./rainViewerTileFetch";
 
 /** Maximum mosaic echo intensity along `geometry` using RainViewer tile URLs (`{z}/{x}/{y}` placeholders). */
 export async function sampleRadarMosaicMaxAlongPolyline(

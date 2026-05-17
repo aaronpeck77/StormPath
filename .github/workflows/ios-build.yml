@@ -13,6 +13,7 @@
 #   APP_STORE_CONNECT_API_KEY_ID        Key ID from App Store Connect → Keys
 #   APP_STORE_CONNECT_ISSUER_ID         Issuer ID from the same page
 #   APP_STORE_CONNECT_API_KEY_CONTENT   The .p8 file: paste full PEM *or* base64 of the file
+#   VITE_TOMORROW_IO_API_KEY            Tomorrow.io key (baked into the web bundle at build time)
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: iOS Build & TestFlight
@@ -57,12 +58,14 @@ jobs:
         working-directory: web
         env:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
+          VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
 
       - name: Build web app
         run: npx vite build
         working-directory: web
         env:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
+          VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
 
       # ── 5. Sync web assets into the Xcode project ────────────────────────────
       - name: Capacitor sync

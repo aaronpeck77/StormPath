@@ -12,6 +12,7 @@ import {
   tileXY,
 } from "./radarPolylineIntensity";
 import { tileUrlFromHostAndPath } from "./rainViewerRadar";
+import { isRainViewerRateLimited } from "./rainViewerTileFetch";
 
 export type MapBounds = { west: number; south: number; east: number; north: number };
 
@@ -319,7 +320,7 @@ export async function computeRadarStormMotions(
   frameNewer: { path: string; time: number },
   opts?: { referenceLngLat?: LngLat | null; signal?: AbortSignal }
 ): Promise<RadarStormMotion[]> {
-  tileRgbaCache.clear();
+  if (isRainViewerRateLimited()) return [];
   const bounds = clampBounds(boundsIn);
   const dtSec = Math.max(120, frameNewer.time - frameOlder.time);
   if (dtSec <= 0) return [];

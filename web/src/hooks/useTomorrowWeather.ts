@@ -14,6 +14,7 @@ import {
   buildTimelinesWaypointsForGeometry,
   fetchMinutePrecip,
   fetchRouteForecast,
+  isTomorrowIoRateLimited,
   type MinutePrecipForecast,
   type RouteForecast,
 } from "../services/tomorrowIo";
@@ -51,7 +52,7 @@ export function useTomorrowMinutePrecip(
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!apiKey || !userLngLat) return;
+    if (!apiKey || !userLngLat || isTomorrowIoRateLimited()) return;
 
     const now = Date.now();
     const lastLng = lastFetchLngLat.current;
@@ -132,7 +133,7 @@ export function useTomorrowRouteForecast(
   }, [routeGeometry]);
 
   useEffect(() => {
-    if (!apiKey || !waypoints) {
+    if (!apiKey || !waypoints || isTomorrowIoRateLimited()) {
       setForecast(null);
       return;
     }

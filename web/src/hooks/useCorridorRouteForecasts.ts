@@ -4,6 +4,7 @@ import { polylineLengthMeters } from "../nav/routeGeometry";
 import {
   buildTimelinesWaypointsForGeometry,
   fetchRouteForecast,
+  isTomorrowIoRateLimited,
   type RouteForecast,
 } from "../services/tomorrowIo";
 
@@ -52,25 +53,24 @@ export function useCorridorRouteForecasts(
 
     void (async () => {
       const next: Record<string, RouteForecast | null> = {};
-      await Promise.all(
-        legsRef.current.map(async (leg) => {
-          if (cancelled) return;
-          if (leg.geometry.length < 2 || polylineLengthMeters(leg.geometry) < 1000) {
-            next[leg.routeId] = null;
-            return;
-          }
-          const wps = buildTimelinesWaypointsForGeometry(leg.geometry, speedMps);
-          if (!wps?.length) {
-            next[leg.routeId] = null;
-            return;
-          }
-          try {
-            next[leg.routeId] = await fetchRouteForecast(apiKey, wps, ac.signal);
-          } catch {
-            next[leg.routeId] = null;
-          }
-        })
-      );
+      for (const leg of legsRef.current) {
+        if (cancelled || ac.signal.aborted) break;
+        if (isTomorrowIoRateLimited()) break;
+        if (leg.geometry.length < 2 || polylineLengthMeters(leg.geometry) < 1000) {
+          next[leg.routeId] = null;
+          continue;
+        }
+        const wps = buildTimelinesWaypointsForGeometry(leg.geometry, speedMps);
+        if (!wps?.length) {
+          next[leg.routeId] = null;
+          continue;
+        }
+        try {
+          next[leg.routeId] = await fetchRouteForecast(apiKey, wps, ac.signal);
+        } catch {
+          next[leg.routeId] = null;
+        }
+      }
       if (!cancelled) {
         setForecastsByLegId(next);
         setLoading(false);

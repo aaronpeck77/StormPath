@@ -3,7 +3,12 @@
  * @see https://www.rainviewer.com/api.html
  * @see https://www.rainviewer.com/api/weather-maps-api.html (max zoom 7 — higher z returns error tiles)
  */
-const MANIFEST = "https://api.rainviewer.com/public/weather-maps.json";
+const MANIFEST = import.meta.env.DEV
+  ? "/rainviewer-api/public/weather-maps.json"
+  : "https://api.rainviewer.com/public/weather-maps.json";
+
+const TILE_CACHE_ORIGIN = "https://tilecache.rainviewer.com";
+const DEV_TILE_PREFIX = "/rainviewer-tiles";
 
 /** RainViewer only serves z=0..7; Mapbox must overzoom above that or tiles show “zoom level not supported”. */
 export const RAINVIEWER_RADAR_MAX_ZOOM = 7;
@@ -16,7 +21,8 @@ export const RAINVIEWER_LOOP_PAST_WINDOW_SEC = 30 * 60;
  * With only ~3 frames per 30-min window, the long crossfade IS the animation —
  * radar appears to flow continuously rather than snap between snapshots.
  */
-export const RAINVIEWER_ANIMATION_DWELL_MS = 100;
+/** Pause on each frame before blending — keeps tile request rate under RainViewer limits. */
+export const RAINVIEWER_ANIMATION_DWELL_MS = 2800;
 
 type Manifest = {
   host?: string;
@@ -47,9 +53,18 @@ function normalizeHost(h: string): string {
   return h.replace(/\/$/, "");
 }
 
+/** Same-origin tile URLs in Vite dev (avoids CORS noise when RainViewer throttles). */
+export function rainViewerHostForTiles(host: string): string {
+  const h = normalizeHost(host);
+  if (import.meta.env.DEV && h.startsWith(TILE_CACHE_ORIGIN)) {
+    return DEV_TILE_PREFIX;
+  }
+  return h;
+}
+
 /** Full tile URL template for Mapbox raster source. */
 export function tileUrlFromHostAndPath(host: string, path: string): string {
-  return `${normalizeHost(host)}${path}/256/{z}/{x}/{y}/2/1_1.png`;
+  return `${rainViewerHostForTiles(host)}${path}/256/{z}/{x}/{y}/2/1_1.png`;
 }
 
 /**
