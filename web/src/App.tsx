@@ -241,18 +241,22 @@ const TRIP_CACHE_MIN_SAVE_INTERVAL_MS = 20_000;
 const LAYER_DEFAULTS_MIGRATION_KEY = "stormpath-layer-defaults-v2";
 /** v3: v2 skipped after first run, but some profiles still had `stormpath-radar-overlay-on` stuck at "1" — force off once. */
 const RADAR_OVERLAY_DEFAULT_V3_KEY = "stormpath-radar-overlay-default-v3";
+/** v4: weather-first redesign — radar on by default for all users. */
+const RADAR_OVERLAY_DEFAULT_V4_KEY = "stormpath-radar-overlay-default-v4";
 
 function applyStormLayerStorageMigrations(): void {
   if (typeof window === "undefined") return;
   try {
     if (localStorage.getItem(LAYER_DEFAULTS_MIGRATION_KEY) !== "1") {
-      localStorage.setItem("stormpath-radar-overlay-on", "0");
       localStorage.setItem("stormpath-road-advisory-detail", "0");
       localStorage.setItem(LAYER_DEFAULTS_MIGRATION_KEY, "1");
     }
-    if (localStorage.getItem(RADAR_OVERLAY_DEFAULT_V3_KEY) !== "1") {
-      localStorage.setItem("stormpath-radar-overlay-on", "0");
+    // v3 forced radar off once — superseded by v4.
+    if (localStorage.getItem(RADAR_OVERLAY_DEFAULT_V4_KEY) !== "1") {
+      // Weather-first: turn radar on for all existing users on first run of this version.
+      localStorage.setItem("stormpath-radar-overlay-on", "1");
       localStorage.setItem(RADAR_OVERLAY_DEFAULT_V3_KEY, "1");
+      localStorage.setItem(RADAR_OVERLAY_DEFAULT_V4_KEY, "1");
     }
   } catch {
     /* ignore */
@@ -664,7 +668,7 @@ export default function App() {
     routeId: string;
     alerts: RouteAlert[];
   } | null>(null);
-  /** Map overlay (toolbar Rad). Only `stormpath-radar-overlay-on` — default off; Settings controls whether Rad is enabled. */
+  /** Map overlay (toolbar Rad). Default ON — weather-first app design. */
   const [showRadar, setShowRadar] = useState(() => {
     try {
       const o = localStorage.getItem("stormpath-radar-overlay-on");
@@ -673,7 +677,7 @@ export default function App() {
     } catch {
       /* ignore */
     }
-    return false;
+    return true; // default ON
   });
   useEffect(() => {
     try {
@@ -682,14 +686,8 @@ export default function App() {
       /* ignore */
     }
   }, [showRadar]);
-  /** Rad toolbar + map overlay: planning with no route, or after Go — not while A/B/C preview before navigation. */
-  const offerRadarChrome = plan.routes.length === 0 || navigationStarted;
-  const radarMapOverlayOn = showRadar && !driveModeUi && offerRadarChrome;
-  useEffect(() => {
-    if (plan.routes.length > 0 && !navigationStarted) {
-      setShowRadar(false);
-    }
-  }, [plan.routes.length, navigationStarted]);
+  /** Radar visible in all modes except drive (too distracting at street level). */
+  const radarMapOverlayOn = showRadar && !driveModeUi;
   const [radarFrameUtcSec, setRadarFrameUtcSec] = useState<number | null>(null);
   const seriousHazardAutoFlewRef = useRef<Set<string>>(new Set());
   const [safetyAck, setSafetyAck] = useState(() => {
@@ -2594,29 +2592,37 @@ export default function App() {
         "stormMapGeoJsonForMap:", stormMapGeoJsonForMap?.features?.length ?? 0,
       );
     }
-    // Hard gates: feature flag + user setting + must have a route.
-    // Never show polygons in browse mode (no route) or when NWS is toggled off.
+    // Hard gates: feature flag + user NWS toggle.
     if (!advisoryLifeSafetyOn || !settingStormEnabled) return null;
-    if (!nwsMapOverlapRouteGeom?.length) return null;
 
-    // Prefer the route-intersection–filtered set.
+    // Browse mode (no route): Plus users see regional alert polygons; basic sees radar only.
+    if (!nwsMapOverlapRouteGeom?.length) {
+      if (!isPlus) return null;
+      const withGeom = stormCorridorAlerts.filter((a) => a.geometry);
+      if (withGeom.length) return mapGeoJsonFromAlerts(withGeom);
+      if (stormMapGeoJson?.features?.length) return stormMapGeoJson;
+      return null;
+    }
+
+    // Route active — prefer the route-intersection–filtered set.
     const base = stormMapGeoJsonForMap;
     if (base?.features.length) return base;
 
-    // Fallback: alerts that affect the route but whose geometry we got directly
-    // (e.g. NWS returned geometry on the alert object, not the separate map layer).
+    // Fallback: alerts that affect the route but whose geometry came directly from
+    // the alert object (not the separate map GeoJSON layer).
     const withGeom = nwsAlertsAffectingActiveRoute.filter((a) => a.geometry);
     if (withGeom.length) return mapGeoJsonFromAlerts(withGeom);
 
-    // No route-specific polygons found — show nothing rather than dumping all
-    // regional browse data onto the map.
     return null;
   }, [
     advisoryLifeSafetyOn,
     settingStormEnabled,
+    isPlus,
     nwsMapOverlapRouteGeom,
     stormMapGeoJsonForMap,
     nwsAlertsAffectingActiveRoute,
+    stormCorridorAlerts,
+    stormMapGeoJson,
   ]);
 
   /** Drive HUD: unified Road Ahead — same RouteImpact list as map / strip / bypass. */
@@ -4976,7 +4982,7 @@ export default function App() {
               showRadar={radarMapOverlayOn}
               onToggleRadar={() => setShowRadar((v) => !v)}
               radarEnabled={settingRadarEnabled}
-              showRadarButton={offerRadarChrome}
+              showRadarButton={!driveModeUi}
               offRouteSevere={offRouteSevere}
               showOffRouteBanner={showOffRouteManualBanner}
               onRerouteFromHere={() => void recalcRouteFromHere()}

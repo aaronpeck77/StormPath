@@ -1,10 +1,14 @@
-fix(web): never show NWS polygons without a route or when NWS is off
+feat(web): weather-first redesign — radar on by default, polygons in browse mode
 
-Remove the raw stormMapGeoJson fallback from nwsAlertGeoJsonForMap. That
-fallback was returning the full regional browse-viewport dataset onto the
-map whenever no route-specific polygons were found, which showed unrelated
-NWS polygons on the map in browse mode and with NWS toggled off.
+Radar:
+- Radar overlay now ON by default for all users (migration v4 resets localStorage)
+- Radar stays visible during route planning and navigation — only hidden in
+  drive view where it would obscure the road
 
-Now the two hard gates (NWS setting off, no route) are enforced strictly
-with no fallback paths around them. Polygons only appear when NWS is on,
-a route is active, and at least one alert polygon actually intersects it.
+NWS polygons:
+- Plus tier: alert polygons visible in browse mode (no route needed); regional
+  corridor alerts show on the map as soon as the app loads
+- Basic tier: radar only in browse mode, polygons only appear when a route is active
+
+This makes the app weather-first: weather data is live on the map immediately,
+and route planning layers on top of it rather than unlocking it.
