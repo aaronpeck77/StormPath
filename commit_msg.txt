@@ -1,11 +1,10 @@
-fix(web): advisory only shows alerts that actually intersect the route
+fix(web): never show NWS polygons without a route or when NWS is off
 
-nwsAlertsAffectingActiveRoute was falling back to all corridor alerts when
-no route was set, and to all corridor-alerts-with-geometry when the strict
-intersection test returned nothing. Both paths caused unrelated nearby alerts
-to appear in the advisory panel and hazard timeline as if they were on the route.
+Remove the raw stormMapGeoJson fallback from nwsAlertGeoJsonForMap. That
+fallback was returning the full regional browse-viewport dataset onto the
+map whenever no route-specific polygons were found, which showed unrelated
+NWS polygons on the map in browse mode and with NWS toggled off.
 
-Now returns empty when there is no route, and strictly the intersecting alerts
-when a route exists. The map polygon display retains its own independent
-fallback in stormMapGeoJsonForMap so polygons still render on the map for
-alerts whose polygons are thin enough to be missed by sparse route sampling.
+Now the two hard gates (NWS setting off, no route) are enforced strictly
+with no fallback paths around them. Polygons only appear when NWS is on,
+a route is active, and at least one alert polygon actually intersects it.

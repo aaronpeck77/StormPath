@@ -2594,17 +2594,22 @@ export default function App() {
         "stormMapGeoJsonForMap:", stormMapGeoJsonForMap?.features?.length ?? 0,
       );
     }
+    // Hard gates: feature flag + user setting + must have a route.
+    // Never show polygons in browse mode (no route) or when NWS is toggled off.
     if (!advisoryLifeSafetyOn || !settingStormEnabled) return null;
     if (!nwsMapOverlapRouteGeom?.length) return null;
-    if (!stormCorridorAlerts.length && !stormMapGeoJson?.features?.length) return null;
 
+    // Prefer the route-intersection–filtered set.
     const base = stormMapGeoJsonForMap;
     if (base?.features.length) return base;
 
+    // Fallback: alerts that affect the route but whose geometry we got directly
+    // (e.g. NWS returned geometry on the alert object, not the separate map layer).
     const withGeom = nwsAlertsAffectingActiveRoute.filter((a) => a.geometry);
     if (withGeom.length) return mapGeoJsonFromAlerts(withGeom);
 
-    if (stormMapGeoJson?.features?.length) return stormMapGeoJson;
+    // No route-specific polygons found — show nothing rather than dumping all
+    // regional browse data onto the map.
     return null;
   }, [
     advisoryLifeSafetyOn,
@@ -2612,8 +2617,6 @@ export default function App() {
     nwsMapOverlapRouteGeom,
     stormMapGeoJsonForMap,
     nwsAlertsAffectingActiveRoute,
-    stormCorridorAlerts,
-    stormMapGeoJson,
   ]);
 
   /** Drive HUD: unified Road Ahead — same RouteImpact list as map / strip / bypass. */
