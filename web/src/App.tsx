@@ -754,6 +754,7 @@ export default function App() {
       `[stormpath boot] ${buildLabel}`,
       "tier:", tierLabel,
       "| mapboxToken:", env.mapboxToken ? "YES" : "NO",
+      "| tomorrowIo:", env.tomorrowIoApiKey ? "YES" : "NO",
       "| stormAdvisory:", env.stormAdvisoryEnabled,
       "| nwsBase:", env.nwsApiBase,
       "| trafficEnabled:", settingTrafficEnabled,

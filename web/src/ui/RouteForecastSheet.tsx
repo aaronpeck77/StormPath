@@ -217,8 +217,9 @@ export function RouteForecastSheet({
             <h3 className="cfs-panel__h">Along your route</h3>
             {!forecastDataAvailable ? (
               <p className="cfs-muted">
-                Corridor forecast needs a Tomorrow.io API key in this build. On TestFlight, add{" "}
-                <strong>VITE_TOMORROW_IO_API_KEY</strong> as a GitHub Actions secret and rebuild.
+                Corridor forecast is not available in this build (Tomorrow.io key was not included when
+                the app was compiled). Install a newer TestFlight build after the key is added to CI, or
+                check About → Support diagnostics for <strong>tomorrowIo=off</strong>.
               </p>
             ) : forecastsLoading && !along.length ? (
               <p className="cfs-muted">Loading corridor forecast…</p>

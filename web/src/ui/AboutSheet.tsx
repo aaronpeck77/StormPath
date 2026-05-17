@@ -106,7 +106,7 @@ export function AboutSheet({
     `Landscape UI: ${settings.landscapeSideHand === "left" ? "left hand" : "right hand"}`,
     `Providers: mapbox=${env.mapboxToken ? "on" : "off"}, openweather=${
       env.openWeatherApiKey ? "on" : "off"
-    }`,
+    }, tomorrowIo=${env.tomorrowIoApiKey ? "on" : "off"}`,
   ];
   const diagnosticsText = diagnosticsLines.join("\n");
   const supportEmail = env.supportEmail.trim();
