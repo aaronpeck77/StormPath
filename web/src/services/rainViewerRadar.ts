@@ -3,10 +3,6 @@
  * @see https://www.rainviewer.com/api.html
  * @see https://www.rainviewer.com/api/weather-maps-api.html (max zoom 7 — higher z returns error tiles)
  */
-const MANIFEST = import.meta.env.DEV
-  ? "/rainviewer-api/public/weather-maps.json"
-  : "https://api.rainviewer.com/public/weather-maps.json";
-
 const TILE_CACHE_ORIGIN = "https://tilecache.rainviewer.com";
 const DEV_TILE_PREFIX = "/rainviewer-tiles";
 
@@ -83,14 +79,47 @@ function filterPastFramesByWindow(
   return inWindow.length >= 2 ? inWindow : frames.slice(-Math.min(frames.length, 2));
 }
 
+let manifestCooldownUntil = 0;
+let manifestWarned = false;
+
+async function fetchRainViewerManifest(): Promise<Manifest | null> {
+  if (Date.now() < manifestCooldownUntil) return null;
+
+  const urls: string[] = import.meta.env.DEV
+    ? ["/rainviewer-api/public/weather-maps.json", "https://api.rainviewer.com/public/weather-maps.json"]
+    : ["https://api.rainviewer.com/public/weather-maps.json"];
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url);
+      if (res.status === 429) {
+        manifestCooldownUntil = Date.now() + 90_000;
+        return null;
+      }
+      if (!res.ok) continue;
+      return (await res.json()) as Manifest;
+    } catch {
+      /* try next URL */
+    }
+  }
+
+  manifestCooldownUntil = Date.now() + 60_000;
+  if (import.meta.env.DEV && !manifestWarned) {
+    manifestWarned = true;
+    console.warn(
+      "[RainViewer] weather-maps manifest unavailable (API or dev proxy error) — radar overlay may be empty until it recovers."
+    );
+  }
+  return null;
+}
+
 export async function fetchRainViewerRadarFrames(
   opts?: FetchRainViewerRadarOptions
 ): Promise<RainViewerRadarPack | null> {
   const includeNowcast = opts?.includeNowcast ?? false;
   const pastWindowSec = opts?.pastWindowSec ?? RAINVIEWER_LOOP_PAST_WINDOW_SEC;
-  const res = await fetch(MANIFEST);
-  if (!res.ok) return null;
-  const data = (await res.json()) as Manifest;
+  const data = await fetchRainViewerManifest();
+  if (!data) return null;
   const host = normalizeHost(data.host ?? "https://tilecache.rainviewer.com");
   const pastRaw = data.radar?.past ?? [];
   const pastSorted: RainViewerRadarFrame[] = [];

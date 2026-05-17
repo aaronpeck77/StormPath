@@ -3613,6 +3613,82 @@
   flex-shrink: 0;
 }
 
+.storm-advisory-bar__route-alerts {
+  margin: 0 0 10px;
+}
+
+.storm-advisory-bar__route-alerts-h {
+  margin: 0 0 4px;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.storm-advisory-bar__route-alerts-lead {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.nws-route-alerts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nws-route-alert {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.55);
+  color: inherit;
+  cursor: pointer;
+}
+
+.nws-route-alert--avoid {
+  border-color: rgba(239, 68, 68, 0.55);
+  background: rgba(127, 29, 29, 0.35);
+}
+
+.nws-route-alert--serious {
+  border-color: rgba(249, 115, 22, 0.5);
+  background: rgba(124, 45, 18, 0.28);
+}
+
+.nws-route-alert--caution {
+  border-color: rgba(234, 179, 8, 0.45);
+}
+
+.nws-route-alert__title {
+  font-size: 0.88rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.nws-route-alert__timing {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.nws-route-alert__detail {
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.52);
+}
+
 /* Impact rows ? flat list inside a section. No per-row card / no accent stripe.
  * Severity is signalled by a small colored dot before the headline and an inline
  * severity pill on the right. Rows are separated by hairlines. */
@@ -4491,6 +4567,133 @@
 .rhtz__reroute {
   margin: 8px 0 0;
   padding: 0;
+}
+
+/* — Local forecast card (advisory bar) — */
+.adv-forecast {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: linear-gradient(165deg, rgba(30, 41, 59, 0.72) 0%, rgba(15, 23, 42, 0.55) 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+.adv-forecast__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.adv-forecast__head-text {
+  min-width: 0;
+}
+
+.adv-forecast__title {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(186, 230, 253, 0.85);
+}
+
+.adv-forecast__area {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.92rem;
+  font-weight: 650;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.adv-forecast__area-pin {
+  flex-shrink: 0;
+  color: rgba(125, 211, 252, 0.9);
+}
+
+.adv-forecast__updated {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
+  text-align: right;
+  max-width: 42%;
+  line-height: 1.35;
+}
+
+.adv-forecast__block {
+  padding: 8px 0;
+}
+
+.adv-forecast__block--hour {
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.adv-forecast__block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.adv-forecast__block-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.adv-forecast__block-meta {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.38);
+  text-align: right;
+}
+
+.adv-forecast__conditions {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.adv-forecast__hour-summary {
+  margin: 0 0 8px;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.adv-forecast__bar {
+  display: flex;
+  height: 22px;
+  border-radius: 5px;
+  overflow: hidden;
+  gap: 1px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.adv-forecast__cell {
+  flex: 1;
+  min-width: 0;
+}
+
+.adv-forecast__axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.35);
 }
 
 /* ?? Minute precipitation strip (Tomorrow.io) ?? */
@@ -5398,13 +5601,33 @@
   appearance: none;
   border-width: 1px;
   border-style: solid;
-  min-height: 46px;
-  line-height: 1.32;
+  min-height: 44px;
+  max-height: 3.25rem;
+  line-height: 1.3;
+  overflow: hidden;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .storm-advisory-bar--preview:hover {
   background: rgba(15, 23, 42, 0.96);
+}
+
+.storm-advisory-bar__preview-stack {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.storm-advisory-bar__preview-local-inline {
+  font-size: 0.68rem;
+  font-weight: 550;
+  line-height: 1.2;
+  color: rgba(186, 230, 253, 0.78);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Single-surface design: the inner span is now layout-only ? no background, border, or padding.
@@ -5413,6 +5636,7 @@
   flex: 1 1 auto;
   display: flex;
   align-items: flex-start;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -5453,11 +5677,18 @@
 .storm-advisory-bar__preview-text {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: visible;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   white-space: normal;
   word-break: break-word;
-  line-height: 1.35;
+  line-height: 1.3;
   color: #e2e8f0;
+}
+
+.storm-advisory-bar__preview-message-wrap--forecast .storm-advisory-bar__preview-text {
+  -webkit-line-clamp: 1;
 }
 
 .storm-advisory-bar__preview-count {

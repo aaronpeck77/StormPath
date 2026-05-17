@@ -1,18 +1,47 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { SITEBIBLE_AD_BAR, type AdvisoryPromoLine } from "../config/advisoryPromo";
 import { sortWeatherAlertsBySeverity, type NormalizedWeatherAlert } from "../weatherAlerts";
 import { nwsAlertIsBasicEmergency } from "../weatherAlerts/basicEmergencyFilter";
 import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
 import type { DriveAheadLine, DriveAheadRadarTier } from "../nav/driveRouteAhead";
 import { formatDriveAheadBrief, formatMinutesAsHoursMinutes } from "../nav/driveRouteAhead";
+import { fmtMi, formatRouteAlertTiming } from "../nav/routeAlertTiming";
 import type { RouteImpact, RouteImpactSeverity } from "../nav/routeImpacts";
 import { RouteHazardTimeline, impactToTimelineItem } from "./RouteHazardTimeline";
 import type { TimelineItem } from "./RouteHazardTimeline";
 import type { MinutePrecipForecast } from "../services/tomorrowIo";
-import { MinutePrecipStrip } from "./MinutePrecipStrip";
+import { AdvisoryLocalForecast } from "./AdvisoryLocalForecast";
+import type { CurrentNowcast } from "../services/openWeatherClient";
 import { displayText } from "../utils/displayText";
+import {
+  buildLocalForecastBannerItem,
+  latestForecastFetchedAtMs,
+  truncateBannerText,
+} from "../utils/forecastDisplay";
 
-/** Full advisory preview message — wraps instead of truncating with an ellipsis. */
+const BANNER_MSG_MAX = 72;
+const BANNER_TICKER_MAX = 80;
+
+type AdvisoryPreviewItem = {
+  badge: string | null;
+  raw: string;
+  /** Area + freshness — only on the local forecast rotator slot. */
+  localMeta?: { area: string; updated: string | null };
+};
+
+function bannerMsg(text: string, max = BANNER_MSG_MAX): string {
+  return truncateBannerText(text, max);
+}
+
+/** Collapsed advisory line — clamped in CSS to avoid a tall bar. */
 function AdvisoryPreviewMessage({ raw }: { raw: string }) {
   return <span className="storm-advisory-bar__preview-text">{displayText(raw)}</span>;
 }
@@ -104,6 +133,10 @@ export type StormAdvisoryBarProps = SharedProps & {
    * drivers see a quick read of conditions at a glance.
    */
   nowcastLine?: string | null;
+  /** OpenWeather snapshot at the user's position (expanded local forecast card). */
+  currentNowcast?: CurrentNowcast | null;
+  /** Human place label, e.g. "Springfield, IL". */
+  forecastAreaLabel?: string | null;
   /** Tomorrow.io 60-minute minute-by-minute precip forecast at the user's location. */
   minutePrecipForecast?: MinutePrecipForecast | null;
   /** Open full corridor forecast sheet (route-tied timeline). */
@@ -137,6 +170,36 @@ function impactSectionBucket(i: RouteImpact): "weather" | "road" {
 }
 
 
+
+/** Route-crossing NWS alert with distance, drive time, expiry, and relevance. */
+function nwsRouteAlertRow(
+  a: NormalizedWeatherAlert,
+  timingLine: string,
+  onClick?: (alert: NormalizedWeatherAlert) => void
+): ReactNode {
+  const sevClass =
+    a.severity === "Extreme" || /tornado warning/i.test(a.event ?? "")
+      ? "avoid"
+      : a.severity === "Severe"
+        ? "serious"
+        : "caution";
+  return (
+    <li key={a.id}>
+      <button
+        type="button"
+        className={`nws-route-alert nws-route-alert--${sevClass}`}
+        onClick={() => onClick?.(a)}
+        aria-label={`${a.event} on your route — ${timingLine}`}
+      >
+        <span className="nws-route-alert__title">{a.event?.trim() || "Weather alert"}</span>
+        <span className="nws-route-alert__timing">{timingLine}</span>
+        {nwsGlanceSummary(a) ? (
+          <span className="nws-route-alert__detail">{nwsGlanceSummary(a)}</span>
+        ) : null}
+      </button>
+    </li>
+  );
+}
 
 /** Compact inline chip for an NWS alert at the user's position. */
 function nwsAlertChip(
@@ -203,6 +266,8 @@ export function StormAdvisoryBar({
   basicNavAdvisoryMode = false,
   navigationStarted,
   nowcastLine = null,
+  currentNowcast = null,
+  forecastAreaLabel = null,
   minutePrecipForecast = null,
   onOpenCorridorForecast,
 }: StormAdvisoryBarProps) {
@@ -389,19 +454,82 @@ export function StormAdvisoryBar({
     roadImpacts.length > 0 || trafficNarrativeRows.length > 0 || showRerouteCta;
   const hasSuggestion = Boolean(betterRouteRow) || (showRerouteCta && !roadDetailEnabled);
 
+  const bandByAlertId = useMemo(() => {
+    const m = new Map<string, StormStripBand>();
+    for (const b of stormStripBands ?? []) {
+      if (b.alertId) m.set(b.alertId, b);
+    }
+    return m;
+  }, [stormStripBands]);
+
+  const routeTimingForAlert = useCallback(
+    (alertId: string | undefined) => {
+      if (!alertId || routeTotalMeters <= 0) return null;
+      const band = bandByAlertId.get(alertId);
+      if (!band) return null;
+      return formatRouteAlertTiming({
+        startMeters: band.startMeters,
+        endMeters: band.endMeters,
+        userAlongMeters,
+        totalMeters: routeTotalMeters,
+        planEtaMinutes,
+        driveEtaMinutes,
+        expiresIso: band.expiresIso,
+        crossesRoute: band.crossesRoute,
+      });
+    },
+    [bandByAlertId, routeTotalMeters, userAlongMeters, planEtaMinutes, driveEtaMinutes]
+  );
+
+  const crossingRouteRows = useMemo(() => {
+    if (routeTotalMeters <= 0) return [];
+    return crossingSorted
+      .map((a) => {
+        const band = bandByAlertId.get(a.id);
+        if (!band) return null;
+        const timing = formatRouteAlertTiming({
+          startMeters: band.startMeters,
+          endMeters: band.endMeters,
+          userAlongMeters,
+          totalMeters: routeTotalMeters,
+          planEtaMinutes,
+          driveEtaMinutes,
+          expiresIso: band.expiresIso,
+          crossesRoute: band.crossesRoute,
+        });
+        return { alert: a, band, timing };
+      })
+      .filter((x): x is NonNullable<typeof x> => x != null)
+      .sort((a, b) => a.timing.aheadMeters - b.timing.aheadMeters);
+  }, [
+    crossingSorted,
+    bandByAlertId,
+    routeTotalMeters,
+    userAlongMeters,
+    planEtaMinutes,
+    driveEtaMinutes,
+  ]);
+
   const tickerMessages = useMemo(() => {
     const list = [...crossingSorted, ...atLocationSorted];
     return list.map((a) => {
       const g = nwsGlanceSummary(a);
-      const badge = crossingSorted.includes(a) ? "On route" : "At your position";
+      const onRoute = crossingSorted.includes(a);
+      const routeTiming = onRoute ? routeTimingForAlert(a.id) : null;
+      const badge = onRoute
+        ? routeTiming
+          ? `On route · ${fmtMi(routeTiming.aheadMeters)} ahead`
+          : "On route"
+        : "At your position";
+      const base = g || (a.event?.trim() || "Weather alert");
       return {
         id: a.id,
-        text: g || (a.event?.trim() || "Weather alert"),
+        text: routeTiming ? `${base} — ${routeTiming.timingLine}` : base,
         alert: a,
         badge,
       };
     });
-  }, [crossingSorted, atLocationSorted]);
+  }, [crossingSorted, atLocationSorted, routeTimingForAlert]);
   const [tickerIdx, setTickerIdx] = useState(0);
   const [previewIdx, setPreviewIdx] = useState(0);
   const [loadSlow, setLoadSlow] = useState(false);
@@ -436,31 +564,50 @@ export function StormAdvisoryBar({
         : "No life-safety warnings here — tap for details"
       : "No hazards in view — tap for advisory";
   const activeTicker = tickerMessages[tickerIdx];
+
+  const localForecastBanner = useMemo(() => {
+    if (!forecastAreaLabel) return null;
+    return buildLocalForecastBannerItem({
+      areaLabel: forecastAreaLabel,
+      nowcastLine,
+      minutePrecip: minutePrecipForecast,
+      fetchedAtMs: latestForecastFetchedAtMs(
+        currentNowcast?.fetchedAtMs,
+        minutePrecipForecast?.fetchedAt
+      ),
+    });
+  }, [
+    forecastAreaLabel,
+    nowcastLine,
+    minutePrecipForecast,
+    currentNowcast?.fetchedAtMs,
+  ]);
+
   const previewItems = useMemo(() => {
     if (basicNavAdvisoryMode) {
-      const out: { badge: string | null; raw: string }[] = [];
+      const out: AdvisoryPreviewItem[] = [];
       if (!isOnline) {
         out.push({
           badge: "Offline",
-          raw: "No network. Reconnect to refresh map tiles and radar.",
+          raw: bannerMsg("Offline — reconnect for map and radar."),
         });
       }
-      /* Compact current-conditions read — first slot in the rotator (after offline state) so
-       * drivers immediately see the temp / wind / precip read on Basic too. */
-      if (nowcastLine) {
-        out.push({ badge: "Now", raw: nowcastLine });
+      if (localForecastBanner) {
+        out.push(localForecastBanner);
+      } else if (nowcastLine) {
+        out.push({ badge: "Now", raw: bannerMsg(nowcastLine) });
       } else {
         /* If weather is temporarily unavailable, keep the first visible fallback useful instead
          * of leading with the generic route-status line. */
         out.push({ badge: "App", raw: SITEBIBLE_AD_BAR });
       }
       if (hasGuidanceRoute) {
-        out.push({ badge: "Nav", raw: "Route is set — tap Go when you are ready to drive." });
+        out.push({ badge: "Nav", raw: bannerMsg("Route set — tap Go when ready.") });
       }
-      if (busyLabel) out.push({ badge: "Work", raw: busyLabel });
+      if (busyLabel) out.push({ badge: "Work", raw: bannerMsg(busyLabel) });
       for (const p of promoLines) {
-        if (!nowcastLine && p.id === "sitebible") continue;
-        out.push({ badge: "Info", raw: displayText(p.text) });
+        if (!localForecastBanner && !nowcastLine && p.id === "sitebible") continue;
+        out.push({ badge: "Info", raw: bannerMsg(displayText(p.text)) });
       }
       if (out.length === 0) out.push({ badge: null, raw: defaultPreviewText });
       return out;
@@ -469,45 +616,53 @@ export function StormAdvisoryBar({
      * traffic / ahead) so any real condition is the first thing a driver sees. App-promo and
      * filler content are appended at the END so they still cycle in over a long session, but
      * never crowd ahead of a hazard or current-conditions reading. */
-    const out: { badge: string | null; raw: string }[] = [];
+    const out: AdvisoryPreviewItem[] = [];
     if (!isOnline) {
-      out.push({ badge: "Offline", raw: "No network. Reconnect to refresh the map and advisories." });
+      out.push({ badge: "Offline", raw: bannerMsg("Offline — reconnect for map and advisories.") });
     }
     if (showErrorState && (error || "").trim()) {
-      out.push({ badge: "Error", raw: (error || "").trim() });
+      out.push({ badge: "Error", raw: bannerMsg((error || "").trim(), 96) });
     }
-    /* Compact "right now" reading — temperature, wind, precip near your position. Surfaced near
-     * the top of the rotator so it's seen even when other items are queued behind it. Stays in
-     * the cycle with everything else (5–10 s per slot) instead of fighting for permanent space. */
-    if (nowcastLine) {
-      out.push({ badge: "Now", raw: nowcastLine });
+    if (localForecastBanner) {
+      out.push(localForecastBanner);
+    } else if (nowcastLine) {
+      out.push({ badge: "Now", raw: bannerMsg(nowcastLine) });
     }
     if (loading) {
       if (!navigationStarted && hasGuidanceRoute) {
         out.push({
           badge: "Plan",
-          raw: loadSlow
-            ? "Still loading NWS for this route. Live traffic & road strip after Go."
-            : "Loading NWS for your planned route. Live traffic after Go.",
+          raw: bannerMsg(
+            loadSlow ? "Still loading NWS for route…" : "Loading NWS for planned route…"
+          ),
         });
       } else {
-        out.push({ badge: "Load", raw: navigationStarted ? "Loading alerts…" : "Loading…" });
+        out.push({
+          badge: "Load",
+          raw: bannerMsg(navigationStarted ? "Loading alerts…" : "Loading…"),
+        });
       }
     }
     if (busyLabel) {
-      out.push({ badge: "Work", raw: busyLabel });
+      out.push({ badge: "Work", raw: bannerMsg(busyLabel) });
     }
     if (activeTicker) {
-      out.push({ badge: activeTicker.badge, raw: activeTicker.text });
+      out.push({
+        badge: activeTicker.badge,
+        raw: bannerMsg(activeTicker.text, BANNER_TICKER_MAX),
+      });
     }
     if (advisoryTier !== "basic" && trafficDelayMinutes >= 8) {
       out.push({
         badge: "Traffic",
-        raw: `Traffic +${formatMinutesAsHoursMinutes(trafficDelayMinutes)} on route`,
+        raw: bannerMsg(`Traffic +${formatMinutesAsHoursMinutes(trafficDelayMinutes)} on route`),
       });
     }
     if (advisoryTier !== "basic" && driveRouteAheadLine) {
-      out.push({ badge: "Ahead", raw: formatDriveAheadBrief(driveRouteAheadLine) });
+      out.push({
+        badge: "Ahead",
+        raw: bannerMsg(formatDriveAheadBrief(driveRouteAheadLine)),
+      });
     }
     /* Filler / promo tail. Always present in the rotation so the SiteBible blurb and the route-
      * status hint show up over time, but appended after substantive items so they never pre-empt
@@ -519,14 +674,14 @@ export function StormAdvisoryBar({
     if (hasGuidanceRoute && !hasRouteContext) {
       out.push({
         badge: "Drive",
-        raw: navigationStarted
-          ? "Route is set. Data keeps updating while you drive."
-          : "Route is set — tap Go for live traffic and corridor alerts.",
+        raw: bannerMsg(
+          navigationStarted ? "Route active — data updates while driving." : "Route set — tap Go for live data."
+        ),
       });
     }
     for (const p of promoLines) {
       if (p.id === "sitebible") continue;
-      out.push({ badge: "Info", raw: displayText(p.text) });
+      out.push({ badge: "Info", raw: bannerMsg(displayText(p.text)) });
     }
     if (out.length === 0) out.push({ badge: null, raw: defaultPreviewText });
     return out;
@@ -547,6 +702,7 @@ export function StormAdvisoryBar({
     promoLines,
     defaultPreviewText,
     nowcastLine,
+    localForecastBanner,
   ]);
   useEffect(() => {
     setPreviewIdx(0);
@@ -720,13 +876,32 @@ export function StormAdvisoryBar({
         }}
         title={barExpanded ? "Close advisory" : activePreview.raw}
       >
-        <span className="storm-advisory-bar__preview-message-wrap">
+        <span
+          className={`storm-advisory-bar__preview-message-wrap${
+            !barExpanded && activePreview.localMeta ? " storm-advisory-bar__preview-message-wrap--forecast" : ""
+          }`}
+        >
           {barExpanded ? (
             <span className="storm-advisory-bar__preview-text" title="Close advisory">
               {basicNavAdvisoryMode ? "Status — tap to close ▲" : "Advisory — tap to close ▲"}
             </span>
           ) : (
-            <AdvisoryPreviewMessage raw={activePreview.raw} />
+            <>
+              {activePreview.badge ? (
+                <span className="storm-advisory-bar__preview-ticker-badge">{activePreview.badge}</span>
+              ) : null}
+              <span className="storm-advisory-bar__preview-stack">
+                {activePreview.localMeta ? (
+                  <span className="storm-advisory-bar__preview-local-inline">
+                    {activePreview.localMeta.area}
+                    {activePreview.localMeta.updated
+                      ? ` · ${activePreview.localMeta.updated}`
+                      : null}
+                  </span>
+                ) : null}
+                <AdvisoryPreviewMessage raw={activePreview.raw} />
+              </span>
+            </>
           )}
         </span>
       </button>
@@ -829,15 +1004,19 @@ export function StormAdvisoryBar({
       )}
 
       <div className="storm-advisory-bar__sections-scroll">
-        {/* ── Minute precip strip (Tomorrow.io) ── shown when we have a forecast */}
-        {minutePrecipForecast && (
-          <MinutePrecipStrip forecast={minutePrecipForecast} />
-        )}
+        {(currentNowcast || minutePrecipForecast) && forecastAreaLabel ? (
+          <AdvisoryLocalForecast
+            areaLabel={forecastAreaLabel}
+            nowcast={currentNowcast}
+            minutePrecip={minutePrecipForecast}
+          />
+        ) : null}
 
         {/* Pre-Go hint surfaced once at the very top so it doesn't repeat across sections. */}
         {!navigationStarted && hasGuidanceRoute && !basicNavAdvisoryMode && (
           <p className="storm-advisory-bar__pre-go-hint" role="note">
-            <strong>Tap Go</strong> for live traffic and ETA. NWS / radar already preview your planned route below.
+            <strong>Tap Go</strong> for live traffic and ETA. Below: each warning shows how far down your route it is and
+            whether it may end before you get there.
           </p>
         )}
 
@@ -851,6 +1030,20 @@ export function StormAdvisoryBar({
               .filter((a) => !nowAtLocation.some((b) => b.id === a.id))
               .map((a) => nwsAlertChip(a, "atLocation", onNwsAlertClick))}
           </ul>
+        )}
+
+        {crossingRouteRows.length > 0 && (
+          <section className="storm-advisory-bar__route-alerts" aria-label="NWS alerts on your route">
+            <h3 className="storm-advisory-bar__route-alerts-h">On your route</h3>
+            <p className="storm-advisory-bar__route-alerts-lead">
+              Distance and drive time from your position now. Warnings far ahead may expire before you arrive.
+            </p>
+            <ul className="nws-route-alerts" role="list">
+              {crossingRouteRows.map(({ alert, timing }) =>
+                nwsRouteAlertRow(alert, timing.timingLine, onNwsAlertClick)
+              )}
+            </ul>
+          </section>
         )}
 
         {/* ───── UNIFIED ROUTE HAZARD TIMELINE ───────────────────────────────────

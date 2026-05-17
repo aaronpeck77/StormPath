@@ -1,25 +1,102 @@
 /**
- * Tomorrow.io request pacing: 3 req/s and 25/hr on free tier — serialize calls and cache responses.
+ * Tomorrow.io request pacing: free tier ~25 req/hr, 3 req/s — serialize, cache, budget, persist 429 cooldown.
  */
 
-const MIN_GAP_MS = 500;
-const CACHE_TTL_MS = 12 * 60 * 1000;
+const MIN_GAP_MS = 1200;
+const CACHE_TTL_MS = 25 * 60 * 1000;
 const RATE_LIMIT_COOLDOWN_MS = 60 * 60 * 1000;
+/** Stay under Tomorrow.io's 25/hr cap (leave headroom for retries). */
+const MAX_REQUESTS_PER_HOUR = 18;
 
-let rateLimitedUntil = 0;
+const LS_RATE_UNTIL = "stormpath-tio-rate-until";
+const LS_HOUR_BUDGET = "stormpath-tio-hour-budget";
+
+let rateLimitedUntil = readPersistedRateUntil();
 let lastRequestAt = 0;
 let chain: Promise<unknown> = Promise.resolve();
 
 const responseCache = new Map<string, { at: number; data: unknown }>();
 
+function readPersistedRateUntil(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const v = Number(localStorage.getItem(LS_RATE_UNTIL));
+    return Number.isFinite(v) && v > Date.now() ? v : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function persistRateUntil(until: number): void {
+  try {
+    if (until > Date.now()) {
+      localStorage.setItem(LS_RATE_UNTIL, String(until));
+    } else {
+      localStorage.removeItem(LS_RATE_UNTIL);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function currentHourKey(): string {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}-${d.getUTCHours()}`;
+}
+
+function readHourCount(): { hour: string; count: number } {
+  if (typeof window === "undefined") return { hour: currentHourKey(), count: 0 };
+  try {
+    const raw = localStorage.getItem(LS_HOUR_BUDGET);
+    if (!raw) return { hour: currentHourKey(), count: 0 };
+    const parsed = JSON.parse(raw) as { hour?: string; count?: number };
+    return {
+      hour: typeof parsed.hour === "string" ? parsed.hour : currentHourKey(),
+      count: typeof parsed.count === "number" ? parsed.count : 0,
+    };
+  } catch {
+    return { hour: currentHourKey(), count: 0 };
+  }
+}
+
+function writeHourCount(hour: string, count: number): void {
+  try {
+    localStorage.setItem(LS_HOUR_BUDGET, JSON.stringify({ hour, count }));
+  } catch {
+    /* ignore */
+  }
+}
+
+function hourBudgetRemaining(): number {
+  const { hour, count } = readHourCount();
+  if (hour !== currentHourKey()) return MAX_REQUESTS_PER_HOUR;
+  return Math.max(0, MAX_REQUESTS_PER_HOUR - count);
+}
+
+function spendHourBudget(): void {
+  const key = currentHourKey();
+  const { hour, count } = readHourCount();
+  writeHourCount(hour === key ? hour : key, hour === key ? count + 1 : 1);
+}
+
 export function isTomorrowIoRateLimited(): boolean {
-  return Date.now() < rateLimitedUntil;
+  if (Date.now() < rateLimitedUntil) return true;
+  if (hourBudgetRemaining() <= 0) return true;
+  return false;
+}
+
+export function tomorrowIoBudgetRemaining(): number {
+  if (Date.now() < rateLimitedUntil) return 0;
+  return hourBudgetRemaining();
 }
 
 export function noteTomorrowIoRateLimit(): void {
   rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
+  persistRateUntil(rateLimitedUntil);
   if (import.meta.env.DEV) {
-    console.warn("[Tomorrow.io] rate limited — pausing API calls for 1 hour");
+    console.warn(
+      "[Tomorrow.io] rate limited — no more API calls for 1 hour (saved in this browser). Corridor forecast and minute precip pause until then."
+    );
   }
 }
 
@@ -27,7 +104,7 @@ function cacheKey(apiKey: string, body: Record<string, unknown>): string {
   return `${apiKey.slice(0, 6)}:${JSON.stringify(body)}`;
 }
 
-/** Run Tomorrow.io POSTs one at a time with spacing and short-lived cache. */
+/** Run Tomorrow.io POSTs one at a time with spacing, cache, and hourly budget. */
 export function enqueueTomorrowIoPost(
   apiKey: string,
   body: Record<string, unknown>,
@@ -46,12 +123,15 @@ export function enqueueTomorrowIoPost(
   }
 
   const run = async (): Promise<unknown> => {
+    if (isTomorrowIoRateLimited()) throw new Error("Tomorrow.io rate limited");
+
     const wait = MIN_GAP_MS - (Date.now() - lastRequestAt);
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     if (isTomorrowIoRateLimited()) throw new Error("Tomorrow.io rate limited");
 
     lastRequestAt = Date.now();
+    spendHourBudget();
     try {
       const data = await post(signal);
       responseCache.set(key, { at: Date.now(), data });

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { formatRouteAlertTiming } from "../nav/routeAlertTiming";
 import type { RouteImpact } from "../nav/routeImpacts";
 
 /**
@@ -44,33 +45,9 @@ export type RouteHazardTimelineProps = {
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
 
-const METERS_PER_MILE = 1609.34;
-
 function pct(meters: number, total: number): number {
   if (total <= 0) return 0;
   return Math.max(0, Math.min(100, (meters / total) * 100));
-}
-
-function fmtMi(meters: number): string {
-  if (!Number.isFinite(meters) || meters <= 0) return "0 mi";
-  const mi = meters / METERS_PER_MILE;
-  return mi < 10 ? `${mi.toFixed(1)} mi` : `${Math.round(mi)} mi`;
-}
-
-function fmtMin(min: number | null | undefined): string | null {
-  if (min == null || !Number.isFinite(min) || min < 0) return null;
-  if (min < 1) return "now";
-  if (min < 60) return `${Math.round(min)} min`;
-  const h = Math.floor(min / 60);
-  const m = Math.round(min % 60);
-  return m === 0 ? `${h} hr` : `${h} hr ${m} min`;
-}
-
-function fmtExpires(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return null;
-  return new Date(t).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
 }
 
 const TRACK_META: Record<string, { label: string; emptyText: string }> = {
@@ -108,55 +85,22 @@ export function RouteHazardTimeline({
 
   /* Pre-compute timing text for each item. */
   const itemVisuals = useMemo(() => {
-    const remainingM = Math.max(0, totalMeters - userAlongMeters);
-    const effectiveEta =
-      driveEtaMinutes != null && Number.isFinite(driveEtaMinutes)
-        ? driveEtaMinutes
-        : planEtaMinutes != null && Number.isFinite(planEtaMinutes) && totalMeters > 0
-          ? planEtaMinutes * (remainingM / totalMeters)
-          : null;
-
-    const etaForM = (m: number): number | null => {
-      if (effectiveEta == null || remainingM <= 0) return null;
-      const ahead = Math.max(0, m - userAlongMeters);
-      if (ahead <= 0) return 0;
-      return effectiveEta * (ahead / remainingM);
-    };
-
     return items.map((item) => {
       const sPct = pct(item.startMeters, totalMeters);
       const ePct = pct(item.endMeters, totalMeters);
       const wPct = Math.max(MIN_BAND_PCT, ePct - sPct);
       const passed = item.endMeters <= userAlongMeters;
       const inside = userAlongMeters >= item.startMeters && userAlongMeters < item.endMeters;
-      const crosses = item.crossesRoute !== false;
-
-      const enterMin = etaForM(item.startMeters);
-      const exitMin = etaForM(item.endMeters);
-      const enterLabel = fmtMin(enterMin);
-      const exitLabel = fmtMin(exitMin);
-      const lengthMeters = Math.max(0, item.endMeters - item.startMeters);
-      const isPoint = lengthMeters < 50;
-      const aheadMeters = Math.max(0, item.startMeters - userAlongMeters);
-      const aheadMi = isPoint ? fmtMi(aheadMeters) : null;
-      const lengthMi = !isPoint ? fmtMi(lengthMeters) : null;
-      const expiresLabel = fmtExpires(item.expiresIso);
-
-      const timing = passed
-        ? "Passed"
-        : !crosses
-          ? `Nearby · within storm corridor${expiresLabel ? ` · exp ${expiresLabel}` : ""}`
-          : inside
-            ? isPoint
-              ? `At this location now${expiresLabel ? ` · exp ${expiresLabel}` : ""}`
-              : `In zone now · exits in ${exitLabel ?? "—"}`
-            : isPoint
-              ? enterLabel
-                ? `${aheadMi} ahead · in ${enterLabel}${expiresLabel ? ` · exp ${expiresLabel}` : ""}`
-                : `${aheadMi} ahead${expiresLabel ? ` · exp ${expiresLabel}` : ""}`
-              : enterLabel
-                ? `Enter in ${enterLabel} · ${lengthMi} long${expiresLabel ? ` · exp ${expiresLabel}` : ""}`
-                : `${lengthMi} long${expiresLabel ? ` · exp ${expiresLabel}` : ""}`;
+      const timing = formatRouteAlertTiming({
+        startMeters: item.startMeters,
+        endMeters: item.endMeters,
+        userAlongMeters,
+        totalMeters,
+        planEtaMinutes,
+        driveEtaMinutes,
+        expiresIso: item.expiresIso,
+        crossesRoute: item.crossesRoute,
+      }).timingLine;
 
       return { sPct, wPct, passed, inside, timing };
     });

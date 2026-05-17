@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 import type { MinutePrecipForecast, RouteForecast } from "../services/tomorrowIo";
+import { isTomorrowIoRateLimited } from "../services/tomorrowIo";
 import {
   alongRouteSegments,
   arrivalSnapshot,
@@ -220,6 +221,11 @@ export function RouteForecastSheet({
                 Corridor forecast is not available in this build (Tomorrow.io key was not included when
                 the app was compiled). Install a newer TestFlight build after the key is added to CI, or
                 check About → Support diagnostics for <strong>tomorrowIo=off</strong>.
+              </p>
+            ) : isTomorrowIoRateLimited() ? (
+              <p className="cfs-muted">
+                Tomorrow.io is paused for about an hour (hourly request limit). NWS and radar on the map
+                still work. Try again later or reload after the cooldown.
               </p>
             ) : forecastsLoading && !along.length ? (
               <p className="cfs-muted">Loading corridor forecast…</p>

@@ -11,7 +11,7 @@
 
 import type { LngLat } from "../nav/types";
 import { pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
-import { enqueueTomorrowIoPost } from "./tomorrowIoClient";
+import { enqueueTomorrowIoPost, noteTomorrowIoRateLimit } from "./tomorrowIoClient";
 
 const BASE_URL = "https://api.tomorrow.io/v4/timelines";
 const TIMEOUT_MS = 10_000;
@@ -90,6 +90,10 @@ async function postTimelinesOnce(
       signal: effectiveSignal,
     });
     clearTimeout(timeoutId);
+    if (res.status === 429) {
+      noteTomorrowIoRateLimit();
+      throw new Error("Tomorrow.io 429");
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new Error(`Tomorrow.io ${res.status}: ${text.slice(0, 200)}`);

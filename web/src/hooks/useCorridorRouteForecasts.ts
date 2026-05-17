@@ -21,7 +21,9 @@ export function useCorridorRouteForecasts(
   apiKey: string,
   legs: CorridorForecastLeg[],
   speedMps: number,
-  enabled: boolean
+  enabled: boolean,
+  /** Reuse an existing forecast for this leg (avoids a duplicate Tomorrow.io call). */
+  reuseForecast?: { routeId: string; forecast: RouteForecast | null } | null
 ): { forecastsByLegId: Record<string, RouteForecast | null>; loading: boolean } {
   const [forecastsByLegId, setForecastsByLegId] = useState<Record<string, RouteForecast | null>>({});
   const [loading, setLoading] = useState(false);
@@ -52,10 +54,25 @@ export function useCorridorRouteForecasts(
     setLoading(true);
 
     void (async () => {
+      if (isTomorrowIoRateLimited()) {
+        if (!cancelled) {
+          setForecastsByLegId({});
+          setLoading(false);
+        }
+        return;
+      }
+
       const next: Record<string, RouteForecast | null> = {};
       for (const leg of legsRef.current) {
         if (cancelled || ac.signal.aborted) break;
         if (isTomorrowIoRateLimited()) break;
+        if (
+          reuseForecast?.routeId === leg.routeId &&
+          reuseForecast.forecast != null
+        ) {
+          next[leg.routeId] = reuseForecast.forecast;
+          continue;
+        }
         if (leg.geometry.length < 2 || polylineLengthMeters(leg.geometry) < 1000) {
           next[leg.routeId] = null;
           continue;
@@ -81,7 +98,7 @@ export function useCorridorRouteForecasts(
       cancelled = true;
       ac.abort();
     };
-  }, [apiKey, enabled, legsKey, speedMps]);
+  }, [apiKey, enabled, legsKey, speedMps, reuseForecast?.routeId, reuseForecast?.forecast]);
 
   return { forecastsByLegId, loading };
 }

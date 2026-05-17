@@ -40,6 +40,10 @@ import { pickSuggestedActive, scoreTrip } from "./scoring/scoreRoutes";
 import { buildTripFromMapbox, collectMapboxRouteVariants } from "./services/mapboxDirectionsRouter";
 import { isAbortError, isSaveDataPreferred, routeFetchUserMessage } from "./utils/fetchResilient";
 import {
+  formatCoordsAreaLabel,
+  shortenPlaceNameForForecast,
+} from "./utils/forecastDisplay";
+import {
   mapboxAutocomplete,
   mapboxGeocodeSearch,
   mapboxReverseGeocode,
@@ -66,12 +70,6 @@ import {
   weatherHintSamplesAlongPolyline,
   type CurrentNowcast,
 } from "./services/openWeatherClient";
-import {
-  buildTimelinesWaypointsForGeometry,
-  fetchRouteForecast,
-  routeForecastCompactHeadline,
-  routeForecastCorridorStress,
-} from "./services/tomorrowIo";
 import type { RouteAlert } from "./nav/routeAlerts";
 import { augmentAlertsForProgressStrip } from "./nav/routeAlerts";
 import {
@@ -1314,6 +1312,7 @@ export default function App() {
    * even before a route is loaded. Throttled to ~10 min, plus an extra refresh when the user
    * moves more than ~25 km from the last sample. */
   const [currentNowcast, setCurrentNowcast] = useState<CurrentNowcast | null>(null);
+  const [forecastPlaceShort, setForecastPlaceShort] = useState<string | null>(null);
   const lastNowcastFixRef = useRef<{ lng: number; lat: number; tMs: number } | null>(null);
   /* Track transient failures separately from the last successful sample. The old code
    * "claimed" the throttle slot before the request finished, which meant one dropped
@@ -1426,12 +1425,8 @@ export default function App() {
     }
 
     const owKey = env.openWeatherApiKey;
-    const tioKey = env.tomorrowIoApiKey;
     const wantOpenWeather = Boolean(owKey) && settingWeatherHintsEnabled;
-    const wantTomorrowCorridor =
-      Boolean(tioKey) && (settingWeatherHintsEnabled || settingStormEnabled);
-
-    if (!isPlus || !isOnline || !routes.length || (!wantOpenWeather && !wantTomorrowCorridor)) {
+    if (!isPlus || !isOnline || !routes.length || !wantOpenWeather) {
       setWeatherOverlay(undefined);
       return;
     }
@@ -1441,7 +1436,6 @@ export default function App() {
     const LONG_ROUTE_M = 1_000_000;
     const LONG_ETA_MIN = 720;
     const saveData = isSaveDataPreferred();
-    const driveSpeed = speedMps ?? 0;
 
     (async () => {
       const w: WeatherOverlay = {};
@@ -1493,34 +1487,6 @@ export default function App() {
             }
           }
 
-          /* One Tomorrow.io call per overlay refresh (primary leg only) — free tier is 25 req/hr. */
-          const primaryRouteId = routes[0]?.id;
-          if (
-            wantTomorrowCorridor &&
-            tioKey &&
-            !longTrip &&
-            !ac.signal.aborted &&
-            r.id === primaryRouteId
-          ) {
-            try {
-              const wps = buildTimelinesWaypointsForGeometry(r.geometry, driveSpeed);
-              if (wps?.length) {
-                const fc = await fetchRouteForecast(tioKey, wps, ac.signal);
-                if (!cancelled && !ac.signal.aborted) {
-                  const stress = routeForecastCorridorStress(fc);
-                  const th = routeForecastCompactHeadline(fc);
-                  precipHint = Math.max(precipHint, stress);
-                  headline =
-                    headline.trim() && th.trim()
-                      ? `${headline.trim()} · ${th.trim()}`
-                      : headline.trim() || th.trim();
-                }
-              }
-            } catch {
-              /* Tomorrow.io corridor merge optional */
-            }
-          }
-
           if (!cancelled && (precipHint > 0 || headline.trim() || samples?.length)) {
             w[r.id] = {
               headline: headline.trim() || "Conditions along route",
@@ -1540,7 +1506,6 @@ export default function App() {
   }, [
     planRoutesKeyStable,
     env.openWeatherApiKey,
-    env.tomorrowIoApiKey,
     settingWeatherHintsEnabled,
     settingStormEnabled,
     Math.round((speedMps ?? 0) * 4),
@@ -2066,6 +2031,32 @@ export default function App() {
   const effectiveUserLngLatRef = useRef(effectiveUserLngLat);
   effectiveUserLngLatRef.current = effectiveUserLngLat;
 
+  const forecastAreaLabel = useMemo(() => {
+    if (forecastPlaceShort) return forecastPlaceShort;
+    if (effectiveUserLngLat) {
+      const [lng, lat] = effectiveUserLngLat;
+      return formatCoordsAreaLabel(lat, lng);
+    }
+    return "Your location";
+  }, [forecastPlaceShort, effectiveUserLngLat]);
+
+  useEffect(() => {
+    if (!env.mapboxToken || !effectiveUserLngLat) {
+      setForecastPlaceShort(null);
+      return;
+    }
+    const [lng, lat] = effectiveUserLngLat;
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+    let cancelled = false;
+    void mapboxReverseGeocode(lng, lat, env.mapboxToken).then((hit) => {
+      if (cancelled || !hit?.placeName) return;
+      setForecastPlaceShort(shortenPlaceNameForForecast(hit.placeName));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveUserLngLat, env.mapboxToken]);
+
   /** Bumps NWS effect when GPS becomes available for browse mode (no Go yet). */
   const nwsBrowseLocationReady = Boolean(effectiveUserLngLat);
 
@@ -2190,6 +2181,19 @@ export default function App() {
     effectiveUserLngLat,
     guidanceRoute?.geometry
   );
+
+  /** Advisory timeline / NWS distance — snap to GPS on the route when planning, not only after Go. */
+  const advisoryUserAlongM = useMemo(() => {
+    const g = guidanceRoute?.geometry;
+    if (!g?.length) return 0;
+    if (navigationStarted && Number.isFinite(userAlongGuidanceM) && userAlongGuidanceM >= 0) {
+      return userAlongGuidanceM;
+    }
+    if (effectiveUserLngLat) {
+      return closestAlongRouteMeters(effectiveUserLngLat, g).alongMeters;
+    }
+    return 0;
+  }, [guidanceRoute?.geometry, navigationStarted, userAlongGuidanceM, effectiveUserLngLat]);
 
   const turnStepBounds = useMemo(
     () => turnStepAlongBounds(turnSteps, guidanceRouteLengthM),
@@ -2328,13 +2332,22 @@ export default function App() {
     guidanceRoute?.geometry
   );
 
-  // ── Tomorrow.io ─────────────────────────────────────────────────────────────
+  // ── Tomorrow.io (only while weather UI is open — free tier ~25 req/hr) ───────
   const tioApiKey = env.tomorrowIoApiKey;
-  const tioMinutePrecip = useTomorrowMinutePrecip(tioApiKey, effectiveUserLngLat ?? null);
+  const tioFetchEnabled =
+    isPlus &&
+    Boolean(tioApiKey) &&
+    (stormBarExpanded || corridorForecastOpen || navigationStarted);
+  const tioMinutePrecip = useTomorrowMinutePrecip(
+    tioApiKey,
+    effectiveUserLngLat ?? null,
+    tioFetchEnabled
+  );
   const tioRouteForecast = useTomorrowRouteForecast(
     tioApiKey,
     isPlus && guidanceRoute?.geometry?.length ? guidanceRoute.geometry : null,
-    speedMps ?? 0
+    speedMps ?? 0,
+    tioFetchEnabled
   );
 
   const corridorLegOptions = useMemo(
@@ -2367,7 +2380,15 @@ export default function App() {
   );
 
   const { forecastsByLegId: corridorForecastsByLegId, loading: corridorForecastsLoading } =
-    useCorridorRouteForecasts(tioApiKey, corridorForecastLegs, speedMps ?? 0, corridorForecastOpen);
+    useCorridorRouteForecasts(
+      tioApiKey,
+      corridorForecastLegs,
+      speedMps ?? 0,
+      corridorForecastOpen,
+      guidanceRoute?.id && tioRouteForecast
+        ? { routeId: guidanceRoute.id, forecast: tioRouteForecast }
+        : null
+    );
 
   const corridorForecastsMerged = useMemo(() => {
     if (!corridorForecastOpen) return {};
@@ -4510,7 +4531,7 @@ export default function App() {
                       routeImpacts={advisoryRouteImpacts}
                       stormStripBands={advisoryStormStripBands}
                       routeTotalMeters={guidanceRouteLengthM}
-                      userAlongMeters={Number.isFinite(userAlongGuidanceM) ? userAlongGuidanceM : 0}
+                      userAlongMeters={advisoryUserAlongM}
                       planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
                       driveEtaMinutes={driveEtaMinutes ?? null}
                       barExpanded={stormBarExpanded}
@@ -4527,6 +4548,8 @@ export default function App() {
                       basicNavAdvisoryMode={!isPlus}
                       navigationStarted={navigationStarted}
                       nowcastLine={advisoryNowcastLine}
+                      currentNowcast={currentNowcast}
+                      forecastAreaLabel={forecastAreaLabel}
                       minutePrecipForecast={tioMinutePrecip}
                       onOpenCorridorForecast={isPlus ? openCorridorForecast : undefined}
                     />

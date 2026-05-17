@@ -28,15 +28,7 @@ import {
   positionWeatherAlertLayersAboveRadar,
   WEATHER_ALERTS_NWS_FILL_LAYER_ID,
 } from "./mapWeatherAlertLayers";
-import {
-  applyRadarMotionLayers,
-  removeRadarMotionLayers,
-} from "./mapRadarMotionLayer";
-import {
-  boundsFromGeometry,
-  computeRadarStormMotions,
-  intersectBounds,
-} from "../services/radarStormMotion";
+import { removeRadarMotionLayers } from "./mapRadarMotionLayer";
 import {
   bringMapboxTrafficLayersToFront,
   ensureMapboxTrafficConditionLayers,
@@ -2031,112 +2023,16 @@ export function DriveMap({
     else map.once("load", sync);
   }, [mapReady, weatherAlertGeoJson, routes, lineFocusId, navigationStarted, viewMode]);
 
-  /** Strongest radar echoes: motion arrow + speed / ~ETA label (route corridor ∩ map view). */
+  /** Radar storm-motion arrows disabled — sampling was misleading; strip any legacy layers. */
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-
-    if (!showRadar) {
-      try {
-        removeRadarMotionLayers(map);
-      } catch {
-        /* style race */
-      }
-      return;
+    try {
+      removeRadarMotionLayers(map);
+    } catch {
+      /* style race */
     }
-
-    let cancelled = false;
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const lastKeyRef = { current: "" };
-
-    const run = async () => {
-      try {
-        if (isRainViewerRateLimited()) return;
-        if (!map.isStyleLoaded()) return;
-        const b = map.getBounds();
-        if (!b) return;
-
-        const viewBox = {
-          west: b.getWest(),
-          south: b.getSouth(),
-          east: b.getEast(),
-          north: b.getNorth(),
-        };
-
-        const corridor =
-          corridorRouteGeometry ??
-          routes.find((r) => r.id === lineFocusId)?.geometry ??
-          null;
-        const routeBox = corridor?.length ? boundsFromGeometry(corridor) : null;
-        const sampleBox = routeBox ? intersectBounds(viewBox, routeBox) ?? routeBox : viewBox;
-
-        const pack = await fetchRainViewerRadarFrames({ includeNowcast: false });
-        if (cancelled || mapRef.current !== map) return;
-        if (!pack?.frames || pack.frames.length < 2) {
-          removeRadarMotionLayers(map);
-          return;
-        }
-
-        const older = pack.frames[pack.frames.length - 2]!;
-        const newer = pack.frames[pack.frames.length - 1]!;
-        const motionKey = `${pack.frames.map((f) => f.path).join("|")}:${sampleBox.west.toFixed(2)},${sampleBox.south.toFixed(2)}`;
-        if (motionKey === lastKeyRef.current) return;
-        lastKeyRef.current = motionKey;
-
-        const motions = await computeRadarStormMotions(sampleBox, pack.host, older, newer, {
-          referenceLngLat: userLngLat,
-        });
-        if (cancelled || mapRef.current !== map) return;
-        applyRadarMotionLayers(map, motions.length > 0 ? motions : null);
-        positionWeatherAlertLayersAboveRadar(map);
-        liftTrafficThenRoutesThenHits(
-          map,
-          visibleRouteIdsForHitLayers(routes, lineFocusId, viewMode, false)
-        );
-      } catch {
-        if (!cancelled && mapRef.current === map) {
-          try {
-            removeRadarMotionLayers(map);
-          } catch {
-            /* ignore */
-          }
-        }
-      }
-    };
-
-    const schedule = () => {
-      if (debounceTimer != null) clearTimeout(debounceTimer);
-      debounceTimer = window.setTimeout(() => {
-        debounceTimer = null;
-        void run();
-      }, 1400);
-    };
-
-    map.on("moveend", schedule);
-    schedule();
-    const refreshTimer = window.setInterval(schedule, 180_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(refreshTimer);
-      if (debounceTimer != null) clearTimeout(debounceTimer);
-      map.off("moveend", schedule);
-      try {
-        removeRadarMotionLayers(map);
-      } catch {
-        /* style race */
-      }
-    };
-  }, [
-    mapReady,
-    showRadar,
-    corridorRouteGeometry,
-    routes,
-    lineFocusId,
-    userLngLat,
-    viewMode,
-    navigationStarted,
-  ]);
+  }, [mapReady, showRadar]);
 
   /**
    * Quick glance: entering an NWS polygon shows event/headline once; after a few seconds it fades out

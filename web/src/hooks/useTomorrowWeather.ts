@@ -44,7 +44,9 @@ function haversineM(a: LngLat, b: LngLat): number {
  */
 export function useTomorrowMinutePrecip(
   apiKey: string,
-  userLngLat: LngLat | null
+  userLngLat: LngLat | null,
+  /** When false, no network calls (saves Tomorrow.io hourly quota until user opens weather UI). */
+  enabled = false
 ): MinutePrecipForecast | null {
   const [forecast, setForecast] = useState<MinutePrecipForecast | null>(null);
   const lastFetchLngLat = useRef<LngLat | null>(null);
@@ -52,7 +54,7 @@ export function useTomorrowMinutePrecip(
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!apiKey || !userLngLat || isTomorrowIoRateLimited()) return;
+    if (!enabled || !apiKey || !userLngLat || isTomorrowIoRateLimited()) return;
 
     const now = Date.now();
     const lastLng = lastFetchLngLat.current;
@@ -74,13 +76,14 @@ export function useTomorrowMinutePrecip(
     fetchMinutePrecip(apiKey, lat, lng, ac.signal)
       .then((f) => { if (!ac.signal.aborted) setForecast(f); })
       .catch((e) => {
-        if (!ac.signal.aborted) {
+        if (!ac.signal.aborted && !isTomorrowIoRateLimited()) {
           if (import.meta.env.DEV) console.warn("[TomorrowIO] minute precip fetch failed:", e);
         }
       });
 
     return () => { ac.abort(); };
   }, [
+    enabled,
     apiKey,
     // Quantise position to ~3 km grid to avoid re-firing on every GPS tick.
     userLngLat ? Math.round(userLngLat[0] * 33) : null,
@@ -89,12 +92,12 @@ export function useTomorrowMinutePrecip(
 
   // Set up a timer to re-fetch every MINUTE_PRECIP_POLL_MS regardless of movement.
   useEffect(() => {
-    if (!apiKey || !userLngLat) return;
+    if (!enabled || !apiKey || !userLngLat) return;
     const id = setInterval(() => {
       lastFetchTime.current = 0; // force refresh on next position update
     }, MINUTE_PRECIP_POLL_MS);
     return () => clearInterval(id);
-  }, [apiKey, !!userLngLat]);
+  }, [enabled, apiKey, !!userLngLat]);
 
   return forecast;
 }
@@ -114,7 +117,8 @@ const ROUTE_FORECAST_POLL_MS = 30 * 60 * 1000;
 export function useTomorrowRouteForecast(
   apiKey: string,
   routeGeometry: LngLat[] | null,
-  speedMps: number
+  speedMps: number,
+  enabled = false
 ): RouteForecast | null {
   const [forecast, setForecast] = useState<RouteForecast | null>(null);
   const lastRouteSig = useRef("");
@@ -133,10 +137,12 @@ export function useTomorrowRouteForecast(
   }, [routeGeometry]);
 
   useEffect(() => {
-    if (!apiKey || !waypoints || isTomorrowIoRateLimited()) {
+    if (!enabled || !apiKey || !waypoints) {
+      if (!enabled) return;
       setForecast(null);
       return;
     }
+    if (isTomorrowIoRateLimited()) return;
 
     const now = Date.now();
     const routeChanged = routeSig !== lastRouteSig.current;
@@ -153,13 +159,13 @@ export function useTomorrowRouteForecast(
     fetchRouteForecast(apiKey, waypoints, ac.signal)
       .then((f) => { if (!ac.signal.aborted) setForecast(f); })
       .catch((e) => {
-        if (!ac.signal.aborted) {
+        if (!ac.signal.aborted && !isTomorrowIoRateLimited()) {
           if (import.meta.env.DEV) console.warn("[TomorrowIO] route forecast fetch failed:", e);
         }
       });
 
     return () => { ac.abort(); };
-  }, [apiKey, routeSig, waypoints]);
+  }, [enabled, apiKey, routeSig, waypoints]);
 
   return forecast;
 }
