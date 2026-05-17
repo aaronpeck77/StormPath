@@ -31,12 +31,21 @@ export type MinutePrecipInterval = {
   precipType: number;
 };
 
+/** “Right now” snapshot from the first minute of a minute-precip timeline (°F, mph). */
+export type MinutePrecipNowSnapshot = {
+  tempF: number;
+  windMph: number;
+  conditions: string;
+};
+
 /** 60-minute precipitation outlook for a point. */
 export type MinutePrecipForecast = {
   fetchedAt: number; // Date.now()
   lat: number;
   lng: number;
   minutes: MinutePrecipInterval[];
+  /** Present when temperature / wind were requested (fallback when OpenWeather is unset). */
+  now?: MinutePrecipNowSnapshot;
 };
 
 /** One hourly forecast sample, tied to a route waypoint. */
@@ -157,7 +166,14 @@ export async function fetchMinutePrecip(
     apiKey,
     {
       location: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
-      fields: ["precipitationIntensity", "precipitationProbability", "precipitationType"],
+      fields: [
+        "precipitationIntensity",
+        "precipitationProbability",
+        "precipitationType",
+        "temperature",
+        "windSpeed",
+        "weatherCode",
+      ],
       units: "metric",
       timesteps: ["1m"],
       startTime: "now",
@@ -173,6 +189,9 @@ export async function fetchMinutePrecip(
             precipitationIntensity?: number;
             precipitationProbability?: number;
             precipitationType?: number;
+            temperature?: number;
+            windSpeed?: number;
+            weatherCode?: number;
           };
         }>;
       }>;
@@ -180,10 +199,22 @@ export async function fetchMinutePrecip(
   };
 
   const intervals = raw.data.timelines[0]?.intervals ?? [];
+  const first = intervals[0]?.values;
+  const tempC = first?.temperature;
+  const windKph = first?.windSpeed;
+  const now =
+    tempC != null && Number.isFinite(tempC)
+      ? {
+          tempF: Math.round((tempC * 9) / 5 + 32),
+          windMph: Math.round((windKph ?? 0) * 0.621371),
+          conditions: weatherCodeLabel(first?.weatherCode ?? 1000),
+        }
+      : undefined;
   return {
     fetchedAt: Date.now(),
     lat,
     lng,
+    now,
     minutes: intervals.map((iv) => ({
       timeIso: iv.startTime,
       precipIntensityMmh: iv.values.precipitationIntensity ?? 0,

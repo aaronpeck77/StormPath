@@ -70,6 +70,7 @@ import {
   weatherHintSamplesAlongPolyline,
   type CurrentNowcast,
 } from "./services/openWeatherClient";
+import { formatMinutePrecipNowLine } from "./utils/forecastDisplay";
 import type { RouteAlert } from "./nav/routeAlerts";
 import { augmentAlertsForProgressStrip } from "./nav/routeAlerts";
 import {
@@ -1411,11 +1412,6 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [isOnline, env.openWeatherApiKey]);
 
-  const advisoryNowcastLine = useMemo(() => {
-    if (!currentNowcast) return null;
-    return formatNowcastLine(currentNowcast);
-  }, [currentNowcast]);
-
   useEffect(() => {
     const routes = planRef.current.routes;
     if (routing) return;
@@ -2349,6 +2345,12 @@ export default function App() {
     speedMps ?? 0,
     tioFetchEnabled
   );
+
+  const advisoryNowcastLine = useMemo(() => {
+    if (currentNowcast) return formatNowcastLine(currentNowcast);
+    if (tioMinutePrecip?.now) return formatMinutePrecipNowLine(tioMinutePrecip.now);
+    return null;
+  }, [currentNowcast, tioMinutePrecip?.now]);
 
   const corridorLegOptions = useMemo(
     () =>

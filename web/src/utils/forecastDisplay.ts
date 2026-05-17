@@ -1,4 +1,4 @@
-import type { MinutePrecipForecast } from "../services/tomorrowIo";
+import type { MinutePrecipForecast, MinutePrecipNowSnapshot } from "../services/tomorrowIo";
 
 /** Short place label for forecast headers (Mapbox `place_name` is often a full address). */
 export function shortenPlaceNameForForecast(placeName: string): string {
@@ -55,6 +55,14 @@ export function truncateBannerText(text: string, maxLen: number): string {
   const t = text.trim();
   if (t.length <= maxLen) return t;
   return `${t.slice(0, Math.max(0, maxLen - 1)).trimEnd()}…`;
+}
+
+/** Compact “right now” line when OpenWeather is unavailable (uses Tomorrow.io snapshot). */
+export function formatMinutePrecipNowLine(now: MinutePrecipNowSnapshot): string {
+  const parts = [`${now.tempF}°F`];
+  if (now.windMph >= 1) parts.push(`Wind ${now.windMph} mph`);
+  if (now.conditions) parts.push(now.conditions);
+  return parts.join(" · ");
 }
 
 export function minutePrecipBannerHint(forecast: MinutePrecipForecast): string {

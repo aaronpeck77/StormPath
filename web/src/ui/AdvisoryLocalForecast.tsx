@@ -2,7 +2,11 @@ import { useMemo } from "react";
 import type { CurrentNowcast } from "../services/openWeatherClient";
 import { formatNowcastLine } from "../services/openWeatherClient";
 import type { MinutePrecipForecast } from "../services/tomorrowIo";
-import { formatForecastUpdatedAt, latestForecastFetchedAtMs } from "../utils/forecastDisplay";
+import {
+  formatForecastUpdatedAt,
+  formatMinutePrecipNowLine,
+  latestForecastFetchedAtMs,
+} from "../utils/forecastDisplay";
 
 function precipColor(mmh: number, prob: number): string {
   const effective = mmh * Math.max(0.3, prob);
@@ -37,11 +41,14 @@ type Props = {
 
 /** Local weather in the expanded advisory bar — area, update time, now + next hour. */
 export function AdvisoryLocalForecast({ areaLabel, nowcast, minutePrecip }: Props) {
-  const hasNow = Boolean(nowcast);
+  const nowLine = nowcast
+    ? formatNowcastLine(nowcast)
+    : minutePrecip?.now
+      ? formatMinutePrecipNowLine(minutePrecip.now)
+      : null;
+  const hasNow = Boolean(nowLine);
   const hasHour = Boolean(minutePrecip?.minutes.length);
   if (!hasNow && !hasHour) return null;
-
-  const nowLine = nowcast ? formatNowcastLine(nowcast) : null;
   const hourSummary = minutePrecip ? minutePrecipSummary(minutePrecip) : null;
   const metaUpdated = useMemo(() => {
     const ms = latestForecastFetchedAtMs(nowcast?.fetchedAtMs, minutePrecip?.fetchedAt);
@@ -70,12 +77,15 @@ export function AdvisoryLocalForecast({ areaLabel, nowcast, minutePrecip }: Prop
         {metaUpdated ? <span className="adv-forecast__updated">{metaUpdated}</span> : null}
       </header>
 
-      {hasNow && nowcast && nowLine ? (
+      {hasNow && nowLine ? (
         <div className="adv-forecast__block">
           <div className="adv-forecast__block-head">
             <span className="adv-forecast__block-label">Right now</span>
             <span className="adv-forecast__block-meta">
-              {formatForecastUpdatedAt(nowcast.fetchedAtMs)} · OpenWeather
+              {formatForecastUpdatedAt(
+                nowcast?.fetchedAtMs ?? minutePrecip?.fetchedAt ?? Date.now()
+              )}
+              {nowcast ? " · OpenWeather" : " · Tomorrow.io"}
             </span>
           </div>
           <p className="adv-forecast__conditions">{nowLine}</p>
