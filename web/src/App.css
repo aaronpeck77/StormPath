@@ -4545,6 +4545,12 @@
   color: rgba(255, 255, 255, 0.35);
 }
 
+.mps__source {
+  margin: 6px 0 0;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.32);
+}
+
 /* — Corridor forecast sheet (V1 timeline + V2 leg compare + V3 leave window) — */
 .cfs-scrim {
   position: fixed;

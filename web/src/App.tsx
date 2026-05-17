@@ -4949,8 +4949,8 @@ export default function App() {
                 ? "Offline — cached route; no live traffic, weather, or storm updates."
                 : "Offline — cached route; map and radar may be limited until you reconnect."
               : isPlus
-                ? "Offline — showing last route. Live updates paused (traffic, weather, storm)."
-                : "Offline — showing last route. Reconnect for map tiles and radar."}
+                ? "Offline — showing last route. Live updates paused (traffic, weather, storm). See About if layers stay empty after you reconnect."
+                : "Offline — showing last route. Reconnect for map tiles and radar. See About if layers stay empty."}
           </div>
         )}
 

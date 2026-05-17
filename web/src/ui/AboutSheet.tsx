@@ -266,7 +266,8 @@ export function AboutSheet({
                   <strong>Traffic</strong> overlay + bypass tools (Mapbox)
                 </li>
                 <li>
-                  <strong>Weather</strong> hints on route (OpenWeather)
+                  <strong>Weather</strong> hints on route (OpenWeather) plus <strong>Route forecast</strong> and
+                  minute precip (Tomorrow.io)
                 </li>
                 <li>
                   <strong>Auto reroute</strong> when far off-line (optional)
@@ -523,11 +524,59 @@ export function AboutSheet({
             </section>
           )}
 
+          <details className="about-sheet__panel about-sheet__details">
+            <summary>When data looks wrong</summary>
+            <p className="about-sheet__p">
+              StormPath stitches together your phone, your network, and several live data providers. If one link is
+              weak, the rest of the app can still work — so a blank radar layer does not always mean routing failed, and
+              a working map does not guarantee every forecast loaded.
+            </p>
+            <p className="about-sheet__p">
+              <strong>Usually not the app alone:</strong>
+            </p>
+            <ul className="about-sheet__bullets">
+              <li>
+                <strong>No or poor connection</strong> — map tiles, radar, alerts, traffic, and forecasts need cellular
+                or Wi‑Fi. Offline mode keeps your last route; live layers pause until you reconnect.
+              </li>
+              <li>
+                <strong>Provider delay or outage</strong> — Mapbox, NWS, RainViewer, OpenWeather, or Tomorrow.io can be
+                slow, rate-limited, or down. We show a short note in the advisory bar when we know which feed failed.
+              </li>
+              <li>
+                <strong>Phone / GPS</strong> — location permission, low power mode, or weak GPS can delay the puck,
+                reroute, or “at your location” forecasts.
+              </li>
+              <li>
+                <strong>Your settings</strong> — Radar, storm/NWS, traffic, and road overlays can be off in About or the
+                hazard toggles. <strong>Drive</strong> view hides the radar overlay by design.
+              </li>
+              <li>
+                <strong>Region or build</strong> — NWS polygons are US-focused. Some builds ship without every API key;
+                Support diagnostics shows which providers are on for this install.
+              </li>
+            </ul>
+            <p className="about-sheet__p">
+              <strong>What to try:</strong> reconnect, wait a minute and open the advisory bar again, confirm toggles
+              and <strong>Rad</strong> in Route/Map view, then copy <strong>Support diagnostics</strong> below if you
+              email us — that shows online status and which providers this build has, not your personal data.
+            </p>
+          </details>
+
           <details className="about-sheet__panel about-sheet__panel--privacy about-sheet__details">
             <summary>Privacy, safety &amp; data</summary>
             <p className="about-sheet__p">
-              <strong>Data:</strong> Map, routing, and traffic use Mapbox when configured; weather samples OpenWeather;
-              US alerts via NWS (api.weather.gov). What runs depends on your keys and region.
+              <strong>Data:</strong> Map, routing, and traffic use <strong>Mapbox</strong> when configured; live radar
+              mosaic uses <strong>RainViewer</strong>; US warning shapes use <strong>NWS</strong> (api.weather.gov);
+              route weather samples use <strong>OpenWeather</strong> when enabled in Settings; corridor timeline,
+              minute-by-minute precip, and <strong>Route forecast</strong> use <strong>Tomorrow.io</strong> when this
+              build includes the API key (no separate off switch).
+            </p>
+            <p className="about-sheet__p">
+              <strong>Forecasts in the app:</strong> expand the storm advisory bar → <strong>Route forecast</strong> for
+              weather along your trip; the precip bar at your location and the advisory strip use the same Tomorrow.io
+              feed. Map <strong>Rad</strong> is RainViewer; colored NWS shapes follow the <strong>NWS polygons</strong>{" "}
+              toggle.
             </p>
             <p className="about-sheet__p">
               <strong>Privacy:</strong> Location is for position, routing, and conditions while you use the app. Plus
@@ -570,7 +619,8 @@ export function AboutSheet({
             <h3 className="about-sheet__h3">Support diagnostics</h3>
             <p className="about-sheet__p">
               Send bug reports, suggestions, feature requests, or general feedback. Include diagnostics (no personal
-              info, just app configuration) so we can help faster.
+              info — version, toggles, and which data providers are configured) so we can tell an app bug from a network
+              or provider issue faster.
             </p>
             <label className="about-sheet__setting about-sheet__setting--stack">
               <span>

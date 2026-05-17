@@ -248,8 +248,9 @@ export function RouteForecastSheet({
           ) : null}
 
           <p className="cfs-footnote">
-            Forecast is tied to your trip corridor and ETA — not a generic city page. Radar and NWS on the map stay
-            the live view; this sheet is the timeline read.
+            Corridor and minute forecasts: <strong>Tomorrow.io</strong>. Tied to your trip and ETA — not a generic city
+            page. Map <strong>Rad</strong> (RainViewer) and NWS polygons stay the live map view; this sheet is the
+            timeline read.
           </p>
         </div>
       </div>

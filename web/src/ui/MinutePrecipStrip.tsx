@@ -59,6 +59,7 @@ export function MinutePrecipStrip({ forecast }: { forecast: MinutePrecipForecast
         <span>30 min</span>
         <span>60 min</span>
       </div>
+      <p className="mps__source">Forecast: Tomorrow.io</p>
     </div>
   );
 }
