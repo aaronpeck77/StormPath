@@ -385,7 +385,7 @@ function wxLineForFinal(
   const dest = forecastSlicesForChunkFraction(fc, 0.92, 1)[0];
   const destLine = dest ? compactSegmentWx(dest) : "";
   if (onWay && destLine) return `${onWay} → ${destLine}`;
-  return onWay || destLine || "…";
+  return onWay || destLine || "No forecast for this stretch";
 }
 
 export function routeChunkStepMeters(_totalM: number): number {

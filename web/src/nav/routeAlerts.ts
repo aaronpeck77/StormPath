@@ -2,7 +2,7 @@ import type { LngLat } from "./types";
 import { MAX_STRIP_ALERTS } from "./constants";
 
 /**
- * Legacy `RouteAlert` shape — kept for the strip / map / corridor sheet which still consume it.
+ * Legacy `RouteAlert` shape -- kept for the strip / map / corridor sheet which still consume it.
  * The unified `RouteImpact` model in `routeImpacts.ts` is now the source of truth; this type
  * is produced by `routeImpactToRouteAlert()` so every surface stays consistent.
  */
@@ -17,9 +17,11 @@ export type RouteAlert = {
   zoom: number;
   /** Approximate distance from route start along the selected polyline (meters). */
   alongMeters: number;
-  /** Include in drive-mode “within 5 mi” reroute prompts. */
+  /** Include in drive-mode "within 5 mi" reroute prompts. */
   promptRerouteAhead: boolean;
   corridorKind: RouteAlertCorridorKind;
+  /** Bounding box [sw, ne] of the source NWS polygon -- used by "Show on map" to fit the entire polygon. */
+  polygonBounds?: [[number, number], [number, number]];
 };
 
 /** Half-length of highlighted segment on map + strip (meters each side of alert position). */

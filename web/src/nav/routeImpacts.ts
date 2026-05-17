@@ -47,6 +47,7 @@ export type RouteImpactSource =
   | "mapboxTraffic"
   | "mapboxIncident"
   | "routeNotice"
+  | "tomorrowIo"
   | "fused";
 
 export type RouteImpactAction =
@@ -253,7 +254,10 @@ function buildNwsImpacts(opts: {
         : `${event} ahead`,
       driverAction,
       roadEffect: cls.effect,
-      detail: matchingAlert?.headline?.trim() || matchingAlert?.description?.slice(0, 220) || cls.effect,
+      detail:
+        matchingAlert?.headline?.trim() ||
+        matchingAlert?.description?.replace(/\s+/g, " ").trim() ||
+        cls.effect,
       numericSeverity: impactSeverityToNumeric(sev),
     };
   });

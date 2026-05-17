@@ -20,6 +20,29 @@ function nwsSeverityToScore(sev: string): number {
   }
 }
 
+/** Compute a [sw, ne] bounding box from a GeoJSON geometry, or null if not possible. */
+function polygonBoundsFromGeometry(
+  geom: GeoJSON.Geometry | null | undefined
+): [[number, number], [number, number]] | undefined {
+  if (!geom) return undefined;
+  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+  function visit(coords: number[]) {
+    if (coords.length < 2) return;
+    if (coords[0]! < minLng) minLng = coords[0]!;
+    if (coords[0]! > maxLng) maxLng = coords[0]!;
+    if (coords[1]! < minLat) minLat = coords[1]!;
+    if (coords[1]! > maxLat) maxLat = coords[1]!;
+  }
+  function walkRings(rings: number[][][]) { for (const ring of rings) for (const c of ring) visit(c); }
+  if (geom.type === "Polygon") walkRings(geom.coordinates);
+  else if (geom.type === "MultiPolygon") for (const poly of geom.coordinates) walkRings(poly);
+  else if (geom.type === "Point") visit(geom.coordinates);
+  else if (geom.type === "MultiPoint" || geom.type === "LineString")
+    for (const c of geom.coordinates as number[][]) visit(c);
+  if (!isFinite(minLng)) return undefined;
+  return [[minLng, minLat], [maxLng, maxLat]];
+}
+
 /** Present NWS warnings in the same sheet shape as corridor / map hazards. */
 export function normalizedWeatherToRouteAlert(
   n: NormalizedWeatherAlert,
@@ -27,7 +50,7 @@ export function normalizedWeatherToRouteAlert(
   alongMeters: number
 ): RouteAlert {
   const detail =
-    nwsDetailForRouteStrip(n) || n.description.slice(0, 800) || n.headline.trim() || n.areaDesc;
+    nwsDetailForRouteStrip(n) || n.description.replace(/\s+/g, " ").trim() || n.headline.trim() || n.areaDesc;
   return {
     id: `nws-strip-${n.id}`,
     severity: nwsSeverityToScore(n.severity),
@@ -38,6 +61,7 @@ export function normalizedWeatherToRouteAlert(
     alongMeters,
     promptRerouteAhead: n.severity === "Extreme" || n.severity === "Severe",
     corridorKind: "weather",
+    polygonBounds: polygonBoundsFromGeometry(n.geometry ?? null),
   };
 }
 

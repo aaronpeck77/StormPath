@@ -15,7 +15,8 @@ function effectiveDelayMinutes(delayVsTypical: number, _congestion: CongestionLe
 }
 
 /**
- * Fused view from real sources only: OpenWeather samples (optional), Mapbox driving-traffic (optional).
+ * Fused view from real sources only: OpenWeather samples (optional), Tomorrow.io corridor hourly
+ * forecast stress (optional), Mapbox driving-traffic (optional).
  * No simulated incidents, phases, or fake turn lists.
  */
 export function buildFusedSnapshot(
@@ -67,7 +68,7 @@ export function buildFusedSnapshot(
   const hasWx = Boolean(weather && Object.keys(weather).length > 0);
   const hasTraffic = routes.some((x) => x.hasLiveTrafficEstimate);
   const parts: string[] = [];
-  if (hasWx) parts.push("Weather from OpenWeather (samples along each route).");
+  if (hasWx) parts.push("Weather uses corridor samples (OpenWeather and/or Tomorrow.io when configured).");
   else parts.push("Weather: not loaded.");
   if (hasTraffic) parts.push("Drive times use Mapbox live traffic along the route shape.");
   else parts.push("Live traffic: add a Mapbox token — static ETA has no real-time congestion.");

@@ -8,63 +8,13 @@ import { formatDriveAheadBrief, formatMinutesAsHoursMinutes } from "../nav/drive
 import type { RouteImpact, RouteImpactSeverity } from "../nav/routeImpacts";
 import { RouteHazardTimeline, impactToTimelineItem } from "./RouteHazardTimeline";
 import type { TimelineItem } from "./RouteHazardTimeline";
+import type { MinutePrecipForecast } from "../services/tomorrowIo";
+import { MinutePrecipStrip } from "./MinutePrecipStrip";
+import { displayText } from "../utils/displayText";
 
-/** One-line target when static (no scroll); longer text scrolls inside the bar first. */
-const PREVIEW_MAX_STATIC = 40;
-
-function clipOneLine(s: string, max = PREVIEW_MAX_STATIC): string {
-  const t = s.replace(/\s+/g, " ").trim();
-  if (t.length <= max) return t;
-  return `${t.slice(0, Math.max(0, max - 1))}…`;
-}
-
-/** Renders a single preview line: short copy fits; longer copy scrolls left so you can read it. */
+/** Full advisory preview message — wraps instead of truncating with an ellipsis. */
 function AdvisoryPreviewMessage({ raw }: { raw: string }) {
-  const wrapRef = useRef<HTMLSpanElement>(null);
-  const innerRef = useRef<HTMLSpanElement>(null);
-  const plain = raw.replace(/\s+/g, " ").trim();
-
-  useLayoutEffect(() => {
-    const wrap = wrapRef.current;
-    const inner = innerRef.current;
-    if (!wrap || !inner) return;
-    let anim: Animation | undefined;
-    let raf2 = 0;
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => {
-        inner.style.transform = "translateX(0)";
-        const need = inner.scrollWidth - wrap.clientWidth;
-        if (plain.length <= PREVIEW_MAX_STATIC || need <= 1) return;
-        const duration = Math.min(14_000, Math.max(2_400, need * 32));
-        anim = inner.animate(
-          [{ transform: "translateX(0px)" }, { transform: `translateX(-${need}px)` }],
-          { duration, easing: "linear", fill: "forwards" }
-        );
-      });
-    });
-    return () => {
-      cancelAnimationFrame(raf1);
-      if (raf2) cancelAnimationFrame(raf2);
-      anim?.cancel();
-    };
-  }, [plain]);
-
-  if (plain.length <= PREVIEW_MAX_STATIC) {
-    return (
-      <span className="storm-advisory-bar__preview-text" title={plain}>
-        {clipOneLine(plain)}
-      </span>
-    );
-  }
-  return (
-    <span className="storm-advisory-bar__preview-text storm-advisory-bar__preview-text--scroll" title={plain}>
-      <span ref={wrapRef} className="storm-advisory-bar__preview-clip">
-        <span ref={innerRef} className="storm-advisory-bar__preview-clip-inner">
-          {plain}
-        </span>
-      </span>
-    </span>
-  );
+  return <span className="storm-advisory-bar__preview-text">{displayText(raw)}</span>;
 }
 
 export type StormRoadDetailRow = {
@@ -154,19 +104,13 @@ export type StormAdvisoryBarProps = SharedProps & {
    * drivers see a quick read of conditions at a glance.
    */
   nowcastLine?: string | null;
+  /** Tomorrow.io 60-minute minute-by-minute precip forecast at the user's location. */
+  minutePrecipForecast?: MinutePrecipForecast | null;
+  /** Open full corridor forecast sheet (route-tied timeline). */
+  onOpenCorridorForecast?: () => void;
 };
 
 
-function fmtEnds(ends: string | null): string | null {
-  if (!ends) return null;
-  const t = Date.parse(ends);
-  if (!Number.isFinite(t)) return null;
-  return new Date(t).toLocaleString(undefined, {
-    weekday: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 /**
  * Bucket a {@link RouteImpact}'s category into one of the four advisory sections:
@@ -193,41 +137,30 @@ function impactSectionBucket(i: RouteImpact): "weather" | "road" {
 }
 
 
-/** Compact urgent card for the NOW section — life-safety NWS at the user's position. */
-function urgentNwsCard(
+
+/** Compact inline chip for an NWS alert at the user's position. */
+function nwsAlertChip(
   a: NormalizedWeatherAlert,
-  context: "atLocation" | "crosses",
+  _context: "atLocation",
   onClick?: (alert: NormalizedWeatherAlert) => void
 ): ReactNode {
-  const endsLabel = fmtEnds(a.ends);
-  const glance = nwsGlanceSummary(a);
+  const sevClass =
+    a.severity === "Extreme" || /tornado warning/i.test(a.event ?? "")
+      ? "avoid"
+      : a.severity === "Severe"
+        ? "serious"
+        : "caution";
   return (
-    <li
-      key={a.id}
-      className={`storm-advisory-bar__now-card storm-advisory-bar__now-card--${context}`}
-    >
+    <li key={a.id}>
       <button
         type="button"
-        className="storm-advisory-bar__now-card-btn"
+        className={`nws-chip nws-chip--${sevClass} nws-chip--here`}
         onClick={() => onClick?.(a)}
-        aria-label={`${a.event} — open details`}
+        aria-label={`${a.event} — at your position — open details`}
       >
-        <span className="storm-advisory-bar__now-card-icon" aria-hidden>
-          ⚠
-        </span>
-        <span className="storm-advisory-bar__now-card-body">
-          <span className="storm-advisory-bar__now-card-title">
-            <strong>{a.event}</strong>
-            {a.severity ? <span className="storm-advisory-bar__now-card-sev">{a.severity}</span> : null}
-          </span>
-          {glance ? (
-            <span className="storm-advisory-bar__now-card-detail">{glance}</span>
-          ) : null}
-          <span className="storm-advisory-bar__now-card-meta">
-            {context === "atLocation" ? "At your position" : "Crosses your route"}
-            {endsLabel ? ` · ends ${endsLabel}` : ""}
-          </span>
-        </span>
+        <span className="nws-chip__dot" aria-hidden />
+        <span className="nws-chip__label">{a.event}</span>
+        <span className="nws-chip__here" aria-hidden>Here</span>
       </button>
     </li>
   );
@@ -270,6 +203,8 @@ export function StormAdvisoryBar({
   basicNavAdvisoryMode = false,
   navigationStarted,
   nowcastLine = null,
+  minutePrecipForecast = null,
+  onOpenCorridorForecast,
 }: StormAdvisoryBarProps) {
   if (!featureEnabled) return null;
 
@@ -332,9 +267,13 @@ export function StormAdvisoryBar({
     return routeImpacts.filter((i) => impactSectionBucket(i) === "weather" && !promoted.has(i.id));
   }, [routeImpacts, nowAtLocation, nowCrossing]);
 
-  /* Split weather into radar vs other (NWS handled separately by RouteAlertGroupPanel). */
+  /* Split weather into radar, Tomorrow.io forecast, vs other (NWS handled separately). */
   const radarImpacts = useMemo(
     () => allWeatherImpacts.filter((i) => i.source === "radar"),
+    [allWeatherImpacts]
+  );
+  const forecastImpacts = useMemo(
+    () => allWeatherImpacts.filter((i) => i.source === "tomorrowIo"),
     [allWeatherImpacts]
   );
   const weatherImpacts = allWeatherImpacts; // kept for hasWeather gate
@@ -372,13 +311,12 @@ export function StormAdvisoryBar({
    * no NWS-derived rows on the panel — once impacts are visible, they speak for themselves. The
    * goal: when a user opens the advisory and sees no NWS info, they always know *why*. */
   const nwsStatusMessage: { tone: "muted" | "warn"; text: string } | null = useMemo(() => {
-    /* Suppress the status note when the section already has substantive content — including the
-     * at-location list we render below for non-urgent advisories at the user's position. */
+    /* Suppress the status note only when we're actually rendering substantive content.
+     * atLocationOther/crossingOther are no longer rendered as explicit cards — only the
+     * timeline shows crossing alerts, so don't suppress based on them alone. */
     if (
       weatherImpacts.length > 0 ||
-      (stormStripBands?.length ?? 0) > 0 ||
-      atLocationOther.length > 0 ||
-      crossingOther.length > 0
+      (stormStripBands?.length ?? 0) > 0
     ) {
       return null;
     }
@@ -522,7 +460,7 @@ export function StormAdvisoryBar({
       if (busyLabel) out.push({ badge: "Work", raw: busyLabel });
       for (const p of promoLines) {
         if (!nowcastLine && p.id === "sitebible") continue;
-        out.push({ badge: "Info", raw: clipOneLine(p.text, 64) });
+        out.push({ badge: "Info", raw: displayText(p.text) });
       }
       if (out.length === 0) out.push({ badge: null, raw: defaultPreviewText });
       return out;
@@ -588,7 +526,7 @@ export function StormAdvisoryBar({
     }
     for (const p of promoLines) {
       if (p.id === "sitebible") continue;
-      out.push({ badge: "Info", raw: clipOneLine(p.text, 64) });
+      out.push({ badge: "Info", raw: displayText(p.text) });
     }
     if (out.length === 0) out.push({ badge: null, raw: defaultPreviewText });
     return out;
@@ -817,6 +755,20 @@ export function StormAdvisoryBar({
             )}
           </div>
         </div>
+        {onOpenCorridorForecast && !basicNavAdvisoryMode && hasGuidanceRoute ? (
+          <button
+            type="button"
+            className="storm-advisory-bar__forecast-btn"
+            onPointerDownCapture={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onOpenCorridorForecast();
+            }}
+          >
+            Route forecast
+          </button>
+        ) : null}
         {!hideHeadToggles && (
           <div className="storm-advisory-bar__toggles storm-advisory-bar__toggles--stacked">
             <label className="storm-advisory-bar__toggle storm-advisory-bar__toggle--nws">
@@ -877,6 +829,11 @@ export function StormAdvisoryBar({
       )}
 
       <div className="storm-advisory-bar__sections-scroll">
+        {/* ── Minute precip strip (Tomorrow.io) ── shown when we have a forecast */}
+        {minutePrecipForecast && (
+          <MinutePrecipStrip forecast={minutePrecipForecast} />
+        )}
+
         {/* Pre-Go hint surfaced once at the very top so it doesn't repeat across sections. */}
         {!navigationStarted && hasGuidanceRoute && !basicNavAdvisoryMode && (
           <p className="storm-advisory-bar__pre-go-hint" role="note">
@@ -884,18 +841,16 @@ export function StormAdvisoryBar({
           </p>
         )}
 
-        {/* ───── NOW ───── Life-safety NWS that is at-location or crossing now. */}
-        {hasNow && (
-          <section className="storm-advisory-bar__section storm-advisory-bar__section--now">
-            <p className="storm-advisory-bar__section-title">Now</p>
-            <ul className="storm-advisory-bar__now-list" role="list">
-              {nowAtLocation.map((a) => urgentNwsCard(a, "atLocation", onNwsAlertClick))}
-              {nowCrossing
-                .filter((a) => !nowAtLocation.some((b) => b.id === a.id))
-                .map((a) => urgentNwsCard(a, "crosses", onNwsAlertClick))}
-            </ul>
-            <p className="storm-advisory-bar__section-source">Source: NWS</p>
-          </section>
+        {/* ── At-location NWS alerts — things happening WHERE YOU ARE RIGHT NOW.
+         *  Shown as compact tappable chips. Route-crossing alerts live in the
+         *  timeline graph + detail cards below instead. */}
+        {(nowAtLocation.length > 0 || atLocationOther.length > 0) && (
+          <ul className="nws-chips" role="list" aria-label="NWS alerts at your position">
+            {nowAtLocation.map((a) => nwsAlertChip(a, "atLocation", onNwsAlertClick))}
+            {atLocationOther
+              .filter((a) => !nowAtLocation.some((b) => b.id === a.id))
+              .map((a) => nwsAlertChip(a, "atLocation", onNwsAlertClick))}
+          </ul>
         )}
 
         {/* ───── UNIFIED ROUTE HAZARD TIMELINE ───────────────────────────────────
@@ -928,6 +883,9 @@ export function StormAdvisoryBar({
           }
 
           for (const imp of radarImpacts) {
+            timelineItems.push(impactToTimelineItem(imp));
+          }
+          for (const imp of forecastImpacts) {
             timelineItems.push(impactToTimelineItem(imp));
           }
           for (const imp of roadImpacts) {
@@ -964,35 +922,6 @@ export function StormAdvisoryBar({
                 </p>
               )}
 
-              {/* Non-urgent at-position NWS advisories (Wind Advisory, Dense Fog…) */}
-              {atLocationOther.length > 0 && (
-                <ul className="storm-advisory-bar__here-list" role="list" aria-label="NWS advisories at your position">
-                  {atLocationOther.map((a) => {
-                    const glance = nwsGlanceSummary(a);
-                    const ends = fmtEnds(a.ends);
-                    return (
-                      <li key={a.id} className="storm-advisory-bar__here-item">
-                        <button
-                          type="button"
-                          className="storm-advisory-bar__here-btn"
-                          onClick={() => onNwsAlertClick?.(a)}
-                          aria-label={`${a.event} — open details`}
-                        >
-                          <span className="storm-advisory-bar__here-pill" aria-hidden>At you</span>
-                          <span className="storm-advisory-bar__here-body">
-                            <span className="storm-advisory-bar__here-title">
-                              <strong>{a.event}</strong>
-                              {a.severity ? <span className="storm-advisory-bar__here-sev">{a.severity}</span> : null}
-                            </span>
-                            {glance ? <span className="storm-advisory-bar__here-detail">{glance}</span> : null}
-                            {ends ? <span className="storm-advisory-bar__here-meta">ends {ends}</span> : null}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
 
               {/* Better route suggestion */}
               {betterRouteRow && (

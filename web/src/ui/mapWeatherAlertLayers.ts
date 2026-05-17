@@ -4,6 +4,7 @@ import type {
   GeoJSONSource,
   LineLayer,
   Map as MapboxMap,
+  SymbolLayer,
 } from "mapbox-gl";
 
 import { nwsMapKindHex, nwsMapKindFromEvent, type NwsMapKind } from "../weatherAlerts/nwsMapKind";
@@ -14,6 +15,8 @@ const LINE = "weather-alerts-nws-outline";
 
 const MOTION_SRC = "weather-alerts-motion";
 const MOTION_LAYER = "weather-alerts-motion-arrows";
+const MOTION_LABEL_SRC = "weather-alerts-motion-labels";
+const MOTION_LABEL_LAYER = "weather-alerts-motion-labels-text";
 
 /** Hit-test layer for hover / identify (fill has the polygon area). */
 export const WEATHER_ALERTS_NWS_FILL_LAYER_ID = FILL;
@@ -154,11 +157,21 @@ function stormMotionArrowLines(
   ];
 }
 
+function cardinalLabel(bearingDeg: number): string {
+  const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  return dirs[Math.round(bearingDeg / 45) % 8]!;
+}
+
+function nwsMotionLabel(motionDeg: number, motionMph: number): string {
+  return `${Math.round(motionMph)} mph ${cardinalLabel(motionDeg)}`;
+}
+
 /** Build arrow GeoJSON from polygon features that carry motionDeg + motionMph properties. */
 function buildMotionArrowCollection(
   collection: GeoJSON.FeatureCollection
-): GeoJSON.FeatureCollection {
+): { arrows: GeoJSON.FeatureCollection; labels: GeoJSON.FeatureCollection } {
   const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+  const labels: GeoJSON.Feature<GeoJSON.Point>[] = [];
 
   for (const f of collection.features) {
     const props = f.properties as Record<string, unknown> | null;
@@ -176,10 +189,20 @@ function buildMotionArrowCollection(
       : kind as NwsMapKind);
 
     const centroid = geometryCentroid(g);
+    const shaftM = 38000 + motionMph * 700;
+    const tip = destinationPoint(centroid[0], centroid[1], motionDeg, shaftM);
     features.push(...stormMotionArrowLines(centroid, motionDeg, motionMph, color));
+    labels.push({
+      type: "Feature",
+      properties: { label: nwsMotionLabel(motionDeg, motionMph), labelColor: color },
+      geometry: { type: "Point", coordinates: tip },
+    });
   }
 
-  return { type: "FeatureCollection", features };
+  return {
+    arrows: { type: "FeatureCollection", features },
+    labels: { type: "FeatureCollection", features: labels },
+  };
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -249,9 +272,9 @@ export function applyWeatherAlertLayers(
   }
 
   // ── Storm motion arrows ──────────────────────────────────────────────────
-  const arrows = buildMotionArrowCollection(effective);
-  if (arrows.features.length > 0) {
-    applyMotionArrows(map, arrows, beforeId);
+  const motion = buildMotionArrowCollection(effective);
+  if (motion.arrows.features.length > 0) {
+    applyMotionArrows(map, motion.arrows, motion.labels, beforeId);
   } else {
     removeMotionArrows(map);
   }
@@ -262,6 +285,7 @@ export function applyWeatherAlertLayers(
 function applyMotionArrows(
   map: MapboxMap,
   arrows: GeoJSON.FeatureCollection,
+  labels: GeoJSON.FeatureCollection,
   beforeId: string | undefined
 ): void {
   if (!map.getSource(MOTION_SRC)) {
@@ -285,9 +309,38 @@ function applyMotionArrows(
   } else {
     (map.getSource(MOTION_SRC) as GeoJSONSource).setData(arrows);
   }
+
+  if (!map.getSource(MOTION_LABEL_SRC)) {
+    map.addSource(MOTION_LABEL_SRC, { type: "geojson", data: labels });
+    const labelLayer: SymbolLayer = {
+      id: MOTION_LABEL_LAYER,
+      type: "symbol",
+      source: MOTION_LABEL_SRC,
+      layout: {
+        "text-field": ["get", "label"],
+        "text-size": 11,
+        "text-offset": [0, -1.1],
+        "text-anchor": "bottom",
+        "text-max-width": 12,
+        "text-allow-overlap": true,
+        "text-ignore-placement": true,
+      },
+      paint: {
+        "text-color": ["get", "labelColor"] as unknown as DataDrivenPropertyValueSpecification<string>,
+        "text-halo-color": "rgba(15, 23, 42, 0.88)",
+        "text-halo-width": 1.4,
+      },
+    };
+    if (beforeId) map.addLayer(labelLayer, beforeId);
+    else map.addLayer(labelLayer);
+  } else {
+    (map.getSource(MOTION_LABEL_SRC) as GeoJSONSource).setData(labels);
+  }
 }
 
 function removeMotionArrows(map: MapboxMap): void {
+  if (map.getLayer(MOTION_LABEL_LAYER)) map.removeLayer(MOTION_LABEL_LAYER);
   if (map.getLayer(MOTION_LAYER)) map.removeLayer(MOTION_LAYER);
+  if (map.getSource(MOTION_LABEL_SRC)) map.removeSource(MOTION_LABEL_SRC);
   if (map.getSource(MOTION_SRC)) map.removeSource(MOTION_SRC);
 }

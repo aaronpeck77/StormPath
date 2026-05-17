@@ -17,9 +17,7 @@ export function pickPrimaryRoadName(instruction: string, stepName?: string, step
   const onto = instruction.match(/\b(?:onto|on|toward)\s+([^,.;]+?)(?:\.|,|;|$)/i);
   const raw = (onto?.[1] ?? stepName ?? "").trim();
   if (!raw) return null;
-  const cleaned = raw.replace(/\s+/g, " ");
-  if (cleaned.length <= 52) return cleaned;
-  return `${cleaned.slice(0, 50).trim()}…`;
+  return raw.replace(/\s+/g, " ").trim();
 }
 
 type RoadInstructionContext = "interstate" | "us_hwy" | "state_hwy" | "street";
@@ -60,12 +58,8 @@ function shortenVerb(instr: string): string {
   return "Continue";
 }
 
-const MAX_INTERSTATE = 48;
-const MAX_US_SR = 56;
-const MAX_STREET = 96;
-
 /**
- * Mapbox/OSRM full sentence → banner line: compact shields on highways, fuller text on streets.
+ * Mapbox/OSRM full sentence → banner line: compact shields on highways, full Mapbox text on streets.
  */
 export function shortenTurnInstruction(instruction: string, stepName?: string, stepRef?: string): string {
   const raw = instruction.replace(/\s+/g, " ").trim();
@@ -75,13 +69,8 @@ export function shortenTurnInstruction(instruction: string, stepName?: string, s
   if (ctx === "interstate" || ctx === "us_hwy" || ctx === "state_hwy") {
     const road = pickPrimaryRoadName(raw, stepName, stepRef);
     const verb = shortenVerb(raw);
-    if (road) {
-      const line = `${verb} · ${road}`;
-      const cap = ctx === "interstate" ? MAX_INTERSTATE : MAX_US_SR;
-      return line.length <= cap ? line : `${line.slice(0, cap - 1).trimEnd()}…`;
-    }
+    if (road) return `${verb} · ${road}`;
   }
 
-  if (raw.length <= MAX_STREET) return raw;
-  return `${raw.slice(0, MAX_STREET - 1).trimEnd()}…`;
+  return raw;
 }

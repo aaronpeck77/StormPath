@@ -1,18 +1,12 @@
 import type { RouteAlert } from "./routeAlerts";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { nwsWhatIsHappening, nwsWhatToDo } from "../weatherAlerts/nwsDriveSummary";
+import { displayText } from "../utils/displayText";
 import { formatDelayMinutesForUi } from "./trafficNarrative";
 
-/** Soft cap for the one-line panel summary; full text lives in the `title` tooltip. */
-const SUMMARY_MAX = 118;
-
-export function squeezeForSummary(text: string, max = SUMMARY_MAX): string {
-  const t = text.replace(/\s+/g, " ").trim();
-  if (t.length <= max) return t;
-  const cut = t.slice(0, max);
-  const lastSp = cut.lastIndexOf(" ");
-  const base = lastSp > 40 ? cut.slice(0, lastSp) : cut;
-  return `${base.trim()}…`;
+/** Panel summary — full message (whitespace normalized only). */
+export function squeezeForSummary(text: string, _max?: number): string {
+  return displayText(text);
 }
 
 /** Distance along the polyline from the route start (not remaining). */

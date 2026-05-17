@@ -1,12 +1,5 @@
 import type { NormalizedWeatherAlert } from "./types";
-
-const MAX = 320;
-
-function trunc(s: string, n: number): string {
-  const t = s.replace(/\s+/g, " ").trim();
-  if (t.length <= n) return t;
-  return `${t.slice(0, n - 1)}…`;
-}
+import { displayText } from "../utils/displayText";
 
 /** NWS CAP-style sections in `description` (bullet + LABEL...). */
 function capSection(description: string, label: string): string {
@@ -61,8 +54,8 @@ function firstMeaningfulSentence(description: string): string {
   /* Drop leading "Issued at" style if present in description */
   body = body.replace(/^\s*issued\s+at\s+[^.]+\.\s*/i, "").trim();
   const cut = body.search(/[.!?](\s|$)/);
-  if (cut > 25 && cut < 450) return body.slice(0, cut + 1).trim();
-  return body.slice(0, 280);
+  if (cut > 25) return body.slice(0, cut + 1).trim();
+  return body;
 }
 
 /** True if text is mostly a county / zone list (not useful while driving). */
@@ -84,53 +77,46 @@ export function nwsWhatIsHappening(a: NormalizedWeatherAlert): string {
   const desc = a.description ?? "";
   let what = capSection(desc, "WHAT");
   if (!what) what = capSectionLoose(desc, "WHAT");
-  if (what && !nwsLooksLikeCountyList(what)) return trunc(what, MAX);
+  if (what && !nwsLooksLikeCountyList(what)) return displayText(what);
 
   let hazard = capSection(desc, "HAZARD");
   if (!hazard) hazard = capSectionLoose(desc, "HAZARD");
-  if (hazard) return trunc(hazard, MAX);
+  if (hazard) return displayText(hazard);
 
   const impacts = capSection(desc, "IMPACTS") || capSection(desc, "IMPACT");
-  if (impacts && !nwsLooksLikeCountyList(impacts)) return trunc(impacts, MAX);
+  if (impacts && !nwsLooksLikeCountyList(impacts)) return displayText(impacts);
 
   const first = firstMeaningfulSentence(desc);
   if (first && !nwsLooksLikeCountyList(first) && !nwsHeadlineIsIssuanceOnly(first)) {
-    return trunc(first, MAX);
+    return displayText(first);
   }
 
   const hl = a.headline.trim();
   const hlBody = hl.replace(/^[^*]+?\*\s*WHAT\.\.\.\s*/i, "").trim() || hl;
   if (hlBody && !nwsLooksLikeCountyList(hlBody) && !nwsHeadlineIsIssuanceOnly(hlBody)) {
-    return trunc(hlBody, MAX);
+    return displayText(hlBody);
   }
 
-  return trunc(a.event.trim() || "Weather alert", 120);
+  return displayText(a.event) || "Weather alert";
 }
 
-/**
- * Very short line for advisory ticker / list glance — event + one clause when distinct.
- * Keeps driving UI readable without paragraph-length CAP text.
- */
+/** Advisory ticker / list — full hazard text (event + detail when distinct). */
 export function nwsGlanceSummary(a: NormalizedWeatherAlert): string {
-  const full = nwsWhatIsHappening(a).replace(/\s+/g, " ").trim();
-  const ev = (a.event || "").trim();
-  if (!full) return trunc(ev || "Weather alert", 56);
-  const first = full.split(/[.;]/)[0]?.trim() ?? full;
-  if (!ev) return trunc(first, 56);
+  const full = displayText(nwsWhatIsHappening(a));
+  const ev = displayText(a.event);
+  if (!full) return ev || "Weather alert";
+  if (!ev) return full;
   const evL = ev.toLowerCase();
-  const firstL = first.toLowerCase();
-  if (firstL.startsWith(evL) || firstL.includes(evL.slice(0, Math.min(14, evL.length)))) {
-    return trunc(first, 56);
-  }
-  const combo = `${ev}: ${first}`;
-  return trunc(combo, 56);
+  const fullL = full.toLowerCase();
+  if (fullL.startsWith(evL) || fullL.includes(evL)) return full;
+  return `${ev}: ${full}`;
 }
 
 /** One short line for “issued …” — optional subline in UI (not the hazard). */
 export function nwsIssuedByLine(headline: string): string {
   const h = headline.trim();
   if (!h || !nwsHeadlineIsIssuanceOnly(h)) return "";
-  return trunc(h, 140);
+  return displayText(h);
 }
 
 /**
@@ -141,7 +127,7 @@ export function nwsWhatToDo(a: NormalizedWeatherAlert): string {
     capSection(a.description, "PRECAUTIONARY / PREPAREDNESS ACTIONS") ||
     capSection(a.description, "PRECAUTIONARY/PREPAREDNESS ACTIONS") ||
     capSection(a.description, "PRECAUTIONARY");
-  if (prep) return trunc(prep, 260);
+  if (prep) return displayText(prep);
   return "";
 }
 

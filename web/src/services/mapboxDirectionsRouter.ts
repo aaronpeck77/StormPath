@@ -1,4 +1,11 @@
 import type { LngLat, NavRoute, RouteTurnStep, TripPlan } from "../nav/types";
+import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
+import {
+  computeRadarBypassWaypointCandidates,
+  computeStormAvoidanceWaypointVariants,
+  dedupeWaypointCandidates,
+  STORM_AVOIDANCE_MAX_ETA_FACTOR,
+} from "../nav/stormAvoidanceWaypoint";
 import {
   closestAlongRouteMeters,
   cumulativeLengthToVertex,
@@ -15,6 +22,8 @@ import {
   isRetryableHttpStatus,
   MAPBOX_DIRECTIONS_TIMEOUT_MS,
 } from "../utils/fetchResilient";
+import { rainViewerPrecipTileUrlTemplate } from "./rainViewerRadar";
+import { RADAR_PRIMARY_PRECIP_GATE, sampleRadarMosaicMaxAlongPolyline } from "./radarPolylineIntensity";
 
 type MbCoord = [number, number];
 
@@ -285,6 +294,189 @@ async function fetchMapboxDirections(
   throw new Error("Mapbox Directions: request failed");
 }
 
+/** Multi-stop Directions request (`start;via;…;end`). Single route — used for storm waypoint legs. */
+async function fetchMapboxDirectionsThrough(
+  accessToken: string,
+  coords: LngLat[],
+  opts: { alternatives: boolean; excludeMotorway: boolean; includeDetails?: boolean },
+  signal?: AbortSignal
+): Promise<DirectionsResponse> {
+  if (coords.length < 2) throw new Error("Mapbox Directions: need at least two coordinates");
+  const coordStr = coords.map((c) => `${c[0].toFixed(5)},${c[1].toFixed(5)}`).join(";");
+  const url = new URL(
+    `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coordStr}`
+  );
+  url.searchParams.set("access_token", accessToken);
+  if (opts.alternatives) url.searchParams.set("alternatives", "true");
+  url.searchParams.set("geometries", "geojson");
+  url.searchParams.set("overview", opts.includeDetails === false ? "simplified" : "full");
+  url.searchParams.set("steps", opts.includeDetails === false ? "false" : "true");
+  if (opts.includeDetails !== false) {
+    url.searchParams.set("annotations", "closure");
+  }
+  if (opts.excludeMotorway) url.searchParams.set("exclude", "motorway");
+
+  let lastHttp: { res: Response; data: DirectionsResponse } | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    try {
+      const res = await fetchWithTimeout({
+        input: url.toString(),
+        init: { method: "GET" },
+        timeoutMs: MAPBOX_DIRECTIONS_TIMEOUT_MS,
+        externalSignal: signal,
+      });
+      const data = (await res.json()) as DirectionsResponse;
+      if (!res.ok || (data.code && data.code !== "Ok")) {
+        lastHttp = { res, data };
+        if (attempt === 0 && isRetryableHttpStatus(res.status)) {
+          await new Promise<void>((r) => setTimeout(r, 550));
+          continue;
+        }
+        throw mapboxDirectionsErrorFromResponse(res, data);
+      }
+      return data;
+    } catch (e) {
+      if (isAbortError(e) || isFetchTimeoutError(e)) throw e;
+      if (attempt === 0 && isRetryableFetchError(e)) {
+        await new Promise<void>((r) => setTimeout(r, 550));
+        continue;
+      }
+      throw e;
+    }
+  }
+  if (lastHttp) throw mapboxDirectionsErrorFromResponse(lastHttp.res, lastHttp.data);
+  throw new Error("Mapbox Directions: request failed");
+}
+
+/**
+ * Replace leg **C** (`r-c`) with a storm‑safer polyline: try multiple lateral waypoints (NWS-informed plus
+ * generic bypass offsets), fetch Directions for each, then prefer the path whose RainViewer mosaic echo
+ * peak along the polyline is lowest (warm reds rank highest). Falls back to first successful polygon
+ * waypoint when tiles are unavailable.
+ */
+async function finalizeStormAvoidanceThirdLeg(
+  accessToken: string,
+  start: LngLat,
+  end: LngLat,
+  routes: NavRoute[],
+  stormAlerts: NormalizedWeatherAlert[] | undefined,
+  radarAvoidanceEnabled: boolean,
+  signal: AbortSignal | undefined,
+  preferThreeRoutes: boolean,
+  includeDetails: boolean
+): Promise<NavRoute[]> {
+  if (!preferThreeRoutes || routes.length < 2) return routes;
+
+  const polygonWps =
+    stormAlerts?.length ? computeStormAvoidanceWaypointVariants(start, end, stormAlerts) : [];
+
+  let tileTemplate: string | null = null;
+  if (polygonWps.length > 0 || radarAvoidanceEnabled) {
+    tileTemplate = await rainViewerPrecipTileUrlTemplate().catch(() => null);
+    if (signal?.aborted) return routes;
+  }
+
+  let precipAlongPrimary = 0;
+  const primaryGeom = routes[0]?.geometry;
+  if (tileTemplate && primaryGeom && primaryGeom.length >= 2) {
+    precipAlongPrimary = await sampleRadarMosaicMaxAlongPolyline(primaryGeom, tileTemplate, signal);
+    if (signal?.aborted) return routes;
+  }
+
+  const strongPrecipOnPrimary =
+    tileTemplate != null && precipAlongPrimary >= RADAR_PRIMARY_PRECIP_GATE;
+
+  let waypointCandidates = [...polygonWps];
+  if (
+    waypointCandidates.length < 8 &&
+    (polygonWps.length > 0 || (radarAvoidanceEnabled && strongPrecipOnPrimary))
+  ) {
+    waypointCandidates.push(...computeRadarBypassWaypointCandidates(start, end));
+  }
+  waypointCandidates = dedupeWaypointCandidates(waypointCandidates, 2500).slice(0, 8);
+
+  if (!waypointCandidates.length) return routes;
+
+  const primaryEta = routes[0]!.baseEtaMinutes;
+  const tieRadar = tileTemplate != null;
+
+  let bestRoute: NavRoute | null = null;
+  let bestRadarMax = Number.POSITIVE_INFINITY;
+  let bestEta = Number.POSITIVE_INFINITY;
+
+  for (const wp of waypointCandidates) {
+    if (signal?.aborted) return routes;
+
+    let data: DirectionsResponse;
+    try {
+      data = await fetchMapboxDirectionsThrough(
+        accessToken,
+        [start, wp, end],
+        { alternatives: false, excludeMotorway: false, includeDetails },
+        signal
+      );
+    } catch {
+      continue;
+    }
+
+    const raw = sortRoutesByDurationAsc(data.routes ?? [])[0];
+    if (!raw?.geometry?.coordinates?.length) continue;
+
+    const navStorm = routeFromDirectionsApi(raw, "r-c", "balanced", "Storm safer");
+    if (!navStorm) continue;
+
+    if (
+      primaryEta > 0 &&
+      navStorm.baseEtaMinutes > primaryEta * STORM_AVOIDANCE_MAX_ETA_FACTOR
+    ) {
+      continue;
+    }
+
+    let duplicateShape = false;
+    for (const existing of routes) {
+      if (sameRouteShapeLine(navStorm.geometry, existing.geometry)) {
+        duplicateShape = true;
+        break;
+      }
+    }
+    if (duplicateShape) continue;
+
+    let radarMax = 0;
+    if (tieRadar && navStorm.geometry?.length) {
+      radarMax = await sampleRadarMosaicMaxAlongPolyline(navStorm.geometry, tileTemplate!, signal);
+      if (signal?.aborted) return routes;
+    }
+
+    if (!tieRadar) {
+      bestRoute = navStorm;
+      break;
+    }
+
+    const better =
+      radarMax < bestRadarMax - 1e-9 ||
+      (Math.abs(radarMax - bestRadarMax) < 1e-9 && navStorm.baseEtaMinutes < bestEta - 1e-9);
+
+    if (better) {
+      bestRoute = navStorm;
+      bestRadarMax = radarMax;
+      bestEta = navStorm.baseEtaMinutes;
+    }
+  }
+
+  if (!bestRoute) return routes;
+
+  const navStorm = bestRoute;
+
+  const out = [...routes];
+  if (out.length >= 3) {
+    out[2] = navStorm;
+  } else if (out.length === 2) {
+    out.push(navStorm);
+  }
+  return out;
+}
+
 function sortRoutesByDurationAsc(
   routes: NonNullable<DirectionsResponse["routes"]>
 ): NonNullable<DirectionsResponse["routes"]> {
@@ -431,18 +623,37 @@ function collectRouteNoticesWithAlong(
 }
 
 /**
- * Up to 3 traffic-aware routes:
- * - **Main** — fastest typical path (major roads when faster).
- * - **No interstate** — `exclude=motorway` when available, else next-best alternate.
- * - **No town** — prefers fewer turns / arterial feel, while capping ETA inflation.
+ * Up to 3 traffic-aware routes from Mapbox (alternatives + optional `exclude=motorway`).
  *
- * For short in-town trips, we intentionally return only A/B (speed-focused) to keep choices quick.
+ * ### Product intent (weather — not fully wired yet)
+ * Storms are **soft** preferences: we surface safer paths when geometry differs, but routes must
+ * stay reasonable (bounded ETA vs fastest). **Closures, incidents, and severe traffic blocks** from
+ * Mapbox are **hard** barriers — Directions already biases away when annotated; we still report what’s left.
  *
- * Latency: long trips can take several seconds per Directions call. We **always** complete the
- * primary `alternatives=true` request first and build A/B/C from that pool when possible. When a
- * second `exclude=motorway` call is needed, Plus builds start it **in parallel** with the primary
- * (then abort it if the primary already yielded enough alternates), so worst-case latency is
- * ~max(primary, secondary) instead of primary+secondary.
+ * - **A (`fastest`)** — Time-optimal among returned variants; carries full hazard / NWS / radar
+ *   reporting even if it cuts through weather. Driver chooses knowingly.
+ * - **B (`hazardSmart`)** — Medium-risk corridor: prefer avoiding motorways when Mapbox gives a
+ *   distinct non-interstate shape; future: allow motorway **only** if modeled storm exposure drops
+ *   by ~half vs staying off interstate (compare per-leg mosaic / advisory stress).
+ * - **C (`balanced`)** — Among waypoint-detoured candidates within an ETA budget vs A, prefers **lower
+ *   RainViewer echo intensity** along the snapped polyline (strong reds rank worst). NWS polygons seed lateral
+ *   waypoint variants; generic corridor offsets fill the candidate list when mosaic shows meaningful precip.
+ *
+ * ### Storm / radar avoidance on leg C (`radarAvoidanceEnabled` + Plus three-route builds)
+ * Leg **C** may be replaced after scoring several `start → waypoint → end` Directions results: waypoints come
+ * from NWS-informed lateral offsets (`stormAvoidanceWaypoint.ts`) plus optional perpendicular bypass offsets when
+ * the fastest route crosses heavy mosaic echoes and Storm mode is on.
+ * ETA must stay within {@link STORM_AVOIDANCE_MAX_ETA_FACTOR} of the fastest returned leg — soft cap.
+ * Mapbox still respects closures/incidents from live traffic annotations on each candidate request.
+ *
+ * ### Earlier behaviour (legs A/B and baseline C)
+ * Roles were assigned from **duration sort + motorway exclusion + turn-density scoring**, not from
+ * live storm polygons alone.
+ *
+ * For short in-town trips we return only A/B (speed-focused).
+ *
+ * ### Latency
+ * Primary `alternatives=true` completes first; Plus may start `exclude=motorway` in parallel.
  */
 export async function collectMapboxRouteVariants(
   accessToken: string,
@@ -453,9 +664,15 @@ export async function collectMapboxRouteVariants(
     allowLocalTripThirdRoute?: boolean;
     preferThreeRoutes?: boolean;
     includeDetails?: boolean;
+    /** Active NWS alerts near the corridor — informs lateral waypoint variants for leg C. */
+    stormAlerts?: NormalizedWeatherAlert[];
+    /** Plus + Storm: refine leg C using RainViewer mosaic (prefer paths that avoid strong echoes). */
+    radarAvoidanceEnabled?: boolean;
   }
 ): Promise<NavRoute[]> {
   const signal = opts?.signal;
+  const stormAlerts = opts?.stormAlerts;
+  const radarAvoidanceEnabled = Boolean(opts?.radarAvoidanceEnabled);
   const allowLocalTripThirdRoute = Boolean(opts?.allowLocalTripThirdRoute);
   const preferThreeRoutes = Boolean(opts?.preferThreeRoutes);
   const includeDetails = opts?.includeDetails !== false;
@@ -515,7 +732,17 @@ export async function collectMapboxRouteVariants(
    */
   if (primaryOnly.length >= targetPrimaryCount) {
     secondaryAbort?.abort();
-    return primaryOnly;
+    return finalizeStormAvoidanceThirdLeg(
+      accessToken,
+      start,
+      end,
+      primaryOnly,
+      stormAlerts,
+      radarAvoidanceEnabled,
+      signal,
+      preferThreeRoutes,
+      includeDetails
+    );
   }
 
   const mergePools = (
@@ -590,11 +817,32 @@ export async function collectMapboxRouteVariants(
   const localTrip = straightLineM <= LOCAL_TRIP_MAX_DISTANCE_M || aDurationS <= LOCAL_TRIP_MAX_DURATION_S;
   if (localTrip && !allowLocalTripThirdRoute) {
     secondaryAbort?.abort();
-    return out.slice(0, Math.min(2, out.length));
+    const sliced = out.slice(0, Math.min(2, out.length));
+    return finalizeStormAvoidanceThirdLeg(
+      accessToken,
+      start,
+      end,
+      sliced,
+      stormAlerts,
+      radarAvoidanceEnabled,
+      signal,
+      preferThreeRoutes,
+      includeDetails
+    );
   }
   if (out.length >= 2 && (!preferThreeRoutes || out.length >= 3)) {
     secondaryAbort?.abort();
-    return out;
+    return finalizeStormAvoidanceThirdLeg(
+      accessToken,
+      start,
+      end,
+      out,
+      stormAlerts,
+      radarAvoidanceEnabled,
+      signal,
+      preferThreeRoutes,
+      includeDetails
+    );
   }
 
   /* Rare: only one drivable path in the first response — merge no-motorway variants to split B/C. */
@@ -616,7 +864,17 @@ export async function collectMapboxRouteVariants(
   }
 
   out = mergePools(noMwSorted);
-  return out;
+  return finalizeStormAvoidanceThirdLeg(
+    accessToken,
+    start,
+    end,
+    out,
+    stormAlerts,
+    radarAvoidanceEnabled,
+    signal,
+    preferThreeRoutes,
+    includeDetails
+  );
 }
 
 export type BuildTripFromMapboxResult = {
@@ -642,6 +900,8 @@ export async function buildTripFromMapbox(
     allowLocalTripThirdRoute?: boolean;
     preferThreeRoutes?: boolean;
     includeDetails?: boolean;
+    stormAlerts?: NormalizedWeatherAlert[];
+    radarAvoidanceEnabled?: boolean;
   }
 ): Promise<BuildTripFromMapboxResult> {
   const routes = await collectMapboxRouteVariants(accessToken, start, end, opts);

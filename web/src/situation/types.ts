@@ -12,9 +12,9 @@ export interface RouteSituationSlice {
   mapboxDurationMinutes: number | null;
   /** True when `mapboxDurationMinutes` came from a successful Mapbox request */
   hasLiveTrafficEstimate: boolean;
-  /** 0 = clear, 1 = heavy precip (from OpenWeather-derived hint) */
+  /** 0 = clear, 1 = heavy precip / adverse forecast (OpenWeather samples ± Tomorrow.io corridor stress) */
   radarIntensity: number;
-  /** OpenWeather headline along sampled points, or a “no data” note */
+  /** Corridor headline — OpenWeather samples and/or Tomorrow.io hourly summary along the route */
   forecastHeadline: string;
   /** Reserved for real incident/construction feeds — none wired yet */
   hazards: { kind: HazardKind; summary: string; alongMeters?: number }[];

@@ -148,8 +148,6 @@ export function buildDriveRouteAheadFromImpacts(opts: {
   };
 }
 
-const BRIEF_MAX = 62;
-
 export function formatDriveAheadBrief(line: DriveAheadLine): string {
   if (line.kind === "none") {
     return "Ahead: no flagged hazards";
@@ -157,7 +155,5 @@ export function formatDriveAheadBrief(line: DriveAheadLine): string {
   if (line.text.includes("in this segment")) {
     return "NWS — on this segment";
   }
-  let s = line.text.replace(/\s*\(~[^)]+\)\s*/g, " ").replace(/\s+/g, " ").trim();
-  if (s.length <= BRIEF_MAX) return s;
-  return `${s.slice(0, BRIEF_MAX - 1)}…`;
+  return line.text.replace(/\s*\(~[^)]+\)\s*/g, " ").replace(/\s+/g, " ").trim();
 }

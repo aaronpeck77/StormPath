@@ -28,6 +28,15 @@ import {
   WEATHER_ALERTS_NWS_FILL_LAYER_ID,
 } from "./mapWeatherAlertLayers";
 import {
+  applyRadarMotionLayers,
+  removeRadarMotionLayers,
+} from "./mapRadarMotionLayer";
+import {
+  boundsFromGeometry,
+  computeRadarStormMotions,
+  intersectBounds,
+} from "../services/radarStormMotion";
+import {
   bringMapboxTrafficLayersToFront,
   ensureMapboxTrafficConditionLayers,
   setMapboxTrafficLayersVisible,
@@ -154,10 +163,8 @@ function mapHoverPopupSupported(): boolean {
   return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
 }
 
-function truncateStormHoverText(s: string, max: number): string {
-  const t = s.trim();
-  if (t.length <= max) return t;
-  return `${t.slice(0, max - 1).trimEnd()}…`;
+function truncateStormHoverText(s: string, _max: number): string {
+  return s.replace(/\s+/g, " ").trim();
 }
 
 /** No hazard hover popups when zoomed past this (street-level — too noisy). */
@@ -1276,7 +1283,18 @@ export function DriveMap({
 
     beginUserExploreRef.current();
 
-    if (mapFocus.kind === "hazardOverview") {
+    if (mapFocus.kind === "polygonFit") {
+      // Fit to the NWS polygon bounding box with extra padding to show surrounding context.
+      const b = new mapboxgl.LngLatBounds(mapFocus.sw, mapFocus.ne);
+      map.fitBounds(b, {
+        padding: hazardOverviewFitPadding(),
+        duration: 1100,
+        maxZoom: 9,
+        pitch: 0,
+        bearing: 0,
+        essential: true,
+      });
+    } else if (mapFocus.kind === "hazardOverview") {
       const b = new mapboxgl.LngLatBounds();
       b.extend([mapFocus.hazardLng, mapFocus.hazardLat]);
       if (userLngLat) b.extend(userLngLat);
@@ -2011,6 +2029,112 @@ export function DriveMap({
     if (map.isStyleLoaded()) sync();
     else map.once("load", sync);
   }, [mapReady, weatherAlertGeoJson, routes, lineFocusId, navigationStarted, viewMode]);
+
+  /** Strongest radar echoes: motion arrow + speed / ~ETA label (route corridor ∩ map view). */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    if (!showRadar) {
+      try {
+        removeRadarMotionLayers(map);
+      } catch {
+        /* style race */
+      }
+      return;
+    }
+
+    let cancelled = false;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const lastKeyRef = { current: "" };
+
+    const run = async () => {
+      try {
+        if (!map.isStyleLoaded()) return;
+        const b = map.getBounds();
+        if (!b) return;
+
+        const viewBox = {
+          west: b.getWest(),
+          south: b.getSouth(),
+          east: b.getEast(),
+          north: b.getNorth(),
+        };
+
+        const corridor =
+          corridorRouteGeometry ??
+          routes.find((r) => r.id === lineFocusId)?.geometry ??
+          null;
+        const routeBox = corridor?.length ? boundsFromGeometry(corridor) : null;
+        const sampleBox = routeBox ? intersectBounds(viewBox, routeBox) ?? routeBox : viewBox;
+
+        const pack = await fetchRainViewerRadarFrames({ includeNowcast: false });
+        if (cancelled || mapRef.current !== map) return;
+        if (!pack?.frames || pack.frames.length < 2) {
+          removeRadarMotionLayers(map);
+          return;
+        }
+
+        const older = pack.frames[pack.frames.length - 2]!;
+        const newer = pack.frames[pack.frames.length - 1]!;
+        const motionKey = `${pack.frames.map((f) => f.path).join("|")}:${sampleBox.west.toFixed(2)},${sampleBox.south.toFixed(2)}`;
+        if (motionKey === lastKeyRef.current) return;
+        lastKeyRef.current = motionKey;
+
+        const motions = await computeRadarStormMotions(sampleBox, pack.host, older, newer, {
+          referenceLngLat: userLngLat,
+        });
+        if (cancelled || mapRef.current !== map) return;
+        applyRadarMotionLayers(map, motions.length > 0 ? motions : null);
+        positionWeatherAlertLayersAboveRadar(map);
+        liftTrafficThenRoutesThenHits(
+          map,
+          visibleRouteIdsForHitLayers(routes, lineFocusId, viewMode, false)
+        );
+      } catch {
+        if (!cancelled && mapRef.current === map) {
+          try {
+            removeRadarMotionLayers(map);
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    };
+
+    const schedule = () => {
+      if (debounceTimer != null) clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(() => {
+        debounceTimer = null;
+        void run();
+      }, 1400);
+    };
+
+    map.on("moveend", schedule);
+    schedule();
+    const refreshTimer = window.setInterval(schedule, 180_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(refreshTimer);
+      if (debounceTimer != null) clearTimeout(debounceTimer);
+      map.off("moveend", schedule);
+      try {
+        removeRadarMotionLayers(map);
+      } catch {
+        /* style race */
+      }
+    };
+  }, [
+    mapReady,
+    showRadar,
+    corridorRouteGeometry,
+    routes,
+    lineFocusId,
+    userLngLat,
+    viewMode,
+    navigationStarted,
+  ]);
 
   /**
    * Quick glance: entering an NWS polygon shows event/headline once; after a few seconds it fades out

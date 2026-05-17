@@ -2,10 +2,12 @@ export type MapViewMode = "drive" | "topdown" | "route";
 
 export type MapFocusRequest =
   | { kind: "point"; lng: number; lat: number; zoom?: number }
+  | { kind: "hazardOverview"; hazardLng: number; hazardLat: number }
   | {
-      kind: "hazardOverview";
-      hazardLng: number;
-      hazardLat: number;
+      /** Fit the map to show an entire NWS polygon (sw + ne bounding box). */
+      kind: "polygonFit";
+      sw: [number, number];
+      ne: [number, number];
     };
 
 /** Padding: top = turn + storm advisory; bottom = search + toolbar + attribution strip */

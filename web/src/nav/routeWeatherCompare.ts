@@ -134,14 +134,13 @@ export function buildRouteWeatherCompareRows(
       parts.push("Winter surface risk on this corridor — slow down, increase following distance.");
     }
 
-    const trunc = (t: string, n: number) => (t.length <= n ? t : `${t.slice(0, n - 1)}…`);
-    const tail = head ? ` Wx: ${trunc(head, 72)}` : "";
+    const tail = head ? ` Wx: ${head.replace(/\s+/g, " ").trim()}` : "";
     const [lng, lat] = midPoint(geometries.get(s.route.id));
 
     rows.push({
       id: `compare-route-${s.route.id}`,
       tag: `Rt ${letter}`,
-      text: trunc(parts.join(" ") + tail, 220),
+      text: `${parts.join(" ")}${tail}`.replace(/\s+/g, " ").trim(),
       severity: Math.min(
         88,
         42 + Math.round(rad * 40) + (s.route.id === activeRouteId ? 6 : 0) + (winterHere ? 10 : 0)

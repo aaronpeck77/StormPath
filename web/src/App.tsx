@@ -24,8 +24,15 @@ import {
   clearDevLocationOverride,
 } from "./hooks/useUserLocation";
 import { useRadarBandsAlongRoute } from "./hooks/useRadarBandsAlongRoute";
+import { useCorridorRouteForecasts } from "./hooks/useCorridorRouteForecasts";
+import { useTomorrowMinutePrecip, useTomorrowRouteForecast } from "./hooks/useTomorrowWeather";
+import { routeForecastToImpacts } from "./nav/tomorrowIoImpacts";
 import { buildMockTripBetween, EMPTY_TRIP } from "./nav/emptyTrip";
 import { mergePlanPreservingPrimary } from "./nav/mergePlanRoutes";
+import {
+  hasAdaptiveStormThreatAlongTrip,
+  stormAdaptiveRoutingSignature,
+} from "./nav/stormAvoidanceWaypoint";
 import { tripPlanFromSavedRoute } from "./nav/planFromSavedRoute";
 import type { SavedRoute } from "./nav/savedRoutes";
 import type { LngLat, RouteTurnStep, TripPlan } from "./nav/types";
@@ -59,6 +66,12 @@ import {
   weatherHintSamplesAlongPolyline,
   type CurrentNowcast,
 } from "./services/openWeatherClient";
+import {
+  buildTimelinesWaypointsForGeometry,
+  fetchRouteForecast,
+  routeForecastCompactHeadline,
+  routeForecastCorridorStress,
+} from "./services/tomorrowIo";
 import type { RouteAlert } from "./nav/routeAlerts";
 import { augmentAlertsForProgressStrip } from "./nav/routeAlerts";
 import {
@@ -130,6 +143,10 @@ import { StormAdvisoryBar } from "./ui/StormAdvisoryBar";
 import { DriveHazardApproachBanner } from "./ui/DriveHazardApproachBanner";
 import { ActivityStatusPill } from "./ui/ActivityStatusPill";
 import { AboutSheet } from "./ui/AboutSheet";
+import {
+  RouteForecastSheet,
+  corridorLegOptionsFromPlan,
+} from "./ui/RouteForecastSheet";
 import { Coachmarks } from "./ui/Coachmarks";
 import { resetAllCoachmarks } from "./ui/coachmarks/firstLaunchSteps";
 import { TrafficBypassComparePanel } from "./ui/TrafficBypassComparePanel";
@@ -228,6 +245,10 @@ type TrafficBypassCompareState = {
 const MB_TRAFFIC_LINE_SNAP_NOTICE = "Mapbox traffic-aware line";
 /** Route mode: refresh B/C alternates only (primary leg unchanged). */
 const NAV_ROUTE_ALT_REFRESH_MS = 26_000;
+/** Debounce after storm/user fingerprint moves before requesting Mapbox again. */
+const STORM_ADAPT_DEBOUNCE_MS = 4500;
+/** Minimum spacing between adaptive storm reroute attempts (NWS + Directions churn). */
+const STORM_ADAPT_MIN_INTERVAL_MS = 75_000;
 /** Throttle between auto-reroute attempts when still far off the polyline (keep low for quick recovery). */
 const NAV_SEVERE_OFF_ROUTE_THROTTLE_MS = 1_200;
 /** Snap drawn line to Mapbox’s road network when live delay vs ORS is huge or Mapbox can’t trace the ORS path. */
@@ -412,6 +433,8 @@ export default function App() {
   } = useRouteRecorder();
   const [pendingSave, setPendingSave] = useState<PendingSave>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [corridorForecastOpen, setCorridorForecastOpen] = useState(false);
+  const [corridorForecastLegId, setCorridorForecastLegId] = useState("");
   /* Contextual one-shot coachmarks — the {@link Coachmarks} component watches for its
    * tracked targets to become visible and pops a single "Tip" card next to each the first
    * time the user encounters it. Persistence + queue logic live entirely in that component;
@@ -553,6 +576,11 @@ export default function App() {
     () => isPlus && settingStormEnabled && stormSessionOn,
     [isPlus, settingStormEnabled, stormSessionOn]
   );
+  /** Passed into Mapbox routing — leg C may use an NWS-informed waypoint detour (Plus + Storm on). */
+  const stormAlertsForRouting = useMemo((): NormalizedWeatherAlert[] | undefined => {
+    if (!isPlus || !settingStormEnabled || stormCorridorAlerts.length === 0) return undefined;
+    return stormCorridorAlerts;
+  }, [isPlus, settingStormEnabled, stormCorridorAlerts]);
   const [plan, setPlan] = useState<TripPlan>(EMPTY_TRIP);
   const [destLngLat, setDestLngLat] = useState<[number, number] | null>(null);
   const [destinationLabel, setDestinationLabel] = useState("");
@@ -598,6 +626,9 @@ export default function App() {
   const [routing, setRouting] = useState(false);
   const routingRef = useRef(routing);
   routingRef.current = routing;
+
+  const lastStormAdaptiveRefreshMsRef = useRef(0);
+  const stormAdaptiveRefreshInFlightRef = useRef(false);
   const [tapHint, setTapHint] = useState<string | null>(null);
   /** Several geocode hits (business + city, “coffee”, etc.) — map pins + list until user picks one. */
   const [searchPickHits, setSearchPickHits] = useState<SearchSuggestion[] | null>(null);
@@ -778,6 +809,8 @@ export default function App() {
               signal: mainFetch.signal,
               allowLocalTripThirdRoute: isPlus,
               preferThreeRoutes: isPlus,
+              stormAlerts: stormAlertsForRouting,
+              radarAvoidanceEnabled: isPlus && settingStormEnabled,
             }
           );
           p = built.plan;
@@ -823,7 +856,7 @@ export default function App() {
         setRouting(false);
       }
     },
-    [userLngLat, env.mapboxToken, resetNavigationPlanning, payFrequentRoutes, isPlus]
+    [userLngLat, env.mapboxToken, resetNavigationPlanning, payFrequentRoutes, isPlus, stormAlertsForRouting, settingStormEnabled]
   );
 
   /** Recompute routes from current GPS to the same destination without stopping navigation. */
@@ -860,6 +893,8 @@ export default function App() {
               signal: mainFetch.signal,
               allowLocalTripThirdRoute: isPlus,
               preferThreeRoutes: isPlus,
+              stormAlerts: stormAlertsForRouting,
+              radarAvoidanceEnabled: isPlus && settingStormEnabled,
             }
           );
           p = built.plan;
@@ -912,7 +947,7 @@ export default function App() {
         setRouting(false);
       }
     },
-    [userLngLat, destLngLat, env.mapboxToken, destinationLabel, computeRoutes, isOnline, resetNavigationPlanning, isPlus]
+    [userLngLat, destLngLat, env.mapboxToken, destinationLabel, computeRoutes, isOnline, resetNavigationPlanning, isPlus, stormAlertsForRouting, settingStormEnabled]
   );
 
   const handleMapClick = useCallback(
@@ -1456,57 +1491,118 @@ export default function App() {
       setWeatherOverlay(undefined);
       return;
     }
-    if (!isPlus || !isOnline || !settingWeatherHintsEnabled || !env.openWeatherApiKey || !routes.length) {
+
+    const owKey = env.openWeatherApiKey;
+    const tioKey = env.tomorrowIoApiKey;
+    const wantOpenWeather = Boolean(owKey) && settingWeatherHintsEnabled;
+    const wantTomorrowCorridor =
+      Boolean(tioKey) && (settingWeatherHintsEnabled || settingStormEnabled);
+
+    if (!isPlus || !isOnline || !routes.length || (!wantOpenWeather && !wantTomorrowCorridor)) {
       setWeatherOverlay(undefined);
       return;
     }
+
     let cancelled = false;
+    const ac = new AbortController();
     const LONG_ROUTE_M = 1_000_000;
     const LONG_ETA_MIN = 720;
     const saveData = isSaveDataPreferred();
+    const driveSpeed = speedMps ?? 0;
+
     (async () => {
       const w: WeatherOverlay = {};
       await Promise.all(
         routes.map(async (r) => {
           if (cancelled) return;
-          try {
-            const eta = r.baseEtaMinutes ?? 30;
-            const lenM = polylineLengthMeters(r.geometry);
-            if (saveData || lenM > LONG_ROUTE_M || eta > LONG_ETA_MIN) {
-              const hint = await weatherHintSamplesAlongPolyline(env.openWeatherApiKey, r.geometry);
-              if (!cancelled) w[r.id] = hint;
-            } else {
-              const [hint, fc] = await Promise.all([
-                weatherHintSamplesAlongPolyline(env.openWeatherApiKey, r.geometry),
-                weatherForecastAlongRoute(env.openWeatherApiKey, r.geometry, eta),
-              ]);
-              if (!cancelled) {
-                w[r.id] = {
-                  headline: fc.headline || hint.headline,
-                  precipHint: Math.max(fc.precipHint ?? 0, hint.precipHint ?? 0),
-                  samples: hint.samples,
-                };
+
+          let headline = "";
+          let precipHint = 0;
+          let samples:
+            | NonNullable<WeatherOverlay[string]>["samples"]
+            | undefined;
+
+          const eta = r.baseEtaMinutes ?? 30;
+          const lenM = polylineLengthMeters(r.geometry);
+          const longTrip = saveData || lenM > LONG_ROUTE_M || eta > LONG_ETA_MIN;
+
+          if (wantOpenWeather && owKey) {
+            try {
+              if (longTrip) {
+                const hint = await weatherHintSamplesAlongPolyline(owKey, r.geometry);
+                if (!cancelled) {
+                  headline = hint.headline;
+                  precipHint = hint.precipHint ?? 0;
+                  samples = hint.samples;
+                }
+              } else {
+                const [hint, fc] = await Promise.all([
+                  weatherHintSamplesAlongPolyline(owKey, r.geometry),
+                  weatherForecastAlongRoute(owKey, r.geometry, eta),
+                ]);
+                if (!cancelled) {
+                  headline = fc.headline || hint.headline;
+                  precipHint = Math.max(fc.precipHint ?? 0, hint.precipHint ?? 0);
+                  samples = hint.samples;
+                }
+              }
+            } catch {
+              try {
+                const hint = await weatherHintSamplesAlongPolyline(owKey, r.geometry);
+                if (!cancelled) {
+                  headline = hint.headline;
+                  precipHint = hint.precipHint ?? 0;
+                  samples = hint.samples;
+                }
+              } catch {
+                /* skip OpenWeather for this leg */
               }
             }
-          } catch {
+          }
+
+          if (wantTomorrowCorridor && tioKey && !longTrip && !ac.signal.aborted) {
             try {
-              const hint = await weatherHintSamplesAlongPolyline(env.openWeatherApiKey, r.geometry);
-              if (!cancelled) w[r.id] = hint;
+              const wps = buildTimelinesWaypointsForGeometry(r.geometry, driveSpeed);
+              if (wps?.length) {
+                const fc = await fetchRouteForecast(tioKey, wps, ac.signal);
+                if (!cancelled && !ac.signal.aborted) {
+                  const stress = routeForecastCorridorStress(fc);
+                  const th = routeForecastCompactHeadline(fc);
+                  precipHint = Math.max(precipHint, stress);
+                  headline =
+                    headline.trim() && th.trim()
+                      ? `${headline.trim()} · ${th.trim()}`
+                      : headline.trim() || th.trim();
+                }
+              }
             } catch {
-              /* skip */
+              /* Tomorrow.io corridor merge optional */
             }
+          }
+
+          if (!cancelled && (precipHint > 0 || headline.trim() || samples?.length)) {
+            w[r.id] = {
+              headline: headline.trim() || "Conditions along route",
+              precipHint,
+              samples,
+            };
           }
         })
       );
       if (!cancelled) setWeatherOverlay(Object.keys(w).length ? w : undefined);
     })();
+
     return () => {
       cancelled = true;
+      ac.abort();
     };
   }, [
     planRoutesKeyStable,
     env.openWeatherApiKey,
+    env.tomorrowIoApiKey,
     settingWeatherHintsEnabled,
+    settingStormEnabled,
+    Math.round((speedMps ?? 0) * 4),
     isOnline,
     routing,
     navigationStarted,
@@ -1783,6 +1879,17 @@ export default function App() {
     return planRouteIds;
   }, [routeSlotOrder, planRouteIds]);
 
+  /** Fingerprint for moving storm mass + driver movement — triggers debounced reroute while navigating. */
+  const stormAdaptiveSig = useMemo(() => {
+    if (!navigationStarted || !userLngLat || !destLngLat || !stormAlertsForRouting?.length) {
+      return "";
+    }
+    if (!hasAdaptiveStormThreatAlongTrip(userLngLat, destLngLat, stormAlertsForRouting)) {
+      return "";
+    }
+    return stormAdaptiveRoutingSignature(userLngLat, destLngLat, stormAlertsForRouting);
+  }, [navigationStarted, userLngLat, destLngLat, stormAlertsForRouting]);
+
   /** After Go: NWS + corridor bands use the promoted primary (slot A), not the A/B/C preview leg. */
   const nwsNavCorridorGeom = useMemo(() => {
     if (!navigationStarted) return undefined;
@@ -1819,50 +1926,95 @@ export default function App() {
   planRoutesRef.current = plan.routes;
 
   /** Route view while navigating: refresh B/C from current GPS; keep primary (slot A) geometry unchanged. */
-  const refreshAlternateRoutesOnly = useCallback(async () => {
-    if (!navigationStarted || viewMode !== "route") return;
-    if (!userLngLat || !destLngLat) return;
-    if (env.mapboxToken && !isOnline) return;
-    const primaryId = orderedRouteIds[0];
-    if (!primaryId || plan.routes.length < 2) return;
-    const epochAtStart = routeGraphEpochRef.current;
-    altRoutesFetchAbortRef.current?.abort();
-    const altFetch = new AbortController();
-    altRoutesFetchAbortRef.current = altFetch;
-    setRouting(true);
-    try {
-      if (env.mapboxToken) {
-        const fresh = await collectMapboxRouteVariants(env.mapboxToken, userLngLat, destLngLat, {
-          signal: altFetch.signal,
-          allowLocalTripThirdRoute: isPlus,
-          preferThreeRoutes: isPlus,
-        });
-        if (fresh.length === 0) return;
-        if (epochAtStart !== routeGraphEpochRef.current) return;
-        setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, fresh));
-      } else {
-        const mock = buildMockTripBetween(
-          userLngLat,
-          destLngLat,
-          destinationLabel.trim() || "Destination"
-        );
-        if (epochAtStart !== routeGraphEpochRef.current) return;
-        setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, mock.routes));
+  const refreshAlternateRoutesOnly = useCallback(
+    async (opts?: { allowDuringDrive?: boolean }) => {
+      if (!navigationStarted) return;
+      if (!opts?.allowDuringDrive && viewMode !== "route") return;
+      if (!userLngLat || !destLngLat) return;
+      if (env.mapboxToken && !isOnline) return;
+      const primaryId = orderedRouteIds[0];
+      if (!primaryId || plan.routes.length < 2) return;
+      const epochAtStart = routeGraphEpochRef.current;
+      altRoutesFetchAbortRef.current?.abort();
+      const altFetch = new AbortController();
+      altRoutesFetchAbortRef.current = altFetch;
+      setRouting(true);
+      try {
+        if (env.mapboxToken) {
+          const fresh = await collectMapboxRouteVariants(env.mapboxToken, userLngLat, destLngLat, {
+            signal: altFetch.signal,
+            allowLocalTripThirdRoute: isPlus,
+            preferThreeRoutes: isPlus,
+            stormAlerts: stormAlertsForRouting,
+            radarAvoidanceEnabled: isPlus && settingStormEnabled,
+          });
+          if (fresh.length === 0) return;
+          if (epochAtStart !== routeGraphEpochRef.current) return;
+          setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, fresh));
+        } else {
+          const mock = buildMockTripBetween(
+            userLngLat,
+            destLngLat,
+            destinationLabel.trim() || "Destination"
+          );
+          if (epochAtStart !== routeGraphEpochRef.current) return;
+          setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, mock.routes));
+        }
+      } catch {
+        /* Offline / Mapbox errors — keep prior B/C */
+      } finally {
+        setRouting(false);
       }
-    } catch {
-      /* Offline / Mapbox errors — keep prior B/C */
+    },
+    [
+      navigationStarted,
+      viewMode,
+      userLngLat,
+      destLngLat,
+      orderedRouteIds,
+      plan.routes.length,
+      env.mapboxToken,
+      isOnline,
+      destinationLabel,
+      stormAlertsForRouting,
+      isPlus,
+      settingStormEnabled,
+    ]
+  );
+
+  /** Storm polygons or position shifted — refresh leg C via merge, or full replan when primary is `r-c`. */
+  const refreshStormAwareRoutes = useCallback(async () => {
+    if (!navigationStarted || !userLngLat || !destLngLat) return;
+    if (!stormAlertsForRouting?.length) return;
+    if (env.mapboxToken && !isOnline) return;
+    if (plan.routes.length < 2) return;
+    if (routingRef.current || stormAdaptiveRefreshInFlightRef.current) return;
+    const now = Date.now();
+    if (now - lastStormAdaptiveRefreshMsRef.current < STORM_ADAPT_MIN_INTERVAL_MS) return;
+
+    stormAdaptiveRefreshInFlightRef.current = true;
+    lastStormAdaptiveRefreshMsRef.current = now;
+    try {
+      const primaryId = orderedRouteIds[0];
+      if (primaryId === "r-c") {
+        await recalcRouteFromHere({ silent: true });
+      } else {
+        await refreshAlternateRoutesOnly({ allowDuringDrive: true });
+      }
     } finally {
-      setRouting(false);
+      stormAdaptiveRefreshInFlightRef.current = false;
     }
   }, [
     navigationStarted,
-    viewMode,
     userLngLat,
     destLngLat,
-    orderedRouteIds,
-    plan.routes.length,
+    stormAlertsForRouting,
     env.mapboxToken,
-    destinationLabel,
+    isOnline,
+    plan.routes.length,
+    orderedRouteIds,
+    recalcRouteFromHere,
+    refreshAlternateRoutesOnly,
   ]);
 
   useEffect(() => {
@@ -2234,6 +2386,76 @@ export default function App() {
     Boolean(radarMapOverlayOn && navigationStarted && guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2),
     guidanceRoute?.geometry
   );
+
+  // ── Tomorrow.io ─────────────────────────────────────────────────────────────
+  const tioApiKey = env.tomorrowIoApiKey;
+  const tioMinutePrecip = useTomorrowMinutePrecip(tioApiKey, effectiveUserLngLat ?? null);
+  const tioRouteForecast = useTomorrowRouteForecast(
+    tioApiKey,
+    isPlus && guidanceRoute?.geometry?.length ? guidanceRoute.geometry : null,
+    speedMps ?? 0
+  );
+
+  const corridorLegOptions = useMemo(
+    () =>
+      corridorLegOptionsFromPlan(
+        plan.routes.map((r) => ({
+          id: r.id,
+          label: r.label,
+          baseEtaMinutes: r.baseEtaMinutes,
+        })),
+        orderedRouteIds
+      ),
+    [plan.routes, orderedRouteIds]
+  );
+
+  const corridorForecastLegs = useMemo(
+    () =>
+      orderedRouteIds
+        .map((routeId) => {
+          const route = plan.routes.find((r) => r.id === routeId);
+          if (!route?.geometry || route.geometry.length < 2) return null;
+          return {
+            routeId,
+            geometry: route.geometry,
+            etaMinutes: Math.max(1, Math.round(route.baseEtaMinutes)),
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x != null),
+    [orderedRouteIds, plan.routes]
+  );
+
+  const { forecastsByLegId: corridorForecastsByLegId, loading: corridorForecastsLoading } =
+    useCorridorRouteForecasts(tioApiKey, corridorForecastLegs, speedMps ?? 0, corridorForecastOpen);
+
+  const corridorForecastsMerged = useMemo(() => {
+    if (!corridorForecastOpen) return {};
+    const out = { ...corridorForecastsByLegId };
+    if (tioRouteForecast && guidanceRoute?.id && out[guidanceRoute.id] == null) {
+      out[guidanceRoute.id] = tioRouteForecast;
+    }
+    return out;
+  }, [corridorForecastOpen, corridorForecastsByLegId, tioRouteForecast, guidanceRoute?.id]);
+
+  const openCorridorForecast = useCallback(() => {
+    setCorridorForecastLegId(lineFocusId || orderedRouteIds[0] || primaryRouteId);
+    setCorridorForecastOpen(true);
+  }, [lineFocusId, orderedRouteIds, primaryRouteId]);
+
+  useEffect(() => {
+    if (!corridorForecastLegId && corridorLegOptions[0]) {
+      setCorridorForecastLegId(corridorLegOptions[0].routeId);
+      return;
+    }
+    if (
+      corridorForecastLegId &&
+      corridorLegOptions.length > 0 &&
+      !corridorLegOptions.some((l) => l.routeId === corridorForecastLegId)
+    ) {
+      setCorridorForecastLegId(corridorLegOptions[0]!.routeId);
+    }
+  }, [corridorLegOptions, corridorForecastLegId]);
+
   const radarMosaicMaxIntensity = useMemo(() => {
     const s = radarMosaicAlongRoute.samples;
     if (!s.length) return 0;
@@ -2367,12 +2589,28 @@ export default function App() {
    *  RouteImpact fields the bar needs to split rows by source/category and to slot severe NWS
    *  bands into the storm strip (source-attribution + start/end-meters). */
   const advisoryRouteImpacts = useMemo(() => {
-    return [...routeImpactsForUi].sort((a, b) => {
+    const base = [...routeImpactsForUi];
+
+    // Merge Tomorrow.io hourly forecast impacts (Plus only, when route is active).
+    if (tioRouteForecast && guidanceRoute?.geometry && guidanceRouteLengthM > 0) {
+      const planEta = guidanceRoute.baseEtaMinutes ?? null;
+      if (planEta && planEta > 0) {
+        const tioImpacts = routeForecastToImpacts(
+          tioRouteForecast,
+          guidanceRoute.geometry,
+          planEta,
+          guidanceRouteLengthM
+        );
+        base.push(...tioImpacts);
+      }
+    }
+
+    return base.sort((a, b) => {
       const da = a.distanceAheadMeters ?? a.alongMeters;
       const db = b.distanceAheadMeters ?? b.alongMeters;
       return da - db;
     });
-  }, [routeImpactsForUi]);
+  }, [routeImpactsForUi, tioRouteForecast, guidanceRoute?.geometry, guidanceRoute?.baseEtaMinutes, guidanceRouteLengthM]);
 
   /** Severe / extreme NWS warnings that cross the active route, projected to a storm-strip band.
    *  We pair each NWS-source impact with its raw alert (by id) so the strip caption can show the
@@ -2915,8 +3153,8 @@ export default function App() {
     } catch {
       /* ignore */
     }
-    if (!settingWeatherHintsEnabled) setWeatherOverlay(undefined);
-  }, [settingWeatherHintsEnabled]);
+    if (!settingWeatherHintsEnabled && !settingStormEnabled) setWeatherOverlay(undefined);
+  }, [settingWeatherHintsEnabled, settingStormEnabled]);
 
   useEffect(() => {
     try {
@@ -3282,6 +3520,18 @@ export default function App() {
 
   const refreshAltRef = useRef(refreshAlternateRoutesOnly);
   refreshAltRef.current = refreshAlternateRoutesOnly;
+
+  const refreshStormAwareRoutesRef = useRef(refreshStormAwareRoutes);
+  refreshStormAwareRoutesRef.current = refreshStormAwareRoutes;
+
+  /** Debounced reroute when storm mass moves along the corridor or you cross an avoidance boundary. */
+  useEffect(() => {
+    if (!stormAdaptiveSig) return;
+    const t = window.setTimeout(() => {
+      void refreshStormAwareRoutesRef.current();
+    }, STORM_ADAPT_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+  }, [stormAdaptiveSig]);
 
   /** Rt: keep primary leg fixed; refresh alternate legs on an interval */
   useEffect(() => {
@@ -4355,6 +4605,8 @@ export default function App() {
                       basicNavAdvisoryMode={!isPlus}
                       navigationStarted={navigationStarted}
                       nowcastLine={advisoryNowcastLine}
+                      minutePrecipForecast={tioMinutePrecip}
+                      onOpenCorridorForecast={isPlus ? openCorridorForecast : undefined}
                     />
                   ) : isPlus ? (
                     <div className="nav-top-activity-pill-wrap nav-top-activity-pill-wrap--solo">
@@ -4552,6 +4804,8 @@ export default function App() {
               handleTryAlternateRoute();
               setRouteHazardSheet(null);
               onStormBarExpandedChange(false);
+              // Switch to route view so the user can compare/toggle between routes.
+              setViewMode("route");
             }}
             onCompareReroutes={() => {
               setRouteHazardSheet(null);
@@ -4564,16 +4818,26 @@ export default function App() {
               onStormBarExpandedChange(false);
             }}
             onShowOnMap={(alert) => {
-              /* Close the sheet, collapse advisory bar, and frame the hazard on the map. */
+              /* Close sheet, collapse advisory bar, switch to top-down, and fit the polygon. */
               setRouteHazardSheet(null);
               onStormBarExpandedChange(false);
               if (viewMode === "drive") setViewMode("topdown");
               else if (viewMode !== "topdown") setViewMode("topdown");
-              setMapFocus({
-                kind: "hazardOverview",
-                hazardLng: alert.lngLat[0]!,
-                hazardLat: alert.lngLat[1]!,
-              });
+              if (alert.polygonBounds) {
+                // Fit the entire NWS polygon into view.
+                setMapFocus({
+                  kind: "polygonFit",
+                  sw: alert.polygonBounds[0],
+                  ne: alert.polygonBounds[1],
+                });
+              } else {
+                // Fallback: fly to centroid + frame route.
+                setMapFocus({
+                  kind: "hazardOverview",
+                  hazardLng: alert.lngLat[0]!,
+                  hazardLat: alert.lngLat[1]!,
+                });
+              }
             }}
             onSelectThisRoute={(id) => {
               handlePromoteRouteToPrimary(id);
@@ -4993,6 +5257,25 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      <RouteForecastSheet
+        open={corridorForecastOpen}
+        onClose={() => setCorridorForecastOpen(false)}
+        destinationLabel={destinationLabel.trim() || "Destination"}
+        hasTrip={Boolean(
+          destLngLat && plan.routes.some((r) => r.geometry && r.geometry.length >= 2)
+        )}
+        navigationStarted={navigationStarted}
+        nowcastLine={advisoryNowcastLine}
+        minutePrecip={tioMinutePrecip}
+        forecastsByLegId={corridorForecastsMerged}
+        forecastsLoading={corridorForecastsLoading}
+        legs={corridorLegOptions}
+        activeLegId={corridorForecastLegId || corridorLegOptions[0]?.routeId || ""}
+        onActiveLegChange={setCorridorForecastLegId}
+        driveEtaMinutes={driveEtaMinutes}
+        forecastDataAvailable={Boolean(tioApiKey)}
+      />
 
       <AboutSheet
         open={aboutOpen}

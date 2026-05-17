@@ -152,11 +152,6 @@ function orsManeuverIcon(type?: number): string {
   }
 }
 
-function trunc(s: string, n: number): string {
-  const t = s.replace(/\s+/g, " ").trim();
-  return t.length <= n ? t : `${t.slice(0, n - 1)}…`;
-}
-
 function formatAlongMeters(m: number): string {
   if (m < 8) return "";
   const ft = m * 3.28084;
@@ -228,7 +223,7 @@ export function TurnBanner({ visible, steps, activeIndex, metersToManeuverEnd }:
               </span>
               <div className="turn-banner-next-text">
                 <p className="turn-banner-next-instr">
-                  {instructionWithRoadShields(trunc(next.instruction, 96))}
+                  {instructionWithRoadShields(next.instruction.replace(/\s+/g, " ").trim())}
                 </p>
                 <div className="turn-banner-next-meta-row">
                   {formatStepDistanceM(next.distanceM) ? (

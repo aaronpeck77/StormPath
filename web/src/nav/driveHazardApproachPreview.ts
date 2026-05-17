@@ -16,10 +16,8 @@ const APPROACH_UPPER_SLACK_M = 380;
 export const DRIVE_HAZARD_APPROACH_NEAR_MAX_METERS =
   DRIVE_HAZARD_APPROACH_PREVIEW_METERS + APPROACH_UPPER_SLACK_M;
 
-function shortTitle(raw: string, max = 52): string {
-  const t = raw.replace(/\s+/g, " ").trim();
-  if (t.length <= max) return t;
-  return `${t.slice(0, max - 1)}…`;
+function shortTitle(raw: string): string {
+  return raw.replace(/\s+/g, " ").trim();
 }
 
 /**

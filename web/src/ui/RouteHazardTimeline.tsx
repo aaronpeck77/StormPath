@@ -9,7 +9,7 @@ import type { RouteImpact } from "../nav/routeImpacts";
 export type TimelineItem = {
   id: string;
   /** Which horizontal track this item lives on. */
-  track: "nws" | "radar" | "road";
+  track: "nws" | "radar" | "road" | "forecast";
   /** Event / headline label (e.g. "Flood Advisory", "Heavy rain on route"). */
   label: string;
   severity: "info" | "caution" | "serious" | "avoid";
@@ -74,12 +74,13 @@ function fmtExpires(iso: string | null | undefined): string | null {
 }
 
 const TRACK_META: Record<string, { label: string; emptyText: string }> = {
-  nws:   { label: "NWS",   emptyText: "No active NWS alerts on route" },
-  radar: { label: "Radar", emptyText: "No radar precipitation detected" },
-  road:  { label: "Road",  emptyText: "No road hazards detected" },
+  nws:      { label: "NWS",      emptyText: "No active NWS alerts on route" },
+  radar:    { label: "Radar",    emptyText: "No radar precipitation detected" },
+  road:     { label: "Road",     emptyText: "No road hazards detected" },
+  forecast: { label: "Forecast", emptyText: "No significant weather forecast" },
 };
 
-const TRACK_ORDER = ["nws", "radar", "road"] as const;
+const TRACK_ORDER = ["nws", "radar", "forecast", "road"] as const;
 
 const BAND_COLORS: Record<string, string> = {
   avoid:   "#ef4444",
@@ -164,7 +165,7 @@ export function RouteHazardTimeline({
   /* Group items by track for the graph rows. */
   const byTrack = useMemo(() => {
     const map: Record<string, Array<{ item: TimelineItem; vis: (typeof itemVisuals)[number] }>> = {
-      nws: [], radar: [], road: [],
+      nws: [], radar: [], road: [], forecast: [],
     };
     items.forEach((item, i) => {
       map[item.track]?.push({ item, vis: itemVisuals[i]! });
@@ -245,10 +246,11 @@ export function RouteHazardTimeline({
         </div>
       </div>
 
-      {/* ── Detail cards — sorted closest-first ─────────────────────── */}
+      {/* ── Detail cards — closest-first, passed items removed ────── */}
       <div className="rhtz__cards">
         {[...items]
           .map((item, i) => ({ item, vis: itemVisuals[i]! }))
+          .filter(({ vis }) => !vis.passed)
           .sort((a, b) => a.item.startMeters - b.item.startMeters)
           .map(({ item, vis }) => {
           const color = BAND_COLORS[item.severity] ?? "#94a3b8";
@@ -295,6 +297,7 @@ export function impactToTimelineItem(imp: RouteImpact): TimelineItem {
   const track: TimelineItem["track"] =
     imp.source === "radar" ? "radar"
     : imp.source === "nws" ? "nws"
+    : imp.source === "tomorrowIo" ? "forecast"
     : "road";
   return {
     id: imp.id,
