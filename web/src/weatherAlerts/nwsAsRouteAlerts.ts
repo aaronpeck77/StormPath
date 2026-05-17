@@ -1,7 +1,7 @@
 import type { RouteAlert } from "../nav/routeAlerts";
 import { pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
 import type { LngLat } from "../nav/types";
-import { pointInAnyPolygonGeometry } from "./geometryOverlap";
+import { closestAlongMeters, pointInAnyPolygonGeometry, polygonApproxCentroid } from "./geometryOverlap";
 import { nwsDetailForRouteStrip } from "./nwsDriveSummary";
 import type { NormalizedWeatherAlert } from "./types";
 
@@ -106,6 +106,31 @@ export function normalizedAlertsForStormBandSegment(
   candidates: NormalizedWeatherAlert[]
 ): NormalizedWeatherAlert[] {
   return stormBandAlertHits(geometry, startM, endM, candidates).map(({ n }) => n);
+}
+
+/**
+ * Build a {@link RouteAlert} for the hazard sheet when the user taps an NWS item on the
+ * advisory timeline. Uses the along-route band (event location), not the driver's GPS.
+ */
+export function routeAlertForNwsAdvisoryClick(
+  alert: NormalizedWeatherAlert,
+  routeGeometry: LngLat[],
+  band: { startMeters: number; endMeters: number } | null | undefined
+): RouteAlert | null {
+  if (routeGeometry.length >= 2 && band && band.endMeters > band.startMeters) {
+    const fromBand = routeAlertsFromStormBandMidpoint(
+      routeGeometry,
+      band.startMeters,
+      band.endMeters,
+      [alert]
+    );
+    if (fromBand[0]) return fromBand[0];
+  }
+  if (!alert.geometry) return null;
+  const lngLat = polygonApproxCentroid(alert.geometry) as LngLat;
+  const alongM =
+    routeGeometry.length >= 2 ? closestAlongMeters(routeGeometry, lngLat) : 0;
+  return normalizedWeatherToRouteAlert(alert, lngLat, alongM);
 }
 
 /** Alerts whose polygons intersect sample points along a storm band (not only the midpoint — avoids empty taps). */

@@ -3549,6 +3549,10 @@
   margin-top: 0;
 }
 
+.nws-chips--urgent {
+  margin-bottom: 6px;
+}
+
 .nws-chip {
   display: inline-flex;
   align-items: flex-start;
@@ -3597,10 +3601,25 @@
   opacity: 0.85;
 }
 
+.nws-chip__text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+}
+
 .nws-chip__label {
   min-width: 0;
   white-space: normal;
   word-break: break-word;
+}
+
+.nws-chip--urgent .nws-chip__timing {
+  font-size: 0.7rem;
+  font-weight: 500;
+  opacity: 0.88;
+  line-height: 1.25;
 }
 
 .nws-chip__here {

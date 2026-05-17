@@ -1,5 +1,4 @@
 import {
-  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -13,7 +12,11 @@ import { nwsAlertIsBasicEmergency } from "../weatherAlerts/basicEmergencyFilter"
 import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
 import type { DriveAheadLine, DriveAheadRadarTier } from "../nav/driveRouteAhead";
 import { formatDriveAheadBrief, formatMinutesAsHoursMinutes } from "../nav/driveRouteAhead";
-import { fmtMi, formatRouteAlertTiming } from "../nav/routeAlertTiming";
+import {
+  formatRouteAlertTiming,
+  isAlertExpired,
+  promoteAtPositionAlertToTop,
+} from "../nav/routeAlertTiming";
 import type { RouteImpact, RouteImpactSeverity } from "../nav/routeImpacts";
 import { RouteHazardTimeline, impactToTimelineItem } from "./RouteHazardTimeline";
 import type { TimelineItem } from "./RouteHazardTimeline";
@@ -171,8 +174,8 @@ function impactSectionBucket(i: RouteImpact): "weather" | "road" {
 
 
 
-/** Route-crossing NWS alert with distance, drive time, expiry, and relevance. */
-function nwsRouteAlertRow(
+/** Compact urgent chip — only for hazards that affect you now or very soon on route. */
+function nwsUrgentChip(
   a: NormalizedWeatherAlert,
   timingLine: string,
   onClick?: (alert: NormalizedWeatherAlert) => void
@@ -187,43 +190,15 @@ function nwsRouteAlertRow(
     <li key={a.id}>
       <button
         type="button"
-        className={`nws-route-alert nws-route-alert--${sevClass}`}
+        className={`nws-chip nws-chip--urgent nws-chip--${sevClass}`}
         onClick={() => onClick?.(a)}
-        aria-label={`${a.event} on your route — ${timingLine}`}
-      >
-        <span className="nws-route-alert__title">{a.event?.trim() || "Weather alert"}</span>
-        <span className="nws-route-alert__timing">{timingLine}</span>
-        {nwsGlanceSummary(a) ? (
-          <span className="nws-route-alert__detail">{nwsGlanceSummary(a)}</span>
-        ) : null}
-      </button>
-    </li>
-  );
-}
-
-/** Compact inline chip for an NWS alert at the user's position. */
-function nwsAlertChip(
-  a: NormalizedWeatherAlert,
-  _context: "atLocation",
-  onClick?: (alert: NormalizedWeatherAlert) => void
-): ReactNode {
-  const sevClass =
-    a.severity === "Extreme" || /tornado warning/i.test(a.event ?? "")
-      ? "avoid"
-      : a.severity === "Severe"
-        ? "serious"
-        : "caution";
-  return (
-    <li key={a.id}>
-      <button
-        type="button"
-        className={`nws-chip nws-chip--${sevClass} nws-chip--here`}
-        onClick={() => onClick?.(a)}
-        aria-label={`${a.event} — at your position — open details`}
+        aria-label={`${a.event} — ${timingLine} — open details`}
       >
         <span className="nws-chip__dot" aria-hidden />
-        <span className="nws-chip__label">{a.event}</span>
-        <span className="nws-chip__here" aria-hidden>Here</span>
+        <span className="nws-chip__text">
+          <span className="nws-chip__label">{a.event}</span>
+          <span className="nws-chip__timing">{timingLine}</span>
+        </span>
       </button>
     </li>
   );
@@ -289,12 +264,6 @@ export function StormAdvisoryBar({
     () => atLocationSorted.filter(nwsAlertIsBasicEmergency),
     [atLocationSorted]
   );
-  const nowCrossing = useMemo(() => {
-    /* Crossing life-safety alerts that have a polygon overlap close to the user are also "now".
-     * Heuristic: pull life-safety crossings into NOW; less-urgent crossings live in WEATHER. */
-    return crossingSorted.filter(nwsAlertIsBasicEmergency);
-  }, [crossingSorted]);
-
   /* AT-YOUR-POSITION (non-urgent): NWS alerts whose polygon contains the user but which aren't
    * life-safety (e.g. Wind Advisory, Blowing Dust Advisory, Dense Fog Advisory). The collapsed
    * bar's ticker already rotates through these — without a panel surface, the bar would say
@@ -318,10 +287,7 @@ export function StormAdvisoryBar({
   const allWeatherImpacts = useMemo(() => {
     if (!routeImpacts?.length) return [];
     const promoted = new Set<string>();
-    const nowEvents = new Set([
-      ...nowAtLocation.map((a) => a.event.toLowerCase()),
-      ...nowCrossing.map((a) => a.event.toLowerCase()),
-    ]);
+    const nowEvents = new Set(nowAtLocation.map((a) => a.event.toLowerCase()));
     for (const i of routeImpacts) {
       if (i.source !== "nws") continue;
       const headline = i.driverHeadline.toLowerCase();
@@ -330,7 +296,7 @@ export function StormAdvisoryBar({
       }
     }
     return routeImpacts.filter((i) => impactSectionBucket(i) === "weather" && !promoted.has(i.id));
-  }, [routeImpacts, nowAtLocation, nowCrossing]);
+  }, [routeImpacts, nowAtLocation]);
 
   /* Split weather into radar, Tomorrow.io forecast, vs other (NWS handled separately). */
   const radarImpacts = useMemo(
@@ -361,8 +327,6 @@ export function StormAdvisoryBar({
     [roadDetailRows]
   );
 
-  /* Show NOW when there is a real urgency. Empty otherwise. */
-  const hasNow = nowAtLocation.length > 0 || nowCrossing.length > 0;
   /* Show WEATHER when there are weather impacts, storm strips, non-urgent at-location alerts,
    * or we're loading weather data. The at-location entry covers the "Wind Advisory at your
    * position" case, which previously had no panel surface. */
@@ -462,31 +426,21 @@ export function StormAdvisoryBar({
     return m;
   }, [stormStripBands]);
 
-  const routeTimingForAlert = useCallback(
-    (alertId: string | undefined) => {
-      if (!alertId || routeTotalMeters <= 0) return null;
-      const band = bandByAlertId.get(alertId);
-      if (!band) return null;
-      return formatRouteAlertTiming({
-        startMeters: band.startMeters,
-        endMeters: band.endMeters,
-        userAlongMeters,
-        totalMeters: routeTotalMeters,
-        planEtaMinutes,
-        driveEtaMinutes,
-        expiresIso: band.expiresIso,
-        crossesRoute: band.crossesRoute,
-      });
-    },
-    [bandByAlertId, routeTotalMeters, userAlongMeters, planEtaMinutes, driveEtaMinutes]
-  );
+  const urgentTopAlerts = useMemo(() => {
+    const out: { alert: NormalizedWeatherAlert; timingLine: string }[] = [];
+    const seen = new Set<string>();
 
-  const crossingRouteRows = useMemo(() => {
-    if (routeTotalMeters <= 0) return [];
-    return crossingSorted
-      .map((a) => {
+    for (const a of nowAtLocation) {
+      if (isAlertExpired(a.ends)) continue;
+      seen.add(a.id);
+      out.push({ alert: a, timingLine: promoteAtPositionAlertToTop().timingLine });
+    }
+
+    if (routeTotalMeters > 0) {
+      for (const a of crossingSorted) {
+        if (seen.has(a.id)) continue;
         const band = bandByAlertId.get(a.id);
-        if (!band) return null;
+        if (!band || isAlertExpired(band.expiresIso)) continue;
         const timing = formatRouteAlertTiming({
           startMeters: band.startMeters,
           endMeters: band.endMeters,
@@ -497,11 +451,15 @@ export function StormAdvisoryBar({
           expiresIso: band.expiresIso,
           crossesRoute: band.crossesRoute,
         });
-        return { alert: a, band, timing };
-      })
-      .filter((x): x is NonNullable<typeof x> => x != null)
-      .sort((a, b) => a.timing.aheadMeters - b.timing.aheadMeters);
+        if (!timing.promoteToTop) continue;
+        seen.add(a.id);
+        out.push({ alert: a, timingLine: timing.timingLine });
+      }
+    }
+
+    return out;
   }, [
+    nowAtLocation,
     crossingSorted,
     bandByAlertId,
     routeTotalMeters,
@@ -510,26 +468,20 @@ export function StormAdvisoryBar({
     driveEtaMinutes,
   ]);
 
+  const hasNow = urgentTopAlerts.length > 0;
+
   const tickerMessages = useMemo(() => {
-    const list = [...crossingSorted, ...atLocationSorted];
-    return list.map((a) => {
+    return urgentTopAlerts.map(({ alert: a, timingLine }) => {
       const g = nwsGlanceSummary(a);
-      const onRoute = crossingSorted.includes(a);
-      const routeTiming = onRoute ? routeTimingForAlert(a.id) : null;
-      const badge = onRoute
-        ? routeTiming
-          ? `On route · ${fmtMi(routeTiming.aheadMeters)} ahead`
-          : "On route"
-        : "At your position";
       const base = g || (a.event?.trim() || "Weather alert");
       return {
         id: a.id,
-        text: routeTiming ? `${base} — ${routeTiming.timingLine}` : base,
+        text: `${base} — ${timingLine}`,
         alert: a,
-        badge,
+        badge: "Alert",
       };
     });
-  }, [crossingSorted, atLocationSorted, routeTimingForAlert]);
+  }, [urgentTopAlerts]);
   const [tickerIdx, setTickerIdx] = useState(0);
   const [previewIdx, setPreviewIdx] = useState(0);
   const [loadSlow, setLoadSlow] = useState(false);
@@ -732,7 +684,7 @@ export function StormAdvisoryBar({
     if (basicNavAdvisoryMode) {
       if (loading) return loadSlow ? "warn" : "info";
       if (busyLabel) return "info";
-      if (nowAtLocation.length > 0) return "severe";
+      if (urgentTopAlerts.length > 0) return "severe";
       return "none";
     }
     /* Worst impact severity wins. */
@@ -742,10 +694,10 @@ export function StormAdvisoryBar({
     for (const i of routeImpacts ?? []) {
       if (!worstSev || rank(i.severity) > rank(worstSev)) worstSev = i.severity;
     }
-    if (worstSev === "avoid" || worstSev === "serious" || hasTrafficStop || nowAtLocation.length > 0) {
+    if (worstSev === "avoid" || worstSev === "serious" || hasTrafficStop || urgentTopAlerts.length > 0) {
       return "severe";
     }
-    if (worstSev === "caution" || trafficDelayMinutes >= 8 || nowCrossing.length > 0) return "warn";
+    if (worstSev === "caution" || trafficDelayMinutes >= 8 || urgentTopAlerts.length > 0) return "warn";
     if (driveTierSev(driveRouteAheadLine?.radarTier) === "severe") return "severe";
     if (driveTierSev(driveRouteAheadLine?.radarTier) === "warn") return "warn";
     if (loading) return loadSlow ? "warn" : "info";
@@ -760,8 +712,7 @@ export function StormAdvisoryBar({
     loading,
     loadSlow,
     busyLabel,
-    nowAtLocation.length,
-    nowCrossing.length,
+    urgentTopAlerts.length,
     routeImpacts,
     hasTrafficStop,
     trafficDelayMinutes,
@@ -1020,30 +971,12 @@ export function StormAdvisoryBar({
           </p>
         )}
 
-        {/* ── At-location NWS alerts — things happening WHERE YOU ARE RIGHT NOW.
-         *  Shown as compact tappable chips. Route-crossing alerts live in the
-         *  timeline graph + detail cards below instead. */}
-        {(nowAtLocation.length > 0 || atLocationOther.length > 0) && (
-          <ul className="nws-chips" role="list" aria-label="NWS alerts at your position">
-            {nowAtLocation.map((a) => nwsAlertChip(a, "atLocation", onNwsAlertClick))}
-            {atLocationOther
-              .filter((a) => !nowAtLocation.some((b) => b.id === a.id))
-              .map((a) => nwsAlertChip(a, "atLocation", onNwsAlertClick))}
+        {urgentTopAlerts.length > 0 && (
+          <ul className="nws-chips nws-chips--urgent" role="list" aria-label="Urgent weather affecting you now">
+            {urgentTopAlerts.map(({ alert, timingLine }) =>
+              nwsUrgentChip(alert, timingLine, onNwsAlertClick)
+            )}
           </ul>
-        )}
-
-        {crossingRouteRows.length > 0 && (
-          <section className="storm-advisory-bar__route-alerts" aria-label="NWS alerts on your route">
-            <h3 className="storm-advisory-bar__route-alerts-h">On your route</h3>
-            <p className="storm-advisory-bar__route-alerts-lead">
-              Distance and drive time from your position now. Warnings far ahead may expire before you arrive.
-            </p>
-            <ul className="nws-route-alerts" role="list">
-              {crossingRouteRows.map(({ alert, timing }) =>
-                nwsRouteAlertRow(alert, timing.timingLine, onNwsAlertClick)
-              )}
-            </ul>
-          </section>
         )}
 
         {/* ───── UNIFIED ROUTE HAZARD TIMELINE ───────────────────────────────────
@@ -1059,6 +992,18 @@ export function StormAdvisoryBar({
 
           if (routeTotalMeters > 0 && (stormStripBands?.length ?? 0) > 0) {
             for (const band of stormStripBands!) {
+              if (isAlertExpired(band.expiresIso)) continue;
+              const timing = formatRouteAlertTiming({
+                startMeters: band.startMeters,
+                endMeters: band.endMeters,
+                userAlongMeters,
+                totalMeters: routeTotalMeters,
+                planEtaMinutes,
+                driveEtaMinutes,
+                expiresIso: band.expiresIso,
+                crossesRoute: band.crossesRoute,
+              });
+              if (timing.passed) continue;
               const extra = stripBandDetail(band);
               timelineItems.push({
                 id: band.id,
@@ -1075,15 +1020,13 @@ export function StormAdvisoryBar({
             }
           }
 
-          for (const imp of radarImpacts) {
+          const pushIfActive = (imp: (typeof radarImpacts)[number]) => {
+            if (imp.endMeters <= userAlongMeters) return;
             timelineItems.push(impactToTimelineItem(imp));
-          }
-          for (const imp of forecastImpacts) {
-            timelineItems.push(impactToTimelineItem(imp));
-          }
-          for (const imp of roadImpacts) {
-            timelineItems.push(impactToTimelineItem(imp));
-          }
+          };
+          for (const imp of radarImpacts) pushIfActive(imp);
+          for (const imp of forecastImpacts) pushIfActive(imp);
+          for (const imp of roadImpacts) pushIfActive(imp);
 
           const hasTimeline = timelineItems.length > 0 && routeTotalMeters > 0;
 

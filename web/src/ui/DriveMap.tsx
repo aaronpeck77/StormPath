@@ -1287,6 +1287,15 @@ export function DriveMap({
         bearing: 0,
         essential: true,
       });
+    } else if (mapFocus.kind === "hazardEvent") {
+      map.flyTo({
+        center: [mapFocus.hazardLng, mapFocus.hazardLat],
+        zoom: mapFocus.zoom ?? 11.5,
+        duration: 950,
+        pitch: 0,
+        bearing: 0,
+        essential: true,
+      });
     } else if (mapFocus.kind === "hazardOverview") {
       const b = new mapboxgl.LngLatBounds();
       b.extend([mapFocus.hazardLng, mapFocus.hazardLat]);

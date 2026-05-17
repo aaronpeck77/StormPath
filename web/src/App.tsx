@@ -182,7 +182,10 @@ import {
   closestAlongMeters,
 } from "./weatherAlerts/geometryOverlap";
 import { mapGeoJsonFromAlerts } from "./weatherAlerts/mapGeoJsonFromAlerts";
-import { normalizedWeatherToRouteAlert, routeAlertsFromStormBandMidpoint } from "./weatherAlerts/nwsAsRouteAlerts";
+import {
+  routeAlertForNwsAdvisoryClick,
+  routeAlertsFromStormBandMidpoint,
+} from "./weatherAlerts/nwsAsRouteAlerts";
 import type { NormalizedWeatherAlert } from "./weatherAlerts/types";
 import {
   filterMapGeoJsonToBasicEmergencies,
@@ -3887,6 +3890,39 @@ export default function App() {
     setMapFocus(null);
   }, []);
 
+  const focusMapOnRouteAlert = useCallback(
+    (alert: RouteAlert) => {
+      if (viewMode === "drive") setViewMode("topdown");
+      if (alert.polygonBounds) {
+        setMapFocus({
+          kind: "polygonFit",
+          sw: alert.polygonBounds[0],
+          ne: alert.polygonBounds[1],
+        });
+      } else {
+        setMapFocus({
+          kind: "hazardEvent",
+          hazardLng: alert.lngLat[0]!,
+          hazardLat: alert.lngLat[1]!,
+          zoom: alert.zoom,
+        });
+      }
+    },
+    [viewMode]
+  );
+
+  /** Close hazard sheet + advisory panel, then run (helps WKWebView apply view/focus changes). */
+  const runAfterHazardSheetAction = useCallback(
+    (action: () => void) => {
+      setRouteHazardSheet(null);
+      onStormBarExpandedChange(false);
+      window.requestAnimationFrame(() => {
+        window.setTimeout(action, 0);
+      });
+    },
+    [onStormBarExpandedChange]
+  );
+
   const handleDriveCameraBearingDeg = useCallback((deg: number | null) => {
     setDriveMapBearingDeg(deg);
   }, []);
@@ -3957,15 +3993,15 @@ export default function App() {
       if (!lineFocusId) return;
       const geom = guidanceRoute?.geometry;
       if (!geom?.length) return;
-      const totalM = polylineLengthMeters(geom);
-      const alongM = Math.max(0, Math.min(totalM, Number.isFinite(userAlongGuidanceM) ? userAlongGuidanceM : totalM * 0.5));
-      const lngLat = pointAtAlongMeters(geom, alongM);
+      const band = advisoryStormStripBands.find((b) => b.alertId === alert.id);
+      const routeAlert = routeAlertForNwsAdvisoryClick(alert, geom, band ?? null);
+      if (!routeAlert) return;
       setRouteHazardSheet({
         routeId: lineFocusId,
-        alerts: [normalizedWeatherToRouteAlert(alert, lngLat, alongM)],
+        alerts: [routeAlert],
       });
     },
-    [guidanceRoute?.geometry, lineFocusId, userAlongGuidanceM]
+    [guidanceRoute?.geometry, lineFocusId, advisoryStormStripBands]
   );
 
   const handleTrafficBypassFromHere = useCallback(async (opts?: {
@@ -4741,50 +4777,56 @@ export default function App() {
             routeId={routeHazardSheet.routeId}
             focusedRouteId={lineFocusId}
             alerts={routeHazardSheet.alerts}
-            alternateRouteAvailable={Boolean(alternateBypassRouteId)}
+            alternateRouteAvailable={Boolean(
+              alternateBypassRouteId ||
+                (routeHazardSheet.alerts[0]?.corridorKind === "weather" &&
+                  isPlus &&
+                  env.mapboxToken &&
+                  userLngLat &&
+                  destLngLat)
+            )}
             bypassCompareAvailable={Boolean(
               env.mapboxToken && userLngLat && destLngLat && guidanceRoute
             )}
             bypassBusy={bypassBusy}
             onClose={() => setRouteHazardSheet(null)}
             onTryAlternateRoute={() => {
-              handleTryAlternateRoute();
-              setRouteHazardSheet(null);
-              onStormBarExpandedChange(false);
-              // Switch to route view so the user can compare/toggle between routes.
-              setViewMode("route");
+              const primary = routeHazardSheet.alerts[0];
+              runAfterHazardSheetAction(() => {
+                if (primary) focusMapOnRouteAlert(primary);
+                if (primary?.corridorKind === "weather" && destLngLat && isPlus && userLngLat && env.mapboxToken) {
+                  if (alternateBypassRouteId) {
+                    handleTryAlternateRoute();
+                  } else {
+                    void computeRoutes(destLngLat, destinationLabel.trim() || "Destination", {
+                      preserveNavigation: true,
+                    });
+                  }
+                } else if (alternateBypassRouteId) {
+                  handleTryAlternateRoute();
+                } else {
+                  setTapHint("No other route loaded — open Rt view or replan from your destination.");
+                  window.setTimeout(() => setTapHint(null), 5500);
+                }
+                setViewMode("route");
+                setFitTrigger((n) => n + 1);
+              });
             }}
             onCompareReroutes={() => {
-              setRouteHazardSheet(null);
-              onStormBarExpandedChange(false);
-              void handleTrafficBypassFromHere();
+              runAfterHazardSheetAction(() => {
+                void handleTrafficBypassFromHere();
+              });
             }}
             onOpenRouteView={() => {
-              setViewMode("route");
-              setRouteHazardSheet(null);
-              onStormBarExpandedChange(false);
+              runAfterHazardSheetAction(() => {
+                setViewMode("route");
+                setFitTrigger((n) => n + 1);
+              });
             }}
             onShowOnMap={(alert) => {
-              /* Close sheet, collapse advisory bar, switch to top-down, and fit the polygon. */
-              setRouteHazardSheet(null);
-              onStormBarExpandedChange(false);
-              if (viewMode === "drive") setViewMode("topdown");
-              else if (viewMode !== "topdown") setViewMode("topdown");
-              if (alert.polygonBounds) {
-                // Fit the entire NWS polygon into view.
-                setMapFocus({
-                  kind: "polygonFit",
-                  sw: alert.polygonBounds[0],
-                  ne: alert.polygonBounds[1],
-                });
-              } else {
-                // Fallback: fly to centroid + frame route.
-                setMapFocus({
-                  kind: "hazardOverview",
-                  hazardLng: alert.lngLat[0]!,
-                  hazardLat: alert.lngLat[1]!,
-                });
-              }
+              runAfterHazardSheetAction(() => {
+                focusMapOnRouteAlert(alert);
+              });
             }}
             onSelectThisRoute={(id) => {
               handlePromoteRouteToPrimary(id);

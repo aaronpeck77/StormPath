@@ -4,6 +4,13 @@ export type MapFocusRequest =
   | { kind: "point"; lng: number; lat: number; zoom?: number }
   | { kind: "hazardOverview"; hazardLng: number; hazardLat: number }
   | {
+      /** Fly/fit to the hazard itself (not the driver's position). */
+      kind: "hazardEvent";
+      hazardLng: number;
+      hazardLat: number;
+      zoom?: number;
+    }
+  | {
       /** Fit the map to show an entire NWS polygon (sw + ne bounding box). */
       kind: "polygonFit";
       sw: [number, number];

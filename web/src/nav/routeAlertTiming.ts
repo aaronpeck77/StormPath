@@ -16,12 +16,19 @@ export type RouteAlertTimingInput = {
   crossesRoute?: boolean;
 };
 
+/** Promote to the advisory top strip when enter ETA is within this many minutes. */
+export const ROUTE_ALERT_IMMINENT_ENTER_MIN = 45;
+
 export type RouteAlertTiming = {
   aheadMeters: number;
   enterMin: number | null;
   exitMin: number | null;
   timingLine: string;
   relevanceNote: string | null;
+  passed: boolean;
+  inside: boolean;
+  /** True when the driver should see a red urgent row above the hazard graph. */
+  promoteToTop: boolean;
 };
 
 export function fmtMi(meters: number): string {
@@ -127,11 +134,40 @@ export function formatRouteAlertTiming(opts: RouteAlertTimingInput): RouteAlertT
     timingLine = `${timingLine} · ${rel}`;
   }
 
+  const promoteToTop =
+    !passed &&
+    crossesRoute &&
+    rel !== "Likely over before you reach it" &&
+    (inside || (enterMin != null && enterMin <= ROUTE_ALERT_IMMINENT_ENTER_MIN));
+
   return {
     aheadMeters,
     enterMin,
     exitMin,
     timingLine,
     relevanceNote: passed ? null : rel,
+    passed,
+    inside,
+    promoteToTop,
   };
+}
+
+/** At-your-position alerts (no route band) always surface above the graph. */
+export function promoteAtPositionAlertToTop(): RouteAlertTiming {
+  return {
+    aheadMeters: 0,
+    enterMin: 0,
+    exitMin: null,
+    timingLine: "At your position now",
+    relevanceNote: null,
+    passed: false,
+    inside: true,
+    promoteToTop: true,
+  };
+}
+
+export function isAlertExpired(iso: string | null | undefined, nowMs = Date.now()): boolean {
+  if (!iso) return false;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) && t <= nowMs;
 }
