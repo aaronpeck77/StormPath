@@ -1,5 +1,10 @@
-import type { MinutePrecipForecast, MinutePrecipNowSnapshot } from "../services/tomorrowIo";
+import type {
+  MinutePrecipForecast,
+  MinutePrecipNowSnapshot,
+  PointHourlyInterval,
+} from "../services/tomorrowIo";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
+import { formatEtaDuration } from "../ui/formatEta";
 
 /** Short place label for forecast headers (Mapbox `place_name` is often a full address). */
 export function shortenPlaceNameForForecast(placeName: string): string {
@@ -34,7 +39,7 @@ export function latestForecastFetchedAtMs(
 export function formatForecastUpdatedAt(fetchedAtMs: number): string {
   const ageMin = (Date.now() - fetchedAtMs) / 60_000;
   if (ageMin < 2) return "Updated just now";
-  if (ageMin < 55) return `Updated ${Math.round(ageMin)} min ago`;
+  if (ageMin < 55) return `Updated ${formatEtaDuration(ageMin)} ago`;
   return `Updated ${new Date(fetchedAtMs).toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
@@ -66,13 +71,35 @@ export function formatMinutePrecipNowLine(now: MinutePrecipNowSnapshot): string 
   return parts.join(" · ");
 }
 
+/** Short label for an hourly column (Now, 3p, 12a, …). */
+export function formatLocalForecastHourLabel(offsetHours: number, index: number): string {
+  if (index === 0 || offsetHours < 0.75) return "Now";
+  const d = new Date(Date.now() + offsetHours * 3_600_000);
+  return d.toLocaleTimeString(undefined, { hour: "numeric" }).replace(/\s/g, "");
+}
+
+/** One-line read on the 24-hour strip. */
+export function pointHourlyForecastSummary(hours: PointHourlyInterval[]): string {
+  if (!hours.length) return "";
+  const wet = hours.filter(
+    (h) => h.precipProbability > 0.25 || h.precipIntensityMmh > 0.15
+  );
+  if (!wet.length) return "Dry for the next 24 hours";
+  const firstH = Math.max(0, Math.round(wet[0]!.offsetHours));
+  const lastH = Math.round(wet[wet.length - 1]!.offsetHours);
+  if (firstH <= 1 && lastH >= 18) return "Precip likely much of the next day";
+  if (firstH <= 1) return `Precip through about ${lastH}h from now`;
+  if (firstH === lastH) return `Precip possible around ${firstH}h from now`;
+  return `Precip possible ${firstH}–${lastH}h from now`;
+}
+
 export function minutePrecipBannerHint(forecast: MinutePrecipForecast): string {
   const minutes = forecast.minutes.slice(0, 60);
   const wet = minutes.findIndex((m) => m.precipIntensityMmh > 0.1);
   if (wet < 0) return "Dry next hour";
   if (wet === 0) return "Rain now";
-  if (wet <= 20) return `Rain ~${wet}m`;
-  return `Rain ~${wet}m`;
+  if (wet <= 20) return `Rain ~${formatEtaDuration(wet)}`;
+  return `Rain ~${formatEtaDuration(wet)}`;
 }
 
 export type LocalForecastBannerItem = {
@@ -82,12 +109,12 @@ export type LocalForecastBannerItem = {
 };
 
 /** One-line NWS hint for the collapsed Local rotator slot. */
-export function nwsAtLocationBannerHint(alerts: NormalizedWeatherAlert[]): string | null {
+export function nwsLocalForecastBannerHint(alerts: NormalizedWeatherAlert[]): string | null {
   if (!alerts.length) return null;
   const top = alerts[0]!;
   const ev = top.event?.trim() || "Weather alert";
-  if (alerts.length === 1) return `${ev} · at your location`;
-  return `${ev} +${alerts.length - 1} more · at your location`;
+  if (alerts.length === 1) return `${ev} near you`;
+  return `${ev} +${alerts.length - 1} more near you`;
 }
 
 /** Single rotator slot: local area + freshness + compact conditions (banner only). */
@@ -96,15 +123,15 @@ export function buildLocalForecastBannerItem(opts: {
   nowcastLine: string | null;
   minutePrecip?: MinutePrecipForecast | null;
   fetchedAtMs: number | null;
-  /** Active NWS polygons at your GPS (shown after conditions). */
-  nwsAtLocation?: NormalizedWeatherAlert[] | null;
+  /** Active NWS alerts near you (shown after conditions). */
+  nwsNearYou?: NormalizedWeatherAlert[] | null;
 }): LocalForecastBannerItem | null {
   const parts: string[] = [];
   if (opts.nowcastLine) parts.push(truncateBannerText(opts.nowcastLine, 48));
   if (opts.minutePrecip?.minutes.length) {
     parts.push(minutePrecipBannerHint(opts.minutePrecip));
   }
-  const nwsLine = opts.nwsAtLocation?.length ? nwsAtLocationBannerHint(opts.nwsAtLocation) : null;
+  const nwsLine = opts.nwsNearYou?.length ? nwsLocalForecastBannerHint(opts.nwsNearYou) : null;
   if (nwsLine) parts.push(truncateBannerText(nwsLine, 52));
   if (!parts.length) return null;
   return {

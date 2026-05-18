@@ -25,7 +25,11 @@ import {
 } from "./hooks/useUserLocation";
 import { useRadarBandsAlongRoute } from "./hooks/useRadarBandsAlongRoute";
 import { useCorridorRouteForecasts } from "./hooks/useCorridorRouteForecasts";
-import { useTomorrowMinutePrecip, useTomorrowRouteForecast } from "./hooks/useTomorrowWeather";
+import {
+  useLocalHourlyForecast,
+  useTomorrowMinutePrecip,
+  useTomorrowRouteForecast,
+} from "./hooks/useTomorrowWeather";
 import { routeForecastToImpacts } from "./nav/tomorrowIoImpacts";
 import { buildMockTripBetween, EMPTY_TRIP } from "./nav/emptyTrip";
 import { mergePlanPreservingPrimary } from "./nav/mergePlanRoutes";
@@ -192,6 +196,7 @@ import {
   filterMapGeoJsonToBasicEmergencies,
   nwsAlertIsBasicEmergency,
 } from "./weatherAlerts/basicEmergencyFilter";
+import { nwsAlertsForLocalForecast } from "./weatherAlerts/localForecastNws";
 import { buildAdvisoryPromoLines, buildBasicNavAdvisoryPromoLines } from "./config/advisoryPromo";
 import { getPayTier } from "./billing/payFeatures";
 import type { FrequentRouteCluster } from "./frequentRoutes/types";
@@ -2350,6 +2355,12 @@ export default function App() {
     effectiveUserLngLat ?? null,
     tioFetchEnabled
   );
+  const localHourlyForecast = useLocalHourlyForecast(
+    tioApiKey,
+    env.openWeatherApiKey,
+    effectiveUserLngLat ?? null,
+    tioFetchEnabled
+  );
   const tioRouteForecast = useTomorrowRouteForecast(
     tioApiKey,
     isPlus && guidanceRoute?.geometry?.length ? guidanceRoute.geometry : null,
@@ -2470,6 +2481,24 @@ export default function App() {
     for (const a of stormNwsPuckInside) byId.set(a.id, a);
     return sortWeatherAlertsBySeverity([...byId.values()]);
   }, [nwsAlertsAffectingActiveRoute, stormNwsPuckInside]);
+
+  /** NWS at the user’s position only (local forecast — not the whole browse/route corridor). */
+  const localForecastNwsAlertsRaw = useMemo(
+    () =>
+      nwsAlertsForLocalForecast({
+        userLngLat: effectiveUserLngLat,
+        corridorAlerts: stormCorridorAlerts,
+      }),
+    [effectiveUserLngLat, stormCorridorAlerts]
+  );
+
+  const localForecastNwsAlerts = useMemo(
+    () =>
+      advisoryPlusDetailOn
+        ? localForecastNwsAlertsRaw
+        : localForecastNwsAlertsRaw.filter(nwsAlertIsBasicEmergency),
+    [advisoryPlusDetailOn, localForecastNwsAlertsRaw]
+  );
 
   const stormMapGeoJsonForMap = useMemo((): GeoJSON.FeatureCollection | undefined => {
     const g = nwsMapOverlapRouteGeom;
@@ -4583,6 +4612,10 @@ export default function App() {
                       currentNowcast={currentNowcast}
                       forecastAreaLabel={forecastAreaLabel}
                       minutePrecipForecast={tioMinutePrecip}
+                      hourlyForecast={localHourlyForecast}
+                      localForecastNwsAlerts={localForecastNwsAlerts}
+                      nwsForecastLoading={stormLoading}
+                      nwsForecastError={stormError}
                       onOpenCorridorForecast={isPlus ? openCorridorForecast : undefined}
                     />
                   ) : isPlus ? (

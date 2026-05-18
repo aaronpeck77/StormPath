@@ -3,6 +3,7 @@ import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { nwsWhatIsHappening, nwsWhatToDo } from "../weatherAlerts/nwsDriveSummary";
 import { displayText } from "../utils/displayText";
 import { formatDelayMinutesForUi } from "./trafficNarrative";
+import { formatEtaDuration } from "../ui/formatEta";
 
 /** Panel summary — full message (whitespace normalized only). */
 export function squeezeForSummary(text: string, _max?: number): string {
@@ -44,8 +45,8 @@ export function etaRangeIntoTripLine(
   const lo = etaMinutesIntoTrip(totalM, Math.min(startM, endM), planEtaMinutes);
   const hi = etaMinutesIntoTrip(totalM, Math.max(startM, endM), planEtaMinutes);
   if (lo == null || hi == null) return null;
-  if (Math.abs(hi - lo) <= 1) return `~${lo} min into trip (plan ETA)`;
-  return `~${Math.min(lo, hi)}–${Math.max(lo, hi)} min into trip (plan ETA)`;
+  if (Math.abs(hi - lo) <= 1) return `~${formatEtaDuration(lo)} into trip (plan ETA)`;
+  return `~${formatEtaDuration(Math.min(lo, hi))}–${formatEtaDuration(Math.max(lo, hi))} into trip (plan ETA)`;
 }
 
 function corridorKindLabel(kind: RouteAlert["corridorKind"]): string {
@@ -88,7 +89,7 @@ export function buildCorridorCalloutBlock(
   const detail = a.detail?.trim() ?? "";
   const pos = formatAlongFromStart(a.alongMeters);
   const eta = etaMinutesIntoTrip(opts.totalM, a.alongMeters, opts.planEtaMinutes);
-  const when = eta != null ? `${pos} · ~${eta} min into trip` : pos;
+  const when = eta != null ? `${pos} · ~${formatEtaDuration(eta)} into trip` : pos;
 
   const bits: string[] = [when];
   if (detail) bits.push(detail);
@@ -105,7 +106,7 @@ export function buildCorridorCalloutBlock(
   if (a.corridorKind === "traffic") {
     const d = opts.trafficDelayMinutes;
     if (d != null && Number.isFinite(d) && d > 0) {
-      bits.push(`Delay vs free-flow: +${formatDelayMinutesForUi(d)} min`);
+      bits.push(`Delay vs free-flow: +${formatDelayMinutesForUi(d)}`);
     }
   }
 

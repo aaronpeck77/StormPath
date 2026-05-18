@@ -243,7 +243,7 @@ export function RouteForecastSheet({
               <ol className="cfs-along-list">
                 {along.map((seg, i) => (
                   <li key={i} className={`cfs-along-item ${sevClass(seg.severity)}`}>
-                    <span className="cfs-along-item__eta">~{seg.etaMinutes} min</span>
+                    <span className="cfs-along-item__eta">~{formatEtaDuration(seg.etaMinutes)}</span>
                     <span className="cfs-along-item__label">{seg.label}</span>
                     <span className="cfs-along-item__detail">{seg.detail}</span>
                   </li>

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { RouteImpact } from "../nav/routeImpacts";
+import { formatDurationMinutesMaybe, formatEtaDuration } from "./formatEta";
 
 /**
  * Severe-class NWS warning that crosses the active route, projected onto a horizontal
@@ -55,12 +56,7 @@ function formatMiles(meters: number): string {
 }
 
 function formatMinutesShort(min: number | null | undefined): string | null {
-  if (min == null || !Number.isFinite(min) || min < 0) return null;
-  if (min < 1) return "now";
-  if (min < 60) return `${Math.round(min)} min`;
-  const h = Math.floor(min / 60);
-  const m = Math.round(min - h * 60);
-  return m === 0 ? `${h} hr` : `${h} hr ${m} min`;
+  return formatDurationMinutesMaybe(min);
 }
 
 function formatExpires(iso: string | null | undefined): string | null {
@@ -500,9 +496,8 @@ export function RouteImpactGroupPanel({
                 : `${Math.round(aheadM / 1609.34)} mi ahead`
             : null;
 
-        const etaLabel = eta != null && Number.isFinite(eta) && eta >= 0.5
-          ? eta < 60 ? `${Math.round(eta)} min` : `${Math.floor(eta / 60)}h ${Math.round(eta % 60)}m`
-          : null;
+        const etaLabel =
+          eta != null && Number.isFinite(eta) && eta >= 0.5 ? formatEtaDuration(eta) : null;
 
         const timing = passed ? "Behind you"
           : [aheadLabel, etaLabel && `≈ ${etaLabel}`].filter(Boolean).join(" · ");

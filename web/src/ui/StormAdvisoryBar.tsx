@@ -20,7 +20,7 @@ import {
 import type { RouteImpact, RouteImpactSeverity } from "../nav/routeImpacts";
 import { RouteHazardTimeline, impactToTimelineItem } from "./RouteHazardTimeline";
 import type { TimelineItem } from "./RouteHazardTimeline";
-import type { MinutePrecipForecast } from "../services/tomorrowIo";
+import type { MinutePrecipForecast, PointHourlyForecast } from "../services/tomorrowIo";
 import { AdvisoryLocalForecast } from "./AdvisoryLocalForecast";
 import type { CurrentNowcast } from "../services/openWeatherClient";
 import { displayText } from "../utils/displayText";
@@ -33,12 +33,76 @@ import {
 const BANNER_MSG_MAX = 72;
 const BANNER_TICKER_MAX = 80;
 
+/** Collapsed-bar background + ring — one per rotator message. */
+type AdvisoryPreviewTone = "clear" | "weather" | "info" | "warn" | "hazard" | "severe";
+
 type AdvisoryPreviewItem = {
   badge: string | null;
   raw: string;
+  tone: AdvisoryPreviewTone;
   /** Area + freshness — only on the local forecast rotator slot. */
   localMeta?: { area: string; updated: string | null };
 };
+
+function nwsAlertPreviewTone(a: NormalizedWeatherAlert): AdvisoryPreviewTone {
+  if (a.severity === "Extreme" || /tornado warning/i.test(a.event ?? "")) return "severe";
+  if (a.severity === "Severe" || /warning/i.test(a.event ?? "")) return "hazard";
+  return "warn";
+}
+
+function conditionsLinePreviewTone(line: string): AdvisoryPreviewTone {
+  const l = line.toLowerCase();
+  if (/\b(dry|clear|fair|sunny|no precip|mostly clear)\b/.test(l)) return "clear";
+  if (/\b(rain|snow|storm|thunder|hail|flood|wind|ice|freez|heavy|severe)\b/.test(l)) return "warn";
+  return "weather";
+}
+
+function localForecastBannerTone(
+  item: { raw: string },
+  nwsNearYou: NormalizedWeatherAlert[] | null | undefined
+): AdvisoryPreviewTone {
+  if (nwsNearYou?.length) {
+    let worst: AdvisoryPreviewTone = "warn";
+    for (const a of nwsNearYou) {
+      const t = nwsAlertPreviewTone(a);
+      if (t === "severe") return "severe";
+      if (t === "hazard") worst = "hazard";
+    }
+    return worst;
+  }
+  return conditionsLinePreviewTone(item.raw);
+}
+
+function driveAheadPreviewTone(tier: DriveAheadRadarTier | undefined): AdvisoryPreviewTone {
+  if (tier === "red") return "severe";
+  if (tier === "orange") return "hazard";
+  if (tier === "yellow") return "warn";
+  if (tier === "green" || tier === "clear") return "clear";
+  if (tier === "blue") return "weather";
+  return "info";
+}
+
+function defaultPreviewTone(badge: string | null, raw: string): AdvisoryPreviewTone {
+  const b = (badge ?? "").toLowerCase();
+  const r = raw.toLowerCase();
+  if (b === "offline") return "warn";
+  if (b === "error") return "severe";
+  if (b === "traffic") return "warn";
+  if (b === "local" || b === "now") return conditionsLinePreviewTone(raw);
+  if (b === "load" || b === "plan" || b === "work") return "info";
+  if (b === "app" || b === "drive" || b === "nav" || b === "info") return "info";
+  if (/no hazard|no urgent|no life-safety/.test(r)) return "clear";
+  return "info";
+}
+
+function previewItem(
+  item: Omit<AdvisoryPreviewItem, "tone"> & { tone?: AdvisoryPreviewTone }
+): AdvisoryPreviewItem {
+  return {
+    ...item,
+    tone: item.tone ?? defaultPreviewTone(item.badge, item.raw),
+  };
+}
 
 function bannerMsg(text: string, max = BANNER_MSG_MAX): string {
   return truncateBannerText(text, max);
@@ -142,6 +206,12 @@ export type StormAdvisoryBarProps = SharedProps & {
   forecastAreaLabel?: string | null;
   /** Tomorrow.io 60-minute minute-by-minute precip forecast at the user's location. */
   minutePrecipForecast?: MinutePrecipForecast | null;
+  /** 24-hour hourly outlook at the user's position. */
+  hourlyForecast?: PointHourlyForecast | null;
+  /** NWS alerts merged for local forecast (corridor + near you + route context). */
+  localForecastNwsAlerts?: NormalizedWeatherAlert[];
+  nwsForecastLoading?: boolean;
+  nwsForecastError?: string | null;
   /** Open full corridor forecast sheet (route-tied timeline). */
   onOpenCorridorForecast?: () => void;
 };
@@ -245,6 +315,10 @@ export function StormAdvisoryBar({
   currentNowcast = null,
   forecastAreaLabel = null,
   minutePrecipForecast = null,
+  hourlyForecast = null,
+  localForecastNwsAlerts = [],
+  nwsForecastLoading = false,
+  nwsForecastError = null,
   onOpenCorridorForecast,
 }: StormAdvisoryBarProps) {
   if (!featureEnabled) return null;
@@ -519,6 +593,7 @@ export function StormAdvisoryBar({
         text: `${base} — ${timingLine}`,
         alert: a,
         badge: "Alert",
+        tone: nwsAlertPreviewTone(a),
       };
     });
   }, [urgentTopAlerts]);
@@ -567,43 +642,57 @@ export function StormAdvisoryBar({
         currentNowcast?.fetchedAtMs,
         minutePrecipForecast?.fetchedAt
       ),
-      nwsAtLocation: atLocationSorted.length ? atLocationSorted : null,
+      nwsNearYou: localForecastNwsAlerts.length ? localForecastNwsAlerts : null,
     });
   }, [
     forecastAreaLabel,
     nowcastLine,
     minutePrecipForecast,
     currentNowcast?.fetchedAtMs,
-    atLocationSorted,
+    localForecastNwsAlerts,
   ]);
 
   const previewItems = useMemo(() => {
     if (basicNavAdvisoryMode) {
       const out: AdvisoryPreviewItem[] = [];
       if (!isOnline) {
-        out.push({
-          badge: "Offline",
-          raw: bannerMsg("Offline — reconnect for map and radar."),
-        });
+        out.push(
+          previewItem({
+            badge: "Offline",
+            raw: bannerMsg("Offline — reconnect for map and radar."),
+            tone: "warn",
+          })
+        );
       }
       if (localForecastBanner) {
-        out.push(localForecastBanner);
+        out.push(
+          previewItem({
+            ...localForecastBanner,
+            tone: localForecastBannerTone(localForecastBanner, localForecastNwsAlerts),
+          })
+        );
       } else if (nowcastLine) {
-        out.push({ badge: "Now", raw: bannerMsg(nowcastLine) });
+        out.push(
+          previewItem({
+            badge: "Now",
+            raw: bannerMsg(nowcastLine),
+            tone: conditionsLinePreviewTone(nowcastLine),
+          })
+        );
       } else {
         /* If weather is temporarily unavailable, keep the first visible fallback useful instead
          * of leading with the generic route-status line. */
-        out.push({ badge: "App", raw: SITEBIBLE_AD_BAR });
+        out.push(previewItem({ badge: "App", raw: SITEBIBLE_AD_BAR }));
       }
       if (hasGuidanceRoute) {
-        out.push({ badge: "Nav", raw: bannerMsg("Route set — tap Go when ready.") });
+        out.push(previewItem({ badge: "Nav", raw: bannerMsg("Route set — tap Go when ready.") }));
       }
-      if (busyLabel) out.push({ badge: "Work", raw: bannerMsg(busyLabel) });
+      if (busyLabel) out.push(previewItem({ badge: "Work", raw: bannerMsg(busyLabel) }));
       for (const p of promoLines) {
         if (!localForecastBanner && !nowcastLine && p.id === "sitebible") continue;
-        out.push({ badge: "Info", raw: bannerMsg(displayText(p.text)) });
+        out.push(previewItem({ badge: "Info", raw: bannerMsg(displayText(p.text)) }));
       }
-      if (out.length === 0) out.push({ badge: null, raw: defaultPreviewText });
+      if (out.length === 0) out.push(previewItem({ badge: null, raw: defaultPreviewText, tone: "clear" }));
       return out;
     }
     /* Plus rotator: substantive items first (offline / error / Now / loading / busy / ticker /
@@ -612,51 +701,89 @@ export function StormAdvisoryBar({
      * never crowd ahead of a hazard or current-conditions reading. */
     const out: AdvisoryPreviewItem[] = [];
     if (!isOnline) {
-      out.push({ badge: "Offline", raw: bannerMsg("Offline — reconnect for map and advisories.") });
+      out.push(
+        previewItem({
+          badge: "Offline",
+          raw: bannerMsg("Offline — reconnect for map and advisories."),
+          tone: "warn",
+        })
+      );
     }
     if (showErrorState && (error || "").trim()) {
-      out.push({ badge: "Error", raw: bannerMsg((error || "").trim(), 96) });
+      out.push(
+        previewItem({
+          badge: "Error",
+          raw: bannerMsg((error || "").trim(), 96),
+          tone: "severe",
+        })
+      );
     }
     if (localForecastBanner) {
-      out.push(localForecastBanner);
+      out.push(
+        previewItem({
+          ...localForecastBanner,
+          tone: localForecastBannerTone(localForecastBanner, localForecastNwsAlerts),
+        })
+      );
     } else if (nowcastLine) {
-      out.push({ badge: "Now", raw: bannerMsg(nowcastLine) });
+      out.push(
+        previewItem({
+          badge: "Now",
+          raw: bannerMsg(nowcastLine),
+          tone: conditionsLinePreviewTone(nowcastLine),
+        })
+      );
     }
     if (loading) {
       if (!navigationStarted && hasGuidanceRoute) {
-        out.push({
-          badge: "Plan",
-          raw: bannerMsg(
-            loadSlow ? "Still loading NWS for route…" : "Loading NWS for planned route…"
-          ),
-        });
+        out.push(
+          previewItem({
+            badge: "Plan",
+            raw: bannerMsg(
+              loadSlow ? "Still loading NWS for route…" : "Loading NWS for planned route…"
+            ),
+            tone: loadSlow ? "warn" : "info",
+          })
+        );
       } else {
-        out.push({
-          badge: "Load",
-          raw: bannerMsg(navigationStarted ? "Loading alerts…" : "Loading…"),
-        });
+        out.push(
+          previewItem({
+            badge: "Load",
+            raw: bannerMsg(navigationStarted ? "Loading alerts…" : "Loading…"),
+            tone: loadSlow ? "warn" : "info",
+          })
+        );
       }
     }
     if (busyLabel) {
-      out.push({ badge: "Work", raw: bannerMsg(busyLabel) });
+      out.push(previewItem({ badge: "Work", raw: bannerMsg(busyLabel) }));
     }
     if (activeTicker) {
-      out.push({
-        badge: activeTicker.badge,
-        raw: bannerMsg(activeTicker.text, BANNER_TICKER_MAX),
-      });
+      out.push(
+        previewItem({
+          badge: activeTicker.badge,
+          raw: bannerMsg(activeTicker.text, BANNER_TICKER_MAX),
+          tone: activeTicker.tone,
+        })
+      );
     }
     if (advisoryTier !== "basic" && trafficDelayMinutes >= 8) {
-      out.push({
-        badge: "Traffic",
-        raw: bannerMsg(`Traffic +${formatMinutesAsHoursMinutes(trafficDelayMinutes)} on route`),
-      });
+      out.push(
+        previewItem({
+          badge: "Traffic",
+          raw: bannerMsg(`Traffic +${formatMinutesAsHoursMinutes(trafficDelayMinutes)} on route`),
+          tone: "warn",
+        })
+      );
     }
     if (advisoryTier !== "basic" && driveRouteAheadLine) {
-      out.push({
-        badge: "Ahead",
-        raw: bannerMsg(formatDriveAheadBrief(driveRouteAheadLine)),
-      });
+      out.push(
+        previewItem({
+          badge: "Ahead",
+          raw: bannerMsg(formatDriveAheadBrief(driveRouteAheadLine)),
+          tone: driveAheadPreviewTone(driveRouteAheadLine.radarTier),
+        })
+      );
     }
     /* Filler / promo tail. Always present in the rotation so the SiteBible blurb and the route-
      * status hint show up over time, but appended after substantive items so they never pre-empt
@@ -664,20 +791,22 @@ export function StormAdvisoryBar({
      * traffic / ahead — once those exist, the user already knows the route is set. */
     const hasRouteContext =
       Boolean(activeTicker) || trafficDelayMinutes >= 8 || Boolean(driveRouteAheadLine);
-    out.push({ badge: "App", raw: SITEBIBLE_AD_BAR });
+    out.push(previewItem({ badge: "App", raw: SITEBIBLE_AD_BAR }));
     if (hasGuidanceRoute && !hasRouteContext) {
-      out.push({
-        badge: "Drive",
-        raw: bannerMsg(
-          navigationStarted ? "Route active — data updates while driving." : "Route set — tap Go for live data."
-        ),
-      });
+      out.push(
+        previewItem({
+          badge: "Drive",
+          raw: bannerMsg(
+            navigationStarted ? "Route active — data updates while driving." : "Route set — tap Go for live data."
+          ),
+        })
+      );
     }
     for (const p of promoLines) {
       if (p.id === "sitebible") continue;
-      out.push({ badge: "Info", raw: bannerMsg(displayText(p.text)) });
+      out.push(previewItem({ badge: "Info", raw: bannerMsg(displayText(p.text)) }));
     }
-    if (out.length === 0) out.push({ badge: null, raw: defaultPreviewText });
+    if (out.length === 0) out.push(previewItem({ badge: null, raw: defaultPreviewText, tone: "clear" }));
     return out;
   }, [
     basicNavAdvisoryMode,
@@ -697,6 +826,7 @@ export function StormAdvisoryBar({
     defaultPreviewText,
     nowcastLine,
     localForecastBanner,
+    localForecastNwsAlerts,
   ]);
   useEffect(() => {
     setPreviewIdx(0);
@@ -787,6 +917,7 @@ export function StormAdvisoryBar({
   };
 
   const activePreview = previewItems[previewIdx % previewItems.length]!;
+  const previewTone: AdvisoryPreviewTone = barExpanded ? "info" : activePreview.tone;
 
   /* Measure the preview button's bounding rect → CSS vars on documentElement. The expanded panel
    * is `position: fixed` and uses these vars for its top / left / right so the three edges align
@@ -848,7 +979,7 @@ export function StormAdvisoryBar({
       <button
         ref={previewBtnRef}
         type="button"
-        className={`storm-advisory-bar storm-advisory-bar--preview storm-advisory-bar--sev-${effectiveSeverity}${showErrorState ? " storm-advisory-bar--err" : ""}${barExpanded ? " storm-advisory-bar--preview-active" : ""}`}
+        className={`storm-advisory-bar storm-advisory-bar--preview storm-advisory-bar--tone-${previewTone}${showErrorState && !barExpanded ? " storm-advisory-bar--err" : ""}${barExpanded ? " storm-advisory-bar--preview-active" : ""}`}
         id="storm-advisory-panel-toggle"
         aria-label={
           basicNavAdvisoryMode
@@ -923,7 +1054,7 @@ export function StormAdvisoryBar({
             )}
           </div>
         </div>
-        {onOpenCorridorForecast && !basicNavAdvisoryMode && forecastAreaLabel ? (
+        {onOpenCorridorForecast && !basicNavAdvisoryMode && hasGuidanceRoute ? (
           <button
             type="button"
             className="storm-advisory-bar__forecast-btn"
@@ -934,7 +1065,7 @@ export function StormAdvisoryBar({
               onOpenCorridorForecast();
             }}
           >
-            {hasGuidanceRoute ? "Route forecast" : "Local forecast"}
+            Route forecast
           </button>
         ) : null}
         {!hideHeadToggles && (
@@ -998,12 +1129,19 @@ export function StormAdvisoryBar({
 
       <div className="storm-advisory-bar__sections-scroll">
         {forecastAreaLabel &&
-        (currentNowcast || minutePrecipForecast || atLocationSorted.length > 0) ? (
+        (currentNowcast ||
+          minutePrecipForecast ||
+          hourlyForecast?.hours.length ||
+          localForecastNwsAlerts.length > 0 ||
+          nwsForecastLoading) ? (
           <AdvisoryLocalForecast
             areaLabel={forecastAreaLabel}
             nowcast={currentNowcast}
             minutePrecip={minutePrecipForecast}
-            locationAlerts={atLocationSorted}
+            hourlyForecast={hourlyForecast}
+            locationAlerts={localForecastNwsAlerts}
+            nwsLoading={nwsForecastLoading}
+            nwsError={nwsForecastError}
             onLocationAlertClick={onNwsAlertClick}
           />
         ) : null}
@@ -1154,7 +1292,11 @@ export function StormAdvisoryBar({
                 !loading &&
                 !(
                   forecastAreaLabel &&
-                  (currentNowcast || minutePrecipForecast || atLocationSorted.length > 0)
+                  (currentNowcast ||
+                    minutePrecipForecast ||
+                    hourlyForecast?.hours.length ||
+                    localForecastNwsAlerts.length > 0 ||
+                    nwsForecastLoading)
                 ) && (
                 <p className="storm-advisory-bar__muted storm-advisory-bar__section-status">
                   {hasGuidanceRoute

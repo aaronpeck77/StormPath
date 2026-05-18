@@ -2,6 +2,8 @@
  * Along-route timing copy for NWS (and timeline) alerts — distance ahead, ETA, expiry, relevance.
  */
 
+import { formatDurationMinutesMaybe } from "../ui/formatEta";
+
 const METERS_PER_MILE = 1609.344;
 
 export type RouteAlertTimingInput = {
@@ -38,12 +40,7 @@ export function fmtMi(meters: number): string {
 }
 
 export function fmtMin(min: number | null | undefined): string | null {
-  if (min == null || !Number.isFinite(min) || min < 0) return null;
-  if (min < 1) return "now";
-  if (min < 60) return `${Math.round(min)} min`;
-  const h = Math.floor(min / 60);
-  const m = Math.round(min % 60);
-  return m === 0 ? `${h} hr` : `${h} hr ${m} min`;
+  return formatDurationMinutesMaybe(min);
 }
 
 export function fmtExpires(iso: string | null | undefined): string | null {

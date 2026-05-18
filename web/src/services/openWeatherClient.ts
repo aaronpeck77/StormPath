@@ -1,5 +1,7 @@
 import type { LngLat } from "../nav/types";
+import { formatEtaDuration } from "../ui/formatEta";
 import { fetchWithTimeout, OPENWEATHER_TIMEOUT_MS } from "../utils/fetchResilient";
+import type { PointHourlyForecast, PointHourlyInterval } from "./tomorrowIo";
 
 /** Free-tier friendly: current weather at a point (lat, lon). */
 export async function fetchCurrentWeatherHeadline(
@@ -169,6 +171,60 @@ export function formatNowcastLine(now: CurrentNowcast): string {
   }
 
   return parts.join(" \u00b7 ");
+}
+
+/** Next 24 hours at a point (3-hour steps, 8 windows). Free tier `forecast`. */
+export async function fetchOpenWeatherPointHourly24h(
+  apiKey: string,
+  lat: number,
+  lon: number
+): Promise<PointHourlyForecast> {
+  const url = new URL("https://api.openweathermap.org/data/2.5/forecast");
+  url.searchParams.set("lat", String(lat));
+  url.searchParams.set("lon", String(lon));
+  url.searchParams.set("appid", apiKey);
+  url.searchParams.set("units", "imperial");
+  url.searchParams.set("cnt", "8");
+
+  const res = await fetchWithTimeout({
+    input: url.toString(),
+    init: { method: "GET" },
+    timeoutMs: OPENWEATHER_TIMEOUT_MS,
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`OpenWeather hourly ${res.status}: ${t.slice(0, 160)}`);
+  }
+  const data = (await res.json()) as {
+    list?: {
+      dt: number;
+      dt_txt?: string;
+      main?: { temp?: number };
+      weather?: { description?: string }[];
+      pop?: number;
+      wind?: { speed?: number };
+      rain?: { "3h"?: number };
+      snow?: { "3h"?: number };
+    }[];
+  };
+
+  const fetchedAt = Date.now();
+  const hours: PointHourlyInterval[] = (data.list ?? []).slice(0, 8).map((it) => {
+    const tMs = it.dt * 1000;
+    const pop = it.pop ?? 0;
+    const rainMm = (it.rain?.["3h"] ?? it.snow?.["3h"] ?? 0) / 3;
+    return {
+      timeIso: new Date(tMs).toISOString(),
+      offsetHours: (tMs - fetchedAt) / 3_600_000,
+      tempF: Math.round(it.main?.temp ?? 0),
+      precipIntensityMmh: rainMm,
+      precipProbability: pop,
+      windMph: Math.round(it.wind?.speed ?? 0),
+      conditions: it.weather?.[0]?.description ?? "conditions",
+    };
+  });
+
+  return { fetchedAt, lat, lng: lon, hours, provider: "openWeather" };
 }
 
 /** Next ~6–9 hours at a point (3-hour steps). Free tier `forecast`. */
@@ -351,9 +407,7 @@ export async function weatherForecastAlongRoute(
     const offsetLabel =
       p.arrivalOffsetMin < 2
         ? ""
-        : p.arrivalOffsetMin < 60
-          ? ` (in ~${Math.round(p.arrivalOffsetMin)} min)`
-          : ` (in ~${(p.arrivalOffsetMin / 60).toFixed(1)} hr)`;
+        : ` (in ~${formatEtaDuration(p.arrivalOffsetMin)})`;
     return `${p.label}${offsetLabel}: ${temp ? temp + " " : ""}${p.conditions}${p.precipPct > 10 ? ` ${p.precipPct}% precip` : ""}`;
   });
   const headline = headlineParts.join(" \u2192 ");

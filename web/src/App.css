@@ -4746,6 +4746,68 @@
   filter: brightness(1.12);
 }
 
+.adv-forecast__nws-status {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: rgba(226, 232, 240, 0.85);
+}
+
+.adv-forecast__nws-status--warn {
+  color: #fcd34d;
+}
+
+.adv-forecast__block--day {
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.adv-forecast__hour24-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -2px;
+  padding-bottom: 2px;
+}
+
+.adv-forecast__hour24-cols {
+  display: flex;
+  gap: 3px;
+  min-width: min-content;
+}
+
+.adv-forecast__hour24-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 34px;
+  flex-shrink: 0;
+}
+
+.adv-forecast__hour24-time {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+}
+
+.adv-forecast__hour24-temp {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.adv-forecast__hour24-precip {
+  width: 100%;
+  height: 28px;
+  border-radius: 4px;
+  min-height: 8px;
+}
+
+.adv-forecast__axis--day {
+  margin-top: 6px;
+}
+
 .adv-forecast__axis {
   display: flex;
   justify-content: space-between;
@@ -5663,11 +5725,10 @@
   max-height: 3.25rem;
   line-height: 1.3;
   overflow: hidden;
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-
-.storm-advisory-bar--preview:hover {
-  background: rgba(15, 23, 42, 0.96);
+  transition:
+    background 0.35s ease,
+    border-color 0.35s ease,
+    box-shadow 0.35s ease;
 }
 
 .storm-advisory-bar__preview-stack {
@@ -5698,25 +5759,117 @@
   min-width: 0;
 }
 
-/* Severity-tinted backgrounds applied directly to the preview button (no inner pill). */
-.storm-advisory-bar--preview.storm-advisory-bar--sev-none {
-  background: rgba(30, 41, 59, 0.92);
+/* Per-message tone on the collapsed preview (tracks the active rotator slot). */
+.storm-advisory-bar--preview.storm-advisory-bar--tone-clear {
+  background: rgba(20, 83, 45, 0.9);
+  border-color: rgba(74, 222, 128, 0.55);
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.2) inset;
 }
 
-.storm-advisory-bar--preview.storm-advisory-bar--sev-info {
-  background: rgba(23, 47, 110, 0.88);
+.storm-advisory-bar--preview.storm-advisory-bar--tone-weather {
+  background: rgba(23, 58, 110, 0.9);
+  border-color: rgba(96, 165, 250, 0.58);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.22) inset;
 }
 
-.storm-advisory-bar--preview.storm-advisory-bar--sev-warn {
-  background: rgba(120, 53, 24, 0.88);
+.storm-advisory-bar--preview.storm-advisory-bar--tone-info {
+  background: rgba(30, 41, 59, 0.94);
+  border-color: rgba(148, 163, 184, 0.45);
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.12) inset;
 }
 
-.storm-advisory-bar--preview.storm-advisory-bar--sev-severe {
-  background: rgba(120, 25, 25, 0.9);
+.storm-advisory-bar--preview.storm-advisory-bar--tone-warn {
+  background: rgba(120, 53, 24, 0.9);
+  border-color: #b45309;
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.4) inset;
+}
+
+.storm-advisory-bar--preview.storm-advisory-bar--tone-hazard {
+  background: rgba(127, 29, 29, 0.92);
+  border-color: #dc2626;
+  box-shadow: 0 0 0 1px rgba(252, 165, 165, 0.35) inset;
+}
+
+.storm-advisory-bar--preview.storm-advisory-bar--tone-severe {
+  background: rgba(69, 10, 10, 0.95);
+  border-color: #ef4444;
+  box-shadow:
+    0 0 0 2px rgba(239, 68, 68, 0.95),
+    0 0 14px rgba(239, 68, 68, 0.35),
+    0 0 0 1px rgba(252, 165, 165, 0.45) inset;
 }
 
 .storm-advisory-bar--preview.storm-advisory-bar--err {
-  background: rgba(120, 25, 25, 0.92);
+  background: rgba(69, 10, 10, 0.95);
+  border-color: #ef4444;
+}
+
+.storm-advisory-bar--preview.storm-advisory-bar--tone-clear:hover {
+  background: rgba(22, 101, 52, 0.94);
+}
+
+.storm-advisory-bar--preview.storm-advisory-bar--tone-weather:hover {
+  background: rgba(30, 64, 120, 0.94);
+}
+
+.storm-advisory-bar--preview.storm-advisory-bar--tone-info:hover {
+  background: rgba(51, 65, 85, 0.96);
+}
+
+.storm-advisory-bar--preview.storm-advisory-bar--tone-warn:hover {
+  background: rgba(146, 64, 14, 0.94);
+}
+
+.storm-advisory-bar--preview.storm-advisory-bar--tone-hazard:hover {
+  background: rgba(153, 27, 27, 0.94);
+}
+
+.storm-advisory-bar--preview.storm-advisory-bar--tone-severe:hover {
+  background: rgba(82, 12, 12, 0.97);
+}
+
+.storm-advisory-bar--tone-clear .storm-advisory-bar__preview-ticker-badge {
+  background: rgba(34, 197, 94, 0.22);
+  border-color: rgba(74, 222, 128, 0.55);
+  color: #dcfce7;
+}
+
+.storm-advisory-bar--tone-weather .storm-advisory-bar__preview-ticker-badge {
+  background: rgba(59, 130, 246, 0.24);
+  border-color: rgba(96, 165, 250, 0.55);
+  color: #dbeafe;
+}
+
+.storm-advisory-bar--tone-info .storm-advisory-bar__preview-ticker-badge {
+  background: rgba(100, 116, 139, 0.28);
+  border-color: rgba(203, 213, 225, 0.45);
+  color: #e2e8f0;
+}
+
+.storm-advisory-bar--tone-warn .storm-advisory-bar__preview-ticker-badge {
+  background: rgba(245, 158, 11, 0.22);
+  border-color: rgba(251, 191, 36, 0.6);
+  color: #fef3c7;
+}
+
+.storm-advisory-bar--tone-hazard .storm-advisory-bar__preview-ticker-badge,
+.storm-advisory-bar--tone-severe .storm-advisory-bar__preview-ticker-badge {
+  background: rgba(220, 38, 38, 0.35);
+  border-color: rgba(254, 202, 202, 0.75);
+  color: #fff;
+}
+
+.storm-advisory-bar--tone-weather .storm-advisory-bar__preview-local-inline {
+  color: rgba(186, 230, 253, 0.88);
+}
+
+.storm-advisory-bar--tone-clear .storm-advisory-bar__preview-local-inline {
+  color: rgba(187, 247, 208, 0.82);
+}
+
+.storm-advisory-bar--tone-hazard .storm-advisory-bar__preview-text,
+.storm-advisory-bar--tone-severe .storm-advisory-bar__preview-text {
+  color: #fef2f2;
 }
 
 .storm-advisory-bar__preview-ticker-badge {

@@ -10,12 +10,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LngLat } from "../nav/types";
+import { fetchOpenWeatherPointHourly24h } from "../services/openWeatherClient";
 import {
   buildTimelinesWaypointsForGeometry,
   fetchMinutePrecip,
+  fetchPointHourlyForecast,
   fetchRouteForecast,
   isTomorrowIoRateLimited,
   type MinutePrecipForecast,
+  type PointHourlyForecast,
   type RouteForecast,
 } from "../services/tomorrowIo";
 
@@ -98,6 +101,94 @@ export function useTomorrowMinutePrecip(
     }, MINUTE_PRECIP_POLL_MS);
     return () => clearInterval(id);
   }, [enabled, apiKey, !!userLngLat]);
+
+  return forecast;
+}
+
+// ── Local 24-hour hourly ──────────────────────────────────────────────────────
+
+const HOURLY_POINT_POLL_MS = 30 * 60 * 1000;
+const HOURLY_POINT_MOVE_THRESHOLD_M = 5000;
+
+/**
+ * 24-hour hourly outlook at the user's position.
+ * Tomorrow.io (1 h steps) when available; otherwise OpenWeather (3 h steps).
+ */
+export function useLocalHourlyForecast(
+  tioApiKey: string,
+  openWeatherApiKey: string,
+  userLngLat: LngLat | null,
+  enabled = false
+): PointHourlyForecast | null {
+  const [forecast, setForecast] = useState<PointHourlyForecast | null>(null);
+  const lastFetchLngLat = useRef<LngLat | null>(null);
+  const lastFetchTime = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !userLngLat) return;
+    if (!tioApiKey && !openWeatherApiKey) return;
+
+    const now = Date.now();
+    const lastLng = lastFetchLngLat.current;
+    const tooSoon = now - lastFetchTime.current < HOURLY_POINT_POLL_MS;
+    const tooClose =
+      lastLng != null && haversineM(lastLng, userLngLat) < HOURLY_POINT_MOVE_THRESHOLD_M;
+    if (tooSoon && tooClose) return;
+
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    const [lng, lat] = userLngLat;
+    lastFetchTime.current = now;
+    lastFetchLngLat.current = userLngLat;
+
+    const run = async () => {
+      if (tioApiKey && !isTomorrowIoRateLimited()) {
+        try {
+          const f = await fetchPointHourlyForecast(tioApiKey, lat, lng, ac.signal);
+          if (!ac.signal.aborted) {
+            setForecast(f);
+            return;
+          }
+        } catch (e) {
+          if (!ac.signal.aborted && !isTomorrowIoRateLimited() && import.meta.env.DEV) {
+            console.warn("[TomorrowIO] point hourly failed:", e);
+          }
+        }
+      }
+      if (openWeatherApiKey && !ac.signal.aborted) {
+        try {
+          const f = await fetchOpenWeatherPointHourly24h(openWeatherApiKey, lat, lng);
+          if (!ac.signal.aborted) setForecast(f);
+        } catch (e) {
+          if (!ac.signal.aborted && import.meta.env.DEV) {
+            console.warn("[OpenWeather] point hourly failed:", e);
+          }
+        }
+      }
+    };
+
+    void run();
+    return () => {
+      ac.abort();
+    };
+  }, [
+    enabled,
+    tioApiKey,
+    openWeatherApiKey,
+    userLngLat ? Math.round(userLngLat[0] * 20) : null,
+    userLngLat ? Math.round(userLngLat[1] * 20) : null,
+  ]);
+
+  useEffect(() => {
+    if (!enabled || !userLngLat || (!tioApiKey && !openWeatherApiKey)) return;
+    const id = setInterval(() => {
+      lastFetchTime.current = 0;
+    }, HOURLY_POINT_POLL_MS);
+    return () => clearInterval(id);
+  }, [enabled, tioApiKey, openWeatherApiKey, !!userLngLat]);
 
   return forecast;
 }

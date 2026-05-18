@@ -1,14 +1,17 @@
 import { useMemo } from "react";
 import type { CurrentNowcast } from "../services/openWeatherClient";
 import { formatNowcastLine } from "../services/openWeatherClient";
-import type { MinutePrecipForecast } from "../services/tomorrowIo";
+import type { MinutePrecipForecast, PointHourlyForecast } from "../services/tomorrowIo";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
 import {
   formatForecastUpdatedAt,
+  formatLocalForecastHourLabel,
   formatMinutePrecipNowLine,
   latestForecastFetchedAtMs,
+  pointHourlyForecastSummary,
 } from "../utils/forecastDisplay";
+import { formatEtaDuration } from "./formatEta";
 
 function precipColor(mmh: number, prob: number): string {
   const effective = mmh * Math.max(0.3, prob);
@@ -30,26 +33,33 @@ function minutePrecipSummary(forecast: MinutePrecipForecast): string {
   );
   if (!hasAnyPrecip) return "Dry for the next hour";
   if (firstWet === 0 && lastWet >= 55) return "Rain expected throughout the hour";
-  if (firstWet === 0) return `Rain easing around ${lastWet + 1} minutes from now`;
+  if (firstWet === 0) return `Rain easing around ${formatEtaDuration(lastWet + 1)} from now`;
   if (firstWet <= 5) return "Rain starting soon";
-  return `Rain likely in about ${firstWet} minutes`;
+  return `Rain likely in about ${formatEtaDuration(firstWet)}`;
 }
 
 type Props = {
   areaLabel: string;
   nowcast?: CurrentNowcast | null;
   minutePrecip?: MinutePrecipForecast | null;
-  /** NWS polygons containing your current position. */
+  hourlyForecast?: PointHourlyForecast | null;
   locationAlerts?: NormalizedWeatherAlert[];
+  nwsLoading?: boolean;
+  nwsError?: string | null;
   onLocationAlertClick?: (alert: NormalizedWeatherAlert) => void;
 };
 
-/** Local weather in the expanded advisory bar — area, update time, now + next hour. */
+/**
+ * Local weather in the expanded advisory bar — NWS, right now, next hour, and 24-hour outlook.
+ */
 export function AdvisoryLocalForecast({
   areaLabel,
   nowcast,
   minutePrecip,
+  hourlyForecast,
   locationAlerts = [],
+  nwsLoading = false,
+  nwsError = null,
   onLocationAlertClick,
 }: Props) {
   const nowLine = nowcast
@@ -59,13 +69,25 @@ export function AdvisoryLocalForecast({
       : null;
   const hasNow = Boolean(nowLine);
   const hasHour = Boolean(minutePrecip?.minutes.length);
+  const hours = hourlyForecast?.hours ?? [];
+  const hasDay = hours.length > 0;
   const hasNws = locationAlerts.length > 0;
-  if (!hasNow && !hasHour && !hasNws) return null;
-  const hourSummary = minutePrecip ? minutePrecipSummary(minutePrecip) : null;
+  const showNwsBlock = hasNws || nwsLoading || Boolean(nwsError?.trim());
   const metaUpdated = useMemo(() => {
-    const ms = latestForecastFetchedAtMs(nowcast?.fetchedAtMs, minutePrecip?.fetchedAt);
+    const ms = latestForecastFetchedAtMs(
+      nowcast?.fetchedAtMs,
+      minutePrecip?.fetchedAt,
+      hourlyForecast?.fetchedAt
+    );
     return ms != null ? formatForecastUpdatedAt(ms) : null;
-  }, [nowcast?.fetchedAtMs, minutePrecip?.fetchedAt]);
+  }, [nowcast?.fetchedAtMs, minutePrecip?.fetchedAt, hourlyForecast?.fetchedAt]);
+
+  if (!hasNow && !hasHour && !hasDay && !showNwsBlock) return null;
+
+  const hourSummary = minutePrecip ? minutePrecipSummary(minutePrecip) : null;
+  const daySummary = hasDay ? pointHourlyForecastSummary(hours) : null;
+  const hourlyProviderLabel =
+    hourlyForecast?.provider === "openWeather" ? "OpenWeather · 3 h steps" : "Tomorrow.io";
 
   return (
     <section className="adv-forecast" aria-label={`Local forecast for ${areaLabel}`}>
@@ -89,34 +111,52 @@ export function AdvisoryLocalForecast({
         {metaUpdated ? <span className="adv-forecast__updated">{metaUpdated}</span> : null}
       </header>
 
-      {hasNws ? (
+      {showNwsBlock ? (
         <div className="adv-forecast__block adv-forecast__block--nws">
           <div className="adv-forecast__block-head">
-            <span className="adv-forecast__block-label">Active NWS alerts</span>
-            <span className="adv-forecast__block-meta">At your position · NWS</span>
+            <span className="adv-forecast__block-label">
+              {hasNws
+                ? locationAlerts.length === 1
+                  ? "Active NWS alert"
+                  : `Active NWS alerts (${locationAlerts.length})`
+                : "NWS alerts"}
+            </span>
+            <span className="adv-forecast__block-meta">Near you · NWS</span>
           </div>
-          <ul className="adv-forecast__nws-list" role="list">
-            {locationAlerts.map((a) => {
-              const summary = nwsGlanceSummary(a);
-              const label = a.event?.trim() || "Weather alert";
-              const body = summary ? `${label} — ${summary}` : label;
-              return (
-                <li key={a.id}>
-                  {onLocationAlertClick ? (
-                    <button
-                      type="button"
-                      className="adv-forecast__nws-row"
-                      onClick={() => onLocationAlertClick(a)}
-                    >
-                      {body}
-                    </button>
-                  ) : (
-                    <p className="adv-forecast__nws-row adv-forecast__nws-row--static">{body}</p>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+          {nwsLoading && !hasNws ? (
+            <p className="adv-forecast__nws-status">Loading active alerts from api.weather.gov…</p>
+          ) : null}
+          {nwsError?.trim() && !hasNws && !nwsLoading ? (
+            <p className="adv-forecast__nws-status adv-forecast__nws-status--warn">
+              Could not refresh NWS alerts. Conditions below may still be current.
+            </p>
+          ) : null}
+          {hasNws ? (
+            <ul className="adv-forecast__nws-list" role="list">
+              {locationAlerts.map((a) => {
+                const summary = nwsGlanceSummary(a);
+                const label = a.event?.trim() || "Weather alert";
+                const body = summary ? `${label} — ${summary}` : label;
+                return (
+                  <li key={a.id}>
+                    {onLocationAlertClick ? (
+                      <button
+                        type="button"
+                        className="adv-forecast__nws-row"
+                        onClick={() => onLocationAlertClick(a)}
+                      >
+                        {body}
+                      </button>
+                    ) : (
+                      <p className="adv-forecast__nws-row adv-forecast__nws-row--static">{body}</p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : !nwsLoading && !nwsError?.trim() ? (
+            <p className="adv-forecast__nws-status">No active NWS alerts near you right now.</p>
+          ) : null}
         </div>
       ) : null}
 
@@ -155,14 +195,65 @@ export function AdvisoryLocalForecast({
                 style={{
                   background: precipColor(m.precipIntensityMmh, m.precipProbability),
                 }}
-                title={`+${i + 1} min: ${m.precipIntensityMmh.toFixed(1)} mm/hr`}
+                title={`+${formatEtaDuration(i + 1)}: ${m.precipIntensityMmh.toFixed(1)} mm/hr`}
               />
             ))}
           </div>
           <div className="adv-forecast__axis">
             <span>Now</span>
-            <span>30 min</span>
-            <span>60 min</span>
+            <span>{formatEtaDuration(30)}</span>
+            <span>{formatEtaDuration(60)}</span>
+          </div>
+        </div>
+      ) : null}
+
+      {hasDay ? (
+        <div className="adv-forecast__block adv-forecast__block--day">
+          <div className="adv-forecast__block-head">
+            <span className="adv-forecast__block-label">Next 24 hours</span>
+            <span className="adv-forecast__block-meta">
+              {hourlyForecast
+                ? `${formatForecastUpdatedAt(hourlyForecast.fetchedAt)} · ${hourlyProviderLabel}`
+                : null}
+            </span>
+          </div>
+          {daySummary ? <p className="adv-forecast__hour-summary">{daySummary}</p> : null}
+          <div
+            className="adv-forecast__hour24-scroll"
+            role="img"
+            aria-label={`Hourly forecast for the next 24 hours at ${areaLabel}`}
+          >
+            <div className="adv-forecast__hour24-cols">
+              {hours.map((h, i) => (
+                <div
+                  key={h.timeIso}
+                  className="adv-forecast__hour24-col"
+                  title={`${formatLocalForecastHourLabel(h.offsetHours, i)}: ${h.tempF}°F, ${h.conditions}${
+                    h.precipProbability > 0.1
+                      ? `, ${Math.round(h.precipProbability * 100)}% precip`
+                      : ""
+                  }`}
+                >
+                  <span className="adv-forecast__hour24-time">
+                    {formatLocalForecastHourLabel(h.offsetHours, i)}
+                  </span>
+                  <span className="adv-forecast__hour24-temp">{h.tempF}°</span>
+                  <div
+                    className="adv-forecast__hour24-precip"
+                    style={{
+                      background: precipColor(h.precipIntensityMmh, h.precipProbability),
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="adv-forecast__axis adv-forecast__axis--day">
+            <span>Now</span>
+            <span>6 hr</span>
+            <span>12 hr</span>
+            <span>18 hr</span>
+            <span>24 hr</span>
           </div>
         </div>
       ) : null}

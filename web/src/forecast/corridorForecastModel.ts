@@ -1,6 +1,7 @@
 import type { MinutePrecipForecast, RouteForecast, RouteHourlyInterval } from "../services/tomorrowIo";
 import { routeForecastCorridorStress, weatherCodeLabel, weatherCodeSeverity } from "../services/tomorrowIo";
 import type { RouteImpactSeverity } from "../nav/routeImpacts";
+import { formatEtaDuration } from "../ui/formatEta";
 
 export type AlongRouteSegment = {
   etaMinutes: number;
@@ -124,15 +125,15 @@ export function computeLeaveWindowHint(
   if (dryMins >= 20 && heaviestEta >= 0 && heaviestEta > dryMins + 15) {
     return {
       kind: "go_now",
-      headline: `Leave within ~${dryMins} min if you can`,
-      detail: `Heaviest rain on your corridor is expected ~${Math.round(heaviestEta)} min into the drive — leaving soon keeps you ahead of it.`,
+      headline: `Leave within ~${formatEtaDuration(dryMins)} if you can`,
+      detail: `Heaviest rain on your corridor is expected ~${formatEtaDuration(heaviestEta)} into the drive — leaving soon keeps you ahead of it.`,
     };
   }
 
   if (firstWet >= 0 && firstWet <= 12 && heaviestPrecip >= 4) {
     return {
       kind: "wait",
-      headline: `Rain starting at you in ~${firstWet} min`,
+      headline: `Rain starting at you in ~${formatEtaDuration(firstWet)}`,
       detail: "Wait for a break or pick a drier leg below before Go if timing is flexible.",
     };
   }

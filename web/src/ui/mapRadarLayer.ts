@@ -1,5 +1,8 @@
 import type { Map, MapSourceDataEvent, RasterTileSource } from "mapbox-gl";
 import { RAINVIEWER_RADAR_MAX_ZOOM } from "../services/rainViewerRadar";
+import { noteRainViewerRateLimit } from "../services/rainViewerTileFetch";
+
+const mapsWithRainViewerErrorFilter = new WeakSet<Map>();
 
 /** Legacy single-buffer ids (removed when using dual buffer). */
 const LEGACY_RADAR_SOURCE = "rainviewer-radar";
@@ -72,6 +75,26 @@ export function setRainViewerRadarFadeMs(map: Map, ms: number = RAINVIEWER_RASTE
   }
 }
 
+/** Throttle Mapbox tile errors so a RainViewer burst does not spam the console or trigger GL retries. */
+function installRainViewerMapErrorFilter(map: Map): void {
+  if (mapsWithRainViewerErrorFilter.has(map)) return;
+  mapsWithRainViewerErrorFilter.add(map);
+  let lastWarnAt = 0;
+  map.on("error", (e) => {
+    const src = (e as { sourceId?: string }).sourceId ?? "";
+    if (!src.includes("rainviewer")) return;
+    noteRainViewerRateLimit();
+    if (Date.now() - lastWarnAt < 45_000) return;
+    lastWarnAt = Date.now();
+    if (import.meta.env.DEV) {
+      console.warn(
+        "[RainViewer] Some radar tiles failed to load (often rate limit or out-of-coverage). " +
+          "Pausing animation ~90s; map radar may look patchy until then."
+      );
+    }
+  });
+}
+
 function addRasterPair(
   map: Map,
   sourceId: string,
@@ -80,10 +103,12 @@ function addRasterPair(
   opacity: number,
   beforeId: string | undefined
 ): void {
+  installRainViewerMapErrorFilter(map);
   map.addSource(sourceId, {
     type: "raster",
     tiles: [tileUrlTemplate],
     tileSize: 256,
+    volatile: true,
     /**
      * Prevent Mapbox from fetching z=0..2 "overview" tiles on source creation.
      * Those world-level tiles are never visible and trigger a burst of requests
@@ -114,6 +139,7 @@ function addRasterPair(
  */
 export function ensureRainViewerRadarDual(map: Map, initialTileUrlTemplate: string): void {
   removeLegacyIfPresent(map);
+  installRainViewerMapErrorFilter(map);
   const beforeId = insertBeforeId(map);
 
   if (!map.getSource(RADAR_SOURCE_A)) {

@@ -38,6 +38,27 @@ export type MinutePrecipNowSnapshot = {
   conditions: string;
 };
 
+/** One hour in a point (local) hourly outlook. */
+export type PointHourlyInterval = {
+  timeIso: string;
+  /** Hours from fetch (0 = current hour). */
+  offsetHours: number;
+  tempF: number;
+  precipIntensityMmh: number;
+  precipProbability: number;
+  windMph: number;
+  conditions: string;
+};
+
+/** 24-hour hourly outlook at the user's position. */
+export type PointHourlyForecast = {
+  fetchedAt: number;
+  lat: number;
+  lng: number;
+  hours: PointHourlyInterval[];
+  provider: "tomorrowIo" | "openWeather";
+};
+
 /** 60-minute precipitation outlook for a point. */
 export type MinutePrecipForecast = {
   fetchedAt: number; // Date.now()
@@ -222,6 +243,72 @@ export async function fetchMinutePrecip(
       precipType: iv.values.precipitationType ?? 0,
     })),
   };
+}
+
+// ── Point hourly (24 h local) ────────────────────────────────────────────────
+
+/**
+ * Hourly conditions at the user's position for the next 24 hours (local forecast card).
+ */
+export async function fetchPointHourlyForecast(
+  apiKey: string,
+  lat: number,
+  lng: number,
+  signal?: AbortSignal
+): Promise<PointHourlyForecast> {
+  const raw = await postTimelines(
+    apiKey,
+    {
+      location: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+      fields: [
+        "temperature",
+        "precipitationIntensity",
+        "precipitationProbability",
+        "windSpeed",
+        "weatherCode",
+      ],
+      units: "metric",
+      timesteps: ["1h"],
+      startTime: "now",
+      endTime: "nowPlus24h",
+    },
+    signal
+  ) as {
+    data: {
+      timelines: Array<{
+        intervals: Array<{
+          startTime: string;
+          values: {
+            temperature?: number;
+            precipitationIntensity?: number;
+            precipitationProbability?: number;
+            windSpeed?: number;
+            weatherCode?: number;
+          };
+        }>;
+      }>;
+    };
+  };
+
+  const fetchedAt = Date.now();
+  const intervals = raw.data.timelines[0]?.intervals ?? [];
+  const hours: PointHourlyInterval[] = intervals.slice(0, 24).map((iv) => {
+    const tempC = iv.values.temperature ?? 0;
+    const windKph = iv.values.windSpeed ?? 0;
+    const code = iv.values.weatherCode ?? 1000;
+    const offsetHours = (new Date(iv.startTime).getTime() - fetchedAt) / 3_600_000;
+    return {
+      timeIso: iv.startTime,
+      offsetHours,
+      tempF: Math.round((tempC * 9) / 5 + 32),
+      precipIntensityMmh: iv.values.precipitationIntensity ?? 0,
+      precipProbability: (iv.values.precipitationProbability ?? 0) / 100,
+      windMph: Math.round(windKph * 0.621371),
+      conditions: weatherCodeLabel(code),
+    };
+  });
+
+  return { fetchedAt, lat, lng, hours, provider: "tomorrowIo" };
 }
 
 // ── Route hourly forecast ─────────────────────────────────────────────────────

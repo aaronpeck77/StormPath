@@ -58,7 +58,7 @@ async function fetchRadarTileRgbaOnce(url: string): Promise<Uint8ClampedArray | 
   try {
     await throttleGap();
     const res = await fetch(url, { mode: "cors", cache: "force-cache" });
-    if (res.status === 429) {
+    if (res.status === 429 || res.status === 500 || res.status === 502 || res.status === 503) {
       noteRainViewerRateLimit();
       return null;
     }

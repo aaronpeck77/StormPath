@@ -58,6 +58,7 @@ import {
 
 import type { MapFocusRequest, MapViewMode } from "./driveMapTypes";
 import { MAIN_MAP_ROUTE_PADDING } from "./driveMapTypes";
+import { formatEtaDuration } from "./formatEta";
 export type { MapFocusRequest, MapViewMode };
 export { MAIN_MAP_ROUTE_PADDING };
 
@@ -784,8 +785,8 @@ function makeBypassHazardEl(): HTMLDivElement {
 function trafficBypassSavingsLabel(savingsVsAMinutes: number | null): string {
   if (savingsVsAMinutes == null) return "Baseline";
   const d = Math.round(savingsVsAMinutes);
-  if (d >= 1) return `−${d} min vs A`;
-  if (d <= -1) return `+${-d} min vs A`;
+  if (d >= 1) return `−${formatEtaDuration(d)} vs A`;
+  if (d <= -1) return `+${formatEtaDuration(-d)} vs A`;
   return "Same as A";
 }
 
@@ -803,13 +804,13 @@ function makeTrafficBypassCompareFlagEl(
   el.className = `map-bypass-compare-flag map-bypass-compare-flag--${slot.toLowerCase()}${
     selected ? " map-bypass-compare-flag--selected" : ""
   }`;
-  el.setAttribute("aria-label", `Route ${slot}, about ${Math.round(etaMinutes)} minutes`);
+  el.setAttribute("aria-label", `Route ${slot}, about ${formatEtaDuration(etaMinutes)}`);
   const slotEl = document.createElement("span");
   slotEl.className = "map-bypass-compare-flag__slot";
   slotEl.textContent = slot;
   const etaEl = document.createElement("span");
   etaEl.className = "map-bypass-compare-flag__eta";
-  etaEl.textContent = `~${Math.round(etaMinutes)} min`;
+  etaEl.textContent = `~${formatEtaDuration(etaMinutes)}`;
   const saveEl = document.createElement("span");
   saveEl.className = "map-bypass-compare-flag__save";
   saveEl.textContent = trafficBypassSavingsLabel(savingsVsAMinutes);

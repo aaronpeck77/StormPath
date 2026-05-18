@@ -58,10 +58,10 @@ export function RouteTripleToggle({
             }}
             title={
               it.suggested
-                ? `${it.routeLabel} (slot ${it.letter}): ~${it.etaMinutes} min — suggested for conditions`
+                ? `${it.routeLabel} (slot ${it.letter}): ~${formatEtaDuration(it.etaMinutes)} — suggested for conditions`
                 : it.softPath
-                  ? `${it.routeLabel} (slot ${it.letter}): ~${it.etaMinutes} min — no interstate`
-                  : `${it.routeLabel} (slot ${it.letter}): ~${it.etaMinutes} min`
+                  ? `${it.routeLabel} (slot ${it.letter}): ~${formatEtaDuration(it.etaMinutes)} — no interstate`
+                  : `${it.routeLabel} (slot ${it.letter}): ~${formatEtaDuration(it.etaMinutes)}`
             }
             onClick={() => onSelect(it.id)}
           >

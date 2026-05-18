@@ -1,4 +1,5 @@
 import type { MinutePrecipForecast } from "../services/tomorrowIo";
+import { formatEtaDuration } from "./formatEta";
 
 function precipColor(mmh: number, prob: number): string {
   const effective = mmh * Math.max(0.3, prob);
@@ -28,11 +29,11 @@ export function MinutePrecipStrip({ forecast }: { forecast: MinutePrecipForecast
   } else if (firstWet === 0 && lastWet >= 55) {
     summaryText = "Rain throughout";
   } else if (firstWet === 0) {
-    summaryText = `Stopping around ${lastWet + 1} min`;
+    summaryText = `Stopping around ${formatEtaDuration(lastWet + 1)}`;
   } else if (firstWet <= 5) {
     summaryText = "Starting soon";
   } else {
-    summaryText = `Rain in ${firstWet} min`;
+    summaryText = `Rain in ${formatEtaDuration(firstWet)}`;
   }
 
   return (
@@ -50,14 +51,14 @@ export function MinutePrecipStrip({ forecast }: { forecast: MinutePrecipForecast
             key={i}
             className="mps__cell"
             style={{ background: precipColor(m.precipIntensityMmh, m.precipProbability) }}
-            title={`${i + 1} min: ${m.precipIntensityMmh.toFixed(1)} mm/hr`}
+            title={`+${formatEtaDuration(i + 1)}: ${m.precipIntensityMmh.toFixed(1)} mm/hr`}
           />
         ))}
       </div>
       <div className="mps__axis">
         <span>Now</span>
-        <span>30 min</span>
-        <span>60 min</span>
+        <span>{formatEtaDuration(30)}</span>
+        <span>{formatEtaDuration(60)}</span>
       </div>
       <p className="mps__source">Forecast: Tomorrow.io</p>
     </div>

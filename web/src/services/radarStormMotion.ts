@@ -5,6 +5,7 @@
 
 import { haversineMeters, initialBearingDegrees } from "../nav/routeGeometry";
 import type { LngLat } from "../nav/types";
+import { formatEtaDuration } from "../ui/formatEta";
 import {
   fetchRadarTileRgba,
   RADAR_MOSAIC_SAMPLE_ZOOM,
@@ -308,7 +309,7 @@ export function formatRadarMotionLabel(m: RadarStormMotion): string {
   const dir = cardinalLabel(m.bearingDeg);
   const spd = `${Math.round(m.speedMph)} mph ${dir}`;
   if (m.minutesToArrive != null && m.minutesToArrive < 180) {
-    return `${spd} · ~${m.minutesToArrive} min`;
+    return `${spd} · ~${formatEtaDuration(m.minutesToArrive)}`;
   }
   return spd;
 }
