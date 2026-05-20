@@ -42,7 +42,16 @@ import type { SavedRoute } from "./nav/savedRoutes";
 import type { LngLat, RouteTurnStep, TripPlan } from "./nav/types";
 import { pickSuggestedActive, scoreTrip } from "./scoring/scoreRoutes";
 import { buildTripFromMapbox, collectMapboxRouteVariants } from "./services/mapboxDirectionsRouter";
-import { isAbortError, isSaveDataPreferred, routeFetchUserMessage } from "./utils/fetchResilient";
+import { useAppForeground } from "./hooks/useAppForeground";
+import { isAbortError, routeFetchUserMessage } from "./utils/fetchResilient";
+import {
+  getNavAltRefreshMs,
+  getNwsPollIntervalMs,
+  getTrafficPollIntervalMs,
+  isDataSaverMode,
+  LS_DATA_SAVER,
+  readDataSaverSetting,
+} from "./utils/dataSaver";
 import {
   formatCoordsAreaLabel,
   shortenPlaceNameForForecast,
@@ -267,7 +276,6 @@ type TrafficBypassCompareState = {
 
 const MB_TRAFFIC_LINE_SNAP_NOTICE = "Mapbox traffic-aware line";
 /** Route mode: refresh B/C alternates only (primary leg unchanged). */
-const NAV_ROUTE_ALT_REFRESH_MS = 26_000;
 /** Debounce after storm/user fingerprint moves before requesting Mapbox again. */
 const STORM_ADAPT_DEBOUNCE_MS = 4500;
 /** Minimum spacing between adaptive storm reroute attempts (NWS + Directions churn). */
@@ -484,6 +492,9 @@ export default function App() {
     return true;
   });
   const [settingRadarEnabled, setSettingRadarEnabled] = useState(readRadarSettingOn);
+  const [settingDataSaverEnabled, setSettingDataSaverEnabled] = useState(readDataSaverSetting);
+  const appForeground = useAppForeground();
+  const dataSaverMode = isDataSaverMode(settingDataSaverEnabled);
   const [settingVoiceGuidanceEnabled, setSettingVoiceGuidanceEnabled] = useState(() => {
     try {
       const v = localStorage.getItem("stormpath-setting-voice-guided");
@@ -657,8 +668,8 @@ export default function App() {
   useEffect(() => {
     writeRadarOverlayOn(showRadar);
   }, [showRadar]);
-  /** Radar visible in all modes except drive (too distracting at street level). */
-  const radarMapOverlayOn = showRadar && !driveModeUi;
+  /** Radar visible in all modes except drive (too distracting at street level). Paused when app is backgrounded. */
+  const radarMapOverlayOn = showRadar && !driveModeUi && appForeground;
   const [radarFrameUtcSec, setRadarFrameUtcSec] = useState<number | null>(null);
   const seriousHazardAutoFlewRef = useRef<Set<string>>(new Set());
   const [safetyAck, setSafetyAck] = useState(() => {
@@ -1440,7 +1451,7 @@ export default function App() {
     const ac = new AbortController();
     const LONG_ROUTE_M = 1_000_000;
     const LONG_ETA_MIN = 720;
-    const saveData = isSaveDataPreferred();
+    const saveData = dataSaverMode;
 
     (async () => {
       const w: WeatherOverlay = {};
@@ -1512,6 +1523,7 @@ export default function App() {
     planRoutesKeyStable,
     env.openWeatherApiKey,
     settingWeatherHintsEnabled,
+    dataSaverMode,
     settingStormEnabled,
     Math.round((speedMps ?? 0) * 4),
     isOnline,
@@ -1601,13 +1613,14 @@ export default function App() {
   ]);
 
   useEffect(() => {
+    if (!appForeground) return;
     if (!planRoutesKeyStable || !settingTrafficEnabled || !navigationStarted || !isPlus) return;
     const id = window.setInterval(() => {
       trafficRefreshRef.current += 1;
       setTrafficRefreshKey(trafficRefreshRef.current);
-    }, 90_000);
+    }, getTrafficPollIntervalMs(dataSaverMode));
     return () => window.clearInterval(id);
-  }, [planRoutesKeyStable, settingTrafficEnabled, navigationStarted, isPlus]);
+  }, [appForeground, planRoutesKeyStable, settingTrafficEnabled, navigationStarted, isPlus, dataSaverMode]);
 
   const snap = useFusedSituation(plan, weatherOverlay, trafficOverlay);
   const scored = useMemo(() => scoreTrip(plan, snap, "balanced"), [plan, snap]);
@@ -2004,6 +2017,26 @@ export default function App() {
     return undefined;
   }, [navigationStarted, nwsNavCorridorGeom, guidanceRoute?.geometry]);
 
+  /** Data saver: one corridor (+ shared national feed) instead of every A/B/C leg each poll. */
+  const nwsRouteGeomsForFetch = useMemo((): LngLat[][] => {
+    const all = plan.routes
+      .map((r) => r.geometry)
+      .filter((g): g is LngLat[] => Boolean(g && g.length >= 2));
+    if (!dataSaverMode) return all;
+    if (navigationStarted) {
+      const g = nwsNavCorridorGeom;
+      return g && g.length >= 2 ? [g] : all.length ? [all[0]!] : [];
+    }
+    const focused = plan.routes.find((r) => r.id === lineFocusId)?.geometry;
+    if (focused && focused.length >= 2) return [focused];
+    return all.length ? [all[0]!] : [];
+  }, [dataSaverMode, navigationStarted, nwsNavCorridorGeom, plan.routes, lineFocusId]);
+
+  const nwsPollIntervalMs = useMemo(
+    () => getNwsPollIntervalMs(dataSaverMode, navigationStarted),
+    [dataSaverMode, navigationStarted]
+  );
+
   const liveTrafficNarrative = useMemo(() => {
     if (!guidanceSlice || !guidanceRoute) return null;
     const tLeg = trafficOverlay?.[guidanceRouteId] ?? null;
@@ -2346,10 +2379,13 @@ export default function App() {
     isPlus &&
     Boolean(tioApiKey) &&
     Boolean(effectiveUserLngLat) &&
-    (!hasPlannedRoute ||
-      stormBarExpanded ||
-      corridorForecastOpen ||
-      navigationStarted);
+    appForeground &&
+    (dataSaverMode
+      ? stormBarExpanded || corridorForecastOpen
+      : !hasPlannedRoute ||
+        stormBarExpanded ||
+        corridorForecastOpen ||
+        navigationStarted);
   const tioMinutePrecip = useTomorrowMinutePrecip(
     tioApiKey,
     effectiveUserLngLat ?? null,
@@ -3170,6 +3206,14 @@ export default function App() {
 
   useEffect(() => {
     try {
+      localStorage.setItem(LS_DATA_SAVER, settingDataSaverEnabled ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [settingDataSaverEnabled]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem("stormpath-setting-auto-reroute-enabled", settingAutoRerouteEnabled ? "1" : "0");
     } catch {
       /* ignore */
@@ -3218,6 +3262,7 @@ export default function App() {
    * viewport browse (same as empty-map storm context).
    */
   useEffect(() => {
+    if (!appForeground) return;
     /** NWS is not Plus-gated — Basic still needs life-safety alerts; UI filters detail elsewhere. */
     if (!env.stormAdvisoryEnabled || !advisoryLifeSafetyOn) {
       if (import.meta.env.DEV) console.error("[NWS] BLOCKED gate1 stormAdvisoryEnabled=", env.stormAdvisoryEnabled, "lifeSafetyOn=", advisoryLifeSafetyOn);
@@ -3240,9 +3285,7 @@ export default function App() {
      * HTTPS APIs still work; blocking here showed “no NWS” forever on some devices.
      */
 
-    const routeGeoms = plan.routes
-      .map((r) => r.geometry)
-      .filter((g): g is LngLat[] => Boolean(g && g.length >= 2));
+    const routeGeoms = nwsRouteGeomsForFetch;
     const hasRouteCorridors = routeGeoms.length > 0;
     const canBrowseWithoutRoutes = !hasRouteCorridors && Boolean(effectiveUserLngLat);
 
@@ -3291,10 +3334,7 @@ export default function App() {
       setStormError(null);
 
       try {
-        const routesSnapshot = planRoutesRef.current;
-        const geoms = routesSnapshot
-          .map((r) => r.geometry)
-          .filter((g): g is LngLat[] => Boolean(g && g.length >= 2));
+        const geoms = nwsRouteGeomsForFetch;
 
         if (geoms.length > 0) {
           const { result: merged, partialErrors } = await fetchNwsAlertsForRouteCorridorsMerged(
@@ -3355,7 +3395,7 @@ export default function App() {
       }
     };
     void run();
-    const id = window.setInterval(run, 120_000);
+    const id = window.setInterval(run, nwsPollIntervalMs);
     return () => {
       cancelled = true;
       if (routingRetryTimer != null) window.clearTimeout(routingRetryTimer);
@@ -3364,8 +3404,11 @@ export default function App() {
       setStormLoading(false);
     };
   }, [
+    appForeground,
     env.stormAdvisoryEnabled,
     nwsPlanRoutesGeomKey,
+    nwsRouteGeomsForFetch,
+    nwsPollIntervalMs,
     advisoryLifeSafetyOn,
     settingStormEnabled,
     plan.routes.length,
@@ -3546,15 +3589,18 @@ export default function App() {
 
   /** Rt: keep primary leg fixed; refresh alternate legs on an interval */
   useEffect(() => {
+    if (!appForeground) return;
     if (!navigationStarted) return;
     if (viewMode !== "route") return;
     if (!destLngLat) return;
+    const altMs = getNavAltRefreshMs(dataSaverMode);
+    if (altMs == null) return;
     const id = window.setInterval(() => {
       if (routingRef.current) return;
       void refreshAltRef.current();
-    }, NAV_ROUTE_ALT_REFRESH_MS);
+    }, altMs);
     return () => window.clearInterval(id);
-  }, [navigationStarted, viewMode, destLngLat]);
+  }, [appForeground, navigationStarted, viewMode, destLngLat, dataSaverMode]);
 
   /** Far off-route: silent reroute from current GPS when the setting is on (default). */
   useEffect(() => {
@@ -4504,6 +4550,7 @@ export default function App() {
             onMapFocusComplete={flushMapFocus}
             orderedRouteIds={orderedRouteIds}
             showRadar={radarMapOverlayOn}
+            radarAnimate={!dataSaverMode}
             onRadarFrameUtcSec={setRadarFrameUtcSec}
             alongRouteAlerts={mapAlongRouteAlerts}
             corridorRouteGeometry={guidanceRoute?.geometry}
@@ -5295,6 +5342,7 @@ export default function App() {
           stormEnabled: settingStormEnabled,
           trafficEnabled: settingTrafficEnabled,
           weatherHintsEnabled: settingWeatherHintsEnabled,
+          dataSaverEnabled: settingDataSaverEnabled,
           autoRerouteEnabled: settingAutoRerouteEnabled,
           voiceGuidanceEnabled: settingVoiceGuidanceEnabled,
           gpsHighRefreshEnabled: settingGpsHighRefreshEnabled,
@@ -5312,6 +5360,7 @@ export default function App() {
           setSettingTrafficEnabled(next.trafficEnabled);
           writeTrafficSettingOn(next.trafficEnabled);
           setSettingWeatherHintsEnabled(next.weatherHintsEnabled);
+          setSettingDataSaverEnabled(next.dataSaverEnabled);
           setSettingAutoRerouteEnabled(next.autoRerouteEnabled);
           setSettingVoiceGuidanceEnabled(next.voiceGuidanceEnabled);
           setSettingGpsHighRefreshEnabled(next.gpsHighRefreshEnabled);

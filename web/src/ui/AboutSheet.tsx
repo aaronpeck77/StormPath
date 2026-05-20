@@ -30,6 +30,7 @@ type Props = {
     stormEnabled: boolean;
     trafficEnabled: boolean;
     weatherHintsEnabled: boolean;
+    dataSaverEnabled: boolean;
     autoRerouteEnabled: boolean;
     voiceGuidanceEnabled: boolean;
     gpsHighRefreshEnabled: boolean;
@@ -102,7 +103,7 @@ export function AboutSheet({
     `Online: ${typeof navigator === "undefined" ? "unknown" : navigator.onLine ? "yes" : "no"}`,
     `Voice: ${settings.voiceGuidanceEnabled ? "on" : "off"}, GPS refresh: ${
       settings.gpsHighRefreshEnabled ? "high" : "normal"
-    }`,
+    }, Data saver: ${settings.dataSaverEnabled ? "on" : "off"}`,
     `Landscape UI: ${settings.landscapeSideHand === "left" ? "left hand" : "right hand"}`,
     `Providers: mapbox=${env.mapboxToken ? "on" : "off"}, openweather=${
       env.openWeatherApiKey ? "on" : "off"
@@ -338,6 +339,19 @@ export function AboutSheet({
               <span>
                 <strong>Weather hints</strong> (OpenWeather) — sample conditions along routes{" "}
                 {!plus ? <em>(Plus)</em> : null}
+              </span>
+            </label>
+
+            <label className="about-sheet__setting">
+              <input
+                type="checkbox"
+                checked={settings.dataSaverEnabled}
+                onChange={(e) => onSettings({ ...settings, dataSaverEnabled: e.target.checked })}
+              />
+              <span>
+                <strong>Data saver</strong> — slower NWS/traffic refresh, one route leg at a time while
+                planning, static radar (no animation), and Tomorrow.io only when the advisory or corridor
+                forecast is open. Also follows your phone&apos;s &quot;use less data&quot; when set.
               </span>
             </label>
 

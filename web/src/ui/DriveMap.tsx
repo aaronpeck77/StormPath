@@ -565,6 +565,8 @@ type Props = {
   /** A / B / C order — same as route picker */
   orderedRouteIds: string[];
   showRadar: boolean;
+  /** When false, show the latest radar frame only (no dual-layer animation — saves data). */
+  radarAnimate?: boolean;
   /** RainViewer frame `time` (unix seconds, UTC instant) for the mosaic shown, or null when radar is off / unavailable. */
   onRadarFrameUtcSec?: (utcSec: number | null) => void;
   /** Same corridor points as the progress-strip ticks (weather, notices) — drawn on the active route line. */
@@ -847,6 +849,7 @@ export function DriveMap({
   onMapFocusComplete,
   orderedRouteIds,
   showRadar,
+  radarAnimate = true,
   onRadarFrameUtcSec,
   alongRouteAlerts,
   corridorRouteGeometry = null,
@@ -2280,7 +2283,7 @@ export function DriveMap({
         /* Prime bench side after source A has had time to load — avoids the startup
          * burst where both sources request tiles simultaneously and hit RainViewer's
          * rate limit.  1.5 s is enough for A tiles to arrive before B starts. */
-        if (cells.length > 1 && !isRainViewerRateLimited()) {
+        if (radarAnimate && cells.length > 1 && !isRainViewerRateLimited()) {
           const nextUrl = tileUrlFromHostAndPath(host, cells[1]!.path);
           await sleep(3000);
           if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
@@ -2288,6 +2291,7 @@ export function DriveMap({
         }
 
         while (
+          radarAnimate &&
           !cancelled &&
           loopGen === radarLoopGeneration &&
           cells.length > 1 &&
@@ -2360,7 +2364,7 @@ export function DriveMap({
       bringMapboxTrafficLayersToFront(map);
       liftRouteHits();
       onRadarFrameUtcSecRef.current?.(cells[0]!.time);
-      if (cells.length > 1 && !isRainViewerRateLimited()) {
+      if (radarAnimate && cells.length > 1 && !isRainViewerRateLimited()) {
         runRadarFrameLoop(myGen, host, cells.slice(-2));
       }
     };
@@ -2379,7 +2383,7 @@ export function DriveMap({
         /* map may already be torn down */
       }
     };
-  }, [mapReady, showRadar]);
+  }, [mapReady, showRadar, radarAnimate]);
 
   /** Route planning, no trip: allow one auto-center per “empty planning” session (leaving Rt or getting a route resets). */
   const routeEmptyPlanningRef = useRef(false);

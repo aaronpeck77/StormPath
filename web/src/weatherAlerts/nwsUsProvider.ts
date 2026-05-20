@@ -19,6 +19,11 @@ import {
 import { nwsMapKindFromEvent } from "./nwsMapKind";
 import { nwsApiRequestHeaders } from "./nwsClientHeaders";
 import { nwsHttpGet, resolveNwsRequestUrl } from "./nwsHttpGet";
+import {
+  getCachedNwsNationalEtag,
+  getCachedNwsNationalFeatures,
+  storeNwsNationalCache,
+} from "./nwsNationalCache";
 
 /**
  * Do not use `limit=` — NWS returns 400 ("limit is not recognized").
@@ -563,22 +568,52 @@ async function mergeNwsPointSamples(
  */
 async function fetchNwsActiveAlertsFeatures(userAgent: string, retries = NWS_MAX_RETRIES): Promise<NwsFeature[]> {
   const url = resolveNwsRequestUrl(nwsActiveAlertsUrl());
-  const headers = nwsApiRequestHeaders(userAgent);
+  const baseHeaders = nwsApiRequestHeaders(userAgent);
+  const etag = getCachedNwsNationalEtag();
+  const conditionalHeaders = etag ? { ...baseHeaders, "If-None-Match": etag } : baseHeaders;
+
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const ctrl = new AbortController();
     // Keep timer alive through body read — NWS national feed can be several MB
     const timer = setTimeout(() => ctrl.abort(), NWS_FETCH_TIMEOUT_MS);
     try {
-      const res = await fetch(url, { headers, signal: ctrl.signal });
-      if (!res.ok) throw new Error(`NWS HTTP ${res.status}`);
-      const data = (await res.json()) as GeoJSON.FeatureCollection; // signal still active
+      const res = await nwsHttpGet(url, conditionalHeaders, { signal: ctrl.signal });
       clearTimeout(timer);
-      return (data.features ?? []) as NwsFeature[];
+
+      if (res.status === 304) {
+        const cached = getCachedNwsNationalFeatures();
+        if (cached?.length) {
+          if (import.meta.env.DEV) console.log("[NWS national] 304 — using cached", cached.length, "features");
+          return cached;
+        }
+        /* Rare: 304 without a prior body in this session — fall through to full fetch. */
+      }
+
+      if (!res.ok) throw new Error(`NWS HTTP ${res.status}`);
+
+      const nextEtag = res.headers.get("ETag") ?? res.headers.get("etag");
+      const data = (await res.json()) as GeoJSON.FeatureCollection;
+      const features = (data.features ?? []) as NwsFeature[];
+      storeNwsNationalCache(nextEtag, features);
+      if (import.meta.env.DEV) {
+        console.log(
+          "[NWS national] fetched",
+          features.length,
+          "features",
+          nextEtag ? `(etag ${String(nextEtag).slice(0, 24)}…)` : ""
+        );
+      }
+      return features;
     } catch (e) {
       clearTimeout(timer);
       const isAbort = e instanceof DOMException && e.name === "AbortError";
       if (import.meta.env.DEV) console.warn("[NWS national] attempt", attempt, isAbort ? "TIMED OUT" : e);
+      const stale = getCachedNwsNationalFeatures();
+      if (stale?.length && attempt >= retries) {
+        if (import.meta.env.DEV) console.warn("[NWS national] using stale cache after error");
+        return stale;
+      }
       if (attempt < retries) {
         await new Promise((r) => setTimeout(r, NWS_RETRY_DELAY_MS * (attempt + 1)));
         lastError = isAbort ? new Error("NWS request timed out — the weather service may be slow.") : e;
