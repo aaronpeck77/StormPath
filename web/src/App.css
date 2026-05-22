@@ -2341,6 +2341,35 @@
   color: #80868b;
 }
 
+.nav-search-dismiss {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0 -4px 0 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #9aa0a6;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.nav-search-dismiss:hover,
+.nav-search-dismiss:focus-visible {
+  color: #e8eaed;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.nav-search-dismiss:focus-visible {
+  outline: 2px solid #8ab4f8;
+  outline-offset: 1px;
+}
+
 .nav-search-wrap {
   position: relative;
 }

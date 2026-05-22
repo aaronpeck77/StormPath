@@ -5,7 +5,7 @@ Short version: a single source for two audiences.
 1. **You (Aaron)** — the pre-invite smoke checklist + what to paste into each TestFlight build's "What to Test" field.
 2. **Your testers** — what the app is, what to focus on, and how to report things back.
 
-Related: [DEV_AND_TESTFLIGHT_WORKFLOW.md](DEV_AND_TESTFLIGHT_WORKFLOW.md), [MOBILE_STORE_RELEASE.md](MOBILE_STORE_RELEASE.md), [PAY_TIERS.md](PAY_TIERS.md).
+Related: [BETA_READINESS.md](BETA_READINESS.md) (owner checklist), [DEV_AND_TESTFLIGHT_WORKFLOW.md](DEV_AND_TESTFLIGHT_WORKFLOW.md), [MOBILE_STORE_RELEASE.md](MOBILE_STORE_RELEASE.md), [PAY_TIERS.md](PAY_TIERS.md).
 
 ---
 
@@ -15,7 +15,9 @@ Do this short smoke pass on the actual device before inviting anyone (or after p
 
 - App launches without crashing; the home screen shows the season-themed StormPath logo + cloud.
 - Address bar accepts both an address and a business name (closest-first results).
+- With a route loaded: open the address bar, then tap **×** on the right — bar collapses to the one-line destination (not stuck open).
 - Tap a result → routes A/B/C build → tap **Go** → drive view follows the puck smoothly.
+- **Compare routes on map** (hazard sheet or advisory): three different lines on the map, tap A/B/C to highlight, **Go** to switch route and return to drive.
 - Cycle the view button (Rt / Dr / Mp). Drive view shows only the active leg; route/topdown show alternates.
 - Advisory bar always shows *something* useful — local weather, NWS, traffic, or the SiteBible/coming-soon fallback. Never blank.
 - Tap the advisory bar to expand. Confirm the panel fits, scrolls if needed, and closes cleanly.
@@ -37,6 +39,8 @@ What to focus on:
 - Drive a familiar route and tell me anywhere the map/turn directions felt wrong.
 - Open the advisory bar (the colored strip near the top) and tell me if anything
   there read as confusing or wrong.
+- Try **Compare routes on map** if you hit a hazard — do the three options look different, and does Go switch you cleanly?
+- If the address bar gets in the way, use the **×** on the right to collapse it.
 - Try searching for a business name, not just an address.
 - Tap the `i` button (bottom-left) — everything you need to configure or
   understand the app lives there.
@@ -67,6 +71,8 @@ A multi-route driving app with live weather, traffic, and road-hazard awareness 
 - **Drive.** The blue puck is you. The blue line is your active route. Colored bands under the line mean weather, traffic, or hazards ahead.
 - **See conditions.** The top advisory bar rotates through local weather, route forecasts, NWS alerts, traffic delays, and tips. Tap it to expand.
 - **Save places and routes.** Tap the star button to save a destination or a route you've driven for one-tap access later.
+- **Change route while driving.** Hazard popup or advisory → **Compare routes on map** → pick A, B, or C → **Go**.
+- **Dismiss search.** Tap **×** on the address bar to collapse it when you don't need to change destination.
 - **Switch views.** The two-letter button (Rt / Dr / Mp) cycles between route plan, drive, and top-down map.
 - **Find anything you need.** The `i` info button (bottom-left) opens settings, the **map color legend**, your saved places, the activity-trail toggle, the help/tips replay, and the support form.
 

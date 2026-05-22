@@ -2722,13 +2722,13 @@ export function DriveMap({
 
     if (userExploringRef.current) return;
 
-    /* Bypass compare: frame the hazard + driver instead of centering on the user, so A/B/C
-     * visibly fork around the hazard and the chooser at the bottom matches what's on the map. */
-    if (trafficBypassCompareHazardLngLat) {
+    /* Route compare: show all three end-to-end options from you → destination (not a tight jam crop). */
+    if (trafficBypassCompareCallouts?.length) {
       prevTopdownRef.current = true;
       const b = new mapboxgl.LngLatBounds();
       b.extend(userLngLat);
-      b.extend(trafficBypassCompareHazardLngLat);
+      if (destLngLat) b.extend(destLngLat);
+      if (trafficBypassCompareHazardLngLat) b.extend(trafficBypassCompareHazardLngLat);
       for (const r of routes) {
         const g = r.geometry;
         if (!g?.length) continue;
@@ -2737,7 +2737,7 @@ export function DriveMap({
       map.fitBounds(b, {
         padding: hazardOverviewFitPadding(),
         duration: 600,
-        maxZoom: 13.4,
+        maxZoom: 11.2,
         pitch: 0,
         bearing: 0,
         essential: true,
@@ -2772,6 +2772,8 @@ export function DriveMap({
     topdownZoomRef,
     mapResumeTick,
     trafficBypassCompareHazardLngLat,
+    trafficBypassCompareCallouts,
+    destLngLat,
     routes,
   ]);
 

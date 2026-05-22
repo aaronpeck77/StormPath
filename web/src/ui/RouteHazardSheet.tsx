@@ -71,7 +71,7 @@ export function RouteHazardSheet({
               onClick={onTryAlternateRoute}
               disabled={bypassBusy}
             >
-              {bypassBusy ? "Finding alternate…" : "Try alternate route"}
+              {bypassBusy ? "Finding alternates…" : "Compare routes on map"}
             </button>
           )}
           <button type="button" className="route-hazard-sheet__btn route-hazard-sheet__btn--ghost" onClick={onClose}>

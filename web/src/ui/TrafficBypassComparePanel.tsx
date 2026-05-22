@@ -15,6 +15,10 @@ export type TrafficBypassComparePanelProps = {
   /** Applies the selected leg as primary and returns to drive view. */
   onConfirm: () => void;
   onCancel: () => void;
+  /** When true, confirm reads "Go" (active navigation); otherwise "Use this route". */
+  navigationStarted?: boolean;
+  /** Mapbox leg labels (Main, No interstate, etc.) — shown on each card. */
+  routeLabels?: Partial<Record<"r-a" | "r-b" | "r-c", string>>;
 };
 
 /** Short delta for the one-line summary, e.g. "−7m" vs A */
@@ -51,20 +55,18 @@ export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps)
     onSelect,
     onConfirm,
     onCancel,
+    navigationStarted = false,
+    routeLabels,
   } = props;
   const lowConfidence = confidence === "low";
+  const label = (id: SlotKey) => routeLabels?.[id]?.trim() || `Route ${id === "r-a" ? "A" : id === "r-b" ? "B" : "C"}`;
 
-  /* Order matters: A (stay) = always shown; C (local bypass) = surgical detour near the jam;
-   * B (alternate route) = full reroute. The user wants to visually compare all three
-   * side-by-side without the panel blocking the route flags on the map. */
   const options: Option[] = [
     {
       id: "r-a",
       badge: "A",
-      title: "Stay on route",
-      desc: lowConfidence
-        ? "Hold current plan; ETA from live traffic on this line"
-        : "Hold current plan; drive through the slowdown",
+      title: label("r-a"),
+      desc: "From your position to destination",
       eta: etaA,
       deltaLabel: null,
       disabled: false,
@@ -72,10 +74,8 @@ export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps)
     {
       id: "r-c",
       badge: "C",
-      title: lowConfidence ? "Try local bypass" : "Local bypass",
-      desc: lowConfidence
-        ? "Side-road detour near the corridor — exit/rejoin not guaranteed"
-        : "Exit before jam, rejoin after it clears",
+      title: label("r-c"),
+      desc: lowConfidence ? "Third option — compare on map" : "Third option — different corridor",
       eta: etaC,
       deltaLabel: hasC ? savingsShortVsA(etaA, etaC) : null,
       disabled: !hasC,
@@ -83,8 +83,8 @@ export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps)
     {
       id: "r-b",
       badge: "B",
-      title: "Alternate route",
-      desc: "Different highway / end-to-end reroute",
+      title: label("r-b"),
+      desc: "Second option — different corridor",
       eta: etaB,
       deltaLabel: hasB ? savingsShortVsA(etaA, etaB) : null,
       disabled: !hasB,
@@ -96,11 +96,11 @@ export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps)
       className="traffic-bypass-compare"
       role="dialog"
       aria-modal="true"
-      aria-label="Traffic bypass options"
+      aria-label="Choose a route"
     >
       <div className="traffic-bypass-compare__header">
         <div className="traffic-bypass-compare__header-main">
-          <span className="traffic-bypass-compare__title">Reroute options</span>
+          <span className="traffic-bypass-compare__title">Choose a route</span>
           <span className="traffic-bypass-compare__sub">{headline}</span>
         </div>
         <button
@@ -151,7 +151,7 @@ export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps)
           onClick={onConfirm}
           disabled={selectedLeg == null}
         >
-          Return to drive
+          {navigationStarted ? "Go" : "Use this route"}
         </button>
       </div>
     </div>

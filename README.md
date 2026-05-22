@@ -2,6 +2,8 @@
 
 **New to this?** Open [`START_HERE.md`](START_HERE.md) — step-by-step, no coding background required.
 
+**Closed beta?** No Mac: [`docs/GITHUB_TESTFLIGHT_ONLY.md`](docs/GITHUB_TESTFLIGHT_ONLY.md) · Checklist: [`docs/BETA_READINESS.md`](docs/BETA_READINESS.md) · Testers: [`docs/TESTER_NOTES.md`](docs/TESTER_NOTES.md).
+
 Driving-first, multi-route navigation with a **fused** situation layer (traffic, weather, hazards — radar/storm feeds to be wired next). Product intent: [`docs/NEXT_APP_VISION.md`](docs/NEXT_APP_VISION.md).
 
 ## Repos in this folder

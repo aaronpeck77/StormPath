@@ -71,11 +71,7 @@ import {
   fetchMapboxTrafficAlongPolyline,
   trafficCongestionAnchorFraction,
 } from "./services/mapboxDirectionsTraffic";
-import {
-  fetchMapboxDrivingTrafficRoute,
-  fetchMapboxSurgicalBypass,
-  fetchMapboxTrafficAlternatives,
-} from "./services/mapboxRouteAlternatives";
+import { fetchMapboxDrivingTrafficRoute } from "./services/mapboxRouteAlternatives";
 import {
   fetchCurrentNowcast,
   formatNowcastLine,
@@ -104,7 +100,6 @@ import {
   initialBearingDegrees,
   pointAtAlongMeters,
   polylineLengthMeters,
-  slicePolylineBetweenAlong,
 } from "./nav/routeGeometry";
 import { bannerPrimaryStepIndex } from "./nav/bannerPrimaryStep";
 import { useAlongRouteMetersHeldWhenOffLine } from "./nav/guidanceAlongHold";
@@ -113,10 +108,7 @@ import { formatRouteDistanceMi, routeConsiderationSummary } from "./nav/routeSum
 import { buildDriveRouteAheadFromImpacts } from "./nav/driveRouteAhead";
 import { pickDriveApproachBanner } from "./nav/driveHazardApproachPreview";
 import { computeTrafficBypassOffer, pickTrafficBypassAnchorImpact } from "./nav/trafficBypassOffer";
-import {
-  computeSurgicalBypassWindow,
-  earlyApproachMaxMetersForSpeed,
-} from "./nav/surgicalBypassWindow";
+import { earlyApproachMaxMetersForSpeed } from "./nav/surgicalBypassWindow";
 import { unifiedTrafficNarrative } from "./nav/trafficNarrative";
 import {
   ARRIVAL_BG_CLEAR_MIN_MS,
@@ -1166,6 +1158,17 @@ export default function App() {
     setSuggestLoading(false);
   }, []);
 
+  /** × on the search bar — collapse to compact destination and clear stuck suggestion lists. */
+  const handleSearchDismiss = useCallback(() => {
+    handleSearchCancelSuggestions();
+    setAllowAutocomplete(false);
+    if (plan.routes.length > 0) {
+      setSearchExpanded(false);
+    }
+    const el = document.activeElement;
+    if (el instanceof HTMLElement) el.blur();
+  }, [handleSearchCancelSuggestions, plan.routes.length]);
+
   const handleCompactDestOpen = useCallback(() => {
     if (searchBlurClearTimerRef.current) {
       window.clearTimeout(searchBlurClearTimerRef.current);
@@ -1955,6 +1958,9 @@ export default function App() {
     navigationStarted && viewMode !== "route"
       ? (orderedRouteIds[0] ?? primaryRouteId)
       : (orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? primaryRouteId);
+
+  /** During A/B/C compare, highlight the leg the driver tapped (not only the current primary). */
+  const driveMapLineFocusId = trafficBypassCompare?.selectedLeg ?? lineFocusId;
 
   const suggestedRouteId = useMemo(() => {
     const id = pickSuggestedActive(scored);
@@ -2785,11 +2791,11 @@ export default function App() {
 
   /** Dr: only the chosen (focused) leg on the map — alternates stay in Rt / Map views. */
   const driveMapRoutes = useMemo(() => {
-    if (viewMode !== "drive") return plan.routes;
+    if (trafficBypassCompare || viewMode !== "drive") return plan.routes;
     const active = plan.routes.find((r) => r.id === guidanceRouteId);
     if (active) return [active];
     return plan.routes.length ? [plan.routes[0]!] : [];
-  }, [viewMode, guidanceRouteId, plan.routes]);
+  }, [trafficBypassCompare, viewMode, guidanceRouteId, plan.routes]);
   const progressRailRoute = guidanceRoute ?? driveMapRoutes[0] ?? plan.routes[0];
 
   /** Map pins during bypass compare — stagger along each polyline so labels don’t stack. */
@@ -3888,6 +3894,7 @@ export default function App() {
 
   const handleTrafficBypassCompareSelect = useCallback((id: "r-a" | "r-b" | "r-c") => {
     setTrafficBypassCompare((prev) => (prev ? { ...prev, selectedLeg: id } : null));
+    setFitTrigger((n) => n + 1);
   }, []);
 
   const handleTrafficBypassCompareConfirm = useCallback(() => {
@@ -3998,19 +4005,69 @@ export default function App() {
     setDriveMapBearingDeg(deg);
   }, []);
 
-  const handleTryAlternateRoute = useCallback(() => {
-    if (!alternateBypassRouteId) {
-      setTapHint("No other route to try — open Rt view or Stop and set a new destination.");
-      window.setTimeout(() => setTapHint(null), 5000);
-      return;
-    }
-    setRouteSlotOrder((prev) =>
-      slotOrderAfterSelect(prev.length ? prev : planRouteIds, alternateBypassRouteId)
-    );
-    setPreviewLegIndex(0);
-    setTapHint("Alternate route active — map and guidance updated.");
-    window.setTimeout(() => setTapHint(null), 5500);
-  }, [alternateBypassRouteId, planRouteIds]);
+  const buildRouteCompareFromPlan = useCallback(
+    (opts: {
+      headline: string;
+      hazardLngLat: LngLat | null;
+      hazardAlongMeters: number | null;
+      confidence?: "low" | "medium" | "high";
+      etaOverrides?: {
+        etaB?: number | null;
+        etaC?: number | null;
+        hasB?: boolean;
+        hasC?: boolean;
+      };
+    }): TrafficBypassCompareState | null => {
+      if (!guidanceRoute?.geometry?.length) return null;
+      const etaForSlot = (id: "r-a" | "r-b" | "r-c"): number | null => {
+        if (id === "r-a" && navigationStarted && driveEtaMinutes != null) {
+          return Math.max(1, Math.round(driveEtaMinutes));
+        }
+        const s = scored.find((x) => x.route.id === id);
+        if (s) return Math.max(1, Math.round(s.effectiveEtaMinutes));
+        const r = plan.routes.find((x) => x.id === id);
+        return r ? Math.max(1, Math.round(r.baseEtaMinutes)) : null;
+      };
+      const rB = plan.routes.find((r) => r.id === "r-b");
+      const rC = plan.routes.find((r) => r.id === "r-c");
+      const hasB =
+        opts.etaOverrides?.hasB ?? Boolean(rB?.geometry && rB.geometry.length >= 2);
+      const hasC =
+        opts.etaOverrides?.hasC ?? Boolean(rC?.geometry && rC.geometry.length >= 2);
+      const etaA = etaForSlot("r-a");
+      if (etaA == null) return null;
+      const altWithGeom = plan.routes.some(
+        (r) => r.id !== guidanceRouteId && (r.geometry?.length ?? 0) >= 2
+      );
+      if (!hasB && !hasC && !altWithGeom) return null;
+      return {
+        headline: opts.headline,
+        etaA,
+        etaB: opts.etaOverrides?.etaB ?? (hasB ? etaForSlot("r-b") : null),
+        etaC: opts.etaOverrides?.etaC ?? (hasC ? etaForSlot("r-c") : null),
+        hasB,
+        hasC,
+        confidence: opts.confidence ?? "medium",
+        selectedLeg: null,
+        hazardLngLat: opts.hazardLngLat,
+        hazardAlongMeters: opts.hazardAlongMeters,
+      };
+    },
+    [guidanceRoute, plan.routes, scored, driveEtaMinutes, navigationStarted, guidanceRouteId]
+  );
+
+  const openRouteCompareFromPlan = useCallback(
+    (opts: Parameters<typeof buildRouteCompareFromPlan>[0]) => {
+      const state = buildRouteCompareFromPlan(opts);
+      if (!state) return false;
+      viewModeBeforeTrafficBypassRef.current = viewMode;
+      setTrafficBypassCompare(state);
+      setViewMode("topdown");
+      setFitTrigger((n) => n + 1);
+      return true;
+    },
+    [buildRouteCompareFromPlan, viewMode]
+  );
 
   const handleQuickReportIssue = useCallback(() => {
     const to = env.supportEmail?.trim();
@@ -4091,167 +4148,92 @@ export default function App() {
     const geom = guidanceRoute.geometry;
     const totalM = polylineLengthMeters(geom);
 
+    const anchorImpact = opts?.anchorAlongMeters == null
+      ? pickTrafficBypassAnchorImpact(routeImpactsForUi)
+      : null;
+    const jamAlongM =
+      opts?.anchorAlongMeters ??
+      anchorImpact?.alongMeters ??
+      Math.min(
+        totalM - 50,
+        userAlongGuidanceM + Math.max(600, (totalM - userAlongGuidanceM) * 0.32)
+      );
+    const hazardLngLat =
+      opts?.anchorLngLat ?? anchorImpact?.lngLat ?? pointAtAlongMeters(geom, jamAlongM);
+    const compareHeadline =
+      trafficBypassContext?.headline ?? "Three routes from here to your destination";
+
     try {
-      /* Anchor the surgical bypass on the strongest reroute-worthy impact (traffic / closure) ahead.
-       * If we don't have a confident anchor, fall back to ~38% of remaining route. Demo paths can
-       * inject an explicit anchor via `opts.anchorAlongMeters` to test the close-hazard tier. */
-      const anchorImpact = opts?.anchorAlongMeters == null
-        ? pickTrafficBypassAnchorImpact(routeImpactsForUi)
-        : null;
-      const jamAlongM =
-        opts?.anchorAlongMeters ??
-        anchorImpact?.alongMeters ??
-        Math.min(
-          totalM - 50,
-          userAlongGuidanceM + Math.max(600, (totalM - userAlongGuidanceM) * 0.32)
-        );
+      /* Same A/B/C builder as initial Go — three distinct end-to-end lines, not surgical splices
+       * on the current leg (those looked like one route with tiny forks). */
+      const fresh = await collectMapboxRouteVariants(env.mapboxToken, originLngLat, destLngLat, {
+        allowLocalTripThirdRoute: isPlus,
+        preferThreeRoutes: isPlus,
+        stormAlerts: stormAlertsForRouting,
+        radarAvoidanceEnabled: isPlus && settingStormEnabled,
+      });
 
-      /* Fair ETA comparison: re-fetch live A duration from current position along the remaining
-       * polyline, in parallel with B (alternate) and C (surgical bypass). All three then come from
-       * fresh Mapbox live traffic data, so the compare panel doesn't pit a stale A baseline against
-       * fresh B/C numbers. */
-      const remainingPolyline = slicePolylineBetweenAlong(geom, Math.max(0, userAlongGuidanceM), totalM);
-
-      const [fullRerouteP, surgicalP, liveAFromHereP] = await Promise.all([
-        fetchMapboxTrafficAlternatives(env.mapboxToken, originLngLat, destLngLat),
-        (async (): Promise<{
-          geometry: LngLat[];
-          baseEtaMinutes: number;
-          turnSteps: { instruction: string; distanceM?: number }[];
-          notice: string;
-          framing: "plenty" | "tight" | "nextExit";
-        } | null> => {
-          const window = computeSurgicalBypassWindow({
-            userAlongMeters: userAlongGuidanceM,
-            jamAlongMeters: jamAlongM,
-            totalMeters: totalM,
-            speedMps,
-          });
-          if (!window) return null;
-          const { exitMeters: exitM, rejoinMeters: rejoinM, framing } = window;
-          const exitPt = pointAtAlongMeters(geom, exitM);
-          const rejoinPt = pointAtAlongMeters(geom, rejoinM);
-          const seg = await fetchMapboxSurgicalBypass(env.mapboxToken, exitPt, rejoinPt);
-          if (!seg?.geometry?.length) return null;
-
-          const pre = slicePolylineBetweenAlong(geom, 0, exitM);
-          const post = slicePolylineBetweenAlong(geom, rejoinM, totalM);
-          const spliced: LngLat[] = [...pre, ...seg.geometry, ...post];
-          if (spliced.length < 2) return null;
-
-          const preRatio = totalM > 0 ? exitM / totalM : 0;
-          const postRatio = totalM > 0 ? (totalM - rejoinM) / totalM : 0;
-          const baseEta = guidanceRoute.baseEtaMinutes;
-          const splicedEta = baseEta * preRatio + seg.durationMinutes + baseEta * postRatio;
-
-          /* Driver-facing intro line for the bypass leg — "tap next exit" copy when we're
-           * close enough to the jam that the driver needs to commit on the next available ramp. */
-          const intro =
-            framing === "nextExit"
-              ? "Take the next exit / turn off the route to start the bypass"
-              : "Continue on current route to exit";
-          const notice =
-            framing === "nextExit"
-              ? "Tight bypass: next exit, side roads around the slowdown, rejoin past it."
-              : framing === "tight"
-                ? "Bypass: leave before the slowdown, rejoin past it."
-                : "Side-road bypass around traffic (exit \u2192 rejoin).";
-
-          return {
-            geometry: spliced,
-            baseEtaMinutes: Math.max(1, Math.round(splicedEta)),
-            turnSteps: [
-              ...(pre.length ? [{ instruction: intro }] : []),
-              ...seg.turnSteps,
-              ...(post.length ? [{ instruction: "Rejoin highway and continue to destination" }] : []),
-            ],
-            notice,
-            framing,
-          };
-        })(),
-        remainingPolyline.length >= 2
-          ? fetchMapboxTrafficAlongPolyline(env.mapboxToken, remainingPolyline)
-          : Promise.resolve(null),
-      ]);
-
-      const alts = fullRerouteP;
-      const bestFull = alts
-        ?.slice()
-        .sort((a, b) => a.durationMinutes - b.durationMinutes)[0];
-
-      if (!bestFull && !surgicalP) {
-        viewModeBeforeTrafficBypassRef.current = null;
-        setTapHint("No alternate routes available right now. Try again closer to the slowdown.");
-        window.setTimeout(() => setTapHint(null), 6000);
+      if (fresh.length === 0 || epochAtStart !== routeGraphEpochRef.current) {
+        const opened = openRouteCompareFromPlan({
+          headline: compareHeadline,
+          hazardLngLat,
+          hazardAlongMeters: jamAlongM,
+          confidence: trafficBypassContext?.confidence ?? "medium",
+        });
+        if (!opened) {
+          viewModeBeforeTrafficBypassRef.current = null;
+          setTapHint("No alternate routes available right now — try again in a moment.");
+          window.setTimeout(() => setTapHint(null), 6000);
+        }
         return;
       }
 
-      if (bestFull || surgicalP) {
-        if (epochAtStart !== routeGraphEpochRef.current) return;
-        setPlan((prev) => ({
-          ...prev,
-          routes: prev.routes.map((r) => {
-            if (r.id === "r-b" && bestFull) {
-              return {
-                ...r,
-                label: "No interstate · reroute",
-                geometry: bestFull.geometry,
-                baseEtaMinutes: Math.max(1, Math.round(bestFull.durationMinutes)),
-                turnSteps: bestFull.turnSteps,
-                routeNotices: [
-                  ...(r.routeNotices ?? []),
-                  "Full reroute via Mapbox live traffic.",
-                ],
-              };
-            }
-            if (r.id === "r-c" && surgicalP) {
-              return {
-                ...r,
-                label:
-                  surgicalP.framing === "nextExit"
-                    ? "Next exit · bypass"
-                    : "Scenic · bypass",
-                geometry: surgicalP.geometry,
-                baseEtaMinutes: surgicalP.baseEtaMinutes,
-                turnSteps: surgicalP.turnSteps,
-                routeNotices: [
-                  ...(r.routeNotices ?? []),
-                  surgicalP.notice,
-                ],
-              };
-            }
-            return r;
-          }),
-        }));
-      }
+      const byId = new Map(fresh.map((r) => [r.id, r]));
+      setPlan((prev) => ({
+        ...prev,
+        routes: prev.routes.map((r) => byId.get(r.id) ?? r),
+      }));
 
-      /* Use the live remaining-from-here ETA for A so all three options share the same baseline.
-       * If the live fetch failed, fall back to the static plan ETA so the panel still has a number. */
-      const liveAEtaMin = liveAFromHereP?.mapboxDurationMinutes;
-      const etaA =
-        typeof liveAEtaMin === "number" && Number.isFinite(liveAEtaMin) && liveAEtaMin > 0
-          ? Math.max(1, Math.round(liveAEtaMin))
-          : Math.round(guidanceRoute.baseEtaMinutes);
+      const etaFor = (id: "r-a" | "r-b" | "r-c") => {
+        const r = byId.get(id);
+        return r?.geometry?.length && r.geometry.length >= 2
+          ? Math.max(1, Math.round(r.baseEtaMinutes))
+          : null;
+      };
+      const etaA = etaFor("r-a");
+      if (etaA == null) {
+        viewModeBeforeTrafficBypassRef.current = null;
+        setTapHint("Could not build route options — try again.");
+        window.setTimeout(() => setTapHint(null), 5000);
+        return;
+      }
 
       setFitTrigger((n) => n + 1);
       setTrafficBypassCompare({
-        headline: trafficBypassContext?.headline ?? "Traffic ahead",
+        headline: compareHeadline,
         etaA,
-        etaB: bestFull ? Math.round(bestFull.durationMinutes) : null,
-        etaC: surgicalP ? surgicalP.baseEtaMinutes : null,
-        hasB: Boolean(bestFull),
-        hasC: Boolean(surgicalP),
+        etaB: etaFor("r-b"),
+        etaC: etaFor("r-c"),
+        hasB: Boolean(byId.get("r-b")?.geometry && byId.get("r-b")!.geometry.length >= 2),
+        hasC: Boolean(byId.get("r-c")?.geometry && byId.get("r-c")!.geometry.length >= 2),
         confidence: trafficBypassContext?.confidence ?? "medium",
         selectedLeg: null,
-        hazardLngLat:
-          opts?.anchorLngLat ?? anchorImpact?.lngLat ?? pointAtAlongMeters(geom, jamAlongM),
+        hazardLngLat,
         hazardAlongMeters: jamAlongM,
       });
       setViewMode("topdown");
     } catch {
-      viewModeBeforeTrafficBypassRef.current = null;
-      setTapHint("Bypass request failed.");
-      window.setTimeout(() => setTapHint(null), 5000);
+      const opened = openRouteCompareFromPlan({
+        headline: compareHeadline,
+        hazardLngLat,
+        hazardAlongMeters: jamAlongM,
+        confidence: trafficBypassContext?.confidence ?? "medium",
+      });
+      if (!opened) {
+        viewModeBeforeTrafficBypassRef.current = null;
+        setTapHint("Route compare failed — try again when you have a signal.");
+        window.setTimeout(() => setTapHint(null), 5000);
+      }
     } finally {
       setBypassBusy(false);
     }
@@ -4267,6 +4249,9 @@ export default function App() {
     userAlongGuidanceM,
     trafficBypassContext,
     viewMode,
+    openRouteCompareFromPlan,
+    stormAlertsForRouting,
+    settingStormEnabled,
   ]);
 
   /** Stop navigation and clear the trip (single “cancel everything” control). */
@@ -4456,6 +4441,11 @@ export default function App() {
             <span className="storm-advisory-bar__road-muted">{betterRouteNote}</span>
           </>
         ),
+        actionLabel: "Compare routes",
+        onAction:
+          isPlus && env.mapboxToken && userLngLat && destLngLat && guidanceRoute?.geometry?.length
+            ? () => void handleTrafficBypassFromHere()
+            : undefined,
       });
     }
 
@@ -4469,9 +4459,15 @@ export default function App() {
     routeAlerts,
     driveEtaMinutes,
     handleInspectTrafficStop,
+    handleTrafficBypassFromHere,
     navigationStarted,
     effectiveUserLngLat,
     plan.routes,
+    isPlus,
+    env.mapboxToken,
+    userLngLat,
+    destLngLat,
+    guidanceRoute?.geometry?.length,
   ]);
 
   /** Busy message for the always-visible activity chip (null → shows muted Idle). */
@@ -4530,7 +4526,7 @@ export default function App() {
           <Suspense fallback={<div className="drive-map" />}>
           <DriveMap
             routes={driveMapRoutes}
-            lineFocusId={lineFocusId}
+            lineFocusId={driveMapLineFocusId}
             suggestedRouteId={suggestedRouteId}
             userLngLat={effectiveUserLngLat}
             destLngLat={destLngLat}
@@ -4847,19 +4843,12 @@ export default function App() {
 
         {routeHazardSheet && (() => {
           const primary = routeHazardSheet.alerts[0];
-          const primaryIsTraffic =
-            primary != null &&
-            (primary.id === "traffic" ||
-              primary.id === "traffic-delay" ||
-              /traffic|stopped|closure|jam/i.test(primary.title ?? ""));
           const canTryAlternate = Boolean(
-            alternateBypassRouteId ||
-              (primary?.corridorKind === "weather" &&
-                isPlus &&
-                env.mapboxToken &&
-                userLngLat &&
-                destLngLat) ||
-              (primaryIsTraffic && env.mapboxToken && userLngLat && destLngLat && guidanceRoute)
+            isPlus &&
+              env.mapboxToken &&
+              userLngLat &&
+              destLngLat &&
+              guidanceRoute?.geometry?.length
           );
           return (
             <RouteHazardSheet
@@ -4870,30 +4859,30 @@ export default function App() {
               onClose={() => setRouteHazardSheet(null)}
               onTryAlternateRoute={() => {
                 runAfterHazardSheetAction(() => {
-                  if (primaryIsTraffic && env.mapboxToken && userLngLat && destLngLat && guidanceRoute) {
-                    void handleTrafficBypassFromHere();
+                  if (!canTryAlternate || !guidanceRoute?.geometry?.length || !destLngLat) {
+                    setTapHint("Route compare needs Plus, traffic, and an active trip.");
+                    window.setTimeout(() => setTapHint(null), 5500);
                     return;
                   }
-                  if (
-                    primary?.corridorKind === "weather" &&
-                    destLngLat &&
-                    isPlus &&
-                    userLngLat &&
-                    env.mapboxToken
-                  ) {
-                    if (alternateBypassRouteId) {
-                      handleTryAlternateRoute();
-                    } else {
-                      void computeRoutes(destLngLat, destinationLabel.trim() || "Destination", {
+                  const geom = guidanceRoute.geometry;
+                  let anchorAlongM: number | undefined;
+                  let anchorLngLat: LngLat | undefined;
+                  if (primary?.alongMeters != null && geom.length) {
+                    const totalM = polylineLengthMeters(geom);
+                    anchorAlongM = Math.max(0, Math.min(primary.alongMeters, totalM - 1));
+                    anchorLngLat = pointAtAlongMeters(geom, anchorAlongM);
+                  }
+                  const bypassOpts = { anchorAlongMeters: anchorAlongM, anchorLngLat };
+                  if (primary?.corridorKind === "weather" && !alternateBypassRouteId) {
+                    void (async () => {
+                      await computeRoutes(destLngLat, destinationLabel.trim() || "Destination", {
                         preserveNavigation: true,
                       });
-                    }
-                  } else if (alternateBypassRouteId) {
-                    handleTryAlternateRoute();
-                  } else {
-                    setTapHint("No other route loaded — replan from your destination to see alternates.");
-                    window.setTimeout(() => setTapHint(null), 5500);
+                      void handleTrafficBypassFromHere(bypassOpts);
+                    })();
+                    return;
                   }
+                  void handleTrafficBypassFromHere(bypassOpts);
                 });
               }}
             />
@@ -5153,9 +5142,15 @@ export default function App() {
               hasC={trafficBypassCompare.hasC}
               confidence={trafficBypassCompare.confidence}
               selectedLeg={trafficBypassCompare.selectedLeg}
+              routeLabels={{
+                "r-a": plan.routes.find((r) => r.id === "r-a")?.label ?? "Route A",
+                "r-b": plan.routes.find((r) => r.id === "r-b")?.label ?? "Route B",
+                "r-c": plan.routes.find((r) => r.id === "r-c")?.label ?? "Route C",
+              }}
               onSelect={handleTrafficBypassCompareSelect}
               onConfirm={handleTrafficBypassCompareConfirm}
               onCancel={handleTrafficBypassCompareCancel}
+              navigationStarted={navigationStarted}
             />
           )}
           {recordingActive && (
@@ -5261,6 +5256,7 @@ export default function App() {
                             onBeginEditing={handleSearchFieldBeginEditing}
                             onEndEditing={handleSearchFieldEndEditing}
                             onCancelSuggestions={handleSearchCancelSuggestions}
+                            onDismiss={handleSearchDismiss}
                             onSearch={() => void handleSearch()}
                             placeholder="Search address or place"
                             suggestions={suggestions}

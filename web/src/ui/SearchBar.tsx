@@ -21,6 +21,8 @@ type Props = {
   onEndEditing?: () => void;
   /** Escape: full dismiss (use when blur path intentionally keeps the list open). */
   onCancelSuggestions?: () => void;
+  /** Collapse search to resting state (compact destination chip when a trip is loaded). */
+  onDismiss?: () => void;
 };
 
 export function SearchBar({
@@ -36,6 +38,7 @@ export function SearchBar({
   onBeginEditing,
   onEndEditing,
   onCancelSuggestions,
+  onDismiss,
 }: Props) {
   const t = value.trim();
   /** Keep list open for 0–1 chars on phone (recents) so the panel does not flash off between keystrokes. */
@@ -89,6 +92,23 @@ export function SearchBar({
           aria-expanded={showList}
           aria-controls="nav-search-suggestions"
         />
+        {onDismiss ? (
+          <button
+            type="button"
+            className="nav-search-dismiss"
+            aria-label="Close search"
+            title="Close"
+            onPointerDown={(e) => {
+              e.preventDefault();
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              onDismiss();
+            }}
+          >
+            <span aria-hidden>×</span>
+          </button>
+        ) : null}
       </form>
       {showList && (
         <ul id="nav-search-suggestions" className="nav-search-suggestions" role="listbox">

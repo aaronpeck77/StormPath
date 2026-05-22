@@ -13,8 +13,10 @@
 #   APP_STORE_CONNECT_API_KEY_ID        Key ID from App Store Connect → Keys
 #   APP_STORE_CONNECT_ISSUER_ID         Issuer ID from the same page
 #   APP_STORE_CONNECT_API_KEY_CONTENT   The .p8 file: paste full PEM *or* base64 of the file
-#   VITE_TOMORROW_IO_API_KEY            Tomorrow.io key (baked into the web bundle at build time)
-#   VITE_OPENWEATHER_API_KEY            OpenWeather key — local temp / “right now” in advisory bar
+#   VITE_MAPBOX_TOKEN                   Mapbox public token (map + search + directions)
+#   VITE_TOMORROW_IO_API_KEY            Tomorrow.io (optional but recommended)
+#   VITE_OPENWEATHER_API_KEY            OpenWeather (optional but recommended)
+# Plus / support / legal for testers come from committed web/.env.testflight (build:testflight).
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: iOS Build & TestFlight
@@ -62,8 +64,8 @@ jobs:
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
 
-      - name: Build web app
-        run: npx vite build
+      - name: Build web app (TestFlight mode — Plus, support URLs, NWS UA from .env.testflight)
+        run: npm run build:testflight
         working-directory: web
         env:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}

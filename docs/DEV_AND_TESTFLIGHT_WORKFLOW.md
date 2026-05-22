@@ -4,9 +4,11 @@ There is **one** StormPath codebase. **Local dev** is where you verify changes b
 
 ## Pipeline (your intent)
 
-1. **Develop** — `cd web && npm run dev` (browser / tooling). Tier defaults to **Plus** so you are not fighting Basic gates while building.
-2. **Commit & push to GitHub** — when you are happy with the change set.
-3. **TestFlight binary** — build the web bundle, sync iOS, archive in Xcode (or your CI). That install should **mirror** what you just tested, including **Plus vs Basic** expectations.
+1. **Develop** — `cd web && npm run dev` on Windows (browser). Tier defaults to **Plus** in dev.
+2. **Commit & push to GitHub** (`master` or `main`) — when you are happy with the change set.
+3. **TestFlight binary** — **GitHub Actions** builds and uploads (no Mac required). See [`GITHUB_TESTFLIGHT_ONLY.md`](GITHUB_TESTFLIGHT_ONLY.md). Optional: rented Mac + Xcode archive instead of Actions.
+
+That install should **mirror** what you tested, including **Plus** on internal TestFlight builds.
 
 ## Mirroring Plus between dev and TestFlight
 
@@ -36,5 +38,7 @@ npm run build:ios              # retail-shaped bundle (Basic) + sync — App Sto
 
 ## Related
 
+- `docs/BETA_READINESS.md` — pre-invite checklist (keys, build, smoke, TestFlight copy).
+- `docs/TESTER_NOTES.md` — smoke items + text for testers.
 - `docs/MOBILE_STORE_RELEASE.md` — store review, IAP placeholder, QA entitlement keys.
 - `docs/PAY_TIERS.md` — what Basic vs Plus includes.
