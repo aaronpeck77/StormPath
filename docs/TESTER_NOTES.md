@@ -55,6 +55,7 @@ Known limitations in this build:
 - US-only weather alerts (NWS).
 - Subscription / Plus billing isn't real yet — everyone on this build has Plus.
 - Some weather data lags up to ~10 min behind real conditions.
+- Serious app errors may be reported automatically to the developer (no personal info). Please still email feedback for anything confusing or wrong.
 ```
 
 ---

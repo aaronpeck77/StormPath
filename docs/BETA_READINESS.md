@@ -21,7 +21,7 @@ One checklist for **you** before sending invites. Testers use [`TESTER_NOTES.md`
 | Plus on TestFlight build | Yes | `VITE_PAY_TIER=plus` in testflight mode |
 | Demo tools in TF/production | Hidden | `?demo=bypass` only when `import.meta.env.DEV` |
 | IAP / App Store billing | No | OK for closed beta; document in tester notes |
-| Crash reporting (Sentry, etc.) | No | Use support email + screenshots for now |
+| Crash reporting (Sentry) | Code ready | Add GitHub secret `VITE_SENTRY_DSN` — see [`SENTRY_SETUP.md`](SENTRY_SETUP.md) |
 | Automated tests | No | Manual smoke only |
 | Android closed test | Optional | iOS-first is fine |
 
@@ -41,6 +41,7 @@ Do this on **whatever machine runs the archive** (rented Mac or CI only):
   - [ ] `VITE_TOMORROW_IO_API_KEY` (optional — minute precip + hourly; note quota in tester limitations if omitted)
 - [ ] **Mapbox dashboard:** budget alert set; token not restricted in a way that breaks the iOS WebView.
 - [ ] **Support inbox** `stormpath@yahoo.com` monitored (or change `VITE_SUPPORT_EMAIL` in `.env.testflight` and rebuild).
+- [ ] **Sentry DSN** in GitHub Secrets as `VITE_SENTRY_DSN` ([`SENTRY_SETUP.md`](SENTRY_SETUP.md)) — optional but recommended for beta.
 
 Committed **`web/.env.testflight`** already sets Plus, support URLs, NWS User-Agent, and internal pay-tier test panel. Do **not** use testflight mode for App Store *customer* builds.
 
@@ -103,7 +104,7 @@ If anything fails, fix and rebuild — do not invite on a broken build.
 | Watch Mapbox / Tomorrow.io / OpenWeather usage | You | [ ] |
 | One **Basic** build smoke (`npm run build:ios`, no testflight mode) | You | [ ] |
 | Fix top 3 crashers / “feels broken” themes | Dev | [ ] |
-| Optional: add crash reporter (Sentry / Firebase) | Dev | [ ] |
+| Confirm Sentry receives a test event after DSN secret is set | You | [ ] |
 
 ---
 

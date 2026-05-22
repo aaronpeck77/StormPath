@@ -2,6 +2,9 @@ import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
+import { captureAppException, initCrashReporting } from "./monitoring/sentry";
+
+initCrashReporting();
 
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -15,6 +18,10 @@ class ErrorBoundary extends Component<
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("StormPath crash:", error, info.componentStack);
+    captureAppException(error, {
+      componentStack: info.componentStack,
+      source: "react_error_boundary",
+    });
   }
 
   render() {
@@ -39,7 +46,8 @@ class ErrorBoundary extends Component<
             Something went wrong
           </h1>
           <p style={{ fontSize: "0.9rem", color: "#94a3b8", margin: "0 0 20px", maxWidth: "320px" }}>
-            StormPath hit an unexpected error. Tap below to reload.
+            StormPath hit an unexpected error. Tap below to reload. If this keeps happening, use About →
+            Support diagnostics to send feedback.
           </p>
           <button
             onClick={() => window.location.reload()}

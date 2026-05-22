@@ -16,6 +16,7 @@
 #   VITE_MAPBOX_TOKEN                   Mapbox public token (map + search + directions)
 #   VITE_TOMORROW_IO_API_KEY            Tomorrow.io (optional but recommended)
 #   VITE_OPENWEATHER_API_KEY            OpenWeather (optional but recommended)
+#   VITE_SENTRY_DSN                     Sentry DSN for crash reports (optional; see docs/SENTRY_SETUP.md)
 # Plus / support / legal for testers come from committed web/.env.testflight (build:testflight).
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ jobs:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
 
       - name: Build web app (TestFlight mode — Plus, support URLs, NWS UA from .env.testflight)
         run: npm run build:testflight
@@ -71,6 +73,7 @@ jobs:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
 
       # ── 5. Sync web assets into the Xcode project ────────────────────────────
       - name: Capacitor sync

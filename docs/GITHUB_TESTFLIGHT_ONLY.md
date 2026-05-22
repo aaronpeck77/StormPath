@@ -70,8 +70,9 @@ Build number = GitHub run number (always increases).
 | `APP_STORE_CONNECT_API_KEY_ID` | App Store Connect API key ID |
 | `APP_STORE_CONNECT_ISSUER_ID` | Issuer ID (same Keys page) |
 | `APP_STORE_CONNECT_API_KEY_CONTENT` | Contents of the `.p8` file (PEM or base64) |
+| `VITE_SENTRY_DSN` | Sentry DSN for automatic crash reports ([`SENTRY_SETUP.md`](SENTRY_SETUP.md)) — **recommended** |
 
-You said these are already set — if builds were reaching TestFlight before, you’re good.  
+You said API/signing secrets are already set — if builds were reaching TestFlight before, you’re good. Add `VITE_SENTRY_DSN` when ready (app works without it).  
 If a build **suddenly** fails on signing, the **certificate or profile may have expired** (renew in Apple Developer, re-export `.p12` / profile, update the two APPLE_* secrets).
 
 You **cannot** view secret values again in GitHub; you can only update them.

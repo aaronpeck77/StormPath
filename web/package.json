@@ -22,6 +22,7 @@
     "@capacitor/core": "^8.3.1",
     "@capacitor/geolocation": "^8.2.0",
     "@capacitor/ios": "^8.3.1",
+    "@sentry/react": "^10.53.1",
     "mapbox-gl": "^3.22.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

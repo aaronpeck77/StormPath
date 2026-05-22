@@ -1,5 +1,7 @@
 # StormPath — iOS App Store (Capacitor)
 
+**After beta:** retail checklist in [`../../docs/APP_STORE_CHECKLIST.md`](../../docs/APP_STORE_CHECKLIST.md). **Crashes:** [`../../docs/SENTRY_SETUP.md`](../../docs/SENTRY_SETUP.md).
+
 The native shell lives under **`web/ios/`** (Xcode project). Bundle ID is set in [`capacitor.config.ts`](../capacitor.config.ts) (`appId`, currently `com.aaronpeck.stormpath`) and must match App Store Connect and your provisioning profile.
 
 ## What you need from Apple

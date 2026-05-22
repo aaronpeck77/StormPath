@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
 import { getWebEnv } from "../config/env";
+import { isCrashReportingEnabled } from "../monitoring/sentry";
 import { MapKeyPanel } from "./MapKeyPanel";
 
 type ActivityTrailPanel = {
@@ -100,6 +101,7 @@ export function AboutSheet({
   const diagnosticsLines = [
     `StormPath ${__APP_VERSION__}${dev ? " (dev)" : ""}`,
     `Plan: ${tierLabel}`,
+    `Crash reporting: ${isCrashReportingEnabled() ? "on (automatic for serious errors)" : "off"}`,
     `Online: ${typeof navigator === "undefined" ? "unknown" : navigator.onLine ? "yes" : "no"}`,
     `Voice: ${settings.voiceGuidanceEnabled ? "on" : "off"}, GPS refresh: ${
       settings.gpsHighRefreshEnabled ? "high" : "normal"
