@@ -145,6 +145,8 @@ export type ApplyRoutesLayerOptions = {
   viewMode: MapViewMode;
   /** Corner PiP: always draw every leg; style like route overview */
   isOverviewPip?: boolean;
+  /** Top-down A/B/C picker: bold selected slot color, dim the other legs */
+  routeComparePicker?: boolean;
 };
 
 export function removeStaleRoutes(
@@ -278,6 +280,7 @@ export function applyRoutesToMap(
   const navigationStarted = opts?.navigationStarted ?? false;
   const viewMode = opts?.viewMode ?? "route";
   const isOverviewPip = opts?.isOverviewPip ?? false;
+  const routeComparePicker = Boolean(opts?.routeComparePicker && viewMode === "topdown");
 
   const hideAltsOnMainDrive = viewMode === "drive" && !isOverviewPip;
   const routesToDraw = hideAltsOnMainDrive
@@ -308,7 +311,12 @@ export function applyRoutesToMap(
     let lineWidth: number;
     let lineOpacity: number;
 
-    if (!navigationStarted) {
+    if (routeComparePicker) {
+      /* Compare sheet: A/B/C slot colors; selected leg pops, others fade */
+      lineColor = slotHex;
+      lineWidth = isFocus ? 10 : 4;
+      lineOpacity = isFocus ? 0.95 : 0.22;
+    } else if (!navigationStarted) {
       /* Planning: selected leg uses A/B/C slot color; others same slot hue, dimmed */
       lineColor = slotHex;
       lineWidth = isFocus ? 7 : isSuggested ? 5 : 4;

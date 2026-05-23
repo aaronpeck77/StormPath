@@ -58,19 +58,8 @@ import {
 
 import type { MapFocusRequest, MapViewMode } from "./driveMapTypes";
 import { MAIN_MAP_ROUTE_PADDING } from "./driveMapTypes";
-import { formatEtaDuration } from "./formatEta";
 export type { MapFocusRequest, MapViewMode };
 export { MAIN_MAP_ROUTE_PADDING };
-
-/** Map pins during traffic-bypass compare (ETA + savings vs A). */
-export type TrafficBypassCompareCallout = {
-  routeId: string;
-  lngLat: LngLat;
-  slot: "A" | "B" | "C";
-  etaMinutes: number;
-  /** `null` for A. Positive = fewer minutes than A (time saved). */
-  savingsVsAMinutes: number | null;
-};
 
 const MAP_STYLE_DAY = "mapbox://styles/mapbox/streets-v12";
 
@@ -606,14 +595,10 @@ type Props = {
     east: number;
     north: number;
   }) => void;
-  /** Traffic bypass compare: pins on each route with ETA / savings — only in topdown compare. */
-  trafficBypassCompareCallouts?: TrafficBypassCompareCallout[] | null;
-  /** Highlights the map flag that matches the bottom-panel selection before confirm. */
-  trafficBypassCompareSelectedRouteId?: string | null;
-  onTrafficBypassCompareFlagPick?: (routeId: string) => void;
+  /** Traffic bypass compare: show all A/B/C legs with picker styling (no map ETA flags). */
+  trafficBypassCompareActive?: boolean;
   /**
-   * Hazard the user is being asked to plan around — drives both the on-map pin and the tighter
-   * compare camera fit (so A/B/C visibly fork at the hazard instead of an end-to-end overview).
+   * Hazard the user is being asked to plan around — drives the on-map pin and compare camera fit.
    */
   trafficBypassCompareHazardLngLat?: LngLat | null;
   /** Plus: sparse GPS dots over weeks/months (see About → Activity trail). */
@@ -784,49 +769,6 @@ function makeBypassHazardEl(): HTMLDivElement {
   return wrap;
 }
 
-function trafficBypassSavingsLabel(savingsVsAMinutes: number | null): string {
-  if (savingsVsAMinutes == null) return "Baseline";
-  const d = Math.round(savingsVsAMinutes);
-  if (d >= 1) return `−${formatEtaDuration(d)} vs A`;
-  if (d <= -1) return `+${formatEtaDuration(-d)} vs A`;
-  return "Same as A";
-}
-
-function makeTrafficBypassCompareFlagEl(
-  slot: "A" | "B" | "C",
-  etaMinutes: number,
-  savingsVsAMinutes: number | null,
-  routeId: string,
-  selectedRouteId: string | null,
-  onPick: (id: string) => void
-): HTMLButtonElement {
-  const el = document.createElement("button");
-  el.type = "button";
-  const selected = selectedRouteId != null && selectedRouteId === routeId;
-  el.className = `map-bypass-compare-flag map-bypass-compare-flag--${slot.toLowerCase()}${
-    selected ? " map-bypass-compare-flag--selected" : ""
-  }`;
-  el.setAttribute("aria-label", `Route ${slot}, about ${formatEtaDuration(etaMinutes)}`);
-  const slotEl = document.createElement("span");
-  slotEl.className = "map-bypass-compare-flag__slot";
-  slotEl.textContent = slot;
-  const etaEl = document.createElement("span");
-  etaEl.className = "map-bypass-compare-flag__eta";
-  etaEl.textContent = `~${formatEtaDuration(etaMinutes)}`;
-  const saveEl = document.createElement("span");
-  saveEl.className = "map-bypass-compare-flag__save";
-  saveEl.textContent = trafficBypassSavingsLabel(savingsVsAMinutes);
-  el.appendChild(slotEl);
-  el.appendChild(etaEl);
-  el.appendChild(saveEl);
-  el.addEventListener("click", (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    onPick(routeId);
-  });
-  return el;
-}
-
 export function DriveMap({
   routes,
   lineFocusId,
@@ -864,9 +806,7 @@ export function DriveMap({
   onDriveCameraBearingDeg,
   stormBrowseBoundsReporting = false,
   onStormBrowseBoundsChange,
-  trafficBypassCompareCallouts = null,
-  trafficBypassCompareSelectedRouteId = null,
-  onTrafficBypassCompareFlagPick,
+  trafficBypassCompareActive = false,
   trafficBypassCompareHazardLngLat = null,
   activityTrailGeoJson = null,
   activityTrailPlanningBounds = null,
@@ -879,10 +819,7 @@ export function DriveMap({
   const puckMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const destMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const poiHoverMarkerRef = useRef<mapboxgl.Marker | null>(null);
-  const bypassCompareMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const bypassHazardMarkerRef = useRef<mapboxgl.Marker | null>(null);
-  const onTrafficBypassCompareFlagPickRef = useRef(onTrafficBypassCompareFlagPick);
-  onTrafficBypassCompareFlagPickRef.current = onTrafficBypassCompareFlagPick;
   const savedMarkerMapRef = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLButtonElement }>>(new Map());
   const onSavedClickRef = useRef(onSavedPlaceClick);
   onSavedClickRef.current = onSavedPlaceClick;
@@ -1754,41 +1691,8 @@ export function DriveMap({
     }
   }, [mapReady, destLngLat]);
 
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady) return;
-    for (const m of bypassCompareMarkersRef.current) {
-      m.remove();
-    }
-    bypassCompareMarkersRef.current = [];
-    const callouts = trafficBypassCompareCallouts;
-    const onPick = onTrafficBypassCompareFlagPickRef.current;
-    if (!callouts?.length || !onPick) return;
-    for (const c of callouts) {
-      const el = makeTrafficBypassCompareFlagEl(
-        c.slot,
-        c.etaMinutes,
-        c.savingsVsAMinutes,
-        c.routeId,
-        trafficBypassCompareSelectedRouteId ?? null,
-        onPick
-      );
-      const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" })
-        .setLngLat(c.lngLat)
-        .addTo(map);
-      bypassCompareMarkersRef.current.push(marker);
-    }
-    return () => {
-      for (const m of bypassCompareMarkersRef.current) {
-        m.remove();
-      }
-      bypassCompareMarkersRef.current = [];
-    };
-  }, [mapReady, trafficBypassCompareCallouts, trafficBypassCompareSelectedRouteId]);
-
   /**
-   * Hazard pin during the bypass-compare flow — a pulsing red dot at the impact's lng/lat so the
-   * driver can see what they're being asked to plan around alongside the A/B/C ETA flags.
+   * Hazard pin during the bypass-compare flow — a pulsing red dot at the impact's lng/lat.
    */
   useEffect(() => {
     const map = mapRef.current;
@@ -1839,6 +1743,7 @@ export function DriveMap({
           navigationStarted,
           viewMode,
           isOverviewPip: false,
+          routeComparePicker: trafficBypassCompareActive,
         }
       );
       liftTrafficThenRoutesThenHits(
@@ -1875,6 +1780,7 @@ export function DriveMap({
           navigationStarted,
           viewMode,
           isOverviewPip: false,
+          routeComparePicker: trafficBypassCompareActive,
         }
       );
       liftTrafficThenRoutesThenHits(
@@ -1898,6 +1804,7 @@ export function DriveMap({
     orderedRouteIds,
     navigationStarted,
     viewMode,
+    trafficBypassCompareActive,
   ]);
 
   useEffect(() => {
@@ -2723,7 +2630,7 @@ export function DriveMap({
     if (userExploringRef.current) return;
 
     /* Route compare: show all three end-to-end options from you → destination (not a tight jam crop). */
-    if (trafficBypassCompareCallouts?.length) {
+    if (trafficBypassCompareActive) {
       prevTopdownRef.current = true;
       const b = new mapboxgl.LngLatBounds();
       b.extend(userLngLat);
@@ -2772,7 +2679,7 @@ export function DriveMap({
     topdownZoomRef,
     mapResumeTick,
     trafficBypassCompareHazardLngLat,
-    trafficBypassCompareCallouts,
+    trafficBypassCompareActive,
     destLngLat,
     routes,
   ]);

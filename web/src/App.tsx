@@ -169,7 +169,6 @@ import {
 import { Coachmarks } from "./ui/Coachmarks";
 import { resetAllCoachmarks } from "./ui/coachmarks/firstLaunchSteps";
 import { TrafficBypassComparePanel } from "./ui/TrafficBypassComparePanel";
-import type { TrafficBypassCompareCallout } from "./ui/DriveMap";
 import { pointAlongPolyline } from "./ui/geometryAlong";
 import { NWS_REQUEST_USER_AGENT } from "./config/nwsUserAgent";
 import {
@@ -265,6 +264,14 @@ type TrafficBypassCompareState = {
   /** Distance from the user along the active route to the hazard (m); drives the tight fit. */
   hazardAlongMeters: number | null;
 };
+
+/** Pre-select the active leg when opening A/B/C compare so Go works without an extra tap. */
+function defaultRouteCompareSelection(guidanceRouteId: string): "r-a" | "r-b" | "r-c" {
+  if (guidanceRouteId === "r-a" || guidanceRouteId === "r-b" || guidanceRouteId === "r-c") {
+    return guidanceRouteId;
+  }
+  return "r-a";
+}
 
 const MB_TRAFFIC_LINE_SNAP_NOTICE = "Mapbox traffic-aware line";
 /** Route mode: refresh B/C alternates only (primary leg unchanged). */
@@ -2798,29 +2805,6 @@ export default function App() {
   }, [trafficBypassCompare, viewMode, guidanceRouteId, plan.routes]);
   const progressRailRoute = guidanceRoute ?? driveMapRoutes[0] ?? plan.routes[0];
 
-  /** Map pins during bypass compare — stagger along each polyline so labels don’t stack. */
-  const trafficBypassCompareCallouts = useMemo((): TrafficBypassCompareCallout[] | null => {
-    if (!trafficBypassCompare) return null;
-    const { etaA, etaB, etaC, hasB, hasC } = trafficBypassCompare;
-    const frac: Record<string, number> = { "r-a": 0.36, "r-b": 0.44, "r-c": 0.52 };
-    const out: TrafficBypassCompareCallout[] = [];
-    for (const r of plan.routes) {
-      if (r.id !== "r-a" && r.id !== "r-b" && r.id !== "r-c") continue;
-      if (r.id === "r-b" && !hasB) continue;
-      if (r.id === "r-c" && !hasC) continue;
-      const g = r.geometry;
-      if (!g?.length) continue;
-      const t = frac[r.id] ?? 0.4;
-      const p = pointAlongPolyline(g, t);
-      if (!p) continue;
-      const eta = r.id === "r-a" ? etaA : r.id === "r-b" ? etaB! : etaC!;
-      const slot: "A" | "B" | "C" = r.id === "r-a" ? "A" : r.id === "r-b" ? "B" : "C";
-      const savingsVsAMinutes = r.id === "r-a" ? null : etaA - eta;
-      out.push({ routeId: r.id, lngLat: p, slot, etaMinutes: eta, savingsVsAMinutes });
-    }
-    return out.length ? out : null;
-  }, [trafficBypassCompare, plan.routes]);
-
   const postedMph = estimatePostedSpeedMph(speedMph, turnSteps, activeTurnIndex);
 
   /** Cruise demo puck along the active route polyline at ~posted speed (see `toggleDemoPlaybackPlaying`). */
@@ -3947,13 +3931,13 @@ export default function App() {
       hasB: true,
       hasC: true,
       confidence: "medium",
-      selectedLeg: null,
+      selectedLeg: defaultRouteCompareSelection(guidanceRouteId),
       hazardLngLat: pointAtAlongMeters(gr.geometry, mockJamAlong),
       hazardAlongMeters: mockJamAlong,
     });
     setViewMode("topdown");
     setFitTrigger((n) => n + 1);
-  }, [demoBypassTrafficJamPlus, navigationStarted, guidanceRoute, viewMode, userAlongGuidanceM]);
+  }, [demoBypassTrafficJamPlus, navigationStarted, guidanceRoute, viewMode, userAlongGuidanceM, guidanceRouteId]);
 
   const handleGo = () => {
     const chosen = orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? primaryRouteId;
@@ -4048,7 +4032,7 @@ export default function App() {
         hasB,
         hasC,
         confidence: opts.confidence ?? "medium",
-        selectedLeg: null,
+        selectedLeg: defaultRouteCompareSelection(guidanceRouteId),
         hazardLngLat: opts.hazardLngLat,
         hazardAlongMeters: opts.hazardAlongMeters,
       };
@@ -4217,7 +4201,7 @@ export default function App() {
         hasB: Boolean(byId.get("r-b")?.geometry && byId.get("r-b")!.geometry.length >= 2),
         hasC: Boolean(byId.get("r-c")?.geometry && byId.get("r-c")!.geometry.length >= 2),
         confidence: trafficBypassContext?.confidence ?? "medium",
-        selectedLeg: null,
+        selectedLeg: defaultRouteCompareSelection(guidanceRouteId),
         hazardLngLat,
         hazardAlongMeters: jamAlongM,
       });
@@ -4574,13 +4558,7 @@ export default function App() {
             onDriveCameraBearingDeg={handleDriveCameraBearingDeg}
             stormBrowseBoundsReporting={false}
             onStormBrowseBoundsChange={undefined}
-            trafficBypassCompareCallouts={trafficBypassCompareCallouts}
-            trafficBypassCompareSelectedRouteId={trafficBypassCompare?.selectedLeg ?? null}
-            onTrafficBypassCompareFlagPick={
-              trafficBypassCompare
-                ? (id) => handleTrafficBypassCompareSelect(id as "r-a" | "r-b" | "r-c")
-                : undefined
-            }
+            trafficBypassCompareActive={Boolean(trafficBypassCompare)}
             trafficBypassCompareHazardLngLat={trafficBypassCompare?.hazardLngLat ?? null}
             activityTrailGeoJson={activityTrailGeoJsonForMap}
             activityTrailPlanningBounds={activityTrailPlanningBounds}
