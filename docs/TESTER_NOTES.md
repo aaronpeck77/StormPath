@@ -53,7 +53,6 @@ How to report:
 
 Known limitations in this build:
 - US-only weather alerts (NWS).
-- Subscription / Plus billing isn't real yet — everyone on this build has Plus.
 - Some weather data lags up to ~10 min behind real conditions.
 - Serious app errors may be reported automatically to the developer (no personal info). Please still email feedback for anything confusing or wrong.
 ```
@@ -100,7 +99,6 @@ That sends a message plus a small build-config dump (no personal info — just a
 ### Known limitations in this build
 
 - **US weather only.** Severe-weather alerts come from the US National Weather Service. The app works outside the US, but you won't see NWS alerts there.
-- **Billing isn't real yet.** Every TestFlight build is Plus-enabled so you can test the full app. Subscription/upgrade buttons in About are placeholders — don't tap them expecting a real checkout.
 - **Some weather data lags.** Local-weather readings refresh every ~10 minutes. Severe-weather polygons refresh more often.
 - **Don't use it while driving.** Look, plan, then go. If you need to change settings mid-trip, pull over.
 
@@ -113,7 +111,7 @@ Location is used in-app only — for showing your puck, routing, and pulling wea
 ## Operational reminders (for me)
 
 - TestFlight builds: `cd web && npm run build:ios:testflight` then archive in Xcode.
-- Plus is forced on for testers via [.env.testflight](../web/.env.testflight) — do **not** ship that env to App Store.
+- TestFlight builds use [.env.testflight](../web/.env.testflight) (full features, no “Test pay tier” dev panel). Do **not** ship that env to the public App Store.
 - Coachmark replay key: About → Help → Show tips again.
 - Force-clear all coachmarks for a clean tester first-launch: in Safari Web Inspector (`http://localhost:5173` in dev),
   `Object.keys(localStorage).filter(k=>k.startsWith('stormpath:coachmark:')).forEach(k=>localStorage.removeItem(k))`.
