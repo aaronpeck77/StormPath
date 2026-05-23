@@ -51,6 +51,8 @@ import {
   isDataSaverMode,
   LS_DATA_SAVER,
   readDataSaverSetting,
+  readDataSaverHintDismissed,
+  dismissDataSaverHint,
 } from "./utils/dataSaver";
 import {
   formatCoordsAreaLabel,
@@ -492,6 +494,7 @@ export default function App() {
   });
   const [settingRadarEnabled, setSettingRadarEnabled] = useState(readRadarSettingOn);
   const [settingDataSaverEnabled, setSettingDataSaverEnabled] = useState(readDataSaverSetting);
+  const [dataSaverHintDismissed, setDataSaverHintDismissed] = useState(readDataSaverHintDismissed);
   const appForeground = useAppForeground();
   const dataSaverMode = isDataSaverMode(settingDataSaverEnabled);
   const [settingVoiceGuidanceEnabled, setSettingVoiceGuidanceEnabled] = useState(() => {
@@ -2016,6 +2019,11 @@ export default function App() {
 
   const guidanceRouteId = lineFocusId || primaryRouteId;
   const guidanceRoute = plan.routes.find((r) => r.id === guidanceRouteId);
+  const showDataSaverHint =
+    isPlus &&
+    !dataSaverMode &&
+    !dataSaverHintDismissed &&
+    Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
   const turnSteps = guidanceRoute?.turnSteps ?? [];
   const guidanceSlice = snap.routes.find((r) => r.routeId === guidanceRouteId);
 
@@ -4638,6 +4646,17 @@ export default function App() {
                       nwsForecastLoading={stormLoading}
                       nwsForecastError={stormError}
                       onOpenCorridorForecast={isPlus ? openCorridorForecast : undefined}
+                      dataSaverHint={
+                        showDataSaverHint
+                          ? {
+                              onOpenSettings: () => setAboutOpen(true),
+                              onDismiss: () => {
+                                dismissDataSaverHint();
+                                setDataSaverHintDismissed(true);
+                              },
+                            }
+                          : null
+                      }
                     />
                   ) : isPlus ? (
                     <div className="nav-top-activity-pill-wrap nav-top-activity-pill-wrap--solo">

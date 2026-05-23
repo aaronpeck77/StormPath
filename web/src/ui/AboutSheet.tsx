@@ -353,7 +353,8 @@ export function AboutSheet({
               <span>
                 <strong>Data saver</strong> — slower NWS/traffic refresh, one route leg at a time while
                 planning, static radar (no animation), and Tomorrow.io only when the advisory or corridor
-                forecast is open. Also follows your phone&apos;s &quot;use less data&quot; when set.
+                forecast is open. Good for long drives on cellular data. Also follows your phone&apos;s
+                &quot;use less data&quot; when set.
               </span>
             </label>
 

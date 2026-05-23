@@ -3845,6 +3845,27 @@
   color: #f1f5f9;
 }
 
+.storm-advisory-bar__suggestion-row-dismiss {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.storm-advisory-bar__suggestion-row-dismiss:hover,
+.storm-advisory-bar__suggestion-row-dismiss:focus-visible {
+  color: #e2e8f0;
+}
+
+.storm-advisory-bar__suggestion-row--data-saver .storm-advisory-bar__suggestion-label {
+  color: #7dd3fc;
+}
+
 /* ????? Storm strip (Stage C) ????? */
 .route-storm-strip {
   margin: 4px 0 8px;

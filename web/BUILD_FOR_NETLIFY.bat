@@ -14,7 +14,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo  Step 1/3 - Installing dependencies (first time can take a minute)...
+echo  Step 1/4 - Installing dependencies (first time can take a minute)...
 call npm install
 if errorlevel 1 (
     echo.
@@ -24,11 +24,11 @@ if errorlevel 1 (
 )
 
 echo.
-echo  Step 2/3 - Building the website into the "dist" folder...
-call npm run build
+echo  Step 2/4 - Building + verifying dist for Netlify...
+call npm run build:netlify
 if errorlevel 1 (
     echo.
-    echo  Build failed. Copy the text above and ask for help.
+    echo  Build or Netlify verification failed. Do NOT deploy until this passes.
     pause
     exit /b 1
 )
@@ -47,21 +47,43 @@ if errorlevel 8 (
 )
 
 echo.
-echo  Step 4/4 - Done.
+echo  Step 4/4 - Pre-flight checklist
+findstr /C:"api.tomorrow.io" "%NETLIFY_OUT%\_headers" >nul
+if errorlevel 1 (
+    echo  ERROR: _headers in deploy folder is missing api.tomorrow.io
+    pause
+    exit /b 1
+)
+if not exist "%NETLIFY_OUT%\icons\icon-192.png" (
+    echo  ERROR: icons\icon-192.png missing from deploy folder
+    pause
+    exit /b 1
+)
+if not exist "%NETLIFY_OUT%\_deploy-check.txt" (
+    echo  ERROR: _deploy-check.txt missing — run build:netlify again
+    pause
+    exit /b 1
+)
+
 echo.
 echo  ------------------------------------------------------------
-echo   NEXT: File Explorer opens the folder to use for Netlify Drop.
+echo   READY TO DEPLOY
 echo.
-echo   USE THIS FOLDER if OneDrive shows "sync pending" on \dist:
-echo   %NETLIFY_OUT%
+echo   1. Netlify - site stormpath2 - Deploys - drag THIS folder:
+echo      %NETLIFY_OUT%
 echo.
-echo   Your project \dist is still here for local checks:
-echo   %~dp0dist
+echo   2. After deploy, verify in your browser:
+echo      https://stormpath2.netlify.app/_deploy-check.txt
+echo      ^(must show csp_tomorrow_io=yes^)
 echo.
-echo   Why pending? OneDrive re-uploads dist after every build; temp is faster.
+echo   3. Hard-refresh the app ^(Ctrl+Shift+R^) and check the console.
 echo.
-echo   Live site after deploy: https://stormpath2.netlify.app
-echo   (see docs\NETLIFY_HOSTING.md in the repo root)
+echo   If CSP errors persist AFTER _deploy-check.txt is correct:
+echo   Netlify - stormpath2 - Site configuration - HTTP headers
+echo   Remove any Content-Security-Policy set in the dashboard
+echo   ^(dashboard headers override _headers from your upload^).
+echo.
+echo   Do NOT use an old Temp folder from a previous run.
 echo  ------------------------------------------------------------
 echo.
 explorer "%NETLIFY_OUT%"

@@ -1,12 +1,46 @@
 import { isSaveDataPreferred } from "./fetchResilient";
 
 export const LS_DATA_SAVER = "stormpath-setting-data-saver-enabled";
+export const LS_DATA_SAVER_HINT_DISMISSED = "stormpath-data-saver-hint-dismissed";
+
+/**
+ * Default for new installs when the user has never toggled Data saver in About.
+ * Keep false while onboarding — best first-run experience. If API cost dominates at
+ * hundreds of users, flip to true so background polling starts conservative.
+ */
+export const DATA_SAVER_DEFAULT_ENABLED = false;
+
+/** Collapsed advisory rotator — short; expanded panel uses {@link DATA_SAVER_ADVISORY_DETAIL}. */
+export const DATA_SAVER_ADVISORY_TIP =
+  "Tip: Data saver in About — less cellular data on long drives.";
+
+export const DATA_SAVER_ADVISORY_DETAIL =
+  "Long trip on cellular? Turn on Data saver in About to slow background refreshes and use less data.";
 
 export function readDataSaverSetting(): boolean {
   try {
-    return localStorage.getItem(LS_DATA_SAVER) === "1";
+    const v = localStorage.getItem(LS_DATA_SAVER);
+    if (v === "1") return true;
+    if (v === "0") return false;
+    return DATA_SAVER_DEFAULT_ENABLED;
+  } catch {
+    return DATA_SAVER_DEFAULT_ENABLED;
+  }
+}
+
+export function readDataSaverHintDismissed(): boolean {
+  try {
+    return localStorage.getItem(LS_DATA_SAVER_HINT_DISMISSED) === "1";
   } catch {
     return false;
+  }
+}
+
+export function dismissDataSaverHint(): void {
+  try {
+    localStorage.setItem(LS_DATA_SAVER_HINT_DISMISSED, "1");
+  } catch {
+    /* ignore */
   }
 }
 

@@ -25,6 +25,10 @@ import { AdvisoryLocalForecast } from "./AdvisoryLocalForecast";
 import type { CurrentNowcast } from "../services/openWeatherClient";
 import { displayText } from "../utils/displayText";
 import {
+  DATA_SAVER_ADVISORY_DETAIL,
+  DATA_SAVER_ADVISORY_TIP,
+} from "../utils/dataSaver";
+import {
   buildLocalForecastBannerItem,
   latestForecastFetchedAtMs,
   truncateBannerText,
@@ -214,6 +218,11 @@ export type StormAdvisoryBarProps = SharedProps & {
   nwsForecastError?: string | null;
   /** Open full corridor forecast sheet (route-tied timeline). */
   onOpenCorridorForecast?: () => void;
+  /** Plus: suggest Data saver in About (rotator + expanded row until dismissed). */
+  dataSaverHint?: {
+    onOpenSettings: () => void;
+    onDismiss: () => void;
+  } | null;
 };
 
 
@@ -320,6 +329,7 @@ export function StormAdvisoryBar({
   nwsForecastLoading = false,
   nwsForecastError = null,
   onOpenCorridorForecast,
+  dataSaverHint = null,
 }: StormAdvisoryBarProps) {
   if (!featureEnabled) return null;
 
@@ -806,6 +816,15 @@ export function StormAdvisoryBar({
       if (p.id === "sitebible") continue;
       out.push(previewItem({ badge: "Info", raw: bannerMsg(displayText(p.text)) }));
     }
+    if (dataSaverHint) {
+      out.push(
+        previewItem({
+          badge: "Tip",
+          raw: bannerMsg(DATA_SAVER_ADVISORY_TIP, BANNER_TICKER_MAX),
+          tone: "info",
+        })
+      );
+    }
     if (out.length === 0) out.push(previewItem({ badge: null, raw: defaultPreviewText, tone: "clear" }));
     return out;
   }, [
@@ -827,6 +846,7 @@ export function StormAdvisoryBar({
     nowcastLine,
     localForecastBanner,
     localForecastNwsAlerts,
+    dataSaverHint,
   ]);
   useEffect(() => {
     setPreviewIdx(0);
@@ -1267,6 +1287,32 @@ export function StormAdvisoryBar({
                       {betterRouteRow.actionLabel ?? "Open"}
                     </button>
                   )}
+                </div>
+              )}
+
+              {dataSaverHint && (
+                <div
+                  className="storm-advisory-bar__suggestion-row storm-advisory-bar__suggestion-row--data-saver"
+                  role="note"
+                >
+                  <span className="storm-advisory-bar__suggestion-label">Data saver</span>
+                  <span className="storm-advisory-bar__suggestion-text">{DATA_SAVER_ADVISORY_DETAIL}</span>
+                  <button
+                    type="button"
+                    className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
+                    onClick={dataSaverHint.onOpenSettings}
+                  >
+                    About
+                  </button>
+                  <button
+                    type="button"
+                    className="storm-advisory-bar__suggestion-row-dismiss"
+                    onClick={dataSaverHint.onDismiss}
+                    aria-label="Dismiss data saver tip"
+                    title="Dismiss"
+                  >
+                    ×
+                  </button>
                 </div>
               )}
 
