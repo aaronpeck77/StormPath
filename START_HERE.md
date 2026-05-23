@@ -90,7 +90,7 @@ Make sure **Part 1** (Node) and **Part 2** (`.env` with your keys) are done. The
 4. Go to **Netlify Drop** (or your other app) and **drag that `dist` folder** the same way you do for other projects.  
    - If the site only accepts a **zip**: open **`dist`**, select **everything inside** (all files and the `assets` folder), right‑click → **Compress to ZIP file**, then upload that zip.
 
-5. Netlify will show you a link like **`https://something.netlify.app`**. Open that link **on your phone** to use the app.
+5. Netlify site **stormpath2** → **https://stormpath2.netlify.app** (see `docs/NETLIFY_HOSTING.md`). Open that link **on your phone** to use the web app, or use TestFlight for the native app.
 
 **You never need to open “the files” and run commands yourself** — only double‑click `BUILD_FOR_NETLIFY.bat`. If anything errors, copy the **red or white text** from the black window (not your secret keys) and ask for help.
 
@@ -124,7 +124,7 @@ npm run dev -- --host
 ## If something goes wrong
 
 - **Works on PC but not on phone (local testing)** — You must use the **Network** `http://192.168…:5173` address on the phone, not `localhost`. PC and phone must be on the **same Wi‑Fi**. Allow Node through **Windows Firewall** (see Part 3).
-- **Netlify opens on phone but map is blank** — In [Mapbox Account → Access tokens](https://account.mapbox.com/access-tokens/), edit your token’s **URL restrictions** and add your site, e.g. `https://yoursite.netlify.app/*` (or turn restrictions off while testing).
+- **Netlify opens on phone but map is blank** — In [Mapbox Account → Access tokens](https://account.mapbox.com/access-tokens/), edit your token’s **URL restrictions** and add `https://stormpath2.netlify.app/*` (or turn restrictions off while testing).
 - **“npm is not recognized”** — Node didn’t install or you need to **close and reopen** Cursor (and the terminal) after installing Node.
 - **Map is blank** — Open **`web/.env`** and check that **`VITE_MAPBOX_TOKEN=`** has your Mapbox key after the `=`. Save, then run **`RUN_APP.bat`** again.
 - **Drive times** — OpenRouteService plans the path and a baseline time; **Mapbox** (same token as the map) supplies **live traffic** on that path. Weather samples use **OpenWeather** if that key is set.

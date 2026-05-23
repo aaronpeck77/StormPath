@@ -20,7 +20,7 @@ Do **not** ship `VITE_PAY_TIER=plus` on the public customer binary.
 - [ ] Screenshots + description for required iPhone sizes
 - [ ] **App Privacy** questionnaire in App Store Connect matches location + diagnostics
 - [ ] **Export compliance** — `ITSAppUsesNonExemptEncryption` is `false` in `Info.plist` (standard HTTPS only)
-- [ ] Support URL + privacy policy URLs live (bundled or hosted)
+- [ ] Support URL + privacy policy URLs live — **https://stormpath2.netlify.app** ([`NETLIFY_HOSTING.md`](NETLIFY_HOSTING.md))
 - [ ] Test **Basic** build on device (`npm run build` + archive or separate CI job)
 
 ## Already in the project

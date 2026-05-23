@@ -2,7 +2,7 @@
 
 **New to this?** Open [`START_HERE.md`](START_HERE.md) — step-by-step, no coding background required.
 
-**Closed beta?** No Mac: [`docs/GITHUB_TESTFLIGHT_ONLY.md`](docs/GITHUB_TESTFLIGHT_ONLY.md) · Checklist: [`docs/BETA_READINESS.md`](docs/BETA_READINESS.md) · Crashes: [`docs/SENTRY_SETUP.md`](docs/SENTRY_SETUP.md) · Testers: [`docs/TESTER_NOTES.md`](docs/TESTER_NOTES.md).
+**Closed beta?** No Mac: [`docs/GITHUB_TESTFLIGHT_ONLY.md`](docs/GITHUB_TESTFLIGHT_ONLY.md) · Netlify: [`docs/NETLIFY_HOSTING.md`](docs/NETLIFY_HOSTING.md) · Checklist: [`docs/BETA_READINESS.md`](docs/BETA_READINESS.md) · Crashes: [`docs/SENTRY_SETUP.md`](docs/SENTRY_SETUP.md) · Testers: [`docs/TESTER_NOTES.md`](docs/TESTER_NOTES.md).
 
 Driving-first, multi-route navigation with a **fused** situation layer (traffic, weather, hazards — radar/storm feeds to be wired next). Product intent: [`docs/NEXT_APP_VISION.md`](docs/NEXT_APP_VISION.md).
 

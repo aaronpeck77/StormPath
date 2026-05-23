@@ -1,5 +1,5 @@
 @echo off
-title Build website folder for Netlify
+title Build website folder for Netlify (site: stormpath2)
 cd /d "%~dp0"
 
 where npm >nul 2>nul
@@ -59,6 +59,9 @@ echo   Your project \dist is still here for local checks:
 echo   %~dp0dist
 echo.
 echo   Why pending? OneDrive re-uploads dist after every build; temp is faster.
+echo.
+echo   Live site after deploy: https://stormpath2.netlify.app
+echo   (see docs\NETLIFY_HOSTING.md in the repo root)
 echo  ------------------------------------------------------------
 echo.
 explorer "%NETLIFY_OUT%"

@@ -1,4 +1,9 @@
 import { Capacitor } from "@capacitor/core";
+import {
+  STORMPATH_PUBLIC_PRIVACY_URL,
+  STORMPATH_PUBLIC_SUPPORT_URL,
+  STORMPATH_PUBLIC_TERMS_URL,
+} from "./publicSite";
 
 /** Vite injects only vars prefixed with VITE_. Never commit real keys — use `.env.local`. */
 /** Plus: see `billing/payFeatures.ts` and `docs/PAY_TIERS.md` (dev server defaults to Plus). */
@@ -31,9 +36,14 @@ export function getWebEnv() {
      * Native apps always use `https://api.weather.gov` unless overridden (see `computeNwsApiBase`).
      */
     nwsApiBase: computeNwsApiBase(),
-    privacyPolicyUrl: (import.meta.env.VITE_PRIVACY_POLICY_URL as string | undefined)?.trim() ?? "",
-    termsUrl: (import.meta.env.VITE_TERMS_URL as string | undefined)?.trim() ?? "",
-    supportUrl: (import.meta.env.VITE_SUPPORT_URL as string | undefined)?.trim() || "/support.html",
+    privacyPolicyUrl:
+      (import.meta.env.VITE_PRIVACY_POLICY_URL as string | undefined)?.trim() ||
+      STORMPATH_PUBLIC_PRIVACY_URL,
+    termsUrl:
+      (import.meta.env.VITE_TERMS_URL as string | undefined)?.trim() || STORMPATH_PUBLIC_TERMS_URL,
+    supportUrl:
+      (import.meta.env.VITE_SUPPORT_URL as string | undefined)?.trim() ||
+      STORMPATH_PUBLIC_SUPPORT_URL,
     /** Default inbox when `VITE_SUPPORT_EMAIL` is unset (override in `.env` / host env if needed). */
     supportEmail:
       (import.meta.env.VITE_SUPPORT_EMAIL as string | undefined)?.trim() || "stormpath@yahoo.com",
