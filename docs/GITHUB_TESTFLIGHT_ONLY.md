@@ -70,6 +70,7 @@ Build number = GitHub run number (always increases).
 | `APP_STORE_CONNECT_API_KEY_ID` | App Store Connect API key ID |
 | `APP_STORE_CONNECT_ISSUER_ID` | Issuer ID (same Keys page) |
 | `APP_STORE_CONNECT_API_KEY_CONTENT` | Contents of the `.p8` file (PEM or base64) |
+| `APP_STORE_CONNECT_APPLE_ID` | *(Recommended)* Numeric **Apple ID** for StormPath — App Store Connect → your app → **App Information** → **Apple ID** (digits only). Fixes Xcode 26 uploads that “succeed” in GitHub but never appear in TestFlight. |
 | `VITE_SENTRY_DSN` | Sentry DSN for automatic crash reports ([`SENTRY_SETUP.md`](SENTRY_SETUP.md)) — **recommended** |
 
 You said API/signing secrets are already set — if builds were reaching TestFlight before, you’re good. Add `VITE_SENTRY_DSN` when ready (app works without it).  
@@ -95,6 +96,7 @@ Use this after fixing a secret or when Apple didn’t pick up a build.
    - **Signing** — `code sign`, `provisioning`, `certificate`; refresh `.p12` + profile in Secrets.
    - **Xcode / SDK** — workflow selects Xcode 26; if GitHub’s image changes, see workflow step “Select Xcode 26”.
    - **Mapbox / API** — map blank in TestFlight but build succeeded → check `VITE_MAPBOX_TOKEN` secret.
+   - **Green GitHub, no TestFlight build** — known **Xcode 26 altool** bug: workflow uses `--use-old-altool`. Add secret **`APP_STORE_CONNECT_APPLE_ID`** (numeric Apple ID from App Store Connect → App Information). Then **Run workflow** again.
 3. Optional: download **Artifacts** → `StormPath-###.ipa` from a successful run for debugging.
 
 ---

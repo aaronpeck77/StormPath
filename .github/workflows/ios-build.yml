@@ -13,6 +13,7 @@
 #   APP_STORE_CONNECT_API_KEY_ID        Key ID from App Store Connect → Keys
 #   APP_STORE_CONNECT_ISSUER_ID         Issuer ID from the same page
 #   APP_STORE_CONNECT_API_KEY_CONTENT   The .p8 file: paste full PEM *or* base64 of the file
+#   APP_STORE_CONNECT_APPLE_ID          (Recommended) Numeric Apple ID from ASC → App Information
 #   VITE_MAPBOX_TOKEN                   Mapbox public token (map + search + directions)
 #   VITE_TOMORROW_IO_API_KEY            Tomorrow.io (optional but recommended)
 #   VITE_OPENWEATHER_API_KEY            OpenWeather (optional but recommended)
@@ -190,18 +191,41 @@ jobs:
             2>&1 | tee /tmp/export.log
 
       # ── 11. Upload to TestFlight ──────────────────────────────────────────────
+      # Xcode 26 altool can report "success" but the build never appears in ASC unless
+      # --use-old-altool is set (Apple/fastlane #29698). Optional numeric Apple ID:
+      # App Store Connect → StormPath → App Information → Apple ID → secret APP_STORE_CONNECT_APPLE_ID.
       - name: Upload to TestFlight
         env:
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
           APP_STORE_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_APPLE_ID: ${{ secrets.APP_STORE_CONNECT_APPLE_ID }}
         run: |
+          set -euo pipefail
           python3 .github/scripts/write-appstore-connect-key.py
 
-          xcrun altool --upload-app \
-            --type ios \
-            --file "$RUNNER_TEMP/export/App.ipa" \
-            --apiKey "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" \
+          UPLOAD_ARGS=(
+            --upload-app
+            --type ios
+            --file "$RUNNER_TEMP/export/App.ipa"
+            --apiKey "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}"
             --apiIssuer "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}"
+            --use-old-altool
+            --verbose
+          )
+          if [[ -n "${APP_STORE_CONNECT_APPLE_ID:-}" ]]; then
+            UPLOAD_ARGS+=(--apple-id "$APP_STORE_CONNECT_APPLE_ID")
+          fi
+
+          xcrun altool "${UPLOAD_ARGS[@]}" 2>&1 | tee /tmp/altool-upload.log
+
+          if grep -Eiq 'Validation failed|ERROR: \[altool|This bundle is invalid' /tmp/altool-upload.log; then
+            echo "altool reported validation/upload errors — see log above."
+            exit 1
+          fi
+          if ! grep -Eiq 'No errors uploading|Successfully uploaded package' /tmp/altool-upload.log; then
+            echo "altool did not confirm a successful upload — see /tmp/altool-upload.log"
+            exit 1
+          fi
 
       # ── 12. Save IPA as a build artifact (optional — handy for debugging) ────
       - name: Upload IPA artifact
