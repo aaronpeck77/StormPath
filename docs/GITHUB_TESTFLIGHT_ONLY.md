@@ -23,10 +23,11 @@ You **do not need a Mac** if this workflow is set up. GitHub runs the build on A
    - **Actions** tab → workflow **“iOS Build & TestFlight”**
    - Yellow dot = running, green check = success, red X = failed (open the run and search the log for `error:`)
 
-4. **TestFlight on your iPhone** (10–30 minutes after a green build):
+4. **TestFlight on your iPhone** (after a green build **and** Apple processing):
+   - Green GitHub only means the IPA was uploaded. The workflow now **waits until Apple marks the build VALID** (~10–30 min). If that step fails, the build never became installable.
    - Install Apple’s **TestFlight** app
-   - Open the invite / internal build for StormPath
-   - Install the new build when it appears (Apple sometimes shows “Processing” first)
+   - Open StormPath → pull down to refresh → tap **Update** when build **100+** appears
+   - Apple sometimes shows “Processing” in [App Store Connect](https://appstoreconnect.apple.com) first
 
 5. **Invite testers** — [App Store Connect](https://appstoreconnect.apple.com) in any browser (no Mac):
    - Your app → **TestFlight** → add internal/external testers
@@ -95,6 +96,12 @@ Use this after fixing a secret or when Apple didn’t pick up a build.
    - **Signing** — `code sign`, `provisioning`, `certificate`; refresh `.p12` + profile in Secrets.
    - **Xcode / SDK** — workflow selects Xcode 26; if GitHub’s image changes, see workflow step “Select Xcode 26”.
    - **Mapbox / API** — map blank in TestFlight but build succeeded → check `VITE_MAPBOX_TOKEN` secret.
+   - **Green GitHub, phone still on old build (#99)** — open **App Store Connect → StormPath → TestFlight → iOS Builds** (version **1.0.1**). Look for builds **100–105**:
+     - **Missing** → upload never reached Apple; re-run workflow and check the upload log.
+     - **Processing** → wait (can take 30+ min).
+     - **Missing Compliance** → tap build → answer export compliance (should be auto with `ITSAppUsesNonExemptEncryption=false`).
+     - **Invalid / Failed** → open the build for Apple’s email/reason (icon, signing, etc.).
+     - **Ready to Test** but phone stuck on 99 → TestFlight app → pull down to refresh; confirm **Internal Testing** group has the new build enabled.
    - **Upload / API key** — `DECODER routines::unsupported` means the `.p8` secret isn’t valid PEM for Node. The workflow normalizes it automatically; if it still fails, re-save **`APP_STORE_CONNECT_API_KEY_CONTENT`** as the full `.p8` file text (including `BEGIN`/`END` lines) or one line of base64 of that whole file.
 3. Optional: download **Artifacts** → `StormPath-###.ipa` from a successful run for debugging.
 

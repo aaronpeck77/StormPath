@@ -208,6 +208,16 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
+      - name: Log IPA build metadata
+        run: |
+          set -euo pipefail
+          IPA="$RUNNER_TEMP/export/App.ipa"
+          PLIST=$(unzip -p "$IPA" 'Payload/*.app/Info.plist')
+          echo "Expected TestFlight build number: ${{ github.run_number }}"
+          echo "IPA CFBundleVersion: $(echo "$PLIST" | plutil -extract CFBundleVersion raw -)"
+          echo "IPA CFBundleShortVersionString: $(echo "$PLIST" | plutil -extract CFBundleShortVersionString raw -)"
+          echo "IPA CFBundleIdentifier: $(echo "$PLIST" | plutil -extract CFBundleIdentifier raw -)"
+
       - name: Upload to TestFlight
         uses: apple-actions/upload-testflight-build@v4
         with:
@@ -217,7 +227,8 @@ jobs:
           api-key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           api-private-key: ${{ steps.asc_key.outputs.pem }}
           backend: appstore-api
-          wait-for-processing: "false"
+          uses-non-exempt-encryption: "false"
+          wait-for-processing: "true"
 
       # ── 12. Save IPA as a build artifact (optional — handy for debugging) ────
       - name: Upload IPA artifact
