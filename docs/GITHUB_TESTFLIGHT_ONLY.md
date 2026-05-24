@@ -23,11 +23,11 @@ You **do not need a Mac** if this workflow is set up. GitHub runs the build on A
    - **Actions** tab → workflow **“iOS Build & TestFlight”**
    - Yellow dot = running, green check = success, red X = failed (open the run and search the log for `error:`)
 
-4. **TestFlight on your iPhone** (after a green build **and** Apple processing):
-   - Green GitHub only means the IPA was uploaded. The workflow now **waits until Apple marks the build VALID** (~10–30 min). If that step fails, the build never became installable.
+4. **TestFlight on your iPhone** (after a green build, then Apple processing in App Store Connect):
+   - Green GitHub means the IPA was **uploaded** to Apple (~2 min). Apple still needs **10–30+ min** to process before it appears on your phone.
    - Install Apple’s **TestFlight** app
    - Open StormPath → pull down to refresh → tap **Update** when build **100+** appears
-   - Apple sometimes shows “Processing” in [App Store Connect](https://appstoreconnect.apple.com) first
+   - Check [App Store Connect](https://appstoreconnect.apple.com) → **TestFlight** if the phone doesn’t update after 30 min
 
 5. **Invite testers** — [App Store Connect](https://appstoreconnect.apple.com) in any browser (no Mac):
    - Your app → **TestFlight** → add internal/external testers
@@ -70,7 +70,7 @@ Build number = GitHub run number (always increases).
 | `APPLE_TEAM_ID` | 10-character Apple Team ID |
 | `APP_STORE_CONNECT_API_KEY_ID` | App Store Connect API key ID |
 | `APP_STORE_CONNECT_ISSUER_ID` | Issuer ID (same Keys page) |
-| `APP_STORE_CONNECT_API_KEY_CONTENT` | Contents of the `.p8` file (PEM or base64) |
+| `APP_STORE_CONNECT_API_KEY_CONTENT` | Contents of the `.p8` file (PEM or base64) — key must have **App Manager** access (Developer-only keys can upload but get **401** when checking build status) |
 | `VITE_SENTRY_DSN` | Sentry DSN for automatic crash reports ([`SENTRY_SETUP.md`](SENTRY_SETUP.md)) — **recommended** |
 
 You said API/signing secrets are already set — if builds were reaching TestFlight before, you’re good. Add `VITE_SENTRY_DSN` when ready (app works without it).  
@@ -102,6 +102,7 @@ Use this after fixing a secret or when Apple didn’t pick up a build.
      - **Missing Compliance** → tap build → answer export compliance (should be auto with `ITSAppUsesNonExemptEncryption=false`).
      - **Invalid / Failed** → open the build for Apple’s email/reason (icon, signing, etc.).
      - **Ready to Test** but phone stuck on 99 → TestFlight app → pull down to refresh; confirm **Internal Testing** group has the new build enabled.
+   - **401 NOT_AUTHORIZED on upload step** — API key needs **App Manager** (or Admin) role in App Store Connect → Users and Access → Keys. Developer-only keys can upload but cannot poll build status.
    - **Upload / API key** — `DECODER routines::unsupported` means the `.p8` secret isn’t valid PEM for Node. The workflow normalizes it automatically; if it still fails, re-save **`APP_STORE_CONNECT_API_KEY_CONTENT`** as the full `.p8` file text (including `BEGIN`/`END` lines) or one line of base64 of that whole file.
 3. Optional: download **Artifacts** → `StormPath-###.ipa` from a successful run for debugging.
 

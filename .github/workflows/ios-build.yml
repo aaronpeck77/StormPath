@@ -218,6 +218,7 @@ jobs:
           echo "IPA CFBundleShortVersionString: $(echo "$PLIST" | plutil -extract CFBundleShortVersionString raw -)"
           echo "IPA CFBundleIdentifier: $(echo "$PLIST" | plutil -extract CFBundleIdentifier raw -)"
 
+      # Upload succeeds with Developer role; polling build status needs App Manager (401 otherwise).
       - name: Upload to TestFlight
         uses: apple-actions/upload-testflight-build@v4
         with:
@@ -228,7 +229,7 @@ jobs:
           api-private-key: ${{ steps.asc_key.outputs.pem }}
           backend: appstore-api
           uses-non-exempt-encryption: "false"
-          wait-for-processing: "true"
+          wait-for-processing: "false"
 
       # ── 12. Save IPA as a build artifact (optional — handy for debugging) ────
       - name: Upload IPA artifact
