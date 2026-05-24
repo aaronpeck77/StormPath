@@ -27,7 +27,8 @@ const iosIcon = path.join(
   "ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png"
 );
 const iconsDir = path.join(webRoot, "public", "icons");
-const ICON_BG = "#0a0b0d";
+const ICON_BG = "#7EC8EB";
+const SKY_FLATTEN = "#7EC8EB";
 const IOS_SIZE = 1024;
 const MAX_IOS_ICON_BYTES = 512 * 1024;
 
@@ -37,7 +38,7 @@ async function writeIosIcon(buffer, dest, { colorful = false } = {}) {
       fit: "contain",
       background: ICON_BG,
     })
-    .flatten({ background: ICON_BG });
+    .flatten({ background: SKY_FLATTEN });
 
   // Palette mode dulls rainbow gradients — keep truecolor for photo-style masters.
   pipeline = pipeline.png(
