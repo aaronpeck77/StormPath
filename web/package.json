@@ -15,7 +15,8 @@
     "cap:sync": "npx cap sync ios",
     "sync:ios-version": "node scripts/sync-ios-version.mjs",
     "build:ios": "npm run build && npm run sync:ios-version && npx cap sync ios",
-    "build:ios:testflight": "npm run build:testflight && npm run sync:ios-version && npx cap sync ios"
+    "build:ios:testflight": "npm run build:testflight && npm run sync:ios-version && npx cap sync ios",
+    "render:app-icon": "node scripts/render-app-icon.mjs"
   },
   "dependencies": {
     "@capacitor-community/keep-awake": "^8.0.1",
@@ -29,6 +30,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
