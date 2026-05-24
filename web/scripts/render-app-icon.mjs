@@ -1,12 +1,14 @@
 /**
- * Prepare App Store / PWA icons from a master PNG (preferred) or SVG fallback.
+ * Prepare App Store / PWA icons from SVG (default) or a master PNG.
  *
- * Drop YOUR artwork here (1024×1024 PNG or larger square):
+ * Default source:
+ *   web/assets/stormpath-app-icon.svg  →  npm run render:app-icon
+ *
+ * Optional PNG masters:
  *   web/assets/stormpath-app-icon-master.png
- * Committed rainbow artwork from last night:
  *   web/assets/stormpath-app-icon-master-rainbow.png  →  npm run render:app-icon:rainbow
  *
- * iOS requires opaque RGB 1024×1024 — flattened onto #0a0b0d.
+ * iOS requires opaque RGB 1024×1024 — flattened onto sky blue.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -16,19 +18,21 @@ import sharp from "sharp";
 
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const svgPath = path.join(webRoot, "assets", "stormpath-app-icon.svg");
+const mode = process.argv[2]?.trim();
 const masterName =
-  process.argv[2] === "rainbow"
+  mode === "rainbow"
     ? "stormpath-app-icon-master-rainbow.png"
     : process.env.APP_ICON_MASTER?.trim() || "stormpath-app-icon-master.png";
 const masterPath = path.join(webRoot, "assets", masterName);
+const useSvg = mode === "svg";
 const outMaster = path.join(webRoot, "assets", "stormpath-app-icon-1024.png");
 const iosIcon = path.join(
   webRoot,
   "ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png"
 );
 const iconsDir = path.join(webRoot, "public", "icons");
-const ICON_BG = "#7EC8EB";
-const SKY_FLATTEN = "#7EC8EB";
+const ICON_BG = "#5EB8E8";
+const SKY_FLATTEN = "#5EB8E8";
 const IOS_SIZE = 1024;
 const MAX_IOS_ICON_BYTES = 512 * 1024;
 
@@ -97,7 +101,9 @@ async function fromSvg() {
     fitTo: { mode: "width", value: IOS_SIZE },
     background: ICON_BG,
   });
-  const bytes = await writeIosIcon(resvg.render().asPng(), outMaster);
+  const rendered = resvg.render().asPng();
+  fs.writeFileSync(masterPath, rendered);
+  const bytes = await writeIosIcon(rendered, outMaster, { colorful: true });
   fs.copyFileSync(outMaster, iosIcon);
   for (const dest of [
     path.join(iconsDir, "icon-512.png"),
@@ -105,18 +111,27 @@ async function fromSvg() {
   ]) {
     fs.copyFileSync(outMaster, dest);
   }
-  const icon192 = await sharp(outMaster).resize(192, 192).png().toBuffer();
+  const icon192 = await sharp(outMaster)
+    .resize(192, 192, { fit: "contain", background: ICON_BG })
+    .flatten({ background: ICON_BG })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
   fs.writeFileSync(path.join(iconsDir, "icon-192.png"), icon192);
-  console.log(`App icon from SVG fallback (${(bytes / 1024).toFixed(0)} KB):`);
+  console.log(`App icon from SVG (${path.basename(svgPath)}):`);
+  console.log(`  ${masterPath}`);
+  console.log(`  ${outMaster} (${(bytes / 1024).toFixed(0)} KB, opaque RGB)`);
   console.log(`  ${iosIcon}`);
+  console.log(`  ${iconsDir}`);
 }
 
-if (fs.existsSync(masterPath)) {
+if (useSvg && fs.existsSync(svgPath)) {
+  await fromSvg();
+} else if (fs.existsSync(masterPath)) {
   await fromMaster();
 } else if (fs.existsSync(svgPath)) {
-  console.warn(`Master not found (${masterPath}); using SVG fallback.`);
+  console.warn(`Master not found (${masterPath}); using SVG.`);
   await fromSvg();
 } else {
-  console.error("No app icon master PNG or SVG found.");
+  console.error("No app icon SVG or master PNG found.");
   process.exit(1);
 }
