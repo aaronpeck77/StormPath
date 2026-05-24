@@ -192,6 +192,22 @@ jobs:
       # ── 11. Upload to TestFlight ──────────────────────────────────────────────
       # Xcode 26 xcrun altool is unreliable (false success or hard failure). Use the
       # App Store Connect API backend instead of altool/iTMSTransporter.
+      # Normalize the .p8 secret first — GitHub often stores base64/DER; Node crypto needs PEM.
+      - name: Prepare App Store Connect API key
+        id: asc_key
+        env:
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/write-appstore-connect-key.py
+          KEY_FILE="$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_KEY_ID}.p8"
+          {
+            echo 'pem<<EOF'
+            cat "$KEY_FILE"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Upload to TestFlight
         uses: apple-actions/upload-testflight-build@v4
         with:
@@ -199,7 +215,7 @@ jobs:
           app-type: ios
           issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           api-key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          api-private-key: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          api-private-key: ${{ steps.asc_key.outputs.pem }}
           backend: appstore-api
           wait-for-processing: "false"
 

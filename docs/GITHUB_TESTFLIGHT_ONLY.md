@@ -95,7 +95,7 @@ Use this after fixing a secret or when Apple didn’t pick up a build.
    - **Signing** — `code sign`, `provisioning`, `certificate`; refresh `.p12` + profile in Secrets.
    - **Xcode / SDK** — workflow selects Xcode 26; if GitHub’s image changes, see workflow step “Select Xcode 26”.
    - **Mapbox / API** — map blank in TestFlight but build succeeded → check `VITE_MAPBOX_TOKEN` secret.
-   - **Green GitHub, no TestFlight build** — workflow uploads via **App Store Connect API** (not altool). Re-run the workflow; if it still fails, open the **Upload to TestFlight** step log for the API error.
+   - **Upload / API key** — `DECODER routines::unsupported` means the `.p8` secret isn’t valid PEM for Node. The workflow normalizes it automatically; if it still fails, re-save **`APP_STORE_CONNECT_API_KEY_CONTENT`** as the full `.p8` file text (including `BEGIN`/`END` lines) or one line of base64 of that whole file.
 3. Optional: download **Artifacts** → `StormPath-###.ipa` from a successful run for debugging.
 
 ---
