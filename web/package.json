@@ -16,7 +16,8 @@
     "sync:ios-version": "node scripts/sync-ios-version.mjs",
     "build:ios": "npm run build && npm run sync:ios-version && npx cap sync ios",
     "build:ios:testflight": "npm run build:testflight && npm run sync:ios-version && npx cap sync ios",
-    "render:app-icon": "node scripts/render-app-icon.mjs"
+    "render:app-icon": "node scripts/render-app-icon.mjs",
+    "validate:app-icon": "node scripts/validate-app-icon.mjs"
   },
   "dependencies": {
     "@capacitor-community/keep-awake": "^8.0.1",

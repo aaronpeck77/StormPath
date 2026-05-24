@@ -80,6 +80,10 @@ jobs:
         run: npx cap sync ios
         working-directory: web
 
+      - name: Validate iOS app icon (must be 1024×1024)
+        run: npm run validate:app-icon
+        working-directory: web
+
       # ── 5b. Xcode / iOS SDK (App Store minimum) ─────────────────────────────
       # Default selected Xcode on the runner is 16.x (iOS 18 SDK). Apple rejects uploads built with
       # that SDK when they require iOS 26+ / Xcode 26+. Runner images ship Xcode 26.x side-by-side:
