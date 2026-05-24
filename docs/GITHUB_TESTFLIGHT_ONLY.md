@@ -96,7 +96,7 @@ Use this after fixing a secret or when Apple didn’t pick up a build.
    - **Signing** — `code sign`, `provisioning`, `certificate`; refresh `.p12` + profile in Secrets.
    - **Xcode / SDK** — workflow selects Xcode 26; if GitHub’s image changes, see workflow step “Select Xcode 26”.
    - **Mapbox / API** — map blank in TestFlight but build succeeded → check `VITE_MAPBOX_TOKEN` secret.
-   - **Green GitHub, phone still on old build (#99)** — open **App Store Connect → StormPath → TestFlight → iOS Builds** (version **1.0.1**). Look for builds **100–105**:
+   - **Green GitHub, phone still on old build (#99)** — common after the rainbow icon: **RGBA / oversized PNG** passes CI but Apple rejects during processing. Workflow now validates **opaque RGB** icons. Also check **App Store Connect → StormPath → TestFlight → iOS Builds** (version **1.0.1**):
      - **Missing** → upload never reached Apple; re-run workflow and check the upload log.
      - **Processing** → wait (can take 30+ min).
      - **Missing Compliance** → tap build → answer export compliance (should be auto with `ITSAppUsesNonExemptEncryption=false`).
