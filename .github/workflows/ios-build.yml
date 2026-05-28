@@ -146,6 +146,22 @@ jobs:
 
       # ── 8. Build number already set via sync:ios-version (IOS_BUILD_NUMBER) ───
 
+      # ── 8b. Pre-resolve Swift Package Manager dependencies ───────────────────
+      # `Package.resolved` is committed for reproducible local dev, but `npx cap sync ios`
+      # (and the developer's Windows workstation) doesn't update it when plugins are added —
+      # only macOS Xcode does. To keep CI from failing the strict Package.resolved consistency
+      # check that Xcode 16+ enforces during `archive`, refresh it explicitly first.
+      # `-onlyUsePackageVersionsFromResolvedFile=NO` lets SPM re-resolve when Package.swift
+      # has new packages that aren't in the lockfile.
+      - name: Resolve Swift Package dependencies
+        run: |
+          set -o pipefail
+          xcodebuild -resolvePackageDependencies \
+            -project web/ios/App/App.xcodeproj \
+            -scheme App \
+            -onlyUsePackageVersionsFromResolvedFile=NO \
+            2>&1 | tee /tmp/spm-resolve.log
+
       # ── 9. Build the Xcode archive ───────────────────────────────────────────
       - name: Build archive
         run: |
