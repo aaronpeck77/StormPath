@@ -1700,68 +1700,6 @@
   background: #121418;
 }
 
-/* Phase 8.x — diagnostic banner that surfaces mapbox-gl's init state + first error.
- * Pinned to the BOTTOM of the screen (above the home-indicator inset) so it doesn't
- * collide with the storm advisory bar, search bar, or any other top chrome. z-index is
- * pushed above every other overlay in the app so it always wins. Only renders when
- * DriveMap's mapErrorMessage state is non-null, which today is only on TestFlight
- * builds where there's no JS console available. */
-.drive-map__error-banner {
-  position: fixed;
-  top: 50%;
-  left: 12px;
-  right: 12px;
-  transform: translateY(-50%);
-  z-index: 2147483647;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 14px 14px;
-  border-radius: 14px;
-  background: rgba(220, 38, 38, 0.98);
-  color: #ffffff;
-  font-size: 0.85rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  line-height: 1.4;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-  /* Diagnostic-only banner: the map underneath is the real UI. Don't steal touches —
-   * pinch/zoom/pan should pass through the banner to the map. The dismiss button
-   * below re-enables pointer-events so it can still be tapped. */
-  pointer-events: none;
-  user-select: text;
-  -webkit-user-select: text;
-}
-
-.drive-map__error-banner-text {
-  flex: 1 1 auto;
-  word-break: break-word;
-  white-space: pre-line;
-  font-family:
-    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
-    monospace;
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-.drive-map__error-banner-dismiss {
-  flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.18);
-  color: #ffffff;
-  font-size: 1.3rem;
-  line-height: 1;
-  cursor: pointer;
-  pointer-events: auto;
-}
-
-.drive-map__error-banner-dismiss:hover {
-  background: rgba(255, 255, 255, 0.28);
-}
-
 .map-missing-token code {
   font-size: 0.85rem;
   color: #e8eaed;

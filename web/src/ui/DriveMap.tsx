@@ -912,12 +912,6 @@ export function DriveMap({
 
   const token = getWebEnv().mapboxToken;
   const [mapReady, setMapReady] = useState(false);
-  /* Phase 8.x diagnostic — persistent multi-line banner that accumulates state from every
-   * mapbox-gl event (token info, WebGL version, origin, projection, source/layer counts,
-   * event counts, tile-loaded status, first error). The TestFlight WebView has no console,
-   * so this is our only way to see what's happening. Initialized to a "booting" placeholder
-   * that the map init effect immediately overwrites via repaint(). */
-  const [mapErrorMessage, setMapErrorMessage] = useState<string | null>("[init] booting…");
   const [mapResumeTick, setMapResumeTick] = useState(0);
   const [nightBasemapPreset] = useState<NightBasemapPreset>(parseNightBasemapPreset);
   const [mapPhase, setMapPhase] = useState(currentMapPhase);
@@ -951,40 +945,10 @@ export function DriveMap({
     if (!containerRef.current || !token || mapRef.current) return;
 
     mapboxgl.accessToken = token;
-    /* Phase 8.x — re-enable mapbox-gl Web Workers (default). Setting workerCount = 0
-     * earlier was a shot-in-the-dark guess that may itself have been the root cause of
-     * the blank-tile bug: mapbox-gl 3.x DOES its vector tile decoding inside workers, so
-     * disabling them means tiles download successfully (areTilesLoaded=true, sourcedata
-     * fires) but the decoded geometry never reaches the render loop, leaving the globe
-     * visible with no tiles drawn and `load=0, idle=0` forever — which is exactly what
-     * the build 119 banner reported. We now let mapbox-gl use its default worker pool
-     * size. If workers genuinely don't load in the Capacitor WebView we'll see explicit
-     * errors via the diagnostic banner; silent stalls are no longer a possible failure
-     * mode. */
     activeStyleRef.current = currentMapStyle(currentMapPhase(), nightBasemapPreset);
-    /* Track every URL mapbox-gl requests. Build 119 banner showed sources=2 in TestFlight
-     * vs sources=6 in dev — the style is loading PARTIALLY. transformRequest gives us a
-     * hook into every fetch mapbox makes, so we can see which URLs are being requested
-     * (style imports, tilejson, sprite, glyphs, tiles) and confirm the imports theory. */
-    const requestUrlSamples: string[] = [];
-    let requestCount = 0;
-    const transformRequest = (url: string, _resourceType?: string): { url: string } => {
-      requestCount++;
-      if (requestUrlSamples.length < 8) {
-        try {
-          const u = new URL(url);
-          /* Drop query string to keep the banner readable; key info is the path. */
-          const short = `${u.host}${u.pathname}`.slice(0, 70);
-          if (!requestUrlSamples.includes(short)) requestUrlSamples.push(short);
-        } catch {
-          requestUrlSamples.push(url.slice(0, 70));
-        }
-      }
-      return { url };
-    };
 
-    /* Wrap construction in try/catch so any runtime error surfaces via the diagnostic
-     * banner instead of silently breaking the whole map. */
+    /* Wrap construction in try/catch so any runtime error in mapboxgl.Map is logged
+     * rather than left as a silent React effect failure. */
     let map: mapboxgl.Map;
     try {
       map = new mapboxgl.Map({
@@ -1000,122 +964,30 @@ export function DriveMap({
         touchZoomRotate: true,
         boxZoom: true,
         doubleClickZoom: true,
-        transformRequest,
       });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setMapErrorMessage(`[init] FATAL — Map constructor threw:\n${msg}`);
-      console.error("[mapbox-diag] constructor threw", e);
+      console.error("[map] constructor threw", e);
       return;
     }
     map.addControl(new mapboxgl.AttributionControl({ compact: true }));
     mapRef.current = map;
 
-    /* Persistent diagnostic dump — accumulates state across every mapbox-gl event and
-     * renders it as a multi-line banner so the user can screenshot once and we get
-     * everything we need (token, gl ver, origin, WebGL ver, projection, event counts,
-     * source count, tile-loaded status, first error). The banner persists indefinitely
-     * once any errors fire; happy builds will eventually show `tilesLoaded=true` and we'll
-     * know the map is healthy. */
-    const counts = { styledata: 0, styleLoad: 0, load: 0, idle: 0, error: 0, sourcedata: 0 };
-    let firstError: string | null = null;
-    const tokenForDiag = token;
-    const tokenInfo = tokenForDiag
-      ? `${tokenForDiag.length}ch …${tokenForDiag.slice(-4)}`
-      : "EMPTY";
-    const origin = typeof window !== "undefined" ? window.location.origin : "ssr";
-    const ver = (mapboxgl as unknown as { version?: string }).version ?? "?";
-    /* Probe WebGL availability + version. mapbox-gl 3.x prefers WebGL2 and falls back to
-     * WebGL1; some Capacitor iOS WebViews only expose WebGL1, which can cause rendering
-     * regressions vs. desktop. */
-    const webglProbe = (() => {
-      try {
-        const c = document.createElement("canvas");
-        const g2 = c.getContext("webgl2");
-        if (g2) return "webgl2";
-        const g1 = c.getContext("webgl") || (c.getContext as unknown as (name: string) => unknown)("experimental-webgl");
-        if (g1) return "webgl1";
-        return "none";
-      } catch (e) {
-        return `probe-err:${String(e).slice(0, 40)}`;
-      }
-    })();
-
-    const repaint = () => {
-      const styleObj = (() => {
-        try { return map.getStyle(); } catch { return null; }
-      })();
-      const sourceNames = styleObj ? Object.keys(styleObj.sources ?? {}) : [];
-      const sourceCount = sourceNames.length;
-      const layerCount = styleObj ? (styleObj.layers ?? []).length : -1;
-      /* Style imports are mapbox-gl 3.x's mechanism for composing a parent style from
-       * multiple sub-styles. streets-v12 uses imports to pull in mapbox-streets,
-       * traffic, terrain, etc. If imports fail (CORS, URL allowlist, etc.) you get
-       * the parent style only — which explains build 119's sources=2, layers=53 vs
-       * dev's sources=6, layers=142. Surfacing the import IDs here will confirm. */
-      const importIds: string[] = [];
-      try {
-        const imports = (styleObj as unknown as { imports?: Array<{ id: string }> })?.imports;
-        if (Array.isArray(imports)) {
-          for (const imp of imports) importIds.push(imp?.id ?? "?");
-        }
-      } catch { /* getStyle may not expose imports — fine */ }
-      const tilesLoaded = (() => {
-        try { return map.areTilesLoaded() ? "y" : "n"; } catch { return "?"; }
-      })();
-      const projection = (() => {
-        try {
-          const p = (map as unknown as { getProjection: () => { name?: string } }).getProjection?.();
-          return p?.name ?? "?";
-        } catch { return "?"; }
-      })();
-      const sourcesLine = sourceNames.length
-        ? sourceNames.slice(0, 6).join(",") + (sourceNames.length > 6 ? `+${sourceNames.length - 6}` : "")
-        : "(none)";
-      const importsLine = importIds.length ? `imports=[${importIds.join(",")}]` : "imports=(none)";
-      const line = [
-        `token=${tokenInfo}, gl=${ver}, WebGL=${webglProbe}, origin=${origin}`,
-        `proj=${projection}, sources=${sourceCount}, layers=${layerCount}, tilesLoaded=${tilesLoaded}`,
-        `src=${sourcesLine}`,
-        importsLine,
-        `req=${requestCount} urls=[${requestUrlSamples.slice(0, 4).join(" | ")}]`,
-        `styledata=${counts.styledata} styleLoad=${counts.styleLoad} load=${counts.load} idle=${counts.idle} sourcedata=${counts.sourcedata} error=${counts.error}`,
-        firstError ?? "",
-      ]
-        .filter(Boolean)
-        .join("\n");
-      setMapErrorMessage(line);
-    };
-
-    map.on("styledata", () => { counts.styledata++; repaint(); });
+    /* Force Mercator projection. mapbox-gl 3.x defaults to globe at zoom < 6 (our
+     * initial zoom is 4), and globe projection on Capacitor's WebKit/WebGL2 context
+     * never completes a frame — the map renders only the atmosphere ring with no
+     * continents drawn. Mercator is also how every classic nav app (Apple Maps,
+     * Google Maps mobile, Waze) renders; globe was a desktop showpiece, not a fit
+     * for in-car nav. We set it on style.load (rather than constructor opts) because
+     * some Mapbox style JSONs include a `projection` field that would override the
+     * constructor setting. */
     map.on("style.load", () => {
-      counts.styleLoad++;
-      /* Defensive: re-assert Mercator after style.load. Some Mapbox style JSONs include
-       * a `projection` field that overrides the constructor setting; setProjection here
-       * ensures we stay in Mercator regardless of what the style spec says. */
       try {
         (map as unknown as { setProjection: (p: string) => void }).setProjection("mercator");
       } catch { /* setProjection not available on this gl version — fine */ }
-      repaint();
     });
-    map.on("sourcedata", () => { counts.sourcedata++; });
-    map.on("load", () => { counts.load++; repaint(); });
-    map.on("idle", () => { counts.idle++; repaint(); });
     map.on("error", (e: { error?: unknown }) => {
-      counts.error++;
-      if (!firstError) {
-        const err = (e?.error ?? e) as
-          | (Error & { status?: number; url?: string; statusText?: string })
-          | undefined;
-        const status = err?.status ? `[${err.status}] ` : "";
-        const url = err?.url ? ` ${err.url}` : "";
-        const msg = err?.message ?? err?.statusText ?? String(err ?? "unknown");
-        firstError = `ERR: ${status}${msg}${url}`;
-      }
-      repaint();
+      console.warn("[map] mapbox-gl error", e?.error ?? e);
     });
-    /* Force first paint so the banner exists immediately even before any events fire. */
-    repaint();
 
     const installTrafficLayers = () => {
       try {
@@ -3074,23 +2946,7 @@ export function DriveMap({
     );
   }
 
-  return (
-    <div ref={containerRef} className="drive-map">
-      {mapErrorMessage && (
-        <div className="drive-map__error-banner" role="status" aria-live="polite">
-          <span className="drive-map__error-banner-text">{mapErrorMessage}</span>
-          <button
-            type="button"
-            className="drive-map__error-banner-dismiss"
-            onClick={() => setMapErrorMessage(null)}
-            aria-label="Dismiss map error"
-          >
-            ×
-          </button>
-        </div>
-      )}
-    </div>
-  );
+  return <div ref={containerRef} className="drive-map" />;
 }
 
 export default DriveMap;
