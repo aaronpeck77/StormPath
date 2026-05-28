@@ -895,11 +895,25 @@ export function DriveMap({
 
   const token = getWebEnv().mapboxToken;
   const [mapReady, setMapReady] = useState(false);
-  /* Phase 8.x diagnostic — surfaces mapbox-gl's first error to a visible banner.
-   * The TestFlight WebView has no console, so any tile/style/auth failure would otherwise
-   * just leave a blank globe with no clue why. The banner is dismissable so the user can
-   * dismiss it once they've shared the message. Stays empty in the happy path. */
-  const [mapErrorMessage, setMapErrorMessage] = useState<string | null>(null);
+  /* Phase 8.x diagnostic — surfaces mapbox-gl initialisation state + first error to a
+   * visible banner. The TestFlight WebView has no console, so any tile/style/auth failure
+   * would otherwise just leave a blank globe with no clue why. Renders a single line with
+   * token presence, gl version, origin, style attempts, load events, and the first error.
+   * Auto-hides once the map fires "idle" (i.e. fully rendered) for 5s. Dismissable. */
+  const [mapErrorMessage, setMapErrorMessage] = useState<string | null>(() => {
+    /* Compose initial diagnostic line BEFORE map init so the banner shows even if mapbox
+     * never reaches the network. Token shown by length + last 4 chars so we don't leak
+     * the value in screenshots but can confirm it's present and non-empty. */
+    const tokenPart = (() => {
+      const t = getWebEnv().mapboxToken;
+      if (!t) return "token=EMPTY";
+      const last4 = t.slice(-4);
+      return `token=${t.length}ch …${last4}`;
+    })();
+    const origin = typeof window !== "undefined" ? window.location.origin : "ssr";
+    const ver = (mapboxgl as unknown as { version?: string }).version ?? "?";
+    return `[init] ${tokenPart}, gl=${ver}, origin=${origin}`;
+  });
   const [mapResumeTick, setMapResumeTick] = useState(0);
   const [nightBasemapPreset] = useState<NightBasemapPreset>(parseNightBasemapPreset);
   const [mapPhase, setMapPhase] = useState(currentMapPhase);
@@ -933,6 +947,15 @@ export function DriveMap({
     if (!containerRef.current || !token || mapRef.current) return;
 
     mapboxgl.accessToken = token;
+    /* Phase 8.x — disable mapbox-gl's Web Worker pool. mapbox-gl 3.x defaults to spawning
+     * up to 4 workers loaded from a bundler-emitted chunk; on iOS Capacitor (Capacitor 8.x
+     * with the `capacitor://localhost` WebView origin), those workers can silently fail to
+     * load and leave the map stuck with no tiles + no error event (exact symptom: globe
+     * visible, no markers, no error fired). Forcing workerCount = 0 makes mapbox-gl do all
+     * style/tile decoding on the main thread — slower for huge styles, but reliable. The
+     * perf hit is fine for a single-style nav app like ours. Set BEFORE `new mapboxgl.Map`
+     * so the constructor never tries to spawn workers. */
+    (mapboxgl as unknown as { workerCount: number }).workerCount = 0;
     activeStyleRef.current = currentMapStyle(currentMapPhase(), nightBasemapPreset);
     const map = new mapboxgl.Map({
       container: containerRef.current,
@@ -951,11 +974,36 @@ export function DriveMap({
     map.addControl(new mapboxgl.AttributionControl({ compact: true }));
     mapRef.current = map;
 
-    /* Diagnostic banner: surface mapbox-gl's first error to the on-screen overlay so we can
-     * see exactly what's failing on TestFlight where there's no JS console. Every Mapbox
-     * failure (style fetch 401/403, blocked network, invalid token, worker init) reaches
-     * this handler. We only show the FIRST error to avoid flooding the screen, and we keep
-     * the map alive — the user can still pan/zoom the empty globe while we read the error. */
+    /* Diagnostic event ladder: surface every meaningful mapbox-gl state transition to the
+     * on-screen banner. We mutate the banner text as events fire so the user can see how
+     * far the map got before stalling. Auto-hides 5s after "idle" (everything rendered).
+     * Errors override the banner permanently so the user can read the failure. */
+    let bannerStuck = false; // becomes true on first error; later non-error updates are ignored
+    const setDiag = (line: string, opts?: { error?: boolean }) => {
+      if (bannerStuck && !opts?.error) return;
+      if (opts?.error) bannerStuck = true;
+      console.warn("[mapbox-diag]", line);
+      setMapErrorMessage(line);
+    };
+    /* Note: mapbox-gl's request hook fires for every tile/sprite/glyph; we only care about
+     * the very first one to confirm fetches are kicking off at all. */
+    let firstRequestLogged = false;
+    map.on("dataloading" as any, (e: { dataType?: string; sourceId?: string }) => {
+      if (firstRequestLogged) return;
+      firstRequestLogged = true;
+      setDiag(`[load] dataloading dataType=${e?.dataType ?? "?"} src=${e?.sourceId ?? "?"}`);
+    });
+    map.on("styledata", () => setDiag("[load] styledata fired"));
+    map.on("style.load", () => setDiag("[load] style.load fired"));
+    map.on("load", () => setDiag("[load] map.load fired — tiles should appear"));
+    map.on("idle", () => {
+      setDiag("[load] idle — map fully rendered");
+      /* Auto-hide the diagnostic banner shortly after the map is fully ready, so happy
+       * builds aren't permanently disfigured by it. Errors keep the banner up forever. */
+      window.setTimeout(() => {
+        if (!bannerStuck) setMapErrorMessage(null);
+      }, 5000);
+    });
     map.on("error", (e: { error?: unknown }) => {
       const err = (e?.error ?? e) as
         | (Error & { status?: number; url?: string; statusText?: string })
@@ -963,9 +1011,7 @@ export function DriveMap({
       const status = err?.status ? `[${err.status}] ` : "";
       const url = err?.url ? ` ${err.url}` : "";
       const msg = err?.message ?? err?.statusText ?? String(err ?? "unknown");
-      const line = `Mapbox: ${status}${msg}${url}`;
-      console.warn("[mapbox]", line, err);
-      setMapErrorMessage((prev) => prev ?? line);
+      setDiag(`Mapbox error: ${status}${msg}${url}`, { error: true });
     });
 
     const installTrafficLayers = () => {
