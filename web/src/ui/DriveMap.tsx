@@ -1,13 +1,22 @@
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-/* Phase 8.x — load the CSP build's worker as a Vite-bundled same-origin asset and
- * hand the URL to mapboxgl. The Vite resolve.alias in vite.config.ts redirects the
- * `mapbox-gl` import above to `mapbox-gl/dist/mapbox-gl-csp`, which expects an
- * explicit workerUrl instead of spawning workers from blob: URLs (which WebKit
- * blocks under capacitor:// origins). `?url` tells Vite to emit the file as a
- * hashed asset under /assets/ and return its URL string. Same-origin → CSP-safe. */
+/* Phase 8.x — production-only CSP worker URL. In production, vite.config.ts aliases
+ * the `mapbox-gl` import above to mapbox-gl/dist/mapbox-gl-csp (the CSP-friendly
+ * build that loads its worker from an explicit URL instead of a blob: URL — needed
+ * because WebKit under capacitor://localhost silently rejects blob: workers).
+ * We import the worker file via `?url` so Vite emits it as a hashed same-origin
+ * asset under /assets/, then set mapboxgl.workerUrl to that URL before any Map is
+ * created. In dev, the alias is OFF (the CSP build is UMD and Vite dev can't serve
+ * UMD as ESM), so we use the regular ESM mapbox-gl with its default blob worker
+ * (which works fine on http://localhost). import.meta.env.PROD is statically
+ * replaced by Vite at build time — in dev this branch is dead code that the
+ * dev-server-side rolldown still parses, so the `?url` import resolves but is
+ * never assigned to workerUrl (preventing the regular ESM build's worker config
+ * from being clobbered). */
 import mapboxWorkerUrl from "mapbox-gl/dist/mapbox-gl-csp-worker.js?url";
-(mapboxgl as unknown as { workerUrl: string }).workerUrl = mapboxWorkerUrl;
+if (import.meta.env.PROD) {
+  (mapboxgl as unknown as { workerUrl: string }).workerUrl = mapboxWorkerUrl;
+}
 import type { MutableRefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { RouteAlert } from "../nav/routeAlerts";

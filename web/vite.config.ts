@@ -9,7 +9,7 @@ import { rainViewerTileProxyOptions } from "./vite.rainViewerProxy";
 const pkgPath = fileURLToPath(new URL("./package.json", import.meta.url));
 const { version: appVersion } = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version: string };
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
   },
@@ -42,23 +42,20 @@ export default defineConfig({
      web build because Netlify serves from the root anyway. */
   base: "./",
   resolve: {
-    /* Phase 8.x — redirect ONLY the bare `mapbox-gl` specifier (not `mapbox-gl/dist/...`
-     * subpaths) to the CSP-friendly build. The default mapbox-gl distribution spawns
-     * its tile-decoding Web Workers from a `blob:` URL, which works on https:// and
-     * http://localhost but is silently REJECTED by WebKit under `capacitor://localhost`.
-     * Symptom in TestFlight build 122: TileJSON fetches succeed (req=11), style + layer
-     * metadata parse fine (137 layers), but `tilesLoaded=n` forever because workers
-     * never decode the vector tile data — so the render loop stalls (load=0, idle=0)
-     * with zero errors. The CSP build instead loads its worker from an explicit
-     * same-origin URL (see `mapboxgl.workerUrl =` setup in DriveMap.tsx), which is
-     * permitted by every CSP. Using `find` as a regex restricted with `^...$` ensures
-     * the alias doesn't rewrite `mapbox-gl/dist/mapbox-gl.css` or the explicit
-     * `mapbox-gl/dist/mapbox-gl-csp-worker?url` import. Same JS surface — the
-     * `mapboxgl` default export and all named type exports are identical between
-     * the standard and CSP builds. */
-    alias: [
-      { find: /^mapbox-gl$/, replacement: "mapbox-gl/dist/mapbox-gl-csp" },
-    ],
+    /* Phase 8.x — BUILD-ONLY alias. Redirect the bare `mapbox-gl` specifier to the
+     * CSP-friendly build for production bundles (which run on Capacitor's
+     * capacitor://localhost origin where blob: workers are silently rejected by
+     * WebKit). The CSP build is UMD-formatted and Vite dev can't serve UMD as ESM —
+     * dev mode would throw "Cannot use import statement outside a module" — so dev
+     * keeps using the default ESM build (which works fine on http://localhost:5173).
+     * Symptom this fixes on TestFlight 122: TileJSON fetches succeed (req=11), style
+     * + layers parse (137 layers), but `tilesLoaded=n` forever because workers never
+     * decode the vector tile data — silent worker-spawn failure under WebKit CSP.
+     * The CSP build loads its worker from an explicit same-origin /assets/ URL
+     * (see `mapboxgl.workerUrl =` setup in DriveMap.tsx). */
+    alias: command === "build"
+      ? [{ find: /^mapbox-gl$/, replacement: "mapbox-gl/dist/mapbox-gl-csp" }]
+      : [],
   },
   build: {
     rollupOptions: {
@@ -117,4 +114,4 @@ export default defineConfig({
       "/rainviewer-tiles": rainViewerTileProxyOptions(),
     },
   },
-});
+}));
