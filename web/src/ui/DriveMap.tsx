@@ -934,39 +934,46 @@ export function DriveMap({
     if (!containerRef.current || !token || mapRef.current) return;
 
     mapboxgl.accessToken = token;
-    /* Phase 8.x — disable mapbox-gl's Web Worker pool. mapbox-gl 3.x defaults to spawning
-     * up to 4 workers loaded from a bundler-emitted chunk; on iOS Capacitor (Capacitor 8.x
-     * with the `capacitor://localhost` WebView origin), those workers can silently fail to
-     * load and leave the map stuck with no tiles + no error event (exact symptom: globe
-     * visible, no markers, no error fired). Forcing workerCount = 0 makes mapbox-gl do all
-     * style/tile decoding on the main thread — slower for huge styles, but reliable. The
-     * perf hit is fine for a single-style nav app like ours. Set BEFORE `new mapboxgl.Map`
-     * so the constructor never tries to spawn workers. */
-    (mapboxgl as unknown as { workerCount: number }).workerCount = 0;
+    /* Phase 8.x — re-enable mapbox-gl Web Workers (default). Setting workerCount = 0
+     * earlier was a shot-in-the-dark guess that may itself have been the root cause of
+     * the blank-tile bug: mapbox-gl 3.x DOES its vector tile decoding inside workers, so
+     * disabling them means tiles download successfully (areTilesLoaded=true, sourcedata
+     * fires) but the decoded geometry never reaches the render loop, leaving the globe
+     * visible with no tiles drawn and `load=0, idle=0` forever — which is exactly what
+     * the build 119 banner reported. We now let mapbox-gl use its default worker pool
+     * size. If workers genuinely don't load in the Capacitor WebView we'll see explicit
+     * errors via the diagnostic banner; silent stalls are no longer a possible failure
+     * mode. */
     activeStyleRef.current = currentMapStyle(currentMapPhase(), nightBasemapPreset);
-    const map = new mapboxgl.Map({
-      container: containerRef.current,
-      style: activeStyleRef.current,
-      center: [-98.5, 39.8],
-      zoom: 4,
-      attributionControl: false,
-      dragRotate: true,
-      touchPitch: true,
-      scrollZoom: true,
-      dragPan: true,
-      touchZoomRotate: true,
-      boxZoom: true,
-      doubleClickZoom: true,
-      /* Phase 8.x — force Mercator projection. mapbox-gl 3.x defaults to globe at
-       * zoom < 6 (our initial zoom is 4). The Capacitor iOS WebView (WebKit/WebGL2)
-       * ships tiles to the GPU in globe mode but never completes a frame — the
-       * diagnostic banner from build 119 confirmed sources=2, layers=53,
-       * tilesLoaded=y, error=0, but load=0, idle=0, leaving only the globe
-       * atmosphere visible with no continents/road network drawn. Forcing Mercator
-       * sidesteps the bug. This is also how every classic nav app (Apple Maps,
-       * Google Maps mobile, Waze) renders — globe was a desktop showpiece. */
-      projection: { name: "mercator" },
-    });
+    /* Wrap construction in try/catch so any runtime error surfaces via the diagnostic
+     * banner instead of silently breaking the whole map. Build 120 lost the globe
+     * entirely after we added projection: { name: 'mercator' } to constructor opts —
+     * the option is type-valid per mapbox-gl 3.24's d.ts but apparently rejected at
+     * runtime in some path. We now revert to default constructor (no projection
+     * option) and switch to Mercator AFTER style.load, which is also how mapbox-gl's
+     * own examples handle projection switches. */
+    let map: mapboxgl.Map;
+    try {
+      map = new mapboxgl.Map({
+        container: containerRef.current,
+        style: activeStyleRef.current,
+        center: [-98.5, 39.8],
+        zoom: 4,
+        attributionControl: false,
+        dragRotate: true,
+        touchPitch: true,
+        scrollZoom: true,
+        dragPan: true,
+        touchZoomRotate: true,
+        boxZoom: true,
+        doubleClickZoom: true,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMapErrorMessage(`[init] FATAL — Map constructor threw:\n${msg}`);
+      console.error("[mapbox-diag] constructor threw", e);
+      return;
+    }
     map.addControl(new mapboxgl.AttributionControl({ compact: true }));
     mapRef.current = map;
 

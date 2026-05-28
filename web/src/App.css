@@ -1725,7 +1725,10 @@
   letter-spacing: 0.01em;
   line-height: 1.4;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-  pointer-events: auto;
+  /* Diagnostic-only banner: the map underneath is the real UI. Don't steal touches —
+   * pinch/zoom/pan should pass through the banner to the map. The dismiss button
+   * below re-enables pointer-events so it can still be tapped. */
+  pointer-events: none;
   user-select: text;
   -webkit-user-select: text;
 }
@@ -1743,15 +1746,16 @@
 
 .drive-map__error-banner-dismiss {
   flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   border: none;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.18);
   color: #ffffff;
-  font-size: 1.1rem;
+  font-size: 1.3rem;
   line-height: 1;
   cursor: pointer;
+  pointer-events: auto;
 }
 
 .drive-map__error-banner-dismiss:hover {
