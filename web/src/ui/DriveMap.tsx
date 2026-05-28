@@ -945,13 +945,29 @@ export function DriveMap({
      * errors via the diagnostic banner; silent stalls are no longer a possible failure
      * mode. */
     activeStyleRef.current = currentMapStyle(currentMapPhase(), nightBasemapPreset);
+    /* Track every URL mapbox-gl requests. Build 119 banner showed sources=2 in TestFlight
+     * vs sources=6 in dev — the style is loading PARTIALLY. transformRequest gives us a
+     * hook into every fetch mapbox makes, so we can see which URLs are being requested
+     * (style imports, tilejson, sprite, glyphs, tiles) and confirm the imports theory. */
+    const requestUrlSamples: string[] = [];
+    let requestCount = 0;
+    const transformRequest = (url: string, _resourceType?: string): { url: string } => {
+      requestCount++;
+      if (requestUrlSamples.length < 8) {
+        try {
+          const u = new URL(url);
+          /* Drop query string to keep the banner readable; key info is the path. */
+          const short = `${u.host}${u.pathname}`.slice(0, 70);
+          if (!requestUrlSamples.includes(short)) requestUrlSamples.push(short);
+        } catch {
+          requestUrlSamples.push(url.slice(0, 70));
+        }
+      }
+      return { url };
+    };
+
     /* Wrap construction in try/catch so any runtime error surfaces via the diagnostic
-     * banner instead of silently breaking the whole map. Build 120 lost the globe
-     * entirely after we added projection: { name: 'mercator' } to constructor opts —
-     * the option is type-valid per mapbox-gl 3.24's d.ts but apparently rejected at
-     * runtime in some path. We now revert to default constructor (no projection
-     * option) and switch to Mercator AFTER style.load, which is also how mapbox-gl's
-     * own examples handle projection switches. */
+     * banner instead of silently breaking the whole map. */
     let map: mapboxgl.Map;
     try {
       map = new mapboxgl.Map({
@@ -967,6 +983,7 @@ export function DriveMap({
         touchZoomRotate: true,
         boxZoom: true,
         doubleClickZoom: true,
+        transformRequest,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -1011,8 +1028,21 @@ export function DriveMap({
       const styleObj = (() => {
         try { return map.getStyle(); } catch { return null; }
       })();
-      const sourceCount = styleObj ? Object.keys(styleObj.sources ?? {}).length : -1;
+      const sourceNames = styleObj ? Object.keys(styleObj.sources ?? {}) : [];
+      const sourceCount = sourceNames.length;
       const layerCount = styleObj ? (styleObj.layers ?? []).length : -1;
+      /* Style imports are mapbox-gl 3.x's mechanism for composing a parent style from
+       * multiple sub-styles. streets-v12 uses imports to pull in mapbox-streets,
+       * traffic, terrain, etc. If imports fail (CORS, URL allowlist, etc.) you get
+       * the parent style only — which explains build 119's sources=2, layers=53 vs
+       * dev's sources=6, layers=142. Surfacing the import IDs here will confirm. */
+      const importIds: string[] = [];
+      try {
+        const imports = (styleObj as unknown as { imports?: Array<{ id: string }> })?.imports;
+        if (Array.isArray(imports)) {
+          for (const imp of imports) importIds.push(imp?.id ?? "?");
+        }
+      } catch { /* getStyle may not expose imports — fine */ }
       const tilesLoaded = (() => {
         try { return map.areTilesLoaded() ? "y" : "n"; } catch { return "?"; }
       })();
@@ -1022,9 +1052,16 @@ export function DriveMap({
           return p?.name ?? "?";
         } catch { return "?"; }
       })();
+      const sourcesLine = sourceNames.length
+        ? sourceNames.slice(0, 6).join(",") + (sourceNames.length > 6 ? `+${sourceNames.length - 6}` : "")
+        : "(none)";
+      const importsLine = importIds.length ? `imports=[${importIds.join(",")}]` : "imports=(none)";
       const line = [
         `token=${tokenInfo}, gl=${ver}, WebGL=${webglProbe}, origin=${origin}`,
         `proj=${projection}, sources=${sourceCount}, layers=${layerCount}, tilesLoaded=${tilesLoaded}`,
+        `src=${sourcesLine}`,
+        importsLine,
+        `req=${requestCount} urls=[${requestUrlSamples.slice(0, 4).join(" | ")}]`,
         `styledata=${counts.styledata} styleLoad=${counts.styleLoad} load=${counts.load} idle=${counts.idle} sourcedata=${counts.sourcedata} error=${counts.error}`,
         firstError ?? "",
       ]
