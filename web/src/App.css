@@ -1733,6 +1733,12 @@
 .drive-map__error-banner-text {
   flex: 1 1 auto;
   word-break: break-word;
+  white-space: pre-line;
+  font-family:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .drive-map__error-banner-dismiss {

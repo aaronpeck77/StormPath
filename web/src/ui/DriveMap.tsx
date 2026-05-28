@@ -895,25 +895,12 @@ export function DriveMap({
 
   const token = getWebEnv().mapboxToken;
   const [mapReady, setMapReady] = useState(false);
-  /* Phase 8.x diagnostic — surfaces mapbox-gl initialisation state + first error to a
-   * visible banner. The TestFlight WebView has no console, so any tile/style/auth failure
-   * would otherwise just leave a blank globe with no clue why. Renders a single line with
-   * token presence, gl version, origin, style attempts, load events, and the first error.
-   * Auto-hides once the map fires "idle" (i.e. fully rendered) for 5s. Dismissable. */
-  const [mapErrorMessage, setMapErrorMessage] = useState<string | null>(() => {
-    /* Compose initial diagnostic line BEFORE map init so the banner shows even if mapbox
-     * never reaches the network. Token shown by length + last 4 chars so we don't leak
-     * the value in screenshots but can confirm it's present and non-empty. */
-    const tokenPart = (() => {
-      const t = getWebEnv().mapboxToken;
-      if (!t) return "token=EMPTY";
-      const last4 = t.slice(-4);
-      return `token=${t.length}ch …${last4}`;
-    })();
-    const origin = typeof window !== "undefined" ? window.location.origin : "ssr";
-    const ver = (mapboxgl as unknown as { version?: string }).version ?? "?";
-    return `[init] ${tokenPart}, gl=${ver}, origin=${origin}`;
-  });
+  /* Phase 8.x diagnostic — persistent multi-line banner that accumulates state from every
+   * mapbox-gl event (token info, WebGL version, origin, projection, source/layer counts,
+   * event counts, tile-loaded status, first error). The TestFlight WebView has no console,
+   * so this is our only way to see what's happening. Initialized to a "booting" placeholder
+   * that the map init effect immediately overwrites via repaint(). */
+  const [mapErrorMessage, setMapErrorMessage] = useState<string | null>("[init] booting…");
   const [mapResumeTick, setMapResumeTick] = useState(0);
   const [nightBasemapPreset] = useState<NightBasemapPreset>(parseNightBasemapPreset);
   const [mapPhase, setMapPhase] = useState(currentMapPhase);
@@ -974,45 +961,82 @@ export function DriveMap({
     map.addControl(new mapboxgl.AttributionControl({ compact: true }));
     mapRef.current = map;
 
-    /* Diagnostic event ladder: surface every meaningful mapbox-gl state transition to the
-     * on-screen banner. We mutate the banner text as events fire so the user can see how
-     * far the map got before stalling. Auto-hides 5s after "idle" (everything rendered).
-     * Errors override the banner permanently so the user can read the failure. */
-    let bannerStuck = false; // becomes true on first error; later non-error updates are ignored
-    const setDiag = (line: string, opts?: { error?: boolean }) => {
-      if (bannerStuck && !opts?.error) return;
-      if (opts?.error) bannerStuck = true;
-      console.warn("[mapbox-diag]", line);
+    /* Persistent diagnostic dump — accumulates state across every mapbox-gl event and
+     * renders it as a multi-line banner so the user can screenshot once and we get
+     * everything we need (token, gl ver, origin, WebGL ver, projection, event counts,
+     * source count, tile-loaded status, first error). The banner persists indefinitely
+     * once any errors fire; happy builds will eventually show `tilesLoaded=true` and we'll
+     * know the map is healthy. */
+    const counts = { styledata: 0, styleLoad: 0, load: 0, idle: 0, error: 0, sourcedata: 0 };
+    let firstError: string | null = null;
+    const tokenForDiag = token;
+    const tokenInfo = tokenForDiag
+      ? `${tokenForDiag.length}ch …${tokenForDiag.slice(-4)}`
+      : "EMPTY";
+    const origin = typeof window !== "undefined" ? window.location.origin : "ssr";
+    const ver = (mapboxgl as unknown as { version?: string }).version ?? "?";
+    /* Probe WebGL availability + version. mapbox-gl 3.x prefers WebGL2 and falls back to
+     * WebGL1; some Capacitor iOS WebViews only expose WebGL1, which can cause rendering
+     * regressions vs. desktop. */
+    const webglProbe = (() => {
+      try {
+        const c = document.createElement("canvas");
+        const g2 = c.getContext("webgl2");
+        if (g2) return "webgl2";
+        const g1 = c.getContext("webgl") || (c.getContext as unknown as (name: string) => unknown)("experimental-webgl");
+        if (g1) return "webgl1";
+        return "none";
+      } catch (e) {
+        return `probe-err:${String(e).slice(0, 40)}`;
+      }
+    })();
+
+    const repaint = () => {
+      const styleObj = (() => {
+        try { return map.getStyle(); } catch { return null; }
+      })();
+      const sourceCount = styleObj ? Object.keys(styleObj.sources ?? {}).length : -1;
+      const layerCount = styleObj ? (styleObj.layers ?? []).length : -1;
+      const tilesLoaded = (() => {
+        try { return map.areTilesLoaded() ? "y" : "n"; } catch { return "?"; }
+      })();
+      const projection = (() => {
+        try {
+          const p = (map as unknown as { getProjection: () => { name?: string } }).getProjection?.();
+          return p?.name ?? "?";
+        } catch { return "?"; }
+      })();
+      const line = [
+        `token=${tokenInfo}, gl=${ver}, WebGL=${webglProbe}, origin=${origin}`,
+        `proj=${projection}, sources=${sourceCount}, layers=${layerCount}, tilesLoaded=${tilesLoaded}`,
+        `styledata=${counts.styledata} styleLoad=${counts.styleLoad} load=${counts.load} idle=${counts.idle} sourcedata=${counts.sourcedata} error=${counts.error}`,
+        firstError ?? "",
+      ]
+        .filter(Boolean)
+        .join("\n");
       setMapErrorMessage(line);
     };
-    /* Note: mapbox-gl's request hook fires for every tile/sprite/glyph; we only care about
-     * the very first one to confirm fetches are kicking off at all. */
-    let firstRequestLogged = false;
-    map.on("dataloading" as any, (e: { dataType?: string; sourceId?: string }) => {
-      if (firstRequestLogged) return;
-      firstRequestLogged = true;
-      setDiag(`[load] dataloading dataType=${e?.dataType ?? "?"} src=${e?.sourceId ?? "?"}`);
-    });
-    map.on("styledata", () => setDiag("[load] styledata fired"));
-    map.on("style.load", () => setDiag("[load] style.load fired"));
-    map.on("load", () => setDiag("[load] map.load fired — tiles should appear"));
-    map.on("idle", () => {
-      setDiag("[load] idle — map fully rendered");
-      /* Auto-hide the diagnostic banner shortly after the map is fully ready, so happy
-       * builds aren't permanently disfigured by it. Errors keep the banner up forever. */
-      window.setTimeout(() => {
-        if (!bannerStuck) setMapErrorMessage(null);
-      }, 5000);
-    });
+
+    map.on("styledata", () => { counts.styledata++; repaint(); });
+    map.on("style.load", () => { counts.styleLoad++; repaint(); });
+    map.on("sourcedata", () => { counts.sourcedata++; });
+    map.on("load", () => { counts.load++; repaint(); });
+    map.on("idle", () => { counts.idle++; repaint(); });
     map.on("error", (e: { error?: unknown }) => {
-      const err = (e?.error ?? e) as
-        | (Error & { status?: number; url?: string; statusText?: string })
-        | undefined;
-      const status = err?.status ? `[${err.status}] ` : "";
-      const url = err?.url ? ` ${err.url}` : "";
-      const msg = err?.message ?? err?.statusText ?? String(err ?? "unknown");
-      setDiag(`Mapbox error: ${status}${msg}${url}`, { error: true });
+      counts.error++;
+      if (!firstError) {
+        const err = (e?.error ?? e) as
+          | (Error & { status?: number; url?: string; statusText?: string })
+          | undefined;
+        const status = err?.status ? `[${err.status}] ` : "";
+        const url = err?.url ? ` ${err.url}` : "";
+        const msg = err?.message ?? err?.statusText ?? String(err ?? "unknown");
+        firstError = `ERR: ${status}${msg}${url}`;
+      }
+      repaint();
     });
+    /* Force first paint so the banner exists immediately even before any events fire. */
+    repaint();
 
     const installTrafficLayers = () => {
       try {
