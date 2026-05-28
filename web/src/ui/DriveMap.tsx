@@ -957,6 +957,15 @@ export function DriveMap({
       touchZoomRotate: true,
       boxZoom: true,
       doubleClickZoom: true,
+      /* Phase 8.x — force Mercator projection. mapbox-gl 3.x defaults to globe at
+       * zoom < 6 (our initial zoom is 4). The Capacitor iOS WebView (WebKit/WebGL2)
+       * ships tiles to the GPU in globe mode but never completes a frame — the
+       * diagnostic banner from build 119 confirmed sources=2, layers=53,
+       * tilesLoaded=y, error=0, but load=0, idle=0, leaving only the globe
+       * atmosphere visible with no continents/road network drawn. Forcing Mercator
+       * sidesteps the bug. This is also how every classic nav app (Apple Maps,
+       * Google Maps mobile, Waze) renders — globe was a desktop showpiece. */
+      projection: { name: "mercator" },
     });
     map.addControl(new mapboxgl.AttributionControl({ compact: true }));
     mapRef.current = map;
@@ -1018,7 +1027,16 @@ export function DriveMap({
     };
 
     map.on("styledata", () => { counts.styledata++; repaint(); });
-    map.on("style.load", () => { counts.styleLoad++; repaint(); });
+    map.on("style.load", () => {
+      counts.styleLoad++;
+      /* Defensive: re-assert Mercator after style.load. Some Mapbox style JSONs include
+       * a `projection` field that overrides the constructor setting; setProjection here
+       * ensures we stay in Mercator regardless of what the style spec says. */
+      try {
+        (map as unknown as { setProjection: (p: string) => void }).setProjection("mercator");
+      } catch { /* setProjection not available on this gl version — fine */ }
+      repaint();
+    });
     map.on("sourcedata", () => { counts.sourcedata++; });
     map.on("load", () => { counts.load++; repaint(); });
     map.on("idle", () => { counts.idle++; repaint(); });
