@@ -144,6 +144,31 @@ jobs:
           cp "$PP_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/"$UUID".mobileprovision
           echo "uuid=$UUID" >> $GITHUB_OUTPUT
 
+      # ── 7b. Inject the provisioning profile UUID into the App target only ────
+      # The committed project.pbxproj has CODE_SIGN_STYLE=Manual + a placeholder
+      # PROVISIONING_PROFILE_SPECIFIER so the manual signing settings are scoped
+      # to the App target's Release config. We must NOT pass these on the xcodebuild
+      # CLI, because that applies them globally to every transitive target — including
+      # SPM resource bundles like RevenueCat_RevenueCat, which Xcode 26 rejects with
+      # "<bundle> does not support provisioning profiles".
+      - name: Inject provisioning profile UUID into Xcode project
+        run: |
+          set -euo pipefail
+          PROJ="web/ios/App/App.xcodeproj/project.pbxproj"
+          UUID="${{ steps.profile.outputs.uuid }}"
+          # Sanity-check the placeholder is present so a future regeneration doesn't silently break us.
+          if ! grep -q "STORMPATH_PROVISIONING_PROFILE_UUID" "$PROJ"; then
+            echo "Placeholder STORMPATH_PROVISIONING_PROFILE_UUID is missing from $PROJ."
+            echo "Re-add PROVISIONING_PROFILE_SPECIFIER = STORMPATH_PROVISIONING_PROFILE_UUID; to the App target's Release config."
+            exit 1
+          fi
+          /usr/bin/sed -i '' "s/STORMPATH_PROVISIONING_PROFILE_UUID/$UUID/g" "$PROJ"
+          # Verify the substitution actually happened.
+          if grep -q "STORMPATH_PROVISIONING_PROFILE_UUID" "$PROJ"; then
+            echo "sed substitution failed."
+            exit 1
+          fi
+
       # ── 8. Build number already set via sync:ios-version (IOS_BUILD_NUMBER) ───
 
       # ── 8b. Pre-resolve Swift Package Manager dependencies ───────────────────
@@ -163,6 +188,12 @@ jobs:
             2>&1 | tee /tmp/spm-resolve.log
 
       # ── 9. Build the Xcode archive ───────────────────────────────────────────
+      # Code signing settings (CODE_SIGN_STYLE, CODE_SIGN_IDENTITY,
+      # PROVISIONING_PROFILE_SPECIFIER, DEVELOPMENT_TEAM) live in the App target's
+      # Release config in project.pbxproj. We deliberately do NOT pass them on the
+      # CLI here — passing them globally applies them to every transitive target,
+      # including SPM resource bundles (e.g. RevenueCat_RevenueCat) which Xcode 26
+      # rejects as "does not support provisioning profiles".
       - name: Build archive
         run: |
           set -o pipefail
@@ -174,10 +205,6 @@ jobs:
             -configuration Release \
             -archivePath "$RUNNER_TEMP/StormPath.xcarchive" \
             -destination "generic/platform=iOS" \
-            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="iPhone Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="${{ steps.profile.outputs.uuid }}" \
             CODE_SIGNING_REQUIRED=YES \
             2>&1 | tee /tmp/xcodebuild.log
 
