@@ -1,4 +1,5 @@
 import type { LngLat, NavRoute, RouteTurnStep, TripPlan } from "../nav/types";
+import { detectRouteTollsFromLegs } from "../nav/detectRouteTolls";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import {
   computeRadarBypassWaypointCandidates,
@@ -64,7 +65,11 @@ type DirectionsResponse = {
         /** Road number per Mapbox (e.g. I 72, US 36) — prefer over long `name` for shields. */
         ref?: string;
         distance?: number;
-        intersections?: { geometry_index?: number }[];
+        intersections?: {
+          geometry_index?: number;
+          classes?: string[];
+          toll_collection?: { name?: string; type?: string };
+        }[];
       }[];
       incidents?: MbIncident[];
       annotation?: {
@@ -101,6 +106,24 @@ function mapboxDirectionsErrorFromResponse(
 
 /** Mapbox can return thousands of micro-steps on cross-country legs — enough for any US drive. */
 const MAX_TURN_STEPS = 5000;
+
+/** Mapbox `exclude` query — motorway and toll can be combined. */
+type DirectionsFetchExclude = {
+  excludeMotorway?: boolean;
+  excludeToll?: boolean;
+};
+
+function directionsExcludeParam(opts: DirectionsFetchExclude): string | undefined {
+  const parts: string[] = [];
+  if (opts.excludeMotorway) parts.push("motorway");
+  if (opts.excludeToll) parts.push("toll");
+  return parts.length > 0 ? parts.join(",") : undefined;
+}
+
+type DirectionsFetchOpts = DirectionsFetchExclude & {
+  alternatives: boolean;
+  includeDetails?: boolean;
+};
 
 function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteTurnStep[] {
   const out: RouteTurnStep[] = [];
@@ -221,6 +244,7 @@ function routeFromDirectionsApi(
   if (durSec == null || !Number.isFinite(durSec)) return null;
 
   const { texts: notices, alongMeters: noticeAlong } = collectRouteNoticesWithAlong(r, geometry);
+  const tollInfo = detectRouteTollsFromLegs(r.legs);
   const displayGeometry =
     geometry.length > MAX_STORED_GEOMETRY_VERTICES
       ? subsamplePolylineVertexBudget(geometry, MAX_STORED_GEOMETRY_VERTICES)
@@ -236,6 +260,8 @@ function routeFromDirectionsApi(
     turnSteps: parseSteps(r),
     routeNotices: notices.length ? notices : undefined,
     routeNoticeAlongMeters: notices.length ? alongForDisplay : undefined,
+    hasTolls: tollInfo.hasTolls || undefined,
+    tollLabels: tollInfo.tollLabels.length ? tollInfo.tollLabels : undefined,
   };
 }
 
@@ -243,7 +269,7 @@ async function fetchMapboxDirections(
   accessToken: string,
   start: LngLat,
   end: LngLat,
-  opts: { alternatives: boolean; excludeMotorway: boolean; includeDetails?: boolean },
+  opts: DirectionsFetchOpts,
   signal?: AbortSignal
 ): Promise<DirectionsResponse> {
   const o = `${start[0].toFixed(5)},${start[1].toFixed(5)}`;
@@ -259,7 +285,8 @@ async function fetchMapboxDirections(
   if (opts.includeDetails !== false) {
     url.searchParams.set("annotations", "closure");
   }
-  if (opts.excludeMotorway) url.searchParams.set("exclude", "motorway");
+  const exclude = directionsExcludeParam(opts);
+  if (exclude) url.searchParams.set("exclude", exclude);
 
   let lastHttp: { res: Response; data: DirectionsResponse } | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -298,7 +325,7 @@ async function fetchMapboxDirections(
 async function fetchMapboxDirectionsThrough(
   accessToken: string,
   coords: LngLat[],
-  opts: { alternatives: boolean; excludeMotorway: boolean; includeDetails?: boolean },
+  opts: DirectionsFetchOpts,
   signal?: AbortSignal
 ): Promise<DirectionsResponse> {
   if (coords.length < 2) throw new Error("Mapbox Directions: need at least two coordinates");
@@ -314,7 +341,8 @@ async function fetchMapboxDirectionsThrough(
   if (opts.includeDetails !== false) {
     url.searchParams.set("annotations", "closure");
   }
-  if (opts.excludeMotorway) url.searchParams.set("exclude", "motorway");
+  const exclude = directionsExcludeParam(opts);
+  if (exclude) url.searchParams.set("exclude", exclude);
 
   let lastHttp: { res: Response; data: DirectionsResponse } | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -668,6 +696,8 @@ export async function collectMapboxRouteVariants(
     stormAlerts?: NormalizedWeatherAlert[];
     /** Plus + Storm: refine leg C using RainViewer mosaic (prefer paths that avoid strong echoes). */
     radarAvoidanceEnabled?: boolean;
+    /** Primary Directions request uses `exclude=toll` (toll-free replan). */
+    excludeToll?: boolean;
   }
 ): Promise<NavRoute[]> {
   const signal = opts?.signal;
@@ -676,6 +706,7 @@ export async function collectMapboxRouteVariants(
   const allowLocalTripThirdRoute = Boolean(opts?.allowLocalTripThirdRoute);
   const preferThreeRoutes = Boolean(opts?.preferThreeRoutes);
   const includeDetails = opts?.includeDetails !== false;
+  const excludeToll = Boolean(opts?.excludeToll);
   const MAX_NO_TOWN_DURATION_FACTOR = 1.6;
   const LOCAL_TRIP_MAX_DISTANCE_M = 18_000;
   const LOCAL_TRIP_MAX_DURATION_S = 22 * 60;
@@ -709,6 +740,7 @@ export async function collectMapboxRouteVariants(
   const primaryData = await fetchMapboxDirections(accessToken, start, end, {
     alternatives: true,
     excludeMotorway: false,
+    excludeToll,
     includeDetails,
   }, signal);
 
@@ -902,6 +934,7 @@ export async function buildTripFromMapbox(
     includeDetails?: boolean;
     stormAlerts?: NormalizedWeatherAlert[];
     radarAvoidanceEnabled?: boolean;
+    excludeToll?: boolean;
   }
 ): Promise<BuildTripFromMapboxResult> {
   const routes = await collectMapboxRouteVariants(accessToken, start, end, opts);

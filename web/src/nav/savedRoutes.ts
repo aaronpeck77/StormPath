@@ -1,3 +1,4 @@
+import { safeStorage } from "../storage/safeStorage";
 import type { LngLat, RouteTurnStep } from "./types";
 
 export type SavedRoute = {
@@ -19,12 +20,10 @@ function isLngLat(v: unknown): v is LngLat {
 }
 
 export function loadSavedRoutes(): SavedRoute[] {
+  const data = safeStorage.getJson<unknown>(STORAGE_KEY, []);
+  if (!Array.isArray(data)) return [];
+  const out: SavedRoute[] = [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const data = JSON.parse(raw) as unknown;
-    if (!Array.isArray(data)) return [];
-    const out: SavedRoute[] = [];
     for (const row of data) {
       if (!row || typeof row !== "object") continue;
       const o = row as Record<string, unknown>;
@@ -70,16 +69,12 @@ export function loadSavedRoutes(): SavedRoute[] {
     }
     return out;
   } catch {
-    return [];
+    return out;
   }
 }
 
 export function persistSavedRoutes(routes: SavedRoute[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(routes));
-  } catch {
-    /* quota */
-  }
+  safeStorage.setJson(STORAGE_KEY, routes);
 }
 
 export function newSavedRouteId(): string {

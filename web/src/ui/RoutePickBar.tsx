@@ -11,6 +11,8 @@ export type RoutePickItem = {
   softPath: boolean;
   /** Matches map line color */
   color: string;
+  /** Mapbox detected toll segments on this leg. */
+  hasTolls?: boolean;
 };
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -130,7 +132,7 @@ export function RouteCycleButton({
   const title = items
     .map(
       (it) =>
-        `${it.routeLabel} (${it.letter}) ~${formatEtaDuration(it.etaMinutes)}${it.suggested ? " (suggested)" : ""}`
+        `${it.routeLabel} (${it.letter}) ~${formatEtaDuration(it.etaMinutes)}${it.suggested ? " (suggested)" : ""}${it.hasTolls ? " · tolls" : ""}`
     )
     .join(" · ");
   const hint =

@@ -66,6 +66,18 @@ jobs:
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
 
+      # Vitest seatbelt — runs in parallel with the build setup if the runner had cores
+      # to spare; in practice it adds <5s to the job. Failing tests block the IPA build.
+      - name: Run unit tests
+        run: npm test
+        working-directory: web
+
+      - name: Sync iOS marketing version + build number
+        run: npm run sync:ios-version
+        working-directory: web
+        env:
+          IOS_BUILD_NUMBER: ${{ github.run_number }}
+
       - name: Build web app (TestFlight mode — Plus, support URLs, NWS UA from .env.testflight)
         run: npm run build:testflight
         working-directory: web
@@ -74,6 +86,7 @@ jobs:
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_IOS_BUILD_NUMBER: ${{ github.run_number }}
 
       # ── 5. Sync web assets into the Xcode project ────────────────────────────
       - name: Capacitor sync
@@ -131,11 +144,7 @@ jobs:
           cp "$PP_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/"$UUID".mobileprovision
           echo "uuid=$UUID" >> $GITHUB_OUTPUT
 
-      # ── 8. Set build number to the GitHub run number (always increments) ─────
-      - name: Set build number
-        run: |
-          cd web/ios/App
-          agvtool new-version -all ${{ github.run_number }}
+      # ── 8. Build number already set via sync:ios-version (IOS_BUILD_NUMBER) ───
 
       # ── 9. Build the Xcode archive ───────────────────────────────────────────
       - name: Build archive

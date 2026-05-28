@@ -1,8 +1,11 @@
 import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
+import { initRevenueCat } from "./billing/revenueCat";
+import { getWebEnv } from "./config/env";
 import "./index.css";
 import { captureAppException, initCrashReporting } from "./monitoring/sentry";
+import { hydrateSafeStorage } from "./storage/safeStorage";
 
 initCrashReporting();
 
@@ -72,10 +75,22 @@ class ErrorBoundary extends Component<
   }
 }
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </StrictMode>
-);
+/* Block first render until persisted settings/saved-data are in the in-memory cache so
+ * `useState(() => readSetting())` initializers and other sync reads see real values. */
+hydrateSafeStorage().finally(() => {
+  /* Fire-and-forget RevenueCat init. Doesn't block first paint — the SDK takes ~100-300 ms
+   * on cold start and the AboutSheet (where its UI lives) is several taps deep. If the user
+   * opens AboutSheet before init resolves, `isRevenueCatReady()` returns false and the panel
+   * shows the legacy URL fallback; once configure resolves, the customer-info listener fires
+   * and the next AboutSheet open reflects entitlement state correctly. No-op on web /
+   * unconfigured (missing API key). */
+  void initRevenueCat({ iosApiKey: getWebEnv().revenueCatApiKeyIos });
+
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    </StrictMode>
+  );
+});

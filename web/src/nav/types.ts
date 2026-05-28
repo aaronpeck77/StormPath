@@ -30,6 +30,10 @@ export interface NavRoute {
   routeNotices?: string[];
   /** Same length as `routeNotices` when set — meters from route start for strip/map alignment (Mapbox incidents). */
   routeNoticeAlongMeters?: (number | undefined)[];
+  /** Mapbox flagged toll roads or collection points along this leg. */
+  hasTolls?: boolean;
+  /** Distinct toll road refs/names or booth labels (when known). */
+  tollLabels?: string[];
 }
 
 export interface TripPlan {

@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import type { PurchasesPackage } from "@revenuecat/purchases-capacitor";
 import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
+import { useRevenueCat } from "../billing/useRevenueCat";
 import { getWebEnv } from "../config/env";
 import { isCrashReportingEnabled } from "../monitoring/sentry";
+import { stormpathVersionChipLabel, stormpathVersionLabel } from "../appVersion";
+import { safeStorage } from "../storage/safeStorage";
 import { MapKeyPanel } from "./MapKeyPanel";
 
 type ActivityTrailPanel = {
@@ -37,6 +41,8 @@ type Props = {
     gpsHighRefreshEnabled: boolean;
     /** Landscape / side view only — portrait layout ignores this */
     landscapeSideHand: "right" | "left";
+    /** Phase 8 — drives `feedback/haptics.ts`; off-switch for the Taptic Engine taps. */
+    hapticsEnabled: boolean;
   };
   onSettings: (next: Props["settings"]) => void;
   /** Replays the first-launch coachmark walk-through. Resets the suppression flag and asks
@@ -65,17 +71,21 @@ export function AboutSheet({
   /** LS override for button highlight (same key as {@link getPayTier}). */
   const payTierOverrideMode = useMemo((): "none" | "free" | "plus" => {
     if (!onPayTierOverride) return "none";
-    try {
-      const v = localStorage.getItem(PAY_TIER_OVERRIDE_LS_KEY)?.toLowerCase();
-      if (v === "free") return "free";
-      if (v === "plus" || v === "pro") return "plus";
-    } catch {
-      /* ignore */
-    }
+    const v = safeStorage.get(PAY_TIER_OVERRIDE_LS_KEY)?.toLowerCase();
+    if (v === "free") return "free";
+    if (v === "plus" || v === "pro") return "plus";
     return "none";
   }, [onPayTierOverride, open, payTierProbeKey]);
   const env = useMemo(() => getWebEnv(), []);
   const [supportNote, setSupportNote] = useState("");
+  /* Phase 7 — native IAP through RevenueCat. `iap.ready` is true only when configure
+   * resolved successfully (native + non-empty `VITE_REVENUECAT_API_KEY_IOS`); when false,
+   * the panel below falls back to the existing `env.upgradeUrl` link. */
+  const iap = useRevenueCat();
+  /* Clear any leftover purchase / restore banner the next time the sheet reopens. */
+  useEffect(() => {
+    if (!open) iap.clearMessage();
+  }, [open, iap]);
 
   useEffect(() => {
     if (!open) return;
@@ -98,14 +108,17 @@ export function AboutSheet({
 
   if (!open) return null;
 
+  const versionLabel = stormpathVersionLabel({ dev });
   const diagnosticsLines = [
-    `StormPath ${__APP_VERSION__}${dev ? " (dev)" : ""}`,
+    `StormPath ${versionLabel}`,
     `Plan: ${tierLabel}`,
     `Crash reporting: ${isCrashReportingEnabled() ? "on (automatic for serious errors)" : "off"}`,
     `Online: ${typeof navigator === "undefined" ? "unknown" : navigator.onLine ? "yes" : "no"}`,
     `Voice: ${settings.voiceGuidanceEnabled ? "on" : "off"}, GPS refresh: ${
       settings.gpsHighRefreshEnabled ? "high" : "normal"
-    }, Data saver: ${settings.dataSaverEnabled ? "on" : "off"}`,
+    }, Data saver: ${settings.dataSaverEnabled ? "on" : "off"}, Haptics: ${
+      settings.hapticsEnabled ? "on" : "off"
+    }`,
     `Landscape UI: ${settings.landscapeSideHand === "left" ? "left hand" : "right hand"}`,
     `Providers: mapbox=${env.mapboxToken ? "on" : "off"}, openweather=${
       env.openWeatherApiKey ? "on" : "off"
@@ -135,12 +148,11 @@ export function AboutSheet({
               className="about-sheet__chip"
               title={
                 dev
-                  ? "Local dev: this value may lag; it is not updated on every dev session."
-                  : "From package.json at build time — bump web/package.json to confirm you’re on the latest bundle"
+                  ? "Local dev — semver from package.json; TestFlight build numbers appear in shipped IPAs only."
+                  : "Matches TestFlight: version from package.json, build number from CI (same as TestFlight list)."
               }
             >
-              v{__APP_VERSION__}
-              {dev ? " · dev" : ""}
+              {stormpathVersionChipLabel({ dev })}
             </span>
             <span
               className={`about-sheet__chip about-sheet__chip--tier${
@@ -166,11 +178,7 @@ export function AboutSheet({
                   payTierOverrideMode === "free" ? " about-sheet__tier-preview-btn--active" : ""
                 }`}
                 onClick={() => {
-                  try {
-                    localStorage.setItem(PAY_TIER_OVERRIDE_LS_KEY, "free");
-                  } catch {
-                    /* ignore */
-                  }
+                  safeStorage.set(PAY_TIER_OVERRIDE_LS_KEY, "free");
                   onPayTierOverride?.();
                 }}
               >
@@ -182,11 +190,7 @@ export function AboutSheet({
                   payTierOverrideMode === "plus" ? " about-sheet__tier-preview-btn--active" : ""
                 }`}
                 onClick={() => {
-                  try {
-                    localStorage.setItem(PAY_TIER_OVERRIDE_LS_KEY, "plus");
-                  } catch {
-                    /* ignore */
-                  }
+                  safeStorage.set(PAY_TIER_OVERRIDE_LS_KEY, "plus");
                   onPayTierOverride?.();
                 }}
               >
@@ -198,11 +202,7 @@ export function AboutSheet({
                   payTierOverrideMode === "none" ? " about-sheet__tier-preview-btn--active" : ""
                 }`}
                 onClick={() => {
-                  try {
-                    localStorage.removeItem(PAY_TIER_OVERRIDE_LS_KEY);
-                  } catch {
-                    /* ignore */
-                  }
+                  safeStorage.remove(PAY_TIER_OVERRIDE_LS_KEY);
                   onPayTierOverride?.();
                 }}
               >
@@ -228,7 +228,25 @@ export function AboutSheet({
             <div className="about-sheet__upgrade-actions">
               {!plus && (
                 <>
-                  {env.upgradeUrl ? (
+                  {iap.ready ? (
+                    /* Native IAP path: the in-app "Subscribe" button. RevenueCat handles
+                     * the App Store sheet, receipt validation, and family sharing for us;
+                     * the customer-info listener in `revenueCat.ts` flips the entitlement
+                     * via `setNativePlusEntitlementActive` and dispatches the global event
+                     * App.tsx listens for. */
+                    <button
+                      type="button"
+                      className="about-sheet__upgrade-btn"
+                      onClick={() => void iap.purchase()}
+                      disabled={iap.busy || !iap.defaultPackage}
+                    >
+                      {iap.busy
+                        ? "Working…"
+                        : iap.defaultPackage
+                        ? formatSubscribeButtonLabel(iap.defaultPackage)
+                        : "Loading subscription…"}
+                    </button>
+                  ) : env.upgradeUrl ? (
                     <a
                       className="about-sheet__upgrade-btn"
                       href={env.upgradeUrl}
@@ -241,6 +259,20 @@ export function AboutSheet({
                     <span className="about-sheet__upgrade-muted">Upgrade link not set.</span>
                   )}
                 </>
+              )}
+              {iap.ready && (
+                /* App Store Review Guideline 3.1.1 — auto-renewable subscriptions must
+                 * include a Restore Purchases button. Always shown when IAP is wired,
+                 * including for users who already have Plus active (handles "I bought on
+                 * my other iPhone" / "I deleted and reinstalled" cases). */
+                <button
+                  type="button"
+                  className="about-sheet__upgrade-link"
+                  onClick={() => void iap.restore()}
+                  disabled={iap.busy}
+                >
+                  {iap.busy ? "Restoring…" : "Restore purchases"}
+                </button>
               )}
               {env.manageSubscriptionUrl ? (
                 <a
@@ -255,6 +287,18 @@ export function AboutSheet({
                 <span className="about-sheet__upgrade-muted">Manage-subscription link not set.</span>
               )}
             </div>
+            {iap.message && (
+              <p
+                className={
+                  iap.messageKind === "success"
+                    ? "about-sheet__upgrade-success"
+                    : "about-sheet__upgrade-muted"
+                }
+                role={iap.messageKind === "error" ? "alert" : "status"}
+              >
+                {iap.message}
+              </p>
+            )}
           </section>
 
           {!plus && (
@@ -391,6 +435,20 @@ export function AboutSheet({
               <span>
                 <strong>GPS high refresh</strong> — request fresher positions (uses more battery). Turn off if the
                 puck feels jittery.
+              </span>
+            </label>
+
+            {/* Phase 8 — Taptic Engine toggle. Only meaningful on iPhone (web no-ops anyway),
+             *  but the toggle ships everywhere so a future Android Capacitor build inherits it. */}
+            <label className="about-sheet__setting">
+              <input
+                type="checkbox"
+                checked={settings.hapticsEnabled}
+                onChange={(e) => onSettings({ ...settings, hapticsEnabled: e.target.checked })}
+              />
+              <span>
+                <strong>Haptic feedback</strong> — short taps from your phone when you start a route, switch lines, or
+                tap a hazard. iPhone only.
               </span>
             </label>
 
@@ -673,7 +731,7 @@ export function AboutSheet({
                 title={supportEmail ? `Email ${supportEmail}` : "Support email not configured"}
                 onClick={() => {
                   if (!supportEmail) return;
-                  const subject = encodeURIComponent(`StormPath support (${__APP_VERSION__})`);
+                  const subject = encodeURIComponent(`StormPath support (${versionLabel})`);
                   const body = encodeURIComponent(
                     `${supportNote.trim() ? `Message:\n${supportNote.trim()}\n\n` : ""}Diagnostics:\n${diagnosticsText}`
                   );
@@ -703,4 +761,32 @@ export function AboutSheet({
       </div>
     </>
   );
+}
+
+/**
+ * Build the "Subscribe — $4.99 / month" style label for the IAP button. RevenueCat's
+ * `priceString` is locale-formatted by the App Store ($4.99, £4.99, €4,99) so we just
+ * append a short period suffix derived from the package identifier. Falls back to plain
+ * "Subscribe to Plus" if anything in the shape is unexpected.
+ */
+function formatSubscribeButtonLabel(pkg: PurchasesPackage): string {
+  const price = pkg.product?.priceString;
+  if (!price) return "Subscribe to Plus";
+  /* RevenueCat "package types" map to canonical period strings. We surface only the four
+   * we'd realistically configure; anything else we render as just the price. */
+  const period = (() => {
+    switch (pkg.packageType) {
+      case "MONTHLY":
+        return " / mo";
+      case "ANNUAL":
+        return " / yr";
+      case "WEEKLY":
+        return " / wk";
+      case "LIFETIME":
+        return " · lifetime";
+      default:
+        return "";
+    }
+  })();
+  return `Subscribe — ${price}${period}`;
 }

@@ -1,3 +1,4 @@
+import { safeStorage } from "../storage/safeStorage";
 import type { LngLat } from "./types";
 
 export type SavedPlace = {
@@ -10,12 +11,10 @@ export type SavedPlace = {
 const STORAGE_KEY = "nav-saved-places-v1";
 
 export function loadSavedPlaces(): SavedPlace[] {
+  const data = safeStorage.getJson<unknown>(STORAGE_KEY, []);
+  if (!Array.isArray(data)) return [];
+  const out: SavedPlace[] = [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const data = JSON.parse(raw) as unknown;
-    if (!Array.isArray(data)) return [];
-    const out: SavedPlace[] = [];
     for (const row of data) {
       if (!row || typeof row !== "object") continue;
       const o = row as Record<string, unknown>;
@@ -31,16 +30,12 @@ export function loadSavedPlaces(): SavedPlace[] {
     }
     return out;
   } catch {
-    return [];
+    return out;
   }
 }
 
 export function persistSavedPlaces(places: SavedPlace[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(places));
-  } catch {
-    /* ignore quota */
-  }
+  safeStorage.setJson(STORAGE_KEY, places);
 }
 
 export function newSavedPlaceId(): string {

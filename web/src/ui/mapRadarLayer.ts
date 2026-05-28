@@ -84,6 +84,7 @@ function installRainViewerMapErrorFilter(map: Map): void {
     const src = (e as { sourceId?: string }).sourceId ?? "";
     if (!src.includes("rainviewer")) return;
     noteRainViewerRateLimit();
+    setRainViewerRadarLayersVisible(map, false);
     if (Date.now() - lastWarnAt < 45_000) return;
     lastWarnAt = Date.now();
     if (import.meta.env.DEV) {
@@ -93,6 +94,19 @@ function installRainViewerMapErrorFilter(map: Map): void {
       );
     }
   });
+}
+
+/** Hide/show raster layers without removing sources (stops tile fetch storms while rate limited). */
+export function setRainViewerRadarLayersVisible(map: Map, visible: boolean): void {
+  const vis = visible ? "visible" : "none";
+  for (const id of [RADAR_LAYER_A, RADAR_LAYER_B, LEGACY_RADAR_LAYER]) {
+    if (!map.getLayer(id)) continue;
+    try {
+      map.setLayoutProperty(id, "visibility", vis);
+    } catch {
+      /* style race */
+    }
+  }
 }
 
 function addRasterPair(

@@ -6,7 +6,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { SITEBIBLE_AD_BAR, type AdvisoryPromoLine } from "../config/advisoryPromo";
+import { SITEBIBLE_AD_BAR, type AdvisoryPromoLine } from "../config/basicAds";
+import { BasicAdStrip } from "./BasicAdStrip";
 import { sortWeatherAlertsBySeverity, type NormalizedWeatherAlert } from "../weatherAlerts";
 import { nwsAlertIsBasicEmergency } from "../weatherAlerts/basicEmergencyFilter";
 import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
@@ -1355,6 +1356,10 @@ export function StormAdvisoryBar({
             </div>
           );
         })()}
+
+              {basicNavAdvisoryMode && promoLines.length > 0 ? (
+                <BasicAdStrip lines={promoLines} expanded aria-label="Partner offers and StormPath Plus" />
+              ) : null}
           </div>
         </div>
       )}

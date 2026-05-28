@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/react";
 import { Capacitor } from "@capacitor/core";
+import { stormpathSentryRelease } from "../appVersion";
 
 let crashReportingActive = false;
 
@@ -23,7 +24,7 @@ export function initCrashReporting(): void {
   Sentry.init({
     dsn,
     environment: mode,
-    release: `stormpath@${__APP_VERSION__}`,
+    release: stormpathSentryRelease(),
     enableLogs: false,
     /* Beta: capture every error; no performance tracing (smaller bundle, less noise). */
     tracesSampleRate: 0,
@@ -37,6 +38,8 @@ export function initCrashReporting(): void {
 
   Sentry.setTag("platform", Capacitor.getPlatform());
   Sentry.setTag("build_mode", mode);
+  const build = (import.meta.env.VITE_IOS_BUILD_NUMBER as string | undefined)?.trim();
+  if (build) Sentry.setTag("ios_build", build);
   crashReportingActive = true;
 }
 

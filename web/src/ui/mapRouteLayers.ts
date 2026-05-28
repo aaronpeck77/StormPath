@@ -8,6 +8,7 @@ import { haversineMeters, slicePolylineBetweenAlong } from "../nav/routeGeometry
 import { sliceRouteAhead } from "../nav/routeRemaining";
 import type { LngLat, NavRoute } from "../nav/types";
 import { polylineBbox, stormOverlapLineFeatures } from "../weatherAlerts/geometryOverlap";
+import { safeExtendBounds, safeFitBounds } from "./mapCameraSafe";
 import { FOCUSED_ROUTE_LINE_WIDTH, routePickSlotHex } from "./mapRouteStyle";
 
 const ROUTE_COND_LEGACY_LAYER = "route-condition-markers-circles";
@@ -412,12 +413,12 @@ function extendBoundsWithPolyline(b: mapboxgl.LngLatBounds, geometry: LngLat[] |
   if (geometry.length > BOUNDS_EXTEND_VERTEX_BUDGET) {
     const box = polylineBbox(geometry);
     if (box) {
-      b.extend([box.west, box.south]);
-      b.extend([box.east, box.north]);
+      safeExtendBounds(b, [box.west, box.south]);
+      safeExtendBounds(b, [box.east, box.north]);
     }
     return;
   }
-  for (const c of geometry) b.extend(c);
+  for (const c of geometry) safeExtendBounds(b, c);
 }
 
 export type FitMapToTripOptions = {
@@ -442,8 +443,8 @@ export function fitMapToTrip(
   opts?: FitMapToTripOptions
 ) {
   const b = new mapboxgl.LngLatBounds();
-  if (user) b.extend(user);
-  if (dest) b.extend(dest);
+  if (user) safeExtendBounds(b, user);
+  if (dest) safeExtendBounds(b, dest);
 
   const onlyId = opts?.onlyRouteId;
   if (onlyId) {
@@ -471,7 +472,10 @@ export function fitMapToTrip(
 
   const finish = () => opts?.onAfterFit?.();
   map.once("moveend", finish);
-  map.fitBounds(b, { padding, maxZoom, duration: 360, essential: true });
+  if (!safeFitBounds(map, b, { padding, maxZoom, duration: 360, essential: true })) {
+    map.off("moveend", finish);
+    opts?.onAfterFit?.();
+  }
 }
 
 export function fitMapToRemainingRoutes(
@@ -487,8 +491,8 @@ export function fitMapToRemainingRoutes(
   zoomBias = 0
 ) {
   const b = new mapboxgl.LngLatBounds();
-  b.extend(userLngLat);
-  if (dest) b.extend(dest);
+  safeExtendBounds(b, userLngLat);
+  if (dest) safeExtendBounds(b, dest);
 
   const primary = primaryRouteId ? routes.find((r) => r.id === primaryRouteId) : null;
   if (primary?.geometry?.length) {
@@ -506,5 +510,5 @@ export function fitMapToRemainingRoutes(
   const spanM = boundsDiagonalMeters(b);
   const maxZoom = Math.min(maxZoomCeiling, maxZoomForBoundsSpanMeters(spanM) + Math.max(0, zoomBias));
 
-  map.fitBounds(b, { padding, maxZoom, duration: 400, essential: true });
+  safeFitBounds(map, b, { padding, maxZoom, duration: 400, essential: true });
 }

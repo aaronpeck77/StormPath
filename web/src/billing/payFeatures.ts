@@ -1,3 +1,4 @@
+import { safeStorage } from "../storage/safeStorage";
 import { readNativePlusEntitlementActive } from "./storeEntitlement";
 
 /**
@@ -25,13 +26,9 @@ export type PayTier = "free" | "plus";
 export const PAY_TIER_OVERRIDE_LS_KEY = "stormpath-pay-tier-override";
 
 export function getPayTier(): PayTier {
-  try {
-    const o = localStorage.getItem(PAY_TIER_OVERRIDE_LS_KEY)?.toLowerCase();
-    if (o === "plus" || o === "pro") return "plus";
-    if (o === "free") return "free";
-  } catch {
-    /* ignore */
-  }
+  const o = safeStorage.get(PAY_TIER_OVERRIDE_LS_KEY)?.toLowerCase();
+  if (o === "plus" || o === "pro") return "plus";
+  if (o === "free") return "free";
   const v = (import.meta.env.VITE_PAY_TIER as string | undefined)?.toLowerCase();
   if (v === "plus" || v === "pro") return "plus";
   if (v === "free") return "free";

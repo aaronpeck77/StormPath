@@ -17,27 +17,20 @@ import {
   type TripLearningMachineState,
 } from "../frequentRoutes/tripDetector";
 import type { FrequentRouteCluster } from "../frequentRoutes/types";
+import { safeStorage } from "../storage/safeStorage";
 
 const OPT_IN_KEY = "stormpath-frequent-routes-opt-in";
 const TICK_MS = 4000;
 
 function readOptIn(): boolean {
-  try {
-    const v = localStorage.getItem(OPT_IN_KEY);
-    if (v === "0" || v === "false") return false;
-    if (v === "1" || v === "true") return true;
-  } catch {
-    /* ignore */
-  }
+  const v = safeStorage.get(OPT_IN_KEY);
+  if (v === "0" || v === "false") return false;
+  if (v === "1" || v === "true") return true;
   return true;
 }
 
 function writeOptIn(on: boolean): void {
-  try {
-    localStorage.setItem(OPT_IN_KEY, on ? "1" : "0");
-  } catch {
-    /* ignore */
-  }
+  safeStorage.set(OPT_IN_KEY, on ? "1" : "0");
 }
 
 /** Plus-only: loose GPS trip detection → clustered candidates for saved routes. */

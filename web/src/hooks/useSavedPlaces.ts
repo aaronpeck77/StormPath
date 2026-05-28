@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { SavedPlace } from "../nav/savedPlaces";
 import { loadSavedPlaces, newSavedPlaceId, persistSavedPlaces } from "../nav/savedPlaces";
 import type { LngLat } from "../nav/types";
+import { safeStorage } from "../storage/safeStorage";
 
 function narrowPhoneDefaultSavedOnMap(): boolean {
   if (typeof window === "undefined") return true;
@@ -11,22 +12,14 @@ function narrowPhoneDefaultSavedOnMap(): boolean {
 export function useSavedPlaces() {
   const [places, setPlaces] = useState<SavedPlace[]>(() => loadSavedPlaces());
   const [showOnMap, setShowOnMap] = useState(() => {
-    try {
-      const v = localStorage.getItem("stormpath-saved-places-on-map");
-      if (v === "0") return false;
-      if (v === "1") return true;
-    } catch {
-      /* ignore */
-    }
+    const v = safeStorage.get("stormpath-saved-places-on-map");
+    if (v === "0") return false;
+    if (v === "1") return true;
     return narrowPhoneDefaultSavedOnMap();
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem("stormpath-saved-places-on-map", showOnMap ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
+    safeStorage.set("stormpath-saved-places-on-map", showOnMap ? "1" : "0");
   }, [showOnMap]);
 
   useEffect(() => {

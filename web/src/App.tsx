@@ -39,20 +39,17 @@ import {
 } from "./nav/stormAvoidanceWaypoint";
 import { tripPlanFromSavedRoute } from "./nav/planFromSavedRoute";
 import type { SavedRoute } from "./nav/savedRoutes";
-import type { LngLat, RouteTurnStep, TripPlan } from "./nav/types";
+import type { LngLat, TripPlan } from "./nav/types";
 import { pickSuggestedActive, scoreTrip } from "./scoring/scoreRoutes";
 import { buildTripFromMapbox, collectMapboxRouteVariants } from "./services/mapboxDirectionsRouter";
 import { useAppForeground } from "./hooks/useAppForeground";
 import { isAbortError, routeFetchUserMessage } from "./utils/fetchResilient";
+import { useTollPreview } from "./nav/useTollPreview";
 import {
   getNavAltRefreshMs,
   getNwsPollIntervalMs,
   getTrafficPollIntervalMs,
   isDataSaverMode,
-  LS_DATA_SAVER,
-  readDataSaverSetting,
-  readDataSaverHintDismissed,
-  dismissDataSaverHint,
 } from "./utils/dataSaver";
 import {
   formatCoordsAreaLabel,
@@ -121,22 +118,16 @@ import {
   RADAR_SOFT_THRESHOLD,
 } from "./nav/constants";
 import type { TrafficOverlay, WeatherOverlay } from "./situation/fusedSnapshot";
-import type { MapFocusRequest, MapViewMode } from "./ui/driveMapTypes";
-import { STORMPATH_CLIENT_BUILD } from "./buildStamp";
+import type { MapViewMode } from "./ui/driveMapTypes";
+import { stormpathVersionLabel } from "./appVersion";
 import {
   applyLayerStartupMigrations,
   readNwsSessionOn,
   readRadarOverlayOn,
-  readRadarSettingOn,
   readRoadAdvisoryDetailOn,
-  readStormSettingOn,
-  readTrafficSettingOn,
   writeNwsSessionOn,
   writeRadarOverlayOn,
-  writeRadarSettingOn,
   writeRoadAdvisoryDetailOn,
-  writeStormSettingOn,
-  writeTrafficSettingOn,
 } from "./layerStartupPrefs";
 
 const DriveMap = lazy(() => import("./ui/DriveMap"));
@@ -157,6 +148,7 @@ import { SavedDestinationsDrawer } from "./ui/SavedDestinationsDrawer";
 import { TopGuidanceBar } from "./ui/TopGuidanceBar";
 import { RecordingRouteBanner } from "./ui/RecordingRouteBanner";
 import { RouteHazardSheet } from "./ui/RouteHazardSheet";
+import { TollFlowSheets } from "./ui/TollFlowSheets";
 import { RouteProgressStrip } from "./ui/RouteProgressStrip";
 import { estimatePostedSpeedMph } from "./ui/DriveHud";
 import { formatEtaDuration } from "./ui/formatEta";
@@ -170,7 +162,7 @@ import {
 } from "./ui/RouteForecastSheet";
 import { Coachmarks } from "./ui/Coachmarks";
 import { resetAllCoachmarks } from "./ui/coachmarks/firstLaunchSteps";
-import { TrafficBypassComparePanel } from "./ui/TrafficBypassComparePanel";
+import { RouteCompareBottomPanel } from "./ui/RouteCompareBottomPanel";
 import { pointAlongPolyline } from "./ui/geometryAlong";
 import { NWS_REQUEST_USER_AGENT } from "./config/nwsUserAgent";
 import {
@@ -199,9 +191,15 @@ import {
   nwsAlertIsBasicEmergency,
 } from "./weatherAlerts/basicEmergencyFilter";
 import { nwsAlertsForLocalForecast } from "./weatherAlerts/localForecastNws";
-import { buildAdvisoryPromoLines, buildBasicNavAdvisoryPromoLines } from "./config/advisoryPromo";
+import {
+  buildAdvisoryPromoLines,
+  buildBasicDisplayAdLines,
+  buildBasicNavAdvisoryPromoLines,
+} from "./config/basicAds";
+import { BasicIdleAdBanner } from "./ui/BasicIdleAdBanner";
+import { useBasicAdMobBanner } from "./hooks/useBasicAdMobBanner";
 import { getPayTier } from "./billing/payFeatures";
-import type { FrequentRouteCluster } from "./frequentRoutes/types";
+import { NATIVE_PAY_TIER_CHANGED_EVENT } from "./billing/revenueCat";
 import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
 import { useFrequentRouteLearning } from "./hooks/useFrequentRouteLearning";
 import { isMapBasemapDaytime } from "./map/mapBasemapDaytime";
@@ -224,7 +222,25 @@ import {
   saveActiveTripToCache,
   isRestorableActiveTripEntry,
 } from "./tripCache";
+import { hapticTapLight, hapticTapMedium, hapticWarning } from "./feedback/haptics";
 import { loadRecentSearchSuggestions, recordRecentSearch } from "./recentSearches";
+import {
+  getTollCompareContext,
+  setTollCompareContext,
+  type TrafficBypassCompareState,
+  useRouteCompareStore,
+} from "./state/routeCompareStore";
+import { useComputeRoutes } from "./nav/useComputeRoutes";
+import { useSettingsStore } from "./state/settingsStore";
+import { useRouteCompareActions } from "./state/useRouteCompareActions";
+import { useTripPlanStore } from "./state/tripPlanStore";
+import {
+  getViewModeBeforeTrafficBypass,
+  setViewModeBeforeTrafficBypass,
+  useUiStore,
+} from "./state/uiStore";
+import { useWeatherStore } from "./state/weatherStore";
+import { safeStorage } from "./storage/safeStorage";
 import {
   areaKeyFromLngLat,
   areaLabelFromDestinationLabel,
@@ -234,38 +250,13 @@ import {
 } from "./preferredAreaRoutes";
 import "./App.css";
 
-type PendingSave =
-  | null
-  | {
-      kind: "route";
-      geometry: LngLat[];
-      turnSteps?: RouteTurnStep[];
-      destinationLngLat: LngLat;
-      destinationLabel: string;
-    }
-  | {
-      kind: "recorded";
-      geometry: LngLat[];
-      destinationLngLat: LngLat;
-    }
-  | { kind: "learned"; cluster: FrequentRouteCluster };
+/* `PendingSave` lives in `state/uiStore.ts` (Phase 4e5a). The type is exported from there
+ * for future consumers; App.tsx no longer references it directly because the `useState<…>`
+ * annotation moved into the store. */
 
-type TrafficBypassCompareState = {
-  headline: string;
-  etaA: number;
-  etaB: number | null;
-  etaC: number | null;
-  hasB: boolean;
-  hasC: boolean;
-  /** From the underlying `RouteImpact` confidence — softens compare panel copy when low. */
-  confidence: "low" | "medium" | "high";
-  /** Chosen A/B/C leg; promotion + drive view happen on explicit confirm, not on first tap. */
-  selectedLeg: "r-a" | "r-b" | "r-c" | null;
-  /** Anchor the compare camera + on-map pin to the hazard the driver is being asked to plan around. */
-  hazardLngLat: LngLat | null;
-  /** Distance from the user along the active route to the hazard (m); drives the tight fit. */
-  hazardAlongMeters: number | null;
-};
+/* `TrafficBypassCompareState` lives in `state/routeCompareStore.ts` (Phase 4c) and is imported
+ * at the top of this file. The shape is unchanged — it just lives next to the store that owns
+ * it so the panel and store can never drift. */
 
 /** Pre-select the active leg when opening A/B/C compare so Go works without an extra tap. */
 function defaultRouteCompareSelection(guidanceRouteId: string): "r-a" | "r-b" | "r-c" {
@@ -273,6 +264,16 @@ function defaultRouteCompareSelection(guidanceRouteId: string): "r-a" | "r-b" | 
     return guidanceRouteId;
   }
   return "r-a";
+}
+
+/** Cancel route compare — flat map view, not tilted drive camera. */
+function viewModeAfterCompareCancel(
+  restore: MapViewMode | null | undefined,
+  navigationStarted: boolean
+): MapViewMode {
+  if (navigationStarted && restore === "drive") return "topdown";
+  if (restore) return restore;
+  return navigationStarted ? "topdown" : "route";
 }
 
 const MB_TRAFFIC_LINE_SNAP_NOTICE = "Mapbox traffic-aware line";
@@ -335,10 +336,24 @@ export default function App() {
   /** Bumped when dev About changes `PAY_TIER_OVERRIDE_LS_KEY` so `getPayTier()` is re-read without reload. */
   const [payTierProbeKey, setPayTierProbeKey] = useState(0);
   const reprobePayTier = useCallback(() => setPayTierProbeKey((n) => n + 1), []);
+  /* Phase 7 — RevenueCat fires `NATIVE_PAY_TIER_CHANGED_EVENT` on every customer-info push
+   * (purchase, restore, refund, family-share). The wrapper has already mirrored the new
+   * entitlement into `safeStorage` by the time this handler runs, so a single
+   * `reprobePayTier()` is enough to make `getPayTier()` re-read and the whole app re-render
+   * with the right tier. Same mechanism the dev "Test pay tier" panel uses. */
+  useEffect(() => {
+    const handler = () => reprobePayTier();
+    window.addEventListener(NATIVE_PAY_TIER_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(NATIVE_PAY_TIER_CHANGED_EVENT, handler);
+  }, [reprobePayTier]);
   /** Plus vs Basic from `getPayTier()` (build env + optional LS override) — identical in dev and production. */
   const isPlus = useMemo(() => getPayTier() === "plus", [payTierProbeKey]);
   const advisoryPromoLines = useMemo(
     () => (isPlus ? buildAdvisoryPromoLines(env, isPlus) : buildBasicNavAdvisoryPromoLines(env)),
+    [env, isPlus]
+  );
+  const basicDisplayAdLines = useMemo(
+    () => (isPlus ? [] : buildBasicDisplayAdLines(env)),
     [env, isPlus]
   );
   /** `?demo=bypass` replay / simulated delay — Plus only (matches Traffic bypass). */
@@ -348,26 +363,23 @@ export default function App() {
   const payFrequentRoutes = isPlus;
   const tierLabel = isPlus ? "Plus" : "Basic";
   const [isOnline, setIsOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
-  const [settingGpsHighRefreshEnabled, setSettingGpsHighRefreshEnabled] = useState(() => {
-    try {
-      const v = localStorage.getItem("stormpath-setting-gps-high-refresh");
-      if (v === "1" || v === "true") return true;
-      if (v === "0" || v === "false") return false;
-    } catch {
-      /* ignore */
-    }
-    return false;
-  });
+  /* Settings now live in `useSettingsStore` (Phase 4a). Local names are kept identical so the
+   * ~50 read sites and the AboutSheet wiring stay unchanged; the store handles persistence to
+   * Capacitor Preferences via `safeStorage` so the per-flag persistence useEffects below could
+   * disappear. Any *side-effects* on toggle (clearing storm state, setting overlay = undefined,
+   * etc.) stay in App-owned useEffects because they touch App-owned refs/state. */
+  const settingGpsHighRefreshEnabled = useSettingsStore((s) => s.gpsHighRefreshEnabled);
   /** Landscape / side view only — CSS mirrors chrome when "left"; portrait ignores */
-  const [settingLandscapeSideHand, setSettingLandscapeSideHand] = useState<"right" | "left">(() => {
-    try {
-      const v = localStorage.getItem("stormpath-setting-landscape-side-hand");
-      if (v === "left") return "left";
-    } catch {
-      /* ignore */
-    }
-    return "right";
-  });
+  const settingLandscapeSideHand = useSettingsStore((s) => s.landscapeSideHand);
+  /** Phase 8 — drives `feedback/haptics.ts`. Subscribed here so the AboutSheet bulk-apply
+   * handler can include it in the settings payload. */
+  const settingHapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
+  /* Phase 4e3: the About sheet is the only consumer of the individual `setSettingX` setters.
+   * `applySettings` writes through all 9 fields in one batched store update and runs each
+   * persistence side once. Per-toggle handlers elsewhere (toolbar Radar overlay, etc.) operate
+   * on App-owned state (`showRadar`), not on the persistent settings, so they don't need the
+   * individual setters either. */
+  const applySettings = useSettingsStore((s) => s.applySettings);
   const {
     lngLat: userLngLat,
     heading,
@@ -396,11 +408,7 @@ export default function App() {
 
   const ACTIVITY_TRAIL_MAP_LS = "stormpath-activity-trail-map-on";
   const [activityTrailMapOn, setActivityTrailMapOn] = useState(() => {
-    try {
-      return localStorage.getItem(ACTIVITY_TRAIL_MAP_LS) === "1";
-    } catch {
-      return false;
-    }
+    return safeStorage.get(ACTIVITY_TRAIL_MAP_LS) === "1";
   });
   const [activityTrailTick, setActivityTrailTick] = useState(0);
   useEffect(() => {
@@ -437,9 +445,16 @@ export default function App() {
     discard: discardRouteRecording,
     tryFinishRecording,
   } = useRouteRecorder();
-  const [pendingSave, setPendingSave] = useState<PendingSave>(null);
-  const [aboutOpen, setAboutOpen] = useState(false);
-  const [corridorForecastOpen, setCorridorForecastOpen] = useState(false);
+  /* Ephemeral overlay state lives in `useUiStore` (Phase 4e5a). Local names + setter
+   * signatures preserved so the dozens of read/setter sites in this file stay unchanged.
+   * `dismissAllOverlays()` from the store collapses 11 setter calls into a single batched
+   * update — used by the route-compare dismiss helper. */
+  const pendingSave = useUiStore((s) => s.pendingSave);
+  const setPendingSave = useUiStore((s) => s.setPendingSave);
+  const aboutOpen = useUiStore((s) => s.aboutOpen);
+  const setAboutOpen = useUiStore((s) => s.setAboutOpen);
+  const corridorForecastOpen = useUiStore((s) => s.corridorForecastOpen);
+  const setCorridorForecastOpen = useUiStore((s) => s.setCorridorForecastOpen);
   const [corridorForecastLegId, setCorridorForecastLegId] = useState("");
   /* Contextual one-shot coachmarks — the {@link Coachmarks} component watches for its
    * tracked targets to become visible and pops a single "Tip" card next to each the first
@@ -462,72 +477,49 @@ export default function App() {
   const [stormSessionOn, setStormSessionOn] = useState(readNwsSessionOn);
 
   /** Never persisted — each route session starts closed; cleared when the plan changes or the trip is stopped. */
-  const [progressCalloutsOpen, setProgressCalloutsOpen] = useState(false);
+  const progressCalloutsOpen = useUiStore((s) => s.progressCalloutsOpen);
+  const setProgressCalloutsOpen = useUiStore((s) => s.setProgressCalloutsOpen);
   const progressCalloutTrackRef = useRef<HTMLDivElement | null>(null);
   const progressCalloutWasOpenRef = useRef(false);
 
   /** Road & traffic overlay (Hazards strip + map traffic colors). Default on until user turns off. */
   const [roadAdvisoryDetailOn, setRoadAdvisoryDetailOn] = useState(readRoadAdvisoryDetailOn);
 
-  // Settings (persisted): toggles that actually reduce background API calls.
-  const [settingStormEnabled, setSettingStormEnabled] = useState(readStormSettingOn);
-  const [settingTrafficEnabled, setSettingTrafficEnabled] = useState(readTrafficSettingOn);
-  const [settingWeatherHintsEnabled, setSettingWeatherHintsEnabled] = useState(() => {
-    try {
-      const v = localStorage.getItem("stormpath-setting-weather-hints-enabled");
-      if (v === "0" || v === "false") return false;
-      if (v === "1" || v === "true") return true;
-    } catch {
-      /* ignore */
-    }
-    return false;
-  });
-  const [settingAutoRerouteEnabled, setSettingAutoRerouteEnabled] = useState(() => {
-    try {
-      const v = localStorage.getItem("stormpath-setting-auto-reroute-enabled");
-      if (v === "0" || v === "false") return false;
-      if (v === "1" || v === "true") return true;
-    } catch {
-      /* ignore */
-    }
-    return true;
-  });
-  const [settingRadarEnabled, setSettingRadarEnabled] = useState(readRadarSettingOn);
-  const [settingDataSaverEnabled, setSettingDataSaverEnabled] = useState(readDataSaverSetting);
-  const [dataSaverHintDismissed, setDataSaverHintDismissed] = useState(readDataSaverHintDismissed);
+  /* Settings (persisted) — toggles that actually reduce background API calls.
+   * Sourced from `useSettingsStore` (Phase 4a). Individual `setSettingX` selectors were
+   * dropped in Phase 4e3 — the only consumer (About sheet) now goes through `applySettings`. */
+  const settingStormEnabled = useSettingsStore((s) => s.stormEnabled);
+  const settingTrafficEnabled = useSettingsStore((s) => s.trafficEnabled);
+  const settingWeatherHintsEnabled = useSettingsStore((s) => s.weatherHintsEnabled);
+  const settingAutoRerouteEnabled = useSettingsStore((s) => s.autoRerouteEnabled);
+  const settingRadarEnabled = useSettingsStore((s) => s.radarEnabled);
+  const settingDataSaverEnabled = useSettingsStore((s) => s.dataSaverEnabled);
+  const dataSaverHintDismissed = useSettingsStore((s) => s.dataSaverHintDismissed);
+  const dismissDataSaverHintAction = useSettingsStore((s) => s.dismissDataSaverHint);
   const appForeground = useAppForeground();
   const dataSaverMode = isDataSaverMode(settingDataSaverEnabled);
-  const [settingVoiceGuidanceEnabled, setSettingVoiceGuidanceEnabled] = useState(() => {
-    try {
-      const v = localStorage.getItem("stormpath-setting-voice-guided");
-      if (v === "1" || v === "true") return true;
-      if (v === "0" || v === "false") return false;
-    } catch {
-      /* ignore */
-    }
-    return false;
-  });
-  const [stormCorridorAlerts, setStormCorridorAlerts] = useState<NormalizedWeatherAlert[]>([]);
-  const [stormOverlapping, setStormOverlapping] = useState<NormalizedWeatherAlert[]>([]);
-  const [stormMapGeoJson, setStormMapGeoJson] = useState<GeoJSON.FeatureCollection | null>(null);
+  const settingVoiceGuidanceEnabled = useSettingsStore((s) => s.voiceGuidanceEnabled);
+  /* Storm/advisory state lives in `useWeatherStore` (Phase 4d). Local names + setter
+   * signatures preserved so the ~40 read/setter sites in this file are unchanged. The store
+   * action for `setStormBarExpanded` writes through to `safeStorage` so persistence and React
+   * state can't drift; `collapseStormBarTransient` covers the route-compare dismiss case that
+   * must NOT persist. */
+  const stormCorridorAlerts = useWeatherStore((s) => s.stormCorridorAlerts);
+  const setStormCorridorAlerts = useWeatherStore((s) => s.setStormCorridorAlerts);
+  const stormOverlapping = useWeatherStore((s) => s.stormOverlapping);
+  const setStormOverlapping = useWeatherStore((s) => s.setStormOverlapping);
+  const stormMapGeoJson = useWeatherStore((s) => s.stormMapGeoJson);
+  const setStormMapGeoJson = useWeatherStore((s) => s.setStormMapGeoJson);
   /** True once we have polygons to draw; avoids flashing "Loading NWS" on 120s refresh while keeping prior map data. */
   const stormMapHasDisplayableRef = useRef(false);
-  const [stormLoading, setStormLoading] = useState(false);
-  const [stormError, setStormError] = useState<string | null>(null);
-  const [stormBarExpanded, setStormBarExpanded] = useState(() => {
-    try {
-      if (typeof localStorage === "undefined") return true;
-      const v = localStorage.getItem("stormpath-storm-advisory-bar-expanded");
-      if (v === "0") return false;
-      if (v === "1") return true;
-      const legacy = localStorage.getItem("stormpath-storm-drawer-expanded");
-      if (legacy === "0") return false;
-      if (legacy === "1") return true;
-      return isNarrowPhoneViewport() ? false : true;
-    } catch {
-      return isNarrowPhoneViewport() ? false : true;
-    }
-  });
+  const stormLoading = useWeatherStore((s) => s.stormLoading);
+  const setStormLoading = useWeatherStore((s) => s.setStormLoading);
+  const stormError = useWeatherStore((s) => s.stormError);
+  const setStormError = useWeatherStore((s) => s.setStormError);
+  const stormBarExpanded = useWeatherStore((s) => s.stormBarExpanded);
+  const setStormBarExpanded = useWeatherStore((s) => s.setStormBarExpanded);
+  /* `collapseStormBarTransient` is consumed inside `useRouteCompareActions` directly; App.tsx
+   * no longer needs to subscribe to it. */
   /**
    * Baseline advisory stream:
    * - Basic: follows Storm setting.
@@ -547,12 +539,20 @@ export default function App() {
     if (!isPlus || !settingStormEnabled || stormCorridorAlerts.length === 0) return undefined;
     return stormCorridorAlerts;
   }, [isPlus, settingStormEnabled, stormCorridorAlerts]);
-  const [plan, setPlan] = useState<TripPlan>(EMPTY_TRIP);
-  const [destLngLat, setDestLngLat] = useState<[number, number] | null>(null);
-  const [destinationLabel, setDestinationLabel] = useState("");
+  /* Trip-plan + view-mode + destination state lives in `useTripPlanStore` (Phase 4b).
+   * Local names + setter signatures match the prior `useState` API exactly so the ~120 read
+   * sites and ~30 setter call sites in this file are unchanged. */
+  const plan = useTripPlanStore((s) => s.plan);
+  const setPlan = useTripPlanStore((s) => s.setPlan);
+  const destLngLat = useTripPlanStore((s) => s.destLngLat);
+  const setDestLngLat = useTripPlanStore((s) => s.setDestLngLat);
+  const destinationLabel = useTripPlanStore((s) => s.destinationLabel);
+  const setDestinationLabel = useTripPlanStore((s) => s.setDestinationLabel);
   const [searchText, setSearchText] = useState("");
-  const [searchExpanded, setSearchExpanded] = useState(true);
-  const [searchEditing, setSearchEditing] = useState(false);
+  const searchExpanded = useUiStore((s) => s.searchExpanded);
+  const setSearchExpanded = useUiStore((s) => s.setSearchExpanded);
+  const searchEditing = useUiStore((s) => s.searchEditing);
+  const setSearchEditing = useUiStore((s) => s.setSearchEditing);
   const [allowAutocomplete, setAllowAutocomplete] = useState(true);
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
   const [suggestLoading, setSuggestLoading] = useState(false);
@@ -577,7 +577,7 @@ export default function App() {
     if (!searchExpanded) searchBoxSessionTokenRef.current = null;
   }, [searchExpanded]);
   /** Lets suggestion taps win over blur before parent clears the list. */
-  const searchBlurClearTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const searchBlurClearTimerRef = useRef<number | null>(null);
   /** Bumped on Stop/clear — in-flight route fetches must not call setPlan after the user cleared the trip. */
   const routeGraphEpochRef = useRef(0);
   /** Cancels the active primary Directions request when the user starts a new route, reroutes, or clears. */
@@ -607,7 +607,8 @@ export default function App() {
   const [weatherOverlay, setWeatherOverlay] = useState<WeatherOverlay | undefined>(
     undefined
   );
-  const [navigationStarted, setNavigationStarted] = useState(false);
+  const navigationStarted = useTripPlanStore((s) => s.navigationStarted);
+  const setNavigationStarted = useTripPlanStore((s) => s.setNavigationStarted);
   const navigationStartedRef = useRef(navigationStarted);
   navigationStartedRef.current = navigationStarted;
 
@@ -623,15 +624,25 @@ export default function App() {
 
   const destLngLatRef = useRef(destLngLat);
   destLngLatRef.current = destLngLat;
-  const [viewMode, setViewMode] = useState<MapViewMode>("route");
-  /** Restore Rt / Dr / map if user cancels bypass compare without picking a line. */
-  const viewModeBeforeTrafficBypassRef = useRef<MapViewMode | null>(null);
+  const viewMode = useTripPlanStore((s) => s.viewMode);
+  const setViewMode = useTripPlanStore((s) => s.setViewMode);
+  /* `viewModeBeforeTrafficBypass` moved into `state/uiStore.ts` (Phase 4e5a) as a module-local
+   * imperative variable + thin getter/setter — same pattern as `tollCompareContext` in 4c.
+   * The route-compare cancel/confirm handlers read it once via `getViewModeBeforeTrafficBypass()`
+   * and clear it via `setViewModeBeforeTrafficBypass(null)`. */
 
   const driveModeUi = navigationStarted && viewMode === "drive";
+  const showBasicIdleAd =
+    !isPlus && !navigationStarted && !stormBarExpanded && basicDisplayAdLines.length > 0;
+  useBasicAdMobBanner({ enabled: !isPlus, navigationStarted });
   /** NWS polygons + fetches follow the user’s NWS toggle everywhere (including drive — no auto-on). */
-  const [savedDrawerOpen, setSavedDrawerOpen] = useState(false);
+  const savedDrawerOpen = useUiStore((s) => s.savedDrawerOpen);
+  const setSavedDrawerOpen = useUiStore((s) => s.setSavedDrawerOpen);
   const [bypassBusy, setBypassBusy] = useState(false);
-  const [trafficBypassCompare, setTrafficBypassCompare] = useState<TrafficBypassCompareState | null>(null);
+  /* Compare panel state lives in `useRouteCompareStore` (Phase 4c). Local names + setter
+   * signature preserved so the ~30 reads / setters in this file are unchanged. */
+  const trafficBypassCompare = useRouteCompareStore((s) => s.trafficBypassCompare);
+  const setTrafficBypassCompare = useRouteCompareStore((s) => s.setTrafficBypassCompare);
   const trafficBypassCompareRef = useRef<TrafficBypassCompareState | null>(null);
   trafficBypassCompareRef.current = trafficBypassCompare;
   const [driveApproachDismissedIds, setDriveApproachDismissedIds] = useState(() => new Set<string>());
@@ -641,8 +652,10 @@ export default function App() {
   /** When true, fabricate a fake reroute-eligible impact ~1.4 mi ahead so the approach banner appears
    *  for testing — only honored under `?demo=bypass` + Plus + navigating. Tapping the banner in this
    *  mode opens the mock compare panel (no Mapbox network call). */
-  const [demoApproachBannerOn, setDemoApproachBannerOn] = useState(false);
-  const [demoCloseHazardOn, setDemoCloseHazardOn] = useState(false);
+  const demoApproachBannerOn = useUiStore((s) => s.demoApproachBannerOn);
+  const setDemoApproachBannerOn = useUiStore((s) => s.setDemoApproachBannerOn);
+  const demoCloseHazardOn = useUiStore((s) => s.demoCloseHazardOn);
+  const setDemoCloseHazardOn = useUiStore((s) => s.setDemoCloseHazardOn);
   const demoPlaybackAlongRef = useRef<number | null>(null);
   demoPlaybackAlongRef.current = demoPlaybackAlongM;
   const [offRouteSevere, setOffRouteSevere] = useState(false);
@@ -658,13 +671,18 @@ export default function App() {
   const lastMbLineSnapMsRef = useRef(0);
   const [trafficOverlay, setTrafficOverlay] = useState<TrafficOverlay | undefined>(undefined);
   const [trafficFetchDone, setTrafficFetchDone] = useState(true);
-  const [mapFocus, setMapFocus] = useState<MapFocusRequest | null>(null);
+  const mapFocus = useUiStore((s) => s.mapFocus);
+  const setMapFocus = useUiStore((s) => s.setMapFocus);
   /** Map bearing in drive mode — compass above the info button. */
   const [driveMapBearingDeg, setDriveMapBearingDeg] = useState<number | null>(null);
-  const [routeHazardSheet, setRouteHazardSheet] = useState<{
-    routeId: string;
-    alerts: RouteAlert[];
-  } | null>(null);
+  const routeHazardSheet = useUiStore((s) => s.routeHazardSheet);
+  const setRouteHazardSheet = useUiStore((s) => s.setRouteHazardSheet);
+  const tollRoutePrompt = useRouteCompareStore((s) => s.tollRoutePrompt);
+  const setTollRoutePrompt = useRouteCompareStore((s) => s.setTollRoutePrompt);
+  const [tollAvoidBusy, setTollAvoidBusy] = useState(false);
+  const [tollAvoidFailureNote, setTollAvoidFailureNote] = useState<string | null>(null);
+  const tollAcceptedRouteIdsRef = useRef<Set<string>>(new Set());
+  const pendingGoAfterTollRef = useRef(false);
   /** Map overlay (toolbar Rad). Default ON — weather-first app design. */
   const [showRadar, setShowRadar] = useState(readRadarOverlayOn);
   useEffect(() => {
@@ -675,16 +693,12 @@ export default function App() {
   const [radarFrameUtcSec, setRadarFrameUtcSec] = useState<number | null>(null);
   const seriousHazardAutoFlewRef = useRef<Set<string>>(new Set());
   const [safetyAck, setSafetyAck] = useState(() => {
-    try {
-      return localStorage.getItem("stormpath-safety-ack-v1") === "1";
-    } catch {
-      return false;
-    }
+    return safeStorage.get("stormpath-safety-ack-v1") === "1";
   });
-  /** Display order: [0]=Route A blue, [1]=B, [2]=C — permutes when you promote a leg (Go / hazard / bypass). */
-  const [routeSlotOrder, setRouteSlotOrder] = useState<string[]>([]);
-  /** Which A/B/C slot is highlighted in route view (0..n-1). Separate from slot 0 so the cycle can reach all legs. */
-  const [previewLegIndex, setPreviewLegIndex] = useState(0);
+  const routeSlotOrder = useTripPlanStore((s) => s.routeSlotOrder);
+  const setRouteSlotOrder = useTripPlanStore((s) => s.setRouteSlotOrder);
+  const previewLegIndex = useTripPlanStore((s) => s.previewLegIndex);
+  const setPreviewLegIndex = useTripPlanStore((s) => s.setPreviewLegIndex);
 
   /** Matches Mapbox night basemap window — stronger chrome borders when the basemap is night. */
   const [basemapNight, setBasemapNight] = useState(() => !isMapBasemapDaytime());
@@ -702,7 +716,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const buildLabel = import.meta.env.DEV ? "dev (local)" : STORMPATH_CLIENT_BUILD;
+    const buildLabel = stormpathVersionLabel();
     console.info(
       `[stormpath boot] ${buildLabel}`,
       "tier:", tierLabel,
@@ -727,91 +741,29 @@ export default function App() {
     };
   }, []);
 
-  const computeRoutes = useCallback(
-    async (
-      end: [number, number],
-      label: string,
-      opts?: { preserveNavigation?: boolean }
-    ) => {
-      if (!userLngLat) return;
-      const epochAtStart = routeGraphEpochRef.current;
-      routeMainFetchAbortRef.current?.abort();
-      const mainFetch = new AbortController();
-      routeMainFetchAbortRef.current = mainFetch;
-      setRouting(true);
-      setRouteError(null);
-      setTapHint(null);
-      if (!opts?.preserveNavigation) {
-        resetNavigationPlanning();
-        /* Route planning mode is the immediate next UI step; don't wait on router/post-processing. */
-        setViewMode("route");
-        setSearchExpanded(false);
-      }
-      try {
-        let p: TripPlan;
-        let destForMap: [number, number] = end;
-        if (env.mapboxToken) {
-          const built = await buildTripFromMapbox(
-            env.mapboxToken,
-            userLngLat,
-            end,
-            {
-              origin: "Your location",
-              destination: label,
-            },
-            {
-              signal: mainFetch.signal,
-              allowLocalTripThirdRoute: isPlus,
-              preferThreeRoutes: isPlus,
-              stormAlerts: stormAlertsForRouting,
-              radarAvoidanceEnabled: isPlus && settingStormEnabled,
-            }
-          );
-          p = built.plan;
-          destForMap = built.routeDestination;
-          if (built.snapNotice) {
-            setTapHint(built.snapNotice);
-            window.setTimeout(() => setTapHint(null), 8500);
-          }
-        } else {
-          p = buildMockTripBetween(userLngLat, end, label);
-        }
-        p = !isPlus && p.routes.length > 2 ? { ...p, routes: p.routes.slice(0, 2) } : p;
-        if (epochAtStart !== routeGraphEpochRef.current) return;
-        setPlan(p);
-        if (payFrequentRoutes) {
-          // Apply learned “preferred route” for this destination area (city-ish bucket).
-          const prefKey = areaKeyFromLngLat(destForMap);
-          const pref = preferredAreaRouteMapRef.current[prefKey];
-          const preferredRole = pref?.preferredRole;
-          if (preferredRole && p.routes.some((r) => r.role === preferredRole)) {
-            const preferredId = p.routes.find((r) => r.role === preferredRole)!.id;
-            const ids = slotOrderAfterSelect(p.routes.map((r) => r.id), preferredId);
-            setRouteSlotOrder(ids);
-            setPreviewLegIndex(0);
-          } else {
-            setRouteSlotOrder(p.routes.map((r) => r.id));
-            setPreviewLegIndex(0);
-          }
-        } else {
-          setRouteSlotOrder(p.routes.map((r) => r.id));
-          setPreviewLegIndex(0);
-        }
-        setDestLngLat(destForMap);
-        setViewMode("route");
-        setFitTrigger((n) => n + 1);
-        setSearchExpanded(false);
-      } catch (e) {
-        if (isAbortError(e)) return;
-        setRouteError(
-          routeFetchUserMessage(e) ?? (e instanceof Error ? e.message : String(e))
-        );
-      } finally {
-        setRouting(false);
-      }
-    },
-    [userLngLat, env.mapboxToken, resetNavigationPlanning, payFrequentRoutes, isPlus, stormAlertsForRouting, settingStormEnabled]
-  );
+  /* Main route-build entry point now lives in `nav/useComputeRoutes.ts` (Phase 4e5c). The
+   * hook subscribes to route-compare, trip-plan, and ui stores directly; the remaining 16
+   * deps are App-owned (refs, env, pay-tier flags, App-owned setters). The returned function
+   * keeps the same name + signature so the dozens of call sites below are unchanged. */
+  const computeRoutes = useComputeRoutes({
+    userLngLat,
+    mapboxToken: env.mapboxToken,
+    isPlus,
+    stormAlertsForRouting,
+    stormEnabled: settingStormEnabled,
+    payFrequentRoutes,
+    resetNavigationPlanning,
+    routeGraphEpochRef,
+    routeMainFetchAbortRef,
+    tollAcceptedRouteIdsRef,
+    pendingGoAfterTollRef,
+    preferredAreaRouteMapRef,
+    setRouting,
+    setRouteError,
+    setTapHint,
+    setTollAvoidFailureNote,
+    setFitTrigger,
+  });
 
   /** Recompute routes from current GPS to the same destination without stopping navigation. */
   const recalcRouteFromHere = useCallback(
@@ -1996,7 +1948,7 @@ export default function App() {
           : Math.max(1, Math.round(route.baseEtaMinutes));
         const letter = String.fromCharCode(65 + Math.min(slot, 25));
         const routeLabel = route.label.trim() || `Route ${letter}`;
-        return {
+        const item: RoutePickItem = {
           id: route.id,
           letter,
           routeLabel,
@@ -2005,6 +1957,8 @@ export default function App() {
           softPath: route.role === "hazardSmart",
           color: routePickSlotHex(slot),
         };
+        if (route.hasTolls) item.hasTolls = true;
+        return item;
       })
       .filter((x): x is RoutePickItem => x != null);
   }, [scored, suggestedRouteId, orderedRouteIds, plan.routes]);
@@ -2014,7 +1968,8 @@ export default function App() {
     if (!r?.geometry?.length) return undefined;
     const dist = formatRouteDistanceMi(r.geometry);
     const blurb = routeConsiderationSummary(r);
-    return `${dist} · ${blurb}`;
+    const tollNote = r.hasTolls ? "Tolls" : "";
+    return [dist, blurb, tollNote].filter(Boolean).join(" · ");
   }, [plan.routes, lineFocusId]);
 
   const guidanceRouteId = lineFocusId || primaryRouteId;
@@ -3159,18 +3114,27 @@ export default function App() {
     writeRoadAdvisoryDetailOn(on);
   }, []);
 
-  const onStormBarExpandedChange = useCallback((expanded: boolean) => {
-    setStormBarExpanded(expanded);
-    try {
-      localStorage.setItem("stormpath-storm-advisory-bar-expanded", expanded ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-    setFitTrigger((n) => n + 1);
-  }, []);
+  const onStormBarExpandedChange = useCallback(
+    (expanded: boolean) => {
+      setStormBarExpanded(expanded);
+      setFitTrigger((n) => n + 1);
+    },
+    [setStormBarExpanded]
+  );
 
+  /* Route-compare actions live in `useRouteCompareActions` (Phase 4e5b). The hook subscribes
+   * to all four state stores (uiStore, routeCompareStore, weatherStore, tripPlanStore)
+   * internally; the only App-owned dep is `setFitTrigger`. Names preserved so the existing
+   * call sites in `handleTollPreview`, the hazard sheet handler, and the trip-bypass effects
+   * stay unchanged. */
+  const { activateRouteCompare } = useRouteCompareActions({
+    setFitTrigger,
+  });
+
+  /* Persistence for the 10 settings now lives inside `useSettingsStore` (Phase 4a). The
+   * effects below only react to *changes* in a setting to clean up App-owned state — they no
+   * longer call `writeXSettingOn`/`safeStorage.set` since the store action already did that. */
   useEffect(() => {
-    writeStormSettingOn(settingStormEnabled);
     if (!settingStormEnabled) {
       // Ensure we stop storm polling immediately.
       stormMapHasDisplayableRef.current = false;
@@ -3180,75 +3144,23 @@ export default function App() {
       setStormCorridorAlerts([]);
       setStormOverlapping([]);
       setStormBarExpanded(false);
-      try {
-        localStorage.setItem("stormpath-storm-advisory-bar-expanded", "0");
-      } catch {
-        /* ignore */
-      }
     }
   }, [settingStormEnabled]);
 
   useEffect(() => {
-    writeTrafficSettingOn(settingTrafficEnabled);
     if (!settingTrafficEnabled) setTrafficOverlay(undefined);
   }, [settingTrafficEnabled]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem("stormpath-setting-weather-hints-enabled", settingWeatherHintsEnabled ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
     if (!settingWeatherHintsEnabled && !settingStormEnabled) setWeatherOverlay(undefined);
   }, [settingWeatherHintsEnabled, settingStormEnabled]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(LS_DATA_SAVER, settingDataSaverEnabled ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  }, [settingDataSaverEnabled]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("stormpath-setting-auto-reroute-enabled", settingAutoRerouteEnabled ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  }, [settingAutoRerouteEnabled]);
-
-  useEffect(() => {
-    writeRadarSettingOn(settingRadarEnabled);
     if (!settingRadarEnabled) {
       setShowRadar(false);
       writeRadarOverlayOn(false);
     }
   }, [settingRadarEnabled]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("stormpath-setting-voice-guided", settingVoiceGuidanceEnabled ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  }, [settingVoiceGuidanceEnabled]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("stormpath-setting-gps-high-refresh", settingGpsHighRefreshEnabled ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  }, [settingGpsHighRefreshEnabled]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("stormpath-setting-landscape-side-hand", settingLandscapeSideHand);
-    } catch {
-      /* ignore */
-    }
-  }, [settingLandscapeSideHand]);
 
   useEffect(() => {
     stormMapHasDisplayableRef.current = Boolean(stormMapGeoJson?.features?.length);
@@ -3303,7 +3215,7 @@ export default function App() {
     const genAtStart = ++nwsFetchGenRef.current;
     let cancelled = false;
     /** If primary routing is still computing, retry soon instead of waiting for the 120s interval. */
-    let routingRetryTimer: ReturnType<typeof window.setTimeout> | null = null;
+    let routingRetryTimer: number | null = null;
 
     const run = async () => {
       if (nwsFetchGenRef.current !== genAtStart) { if (import.meta.env.DEV) console.log("[NWS run] stale gen"); return; }
@@ -3555,6 +3467,9 @@ export default function App() {
       (env.mapboxToken ? isOnline : true)
     ) {
       lastSevereAutoRecalcMsRef.current = now;
+      /* Phase 8 — warning two-tap so the driver feels the silent reroute kicking off without
+       * having to glance up. Throttled by FAST_REROUTE_THROTTLE_MS so it never rapid-fires. */
+      hapticWarning();
       void recalcRouteFromHere({ silent: true });
     }
   }, [
@@ -3609,6 +3524,10 @@ export default function App() {
     const now = Date.now();
     if (now - lastSevereAutoRecalcMsRef.current < NAV_SEVERE_OFF_ROUTE_THROTTLE_MS) return;
     lastSevereAutoRecalcMsRef.current = now;
+    /* Phase 8 — driver is severely off-route and we're auto-rerouting silently. The Taptic
+     * warning is the only feedback for this `silent: true` path, so it doubles as the cue
+     * that the screen is about to update. */
+    hapticWarning();
     void recalcRouteFromHere({ silent: true });
   }, [
     settingAutoRerouteEnabled,
@@ -3716,11 +3635,7 @@ export default function App() {
       showOnMap: activityTrailMapOn,
       onShowOnMapChange: (on: boolean) => {
         setActivityTrailMapOn(on);
-        try {
-          localStorage.setItem(ACTIVITY_TRAIL_MAP_LS, on ? "1" : "0");
-        } catch {
-          /* ignore */
-        }
+        safeStorage.set(ACTIVITY_TRAIL_MAP_LS, on ? "1" : "0");
       },
       onClear: () => {
         clearActivitySamples();
@@ -3756,11 +3671,17 @@ export default function App() {
     seriousHazardAutoFlewRef.current.clear();
     resetNavigationPlanning();
     setViewMode("route");
+    setRecenterPlanningPuckTick((n) => n + 1);
     setRouteHazardSheet(null);
+    setTollRoutePrompt(null);
+    setTollAvoidFailureNote(null);
+    tollAcceptedRouteIdsRef.current.clear();
+    pendingGoAfterTollRef.current = false;
     setMapFocus(null);
     setBypassBusy(false);
     setRouting(false);
     setTrafficBypassCompare(null);
+    setTollCompareContext(null);
     setDemoPlaybackPlaying(false);
     setDemoPlaybackAlongM(null);
     void clearActiveTripCache();
@@ -3878,6 +3799,9 @@ export default function App() {
   const handlePromoteRouteToPrimary = useCallback(
     (id: string) => {
       if (!plan.routes.some((r) => r.id === id)) return;
+      /* Phase 8 — light tap when the user picks a different alternate from the line tap or
+       * compare bar. Low-stakes ack so the user feels the route swap commit. */
+      hapticTapLight();
       setRouteSlotOrder((prev) => slotOrderAfterSelect(prev.length ? prev : planRouteIds, id));
       setPreviewLegIndex(0);
     },
@@ -3889,24 +3813,38 @@ export default function App() {
     setFitTrigger((n) => n + 1);
   }, []);
 
-  const handleTrafficBypassCompareConfirm = useCallback(() => {
-    const prev = trafficBypassCompareRef.current;
-    const id = prev?.selectedLeg;
-    if (!id) return;
-    handlePromoteRouteToPrimary(id);
-    setTrafficBypassCompare(null);
-    viewModeBeforeTrafficBypassRef.current = null;
-    setViewMode("drive");
-    setFitTrigger((n) => n + 1);
-  }, [handlePromoteRouteToPrimary]);
-
   const handleTrafficBypassCompareCancel = useCallback(() => {
+    const tollCtx = getTollCompareContext();
+    if (tollCtx) {
+      setTollCompareContext(null);
+      setTrafficBypassCompare(null);
+      setPlan(tollCtx.originalPlan);
+      setRouteSlotOrder(tollCtx.originalSlotOrder);
+      setPreviewLegIndex(tollCtx.originalPreviewLegIndex);
+      setViewModeBeforeTrafficBypass(null);
+      setViewMode(viewModeAfterCompareCancel(tollCtx.originalViewMode, navigationStarted));
+      setFitTrigger((n) => n + 1);
+      const route = tollCtx.originalPlan.routes.find((r) => r.id === tollCtx.originalRouteId);
+      if (route?.hasTolls && !tollAcceptedRouteIdsRef.current.has(tollCtx.originalRouteId)) {
+        setTollRoutePrompt({ routeId: tollCtx.originalRouteId, labels: route.tollLabels ?? [] });
+      }
+      return;
+    }
+
     setTrafficBypassCompare(null);
-    const restore = viewModeBeforeTrafficBypassRef.current;
-    viewModeBeforeTrafficBypassRef.current = null;
-    setViewMode(restore ?? "drive");
+    const restore = getViewModeBeforeTrafficBypass();
+    setViewModeBeforeTrafficBypass(null);
+    setViewMode(viewModeAfterCompareCancel(restore, navigationStarted));
     setFitTrigger((n) => n + 1);
-  }, []);
+  }, [
+    navigationStarted,
+    setTrafficBypassCompare,
+    setPlan,
+    setRouteSlotOrder,
+    setPreviewLegIndex,
+    setViewMode,
+    setTollRoutePrompt,
+  ]);
 
   const toggleDemoPlaybackPlaying = useCallback(() => {
     if (!demoBypassTrafficJamPlus || !guidanceRoute?.geometry?.length) return;
@@ -3926,12 +3864,11 @@ export default function App() {
     if (trafficBypassCompareRef.current) return;
     const gr = guidanceRoute;
     if (!gr?.geometry?.length) return;
-    viewModeBeforeTrafficBypassRef.current = viewMode;
     const base = Math.max(8, Math.round(gr.baseEtaMinutes ?? 30));
     const totalM = polylineLengthMeters(gr.geometry);
     const userAlong = Number.isFinite(userAlongGuidanceM) ? userAlongGuidanceM : 0;
     const mockJamAlong = Math.min(totalM - 50, userAlong + Math.max(800, (totalM - userAlong) * 0.32));
-    setTrafficBypassCompare({
+    activateRouteCompare({
       headline: "Demo: mock bypass compare (no network)",
       etaA: base,
       etaB: Math.max(6, base - 4),
@@ -3943,18 +3880,21 @@ export default function App() {
       hazardLngLat: pointAtAlongMeters(gr.geometry, mockJamAlong),
       hazardAlongMeters: mockJamAlong,
     });
-    setViewMode("topdown");
-    setFitTrigger((n) => n + 1);
-  }, [demoBypassTrafficJamPlus, navigationStarted, guidanceRoute, viewMode, userAlongGuidanceM, guidanceRouteId]);
+  }, [demoBypassTrafficJamPlus, navigationStarted, guidanceRoute, userAlongGuidanceM, guidanceRouteId, activateRouteCompare]);
 
-  const handleGo = () => {
+  const proceedGo = useCallback(() => {
     const chosen = orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? primaryRouteId;
     if (!chosen) return;
+    /* Phase 8 — primary "I'm starting navigation" tap. Medium impact gives the user clear
+     * Taptic confirmation that the gesture registered before the screen flips into drive mode. */
+    hapticTapMedium();
     setRouteSlotOrder((prev) => slotOrderAfterSelect(prev.length ? prev : planRouteIds, chosen));
     setPreviewLegIndex(0);
     setNavigationStarted(true);
     setViewMode("drive");
     setFitTrigger((n) => n + 1);
+    setTollRoutePrompt(null);
+    setTollAvoidFailureNote(null);
 
     // Learn the preferred A/B/C “role” for this destination area.
     if (payFrequentRoutes && destLngLat && destinationLabel.trim()) {
@@ -3975,7 +3915,131 @@ export default function App() {
         savePreferredAreaRouteMap(map);
       }
     }
+  }, [
+    orderedRouteIds,
+    previewLegIndex,
+    primaryRouteId,
+    planRouteIds,
+    payFrequentRoutes,
+    destLngLat,
+    destinationLabel,
+    plan.routes,
+  ]);
+
+  const handleGo = () => {
+    const chosen = orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? primaryRouteId;
+    if (!chosen) return;
+    const route = plan.routes.find((r) => r.id === chosen);
+    if (route?.hasTolls && !tollAcceptedRouteIdsRef.current.has(chosen)) {
+      pendingGoAfterTollRef.current = true;
+      setTollRoutePrompt({ routeId: chosen, labels: route.tollLabels ?? [] });
+      return;
+    }
+    proceedGo();
   };
+
+  const handleTollContinue = useCallback(() => {
+    if (tollRoutePrompt) {
+      tollAcceptedRouteIdsRef.current.add(tollRoutePrompt.routeId);
+    }
+    setTollAvoidFailureNote(null);
+    setTollRoutePrompt(null);
+    if (pendingGoAfterTollRef.current) {
+      pendingGoAfterTollRef.current = false;
+      proceedGo();
+    }
+  }, [tollRoutePrompt, proceedGo]);
+
+  /* Toll preview kickoff lives in `useTollPreview` (Phase 4e4). The hook subscribes to
+   * `routeCompareStore` + `tripPlanStore` internally; we just forward the App-owned bits
+   * (busy / failure-note setters, env, location, the route-compare activation helper). */
+  const handleTollPreview = useTollPreview({
+    userLngLat,
+    mapboxToken: env.mapboxToken,
+    isPlus,
+    stormAlertsForRouting,
+    stormEnabled: settingStormEnabled,
+    pendingGoAfterTollRef,
+    setTollAvoidBusy,
+    setTollAvoidFailureNote,
+    activateRouteCompare,
+  });
+
+  const handleTrafficBypassCompareConfirm = useCallback(() => {
+    const tollCtx = getTollCompareContext();
+    const prev = trafficBypassCompareRef.current;
+    const id = prev?.selectedLeg;
+    if (!id) return;
+
+    if (tollCtx) {
+      setTollCompareContext(null);
+      setTrafficBypassCompare(null);
+      setViewModeBeforeTrafficBypass(null);
+
+      if (id === "r-b") {
+        const p =
+          !isPlus && tollCtx.fullTollFreePlan.routes.length > 2
+            ? { ...tollCtx.fullTollFreePlan, routes: tollCtx.fullTollFreePlan.routes.slice(0, 2) }
+            : tollCtx.fullTollFreePlan;
+        setPlan(p);
+        setRouteSlotOrder(p.routes.map((r) => r.id));
+        setPreviewLegIndex(0);
+        setTollAvoidFailureNote(null);
+        setTollRoutePrompt(null);
+        setTapHint("Updated to a toll-free route.");
+        window.setTimeout(() => setTapHint(null), 5500);
+        setViewMode("route");
+      } else {
+        setPlan(tollCtx.originalPlan);
+        setRouteSlotOrder(tollCtx.originalSlotOrder);
+        setPreviewLegIndex(tollCtx.originalPreviewLegIndex);
+        tollAcceptedRouteIdsRef.current.add(tollCtx.originalRouteId);
+        setTollRoutePrompt(null);
+        if (tollCtx.pendingGo) {
+          pendingGoAfterTollRef.current = false;
+          proceedGo();
+        } else {
+          setViewMode(tollCtx.originalViewMode);
+        }
+      }
+      setFitTrigger((n) => n + 1);
+      return;
+    }
+
+    handlePromoteRouteToPrimary(id);
+    setTrafficBypassCompare(null);
+    setViewModeBeforeTrafficBypass(null);
+    setViewMode("drive");
+    setFitTrigger((n) => n + 1);
+  }, [
+    handlePromoteRouteToPrimary,
+    proceedGo,
+    isPlus,
+    setTrafficBypassCompare,
+    setPlan,
+    setRouteSlotOrder,
+    setPreviewLegIndex,
+    setViewMode,
+    setTollRoutePrompt,
+  ]);
+
+  useEffect(() => {
+    if (navigationStarted || routing || plan.routes.length === 0 || trafficBypassCompare) return;
+    const routeId =
+      orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? plan.routes[0]?.id;
+    if (!routeId) return;
+    const route = plan.routes.find((r) => r.id === routeId);
+    if (!route?.hasTolls) {
+      setTollRoutePrompt(null);
+      return;
+    }
+    if (tollAcceptedRouteIdsRef.current.has(routeId)) {
+      setTollRoutePrompt(null);
+      return;
+    }
+    if (pendingGoAfterTollRef.current) return;
+    setTollRoutePrompt({ routeId, labels: route.tollLabels ?? [] });
+  }, [navigationStarted, routing, plan.routes, orderedRouteIds, previewLegIndex, trafficBypassCompare]);
 
   const flushMapFocus = useCallback(() => {
     setMapFocus(null);
@@ -4052,13 +4116,10 @@ export default function App() {
     (opts: Parameters<typeof buildRouteCompareFromPlan>[0]) => {
       const state = buildRouteCompareFromPlan(opts);
       if (!state) return false;
-      viewModeBeforeTrafficBypassRef.current = viewMode;
-      setTrafficBypassCompare(state);
-      setViewMode("topdown");
-      setFitTrigger((n) => n + 1);
+      activateRouteCompare(state);
       return true;
     },
-    [buildRouteCompareFromPlan, viewMode]
+    [buildRouteCompareFromPlan, activateRouteCompare]
   );
 
   const handleQuickReportIssue = useCallback(() => {
@@ -4068,9 +4129,10 @@ export default function App() {
       if (site) window.open(site, "_blank", "noopener,noreferrer");
       return;
     }
-    const subject = encodeURIComponent(`StormPath quick issue report (${__APP_VERSION__})`);
+    const versionLabel = stormpathVersionLabel();
+    const subject = encodeURIComponent(`StormPath quick issue report (${versionLabel})`);
     const quickDiag = [
-      `App: StormPath ${__APP_VERSION__}`,
+      `App: StormPath ${versionLabel}`,
       `Online: ${typeof navigator === "undefined" ? "unknown" : navigator.onLine ? "yes" : "no"}`,
       `View: ${viewMode}`,
       `Navigating: ${navigationStarted ? "yes" : "no"}`,
@@ -4084,6 +4146,8 @@ export default function App() {
 
   const handleProgressStripCorridorClick = useCallback((alert: RouteAlert) => {
     if (!lineFocusId) return;
+    /* Phase 8 — light tap when the driver opens a hazard from the progress strip. */
+    hapticTapLight();
     setRouteHazardSheet({
       routeId: lineFocusId,
       alerts: [alert],
@@ -4100,6 +4164,7 @@ export default function App() {
         stormOverlapping.length > 0 ? stormOverlapping : stormCorridorAlerts;
       const picked = routeAlertsFromStormBandMidpoint(geom, startM, endM, pool);
       if (!picked.length) return;
+      hapticTapLight();
       setRouteHazardSheet({
         routeId: lineFocusId,
         alerts: picked,
@@ -4116,6 +4181,7 @@ export default function App() {
       const band = advisoryStormStripBands.find((b) => b.alertId === alert.id);
       const routeAlert = routeAlertForNwsAdvisoryClick(alert, geom, band ?? null);
       if (!routeAlert) return;
+      hapticTapLight();
       setRouteHazardSheet({
         routeId: lineFocusId,
         alerts: [routeAlert],
@@ -4134,7 +4200,6 @@ export default function App() {
     const originLngLat =
       demoBypassTrafficJamPlus && effectiveUserLngLat ? effectiveUserLngLat : userLngLat;
     if (!env.mapboxToken || !originLngLat || !destLngLat || !guidanceRoute?.geometry?.length) return;
-    viewModeBeforeTrafficBypassRef.current = viewMode;
     const epochAtStart = routeGraphEpochRef.current;
     setBypassBusy(true);
     const geom = guidanceRoute.geometry;
@@ -4173,7 +4238,7 @@ export default function App() {
           confidence: trafficBypassContext?.confidence ?? "medium",
         });
         if (!opened) {
-          viewModeBeforeTrafficBypassRef.current = null;
+          setViewModeBeforeTrafficBypass(null);
           setTapHint("No alternate routes available right now — try again in a moment.");
           window.setTimeout(() => setTapHint(null), 6000);
         }
@@ -4194,14 +4259,13 @@ export default function App() {
       };
       const etaA = etaFor("r-a");
       if (etaA == null) {
-        viewModeBeforeTrafficBypassRef.current = null;
+        setViewModeBeforeTrafficBypass(null);
         setTapHint("Could not build route options — try again.");
         window.setTimeout(() => setTapHint(null), 5000);
         return;
       }
 
-      setFitTrigger((n) => n + 1);
-      setTrafficBypassCompare({
+      activateRouteCompare({
         headline: compareHeadline,
         etaA,
         etaB: etaFor("r-b"),
@@ -4213,7 +4277,6 @@ export default function App() {
         hazardLngLat,
         hazardAlongMeters: jamAlongM,
       });
-      setViewMode("topdown");
     } catch {
       const opened = openRouteCompareFromPlan({
         headline: compareHeadline,
@@ -4222,7 +4285,7 @@ export default function App() {
         confidence: trafficBypassContext?.confidence ?? "medium",
       });
       if (!opened) {
-        viewModeBeforeTrafficBypassRef.current = null;
+        setViewModeBeforeTrafficBypass(null);
         setTapHint("Route compare failed — try again when you have a signal.");
         window.setTimeout(() => setTapHint(null), 5000);
       }
@@ -4240,10 +4303,68 @@ export default function App() {
     routeImpactsForUi,
     userAlongGuidanceM,
     trafficBypassContext,
-    viewMode,
     openRouteCompareFromPlan,
+    activateRouteCompare,
     stormAlertsForRouting,
     settingStormEnabled,
+  ]);
+
+  /* Hazard sheet's "Try alternate route" CTA is only meaningful when we have Plus + Mapbox +
+   * an active trip. Hoisted out of the JSX IIFE in Phase 4e4 so the render path stays declarative.
+   * Placed below `handleTrafficBypassFromHere` because the handler closes over it. */
+  const hazardSheetAlternateAvailable = useMemo(
+    () =>
+      Boolean(
+        isPlus &&
+          env.mapboxToken &&
+          userLngLat &&
+          destLngLat &&
+          guidanceRoute?.geometry?.length
+      ),
+    [isPlus, env.mapboxToken, userLngLat, destLngLat, guidanceRoute?.geometry?.length]
+  );
+
+  /** Hazard sheet → "Try alternate route": for weather corridors with no pre-built alt,
+   * recompute first, then open the bypass compare; otherwise jump straight into compare. */
+  const handleHazardSheetTryAlternate = useCallback(() => {
+    if (!routeHazardSheet) return;
+    const primary = routeHazardSheet.alerts[0];
+    runAfterHazardSheetAction(() => {
+      if (!hazardSheetAlternateAvailable || !guidanceRoute?.geometry?.length || !destLngLat) {
+        setTapHint("Route compare needs Plus, traffic, and an active trip.");
+        window.setTimeout(() => setTapHint(null), 5500);
+        return;
+      }
+      const geom = guidanceRoute.geometry;
+      let anchorAlongM: number | undefined;
+      let anchorLngLat: LngLat | undefined;
+      if (primary?.alongMeters != null && geom.length) {
+        const totalM = polylineLengthMeters(geom);
+        anchorAlongM = Math.max(0, Math.min(primary.alongMeters, totalM - 1));
+        anchorLngLat = pointAtAlongMeters(geom, anchorAlongM);
+      }
+      const bypassOpts = { anchorAlongMeters: anchorAlongM, anchorLngLat };
+      if (primary?.corridorKind === "weather" && !alternateBypassRouteId) {
+        void (async () => {
+          await computeRoutes(destLngLat, destinationLabel.trim() || "Destination", {
+            preserveNavigation: true,
+          });
+          void handleTrafficBypassFromHere(bypassOpts);
+        })();
+        return;
+      }
+      void handleTrafficBypassFromHere(bypassOpts);
+    });
+  }, [
+    routeHazardSheet,
+    runAfterHazardSheetAction,
+    hazardSheetAlternateAvailable,
+    guidanceRoute,
+    destLngLat,
+    destinationLabel,
+    alternateBypassRouteId,
+    computeRoutes,
+    handleTrafficBypassFromHere,
   ]);
 
   /** Stop navigation and clear the trip (single “cancel everything” control). */
@@ -4499,8 +4620,8 @@ export default function App() {
   return (
     <div
       className={`app-shell nav-fullmap${navigationStarted && viewMode === "drive" ? " nav-drive-ui" : ""}${
-        basemapNight ? " app-shell--basemap-night" : ""
-      }${settingLandscapeSideHand === "left" ? " app-shell--landscape-hand-left" : ""}${
+        trafficBypassCompare ? " nav-route-compare-active" : ""
+      }${basemapNight ? " app-shell--basemap-night" : ""}${settingLandscapeSideHand === "left" ? " app-shell--landscape-hand-left" : ""}${
         radarMapOverlayOn && radarFrameUtcSec != null ? " nav-radar-frame-time-visible" : ""
       }`}
     >
@@ -4578,6 +4699,7 @@ export default function App() {
         </div>
 
         <div className="nav-drive-overlay-stack">
+            {!trafficBypassCompare ? (
             <div className="nav-top-cluster">
               <div className="nav-top-route-rail">
                 <div className="nav-top-route-rail__main">
@@ -4651,8 +4773,8 @@ export default function App() {
                           ? {
                               onOpenSettings: () => setAboutOpen(true),
                               onDismiss: () => {
-                                dismissDataSaverHint();
-                                setDataSaverHintDismissed(true);
+                                /* Store action: persists + flips `dataSaverHintDismissed` in one go. */
+                                dismissDataSaverHintAction();
                               },
                             }
                           : null
@@ -4712,8 +4834,10 @@ export default function App() {
                 </div>
               </div>
             </div>
+            ) : null}
             {navigationStarted &&
               isPlus &&
+              !trafficBypassCompare &&
               progressRailRoute?.geometry &&
               progressRailRoute.geometry.length >= 2 && (
               <div
@@ -4838,53 +4962,23 @@ export default function App() {
             )}
           </div>
 
-        {routeHazardSheet && (() => {
-          const primary = routeHazardSheet.alerts[0];
-          const canTryAlternate = Boolean(
-            isPlus &&
-              env.mapboxToken &&
-              userLngLat &&
-              destLngLat &&
-              guidanceRoute?.geometry?.length
-          );
-          return (
-            <RouteHazardSheet
-              open
-              alerts={routeHazardSheet.alerts}
-              alternateRouteAvailable={canTryAlternate}
-              bypassBusy={bypassBusy}
-              onClose={() => setRouteHazardSheet(null)}
-              onTryAlternateRoute={() => {
-                runAfterHazardSheetAction(() => {
-                  if (!canTryAlternate || !guidanceRoute?.geometry?.length || !destLngLat) {
-                    setTapHint("Route compare needs Plus, traffic, and an active trip.");
-                    window.setTimeout(() => setTapHint(null), 5500);
-                    return;
-                  }
-                  const geom = guidanceRoute.geometry;
-                  let anchorAlongM: number | undefined;
-                  let anchorLngLat: LngLat | undefined;
-                  if (primary?.alongMeters != null && geom.length) {
-                    const totalM = polylineLengthMeters(geom);
-                    anchorAlongM = Math.max(0, Math.min(primary.alongMeters, totalM - 1));
-                    anchorLngLat = pointAtAlongMeters(geom, anchorAlongM);
-                  }
-                  const bypassOpts = { anchorAlongMeters: anchorAlongM, anchorLngLat };
-                  if (primary?.corridorKind === "weather" && !alternateBypassRouteId) {
-                    void (async () => {
-                      await computeRoutes(destLngLat, destinationLabel.trim() || "Destination", {
-                        preserveNavigation: true,
-                      });
-                      void handleTrafficBypassFromHere(bypassOpts);
-                    })();
-                    return;
-                  }
-                  void handleTrafficBypassFromHere(bypassOpts);
-                });
-              }}
-            />
-          );
-        })()}
+        {routeHazardSheet && (
+          <RouteHazardSheet
+            open
+            alerts={routeHazardSheet.alerts}
+            alternateRouteAvailable={hazardSheetAlternateAvailable}
+            bypassBusy={bypassBusy}
+            onClose={() => setRouteHazardSheet(null)}
+            onTryAlternateRoute={handleHazardSheetTryAlternate}
+          />
+        )}
+
+        <TollFlowSheets
+          avoidFailureNote={tollAvoidFailureNote}
+          busy={tollAvoidBusy || routing}
+          onContinue={handleTollContinue}
+          onPreview={() => void handleTollPreview()}
+        />
 
         <SavedDestinationsDrawer
           open={savedDrawerOpen}
@@ -5042,11 +5136,7 @@ export default function App() {
                 type="button"
                 className="nav-safety-banner__btn"
                 onClick={() => {
-                  try {
-                    localStorage.setItem("stormpath-safety-ack-v1", "1");
-                  } catch {
-                    /* ignore */
-                  }
+                  safeStorage.set("stormpath-safety-ack-v1", "1");
                   setSafetyAck(true);
                 }}
               >
@@ -5129,35 +5219,22 @@ export default function App() {
         )}
 
         <div className="nav-bottom-stack">
-          {trafficBypassCompare && (
-            <TrafficBypassComparePanel
-              headline={trafficBypassCompare.headline}
-              etaA={trafficBypassCompare.etaA}
-              etaB={trafficBypassCompare.etaB}
-              etaC={trafficBypassCompare.etaC}
-              hasB={trafficBypassCompare.hasB}
-              hasC={trafficBypassCompare.hasC}
-              confidence={trafficBypassCompare.confidence}
-              selectedLeg={trafficBypassCompare.selectedLeg}
-              routeLabels={{
-                "r-a": plan.routes.find((r) => r.id === "r-a")?.label ?? "Route A",
-                "r-b": plan.routes.find((r) => r.id === "r-b")?.label ?? "Route B",
-                "r-c": plan.routes.find((r) => r.id === "r-c")?.label ?? "Route C",
-              }}
-              onSelect={handleTrafficBypassCompareSelect}
-              onConfirm={handleTrafficBypassCompareConfirm}
-              onCancel={handleTrafficBypassCompareCancel}
-              navigationStarted={navigationStarted}
-            />
-          )}
-          {recordingActive && (
+          {showBasicIdleAd ? <BasicIdleAdBanner lines={basicDisplayAdLines} /> : null}
+          <RouteCompareBottomPanel
+            onSelect={handleTrafficBypassCompareSelect}
+            onConfirm={handleTrafficBypassCompareConfirm}
+            onCancel={handleTrafficBypassCompareCancel}
+          />
+
+          {recordingActive && !trafficBypassCompare ? (
             <RecordingRouteBanner
               pointCount={recordingPointCount}
               lengthMeters={recordingLengthM}
               onStopSave={handleStopRecordingSave}
               onDiscard={handleDiscardRecordingPath}
             />
-          )}
+          ) : null}
+          {!trafficBypassCompare ? (
           <div className="nav-bottom-chrome-wrap">
             <div className="nav-bottom-dock">
               {navigationStarted && viewMode === "drive" ? (
@@ -5302,6 +5379,7 @@ export default function App() {
               onTrafficBypass={() => void handleTrafficBypassFromHere()}
             />
           </div>
+          ) : null}
         </div>
       </div>
 
@@ -5340,24 +5418,14 @@ export default function App() {
           voiceGuidanceEnabled: settingVoiceGuidanceEnabled,
           gpsHighRefreshEnabled: settingGpsHighRefreshEnabled,
           landscapeSideHand: settingLandscapeSideHand,
+          hapticsEnabled: settingHapticsEnabled,
         }}
         onSettings={(next) => {
-          setSettingRadarEnabled(next.radarEnabled);
-          writeRadarSettingOn(next.radarEnabled);
-          if (!next.radarEnabled) {
-            setShowRadar(false);
-            writeRadarOverlayOn(false);
-          }
-          setSettingStormEnabled(next.stormEnabled);
-          writeStormSettingOn(next.stormEnabled);
-          setSettingTrafficEnabled(next.trafficEnabled);
-          writeTrafficSettingOn(next.trafficEnabled);
-          setSettingWeatherHintsEnabled(next.weatherHintsEnabled);
-          setSettingDataSaverEnabled(next.dataSaverEnabled);
-          setSettingAutoRerouteEnabled(next.autoRerouteEnabled);
-          setSettingVoiceGuidanceEnabled(next.voiceGuidanceEnabled);
-          setSettingGpsHighRefreshEnabled(next.gpsHighRefreshEnabled);
-          setSettingLandscapeSideHand(next.landscapeSideHand);
+          /* `applySettings` persists every field through the same helpers the individual
+           * setters use and batches the state update into a single React re-render. The
+           * `useEffect([settingRadarEnabled])` at the top of this file picks up the radar
+           * overlay clean-up on the next tick. */
+          applySettings(next);
           setTapHint(`Settings updated (${tierLabel}).`);
           window.setTimeout(() => setTapHint(null), 2500);
         }}

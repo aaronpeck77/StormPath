@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import type { LngLat } from "../nav/types";
+import { safeStorage } from "../storage/safeStorage";
 import { fetchWithTimeout } from "../utils/fetchResilient";
 
 /**
@@ -37,21 +38,13 @@ function readDevLocationOverride(): LngLat | null {
     const raw = fromHash?.get("devloc") ?? params.get("devloc");
     const fromUrl = parseLatLngString(raw);
     if (fromUrl) {
-      try {
-        localStorage.setItem(DEV_LOCATION_LS_KEY, `${fromUrl[1]},${fromUrl[0]}`);
-      } catch {
-        /* private mode */
-      }
+      safeStorage.set(DEV_LOCATION_LS_KEY, `${fromUrl[1]},${fromUrl[0]}`);
       return fromUrl;
     }
   } catch {
-    /* ignore */
+    /* ignore URL parsing */
   }
-  try {
-    return parseLatLngString(localStorage.getItem(DEV_LOCATION_LS_KEY));
-  } catch {
-    return null;
-  }
+  return parseLatLngString(safeStorage.get(DEV_LOCATION_LS_KEY));
 }
 
 /** DEV only: pinned coords from `#devloc=` / `?devloc=` / `stormpath-dev-location` (browser GPS skipped). */
@@ -62,11 +55,7 @@ export function getDevLocationOverrideLngLat(): LngLat | null {
 
 /** DEV: drop pinned coords so the browser can supply real GPS again. */
 export function clearDevLocationOverride(): void {
-  try {
-    localStorage.removeItem(DEV_LOCATION_LS_KEY);
-  } catch {
-    /* ignore */
-  }
+  safeStorage.remove(DEV_LOCATION_LS_KEY);
 }
 
 export type LocationFixSource =

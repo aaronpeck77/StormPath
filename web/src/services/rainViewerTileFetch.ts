@@ -8,6 +8,7 @@ const MIN_GAP_MS = 80;
 const RATE_LIMIT_COOLDOWN_MS = 90_000;
 
 let rateLimitedUntil = 0;
+let lastRateLimitLogAt = 0;
 let inFlight = 0;
 let lastFetchAt = 0;
 const waiters: (() => void)[] = [];
@@ -19,11 +20,28 @@ export function isRainViewerRateLimited(): boolean {
   return Date.now() < rateLimitedUntil;
 }
 
+/** Milliseconds until RainViewer fetches can resume (0 when not cooling down). */
+export function rainViewerRateLimitMsRemaining(): number {
+  return Math.max(0, rateLimitedUntil - Date.now());
+}
+
 export function noteRainViewerRateLimit(): void {
-  rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
-  if (import.meta.env.DEV) {
+  const now = Date.now();
+  const entering = now >= rateLimitedUntil;
+  rateLimitedUntil = now + RATE_LIMIT_COOLDOWN_MS;
+  if (import.meta.env.DEV && entering && now - lastRateLimitLogAt > 45_000) {
+    lastRateLimitLogAt = now;
     console.warn("[RainViewer] rate limited — pausing extra tile fetches for 90s");
   }
+  for (const listener of rateLimitListeners) listener();
+}
+
+const rateLimitListeners = new Set<() => void>();
+
+/** Run when RainViewer enters a cooldown (hide layers, pause animation, etc.). */
+export function onRainViewerRateLimit(listener: () => void): () => void {
+  rateLimitListeners.add(listener);
+  return () => rateLimitListeners.delete(listener);
 }
 
 function releaseSlot(): void {

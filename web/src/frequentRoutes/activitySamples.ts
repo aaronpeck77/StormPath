@@ -1,5 +1,6 @@
 import { haversineMeters } from "../nav/routeGeometry";
 import type { LngLat } from "../nav/types";
+import { safeStorage } from "../storage/safeStorage";
 import type { FrequentRouteCluster } from "./types";
 
 const STORAGE_KEY = "stormpath-activity-samples-v1";
@@ -33,44 +34,26 @@ function hydrateMemFromTail(list: ActivitySample[]) {
 }
 
 function loadRaw(): ActivitySample[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const data = JSON.parse(raw) as unknown;
-    if (!Array.isArray(data)) return [];
-    const out: ActivitySample[] = [];
-    for (const row of data) {
-      if (!row || typeof row !== "object") continue;
-      const o = row as { t?: number; lng?: number; lat?: number };
-      if (
-        typeof o.t === "number" &&
-        typeof o.lng === "number" &&
-        typeof o.lat === "number" &&
-        Number.isFinite(o.t + o.lng + o.lat)
-      ) {
-        out.push({ t: o.t, lng: o.lng, lat: o.lat });
-      }
+  const data = safeStorage.getJson<unknown>(STORAGE_KEY, []);
+  if (!Array.isArray(data)) return [];
+  const out: ActivitySample[] = [];
+  for (const row of data) {
+    if (!row || typeof row !== "object") continue;
+    const o = row as { t?: number; lng?: number; lat?: number };
+    if (
+      typeof o.t === "number" &&
+      typeof o.lng === "number" &&
+      typeof o.lat === "number" &&
+      Number.isFinite(o.t + o.lng + o.lat)
+    ) {
+      out.push({ t: o.t, lng: o.lng, lat: o.lat });
     }
-    return out;
-  } catch {
-    return [];
   }
+  return out;
 }
 
 function persist(list: ActivitySample[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-  } catch {
-    /* quota — drop oldest half and retry once */
-    try {
-      const half = list.slice(Math.floor(list.length / 2));
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(half));
-      hydrateMemFromTail(half);
-    } catch {
-      /* ignore */
-    }
-    return;
-  }
+  safeStorage.setJson(STORAGE_KEY, list);
   hydrateMemFromTail(list);
   try {
     window.dispatchEvent(new Event(ACTIVITY_SAMPLES_UPDATED_EVENT));
@@ -103,11 +86,7 @@ export function loadActivitySamples(): ActivitySample[] {
 }
 
 export function clearActivitySamples(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    /* ignore */
-  }
+  safeStorage.remove(STORAGE_KEY);
   memLastT = 0;
   memLastPos = null;
   try {

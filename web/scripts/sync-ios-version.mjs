@@ -2,7 +2,7 @@
  * Keeps Xcode MARKETING_VERSION / CURRENT_PROJECT_VERSION in sync with web/package.json
  * so TestFlight / Settings match the in-app semver from Vite (__APP_VERSION__).
  *
- * Build number = major*1_000_000 + minor*1000 + patch (monotonic with semver bumps).
+ * Build number = IOS_BUILD_NUMBER env (CI / TestFlight) or major*1_000_000 + minor*1000 + patch.
  *
  * Important: iOS compares MARKETING_VERSION when offering TestFlight/App Store updates.
  * If you ever shipped 1.0, do not ship 0.x next — testers on 1.0 will not see 0.x as an update
@@ -24,7 +24,10 @@ const maj = Number.isFinite(parts[0]) ? parts[0] : 0;
 const min = Number.isFinite(parts[1]) ? parts[1] : 0;
 const pat = Number.isFinite(parts[2]) ? parts[2] : 0;
 const marketingVersion = version;
-const buildNumber = maj * 1_000_000 + min * 1000 + pat;
+const envBuild = process.env.IOS_BUILD_NUMBER?.trim();
+const buildNumber = envBuild && /^\d+$/.test(envBuild)
+  ? envBuild
+  : String(maj * 1_000_000 + min * 1000 + pat);
 
 let pbx = fs.readFileSync(pbxPath, "utf8");
 pbx = pbx.replace(/MARKETING_VERSION = [^;]+;/g, `MARKETING_VERSION = ${marketingVersion};`);

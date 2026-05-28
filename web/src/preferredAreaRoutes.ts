@@ -1,4 +1,5 @@
 import type { LngLat, RouteRole } from "./nav/types";
+import { safeStorage } from "./storage/safeStorage";
 
 const LS_KEY = "stormpath-preferred-area-routes-v1";
 
@@ -31,22 +32,12 @@ export function areaLabelFromDestinationLabel(destinationLabel: string): string 
 }
 
 export function loadPreferredAreaRouteMap(): PreferredAreaRouteMap {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") return {};
-    return parsed as PreferredAreaRouteMap;
-  } catch {
-    return {};
-  }
+  const parsed = safeStorage.getJson<unknown>(LS_KEY, {});
+  if (!parsed || typeof parsed !== "object") return {};
+  return parsed as PreferredAreaRouteMap;
 }
 
 export function savePreferredAreaRouteMap(map: PreferredAreaRouteMap): void {
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(map));
-  } catch {
-    /* ignore */
-  }
+  safeStorage.setJson(LS_KEY, map);
 }
 

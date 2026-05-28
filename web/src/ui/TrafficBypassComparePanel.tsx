@@ -17,6 +17,8 @@ export type TrafficBypassComparePanelProps = {
   onCancel: () => void;
   /** When true, confirm reads "Go" (active navigation); otherwise "Use this route". */
   navigationStarted?: boolean;
+  /** Override confirm button label (e.g. toll preview during planning). */
+  confirmLabel?: string;
   /** Mapbox leg labels (Main, No interstate, etc.) — shown on each card. */
   routeLabels?: Partial<Record<"r-a" | "r-b" | "r-c", string>>;
 };
@@ -56,6 +58,7 @@ export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps)
     onConfirm,
     onCancel,
     navigationStarted = false,
+    confirmLabel,
     routeLabels,
   } = props;
   const lowConfidence = confidence === "low";
@@ -72,15 +75,6 @@ export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps)
       disabled: false,
     },
     {
-      id: "r-c",
-      badge: "C",
-      title: label("r-c"),
-      desc: lowConfidence ? "Third option — compare on map" : "Third option — different corridor",
-      eta: etaC,
-      deltaLabel: hasC ? savingsShortVsA(etaA, etaC) : null,
-      disabled: !hasC,
-    },
-    {
       id: "r-b",
       badge: "B",
       title: label("r-b"),
@@ -88,6 +82,15 @@ export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps)
       eta: etaB,
       deltaLabel: hasB ? savingsShortVsA(etaA, etaB) : null,
       disabled: !hasB,
+    },
+    {
+      id: "r-c",
+      badge: "C",
+      title: label("r-c"),
+      desc: lowConfidence ? "Third option — compare on map" : "Third option — different corridor",
+      eta: etaC,
+      deltaLabel: hasC ? savingsShortVsA(etaA, etaC) : null,
+      disabled: !hasC,
     },
   ];
 
@@ -151,7 +154,7 @@ export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps)
           onClick={onConfirm}
           disabled={selectedLeg == null}
         >
-          {navigationStarted ? "Go" : "Use this route"}
+          {confirmLabel ?? (navigationStarted ? "Go" : "Use this route")}
         </button>
       </div>
     </div>

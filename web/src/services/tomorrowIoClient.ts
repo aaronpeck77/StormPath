@@ -2,6 +2,8 @@
  * Tomorrow.io request pacing: free tier ~25 req/hr, 3 req/s — serialize, cache, budget, persist 429 cooldown.
  */
 
+import { safeStorage } from "../storage/safeStorage";
+
 const MIN_GAP_MS = 1200;
 const CACHE_TTL_MS = 25 * 60 * 1000;
 const RATE_LIMIT_COOLDOWN_MS = 60 * 60 * 1000;
@@ -19,23 +21,15 @@ const responseCache = new Map<string, { at: number; data: unknown }>();
 
 function readPersistedRateUntil(): number {
   if (typeof window === "undefined") return 0;
-  try {
-    const v = Number(localStorage.getItem(LS_RATE_UNTIL));
-    return Number.isFinite(v) && v > Date.now() ? v : 0;
-  } catch {
-    return 0;
-  }
+  const v = Number(safeStorage.get(LS_RATE_UNTIL));
+  return Number.isFinite(v) && v > Date.now() ? v : 0;
 }
 
 function persistRateUntil(until: number): void {
-  try {
-    if (until > Date.now()) {
-      localStorage.setItem(LS_RATE_UNTIL, String(until));
-    } else {
-      localStorage.removeItem(LS_RATE_UNTIL);
-    }
-  } catch {
-    /* ignore */
+  if (until > Date.now()) {
+    safeStorage.set(LS_RATE_UNTIL, String(until));
+  } else {
+    safeStorage.remove(LS_RATE_UNTIL);
   }
 }
 
@@ -46,25 +40,19 @@ function currentHourKey(): string {
 
 function readHourCount(): { hour: string; count: number } {
   if (typeof window === "undefined") return { hour: currentHourKey(), count: 0 };
-  try {
-    const raw = localStorage.getItem(LS_HOUR_BUDGET);
-    if (!raw) return { hour: currentHourKey(), count: 0 };
-    const parsed = JSON.parse(raw) as { hour?: string; count?: number };
-    return {
-      hour: typeof parsed.hour === "string" ? parsed.hour : currentHourKey(),
-      count: typeof parsed.count === "number" ? parsed.count : 0,
-    };
-  } catch {
-    return { hour: currentHourKey(), count: 0 };
-  }
+  const parsed = safeStorage.getJson<{ hour?: string; count?: number } | null>(
+    LS_HOUR_BUDGET,
+    null
+  );
+  if (!parsed) return { hour: currentHourKey(), count: 0 };
+  return {
+    hour: typeof parsed.hour === "string" ? parsed.hour : currentHourKey(),
+    count: typeof parsed.count === "number" ? parsed.count : 0,
+  };
 }
 
 function writeHourCount(hour: string, count: number): void {
-  try {
-    localStorage.setItem(LS_HOUR_BUDGET, JSON.stringify({ hour, count }));
-  } catch {
-    /* ignore */
-  }
+  safeStorage.setJson(LS_HOUR_BUDGET, { hour, count });
 }
 
 function hourBudgetRemaining(): number {

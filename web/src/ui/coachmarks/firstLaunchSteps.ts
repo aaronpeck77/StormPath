@@ -5,9 +5,11 @@
  * fires the first time its target actually becomes visible on screen — i.e. as the user
  * naturally encounters each piece of chrome — rather than as a forced-up-front walkthrough.
  *
- * Per-tip persistence: each entry has its own localStorage key so dismissing one (Got it)
+ * Per-tip persistence: each entry has its own storage key so dismissing one (Got it)
  * doesn't suppress the others. About → Help → Replay quick tour clears all of them.
  */
+
+import { safeStorage } from "../../storage/safeStorage";
 
 export type CoachmarkAnchor = "auto" | "above" | "below" | "left" | "right";
 
@@ -74,32 +76,17 @@ function storageKey(id: string): string {
 
 /** Has the user already dismissed this specific tip on this device? */
 export function isCoachmarkStepSeen(id: string): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return window.localStorage.getItem(storageKey(id)) === "done";
-  } catch {
-    return false;
-  }
+  return safeStorage.get(storageKey(id)) === "done";
 }
 
 /** Record dismissal for one tip. Other tips remain in their pre-existing state. */
 export function markCoachmarkStepSeen(id: string): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(storageKey(id), "done");
-  } catch {
-    /* swallow — silent failure better than crashing the tour */
-  }
+  safeStorage.set(storageKey(id), "done");
 }
 
 /** Wipe every per-step "seen" flag so all tips re-arm. Used by About → Replay quick tour. */
 export function resetAllCoachmarks(): void {
-  if (typeof window === "undefined") return;
-  try {
-    for (const step of FIRST_LAUNCH_COACHMARK_STEPS) {
-      window.localStorage.removeItem(storageKey(step.id));
-    }
-  } catch {
-    /* swallow */
+  for (const step of FIRST_LAUNCH_COACHMARK_STEPS) {
+    safeStorage.remove(storageKey(step.id));
   }
 }

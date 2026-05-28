@@ -1,4 +1,5 @@
 import type { LngLat } from "./nav/types";
+import { safeStorage } from "./storage/safeStorage";
 import type { SearchSuggestion } from "./ui/SearchBar";
 
 const RECENT_KEY = "stormpath-recent-searches-v1";
@@ -11,34 +12,24 @@ type RecentEntry = {
 };
 
 function safeRead(): RecentEntry[] {
-  try {
-    const raw = localStorage.getItem(RECENT_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((x) => x as Partial<RecentEntry>)
-      .filter(
-        (x): x is RecentEntry =>
-          typeof x?.placeName === "string" &&
-          Array.isArray(x?.lngLat) &&
-          x.lngLat.length === 2 &&
-          typeof x.lngLat[0] === "number" &&
-          typeof x.lngLat[1] === "number" &&
-          typeof x.savedAtMs === "number"
-      )
-      .sort((a, b) => b.savedAtMs - a.savedAtMs);
-  } catch {
-    return [];
-  }
+  const parsed = safeStorage.getJson<unknown>(RECENT_KEY, []);
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((x) => x as Partial<RecentEntry>)
+    .filter(
+      (x): x is RecentEntry =>
+        typeof x?.placeName === "string" &&
+        Array.isArray(x?.lngLat) &&
+        x.lngLat.length === 2 &&
+        typeof x.lngLat[0] === "number" &&
+        typeof x.lngLat[1] === "number" &&
+        typeof x.savedAtMs === "number"
+    )
+    .sort((a, b) => b.savedAtMs - a.savedAtMs);
 }
 
 function safeWrite(entries: RecentEntry[]): void {
-  try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(entries.slice(0, MAX_RECENTS)));
-  } catch {
-    /* ignore */
-  }
+  safeStorage.setJson(RECENT_KEY, entries.slice(0, MAX_RECENTS));
 }
 
 function hitId(placeName: string, lngLat: LngLat): string {

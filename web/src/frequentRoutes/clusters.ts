@@ -1,5 +1,6 @@
 import { haversineMeters } from "../nav/routeGeometry";
 import type { LngLat } from "../nav/types";
+import { safeStorage } from "../storage/safeStorage";
 import type { CompletedLearnedTrip, FrequentRouteCluster } from "./types";
 
 const STORAGE_KEY = "stormpath-frequent-route-clusters";
@@ -74,12 +75,10 @@ function trimClusters(list: FrequentRouteCluster[]): FrequentRouteCluster[] {
 }
 
 export function loadFrequentRouteClusters(): FrequentRouteCluster[] {
+  const data = safeStorage.getJson<unknown>(STORAGE_KEY, []);
+  if (!Array.isArray(data)) return [];
+  const out: FrequentRouteCluster[] = [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const data = JSON.parse(raw) as unknown;
-    if (!Array.isArray(data)) return [];
-    const out: FrequentRouteCluster[] = [];
     for (const row of data) {
       if (!row || typeof row !== "object") continue;
       const o = row as Record<string, unknown>;
@@ -111,16 +110,12 @@ export function loadFrequentRouteClusters(): FrequentRouteCluster[] {
     }
     return out;
   } catch {
-    return [];
+    return out;
   }
 }
 
 export function persistFrequentRouteClusters(clusters: FrequentRouteCluster[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(clusters));
-  } catch {
-    /* ignore */
-  }
+  safeStorage.setJson(STORAGE_KEY, clusters);
 }
 
 export function removeFrequentRouteCluster(clusters: FrequentRouteCluster[], id: string): FrequentRouteCluster[] {

@@ -12,7 +12,7 @@ import {
   RAINVIEWER_ANIMATION_DWELL_MS,
   tileUrlFromHostAndPath,
 } from "../services/rainViewerRadar";
-import { isRainViewerRateLimited } from "../services/rainViewerTileFetch";
+import { isRainViewerRateLimited, onRainViewerRateLimit, rainViewerRateLimitMsRemaining } from "../services/rainViewerTileFetch";
 import {
   applyRouteConditionHighlights,
   applyRoutesToMap,
@@ -34,6 +34,17 @@ import {
   ensureMapboxTrafficConditionLayers,
   setMapboxTrafficLayersVisible,
 } from "./mapTrafficLayers";
+import {
+  getMapCanvas,
+  isValidLngLat,
+  isValidLngLatPair,
+  safeEaseTo,
+  safeExtendBounds,
+  safeFitBounds,
+  safeFlyTo,
+  setMapCanvasCursor,
+  stopMapCamera,
+} from "./mapCameraSafe";
 
 /** Mapbox traffic is moved to the top of the layer stack; route lines must be lifted above it again. */
 function liftTrafficThenRoutesThenHits(
@@ -53,8 +64,11 @@ import {
   RAINVIEWER_RADAR_VISIBLE_OPACITY,
   removeRainViewerRadar,
   setRainViewerRadarTilesOnSource,
+  setRainViewerRadarLayersVisible,
   waitForRainViewerSideLoaded,
 } from "./mapRadarLayer";
+
+import { safeStorage } from "../storage/safeStorage";
 
 import type { MapFocusRequest, MapViewMode } from "./driveMapTypes";
 import { MAIN_MAP_ROUTE_PADDING } from "./driveMapTypes";
@@ -93,11 +107,11 @@ function parseNightBasemapPreset(): NightBasemapPreset {
     if (q === "navigation" || q === "nav") return "navigation";
     if (q === "streets" || q === "day") return "streets";
     if (q === "neutral" || q === "dark") return "neutral";
-    const ls = localStorage.getItem(NIGHT_MAP_STYLE_LS_KEY);
-    if (ls === "navigation" || ls === "streets" || ls === "neutral") return ls;
   } catch {
-    /* ignore */
+    /* ignore URL parse */
   }
+  const ls = safeStorage.get(NIGHT_MAP_STYLE_LS_KEY);
+  if (ls === "navigation" || ls === "streets" || ls === "neutral") return ls;
   return "neutral";
 }
 
@@ -829,6 +843,8 @@ export function DriveMap({
   const routeIdsRef = useRef<Set<string>>(new Set());
   const userFlewRef = useRef(false);
   const prevTopdownRef = useRef(false);
+  const prevNavigationStartedRef = useRef(false);
+  const wasRouteCompareRef = useRef(false);
   const onClickRef = useRef(onMapClick);
   onClickRef.current = onMapClick;
   const userLngLatRef = useRef(userLngLat);
@@ -846,7 +862,7 @@ export function DriveMap({
   const navigationStartedRef = useRef(navigationStarted);
   navigationStartedRef.current = navigationStarted;
   const userExploringRef = useRef(false);
-  const exploreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exploreTimerRef = useRef<number | null>(null);
   const lastForcedPlanningFitTriggerRef = useRef<number | null>(null);
   const driveCamBearingSmoothedRef = useRef<number | null>(null);
   /** Reuse stable padding/offset for drive follow — fresh objects every frame can confuse Mapbox camera updates. */
@@ -896,12 +912,12 @@ export function DriveMap({
     }
   };
   scheduleExploreEndRef.current = () => {
-    if (exploreTimerRef.current) clearTimeout(exploreTimerRef.current);
+    if (exploreTimerRef.current) window.clearTimeout(exploreTimerRef.current);
     const idleMs =
       navigationStartedRef.current && viewModeRef.current === "drive"
         ? DRIVE_EXPLORE_IDLE_MS
         : EXPLORE_IDLE_MS;
-    exploreTimerRef.current = setTimeout(() => {
+    exploreTimerRef.current = window.setTimeout(() => {
       userExploringRef.current = false;
       exploreTimerRef.current = null;
       setMapResumeTick((n) => n + 1);
@@ -980,18 +996,14 @@ export function DriveMap({
   }, [token]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(NIGHT_MAP_STYLE_LS_KEY, nightBasemapPreset);
-    } catch {
-      /* ignore */
-    }
+    safeStorage.set(NIGHT_MAP_STYLE_LS_KEY, nightBasemapPreset);
   }, [nightBasemapPreset]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !stormBrowseBoundsReporting || !onStormBrowseBoundsChange) return;
 
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let debounceTimer: number | null = null;
 
     const emit = () => {
       try {
@@ -1219,8 +1231,9 @@ export function DriveMap({
 
     if (mapFocus.kind === "polygonFit") {
       // Fit to the NWS polygon bounding box with extra padding to show surrounding context.
+      if (!isValidLngLatPair(mapFocus.sw) || !isValidLngLatPair(mapFocus.ne)) return;
       const b = new mapboxgl.LngLatBounds(mapFocus.sw, mapFocus.ne);
-      map.fitBounds(b, {
+      safeFitBounds(map, b, {
         padding: hazardOverviewFitPadding(),
         duration: 1100,
         maxZoom: 9,
@@ -1229,7 +1242,8 @@ export function DriveMap({
         essential: true,
       });
     } else if (mapFocus.kind === "hazardEvent") {
-      map.flyTo({
+      if (!isValidLngLat(mapFocus.hazardLng, mapFocus.hazardLat)) return;
+      safeFlyTo(map, {
         center: [mapFocus.hazardLng, mapFocus.hazardLat],
         zoom: mapFocus.zoom ?? 11.5,
         duration: 950,
@@ -1239,15 +1253,15 @@ export function DriveMap({
       });
     } else if (mapFocus.kind === "hazardOverview") {
       const b = new mapboxgl.LngLatBounds();
-      b.extend([mapFocus.hazardLng, mapFocus.hazardLat]);
-      if (userLngLat) b.extend(userLngLat);
-      if (destLngLat) b.extend(destLngLat);
+      safeExtendBounds(b, [mapFocus.hazardLng, mapFocus.hazardLat]);
+      if (userLngLat) safeExtendBounds(b, userLngLat);
+      if (destLngLat) safeExtendBounds(b, destLngLat);
       for (const r of routes) {
         for (const pt of r.geometry) {
-          b.extend(pt as [number, number]);
+          safeExtendBounds(b, pt as [number, number]);
         }
       }
-      map.fitBounds(b, {
+      safeFitBounds(map, b, {
         padding: hazardOverviewFitPadding(),
         duration: 1100,
         maxZoom: 12.8,
@@ -1256,7 +1270,8 @@ export function DriveMap({
         essential: true,
       });
     } else {
-      map.flyTo({
+      if (!isValidLngLat(mapFocus.lng, mapFocus.lat)) return;
+      safeFlyTo(map, {
         center: [mapFocus.lng, mapFocus.lat],
         zoom: mapFocus.zoom ?? 12.8,
         duration: 950,
@@ -1265,6 +1280,9 @@ export function DriveMap({
     }
     map.once("moveend", () => scheduleExploreEndRef.current());
     onMapFocusCompleteRef.current();
+    return () => {
+      stopMapCamera(map);
+    };
   }, [mapReady, mapFocus, routes, userLngLat, destLngLat]);
 
   useEffect(() => {
@@ -1308,7 +1326,7 @@ export function DriveMap({
     if (!map || !mapReady) return;
 
     const clearHover = () => {
-      map.getCanvas().style.cursor = "";
+      setMapCanvasCursor(map, "");
       poiHoverMarkerRef.current?.remove();
       poiHoverMarkerRef.current = null;
     };
@@ -1323,7 +1341,7 @@ export function DriveMap({
         clearHover();
         return;
       }
-      map.getCanvas().style.cursor = "pointer";
+      setMapCanvasCursor(map, "pointer");
       if (!poiHoverMarkerRef.current) {
         poiHoverMarkerRef.current = new mapboxgl.Marker({
           element: makePoiHoverEl(),
@@ -1371,7 +1389,7 @@ export function DriveMap({
       } catch {
         /* ignore */
       }
-      map.flyTo({
+      safeFlyTo(map, {
         center: userLngLat,
         zoom: regionalPlanningZoom(),
         padding: ZERO_MAP_PADDING,
@@ -1626,12 +1644,9 @@ export function DriveMap({
           const pitchOff = Math.abs(map.getPitch() - 58) > 1;
           const zoomOff  = Math.abs(map.getZoom()  - 16.35) > 0.3;
           if (camMoved || bearingMoved || pitchOff || zoomOff) {
-            try {
-              /*
-               * `easeTo` honors `offset` (drive focal point); `jumpTo` silently drops it.
-               * `duration: 0` skips animation, so this is effectively an immediate snap.
-               */
-              map.easeTo({
+            if (
+              isValidLngLat(pos.lng, pos.lat) &&
+              safeEaseTo(map, {
                 center: [pos.lng, pos.lat],
                 zoom: 16.35,
                 pitch: 58,
@@ -1640,10 +1655,9 @@ export function DriveMap({
                 offset,
                 duration: 0,
                 essential: true,
-              });
+              })
+            ) {
               lastBearingApplied = driveCamBearingSmoothedRef.current;
-            } catch {
-              /* style race */
             }
           }
         }
@@ -1671,6 +1685,31 @@ export function DriveMap({
       /* older mapbox */
     }
   }, [navigationStarted, viewMode, mapReady]);
+
+  /** After route compare or end of navigation, re-run topdown init and flatten pitch. */
+  useEffect(() => {
+    if (trafficBypassCompareActive) {
+      wasRouteCompareRef.current = true;
+      return;
+    }
+    if (wasRouteCompareRef.current) {
+      wasRouteCompareRef.current = false;
+      prevTopdownRef.current = false;
+    }
+  }, [trafficBypassCompareActive]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const wasNav = prevNavigationStartedRef.current;
+    prevNavigationStartedRef.current = navigationStarted;
+    if (!wasNav || navigationStarted) return;
+    prevTopdownRef.current = false;
+    if (Math.abs(map.getPitch()) > 0.25 || Math.abs(map.getBearing()) > 0.25) {
+      stopMapCamera(map);
+      safeEaseTo(map, { pitch: 0, bearing: 0, duration: 480, essential: true });
+    }
+  }, [navigationStarted, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1977,8 +2016,8 @@ export function DriveMap({
     let pending: mapboxgl.MapMouseEvent | null = null;
     /** Alert id key we last showed for; cleared when pointer leaves polygons or zoom blocks. */
     let shownForKey: string | null = null;
-    let readTimer: ReturnType<typeof setTimeout> | null = null;
-    let fadeRemoveTimer: ReturnType<typeof setTimeout> | null = null;
+    let readTimer: number | null = null;
+    let fadeRemoveTimer: number | null = null;
 
     const clearTimers = () => {
       if (readTimer != null) {
@@ -2000,7 +2039,7 @@ export function DriveMap({
       clearTimers();
       stripFadeClass();
       popup.remove();
-      map.getCanvas().style.cursor = "";
+      setMapCanvasCursor(map, "");
     };
 
     const fadeOutThenRemove = () => {
@@ -2028,7 +2067,7 @@ export function DriveMap({
       clearTimers();
       stripFadeClass();
       popup.setLngLat(lngLat).setDOMContent(buildStormHoverPopupContent(feats)).addTo(map);
-      map.getCanvas().style.cursor = "pointer";
+      setMapCanvasCursor(map, "pointer");
       shownForKey = key;
       readTimer = window.setTimeout(fadeOutThenRemove, NWS_HOVER_READ_MS);
     };
@@ -2065,7 +2104,7 @@ export function DriveMap({
         return;
       }
 
-      map.getCanvas().style.cursor = "pointer";
+      setMapCanvasCursor(map, "pointer");
 
       if (key === shownForKey) {
         return;
@@ -2099,12 +2138,13 @@ export function DriveMap({
 
     map.on("mousemove", mousemove);
     map.on("zoom", onZoom);
-    map.getCanvas().addEventListener("mouseleave", leave);
+    const hoverCanvas = getMapCanvas(map);
+    hoverCanvas?.addEventListener("mouseleave", leave);
 
     return () => {
       map.off("mousemove", mousemove);
       map.off("zoom", onZoom);
-      map.getCanvas().removeEventListener("mouseleave", leave);
+      hoverCanvas?.removeEventListener("mouseleave", leave);
       pending = null;
       shownForKey = null;
       if (rafId != null) cancelAnimationFrame(rafId);
@@ -2246,6 +2286,7 @@ export function DriveMap({
         liftRouteHits();
         return;
       }
+      if (isRainViewerRateLimited()) return;
       const pack = await fetchRainViewerRadarFrames();
       if (cancelled || mapRef.current !== map) return;
       if (!pack?.frames.length) {
@@ -2279,8 +2320,25 @@ export function DriveMap({
     void loadManifest();
     if (showRadar) manifestTimer = setInterval(() => void loadManifest(), 600_000);
 
+    let rateLimitResumeTimer: number | null = null;
+    const offRateLimit = onRainViewerRateLimit(() => {
+      if (!showRadar || mapRef.current !== map) return;
+      setRainViewerRadarLayersVisible(map, false);
+      if (rateLimitResumeTimer) window.clearTimeout(rateLimitResumeTimer);
+      rateLimitResumeTimer = window.setTimeout(() => {
+        rateLimitResumeTimer = null;
+        if (cancelled || mapRef.current !== map || !showRadar) return;
+        if (!isRainViewerRateLimited()) {
+          setRainViewerRadarLayersVisible(map, true);
+          void loadManifest();
+        }
+      }, rainViewerRateLimitMsRemaining() + 500);
+    });
+
     return () => {
       cancelled = true;
+      offRateLimit();
+      if (rateLimitResumeTimer) clearTimeout(rateLimitResumeTimer);
       radarLoopGeneration += 1;
       onRadarFrameUtcSecRef.current?.(null);
       clearTimers();
@@ -2309,10 +2367,10 @@ export function DriveMap({
     const tb = activityTrailPlanningBounds;
     if (tb) {
       const b = new mapboxgl.LngLatBounds();
-      b.extend(userLngLat);
-      b.extend(tb[0]);
-      b.extend(tb[1]);
-      map.fitBounds(b, {
+      safeExtendBounds(b, userLngLat);
+      safeExtendBounds(b, tb[0]);
+      safeExtendBounds(b, tb[1]);
+      safeFitBounds(map, b, {
         padding: 48,
         maxZoom: 11.2,
         duration: 520,
@@ -2321,7 +2379,7 @@ export function DriveMap({
         essential: true,
       });
     } else {
-      map.easeTo({
+      safeEaseTo(map, {
         center: userLngLat,
         zoom: regionalPlanningZoom(),
         pitch: 0,
@@ -2331,6 +2389,9 @@ export function DriveMap({
         essential: true,
       });
     }
+    return () => {
+      stopMapCamera(map);
+    };
   }, [mapReady, viewMode, routes.length, userLngLat, activityTrailPlanningBounds]);
 
   useEffect(() => {
@@ -2341,9 +2402,9 @@ export function DriveMap({
     const u = userLngLatRef.current;
     if (!u || !destLngLat) return;
     const b = new mapboxgl.LngLatBounds();
-    b.extend(u);
-    b.extend(destLngLat);
-    map.fitBounds(b, {
+    safeExtendBounds(b, u);
+    safeExtendBounds(b, destLngLat);
+    safeFitBounds(map, b, {
       padding: routeFitPadding(stormBarVisible, stormBarExpanded, [], null, progressRailVisible),
       maxZoom: ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM,
       duration: 260,
@@ -2374,7 +2435,7 @@ export function DriveMap({
       clearTimeout(exploreTimerRef.current);
       exploreTimerRef.current = null;
     }
-    map.easeTo({
+    safeEaseTo(map, {
       center: u,
       zoom: Math.max(ROUTE_VIEW_PLANNING_STREET_ZOOM, map.getZoom()),
       pitch: 0,
@@ -2408,7 +2469,7 @@ export function DriveMap({
     }
 
     const flatten = () => {
-      map.easeTo({ pitch: 0, bearing: 0, duration: 240, essential: true });
+      safeEaseTo(map, { pitch: 0, bearing: 0, duration: 240, essential: true });
     };
 
     let pendingFlatten: (() => void) | null = null;
@@ -2475,6 +2536,7 @@ export function DriveMap({
     }
 
     return () => {
+      stopMapCamera(map);
       if (intervalId != null) clearInterval(intervalId);
       if (pendingFlatten) {
         map.off("moveend", pendingFlatten);
@@ -2620,28 +2682,30 @@ export function DriveMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || !userLngLat || !canCameraFollow) return;
+    if (!map || !mapReady) return;
 
-    if (viewMode !== "topdown") {
-      prevTopdownRef.current = false;
-      return;
+    if (!userLngLat || !canCameraFollow || viewMode !== "topdown") {
+      if (viewMode !== "topdown") prevTopdownRef.current = false;
+      return () => stopMapCamera(map);
     }
 
-    if (userExploringRef.current) return;
+    if (userExploringRef.current) {
+      return () => stopMapCamera(map);
+    }
 
     /* Route compare: show all three end-to-end options from you → destination (not a tight jam crop). */
     if (trafficBypassCompareActive) {
       prevTopdownRef.current = true;
       const b = new mapboxgl.LngLatBounds();
-      b.extend(userLngLat);
-      if (destLngLat) b.extend(destLngLat);
-      if (trafficBypassCompareHazardLngLat) b.extend(trafficBypassCompareHazardLngLat);
+      safeExtendBounds(b, userLngLat);
+      if (destLngLat) safeExtendBounds(b, destLngLat);
+      if (trafficBypassCompareHazardLngLat) safeExtendBounds(b, trafficBypassCompareHazardLngLat);
       for (const r of routes) {
         const g = r.geometry;
         if (!g?.length) continue;
-        for (const pt of g) b.extend(pt as [number, number]);
+        for (const pt of g) safeExtendBounds(b, pt as [number, number]);
       }
-      map.fitBounds(b, {
+      safeFitBounds(map, b, {
         padding: hazardOverviewFitPadding(),
         duration: 600,
         maxZoom: 11.2,
@@ -2649,12 +2713,12 @@ export function DriveMap({
         bearing: 0,
         essential: true,
       });
-      return;
+      return () => stopMapCamera(map);
     }
 
     if (!prevTopdownRef.current) {
       prevTopdownRef.current = true;
-      map.easeTo({
+      safeEaseTo(map, {
         center: userLngLat,
         zoom: topdownZoomRef.current,
         pitch: 0,
@@ -2664,13 +2728,15 @@ export function DriveMap({
         essential: true,
       });
     } else {
-      map.easeTo({
+      safeEaseTo(map, {
         center: userLngLat,
         offset: TOPDOWN_PUCK_OFFSET_PX,
         duration: 0,
         essential: true,
       });
     }
+
+    return () => stopMapCamera(map);
   }, [
     mapReady,
     viewMode,
@@ -2816,14 +2882,14 @@ export function DriveMap({
     if (!markers || markers.length < 2) return;
 
     const b = new mapboxgl.LngLatBounds();
-    for (const m of markers) b.extend(m.lngLat as [number, number]);
+    for (const m of markers) safeExtendBounds(b, m.lngLat as [number, number]);
     const u = userLngLatRef.current;
-    if (u) b.extend(u);
+    if (u) safeExtendBounds(b, u);
 
     const pad = isNarrowPhoneViewport()
       ? { top: 200, bottom: 200, left: 20, right: 88 }
       : { top: 160, bottom: 160, left: 28, right: 28 };
-    map.fitBounds(b, { padding: pad, maxZoom: 14, duration: 480, essential: true });
+    safeFitBounds(map, b, { padding: pad, maxZoom: 14, duration: 480, essential: true });
     /* Intentionally not depending on userLngLat — GPS ticks would re-fit; ref has latest puck. */
   }, [mapReady, searchPickMarkers]);
 

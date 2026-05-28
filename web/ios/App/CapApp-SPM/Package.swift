@@ -11,9 +11,13 @@ let package = Package(
             targets: ["CapApp-SPM"])
     ],
     dependencies: [
-        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.3.1"),
+        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.3.4"),
+        .package(name: "CapacitorCommunityAdmob", path: "..\..\..\node_modules\@capacitor-community\admob"),
         .package(name: "CapacitorCommunityKeepAwake", path: "..\..\..\node_modules\@capacitor-community\keep-awake"),
-        .package(name: "CapacitorGeolocation", path: "..\..\..\node_modules\@capacitor\geolocation")
+        .package(name: "CapacitorGeolocation", path: "..\..\..\node_modules\@capacitor\geolocation"),
+        .package(name: "CapacitorHaptics", path: "..\..\..\node_modules\@capacitor\haptics"),
+        .package(name: "CapacitorPreferences", path: "..\..\..\node_modules\@capacitor\preferences"),
+        .package(name: "RevenuecatPurchasesCapacitor", path: "..\..\..\node_modules\@revenuecat\purchases-capacitor")
     ],
     targets: [
         .target(
@@ -21,8 +25,12 @@ let package = Package(
             dependencies: [
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
+                .product(name: "CapacitorCommunityAdmob", package: "CapacitorCommunityAdmob"),
                 .product(name: "CapacitorCommunityKeepAwake", package: "CapacitorCommunityKeepAwake"),
-                .product(name: "CapacitorGeolocation", package: "CapacitorGeolocation")
+                .product(name: "CapacitorGeolocation", package: "CapacitorGeolocation"),
+                .product(name: "CapacitorHaptics", package: "CapacitorHaptics"),
+                .product(name: "CapacitorPreferences", package: "CapacitorPreferences"),
+                .product(name: "RevenuecatPurchasesCapacitor", package: "RevenuecatPurchasesCapacitor")
             ]
         )
     ]
