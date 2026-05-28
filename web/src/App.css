@@ -1700,28 +1700,33 @@
   background: #121418;
 }
 
-/* Phase 8.x — diagnostic banner that surfaces mapbox-gl's first error message in the
- * top-center of the map. Only renders when DriveMap's mapErrorMessage state is non-null,
- * which today only happens on TestFlight where there's no JS console available. */
+/* Phase 8.x — diagnostic banner that surfaces mapbox-gl's init state + first error.
+ * Pinned to the BOTTOM of the screen (above the home-indicator inset) so it doesn't
+ * collide with the storm advisory bar, search bar, or any other top chrome. z-index is
+ * pushed above every other overlay in the app so it always wins. Only renders when
+ * DriveMap's mapErrorMessage state is non-null, which today is only on TestFlight
+ * builds where there's no JS console available. */
 .drive-map__error-banner {
   position: absolute;
-  top: max(96px, env(safe-area-inset-top, 0px) + 80px);
+  bottom: max(24px, env(safe-area-inset-bottom, 0px) + 16px);
   left: 12px;
   right: 12px;
-  z-index: 9999;
+  z-index: 2147483647;
   display: flex;
   align-items: flex-start;
   gap: 8px;
   padding: 10px 12px;
   border-radius: 12px;
-  background: rgba(220, 38, 38, 0.95);
+  background: rgba(220, 38, 38, 0.96);
   color: #ffffff;
   font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.01em;
   line-height: 1.35;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
   pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .drive-map__error-banner-text {
