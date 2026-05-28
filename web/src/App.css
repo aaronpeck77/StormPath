@@ -1700,6 +1700,52 @@
   background: #121418;
 }
 
+/* Phase 8.x — diagnostic banner that surfaces mapbox-gl's first error message in the
+ * top-center of the map. Only renders when DriveMap's mapErrorMessage state is non-null,
+ * which today only happens on TestFlight where there's no JS console available. */
+.drive-map__error-banner {
+  position: absolute;
+  top: max(96px, env(safe-area-inset-top, 0px) + 80px);
+  left: 12px;
+  right: 12px;
+  z-index: 9999;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(220, 38, 38, 0.95);
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+}
+
+.drive-map__error-banner-text {
+  flex: 1 1 auto;
+  word-break: break-word;
+}
+
+.drive-map__error-banner-dismiss {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.drive-map__error-banner-dismiss:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
 .map-missing-token code {
   font-size: 0.85rem;
   color: #e8eaed;

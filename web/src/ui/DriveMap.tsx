@@ -895,6 +895,11 @@ export function DriveMap({
 
   const token = getWebEnv().mapboxToken;
   const [mapReady, setMapReady] = useState(false);
+  /* Phase 8.x diagnostic — surfaces mapbox-gl's first error to a visible banner.
+   * The TestFlight WebView has no console, so any tile/style/auth failure would otherwise
+   * just leave a blank globe with no clue why. The banner is dismissable so the user can
+   * dismiss it once they've shared the message. Stays empty in the happy path. */
+  const [mapErrorMessage, setMapErrorMessage] = useState<string | null>(null);
   const [mapResumeTick, setMapResumeTick] = useState(0);
   const [nightBasemapPreset] = useState<NightBasemapPreset>(parseNightBasemapPreset);
   const [mapPhase, setMapPhase] = useState(currentMapPhase);
@@ -945,6 +950,23 @@ export function DriveMap({
     });
     map.addControl(new mapboxgl.AttributionControl({ compact: true }));
     mapRef.current = map;
+
+    /* Diagnostic banner: surface mapbox-gl's first error to the on-screen overlay so we can
+     * see exactly what's failing on TestFlight where there's no JS console. Every Mapbox
+     * failure (style fetch 401/403, blocked network, invalid token, worker init) reaches
+     * this handler. We only show the FIRST error to avoid flooding the screen, and we keep
+     * the map alive — the user can still pan/zoom the empty globe while we read the error. */
+    map.on("error", (e: { error?: unknown }) => {
+      const err = (e?.error ?? e) as
+        | (Error & { status?: number; url?: string; statusText?: string })
+        | undefined;
+      const status = err?.status ? `[${err.status}] ` : "";
+      const url = err?.url ? ` ${err.url}` : "";
+      const msg = err?.message ?? err?.statusText ?? String(err ?? "unknown");
+      const line = `Mapbox: ${status}${msg}${url}`;
+      console.warn("[mapbox]", line, err);
+      setMapErrorMessage((prev) => prev ?? line);
+    });
 
     const installTrafficLayers = () => {
       try {
@@ -2903,7 +2925,23 @@ export function DriveMap({
     );
   }
 
-  return <div ref={containerRef} className="drive-map" />;
+  return (
+    <div ref={containerRef} className="drive-map">
+      {mapErrorMessage && (
+        <div className="drive-map__error-banner" role="status" aria-live="polite">
+          <span className="drive-map__error-banner-text">{mapErrorMessage}</span>
+          <button
+            type="button"
+            className="drive-map__error-banner-dismiss"
+            onClick={() => setMapErrorMessage(null)}
+            aria-label="Dismiss map error"
+          >
+            ×
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default DriveMap;
