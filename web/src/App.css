@@ -1707,23 +1707,24 @@
  * DriveMap's mapErrorMessage state is non-null, which today is only on TestFlight
  * builds where there's no JS console available. */
 .drive-map__error-banner {
-  position: absolute;
-  bottom: max(24px, env(safe-area-inset-bottom, 0px) + 16px);
+  position: fixed;
+  top: 50%;
   left: 12px;
   right: 12px;
+  transform: translateY(-50%);
   z-index: 2147483647;
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(220, 38, 38, 0.96);
+  padding: 14px 14px;
+  border-radius: 14px;
+  background: rgba(220, 38, 38, 0.98);
   color: #ffffff;
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.85rem;
+  font-weight: 700;
   letter-spacing: 0.01em;
-  line-height: 1.35;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+  line-height: 1.4;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
   pointer-events: auto;
   user-select: text;
   -webkit-user-select: text;
