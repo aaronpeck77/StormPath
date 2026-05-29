@@ -111,6 +111,18 @@ export function setMapCanvasCursor(map: Map | null | undefined, cursor: string):
   }
 }
 
+export function flattenMapCamera(map: Map | null | undefined): boolean {
+  if (!map || !isMapUsable(map)) return false;
+  try {
+    if (map.getPitch() <= 0.25 && Math.abs(map.getBearing()) <= 0.25) return true;
+    stopMapCamera(map);
+    map.easeTo({ pitch: 0, bearing: 0, duration: 420, essential: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function safeExtendBounds(b: LngLatBounds, coord: LngLat | null | undefined): void {
   if (!isValidLngLatPair(coord)) return;
   try {
@@ -129,6 +141,23 @@ export function safeEaseTo(map: Map, options: EaseToOptions): boolean {
       const center = normalizeCenter(options.center);
       if (!center) return false;
       next = { ...options, center };
+    }
+    map.easeTo(next);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Follow-camera nudge (duration 0) — must not call {@link stopMapCamera} or it kills active touch pan/zoom. */
+export function safePanToCenter(map: Map, options: EaseToOptions): boolean {
+  if (!isMapReadyForCamera(map)) return false;
+  try {
+    let next: EaseToOptions = { ...options, duration: 0, essential: true };
+    if (options.center !== undefined && options.center !== null) {
+      const center = normalizeCenter(options.center);
+      if (!center) return false;
+      next = { ...next, center };
     }
     map.easeTo(next);
     return true;

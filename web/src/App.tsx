@@ -204,6 +204,11 @@ import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
 import { useFrequentRouteLearning } from "./hooks/useFrequentRouteLearning";
 import { isMapBasemapDaytime } from "./map/mapBasemapDaytime";
 import {
+  readHomeMapFraming,
+  writeHomeMapFraming,
+  type HomeMapFraming,
+} from "./map/homeMapFraming";
+import {
   ACTIVITY_MIN_SAMPLES_PLANNING_MAP,
   ACTIVITY_MIN_SAMPLES_RANK,
   ACTIVITY_SAMPLES_UPDATED_EVENT,
@@ -410,6 +415,7 @@ export default function App() {
   const [activityTrailMapOn, setActivityTrailMapOn] = useState(() => {
     return safeStorage.get(ACTIVITY_TRAIL_MAP_LS) === "1";
   });
+  const [homeMapFraming, setHomeMapFraming] = useState<HomeMapFraming>(() => readHomeMapFraming());
   const [activityTrailTick, setActivityTrailTick] = useState(0);
   useEffect(() => {
     const on = () => setActivityTrailTick((n) => n + 1);
@@ -1701,6 +1707,15 @@ export default function App() {
     setSearchExpanded(false);
     setFitTrigger((n) => n + 1);
   }, [routing, navigationStarted, plan.routes.length, viewMode]);
+
+  /** 3D drive camera is only valid during active Go navigation — never leave Dr mode otherwise. */
+  useEffect(() => {
+    if (navigationStarted) return;
+    if (viewMode !== "drive") return;
+    setViewMode(plan.routes.length > 0 ? "route" : "topdown");
+    if (plan.routes.length > 0) setFitTrigger((n) => n + 1);
+    else setRecenterPlanningPuckTick((n) => n + 1);
+  }, [navigationStarted, viewMode, plan.routes.length]);
 
   /**
    * Replanning can replace A/B/C while keeping the same slot ids (`r-a|r-b|r-c`) and the same route
@@ -3618,6 +3633,11 @@ export default function App() {
     return activitySamplesToGeoJson(s);
   }, [isPlus, activityTrailMapOn, activityTrailTick]);
 
+  const activityTrailPlanningBounds = useMemo(() => {
+    if (!isPlus || !learnEnabled) return null;
+    return getActivityTrailPlanningBounds(ACTIVITY_MIN_SAMPLES_PLANNING_MAP);
+  }, [isPlus, learnEnabled, activityTrailTick]);
+
   const activityTrailAboutPanel = useMemo(() => {
     if (!isPlus) return null;
     const s = getActivityTrailStats();
@@ -3637,17 +3657,28 @@ export default function App() {
         setActivityTrailMapOn(on);
         safeStorage.set(ACTIVITY_TRAIL_MAP_LS, on ? "1" : "0");
       },
+      homeMapFraming,
+      onHomeMapFramingChange: (mode: HomeMapFraming) => {
+        setHomeMapFraming(mode);
+        writeHomeMapFraming(mode);
+      },
+      homeAreaAvailable: activityTrailPlanningBounds != null,
       onClear: () => {
         clearActivitySamples();
         setActivityTrailTick((n) => n + 1);
       },
     };
-  }, [isPlus, activityTrailMapOn, activityTrailTick, learnEnabled, setLearnEnabled]);
+  }, [
+    isPlus,
+    activityTrailMapOn,
+    activityTrailTick,
+    learnEnabled,
+    setLearnEnabled,
+    homeMapFraming,
+    activityTrailPlanningBounds,
+  ]);
 
-  const activityTrailPlanningBounds = useMemo(() => {
-    if (!isPlus || !learnEnabled) return null;
-    return getActivityTrailPlanningBounds(ACTIVITY_MIN_SAMPLES_PLANNING_MAP);
-  }, [isPlus, learnEnabled, activityTrailTick]);
+  const idleHomeMapFraming: HomeMapFraming = isPlus ? homeMapFraming : "my_location";
 
   const clearRoute = () => {
     routeGraphEpochRef.current += 1;
@@ -4691,6 +4722,7 @@ export default function App() {
             trafficBypassCompareHazardLngLat={trafficBypassCompare?.hazardLngLat ?? null}
             activityTrailGeoJson={activityTrailGeoJsonForMap}
             activityTrailPlanningBounds={activityTrailPlanningBounds}
+            idleHomeMapFraming={idleHomeMapFraming}
             searchPickMarkers={searchPickMarkersForMap}
             onSearchPickMarkerClick={searchPickMarkersForMap ? handleSearchPickFromMap : undefined}
             progressRailVisible={navigationStarted && isPlus}

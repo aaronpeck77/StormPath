@@ -1545,6 +1545,45 @@
   opacity: 0.55;
 }
 
+.about-sheet__home-framing {
+  margin: 12px 0 0;
+  padding: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.about-sheet__home-framing-legend {
+  font-size: 0.78rem;
+  font-weight: 750;
+  color: #e8eaed;
+  padding: 0;
+}
+
+.about-sheet__p--tight {
+  margin-top: 0;
+  margin-bottom: 4px;
+}
+
+.about-sheet__home-framing-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #e8eaed;
+}
+
+.about-sheet__home-framing-option input {
+  margin-top: 2px;
+  accent-color: #60a5fa;
+}
+
+.about-sheet__home-framing-option.disabled {
+  opacity: 0.55;
+}
+
 .about-sheet__setting--stack {
   display: flex;
   flex-direction: column;

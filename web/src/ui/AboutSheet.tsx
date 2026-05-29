@@ -7,6 +7,7 @@ import { isCrashReportingEnabled } from "../monitoring/sentry";
 import { stormpathVersionChipLabel, stormpathVersionLabel } from "../appVersion";
 import { safeStorage } from "../storage/safeStorage";
 import { MapKeyPanel } from "./MapKeyPanel";
+import type { HomeMapFraming } from "../map/homeMapFraming";
 
 type ActivityTrailPanel = {
   count: number;
@@ -18,6 +19,11 @@ type ActivityTrailPanel = {
   onLearnEnabledChange: (on: boolean) => void;
   showOnMap: boolean;
   onShowOnMapChange: (on: boolean) => void;
+  /** Launch / idle map: auto, GPS street view, or usual driving area (when enough dots). */
+  homeMapFraming: HomeMapFraming;
+  onHomeMapFramingChange: (mode: HomeMapFraming) => void;
+  /** Enough trail dots to offer “usual area” home framing. */
+  homeAreaAvailable: boolean;
   onClear: () => void;
 };
 
@@ -564,6 +570,49 @@ export function AboutSheet({
                   <strong>Show activity dots on map</strong> — cyan trail of where you’ve been (zoom in to see density)
                 </span>
               </label>
+              <fieldset className="about-sheet__home-framing">
+                <legend className="about-sheet__home-framing-legend">Home map view (no active trip)</legend>
+                <p className="about-sheet__p about-sheet__p--tight">
+                  When you open StormPath or finish a trip, the map centers like{" "}
+                  <strong>My location</strong> or frames your <strong>usual driving area</strong> when enough trail dots
+                  exist.
+                </p>
+                <label className="about-sheet__home-framing-option">
+                  <input
+                    type="radio"
+                    name="home-map-framing"
+                    checked={activityTrail.homeMapFraming === "auto"}
+                    onChange={() => activityTrail.onHomeMapFramingChange("auto")}
+                  />
+                  <span>
+                    <strong>Auto</strong> — usual area when the trail has enough dots ({activityTrail.homeAreaAvailable ? "available now" : "not enough yet"}), otherwise My location
+                  </span>
+                </label>
+                <label className="about-sheet__home-framing-option">
+                  <input
+                    type="radio"
+                    name="home-map-framing"
+                    checked={activityTrail.homeMapFraming === "my_location"}
+                    onChange={() => activityTrail.onHomeMapFramingChange("my_location")}
+                  />
+                  <span>
+                    <strong>My location</strong> — street-level on your GPS (same as the My location button)
+                  </span>
+                </label>
+                <label className={`about-sheet__home-framing-option${activityTrail.homeAreaAvailable ? "" : " disabled"}`}>
+                  <input
+                    type="radio"
+                    name="home-map-framing"
+                    checked={activityTrail.homeMapFraming === "activity_area"}
+                    disabled={!activityTrail.homeAreaAvailable}
+                    onChange={() => activityTrail.onHomeMapFramingChange("activity_area")}
+                  />
+                  <span>
+                    <strong>My usual area</strong> — zoom to where your trail shows you usually drive
+                    {!activityTrail.homeAreaAvailable ? " (need more dots)" : null}
+                  </span>
+                </label>
+              </fieldset>
               <div className="about-sheet__trail-clear">
                 {activityTrailClearStep === "idle" ? (
                   <button

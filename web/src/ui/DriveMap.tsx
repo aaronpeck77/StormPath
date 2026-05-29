@@ -2,6 +2,8 @@ import mapboxgl from "../mapboxCapacitorWorker";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { MutableRefObject } from "react";
 import { useEffect, useRef, useState } from "react";
+import type { HomeMapFraming } from "../map/homeMapFraming";
+import { resolveIdleHomeFraming } from "../map/homeMapFraming";
 import type { RouteAlert } from "../nav/routeAlerts";
 import type { LngLat, NavRoute } from "../nav/types";
 import type { SavedPlace } from "../nav/savedPlaces";
@@ -43,6 +45,8 @@ import {
   safeExtendBounds,
   safeFitBounds,
   safeFlyTo,
+  safePanToCenter,
+  flattenMapCamera,
   safeSetMapLngLat,
   isMapUsable,
   setMapCanvasCursor,
@@ -647,6 +651,8 @@ type Props = {
    * Plus + learn: SW/NE corners covering stored activity — with user position, frames route planning before a destination.
    */
   activityTrailPlanningBounds?: [[number, number], [number, number]] | null;
+  /** Plus: launch / idle map framing preference (Basic always my_location). */
+  idleHomeMapFraming?: HomeMapFraming;
   /** Multi-result destination search: temporary pins until the user picks one. */
   searchPickMarkers?: { id: string; lngLat: LngLat; label: string }[] | null;
   onSearchPickMarkerClick?: (id: string) => void;
@@ -850,6 +856,7 @@ export function DriveMap({
   trafficBypassCompareHazardLngLat = null,
   activityTrailGeoJson = null,
   activityTrailPlanningBounds = null,
+  idleHomeMapFraming = "my_location",
   searchPickMarkers = null,
   onSearchPickMarkerClick,
   progressRailVisible = true,
@@ -890,6 +897,12 @@ export function DriveMap({
   const userExploringRef = useRef(false);
   const exploreTimerRef = useRef<number | null>(null);
   const lastForcedPlanningFitTriggerRef = useRef<number | null>(null);
+  const prevPlanningRouteCountRef = useRef(0);
+  const activeDriveCamera = navigationStarted && viewMode === "drive";
+
+  useEffect(() => {
+    if (routes.length === 0) prevPlanningRouteCountRef.current = 0;
+  }, [routes.length]);
   const driveCamBearingSmoothedRef = useRef<number | null>(null);
   /** Reuse stable padding/offset for drive follow — fresh objects every frame can confuse Mapbox camera updates. */
   const driveCamEaseOptsCacheRef = useRef<{
@@ -1225,6 +1238,13 @@ export function DriveMap({
     const rotateend = (e: unknown) => {
       if (mapEventFromUser(e)) scheduleExploreEndRef.current();
     };
+    /** Pinch / two-finger pan on iOS often surfaces as move* rather than drag* alone. */
+    const movestart = (e: unknown) => {
+      if (mapEventFromUser(e)) beginUserExploreRef.current();
+    };
+    const moveend = (e: unknown) => {
+      if (mapEventFromUser(e)) scheduleExploreEndRef.current();
+    };
 
     map.on("dragstart", dragstart);
     map.on("dragend", dragend);
@@ -1232,6 +1252,8 @@ export function DriveMap({
     map.on("zoomend", zoomend);
     map.on("rotatestart", rotatestart);
     map.on("rotateend", rotateend);
+    map.on("movestart", movestart);
+    map.on("moveend", moveend);
     return () => {
       map.off("dragstart", dragstart);
       map.off("dragend", dragend);
@@ -1239,6 +1261,8 @@ export function DriveMap({
       map.off("zoomend", zoomend);
       map.off("rotatestart", rotatestart);
       map.off("rotateend", rotateend);
+      map.off("movestart", movestart);
+      map.off("moveend", moveend);
       if (exploreTimerRef.current) clearTimeout(exploreTimerRef.current);
     };
   }, [mapReady]);
@@ -1306,7 +1330,7 @@ export function DriveMap({
     } else if (mapFocus.kind === "hazardOverview") {
       const b = new mapboxgl.LngLatBounds();
       safeExtendBounds(b, [mapFocus.hazardLng, mapFocus.hazardLat]);
-      if (userLngLat) safeExtendBounds(b, userLngLat);
+      if (userLngLatRef.current) safeExtendBounds(b, userLngLatRef.current);
       if (destLngLat) safeExtendBounds(b, destLngLat);
       for (const r of routes) {
         for (const pt of r.geometry) {
@@ -1333,9 +1357,9 @@ export function DriveMap({
     map.once("moveend", () => scheduleExploreEndRef.current());
     onMapFocusCompleteRef.current();
     return () => {
-      stopMapCamera(map);
+      if (!userExploringRef.current) stopMapCamera(map);
     };
-  }, [mapReady, mapFocus, routes, userLngLat, destLngLat]);
+  }, [mapReady, mapFocus, routes, destLngLat]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1777,22 +1801,74 @@ export function DriveMap({
       exploreTimerRef.current = null;
     }
     stopMapCamera(map);
+    flattenMapCamera(map);
     const u = userLngLatRef.current;
-    if (routes.length === 0 && u) {
+    const idleTopdown = viewModeRef.current === "topdown" || routes.length === 0;
+    if (u && idleTopdown) {
       safeFlyTo(map, {
         center: u,
-        zoom: viewModeRef.current === "topdown" ? topdownZoomRef.current : regionalPlanningZoom(),
+        zoom: topdownZoomRef.current,
         pitch: 0,
         bearing: 0,
         padding: ZERO_MAP_PADDING,
-        offset: viewModeRef.current === "topdown" ? TOPDOWN_PUCK_OFFSET_PX : [0, 0],
+        offset: TOPDOWN_PUCK_OFFSET_PX,
         duration: 480,
         essential: true,
       });
-    } else if (Math.abs(map.getPitch()) > 0.25 || Math.abs(map.getBearing()) > 0.25) {
-      safeEaseTo(map, { pitch: 0, bearing: 0, duration: 480, essential: true });
+    } else if (routes.length > 0 && viewModeRef.current === "route") {
+      /* Route fit effect handles both ends once viewMode settles to Rt. */
+      lastForcedPlanningFitTriggerRef.current = null;
+    } else if (u) {
+      safeFlyTo(map, {
+        center: u,
+        zoom: regionalPlanningZoom(),
+        pitch: 0,
+        bearing: 0,
+        padding: ZERO_MAP_PADDING,
+        duration: 480,
+        essential: true,
+      });
     }
-  }, [navigationStarted, mapReady, routes.length]);
+  }, [navigationStarted, mapReady, routes.length, viewMode]);
+
+  /** Leave 3D drive pitch/zoom whenever navigation is off or the user is not in Dr view. */
+  useEffect(() => {
+    if (activeDriveCamera) return;
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const pitched =
+      map.getPitch() > 0.5 ||
+      Math.abs(map.getBearing()) > 0.5 ||
+      (routes.length === 0 && !navigationStarted && map.getZoom() > 15.5);
+    if (!pitched) return;
+    userExploringRef.current = false;
+    stopMapCamera(map);
+    flattenMapCamera(map);
+    const u = userLngLatRef.current;
+    if (!u) return;
+    if (viewMode === "topdown" || routes.length === 0) {
+      prevTopdownRef.current = false;
+      safeFlyTo(map, {
+        center: u,
+        zoom: viewMode === "topdown" ? topdownZoomRef.current : regionalPlanningZoom(),
+        pitch: 0,
+        bearing: 0,
+        padding: ZERO_MAP_PADDING,
+        offset: viewMode === "topdown" ? TOPDOWN_PUCK_OFFSET_PX : [0, 0],
+        duration: 420,
+        essential: true,
+      });
+    }
+  }, [
+    activeDriveCamera,
+    mapReady,
+    viewMode,
+    navigationStarted,
+    routes.length,
+    fitTrigger,
+    recenterPlanningPuckTick,
+    topdownZoomRef,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2447,24 +2523,33 @@ export function DriveMap({
     };
   }, [mapReady, showRadar, radarAnimate]);
 
-  /** Route planning, no trip: allow one auto-center per “empty planning” session (leaving Rt or getting a route resets). */
-  const routeEmptyPlanningRef = useRef(false);
+  /** Idle home (no trip): one auto-frame per session; cleared when routing/nav starts or pref changes. */
+  const idleHomeAppliedRef = useRef(false);
   useEffect(() => {
-    if (viewMode !== "route" || routes.length > 0) {
-      routeEmptyPlanningRef.current = false;
+    if (routes.length > 0 || navigationStarted || viewMode === "drive") {
+      idleHomeAppliedRef.current = false;
     }
-  }, [viewMode, routes.length]);
+  }, [viewMode, routes.length, navigationStarted]);
+
+  useEffect(() => {
+    idleHomeAppliedRef.current = false;
+  }, [idleHomeMapFraming]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || viewMode !== "route" || routes.length > 0) return;
-    if (!userLngLat || userExploringRef.current) return;
-    if (routeEmptyPlanningRef.current) return;
-    routeEmptyPlanningRef.current = true;
-    const tb = activityTrailPlanningBounds;
-    if (tb) {
+    if (!map || !mapReady) return;
+    if (viewMode !== "route" && viewMode !== "topdown") return;
+    if (routes.length > 0 || navigationStarted) return;
+    const u = userLngLatRef.current;
+    if (!u || userExploringRef.current) return;
+    if (idleHomeAppliedRef.current) return;
+    idleHomeAppliedRef.current = true;
+
+    const framing = resolveIdleHomeFraming(idleHomeMapFraming, activityTrailPlanningBounds);
+    if (framing === "activity_area" && activityTrailPlanningBounds) {
+      const tb = activityTrailPlanningBounds;
       const b = new mapboxgl.LngLatBounds();
-      safeExtendBounds(b, userLngLat);
+      safeExtendBounds(b, u);
       safeExtendBounds(b, tb[0]);
       safeExtendBounds(b, tb[1]);
       safeFitBounds(map, b, {
@@ -2475,10 +2560,22 @@ export function DriveMap({
         bearing: 0,
         essential: true,
       });
+    } else if (viewMode === "topdown") {
+      topdownZoomRef.current = ROUTE_VIEW_PLANNING_STREET_ZOOM;
+      safeFlyTo(map, {
+        center: u,
+        zoom: ROUTE_VIEW_PLANNING_STREET_ZOOM,
+        pitch: 0,
+        bearing: 0,
+        padding: ZERO_MAP_PADDING,
+        offset: TOPDOWN_PUCK_OFFSET_PX,
+        duration: 520,
+        essential: true,
+      });
     } else {
       safeEaseTo(map, {
-        center: userLngLat,
-        zoom: regionalPlanningZoom(),
+        center: u,
+        zoom: ROUTE_VIEW_PLANNING_STREET_ZOOM,
         pitch: 0,
         bearing: 0,
         padding: ZERO_MAP_PADDING,
@@ -2486,10 +2583,16 @@ export function DriveMap({
         essential: true,
       });
     }
-    return () => {
-      stopMapCamera(map);
-    };
-  }, [mapReady, viewMode, routes.length, userLngLat, activityTrailPlanningBounds]);
+    /* One-shot framing — no cleanup stop; GPS ticks must not call map.stop() mid-gesture. */
+  }, [
+    mapReady,
+    viewMode,
+    routes.length,
+    navigationStarted,
+    Boolean(userLngLat),
+    activityTrailPlanningBounds,
+    idleHomeMapFraming,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2523,7 +2626,8 @@ export function DriveMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || viewMode !== "route" || routes.length > 0) return;
+    if (!map || !mapReady || routes.length > 0) return;
+    if (viewMode !== "route" && viewMode !== "topdown") return;
     if (recenterPlanningPuckTick === 0) return;
     const u = userLngLatRef.current;
     if (!u) return;
@@ -2532,17 +2636,33 @@ export function DriveMap({
       clearTimeout(exploreTimerRef.current);
       exploreTimerRef.current = null;
     }
-    safeEaseTo(map, {
-      center: u,
-      zoom: Math.max(ROUTE_VIEW_PLANNING_STREET_ZOOM, map.getZoom()),
-      pitch: 0,
-      bearing: 0,
-      padding: ZERO_MAP_PADDING,
-      duration: 480,
-      essential: true,
-    });
+    const zoom = Math.max(ROUTE_VIEW_PLANNING_STREET_ZOOM, map.getZoom());
+    if (viewMode === "topdown") {
+      topdownZoomRef.current = zoom;
+      prevTopdownRef.current = false;
+      safeFlyTo(map, {
+        center: u,
+        zoom,
+        pitch: 0,
+        bearing: 0,
+        padding: ZERO_MAP_PADDING,
+        offset: TOPDOWN_PUCK_OFFSET_PX,
+        duration: 480,
+        essential: true,
+      });
+    } else {
+      safeEaseTo(map, {
+        center: u,
+        zoom,
+        pitch: 0,
+        bearing: 0,
+        padding: ZERO_MAP_PADDING,
+        duration: 480,
+        essential: true,
+      });
+    }
     /* Intentionally omit userLngLat from deps — GPS updates must not re-fire this (only tick bumps). */
-  }, [mapReady, viewMode, routes.length, recenterPlanningPuckTick]);
+  }, [mapReady, viewMode, routes.length, recenterPlanningPuckTick, topdownZoomRef]);
 
   useEffect(() => {
     if (viewMode !== "drive" || !navigationStarted) {
@@ -2554,9 +2674,13 @@ export function DriveMap({
     const map = mapRef.current;
     if (!map || !mapReady || viewMode !== "route" || routes.length === 0) return;
 
+    const prevCount = prevPlanningRouteCountRef.current;
+    prevPlanningRouteCountRef.current = routes.length;
+    const routesJustLoaded = prevCount === 0 && routes.length > 0;
+
     const forcePlanningFit = !navigationStarted;
     /* Any App-driven refit (reroute, slot change, etc.) must win over stale "user exploring" from pan/zoom. */
-    if (fitTrigger !== lastForcedPlanningFitTriggerRef.current) {
+    if (fitTrigger !== lastForcedPlanningFitTriggerRef.current || routesJustLoaded) {
       lastForcedPlanningFitTriggerRef.current = fitTrigger;
       userExploringRef.current = false;
       if (exploreTimerRef.current) {
@@ -2633,7 +2757,7 @@ export function DriveMap({
     }
 
     return () => {
-      stopMapCamera(map);
+      if (!userExploringRef.current) stopMapCamera(map);
       if (intervalId != null) clearInterval(intervalId);
       if (pendingFlatten) {
         map.off("moveend", pendingFlatten);
@@ -2783,20 +2907,17 @@ export function DriveMap({
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
-    if (!userLngLat || !canCameraFollow || viewMode !== "topdown") {
+    if (!canCameraFollow || viewMode !== "topdown") {
       if (viewMode !== "topdown") prevTopdownRef.current = false;
-      return () => stopMapCamera(map);
+      return;
     }
 
-    if (userExploringRef.current) {
-      return () => stopMapCamera(map);
-    }
-
-    /* Route compare: show all three end-to-end options from you → destination (not a tight jam crop). */
     if (trafficBypassCompareActive) {
       prevTopdownRef.current = true;
+      const u = userLngLatRef.current;
+      if (!u) return;
       const b = new mapboxgl.LngLatBounds();
-      safeExtendBounds(b, userLngLat);
+      safeExtendBounds(b, u);
       if (destLngLat) safeExtendBounds(b, destLngLat);
       if (trafficBypassCompareHazardLngLat) safeExtendBounds(b, trafficBypassCompareHazardLngLat);
       for (const r of routes) {
@@ -2812,35 +2933,42 @@ export function DriveMap({
         bearing: 0,
         essential: true,
       });
-      return () => stopMapCamera(map);
+      return () => {
+        if (!userExploringRef.current) stopMapCamera(map);
+      };
     }
 
-    if (!prevTopdownRef.current) {
-      prevTopdownRef.current = true;
-      safeEaseTo(map, {
-        center: userLngLat,
-        zoom: topdownZoomRef.current,
-        pitch: 0,
-        bearing: 0,
-        offset: TOPDOWN_PUCK_OFFSET_PX,
-        duration: 0,
-        essential: true,
-      });
-    } else {
-      safeEaseTo(map, {
-        center: userLngLat,
-        offset: TOPDOWN_PUCK_OFFSET_PX,
-        duration: 0,
-        essential: true,
-      });
-    }
+    const followTopdown = () => {
+      if (userExploringRef.current) return;
+      const u = userLngLatRef.current;
+      if (!u) return;
+      if (!prevTopdownRef.current) {
+        prevTopdownRef.current = true;
+        safePanToCenter(map, {
+          center: u,
+          zoom: topdownZoomRef.current,
+          pitch: 0,
+          bearing: 0,
+          offset: TOPDOWN_PUCK_OFFSET_PX,
+        });
+      } else {
+        safePanToCenter(map, {
+          center: u,
+          offset: TOPDOWN_PUCK_OFFSET_PX,
+        });
+      }
+    };
 
-    return () => stopMapCamera(map);
+    followTopdown();
+    const followTimer = window.setInterval(followTopdown, 900);
+
+    return () => {
+      window.clearInterval(followTimer);
+    };
   }, [
     mapReady,
     viewMode,
     canCameraFollow,
-    userLngLat,
     topdownZoomRef,
     mapResumeTick,
     trafficBypassCompareHazardLngLat,
