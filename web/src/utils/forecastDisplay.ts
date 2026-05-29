@@ -136,9 +136,9 @@ export function buildLocalForecastBannerItem(opts: {
   if (!parts.length) return null;
   return {
     badge: "Local",
-    raw: truncateBannerText(parts.join(" · "), 64),
+    raw: truncateBannerText(parts.join(" · "), 96),
     localMeta: {
-      area: truncateBannerText(opts.areaLabel, 22),
+      area: opts.areaLabel.trim(),
       updated: opts.fetchedAtMs != null ? formatForecastUpdatedShort(opts.fetchedAtMs) : null,
     },
   };

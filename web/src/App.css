@@ -861,16 +861,41 @@
   top: 0;
   z-index: 2;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   margin: 0 0 10px;
   padding: 8px 10px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: linear-gradient(180deg, rgba(28, 32, 40, 0.98), rgba(20, 24, 30, 0.98));
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.about-sheet__header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
+.about-sheet__close {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.35);
+  color: #e8eaed;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.about-sheet__close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.28);
 }
 
 .about-sheet__header-title {
@@ -5760,12 +5785,8 @@
   gap: 8px;
   width: 100%;
   margin-top: 4px;
-  /* A little more vertical padding now that the inner pill is gone ? gives the larger message
-   * room to breathe without making the whole bar taller than the surrounding turn / progress strip. */
   padding: 11px 14px;
   font: inherit;
-  /* Bumped from 0.72rem ? was reading as squint-tiny at a glance. clamp() keeps it responsive on
-   * narrow phones (~14px) up to mid-width (~16px). */
   font-size: clamp(0.88rem, 2.6vw, 1rem);
   font-weight: 600;
   text-align: left;
@@ -5778,8 +5799,8 @@
   appearance: none;
   border-width: 1px;
   border-style: solid;
+  /* Typical height: ~2 lines. Grows to 3 lines only when abbreviated copy still wraps. */
   min-height: 44px;
-  max-height: 3.25rem;
   line-height: 1.3;
   overflow: hidden;
   transition:
@@ -5801,9 +5822,8 @@
   font-weight: 550;
   line-height: 1.2;
   color: rgba(186, 230, 253, 0.78);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
 }
 
 /* Single-surface design: the inner span is now layout-only ? no background, border, or padding.
@@ -5948,15 +5968,18 @@
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
   white-space: normal;
   word-break: break-word;
   line-height: 1.3;
   color: #e2e8f0;
 }
 
+/* Local forecast slot: area line + up to 2 message lines (3 rows total). */
 .storm-advisory-bar__preview-message-wrap--forecast .storm-advisory-bar__preview-text {
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .storm-advisory-bar__preview-count {
@@ -7902,7 +7925,8 @@
 .top-guidance-bar--glanceable .turn-banner-dist {
   font-size: clamp(0.58rem, 2vw, 0.72rem);
   font-weight: 720;
-  opacity: 0.96;
+  color: #ffffff;
+  opacity: 1;
 }
 
 .top-guidance-bar--glanceable .turn-banner-icon--next {
@@ -8910,7 +8934,7 @@
 
 .turn-banner-next-meta {
   font-size: 0.6rem;
-  color: #94a3b8;
+  color: #ffffff;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   flex-shrink: 0;
@@ -9031,7 +9055,7 @@
 
 .turn-banner-dist {
   font-size: 0.72rem;
-  color: #9aa0a6;
+  color: #ffffff;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }

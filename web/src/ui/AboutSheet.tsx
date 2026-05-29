@@ -137,11 +137,16 @@ export function AboutSheet({
         aria-labelledby="about-sheet-title"
       >
         <header className="about-sheet__header">
-          <div className="about-sheet__header-title">
-            <h2 id="about-sheet-title" className="about-sheet__title">
-              StormPath
-            </h2>
-            <p className="about-sheet__tagline">Multi-route driving with live conditions on your route.</p>
+          <div className="about-sheet__header-top">
+            <div className="about-sheet__header-title">
+              <h2 id="about-sheet-title" className="about-sheet__title">
+                StormPath
+              </h2>
+              <p className="about-sheet__tagline">Multi-route driving with live conditions on your route.</p>
+            </div>
+            <button type="button" className="about-sheet__close" onClick={onClose} aria-label="Close info">
+              Close
+            </button>
           </div>
           <div className="about-sheet__header-meta">
             <span

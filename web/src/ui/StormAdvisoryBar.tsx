@@ -35,8 +35,8 @@ import {
   truncateBannerText,
 } from "../utils/forecastDisplay";
 
-const BANNER_MSG_MAX = 72;
-const BANNER_TICKER_MAX = 80;
+const BANNER_MSG_MAX = 96;
+const BANNER_TICKER_MAX = 110;
 
 /** Collapsed-bar background + ring — one per rotator message. */
 type AdvisoryPreviewTone = "clear" | "weather" | "info" | "warn" | "hazard" | "severe";
@@ -113,7 +113,7 @@ function bannerMsg(text: string, max = BANNER_MSG_MAX): string {
   return truncateBannerText(text, max);
 }
 
-/** Collapsed advisory line — clamped in CSS to avoid a tall bar. */
+/** Collapsed advisory line — CSS clamps to 2–3 lines when needed. */
 function AdvisoryPreviewMessage({ raw }: { raw: string }) {
   return <span className="storm-advisory-bar__preview-text">{displayText(raw)}</span>;
 }

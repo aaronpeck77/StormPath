@@ -488,6 +488,27 @@ function hazardOverviewFitPadding(): mapboxgl.PaddingOptions {
   return { top: 120, bottom: 220, left: 20, right: 24 };
 }
 
+/** Drive follow-cam puck placement — football-field metaphor (% up from bottom toward midfield). */
+const DRIVE_PUCK_YARD_LINE = 30;
+
+/**
+ * Mapbox easeTo +Y offset: positive Y sits the follow center below viewport midline so the
+ * puck reads above the bottom dock with road ahead overhead. Each +5 yard line upfield
+ * (25 → 30) reduces offset by 5% of viewport height.
+ */
+function drivePuckFollowOffsetY(
+  viewportHeight: number,
+  baseOffsetAt25YardLine: number,
+  opts?: { min?: number; max?: number }
+): number {
+  const yardDeltaPx = Math.round(((DRIVE_PUCK_YARD_LINE - 25) / 100) * viewportHeight);
+  const y = Math.round(baseOffsetAt25YardLine - yardDeltaPx);
+  if (opts?.min != null && opts?.max != null) return Math.min(opts.max, Math.max(opts.min, y));
+  if (opts?.min != null) return Math.max(opts.min, y);
+  if (opts?.max != null) return Math.min(opts.max, y);
+  return y;
+}
+
 function driveCameraEaseOptions(
   stormBarVisible: boolean,
   stormBarExpanded: boolean,
@@ -508,8 +529,8 @@ function driveCameraEaseOptions(
     const railPad = Math.max(72, rightNeed + 14);
     const topPad = Math.max(52, 44 + Math.round(stormTop * 0.45));
     const bottomPad = Math.max(36, 48);
-    /* Drive “25-yard line”: puck closer to the bottom dock, more road ahead overhead. */
-    const yOff = Math.min(140, Math.max(72, Math.round(vh * 0.22)));
+    /* Drive “30-yard line”: puck slightly upfield from the bottom dock — more road ahead overhead. */
+    const yOff = drivePuckFollowOffsetY(vh, Math.round(vh * 0.22), { min: 72, max: 140 });
     if (handLeft) {
       return {
         padding: {
@@ -534,6 +555,7 @@ function driveCameraEaseOptions(
   if (isNarrowPhoneViewport()) {
     /** Match left/right so the follow point sits on the horizontal screen center (rail overlays the gutter). */
     const sidePad = Math.max(12, Math.max(104, rightNeed));
+    const vh = typeof window !== "undefined" ? window.innerHeight : 800;
     return {
       padding: {
         top: 172 + stormTop,
@@ -543,12 +565,13 @@ function driveCameraEaseOptions(
       },
       /*
        * +Y: focal point lower on screen → more road ahead above the puck.
-       * Drive “25-yard line”: puck sits ~25% above the bottom dock instead of mid-screen.
+       * Drive “30-yard line”: puck sits ~30% up from the bottom dock instead of mid-screen.
        */
-      offset: [0, 224],
+      offset: [0, drivePuckFollowOffsetY(vh, 224)],
     };
   }
   const sidePadWide = Math.max(16, Math.max(96, rightNeed));
+  const vh = typeof window !== "undefined" ? window.innerHeight : 900;
   return {
     padding: {
       top: 268 + stormTop,
@@ -556,7 +579,7 @@ function driveCameraEaseOptions(
       left: sidePadWide,
       right: sidePadWide,
     },
-    offset: [0, 320],
+    offset: [0, drivePuckFollowOffsetY(vh, 320)],
   };
 }
 
