@@ -3670,7 +3670,7 @@ export default function App() {
     setPreviewLegIndex(0);
     seriousHazardAutoFlewRef.current.clear();
     resetNavigationPlanning();
-    setViewMode("route");
+    setViewMode("topdown");
     setRecenterPlanningPuckTick((n) => n + 1);
     setRouteHazardSheet(null);
     setTollRoutePrompt(null);

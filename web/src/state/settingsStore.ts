@@ -123,7 +123,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   stormEnabled: readStormSettingOn(),
   trafficEnabled: readTrafficSettingOn(),
   radarEnabled: readRadarSettingOn(),
-  weatherHintsEnabled: readBoolFlag(LS_WEATHER_HINTS, false),
+  weatherHintsEnabled: readBoolFlag(LS_WEATHER_HINTS, true),
   autoRerouteEnabled: readBoolFlag(LS_AUTO_REROUTE, true),
   dataSaverEnabled: readDataSaverSetting(),
   dataSaverHintDismissed: readDataSaverHintDismissed(),

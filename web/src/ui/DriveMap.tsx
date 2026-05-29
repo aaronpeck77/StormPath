@@ -1771,11 +1771,28 @@ export function DriveMap({
     prevNavigationStartedRef.current = navigationStarted;
     if (!wasNav || navigationStarted) return;
     prevTopdownRef.current = false;
-    if (Math.abs(map.getPitch()) > 0.25 || Math.abs(map.getBearing()) > 0.25) {
-      stopMapCamera(map);
+    userExploringRef.current = false;
+    if (exploreTimerRef.current) {
+      clearTimeout(exploreTimerRef.current);
+      exploreTimerRef.current = null;
+    }
+    stopMapCamera(map);
+    const u = userLngLatRef.current;
+    if (routes.length === 0 && u) {
+      safeFlyTo(map, {
+        center: u,
+        zoom: viewModeRef.current === "topdown" ? topdownZoomRef.current : regionalPlanningZoom(),
+        pitch: 0,
+        bearing: 0,
+        padding: ZERO_MAP_PADDING,
+        offset: viewModeRef.current === "topdown" ? TOPDOWN_PUCK_OFFSET_PX : [0, 0],
+        duration: 480,
+        essential: true,
+      });
+    } else if (Math.abs(map.getPitch()) > 0.25 || Math.abs(map.getBearing()) > 0.25) {
       safeEaseTo(map, { pitch: 0, bearing: 0, duration: 480, essential: true });
     }
-  }, [navigationStarted, mapReady]);
+  }, [navigationStarted, mapReady, routes.length]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2662,7 +2679,9 @@ export function DriveMap({
     return () => cancelAnimationFrame(raf0);
   }, [mapReady, viewMode]);
 
-  const canCameraFollow = Boolean(userLngLat && (navigationStarted || routes.length > 0));
+  const canCameraFollow = Boolean(
+    userLngLat && (navigationStarted || routes.length > 0 || viewMode === "topdown")
+  );
 
   /** On Go: clear "user exploring" so the drive camera is not stuck; nudge follow + size after nav chrome. */
   const wasNavRef = useRef(false);
