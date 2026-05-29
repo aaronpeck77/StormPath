@@ -8,7 +8,7 @@ import { haversineMeters, slicePolylineBetweenAlong } from "../nav/routeGeometry
 import { sliceRouteAhead } from "../nav/routeRemaining";
 import type { LngLat, NavRoute } from "../nav/types";
 import { polylineBbox, stormOverlapLineFeatures } from "../weatherAlerts/geometryOverlap";
-import { safeExtendBounds, safeFitBounds } from "./mapCameraSafe";
+import { safeExtendBounds, safeFitBounds, readMapLngLat } from "./mapCameraSafe";
 import { FOCUSED_ROUTE_LINE_WIDTH, routePickSlotHex } from "./mapRouteStyle";
 
 const ROUTE_COND_LEGACY_LAYER = "route-condition-markers-circles";
@@ -387,9 +387,10 @@ export function applyRoutesToMap(
 
 /** Diagonal of bounds (m) — drives how close fitBounds can zoom before hitting maxZoom. */
 function boundsDiagonalMeters(b: mapboxgl.LngLatBounds): number {
-  const sw = b.getSouthWest();
-  const ne = b.getNorthEast();
-  return haversineMeters([sw.lng, sw.lat], [ne.lng, ne.lat]);
+  const sw = readMapLngLat(b.getSouthWest());
+  const ne = readMapLngLat(b.getNorthEast());
+  if (!sw || !ne) return 0;
+  return haversineMeters(sw, ne);
 }
 
 /**

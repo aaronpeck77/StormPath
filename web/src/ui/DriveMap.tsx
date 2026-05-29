@@ -1,22 +1,5 @@
-import mapboxgl from "mapbox-gl";
+import mapboxgl from "../mapboxCapacitorWorker";
 import "mapbox-gl/dist/mapbox-gl.css";
-/* Phase 8.x — production-only CSP worker URL. In production, vite.config.ts aliases
- * the `mapbox-gl` import above to mapbox-gl/dist/mapbox-gl-csp (the CSP-friendly
- * build that loads its worker from an explicit URL instead of a blob: URL — needed
- * because WebKit under capacitor://localhost silently rejects blob: workers).
- * We import the worker file via `?url` so Vite emits it as a hashed same-origin
- * asset under /assets/, then set mapboxgl.workerUrl to that URL before any Map is
- * created. In dev, the alias is OFF (the CSP build is UMD and Vite dev can't serve
- * UMD as ESM), so we use the regular ESM mapbox-gl with its default blob worker
- * (which works fine on http://localhost). import.meta.env.PROD is statically
- * replaced by Vite at build time — in dev this branch is dead code that the
- * dev-server-side rolldown still parses, so the `?url` import resolves but is
- * never assigned to workerUrl (preventing the regular ESM build's worker config
- * from being clobbered). */
-import mapboxWorkerUrl from "mapbox-gl/dist/mapbox-gl-csp-worker.js?url";
-if (import.meta.env.PROD) {
-  (mapboxgl as unknown as { workerUrl: string }).workerUrl = mapboxWorkerUrl;
-}
 import type { MutableRefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { RouteAlert } from "../nav/routeAlerts";
@@ -55,10 +38,13 @@ import {
   getMapCanvas,
   isValidLngLat,
   isValidLngLatPair,
+  readMapLngLat,
   safeEaseTo,
   safeExtendBounds,
   safeFitBounds,
   safeFlyTo,
+  safeSetMapLngLat,
+  isMapUsable,
   setMapCanvasCursor,
   stopMapCamera,
 } from "./mapCameraSafe";
@@ -1378,8 +1364,9 @@ export function DriveMap({
         onClickRef.current(poi.lngLat[0], poi.lngLat[1]);
         return;
       }
-      const { lng, lat } = e.lngLat;
-      onClickRef.current(lng, lat);
+      const clickLngLat = readMapLngLat(e.lngLat);
+      if (!clickLngLat) return;
+      onClickRef.current(clickLngLat[0], clickLngLat[1]);
     };
     map.on("click", click);
     return () => {
@@ -1414,7 +1401,9 @@ export function DriveMap({
           anchor: "center",
         }).addTo(map);
       }
-      poiHoverMarkerRef.current.setLngLat(poi.lngLat).getElement().setAttribute("aria-label", poi.label);
+      poiHoverMarkerRef.current &&
+        safeSetMapLngLat(poiHoverMarkerRef.current, poi.lngLat) &&
+        poiHoverMarkerRef.current.getElement().setAttribute("aria-label", poi.label);
     };
 
     map.on("mousemove", mousemove);
@@ -1527,8 +1516,10 @@ export function DriveMap({
     let lastBearingApplied = NaN;
 
     const loop = () => {
+      if (puckMarkerRef.current !== marker) return;
       const t = userLngLatRef.current;
       if (t) {
+        try {
         const now = performance.now();
         const dt = Math.min(0.12, (now - lastTs) / 1000);
         lastTs = now;
@@ -1641,17 +1632,21 @@ export function DriveMap({
          *   free / fast → 0.095s (existing tuning) */
         const blendTc = isStationary ? 2.4 : isCrawling ? 0.32 : snapLatched ? 0.145 : 0.095;
         const blend = 1 - Math.exp(-dt / blendTc);
-        const cur = marker.getLngLat();
-        const nextLng = cur.lng + (targetLng - cur.lng) * blend;
-        const nextLat = cur.lat + (targetLat - cur.lat) * blend;
+        const cur = readMapLngLat(marker.getLngLat());
+        if (!cur) {
+          raf = requestAnimationFrame(loop);
+          return;
+        }
+        const nextLng = cur[0] + (targetLng - cur[0]) * blend;
+        const nextLat = cur[1] + (targetLat - cur[1]) * blend;
         /* Skip the write when the change is sub-half-meter — keeps Mapbox from repainting the
          * marker (and the follow camera) at 60 fps for sub-pixel deltas. This is the difference
          * between "occasionally settling toward a new fix" and "vibrating in place". */
         const moved =
-          Math.abs(nextLng - cur.lng) > NOOP_LNGLAT_DELTA ||
-          Math.abs(nextLat - cur.lat) > NOOP_LNGLAT_DELTA;
-        if (moved) {
-          marker.setLngLat([nextLng, nextLat]);
+          Math.abs(nextLng - cur[0]) > NOOP_LNGLAT_DELTA ||
+          Math.abs(nextLat - cur[1]) > NOOP_LNGLAT_DELTA;
+        if (moved && isValidLngLat(nextLng, nextLat)) {
+          safeSetMapLngLat(marker, [nextLng, nextLat]);
         }
 
         /* Drive camera must track the smoothed puck — not raw GPS `easeTo` — or the map lurches while the puck glides. */
@@ -1690,19 +1685,19 @@ export function DriveMap({
             rawBrg,
             alphaBrg
           );
-          const pos = marker.getLngLat();
+          const pos = readMapLngLat(marker.getLngLat());
           /* Mirror the marker's no-op guard for the camera. Without this, easeTo runs every
            * frame even when target ≈ current, and Mapbox repaints — even sub-pixel deltas in
            * float math show up as a visible vibration. */
-          const camCenter = map.getCenter();
+          const camCenter = readMapLngLat(map.getCenter());
           const bearingDelta = Number.isFinite(lastBearingApplied)
             ? Math.abs(driveCamBearingSmoothedRef.current - lastBearingApplied)
             : Infinity;
           const camMoved =
-            !moved
+            !moved || !pos || !camCenter
               ? false
-              : Math.abs(camCenter.lng - pos.lng) > NOOP_LNGLAT_DELTA ||
-                Math.abs(camCenter.lat - pos.lat) > NOOP_LNGLAT_DELTA;
+              : Math.abs(camCenter[0] - pos[0]) > NOOP_LNGLAT_DELTA ||
+                Math.abs(camCenter[1] - pos[1]) > NOOP_LNGLAT_DELTA;
           const bearingMoved = bearingDelta > 0.05;
           /* When entering drive view the pitch/zoom may be totally wrong (e.g. flat topdown).
            * Force an easeTo if pitch or zoom are far from drive targets so the view snaps in
@@ -1711,9 +1706,9 @@ export function DriveMap({
           const zoomOff  = Math.abs(map.getZoom()  - 16.35) > 0.3;
           if (camMoved || bearingMoved || pitchOff || zoomOff) {
             if (
-              isValidLngLat(pos.lng, pos.lat) &&
+              pos &&
               safeEaseTo(map, {
-                center: [pos.lng, pos.lat],
+                center: pos,
                 zoom: 16.35,
                 pitch: 58,
                 bearing: driveCamBearingSmoothedRef.current,
@@ -1727,8 +1722,13 @@ export function DriveMap({
             }
           }
         }
+        } catch (err) {
+          console.warn("[drive-puck] RAF loop skipped frame", err);
+        }
       }
-      raf = requestAnimationFrame(loop);
+      if (puckMarkerRef.current === marker) {
+        raf = requestAnimationFrame(loop);
+      }
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
@@ -2104,7 +2104,11 @@ export function DriveMap({
     const removePopupImmediate = () => {
       clearTimers();
       stripFadeClass();
-      popup.remove();
+      try {
+        popup.remove();
+      } catch {
+        /* map removed */
+      }
       setMapCanvasCursor(map, "");
     };
 
@@ -2127,12 +2131,14 @@ export function DriveMap({
 
     const showForKey = (
       key: string,
-      lngLat: mapboxgl.LngLat,
+      lngLat: LngLat,
       feats: mapboxgl.MapboxGeoJSONFeature[]
     ) => {
       clearTimers();
       stripFadeClass();
-      popup.setLngLat(lngLat).setDOMContent(buildStormHoverPopupContent(feats)).addTo(map);
+      popup.setDOMContent(buildStormHoverPopupContent(feats));
+      if (!safeSetMapLngLat(popup, lngLat)) return;
+      popup.addTo(map);
       setMapCanvasCursor(map, "pointer");
       shownForKey = key;
       readTimer = window.setTimeout(fadeOutThenRemove, NWS_HOVER_READ_MS);
@@ -2142,7 +2148,7 @@ export function DriveMap({
       rafId = null;
       const ev = pending;
       pending = null;
-      if (!ev) return;
+      if (!ev || !isMapUsable(map) || !map.isStyleLoaded()) return;
 
       if (!map.getLayer(WEATHER_ALERTS_NWS_FILL_LAYER_ID)) {
         shownForKey = null;
@@ -2156,7 +2162,12 @@ export function DriveMap({
         return;
       }
 
-      const feats = map.queryRenderedFeatures(ev.point, { layers: [WEATHER_ALERTS_NWS_FILL_LAYER_ID] });
+      let feats: mapboxgl.MapboxGeoJSONFeature[];
+      try {
+        feats = map.queryRenderedFeatures(ev.point, { layers: [WEATHER_ALERTS_NWS_FILL_LAYER_ID] });
+      } catch {
+        return;
+      }
       if (!feats.length) {
         shownForKey = null;
         removePopupImmediate();
@@ -2176,7 +2187,9 @@ export function DriveMap({
         return;
       }
 
-      showForKey(key, ev.lngLat, feats);
+      const hoverLngLat = readMapLngLat(ev.lngLat);
+      if (!hoverLngLat) return;
+      showForKey(key, hoverLngLat, feats);
     };
 
     const mousemove = (e: mapboxgl.MapMouseEvent) => {
@@ -2199,6 +2212,7 @@ export function DriveMap({
         rafId = null;
       }
       shownForKey = null;
+      if (!isMapUsable(map)) return;
       removePopupImmediate();
     };
 
