@@ -6438,47 +6438,6 @@
   color: #94a3b8;
 }
 
-.basic-idle-ad {
-  flex: 0 0 auto;
-  margin: 0 0 6px;
-  padding: 6px 10px;
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.82);
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  font-size: 0.62rem;
-  line-height: 1.35;
-  color: #e2e8f0;
-  pointer-events: auto;
-}
-
-.basic-idle-ad__link,
-.basic-idle-ad__body {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  text-decoration: none;
-  color: inherit;
-}
-
-.basic-idle-ad__link:hover .basic-idle-ad__text {
-  color: #7dd3fc;
-}
-
-.basic-idle-ad__tag {
-  flex: 0 0 auto;
-  font-size: 0.55rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #94a3b8;
-  padding-top: 1px;
-}
-
-.basic-idle-ad__text {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
 .storm-advisory-bar__basic-upsell {
   margin: 0 0 8px;
   font-size: 0.62rem;

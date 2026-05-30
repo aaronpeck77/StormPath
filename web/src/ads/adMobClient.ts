@@ -36,7 +36,7 @@ function attachFailureListenerOnce(): void {
   if (failureListenerAttached) return;
   failureListenerAttached = true;
   AdMob.addListener(BannerAdPluginEvents.FailedToLoad, () => {
-    /* Silent — house promos still show in the advisory strip. */
+    /* Silent — advisory strip promos are separate; no in-app fallback for a failed AdMob load. */
   });
 }
 

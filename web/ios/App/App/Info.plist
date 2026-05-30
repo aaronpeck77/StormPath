@@ -58,7 +58,7 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>GADApplicationIdentifier</key>
-	<string>ca-app-pub-3940256099942544~1458002511</string>
+	<string>ca-app-pub-3213710841500662~7029172303</string>
 	<key>NSUserTrackingUsageDescription</key>
 	<string>StormPath may use this to show relevant ads in the free Basic version. You can decline and still use the app.</string>
 	<key>SKAdNetworkItems</key>

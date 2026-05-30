@@ -195,10 +195,8 @@ import {
 import { nwsAlertsForLocalForecast } from "./weatherAlerts/localForecastNws";
 import {
   buildAdvisoryPromoLines,
-  buildBasicDisplayAdLines,
   buildBasicNavAdvisoryPromoLines,
 } from "./config/basicAds";
-import { BasicIdleAdBanner } from "./ui/BasicIdleAdBanner";
 import { useBasicAdMobBanner } from "./hooks/useBasicAdMobBanner";
 import { getPayTier } from "./billing/payFeatures";
 import { NATIVE_PAY_TIER_CHANGED_EVENT } from "./billing/revenueCat";
@@ -364,10 +362,6 @@ export default function App() {
   const isPlus = useMemo(() => getPayTier() === "plus", [payTierProbeKey]);
   const advisoryPromoLines = useMemo(
     () => (isPlus ? buildAdvisoryPromoLines(env, isPlus) : buildBasicNavAdvisoryPromoLines(env)),
-    [env, isPlus]
-  );
-  const basicDisplayAdLines = useMemo(
-    () => (isPlus ? [] : buildBasicDisplayAdLines(env)),
     [env, isPlus]
   );
   /** `?demo=bypass` replay / simulated delay — Plus only (matches Traffic bypass). */
@@ -648,8 +642,7 @@ export default function App() {
    * and clear it via `setViewModeBeforeTrafficBypass(null)`. */
 
   const driveModeUi = navigationStarted && viewMode === "drive";
-  const showBasicIdleAd =
-    !isPlus && !navigationStarted && !stormBarExpanded && basicDisplayAdLines.length > 0;
+  /** Third-party AdMob only — house promos (SiteBible, Plus upsell) live in StormAdvisoryBar. */
   useBasicAdMobBanner({ enabled: !isPlus, navigationStarted });
   /** NWS polygons + fetches follow the user’s NWS toggle everywhere (including drive — no auto-on). */
   const savedDrawerOpen = useUiStore((s) => s.savedDrawerOpen);
@@ -5331,7 +5324,6 @@ export default function App() {
         )}
 
         <div className="nav-bottom-stack">
-          {showBasicIdleAd ? <BasicIdleAdBanner lines={basicDisplayAdLines} /> : null}
           <RouteCompareBottomPanel
             onSelect={handleTrafficBypassCompareSelect}
             onConfirm={handleTrafficBypassCompareConfirm}

@@ -5,9 +5,9 @@ export type AdvisoryPromoLine = {
   text: string;
   /** Opens in a new tab when the row is a link. */
   href?: string;
-  /** Shown in expanded strip / idle banner when set; falls back to `text`. */
+  /** Shown in expanded advisory strip when set; falls back to `text`. */
   detailText?: string;
-  /** Partner promos show a small “Sponsored” label in the idle banner. */
+  /** Partner promos show a small “Sponsored” label in the advisory strip. */
   sponsored?: boolean;
 };
 
@@ -140,11 +140,5 @@ export function buildAdvisoryPromoLines(env: WebEnv, ownsPlus: boolean): Advisor
 /** Basic tier: navigation + radar only — no weather-upgrade or NWS-oriented promo copy. */
 export function buildBasicNavAdvisoryPromoLines(env: WebEnv): AdvisoryPromoLine[] {
   const lines: AdvisoryPromoLine[] = [...partnerLines(env), plusUpsellLine(env, "nav-radar"), connectivityTip("tip-net-basic")];
-  return mergeEnvOverrides(lines, parseEnvBasicAdsJson(env.basicAdsJson));
-}
-
-/** Idle banner + expanded strip: partner promos and Plus upsell (no generic tips). */
-export function buildBasicDisplayAdLines(env: WebEnv): AdvisoryPromoLine[] {
-  const lines: AdvisoryPromoLine[] = [...partnerLines(env), plusUpsellLine(env, "nav-radar")];
   return mergeEnvOverrides(lines, parseEnvBasicAdsJson(env.basicAdsJson));
 }
