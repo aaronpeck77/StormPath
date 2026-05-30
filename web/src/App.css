@@ -655,6 +655,25 @@
   --nav-chrome-panel-bg: rgba(18, 20, 24, 0.96);
   --nav-chrome-panel-border: 1px solid rgba(255, 255, 255, 0.1);
   --nav-chrome-panel-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+  --basic-admob-banner-h: 50px;
+}
+
+/* Basic: native AdMob sits flush on the screen bottom; lift web chrome above it. */
+.app-shell.nav-fullmap.app-shell--basic-ad-banner {
+  --basic-ad-banner-reserve: var(--basic-admob-banner-h, 50px);
+}
+
+.app-shell.nav-fullmap.app-shell--basic-ad-banner .nav-bottom-stack {
+  padding-bottom: calc(var(--nav-bottom-reserved) + var(--basic-ad-banner-reserve, 50px));
+}
+
+.app-shell.nav-fullmap.app-shell--basic-ad-banner .nav-route-progress-rail {
+  padding-bottom: calc(var(--nav-progress-rail-foot-inset, 122px) + var(--basic-ad-banner-reserve, 50px));
+}
+
+.app-shell.nav-fullmap.app-shell--basic-ad-banner .map-stage.map-bleed .mapboxgl-ctrl-bottom-left,
+.app-shell.nav-fullmap.app-shell--basic-ad-banner .map-stage.map-bleed .mapboxgl-ctrl-bottom-right {
+  transform: translateY(calc(-1 * var(--basic-ad-banner-reserve, 50px)));
 }
 
 /* Stronger dock / toolbar / My location rims when basemap is night (overrides --nav-chrome on .nav-fullmap above) */
@@ -6472,6 +6491,13 @@
   pointer-events: none;
   user-select: none;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+/* Dev web only — mirrors bottom banner reserve without native AdMob. */
+.app-shell--basic-ad-banner .basic-admob-slot--dev-preview {
+  position: static;
+  bottom: auto;
+  margin-bottom: 4px;
 }
 
 .basic-admob-slot__tag {

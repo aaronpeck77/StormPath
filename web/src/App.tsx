@@ -645,7 +645,11 @@ export default function App() {
 
   const driveModeUi = navigationStarted && viewMode === "drive";
   /** Third-party AdMob only — house promos (SiteBible, Plus upsell) live in StormAdvisoryBar. */
-  const basicAdBanner = useBasicAdMobBanner({ enabled: !isPlus, navigationStarted });
+  const basicAdBanner = useBasicAdMobBanner({
+    enabled: !isPlus,
+    navigationStarted,
+    payTierProbeKey,
+  });
   /** NWS polygons + fetches follow the user’s NWS toggle everywhere (including drive — no auto-on). */
   const savedDrawerOpen = useUiStore((s) => s.savedDrawerOpen);
   const setSavedDrawerOpen = useUiStore((s) => s.setSavedDrawerOpen);
@@ -4733,7 +4737,7 @@ export default function App() {
         trafficBypassCompare ? " nav-route-compare-active" : ""
       }${basemapNight ? " app-shell--basemap-night" : ""}${settingLandscapeSideHand === "left" ? " app-shell--landscape-hand-left" : ""}${
         radarMapOverlayOn && radarFrameUtcSec != null ? " nav-radar-frame-time-visible" : ""
-      }`}
+      }${basicAdBanner.reservesBottomSpace ? " app-shell--basic-ad-banner" : ""}`}
     >
       {import.meta.env.DEV ? (
         <div
@@ -5365,7 +5369,8 @@ export default function App() {
           ) : null}
           {!trafficBypassCompare ? (
           <div className="nav-bottom-chrome-wrap">
-            {!isPlus &&
+            {import.meta.env.DEV &&
+            !isPlus &&
             !navigationStarted &&
             (basicAdBanner.slotState === "loading" || basicAdBanner.slotState === "empty") ? (
               <BasicAdMobSlot state={basicAdBanner.slotState} testMode={basicAdBanner.testMode} />

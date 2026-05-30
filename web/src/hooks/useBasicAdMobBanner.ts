@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { getWebEnv } from "../config/env";
+import { getPayTier } from "../billing/payFeatures";
 import {
   ADMOB_TEST_BANNER_UNIT_ID,
-  hideBasicBanner,
   isAdMobSupported,
-  removeBasicBanner,
   showBasicBanner,
   subscribeBasicBannerLoad,
+  teardownBasicBanner,
 } from "../ads/adMobClient";
 
 type Args = {
@@ -14,6 +14,8 @@ type Args = {
   enabled: boolean;
   /** Hide while actively navigating (Drive / Go). */
   navigationStarted: boolean;
+  /** Bumped when pay tier override changes so ads tear down immediately on Plus. */
+  payTierProbeKey: number;
 };
 
 export type BasicAdBannerSlotState = "hidden" | "loading" | "filled" | "empty";
@@ -29,30 +31,37 @@ function resolveAdMobTestMode(): boolean {
 
 /** Third-party AdMob banner for Basic — browse / route planning only, not while driving.
  *  House promos (SiteBible, Plus upsell) stay in StormAdvisoryBar only. */
-export function useBasicAdMobBanner({ enabled, navigationStarted }: Args): {
+export function useBasicAdMobBanner({
+  enabled,
+  navigationStarted,
+  payTierProbeKey,
+}: Args): {
   slotState: BasicAdBannerSlotState;
   testMode: boolean;
+  /** Lift bottom chrome while a Basic banner is loading, filled, or empty on device. */
+  reservesBottomSpace: boolean;
 } {
   const env = getWebEnv();
   const showRef = useRef(false);
   const [slotState, setSlotState] = useState<BasicAdBannerSlotState>("hidden");
   const testMode = resolveAdMobTestMode();
+  const isBasicTier = getPayTier() !== "plus";
 
   useEffect(() => {
     if (!isAdMobSupported()) {
       setSlotState(
-        import.meta.env.DEV && enabled && !navigationStarted ? "empty" : "hidden"
+        import.meta.env.DEV && enabled && isBasicTier && !navigationStarted ? "empty" : "hidden"
       );
       return undefined;
     }
 
-    const shouldShow = enabled && !navigationStarted;
+    const shouldShow = enabled && isBasicTier && !navigationStarted;
     const adUnitId = env.admobBannerUnitId || ADMOB_TEST_BANNER_UNIT_ID;
 
     if (!shouldShow) {
       showRef.current = false;
       setSlotState("hidden");
-      void hideBasicBanner();
+      void teardownBasicBanner();
       return undefined;
     }
 
@@ -76,7 +85,7 @@ export function useBasicAdMobBanner({ enabled, navigationStarted }: Args): {
     void showBasicBanner({
       adUnitId,
       testMode,
-      bottomMarginPx: 106,
+      bottomMarginPx: 0,
     }).then((shown) => {
       if (cancelled || !shown) {
         window.clearTimeout(timeoutId);
@@ -90,16 +99,22 @@ export function useBasicAdMobBanner({ enabled, navigationStarted }: Args): {
       unsubLoad();
       if (showRef.current) {
         showRef.current = false;
-        void hideBasicBanner();
+        void teardownBasicBanner();
       }
     };
-  }, [enabled, navigationStarted, env.admobBannerUnitId, testMode]);
+  }, [enabled, isBasicTier, navigationStarted, env.admobBannerUnitId, testMode, payTierProbeKey]);
 
   useEffect(() => {
     return () => {
-      void removeBasicBanner();
+      void teardownBasicBanner();
     };
   }, []);
 
-  return { slotState, testMode };
+  const reservesBottomSpace =
+    isBasicTier &&
+    enabled &&
+    !navigationStarted &&
+    slotState !== "hidden";
+
+  return { slotState, testMode, reservesBottomSpace };
 }

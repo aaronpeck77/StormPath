@@ -157,7 +157,7 @@ export async function showBasicBanner(opts: {
 
   const options: BannerAdOptions = {
     adId,
-    adSize: BannerAdSize.ADAPTIVE_BANNER,
+    adSize: BannerAdSize.BANNER,
     position: BannerAdPosition.BOTTOM_CENTER,
     margin: opts.bottomMarginPx,
     isTesting: opts.testMode,
@@ -183,8 +183,14 @@ export async function hideBasicBanner(): Promise<void> {
   bannerVisible = false;
 }
 
-export async function removeBasicBanner(): Promise<void> {
+/** Remove native banner entirely — use when leaving Basic tier or hiding ads for Plus. */
+export async function teardownBasicBanner(): Promise<void> {
   if (!isAdMobSupported()) return;
   await AdMob.removeBanner().catch(() => undefined);
   bannerVisible = false;
+  bannerLoadOutcome = null;
+}
+
+export async function removeBasicBanner(): Promise<void> {
+  await teardownBasicBanner();
 }
