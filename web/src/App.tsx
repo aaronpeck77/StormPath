@@ -91,6 +91,7 @@ import {
   buildRouteChunkCalloutList,
   type RouteChunkCalloutItem,
 } from "./nav/routeProgressChunkList";
+import type { RouteOutlookStep } from "./nav/routeForecastTimeline";
 import { layoutStripAlerts } from "./nav/stripAlertLayout";
 import {
   bearingAlongRouteAhead,
@@ -150,6 +151,7 @@ import { RecordingRouteBanner } from "./ui/RecordingRouteBanner";
 import { RouteHazardSheet } from "./ui/RouteHazardSheet";
 import { TollFlowSheets } from "./ui/TollFlowSheets";
 import { RouteProgressStrip } from "./ui/RouteProgressStrip";
+import { RouteOutlookTimeline } from "./ui/RouteOutlookTimeline";
 import { estimatePostedSpeedMph } from "./ui/DriveHud";
 import { formatEtaDuration } from "./ui/formatEta";
 import { StormAdvisoryBar } from "./ui/StormAdvisoryBar";
@@ -3014,19 +3016,28 @@ export default function App() {
    */
   const progressCalloutPanel = useMemo((): {
     routeWide: RouteChunkCalloutItem[];
+    outlookTimeline: RouteOutlookStep[];
     segments: RouteChunkCalloutItem[];
+    userAlongT: number;
+    stripTint: string;
   } => {
     const g = guidanceRoute?.geometry;
-    if (!g?.length) return { routeWide: [], segments: [] };
-    const totalM = polylineLengthMeters(g);
-    if (totalM <= 0) return { routeWide: [], segments: [] };
-
     const stripTint =
       guidanceRoute != null
         ? navigationStarted
           ? routePickSlotHex(0)
           : routePickSlotHex(routeSlotIndexFor(guidanceRoute.id, orderedRouteIds))
         : "#94a3b8";
+
+    if (!g?.length) {
+      return { routeWide: [], outlookTimeline: [], segments: [], userAlongT: 0, stripTint };
+    }
+    const totalM = polylineLengthMeters(g);
+    if (totalM <= 0) {
+      return { routeWide: [], outlookTimeline: [], segments: [], userAlongT: 0, stripTint };
+    }
+    const userAlongT =
+      totalM > 0 ? Math.min(1, Math.max(0, userAlongGuidanceM / totalM)) : 0;
 
     if (!navigationStarted) {
       const pt = totalM > 0 ? Math.min(1, Math.max(0, userAlongGuidanceM / totalM)) : 0.5;
@@ -3036,6 +3047,7 @@ export default function App() {
       ]);
       return {
         routeWide: [],
+        outlookTimeline: [],
         segments: [
           {
             key: "callout-pre-go",
@@ -3048,6 +3060,8 @@ export default function App() {
             alongPct: Math.round(pt * 100),
           },
         ],
+        userAlongT,
+        stripTint,
       };
     }
 
@@ -3069,7 +3083,9 @@ export default function App() {
       progressTrafficLine: liveTrafficNarrative?.progressStartLine ?? null,
     });
 
-    if (bundle.routeWide.length > 0 || bundle.segments.length > 0) return bundle;
+    if (bundle.routeWide.length > 0 || bundle.outlookTimeline.length > 0 || bundle.segments.length > 0) {
+      return { ...bundle, userAlongT, stripTint };
+    }
 
     const pt = totalM > 0 ? Math.min(1, Math.max(0, userAlongGuidanceM / totalM)) : 0.5;
     const hasStormUi =
@@ -3084,6 +3100,7 @@ export default function App() {
     );
     return {
       routeWide: [],
+      outlookTimeline: [],
       segments: [
         {
           key: "callout-fallback",
@@ -3096,6 +3113,8 @@ export default function App() {
           alongPct: Math.round(pt * 100),
         },
       ],
+      userAlongT,
+      stripTint,
     };
   }, [
     navigationStarted,
@@ -3114,7 +3133,9 @@ export default function App() {
   ]);
 
   const progressCalloutCount =
-    progressCalloutPanel.routeWide.length + progressCalloutPanel.segments.length;
+    progressCalloutPanel.routeWide.length +
+    (progressCalloutPanel.outlookTimeline.length > 0 ? 1 : 0) +
+    progressCalloutPanel.segments.length;
 
   /** Open panel with “Start route” at the bottom of the scroll area (list reads ahead toward the top). */
   useLayoutEffect(() => {
@@ -4947,14 +4968,15 @@ export default function App() {
                                       <span className="route-progress-callout-panel__title">{it.title}</span>
                                       <span className="route-progress-callout-panel__along">ALL</span>
                                     </div>
-                                    <p className="route-progress-callout-panel__summary">{it.summary}</p>
+                                    {it.summary ? (
+                                      <p className="route-progress-callout-panel__summary">{it.summary}</p>
+                                    ) : null}
                                   </div>
                                 </div>
                               ))}
                             </div>
                           )}
-                          {progressCalloutPanel.routeWide.length > 0 &&
-                            progressCalloutPanel.segments.length > 0 && (
+                          {progressCalloutPanel.segments.length > 0 && (
                               <>
                                 <hr
                                   className="route-progress-callout-panel__divider"
@@ -4981,10 +5003,27 @@ export default function App() {
                                   <span className="route-progress-callout-panel__title">{it.title}</span>
                                   <span className="route-progress-callout-panel__along">{it.alongPct}%</span>
                                 </div>
-                                <p className="route-progress-callout-panel__summary">{it.summary}</p>
+                                {it.summary ? (
+                                  <p className="route-progress-callout-panel__summary">{it.summary}</p>
+                                ) : null}
                               </div>
                             </div>
                           ))}
+                          {progressCalloutPanel.outlookTimeline.length > 0 && (
+                            <>
+                              {progressCalloutPanel.segments.length > 0 && (
+                                <hr
+                                  className="route-progress-callout-panel__divider route-progress-callout-panel__divider--above-outlook"
+                                  aria-hidden
+                                />
+                              )}
+                              <RouteOutlookTimeline
+                                steps={progressCalloutPanel.outlookTimeline}
+                                userAlongT={progressCalloutPanel.userAlongT}
+                                stripTint={progressCalloutPanel.stripTint}
+                              />
+                            </>
+                          )}
                         </div>
                       </div>
                     )}

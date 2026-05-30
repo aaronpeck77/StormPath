@@ -1,13 +1,14 @@
 import type { RouteAlert } from "./routeAlerts";
 import { corridorHighlightHex } from "./routeAlerts";
-import { abbrevNwsEvent, compactRouteOutlook, compactSegmentWx } from "./compactWxCopy";
+import { abbrevNwsEvent, compactSegmentWx } from "./compactWxCopy";
+import { buildRouteOutlookTimeline, type RouteOutlookStep } from "./routeForecastTimeline";
 import { chordFractionToAlongMeters } from "./routeGeometry";
 import type { LngLat } from "./types";
 import type { HazardKind, RouteSituationSlice } from "../situation/types";
 import { normalizedAlertsForStormBandSegment } from "../weatherAlerts/nwsAsRouteAlerts";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { forecastSlicesForChunkFraction, samplesOverlappingChunk } from "./routeChunkWeather";
-import { squeezeForSummary } from "./progressCalloutCopy";
+import { noticesMatch, splitRouteNoticeCallout, squeezeForSummary } from "./progressCalloutCopy";
 import { formatDelayMinutesForUi } from "./trafficNarrative";
 import { TRAFFIC_STRIP_SOFT_MINUTES } from "./constants";
 
@@ -28,6 +29,8 @@ export type RouteChunkCalloutItem = {
 export type RouteProgressCalloutBundle = {
   /** Top of panel — traffic / outlook for the full trip, not one mile marker. */
   routeWide: RouteChunkCalloutItem[];
+  /** Glanceable weather timeline for the full leg (replaces text route outlook). */
+  outlookTimeline: RouteOutlookStep[];
   /** Timeline rows tied to a location along the polyline. */
   segments: RouteChunkCalloutItem[];
 };
@@ -89,6 +92,19 @@ function isSeriousAlert(a: RouteAlert): boolean {
   if (a.corridorKind === "traffic" && a.severity >= 80) return true;
   if (a.corridorKind === "weather" && a.severity >= 70) return true;
   return false;
+}
+
+/** Aggregate RainViewer / corridor read — not a mile-marker hazard (route outlook timeline covers it). */
+export function isCorridorWideWeatherCalloutAlert(a: RouteAlert): boolean {
+  return a.corridorKind === "weather" && a.id === "radar";
+}
+
+function calloutAlertsForMileList(
+  laidOut: RouteAlert[],
+  hasRouteOutlookTimeline: boolean
+): RouteAlert[] {
+  if (!hasRouteOutlookTimeline) return laidOut;
+  return laidOut.filter((a) => !isCorridorWideWeatherCalloutAlert(a));
 }
 
 function alertsInSegment(laidOut: RouteAlert[], startM: number, endM: number): RouteAlert[] {
@@ -168,12 +184,13 @@ export function buildRouteChunkCalloutList(opts: {
   const segments: RouteChunkCalloutItem[] = [];
 
   if (totalM < 1 || geometry.length < 2) {
-    return { routeWide, segments };
+    return { routeWide, outlookTimeline: [], segments };
   }
 
   const fc = slice?.forecastHeadline?.trim() ?? "";
   const delay = slice?.trafficDelayMinutes ?? 0;
-  const outlook = compactRouteOutlook(fc);
+  const outlookTimeline = buildRouteOutlookTimeline(fc, weatherSamples);
+  const mileListAlerts = calloutAlertsForMileList(laidOutAlerts, outlookTimeline.length > 0);
 
   if (progressTrafficLine) {
     routeWide.push({
@@ -194,19 +211,6 @@ export function buildRouteChunkCalloutList(opts: {
       summary: `+${formatDelayMinutesForUi(delay)} vs free-flow`,
       tooltip: `Mapbox traffic delay for the full leg: +${formatDelayMinutesForUi(delay)}`,
       color: corridorHighlightHex("traffic", Math.min(95, 50 + delay * 4)),
-      alongT: 1,
-      alongPct: 0,
-    });
-  }
-
-  if (outlook) {
-    routeWide.push({
-      key: "route-wx-outlook",
-      scope: "route",
-      title: "Route outlook",
-      summary: outlook,
-      tooltip: fc || outlook,
-      color: stripTint,
       alongT: 1,
       alongPct: 0,
     });
@@ -253,7 +257,7 @@ export function buildRouteChunkCalloutList(opts: {
     const seriousHz = hzFull.filter((h) => isSeriousHazardKind(h.kind));
     const routineHz = hzFull.filter((h) => !isSeriousHazardKind(h.kind));
 
-    const segAlerts = alertsInSegment(laidOutAlerts, startM, endM);
+    const segAlerts = alertsInSegment(mileListAlerts, startM, endM);
     const seriousAlerts = segAlerts.filter(isSeriousAlert);
     const routineAlerts = segAlerts.filter((a) => !isSeriousAlert(a));
 
@@ -320,25 +324,34 @@ export function buildRouteChunkCalloutList(opts: {
 
     for (const a of seriousAlerts) {
       const at = Math.min(1, Math.max(0, a.alongMeters / totalM));
+      const title = squeezeForSummary(a.title, 56);
+      const detail = squeezeForSummary(a.detail.trim(), 72);
+      const summary = detail && !noticesMatch(title, detail) ? detail : "";
       segments.push({
         key: `serious-alert-${a.id}-${Math.round(a.alongMeters)}`,
         scope: "segment",
-        title: squeezeForSummary(a.title, 56),
-        summary: squeezeForSummary(a.detail.trim(), 72),
-        tooltip: a.detail.trim(),
+        title,
+        summary,
+        tooltip: a.detail.trim() || a.title,
         color: corridorHighlightHex(a.corridorKind, a.severity),
         alongT: at,
         alongPct: Math.round(at * 100),
       });
     }
     for (const h of seriousHz) {
+      const alreadyListed = seriousAlerts.some(
+        (a) => noticesMatch(a.detail, h.summary) || noticesMatch(a.title, h.summary)
+      );
+      if (alreadyListed) continue;
+
       const am = typeof h.alongMeters === "number" && Number.isFinite(h.alongMeters) ? h.alongMeters : midM;
       const at = Math.min(1, Math.max(0, am / totalM));
+      const callout = splitRouteNoticeCallout(h.summary, h.kind);
       segments.push({
         key: `serious-hazard-${h.kind}-${Math.round(am)}`,
         scope: "segment",
-        title: squeezeForSummary(h.summary, 56),
-        summary: squeezeForSummary(h.summary, 72),
+        title: callout.title,
+        summary: callout.summary,
         tooltip: h.summary,
         color: "#ea580c",
         alongT: at,
@@ -371,7 +384,7 @@ export function buildRouteChunkCalloutList(opts: {
   }
 
   segments.sort((a, b) => b.alongT - a.alongT);
-  return { routeWide, segments };
+  return { routeWide, outlookTimeline, segments };
 }
 
 function wxLineForFinal(

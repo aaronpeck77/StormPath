@@ -3400,6 +3400,129 @@
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
 }
 
+/* Route outlook — horizontal weather timeline (progress info panel, anchored at route start) */
+.rotl {
+  margin: 0.45rem 0 0.15rem;
+  padding: 0.35rem 0.15rem 0.55rem;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.route-progress-callout-panel__divider--above-outlook {
+  margin-top: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.rotl__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.45rem;
+  padding: 0 0.15rem;
+}
+
+.rotl__title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #f8fafc;
+}
+
+.rotl__graph {
+  position: relative;
+  min-height: 74px;
+  padding: 0 6px 2px;
+}
+
+.rotl__rail {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 38px;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(148, 163, 184, 0.45);
+}
+
+.rotl__you {
+  position: absolute;
+  top: 28px;
+  bottom: 18px;
+  width: 2px;
+  border-radius: 1px;
+  transform: translateX(-50%);
+  z-index: 3;
+  box-shadow: 0 0 6px rgba(59, 130, 246, 0.55);
+  pointer-events: none;
+}
+
+.rotl__steps {
+  position: relative;
+  height: 74px;
+}
+
+.rotl__step {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 34px;
+  max-width: 52px;
+  text-align: center;
+  z-index: 2;
+}
+
+.rotl__icon {
+  font-size: 0.78rem;
+  line-height: 1;
+}
+
+.rotl__temp {
+  font-size: 0.62rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #f1f5f9;
+  line-height: 1.1;
+}
+
+.rotl__precip-wrap {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 18px;
+  width: 100%;
+}
+
+.rotl__precip-bar {
+  width: 7px;
+  min-height: 4px;
+  border-radius: 3px 3px 1px 1px;
+  transition: height 0.15s ease;
+}
+
+.rotl__label {
+  font-size: 0.58rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  color: rgba(226, 232, 240, 0.92);
+  line-height: 1.1;
+}
+
+.rotl__eta {
+  font-size: 0.52rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: rgba(148, 163, 184, 0.95);
+  line-height: 1.05;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Don?t clamp side-rail strip to rail width (56px) ? that collapsed the rotated bar to a nub */
 .nav-route-progress-rail__inner > .route-progress-strip:not(.route-progress-strip--side) {
   flex: 1 1 auto;

@@ -1,4 +1,5 @@
 import type { RouteAlert } from "./routeAlerts";
+import type { HazardKind } from "../situation/types";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { nwsWhatIsHappening, nwsWhatToDo } from "../weatherAlerts/nwsDriveSummary";
 import { displayText } from "../utils/displayText";
@@ -8,6 +9,59 @@ import { formatEtaDuration } from "../ui/formatEta";
 /** Panel summary — full message (whitespace normalized only). */
 export function squeezeForSummary(text: string, _max?: number): string {
   return displayText(text);
+}
+
+function hazardKindShortTitle(kind: HazardKind): string {
+  switch (kind) {
+    case "closure":
+      return "Closure ahead";
+    case "restriction":
+      return "Lane restriction";
+    case "incident":
+      return "Incident ahead";
+    case "lowVisibility":
+      return "Low visibility";
+  }
+}
+
+/** True when two notice strings describe the same Mapbox / route event. */
+export function noticesMatch(a: string, b: string): boolean {
+  const x = displayText(a).toLowerCase();
+  const y = displayText(b).toLowerCase();
+  if (!x || !y) return false;
+  return x === y || x.includes(y) || y.includes(x);
+}
+
+/**
+ * Split a route notice into a short panel title and a longer body line.
+ * Mapbox notices use "Type — on Road — description" segments.
+ */
+export function splitRouteNoticeCallout(
+  notice: string,
+  kind?: HazardKind
+): { title: string; summary: string } {
+  const raw = displayText(notice);
+  if (!raw) {
+    return { title: kind ? hazardKindShortTitle(kind) : "Road notice", summary: "" };
+  }
+
+  const parts = raw
+    .split(" — ")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length >= 2) {
+    return {
+      title: squeezeForSummary(parts[0]!, 56),
+      summary: squeezeForSummary(parts.slice(1).join(" — "), 72),
+    };
+  }
+
+  const kindTitle = kind ? hazardKindShortTitle(kind) : "";
+  if (kindTitle && raw.toLowerCase() !== kindTitle.toLowerCase()) {
+    return { title: kindTitle, summary: squeezeForSummary(raw, 72) };
+  }
+
+  return { title: squeezeForSummary(raw, 56), summary: "" };
 }
 
 /** Distance along the polyline from the route start (not remaining). */
