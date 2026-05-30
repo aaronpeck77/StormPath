@@ -15,7 +15,8 @@ export type CorridorForecastLeg = {
 };
 
 /**
- * Fetches Tomorrow.io corridor forecasts for every plan leg while the sheet is open (V2 leg compare).
+ * Fetches Tomorrow.io corridor forecast for the active leg only (V2 leg compare).
+ * Previously viewed legs stay cached in memory so switching A/B/C does not re-hit the API.
  */
 export function useCorridorRouteForecasts(
   apiKey: string,
@@ -23,10 +24,14 @@ export function useCorridorRouteForecasts(
   speedMps: number,
   enabled: boolean,
   /** Reuse an existing forecast for this leg (avoids a duplicate Tomorrow.io call). */
-  reuseForecast?: { routeId: string; forecast: RouteForecast | null } | null
+  reuseForecast?: { routeId: string; forecast: RouteForecast | null } | null,
+  /** Only fetch this leg while the sheet is open — saves 2 calls vs loading A/B/C at once. */
+  activeLegId?: string
 ): { forecastsByLegId: Record<string, RouteForecast | null>; loading: boolean } {
   const [forecastsByLegId, setForecastsByLegId] = useState<Record<string, RouteForecast | null>>({});
   const [loading, setLoading] = useState(false);
+  const cacheRef = useRef<Record<string, RouteForecast | null>>({});
+
   const legsKey = useMemo(
     () =>
       legs
@@ -42,9 +47,37 @@ export function useCorridorRouteForecasts(
   const legsRef = useRef(legs);
   legsRef.current = legs;
 
+  const targetLegId = activeLegId || legs[0]?.routeId || "";
+
   useEffect(() => {
-    if (!enabled || !apiKey || !legs.length) {
-      setForecastsByLegId({});
+    if (!enabled || !apiKey || !legs.length || !targetLegId) {
+      if (!enabled) {
+        setForecastsByLegId({});
+        cacheRef.current = {};
+      }
+      setLoading(false);
+      return;
+    }
+
+    const leg = legsRef.current.find((l) => l.routeId === targetLegId);
+    if (!leg) {
+      setLoading(false);
+      return;
+    }
+
+    if (
+      reuseForecast?.routeId === leg.routeId &&
+      reuseForecast.forecast != null
+    ) {
+      cacheRef.current[leg.routeId] = reuseForecast.forecast;
+      setForecastsByLegId((prev) => ({ ...prev, [leg.routeId]: reuseForecast.forecast }));
+      setLoading(false);
+      return;
+    }
+
+    const cached = cacheRef.current[leg.routeId];
+    if (cached != null) {
+      setForecastsByLegId((prev) => ({ ...prev, [leg.routeId]: cached }));
       setLoading(false);
       return;
     }
@@ -55,50 +88,57 @@ export function useCorridorRouteForecasts(
 
     void (async () => {
       if (isTomorrowIoRateLimited()) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+
+      if (leg.geometry.length < 2 || polylineLengthMeters(leg.geometry) < 1000) {
+        cacheRef.current[leg.routeId] = null;
         if (!cancelled) {
-          setForecastsByLegId({});
+          setForecastsByLegId((prev) => ({ ...prev, [leg.routeId]: null }));
           setLoading(false);
         }
         return;
       }
 
-      const next: Record<string, RouteForecast | null> = {};
-      for (const leg of legsRef.current) {
-        if (cancelled || ac.signal.aborted) break;
-        if (isTomorrowIoRateLimited()) break;
-        if (
-          reuseForecast?.routeId === leg.routeId &&
-          reuseForecast.forecast != null
-        ) {
-          next[leg.routeId] = reuseForecast.forecast;
-          continue;
+      const wps = buildTimelinesWaypointsForGeometry(leg.geometry, speedMps);
+      if (!wps?.length) {
+        cacheRef.current[leg.routeId] = null;
+        if (!cancelled) {
+          setForecastsByLegId((prev) => ({ ...prev, [leg.routeId]: null }));
+          setLoading(false);
         }
-        if (leg.geometry.length < 2 || polylineLengthMeters(leg.geometry) < 1000) {
-          next[leg.routeId] = null;
-          continue;
+        return;
+      }
+
+      try {
+        const forecast = await fetchRouteForecast(apiKey, wps, ac.signal);
+        cacheRef.current[leg.routeId] = forecast;
+        if (!cancelled) {
+          setForecastsByLegId((prev) => ({ ...prev, [leg.routeId]: forecast }));
         }
-        const wps = buildTimelinesWaypointsForGeometry(leg.geometry, speedMps);
-        if (!wps?.length) {
-          next[leg.routeId] = null;
-          continue;
-        }
-        try {
-          next[leg.routeId] = await fetchRouteForecast(apiKey, wps, ac.signal);
-        } catch {
-          next[leg.routeId] = null;
+      } catch {
+        cacheRef.current[leg.routeId] = null;
+        if (!cancelled) {
+          setForecastsByLegId((prev) => ({ ...prev, [leg.routeId]: null }));
         }
       }
-      if (!cancelled) {
-        setForecastsByLegId(next);
-        setLoading(false);
-      }
+      if (!cancelled) setLoading(false);
     })();
 
     return () => {
       cancelled = true;
       ac.abort();
     };
-  }, [apiKey, enabled, legsKey, speedMps, reuseForecast?.routeId, reuseForecast?.forecast]);
+  }, [
+    apiKey,
+    enabled,
+    legsKey,
+    speedMps,
+    targetLegId,
+    reuseForecast?.routeId,
+    reuseForecast?.forecast,
+  ]);
 
   return { forecastsByLegId, loading };
 }

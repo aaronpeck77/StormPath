@@ -24,8 +24,9 @@ import {
 
 // ── Minute precip ─────────────────────────────────────────────────────────────
 
-/** How often to re-fetch the minute precip (5 min). */
+/** How often to re-fetch the minute precip (5 min idle; slower while navigating). */
 const MINUTE_PRECIP_POLL_MS = 5 * 60 * 1000;
+const MINUTE_PRECIP_POLL_NAV_MS = 20 * 60 * 1000;
 /** How many meters the user must move before a fresh fetch is triggered. */
 const MINUTE_PRECIP_MOVE_THRESHOLD_M = 3000;
 
@@ -49,8 +50,11 @@ export function useTomorrowMinutePrecip(
   apiKey: string,
   userLngLat: LngLat | null,
   /** When false, no network calls (saves Tomorrow.io hourly quota until user opens weather UI). */
-  enabled = false
+  enabled = false,
+  /** Slower refresh while navigating — corridor route forecast covers the leg. */
+  slowPollWhileNavigating = false
 ): MinutePrecipForecast | null {
+  const pollMs = slowPollWhileNavigating ? MINUTE_PRECIP_POLL_NAV_MS : MINUTE_PRECIP_POLL_MS;
   const [forecast, setForecast] = useState<MinutePrecipForecast | null>(null);
   const lastFetchLngLat = useRef<LngLat | null>(null);
   const lastFetchTime = useRef<number>(0);
@@ -61,7 +65,7 @@ export function useTomorrowMinutePrecip(
 
     const now = Date.now();
     const lastLng = lastFetchLngLat.current;
-    const tooSoon = now - lastFetchTime.current < MINUTE_PRECIP_POLL_MS;
+    const tooSoon = now - lastFetchTime.current < pollMs;
     const tooClose =
       lastLng != null && haversineM(lastLng, userLngLat) < MINUTE_PRECIP_MOVE_THRESHOLD_M;
 
@@ -91,16 +95,17 @@ export function useTomorrowMinutePrecip(
     // Quantise position to ~3 km grid to avoid re-firing on every GPS tick.
     userLngLat ? Math.round(userLngLat[0] * 33) : null,
     userLngLat ? Math.round(userLngLat[1] * 33) : null,
+    pollMs,
   ]);
 
-  // Set up a timer to re-fetch every MINUTE_PRECIP_POLL_MS regardless of movement.
+  // Set up a timer to re-fetch on poll interval regardless of movement.
   useEffect(() => {
     if (!enabled || !apiKey || !userLngLat) return;
     const id = setInterval(() => {
       lastFetchTime.current = 0; // force refresh on next position update
-    }, MINUTE_PRECIP_POLL_MS);
+    }, pollMs);
     return () => clearInterval(id);
-  }, [enabled, apiKey, !!userLngLat]);
+  }, [enabled, apiKey, !!userLngLat, pollMs]);
 
   return forecast;
 }
@@ -145,26 +150,26 @@ export function useLocalHourlyForecast(
     lastFetchLngLat.current = userLngLat;
 
     const run = async () => {
-      if (tioApiKey && !isTomorrowIoRateLimited()) {
+      if (openWeatherApiKey && !ac.signal.aborted) {
         try {
-          const f = await fetchPointHourlyForecast(tioApiKey, lat, lng, ac.signal);
+          const f = await fetchOpenWeatherPointHourly24h(openWeatherApiKey, lat, lng);
           if (!ac.signal.aborted) {
             setForecast(f);
             return;
           }
         } catch (e) {
-          if (!ac.signal.aborted && !isTomorrowIoRateLimited() && import.meta.env.DEV) {
-            console.warn("[TomorrowIO] point hourly failed:", e);
+          if (!ac.signal.aborted && import.meta.env.DEV) {
+            console.warn("[OpenWeather] point hourly failed:", e);
           }
         }
       }
-      if (openWeatherApiKey && !ac.signal.aborted) {
+      if (tioApiKey && !isTomorrowIoRateLimited() && !ac.signal.aborted) {
         try {
-          const f = await fetchOpenWeatherPointHourly24h(openWeatherApiKey, lat, lng);
+          const f = await fetchPointHourlyForecast(tioApiKey, lat, lng, ac.signal);
           if (!ac.signal.aborted) setForecast(f);
         } catch (e) {
-          if (!ac.signal.aborted && import.meta.env.DEV) {
-            console.warn("[OpenWeather] point hourly failed:", e);
+          if (!ac.signal.aborted && !isTomorrowIoRateLimited() && import.meta.env.DEV) {
+            console.warn("[TomorrowIO] point hourly failed:", e);
           }
         }
       }
@@ -195,8 +200,8 @@ export function useLocalHourlyForecast(
 
 // ── Route forecast ────────────────────────────────────────────────────────────
 
-/** Re-fetch when route changes or every 30 min. */
-const ROUTE_FORECAST_POLL_MS = 30 * 60 * 1000;
+/** Re-fetch when route changes or every 45 min. */
+const ROUTE_FORECAST_POLL_MS = 45 * 60 * 1000;
 
 /**
  * Fetches hourly weather conditions along the active route, sampled at regular

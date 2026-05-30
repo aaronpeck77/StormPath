@@ -2374,38 +2374,43 @@ export default function App() {
     guidanceRoute?.geometry
   );
 
-  // ── Tomorrow.io (free tier ~25 req/hr) — always at your position when browsing without a route ──
+  // ── Tomorrow.io (free tier ~25 req/hr) — split point vs route to stay under quota ──
   const tioApiKey = env.tomorrowIoApiKey;
   const hasPlannedRoute = Boolean(
     destLngLat && plan.routes.some((r) => r.geometry && r.geometry.length >= 2)
   );
-  const tioFetchEnabled =
-    isPlus &&
-    Boolean(tioApiKey) &&
-    Boolean(effectiveUserLngLat) &&
-    appForeground &&
+  const tioWeatherUiOpen = stormBarExpanded || corridorForecastOpen;
+  const tioBaseEnabled =
+    isPlus && Boolean(tioApiKey) && Boolean(effectiveUserLngLat) && appForeground;
+  /** At-your-location minute precip + hourly card — not while driving with the bar collapsed. */
+  const tioPointFetchEnabled =
+    tioBaseEnabled &&
     (dataSaverMode
-      ? stormBarExpanded || corridorForecastOpen
-      : !hasPlannedRoute ||
-        stormBarExpanded ||
-        corridorForecastOpen ||
-        navigationStarted);
+      ? tioWeatherUiOpen
+      : tioWeatherUiOpen || (!hasPlannedRoute && !navigationStarted));
+  /** Corridor hourly along the active leg — while navigating or when forecast UI is open. */
+  const tioRouteFetchEnabled =
+    tioBaseEnabled &&
+    (dataSaverMode
+      ? tioWeatherUiOpen
+      : tioWeatherUiOpen || navigationStarted);
   const tioMinutePrecip = useTomorrowMinutePrecip(
     tioApiKey,
     effectiveUserLngLat ?? null,
-    tioFetchEnabled
+    tioPointFetchEnabled,
+    navigationStarted
   );
   const localHourlyForecast = useLocalHourlyForecast(
     tioApiKey,
     env.openWeatherApiKey,
     effectiveUserLngLat ?? null,
-    tioFetchEnabled
+    tioPointFetchEnabled
   );
   const tioRouteForecast = useTomorrowRouteForecast(
     tioApiKey,
     isPlus && guidanceRoute?.geometry?.length ? guidanceRoute.geometry : null,
     speedMps ?? 0,
-    tioFetchEnabled
+    tioRouteFetchEnabled
   );
 
   const advisoryNowcastLine = useMemo(() => {
@@ -2451,7 +2456,8 @@ export default function App() {
       corridorForecastOpen,
       guidanceRoute?.id && tioRouteForecast
         ? { routeId: guidanceRoute.id, forecast: tioRouteForecast }
-        : null
+        : null,
+      corridorForecastLegId || corridorLegOptions[0]?.routeId || guidanceRoute?.id || ""
     );
 
   const corridorForecastsMerged = useMemo(() => {

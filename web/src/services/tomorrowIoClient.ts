@@ -5,10 +5,11 @@
 import { safeStorage } from "../storage/safeStorage";
 
 const MIN_GAP_MS = 1200;
-const CACHE_TTL_MS = 25 * 60 * 1000;
+/** Route / point forecasts stay valid long enough to avoid re-fetch on minor UI toggles. */
+const CACHE_TTL_MS = 45 * 60 * 1000;
 const RATE_LIMIT_COOLDOWN_MS = 60 * 60 * 1000;
 /** Stay under Tomorrow.io's 25/hr cap (leave headroom for retries). */
-const MAX_REQUESTS_PER_HOUR = 18;
+const MAX_REQUESTS_PER_HOUR = 16;
 
 const LS_RATE_UNTIL = "stormpath-tio-rate-until";
 const LS_HOUR_BUDGET = "stormpath-tio-hour-budget";
