@@ -1,5 +1,6 @@
 import { useCallback, type MutableRefObject } from "react";
 import { areaKeyFromLngLat, type PreferredAreaRouteMap } from "../preferredAreaRoutes";
+import { pickTrailPreferredRouteId } from "../frequentRoutes/trailRouteOverlap";
 import { buildTripFromMapbox } from "../services/mapboxDirectionsRouter";
 import { useRouteCompareStore } from "../state/routeCompareStore";
 import { useTripPlanStore } from "../state/tripPlanStore";
@@ -54,6 +55,8 @@ export interface UseComputeRoutesDeps {
   stormEnabled: boolean;
   /** Plus-only: prefer learned "preferred route" for the destination's city bucket. */
   payFrequentRoutes: boolean;
+  /** Plus + learn where I drive: bias alternates and default preview toward activity trail. */
+  learnWhereIDrive: boolean;
   /** Resets nav-only state (turn step, off-route latch, drive timers); skipped on `preserveNavigation`. */
   resetNavigationPlanning: () => void;
   /** Bumped any time the route graph identity changes; lets us discard stale awaits. */
@@ -87,6 +90,7 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
     stormAlertsForRouting,
     stormEnabled,
     payFrequentRoutes,
+    learnWhereIDrive,
     resetNavigationPlanning,
     routeGraphEpochRef,
     routeMainFetchAbortRef,
@@ -153,6 +157,7 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
               stormAlerts: stormAlertsForRouting,
               radarAvoidanceEnabled: isPlus && stormEnabled,
               excludeToll: Boolean(opts?.excludeToll),
+              trailRoutePersonalization: isPlus && learnWhereIDrive,
             }
           );
           p = built.plan;
@@ -175,24 +180,24 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
           }
         }
         setPlan(p);
+        let defaultRouteId: string | null = null;
         if (payFrequentRoutes) {
-          // Apply learned “preferred route” for this destination area (city-ish bucket).
           const prefKey = areaKeyFromLngLat(destForMap);
           const pref = preferredAreaRouteMapRef.current[prefKey];
           const preferredRole = pref?.preferredRole;
           if (preferredRole && p.routes.some((r) => r.role === preferredRole)) {
-            const preferredId = p.routes.find((r) => r.role === preferredRole)!.id;
-            const ids = slotOrderAfterSelect(p.routes.map((r) => r.id), preferredId);
-            setRouteSlotOrder(ids);
-            setPreviewLegIndex(0);
-          } else {
-            setRouteSlotOrder(p.routes.map((r) => r.id));
-            setPreviewLegIndex(0);
+            defaultRouteId = p.routes.find((r) => r.role === preferredRole)!.id;
           }
+        }
+        if (!defaultRouteId && learnWhereIDrive) {
+          defaultRouteId = pickTrailPreferredRouteId(p.routes);
+        }
+        if (defaultRouteId) {
+          setRouteSlotOrder(slotOrderAfterSelect(p.routes.map((r) => r.id), defaultRouteId));
         } else {
           setRouteSlotOrder(p.routes.map((r) => r.id));
-          setPreviewLegIndex(0);
         }
+        setPreviewLegIndex(0);
         setDestLngLat(destForMap);
         setViewMode("route");
         setFitTrigger((n) => n + 1);
@@ -220,6 +225,7 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
       stormAlertsForRouting,
       stormEnabled,
       payFrequentRoutes,
+      learnWhereIDrive,
       resetNavigationPlanning,
       routeGraphEpochRef,
       routeMainFetchAbortRef,

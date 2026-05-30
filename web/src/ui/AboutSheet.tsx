@@ -24,6 +24,11 @@ type ActivityTrailPanel = {
   onHomeMapFramingChange: (mode: HomeMapFraming) => void;
   /** Enough trail dots to offer “usual area” home framing. */
   homeAreaAvailable: boolean;
+  /** Wi‑Fi tile cache warm over density-capped home region. */
+  homePreloadEnabled: boolean;
+  onHomePreloadEnabledChange: (on: boolean) => void;
+  homePreloadAvailable: boolean;
+  homePreloadSizeLabel: string | null;
   onClear: () => void;
 };
 
@@ -108,8 +113,12 @@ export function AboutSheet({
   }, [open]);
 
   const [activityTrailClearStep, setActivityTrailClearStep] = useState<"idle" | "confirm">("idle");
+  const [activityTrailClearAck, setActivityTrailClearAck] = useState(false);
   useEffect(() => {
-    if (!open) setActivityTrailClearStep("idle");
+    if (!open) {
+      setActivityTrailClearStep("idle");
+      setActivityTrailClearAck(false);
+    }
   }, [open]);
 
   if (!open) return null;
@@ -530,9 +539,10 @@ export function AboutSheet({
                 </span>
               </label>
               <p className="about-sheet__p">
-                With this on, StormPath saves sparse GPS dots (about every few minutes while you move) to learn where
+                With this on, StormPath saves sparse GPS dots (about every minute while you move) to learn where
                 you usually drive. That helps <strong>frame the map</strong> around your area,{" "}
-                <strong>rank search suggestions</strong> nearer places you know, and show the cyan overlay below. Trip
+                <strong>rank search suggestions</strong> nearer places you know,{" "}
+                <strong>prefer familiar alternates</strong> when A/B/C routes are built, and show the cyan overlay below. Trip
                 detection for “frequent routes” uses a separate path.
               </p>
               <details className="about-sheet__details about-sheet__details--inline">
@@ -613,35 +623,74 @@ export function AboutSheet({
                   </span>
                 </label>
               </fieldset>
+              <label
+                className={`about-sheet__setting${activityTrail.homePreloadAvailable ? "" : " disabled"}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={activityTrail.homePreloadEnabled}
+                  disabled={!activityTrail.homePreloadAvailable}
+                  onChange={(e) => activityTrail.onHomePreloadEnabledChange(e.target.checked)}
+                />
+                <span>
+                  <strong>Preload my usual area (Wi‑Fi only)</strong> — after enough trail dots, quietly
+                  cache map tiles around where you usually drive so the map fills in faster on weak signal.
+                  {activityTrail.homePreloadSizeLabel ? (
+                    <> Estimated cache: {activityTrail.homePreloadSizeLabel}.</>
+                  ) : (
+                    <> Need more dots first.</>
+                  )}
+                </span>
+              </label>
               <div className="about-sheet__trail-clear">
                 {activityTrailClearStep === "idle" ? (
                   <button
                     type="button"
                     className="about-sheet__trail-clear-btn"
-                    onClick={() => setActivityTrailClearStep("confirm")}
+                    onClick={() => {
+                      setActivityTrailClearAck(false);
+                      setActivityTrailClearStep("confirm");
+                    }}
                   >
-                    Clear trail data
+                    Erase activity trail…
                   </button>
                 ) : (
-                  <div className="about-sheet__trail-clear-panel" role="alert">
-                    <p className="about-sheet__trail-clear-text">
-                      Erase all saved GPS dots on this device? Map framing and search ranking that use your trail will
-                      reset. This can’t be undone.
+                  <div className="about-sheet__trail-clear-panel" role="alertdialog" aria-labelledby="trail-clear-title">
+                    <p id="trail-clear-title" className="about-sheet__trail-clear-title">
+                      Erase all activity trail data?
                     </p>
+                    <p className="about-sheet__trail-clear-text">
+                      This permanently deletes every saved GPS dot on this device. You will lose home map framing,
+                      search ranking for your area, familiar route suggestions, and Wi‑Fi map preload for your usual
+                      territory. StormPath will behave like a fresh install until new dots accumulate.
+                    </p>
+                    <label className="about-sheet__trail-clear-ack">
+                      <input
+                        type="checkbox"
+                        checked={activityTrailClearAck}
+                        onChange={(e) => setActivityTrailClearAck(e.target.checked)}
+                      />
+                      <span>I understand this cannot be undone</span>
+                    </label>
                     <div className="about-sheet__trail-clear-row">
                       <button
                         type="button"
                         className="about-sheet__trail-clear-cancel"
-                        onClick={() => setActivityTrailClearStep("idle")}
+                        onClick={() => {
+                          setActivityTrailClearStep("idle");
+                          setActivityTrailClearAck(false);
+                        }}
                       >
                         Cancel
                       </button>
                       <button
                         type="button"
                         className="about-sheet__trail-clear-confirm-btn"
+                        disabled={!activityTrailClearAck}
                         onClick={() => {
                           activityTrail.onClear();
                           setActivityTrailClearStep("idle");
+                          setActivityTrailClearAck(false);
                         }}
                       >
                         Erase trail data

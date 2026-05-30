@@ -209,6 +209,13 @@ import {
   type HomeMapFraming,
 } from "./map/homeMapFraming";
 import {
+  estimatePreloadStorageLabel,
+  getHomePreloadBounds,
+  readHomePreloadEnabled,
+  writeHomePreloadEnabled,
+  clearHomePreloadRecord,
+} from "./map/homePreloadRegion";
+import {
   ACTIVITY_MIN_SAMPLES_PLANNING_MAP,
   ACTIVITY_MIN_SAMPLES_RANK,
   ACTIVITY_SAMPLES_UPDATED_EVENT,
@@ -416,6 +423,7 @@ export default function App() {
     return safeStorage.get(ACTIVITY_TRAIL_MAP_LS) === "1";
   });
   const [homeMapFraming, setHomeMapFraming] = useState<HomeMapFraming>(() => readHomeMapFraming());
+  const [homePreloadEnabled, setHomePreloadEnabled] = useState(() => readHomePreloadEnabled());
   const [activityTrailTick, setActivityTrailTick] = useState(0);
   useEffect(() => {
     const on = () => setActivityTrailTick((n) => n + 1);
@@ -758,6 +766,7 @@ export default function App() {
     stormAlertsForRouting,
     stormEnabled: settingStormEnabled,
     payFrequentRoutes,
+    learnWhereIDrive: isPlus && learnEnabled,
     resetNavigationPlanning,
     routeGraphEpochRef,
     routeMainFetchAbortRef,
@@ -807,6 +816,7 @@ export default function App() {
               preferThreeRoutes: isPlus,
               stormAlerts: stormAlertsForRouting,
               radarAvoidanceEnabled: isPlus && settingStormEnabled,
+              trailRoutePersonalization: isPlus && learnEnabled,
             }
           );
           p = built.plan;
@@ -1851,6 +1861,7 @@ export default function App() {
             preferThreeRoutes: isPlus,
             stormAlerts: stormAlertsForRouting,
             radarAvoidanceEnabled: isPlus && settingStormEnabled,
+            trailRoutePersonalization: isPlus && learnEnabled,
           });
           if (fresh.length === 0) return;
           if (epochAtStart !== routeGraphEpochRef.current) return;
@@ -3638,6 +3649,16 @@ export default function App() {
     return getActivityTrailPlanningBounds(ACTIVITY_MIN_SAMPLES_PLANNING_MAP);
   }, [isPlus, learnEnabled, activityTrailTick]);
 
+  const homePreloadBounds = useMemo(() => {
+    if (!isPlus || !learnEnabled || !homePreloadEnabled) return null;
+    return getHomePreloadBounds();
+  }, [isPlus, learnEnabled, homePreloadEnabled, activityTrailTick]);
+
+  const homePreloadSizeLabel = useMemo(
+    () => estimatePreloadStorageLabel(homePreloadBounds),
+    [homePreloadBounds]
+  );
+
   const activityTrailAboutPanel = useMemo(() => {
     if (!isPlus) return null;
     const s = getActivityTrailStats();
@@ -3663,8 +3684,16 @@ export default function App() {
         writeHomeMapFraming(mode);
       },
       homeAreaAvailable: activityTrailPlanningBounds != null,
+      homePreloadEnabled,
+      onHomePreloadEnabledChange: (on: boolean) => {
+        setHomePreloadEnabled(on);
+        writeHomePreloadEnabled(on);
+      },
+      homePreloadAvailable: homePreloadBounds != null,
+      homePreloadSizeLabel,
       onClear: () => {
         clearActivitySamples();
+        clearHomePreloadRecord();
         setActivityTrailTick((n) => n + 1);
       },
     };
@@ -3676,6 +3705,9 @@ export default function App() {
     setLearnEnabled,
     homeMapFraming,
     activityTrailPlanningBounds,
+    homePreloadEnabled,
+    homePreloadBounds,
+    homePreloadSizeLabel,
   ]);
 
   const idleHomeMapFraming: HomeMapFraming = isPlus ? homeMapFraming : "my_location";
@@ -4259,6 +4291,7 @@ export default function App() {
         preferThreeRoutes: isPlus,
         stormAlerts: stormAlertsForRouting,
         radarAvoidanceEnabled: isPlus && settingStormEnabled,
+        trailRoutePersonalization: isPlus && learnEnabled,
       });
 
       if (fresh.length === 0 || epochAtStart !== routeGraphEpochRef.current) {
@@ -4723,6 +4756,8 @@ export default function App() {
             activityTrailGeoJson={activityTrailGeoJsonForMap}
             activityTrailPlanningBounds={activityTrailPlanningBounds}
             idleHomeMapFraming={idleHomeMapFraming}
+            homePreloadEnabled={isPlus && learnEnabled && homePreloadEnabled}
+            homePreloadBounds={homePreloadBounds}
             searchPickMarkers={searchPickMarkersForMap}
             onSearchPickMarkerClick={searchPickMarkersForMap ? handleSearchPickFromMap : undefined}
             progressRailVisible={navigationStarted && isPlus}

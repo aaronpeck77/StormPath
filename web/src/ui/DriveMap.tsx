@@ -4,6 +4,12 @@ import type { MutableRefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import { resolveIdleHomeFraming } from "../map/homeMapFraming";
+import {
+  markHomePreloadCompleted,
+  shouldSkipHomePreloadThrottle,
+} from "../map/homePreloadRegion";
+import { isWifiConnection } from "../map/mapPreloadNetwork";
+import { warmMapTilesForBounds } from "../map/mapRegionCacheWarm";
 import type { RouteAlert } from "../nav/routeAlerts";
 import type { LngLat, NavRoute } from "../nav/types";
 import type { SavedPlace } from "../nav/savedPlaces";
@@ -653,6 +659,9 @@ type Props = {
   activityTrailPlanningBounds?: [[number, number], [number, number]] | null;
   /** Plus: launch / idle map framing preference (Basic always my_location). */
   idleHomeMapFraming?: HomeMapFraming;
+  /** Plus + learn: Wi‑Fi tile cache warm over density-capped home region. */
+  homePreloadEnabled?: boolean;
+  homePreloadBounds?: [[number, number], [number, number]] | null;
   /** Multi-result destination search: temporary pins until the user picks one. */
   searchPickMarkers?: { id: string; lngLat: LngLat; label: string }[] | null;
   onSearchPickMarkerClick?: (id: string) => void;
@@ -671,6 +680,8 @@ const DRIVE_EXPLORE_IDLE_MS = 4_000;
 const DRIVE_CAMERA_BEARING_TC_S = 0.58;
 /** Top-down map view: nudge puck slightly right of visual center to balance the side rail/chrome. */
 const TOPDOWN_PUCK_OFFSET_PX: [number, number] = [24, 0];
+/** Delay before Wi‑Fi tile warm so idle-home camera can finish first. */
+const HOME_PRELOAD_START_DELAY_MS = 4_500;
 
 /**
  * Drive (3D) view: lateral balance comes from symmetric horizontal padding in
@@ -857,6 +868,8 @@ export function DriveMap({
   activityTrailGeoJson = null,
   activityTrailPlanningBounds = null,
   idleHomeMapFraming = "my_location",
+  homePreloadEnabled = false,
+  homePreloadBounds = null,
   searchPickMarkers = null,
   onSearchPickMarkerClick,
   progressRailVisible = true,
@@ -874,7 +887,6 @@ export function DriveMap({
   const onSearchPickMarkerClickRef = useRef(onSearchPickMarkerClick);
   onSearchPickMarkerClickRef.current = onSearchPickMarkerClick;
   const routeIdsRef = useRef<Set<string>>(new Set());
-  const userFlewRef = useRef(false);
   const prevTopdownRef = useRef(false);
   const prevNavigationStartedRef = useRef(false);
   const wasRouteCompareRef = useRef(false);
@@ -1055,7 +1067,6 @@ export function DriveMap({
       mapRef.current = null;
       setMapReady(false);
       routeIdsRef.current = new Set();
-      userFlewRef.current = false;
       if (exploreTimerRef.current) clearTimeout(exploreTimerRef.current);
     };
   }, [token]);
@@ -1459,22 +1470,6 @@ export function DriveMap({
         .addTo(map);
     } else if (!navigationStarted) {
       puckMarkerRef.current.setLngLat(userLngLat);
-    }
-
-    if (!userFlewRef.current && routes.length === 0) {
-      userFlewRef.current = true;
-      try {
-        map.resize();
-      } catch {
-        /* ignore */
-      }
-      safeFlyTo(map, {
-        center: userLngLat,
-        zoom: regionalPlanningZoom(),
-        padding: ZERO_MAP_PADDING,
-        essential: true,
-        duration: 1200,
-      });
     }
   }, [mapReady, userLngLat, routes.length, navigationStarted]);
 
@@ -2523,8 +2518,9 @@ export function DriveMap({
     };
   }, [mapReady, showRadar, radarAnimate]);
 
-  /** Idle home (no trip): one auto-frame per session; cleared when routing/nav starts or pref changes. */
+  /** Idle home (no trip): frame on My location or trail area; retry until GPS + style are ready. */
   const idleHomeAppliedRef = useRef(false);
+  const hadTrailBoundsRef = useRef(false);
   useEffect(() => {
     if (routes.length > 0 || navigationStarted || viewMode === "drive") {
       idleHomeAppliedRef.current = false;
@@ -2536,54 +2532,88 @@ export function DriveMap({
   }, [idleHomeMapFraming]);
 
   useEffect(() => {
+    const hasBounds = activityTrailPlanningBounds != null;
+    if (hasBounds && !hadTrailBoundsRef.current && idleHomeMapFraming === "auto") {
+      idleHomeAppliedRef.current = false;
+    }
+    hadTrailBoundsRef.current = hasBounds;
+  }, [activityTrailPlanningBounds, idleHomeMapFraming]);
+
+  useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
     if (viewMode !== "route" && viewMode !== "topdown") return;
     if (routes.length > 0 || navigationStarted) return;
-    const u = userLngLatRef.current;
-    if (!u || userExploringRef.current) return;
-    if (idleHomeAppliedRef.current) return;
-    idleHomeAppliedRef.current = true;
 
-    const framing = resolveIdleHomeFraming(idleHomeMapFraming, activityTrailPlanningBounds);
-    if (framing === "activity_area" && activityTrailPlanningBounds) {
-      const tb = activityTrailPlanningBounds;
-      const b = new mapboxgl.LngLatBounds();
-      safeExtendBounds(b, u);
-      safeExtendBounds(b, tb[0]);
-      safeExtendBounds(b, tb[1]);
-      safeFitBounds(map, b, {
-        padding: 48,
-        maxZoom: 11.2,
-        duration: 520,
-        pitch: 0,
-        bearing: 0,
-        essential: true,
-      });
-    } else if (viewMode === "topdown") {
-      topdownZoomRef.current = ROUTE_VIEW_PLANNING_STREET_ZOOM;
-      safeFlyTo(map, {
-        center: u,
-        zoom: ROUTE_VIEW_PLANNING_STREET_ZOOM,
-        pitch: 0,
-        bearing: 0,
-        padding: ZERO_MAP_PADDING,
-        offset: TOPDOWN_PUCK_OFFSET_PX,
-        duration: 520,
-        essential: true,
-      });
-    } else {
-      safeEaseTo(map, {
-        center: u,
-        zoom: ROUTE_VIEW_PLANNING_STREET_ZOOM,
-        pitch: 0,
-        bearing: 0,
-        padding: ZERO_MAP_PADDING,
-        duration: 520,
-        essential: true,
-      });
-    }
-    /* One-shot framing — no cleanup stop; GPS ticks must not call map.stop() mid-gesture. */
+    const tryApplyIdleHome = (): boolean => {
+      if (idleHomeAppliedRef.current) return true;
+      if (userExploringRef.current) return false;
+      const u = userLngLatRef.current;
+      if (!u) return false;
+      if (!isMapUsable(map)) return false;
+      try {
+        if (!map.isStyleLoaded()) return false;
+      } catch {
+        return false;
+      }
+
+      const framing = resolveIdleHomeFraming(idleHomeMapFraming, activityTrailPlanningBounds);
+      let ok = false;
+      if (framing === "activity_area" && activityTrailPlanningBounds) {
+        const tb = activityTrailPlanningBounds;
+        const b = new mapboxgl.LngLatBounds();
+        safeExtendBounds(b, u);
+        safeExtendBounds(b, tb[0]);
+        safeExtendBounds(b, tb[1]);
+        ok = safeFitBounds(map, b, {
+          padding: 48,
+          maxZoom: 11.2,
+          duration: 520,
+          pitch: 0,
+          bearing: 0,
+          essential: true,
+        });
+      } else if (viewMode === "topdown") {
+        topdownZoomRef.current = ROUTE_VIEW_PLANNING_STREET_ZOOM;
+        ok = safeFlyTo(map, {
+          center: u,
+          zoom: ROUTE_VIEW_PLANNING_STREET_ZOOM,
+          pitch: 0,
+          bearing: 0,
+          padding: ZERO_MAP_PADDING,
+          offset: TOPDOWN_PUCK_OFFSET_PX,
+          duration: 520,
+          essential: true,
+        });
+      } else {
+        ok = safeEaseTo(map, {
+          center: u,
+          zoom: ROUTE_VIEW_PLANNING_STREET_ZOOM,
+          pitch: 0,
+          bearing: 0,
+          padding: ZERO_MAP_PADDING,
+          duration: 520,
+          essential: true,
+        });
+      }
+      if (ok) idleHomeAppliedRef.current = true;
+      return ok;
+    };
+
+    if (tryApplyIdleHome()) return;
+
+    const onReady = () => {
+      tryApplyIdleHome();
+    };
+    map.on("load", onReady);
+    map.on("style.load", onReady);
+    const timers = [250, 800, 2000, 4500].map((ms) => window.setTimeout(onReady, ms));
+
+    return () => {
+      map.off("load", onReady);
+      map.off("style.load", onReady);
+      for (const id of timers) window.clearTimeout(id);
+    };
   }, [
     mapReady,
     viewMode,
@@ -2592,6 +2622,57 @@ export function DriveMap({
     Boolean(userLngLat),
     activityTrailPlanningBounds,
     idleHomeMapFraming,
+  ]);
+
+  const homePreloadBoundsKey = homePreloadBounds
+    ? `${homePreloadBounds[0].join(",")}|${homePreloadBounds[1].join(",")}`
+    : "";
+
+  useEffect(() => {
+    if (!homePreloadEnabled || !homePreloadBounds || !mapReady) return;
+    if (navigationStarted || routes.length > 0) return;
+    if (viewMode !== "route" && viewMode !== "topdown") return;
+    if (shouldSkipHomePreloadThrottle(homePreloadBounds)) return;
+
+    let cancelled = false;
+    let startTimer = 0;
+
+    const run = async () => {
+      if (cancelled) return;
+      if (!(await isWifiConnection())) return;
+      if (userExploringRef.current || navigationStartedRef.current) return;
+
+      const map = mapRef.current;
+      if (!map || !isMapUsable(map)) return;
+      try {
+        if (!map.isStyleLoaded()) return;
+      } catch {
+        return;
+      }
+
+      const result = await warmMapTilesForBounds(map, homePreloadBounds, () =>
+        cancelled || userExploringRef.current || navigationStartedRef.current
+      );
+      if (result === "done" && !cancelled) {
+        markHomePreloadCompleted(homePreloadBounds);
+      }
+    };
+
+    startTimer = window.setTimeout(() => {
+      void run();
+    }, HOME_PRELOAD_START_DELAY_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(startTimer);
+    };
+  }, [
+    mapReady,
+    homePreloadEnabled,
+    homePreloadBoundsKey,
+    navigationStarted,
+    routes.length,
+    viewMode,
   ]);
 
   useEffect(() => {

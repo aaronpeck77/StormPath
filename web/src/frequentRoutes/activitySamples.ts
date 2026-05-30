@@ -4,10 +4,10 @@ import { safeStorage } from "../storage/safeStorage";
 import type { FrequentRouteCluster } from "./types";
 
 const STORAGE_KEY = "stormpath-activity-samples-v1";
-/** Throttle: at most one stored dot per interval while moving (keeps months of history under localStorage limits). */
-const MIN_INTERVAL_MS = 3 * 60 * 1000;
+/** Throttle while moving — faster than before so “home area” builds in a reasonable first week. */
+const MIN_INTERVAL_MS = 90 * 1000;
 /** Ignore micro-moves between samples */
-const MIN_MOVE_M = 75;
+const MIN_MOVE_M = 50;
 const MAX_SAMPLES = 22_000;
 
 /** Enough trail dots to frame the map in route planning (no destination yet). */
@@ -69,11 +69,14 @@ hydrateMemFromTail(loadRaw());
  * Independent of the trip-detector polyline (which uses ~16s steps); this is for a long-horizon “where I’ve been” map.
  */
 export function tryAppendActivitySample(now: number, lngLat: LngLat, speedMps: number | null): void {
-  if (speedMps != null && speedMps < 0.85) return;
-  if (now - memLastT < MIN_INTERVAL_MS) return;
-  if (memLastPos != null && haversineMeters(memLastPos, lngLat) < MIN_MOVE_M) return;
-
   const list = loadRaw();
+  const bootstrap = list.length === 0;
+  if (!bootstrap) {
+    if (speedMps != null && speedMps < 0.85) return;
+    if (now - memLastT < MIN_INTERVAL_MS) return;
+    if (memLastPos != null && haversineMeters(memLastPos, lngLat) < MIN_MOVE_M) return;
+  }
+
   list.push({ t: now, lng: lngLat[0]!, lat: lngLat[1]! });
   while (list.length > MAX_SAMPLES) list.shift();
   memLastT = now;

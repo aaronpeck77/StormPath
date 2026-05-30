@@ -16,6 +16,15 @@ import {
 } from "../nav/routeGeometry";
 import { shortenTurnInstruction } from "../nav/turnInstructionShort";
 import {
+  loadActivitySamples,
+  type ActivitySample,
+} from "../frequentRoutes/activitySamples";
+import {
+  compareRouteTrailOverlapDesc,
+  routeTrailOverlapScore,
+  TRAIL_ROUTE_MIN_OVERLAP,
+} from "../frequentRoutes/trailRouteOverlap";
+import {
   fetchWithTimeout,
   isAbortError,
   isFetchTimeoutError,
@@ -229,6 +238,34 @@ function coordsToLightLine(coords: MbCoord[], maxPoints: number): LngLat[] {
     [a[0]!, a[1]!] as LngLat,
     [b[0]!, b[1]!] as LngLat,
   ];
+}
+
+type MbRoute = NonNullable<DirectionsResponse["routes"]>[number];
+
+function mbRouteLightLine(r: MbRoute): LngLat[] | null {
+  const c = r.geometry?.coordinates;
+  if (!c?.length) return null;
+  return coordsToLightLine(c, GEOM_COMPARE_MAX_VERTICES);
+}
+
+function pickMbRouteByTrail(
+  candidates: MbRoute[],
+  samples: ActivitySample[],
+  excludeLines: LngLat[][] = []
+): MbRoute | undefined {
+  let best: MbRoute | undefined;
+  let bestScore = -1;
+  for (const r of candidates) {
+    const line = mbRouteLightLine(r);
+    if (!line || line.length < 2) continue;
+    if (excludeLines.some((ex) => sameRouteShapeLine(ex, line))) continue;
+    const score = routeTrailOverlapScore(line, samples);
+    if (score > bestScore) {
+      bestScore = score;
+      best = r;
+    }
+  }
+  return bestScore >= TRAIL_ROUTE_MIN_OVERLAP ? best : undefined;
 }
 
 function routeFromDirectionsApi(
@@ -698,6 +735,8 @@ export async function collectMapboxRouteVariants(
     radarAvoidanceEnabled?: boolean;
     /** Primary Directions request uses `exclude=toll` (toll-free replan). */
     excludeToll?: boolean;
+    /** Plus + learn: prefer alternates that overlap the on-device activity trail. */
+    trailRoutePersonalization?: boolean;
   }
 ): Promise<NavRoute[]> {
   const signal = opts?.signal;
@@ -707,6 +746,9 @@ export async function collectMapboxRouteVariants(
   const preferThreeRoutes = Boolean(opts?.preferThreeRoutes);
   const includeDetails = opts?.includeDetails !== false;
   const excludeToll = Boolean(opts?.excludeToll);
+  const trailSamples: ActivitySample[] | null = opts?.trailRoutePersonalization
+    ? loadActivitySamples()
+    : null;
   const MAX_NO_TOWN_DURATION_FACTOR = 1.6;
   const LOCAL_TRIP_MAX_DISTANCE_M = 18_000;
   const LOCAL_TRIP_MAX_DURATION_S = 22 * 60;
@@ -747,14 +789,28 @@ export async function collectMapboxRouteVariants(
   const primarySorted = sortRoutesByDurationAsc(primaryData.routes ?? []);
 
   const targetPrimaryCount = preferThreeRoutes ? 3 : 2;
-  const primaryOnly = primarySorted
-    .slice(0, targetPrimaryCount)
+  const primaryRoles: Array<{ role: NavRoute["role"]; label: string }> = [
+    { role: "fastest", label: "Main" },
+    { role: "hazardSmart", label: "Alternate" },
+    { role: "balanced", label: "Third route" },
+  ];
+  let primaryAltRaws = primarySorted.slice(1, targetPrimaryCount);
+  if (trailSamples && primaryAltRaws.length >= 2) {
+    primaryAltRaws = [...primaryAltRaws].sort((x, y) => {
+      const ax = mbRouteLightLine(x);
+      const ay = mbRouteLightLine(y);
+      if (!ax || !ay) return 0;
+      return compareRouteTrailOverlapDesc(ax, ay, trailSamples);
+    });
+  }
+  const primaryOnly = [primarySorted[0], ...primaryAltRaws]
+    .filter((r): r is MbRoute => Boolean(r))
     .map((r, i) =>
       routeFromDirectionsApi(
         r,
         `r-${String.fromCharCode(97 + i)}`,
-        i === 0 ? "fastest" : i === 1 ? "hazardSmart" : "balanced",
-        i === 0 ? "Main" : i === 1 ? "Alternate" : "Third route"
+        primaryRoles[i]!.role,
+        primaryRoles[i]!.label
       )
     )
     .filter((r): r is NavRoute => r != null);
@@ -789,13 +845,24 @@ export async function collectMapboxRouteVariants(
     if (!navA) return [];
     out.push(navA);
 
-    const bRaw =
+    const bCandidates: MbRoute[] = [];
+    for (const r of noMwSorted) {
+      const line = mbRouteLightLine(r);
+      if (line && !sameRouteShapeLine(line, navA.geometry)) bCandidates.push(r);
+    }
+    if (primarySorted[1]) bCandidates.push(primarySorted[1]);
+
+    let bRaw =
+      (trailSamples
+        ? pickMbRouteByTrail(bCandidates, trailSamples, [navA.geometry])
+        : undefined) ??
       noMwSorted.find((r) => {
         const c = r.geometry?.coordinates;
         if (!c?.length) return false;
         const gLight = coordsToLightLine(c, GEOM_COMPARE_MAX_VERTICES);
         return !sameRouteShapeLine(gLight, navA.geometry);
-      }) ?? primarySorted[1];
+      }) ??
+      primarySorted[1];
 
     if (bRaw) {
       const navB = routeFromDirectionsApi(bRaw, "r-b", "hazardSmart", "No interstate");
@@ -821,6 +888,13 @@ export async function collectMapboxRouteVariants(
     };
     const noTownScore = (r: NonNullable<DirectionsResponse["routes"]>[0]): number =>
       turnDensityPerKm(r) * 0.78 + durationFactor(r) * 0.22;
+    const trailBias = (r: NonNullable<DirectionsResponse["routes"]>[0]): number => {
+      if (!trailSamples) return 0;
+      const line = mbRouteLightLine(r);
+      return line ? routeTrailOverlapScore(line, trailSamples) * 0.42 : 0;
+    };
+    const cPickScore = (r: NonNullable<DirectionsResponse["routes"]>[0]): number =>
+      noTownScore(r) - trailBias(r);
 
     const cRaw = [...mergedRaw]
       .filter((r) => {
@@ -830,7 +904,7 @@ export async function collectMapboxRouteVariants(
         const gLight = coordsToLightLine(c, GEOM_COMPARE_MAX_VERTICES);
         return !usedForDistinct.some((ug) => sameRouteShapeLine(ug, gLight));
       })
-      .sort((x, y) => noTownScore(x) - noTownScore(y))[0];
+      .sort((x, y) => cPickScore(x) - cPickScore(y))[0];
 
     if (cRaw) {
       const navC = routeFromDirectionsApi(cRaw, "r-c", "balanced", "No town");
@@ -935,6 +1009,7 @@ export async function buildTripFromMapbox(
     stormAlerts?: NormalizedWeatherAlert[];
     radarAvoidanceEnabled?: boolean;
     excludeToll?: boolean;
+    trailRoutePersonalization?: boolean;
   }
 ): Promise<BuildTripFromMapboxResult> {
   const routes = await collectMapboxRouteVariants(accessToken, start, end, opts);
