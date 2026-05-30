@@ -198,7 +198,8 @@ import {
   buildBasicNavAdvisoryPromoLines,
 } from "./config/basicAds";
 import { useBasicAdMobBanner } from "./hooks/useBasicAdMobBanner";
-import { getPayTier } from "./billing/payFeatures";
+import { BasicAdMobSlot } from "./ui/BasicAdMobSlot";
+import { getPayTier, hasTollBypass } from "./billing/payFeatures";
 import { NATIVE_PAY_TIER_CHANGED_EVENT } from "./billing/revenueCat";
 import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
 import { useFrequentRouteLearning } from "./hooks/useFrequentRouteLearning";
@@ -360,6 +361,7 @@ export default function App() {
   }, [reprobePayTier]);
   /** Plus vs Basic from `getPayTier()` (build env + optional LS override) — identical in dev and production. */
   const isPlus = useMemo(() => getPayTier() === "plus", [payTierProbeKey]);
+  const tollBypassEnabled = useMemo(() => hasTollBypass(), [payTierProbeKey]);
   const advisoryPromoLines = useMemo(
     () => (isPlus ? buildAdvisoryPromoLines(env, isPlus) : buildBasicNavAdvisoryPromoLines(env)),
     [env, isPlus]
@@ -643,7 +645,7 @@ export default function App() {
 
   const driveModeUi = navigationStarted && viewMode === "drive";
   /** Third-party AdMob only — house promos (SiteBible, Plus upsell) live in StormAdvisoryBar. */
-  useBasicAdMobBanner({ enabled: !isPlus, navigationStarted });
+  const basicAdBanner = useBasicAdMobBanner({ enabled: !isPlus, navigationStarted });
   /** NWS polygons + fetches follow the user’s NWS toggle everywhere (including drive — no auto-on). */
   const savedDrawerOpen = useUiStore((s) => s.savedDrawerOpen);
   const setSavedDrawerOpen = useUiStore((s) => s.setSavedDrawerOpen);
@@ -3908,7 +3910,11 @@ export default function App() {
       setViewMode(viewModeAfterCompareCancel(tollCtx.originalViewMode, navigationStarted));
       setFitTrigger((n) => n + 1);
       const route = tollCtx.originalPlan.routes.find((r) => r.id === tollCtx.originalRouteId);
-      if (route?.hasTolls && !tollAcceptedRouteIdsRef.current.has(tollCtx.originalRouteId)) {
+      if (
+        tollBypassEnabled &&
+        route?.hasTolls &&
+        !tollAcceptedRouteIdsRef.current.has(tollCtx.originalRouteId)
+      ) {
         setTollRoutePrompt({ routeId: tollCtx.originalRouteId, labels: route.tollLabels ?? [] });
       }
       return;
@@ -3920,6 +3926,7 @@ export default function App() {
     setViewMode(viewModeAfterCompareCancel(restore, navigationStarted));
     setFitTrigger((n) => n + 1);
   }, [
+    tollBypassEnabled,
     navigationStarted,
     setTrafficBypassCompare,
     setPlan,
@@ -4013,7 +4020,11 @@ export default function App() {
     const chosen = orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? primaryRouteId;
     if (!chosen) return;
     const route = plan.routes.find((r) => r.id === chosen);
-    if (route?.hasTolls && !tollAcceptedRouteIdsRef.current.has(chosen)) {
+    if (
+      tollBypassEnabled &&
+      route?.hasTolls &&
+      !tollAcceptedRouteIdsRef.current.has(chosen)
+    ) {
       pendingGoAfterTollRef.current = true;
       setTollRoutePrompt({ routeId: chosen, labels: route.tollLabels ?? [] });
       return;
@@ -4107,6 +4118,12 @@ export default function App() {
   ]);
 
   useEffect(() => {
+    if (!tollBypassEnabled) {
+      setTollRoutePrompt(null);
+      setTollAvoidFailureNote(null);
+      pendingGoAfterTollRef.current = false;
+      return;
+    }
     if (navigationStarted || routing || plan.routes.length === 0 || trafficBypassCompare) return;
     const routeId =
       orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? plan.routes[0]?.id;
@@ -4122,7 +4139,16 @@ export default function App() {
     }
     if (pendingGoAfterTollRef.current) return;
     setTollRoutePrompt({ routeId, labels: route.tollLabels ?? [] });
-  }, [navigationStarted, routing, plan.routes, orderedRouteIds, previewLegIndex, trafficBypassCompare]);
+  }, [
+    tollBypassEnabled,
+    navigationStarted,
+    routing,
+    plan.routes,
+    orderedRouteIds,
+    previewLegIndex,
+    trafficBypassCompare,
+    setTollRoutePrompt,
+  ]);
 
   const flushMapFocus = useCallback(() => {
     setMapFocus(null);
@@ -4792,7 +4818,6 @@ export default function App() {
                 <div className="nav-top-route-rail__main">
                   <TopGuidanceBar
                     hasRoute={navigationStarted && plan.routes.length > 0}
-                    isPlus={isPlus}
                     turnSteps={turnSteps}
                     activeTurnIndex={bannerTurnIndex}
                     metersToManeuverEnd={metersToBannerManeuver}
@@ -5340,6 +5365,11 @@ export default function App() {
           ) : null}
           {!trafficBypassCompare ? (
           <div className="nav-bottom-chrome-wrap">
+            {!isPlus &&
+            !navigationStarted &&
+            (basicAdBanner.slotState === "loading" || basicAdBanner.slotState === "empty") ? (
+              <BasicAdMobSlot state={basicAdBanner.slotState} testMode={basicAdBanner.testMode} />
+            ) : null}
             <div className="nav-bottom-dock">
               {navigationStarted && viewMode === "drive" ? (
                 <div className="nav-bottom-dock__about-row">

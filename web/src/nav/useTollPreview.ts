@@ -82,6 +82,10 @@ export function useTollPreview(deps: UseTollPreviewDeps): () => Promise<void> {
   const setPreviewLegIndex = useTripPlanStore((s) => s.setPreviewLegIndex);
 
   return useCallback(async () => {
+    if (!isPlus) {
+      setTollAvoidFailureNote("Toll-free route preview is a StormPath Plus feature.");
+      return;
+    }
     if (!destLngLat || !mapboxToken || !userLngLat || !tollRoutePrompt) {
       setTollAvoidFailureNote("Mapbox routing is needed to preview a toll-free route.");
       return;

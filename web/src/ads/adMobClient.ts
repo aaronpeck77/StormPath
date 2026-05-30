@@ -29,15 +29,43 @@ export type TrackingAuthorizationOutcome =
 let initialized = false;
 let bannerVisible = false;
 let failureListenerAttached = false;
+let successListenerAttached = false;
 let trackingAuthorization: TrackingAuthorizationOutcome | null = null;
 let trackingAuthorizationInFlight: Promise<TrackingAuthorizationOutcome> | null = null;
 
-function attachFailureListenerOnce(): void {
-  if (failureListenerAttached) return;
-  failureListenerAttached = true;
-  AdMob.addListener(BannerAdPluginEvents.FailedToLoad, () => {
-    /* Silent — advisory strip promos are separate; no in-app fallback for a failed AdMob load. */
-  });
+export type BasicBannerLoadOutcome = "loaded" | "failed";
+
+let bannerLoadOutcome: BasicBannerLoadOutcome | null = null;
+const bannerLoadListeners = new Set<(outcome: BasicBannerLoadOutcome) => void>();
+
+function setBannerLoadOutcome(outcome: BasicBannerLoadOutcome): void {
+  bannerLoadOutcome = outcome;
+  for (const listener of bannerLoadListeners) {
+    listener(outcome);
+  }
+}
+
+export function subscribeBasicBannerLoad(
+  listener: (outcome: BasicBannerLoadOutcome) => void
+): () => void {
+  bannerLoadListeners.add(listener);
+  if (bannerLoadOutcome) listener(bannerLoadOutcome);
+  return () => bannerLoadListeners.delete(listener);
+}
+
+function attachBannerListenersOnce(): void {
+  if (!failureListenerAttached) {
+    failureListenerAttached = true;
+    AdMob.addListener(BannerAdPluginEvents.FailedToLoad, () => {
+      setBannerLoadOutcome("failed");
+    });
+  }
+  if (!successListenerAttached) {
+    successListenerAttached = true;
+    AdMob.addListener(BannerAdPluginEvents.Loaded, () => {
+      setBannerLoadOutcome("loaded");
+    });
+  }
 }
 
 export function isAdMobSupported(): boolean {
@@ -106,8 +134,8 @@ export async function showBasicBanner(opts: {
   testMode: boolean;
   /** Pixels above the bottom safe area / dock (keeps banner above My location row). */
   bottomMarginPx: number;
-}): Promise<void> {
-  if (!isAdMobSupported()) return;
+}): Promise<boolean> {
+  if (!isAdMobSupported()) return false;
   const adId = opts.adUnitId.trim() || ADMOB_TEST_BANNER_UNIT_ID;
 
   if (!initialized) {
@@ -118,6 +146,8 @@ export async function showBasicBanner(opts: {
     await AdMob.hideBanner().catch(() => undefined);
     bannerVisible = false;
   }
+
+  bannerLoadOutcome = null;
 
   /* `npa = "non-personalized ads"`. When the user explicitly authorizes tracking we serve
    * personalized ads; in every other case (denied / restricted / notDetermined / unsupported)
@@ -134,10 +164,17 @@ export async function showBasicBanner(opts: {
     npa,
   };
 
-  attachFailureListenerOnce();
+  attachBannerListenersOnce();
 
-  await AdMob.showBanner(options);
-  bannerVisible = true;
+  try {
+    await AdMob.showBanner(options);
+    bannerVisible = true;
+    return true;
+  } catch {
+    setBannerLoadOutcome("failed");
+    bannerVisible = false;
+    return false;
+  }
 }
 
 export async function hideBasicBanner(): Promise<void> {

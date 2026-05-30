@@ -45,3 +45,8 @@ export function hasPlusTier(): boolean {
 export function hasFrequentRoutesLearning(): boolean {
   return hasPlusTier();
 }
+
+/** Preview / compare toll-free alternates when the selected route has tolls. */
+export function hasTollBypass(): boolean {
+  return hasPlusTier();
+}

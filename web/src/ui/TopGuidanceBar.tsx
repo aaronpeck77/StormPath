@@ -7,8 +7,6 @@ import { getCurrentSeason } from "./seasonTheme";
 type Props = {
   /** When false, show idle branding instead of turn list. */
   hasRoute: boolean;
-  /** Plus shows logo-only idle; Basic may show upgrade hint in the strip. */
-  isPlus: boolean;
   turnSteps: RouteTurnStep[];
   /** Index into `turnSteps` for the primary line (meaningful upcoming maneuver). */
   activeTurnIndex: number;
@@ -19,7 +17,6 @@ type Props = {
 
 export function TopGuidanceBar({
   hasRoute,
-  isPlus,
   turnSteps,
   activeTurnIndex,
   metersToManeuverEnd,
@@ -61,11 +58,6 @@ export function TopGuidanceBar({
               </div>
             </div>
           </div>
-          {!isPlus && (
-            <p className="turn-strip-idle__ad turn-strip-idle__ad--basic">
-              Nav &amp; radar — <strong>Plus</strong> adds traffic, advisory map, and route tools.
-            </p>
-          )}
         </div>
       )}
     </div>

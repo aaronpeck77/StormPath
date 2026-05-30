@@ -20,6 +20,7 @@ Everything needed for full navigation without a subscription:
 | Feature | Notes |
 |---------|--------|
 | **Route progress rail** | Right-edge strip while navigating: trip progress, radar/traffic/hazard ticks, segment callouts, route outlook timeline. Gated in `App.tsx` on `isPlus`. |
+| **Toll bypass** | Toll warning sheet + preview/compare toll-free alternates before Go or when switching legs. Gated by `hasTollBypass()` in `payFeatures.ts`. Basic still shows **Tolls** on route labels. |
 | **Frequent route learning** | Device-local GPS trip detection, clustering, suggestions in ★ drawer, save to favorites. Gated by `hasFrequentRoutesLearning()` → `getPayTier() === "plus"`. |
 
 ## Subscription links (About sheet)

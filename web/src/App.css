@@ -624,11 +624,11 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  --rail-panel-gap: 7px;
+  --rail-panel-gap: 5px;
   /* Progress-callout panel starts below the top guidance/advisory cluster. */
-  --progress-callout-top-reserve: 112px;
+  --progress-callout-top-reserve: 100px;
   /* Height reserved above map bottom for the bottom chrome stack (dock + toolbar). */
-  --nav-dock-above-safe: 164px;
+  --nav-dock-above-safe: 152px;
   /* Drive view uses a shorter bottom stack; let the progress rail extend lower. */
   --nav-dock-above-safe-current: var(--nav-dock-above-safe);
   /*
@@ -636,18 +636,22 @@
    * Planning (route / map): clears address + search row. Drive: shorter stack (no address bar) ? longer rail.
    */
   /* From viewport bottom to strip foot: toolbar + chrome gap + margin above the address row (tune if overlap). */
-  --nav-progress-rail-foot-inset: 134px;
+  --nav-progress-rail-foot-inset: 122px;
   /* Shorter unrotated strip width = shorter vertical bar; legacy trim used in map fit padding */
   --nav-progress-strip-bottom-trim: 68px;
   /* Room under the command bar for Mapbox logo/� (controls use z-index above the stack; strip can stay thin). */
-  --attribution-strip-h: 18px;
+  --attribution-strip-h: 14px;
   /* Padding under .nav-bottom-stack ? keeps toolbar/search above the logo (Mapbox z-index above stack). */
-  --nav-bottom-reserved: calc(2px + env(safe-area-inset-bottom, 0px) + var(--attribution-strip-h, 18px));
+  --nav-bottom-reserved: calc(2px + env(safe-area-inset-bottom, 0px) + var(--attribution-strip-h, 14px));
   /* Route PiP: snug under top cluster (overridden when .nav-top-cluster present) */
-  --pip-top: calc(max(8px, env(safe-area-inset-top)) + 86px + var(--rail-panel-gap));
+  --pip-top: calc(max(8px, env(safe-area-inset-top)) + 80px + var(--rail-panel-gap));
   /* Bottom chrome: square-aligned panels + toolbar */
-  --nav-chrome-radius: 8px;
-  --nav-chrome-control: 44px;
+  --nav-chrome-radius: 7px;
+  --nav-chrome-control: 40px;
+  --nav-chrome-about: 32px;
+  --nav-chrome-gap: 5px;
+  --nav-top-gap: 3px;
+  --nav-bottom-stack-gap: 4px;
   --nav-chrome-panel-bg: rgba(18, 20, 24, 0.96);
   --nav-chrome-panel-border: 1px solid rgba(255, 255, 255, 0.1);
   --nav-chrome-panel-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
@@ -659,14 +663,14 @@
 }
 
 .app-shell.nav-fullmap.nav-drive-ui {
-  --nav-dock-above-safe-current: 132px;
+  --nav-dock-above-safe-current: 122px;
   /* Drive: compass/about + ETA toolbar ? must clear the bottom trip bar (was too short; rail overlapped ETA strip). */
-  --nav-progress-rail-foot-inset: 78px;
+  --nav-progress-rail-foot-inset: 70px;
 }
 
 /* Radar mosaic clock in the about row ? needs more clearance above the address pill + progress rail foot */
 .app-shell.nav-fullmap.nav-radar-frame-time-visible:not(.nav-drive-ui) {
-  --nav-progress-rail-foot-inset: 156px;
+  --nav-progress-rail-foot-inset: 144px;
 }
 
 /* About ? own row above address; left-aligned with search + route below */
@@ -674,7 +678,7 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
+  gap: var(--nav-chrome-gap, 5px);
   width: 100%;
   /* Let map clicks pass through flex gaps; children re-enable hits below. */
   pointer-events: none;
@@ -695,7 +699,7 @@
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--nav-chrome-gap, 5px);
   width: 100%;
   min-width: 0;
 }
@@ -705,7 +709,7 @@
   display: flex;
   flex-direction: row;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--nav-chrome-gap, 5px);
   width: 100%;
   min-width: 0;
   pointer-events: none;
@@ -719,10 +723,10 @@
   flex-direction: row;
   align-items: stretch;
   justify-content: stretch;
-  gap: 8px;
+  gap: var(--nav-chrome-gap, 5px);
   width: 100%;
   min-width: 0;
-  margin-top: 6px;
+  margin-top: 4px;
   pointer-events: none;
 }
 
@@ -736,11 +740,11 @@
   z-index: 1;
   flex-shrink: 0;
   box-sizing: border-box;
-  width: 34px;
-  height: 34px;
-  min-width: 34px;
+  width: var(--nav-chrome-about, 32px);
+  height: var(--nav-chrome-about, 32px);
+  min-width: var(--nav-chrome-about, 32px);
   padding: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(18, 20, 24, 0.38);
   backdrop-filter: blur(6px);
@@ -772,13 +776,13 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .drive-compass {
   flex-shrink: 0;
-  width: 34px;
-  height: 34px;
+  width: var(--nav-chrome-about, 32px);
+  height: var(--nav-chrome-about, 32px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -815,12 +819,13 @@
 
 /* Search + route + toolbar share width and stack cleanly */
 .nav-bottom-chrome-wrap {
+  position: relative;
   align-self: flex-start;
   width: 100%;
   max-width: min(600px, calc(100vw - 16px));
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--nav-chrome-gap, 5px);
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -1737,11 +1742,11 @@
   flex: 1 1 auto;
   width: auto;
   max-width: none;
-  height: 34px;
-  min-height: 34px;
-  max-height: 34px;
-  padding: 0 12px;
-  border-radius: 9px;
+  height: var(--nav-chrome-about, 32px);
+  min-height: var(--nav-chrome-about, 32px);
+  max-height: var(--nav-chrome-about, 32px);
+  padding: 0 10px;
+  border-radius: 8px;
   font-size: 0.82rem;
   font-weight: 800;
   letter-spacing: 0.02em;
@@ -1934,7 +1939,7 @@
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--nav-bottom-stack-gap, 4px);
   padding: 0 max(8px, env(safe-area-inset-left)) var(--nav-bottom-reserved) max(8px, env(safe-area-inset-right));
   pointer-events: none;
   touch-action: manipulation;
@@ -2051,16 +2056,16 @@
 .nav-search-dock {
   flex: 1;
   min-width: 0;
-  min-height: var(--nav-chrome-control, 44px);
+  min-height: var(--nav-chrome-control, 40px);
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
   box-sizing: border-box;
   background: var(--nav-chrome-panel-bg);
   border: var(--nav-chrome-panel-border);
-  border-radius: var(--nav-chrome-radius, 8px);
+  border-radius: var(--nav-chrome-radius, 7px);
   box-shadow: var(--nav-chrome-panel-shadow);
-  padding: 0 10px;
+  padding: 0 8px;
   max-width: 100%;
   margin: 0;
   width: auto;
@@ -2141,9 +2146,9 @@
   width: auto;
   min-width: 0;
   max-width: none;
-  height: 34px;
-  min-height: 34px;
-  max-height: 34px;
+  height: var(--nav-chrome-about, 32px);
+  min-height: var(--nav-chrome-about, 32px);
+  max-height: var(--nav-chrome-about, 32px);
   justify-content: stretch;
 }
 
@@ -2172,10 +2177,10 @@
    * unlock here so the inline button stretches across the about-row strip. */
   min-width: 0;
   max-width: none;
-  height: 34px;
-  min-height: 34px;
-  max-height: 34px;
-  /* Two-row grid inside the 34 px button so all three pieces render in full instead of being
+  height: var(--nav-chrome-about, 32px);
+  min-height: var(--nav-chrome-about, 32px);
+  max-height: var(--nav-chrome-about, 32px);
+  /* Two-row grid inside the about-row button so all three pieces render in full instead of being
    * ellipsized:
    *   row 1: [road label]  [letter � ETA]   ? left + right of the top line
    *   row 2: [distance � strategy ????????] ? full-width bottom line
@@ -2188,13 +2193,13 @@
   align-content: center;
   justify-content: stretch;
   align-items: center;
-  column-gap: 8px;
+  column-gap: 6px;
   row-gap: 0;
-  padding: 3px 10px;
+  padding: 2px 8px;
   text-align: left;
   overflow: hidden;
   /* Match .map-about-btn corner radius for visual symmetry across the row. */
-  border-radius: 9px;
+  border-radius: 8px;
 }
 
 .nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-cycle-btn__label {
@@ -3088,8 +3093,8 @@
   z-index: 5;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: max(4px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 6px
+  gap: var(--nav-top-gap, 3px);
+  padding: max(3px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 4px
     max(8px, env(safe-area-inset-left));
   box-sizing: border-box;
   width: 100%;
@@ -3119,7 +3124,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 /* Right edge: column 2 ? fill map band; foot stays var(--nav-progress-rail-foot-inset) above bottom chrome */
@@ -3626,9 +3631,9 @@
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  margin-top: 4px;
-  padding: 10px 12px;
-  border-radius: 10px;
+  margin-top: 2px;
+  padding: 7px 10px;
+  border-radius: 9px;
   background: rgba(15, 23, 42, 0.92);
   border: 1px solid rgba(251, 191, 36, 0.22);
   font-size: 0.56rem;
@@ -5979,17 +5984,17 @@
 .storm-advisory-bar--preview {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  margin-top: 4px;
-  padding: 11px 14px;
+  margin-top: 2px;
+  padding: 7px 10px;
   font: inherit;
-  font-size: clamp(0.88rem, 2.6vw, 1rem);
+  font-size: clamp(0.84rem, 2.5vw, 0.96rem);
   font-weight: 600;
   text-align: left;
   color: #f1f5f9;
   background: rgba(15, 23, 42, 0.92);
-  border-radius: 10px;
+  border-radius: 9px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
@@ -5997,7 +6002,7 @@
   border-width: 1px;
   border-style: solid;
   /* Typical height: ~2 lines. Grows to 3 lines only when abbreviated copy still wraps. */
-  min-height: 44px;
+  min-height: var(--nav-chrome-control, 40px);
   line-height: 1.3;
   overflow: hidden;
   transition:
@@ -6015,7 +6020,7 @@
 }
 
 .storm-advisory-bar__preview-local-inline {
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   font-weight: 550;
   line-height: 1.2;
   color: rgba(186, 230, 253, 0.78);
@@ -6029,7 +6034,7 @@
   flex: 1 1 auto;
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -6442,6 +6447,53 @@
   margin: 0 0 8px;
   font-size: 0.62rem;
   line-height: 1.35;
+}
+
+.basic-admob-slot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 4px);
+  z-index: 2;
+  flex: unset;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--basic-admob-banner-h, 50px);
+  min-height: unset;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  font-size: 0.62rem;
+  line-height: 1.35;
+  color: #cbd5e1;
+  pointer-events: none;
+  user-select: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.basic-admob-slot__tag {
+  flex: 0 0 auto;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.basic-admob-slot__label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.basic-admob-slot--dev-preview {
+  height: var(--basic-admob-banner-h, 50px);
+  padding: 0;
+  border-style: dashed;
+  border-color: rgba(148, 163, 184, 0.45);
+  background: rgba(15, 23, 42, 0.42);
 }
 
 .storm-advisory-bar__weather-block {
@@ -7582,9 +7634,9 @@
 }
 
 .nav-top-cluster .top-guidance-bar {
-  padding: 5px 8px;
-  border-radius: 10px;
-  gap: 4px;
+  padding: 4px 7px;
+  border-radius: 9px;
+  gap: 3px;
   background: #000000;
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: none;
@@ -8017,24 +8069,24 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
   background: rgba(18, 20, 24, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 8px 10px;
+  border-radius: 12px;
+  padding: 6px 9px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 
 /* Idle / branding strip: tighter vertical padding so the panel stays short */
 .top-guidance-bar:has(.turn-strip-idle) {
-  padding: 4px 8px 8px;
-  gap: 4px;
+  padding: 3px 7px 6px;
+  gap: 3px;
   overflow: visible;
 }
 
 .nav-top-cluster .top-guidance-bar:has(.turn-strip-idle) {
-  padding: 4px 8px 8px;
+  padding: 3px 7px 6px;
 }
 
 .top-guidance-bar--turn-only {
@@ -8290,8 +8342,8 @@
   column-gap: clamp(8px, 2vw, 16px);
   width: 100%;
   min-width: 0;
-  min-height: clamp(2.6rem, 7.5vw, 3.85rem);
-  padding-bottom: 4px;
+  min-height: clamp(2.35rem, 6.8vw, 3.35rem);
+  padding-bottom: 2px;
   overflow: visible;
 }
 
@@ -8338,7 +8390,7 @@
   display: block;
   width: 100%;
   height: auto;
-  max-height: clamp(3.5rem, 9.5vw, 4.75rem);
+  max-height: clamp(3.1rem, 8.5vw, 4.25rem);
 }
 
 .turn-strip-idle__titles {
@@ -8684,33 +8736,16 @@
   }
 }
 
-.turn-strip-idle__ad {
-  margin: 0;
-  font-size: 0.68rem;
-  color: #93c5fd;
-  line-height: 1.35;
-  font-weight: 600;
-  opacity: 0.95;
-}
-
-.turn-strip-idle__ad--basic {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-  min-width: 0;
-}
-
 /* NWS + Road + activity + Hazards ? one row; shared control height */
 .hazard-controls-strip {
-  --hazard-strip-row-h: 34px;
+  --hazard-strip-row-h: 30px;
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: var(--nav-chrome-gap, 5px);
   width: 100%;
   box-sizing: border-box;
-  padding: 4px 0 6px;
+  padding: 2px 0 4px;
   min-height: 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -9338,8 +9373,8 @@
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: 4px;
+  padding: 6px 8px;
   box-sizing: border-box;
   width: 100%;
   background: var(--nav-chrome-panel-bg);
@@ -9361,8 +9396,8 @@
   /* Balance columns so the center controls land visually centered (not pulled right by ETA block). */
   grid-template-columns: 1.15fr auto 0.85fr;
   align-items: center;
-  column-gap: 10px;
-  row-gap: 6px;
+  column-gap: 8px;
+  row-gap: 4px;
   width: 100%;
   min-width: 0;
 }
@@ -9736,7 +9771,7 @@
   display: flex;
   flex-direction: row;
   flex-shrink: 0;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
   justify-content: center;
 }
@@ -10843,21 +10878,21 @@
 /* ??? Phones & narrow viewports (stacked top + smaller chrome) ??? */
 @media (max-width: 520px) {
   .app-shell.nav-fullmap {
-    --rail-panel-gap: 5px;
-    --nav-dock-above-safe: 154px;
+    --rail-panel-gap: 4px;
+    --nav-dock-above-safe: 142px;
     --nav-dock-above-safe-current: var(--nav-dock-above-safe);
     /* Match home-indicator inset only ? avoids an extra empty band under the toolbar + attribution. */
     --nav-bottom-reserved: env(safe-area-inset-bottom, 0px);
-    --nav-progress-rail-foot-inset: 124px;
+    --nav-progress-rail-foot-inset: 112px;
   }
 
   .app-shell.nav-fullmap.nav-drive-ui {
-    --nav-dock-above-safe-current: 122px;
-    --nav-progress-rail-foot-inset: 72px;
+    --nav-dock-above-safe-current: 112px;
+    --nav-progress-rail-foot-inset: 64px;
   }
 
   .app-shell.nav-fullmap.nav-radar-frame-time-visible:not(.nav-drive-ui) {
-    --nav-progress-rail-foot-inset: 144px;
+    --nav-progress-rail-foot-inset: 132px;
   }
 
   .nav-bottom-stack {
@@ -10881,7 +10916,7 @@
   }
 
   .nav-bottom-toolbar {
-    padding: 6px 8px;
+    padding: 5px 6px;
   }
 
   .nav-search-dock {
@@ -10954,8 +10989,8 @@
   }
 
   .nav-top-cluster {
-    gap: 6px;
-    padding: max(6px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) 8px
+    gap: var(--nav-top-gap, 3px);
+    padding: max(4px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) 4px
       max(6px, env(safe-area-inset-left));
   }
 
@@ -11223,9 +11258,9 @@
   }
 
   .top-guidance-bar {
-    padding: 6px 8px;
-    border-radius: 10px;
-    gap: 4px;
+    padding: 5px 7px;
+    border-radius: 9px;
+    gap: 3px;
   }
 
   .turn-banner-primary {
@@ -11285,14 +11320,14 @@
   }
 
   .map-stage.map-bleed:has(.nav-top-cluster) {
-    --pip-top: calc(max(6px, env(safe-area-inset-top)) + 156px);
+    --pip-top: calc(max(6px, env(safe-area-inset-top)) + 142px);
   }
 
   .route-overview-pip-wrap {
     width: 120px;
     height: 120px;
     border-radius: 12px;
-    top: var(--pip-top, calc(max(6px, env(safe-area-inset-top)) + 108px));
+    top: var(--pip-top, calc(max(6px, env(safe-area-inset-top)) + 96px));
   }
 
   .route-overview-pip-map-shell {
@@ -11306,16 +11341,16 @@
   }
 
   .route-pip-reopen {
-    top: var(--pip-top, calc(max(6px, env(safe-area-inset-top)) + 108px));
+    top: var(--pip-top, calc(max(6px, env(safe-area-inset-top)) + 96px));
     padding: 5px 8px;
     font-size: 0.62rem;
     border-radius: 8px;
   }
 
   .nav-bottom-toolbar {
-    padding: 6px 8px;
-    gap: 4px 5px;
-    border-radius: var(--nav-chrome-radius, 8px);
+    padding: 5px 6px;
+    gap: 3px 4px;
+    border-radius: var(--nav-chrome-radius, 7px);
     flex-wrap: nowrap;
     align-items: center;
     overflow-x: auto;
@@ -11327,12 +11362,12 @@
     flex-wrap: wrap;
     justify-content: center;
     overflow-x: visible;
-    row-gap: 6px;
+    row-gap: 4px;
   }
 
   .nav-mode-sq {
-    width: 44px;
-    height: 44px;
+    width: var(--nav-chrome-control, 40px);
+    height: var(--nav-chrome-control, 40px);
     font-size: 0.55rem;
     border-radius: 8px;
   }
@@ -11539,18 +11574,19 @@
 /* Landscape / short viewports: keep chrome from blowing up; map still fills (H). */
 @media (orientation: landscape) and (max-height: 520px) {
   .app-shell.nav-fullmap {
-    --nav-chrome-control: 40px;
-    --nav-dock-above-safe: 150px;
+    --nav-chrome-control: 36px;
+    --nav-chrome-about: 30px;
+    --nav-dock-above-safe: 138px;
   }
 
   .app-shell.nav-fullmap.nav-drive-ui {
-    --nav-dock-above-safe-current: 124px;
+    --nav-dock-above-safe-current: 114px;
   }
 
   .nav-top-cluster {
     gap: 2px;
     padding-top: max(2px, env(safe-area-inset-top));
-    padding-bottom: 4px;
+    padding-bottom: 3px;
   }
 
   .top-guidance-bar--turn-only .turn-banner-street {
@@ -11563,11 +11599,11 @@
   }
 
   .nav-bottom-stack {
-    gap: 6px;
+    gap: 4px;
   }
 
   .nav-bottom-toolbar {
-    padding: 6px 8px;
+    padding: 5px 6px;
   }
 }
 
