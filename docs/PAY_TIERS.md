@@ -10,7 +10,7 @@ Everything needed for full navigation without a subscription:
 |------|----------|
 | **Map & routing** | Multi-route (A/B/C), ORS directions, Mapbox style, fit/follow, route view / drive / topdown |
 | **Search & destination** | Autocomplete, geocode, set destination, trip planning |
-| **Driving** | Turn-by-turn banner, progress strip (traffic band, hazards, radar ticks), bottom toolbar, reroute / off-route flows |
+| **Driving** | Turn-by-turn banner, bottom toolbar, reroute / off-route flows |
 | **Saved** | Saved places (★), save current destination, **saved routes**, **record path (GPS)** and save |
 | **Situation** | Fused weather/traffic/hazards along routes, scoring, hazard sheet, Mapbox traffic when configured |
 | **Storm advisory (US)** | NWS active-alert polygons + advisory strip when **not** disabled by env (`VITE_STORM_ADVISORY_ENABLED=false`). *Not* pay-gated today — only env. You can move it behind Plus later in `payFeatures` if you want. |
@@ -19,6 +19,7 @@ Everything needed for full navigation without a subscription:
 
 | Feature | Notes |
 |---------|--------|
+| **Route progress rail** | Right-edge strip while navigating: trip progress, radar/traffic/hazard ticks, segment callouts, route outlook timeline. Gated in `App.tsx` on `isPlus`. |
 | **Frequent route learning** | Device-local GPS trip detection, clustering, suggestions in ★ drawer, save to favorites. Gated by `hasFrequentRoutesLearning()` → `getPayTier() === "plus"`. |
 
 ## Subscription links (About sheet)
