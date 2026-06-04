@@ -239,6 +239,35 @@
   border-color: rgba(255, 255, 255, 0.44);
 }
 
+/* Dev-only: dark dot cursor with white ring (readable on the dark map UI). */
+@media (pointer: fine) {
+  .app-shell.app-shell--dev-pointer {
+    cursor: var(--sp-dev-cursor-default, default);
+  }
+
+  .app-shell.app-shell--dev-pointer .mapboxgl-canvas,
+  .app-shell.app-shell--dev-pointer .mapboxgl-canvas-container {
+    cursor: var(--sp-dev-cursor-default, default) !important;
+  }
+
+  .app-shell.app-shell--dev-pointer button:not(:disabled),
+  .app-shell.app-shell--dev-pointer a[href],
+  .app-shell.app-shell--dev-pointer [role="button"]:not(:disabled),
+  .app-shell.app-shell--dev-pointer label:has(input[type="checkbox"]),
+  .app-shell.app-shell--dev-pointer label:has(input[type="radio"]),
+  .app-shell.app-shell--dev-pointer summary,
+  .app-shell.app-shell--dev-pointer .saved-place-dot,
+  .app-shell.app-shell--dev-pointer .map-search-pick-dot {
+    cursor: var(--sp-dev-cursor-pointer, pointer) !important;
+  }
+
+  .app-shell.app-shell--dev-pointer input:not(:disabled),
+  .app-shell.app-shell--dev-pointer textarea:not(:disabled),
+  .app-shell.app-shell--dev-pointer select:not(:disabled) {
+    cursor: text !important;
+  }
+}
+
 /* Dev-only ? semver from package.json (bump version to verify fresh bundle) */
 .stormpath-build-stamp {
   position: fixed;
@@ -699,8 +728,7 @@
   align-items: stretch;
   gap: var(--nav-chrome-gap, 5px);
   width: 100%;
-  /* Let map clicks pass through flex gaps; children re-enable hits below. */
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .nav-bottom-dock__plan-stack > .nav-bottom-dock__about-row {
@@ -731,7 +759,7 @@
   gap: var(--nav-chrome-gap, 5px);
   width: 100%;
   min-width: 0;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 /* Action row beneath the search: hosts the My-location and / or Route-cycle button on its own
@@ -746,7 +774,7 @@
   width: 100%;
   min-width: 0;
   margin-top: 4px;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .nav-bottom-dock__actions-row > * {
@@ -845,6 +873,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--nav-chrome-gap, 5px);
+  pointer-events: auto;
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -1960,7 +1989,8 @@
   justify-content: flex-end;
   gap: var(--nav-bottom-stack-gap, 4px);
   padding: 0 max(8px, env(safe-area-inset-left)) var(--nav-bottom-reserved) max(8px, env(safe-area-inset-right));
-  pointer-events: none;
+  /* Block map destination picks in the bottom chrome band (gaps between rows included). */
+  pointer-events: auto;
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -1968,11 +1998,6 @@
 
 .nav-bottom-stack > * {
   pointer-events: auto;
-}
-
-/* Search + toolbar column: don?t turn the whole tall stack into one mouse trap when suggestions open */
-.nav-bottom-stack > .nav-bottom-chrome-wrap {
-  pointer-events: none;
 }
 
 .nav-bottom-chrome-wrap .nav-bottom-toolbar {
@@ -2060,16 +2085,15 @@
   width: 100%;
   max-width: none;
   padding: 0;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
-/* Don?t use `> * { auto }` ? it overrides .nav-bottom-dock__plan-stack { none } and blocks the map. */
 .nav-bottom-dock > .nav-bottom-dock__about-row {
   pointer-events: auto;
 }
 
 .nav-bottom-dock > .nav-bottom-dock__plan-stack {
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .nav-search-dock {
@@ -3118,6 +3142,7 @@
   box-sizing: border-box;
   width: 100%;
   background: transparent;
+  pointer-events: auto;
   /* Pinch/scroll on the map ? avoid browser/page zoom starting from the guidance stack */
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
@@ -3136,6 +3161,7 @@
   flex-direction: column;
   align-items: stretch;
   gap: 0;
+  pointer-events: auto;
 }
 
 .nav-top-route-rail__main {
@@ -3144,6 +3170,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  pointer-events: auto;
 }
 
 /* Right edge: column 2 ? fill map band; foot stays var(--nav-progress-rail-foot-inset) above bottom chrome */
@@ -6468,60 +6495,6 @@
   line-height: 1.35;
 }
 
-.basic-admob-slot {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: calc(100% + 4px);
-  z-index: 2;
-  flex: unset;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: var(--basic-admob-banner-h, 50px);
-  min-height: unset;
-  margin: 0;
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.88);
-  border: 1px dashed rgba(148, 163, 184, 0.45);
-  font-size: 0.62rem;
-  line-height: 1.35;
-  color: #cbd5e1;
-  pointer-events: none;
-  user-select: none;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-}
-
-/* Dev web only — mirrors bottom banner reserve without native AdMob. */
-.app-shell--basic-ad-banner .basic-admob-slot--dev-preview {
-  position: static;
-  bottom: auto;
-  margin-bottom: 4px;
-}
-
-.basic-admob-slot__tag {
-  flex: 0 0 auto;
-  font-size: 0.55rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #94a3b8;
-}
-
-.basic-admob-slot__label {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.basic-admob-slot--dev-preview {
-  height: var(--basic-admob-banner-h, 50px);
-  padding: 0;
-  border-style: dashed;
-  border-color: rgba(148, 163, 184, 0.45);
-  background: rgba(15, 23, 42, 0.42);
-}
-
 .storm-advisory-bar__weather-block {
   margin-top: 8px;
   padding: 8px 10px;
@@ -9445,6 +9418,10 @@
   padding-right: 0;
 }
 
+.nav-bottom-stat--remaining .nav-bottom-stat-v {
+  color: #93c5fd;
+}
+
 /* Spd/Lim: now that the left column has room, make numbers more legible without overflowing. */
 .nav-bottom-toolbar__left .nav-bottom-stat-v {
   font-size: 1.08rem;
@@ -9870,6 +9847,35 @@
   line-height: 1;
 }
 
+.nav-mode-sq--return {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  max-width: min(118px, 34vw);
+  padding: 0 8px;
+  background: linear-gradient(180deg, rgba(52, 211, 153, 0.35), rgba(5, 150, 105, 0.42));
+  border-color: rgba(110, 231, 183, 0.55);
+  color: #ecfdf5;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-mode-sq--return__glyph {
+  font-size: 0.95rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.nav-mode-sq--return__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .nav-mode-sq.active {
   box-shadow: none;
   border-color: rgba(255, 255, 255, 0.45);
@@ -10279,7 +10285,121 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 18px;
+}
+
+.saved-drawer-home-panel {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 2px solid rgba(148, 163, 184, 0.38);
+  background: rgba(18, 20, 24, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.saved-drawer-toggle--panel {
+  margin: 0;
+  width: 100%;
+}
+
+.saved-drawer-home-section {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 14px 14px;
+  border-radius: 12px;
+  border: 2px solid rgba(148, 163, 184, 0.48);
+  border-left-width: 5px;
+  background: rgba(10, 12, 16, 0.98);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 3px 12px rgba(0, 0, 0, 0.4);
+}
+
+.saved-drawer-home-section + .saved-drawer-home-section {
+  margin-top: 2px;
+}
+
+.saved-drawer-home-section__title {
+  margin: 0;
+  padding-bottom: 10px;
+  border-bottom: 2px solid rgba(148, 163, 184, 0.35);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.saved-drawer-home-section__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid rgba(148, 163, 184, 0.28);
+}
+
+.saved-drawer-home-section:not(:has(.saved-drawer-home-section__actions)) .saved-drawer-home-section__title {
+  margin-bottom: 2px;
+}
+
+.saved-drawer-home-section--places {
+  border-color: rgba(138, 180, 248, 0.62);
+  border-left-color: #8ab4f8;
+}
+
+.saved-drawer-home-section--places .saved-drawer-home-section__title {
+  color: #a8c7fa;
+  border-bottom-color: rgba(138, 180, 248, 0.45);
+}
+
+.saved-drawer-home-section--routes {
+  border-color: rgba(203, 213, 225, 0.5);
+  border-left-color: #94a3b8;
+}
+
+.saved-drawer-home-section--routes .saved-drawer-home-section__title {
+  color: #cbd5e1;
+  border-bottom-color: rgba(203, 213, 225, 0.4);
+}
+
+.saved-drawer-home-section--frequent {
+  border-color: rgba(251, 191, 36, 0.55);
+  border-left-color: #fbbf24;
+}
+
+.saved-drawer-home-section--frequent .saved-drawer-home-section__title {
+  color: #fde68a;
+  border-bottom-color: rgba(251, 191, 36, 0.45);
+}
+
+.saved-drawer-save-current--home {
+  flex-shrink: 0;
+}
+
+.saved-drawer-recording-note--home {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: #fca5a5;
+}
+
+.saved-drawer-home-section .saved-drawer-home-tile {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(24, 27, 32, 0.88);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.saved-drawer-home-section--places .saved-drawer-home-tile {
+  border-color: rgba(138, 180, 248, 0.28);
+}
+
+.saved-drawer-home-section--routes .saved-drawer-home-tile {
+  border-color: rgba(203, 213, 225, 0.22);
+}
+
+.saved-drawer-home-section--frequent .saved-drawer-home-tile {
+  border-color: rgba(251, 191, 36, 0.28);
 }
 
 .saved-drawer-home-tile-item {

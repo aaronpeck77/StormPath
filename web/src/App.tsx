@@ -8,10 +8,11 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Capacitor } from "@capacitor/core";
 import { KeepAwake } from "@capacitor-community/keep-awake";
 import { getWebEnv } from "./config/env";
+import { DEV_CURSOR_DEFAULT, DEV_CURSOR_POINTER } from "./dev/devCursor";
 import { useFusedSituation } from "./hooks/useFusedSituation";
 import { useSavedPlaces } from "./hooks/useSavedPlaces";
 import { useSavedRoutes } from "./hooks/useSavedRoutes";
@@ -38,12 +39,20 @@ import {
   stormAdaptiveRoutingSignature,
 } from "./nav/stormAvoidanceWaypoint";
 import { tripPlanFromSavedRoute } from "./nav/planFromSavedRoute";
+import {
+  isGenericOriginLabel,
+  loadReturnTripLeg,
+  persistReturnTripLegOnGo,
+  shortenReturnTripLabel,
+  type ReturnTripLeg,
+} from "./nav/returnTripLeg";
 import type { SavedRoute } from "./nav/savedRoutes";
 import type { LngLat, TripPlan } from "./nav/types";
 import { pickSuggestedActive, scoreTrip } from "./scoring/scoreRoutes";
 import { buildTripFromMapbox, collectMapboxRouteVariants } from "./services/mapboxDirectionsRouter";
 import { useAppForeground } from "./hooks/useAppForeground";
 import { isAbortError, routeFetchUserMessage } from "./utils/fetchResilient";
+import { formatDistanceShort, useMilesForLngLat } from "./utils/formatDistance";
 import { useTollPreview } from "./nav/useTollPreview";
 import {
   getNavAltRefreshMs,
@@ -112,12 +121,15 @@ import { earlyApproachMaxMetersForSpeed } from "./nav/surgicalBypassWindow";
 import { unifiedTrafficNarrative } from "./nav/trafficNarrative";
 import {
   ARRIVAL_BG_CLEAR_MIN_MS,
-  ARRIVAL_DEST_RADIUS_M,
-  ARRIVAL_IDLE_CLEAR_MS,
-  ARRIVAL_STATIONARY_MAX_SPEED_MPS,
   DRIVE_AHEAD_WINDOW_M,
   RADAR_SOFT_THRESHOLD,
 } from "./nav/constants";
+import {
+  arrivalIdleClearMs,
+  arrivalProximity,
+  isStationaryForArrival,
+  shouldResetArrivalIdleOnPointer,
+} from "./nav/arrivalDetect";
 import type { TrafficOverlay, WeatherOverlay } from "./situation/fusedSnapshot";
 import type { MapViewMode } from "./ui/driveMapTypes";
 import { stormpathVersionLabel } from "./appVersion";
@@ -198,7 +210,6 @@ import {
   buildBasicNavAdvisoryPromoLines,
 } from "./config/basicAds";
 import { useBasicAdMobBanner } from "./hooks/useBasicAdMobBanner";
-import { BasicAdMobSlot } from "./ui/BasicAdMobSlot";
 import { getPayTier, hasTollBypass } from "./billing/payFeatures";
 import { NATIVE_PAY_TIER_CHANGED_EVENT } from "./billing/revenueCat";
 import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
@@ -306,29 +317,6 @@ const TRIP_CACHE_MIN_SAVE_INTERVAL_MS = 20_000;
 
 function isNarrowPhoneViewport(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(max-width: 520px)").matches;
-}
-
-/**
- * Compact distance label for the search-suggestion secondary line. Returns "" when input is null
- * so callers can use `||` to fall through to the address text.
- *
- *   25 m  → "25 m"           (or "82 ft" in US)
- *   180 m → "0.1 mi"         (US — under a quarter mile reads better in feet but we keep it short)
- *   1.2 km → "1.2 km" / "0.7 mi"
- *   45 km → "45 km"  / "28 mi"
- */
-function formatDistanceShort(meters: number | null, useMiles: boolean): string {
-  if (meters == null || !Number.isFinite(meters) || meters < 0) return "";
-  if (useMiles) {
-    const miles = meters / 1609.344;
-    if (miles < 0.1) return `${Math.round(meters * 3.28084)} ft`;
-    if (miles < 10) return `${miles.toFixed(1)} mi`;
-    return `${Math.round(miles)} mi`;
-  }
-  if (meters < 950) return `${Math.round(meters)} m`;
-  const km = meters / 1000;
-  if (km < 10) return `${km.toFixed(1)} km`;
-  return `${Math.round(km)} km`;
 }
 
 export default function App() {
@@ -608,6 +596,7 @@ export default function App() {
   const lastStormAdaptiveRefreshMsRef = useRef(0);
   const stormAdaptiveRefreshInFlightRef = useRef(false);
   const [tapHint, setTapHint] = useState<string | null>(null);
+  const [returnTripLeg, setReturnTripLeg] = useState<ReturnTripLeg | null>(() => loadReturnTripLeg());
   /** Several geocode hits (business + city, “coffee”, etc.) — map pins + list until user picks one. */
   const [searchPickHits, setSearchPickHits] = useState<SearchSuggestion[] | null>(null);
   const searchPickHitsRef = useRef<SearchSuggestion[] | null>(null);
@@ -2223,6 +2212,13 @@ export default function App() {
     guidanceRoute?.geometry
   );
 
+  const guidanceRouteGeomRef = useRef<LngLat[] | null>(null);
+  const guidanceRouteLengthMRef = useRef(0);
+  const userAlongGuidanceMRef = useRef(0);
+  guidanceRouteGeomRef.current = guidanceRoute?.geometry ?? null;
+  guidanceRouteLengthMRef.current = guidanceRouteLengthM;
+  userAlongGuidanceMRef.current = userAlongGuidanceM;
+
   /** Advisory timeline / NWS distance — snap to GPS on the route when planning, not only after Go. */
   const advisoryUserAlongM = useMemo(() => {
     const g = guidanceRoute?.geometry;
@@ -2343,6 +2339,18 @@ export default function App() {
     guidanceRoute,
     guidanceRouteLengthM,
     userAlongGuidanceM,
+  ]);
+
+  const driveDistanceRemainingLabel = useMemo(() => {
+    if (!navigationStarted || guidanceRouteLengthM <= 1) return null;
+    const rem = Math.max(0, guidanceRouteLengthM - userAlongGuidanceM);
+    if (rem <= 0) return null;
+    return formatDistanceShort(rem, useMilesForLngLat(effectiveUserLngLat));
+  }, [
+    navigationStarted,
+    guidanceRouteLengthM,
+    userAlongGuidanceM,
+    effectiveUserLngLat,
   ]);
 
   /** Merge forecast headline + midpoint sample so the progress strip “heavy wx” band isn’t cloud-only. */
@@ -3622,6 +3630,15 @@ export default function App() {
   const allowDestinationPick = mapPlanningUi;
   const routeActive = plan.routes.length > 0;
   const showCompactDest = routeActive && !searchExpanded;
+  const showReturnTripButton =
+    mapPlanningUi &&
+    !navigationStarted &&
+    !destLngLat &&
+    !plan.routes.length &&
+    Boolean(returnTripLeg?.geometry.length && returnTripLeg.geometry.length >= 2);
+  const returnTripButtonLabel = returnTripLeg
+    ? shortenReturnTripLabel(returnTripLeg.returnToLabel)
+    : "";
 
   /** Advisory strip always available for Plus life-safety; Basic follows Storm setting. */
   const showStormAdvisoryChrome = advisoryLifeSafetyOn;
@@ -3779,11 +3796,15 @@ export default function App() {
   const clearRouteRef = useRef(clearRoute);
   clearRouteRef.current = clearRoute;
 
-  /** Bump on any real user input — resets arrival idle countdown. */
+  const arrivalHintShownRef = useRef(false);
+
+  /** Bump on chrome input — resets arrival idle countdown (map pan/zoom does not). */
   useEffect(() => {
-    const bump = () => {
+    const bump = (e: Event) => {
+      if (!shouldResetArrivalIdleOnPointer(e.target)) return;
       lastUserInteractionMsRef.current = Date.now();
       arrivalIdleStartMsRef.current = null;
+      arrivalHintShownRef.current = false;
     };
     const opts: AddEventListenerOptions = { capture: true };
     window.addEventListener("pointerdown", bump, opts);
@@ -3801,6 +3822,7 @@ export default function App() {
     const runArrivalClear = () => {
       if (demoBypassTrafficJamPlusRef.current) return;
       arrivalIdleStartMsRef.current = null;
+      arrivalHintShownRef.current = false;
       tabHiddenAtMsRef.current = null;
       clearRouteRef.current();
       setTapHint("You've arrived — trip cleared.");
@@ -3810,34 +3832,48 @@ export default function App() {
       if (demoBypassTrafficJamPlusRef.current) return;
       if (!navigationStartedRef.current) {
         arrivalIdleStartMsRef.current = null;
+        arrivalHintShownRef.current = false;
         return;
       }
       const pos = userLngLatRef.current;
       const dest = destLngLatRef.current;
       if (!pos || !dest) {
         arrivalIdleStartMsRef.current = null;
+        arrivalHintShownRef.current = false;
         return;
       }
-      const d = haversineMeters(pos, dest);
-      if (d > ARRIVAL_DEST_RADIUS_M) {
+      const prox = arrivalProximity({
+        pos,
+        dest,
+        routeGeometry: guidanceRouteGeomRef.current,
+        alongRouteM: userAlongGuidanceMRef.current,
+        routeLengthM: guidanceRouteLengthMRef.current,
+      });
+      if (!prox.near) {
         arrivalIdleStartMsRef.current = null;
+        arrivalHintShownRef.current = false;
         return;
       }
-      const speed = speedMpsRef.current;
-      if (speed != null && Number.isFinite(speed) && speed > ARRIVAL_STATIONARY_MAX_SPEED_MPS) {
+      if (!isStationaryForArrival(speedMpsRef.current)) {
         arrivalIdleStartMsRef.current = null;
         return;
       }
       const now = Date.now();
-      if (now - lastUserInteractionMsRef.current < 3500) {
+      if (now - lastUserInteractionMsRef.current < 2500) {
         arrivalIdleStartMsRef.current = null;
         return;
       }
+      const idleMs = arrivalIdleClearMs(prox.remainingAlongM);
       if (arrivalIdleStartMsRef.current == null) {
         arrivalIdleStartMsRef.current = now;
+        if (!arrivalHintShownRef.current) {
+          arrivalHintShownRef.current = true;
+          setTapHint("Near destination — trip clears shortly when you stop.");
+          window.setTimeout(() => setTapHint(null), 6500);
+        }
         return;
       }
-      if (now - arrivalIdleStartMsRef.current >= ARRIVAL_IDLE_CLEAR_MS) {
+      if (now - arrivalIdleStartMsRef.current >= idleMs) {
         runArrivalClear();
       }
     };
@@ -3856,10 +3892,15 @@ export default function App() {
       const pos = userLngLatRef.current;
       const dest = destLngLatRef.current;
       if (!navigationStartedRef.current || !pos || !dest) return;
-      const dist = haversineMeters(pos, dest);
-      if (dist > ARRIVAL_DEST_RADIUS_M) return;
-      const speed = speedMpsRef.current;
-      if (speed != null && Number.isFinite(speed) && speed > ARRIVAL_STATIONARY_MAX_SPEED_MPS) return;
+      const prox = arrivalProximity({
+        pos,
+        dest,
+        routeGeometry: guidanceRouteGeomRef.current,
+        alongRouteM: userAlongGuidanceMRef.current,
+        routeLengthM: guidanceRouteLengthMRef.current,
+      });
+      if (!prox.near) return;
+      if (!isStationaryForArrival(speedMpsRef.current)) return;
       runArrivalClear();
     };
     document.addEventListener("visibilitychange", onVisibility);
@@ -3990,6 +4031,25 @@ export default function App() {
     setTollRoutePrompt(null);
     setTollAvoidFailureNote(null);
 
+    if (userLngLat && destLngLat) {
+      const picked = plan.routes.find((r) => r.id === chosen);
+      if (picked?.geometry && picked.geometry.length >= 2) {
+        const [lng, lat] = userLngLat;
+        const originLabel = isGenericOriginLabel(plan.originLabel)
+          ? formatCoordsAreaLabel(lat, lng)
+          : plan.originLabel.trim();
+        setReturnTripLeg(
+          persistReturnTripLegOnGo({
+            returnToLngLat: userLngLat,
+            returnToLabel: originLabel,
+            outboundDestLngLat: destLngLat,
+            outboundDestLabel: destinationLabel.trim() || "Destination",
+            geometry: picked.geometry.map(([a, b]) => [a, b] as LngLat),
+          })
+        );
+      }
+    }
+
     // Learn the preferred A/B/C “role” for this destination area.
     if (payFrequentRoutes && destLngLat && destinationLabel.trim()) {
       const key = areaKeyFromLngLat(destLngLat);
@@ -4018,6 +4078,8 @@ export default function App() {
     destLngLat,
     destinationLabel,
     plan.routes,
+    plan.originLabel,
+    userLngLat,
   ]);
 
   const handleGo = () => {
@@ -4493,6 +4555,25 @@ export default function App() {
     addPlace(name, destLngLat);
   }, [destLngLat, destinationLabel, addPlace]);
 
+  const handleSaveCurrentLocation = useCallback(async () => {
+    if (!userLngLat) {
+      setTapHint(
+        locationError ?? "Turn on location first — allow it for this site in browser settings."
+      );
+      window.setTimeout(() => setTapHint(null), 8000);
+      return;
+    }
+    const [lng, lat] = userLngLat;
+    let name = forecastPlaceShort ?? formatCoordsAreaLabel(lat, lng);
+    if (!forecastPlaceShort && env.mapboxToken) {
+      const hit = await mapboxReverseGeocode(lng, lat, env.mapboxToken);
+      if (hit?.placeName) name = shortenPlaceNameForForecast(hit.placeName);
+    }
+    addPlace(name, userLngLat);
+    setTapHint(`Saved place: ${name}`);
+    window.setTimeout(() => setTapHint(null), 4500);
+  }, [userLngLat, locationError, forecastPlaceShort, env.mapboxToken, addPlace]);
+
   const openSaveRouteSheet = useCallback(() => {
     const r = plan.routes.find((x) => x.id === lineFocusId) ?? plan.routes[0];
     if (!r?.geometry || r.geometry.length < 2 || !destLngLat) return;
@@ -4535,6 +4616,32 @@ export default function App() {
     },
     [resetNavigationPlanning]
   );
+
+  const handleReturnToPreviousDestination = useCallback(() => {
+    const leg = returnTripLeg ?? loadReturnTripLeg();
+    if (!leg || leg.geometry.length < 2) {
+      setTapHint("No previous trip to return to yet — start a route with Go first.");
+      window.setTimeout(() => setTapHint(null), 5500);
+      return;
+    }
+    if (!userLngLat) {
+      setTapHint(
+        locationError ?? "Turn on location first — allow it for this site in browser settings."
+      );
+      window.setTimeout(() => setTapHint(null), 8000);
+      return;
+    }
+    const sr: SavedRoute = {
+      id: "return-leg",
+      name: "Return",
+      geometry: leg.geometry,
+      destinationLngLat: leg.outboundDestLngLat,
+      destinationLabel: leg.outboundDestLabel,
+      startLabel: leg.returnToLabel,
+      createdAt: leg.savedAtMs,
+    };
+    handleLoadSavedRoute(sr, { reverse: true });
+  }, [returnTripLeg, userLngLat, locationError, handleLoadSavedRoute]);
 
   const handleStartRecordingPath = useCallback(() => {
     if (!userLngLat) {
@@ -4731,13 +4838,23 @@ export default function App() {
     isPlus,
   ]);
 
+  const devPointerStyle = import.meta.env.DEV
+    ? ({
+        ["--sp-dev-cursor-default"]: DEV_CURSOR_DEFAULT,
+        ["--sp-dev-cursor-pointer"]: DEV_CURSOR_POINTER,
+      } as CSSProperties)
+    : undefined;
+
   return (
     <div
       className={`app-shell nav-fullmap${navigationStarted && viewMode === "drive" ? " nav-drive-ui" : ""}${
         trafficBypassCompare ? " nav-route-compare-active" : ""
       }${basemapNight ? " app-shell--basemap-night" : ""}${settingLandscapeSideHand === "left" ? " app-shell--landscape-hand-left" : ""}${
         radarMapOverlayOn && radarFrameUtcSec != null ? " nav-radar-frame-time-visible" : ""
-      }${basicAdBanner.reservesBottomSpace ? " app-shell--basic-ad-banner" : ""}`}
+      }${basicAdBanner.reservesBottomSpace ? " app-shell--basic-ad-banner" : ""}${
+        import.meta.env.DEV ? " app-shell--dev-pointer" : ""
+      }`}
+      style={devPointerStyle}
     >
       {import.meta.env.DEV ? (
         <div
@@ -5124,6 +5241,8 @@ export default function App() {
           onRename={updateName}
           onDelete={removePlace}
           onSaveCurrent={destLngLat ? handleSaveCurrentDestination : null}
+          onSaveCurrentLocation={userLngLat ? () => void handleSaveCurrentLocation() : null}
+          currentLocationLabel={forecastAreaLabel}
           currentDestLabel={destinationLabel || null}
           currentDestLngLat={destLngLat}
           savedRoutes={savedTripRoutes}
@@ -5369,12 +5488,6 @@ export default function App() {
           ) : null}
           {!trafficBypassCompare ? (
           <div className="nav-bottom-chrome-wrap">
-            {import.meta.env.DEV &&
-            !isPlus &&
-            !navigationStarted &&
-            (basicAdBanner.slotState === "loading" || basicAdBanner.slotState === "empty") ? (
-              <BasicAdMobSlot state={basicAdBanner.slotState} testMode={basicAdBanner.testMode} />
-            ) : null}
             <div className="nav-bottom-dock">
               {navigationStarted && viewMode === "drive" ? (
                 <div className="nav-bottom-dock__about-row">
@@ -5499,6 +5612,14 @@ export default function App() {
               postedMph={postedMph}
               onStop={handleStopAndClear}
               hasTrip={Boolean(plan.routes.length > 0 || destLngLat)}
+              showReturnTripButton={showReturnTripButton}
+              returnTripLabel={returnTripButtonLabel}
+              returnTripTitle={
+                returnTripLeg
+                  ? `Return to ${returnTripLeg.returnToLabel} on your previous route (reversed)`
+                  : undefined
+              }
+              onReturnTrip={handleReturnToPreviousDestination}
               showSavedPlacesButton={
                 mapPlanningUi &&
                 (!navigationStarted || !routeActive)
@@ -5506,6 +5627,7 @@ export default function App() {
               showViewCycleButton
               viewCycleDisabled={!navigationStarted}
               driveEtaMinutes={driveEtaMinutes}
+              distanceRemainingLabel={driveDistanceRemainingLabel}
               showRadar={radarMapOverlayOn}
               onToggleRadar={() => setShowRadar((v) => !v)}
               radarEnabled={settingRadarEnabled}

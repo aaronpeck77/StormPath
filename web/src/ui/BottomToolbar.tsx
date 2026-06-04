@@ -32,6 +32,11 @@ type Props = {
   postedMph: number;
   onStop: () => void;
   hasTrip: boolean;
+  /** Planning with no destination: quick return along the reversed last Go route. */
+  showReturnTripButton?: boolean;
+  returnTripLabel?: string;
+  returnTripTitle?: string;
+  onReturnTrip?: () => void;
   /** ★ in route / map (topdown): shown while navigating; hidden in drive only (saves bar space) */
   showSavedPlacesButton: boolean;
   /** Rt/Mp/Dr cycle — set false to hide entirely */
@@ -40,6 +45,8 @@ type Props = {
   viewCycleDisabled?: boolean;
   /** Active leg ETA while driving (minutes, fused score) */
   driveEtaMinutes: number | null;
+  /** Distance left to destination along the active route (e.g. "12.4 mi"). */
+  distanceRemainingLabel?: string | null;
   showRadar: boolean;
   onToggleRadar: () => void;
   /** When false, hide the Rad button entirely (not just inactive). */
@@ -67,10 +74,15 @@ export function BottomToolbar({
   postedMph,
   onStop,
   hasTrip,
+  showReturnTripButton = false,
+  returnTripLabel = "",
+  returnTripTitle,
+  onReturnTrip,
   showSavedPlacesButton,
   showViewCycleButton = true,
   viewCycleDisabled = false,
   driveEtaMinutes,
+  distanceRemainingLabel = null,
   showRadar,
   onToggleRadar,
   showRadarButton = true,
@@ -171,6 +183,14 @@ export function BottomToolbar({
                 <span className="nav-bottom-stat-k">Lim</span>
                 <span className="nav-bottom-stat-v">{postedMph}</span>
               </div>
+              {distanceRemainingLabel ? (
+                <div className="nav-bottom-stat nav-bottom-stat--remaining">
+                  <span className="nav-bottom-stat-k">Left</span>
+                  <span className="nav-bottom-stat-v" title="Distance remaining to destination">
+                    {distanceRemainingLabel}
+                  </span>
+                </div>
+              ) : null}
             </div>
           )}
         </div>
@@ -227,6 +247,25 @@ export function BottomToolbar({
                 Go
               </button>
             )}
+            {showReturnTripButton && onReturnTrip ? (
+              <button
+                type="button"
+                className="nav-mode-sq nav-mode-sq--return"
+                onClick={onReturnTrip}
+                aria-label={
+                  returnTripTitle ??
+                  (returnTripLabel
+                    ? `Return to ${returnTripLabel}`
+                    : "Return to previous destination")
+                }
+                title={returnTripTitle ?? "Return to where you started your last trip"}
+              >
+                <span className="nav-mode-sq--return__glyph" aria-hidden>
+                  ↩
+                </span>
+                <span className="nav-mode-sq--return__label">{returnTripLabel || "Return"}</span>
+              </button>
+            ) : null}
             {showSavedPlacesButton && (
               <button
                 type="button"

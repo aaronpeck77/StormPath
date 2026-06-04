@@ -13,7 +13,14 @@ import { warmMapTilesForBounds } from "../map/mapRegionCacheWarm";
 import type { RouteAlert } from "../nav/routeAlerts";
 import type { LngLat, NavRoute } from "../nav/types";
 import type { SavedPlace } from "../nav/savedPlaces";
-import { buildCumulativeDistances, closestPointOnPolyline, closestPointOnPolylineWindowed, haversineMeters, pointAtAlongMeters } from "../nav/routeGeometry";
+import {
+  buildCumulativeDistances,
+  closestPointOnPolyline,
+  closestPointOnPolylineWindowed,
+  haversineMeters,
+  pointAtAlongMeters,
+} from "../nav/routeGeometry";
+import { polylineBbox } from "../weatherAlerts/geometryOverlap";
 import { getWebEnv } from "../config/env";
 import {
   fetchRainViewerRadarFrames,
@@ -373,6 +380,17 @@ function routeViewAxis(
   return "diagonal";
 }
 
+function routePrimarySpanMeters(routes: NavRoute[], primaryRouteId?: string | null): number {
+  const route =
+    (primaryRouteId ? routes.find((r) => r.id === primaryRouteId) : null) ??
+    routes[0] ??
+    null;
+  if (!route?.geometry?.length) return 0;
+  const box = polylineBbox(route.geometry);
+  if (!box) return 0;
+  return haversineMeters([box.west, box.south], [box.east, box.north]);
+}
+
 /** Route overview fit: turn/storm strip, address/toolbar, progress rail. */
 function routeFitPadding(
   stormBarVisible: boolean,
@@ -398,12 +416,12 @@ function routeFitPadding(
      * address bar. Give tall north/south fits a little more air at the bottom so the lower
      * route endpoint / pin doesn't sit right on top of that button. */
     const planningBottom =
-      164 +
+      148 +
       Math.min(34, safe.bottom) +
-      (planningOverview && axis === "northSouth" ? 28 : 0);
+      (planningOverview && axis === "northSouth" ? 20 : 0);
     /* Before Go there is no progress rail, so keep the route overview centered in the full map width. */
     return {
-      top: Math.max(128, 182 - ROUTE_FIT_TOP_TRIM_PX) + stormTop + Math.min(6, safe.top * 0.25),
+      top: Math.max(118, 168 - ROUTE_FIT_TOP_TRIM_PX) + stormTop + Math.min(6, safe.top * 0.25),
       bottom: planningBottom,
       left: sidePad,
       right: planningOverview ? sidePad : Math.max(88, rightNeed),
@@ -470,11 +488,19 @@ function routeFitMaxZoomCeiling(routes: NavRoute[], primaryRouteId?: string | nu
 }
 
 function routeFitZoomBias(routes: NavRoute[], primaryRouteId?: string | null): number {
-  if (!isLandscapeViewport()) return 0;
-  const axis = routeViewAxis(routes, primaryRouteId);
-  if (axis === "eastWest") return 0.35;
-  /* N/S + diagonal: keep endpoints near pane walls while traveling. */
-  return 1.55;
+  const span = routePrimarySpanMeters(routes, primaryRouteId);
+  if (isLandscapeViewport()) {
+    const axis = routeViewAxis(routes, primaryRouteId);
+    if (axis === "eastWest") return 0.35;
+    /* N/S + diagonal: keep endpoints near pane walls while traveling. */
+    return 1.55;
+  }
+  /* Portrait: nudge zoom in so start/end sit on the padded viewport edges for short/medium trips. */
+  if (span > 0 && span < 1200) return 2.1;
+  if (span < 2800) return 1.65;
+  if (span < 9000) return 1;
+  if (span < 28000) return 0.4;
+  return 0;
 }
 
 function hazardOverviewFitPadding(): mapboxgl.PaddingOptions {
@@ -701,7 +727,8 @@ function regionalPlanningZoom(): number {
     : ROUTE_VIEW_REGIONAL_ZOOM;
 }
 /** Cap auto fitBounds on the trip so preview stays overview-ish until the user zooms in. */
-const ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM = 10.85;
+/** Upper zoom for route fitBounds — short trips need street-level; long trips stay capped by span heuristic. */
+const ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM = 18.85;
 /** Planning “My location” / recenter — street-level framing. */
 const ROUTE_VIEW_PLANNING_STREET_ZOOM = 14.2;
 const ZERO_MAP_PADDING: mapboxgl.PaddingOptions = { top: 0, bottom: 0, left: 0, right: 0 };
@@ -2677,22 +2704,24 @@ export function DriveMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || viewMode !== "route") return;
+    if (!map || !mapReady || viewMode !== "route" && viewMode !== "topdown") return;
     if (routes.length > 0 || navigationStarted) return;
     if (userExploringRef.current) return;
     const u = userLngLatRef.current;
     if (!u || !destLngLat) return;
-    const b = new mapboxgl.LngLatBounds();
-    safeExtendBounds(b, u);
-    safeExtendBounds(b, destLngLat);
-    safeFitBounds(map, b, {
-      padding: routeFitPadding(stormBarVisible, stormBarExpanded, [], null, progressRailVisible),
-      maxZoom: ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM,
-      duration: 260,
-      pitch: 0,
-      bearing: 0,
-      essential: true,
-    });
+    fitMapToTrip(
+      map,
+      [],
+      u,
+      destLngLat,
+      routeFitPadding(stormBarVisible, stormBarExpanded, [], null, progressRailVisible),
+      ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM,
+      {
+        onAfterFit: () => {
+          if (viewModeRef.current === "topdown") topdownZoomRef.current = map.getZoom();
+        },
+      }
+    );
   }, [
     mapReady,
     viewMode,
@@ -2753,7 +2782,13 @@ export function DriveMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || viewMode !== "route" || routes.length === 0) return;
+    if (!map || !mapReady) return;
+    if (viewMode !== "route" && viewMode !== "topdown") return;
+    if (routes.length === 0) return;
+
+    const syncTopdownZoomFromFit = () => {
+      if (viewModeRef.current === "topdown") topdownZoomRef.current = map.getZoom();
+    };
 
     const prevCount = prevPlanningRouteCountRef.current;
     prevPlanningRouteCountRef.current = routes.length;
@@ -2793,7 +2828,10 @@ export function DriveMap({
         },
         routeFitMaxZoomCeiling(routes, lineFocusId),
         {
-          onAfterFit: flatten,
+          onAfterFit: () => {
+            syncTopdownZoomFromFit();
+            flatten();
+          },
           onlyRouteId: lineFocusId,
           zoomBias: routeFitZoomBias(routes, lineFocusId),
         }
@@ -2813,6 +2851,7 @@ export function DriveMap({
       }
       pendingFlatten = () => {
         pendingFlatten = null;
+        syncTopdownZoomFromFit();
         flatten();
       };
       map.once("moveend", pendingFlatten);
@@ -2990,6 +3029,11 @@ export function DriveMap({
 
     if (!canCameraFollow || viewMode !== "topdown") {
       if (viewMode !== "topdown") prevTopdownRef.current = false;
+      return;
+    }
+
+    /* Active trip: route fit effect frames user → destination on the padded edges. */
+    if (routes.length > 0 && destLngLat) {
       return;
     }
 

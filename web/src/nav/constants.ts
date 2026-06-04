@@ -88,11 +88,18 @@ export const SERIOUS_DRIVE_AHEAD_MIN_SEVERITY = 72;
  * ── Arrival auto-clear (idle at destination) ─────────────────────────
  */
 
-/** GPS within this distance of the destination counts as “arrived” for auto end-trip. */
-export const ARRIVAL_DEST_RADIUS_M = 58;
-/** Ground speed below this (m/s) while near the destination counts as stationary (~3.4 mph). */
-export const ARRIVAL_STATIONARY_MAX_SPEED_MPS = 1.55;
-/** At destination + stationary + no interaction for this long → clear trip (foreground timer). */
-export const ARRIVAL_IDLE_CLEAR_MS = 120_000;
+/** GPS within this distance of the destination pin counts as “arrived” (GPS error is often 15–65 m). */
+export const ARRIVAL_DEST_RADIUS_M = 140;
+/** Along-route remaining below this counts as arrived even if the pin is farther (parking, building offset). */
+export const ARRIVAL_ROUTE_REMAINING_M = 100;
+/** Near the last point on the driven polyline (road snap vs search pin). */
+export const ARRIVAL_ROUTE_END_RADIUS_M = 130;
+/** Ground speed below this (m/s) while near the destination counts as stationary (~6.3 mph). */
+export const ARRIVAL_STATIONARY_MAX_SPEED_MPS = 2.8;
+/** Default idle at destination before auto end-trip (foreground timer). */
+export const ARRIVAL_IDLE_CLEAR_MS = 75_000;
+/** Shorter idle when almost no distance remains along the route. */
+export const ARRIVAL_IDLE_CLEAR_NEAR_MS = 50_000;
+export const ARRIVAL_IDLE_CLEAR_VERY_NEAR_MS = 30_000;
 /** Tab/phone backgrounded at least this long; on next visible, still near dest → clear trip. */
-export const ARRIVAL_BG_CLEAR_MIN_MS = 60_000;
+export const ARRIVAL_BG_CLEAR_MIN_MS = 45_000;

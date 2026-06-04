@@ -38,7 +38,7 @@ export function useBasicAdMobBanner({
 }: Args): {
   slotState: BasicAdBannerSlotState;
   testMode: boolean;
-  /** Lift bottom chrome while a Basic banner is loading, filled, or empty on device. */
+  /** Lift bottom chrome while Basic idle — dev web reserves layout only; device also shows native AdMob. */
   reservesBottomSpace: boolean;
 } {
   const env = getWebEnv();
@@ -49,9 +49,7 @@ export function useBasicAdMobBanner({
 
   useEffect(() => {
     if (!isAdMobSupported()) {
-      setSlotState(
-        import.meta.env.DEV && enabled && isBasicTier && !navigationStarted ? "empty" : "hidden"
-      );
+      setSlotState("hidden");
       return undefined;
     }
 
@@ -114,7 +112,9 @@ export function useBasicAdMobBanner({
     isBasicTier &&
     enabled &&
     !navigationStarted &&
-    slotState !== "hidden";
+    (import.meta.env.DEV && !isAdMobSupported()
+      ? true
+      : isAdMobSupported() && slotState !== "hidden");
 
   return { slotState, testMode, reservesBottomSpace };
 }

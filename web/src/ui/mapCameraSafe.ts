@@ -1,4 +1,5 @@
 import type { LngLatBounds, Map } from "mapbox-gl";
+import { resolveDevMapCanvasCursor } from "../dev/devCursor";
 import type { LngLat } from "../nav/types";
 
 type EaseToOptions = Parameters<Map["easeTo"]>[0];
@@ -105,7 +106,7 @@ export function setMapCanvasCursor(map: Map | null | undefined, cursor: string):
   if (!isMapUsable(map)) return;
   try {
     const canvas = getMapCanvas(map);
-    if (canvas?.style) canvas.style.cursor = cursor;
+    if (canvas?.style) canvas.style.cursor = resolveDevMapCanvasCursor(cursor);
   } catch {
     /* map mid-teardown or style reload */
   }
@@ -193,5 +194,19 @@ export function safeFitBounds(
     return true;
   } catch {
     return false;
+  }
+}
+
+export function safeCameraForBounds(
+  map: Map,
+  bounds: LngLatBounds,
+  options?: FitBoundsOptions
+): ReturnType<Map["cameraForBounds"]> | null {
+  if (!isMapReadyForCamera(map)) return null;
+  try {
+    if (bounds.isEmpty()) return null;
+    return map.cameraForBounds(bounds, options);
+  } catch {
+    return null;
   }
 }

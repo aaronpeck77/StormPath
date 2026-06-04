@@ -20,6 +20,8 @@ type Props = {
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
   onSaveCurrent: (() => void) | null;
+  onSaveCurrentLocation: (() => void) | null;
+  currentLocationLabel: string | null;
   currentDestLabel: string | null;
   currentDestLngLat: LngLat | null;
   savedRoutes: SavedRoute[];
@@ -49,6 +51,8 @@ export function SavedDestinationsDrawer({
   onRename,
   onDelete,
   onSaveCurrent,
+  onSaveCurrentLocation,
+  currentLocationLabel,
   currentDestLabel,
   currentDestLngLat,
   savedRoutes,
@@ -115,61 +119,116 @@ export function SavedDestinationsDrawer({
         <div className="saved-drawer-body saved-drawer-body--full">
           {view === "home" && (
             <div className="saved-drawer-home">
-              <label className="saved-drawer-toggle">
-                <input
-                  type="checkbox"
-                  checked={showOnMap}
-                  onChange={(e) => onToggleShowOnMap(e.target.checked)}
-                />
-                <span>Show place pins on map</span>
-              </label>
+              <div className="saved-drawer-home-panel saved-drawer-home-panel--map">
+                <label className="saved-drawer-toggle saved-drawer-toggle--panel">
+                  <input
+                    type="checkbox"
+                    checked={showOnMap}
+                    onChange={(e) => onToggleShowOnMap(e.target.checked)}
+                  />
+                  <span>Show place pins on map</span>
+                </label>
+              </div>
 
               <ul className="saved-drawer-home-list" role="list">
-                <HomeTile
-                  label="Places"
-                  count={placeCount}
-                  hint="Saved pins on the map — tap one to set it as a destination."
-                  onClick={() => setView("places")}
-                />
-                <HomeTile
-                  label="Saved routes"
-                  count={routeCount}
-                  hint="Full driven paths you can replay or reverse."
-                  onClick={() => setView("routes")}
-                />
-                <HomeTile
-                  label="Frequent routes"
-                  count={frequentCount}
-                  hint={
-                    payFrequentRoutes
-                      ? "Repeat trips detected on this device."
-                      : "Plus — repeat-trip learning and suggestions."
-                  }
-                  badge={payFrequentRoutes ? null : "Plus"}
-                  onClick={() => setView("frequent")}
-                />
+                <li className="saved-drawer-home-section saved-drawer-home-section--places">
+                  <h3 className="saved-drawer-home-section__title">Places</h3>
+                  {onSaveCurrentLocation || (onSaveCurrent && currentDestLngLat) ? (
+                    <div className="saved-drawer-home-section__actions">
+                      {onSaveCurrentLocation ? (
+                        <button
+                          type="button"
+                          className="saved-drawer-save-current saved-drawer-save-current--home saved-drawer-save-current--location"
+                          onClick={onSaveCurrentLocation}
+                        >
+                          Save current location
+                          {currentLocationLabel && currentLocationLabel !== "Your location"
+                            ? ` (${truncateDrawerLabel(currentLocationLabel)})`
+                            : ""}
+                        </button>
+                      ) : null}
+                      {onSaveCurrent && currentDestLngLat ? (
+                        <button
+                          type="button"
+                          className="saved-drawer-save-current saved-drawer-save-current--home"
+                          onClick={onSaveCurrent}
+                        >
+                          Save destination
+                          {currentDestLabel ? ` (${truncateDrawerLabel(currentDestLabel)})` : ""}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <HomeTile
+                    label="Places"
+                    count={placeCount}
+                    hint="Saved pins on the map — tap one to set it as a destination."
+                    onClick={() => setView("places")}
+                  />
+                </li>
+                <li className="saved-drawer-home-section saved-drawer-home-section--routes">
+                  <h3 className="saved-drawer-home-section__title">Saved routes</h3>
+                  {onSaveCurrentRoute || onStartRecordingPath || recordingActive ? (
+                    <div className="saved-drawer-home-section__actions">
+                      {onSaveCurrentRoute ? (
+                        <button
+                          type="button"
+                          className="saved-drawer-save-current saved-drawer-save-current--home"
+                          onClick={onSaveCurrentRoute}
+                        >
+                          Save route
+                        </button>
+                      ) : null}
+                      {onStartRecordingPath ? (
+                        <button
+                          type="button"
+                          className="saved-drawer-save-current saved-drawer-save-current--record saved-drawer-save-current--home"
+                          onClick={onStartRecordingPath}
+                        >
+                          Record driven path (GPS)
+                        </button>
+                      ) : null}
+                      {recordingActive ? (
+                        <p className="saved-drawer-recording-note saved-drawer-recording-note--home" role="status">
+                          Recording — use the bar above the toolbar to stop &amp; save or discard.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <HomeTile
+                    label="Saved routes"
+                    count={routeCount}
+                    hint="Full driven paths you can replay or reverse."
+                    onClick={() => setView("routes")}
+                  />
+                </li>
+                <li className="saved-drawer-home-section saved-drawer-home-section--frequent">
+                  <h3 className="saved-drawer-home-section__title">Frequent routes</h3>
+                  <HomeTile
+                    label="Frequent routes"
+                    count={frequentCount}
+                    hint={
+                      payFrequentRoutes
+                        ? "Repeat trips detected on this device."
+                        : "Plus — repeat-trip learning and suggestions."
+                    }
+                    badge={payFrequentRoutes ? null : "Plus"}
+                    onClick={() => setView("frequent")}
+                  />
+                </li>
               </ul>
             </div>
           )}
 
           {view === "places" && (
             <section className="saved-drawer-section" aria-label="Saved places">
-              {onSaveCurrent && currentDestLngLat && (
-                <button
-                  type="button"
-                  className="saved-drawer-save-current saved-drawer-save-current--full"
-                  onClick={onSaveCurrent}
-                >
-                  Save current destination
-                  {currentDestLabel ? ` (${currentDestLabel})` : ""}
-                </button>
-              )}
               <p className="saved-drawer-section-kicker">Tap any place to set it as your destination and plan a route.</p>
               <ul className="saved-drawer-list saved-drawer-list--full">
                 {places.length === 0 && (
                   <li className="saved-drawer-empty">
-                    No saved places yet. Set a destination and build a route, then tap ★ and use{" "}
-                    <strong>Save current destination</strong> before you hit Go.
+                    No saved places yet. Tap ★ and use <strong>Save current location</strong> for where you
+                    are now, or set a map destination and use <strong>Save destination</strong> on the Saved
+                    home screen.
                   </li>
                 )}
                 {places.map((p) => (
@@ -182,32 +241,9 @@ export function SavedDestinationsDrawer({
           {view === "routes" && (
             <section className="saved-drawer-section" aria-label="Saved routes">
               <p className="saved-drawer-section-kicker">
-                Save the line on the map, or record a drive when the router won’t follow your road. Use{" "}
-                <strong>Rev</strong> on a saved route to flip direction.
+                Use <strong>Save route</strong> or <strong>Record driven path</strong> on the Saved home screen when you
+                have a trip on the map. Use <strong>Rev</strong> on a saved route to flip direction.
               </p>
-              {onStartRecordingPath && (
-                <button
-                  type="button"
-                  className="saved-drawer-save-current saved-drawer-save-current--record saved-drawer-save-current--full"
-                  onClick={onStartRecordingPath}
-                >
-                  Record driven path (GPS)
-                </button>
-              )}
-              {recordingActive && (
-                <p className="saved-drawer-recording-note" role="status">
-                  Recording — use the bar above the toolbar to stop &amp; save or discard.
-                </p>
-              )}
-              {onSaveCurrentRoute && (
-                <button
-                  type="button"
-                  className="saved-drawer-save-current saved-drawer-save-current--full"
-                  onClick={onSaveCurrentRoute}
-                >
-                  Save active route
-                </button>
-              )}
               <p className="saved-drawer-pane__subhead">Your routes</p>
               <ul className="saved-drawer-list saved-drawer-list--full">
                 {savedRoutes.length === 0 && <li className="saved-drawer-empty">No saved routes yet.</li>}
@@ -310,6 +346,12 @@ export function SavedDestinationsDrawer({
   );
 }
 
+function truncateDrawerLabel(label: string, maxLen = 40): string {
+  const t = label.trim();
+  if (t.length <= maxLen) return t;
+  return `${t.slice(0, maxLen - 1)}…`;
+}
+
 /** Big tappable home tile that drills into one of the three sections. */
 function HomeTile({
   label,
@@ -325,22 +367,20 @@ function HomeTile({
   onClick: () => void;
 }) {
   return (
-    <li className="saved-drawer-home-tile-item">
-      <button type="button" className="saved-drawer-home-tile" onClick={onClick}>
-        <span className="saved-drawer-home-tile__row">
-          <span className="saved-drawer-home-tile__label">{label}</span>
-          {badge ? (
-            <span className="saved-drawer-home-tile__badge">{badge}</span>
-          ) : (
-            <span className="saved-drawer-home-tile__count">{count}</span>
-          )}
-          <span className="saved-drawer-home-tile__chevron" aria-hidden>
-            ›
-          </span>
+    <button type="button" className="saved-drawer-home-tile" onClick={onClick}>
+      <span className="saved-drawer-home-tile__row">
+        <span className="saved-drawer-home-tile__label">{label}</span>
+        {badge ? (
+          <span className="saved-drawer-home-tile__badge">{badge}</span>
+        ) : (
+          <span className="saved-drawer-home-tile__count">{count}</span>
+        )}
+        <span className="saved-drawer-home-tile__chevron" aria-hidden>
+          ›
         </span>
-        <span className="saved-drawer-home-tile__hint">{hint}</span>
-      </button>
-    </li>
+      </span>
+      <span className="saved-drawer-home-tile__hint">{hint}</span>
+    </button>
   );
 }
 

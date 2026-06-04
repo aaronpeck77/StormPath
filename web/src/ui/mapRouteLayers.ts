@@ -8,7 +8,7 @@ import { haversineMeters, slicePolylineBetweenAlong } from "../nav/routeGeometry
 import { sliceRouteAhead } from "../nav/routeRemaining";
 import type { LngLat, NavRoute } from "../nav/types";
 import { polylineBbox, stormOverlapLineFeatures } from "../weatherAlerts/geometryOverlap";
-import { safeExtendBounds, safeFitBounds, readMapLngLat } from "./mapCameraSafe";
+import { safeCameraForBounds, safeEaseTo, safeExtendBounds, safeFitBounds, readMapLngLat } from "./mapCameraSafe";
 import { FOCUSED_ROUTE_LINE_WIDTH, routePickSlotHex } from "./mapRouteStyle";
 
 const ROUTE_COND_LEGACY_LAYER = "route-condition-markers-circles";
@@ -397,13 +397,13 @@ function boundsDiagonalMeters(b: mapboxgl.LngLatBounds): number {
  * Shorter span → higher maxZoom (more road detail). Long span → stay zoomed out so both ends stay in frame.
  */
 function maxZoomForBoundsSpanMeters(spanM: number): number {
-  if (!Number.isFinite(spanM) || spanM < 400) return 17.6;
-  if (spanM < 2500) return 16.9;
-  if (spanM < 10000) return 15.7;
-  if (spanM < 35000) return 14.6;
-  if (spanM < 90000) return 13.5;
-  if (spanM < 200000) return 12.5;
-  return 11.6;
+  if (!Number.isFinite(spanM) || spanM < 400) return 18;
+  if (spanM < 2500) return 17.2;
+  if (spanM < 10000) return 16.1;
+  if (spanM < 35000) return 14.9;
+  if (spanM < 90000) return 13.8;
+  if (spanM < 200000) return 12.7;
+  return 11.8;
 }
 
 /** Per-point extend is O(n) — long country routes block the main thread. Use a bbox for huge lines. */
@@ -434,6 +434,142 @@ export type FitMapToTripOptions = {
   zoomBias?: number;
 };
 
+export type TripFitBoundsMode = {
+  bounds: mapboxgl.LngLatBounds;
+  /** Straight-line user → destination (m). */
+  directM: number;
+  /** Fit from endpoints only — winding polyline bbox is not used. */
+  endpointsOnly: boolean;
+};
+
+function directTripMeters(user: LngLat | null, dest: LngLat | null): number {
+  if (!user || !dest) return Number.POSITIVE_INFINITY;
+  return haversineMeters(user, dest);
+}
+
+function primaryRouteGeometry(routes: NavRoute[], onlyRouteId?: string | null): LngLat[] | null {
+  const route =
+    (onlyRouteId ? routes.find((r) => r.id === onlyRouteId) : null) ?? routes[0] ?? null;
+  return route?.geometry?.length ? route.geometry : null;
+}
+
+/** Short / winding trips: anchor on user + destination so fitBounds pushes them to the padded edges. */
+export function preferEndpointAnchoredTripFit(
+  user: LngLat | null,
+  dest: LngLat | null,
+  geometry: LngLat[] | null | undefined
+): boolean {
+  const direct = directTripMeters(user, dest);
+  if (!Number.isFinite(direct)) return false;
+  if (direct < 32_000) {
+    if (!geometry?.length || geometry.length < 2) return true;
+    const box = polylineBbox(geometry);
+    if (!box) return true;
+    const routeSpan = haversineMeters([box.west, box.south], [box.east, box.north]);
+    return routeSpan > direct * 1.22 || direct < 24_000;
+  }
+  return false;
+}
+
+function extendEndpointPairBounds(b: mapboxgl.LngLatBounds, user: LngLat, dest: LngLat): void {
+  safeExtendBounds(b, user);
+  safeExtendBounds(b, dest);
+  const direct = haversineMeters(user, dest);
+  if (direct < 120) {
+    const bump = 0.00035;
+    safeExtendBounds(b, [user[0] + bump, user[1] + bump * 0.35]);
+    safeExtendBounds(b, [dest[0] - bump, dest[1] - bump * 0.35]);
+  }
+}
+
+export function buildTripFitBounds(
+  user: LngLat | null,
+  dest: LngLat | null,
+  routes: NavRoute[],
+  onlyRouteId?: string | null
+): TripFitBoundsMode | null {
+  const geometry = primaryRouteGeometry(routes, onlyRouteId);
+  const directM = directTripMeters(user, dest);
+  const endpointsOnly = preferEndpointAnchoredTripFit(user, dest, geometry);
+  const b = new mapboxgl.LngLatBounds();
+
+  if (endpointsOnly && user && dest) {
+    extendEndpointPairBounds(b, user, dest);
+  } else {
+    if (user) safeExtendBounds(b, user);
+    if (dest) safeExtendBounds(b, dest);
+    if (onlyRouteId) {
+      const one = routes.find((r) => r.id === onlyRouteId);
+      if (one?.geometry?.length) extendBoundsWithPolyline(b, one.geometry);
+      else for (const r of routes) extendBoundsWithPolyline(b, r.geometry);
+    } else {
+      for (const r of routes) extendBoundsWithPolyline(b, r.geometry);
+    }
+  }
+
+  if (b.isEmpty()) return null;
+  return { bounds: b, directM, endpointsOnly };
+}
+
+function computeTripFitMaxZoom(
+  spanM: number,
+  directM: number,
+  endpointsOnly: boolean,
+  maxZoomCeiling: number,
+  zoomBias: number
+): number {
+  const bias = Math.max(0, zoomBias);
+  if (endpointsOnly && Number.isFinite(directM)) {
+    if (directM < 900) return Math.min(18.85, maxZoomCeiling + 1.35 + bias);
+    if (directM < 2500) return Math.min(18.85, maxZoomCeiling + 1.1 + bias);
+    if (directM < 8000) return Math.min(18.85, maxZoomCeiling + 0.65 + bias);
+    if (directM < 20_000) return Math.min(18.85, maxZoomCeiling + 0.25 + bias);
+  }
+  return Math.min(maxZoomCeiling, maxZoomForBoundsSpanMeters(spanM) + bias);
+}
+
+function applyTripCameraFit(
+  map: mapboxgl.Map,
+  fit: TripFitBoundsMode,
+  padding: mapboxgl.PaddingOptions,
+  maxZoomCeiling: number,
+  zoomBias: number,
+  durationMs: number
+): boolean {
+  const spanM = boundsDiagonalMeters(fit.bounds);
+  const maxZoom = computeTripFitMaxZoom(
+    spanM,
+    fit.directM,
+    fit.endpointsOnly,
+    maxZoomCeiling,
+    zoomBias
+  );
+  const cam = safeCameraForBounds(map, fit.bounds, {
+    padding,
+    maxZoom,
+    bearing: 0,
+    pitch: 0,
+  });
+  if (!cam?.center || cam.zoom == null || !Number.isFinite(cam.zoom)) {
+    return safeFitBounds(map, fit.bounds, {
+      padding,
+      maxZoom,
+      duration: durationMs,
+      bearing: 0,
+      pitch: 0,
+      essential: true,
+    });
+  }
+  return safeEaseTo(map, {
+    center: cam.center,
+    zoom: cam.zoom,
+    bearing: 0,
+    pitch: 0,
+    duration: durationMs,
+    essential: true,
+  });
+}
+
 export function fitMapToTrip(
   map: mapboxgl.Map,
   routes: NavRoute[],
@@ -443,37 +579,16 @@ export function fitMapToTrip(
   maxZoomCeiling = 18,
   opts?: FitMapToTripOptions
 ) {
-  const b = new mapboxgl.LngLatBounds();
-  if (user) safeExtendBounds(b, user);
-  if (dest) safeExtendBounds(b, dest);
-
-  const onlyId = opts?.onlyRouteId;
-  if (onlyId) {
-    const one = routes.find((r) => r.id === onlyId);
-    if (one?.geometry?.length) {
-      extendBoundsWithPolyline(b, one.geometry);
-    } else {
-      for (const r of routes) {
-        extendBoundsWithPolyline(b, r.geometry);
-      }
-    }
-  } else {
-    for (const r of routes) {
-      extendBoundsWithPolyline(b, r.geometry);
-    }
-  }
-
-  if (b.isEmpty()) {
+  const fit = buildTripFitBounds(user, dest, routes, opts?.onlyRouteId);
+  if (!fit) {
     opts?.onAfterFit?.();
     return;
   }
 
-  const spanM = boundsDiagonalMeters(b);
-  const maxZoom = Math.min(maxZoomCeiling, maxZoomForBoundsSpanMeters(spanM) + Math.max(0, opts?.zoomBias ?? 0));
-
   const finish = () => opts?.onAfterFit?.();
   map.once("moveend", finish);
-  if (!safeFitBounds(map, b, { padding, maxZoom, duration: 360, essential: true })) {
+  const ok = applyTripCameraFit(map, fit, padding, maxZoomCeiling, opts?.zoomBias ?? 0, 360);
+  if (!ok) {
     map.off("moveend", finish);
     opts?.onAfterFit?.();
   }
@@ -491,25 +606,40 @@ export function fitMapToRemainingRoutes(
   /** Positive bias = allow tighter zoom than span heuristic when safe. */
   zoomBias = 0
 ) {
-  const b = new mapboxgl.LngLatBounds();
-  safeExtendBounds(b, userLngLat);
-  if (dest) safeExtendBounds(b, dest);
-
   const primary = primaryRouteId ? routes.find((r) => r.id === primaryRouteId) : null;
-  if (primary?.geometry?.length) {
-    const ahead = sliceRouteAhead(primary.geometry, userLngLat);
-    extendBoundsWithPolyline(b, ahead);
+  const geometry = primary?.geometry ?? null;
+  const ahead = geometry?.length ? sliceRouteAhead(geometry, userLngLat) : null;
+  const directM = directTripMeters(userLngLat, dest);
+  const endpointsOnly = preferEndpointAnchoredTripFit(userLngLat, dest, ahead ?? geometry);
+
+  let fit: TripFitBoundsMode | null = null;
+  if (endpointsOnly && dest) {
+    const b = new mapboxgl.LngLatBounds();
+    extendEndpointPairBounds(b, userLngLat, dest);
+    fit = { bounds: b, directM, endpointsOnly: true };
   } else {
-    for (const r of routes) {
-      const ahead = sliceRouteAhead(r.geometry, userLngLat);
+    const b = new mapboxgl.LngLatBounds();
+    safeExtendBounds(b, userLngLat);
+    if (dest) safeExtendBounds(b, dest);
+    if (ahead?.length) {
       extendBoundsWithPolyline(b, ahead);
+      if (geometry?.length) {
+        const end = geometry[geometry.length - 1]!;
+        safeExtendBounds(b, end);
+      }
+    } else if (primary?.geometry?.length) {
+      extendBoundsWithPolyline(b, primary.geometry);
+    } else {
+      for (const r of routes) {
+        const ahead = sliceRouteAhead(r.geometry, userLngLat);
+        extendBoundsWithPolyline(b, ahead);
+      }
+    }
+    if (!b.isEmpty()) {
+      fit = { bounds: b, directM, endpointsOnly: false };
     }
   }
 
-  if (b.isEmpty()) return;
-
-  const spanM = boundsDiagonalMeters(b);
-  const maxZoom = Math.min(maxZoomCeiling, maxZoomForBoundsSpanMeters(spanM) + Math.max(0, zoomBias));
-
-  safeFitBounds(map, b, { padding, maxZoom, duration: 400, essential: true });
+  if (!fit) return;
+  applyTripCameraFit(map, fit, padding, maxZoomCeiling, zoomBias, 400);
 }
