@@ -10,10 +10,17 @@ export const NWS_HTTP_DEFAULT_TIMEOUT_MS = 22_000;
 export function resolveNwsRequestUrl(url: string): string {
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
   if (url.startsWith("/weather-gov")) {
+    /** Native: no Vite proxy — call NWS directly. */
+    if (Capacitor.isNativePlatform()) {
+      return `https://api.weather.gov${url.slice("/weather-gov".length)}`;
+    }
     /**
-     * api.weather.gov sends `Access-Control-Allow-Origin: *`, so browsers can call it directly.
-     * Always rewrite to HTTPS — avoids Vite-proxy stalls in dev and is correct for native builds.
+     * Browser dev/preview: keep same-origin `/weather-gov` so Vite proxies to api.weather.gov.
+     * Direct HTTPS from localhost fails CORS when NWS returns 503 (error pages omit ACAO).
      */
+    if (typeof window !== "undefined") {
+      return `${window.location.origin}${url}`;
+    }
     return `https://api.weather.gov${url.slice("/weather-gov".length)}`;
   }
   if (typeof window !== "undefined" && url.startsWith("/")) {

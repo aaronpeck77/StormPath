@@ -22,6 +22,7 @@ import { nwsHttpGet, resolveNwsRequestUrl } from "./nwsHttpGet";
 import {
   getCachedNwsNationalEtag,
   getCachedNwsNationalFeatures,
+  getCachedNwsNationalFetchedAtMs,
   storeNwsNationalCache,
 } from "./nwsNationalCache";
 
@@ -610,9 +611,14 @@ async function fetchNwsActiveAlertsFeatures(userAgent: string, retries = NWS_MAX
       const isAbort = e instanceof DOMException && e.name === "AbortError";
       if (import.meta.env.DEV) console.warn("[NWS national] attempt", attempt, isAbort ? "TIMED OUT" : e);
       const stale = getCachedNwsNationalFeatures();
-      if (stale?.length && attempt >= retries) {
-        if (import.meta.env.DEV) console.warn("[NWS national] using stale cache after error");
-        return stale;
+      if (stale?.length) {
+        const cacheAgeMs = Date.now() - getCachedNwsNationalFetchedAtMs();
+        if (attempt >= retries || cacheAgeMs < 45 * 60 * 1000) {
+          if (import.meta.env.DEV) {
+            console.warn("[NWS national] using cached", stale.length, "features after error");
+          }
+          return stale;
+        }
       }
       if (attempt < retries) {
         await new Promise((r) => setTimeout(r, NWS_RETRY_DELAY_MS * (attempt + 1)));

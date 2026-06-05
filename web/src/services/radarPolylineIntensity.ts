@@ -8,7 +8,7 @@ export const RADAR_MOSAIC_SAMPLE_ZOOM = 7;
  * Meaningful precip along the fastest route before we spend Directions calls on pure radar bypass
  * waypoints (when no NWS polygons apply).
  */
-export const RADAR_PRIMARY_PRECIP_GATE = 0.34;
+export const RADAR_PRIMARY_PRECIP_GATE = 0.38;
 
 /** Fractions along polyline length used when scoring echoes (dense enough for mesoscale cells at z=7). */
 export const RADAR_ROUTE_SAMPLE_FRACTIONS: readonly number[] = [
@@ -21,14 +21,16 @@ export function clamp01(x: number): number {
 }
 
 /**
- * Echo strength aligned with RainViewer’s reflectivity palette — warm reds/oranges rank above cool drizzle.
+ * Echo strength from RainViewer tile RGBA — tuned conservative vs raw palette so light
+ * precip and yellow–green fringe do not read as severe as storm cores on consumer apps.
  */
 export function echoIntensityFromRgba(r: number, g: number, b: number, a: number): number {
-  if (a < 14) return 0;
+  if (a < 20) return 0;
   const alpha = a / 255;
   const bright = (r + g + b) / (3 * 255);
-  const warm = Math.max(0, r - Math.max(g, b) * 0.9) / 255;
-  return clamp01(alpha * Math.max(bright * 1.22, warm * 2.05));
+  const warm = Math.max(0, r - Math.max(g, b) * 0.92) / 255;
+  const raw = alpha * Math.max(bright * 0.92, warm * 1.48);
+  return clamp01(Math.pow(raw, 1.2));
 }
 
 /**
@@ -44,8 +46,8 @@ export function stormCoreIntensityFromRgba(r: number, g: number, b: number, a: n
   if (bright > 0.82 && r > 175 && a > 160) {
     return clamp01(0.88 + bright * 0.12);
   }
-  if (warm < 0.22 || bright < 0.42) return 0;
-  return clamp01(alpha * warm * 2.35);
+  if (warm < 0.26 || bright < 0.46) return 0;
+  return clamp01(Math.pow(alpha * warm * 1.95, 1.12));
 }
 
 export function tileXY(lng: number, lat: number, z: number): { x: number; y: number; px: number; py: number } {

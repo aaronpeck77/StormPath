@@ -20,7 +20,11 @@ import {
   promoteAtPositionAlertToTop,
 } from "../nav/routeAlertTiming";
 import type { RouteImpact, RouteImpactSeverity } from "../nav/routeImpacts";
-import { RouteHazardTimeline, impactToTimelineItem } from "./RouteHazardTimeline";
+import {
+  RouteHazardTimeline,
+  impactToTimelineItem,
+  mergeOverlappingTimelineItems,
+} from "./RouteHazardTimeline";
 import type { TimelineItem } from "./RouteHazardTimeline";
 import type { MinutePrecipForecast, PointHourlyForecast } from "../services/tomorrowIo";
 import { AdvisoryLocalForecast } from "./AdvisoryLocalForecast";
@@ -714,7 +718,9 @@ export function StormAdvisoryBar({
       if (hasGuidanceRoute) {
         trip.push(previewItem({ badge: "Nav", raw: bannerMsg("Route set — tap Go when ready.") }));
       }
-      if (busyLabel) trip.push(previewItem({ badge: "Work", raw: bannerMsg(busyLabel) }));
+      if (busyLabel && !barExpanded) {
+        trip.push(previewItem({ badge: "Work", raw: bannerMsg(busyLabel) }));
+      }
       for (const p of promoLines) {
         if (!localForecastBanner && !nowcastLine && p.id === "sitebible") continue;
         promo.push(previewItem({ badge: "Info", raw: bannerMsg(displayText(p.text)) }));
@@ -785,7 +791,7 @@ export function StormAdvisoryBar({
         );
       }
     }
-    if (busyLabel) {
+    if (busyLabel && !barExpanded) {
       trip.push(previewItem({ badge: "Work", raw: bannerMsg(busyLabel) }));
     }
     if (activeTicker) {
@@ -858,6 +864,7 @@ export function StormAdvisoryBar({
     hasGuidanceRoute,
     navigationStarted,
     busyLabel,
+    barExpanded,
     activeTicker,
     advisoryTier,
     trafficDelayMinutes,
@@ -1105,6 +1112,14 @@ export function StormAdvisoryBar({
         <div className="storm-advisory-bar__head-leading">
           <div className="storm-advisory-bar__head-title-stack">
             <span className="storm-advisory-bar__title">{basicNavAdvisoryMode ? "Status" : "Advisory"}</span>
+            <div className="storm-advisory-bar__head-busy-slot" aria-live="polite">
+              {busyLabel ? (
+                <span className="storm-advisory-bar__head-busy">
+                  <span className="storm-advisory-bar__head-busy-dot" aria-hidden />
+                  {busyLabel}
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
         {!hideHeadToggles && (
@@ -1157,15 +1172,6 @@ export function StormAdvisoryBar({
         </div>
       )}
 
-      {busyLabel && (
-        <div className="storm-advisory-bar__now-row" aria-live="polite">
-          <span className="storm-advisory-bar__now-chip storm-advisory-bar__now-chip--busy">
-            <span className="storm-advisory-bar__now-dot" aria-hidden />
-            {busyLabel}
-          </span>
-        </div>
-      )}
-
       <div className="storm-advisory-bar__sections-scroll">
         {forecastAreaLabel &&
         (currentNowcast ||
@@ -1202,11 +1208,8 @@ export function StormAdvisoryBar({
         )}
 
         {/* ───── UNIFIED ROUTE HAZARD TIMELINE ───────────────────────────────────
-         *  A single Gantt-style graph where the route is the x-axis and every
-         *  hazard category (NWS, Radar, Road) is its own labeled track.
-         *  A shared YOU line moves left→right as the driver progresses; storm
-         *  bands shift as NWS updates arrive.  All timing, distances, and
-         *  context are in the legend rows below the graph.
+         *  Weather, radar, forecast, and live traffic share one route axis. The
+         *  legend below is sorted in encounter order (nearest ahead first).
          * ─────────────────────────────────────────────────────────────────────── */}
         {!basicNavAdvisoryMode && (() => {
           /* Build unified item list combining NWS strip bands + radar + road impacts. */
@@ -1254,14 +1257,19 @@ export function StormAdvisoryBar({
           for (const imp of forecastImpacts) pushIfActive(imp);
           for (const imp of roadImpacts) pushIfActive(imp);
 
-          const hasTimeline = timelineItems.length > 0 && routeTotalMeters > 0;
+          const mergedTimelineItems =
+            routeTotalMeters > 0
+              ? mergeOverlappingTimelineItems(timelineItems, routeTotalMeters)
+              : timelineItems;
+
+          const hasTimeline = mergedTimelineItems.length > 0 && routeTotalMeters > 0;
 
           return (
             <div className="storm-advisory-bar__dashboard">
               {/* ── Unified timeline ── */}
               {hasTimeline && (
                 <RouteHazardTimeline
-                  items={timelineItems}
+                  items={mergedTimelineItems}
                   totalMeters={routeTotalMeters}
                   userAlongMeters={userAlongMeters}
                   planEtaMinutes={planEtaMinutes}

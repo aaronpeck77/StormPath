@@ -10,7 +10,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LngLat } from "../nav/types";
-import { fetchOpenWeatherPointHourly24h } from "../services/openWeatherClient";
+import {
+  fetchOpenWeatherPointHourly24h,
+  isOpenWeatherRateLimited,
+} from "../services/openWeatherClient";
 import {
   buildTimelinesWaypointsForGeometry,
   fetchMinutePrecip,
@@ -123,7 +126,9 @@ export function useLocalHourlyForecast(
   tioApiKey: string,
   openWeatherApiKey: string,
   userLngLat: LngLat | null,
-  enabled = false
+  enabled = false,
+  /** When false, skip OpenWeather hourly even if a key is set (Tomorrow.io is primary). */
+  openWeatherEnabled = true
 ): PointHourlyForecast | null {
   const [forecast, setForecast] = useState<PointHourlyForecast | null>(null);
   const lastFetchLngLat = useRef<LngLat | null>(null);
@@ -150,26 +155,36 @@ export function useLocalHourlyForecast(
     lastFetchLngLat.current = userLngLat;
 
     const run = async () => {
-      if (openWeatherApiKey && !ac.signal.aborted) {
+      if (tioApiKey && !isTomorrowIoRateLimited() && !ac.signal.aborted) {
         try {
-          const f = await fetchOpenWeatherPointHourly24h(openWeatherApiKey, lat, lng);
+          const f = await fetchPointHourlyForecast(tioApiKey, lat, lng, ac.signal);
           if (!ac.signal.aborted) {
             setForecast(f);
             return;
           }
         } catch (e) {
-          if (!ac.signal.aborted && import.meta.env.DEV) {
-            console.warn("[OpenWeather] point hourly failed:", e);
+          if (!ac.signal.aborted && !isTomorrowIoRateLimited() && import.meta.env.DEV) {
+            console.warn("[TomorrowIO] point hourly failed:", e);
           }
         }
       }
-      if (tioApiKey && !isTomorrowIoRateLimited() && !ac.signal.aborted) {
+      if (
+        openWeatherEnabled &&
+        openWeatherApiKey &&
+        !isOpenWeatherRateLimited() &&
+        !ac.signal.aborted
+      ) {
         try {
-          const f = await fetchPointHourlyForecast(tioApiKey, lat, lng, ac.signal);
+          const f = await fetchOpenWeatherPointHourly24h(openWeatherApiKey, lat, lng);
           if (!ac.signal.aborted) setForecast(f);
         } catch (e) {
-          if (!ac.signal.aborted && !isTomorrowIoRateLimited() && import.meta.env.DEV) {
-            console.warn("[TomorrowIO] point hourly failed:", e);
+          if (
+            !ac.signal.aborted &&
+            import.meta.env.DEV &&
+            !isOpenWeatherRateLimited() &&
+            !(e instanceof Error && e.message.includes("rate limited"))
+          ) {
+            console.warn("[OpenWeather] point hourly failed:", e);
           }
         }
       }
@@ -193,7 +208,7 @@ export function useLocalHourlyForecast(
       lastFetchTime.current = 0;
     }, HOURLY_POINT_POLL_MS);
     return () => clearInterval(id);
-  }, [enabled, tioApiKey, openWeatherApiKey, !!userLngLat]);
+  }, [enabled, openWeatherEnabled, tioApiKey, openWeatherApiKey, !!userLngLat]);
 
   return forecast;
 }

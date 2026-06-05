@@ -56,3 +56,11 @@ export function captureAppException(
     Sentry.captureException(error);
   });
 }
+
+/** One-shot install — unhandled promise rejections that never reach the error boundary. */
+export function installGlobalErrorHandlers(): void {
+  if (typeof window === "undefined") return;
+  window.addEventListener("unhandledrejection", (event) => {
+    captureAppException(event.reason, { source: "unhandled_rejection" });
+  });
+}

@@ -64,13 +64,13 @@ export function isSignificantTrafficDelay(
 }
 
 /** Radar intensity that triggers a "heavy weather" alert. */
-export const RADAR_HEAVY_THRESHOLD = 0.72;
+export const RADAR_HEAVY_THRESHOLD = 0.78;
 
 /** Radar intensity for a softer weather-headline card. */
-export const RADAR_SOFT_THRESHOLD = 0.35;
+export const RADAR_SOFT_THRESHOLD = 0.4;
 
 /** Radar at/above this value enables promptRerouteAhead on weather headline. */
-export const RADAR_REROUTE_THRESHOLD = 0.5;
+export const RADAR_REROUTE_THRESHOLD = 0.56;
 
 /** Drive-ahead banner: scan window ahead of the user (meters). */
 export const DRIVE_AHEAD_WINDOW_M = 5 * METERS_PER_MILE;

@@ -308,6 +308,15 @@
   min-width: 0;
 }
 
+.rhtz__legend-track {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  color: rgba(148, 163, 184, 0.9);
+}
+
 .rhtz__legend-label {
   font-size: 0.88rem;
   font-weight: 700;
@@ -5885,8 +5894,37 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
+}
+
+/* Fixed slot under "Advisory" — busy text swaps in without shifting sections below. */
+.storm-advisory-bar__head-busy-slot {
+  min-height: 1.05rem;
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+}
+
+.storm-advisory-bar__head-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.58rem;
+  font-weight: 650;
+  line-height: 1.2;
+  color: #93c5fd;
+  letter-spacing: 0.01em;
+}
+
+.storm-advisory-bar__head-busy-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #60a5fa;
+  box-shadow: 0 0 4px rgba(96, 165, 250, 0.55);
+  flex-shrink: 0;
+  animation: storm-advisory-now-pulse 1.6s ease-in-out infinite;
 }
 
 .storm-advisory-bar--expanded .storm-advisory-bar__head-leading {

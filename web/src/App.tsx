@@ -82,6 +82,7 @@ import { fetchMapboxDrivingTrafficRoute } from "./services/mapboxRouteAlternativ
 import {
   fetchCurrentNowcast,
   formatNowcastLine,
+  isOpenWeatherRateLimited,
   weatherForecastAlongRoute,
   weatherHintSamplesAlongPolyline,
   type CurrentNowcast,
@@ -126,6 +127,7 @@ import {
   TRIP_NAV_DISPLAY_POLL_MS,
   TRIP_NAV_DISPLAY_REPAIR_COOLDOWN_MS,
 } from "./nav/tripNavDisplay";
+import { reportAppHealthRepair } from "./monitoring/appHealthSignals";
 import { activeTurnStepIndexAlong, turnStepAlongBounds } from "./nav/turnStepAlong";
 import { formatRouteDistanceMi, routeConsiderationSummary } from "./nav/routeSummary";
 import { buildDriveRouteAheadFromImpacts } from "./nav/driveRouteAhead";
@@ -524,8 +526,10 @@ export default function App() {
   const setStormOverlapping = useWeatherStore((s) => s.setStormOverlapping);
   const stormMapGeoJson = useWeatherStore((s) => s.stormMapGeoJson);
   const setStormMapGeoJson = useWeatherStore((s) => s.setStormMapGeoJson);
-  /** True once we have polygons to draw; avoids flashing "Loading NWS" on 120s refresh while keeping prior map data. */
+  /** True once we have polygons or corridor alerts; avoids flashing "Loading NWS" on refresh. */
   const stormMapHasDisplayableRef = useRef(false);
+  const stormCorridorAlertsRef = useRef(stormCorridorAlerts);
+  stormCorridorAlertsRef.current = stormCorridorAlerts;
   const stormLoading = useWeatherStore((s) => s.stormLoading);
   const setStormLoading = useWeatherStore((s) => s.setStormLoading);
   const stormError = useWeatherStore((s) => s.stormError);
@@ -609,6 +613,8 @@ export default function App() {
 
   const lastStormAdaptiveRefreshMsRef = useRef(0);
   const stormAdaptiveRefreshInFlightRef = useRef(false);
+  /** B/C leg refresh — must not flip global `routing` (advisory shows "Building routes…"). */
+  const altRoutesRefreshInFlightRef = useRef(false);
   const [tapHint, setTapHint] = useState<string | null>(null);
   const [returnTripLeg, setReturnTripLeg] = useState<ReturnTripLeg | null>(() => loadReturnTripLeg());
   /** Several geocode hits (business + city, “coffee”, etc.) — map pins + list until user picks one. */
@@ -1313,6 +1319,31 @@ export default function App() {
   planRef.current = plan;
   const planRoutesKeyStable = useMemo(() => plan.routes.map((r) => r.id).join("|"), [plan.routes]);
 
+  /** OpenWeather corridor overlay: one active leg only (not all A/B/C in parallel). */
+  const owWeatherFocusLegId = useMemo(() => {
+    if (!navigationStarted) return "";
+    const planIds = plan.routes.map((r) => r.id);
+    if (!planIds.length) return "";
+    const ordered = isFullSlotPermutation(routeSlotOrder, planIds)
+      ? routeSlotOrder
+      : planIds;
+    if (viewMode !== "route") return ordered[0] ?? planIds[0] ?? "";
+    return ordered[previewLegIndex] ?? ordered[0] ?? planIds[0] ?? "";
+  }, [navigationStarted, viewMode, previewLegIndex, routeSlotOrder, planRoutesKeyStable]);
+
+  const owWeatherGeomKey = useMemo(() => {
+    if (!owWeatherFocusLegId) return "";
+    const g = plan.routes.find((r) => r.id === owWeatherFocusLegId)?.geometry;
+    if (!g || g.length < 2) return "";
+    const f = g[0]!;
+    const l = g[g.length - 1]!;
+    return `${owWeatherFocusLegId}:${g.length}:${Math.round(f[0] * 1000)}:${Math.round(f[1] * 1000)}:${Math.round(l[0] * 1000)}:${Math.round(l[1] * 1000)}`;
+  }, [owWeatherFocusLegId, plan.routes]);
+
+  const lastOwOverlayGeomKeyRef = useRef("");
+  const lastOwOverlayAtRef = useRef(0);
+  const OW_OVERLAY_MIN_MS = 20 * 60 * 1000;
+
   /* "Right now" point reading near the user — drives the advisory bar's compact nowcast line.
    * Independent of the route weather overlay above: this fires whenever we have a position,
    * even before a route is loaded. Throttled to ~10 min, plus an extra refresh when the user
@@ -1344,6 +1375,7 @@ export default function App() {
   useEffect(() => {
     if (!isOnline) return;
     if (!env.openWeatherApiKey) return;
+    if (isOpenWeatherRateLimited()) return;
     if (!userLngLat) return;
     const [lng, lat] = userLngLat;
     if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
@@ -1352,6 +1384,7 @@ export default function App() {
     const NOW_FAR_M = 25_000;
     const NOW_FAIL_RETRY_MS = 90 * 1000;
     const NOW_FAIL_RETRY_MOVE_M = 5_000;
+    const NOW_RATE_LIMIT_RETRY_MS = 60 * 60 * 1000;
     const last = lastNowcastFixRef.current;
     const now = Date.now();
     if (last) {
@@ -1364,7 +1397,8 @@ export default function App() {
       const movedEnough =
         haversineMeters([lastFailure.lng, lastFailure.lat], [lng, lat]) >= NOW_FAIL_RETRY_MOVE_M;
       const ageMs = now - lastFailure.tMs;
-      if (!movedEnough && ageMs < NOW_FAIL_RETRY_MS) return;
+      const retryMs = isOpenWeatherRateLimited() ? NOW_RATE_LIMIT_RETRY_MS : NOW_FAIL_RETRY_MS;
+      if (!movedEnough && ageMs < retryMs) return;
     }
     if (nowcastFetchInFlightRef.current) return;
 
@@ -1394,6 +1428,7 @@ export default function App() {
     if (!isOnline) return;
     if (!env.openWeatherApiKey) return;
     const id = window.setInterval(() => {
+      if (isOpenWeatherRateLimited()) return;
       const cur = userLngLatRef.current;
       if (!cur) return;
       const [lng, lat] = cur;
@@ -1418,101 +1453,104 @@ export default function App() {
   }, [isOnline, env.openWeatherApiKey]);
 
   useEffect(() => {
-    const routes = planRef.current.routes;
-    if (routing) return;
+    if (routingRef.current) return;
     if (!navigationStarted) {
       setWeatherOverlay(undefined);
+      lastOwOverlayGeomKeyRef.current = "";
+      lastOwOverlayAtRef.current = 0;
       return;
     }
 
     const owKey = env.openWeatherApiKey;
     const wantOpenWeather = Boolean(owKey) && settingWeatherHintsEnabled;
-    if (!isPlus || !isOnline || !routes.length || !wantOpenWeather) {
+    if (!isPlus || !isOnline || !owWeatherFocusLegId || !owWeatherGeomKey || !wantOpenWeather) {
+      setWeatherOverlay(undefined);
+      return;
+    }
+    if (isOpenWeatherRateLimited()) return;
+
+    const geomUnchanged = owWeatherGeomKey === lastOwOverlayGeomKeyRef.current;
+    if (geomUnchanged && Date.now() - lastOwOverlayAtRef.current < OW_OVERLAY_MIN_MS) {
+      return;
+    }
+
+    const routes = planRef.current.routes;
+    const r = routes.find((x) => x.id === owWeatherFocusLegId) ?? routes[0];
+    if (!r?.geometry?.length) {
       setWeatherOverlay(undefined);
       return;
     }
 
     let cancelled = false;
-    const ac = new AbortController();
     const LONG_ROUTE_M = 1_000_000;
     const LONG_ETA_MIN = 720;
     const saveData = dataSaverMode;
 
     (async () => {
-      const w: WeatherOverlay = {};
-      await Promise.all(
-        routes.map(async (r) => {
-          if (cancelled) return;
+      let headline = "";
+      let precipHint = 0;
+      let samples: NonNullable<WeatherOverlay[string]>["samples"] | undefined;
 
-          let headline = "";
-          let precipHint = 0;
-          let samples:
-            | NonNullable<WeatherOverlay[string]>["samples"]
-            | undefined;
+      const eta = r.baseEtaMinutes ?? 30;
+      const lenM = polylineLengthMeters(r.geometry);
+      const longTrip = saveData || lenM > LONG_ROUTE_M || eta > LONG_ETA_MIN;
 
-          const eta = r.baseEtaMinutes ?? 30;
-          const lenM = polylineLengthMeters(r.geometry);
-          const longTrip = saveData || lenM > LONG_ROUTE_M || eta > LONG_ETA_MIN;
-
-          if (wantOpenWeather && owKey) {
-            try {
-              if (longTrip) {
-                const hint = await weatherHintSamplesAlongPolyline(owKey, r.geometry);
-                if (!cancelled) {
-                  headline = hint.headline;
-                  precipHint = hint.precipHint ?? 0;
-                  samples = hint.samples;
-                }
-              } else {
-                const [hint, fc] = await Promise.all([
-                  weatherHintSamplesAlongPolyline(owKey, r.geometry),
-                  weatherForecastAlongRoute(owKey, r.geometry, eta),
-                ]);
-                if (!cancelled) {
-                  headline = fc.headline || hint.headline;
-                  precipHint = Math.max(fc.precipHint ?? 0, hint.precipHint ?? 0);
-                  samples = hint.samples;
-                }
-              }
-            } catch {
-              try {
-                const hint = await weatherHintSamplesAlongPolyline(owKey, r.geometry);
-                if (!cancelled) {
-                  headline = hint.headline;
-                  precipHint = hint.precipHint ?? 0;
-                  samples = hint.samples;
-                }
-              } catch {
-                /* skip OpenWeather for this leg */
+      if (wantOpenWeather && owKey) {
+        try {
+          if (longTrip) {
+            const hint = await weatherHintSamplesAlongPolyline(owKey, r.geometry);
+            if (!cancelled) {
+              headline = hint.headline;
+              precipHint = hint.precipHint ?? 0;
+              samples = hint.samples;
+            }
+          } else {
+            const hint = await weatherHintSamplesAlongPolyline(owKey, r.geometry);
+            if (!cancelled) {
+              headline = hint.headline;
+              precipHint = hint.precipHint ?? 0;
+              samples = hint.samples;
+            }
+            if (!cancelled && !isOpenWeatherRateLimited()) {
+              const fc = await weatherForecastAlongRoute(owKey, r.geometry, eta);
+              if (!cancelled) {
+                headline = fc.headline || headline;
+                precipHint = Math.max(fc.precipHint ?? 0, precipHint);
               }
             }
           }
+        } catch {
+          /* keep previous overlay on failure */
+        }
+      }
 
-          if (!cancelled && (precipHint > 0 || headline.trim() || samples?.length)) {
-            w[r.id] = {
-              headline: headline.trim() || "Conditions along route",
-              precipHint,
-              samples,
-            };
-          }
-        })
-      );
-      if (!cancelled) setWeatherOverlay(Object.keys(w).length ? w : undefined);
+      if (cancelled) return;
+      lastOwOverlayGeomKeyRef.current = owWeatherGeomKey;
+      lastOwOverlayAtRef.current = Date.now();
+
+      if (precipHint > 0 || headline.trim() || samples?.length) {
+        setWeatherOverlay({
+          [r.id]: {
+            headline: headline.trim() || "Conditions along route",
+            precipHint,
+            samples,
+          },
+        });
+      } else {
+        setWeatherOverlay(undefined);
+      }
     })();
 
     return () => {
       cancelled = true;
-      ac.abort();
     };
   }, [
-    planRoutesKeyStable,
+    owWeatherGeomKey,
+    owWeatherFocusLegId,
     env.openWeatherApiKey,
     settingWeatherHintsEnabled,
     dataSaverMode,
-    settingStormEnabled,
-    Math.round((speedMps ?? 0) * 4),
     isOnline,
-    routing,
     navigationStarted,
     isPlus,
   ]);
@@ -1522,8 +1560,7 @@ export default function App() {
 
   useEffect(() => {
     const routes = planRef.current.routes;
-    if (routing) {
-      setTrafficFetchDone(true);
+    if (routingRef.current) {
       return;
     }
     if (!navigationStarted) {
@@ -1532,25 +1569,29 @@ export default function App() {
       return;
     }
     if (!isPlus || !isOnline || !settingTrafficEnabled || !env.mapboxToken || !routes.length) {
-      console.info(
-        "[traffic] skipping fetch —",
-        !isPlus
-          ? "basic tier"
-          : !isOnline
-            ? "offline"
-            : !settingTrafficEnabled
-              ? "setting OFF"
-              : !env.mapboxToken
-                ? "no token"
-                : "no routes"
-      );
+      if (import.meta.env.DEV) {
+        console.info(
+          "[traffic] skipping fetch —",
+          !isPlus
+            ? "basic tier"
+            : !isOnline
+              ? "offline"
+              : !settingTrafficEnabled
+                ? "setting OFF"
+                : !env.mapboxToken
+                  ? "no token"
+                  : "no routes"
+        );
+      }
       setTrafficOverlay(undefined);
       setTrafficFetchDone(true);
       return;
     }
     let cancelled = false;
     setTrafficFetchDone(false);
-    console.info("[traffic v2] fetching for", routes.length, "route(s)…");
+    if (import.meta.env.DEV) {
+      console.info("[traffic v2] fetching for", routes.length, "route(s)…");
+    }
     (async () => {
       const next: TrafficOverlay = {};
       await Promise.all(
@@ -1558,14 +1599,16 @@ export default function App() {
           if (cancelled) return;
           try {
             const leg = await fetchMapboxTrafficAlongPolyline(env.mapboxToken, r.geometry);
-            console.info(
-              "[traffic v2] route",
-              r.id,
-              "→",
-              leg
-                ? `live ${leg.mapboxDurationMinutes.toFixed(1)} min, typical ${leg.typicalDurationMinutes.toFixed(1)}, delay ${leg.delayVsTypicalMinutes.toFixed(1)}, congestion: ${leg.congestionSummary}`
-                : "null (API returned no data)"
-            );
+            if (import.meta.env.DEV) {
+              console.info(
+                "[traffic v2] route",
+                r.id,
+                "→",
+                leg
+                  ? `live ${leg.mapboxDurationMinutes.toFixed(1)} min, typical ${leg.typicalDurationMinutes.toFixed(1)}, delay ${leg.delayVsTypicalMinutes.toFixed(1)}, congestion: ${leg.congestionSummary}`
+                  : "null (API returned no data)"
+              );
+            }
             if (!cancelled) next[r.id] = leg;
           } catch (err) {
             console.warn("[traffic v2] route", r.id, "fetch error:", err);
@@ -1577,9 +1620,11 @@ export default function App() {
         setTrafficOverlay(next);
         setTrafficFetchDone(true);
         const live = Object.values(next).filter(Boolean).length;
-        console.info("[traffic v2] overlay set, routes with live data:", live);
-        if (live === 0) {
-          console.warn("[traffic v2] WARNING: all routes returned null — check Mapbox token and API access");
+        if (import.meta.env.DEV) {
+          console.info("[traffic v2] overlay set, routes with live data:", live);
+          if (live === 0) {
+            console.warn("[traffic v2] WARNING: all routes returned null — check Mapbox token and API access");
+          }
         }
       }
     })();
@@ -1592,7 +1637,6 @@ export default function App() {
     settingTrafficEnabled,
     isOnline,
     trafficRefreshKey,
-    routing,
     navigationStarted,
     isPlus,
   ]);
@@ -1823,7 +1867,7 @@ export default function App() {
     return `${g.length}:${a[0].toFixed(4)},${a[1].toFixed(4)}→${b[0].toFixed(4)},${b[1].toFixed(4)}`;
   }, [nwsNavCorridorGeom]);
 
-  /** Invalidates NWS polling when any A/B/C geometry changes (before or after Go). */
+  /** Invalidates NWS polling when any A/B/C geometry changes (planning only). */
   const nwsPlanRoutesGeomKey = useMemo(() => {
     return plan.routes
       .map((r) => {
@@ -1835,6 +1879,17 @@ export default function App() {
       })
       .join("|");
   }, [plan.routes]);
+
+  /**
+   * While navigating, B/C alt-refreshes must not restart the NWS effect (was causing 450ms retry
+   * storms + traffic refetch loops). After Go, key only the promoted primary leg.
+   */
+  const nwsEffectStableKey = useMemo(() => {
+    if (navigationStarted && nwsNavCorridorGeomKey) {
+      return `nav:${nwsNavCorridorGeomKey}`;
+    }
+    return `plan:${nwsPlanRoutesGeomKey}`;
+  }, [navigationStarted, nwsNavCorridorGeomKey, nwsPlanRoutesGeomKey]);
 
   const nwsNavCorridorGeomRef = useRef<LngLat[] | undefined>(undefined);
   nwsNavCorridorGeomRef.current = nwsNavCorridorGeom;
@@ -1852,10 +1907,11 @@ export default function App() {
       const primaryId = orderedRouteIds[0];
       if (!primaryId || plan.routes.length < 2) return;
       const epochAtStart = routeGraphEpochRef.current;
+      if (altRoutesRefreshInFlightRef.current) return;
       altRoutesFetchAbortRef.current?.abort();
       const altFetch = new AbortController();
       altRoutesFetchAbortRef.current = altFetch;
-      setRouting(true);
+      altRoutesRefreshInFlightRef.current = true;
       try {
         if (env.mapboxToken) {
           const fresh = await collectMapboxRouteVariants(env.mapboxToken, userLngLat, destLngLat, {
@@ -1881,7 +1937,7 @@ export default function App() {
       } catch {
         /* Offline / Mapbox errors — keep prior B/C */
       } finally {
-        setRouting(false);
+        altRoutesRefreshInFlightRef.current = false;
       }
     },
     [
@@ -1906,7 +1962,13 @@ export default function App() {
     if (!stormAlertsForRouting?.length) return;
     if (env.mapboxToken && !isOnline) return;
     if (plan.routes.length < 2) return;
-    if (routingRef.current || stormAdaptiveRefreshInFlightRef.current) return;
+    if (
+      routingRef.current ||
+      stormAdaptiveRefreshInFlightRef.current ||
+      altRoutesRefreshInFlightRef.current
+    ) {
+      return;
+    }
     const now = Date.now();
     if (now - lastStormAdaptiveRefreshMsRef.current < STORM_ADAPT_MIN_INTERVAL_MS) return;
 
@@ -2036,6 +2098,9 @@ export default function App() {
     if (focused && focused.length >= 2) return [focused];
     return all.length ? [all[0]!] : [];
   }, [dataSaverMode, navigationStarted, nwsNavCorridorGeom, plan.routes, lineFocusId]);
+
+  const nwsRouteGeomsForFetchRef = useRef(nwsRouteGeomsForFetch);
+  nwsRouteGeomsForFetchRef.current = nwsRouteGeomsForFetch;
 
   const nwsPollIntervalMs = useMemo(
     () => getNwsPollIntervalMs(dataSaverMode, navigationStarted),
@@ -2435,13 +2500,15 @@ export default function App() {
       if (audit.ok) return;
       if (now - tripNavRepairAtRef.current < TRIP_NAV_DISPLAY_REPAIR_COOLDOWN_MS) return;
       tripNavRepairAtRef.current = now;
-      for (const action of repairActionsForIssues(audit.issues)) {
+      const actions = repairActionsForIssues(audit.issues);
+      for (const action of actions) {
         if (action === "reset_along_hold") setAlongHoldResetKey((k) => k + 1);
         if (action === "refresh_traffic") {
           trafficRefreshRef.current += 1;
           setTrafficRefreshKey(trafficRefreshRef.current);
         }
       }
+      reportAppHealthRepair("nav_display", audit.issues, actions);
       if (import.meta.env.DEV) {
         console.info("[nav-health] trip display repair", audit.issues);
       }
@@ -2494,6 +2561,8 @@ export default function App() {
     (dataSaverMode
       ? tioWeatherUiOpen
       : tioWeatherUiOpen || (!hasPlannedRoute && !navigationStarted));
+  /** OpenWeather hourly is fallback only — skip when Tomorrow.io covers the point card. */
+  const openWeatherHourlyEnabled = tioPointFetchEnabled && !tioApiKey;
   /** Corridor hourly along the active leg — while navigating or advisory expanded. */
   const tioRouteFetchEnabled =
     tioBaseEnabled &&
@@ -2510,7 +2579,8 @@ export default function App() {
     tioApiKey,
     env.openWeatherApiKey,
     effectiveUserLngLat ?? null,
-    tioPointFetchEnabled
+    tioPointFetchEnabled,
+    openWeatherHourlyEnabled
   );
   const tioRouteForecast = useTomorrowRouteForecast(
     tioApiKey,
@@ -2586,43 +2656,25 @@ export default function App() {
   const stormMapGeoJsonForMap = useMemo((): GeoJSON.FeatureCollection | undefined => {
     const g = nwsMapOverlapRouteGeom;
     if (!g?.length) return undefined;
-    const affectingIds = new Set(
-      nwsAlertsAffectingActiveRoute.length > 0
-        ? nwsAlertsAffectingActiveRoute.map((a) => a.id)
-        : stormCorridorAlerts.map((a) => a.id)
-    );
+    /** Map: every alert already fetched for this trip corridor — not only strict polyline hits. */
+    const corridorIds = new Set(stormCorridorAlerts.map((a) => a.id));
     const byId = new Map<string, GeoJSON.Feature>();
     if (stormMapGeoJson?.features?.length) {
       for (const f of stormMapGeoJson.features) {
         const id = String((f.properties as { id?: string } | undefined)?.id ?? "");
-        if (id && affectingIds.has(id)) byId.set(id, f);
+        if (id && corridorIds.has(id)) byId.set(id, f);
       }
     }
-    for (const a of nwsAlertsAffectingActiveRoute) {
-      if (!a.geometry) continue;
-      if (byId.has(a.id)) continue;
-      byId.set(a.id, {
-        type: "Feature",
-        id: a.id,
-        properties: {
-          id: a.id,
-          event: a.event,
-          headline: a.headline,
-          severity: a.severity,
-        },
-        geometry: a.geometry,
-      });
-    }
-    if (!byId.size) {
-      for (const f of mapGeoJsonFromAlerts(stormCorridorAlerts.filter((a) => a.geometry)).features) {
-        const id = String((f.properties as { id?: string } | undefined)?.id ?? "");
-        if (id) byId.set(id, f);
-      }
+    for (const f of mapGeoJsonFromAlerts(
+      stormCorridorAlerts.filter((a) => a.geometry && !byId.has(a.id))
+    ).features) {
+      const id = String((f.properties as { id?: string } | undefined)?.id ?? "");
+      if (id) byId.set(id, f);
     }
     const features = [...byId.values()];
     if (!features.length) return undefined;
     return { type: "FeatureCollection", features } as GeoJSON.FeatureCollection;
-  }, [stormMapGeoJson, nwsMapOverlapRouteGeom, nwsAlertsAffectingActiveRoute, stormCorridorAlerts]);
+  }, [stormMapGeoJson, nwsMapOverlapRouteGeom, stormCorridorAlerts]);
 
   const stormProgressBands = useMemo(() => {
     const g = nwsNavCorridorGeom;
@@ -2907,17 +2959,6 @@ export default function App() {
    * (after Go the UI is usually Dr, which previously hid all polygons).
    */
   const nwsAlertGeoJsonForMap = useMemo((): GeoJSON.FeatureCollection | null => {
-    if (import.meta.env.DEV) {
-      console.log(
-        "[NWS map] lifeSafetyOn:", advisoryLifeSafetyOn,
-        "stormEnabled:", settingStormEnabled,
-        "routeGeom:", nwsMapOverlapRouteGeom?.length ?? 0,
-        "corridorAlerts:", stormCorridorAlerts.length,
-        "mapFeatures:", stormMapGeoJson?.features?.length ?? 0,
-        "affectingRoute:", nwsAlertsAffectingActiveRoute.length,
-        "stormMapGeoJsonForMap:", stormMapGeoJsonForMap?.features?.length ?? 0,
-      );
-    }
     // Hard gates: feature flag + user NWS toggle.
     if (!advisoryLifeSafetyOn || !settingStormEnabled) return null;
 
@@ -2930,14 +2971,15 @@ export default function App() {
       return null;
     }
 
-    // Route active — prefer the route-intersection–filtered set.
+    // Route active — corridor-wide polygons (SVR boxes, fog zones, etc. along the trip).
     const base = stormMapGeoJsonForMap;
     if (base?.features.length) return base;
 
-    // Fallback: alerts that affect the route but whose geometry came directly from
-    // the alert object (not the separate map GeoJSON layer).
-    const withGeom = nwsAlertsAffectingActiveRoute.filter((a) => a.geometry);
-    if (withGeom.length) return mapGeoJsonFromAlerts(withGeom);
+    const corridorGeom = stormCorridorAlerts.filter((a) => a.geometry);
+    if (corridorGeom.length) return mapGeoJsonFromAlerts(corridorGeom);
+
+    const onRouteGeom = nwsAlertsAffectingActiveRoute.filter((a) => a.geometry);
+    if (onRouteGeom.length) return mapGeoJsonFromAlerts(onRouteGeom);
 
     return null;
   }, [
@@ -3253,8 +3295,9 @@ export default function App() {
   }, [settingRadarEnabled]);
 
   useEffect(() => {
-    stormMapHasDisplayableRef.current = Boolean(stormMapGeoJson?.features?.length);
-  }, [stormMapGeoJson]);
+    stormMapHasDisplayableRef.current =
+      Boolean(stormMapGeoJson?.features?.length) || stormCorridorAlerts.length > 0;
+  }, [stormMapGeoJson, stormCorridorAlerts.length]);
 
   /**
    * US NWS: starts once A/B/C polylines exist (same time as route preview). Merges corridor results for
@@ -3285,19 +3328,31 @@ export default function App() {
      * HTTPS APIs still work; blocking here showed “no NWS” forever on some devices.
      */
 
-    const routeGeoms = nwsRouteGeomsForFetch;
+    const routeGeoms = nwsRouteGeomsForFetchRef.current;
     const hasRouteCorridors = routeGeoms.length > 0;
     const canBrowseWithoutRoutes = !hasRouteCorridors && Boolean(effectiveUserLngLat);
 
-    if (import.meta.env.DEV) console.log("[NWS] effect: routes=", plan.routes.length, "withGeom=", routeGeoms.length, "hasCorridors=", hasRouteCorridors, "canBrowse=", canBrowseWithoutRoutes);
+    if (import.meta.env.DEV) {
+      console.log(
+        "[NWS] effect:",
+        "stableKey=",
+        nwsEffectStableKey,
+        "withGeom=",
+        routeGeoms.length,
+        "hasCorridors=",
+        hasRouteCorridors
+      );
+    }
 
     if (!hasRouteCorridors && !canBrowseWithoutRoutes) {
       if (import.meta.env.DEV) console.debug("[NWS] skipped: no route yet and no GPS fix");
-      stormMapHasDisplayableRef.current = false;
-      setStormMapGeoJson(null);
-      setStormCorridorAlerts([]);
-      setStormOverlapping([]);
-      setStormError(null);
+      if (planRef.current.routes.length === 0) {
+        stormMapHasDisplayableRef.current = false;
+        setStormMapGeoJson(null);
+        setStormCorridorAlerts([]);
+        setStormOverlapping([]);
+        setStormError(null);
+      }
       setStormLoading(false);
       return;
     }
@@ -3311,7 +3366,6 @@ export default function App() {
       if (nwsFetchGenRef.current !== genAtStart) { if (import.meta.env.DEV) console.log("[NWS run] stale gen"); return; }
       if (nwsFetchInFlightRef.current) {
         /* Another fetch is still running; wait for it to finish rather than pile up timers. */
-        if (import.meta.env.DEV) console.log("[NWS run] in-flight, will retry when clear");
         if (routingRetryTimer == null) {
           routingRetryTimer = window.setTimeout(() => {
             routingRetryTimer = null;
@@ -3320,26 +3374,37 @@ export default function App() {
         }
         return;
       }
-      if (routingRef.current) {
-        if (import.meta.env.DEV) console.log("[NWS run] routing in progress, retry 450ms");
+      const geomsForRun = nwsRouteGeomsForFetchRef.current;
+      if (routingRef.current && geomsForRun.length === 0) {
+        if (import.meta.env.DEV) console.log("[NWS run] primary routing in progress, retry 1.2s");
         routingRetryTimer = window.setTimeout(() => {
           routingRetryTimer = null;
           if (!cancelled && nwsFetchGenRef.current === genAtStart) void run();
-        }, 450);
+        }, 1200);
         return;
       }
       if (import.meta.env.DEV) console.log("[NWS run] fetching...");
       nwsFetchInFlightRef.current = true;
-      if (!stormMapHasDisplayableRef.current) setStormLoading(true);
+      const hasPriorNws =
+        stormMapHasDisplayableRef.current || stormCorridorAlertsRef.current.length > 0;
+      if (!hasPriorNws) setStormLoading(true);
       setStormError(null);
 
       try {
-        const geoms = nwsRouteGeomsForFetch;
+        const geoms = geomsForRun;
 
         if (geoms.length > 0) {
           const { result: merged, partialErrors } = await fetchNwsAlertsForRouteCorridorsMerged(
             geoms,
-            NWS_REQUEST_USER_AGENT
+            NWS_REQUEST_USER_AGENT,
+            {
+              onBeforeUgc: (partial) => {
+                if (cancelled || nwsFetchGenRef.current !== genAtStart) return;
+                if (!partial.alerts.length && !partial.mapGeoJson.features.length) return;
+                setStormCorridorAlerts(partial.alerts);
+                setStormMapGeoJson(partial.mapGeoJson);
+              },
+            }
           );
           if (import.meta.env.DEV && partialErrors?.length) {
             console.warn("[StormPath NWS] Some route legs failed (others merged):", partialErrors);
@@ -3385,9 +3450,11 @@ export default function App() {
       } catch (e) {
         if (!cancelled && nwsFetchGenRef.current === genAtStart) {
           setStormError(e instanceof Error ? e.message : String(e));
-          setStormMapGeoJson(null);
-          setStormCorridorAlerts([]);
-          setStormOverlapping([]);
+          if (!stormCorridorAlertsRef.current.length) {
+            setStormMapGeoJson(null);
+            setStormCorridorAlerts([]);
+            setStormOverlapping([]);
+          }
         }
       } finally {
         nwsFetchInFlightRef.current = false;
@@ -3406,8 +3473,7 @@ export default function App() {
   }, [
     appForeground,
     env.stormAdvisoryEnabled,
-    nwsPlanRoutesGeomKey,
-    nwsRouteGeomsForFetch,
+    nwsEffectStableKey,
     nwsPollIntervalMs,
     advisoryLifeSafetyOn,
     settingStormEnabled,
@@ -3548,6 +3614,7 @@ export default function App() {
       if (
         !settingAutoRerouteEnabled ||
         routingRef.current ||
+        altRoutesRefreshInFlightRef.current ||
         (env.mapboxToken && !isOnline)
       ) {
         return;
@@ -3601,7 +3668,7 @@ export default function App() {
     const altMs = getNavAltRefreshMs(dataSaverMode);
     if (altMs == null) return;
     const id = window.setInterval(() => {
-      if (routingRef.current) return;
+      if (routingRef.current || altRoutesRefreshInFlightRef.current) return;
       void refreshAltRef.current();
     }, altMs);
     return () => window.clearInterval(id);
@@ -4823,8 +4890,8 @@ export default function App() {
     guidanceRoute?.geometry?.length,
   ]);
 
-  /** Busy message for the always-visible activity chip (null → shows muted Idle). */
-  const activityBusyLabel = useMemo(() => {
+  /** Busy message source — debounced before advisory to avoid layout/rotator flicker. */
+  const activityBusyRaw = useMemo(() => {
     const trafficBusy =
       isPlus &&
       navigationStarted &&
@@ -4834,7 +4901,11 @@ export default function App() {
       Boolean(env.mapboxToken) &&
       isOnline;
 
-    const stormBusy = stormLoading && advisoryLifeSafetyOn;
+    const stormBusy =
+      stormLoading &&
+      advisoryLifeSafetyOn &&
+      stormCorridorAlerts.length === 0 &&
+      !(stormMapGeoJson?.features?.length);
 
     if (routing) return "Building routes…";
     if (bypassBusy) return "Checking alternates…";
@@ -4853,9 +4924,21 @@ export default function App() {
     env.mapboxToken,
     isOnline,
     stormLoading,
+    stormCorridorAlerts.length,
+    stormMapGeoJson?.features?.length,
     advisoryLifeSafetyOn,
     isPlus,
   ]);
+
+  const [activityBusyLabel, setActivityBusyLabel] = useState<string | null>(null);
+  useEffect(() => {
+    if (!activityBusyRaw) {
+      const id = window.setTimeout(() => setActivityBusyLabel(null), 300);
+      return () => window.clearTimeout(id);
+    }
+    const id = window.setTimeout(() => setActivityBusyLabel(activityBusyRaw), 700);
+    return () => window.clearTimeout(id);
+  }, [activityBusyRaw]);
 
   const devPointerStyle = import.meta.env.DEV
     ? ({
@@ -4969,7 +5052,11 @@ export default function App() {
                       featureEnabled
                       sessionOn={advisoryPlusDetailOn}
                       onSessionToggle={onStormSessionToggle}
-                      loading={stormLoading}
+                      loading={
+                        stormLoading &&
+                        stormCorridorAlerts.length === 0 &&
+                        !(stormMapGeoJson?.features?.length)
+                      }
                       error={stormError}
                       corridorAlerts={stormCorridorAlerts}
                       overlappingAlerts={
@@ -5017,7 +5104,11 @@ export default function App() {
                       minutePrecipForecast={tioMinutePrecip}
                       hourlyForecast={localHourlyForecast}
                       localForecastNwsAlerts={localForecastNwsAlerts}
-                      nwsForecastLoading={stormLoading}
+                      nwsForecastLoading={
+                        stormLoading &&
+                        stormCorridorAlerts.length === 0 &&
+                        !(stormMapGeoJson?.features?.length)
+                      }
                       nwsForecastError={stormError}
                       dataSaverHint={
                         showDataSaverHint

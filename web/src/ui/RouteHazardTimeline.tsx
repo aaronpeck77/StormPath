@@ -137,7 +137,7 @@ export function RouteHazardTimeline({
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="rhtz__header">
         <span className="rhtz__header-title">Route ahead</span>
-        <span className="rhtz__header-dest">YOU → DEST</span>
+        <span className="rhtz__header-dest">In encounter order · YOU → DEST</span>
       </div>
 
       {/* ── Scrollable graph ───────────────────────────────────────────── */}
@@ -205,7 +205,7 @@ export function RouteHazardTimeline({
           .sort((a, b) => a.item.startMeters - b.item.startMeters);
         if (!legendEntries.length) return null;
         return (
-      <ul className="rhtz__legend" aria-label="Hazards along your route">
+      <ul className="rhtz__legend" aria-label="Hazards along your route in encounter order">
         {legendEntries.map(({ item, vis }) => (
             <li key={item.id}>
               <div
@@ -226,6 +226,7 @@ export function RouteHazardTimeline({
               >
                 <span className="rhtz__legend-dot" aria-hidden />
                 <span className="rhtz__legend-body">
+                  <span className="rhtz__legend-track">{TRACK_META[item.track]?.label ?? item.track}</span>
                   <span className="rhtz__legend-label">{item.label}</span>
                   {(() => {
                     const detail = legendDetailText(item);
@@ -271,6 +272,32 @@ function impactDetailLine(imp: RouteImpact): string | null {
   const el = effect.toLowerCase();
   if (dl.includes(el) || el.includes(dl.slice(0, Math.min(28, dl.length)))) return detail;
   return `${effect} · ${detail}`;
+}
+
+/** Collapse adjacent/overlapping items with the same track + label (e.g. repeated “Light rain on route”). */
+export function mergeOverlappingTimelineItems(
+  items: TimelineItem[],
+  totalMeters: number
+): TimelineItem[] {
+  if (items.length <= 1 || totalMeters <= 0) return items;
+  const sorted = [...items].sort((a, b) => a.startMeters - b.startMeters);
+  const gapM = totalMeters * 0.06;
+  const out: TimelineItem[] = [];
+  for (const item of sorted) {
+    const prev = out[out.length - 1];
+    if (
+      prev &&
+      prev.track === item.track &&
+      prev.label.trim().toLowerCase() === item.label.trim().toLowerCase() &&
+      item.startMeters <= prev.endMeters + gapM
+    ) {
+      prev.endMeters = Math.max(prev.endMeters, item.endMeters);
+      if (!prev.detailLine && item.detailLine) prev.detailLine = item.detailLine;
+      continue;
+    }
+    out.push({ ...item });
+  }
+  return out;
 }
 
 export function impactToTimelineItem(imp: RouteImpact): TimelineItem {

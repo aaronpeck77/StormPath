@@ -432,6 +432,8 @@ export type FitMapToTripOptions = {
   onlyRouteId?: string;
   /** Positive bias = allow tighter zoom than span heuristic when safe. */
   zoomBias?: number;
+  /** Planning overview: always frame the full polyline, not just user→destination endpoints. */
+  forceFullPolyline?: boolean;
 };
 
 export type TripFitBoundsMode = {
@@ -488,11 +490,14 @@ export function buildTripFitBounds(
   user: LngLat | null,
   dest: LngLat | null,
   routes: NavRoute[],
-  onlyRouteId?: string | null
+  onlyRouteId?: string | null,
+  forceFullPolyline = false
 ): TripFitBoundsMode | null {
   const geometry = primaryRouteGeometry(routes, onlyRouteId);
   const directM = directTripMeters(user, dest);
-  const endpointsOnly = preferEndpointAnchoredTripFit(user, dest, geometry);
+  const endpointsOnly = forceFullPolyline
+    ? false
+    : preferEndpointAnchoredTripFit(user, dest, geometry);
   const b = new mapboxgl.LngLatBounds();
 
   if (endpointsOnly && user && dest) {
@@ -584,7 +589,7 @@ export function fitMapToTrip(
   maxZoomCeiling = 18,
   opts?: FitMapToTripOptions
 ): boolean {
-  const fit = buildTripFitBounds(user, dest, routes, opts?.onlyRouteId);
+  const fit = buildTripFitBounds(user, dest, routes, opts?.onlyRouteId, opts?.forceFullPolyline);
   if (!fit) {
     opts?.onAfterFit?.();
     return false;

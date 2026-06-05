@@ -198,6 +198,19 @@ export function polylineNearPolygon(
   return pointNearPolygonGeometry(last[0], last[1], geometry, lateralBufferM);
 }
 
+/** Storm-based warnings can be small vs a long highway — use a wider “near path” band. */
+const CONVECTIVE_NEAR_ROUTE_BUFFER_M = 85_000;
+
+function nearRouteBufferM(a: NormalizedWeatherAlert, defaultM: number): number {
+  const ev = a.event?.trim() ?? "";
+  if (
+    /tornado warning|tornado watch|severe thunderstorm warning|severe thunderstorm watch/i.test(ev)
+  ) {
+    return Math.max(defaultM, CONVECTIVE_NEAR_ROUTE_BUFFER_M);
+  }
+  return defaultM;
+}
+
 /** Alerts that touch the route or sit on the corridor ahead (not only strict polyline ∩ polygon). */
 export function filterAlertsAffectingRoute(
   route: LngLat[],
@@ -213,7 +226,10 @@ export function filterAlertsAffectingRoute(
       out.push(a);
       continue;
     }
-    if (a.geometry && polylineNearPolygon(route, a.geometry, lateralBufferM)) {
+    if (
+      a.geometry &&
+      polylineNearPolygon(route, a.geometry, nearRouteBufferM(a, lateralBufferM))
+    ) {
       ids.add(a.id);
       out.push(a);
     }

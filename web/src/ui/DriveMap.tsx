@@ -96,6 +96,7 @@ import {
 } from "./mapRadarLayer";
 
 import { safeStorage } from "../storage/safeStorage";
+import { reportAppHealthSignal } from "../monitoring/appHealthSignals";
 
 import type { MapFocusRequest, MapViewMode } from "./driveMapTypes";
 import { MAIN_MAP_ROUTE_PADDING } from "./driveMapTypes";
@@ -791,8 +792,27 @@ const EXPLORE_IDLE_MS = 120_000;
 const DRIVE_EXPLORE_IDLE_MS = 4_000;
 /** ~1/e time constant (seconds) for drive camera bearing toward route/GPS heading (rAF loop). */
 const DRIVE_CAMERA_BEARING_TC_S = 0.58;
-/** Top-down map view: nudge puck slightly right of visual center to balance the side rail/chrome. */
-const TOPDOWN_PUCK_OFFSET_PX: [number, number] = [24, 0];
+/** Top-down map view: keep the puck at the visual center; map pans to follow GPS. */
+const TOPDOWN_PUCK_OFFSET_PX: [number, number] = [0, 0];
+/** Map (Mp) view while navigating — local corridor, not whole-route overview. */
+const TOPDOWN_LOCAL_DEFAULT_ZOOM = 11.75;
+const TOPDOWN_LOCAL_MIN_ZOOM = 10.25;
+
+function resolveTopdownLocalZoom(
+  topdownZoomRef: MutableRefObject<number>,
+  navigationStarted: boolean
+): number {
+  if (navigationStarted) {
+    if (topdownZoomRef.current < TOPDOWN_LOCAL_MIN_ZOOM) {
+      topdownZoomRef.current = TOPDOWN_LOCAL_DEFAULT_ZOOM;
+    }
+    return topdownZoomRef.current;
+  }
+  if (topdownZoomRef.current < ROUTE_VIEW_PLANNING_STREET_ZOOM - 0.5) {
+    topdownZoomRef.current = ROUTE_VIEW_PLANNING_STREET_ZOOM;
+  }
+  return topdownZoomRef.current;
+}
 /** Delay before Wi‑Fi tile warm so idle-home camera can finish first. */
 const HOME_PRELOAD_START_DELAY_MS = 4_500;
 
@@ -1005,6 +1025,7 @@ export function DriveMap({
   const syncTripRoutesRef = useRef<() => boolean>(() => false);
   const routeLayerHealthRepairAtRef = useRef(0);
   const prevTopdownRef = useRef(false);
+  const topdownSnapKeyRef = useRef("");
   const prevNavigationStartedRef = useRef(false);
   const wasRouteCompareRef = useRef(false);
   const onClickRef = useRef(onMapClick);
@@ -1031,6 +1052,13 @@ export function DriveMap({
   const planningFitRetryTimerRef = useRef<number | null>(null);
   const planningFitVerifyTimerRef = useRef<number | null>(null);
   const activeDriveCamera = navigationStarted && viewMode === "drive";
+  const routeNavFollowKey =
+    viewMode === "route" && navigationStarted && userLngLat
+      ? `${Math.round(userLngLat[0] * 1800)}|${Math.round(userLngLat[1] * 1800)}`
+      : null;
+  const topdownFollowKey = userLngLat
+    ? `${Math.round(userLngLat[0] * 2500)}|${Math.round(userLngLat[1] * 2500)}`
+    : null;
 
   useEffect(() => {
     if (routes.length === 0) prevPlanningRouteCountRef.current = 0;
@@ -2197,6 +2225,10 @@ export function DriveMap({
       if (now - routeLayerHealthRepairAtRef.current < ROUTE_LAYER_HEALTH_REPAIR_COOLDOWN_MS) return;
       routeLayerHealthRepairAtRef.current = now;
       syncTripRoutesRef.current();
+      reportAppHealthSignal("map_layers", "missing_route_lines", {
+        count: missing.length,
+        layers: missing.slice(0, 6).join("|"),
+      });
       if (import.meta.env.DEV) {
         console.info("[map-health] re-synced missing route line layers", missing);
       }
@@ -2918,6 +2950,20 @@ export function DriveMap({
     if (userExploringRef.current) return;
     const u = userLngLatRef.current;
     if (!u || !destLngLat) return;
+    if (viewMode === "topdown") {
+      prevTopdownRef.current = false;
+      safeFlyTo(map, {
+        center: u,
+        zoom: resolveTopdownLocalZoom(topdownZoomRef, false),
+        pitch: 0,
+        bearing: 0,
+        padding: ZERO_MAP_PADDING,
+        offset: TOPDOWN_PUCK_OFFSET_PX,
+        duration: 480,
+        essential: true,
+      });
+      return;
+    }
     fitMapToTrip(
       map,
       [],
@@ -2925,11 +2971,7 @@ export function DriveMap({
       destLngLat,
       routeFitPadding(stormBarVisible, stormBarExpanded, [], null, progressRailVisible),
       ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM,
-      {
-        onAfterFit: () => {
-          if (viewModeRef.current === "topdown") topdownZoomRef.current = map.getZoom();
-        },
-      }
+      {}
     );
   }, [
     mapReady,
@@ -3012,10 +3054,6 @@ export function DriveMap({
       }
     };
 
-    const syncTopdownZoomFromFit = () => {
-      if (viewModeRef.current === "topdown") topdownZoomRef.current = map.getZoom();
-    };
-
     const prevCount = prevPlanningRouteCountRef.current;
     prevPlanningRouteCountRef.current = routes.length;
     const routesJustLoaded = prevCount === 0 && routes.length > 0;
@@ -3056,11 +3094,11 @@ export function DriveMap({
         routeFitMaxZoomCeiling(routes, lineFocusId),
         {
           onAfterFit: () => {
-            syncTopdownZoomFromFit();
             flatten();
           },
           onlyRouteId: lineFocusId,
           zoomBias: routeFitZoomBias(routes, lineFocusId),
+          forceFullPolyline: true,
         }
       );
     };
@@ -3126,7 +3164,6 @@ export function DriveMap({
       }
       pendingFlatten = () => {
         pendingFlatten = null;
-        syncTopdownZoomFromFit();
         flatten();
       };
       map.once("moveend", pendingFlatten);
@@ -3142,13 +3179,51 @@ export function DriveMap({
       );
     };
 
+    /** Map (Mp): top-down on the user’s position — route lines stay visible; camera does not fit the whole trip. */
+    const doTopdownLocalFit = () => {
+      if (userExploringRef.current) return;
+      if (!mapStyleReadyForCamera(map)) return;
+      const u = userLngLatRef.current;
+      if (!u) return;
+      const zoom = resolveTopdownLocalZoom(topdownZoomRef, navigationStarted);
+      if (pendingFlatten) {
+        map.off("moveend", pendingFlatten);
+        pendingFlatten = null;
+      }
+      pendingFlatten = () => {
+        pendingFlatten = null;
+        flatten();
+      };
+      map.once("moveend", pendingFlatten);
+      prevTopdownRef.current = false;
+      safeFlyTo(map, {
+        center: u,
+        zoom,
+        pitch: 0,
+        bearing: 0,
+        padding: ZERO_MAP_PADDING,
+        offset: TOPDOWN_PUCK_OFFSET_PX,
+        duration: navigationStarted ? 340 : 480,
+        essential: true,
+      });
+    };
+
     let intervalId: ReturnType<typeof setInterval> | undefined;
 
-    if (navigationStarted && destLngLat) {
-      doNavRemainingFit();
-      intervalId = setInterval(doNavRemainingFit, 2200);
+    if (viewMode === "topdown") {
+      const snapKey = `${viewMode}|${fitTrigger}|${mapResumeTick}|${navigationStarted ? 1 : 0}|${routesPlanningFitKey}`;
+      if (topdownSnapKeyRef.current !== snapKey) {
+        topdownSnapKeyRef.current = snapKey;
+        doTopdownLocalFit();
+      }
     } else {
-      schedulePlanningRouteFit();
+      topdownSnapKeyRef.current = "";
+      if (navigationStarted && destLngLat) {
+        doNavRemainingFit();
+        intervalId = setInterval(doNavRemainingFit, 1600);
+      } else {
+        schedulePlanningRouteFit();
+      }
     }
 
     return () => {
@@ -3175,6 +3250,7 @@ export function DriveMap({
     lineFocusId,
     progressRailVisible,
     chromeLayoutTick,
+    routeNavFollowKey,
   ]);
 
   /**
@@ -3311,11 +3387,6 @@ export function DriveMap({
       return;
     }
 
-    /* Active trip: route fit effect frames user → destination on the padded edges. */
-    if (routes.length > 0 && destLngLat) {
-      return;
-    }
-
     if (trafficBypassCompareActive) {
       prevTopdownRef.current = true;
       const u = userLngLatRef.current;
@@ -3346,11 +3417,12 @@ export function DriveMap({
       if (userExploringRef.current) return;
       const u = userLngLatRef.current;
       if (!u) return;
+      const zoom = resolveTopdownLocalZoom(topdownZoomRef, navigationStartedRef.current);
       if (!prevTopdownRef.current) {
         prevTopdownRef.current = true;
         safePanToCenter(map, {
           center: u,
-          zoom: topdownZoomRef.current,
+          zoom,
           pitch: 0,
           bearing: 0,
           offset: TOPDOWN_PUCK_OFFSET_PX,
@@ -3364,11 +3436,6 @@ export function DriveMap({
     };
 
     followTopdown();
-    const followTimer = window.setInterval(followTopdown, 900);
-
-    return () => {
-      window.clearInterval(followTimer);
-    };
   }, [
     mapReady,
     viewMode,
@@ -3379,6 +3446,8 @@ export function DriveMap({
     trafficBypassCompareActive,
     destLngLat,
     routes,
+    navigationStarted,
+    topdownFollowKey,
   ]);
 
   useEffect(() => {

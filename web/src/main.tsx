@@ -4,10 +4,11 @@ import App from "./App.tsx";
 import { initRevenueCat } from "./billing/revenueCat";
 import { getWebEnv } from "./config/env";
 import "./index.css";
-import { captureAppException, initCrashReporting } from "./monitoring/sentry";
+import { captureAppException, initCrashReporting, installGlobalErrorHandlers } from "./monitoring/sentry";
 import { hydrateSafeStorage } from "./storage/safeStorage";
 
 initCrashReporting();
+installGlobalErrorHandlers();
 
 class ErrorBoundary extends Component<
   { children: ReactNode },

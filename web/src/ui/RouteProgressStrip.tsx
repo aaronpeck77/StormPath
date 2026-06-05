@@ -6,6 +6,7 @@ import {
   ROUTE_CORRIDOR_HIGHLIGHT_HALF_SPAN_M,
 } from "../nav/routeAlerts";
 import { layoutStripAlerts } from "../nav/stripAlertLayout";
+import { RADAR_HEAVY_THRESHOLD } from "../nav/constants";
 import { closestAlongRouteMeters, polylineLengthMeters } from "../nav/routeGeometry";
 import { turnStepAlongBounds } from "../nav/turnStepAlong";
 import type { LngLat, RouteTurnStep } from "../nav/types";
@@ -169,7 +170,7 @@ export function RouteProgressStrip({
 
   return (
     <div
-      className={`route-progress-strip ${layoutClass}${driveEndsClass}${radarIntensity >= 0.72 ? " route-progress-strip--radar" : ""}`}
+      className={`route-progress-strip ${layoutClass}${driveEndsClass}${radarIntensity >= RADAR_HEAVY_THRESHOLD ? " route-progress-strip--radar" : ""}`}
       role="region"
       aria-label={
         tripRelativeProgress

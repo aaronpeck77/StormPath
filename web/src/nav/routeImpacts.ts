@@ -267,6 +267,45 @@ function buildNwsImpacts(opts: {
 
 export type RadarMosaicSample = { t: number; intensity: number };
 
+/** Merge nearby mosaic samples so the timeline shows bands, not one chip per sample. */
+const RADAR_MERGE_GAP_T = 0.14;
+
+type RadarMosaicBand = { startT: number; endT: number; maxIntensity: number };
+
+function mergeRadarMosaicBands(samples: RadarMosaicSample[]): RadarMosaicBand[] {
+  const above = samples
+    .filter((s) => s.intensity >= RADAR_SOFT_THRESHOLD)
+    .sort((a, b) => a.t - b.t);
+  if (!above.length) return [];
+  const out: RadarMosaicBand[] = [];
+  let cur: RadarMosaicBand = {
+    startT: above[0]!.t,
+    endT: above[0]!.t,
+    maxIntensity: above[0]!.intensity,
+  };
+  for (let i = 1; i < above.length; i++) {
+    const s = above[i]!;
+    if (s.t - cur.endT <= RADAR_MERGE_GAP_T) {
+      cur.endT = Math.max(cur.endT, s.t);
+      cur.maxIntensity = Math.max(cur.maxIntensity, s.intensity);
+    } else {
+      out.push(cur);
+      cur = { startT: s.t, endT: s.t, maxIntensity: s.intensity };
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+function radarHeadlineForBand(maxIntensity: number, spanFrac: number): string {
+  const veryHeavy = maxIntensity >= 0.9;
+  const heavy = maxIntensity >= RADAR_HEAVY_THRESHOLD;
+  const longBand = spanFrac >= 0.32;
+  if (veryHeavy) return longBand ? "Heavy rain along much of your route" : "Heavy rain on route";
+  if (heavy) return longBand ? "Rain along much of your route" : "Rain on route";
+  return longBand ? "Light rain along much of your route" : "Light rain on route";
+}
+
 function buildRadarImpact(opts: {
   geometry: LngLat[] | undefined;
   radarIntensity: number;
@@ -280,10 +319,13 @@ function buildRadarImpact(opts: {
   hasNwsBand: boolean;
   /** Optional along-route fraction from RainViewer mosaic (0..1). */
   alongFraction?: number;
+  /** Band span (mosaic merge) — when set, start/end meters frame the graph band. */
+  startFraction?: number;
+  endFraction?: number;
   idSuffix?: string;
 }): RouteImpact | null {
   const { radarIntensity, hasNwsBand, geometry, totalMeters } = opts;
-  if (hasNwsBand && opts.alongFraction == null) return null;
+  if (hasNwsBand && opts.alongFraction == null && opts.startFraction == null) return null;
   if (radarIntensity < RADAR_SOFT_THRESHOLD) return null;
 
   const veryHeavy = radarIntensity >= 0.9;
@@ -292,11 +334,29 @@ function buildRadarImpact(opts: {
   const action: RouteImpactAction =
     radarIntensity >= RADAR_REROUTE_THRESHOLD ? "prepare" : heavy ? "slow" : "watch";
 
-  const alongM =
-    opts.alongFraction != null && Number.isFinite(opts.alongFraction)
-      ? totalMeters * Math.max(0, Math.min(1, opts.alongFraction))
-      : totalMeters * 0.52;
-  const aheadM = Math.max(0, alongM - opts.userAlongM);
+  let startM: number;
+  let endM: number;
+  if (
+    opts.startFraction != null &&
+    opts.endFraction != null &&
+    Number.isFinite(opts.startFraction) &&
+    Number.isFinite(opts.endFraction) &&
+    totalMeters > 0
+  ) {
+    startM = totalMeters * Math.max(0, Math.min(1, opts.startFraction));
+    endM = totalMeters * Math.max(startM, Math.min(1, opts.endFraction));
+    if (endM - startM < totalMeters * 0.02) endM = Math.min(totalMeters, startM + totalMeters * 0.02);
+  } else {
+    const alongM =
+      opts.alongFraction != null && Number.isFinite(opts.alongFraction)
+        ? totalMeters * Math.max(0, Math.min(1, opts.alongFraction))
+        : totalMeters * 0.52;
+    startM = alongM;
+    endM = alongM;
+  }
+  const alongM = (startM + endM) / 2;
+  const spanFrac = totalMeters > 0 ? (endM - startM) / totalMeters : 0;
+  const aheadM = Math.max(0, startM - opts.userAlongM);
   const eta =
     totalMeters > 0 && opts.planEtaMinutes != null && Number.isFinite(opts.planEtaMinutes)
       ? Math.max(0, opts.planEtaMinutes * (aheadM / totalMeters))
@@ -315,11 +375,11 @@ function buildRadarImpact(opts: {
     source: "radar",
     lngLat: alongToLngLat(geometry, alongM, opts.userLngLat),
     alongMeters: alongM,
-    startMeters: alongM,
-    endMeters: alongM,
+    startMeters: startM,
+    endMeters: endM,
     distanceAheadMeters: aheadM,
     etaAheadMinutes: eta,
-    driverHeadline: veryHeavy ? "Heavy rain on route" : heavy ? "Rain on route" : "Light rain on route",
+    driverHeadline: radarHeadlineForBand(radarIntensity, spanFrac),
     driverAction: action,
     roadEffect: heavy
       ? "Heavy rain — slow down and leave extra following distance."
@@ -353,38 +413,21 @@ function buildTrafficImpact(opts: {
   const remainingMin =
     trafficLeg?.mapboxDurationMinutes ?? trafficForRoute?.effectiveEtaMinutes ?? null;
   const hasLive = Boolean(slice?.hasLiveTrafficEstimate && trafficLeg);
+  if (!hasLive || !trafficLeg) return null;
+
   const story = unifiedTrafficNarrative(delay, trafficLeg, hasLive, remainingMin);
-  if (!story.shouldAddCorridorAlert) return null;
-
-  const anchorT =
-    trafficLeg?.nearStopFraction ??
-    trafficLeg?.firstHeavyCongestionFraction ??
-    null;
-  /** No Mapbox segment anchor and not a closure → skip spatial traffic (avoids bogus “ahead” pins). */
-  if (anchorT == null && !trafficLeg?.hasClosure) return null;
-
-  const along =
-    anchorT != null
-      ? totalMeters * anchorT
-      : Math.min(totalMeters - 50, userAlongM + Math.min(5000, Math.max(400, (totalMeters - userAlongM) * 0.25)));
-  const aheadM = Math.max(0, along - userAlongM);
-  const eta =
-    totalMeters > 0 && opts.planEtaMinutes != null && Number.isFinite(opts.planEtaMinutes)
-      ? Math.max(0, opts.planEtaMinutes * (aheadM / totalMeters))
-      : null;
-
-  const sev = trafficNumericToSeverity(story.mapSeverity, Boolean(trafficLeg?.hasClosure));
+  const sev = trafficNumericToSeverity(story.mapSeverity, Boolean(trafficLeg.hasClosure));
   const significant = isSignificantTrafficDelay(delay, remainingMin);
-  const confidence: RouteImpactConfidence = trafficLeg?.hasClosure
+  const confidence: RouteImpactConfidence = trafficLeg.hasClosure
     ? "high"
-    : trafficLeg?.nearStopFraction != null
+    : trafficLeg.nearStopFraction != null
       ? "high"
-      : trafficLeg?.firstHeavyCongestionFraction != null
+      : trafficLeg.firstHeavyCongestionFraction != null
         ? "medium"
         : "low";
 
-  let action: RouteImpactAction = "slow";
-  if (trafficLeg?.hasClosure) action = "rerouteRecommended";
+  let action: RouteImpactAction = "watch";
+  if (trafficLeg.hasClosure) action = "rerouteRecommended";
   else if (delay >= TRAFFIC_PROMPT_REROUTE_MINUTES && significant && confidence !== "low") {
     action = "rerouteRecommended";
   } else if (delay >= 4 && significant) action = "rerouteAvailable";
@@ -392,23 +435,70 @@ function buildTrafficImpact(opts: {
 
   const detailGlue = [story.advisorySubtext, story.mapDetail].filter(Boolean).join(" ");
 
+  let startM: number;
+  let endM: number;
+  let alongM: number;
+  let aheadM: number;
+  let roadEffect: string;
+  let id = "traffic-corridor";
+
+  if (trafficLeg.hasClosure) {
+    id = "closure-traffic";
+    const anchorT = trafficLeg.nearStopFraction ?? trafficLeg.firstHeavyCongestionFraction ?? 0.55;
+    alongM = totalMeters * anchorT;
+    startM = alongM;
+    endM = alongM;
+    aheadM = Math.max(0, alongM - userAlongM);
+    roadEffect = "Road blocked — alternate route may be needed.";
+  } else if (trafficLeg.nearStopFraction != null) {
+    id = "traffic-delay";
+    alongM = totalMeters * trafficLeg.nearStopFraction;
+    startM = alongM;
+    endM = alongM;
+    aheadM = Math.max(0, alongM - userAlongM);
+    roadEffect = "Stop-and-go ahead — ease off and add following distance.";
+    action = action === "watch" ? "slow" : action;
+  } else if (trafficLeg.firstHeavyCongestionFraction != null && story.shouldAddCorridorAlert) {
+    id = "traffic-delay";
+    alongM = totalMeters * trafficLeg.firstHeavyCongestionFraction;
+    startM = alongM;
+    endM = alongM;
+    aheadM = Math.max(0, alongM - userAlongM);
+    roadEffect = "Congestion ahead — ease off and add following distance.";
+    action = action === "watch" ? "slow" : action;
+  } else {
+    /** Route-wide live read (clear / mild / patchy) — spans from here to destination on the timeline. */
+    startM = Math.max(0, userAlongM);
+    endM = totalMeters;
+    if (endM - startM < 50) return null;
+    alongM = (startM + endM) / 2;
+    aheadM = 0;
+    roadEffect =
+      story.advisorySubtext?.trim() ||
+      story.mapDetail?.trim() ||
+      "Live traffic conditions for the rest of this trip.";
+  }
+
+  const eta =
+    totalMeters > 0 && opts.planEtaMinutes != null && Number.isFinite(opts.planEtaMinutes)
+      ? Math.max(0, opts.planEtaMinutes * (aheadM / totalMeters))
+      : null;
+
   return {
-    id: trafficLeg?.hasClosure ? "closure-traffic" : "traffic-delay",
-    category: trafficLeg?.hasClosure ? "closure" : "traffic",
+    id,
+    category: trafficLeg.hasClosure ? "closure" : "traffic",
     severity: sev,
     confidence,
     source: "mapboxTraffic",
-    lngLat: alongToLngLat(geometry, along, opts.userLngLat),
-    alongMeters: along,
-    startMeters: along,
-    endMeters: along,
+    lngLat: alongToLngLat(geometry, alongM, opts.userLngLat),
+    alongMeters: alongM,
+    startMeters: startM,
+    endMeters: endM,
     distanceAheadMeters: aheadM,
     etaAheadMinutes: eta,
     driverHeadline: story.advisoryHeadline,
     driverAction: action,
-    roadEffect: trafficLeg?.hasClosure
-      ? "Road blocked — alternate route may be needed."
-      : "Stop-and-go ahead — ease off and add following distance.",
+    roadEffect,
     detail: detailGlue.trim() || story.mapDetail,
     numericSeverity: story.mapSeverity,
   };
@@ -570,13 +660,13 @@ function buildRadarMosaicSegmentImpacts(opts: {
 }): RouteImpact[] {
   const { samples, totalMeters, hasNwsBand } = opts;
   if (!samples.length || totalMeters <= 0) return [];
+  const bands = mergeRadarMosaicBands(samples);
   const out: RouteImpact[] = [];
-  for (let i = 0; i < samples.length; i++) {
-    const s = samples[i]!;
-    if (s.intensity < RADAR_SOFT_THRESHOLD) continue;
+  for (let i = 0; i < bands.length; i++) {
+    const band = bands[i]!;
     const impact = buildRadarImpact({
       geometry: opts.geometry,
-      radarIntensity: s.intensity,
+      radarIntensity: band.maxIntensity,
       forecastHeadline: opts.forecastHeadline,
       corridorWeatherDetail: opts.corridorWeatherDetail,
       userAlongM: opts.userAlongM,
@@ -584,8 +674,9 @@ function buildRadarMosaicSegmentImpacts(opts: {
       totalMeters,
       userLngLat: opts.userLngLat,
       hasNwsBand,
-      alongFraction: s.t,
-      idSuffix: `seg-${i}`,
+      startFraction: band.startT,
+      endFraction: band.endT,
+      idSuffix: `band-${i}`,
     });
     if (impact) out.push(impact);
   }

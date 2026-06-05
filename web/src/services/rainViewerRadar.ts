@@ -58,9 +58,14 @@ export function rainViewerHostForTiles(host: string): string {
   return h;
 }
 
+/** Universal Blue palette (RainViewer color id 2). */
+export const RAINVIEWER_TILE_COLOR = 2;
+/** `0_1` = no smooth blur (less “blooming” intensity), snow colors on. */
+export const RAINVIEWER_TILE_OPTIONS = "0_1";
+
 /** Full tile URL template for Mapbox raster source. */
 export function tileUrlFromHostAndPath(host: string, path: string): string {
-  return `${rainViewerHostForTiles(host)}${path}/256/{z}/{x}/{y}/2/1_1.png`;
+  return `${rainViewerHostForTiles(host)}${path}/256/{z}/{x}/{y}/${RAINVIEWER_TILE_COLOR}/${RAINVIEWER_TILE_OPTIONS}.png`;
 }
 
 /**

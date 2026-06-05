@@ -48,6 +48,37 @@ function headlineFromInterval(iv: RouteHourlyInterval): string {
   return label;
 }
 
+function isLightPrecipInterval(iv: RouteHourlyInterval): boolean {
+  const label = weatherCodeLabel(iv.weatherCode).toLowerCase();
+  return (
+    iv.precipIntensityMmh > 0.05 &&
+    iv.precipIntensityMmh < 2.5 &&
+    (label.includes("rain") || label.includes("drizzle"))
+  );
+}
+
+function forecastHeadlineForBand(
+  rep: RouteHourlyInterval,
+  worstSev: RouteImpactSeverity,
+  spanFrac: number
+): string {
+  const label = weatherCodeLabel(rep.weatherCode);
+  const longBand = spanFrac >= 0.32;
+  if (worstSev === "avoid" || worstSev === "serious") {
+    return longBand ? `Hazardous weather along much of your route` : `Hazardous: ${label}`;
+  }
+  if (isLightPrecipInterval(rep) && longBand) {
+    return "Light rain along much of your route";
+  }
+  if (
+    longBand &&
+    (label.toLowerCase().includes("rain") || label.toLowerCase().includes("drizzle"))
+  ) {
+    return "Rain along much of your route";
+  }
+  return headlineFromInterval(rep);
+}
+
 /**
  * Converts Tomorrow.io route forecast into RouteImpact[] for hazard timeline.
  *
@@ -92,14 +123,16 @@ export function routeForecastToImpacts(
 
   if (!annotated.length) return [];
 
-  // Merge consecutive segments with the same severity into bands.
+  // Merge consecutive light-precip / same-severity segments into bands for the graph.
   const bands: Annotated[][] = [];
   let current: Annotated[] = [annotated[0]!];
   for (let i = 1; i < annotated.length; i++) {
     const prev = current[current.length - 1]!;
     const curr = annotated[i]!;
-    // Merge if adjacent and same or adjacent severity.
-    if (curr.startM <= prev.endM + 500 && curr.sev === prev.sev) {
+    const adjacent = curr.startM <= prev.endM + 500;
+    const sameSeverity = curr.sev === prev.sev;
+    const bothLightPrecip = isLightPrecipInterval(prev.iv) && isLightPrecipInterval(curr.iv);
+    if (adjacent && (sameSeverity || bothLightPrecip)) {
       current.push(curr);
     } else {
       bands.push(current);
@@ -131,6 +164,7 @@ export function routeForecastToImpacts(
 
     const lngLat = pointAtAlongMeters(geometry, midM);
     const etaAheadMin = first.iv.etaMinutes;
+    const spanFrac = totalMeters > 0 ? (endM - startM) / totalMeters : 0;
 
     return {
       id: `tio-${i}-${first.iv.etaMinutes}`,
@@ -144,10 +178,13 @@ export function routeForecastToImpacts(
       endMeters: endM,
       distanceAheadMeters: startM,
       etaAheadMinutes: etaAheadMin,
-      driverHeadline: headlineFromInterval(rep.iv),
+      driverHeadline: forecastHeadlineForBand(rep.iv, worstSev, spanFrac),
       driverAction: worstSev === "avoid" || worstSev === "serious" ? "prepare" : "watch",
       roadEffect: detailFromInterval(rep.iv),
-      detail: band.map((a) => detailFromInterval(a.iv)).join("\n"),
+      detail:
+        band.length > 1 && spanFrac >= 0.25
+          ? `${forecastHeadlineForBand(rep.iv, worstSev, spanFrac)} · ${Math.round(spanFrac * 100)}% of trip`
+          : detailFromInterval(rep.iv),
       numericSeverity: SEVERITY_TO_NUMERIC[worstSev],
     };
   });

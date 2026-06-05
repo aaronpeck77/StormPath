@@ -4,6 +4,7 @@ import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { nwsWhatIsHappening, nwsWhatToDo } from "../weatherAlerts/nwsDriveSummary";
 import { displayText } from "../utils/displayText";
 import { formatDelayMinutesForUi } from "./trafficNarrative";
+import { RADAR_HEAVY_THRESHOLD, RADAR_REROUTE_THRESHOLD, RADAR_SOFT_THRESHOLD } from "./constants";
 import { formatEtaDuration } from "../ui/formatEta";
 
 /** Panel summary — full message (whitespace normalized only). */
@@ -152,8 +153,10 @@ export function buildCorridorCalloutBlock(
     const fc = opts.forecastHeadline?.trim();
     if (fc) bits.push(`Forecast along corridor: ${fc}`);
     const ri = opts.radarIntensity;
-    if (ri != null && ri >= 0.5) {
-      bits.push(`Radar (model): ${ri >= 0.85 ? "heavy" : ri >= 0.55 ? "moderate" : "light"}`);
+    if (ri != null && ri >= RADAR_SOFT_THRESHOLD) {
+      bits.push(
+        `Radar (model): ${ri >= RADAR_HEAVY_THRESHOLD ? "heavy" : ri >= RADAR_REROUTE_THRESHOLD ? "moderate" : "light"}`
+      );
     }
   }
 
