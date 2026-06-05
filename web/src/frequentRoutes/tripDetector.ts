@@ -15,7 +15,7 @@ const SAMPLE_MS = 16_000;
 const MIN_APPEND_M = 28;
 const START_SPEED_MPS = 1.2;
 const END_SLOW_MPS = 0.5;
-const END_DWELL_MS = 95_000;
+const END_DWELL_MS = 45_000;
 const MIN_TRIP_LEN_M = 300;
 const MIN_TRIP_DURATION_MS = 75_000;
 const MAX_POINTS = 160;
@@ -119,4 +119,45 @@ export function processTripSample(
   }
 
   return { state: mid, trip: null };
+}
+
+/** Commit an active trip when navigation ends or the user taps Stop (no 45s idle wait). */
+export function forceFinishActiveTrip(
+  s: TripLearningMachineState,
+  now: number,
+  lngLat?: LngLat | null
+): { state: TripLearningMachineState; trip: CompletedLearnedTrip | null } {
+  if (s.phase !== "active") {
+    return { state: s, trip: null };
+  }
+  let points = s.points;
+  if (
+    lngLat &&
+    (points.length === 0 ||
+      s.lastAppended == null ||
+      haversineMeters(s.lastAppended, lngLat) >= MIN_APPEND_M)
+  ) {
+    points = [...points, lngLat];
+  }
+  const trip = finishTrip({ ...s, points }, now);
+  return { state: createInitialTripState(now), trip };
+}
+
+/** Record a completed Go navigation leg from the planned route geometry. */
+export function completedTripFromGeometry(
+  geometry: LngLat[],
+  startedAt: number,
+  endedAt = Date.now()
+): CompletedLearnedTrip | null {
+  if (geometry.length < 2) return null;
+  const distanceM = polylineLengthMeters(geometry);
+  if (distanceM < MIN_TRIP_LEN_M) return null;
+  const duration = endedAt - startedAt;
+  if (duration < 20_000) return null;
+  return {
+    geometry: simplifyPolyline(geometry),
+    startedAt,
+    endedAt,
+    distanceM,
+  };
 }

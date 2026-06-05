@@ -52,8 +52,8 @@ export function SavedDestinationsDrawer({
   onDelete,
   onSaveCurrent,
   onSaveCurrentLocation,
-  currentLocationLabel,
-  currentDestLabel,
+  currentLocationLabel: _currentLocationLabel,
+  currentDestLabel: _currentDestLabel,
   currentDestLngLat,
   savedRoutes,
   onSaveCurrentRoute,
@@ -141,10 +141,7 @@ export function SavedDestinationsDrawer({
                           className="saved-drawer-save-current saved-drawer-save-current--home saved-drawer-save-current--location"
                           onClick={onSaveCurrentLocation}
                         >
-                          Save current location
-                          {currentLocationLabel && currentLocationLabel !== "Your location"
-                            ? ` (${truncateDrawerLabel(currentLocationLabel)})`
-                            : ""}
+                          Save location
                         </button>
                       ) : null}
                       {onSaveCurrent && currentDestLngLat ? (
@@ -154,15 +151,13 @@ export function SavedDestinationsDrawer({
                           onClick={onSaveCurrent}
                         >
                           Save destination
-                          {currentDestLabel ? ` (${truncateDrawerLabel(currentDestLabel)})` : ""}
                         </button>
                       ) : null}
                     </div>
                   ) : null}
                   <HomeTile
-                    label="Places"
                     count={placeCount}
-                    hint="Saved pins on the map — tap one to set it as a destination."
+                    hint="Saved pins — tap to open the list."
                     onClick={() => setView("places")}
                   />
                 </li>
@@ -185,32 +180,30 @@ export function SavedDestinationsDrawer({
                           className="saved-drawer-save-current saved-drawer-save-current--record saved-drawer-save-current--home"
                           onClick={onStartRecordingPath}
                         >
-                          Record driven path (GPS)
+                          Record path
                         </button>
                       ) : null}
                       {recordingActive ? (
                         <p className="saved-drawer-recording-note saved-drawer-recording-note--home" role="status">
-                          Recording — use the bar above the toolbar to stop &amp; save or discard.
+                          Recording — stop in the bar above the toolbar.
                         </p>
                       ) : null}
                     </div>
                   ) : null}
                   <HomeTile
-                    label="Saved routes"
                     count={routeCount}
-                    hint="Full driven paths you can replay or reverse."
+                    hint="Full paths you can replay or reverse."
                     onClick={() => setView("routes")}
                   />
                 </li>
                 <li className="saved-drawer-home-section saved-drawer-home-section--frequent">
                   <h3 className="saved-drawer-home-section__title">Frequent routes</h3>
                   <HomeTile
-                    label="Frequent routes"
                     count={frequentCount}
                     hint={
                       payFrequentRoutes
-                        ? "Repeat trips detected on this device."
-                        : "Plus — repeat-trip learning and suggestions."
+                        ? "Repeat trips from Go navigation on this device."
+                        : "Plus — repeat-trip learning."
                     }
                     badge={payFrequentRoutes ? null : "Plus"}
                     onClick={() => setView("frequent")}
@@ -286,14 +279,13 @@ export function SavedDestinationsDrawer({
                       onChange={(e) => onFrequentRoutesLearnEnabled(e.target.checked)}
                     />
                     <span>
-                      <strong>Learn repeated trips</strong> on this device — detects similar drives for suggestions
-                      below, saves sparse GPS for your usual area (map framing + search ranking), optional cyan trail in
-                      About.
+                      <strong>Learn repeated trips</strong> — counts Go navigation legs (home ↔ work count as
+                      one corridor). Sparse GPS trail for search ranking and map framing.
                     </span>
                   </label>
                   <p className="saved-drawer-route-hint saved-drawer-route-hint--tight">
-                    After you drive a similar path at least twice while the app is open, a row appears below. Learning
-                    pauses when you leave the tab.
+                    Finish a trip with <strong>Go</strong> then Stop or arrival auto-clear. After two similar legs, a
+                    suggestion appears below.
                   </p>
                   <p className="saved-drawer-pane__subhead">Suggestions</p>
                   <ul className="saved-drawer-list saved-drawer-list--full">
@@ -346,21 +338,14 @@ export function SavedDestinationsDrawer({
   );
 }
 
-function truncateDrawerLabel(label: string, maxLen = 40): string {
-  const t = label.trim();
-  if (t.length <= maxLen) return t;
-  return `${t.slice(0, maxLen - 1)}…`;
-}
 
-/** Big tappable home tile that drills into one of the three sections. */
+/** Compact tappable row that drills into a Saved section. */
 function HomeTile({
-  label,
   count,
   hint,
   badge,
   onClick,
 }: {
-  label: string;
   count: number;
   hint: string;
   badge?: string | null;
@@ -369,7 +354,6 @@ function HomeTile({
   return (
     <button type="button" className="saved-drawer-home-tile" onClick={onClick}>
       <span className="saved-drawer-home-tile__row">
-        <span className="saved-drawer-home-tile__label">{label}</span>
         {badge ? (
           <span className="saved-drawer-home-tile__badge">{badge}</span>
         ) : (

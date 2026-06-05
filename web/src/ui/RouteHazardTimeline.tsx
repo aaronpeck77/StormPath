@@ -69,6 +69,14 @@ const BAND_COLORS: Record<string, string> = {
 /** Minimum visual band width (% of rail) so tiny/point impacts are visible. */
 const MIN_BAND_PCT = 2.5;
 
+function legendDetailText(item: TimelineItem): string | null {
+  const detail = (item.detailLine ?? "").trim();
+  if (!detail) return null;
+  const label = item.label.trim().toLowerCase();
+  if (detail.toLowerCase() === label) return null;
+  return detail;
+}
+
 /* ── component ────────────────────────────────────────────────────────────── */
 
 export function RouteHazardTimeline({
@@ -190,33 +198,49 @@ export function RouteHazardTimeline({
         </div>
       </div>
 
-      {/* ── Detail cards — closest-first, passed items removed ────── */}
-      <div className="rhtz__cards">
-        {[...items]
+      {(() => {
+        const legendEntries = [...items]
           .map((item, i) => ({ item, vis: itemVisuals[i]! }))
           .filter(({ vis }) => !vis.passed)
-          .sort((a, b) => a.item.startMeters - b.item.startMeters)
-          .map(({ item, vis }) => {
-          const color = BAND_COLORS[item.severity] ?? "#94a3b8";
-          return (
-            <div
-              key={item.id}
-              className={`rhtz__card rhtz__card--${item.severity}${vis.passed ? " rhtz__card--passed" : ""}${item.onClick ? " rhtz__card--tappable" : ""}`}
-              style={{ borderLeftColor: color }}
-              role={item.onClick ? "button" : undefined}
-              tabIndex={item.onClick ? 0 : undefined}
-              onClick={item.onClick}
-              onKeyDown={item.onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); item.onClick?.(); } } : undefined}
-            >
-              <div className="rhtz__card-name">{item.label}</div>
-              {item.detailLine && (
-                <div className="rhtz__card-detail">{item.detailLine}</div>
-              )}
-              <div className="rhtz__card-timing">{vis.timing}</div>
-            </div>
-          );
-        })}
-      </div>
+          .sort((a, b) => a.item.startMeters - b.item.startMeters);
+        if (!legendEntries.length) return null;
+        return (
+      <ul className="rhtz__legend" aria-label="Hazards along your route">
+        {legendEntries.map(({ item, vis }) => (
+            <li key={item.id}>
+              <div
+                className={`rhtz__legend-item rhtz__legend-item--${item.severity}${item.onClick ? " rhtz__legend-item--tappable" : ""}`}
+                role={item.onClick ? "button" : undefined}
+                tabIndex={item.onClick ? 0 : undefined}
+                onClick={item.onClick}
+                onKeyDown={
+                  item.onClick
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          item.onClick?.();
+                        }
+                      }
+                    : undefined
+                }
+              >
+                <span className="rhtz__legend-dot" aria-hidden />
+                <span className="rhtz__legend-body">
+                  <span className="rhtz__legend-label">{item.label}</span>
+                  {(() => {
+                    const detail = legendDetailText(item);
+                    return detail ? (
+                      <span className="rhtz__legend-detail">{detail}</span>
+                    ) : null;
+                  })()}
+                  {vis.timing ? <span className="rhtz__legend-timing">{vis.timing}</span> : null}
+                </span>
+              </div>
+            </li>
+          ))}
+      </ul>
+        );
+      })()}
 
       {/* Reroute CTA */}
       {showRerouteCta && onReroute && (
@@ -237,6 +261,18 @@ export function RouteHazardTimeline({
 
 /* ── Helper: build TimelineItems from advisory data ─────────────────────── */
 
+function impactDetailLine(imp: RouteImpact): string | null {
+  const effect = (imp.roadEffect || "").trim();
+  const detail = (imp.detail || "").trim();
+  if (!effect && !detail) return null;
+  if (!effect) return detail;
+  if (!detail || detail === effect) return effect;
+  const dl = detail.toLowerCase();
+  const el = effect.toLowerCase();
+  if (dl.includes(el) || el.includes(dl.slice(0, Math.min(28, dl.length)))) return detail;
+  return `${effect} · ${detail}`;
+}
+
 export function impactToTimelineItem(imp: RouteImpact): TimelineItem {
   const track: TimelineItem["track"] =
     imp.source === "radar" ? "radar"
@@ -250,7 +286,7 @@ export function impactToTimelineItem(imp: RouteImpact): TimelineItem {
     severity: imp.severity,
     startMeters: imp.startMeters,
     endMeters: imp.endMeters,
-    detailLine: (imp.roadEffect || imp.detail || "").trim() || null,
+    detailLine: impactDetailLine(imp),
     crossesRoute: true,
   };
 }

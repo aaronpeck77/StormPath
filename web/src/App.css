@@ -118,12 +118,29 @@
   top: 4px;
   bottom: 4px;
   border-radius: 4px;
+  border: 1px solid rgba(15, 23, 42, 0.45);
   opacity: 0.9;
   overflow: hidden;
   display: flex;
   align-items: center;
   cursor: default;
   transition: filter 150ms, opacity 150ms;
+}
+
+.rhtz__band--avoid {
+  border-color: rgba(127, 29, 29, 0.85);
+}
+
+.rhtz__band--serious {
+  border-color: rgba(154, 52, 18, 0.85);
+}
+
+.rhtz__band--caution {
+  border-color: rgba(161, 98, 7, 0.85);
+}
+
+.rhtz__band--info {
+  border-color: rgba(37, 99, 235, 0.85);
 }
 
 .rhtz__band[role="button"] { cursor: pointer; }
@@ -206,6 +223,119 @@
   margin: 8px 0 0;
   padding: 0;
 }
+
+/* Compact hazard list under the graph — bordered rows, no duplicate detail panels. */
+.rhtz__legend {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rhtz__legend-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.rhtz__legend-item--avoid {
+  border-color: rgba(239, 68, 68, 0.75);
+  background: rgba(69, 10, 10, 0.28);
+}
+
+.rhtz__legend-item--serious {
+  border-color: rgba(249, 115, 22, 0.7);
+  background: rgba(67, 20, 7, 0.22);
+}
+
+.rhtz__legend-item--caution {
+  border-color: rgba(234, 179, 8, 0.7);
+  background: rgba(66, 32, 6, 0.2);
+}
+
+.rhtz__legend-item--info {
+  border-color: rgba(96, 165, 250, 0.7);
+  background: rgba(30, 58, 138, 0.22);
+}
+
+.rhtz__legend-item--tappable {
+  cursor: pointer;
+}
+
+.rhtz__legend-item--tappable:hover,
+.rhtz__legend-item--tappable:focus-visible {
+  filter: brightness(1.08);
+  outline: none;
+}
+
+.rhtz__legend-dot {
+  width: 11px;
+  height: 11px;
+  margin-top: 3px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #94a3b8;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.9);
+}
+
+.rhtz__legend-item--avoid .rhtz__legend-dot {
+  background: #ef4444;
+}
+
+.rhtz__legend-item--serious .rhtz__legend-dot {
+  background: #f97316;
+}
+
+.rhtz__legend-item--caution .rhtz__legend-dot {
+  background: #eab308;
+}
+
+.rhtz__legend-item--info .rhtz__legend-dot {
+  background: #60a5fa;
+}
+
+.rhtz__legend-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.rhtz__legend-label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #f8fafc;
+}
+
+.rhtz__legend-detail {
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: rgba(226, 232, 240, 0.88);
+}
+
+.rhtz__legend-timing {
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: rgba(203, 213, 225, 0.72);
+}
+
+.nws-chip__detail {
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: rgba(226, 232, 240, 0.82);
+}
+
 /* ??? Phone-first dark chrome (map + search + right rail) ??? */
 
 :root {
@@ -818,12 +948,64 @@
   outline: none;
 }
 
-/* Drive: compass above the glass ?i? ? dial rotates so N matches true north on the map */
-.nav-bottom-dock__drive-about-stack {
+/* Drive: compass above i; miles-left chip inline to the right of the info button. */
+.nav-bottom-dock__drive-about-cluster {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nav-bottom-dock__compass-i-col {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
+}
+
+.nav-miles-left-box {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  box-sizing: border-box;
+  height: var(--nav-chrome-about, 32px);
+  min-height: var(--nav-chrome-about, 32px);
+  max-height: var(--nav-chrome-about, 32px);
+  padding: 2px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(147, 197, 253, 0.45);
+  background: rgba(30, 58, 138, 0.42);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  flex-shrink: 0;
+  max-width: min(8.5rem, 40vw);
+  min-width: 0;
+}
+
+.nav-miles-left-box__k {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(191, 219, 254, 0.88);
+  line-height: 1.1;
+}
+
+.nav-miles-left-box__v {
+  font-size: 0.82rem;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  color: #e0f2fe;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .drive-compass {
@@ -3865,10 +4047,11 @@
 .nws-chip {
   display: inline-flex;
   align-items: flex-start;
-  gap: 6px;
-  padding: 5px 10px 5px 8px;
-  border-radius: 12px;
-  border: 1px solid transparent;
+  gap: 8px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.72);
   font: inherit;
   font-size: 0.82rem;
   font-weight: 600;
@@ -3877,24 +4060,31 @@
   white-space: normal;
   word-break: break-word;
   line-height: 1.3;
+  color: #e2e8f0;
 }
 
 .nws-chip--avoid {
-  background: rgba(127, 29, 29, 0.8);
-  border-color: rgba(252, 165, 165, 0.5);
-  color: #fee2e2;
+  background: rgba(69, 10, 10, 0.35);
+  border: 2px solid rgba(239, 68, 68, 0.75);
+  color: #fecaca;
 }
 
 .nws-chip--serious {
-  background: rgba(124, 45, 18, 0.8);
-  border-color: rgba(253, 186, 116, 0.5);
+  background: rgba(67, 20, 7, 0.32);
+  border: 2px solid rgba(249, 115, 22, 0.7);
   color: #fed7aa;
 }
 
 .nws-chip--caution {
-  background: rgba(113, 63, 18, 0.8);
-  border-color: rgba(252, 211, 77, 0.4);
+  background: rgba(66, 32, 6, 0.28);
+  border: 2px solid rgba(234, 179, 8, 0.7);
   color: #fef3c7;
+}
+
+.nws-chip--info {
+  background: rgba(30, 58, 138, 0.28);
+  border: 2px solid rgba(96, 165, 250, 0.7);
+  color: #dbeafe;
 }
 
 .nws-chip:active {
@@ -3902,12 +4092,29 @@
 }
 
 .nws-chip__dot {
-  width: 7px;
-  height: 7px;
+  width: 9px;
+  height: 9px;
+  margin-top: 2px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: currentColor;
-  opacity: 0.85;
+  background: #94a3b8;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.85);
+}
+
+.nws-chip--avoid .nws-chip__dot {
+  background: #ef4444;
+}
+
+.nws-chip--serious .nws-chip__dot {
+  background: #f97316;
+}
+
+.nws-chip--caution .nws-chip__dot {
+  background: #eab308;
+}
+
+.nws-chip--info .nws-chip__dot {
+  background: #60a5fa;
 }
 
 .nws-chip__text {
@@ -3977,26 +4184,32 @@
   gap: 3px;
   width: 100%;
   text-align: left;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background: rgba(15, 23, 42, 0.55);
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.72);
   color: inherit;
   cursor: pointer;
 }
 
 .nws-route-alert--avoid {
-  border-color: rgba(239, 68, 68, 0.55);
-  background: rgba(127, 29, 29, 0.35);
+  border-color: rgba(239, 68, 68, 0.75);
+  background: rgba(69, 10, 10, 0.28);
 }
 
 .nws-route-alert--serious {
-  border-color: rgba(249, 115, 22, 0.5);
-  background: rgba(124, 45, 18, 0.28);
+  border-color: rgba(249, 115, 22, 0.7);
+  background: rgba(67, 20, 7, 0.22);
 }
 
 .nws-route-alert--caution {
-  border-color: rgba(234, 179, 8, 0.45);
+  border-color: rgba(234, 179, 8, 0.7);
+  background: rgba(66, 32, 6, 0.2);
+}
+
+.nws-route-alert--info {
+  border-color: rgba(96, 165, 250, 0.7);
+  background: rgba(30, 58, 138, 0.22);
 }
 
 .nws-route-alert__title {
@@ -4860,63 +5073,7 @@
   color: rgba(255, 255, 255, 0.45);
 }
 
-/* ?? Detail cards ? readable info for each hazard block ?? */
-.rhtz__cards {
-  margin-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.rhtz__card {
-  padding: 10px 12px;
-  border-left: 4px solid #60a5fa;
-  border-radius: 0 8px 8px 0;
-  background: rgba(255, 255, 255, 0.06);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  cursor: default;
-}
-
-.rhtz__card--tappable {
-  cursor: pointer;
-}
-
-.rhtz__card--tappable:active {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.rhtz__card--passed {
-  opacity: 0.4;
-}
-
-.rhtz__card-name {
-  font-size: 1rem;
-  font-weight: 700;
-  line-height: 1.3;
-  color: #fff;
-}
-
-.rhtz__card-detail {
-  font-size: 0.88rem;
-  color: rgba(255, 255, 255, 0.78);
-  line-height: 1.4;
-}
-
-.rhtz__card-timing {
-  font-size: 0.84rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.55);
-  line-height: 1.3;
-}
-
-.rhtz__reroute {
-  margin: 8px 0 0;
-  padding: 0;
-}
+/* (Detail cards removed — see .rhtz__legend at top of file.) */
 
 /* — Local forecast card (advisory bar) — */
 .adv-forecast {
@@ -5055,17 +5212,71 @@
 .adv-forecast__nws-row {
   width: 100%;
   margin: 0;
-  padding: 8px 10px;
+  padding: 9px 11px;
   border-radius: 10px;
-  border: 1px solid rgba(234, 88, 12, 0.35);
-  background: rgba(124, 45, 18, 0.35);
-  color: #fed7aa;
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.72);
+  color: #e2e8f0;
   font: inherit;
   font-size: 0.82rem;
   font-weight: 600;
   line-height: 1.35;
   text-align: left;
   cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.adv-forecast__nws-row::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #94a3b8;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.9);
+}
+
+.adv-forecast__nws-row--avoid {
+  border-color: rgba(239, 68, 68, 0.75);
+  background: rgba(69, 10, 10, 0.28);
+  color: #fecaca;
+}
+
+.adv-forecast__nws-row--avoid::before {
+  background: #ef4444;
+}
+
+.adv-forecast__nws-row--serious {
+  border-color: rgba(249, 115, 22, 0.7);
+  background: rgba(67, 20, 7, 0.22);
+  color: #fed7aa;
+}
+
+.adv-forecast__nws-row--serious::before {
+  background: #f97316;
+}
+
+.adv-forecast__nws-row--caution {
+  border-color: rgba(234, 179, 8, 0.7);
+  background: rgba(66, 32, 6, 0.2);
+  color: #fef3c7;
+}
+
+.adv-forecast__nws-row--caution::before {
+  background: #eab308;
+}
+
+.adv-forecast__nws-row--info {
+  border-color: rgba(96, 165, 250, 0.7);
+  background: rgba(30, 58, 138, 0.22);
+  color: #dbeafe;
+}
+
+.adv-forecast__nws-row--info::before {
+  background: #60a5fa;
 }
 
 .adv-forecast__nws-row--static {
@@ -5535,26 +5746,6 @@
   margin-top: 4px;
   font-size: 0.72rem;
   opacity: 0.85;
-}
-
-.storm-advisory-bar__forecast-btn {
-  flex: 0 0 auto;
-  align-self: center;
-  margin-right: 4px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(147, 197, 253, 0.45);
-  background: rgba(59, 130, 246, 0.15);
-  color: #bfdbfe;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.storm-advisory-bar__forecast-btn:hover {
-  background: rgba(59, 130, 246, 0.28);
 }
 
 /* ??????????????????????????????????????????????????????????????????????????? */
@@ -6262,21 +6453,6 @@
   font-size: 0.7rem;
   color: rgba(251, 191, 36, 0.85);
   line-height: 1;
-}
-
-.storm-advisory-bar__head-badge {
-  margin-left: 6px;
-  flex-shrink: 0;
-  min-width: 1.15em;
-  padding: 1px 6px;
-  font-size: 0.6rem;
-  font-weight: 900;
-  line-height: 1.2;
-  text-align: center;
-  border-radius: 999px;
-  background: rgba(220, 38, 38, 0.6);
-  border: 1px solid rgba(254, 202, 202, 0.75);
-  color: #fff;
 }
 
 /* Expanded-panel "Now" row: busy status + drive route-ahead chips. */
@@ -9454,13 +9630,6 @@
   border-left: 1px solid rgba(255, 255, 255, 0.14);
 }
 
-.nav-bottom-toolbar--drive .nav-bottom-toolbar__drive-meta,
-.nav-bottom-toolbar--mapnav .nav-bottom-toolbar__drive-meta {
-  width: 100%;
-  justify-content: space-evenly;
-  gap: 14px;
-}
-
 .nav-bottom-toolbar__center {
   display: flex;
   align-items: center;
@@ -10229,15 +10398,21 @@
   height: 100dvh;
   max-height: 100dvh;
   border-radius: 0;
-  padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  padding-top: calc(8px + env(safe-area-inset-top, 0px));
+  padding-left: 10px;
+  padding-right: 10px;
+  gap: 4px;
 }
 
-/* Body uses the entire space below the header ? single scroll context per drill-in view. */
-.saved-drawer-body--full {
+/* Body uses the entire space below the header — single scroll context per drill-in view. */
+.saved-drawer-body.saved-drawer-body--full {
   flex: 1 1 0;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
   padding-right: 2px;
   padding-bottom: 6px;
 }
@@ -10261,22 +10436,22 @@
 .saved-drawer.saved-drawer--full .saved-drawer-head {
   /* Larger, page-style header with bigger title for the full-screen sheet. */
   align-items: center;
-  padding-bottom: 6px;
+  padding-bottom: 4px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .saved-drawer.saved-drawer--full .saved-drawer-title {
   flex: 1;
-  font-size: 1.15rem;
+  font-size: 1.05rem;
 }
 
 /* Home view container: comfortable spacing above the section tiles. */
 .saved-drawer-home {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 6px 0 12px;
+  gap: 8px;
+  padding: 2px 0 8px;
 }
 
 .saved-drawer-home-list {
@@ -10285,13 +10460,13 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 10px;
 }
 
 .saved-drawer-home-panel {
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 2px solid rgba(148, 163, 184, 0.38);
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
   background: rgba(18, 20, 24, 0.72);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
@@ -10305,11 +10480,11 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 14px 14px;
-  border-radius: 12px;
-  border: 2px solid rgba(148, 163, 184, 0.48);
-  border-left-width: 5px;
+  gap: 6px;
+  padding: 8px 10px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  border-left-width: 4px;
   background: rgba(10, 12, 16, 0.98);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
@@ -10322,21 +10497,21 @@
 
 .saved-drawer-home-section__title {
   margin: 0;
-  padding-bottom: 10px;
-  border-bottom: 2px solid rgba(148, 163, 184, 0.35);
-  font-size: 0.72rem;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+  font-size: 0.66rem;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #94a3b8;
 }
 
 .saved-drawer-home-section__actions {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-bottom: 10px;
-  border-bottom: 2px solid rgba(148, 163, 184, 0.28);
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 .saved-drawer-home-section:not(:has(.saved-drawer-home-section__actions)) .saved-drawer-home-section__title {
@@ -10375,6 +10550,9 @@
 
 .saved-drawer-save-current--home {
   flex-shrink: 0;
+  padding: 7px 10px;
+  font-size: 0.76rem;
+  border-radius: 8px;
 }
 
 .saved-drawer-recording-note--home {
@@ -10410,11 +10588,11 @@
 .saved-drawer-home-tile {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   width: 100%;
-  padding: 16px 16px 14px;
+  padding: 10px 12px 9px;
   border: 1px solid rgba(138, 180, 248, 0.28);
-  border-radius: 14px;
+  border-radius: 10px;
   background: linear-gradient(180deg, rgba(36, 39, 46, 0.95) 0%, rgba(20, 22, 26, 0.92) 100%);
   color: #e8eaed;
   text-align: left;
@@ -10439,13 +10617,14 @@
 .saved-drawer-home-tile__row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .saved-drawer-home-tile__label {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 1.02rem;
+  font-size: 0.92rem;
   font-weight: 700;
   color: #e8eaed;
   letter-spacing: 0.005em;
@@ -10488,8 +10667,8 @@
 }
 
 .saved-drawer-home-tile__hint {
-  font-size: 0.78rem;
-  line-height: 1.4;
+  font-size: 0.7rem;
+  line-height: 1.3;
   color: #9aa0a6;
 }
 

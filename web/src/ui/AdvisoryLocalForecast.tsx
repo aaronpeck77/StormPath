@@ -23,6 +23,13 @@ function precipColor(mmh: number, prob: number): string {
   return "#ef4444";
 }
 
+function nwsRowSeverityClass(a: NormalizedWeatherAlert): string {
+  if (a.severity === "Extreme" || /tornado warning/i.test(a.event ?? "")) return "avoid";
+  if (a.severity === "Severe" || /warning/i.test(a.event ?? "")) return "serious";
+  if (a.severity === "Moderate") return "caution";
+  return "info";
+}
+
 function minutePrecipSummary(forecast: MinutePrecipForecast): string {
   const minutes = forecast.minutes.slice(0, 60);
   const hasAnyPrecip = minutes.some((m) => m.precipIntensityMmh > 0 || m.precipProbability > 0.1);
@@ -137,18 +144,21 @@ export function AdvisoryLocalForecast({
                 const summary = nwsGlanceSummary(a);
                 const label = a.event?.trim() || "Weather alert";
                 const body = summary ? `${label} — ${summary}` : label;
+                const sev = nwsRowSeverityClass(a);
                 return (
                   <li key={a.id}>
                     {onLocationAlertClick ? (
                       <button
                         type="button"
-                        className="adv-forecast__nws-row"
+                        className={`adv-forecast__nws-row adv-forecast__nws-row--${sev}`}
                         onClick={() => onLocationAlertClick(a)}
                       >
                         {body}
                       </button>
                     ) : (
-                      <p className="adv-forecast__nws-row adv-forecast__nws-row--static">{body}</p>
+                      <p className={`adv-forecast__nws-row adv-forecast__nws-row--static adv-forecast__nws-row--${sev}`}>
+                        {body}
+                      </p>
                     )}
                   </li>
                 );

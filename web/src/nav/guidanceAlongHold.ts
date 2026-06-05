@@ -25,16 +25,24 @@ const AHEAD_SEARCH_M      = 3_500;  // how far ahead to search (covers ~60 s at 
 
 export function useAlongRouteMetersHeldWhenOffLine(
   pos: LngLat | null,
-  geometry: LngLat[] | undefined
+  geometry: LngLat[] | undefined,
+  /** Bump to clear held progress (trip display health / reroute recovery). */
+  resetKey = 0
 ): number {
   const holdRef    = useRef(0);
   const geomSigRef = useRef("");
+  const resetKeyRef = useRef(resetKey);
   const cumDistRef = useRef<Float64Array | null>(null);
 
   const sig =
     geometry && geometry.length >= 2
       ? `${geometry.length}:${geometry[0]![0].toFixed(5)}:${geometry[geometry.length - 1]![0].toFixed(5)}`
       : "";
+
+  if (resetKey !== resetKeyRef.current) {
+    resetKeyRef.current = resetKey;
+    holdRef.current = 0;
+  }
 
   if (sig !== geomSigRef.current) {
     geomSigRef.current = sig;

@@ -5,7 +5,6 @@ import {
   formatEtaDuration,
   formatEtaDurationToolbar,
 } from "./formatEta";
-
 const VIEW_CYCLE: { mode: MapViewMode; label: string; line: string }[] = [
   { mode: "route", label: "Rt", line: "#3b82f6" },
   { mode: "drive", label: "Dr", line: "#22c55e" },
@@ -45,8 +44,6 @@ type Props = {
   viewCycleDisabled?: boolean;
   /** Active leg ETA while driving (minutes, fused score) */
   driveEtaMinutes: number | null;
-  /** Distance left to destination along the active route (e.g. "12.4 mi"). */
-  distanceRemainingLabel?: string | null;
   showRadar: boolean;
   onToggleRadar: () => void;
   /** When false, hide the Rad button entirely (not just inactive). */
@@ -82,7 +79,6 @@ export function BottomToolbar({
   showViewCycleButton = true,
   viewCycleDisabled = false,
   driveEtaMinutes,
-  distanceRemainingLabel = null,
   showRadar,
   onToggleRadar,
   showRadarButton = true,
@@ -183,14 +179,6 @@ export function BottomToolbar({
                 <span className="nav-bottom-stat-k">Lim</span>
                 <span className="nav-bottom-stat-v">{postedMph}</span>
               </div>
-              {distanceRemainingLabel ? (
-                <div className="nav-bottom-stat nav-bottom-stat--remaining">
-                  <span className="nav-bottom-stat-k">Left</span>
-                  <span className="nav-bottom-stat-v" title="Distance remaining to destination">
-                    {distanceRemainingLabel}
-                  </span>
-                </div>
-              ) : null}
             </div>
           )}
         </div>
@@ -302,28 +290,27 @@ export function BottomToolbar({
             </button>
           )}
 
-          {navigationStarted && (
-            <>
-              {driveEtaMinutes != null && driveEtaMinutes > 0 && arrivalAtMs != null && (
-                <div
-                  className="nav-bottom-toolbar__drive-meta"
-                  aria-label={`ETA ${formatArrivalClockCompact(arrivalAtMs)}, ${formatEtaDuration(driveEtaMinutes)} remaining`}
-                >
-                  <div className="nav-bottom-toolbar__drive-eta-compact">
-                    <span className="nav-bottom-toolbar__drive-eta-line nav-bottom-toolbar__drive-eta-line--arrival">
-                      <span className="nav-bottom-toolbar__drive-eta-prefix">ETA </span>
-                      <span className="nav-bottom-toolbar__drive-eta-clock">
-                        {formatArrivalClockCompact(arrivalAtMs)}
-                      </span>
-                    </span>
-                    <span className="nav-bottom-toolbar__drive-eta-line nav-bottom-toolbar__drive-eta-line--remaining">
-                      {formatEtaDurationToolbar(driveEtaMinutes)}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
+          {navigationStarted &&
+          driveEtaMinutes != null &&
+          driveEtaMinutes > 0 &&
+          arrivalAtMs != null ? (
+            <div
+              className="nav-bottom-toolbar__drive-meta"
+              aria-label={`ETA ${formatArrivalClockCompact(arrivalAtMs)}, ${formatEtaDuration(driveEtaMinutes)} remaining`}
+            >
+              <div className="nav-bottom-toolbar__drive-eta-compact">
+                <span className="nav-bottom-toolbar__drive-eta-line nav-bottom-toolbar__drive-eta-line--arrival">
+                  <span className="nav-bottom-toolbar__drive-eta-prefix">ETA </span>
+                  <span className="nav-bottom-toolbar__drive-eta-clock">
+                    {formatArrivalClockCompact(arrivalAtMs)}
+                  </span>
+                </span>
+                <span className="nav-bottom-toolbar__drive-eta-line nav-bottom-toolbar__drive-eta-line--remaining">
+                  {formatEtaDurationToolbar(driveEtaMinutes)}
+                </span>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

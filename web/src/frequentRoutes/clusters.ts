@@ -5,7 +5,7 @@ import type { CompletedLearnedTrip, FrequentRouteCluster } from "./types";
 
 const STORAGE_KEY = "stormpath-frequent-route-clusters";
 
-const MATCH_START_END_M = 280;
+const MATCH_START_END_M = 320;
 const MAX_CLUSTERS = 14;
 
 function newClusterId(): string {
@@ -26,10 +26,13 @@ export function mergeTripIntoClusters(
   let idx = -1;
   for (let i = 0; i < clusters.length; i++) {
     const c = clusters[i]!;
-    if (
+    const forward =
       haversineMeters(start, c.centerStart) <= MATCH_START_END_M &&
-      haversineMeters(end, c.centerEnd) <= MATCH_START_END_M
-    ) {
+      haversineMeters(end, c.centerEnd) <= MATCH_START_END_M;
+    const reverse =
+      haversineMeters(start, c.centerEnd) <= MATCH_START_END_M &&
+      haversineMeters(end, c.centerStart) <= MATCH_START_END_M;
+    if (forward || reverse) {
       idx = i;
       break;
     }

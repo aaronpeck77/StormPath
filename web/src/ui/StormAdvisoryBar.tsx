@@ -177,8 +177,6 @@ export type StormAdvisoryBarProps = SharedProps & {
   onBarExpandedChange: (expanded: boolean) => void;
   hideHeadToggles?: boolean;
   onNwsAlertClick?: (alert: NormalizedWeatherAlert) => void;
-  /** Hazards-button rollup count (NWS overlaps + at-location); null = hide. */
-  peekBadge?: number | null;
   /** Optional hazard status severity: drives the collapsed preview border color. */
   peekSeverity?: "none" | "info" | "warn" | "severe" | null;
   /** Short "doing something" label (NWS loading, traffic fetching…). Surfaced in preview. */
@@ -218,8 +216,6 @@ export type StormAdvisoryBarProps = SharedProps & {
   localForecastNwsAlerts?: NormalizedWeatherAlert[];
   nwsForecastLoading?: boolean;
   nwsForecastError?: string | null;
-  /** Open full corridor forecast sheet (route-tied timeline). */
-  onOpenCorridorForecast?: () => void;
   /** Plus: suggest Data saver in About (rotator + expanded row until dismissed). */
   dataSaverHint?: {
     onOpenSettings: () => void;
@@ -265,9 +261,11 @@ function nwsChip(
   const sevClass =
     a.severity === "Extreme" || /tornado warning/i.test(a.event ?? "")
       ? "avoid"
-      : a.severity === "Severe"
+      : a.severity === "Severe" || /warning/i.test(a.event ?? "")
         ? "serious"
-        : "caution";
+        : a.severity === "Moderate"
+          ? "caution"
+          : "info";
   return (
     <li key={a.id}>
       <button
@@ -279,6 +277,10 @@ function nwsChip(
         <span className="nws-chip__dot" aria-hidden />
         <span className="nws-chip__text">
           <span className="nws-chip__label">{a.event}</span>
+          {(() => {
+            const summary = nwsGlanceSummary(a);
+            return summary ? <span className="nws-chip__detail">{summary}</span> : null;
+          })()}
           <span className="nws-chip__timing">{timingLine}</span>
         </span>
       </button>
@@ -312,7 +314,6 @@ export function StormAdvisoryBar({
   onBarExpandedChange,
   hideHeadToggles = false,
   onNwsAlertClick,
-  peekBadge = null,
   peekSeverity = null,
   busyLabel = null,
   driveRouteAheadLine = null,
@@ -330,7 +331,6 @@ export function StormAdvisoryBar({
   localForecastNwsAlerts = [],
   nwsForecastLoading = false,
   nwsForecastError = null,
-  onOpenCorridorForecast,
   dataSaverHint = null,
 }: StormAdvisoryBarProps) {
   if (!featureEnabled) return null;
@@ -527,13 +527,28 @@ export function StormAdvisoryBar({
     driveEtaMinutes,
   ]);
 
+  /** NWS alert ids already on the route-ahead timeline — skip duplicate chip rows below the graph. */
+  const timelineNwsAlertIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const b of stormStripBands ?? []) {
+      if (b.alertId) ids.add(b.alertId);
+    }
+    return ids;
+  }, [stormStripBands]);
+
+  /** At-position-only NWS chips — excludes route timeline rows (same alert + timing). */
+  const panelNwsAlertsExtra = useMemo(
+    () => panelNwsAlerts.filter(({ alert }) => !timelineNwsAlertIds.has(alert.id)),
+    [panelNwsAlerts, timelineNwsAlertIds]
+  );
+
   /* Single, clear NWS status note when the panel has no NWS rows yet. */
   const nwsStatusMessage: { tone: "muted" | "warn"; text: string } | null = useMemo(() => {
     if (
       weatherImpacts.length > 0 ||
       (stormStripBands?.length ?? 0) > 0 ||
       atLocationSorted.length > 0 ||
-      panelNwsAlerts.length > 0 ||
+      panelNwsAlertsExtra.length > 0 ||
       urgentTopAlerts.length > 0
     ) {
       return null;
@@ -584,7 +599,7 @@ export function StormAdvisoryBar({
     weatherImpacts.length,
     stormStripBands,
     atLocationSorted.length,
-    panelNwsAlerts.length,
+    panelNwsAlertsExtra.length,
     urgentTopAlerts.length,
     isOnline,
     error,
@@ -1090,31 +1105,8 @@ export function StormAdvisoryBar({
         <div className="storm-advisory-bar__head-leading">
           <div className="storm-advisory-bar__head-title-stack">
             <span className="storm-advisory-bar__title">{basicNavAdvisoryMode ? "Status" : "Advisory"}</span>
-            {peekBadge != null && peekBadge > 0 && (
-              <span
-                className="storm-advisory-bar__head-badge"
-                aria-label={`${peekBadge} active hazards`}
-                title={`${peekBadge} active hazards`}
-              >
-                {peekBadge}
-              </span>
-            )}
           </div>
         </div>
-        {onOpenCorridorForecast && !basicNavAdvisoryMode && hasGuidanceRoute ? (
-          <button
-            type="button"
-            className="storm-advisory-bar__forecast-btn"
-            onPointerDownCapture={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onOpenCorridorForecast();
-            }}
-          >
-            Route forecast
-          </button>
-        ) : null}
         {!hideHeadToggles && (
           <div className="storm-advisory-bar__toggles storm-advisory-bar__toggles--stacked">
             <label className="storm-advisory-bar__toggle storm-advisory-bar__toggle--nws">
@@ -1235,6 +1227,10 @@ export function StormAdvisoryBar({
               });
               if (timing.passed) continue;
               const extra = stripBandDetail(band);
+              const nwsDetail = [extra.severityLabel, extra.detail]
+                .map((s) => (s ?? "").trim())
+                .filter(Boolean)
+                .join(" — ");
               timelineItems.push({
                 id: band.id,
                 track: "nws",
@@ -1242,7 +1238,7 @@ export function StormAdvisoryBar({
                 severity: band.severity,
                 startMeters: band.startMeters,
                 endMeters: band.endMeters,
-                detailLine: extra.detail ?? null,
+                detailLine: nwsDetail || null,
                 expiresIso: band.expiresIso,
                 crossesRoute: band.crossesRoute !== false,
                 onClick: stripBandClick(band),
@@ -1288,13 +1284,13 @@ export function StormAdvisoryBar({
                 </p>
               )}
 
-              {panelNwsAlerts.length > 0 && (
+              {panelNwsAlertsExtra.length > 0 && (
                 <ul
                   className="nws-chips nws-chips--secondary"
                   role="list"
-                  aria-label="Weather alerts at your position or on your route"
+                  aria-label="Weather alerts at your position (not already on route timeline)"
                 >
-                  {panelNwsAlerts.map(({ alert, timingLine }) =>
+                  {panelNwsAlertsExtra.map(({ alert, timingLine }) =>
                     nwsChip(alert, timingLine, onNwsAlertClick, "secondary")
                   )}
                 </ul>
@@ -1375,7 +1371,7 @@ export function StormAdvisoryBar({
                   {hasGuidanceRoute
                     ? "No advisories on your route right now."
                     : forecastAreaLabel
-                      ? "Local weather is shown above. Set a destination for route hazards and corridor forecast."
+                      ? "Local weather is shown above. Set a destination for route hazards."
                       : "Allow location to see weather at your position."}
                 </p>
               )}

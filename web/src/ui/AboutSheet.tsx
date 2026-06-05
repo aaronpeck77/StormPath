@@ -333,8 +333,7 @@ export function AboutSheet({
                   <strong>Traffic</strong> overlay + bypass tools (Mapbox)
                 </li>
                 <li>
-                  <strong>Weather</strong> hints on route (OpenWeather) plus <strong>Route forecast</strong> and
-                  minute precip (Tomorrow.io)
+                  <strong>Weather</strong> hints on route (OpenWeather) plus minute precip (Tomorrow.io)
                 </li>
                 <li>
                   <strong>Auto reroute</strong> when far off-line (optional)
@@ -746,15 +745,14 @@ export function AboutSheet({
             <p className="about-sheet__p">
               <strong>Data:</strong> Map, routing, and traffic use <strong>Mapbox</strong> when configured; live radar
               mosaic uses <strong>RainViewer</strong>; US warning shapes use <strong>NWS</strong> (api.weather.gov);
-              route weather samples use <strong>OpenWeather</strong> when enabled in Settings; corridor timeline,
-              minute-by-minute precip, and <strong>Route forecast</strong> use <strong>Tomorrow.io</strong> when this
-              build includes the API key (no separate off switch).
+              route weather samples use <strong>OpenWeather</strong> when enabled in Settings; minute-by-minute precip
+              and hourly outlook at your location use <strong>Tomorrow.io</strong> when this build includes the API key
+              (no separate off switch).
             </p>
             <p className="about-sheet__p">
-              <strong>Forecasts in the app:</strong> expand the storm advisory bar → <strong>Route forecast</strong> for
-              weather along your trip; the precip bar at your location and the advisory strip use the same Tomorrow.io
-              feed. Map <strong>Rad</strong> is RainViewer; colored NWS shapes follow the <strong>NWS polygons</strong>{" "}
-              toggle.
+              <strong>Forecasts in the app:</strong> expand the storm advisory bar for local weather at your position;
+              route hazards and timeline details stay in the advisory sections. Map <strong>Rad</strong> is RainViewer;
+              colored NWS shapes follow the <strong>NWS polygons</strong> toggle.
             </p>
             <p className="about-sheet__p">
               <strong>Privacy:</strong> Location is for position, routing, and conditions while you use the app. Plus

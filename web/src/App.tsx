@@ -25,7 +25,6 @@ import {
   clearDevLocationOverride,
 } from "./hooks/useUserLocation";
 import { useRadarBandsAlongRoute } from "./hooks/useRadarBandsAlongRoute";
-import { useCorridorRouteForecasts } from "./hooks/useCorridorRouteForecasts";
 import {
   useLocalHourlyForecast,
   useTomorrowMinutePrecip,
@@ -111,7 +110,22 @@ import {
   polylineLengthMeters,
 } from "./nav/routeGeometry";
 import { bannerPrimaryStepIndex } from "./nav/bannerPrimaryStep";
+import {
+  measureOffRouteLateral,
+  OFF_ROUTE_POLL_MS,
+  OFF_ROUTE_REROUTE_THROTTLE_MS,
+  shouldTriggerOffRouteReroute,
+  shouldExitOffRouteLatch,
+} from "./nav/offRouteDetect";
 import { useAlongRouteMetersHeldWhenOffLine } from "./nav/guidanceAlongHold";
+import {
+  auditTripNavDisplay,
+  computeRemainingDistanceMeters,
+  computeRemainingDriveEtaMinutes,
+  repairActionsForIssues,
+  TRIP_NAV_DISPLAY_POLL_MS,
+  TRIP_NAV_DISPLAY_REPAIR_COOLDOWN_MS,
+} from "./nav/tripNavDisplay";
 import { activeTurnStepIndexAlong, turnStepAlongBounds } from "./nav/turnStepAlong";
 import { formatRouteDistanceMi, routeConsiderationSummary } from "./nav/routeSummary";
 import { buildDriveRouteAheadFromImpacts } from "./nav/driveRouteAhead";
@@ -147,6 +161,7 @@ const DriveMap = lazy(() => import("./ui/DriveMap"));
 import { SearchBar } from "./ui/SearchBar";
 import type { SearchSuggestion } from "./ui/SearchBar";
 import { BottomToolbar } from "./ui/BottomToolbar";
+import { NavMilesLeftBox } from "./ui/NavMilesLeftBox";
 import { DriveCompass } from "./ui/DriveCompass";
 import { RouteCycleButton, type RoutePickItem } from "./ui/RoutePickBar";
 import { routePickSlotHex } from "./ui/mapRouteStyle";
@@ -170,10 +185,6 @@ import { StormAdvisoryBar } from "./ui/StormAdvisoryBar";
 import { DriveHazardApproachBanner } from "./ui/DriveHazardApproachBanner";
 import { ActivityStatusPill } from "./ui/ActivityStatusPill";
 import { AboutSheet } from "./ui/AboutSheet";
-import {
-  RouteForecastSheet,
-  corridorLegOptionsFromPlan,
-} from "./ui/RouteForecastSheet";
 import { Coachmarks } from "./ui/Coachmarks";
 import { resetAllCoachmarks } from "./ui/coachmarks/firstLaunchSteps";
 import { RouteCompareBottomPanel } from "./ui/RouteCompareBottomPanel";
@@ -213,6 +224,7 @@ import { useBasicAdMobBanner } from "./hooks/useBasicAdMobBanner";
 import { getPayTier, hasTollBypass } from "./billing/payFeatures";
 import { NATIVE_PAY_TIER_CHANGED_EVENT } from "./billing/revenueCat";
 import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
+import { completedTripFromGeometry } from "./frequentRoutes/tripDetector";
 import { useFrequentRouteLearning } from "./hooks/useFrequentRouteLearning";
 import { isMapBasemapDaytime } from "./map/mapBasemapDaytime";
 import {
@@ -306,8 +318,8 @@ const MB_TRAFFIC_LINE_SNAP_NOTICE = "Mapbox traffic-aware line";
 const STORM_ADAPT_DEBOUNCE_MS = 4500;
 /** Minimum spacing between adaptive storm reroute attempts (NWS + Directions churn). */
 const STORM_ADAPT_MIN_INTERVAL_MS = 75_000;
-/** Throttle between auto-reroute attempts when still far off the polyline (keep low for quick recovery). */
-const NAV_SEVERE_OFF_ROUTE_THROTTLE_MS = 1_200;
+/** Throttle between auto-reroute attempts when off the polyline. */
+const NAV_SEVERE_OFF_ROUTE_THROTTLE_MS = OFF_ROUTE_REROUTE_THROTTLE_MS;
 /** Snap drawn line to Mapbox’s road network when live delay vs ORS is huge or Mapbox can’t trace the ORS path. */
 const MAPBOX_LINE_SNAP_DELAY_MIN = 10;
 /** Applies to both “heavy delay” and untraceable polyline — avoids GPS-driven snap loops in drive/topdown. */
@@ -398,11 +410,16 @@ export default function App() {
     learnEnabled,
     setLearnEnabled,
     dismissCluster,
+    recordLearnedTrip,
+    resetTripLearningMachine,
   } = useFrequentRouteLearning({
     payUnlocked: payFrequentRoutes,
     userLngLat,
     speedMps,
   });
+
+  const navGoStartedAtRef = useRef<number | null>(null);
+  const navGoGeometryRef = useRef<LngLat[] | null>(null);
 
   const ACTIVITY_TRAIL_MAP_LS = "stormpath-activity-trail-map-on";
   const [activityTrailMapOn, setActivityTrailMapOn] = useState(() => {
@@ -453,9 +470,6 @@ export default function App() {
   const setPendingSave = useUiStore((s) => s.setPendingSave);
   const aboutOpen = useUiStore((s) => s.aboutOpen);
   const setAboutOpen = useUiStore((s) => s.setAboutOpen);
-  const corridorForecastOpen = useUiStore((s) => s.corridorForecastOpen);
-  const setCorridorForecastOpen = useUiStore((s) => s.setCorridorForecastOpen);
-  const [corridorForecastLegId, setCorridorForecastLegId] = useState("");
   /* Contextual one-shot coachmarks — the {@link Coachmarks} component watches for its
    * tracked targets to become visible and pops a single "Tip" card next to each the first
    * time the user encounters it. Persistence + queue logic live entirely in that component;
@@ -1705,7 +1719,6 @@ export default function App() {
     if (!plan.routes.length) return;
     if (viewMode !== "route") setViewMode("route");
     setSearchExpanded(false);
-    setFitTrigger((n) => n + 1);
   }, [routing, navigationStarted, plan.routes.length, viewMode]);
 
   /** 3D drive camera is only valid during active Go navigation — never leave Dr mode otherwise. */
@@ -2207,9 +2220,11 @@ export default function App() {
     return g && g.length >= 2 ? polylineLengthMeters(g) : 0;
   }, [guidanceRoute?.geometry]);
 
+  const [alongHoldResetKey, setAlongHoldResetKey] = useState(0);
   const userAlongGuidanceM = useAlongRouteMetersHeldWhenOffLine(
     effectiveUserLngLat,
-    guidanceRoute?.geometry
+    guidanceRoute?.geometry,
+    alongHoldResetKey
   );
 
   const guidanceRouteGeomRef = useRef<LngLat[] | null>(null);
@@ -2319,19 +2334,19 @@ export default function App() {
 
   /** Full-route ETA from scoring; scale by remaining distance while navigating so it tracks progress. */
   const driveEtaMinutes = useMemo(() => {
-    if (!navigationStarted) return null;
     const s = scored.find((x) => x.route.id === lineFocusId);
     const full = s
       ? Math.round(s.effectiveEtaMinutes)
       : guidanceRoute
         ? Math.round(guidanceRoute.baseEtaMinutes)
         : null;
-    if (full == null) return null;
-    const totalM = guidanceRouteLengthM;
-    if (totalM <= 1 || !guidanceRoute?.geometry?.length) return full;
-    const rem = Math.max(0, totalM - userAlongGuidanceM);
-    const frac = rem / totalM;
-    return Math.max(1, Math.round(full * frac));
+    return computeRemainingDriveEtaMinutes({
+      navigationStarted,
+      fullEtaMinutes: full,
+      routeLengthM: guidanceRouteLengthM,
+      alongM: userAlongGuidanceM,
+      hasRouteGeometry: Boolean(guidanceRoute?.geometry?.length),
+    });
   }, [
     navigationStarted,
     scored,
@@ -2342,9 +2357,12 @@ export default function App() {
   ]);
 
   const driveDistanceRemainingLabel = useMemo(() => {
-    if (!navigationStarted || guidanceRouteLengthM <= 1) return null;
-    const rem = Math.max(0, guidanceRouteLengthM - userAlongGuidanceM);
-    if (rem <= 0) return null;
+    const rem = computeRemainingDistanceMeters(
+      navigationStarted,
+      guidanceRouteLengthM,
+      userAlongGuidanceM
+    );
+    if (rem == null) return null;
     return formatDistanceShort(rem, useMilesForLngLat(effectiveUserLngLat));
   }, [
     navigationStarted,
@@ -2352,6 +2370,87 @@ export default function App() {
     userAlongGuidanceM,
     effectiveUserLngLat,
   ]);
+
+  const scoredNavHealthRef = useRef(scored);
+  scoredNavHealthRef.current = scored;
+
+  /** Miles / ETA / time-left integrity — periodic audit + throttled repair (traffic refresh, along reset). */
+  const tripNavRepairAtRef = useRef(0);
+  const alongProgressTrackRef = useRef({ alongM: 0, atMs: 0 });
+  useEffect(() => {
+    alongProgressTrackRef.current = { alongM: 0, atMs: 0 };
+  }, [alongHoldResetKey, guidanceRouteId]);
+  useEffect(() => {
+    if (!navigationStarted || !appForeground) return;
+    const runAudit = () => {
+      const routeLengthM = guidanceRouteLengthMRef.current;
+      const alongM = userAlongGuidanceMRef.current;
+      if (routeLengthM <= 1) return;
+
+      const speed = speedMpsRef.current;
+      const now = Date.now();
+      const track = alongProgressTrackRef.current;
+      if (speed != null && speed >= 2.5) {
+        if (Math.abs(alongM - track.alongM) >= 25) {
+          alongProgressTrackRef.current = { alongM, atMs: now };
+        }
+      } else {
+        alongProgressTrackRef.current = { alongM, atMs: now };
+      }
+      const alongStaleMs =
+        speed != null && speed >= 2.5 ? now - alongProgressTrackRef.current.atMs : 0;
+
+      const focusId = lineFocusId;
+      const s = scoredNavHealthRef.current.find((x) => x.route.id === focusId);
+      const route = plan.routes.find((r) => r.id === focusId);
+      const fullEta = s
+        ? Math.round(s.effectiveEtaMinutes)
+        : route
+          ? Math.round(route.baseEtaMinutes)
+          : null;
+      const remainingDistanceM = computeRemainingDistanceMeters(
+        true,
+        routeLengthM,
+        alongM
+      );
+      const remainingEtaMinutes = computeRemainingDriveEtaMinutes({
+        navigationStarted: true,
+        fullEtaMinutes: fullEta,
+        routeLengthM,
+        alongM,
+        hasRouteGeometry: Boolean(guidanceRouteGeomRef.current?.length),
+      });
+
+      const audit = auditTripNavDisplay({
+        navigationStarted: true,
+        routeLengthM,
+        alongM,
+        fullEtaMinutes: fullEta,
+        remainingEtaMinutes,
+        remainingDistanceM,
+        speedMps: speed,
+        alongStaleMs,
+      });
+
+      if (audit.ok) return;
+      if (now - tripNavRepairAtRef.current < TRIP_NAV_DISPLAY_REPAIR_COOLDOWN_MS) return;
+      tripNavRepairAtRef.current = now;
+      for (const action of repairActionsForIssues(audit.issues)) {
+        if (action === "reset_along_hold") setAlongHoldResetKey((k) => k + 1);
+        if (action === "refresh_traffic") {
+          trafficRefreshRef.current += 1;
+          setTrafficRefreshKey(trafficRefreshRef.current);
+        }
+      }
+      if (import.meta.env.DEV) {
+        console.info("[nav-health] trip display repair", audit.issues);
+      }
+    };
+
+    runAudit();
+    const id = window.setInterval(runAudit, TRIP_NAV_DISPLAY_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [navigationStarted, appForeground, lineFocusId, guidanceRouteId, plan.routes]);
 
   /** Merge forecast headline + midpoint sample so the progress strip “heavy wx” band isn’t cloud-only. */
   const corridorWeatherDetail = useMemo(() => {
@@ -2386,7 +2485,7 @@ export default function App() {
   const hasPlannedRoute = Boolean(
     destLngLat && plan.routes.some((r) => r.geometry && r.geometry.length >= 2)
   );
-  const tioWeatherUiOpen = stormBarExpanded || corridorForecastOpen;
+  const tioWeatherUiOpen = stormBarExpanded;
   const tioBaseEnabled =
     isPlus && Boolean(tioApiKey) && Boolean(effectiveUserLngLat) && appForeground;
   /** At-your-location minute precip + hourly card — not while driving with the bar collapsed. */
@@ -2395,7 +2494,7 @@ export default function App() {
     (dataSaverMode
       ? tioWeatherUiOpen
       : tioWeatherUiOpen || (!hasPlannedRoute && !navigationStarted));
-  /** Corridor hourly along the active leg — while navigating or when forecast UI is open. */
+  /** Corridor hourly along the active leg — while navigating or advisory expanded. */
   const tioRouteFetchEnabled =
     tioBaseEnabled &&
     (dataSaverMode
@@ -2425,75 +2524,6 @@ export default function App() {
     if (tioMinutePrecip?.now) return formatMinutePrecipNowLine(tioMinutePrecip.now);
     return null;
   }, [currentNowcast, tioMinutePrecip?.now]);
-
-  const corridorLegOptions = useMemo(
-    () =>
-      corridorLegOptionsFromPlan(
-        plan.routes.map((r) => ({
-          id: r.id,
-          label: r.label,
-          baseEtaMinutes: r.baseEtaMinutes,
-        })),
-        orderedRouteIds
-      ),
-    [plan.routes, orderedRouteIds]
-  );
-
-  const corridorForecastLegs = useMemo(
-    () =>
-      orderedRouteIds
-        .map((routeId) => {
-          const route = plan.routes.find((r) => r.id === routeId);
-          if (!route?.geometry || route.geometry.length < 2) return null;
-          return {
-            routeId,
-            geometry: route.geometry,
-            etaMinutes: Math.max(1, Math.round(route.baseEtaMinutes)),
-          };
-        })
-        .filter((x): x is NonNullable<typeof x> => x != null),
-    [orderedRouteIds, plan.routes]
-  );
-
-  const { forecastsByLegId: corridorForecastsByLegId, loading: corridorForecastsLoading } =
-    useCorridorRouteForecasts(
-      tioApiKey,
-      corridorForecastLegs,
-      speedMps ?? 0,
-      corridorForecastOpen,
-      guidanceRoute?.id && tioRouteForecast
-        ? { routeId: guidanceRoute.id, forecast: tioRouteForecast }
-        : null,
-      corridorForecastLegId || corridorLegOptions[0]?.routeId || guidanceRoute?.id || ""
-    );
-
-  const corridorForecastsMerged = useMemo(() => {
-    if (!corridorForecastOpen) return {};
-    const out = { ...corridorForecastsByLegId };
-    if (tioRouteForecast && guidanceRoute?.id && out[guidanceRoute.id] == null) {
-      out[guidanceRoute.id] = tioRouteForecast;
-    }
-    return out;
-  }, [corridorForecastOpen, corridorForecastsByLegId, tioRouteForecast, guidanceRoute?.id]);
-
-  const openCorridorForecast = useCallback(() => {
-    setCorridorForecastLegId(lineFocusId || orderedRouteIds[0] || primaryRouteId);
-    setCorridorForecastOpen(true);
-  }, [lineFocusId, orderedRouteIds, primaryRouteId]);
-
-  useEffect(() => {
-    if (!corridorForecastLegId && corridorLegOptions[0]) {
-      setCorridorForecastLegId(corridorLegOptions[0].routeId);
-      return;
-    }
-    if (
-      corridorForecastLegId &&
-      corridorLegOptions.length > 0 &&
-      !corridorLegOptions.some((l) => l.routeId === corridorForecastLegId)
-    ) {
-      setCorridorForecastLegId(corridorLegOptions[0]!.routeId);
-    }
-  }, [corridorLegOptions, corridorForecastLegId]);
 
   const radarMosaicMaxIntensity = useMemo(() => {
     const s = radarMosaicAlongRoute.samples;
@@ -3472,77 +3502,79 @@ export default function App() {
     offRouteLatchedRef.current = false;
   }, [guidanceRouteId]);
 
-  /** Lateral distance to polyline — lower = flag off-route sooner so auto-reroute fires faster. */
-  const OFF_ROUTE_SEVERE_ENTER_M = 40;
-  const OFF_ROUTE_SEVERE_EXIT_M = 18;
-
+  /** Lateral distance near last on-route position — reroute ~100 ft off the corridor. */
   useEffect(() => {
-    if (!navigationStarted || !guidanceRoute?.geometry?.length || !userLngLat || !destLngLat) {
+    if (!navigationStarted || !guidanceRoute?.geometry?.length || !destLngLat) {
       offRouteLatchedRef.current = false;
       lastOffRouteSampleRef.current = null;
       setOffRouteSevere(false);
       return;
     }
-    const { lateralMetersApprox, alongMeters } = closestAlongRouteMeters(
-      userLngLat,
-      guidanceRoute.geometry
-    );
-    const totalM =
-      guidanceRouteLengthM > 0 ? guidanceRouteLengthM : polylineLengthMeters(guidanceRoute.geometry);
-    const nearingEnd = totalM > 0 && alongMeters > totalM - 45;
-    if (nearingEnd) {
-      offRouteLatchedRef.current = false;
-      setOffRouteSevere(false);
-      return;
-    }
-    const lat = lateralMetersApprox;
-    const now = Date.now();
-    const prev = lastOffRouteSampleRef.current;
-    lastOffRouteSampleRef.current = { t: now, lateralM: lat, alongM: alongMeters };
-    if (offRouteLatchedRef.current) {
-      if (lat < OFF_ROUTE_SEVERE_EXIT_M) {
+
+    const tick = () => {
+      const pos = userLngLatRef.current;
+      const geom = guidanceRouteGeomRef.current;
+      if (!pos || !geom?.length) return;
+
+      const totalM =
+        guidanceRouteLengthMRef.current > 0
+          ? guidanceRouteLengthMRef.current
+          : polylineLengthMeters(geom);
+      const sample = measureOffRouteLateral(pos, geom, userAlongGuidanceMRef.current);
+      const lat = sample.lateralM;
+      const alongM = sample.alongM;
+      const now = Date.now();
+
+      const nearingEnd = totalM > 0 && alongM > totalM - 45;
+      if (nearingEnd) {
         offRouteLatchedRef.current = false;
         setOffRouteSevere(false);
+        lastOffRouteSampleRef.current = null;
+        return;
       }
-    } else if (lat > OFF_ROUTE_SEVERE_ENTER_M) {
-      offRouteLatchedRef.current = true;
-      setOffRouteSevere(true);
-    }
 
-    // Fast-path reroute: if you’re drifting away from the line, reroute sooner (don’t wait for “severe”).
-    const OFF_ROUTE_FAST_ENTER_M = 20;
-    const FAST_SAMPLE_MAX_AGE_MS = 2_200;
-    const FAST_REROUTE_THROTTLE_MS = 600;
-    const driftingAway =
-      prev != null &&
-      now - prev.t < FAST_SAMPLE_MAX_AGE_MS &&
-      lat > OFF_ROUTE_FAST_ENTER_M &&
-      lat - prev.lateralM > 5;
-    if (
-      settingAutoRerouteEnabled &&
-      navigationStarted &&
-      !routing &&
-      driftingAway &&
-      now - lastSevereAutoRecalcMsRef.current > FAST_REROUTE_THROTTLE_MS &&
-      (env.mapboxToken ? isOnline : true)
-    ) {
+      lastOffRouteSampleRef.current = { t: now, lateralM: lat, alongM };
+
+      if (offRouteLatchedRef.current) {
+        if (shouldExitOffRouteLatch(lat)) {
+          offRouteLatchedRef.current = false;
+          setOffRouteSevere(false);
+        }
+      } else if (shouldTriggerOffRouteReroute(lat)) {
+        offRouteLatchedRef.current = true;
+        setOffRouteSevere(true);
+      }
+
+      if (
+        !settingAutoRerouteEnabled ||
+        routingRef.current ||
+        (env.mapboxToken && !isOnline)
+      ) {
+        return;
+      }
+
+      if (!shouldTriggerOffRouteReroute(lat)) return;
+      if (now - lastSevereAutoRecalcMsRef.current < NAV_SEVERE_OFF_ROUTE_THROTTLE_MS) return;
+
       lastSevereAutoRecalcMsRef.current = now;
-      /* Phase 8 — warning two-tap so the driver feels the silent reroute kicking off without
-       * having to glance up. Throttled by FAST_REROUTE_THROTTLE_MS so it never rapid-fires. */
       hapticWarning();
       void recalcRouteFromHere({ silent: true });
-    }
+    };
+
+    tick();
+    const id = window.setInterval(tick, OFF_ROUTE_POLL_MS);
+    return () => window.clearInterval(id);
   }, [
     navigationStarted,
     guidanceRoute?.geometry,
     guidanceRouteLengthM,
-    userLngLat,
     destLngLat,
     recalcRouteFromHere,
     routing,
     settingAutoRerouteEnabled,
     env.mapboxToken,
     isOnline,
+    userLngLat,
   ]);
 
   const refreshAltRef = useRef(refreshAlternateRoutesOnly);
@@ -3574,30 +3606,6 @@ export default function App() {
     }, altMs);
     return () => window.clearInterval(id);
   }, [appForeground, navigationStarted, viewMode, destLngLat, dataSaverMode]);
-
-  /** Far off-route: silent reroute from current GPS when the setting is on (default). */
-  useEffect(() => {
-    if (!settingAutoRerouteEnabled) return;
-    if (!navigationStarted || !offRouteSevere) return;
-    if (routing) return;
-    if (env.mapboxToken && !isOnline) return;
-    const now = Date.now();
-    if (now - lastSevereAutoRecalcMsRef.current < NAV_SEVERE_OFF_ROUTE_THROTTLE_MS) return;
-    lastSevereAutoRecalcMsRef.current = now;
-    /* Phase 8 — driver is severely off-route and we're auto-rerouting silently. The Taptic
-     * warning is the only feedback for this `silent: true` path, so it doubles as the cue
-     * that the screen is about to update. */
-    hapticWarning();
-    void recalcRouteFromHere({ silent: true });
-  }, [
-    settingAutoRerouteEnabled,
-    offRouteSevere,
-    navigationStarted,
-    routing,
-    recalcRouteFromHere,
-    env.mapboxToken,
-    isOnline,
-  ]);
 
   useEffect(() => {
     if (!navigationStarted || viewMode !== "drive") return;
@@ -3631,6 +3639,7 @@ export default function App() {
   const routeActive = plan.routes.length > 0;
   const showCompactDest = routeActive && !searchExpanded;
   const showReturnTripButton =
+    isPlus &&
     mapPlanningUi &&
     !navigationStarted &&
     !destLngLat &&
@@ -3643,18 +3652,11 @@ export default function App() {
   /** Advisory strip always available for Plus life-safety; Basic follows Storm setting. */
   const showStormAdvisoryChrome = advisoryLifeSafetyOn;
 
-  const stormHazardPeekBadge = useMemo(() => {
-    if (!advisoryLifeSafetyOn || stormLoading || stormError) return null;
-    const ids = new Set<string>();
-    /* Route-crossing alerts (polygons on your planned route) — shown when Plus detail is on
-     * so the badge matches what the advisory panel is actually surfacing. */
-    const forBadge = advisoryPlusDetailOn
-      ? nwsAlertsForGuidanceAdvisory
-      : nwsAlertsForGuidanceAdvisory.filter(nwsAlertIsBasicEmergency);
-    for (const a of forBadge) ids.add(a.id);
-    if (ids.size === 0) return null;
-    return ids.size;
-  }, [advisoryLifeSafetyOn, advisoryPlusDetailOn, stormLoading, stormError, nwsAlertsForGuidanceAdvisory]);
+  const showProgressRail =
+    navigationStarted &&
+    isPlus &&
+    !trafficBypassCompare &&
+    Boolean(progressRailRoute?.geometry && progressRailRoute.geometry.length >= 2);
 
   /** Matches map: planning uses A/B/C preview; after Go the active leg reads as primary blue. */
   const progressStripRouteColor = useMemo(() => {
@@ -3756,6 +3758,17 @@ export default function App() {
   const idleHomeMapFraming: HomeMapFraming = isPlus ? homeMapFraming : "my_location";
 
   const clearRoute = () => {
+    if (navigationStartedRef.current && payFrequentRoutes && learnEnabled) {
+      const started = navGoStartedAtRef.current;
+      const geom = navGoGeometryRef.current;
+      if (geom && started) {
+        const trip = completedTripFromGeometry(geom, started);
+        if (trip) recordLearnedTrip(trip);
+      }
+      resetTripLearningMachine();
+      navGoStartedAtRef.current = null;
+      navGoGeometryRef.current = null;
+    }
     routeGraphEpochRef.current += 1;
     routeMainFetchAbortRef.current?.abort();
     routeMainFetchAbortRef.current = null;
@@ -4031,8 +4044,14 @@ export default function App() {
     setTollRoutePrompt(null);
     setTollAvoidFailureNote(null);
 
+    const pickedForNav = plan.routes.find((r) => r.id === chosen);
+    navGoStartedAtRef.current = Date.now();
+    navGoGeometryRef.current = pickedForNav?.geometry?.length
+      ? pickedForNav.geometry.map(([a, b]) => [a, b] as LngLat)
+      : null;
+
     if (userLngLat && destLngLat) {
-      const picked = plan.routes.find((r) => r.id === chosen);
+      const picked = pickedForNav;
       if (picked?.geometry && picked.geometry.length >= 2) {
         const [lng, lat] = userLngLat;
         const originLabel = isGenericOriginLabel(plan.originLabel)
@@ -4848,7 +4867,8 @@ export default function App() {
   return (
     <div
       className={`app-shell nav-fullmap${navigationStarted && viewMode === "drive" ? " nav-drive-ui" : ""}${
-        trafficBypassCompare ? " nav-route-compare-active" : ""
+        showProgressRail ? " nav-progress-rail-on" : ""
+      }${trafficBypassCompare ? " nav-route-compare-active" : ""
       }${basemapNight ? " app-shell--basemap-night" : ""}${settingLandscapeSideHand === "left" ? " app-shell--landscape-hand-left" : ""}${
         radarMapOverlayOn && radarFrameUtcSec != null ? " nav-radar-frame-time-visible" : ""
       }${basicAdBanner.reservesBottomSpace ? " app-shell--basic-ad-banner" : ""}${
@@ -4983,7 +5003,6 @@ export default function App() {
                       onBarExpandedChange={onStormBarExpandedChange}
                       hideHeadToggles={!isPlus}
                       onNwsAlertClick={handleAdvisoryNwsClick}
-                      peekBadge={stormHazardPeekBadge}
                       busyLabel={activityBusyLabel}
                       driveRouteAheadLine={driveModeUi ? driveRouteAheadLine : null}
                       advisoryTier={advisoryPlusDetailOn ? "plus" : "basic"}
@@ -5000,7 +5019,6 @@ export default function App() {
                       localForecastNwsAlerts={localForecastNwsAlerts}
                       nwsForecastLoading={stormLoading}
                       nwsForecastError={stormError}
-                      onOpenCorridorForecast={isPlus ? openCorridorForecast : undefined}
                       dataSaverHint={
                         showDataSaverHint
                           ? {
@@ -5068,11 +5086,7 @@ export default function App() {
               </div>
             </div>
             ) : null}
-            {navigationStarted &&
-              isPlus &&
-              !trafficBypassCompare &&
-              progressRailRoute?.geometry &&
-              progressRailRoute.geometry.length >= 2 && (
+            {showProgressRail && (
               <div
                 className={`nav-route-progress-rail${progressCalloutsOpen && progressCalloutCount > 0 ? " nav-route-progress-rail--callouts-open" : ""}`}
               >
@@ -5491,17 +5505,22 @@ export default function App() {
             <div className="nav-bottom-dock">
               {navigationStarted && viewMode === "drive" ? (
                 <div className="nav-bottom-dock__about-row">
-                  <div className="nav-bottom-dock__drive-about-stack">
-                    <DriveCompass bearingDeg={driveMapBearingDeg} />
-                    <button
-                      type="button"
-                      className="map-about-btn"
-                      aria-label="About StormPath"
-                      title="About / Settings"
-                      onClick={() => setAboutOpen(true)}
-                    >
-                      i
-                    </button>
+                  <div className="nav-bottom-dock__drive-about-cluster">
+                    <div className="nav-bottom-dock__compass-i-col">
+                      <DriveCompass bearingDeg={driveMapBearingDeg} />
+                      <button
+                        type="button"
+                        className="map-about-btn"
+                        aria-label="About StormPath"
+                        title="About / Settings"
+                        onClick={() => setAboutOpen(true)}
+                      >
+                        i
+                      </button>
+                    </div>
+                    {driveDistanceRemainingLabel ? (
+                      <NavMilesLeftBox label={driveDistanceRemainingLabel} />
+                    ) : null}
                   </div>
                 </div>
               ) : (
@@ -5526,6 +5545,9 @@ export default function App() {
                     >
                       i
                     </button>
+                    {navigationStarted && driveDistanceRemainingLabel ? (
+                      <NavMilesLeftBox label={driveDistanceRemainingLabel} />
+                    ) : null}
                     {viewMode === "route" && routePickItems.length >= 1 ? (
                       <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
                         <RouteCycleButton
@@ -5627,7 +5649,6 @@ export default function App() {
               showViewCycleButton
               viewCycleDisabled={!navigationStarted}
               driveEtaMinutes={driveEtaMinutes}
-              distanceRemainingLabel={driveDistanceRemainingLabel}
               showRadar={radarMapOverlayOn}
               onToggleRadar={() => setShowRadar((v) => !v)}
               radarEnabled={settingRadarEnabled}
@@ -5643,25 +5664,6 @@ export default function App() {
           ) : null}
         </div>
       </div>
-
-      <RouteForecastSheet
-        open={corridorForecastOpen}
-        onClose={() => setCorridorForecastOpen(false)}
-        destinationLabel={destinationLabel.trim() || "Destination"}
-        hasTrip={Boolean(
-          destLngLat && plan.routes.some((r) => r.geometry && r.geometry.length >= 2)
-        )}
-        navigationStarted={navigationStarted}
-        nowcastLine={advisoryNowcastLine}
-        minutePrecip={tioMinutePrecip}
-        forecastsByLegId={corridorForecastsMerged}
-        forecastsLoading={corridorForecastsLoading}
-        legs={corridorLegOptions}
-        activeLegId={corridorForecastLegId || corridorLegOptions[0]?.routeId || ""}
-        onActiveLegChange={setCorridorForecastLegId}
-        driveEtaMinutes={driveEtaMinutes}
-        forecastDataAvailable={Boolean(tioApiKey)}
-      />
 
       <AboutSheet
         open={aboutOpen}

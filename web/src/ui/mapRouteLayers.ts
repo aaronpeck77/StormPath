@@ -461,13 +461,15 @@ export function preferEndpointAnchoredTripFit(
 ): boolean {
   const direct = directTripMeters(user, dest);
   if (!Number.isFinite(direct)) return false;
+  if (!geometry?.length || geometry.length < 2) return true;
+  const box = polylineBbox(geometry);
+  if (!box) return direct < 250_000;
+  const routeSpan = haversineMeters([box.west, box.south], [box.east, box.north]);
   if (direct < 32_000) {
-    if (!geometry?.length || geometry.length < 2) return true;
-    const box = polylineBbox(geometry);
-    if (!box) return true;
-    const routeSpan = haversineMeters([box.west, box.south], [box.east, box.north]);
     return routeSpan > direct * 1.22 || direct < 24_000;
   }
+  /* Medium/long trips: endpoint pair unless the driven path extends far beyond start/end. */
+  if (direct < 250_000) return routeSpan <= direct * 1.42;
   return false;
 }
 
@@ -524,6 +526,9 @@ function computeTripFitMaxZoom(
     if (directM < 2500) return Math.min(18.85, maxZoomCeiling + 1.1 + bias);
     if (directM < 8000) return Math.min(18.85, maxZoomCeiling + 0.65 + bias);
     if (directM < 20_000) return Math.min(18.85, maxZoomCeiling + 0.25 + bias);
+    if (directM < 250_000) {
+      return Math.min(maxZoomCeiling, maxZoomForBoundsSpanMeters(spanM) + 0.35 + bias);
+    }
   }
   return Math.min(maxZoomCeiling, maxZoomForBoundsSpanMeters(spanM) + bias);
 }
@@ -578,11 +583,11 @@ export function fitMapToTrip(
   padding: mapboxgl.PaddingOptions,
   maxZoomCeiling = 18,
   opts?: FitMapToTripOptions
-) {
+): boolean {
   const fit = buildTripFitBounds(user, dest, routes, opts?.onlyRouteId);
   if (!fit) {
     opts?.onAfterFit?.();
-    return;
+    return false;
   }
 
   const finish = () => opts?.onAfterFit?.();
@@ -592,6 +597,7 @@ export function fitMapToTrip(
     map.off("moveend", finish);
     opts?.onAfterFit?.();
   }
+  return ok;
 }
 
 export function fitMapToRemainingRoutes(

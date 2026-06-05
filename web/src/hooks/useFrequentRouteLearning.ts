@@ -13,10 +13,11 @@ import {
 } from "../frequentRoutes/clusters";
 import {
   createInitialTripState,
+  forceFinishActiveTrip,
   processTripSample,
   type TripLearningMachineState,
 } from "../frequentRoutes/tripDetector";
-import type { FrequentRouteCluster } from "../frequentRoutes/types";
+import type { CompletedLearnedTrip, FrequentRouteCluster } from "../frequentRoutes/types";
 import { safeStorage } from "../storage/safeStorage";
 
 const OPT_IN_KEY = "stormpath-frequent-routes-opt-in";
@@ -98,6 +99,31 @@ export function useFrequentRouteLearning(opts: {
     []
   );
 
+  const recordLearnedTrip = useCallback((trip: CompletedLearnedTrip) => {
+    setClusters((prev) => {
+      const next = mergeTripIntoClusters(prev, trip);
+      persistFrequentRouteClusters(next);
+      return next;
+    });
+  }, []);
+
+  const resetTripLearningMachine = useCallback(() => {
+    machineRef.current = createInitialTripState(Date.now());
+  }, []);
+
+  const flushActiveLearnedTrip = useCallback((): CompletedLearnedTrip | null => {
+    const p = posRef.current;
+    const machine = machineRef.current;
+    if (!machine) return null;
+    const now = Date.now();
+    const { state, trip } = forceFinishActiveTrip(machine, now, p);
+    machineRef.current = state;
+    if (trip) {
+      recordLearnedTrip(trip);
+    }
+    return trip;
+  }, [recordLearnedTrip]);
+
   const suggestedClusters = useMemo(() => {
     const base = clusters
       .filter((c) => c.count >= 2)
@@ -111,5 +137,8 @@ export function useFrequentRouteLearning(opts: {
     learnEnabled,
     setLearnEnabled: setLearnEnabledPersist,
     dismissCluster,
+    recordLearnedTrip,
+    resetTripLearningMachine,
+    flushActiveLearnedTrip,
   };
 }

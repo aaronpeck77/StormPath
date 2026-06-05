@@ -1,7 +1,7 @@
 import mapboxgl from "../mapboxCapacitorWorker";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { MutableRefObject } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import { resolveIdleHomeFraming } from "../map/homeMapFraming";
 import {
@@ -10,6 +10,13 @@ import {
 } from "../map/homePreloadRegion";
 import { isWifiConnection } from "../map/mapPreloadNetwork";
 import { warmMapTilesForBounds } from "../map/mapRegionCacheWarm";
+import {
+  findMissingTripRouteLineLayers,
+  ROUTE_LAYER_HEALTH_IDLE_DEBOUNCE_MS,
+  ROUTE_LAYER_HEALTH_POLL_MS,
+  ROUTE_LAYER_HEALTH_REPAIR_COOLDOWN_MS,
+  ROUTE_LAYER_HEALTH_RETRY_MS,
+} from "../map/tripRouteLayerHealth";
 import type { RouteAlert } from "../nav/routeAlerts";
 import type { LngLat, NavRoute } from "../nav/types";
 import type { SavedPlace } from "../nav/savedPlaces";
@@ -320,6 +327,53 @@ function stormBarTopExtraPx(visible: boolean, expanded: boolean): number {
 const ROUTE_FIT_TOP_TRIM_PX = 36;
 /** Keep start/end dots close to safe-area edges (inside chrome), not centered deep in map. */
 const ROUTE_FIT_EDGE_INSET_PX = 12;
+/** Breathing room between fitted endpoints and measured chrome edges. */
+const MAP_CHROME_FIT_GAP_PX = 12;
+
+type MapChromeInsets = { top: number; bottom: number; left: number; right: number };
+
+/** Live dead-zone insets from bottom dock/toolbar and top guidance cluster. */
+function measuredMapChromeInsets(progressRailVisible: boolean): MapChromeInsets | null {
+  if (typeof document === "undefined") return null;
+  const vh = window.innerHeight;
+  let bottom = 0;
+  let top = 0;
+  const right = progressRailVisible ? ROUTE_RIGHT_RAIL_PX + ROUTE_RIGHT_RAIL_GAP_PX : 0;
+
+  const bottomStack = document.querySelector<HTMLElement>(".nav-bottom-stack");
+  if (bottomStack) {
+    const rect = bottomStack.getBoundingClientRect();
+    if (rect.height > 4 && rect.top < vh) {
+      bottom = Math.round(vh - rect.top + MAP_CHROME_FIT_GAP_PX);
+    }
+  }
+
+  const topCluster = document.querySelector<HTMLElement>(".nav-top-cluster");
+  if (topCluster) {
+    const rect = topCluster.getBoundingClientRect();
+    if (rect.height > 4 && rect.bottom > 0) {
+      top = Math.round(rect.bottom + MAP_CHROME_FIT_GAP_PX);
+    }
+  }
+
+  if (bottom <= 0 && top <= 0) return null;
+  return {
+    top: Math.min(Math.max(0, top), Math.round(vh * 0.35)),
+    bottom: Math.min(Math.max(0, bottom), Math.round(vh * 0.45)),
+    left: MAIN_MAP_ROUTE_PADDING.left,
+    right: Math.max(right, progressRailVisible ? ROUTE_RIGHT_RAIL_PX + ROUTE_RIGHT_RAIL_GAP_PX : 18),
+  };
+}
+
+function mergeMapChromeInsets(base: MapChromeInsets, measured: MapChromeInsets | null): MapChromeInsets {
+  if (!measured) return base;
+  return {
+    top: Math.max(base.top, measured.top),
+    bottom: Math.max(base.bottom, measured.bottom),
+    left: Math.max(base.left, measured.left),
+    right: Math.max(base.right, measured.right),
+  };
+}
 
 /** Route overview fit: turn/storm strip, address/toolbar, progress rail. */
 function isLandscapeViewport(): boolean {
@@ -391,6 +445,33 @@ function routePrimarySpanMeters(routes: NavRoute[], primaryRouteId?: string | nu
   return haversineMeters([box.west, box.south], [box.east, box.north]);
 }
 
+/** Stable key so route-fit effect is not re-fired on every parent render with a new routes array ref. */
+function planningRoutesFitKey(
+  routes: NavRoute[],
+  primaryRouteId: string | null | undefined,
+  dest: LngLat | null | undefined
+): string {
+  const route =
+    (primaryRouteId ? routes.find((r) => r.id === primaryRouteId) : null) ?? routes[0] ?? null;
+  const g = route?.geometry;
+  const destKey = dest ? `${dest[0].toFixed(4)},${dest[1].toFixed(4)}` : "";
+  if (!g?.length) return `${route?.id ?? ""}|empty|${destKey}`;
+  const a = g[0]!;
+  const b = g[g.length - 1]!;
+  return `${route?.id ?? ""}|${g.length}|${a[0].toFixed(4)},${a[1].toFixed(4)}|${b[0].toFixed(4)},${b[1].toFixed(4)}|${destKey}`;
+}
+
+function mapStyleReadyForCamera(map: mapboxgl.Map): boolean {
+  if (!isMapUsable(map)) return false;
+  try {
+    return map.isStyleLoaded();
+  } catch {
+    return false;
+  }
+}
+
+const MIN_PLANNING_ROUTE_ZOOM = 7.5;
+
 /** Route overview fit: turn/storm strip, address/toolbar, progress rail. */
 function routeFitPadding(
   stormBarVisible: boolean,
@@ -412,20 +493,20 @@ function routeFitPadding(
   if (isNarrowPhoneViewport()) {
     const safe = safeAreaInsetsPx();
     const sidePad = Math.max(p.left, 22);
-    /* Portrait / planning view now has the route-select button in the about row above the
-     * address bar. Give tall north/south fits a little more air at the bottom so the lower
-     * route endpoint / pin doesn't sit right on top of that button. */
     const planningBottom =
       148 +
       Math.min(34, safe.bottom) +
       (planningOverview && axis === "northSouth" ? 20 : 0);
     /* Before Go there is no progress rail, so keep the route overview centered in the full map width. */
-    return {
-      top: Math.max(118, 168 - ROUTE_FIT_TOP_TRIM_PX) + stormTop + Math.min(6, safe.top * 0.25),
-      bottom: planningBottom,
-      left: sidePad,
-      right: planningOverview ? sidePad : Math.max(88, rightNeed),
-    };
+    return mergeMapChromeInsets(
+      {
+        top: Math.max(118, 168 - ROUTE_FIT_TOP_TRIM_PX) + stormTop + Math.min(6, safe.top * 0.25),
+        bottom: planningBottom,
+        left: sidePad,
+        right: planningOverview ? sidePad : Math.max(88, rightNeed),
+      },
+      measuredMapChromeInsets(progressRailVisible)
+    );
   }
   if (isLandscapeViewport()) {
     const handLeft = isLandscapeHandLeft();
@@ -455,28 +536,34 @@ function routeFitPadding(
     const rightPad = handLeft
       ? rightUiNeed
       : Math.max(axis === "eastWest" ? eastWestRightPad : nonEastWestRightPad, rightUiNeed);
-    return axis === "eastWest"
-      ? {
-          /* E/W: raise route center so endpoints sit higher in the safe viewing lane. */
-          top: Math.max(74, p.top + stormTop - ROUTE_FIT_TOP_TRIM_PX - 22),
-          bottom: Math.max(144, p.bottom - 20),
-          left: leftPad,
-          right: rightPad,
-        }
-      : {
-          /* N/S + diagonal: use almost the full safe lane height (tight to outer walls). */
-          top: Math.max(20, 18 + Math.min(18, stormTop)),
-          bottom: 18,
-          left: leftPad,
-          right: rightPad,
-        };
+    return mergeMapChromeInsets(
+      axis === "eastWest"
+        ? {
+            /* E/W: raise route center so endpoints sit higher in the safe viewing lane. */
+            top: Math.max(74, p.top + stormTop - ROUTE_FIT_TOP_TRIM_PX - 22),
+            bottom: Math.max(144, p.bottom - 20),
+            left: leftPad,
+            right: rightPad,
+          }
+        : {
+            /* N/S + diagonal: use almost the full safe lane height (tight to outer walls). */
+            top: Math.max(20, 18 + Math.min(18, stormTop)),
+            bottom: Math.max(120, p.bottom - 48),
+            left: leftPad,
+            right: rightPad,
+          },
+      measuredMapChromeInsets(progressRailVisible)
+    );
   }
-  return {
-    top: Math.max(128, p.top + stormTop - ROUTE_FIT_TOP_TRIM_PX),
-    bottom: p.bottom,
-    left: p.left,
-    right: planningOverview ? p.left : Math.max(p.right, rightNeed),
-  };
+  return mergeMapChromeInsets(
+    {
+      top: Math.max(128, p.top + stormTop - ROUTE_FIT_TOP_TRIM_PX),
+      bottom: p.bottom,
+      left: p.left,
+      right: planningOverview ? p.left : Math.max(p.right, rightNeed),
+    },
+    measuredMapChromeInsets(progressRailVisible)
+  );
 }
 
 function routeFitMaxZoomCeiling(routes: NavRoute[], primaryRouteId?: string | null): number {
@@ -914,6 +1001,9 @@ export function DriveMap({
   const onSearchPickMarkerClickRef = useRef(onSearchPickMarkerClick);
   onSearchPickMarkerClickRef.current = onSearchPickMarkerClick;
   const routeIdsRef = useRef<Set<string>>(new Set());
+  /** Re-apply A/B/C route lines — shared by sync effect and map layer health watch. */
+  const syncTripRoutesRef = useRef<() => boolean>(() => false);
+  const routeLayerHealthRepairAtRef = useRef(0);
   const prevTopdownRef = useRef(false);
   const prevNavigationStartedRef = useRef(false);
   const wasRouteCompareRef = useRef(false);
@@ -937,6 +1027,9 @@ export function DriveMap({
   const exploreTimerRef = useRef<number | null>(null);
   const lastForcedPlanningFitTriggerRef = useRef<number | null>(null);
   const prevPlanningRouteCountRef = useRef(0);
+  const planningFitRafRef = useRef<number | null>(null);
+  const planningFitRetryTimerRef = useRef<number | null>(null);
+  const planningFitVerifyTimerRef = useRef<number | null>(null);
   const activeDriveCamera = navigationStarted && viewMode === "drive";
 
   useEffect(() => {
@@ -971,9 +1064,16 @@ export function DriveMap({
   const progressRailVisibleRef = useRef(progressRailVisible);
   progressRailVisibleRef.current = progressRailVisible;
 
+  const routesPlanningFitKey = useMemo(
+    () => planningRoutesFitKey(routes, lineFocusId, destLngLat),
+    [routes, lineFocusId, destLngLat]
+  );
+
   const token = getWebEnv().mapboxToken;
   const [mapReady, setMapReady] = useState(false);
   const [mapResumeTick, setMapResumeTick] = useState(0);
+  /** Bumps when bottom/top chrome resizes so route fit padding tracks live UI dead zones. */
+  const [chromeLayoutTick, setChromeLayoutTick] = useState(0);
   const [nightBasemapPreset] = useState<NightBasemapPreset>(parseNightBasemapPreset);
   const [mapPhase, setMapPhase] = useState(currentMapPhase);
   const activeStyleRef = useRef(currentMapStyle(mapPhase, nightBasemapPreset));
@@ -1001,6 +1101,32 @@ export function DriveMap({
       setMapResumeTick((n) => n + 1);
     }, idleMs);
   };
+
+  useLayoutEffect(() => {
+    const bottomStack = document.querySelector<HTMLElement>(".nav-bottom-stack");
+    const topCluster = document.querySelector<HTMLElement>(".nav-top-cluster");
+    if (!bottomStack && !topCluster) return;
+
+    let raf = 0;
+    const bump = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => setChromeLayoutTick((n) => n + 1));
+    };
+
+    const ro = new ResizeObserver(bump);
+    if (bottomStack) ro.observe(bottomStack);
+    if (topCluster) ro.observe(topCluster);
+    window.addEventListener("resize", bump);
+    window.addEventListener("orientationchange", bump);
+    bump();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      window.removeEventListener("resize", bump);
+      window.removeEventListener("orientationchange", bump);
+    };
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current || !token || mapRef.current) return;
@@ -1947,6 +2073,7 @@ export function DriveMap({
     if (!map || !mapReady) return;
 
     let cancelled = false;
+    let pendingStyleRetry = false;
 
     /** When there are no routes, always try to strip trip line layers; retry if style is mid-transition. */
     const clearTripRouteLayers = () => {
@@ -1972,7 +2099,9 @@ export function DriveMap({
       );
     };
 
-    const sync = () => {
+    const sync = (): boolean => {
+      if (cancelled) return false;
+
       if (routes.length === 0) {
         clearTripRouteLayers();
         if (!map.isStyleLoaded()) {
@@ -1984,10 +2113,23 @@ export function DriveMap({
             if (!cancelled) clearTripRouteLayers();
           });
         });
-        return;
+        return true;
       }
 
-      if (!map.isStyleLoaded()) return;
+      if (!map.isStyleLoaded()) {
+        if (!pendingStyleRetry) {
+          pendingStyleRetry = true;
+          const retry = () => {
+            pendingStyleRetry = false;
+            sync();
+          };
+          map.once("style.load", retry);
+          map.once("idle", retry);
+        }
+        return false;
+      }
+      pendingStyleRetry = false;
+
       routeIdsRef.current = applyRoutesToMap(
         map,
         routes,
@@ -2007,13 +2149,16 @@ export function DriveMap({
         map,
         visibleRouteIdsForHitLayers(routes, lineFocusId, viewMode, false)
       );
+      return true;
     };
 
-    /* After setStyle, "load" does not fire again — use style.load so polylines always re-attach. */
+    syncTripRoutesRef.current = sync;
+
     sync();
     map.on("style.load", sync);
     return () => {
       cancelled = true;
+      syncTripRoutesRef.current = () => false;
       map.off("style.load", sync);
     };
   }, [
@@ -2026,6 +2171,70 @@ export function DriveMap({
     viewMode,
     trafficBypassCompareActive,
   ]);
+
+  /**
+   * Map layer health: after routes load (especially on slow / low-data links), verify line layers
+   * exist and re-sync if the style was not ready on the first pass. View cycling used to “fix” this.
+   */
+  useEffect(() => {
+    if (!mapReady || routes.length === 0) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    const verifyAndRepair = () => {
+      if (!isMapUsable(map)) return;
+      try {
+        if (!map.isStyleLoaded()) return;
+      } catch {
+        return;
+      }
+      const { routes: rts, lineFocusId: lid, viewMode: vm } = routesForHitRef.current;
+      if (rts.length === 0) return;
+      const ids = visibleRouteIdsForHitLayers(rts, lid, vm, false);
+      const missing = findMissingTripRouteLineLayers(map, ids);
+      if (missing.length === 0) return;
+      const now = Date.now();
+      if (now - routeLayerHealthRepairAtRef.current < ROUTE_LAYER_HEALTH_REPAIR_COOLDOWN_MS) return;
+      routeLayerHealthRepairAtRef.current = now;
+      syncTripRoutesRef.current();
+      if (import.meta.env.DEV) {
+        console.info("[map-health] re-synced missing route line layers", missing);
+      }
+    };
+
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    const onIdle = () => {
+      if (idleTimer != null) window.clearTimeout(idleTimer);
+      idleTimer = window.setTimeout(verifyAndRepair, ROUTE_LAYER_HEALTH_IDLE_DEBOUNCE_MS);
+    };
+
+    const timers = ROUTE_LAYER_HEALTH_RETRY_MS.map((ms) => window.setTimeout(verifyAndRepair, ms));
+    const poll = window.setInterval(verifyAndRepair, ROUTE_LAYER_HEALTH_POLL_MS);
+    map.on("idle", onIdle);
+    map.on("style.load", verifyAndRepair);
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") verifyAndRepair();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    verifyAndRepair();
+
+    return () => {
+      for (const t of timers) window.clearTimeout(t);
+      window.clearInterval(poll);
+      if (idleTimer != null) window.clearTimeout(idleTimer);
+      map.off("idle", onIdle);
+      map.off("style.load", verifyAndRepair);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [mapReady, routes, lineFocusId, viewMode, navigationStarted, mapResumeTick]);
+
+  /** View cycle (Rt/Mp/Dr) used to remount layers; force route sync when mode changes. */
+  useEffect(() => {
+    if (!mapReady || routes.length === 0) return;
+    syncTripRoutesRef.current();
+  }, [viewMode, mapReady, routes.length]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2786,6 +2995,23 @@ export function DriveMap({
     if (viewMode !== "route" && viewMode !== "topdown") return;
     if (routes.length === 0) return;
 
+    let cancelled = false;
+
+    const clearPlanningFitTimers = () => {
+      if (planningFitRafRef.current != null) {
+        cancelAnimationFrame(planningFitRafRef.current);
+        planningFitRafRef.current = null;
+      }
+      if (planningFitRetryTimerRef.current != null) {
+        window.clearTimeout(planningFitRetryTimerRef.current);
+        planningFitRetryTimerRef.current = null;
+      }
+      if (planningFitVerifyTimerRef.current != null) {
+        window.clearTimeout(planningFitVerifyTimerRef.current);
+        planningFitVerifyTimerRef.current = null;
+      }
+    };
+
     const syncTopdownZoomFromFit = () => {
       if (viewModeRef.current === "topdown") topdownZoomRef.current = map.getZoom();
     };
@@ -2811,14 +3037,15 @@ export function DriveMap({
 
     let pendingFlatten: (() => void) | null = null;
 
-    const doPlanningFit = () => {
-      if (userExploringRef.current && !forcePlanningFit) return;
+    const executePlanningFit = (): boolean => {
+      if (userExploringRef.current && !forcePlanningFit) return false;
+      if (!mapStyleReadyForCamera(map)) return false;
       const u = userLngLatRef.current;
       if (pendingFlatten) {
         map.off("moveend", pendingFlatten);
         pendingFlatten = null;
       }
-      fitMapToTrip(
+      return fitMapToTrip(
         map,
         routes,
         u,
@@ -2838,11 +3065,59 @@ export function DriveMap({
       );
     };
 
+    const verifyPlanningZoom = (attempt: number) => {
+      if (cancelled || navigationStartedRef.current || routes.length === 0) return;
+      if (viewModeRef.current !== "route" && viewModeRef.current !== "topdown") return;
+      let zoom = 0;
+      try {
+        zoom = map.getZoom();
+      } catch {
+        return;
+      }
+      if (zoom >= MIN_PLANNING_ROUTE_ZOOM) return;
+      if (attempt >= 5) return;
+      if (!executePlanningFit()) {
+        planningFitRetryTimerRef.current = window.setTimeout(
+          () => verifyPlanningZoom(attempt + 1),
+          220 + attempt * 180
+        );
+        return;
+      }
+      planningFitVerifyTimerRef.current = window.setTimeout(
+        () => verifyPlanningZoom(attempt + 1),
+        480 + attempt * 120
+      );
+    };
+
+    const retryWhenReady = () => {
+      if (cancelled) return;
+      if (!executePlanningFit()) verifyPlanningZoom(1);
+      else {
+        planningFitVerifyTimerRef.current = window.setTimeout(() => verifyPlanningZoom(0), 520);
+      }
+    };
+
+    const schedulePlanningRouteFit = () => {
+      clearPlanningFitTimers();
+      planningFitRafRef.current = requestAnimationFrame(() => {
+        planningFitRafRef.current = null;
+        if (cancelled) return;
+        if (!executePlanningFit()) {
+          map.once("idle", retryWhenReady);
+          map.once("style.load", retryWhenReady);
+          planningFitRetryTimerRef.current = window.setTimeout(retryWhenReady, 160);
+        } else {
+          planningFitVerifyTimerRef.current = window.setTimeout(() => verifyPlanningZoom(0), 520);
+        }
+      });
+    };
+
     const doNavRemainingFit = () => {
       if (userExploringRef.current) return;
+      if (!mapStyleReadyForCamera(map)) return;
       const u = userLngLatRef.current;
       if (!u || !destLngLat) {
-        doPlanningFit();
+        schedulePlanningRouteFit();
         return;
       }
       if (pendingFlatten) {
@@ -2873,11 +3148,14 @@ export function DriveMap({
       doNavRemainingFit();
       intervalId = setInterval(doNavRemainingFit, 2200);
     } else {
-      doPlanningFit();
+      schedulePlanningRouteFit();
     }
 
     return () => {
-      if (!userExploringRef.current) stopMapCamera(map);
+      cancelled = true;
+      clearPlanningFitTimers();
+      map.off("idle", retryWhenReady);
+      map.off("style.load", retryWhenReady);
       if (intervalId != null) clearInterval(intervalId);
       if (pendingFlatten) {
         map.off("moveend", pendingFlatten);
@@ -2888,7 +3166,7 @@ export function DriveMap({
     mapReady,
     fitTrigger,
     viewMode,
-    routes,
+    routesPlanningFitKey,
     destLngLat,
     navigationStarted,
     mapResumeTick,
@@ -2896,6 +3174,7 @@ export function DriveMap({
     stormBarExpanded,
     lineFocusId,
     progressRailVisible,
+    chromeLayoutTick,
   ]);
 
   /**
