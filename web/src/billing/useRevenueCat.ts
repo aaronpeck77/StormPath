@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PurchasesPackage } from "@revenuecat/purchases-capacitor";
-import { hapticError, hapticSuccess } from "../feedback/haptics";
 import {
   getPlusOffering,
   isRevenueCatReady,
@@ -87,29 +86,22 @@ export function useRevenueCat(): UseRevenueCatResult {
       if (outcome.entitled) {
         setMessage(successText);
         setMessageKind("success");
-        /* Phase 8 — celebrate the entitlement flip with the iOS three-tap success pattern.
-         * Lands at the same moment the green banner appears, so the haptic + visual fire as one cue. */
-        hapticSuccess();
       } else {
         /* `ok` + `entitled: false` happens on Restore when the user has nothing to restore.
          * Apple's UX guidance: show a polite "no purchases found" message rather than silence. */
         setMessage("No prior purchases found on this Apple ID.");
         setMessageKind("error");
-        hapticError();
       }
     } else if (outcome.status === "cancelled") {
-      /* Silent — user backed out of the App Store sheet, no banner needed (and no haptic
-       * either; cancelling is a deliberate user choice, not a failure). */
+      /* Silent — user backed out of the App Store sheet, no banner needed. */
       setMessage(null);
       setMessageKind(null);
     } else if (outcome.status === "unsupported") {
       setMessage("Subscriptions are only available in the iOS app.");
       setMessageKind("error");
-      /* No haptic on web — `hapticError` would no-op anyway, but be explicit about the intent. */
     } else {
       setMessage(outcome.message);
       setMessageKind("error");
-      hapticError();
     }
   }, []);
 

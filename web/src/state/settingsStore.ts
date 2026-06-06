@@ -40,14 +40,11 @@ const LS_AUTO_REROUTE = "stormpath-setting-auto-reroute-enabled";
 const LS_VOICE = "stormpath-setting-voice-guided";
 const LS_GPS_HIGH_REFRESH = "stormpath-setting-gps-high-refresh";
 const LS_LANDSCAPE_SIDE_HAND = "stormpath-setting-landscape-side-hand";
-/** Phase 8 — haptic feedback toggle. Default ON: first-time users feel the polish; opt-out
- * lives in About → Feedback. Stored as `1`/`0` like every other bool setting. */
-const LS_HAPTICS = "stormpath-setting-haptics-enabled";
 
 export type LandscapeSideHand = "right" | "left";
 
 /**
- * Shape passed to / from the About sheet. Mirrors the 9 user-toggleable persisted fields. Kept
+ * Shape passed to / from the About sheet. Mirrors the 8 user-toggleable persisted fields. Kept
  * separate from `SettingsState` so the About sheet doesn't need to know about the underlying
  * setter names — it just exchanges a plain settings object.
  */
@@ -61,8 +58,6 @@ export interface AppSettings {
   voiceGuidanceEnabled: boolean;
   gpsHighRefreshEnabled: boolean;
   landscapeSideHand: LandscapeSideHand;
-  /** Phase 8 — included in the bulk-apply payload from About → Feedback toggle. */
-  hapticsEnabled: boolean;
 }
 
 function readBoolFlag(key: string, defaultValue: boolean): boolean {
@@ -92,8 +87,6 @@ export interface SettingsState {
   gpsHighRefreshEnabled: boolean;
   /** Landscape / side view only; portrait ignores. */
   landscapeSideHand: LandscapeSideHand;
-  /** Phase 8 — drives `feedback/haptics.ts`. Default ON; user opt-out in About → Feedback. */
-  hapticsEnabled: boolean;
 
   setStormEnabled: (on: boolean) => void;
   setTrafficEnabled: (on: boolean) => void;
@@ -106,12 +99,11 @@ export interface SettingsState {
   setVoiceGuidanceEnabled: (on: boolean) => void;
   setGpsHighRefreshEnabled: (on: boolean) => void;
   setLandscapeSideHand: (hand: LandscapeSideHand) => void;
-  setHapticsEnabled: (on: boolean) => void;
   /**
-   * Bulk-apply all 9 persisted toggles from the About sheet in a single store update.
+   * Bulk-apply all 8 persisted toggles from the About sheet in a single store update.
    *
    * - Each per-field persistence side-effect (`safeStorage.set`, `writeXSettingOn`) fires once.
-   * - Only one React re-render fires (vs. 9 if the caller looped over individual setters).
+   * - Only one React re-render fires (vs. 8 if the caller looped over individual setters).
    * - Caller-side side-effects (e.g. clearing the radar overlay when `radarEnabled` flips off)
    *   are owned by the `useEffect`s in App.tsx that already watch the corresponding setting —
    *   `applySettings` deliberately doesn't re-implement them.
@@ -130,7 +122,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   voiceGuidanceEnabled: readBoolFlag(LS_VOICE, false),
   gpsHighRefreshEnabled: readBoolFlag(LS_GPS_HIGH_REFRESH, false),
   landscapeSideHand: safeStorage.get(LS_LANDSCAPE_SIDE_HAND) === "left" ? "left" : "right",
-  hapticsEnabled: readBoolFlag(LS_HAPTICS, true),
 
   setStormEnabled: (on) => {
     writeStormSettingOn(on);
@@ -172,10 +163,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     safeStorage.set(LS_LANDSCAPE_SIDE_HAND, hand);
     set({ landscapeSideHand: hand });
   },
-  setHapticsEnabled: (on) => {
-    writeBoolFlag(LS_HAPTICS, on);
-    set({ hapticsEnabled: on });
-  },
   applySettings: (next) => {
     /* Persist each field through its existing helper so the storage shape stays identical to
      * the individual setters (legacy fallback keys in `layerStartupPrefs`, `safeStorage` for
@@ -190,7 +177,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     writeBoolFlag(LS_VOICE, next.voiceGuidanceEnabled);
     writeBoolFlag(LS_GPS_HIGH_REFRESH, next.gpsHighRefreshEnabled);
     safeStorage.set(LS_LANDSCAPE_SIDE_HAND, next.landscapeSideHand);
-    writeBoolFlag(LS_HAPTICS, next.hapticsEnabled);
     set({
       stormEnabled: next.stormEnabled,
       trafficEnabled: next.trafficEnabled,
@@ -201,7 +187,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       voiceGuidanceEnabled: next.voiceGuidanceEnabled,
       gpsHighRefreshEnabled: next.gpsHighRefreshEnabled,
       landscapeSideHand: next.landscapeSideHand,
-      hapticsEnabled: next.hapticsEnabled,
     });
   },
 }));

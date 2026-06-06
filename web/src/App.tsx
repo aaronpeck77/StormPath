@@ -260,7 +260,6 @@ import {
   saveActiveTripToCache,
   isRestorableActiveTripEntry,
 } from "./tripCache";
-import { hapticTapLight, hapticTapMedium, hapticWarning } from "./feedback/haptics";
 import { loadRecentSearchSuggestions, recordRecentSearch } from "./recentSearches";
 import {
   getTollCompareContext,
@@ -383,11 +382,8 @@ export default function App() {
   const settingGpsHighRefreshEnabled = useSettingsStore((s) => s.gpsHighRefreshEnabled);
   /** Landscape / side view only — CSS mirrors chrome when "left"; portrait ignores */
   const settingLandscapeSideHand = useSettingsStore((s) => s.landscapeSideHand);
-  /** Phase 8 — drives `feedback/haptics.ts`. Subscribed here so the AboutSheet bulk-apply
-   * handler can include it in the settings payload. */
-  const settingHapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
   /* Phase 4e3: the About sheet is the only consumer of the individual `setSettingX` setters.
-   * `applySettings` writes through all 9 fields in one batched store update and runs each
+   * `applySettings` writes through all 8 fields in one batched store update and runs each
    * persistence side once. Per-toggle handlers elsewhere (toolbar Radar overlay, etc.) operate
    * on App-owned state (`showRadar`), not on the persistent settings, so they don't need the
    * individual setters either. */
@@ -3624,7 +3620,6 @@ export default function App() {
       if (now - lastSevereAutoRecalcMsRef.current < NAV_SEVERE_OFF_ROUTE_THROTTLE_MS) return;
 
       lastSevereAutoRecalcMsRef.current = now;
-      hapticWarning();
       void recalcRouteFromHere({ silent: true });
     };
 
@@ -4009,9 +4004,6 @@ export default function App() {
   const handlePromoteRouteToPrimary = useCallback(
     (id: string) => {
       if (!plan.routes.some((r) => r.id === id)) return;
-      /* Phase 8 — light tap when the user picks a different alternate from the line tap or
-       * compare bar. Low-stakes ack so the user feels the route swap commit. */
-      hapticTapLight();
       setRouteSlotOrder((prev) => slotOrderAfterSelect(prev.length ? prev : planRouteIds, id));
       setPreviewLegIndex(0);
     },
@@ -4100,9 +4092,6 @@ export default function App() {
   const proceedGo = useCallback(() => {
     const chosen = orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? primaryRouteId;
     if (!chosen) return;
-    /* Phase 8 — primary "I'm starting navigation" tap. Medium impact gives the user clear
-     * Taptic confirmation that the gesture registered before the screen flips into drive mode. */
-    hapticTapMedium();
     setRouteSlotOrder((prev) => slotOrderAfterSelect(prev.length ? prev : planRouteIds, chosen));
     setPreviewLegIndex(0);
     setNavigationStarted(true);
@@ -4407,8 +4396,6 @@ export default function App() {
 
   const handleProgressStripCorridorClick = useCallback((alert: RouteAlert) => {
     if (!lineFocusId) return;
-    /* Phase 8 — light tap when the driver opens a hazard from the progress strip. */
-    hapticTapLight();
     setRouteHazardSheet({
       routeId: lineFocusId,
       alerts: [alert],
@@ -4425,7 +4412,6 @@ export default function App() {
         stormOverlapping.length > 0 ? stormOverlapping : stormCorridorAlerts;
       const picked = routeAlertsFromStormBandMidpoint(geom, startM, endM, pool);
       if (!picked.length) return;
-      hapticTapLight();
       setRouteHazardSheet({
         routeId: lineFocusId,
         alerts: picked,
@@ -4442,7 +4428,6 @@ export default function App() {
       const band = advisoryStormStripBands.find((b) => b.alertId === alert.id);
       const routeAlert = routeAlertForNwsAdvisoryClick(alert, geom, band ?? null);
       if (!routeAlert) return;
-      hapticTapLight();
       setRouteHazardSheet({
         routeId: lineFocusId,
         alerts: [routeAlert],
@@ -5772,7 +5757,6 @@ export default function App() {
           voiceGuidanceEnabled: settingVoiceGuidanceEnabled,
           gpsHighRefreshEnabled: settingGpsHighRefreshEnabled,
           landscapeSideHand: settingLandscapeSideHand,
-          hapticsEnabled: settingHapticsEnabled,
         }}
         onSettings={(next) => {
           /* `applySettings` persists every field through the same helpers the individual

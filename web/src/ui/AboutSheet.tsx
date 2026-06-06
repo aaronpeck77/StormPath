@@ -52,8 +52,6 @@ type Props = {
     gpsHighRefreshEnabled: boolean;
     /** Landscape / side view only — portrait layout ignores this */
     landscapeSideHand: "right" | "left";
-    /** Phase 8 — drives `feedback/haptics.ts`; off-switch for the Taptic Engine taps. */
-    hapticsEnabled: boolean;
   };
   onSettings: (next: Props["settings"]) => void;
   /** Replays the first-launch coachmark walk-through. Resets the suppression flag and asks
@@ -131,9 +129,7 @@ export function AboutSheet({
     `Online: ${typeof navigator === "undefined" ? "unknown" : navigator.onLine ? "yes" : "no"}`,
     `Voice: ${settings.voiceGuidanceEnabled ? "on" : "off"}, GPS refresh: ${
       settings.gpsHighRefreshEnabled ? "high" : "normal"
-    }, Data saver: ${settings.dataSaverEnabled ? "on" : "off"}, Haptics: ${
-      settings.hapticsEnabled ? "on" : "off"
-    }`,
+    }, Data saver: ${settings.dataSaverEnabled ? "on" : "off"}`,
     `Landscape UI: ${settings.landscapeSideHand === "left" ? "left hand" : "right hand"}`,
     `Providers: mapbox=${env.mapboxToken ? "on" : "off"}, openweather=${
       env.openWeatherApiKey ? "on" : "off"
@@ -454,20 +450,6 @@ export function AboutSheet({
               <span>
                 <strong>GPS high refresh</strong> — request fresher positions (uses more battery). Turn off if the
                 puck feels jittery.
-              </span>
-            </label>
-
-            {/* Phase 8 — Taptic Engine toggle. Only meaningful on iPhone (web no-ops anyway),
-             *  but the toggle ships everywhere so a future Android Capacitor build inherits it. */}
-            <label className="about-sheet__setting">
-              <input
-                type="checkbox"
-                checked={settings.hapticsEnabled}
-                onChange={(e) => onSettings({ ...settings, hapticsEnabled: e.target.checked })}
-              />
-              <span>
-                <strong>Haptic feedback</strong> — short taps from your phone when you start a route, switch lines, or
-                tap a hazard. iPhone only.
               </span>
             </label>
 
