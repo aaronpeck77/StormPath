@@ -794,17 +794,17 @@ const DRIVE_EXPLORE_IDLE_MS = 4_000;
 const DRIVE_CAMERA_BEARING_TC_S = 0.58;
 /** Top-down map view: keep the puck at the visual center; map pans to follow GPS. */
 const TOPDOWN_PUCK_OFFSET_PX: [number, number] = [0, 0];
-/** Map (Mp) view while navigating — local corridor, not whole-route overview. */
-const TOPDOWN_LOCAL_DEFAULT_ZOOM = 11.75;
-const TOPDOWN_LOCAL_MIN_ZOOM = 10.25;
+/** Map (Mp) while navigating — street-level on the puck, not Rt whole-route framing. */
+const TOPDOWN_NAV_STREET_ZOOM = 14.5;
+const TOPDOWN_NAV_MIN_ZOOM = 13.35;
 
 function resolveTopdownLocalZoom(
   topdownZoomRef: MutableRefObject<number>,
   navigationStarted: boolean
 ): number {
   if (navigationStarted) {
-    if (topdownZoomRef.current < TOPDOWN_LOCAL_MIN_ZOOM) {
-      topdownZoomRef.current = TOPDOWN_LOCAL_DEFAULT_ZOOM;
+    if (topdownZoomRef.current < TOPDOWN_NAV_MIN_ZOOM) {
+      topdownZoomRef.current = TOPDOWN_NAV_STREET_ZOOM;
     }
     return topdownZoomRef.current;
   }
@@ -812,6 +812,23 @@ function resolveTopdownLocalZoom(
     topdownZoomRef.current = ROUTE_VIEW_PLANNING_STREET_ZOOM;
   }
   return topdownZoomRef.current;
+}
+
+/** When Mp inherits a wide zoom from Rt overview, snap back to street follow. */
+function coerceTopdownNavStreetZoom(
+  map: mapboxgl.Map,
+  topdownZoomRef: MutableRefObject<number>
+): number {
+  let mapZoom = topdownZoomRef.current;
+  try {
+    mapZoom = map.getZoom();
+  } catch {
+    /* map torn down */
+  }
+  if (mapZoom < TOPDOWN_NAV_MIN_ZOOM || topdownZoomRef.current < TOPDOWN_NAV_MIN_ZOOM) {
+    topdownZoomRef.current = TOPDOWN_NAV_STREET_ZOOM;
+  }
+  return resolveTopdownLocalZoom(topdownZoomRef, true);
 }
 /** Delay before Wi‑Fi tile warm so idle-home camera can finish first. */
 const HOME_PRELOAD_START_DELAY_MS = 4_500;
@@ -3185,7 +3202,9 @@ export function DriveMap({
       if (!mapStyleReadyForCamera(map)) return;
       const u = userLngLatRef.current;
       if (!u) return;
-      const zoom = resolveTopdownLocalZoom(topdownZoomRef, navigationStarted);
+      const zoom = navigationStarted
+        ? coerceTopdownNavStreetZoom(map, topdownZoomRef)
+        : resolveTopdownLocalZoom(topdownZoomRef, false);
       if (pendingFlatten) {
         map.off("moveend", pendingFlatten);
         pendingFlatten = null;
@@ -3211,7 +3230,10 @@ export function DriveMap({
     let intervalId: ReturnType<typeof setInterval> | undefined;
 
     if (viewMode === "topdown") {
-      const snapKey = `${viewMode}|${fitTrigger}|${mapResumeTick}|${navigationStarted ? 1 : 0}|${routesPlanningFitKey}`;
+      /* Nav: local street snap once per view/resume — GPS follow is a separate pan effect. */
+      const snapKey = navigationStarted
+        ? `${viewMode}|${fitTrigger}|${mapResumeTick}|nav`
+        : `${viewMode}|${fitTrigger}|${mapResumeTick}|plan|${routesPlanningFitKey}`;
       if (topdownSnapKeyRef.current !== snapKey) {
         topdownSnapKeyRef.current = snapKey;
         doTopdownLocalFit();
@@ -3417,7 +3439,10 @@ export function DriveMap({
       if (userExploringRef.current) return;
       const u = userLngLatRef.current;
       if (!u) return;
-      const zoom = resolveTopdownLocalZoom(topdownZoomRef, navigationStartedRef.current);
+      const nav = navigationStartedRef.current;
+      const zoom = nav
+        ? coerceTopdownNavStreetZoom(map, topdownZoomRef)
+        : resolveTopdownLocalZoom(topdownZoomRef, false);
       if (!prevTopdownRef.current) {
         prevTopdownRef.current = true;
         safePanToCenter(map, {
@@ -3428,8 +3453,15 @@ export function DriveMap({
           offset: TOPDOWN_PUCK_OFFSET_PX,
         });
       } else {
+        let mapZoom = zoom;
+        try {
+          mapZoom = map.getZoom();
+        } catch {
+          /* map torn down */
+        }
         safePanToCenter(map, {
           center: u,
+          ...(nav && mapZoom < TOPDOWN_NAV_MIN_ZOOM - 0.08 ? { zoom } : {}),
           offset: TOPDOWN_PUCK_OFFSET_PX,
         });
       }

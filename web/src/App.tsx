@@ -438,8 +438,8 @@ export default function App() {
     [isPlus, learnEnabled]
   );
 
-  /** Map (top-down) follow mode: a few zoom levels wider than route overview for corridor context. */
-  const topdownZoomRef = useRef(11.75);
+  /** Map (Mp) follow: street-level on the puck while navigating — not route-wide Rt framing. */
+  const topdownZoomRef = useRef(14.5);
 
   const { places: savedPlaces, showOnMap, setShowOnMap, addPlace, updateName, removePlace } =
     useSavedPlaces();

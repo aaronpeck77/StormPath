@@ -412,3 +412,44 @@ export function slicePolylineBetweenAlong(
   }
   return out;
 }
+
+/** Samples on `route` within this lateral distance of `reference` count as shared corridor. */
+export const ROUTE_CORRIDOR_OVERLAP_M = 140;
+/** Spacing between overlap samples along `route`. */
+export const ROUTE_OVERLAP_SAMPLE_STEP_M = 380;
+/**
+ * Fraction of `route` samples that lie on the same corridor as `reference` (0–1).
+ * Used to tell “mostly the same drive” from “shares a leg but diverges when it can”.
+ */
+export function routeCorridorOverlapFraction(
+  route: LngLat[],
+  reference: LngLat[],
+  opts?: { corridorM?: number; sampleStepM?: number }
+): number {
+  if (route.length < 2 || reference.length < 2) return 0;
+  const corridorM = opts?.corridorM ?? ROUTE_CORRIDOR_OVERLAP_M;
+  const sampleStepM = opts?.sampleStepM ?? ROUTE_OVERLAP_SAMPLE_STEP_M;
+  const totalM = polylineLengthMeters(route);
+  if (totalM < 80) return 0;
+
+  const step = Math.max(sampleStepM, totalM / 48);
+  let hits = 0;
+  let checks = 0;
+  for (let d = 0; d <= totalM; d += step) {
+    const pt = pointAtAlongMeters(route, d);
+    checks++;
+    const { lateralMetersApprox } = closestAlongRouteMeters(pt, reference);
+    if (lateralMetersApprox <= corridorM) hits++;
+  }
+  return checks > 0 ? hits / checks : 0;
+}
+
+/** True when two legs are effectively the same drive (high corridor overlap). */
+export function routesEffectivelySame(
+  a: LngLat[],
+  b: LngLat[],
+  minOverlap = 0.93
+): boolean {
+  if (a.length < 2 || b.length < 2) return false;
+  return routeCorridorOverlapFraction(a, b) >= minOverlap;
+}

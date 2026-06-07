@@ -12,13 +12,15 @@
  *
  * Browser `fetch()` throws a TypeError if any header value contains a non-ISO-8859-1
  * code point, and Chrome overrides `User-Agent` regardless.  Skip the header in
- * non-native browser contexts — NWS accepts requests without it.
+ * non-native browser contexts — the Vite dev proxy is same-origin and does not need it.
  */
+import { Capacitor } from "@capacitor/core";
+
 export function nwsApiRequestHeaders(userAgent: string): Record<string, string> {
   // Capacitor native: CapacitorHttp.request() accepts User-Agent correctly.
   // Browser: User-Agent cannot be set via fetch() and Chrome throws on non-ASCII values.
-  if (typeof window !== "undefined" && typeof document !== "undefined") {
-    return {};
+  if (Capacitor.isNativePlatform()) {
+    return { "User-Agent": userAgent };
   }
-  return { "User-Agent": userAgent };
+  return {};
 }

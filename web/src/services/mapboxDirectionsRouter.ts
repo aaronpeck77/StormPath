@@ -12,6 +12,8 @@ import {
   cumulativeLengthToVertex,
   haversineMeters,
   polylineLengthMeters,
+  routeCorridorOverlapFraction,
+  routesEffectivelySame,
   subsamplePolylineVertexBudget,
 } from "../nav/routeGeometry";
 import { shortenTurnInstruction } from "../nav/turnInstructionShort";
@@ -162,17 +164,6 @@ function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteT
   return out;
 }
 
-function geometryNearlySame(a: LngLat[], b: LngLat[]): boolean {
-  if (a.length < 2 || b.length < 2) return false;
-  if (haversineMeters(a[0]!, b[0]!) > 45) return false;
-  if (haversineMeters(a[a.length - 1]!, b[b.length - 1]!) > 45) return false;
-  const la = polylineLengthMeters(a);
-  const lb = polylineLengthMeters(b);
-  if (la < 15 || lb < 15) return false;
-  /* Slightly looser than before so Mapbox “alternatives” that share most of the path still show as A/B/C. */
-  return Math.abs(la - lb) / Math.max(la, lb) < 0.011;
-}
-
 /**
  * Cross-country `overview=full` lines are huge; keep payload bounded, but preserve enough vertices
  * so rendered turns stay attached to real roads on long interstate drives (esp. TestFlight/native).
@@ -195,17 +186,17 @@ function rescaledNoticeAlongMeters(
   );
 }
 
-/** O(200) per side — for mergePools only (don’t use full 10k+ vertex lines). */
+/** O(200) per side — corridor overlap, not total-length equality (shared legs are OK). */
 function sameRouteShapeLine(a: LngLat[], b: LngLat[]): boolean {
-  if (a.length < 2 || b.length < 2) return false;
-  return geometryNearlySame(
+  const aLite =
     a.length > GEOM_COMPARE_MAX_VERTICES
       ? subsamplePolylineVertexBudget(a, GEOM_COMPARE_MAX_VERTICES)
-      : a,
+      : a;
+  const bLite =
     b.length > GEOM_COMPARE_MAX_VERTICES
       ? subsamplePolylineVertexBudget(b, GEOM_COMPARE_MAX_VERTICES)
-      : b
-  );
+      : b;
+  return routesEffectivelySame(aLite, bLite);
 }
 
 /**
@@ -700,9 +691,9 @@ function collectRouteNoticesWithAlong(
  * - **B (`hazardSmart`)** — Medium-risk corridor: prefer avoiding motorways when Mapbox gives a
  *   distinct non-interstate shape; future: allow motorway **only** if modeled storm exposure drops
  *   by ~half vs staying off interstate (compare per-leg mosaic / advisory stress).
- * - **C (`balanced`)** — Among waypoint-detoured candidates within an ETA budget vs A, prefers **lower
- *   RainViewer echo intensity** along the snapped polyline (strong reds rank worst). NWS polygons seed lateral
- *   waypoint variants; generic corridor offsets fill the candidate list when mosaic shows meaningful precip.
+ * - **C (`balanced`)** — A reasonable third leg: stays within ~30% of A’s ETA/distance, prefers a corridor
+ *   that diverges from A/B when Mapbox offers one (shared highway legs are fine). Storm refinement may replace C
+ *   with a waypoint detour that lowers RainViewer echo along the polyline.
  *
  * ### Storm / radar avoidance on leg C (`radarAvoidanceEnabled` + Plus three-route builds)
  * Leg **C** may be replaced after scoring several `start → waypoint → end` Directions results: waypoints come
@@ -749,7 +740,9 @@ export async function collectMapboxRouteVariants(
   const trailSamples: ActivitySample[] | null = opts?.trailRoutePersonalization
     ? loadActivitySamples()
     : null;
-  const MAX_NO_TOWN_DURATION_FACTOR = 1.6;
+  /** Leg C should stay a reasonable drive — not a long scenic detour. */
+  const MAX_C_ROUTE_DURATION_FACTOR = 1.3;
+  const MAX_C_ROUTE_DISTANCE_FACTOR = 1.35;
   const LOCAL_TRIP_MAX_DISTANCE_M = 18_000;
   const LOCAL_TRIP_MAX_DURATION_S = 22 * 60;
 
@@ -875,7 +868,8 @@ export async function collectMapboxRouteVariants(
     const usedForDistinct: LngLat[][] = [navA.geometry];
     if (out[1]) usedForDistinct.push(out[1].geometry);
 
-    const noTownMaxDur = (aRaw.duration ?? 0) * MAX_NO_TOWN_DURATION_FACTOR;
+    const cMaxDur = (aRaw.duration ?? 0) * MAX_C_ROUTE_DURATION_FACTOR;
+    const aDistM = Math.max(1, aRaw.distance ?? 1);
     const routeStepCount = (r: NonNullable<DirectionsResponse["routes"]>[0]): number =>
       (r.legs ?? []).reduce((n, leg) => n + (leg.steps?.length ?? 0), 0);
     const turnDensityPerKm = (r: NonNullable<DirectionsResponse["routes"]>[0]): number => {
@@ -886,28 +880,57 @@ export async function collectMapboxRouteVariants(
       const aDur = Math.max(1, aRaw.duration ?? 1);
       return Math.max(1, (r.duration ?? aDur) / aDur);
     };
-    const noTownScore = (r: NonNullable<DirectionsResponse["routes"]>[0]): number =>
-      turnDensityPerKm(r) * 0.78 + durationFactor(r) * 0.22;
+    const distanceFactor = (r: NonNullable<DirectionsResponse["routes"]>[0]): number =>
+      Math.max(1, (r.distance ?? aDistM) / aDistM);
     const trailBias = (r: NonNullable<DirectionsResponse["routes"]>[0]): number => {
       if (!trailSamples) return 0;
       const line = mbRouteLightLine(r);
-      return line ? routeTrailOverlapScore(line, trailSamples) * 0.42 : 0;
+      return line ? routeTrailOverlapScore(line, trailSamples) * 0.35 : 0;
     };
-    const cPickScore = (r: NonNullable<DirectionsResponse["routes"]>[0]): number =>
-      noTownScore(r) - trailBias(r);
+    const overlapPenalty = (line: LngLat[]): number => {
+      let maxOv = 0;
+      for (const ug of usedForDistinct) {
+        maxOv = Math.max(maxOv, routeCorridorOverlapFraction(line, ug));
+      }
+      if (maxOv >= 0.93) return 2.5;
+      if (maxOv >= 0.88) return 0.3;
+      if (maxOv <= 0.72) return -0.1;
+      return 0;
+    };
+    const cPickScore = (
+      r: NonNullable<DirectionsResponse["routes"]>[0],
+      line: LngLat[]
+    ): number =>
+      durationFactor(r) * 0.48 +
+      distanceFactor(r) * 0.26 +
+      turnDensityPerKm(r) * 0.1 +
+      overlapPenalty(line) -
+      trailBias(r);
 
     const cRaw = [...mergedRaw]
       .filter((r) => {
-        if (typeof r.duration === "number" && noTownMaxDur > 0 && r.duration > noTownMaxDur) return false;
+        if (typeof r.duration === "number" && cMaxDur > 0 && r.duration > cMaxDur) return false;
+        if (
+          typeof r.distance === "number" &&
+          aDistM > 0 &&
+          r.distance > aDistM * MAX_C_ROUTE_DISTANCE_FACTOR
+        ) {
+          return false;
+        }
         const c = r.geometry?.coordinates;
         if (!c?.length) return false;
         const gLight = coordsToLightLine(c, GEOM_COMPARE_MAX_VERTICES);
-        return !usedForDistinct.some((ug) => sameRouteShapeLine(ug, gLight));
+        return !usedForDistinct.some((ug) => routesEffectivelySame(ug, gLight));
       })
-      .sort((x, y) => cPickScore(x) - cPickScore(y))[0];
+      .sort((x, y) => {
+        const xLine = mbRouteLightLine(x);
+        const yLine = mbRouteLightLine(y);
+        if (!xLine || !yLine) return 0;
+        return cPickScore(x, xLine) - cPickScore(y, yLine);
+      })[0];
 
     if (cRaw) {
-      const navC = routeFromDirectionsApi(cRaw, "r-c", "balanced", "No town");
+      const navC = routeFromDirectionsApi(cRaw, "r-c", "balanced", "Alternate");
       if (navC && !out.some((existing) => sameRouteShapeLine(existing.geometry, navC.geometry))) {
         out.push(navC);
       }
