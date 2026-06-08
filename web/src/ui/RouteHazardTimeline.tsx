@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { formatRouteAlertTiming } from "../nav/routeAlertTiming";
+import { timelineItemBandColor } from "../nav/timelineBandColors";
 import type { RouteImpact } from "../nav/routeImpacts";
 
 /**
@@ -37,6 +38,8 @@ export type RouteHazardTimelineProps = {
   userAlongMeters: number;
   planEtaMinutes: number | null;
   driveEtaMinutes?: number | null;
+  /** Full graph + legend (advisory legacy) or detailed list only (progress panel has the graph). */
+  variant?: "full" | "legendOnly";
   /** Show the reroute button when traffic warrants it. */
   showRerouteCta?: boolean;
   onReroute?: () => void;
@@ -59,13 +62,6 @@ const TRACK_META: Record<string, { label: string; emptyText: string }> = {
 
 const TRACK_ORDER = ["nws", "radar", "forecast", "road"] as const;
 
-const BAND_COLORS: Record<string, string> = {
-  avoid:   "#ef4444",
-  serious: "#f97316",
-  caution: "#eab308",
-  info:    "#60a5fa",
-};
-
 /** Minimum visual band width (% of rail) so tiny/point impacts are visible. */
 const MIN_BAND_PCT = 2.5;
 
@@ -77,22 +73,22 @@ function legendDetailText(item: TimelineItem): string | null {
   return detail;
 }
 
-/* ── component ────────────────────────────────────────────────────────────── */
+type ItemVisual = {
+  sPct: number;
+  wPct: number;
+  passed: boolean;
+  inside: boolean;
+  timing: string;
+};
 
-export function RouteHazardTimeline({
-  items,
-  totalMeters,
-  userAlongMeters,
-  planEtaMinutes,
-  driveEtaMinutes = null,
-  showRerouteCta = false,
-  onReroute,
-  rerouteBusy = false,
-}: RouteHazardTimelineProps) {
-  const youPct = pct(userAlongMeters, totalMeters);
-
-  /* Pre-compute timing text for each item. */
-  const itemVisuals = useMemo(() => {
+function useTimelineItemVisuals(
+  items: TimelineItem[],
+  totalMeters: number,
+  userAlongMeters: number,
+  planEtaMinutes: number | null,
+  driveEtaMinutes: number | null
+): ItemVisual[] {
+  return useMemo(() => {
     return items.map((item) => {
       const sPct = pct(item.startMeters, totalMeters);
       const ePct = pct(item.endMeters, totalMeters);
@@ -113,11 +109,139 @@ export function RouteHazardTimeline({
       return { sPct, wPct, passed, inside, timing };
     });
   }, [items, totalMeters, userAlongMeters, planEtaMinutes, driveEtaMinutes]);
+}
+
+function RouteHazardLegend({
+  items,
+  itemVisuals,
+}: {
+  items: TimelineItem[];
+  itemVisuals: ItemVisual[];
+}) {
+  const legendEntries = useMemo(
+    () =>
+      [...items]
+        .map((item, i) => ({ item, vis: itemVisuals[i]! }))
+        .filter(({ vis }) => !vis.passed)
+        .sort((a, b) => a.item.startMeters - b.item.startMeters),
+    [items, itemVisuals]
+  );
+
+  if (!legendEntries.length) return null;
+
+  return (
+    <ul className="rhtz__legend" aria-label="Hazards along your route in encounter order">
+      {legendEntries.map(({ item, vis }) => (
+        <li key={item.id}>
+          <div
+            className={`rhtz__legend-item rhtz__legend-item--${item.severity}${item.onClick ? " rhtz__legend-item--tappable" : ""}`}
+            role={item.onClick ? "button" : undefined}
+            tabIndex={item.onClick ? 0 : undefined}
+            onClick={item.onClick}
+            onKeyDown={
+              item.onClick
+                ? (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      item.onClick?.();
+                    }
+                  }
+                : undefined
+            }
+          >
+            <span className="rhtz__legend-dot" aria-hidden />
+            <span className="rhtz__legend-body">
+              <span className="rhtz__legend-track">{TRACK_META[item.track]?.label ?? item.track}</span>
+              <span className="rhtz__legend-label">{item.label}</span>
+              {(() => {
+                const detail = legendDetailText(item);
+                return detail ? <span className="rhtz__legend-detail">{detail}</span> : null;
+              })()}
+              {vis.timing ? <span className="rhtz__legend-timing">{vis.timing}</span> : null}
+            </span>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function RouteHazardReroute({
+  showRerouteCta,
+  onReroute,
+  rerouteBusy,
+}: {
+  showRerouteCta: boolean;
+  onReroute?: () => void;
+  rerouteBusy: boolean;
+}) {
+  if (!showRerouteCta || !onReroute) return null;
+  return (
+    <p className="rhtz__reroute">
+      <button
+        type="button"
+        className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
+        onClick={onReroute}
+        disabled={rerouteBusy}
+      >
+        {rerouteBusy ? "Finding route…" : "Reroute around traffic"}
+      </button>
+    </p>
+  );
+}
+
+/* ── component ────────────────────────────────────────────────────────────── */
+
+export function RouteHazardTimeline({
+  items,
+  totalMeters,
+  userAlongMeters,
+  planEtaMinutes,
+  driveEtaMinutes = null,
+  variant = "full",
+  showRerouteCta = false,
+  onReroute,
+  rerouteBusy = false,
+}: RouteHazardTimelineProps) {
+  const youPct = pct(userAlongMeters, totalMeters);
+  const itemVisuals = useTimelineItemVisuals(
+    items,
+    totalMeters,
+    userAlongMeters,
+    planEtaMinutes,
+    driveEtaMinutes
+  );
+
+  const activeLegendCount = useMemo(
+    () => items.filter((item, i) => !itemVisuals[i]?.passed).length,
+    [items, itemVisuals]
+  );
+
+  if (variant === "legendOnly") {
+    if (activeLegendCount === 0 && !showRerouteCta) return null;
+    return (
+      <div className="rhtz rhtz--legend-only">
+        <div className="rhtz__header">
+          <span className="rhtz__header-title">On your route</span>
+          <span className="rhtz__header-dest">Nearest ahead first · full detail</span>
+        </div>
+        <RouteHazardLegend items={items} itemVisuals={itemVisuals} />
+        <RouteHazardReroute
+          showRerouteCta={showRerouteCta}
+          onReroute={onReroute}
+          rerouteBusy={rerouteBusy}
+        />
+      </div>
+    );
+  }
 
   /* Group items by track for the graph rows. */
   const byTrack = useMemo(() => {
-    const map: Record<string, Array<{ item: TimelineItem; vis: (typeof itemVisuals)[number] }>> = {
-      nws: [], radar: [], road: [], forecast: [],
+    const map: Record<string, Array<{ item: TimelineItem; vis: ItemVisual }>> = {
+      nws: [],
+      radar: [],
+      road: [],
+      forecast: [],
     };
     items.forEach((item, i) => {
       map[item.track]?.push({ item, vis: itemVisuals[i]! });
@@ -168,7 +292,7 @@ export function RouteHazardTimeline({
                       style={{
                         left: `${vis.sPct}%`,
                         width: `${vis.wPct}%`,
-                        background: vis.passed ? undefined : BAND_COLORS[item.severity],
+                        background: vis.passed ? undefined : timelineItemBandColor(item),
                       }}
                       title={`${item.label}${vis.timing ? " · " + vis.timing : ""}`}
                       role={item.onClick ? "button" : undefined}
@@ -198,64 +322,12 @@ export function RouteHazardTimeline({
         </div>
       </div>
 
-      {(() => {
-        const legendEntries = [...items]
-          .map((item, i) => ({ item, vis: itemVisuals[i]! }))
-          .filter(({ vis }) => !vis.passed)
-          .sort((a, b) => a.item.startMeters - b.item.startMeters);
-        if (!legendEntries.length) return null;
-        return (
-      <ul className="rhtz__legend" aria-label="Hazards along your route in encounter order">
-        {legendEntries.map(({ item, vis }) => (
-            <li key={item.id}>
-              <div
-                className={`rhtz__legend-item rhtz__legend-item--${item.severity}${item.onClick ? " rhtz__legend-item--tappable" : ""}`}
-                role={item.onClick ? "button" : undefined}
-                tabIndex={item.onClick ? 0 : undefined}
-                onClick={item.onClick}
-                onKeyDown={
-                  item.onClick
-                    ? (e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          item.onClick?.();
-                        }
-                      }
-                    : undefined
-                }
-              >
-                <span className="rhtz__legend-dot" aria-hidden />
-                <span className="rhtz__legend-body">
-                  <span className="rhtz__legend-track">{TRACK_META[item.track]?.label ?? item.track}</span>
-                  <span className="rhtz__legend-label">{item.label}</span>
-                  {(() => {
-                    const detail = legendDetailText(item);
-                    return detail ? (
-                      <span className="rhtz__legend-detail">{detail}</span>
-                    ) : null;
-                  })()}
-                  {vis.timing ? <span className="rhtz__legend-timing">{vis.timing}</span> : null}
-                </span>
-              </div>
-            </li>
-          ))}
-      </ul>
-        );
-      })()}
-
-      {/* Reroute CTA */}
-      {showRerouteCta && onReroute && (
-        <p className="rhtz__reroute">
-          <button
-            type="button"
-            className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
-            onClick={onReroute}
-            disabled={rerouteBusy}
-          >
-            {rerouteBusy ? "Finding route…" : "Reroute around traffic"}
-          </button>
-        </p>
-      )}
+      <RouteHazardLegend items={items} itemVisuals={itemVisuals} />
+      <RouteHazardReroute
+        showRerouteCta={showRerouteCta}
+        onReroute={onReroute}
+        rerouteBusy={rerouteBusy}
+      />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildRouteImpacts,
   compareRouteImpactPriority,
   impactSeverityToNumeric,
   pickRerouteImpactAhead,
@@ -10,6 +11,9 @@ import {
   type RouteImpactConfidence,
   type RouteImpactSeverity,
 } from "../routeImpacts";
+import type { MapboxTrafficLeg } from "../../services/mapboxDirectionsTraffic";
+import type { RouteSituationSlice } from "../../situation/types";
+import type { LngLat } from "../types";
 
 function fakeImpact(overrides: Partial<RouteImpact> = {}): RouteImpact {
   const severity: RouteImpactSeverity = overrides.severity ?? "caution";
@@ -203,5 +207,90 @@ describe("routeImpactToRouteAlert", () => {
     expect(routeImpactToRouteAlert(fakeImpact({ category: "traffic" })).zoom).toBe(12.4);
     expect(routeImpactToRouteAlert(fakeImpact({ category: "weather" })).zoom).toBe(11.5);
     expect(routeImpactToRouteAlert(fakeImpact({ category: "incident" })).zoom).toBe(12.6);
+  });
+});
+
+describe("buildRouteImpacts traffic gating", () => {
+  const routeGeom: LngLat[] = [
+    [-88.95, 40.12],
+    [-89.4, 40.55],
+    [-90.1, 41.02],
+  ];
+
+  const clearLeg: MapboxTrafficLeg = {
+    mapboxDurationMinutes: 176,
+    typicalDurationMinutes: 175.97,
+    delayVsTypicalMinutes: 0.03,
+    congestionSummary: "low",
+    hasClosure: false,
+    nearStopFraction: null,
+    firstHeavyCongestionFraction: null,
+  };
+
+  const liveSlice = (delayMin: number): RouteSituationSlice => ({
+    routeId: "r-a",
+    role: "fastest",
+    trafficDelayMinutes: delayMin,
+    mapboxDurationMinutes: 176,
+    hasLiveTrafficEstimate: true,
+    radarIntensity: 0,
+    forecastHeadline: "",
+    hazards: [],
+  });
+
+  it("omits route-wide traffic when flow is clear with no meaningful delay", () => {
+    const impacts = buildRouteImpacts({
+      geometry: routeGeom,
+      userLngLat: routeGeom[0]!,
+      userAlongM: 0,
+      planEtaMinutes: 176,
+      slice: liveSlice(0.03),
+      trafficForRoute: undefined,
+      trafficLeg: clearLeg,
+      nwsBands: [],
+      nwsAlerts: [],
+    });
+    expect(impacts.some((i) => i.category === "traffic")).toBe(false);
+  });
+
+  it("keeps localized slowdowns on the timeline", () => {
+    const slowLeg: MapboxTrafficLeg = {
+      ...clearLeg,
+      delayVsTypicalMinutes: 6,
+      congestionSummary: "heavy",
+      firstHeavyCongestionFraction: 0.42,
+    };
+    const impacts = buildRouteImpacts({
+      geometry: routeGeom,
+      userLngLat: routeGeom[0]!,
+      userAlongM: 0,
+      planEtaMinutes: 176,
+      slice: liveSlice(6),
+      trafficForRoute: undefined,
+      trafficLeg: slowLeg,
+      nwsBands: [],
+      nwsAlerts: [],
+    });
+    expect(impacts.some((i) => i.category === "traffic")).toBe(true);
+  });
+
+  it("adds radar mosaic bands even without live traffic", () => {
+    const impacts = buildRouteImpacts({
+      geometry: routeGeom,
+      userLngLat: routeGeom[0]!,
+      userAlongM: 0,
+      planEtaMinutes: 176,
+      slice: undefined,
+      trafficForRoute: undefined,
+      trafficLeg: null,
+      nwsBands: [],
+      nwsAlerts: [],
+      radarMosaicSamples: [
+        { t: 0.2, intensity: 0.05 },
+        { t: 0.35, intensity: 0.72 },
+        { t: 0.5, intensity: 0.68 },
+      ],
+    });
+    expect(impacts.some((i) => i.source === "radar")).toBe(true);
   });
 });

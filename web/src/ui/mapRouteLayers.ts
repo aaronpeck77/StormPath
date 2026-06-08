@@ -7,7 +7,12 @@ import {
 import { haversineMeters, slicePolylineBetweenAlong } from "../nav/routeGeometry";
 import { sliceRouteAhead } from "../nav/routeRemaining";
 import type { LngLat, NavRoute } from "../nav/types";
-import { polylineBbox, stormOverlapLineFeatures } from "../weatherAlerts/geometryOverlap";
+import {
+  polylineBbox,
+  stormOverlapLineFeatures,
+  stormStripBandsToLineFeatures,
+  type StormProgressStripBand,
+} from "../weatherAlerts/geometryOverlap";
 import { safeCameraForBounds, safeEaseTo, safeExtendBounds, safeFitBounds, readMapLngLat } from "./mapCameraSafe";
 import { FOCUSED_ROUTE_LINE_WIDTH, routePickSlotHex } from "./mapRouteStyle";
 
@@ -22,6 +27,8 @@ export type RouteConditionHighlightOpts = {
   alerts: RouteAlert[] | undefined;
   routeGeometry: LngLat[] | undefined;
   stormGeoJson: GeoJSON.FeatureCollection | null | undefined;
+  /** Per-alert NWS spans along the route — same source as the progress strip storm bands. */
+  stormAlongRouteBands?: StormProgressStripBand[];
 };
 
 /** Zoom-dependent halo width so the blue route core (~4–8px) stays readable at all scales */
@@ -44,7 +51,7 @@ const ROUTE_COND_CASING_WIDTH: mapboxgl.ExpressionSpecification = [
  */
 export function applyRouteConditionHighlights(
   map: mapboxgl.Map,
-  { alerts, routeGeometry, stormGeoJson }: RouteConditionHighlightOpts
+  { alerts, routeGeometry, stormGeoJson, stormAlongRouteBands }: RouteConditionHighlightOpts
 ) {
   /* Former solid overlay on top of the route — remove if present (e.g. HMR). */
   const legacyOverlay = "route-condition-highlights-line";
@@ -73,6 +80,9 @@ export function applyRouteConditionHighlights(
   }
 
   if (routeGeometry?.length) {
+    if (stormAlongRouteBands?.length) {
+      features.push(...stormStripBandsToLineFeatures(routeGeometry, stormAlongRouteBands));
+    }
     features.push(...stormOverlapLineFeatures(routeGeometry, stormGeoJson ?? null));
   }
 

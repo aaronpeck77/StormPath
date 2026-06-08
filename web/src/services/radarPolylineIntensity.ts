@@ -8,7 +8,7 @@ export const RADAR_MOSAIC_SAMPLE_ZOOM = 7;
  * Meaningful precip along the fastest route before we spend Directions calls on pure radar bypass
  * waypoints (when no NWS polygons apply).
  */
-export const RADAR_PRIMARY_PRECIP_GATE = 0.38;
+export const RADAR_PRIMARY_PRECIP_GATE = 0.44;
 
 /** Fractions along polyline length used when scoring echoes (dense enough for mesoscale cells at z=7). */
 export const RADAR_ROUTE_SAMPLE_FRACTIONS: readonly number[] = [
@@ -25,12 +25,13 @@ export function clamp01(x: number): number {
  * precip and yellow–green fringe do not read as severe as storm cores on consumer apps.
  */
 export function echoIntensityFromRgba(r: number, g: number, b: number, a: number): number {
-  if (a < 20) return 0;
+  if (a < 24) return 0;
   const alpha = a / 255;
   const bright = (r + g + b) / (3 * 255);
-  const warm = Math.max(0, r - Math.max(g, b) * 0.92) / 255;
-  const raw = alpha * Math.max(bright * 0.92, warm * 1.48);
-  return clamp01(Math.pow(raw, 1.2));
+  /* Require clearer warm (red/orange) dominance before treating as moderate+ echo. */
+  const warm = Math.max(0, r - Math.max(g, b) * 0.96) / 255;
+  const raw = alpha * Math.max(bright * 0.72, warm * 1.18);
+  return clamp01(Math.pow(raw, 1.38));
 }
 
 /**

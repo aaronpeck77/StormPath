@@ -12,12 +12,11 @@ import {
 import { unifiedTrafficNarrative } from "./trafficNarrative";
 import {
   FALLBACK_LNGLAT,
-  RADAR_HEAVY_THRESHOLD,
-  RADAR_REROUTE_THRESHOLD,
   RADAR_SOFT_THRESHOLD,
   TRAFFIC_PROMPT_REROUTE_MINUTES,
   isSignificantTrafficDelay,
 } from "./constants";
+import { classifyRadarEcho, radarDisplayIntensity } from "./radarReflectivityScale";
 
 /**
  * Shared “Road Ahead” impact: any condition the driver will run into on the active route,
@@ -272,9 +271,9 @@ const RADAR_MERGE_GAP_T = 0.14;
 
 type RadarMosaicBand = { startT: number; endT: number; maxIntensity: number };
 
-function mergeRadarMosaicBands(samples: RadarMosaicSample[]): RadarMosaicBand[] {
+export function mergeRadarMosaicBands(samples: RadarMosaicSample[]): RadarMosaicBand[] {
   const above = samples
-    .filter((s) => s.intensity >= RADAR_SOFT_THRESHOLD)
+    .filter((s) => radarDisplayIntensity(s.intensity) >= RADAR_SOFT_THRESHOLD)
     .sort((a, b) => a.t - b.t);
   if (!above.length) return [];
   const out: RadarMosaicBand[] = [];
@@ -297,13 +296,25 @@ function mergeRadarMosaicBands(samples: RadarMosaicSample[]): RadarMosaicBand[] 
   return out;
 }
 
+/** RainViewer mosaic spans for the progress strip / map when NWS polygons are missing or lagging. */
+export function radarMosaicToProgressStripBands(
+  totalM: number,
+  samples: RadarMosaicSample[]
+): { startM: number; endM: number; lineHex: string; severity: string }[] {
+  if (totalM <= 0 || !samples.length) return [];
+  return mergeRadarMosaicBands(samples).map((b) => {
+    const echo = classifyRadarEcho(b.maxIntensity);
+    return {
+      startM: totalM * Math.max(0, Math.min(1, b.startT)),
+      endM: totalM * Math.max(b.startT, Math.min(1, b.endT)),
+      lineHex: echo?.stripHex ?? "#64748b",
+      severity: echo?.stripLabel ?? "Trace",
+    };
+  });
+}
+
 function radarHeadlineForBand(maxIntensity: number, spanFrac: number): string {
-  const veryHeavy = maxIntensity >= 0.9;
-  const heavy = maxIntensity >= RADAR_HEAVY_THRESHOLD;
-  const longBand = spanFrac >= 0.32;
-  if (veryHeavy) return longBand ? "Heavy rain along much of your route" : "Heavy rain on route";
-  if (heavy) return longBand ? "Rain along much of your route" : "Rain on route";
-  return longBand ? "Light rain along much of your route" : "Light rain on route";
+  return classifyRadarEcho(maxIntensity, spanFrac)?.headline ?? "Light showers possible";
 }
 
 function buildRadarImpact(opts: {
@@ -326,13 +337,25 @@ function buildRadarImpact(opts: {
 }): RouteImpact | null {
   const { radarIntensity, hasNwsBand, geometry, totalMeters } = opts;
   if (hasNwsBand && opts.alongFraction == null && opts.startFraction == null) return null;
-  if (radarIntensity < RADAR_SOFT_THRESHOLD) return null;
 
-  const veryHeavy = radarIntensity >= 0.9;
-  const heavy = radarIntensity >= RADAR_HEAVY_THRESHOLD;
-  const sev: RouteImpactSeverity = veryHeavy ? "serious" : heavy ? "caution" : "info";
-  const action: RouteImpactAction =
-    radarIntensity >= RADAR_REROUTE_THRESHOLD ? "prepare" : heavy ? "slow" : "watch";
+  const spanFrac = (() => {
+    if (
+      opts.startFraction != null &&
+      opts.endFraction != null &&
+      Number.isFinite(opts.startFraction) &&
+      Number.isFinite(opts.endFraction) &&
+      totalMeters > 0
+    ) {
+      const startM = totalMeters * Math.max(0, Math.min(1, opts.startFraction));
+      const endM = totalMeters * Math.max(startM, Math.min(1, opts.endFraction));
+      return (endM - startM) / totalMeters;
+    }
+    return 0;
+  })();
+  const echo = classifyRadarEcho(radarIntensity, spanFrac);
+  if (!echo) return null;
+
+  const { severity: sev, action, roadEffect, numericSeverity } = echo;
 
   let startM: number;
   let endM: number;
@@ -355,7 +378,7 @@ function buildRadarImpact(opts: {
     endM = alongM;
   }
   const alongM = (startM + endM) / 2;
-  const spanFrac = totalMeters > 0 ? (endM - startM) / totalMeters : 0;
+  const bandSpanFrac = totalMeters > 0 ? (endM - startM) / totalMeters : spanFrac;
   const aheadM = Math.max(0, startM - opts.userAlongM);
   const eta =
     totalMeters > 0 && opts.planEtaMinutes != null && Number.isFinite(opts.planEtaMinutes)
@@ -379,13 +402,11 @@ function buildRadarImpact(opts: {
     endMeters: endM,
     distanceAheadMeters: aheadM,
     etaAheadMinutes: eta,
-    driverHeadline: radarHeadlineForBand(radarIntensity, spanFrac),
+    driverHeadline: radarHeadlineForBand(radarIntensity, bandSpanFrac),
     driverAction: action,
-    roadEffect: heavy
-      ? "Heavy rain — slow down and leave extra following distance."
-      : "Wet pavement possible — watch for hydroplaning.",
+    roadEffect,
     detail: detailCore,
-    numericSeverity: Math.round(50 + radarIntensity * 30),
+    numericSeverity,
   };
 }
 
@@ -416,8 +437,16 @@ function buildTrafficImpact(opts: {
   if (!hasLive || !trafficLeg) return null;
 
   const story = unifiedTrafficNarrative(delay, trafficLeg, hasLive, remainingMin);
-  const sev = trafficNumericToSeverity(story.mapSeverity, Boolean(trafficLeg.hasClosure));
   const significant = isSignificantTrafficDelay(delay, remainingMin);
+  const localizedIssue =
+    trafficLeg.hasClosure ||
+    trafficLeg.nearStopFraction != null ||
+    (trafficLeg.firstHeavyCongestionFraction != null && story.shouldAddCorridorAlert);
+  /** Skip route-wide “clear / typical flow” — only surface traffic when it actually slows the trip. */
+  if (!localizedIssue && !story.shouldAddCorridorAlert && !significant) {
+    return null;
+  }
+  const sev = trafficNumericToSeverity(story.mapSeverity, Boolean(trafficLeg.hasClosure));
   const confidence: RouteImpactConfidence = trafficLeg.hasClosure
     ? "high"
     : trafficLeg.nearStopFraction != null

@@ -165,6 +165,8 @@ type SharedProps = {
   roadDetailRows: StormRoadDetailRow[];
   /** Unified route impact list (already sorted nearest-first) — drives Weather + Roads sections. */
   routeImpacts?: RouteImpact[] | null;
+  /** Pre-built route timeline — shared with progress strip / glance panel (advisory shows detail list only). */
+  routeAheadTimeline?: TimelineItem[] | null;
   /** Severe / extreme NWS bands crossing the active route (Stage C). One strip rendered per band. */
   stormStripBands?: StormStripBand[] | null;
   /** Total length of the active leg (m) — required for storm strip percent placement. */
@@ -309,6 +311,7 @@ export function StormAdvisoryBar({
   hasGuidanceRoute,
   roadDetailRows,
   routeImpacts = null,
+  routeAheadTimeline = null,
   stormStripBands = null,
   routeTotalMeters = 0,
   userAlongMeters = 0,
@@ -389,7 +392,6 @@ export function StormAdvisoryBar({
     return routeImpacts.filter((i) => impactSectionBucket(i) === "weather" && !promoted.has(i.id));
   }, [routeImpacts, nowAtLocation]);
 
-  /* Split weather into radar, Tomorrow.io forecast, vs other (NWS handled separately). */
   const radarImpacts = useMemo(
     () => allWeatherImpacts.filter((i) => i.source === "radar"),
     [allWeatherImpacts]
@@ -531,7 +533,7 @@ export function StormAdvisoryBar({
     driveEtaMinutes,
   ]);
 
-  /** NWS alert ids already on the route-ahead timeline — skip duplicate chip rows below the graph. */
+  /** NWS alert ids on the route hazard list — skip duplicate chip rows below. */
   const timelineNwsAlertIds = useMemo(() => {
     const ids = new Set<string>();
     for (const b of stormStripBands ?? []) {
@@ -962,13 +964,11 @@ export function StormAdvisoryBar({
     promoLines.length,
   ]);
 
-  /* All NWS alerts available for band enrichment. */
   const allAlerts = useMemo(
     () => [...overlappingAlerts, ...nwsAtLocationAlerts],
     [overlappingAlerts, nwsAtLocationAlerts]
   );
 
-  /* Resolve a band's onClick and extra info by looking up the matching alert by id. */
   const stripBandClick = (band: StormStripBand): (() => void) | undefined => {
     if (!band.alertId || !onNwsAlertClick) return undefined;
     const matched = allAlerts.find((a) => a.id === band.alertId);
@@ -984,6 +984,80 @@ export function StormAdvisoryBar({
       detail: nwsGlanceSummary(matched) ?? null,
     };
   };
+
+  const advisoryRouteTimeline = useMemo((): TimelineItem[] => {
+    const timelineFromApp =
+      routeAheadTimeline != null && routeTotalMeters > 0 ? routeAheadTimeline : null;
+    const timelineItems: TimelineItem[] = timelineFromApp ? [...timelineFromApp] : [];
+
+    if (!timelineFromApp) {
+      if (routeTotalMeters > 0 && (stormStripBands?.length ?? 0) > 0) {
+        for (const band of stormStripBands!) {
+          if (isAlertExpired(band.expiresIso)) continue;
+          const timing = formatRouteAlertTiming({
+            startMeters: band.startMeters,
+            endMeters: band.endMeters,
+            userAlongMeters,
+            totalMeters: routeTotalMeters,
+            planEtaMinutes,
+            driveEtaMinutes,
+            expiresIso: band.expiresIso,
+            crossesRoute: band.crossesRoute,
+          });
+          if (timing.passed) continue;
+          const extra = stripBandDetail(band);
+          const nwsDetail = [extra.severityLabel, extra.detail]
+            .map((s) => (s ?? "").trim())
+            .filter(Boolean)
+            .join(" — ");
+          timelineItems.push({
+            id: band.id,
+            track: "nws",
+            label: band.event,
+            severity: band.severity,
+            startMeters: band.startMeters,
+            endMeters: band.endMeters,
+            detailLine: nwsDetail || null,
+            expiresIso: band.expiresIso,
+            crossesRoute: band.crossesRoute !== false,
+            onClick: stripBandClick(band),
+          });
+        }
+      }
+
+      const pushIfActive = (imp: RouteImpact) => {
+        if (imp.endMeters <= userAlongMeters) return;
+        timelineItems.push(impactToTimelineItem(imp));
+      };
+      for (const imp of radarImpacts) pushIfActive(imp);
+      for (const imp of forecastImpacts) pushIfActive(imp);
+      for (const imp of roadImpacts) pushIfActive(imp);
+    } else {
+      for (let i = 0; i < timelineItems.length; i++) {
+        const item = timelineItems[i]!;
+        if (item.track !== "nws" || item.onClick) continue;
+        const band = stormStripBands?.find((b) => b.id === item.id);
+        if (band) timelineItems[i] = { ...item, onClick: stripBandClick(band) };
+      }
+    }
+
+    return timelineFromApp ?? mergeOverlappingTimelineItems(timelineItems, routeTotalMeters);
+  }, [
+    routeAheadTimeline,
+    routeTotalMeters,
+    stormStripBands,
+    userAlongMeters,
+    planEtaMinutes,
+    driveEtaMinutes,
+    radarImpacts,
+    forecastImpacts,
+    roadImpacts,
+    allAlerts,
+    onNwsAlertClick,
+  ]);
+
+  const hasRouteHazardDetail =
+    advisoryRouteTimeline.some((item) => item.endMeters > userAlongMeters) && routeTotalMeters > 0;
 
   const activePreview = previewItems[previewIdx % previewItems.length]!;
   const previewTone: AdvisoryPreviewTone = barExpanded ? "info" : activePreview.tone;
@@ -1207,185 +1281,145 @@ export function StormAdvisoryBar({
           </ul>
         )}
 
-        {/* ───── UNIFIED ROUTE HAZARD TIMELINE ───────────────────────────────────
-         *  Weather, radar, forecast, and live traffic share one route axis. The
-         *  legend below is sorted in encounter order (nearest ahead first).
-         * ─────────────────────────────────────────────────────────────────────── */}
-        {!basicNavAdvisoryMode && (() => {
-          /* Build unified item list combining NWS strip bands + radar + road impacts. */
-          const timelineItems: TimelineItem[] = [];
+        {!basicNavAdvisoryMode ? (
+          <div className="storm-advisory-bar__dashboard">
+            {hasRouteHazardDetail ? (
+              <RouteHazardTimeline
+                variant="legendOnly"
+                items={advisoryRouteTimeline}
+                totalMeters={routeTotalMeters}
+                userAlongMeters={userAlongMeters}
+                planEtaMinutes={planEtaMinutes}
+                driveEtaMinutes={driveEtaMinutes}
+                showRerouteCta={showRerouteCta}
+                onReroute={onTrafficReroute}
+                rerouteBusy={trafficRerouteBusy}
+              />
+            ) : null}
 
-          if (routeTotalMeters > 0 && (stormStripBands?.length ?? 0) > 0) {
-            for (const band of stormStripBands!) {
-              if (isAlertExpired(band.expiresIso)) continue;
-              const timing = formatRouteAlertTiming({
-                startMeters: band.startMeters,
-                endMeters: band.endMeters,
-                userAlongMeters,
-                totalMeters: routeTotalMeters,
-                planEtaMinutes,
-                driveEtaMinutes,
-                expiresIso: band.expiresIso,
-                crossesRoute: band.crossesRoute,
-              });
-              if (timing.passed) continue;
-              const extra = stripBandDetail(band);
-              const nwsDetail = [extra.severityLabel, extra.detail]
-                .map((s) => (s ?? "").trim())
-                .filter(Boolean)
-                .join(" — ");
-              timelineItems.push({
-                id: band.id,
-                track: "nws",
-                label: band.event,
-                severity: band.severity,
-                startMeters: band.startMeters,
-                endMeters: band.endMeters,
-                detailLine: nwsDetail || null,
-                expiresIso: band.expiresIso,
-                crossesRoute: band.crossesRoute !== false,
-                onClick: stripBandClick(band),
-              });
-            }
-          }
+            {nwsStatusMessage ? (
+              <p
+                className={`storm-advisory-bar__nws-status${
+                  nwsStatusMessage.tone === "warn" ? " storm-advisory-bar__nws-status--warn" : ""
+                }`}
+                aria-live="polite"
+              >
+                {nwsStatusMessage.text}
+              </p>
+            ) : null}
 
-          const pushIfActive = (imp: (typeof radarImpacts)[number]) => {
-            if (imp.endMeters <= userAlongMeters) return;
-            timelineItems.push(impactToTimelineItem(imp));
-          };
-          for (const imp of radarImpacts) pushIfActive(imp);
-          for (const imp of forecastImpacts) pushIfActive(imp);
-          for (const imp of roadImpacts) pushIfActive(imp);
+            {panelNwsAlertsExtra.length > 0 ? (
+              <ul
+                className="nws-chips nws-chips--secondary"
+                role="list"
+                aria-label="Weather alerts at your position (not already listed on your route)"
+              >
+                {panelNwsAlertsExtra.map(({ alert, timingLine }) =>
+                  nwsChip(alert, timingLine, onNwsAlertClick, "secondary")
+                )}
+              </ul>
+            ) : null}
 
-          const mergedTimelineItems =
-            routeTotalMeters > 0
-              ? mergeOverlappingTimelineItems(timelineItems, routeTotalMeters)
-              : timelineItems;
-
-          const hasTimeline = mergedTimelineItems.length > 0 && routeTotalMeters > 0;
-
-          return (
-            <div className="storm-advisory-bar__dashboard">
-              {/* ── Unified timeline ── */}
-              {hasTimeline && (
-                <RouteHazardTimeline
-                  items={mergedTimelineItems}
-                  totalMeters={routeTotalMeters}
-                  userAlongMeters={userAlongMeters}
-                  planEtaMinutes={planEtaMinutes}
-                  driveEtaMinutes={driveEtaMinutes}
-                  showRerouteCta={showRerouteCta}
-                  onReroute={onTrafficReroute}
-                  rerouteBusy={trafficRerouteBusy}
-                />
-              )}
-
-              {/* NWS status note — when nothing is visible yet */}
-              {nwsStatusMessage && (
-                <p
-                  className={`storm-advisory-bar__nws-status${
-                    nwsStatusMessage.tone === "warn" ? " storm-advisory-bar__nws-status--warn" : ""
-                  }`}
-                  aria-live="polite"
-                >
-                  {nwsStatusMessage.text}
-                </p>
-              )}
-
-              {panelNwsAlertsExtra.length > 0 && (
-                <ul
-                  className="nws-chips nws-chips--secondary"
-                  role="list"
-                  aria-label="Weather alerts at your position (not already on route timeline)"
-                >
-                  {panelNwsAlertsExtra.map(({ alert, timingLine }) =>
-                    nwsChip(alert, timingLine, onNwsAlertClick, "secondary")
-                  )}
-                </ul>
-              )}
-
-              {/* Better route suggestion */}
-              {betterRouteRow && (
-                <div className="storm-advisory-bar__suggestion-row">
-                  <span className="storm-advisory-bar__suggestion-label">{betterRouteRow.label}</span>
-                  <span className="storm-advisory-bar__suggestion-text">{betterRouteRow.text}</span>
-                  {betterRouteRow.onAction && (
-                    <button
-                      type="button"
-                      className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
-                      onClick={betterRouteRow.onAction}
-                    >
-                      {betterRouteRow.actionLabel ?? "Open"}
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {dataSaverHint && (
-                <div
-                  className="storm-advisory-bar__suggestion-row storm-advisory-bar__suggestion-row--data-saver"
-                  role="note"
-                >
-                  <span className="storm-advisory-bar__suggestion-label">Data saver</span>
-                  <span className="storm-advisory-bar__suggestion-text">{DATA_SAVER_ADVISORY_DETAIL}</span>
+            {betterRouteRow ? (
+              <div className="storm-advisory-bar__suggestion-row">
+                <span className="storm-advisory-bar__suggestion-label">{betterRouteRow.label}</span>
+                <span className="storm-advisory-bar__suggestion-text">{betterRouteRow.text}</span>
+                {betterRouteRow.onAction ? (
                   <button
                     type="button"
                     className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
-                    onClick={dataSaverHint.onOpenSettings}
+                    onClick={betterRouteRow.onAction}
                   >
-                    About
+                    {betterRouteRow.actionLabel ?? "Open"}
                   </button>
-                  <button
-                    type="button"
-                    className="storm-advisory-bar__suggestion-row-dismiss"
-                    onClick={dataSaverHint.onDismiss}
-                    aria-label="Dismiss data saver tip"
-                    title="Dismiss"
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
+                ) : null}
+              </div>
+            ) : null}
 
-              {advisoryTier === "plus" && !sessionOn && !loading && (stormStripBands?.length ?? 0) === 0 && (
-                <p className="storm-advisory-bar__muted storm-advisory-bar__section-hint">
-                  Turn on <strong>NWS polygons</strong> above for shaded zones on the map.
-                </p>
-              )}
+            {showRerouteCta && onTrafficReroute && !hasRouteHazardDetail ? (
+              <div className="storm-advisory-bar__suggestion-row">
+                <span className="storm-advisory-bar__suggestion-label">Traffic</span>
+                <span className="storm-advisory-bar__suggestion-text">Heavy delay ahead on your route.</span>
+                <button
+                  type="button"
+                  className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
+                  onClick={onTrafficReroute}
+                  disabled={trafficRerouteBusy}
+                >
+                  {trafficRerouteBusy ? "Finding route…" : "Reroute around traffic"}
+                </button>
+              </div>
+            ) : null}
 
-              {basicNavAdvisoryMode === false && advisoryTier === "basic" &&
-                weatherImpacts.length === 0 && roadImpacts.length === 0 && !loading && (
-                <p className="storm-advisory-bar__muted storm-advisory-bar__basic-upsell">
-                  {ownsPlus
-                    ? <>Turn on <strong>NWS polygons</strong> and <strong>Road impacts</strong> for full data.</>
-                    : <>Basic shows the most urgent products. <strong>Plus</strong> adds full NWS and road tools.</>}
-                </p>
-              )}
+            {dataSaverHint ? (
+              <div
+                className="storm-advisory-bar__suggestion-row storm-advisory-bar__suggestion-row--data-saver"
+                role="note"
+              >
+                <span className="storm-advisory-bar__suggestion-label">Data saver</span>
+                <span className="storm-advisory-bar__suggestion-text">{DATA_SAVER_ADVISORY_DETAIL}</span>
+                <button
+                  type="button"
+                  className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
+                  onClick={dataSaverHint.onOpenSettings}
+                >
+                  About
+                </button>
+                <button
+                  type="button"
+                  className="storm-advisory-bar__suggestion-row-dismiss"
+                  onClick={dataSaverHint.onDismiss}
+                  aria-label="Dismiss data saver tip"
+                  title="Dismiss"
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
 
-              {!hasNow &&
-                !hasWeather &&
-                !hasRoads &&
-                !hasSuggestion &&
-                !loading &&
-                !(
-                  forecastAreaLabel &&
-                  (currentNowcast ||
-                    minutePrecipForecast ||
-                    hourlyForecast?.hours.length ||
-                    localForecastNwsAlerts.length > 0 ||
-                    nwsForecastLoading)
-                ) && (
-                <p className="storm-advisory-bar__muted storm-advisory-bar__section-status">
-                  {hasGuidanceRoute
-                    ? "No advisories on your route right now."
-                    : forecastAreaLabel
-                      ? "Local weather is shown above. Set a destination for route hazards."
-                      : "Allow location to see weather at your position."}
-                </p>
-              )}
-            </div>
-          );
-        })()}
+            {advisoryTier === "plus" && !sessionOn && !loading && (stormStripBands?.length ?? 0) === 0 ? (
+              <p className="storm-advisory-bar__muted storm-advisory-bar__section-hint">
+                Turn on <strong>NWS polygons</strong> above for shaded zones on the map.
+              </p>
+            ) : null}
+
+            {advisoryTier === "basic" && weatherImpacts.length === 0 && roadImpacts.length === 0 && !loading ? (
+              <p className="storm-advisory-bar__muted storm-advisory-bar__basic-upsell">
+                {ownsPlus ? (
+                  <>
+                    Turn on <strong>NWS polygons</strong> and <strong>Road impacts</strong> for full data.
+                  </>
+                ) : (
+                  <>
+                    Basic shows the most urgent products. <strong>Plus</strong> adds full NWS and road tools.
+                  </>
+                )}
+              </p>
+            ) : null}
+
+            {!hasNow &&
+            !hasWeather &&
+            !hasRoads &&
+            !hasSuggestion &&
+            !loading &&
+            !(
+              forecastAreaLabel &&
+              (currentNowcast ||
+                minutePrecipForecast ||
+                hourlyForecast?.hours.length ||
+                localForecastNwsAlerts.length > 0 ||
+                nwsForecastLoading)
+            ) ? (
+              <p className="storm-advisory-bar__muted storm-advisory-bar__section-status">
+                {hasGuidanceRoute
+                  ? "No advisories on your route right now."
+                  : forecastAreaLabel
+                    ? "Local weather is shown above. Set a destination for route hazards."
+                    : "Allow location to see weather at your position."}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
               {basicNavAdvisoryMode && expandedPromoLines.length > 0 ? (
                 <BasicAdStrip lines={expandedPromoLines} expanded aria-label="Partner offers and StormPath Plus" />

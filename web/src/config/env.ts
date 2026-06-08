@@ -63,13 +63,6 @@ export function getWebEnv() {
     /** When true, AdMob serves test creatives on device (set in `.env.local` for QA). */
     admobTestMode: String(import.meta.env.VITE_ADMOB_TEST_MODE ?? "").toLowerCase() === "true",
     /**
-     * About → “Test pay tier” (uses `PAY_TIER_OVERRIDE_LS_KEY`). **On** in Vite dev. **Off** in production
-     * builds unless you set `VITE_PAY_TIER_TEST_PANEL=true` (e.g. internal QA APK/IPA only — not App Store review).
-     */
-    payTierTestPanel:
-      import.meta.env.DEV ||
-      String(import.meta.env.VITE_PAY_TIER_TEST_PANEL ?? "").toLowerCase() === "true",
-    /**
      * RevenueCat iOS API key (`appl_...`). Empty = the SDK stays uninitialized and the
      * Subscription panel falls back to the legacy `upgradeUrl` link. See
      * `src/billing/revenueCat.ts` header for the dashboard + App Store Connect setup steps.

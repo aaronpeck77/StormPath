@@ -208,6 +208,9 @@ function nearRouteBufferM(a: NormalizedWeatherAlert, defaultM: number): number {
   ) {
     return Math.max(defaultM, CONVECTIVE_NEAR_ROUTE_BUFFER_M);
   }
+  if (/flood warning|flash flood warning|flash flood watch|flood watch/i.test(ev)) {
+    return Math.max(defaultM, CONVECTIVE_NEAR_ROUTE_BUFFER_M);
+  }
   return defaultM;
 }
 
@@ -549,4 +552,142 @@ export function alertRouteIntersectionMeters(
     startM: Math.max(0, midM - FALLBACK_STRIP_HALF_M),
     endM: Math.min(total, midM + FALLBACK_STRIP_HALF_M),
   };
+}
+
+/** Per-alert storm spans along a route — shared by advisory timeline, progress strip, and map highlights. */
+export type RouteStormStripBand = {
+  id: string;
+  event: string;
+  impactSeverity: "info" | "caution" | "serious" | "avoid";
+  nwsSeverity: string;
+  startMeters: number;
+  endMeters: number;
+  expiresIso: string | null;
+  alertId: string | null;
+  crossesRoute: boolean;
+};
+
+function impactSeverityFromNws(rawSev: string): RouteStormStripBand["impactSeverity"] {
+  if (rawSev === "Extreme") return "avoid";
+  if (rawSev === "Severe") return "serious";
+  if (rawSev === "Moderate") return "caution";
+  return "info";
+}
+
+const ROUTE_STORM_NEARBY_HALF_M = 8_000;
+
+/**
+ * Project NWS alerts onto the active route polyline. Uses {@link alertRouteIntersectionMeters}
+ * (with centroid fallback) so thin polygon clips still produce a visible band — the same logic
+ * as the advisory Route Ahead timeline.
+ */
+export function buildRouteStormStripBands(
+  routeGeom: LngLat[],
+  totalM: number,
+  alerts: NormalizedWeatherAlert[]
+): RouteStormStripBand[] {
+  if (totalM <= 0 || !alerts.length || routeGeom.length < 2) return [];
+
+  const bands: RouteStormStripBand[] = [];
+  for (const alert of alerts) {
+    const nwsSeverity = alert.severity ?? "Moderate";
+    const impactSeverity = impactSeverityFromNws(nwsSeverity);
+
+    let startM: number;
+    let endM: number;
+    let crossesRoute: boolean;
+
+    if (alert.geometry) {
+      const intersection = alertRouteIntersectionMeters(routeGeom, alert.geometry);
+      if (intersection) {
+        startM = intersection.startM;
+        endM = intersection.endM;
+        crossesRoute = true;
+      } else {
+        const centroid = polygonApproxCentroid(alert.geometry);
+        const midM = closestAlongMeters(routeGeom, centroid as LngLat);
+        startM = Math.max(0, midM - ROUTE_STORM_NEARBY_HALF_M);
+        endM = Math.min(totalM, midM + ROUTE_STORM_NEARBY_HALF_M);
+        crossesRoute = false;
+      }
+    } else {
+      startM = 0;
+      endM = totalM;
+      crossesRoute = false;
+    }
+
+    bands.push({
+      id: `nws-alert-${alert.id}`,
+      event: alert.event ?? "Weather Alert",
+      impactSeverity,
+      nwsSeverity,
+      startMeters: startM,
+      endMeters: endM,
+      expiresIso: alert.ends ?? null,
+      alertId: alert.id ?? null,
+      crossesRoute,
+    });
+  }
+
+  return bands;
+}
+
+export type StormProgressStripBand = {
+  startM: number;
+  endM: number;
+  lineHex: string;
+  severity: string;
+};
+
+export function routeStormStripBandsToProgressStrip(
+  bands: readonly RouteStormStripBand[]
+): StormProgressStripBand[] {
+  return bands.map((b) => ({
+    startM: b.startMeters,
+    endM: b.endMeters,
+    lineHex: nwsAlertLineColorHex(b.nwsSeverity),
+    severity: b.nwsSeverity,
+  }));
+}
+
+/** Colored route-line segments for map highlights (same spans as the progress strip storm bands). */
+export function stormStripBandsToLineFeatures(
+  route: LngLat[],
+  bands: ReadonlyArray<{ startM: number; endM: number; lineHex: string }>
+): GeoJSON.Feature<GeoJSON.LineString>[] {
+  if (route.length < 2 || !bands.length) return [];
+  const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+  for (const b of bands) {
+    const coords = slicePolylineBetweenAlong(route, b.startM, b.endM);
+    if (coords.length < 2) continue;
+    features.push({
+      type: "Feature",
+      properties: { highlightKind: "nws", lineHex: b.lineHex },
+      geometry: { type: "LineString", coordinates: coords },
+    });
+  }
+  return features;
+}
+
+/** Merge NWS + radar + impact-derived spans for the progress strip and map route halo. */
+export function mergeProgressStripWeatherBands(
+  bands: readonly StormProgressStripBand[]
+): StormProgressStripBand[] {
+  if (!bands.length) return [];
+  const sorted = [...bands].sort((a, b) => a.startM - b.startM || a.endM - b.endM);
+  const out: StormProgressStripBand[] = [];
+  for (const b of sorted) {
+    if (b.endM - b.startM < 8) continue;
+    const prev = out[out.length - 1];
+    if (
+      prev &&
+      b.lineHex === prev.lineHex &&
+      b.startM <= prev.endM + Math.max(500, (prev.endM - prev.startM) * 0.08)
+    ) {
+      prev.endM = Math.max(prev.endM, b.endM);
+      continue;
+    }
+    out.push({ ...b });
+  }
+  return out;
 }

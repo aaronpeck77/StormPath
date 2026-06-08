@@ -18,6 +18,18 @@
   color: #fff;
 }
 
+.rhtz--legend-only {
+  margin-bottom: 4px;
+}
+
+.rhtz--legend-only .rhtz__header {
+  margin-bottom: 4px;
+}
+
+.rhtz--legend-only .rhtz__legend {
+  margin-top: 0;
+}
+
 .rhtz__header {
   display: flex;
   justify-content: space-between;
@@ -795,6 +807,7 @@
   --rail-panel-gap: 5px;
   /* Progress-callout panel starts below the top guidance/advisory cluster. */
   --progress-callout-top-reserve: 100px;
+  --progress-callout-toggle-width: 22px;
   /* Height reserved above map bottom for the bottom chrome stack (dock + toolbar). */
   --nav-dock-above-safe: 152px;
   /* Drive view uses a shorter bottom stack; let the progress rail extend lower. */
@@ -855,8 +868,14 @@
   --nav-progress-rail-foot-inset: 70px;
 }
 
+/* Map (Mp) while navigating: compact bottom chrome like drive — not the Rt planning search stack. */
+.app-shell.nav-fullmap.nav-mapnav-ui {
+  --nav-dock-above-safe-current: 122px;
+  --nav-progress-rail-foot-inset: 70px;
+}
+
 /* Radar mosaic clock in the about row ? needs more clearance above the address pill + progress rail foot */
-.app-shell.nav-fullmap.nav-radar-frame-time-visible:not(.nav-drive-ui) {
+.app-shell.nav-fullmap.nav-radar-frame-time-visible:not(.nav-drive-ui):not(.nav-mapnav-ui) {
   --nav-progress-rail-foot-inset: 144px;
 }
 
@@ -3382,6 +3401,15 @@
   padding-bottom: calc(var(--nav-progress-rail-foot-inset, 134px) + env(safe-area-inset-bottom));
   box-sizing: border-box;
   pointer-events: none;
+  /* Fill map band: left safe inset → just shy of the progress strip */
+  --progress-callout-panel-left-inset: max(8px, env(safe-area-inset-left, 0px));
+  --progress-callout-rail-anchor: calc(
+    max(14px, calc(10px + env(safe-area-inset-right, 0px))) + 32px
+  );
+  --progress-callout-panel-max: max(
+    240px,
+    calc(100vw - var(--progress-callout-panel-left-inset) - var(--progress-callout-rail-anchor))
+  );
 }
 
 .nav-route-progress-rail__inner {
@@ -3413,8 +3441,8 @@
 .route-progress-callout-rail-cluster {
   position: absolute;
   top: 2px;
-  /* Nudge toward map so the closed-state control doesn?t crowd the rotated strip */
-  left: -10px;
+  /* Sit just left of the strip — panel can tuck in with only a sliver of map showing */
+  left: 2px;
   z-index: 7;
   pointer-events: none;
   box-sizing: border-box;
@@ -3425,15 +3453,25 @@
 }
 
 .route-progress-callout-rail-cluster--open {
-  left: auto;
-  /* Hug the strip ? panel aligns with bar marks */
-  right: 100%;
-  width: min(300px, min(76vw, calc(100vw - 88px)));
+  /* Keep the same anchor as closed — only the panel grows, toward the map */
   z-index: 6;
+}
+
+.route-progress-callout-rail-cluster--open .route-progress-callout-panel--rail {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: auto;
+  width: var(--progress-callout-panel-max);
+  max-width: var(--progress-callout-panel-max);
+  padding-right: calc(var(--progress-callout-toggle-width, 22px) + 2px);
+  min-width: 0;
+  z-index: 5;
 }
 
 .route-progress-callout-toggle {
   position: relative;
+  z-index: 8;
   width: 22px;
   min-width: 22px;
   height: 30px;
@@ -3454,15 +3492,6 @@
   flex-shrink: 0;
 }
 
-/* When panel is open, park ? on the panel?s top-right (same side as closed state next to the strip) */
-.route-progress-callout-toggle--docked {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  left: auto;
-  z-index: 8;
-}
-
 .route-progress-callout-toggle--on {
   border-color: rgba(125, 211, 252, 0.55);
   background: rgba(30, 58, 95, 0.55);
@@ -3474,31 +3503,31 @@
   position: relative;
   width: 100%;
   height: min(
-    68dvh,
+    74dvh,
     calc(
       100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) -
         var(--nav-dock-above-safe-current, var(--nav-dock-above-safe)) -
-        var(--progress-callout-top-reserve, 112px) - 14px
+        var(--progress-callout-top-reserve, 112px) - 10px
     )
   );
   max-height: min(
-    68dvh,
+    74dvh,
     calc(
       100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) -
         var(--nav-dock-above-safe-current, var(--nav-dock-above-safe)) -
-        var(--progress-callout-top-reserve, 112px) - 14px
+        var(--progress-callout-top-reserve, 112px) - 10px
     )
   );
   margin: 0;
   padding: 6px 10px 8px 10px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(12, 14, 18, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(18, 22, 30, 0.94);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-  font-size: 0.68rem;
+  font-size: 0.74rem;
   font-weight: 650;
-  line-height: 1.25;
-  color: rgba(226, 232, 240, 0.92);
+  line-height: 1.28;
+  color: #f1f5f9;
   text-align: left;
   box-sizing: border-box;
   display: flex;
@@ -3507,23 +3536,14 @@
   overflow: hidden;
 }
 
-.route-progress-callout-panel--with-docked-toggle {
-  padding-top: 34px;
-}
-
 .route-progress-callout-panel__track {
   width: 100%;
-  flex: 1 1 auto;
-  height: auto;
-  min-height: 120px;
+  flex: 1 1 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  touch-action: pan-y;
+  overflow: hidden;
 }
 
 .route-progress-callout-panel__line {
@@ -3663,11 +3683,268 @@
   padding: 0 0.15rem;
 }
 
+.rotl--line .rotl__subtitle {
+  margin: 0 0 6px;
+  padding: 0 2px;
+  font-size: 0.54rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: rgba(148, 163, 184, 0.88);
+}
+
+.rotl--line .rotl__legend {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  margin-bottom: 6px;
+  padding: 0 2px;
+}
+
+.rotl__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.54rem;
+  font-weight: 750;
+  color: rgba(203, 213, 225, 0.9);
+}
+
+.rotl__legend-swatch {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.rotl__legend-item--temp .rotl__legend-swatch {
+  background: #fb923c;
+}
+
+.rotl__legend-item--precip .rotl__legend-swatch {
+  background: #38bdf8;
+}
+
+.rotl__chart-wrap {
+  position: relative;
+  width: 100%;
+  min-height: 118px;
+}
+
+.rotl__chart {
+  display: block;
+  width: 100%;
+  height: 118px;
+}
+
+/* Labels + dots sit above the stretched plot SVG so type stays crisp and circles stay round. */
+.rotl__chart-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.rotl__axis-label-html {
+  position: absolute;
+  transform: translateY(-50%);
+  font-size: 8px;
+  font-weight: 650;
+  line-height: 1;
+  color: rgba(148, 163, 184, 0.85);
+  white-space: nowrap;
+}
+
+.rotl__axis-label-html--left {
+  left: 2px;
+  color: rgba(251, 146, 60, 0.95);
+  text-align: right;
+  width: 26px;
+}
+
+.rotl__axis-label-html--right {
+  right: 2px;
+  color: rgba(56, 189, 248, 0.95);
+  text-align: left;
+  width: 26px;
+}
+
+.rotl__marker-html {
+  position: static;
+}
+
+.rotl__dot-html {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.rotl__dot-html--temp {
+  width: 6.4px;
+  height: 6.4px;
+  background: #fb923c;
+  border: 1px solid rgba(15, 23, 42, 0.85);
+}
+
+.rotl__dot-html--precip {
+  width: 5.2px;
+  height: 5.2px;
+  background: #38bdf8;
+  border: 0.8px solid rgba(15, 23, 42, 0.85);
+}
+
+.rotl__grid {
+  stroke: rgba(148, 163, 184, 0.14);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.rotl__baseline {
+  stroke: rgba(148, 163, 184, 0.35);
+  stroke-width: 1;
+}
+
+.rotl__axis-label {
+  font-size: 8px;
+  font-weight: 650;
+  fill: rgba(148, 163, 184, 0.85);
+}
+
+.rotl__axis-label--left {
+  fill: rgba(251, 146, 60, 0.95);
+}
+
+.rotl__axis-label--right {
+  fill: rgba(56, 189, 248, 0.95);
+}
+
+.rotl__precip-fill {
+  fill: rgba(56, 189, 248, 0.12);
+  stroke: none;
+}
+
+.rotl__line {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rotl__line--temp {
+  stroke: #fb923c;
+}
+
+.rotl__line--precip {
+  stroke: #38bdf8;
+  stroke-width: 2;
+}
+
+.rotl__dot--temp {
+  fill: #fb923c;
+  stroke: rgba(15, 23, 42, 0.85);
+  stroke-width: 1;
+}
+
+.rotl__dot--precip {
+  fill: #38bdf8;
+  stroke: rgba(15, 23, 42, 0.85);
+  stroke-width: 0.8;
+}
+
+.rotl__you-line {
+  stroke-width: 2;
+  opacity: 0.95;
+}
+
+.rotl__x-ticks {
+  position: relative;
+  height: 28px;
+  margin-top: 2px;
+}
+
+.rotl__x-tick {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 28px;
+  max-width: 52px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.rotl__x-label {
+  font-size: 0.54rem;
+  font-weight: 800;
+  color: rgba(226, 232, 240, 0.92);
+  line-height: 1.1;
+}
+
+.rotl__x-eta {
+  font-size: 0.48rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: rgba(148, 163, 184, 0.9);
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+.rotl__you-flag {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 0.48rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+
+.rotl--line.rotl--synced {
+  background: transparent;
+  padding: 0 2px 0.15rem;
+  margin: 0;
+}
+
+.rotl--line.rotl--synced .rotl__chart-wrap {
+  min-height: 124px;
+}
+
+.rpgl__outlook .rotl--line {
+  margin: 0;
+}
+
 .rotl__title {
   font-size: 0.72rem;
   font-weight: 800;
   line-height: 1.2;
   color: #f8fafc;
+}
+
+.rotl__axis-hint {
+  font-size: 0.54rem;
+  font-weight: 750;
+  letter-spacing: 0.07em;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.rotl--synced .rotl__graph {
+  min-height: 82px;
+}
+
+.rotl--detail .rotl__step {
+  min-width: 44px;
+  max-width: 64px;
+}
+
+.rotl__cond {
+  font-size: 0.5rem;
+  font-weight: 650;
+  line-height: 1.1;
+  color: rgba(203, 213, 225, 0.82);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rotl__graph {
@@ -3763,6 +4040,702 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* --- RouteProgressGlancePanel (.rpgl) — driving-glance progress info ----- */
+.rpgl {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Top: weather + hazards axis — horizontal scroll only */
+.rpgl__axis-pane {
+  flex: 0 0 auto;
+  width: 100%;
+  max-height: 52%;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.rpgl__axis-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: none;
+  touch-action: pan-x;
+  margin: 0;
+  padding: 2px 2px 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+
+/* Bottom: alert cards — vertical scroll only */
+.rpgl__detail-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
+  padding: 8px 0 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+}
+
+/* Only the detail pane — fill panel when axis is hidden */
+.rpgl__detail-scroll--solo {
+  flex: 1 1 0;
+}
+
+.rpgl__detail-scroll > * {
+  flex-shrink: 0;
+}
+
+.rpgl__detail-scroll > * + * {
+  margin-top: 10px;
+}
+
+.rpgl__detail-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.rpgl__detail-scroll::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.4);
+}
+
+.rpgl__axis-scroll::-webkit-scrollbar {
+  height: 5px;
+}
+
+.rpgl__axis-scroll::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.4);
+}
+
+.rpgl__axis-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Unified route axis — one driver line through forecast + hazards */
+.rpgl__sync-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+}
+
+.rpgl__sync-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+  padding: 0 2px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #cbd5e1;
+}
+
+.rpgl__sync-head-title {
+  flex: 1;
+  text-align: center;
+  font-size: 0.58rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.rpgl__sync-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* YOU line spans weather chart top → hazards rail bottom only */
+.rpgl__driver-track {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rpgl__driver-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+}
+
+.rpgl__driver-vline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--rpgl-driver-left, 8.5%);
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--rpgl-driver-color, #94a3b8);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 0 14px color-mix(in srgb, var(--rpgl-driver-color, #94a3b8) 85%, transparent);
+  opacity: 1;
+  transition: left 0.4s ease-out;
+}
+
+.rpgl__sync-outlook {
+  position: relative;
+}
+
+.rpgl__outlook-wait {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 96px;
+  padding: 4px 4px 2px;
+  justify-content: center;
+}
+
+.rpgl__outlook-wait-title {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #e2e8f0;
+}
+
+.rpgl__outlook-wait-hint {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+/* Glance panel: chart only — driver line aligns to graph top */
+.rpgl__sync-outlook .rotl--synced .rotl__header,
+.rpgl__sync-outlook .rotl--synced .rotl__subtitle,
+.rpgl__sync-outlook .rotl--synced .rotl__legend {
+  display: none;
+}
+
+.rpgl__sync-outlook .rotl--line.rotl--synced {
+  padding: 0;
+}
+
+.rpgl__sync-outlook .rotl--synced .rotl__chart-wrap {
+  min-height: 96px;
+}
+
+.rpgl__sync-outlook .rotl--synced .rotl__chart {
+  height: 96px;
+}
+
+/* Route outlook graph — slightly larger type for at-a-glance driving */
+.rpgl .rotl--synced .rotl__title {
+  font-size: 0.8rem;
+}
+
+.rpgl .rotl--synced .rotl__subtitle {
+  font-size: 0.6rem;
+}
+
+.rpgl .rotl--synced .rotl__legend-item {
+  font-size: 0.6rem;
+}
+
+.rpgl .rotl--synced .rotl__axis-label,
+.rpgl .rotl--synced .rotl__axis-label-html {
+  font-size: 9px;
+}
+
+.rpgl .rotl--synced .rotl__x-label {
+  font-size: 0.62rem;
+}
+
+.rpgl .rotl--synced .rotl__x-eta {
+  font-size: 0.54rem;
+}
+
+.rpgl .rotl--synced .rotl__grid {
+  stroke: rgba(203, 213, 225, 0.28);
+}
+
+.rpgl .rotl--synced .rotl__baseline {
+  stroke: rgba(203, 213, 225, 0.45);
+}
+
+.rpgl .rotl--synced .rotl__axis-label {
+  fill: #e2e8f0;
+}
+
+.rpgl .rotl--synced .rotl__axis-label--left {
+  fill: #fdba74;
+}
+
+.rpgl .rotl--synced .rotl__axis-label--right {
+  fill: #7dd3fc;
+}
+
+.rpgl .rotl--synced .rotl__line--temp {
+  stroke: #fb923c;
+  stroke-width: 2.5;
+}
+
+.rpgl .rotl--synced .rotl__line--precip {
+  stroke: #38bdf8;
+  stroke-width: 2.3;
+}
+
+.rpgl .rotl--synced .rotl__precip-fill {
+  fill: rgba(56, 189, 248, 0.2);
+}
+
+.rpgl__sync-outlook .rotl--synced .rotl__header .rotl__axis-hint {
+  display: none;
+}
+
+.rpgl__hazard-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.rpgl__hazard-label {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #ef4444;
+  line-height: 1.1;
+}
+
+.rpgl__hazard-row {
+  display: grid;
+  grid-template-columns: 4.1rem minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.rpgl__hazard-sublabel {
+  margin: 0;
+  font-size: 0.54rem;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.rpgl__hazard-sublabel--weather {
+  color: #c4b5fd;
+}
+
+.rpgl__hazard-sublabel--road {
+  color: #fdba74;
+}
+
+.rpgl__hazard-rail {
+  position: relative;
+  width: 100%;
+  height: 14px;
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.rpgl__hazard-rail--weather,
+.rpgl__hazard-row:has(.rpgl__hazard-sublabel--weather) .rpgl__hazard-rail {
+  background: rgba(124, 58, 237, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.22);
+}
+
+.rpgl__hazard-row:has(.rpgl__hazard-sublabel--road) .rpgl__hazard-rail {
+  background: rgba(234, 88, 12, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(234, 88, 12, 0.24);
+}
+
+.rpgl__sync-x-ticks {
+  position: relative;
+  height: 28px;
+  margin-top: 0;
+  z-index: 2;
+}
+
+.rpgl__x-tick {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 28px;
+  max-width: 52px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.rpgl__x-label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #f8fafc;
+  line-height: 1.1;
+}
+
+.rpgl__x-eta {
+  font-size: 0.54rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: #cbd5e1;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+.rpgl__rail-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rpgl__rail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.54rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.rpgl__rail-title {
+  flex: 1;
+  text-align: center;
+  font-size: 0.52rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.75);
+}
+
+.rpgl__rail {
+  position: relative;
+  height: 14px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.rpgl__band {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 4px;
+  opacity: 1;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.rpgl__band--weather {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 0 6px rgba(124, 58, 237, 0.28);
+}
+
+.rpgl__band--road {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 0 6px rgba(234, 88, 12, 0.3);
+}
+
+.rpgl__band--nearby {
+  opacity: 0.55;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 3px,
+    rgba(255, 255, 255, 0.22) 3px,
+    rgba(255, 255, 255, 0.22) 6px
+  );
+}
+
+.rpgl__you {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 0 6px rgba(59, 130, 246, 0.55);
+  z-index: 2;
+}
+
+.rpgl__route-wide {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rpgl__route-pill {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.rpgl__route-pill-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.rpgl__route-pill-title {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #e2e8f0;
+}
+
+.rpgl__route-pill-summary {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8rem;
+  font-weight: 750;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rpgl__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.rpgl__card {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  padding: 8px 10px 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  min-height: 40px;
+  border-radius: 6px;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.rpgl__card--current {
+  background: rgba(56, 189, 248, 0.16);
+  border-bottom-color: rgba(125, 211, 252, 0.4);
+  box-shadow:
+    inset 0 0 0 1px rgba(125, 211, 252, 0.5),
+    0 0 12px rgba(56, 189, 248, 0.2);
+}
+
+.rpgl__card--current .rpgl__card-accent {
+  width: 5px;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.rpgl__card--current .rpgl__label {
+  color: #f0f9ff;
+}
+
+.rpgl__card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 8px;
+}
+
+.rpgl__card-head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rpgl__detail {
+  margin: 0;
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #ffffff;
+  word-break: break-word;
+}
+
+.rpgl__card:last-child {
+  border-bottom: none;
+}
+
+.rpgl__card-accent {
+  align-self: stretch;
+  width: 4px;
+  border-radius: 0 3px 3px 0;
+  min-height: 28px;
+}
+
+.rpgl__track {
+  flex-shrink: 0;
+  font-size: 0.58rem;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  padding: 2px 5px;
+  border-radius: 4px;
+  line-height: 1.2;
+}
+
+.rpgl__track--nws {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.22);
+}
+
+.rpgl__track--radar {
+  color: #bfdbfe;
+  background: rgba(14, 165, 233, 0.2);
+}
+
+.rpgl__track--forecast {
+  color: #bae6fd;
+  background: rgba(56, 189, 248, 0.18);
+}
+
+.rpgl__track--road {
+  color: #fde68a;
+  background: rgba(234, 179, 8, 0.18);
+}
+
+.rpgl__label {
+  flex: 1;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.15;
+  color: #ffffff;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rpgl__label--avoid,
+.rpgl__label--serious {
+  color: #fff;
+}
+
+.rpgl__chips {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.rpgl__chip {
+  font-size: 0.64rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 6px;
+  border-radius: 999px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.rpgl__chip--dist {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.rpgl__chip--eta {
+  color: #dbeafe;
+  background: rgba(59, 130, 246, 0.32);
+}
+
+.rpgl__chip--rel-active {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.28);
+}
+
+.rpgl__chip--rel-ending {
+  color: #fde68a;
+  background: rgba(234, 179, 8, 0.22);
+}
+
+.rpgl__chip--rel-clear {
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.18);
+}
+
+.rpgl__overflow {
+  margin: 0;
+  padding: 6px 10px 8px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  color: #cbd5e1;
+  text-align: center;
+}
+
+.rpgl__outlook {
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.rpgl__outlook--top {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+  margin-bottom: 0;
+  padding-bottom: 4px;
+  border-bottom: none;
+}
+
+.rpgl__outlook .rotl {
+  margin: 0;
+}
+
+.rpgl__outlook .rotl--synced {
+  background: transparent;
+  padding: 0 4px 0.2rem;
+}
+
+.rpgl__card--fallback .rpgl__card-body {
+  gap: 3px;
+}
+
+.rpgl__card--fallback {
+  padding-left: 0;
 }
 
 /* Don?t clamp side-rail strip to rail width (56px) ? that collapsed the rotated bar to a nub */
@@ -7362,7 +8335,8 @@
 }
 
 .route-progress-strip__corridor-band--storm {
-  opacity: 0.88;
+  opacity: 0.95;
+  z-index: 4;
 }
 
 .route-progress-strip__track-done {
@@ -11249,12 +12223,13 @@
     --nav-progress-rail-foot-inset: 112px;
   }
 
-  .app-shell.nav-fullmap.nav-drive-ui {
+  .app-shell.nav-fullmap.nav-drive-ui,
+  .app-shell.nav-fullmap.nav-mapnav-ui {
     --nav-dock-above-safe-current: 112px;
     --nav-progress-rail-foot-inset: 64px;
   }
 
-  .app-shell.nav-fullmap.nav-radar-frame-time-visible:not(.nav-drive-ui) {
+  .app-shell.nav-fullmap.nav-radar-frame-time-visible:not(.nav-drive-ui):not(.nav-mapnav-ui) {
     --nav-progress-rail-foot-inset: 132px;
   }
 
@@ -12614,12 +13589,21 @@
     margin-left: 3px;
   }
 
-  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .route-progress-callout-rail-cluster--open {
-    top: 2px;
-    left: 100%;
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-route-progress-rail {
+    --progress-callout-panel-left-inset: calc(var(--sp-landscape-map-inset-start, 0px) + 8px);
+    --progress-callout-rail-anchor: calc(56px + 3px + 22px + max(6px, env(safe-area-inset-right, 0px)));
+    --progress-callout-panel-max: max(
+      240px,
+      calc(100vw - var(--progress-callout-panel-left-inset) - var(--progress-callout-rail-anchor))
+    );
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .route-progress-callout-rail-cluster--open
+    .route-progress-callout-panel--rail {
+    left: 0;
     right: auto;
-    margin-left: 3px;
-    width: min(300px, min(50vw, calc(100vw - var(--sp-landscape-map-inset-start) - 20px)));
+    padding-right: 10px;
+    padding-left: calc(var(--progress-callout-toggle-width, 22px) + 2px);
   }
 
   .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .map-stage.map-bleed .mapboxgl-ctrl-bottom-left {
@@ -12726,12 +13710,15 @@
     margin-right: 3px;
   }
 
-  .app-shell.nav-fullmap.app-shell--landscape-hand-left .route-progress-callout-rail-cluster--open {
-    top: 2px;
-    right: 100%;
-    left: auto;
-    margin-right: 3px;
-    width: min(300px, min(50vw, calc(100vw - var(--sp-landscape-map-inset-end) - 20px)));
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-route-progress-rail {
+    --progress-callout-panel-left-inset: max(8px, env(safe-area-inset-left, 0px));
+    --progress-callout-rail-anchor: calc(
+      max(6px, env(safe-area-inset-right, 0px)) + 32px + var(--sp-landscape-map-inset-end, 0px)
+    );
+    --progress-callout-panel-max: max(
+      240px,
+      calc(100vw - var(--progress-callout-panel-left-inset) - var(--progress-callout-rail-anchor))
+    );
   }
 
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .map-stage.map-bleed .mapboxgl-ctrl-bottom-left {

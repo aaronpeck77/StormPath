@@ -85,22 +85,39 @@ import {
   isOpenWeatherRateLimited,
   weatherForecastAlongRoute,
   weatherHintSamplesAlongPolyline,
+  weatherSamplesFromRoutePoints,
   type CurrentNowcast,
 } from "./services/openWeatherClient";
 import { formatMinutePrecipNowLine } from "./utils/forecastDisplay";
-import type { RouteAlert } from "./nav/routeAlerts";
-import { augmentAlertsForProgressStrip } from "./nav/routeAlerts";
 import {
   buildRouteImpacts,
+  compareRouteImpactPriority,
   routeImpactToRouteAlert,
   type RouteImpact,
 } from "./nav/routeImpacts";
+import { augmentAlertsForProgressStrip, type RouteAlert } from "./nav/routeAlerts";
 import { buildSimpleCalloutBlock } from "./nav/progressCalloutCopy";
+import {
+  buildRouteAheadCalloutSegments,
+  buildRouteAheadTimeline,
+  timelineToMapCorridorAlerts,
+  timelineToProgressStripBands,
+} from "./nav/routeAheadSync";
+import { nwsGlanceSummary } from "./weatherAlerts/nwsDriveSummary";
 import {
   buildRouteChunkCalloutList,
   type RouteChunkCalloutItem,
 } from "./nav/routeProgressChunkList";
+import type { WxSample } from "./nav/routeChunkWeather";
 import type { RouteOutlookStep } from "./nav/routeForecastTimeline";
+import {
+  applyRadarOutlookBoost,
+  buildRouteOutlookFromTomorrowForecast,
+  buildSyncedRouteOutlook,
+  mergeRouteOutlookSteps,
+  resyncRouteOutlookSteps,
+  tomorrowForecastToWxSamples,
+} from "./nav/routeForecastTimeline";
 import { layoutStripAlerts } from "./nav/stripAlertLayout";
 import {
   bearingAlongRouteAhead,
@@ -127,6 +144,12 @@ import {
   TRIP_NAV_DISPLAY_POLL_MS,
   TRIP_NAV_DISPLAY_REPAIR_COOLDOWN_MS,
 } from "./nav/tripNavDisplay";
+import {
+  auditRouteAheadSync,
+  repairActionsForRouteAheadIssues,
+  ROUTE_AHEAD_HEALTH_POLL_MS,
+  ROUTE_AHEAD_HEALTH_REPAIR_COOLDOWN_MS,
+} from "./nav/routeAheadHealth";
 import { reportAppHealthRepair } from "./monitoring/appHealthSignals";
 import { activeTurnStepIndexAlong, turnStepAlongBounds } from "./nav/turnStepAlong";
 import { formatRouteDistanceMi, routeConsiderationSummary } from "./nav/routeSummary";
@@ -140,6 +163,7 @@ import {
   DRIVE_AHEAD_WINDOW_M,
   RADAR_SOFT_THRESHOLD,
 } from "./nav/constants";
+import { radarDisplayIntensity } from "./nav/radarReflectivityScale";
 import {
   arrivalIdleClearMs,
   arrivalProximity,
@@ -180,7 +204,7 @@ import { RecordingRouteBanner } from "./ui/RecordingRouteBanner";
 import { RouteHazardSheet } from "./ui/RouteHazardSheet";
 import { TollFlowSheets } from "./ui/TollFlowSheets";
 import { RouteProgressStrip } from "./ui/RouteProgressStrip";
-import { RouteOutlookTimeline } from "./ui/RouteOutlookTimeline";
+import { RouteProgressGlancePanel } from "./ui/RouteProgressGlancePanel";
 import { estimatePostedSpeedMph } from "./ui/DriveHud";
 import { formatEtaDuration } from "./ui/formatEta";
 import { StormAdvisoryBar } from "./ui/StormAdvisoryBar";
@@ -201,10 +225,7 @@ import {
   computeRouteOverlapWithAlerts,
   filterAlertsAffectingRoute,
   pointInAnyPolygonGeometry,
-  stormAlongBandsForProgressStrip,
-  alertRouteIntersectionMeters,
-  polygonApproxCentroid,
-  closestAlongMeters,
+  buildRouteStormStripBands,
   sortWeatherAlertsBySeverity,
 } from "./weatherAlerts/geometryOverlap";
 import { mapGeoJsonFromAlerts } from "./weatherAlerts/mapGeoJsonFromAlerts";
@@ -214,7 +235,6 @@ import {
 } from "./weatherAlerts/nwsAsRouteAlerts";
 import type { NormalizedWeatherAlert } from "./weatherAlerts/types";
 import {
-  filterMapGeoJsonToBasicEmergencies,
   nwsAlertIsBasicEmergency,
 } from "./weatherAlerts/basicEmergencyFilter";
 import { nwsAlertsForLocalForecast } from "./weatherAlerts/localForecastNws";
@@ -223,8 +243,7 @@ import {
   buildBasicNavAdvisoryPromoLines,
 } from "./config/basicAds";
 import { useBasicAdMobBanner } from "./hooks/useBasicAdMobBanner";
-import { getPayTier, hasTollBypass } from "./billing/payFeatures";
-import { NATIVE_PAY_TIER_CHANGED_EVENT } from "./billing/revenueCat";
+import { hasTollBypass } from "./billing/payFeatures";
 import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
 import { completedTripFromGeometry } from "./frequentRoutes/tripDetector";
 import { useFrequentRouteLearning } from "./hooks/useFrequentRouteLearning";
@@ -347,22 +366,8 @@ export default function App() {
       return false;
     }
   }, []);
-  /** Bumped when dev About changes `PAY_TIER_OVERRIDE_LS_KEY` so `getPayTier()` is re-read without reload. */
-  const [payTierProbeKey, setPayTierProbeKey] = useState(0);
-  const reprobePayTier = useCallback(() => setPayTierProbeKey((n) => n + 1), []);
-  /* Phase 7 — RevenueCat fires `NATIVE_PAY_TIER_CHANGED_EVENT` on every customer-info push
-   * (purchase, restore, refund, family-share). The wrapper has already mirrored the new
-   * entitlement into `safeStorage` by the time this handler runs, so a single
-   * `reprobePayTier()` is enough to make `getPayTier()` re-read and the whole app re-render
-   * with the right tier. Same mechanism the dev "Test pay tier" panel uses. */
-  useEffect(() => {
-    const handler = () => reprobePayTier();
-    window.addEventListener(NATIVE_PAY_TIER_CHANGED_EVENT, handler);
-    return () => window.removeEventListener(NATIVE_PAY_TIER_CHANGED_EVENT, handler);
-  }, [reprobePayTier]);
-  /** Plus vs Basic from `getPayTier()` (build env + optional LS override) — identical in dev and production. */
-  const isPlus = useMemo(() => getPayTier() === "plus", [payTierProbeKey]);
-  const tollBypassEnabled = useMemo(() => hasTollBypass(), [payTierProbeKey]);
+  const isPlus = true;
+  const tollBypassEnabled = hasTollBypass();
   const advisoryPromoLines = useMemo(
     () => (isPlus ? buildAdvisoryPromoLines(env, isPlus) : buildBasicNavAdvisoryPromoLines(env)),
     [env, isPlus]
@@ -439,7 +444,7 @@ export default function App() {
   );
 
   /** Map (Mp) follow: street-level on the puck while navigating — not route-wide Rt framing. */
-  const topdownZoomRef = useRef(14.5);
+  const topdownZoomRef = useRef(16);
 
   const { places: savedPlaces, showOnMap, setShowOnMap, addPlace, updateName, removePlace } =
     useSavedPlaces();
@@ -492,6 +497,7 @@ export default function App() {
   const progressCalloutsOpen = useUiStore((s) => s.progressCalloutsOpen);
   const setProgressCalloutsOpen = useUiStore((s) => s.setProgressCalloutsOpen);
   const progressCalloutTrackRef = useRef<HTMLDivElement | null>(null);
+  const progressCalloutDetailScrollRef = useRef<HTMLDivElement | null>(null);
   const progressCalloutWasOpenRef = useRef(false);
 
   /** Road & traffic overlay (Hazards strip + map traffic colors). Default on until user turns off. */
@@ -651,9 +657,8 @@ export default function App() {
   const driveModeUi = navigationStarted && viewMode === "drive";
   /** Third-party AdMob only — house promos (SiteBible, Plus upsell) live in StormAdvisoryBar. */
   const basicAdBanner = useBasicAdMobBanner({
-    enabled: !isPlus,
+    enabled: false,
     navigationStarted,
-    payTierProbeKey,
   });
   /** NWS polygons + fetches follow the user’s NWS toggle everywhere (including drive — no auto-on). */
   const savedDrawerOpen = useUiStore((s) => s.savedDrawerOpen);
@@ -1315,27 +1320,6 @@ export default function App() {
   planRef.current = plan;
   const planRoutesKeyStable = useMemo(() => plan.routes.map((r) => r.id).join("|"), [plan.routes]);
 
-  /** OpenWeather corridor overlay: one active leg only (not all A/B/C in parallel). */
-  const owWeatherFocusLegId = useMemo(() => {
-    if (!navigationStarted) return "";
-    const planIds = plan.routes.map((r) => r.id);
-    if (!planIds.length) return "";
-    const ordered = isFullSlotPermutation(routeSlotOrder, planIds)
-      ? routeSlotOrder
-      : planIds;
-    if (viewMode !== "route") return ordered[0] ?? planIds[0] ?? "";
-    return ordered[previewLegIndex] ?? ordered[0] ?? planIds[0] ?? "";
-  }, [navigationStarted, viewMode, previewLegIndex, routeSlotOrder, planRoutesKeyStable]);
-
-  const owWeatherGeomKey = useMemo(() => {
-    if (!owWeatherFocusLegId) return "";
-    const g = plan.routes.find((r) => r.id === owWeatherFocusLegId)?.geometry;
-    if (!g || g.length < 2) return "";
-    const f = g[0]!;
-    const l = g[g.length - 1]!;
-    return `${owWeatherFocusLegId}:${g.length}:${Math.round(f[0] * 1000)}:${Math.round(f[1] * 1000)}:${Math.round(l[0] * 1000)}:${Math.round(l[1] * 1000)}`;
-  }, [owWeatherFocusLegId, plan.routes]);
-
   const lastOwOverlayGeomKeyRef = useRef("");
   const lastOwOverlayAtRef = useRef(0);
   const OW_OVERLAY_MIN_MS = 20 * 60 * 1000;
@@ -1448,111 +1432,10 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [isOnline, env.openWeatherApiKey]);
 
-  useEffect(() => {
-    if (routingRef.current) return;
-    if (!navigationStarted) {
-      setWeatherOverlay(undefined);
-      lastOwOverlayGeomKeyRef.current = "";
-      lastOwOverlayAtRef.current = 0;
-      return;
-    }
-
-    const owKey = env.openWeatherApiKey;
-    const wantOpenWeather = Boolean(owKey) && settingWeatherHintsEnabled;
-    if (!isPlus || !isOnline || !owWeatherFocusLegId || !owWeatherGeomKey || !wantOpenWeather) {
-      setWeatherOverlay(undefined);
-      return;
-    }
-    if (isOpenWeatherRateLimited()) return;
-
-    const geomUnchanged = owWeatherGeomKey === lastOwOverlayGeomKeyRef.current;
-    if (geomUnchanged && Date.now() - lastOwOverlayAtRef.current < OW_OVERLAY_MIN_MS) {
-      return;
-    }
-
-    const routes = planRef.current.routes;
-    const r = routes.find((x) => x.id === owWeatherFocusLegId) ?? routes[0];
-    if (!r?.geometry?.length) {
-      setWeatherOverlay(undefined);
-      return;
-    }
-
-    let cancelled = false;
-    const LONG_ROUTE_M = 1_000_000;
-    const LONG_ETA_MIN = 720;
-    const saveData = dataSaverMode;
-
-    (async () => {
-      let headline = "";
-      let precipHint = 0;
-      let samples: NonNullable<WeatherOverlay[string]>["samples"] | undefined;
-
-      const eta = r.baseEtaMinutes ?? 30;
-      const lenM = polylineLengthMeters(r.geometry);
-      const longTrip = saveData || lenM > LONG_ROUTE_M || eta > LONG_ETA_MIN;
-
-      if (wantOpenWeather && owKey) {
-        try {
-          if (longTrip) {
-            const hint = await weatherHintSamplesAlongPolyline(owKey, r.geometry);
-            if (!cancelled) {
-              headline = hint.headline;
-              precipHint = hint.precipHint ?? 0;
-              samples = hint.samples;
-            }
-          } else {
-            const hint = await weatherHintSamplesAlongPolyline(owKey, r.geometry);
-            if (!cancelled) {
-              headline = hint.headline;
-              precipHint = hint.precipHint ?? 0;
-              samples = hint.samples;
-            }
-            if (!cancelled && !isOpenWeatherRateLimited()) {
-              const fc = await weatherForecastAlongRoute(owKey, r.geometry, eta);
-              if (!cancelled) {
-                headline = fc.headline || headline;
-                precipHint = Math.max(fc.precipHint ?? 0, precipHint);
-              }
-            }
-          }
-        } catch {
-          /* keep previous overlay on failure */
-        }
-      }
-
-      if (cancelled) return;
-      lastOwOverlayGeomKeyRef.current = owWeatherGeomKey;
-      lastOwOverlayAtRef.current = Date.now();
-
-      if (precipHint > 0 || headline.trim() || samples?.length) {
-        setWeatherOverlay({
-          [r.id]: {
-            headline: headline.trim() || "Conditions along route",
-            precipHint,
-            samples,
-          },
-        });
-      } else {
-        setWeatherOverlay(undefined);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    owWeatherGeomKey,
-    owWeatherFocusLegId,
-    env.openWeatherApiKey,
-    settingWeatherHintsEnabled,
-    dataSaverMode,
-    isOnline,
-    navigationStarted,
-    isPlus,
-  ]);
-
   const trafficRefreshRef = useRef(0);
   const [trafficRefreshKey, setTrafficRefreshKey] = useState(0);
+  const weatherRefreshRef = useRef(0);
+  const [weatherRefreshKey, setWeatherRefreshKey] = useState(0);
 
   useEffect(() => {
     const routes = planRef.current.routes;
@@ -2535,19 +2418,137 @@ export default function App() {
     return bits.join(" · ").replace(/\s+/g, " ").trim();
   }, [lineFocusId, guidanceSlice?.forecastHeadline, weatherOverlay]);
 
+  /** OpenWeather corridor overlay — focused leg (planning + navigation). */
+  const weatherOverlayLegId = lineFocusId || primaryRouteId;
+
+  const weatherOverlayGeomKey = useMemo(() => {
+    if (!weatherOverlayLegId) return "";
+    const g = plan.routes.find((r) => r.id === weatherOverlayLegId)?.geometry;
+    if (!g || g.length < 2) return "";
+    const f = g[0]!;
+    const l = g[g.length - 1]!;
+    return `${weatherOverlayLegId}:${g.length}:${Math.round(f[0] * 1000)}:${Math.round(f[1] * 1000)}:${Math.round(l[0] * 1000)}:${Math.round(l[1] * 1000)}`;
+  }, [weatherOverlayLegId, plan.routes]);
+
+  useEffect(() => {
+    if (routingRef.current) return;
+    const hasPlannedRoute = Boolean(
+      destLngLat && planRef.current.routes.some((r) => r.geometry && r.geometry.length >= 2)
+    );
+    if (!navigationStarted && !hasPlannedRoute) {
+      setWeatherOverlay(undefined);
+      lastOwOverlayGeomKeyRef.current = "";
+      lastOwOverlayAtRef.current = 0;
+      return;
+    }
+
+    const owKey = env.openWeatherApiKey;
+    const wantOpenWeather =
+      Boolean(owKey) && (settingWeatherHintsEnabled || settingStormEnabled);
+    if (!isPlus || !isOnline || !weatherOverlayLegId || !weatherOverlayGeomKey || !wantOpenWeather) {
+      setWeatherOverlay(undefined);
+      return;
+    }
+    if (isOpenWeatherRateLimited()) return;
+
+    const geomUnchanged = weatherOverlayGeomKey === lastOwOverlayGeomKeyRef.current;
+    if (geomUnchanged && Date.now() - lastOwOverlayAtRef.current < OW_OVERLAY_MIN_MS) {
+      return;
+    }
+
+    const routes = planRef.current.routes;
+    const r = routes.find((x) => x.id === weatherOverlayLegId) ?? routes[0];
+    if (!r?.geometry?.length) {
+      setWeatherOverlay(undefined);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      let headline = "";
+      let precipHint = 0;
+      let samples: NonNullable<WeatherOverlay[string]>["samples"] | undefined;
+
+      const eta = r.baseEtaMinutes ?? 30;
+
+      if (wantOpenWeather && owKey) {
+        try {
+          if (!cancelled && !isOpenWeatherRateLimited()) {
+            const fc = await weatherForecastAlongRoute(owKey, r.geometry, eta);
+            if (!cancelled && fc.points.length) {
+              headline = fc.headline;
+              precipHint = fc.precipHint ?? 0;
+              samples = weatherSamplesFromRoutePoints(fc.points);
+            }
+          }
+          if (!cancelled && !samples?.length && !isOpenWeatherRateLimited()) {
+            const hint = await weatherHintSamplesAlongPolyline(owKey, r.geometry);
+            if (!cancelled) {
+              headline = hint.headline;
+              precipHint = hint.precipHint ?? 0;
+              samples = hint.samples;
+            }
+          }
+        } catch {
+          /* keep previous overlay on failure */
+        }
+      }
+
+      if (cancelled) return;
+      lastOwOverlayGeomKeyRef.current = weatherOverlayGeomKey;
+      lastOwOverlayAtRef.current = Date.now();
+
+      if (precipHint > 0 || headline.trim() || samples?.length) {
+        setWeatherOverlay({
+          [r.id]: {
+            headline: headline.trim() || "Conditions along route",
+            precipHint,
+            samples,
+          },
+        });
+      } else {
+        setWeatherOverlay(undefined);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    weatherOverlayGeomKey,
+    weatherOverlayLegId,
+    weatherRefreshKey,
+    env.openWeatherApiKey,
+    settingWeatherHintsEnabled,
+    settingStormEnabled,
+    dataSaverMode,
+    isOnline,
+    navigationStarted,
+    destLngLat,
+    isPlus,
+  ]);
+
   /** Strip + map corridors: honor the Road checkbox — do not force “on” in drive (that hid toggles but left layers active). */
   const showTrafficCorridorOnRoute = isPlus && roadAdvisoryDetailOn && settingTrafficEnabled;
   const showRoadNoticesOnRoute = isPlus && roadAdvisoryDetailOn;
+  const hasPlannedRoute = Boolean(
+    destLngLat && plan.routes.some((r) => r.geometry && r.geometry.length >= 2)
+  );
+  /** Sample RainViewer along the route for advisory/timeline — not only when the map RAD layer is on. */
+  const radarRouteSamplingEnabled = Boolean(
+    guidanceRoute?.geometry &&
+      guidanceRoute.geometry.length >= 2 &&
+      (settingStormEnabled || settingWeatherHintsEnabled || radarMapOverlayOn) &&
+      (navigationStarted || hasPlannedRoute)
+  );
   const radarMosaicAlongRoute = useRadarBandsAlongRoute(
-    Boolean(radarMapOverlayOn && navigationStarted && guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2),
+    radarRouteSamplingEnabled,
     guidanceRoute?.geometry
   );
 
   // ── Tomorrow.io (free tier ~25 req/hr) — split point vs route to stay under quota ──
   const tioApiKey = env.tomorrowIoApiKey;
-  const hasPlannedRoute = Boolean(
-    destLngLat && plan.routes.some((r) => r.geometry && r.geometry.length >= 2)
-  );
   const tioWeatherUiOpen = stormBarExpanded;
   const tioBaseEnabled =
     isPlus && Boolean(tioApiKey) && Boolean(effectiveUserLngLat) && appForeground;
@@ -2559,12 +2560,18 @@ export default function App() {
       : tioWeatherUiOpen || (!hasPlannedRoute && !navigationStarted));
   /** OpenWeather hourly is fallback only — skip when Tomorrow.io covers the point card. */
   const openWeatherHourlyEnabled = tioPointFetchEnabled && !tioApiKey;
-  /** Corridor hourly along the active leg — while navigating or advisory expanded. */
+  /** Corridor hourly along the active leg — route shape only (no GPS required). */
+  const tioRouteCorridorEnabled =
+    isPlus &&
+    Boolean(tioApiKey) &&
+    appForeground &&
+    Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
+  /** Fetch while navigating, planning a route, or advisory weather is expanded. */
   const tioRouteFetchEnabled =
-    tioBaseEnabled &&
+    tioRouteCorridorEnabled &&
     (dataSaverMode
       ? tioWeatherUiOpen
-      : tioWeatherUiOpen || navigationStarted);
+      : tioWeatherUiOpen || navigationStarted || hasPlannedRoute);
   const tioMinutePrecip = useTomorrowMinutePrecip(
     tioApiKey,
     effectiveUserLngLat ?? null,
@@ -2597,13 +2604,6 @@ export default function App() {
     return Math.max(...s.map((x) => x.intensity));
   }, [radarMosaicAlongRoute.samples]);
 
-  /** Weather impacts (NWS / heavy radar) on the strip + map are gated by the storm session toggle. */
-  const showWeatherImpactsOnRoute =
-    advisoryLifeSafetyOn &&
-    (advisoryPlusDetailOn ||
-      stormCorridorAlerts.length > 0 ||
-      radarMosaicMaxIntensity >= RADAR_SOFT_THRESHOLD);
-
   /** NWS polygons + route bands: corridor alerts that touch or sit ahead of the active leg (~28 mi buffer). */
   const nwsAlertsAffectingActiveRoute = useMemo(() => {
     const g = nwsMapOverlapRouteGeom;
@@ -2630,6 +2630,49 @@ export default function App() {
     for (const a of stormNwsPuckInside) byId.set(a.id, a);
     return sortWeatherAlertsBySeverity([...byId.values()]);
   }, [nwsAlertsAffectingActiveRoute, stormNwsPuckInside]);
+
+  /** Alerts used for route storm bands — basic tier only sees life-safety polygons. */
+  const routeStormStripAlerts = useMemo(() => {
+    const g = guidanceRoute?.geometry ?? nwsNavCorridorGeom;
+    if (!g?.length) return [];
+    const affecting = filterAlertsAffectingRoute(g, stormCorridorAlerts);
+    const byId = new Map<string, (typeof stormCorridorAlerts)[number]>();
+    for (const a of affecting) byId.set(a.id, a);
+    for (const a of stormNwsPuckInside) byId.set(a.id, a);
+    const sorted = sortWeatherAlertsBySeverity([...byId.values()]);
+    if (advisoryPlusDetailOn) return sorted;
+    return sorted.filter(nwsAlertIsBasicEmergency);
+  }, [
+    advisoryPlusDetailOn,
+    guidanceRoute?.geometry,
+    nwsNavCorridorGeom,
+    stormCorridorAlerts,
+    stormNwsPuckInside,
+  ]);
+
+  /**
+   * NWS spans along the active route — same per-alert intersection logic as the advisory timeline.
+   * Feeds the progress strip, map route highlights, and unified route impacts.
+   */
+  const routeStormStripBands = useMemo(() => {
+    const routeGeom = guidanceRoute?.geometry ?? nwsNavCorridorGeom;
+    if (!routeGeom?.length || guidanceRouteLengthM <= 0) return [];
+    return buildRouteStormStripBands(routeGeom, guidanceRouteLengthM, routeStormStripAlerts);
+  }, [
+    guidanceRoute?.geometry,
+    nwsNavCorridorGeom,
+    guidanceRouteLengthM,
+    routeStormStripAlerts,
+  ]);
+
+  /** Weather impacts (NWS / heavy radar) on the strip + map. */
+  const showWeatherImpactsOnRoute =
+    advisoryLifeSafetyOn &&
+    (advisoryPlusDetailOn ||
+      routeStormStripBands.length > 0 ||
+      stormCorridorAlerts.length > 0 ||
+      radarDisplayIntensity(radarMosaicMaxIntensity) >= RADAR_SOFT_THRESHOLD ||
+      radarDisplayIntensity(guidanceSlice?.radarIntensity ?? 0) >= RADAR_SOFT_THRESHOLD);
 
   /** NWS at the user’s position only (local forecast — not the whole browse/route corridor). */
   const localForecastNwsAlertsRaw = useMemo(
@@ -2672,44 +2715,49 @@ export default function App() {
     return { type: "FeatureCollection", features } as GeoJSON.FeatureCollection;
   }, [stormMapGeoJson, nwsMapOverlapRouteGeom, stormCorridorAlerts]);
 
-  const stormProgressBands = useMemo(() => {
-    const g = nwsNavCorridorGeom;
-    if (!g?.length) return [];
-    const raw = stormMapGeoJsonForMap;
-    if (raw === undefined) return [];
-    let geo: GeoJSON.FeatureCollection | null = raw;
-    if (!advisoryPlusDetailOn && raw.features.length > 0) {
-      const filtered = filterMapGeoJsonToBasicEmergencies(raw, stormCorridorAlerts);
-      geo = filtered?.features?.length ? filtered : stormCorridorAlerts.length > 0 ? raw : null;
-    }
-    if (!geo?.features?.length) return [];
-    return stormAlongBandsForProgressStrip(g, geo);
-  }, [advisoryPlusDetailOn, nwsNavCorridorGeom, nwsNavCorridorGeomKey, stormMapGeoJsonForMap, stormCorridorAlerts]);
-
   /**
    * Unified Road Ahead model — every surface (drive status, advisory bar, progress rail, map highlights, bypass)
    * reads from the same `RouteImpact[]`, so weather, traffic, closures, and incidents can never disagree.
    */
   const routeImpacts = useMemo<RouteImpact[]>(() => {
-    if (!navigationStarted) return [];
-    const totalM = guidanceRoute?.geometry?.length ? polylineLengthMeters(guidanceRoute.geometry) : 0;
-    return buildRouteImpacts({
-      geometry: guidanceRoute?.geometry,
+    const geometry = guidanceRoute?.geometry;
+    if (!geometry?.length) return [];
+    const totalM = polylineLengthMeters(geometry);
+    const navActive = navigationStarted;
+    const list = buildRouteImpacts({
+      geometry,
       userLngLat: effectiveUserLngLat,
-      userAlongM: totalM > 0 ? userAlongGuidanceM : 0,
+      userAlongM: navActive && totalM > 0 ? userAlongGuidanceM : 0,
       planEtaMinutes: guidanceRoute?.baseEtaMinutes,
-      slice: guidanceSlice,
-      trafficForRoute: scored.find((s) => s.route.id === lineFocusId),
-      trafficLeg: (lineFocusId ? trafficOverlay?.[lineFocusId] : null) ?? null,
+      slice: navActive ? guidanceSlice : undefined,
+      trafficForRoute: navActive ? scored.find((s) => s.route.id === lineFocusId) : undefined,
+      trafficLeg: navActive ? ((lineFocusId ? trafficOverlay?.[lineFocusId] : null) ?? null) : null,
       corridorWeatherDetail,
-      nwsBands: stormProgressBands.map((b) => ({
-        startM: b.startM,
-        endM: b.endM,
-        severity: b.severity ?? "Moderate",
+      nwsBands: routeStormStripBands.map((b) => ({
+        startM: b.startMeters,
+        endM: b.endMeters,
+        severity: b.nwsSeverity,
       })),
       nwsAlerts: nwsAlertsAffectingActiveRoute,
       radarMosaicSamples: radarMosaicAlongRoute.samples,
     });
+
+    if (tioRouteForecast && guidanceRouteLengthM > 0) {
+      const planEta = guidanceRoute?.baseEtaMinutes;
+      if (planEta && planEta > 0) {
+        list.push(
+          ...routeForecastToImpacts(
+            tioRouteForecast,
+            geometry,
+            planEta,
+            guidanceRouteLengthM
+          )
+        );
+      }
+    }
+
+    list.sort(compareRouteImpactPriority);
+    return list;
   }, [
     navigationStarted,
     guidanceRoute?.geometry,
@@ -2721,9 +2769,11 @@ export default function App() {
     lineFocusId,
     trafficOverlay,
     corridorWeatherDetail,
-    stormProgressBands,
+    routeStormStripBands,
     nwsAlertsAffectingActiveRoute,
     radarMosaicAlongRoute.samples,
+    tioRouteForecast,
+    guidanceRouteLengthM,
   ]);
 
   /** Filter impacts by the same UI toggles that gated the legacy alert list. */
@@ -2742,109 +2792,66 @@ export default function App() {
    *  RouteImpact fields the bar needs to split rows by source/category and to slot severe NWS
    *  bands into the storm strip (source-attribution + start/end-meters). */
   const advisoryRouteImpacts = useMemo(() => {
-    const base = [...routeImpactsForUi];
-
-    // Merge Tomorrow.io hourly forecast impacts (Plus only, when route is active).
-    if (tioRouteForecast && guidanceRoute?.geometry && guidanceRouteLengthM > 0) {
-      const planEta = guidanceRoute.baseEtaMinutes ?? null;
-      if (planEta && planEta > 0) {
-        const tioImpacts = routeForecastToImpacts(
-          tioRouteForecast,
-          guidanceRoute.geometry,
-          planEta,
-          guidanceRouteLengthM
-        );
-        base.push(...tioImpacts);
-      }
-    }
-
-    return base.sort((a, b) => {
+    return [...routeImpactsForUi].sort((a, b) => {
       const da = a.distanceAheadMeters ?? a.alongMeters;
       const db = b.distanceAheadMeters ?? b.alongMeters;
       return da - db;
     });
-  }, [routeImpactsForUi, tioRouteForecast, guidanceRoute?.geometry, guidanceRoute?.baseEtaMinutes, guidanceRouteLengthM]);
+  }, [routeImpactsForUi]);
 
-  /** Severe / extreme NWS warnings that cross the active route, projected to a storm-strip band.
-   *  We pair each NWS-source impact with its raw alert (by id) so the strip caption can show the
-   *  expiration time, which is on the NWS alert and not duplicated on the impact. */
-  const advisoryStormStripBands = useMemo(() => {
-    const totalM = guidanceRouteLengthM;
-    if (totalM <= 0 || !nwsAlertsForGuidanceAdvisory.length) return [] as Array<{
-      id: string; event: string;
-      severity: "info" | "caution" | "serious" | "avoid";
-      startMeters: number; endMeters: number;
-      expiresIso: string | null; alertId: string | null;
-      crossesRoute: boolean;
-    }>;
+  /** Advisory timeline storm bands — same spans as progress strip / map route highlights. */
+  const advisoryStormStripBands = useMemo(
+    () =>
+      routeStormStripBands.map((b) => ({
+        id: b.id,
+        event: b.event,
+        severity: b.impactSeverity,
+        startMeters: b.startMeters,
+        endMeters: b.endMeters,
+        expiresIso: b.expiresIso,
+        alertId: b.alertId,
+        crossesRoute: b.crossesRoute,
+      })),
+    [routeStormStripBands]
+  );
 
-    const routeGeom = guidanceRoute?.geometry ?? nwsNavCorridorGeom;
-    if (!routeGeom?.length) return [];
-
-    const bands: Array<{
-      id: string; event: string;
-      severity: "info" | "caution" | "serious" | "avoid";
-      startMeters: number; endMeters: number;
-      expiresIso: string | null;
-      alertId: string | null;
-      crossesRoute: boolean;
-    }> = [];
-
-    const NEARBY_HALF_M = 8_000; // strip half-width for near-but-not-crossing alerts
-
-    for (const alert of nwsAlertsForGuidanceAdvisory) {
-      const rawSev = alert.severity ?? "Moderate";
-      const sev: "info" | "caution" | "serious" | "avoid" =
-        rawSev === "Extreme" ? "avoid"
-        : rawSev === "Severe" ? "serious"
-        : rawSev === "Moderate" ? "caution"
-        : "info";
-
-      let startM: number;
-      let endM: number;
-      let crossesRoute: boolean;
-
-      if (alert.geometry) {
-        const intersection = alertRouteIntersectionMeters(routeGeom, alert.geometry);
-        if (intersection) {
-          startM = intersection.startM;
-          endM = intersection.endM;
-          crossesRoute = true;
-        } else {
-          /* Alert is near the route (NWS buffer) but doesn't cross — place a representative
-           * strip at the closest route point to the polygon centroid. */
-          const centroid = polygonApproxCentroid(alert.geometry);
-          const midM = closestAlongMeters(routeGeom, centroid as [number, number]);
-          startM = Math.max(0, midM - NEARBY_HALF_M);
-          endM = Math.min(totalM, midM + NEARBY_HALF_M);
-          crossesRoute = false;
-        }
-      } else {
-        /* No geometry at all — spread across full route as a last-resort placeholder. */
-        startM = 0;
-        endM = totalM;
-        crossesRoute = false;
-      }
-
-      bands.push({
-        id: `nws-alert-${alert.id}`,
-        event: alert.event ?? "Weather Alert",
-        severity: sev,
-        startMeters: startM,
-        endMeters: endM,
-        expiresIso: alert.ends ?? null,
-        alertId: alert.id ?? null,
-        crossesRoute,
-      });
-    }
-
-    return bands;
+  /**
+   * Unified route-hazard timeline — progress strip bands, map highlights,
+   * and progress info panel all read from this list.
+   */
+  const routeAheadTimeline = useMemo(() => {
+    if (guidanceRouteLengthM <= 0) return [];
+    const alertsById = new Map(nwsAlertsForGuidanceAdvisory.map((a) => [a.id, a]));
+    return buildRouteAheadTimeline({
+      routeTotalMeters: guidanceRouteLengthM,
+      userAlongMeters: advisoryUserAlongM,
+      planEtaMinutes: guidanceRoute?.baseEtaMinutes ?? null,
+      driveEtaMinutes: driveEtaMinutes ?? null,
+      stormStripBands: advisoryStormStripBands,
+      routeImpacts: advisoryRouteImpacts,
+      stripBandDetail: (band) => {
+        const matched = band.alertId ? alertsById.get(band.alertId) : undefined;
+        if (!matched) return { severityLabel: null, detail: null };
+        return {
+          severityLabel: matched.severity ?? null,
+          detail: nwsGlanceSummary(matched) ?? null,
+        };
+      },
+    });
   }, [
-    nwsAlertsForGuidanceAdvisory,
     guidanceRouteLengthM,
-    guidanceRoute?.geometry,
-    nwsNavCorridorGeom,
+    advisoryUserAlongM,
+    guidanceRoute?.baseEtaMinutes,
+    driveEtaMinutes,
+    advisoryStormStripBands,
+    advisoryRouteImpacts,
+    nwsAlertsForGuidanceAdvisory,
   ]);
+
+  const routeAheadProgressBands = useMemo(
+    () => timelineToProgressStripBands(routeAheadTimeline),
+    [routeAheadTimeline]
+  );
 
   /**
    * Project unified impacts back to the legacy `RouteAlert` shape so existing surfaces (progress strip,
@@ -2856,7 +2863,10 @@ export default function App() {
    * route was silently filtered out of the progress strip.
    */
   const routeAlerts = useMemo(
-    () => routeImpactsForUi.map(routeImpactToRouteAlert),
+    () =>
+      routeImpactsForUi
+        .filter((i) => i.source !== "nws")
+        .map(routeImpactToRouteAlert),
     [routeImpactsForUi]
   );
 
@@ -2946,8 +2956,13 @@ export default function App() {
   const mapAlongRouteAlerts = useMemo(() => {
     const g = guidanceRoute?.geometry;
     if (!g?.length) return [];
-    return progressStripAlerts;
-  }, [progressStripAlerts, guidanceRoute?.geometry]);
+    const roadFromTimeline = timelineToMapCorridorAlerts(routeAheadTimeline, advisoryRouteImpacts);
+    const byId = new Map<string, RouteAlert>();
+    for (const a of [...progressStripAlerts, ...roadFromTimeline]) {
+      byId.set(a.id, a);
+    }
+    return [...byId.values()];
+  }, [progressStripAlerts, guidanceRoute?.geometry, routeAheadTimeline, advisoryRouteImpacts]);
 
   /**
    * NWS warning polygons on the map for the active leg (Rt / Dr / Map). Independent of radar overlay.
@@ -3098,6 +3113,7 @@ export default function App() {
   const progressCalloutPanel = useMemo((): {
     routeWide: RouteChunkCalloutItem[];
     outlookTimeline: RouteOutlookStep[];
+    outlookSamples: WxSample[];
     segments: RouteChunkCalloutItem[];
     userAlongT: number;
     stripTint: string;
@@ -3111,44 +3127,44 @@ export default function App() {
         : "#94a3b8";
 
     if (!g?.length) {
-      return { routeWide: [], outlookTimeline: [], segments: [], userAlongT: 0, stripTint };
+      return {
+        routeWide: [],
+        outlookTimeline: [],
+        outlookSamples: [],
+        segments: [],
+        userAlongT: 0,
+        stripTint,
+      };
     }
     const totalM = polylineLengthMeters(g);
     if (totalM <= 0) {
-      return { routeWide: [], outlookTimeline: [], segments: [], userAlongT: 0, stripTint };
+      return {
+        routeWide: [],
+        outlookTimeline: [],
+        outlookSamples: [],
+        segments: [],
+        userAlongT: 0,
+        stripTint,
+      };
     }
     const userAlongT =
       totalM > 0 ? Math.min(1, Math.max(0, userAlongGuidanceM / totalM)) : 0;
 
-    if (!navigationStarted) {
-      const pt = totalM > 0 ? Math.min(1, Math.max(0, userAlongGuidanceM / totalM)) : 0.5;
-      const b = buildSimpleCalloutBlock("Route conditions", [
-        "Open Rt view for NWS warning polygons on the map.",
-        "Press Go for live traffic and segment labels on the strip.",
-      ]);
-      return {
-        routeWide: [],
-        outlookTimeline: [],
-        segments: [
-          {
-            key: "callout-pre-go",
-            scope: "segment",
-            title: b.title,
-            summary: b.summary,
-            tooltip: b.tooltip,
-            color: stripTint,
-            alongT: pt,
-            alongPct: Math.round(pt * 100),
-          },
-        ],
-        userAlongT,
-        stripTint,
-      };
-    }
-
     const laidOut = layoutStripAlerts(progressStripAlerts, g, userAlongGuidanceM, totalM);
     const planEta = guidanceRoute?.baseEtaMinutes ?? null;
-    const wxSamples = weatherOverlay?.[guidanceRouteId]?.samples;
+    const wxOverlay =
+      weatherOverlay?.[guidanceRouteId] ??
+      weatherOverlay?.[lineFocusId] ??
+      (weatherOverlay ? Object.values(weatherOverlay)[0] : undefined);
+    const wxSamples = wxOverlay?.samples;
+
+    const routeAheadSegments = buildRouteAheadCalloutSegments({
+      items: routeAheadTimeline,
+      totalMeters: totalM,
+      userAlongMeters: userAlongGuidanceM,
+      planEtaMinutes: planEta,
+      driveEtaMinutes: driveEtaMinutes ?? null,
+    });
 
     const bundle = buildRouteChunkCalloutList({
       geometry: g,
@@ -3158,30 +3174,101 @@ export default function App() {
       slice: guidanceSlice,
       weatherSamples: wxSamples,
       laidOutAlerts: laidOut,
-      stormBands: stormProgressBands,
+      stormBands: routeAheadProgressBands,
       stripTint,
       stormNwsAlerts: nwsAlertsAffectingActiveRoute,
-      progressTrafficLine: liveTrafficNarrative?.progressStartLine ?? null,
+      progressTrafficLine: navigationStarted ? liveTrafficNarrative?.progressStartLine ?? null : null,
     });
 
-    if (bundle.routeWide.length > 0 || bundle.outlookTimeline.length > 0 || bundle.segments.length > 0) {
-      return { ...bundle, userAlongT, stripTint };
+    const wxHeadline =
+      guidanceSlice?.forecastHeadline?.trim() ||
+      wxOverlay?.headline?.trim() ||
+      corridorWeatherDetail;
+
+    const syncedOutlook = buildSyncedRouteOutlook({
+      forecastHeadline: wxHeadline,
+      samples: wxSamples,
+      totalMeters: totalM,
+      userAlongMeters: userAlongGuidanceM,
+      planEtaMinutes: planEta,
+      driveEtaMinutes: driveEtaMinutes ?? null,
+    });
+
+    const tioOutlook =
+      tioRouteForecast && planEta && planEta > 0
+        ? buildSyncedRouteOutlook({
+            forecastHeadline: "",
+            samples: tomorrowForecastToWxSamples(tioRouteForecast, planEta),
+            totalMeters: totalM,
+            userAlongMeters: userAlongGuidanceM,
+            planEtaMinutes: planEta,
+            driveEtaMinutes: driveEtaMinutes ?? null,
+          })
+        : [];
+
+    const tioOutlookFallback =
+      tioRouteForecast && planEta && planEta > 0
+        ? buildRouteOutlookFromTomorrowForecast(tioRouteForecast, planEta)
+        : [];
+
+    const mergedSegments = [...routeAheadSegments, ...bundle.segments].sort((a, b) => b.alongT - a.alongT);
+    const outlookTimeline = resyncRouteOutlookSteps(
+      applyRadarOutlookBoost(
+        mergeRouteOutlookSteps(
+          syncedOutlook,
+          tioOutlook,
+          tioOutlook.length === 0 ? tioOutlookFallback : [],
+          bundle.outlookTimeline
+        ),
+        radarMosaicAlongRoute.samples
+      ),
+      {
+        samples: wxSamples,
+        totalMeters: totalM,
+        userAlongMeters: userAlongGuidanceM,
+        planEtaMinutes: planEta,
+        driveEtaMinutes: driveEtaMinutes ?? null,
+      }
+    );
+
+    const tioSamples =
+      tioRouteForecast && planEta && planEta > 0
+        ? tomorrowForecastToWxSamples(tioRouteForecast, planEta)
+        : [];
+    const outlookSamples =
+      wxSamples?.length ? wxSamples : tioSamples.length ? tioSamples : [];
+
+    if (bundle.routeWide.length > 0 || outlookTimeline.length > 0 || mergedSegments.length > 0) {
+      return {
+        routeWide: bundle.routeWide,
+        outlookTimeline,
+        outlookSamples,
+        segments: mergedSegments,
+        userAlongT,
+        stripTint,
+      };
     }
 
     const pt = totalM > 0 ? Math.min(1, Math.max(0, userAlongGuidanceM / totalM)) : 0.5;
     const hasStormUi =
-      Boolean(stormProgressBands?.length) ||
+      Boolean(routeAheadProgressBands?.length) ||
       Boolean(stormCorridorAlerts?.length) ||
       Boolean(progressStripAlerts?.length);
     const b = buildSimpleCalloutBlock(
       "Route conditions",
       hasStormUi
         ? ["NWS active — open Rt view for warning polygons on the map."]
-        : ["No corridor alerts yet — check Storm is on in Settings."]
+        : navigationStarted
+          ? ["No corridor alerts yet — check Storm is on in Settings."]
+          : [
+              "Open Rt view for NWS warning polygons on the map.",
+              "Press Go for live traffic and segment labels on the strip.",
+            ]
     );
     return {
       routeWide: [],
       outlookTimeline: [],
+      outlookSamples: [],
       segments: [
         {
           key: "callout-fallback",
@@ -3205,12 +3292,88 @@ export default function App() {
     guidanceRoute?.baseEtaMinutes,
     guidanceRouteId,
     userAlongGuidanceM,
-    stormProgressBands,
+    routeAheadTimeline,
+    routeAheadProgressBands,
     stormCorridorAlerts,
     progressStripAlerts,
     guidanceSlice,
     weatherOverlay,
+    corridorWeatherDetail,
+    lineFocusId,
+    tioRouteForecast,
+    radarMosaicAlongRoute.samples,
     liveTrafficNarrative,
+    driveEtaMinutes,
+  ]);
+
+  const routeAheadHealthRepairAtRef = useRef(0);
+
+  /** Route-hazard watchdog — progress strip and progress info panel stay fed from one pipeline. */
+  useEffect(() => {
+    if (!appForeground) return;
+    const hasRoute = Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
+    if (!hasRoute) return;
+
+    const runAudit = () => {
+      const ow = weatherOverlay?.[guidanceRouteId];
+      const audit = auditRouteAheadSync({
+        hasRouteGeometry: hasRoute,
+        isPlus,
+        weatherHintsEnabled: settingWeatherHintsEnabled,
+        hasPlannedRoute: Boolean(
+          destLngLat && plan.routes.some((r) => r.geometry && r.geometry.length >= 2)
+        ),
+        navigationStarted,
+        outlookStepCount: progressCalloutPanel.outlookTimeline.length,
+        timelineItemCount: routeAheadTimeline.length,
+        progressBandCount: routeAheadProgressBands.length,
+        corridorWeatherDetail,
+        weatherOverlayHeadline: ow?.headline?.trim() ?? "",
+        hasWeatherSamples: Boolean(ow?.samples?.length),
+      });
+
+      if (audit.ok) return;
+      const now = Date.now();
+      if (now - routeAheadHealthRepairAtRef.current < ROUTE_AHEAD_HEALTH_REPAIR_COOLDOWN_MS) return;
+      routeAheadHealthRepairAtRef.current = now;
+
+      const actions = repairActionsForRouteAheadIssues(audit.issues);
+      for (const action of actions) {
+        if (action === "refresh_weather_overlay") {
+          lastOwOverlayGeomKeyRef.current = "";
+          lastOwOverlayAtRef.current = 0;
+          weatherRefreshRef.current += 1;
+          setWeatherRefreshKey(weatherRefreshRef.current);
+        }
+        if (action === "refresh_traffic") {
+          trafficRefreshRef.current += 1;
+          setTrafficRefreshKey(trafficRefreshRef.current);
+        }
+      }
+      reportAppHealthRepair("route_ahead", audit.issues, actions);
+      if (import.meta.env.DEV) {
+        console.info("[route-ahead-health] repair", audit.issues, actions);
+      }
+    };
+
+    runAudit();
+    const id = window.setInterval(runAudit, ROUTE_AHEAD_HEALTH_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [
+    appForeground,
+    isPlus,
+    settingWeatherHintsEnabled,
+    navigationStarted,
+    destLngLat,
+    plan.routes,
+    guidanceRoute?.geometry,
+    guidanceRouteId,
+    progressCalloutPanel.outlookTimeline.length,
+    routeAheadTimeline.length,
+    routeAheadProgressBands.length,
+    corridorWeatherDetail,
+    weatherOverlay,
+    progressCalloutsOpen,
   ]);
 
   const progressCalloutCount =
@@ -3223,7 +3386,7 @@ export default function App() {
     const wasOpen = progressCalloutWasOpenRef.current;
     progressCalloutWasOpenRef.current = progressCalloutsOpen;
     if (progressCalloutsOpen && !wasOpen && progressCalloutCount > 0) {
-      const el = progressCalloutTrackRef.current;
+      const el = progressCalloutDetailScrollRef.current;
       if (el) {
         requestAnimationFrame(() => {
           el.scrollTop = el.scrollHeight;
@@ -3715,7 +3878,6 @@ export default function App() {
   const showStormAdvisoryChrome = advisoryLifeSafetyOn;
 
   const showProgressRail =
-    navigationStarted &&
     isPlus &&
     !trafficBypassCompare &&
     Boolean(progressRailRoute?.geometry && progressRailRoute.geometry.length >= 2);
@@ -4935,7 +5097,8 @@ export default function App() {
   return (
     <div
       className={`app-shell nav-fullmap${navigationStarted && viewMode === "drive" ? " nav-drive-ui" : ""}${
-        showProgressRail ? " nav-progress-rail-on" : ""
+        navigationStarted && viewMode === "topdown" ? " nav-mapnav-ui" : ""
+      }${showProgressRail ? " nav-progress-rail-on" : ""
       }${trafficBypassCompare ? " nav-route-compare-active" : ""
       }${basemapNight ? " app-shell--basemap-night" : ""}${settingLandscapeSideHand === "left" ? " app-shell--landscape-hand-left" : ""}${
         radarMapOverlayOn && radarFrameUtcSec != null ? " nav-radar-frame-time-visible" : ""
@@ -4982,6 +5145,7 @@ export default function App() {
             onRadarFrameUtcSec={setRadarFrameUtcSec}
             alongRouteAlerts={mapAlongRouteAlerts}
             corridorRouteGeometry={guidanceRoute?.geometry}
+            stormAlongRouteBands={routeAheadProgressBands}
             recordingGeometry={recordingActive ? recordingPathPreview : undefined}
             weatherAlertGeoJson={nwsAlertGeoJsonForMap}
             stormBarVisible={showStormAdvisoryChrome}
@@ -5067,6 +5231,7 @@ export default function App() {
                       roadDetailRows={advisoryRoadDetailRows}
                       routeImpacts={advisoryRouteImpacts}
                       stormStripBands={advisoryStormStripBands}
+                      routeAheadTimeline={routeAheadTimeline}
                       routeTotalMeters={guidanceRouteLengthM}
                       userAlongMeters={advisoryUserAlongM}
                       planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
@@ -5176,89 +5341,27 @@ export default function App() {
                   >
                     {progressCalloutsOpen && progressCalloutCount > 0 && (
                       <div
-                        className="route-progress-callout-panel route-progress-callout-panel--rail route-progress-callout-panel--with-docked-toggle"
+                        className="route-progress-callout-panel route-progress-callout-panel--rail"
                         role="list"
                         aria-label="Progress bar segments"
                       >
                         <div className="route-progress-callout-panel__track" ref={progressCalloutTrackRef}>
-                          {progressCalloutPanel.routeWide.length > 0 && (
-                            <div
-                              className="route-progress-callout-panel__route-wide"
-                              role="group"
-                              aria-label="Whole route"
-                            >
-                              {progressCalloutPanel.routeWide.map((it) => (
-                                <div
-                                  key={it.key}
-                                  className="route-progress-callout-panel__line route-progress-callout-panel__line--route-wide"
-                                  role="listitem"
-                                  title={it.tooltip}
-                                >
-                                  <span
-                                    className="route-progress-callout-panel__dot"
-                                    style={{ backgroundColor: it.color }}
-                                  />
-                                  <div className="route-progress-callout-panel__line-body">
-                                    <div className="route-progress-callout-panel__title-row">
-                                      <span className="route-progress-callout-panel__title">{it.title}</span>
-                                      <span className="route-progress-callout-panel__along">ALL</span>
-                                    </div>
-                                    {it.summary ? (
-                                      <p className="route-progress-callout-panel__summary">{it.summary}</p>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {progressCalloutPanel.segments.length > 0 && (
-                              <>
-                                <hr
-                                  className="route-progress-callout-panel__divider"
-                                  aria-hidden
-                                />
-                                <p className="route-progress-callout-panel__timeline-label" aria-hidden>
-                                  Along route
-                                </p>
-                              </>
+                          <RouteProgressGlancePanel
+                            timeline={routeAheadTimeline}
+                            routeWide={progressCalloutPanel.routeWide}
+                            outlookSteps={progressCalloutPanel.outlookTimeline}
+                            outlookSamples={progressCalloutPanel.outlookSamples}
+                            fallbackSegments={progressCalloutPanel.segments.filter(
+                              (s) => !s.key.startsWith("route-ahead-")
                             )}
-                          {progressCalloutPanel.segments.map((it) => (
-                            <div
-                              key={it.key}
-                              className="route-progress-callout-panel__line"
-                              role="listitem"
-                              title={it.tooltip}
-                            >
-                              <span
-                                className="route-progress-callout-panel__dot"
-                                style={{ backgroundColor: it.color }}
-                              />
-                              <div className="route-progress-callout-panel__line-body">
-                                <div className="route-progress-callout-panel__title-row">
-                                  <span className="route-progress-callout-panel__title">{it.title}</span>
-                                  <span className="route-progress-callout-panel__along">{it.alongPct}%</span>
-                                </div>
-                                {it.summary ? (
-                                  <p className="route-progress-callout-panel__summary">{it.summary}</p>
-                                ) : null}
-                              </div>
-                            </div>
-                          ))}
-                          {progressCalloutPanel.outlookTimeline.length > 0 && (
-                            <>
-                              {progressCalloutPanel.segments.length > 0 && (
-                                <hr
-                                  className="route-progress-callout-panel__divider route-progress-callout-panel__divider--above-outlook"
-                                  aria-hidden
-                                />
-                              )}
-                              <RouteOutlookTimeline
-                                steps={progressCalloutPanel.outlookTimeline}
-                                userAlongT={progressCalloutPanel.userAlongT}
-                                stripTint={progressCalloutPanel.stripTint}
-                              />
-                            </>
-                          )}
+                            totalMeters={guidanceRouteLengthM}
+                            userAlongMeters={userAlongGuidanceM}
+                            planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
+                            driveEtaMinutes={driveEtaMinutes ?? null}
+                            userAlongT={progressCalloutPanel.userAlongT}
+                            stripTint={progressCalloutPanel.stripTint}
+                            detailScrollRef={progressCalloutDetailScrollRef}
+                          />
                         </div>
                       </div>
                     )}
@@ -5266,16 +5369,12 @@ export default function App() {
                       type="button"
                       className={`route-progress-callout-toggle${
                         progressCalloutsOpen ? " route-progress-callout-toggle--on" : ""
-                      }${
-                        progressCalloutsOpen && progressCalloutCount > 0
-                          ? " route-progress-callout-toggle--docked"
-                          : ""
                       }`}
                       aria-pressed={progressCalloutsOpen}
                       title={
                         progressCalloutsOpen
-                          ? "Hide strip labels"
-                          : "Show labels for colored segments on the progress bar"
+                          ? "Hide route glance"
+                          : "Route glance — bands, hazards, and forecast"
                       }
                       onClick={() => setProgressCalloutsOpen((o) => !o)}
                     >
@@ -5291,7 +5390,7 @@ export default function App() {
                     radarIntensity={guidanceSlice?.radarIntensity ?? 0}
                     routeLineColor={progressStripRouteColor}
                     turnSteps={progressRailRoute.turnSteps ?? turnSteps}
-                    stormBands={stormProgressBands}
+                    stormBands={routeAheadProgressBands}
                     onCorridorBandClick={isPlus ? handleProgressStripCorridorClick : undefined}
                     onStormBandClick={isPlus ? handleProgressStripStormClick : undefined}
                     driveEndsEmphasis={driveModeUi}
@@ -5599,6 +5698,41 @@ export default function App() {
                     ) : null}
                   </div>
                 </div>
+              ) : navigationStarted && viewMode === "topdown" ? (
+                <div className="nav-bottom-dock__about-row">
+                  <button
+                    type="button"
+                    className="map-about-btn"
+                    aria-label="About StormPath"
+                    title="About / Settings"
+                    onClick={() => setAboutOpen(true)}
+                  >
+                    i
+                  </button>
+                  {driveDistanceRemainingLabel ? (
+                    <NavMilesLeftBox label={driveDistanceRemainingLabel} />
+                  ) : null}
+                  {routePickItems.length >= 1 ? (
+                    <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
+                      <RouteCycleButton
+                        items={routePickItems}
+                        selectedId={lineFocusId}
+                        cycleOrderIds={planRouteIds}
+                        activeSlotIndex={null}
+                        onSelect={handlePreviewRouteSelect}
+                        detail={routeDockDetail}
+                      />
+                    </div>
+                  ) : radarMapOverlayOn && radarFrameTimeLabel ? (
+                    <div
+                      className="nav-radar-frame-time-dock"
+                      aria-live="polite"
+                      title="Radar mosaic time (your local time)"
+                    >
+                      {radarFrameTimeLabel}
+                    </div>
+                  ) : null}
+                </div>
               ) : (
                 <div className="nav-bottom-dock__plan-stack">
                   {/* About row hosts the round 'i' info button on the left and, when there are
@@ -5744,8 +5878,6 @@ export default function App() {
       <AboutSheet
         open={aboutOpen}
         onClose={() => setAboutOpen(false)}
-        payTierProbeKey={payTierProbeKey}
-        onPayTierOverride={env.payTierTestPanel ? reprobePayTier : undefined}
         activityTrail={activityTrailAboutPanel}
         settings={{
           radarEnabled: settingRadarEnabled,

@@ -23,16 +23,24 @@ export async function fetchCurrentWeatherHeadline(
     throw new Error(`OpenWeather ${res.status}: ${t.slice(0, 160)}`);
   }
   const data = (await res.json()) as {
+    main?: { temp?: number };
     weather?: { description?: string }[];
     clouds?: { all?: number };
     rain?: { "1h"?: number };
     snow?: { "1h"?: number };
   };
   const desc = data.weather?.[0]?.description ?? "conditions";
+  const tempF =
+    data.main?.temp != null && Number.isFinite(data.main.temp)
+      ? Math.round(data.main.temp)
+      : null;
   const clouds = (data.clouds?.all ?? 0) / 100;
   const rain = data.rain?.["1h"] ?? data.snow?.["1h"] ?? 0;
   const precipHint = Math.min(1, clouds * 0.5 + Math.min(1, rain / 5));
-  const headline = `${desc}; clouds ${data.clouds?.all ?? 0}%`;
+  const headline =
+    tempF != null
+      ? `${tempF}°F ${desc}; clouds ${data.clouds?.all ?? 0}%`
+      : `${desc}; clouds ${data.clouds?.all ?? 0}%`;
   return { headline, precipHint };
 }
 
@@ -312,7 +320,7 @@ export async function weatherForecastAlongRoute(
       url.searchParams.set("lon", String(lng));
       url.searchParams.set("appid", apiKey);
       url.searchParams.set("units", "imperial");
-      url.searchParams.set("cnt", "8");
+      url.searchParams.set("cnt", String(Math.min(40, Math.max(8, Math.ceil(totalEtaMinutes / 180) + 2))));
 
       const res = await enqueueOpenWeatherGet(url.toString());
       if (!res.ok) throw new Error(`${res.status}`);
@@ -362,7 +370,8 @@ export async function weatherForecastAlongRoute(
       precipPct = Math.round(((best as FcItem).pop ?? 0) * 100);
       const clouds = ((best as FcItem).clouds?.all ?? 0) / 100;
       const rain = (best as FcItem).rain?.["3h"] ?? (best as FcItem).snow?.["3h"] ?? 0;
-      precipHint = Math.min(1, clouds * 0.5 + Math.min(1, rain / 5));
+      const heuristic = Math.min(1, clouds * 0.5 + Math.min(1, rain / 5));
+      precipHint = Math.max(precipPct / 100, heuristic);
     } else if (!result?.error) {
       try {
         const [lng, lat] = geometry[gIdx]!;
@@ -390,7 +399,7 @@ export async function weatherForecastAlongRoute(
       p.arrivalOffsetMin < 2
         ? ""
         : ` (in ~${formatEtaDuration(p.arrivalOffsetMin)})`;
-    return `${p.label}${offsetLabel}: ${temp ? temp + " " : ""}${p.conditions}${p.precipPct > 10 ? ` ${p.precipPct}% precip` : ""}`;
+    return `${p.label}${offsetLabel}: ${temp ? temp + " " : ""}${p.conditions}${p.precipPct > 0 ? ` ${p.precipPct}% precip` : ""}`;
   });
   const headline = headlineParts.join(" \u2192 ");
 
@@ -450,4 +459,34 @@ export async function weatherHintSamplesAlongPolyline(
   });
 
   return { headline, precipHint, samples };
+}
+
+const ROUTE_POINT_FRACTION: Record<string, number> = {
+  Start: 0,
+  Quarter: 0.25,
+  Midway: 0.5,
+  "3/4 mark": 0.75,
+  Destination: 1,
+};
+
+/** Rich samples from a along-route forecast — powers the progress info weather graph. */
+export function weatherSamplesFromRoutePoints(
+  points: RouteWeatherPoint[]
+): WeatherHintSample[] {
+  return points.map((p) => {
+    const t = ROUTE_POINT_FRACTION[p.label] ?? 0.5;
+    const temp = p.tempF != null ? `${p.tempF}°F ` : "";
+    const precipHint = Math.max(p.precipHint, p.precipPct / 100);
+    const precip =
+      p.precipPct > 0
+        ? ` ${p.precipPct}% precip`
+        : precipHint > 0.05
+          ? ` ${Math.round(precipHint * 100)}% precip`
+          : "";
+    return {
+      t,
+      precipHint,
+      headline: `${temp}${p.conditions}${precip}`.trim(),
+    };
+  });
 }

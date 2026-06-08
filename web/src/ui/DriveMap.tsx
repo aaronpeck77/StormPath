@@ -729,6 +729,8 @@ type Props = {
    * (active guidance leg). When omitted, falls back to `routes.find(lineFocusId)?.geometry`.
    */
   corridorRouteGeometry?: LngLat[] | null;
+  /** NWS storm spans along the route line — same bands as the progress strip. */
+  stormAlongRouteBands?: import("../weatherAlerts/geometryOverlap").StormProgressStripBand[];
   /** Live GPS path while “Record driven path” is active (dashed line + rubber-band to current position). */
   recordingGeometry?: LngLat[];
   /** US NWS warning polygons (GeoJSON), when storm advisory is on */
@@ -795,8 +797,8 @@ const DRIVE_CAMERA_BEARING_TC_S = 0.58;
 /** Top-down map view: keep the puck at the visual center; map pans to follow GPS. */
 const TOPDOWN_PUCK_OFFSET_PX: [number, number] = [0, 0];
 /** Map (Mp) while navigating — street-level on the puck, not Rt whole-route framing. */
-const TOPDOWN_NAV_STREET_ZOOM = 14.5;
-const TOPDOWN_NAV_MIN_ZOOM = 13.35;
+const TOPDOWN_NAV_STREET_ZOOM = 16;
+const TOPDOWN_NAV_MIN_ZOOM = 14.25;
 
 function resolveTopdownLocalZoom(
   topdownZoomRef: MutableRefObject<number>,
@@ -825,10 +827,17 @@ function coerceTopdownNavStreetZoom(
   } catch {
     /* map torn down */
   }
-  if (mapZoom < TOPDOWN_NAV_MIN_ZOOM || topdownZoomRef.current < TOPDOWN_NAV_MIN_ZOOM) {
+  const tooWide = mapZoom < TOPDOWN_NAV_STREET_ZOOM - 0.85;
+  if (
+    mapZoom < TOPDOWN_NAV_MIN_ZOOM ||
+    topdownZoomRef.current < TOPDOWN_NAV_MIN_ZOOM ||
+    tooWide
+  ) {
     topdownZoomRef.current = TOPDOWN_NAV_STREET_ZOOM;
+    return TOPDOWN_NAV_STREET_ZOOM;
   }
-  return resolveTopdownLocalZoom(topdownZoomRef, true);
+  topdownZoomRef.current = mapZoom;
+  return mapZoom;
 }
 /** Delay before Wi‑Fi tile warm so idle-home camera can finish first. */
 const HOME_PRELOAD_START_DELAY_MS = 4_500;
@@ -1003,6 +1012,7 @@ export function DriveMap({
   onRadarFrameUtcSec,
   alongRouteAlerts,
   corridorRouteGeometry = null,
+  stormAlongRouteBands,
   recordingGeometry,
   weatherAlertGeoJson,
   stormBarVisible = false,
@@ -2619,6 +2629,7 @@ export function DriveMap({
         alerts: alongRouteAlerts,
         routeGeometry: focusGeom,
         stormGeoJson: weatherAlertGeoJson,
+        stormAlongRouteBands,
       });
       liftTrafficThenRoutesThenHits(
         map,
@@ -2632,6 +2643,7 @@ export function DriveMap({
     mapReady,
     alongRouteAlerts,
     corridorRouteGeometry,
+    stormAlongRouteBands,
     routes,
     lineFocusId,
     navigationStarted,
@@ -3281,6 +3293,10 @@ export function DriveMap({
    */
   useEffect(() => {
     if (!mapReady) return;
+    if (viewMode === "topdown" && navigationStarted) {
+      topdownZoomRef.current = TOPDOWN_NAV_STREET_ZOOM;
+      prevTopdownRef.current = false;
+    }
     userExploringRef.current = false;
     if (exploreTimerRef.current) {
       clearTimeout(exploreTimerRef.current);
@@ -3298,7 +3314,7 @@ export function DriveMap({
       });
     });
     return () => cancelAnimationFrame(raf0);
-  }, [mapReady, viewMode]);
+  }, [mapReady, viewMode, navigationStarted, topdownZoomRef]);
 
   const canCameraFollow = Boolean(
     userLngLat && (navigationStarted || routes.length > 0 || viewMode === "topdown")
@@ -3461,7 +3477,10 @@ export function DriveMap({
         }
         safePanToCenter(map, {
           center: u,
-          ...(nav && mapZoom < TOPDOWN_NAV_MIN_ZOOM - 0.08 ? { zoom } : {}),
+          ...(nav &&
+          (mapZoom < TOPDOWN_NAV_MIN_ZOOM - 0.08 || mapZoom < TOPDOWN_NAV_STREET_ZOOM - 0.85)
+            ? { zoom }
+            : {}),
           offset: TOPDOWN_PUCK_OFFSET_PX,
         });
       }

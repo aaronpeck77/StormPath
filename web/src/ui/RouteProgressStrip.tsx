@@ -138,7 +138,8 @@ export function RouteProgressStrip({
   const stormSegments = useMemo(() => {
     if (totalM <= 0) return [];
     return stormBands.map((b, i) => {
-      const w = Math.max(0.008, (b.endM - b.startM) / totalM);
+      const spanT = (b.endM - b.startM) / totalM;
+      const w = Math.max(0.018, spanT);
       const leftT = Math.min(1 - w, Math.max(0, b.startM / totalM));
       return {
         key: `storm-${i}`,
