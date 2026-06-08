@@ -213,7 +213,7 @@ export function RouteHazardTimeline({
   );
 
   const activeLegendCount = useMemo(
-    () => items.filter((item, i) => !itemVisuals[i]?.passed).length,
+    () => items.filter((_, i) => !itemVisuals[i]?.passed).length,
     [items, itemVisuals]
   );
 
