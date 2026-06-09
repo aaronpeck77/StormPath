@@ -20,7 +20,8 @@ import {
  *   - The user explicitly asked for "explain it to them the first time it pops up" — a
  *     contextual reveal beats a forced linear walkthrough. The advisory bar tip plays as
  *     soon as the app loads (target is on screen). The progress-rail tip waits silently
- *     until the user actually has a route. The view-cycle tip plays the first time the
+ *     until the user actually has a route (and explains tapping the bar to open Route info).
+ *     The view-cycle tip plays the first time the
  *     button becomes interactable. Etc.
  *   - One tip at a time: the queue is in priority order (see firstLaunchSteps). If two
  *     targets are visible simultaneously, the higher-priority one shows first; once

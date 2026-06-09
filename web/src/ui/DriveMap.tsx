@@ -4,6 +4,8 @@ import type { MutableRefObject } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import { resolveIdleHomeFraming } from "../map/homeMapFraming";
+import type { HomePuckFollowMode } from "../map/homePuckFollow";
+import type { TripStop } from "../nav/routeWaypoints";
 import {
   markHomePreloadCompleted,
   shouldSkipHomePreloadThrottle,
@@ -47,6 +49,7 @@ import {
 } from "./mapRouteLayers";
 import {
   applyWeatherAlertLayers,
+  NWS_POLYGON_MAP_MAX_ZOOM,
   positionWeatherAlertLayersAboveRadar,
   WEATHER_ALERTS_NWS_FILL_LAYER_ID,
 } from "./mapWeatherAlertLayers";
@@ -192,8 +195,8 @@ function truncateStormHoverText(s: string, _max: number): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
-/** No hazard hover popups when zoomed past this (street-level — too noisy). */
-const NWS_HOVER_POPUP_MAX_ZOOM = 11.5;
+/** No hazard hover popups when zoomed past polygon visibility (same cutoff as map layers). */
+const NWS_HOVER_POPUP_MAX_ZOOM = NWS_POLYGON_MAP_MAX_ZOOM;
 /** Time to read the card before fade. */
 const NWS_HOVER_READ_MS = 4500;
 const NWS_HOVER_FADE_MS = 480;
@@ -699,6 +702,8 @@ type Props = {
   suggestedRouteId: string | null;
   userLngLat: [number, number] | null;
   destLngLat: [number, number] | null;
+  /** Numbered markers for intermediate stops (before final destination). */
+  viaStops?: TripStop[];
   fitTrigger: number;
   viewMode: MapViewMode;
   navigationStarted: boolean;
@@ -775,6 +780,8 @@ type Props = {
   activityTrailPlanningBounds?: [[number, number], [number, number]] | null;
   /** Plus: launch / idle map framing preference (Basic always my_location). */
   idleHomeMapFraming?: HomeMapFraming;
+  /** Home screen (no trip): center puck on GPS vs free map exploration. */
+  homePuckFollow?: HomePuckFollowMode;
   /** Plus + learn: Wi‑Fi tile cache warm over density-capped home region. */
   homePreloadEnabled?: boolean;
   homePreloadBounds?: [[number, number], [number, number]] | null;
@@ -966,6 +973,13 @@ function makeDestEl(): HTMLDivElement {
   return el;
 }
 
+function makeViaStopEl(): HTMLDivElement {
+  const el = document.createElement("div");
+  el.className = "map-via-stop-marker";
+  el.textContent = "S";
+  return el;
+}
+
 function makePoiHoverEl(): HTMLDivElement {
   const el = document.createElement("div");
   el.className = "map-poi-hover-target";
@@ -992,6 +1006,7 @@ export function DriveMap({
   suggestedRouteId,
   userLngLat,
   destLngLat,
+  viaStops = [],
   fitTrigger,
   viewMode,
   navigationStarted,
@@ -1029,6 +1044,7 @@ export function DriveMap({
   activityTrailGeoJson = null,
   activityTrailPlanningBounds = null,
   idleHomeMapFraming = "my_location",
+  homePuckFollow = "follow",
   homePreloadEnabled = false,
   homePreloadBounds = null,
   searchPickMarkers = null,
@@ -1039,6 +1055,7 @@ export function DriveMap({
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const puckMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const destMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const viaMarkerMapRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
   const poiHoverMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const bypassHazardMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const savedMarkerMapRef = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLButtonElement }>>(new Map());
@@ -1071,6 +1088,10 @@ export function DriveMap({
   viewModeRef.current = viewMode;
   const navigationStartedRef = useRef(navigationStarted);
   navigationStartedRef.current = navigationStarted;
+  const routesLengthRef = useRef(routes.length);
+  routesLengthRef.current = routes.length;
+  const homePuckFollowRef = useRef(homePuckFollow);
+  homePuckFollowRef.current = homePuckFollow;
   const userExploringRef = useRef(false);
   const exploreTimerRef = useRef<number | null>(null);
   const lastForcedPlanningFitTriggerRef = useRef<number | null>(null);
@@ -1079,6 +1100,7 @@ export function DriveMap({
   const planningFitRetryTimerRef = useRef<number | null>(null);
   const planningFitVerifyTimerRef = useRef<number | null>(null);
   const activeDriveCamera = navigationStarted && viewMode === "drive";
+  const idleHomeScreen = routes.length === 0 && !navigationStarted;
   const routeNavFollowKey =
     viewMode === "route" && navigationStarted && userLngLat
       ? `${Math.round(userLngLat[0] * 1800)}|${Math.round(userLngLat[1] * 1800)}`
@@ -1086,6 +1108,10 @@ export function DriveMap({
   const topdownFollowKey = userLngLat
     ? `${Math.round(userLngLat[0] * 2500)}|${Math.round(userLngLat[1] * 2500)}`
     : null;
+  const idleHomeFollowKey =
+    idleHomeScreen && homePuckFollow === "follow" && userLngLat
+      ? `${Math.round(userLngLat[0] * 2500)}|${Math.round(userLngLat[1] * 2500)}`
+      : null;
 
   useEffect(() => {
     if (routes.length === 0) prevPlanningRouteCountRef.current = 0;
@@ -1146,6 +1172,14 @@ export function DriveMap({
   };
   scheduleExploreEndRef.current = () => {
     if (exploreTimerRef.current) window.clearTimeout(exploreTimerRef.current);
+    /* Home screen + explore preference: stay off follow until My location. */
+    if (
+      !navigationStartedRef.current &&
+      routesLengthRef.current === 0 &&
+      homePuckFollowRef.current === "explore"
+    ) {
+      return;
+    }
     const idleMs =
       navigationStartedRef.current && viewModeRef.current === "drive"
         ? DRIVE_EXPLORE_IDLE_MS
@@ -2092,6 +2126,31 @@ export function DriveMap({
     }
   }, [mapReady, destLngLat]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    const wanted = new Set(viaStops.map((_, i) => i));
+    for (const [idx, marker] of viaMarkerMapRef.current) {
+      if (!wanted.has(idx)) {
+        marker.remove();
+        viaMarkerMapRef.current.delete(idx);
+      }
+    }
+
+    viaStops.forEach((stop, i) => {
+      let marker = viaMarkerMapRef.current.get(i);
+      if (!marker) {
+        marker = new mapboxgl.Marker({ element: makeViaStopEl(), anchor: "center" })
+          .setLngLat(stop.lngLat)
+          .addTo(map);
+        viaMarkerMapRef.current.set(i, marker);
+      } else {
+        marker.setLngLat(stop.lngLat);
+      }
+    });
+  }, [mapReady, viaStops]);
+
   /**
    * Hazard pin during the bypass-compare flow — a pulsing red dot at the impact's lng/lat.
    */
@@ -2420,8 +2479,9 @@ export function DriveMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
+    const hideNwsPolygons = navigationStarted && viewMode === "drive";
     const sync = () => {
-      applyWeatherAlertLayers(map, weatherAlertGeoJson ?? null);
+      applyWeatherAlertLayers(map, hideNwsPolygons ? null : (weatherAlertGeoJson ?? null));
       liftTrafficThenRoutesThenHits(
         map,
         visibleRouteIdsForHitLayers(routes, lineFocusId, viewMode, false)
@@ -2450,6 +2510,7 @@ export function DriveMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
+    if (navigationStarted && viewMode === "drive") return;
     if (!weatherAlertGeoJson?.features?.length) return;
     if (!mapHoverPopupSupported()) return;
 
@@ -2613,7 +2674,7 @@ export function DriveMap({
       if (rafId != null) cancelAnimationFrame(rafId);
       removePopupImmediate();
     };
-  }, [mapReady, weatherAlertGeoJson]);
+  }, [mapReady, weatherAlertGeoJson, navigationStarted, viewMode]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2827,6 +2888,17 @@ export function DriveMap({
   useEffect(() => {
     idleHomeAppliedRef.current = false;
   }, [idleHomeMapFraming]);
+
+  useEffect(() => {
+    if (homePuckFollow !== "follow" || routes.length > 0 || navigationStarted) return;
+    userExploringRef.current = false;
+    idleHomeAppliedRef.current = false;
+    if (exploreTimerRef.current) {
+      clearTimeout(exploreTimerRef.current);
+      exploreTimerRef.current = null;
+    }
+    setMapResumeTick((n) => n + 1);
+  }, [homePuckFollow, routes.length, navigationStarted]);
 
   useEffect(() => {
     const hasBounds = activityTrailPlanningBounds != null;
@@ -3317,7 +3389,11 @@ export function DriveMap({
   }, [mapReady, viewMode, navigationStarted, topdownZoomRef]);
 
   const canCameraFollow = Boolean(
-    userLngLat && (navigationStarted || routes.length > 0 || viewMode === "topdown")
+    userLngLat &&
+      (navigationStarted ||
+        routes.length > 0 ||
+        (idleHomeScreen && homePuckFollow === "follow") ||
+        (viewMode === "topdown" && !(idleHomeScreen && homePuckFollow === "explore")))
   );
 
   /** On Go: clear "user exploring" so the drive camera is not stuck; nudge follow + size after nav chrome. */
@@ -3420,12 +3496,16 @@ export function DriveMap({
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
-    if (!canCameraFollow || viewMode !== "topdown") {
-      if (viewMode !== "topdown") prevTopdownRef.current = false;
+    const idleHomeFollow = idleHomeScreen && homePuckFollow === "follow";
+    const followTopdownView = viewMode === "topdown";
+    const followRouteHome = viewMode === "route" && idleHomeFollow;
+
+    if (!canCameraFollow || (!followTopdownView && !followRouteHome)) {
+      if (!followTopdownView) prevTopdownRef.current = false;
       return;
     }
 
-    if (trafficBypassCompareActive) {
+    if (trafficBypassCompareActive && followTopdownView) {
       prevTopdownRef.current = true;
       const u = userLngLatRef.current;
       if (!u) return;
@@ -3451,10 +3531,20 @@ export function DriveMap({
       };
     }
 
-    const followTopdown = () => {
+    const followPuck = () => {
       if (userExploringRef.current) return;
       const u = userLngLatRef.current;
       if (!u) return;
+
+      if (followRouteHome) {
+        safePanToCenter(map, {
+          center: u,
+          pitch: 0,
+          bearing: 0,
+        });
+        return;
+      }
+
       const nav = navigationStartedRef.current;
       const zoom = nav
         ? coerceTopdownNavStreetZoom(map, topdownZoomRef)
@@ -3486,7 +3576,7 @@ export function DriveMap({
       }
     };
 
-    followTopdown();
+    followPuck();
   }, [
     mapReady,
     viewMode,
@@ -3499,6 +3589,9 @@ export function DriveMap({
     routes,
     navigationStarted,
     topdownFollowKey,
+    idleHomeFollowKey,
+    homePuckFollow,
+    routes.length,
   ]);
 
   useEffect(() => {

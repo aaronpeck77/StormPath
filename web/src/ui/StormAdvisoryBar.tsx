@@ -118,6 +118,23 @@ function bannerMsg(text: string, max = BANNER_MSG_MAX): string {
   return truncateBannerText(text, max);
 }
 
+const GENERIC_NWS_CHIP_TIMING = new Set(["On your planned route"]);
+
+function nwsChipDetailText(a: NormalizedWeatherAlert): string | null {
+  const summary = nwsGlanceSummary(a).trim();
+  const ev = (a.event ?? "").trim();
+  if (!summary) return null;
+  if (!ev) return summary;
+  const summaryL = summary.toLowerCase();
+  const evL = ev.toLowerCase();
+  if (summaryL === evL || summaryL.startsWith(`${evL}:`) || summaryL.startsWith(evL)) return null;
+  return summary;
+}
+
+function isAdvisoryPromoNoise(line: AdvisoryPromoLine): boolean {
+  return line.id === "sp-weather-upgrades-soon";
+}
+
 /** Collapsed advisory line — CSS clamps to 2–3 lines when needed. */
 function AdvisoryPreviewMessage({ raw }: { raw: string }) {
   return <span className="storm-advisory-bar__preview-text">{displayText(raw)}</span>;
@@ -284,10 +301,12 @@ function nwsChip(
         <span className="nws-chip__text">
           <span className="nws-chip__label">{a.event}</span>
           {(() => {
-            const summary = nwsGlanceSummary(a);
-            return summary ? <span className="nws-chip__detail">{summary}</span> : null;
+            const detail = nwsChipDetailText(a);
+            return detail ? <span className="nws-chip__detail">{detail}</span> : null;
           })()}
-          <span className="nws-chip__timing">{timingLine}</span>
+          {!GENERIC_NWS_CHIP_TIMING.has(timingLine) ? (
+            <span className="nws-chip__timing">{timingLine}</span>
+          ) : null}
         </span>
       </button>
     </li>
@@ -300,7 +319,7 @@ export function StormAdvisoryBar({
   onSessionToggle,
   loading,
   error,
-  corridorAlerts,
+  corridorAlerts: _corridorAlerts,
   overlappingAlerts,
   nwsAtLocationAlerts,
   trafficDelayMinutes,
@@ -400,8 +419,6 @@ export function StormAdvisoryBar({
     () => allWeatherImpacts.filter((i) => i.source === "tomorrowIo"),
     [allWeatherImpacts]
   );
-  const weatherImpacts = allWeatherImpacts; // kept for hasWeather gate
-
   /* ROADS: traffic / closure / incident / construction impacts. */
   const roadImpacts = useMemo(() => {
     if (!routeImpacts?.length) return [];
@@ -414,30 +431,12 @@ export function StormAdvisoryBar({
     () => roadDetailRows.find((r) => r.label === "Better route"),
     [roadDetailRows]
   );
-  /* Traffic narrative rows live in ROADS (not duplicated in any other section). */
-  const trafficNarrativeRows = useMemo(
-    () => roadDetailRows.filter((r) => r.label !== "Better route"),
-    [roadDetailRows]
-  );
-
-  /* Show WEATHER when there are weather impacts, storm strips, non-urgent at-location alerts,
-   * or we're loading weather data. The at-location entry covers the "Wind Advisory at your
-   * position" case, which previously had no panel surface. */
-  const hasWeather =
-    weatherImpacts.length > 0 ||
-    (stormStripBands?.length ?? 0) > 0 ||
-    atLocationOther.length > 0 ||
-    crossingOther.length > 0; // fallback when route length unavailable so strips can't render
-
   /* Show ROADS when there are road impacts, traffic narrative rows, or a reroute CTA condition. */
   const hasTrafficStop = useMemo(
     () => roadDetailRows.some((r) => /traffic stop|closure/i.test(r.label)),
     [roadDetailRows]
   );
   const showRerouteCta = (trafficDelayMinutes >= 10 || hasTrafficStop) && Boolean(onTrafficReroute);
-  const hasRoads =
-    roadImpacts.length > 0 || trafficNarrativeRows.length > 0 || showRerouteCta;
-  const hasSuggestion = Boolean(betterRouteRow) || (showRerouteCta && !roadDetailEnabled);
 
   const bandByAlertId = useMemo(() => {
     const m = new Map<string, StormStripBand>();
@@ -548,74 +547,23 @@ export function StormAdvisoryBar({
     [panelNwsAlerts, timelineNwsAlertIds]
   );
 
-  /* Single, clear NWS status note when the panel has no NWS rows yet. */
+  /** Only surface NWS status when fetch is blocked — skip “all clear” / “along route” filler. */
   const nwsStatusMessage: { tone: "muted" | "warn"; text: string } | null = useMemo(() => {
-    if (
-      weatherImpacts.length > 0 ||
-      (stormStripBands?.length ?? 0) > 0 ||
-      atLocationSorted.length > 0 ||
-      panelNwsAlertsExtra.length > 0 ||
-      urgentTopAlerts.length > 0
-    ) {
-      return null;
-    }
     if (!isOnline) {
       return {
         tone: "warn",
-        text: "NWS · Offline — alerts will refresh once you're back online.",
+        text: "Offline — NWS alerts will refresh when you're back online.",
       };
     }
     const errMsg = (error ?? "").trim();
     if (errMsg) {
       return {
         tone: "warn",
-        text: "NWS · Couldn't reach api.weather.gov. Try again in a moment.",
-      };
-    }
-    if (loading) {
-      return {
-        tone: "muted",
-        text:
-          !navigationStarted && hasGuidanceRoute
-            ? "NWS · Loading alerts for your planned route…"
-            : "NWS · Loading active alerts near you…",
-      };
-    }
-    if (!hasGuidanceRoute) {
-      return corridorAlerts.length === 0
-        ? {
-            tone: "muted",
-            text: "NWS · No active alerts near your position right now. Skies look clear.",
-          }
-        : {
-            tone: "muted",
-            text: `NWS · ${corridorAlerts.length} active alert${
-              corridorAlerts.length === 1 ? "" : "s"
-            } nearby — add a route to see which ones might cross it.`,
-          };
-    }
-    if (corridorAlerts.length === 0) {
-      return {
-        tone: "muted",
-        text: "NWS · No active alerts in this area right now. Looks like a nice day to drive.",
+        text: "Couldn't reach weather.gov — try again in a moment.",
       };
     }
     return null;
-  }, [
-    weatherImpacts.length,
-    stormStripBands,
-    atLocationSorted.length,
-    panelNwsAlertsExtra.length,
-    urgentTopAlerts.length,
-    isOnline,
-    error,
-    loading,
-    navigationStarted,
-    hasGuidanceRoute,
-    corridorAlerts.length,
-  ]);
-
-  const hasNow = urgentTopAlerts.length > 0;
+  }, [isOnline, error]);
 
   const tickerMessages = useMemo(() => {
     return urgentTopAlerts.map(({ alert: a, timingLine }) => {
@@ -724,6 +672,7 @@ export function StormAdvisoryBar({
         trip.push(previewItem({ badge: "Work", raw: bannerMsg(busyLabel) }));
       }
       for (const p of promoLines) {
+        if (isAdvisoryPromoNoise(p)) continue;
         if (!localForecastBanner && !nowcastLine && p.id === "sitebible") continue;
         promo.push(previewItem({ badge: "Info", raw: bannerMsg(displayText(p.text)) }));
       }
@@ -772,27 +721,6 @@ export function StormAdvisoryBar({
         })
       );
     }
-    if (loading) {
-      if (!navigationStarted && hasGuidanceRoute) {
-        trip.push(
-          previewItem({
-            badge: "Plan",
-            raw: bannerMsg(
-              loadSlow ? "Still loading NWS for route…" : "Loading NWS for planned route…"
-            ),
-            tone: loadSlow ? "warn" : "info",
-          })
-        );
-      } else {
-        trip.push(
-          previewItem({
-            badge: "Load",
-            raw: bannerMsg(navigationStarted ? "Loading alerts…" : "Loading…"),
-            tone: loadSlow ? "warn" : "info",
-          })
-        );
-      }
-    }
     if (busyLabel && !barExpanded) {
       trip.push(previewItem({ badge: "Work", raw: bannerMsg(busyLabel) }));
     }
@@ -838,7 +766,7 @@ export function StormAdvisoryBar({
       );
     }
     for (const p of promoLines) {
-      if (p.id === "sitebible") continue;
+      if (p.id === "sitebible" || isAdvisoryPromoNoise(p)) continue;
       promo.push(previewItem({ badge: "Info", raw: bannerMsg(displayText(p.text)) }));
     }
     if (dataSaverHint) {
@@ -888,7 +816,10 @@ export function StormAdvisoryBar({
         (routeImpacts?.length ?? 0) > 0 ||
         (stormStripBands?.length ?? 0) > 0
     );
-    return limitExpandedPromoLines(promoLines, hasTripOrWeatherContent);
+    return limitExpandedPromoLines(
+      promoLines.filter((p) => !isAdvisoryPromoNoise(p)),
+      hasTripOrWeatherContent
+    );
   }, [
     promoLines,
     forecastAreaLabel,
@@ -1006,10 +937,7 @@ export function StormAdvisoryBar({
           });
           if (timing.passed) continue;
           const extra = stripBandDetail(band);
-          const nwsDetail = [extra.severityLabel, extra.detail]
-            .map((s) => (s ?? "").trim())
-            .filter(Boolean)
-            .join(" — ");
+          const nwsDetail = (extra.detail ?? "").trim() || null;
           timelineItems.push({
             id: band.id,
             track: "nws",
@@ -1377,47 +1305,6 @@ export function StormAdvisoryBar({
               </div>
             ) : null}
 
-            {advisoryTier === "plus" && !sessionOn && !loading && (stormStripBands?.length ?? 0) === 0 ? (
-              <p className="storm-advisory-bar__muted storm-advisory-bar__section-hint">
-                Turn on <strong>NWS polygons</strong> above for shaded zones on the map.
-              </p>
-            ) : null}
-
-            {advisoryTier === "basic" && weatherImpacts.length === 0 && roadImpacts.length === 0 && !loading ? (
-              <p className="storm-advisory-bar__muted storm-advisory-bar__basic-upsell">
-                {ownsPlus ? (
-                  <>
-                    Turn on <strong>NWS polygons</strong> and <strong>Road impacts</strong> for full data.
-                  </>
-                ) : (
-                  <>
-                    Basic shows the most urgent products. <strong>Plus</strong> adds full NWS and road tools.
-                  </>
-                )}
-              </p>
-            ) : null}
-
-            {!hasNow &&
-            !hasWeather &&
-            !hasRoads &&
-            !hasSuggestion &&
-            !loading &&
-            !(
-              forecastAreaLabel &&
-              (currentNowcast ||
-                minutePrecipForecast ||
-                hourlyForecast?.hours.length ||
-                localForecastNwsAlerts.length > 0 ||
-                nwsForecastLoading)
-            ) ? (
-              <p className="storm-advisory-bar__muted storm-advisory-bar__section-status">
-                {hasGuidanceRoute
-                  ? "No advisories on your route right now."
-                  : forecastAreaLabel
-                    ? "Local weather is shown above. Set a destination for route hazards."
-                    : "Allow location to see weather at your position."}
-              </p>
-            ) : null}
           </div>
         ) : null}
 

@@ -11,10 +11,6 @@ export type AdvisoryPromoLine = {
   sponsored?: boolean;
 };
 
-/** Shown in the expanded advisory and in the Basic promo rotation (set expectations before backend upgrades). */
-export const ADVISORY_WEATHER_UPGRADES_COMING_SOON =
-  "Weather data and reporting upgrades are coming soon.";
-
 /** Collapsed bar preview; long copy scrolls horizontally in the advisory bar when it doesn’t fit. */
 export const SITEBIBLE_AD_BAR =
   "Coming Soon - SiteBible - Digital Security Database - Check App Store";
@@ -126,10 +122,7 @@ function connectivityTip(id: string): AdvisoryPromoLine {
  * Edit defaults in `basicAds.ts` or set `VITE_BASIC_ADS_JSON` / `VITE_SITEBIBLE_URL` / `VITE_UPGRADE_URL`.
  */
 export function buildAdvisoryPromoLines(env: WebEnv, ownsPlus: boolean): AdvisoryPromoLine[] {
-  const lines: AdvisoryPromoLine[] = [
-    { id: "sp-weather-upgrades-soon", text: ADVISORY_WEATHER_UPGRADES_COMING_SOON },
-    ...partnerLines(env),
-  ];
+  const lines: AdvisoryPromoLine[] = [...partnerLines(env)];
 
   if (!ownsPlus) lines.push(plusUpsellLine(env, "full"));
   lines.push(connectivityTip("tip-net"));

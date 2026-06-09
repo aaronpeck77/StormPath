@@ -114,9 +114,11 @@ function useTimelineItemVisuals(
 function RouteHazardLegend({
   items,
   itemVisuals,
+  showTrackLabel = true,
 }: {
   items: TimelineItem[];
   itemVisuals: ItemVisual[];
+  showTrackLabel?: boolean;
 }) {
   const legendEntries = useMemo(
     () =>
@@ -151,13 +153,17 @@ function RouteHazardLegend({
           >
             <span className="rhtz__legend-dot" aria-hidden />
             <span className="rhtz__legend-body">
-              <span className="rhtz__legend-track">{TRACK_META[item.track]?.label ?? item.track}</span>
+              {showTrackLabel ? (
+                <span className="rhtz__legend-track">{TRACK_META[item.track]?.label ?? item.track}</span>
+              ) : null}
               <span className="rhtz__legend-label">{item.label}</span>
               {(() => {
                 const detail = legendDetailText(item);
                 return detail ? <span className="rhtz__legend-detail">{detail}</span> : null;
               })()}
-              {vis.timing ? <span className="rhtz__legend-timing">{vis.timing}</span> : null}
+              {vis.timing && vis.timing !== "On your planned route" ? (
+                <span className="rhtz__legend-timing">{vis.timing}</span>
+              ) : null}
             </span>
           </div>
         </li>
@@ -225,7 +231,7 @@ export function RouteHazardTimeline({
           <span className="rhtz__header-title">On your route</span>
           <span className="rhtz__header-dest">Nearest ahead first · full detail</span>
         </div>
-        <RouteHazardLegend items={items} itemVisuals={itemVisuals} />
+        <RouteHazardLegend items={items} itemVisuals={itemVisuals} showTrackLabel={false} />
         <RouteHazardReroute
           showRerouteCta={showRerouteCta}
           onReroute={onReroute}

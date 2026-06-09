@@ -13,6 +13,11 @@ const SRC = "weather-alerts-nws";
 const FILL = "weather-alerts-nws-fill";
 const LINE = "weather-alerts-nws-outline";
 
+/** Light enough to read the basemap + radar; still visible at a glance. */
+const NWS_FILL_OPACITY = 0.26;
+const NWS_LINE_WIDTH = 1.45;
+const NWS_LINE_OPACITY = 0.62;
+
 const MOTION_SRC = "weather-alerts-motion";
 const MOTION_LAYER = "weather-alerts-motion-arrows";
 const MOTION_LABEL_SRC = "weather-alerts-motion-labels";
@@ -20,6 +25,12 @@ const MOTION_LABEL_LAYER = "weather-alerts-motion-labels-text";
 
 /** Hit-test layer for hover / identify (fill has the polygon area). */
 export const WEATHER_ALERTS_NWS_FILL_LAYER_ID = FILL;
+
+/**
+ * Rt / Mp (and planning): hide county-scale NWS fills once zoomed in past regional view.
+ * Layer is visible below this zoom; at zoom ≥ this value it is hidden (Mapbox `maxzoom`).
+ */
+export const NWS_POLYGON_MAP_MAX_ZOOM = 10.75;
 
 const NWS_KIND_ORDER: NwsMapKind[] = [
   "hydro",
@@ -58,6 +69,29 @@ function nwsAlertMapColorExpr(): unknown {
     NWS_SEVERITY_COLOR_MATCH,
     ["match", ["get", "kind"], ...kindPairs, NWS_SEVERITY_COLOR_MATCH],
   ];
+}
+
+function syncNwsPolygonPaint(map: MapboxMap): void {
+  if (map.getLayer(FILL)) {
+    map.setPaintProperty(FILL, "fill-opacity", NWS_FILL_OPACITY);
+  }
+  if (map.getLayer(LINE)) {
+    map.setPaintProperty(LINE, "line-width", NWS_LINE_WIDTH);
+    map.setPaintProperty(LINE, "line-opacity", NWS_LINE_OPACITY);
+  }
+}
+
+function syncNwsPolygonZoomRange(map: MapboxMap): void {
+  const max = NWS_POLYGON_MAP_MAX_ZOOM;
+  for (const id of [FILL, LINE, MOTION_LAYER, MOTION_LABEL_LAYER] as const) {
+    if (map.getLayer(id)) {
+      try {
+        map.setLayerZoomRange(id, 0, max);
+      } catch {
+        /* style race */
+      }
+    }
+  }
 }
 
 function firstVisibleRouteLineId(map: MapboxMap): string | undefined {
@@ -243,9 +277,10 @@ export function applyWeatherAlertLayers(
       id: FILL,
       type: "fill",
       source: SRC,
+      maxzoom: NWS_POLYGON_MAP_MAX_ZOOM,
       paint: {
         "fill-color": nwsAlertMapColorExpr() as DataDrivenPropertyValueSpecification<string>,
-        "fill-opacity": 0.38,
+        "fill-opacity": NWS_FILL_OPACITY,
         "fill-opacity-transition": { duration: 280, delay: 0 },
       },
     };
@@ -253,10 +288,11 @@ export function applyWeatherAlertLayers(
       id: LINE,
       type: "line",
       source: SRC,
+      maxzoom: NWS_POLYGON_MAP_MAX_ZOOM,
       paint: {
         "line-color": nwsAlertMapColorExpr() as DataDrivenPropertyValueSpecification<string>,
-        "line-width": 3,
-        "line-opacity": 0.95,
+        "line-width": NWS_LINE_WIDTH,
+        "line-opacity": NWS_LINE_OPACITY,
         "line-opacity-transition": { duration: 280, delay: 0 },
       },
     };
@@ -269,6 +305,8 @@ export function applyWeatherAlertLayers(
     }
   } else {
     (map.getSource(SRC) as GeoJSONSource).setData(effective);
+    syncNwsPolygonPaint(map);
+    syncNwsPolygonZoomRange(map);
   }
 
   // ── Storm motion arrows ──────────────────────────────────────────────────
@@ -279,6 +317,7 @@ export function applyWeatherAlertLayers(
     removeMotionArrows(map);
   }
 
+  syncNwsPolygonZoomRange(map);
   positionWeatherAlertLayersAboveRadar(map);
 }
 
@@ -294,6 +333,7 @@ function applyMotionArrows(
       id: MOTION_LAYER,
       type: "line",
       source: MOTION_SRC,
+      maxzoom: NWS_POLYGON_MAP_MAX_ZOOM,
       paint: {
         "line-color": ["get", "arrowColor"] as unknown as DataDrivenPropertyValueSpecification<string>,
         "line-width": 3.5,
@@ -316,6 +356,7 @@ function applyMotionArrows(
       id: MOTION_LABEL_LAYER,
       type: "symbol",
       source: MOTION_LABEL_SRC,
+      maxzoom: NWS_POLYGON_MAP_MAX_ZOOM,
       layout: {
         "text-field": ["get", "label"],
         "text-size": 11,

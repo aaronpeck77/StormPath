@@ -58,12 +58,20 @@ export const FIRST_LAUNCH_COACHMARK_STEPS: readonly CoachmarkStep[] = [
       "This button cycles between Route plan, Drive, and Map (top-down) views. The two-letter label tells you what's active.",
   },
   {
-    id: "progress-rail",
-    targetSelector: ".nav-route-progress-rail",
-    preferredAnchor: "left",
-    title: "Route progress",
+    id: "add-a-stop",
+    targetSelector: ".route-stops-bar__add",
+    preferredAnchor: "above",
+    title: "Add a stop",
     body:
-      "The vertical strip on the right is your trip from now to arrival. Colored chunks are weather, traffic, or road hazards along the way — tap one to see details.",
+      "After you pick a destination, tap here to add one stop on the way. Search or tap the map to place it — routes refresh with your stop before the final destination.",
+  },
+  {
+    id: "progress-rail-v2",
+    targetSelector: ".route-progress-strip--side",
+    preferredAnchor: "left",
+    title: "Open Route info from here",
+    body:
+      "This vertical bar on the map is your trip progress. Tap anywhere on the bar to open the Route info panel — colored bands, hazards, NWS weather, traffic, and forecast for what's ahead. There is no separate button anymore.",
   },
 ];
 
@@ -89,4 +97,7 @@ export function resetAllCoachmarks(): void {
   for (const step of FIRST_LAUNCH_COACHMARK_STEPS) {
     safeStorage.remove(storageKey(step.id));
   }
+  /* Legacy tip ids from earlier tours. */
+  safeStorage.remove(`${STORAGE_PREFIX}progress-rail:${STORAGE_VERSION}`);
+  safeStorage.remove(`${STORAGE_PREFIX}route-info-panel:${STORAGE_VERSION}`);
 }

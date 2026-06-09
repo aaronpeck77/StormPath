@@ -190,6 +190,13 @@ import { BottomToolbar } from "./ui/BottomToolbar";
 import { NavMilesLeftBox } from "./ui/NavMilesLeftBox";
 import { DriveCompass } from "./ui/DriveCompass";
 import { RouteCycleButton, type RoutePickItem } from "./ui/RoutePickBar";
+import { RouteStopsBar } from "./ui/RouteStopsBar";
+import {
+  currentNavTarget,
+  formatTripDestinationLabel,
+  MAX_VIA_STOPS,
+  remainingViaStops,
+} from "./nav/routeWaypoints";
 import { routePickSlotHex } from "./ui/mapRouteStyle";
 import { routeSlotIndexFor } from "./ui/mapRouteLayers";
 import {
@@ -205,6 +212,7 @@ import { RouteHazardSheet } from "./ui/RouteHazardSheet";
 import { TollFlowSheets } from "./ui/TollFlowSheets";
 import { RouteProgressStrip } from "./ui/RouteProgressStrip";
 import { RouteProgressGlancePanel } from "./ui/RouteProgressGlancePanel";
+import { RouteProgressCalloutRail } from "./ui/RouteProgressCalloutRail";
 import { estimatePostedSpeedMph } from "./ui/DriveHud";
 import { formatEtaDuration } from "./ui/formatEta";
 import { StormAdvisoryBar } from "./ui/StormAdvisoryBar";
@@ -229,10 +237,7 @@ import {
   sortWeatherAlertsBySeverity,
 } from "./weatherAlerts/geometryOverlap";
 import { mapGeoJsonFromAlerts } from "./weatherAlerts/mapGeoJsonFromAlerts";
-import {
-  routeAlertForNwsAdvisoryClick,
-  routeAlertsFromStormBandMidpoint,
-} from "./weatherAlerts/nwsAsRouteAlerts";
+import { routeAlertForNwsAdvisoryClick } from "./weatherAlerts/nwsAsRouteAlerts";
 import type { NormalizedWeatherAlert } from "./weatherAlerts/types";
 import {
   nwsAlertIsBasicEmergency,
@@ -253,6 +258,11 @@ import {
   writeHomeMapFraming,
   type HomeMapFraming,
 } from "./map/homeMapFraming";
+import {
+  readHomePuckFollow,
+  writeHomePuckFollow,
+  type HomePuckFollowMode,
+} from "./map/homePuckFollow";
 import {
   estimatePreloadStorageLabel,
   getHomePreloadBounds,
@@ -429,6 +439,7 @@ export default function App() {
     return safeStorage.get(ACTIVITY_TRAIL_MAP_LS) === "1";
   });
   const [homeMapFraming, setHomeMapFraming] = useState<HomeMapFraming>(() => readHomeMapFraming());
+  const [homePuckFollow, setHomePuckFollow] = useState<HomePuckFollowMode>(() => readHomePuckFollow());
   const [homePreloadEnabled, setHomePreloadEnabled] = useState(() => readHomePreloadEnabled());
   const [activityTrailTick, setActivityTrailTick] = useState(0);
   useEffect(() => {
@@ -496,7 +507,6 @@ export default function App() {
   /** Never persisted — each route session starts closed; cleared when the plan changes or the trip is stopped. */
   const progressCalloutsOpen = useUiStore((s) => s.progressCalloutsOpen);
   const setProgressCalloutsOpen = useUiStore((s) => s.setProgressCalloutsOpen);
-  const progressCalloutTrackRef = useRef<HTMLDivElement | null>(null);
   const progressCalloutDetailScrollRef = useRef<HTMLDivElement | null>(null);
   const progressCalloutWasOpenRef = useRef(false);
 
@@ -524,7 +534,6 @@ export default function App() {
    * must NOT persist. */
   const stormCorridorAlerts = useWeatherStore((s) => s.stormCorridorAlerts);
   const setStormCorridorAlerts = useWeatherStore((s) => s.setStormCorridorAlerts);
-  const stormOverlapping = useWeatherStore((s) => s.stormOverlapping);
   const setStormOverlapping = useWeatherStore((s) => s.setStormOverlapping);
   const stormMapGeoJson = useWeatherStore((s) => s.stormMapGeoJson);
   const setStormMapGeoJson = useWeatherStore((s) => s.setStormMapGeoJson);
@@ -568,6 +577,11 @@ export default function App() {
   const setDestLngLat = useTripPlanStore((s) => s.setDestLngLat);
   const destinationLabel = useTripPlanStore((s) => s.destinationLabel);
   const setDestinationLabel = useTripPlanStore((s) => s.setDestinationLabel);
+  const viaStops = useTripPlanStore((s) => s.viaStops);
+  const setViaStops = useTripPlanStore((s) => s.setViaStops);
+  const activeViaIndex = useTripPlanStore((s) => s.activeViaIndex);
+  const setActiveViaIndex = useTripPlanStore((s) => s.setActiveViaIndex);
+  const [addingViaStop, setAddingViaStop] = useState(false);
   const [searchText, setSearchText] = useState("");
   const searchExpanded = useUiStore((s) => s.searchExpanded);
   const setSearchExpanded = useUiStore((s) => s.setSearchExpanded);
@@ -647,6 +661,18 @@ export default function App() {
 
   const destLngLatRef = useRef(destLngLat);
   destLngLatRef.current = destLngLat;
+  const viaStopsRef = useRef(viaStops);
+  viaStopsRef.current = viaStops;
+  const activeViaIndexRef = useRef(activeViaIndex);
+  activeViaIndexRef.current = activeViaIndex;
+  const destinationLabelRef = useRef(destinationLabel);
+  destinationLabelRef.current = destinationLabel;
+  const navTargetLngLat = useMemo(
+    () => currentNavTarget(viaStops, activeViaIndex, destLngLat),
+    [viaStops, activeViaIndex, destLngLat]
+  );
+  const navTargetRef = useRef(navTargetLngLat);
+  navTargetRef.current = navTargetLngLat;
   const viewMode = useTripPlanStore((s) => s.viewMode);
   const setViewMode = useTripPlanStore((s) => s.setViewMode);
   /* `viewModeBeforeTrafficBypass` moved into `state/uiStore.ts` (Phase 4e5a) as a module-local
@@ -791,6 +817,67 @@ export default function App() {
     setFitTrigger,
   });
 
+  const applyTripPlacePick = useCallback(
+    async (lngLat: LngLat, label: string, mode: "destination" | "via") => {
+      if (mode === "via") {
+        const finalDest = useTripPlanStore.getState().destLngLat;
+        const finalLabel = useTripPlanStore.getState().destinationLabel;
+        if (!finalDest) {
+          setTapHint("Set your final destination first, then add stops.");
+          window.setTimeout(() => setTapHint(null), 5000);
+          setAddingViaStop(false);
+          return;
+        }
+        const prev = useTripPlanStore.getState().viaStops;
+        if (prev.length >= MAX_VIA_STOPS) {
+          setAddingViaStop(false);
+          return;
+        }
+        setViaStops([...prev, { lngLat, label }]);
+        setAddingViaStop(false);
+        await computeRoutes(finalDest, finalLabel.trim() || "Destination", {
+          preserveNavigation: navigationStarted,
+        });
+        return;
+      }
+      setViaStops([]);
+      setActiveViaIndex(0);
+      setAddingViaStop(false);
+      setDestLngLat(lngLat);
+      setDestinationLabel(label);
+      setViewMode("route");
+      setSearchExpanded(false);
+      await computeRoutes(lngLat, label);
+    },
+    [
+      computeRoutes,
+      navigationStarted,
+      setActiveViaIndex,
+      setDestLngLat,
+      setDestinationLabel,
+      setSearchExpanded,
+      setTapHint,
+      setViaStops,
+      setViewMode,
+    ]
+  );
+
+  const handleRemoveViaStop = useCallback(
+    (index: number) => {
+      const finalDest = useTripPlanStore.getState().destLngLat;
+      const finalLabel = useTripPlanStore.getState().destinationLabel;
+      const next = useTripPlanStore.getState().viaStops.filter((_, i) => i !== index);
+      setViaStops(next);
+      setActiveViaIndex((i) => Math.min(i, Math.max(0, next.length)));
+      if (finalDest) {
+        void computeRoutes(finalDest, finalLabel.trim() || "Destination", {
+          preserveNavigation: navigationStarted,
+        });
+      }
+    },
+    [computeRoutes, navigationStarted, setActiveViaIndex, setViaStops]
+  );
+
   /** Recompute routes from current GPS to the same destination without stopping navigation. */
   const recalcRouteFromHere = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -813,16 +900,22 @@ export default function App() {
         let destForMap: [number, number] = destLngLat;
         let rerouteSnapNotice: string | undefined;
         if (env.mapboxToken) {
+          const remainingVias = remainingViaStops(viaStops, activeViaIndex);
+          const viaCoords = remainingVias.map((s) => s.lngLat);
           const built = await buildTripFromMapbox(
             env.mapboxToken,
             userLngLat,
             destLngLat,
             {
               origin: "Your location",
-              destination: destinationLabel.trim() || "Destination",
+              destination: formatTripDestinationLabel(
+                remainingVias,
+                destinationLabel.trim() || "Destination"
+              ),
             },
             {
               signal: mainFetch.signal,
+              via: viaCoords.length > 0 ? viaCoords : undefined,
               allowLocalTripThirdRoute: isPlus,
               preferThreeRoutes: isPlus,
               stormAlerts: stormAlertsForRouting,
@@ -880,7 +973,21 @@ export default function App() {
         setRouting(false);
       }
     },
-    [userLngLat, destLngLat, env.mapboxToken, destinationLabel, computeRoutes, isOnline, resetNavigationPlanning, isPlus, stormAlertsForRouting, settingStormEnabled]
+    [
+      userLngLat,
+      destLngLat,
+      viaStops,
+      activeViaIndex,
+      env.mapboxToken,
+      destinationLabel,
+      computeRoutes,
+      isOnline,
+      resetNavigationPlanning,
+      isPlus,
+      stormAlertsForRouting,
+      settingStormEnabled,
+      learnEnabled,
+    ]
   );
 
   const handleMapClick = useCallback(
@@ -902,25 +1009,31 @@ export default function App() {
       setSuggestions([]);
       setSuggestLoading(false);
       const end: [number, number] = [lng, lat];
-      setDestLngLat(end);
       const pinLabel = `Pin · ${lat.toFixed(3)}°, ${lng.toFixed(3)}°`;
-      setDestinationLabel(pinLabel);
+      const pickMode =
+        addingViaStop && useTripPlanStore.getState().destLngLat ? "via" : "destination";
       setSearchText(pinLabel);
-      /* Jump to route-planning view immediately so the driver can choose A/B/C as soon as data lands. */
       setViewMode("route");
       setFitTrigger((n) => n + 1);
       setSearchExpanded(false);
 
-      /*
-       * Route Directions ASAP — do not block on reverse geocode (that was adding a full round-trip
-       * before routing even started). Update the label when the place name returns.
-       */
-      void computeRoutes(end, pinLabel);
+      if (pickMode === "via") {
+        void applyTripPlacePick(end, pinLabel, "via");
+      } else {
+        setDestinationLabel(pinLabel);
+        void applyTripPlacePick(end, pinLabel, "destination");
+      }
 
       if (env.mapboxToken) {
         void mapboxReverseGeocode(lng, lat, env.mapboxToken)
           .then((rev) => {
-            if (rev?.placeName) {
+            if (!rev?.placeName) return;
+            if (pickMode === "via") {
+              const stops = useTripPlanStore.getState().viaStops;
+              const last = stops[stops.length - 1];
+              if (!last) return;
+              setViaStops(stops.slice(0, -1).concat({ ...last, label: rev.placeName }));
+            } else {
               setDestinationLabel(rev.placeName);
               setSearchText(rev.placeName);
               recordRecentSearch(rev.placeName, end);
@@ -929,18 +1042,20 @@ export default function App() {
           .catch(() => {
             /* keep pin label */
           });
-      } else {
+      } else if (pickMode === "destination") {
         recordRecentSearch(pinLabel, end);
       }
     },
     [
       userLngLat,
-      computeRoutes,
+      applyTripPlacePick,
       env.mapboxToken,
       locationError,
       recordRecentSearch,
       navigationStarted,
       plan.routes.length,
+      addingViaStop,
+      setViaStops,
     ]
   );
 
@@ -957,14 +1072,14 @@ export default function App() {
       setAllowAutocomplete(false);
       setSuggestions([]);
       setSearchExpanded(false);
-      setDestLngLat(lngLat);
-      setDestinationLabel(label);
       setSearchText(label);
       setSavedDrawerOpen(false);
-      setViewMode("route");
-      void computeRoutes(lngLat, label);
+      const pickMode =
+        addingViaStop && useTripPlanStore.getState().destLngLat ? "via" : "destination";
+      if (pickMode === "destination") setDestinationLabel(label);
+      void applyTripPlacePick(lngLat, label, pickMode);
     },
-    [userLngLat, computeRoutes, locationError, recordRecentSearch]
+    [userLngLat, applyTripPlacePick, locationError, recordRecentSearch, addingViaStop]
   );
 
   const handleSavedMarkerClick = useCallback(
@@ -1016,20 +1131,20 @@ export default function App() {
       setAllowAutocomplete(true);
       setSuggestions([]);
       setSearchText(placeName);
-      setDestinationLabel(placeName);
-      setDestLngLat(lngLat);
-      setViewMode("route");
-      setSearchExpanded(false);
-      await computeRoutes(lngLat, placeName);
+      const pickMode =
+        addingViaStop && useTripPlanStore.getState().destLngLat ? "via" : "destination";
+      if (pickMode === "destination") setDestinationLabel(placeName);
+      await applyTripPlacePick(lngLat, placeName, pickMode);
     },
     [
       userLngLat,
-      computeRoutes,
+      applyTripPlacePick,
       locationError,
       recordRecentSearch,
       env.mapboxToken,
       ensureSearchBoxSessionToken,
       resetSearchBoxSessionToken,
+      addingViaStop,
     ]
   );
 
@@ -1076,12 +1191,11 @@ export default function App() {
       const hit = hits[0]!;
       recordRecentSearch(hit.placeName, hit.lngLat);
       setAllowAutocomplete(true);
-      setDestLngLat(hit.lngLat);
-      setDestinationLabel(hit.placeName);
       setSearchText(hit.placeName);
-      setViewMode("route");
-      setSearchExpanded(false);
-      await computeRoutes(hit.lngLat, hit.placeName);
+      const pickMode =
+        addingViaStop && useTripPlanStore.getState().destLngLat ? "via" : "destination";
+      if (pickMode === "destination") setDestinationLabel(hit.placeName);
+      await applyTripPlacePick(hit.lngLat, hit.placeName, pickMode);
       return;
     }
     searchPickQueryRef.current = q;
@@ -2965,13 +3079,13 @@ export default function App() {
   }, [progressStripAlerts, guidanceRoute?.geometry, routeAheadTimeline, advisoryRouteImpacts]);
 
   /**
-   * NWS warning polygons on the map for the active leg (Rt / Dr / Map). Independent of radar overlay.
-   * Shown whenever Storm is enabled and alerts touch the route corridor — not gated on view mode
-   * (after Go the UI is usually Dr, which previously hid all polygons).
+   * NWS warning polygons on the map (Rt / Mp; hidden in Dr). Independent of radar overlay.
+   * Plus: follows the advisory panel **NWS polygons** checkbox (`stormSessionOn`).
    */
   const nwsAlertGeoJsonForMap = useMemo((): GeoJSON.FeatureCollection | null => {
-    // Hard gates: feature flag + user NWS toggle.
     if (!advisoryLifeSafetyOn || !settingStormEnabled) return null;
+    // Display gate only — fetch effect below keeps `stormMapGeoJson` warm while unchecked.
+    if (isPlus && !stormSessionOn) return null;
 
     // Browse mode (no route): Plus users see regional alert polygons; basic sees radar only.
     if (!nwsMapOverlapRouteGeom?.length) {
@@ -2997,6 +3111,7 @@ export default function App() {
     advisoryLifeSafetyOn,
     settingStormEnabled,
     isPlus,
+    stormSessionOn,
     nwsMapOverlapRouteGeom,
     stormMapGeoJsonForMap,
     nwsAlertsAffectingActiveRoute,
@@ -3395,6 +3510,7 @@ export default function App() {
     }
   }, [progressCalloutsOpen, progressCalloutCount]);
 
+  /** Map polygon visibility only — NWS poll + `stormMapGeoJson` cache keep running while off. */
   const onStormSessionToggle = useCallback((on: boolean) => {
     setStormSessionOn(on);
     writeNwsSessionOn(on);
@@ -4001,6 +4117,9 @@ export default function App() {
     setProgressCalloutsOpen(false);
     setPlan(EMPTY_TRIP);
     setDestLngLat(null);
+    setViaStops([]);
+    setActiveViaIndex(0);
+    setAddingViaStop(false);
     setSearchText("");
     setDestinationLabel("");
     setSearchPickHits(null);
@@ -4032,6 +4151,8 @@ export default function App() {
 
   const clearRouteRef = useRef(clearRoute);
   clearRouteRef.current = clearRoute;
+  const computeRoutesRef = useRef(computeRoutes);
+  computeRoutesRef.current = computeRoutes;
 
   const arrivalHintShownRef = useRef(false);
 
@@ -4061,6 +4182,25 @@ export default function App() {
       arrivalIdleStartMsRef.current = null;
       arrivalHintShownRef.current = false;
       tabHiddenAtMsRef.current = null;
+
+      const vias = viaStopsRef.current;
+      const viaIdx = activeViaIndexRef.current;
+      const finalDest = destLngLatRef.current;
+      if (viaIdx < vias.length && finalDest) {
+        const nextIdx = viaIdx + 1;
+        useTripPlanStore.getState().setActiveViaIndex(nextIdx);
+        const nextLabel =
+          nextIdx < vias.length
+            ? vias[nextIdx]!.label
+            : destinationLabelRef.current.trim() || "destination";
+        setTapHint(`Stop reached — continuing to ${nextLabel}.`);
+        window.setTimeout(() => setTapHint(null), 6500);
+        void computeRoutesRef.current(finalDest, destinationLabelRef.current.trim() || "Destination", {
+          preserveNavigation: true,
+        });
+        return;
+      }
+
       clearRouteRef.current();
       setTapHint("You've arrived — trip cleared.");
       window.setTimeout(() => setTapHint(null), 5000);
@@ -4073,7 +4213,7 @@ export default function App() {
         return;
       }
       const pos = userLngLatRef.current;
-      const dest = destLngLatRef.current;
+      const dest = navTargetRef.current;
       if (!pos || !dest) {
         arrivalIdleStartMsRef.current = null;
         arrivalHintShownRef.current = false;
@@ -4105,7 +4245,11 @@ export default function App() {
         arrivalIdleStartMsRef.current = now;
         if (!arrivalHintShownRef.current) {
           arrivalHintShownRef.current = true;
-          setTapHint("Near destination — trip clears shortly when you stop.");
+          setTapHint(
+            activeViaIndexRef.current < viaStopsRef.current.length
+              ? "Near this stop — continuing to next leg when you stop."
+              : "Near destination — trip clears shortly when you stop."
+          );
           window.setTimeout(() => setTapHint(null), 6500);
         }
         return;
@@ -4127,7 +4271,7 @@ export default function App() {
       tabHiddenAtMsRef.current = null;
       if (bgMs < ARRIVAL_BG_CLEAR_MIN_MS) return;
       const pos = userLngLatRef.current;
-      const dest = destLngLatRef.current;
+      const dest = navTargetRef.current;
       if (!navigationStartedRef.current || !pos || !dest) return;
       const prox = arrivalProximity({
         pos,
@@ -4555,32 +4699,6 @@ export default function App() {
     );
     window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
   }, [env.supportEmail, env.supportUrl, viewMode, navigationStarted, destLngLat]);
-
-  const handleProgressStripCorridorClick = useCallback((alert: RouteAlert) => {
-    if (!lineFocusId) return;
-    setRouteHazardSheet({
-      routeId: lineFocusId,
-      alerts: [alert],
-    });
-  }, [lineFocusId]);
-
-  const handleProgressStripStormClick = useCallback(
-    (startM: number, endM: number) => {
-      const geom = guidanceRoute?.geometry;
-      if (!geom?.length) {
-        return;
-      }
-      const pool =
-        stormOverlapping.length > 0 ? stormOverlapping : stormCorridorAlerts;
-      const picked = routeAlertsFromStormBandMidpoint(geom, startM, endM, pool);
-      if (!picked.length) return;
-      setRouteHazardSheet({
-        routeId: lineFocusId,
-        alerts: picked,
-      });
-    },
-    [guidanceRoute?.geometry, stormOverlapping, stormCorridorAlerts, lineFocusId]
-  );
 
   const handleAdvisoryNwsClick = useCallback(
     (alert: NormalizedWeatherAlert) => {
@@ -5125,6 +5243,7 @@ export default function App() {
             suggestedRouteId={suggestedRouteId}
             userLngLat={effectiveUserLngLat}
             destLngLat={destLngLat}
+            viaStops={viaStops}
             fitTrigger={fitTrigger}
             viewMode={viewMode}
             navigationStarted={navigationStarted}
@@ -5175,6 +5294,7 @@ export default function App() {
             activityTrailGeoJson={activityTrailGeoJsonForMap}
             activityTrailPlanningBounds={activityTrailPlanningBounds}
             idleHomeMapFraming={idleHomeMapFraming}
+            homePuckFollow={homePuckFollow}
             homePreloadEnabled={isPlus && learnEnabled && homePreloadEnabled}
             homePreloadBounds={homePreloadBounds}
             searchPickMarkers={searchPickMarkersForMap}
@@ -5332,55 +5452,28 @@ export default function App() {
                 className={`nav-route-progress-rail${progressCalloutsOpen && progressCalloutCount > 0 ? " nav-route-progress-rail--callouts-open" : ""}`}
               >
                 <div className="nav-route-progress-rail__inner">
-                  <div
-                    className={`route-progress-callout-rail-cluster${
-                      progressCalloutsOpen && progressCalloutCount > 0
-                        ? " route-progress-callout-rail-cluster--open"
-                        : ""
-                    }`}
+                  <RouteProgressCalloutRail
+                    open={progressCalloutsOpen}
+                    onOpenChange={setProgressCalloutsOpen}
+                    hasContent={progressCalloutCount > 0}
                   >
-                    {progressCalloutsOpen && progressCalloutCount > 0 && (
-                      <div
-                        className="route-progress-callout-panel route-progress-callout-panel--rail"
-                        role="list"
-                        aria-label="Progress bar segments"
-                      >
-                        <div className="route-progress-callout-panel__track" ref={progressCalloutTrackRef}>
-                          <RouteProgressGlancePanel
-                            timeline={routeAheadTimeline}
-                            routeWide={progressCalloutPanel.routeWide}
-                            outlookSteps={progressCalloutPanel.outlookTimeline}
-                            outlookSamples={progressCalloutPanel.outlookSamples}
-                            fallbackSegments={progressCalloutPanel.segments.filter(
-                              (s) => !s.key.startsWith("route-ahead-")
-                            )}
-                            totalMeters={guidanceRouteLengthM}
-                            userAlongMeters={userAlongGuidanceM}
-                            planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
-                            driveEtaMinutes={driveEtaMinutes ?? null}
-                            userAlongT={progressCalloutPanel.userAlongT}
-                            stripTint={progressCalloutPanel.stripTint}
-                            detailScrollRef={progressCalloutDetailScrollRef}
-                          />
-                        </div>
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      className={`route-progress-callout-toggle${
-                        progressCalloutsOpen ? " route-progress-callout-toggle--on" : ""
-                      }`}
-                      aria-pressed={progressCalloutsOpen}
-                      title={
-                        progressCalloutsOpen
-                          ? "Hide route glance"
-                          : "Route glance — bands, hazards, and forecast"
-                      }
-                      onClick={() => setProgressCalloutsOpen((o) => !o)}
-                    >
-                      ⧉
-                    </button>
-                  </div>
+                    <RouteProgressGlancePanel
+                      timeline={routeAheadTimeline}
+                      routeWide={progressCalloutPanel.routeWide}
+                      outlookSteps={progressCalloutPanel.outlookTimeline}
+                      outlookSamples={progressCalloutPanel.outlookSamples}
+                      fallbackSegments={progressCalloutPanel.segments.filter(
+                        (s) => !s.key.startsWith("route-ahead-")
+                      )}
+                      totalMeters={guidanceRouteLengthM}
+                      userAlongMeters={userAlongGuidanceM}
+                      planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
+                      driveEtaMinutes={driveEtaMinutes ?? null}
+                      userAlongT={progressCalloutPanel.userAlongT}
+                      stripTint={progressCalloutPanel.stripTint}
+                      detailScrollRef={progressCalloutDetailScrollRef}
+                    />
+                  </RouteProgressCalloutRail>
                   <RouteProgressStrip
                     layout="side"
                     geometry={progressRailRoute.geometry}
@@ -5391,11 +5484,13 @@ export default function App() {
                     routeLineColor={progressStripRouteColor}
                     turnSteps={progressRailRoute.turnSteps ?? turnSteps}
                     stormBands={routeAheadProgressBands}
-                    onCorridorBandClick={isPlus ? handleProgressStripCorridorClick : undefined}
-                    onStormBandClick={isPlus ? handleProgressStripStormClick : undefined}
                     driveEndsEmphasis={driveModeUi}
                     tripOdometerM={tripOdometerM}
                     tripRelativeProgress={navigationStarted}
+                    routeInfoOpen={progressCalloutsOpen}
+                    onRouteInfoOpenChange={
+                      progressCalloutCount > 0 ? setProgressCalloutsOpen : undefined
+                    }
                   />
                 </div>
               </div>
@@ -5805,24 +5900,38 @@ export default function App() {
                             </span>
                           </button>
                         ) : (
-                          <SearchBar
-                            value={searchText}
-                            onChange={(v) => {
-                              setSearchText(v);
-                              if (plan.routes.length === 0 || searchExpanded) setAllowAutocomplete(true);
-                            }}
-                            onBeginEditing={handleSearchFieldBeginEditing}
-                            onEndEditing={handleSearchFieldEndEditing}
-                            onCancelSuggestions={handleSearchCancelSuggestions}
-                            onDismiss={handleSearchDismiss}
-                            onSearch={() => void handleSearch()}
-                            placeholder="Search address or place"
-                            suggestions={suggestions}
-                            onPickSuggestion={(h) => void handlePickSuggestion(h)}
-                            suggestionsLoading={suggestLoading}
-                            showSuggestionsWhenEmpty={isNarrowPhoneViewport()}
-                            enableSuggestions={allowAutocomplete && (!routeActive || searchExpanded)}
-                          />
+                          <>
+                            <SearchBar
+                              value={searchText}
+                              onChange={(v) => {
+                                setSearchText(v);
+                                if (plan.routes.length === 0 || searchExpanded) setAllowAutocomplete(true);
+                              }}
+                              onBeginEditing={handleSearchFieldBeginEditing}
+                              onEndEditing={handleSearchFieldEndEditing}
+                              onCancelSuggestions={handleSearchCancelSuggestions}
+                              onDismiss={handleSearchDismiss}
+                              onSearch={() => void handleSearch()}
+                              placeholder={
+                                addingViaStop && destLngLat ? "Search your stop" : "Search address or place"
+                              }
+                              suggestions={suggestions}
+                              onPickSuggestion={(h) => void handlePickSuggestion(h)}
+                              suggestionsLoading={suggestLoading}
+                              showSuggestionsWhenEmpty={isNarrowPhoneViewport()}
+                              enableSuggestions={allowAutocomplete && (!routeActive || searchExpanded)}
+                            />
+                            {!navigationStarted ? (
+                              <RouteStopsBar
+                                viaStops={viaStops}
+                                addingStop={addingViaStop}
+                                canAddStop={Boolean(destLngLat)}
+                                onStartAddStop={() => setAddingViaStop(true)}
+                                onCancelAddStop={() => setAddingViaStop(false)}
+                                onRemoveStop={handleRemoveViaStop}
+                              />
+                            ) : null}
+                          </>
                         )}
                       </div>
                     </div>
@@ -5879,6 +5988,12 @@ export default function App() {
         open={aboutOpen}
         onClose={() => setAboutOpen(false)}
         activityTrail={activityTrailAboutPanel}
+        homePuckFollow={homePuckFollow}
+        onHomePuckFollowChange={(mode) => {
+          setHomePuckFollow(mode);
+          writeHomePuckFollow(mode);
+          if (mode === "follow") setRecenterPlanningPuckTick((n) => n + 1);
+        }}
         settings={{
           radarEnabled: settingRadarEnabled,
           stormEnabled: settingStormEnabled,

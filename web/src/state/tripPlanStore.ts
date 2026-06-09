@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { EMPTY_TRIP } from "../nav/emptyTrip";
+import type { TripStop } from "../nav/routeWaypoints";
 import type { LngLat, TripPlan } from "../nav/types";
 import type { MapViewMode } from "../ui/driveMapTypes";
 
@@ -43,6 +44,10 @@ export interface TripPlanState {
   destLngLat: LngLat | null;
   /** Human-readable destination label shown in the search bar / header. */
   destinationLabel: string;
+  /** One optional intermediate stop before {@link destLngLat}. */
+  viaStops: TripStop[];
+  /** Index of the via stop currently being navigated to (0..viaStops.length). */
+  activeViaIndex: number;
   /** UI mode: `"route"` (planning), `"topdown"` (overview), `"drive"` (turn-by-turn). */
   viewMode: MapViewMode;
   /** True after the driver hits Go and the route engine confirmed the trip. */
@@ -53,6 +58,8 @@ export interface TripPlanState {
   setPreviewLegIndex: (next: Updater<number>) => void;
   setDestLngLat: (next: Updater<LngLat | null>) => void;
   setDestinationLabel: (next: Updater<string>) => void;
+  setViaStops: (next: Updater<TripStop[]>) => void;
+  setActiveViaIndex: (next: Updater<number>) => void;
   setViewMode: (next: Updater<MapViewMode>) => void;
   setNavigationStarted: (next: Updater<boolean>) => void;
 }
@@ -63,6 +70,8 @@ export const useTripPlanStore = create<TripPlanState>((set) => ({
   previewLegIndex: 0,
   destLngLat: null,
   destinationLabel: "",
+  viaStops: [],
+  activeViaIndex: 0,
   viewMode: "route",
   navigationStarted: false,
 
@@ -74,6 +83,9 @@ export const useTripPlanStore = create<TripPlanState>((set) => ({
   setDestLngLat: (next) => set((state) => ({ destLngLat: applyUpdater(state.destLngLat, next) })),
   setDestinationLabel: (next) =>
     set((state) => ({ destinationLabel: applyUpdater(state.destinationLabel, next) })),
+  setViaStops: (next) => set((state) => ({ viaStops: applyUpdater(state.viaStops, next) })),
+  setActiveViaIndex: (next) =>
+    set((state) => ({ activeViaIndex: applyUpdater(state.activeViaIndex, next) })),
   setViewMode: (next) => set((state) => ({ viewMode: applyUpdater(state.viewMode, next) })),
   setNavigationStarted: (next) =>
     set((state) => ({ navigationStarted: applyUpdater(state.navigationStarted, next) })),

@@ -7,6 +7,7 @@ import { isCrashReportingEnabled } from "../monitoring/sentry";
 import { stormpathVersionChipLabel, stormpathVersionLabel } from "../appVersion";
 import { MapKeyPanel } from "./MapKeyPanel";
 import type { HomeMapFraming } from "../map/homeMapFraming";
+import type { HomePuckFollowMode } from "../map/homePuckFollow";
 
 type ActivityTrailPanel = {
   count: number;
@@ -36,6 +37,9 @@ type Props = {
   onClose: () => void;
   /** Plus: sparse GPS dot history on this device — stats + map overlay toggle */
   activityTrail?: ActivityTrailPanel | null;
+  /** Home screen (no trip): keep puck centered vs free map panning. */
+  homePuckFollow: HomePuckFollowMode;
+  onHomePuckFollowChange: (mode: HomePuckFollowMode) => void;
   settings: {
     radarEnabled: boolean;
     stormEnabled: boolean;
@@ -61,6 +65,8 @@ export function AboutSheet({
   open,
   onClose,
   activityTrail = null,
+  homePuckFollow,
+  onHomePuckFollowChange,
   settings,
   onSettings,
   onReplayCoachmarks,
@@ -382,6 +388,39 @@ export function AboutSheet({
               </span>
             </label>
 
+            <fieldset className="about-sheet__home-framing">
+              <legend className="about-sheet__home-framing-legend">Map follow (no active trip)</legend>
+              <p className="about-sheet__p about-sheet__p--tight">
+                Before you set a destination, choose whether the map stays locked on your GPS puck or
+                lets you pan and zoom freely without the camera snapping back.
+              </p>
+              <label className="about-sheet__home-framing-option">
+                <input
+                  type="radio"
+                  name="home-puck-follow"
+                  checked={homePuckFollow === "follow"}
+                  onChange={() => onHomePuckFollowChange("follow")}
+                />
+                <span>
+                  <strong>Keep puck centered</strong> — while you drive, the map moves under you and your
+                  location stays in the middle (tap <strong>My location</strong> anytime to re-center after
+                  panning).
+                </span>
+              </label>
+              <label className="about-sheet__home-framing-option">
+                <input
+                  type="radio"
+                  name="home-puck-follow"
+                  checked={homePuckFollow === "explore"}
+                  onChange={() => onHomePuckFollowChange("explore")}
+                />
+                <span>
+                  <strong>Explore the map</strong> — pan and zoom anywhere; your puck moves on the map but
+                  won&apos;t pull the camera back until you tap <strong>My location</strong>.
+                </span>
+              </label>
+            </fieldset>
+
             <div
               className="about-sheet__tier-preview about-sheet__panel about-sheet__panel--settings-inset"
               role="group"
@@ -420,7 +459,7 @@ export function AboutSheet({
               <p className="about-sheet__muted-line">
                 Forgot what a button does? Re-arm the in-app tips and they'll explain each
                 piece of UI again the first time you see it (advisory bar, view-cycle
-                button, route progress rail, and the i info button).
+                button, route progress bar, and the i info button).
               </p>
               <div className="about-sheet__help-actions">
                 <button

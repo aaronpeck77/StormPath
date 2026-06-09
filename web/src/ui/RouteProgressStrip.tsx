@@ -42,6 +42,9 @@ type Props = {
    */
   tripOdometerM?: number;
   tripRelativeProgress?: boolean;
+  /** Tap the side rail strip to open route info (when content exists). */
+  routeInfoOpen?: boolean;
+  onRouteInfoOpenChange?: (open: boolean) => void;
 };
 
 function hexToRgba(hex: string, alpha: number, blackMix = 0): string {
@@ -71,7 +74,12 @@ export function RouteProgressStrip({
   driveEndsEmphasis = false,
   tripOdometerM = 0,
   tripRelativeProgress = false,
+  routeInfoOpen = false,
+  onRouteInfoOpenChange,
 }: Props) {
+  const routeInfoHitEnabled = layout === "side" && Boolean(onRouteInfoOpenChange);
+  const corridorBandClick = routeInfoHitEnabled ? undefined : onCorridorBandClick;
+  const stormBandClick = routeInfoHitEnabled ? undefined : onStormBandClick;
   const totalM = geometry?.length ? polylineLengthMeters(geometry) : 0;
   const internalAlong =
     geometry?.length && userLngLat ? closestAlongRouteMeters(userLngLat, geometry).alongMeters : 0;
@@ -181,6 +189,22 @@ export function RouteProgressStrip({
       style={{ "--route-strip-line": routeLineColor } as CSSProperties}
     >
       <div className="route-progress-strip__track-wrap">
+        {routeInfoHitEnabled ? (
+          <button
+            type="button"
+            className="route-progress-strip__route-info-hit"
+            aria-label="Route info — bands, hazards, and forecast"
+            aria-expanded={routeInfoOpen}
+            aria-controls="route-progress-callout-panel"
+            title="Route info"
+            onPointerDownCapture={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (!routeInfoOpen) onRouteInfoOpenChange?.(true);
+            }}
+          />
+        ) : null}
         <div className="route-progress-strip__track" style={{ backgroundColor: trackBg }}>
           <div className="route-progress-strip__end-cap route-progress-strip__end-cap--start" aria-hidden />
           <div className="route-progress-strip__end-cap route-progress-strip__end-cap--end" aria-hidden />
@@ -189,7 +213,7 @@ export function RouteProgressStrip({
             style={{ width: `${progress * 100}%`, backgroundColor: doneBg }}
           />
           {stormSegments.map((s) =>
-            onStormBandClick ? (
+            stormBandClick ? (
               <button
                 key={s.key}
                 type="button"
@@ -200,7 +224,7 @@ export function RouteProgressStrip({
                   backgroundColor: s.hex,
                 }}
                 aria-label="Storm advisory on route — open details"
-                onClick={() => onStormBandClick(s.startM, s.endM)}
+                onClick={() => stormBandClick(s.startM, s.endM)}
               />
             ) : (
               <div
@@ -215,7 +239,7 @@ export function RouteProgressStrip({
             )
           )}
           {corridorSegments.map((s) =>
-            onCorridorBandClick ? (
+            corridorBandClick ? (
               <button
                 key={s.key}
                 type="button"
@@ -226,7 +250,7 @@ export function RouteProgressStrip({
                   backgroundColor: s.hex,
                 }}
                 aria-label={s.label}
-                onClick={() => onCorridorBandClick(s.alert)}
+                onClick={() => corridorBandClick(s.alert)}
               />
             ) : (
               <div

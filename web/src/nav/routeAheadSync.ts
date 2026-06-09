@@ -115,10 +115,7 @@ export function buildRouteAheadTimeline(opts: BuildRouteAheadTimelineOpts): Time
     });
     if (timing.passed) continue;
     const extra = stripBandDetail?.(band) ?? { severityLabel: null, detail: null };
-    const nwsDetail = [extra.severityLabel, extra.detail]
-      .map((s) => (s ?? "").trim())
-      .filter(Boolean)
-      .join(" — ");
+    const nwsDetail = (extra.detail ?? "").trim() || null;
     timelineItems.push({
       id: band.id,
       track: "nws",

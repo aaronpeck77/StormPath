@@ -3001,6 +3001,112 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 
+.map-via-stop-marker {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #2563eb;
+  border: 2px solid #fff;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+}
+
+.route-stops-bar {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.route-stops-bar__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.route-stops-bar__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.route-stops-bar__badge {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.route-stops-bar__label {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.route-stops-bar__remove {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
+.route-stops-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.route-stops-bar__hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.72rem;
+  color: #93c5fd;
+}
+
+.route-stops-bar__add,
+.route-stops-bar__cancel {
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  background: rgba(30, 58, 138, 0.35);
+  color: #dbeafe;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 0.74rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.route-stops-bar__cancel {
+  border-color: rgba(148, 163, 184, 0.35);
+  background: transparent;
+  color: #cbd5e1;
+}
+
 /* On-map route flags (color matches polyline) */
 .route-flag {
   display: block;
@@ -3422,8 +3528,6 @@
   /* Anchor strip to the viewport-right edge; centering made the long rotated bar spill left */
   align-items: flex-end;
   justify-content: flex-start;
-  /* Match .route-progress-callout-toggle { top: 2px } so strip top lines up with ? tab */
-  padding-top: 2px;
   overflow: visible;
   pointer-events: auto;
   /* Strip length = this box height; 100cqh sizes the rotated bar to the rail column */
@@ -3431,102 +3535,37 @@
   container-name: progress-rail;
 }
 
-/* Callouts open: keep rail width ? cluster is position:absolute so it never steals space from the strip */
-.nav-route-progress-rail--callouts-open {
-  z-index: 6;
+/* Expanded route-info panel: lift above progress strip (same stacking idea as advisory). */
+.nav-route-progress-rail--callouts-open,
+.nav-route-progress-rail:has(.route-progress-callout-panel--expanded) {
+  z-index: 16;
   position: relative;
 }
 
-/* ? + optional panel (default: rail on right edge): open = wide box extending left toward map */
-.route-progress-callout-rail-cluster {
-  position: absolute;
-  top: 2px;
-  /* Sit just left of the strip — panel can tuck in with only a sliver of map showing */
-  left: 2px;
-  z-index: 7;
-  pointer-events: none;
-  box-sizing: border-box;
-}
-
-.route-progress-callout-rail-cluster > * {
-  pointer-events: auto;
-}
-
-.route-progress-callout-rail-cluster--open {
-  /* Keep the same anchor as closed — only the panel grows, toward the map */
-  z-index: 6;
-}
-
-.route-progress-callout-rail-cluster--open .route-progress-callout-panel--rail {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: auto;
-  width: var(--progress-callout-panel-max);
-  max-width: var(--progress-callout-panel-max);
-  padding-right: calc(var(--progress-callout-toggle-width, 22px) + 2px);
-  min-width: 0;
-  z-index: 5;
-}
-
-.route-progress-callout-toggle {
-  position: relative;
-  z-index: 8;
-  width: 22px;
-  min-width: 22px;
-  height: 30px;
+/* Expanded route-info — fixed overlay like .storm-advisory-bar--expanded; top + horizontal edges
+ * match the advisory preview row (may sit over the progress rail). */
+.route-progress-callout-panel--expanded {
+  position: fixed !important;
+  top: var(
+    --route-progress-callout-anchor-top,
+    calc(env(safe-area-inset-top, 0px) + 56px)
+  ) !important;
+  left: max(14px, var(--route-progress-callout-anchor-left, max(14px, env(safe-area-inset-left, 0px)))) !important;
+  right: max(14px, var(--route-progress-callout-anchor-right, max(14px, env(safe-area-inset-right, 0px)))) !important;
+  bottom: var(--route-progress-callout-bottom-inset, 60px) !important;
+  width: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  z-index: 15;
   margin: 0;
-  padding: 0;
-  border-radius: 5px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: rgba(12, 14, 18, 0.72);
-  color: rgba(226, 232, 240, 0.88);
-  font-size: 0.68rem;
-  font-weight: 800;
-  line-height: 1;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.route-progress-callout-toggle--on {
-  border-color: rgba(125, 211, 252, 0.55);
-  background: rgba(30, 58, 95, 0.55);
-  color: #e0f2fe;
-}
-
-/* Panel fills the open cluster; strip layout still unchanged (cluster is out of flow) */
-.route-progress-callout-panel--rail {
-  position: relative;
-  width: 100%;
-  height: min(
-    74dvh,
-    calc(
-      100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) -
-        var(--nav-dock-above-safe-current, var(--nav-dock-above-safe)) -
-        var(--progress-callout-top-reserve, 112px) - 10px
-    )
-  );
-  max-height: min(
-    74dvh,
-    calc(
-      100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) -
-        var(--nav-dock-above-safe-current, var(--nav-dock-above-safe)) -
-        var(--progress-callout-top-reserve, 112px) - 10px
-    )
-  );
-  margin: 0;
-  padding: 6px 10px 8px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(18, 22, 30, 0.94);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-  font-size: 0.74rem;
+  padding: 16px 14px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 4px 10px -8px rgba(0, 0, 0, 0.65);
+  font-size: clamp(0.92rem, 3.2vw, 1.05rem);
   font-weight: 650;
-  line-height: 1.28;
+  line-height: 1.35;
   color: #f1f5f9;
   text-align: left;
   box-sizing: border-box;
@@ -3536,13 +3575,70 @@
   overflow: hidden;
 }
 
-.route-progress-callout-panel__track {
-  width: 100%;
-  flex: 1 1 0;
+.route-progress-callout-panel__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  margin-bottom: 10px;
+}
+
+.route-progress-callout-panel__head-leading {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.route-progress-callout-panel__title {
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+  font-size: 0.72em;
+}
+
+.route-progress-callout-panel__subtitle {
+  font-size: 0.58em;
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.92);
+  line-height: 1.25;
+}
+
+.route-progress-callout-panel__close {
+  flex-shrink: 0;
+  appearance: none;
+  margin: 0;
+  margin-left: auto;
+  padding: 8px 14px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(125, 211, 252, 0.4);
+  background: rgba(30, 58, 95, 0.45);
+  color: #e0f2fe;
+  font-size: 0.58em;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.route-progress-callout-panel__close:hover {
+  background: rgba(30, 58, 95, 0.65);
+  border-color: rgba(125, 211, 252, 0.55);
+}
+
+.route-progress-callout-panel__body {
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 0;
   overflow: hidden;
 }
 
@@ -8239,7 +8335,41 @@
 }
 
 .route-progress-strip__track-wrap {
+  position: relative;
   min-width: 0;
+}
+
+/* Side rail: tap anywhere on the bar opens route info (hazard bands are display-only). */
+.route-progress-strip__route-info-hit {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  left: 0;
+  right: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  z-index: 1;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.route-progress-strip__route-info-hit:focus {
+  outline: none;
+}
+
+.route-progress-strip__route-info-hit:focus-visible {
+  outline: 2px solid rgba(125, 211, 252, 0.55);
+  outline-offset: 2px;
+  z-index: 2;
+}
+
+.route-progress-strip__route-info-hit[aria-expanded="true"] {
+  pointer-events: none;
+  cursor: default;
 }
 
 .route-progress-strip__track {
@@ -13581,31 +13711,6 @@
     font-size: 0.5rem;
   }
 
-  /* ? tab: just outside the strip (right of rotated bar / red destination end); panel opens further right */
-  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .route-progress-callout-rail-cluster {
-    top: 2px;
-    left: 100%;
-    right: auto;
-    margin-left: 3px;
-  }
-
-  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-route-progress-rail {
-    --progress-callout-panel-left-inset: calc(var(--sp-landscape-map-inset-start, 0px) + 8px);
-    --progress-callout-rail-anchor: calc(56px + 3px + 22px + max(6px, env(safe-area-inset-right, 0px)));
-    --progress-callout-panel-max: max(
-      240px,
-      calc(100vw - var(--progress-callout-panel-left-inset) - var(--progress-callout-rail-anchor))
-    );
-  }
-
-  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .route-progress-callout-rail-cluster--open
-    .route-progress-callout-panel--rail {
-    left: 0;
-    right: auto;
-    padding-right: 10px;
-    padding-left: calc(var(--progress-callout-toggle-width, 22px) + 2px);
-  }
-
   .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .map-stage.map-bleed .mapboxgl-ctrl-bottom-left {
     left: calc(var(--sp-landscape-map-inset-start) + 6px) !important;
     right: auto !important;
@@ -13703,24 +13808,6 @@
     font-size: 0.5rem;
   }
 
-  .app-shell.nav-fullmap.app-shell--landscape-hand-left .route-progress-callout-rail-cluster {
-    top: 2px;
-    right: 100%;
-    left: auto;
-    margin-right: 3px;
-  }
-
-  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-route-progress-rail {
-    --progress-callout-panel-left-inset: max(8px, env(safe-area-inset-left, 0px));
-    --progress-callout-rail-anchor: calc(
-      max(6px, env(safe-area-inset-right, 0px)) + 32px + var(--sp-landscape-map-inset-end, 0px)
-    );
-    --progress-callout-panel-max: max(
-      240px,
-      calc(100vw - var(--progress-callout-panel-left-inset) - var(--progress-callout-rail-anchor))
-    );
-  }
-
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .map-stage.map-bleed .mapboxgl-ctrl-bottom-left {
     left: max(6px, env(safe-area-inset-left)) !important;
     right: auto !important;
@@ -13746,7 +13833,7 @@
 }
 
 /* ????????????????????????????????????????????????????????????????????????????
- * First-launch coachmarks ? sequential walk-through over 4 UI elements.
+ * First-launch coachmarks — contextual tips for advisory, info, views, and progress bar.
  * Layered above everything else (z-index 9000+) so the cards float above the
  * map, advisory bar, progress rail, and bottom dock. The card position is set
  * inline by the React component (top/left in viewport pixels).

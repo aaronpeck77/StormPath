@@ -711,12 +711,28 @@ function collectRouteNoticesWithAlong(
  * ### Latency
  * Primary `alternatives=true` completes first; Plus may start `exclude=motorway` in parallel.
  */
+async function fetchDirectionsPrimary(
+  accessToken: string,
+  start: LngLat,
+  end: LngLat,
+  via: LngLat[] | undefined,
+  opts: DirectionsFetchOpts,
+  signal?: AbortSignal
+): Promise<DirectionsResponse> {
+  if (via?.length) {
+    return fetchMapboxDirectionsThrough(accessToken, [start, ...via, end], opts, signal);
+  }
+  return fetchMapboxDirections(accessToken, start, end, opts, signal);
+}
+
 export async function collectMapboxRouteVariants(
   accessToken: string,
   start: LngLat,
   end: LngLat,
   opts?: {
     signal?: AbortSignal;
+    /** Intermediate stops between start and end (Mapbox via points). */
+    via?: LngLat[];
     allowLocalTripThirdRoute?: boolean;
     preferThreeRoutes?: boolean;
     includeDetails?: boolean;
@@ -731,6 +747,8 @@ export async function collectMapboxRouteVariants(
   }
 ): Promise<NavRoute[]> {
   const signal = opts?.signal;
+  const via = opts?.via?.filter((c) => c?.length === 2) ?? [];
+  const hasVia = via.length > 0;
   const stormAlerts = opts?.stormAlerts;
   const radarAvoidanceEnabled = Boolean(opts?.radarAvoidanceEnabled);
   const allowLocalTripThirdRoute = Boolean(opts?.allowLocalTripThirdRoute);
@@ -760,10 +778,11 @@ export async function collectMapboxRouteVariants(
   if (canSpecSecondary) {
     secondaryAbort = new AbortController();
     const secSig = signal ? abortSignalAny([signal, secondaryAbort.signal]) : secondaryAbort.signal;
-    secondaryP = fetchMapboxDirections(
+    secondaryP = fetchDirectionsPrimary(
       accessToken,
       start,
       end,
+      hasVia ? via : undefined,
       { alternatives: true, excludeMotorway: true, includeDetails },
       secSig
     ).catch((e) => {
@@ -772,12 +791,19 @@ export async function collectMapboxRouteVariants(
     });
   }
 
-  const primaryData = await fetchMapboxDirections(accessToken, start, end, {
-    alternatives: true,
-    excludeMotorway: false,
-    excludeToll,
-    includeDetails,
-  }, signal);
+  const primaryData = await fetchDirectionsPrimary(
+    accessToken,
+    start,
+    end,
+    hasVia ? via : undefined,
+    {
+      alternatives: true,
+      excludeMotorway: false,
+      excludeToll,
+      includeDetails,
+    },
+    signal
+  );
 
   const primarySorted = sortRoutesByDurationAsc(primaryData.routes ?? []);
 
@@ -981,11 +1007,18 @@ export async function collectMapboxRouteVariants(
       const noMwData = await secondaryP;
       noMwSorted = sortRoutesByDurationAsc(noMwData.routes ?? []);
     } else {
-      const noMwData = await fetchMapboxDirections(accessToken, start, end, {
-        alternatives: true,
-        excludeMotorway: true,
-        includeDetails,
-      }, signal);
+      const noMwData = await fetchDirectionsPrimary(
+        accessToken,
+        start,
+        end,
+        hasVia ? via : undefined,
+        {
+          alternatives: true,
+          excludeMotorway: true,
+          includeDetails,
+        },
+        signal
+      );
       noMwSorted = sortRoutesByDurationAsc(noMwData.routes ?? []);
     }
   } catch {
@@ -1026,6 +1059,7 @@ export async function buildTripFromMapbox(
   },
   opts?: {
     signal?: AbortSignal;
+    via?: LngLat[];
     allowLocalTripThirdRoute?: boolean;
     preferThreeRoutes?: boolean;
     includeDetails?: boolean;

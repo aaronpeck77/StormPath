@@ -14,6 +14,7 @@ import {
   tollAvoidFailureExplanation,
   tollFreeReplanStillHasTolls,
 } from "./tollAvoidanceCopy";
+import { formatTripDestinationLabel, remainingViaStops } from "./routeWaypoints";
 import { slotOrderAfterSelect } from "./routeSlotOrder";
 import type { LngLat, TripPlan } from "./types";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
@@ -109,6 +110,7 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
   const setRouteSlotOrder = useTripPlanStore((s) => s.setRouteSlotOrder);
   const setPreviewLegIndex = useTripPlanStore((s) => s.setPreviewLegIndex);
   const setDestLngLat = useTripPlanStore((s) => s.setDestLngLat);
+  const setActiveViaIndex = useTripPlanStore((s) => s.setActiveViaIndex);
   const setViewMode = useTripPlanStore((s) => s.setViewMode);
   const setSearchExpanded = useUiStore((s) => s.setSearchExpanded);
 
@@ -126,8 +128,17 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
       setRouting(true);
       setRouteError(null);
       setTapHint(null);
+      const { viaStops, activeViaIndex } = useTripPlanStore.getState();
+      const remainingVias = remainingViaStops(viaStops, opts?.preserveNavigation ? activeViaIndex : 0);
+      const viaCoords = remainingVias.map((s) => s.lngLat);
+      const tripDestLabel = formatTripDestinationLabel(
+        opts?.preserveNavigation ? remainingVias : viaStops,
+        label
+      );
+
       if (!opts?.preserveNavigation) {
         resetNavigationPlanning();
+        setActiveViaIndex(0);
         tollAcceptedRouteIdsRef.current.clear();
         pendingGoAfterTollRef.current = false;
         if (!opts?.excludeToll) {
@@ -148,10 +159,11 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
             end,
             {
               origin: "Your location",
-              destination: label,
+              destination: tripDestLabel,
             },
             {
               signal: mainFetch.signal,
+              via: viaCoords.length > 0 ? viaCoords : undefined,
               allowLocalTripThirdRoute: isPlus,
               preferThreeRoutes: isPlus,
               stormAlerts: stormAlertsForRouting,
@@ -242,6 +254,7 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
       setRouteSlotOrder,
       setPreviewLegIndex,
       setDestLngLat,
+      setActiveViaIndex,
       setViewMode,
       setSearchExpanded,
     ]

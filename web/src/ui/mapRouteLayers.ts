@@ -31,18 +31,26 @@ export type RouteConditionHighlightOpts = {
   stormAlongRouteBands?: StormProgressStripBand[];
 };
 
-/** Zoom-dependent halo width so the blue route core (~4–8px) stays readable at all scales */
+/** Zoom-dependent halo under the route leg — visible but not overpowering the blue core */
 const ROUTE_COND_CASING_WIDTH: mapboxgl.ExpressionSpecification = [
   "interpolate",
   ["linear"],
   ["zoom"],
   9,
-  14,
+  10,
   12,
-  18,
+  13,
   16,
-  22,
+  16,
 ];
+
+const ROUTE_COND_CASING_OPACITY = 0.58;
+
+function syncRouteConditionCasingPaint(map: mapboxgl.Map): void {
+  if (!map.getLayer(ROUTE_COND_HIGHLIGHT_CASING)) return;
+  map.setPaintProperty(ROUTE_COND_HIGHLIGHT_CASING, "line-width", ROUTE_COND_CASING_WIDTH);
+  map.setPaintProperty(ROUTE_COND_HIGHLIGHT_CASING, "line-opacity", ROUTE_COND_CASING_OPACITY);
+}
 
 /**
  * Hazard / weather / NWS overlap segments as a colored outline under the route line (not a solid overlay).
@@ -103,7 +111,7 @@ export function applyRouteConditionHighlights(
       paint: {
         "line-color": ["get", "lineHex"] as never,
         "line-width": ROUTE_COND_CASING_WIDTH,
-        "line-opacity": 0.92,
+        "line-opacity": ROUTE_COND_CASING_OPACITY,
       },
       layout: { "line-cap": "round", "line-join": "round" },
     });
@@ -117,10 +125,12 @@ export function applyRouteConditionHighlights(
         paint: {
           "line-color": ["get", "lineHex"] as never,
           "line-width": ROUTE_COND_CASING_WIDTH,
-          "line-opacity": 0.92,
+          "line-opacity": ROUTE_COND_CASING_OPACITY,
         },
         layout: { "line-cap": "round", "line-join": "round" },
       });
+    } else {
+      syncRouteConditionCasingPaint(map);
     }
   }
 }
