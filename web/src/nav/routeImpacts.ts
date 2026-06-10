@@ -9,7 +9,7 @@ import {
   pointAtAlongMeters,
   polylineLengthMeters,
 } from "./routeGeometry";
-import { unifiedTrafficNarrative } from "./trafficNarrative";
+import { unifiedTrafficNarrative, hasLocalizedTrafficIssue } from "./trafficNarrative";
 import {
   FALLBACK_LNGLAT,
   RADAR_SOFT_THRESHOLD,
@@ -437,15 +437,10 @@ function buildTrafficImpact(opts: {
   if (!hasLive || !trafficLeg) return null;
 
   const story = unifiedTrafficNarrative(delay, trafficLeg, hasLive, remainingMin);
-  const significant = isSignificantTrafficDelay(delay, remainingMin);
-  const localizedIssue =
-    trafficLeg.hasClosure ||
-    trafficLeg.nearStopFraction != null ||
-    (trafficLeg.firstHeavyCongestionFraction != null && story.shouldAddCorridorAlert);
-  /** Skip route-wide “clear / typical flow” — only surface traffic when it actually slows the trip. */
-  if (!localizedIssue && !story.shouldAddCorridorAlert && !significant) {
+  if (!hasLocalizedTrafficIssue(trafficLeg)) {
     return null;
   }
+  const significant = isSignificantTrafficDelay(delay, remainingMin);
   const sev = trafficNumericToSeverity(story.mapSeverity, Boolean(trafficLeg.hasClosure));
   const confidence: RouteImpactConfidence = trafficLeg.hasClosure
     ? "high"
@@ -487,7 +482,7 @@ function buildTrafficImpact(opts: {
     aheadM = Math.max(0, alongM - userAlongM);
     roadEffect = "Stop-and-go ahead — ease off and add following distance.";
     action = action === "watch" ? "slow" : action;
-  } else if (trafficLeg.firstHeavyCongestionFraction != null && story.shouldAddCorridorAlert) {
+  } else if (trafficLeg.firstHeavyCongestionFraction != null) {
     id = "traffic-delay";
     alongM = totalMeters * trafficLeg.firstHeavyCongestionFraction;
     startM = alongM;
@@ -496,16 +491,7 @@ function buildTrafficImpact(opts: {
     roadEffect = "Congestion ahead — ease off and add following distance.";
     action = action === "watch" ? "slow" : action;
   } else {
-    /** Route-wide live read (clear / mild / patchy) — spans from here to destination on the timeline. */
-    startM = Math.max(0, userAlongM);
-    endM = totalMeters;
-    if (endM - startM < 50) return null;
-    alongM = (startM + endM) / 2;
-    aheadM = 0;
-    roadEffect =
-      story.advisorySubtext?.trim() ||
-      story.mapDetail?.trim() ||
-      "Live traffic conditions for the rest of this trip.";
+    return null;
   }
 
   const eta =

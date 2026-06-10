@@ -1,6 +1,5 @@
 import type { RouteImpact, RouteImpactConfidence } from "./routeImpacts";
 import {
-  BYPASS_HEAVY_DELAY_MINUTES,
   DRIVE_AHEAD_WINDOW_M,
   METERS_PER_MILE,
 } from "./constants";
@@ -44,8 +43,7 @@ export function pickTrafficBypassAnchorImpact(impacts: RouteImpact[]): RouteImpa
 }
 
 /**
- * Offer a live "bypass" CTA when a real reroute-worthy impact is ahead on the active polyline,
- * or as a soft fallback when total corridor delay is heavy enough.
+ * Offer a live "bypass" CTA when a localized reroute-worthy impact is ahead on the active polyline.
  */
 export function computeTrafficBypassOffer(
   impacts: RouteImpact[],
@@ -66,17 +64,6 @@ export function computeTrafficBypassOffer(
       delayMinutes: trafficDelayMinutes,
       confidence: anchor.confidence,
       category: cat,
-    };
-  }
-
-  /* Soft fallback: corridor-wide delay is heavy. We don't know exactly where the jam is, so confidence is low. */
-  if (trafficDelayMinutes >= BYPASS_HEAVY_DELAY_MINUTES) {
-    return {
-      headline: "Heavy delay on corridor",
-      aheadMi: Math.min(4.5, DRIVE_AHEAD_WINDOW_M / METERS_PER_MILE),
-      delayMinutes: trafficDelayMinutes,
-      confidence: "low",
-      category: "traffic",
     };
   }
 

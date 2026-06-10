@@ -253,6 +253,26 @@ describe("buildRouteImpacts traffic gating", () => {
     expect(impacts.some((i) => i.category === "traffic")).toBe(false);
   });
 
+  it("omits route-wide delay without a localized backup or stoppage anchor", () => {
+    const delayOnlyLeg: MapboxTrafficLeg = {
+      ...clearLeg,
+      delayVsTypicalMinutes: 7,
+      congestionSummary: "moderate",
+    };
+    const impacts = buildRouteImpacts({
+      geometry: routeGeom,
+      userLngLat: routeGeom[0]!,
+      userAlongM: 0,
+      planEtaMinutes: 176,
+      slice: liveSlice(7),
+      trafficForRoute: undefined,
+      trafficLeg: delayOnlyLeg,
+      nwsBands: [],
+      nwsAlerts: [],
+    });
+    expect(impacts.some((i) => i.category === "traffic")).toBe(false);
+  });
+
   it("keeps localized slowdowns on the timeline", () => {
     const slowLeg: MapboxTrafficLeg = {
       ...clearLeg,

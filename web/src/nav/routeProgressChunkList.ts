@@ -9,8 +9,6 @@ import { normalizedAlertsForStormBandSegment } from "../weatherAlerts/nwsAsRoute
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { forecastSlicesForChunkFraction, samplesOverlappingChunk } from "./routeChunkWeather";
 import { noticesMatch, splitRouteNoticeCallout, squeezeForSummary } from "./progressCalloutCopy";
-import { formatDelayMinutesForUi } from "./trafficNarrative";
-import { TRAFFIC_STRIP_SOFT_MINUTES } from "./constants";
 
 export type RouteChunkCalloutItem = {
   key: string;
@@ -199,17 +197,6 @@ export function buildRouteChunkCalloutList(opts: {
       title: "Whole route · traffic",
       summary: squeezeForSummary(progressTrafficLine, 100),
       tooltip: progressTrafficLine,
-      color: corridorHighlightHex("traffic", Math.min(95, 50 + delay * 4)),
-      alongT: 1,
-      alongPct: 0,
-    });
-  } else if (delay >= TRAFFIC_STRIP_SOFT_MINUTES) {
-    routeWide.push({
-      key: "route-traffic-delay",
-      scope: "route",
-      title: "Whole route · traffic",
-      summary: `+${formatDelayMinutesForUi(delay)} vs free-flow`,
-      tooltip: `Mapbox traffic delay for the full leg: +${formatDelayMinutesForUi(delay)}`,
       color: corridorHighlightHex("traffic", Math.min(95, 50 + delay * 4)),
       alongT: 1,
       alongPct: 0,

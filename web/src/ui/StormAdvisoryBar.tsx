@@ -13,7 +13,11 @@ import { sortWeatherAlertsBySeverity, type NormalizedWeatherAlert } from "../wea
 import { nwsAlertIsBasicEmergency } from "../weatherAlerts/basicEmergencyFilter";
 import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
 import type { DriveAheadLine, DriveAheadRadarTier } from "../nav/driveRouteAhead";
-import { formatDriveAheadBrief, formatMinutesAsHoursMinutes } from "../nav/driveRouteAhead";
+import {
+  formatDriveAheadBrief,
+  formatMinutesAsHoursMinutes,
+  isDriveAheadInsideSegment,
+} from "../nav/driveRouteAhead";
 import {
   formatRouteAlertTiming,
   isAlertExpired,
@@ -742,7 +746,11 @@ export function StormAdvisoryBar({
         })
       );
     }
-    if (advisoryTier !== "basic" && driveRouteAheadLine) {
+    const showDriveAheadPreview =
+      advisoryTier !== "basic" &&
+      driveRouteAheadLine &&
+      !isDriveAheadInsideSegment(driveRouteAheadLine);
+    if (showDriveAheadPreview) {
       trip.push(
         previewItem({
           badge: "Ahead",
@@ -753,7 +761,9 @@ export function StormAdvisoryBar({
     }
 
     const hasRouteContext =
-      Boolean(activeTicker) || trafficDelayMinutes >= 8 || Boolean(driveRouteAheadLine);
+      Boolean(activeTicker) ||
+      trafficDelayMinutes >= 8 ||
+      Boolean(showDriveAheadPreview);
     promo.push(previewItem({ badge: "App", raw: SITEBIBLE_AD_BAR }));
     if (hasGuidanceRoute && !hasRouteContext) {
       trip.push(

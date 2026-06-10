@@ -143,12 +143,17 @@ export function buildDriveRouteAheadFromImpacts(opts: {
   };
 }
 
+/** Driver is inside an impact band — chips/timeline already surface this; skip the collapsed "Ahead" rotator. */
+export function isDriveAheadInsideSegment(line: DriveAheadLine): boolean {
+  return /\bin this segment\b/i.test(line.text);
+}
+
 export function formatDriveAheadBrief(line: DriveAheadLine): string {
   if (line.kind === "none") {
     return "Ahead: no flagged hazards";
   }
-  if (line.text.includes("in this segment")) {
-    return "NWS — on this segment";
+  if (isDriveAheadInsideSegment(line)) {
+    return line.text.replace(/\s*—\s*in this segment$/i, "").trim();
   }
   return line.text.replace(/\s*\(~[^)]+\)\s*/g, " ").replace(/\s+/g, " ").trim();
 }

@@ -157,7 +157,7 @@ import { buildDriveRouteAheadFromImpacts } from "./nav/driveRouteAhead";
 import { pickDriveApproachBanner } from "./nav/driveHazardApproachPreview";
 import { computeTrafficBypassOffer, pickTrafficBypassAnchorImpact } from "./nav/trafficBypassOffer";
 import { earlyApproachMaxMetersForSpeed } from "./nav/surgicalBypassWindow";
-import { unifiedTrafficNarrative } from "./nav/trafficNarrative";
+import { unifiedTrafficNarrative, hasLocalizedTrafficIssue } from "./nav/trafficNarrative";
 import {
   ARRIVAL_BG_CLEAR_MIN_MS,
   DRIVE_AHEAD_WINDOW_M,
@@ -2215,8 +2215,9 @@ export default function App() {
       } else if (!trafficFetchDone) {
         rows.push({ label: "Traffic", text: <strong>Fetching live data…</strong> });
       } else if (guidanceSlice.hasLiveTrafficEstimate) {
+        const tLeg = trafficOverlay?.[guidanceRouteId];
         const n = liveTrafficNarrative;
-        if (n) {
+        if (hasLocalizedTrafficIssue(tLeg) && n) {
           rows.push({
             label: "Traffic",
             text: <strong>{n.advisoryHeadline}</strong>,
@@ -2227,7 +2228,17 @@ export default function App() {
               text: <span className="storm-advisory-bar__road-muted">{n.advisorySubtext}</span>,
             });
           }
-        } else {
+        } else if (n?.advisoryHeadline === "Clear — little delay") {
+          rows.push({
+            label: "Traffic",
+            text: (
+              <>
+                <strong>Clear</strong>{" "}
+                <span className="storm-advisory-bar__road-muted">— typical flow on this path.</span>
+              </>
+            ),
+          });
+        } else if (!n) {
           rows.push({ label: "Traffic", text: <strong>Live traffic is updating…</strong> });
         }
 
