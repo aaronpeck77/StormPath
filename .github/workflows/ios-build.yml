@@ -44,12 +44,11 @@ jobs:
     timeout-minutes: 60
     env:
       BUILD_TRACK: ${{ github.event_name == 'workflow_dispatch' && inputs.build_track || 'testflight' }}
+      # Quieter Action-step deprecation warnings until third-party actions ship Node 24 runtimes.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     defaults:
       run:
         shell: bash
-    env:
-      # Quieter Action-step deprecation warnings until third-party actions ship Node 24 runtimes.
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       # ── 1. Source code ───────────────────────────────────────────────────────
