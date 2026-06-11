@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PurchasesPackage } from "@revenuecat/purchases-capacitor";
-import { getPayTier } from "../billing/payFeatures";
+import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
 import { useRevenueCat } from "../billing/useRevenueCat";
 import { getWebEnv } from "../config/env";
 import { isCrashReportingEnabled } from "../monitoring/sentry";
 import { stormpathVersionChipLabel, stormpathVersionLabel } from "../appVersion";
+import { safeStorage } from "../storage/safeStorage";
 import { MapKeyPanel } from "./MapKeyPanel";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import type { HomePuckFollowMode } from "../map/homePuckFollow";
@@ -35,6 +36,10 @@ type ActivityTrailPanel = {
 type Props = {
   open: boolean;
   onClose: () => void;
+  /** Bumped from App after dev tier override so `getPayTier()` is reflected in About without reload. */
+  payTierProbeKey?: number;
+  /** When set (dev + most prod builds), run after mutating {@link PAY_TIER_OVERRIDE_LS_KEY} so the app re-reads tier. */
+  onPayTierOverride?: () => void;
   /** Plus: sparse GPS dot history on this device — stats + map overlay toggle */
   activityTrail?: ActivityTrailPanel | null;
   /** Home screen (no trip): keep puck centered vs free map panning. */
@@ -64,6 +69,8 @@ type Props = {
 export function AboutSheet({
   open,
   onClose,
+  payTierProbeKey = 0,
+  onPayTierOverride,
   activityTrail = null,
   homePuckFollow,
   onHomePuckFollowChange,
@@ -72,9 +79,16 @@ export function AboutSheet({
   onReplayCoachmarks,
 }: Props) {
   const dev = import.meta.env.DEV;
-  const tier = useMemo(() => getPayTier(), [open]);
+  const tier = useMemo(() => getPayTier(), [open, payTierProbeKey]);
   const tierLabel = tier === "plus" ? "Plus" : "Basic";
   const plus = tier === "plus";
+  const payTierOverrideMode = useMemo((): "none" | "free" | "plus" => {
+    if (!onPayTierOverride) return "none";
+    const v = safeStorage.get(PAY_TIER_OVERRIDE_LS_KEY)?.toLowerCase();
+    if (v === "free") return "free";
+    if (v === "plus" || v === "pro") return "plus";
+    return "none";
+  }, [onPayTierOverride, open, payTierProbeKey]);
   const env = useMemo(() => getWebEnv(), []);
   const [supportNote, setSupportNote] = useState("");
   /* Phase 7 — native IAP through RevenueCat. `iap.ready` is true only when configure
@@ -169,6 +183,61 @@ export function AboutSheet({
             </span>
           </div>
         </header>
+
+        {onPayTierOverride ? (
+          <div
+            className="about-sheet__tier-preview about-sheet__panel about-sheet__panel--devtools"
+            role="group"
+            aria-label="Test pay tier override"
+          >
+            <p className="about-sheet__tier-preview-label">Test pay tier</p>
+            <div className="about-sheet__tier-preview-btns">
+              <button
+                type="button"
+                className={`about-sheet__tier-preview-btn${
+                  payTierOverrideMode === "free" ? " about-sheet__tier-preview-btn--active" : ""
+                }`}
+                onClick={() => {
+                  safeStorage.set(PAY_TIER_OVERRIDE_LS_KEY, "free");
+                  onPayTierOverride?.();
+                }}
+              >
+                Basic
+              </button>
+              <button
+                type="button"
+                className={`about-sheet__tier-preview-btn${
+                  payTierOverrideMode === "plus" ? " about-sheet__tier-preview-btn--active" : ""
+                }`}
+                onClick={() => {
+                  safeStorage.set(PAY_TIER_OVERRIDE_LS_KEY, "plus");
+                  onPayTierOverride?.();
+                }}
+              >
+                Plus
+              </button>
+              <button
+                type="button"
+                className={`about-sheet__tier-preview-btn${
+                  payTierOverrideMode === "none" ? " about-sheet__tier-preview-btn--active" : ""
+                }`}
+                onClick={() => {
+                  safeStorage.remove(PAY_TIER_OVERRIDE_LS_KEY);
+                  onPayTierOverride?.();
+                }}
+              >
+                Build default
+              </button>
+            </div>
+            <p className="about-sheet__tier-preview-hint">
+              Sets <code className="saved-drawer-code">{PAY_TIER_OVERRIDE_LS_KEY}</code> (same as{" "}
+              <code className="saved-drawer-code">getPayTier()</code>). Shown in Vite dev, or in production only when{" "}
+              <code className="saved-drawer-code">VITE_PAY_TIER_TEST_PANEL=true</code> (internal QA). Store review
+              builds should leave that unset. <strong>Build default</strong> removes the override (dev → Plus unless{" "}
+              <code className="saved-drawer-code">VITE_PAY_TIER</code> says otherwise).
+            </p>
+          </div>
+        ) : null}
 
         <div className="about-sheet__sections">
           <section className="about-sheet__panel about-sheet__panel--subscription">

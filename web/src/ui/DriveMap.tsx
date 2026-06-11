@@ -1093,6 +1093,8 @@ export function DriveMap({
   const homePuckFollowRef = useRef(homePuckFollow);
   homePuckFollowRef.current = homePuckFollow;
   const userExploringRef = useRef(false);
+  /** One-shot: force drive follow-cam easeTo even when the puck barely moved (explore end, layout, resume). */
+  const driveCamResyncRef = useRef(false);
   const exploreTimerRef = useRef<number | null>(null);
   const lastForcedPlanningFitTriggerRef = useRef<number | null>(null);
   const prevPlanningRouteCountRef = useRef(0);
@@ -1187,6 +1189,9 @@ export function DriveMap({
     exploreTimerRef.current = window.setTimeout(() => {
       userExploringRef.current = false;
       exploreTimerRef.current = null;
+      if (navigationStartedRef.current && viewModeRef.current === "drive") {
+        driveCamResyncRef.current = true;
+      }
       setMapResumeTick((n) => n + 1);
     }, idleMs);
   };
@@ -1924,7 +1929,8 @@ export function DriveMap({
           const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;
           const easeKey = `${stormBarVisibleRef.current}|${stormBarExpandedRef.current}|${progressRailVisibleRef.current}|${wx}x${wy}`;
           let easeCached = driveCamEaseOptsCacheRef.current;
-          if (!easeCached || easeCached.key !== easeKey) {
+          const easeLayoutChanged = !easeCached || easeCached.key !== easeKey;
+          if (easeLayoutChanged) {
             const o = driveCameraEaseOptions(
               stormBarVisibleRef.current,
               stormBarExpandedRef.current,
@@ -1932,6 +1938,10 @@ export function DriveMap({
             );
             easeCached = { key: easeKey, padding: o.padding, offset: o.offset };
             driveCamEaseOptsCacheRef.current = easeCached;
+          }
+          if (!easeCached) {
+            raf = requestAnimationFrame(loop);
+            return;
           }
           const { padding, offset } = easeCached;
           const rawBrg =
@@ -1955,7 +1965,7 @@ export function DriveMap({
             ? Math.abs(driveCamBearingSmoothedRef.current - lastBearingApplied)
             : Infinity;
           const camMoved =
-            !moved || !pos || !camCenter
+            !pos || !camCenter
               ? false
               : Math.abs(camCenter[0] - pos[0]) > NOOP_LNGLAT_DELTA ||
                 Math.abs(camCenter[1] - pos[1]) > NOOP_LNGLAT_DELTA;
@@ -1965,7 +1975,8 @@ export function DriveMap({
            * even when the puck hasn't moved relative to the camera center. */
           const pitchOff = Math.abs(map.getPitch() - 58) > 1;
           const zoomOff  = Math.abs(map.getZoom()  - 16.35) > 0.3;
-          if (camMoved || bearingMoved || pitchOff || zoomOff) {
+          const forceCamSync = driveCamResyncRef.current;
+          if (camMoved || bearingMoved || pitchOff || zoomOff || forceCamSync || easeLayoutChanged) {
             if (
               pos &&
               safeEaseTo(map, {
@@ -1980,6 +1991,7 @@ export function DriveMap({
               })
             ) {
               lastBearingApplied = driveCamBearingSmoothedRef.current;
+              if (forceCamSync) driveCamResyncRef.current = false;
             }
           }
         }
@@ -3374,6 +3386,9 @@ export function DriveMap({
       clearTimeout(exploreTimerRef.current);
       exploreTimerRef.current = null;
     }
+    if (viewMode === "drive" && navigationStarted) {
+      driveCamResyncRef.current = true;
+    }
     const map = mapRef.current;
     const raf0 = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -3403,6 +3418,7 @@ export function DriveMap({
     if (!mapReady) return;
     if (navigationStarted && !wasNavRef.current) {
       userExploringRef.current = false;
+      driveCamResyncRef.current = true;
       if (exploreTimerRef.current) {
         clearTimeout(exploreTimerRef.current);
         exploreTimerRef.current = null;
@@ -3430,6 +3446,7 @@ export function DriveMap({
     if (viewMode !== "drive" || !navigationStarted || !mapReady) return;
     const map = mapRef.current;
     if (!map) return;
+    driveCamResyncRef.current = true;
     const raf0 = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         try {
@@ -3442,6 +3459,38 @@ export function DriveMap({
     });
     return () => cancelAnimationFrame(raf0);
   }, [viewMode, navigationStarted, mapReady]);
+
+  /** Foreground / style reload can leave drive follow-cam desynced while the puck keeps updating. */
+  useEffect(() => {
+    if (!mapReady || !navigationStarted || viewMode !== "drive") return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    const nudgeFollowCam = () => {
+      userExploringRef.current = false;
+      driveCamResyncRef.current = true;
+      setMapResumeTick((n) => n + 1);
+      try {
+        map.resize();
+      } catch {
+        /* map disposed */
+      }
+    };
+
+    const onStyle = () => nudgeFollowCam();
+    map.on("style.load", onStyle);
+
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      nudgeFollowCam();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      map.off("style.load", onStyle);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [mapReady, navigationStarted, viewMode]);
 
   /** Report map bearing while driving so the dock compass can keep N aligned with true north. */
   useEffect(() => {

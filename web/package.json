@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:appstore": "tsc --noEmit && vite build",
     "build:netlify": "npm run build && node scripts/verify-netlify-dist.mjs",
     "build:testflight": "tsc --noEmit && vite build --mode testflight",
     "preview": "vite preview",
@@ -17,6 +18,7 @@
     "cap:sync": "npx cap sync ios",
     "sync:ios-version": "node scripts/sync-ios-version.mjs",
     "build:ios": "npm run build && npm run sync:ios-version && npx cap sync ios",
+    "build:ios:appstore": "npm run build:appstore && npm run sync:ios-version && npx cap sync ios",
     "build:ios:testflight": "npm run build:testflight && npm run sync:ios-version && npx cap sync ios",
     "render:app-icon": "node scripts/render-app-icon.mjs",
     "render:app-icon:rainbow": "node scripts/render-app-icon.mjs rainbow",

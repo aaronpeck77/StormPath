@@ -247,8 +247,10 @@ import {
   buildAdvisoryPromoLines,
   buildBasicNavAdvisoryPromoLines,
 } from "./config/basicAds";
+import { payTierTestPanelEnabled } from "./config/env";
 import { useBasicAdMobBanner } from "./hooks/useBasicAdMobBanner";
-import { hasTollBypass } from "./billing/payFeatures";
+import { getPayTier, hasTollBypass } from "./billing/payFeatures";
+import { NATIVE_PAY_TIER_CHANGED_EVENT } from "./billing/revenueCat";
 import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
 import { completedTripFromGeometry } from "./frequentRoutes/tripDetector";
 import { useFrequentRouteLearning } from "./hooks/useFrequentRouteLearning";
@@ -376,8 +378,17 @@ export default function App() {
       return false;
     }
   }, []);
-  const isPlus = true;
-  const tollBypassEnabled = hasTollBypass();
+  /** Bumped when dev About changes `PAY_TIER_OVERRIDE_LS_KEY` or RevenueCat entitlement updates. */
+  const [payTierProbeKey, setPayTierProbeKey] = useState(0);
+  const reprobePayTier = useCallback(() => setPayTierProbeKey((n) => n + 1), []);
+  useEffect(() => {
+    const handler = () => reprobePayTier();
+    window.addEventListener(NATIVE_PAY_TIER_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(NATIVE_PAY_TIER_CHANGED_EVENT, handler);
+  }, [reprobePayTier]);
+  /** Plus vs Basic from `getPayTier()` (build env + native entitlement + optional LS override). */
+  const isPlus = useMemo(() => getPayTier() === "plus", [payTierProbeKey]);
+  const tollBypassEnabled = useMemo(() => hasTollBypass(), [payTierProbeKey]);
   const advisoryPromoLines = useMemo(
     () => (isPlus ? buildAdvisoryPromoLines(env, isPlus) : buildBasicNavAdvisoryPromoLines(env)),
     [env, isPlus]
@@ -683,8 +694,9 @@ export default function App() {
   const driveModeUi = navigationStarted && viewMode === "drive";
   /** Third-party AdMob only — house promos (SiteBible, Plus upsell) live in StormAdvisoryBar. */
   const basicAdBanner = useBasicAdMobBanner({
-    enabled: false,
+    enabled: !isPlus,
     navigationStarted,
+    payTierProbeKey,
   });
   /** NWS polygons + fetches follow the user’s NWS toggle everywhere (including drive — no auto-on). */
   const savedDrawerOpen = useUiStore((s) => s.savedDrawerOpen);
@@ -5998,6 +6010,10 @@ export default function App() {
       <AboutSheet
         open={aboutOpen}
         onClose={() => setAboutOpen(false)}
+        payTierProbeKey={payTierProbeKey}
+        onPayTierOverride={
+          import.meta.env.DEV || payTierTestPanelEnabled() ? reprobePayTier : undefined
+        }
         activityTrail={activityTrailAboutPanel}
         homePuckFollow={homePuckFollow}
         onHomePuckFollowChange={(mode) => {

@@ -14,6 +14,8 @@ type Args = {
   enabled: boolean;
   /** Hide while actively navigating (Drive / Go). */
   navigationStarted: boolean;
+  /** Bumped when pay tier override changes so ads tear down immediately on Plus. */
+  payTierProbeKey: number;
 };
 
 export type BasicAdBannerSlotState = "hidden" | "loading" | "filled" | "empty";
@@ -32,6 +34,7 @@ function resolveAdMobTestMode(): boolean {
 export function useBasicAdMobBanner({
   enabled,
   navigationStarted,
+  payTierProbeKey,
 }: Args): {
   slotState: BasicAdBannerSlotState;
   testMode: boolean;
@@ -97,7 +100,7 @@ export function useBasicAdMobBanner({
         void teardownBasicBanner();
       }
     };
-  }, [enabled, isBasicTier, navigationStarted, env.admobBannerUnitId, testMode]);
+  }, [enabled, isBasicTier, navigationStarted, env.admobBannerUnitId, testMode, payTierProbeKey]);
 
   useEffect(() => {
     return () => {

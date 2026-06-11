@@ -17,7 +17,9 @@
 #   VITE_TOMORROW_IO_API_KEY            Tomorrow.io (optional but recommended)
 #   VITE_OPENWEATHER_API_KEY            OpenWeather (optional but recommended)
 #   VITE_SENTRY_DSN                     Sentry DSN for crash reports (optional; see docs/SENTRY_SETUP.md)
-# Plus / support / legal for testers come from committed web/.env.testflight (build:testflight).
+#   VITE_REVENUECAT_API_KEY_IOS         RevenueCat public SDK key — required for App Store track builds
+# TestFlight track: committed web/.env.testflight (Plus for testers).
+# App Store track: committed web/.env.production (Basic default) + RevenueCat secret above.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: iOS Build & TestFlight
@@ -26,11 +28,22 @@ on:
   push:
     branches: [main, master]
   workflow_dispatch:
+    inputs:
+      build_track:
+        description: "Web bundle flavor baked into the IPA"
+        required: true
+        default: testflight
+        type: choice
+        options:
+          - testflight
+          - appstore
 
 jobs:
   build-ios:
     runs-on: macos-latest
     timeout-minutes: 60
+    env:
+      BUILD_TRACK: ${{ github.event_name == 'workflow_dispatch' && inputs.build_track || 'testflight' }}
     defaults:
       run:
         shell: bash
@@ -79,6 +92,7 @@ jobs:
           IOS_BUILD_NUMBER: ${{ github.run_number }}
 
       - name: Build web app (TestFlight mode — Plus, support URLs, NWS UA from .env.testflight)
+        if: env.BUILD_TRACK == 'testflight'
         run: npm run build:testflight
         working-directory: web
         env:
@@ -86,6 +100,18 @@ jobs:
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_IOS_BUILD_NUMBER: ${{ github.run_number }}
+
+      - name: Build web app (App Store mode — Basic default, IAP via RevenueCat)
+        if: env.BUILD_TRACK == 'appstore'
+        run: npm run build:appstore
+        working-directory: web
+        env:
+          VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
+          VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
+          VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_REVENUECAT_API_KEY_IOS: ${{ secrets.VITE_REVENUECAT_API_KEY_IOS }}
           VITE_IOS_BUILD_NUMBER: ${{ github.run_number }}
 
       # ── 5. Sync web assets into the Xcode project ────────────────────────────
@@ -266,6 +292,7 @@ jobs:
           IPA="$RUNNER_TEMP/export/App.ipa"
           PLIST=$(unzip -p "$IPA" 'Payload/*.app/Info.plist')
           echo "Expected TestFlight build number: ${{ github.run_number }}"
+          echo "Build track: ${{ env.BUILD_TRACK }}"
           echo "IPA CFBundleVersion: $(echo "$PLIST" | plutil -extract CFBundleVersion raw -)"
           echo "IPA CFBundleShortVersionString: $(echo "$PLIST" | plutil -extract CFBundleShortVersionString raw -)"
           echo "IPA CFBundleIdentifier: $(echo "$PLIST" | plutil -extract CFBundleIdentifier raw -)"

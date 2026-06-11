@@ -8,6 +8,13 @@ import {
 /** Vite injects only vars prefixed with VITE_. Never commit real keys — use `.env.local`. */
 /** Plus: see `billing/payFeatures.ts` and `docs/PAY_TIERS.md` (dev server defaults to Plus). */
 
+export function payTierTestPanelEnabled(): boolean {
+  return (
+    import.meta.env.DEV ||
+    String(import.meta.env.VITE_PAY_TIER_TEST_PANEL ?? "").toLowerCase() === "true"
+  );
+}
+
 function computeNwsApiBase(): string {
   const custom = (import.meta.env.VITE_NWS_API_BASE as string | undefined)?.trim();
   if (custom) return custom;

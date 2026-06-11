@@ -1,0 +1,45 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@capacitor/core", () => ({
+  Capacitor: {
+    isNativePlatform: () => true,
+  },
+}));
+
+import { PAY_TIER_OVERRIDE_LS_KEY, getPayTier } from "../payFeatures";
+import { NATIVE_PLUS_ENTITLEMENT_LS_KEY } from "../storeEntitlement";
+import { safeStorage } from "../../storage/safeStorage";
+
+describe("getPayTier", () => {
+  afterEach(() => {
+    safeStorage.remove(PAY_TIER_OVERRIDE_LS_KEY);
+    safeStorage.remove(NATIVE_PLUS_ENTITLEMENT_LS_KEY);
+    vi.unstubAllEnvs();
+  });
+
+  it("returns plus in Vite dev when no override", () => {
+    vi.stubEnv("DEV", true);
+    vi.stubEnv("VITE_PAY_TIER", "");
+    expect(getPayTier()).toBe("plus");
+  });
+
+  it("returns free in production build without entitlement", () => {
+    vi.stubEnv("DEV", false);
+    vi.stubEnv("VITE_PAY_TIER", "");
+    expect(getPayTier()).toBe("free");
+  });
+
+  it("honors native entitlement in production", () => {
+    vi.stubEnv("DEV", false);
+    vi.stubEnv("VITE_PAY_TIER", "");
+    safeStorage.set(NATIVE_PLUS_ENTITLEMENT_LS_KEY, "active");
+    expect(getPayTier()).toBe("plus");
+  });
+
+  it("honors local override for QA", () => {
+    vi.stubEnv("DEV", false);
+    safeStorage.set(PAY_TIER_OVERRIDE_LS_KEY, "free");
+    safeStorage.set(NATIVE_PLUS_ENTITLEMENT_LS_KEY, "active");
+    expect(getPayTier()).toBe("free");
+  });
+});
