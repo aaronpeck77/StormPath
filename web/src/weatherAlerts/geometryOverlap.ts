@@ -1,10 +1,12 @@
 import type { LngLat } from "../nav/types";
 import {
+  buildCumulativeDistances,
   pointAtAlongMeters,
   polylineLengthMeters,
-  slicePolylineBetweenAlong,
+  slicePolylineBetweenAlongForDisplay,
   subsamplePolylineVertexBudget,
 } from "../nav/routeGeometry";
+import { isLongTripRoute } from "../utils/dataSaver";
 import { nwsMapKindFromEvent, nwsMapKindHex, type NwsMapKind } from "./nwsMapKind";
 import type { NormalizedWeatherAlert, RouteOverlapResult } from "./types";
 
@@ -107,6 +109,11 @@ export function pointInAnyPolygonGeometry(
 /** Dense enough for long highway legs; capped so cross-country routes stay bounded. */
 const POLYLINE_INTERSECT_MIN_STEP_M = 850;
 const POLYLINE_INTERSECT_MAX_SAMPLES = 220;
+const POLYLINE_INTERSECT_MAX_SAMPLES_LONG = 120;
+
+function polylineIntersectMaxSamples(totalM: number): number {
+  return isLongTripRoute(totalM) ? POLYLINE_INTERSECT_MAX_SAMPLES_LONG : POLYLINE_INTERSECT_MAX_SAMPLES;
+}
 
 /**
  * True if any sample along the polyline lies inside the polygon (after bbox precheck).
@@ -129,7 +136,7 @@ export function polylineIntersectsPolygon(
   }
   const step = Math.max(
     POLYLINE_INTERSECT_MIN_STEP_M,
-    Math.ceil(total / POLYLINE_INTERSECT_MAX_SAMPLES)
+    Math.ceil(total / polylineIntersectMaxSamples(total))
   );
   for (let m = 0; m <= total; m += step) {
     const p = pointAtAlongMeters(route, Math.min(m, total - 0.01));
@@ -140,6 +147,13 @@ export function polylineIntersectsPolygon(
 }
 
 const OVERLAP_VERTEX_CAP = 160;
+const OVERLAP_LONG_ROUTE_M = 200_000;
+
+function routeForOverlapChecks(route: LngLat[]): LngLat[] {
+  const totalM = polylineLengthMeters(route);
+  if (route.length <= OVERLAP_VERTEX_CAP && totalM < OVERLAP_LONG_ROUTE_M) return route;
+  return subsamplePolylineVertexBudget(route, OVERLAP_VERTEX_CAP);
+}
 
 function geometryBbox(
   geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon
@@ -186,9 +200,10 @@ export function polylineNearPolygon(
   const [rw, rs, re, rn] = expandBbox(rb.west, rb.south, rb.east, rb.north, padDeg);
   if (!bboxIntersects({ west: rw, south: rs, east: re, north: rn }, pb)) return false;
   const total = polylineLengthMeters(route);
+  const maxSamples = polylineIntersectMaxSamples(total);
   const step = Math.max(
     POLYLINE_INTERSECT_MIN_STEP_M,
-    Math.ceil(total / POLYLINE_INTERSECT_MAX_SAMPLES)
+    Math.ceil(total / maxSamples)
   );
   for (let m = 0; m <= total; m += step) {
     const p = pointAtAlongMeters(route, Math.min(m, total - 0.01));
@@ -221,7 +236,9 @@ export function filterAlertsAffectingRoute(
   lateralBufferM = 45_000
 ): NormalizedWeatherAlert[] {
   if (!route.length || !alerts.length) return [];
-  const overlap = computeRouteOverlapWithAlerts(route, alerts);
+  const routeForCheck = routeForOverlapChecks(route);
+  const routeBox = polylineBbox(routeForCheck);
+  const overlap = computeRouteOverlapWithAlerts(routeForCheck, alerts);
   const ids = new Set(overlap.overlappingIds);
   const out: NormalizedWeatherAlert[] = [];
   for (const a of alerts) {
@@ -229,9 +246,24 @@ export function filterAlertsAffectingRoute(
       out.push(a);
       continue;
     }
+    if (!a.geometry) continue;
+    if (routeBox) {
+      const ab = geometryBbox(a.geometry);
+      if (ab) {
+        const padDeg = lateralBufferM / 111_000;
+        const [rw, rs, re, rn] = expandBbox(routeBox.west, routeBox.south, routeBox.east, routeBox.north, padDeg);
+        if (
+          !bboxIntersects(
+            { west: rw, south: rs, east: re, north: rn },
+            ab
+          )
+        ) {
+          continue;
+        }
+      }
+    }
     if (
-      a.geometry &&
-      polylineNearPolygon(route, a.geometry, nearRouteBufferM(a, lateralBufferM))
+      polylineNearPolygon(routeForCheck, a.geometry, nearRouteBufferM(a, lateralBufferM))
     ) {
       ids.add(a.id);
       out.push(a);
@@ -247,10 +279,7 @@ export function computeRouteOverlapWithAlerts(
   const overlappingIds: string[] = [];
   let overlapLngLat: LngLat | null = null;
 
-  const routeForCheck =
-    route.length > OVERLAP_VERTEX_CAP || polylineLengthMeters(route) > 750_000
-      ? subsamplePolylineVertexBudget(route, OVERLAP_VERTEX_CAP)
-      : route;
+  const routeForCheck = routeForOverlapChecks(route);
 
   for (const a of alerts) {
     if (!a.geometry) continue;
@@ -270,6 +299,13 @@ export function computeRouteOverlapWithAlerts(
 const STORM_ROUTE_SAMPLE_STEP_M = 110;
 /** Avoid thousands of samples on long routes (strip + map overlap lines). */
 const STORM_ROUTE_MAX_SAMPLES = 40;
+const STORM_ROUTE_MAX_SAMPLES_LONG = 28;
+/** Long trips with many corridor alerts — cap strip work (worst-first). */
+const ROUTE_STORM_STRIP_ALERT_CAP = 32;
+
+function stormRouteMaxSamples(totalM: number): number {
+  return isLongTripRoute(totalM) ? STORM_ROUTE_MAX_SAMPLES_LONG : STORM_ROUTE_MAX_SAMPLES;
+}
 
 const NWS_SEVERITY_RANK: Record<string, number> = {
   Unknown: 0,
@@ -352,7 +388,7 @@ function alongIntervalsInsidePolygon(
   const rb = polylineBbox(route);
   if (!pb || !rb || !bboxIntersects(rb, pb)) return [];
 
-  const step = Math.max(STORM_ROUTE_SAMPLE_STEP_M, Math.ceil(total / STORM_ROUTE_MAX_SAMPLES));
+  const step = Math.max(STORM_ROUTE_SAMPLE_STEP_M, Math.ceil(total / stormRouteMaxSamples(total)));
   const samples: number[] = [];
   for (let m = 0; m <= total; m += step) {
     samples.push(Math.min(m, total));
@@ -389,6 +425,7 @@ export function stormOverlapLineFeatures(
 ): GeoJSON.Feature<GeoJSON.LineString>[] {
   const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
   if (!collection?.features?.length || route.length < 2) return features;
+  const total = polylineLengthMeters(route);
 
   for (const f of collection.features) {
     const g = f.geometry;
@@ -397,7 +434,7 @@ export function stormOverlapLineFeatures(
     const props = (f.properties ?? {}) as { kind?: string; event?: string; severity?: string };
     const hex = nwsAlertLineHexFromMapFeatureProps(props);
     for (const [lo, hi] of alongIntervalsInsidePolygon(route, poly)) {
-      const coords = slicePolylineBetweenAlong(route, lo, hi);
+      const coords = slicePolylineBetweenAlongForDisplay(route, lo, hi, total);
       if (coords.length < 2) continue;
       features.push({
         type: "Feature",
@@ -418,7 +455,7 @@ export function stormAlongBandsForProgressStrip(
   const total = polylineLengthMeters(route);
   if (total < 15) return [];
 
-  const step = Math.max(STORM_ROUTE_SAMPLE_STEP_M, Math.ceil(total / STORM_ROUTE_MAX_SAMPLES));
+  const step = Math.max(STORM_ROUTE_SAMPLE_STEP_M, Math.ceil(total / stormRouteMaxSamples(total)));
   const samples: number[] = [];
   for (let m = 0; m <= total; m += step) {
     samples.push(Math.min(m, total));
@@ -485,14 +522,16 @@ export function polygonApproxCentroid(g: GeoJSON.Polygon | GeoJSON.MultiPolygon)
 }
 
 /** Return the along-route distance (meters) of the sample point closest to `lngLat`. */
-export function closestAlongMeters(route: LngLat[], lngLat: LngLat): number {
-  const total = polylineLengthMeters(route);
-  const step = Math.max(STORM_ROUTE_SAMPLE_STEP_M, Math.ceil(total / STORM_ROUTE_MAX_SAMPLES));
+export function closestAlongMeters(route: LngLat[], lngLat: LngLat, cumDist?: Float64Array): number {
+  const total = cumDist?.length
+    ? cumDist[cumDist.length - 1]!
+    : polylineLengthMeters(route);
+  const step = Math.max(STORM_ROUTE_SAMPLE_STEP_M, Math.ceil(total / stormRouteMaxSamples(total)));
   let bestDist = Infinity;
   let bestM = total / 2;
   for (let m = 0; m <= total; m += step) {
     const mm = Math.min(m, total);
-    const p = pointAtAlongMeters(route, mm);
+    const p = pointAtAlongMeters(route, mm, cumDist);
     const dlng = p[0] - lngLat[0], dlat = p[1] - lngLat[1];
     const d2 = dlng * dlng + dlat * dlat;
     if (d2 < bestDist) { bestDist = d2; bestM = mm; }
@@ -517,13 +556,16 @@ const FALLBACK_STRIP_HALF_M = 5_000;
  */
 export function alertRouteIntersectionMeters(
   route: LngLat[],
-  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon,
+  cumDist?: Float64Array
 ): { startM: number; endM: number } | null {
   if (route.length < 2) return null;
-  const total = polylineLengthMeters(route);
+  const total = cumDist?.length
+    ? cumDist[cumDist.length - 1]!
+    : polylineLengthMeters(route);
   if (total < 15) return null;
 
-  const step = Math.max(STORM_ROUTE_SAMPLE_STEP_M, Math.ceil(total / STORM_ROUTE_MAX_SAMPLES));
+  const step = Math.max(STORM_ROUTE_SAMPLE_STEP_M, Math.ceil(total / stormRouteMaxSamples(total)));
   const samples: number[] = [];
   for (let m = 0; m <= total; m += step) samples.push(Math.min(m, total));
   if (samples[samples.length - 1]! < total) samples.push(total);
@@ -532,7 +574,7 @@ export function alertRouteIntersectionMeters(
   let endM: number | null = null;
 
   for (const mm of samples) {
-    const p = pointAtAlongMeters(route, mm);
+    const p = pointAtAlongMeters(route, mm, cumDist);
     if (pointInAnyPolygonGeometry(p[0], p[1], geometry)) {
       if (startM === null) startM = mm;
       endM = mm;
@@ -547,7 +589,7 @@ export function alertRouteIntersectionMeters(
   // Fall back: place a strip centred on the route point closest to the polygon centroid.
   if (!polylineIntersectsPolygon(route, geometry)) return null;
   const centroid = polygonApproxCentroid(geometry);
-  const midM = closestAlongMeters(route, centroid as LngLat);
+  const midM = closestAlongMeters(route, centroid as LngLat, cumDist);
   return {
     startM: Math.max(0, midM - FALLBACK_STRIP_HALF_M),
     endM: Math.min(total, midM + FALLBACK_STRIP_HALF_M),
@@ -588,8 +630,14 @@ export function buildRouteStormStripBands(
 ): RouteStormStripBand[] {
   if (totalM <= 0 || !alerts.length || routeGeom.length < 2) return [];
 
+  const stripAlerts =
+    isLongTripRoute(totalM) && alerts.length > ROUTE_STORM_STRIP_ALERT_CAP
+      ? sortWeatherAlertsBySeverity(alerts).slice(0, ROUTE_STORM_STRIP_ALERT_CAP)
+      : alerts;
+  const cumDist = routeGeom.length > 100 ? buildCumulativeDistances(routeGeom) : undefined;
+
   const bands: RouteStormStripBand[] = [];
-  for (const alert of alerts) {
+  for (const alert of stripAlerts) {
     const nwsSeverity = alert.severity ?? "Moderate";
     const impactSeverity = impactSeverityFromNws(nwsSeverity);
 
@@ -598,14 +646,14 @@ export function buildRouteStormStripBands(
     let crossesRoute: boolean;
 
     if (alert.geometry) {
-      const intersection = alertRouteIntersectionMeters(routeGeom, alert.geometry);
+      const intersection = alertRouteIntersectionMeters(routeGeom, alert.geometry, cumDist);
       if (intersection) {
         startM = intersection.startM;
         endM = intersection.endM;
         crossesRoute = true;
       } else {
         const centroid = polygonApproxCentroid(alert.geometry);
-        const midM = closestAlongMeters(routeGeom, centroid as LngLat);
+        const midM = closestAlongMeters(routeGeom, centroid as LngLat, cumDist);
         startM = Math.max(0, midM - ROUTE_STORM_NEARBY_HALF_M);
         endM = Math.min(totalM, midM + ROUTE_STORM_NEARBY_HALF_M);
         crossesRoute = false;
@@ -653,12 +701,14 @@ export function routeStormStripBandsToProgressStrip(
 /** Colored route-line segments for map highlights (same spans as the progress strip storm bands). */
 export function stormStripBandsToLineFeatures(
   route: LngLat[],
-  bands: ReadonlyArray<{ startM: number; endM: number; lineHex: string }>
+  bands: ReadonlyArray<{ startM: number; endM: number; lineHex: string }>,
+  totalRouteM?: number
 ): GeoJSON.Feature<GeoJSON.LineString>[] {
   if (route.length < 2 || !bands.length) return [];
+  const total = totalRouteM ?? polylineLengthMeters(route);
   const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
   for (const b of bands) {
-    const coords = slicePolylineBetweenAlong(route, b.startM, b.endM);
+    const coords = slicePolylineBetweenAlongForDisplay(route, b.startM, b.endM, total);
     if (coords.length < 2) continue;
     features.push({
       type: "Feature",

@@ -7,6 +7,7 @@
 import { getWebEnv } from "../config/env";
 import type { LngLat } from "../nav/types";
 import { pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
+import { isLongTripRoute } from "../utils/dataSaver";
 import { pointAlongPolyline } from "../ui/geometryAlong";
 import { polylineBbox, bboxIntersects } from "./geometryOverlap";
 import { extractPolygonalGeometry } from "./nwsGeometry";
@@ -185,8 +186,10 @@ const NWS_POINT_FETCH_CONCURRENCY = 2;
 const NWS_POINT_INTER_BATCH_MS = 120;
 
 const NWS_PAD_DEG = 0.9;
+const NWS_PAD_DEG_LONG_TRIP = 0.55;
 /** Wider on the upwind (west) side: synoptic weather and storm motion often approach from the west. */
 const NWS_CORRIDOR_EXTRA_WEST_DEG = 0.5;
+const NWS_CORRIDOR_EXTRA_WEST_DEG_LONG_TRIP = 0.28;
 const NWS_UPWIND_SAMPLE_LNG_OFFSET_DEG = 0.45;
 
 /** North America bounds (matches mapRegion) — used only for NWS `point=` range checks and legacy browse. */
@@ -319,7 +322,18 @@ function sampleLngLatAlongRoute(route: LngLat[], maxPoints: number): LngLat[] {
 
 function routePointSampleCount(route: LngLat[]): number {
   const totalM = polylineLengthMeters(route);
+  if (isLongTripRoute(totalM)) return ROUTE_POINT_SAMPLE_COUNT;
   return totalM >= ROUTE_LONG_SAMPLE_THRESHOLD_M ? ROUTE_POINT_SAMPLE_COUNT_LONG : ROUTE_POINT_SAMPLE_COUNT;
+}
+
+function nwsCorridorPadDeg(route: LngLat[]): number {
+  return isLongTripRoute(polylineLengthMeters(route)) ? NWS_PAD_DEG_LONG_TRIP : NWS_PAD_DEG;
+}
+
+function nwsCorridorExtraWestPadDeg(route: LngLat[]): number {
+  return isLongTripRoute(polylineLengthMeters(route))
+    ? NWS_CORRIDOR_EXTRA_WEST_DEG_LONG_TRIP
+    : NWS_CORRIDOR_EXTRA_WEST_DEG;
 }
 
 function mergeFeatureListsDeduped(lists: NwsFeature[][]): NwsFeature[] {
@@ -832,10 +846,13 @@ export async function fetchNwsAlertsForRouteCorridor(
   const samples = mergeDedupePointSamples([upwind, along]);
   const effective = await fetchRouteCorridorRawFeatures(samples, userAgent, nationalFeatures);
   const routeOpts: BuildNwsResultOptions = {
-    corridorExtraWestPadDeg: NWS_CORRIDOR_EXTRA_WEST_DEG,
+    corridorExtraWestPadDeg: nwsCorridorExtraWestPadDeg(route),
+    maxUgcZoneAlerts: isLongTripRoute(polylineLengthMeters(route))
+      ? Math.min(NWS_BROWSE_MAX_UGC_ZONE_ALERTS, 72)
+      : undefined,
     ...buildOptions,
   };
-  return buildResultFromRawFeatures(effective, corridor, userAgent, NWS_PAD_DEG, routeOpts);
+  return buildResultFromRawFeatures(effective, corridor, userAgent, nwsCorridorPadDeg(route), routeOpts);
 }
 
 /**

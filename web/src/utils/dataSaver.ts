@@ -39,19 +39,35 @@ export function isDataSaverMode(userEnabled: boolean): boolean {
 }
 
 export const NWS_POLL_MS_NORMAL = 120_000;
+/** Long trips (100+ mi) — fewer national pulls without requiring Data saver. */
+export const NWS_POLL_MS_LONG_TRIP = 240_000;
 /** Planning / browse — fewer national pulls. */
 export const NWS_POLL_MS_DATA_SAVER = 300_000;
 /** While navigating with data saver. */
 export const NWS_POLL_MS_DATA_SAVER_DRIVE = 480_000;
+
+/** ~100 miles — cross-country routes trigger lean NWS + geometry budgets automatically. */
+export const LONG_TRIP_ROUTE_M = 160_934;
+
+export function isLongTripRoute(routeLengthM: number): boolean {
+  return routeLengthM >= LONG_TRIP_ROUTE_M;
+}
 
 export const TRAFFIC_POLL_MS_NORMAL = 90_000;
 export const TRAFFIC_POLL_MS_DATA_SAVER = 300_000;
 
 export const NAV_ROUTE_ALT_REFRESH_MS_NORMAL = 26_000;
 
-export function getNwsPollIntervalMs(dataSaver: boolean, navigationStarted: boolean): number {
-  if (!dataSaver) return NWS_POLL_MS_NORMAL;
-  return navigationStarted ? NWS_POLL_MS_DATA_SAVER_DRIVE : NWS_POLL_MS_DATA_SAVER;
+export function getNwsPollIntervalMs(
+  dataSaver: boolean,
+  navigationStarted: boolean,
+  routeLengthM = 0
+): number {
+  if (dataSaver) {
+    return navigationStarted ? NWS_POLL_MS_DATA_SAVER_DRIVE : NWS_POLL_MS_DATA_SAVER;
+  }
+  if (isLongTripRoute(routeLengthM)) return NWS_POLL_MS_LONG_TRIP;
+  return NWS_POLL_MS_NORMAL;
 }
 
 export function getTrafficPollIntervalMs(dataSaver: boolean): number {

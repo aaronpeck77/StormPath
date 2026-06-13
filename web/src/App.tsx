@@ -58,6 +58,7 @@ import {
   getNwsPollIntervalMs,
   getTrafficPollIntervalMs,
   isDataSaverMode,
+  isLongTripRoute,
 } from "./utils/dataSaver";
 import {
   formatCoordsAreaLabel,
@@ -2091,11 +2092,24 @@ export default function App() {
 
   const guidanceRouteId = lineFocusId || primaryRouteId;
   const guidanceRoute = plan.routes.find((r) => r.id === guidanceRouteId);
+
+  /** Longest planned leg — auto lean NWS fetch on cross-country trips (100+ mi). */
+  const maxPlanRouteLengthM = useMemo(() => {
+    let max = 0;
+    for (const r of plan.routes) {
+      if (r.geometry && r.geometry.length >= 2) {
+        max = Math.max(max, polylineLengthMeters(r.geometry));
+      }
+    }
+    return max;
+  }, [plan.routes]);
+
   const showDataSaverHint =
     isPlus &&
     !dataSaverMode &&
     !dataSaverHintDismissed &&
-    Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
+    Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2) &&
+    isLongTripRoute(maxPlanRouteLengthM);
   const turnSteps = guidanceRoute?.turnSteps ?? [];
   const guidanceSlice = snap.routes.find((r) => r.routeId === guidanceRouteId);
 
@@ -2110,12 +2124,14 @@ export default function App() {
     return undefined;
   }, [navigationStarted, nwsNavCorridorGeom, guidanceRoute?.geometry]);
 
-  /** Data saver: one corridor (+ shared national feed) instead of every A/B/C leg each poll. */
+  const leanNwsCorridorFetch = dataSaverMode || isLongTripRoute(maxPlanRouteLengthM);
+
+  /** Data saver / long trip: one corridor (+ shared national feed) instead of every A/B/C leg each poll. */
   const nwsRouteGeomsForFetch = useMemo((): LngLat[][] => {
     const all = plan.routes
       .map((r) => r.geometry)
       .filter((g): g is LngLat[] => Boolean(g && g.length >= 2));
-    if (!dataSaverMode) return all;
+    if (!leanNwsCorridorFetch) return all;
     if (navigationStarted) {
       const g = nwsNavCorridorGeom;
       return g && g.length >= 2 ? [g] : all.length ? [all[0]!] : [];
@@ -2123,14 +2139,14 @@ export default function App() {
     const focused = plan.routes.find((r) => r.id === lineFocusId)?.geometry;
     if (focused && focused.length >= 2) return [focused];
     return all.length ? [all[0]!] : [];
-  }, [dataSaverMode, navigationStarted, nwsNavCorridorGeom, plan.routes, lineFocusId]);
+  }, [leanNwsCorridorFetch, navigationStarted, nwsNavCorridorGeom, plan.routes, lineFocusId]);
 
   const nwsRouteGeomsForFetchRef = useRef(nwsRouteGeomsForFetch);
   nwsRouteGeomsForFetchRef.current = nwsRouteGeomsForFetch;
 
   const nwsPollIntervalMs = useMemo(
-    () => getNwsPollIntervalMs(dataSaverMode, navigationStarted),
-    [dataSaverMode, navigationStarted]
+    () => getNwsPollIntervalMs(dataSaverMode, navigationStarted, maxPlanRouteLengthM),
+    [dataSaverMode, navigationStarted, maxPlanRouteLengthM]
   );
 
   const liveTrafficNarrative = useMemo(() => {
@@ -2786,13 +2802,13 @@ export default function App() {
   }, [radarMosaicAlongRoute.samples]);
 
   /** NWS polygons + route bands: corridor alerts that touch or sit ahead of the active leg (~28 mi buffer). */
-  const nwsAlertsAffectingActiveRoute = useMemo(() => {
+  const alertsOnActiveRouteGeom = useMemo(() => {
     const g = nwsMapOverlapRouteGeom;
-    // No route → nothing is "on your route". Return empty so the advisory panel
-    // stays clear and map display falls through to its own independent fallback.
     if (!g?.length) return [] as typeof stormCorridorAlerts;
     return filterAlertsAffectingRoute(g, stormCorridorAlerts);
   }, [stormCorridorAlerts, nwsMapOverlapRouteGeom]);
+
+  const nwsAlertsAffectingActiveRoute = alertsOnActiveRouteGeom;
 
   /** Polygons containing GPS — surfaced even when the route line misses the geometry. */
   const stormNwsPuckInside = useMemo(() => {
@@ -2815,8 +2831,12 @@ export default function App() {
   /** Alerts used for route storm bands — basic tier only sees life-safety polygons. */
   const routeStormStripAlerts = useMemo(() => {
     const g = guidanceRoute?.geometry ?? nwsNavCorridorGeom;
-    if (!g?.length) return [];
-    const affecting = filterAlertsAffectingRoute(g, stormCorridorAlerts);
+    const affecting =
+      g?.length && g === nwsMapOverlapRouteGeom
+        ? alertsOnActiveRouteGeom
+        : g?.length
+          ? filterAlertsAffectingRoute(g, stormCorridorAlerts)
+          : [];
     const byId = new Map<string, (typeof stormCorridorAlerts)[number]>();
     for (const a of affecting) byId.set(a.id, a);
     for (const a of stormNwsPuckInside) byId.set(a.id, a);
@@ -2827,6 +2847,8 @@ export default function App() {
     advisoryPlusDetailOn,
     guidanceRoute?.geometry,
     nwsNavCorridorGeom,
+    nwsMapOverlapRouteGeom,
+    alertsOnActiveRouteGeom,
     stormCorridorAlerts,
     stormNwsPuckInside,
   ]);

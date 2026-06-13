@@ -278,10 +278,33 @@ export function closestPointOnPolylineWindowed(
 }
 
 /** Point on the polyline at `alongMeters` from the start (clamped to ends). */
-export function pointAtAlongMeters(geometry: LngLat[], alongMeters: number): LngLat {
+export function pointAtAlongMeters(
+  geometry: LngLat[],
+  alongMeters: number,
+  cumDist?: Float64Array
+): LngLat {
   if (geometry.length === 0) return FALLBACK_LNGLAT;
   if (geometry.length === 1) return geometry[0]!;
   const target = Math.max(0, alongMeters);
+  if (cumDist && cumDist.length === geometry.length) {
+    const total = cumDist[geometry.length - 1]!;
+    if (target >= total) return geometry[geometry.length - 1]!;
+    let lo = 0;
+    let hi = geometry.length - 2;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cumDist[mid + 1]! < target) lo = mid + 1;
+      else hi = mid;
+    }
+    const i = lo;
+    const A = geometry[i]!;
+    const B = geometry[i + 1]!;
+    const s0 = cumDist[i]!;
+    const segLen = cumDist[i + 1]! - s0;
+    const t = segLen > 0 ? (target - s0) / segLen : 0;
+    const u = Math.max(0, Math.min(1, t));
+    return [A[0]! + (B[0]! - A[0]!) * u, A[1]! + (B[1]! - A[1]!) * u];
+  }
   let cum = 0;
   for (let i = 0; i < geometry.length - 1; i++) {
     const A = geometry[i]!;
@@ -345,6 +368,30 @@ export function subsamplePolylineVertexBudget(route: LngLat[], maxVertices: numb
     deduped.push(p);
   }
   return deduped.length >= 2 ? deduped : route;
+}
+
+const DISPLAY_SLICE_VERTEX_BUDGET = 128;
+const DISPLAY_SLICE_LONG_ROUTE_M = 400_000;
+
+/**
+ * Map highlight slicing — subsamples very dense polylines so cross-country routes stay responsive.
+ * `startM` / `endM` are on the full route; geometry is simplified for display only.
+ */
+export function slicePolylineBetweenAlongForDisplay(
+  geometry: LngLat[],
+  startM: number,
+  endM: number,
+  totalRouteM?: number
+): LngLat[] {
+  const total = totalRouteM ?? polylineLengthMeters(geometry);
+  if (geometry.length <= 240 && total < DISPLAY_SLICE_LONG_ROUTE_M) {
+    return slicePolylineBetweenAlong(geometry, startM, endM);
+  }
+  const vis = subsamplePolylineVertexBudget(geometry, DISPLAY_SLICE_VERTEX_BUDGET);
+  const visLen = polylineLengthMeters(vis);
+  if (total <= 0 || visLen <= 0) return slicePolylineBetweenAlong(geometry, startM, endM);
+  const ratio = visLen / total;
+  return slicePolylineBetweenAlong(vis, startM * ratio, endM * ratio);
 }
 
 /**

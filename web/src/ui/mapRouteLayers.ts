@@ -4,7 +4,7 @@ import {
   ROUTE_CORRIDOR_HIGHLIGHT_HALF_SPAN_M,
   type RouteAlert,
 } from "../nav/routeAlerts";
-import { haversineMeters, slicePolylineBetweenAlong } from "../nav/routeGeometry";
+import { haversineMeters, polylineLengthMeters, slicePolylineBetweenAlongForDisplay } from "../nav/routeGeometry";
 import { sliceRouteAhead } from "../nav/routeRemaining";
 import type { LngLat, NavRoute } from "../nav/types";
 import {
@@ -69,14 +69,19 @@ export function applyRouteConditionHighlights(
   if (map.getSource(ROUTE_COND_LEGACY_SRC)) map.removeSource(ROUTE_COND_LEGACY_SRC);
 
   const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+  const routeTotalM =
+    routeGeometry?.length && routeGeometry.length >= 2
+      ? polylineLengthMeters(routeGeometry)
+      : 0;
 
   if (routeGeometry?.length && alerts?.length) {
     const half = ROUTE_CORRIDOR_HIGHLIGHT_HALF_SPAN_M;
     for (const a of alerts) {
-      const coords = slicePolylineBetweenAlong(
+      const coords = slicePolylineBetweenAlongForDisplay(
         routeGeometry,
         a.alongMeters - half,
-        a.alongMeters + half
+        a.alongMeters + half,
+        routeTotalM
       );
       if (coords.length < 2) continue;
       features.push({
@@ -89,9 +94,12 @@ export function applyRouteConditionHighlights(
 
   if (routeGeometry?.length) {
     if (stormAlongRouteBands?.length) {
-      features.push(...stormStripBandsToLineFeatures(routeGeometry, stormAlongRouteBands));
+      features.push(
+        ...stormStripBandsToLineFeatures(routeGeometry, stormAlongRouteBands, routeTotalM)
+      );
+    } else {
+      features.push(...stormOverlapLineFeatures(routeGeometry, stormGeoJson ?? null));
     }
-    features.push(...stormOverlapLineFeatures(routeGeometry, stormGeoJson ?? null));
   }
 
   const data: GeoJSON.FeatureCollection = { type: "FeatureCollection", features };
