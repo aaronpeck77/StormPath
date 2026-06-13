@@ -36,6 +36,8 @@ export type RouteAheadStormBand = {
   expiresIso: string | null;
   alertId: string | null;
   crossesRoute?: boolean;
+  /** Distant ahead — timeline only until you get closer. */
+  coarsePreview?: boolean;
 };
 
 export type BuildRouteAheadTimelineOpts = {
@@ -126,6 +128,7 @@ export function buildRouteAheadTimeline(opts: BuildRouteAheadTimelineOpts): Time
       detailLine: nwsDetail || null,
       expiresIso: band.expiresIso,
       crossesRoute: band.crossesRoute !== false,
+      coarsePreview: band.coarsePreview,
     });
   }
 
@@ -142,9 +145,13 @@ export function buildRouteAheadTimeline(opts: BuildRouteAheadTimelineOpts): Time
 }
 
 /** Colored spans for the progress strip and map route halo. */
-export function timelineToProgressStripBands(items: TimelineItem[]): StormProgressStripBand[] {
+export function timelineToProgressStripBands(
+  items: TimelineItem[],
+  opts?: { omitCoarsePreview?: boolean }
+): StormProgressStripBand[] {
   const out: StormProgressStripBand[] = [];
   for (const item of items) {
+    if (opts?.omitCoarsePreview && item.coarsePreview) continue;
     const span = item.endMeters - item.startMeters;
     if (span < 8 && item.track !== "nws") continue;
     out.push({

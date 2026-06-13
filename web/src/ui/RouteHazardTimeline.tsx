@@ -29,6 +29,8 @@ export type TimelineItem = {
    * is nearby rather than directly in the path.
    */
   crossesRoute?: boolean;
+  /** Distant ahead weather — shown on timeline/advisory, skipped for map polygon work. */
+  coarsePreview?: boolean;
   onClick?: () => void;
 };
 
@@ -294,7 +296,7 @@ export function RouteHazardTimeline({
                   {entries.map(({ item, vis }) => (
                     <div
                       key={item.id}
-                      className={`rhtz__band rhtz__band--${item.severity}${vis.passed ? " rhtz__band--passed" : ""}${item.crossesRoute === false ? " rhtz__band--nearby" : ""}`}
+                      className={`rhtz__band rhtz__band--${item.severity}${vis.passed ? " rhtz__band--passed" : ""}${item.crossesRoute === false ? " rhtz__band--nearby" : ""}${item.coarsePreview ? " rhtz__band--preview" : ""}`}
                       style={{
                         left: `${vis.sPct}%`,
                         width: `${vis.wPct}%`,

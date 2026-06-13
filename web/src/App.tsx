@@ -163,6 +163,9 @@ import {
   ARRIVAL_BG_CLEAR_MIN_MS,
   DRIVE_AHEAD_WINDOW_M,
   RADAR_SOFT_THRESHOLD,
+  WEATHER_DETAIL_AHEAD_M,
+  WEATHER_DETAIL_BEHIND_M,
+  WEATHER_PLANNING_DETAIL_AHEAD_M,
 } from "./nav/constants";
 import { radarDisplayIntensity } from "./nav/radarReflectivityScale";
 import {
@@ -2853,19 +2856,36 @@ export default function App() {
     stormNwsPuckInside,
   ]);
 
+  /** Quantize drive position so distant→precise band upgrades don't run every GPS tick. */
+  const weatherDetailAlongM = useMemo(() => {
+    if (!navigationStarted) return advisoryUserAlongM;
+    const m = userAlongGuidanceM;
+    if (!Number.isFinite(m) || m < 0) return 0;
+    const stepM = 8_000;
+    return Math.floor(m / stepM) * stepM;
+  }, [navigationStarted, userAlongGuidanceM, advisoryUserAlongM]);
+
   /**
-   * NWS spans along the active route — same per-alert intersection logic as the advisory timeline.
+   * NWS spans along the active route — precise geometry near you, coarse preview farther out.
    * Feeds the progress strip, map route highlights, and unified route impacts.
    */
   const routeStormStripBands = useMemo(() => {
     const routeGeom = guidanceRoute?.geometry ?? nwsNavCorridorGeom;
     if (!routeGeom?.length || guidanceRouteLengthM <= 0) return [];
-    return buildRouteStormStripBands(routeGeom, guidanceRouteLengthM, routeStormStripAlerts);
+    return buildRouteStormStripBands(routeGeom, guidanceRouteLengthM, routeStormStripAlerts, {
+      userAlongM: weatherDetailAlongM,
+      navigationActive: navigationStarted,
+      detailAheadM: WEATHER_DETAIL_AHEAD_M,
+      detailBehindM: WEATHER_DETAIL_BEHIND_M,
+      planningDetailAheadM: WEATHER_PLANNING_DETAIL_AHEAD_M,
+    });
   }, [
     guidanceRoute?.geometry,
     nwsNavCorridorGeom,
     guidanceRouteLengthM,
     routeStormStripAlerts,
+    navigationStarted,
+    weatherDetailAlongM,
   ]);
 
   /** Weather impacts (NWS / heavy radar) on the strip + map — Plus only. */
@@ -3016,6 +3036,7 @@ export default function App() {
         expiresIso: b.expiresIso,
         alertId: b.alertId,
         crossesRoute: b.crossesRoute,
+        coarsePreview: b.detailTier === "coarse",
       })),
     [routeStormStripBands]
   );
@@ -3055,6 +3076,12 @@ export default function App() {
 
   const routeAheadProgressBands = useMemo(
     () => timelineToProgressStripBands(routeAheadTimeline),
+    [routeAheadTimeline]
+  );
+
+  /** Map halo — only weather you're approaching soon; distant items stay on timeline/advisory. */
+  const routeAheadMapBands = useMemo(
+    () => timelineToProgressStripBands(routeAheadTimeline, { omitCoarsePreview: true }),
     [routeAheadTimeline]
   );
 
@@ -5409,7 +5436,7 @@ export default function App() {
             onRadarFrameUtcSec={setRadarFrameUtcSec}
             alongRouteAlerts={mapAlongRouteAlerts}
             corridorRouteGeometry={guidanceRoute?.geometry}
-            stormAlongRouteBands={routeAheadProgressBands}
+            stormAlongRouteBands={routeAheadMapBands}
             recordingGeometry={recordingActive ? recordingPathPreview : undefined}
             weatherAlertGeoJson={nwsAlertGeoJsonForMap}
             stormBarVisible={showStormAdvisoryChrome}

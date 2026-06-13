@@ -173,6 +173,19 @@
   opacity: 0.55;
 }
 
+/** Distant ahead weather — timeline marker until you enter the detail window. */
+.rhtz__band--preview {
+  opacity: 0.48;
+  border: 1px dashed rgba(255, 255, 255, 0.35);
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 6px,
+    rgba(255, 255, 255, 0.08) 6px,
+    rgba(255, 255, 255, 0.08) 10px
+  ) !important;
+}
+
 /* Inline label ? only shown when band is wide enough */
 .rhtz__band-label {
   padding: 0 5px;

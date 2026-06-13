@@ -78,6 +78,18 @@ export const RADAR_VERY_HEAVY_THRESHOLD = 0.93;
 /** Drive-ahead banner: scan window ahead of the user (meters). */
 export const DRIVE_AHEAD_WINDOW_M = 5 * METERS_PER_MILE;
 
+/**
+ * Full polygon intersection + map highlights for weather within this window ahead of the user.
+ * Distant route weather still appears on the timeline via coarse placement.
+ */
+export const WEATHER_DETAIL_AHEAD_M = 80 * METERS_PER_MILE;
+
+/** While navigating, keep a short behind window for bands you're leaving. */
+export const WEATHER_DETAIL_BEHIND_M = 15 * METERS_PER_MILE;
+
+/** While planning, precise band geometry only for weather near the departure end of the trip. */
+export const WEATHER_PLANNING_DETAIL_AHEAD_M = 120 * METERS_PER_MILE;
+
 /** Max alert cards on the progress strip. */
 export const MAX_STRIP_ALERTS = 10;
 

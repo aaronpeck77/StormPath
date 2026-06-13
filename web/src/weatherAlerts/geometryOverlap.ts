@@ -300,8 +300,6 @@ const STORM_ROUTE_SAMPLE_STEP_M = 110;
 /** Avoid thousands of samples on long routes (strip + map overlap lines). */
 const STORM_ROUTE_MAX_SAMPLES = 40;
 const STORM_ROUTE_MAX_SAMPLES_LONG = 28;
-/** Long trips with many corridor alerts — cap strip work (worst-first). */
-const ROUTE_STORM_STRIP_ALERT_CAP = 32;
 
 function stormRouteMaxSamples(totalM: number): number {
   return isLongTripRoute(totalM) ? STORM_ROUTE_MAX_SAMPLES_LONG : STORM_ROUTE_MAX_SAMPLES;
@@ -607,6 +605,8 @@ export type RouteStormStripBand = {
   expiresIso: string | null;
   alertId: string | null;
   crossesRoute: boolean;
+  /** Precise polyline intersection vs cheap centroid preview for distant ahead weather. */
+  detailTier: "precise" | "coarse";
 };
 
 function impactSeverityFromNws(rawSev: string): RouteStormStripBand["impactSeverity"] {
@@ -617,6 +617,67 @@ function impactSeverityFromNws(rawSev: string): RouteStormStripBand["impactSever
 }
 
 const ROUTE_STORM_NEARBY_HALF_M = 8_000;
+/** Narrow marker for distant weather preview on the timeline (cheap placement). */
+const COARSE_WEATHER_PREVIEW_HALF_M = 4_000;
+
+export type BuildRouteStormStripBandsOpts = {
+  userAlongM?: number;
+  navigationActive?: boolean;
+  detailAheadM?: number;
+  detailBehindM?: number;
+  planningDetailAheadM?: number;
+};
+
+function bandIntersectsDetailWindow(
+  startM: number,
+  endM: number,
+  userAlongM: number,
+  aheadM: number,
+  behindM: number
+): boolean {
+  const winLo = Math.max(0, userAlongM - behindM);
+  const winHi = userAlongM + aheadM;
+  return endM >= winLo - 1 && startM <= winHi + 1;
+}
+
+function coarseAlertBandOnRoute(
+  alert: NormalizedWeatherAlert,
+  routeGeom: LngLat[],
+  totalM: number,
+  cumDist?: Float64Array
+): { startM: number; endM: number; crossesRoute: boolean } {
+  if (!alert.geometry) {
+    return { startM: 0, endM: totalM, crossesRoute: false };
+  }
+  const routeForCheck = routeForOverlapChecks(routeGeom);
+  const centroid = polygonApproxCentroid(alert.geometry);
+  const midM = closestAlongMeters(routeGeom, centroid as LngLat, cumDist);
+  const crossesRoute = polylineIntersectsPolygon(routeForCheck, alert.geometry);
+  return {
+    startM: Math.max(0, midM - COARSE_WEATHER_PREVIEW_HALF_M),
+    endM: Math.min(totalM, midM + COARSE_WEATHER_PREVIEW_HALF_M),
+    crossesRoute,
+  };
+}
+
+function needsPreciseWeatherBand(
+  coarse: { startM: number; endM: number },
+  opts: BuildRouteStormStripBandsOpts
+): boolean {
+  const aheadM = opts.detailAheadM ?? 0;
+  const behindM = opts.detailBehindM ?? 0;
+  const planningAheadM = opts.planningDetailAheadM ?? 0;
+  if (opts.navigationActive) {
+    return bandIntersectsDetailWindow(
+      coarse.startM,
+      coarse.endM,
+      opts.userAlongM ?? 0,
+      aheadM,
+      behindM
+    );
+  }
+  return coarse.startM <= planningAheadM;
+}
 
 /**
  * Project NWS alerts onto the active route polyline. Uses {@link alertRouteIntersectionMeters}
@@ -626,42 +687,52 @@ const ROUTE_STORM_NEARBY_HALF_M = 8_000;
 export function buildRouteStormStripBands(
   routeGeom: LngLat[],
   totalM: number,
-  alerts: NormalizedWeatherAlert[]
+  alerts: NormalizedWeatherAlert[],
+  opts?: BuildRouteStormStripBandsOpts
 ): RouteStormStripBand[] {
   if (totalM <= 0 || !alerts.length || routeGeom.length < 2) return [];
 
-  const stripAlerts =
-    isLongTripRoute(totalM) && alerts.length > ROUTE_STORM_STRIP_ALERT_CAP
-      ? sortWeatherAlertsBySeverity(alerts).slice(0, ROUTE_STORM_STRIP_ALERT_CAP)
-      : alerts;
   const cumDist = routeGeom.length > 100 ? buildCumulativeDistances(routeGeom) : undefined;
+  const sortedAlerts = sortWeatherAlertsBySeverity(alerts);
 
   const bands: RouteStormStripBand[] = [];
-  for (const alert of stripAlerts) {
+  for (const alert of sortedAlerts) {
     const nwsSeverity = alert.severity ?? "Moderate";
     const impactSeverity = impactSeverityFromNws(nwsSeverity);
 
     let startM: number;
     let endM: number;
     let crossesRoute: boolean;
+    let detailTier: RouteStormStripBand["detailTier"] = "coarse";
 
-    if (alert.geometry) {
+    const coarse = coarseAlertBandOnRoute(alert, routeGeom, totalM, cumDist);
+    const usePrecise = opts ? needsPreciseWeatherBand(coarse, opts) : true;
+
+    if (alert.geometry && usePrecise) {
       const intersection = alertRouteIntersectionMeters(routeGeom, alert.geometry, cumDist);
       if (intersection) {
         startM = intersection.startM;
         endM = intersection.endM;
         crossesRoute = true;
+        detailTier = "precise";
       } else {
         const centroid = polygonApproxCentroid(alert.geometry);
         const midM = closestAlongMeters(routeGeom, centroid as LngLat, cumDist);
         startM = Math.max(0, midM - ROUTE_STORM_NEARBY_HALF_M);
         endM = Math.min(totalM, midM + ROUTE_STORM_NEARBY_HALF_M);
         crossesRoute = false;
+        detailTier = "precise";
       }
+    } else if (alert.geometry) {
+      startM = coarse.startM;
+      endM = coarse.endM;
+      crossesRoute = coarse.crossesRoute;
+      detailTier = "coarse";
     } else {
       startM = 0;
       endM = totalM;
       crossesRoute = false;
+      detailTier = usePrecise ? "precise" : "coarse";
     }
 
     bands.push({
@@ -674,6 +745,7 @@ export function buildRouteStormStripBands(
       expiresIso: alert.ends ?? null,
       alertId: alert.id ?? null,
       crossesRoute,
+      detailTier,
     });
   }
 
