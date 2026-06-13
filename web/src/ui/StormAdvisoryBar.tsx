@@ -249,7 +249,7 @@ export type StormAdvisoryBarProps = SharedProps & {
     onOpenSettings: () => void;
     onDismiss: () => void;
   } | null;
-  /** Basic: waiting on OpenWeather for the status-panel forecast. */
+  /** Basic: waiting on OpenWeather for the status-panel forecast. Plus: waiting on TIO/OpenWeather. */
   basicForecastLoading?: boolean;
   /** Basic: open About → Subscription from the Plus upsell card. */
   onOpenSubscription?: () => void;
@@ -619,7 +619,7 @@ export function StormAdvisoryBar({
   }, [tickerMessages.length]);
 
   const defaultPreviewText = basicNavAdvisoryMode
-    ? "Status — tap for local forecast and offers."
+    ? "Status — tap for tips and offers."
     : advisoryTier === "basic"
       ? ownsPlus
         ? "No urgent warnings. Tap for details."
@@ -628,7 +628,7 @@ export function StormAdvisoryBar({
   const activeTicker = tickerMessages[tickerIdx];
 
   const localForecastBanner = useMemo(() => {
-    if (!forecastAreaLabel) return null;
+    if (basicNavAdvisoryMode || !forecastAreaLabel) return null;
     return buildLocalForecastBannerItem({
       areaLabel: forecastAreaLabel,
       nowcastLine,
@@ -663,24 +663,6 @@ export function StormAdvisoryBar({
           })
         );
       }
-      if (localForecastBanner) {
-        trip.push(
-          previewItem({
-            ...localForecastBanner,
-            tone: localForecastBannerTone(localForecastBanner, localForecastNwsAlerts),
-          })
-        );
-      } else if (nowcastLine) {
-        trip.push(
-          previewItem({
-            badge: "Now",
-            raw: bannerMsg(nowcastLine),
-            tone: conditionsLinePreviewTone(nowcastLine),
-          })
-        );
-      } else {
-        promo.push(previewItem({ badge: "App", raw: SITEBIBLE_AD_BAR }));
-      }
       if (hasGuidanceRoute) {
         trip.push(previewItem({ badge: "Nav", raw: bannerMsg("Route set — tap Go when ready.") }));
       }
@@ -689,7 +671,6 @@ export function StormAdvisoryBar({
       }
       for (const p of promoLines) {
         if (isAdvisoryPromoNoise(p)) continue;
-        if (!localForecastBanner && !nowcastLine && p.id === "sitebible") continue;
         promo.push(previewItem({ badge: "Info", raw: bannerMsg(displayText(p.text)) }));
       }
 
@@ -1194,23 +1175,24 @@ export function StormAdvisoryBar({
 
       <div className="storm-advisory-bar__sections-scroll">
         {forecastAreaLabel &&
-        (basicNavAdvisoryMode ||
-          currentNowcast ||
+        !basicNavAdvisoryMode &&
+        (currentNowcast ||
           minutePrecipForecast ||
           hourlyForecast?.hours.length ||
           localForecastNwsAlerts.length > 0 ||
-          nwsForecastLoading) ? (
+          nwsForecastLoading ||
+          basicForecastLoading) ? (
           <AdvisoryLocalForecast
             areaLabel={forecastAreaLabel}
             nowcast={currentNowcast}
-            minutePrecip={basicNavAdvisoryMode ? null : minutePrecipForecast}
+            minutePrecip={minutePrecipForecast}
             hourlyForecast={hourlyForecast}
             locationAlerts={localForecastNwsAlerts}
-            nwsLoading={basicNavAdvisoryMode ? false : nwsForecastLoading}
-            nwsError={basicNavAdvisoryMode ? null : nwsForecastError}
+            nwsLoading={nwsForecastLoading}
+            nwsError={nwsForecastError}
             onLocationAlertClick={onNwsAlertClick}
-            variant={basicNavAdvisoryMode ? "basic" : "full"}
-            forecastLoading={basicNavAdvisoryMode && basicForecastLoading}
+            variant="full"
+            forecastLoading={basicForecastLoading}
           />
         ) : null}
 

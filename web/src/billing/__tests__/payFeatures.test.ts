@@ -6,7 +6,7 @@ vi.mock("@capacitor/core", () => ({
   },
 }));
 
-import { PAY_TIER_OVERRIDE_LS_KEY, getPayTier } from "../payFeatures";
+import { PAY_TIER_OVERRIDE_LS_KEY, getPayTier, hasLocalForecast } from "../payFeatures";
 import { NATIVE_PLUS_ENTITLEMENT_LS_KEY } from "../storeEntitlement";
 import { safeStorage } from "../../storage/safeStorage";
 
@@ -41,5 +41,21 @@ describe("getPayTier", () => {
     safeStorage.set(PAY_TIER_OVERRIDE_LS_KEY, "free");
     safeStorage.set(NATIVE_PLUS_ENTITLEMENT_LS_KEY, "active");
     expect(getPayTier()).toBe("free");
+  });
+});
+
+describe("hasLocalForecast", () => {
+  afterEach(() => {
+    safeStorage.remove(PAY_TIER_OVERRIDE_LS_KEY);
+    safeStorage.remove(NATIVE_PLUS_ENTITLEMENT_LS_KEY);
+    vi.unstubAllEnvs();
+  });
+
+  it("is Plus-only", () => {
+    vi.stubEnv("DEV", false);
+    vi.stubEnv("VITE_PAY_TIER", "");
+    expect(hasLocalForecast()).toBe(false);
+    safeStorage.set(PAY_TIER_OVERRIDE_LS_KEY, "plus");
+    expect(hasLocalForecast()).toBe(true);
   });
 });

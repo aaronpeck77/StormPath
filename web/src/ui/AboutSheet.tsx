@@ -327,13 +327,14 @@ export function AboutSheet({
               <ul className="about-sheet__bullets" aria-label="Plus features">
                 <li>
                   <strong>NWS</strong> — full storm map, every active warning, route overlap, and hazard details (Plus
-                  only; Basic is navigation, radar, local forecast in Status, and limited saved places/routes)
+                  only; Basic is navigation, radar, and limited saved places/routes)
                 </li>
                 <li>
                   <strong>Traffic</strong> overlay + bypass tools (Mapbox)
                 </li>
                 <li>
-                  <strong>Weather</strong> hints on route (OpenWeather) plus minute precip (Tomorrow.io)
+                  <strong>Weather</strong> — local forecast at your position, route hints (OpenWeather), and minute
+                  precip (Tomorrow.io)
                 </li>
                 <li>
                   <strong>Auto reroute</strong> when far off-line (optional)
@@ -375,8 +376,8 @@ export function AboutSheet({
                   </>
                 ) : (
                   <>
-                    <strong>Status strip</strong> — local forecast and offers on Basic. NWS hazards and map polygons are{" "}
-                    <em>Plus</em> only.
+                    <strong>Status strip</strong> — tips and offers on Basic. Local forecast, NWS hazards, and map
+                    polygons are <em>Plus</em> only.
                   </>
                 )}
               </span>

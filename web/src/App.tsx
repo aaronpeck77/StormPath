@@ -1504,6 +1504,10 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
+    if (!isPlus) {
+      setCurrentNowcast(null);
+      return;
+    }
     if (!isOnline) return;
     if (!env.openWeatherApiKey) return;
     if (isOpenWeatherRateLimited()) return;
@@ -1549,13 +1553,14 @@ export default function App() {
     })();
     /* userLngLat is intentionally a dependency so re-fetches happen on big moves; the throttle
      * inside the effect prevents minute-by-minute storms while you sit still or drive locally. */
-  }, [userLngLat, isOnline, env.openWeatherApiKey]);
+  }, [isPlus, userLngLat, isOnline, env.openWeatherApiKey]);
 
   /* Slow background refresh — every 10 min — even if userLngLat hasn't changed. Picks up
    * temperature drift, wind shifts, light precip. Note: deps are intentionally stable
    * (no userLngLat) so the timer survives GPS ticks and actually reaches its 10‑min mark.
    * Position is read from userLngLatRef when the interval fires. */
   useEffect(() => {
+    if (!isPlus) return;
     if (!isOnline) return;
     if (!env.openWeatherApiKey) return;
     const id = window.setInterval(() => {
@@ -1581,7 +1586,7 @@ export default function App() {
       })();
     }, 10 * 60 * 1000);
     return () => window.clearInterval(id);
-  }, [isOnline, env.openWeatherApiKey]);
+  }, [isPlus, isOnline, env.openWeatherApiKey]);
 
   const trafficRefreshRef = useRef(0);
   const [trafficRefreshKey, setTrafficRefreshKey] = useState(0);
@@ -2729,19 +2734,11 @@ export default function App() {
   const tioWeatherUiOpen = stormBarExpanded;
   const tioBaseEnabled =
     isPlus && Boolean(tioApiKey) && Boolean(effectiveUserLngLat) && appForeground;
-  /** At-your-location minute precip + hourly card — always while planning; when driving, only if advisory expanded. */
+  /** At-your-location minute precip + hourly — always on (data saver waits for expanded bar). */
   const tioPointFetchEnabled =
-    tioBaseEnabled &&
-    (dataSaverMode ? tioWeatherUiOpen : tioWeatherUiOpen || !navigationStarted);
+    tioBaseEnabled && (dataSaverMode ? tioWeatherUiOpen : true);
   /** OpenWeather hourly is fallback only — skip when Tomorrow.io covers the point card. */
   const openWeatherHourlyEnabled = tioPointFetchEnabled && !tioApiKey;
-  /** Basic status panel: local now + short OpenWeather outlook when the bar is expanded. */
-  const basicStatusForecastEnabled =
-    !isPlus &&
-    appForeground &&
-    isOnline &&
-    Boolean(effectiveUserLngLat) &&
-    stormBarExpanded;
   /** Corridor hourly along the active leg — route shape only (no GPS required). */
   const tioRouteCorridorEnabled =
     isPlus &&
@@ -2761,11 +2758,11 @@ export default function App() {
     navigationStarted
   );
   const localHourlyForecast = useLocalHourlyForecast(
-    isPlus ? tioApiKey : "",
+    tioApiKey,
     env.openWeatherApiKey,
     effectiveUserLngLat ?? null,
-    isPlus ? tioPointFetchEnabled : basicStatusForecastEnabled,
-    isPlus ? openWeatherHourlyEnabled : Boolean(env.openWeatherApiKey)
+    tioPointFetchEnabled,
+    openWeatherHourlyEnabled
   );
   const tioRouteForecast = useTomorrowRouteForecast(
     tioApiKey,
@@ -2780,23 +2777,24 @@ export default function App() {
     return null;
   }, [currentNowcast, tioMinutePrecip?.now]);
 
-  const basicStatusForecastLoading = useMemo(
-    () =>
-      !isPlus &&
-      stormBarExpanded &&
-      Boolean(effectiveUserLngLat) &&
-      Boolean(env.openWeatherApiKey) &&
-      !currentNowcast &&
-      !(localHourlyForecast?.hours.length ?? 0),
-    [
-      isPlus,
-      stormBarExpanded,
-      effectiveUserLngLat,
-      env.openWeatherApiKey,
-      currentNowcast,
-      localHourlyForecast?.hours.length,
-    ]
-  );
+  const localForecastPanelLoading = useMemo(() => {
+    if (!isPlus || !stormBarExpanded || !effectiveUserLngLat) return false;
+    const hasData =
+      Boolean(currentNowcast) ||
+      Boolean(tioMinutePrecip) ||
+      (localHourlyForecast?.hours.length ?? 0) > 0;
+    if (hasData) return false;
+    return Boolean(tioApiKey) || Boolean(env.openWeatherApiKey);
+  }, [
+    isPlus,
+    stormBarExpanded,
+    effectiveUserLngLat,
+    currentNowcast,
+    tioMinutePrecip,
+    localHourlyForecast?.hours.length,
+    tioApiKey,
+    env.openWeatherApiKey,
+  ]);
 
   const radarMosaicMaxIntensity = useMemo(() => {
     const s = radarMosaicAlongRoute.samples;
@@ -5533,11 +5531,11 @@ export default function App() {
                       isOnline={isOnline}
                       basicNavAdvisoryMode={!isPlus}
                       navigationStarted={navigationStarted}
-                      nowcastLine={advisoryNowcastLine}
-                      currentNowcast={currentNowcast}
-                      forecastAreaLabel={forecastAreaLabel}
-                      minutePrecipForecast={tioMinutePrecip}
-                      hourlyForecast={localHourlyForecast}
+                      nowcastLine={isPlus ? advisoryNowcastLine : null}
+                      currentNowcast={isPlus ? currentNowcast : null}
+                      forecastAreaLabel={isPlus ? forecastAreaLabel : null}
+                      minutePrecipForecast={isPlus ? tioMinutePrecip : null}
+                      hourlyForecast={isPlus ? localHourlyForecast : null}
                       localForecastNwsAlerts={isPlus ? localForecastNwsAlerts : []}
                       nwsForecastLoading={
                         isPlus &&
@@ -5546,7 +5544,7 @@ export default function App() {
                         !(stormMapGeoJson?.features?.length)
                       }
                       nwsForecastError={isPlus ? stormError : null}
-                      basicForecastLoading={basicStatusForecastLoading}
+                      basicForecastLoading={isPlus ? localForecastPanelLoading : false}
                       onOpenSubscription={() => setAboutOpen(true)}
                       basicStatusPanelPromos={basicStatusPanelPromos}
                       dataSaverHint={

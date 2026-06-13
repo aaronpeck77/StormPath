@@ -99,7 +99,7 @@ export function AdvisoryLocalForecast({
 
   if (isBasic) {
     if (!hasNow && !hasDay && !forecastLoading) return null;
-  } else if (!hasNow && !hasHour && !hasDay && !showNwsBlock) {
+  } else if (!hasNow && !hasHour && !hasDay && !showNwsBlock && !forecastLoading) {
     return null;
   }
 
@@ -130,8 +130,10 @@ export function AdvisoryLocalForecast({
         {metaUpdated ? <span className="adv-forecast__updated">{metaUpdated}</span> : null}
       </header>
 
-      {forecastLoading && !hasNow && !hasDay ? (
-        <p className="adv-forecast__nws-status">Loading local conditions…</p>
+      {forecastLoading && !hasNow && !hasHour && !hasDay ? (
+        <p className="adv-forecast__nws-status">
+          {isBasic ? "Loading local conditions…" : "Loading local forecast…"}
+        </p>
       ) : null}
 
       {showNwsBlock ? (
