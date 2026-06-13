@@ -2115,14 +2115,14 @@ export default function App() {
     const all = plan.routes
       .map((r) => r.geometry)
       .filter((g): g is LngLat[] => Boolean(g && g.length >= 2));
-    if (!dataSaverMode) return all;
-    if (navigationStarted) {
-      const g = nwsNavCorridorGeom;
-      return g && g.length >= 2 ? [g] : all.length ? [all[0]!] : [];
+    if (!navigationStarted) {
+      const focused = plan.routes.find((r) => r.id === lineFocusId)?.geometry;
+      if (focused && focused.length >= 2) return [focused];
+      return all.length ? [all[0]!] : [];
     }
-    const focused = plan.routes.find((r) => r.id === lineFocusId)?.geometry;
-    if (focused && focused.length >= 2) return [focused];
-    return all.length ? [all[0]!] : [];
+    if (!dataSaverMode) return all;
+    const g = nwsNavCorridorGeom;
+    return g && g.length >= 2 ? [g] : all.length ? [all[0]!] : [];
   }, [dataSaverMode, navigationStarted, nwsNavCorridorGeom, plan.routes, lineFocusId]);
 
   const nwsRouteGeomsForFetchRef = useRef(nwsRouteGeomsForFetch);
@@ -2599,6 +2599,10 @@ export default function App() {
       lastOwOverlayAtRef.current = 0;
       return;
     }
+    /** Defer corridor weather sampling until Go or expanded advisory — keeps planning responsive. */
+    if (hasPlannedRoute && !navigationStarted && !stormBarExpanded) {
+      return;
+    }
 
     const owKey = env.openWeatherApiKey;
     const wantOpenWeather =
@@ -2685,6 +2689,7 @@ export default function App() {
     navigationStarted,
     destLngLat,
     isPlus,
+    stormBarExpanded,
   ]);
 
   /** Strip + map corridors: honor the Road checkbox — do not force “on” in drive (that hid toggles but left layers active). */
@@ -2698,7 +2703,7 @@ export default function App() {
     guidanceRoute?.geometry &&
       guidanceRoute.geometry.length >= 2 &&
       (settingStormEnabled || settingWeatherHintsEnabled || radarMapOverlayOn) &&
-      (navigationStarted || hasPlannedRoute)
+      (navigationStarted || stormBarExpanded)
   );
   const radarMosaicAlongRoute = useRadarBandsAlongRoute(
     radarRouteSamplingEnabled,
@@ -2725,18 +2730,16 @@ export default function App() {
     isOnline &&
     Boolean(effectiveUserLngLat) &&
     stormBarExpanded;
-  /** Corridor hourly along the active leg — route shape only (no GPS required). */
+  /** Corridor hourly along the active leg — defer until Go or advisory expanded (less load while planning). */
   const tioRouteCorridorEnabled =
     isPlus &&
     Boolean(tioApiKey) &&
     appForeground &&
     Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
-  /** Fetch while navigating, planning a route, or advisory weather is expanded. */
+  /** Fetch while navigating or when the expanded advisory needs route weather. */
   const tioRouteFetchEnabled =
     tioRouteCorridorEnabled &&
-    (dataSaverMode
-      ? tioWeatherUiOpen
-      : tioWeatherUiOpen || navigationStarted || hasPlannedRoute);
+    (dataSaverMode ? tioWeatherUiOpen : tioWeatherUiOpen || navigationStarted);
   const tioMinutePrecip = useTomorrowMinutePrecip(
     tioApiKey,
     effectiveUserLngLat ?? null,

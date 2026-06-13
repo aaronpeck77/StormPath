@@ -1,12 +1,13 @@
 import { useCallback, type MutableRefObject } from "react";
 import { areaKeyFromLngLat, type PreferredAreaRouteMap } from "../preferredAreaRoutes";
 import { pickTrailPreferredRouteId } from "../frequentRoutes/trailRouteOverlap";
-import { buildTripFromMapbox } from "../services/mapboxDirectionsRouter";
+import { buildTripFromMapbox, refineTripPlanStormLeg } from "../services/mapboxDirectionsRouter";
 import { useRouteCompareStore } from "../state/routeCompareStore";
 import { useTripPlanStore } from "../state/tripPlanStore";
 import { useUiStore } from "../state/uiStore";
 import { isAbortError, routeFetchUserMessage } from "../utils/fetchResilient";
 import { buildMockTripBetween } from "./emptyTrip";
+import { mergePlanPreservingPrimary } from "./mergePlanRoutes";
 import {
   computeRoutesFailed,
   computeRoutesSucceeded,
@@ -170,6 +171,7 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
               radarAvoidanceEnabled: isPlus && stormEnabled,
               excludeToll: Boolean(opts?.excludeToll),
               trailRoutePersonalization: isPlus && learnWhereIDrive,
+              skipStormLegRefinement: true,
             }
           );
           p = built.plan;
@@ -191,6 +193,12 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
             return computeRoutesFailed(tollFreeReplanStillHasTolls(primary.tollLabels ?? []));
           }
         }
+        const refineStormLegAfterSetPlan =
+          Boolean(mapboxToken) &&
+          isPlus &&
+          p.routes.length >= 2 &&
+          (Boolean(stormAlertsForRouting?.length) || stormEnabled);
+        const primaryRouteIdForRefine = p.routes[0]?.id ?? "r-a";
         setPlan(p);
         let defaultRouteId: string | null = null;
         if (payFrequentRoutes) {
@@ -216,6 +224,29 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
         setSearchExpanded(false);
         if (opts?.excludeToll) {
           setTollAvoidFailureNote(null);
+        }
+        if (refineStormLegAfterSetPlan) {
+          void (async () => {
+            try {
+              const refined = await refineTripPlanStormLeg(
+                mapboxToken,
+                userLngLat,
+                end,
+                p.routes,
+                {
+                  signal: mainFetch.signal,
+                  stormAlerts: stormAlertsForRouting,
+                  radarAvoidanceEnabled: stormEnabled,
+                  preferThreeRoutes: true,
+                }
+              );
+              if (epochAtStart !== routeGraphEpochRef.current) return;
+              if (mainFetch.signal.aborted) return;
+              setPlan((prev) => mergePlanPreservingPrimary(prev, primaryRouteIdForRefine, refined));
+            } catch (e) {
+              if (isAbortError(e)) return;
+            }
+          })();
         }
         return computeRoutesSucceeded();
       } catch (e) {

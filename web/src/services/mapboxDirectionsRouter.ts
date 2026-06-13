@@ -420,8 +420,10 @@ async function finalizeStormAvoidanceThirdLeg(
   radarAvoidanceEnabled: boolean,
   signal: AbortSignal | undefined,
   preferThreeRoutes: boolean,
-  includeDetails: boolean
+  includeDetails: boolean,
+  skipStormLegRefinement = false
 ): Promise<NavRoute[]> {
+  if (skipStormLegRefinement) return routes;
   if (!preferThreeRoutes || routes.length < 2) return routes;
 
   const polygonWps =
@@ -746,6 +748,8 @@ export async function collectMapboxRouteVariants(
     trailRoutePersonalization?: boolean;
     /** Navigation snap reroute: one route from GPS position, no A/B/C comparison. */
     singleRouteFromPosition?: boolean;
+    /** Skip storm/radar leg-C refinement (fast first paint; refine in background). */
+    skipStormLegRefinement?: boolean;
   }
 ): Promise<NavRoute[]> {
   const signal = opts?.signal;
@@ -760,6 +764,7 @@ export async function collectMapboxRouteVariants(
   const trailSamples: ActivitySample[] | null = opts?.trailRoutePersonalization
     ? loadActivitySamples()
     : null;
+  const skipStormLegRefinement = Boolean(opts?.skipStormLegRefinement);
 
   if (opts?.singleRouteFromPosition) {
     const data = await fetchDirectionsPrimary(
@@ -872,7 +877,8 @@ export async function collectMapboxRouteVariants(
       radarAvoidanceEnabled,
       signal,
       preferThreeRoutes,
-      includeDetails
+      includeDetails,
+      skipStormLegRefinement
     );
   }
 
@@ -1006,7 +1012,8 @@ export async function collectMapboxRouteVariants(
       radarAvoidanceEnabled,
       signal,
       preferThreeRoutes,
-      includeDetails
+      includeDetails,
+      skipStormLegRefinement
     );
   }
   if (out.length >= 2 && (!preferThreeRoutes || out.length >= 3)) {
@@ -1020,7 +1027,8 @@ export async function collectMapboxRouteVariants(
       radarAvoidanceEnabled,
       signal,
       preferThreeRoutes,
-      includeDetails
+      includeDetails,
+      skipStormLegRefinement
     );
   }
 
@@ -1059,7 +1067,8 @@ export async function collectMapboxRouteVariants(
     radarAvoidanceEnabled,
     signal,
     preferThreeRoutes,
-    includeDetails
+    includeDetails,
+    skipStormLegRefinement
   );
 }
 
@@ -1069,6 +1078,35 @@ export type BuildTripFromMapboxResult = {
   routeStart: LngLat;
   snapNotice?: string;
 };
+
+/** Background storm/radar refinement for leg C — after fast first paint. */
+export async function refineTripPlanStormLeg(
+  accessToken: string,
+  start: LngLat,
+  end: LngLat,
+  routes: NavRoute[],
+  opts?: {
+    signal?: AbortSignal;
+    stormAlerts?: NormalizedWeatherAlert[];
+    radarAvoidanceEnabled?: boolean;
+    preferThreeRoutes?: boolean;
+    includeDetails?: boolean;
+  }
+): Promise<NavRoute[]> {
+  if (routes.length < 2) return routes;
+  return finalizeStormAvoidanceThirdLeg(
+    accessToken,
+    start,
+    end,
+    routes,
+    opts?.stormAlerts,
+    Boolean(opts?.radarAvoidanceEnabled),
+    opts?.signal,
+    opts?.preferThreeRoutes !== false,
+    opts?.includeDetails !== false,
+    false
+  );
+}
 
 /**
  * Build A/B/C trip from Mapbox Directions (same `TripPlan` shape as the mock router).
@@ -1092,6 +1130,7 @@ export async function buildTripFromMapbox(
     excludeToll?: boolean;
     trailRoutePersonalization?: boolean;
     singleRouteFromPosition?: boolean;
+    skipStormLegRefinement?: boolean;
   }
 ): Promise<BuildTripFromMapboxResult> {
   const routes = await collectMapboxRouteVariants(accessToken, start, end, opts);
