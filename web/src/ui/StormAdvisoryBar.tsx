@@ -6,8 +6,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { SITEBIBLE_AD_BAR, type AdvisoryPromoLine } from "../config/basicAds";
+import { SITEBIBLE_AD_BAR, type AdvisoryPromoLine, type BasicStatusPanelPromos } from "../config/basicAds";
 import { BasicAdStrip } from "./BasicAdStrip";
+import { BasicStatusAdSlot } from "./BasicStatusAdSlot";
 import { limitExpandedPromoLines, mixAdvisoryPreviewItems } from "./advisoryPreviewMix";
 import { sortWeatherAlertsBySeverity, type NormalizedWeatherAlert } from "../weatherAlerts";
 import { nwsAlertIsBasicEmergency } from "../weatherAlerts/basicEmergencyFilter";
@@ -248,6 +249,12 @@ export type StormAdvisoryBarProps = SharedProps & {
     onOpenSettings: () => void;
     onDismiss: () => void;
   } | null;
+  /** Basic: waiting on OpenWeather for the status-panel forecast. */
+  basicForecastLoading?: boolean;
+  /** Basic: open About → Subscription from the Plus upsell card. */
+  onOpenSubscription?: () => void;
+  /** Basic status panel layout — partner banner slot, Plus upsell, SiteBible. */
+  basicStatusPanelPromos?: BasicStatusPanelPromos | null;
 };
 
 
@@ -362,6 +369,9 @@ export function StormAdvisoryBar({
   nwsForecastLoading = false,
   nwsForecastError = null,
   dataSaverHint = null,
+  basicForecastLoading = false,
+  onOpenSubscription,
+  basicStatusPanelPromos = null,
 }: StormAdvisoryBarProps) {
   if (!featureEnabled) return null;
 
@@ -609,7 +619,7 @@ export function StormAdvisoryBar({
   }, [tickerMessages.length]);
 
   const defaultPreviewText = basicNavAdvisoryMode
-    ? "Status bar — tap for connection, tips, and Plus info (no weather alerts on Basic)."
+    ? "Status — tap for local forecast and offers."
     : advisoryTier === "basic"
       ? ownsPlus
         ? "No urgent warnings. Tap for details."
@@ -627,7 +637,8 @@ export function StormAdvisoryBar({
         currentNowcast?.fetchedAtMs,
         minutePrecipForecast?.fetchedAt
       ),
-      nwsNearYou: localForecastNwsAlerts.length ? localForecastNwsAlerts : null,
+      nwsNearYou:
+        basicNavAdvisoryMode || !localForecastNwsAlerts.length ? null : localForecastNwsAlerts,
     });
   }, [
     forecastAreaLabel,
@@ -635,6 +646,7 @@ export function StormAdvisoryBar({
     minutePrecipForecast,
     currentNowcast?.fetchedAtMs,
     localForecastNwsAlerts,
+    basicNavAdvisoryMode,
   ]);
 
   const previewItems = useMemo(() => {
@@ -818,6 +830,8 @@ export function StormAdvisoryBar({
   ]);
 
   const expandedPromoLines = useMemo(() => {
+    const filtered = promoLines.filter((p) => !isAdvisoryPromoNoise(p));
+    if (basicNavAdvisoryMode) return filtered;
     const hasTripOrWeatherContent = Boolean(
       forecastAreaLabel ||
         localForecastBanner ||
@@ -826,11 +840,9 @@ export function StormAdvisoryBar({
         (routeImpacts?.length ?? 0) > 0 ||
         (stormStripBands?.length ?? 0) > 0
     );
-    return limitExpandedPromoLines(
-      promoLines.filter((p) => !isAdvisoryPromoNoise(p)),
-      hasTripOrWeatherContent
-    );
+    return limitExpandedPromoLines(filtered, hasTripOrWeatherContent);
   }, [
+    basicNavAdvisoryMode,
     promoLines,
     forecastAreaLabel,
     localForecastBanner,
@@ -866,9 +878,7 @@ export function StormAdvisoryBar({
     if (!isOnline) return "warn";
     if (showErrorState) return "severe";
     if (basicNavAdvisoryMode) {
-      if (loading) return loadSlow ? "warn" : "info";
       if (busyLabel) return "info";
-      if (urgentTopAlerts.length > 0) return "severe";
       return "none";
     }
     /* Worst impact severity wins. */
@@ -893,10 +903,7 @@ export function StormAdvisoryBar({
     isOnline,
     showErrorState,
     basicNavAdvisoryMode,
-    loading,
-    loadSlow,
     busyLabel,
-    urgentTopAlerts.length,
     routeImpacts,
     hasTrafficStop,
     trafficDelayMinutes,
@@ -1169,7 +1176,8 @@ export function StormAdvisoryBar({
 
       {basicNavAdvisoryMode && (
         <p className="storm-advisory-bar__muted storm-advisory-bar__basic-tier-desc">
-          Connection status and tips. Use the map <strong>Rad</strong> control for radar.
+          Local forecast at your position. Navigation and radar are on the map — upgrade for NWS hazards, traffic, and
+          route weather.
         </p>
       )}
 
@@ -1186,7 +1194,8 @@ export function StormAdvisoryBar({
 
       <div className="storm-advisory-bar__sections-scroll">
         {forecastAreaLabel &&
-        (currentNowcast ||
+        (basicNavAdvisoryMode ||
+          currentNowcast ||
           minutePrecipForecast ||
           hourlyForecast?.hours.length ||
           localForecastNwsAlerts.length > 0 ||
@@ -1194,12 +1203,14 @@ export function StormAdvisoryBar({
           <AdvisoryLocalForecast
             areaLabel={forecastAreaLabel}
             nowcast={currentNowcast}
-            minutePrecip={minutePrecipForecast}
+            minutePrecip={basicNavAdvisoryMode ? null : minutePrecipForecast}
             hourlyForecast={hourlyForecast}
             locationAlerts={localForecastNwsAlerts}
-            nwsLoading={nwsForecastLoading}
-            nwsError={nwsForecastError}
+            nwsLoading={basicNavAdvisoryMode ? false : nwsForecastLoading}
+            nwsError={basicNavAdvisoryMode ? null : nwsForecastError}
             onLocationAlertClick={onNwsAlertClick}
+            variant={basicNavAdvisoryMode ? "basic" : "full"}
+            forecastLoading={basicNavAdvisoryMode && basicForecastLoading}
           />
         ) : null}
 
@@ -1211,7 +1222,7 @@ export function StormAdvisoryBar({
           </p>
         )}
 
-        {urgentTopAlerts.length > 0 && (
+        {!basicNavAdvisoryMode && urgentTopAlerts.length > 0 && (
           <ul className="nws-chips nws-chips--urgent" role="list" aria-label="Urgent weather affecting you now">
             {urgentTopAlerts.map(({ alert, timingLine }) =>
               nwsChip(alert, timingLine, onNwsAlertClick, "urgent")
@@ -1318,8 +1329,34 @@ export function StormAdvisoryBar({
           </div>
         ) : null}
 
-              {basicNavAdvisoryMode && expandedPromoLines.length > 0 ? (
-                <BasicAdStrip lines={expandedPromoLines} expanded aria-label="Partner offers and StormPath Plus" />
+              {basicNavAdvisoryMode && basicStatusPanelPromos ? (
+                <div
+                  className="storm-advisory-bar__basic-promos"
+                  aria-label="StormPath Plus and partner offers"
+                >
+                  <BasicStatusAdSlot line={basicStatusPanelPromos.partnerSlot} expanded />
+                  <BasicAdStrip
+                    lines={[basicStatusPanelPromos.plusUpsell]}
+                    expanded
+                    className="storm-advisory-bar__basic-strip storm-advisory-bar__basic-strip--plus"
+                    aria-label="StormPath Plus upgrade"
+                    onOpenSubscription={onOpenSubscription}
+                  />
+                  <BasicAdStrip
+                    lines={[basicStatusPanelPromos.siteBible]}
+                    expanded
+                    className="storm-advisory-bar__basic-strip storm-advisory-bar__basic-strip--sitebible"
+                    aria-label="SiteBible partner offer"
+                    onOpenSubscription={onOpenSubscription}
+                  />
+                </div>
+              ) : basicNavAdvisoryMode && expandedPromoLines.length > 0 ? (
+                <BasicAdStrip
+                  lines={expandedPromoLines}
+                  expanded
+                  aria-label="StormPath Plus and partner offers"
+                  onOpenSubscription={onOpenSubscription}
+                />
               ) : null}
           </div>
         </div>

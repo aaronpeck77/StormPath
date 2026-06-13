@@ -7772,6 +7772,185 @@
   color: #94a3b8;
 }
 
+.basic-ad__featured-tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.58em;
+  color: #fef3c7;
+  background: rgba(245, 158, 11, 0.22);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+}
+
+.storm-advisory-bar__promo--featured {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  text-align: left;
+  text-decoration: none;
+  background: linear-gradient(145deg, rgba(30, 58, 138, 0.45), rgba(15, 23, 42, 0.75));
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.storm-advisory-bar__promo--featured.storm-advisory-bar__promo-link {
+  color: #e2e8f0;
+}
+
+.storm-advisory-bar__promo-action {
+  cursor: pointer;
+  font: inherit;
+}
+
+.storm-advisory-bar__promo-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.storm-advisory-bar__promo-cta {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #0f172a;
+  background: #7dd3fc;
+  white-space: nowrap;
+}
+
+.storm-advisory-bar__promo-link:not(.storm-advisory-bar__promo--featured) .storm-advisory-bar__promo-cta {
+  display: none;
+}
+
+.storm-advisory-bar__promo-link.storm-advisory-bar__promo--featured {
+  text-decoration: none;
+}
+
+.storm-advisory-bar__basic-promos {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.storm-advisory-bar__basic-strip--plus,
+.storm-advisory-bar__basic-strip--sitebible {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  gap: 0;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__basic-strip--plus,
+.storm-advisory-bar--expanded .storm-advisory-bar__basic-strip--sitebible {
+  padding: 0;
+}
+
+.basic-status-ad-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 8px;
+  min-height: 96px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  background: rgba(15, 23, 42, 0.55);
+  text-decoration: none;
+  color: inherit;
+}
+
+.basic-status-ad-slot--filled {
+  border-style: solid;
+  border-color: rgba(148, 163, 184, 0.38);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.basic-status-ad-slot--reserved {
+  align-items: center;
+  justify-content: center;
+}
+
+.basic-status-ad-slot__label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.basic-status-ad-slot--reserved .basic-status-ad-slot__label {
+  font-size: 0.72rem;
+}
+
+.basic-status-ad-slot__copy {
+  flex: 1 1 auto;
+  font-size: 0.92rem;
+  line-height: 1.38;
+  color: #e2e8f0;
+}
+
+.basic-status-ad-slot__cta {
+  align-self: flex-start;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #0f172a;
+  background: #cbd5e1;
+  white-space: nowrap;
+}
+
+.basic-status-ad-slot--filled {
+  min-height: 104px;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__promo--sitebible {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 14px;
+  font-size: 0.92rem;
+  line-height: 1.42;
+  border-radius: 12px;
+  text-decoration: none;
+  color: #e2e8f0;
+  background: linear-gradient(145deg, rgba(51, 65, 85, 0.55), rgba(15, 23, 42, 0.82));
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__promo--sitebible .basic-ad__sponsored {
+  font-size: 0.62rem;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__promo--sitebible .storm-advisory-bar__promo-cta {
+  display: inline-flex;
+  padding: 7px 12px;
+  font-size: 0.72rem;
+  color: #0f172a;
+  background: #a5f3fc;
+}
+
+.storm-advisory-bar__basic-tier-desc {
+  margin: 0 0 8px;
+}
+
 .storm-advisory-bar__basic-upsell {
   margin: 0 0 8px;
   font-size: 0.62rem;
@@ -12127,6 +12306,13 @@
   font-size: 0.72rem;
   line-height: 1.35;
   color: #fca5a5;
+}
+
+.saved-drawer-limit-note {
+  margin: 0 0 8px;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: rgba(148, 163, 184, 0.95);
 }
 
 .saved-drawer-list {

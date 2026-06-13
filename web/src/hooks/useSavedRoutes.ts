@@ -3,8 +3,12 @@ import type { LngLat, RouteTurnStep } from "../nav/types";
 import type { SavedRoute } from "../nav/savedRoutes";
 import { loadSavedRoutes, newSavedRouteId, persistSavedRoutes } from "../nav/savedRoutes";
 
-export function useSavedRoutes() {
-  const [routes, setRoutes] = useState<SavedRoute[]>(() => loadSavedRoutes());
+export function useSavedRoutes(maxRoutes: number | null = null) {
+  const [routes, setRoutes] = useState<SavedRoute[]>(() => {
+    const loaded = loadSavedRoutes();
+    if (maxRoutes != null && loaded.length > maxRoutes) return loaded.slice(0, maxRoutes);
+    return loaded;
+  });
 
   useEffect(() => {
     persistSavedRoutes(routes);
@@ -23,21 +27,24 @@ export function useSavedRoutes() {
       const geom = geometry.map(([a, b]) => [a, b] as LngLat);
       const steps = turnSteps?.length ? turnSteps.map((s) => ({ ...s })) : undefined;
       const sl = startLabel?.trim();
-      setRoutes((prev) => [
-        ...prev,
-        {
-          id: newSavedRouteId(),
-          name: trimmed,
-          destinationLngLat: [...destinationLngLat],
-          destinationLabel: destinationLabel.trim() || "Destination",
-          geometry: geom,
-          turnSteps: steps,
-          createdAt: Date.now(),
-          ...(sl ? { startLabel: sl } : {}),
-        },
-      ]);
+      setRoutes((prev) => {
+        if (maxRoutes != null && prev.length >= maxRoutes) return prev;
+        return [
+          ...prev,
+          {
+            id: newSavedRouteId(),
+            name: trimmed,
+            destinationLngLat: [...destinationLngLat],
+            destinationLabel: destinationLabel.trim() || "Destination",
+            geometry: geom,
+            turnSteps: steps,
+            createdAt: Date.now(),
+            ...(sl ? { startLabel: sl } : {}),
+          },
+        ];
+      });
     },
-    []
+    [maxRoutes]
   );
 
   const updateName = useCallback((id: string, name: string) => {
@@ -50,5 +57,7 @@ export function useSavedRoutes() {
     setRoutes((prev) => prev.filter((r) => r.id !== id));
   }, []);
 
-  return { routes, addRoute, updateName, removeRoute };
+  const canAddRoute = maxRoutes == null || routes.length < maxRoutes;
+
+  return { routes, addRoute, updateName, removeRoute, canAddRoute, maxRoutes };
 }

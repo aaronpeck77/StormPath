@@ -327,7 +327,7 @@ export function AboutSheet({
               <ul className="about-sheet__bullets" aria-label="Plus features">
                 <li>
                   <strong>NWS</strong> — full storm map, every active warning, route overlap, and hazard details (Plus
-                  only; Basic uses navigation, radar, and the status strip — no in-app weather feeds)
+                  only; Basic is navigation, radar, local forecast in Status, and limited saved places/routes)
                 </li>
                 <li>
                   <strong>Traffic</strong> overlay + bypass tools (Mapbox)
@@ -360,10 +360,11 @@ export function AboutSheet({
               </span>
             </label>
 
-            <label className="about-sheet__setting">
+            <label className={`about-sheet__setting${plus ? "" : " disabled"}`}>
               <input
                 type="checkbox"
                 checked={settings.stormEnabled}
+                disabled={!plus}
                 onChange={(e) => onSettings({ ...settings, stormEnabled: e.target.checked })}
               />
               <span>
@@ -374,8 +375,8 @@ export function AboutSheet({
                   </>
                 ) : (
                   <>
-                    <strong>Status strip</strong> — online/offline, tips, and Plus info. Basic does not load NWS or
-                    forecast data; use the <strong>Rad</strong> control for radar on the map
+                    <strong>Status strip</strong> — local forecast and offers on Basic. NWS hazards and map polygons are{" "}
+                    <em>Plus</em> only.
                   </>
                 )}
               </span>
@@ -421,15 +422,18 @@ export function AboutSheet({
               </span>
             </label>
 
-            <label className="about-sheet__setting">
+            <label className={`about-sheet__setting${plus ? "" : " disabled"}`}>
               <input
                 type="checkbox"
                 checked={settings.autoRerouteEnabled}
+                disabled={!plus}
                 onChange={(e) => onSettings({ ...settings, autoRerouteEnabled: e.target.checked })}
               />
               <span>
-                <strong>Auto reroute</strong> — when far off the line, fetch a new route from your GPS (no
-                need to tap Reroute). Uses your directions provider when online.
+                <strong>Auto reroute</strong> — when you leave the route or turn onto a different road,
+                fetch a new line from your GPS (no need to tap Re-route). Basic shows an{" "}
+                <strong>Off route</strong> / <strong>Re-route</strong> button
+                instead {!plus ? <em>(Plus)</em> : null}
               </span>
             </label>
 

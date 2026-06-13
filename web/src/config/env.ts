@@ -60,6 +60,8 @@ export function getWebEnv() {
       "https://apps.apple.com/account/subscriptions",
     /** Shown in the Basic advisory promo rotation (other apps you ship). */
     siteBibleUrl: (import.meta.env.VITE_SITEBIBLE_URL as string | undefined)?.trim() ?? "",
+    /** Optional third sponsored slot in the Basic status panel (partner URL). */
+    partnerAdUrl: (import.meta.env.VITE_PARTNER_AD_URL as string | undefined)?.trim() ?? "",
     /**
      * Optional JSON array of Basic-tier promo overrides/additions.
      * Example: `[{"id":"sitebible","text":"…","href":"https://…","sponsored":true}]`

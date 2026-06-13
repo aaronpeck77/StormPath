@@ -54,6 +54,10 @@ type Props = {
   nwsLoading?: boolean;
   nwsError?: string | null;
   onLocationAlertClick?: (alert: NormalizedWeatherAlert) => void;
+  /** Basic status panel: right-now + short outlook only (no charts). */
+  variant?: "full" | "basic";
+  /** Waiting on OpenWeather / hourly for Basic. */
+  forecastLoading?: boolean;
 };
 
 /**
@@ -68,18 +72,22 @@ export function AdvisoryLocalForecast({
   nwsLoading = false,
   nwsError = null,
   onLocationAlertClick,
+  variant = "full",
+  forecastLoading = false,
 }: Props) {
+  const isBasic = variant === "basic";
   const nowLine = nowcast
     ? formatNowcastLine(nowcast)
-    : minutePrecip?.now
+    : !isBasic && minutePrecip?.now
       ? formatMinutePrecipNowLine(minutePrecip.now)
       : null;
   const hasNow = Boolean(nowLine);
-  const hasHour = Boolean(minutePrecip?.minutes.length);
+  const hasHour = !isBasic && Boolean(minutePrecip?.minutes.length);
   const hours = hourlyForecast?.hours ?? [];
   const hasDay = hours.length > 0;
   const hasNws = locationAlerts.length > 0;
-  const showNwsBlock = hasNws || nwsLoading || Boolean(nwsError?.trim());
+  const showNwsBlock =
+    !isBasic && (hasNws || nwsLoading || Boolean(nwsError?.trim()));
   const metaUpdated = useMemo(() => {
     const ms = latestForecastFetchedAtMs(
       nowcast?.fetchedAtMs,
@@ -89,7 +97,11 @@ export function AdvisoryLocalForecast({
     return ms != null ? formatForecastUpdatedAt(ms) : null;
   }, [nowcast?.fetchedAtMs, minutePrecip?.fetchedAt, hourlyForecast?.fetchedAt]);
 
-  if (!hasNow && !hasHour && !hasDay && !showNwsBlock) return null;
+  if (isBasic) {
+    if (!hasNow && !hasDay && !forecastLoading) return null;
+  } else if (!hasNow && !hasHour && !hasDay && !showNwsBlock) {
+    return null;
+  }
 
   const hourSummary = minutePrecip ? minutePrecipSummary(minutePrecip) : null;
   const daySummary = hasDay ? pointHourlyForecastSummary(hours) : null;
@@ -100,7 +112,7 @@ export function AdvisoryLocalForecast({
     <section className="adv-forecast" aria-label={`Local forecast for ${areaLabel}`}>
       <header className="adv-forecast__head">
         <div className="adv-forecast__head-text">
-          <h3 className="adv-forecast__title">Local forecast</h3>
+          <h3 className="adv-forecast__title">{isBasic ? "Local conditions" : "Local forecast"}</h3>
           <p className="adv-forecast__area">
             <svg
               className="adv-forecast__area-pin"
@@ -117,6 +129,10 @@ export function AdvisoryLocalForecast({
         </div>
         {metaUpdated ? <span className="adv-forecast__updated">{metaUpdated}</span> : null}
       </header>
+
+      {forecastLoading && !hasNow && !hasDay ? (
+        <p className="adv-forecast__nws-status">Loading local conditions…</p>
+      ) : null}
 
       {showNwsBlock ? (
         <div className="adv-forecast__block adv-forecast__block--nws">
@@ -218,9 +234,9 @@ export function AdvisoryLocalForecast({
       ) : null}
 
       {hasDay ? (
-        <div className="adv-forecast__block adv-forecast__block--day">
+        <div className={`adv-forecast__block adv-forecast__block--day${isBasic ? " adv-forecast__block--basic-outlook" : ""}`}>
           <div className="adv-forecast__block-head">
-            <span className="adv-forecast__block-label">Next 24 hours</span>
+            <span className="adv-forecast__block-label">{isBasic ? "Outlook" : "Next 24 hours"}</span>
             <span className="adv-forecast__block-meta">
               {hourlyForecast
                 ? `${formatForecastUpdatedAt(hourlyForecast.fetchedAt)} · ${hourlyProviderLabel}`
@@ -228,6 +244,8 @@ export function AdvisoryLocalForecast({
             </span>
           </div>
           {daySummary ? <p className="adv-forecast__hour-summary">{daySummary}</p> : null}
+          {isBasic ? null : (
+            <>
           <div
             className="adv-forecast__hour24-scroll"
             role="img"
@@ -265,6 +283,8 @@ export function AdvisoryLocalForecast({
             <span>18 hr</span>
             <span>24 hr</span>
           </div>
+            </>
+          )}
         </div>
       ) : null}
     </section>

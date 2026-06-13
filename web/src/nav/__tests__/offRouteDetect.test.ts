@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { measureOffRouteLateral } from "../offRouteDetect";
+import {
+  measureOffRouteLateral,
+  OFF_ROUTE_REROUTE_ENTER_M,
+  shouldExitOffRouteLatch,
+  shouldTriggerOffRouteReroute,
+} from "../offRouteDetect";
 import type { LngLat } from "../types";
 
 /** Simple northbound corridor ~10 km with a distant parallel leg (U-shaped route). */
@@ -31,5 +36,39 @@ describe("measureOffRouteLateral", () => {
     const sample = measureOffRouteLateral(off, route, 5_000);
     expect(sample.lateralM).toBeGreaterThan(26);
     expect(sample.fullScanLateralM).toBeLessThan(20);
+  });
+});
+
+describe("shouldTriggerOffRouteReroute", () => {
+  it("triggers when lateral exceeds enter threshold", () => {
+    expect(shouldTriggerOffRouteReroute(OFF_ROUTE_REROUTE_ENTER_M + 0.5)).toBe(true);
+    expect(shouldTriggerOffRouteReroute(OFF_ROUTE_REROUTE_ENTER_M - 0.5)).toBe(false);
+  });
+
+  it("triggers on heading mismatch when slightly off-line and moving", () => {
+    expect(
+      shouldTriggerOffRouteReroute(0.4, {
+        headingDeg: 90,
+        routeBearingDeg: 0,
+        speedMps: 5,
+      })
+    ).toBe(true);
+  });
+
+  it("does not trigger on heading mismatch when stationary", () => {
+    expect(
+      shouldTriggerOffRouteReroute(0.4, {
+        headingDeg: 90,
+        routeBearingDeg: 0,
+        speedMps: 0.5,
+      })
+    ).toBe(false);
+  });
+});
+
+describe("shouldExitOffRouteLatch", () => {
+  it("clears latch only when back inside exit threshold", () => {
+    expect(shouldExitOffRouteLatch(0.5)).toBe(true);
+    expect(shouldExitOffRouteLatch(2)).toBe(false);
   });
 });

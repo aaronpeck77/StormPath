@@ -142,9 +142,9 @@ export function BottomToolbar({
     >
       {showOffRouteBanner && offRouteSevere && onRerouteFromHere && (
         <div className="nav-bottom-off-route" role="alert">
-          <span className="nav-bottom-off-route__text">Off route — reroute from here?</span>
+          <span className="nav-bottom-off-route__text">Off route</span>
           <button type="button" className="nav-bottom-off-route__btn" onClick={onRerouteFromHere}>
-            Reroute
+            Re-route
           </button>
         </div>
       )}

@@ -50,3 +50,15 @@ export function hasFrequentRoutesLearning(): boolean {
 export function hasTollBypass(): boolean {
   return hasPlusTier();
 }
+
+/** Basic tier saved-item caps (Plus = unlimited). */
+export const BASIC_MAX_SAVED_PLACES = 2;
+export const BASIC_MAX_SAVED_ROUTES = 1;
+
+export function maxSavedPlaces(): number | null {
+  return hasPlusTier() ? null : BASIC_MAX_SAVED_PLACES;
+}
+
+export function maxSavedRoutes(): number | null {
+  return hasPlusTier() ? null : BASIC_MAX_SAVED_ROUTES;
+}

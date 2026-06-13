@@ -246,10 +246,11 @@ import { nwsAlertsForLocalForecast } from "./weatherAlerts/localForecastNws";
 import {
   buildAdvisoryPromoLines,
   buildBasicNavAdvisoryPromoLines,
+  buildBasicNavStatusPanelPromos,
 } from "./config/basicAds";
 import { payTierTestPanelEnabled } from "./config/env";
 import { useBasicAdMobBanner } from "./hooks/useBasicAdMobBanner";
-import { getPayTier, hasTollBypass } from "./billing/payFeatures";
+import { getPayTier, hasTollBypass, maxSavedPlaces, maxSavedRoutes } from "./billing/payFeatures";
 import { NATIVE_PAY_TIER_CHANGED_EVENT } from "./billing/revenueCat";
 import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
 import { completedTripFromGeometry } from "./frequentRoutes/tripDetector";
@@ -388,9 +389,15 @@ export default function App() {
   }, [reprobePayTier]);
   /** Plus vs Basic from `getPayTier()` (build env + native entitlement + optional LS override). */
   const isPlus = useMemo(() => getPayTier() === "plus", [payTierProbeKey]);
+  const savedPlacesMax = useMemo(() => maxSavedPlaces(), [payTierProbeKey]);
+  const savedRoutesMax = useMemo(() => maxSavedRoutes(), [payTierProbeKey]);
   const tollBypassEnabled = useMemo(() => hasTollBypass(), [payTierProbeKey]);
   const advisoryPromoLines = useMemo(
     () => (isPlus ? buildAdvisoryPromoLines(env, isPlus) : buildBasicNavAdvisoryPromoLines(env)),
+    [env, isPlus]
+  );
+  const basicStatusPanelPromos = useMemo(
+    () => (isPlus ? null : buildBasicNavStatusPanelPromos(env)),
     [env, isPlus]
   );
   /** `?demo=bypass` replay / simulated delay — Plus only (matches Traffic bypass). */
@@ -428,6 +435,8 @@ export default function App() {
   userLngLatRef.current = userLngLat;
   const speedMpsRef = useRef(speedMps);
   speedMpsRef.current = speedMps;
+  const headingRef = useRef(heading);
+  headingRef.current = heading;
 
   const {
     suggestedClusters,
@@ -468,14 +477,15 @@ export default function App() {
   /** Map (Mp) follow: street-level on the puck while navigating — not route-wide Rt framing. */
   const topdownZoomRef = useRef(16);
 
-  const { places: savedPlaces, showOnMap, setShowOnMap, addPlace, updateName, removePlace } =
-    useSavedPlaces();
+  const { places: savedPlaces, showOnMap, setShowOnMap, addPlace, updateName, removePlace, canAddPlace } =
+    useSavedPlaces(savedPlacesMax);
   const {
     routes: savedTripRoutes,
     addRoute: addSavedTripRoute,
     updateName: updateSavedTripRouteName,
     removeRoute: removeSavedTripRoute,
-  } = useSavedRoutes();
+    canAddRoute,
+  } = useSavedRoutes(savedRoutesMax);
 
   const {
     active: recordingActive,
@@ -531,6 +541,8 @@ export default function App() {
   const settingTrafficEnabled = useSettingsStore((s) => s.trafficEnabled);
   const settingWeatherHintsEnabled = useSettingsStore((s) => s.weatherHintsEnabled);
   const settingAutoRerouteEnabled = useSettingsStore((s) => s.autoRerouteEnabled);
+  /** Plus only — Basic always uses the manual off-route Re-route button. */
+  const effectiveAutoRerouteEnabled = isPlus && settingAutoRerouteEnabled;
   const settingRadarEnabled = useSettingsStore((s) => s.radarEnabled);
   const settingDataSaverEnabled = useSettingsStore((s) => s.dataSaverEnabled);
   const dataSaverHintDismissed = useSettingsStore((s) => s.dataSaverHintDismissed);
@@ -914,6 +926,7 @@ export default function App() {
         if (env.mapboxToken) {
           const remainingVias = remainingViaStops(viaStops, activeViaIndex);
           const viaCoords = remainingVias.map((s) => s.lngLat);
+          const snapFromGps = Boolean(opts?.silent);
           const built = await buildTripFromMapbox(
             env.mapboxToken,
             userLngLat,
@@ -928,11 +941,12 @@ export default function App() {
             {
               signal: mainFetch.signal,
               via: viaCoords.length > 0 ? viaCoords : undefined,
-              allowLocalTripThirdRoute: isPlus,
-              preferThreeRoutes: isPlus,
-              stormAlerts: stormAlertsForRouting,
-              radarAvoidanceEnabled: isPlus && settingStormEnabled,
-              trailRoutePersonalization: isPlus && learnEnabled,
+              allowLocalTripThirdRoute: snapFromGps ? false : isPlus,
+              preferThreeRoutes: snapFromGps ? false : isPlus,
+              stormAlerts: snapFromGps ? undefined : stormAlertsForRouting,
+              radarAvoidanceEnabled: snapFromGps ? false : isPlus && settingStormEnabled,
+              trailRoutePersonalization: snapFromGps ? false : isPlus && learnEnabled,
+              singleRouteFromPosition: snapFromGps,
             }
           );
           p = built.plan;
@@ -2697,6 +2711,13 @@ export default function App() {
       : tioWeatherUiOpen || (!hasPlannedRoute && !navigationStarted));
   /** OpenWeather hourly is fallback only — skip when Tomorrow.io covers the point card. */
   const openWeatherHourlyEnabled = tioPointFetchEnabled && !tioApiKey;
+  /** Basic status panel: local now + short OpenWeather outlook when the bar is expanded. */
+  const basicStatusForecastEnabled =
+    !isPlus &&
+    appForeground &&
+    isOnline &&
+    Boolean(effectiveUserLngLat) &&
+    stormBarExpanded;
   /** Corridor hourly along the active leg — route shape only (no GPS required). */
   const tioRouteCorridorEnabled =
     isPlus &&
@@ -2716,11 +2737,11 @@ export default function App() {
     navigationStarted
   );
   const localHourlyForecast = useLocalHourlyForecast(
-    tioApiKey,
+    isPlus ? tioApiKey : "",
     env.openWeatherApiKey,
     effectiveUserLngLat ?? null,
-    tioPointFetchEnabled,
-    openWeatherHourlyEnabled
+    isPlus ? tioPointFetchEnabled : basicStatusForecastEnabled,
+    isPlus ? openWeatherHourlyEnabled : Boolean(env.openWeatherApiKey)
   );
   const tioRouteForecast = useTomorrowRouteForecast(
     tioApiKey,
@@ -2734,6 +2755,24 @@ export default function App() {
     if (tioMinutePrecip?.now) return formatMinutePrecipNowLine(tioMinutePrecip.now);
     return null;
   }, [currentNowcast, tioMinutePrecip?.now]);
+
+  const basicStatusForecastLoading = useMemo(
+    () =>
+      !isPlus &&
+      stormBarExpanded &&
+      Boolean(effectiveUserLngLat) &&
+      Boolean(env.openWeatherApiKey) &&
+      !currentNowcast &&
+      !(localHourlyForecast?.hours.length ?? 0),
+    [
+      isPlus,
+      stormBarExpanded,
+      effectiveUserLngLat,
+      env.openWeatherApiKey,
+      currentNowcast,
+      localHourlyForecast?.hours.length,
+    ]
+  );
 
   const radarMosaicMaxIntensity = useMemo(() => {
     const s = radarMosaicAlongRoute.samples;
@@ -2802,8 +2841,9 @@ export default function App() {
     routeStormStripAlerts,
   ]);
 
-  /** Weather impacts (NWS / heavy radar) on the strip + map. */
+  /** Weather impacts (NWS / heavy radar) on the strip + map — Plus only. */
   const showWeatherImpactsOnRoute =
+    isPlus &&
     advisoryLifeSafetyOn &&
     (advisoryPlusDetailOn ||
       routeStormStripBands.length > 0 ||
@@ -2915,6 +2955,7 @@ export default function App() {
 
   /** Filter impacts by the same UI toggles that gated the legacy alert list. */
   const routeImpactsForUi = useMemo(() => {
+    if (!isPlus) return [];
     return routeImpacts.filter((i) => {
       if (i.category === "traffic") return showTrafficCorridorOnRoute;
       if (i.category === "closure" || i.category === "incident" || i.category === "construction") {
@@ -2923,7 +2964,7 @@ export default function App() {
       // Weather impacts (NWS / radar) — gated by storm session detail.
       return showWeatherImpactsOnRoute;
     });
-  }, [routeImpacts, showTrafficCorridorOnRoute, showRoadNoticesOnRoute, showWeatherImpactsOnRoute]);
+  }, [isPlus, routeImpacts, showTrafficCorridorOnRoute, showRoadNoticesOnRoute, showWeatherImpactsOnRoute]);
 
   /** Advisory panel: impacts ordered like the progress rail (nearest first). Carries the full
    *  RouteImpact fields the bar needs to split rows by source/category and to slot severe NWS
@@ -3106,6 +3147,7 @@ export default function App() {
    * Plus: follows the advisory panel **NWS polygons** checkbox (`stormSessionOn`).
    */
   const nwsAlertGeoJsonForMap = useMemo((): GeoJSON.FeatureCollection | null => {
+    if (!isPlus) return null;
     if (!advisoryLifeSafetyOn || !settingStormEnabled) return null;
     // Display gate only — fetch effect below keeps `stormMapGeoJson` warm while unchecked.
     if (isPlus && !stormSessionOn) return null;
@@ -3165,6 +3207,7 @@ export default function App() {
 
   /** Same ~2 mi heads-up in Rt / Map / Dr while navigating — not drive-only. */
   const hazardApproachAlertsActive =
+    isPlus &&
     navigationStarted &&
     Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
 
@@ -3604,7 +3647,16 @@ export default function App() {
    */
   useEffect(() => {
     if (!appForeground) return;
-    /** NWS is not Plus-gated — Basic still needs life-safety alerts; UI filters detail elsewhere. */
+    /** NWS polygons and route hazard tooling are Plus-only — skip fetch on Basic. */
+    if (!isPlus) {
+      stormMapHasDisplayableRef.current = false;
+      setStormMapGeoJson(null);
+      setStormCorridorAlerts([]);
+      setStormOverlapping([]);
+      setStormError(null);
+      setStormLoading(false);
+      return;
+    }
     if (!env.stormAdvisoryEnabled || !advisoryLifeSafetyOn) {
       if (import.meta.env.DEV) console.error("[NWS] BLOCKED gate1 stormAdvisoryEnabled=", env.stormAdvisoryEnabled, "lifeSafetyOn=", advisoryLifeSafetyOn);
       stormMapHasDisplayableRef.current = false;
@@ -3775,6 +3827,7 @@ export default function App() {
     nwsPollIntervalMs,
     advisoryLifeSafetyOn,
     settingStormEnabled,
+    isPlus,
     plan.routes.length,
     // `routing` is intentionally excluded — reading it via routingRef.current inside run()
     // so the effect is not torn down every time routing completes (which would cancel
@@ -3866,7 +3919,7 @@ export default function App() {
     offRouteLatchedRef.current = false;
   }, [guidanceRouteId]);
 
-  /** Lateral distance near last on-route position — reroute ~100 ft off the corridor. */
+  /** Lateral distance near last on-route position — Plus auto-reroute snaps to the road you are on. */
   useEffect(() => {
     if (!navigationStarted || !guidanceRoute?.geometry?.length || !destLngLat) {
       offRouteLatchedRef.current = false;
@@ -3888,6 +3941,20 @@ export default function App() {
       const lat = sample.lateralM;
       const alongM = sample.alongM;
       const now = Date.now();
+      const heldAlongM = userAlongGuidanceMRef.current;
+      const routeBearing =
+        totalM > 1
+          ? initialBearingDegrees(
+              pointAtAlongMeters(geom, Math.min(heldAlongM, totalM)),
+              pointAtAlongMeters(geom, Math.min(heldAlongM + 52, totalM))
+            )
+          : bearingAlongRouteAhead(pos, geom);
+      const offRouteCtx = {
+        headingDeg: headingRef.current,
+        speedMps: speedMpsRef.current,
+        routeBearingDeg: routeBearing,
+      };
+      const offRoute = shouldTriggerOffRouteReroute(sample, offRouteCtx);
 
       const nearingEnd = totalM > 0 && alongM > totalM - 45;
       if (nearingEnd) {
@@ -3904,13 +3971,13 @@ export default function App() {
           offRouteLatchedRef.current = false;
           setOffRouteSevere(false);
         }
-      } else if (shouldTriggerOffRouteReroute(lat)) {
+      } else if (offRoute) {
         offRouteLatchedRef.current = true;
         setOffRouteSevere(true);
       }
 
       if (
-        !settingAutoRerouteEnabled ||
+        !effectiveAutoRerouteEnabled ||
         routingRef.current ||
         altRoutesRefreshInFlightRef.current ||
         (env.mapboxToken && !isOnline)
@@ -3918,7 +3985,7 @@ export default function App() {
         return;
       }
 
-      if (!shouldTriggerOffRouteReroute(lat)) return;
+      if (!offRoute) return;
       if (now - lastSevereAutoRecalcMsRef.current < NAV_SEVERE_OFF_ROUTE_THROTTLE_MS) return;
 
       lastSevereAutoRecalcMsRef.current = now;
@@ -3935,7 +4002,8 @@ export default function App() {
     destLngLat,
     recalcRouteFromHere,
     routing,
-    settingAutoRerouteEnabled,
+    effectiveAutoRerouteEnabled,
+    isPlus,
     env.mapboxToken,
     isOnline,
     userLngLat,
@@ -4013,8 +4081,8 @@ export default function App() {
     ? shortenReturnTripLabel(returnTripLeg.returnToLabel)
     : "";
 
-  /** Advisory strip always available for Plus life-safety; Basic follows Storm setting. */
-  const showStormAdvisoryChrome = advisoryLifeSafetyOn;
+  /** Basic: status strip (forecast + offers). Plus: full storm advisory when enabled. */
+  const showStormAdvisoryChrome = isPlus ? advisoryLifeSafetyOn : true;
 
   const showProgressRail =
     isPlus &&
@@ -4031,8 +4099,8 @@ export default function App() {
   const showOffRouteManualBanner =
     offRouteSevere &&
     navigationStarted &&
-    viewMode !== "drive" &&
-    !settingAutoRerouteEnabled;
+    !effectiveAutoRerouteEnabled &&
+    (!isPlus || viewMode !== "drive");
 
   const radarFrameTimeLabel = useMemo(() => {
     if (!radarMapOverlayOn || radarFrameUtcSec == null) return null;
@@ -4925,9 +4993,14 @@ export default function App() {
 
   const handleSaveCurrentDestination = useCallback(() => {
     if (!destLngLat) return;
+    if (!canAddPlace) {
+      setTapHint("Basic limit: 2 saved places. Upgrade to Plus for more.");
+      window.setTimeout(() => setTapHint(null), 5500);
+      return;
+    }
     const name = destinationLabel.trim() || "Saved place";
     addPlace(name, destLngLat);
-  }, [destLngLat, destinationLabel, addPlace]);
+  }, [destLngLat, destinationLabel, addPlace, canAddPlace]);
 
   const handleSaveCurrentLocation = useCallback(async () => {
     if (!userLngLat) {
@@ -4935,6 +5008,11 @@ export default function App() {
         locationError ?? "Turn on location first — allow it for this site in browser settings."
       );
       window.setTimeout(() => setTapHint(null), 8000);
+      return;
+    }
+    if (!canAddPlace) {
+      setTapHint("Basic limit: 2 saved places. Upgrade to Plus for more.");
+      window.setTimeout(() => setTapHint(null), 5500);
       return;
     }
     const [lng, lat] = userLngLat;
@@ -4946,9 +5024,14 @@ export default function App() {
     addPlace(name, userLngLat);
     setTapHint(`Saved place: ${name}`);
     window.setTimeout(() => setTapHint(null), 4500);
-  }, [userLngLat, locationError, forecastPlaceShort, env.mapboxToken, addPlace]);
+  }, [userLngLat, locationError, forecastPlaceShort, env.mapboxToken, addPlace, canAddPlace]);
 
   const openSaveRouteSheet = useCallback(() => {
+    if (!canAddRoute) {
+      setTapHint("Basic limit: 1 saved route. Upgrade to Plus for more.");
+      window.setTimeout(() => setTapHint(null), 5500);
+      return;
+    }
     const r = plan.routes.find((x) => x.id === lineFocusId) ?? plan.routes[0];
     if (!r?.geometry || r.geometry.length < 2 || !destLngLat) return;
     setPendingSave({
@@ -4958,7 +5041,7 @@ export default function App() {
       destinationLngLat: [...destLngLat],
       destinationLabel: destinationLabel.trim() || "Destination",
     });
-  }, [plan.routes, lineFocusId, destLngLat, destinationLabel]);
+  }, [plan.routes, lineFocusId, destLngLat, destinationLabel, canAddRoute]);
 
   const handleLoadSavedRoute = useCallback(
     (sr: SavedRoute, opts?: { reverse?: boolean }) => {
@@ -5345,22 +5428,15 @@ export default function App() {
                       sessionOn={advisoryPlusDetailOn}
                       onSessionToggle={onStormSessionToggle}
                       loading={
+                        isPlus &&
                         stormLoading &&
                         stormCorridorAlerts.length === 0 &&
                         !(stormMapGeoJson?.features?.length)
                       }
-                      error={stormError}
-                      corridorAlerts={stormCorridorAlerts}
-                      overlappingAlerts={
-                        advisoryPlusDetailOn
-                          ? nwsAlertsForGuidanceAdvisory
-                          : nwsAlertsForGuidanceAdvisory.filter(nwsAlertIsBasicEmergency)
-                      }
-                      nwsAtLocationAlerts={
-                        advisoryPlusDetailOn
-                          ? stormNwsPuckInside
-                          : stormNwsPuckInside.filter(nwsAlertIsBasicEmergency)
-                      }
+                      error={isPlus ? stormError : null}
+                      corridorAlerts={isPlus ? stormCorridorAlerts : []}
+                      overlappingAlerts={isPlus ? nwsAlertsForGuidanceAdvisory : []}
+                      nwsAtLocationAlerts={isPlus ? stormNwsPuckInside : []}
                       trafficDelayMinutes={guidanceSlice?.trafficDelayMinutes ?? 0}
                       onTrafficReroute={
                         isPlus && env.mapboxToken && userLngLat && destLngLat && guidanceRoute
@@ -5371,10 +5447,10 @@ export default function App() {
                       roadDetailEnabled={isPlus && roadAdvisoryDetailOn}
                       onRoadDetailToggle={onRoadAdvisoryDetailToggle}
                       hasGuidanceRoute={Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2)}
-                      roadDetailRows={advisoryRoadDetailRows}
-                      routeImpacts={advisoryRouteImpacts}
-                      stormStripBands={advisoryStormStripBands}
-                      routeAheadTimeline={routeAheadTimeline}
+                      roadDetailRows={isPlus ? advisoryRoadDetailRows : []}
+                      routeImpacts={isPlus ? advisoryRouteImpacts : null}
+                      stormStripBands={isPlus ? advisoryStormStripBands : null}
+                      routeAheadTimeline={isPlus ? routeAheadTimeline : null}
                       routeTotalMeters={guidanceRouteLengthM}
                       userAlongMeters={advisoryUserAlongM}
                       planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
@@ -5396,13 +5472,17 @@ export default function App() {
                       forecastAreaLabel={forecastAreaLabel}
                       minutePrecipForecast={tioMinutePrecip}
                       hourlyForecast={localHourlyForecast}
-                      localForecastNwsAlerts={localForecastNwsAlerts}
+                      localForecastNwsAlerts={isPlus ? localForecastNwsAlerts : []}
                       nwsForecastLoading={
+                        isPlus &&
                         stormLoading &&
                         stormCorridorAlerts.length === 0 &&
                         !(stormMapGeoJson?.features?.length)
                       }
-                      nwsForecastError={stormError}
+                      nwsForecastError={isPlus ? stormError : null}
+                      basicForecastLoading={basicStatusForecastLoading}
+                      onOpenSubscription={() => setAboutOpen(true)}
+                      basicStatusPanelPromos={basicStatusPanelPromos}
                       dataSaverHint={
                         showDataSaverHint
                           ? {
@@ -5541,6 +5621,10 @@ export default function App() {
         <SavedDestinationsDrawer
           open={savedDrawerOpen}
           onClose={() => setSavedDrawerOpen(false)}
+          maxSavedPlaces={savedPlacesMax}
+          maxSavedRoutes={savedRoutesMax}
+          canSavePlace={canAddPlace}
+          canSaveRoute={canAddRoute}
           places={savedPlaces}
           showOnMap={showOnMap}
           onToggleShowOnMap={setShowOnMap}

@@ -744,6 +744,8 @@ export async function collectMapboxRouteVariants(
     excludeToll?: boolean;
     /** Plus + learn: prefer alternates that overlap the on-device activity trail. */
     trailRoutePersonalization?: boolean;
+    /** Navigation snap reroute: one route from GPS position, no A/B/C comparison. */
+    singleRouteFromPosition?: boolean;
   }
 ): Promise<NavRoute[]> {
   const signal = opts?.signal;
@@ -758,6 +760,28 @@ export async function collectMapboxRouteVariants(
   const trailSamples: ActivitySample[] | null = opts?.trailRoutePersonalization
     ? loadActivitySamples()
     : null;
+
+  if (opts?.singleRouteFromPosition) {
+    const data = await fetchDirectionsPrimary(
+      accessToken,
+      start,
+      end,
+      hasVia ? via : undefined,
+      {
+        alternatives: false,
+        excludeMotorway: false,
+        excludeToll,
+        includeDetails,
+      },
+      signal
+    );
+    const sorted = sortRoutesByDurationAsc(data.routes ?? []);
+    const raw = sorted[0];
+    if (!raw) return [];
+    const nav = routeFromDirectionsApi(raw, "r-a", "fastest", "Main");
+    return nav ? [nav] : [];
+  }
+
   /** Leg C should stay a reasonable drive — not a long scenic detour. */
   const MAX_C_ROUTE_DURATION_FACTOR = 1.3;
   const MAX_C_ROUTE_DISTANCE_FACTOR = 1.35;
@@ -1067,6 +1091,7 @@ export async function buildTripFromMapbox(
     radarAvoidanceEnabled?: boolean;
     excludeToll?: boolean;
     trailRoutePersonalization?: boolean;
+    singleRouteFromPosition?: boolean;
   }
 ): Promise<BuildTripFromMapboxResult> {
   const routes = await collectMapboxRouteVariants(accessToken, start, end, opts);

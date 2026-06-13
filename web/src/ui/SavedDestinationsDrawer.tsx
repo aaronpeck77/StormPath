@@ -39,6 +39,11 @@ type Props = {
   onTryFrequentRoute: (c: FrequentRouteCluster) => void;
   onSaveFrequentRoute: (c: FrequentRouteCluster) => void;
   onDismissFrequentRoute: (id: string) => void;
+  /** Basic tier caps — null = unlimited (Plus). */
+  maxSavedPlaces?: number | null;
+  maxSavedRoutes?: number | null;
+  canSavePlace?: boolean;
+  canSaveRoute?: boolean;
 };
 
 export function SavedDestinationsDrawer({
@@ -69,6 +74,10 @@ export function SavedDestinationsDrawer({
   onTryFrequentRoute,
   onSaveFrequentRoute,
   onDismissFrequentRoute,
+  maxSavedPlaces = null,
+  maxSavedRoutes = null,
+  canSavePlace = true,
+  canSaveRoute = true,
 }: Props) {
   /* Drill-in navigation. Resets to "home" each time the drawer opens so users always land
    * on the section index instead of wherever they were last time. */
@@ -91,6 +100,10 @@ export function SavedDestinationsDrawer({
   const placeCount = places.length;
   const routeCount = savedRoutes.length;
   const frequentCount = payFrequentRoutes ? frequentRouteSuggestions.length : 0;
+  const placeLimitHint =
+    maxSavedPlaces != null ? `Basic: up to ${maxSavedPlaces} places` : null;
+  const routeLimitHint =
+    maxSavedRoutes != null ? `Basic: up to ${maxSavedRoutes} saved route` : null;
 
   return (
     <>
@@ -140,6 +153,8 @@ export function SavedDestinationsDrawer({
                           type="button"
                           className="saved-drawer-save-current saved-drawer-save-current--home saved-drawer-save-current--location"
                           onClick={onSaveCurrentLocation}
+                          disabled={!canSavePlace}
+                          title={!canSavePlace ? placeLimitHint ?? undefined : undefined}
                         >
                           Save location
                         </button>
@@ -149,11 +164,16 @@ export function SavedDestinationsDrawer({
                           type="button"
                           className="saved-drawer-save-current saved-drawer-save-current--home"
                           onClick={onSaveCurrent}
+                          disabled={!canSavePlace}
+                          title={!canSavePlace ? placeLimitHint ?? undefined : undefined}
                         >
                           Save destination
                         </button>
                       ) : null}
                     </div>
+                  ) : null}
+                  {placeLimitHint ? (
+                    <p className="saved-drawer-limit-note">{placeLimitHint}</p>
                   ) : null}
                   <HomeTile
                     count={placeCount}
@@ -170,6 +190,8 @@ export function SavedDestinationsDrawer({
                           type="button"
                           className="saved-drawer-save-current saved-drawer-save-current--home"
                           onClick={onSaveCurrentRoute}
+                          disabled={!canSaveRoute}
+                          title={!canSaveRoute ? routeLimitHint ?? undefined : undefined}
                         >
                           Save route
                         </button>
@@ -179,6 +201,8 @@ export function SavedDestinationsDrawer({
                           type="button"
                           className="saved-drawer-save-current saved-drawer-save-current--record saved-drawer-save-current--home"
                           onClick={onStartRecordingPath}
+                          disabled={!canSaveRoute}
+                          title={!canSaveRoute ? routeLimitHint ?? undefined : undefined}
                         >
                           Record path
                         </button>
@@ -189,6 +213,9 @@ export function SavedDestinationsDrawer({
                         </p>
                       ) : null}
                     </div>
+                  ) : null}
+                  {routeLimitHint ? (
+                    <p className="saved-drawer-limit-note">{routeLimitHint}</p>
                   ) : null}
                   <HomeTile
                     count={routeCount}
