@@ -543,6 +543,10 @@ export default function App() {
   const settingAutoRerouteEnabled = useSettingsStore((s) => s.autoRerouteEnabled);
   /** Plus only — Basic always uses the manual off-route Re-route button. */
   const effectiveAutoRerouteEnabled = isPlus && settingAutoRerouteEnabled;
+  const effectiveAutoRerouteRef = useRef(effectiveAutoRerouteEnabled);
+  effectiveAutoRerouteRef.current = effectiveAutoRerouteEnabled;
+  const isPlusRef = useRef(isPlus);
+  isPlusRef.current = isPlus;
   const settingRadarEnabled = useSettingsStore((s) => s.radarEnabled);
   const settingDataSaverEnabled = useSettingsStore((s) => s.dataSaverEnabled);
   const dataSaverHintDismissed = useSettingsStore((s) => s.dataSaverHintDismissed);
@@ -734,6 +738,7 @@ export default function App() {
   const demoPlaybackAlongRef = useRef<number | null>(null);
   demoPlaybackAlongRef.current = demoPlaybackAlongM;
   const [offRouteSevere, setOffRouteSevere] = useState(false);
+  const offRouteSevereRef = useRef(false);
   /** Hysteresis: latched true until lateral drops below exit threshold (avoids flapping at one distance). */
   const offRouteLatchedRef = useRef(false);
   const lastSevereAutoRecalcMsRef = useRef(0);
@@ -964,6 +969,7 @@ export default function App() {
         setRouteSlotOrder((prev) => reconcileSlotOrderWithPlan(prev, planIds));
         setFitTrigger((n) => n + 1);
         setOffRouteSevere(false);
+        offRouteSevereRef.current = false;
         offRouteRerouteFailStreakRef.current = 0;
         if (!opts?.silent) {
           if (rerouteSnapNotice) {
@@ -982,6 +988,7 @@ export default function App() {
           routeFetchUserMessage(e) ?? (e instanceof Error ? e.message : String(e));
         setRouteError(msg);
         setOffRouteSevere(false);
+        offRouteSevereRef.current = false;
         offRouteRerouteFailStreakRef.current += 1;
         if (offRouteRerouteFailStreakRef.current >= 2) {
           // Rare fallback: if we can’t recover from GPS, stop nav and show options.
@@ -3923,10 +3930,24 @@ export default function App() {
   useEffect(() => {
     if (!navigationStarted || !guidanceRoute?.geometry?.length || !destLngLat) {
       offRouteLatchedRef.current = false;
+      offRouteSevereRef.current = false;
       lastOffRouteSampleRef.current = null;
       setOffRouteSevere(false);
       return;
     }
+
+    const publishOffRouteUi = () =>
+      !(isPlusRef.current && effectiveAutoRerouteRef.current);
+
+    const setOffRouteSevereIfNeeded = (severe: boolean) => {
+      if (!publishOffRouteUi()) {
+        offRouteSevereRef.current = severe;
+        return;
+      }
+      if (offRouteSevereRef.current === severe) return;
+      offRouteSevereRef.current = severe;
+      setOffRouteSevere(severe);
+    };
 
     const tick = () => {
       const pos = userLngLatRef.current;
@@ -3959,7 +3980,7 @@ export default function App() {
       const nearingEnd = totalM > 0 && alongM > totalM - 45;
       if (nearingEnd) {
         offRouteLatchedRef.current = false;
-        setOffRouteSevere(false);
+        setOffRouteSevereIfNeeded(false);
         lastOffRouteSampleRef.current = null;
         return;
       }
@@ -3969,15 +3990,15 @@ export default function App() {
       if (offRouteLatchedRef.current) {
         if (shouldExitOffRouteLatch(lat)) {
           offRouteLatchedRef.current = false;
-          setOffRouteSevere(false);
+          setOffRouteSevereIfNeeded(false);
         }
       } else if (offRoute) {
         offRouteLatchedRef.current = true;
-        setOffRouteSevere(true);
+        setOffRouteSevereIfNeeded(true);
       }
 
       if (
-        !effectiveAutoRerouteEnabled ||
+        !effectiveAutoRerouteRef.current ||
         routingRef.current ||
         altRoutesRefreshInFlightRef.current ||
         (env.mapboxToken && !isOnline)
@@ -4001,12 +4022,10 @@ export default function App() {
     guidanceRouteLengthM,
     destLngLat,
     recalcRouteFromHere,
-    routing,
     effectiveAutoRerouteEnabled,
     isPlus,
     env.mapboxToken,
     isOnline,
-    userLngLat,
   ]);
 
   const refreshAltRef = useRef(refreshAlternateRoutesOnly);

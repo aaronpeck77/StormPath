@@ -47,7 +47,7 @@ describe("shouldTriggerOffRouteReroute", () => {
 
   it("triggers on heading mismatch when slightly off-line and moving", () => {
     expect(
-      shouldTriggerOffRouteReroute(0.4, {
+      shouldTriggerOffRouteReroute(2.5, {
         headingDeg: 90,
         routeBearingDeg: 0,
         speedMps: 5,
@@ -68,7 +68,7 @@ describe("shouldTriggerOffRouteReroute", () => {
 
 describe("shouldExitOffRouteLatch", () => {
   it("clears latch only when back inside exit threshold", () => {
-    expect(shouldExitOffRouteLatch(0.5)).toBe(true);
-    expect(shouldExitOffRouteLatch(2)).toBe(false);
+    expect(shouldExitOffRouteLatch(4)).toBe(true);
+    expect(shouldExitOffRouteLatch(8)).toBe(false);
   });
 });

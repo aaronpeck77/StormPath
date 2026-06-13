@@ -5,24 +5,24 @@ import {
 } from "./routeGeometry";
 import type { LngLat } from "./types";
 
-/** ~10 ft — assume a parallel/different line once you leave the corridor this far. */
-export const OFF_ROUTE_REROUTE_ENTER_M = 3;
+/** Lateral leave before auto-reroute (~40 ft) — tighter than legacy 30 m but avoids GPS jitter at 3 m. */
+export const OFF_ROUTE_REROUTE_ENTER_M = 12;
 /** Hysteresis so brief GPS noise does not flip-flop reroutes. */
-export const OFF_ROUTE_REROUTE_EXIT_M = 1.5;
+export const OFF_ROUTE_REROUTE_EXIT_M = 6;
 /** Minimum spacing between silent auto-reroute attempts. */
-export const OFF_ROUTE_REROUTE_THROTTLE_MS = 400;
+export const OFF_ROUTE_REROUTE_THROTTLE_MS = 1200;
 /** Poll interval while navigating (reads latest GPS ref, not only React state ticks). */
-export const OFF_ROUTE_POLL_MS = 400;
+export const OFF_ROUTE_POLL_MS = 750;
 
 const WINDOW_BACK_M = 600;
 const WINDOW_AHEAD_M = 3_500;
 
 /** When moving, heading must differ from the route this much to trigger at low lateral offset. */
-const OFF_ROUTE_HEADING_DELTA_DEG = 22;
+const OFF_ROUTE_HEADING_DELTA_DEG = 38;
 /** Minimum lateral offset (m) before heading mismatch can trigger reroute. */
-const OFF_ROUTE_HEADING_MIN_LATERAL_M = 0.35;
-/** Minimum speed (m/s) before heading mismatch is considered (~4.5 mph). */
-const OFF_ROUTE_HEADING_MIN_SPEED_MPS = 2;
+const OFF_ROUTE_HEADING_MIN_LATERAL_M = 2;
+/** Minimum speed (m/s) before heading mismatch is considered (~7 mph). */
+const OFF_ROUTE_HEADING_MIN_SPEED_MPS = 3;
 
 export type OffRouteSample = {
   lateralM: number;
