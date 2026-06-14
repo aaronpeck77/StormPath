@@ -1,4 +1,4 @@
-import type { CustomerInfo } from "@revenuecat/purchases-capacitor";
+import { VERIFICATION_RESULT, type CustomerInfo } from "@revenuecat/purchases-capacitor";
 import { describe, expect, it } from "vitest";
 import {
   PLUS_SUBSCRIPTION_PRODUCT_IDS,
@@ -6,9 +6,20 @@ import {
   customerHasPlusEntitlement,
 } from "../revenueCat";
 
+function stubEntitlements(
+  partial: Partial<Omit<CustomerInfo["entitlements"], "verification">> = {}
+): CustomerInfo["entitlements"] {
+  return {
+    active: {},
+    all: {},
+    verification: VERIFICATION_RESULT.NOT_REQUESTED,
+    ...partial,
+  };
+}
+
 function stubCustomerInfo(partial: Partial<CustomerInfo>): CustomerInfo {
   return {
-    entitlements: { active: {}, all: {}, verification: 0 },
+    entitlements: stubEntitlements(),
     activeSubscriptions: [],
     allPurchasedProductIdentifiers: [],
     latestExpirationDate: null,
@@ -35,32 +46,28 @@ describe("customerHasPlusEntitlement", () => {
 
   it("detects StormPath Pro entitlement from RevenueCat dashboard", () => {
     const info = stubCustomerInfo({
-      entitlements: {
+      entitlements: stubEntitlements({
         active: {
           "StormPath Pro": {
             identifier: "StormPath Pro",
             isActive: true,
           } as CustomerInfo["entitlements"]["active"][string],
         },
-        all: {},
-        verification: 0,
-      },
+      }),
     });
     expect(customerHasPlusEntitlement(info)).toBe(true);
   });
 
   it("detects active plus entitlement (case-insensitive key)", () => {
     const info = stubCustomerInfo({
-      entitlements: {
+      entitlements: stubEntitlements({
         active: {
           Plus: {
             identifier: STORMPATH_PLUS_ENTITLEMENT_ID,
             isActive: true,
           } as CustomerInfo["entitlements"]["active"][string],
         },
-        all: {},
-        verification: 0,
-      },
+      }),
     });
     expect(customerHasPlusEntitlement(info)).toBe(true);
   });
@@ -74,16 +81,14 @@ describe("customerHasPlusEntitlement", () => {
 
   it("ignores inactive plus in all entitlements", () => {
     const info = stubCustomerInfo({
-      entitlements: {
-        active: {},
+      entitlements: stubEntitlements({
         all: {
           plus: {
             identifier: STORMPATH_PLUS_ENTITLEMENT_ID,
             isActive: false,
           } as CustomerInfo["entitlements"]["all"][string],
         },
-        verification: 0,
-      },
+      }),
     });
     expect(customerHasPlusEntitlement(info)).toBe(false);
   });
