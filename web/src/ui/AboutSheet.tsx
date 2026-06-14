@@ -1,6 +1,8 @@
+import { Capacitor } from "@capacitor/core";
 import { useEffect, useMemo, useState } from "react";
 import type { PurchasesPackage } from "@revenuecat/purchases-capacitor";
 import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
+import { getPlusEntitlementDebugSnapshot } from "../billing/revenueCat";
 import { useRevenueCat } from "../billing/useRevenueCat";
 import { getWebEnv } from "../config/env";
 import { isCrashReportingEnabled } from "../monitoring/sentry";
@@ -91,6 +93,7 @@ export function AboutSheet({
   }, [onPayTierOverride, open, payTierProbeKey]);
   const env = useMemo(() => getWebEnv(), []);
   const [supportNote, setSupportNote] = useState("");
+  const [iapDebugLine, setIapDebugLine] = useState("");
   /* Phase 7 — native IAP through RevenueCat. `iap.ready` is true only when configure
    * resolved successfully (native + non-empty `VITE_REVENUECAT_API_KEY_IOS`); when false,
    * the panel below falls back to the existing `env.upgradeUrl` link. */
@@ -99,6 +102,12 @@ export function AboutSheet({
   useEffect(() => {
     if (!open) iap.clearMessage();
   }, [open, iap]);
+
+  /* Apple may already show an active subscription while RevenueCat / StormPath are still Basic. */
+  useEffect(() => {
+    if (!open || plus || !iap.ready) return;
+    void iap.syncEntitlement();
+  }, [open, plus, iap.ready, iap.syncEntitlement]);
 
   useEffect(() => {
     if (!open) return;
@@ -112,7 +121,14 @@ export function AboutSheet({
   useEffect(() => {
     if (!open) return;
     setSupportNote("");
-  }, [open]);
+    let cancelled = false;
+    void getPlusEntitlementDebugSnapshot().then((line) => {
+      if (!cancelled) setIapDebugLine(line);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, payTierProbeKey, iap.message]);
 
   const [activityTrailClearStep, setActivityTrailClearStep] = useState<"idle" | "confirm">("idle");
   const [activityTrailClearAck, setActivityTrailClearAck] = useState(false);
@@ -138,6 +154,7 @@ export function AboutSheet({
     `Providers: mapbox=${env.mapboxToken ? "on" : "off"}, openweather=${
       env.openWeatherApiKey ? "on" : "off"
     }, tomorrowIo=${env.tomorrowIoApiKey ? "on" : "off"}`,
+    iapDebugLine || "iap: loading…",
   ];
   const diagnosticsText = diagnosticsLines.join("\n");
   const supportEmail = env.supportEmail.trim();
@@ -266,6 +283,10 @@ export function AboutSheet({
                         ? formatSubscribeButtonLabel(iap.defaultPackage)
                         : "Loading subscription…"}
                     </button>
+                  ) : Capacitor.isNativePlatform() && env.revenueCatApiKeyIos ? (
+                    <button type="button" className="about-sheet__upgrade-btn" disabled>
+                      Loading subscription…
+                    </button>
                   ) : env.upgradeUrl ? (
                     <a
                       className="about-sheet__upgrade-btn"
@@ -275,6 +296,12 @@ export function AboutSheet({
                     >
                       Upgrade to Plus
                     </a>
+                  ) : Capacitor.isNativePlatform() ? (
+                    <span className="about-sheet__upgrade-muted">
+                      In-app Subscribe isn&apos;t in this build — add{" "}
+                      <code className="saved-drawer-code">VITE_REVENUECAT_API_KEY_IOS</code> to GitHub
+                      Actions secrets and rebuild the <strong>appstore</strong> track.
+                    </span>
                   ) : (
                     <span className="about-sheet__upgrade-muted">Upgrade link not set.</span>
                   )}

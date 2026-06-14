@@ -36,11 +36,20 @@ describe("getPayTier", () => {
     expect(getPayTier()).toBe("plus");
   });
 
-  it("honors local override for QA", () => {
+  it("honors local override for QA when test panel is on", () => {
     vi.stubEnv("DEV", false);
+    vi.stubEnv("VITE_PAY_TIER_TEST_PANEL", "true");
     safeStorage.set(PAY_TIER_OVERRIDE_LS_KEY, "free");
     safeStorage.set(NATIVE_PLUS_ENTITLEMENT_LS_KEY, "active");
     expect(getPayTier()).toBe("free");
+  });
+
+  it("ignores stale QA override on retail builds when IAP entitlement is active", () => {
+    vi.stubEnv("DEV", false);
+    vi.stubEnv("VITE_PAY_TIER_TEST_PANEL", "");
+    safeStorage.set(PAY_TIER_OVERRIDE_LS_KEY, "free");
+    safeStorage.set(NATIVE_PLUS_ENTITLEMENT_LS_KEY, "active");
+    expect(getPayTier()).toBe("plus");
   });
 });
 
@@ -54,6 +63,7 @@ describe("hasLocalForecast", () => {
   it("is Plus-only", () => {
     vi.stubEnv("DEV", false);
     vi.stubEnv("VITE_PAY_TIER", "");
+    vi.stubEnv("VITE_PAY_TIER_TEST_PANEL", "true");
     expect(hasLocalForecast()).toBe(false);
     safeStorage.set(PAY_TIER_OVERRIDE_LS_KEY, "plus");
     expect(hasLocalForecast()).toBe(true);

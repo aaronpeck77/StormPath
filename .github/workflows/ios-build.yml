@@ -101,6 +101,19 @@ jobs:
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
           VITE_IOS_BUILD_NUMBER: ${{ github.run_number }}
 
+      - name: Require RevenueCat key (App Store track)
+        if: env.BUILD_TRACK == 'appstore'
+        env:
+          VITE_REVENUECAT_API_KEY_IOS: ${{ secrets.VITE_REVENUECAT_API_KEY_IOS }}
+        run: |
+          if [ -z "${VITE_REVENUECAT_API_KEY_IOS}" ]; then
+            echo "::error::GitHub secret VITE_REVENUECAT_API_KEY_IOS is missing or empty."
+            echo "RevenueCat → Apps → StormPath → API keys → copy the iOS public key (appl_…)."
+            echo "Settings → Secrets and variables → Actions → New repository secret."
+            echo "Without it, About → Subscription shows Upgrade link not set instead of Subscribe."
+            exit 1
+          fi
+
       - name: Build web app (App Store mode — Basic default, IAP via RevenueCat)
         if: env.BUILD_TRACK == 'appstore'
         run: npm run build:appstore

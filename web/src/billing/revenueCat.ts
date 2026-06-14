@@ -7,7 +7,7 @@ import {
   type PurchasesOffering,
   type PurchasesPackage,
 } from "@revenuecat/purchases-capacitor";
-import { setNativePlusEntitlementActive } from "./storeEntitlement";
+import { setNativePlusEntitlementActive, readNativePlusEntitlementActive } from "./storeEntitlement";
 
 /**
  * RevenueCat wrapper — Phase 7.
@@ -52,6 +52,31 @@ import { setNativePlusEntitlementActive } from "./storeEntitlement";
  * dashboard would silently disable Plus for everyone.
  */
 export const STORMPATH_PLUS_ENTITLEMENT_ID = "plus";
+
+/** Normalize RC entitlement identifiers for comparison (`StormPath Pro` → `stormpathpro`). */
+function normalizeEntitlementId(id: string): string {
+  return id.toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+/** Known RevenueCat entitlement ids that grant Plus (dashboard slug may differ from display name). */
+const PLUS_ENTITLEMENT_NORMALIZED = new Set([
+  "plus",
+  "pro",
+  "stormpathplus",
+  "stormpathpro",
+]);
+
+function entitlementKeyGrantsPlus(key: string): boolean {
+  const norm = normalizeEntitlementId(key);
+  if (PLUS_ENTITLEMENT_NORMALIZED.has(norm)) return true;
+  return norm.includes("stormpath") && (norm.includes("plus") || norm.includes("pro"));
+}
+
+/** App Store product IDs that grant Plus — fallback when RC subscription exists but entitlement map is empty. */
+export const PLUS_SUBSCRIPTION_PRODUCT_IDS = [
+  "stormpath.plus.monthly",
+  "stormpath.plus.yearly",
+] as const;
 
 let configured = false;
 let configuringPromise: Promise<boolean> | null = null;
@@ -118,6 +143,13 @@ export async function initRevenueCat(opts: InitRevenueCatOptions): Promise<boole
       applyCustomerInfo(initial.customerInfo);
 
       configured = true;
+
+      /* After Apple/RevenueCat credentials are fixed server-side, a silent restore on cold
+       * start picks up TestFlight subs that predate valid receipt validation. */
+      if (!customerHasPlusEntitlement(initial.customerInfo)) {
+        void refreshPlusEntitlementFromStore();
+      }
+
       return true;
     } catch (e) {
       /* Configuration failure is silent — it's almost always a missing/wrong API key,
@@ -142,6 +174,13 @@ export function isRevenueCatReady(): boolean {
   return configured;
 }
 
+/** Await in-flight `initRevenueCat` — App mount sync should run after configure, not before. */
+export function whenRevenueCatReady(): Promise<boolean> {
+  if (configured) return Promise.resolve(true);
+  if (configuringPromise) return configuringPromise;
+  return Promise.resolve(false);
+}
+
 /** Internal: mirror RevenueCat's entitlement state into `safeStorage`. */
 function applyCustomerInfo(info: CustomerInfo): void {
   const hasPlus = customerHasPlusEntitlement(info);
@@ -157,8 +196,31 @@ function applyCustomerInfo(info: CustomerInfo): void {
 /** Pure helper — exported for tests and for callers that already have a `CustomerInfo` in hand. */
 export function customerHasPlusEntitlement(info: CustomerInfo | null | undefined): boolean {
   if (!info) return false;
-  const ent = info.entitlements?.active?.[STORMPATH_PLUS_ENTITLEMENT_ID];
-  return ent !== undefined;
+
+  const active = info.entitlements?.active ?? {};
+  for (const [key, ent] of Object.entries(active)) {
+    if (ent?.isActive !== false && entitlementKeyGrantsPlus(key)) {
+      return true;
+    }
+  }
+
+  /* StormPath has one paid tier — if RC shows any active entitlement (e.g. "StormPath Pro"), unlock Plus. */
+  if (Object.values(active).some((ent) => ent?.isActive !== false)) {
+    return true;
+  }
+
+  const all = info.entitlements?.all ?? {};
+  for (const [key, ent] of Object.entries(all)) {
+    if (ent.isActive && entitlementKeyGrantsPlus(key)) {
+      return true;
+    }
+  }
+
+  const subs = info.activeSubscriptions ?? [];
+  if (subs.length > 0) return true;
+
+  const byProduct = info.subscriptionsByProductIdentifier ?? {};
+  return Object.values(byProduct).some((s) => s?.isActive);
 }
 
 /**
@@ -204,6 +266,12 @@ export async function purchasePackage(pkg: PurchasesPackage): Promise<PurchaseOu
     applyCustomerInfo(result.customerInfo);
     return { status: "ok", entitled };
   } catch (e) {
+    if (e && typeof e === "object" && "code" in e) {
+      const err = e as { code: PURCHASES_ERROR_CODE };
+      if (err.code === PURCHASES_ERROR_CODE.PRODUCT_ALREADY_PURCHASED_ERROR) {
+        return restorePlusEntitlement();
+      }
+    }
     return mapPurchaseError(e);
   }
 }
@@ -223,6 +291,44 @@ export async function restorePlusEntitlement(): Promise<PurchaseOutcome> {
     return { status: "ok", entitled };
   } catch (e) {
     return mapPurchaseError(e);
+  }
+}
+
+/**
+ * Re-read StoreKit / RevenueCat when Apple already shows an active subscription but the app
+ * is still on Basic (common after metadata fixes or a purchase before entitlement wiring).
+ */
+export async function refreshPlusEntitlementFromStore(): Promise<PurchaseOutcome> {
+  if (!Capacitor.isNativePlatform()) return { status: "unsupported" };
+  if (!configured) return { status: "error", message: "Subscriptions are not configured." };
+  try {
+    const cached = await Purchases.getCustomerInfo();
+    if (customerHasPlusEntitlement(cached.customerInfo)) {
+      applyCustomerInfo(cached.customerInfo);
+      return { status: "ok", entitled: true };
+    }
+    return restorePlusEntitlement();
+  } catch (e) {
+    return mapPurchaseError(e);
+  }
+}
+
+/** Support diagnostics — active RevenueCat entitlements vs local Plus mirror. */
+export async function getPlusEntitlementDebugSnapshot(): Promise<string> {
+  if (!Capacitor.isNativePlatform()) return "iap: web (n/a)";
+  if (!configured) return "iap: sdk not configured";
+  try {
+    const info = (await Purchases.getCustomerInfo()).customerInfo;
+    const activeEnt =
+      Object.keys(info.entitlements?.active ?? {})
+        .filter(Boolean)
+        .join(", ") || "none";
+    const subs = (info.activeSubscriptions ?? []).join(", ") || "none";
+    const native = readNativePlusEntitlementActive() ? "yes" : "no";
+    return `iap: sdk=ok, nativePlus=${native}, rcEntitlements=[${activeEnt}], rcSubs=[${subs}]`;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return `iap: sdk error (${msg})`;
   }
 }
 

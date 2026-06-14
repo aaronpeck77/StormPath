@@ -7,7 +7,9 @@ import {
   pickDefaultPlusPackage,
   purchasePackage,
   type PurchaseOutcome,
+  refreshPlusEntitlementFromStore,
   restorePlusEntitlement,
+  whenRevenueCatReady,
 } from "./revenueCat";
 
 /**
@@ -43,6 +45,8 @@ export interface UseRevenueCatResult {
   purchase: () => Promise<void>;
   /** Drive restore flow. App Store review requires this exists for any IAP app. */
   restore: () => Promise<void>;
+  /** Silent refresh when Basic — e.g. About opened after Apple already shows a subscription. */
+  syncEntitlement: () => Promise<void>;
   /** Manually clear the banner — UI calls this when the AboutSheet closes. */
   clearMessage: () => void;
 }
@@ -60,9 +64,15 @@ export function useRevenueCat(): UseRevenueCatResult {
   useEffect(() => {
     const handler = () => setReady(isRevenueCatReady());
     window.addEventListener(NATIVE_PAY_TIER_CHANGED_EVENT, handler);
-    /* Also re-check on a microtask in case configure resolved between our render and effect mount. */
     queueMicrotask(handler);
-    return () => window.removeEventListener(NATIVE_PAY_TIER_CHANGED_EVENT, handler);
+    let cancelled = false;
+    void whenRevenueCatReady().then((ok) => {
+      if (!cancelled && ok) handler();
+    });
+    return () => {
+      cancelled = true;
+      window.removeEventListener(NATIVE_PAY_TIER_CHANGED_EVENT, handler);
+    };
   }, []);
 
   /* Lazy-fetch the offering once we know the SDK is up. Cached locally; if the user ever
@@ -81,15 +91,13 @@ export function useRevenueCat(): UseRevenueCatResult {
     };
   }, [ready, defaultPackage]);
 
-  const applyOutcome = useCallback((outcome: PurchaseOutcome, successText: string) => {
+  const applyOutcome = useCallback((outcome: PurchaseOutcome, successText: string, emptyText: string) => {
     if (outcome.status === "ok") {
       if (outcome.entitled) {
         setMessage(successText);
         setMessageKind("success");
       } else {
-        /* `ok` + `entitled: false` happens on Restore when the user has nothing to restore.
-         * Apple's UX guidance: show a polite "no purchases found" message rather than silence. */
-        setMessage("No prior purchases found on this Apple ID.");
+        setMessage(emptyText);
         setMessageKind("error");
       }
     } else if (outcome.status === "cancelled") {
@@ -116,7 +124,7 @@ export function useRevenueCat(): UseRevenueCatResult {
     setMessageKind(null);
     const outcome = await purchasePackage(defaultPackage);
     setBusy(false);
-    applyOutcome(outcome, "Welcome to Plus! All Plus features are unlocked.");
+    applyOutcome(outcome, "Welcome to Plus! All Plus features are unlocked.", "Purchase completed with Apple, but Plus did not unlock yet. Tap Restore purchases, or try again in a minute.");
   }, [defaultPackage, applyOutcome]);
 
   const restore = useCallback(async () => {
@@ -125,8 +133,22 @@ export function useRevenueCat(): UseRevenueCatResult {
     setMessageKind(null);
     const outcome = await restorePlusEntitlement();
     setBusy(false);
-    applyOutcome(outcome, "Plus restored. All Plus features are unlocked.");
+    applyOutcome(outcome, "Plus restored. All Plus features are unlocked.", "No prior purchases found on this Apple ID.");
   }, [applyOutcome]);
+
+  const syncEntitlement = useCallback(async () => {
+    if (!ready || busy) return;
+    setBusy(true);
+    const outcome = await refreshPlusEntitlementFromStore();
+    setBusy(false);
+    if (outcome.status === "ok" && outcome.entitled) {
+      setMessage("Plus restored. All Plus features are unlocked.");
+      setMessageKind("success");
+    } else if (outcome.status === "error") {
+      setMessage(outcome.message);
+      setMessageKind("error");
+    }
+  }, [ready, busy]);
 
   const clearMessage = useCallback(() => {
     setMessage(null);
@@ -142,8 +164,9 @@ export function useRevenueCat(): UseRevenueCatResult {
       messageKind,
       purchase,
       restore,
+      syncEntitlement,
       clearMessage,
     }),
-    [ready, defaultPackage, busy, message, messageKind, purchase, restore, clearMessage]
+    [ready, defaultPackage, busy, message, messageKind, purchase, restore, syncEntitlement, clearMessage]
   );
 }

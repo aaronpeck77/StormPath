@@ -255,7 +255,7 @@ import {
 import { payTierTestPanelEnabled } from "./config/env";
 import { useBasicAdMobBanner } from "./hooks/useBasicAdMobBanner";
 import { getPayTier, hasTollBypass, maxSavedPlaces, maxSavedRoutes } from "./billing/payFeatures";
-import { NATIVE_PAY_TIER_CHANGED_EVENT } from "./billing/revenueCat";
+import { NATIVE_PAY_TIER_CHANGED_EVENT, refreshPlusEntitlementFromStore, whenRevenueCatReady } from "./billing/revenueCat";
 import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
 import { completedTripFromGeometry } from "./frequentRoutes/tripDetector";
 import { useFrequentRouteLearning } from "./hooks/useFrequentRouteLearning";
@@ -389,7 +389,25 @@ export default function App() {
   useEffect(() => {
     const handler = () => reprobePayTier();
     window.addEventListener(NATIVE_PAY_TIER_CHANGED_EVENT, handler);
+    /* Re-read tier after async RevenueCat init may have written entitlement before listener mounted. */
+    queueMicrotask(reprobePayTier);
     return () => window.removeEventListener(NATIVE_PAY_TIER_CHANGED_EVENT, handler);
+  }, [reprobePayTier]);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let cancelled = false;
+    void whenRevenueCatReady().then(async (ready) => {
+      if (cancelled || !ready) return;
+      const outcome = await refreshPlusEntitlementFromStore();
+      if (!cancelled) reprobePayTier();
+      if (import.meta.env.DEV && outcome.status === "error") {
+        console.warn("[RevenueCat] launch entitlement sync:", outcome.message);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [reprobePayTier]);
   /** Plus vs Basic from `getPayTier()` (build env + native entitlement + optional LS override). */
   const isPlus = useMemo(() => getPayTier() === "plus", [payTierProbeKey]);
