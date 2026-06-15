@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PurchasesPackage } from "@revenuecat/purchases-capacitor";
 import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
 import { getPlusEntitlementDebugSnapshot } from "../billing/revenueCat";
@@ -98,14 +98,19 @@ export function AboutSheet({
    * resolved successfully (native + non-empty `VITE_REVENUECAT_API_KEY_IOS`); when false,
    * the panel below falls back to the existing `env.upgradeUrl` link. */
   const iap = useRevenueCat();
+  const syncedEntitlementOnOpenRef = useRef(false);
   /* Clear any leftover purchase / restore banner the next time the sheet reopens. */
   useEffect(() => {
-    if (!open) iap.clearMessage();
+    if (!open) {
+      syncedEntitlementOnOpenRef.current = false;
+      iap.clearMessage();
+    }
   }, [open, iap]);
 
-  /* Apple may already show an active subscription while RevenueCat / StormPath are still Basic. */
+  /* One silent sync per About open — avoids infinite restore loop on Basic. */
   useEffect(() => {
-    if (!open || plus || !iap.ready) return;
+    if (!open || plus || !iap.ready || syncedEntitlementOnOpenRef.current) return;
+    syncedEntitlementOnOpenRef.current = true;
     void iap.syncEntitlement();
   }, [open, plus, iap.ready, iap.syncEntitlement]);
 
@@ -277,7 +282,7 @@ export function AboutSheet({
                       onClick={() => void iap.purchase()}
                       disabled={iap.busy || !iap.defaultPackage}
                     >
-                      {iap.busy
+                      {iap.purchasing
                         ? "Working…"
                         : iap.defaultPackage
                         ? formatSubscribeButtonLabel(iap.defaultPackage)
@@ -318,7 +323,7 @@ export function AboutSheet({
                   onClick={() => void iap.restore()}
                   disabled={iap.busy}
                 >
-                  {iap.busy ? "Restoring…" : "Restore purchases"}
+                  {iap.restoring ? "Restoring…" : "Restore purchases"}
                 </button>
               )}
               {env.manageSubscriptionUrl ? (

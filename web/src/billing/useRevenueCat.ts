@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PurchasesPackage } from "@revenuecat/purchases-capacitor";
 import {
   getPlusOffering,
@@ -30,13 +30,19 @@ import {
  * "subscription test panel" component could share it.
  */
 
+type IapBusyAction = "purchase" | "restore" | "sync";
+
 export interface UseRevenueCatResult {
   /** True only on native + with API key + after configure resolved. */
   ready: boolean;
   /** Default package to surface in the Subscribe button. `null` while loading or unavailable. */
   defaultPackage: PurchasesPackage | null;
-  /** Set during purchase / restore, drives a button spinner. */
+  /** Any IAP network action in flight — disables both buttons. */
   busy: boolean;
+  /** Subscribe sheet open / purchase in progress. */
+  purchasing: boolean;
+  /** Restore or silent sync in progress. */
+  restoring: boolean;
   /** Short user-readable message after the last action; `null` clears the banner. */
   message: string | null;
   /** Whether `message` should be styled as success (`"success"`) or error (`"error"`). */
@@ -54,9 +60,10 @@ export interface UseRevenueCatResult {
 export function useRevenueCat(): UseRevenueCatResult {
   const [ready, setReady] = useState<boolean>(() => isRevenueCatReady());
   const [defaultPackage, setDefaultPackage] = useState<PurchasesPackage | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<IapBusyAction | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageKind, setMessageKind] = useState<"success" | "error" | null>(null);
+  const syncInFlightRef = useRef(false);
 
   /* Re-check ready state on the same window event RevenueCat dispatches when entitlement
    * changes — that's the soonest moment we know `configure()` finished. The first dispatch
@@ -119,47 +126,62 @@ export function useRevenueCat(): UseRevenueCatResult {
       setMessageKind("error");
       return;
     }
-    setBusy(true);
+    setBusyAction("purchase");
     setMessage(null);
     setMessageKind(null);
     const outcome = await purchasePackage(defaultPackage);
-    setBusy(false);
+    setBusyAction(null);
     applyOutcome(outcome, "Welcome to Plus! All Plus features are unlocked.", "Purchase completed with Apple, but Plus did not unlock yet. Tap Restore purchases, or try again in a minute.");
   }, [defaultPackage, applyOutcome]);
 
   const restore = useCallback(async () => {
-    setBusy(true);
+    setBusyAction("restore");
     setMessage(null);
     setMessageKind(null);
     const outcome = await restorePlusEntitlement();
-    setBusy(false);
+    setBusyAction(null);
     applyOutcome(outcome, "Plus restored. All Plus features are unlocked.", "No prior purchases found on this Apple ID.");
   }, [applyOutcome]);
 
+  /* Stable callback — must not depend on `busyAction` or About auto-sync loops forever. */
   const syncEntitlement = useCallback(async () => {
-    if (!ready || busy) return;
-    setBusy(true);
-    const outcome = await refreshPlusEntitlementFromStore();
-    setBusy(false);
-    if (outcome.status === "ok" && outcome.entitled) {
-      setMessage("Plus restored. All Plus features are unlocked.");
-      setMessageKind("success");
-    } else if (outcome.status === "error") {
-      setMessage(outcome.message);
-      setMessageKind("error");
+    if (!ready || syncInFlightRef.current) return;
+    syncInFlightRef.current = true;
+    setBusyAction("sync");
+    try {
+      const outcome = await refreshPlusEntitlementFromStore();
+      if (outcome.status === "ok" && outcome.entitled) {
+        setMessage("Plus restored. All Plus features are unlocked.");
+        setMessageKind("success");
+      } else if (outcome.status === "ok") {
+        setMessage("No prior purchases found on this Apple ID.");
+        setMessageKind("error");
+      } else if (outcome.status === "error") {
+        setMessage(outcome.message);
+        setMessageKind("error");
+      }
+    } finally {
+      syncInFlightRef.current = false;
+      setBusyAction(null);
     }
-  }, [ready, busy]);
+  }, [ready]);
 
   const clearMessage = useCallback(() => {
     setMessage(null);
     setMessageKind(null);
   }, []);
 
+  const purchasing = busyAction === "purchase";
+  const restoring = busyAction === "restore" || busyAction === "sync";
+  const busy = busyAction !== null;
+
   return useMemo(
     () => ({
       ready,
       defaultPackage,
       busy,
+      purchasing,
+      restoring,
       message,
       messageKind,
       purchase,
@@ -167,6 +189,6 @@ export function useRevenueCat(): UseRevenueCatResult {
       syncEntitlement,
       clearMessage,
     }),
-    [ready, defaultPackage, busy, message, messageKind, purchase, restore, syncEntitlement, clearMessage]
+    [ready, defaultPackage, busy, purchasing, restoring, message, messageKind, purchase, restore, syncEntitlement, clearMessage]
   );
 }

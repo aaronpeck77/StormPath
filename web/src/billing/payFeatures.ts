@@ -29,6 +29,8 @@ export const PAY_TIER_OVERRIDE_LS_KEY = "stormpath-pay-tier-override";
 export function getPayTier(): PayTier {
   /** QA override — only when the About test panel is enabled (dev or internal TF). Never on App Store retail. */
   if (payTierTestPanelEnabled()) {
+    /* Verified IAP always wins — avoids "Restore worked but still Basic" after QA forced Basic. */
+    if (readNativePlusEntitlementActive()) return "plus";
     const o = safeStorage.get(PAY_TIER_OVERRIDE_LS_KEY)?.toLowerCase();
     if (o === "plus" || o === "pro") return "plus";
     if (o === "free") return "free";
