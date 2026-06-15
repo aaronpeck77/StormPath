@@ -171,6 +171,17 @@ export function weatherCodeSeverity(
   return "info";
 }
 
+/** True when corridor Timelines forecast shows rain or elevated hazard (for advisory gating). */
+export function routeForecastHasSignificantWeather(
+  forecast: RouteForecast | null | undefined
+): boolean {
+  if (!forecast?.intervals.length) return false;
+  return forecast.intervals.some((iv) => {
+    if (iv.precipIntensityMmh > 0.05 || iv.precipProbability > 0.4) return true;
+    return weatherCodeSeverity(iv.weatherCode, iv.precipIntensityMmh, iv.windGustMph) !== "info";
+  });
+}
+
 // ── Minute precipitation forecast ────────────────────────────────────────────
 
 /**
@@ -414,9 +425,9 @@ export async function fetchRouteForecast(
 }
 
 /** Sample spacing aligned with {@link useTomorrowRouteForecast} — avoid drifting constants. */
-export const TIO_ROUTE_SAMPLE_INTERVAL_M = 16_000;
-export const TIO_ROUTE_MIN_SAMPLES = 2;
-export const TIO_ROUTE_MAX_SAMPLES = 8;
+export const TIO_ROUTE_SAMPLE_INTERVAL_M = 12_000;
+export const TIO_ROUTE_MIN_SAMPLES = 3;
+export const TIO_ROUTE_MAX_SAMPLES = 16;
 
 /**
  * Sample points along the polyline with ETA offsets for Timelines hourly forecasts.

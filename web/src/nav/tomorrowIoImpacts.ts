@@ -118,8 +118,8 @@ export function routeForecastToImpacts(
       const cat = categoryFromInterval(iv);
       return { iv, startM, endM, sev, cat };
     })
-    // Only include caution-or-worse segments.
-    .filter((a) => a.sev !== "info" || a.iv.precipIntensityMmh > 0.1);
+    // Include caution-or-worse segments and any measurable rain.
+    .filter((a) => a.sev !== "info" || a.iv.precipIntensityMmh > 0.05);
 
   if (!annotated.length) return [];
 

@@ -30,6 +30,7 @@ import {
   useTomorrowMinutePrecip,
   useTomorrowRouteForecast,
 } from "./hooks/useTomorrowWeather";
+import { routeForecastHasSignificantWeather } from "./services/tomorrowIo";
 import { routeForecastToImpacts } from "./nav/tomorrowIoImpacts";
 import { buildMockTripBetween, EMPTY_TRIP } from "./nav/emptyTrip";
 import { mergePlanPreservingPrimary } from "./nav/mergePlanRoutes";
@@ -2904,11 +2905,13 @@ export default function App() {
     weatherDetailAlongM,
   ]);
 
-  /** Weather impacts (NWS / heavy radar) on the strip + map — Plus only. */
+  /** Weather impacts (NWS / radar / corridor forecast) on the strip + map — Plus only. */
+  const tioRouteHasWeather = routeForecastHasSignificantWeather(tioRouteForecast);
   const showWeatherImpactsOnRoute =
     isPlus &&
     advisoryLifeSafetyOn &&
     (advisoryPlusDetailOn ||
+      tioRouteHasWeather ||
       routeStormStripBands.length > 0 ||
       stormCorridorAlerts.length > 0 ||
       radarDisplayIntensity(radarMosaicMaxIntensity) >= RADAR_SOFT_THRESHOLD ||
@@ -3020,11 +3023,12 @@ export default function App() {
   const routeImpactsForUi = useMemo(() => {
     if (!isPlus) return [];
     return routeImpacts.filter((i) => {
+      if (i.source === "tomorrowIo") return true;
       if (i.category === "traffic") return showTrafficCorridorOnRoute;
       if (i.category === "closure" || i.category === "incident" || i.category === "construction") {
         return showRoadNoticesOnRoute;
       }
-      // Weather impacts (NWS / radar) — gated by storm session detail.
+      // Weather impacts (NWS / radar) — gated by storm session detail or live corridor wx.
       return showWeatherImpactsOnRoute;
     });
   }, [isPlus, routeImpacts, showTrafficCorridorOnRoute, showRoadNoticesOnRoute, showWeatherImpactsOnRoute]);

@@ -370,8 +370,27 @@ export function subsamplePolylineVertexBudget(route: LngLat[], maxVertices: numb
   return deduped.length >= 2 ? deduped : route;
 }
 
-const DISPLAY_SLICE_VERTEX_BUDGET = 128;
+/**
+ * Subsample by distance along the polyline (not array index) — keeps bends on long interstate routes.
+ * Used when storing Mapbox overview geometry so drive-mode lines follow roads when zoomed in.
+ */
+export function subsamplePolylineAlongDistance(route: LngLat[], maxVertices: number): LngLat[] {
+  if (route.length <= maxVertices) return route;
+  const total = polylineLengthMeters(route);
+  if (total < 1) return route;
+  const out: LngLat[] = [route[0]!];
+  const stepM = total / Math.max(1, maxVertices - 1);
+  for (let i = 1; i < maxVertices - 1; i++) {
+    out.push(pointAtAlongMeters(route, i * stepM));
+  }
+  out.push(route[route.length - 1]!);
+  return out;
+}
+
+const DISPLAY_SLICE_VERTEX_BUDGET = 512;
 const DISPLAY_SLICE_LONG_ROUTE_M = 400_000;
+/** Local map highlights shorter than this keep full geometry (no chord-cutting). */
+const DISPLAY_SLICE_LOCAL_SEGMENT_M = 160_000;
 
 /**
  * Map highlight slicing — subsamples very dense polylines so cross-country routes stay responsive.
@@ -384,10 +403,14 @@ export function slicePolylineBetweenAlongForDisplay(
   totalRouteM?: number
 ): LngLat[] {
   const total = totalRouteM ?? polylineLengthMeters(geometry);
+  const segmentM = Math.abs(endM - startM);
+  if (segmentM <= DISPLAY_SLICE_LOCAL_SEGMENT_M && geometry.length <= 2400) {
+    return slicePolylineBetweenAlong(geometry, startM, endM);
+  }
   if (geometry.length <= 240 && total < DISPLAY_SLICE_LONG_ROUTE_M) {
     return slicePolylineBetweenAlong(geometry, startM, endM);
   }
-  const vis = subsamplePolylineVertexBudget(geometry, DISPLAY_SLICE_VERTEX_BUDGET);
+  const vis = subsamplePolylineAlongDistance(geometry, DISPLAY_SLICE_VERTEX_BUDGET);
   const visLen = polylineLengthMeters(vis);
   if (total <= 0 || visLen <= 0) return slicePolylineBetweenAlong(geometry, startM, endM);
   const ratio = visLen / total;

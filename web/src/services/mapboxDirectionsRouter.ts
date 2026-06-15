@@ -14,6 +14,7 @@ import {
   polylineLengthMeters,
   routeCorridorOverlapFraction,
   routesEffectivelySame,
+  subsamplePolylineAlongDistance,
   subsamplePolylineVertexBudget,
 } from "../nav/routeGeometry";
 import { shortenTurnInstruction } from "../nav/turnInstructionShort";
@@ -168,7 +169,7 @@ function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteT
  * Cross-country `overview=full` lines are huge; keep payload bounded, but preserve enough vertices
  * so rendered turns stay attached to real roads on long interstate drives (esp. TestFlight/native).
  */
-const MAX_STORED_GEOMETRY_VERTICES = 12000;
+const MAX_STORED_GEOMETRY_VERTICES = 16_000;
 const GEOM_COMPARE_MAX_VERTICES = 200;
 
 function rescaledNoticeAlongMeters(
@@ -275,7 +276,7 @@ function routeFromDirectionsApi(
   const tollInfo = detectRouteTollsFromLegs(r.legs);
   const displayGeometry =
     geometry.length > MAX_STORED_GEOMETRY_VERTICES
-      ? subsamplePolylineVertexBudget(geometry, MAX_STORED_GEOMETRY_VERTICES)
+      ? subsamplePolylineAlongDistance(geometry, MAX_STORED_GEOMETRY_VERTICES)
       : geometry;
   const alongForDisplay = rescaledNoticeAlongMeters(noticeAlong, geometry, displayGeometry);
 

@@ -849,6 +849,8 @@
   --nav-chrome-panel-bg: rgba(18, 20, 24, 0.96);
   --nav-chrome-panel-border: 1px solid rgba(255, 255, 255, 0.1);
   --nav-chrome-panel-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+  /* Phone-width chrome column — centered on tablet portrait (see media query below). */
+  --sp-tablet-chrome-w: min(600px, calc(100vw - 16px));
   --basic-admob-banner-h: 50px;
 }
 
@@ -1090,9 +1092,9 @@
 /* Search + route + toolbar share width and stack cleanly */
 .nav-bottom-chrome-wrap {
   position: relative;
-  align-self: flex-start;
+  align-self: center;
   width: 100%;
-  max-width: min(600px, calc(100vw - 16px));
+  max-width: var(--sp-tablet-chrome-w, min(600px, calc(100vw - 16px)));
   display: flex;
   flex-direction: column;
   gap: var(--nav-chrome-gap, 5px);
@@ -2208,10 +2210,10 @@
   z-index: 6;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: center;
   justify-content: flex-end;
   gap: var(--nav-bottom-stack-gap, 4px);
-  padding: 0 max(8px, env(safe-area-inset-left)) var(--nav-bottom-reserved) max(8px, env(safe-area-inset-right));
+  padding: 0 max(8px, env(safe-area-inset-right)) var(--nav-bottom-reserved) max(8px, env(safe-area-inset-left));
   /* Block map destination picks in the bottom chrome band (gaps between rows included). */
   pointer-events: auto;
   touch-action: manipulation;
@@ -13746,6 +13748,74 @@
     animation: none;
     transform: scale(1.5);
     opacity: 0.35;
+  }
+}
+
+/*
+ * Tablet / wide portrait — keep phone-width chrome centered (iPad upright).
+ * Map stays full bleed; bottom dock, top guidance, and progress rail share one centered column.
+ */
+@media (min-width: 521px) and (orientation: portrait) {
+  .app-shell.nav-fullmap .nav-drive-overlay-stack {
+    grid-template-columns: 1fr minmax(0, var(--sp-tablet-chrome-w)) 1fr;
+  }
+
+  .app-shell.nav-fullmap .nav-drive-overlay-stack > .nav-top-cluster {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    max-width: var(--sp-tablet-chrome-w);
+    justify-self: center;
+    box-sizing: border-box;
+  }
+
+  .app-shell.nav-fullmap .nav-route-progress-rail {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+    padding-right: max(10px, calc(6px + env(safe-area-inset-right, 0px)));
+  }
+
+  .app-shell.nav-fullmap .nav-bottom-chrome-wrap {
+    max-width: var(--sp-tablet-chrome-w);
+  }
+
+  .app-shell.nav-fullmap .nav-bottom-stack > .route-recording-banner,
+  .app-shell.nav-fullmap .nav-bottom-stack > .traffic-bypass-compare {
+    width: 100%;
+    max-width: var(--sp-tablet-chrome-w);
+  }
+
+  .app-shell.nav-fullmap .map-stage.map-bleed .mapboxgl-ctrl-bottom-right {
+    right: calc(
+      (100vw - var(--sp-tablet-chrome-w)) / 2 + 64px + max(6px, env(safe-area-inset-right, 0px)) + 8px
+    ) !important;
+  }
+
+  .app-shell.nav-fullmap .route-pip-reopen {
+    right: calc((100vw - var(--sp-tablet-chrome-w)) / 2 + max(4px, env(safe-area-inset-right, 0px)));
+  }
+
+  .about-sheet,
+  .cfs-sheet {
+    left: 50%;
+    right: auto;
+    width: min(var(--sp-tablet-chrome-w), calc(100vw - 20px));
+    transform: translateX(-50%);
+  }
+
+  .name-sheet {
+    left: 50%;
+    right: auto;
+    width: min(var(--sp-tablet-chrome-w), calc(100vw - 24px));
+    transform: translateX(-50%);
+  }
+
+  .saved-drawer:not(.saved-drawer--full) {
+    left: 50%;
+    right: auto;
+    width: min(var(--sp-tablet-chrome-w), 100vw);
+    transform: translateX(-50%);
   }
 }
 
