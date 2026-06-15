@@ -11,10 +11,8 @@ import {
   closestAlongRouteMeters,
   cumulativeLengthToVertex,
   haversineMeters,
-  polylineLengthMeters,
   routeCorridorOverlapFraction,
   routesEffectivelySame,
-  subsamplePolylineAlongDistance,
   subsamplePolylineVertexBudget,
 } from "../nav/routeGeometry";
 import { shortenTurnInstruction } from "../nav/turnInstructionShort";
@@ -165,27 +163,8 @@ function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteT
   return out;
 }
 
-/**
- * Cross-country `overview=full` lines are huge; keep payload bounded, but preserve enough vertices
- * so rendered turns stay attached to real roads on long interstate drives (esp. TestFlight/native).
- */
-const MAX_STORED_GEOMETRY_VERTICES = 16_000;
+/** O(200) per side — corridor overlap / same-shape checks only (not map display). */
 const GEOM_COMPARE_MAX_VERTICES = 200;
-
-function rescaledNoticeAlongMeters(
-  along: (number | undefined)[] | undefined,
-  full: LngLat[],
-  out: LngLat[]
-): (number | undefined)[] | undefined {
-  if (!along) return along;
-  const fLen = polylineLengthMeters(full);
-  const oLen = polylineLengthMeters(out);
-  if (fLen < 1e-3 || oLen < 1e-3) return along;
-  const s = oLen / fLen;
-  return along.map((m) =>
-    m != null && Number.isFinite(m) && m >= 0 ? m * s : m
-  );
-}
 
 /** O(200) per side — corridor overlap, not total-length equality (shared legs are OK). */
 function sameRouteShapeLine(a: LngLat[], b: LngLat[]): boolean {
@@ -274,21 +253,16 @@ function routeFromDirectionsApi(
 
   const { texts: notices, alongMeters: noticeAlong } = collectRouteNoticesWithAlong(r, geometry);
   const tollInfo = detectRouteTollsFromLegs(r.legs);
-  const displayGeometry =
-    geometry.length > MAX_STORED_GEOMETRY_VERTICES
-      ? subsamplePolylineAlongDistance(geometry, MAX_STORED_GEOMETRY_VERTICES)
-      : geometry;
-  const alongForDisplay = rescaledNoticeAlongMeters(noticeAlong, geometry, displayGeometry);
 
   return {
     id,
     role,
     label,
-    geometry: displayGeometry,
+    geometry,
     baseEtaMinutes: Math.max(1, durSec / 60),
     turnSteps: parseSteps(r),
     routeNotices: notices.length ? notices : undefined,
-    routeNoticeAlongMeters: notices.length ? alongForDisplay : undefined,
+    routeNoticeAlongMeters: notices.length ? noticeAlong : undefined,
     hasTolls: tollInfo.hasTolls || undefined,
     tollLabels: tollInfo.tollLabels.length ? tollInfo.tollLabels : undefined,
   };

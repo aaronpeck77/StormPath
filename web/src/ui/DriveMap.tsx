@@ -754,6 +754,8 @@ type Props = {
    * segment far ahead of the user's real position.
    */
   snapSeedMeters?: number | null;
+  /** Along-route meters on the active leg — drives drive-mode route line slicing. */
+  userAlongMeters?: number | null;
   /** Colored road traffic (Mapbox traffic-v1); mirrors Hazards → Road & traffic checkbox. */
   trafficConditionsOnMap?: boolean;
   /** Drive mode: live map bearing (degrees) for a north-fixed compass in the chrome. */
@@ -1035,6 +1037,7 @@ export function DriveMap({
   recenterPlanningPuckTick = 0,
   puckSnapGeometry = null,
   snapSeedMeters = null,
+  userAlongMeters = null,
   trafficConditionsOnMap = false,
   onDriveCameraBearingDeg,
   stormBrowseBoundsReporting = false,
@@ -1082,6 +1085,12 @@ export function DriveMap({
   const snapSeedMetersRef = useRef<number | null>(null);
   snapSeedMetersRef.current = (snapSeedMeters != null && Number.isFinite(snapSeedMeters) && snapSeedMeters >= 0)
     ? snapSeedMeters : null;
+  const userAlongMetersRef = useRef<number | null>(null);
+  userAlongMetersRef.current =
+    userAlongMeters != null && Number.isFinite(userAlongMeters) && userAlongMeters >= 0
+      ? userAlongMeters
+      : null;
+  const lastDriveRouteLineSyncAlongRef = useRef<number | null>(null);
   const speedMpsRef = useRef<number | null>(null);
   speedMpsRef.current = speedMps;
   const viewModeRef = useRef(viewMode);
@@ -2217,6 +2226,7 @@ export function DriveMap({
           viewMode,
           isOverviewPip: false,
           routeComparePicker: trafficBypassCompareActive,
+          userAlongMeters: userAlongMetersRef.current,
         }
       );
       liftTrafficThenRoutesThenHits(
@@ -2269,6 +2279,7 @@ export function DriveMap({
           viewMode,
           isOverviewPip: false,
           routeComparePicker: trafficBypassCompareActive,
+          userAlongMeters: userAlongMetersRef.current,
         }
       );
       liftTrafficThenRoutesThenHits(
@@ -2280,6 +2291,7 @@ export function DriveMap({
 
     syncTripRoutesRef.current = sync;
 
+    lastDriveRouteLineSyncAlongRef.current = null;
     sync();
     map.on("style.load", sync);
     return () => {
@@ -2297,6 +2309,17 @@ export function DriveMap({
     viewMode,
     trafficBypassCompareActive,
   ]);
+
+  /** Drive mode: refresh the ahead-only route slice as the puck moves (throttled — avoids map jank). */
+  useEffect(() => {
+    if (!mapReady || viewMode !== "drive" || !navigationStarted || routes.length === 0) return;
+    const along = userAlongMeters;
+    if (along == null || !Number.isFinite(along)) return;
+    const prev = lastDriveRouteLineSyncAlongRef.current;
+    if (prev != null && Math.abs(along - prev) < 450) return;
+    lastDriveRouteLineSyncAlongRef.current = along;
+    syncTripRoutesRef.current();
+  }, [mapReady, viewMode, navigationStarted, routes.length, userAlongMeters]);
 
   /**
    * Map layer health: after routes load (especially on slow / low-data links), verify line layers
@@ -2692,17 +2715,25 @@ export function DriveMap({
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
-    const focusGeom =
-      corridorRouteGeometry && corridorRouteGeometry.length >= 2
-        ? corridorRouteGeometry
-        : routes.find((r) => r.id === lineFocusId)?.geometry;
+    let cancelled = false;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     const lift = () => {
+      if (cancelled) return;
+      const focusGeom =
+        corridorRouteGeometry && corridorRouteGeometry.length >= 2
+          ? corridorRouteGeometry
+          : routes.find((r) => r.id === lineFocusId)?.geometry;
+
+      const clipBehindAlongM =
+        navigationStarted && viewMode === "drive" ? userAlongMetersRef.current : null;
+
       applyRouteConditionHighlights(map, {
         alerts: alongRouteAlerts,
         routeGeometry: focusGeom,
         stormGeoJson: weatherAlertGeoJson,
         stormAlongRouteBands,
+        clipBehindAlongM,
       });
       liftTrafficThenRoutesThenHits(
         map,
@@ -2710,8 +2741,18 @@ export function DriveMap({
       );
     };
 
-    if (map.isStyleLoaded()) lift();
-    else map.once("load", lift);
+    const schedule = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(lift, 220);
+    };
+
+    if (map.isStyleLoaded()) schedule();
+    else map.once("load", schedule);
+
+    return () => {
+      cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
   }, [
     mapReady,
     alongRouteAlerts,
@@ -2722,6 +2763,7 @@ export function DriveMap({
     navigationStarted,
     viewMode,
     weatherAlertGeoJson,
+    userAlongMeters,
   ]);
 
   useEffect(() => {

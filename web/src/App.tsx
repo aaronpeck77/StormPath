@@ -3100,10 +3100,14 @@ export default function App() {
   );
 
   /** Map halo — only weather you're approaching soon; distant items stay on timeline/advisory. */
-  const routeAheadMapBands = useMemo(
-    () => timelineToProgressStripBands(routeAheadTimeline, { omitCoarsePreview: true }),
-    [routeAheadTimeline]
-  );
+  const routeAheadMapBands = useMemo(() => {
+    const bands = timelineToProgressStripBands(routeAheadTimeline, { omitCoarsePreview: true });
+    if (viewMode !== "drive" || !Number.isFinite(advisoryUserAlongM)) return bands;
+    const floorM = Math.max(0, advisoryUserAlongM - 200);
+    return bands
+      .map((b) => ({ ...b, startM: Math.max(b.startM, floorM) }))
+      .filter((b) => b.endM - b.startM >= 8);
+  }, [routeAheadTimeline, viewMode, advisoryUserAlongM]);
 
   /**
    * Project unified impacts back to the legacy `RouteAlert` shape so existing surfaces (progress strip,
@@ -5471,6 +5475,9 @@ export default function App() {
               Number.isFinite(userAlongGuidanceM) && (userAlongGuidanceM ?? 0) >= 0
                 ? userAlongGuidanceM
                 : null
+            }
+            userAlongMeters={
+              navigationStarted && Number.isFinite(userAlongGuidanceM) ? userAlongGuidanceM : null
             }
             trafficConditionsOnMap={Boolean(
               isPlus &&

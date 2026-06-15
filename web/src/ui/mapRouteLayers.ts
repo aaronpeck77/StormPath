@@ -4,7 +4,7 @@ import {
   ROUTE_CORRIDOR_HIGHLIGHT_HALF_SPAN_M,
   type RouteAlert,
 } from "../nav/routeAlerts";
-import { haversineMeters, polylineLengthMeters, slicePolylineBetweenAlongForDisplay } from "../nav/routeGeometry";
+import { haversineMeters, polylineLengthMeters, routeLineGeometryForDriveDisplay, slicePolylineBetweenAlongForDisplay } from "../nav/routeGeometry";
 import { sliceRouteAhead } from "../nav/routeRemaining";
 import type { LngLat, NavRoute } from "../nav/types";
 import {
@@ -29,7 +29,22 @@ export type RouteConditionHighlightOpts = {
   stormGeoJson: GeoJSON.FeatureCollection | null | undefined;
   /** Per-alert NWS spans along the route — same source as the progress strip storm bands. */
   stormAlongRouteBands?: StormProgressStripBand[];
+  /** Drive mode: omit halo segments behind the puck (avoids a “stray line” back toward the start). */
+  clipBehindAlongM?: number | null;
 };
+
+function clipStormBandsBehindUser(
+  bands: StormProgressStripBand[] | undefined,
+  clipBehindAlongM: number | null | undefined
+): StormProgressStripBand[] | undefined {
+  if (!bands?.length || clipBehindAlongM == null || !Number.isFinite(clipBehindAlongM)) {
+    return bands;
+  }
+  const floorM = Math.max(0, clipBehindAlongM - 200);
+  return bands
+    .map((b) => ({ ...b, startM: Math.max(b.startM, floorM) }))
+    .filter((b) => b.endM - b.startM >= 8);
+}
 
 /** Zoom-dependent halo under the route leg — visible but not overpowering the blue core */
 const ROUTE_COND_CASING_WIDTH: mapboxgl.ExpressionSpecification = [
@@ -59,7 +74,7 @@ function syncRouteConditionCasingPaint(map: mapboxgl.Map): void {
  */
 export function applyRouteConditionHighlights(
   map: mapboxgl.Map,
-  { alerts, routeGeometry, stormGeoJson, stormAlongRouteBands }: RouteConditionHighlightOpts
+  { alerts, routeGeometry, stormGeoJson, stormAlongRouteBands, clipBehindAlongM }: RouteConditionHighlightOpts
 ) {
   /* Former solid overlay on top of the route — remove if present (e.g. HMR). */
   const legacyOverlay = "route-condition-highlights-line";
@@ -77,9 +92,17 @@ export function applyRouteConditionHighlights(
   if (routeGeometry?.length && alerts?.length) {
     const half = ROUTE_CORRIDOR_HIGHLIGHT_HALF_SPAN_M;
     for (const a of alerts) {
+      if (
+        clipBehindAlongM != null &&
+        Number.isFinite(clipBehindAlongM) &&
+        a.alongMeters + half < clipBehindAlongM - 80
+      ) {
+        continue;
+      }
+      const lo = Math.max(a.alongMeters - half, clipBehindAlongM ?? 0);
       const coords = slicePolylineBetweenAlongForDisplay(
         routeGeometry,
-        a.alongMeters - half,
+        lo,
         a.alongMeters + half,
         routeTotalM
       );
@@ -94,9 +117,12 @@ export function applyRouteConditionHighlights(
 
   if (routeGeometry?.length) {
     if (stormAlongRouteBands?.length) {
-      features.push(
-        ...stormStripBandsToLineFeatures(routeGeometry, stormAlongRouteBands, routeTotalM)
-      );
+      const bandsForMap = clipStormBandsBehindUser(stormAlongRouteBands, clipBehindAlongM);
+      if (bandsForMap?.length) {
+        features.push(
+          ...stormStripBandsToLineFeatures(routeGeometry, bandsForMap, routeTotalM)
+        );
+      }
     } else {
       features.push(...stormOverlapLineFeatures(routeGeometry, stormGeoJson ?? null));
     }
@@ -176,7 +202,21 @@ export type ApplyRoutesLayerOptions = {
   isOverviewPip?: boolean;
   /** Top-down A/B/C picker: bold selected slot color, dim the other legs */
   routeComparePicker?: boolean;
+  /** Drive mode: slice the active leg from just behind the puck with full road detail. */
+  userAlongMeters?: number | null;
 };
+
+function routeCoordinatesForMap(route: NavRoute, opts?: ApplyRoutesLayerOptions): LngLat[] {
+  const geometry = route.geometry;
+  if (!geometry.length) return geometry;
+  const viewMode = opts?.viewMode ?? "route";
+  const navigating = opts?.navigationStarted ?? false;
+  const isOverviewPip = opts?.isOverviewPip ?? false;
+  if (viewMode === "drive" && navigating && !isOverviewPip) {
+    return routeLineGeometryForDriveDisplay(geometry, opts?.userAlongMeters);
+  }
+  return geometry;
+}
 
 export function removeStaleRoutes(
   map: mapboxgl.Map,
@@ -360,7 +400,7 @@ export function applyRoutesToMap(
     const geojson: GeoJSON.Feature<GeoJSON.LineString> = {
       type: "Feature",
       properties: {},
-      geometry: { type: "LineString", coordinates: route.geometry },
+      geometry: { type: "LineString", coordinates: routeCoordinatesForMap(route, opts) },
     };
 
     const lineId = `${id}-line`;

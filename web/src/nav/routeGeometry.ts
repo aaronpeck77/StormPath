@@ -387,14 +387,42 @@ export function subsamplePolylineAlongDistance(route: LngLat[], maxVertices: num
   return out;
 }
 
-const DISPLAY_SLICE_VERTEX_BUDGET = 512;
-const DISPLAY_SLICE_LONG_ROUTE_M = 400_000;
-/** Local map highlights shorter than this keep full geometry (no chord-cutting). */
-const DISPLAY_SLICE_LOCAL_SEGMENT_M = 160_000;
+/** Weather/hazard halo segments — dense enough to follow roads on long legs. */
+const HIGHLIGHT_GEOMETRY_VERTEX_BUDGET = 8000;
+const HIGHLIGHT_GEOMETRY_LONG_ROUTE_M = 500_000;
+
+/** Drive map line: short tail behind puck, full detail ahead (cap only when remaining leg is huge). */
+const DRIVE_LINE_BEHIND_M = 1500;
+const DRIVE_LINE_MAX_VERTICES = 24_000;
 
 /**
- * Map highlight slicing — subsamples very dense polylines so cross-country routes stay responsive.
- * `startM` / `endM` are on the full route; geometry is simplified for display only.
+ * Active route polyline for drive-mode map rendering — full-resolution slice from just behind the puck
+ * to the destination. Only subsamples when the remaining leg is extremely dense (cross-country).
+ */
+export function routeLineGeometryForDriveDisplay(
+  geometry: LngLat[],
+  userAlongM: number | null | undefined
+): LngLat[] {
+  if (geometry.length < 2) return geometry;
+  if (userAlongM == null || !Number.isFinite(userAlongM) || userAlongM < 0) return geometry;
+
+  const total = polylineLengthMeters(geometry);
+  const startM = Math.max(0, userAlongM - DRIVE_LINE_BEHIND_M);
+  if (total - startM < 2) return geometry;
+
+  let slice = slicePolylineBetweenAlong(geometry, startM, total);
+  if (slice.length < 2) {
+    slice = [pointAtAlongMeters(geometry, startM), pointAtAlongMeters(geometry, total)];
+  }
+  if (slice.length > DRIVE_LINE_MAX_VERTICES) {
+    slice = subsamplePolylineAlongDistance(slice, DRIVE_LINE_MAX_VERTICES);
+  }
+  return slice.length >= 2 ? slice : geometry;
+}
+
+/**
+ * Map highlight slicing — uses full geometry for normal routes; distance-subsamples only very long
+ * cross-country polylines so hazard/NWS halos follow roads instead of cutting chord lines.
  */
 export function slicePolylineBetweenAlongForDisplay(
   geometry: LngLat[],
@@ -403,14 +431,10 @@ export function slicePolylineBetweenAlongForDisplay(
   totalRouteM?: number
 ): LngLat[] {
   const total = totalRouteM ?? polylineLengthMeters(geometry);
-  const segmentM = Math.abs(endM - startM);
-  if (segmentM <= DISPLAY_SLICE_LOCAL_SEGMENT_M && geometry.length <= 2400) {
+  if (geometry.length <= HIGHLIGHT_GEOMETRY_VERTEX_BUDGET && total < HIGHLIGHT_GEOMETRY_LONG_ROUTE_M) {
     return slicePolylineBetweenAlong(geometry, startM, endM);
   }
-  if (geometry.length <= 240 && total < DISPLAY_SLICE_LONG_ROUTE_M) {
-    return slicePolylineBetweenAlong(geometry, startM, endM);
-  }
-  const vis = subsamplePolylineAlongDistance(geometry, DISPLAY_SLICE_VERTEX_BUDGET);
+  const vis = subsamplePolylineAlongDistance(geometry, HIGHLIGHT_GEOMETRY_VERTEX_BUDGET);
   const visLen = polylineLengthMeters(vis);
   if (total <= 0 || visLen <= 0) return slicePolylineBetweenAlong(geometry, startM, endM);
   const ratio = visLen / total;

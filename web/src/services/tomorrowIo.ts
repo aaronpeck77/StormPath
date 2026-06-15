@@ -425,9 +425,9 @@ export async function fetchRouteForecast(
 }
 
 /** Sample spacing aligned with {@link useTomorrowRouteForecast} — avoid drifting constants. */
-export const TIO_ROUTE_SAMPLE_INTERVAL_M = 12_000;
+export const TIO_ROUTE_SAMPLE_INTERVAL_M = 14_000;
 export const TIO_ROUTE_MIN_SAMPLES = 3;
-export const TIO_ROUTE_MAX_SAMPLES = 16;
+export const TIO_ROUTE_MAX_SAMPLES = 10;
 
 /**
  * Sample points along the polyline with ETA offsets for Timelines hourly forecasts.
