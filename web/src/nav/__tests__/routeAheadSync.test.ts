@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRouteAheadGlanceCards } from "../routeAheadSync";
+import { buildRouteAheadGlanceCards, timelineToProgressStripBands } from "../routeAheadSync";
 import type { TimelineItem } from "../../ui/RouteHazardTimeline";
 
 const baseItem = (overrides: Partial<TimelineItem>): TimelineItem => ({
@@ -76,5 +76,16 @@ describe("buildRouteAheadGlanceCards", () => {
       planEtaMinutes: 60,
     });
     expect(cards).toHaveLength(0);
+  });
+});
+
+describe("timelineToProgressStripBands", () => {
+  it("skips strip-muted minor flood items on the progress rail", () => {
+    const bands = timelineToProgressStripBands([
+      baseItem({ id: "minor-flood", stripMuted: true, label: "Flood Advisory" }),
+      baseItem({ id: "warning", stripMuted: false, label: "Flash Flood Warning" }),
+    ]);
+    expect(bands).toHaveLength(1);
+    expect(bands[0]!.severity).toBe("serious");
   });
 });

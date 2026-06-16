@@ -324,34 +324,119 @@ export async function fetchPointHourlyForecast(
 
 // ── Route hourly forecast ─────────────────────────────────────────────────────
 
-/**
- * Fetches hourly weather conditions along a route, keyed to when you'll
- * actually arrive at each waypoint.
- *
- * @param waypoints - Array of {lat, lng, etaMinutes} sampled along the route.
- *   We group these by ETA hour and call the Timelines API for each unique hour
- *   to stay within rate limits.
- */
-export async function fetchRouteForecast(
-  apiKey: string,
+export const TIO_ROUTE_FORECAST_MAX_LOCATIONS = 6;
+
+type TimelineValues = {
+  temperature?: number;
+  precipitationIntensity?: number;
+  precipitationProbability?: number;
+  windSpeed?: number;
+  windGust?: number;
+  weatherCode?: number;
+  wetRoadIndex?: number;
+};
+
+type HourlyByOffset = { offsetMin: number; values: TimelineValues };
+
+/** ~110 m grid — dedupe nearby waypoints without merging distinct corridor cells. */
+export function routeForecastLocationKey(lat: number, lng: number): string {
+  return `${lat.toFixed(3)},${lng.toFixed(3)}`;
+}
+
+/** Spread fetch points along the route; cap API calls while covering the full corridor. */
+export function pickRouteForecastFetchLocations(
   waypoints: { lat: number; lng: number; etaMinutes: number }[],
+  maxLocations = TIO_ROUTE_FORECAST_MAX_LOCATIONS
+): { lat: number; lng: number }[] {
+  if (!waypoints.length) return [];
+  if (waypoints.length <= maxLocations) {
+    const seen = new Set<string>();
+    const out: { lat: number; lng: number }[] = [];
+    for (const wp of waypoints) {
+      const k = routeForecastLocationKey(wp.lat, wp.lng);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push({ lat: wp.lat, lng: wp.lng });
+    }
+    return out;
+  }
+
+  const indices: number[] = [];
+  for (let i = 0; i < maxLocations; i++) {
+    indices.push(Math.round((i * (waypoints.length - 1)) / Math.max(1, maxLocations - 1)));
+  }
+  const seen = new Set<string>();
+  const out: { lat: number; lng: number }[] = [];
+  for (const i of indices) {
+    const wp = waypoints[i]!;
+    const k = routeForecastLocationKey(wp.lat, wp.lng);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ lat: wp.lat, lng: wp.lng });
+  }
+  return out;
+}
+
+function nearestFetchLocationKey(
+  wp: { lat: number; lng: number },
+  locations: { lat: number; lng: number }[]
+): string {
+  let best = locations[0]!;
+  let bestD = Number.POSITIVE_INFINITY;
+  for (const loc of locations) {
+    const dLat = wp.lat - loc.lat;
+    const dLng = wp.lng - loc.lng;
+    const d = dLat * dLat + dLng * dLng;
+    if (d < bestD) {
+      bestD = d;
+      best = loc;
+    }
+  }
+  return routeForecastLocationKey(best.lat, best.lng);
+}
+
+function intervalFromHourlyTimeline(
+  wp: { lat: number; lng: number; etaMinutes: number },
+  hourlyByOffsetMin: HourlyByOffset[]
+): RouteHourlyInterval {
+  let best = hourlyByOffsetMin[0]!;
+  let bestDelta = Math.abs(best.offsetMin - wp.etaMinutes);
+  for (const h of hourlyByOffsetMin) {
+    const d = Math.abs(h.offsetMin - wp.etaMinutes);
+    if (d < bestDelta) {
+      bestDelta = d;
+      best = h;
+    }
+  }
+  const v = best.values;
+  const tempC = v.temperature ?? 0;
+  const windKph = v.windSpeed ?? 0;
+  const gustKph = v.windGust ?? 0;
+  return {
+    etaMinutes: wp.etaMinutes,
+    lat: wp.lat,
+    lng: wp.lng,
+    tempF: tempC * 9 / 5 + 32,
+    precipIntensityMmh: v.precipitationIntensity ?? 0,
+    precipProbability: (v.precipitationProbability ?? 0) / 100,
+    windSpeedMph: windKph * 0.621371,
+    windGustMph: gustKph * 0.621371,
+    weatherCode: v.weatherCode ?? 1000,
+    wetRoadMm: v.wetRoadIndex ?? 0,
+  };
+}
+
+async function fetchHourlyTimelineAtLocation(
+  apiKey: string,
+  lat: number,
+  lng: number,
+  endHours: number,
   signal?: AbortSignal
-): Promise<RouteForecast> {
-  if (!waypoints.length) return { fetchedAt: Date.now(), intervals: [] };
-
-  // To avoid many API calls, fetch a single timeline using the route start
-  // point with an hourly timestep covering the full trip duration. Then map
-  // each waypoint to the forecast interval whose startTime is closest to the
-  // waypoint's ETA.
-  const startLat = waypoints[0]!.lat;
-  const startLng = waypoints[0]!.lng;
-  const maxEtaMin = Math.max(...waypoints.map((w) => w.etaMinutes));
-  const endHours = Math.ceil(maxEtaMin / 60) + 1;
-
+): Promise<HourlyByOffset[]> {
   const raw = await postTimelines(
     apiKey,
     {
-      location: `${startLat.toFixed(5)}, ${startLng.toFixed(5)}`,
+      location: `${lat.toFixed(5)},${lng.toFixed(5)}`,
       fields: [
         "temperature",
         "precipitationIntensity",
@@ -372,15 +457,7 @@ export async function fetchRouteForecast(
       timelines: Array<{
         intervals: Array<{
           startTime: string;
-          values: {
-            temperature?: number;
-            precipitationIntensity?: number;
-            precipitationProbability?: number;
-            windSpeed?: number;
-            windGust?: number;
-            weatherCode?: number;
-            wetRoadIndex?: number;
-          };
+          values: TimelineValues;
         }>;
       }>;
     };
@@ -388,46 +465,68 @@ export async function fetchRouteForecast(
 
   const hourlyIntervals = raw.data.timelines[0]?.intervals ?? [];
   const now = Date.now();
-
-  // Build a lookup: offset minutes from now → values
-  const hourlyByOffsetMin = hourlyIntervals.map((iv) => ({
+  return hourlyIntervals.map((iv) => ({
     offsetMin: (new Date(iv.startTime).getTime() - now) / 60_000,
     values: iv.values,
   }));
+}
+
+/**
+ * Fetches hourly weather at each corridor location (up to
+ * {@link TIO_ROUTE_FORECAST_MAX_LOCATIONS} Timelines calls), keyed to ETA at each waypoint.
+ */
+export async function fetchRouteForecast(
+  apiKey: string,
+  waypoints: { lat: number; lng: number; etaMinutes: number }[],
+  signal?: AbortSignal
+): Promise<RouteForecast> {
+  if (!waypoints.length) return { fetchedAt: Date.now(), intervals: [] };
+
+  const maxEtaMin = Math.max(...waypoints.map((w) => w.etaMinutes));
+  const endHours = Math.ceil(maxEtaMin / 60) + 1;
+  const fetchLocations = pickRouteForecastFetchLocations(waypoints);
+
+  const timelinesByKey = new Map<string, HourlyByOffset[]>();
+  for (const loc of fetchLocations) {
+    const key = routeForecastLocationKey(loc.lat, loc.lng);
+    if (timelinesByKey.has(key)) continue;
+    const hourly = await fetchHourlyTimelineAtLocation(
+      apiKey,
+      loc.lat,
+      loc.lng,
+      endHours,
+      signal
+    );
+    timelinesByKey.set(key, hourly);
+  }
 
   const intervals: RouteHourlyInterval[] = waypoints.map((wp) => {
-    // Find the hourly bucket whose start is closest to this waypoint's ETA.
-    let best = hourlyByOffsetMin[0]!;
-    let bestDelta = Math.abs(best.offsetMin - wp.etaMinutes);
-    for (const h of hourlyByOffsetMin) {
-      const d = Math.abs(h.offsetMin - wp.etaMinutes);
-      if (d < bestDelta) { bestDelta = d; best = h; }
+    const locKey = nearestFetchLocationKey(wp, fetchLocations);
+    const hourly = timelinesByKey.get(locKey) ?? [];
+    if (!hourly.length) {
+      return {
+        etaMinutes: wp.etaMinutes,
+        lat: wp.lat,
+        lng: wp.lng,
+        tempF: 70,
+        precipIntensityMmh: 0,
+        precipProbability: 0,
+        windSpeedMph: 0,
+        windGustMph: 0,
+        weatherCode: 1000,
+        wetRoadMm: 0,
+      };
     }
-    const v = best.values;
-    const tempC = v.temperature ?? 0;
-    const windKph = v.windSpeed ?? 0;
-    const gustKph = v.windGust ?? 0;
-    return {
-      etaMinutes: wp.etaMinutes,
-      lat: wp.lat,
-      lng: wp.lng,
-      tempF: tempC * 9 / 5 + 32,
-      precipIntensityMmh: v.precipitationIntensity ?? 0,
-      precipProbability: (v.precipitationProbability ?? 0) / 100,
-      windSpeedMph: windKph * 0.621371,
-      windGustMph: gustKph * 0.621371,
-      weatherCode: v.weatherCode ?? 1000,
-      wetRoadMm: v.wetRoadIndex ?? 0,
-    };
+    return intervalFromHourlyTimeline(wp, hourly);
   });
 
   return { fetchedAt: Date.now(), intervals };
 }
 
 /** Sample spacing aligned with {@link useTomorrowRouteForecast} — avoid drifting constants. */
-export const TIO_ROUTE_SAMPLE_INTERVAL_M = 14_000;
-export const TIO_ROUTE_MIN_SAMPLES = 3;
-export const TIO_ROUTE_MAX_SAMPLES = 10;
+export const TIO_ROUTE_SAMPLE_INTERVAL_M = 12_000;
+export const TIO_ROUTE_MIN_SAMPLES = 4;
+export const TIO_ROUTE_MAX_SAMPLES = 12;
 
 /**
  * Sample points along the polyline with ETA offsets for Timelines hourly forecasts.

@@ -5,6 +5,8 @@ import { approachBannerTitle } from "../nav/driveHazardApproachPreview";
 type Props = {
   phase: DriveApproachBannerPhase;
   impact: RouteImpact;
+  /** When false, banner is info-only (no bypass / compare tap target). */
+  rerouteEnabled?: boolean;
   /** Open the bypass-compare flow (single tap target — replaces the old Info / Bypass split). */
   onPlanAround: (impact: RouteImpact) => void;
   onDismiss: () => void;
@@ -13,13 +15,13 @@ type Props = {
 };
 
 /**
- * Slim row under the advisory stack — banner is now a single tap target that opens the
- * A/B/C bypass-compare flow (drops the old `ℹ Info → advisory page` detour). Only fires for
- * road events with a real reroute action; weather is left to the advisory bar.
+ * Slim row under the advisory stack — when reroute is enabled, a single tap opens the
+ * A/B/C bypass-compare flow. When disabled, shows slowdown copy only (dismiss still works).
  */
 export function DriveHazardApproachBanner({
   phase,
   impact,
+  rerouteEnabled = false,
   onPlanAround,
   onDismiss,
   busy = false,
@@ -32,7 +34,14 @@ export function DriveHazardApproachBanner({
     "drive-hazard-approach--strip",
     early ? "drive-hazard-approach--early" : "drive-hazard-approach--near",
     `drive-hazard-approach--sev-${impact.severity}`,
+    rerouteEnabled ? "drive-hazard-approach--actionable" : "drive-hazard-approach--info-only",
   ].join(" ");
+
+  const hint = busy
+    ? "Checking alternates…"
+    : rerouteEnabled
+      ? "Tap to plan around it"
+      : "Consider an alternate route when you can — in-app reroute isn't available yet.";
 
   return (
     <div
@@ -40,6 +49,7 @@ export function DriveHazardApproachBanner({
       role="alertdialog"
       aria-labelledby="drive-hazard-approach-title"
       onClick={(e) => {
+        if (!rerouteEnabled) return;
         if ((e.target as HTMLElement).closest("button")) return;
         if (busy) return;
         onPlanAround(impact);
@@ -52,9 +62,7 @@ export function DriveHazardApproachBanner({
         >
           {title}
         </p>
-        <p className="drive-hazard-approach__hint">
-          {busy ? "Checking alternates…" : "Tap to plan around it"}
-        </p>
+        <p className="drive-hazard-approach__hint">{hint}</p>
       </div>
       <div className="drive-hazard-approach__strip-actions">
         <button

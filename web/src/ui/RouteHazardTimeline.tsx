@@ -31,6 +31,8 @@ export type TimelineItem = {
   crossesRoute?: boolean;
   /** Distant ahead weather — shown on timeline/advisory, skipped for map polygon work. */
   coarsePreview?: boolean;
+  /** Minor flood/hydro — listed in advisory / callouts, not painted on progress strip. */
+  stripMuted?: boolean;
   onClick?: () => void;
 };
 

@@ -140,12 +140,14 @@ export function BottomToolbar({
       }${routeUi ? " nav-bottom-toolbar--route" : ""}`}
       aria-label="Map and trip controls"
     >
-      {showOffRouteBanner && offRouteSevere && onRerouteFromHere && (
+      {showOffRouteBanner && offRouteSevere && (
         <div className="nav-bottom-off-route" role="alert">
           <span className="nav-bottom-off-route__text">Off route</span>
-          <button type="button" className="nav-bottom-off-route__btn" onClick={onRerouteFromHere}>
-            Re-route
-          </button>
+          {onRerouteFromHere ? (
+            <button type="button" className="nav-bottom-off-route__btn" onClick={onRerouteFromHere}>
+              Re-route
+            </button>
+          ) : null}
         </div>
       )}
       {navigationStarted && showTrafficBypass && onTrafficBypass && (

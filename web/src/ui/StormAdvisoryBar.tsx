@@ -12,6 +12,7 @@ import { BasicStatusAdSlot } from "./BasicStatusAdSlot";
 import { limitExpandedPromoLines, mixAdvisoryPreviewItems } from "./advisoryPreviewMix";
 import { sortWeatherAlertsBySeverity, type NormalizedWeatherAlert } from "../weatherAlerts";
 import { nwsAlertIsBasicEmergency } from "../weatherAlerts/basicEmergencyFilter";
+import { nwsAlertIsStripProminent } from "../weatherAlerts/geometryOverlap";
 import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
 import type { DriveAheadLine, DriveAheadRadarTier } from "../nav/driveRouteAhead";
 import {
@@ -24,6 +25,7 @@ import {
   isAlertExpired,
   promoteAtPositionAlertToTop,
 } from "../nav/routeAlertTiming";
+import { TRAFFIC_BYPASS_ENABLED, TRAFFIC_DELAY_ALERT_MINUTES } from "../nav/constants";
 import type { RouteImpact, RouteImpactSeverity } from "../nav/routeImpacts";
 import {
   RouteHazardTimeline,
@@ -450,7 +452,13 @@ export function StormAdvisoryBar({
     () => roadDetailRows.some((r) => /traffic stop|closure/i.test(r.label)),
     [roadDetailRows]
   );
-  const showRerouteCta = (trafficDelayMinutes >= 10 || hasTrafficStop) && Boolean(onTrafficReroute);
+  const showRerouteCta =
+    TRAFFIC_BYPASS_ENABLED &&
+    (trafficDelayMinutes >= TRAFFIC_DELAY_ALERT_MINUTES || hasTrafficStop) &&
+    Boolean(onTrafficReroute);
+  const showTrafficDelayInfoOnly =
+    !TRAFFIC_BYPASS_ENABLED &&
+    (trafficDelayMinutes >= TRAFFIC_DELAY_ALERT_MINUTES || hasTrafficStop);
 
   const bandByAlertId = useMemo(() => {
     const m = new Map<string, StormStripBand>();
@@ -486,6 +494,7 @@ export function StormAdvisoryBar({
           crossesRoute: band.crossesRoute,
         });
         if (!timing.promoteToTop) continue;
+        if (!nwsAlertIsStripProminent(a)) continue;
         seen.add(a.id);
         out.push({ alert: a, timingLine: timing.timingLine });
       }
@@ -1264,6 +1273,17 @@ export function StormAdvisoryBar({
                     {betterRouteRow.actionLabel ?? "Open"}
                   </button>
                 ) : null}
+              </div>
+            ) : null}
+
+            {showTrafficDelayInfoOnly && !hasRouteHazardDetail ? (
+              <div className="storm-advisory-bar__suggestion-row">
+                <span className="storm-advisory-bar__suggestion-label">Traffic</span>
+                <span className="storm-advisory-bar__suggestion-text">
+                  {trafficDelayMinutes >= TRAFFIC_DELAY_ALERT_MINUTES
+                    ? `Heavy delay ahead (~${trafficDelayMinutes} min). Consider an alternate route when you can — in-app reroute isn't available yet.`
+                    : "Slowdown or stoppage ahead on your route. Consider an alternate route when you can."}
+                </span>
               </div>
             ) : null}
 

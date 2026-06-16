@@ -38,6 +38,8 @@ export type RouteAheadStormBand = {
   crossesRoute?: boolean;
   /** Distant ahead — timeline only until you get closer. */
   coarsePreview?: boolean;
+  /** Minor flood/hydro — advisory mention only; skip progress strip / map paint. */
+  stripMuted?: boolean;
 };
 
 export type BuildRouteAheadTimelineOpts = {
@@ -129,6 +131,7 @@ export function buildRouteAheadTimeline(opts: BuildRouteAheadTimelineOpts): Time
       expiresIso: band.expiresIso,
       crossesRoute: band.crossesRoute !== false,
       coarsePreview: band.coarsePreview,
+      stripMuted: band.stripMuted,
     });
   }
 
@@ -152,6 +155,7 @@ export function timelineToProgressStripBands(
   const out: StormProgressStripBand[] = [];
   for (const item of items) {
     if (opts?.omitCoarsePreview && item.coarsePreview) continue;
+    if (item.stripMuted) continue;
     const span = item.endMeters - item.startMeters;
     if (span < 8 && item.track !== "nws") continue;
     out.push({

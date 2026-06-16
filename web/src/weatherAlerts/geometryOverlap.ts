@@ -318,6 +318,49 @@ export function rankNwsSeverity(severity: string): number {
   return NWS_SEVERITY_RANK[severity] ?? 0;
 }
 
+/** Flood / hydrology NWS products (Flood Advisory, Flash Flood Warning, etc.). */
+export function nwsEventIsHydro(event: string): boolean {
+  return /(flood|flash flood|hydrologic|tsunami|coastal flood|lakeshore flood|river)/i.test(
+    event.trim()
+  );
+}
+
+/**
+ * Minor flood/hydro advisories get a mention in the advisory panel but must not paint the
+ * full progress strip or route line. Moderate+ and true warnings stay prominent.
+ */
+export function nwsAlertIsStripProminent(a: NormalizedWeatherAlert): boolean {
+  const ev = a.event?.trim() ?? "";
+  if (!nwsEventIsHydro(ev)) return true;
+
+  const sev = rankNwsSeverity(a.severity);
+  if (/flash flood emergency|flash flood warning|flood warning/i.test(ev)) return true;
+  if (/flash flood watch|flood watch/i.test(ev) && sev >= rankNwsSeverity("Moderate")) {
+    return true;
+  }
+  return sev >= rankNwsSeverity("Moderate");
+}
+
+/** Narrow pin for minor hydro on long routes — visible without covering the corridor. */
+export const MINOR_HYDRO_STRIP_PIN_HALF_M = 3_000;
+
+export function clampStormStripBandSpan(
+  startM: number,
+  endM: number,
+  totalM: number,
+  prominent: boolean
+): { startM: number; endM: number } {
+  if (prominent || endM - startM <= MINOR_HYDRO_STRIP_PIN_HALF_M * 2.5) {
+    return { startM, endM };
+  }
+  const mid = (startM + endM) / 2;
+  const half = MINOR_HYDRO_STRIP_PIN_HALF_M;
+  return {
+    startM: Math.max(0, mid - half),
+    endM: Math.min(totalM, mid + half),
+  };
+}
+
 /** Worst-first so the top of the list is what drivers should read first. */
 export function sortWeatherAlertsBySeverity(alerts: NormalizedWeatherAlert[]): NormalizedWeatherAlert[] {
   return [...alerts].sort((a, b) => rankNwsSeverity(b.severity) - rankNwsSeverity(a.severity));
@@ -607,6 +650,8 @@ export type RouteStormStripBand = {
   crossesRoute: boolean;
   /** Precise polyline intersection vs cheap centroid preview for distant ahead weather. */
   detailTier: "precise" | "coarse";
+  /** False for minor flood/hydro — mention in advisory, not full strip/map paint. */
+  stripProminent: boolean;
 };
 
 function impactSeverityFromNws(rawSev: string): RouteStormStripBand["impactSeverity"] {
@@ -699,6 +744,7 @@ export function buildRouteStormStripBands(
   for (const alert of sortedAlerts) {
     const nwsSeverity = alert.severity ?? "Moderate";
     const impactSeverity = impactSeverityFromNws(nwsSeverity);
+    const stripProminent = nwsAlertIsStripProminent(alert);
 
     let startM: number;
     let endM: number;
@@ -735,6 +781,11 @@ export function buildRouteStormStripBands(
       detailTier = usePrecise ? "precise" : "coarse";
     }
 
+    ({ startM, endM } = clampStormStripBandSpan(startM, endM, totalM, stripProminent));
+    if (!stripProminent) {
+      detailTier = "coarse";
+    }
+
     bands.push({
       id: `nws-alert-${alert.id}`,
       event: alert.event ?? "Weather Alert",
@@ -746,6 +797,7 @@ export function buildRouteStormStripBands(
       alertId: alert.id ?? null,
       crossesRoute,
       detailTier,
+      stripProminent,
     });
   }
 

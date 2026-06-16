@@ -63,6 +63,8 @@ type Props = {
   /** Replays the first-launch coachmark walk-through. Resets the suppression flag and asks
    * App.tsx to show the tour again. About sheet closes itself before the tour starts. */
   onReplayCoachmarks?: () => void;
+  /** When false, auto-reroute / bypass settings are hidden (feature not shippable yet). */
+  liveRerouteEnabled?: boolean;
 };
 
 /**
@@ -79,6 +81,7 @@ export function AboutSheet({
   settings,
   onSettings,
   onReplayCoachmarks,
+  liveRerouteEnabled = true,
 }: Props) {
   const dev = import.meta.env.DEV;
   const tier = useMemo(() => getPayTier(), [open, payTierProbeKey]);
@@ -362,15 +365,17 @@ export function AboutSheet({
                   only; Basic is navigation, radar, and limited saved places/routes)
                 </li>
                 <li>
-                  <strong>Traffic</strong> overlay + bypass tools (Mapbox)
+                  <strong>Traffic</strong> overlay + slowdown alerts (Mapbox)
                 </li>
                 <li>
                   <strong>Weather</strong> — local forecast at your position, route hints (OpenWeather), and minute
                   precip (Tomorrow.io)
                 </li>
-                <li>
-                  <strong>Auto reroute</strong> when far off-line (optional)
-                </li>
+                {liveRerouteEnabled ? (
+                  <li>
+                    <strong>Auto reroute</strong> when far off-line (optional)
+                  </li>
+                ) : null}
                 <li>
                   <strong>Patterns</strong> — preferred A/B/C per area + frequent-route learning
                 </li>
@@ -455,6 +460,7 @@ export function AboutSheet({
               </span>
             </label>
 
+            {liveRerouteEnabled ? (
             <label className={`about-sheet__setting${plus ? "" : " disabled"}`}>
               <input
                 type="checkbox"
@@ -469,6 +475,7 @@ export function AboutSheet({
                 instead {!plus ? <em>(Plus)</em> : null}
               </span>
             </label>
+            ) : null}
 
             <label className="about-sheet__setting">
               <input

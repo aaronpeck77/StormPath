@@ -22,7 +22,7 @@ describe("radarReflectivityScale", () => {
   });
 
   it("returns null below soft threshold", () => {
-    expect(classifyRadarEcho(0.38)).toBeNull();
+    expect(classifyRadarEcho(0.28)).toBeNull();
   });
 
   it("maps tiers for callout copy", () => {

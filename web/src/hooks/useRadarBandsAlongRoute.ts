@@ -4,6 +4,7 @@ import {
   echoIntensityFromRgba,
   fetchRadarTileRgba,
   RADAR_MOSAIC_SAMPLE_ZOOM,
+  RADAR_ROUTE_SAMPLE_FRACTIONS,
   tileXY,
 } from "../services/radarPolylineIntensity";
 import { fetchRainViewerRadarFrames, tileUrlFromHostAndPath } from "../services/rainViewerRadar";
@@ -14,7 +15,7 @@ type RadarSample = { t: number; intensity: number };
 
 /**
  * Sample the RainViewer radar mosaic along a route polyline and convert it into coarse “cell intensity”
- * values per sample. This tracks what the radar overlay shows even when NWS warnings don’t exist.
+ * values per sample. Uses the same fractions as route scoring ({@link RADAR_ROUTE_SAMPLE_FRACTIONS}).
  */
 export function useRadarBandsAlongRoute(
   enabled: boolean,
@@ -49,8 +50,10 @@ export function useRadarBandsAlongRoute(
       const frame = pack.frames[pack.frames.length - 1]!;
       const template = tileUrlFromHostAndPath(pack.host, frame.path);
 
-      const ts = [0.05, 0.18, 0.3, 0.42, 0.54, 0.66, 0.78, 0.9];
-      const pts = ts.map((t) => ({ t, lngLat: pointAlongPolyline(geometry, t) })).filter((x) => x.lngLat);
+      const pts = RADAR_ROUTE_SAMPLE_FRACTIONS.map((t) => ({
+        t,
+        lngLat: pointAlongPolyline(geometry, t),
+      })).filter((x) => x.lngLat);
 
       const Z = RADAR_MOSAIC_SAMPLE_ZOOM;
       const tileToSamples = new Map<string, { t: number; px: number; py: number }[]>();

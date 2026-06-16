@@ -35,6 +35,10 @@ import { routeForecastToImpacts } from "./nav/tomorrowIoImpacts";
 import { buildMockTripBetween, EMPTY_TRIP } from "./nav/emptyTrip";
 import { mergePlanPreservingPrimary } from "./nav/mergePlanRoutes";
 import {
+  navigationPrimaryRouteIdForMerge,
+  resolveNavigationRouteIds,
+} from "./nav/navigationRouteFocus";
+import {
   hasAdaptiveStormThreatAlongTrip,
   stormAdaptiveRoutingSignature,
 } from "./nav/stormAvoidanceWaypoint";
@@ -163,6 +167,7 @@ import { unifiedTrafficNarrative, hasLocalizedTrafficIssue } from "./nav/traffic
 import {
   ARRIVAL_BG_CLEAR_MIN_MS,
   DRIVE_AHEAD_WINDOW_M,
+  TRAFFIC_BYPASS_ENABLED,
   RADAR_SOFT_THRESHOLD,
   WEATHER_DETAIL_AHEAD_M,
   WEATHER_DETAIL_BEHIND_M,
@@ -476,6 +481,8 @@ export default function App() {
 
   const navGoStartedAtRef = useRef<number | null>(null);
   const navGoGeometryRef = useRef<LngLat[] | null>(null);
+  /** Route id locked at Go — guidance follows this until the driver explicitly switches legs. */
+  const lockedNavigationRouteIdRef = useRef<string | null>(null);
 
   const ACTIVITY_TRAIL_MAP_LS = "stormpath-activity-trail-map-on";
   const [activityTrailMapOn, setActivityTrailMapOn] = useState(() => {
@@ -969,12 +976,13 @@ export default function App() {
             {
               signal: mainFetch.signal,
               via: viaCoords.length > 0 ? viaCoords : undefined,
-              allowLocalTripThirdRoute: snapFromGps ? false : isPlus,
-              preferThreeRoutes: snapFromGps ? false : isPlus,
+              allowLocalTripThirdRoute: isPlus,
+              preferThreeRoutes: isPlus,
               stormAlerts: snapFromGps ? undefined : stormAlertsForRouting,
               radarAvoidanceEnabled: snapFromGps ? false : isPlus && settingStormEnabled,
               trailRoutePersonalization: snapFromGps ? false : isPlus && learnEnabled,
-              singleRouteFromPosition: snapFromGps,
+              /* Basic silent off-route: one leg only. Plus keeps A/B/C from current GPS. */
+              singleRouteFromPosition: snapFromGps && !isPlus,
             }
           );
           p = built.plan;
@@ -986,6 +994,7 @@ export default function App() {
         p = !isPlus && p.routes.length > 2 ? { ...p, routes: p.routes.slice(0, 2) } : p;
         if (epochAtStart !== routeGraphEpochRef.current) return;
         setPlan(p);
+        lockedNavigationRouteIdRef.current = p.routes[0]?.id ?? lockedNavigationRouteIdRef.current;
         setDestLngLat(destForMap);
         setPreviewLegIndex(0);
         const planIds = p.routes.map((r) => r.id);
@@ -1750,6 +1759,9 @@ export default function App() {
       setDestinationLabel(entry.destinationLabel);
       setSearchText(entry.destinationLabel);
       setNavigationStarted(entry.navigationStarted);
+      if (entry.navigationStarted) {
+        lockedNavigationRouteIdRef.current = slotNext[0] ?? planIds[0] ?? null;
+      }
       setViewMode(viewNext);
       setRouteSlotOrder(slotNext);
       setPreviewLegIndex(previewNext);
@@ -1905,10 +1917,11 @@ export default function App() {
     return stormAdaptiveRoutingSignature(userLngLat, destLngLat, stormAlertsForRouting);
   }, [navigationStarted, userLngLat, destLngLat, stormAlertsForRouting]);
 
-  /** After Go: NWS + corridor bands use the promoted primary (slot A), not the A/B/C preview leg. */
+  /** After Go: NWS + corridor bands use the locked guidance leg, not the preview leg. */
   const nwsNavCorridorGeom = useMemo(() => {
     if (!navigationStarted) return undefined;
-    const id = orderedRouteIds[0];
+    const id =
+      lockedNavigationRouteIdRef.current ?? orderedRouteIds[0];
     if (!id) return undefined;
     return plan.routes.find((r) => r.id === id)?.geometry;
   }, [navigationStarted, orderedRouteIds, plan.routes]);
@@ -1958,7 +1971,10 @@ export default function App() {
       if (!opts?.allowDuringDrive && viewMode !== "route") return;
       if (!userLngLat || !destLngLat) return;
       if (env.mapboxToken && !isOnline) return;
-      const primaryId = orderedRouteIds[0];
+      const primaryId = navigationPrimaryRouteIdForMerge(
+        lockedNavigationRouteIdRef.current,
+        orderedRouteIds
+      );
       if (!primaryId || plan.routes.length < 2) return;
       const epochAtStart = routeGraphEpochRef.current;
       if (altRoutesRefreshInFlightRef.current) return;
@@ -2010,7 +2026,7 @@ export default function App() {
     ]
   );
 
-  /** Storm polygons or position shifted — refresh leg C via merge, or full replan when primary is `r-c`. */
+  /** Storm polygons or position shifted — refresh alternate legs only; never swap the locked primary. */
   const refreshStormAwareRoutes = useCallback(async () => {
     if (!navigationStarted || !userLngLat || !destLngLat) return;
     if (!stormAlertsForRouting?.length) return;
@@ -2029,12 +2045,7 @@ export default function App() {
     stormAdaptiveRefreshInFlightRef.current = true;
     lastStormAdaptiveRefreshMsRef.current = now;
     try {
-      const primaryId = orderedRouteIds[0];
-      if (primaryId === "r-c") {
-        await recalcRouteFromHere({ silent: true });
-      } else {
-        await refreshAlternateRoutesOnly({ allowDuringDrive: true });
-      }
+      await refreshAlternateRoutesOnly({ allowDuringDrive: true });
     } finally {
       stormAdaptiveRefreshInFlightRef.current = false;
     }
@@ -2046,8 +2057,6 @@ export default function App() {
     env.mapboxToken,
     isOnline,
     plan.routes.length,
-    orderedRouteIds,
-    recalcRouteFromHere,
     refreshAlternateRoutesOnly,
   ]);
 
@@ -2057,14 +2066,17 @@ export default function App() {
     setPreviewLegIndex((i) => Math.min(i, n - 1));
   }, [orderedRouteIds.length]);
 
-  /**
-   * Planning + route map: focused leg follows A/B/C preview at any time (including after Go).
-   * Drive / top-down while navigating: slot 0 — the promoted primary leg (turn-by-turn follows this).
-   */
-  const lineFocusId =
-    navigationStarted && viewMode !== "route"
-      ? (orderedRouteIds[0] ?? primaryRouteId)
-      : (orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? primaryRouteId);
+  const { guidanceRouteId: resolvedGuidanceRouteId, lineFocusId: resolvedLineFocusId } =
+    resolveNavigationRouteIds({
+      navigationStarted,
+      lockedRouteId: lockedNavigationRouteIdRef.current,
+      viewMode,
+      previewLegIndex,
+      orderedRouteIds,
+      primaryRouteId,
+    });
+  const lineFocusId = resolvedLineFocusId;
+  const guidanceRouteId = resolvedGuidanceRouteId || primaryRouteId;
 
   /** During A/B/C compare, highlight the leg the driver tapped (not only the current primary). */
   const driveMapLineFocusId = trafficBypassCompare?.selectedLeg ?? lineFocusId;
@@ -2117,7 +2129,6 @@ export default function App() {
     return [dist, blurb, tollNote].filter(Boolean).join(" · ");
   }, [plan.routes, lineFocusId]);
 
-  const guidanceRouteId = lineFocusId || primaryRouteId;
   const guidanceRoute = plan.routes.find((r) => r.id === guidanceRouteId);
 
   /** Longest planned leg — auto lean NWS fetch on cross-country trips (100+ mi). */
@@ -2736,12 +2747,12 @@ export default function App() {
   const hasPlannedRoute = Boolean(
     destLngLat && plan.routes.some((r) => r.geometry && r.geometry.length >= 2)
   );
-  /** Sample RainViewer along the route for advisory/timeline — not only when the map RAD layer is on. */
+  /** Sample RainViewer along the route for advisory/timeline whenever a leg is loaded or Rad is on. */
   const radarRouteSamplingEnabled = Boolean(
     guidanceRoute?.geometry &&
       guidanceRoute.geometry.length >= 2 &&
-      (settingStormEnabled || settingWeatherHintsEnabled || radarMapOverlayOn) &&
-      (navigationStarted || hasPlannedRoute)
+      (navigationStarted || hasPlannedRoute) &&
+      (radarMapOverlayOn || settingStormEnabled || settingWeatherHintsEnabled)
   );
   const radarMosaicAlongRoute = useRadarBandsAlongRoute(
     radarRouteSamplingEnabled,
@@ -3057,6 +3068,7 @@ export default function App() {
         alertId: b.alertId,
         crossesRoute: b.crossesRoute,
         coarsePreview: b.detailTier === "coarse",
+        stripMuted: !b.stripProminent,
       })),
     [routeStormStripBands]
   );
@@ -3132,6 +3144,7 @@ export default function App() {
   );
 
   const showTrafficBypassCta =
+    TRAFFIC_BYPASS_ENABLED &&
     navigationStarted &&
     Boolean(
       env.mapboxToken &&
@@ -3917,9 +3930,11 @@ export default function App() {
    * The blue line is ORS/OpenStreetMap; traffic delay comes from Mapbox along that shape. Closures
    * can show as huge delay while the line still crosses the barricade. Snap the active leg to Mapbox
    * driving-traffic geometry when delay is extreme or Mapbox can’t trace the ORS polyline.
+   * Disabled during active navigation — the driver-chosen route must not change without approval.
    */
   useEffect(() => {
-    if (!navigationStarted || !env.mapboxToken || !destLngLat || !guidanceRoute) return;
+    if (navigationStarted) return;
+    if (!env.mapboxToken || !destLngLat || !guidanceRoute) return;
     if (!trafficFetchDone || routing) return;
 
     const leg = trafficOverlay?.[lineFocusId];
@@ -4114,11 +4129,11 @@ export default function App() {
     return () => window.clearTimeout(t);
   }, [stormAdaptiveSig]);
 
-  /** Rt: keep primary leg fixed; refresh alternate legs on an interval */
+  /** Rt / Mp: keep locked leg fixed; refresh alternate legs on an interval */
   useEffect(() => {
     if (!appForeground) return;
     if (!navigationStarted) return;
-    if (viewMode !== "route") return;
+    if (viewMode !== "route" && viewMode !== "topdown") return;
     if (!destLngLat) return;
     const altMs = getNavAltRefreshMs(dataSaverMode);
     if (altMs == null) return;
@@ -4128,6 +4143,15 @@ export default function App() {
     }, altMs);
     return () => window.clearInterval(id);
   }, [appForeground, navigationStarted, viewMode, destLngLat, dataSaverMode]);
+
+  /** Fetch fresh B/C when opening Rt or Mp during an active drive. */
+  useEffect(() => {
+    if (!navigationStarted) return;
+    if (viewMode !== "route" && viewMode !== "topdown") return;
+    if (plan.routes.length < 2) return;
+    if (routingRef.current || altRoutesRefreshInFlightRef.current) return;
+    void refreshAltRef.current();
+  }, [navigationStarted, viewMode, plan.routes.length]);
 
   useEffect(() => {
     if (!navigationStarted || viewMode !== "drive") return;
@@ -4187,10 +4211,7 @@ export default function App() {
   }, [guidanceRoute, orderedRouteIds, navigationStarted]);
 
   const showOffRouteManualBanner =
-    offRouteSevere &&
-    navigationStarted &&
-    !effectiveAutoRerouteEnabled &&
-    (!isPlus || viewMode !== "drive");
+    offRouteSevere && navigationStarted && !effectiveAutoRerouteEnabled;
 
   const radarFrameTimeLabel = useMemo(() => {
     if (!radarMapOverlayOn || radarFrameUtcSec == null) return null;
@@ -4290,6 +4311,7 @@ export default function App() {
       navGoStartedAtRef.current = null;
       navGoGeometryRef.current = null;
     }
+    lockedNavigationRouteIdRef.current = null;
     routeGraphEpochRef.current += 1;
     routeMainFetchAbortRef.current?.abort();
     routeMainFetchAbortRef.current = null;
@@ -4472,19 +4494,17 @@ export default function App() {
     };
   }, []);
 
-  /** Route view / cycle: only change which leg is previewed (A/B/C colors stay on fixed slots). */
+  /** Route view / map view while navigating: preview A/B/C without changing active guidance. */
   const handlePreviewRouteSelect = useCallback(
     (id: string) => {
       if (!plan.routes.some((r) => r.id === id)) return;
       const i = orderedRouteIds.indexOf(id);
       if (i >= 0) setPreviewLegIndex(i);
-      if (navigationStarted && viewMode === "route") {
-        setRouteSlotOrder((prev) => slotOrderAfterSelect(prev.length ? prev : planRouteIds, id));
-        setPreviewLegIndex(0);
+      if (!navigationStarted || viewMode === "route" || viewMode === "topdown") {
+        setFitTrigger((n) => n + 1);
       }
-      if (!navigationStarted || viewMode === "route") setFitTrigger((n) => n + 1);
     },
-    [plan.routes, orderedRouteIds, navigationStarted, viewMode, planRouteIds]
+    [plan.routes, orderedRouteIds, navigationStarted, viewMode]
   );
 
   /** Make this leg the primary (slot A / blue); used after Go, hazard “use this route”, and bypass. */
@@ -4493,6 +4513,9 @@ export default function App() {
       if (!plan.routes.some((r) => r.id === id)) return;
       setRouteSlotOrder((prev) => slotOrderAfterSelect(prev.length ? prev : planRouteIds, id));
       setPreviewLegIndex(0);
+      if (navigationStartedRef.current) {
+        lockedNavigationRouteIdRef.current = id;
+      }
     },
     [plan.routes, planRouteIds]
   );
@@ -4588,6 +4611,7 @@ export default function App() {
     setTollAvoidFailureNote(null);
 
     const pickedForNav = plan.routes.find((r) => r.id === chosen);
+    lockedNavigationRouteIdRef.current = chosen;
     navGoStartedAtRef.current = Date.now();
     navGoGeometryRef.current = pickedForNav?.geometry?.length
       ? pickedForNav.geometry.map(([a, b]) => [a, b] as LngLat)
@@ -4903,6 +4927,7 @@ export default function App() {
     /** Override the lng/lat shown for the hazard pin. Falls back to the route geometry at the anchor. */
     anchorLngLat?: LngLat;
   }) => {
+    if (!TRAFFIC_BYPASS_ENABLED) return;
     if (!isPlus) return;
     const originLngLat =
       demoBypassTrafficJamPlus && effectiveUserLngLat ? effectiveUserLngLat : userLngLat;
@@ -5022,6 +5047,7 @@ export default function App() {
    * Placed below `handleTrafficBypassFromHere` because the handler closes over it. */
   const hazardSheetAlternateAvailable = useMemo(
     () =>
+      TRAFFIC_BYPASS_ENABLED &&
       Boolean(
         isPlus &&
           env.mapboxToken &&
@@ -5322,9 +5348,14 @@ export default function App() {
             <span className="storm-advisory-bar__road-muted">{betterRouteNote}</span>
           </>
         ),
-        actionLabel: "Compare routes",
+        actionLabel: TRAFFIC_BYPASS_ENABLED ? "Compare routes" : undefined,
         onAction:
-          isPlus && env.mapboxToken && userLngLat && destLngLat && guidanceRoute?.geometry?.length
+          TRAFFIC_BYPASS_ENABLED &&
+          isPlus &&
+          env.mapboxToken &&
+          userLngLat &&
+          destLngLat &&
+          guidanceRoute?.geometry?.length
             ? () => void handleTrafficBypassFromHere()
             : undefined,
       });
@@ -5532,7 +5563,12 @@ export default function App() {
                       nwsAtLocationAlerts={isPlus ? stormNwsPuckInside : []}
                       trafficDelayMinutes={guidanceSlice?.trafficDelayMinutes ?? 0}
                       onTrafficReroute={
-                        isPlus && env.mapboxToken && userLngLat && destLngLat && guidanceRoute
+                        TRAFFIC_BYPASS_ENABLED &&
+                        isPlus &&
+                        env.mapboxToken &&
+                        userLngLat &&
+                        destLngLat &&
+                        guidanceRoute
                           ? () => void handleTrafficBypassFromHere()
                           : undefined
                       }
@@ -5593,14 +5629,16 @@ export default function App() {
                       <ActivityStatusPill busyLabel={activityBusyLabel} />
                     </div>
                   ) : null}
-                  {hazardApproachAlertsActive &&
-                  driveApproachBannerPick &&
-                  (showTrafficBypassCta ||
-                    driveApproachBannerPick.impact.id === "demo-approach-banner" ||
-                    driveApproachBannerPick.impact.id === "demo-close-hazard") ? (
+                  {hazardApproachAlertsActive && driveApproachBannerPick ? (
                     <DriveHazardApproachBanner
                       phase={driveApproachBannerPick.phase}
                       impact={driveApproachBannerPick.impact}
+                      rerouteEnabled={
+                        TRAFFIC_BYPASS_ENABLED &&
+                        (showTrafficBypassCta ||
+                          driveApproachBannerPick.impact.id === "demo-approach-banner" ||
+                          driveApproachBannerPick.impact.id === "demo-close-hazard")
+                      }
                       onDismiss={() => {
                         const id = driveApproachBannerPick.impact.id;
                         if (id === "demo-approach-banner") {
@@ -6013,7 +6051,7 @@ export default function App() {
                         items={routePickItems}
                         selectedId={lineFocusId}
                         cycleOrderIds={planRouteIds}
-                        activeSlotIndex={null}
+                        activeSlotIndex={previewLegIndex}
                         onSelect={handlePreviewRouteSelect}
                         detail={routeDockDetail}
                       />
@@ -6059,7 +6097,7 @@ export default function App() {
                           items={routePickItems}
                           selectedId={lineFocusId}
                           cycleOrderIds={planRouteIds}
-                          activeSlotIndex={viewMode === "route" ? previewLegIndex : null}
+                          activeSlotIndex={previewLegIndex}
                           onSelect={handlePreviewRouteSelect}
                           detail={routeDockDetail}
                         />
@@ -6174,10 +6212,14 @@ export default function App() {
               showRadarButton={!driveModeUi}
               offRouteSevere={offRouteSevere}
               showOffRouteBanner={showOffRouteManualBanner}
-              onRerouteFromHere={() => void recalcRouteFromHere()}
+              onRerouteFromHere={
+                isPlus && env.mapboxToken ? () => void recalcRouteFromHere() : undefined
+              }
               showTrafficBypass={showTrafficBypassCta}
               bypassBusy={bypassBusy}
-              onTrafficBypass={() => void handleTrafficBypassFromHere()}
+              onTrafficBypass={
+                TRAFFIC_BYPASS_ENABLED ? () => void handleTrafficBypassFromHere() : undefined
+              }
             />
           </div>
           ) : null}
@@ -6219,6 +6261,7 @@ export default function App() {
           window.setTimeout(() => setTapHint(null), 2500);
         }}
         onReplayCoachmarks={handleReplayCoachmarks}
+        liveRerouteEnabled
       />
 
       <Coachmarks replayKey={coachmarksReplayKey} />

@@ -29,6 +29,15 @@ export const TRAFFIC_PROMPT_REROUTE_MINUTES = 10;
 export const TRAFFIC_STRIP_SOFT_MINUTES = 8;
 
 /**
+ * Traffic slowdown bypass — route around jams/closures and rejoin on the far side.
+ * Disabled until slowdown timing and surgical rejoin are reliable; traffic delay *info* still shows.
+ */
+export const TRAFFIC_BYPASS_ENABLED = false;
+
+/** @deprecated Use {@link TRAFFIC_BYPASS_ENABLED} — auto reroute is controlled by the user setting. */
+export const LIVE_REROUTE_ENABLED = TRAFFIC_BYPASS_ENABLED;
+
+/**
  * Relative threshold: any delay ≥ this fraction of remaining trip time is
  * treated as significant, even if it's below the absolute minute floor.
  * Example: a +6 min delay on a 25 min commute = 24 % → fires; same delay on a
@@ -66,8 +75,8 @@ export function isSignificantTrafficDelay(
 /** Radar intensity that triggers a "heavy weather" alert (storm-core reflectivity). */
 export const RADAR_HEAVY_THRESHOLD = 0.85;
 
-/** Radar intensity for a softer weather-headline card (light–moderate showers). */
-export const RADAR_SOFT_THRESHOLD = 0.45;
+/** Radar intensity for a softer “trace showers” band on the progress strip / timeline. */
+export const RADAR_SOFT_THRESHOLD = 0.32;
 
 /** Radar at/above this value suggests slowing / preparing (solid moderate rain). */
 export const RADAR_REROUTE_THRESHOLD = 0.68;
