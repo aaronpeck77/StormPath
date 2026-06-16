@@ -34,7 +34,7 @@ describe("nwsAlertStripProminence", () => {
     );
   });
 
-  it("keeps moderate+ hydro and warnings prominent", () => {
+  it("keeps moderate+ hydro prominent and drops minor warnings", () => {
     expect(nwsAlertIsStripProminent(alert({ event: "Flood Advisory", severity: "Moderate" }))).toBe(
       true
     );
@@ -42,8 +42,11 @@ describe("nwsAlertStripProminence", () => {
       nwsAlertIsStripProminent(alert({ event: "Flash Flood Warning", severity: "Severe" }))
     ).toBe(true);
     expect(nwsAlertIsStripProminent(alert({ event: "Flood Warning", severity: "Minor" }))).toBe(
-      true
+      false
     );
+    expect(
+      nwsAlertIsStripProminent(alert({ event: "Flash Flood Warning", severity: "Minor" }))
+    ).toBe(false);
   });
 
   it("leaves non-hydro alerts prominent", () => {

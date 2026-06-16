@@ -326,19 +326,23 @@ export function nwsEventIsHydro(event: string): boolean {
 }
 
 /**
- * Minor flood/hydro advisories get a mention in the advisory panel but must not paint the
- * full progress strip or route line. Moderate+ and true warnings stay prominent.
+ * Minor flood/hydro get a mention in the advisory panel but must not paint the progress strip
+ * or route line. Only Moderate+ (medium/major) hydro alerts are corridor-prominent.
  */
 export function nwsAlertIsStripProminent(a: NormalizedWeatherAlert): boolean {
   const ev = a.event?.trim() ?? "";
   if (!nwsEventIsHydro(ev)) return true;
+  return rankNwsSeverity(a.severity) >= rankNwsSeverity("Moderate");
+}
 
-  const sev = rankNwsSeverity(a.severity);
-  if (/flash flood emergency|flash flood warning|flood warning/i.test(ev)) return true;
-  if (/flash flood watch|flood watch/i.test(ev) && sev >= rankNwsSeverity("Moderate")) {
-    return true;
-  }
-  return sev >= rankNwsSeverity("Moderate");
+/** GeoJSON feature props → same prominence gate as {@link nwsAlertIsStripProminent}. */
+export function nwsMapFeatureIsRouteLineProminent(props: {
+  event?: string;
+  severity?: string;
+}): boolean {
+  const ev = props.event?.trim() ?? "";
+  if (!nwsEventIsHydro(ev)) return true;
+  return rankNwsSeverity(props.severity ?? "Unknown") >= rankNwsSeverity("Moderate");
 }
 
 /** Narrow pin for minor hydro on long routes — visible without covering the corridor. */
@@ -474,6 +478,7 @@ export function stormOverlapLineFeatures(
     if (!g || (g.type !== "Polygon" && g.type !== "MultiPolygon")) continue;
     const poly = g as GeoJSON.Polygon | GeoJSON.MultiPolygon;
     const props = (f.properties ?? {}) as { kind?: string; event?: string; severity?: string };
+    if (!nwsMapFeatureIsRouteLineProminent(props)) continue;
     const hex = nwsAlertLineHexFromMapFeatureProps(props);
     for (const [lo, hi] of alongIntervalsInsidePolygon(route, poly)) {
       const coords = slicePolylineBetweenAlongForDisplay(route, lo, hi, total, sliceOpts);
@@ -815,12 +820,14 @@ export type StormProgressStripBand = {
 export function routeStormStripBandsToProgressStrip(
   bands: readonly RouteStormStripBand[]
 ): StormProgressStripBand[] {
-  return bands.map((b) => ({
-    startM: b.startMeters,
-    endM: b.endMeters,
-    lineHex: nwsAlertLineColorHex(b.nwsSeverity),
-    severity: b.nwsSeverity,
-  }));
+  return bands
+    .filter((b) => b.stripProminent)
+    .map((b) => ({
+      startM: b.startMeters,
+      endM: b.endMeters,
+      lineHex: nwsAlertLineColorHex(b.nwsSeverity),
+      severity: b.nwsSeverity,
+    }));
 }
 
 /** Colored route-line segments for map highlights (same spans as the progress strip storm bands). */

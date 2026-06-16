@@ -183,6 +183,11 @@ export function timelineToMapCorridorAlerts(
   return out;
 }
 
+/** Progress strip / map / info panel — skip minor hydro (advisory mention only). */
+export function timelineItemsForProgressRail(items: TimelineItem[]): TimelineItem[] {
+  return items.filter((item) => !item.stripMuted);
+}
+
 /** Progress-bar info panel rows — brief copy + ETA / still-active timing from advisory logic. */
 export function buildRouteAheadCalloutSegments(opts: {
   items: TimelineItem[];
@@ -192,9 +197,10 @@ export function buildRouteAheadCalloutSegments(opts: {
   driveEtaMinutes?: number | null;
 }): RouteChunkCalloutItem[] {
   const { items, totalMeters, userAlongMeters, planEtaMinutes, driveEtaMinutes = null } = opts;
-  if (totalMeters <= 0 || !items.length) return [];
+  const visible = timelineItemsForProgressRail(items);
+  if (totalMeters <= 0 || !visible.length) return [];
 
-  return items.map((item) => {
+  return visible.map((item) => {
     const timing = formatRouteAlertTiming({
       startMeters: item.startMeters,
       endMeters: item.endMeters,
@@ -272,10 +278,11 @@ export function buildRouteAheadGlanceCards(opts: {
   driveEtaMinutes?: number | null;
 }): RouteAheadGlanceCard[] {
   const { items, totalMeters, userAlongMeters, planEtaMinutes, driveEtaMinutes = null } = opts;
-  if (totalMeters <= 0 || !items.length) return [];
+  const visible = timelineItemsForProgressRail(items);
+  if (totalMeters <= 0 || !visible.length) return [];
 
   const cards: RouteAheadGlanceCard[] = [];
-  for (const item of items) {
+  for (const item of visible) {
     const timing = formatRouteAlertTiming({
       startMeters: item.startMeters,
       endMeters: item.endMeters,

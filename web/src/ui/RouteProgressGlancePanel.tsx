@@ -153,7 +153,7 @@ export function RouteProgressGlancePanel({
   const bandVisuals = useMemo(() => {
     if (totalMeters <= 0) return [];
     return timeline
-      .filter((item) => item.endMeters > userAlongMeters)
+      .filter((item) => !item.stripMuted && item.endMeters > userAlongMeters)
       .map((item) => {
         const startF = item.startMeters / totalMeters;
         const endF = item.endMeters / totalMeters;

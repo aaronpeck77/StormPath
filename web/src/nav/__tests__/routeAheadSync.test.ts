@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRouteAheadGlanceCards, timelineToProgressStripBands } from "../routeAheadSync";
+import { buildRouteAheadCalloutSegments, buildRouteAheadGlanceCards, timelineToProgressStripBands } from "../routeAheadSync";
 import type { TimelineItem } from "../../ui/RouteHazardTimeline";
 
 const baseItem = (overrides: Partial<TimelineItem>): TimelineItem => ({
@@ -77,6 +77,20 @@ describe("buildRouteAheadGlanceCards", () => {
     });
     expect(cards).toHaveLength(0);
   });
+
+  it("skips strip-muted minor flood cards", () => {
+    const cards = buildRouteAheadGlanceCards({
+      items: [
+        baseItem({ id: "minor-flood", stripMuted: true, label: "Flood Advisory" }),
+        baseItem({ id: "warning", stripMuted: false, label: "Flash Flood Warning" }),
+      ],
+      totalMeters: 80_000,
+      userAlongMeters: 0,
+      planEtaMinutes: 90,
+    });
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.label).toBe("Flash Flood Warning");
+  });
 });
 
 describe("timelineToProgressStripBands", () => {
@@ -87,5 +101,21 @@ describe("timelineToProgressStripBands", () => {
     ]);
     expect(bands).toHaveLength(1);
     expect(bands[0]!.severity).toBe("serious");
+  });
+});
+
+describe("buildRouteAheadCalloutSegments", () => {
+  it("omits strip-muted minor flood rows from the progress info panel", () => {
+    const segments = buildRouteAheadCalloutSegments({
+      items: [
+        baseItem({ id: "minor-flood", stripMuted: true, label: "Flood Advisory" }),
+        baseItem({ id: "warning", stripMuted: false, label: "Flash Flood Warning" }),
+      ],
+      totalMeters: 80_000,
+      userAlongMeters: 0,
+      planEtaMinutes: 90,
+    });
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.title).toContain("Flash Flood Warning");
   });
 });
