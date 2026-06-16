@@ -81,10 +81,16 @@ export type LocationDetail = {
 export type UserLocationOptions = {
   /** Prefer fresher fixes (more battery). Off = allow up to ~2s cached positions. */
   highRefresh?: boolean;
+  /** Cap React state updates (ms). Default {@link GPS_STATE_THROTTLE_MS_NORMAL}. */
+  stateUpdateThrottleMs?: number;
 };
 
 /** Cap React state updates to avoid effect pile-up on older phones. */
-const THROTTLE_MS = 400;
+export const GPS_STATE_THROTTLE_MS_NORMAL = 400;
+/** Cross-country navigation — fewer App re-renders. */
+export const GPS_STATE_THROTTLE_MS_ULTRA_LONG = 750;
+
+const DEFAULT_THROTTLE_MS = GPS_STATE_THROTTLE_MS_NORMAL;
 
 /**
  * Dev-only: approximate lat/lng from the client’s public IP (HTTPS JSON, no API key).
@@ -186,6 +192,7 @@ function watchOpts(highRefresh: boolean): PositionOptions {
 
 export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): LocationDetail {
   const highRefresh = Boolean(opts?.highRefresh);
+  const throttleMs = Math.max(200, opts?.stateUpdateThrottleMs ?? DEFAULT_THROTTLE_MS);
   const [lngLat, setLngLat] = useState<LngLat | null>(null);
   const [heading, setHeading] = useState<number | null>(null);
   const [speedMps, setSpeedMps] = useState<number | null>(null);
@@ -227,7 +234,7 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
         (lng, lat, hdg, spd) => {
           if (cancelled) return;
           const elapsed = Date.now() - lastFlushRef.current;
-          if (lastFlushRef.current === 0 || elapsed >= THROTTLE_MS) {
+          if (lastFlushRef.current === 0 || elapsed >= throttleMs) {
             flushNative(lng, lat, hdg, spd);
             return;
           }
@@ -237,7 +244,7 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
               nativeTimer = 0;
               const p = pendingNativeRef.current;
               if (p && !cancelled) flushNative(p.lng, p.lat, p.hdg, p.spd);
-            }, THROTTLE_MS - elapsed);
+            }, throttleMs - elapsed);
           }
         },
         (msg) => {
@@ -385,7 +392,7 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
         return;
       }
       const elapsed = Date.now() - lastFlushRef.current;
-      if (elapsed >= THROTTLE_MS) {
+      if (elapsed >= throttleMs) {
         flush(pos);
       } else {
         pendingRef.current = pos;
@@ -393,7 +400,7 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
           rafRef.current = window.setTimeout(() => {
             rafRef.current = 0;
             if (!cancelled && pendingRef.current) flush(pendingRef.current);
-          }, THROTTLE_MS - elapsed);
+          }, throttleMs - elapsed);
         }
       }
     };
@@ -471,7 +478,7 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
         try { navigator.geolocation.clearWatch(watchId); } catch { /* ignore */ }
       }
     };
-  }, [enabled, highRefresh]);
+  }, [enabled, highRefresh, throttleMs]);
 
   return { lngLat, heading, speedMps, error: error || null, fixSource, accuracyM };
 }

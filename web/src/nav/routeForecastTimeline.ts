@@ -313,6 +313,36 @@ export function buildRouteOutlookTimeline(
   return [];
 }
 
+/** Placeholder outlook for cross-country legs when corridor wx samples are not ready yet. */
+export function buildMilestoneRouteOutlook(
+  totalMeters: number,
+  planEtaMinutes: number | null,
+  headline?: string
+): RouteOutlookStep[] {
+  if (totalMeters <= 0) return [];
+  const h = headline?.trim();
+  const fractions = [0, 0.25, 0.5, 0.75, 1] as const;
+  return fractions.map((fraction) => {
+    const alongMeters = fraction * totalMeters;
+    const etaLabel =
+      planEtaMinutes != null && planEtaMinutes > 0
+        ? formatDurationMinutesMaybe(Math.max(1, Math.round(planEtaMinutes * fraction)))
+        : null;
+    return {
+      key: `mile-${fraction}`,
+      shortLabel: labelForFraction(fraction),
+      fraction,
+      alongMeters,
+      tempF: null,
+      conditions: h && fraction === 0.5 ? h.slice(0, 48) : "Along route",
+      precipPct: null,
+      precipHint: 0,
+      etaLabel,
+      icon: fraction === 0 ? "🚗" : fraction === 1 ? "🏁" : "📍",
+    };
+  });
+}
+
 /** Same remaining-trip ETA model as {@link formatRouteAlertTiming} / progress strip. */
 function effectiveRemainingEtaMinutes(
   totalMeters: number,

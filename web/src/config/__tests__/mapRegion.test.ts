@@ -27,8 +27,11 @@ describe("mapRegion", () => {
     ]);
   });
 
-  it("raises min zoom during navigation when continent is known", () => {
-    expect(mapMinZoomForSession({ navigationStarted: true, hasContinent: true })).toBe(5);
+  it("lowers min zoom for ultra-long routes and cross-country navigation", () => {
+    expect(
+      mapMinZoomForSession({ navigationStarted: true, hasContinent: true, ultraLongRoute: true })
+    ).toBe(2);
+    expect(mapMinZoomForSession({ navigationStarted: true, hasContinent: true })).toBe(3);
     expect(mapMinZoomForSession({ navigationStarted: false, hasContinent: true })).toBe(3);
   });
 

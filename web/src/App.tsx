@@ -24,6 +24,8 @@ import {
   useUserLocation,
   getDevLocationOverrideLngLat,
   clearDevLocationOverride,
+  GPS_STATE_THROTTLE_MS_NORMAL,
+  GPS_STATE_THROTTLE_MS_ULTRA_LONG,
 } from "./hooks/useUserLocation";
 import { useRadarBandsAlongRoute } from "./hooks/useRadarBandsAlongRoute";
 import {
@@ -124,6 +126,7 @@ import type { WxSample } from "./nav/routeChunkWeather";
 import type { RouteOutlookStep } from "./nav/routeForecastTimeline";
 import {
   applyRadarOutlookBoost,
+  buildMilestoneRouteOutlook,
   buildRouteOutlookFromTomorrowForecast,
   buildSyncedRouteOutlook,
   mergeRouteOutlookSteps,
@@ -455,6 +458,21 @@ export default function App() {
    * on App-owned state (`showRadar`), not on the persistent settings, so they don't need the
    * individual setters either. */
   const applySettings = useSettingsStore((s) => s.applySettings);
+  const tripPlanForGps = useTripPlanStore((s) => s.plan);
+  const navActiveForGps = useTripPlanStore((s) => s.navigationStarted);
+  const maxRouteLenForGps = useMemo(() => {
+    let max = 0;
+    for (const r of tripPlanForGps.routes) {
+      if (r.geometry && r.geometry.length >= 2) {
+        max = Math.max(max, polylineLengthMeters(r.geometry));
+      }
+    }
+    return max;
+  }, [tripPlanForGps.routes]);
+  const gpsStateThrottleMs =
+    navActiveForGps && isUltraLongTripRoute(maxRouteLenForGps)
+      ? GPS_STATE_THROTTLE_MS_ULTRA_LONG
+      : GPS_STATE_THROTTLE_MS_NORMAL;
   const {
     lngLat: userLngLat,
     heading,
@@ -463,6 +481,7 @@ export default function App() {
     fixSource: locationFixSource,
   } = useUserLocation(true, {
     highRefresh: settingGpsHighRefreshEnabled,
+    stateUpdateThrottleMs: gpsStateThrottleMs,
   });
   const devLocOverrideLngLat = import.meta.env.DEV ? getDevLocationOverrideLngLat() : null;
   const userLngLatRef = useRef(userLngLat);
@@ -2821,9 +2840,9 @@ export default function App() {
     navigationStarted && (dataSaverMode || isLongTripRoute(routeLenForCorridorLean));
   const tioRouteFetchEnabled =
     tioRouteCorridorEnabled &&
-    !(navLiteForCorridorFetch && !tioWeatherUiOpen) &&
+    !(navLiteForCorridorFetch && !tioWeatherUiOpen && !navigationStarted) &&
     (dataSaverMode
-      ? tioWeatherUiOpen
+      ? tioWeatherUiOpen || navigationStarted
       : tioWeatherUiOpen ||
         navigationStarted ||
         (hasPlannedRoute && !isLongTripRoute(routeLenForCorridorLean)));
@@ -3447,6 +3466,8 @@ export default function App() {
   const progressPanelAlongM = navigationStarted ? heavyAdvisoryAlongM : userAlongGuidanceM;
   const skipHeavyProgressPanel =
     isUltraLongTripRoute(guidanceRouteLengthM) && !navigationStarted;
+  const ultraLongActiveNav =
+    navigationStarted && isUltraLongTripRoute(guidanceRouteLengthM);
   const progressCalloutPanel = useMemo((): {
     routeWide: RouteChunkCalloutItem[];
     outlookTimeline: RouteOutlookStep[];
@@ -3498,13 +3519,83 @@ export default function App() {
     const userAlongT =
       totalM > 0 ? Math.min(1, Math.max(0, userAlongGuidanceM / totalM)) : 0;
 
-    const laidOut = layoutStripAlerts(progressStripAlerts, g, progressPanelAlongM, totalM);
     const planEta = guidanceRoute?.baseEtaMinutes ?? null;
     const wxOverlay =
       weatherOverlay?.[guidanceRouteId] ??
       weatherOverlay?.[lineFocusId] ??
       (weatherOverlay ? Object.values(weatherOverlay)[0] : undefined);
     const wxSamples = wxOverlay?.samples;
+    const wxHeadline =
+      guidanceSlice?.forecastHeadline?.trim() ||
+      wxOverlay?.headline?.trim() ||
+      corridorWeatherDetail;
+
+    if (ultraLongActiveNav) {
+      const routeAheadSegments = buildRouteAheadCalloutSegments({
+        items: routeAheadTimeline,
+        totalMeters: totalM,
+        userAlongMeters: progressPanelAlongM,
+        planEtaMinutes: planEta,
+        driveEtaMinutes: driveEtaMinutes ?? null,
+      });
+
+      const tioOutlook =
+        tioRouteForecast && planEta && planEta > 0
+          ? buildSyncedRouteOutlook({
+              forecastHeadline: "",
+              samples: tomorrowForecastToWxSamples(tioRouteForecast, planEta),
+              totalMeters: totalM,
+              userAlongMeters: progressPanelAlongM,
+              planEtaMinutes: planEta,
+              driveEtaMinutes: driveEtaMinutes ?? null,
+            })
+          : [];
+
+      const syncedOutlook =
+        wxSamples?.length
+          ? buildSyncedRouteOutlook({
+              forecastHeadline: wxHeadline,
+              samples: wxSamples,
+              totalMeters: totalM,
+              userAlongMeters: progressPanelAlongM,
+              planEtaMinutes: planEta,
+              driveEtaMinutes: driveEtaMinutes ?? null,
+            })
+          : [];
+
+      let outlookTimeline = resyncRouteOutlookSteps(
+        mergeRouteOutlookSteps(syncedOutlook, tioOutlook),
+        {
+          samples: wxSamples,
+          totalMeters: totalM,
+          userAlongMeters: progressPanelAlongM,
+          planEtaMinutes: planEta,
+          driveEtaMinutes: driveEtaMinutes ?? null,
+        }
+      );
+
+      if (outlookTimeline.length === 0) {
+        outlookTimeline = buildMilestoneRouteOutlook(totalM, planEta, wxHeadline);
+      }
+
+      const tioSamples =
+        tioRouteForecast && planEta && planEta > 0
+          ? tomorrowForecastToWxSamples(tioRouteForecast, planEta)
+          : [];
+      const outlookSamples =
+        wxSamples?.length ? wxSamples : tioSamples.length ? tioSamples : [];
+
+      return {
+        routeWide: [],
+        outlookTimeline,
+        outlookSamples,
+        segments: routeAheadSegments.sort((a, b) => b.alongT - a.alongT),
+        userAlongT,
+        stripTint,
+      };
+    }
+
+    const laidOut = layoutStripAlerts(progressStripAlerts, g, progressPanelAlongM, totalM);
 
     const routeAheadSegments = buildRouteAheadCalloutSegments({
       items: routeAheadTimeline,
@@ -3527,11 +3618,6 @@ export default function App() {
       stormNwsAlerts: nwsAlertsAffectingActiveRoute,
       progressTrafficLine: navigationStarted ? liveTrafficNarrative?.progressStartLine ?? null : null,
     });
-
-    const wxHeadline =
-      guidanceSlice?.forecastHeadline?.trim() ||
-      wxOverlay?.headline?.trim() ||
-      corridorWeatherDetail;
 
     const syncedOutlook = buildSyncedRouteOutlook({
       forecastHeadline: wxHeadline,
@@ -3560,7 +3646,7 @@ export default function App() {
         : [];
 
     const mergedSegments = [...routeAheadSegments, ...bundle.segments].sort((a, b) => b.alongT - a.alongT);
-    const outlookTimeline = resyncRouteOutlookSteps(
+    let outlookTimeline = resyncRouteOutlookSteps(
       applyRadarOutlookBoost(
         mergeRouteOutlookSteps(
           syncedOutlook,
@@ -3578,6 +3664,9 @@ export default function App() {
         driveEtaMinutes: driveEtaMinutes ?? null,
       }
     );
+    if (outlookTimeline.length === 0 && isUltraLongTripRoute(totalM)) {
+      outlookTimeline = buildMilestoneRouteOutlook(totalM, planEta, wxHeadline);
+    }
 
     const tioSamples =
       tioRouteForecast && planEta && planEta > 0
@@ -3654,6 +3743,7 @@ export default function App() {
     liveTrafficNarrative,
     driveEtaMinutes,
     skipHeavyProgressPanel,
+    ultraLongActiveNav,
   ]);
 
   const deferredProgressCalloutPanel = useDeferredValue(progressCalloutPanel);
@@ -5606,6 +5696,9 @@ export default function App() {
             trafficBypassCompareActive={Boolean(trafficBypassCompare)}
             trafficBypassCompareHazardLngLat={trafficBypassCompare?.hazardLngLat ?? null}
             activityTrailGeoJson={activityTrailGeoJsonForMap}
+            sessionRouteLengthM={
+              guidanceRouteLengthM > 0 ? guidanceRouteLengthM : maxPlanRouteLengthM
+            }
             activityTrailPlanningBounds={activityTrailPlanningBounds}
             idleHomeMapFraming={idleHomeMapFraming}
             homePuckFollow={homePuckFollow}

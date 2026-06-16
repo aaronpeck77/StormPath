@@ -32,6 +32,7 @@ import {
 import { polylineBbox } from "../weatherAlerts/geometryOverlap";
 import { getWebEnv } from "../config/env";
 import { mapMaxBoundsForLngLat, mapMinZoomForSession } from "../config/mapRegion";
+import { isUltraLongTripRoute } from "../utils/dataSaver";
 import { continentFromLngLat } from "../services/continents";
 import {
   fetchRainViewerRadarFrames,
@@ -477,7 +478,11 @@ function mapStyleReadyForCamera(map: mapboxgl.Map): boolean {
   }
 }
 
-const MIN_PLANNING_ROUTE_ZOOM = 7.5;
+function minPlanningRouteZoomFloor(routeLengthM: number): number {
+  if (isUltraLongTripRoute(routeLengthM)) return 2.8;
+  if (routeLengthM >= 100_000) return 5.5;
+  return 7.5;
+}
 
 /** Route overview fit: turn/storm strip, address/toolbar, progress rail. */
 function routeFitPadding(
@@ -779,6 +784,8 @@ type Props = {
   trafficBypassCompareHazardLngLat?: LngLat | null;
   /** Plus: sparse GPS dots over weeks/months (see About → Activity trail). */
   activityTrailGeoJson?: GeoJSON.FeatureCollection | null;
+  /** Active guidance leg length (m) — zoom floors + cross-country perf. */
+  sessionRouteLengthM?: number;
   /**
    * Plus + learn: SW/NE corners covering stored activity — with user position, frames route planning before a destination.
    */
@@ -1048,6 +1055,7 @@ function DriveMapInner({
   trafficBypassCompareActive = false,
   trafficBypassCompareHazardLngLat = null,
   activityTrailGeoJson = null,
+  sessionRouteLengthM = 0,
   activityTrailPlanningBounds = null,
   idleHomeMapFraming = "my_location",
   homePuckFollow = "follow",
@@ -1057,6 +1065,7 @@ function DriveMapInner({
   onSearchPickMarkerClick,
   progressRailVisible = true,
 }: Props) {
+  const ultraLongRoute = isUltraLongTripRoute(sessionRouteLengthM);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const puckMarkerRef = useRef<mapboxgl.Marker | null>(null);
@@ -1173,6 +1182,8 @@ function DriveMapInner({
   stormBarExpandedRef.current = stormBarExpanded;
   const progressRailVisibleRef = useRef(progressRailVisible);
   progressRailVisibleRef.current = progressRailVisible;
+  const sessionRouteLengthMRef = useRef(sessionRouteLengthM);
+  sessionRouteLengthMRef.current = sessionRouteLengthM;
 
   const routesPlanningFitKey = useMemo(
     () => planningRoutesFitKey(routes, lineFocusId, destLngLat),
@@ -1302,6 +1313,7 @@ function DriveMapInner({
       mapMinZoomForSession({
         navigationStarted: navigationStartedRef.current,
         hasContinent: mapHasContinent,
+        ultraLongRoute: isUltraLongTripRoute(sessionRouteLengthMRef.current),
       })
     );
 
@@ -1600,12 +1612,13 @@ function DriveMapInner({
         mapMinZoomForSession({
           navigationStarted,
           hasContinent: mapHasContinent,
+          ultraLongRoute,
         })
       );
     } catch {
       /* map disposed */
     }
-  }, [mapReady, mapSessionBounds, navigationStarted, mapHasContinent]);
+  }, [mapReady, mapSessionBounds, navigationStarted, mapHasContinent, ultraLongRoute]);
 
   /** Mobile: URL bar / rotation / safe-area change the map container — Mapbox must resize or the canvas stays wrong and the puck can disappear. */
   useEffect(() => {
@@ -3355,13 +3368,15 @@ function DriveMapInner({
     const verifyPlanningZoom = (attempt: number) => {
       if (cancelled || navigationStartedRef.current || routes.length === 0) return;
       if (viewModeRef.current !== "route" && viewModeRef.current !== "topdown") return;
+      if (isUltraLongTripRoute(sessionRouteLengthMRef.current)) return;
       let zoom = 0;
       try {
         zoom = map.getZoom();
       } catch {
         return;
       }
-      if (zoom >= MIN_PLANNING_ROUTE_ZOOM) return;
+      const minPlanningZoom = minPlanningRouteZoomFloor(sessionRouteLengthMRef.current);
+      if (zoom >= minPlanningZoom) return;
       if (attempt >= 5) return;
       if (!executePlanningFit()) {
         planningFitRetryTimerRef.current = window.setTimeout(

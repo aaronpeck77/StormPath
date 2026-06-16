@@ -435,6 +435,8 @@ const HIGHLIGHT_GEOMETRY_VERTEX_BUDGET = 8000;
 /** Drive map line: short tail behind puck, full detail ahead (cap only when remaining leg is huge). */
 export const DRIVE_LINE_BEHIND_M = 1500;
 const DRIVE_LINE_MAX_VERTICES = 24_000;
+const DRIVE_LINE_MAX_VERTICES_ULTRA = 6_000;
+const DRIVE_LINE_MAX_VERTICES_EXTREME = 3_500;
 
 export type RouteHighlightFrame = {
   geometry: LngLat[];
@@ -489,8 +491,13 @@ export function routeLineGeometryForDriveDisplay(
   if (slice.length < 2) {
     slice = [pointAtAlongMeters(geometry, startM), pointAtAlongMeters(geometry, total)];
   }
-  if (slice.length > DRIVE_LINE_MAX_VERTICES) {
-    slice = subsamplePolylineAlongDistance(slice, DRIVE_LINE_MAX_VERTICES);
+  const maxVerts = isExtremeTripRoute(total)
+    ? DRIVE_LINE_MAX_VERTICES_EXTREME
+    : isUltraLongTripRoute(total)
+      ? DRIVE_LINE_MAX_VERTICES_ULTRA
+      : DRIVE_LINE_MAX_VERTICES;
+  if (slice.length > maxVerts) {
+    slice = subsamplePolylineAlongDistance(slice, maxVerts);
   }
   return slice.length >= 2 ? slice : geometry;
 }

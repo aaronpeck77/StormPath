@@ -67,8 +67,11 @@ export function mapMaxBoundsForLngLat(lngLat: LngLat | null | undefined): MapLng
 export function mapMinZoomForSession(opts: {
   navigationStarted: boolean;
   hasContinent: boolean;
+  /** Cross-country legs need continent-scale zoom even while navigating. */
+  ultraLongRoute?: boolean;
 }): number {
-  if (opts.navigationStarted && opts.hasContinent) return 5;
+  if (opts.ultraLongRoute) return opts.hasContinent ? 2 : 2;
+  if (opts.navigationStarted && opts.hasContinent) return 3;
   if (opts.hasContinent) return 3;
   return 2;
 }
