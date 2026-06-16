@@ -19,7 +19,8 @@ type RadarSample = { t: number; intensity: number };
  */
 export function useRadarBandsAlongRoute(
   enabled: boolean,
-  geometry: LngLat[] | undefined
+  geometry: LngLat[] | undefined,
+  pollIntervalMs = 300_000
 ): { samples: RadarSample[]; updatedAt: number | null } {
   const [state, setState] = useState<{ samples: RadarSample[]; updatedAt: number | null }>({
     samples: [],
@@ -96,12 +97,12 @@ export function useRadarBandsAlongRoute(
     };
 
     void run();
-    const id = window.setInterval(run, 300_000);
+    const id = window.setInterval(run, pollIntervalMs);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [enabled, geometry, geomKey]);
+  }, [enabled, geometry, geomKey, pollIntervalMs]);
 
   return state;
 }

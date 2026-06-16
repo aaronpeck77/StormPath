@@ -195,6 +195,12 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
 
   const lastFlushRef = useRef(0);
   const pendingRef = useRef<GeolocationPosition | null>(null);
+  const pendingNativeRef = useRef<{
+    lng: number;
+    lat: number;
+    hdg: number | null;
+    spd: number | null;
+  } | null>(null);
   const rafRef = useRef(0);
 
   useEffect(() => {
@@ -204,17 +210,35 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
     if (Capacitor.isNativePlatform()) {
       let cleanup: (() => void) | undefined;
       let cancelled = false;
+      let nativeTimer = 0;
+
+      const flushNative = (lng: number, lat: number, hdg: number | null, spd: number | null) => {
+        lastFlushRef.current = Date.now();
+        setError(null);
+        setFixSource("native");
+        setAccuracyM(null);
+        setLngLat([lng, lat]);
+        setHeading(hdg);
+        setSpeedMps(spd);
+      };
 
       void startNativeWatch(
         highRefresh,
         (lng, lat, hdg, spd) => {
           if (cancelled) return;
-          setError(null);
-          setFixSource("native");
-          setAccuracyM(null);
-          setLngLat([lng, lat]);
-          setHeading(hdg);
-          setSpeedMps(spd);
+          const elapsed = Date.now() - lastFlushRef.current;
+          if (lastFlushRef.current === 0 || elapsed >= THROTTLE_MS) {
+            flushNative(lng, lat, hdg, spd);
+            return;
+          }
+          pendingNativeRef.current = { lng, lat, hdg, spd };
+          if (!nativeTimer) {
+            nativeTimer = window.setTimeout(() => {
+              nativeTimer = 0;
+              const p = pendingNativeRef.current;
+              if (p && !cancelled) flushNative(p.lng, p.lat, p.hdg, p.spd);
+            }, THROTTLE_MS - elapsed);
+          }
         },
         (msg) => {
           if (!cancelled) setError(msg);
@@ -229,6 +253,7 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
 
       return () => {
         cancelled = true;
+        if (nativeTimer) window.clearTimeout(nativeTimer);
         cleanup?.();
       };
     }

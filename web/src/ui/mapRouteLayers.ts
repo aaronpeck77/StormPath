@@ -67,15 +67,54 @@ function syncRouteConditionCasingPaint(map: mapboxgl.Map): void {
   map.setPaintProperty(ROUTE_COND_HIGHLIGHT_CASING, "line-opacity", ROUTE_COND_CASING_OPACITY);
 }
 
+let lastHighlightMap: mapboxgl.Map | null = null;
+let lastHighlightKey = "";
+
+function routeHighlightContentKey({
+  alerts,
+  routeGeometry,
+  stormAlongRouteBands,
+  clipBehindAlongM,
+}: RouteConditionHighlightOpts): string {
+  const clip =
+    clipBehindAlongM != null && Number.isFinite(clipBehindAlongM)
+      ? Math.floor(clipBehindAlongM / 400)
+      : "all";
+  const alertKey = alerts?.map((a) => `${a.id}:${Math.round(a.alongMeters / 200)}`).join(",") ?? "";
+  const bandKey =
+    stormAlongRouteBands?.map((b) => `${Math.round(b.startM / 200)}-${Math.round(b.endM / 200)}`).join("|") ??
+    "";
+  const geomKey = routeGeometry?.length ?? 0;
+  return `${clip}|${alertKey}|${bandKey}|${geomKey}`;
+}
+
+/** Drop cached skip guard after style reload or map teardown. */
+export function resetRouteConditionHighlightCache(map?: mapboxgl.Map | null): void {
+  if (map == null || map === lastHighlightMap) {
+    lastHighlightMap = null;
+    lastHighlightKey = "";
+  }
+}
+
 /**
  * Hazard / weather / NWS overlap segments as a colored outline under the route line (not a solid overlay).
+ * Returns whether GeoJSON data changed (false = skipped identical rebuild).
  * Call {@link bringMapboxTrafficLayersToFront}, {@link bringRouteVisualLinesAboveTraffic},
  * then {@link bringRouteHitLayersToTop} (DriveMap batches these in one helper).
  */
 export function applyRouteConditionHighlights(
   map: mapboxgl.Map,
-  { alerts, routeGeometry, stormGeoJson, stormAlongRouteBands, clipBehindAlongM }: RouteConditionHighlightOpts
-) {
+  opts: RouteConditionHighlightOpts
+): boolean {
+  const { alerts, routeGeometry, stormGeoJson, stormAlongRouteBands, clipBehindAlongM } = opts;
+  const contentKey = routeHighlightContentKey(opts);
+  if (
+    map === lastHighlightMap &&
+    contentKey === lastHighlightKey &&
+    map.getSource(ROUTE_COND_HIGHLIGHT_SRC)
+  ) {
+    return false;
+  }
   /* Former solid overlay on top of the route — remove if present (e.g. HMR). */
   const legacyOverlay = "route-condition-highlights-line";
   if (map.getLayer(legacyOverlay)) map.removeLayer(legacyOverlay);
@@ -87,7 +126,9 @@ export function applyRouteConditionHighlights(
   if (!routeGeometry?.length) {
     if (map.getLayer(ROUTE_COND_HIGHLIGHT_CASING)) map.removeLayer(ROUTE_COND_HIGHLIGHT_CASING);
     if (map.getSource(ROUTE_COND_HIGHLIGHT_SRC)) map.removeSource(ROUTE_COND_HIGHLIGHT_SRC);
-    return;
+    lastHighlightMap = map;
+    lastHighlightKey = contentKey;
+    return true;
   }
 
   const frame = routeHighlightFrameForMap(routeGeometry, clipBehindAlongM);
@@ -150,7 +191,9 @@ export function applyRouteConditionHighlights(
   if (features.length === 0) {
     if (map.getLayer(ROUTE_COND_HIGHLIGHT_CASING)) map.removeLayer(ROUTE_COND_HIGHLIGHT_CASING);
     if (map.getSource(ROUTE_COND_HIGHLIGHT_SRC)) map.removeSource(ROUTE_COND_HIGHLIGHT_SRC);
-    return;
+    lastHighlightMap = map;
+    lastHighlightKey = contentKey;
+    return true;
   }
 
   if (!map.getSource(ROUTE_COND_HIGHLIGHT_SRC)) {
@@ -184,6 +227,9 @@ export function applyRouteConditionHighlights(
       syncRouteConditionCasingPaint(map);
     }
   }
+  lastHighlightMap = map;
+  lastHighlightKey = contentKey;
+  return true;
 }
 
 /** Place hazard halo directly under the lowest route leg line (above traffic). */

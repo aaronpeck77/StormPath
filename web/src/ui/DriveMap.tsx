@@ -1,7 +1,7 @@
 import mapboxgl from "../mapboxCapacitorWorker";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { MutableRefObject } from "react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import { resolveIdleHomeFraming } from "../map/homeMapFraming";
 import type { HomePuckFollowMode } from "../map/homePuckFollow";
@@ -41,6 +41,7 @@ import {
 import { isRainViewerRateLimited, onRainViewerRateLimit, rainViewerRateLimitMsRemaining } from "../services/rainViewerTileFetch";
 import {
   applyRouteConditionHighlights,
+  resetRouteConditionHighlightCache,
   applyRoutesToMap,
   bringRouteHitLayersToTop,
   bringRouteVisualLinesAboveTraffic,
@@ -1004,7 +1005,7 @@ function makeBypassHazardEl(): HTMLDivElement {
   return wrap;
 }
 
-export function DriveMap({
+function DriveMapInner({
   routes,
   lineFocusId,
   suggestedRouteId,
@@ -1189,6 +1190,14 @@ export function DriveMap({
   );
   const [mapReady, setMapReady] = useState(false);
   const [mapResumeTick, setMapResumeTick] = useState(0);
+
+  /** After pan/zoom ends, refresh halo clip once follow resumes. */
+  useEffect(() => {
+    if (!navigationStarted || viewMode !== "drive" || mapResumeTick === 0) return;
+    lastHighlightClipAlongRef.current = null;
+    setHighlightClipTick((n) => n + 1);
+  }, [mapResumeTick, navigationStarted, viewMode]);
+
   /** Bumps when bottom/top chrome resizes so route fit padding tracks live UI dead zones. */
   const [chromeLayoutTick, setChromeLayoutTick] = useState(0);
   const [nightBasemapPreset] = useState<NightBasemapPreset>(parseNightBasemapPreset);
@@ -1308,6 +1317,7 @@ export function DriveMap({
       try {
         (map as unknown as { setProjection: (p: string) => void }).setProjection("mercator");
       } catch { /* setProjection not available on this gl version — fine */ }
+      resetRouteConditionHighlightCache(map);
     });
     map.on("error", (e: { error?: unknown }) => {
       console.warn("[map] mapbox-gl error", e?.error ?? e);
@@ -2377,14 +2387,22 @@ export function DriveMap({
   /** Drive mode: refresh the ahead-only route slice as the puck moves (throttled — avoids map jank). */
   useEffect(() => {
     if (!mapReady || viewMode !== "drive" || !navigationStarted || routes.length === 0) return;
+    if (userExploringRef.current) return;
     const along = userAlongMeters;
     if (along == null || !Number.isFinite(along)) return;
     const prev = lastDriveRouteLineSyncAlongRef.current;
     if (prev != null && Math.abs(along - prev) < 450) return;
     lastDriveRouteLineSyncAlongRef.current = along;
     syncTripRoutesRef.current();
-    setHighlightClipTick((n) => n + 1);
   }, [mapReady, viewMode, navigationStarted, routes.length, userAlongMeters]);
+
+  /** One-shot route slice refresh when explore ends. */
+  useEffect(() => {
+    if (!mapReady || viewMode !== "drive" || !navigationStarted || routes.length === 0) return;
+    if (mapResumeTick === 0) return;
+    lastDriveRouteLineSyncAlongRef.current = null;
+    syncTripRoutesRef.current();
+  }, [mapResumeTick, mapReady, viewMode, navigationStarted, routes.length]);
 
   /**
    * Map layer health: after routes load (especially on slow / low-data links), verify line layers
@@ -2396,6 +2414,7 @@ export function DriveMap({
     if (!map) return;
 
     const verifyAndRepair = () => {
+      if (userExploringRef.current) return;
       if (!isMapUsable(map)) return;
       try {
         if (!map.isStyleLoaded()) return;
@@ -2784,7 +2803,7 @@ export function DriveMap({
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     const lift = () => {
-      if (cancelled) return;
+      if (cancelled || userExploringRef.current) return;
       const focusGeom =
         corridorRouteGeometry && corridorRouteGeometry.length >= 2
           ? corridorRouteGeometry
@@ -2793,22 +2812,27 @@ export function DriveMap({
       const clipBehindAlongM =
         navigationStarted && viewMode === "drive" ? userAlongMetersRef.current : null;
 
-      applyRouteConditionHighlights(map, {
+      const changed = applyRouteConditionHighlights(map, {
         alerts: alongRouteAlerts,
         routeGeometry: focusGeom,
         stormGeoJson: weatherAlertGeoJson,
         stormAlongRouteBands,
         clipBehindAlongM,
       });
-      liftTrafficThenRoutesThenHits(
-        map,
-        visibleRouteIdsForHitLayers(routes, lineFocusId, viewMode, false)
-      );
+      if (changed) {
+        liftTrafficThenRoutesThenHits(
+          map,
+          visibleRouteIdsForHitLayers(routes, lineFocusId, viewMode, false)
+        );
+      }
     };
 
     const schedule = () => {
+      if (userExploringRef.current) return;
       if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(lift, 220);
+      const debounceMs =
+        navigationStarted && viewMode === "drive" ? 480 : 220;
+      debounceTimer = setTimeout(lift, debounceMs);
     };
 
     if (map.isStyleLoaded()) schedule();
@@ -2829,6 +2853,7 @@ export function DriveMap({
     viewMode,
     weatherAlertGeoJson,
     highlightClipTick,
+    mapResumeTick,
   ]);
 
   useEffect(() => {
@@ -2890,6 +2915,10 @@ export function DriveMap({
           !isRainViewerRateLimited() &&
           mapRef.current === map
         ) {
+          if (userExploringRef.current) {
+            await sleep(400);
+            continue;
+          }
           /* Show the current frame for its full dwell; bench is loading in parallel. */
           await sleep(RAINVIEWER_ANIMATION_DWELL_MS);
           if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
@@ -3907,5 +3936,55 @@ export function DriveMap({
 
   return <div ref={containerRef} className="drive-map" />;
 }
+
+function driveMapPropsAreEqual(prev: Props, next: Props): boolean {
+  if (
+    prev.navigationStarted &&
+    next.navigationStarted &&
+    prev.viewMode === "drive" &&
+    next.viewMode === "drive"
+  ) {
+    const posQ = 0.00012;
+    if (prev.userLngLat && next.userLngLat) {
+      if (
+        Math.abs(prev.userLngLat[0] - next.userLngLat[0]) > posQ ||
+        Math.abs(prev.userLngLat[1] - next.userLngLat[1]) > posQ
+      ) {
+        return false;
+      }
+    } else if (prev.userLngLat !== next.userLngLat) return false;
+
+    if (prev.userAlongMeters != null && next.userAlongMeters != null) {
+      if (Math.abs(prev.userAlongMeters - next.userAlongMeters) > 400) return false;
+    } else if (prev.userAlongMeters !== next.userAlongMeters) return false;
+
+    if (prev.driveRouteBearingDeg != null && next.driveRouteBearingDeg != null) {
+      if (Math.abs(prev.driveRouteBearingDeg - next.driveRouteBearingDeg) > 2) return false;
+    } else if (prev.driveRouteBearingDeg !== next.driveRouteBearingDeg) return false;
+
+    if (prev.heading != null && next.heading != null) {
+      if (Math.abs(prev.heading - next.heading) > 3) return false;
+    } else if (prev.heading !== next.heading) return false;
+  } else {
+    if (prev.userLngLat !== next.userLngLat) return false;
+    if (prev.userAlongMeters !== next.userAlongMeters) return false;
+    if (prev.driveRouteBearingDeg !== next.driveRouteBearingDeg) return false;
+    if (prev.heading !== next.heading) return false;
+  }
+
+  const skip = new Set<keyof Props>([
+    "userLngLat",
+    "userAlongMeters",
+    "driveRouteBearingDeg",
+    "heading",
+  ]);
+  for (const k of Object.keys(prev) as (keyof Props)[]) {
+    if (skip.has(k)) continue;
+    if (!Object.is(prev[k], next[k])) return false;
+  }
+  return true;
+}
+
+export const DriveMap = memo(DriveMapInner, driveMapPropsAreEqual);
 
 export default DriveMap;

@@ -60,12 +60,31 @@ export function quantizeRouteAlongForHeavyUi(
   navigationActive: boolean
 ): number {
   if (!navigationActive || !Number.isFinite(alongM) || alongM < 0) return alongM;
-  const stepM = isLongTripRoute(routeLengthM) ? 5_000 : 1_500;
+  const stepM = isLongTripRoute(routeLengthM) ? 10_000 : 2_500;
   return Math.floor(alongM / stepM) * stepM;
+}
+
+/** ~2 km grid — NWS puck-inside scans do not need sub-block precision while driving. */
+export function quantizeLngLatForHeavyUi(
+  lngLat: [number, number] | null,
+  navigationActive: boolean
+): [number, number] | null {
+  if (!lngLat || !navigationActive) return lngLat;
+  const step = 0.018;
+  return [
+    Math.round(lngLat[0] / step) * step,
+    Math.round(lngLat[1] / step) * step,
+  ];
 }
 
 export const TRAFFIC_POLL_MS_NORMAL = 90_000;
 export const TRAFFIC_POLL_MS_DATA_SAVER = 300_000;
+/** Long-trip active navigation — fewer Mapbox traffic pulls. */
+export const TRAFFIC_POLL_MS_LONG_TRIP_NAV = 180_000;
+
+export const RADAR_ROUTE_SAMPLE_MS_NORMAL = 300_000;
+export const RADAR_ROUTE_SAMPLE_MS_LONG_TRIP = 480_000;
+export const RADAR_ROUTE_SAMPLE_MS_DATA_SAVER = 600_000;
 
 export const NAV_ROUTE_ALT_REFRESH_MS_NORMAL = 26_000;
 
@@ -81,8 +100,33 @@ export function getNwsPollIntervalMs(
   return NWS_POLL_MS_NORMAL;
 }
 
-export function getTrafficPollIntervalMs(dataSaver: boolean): number {
-  return dataSaver ? TRAFFIC_POLL_MS_DATA_SAVER : TRAFFIC_POLL_MS_NORMAL;
+export function getTrafficPollIntervalMs(
+  dataSaver: boolean,
+  navigationStarted = false,
+  routeLengthM = 0
+): number {
+  if (dataSaver) return TRAFFIC_POLL_MS_DATA_SAVER;
+  if (navigationStarted && isLongTripRoute(routeLengthM)) return TRAFFIC_POLL_MS_LONG_TRIP_NAV;
+  return TRAFFIC_POLL_MS_NORMAL;
+}
+
+export function getRadarRouteSampleIntervalMs(
+  dataSaver: boolean,
+  navigationStarted = false,
+  routeLengthM = 0
+): number {
+  if (dataSaver) return RADAR_ROUTE_SAMPLE_MS_DATA_SAVER;
+  if (navigationStarted && isLongTripRoute(routeLengthM)) return RADAR_ROUTE_SAMPLE_MS_LONG_TRIP;
+  return RADAR_ROUTE_SAMPLE_MS_NORMAL;
+}
+
+/** Long-trip or data-saver navigation — lean map + background refresh profile. */
+export function isNavMapLiteMode(
+  navigationStarted: boolean,
+  dataSaver: boolean,
+  routeLengthM: number
+): boolean {
+  return navigationStarted && (dataSaver || isLongTripRoute(routeLengthM));
 }
 
 /** `null` = do not poll alternate legs automatically. */
