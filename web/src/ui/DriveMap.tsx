@@ -1090,6 +1090,18 @@ export function DriveMap({
     userAlongMeters != null && Number.isFinite(userAlongMeters) && userAlongMeters >= 0
       ? userAlongMeters
       : null;
+  /** Throttle map hazard-halo clip refreshes — full corridor reslice was blocking UI on long routes. */
+  const lastHighlightClipAlongRef = useRef<number | null>(null);
+  const [highlightClipTick, setHighlightClipTick] = useState(0);
+  useEffect(() => {
+    if (!navigationStarted || viewMode !== "drive") return;
+    const along = userAlongMeters ?? 0;
+    const last = lastHighlightClipAlongRef.current;
+    if (last != null && Math.abs(along - last) < 1_200) return;
+    lastHighlightClipAlongRef.current = along;
+    const t = window.setTimeout(() => setHighlightClipTick((n) => n + 1), 280);
+    return () => window.clearTimeout(t);
+  }, [userAlongMeters, navigationStarted, viewMode]);
   const lastDriveRouteLineSyncAlongRef = useRef<number | null>(null);
   const speedMpsRef = useRef<number | null>(null);
   speedMpsRef.current = speedMps;
@@ -2763,7 +2775,7 @@ export function DriveMap({
     navigationStarted,
     viewMode,
     weatherAlertGeoJson,
-    userAlongMeters,
+    highlightClipTick,
   ]);
 
   useEffect(() => {

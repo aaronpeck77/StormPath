@@ -487,18 +487,28 @@ export async function fetchRouteForecast(
   const fetchLocations = pickRouteForecastFetchLocations(waypoints);
 
   const timelinesByKey = new Map<string, HourlyByOffset[]>();
+  const seenKeys = new Set<string>();
+  const uniqueLocations: { lat: number; lng: number }[] = [];
   for (const loc of fetchLocations) {
     const key = routeForecastLocationKey(loc.lat, loc.lng);
-    if (timelinesByKey.has(key)) continue;
-    const hourly = await fetchHourlyTimelineAtLocation(
-      apiKey,
-      loc.lat,
-      loc.lng,
-      endHours,
-      signal
-    );
-    timelinesByKey.set(key, hourly);
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    uniqueLocations.push(loc);
   }
+
+  await Promise.all(
+    uniqueLocations.map(async (loc) => {
+      const key = routeForecastLocationKey(loc.lat, loc.lng);
+      const hourly = await fetchHourlyTimelineAtLocation(
+        apiKey,
+        loc.lat,
+        loc.lng,
+        endHours,
+        signal
+      );
+      timelinesByKey.set(key, hourly);
+    })
+  );
 
   const intervals: RouteHourlyInterval[] = waypoints.map((wp) => {
     const locKey = nearestFetchLocationKey(wp, fetchLocations);

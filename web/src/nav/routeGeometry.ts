@@ -389,7 +389,6 @@ export function subsamplePolylineAlongDistance(route: LngLat[], maxVertices: num
 
 /** Weather/hazard halo segments — dense enough to follow roads on long legs. */
 const HIGHLIGHT_GEOMETRY_VERTEX_BUDGET = 8000;
-const HIGHLIGHT_GEOMETRY_LONG_ROUTE_M = 500_000;
 
 /** Drive map line: short tail behind puck, full detail ahead (cap only when remaining leg is huge). */
 const DRIVE_LINE_BEHIND_M = 1500;
@@ -421,8 +420,8 @@ export function routeLineGeometryForDriveDisplay(
 }
 
 /**
- * Map highlight slicing — uses full geometry for normal routes; distance-subsamples only very long
- * cross-country polylines so hazard/NWS halos follow roads instead of cutting chord lines.
+ * Map highlight slicing — slice on full road geometry first, then subsample only the segment
+ * being drawn. Avoids chord shortcuts on long routes and keeps work proportional to band length.
  */
 export function slicePolylineBetweenAlongForDisplay(
   geometry: LngLat[],
@@ -430,15 +429,20 @@ export function slicePolylineBetweenAlongForDisplay(
   endM: number,
   totalRouteM?: number
 ): LngLat[] {
+  if (geometry.length < 2) return [];
   const total = totalRouteM ?? polylineLengthMeters(geometry);
-  if (geometry.length <= HIGHLIGHT_GEOMETRY_VERTEX_BUDGET && total < HIGHLIGHT_GEOMETRY_LONG_ROUTE_M) {
-    return slicePolylineBetweenAlong(geometry, startM, endM);
+  let slice = slicePolylineBetweenAlong(geometry, startM, endM);
+  if (slice.length < 2) return slice;
+
+  const segLenM = Math.abs(endM - startM);
+  const segBudget = Math.min(
+    HIGHLIGHT_GEOMETRY_VERTEX_BUDGET,
+    Math.max(64, Math.ceil(HIGHLIGHT_GEOMETRY_VERTEX_BUDGET * (segLenM / Math.max(total, 1))))
+  );
+  if (slice.length > segBudget) {
+    slice = subsamplePolylineAlongDistance(slice, segBudget);
   }
-  const vis = subsamplePolylineAlongDistance(geometry, HIGHLIGHT_GEOMETRY_VERTEX_BUDGET);
-  const visLen = polylineLengthMeters(vis);
-  if (total <= 0 || visLen <= 0) return slicePolylineBetweenAlong(geometry, startM, endM);
-  const ratio = visLen / total;
-  return slicePolylineBetweenAlong(vis, startM * ratio, endM * ratio);
+  return slice;
 }
 
 /**

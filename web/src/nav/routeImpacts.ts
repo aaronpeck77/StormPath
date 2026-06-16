@@ -649,6 +649,8 @@ export type BuildRouteImpactsOpts = {
   userAlongM: number;
   /** Static plan ETA — used to convert distance-ahead into time-ahead. */
   planEtaMinutes: number | null | undefined;
+  /** Precomputed route length — avoids re-walking huge polylines every GPS tick. */
+  totalMeters?: number;
   slice: RouteSituationSlice | undefined;
   trafficForRoute: ScoredRoute | undefined;
   trafficLeg: MapboxTrafficLeg | null;
@@ -713,7 +715,12 @@ export function buildRouteImpacts(opts: BuildRouteImpactsOpts): RouteImpact[] {
     radarMosaicSamples = [],
   } = opts;
 
-  const totalMeters = geometry?.length ? polylineLengthMeters(geometry) : 0;
+  const totalMeters =
+    opts.totalMeters != null && opts.totalMeters > 0
+      ? opts.totalMeters
+      : geometry?.length
+        ? polylineLengthMeters(geometry)
+        : 0;
   const mosaicMax =
     radarMosaicSamples.length > 0
       ? Math.max(...radarMosaicSamples.map((s) => s.intensity))

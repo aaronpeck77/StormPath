@@ -9,7 +9,7 @@ import {
 } from "../services/radarPolylineIntensity";
 import { fetchRainViewerRadarFrames, tileUrlFromHostAndPath } from "../services/rainViewerRadar";
 import { isRainViewerRateLimited } from "../services/rainViewerTileFetch";
-import { pointAlongPolyline } from "../ui/geometryAlong";
+import { buildCumulativeDistances, pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
 
 type RadarSample = { t: number; intensity: number };
 
@@ -50,10 +50,12 @@ export function useRadarBandsAlongRoute(
       const frame = pack.frames[pack.frames.length - 1]!;
       const template = tileUrlFromHostAndPath(pack.host, frame.path);
 
+      const totalM = polylineLengthMeters(geometry);
+      const cumDist = buildCumulativeDistances(geometry);
       const pts = RADAR_ROUTE_SAMPLE_FRACTIONS.map((t) => ({
         t,
-        lngLat: pointAlongPolyline(geometry, t),
-      })).filter((x) => x.lngLat);
+        lngLat: pointAtAlongMeters(geometry, totalM * t, cumDist),
+      }));
 
       const Z = RADAR_MOSAIC_SAMPLE_ZOOM;
       const tileToSamples = new Map<string, { t: number; px: number; py: number }[]>();

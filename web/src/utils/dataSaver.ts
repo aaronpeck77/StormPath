@@ -53,6 +53,17 @@ export function isLongTripRoute(routeLengthM: number): boolean {
   return routeLengthM >= LONG_TRIP_ROUTE_M;
 }
 
+/** Snap along-route distance so timeline/impact recompute does not run every GPS tick on long legs. */
+export function quantizeRouteAlongForHeavyUi(
+  alongM: number,
+  routeLengthM: number,
+  navigationActive: boolean
+): number {
+  if (!navigationActive || !Number.isFinite(alongM) || alongM < 0) return alongM;
+  const stepM = isLongTripRoute(routeLengthM) ? 5_000 : 1_500;
+  return Math.floor(alongM / stepM) * stepM;
+}
+
 export const TRAFFIC_POLL_MS_NORMAL = 90_000;
 export const TRAFFIC_POLL_MS_DATA_SAVER = 300_000;
 

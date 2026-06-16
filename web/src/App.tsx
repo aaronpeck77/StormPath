@@ -64,6 +64,7 @@ import {
   getTrafficPollIntervalMs,
   isDataSaverMode,
   isLongTripRoute,
+  quantizeRouteAlongForHeavyUi,
 } from "./utils/dataSaver";
 import {
   formatCoordsAreaLabel,
@@ -2403,6 +2404,17 @@ export default function App() {
     return 0;
   }, [guidanceRoute?.geometry, navigationStarted, userAlongGuidanceM, effectiveUserLngLat]);
 
+  /** Throttle heavy advisory recompute (timeline, impacts) — turn banner keeps precise along-m. */
+  const heavyAdvisoryAlongM = useMemo(
+    () =>
+      quantizeRouteAlongForHeavyUi(
+        advisoryUserAlongM,
+        guidanceRouteLengthM,
+        navigationStarted
+      ),
+    [advisoryUserAlongM, guidanceRouteLengthM, navigationStarted]
+  );
+
   const turnStepBounds = useMemo(
     () => turnStepAlongBounds(turnSteps, guidanceRouteLengthM),
     [turnSteps, guidanceRouteLengthM]
@@ -2748,11 +2760,16 @@ export default function App() {
     destLngLat && plan.routes.some((r) => r.geometry && r.geometry.length >= 2)
   );
   /** Sample RainViewer along the route for advisory/timeline whenever a leg is loaded or Rad is on. */
+  const routeLenForCorridorLean =
+    guidanceRouteLengthM > 0 ? guidanceRouteLengthM : maxPlanRouteLengthM;
   const radarRouteSamplingEnabled = Boolean(
     guidanceRoute?.geometry &&
       guidanceRoute.geometry.length >= 2 &&
       (navigationStarted || hasPlannedRoute) &&
-      (radarMapOverlayOn || settingStormEnabled || settingWeatherHintsEnabled)
+      (radarMapOverlayOn || settingStormEnabled || settingWeatherHintsEnabled) &&
+      (navigationStarted ||
+        !isLongTripRoute(routeLenForCorridorLean) ||
+        radarMapOverlayOn)
   );
   const radarMosaicAlongRoute = useRadarBandsAlongRoute(
     radarRouteSamplingEnabled,
@@ -2775,12 +2792,14 @@ export default function App() {
     Boolean(tioApiKey) &&
     appForeground &&
     Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
-  /** Fetch while navigating, planning a route, or advisory weather is expanded. */
+  /** Fetch while navigating, planning a short route, or advisory weather is expanded. */
   const tioRouteFetchEnabled =
     tioRouteCorridorEnabled &&
     (dataSaverMode
       ? tioWeatherUiOpen
-      : tioWeatherUiOpen || navigationStarted || hasPlannedRoute);
+      : tioWeatherUiOpen ||
+        navigationStarted ||
+        (hasPlannedRoute && !isLongTripRoute(routeLenForCorridorLean)));
   const tioMinutePrecip = useTomorrowMinutePrecip(
     tioApiKey,
     effectiveUserLngLat ?? null,
@@ -2976,13 +2995,14 @@ export default function App() {
   const routeImpacts = useMemo<RouteImpact[]>(() => {
     const geometry = guidanceRoute?.geometry;
     if (!geometry?.length) return [];
-    const totalM = polylineLengthMeters(geometry);
+    const totalM = guidanceRouteLengthM;
     const navActive = navigationStarted;
     const list = buildRouteImpacts({
       geometry,
       userLngLat: effectiveUserLngLat,
-      userAlongM: navActive && totalM > 0 ? userAlongGuidanceM : 0,
+      userAlongM: navActive && totalM > 0 ? heavyAdvisoryAlongM : 0,
       planEtaMinutes: guidanceRoute?.baseEtaMinutes,
+      totalMeters: guidanceRouteLengthM,
       slice: navActive ? guidanceSlice : undefined,
       trafficForRoute: navActive ? scored.find((s) => s.route.id === lineFocusId) : undefined,
       trafficLeg: navActive ? ((lineFocusId ? trafficOverlay?.[lineFocusId] : null) ?? null) : null,
@@ -3017,7 +3037,7 @@ export default function App() {
     guidanceRoute?.geometry,
     guidanceRoute?.baseEtaMinutes,
     effectiveUserLngLat,
-    userAlongGuidanceM,
+    heavyAdvisoryAlongM,
     guidanceSlice,
     scored,
     lineFocusId,
@@ -3082,7 +3102,7 @@ export default function App() {
     const alertsById = new Map(nwsAlertsForGuidanceAdvisory.map((a) => [a.id, a]));
     return buildRouteAheadTimeline({
       routeTotalMeters: guidanceRouteLengthM,
-      userAlongMeters: advisoryUserAlongM,
+      userAlongMeters: heavyAdvisoryAlongM,
       planEtaMinutes: guidanceRoute?.baseEtaMinutes ?? null,
       driveEtaMinutes: driveEtaMinutes ?? null,
       stormStripBands: advisoryStormStripBands,
@@ -3098,7 +3118,7 @@ export default function App() {
     });
   }, [
     guidanceRouteLengthM,
-    advisoryUserAlongM,
+    heavyAdvisoryAlongM,
     guidanceRoute?.baseEtaMinutes,
     driveEtaMinutes,
     advisoryStormStripBands,
