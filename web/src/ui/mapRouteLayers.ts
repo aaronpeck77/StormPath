@@ -4,7 +4,7 @@ import {
   ROUTE_CORRIDOR_HIGHLIGHT_HALF_SPAN_M,
   type RouteAlert,
 } from "../nav/routeAlerts";
-import { haversineMeters, routeHighlightFrameForMap, routeLineGeometryForDriveDisplay, slicePolylineBetweenAlongForDisplay } from "../nav/routeGeometry";
+import { geometryForPlanningMapDisplay, haversineMeters, routeHighlightFrameForMap, routeLineGeometryForDriveDisplay, slicePolylineBetweenAlongForDisplay } from "../nav/routeGeometry";
 import { sliceRouteAhead } from "../nav/routeRemaining";
 import type { LngLat, NavRoute } from "../nav/types";
 import {
@@ -278,7 +278,7 @@ function routeCoordinatesForMap(route: NavRoute, opts?: ApplyRoutesLayerOptions)
   if (viewMode === "drive" && navigating && !isOverviewPip) {
     return routeLineGeometryForDriveDisplay(geometry, opts?.userAlongMeters);
   }
-  return geometry;
+  return geometryForPlanningMapDisplay(geometry);
 }
 
 export function removeStaleRoutes(

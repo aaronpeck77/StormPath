@@ -49,8 +49,22 @@ export const NWS_POLL_MS_DATA_SAVER_DRIVE = 480_000;
 /** ~100 miles — cross-country routes trigger lean NWS + geometry budgets automatically. */
 export const LONG_TRIP_ROUTE_M = 160_934;
 
+/** ~300 miles — triple-route planning + full Mapbox geometry often stalls mid-tier phones. */
+export const ULTRA_LONG_TRIP_ROUTE_M = 482_803;
+
+/** ~800 miles — IL→CA scale; maximum geometry and background-work budgets. */
+export const EXTREME_TRIP_ROUTE_M = 1_287_472;
+
 export function isLongTripRoute(routeLengthM: number): boolean {
   return routeLengthM >= LONG_TRIP_ROUTE_M;
+}
+
+export function isUltraLongTripRoute(routeLengthM: number): boolean {
+  return routeLengthM >= ULTRA_LONG_TRIP_ROUTE_M;
+}
+
+export function isExtremeTripRoute(routeLengthM: number): boolean {
+  return routeLengthM >= EXTREME_TRIP_ROUTE_M;
 }
 
 /** Snap along-route distance so timeline/impact recompute does not run every GPS tick on long legs. */
@@ -60,7 +74,13 @@ export function quantizeRouteAlongForHeavyUi(
   navigationActive: boolean
 ): number {
   if (!navigationActive || !Number.isFinite(alongM) || alongM < 0) return alongM;
-  const stepM = isLongTripRoute(routeLengthM) ? 10_000 : 2_500;
+  const stepM = isExtremeTripRoute(routeLengthM)
+    ? 50_000
+    : isUltraLongTripRoute(routeLengthM)
+      ? 25_000
+      : isLongTripRoute(routeLengthM)
+        ? 10_000
+        : 2_500;
   return Math.floor(alongM / stepM) * stepM;
 }
 
@@ -126,6 +146,7 @@ export function isNavMapLiteMode(
   dataSaver: boolean,
   routeLengthM: number
 ): boolean {
+  if (isUltraLongTripRoute(routeLengthM)) return true;
   return navigationStarted && (dataSaver || isLongTripRoute(routeLengthM));
 }
 

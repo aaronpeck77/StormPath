@@ -7,7 +7,7 @@
 import { getWebEnv } from "../config/env";
 import type { LngLat } from "../nav/types";
 import { pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
-import { isLongTripRoute } from "../utils/dataSaver";
+import { isLongTripRoute, isUltraLongTripRoute } from "../utils/dataSaver";
 import { pointAlongPolyline } from "../ui/geometryAlong";
 import { polylineBbox, bboxIntersects } from "./geometryOverlap";
 import { extractPolygonalGeometry } from "./nwsGeometry";
@@ -322,6 +322,7 @@ function sampleLngLatAlongRoute(route: LngLat[], maxPoints: number): LngLat[] {
 
 function routePointSampleCount(route: LngLat[]): number {
   const totalM = polylineLengthMeters(route);
+  if (isUltraLongTripRoute(totalM)) return ROUTE_POINT_SAMPLE_COUNT;
   if (isLongTripRoute(totalM)) return ROUTE_POINT_SAMPLE_COUNT;
   return totalM >= ROUTE_LONG_SAMPLE_THRESHOLD_M ? ROUTE_POINT_SAMPLE_COUNT_LONG : ROUTE_POINT_SAMPLE_COUNT;
 }

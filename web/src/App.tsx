@@ -67,6 +67,7 @@ import {
   isDataSaverMode,
   isLongTripRoute,
   isNavMapLiteMode,
+  isUltraLongTripRoute,
   quantizeLngLatForHeavyUi,
   quantizeRouteAlongForHeavyUi,
 } from "./utils/dataSaver";
@@ -2176,7 +2177,8 @@ export default function App() {
     return undefined;
   }, [navigationStarted, nwsNavCorridorGeom, guidanceRoute?.geometry]);
 
-  const leanNwsCorridorFetch = dataSaverMode || isLongTripRoute(maxPlanRouteLengthM);
+  const leanNwsCorridorFetch =
+    dataSaverMode || isLongTripRoute(maxPlanRouteLengthM) || isUltraLongTripRoute(maxPlanRouteLengthM);
 
   /** Data saver / long trip: one corridor (+ shared national feed) instead of every A/B/C leg each poll. */
   const nwsRouteGeomsForFetch = useMemo((): LngLat[][] => {
@@ -2776,13 +2778,15 @@ export default function App() {
   /** Sample RainViewer along the route for advisory/timeline whenever a leg is loaded or Rad is on. */
   const routeLenForCorridorLean =
     guidanceRouteLengthM > 0 ? guidanceRouteLengthM : maxPlanRouteLengthM;
+  const ultraLongPlannedRoute = isUltraLongTripRoute(routeLenForCorridorLean);
   const radarRouteSamplingEnabled = Boolean(
     guidanceRoute?.geometry &&
       guidanceRoute.geometry.length >= 2 &&
       (navigationStarted || hasPlannedRoute) &&
       (radarMapOverlayOn || settingStormEnabled || settingWeatherHintsEnabled) &&
       (navigationStarted ||
-        !isLongTripRoute(routeLenForCorridorLean) ||
+        (!ultraLongPlannedRoute &&
+          !isLongTripRoute(routeLenForCorridorLean)) ||
         radarMapOverlayOn)
   );
   const radarSampleIntervalMs = getRadarRouteSampleIntervalMs(
@@ -3441,6 +3445,8 @@ export default function App() {
    * Long legs: sliding window follows `userAlongM` so older segments scroll away as you drive.
    */
   const progressPanelAlongM = navigationStarted ? heavyAdvisoryAlongM : userAlongGuidanceM;
+  const skipHeavyProgressPanel =
+    isUltraLongTripRoute(guidanceRouteLengthM) && !navigationStarted;
   const progressCalloutPanel = useMemo((): {
     routeWide: RouteChunkCalloutItem[];
     outlookTimeline: RouteOutlookStep[];
@@ -3456,6 +3462,17 @@ export default function App() {
           ? routePickSlotHex(0)
           : routePickSlotHex(routeSlotIndexFor(guidanceRoute.id, orderedRouteIds))
         : "#94a3b8";
+
+    if (skipHeavyProgressPanel) {
+      return {
+        routeWide: [],
+        outlookTimeline: [],
+        outlookSamples: [],
+        segments: [],
+        userAlongT: 0,
+        stripTint,
+      };
+    }
 
     if (!g?.length) {
       return {
@@ -3636,6 +3653,7 @@ export default function App() {
     radarMosaicAlongRoute.samples,
     liveTrafficNarrative,
     driveEtaMinutes,
+    skipHeavyProgressPanel,
   ]);
 
   const deferredProgressCalloutPanel = useDeferredValue(progressCalloutPanel);

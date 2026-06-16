@@ -1,5 +1,6 @@
 import { FALLBACK_LNGLAT } from "./constants";
 import type { LngLat } from "./types";
+import { isExtremeTripRoute, isUltraLongTripRoute } from "../utils/dataSaver";
 
 const EARTH_M = 6_371_000;
 
@@ -385,6 +386,47 @@ export function subsamplePolylineAlongDistance(route: LngLat[], maxVertices: num
   }
   out.push(route[route.length - 1]!);
   return out;
+}
+
+/** Rough road distance before Directions returns (crow-flies × factor). */
+export function estimateRoadDistanceM(
+  start: LngLat,
+  end: LngLat,
+  via: LngLat[] = []
+): number {
+  let sum = 0;
+  let prev = start;
+  for (const p of [...via, end]) {
+    sum += haversineMeters(prev, p);
+    prev = p;
+  }
+  return sum * 1.28;
+}
+
+/** Stored in React state — cap vertices so cross-country legs do not freeze the UI thread. */
+export const ROUTE_GEOMETRY_STORAGE_VERTICES_ULTRA = 5_000;
+export const ROUTE_GEOMETRY_STORAGE_VERTICES_EXTREME = 2_800;
+/** Planning map overview line — sparse is fine at continent zoom. */
+export const MAP_PLANNING_OVERVIEW_VERTICES = 1_200;
+
+export function normalizeStoredRouteGeometry(geometry: LngLat[]): LngLat[] {
+  if (geometry.length < 2) return geometry;
+  const totalM = polylineLengthMeters(geometry);
+  if (!isUltraLongTripRoute(totalM)) return geometry;
+  const cap = isExtremeTripRoute(totalM)
+    ? ROUTE_GEOMETRY_STORAGE_VERTICES_EXTREME
+    : ROUTE_GEOMETRY_STORAGE_VERTICES_ULTRA;
+  if (geometry.length <= cap) return geometry;
+  return subsamplePolylineVertexBudget(geometry, cap);
+}
+
+export function geometryForPlanningMapDisplay(geometry: LngLat[]): LngLat[] {
+  if (geometry.length < 2) return geometry;
+  const totalM = polylineLengthMeters(geometry);
+  if (!isUltraLongTripRoute(totalM)) return geometry;
+  const cap = isExtremeTripRoute(totalM) ? 800 : MAP_PLANNING_OVERVIEW_VERTICES;
+  if (geometry.length <= cap) return geometry;
+  return subsamplePolylineVertexBudget(geometry, cap);
 }
 
 /** Weather/hazard halo segments — dense enough to follow roads on long legs. */

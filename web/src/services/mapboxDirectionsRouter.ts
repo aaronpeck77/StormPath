@@ -10,11 +10,14 @@ import {
 import {
   closestAlongRouteMeters,
   cumulativeLengthToVertex,
+  estimateRoadDistanceM,
   haversineMeters,
+  normalizeStoredRouteGeometry,
   routeCorridorOverlapFraction,
   routesEffectivelySame,
   subsamplePolylineVertexBudget,
 } from "../nav/routeGeometry";
+import { isUltraLongTripRoute } from "../utils/dataSaver";
 import { shortenTurnInstruction } from "../nav/turnInstructionShort";
 import {
   loadActivitySamples,
@@ -133,6 +136,8 @@ function directionsExcludeParam(opts: DirectionsFetchExclude): string | undefine
 type DirectionsFetchOpts = DirectionsFetchExclude & {
   alternatives: boolean;
   includeDetails?: boolean;
+  /** Mapbox `overview=simplified` — fewer vertices on cross-country legs. */
+  simplifiedOverview?: boolean;
 };
 
 function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteTurnStep[] {
@@ -247,7 +252,9 @@ function routeFromDirectionsApi(
 ): NavRoute | null {
   const coords = r.geometry?.coordinates;
   if (!coords?.length || r.geometry?.type !== "LineString") return null;
-  const geometry = coords.map(([lng, lat]) => [lng, lat] as LngLat);
+  const geometry = normalizeStoredRouteGeometry(
+    coords.map(([lng, lat]) => [lng, lat] as LngLat)
+  );
   const durSec = r.duration;
   if (durSec == null || !Number.isFinite(durSec)) return null;
 
@@ -283,7 +290,10 @@ async function fetchMapboxDirections(
   url.searchParams.set("access_token", accessToken);
   if (opts.alternatives) url.searchParams.set("alternatives", "true");
   url.searchParams.set("geometries", "geojson");
-  url.searchParams.set("overview", opts.includeDetails === false ? "simplified" : "full");
+  url.searchParams.set(
+    "overview",
+    opts.simplifiedOverview || opts.includeDetails === false ? "simplified" : "full"
+  );
   url.searchParams.set("steps", opts.includeDetails === false ? "false" : "true");
   if (opts.includeDetails !== false) {
     url.searchParams.set("annotations", "closure");
@@ -339,7 +349,10 @@ async function fetchMapboxDirectionsThrough(
   url.searchParams.set("access_token", accessToken);
   if (opts.alternatives) url.searchParams.set("alternatives", "true");
   url.searchParams.set("geometries", "geojson");
-  url.searchParams.set("overview", opts.includeDetails === false ? "simplified" : "full");
+  url.searchParams.set(
+    "overview",
+    opts.simplifiedOverview || opts.includeDetails === false ? "simplified" : "full"
+  );
   url.searchParams.set("steps", opts.includeDetails === false ? "false" : "true");
   if (opts.includeDetails !== false) {
     url.searchParams.set("annotations", "closure");
@@ -741,6 +754,13 @@ export async function collectMapboxRouteVariants(
     : null;
   const skipStormLegRefinement = Boolean(opts?.skipStormLegRefinement);
 
+  const estTripM = estimateRoadDistanceM(start, end, hasVia ? via : undefined);
+  const ultraLongTrip = isUltraLongTripRoute(estTripM);
+  const effectivePreferThree = preferThreeRoutes && !ultraLongTrip;
+  const effectiveAllowThird = allowLocalTripThirdRoute && !ultraLongTrip;
+  const effectiveSkipStormRefinement = skipStormLegRefinement || ultraLongTrip;
+  const simplifiedOverview = ultraLongTrip;
+
   if (opts?.singleRouteFromPosition) {
     const data = await fetchDirectionsPrimary(
       accessToken,
@@ -752,6 +772,7 @@ export async function collectMapboxRouteVariants(
         excludeMotorway: false,
         excludeToll,
         includeDetails,
+        simplifiedOverview,
       },
       signal
     );
@@ -773,8 +794,8 @@ export async function collectMapboxRouteVariants(
     AbortSignal as unknown as { any?: (signals: AbortSignal[]) => AbortSignal }
   ).any;
   const canSpecSecondary =
-    preferThreeRoutes &&
-    allowLocalTripThirdRoute &&
+    effectivePreferThree &&
+    effectiveAllowThird &&
     typeof abortSignalAny === "function";
 
   let secondaryAbort: AbortController | null = null;
@@ -787,7 +808,7 @@ export async function collectMapboxRouteVariants(
       start,
       end,
       hasVia ? via : undefined,
-      { alternatives: true, excludeMotorway: true, includeDetails },
+      { alternatives: true, excludeMotorway: true, includeDetails, simplifiedOverview },
       secSig
     ).catch((e) => {
       if (isAbortError(e)) return { routes: [] as MbRoutes };
@@ -805,13 +826,14 @@ export async function collectMapboxRouteVariants(
       excludeMotorway: false,
       excludeToll,
       includeDetails,
+      simplifiedOverview,
     },
     signal
   );
 
   const primarySorted = sortRoutesByDurationAsc(primaryData.routes ?? []);
 
-  const targetPrimaryCount = preferThreeRoutes ? 3 : 2;
+  const targetPrimaryCount = effectivePreferThree ? 3 : 2;
   const primaryRoles: Array<{ role: NavRoute["role"]; label: string }> = [
     { role: "fastest", label: "Main" },
     { role: "hazardSmart", label: "Alternate" },
@@ -837,6 +859,12 @@ export async function collectMapboxRouteVariants(
       )
     )
     .filter((r): r is NavRoute => r != null);
+
+  if (ultraLongTrip) {
+    secondaryAbort?.abort();
+    return primaryOnly.length ? [primaryOnly[0]!] : [];
+  }
+
   /*
    * First paint wins: if Mapbox already gave enough alternatives in the primary call, return them.
    * Do not block route view on no-motorway / no-town refinement; traffic/weather/enrichment happens later.
@@ -851,9 +879,9 @@ export async function collectMapboxRouteVariants(
       stormAlerts,
       radarAvoidanceEnabled,
       signal,
-      preferThreeRoutes,
+      effectivePreferThree,
       includeDetails,
-      skipStormLegRefinement
+      effectiveSkipStormRefinement
     );
   }
 
@@ -975,7 +1003,7 @@ export async function collectMapboxRouteVariants(
   const straightLineM = haversineMeters(start, end);
   const aDurationS = primarySorted[0]?.duration ?? Number.POSITIVE_INFINITY;
   const localTrip = straightLineM <= LOCAL_TRIP_MAX_DISTANCE_M || aDurationS <= LOCAL_TRIP_MAX_DURATION_S;
-  if (localTrip && !allowLocalTripThirdRoute) {
+  if (localTrip && !effectiveAllowThird) {
     secondaryAbort?.abort();
     const sliced = out.slice(0, Math.min(2, out.length));
     return finalizeStormAvoidanceThirdLeg(
@@ -986,12 +1014,12 @@ export async function collectMapboxRouteVariants(
       stormAlerts,
       radarAvoidanceEnabled,
       signal,
-      preferThreeRoutes,
+      effectivePreferThree,
       includeDetails,
-      skipStormLegRefinement
+      effectiveSkipStormRefinement
     );
   }
-  if (out.length >= 2 && (!preferThreeRoutes || out.length >= 3)) {
+  if (out.length >= 2 && (!effectivePreferThree || out.length >= 3)) {
     secondaryAbort?.abort();
     return finalizeStormAvoidanceThirdLeg(
       accessToken,
@@ -1001,9 +1029,9 @@ export async function collectMapboxRouteVariants(
       stormAlerts,
       radarAvoidanceEnabled,
       signal,
-      preferThreeRoutes,
+      effectivePreferThree,
       includeDetails,
-      skipStormLegRefinement
+      effectiveSkipStormRefinement
     );
   }
 
@@ -1023,6 +1051,7 @@ export async function collectMapboxRouteVariants(
           alternatives: true,
           excludeMotorway: true,
           includeDetails,
+          simplifiedOverview,
         },
         signal
       );
@@ -1041,9 +1070,9 @@ export async function collectMapboxRouteVariants(
     stormAlerts,
     radarAvoidanceEnabled,
     signal,
-    preferThreeRoutes,
+    effectivePreferThree,
     includeDetails,
-    skipStormLegRefinement
+    effectiveSkipStormRefinement
   );
 }
 
