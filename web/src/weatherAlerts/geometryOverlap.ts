@@ -462,7 +462,8 @@ function alongIntervalsInsidePolygon(
 /** GeoJSON lines where warning polygons intersect the route polyline. */
 export function stormOverlapLineFeatures(
   route: LngLat[],
-  collection: GeoJSON.FeatureCollection | null | undefined
+  collection: GeoJSON.FeatureCollection | null | undefined,
+  sliceOpts?: { fullDetail?: boolean }
 ): GeoJSON.Feature<GeoJSON.LineString>[] {
   const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
   if (!collection?.features?.length || route.length < 2) return features;
@@ -475,7 +476,7 @@ export function stormOverlapLineFeatures(
     const props = (f.properties ?? {}) as { kind?: string; event?: string; severity?: string };
     const hex = nwsAlertLineHexFromMapFeatureProps(props);
     for (const [lo, hi] of alongIntervalsInsidePolygon(route, poly)) {
-      const coords = slicePolylineBetweenAlongForDisplay(route, lo, hi, total);
+      const coords = slicePolylineBetweenAlongForDisplay(route, lo, hi, total, sliceOpts);
       if (coords.length < 2) continue;
       features.push({
         type: "Feature",
@@ -826,13 +827,21 @@ export function routeStormStripBandsToProgressStrip(
 export function stormStripBandsToLineFeatures(
   route: LngLat[],
   bands: ReadonlyArray<{ startM: number; endM: number; lineHex: string }>,
-  totalRouteM?: number
+  totalRouteM?: number,
+  sliceOpts?: { fullDetail?: boolean }
 ): GeoJSON.Feature<GeoJSON.LineString>[] {
   if (route.length < 2 || !bands.length) return [];
   const total = totalRouteM ?? polylineLengthMeters(route);
   const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
   for (const b of bands) {
-    const coords = slicePolylineBetweenAlongForDisplay(route, b.startM, b.endM, total);
+    if (b.endM <= 0 || b.endM - b.startM < 0.5) continue;
+    const coords = slicePolylineBetweenAlongForDisplay(
+      route,
+      Math.max(0, b.startM),
+      b.endM,
+      total,
+      sliceOpts
+    );
     if (coords.length < 2) continue;
     features.push({
       type: "Feature",

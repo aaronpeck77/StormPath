@@ -391,8 +391,42 @@ export function subsamplePolylineAlongDistance(route: LngLat[], maxVertices: num
 const HIGHLIGHT_GEOMETRY_VERTEX_BUDGET = 8000;
 
 /** Drive map line: short tail behind puck, full detail ahead (cap only when remaining leg is huge). */
-const DRIVE_LINE_BEHIND_M = 1500;
+export const DRIVE_LINE_BEHIND_M = 1500;
 const DRIVE_LINE_MAX_VERTICES = 24_000;
+
+export type RouteHighlightFrame = {
+  geometry: LngLat[];
+  /** Meters along the full-route polyline where `geometry[0]` sits. */
+  alongOffsetM: number;
+  totalM: number;
+  fullDetail: boolean;
+};
+
+/** Match hazard halos to the same road slice as the active drive route line. */
+export function routeHighlightFrameForMap(
+  geometry: LngLat[],
+  clipBehindAlongM: number | null | undefined
+): RouteHighlightFrame {
+  if (geometry.length < 2) {
+    return { geometry, alongOffsetM: 0, totalM: 0, fullDetail: false };
+  }
+  if (clipBehindAlongM != null && Number.isFinite(clipBehindAlongM)) {
+    const slice = routeLineGeometryForDriveDisplay(geometry, clipBehindAlongM);
+    const alongOffsetM = Math.max(0, clipBehindAlongM - DRIVE_LINE_BEHIND_M);
+    return {
+      geometry: slice,
+      alongOffsetM,
+      totalM: polylineLengthMeters(slice),
+      fullDetail: true,
+    };
+  }
+  return {
+    geometry,
+    alongOffsetM: 0,
+    totalM: polylineLengthMeters(geometry),
+    fullDetail: false,
+  };
+}
 
 /**
  * Active route polyline for drive-mode map rendering — full-resolution slice from just behind the puck
@@ -427,20 +461,15 @@ export function slicePolylineBetweenAlongForDisplay(
   geometry: LngLat[],
   startM: number,
   endM: number,
-  totalRouteM?: number
+  _totalRouteM?: number,
+  opts?: { fullDetail?: boolean }
 ): LngLat[] {
   if (geometry.length < 2) return [];
-  const total = totalRouteM ?? polylineLengthMeters(geometry);
   let slice = slicePolylineBetweenAlong(geometry, startM, endM);
   if (slice.length < 2) return slice;
-
-  const segLenM = Math.abs(endM - startM);
-  const segBudget = Math.min(
-    HIGHLIGHT_GEOMETRY_VERTEX_BUDGET,
-    Math.max(64, Math.ceil(HIGHLIGHT_GEOMETRY_VERTEX_BUDGET * (segLenM / Math.max(total, 1))))
-  );
-  if (slice.length > segBudget) {
-    slice = subsamplePolylineAlongDistance(slice, segBudget);
+  if (opts?.fullDetail) return slice;
+  if (slice.length > HIGHLIGHT_GEOMETRY_VERTEX_BUDGET) {
+    slice = subsamplePolylineAlongDistance(slice, HIGHLIGHT_GEOMETRY_VERTEX_BUDGET);
   }
   return slice;
 }

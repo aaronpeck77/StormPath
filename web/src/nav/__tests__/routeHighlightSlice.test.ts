@@ -24,11 +24,19 @@ describe("slicePolylineBetweenAlongForDisplay", () => {
     const half = 25_000;
     const slice = slicePolylineBetweenAlongForDisplay(route, mid - half, mid + half, total);
     expect(slice.length).toBeGreaterThan(80);
-    expect(slice.length).toBeLessThan(900);
 
     for (let i = 1; i < slice.length; i++) {
       const dLng = Math.abs(slice[i]![0]! - slice[i - 1]![0]!);
       expect(dLng).toBeLessThan(0.01);
     }
+  });
+
+  it("keeps full detail when fullDetail is set", () => {
+    const route = denseZigRoute(400);
+    const total = polylineLengthMeters(route);
+    const slice = slicePolylineBetweenAlongForDisplay(route, 0, total * 0.5, total, {
+      fullDetail: true,
+    });
+    expect(slice.length).toBeGreaterThan(150);
   });
 });

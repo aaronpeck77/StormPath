@@ -31,6 +31,8 @@ import {
 } from "../nav/routeGeometry";
 import { polylineBbox } from "../weatherAlerts/geometryOverlap";
 import { getWebEnv } from "../config/env";
+import { mapMaxBoundsForLngLat, mapMinZoomForSession } from "../config/mapRegion";
+import { continentFromLngLat } from "../services/continents";
 import {
   fetchRainViewerRadarFrames,
   RAINVIEWER_ANIMATION_DWELL_MS,
@@ -799,8 +801,8 @@ type Props = {
  * users can freely browse far away areas (other countries/continents) without snap-back.
  */
 const EXPLORE_IDLE_MS = 120_000;
-/** Drive mode: return to follow-cam sooner after the user pans/zooms the map. */
-const DRIVE_EXPLORE_IDLE_MS = 4_000;
+/** Drive mode: return to follow-cam after the user pans/zooms the map. */
+const DRIVE_EXPLORE_IDLE_MS = 10_000;
 /** ~1/e time constant (seconds) for drive camera bearing toward route/GPS heading (rAF loop). */
 const DRIVE_CAMERA_BEARING_TC_S = 0.58;
 /** Top-down map view: keep the puck at the visual center; map pans to follow GPS. */
@@ -1097,7 +1099,7 @@ export function DriveMap({
     if (!navigationStarted || viewMode !== "drive") return;
     const along = userAlongMeters ?? 0;
     const last = lastHighlightClipAlongRef.current;
-    if (last != null && Math.abs(along - last) < 1_200) return;
+    if (last != null && Math.abs(along - last) < 450) return;
     lastHighlightClipAlongRef.current = along;
     const t = window.setTimeout(() => setHighlightClipTick((n) => n + 1), 280);
     return () => window.clearTimeout(t);
@@ -1140,6 +1142,9 @@ export function DriveMap({
     if (routes.length === 0) prevPlanningRouteCountRef.current = 0;
   }, [routes.length]);
   const driveCamBearingSmoothedRef = useRef<number | null>(null);
+  /** User-chosen zoom while navigating in Dr — do not snap back to 16.35 after pinch. */
+  const driveNavZoomRef = useRef(16.35);
+  const navRouteSnapKeyRef = useRef("");
   /** Reuse stable padding/offset for drive follow — fresh objects every frame can confuse Mapbox camera updates. */
   const driveCamEaseOptsCacheRef = useRef<{
     key: string;
@@ -1174,6 +1179,14 @@ export function DriveMap({
   );
 
   const token = getWebEnv().mapboxToken;
+  const mapSessionBounds = useMemo(
+    () => mapMaxBoundsForLngLat(userLngLat),
+    [userLngLat?.[0], userLngLat?.[1]]
+  );
+  const mapHasContinent = useMemo(
+    () => continentFromLngLat(userLngLat) != null,
+    [userLngLat?.[0], userLngLat?.[1]]
+  );
   const [mapReady, setMapReady] = useState(false);
   const [mapResumeTick, setMapResumeTick] = useState(0);
   /** Bumps when bottom/top chrome resizes so route fit padding tracks live UI dead zones. */
@@ -1273,6 +1286,15 @@ export function DriveMap({
     }
     map.addControl(new mapboxgl.AttributionControl({ compact: true }));
     mapRef.current = map;
+
+    /* Keep pan/zoom inside the user's continent once GPS is available (see mapRegion effect). */
+    map.setMaxBounds(mapSessionBounds);
+    map.setMinZoom(
+      mapMinZoomForSession({
+        navigationStarted: navigationStartedRef.current,
+        hasContinent: mapHasContinent,
+      })
+    );
 
     /* Force Mercator projection. mapbox-gl 3.x defaults to globe at zoom < 6 (our
      * initial zoom is 4), and globe projection on Capacitor's WebKit/WebGL2 context
@@ -1509,7 +1531,19 @@ export function DriveMap({
       if (mapEventFromUser(e)) beginUserExploreRef.current();
     };
     const zoomend = (e: unknown) => {
-      if (mapEventFromUser(e)) scheduleExploreEndRef.current();
+      if (!mapEventFromUser(e)) return;
+      scheduleExploreEndRef.current();
+      try {
+        const z = map.getZoom();
+        if (navigationStartedRef.current && viewModeRef.current === "drive") {
+          driveNavZoomRef.current = z;
+        }
+        if (viewModeRef.current === "topdown") {
+          topdownZoomRef.current = z;
+        }
+      } catch {
+        /* map torn down */
+      }
     };
     const rotatestart = (e: unknown) => {
       if (mapEventFromUser(e)) beginUserExploreRef.current();
@@ -1545,6 +1579,23 @@ export function DriveMap({
       if (exploreTimerRef.current) clearTimeout(exploreTimerRef.current);
     };
   }, [mapReady]);
+
+  /** Limit zoom-out / pan to the continent of the current GPS fix (US+CA+MX share NA). */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    try {
+      map.setMaxBounds(mapSessionBounds);
+      map.setMinZoom(
+        mapMinZoomForSession({
+          navigationStarted,
+          hasContinent: mapHasContinent,
+        })
+      );
+    } catch {
+      /* map disposed */
+    }
+  }, [mapReady, mapSessionBounds, navigationStarted, mapHasContinent]);
 
   /** Mobile: URL bar / rotation / safe-area change the map container — Mapbox must resize or the canvas stays wrong and the puck can disappear. */
   useEffect(() => {
@@ -1995,15 +2046,16 @@ export function DriveMap({
            * Force an easeTo if pitch or zoom are far from drive targets so the view snaps in
            * even when the puck hasn't moved relative to the camera center. */
           const pitchOff = Math.abs(map.getPitch() - 58) > 1;
-          const zoomOff  = Math.abs(map.getZoom()  - 16.35) > 0.3;
           const forceCamSync = driveCamResyncRef.current;
-          if (camMoved || bearingMoved || pitchOff || zoomOff || forceCamSync || easeLayoutChanged) {
+          const applyLayoutOrEntry = pitchOff || forceCamSync || easeLayoutChanged;
+          if (camMoved || bearingMoved || applyLayoutOrEntry) {
             if (
               pos &&
               safeEaseTo(map, {
                 center: pos,
-                zoom: 16.35,
-                pitch: 58,
+                ...(applyLayoutOrEntry
+                  ? { zoom: driveNavZoomRef.current, pitch: 58 }
+                  : {}),
                 bearing: driveCamBearingSmoothedRef.current,
                 padding,
                 offset,
@@ -2331,6 +2383,7 @@ export function DriveMap({
     if (prev != null && Math.abs(along - prev) < 450) return;
     lastDriveRouteLineSyncAlongRef.current = along;
     syncTripRoutesRef.current();
+    setHighlightClipTick((n) => n + 1);
   }, [mapReady, viewMode, navigationStarted, routes.length, userAlongMeters]);
 
   /**
@@ -3377,8 +3430,6 @@ export function DriveMap({
       });
     };
 
-    let intervalId: ReturnType<typeof setInterval> | undefined;
-
     if (viewMode === "topdown") {
       /* Nav: local street snap once per view/resume — GPS follow is a separate pan effect. */
       const snapKey = navigationStarted
@@ -3388,14 +3439,15 @@ export function DriveMap({
         topdownSnapKeyRef.current = snapKey;
         doTopdownLocalFit();
       }
+    } else if (navigationStarted && destLngLat) {
+      const navRouteSnapKey = `${fitTrigger}|${mapResumeTick}|${lineFocusId}`;
+      if (navRouteSnapKeyRef.current !== navRouteSnapKey) {
+        navRouteSnapKeyRef.current = navRouteSnapKey;
+        doNavRemainingFit();
+      }
     } else {
       topdownSnapKeyRef.current = "";
-      if (navigationStarted && destLngLat) {
-        doNavRemainingFit();
-        intervalId = setInterval(doNavRemainingFit, 1600);
-      } else {
-        schedulePlanningRouteFit();
-      }
+      schedulePlanningRouteFit();
     }
 
     return () => {
@@ -3403,7 +3455,6 @@ export function DriveMap({
       clearPlanningFitTimers();
       map.off("idle", retryWhenReady);
       map.off("style.load", retryWhenReady);
-      if (intervalId != null) clearInterval(intervalId);
       if (pendingFlatten) {
         map.off("moveend", pendingFlatten);
         pendingFlatten = null;
@@ -3432,7 +3483,9 @@ export function DriveMap({
   useEffect(() => {
     if (!mapReady) return;
     if (viewMode === "topdown" && navigationStarted) {
-      topdownZoomRef.current = TOPDOWN_NAV_STREET_ZOOM;
+      if (topdownZoomRef.current < TOPDOWN_NAV_MIN_ZOOM) {
+        topdownZoomRef.current = TOPDOWN_NAV_STREET_ZOOM;
+      }
       prevTopdownRef.current = false;
     }
     userExploringRef.current = false;
@@ -3472,6 +3525,7 @@ export function DriveMap({
     if (!mapReady) return;
     if (navigationStarted && !wasNavRef.current) {
       userExploringRef.current = false;
+      driveNavZoomRef.current = 16.35;
       driveCamResyncRef.current = true;
       if (exploreTimerRef.current) {
         clearTimeout(exploreTimerRef.current);
@@ -3671,7 +3725,8 @@ export function DriveMap({
         safePanToCenter(map, {
           center: u,
           ...(nav &&
-          (mapZoom < TOPDOWN_NAV_MIN_ZOOM - 0.08 || mapZoom < TOPDOWN_NAV_STREET_ZOOM - 0.85)
+          !userExploringRef.current &&
+          mapZoom < TOPDOWN_NAV_MIN_ZOOM - 0.08
             ? { zoom }
             : {}),
           offset: TOPDOWN_PUCK_OFFSET_PX,

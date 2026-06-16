@@ -4,7 +4,7 @@ import {
   ROUTE_CORRIDOR_HIGHLIGHT_HALF_SPAN_M,
   type RouteAlert,
 } from "../nav/routeAlerts";
-import { haversineMeters, polylineLengthMeters, routeLineGeometryForDriveDisplay, slicePolylineBetweenAlongForDisplay } from "../nav/routeGeometry";
+import { haversineMeters, routeHighlightFrameForMap, routeLineGeometryForDriveDisplay, slicePolylineBetweenAlongForDisplay } from "../nav/routeGeometry";
 import { sliceRouteAhead } from "../nav/routeRemaining";
 import type { LngLat, NavRoute } from "../nav/types";
 import {
@@ -84,12 +84,17 @@ export function applyRouteConditionHighlights(
   if (map.getSource(ROUTE_COND_LEGACY_SRC)) map.removeSource(ROUTE_COND_LEGACY_SRC);
 
   const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
-  const routeTotalM =
-    routeGeometry?.length && routeGeometry.length >= 2
-      ? polylineLengthMeters(routeGeometry)
-      : 0;
+  if (!routeGeometry?.length) {
+    if (map.getLayer(ROUTE_COND_HIGHLIGHT_CASING)) map.removeLayer(ROUTE_COND_HIGHLIGHT_CASING);
+    if (map.getSource(ROUTE_COND_HIGHLIGHT_SRC)) map.removeSource(ROUTE_COND_HIGHLIGHT_SRC);
+    return;
+  }
 
-  if (routeGeometry?.length && alerts?.length) {
+  const frame = routeHighlightFrameForMap(routeGeometry, clipBehindAlongM);
+  const { geometry: highlightGeom, alongOffsetM, totalM: routeTotalM, fullDetail } = frame;
+  const sliceOpts = fullDetail ? { fullDetail: true as const } : undefined;
+
+  if (highlightGeom.length >= 2 && alerts?.length) {
     const half = ROUTE_CORRIDOR_HIGHLIGHT_HALF_SPAN_M;
     for (const a of alerts) {
       if (
@@ -99,12 +104,17 @@ export function applyRouteConditionHighlights(
       ) {
         continue;
       }
-      const lo = Math.max(a.alongMeters - half, clipBehindAlongM ?? 0);
+      const loRoute = Math.max(a.alongMeters - half, clipBehindAlongM ?? 0);
+      const hiRoute = a.alongMeters + half;
+      const lo = loRoute - alongOffsetM;
+      const hi = hiRoute - alongOffsetM;
+      if (hi <= 0 || hi - lo < 0.5) continue;
       const coords = slicePolylineBetweenAlongForDisplay(
-        routeGeometry,
-        lo,
-        a.alongMeters + half,
-        routeTotalM
+        highlightGeom,
+        Math.max(0, lo),
+        hi,
+        routeTotalM,
+        sliceOpts
       );
       if (coords.length < 2) continue;
       features.push({
@@ -115,16 +125,23 @@ export function applyRouteConditionHighlights(
     }
   }
 
-  if (routeGeometry?.length) {
+  if (highlightGeom.length >= 2) {
     if (stormAlongRouteBands?.length) {
       const bandsForMap = clipStormBandsBehindUser(stormAlongRouteBands, clipBehindAlongM);
       if (bandsForMap?.length) {
+        const remapped = bandsForMap
+          .map((b) => ({
+            ...b,
+            startM: b.startM - alongOffsetM,
+            endM: b.endM - alongOffsetM,
+          }))
+          .filter((b) => b.endM - b.startM >= 8);
         features.push(
-          ...stormStripBandsToLineFeatures(routeGeometry, bandsForMap, routeTotalM)
+          ...stormStripBandsToLineFeatures(highlightGeom, remapped, routeTotalM, sliceOpts)
         );
       }
     } else {
-      features.push(...stormOverlapLineFeatures(routeGeometry, stormGeoJson ?? null));
+      features.push(...stormOverlapLineFeatures(highlightGeom, stormGeoJson ?? null, sliceOpts));
     }
   }
 
