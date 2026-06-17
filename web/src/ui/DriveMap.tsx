@@ -42,11 +42,13 @@ import {
 import { isRainViewerRateLimited, onRainViewerRateLimit, rainViewerRateLimitMsRemaining } from "../services/rainViewerTileFetch";
 import {
   applyRouteConditionHighlights,
+  clearRouteConditionHighlights,
   resetRouteConditionHighlightCache,
   applyRoutesToMap,
   bringRouteHitLayersToTop,
   bringRouteVisualLinesAboveTraffic,
   fitMapToRemainingRoutes,
+  fitMapToOffRouteRejoinChoices,
   fitMapToTrip,
   routeIdFromRouteHitLayerId,
   visibleRouteIdsForHitLayers,
@@ -469,6 +471,20 @@ function planningRoutesFitKey(
   return `${route?.id ?? ""}|${g.length}|${a[0].toFixed(4)},${a[1].toFixed(4)}|${b[0].toFixed(4)},${b[1].toFixed(4)}|${destKey}`;
 }
 
+/** B/C geometry fingerprint — reframes map when rejoin options refresh or shuffle. */
+function offRouteAlternatesFitKey(routes: NavRoute[], primaryRouteId: string): string {
+  return routes
+    .filter((r) => r.id !== primaryRouteId)
+    .map((r) => {
+      const g = r.geometry;
+      if (!g?.length) return `${r.id}:0`;
+      const a = g[0]!;
+      const b = g[g.length - 1]!;
+      return `${r.id}:${g.length}:${a[0].toFixed(3)},${a[1].toFixed(3)}|${b[0].toFixed(3)},${b[1].toFixed(3)}`;
+    })
+    .join(";");
+}
+
 function mapStyleReadyForCamera(map: mapboxgl.Map): boolean {
   if (!isMapUsable(map)) return false;
   try {
@@ -802,6 +818,8 @@ type Props = {
   onSearchPickMarkerClick?: (id: string) => void;
   /** Right-side route progress rail visibility affects camera/right padding. */
   progressRailVisible?: boolean;
+  /** Off-route Mp: fit B/C rejoin paths in view instead of street-level puck follow. */
+  offRouteRejoinCompareActive?: boolean;
 };
 
 /**
@@ -1064,6 +1082,7 @@ function DriveMapInner({
   searchPickMarkers = null,
   onSearchPickMarkerClick,
   progressRailVisible = true,
+  offRouteRejoinCompareActive = false,
 }: Props) {
   const ultraLongRoute = isUltraLongTripRoute(sessionRouteLengthM);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1228,18 +1247,25 @@ function DriveMapInner({
   };
   scheduleExploreEndRef.current = () => {
     if (exploreTimerRef.current) window.clearTimeout(exploreTimerRef.current);
-    /* Home screen + explore preference: stay off follow until My location. */
-    if (
+    const idleHomeExplore =
       !navigationStartedRef.current &&
       routesLengthRef.current === 0 &&
-      homePuckFollowRef.current === "explore"
-    ) {
+      homePuckFollowRef.current === "explore";
+    if (idleHomeExplore) {
+      /* Home explore: still release the interaction lock so route overlays clear after a trip ends. */
+      exploreTimerRef.current = window.setTimeout(() => {
+        userExploringRef.current = false;
+        exploreTimerRef.current = null;
+        setMapResumeTick((n) => n + 1);
+      }, 800);
       return;
     }
     const idleMs =
-      navigationStartedRef.current && viewModeRef.current === "drive"
-        ? DRIVE_EXPLORE_IDLE_MS
-        : EXPLORE_IDLE_MS;
+      routesLengthRef.current === 0
+        ? 400
+        : navigationStartedRef.current && viewModeRef.current === "drive"
+          ? DRIVE_EXPLORE_IDLE_MS
+          : EXPLORE_IDLE_MS;
     exploreTimerRef.current = window.setTimeout(() => {
       userExploringRef.current = false;
       exploreTimerRef.current = null;
@@ -2123,7 +2149,7 @@ function DriveMapInner({
 
   /** After route compare or end of navigation, re-run topdown init and flatten pitch. */
   useEffect(() => {
-    if (trafficBypassCompareActive) {
+    if (trafficBypassCompareActive || offRouteRejoinCompareActive) {
       wasRouteCompareRef.current = true;
       return;
     }
@@ -2131,7 +2157,7 @@ function DriveMapInner({
       wasRouteCompareRef.current = false;
       prevTopdownRef.current = false;
     }
-  }, [trafficBypassCompareActive]);
+  }, [trafficBypassCompareActive, offRouteRejoinCompareActive]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2815,12 +2841,25 @@ function DriveMapInner({
     let cancelled = false;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+    const resolveFocusGeom = (): LngLat[] | undefined => {
+      if (corridorRouteGeometry && corridorRouteGeometry.length >= 2) {
+        return corridorRouteGeometry;
+      }
+      const leg = routes.find((r) => r.id === lineFocusId);
+      return leg?.geometry && leg.geometry.length >= 2 ? leg.geometry : undefined;
+    };
+
     const lift = () => {
-      if (cancelled || userExploringRef.current) return;
-      const focusGeom =
-        corridorRouteGeometry && corridorRouteGeometry.length >= 2
-          ? corridorRouteGeometry
-          : routes.find((r) => r.id === lineFocusId)?.geometry;
+      if (cancelled) return;
+      const focusGeom = resolveFocusGeom();
+      const hasRoute = Boolean(focusGeom?.length);
+
+      if (!hasRoute) {
+        clearRouteConditionHighlights(map);
+        return;
+      }
+
+      if (userExploringRef.current) return;
 
       const clipBehindAlongM =
         navigationStarted && viewMode === "drive" ? userAlongMetersRef.current : null;
@@ -2841,8 +2880,13 @@ function DriveMapInner({
     };
 
     const schedule = () => {
-      if (userExploringRef.current) return;
       if (debounceTimer) clearTimeout(debounceTimer);
+      const hasRoute = Boolean(resolveFocusGeom()?.length);
+      if (!hasRoute) {
+        lift();
+        return;
+      }
+      if (userExploringRef.current) return;
       const debounceMs =
         navigationStarted && viewMode === "drive" ? 480 : 220;
       debounceTimer = setTimeout(lift, debounceMs);
@@ -3474,14 +3518,45 @@ function DriveMapInner({
       });
     };
 
+    /** Off-route Mp: fit user + B/C rejoin legs (+ local slice of locked A). */
+    const doOffRouteRejoinFit = () => {
+      if (userExploringRef.current) return;
+      if (!mapStyleReadyForCamera(map)) return;
+      const u = userLngLatRef.current;
+      if (!u) return;
+      if (pendingFlatten) {
+        map.off("moveend", pendingFlatten);
+        pendingFlatten = null;
+      }
+      pendingFlatten = () => {
+        pendingFlatten = null;
+        flatten();
+      };
+      map.once("moveend", pendingFlatten);
+      prevTopdownRef.current = true;
+      fitMapToOffRouteRejoinChoices(
+        map,
+        routes,
+        u,
+        lineFocusId,
+        routeFitPadding(stormBarVisible, stormBarExpanded, routes, lineFocusId, progressRailVisible),
+        Math.min(routeFitMaxZoomCeiling(routes, lineFocusId), 17.6)
+      );
+    };
+
+    const offRouteCompare = navigationStarted && offRouteRejoinCompareActive;
+
     if (viewMode === "topdown") {
       /* Nav: local street snap once per view/resume — GPS follow is a separate pan effect. */
-      const snapKey = navigationStarted
-        ? `${viewMode}|${fitTrigger}|${mapResumeTick}|nav`
-        : `${viewMode}|${fitTrigger}|${mapResumeTick}|plan|${routesPlanningFitKey}`;
+      const snapKey = offRouteCompare
+        ? `${viewMode}|${fitTrigger}|${mapResumeTick}|offroute|${offRouteAlternatesFitKey(routes, lineFocusId)}`
+        : navigationStarted
+          ? `${viewMode}|${fitTrigger}|${mapResumeTick}|nav`
+          : `${viewMode}|${fitTrigger}|${mapResumeTick}|plan|${routesPlanningFitKey}`;
       if (topdownSnapKeyRef.current !== snapKey) {
         topdownSnapKeyRef.current = snapKey;
-        doTopdownLocalFit();
+        if (offRouteCompare) doOffRouteRejoinFit();
+        else doTopdownLocalFit();
       }
     } else if (navigationStarted && destLngLat) {
       const navRouteSnapKey = `${fitTrigger}|${mapResumeTick}|${lineFocusId}`;
@@ -3518,6 +3593,7 @@ function DriveMapInner({
     progressRailVisible,
     chromeLayoutTick,
     routeNavFollowKey,
+    offRouteRejoinCompareActive,
   ]);
 
   /**
@@ -3732,6 +3808,13 @@ function DriveMapInner({
       };
     }
 
+    if (offRouteRejoinCompareActive && followTopdownView) {
+      prevTopdownRef.current = true;
+      return () => {
+        if (!userExploringRef.current) stopMapCamera(map);
+      };
+    }
+
     const followPuck = () => {
       if (userExploringRef.current) return;
       const u = userLngLatRef.current;
@@ -3787,6 +3870,7 @@ function DriveMapInner({
     mapResumeTick,
     trafficBypassCompareHazardLngLat,
     trafficBypassCompareActive,
+    offRouteRejoinCompareActive,
     destLngLat,
     routes,
     navigationStarted,

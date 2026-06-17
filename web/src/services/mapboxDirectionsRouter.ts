@@ -738,6 +738,8 @@ export async function collectMapboxRouteVariants(
     singleRouteFromPosition?: boolean;
     /** Skip storm/radar leg-C refinement (fast first paint; refine in background). */
     skipStormLegRefinement?: boolean;
+    /** Off-route rejoin shuffle — odd passes prefer motorway-excluded alternates for different B/C. */
+    rejoinShufflePass?: number;
   }
 ): Promise<NavRoute[]> {
   const signal = opts?.signal;
@@ -753,6 +755,7 @@ export async function collectMapboxRouteVariants(
     ? loadActivitySamples()
     : null;
   const skipStormLegRefinement = Boolean(opts?.skipStormLegRefinement);
+  const shuffleMotorways = (opts?.rejoinShufflePass ?? 0) % 2 === 1;
 
   const estTripM = estimateRoadDistanceM(start, end, hasVia ? via : undefined);
   const ultraLongTrip = isUltraLongTripRoute(estTripM);
@@ -823,7 +826,7 @@ export async function collectMapboxRouteVariants(
     hasVia ? via : undefined,
     {
       alternatives: true,
-      excludeMotorway: false,
+      excludeMotorway: shuffleMotorways,
       excludeToll,
       includeDetails,
       simplifiedOverview,
@@ -1135,6 +1138,7 @@ export async function buildTripFromMapbox(
     trailRoutePersonalization?: boolean;
     singleRouteFromPosition?: boolean;
     skipStormLegRefinement?: boolean;
+    rejoinShufflePass?: number;
   }
 ): Promise<BuildTripFromMapboxResult> {
   const routes = await collectMapboxRouteVariants(accessToken, start, end, opts);

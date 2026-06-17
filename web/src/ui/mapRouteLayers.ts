@@ -96,6 +96,17 @@ export function resetRouteConditionHighlightCache(map?: mapboxgl.Map | null): vo
   }
 }
 
+/** Remove corridor halo segments — call when the trip ends so pan/zoom cannot leave ghosts. */
+export function clearRouteConditionHighlights(map: mapboxgl.Map): void {
+  resetRouteConditionHighlightCache(map);
+  applyRouteConditionHighlights(map, {
+    alerts: [],
+    routeGeometry: undefined,
+    stormGeoJson: undefined,
+    stormAlongRouteBands: [],
+  });
+}
+
 /**
  * Hazard / weather / NWS overlap segments as a colored outline under the route line (not a solid overlay).
  * Returns whether GeoJSON data changed (false = skipped identical rebuild).
@@ -734,6 +745,68 @@ export function fitMapToTrip(
     opts?.onAfterFit?.();
   }
   return ok;
+}
+
+/** Local window on the locked leg near the driver — full cross-country A is omitted from the fit. */
+function primaryRouteLocalWindowForOffRouteFit(
+  geometry: LngLat[],
+  user: LngLat
+): LngLat[] {
+  if (geometry.length < 2) return geometry;
+  let bestI = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < geometry.length; i++) {
+    const [lng, lat] = geometry[i]!;
+    const d = (lng - user[0]) ** 2 + (lat - user[1]) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      bestI = i;
+    }
+  }
+  const start = Math.max(0, bestI - 28);
+  const end = Math.min(geometry.length, bestI + 64);
+  return geometry.slice(start, end);
+}
+
+/** Bounds for off-route map view: user + B/C rejoin legs + a local slice of locked route A. */
+export function buildOffRouteRejoinFitBounds(
+  user: LngLat,
+  routes: NavRoute[],
+  primaryRouteId: string
+): TripFitBoundsMode | null {
+  const b = new mapboxgl.LngLatBounds();
+  safeExtendBounds(b, user);
+
+  for (const r of routes) {
+    const geom = r.geometry;
+    if (!geom?.length) continue;
+    if (r.id === primaryRouteId) {
+      extendBoundsWithPolyline(b, primaryRouteLocalWindowForOffRouteFit(geom, user));
+    } else {
+      extendBoundsWithPolyline(b, geom);
+    }
+  }
+
+  if (b.isEmpty()) return null;
+  return {
+    bounds: b,
+    directM: boundsDiagonalMeters(b),
+    endpointsOnly: false,
+  };
+}
+
+/** Off-route Mp view: frame user position and both rejoin alternates (B/C). */
+export function fitMapToOffRouteRejoinChoices(
+  map: mapboxgl.Map,
+  routes: NavRoute[],
+  userLngLat: LngLat,
+  primaryRouteId: string,
+  padding: mapboxgl.PaddingOptions,
+  maxZoomCeiling = 17.4
+): boolean {
+  const fit = buildOffRouteRejoinFitBounds(userLngLat, routes, primaryRouteId);
+  if (!fit) return false;
+  return applyTripCameraFit(map, fit, padding, maxZoomCeiling, 0.45, 520);
 }
 
 export function fitMapToRemainingRoutes(

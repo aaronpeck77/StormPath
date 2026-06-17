@@ -5,7 +5,9 @@ import {
   buildRouteOutlookTimeline,
   buildRouteOutlookSeries,
   buildSyncedRouteOutlook,
+  ensureRouteOutlookForGraph,
   inferPrecipPctFromConditions,
+  mergeRouteOutlookSteps,
   precipBarHeight,
   radarIntensityToPrecipPct,
   routeOutlookAriaLabel,
@@ -197,5 +199,36 @@ describe("buildRouteOutlookSeries", () => {
     expect(mid?.tempF).toBeGreaterThan(70);
     expect(mid?.tempF).toBeLessThan(80);
     expect(mid?.precipPct).toBeGreaterThan(0);
+  });
+
+  it("renders a line from a single along-route forecast stop", () => {
+    const steps = buildRouteOutlookTimeline("72°F light rain 45% precip");
+    expect(steps.length).toBeGreaterThanOrEqual(2);
+    const series = buildRouteOutlookSeries(steps);
+    expect(series.length).toBeGreaterThanOrEqual(2);
+    expect(series.some((p) => p.precipPct > 0)).toBe(true);
+  });
+});
+
+describe("mergeRouteOutlookSteps", () => {
+  it("maps a single mid-route headline stop onto the graph axis", () => {
+    const single = buildRouteOutlookTimeline("68°F rain 60% precip");
+    const merged = mergeRouteOutlookSteps(single);
+    expect(merged.length).toBeGreaterThanOrEqual(2);
+    expect(merged.some((s) => (s.precipPct ?? 0) > 0 || s.precipHint > 0)).toBe(true);
+  });
+});
+
+describe("ensureRouteOutlookForGraph", () => {
+  it("fills the graph when only text mentions rain and temp", () => {
+    const ensured = ensureRouteOutlookForGraph({
+      steps: [],
+      samples: [],
+      headline: "Start: 74°F showers 50% precip → Destination: 66°F rain 70% precip",
+    });
+    expect(ensured.steps.length).toBeGreaterThanOrEqual(2);
+    const series = buildRouteOutlookSeries(ensured.steps, ensured.samples);
+    expect(series.length).toBeGreaterThanOrEqual(2);
+    expect(series.some((p) => p.precipPct > 0)).toBe(true);
   });
 });

@@ -129,6 +129,7 @@ import {
   buildMilestoneRouteOutlook,
   buildRouteOutlookFromTomorrowForecast,
   buildSyncedRouteOutlook,
+  ensureRouteOutlookForGraph,
   mergeRouteOutlookSteps,
   resyncRouteOutlookSteps,
   tomorrowForecastToWxSamples,
@@ -146,7 +147,6 @@ import { bannerPrimaryStepIndex } from "./nav/bannerPrimaryStep";
 import {
   measureOffRouteLateral,
   OFF_ROUTE_POLL_MS,
-  OFF_ROUTE_REROUTE_THROTTLE_MS,
   shouldTriggerOffRouteReroute,
   shouldExitOffRouteLatch,
 } from "./nav/offRouteDetect";
@@ -370,8 +370,6 @@ const MB_TRAFFIC_LINE_SNAP_NOTICE = "Mapbox traffic-aware line";
 const STORM_ADAPT_DEBOUNCE_MS = 4500;
 /** Minimum spacing between adaptive storm reroute attempts (NWS + Directions churn). */
 const STORM_ADAPT_MIN_INTERVAL_MS = 75_000;
-/** Throttle between auto-reroute attempts when off the polyline. */
-const NAV_SEVERE_OFF_ROUTE_THROTTLE_MS = OFF_ROUTE_REROUTE_THROTTLE_MS;
 /** Snap drawn line to Mapbox’s road network when live delay vs ORS is huge or Mapbox can’t trace the ORS path. */
 const MAPBOX_LINE_SNAP_DELAY_MIN = 10;
 /** Applies to both “heavy delay” and untraceable polyline — avoids GPS-driven snap loops in drive/topdown. */
@@ -796,9 +794,11 @@ export default function App() {
   const offRouteSevereRef = useRef(false);
   /** Hysteresis: latched true until lateral drops below exit threshold (avoids flapping at one distance). */
   const offRouteLatchedRef = useRef(false);
-  const lastSevereAutoRecalcMsRef = useRef(0);
   const lastOffRouteSampleRef = useRef<{ t: number; lateralM: number; alongM: number } | null>(null);
   const offRouteRerouteFailStreakRef = useRef(0);
+  /** One map-view offer per off-route episode — avoids repeated view flips. */
+  const offRouteChoiceOfferedRef = useRef(false);
+  const rejoinShufflePassRef = useRef(0);
   /** At destination, stationary + no interaction → clearRoute; foreground timer + resume-from-background. */
   const arrivalIdleStartMsRef = useRef<number | null>(null);
   const lastUserInteractionMsRef = useRef<number>(Date.now());
@@ -960,124 +960,6 @@ export default function App() {
       }
     },
     [computeRoutes, navigationStarted, setActiveViaIndex, setViaStops]
-  );
-
-  /** Recompute routes from current GPS to the same destination without stopping navigation. */
-  const recalcRouteFromHere = useCallback(
-    async (opts?: { silent?: boolean }) => {
-      if (!userLngLat || !destLngLat) return;
-    if (env.mapboxToken && !isOnline) {
-        if (!opts?.silent) {
-          setTapHint("Offline: route refresh unavailable.");
-          window.setTimeout(() => setTapHint(null), 3500);
-        }
-        return;
-      }
-      const epochAtStart = routeGraphEpochRef.current;
-      routeMainFetchAbortRef.current?.abort();
-      const mainFetch = new AbortController();
-      routeMainFetchAbortRef.current = mainFetch;
-      setRouting(true);
-      setRouteError(null);
-      try {
-        let p: TripPlan;
-        let destForMap: [number, number] = destLngLat;
-        let rerouteSnapNotice: string | undefined;
-        if (env.mapboxToken) {
-          const remainingVias = remainingViaStops(viaStops, activeViaIndex);
-          const viaCoords = remainingVias.map((s) => s.lngLat);
-          const snapFromGps = Boolean(opts?.silent);
-          const built = await buildTripFromMapbox(
-            env.mapboxToken,
-            userLngLat,
-            destLngLat,
-            {
-              origin: "Your location",
-              destination: formatTripDestinationLabel(
-                remainingVias,
-                destinationLabel.trim() || "Destination"
-              ),
-            },
-            {
-              signal: mainFetch.signal,
-              via: viaCoords.length > 0 ? viaCoords : undefined,
-              allowLocalTripThirdRoute: isPlus,
-              preferThreeRoutes: isPlus,
-              stormAlerts: snapFromGps ? undefined : stormAlertsForRouting,
-              radarAvoidanceEnabled: snapFromGps ? false : isPlus && settingStormEnabled,
-              trailRoutePersonalization: snapFromGps ? false : isPlus && learnEnabled,
-              /* Basic silent off-route: one leg only. Plus keeps A/B/C from current GPS. */
-              singleRouteFromPosition: snapFromGps && !isPlus,
-            }
-          );
-          p = built.plan;
-          destForMap = built.routeDestination;
-          rerouteSnapNotice = built.snapNotice;
-        } else {
-          p = buildMockTripBetween(userLngLat, destLngLat, destinationLabel.trim() || "Destination");
-        }
-        p = !isPlus && p.routes.length > 2 ? { ...p, routes: p.routes.slice(0, 2) } : p;
-        if (epochAtStart !== routeGraphEpochRef.current) return;
-        setPlan(p);
-        lockedNavigationRouteIdRef.current = p.routes[0]?.id ?? lockedNavigationRouteIdRef.current;
-        setDestLngLat(destForMap);
-        setPreviewLegIndex(0);
-        const planIds = p.routes.map((r) => r.id);
-        setRouteSlotOrder((prev) => reconcileSlotOrderWithPlan(prev, planIds));
-        setFitTrigger((n) => n + 1);
-        setOffRouteSevere(false);
-        offRouteSevereRef.current = false;
-        offRouteRerouteFailStreakRef.current = 0;
-        if (!opts?.silent) {
-          if (rerouteSnapNotice) {
-            setTapHint(rerouteSnapNotice);
-            window.setTimeout(() => setTapHint(null), 8500);
-          } else {
-            setTapHint("Route updated from your position.");
-            window.setTimeout(() => setTapHint(null), 4500);
-          }
-        }
-      } catch (e) {
-        if (isAbortError(e)) {
-          return;
-        }
-        const msg =
-          routeFetchUserMessage(e) ?? (e instanceof Error ? e.message : String(e));
-        setRouteError(msg);
-        setOffRouteSevere(false);
-        offRouteSevereRef.current = false;
-        offRouteRerouteFailStreakRef.current += 1;
-        if (offRouteRerouteFailStreakRef.current >= 2) {
-          // Rare fallback: if we can’t recover from GPS, stop nav and show options.
-          resetNavigationPlanning();
-          setViewMode("route");
-          setTapHint("Could not reconnect to the route. Showing A/B/C options…");
-          window.setTimeout(() => setTapHint(null), 8000);
-        }
-        if (userLngLat && destLngLat) {
-          void computeRoutes(destLngLat, destinationLabel.trim() || "Destination", {
-            preserveNavigation: true,
-          });
-        }
-      } finally {
-        setRouting(false);
-      }
-    },
-    [
-      userLngLat,
-      destLngLat,
-      viaStops,
-      activeViaIndex,
-      env.mapboxToken,
-      destinationLabel,
-      computeRoutes,
-      isOnline,
-      resetNavigationPlanning,
-      isPlus,
-      stormAlertsForRouting,
-      settingStormEnabled,
-      learnEnabled,
-    ]
   );
 
   const handleMapClick = useCallback(
@@ -1939,6 +1821,126 @@ export default function App() {
     return planRouteIds;
   }, [routeSlotOrder, planRouteIds]);
 
+  /** Fetch rejoin options (B/C) from current GPS; locked route A is never replaced unless you pick B or C. */
+  const recalcRouteFromHere = useCallback(
+    async (opts?: { silent?: boolean; shuffle?: boolean }) => {
+      if (!userLngLat || !destLngLat) return;
+      if (env.mapboxToken && !isOnline) {
+        if (!opts?.silent) {
+          setTapHint("Offline: route refresh unavailable.");
+          window.setTimeout(() => setTapHint(null), 3500);
+        }
+        return;
+      }
+      if (opts?.shuffle) rejoinShufflePassRef.current += 1;
+      const epochAtStart = routeGraphEpochRef.current;
+      altRoutesFetchAbortRef.current?.abort();
+      const altFetch = new AbortController();
+      altRoutesFetchAbortRef.current = altFetch;
+      altRoutesRefreshInFlightRef.current = true;
+      setRouting(true);
+      setRouteError(null);
+      try {
+        let p: TripPlan;
+        let destForMap: [number, number] = destLngLat;
+        let rerouteSnapNotice: string | undefined;
+        if (env.mapboxToken) {
+          const remainingVias = remainingViaStops(viaStops, activeViaIndex);
+          const viaCoords = remainingVias.map((s) => s.lngLat);
+          const snapFromGps = !isPlus;
+          const built = await buildTripFromMapbox(
+            env.mapboxToken,
+            userLngLat,
+            destLngLat,
+            {
+              origin: "Your location",
+              destination: formatTripDestinationLabel(
+                remainingVias,
+                destinationLabel.trim() || "Destination"
+              ),
+            },
+            {
+              signal: altFetch.signal,
+              via: viaCoords.length > 0 ? viaCoords : undefined,
+              allowLocalTripThirdRoute: isPlus,
+              preferThreeRoutes: isPlus,
+              stormAlerts: stormAlertsForRouting,
+              radarAvoidanceEnabled: isPlus && settingStormEnabled,
+              trailRoutePersonalization: isPlus && learnEnabled,
+              singleRouteFromPosition: snapFromGps,
+              rejoinShufflePass: rejoinShufflePassRef.current,
+            }
+          );
+          p = built.plan;
+          destForMap = built.routeDestination;
+          rerouteSnapNotice = built.snapNotice;
+        } else {
+          p = buildMockTripBetween(userLngLat, destLngLat, destinationLabel.trim() || "Destination");
+        }
+        p = !isPlus && p.routes.length > 2 ? { ...p, routes: p.routes.slice(0, 2) } : p;
+        if (epochAtStart !== routeGraphEpochRef.current) return;
+        const lockedId =
+          lockedNavigationRouteIdRef.current ??
+          orderedRouteIds[0] ??
+          p.routes[0]?.id ??
+          null;
+        if (lockedId && navigationStartedRef.current) {
+          setPlan((prev) => mergePlanPreservingPrimary(prev, lockedId, p.routes));
+        } else {
+          setPlan(p);
+          lockedNavigationRouteIdRef.current = p.routes[0]?.id ?? lockedNavigationRouteIdRef.current;
+        }
+        setDestLngLat(destForMap);
+        const planIds = p.routes.map((r) => r.id);
+        setRouteSlotOrder((prev) => reconcileSlotOrderWithPlan(prev, planIds));
+        setFitTrigger((n) => n + 1);
+        offRouteRerouteFailStreakRef.current = 0;
+        if (!opts?.silent) {
+          if (rerouteSnapNotice) {
+            setTapHint(rerouteSnapNotice);
+            window.setTimeout(() => setTapHint(null), 8500);
+          } else {
+            setTapHint(
+              opts?.shuffle
+                ? "New rejoin options — your chosen route stays until you pick B or C."
+                : "Rejoin options updated from your position."
+            );
+            window.setTimeout(() => setTapHint(null), 5500);
+          }
+        }
+      } catch (e) {
+        if (isAbortError(e)) {
+          return;
+        }
+        const msg =
+          routeFetchUserMessage(e) ?? (e instanceof Error ? e.message : String(e));
+        setRouteError(msg);
+        offRouteRerouteFailStreakRef.current += 1;
+        if (offRouteRerouteFailStreakRef.current >= 2 && !opts?.silent) {
+          setTapHint("Could not fetch rejoin options — try More options again.");
+          window.setTimeout(() => setTapHint(null), 6000);
+        }
+      } finally {
+        setRouting(false);
+        altRoutesRefreshInFlightRef.current = false;
+      }
+    },
+    [
+      userLngLat,
+      destLngLat,
+      viaStops,
+      activeViaIndex,
+      orderedRouteIds,
+      env.mapboxToken,
+      destinationLabel,
+      isOnline,
+      isPlus,
+      stormAlertsForRouting,
+      settingStormEnabled,
+      learnEnabled,
+    ]
+  );
+
   /** Fingerprint for moving storm mass + driver movement — triggers debounced reroute while navigating. */
   const stormAdaptiveSig = useMemo(() => {
     if (!navigationStarted || !userLngLat || !destLngLat || !stormAlertsForRouting?.length) {
@@ -2059,9 +2061,10 @@ export default function App() {
     ]
   );
 
-  /** Storm polygons or position shifted — refresh alternate legs only; never swap the locked primary. */
+  /** Storm polygons shifted — refresh B/C only while in route/map view (never during Dr). */
   const refreshStormAwareRoutes = useCallback(async () => {
     if (!navigationStarted || !userLngLat || !destLngLat) return;
+    if (viewMode === "drive") return;
     if (!stormAlertsForRouting?.length) return;
     if (env.mapboxToken && !isOnline) return;
     if (plan.routes.length < 2) return;
@@ -2078,12 +2081,13 @@ export default function App() {
     stormAdaptiveRefreshInFlightRef.current = true;
     lastStormAdaptiveRefreshMsRef.current = now;
     try {
-      await refreshAlternateRoutesOnly({ allowDuringDrive: true });
+      await refreshAlternateRoutesOnly();
     } finally {
       stormAdaptiveRefreshInFlightRef.current = false;
     }
   }, [
     navigationStarted,
+    viewMode,
     userLngLat,
     destLngLat,
     stormAlertsForRouting,
@@ -3357,6 +3361,12 @@ export default function App() {
   );
 
   const deferredRouteImpactsForUi = useDeferredValue(routeImpactsForUi);
+  /** No active trip — drop deferred corridor overlays immediately (avoid ghost route-line halos). */
+  const activeTripMapOverlays =
+    navigationStarted ||
+    plan.routes.some((r) => r.geometry && r.geometry.length >= 2);
+  const mapAlongRouteAlertsForDrive = activeTripMapOverlays ? deferredMapAlongRouteAlerts : [];
+  const mapStormAlongRouteBandsForDrive = activeTripMapOverlays ? deferredRouteAheadMapBands : [];
   const driveRouteAheadLine = useMemo(() => {
     if (!driveModeUi) return null;
     const g = guidanceRoute?.geometry;
@@ -3582,13 +3592,20 @@ export default function App() {
         tioRouteForecast && planEta && planEta > 0
           ? tomorrowForecastToWxSamples(tioRouteForecast, planEta)
           : [];
-      const outlookSamples =
+      const baseOutlookSamples =
         wxSamples?.length ? wxSamples : tioSamples.length ? tioSamples : [];
+      const ensuredOutlook = ensureRouteOutlookForGraph({
+        steps: outlookTimeline,
+        samples: baseOutlookSamples,
+        headline: wxHeadline,
+      });
 
       return {
         routeWide: [],
-        outlookTimeline,
-        outlookSamples,
+        outlookTimeline: ensuredOutlook.steps,
+        outlookSamples: ensuredOutlook.samples.length
+          ? ensuredOutlook.samples
+          : baseOutlookSamples,
         segments: routeAheadSegments.sort((a, b) => b.alongT - a.alongT),
         userAlongT,
         stripTint,
@@ -3672,14 +3689,21 @@ export default function App() {
       tioRouteForecast && planEta && planEta > 0
         ? tomorrowForecastToWxSamples(tioRouteForecast, planEta)
         : [];
-    const outlookSamples =
+    const baseOutlookSamples =
       wxSamples?.length ? wxSamples : tioSamples.length ? tioSamples : [];
+    const ensuredOutlook = ensureRouteOutlookForGraph({
+      steps: outlookTimeline,
+      samples: baseOutlookSamples,
+      headline: wxHeadline,
+    });
 
-    if (bundle.routeWide.length > 0 || outlookTimeline.length > 0 || mergedSegments.length > 0) {
+    if (bundle.routeWide.length > 0 || ensuredOutlook.steps.length > 0 || mergedSegments.length > 0) {
       return {
         routeWide: bundle.routeWide,
-        outlookTimeline,
-        outlookSamples,
+        outlookTimeline: ensuredOutlook.steps,
+        outlookSamples: ensuredOutlook.samples.length
+          ? ensuredOutlook.samples
+          : baseOutlookSamples,
         segments: mergedSegments,
         userAlongT,
         stripTint,
@@ -3747,6 +3771,9 @@ export default function App() {
   ]);
 
   const deferredProgressCalloutPanel = useDeferredValue(progressCalloutPanel);
+  const activeProgressCalloutPanel = progressCalloutsOpen
+    ? progressCalloutPanel
+    : deferredProgressCalloutPanel;
 
   const routeAheadHealthRepairAtRef = useRef(0);
 
@@ -4182,27 +4209,40 @@ export default function App() {
     offRouteLatchedRef.current = false;
   }, [guidanceRouteId]);
 
-  /** Lateral distance near last on-route position — Plus auto-reroute snaps to the road you are on. */
+  /** Off-route: never swap the locked leg — open map view and offer B/C rejoin paths. */
   useEffect(() => {
     if (!navigationStarted || !guidanceRoute?.geometry?.length || !destLngLat) {
       offRouteLatchedRef.current = false;
+      offRouteChoiceOfferedRef.current = false;
       offRouteSevereRef.current = false;
       lastOffRouteSampleRef.current = null;
       setOffRouteSevere(false);
       return;
     }
 
-    const publishOffRouteUi = () =>
-      !(isPlusRef.current && effectiveAutoRerouteRef.current);
-
     const setOffRouteSevereIfNeeded = (severe: boolean) => {
-      if (!publishOffRouteUi()) {
-        offRouteSevereRef.current = severe;
-        return;
-      }
       if (offRouteSevereRef.current === severe) return;
       offRouteSevereRef.current = severe;
       setOffRouteSevere(severe);
+    };
+
+    const offerRejoinChoices = () => {
+      if (offRouteChoiceOfferedRef.current) return;
+      offRouteChoiceOfferedRef.current = true;
+      if (effectiveAutoRerouteRef.current) {
+        setViewMode((vm) => (vm === "drive" ? "topdown" : vm));
+        setFitTrigger((n) => n + 1);
+        if (!routingRef.current && !altRoutesRefreshInFlightRef.current) {
+          void recalcRouteFromHere({ silent: true });
+        }
+        setTapHint(
+          "Off your chosen route — it stays active until you pick B or C. Tap More options for new paths."
+        );
+        window.setTimeout(() => setTapHint(null), 9000);
+      } else {
+        setTapHint("Off your chosen route — open map view or tap More options when ready.");
+        window.setTimeout(() => setTapHint(null), 7000);
+      }
     };
 
     const tick = () => {
@@ -4217,13 +4257,11 @@ export default function App() {
       const sample = measureOffRouteLateral(pos, geom, userAlongGuidanceMRef.current);
       const lat = sample.lateralM;
       const alongM = sample.alongM;
-      const now = Date.now();
-      const heldAlongM = userAlongGuidanceMRef.current;
       const routeBearing =
         totalM > 1
           ? initialBearingDegrees(
-              pointAtAlongMeters(geom, Math.min(heldAlongM, totalM)),
-              pointAtAlongMeters(geom, Math.min(heldAlongM + 52, totalM))
+              pointAtAlongMeters(geom, Math.min(userAlongGuidanceMRef.current, totalM)),
+              pointAtAlongMeters(geom, Math.min(userAlongGuidanceMRef.current + 52, totalM))
             )
           : bearingAlongRouteAhead(pos, geom);
       const offRouteCtx = {
@@ -4236,37 +4274,25 @@ export default function App() {
       const nearingEnd = totalM > 0 && alongM > totalM - 45;
       if (nearingEnd) {
         offRouteLatchedRef.current = false;
+        offRouteChoiceOfferedRef.current = false;
         setOffRouteSevereIfNeeded(false);
         lastOffRouteSampleRef.current = null;
         return;
       }
 
-      lastOffRouteSampleRef.current = { t: now, lateralM: lat, alongM };
-
       if (offRouteLatchedRef.current) {
         if (shouldExitOffRouteLatch(lat)) {
           offRouteLatchedRef.current = false;
+          offRouteChoiceOfferedRef.current = false;
           setOffRouteSevereIfNeeded(false);
+        } else {
+          setOffRouteSevereIfNeeded(true);
         }
       } else if (offRoute) {
         offRouteLatchedRef.current = true;
         setOffRouteSevereIfNeeded(true);
+        offerRejoinChoices();
       }
-
-      if (
-        !effectiveAutoRerouteRef.current ||
-        routingRef.current ||
-        altRoutesRefreshInFlightRef.current ||
-        (env.mapboxToken && !isOnline)
-      ) {
-        return;
-      }
-
-      if (!offRoute) return;
-      if (now - lastSevereAutoRecalcMsRef.current < NAV_SEVERE_OFF_ROUTE_THROTTLE_MS) return;
-
-      lastSevereAutoRecalcMsRef.current = now;
-      void recalcRouteFromHere({ silent: true });
     };
 
     tick();
@@ -4278,8 +4304,6 @@ export default function App() {
     guidanceRouteLengthM,
     destLngLat,
     recalcRouteFromHere,
-    effectiveAutoRerouteEnabled,
-    isPlus,
     env.mapboxToken,
     isOnline,
   ]);
@@ -4380,8 +4404,7 @@ export default function App() {
     return routePickSlotHex(routeSlotIndexFor(guidanceRoute.id, orderedRouteIds));
   }, [guidanceRoute, orderedRouteIds, navigationStarted]);
 
-  const showOffRouteManualBanner =
-    offRouteSevere && navigationStarted && !effectiveAutoRerouteEnabled;
+  const showOffRouteManualBanner = offRouteSevere && navigationStarted;
 
   const radarFrameTimeLabel = useMemo(() => {
     if (!radarMapOverlayOn || radarFrameUtcSec == null) return null;
@@ -4482,6 +4505,8 @@ export default function App() {
       navGoGeometryRef.current = null;
     }
     lockedNavigationRouteIdRef.current = null;
+    offRouteChoiceOfferedRef.current = false;
+    rejoinShufflePassRef.current = 0;
     routeGraphEpochRef.current += 1;
     routeMainFetchAbortRef.current?.abort();
     routeMainFetchAbortRef.current = null;
@@ -5663,9 +5688,9 @@ export default function App() {
             showRadar={radarMapOverlayOn}
             radarAnimate={!dataSaverMode && !navMapLiteMode}
             onRadarFrameUtcSec={setRadarFrameUtcSec}
-            alongRouteAlerts={deferredMapAlongRouteAlerts}
+            alongRouteAlerts={mapAlongRouteAlertsForDrive}
             corridorRouteGeometry={guidanceRoute?.geometry}
-            stormAlongRouteBands={deferredRouteAheadMapBands}
+            stormAlongRouteBands={mapStormAlongRouteBandsForDrive}
             recordingGeometry={recordingActive ? recordingPathPreview : undefined}
             weatherAlertGeoJson={deferredNwsAlertGeoJsonForMap}
             stormBarVisible={showStormAdvisoryChrome}
@@ -5707,6 +5732,7 @@ export default function App() {
             searchPickMarkers={searchPickMarkersForMap}
             onSearchPickMarkerClick={searchPickMarkersForMap ? handleSearchPickFromMap : undefined}
             progressRailVisible={navigationStarted && isPlus}
+            offRouteRejoinCompareActive={offRouteSevere && navigationStarted}
           />
           </Suspense>
         </div>
@@ -5870,10 +5896,10 @@ export default function App() {
                   >
                     <RouteProgressGlancePanel
                       timeline={routeAheadTimeline}
-                      routeWide={deferredProgressCalloutPanel.routeWide}
-                      outlookSteps={deferredProgressCalloutPanel.outlookTimeline}
-                      outlookSamples={deferredProgressCalloutPanel.outlookSamples}
-                      fallbackSegments={deferredProgressCalloutPanel.segments.filter(
+                      routeWide={activeProgressCalloutPanel.routeWide}
+                      outlookSteps={activeProgressCalloutPanel.outlookTimeline}
+                      outlookSamples={activeProgressCalloutPanel.outlookSamples}
+                      fallbackSegments={activeProgressCalloutPanel.segments.filter(
                         (s) => !s.key.startsWith("route-ahead-")
                       )}
                       totalMeters={guidanceRouteLengthM}
@@ -5881,7 +5907,7 @@ export default function App() {
                       planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
                       driveEtaMinutes={driveEtaMinutes ?? null}
                       userAlongT={progressCalloutPanel.userAlongT}
-                      stripTint={deferredProgressCalloutPanel.stripTint}
+                      stripTint={activeProgressCalloutPanel.stripTint}
                       detailScrollRef={progressCalloutDetailScrollRef}
                     />
                   </RouteProgressCalloutRail>
@@ -6390,7 +6416,9 @@ export default function App() {
               offRouteSevere={offRouteSevere}
               showOffRouteBanner={showOffRouteManualBanner}
               onRerouteFromHere={
-                isPlus && env.mapboxToken ? () => void recalcRouteFromHere() : undefined
+                env.mapboxToken
+                  ? () => void recalcRouteFromHere({ shuffle: true })
+                  : undefined
               }
               showTrafficBypass={showTrafficBypassCta}
               bypassBusy={bypassBusy}

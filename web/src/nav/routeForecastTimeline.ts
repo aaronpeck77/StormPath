@@ -296,21 +296,112 @@ export function buildRouteOutlookTimeline(
   if (h) {
     const wx = parseWxBody(h);
     const precip = effectivePrecipPct(wx.precipPct, wx.conditions);
-    return [
-      {
-        key: "route",
-        shortLabel: labelForFraction(0.5),
-        fraction: 0.5,
-        tempF: wx.tempF,
-        conditions: wx.conditions,
-        precipPct: precip.precipPct,
-        precipHint: precip.precipHint,
-        etaLabel: null,
-        icon: wxIcon(wx.conditions, precip.precipHint),
-      },
-    ];
+    const seed: RouteOutlookStep = {
+      key: "midway",
+      shortLabel: "Mid",
+      fraction: 0.5,
+      tempF: wx.tempF,
+      conditions: wx.conditions,
+      precipPct: precip.precipPct,
+      precipHint: precip.precipHint,
+      etaLabel: null,
+      icon: wxIcon(wx.conditions, precip.precipHint),
+    };
+    return expandOutlookStepToRouteAxis(seed);
   }
   return [];
+}
+
+/** Spread one forecast reading across YOU→DEST so the line graph can render. */
+function expandOutlookStepToRouteAxis(step: RouteOutlookStep): RouteOutlookStep[] {
+  return SAMPLE_FRACTIONS.map(({ fraction, shortLabel, key }) => ({
+    ...step,
+    key,
+    shortLabel,
+    fraction,
+  }));
+}
+
+function outlookStepHasChartValue(step: RouteOutlookStep): boolean {
+  return (
+    step.tempF != null ||
+    (step.precipPct != null && step.precipPct > 0) ||
+    step.precipHint > 0
+  );
+}
+
+/**
+ * Keep graph data aligned with route-info text — bottom copy can mention rain/temp even when
+ * merge dropped a single-stop headline or milestone placeholders lack numbers yet.
+ */
+export function ensureRouteOutlookForGraph(opts: {
+  steps: RouteOutlookStep[];
+  samples?: WxSample[];
+  headline?: string;
+}): { steps: RouteOutlookStep[]; samples: WxSample[] } {
+  const samples = opts.samples ?? [];
+  const headline = opts.headline?.trim() ?? "";
+  let steps = opts.steps.filter(Boolean);
+
+  const chartable = steps.filter(outlookStepHasChartValue).length;
+  if (steps.length < 2 || chartable === 0) {
+    const fromSamples = samples.length ? stepsFromSamples(samples) : [];
+    if (fromSamples.filter(outlookStepHasChartValue).length >= 2) {
+      steps = fromSamples;
+    } else {
+      const fromHeadline = buildRouteOutlookTimeline(headline, samples);
+      if (fromHeadline.filter(outlookStepHasChartValue).length >= 2) {
+        steps = fromHeadline;
+      } else if (fromHeadline.length === 1 && outlookStepHasChartValue(fromHeadline[0]!)) {
+        steps = expandOutlookStepToRouteAxis(fromHeadline[0]!);
+      } else if (fromSamples.length === 1 && outlookStepHasChartValue(fromSamples[0]!)) {
+        steps = expandOutlookStepToRouteAxis(fromSamples[0]!);
+      } else if (headline) {
+        const wx = parseWxBody(headline);
+        const precip = effectivePrecipPct(wx.precipPct, wx.conditions);
+        if (wx.tempF != null || precip.precipPct != null || precip.precipHint > 0) {
+          steps = expandOutlookStepToRouteAxis({
+            key: "midway",
+            shortLabel: "Mid",
+            fraction: 0.5,
+            tempF: wx.tempF,
+            conditions: wx.conditions,
+            precipPct: precip.precipPct,
+            precipHint: precip.precipHint,
+            etaLabel: null,
+            icon: wxIcon(wx.conditions, precip.precipHint),
+          });
+        }
+      }
+    }
+  } else if (steps.length < 2 && outlookStepHasChartValue(steps[0]!)) {
+    steps = expandOutlookStepToRouteAxis(steps[0]!);
+  }
+
+  if (steps.some((s) => !outlookStepHasChartValue(s)) && (samples.length > 0 || headline)) {
+    const fill = samples.length
+      ? stepsFromSamples(samples)
+      : buildRouteOutlookTimeline(headline, samples);
+    if (fill.length) {
+      steps = steps.map((step) => {
+        if (outlookStepHasChartValue(step)) return step;
+        const near =
+          fill.find((f) => Math.abs(f.fraction - step.fraction) < 0.08) ??
+          fill[Math.floor(fill.length / 2)]!;
+        if (!near || !outlookStepHasChartValue(near)) return step;
+        return {
+          ...step,
+          tempF: near.tempF,
+          conditions: near.conditions,
+          precipPct: near.precipPct,
+          precipHint: near.precipHint,
+          icon: near.icon,
+        };
+      });
+    }
+  }
+
+  return { steps, samples };
 }
 
 /** Placeholder outlook for cross-country legs when corridor wx samples are not ready yet. */
@@ -569,9 +660,14 @@ export function mergeRouteOutlookSteps(...groups: RouteOutlookStep[][]): RouteOu
   const merged = new Map<string, RouteOutlookStep>();
   for (const steps of groups) {
     for (const step of steps) {
-      const prev = merged.get(step.key);
+      const slotKey =
+        SAMPLE_FRACTIONS.find((s) => s.key === step.key)?.key ??
+        SAMPLE_FRACTIONS.reduce((best, s) =>
+          Math.abs(s.fraction - step.fraction) < Math.abs(best.fraction - step.fraction) ? s : best
+        ).key;
+      const prev = merged.get(slotKey);
       if (!prev) {
-        merged.set(step.key, step);
+        merged.set(slotKey, { ...step, key: slotKey });
         continue;
       }
       const precipA = precipPctFromStep(prev);
@@ -579,7 +675,7 @@ export function mergeRouteOutlookSteps(...groups: RouteOutlookStep[][]): RouteOu
       const pickPrecip = precipB > precipA ? step : prev;
       const hint = Math.max(prev.precipHint, step.precipHint);
       const pct = Math.max(precipA, precipB);
-      merged.set(step.key, {
+      merged.set(slotKey, {
         ...prev,
         tempF: prev.tempF ?? step.tempF,
         conditions: pickPrecip.conditions || prev.conditions,
@@ -689,7 +785,22 @@ export function buildRouteOutlookSeries(
   }
 
   const merged = mergeCloseOutlookPoints(anchors);
-  if (merged.length < 2) return merged;
+  if (merged.length === 0) return [];
+  if (merged.length === 1) {
+    const p = merged[0]!;
+    const lo = Math.max(0, p.fraction - 0.02);
+    const hi = Math.min(1, p.fraction + 0.02);
+    if (lo === hi) {
+      return [
+        { ...p, fraction: 0 },
+        { ...p, fraction: 1 },
+      ];
+    }
+    return [
+      { ...p, fraction: lo },
+      { ...p, fraction: hi },
+    ];
+  }
   return interpolateOutlookSeries(merged);
 }
 

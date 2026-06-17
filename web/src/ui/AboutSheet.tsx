@@ -373,7 +373,7 @@ export function AboutSheet({
                 </li>
                 {liveRerouteEnabled ? (
                   <li>
-                    <strong>Auto reroute</strong> when far off-line (optional)
+                    <strong>Off-route choices</strong> — map view + B/C rejoin paths (your route stays until you pick)
                   </li>
                 ) : null}
                 <li>
@@ -469,10 +469,9 @@ export function AboutSheet({
                 onChange={(e) => onSettings({ ...settings, autoRerouteEnabled: e.target.checked })}
               />
               <span>
-                <strong>Auto reroute</strong> — when you leave the route or turn onto a different road,
-                fetch a new line from your GPS (no need to tap Re-route). Basic shows an{" "}
-                <strong>Off route</strong> / <strong>Re-route</strong> button
-                instead {!plus ? <em>(Plus)</em> : null}
+                <strong>Off-route map choices</strong> — when you leave your chosen route, StormPath opens
+                map view with B/C rejoin options. Your locked route never changes until you pick another leg.
+                {!plus ? <em> (Plus)</em> : null}
               </span>
             </label>
             ) : null}

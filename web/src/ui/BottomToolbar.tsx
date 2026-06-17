@@ -142,10 +142,12 @@ export function BottomToolbar({
     >
       {showOffRouteBanner && offRouteSevere && (
         <div className="nav-bottom-off-route" role="alert">
-          <span className="nav-bottom-off-route__text">Off route</span>
+          <span className="nav-bottom-off-route__text">
+            Off route — your chosen line stays. Pick B or C to rejoin.
+          </span>
           {onRerouteFromHere ? (
             <button type="button" className="nav-bottom-off-route__btn" onClick={onRerouteFromHere}>
-              Re-route
+              More options
             </button>
           ) : null}
         </div>
