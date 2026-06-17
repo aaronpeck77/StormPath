@@ -810,6 +810,8 @@ type Props = {
   idleHomeMapFraming?: HomeMapFraming;
   /** Home screen (no trip): center puck on GPS vs free map exploration. */
   homePuckFollow?: HomePuckFollowMode;
+  /** User panned/zoomed on the home screen — release follow until My location. */
+  onHomeMapUserPan?: () => void;
   /** Plus + learn: Wi‑Fi tile cache warm over density-capped home region. */
   homePreloadEnabled?: boolean;
   homePreloadBounds?: [[number, number], [number, number]] | null;
@@ -1076,7 +1078,8 @@ function DriveMapInner({
   sessionRouteLengthM = 0,
   activityTrailPlanningBounds = null,
   idleHomeMapFraming = "my_location",
-  homePuckFollow = "follow",
+  homePuckFollow = "explore",
+  onHomeMapUserPan,
   homePreloadEnabled = false,
   homePreloadBounds = null,
   searchPickMarkers = null,
@@ -1144,6 +1147,8 @@ function DriveMapInner({
   routesLengthRef.current = routes.length;
   const homePuckFollowRef = useRef(homePuckFollow);
   homePuckFollowRef.current = homePuckFollow;
+  const onHomeMapUserPanRef = useRef(onHomeMapUserPan);
+  onHomeMapUserPanRef.current = onHomeMapUserPan;
   const userExploringRef = useRef(false);
   /** One-shot: force drive follow-cam easeTo even when the puck barely moved (explore end, layout, resume). */
   const driveCamResyncRef = useRef(false);
@@ -3132,6 +3137,10 @@ function DriveMapInner({
       }
 
       const framing = resolveIdleHomeFraming(idleHomeMapFraming, activityTrailPlanningBounds);
+      if (homePuckFollowRef.current === "explore" && framing !== "activity_area") {
+        idleHomeAppliedRef.current = true;
+        return true;
+      }
       let ok = false;
       if (framing === "activity_area" && activityTrailPlanningBounds) {
         const tb = activityTrailPlanningBounds;
@@ -3196,6 +3205,7 @@ function DriveMapInner({
     Boolean(userLngLat),
     activityTrailPlanningBounds,
     idleHomeMapFraming,
+    homePuckFollow,
   ]);
 
   const homePreloadBoundsKey = homePreloadBounds

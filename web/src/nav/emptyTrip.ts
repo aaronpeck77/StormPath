@@ -64,10 +64,10 @@ export function buildMockTripBetween(
       {
         id: "r-c",
         role: "balanced",
-        label: "Scenic",
+        label: "Country drive",
         geometry: offset(base, 0.0002, 0.001),
         baseEtaMinutes: baseMin + 1,
-        turnSteps: mockSteps("Scenic"),
+        turnSteps: mockSteps("Country drive"),
       },
     ],
   };

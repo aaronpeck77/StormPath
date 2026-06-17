@@ -220,6 +220,22 @@ describe("mergeRouteOutlookSteps", () => {
 });
 
 describe("ensureRouteOutlookForGraph", () => {
+  it("fills graph from storm bands when forecast APIs are empty", () => {
+    const ensured = ensureRouteOutlookForGraph({
+      steps: [],
+      samples: [],
+      headline: "",
+      totalMeters: 40_000,
+      stormBands: [
+        { startMeters: 8_000, endMeters: 18_000, headline: "Severe Thunderstorm Warning" },
+        { startMeters: 22_000, endMeters: 30_000, headline: "Heavy rain on route" },
+      ],
+    });
+    const series = buildRouteOutlookSeries(ensured.steps, ensured.samples);
+    expect(series.length).toBeGreaterThan(1);
+    expect(Math.max(...series.map((p) => p.precipPct))).toBeGreaterThan(40);
+  });
+
   it("fills the graph when only text mentions rain and temp", () => {
     const ensured = ensureRouteOutlookForGraph({
       steps: [],

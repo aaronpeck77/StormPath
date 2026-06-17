@@ -19,7 +19,7 @@ export function formatRouteDistanceMi(geometry: LngLat[]): string {
 /** One short line for UI: how this option was biased. */
 export function routeConsiderationSummary(route: NavRoute): string {
   const L = route.label.toLowerCase();
-  if (L.includes("scenic")) return "Scenic · alternate path";
+  if (L.includes("scenic") || L.includes("country")) return "Country drive · backroads";
   if (L.includes("no interstate") || L.includes("no highway") || /\bhighway\b/.test(L)) {
     return "No interstate";
   }
@@ -27,6 +27,6 @@ export function routeConsiderationSummary(route: NavRoute): string {
   if (L.includes("shortest")) return "Shorter distance";
   if (route.role === "fastest") return "Main · fastest";
   if (route.role === "hazardSmart") return "No interstate";
-  if (route.role === "balanced") return "Scenic · alternate";
+  if (route.role === "balanced") return "Country drive · backroads";
   return "Route option";
 }

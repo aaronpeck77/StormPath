@@ -41,8 +41,12 @@ describe("measureOffRouteLateral", () => {
 
 describe("shouldTriggerOffRouteReroute", () => {
   it("triggers when lateral exceeds enter threshold", () => {
-    expect(shouldTriggerOffRouteReroute(OFF_ROUTE_REROUTE_ENTER_M + 0.5)).toBe(true);
-    expect(shouldTriggerOffRouteReroute(OFF_ROUTE_REROUTE_ENTER_M - 0.5)).toBe(false);
+    expect(
+      shouldTriggerOffRouteReroute(OFF_ROUTE_REROUTE_ENTER_M + 0.5, { speedMps: 5 })
+    ).toBe(true);
+    expect(
+      shouldTriggerOffRouteReroute(OFF_ROUTE_REROUTE_ENTER_M - 0.5, { speedMps: 5 })
+    ).toBe(false);
   });
 
   it("triggers on heading mismatch when slightly off-line and moving", () => {
@@ -55,20 +59,16 @@ describe("shouldTriggerOffRouteReroute", () => {
     ).toBe(true);
   });
 
-  it("does not trigger on heading mismatch when stationary", () => {
-    expect(
-      shouldTriggerOffRouteReroute(0.4, {
-        headingDeg: 90,
-        routeBearingDeg: 0,
-        speedMps: 0.5,
-      })
-    ).toBe(false);
+  it("requires a wider offset when stopped (GPS drift)", () => {
+    expect(shouldTriggerOffRouteReroute(20, { speedMps: 0 })).toBe(false);
+    expect(shouldTriggerOffRouteReroute(39, { speedMps: 0 })).toBe(true);
+    expect(shouldTriggerOffRouteReroute(20, { speedMps: 5 })).toBe(true);
   });
 });
 
 describe("shouldExitOffRouteLatch", () => {
   it("clears latch only when back inside exit threshold", () => {
     expect(shouldExitOffRouteLatch(4)).toBe(true);
-    expect(shouldExitOffRouteLatch(8)).toBe(false);
+    expect(shouldExitOffRouteLatch(12)).toBe(false);
   });
 });

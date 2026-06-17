@@ -5,10 +5,12 @@ import {
 } from "./routeGeometry";
 import type { LngLat } from "./types";
 
-/** Lateral leave before auto-reroute (~40 ft) — tighter than legacy 30 m but avoids GPS jitter at 3 m. */
-export const OFF_ROUTE_REROUTE_ENTER_M = 12;
+/** Lateral leave before off-route UI (~65 ft moving; wider when stopped — GPS drift). */
+export const OFF_ROUTE_REROUTE_ENTER_M = 18;
+/** When stopped or crawling, GPS fix can sit 30–40 m off the polyline without leaving the road. */
+export const OFF_ROUTE_REROUTE_ENTER_STATIONARY_M = 38;
 /** Hysteresis so brief GPS noise does not flip-flop reroutes. */
-export const OFF_ROUTE_REROUTE_EXIT_M = 6;
+export const OFF_ROUTE_REROUTE_EXIT_M = 10;
 /** Minimum spacing between silent auto-reroute attempts. */
 export const OFF_ROUTE_REROUTE_THROTTLE_MS = 1200;
 /** Poll interval while navigating (reads latest GPS ref, not only React state ticks). */
@@ -22,7 +24,17 @@ const OFF_ROUTE_HEADING_DELTA_DEG = 38;
 /** Minimum lateral offset (m) before heading mismatch can trigger reroute. */
 const OFF_ROUTE_HEADING_MIN_LATERAL_M = 2;
 /** Minimum speed (m/s) before heading mismatch is considered (~7 mph). */
-const OFF_ROUTE_HEADING_MIN_SPEED_MPS = 3;
+export const OFF_ROUTE_HEADING_MIN_SPEED_MPS = 3;
+
+/** After Go, ignore off-route until the driver moves or grace expires (GPS vs snap mismatch). */
+export const OFF_ROUTE_NAV_START_GRACE_MS = 50_000;
+export const OFF_ROUTE_NAV_START_GRACE_ALONG_M = 120;
+
+function effectiveEnterThresholdM(speedMps: number): number {
+  return speedMps >= OFF_ROUTE_HEADING_MIN_SPEED_MPS
+    ? OFF_ROUTE_REROUTE_ENTER_M
+    : OFF_ROUTE_REROUTE_ENTER_STATIONARY_M;
+}
 
 export type OffRouteSample = {
   lateralM: number;
@@ -96,11 +108,12 @@ export function shouldTriggerOffRouteReroute(
   ctx?: OffRouteTriggerContext
 ): boolean {
   const lateralM = typeof sample === "number" ? sample : sample.lateralM;
-  if (lateralM > OFF_ROUTE_REROUTE_ENTER_M) return true;
+  const speed = ctx?.speedMps ?? 0;
+  const enterM = effectiveEnterThresholdM(speed);
+  if (lateralM > enterM) return true;
 
   const heading = ctx?.headingDeg;
   const routeBearing = ctx?.routeBearingDeg;
-  const speed = ctx?.speedMps ?? 0;
   if (
     speed >= OFF_ROUTE_HEADING_MIN_SPEED_MPS &&
     heading != null &&

@@ -77,13 +77,22 @@ function parseEtaLabel(part: string): string | null {
 /** Estimate rain % from wording when OpenWeather omits an explicit pop in the headline. */
 export function inferPrecipPctFromConditions(conditions: string): number | null {
   const c = conditions.toLowerCase();
-  if (/thunder|tstm|storm/.test(c)) return 75;
-  if (/heavy (rain|shower)|torrential/.test(c)) return 85;
+  if (/tornado/.test(c)) return 80;
+  if (/thunder|tstm|severe storm/.test(c)) return 75;
+  if (/heavy (rain|shower)|torrential|flash flood/.test(c)) return 85;
   if (/\brain\b/.test(c)) return 65;
   if (/shower|drizzle/.test(c)) return 45;
-  if (/snow|sleet|wintry|hail/.test(c)) return 55;
+  if (/snow|sleet|wintry|hail|blizzard|ice/.test(c)) return 55;
+  if (/flood|hydro|surge/.test(c)) return 50;
+  if (/wind|gust/.test(c)) return 35;
   return null;
 }
+
+export type StormRouteOutlookBand = {
+  startMeters: number;
+  endMeters: number;
+  headline: string;
+};
 
 function effectivePrecipPct(
   parsedPct: number | null,
@@ -334,14 +343,81 @@ function outlookStepHasChartValue(step: RouteOutlookStep): boolean {
  * Keep graph data aligned with route-info text — bottom copy can mention rain/temp even when
  * merge dropped a single-stop headline or milestone placeholders lack numbers yet.
  */
+/**
+ * Build route outlook stops from NWS / radar timeline bands and RainViewer samples —
+ * used when forecast APIs are unavailable but storms show elsewhere in the app.
+ */
+export function buildOutlookFromStormAlongRoute(opts: {
+  totalMeters: number;
+  stormBands?: StormRouteOutlookBand[];
+  radarSamples?: RadarOutlookSample[];
+}): RouteOutlookStep[] {
+  const { totalMeters, stormBands = [], radarSamples = [] } = opts;
+  if (totalMeters <= 0) return [];
+
+  const steps: RouteOutlookStep[] = [];
+  for (const { fraction, shortLabel, key } of SAMPLE_FRACTIONS) {
+    const alongM = fraction * totalMeters;
+    const marginM = Math.max(400, totalMeters * 0.04);
+    let conditions = "—";
+    let precipPct: number | null = null;
+
+    for (const band of stormBands) {
+      if (alongM + marginM < band.startMeters || alongM - marginM > band.endMeters) continue;
+      const text = band.headline.trim();
+      if (!text) continue;
+      const inferred = inferPrecipPctFromConditions(text);
+      if (inferred != null) {
+        precipPct = Math.max(precipPct ?? 0, inferred);
+        conditions = text.split(" — ")[0]?.trim() || conditions;
+      }
+    }
+
+    if (radarSamples.length) {
+      const near = nearestRadarSample(radarSamples, fraction);
+      if (near) {
+        const radarPct = radarIntensityToPrecipPct(near.intensity);
+        if (radarPct > (precipPct ?? 0)) {
+          precipPct = radarPct;
+          if (conditions === "—") {
+            conditions = radarPct >= 48 ? "Heavy rain on route" : "Rain on route";
+          }
+        }
+      }
+    }
+
+    const precip = effectivePrecipPct(precipPct, conditions);
+    if (precip.precipPct == null && precip.precipHint <= 0) {
+      continue;
+    }
+    steps.push({
+      key,
+      shortLabel,
+      fraction,
+      tempF: null,
+      conditions,
+      precipPct: precip.precipPct,
+      precipHint: precip.precipHint,
+      etaLabel: null,
+      icon: wxIcon(conditions, precip.precipHint),
+    });
+  }
+
+  return steps;
+}
+
 export function ensureRouteOutlookForGraph(opts: {
   steps: RouteOutlookStep[];
   samples?: WxSample[];
   headline?: string;
+  totalMeters?: number;
+  stormBands?: StormRouteOutlookBand[];
+  radarSamples?: RadarOutlookSample[];
 }): { steps: RouteOutlookStep[]; samples: WxSample[] } {
   const samples = opts.samples ?? [];
   const headline = opts.headline?.trim() ?? "";
   let steps = opts.steps.filter(Boolean);
+  const totalMeters = opts.totalMeters ?? 0;
 
   const chartable = steps.filter(outlookStepHasChartValue).length;
   if (steps.length < 2 || chartable === 0) {
@@ -356,21 +432,52 @@ export function ensureRouteOutlookForGraph(opts: {
         steps = expandOutlookStepToRouteAxis(fromHeadline[0]!);
       } else if (fromSamples.length === 1 && outlookStepHasChartValue(fromSamples[0]!)) {
         steps = expandOutlookStepToRouteAxis(fromSamples[0]!);
-      } else if (headline) {
-        const wx = parseWxBody(headline);
-        const precip = effectivePrecipPct(wx.precipPct, wx.conditions);
-        if (wx.tempF != null || precip.precipPct != null || precip.precipHint > 0) {
-          steps = expandOutlookStepToRouteAxis({
-            key: "midway",
-            shortLabel: "Mid",
-            fraction: 0.5,
-            tempF: wx.tempF,
-            conditions: wx.conditions,
-            precipPct: precip.precipPct,
-            precipHint: precip.precipHint,
-            etaLabel: null,
-            icon: wxIcon(wx.conditions, precip.precipHint),
-          });
+      } else {
+        const fromStorm =
+          totalMeters > 0
+            ? buildOutlookFromStormAlongRoute({
+                totalMeters,
+                stormBands: opts.stormBands,
+                radarSamples: opts.radarSamples,
+              })
+            : [];
+        if (fromStorm.filter(outlookStepHasChartValue).length >= 2) {
+          steps = fromStorm;
+        } else if (headline) {
+          const wx = parseWxBody(headline);
+          const precip = effectivePrecipPct(wx.precipPct, wx.conditions);
+          if (wx.tempF != null || precip.precipPct != null || precip.precipHint > 0) {
+            steps = expandOutlookStepToRouteAxis({
+              key: "midway",
+              shortLabel: "Mid",
+              fraction: 0.5,
+              tempF: wx.tempF,
+              conditions: wx.conditions,
+              precipPct: precip.precipPct,
+              precipHint: precip.precipHint,
+              etaLabel: null,
+              icon: wxIcon(wx.conditions, precip.precipHint),
+            });
+          } else {
+            const stormText = inferPrecipPctFromConditions(headline);
+            if (stormText != null) {
+              steps = expandOutlookStepToRouteAxis({
+                key: "midway",
+                shortLabel: "Mid",
+                fraction: 0.5,
+                tempF: null,
+                conditions: headline.slice(0, 80),
+                precipPct: stormText,
+                precipHint: stormText / 100,
+                etaLabel: null,
+                icon: wxIcon(headline, stormText / 100),
+              });
+            }
+          }
+        } else if (fromStorm.length >= 2) {
+          steps = fromStorm;
+        } else if (fromStorm.length === 1 && outlookStepHasChartValue(fromStorm[0]!)) {
+          steps = expandOutlookStepToRouteAxis(fromStorm[0]!);
         }
       }
     }

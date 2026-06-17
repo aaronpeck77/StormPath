@@ -7,6 +7,8 @@ import type { MapViewMode } from "../ui/driveMapTypes";
 export function resolveNavigationRouteIds(input: {
   navigationStarted: boolean;
   lockedRouteId: string | null;
+  /** Temporary B/C leg for auto local rejoin — does not change the locked route. */
+  temporaryGuidanceRouteId?: string | null;
   viewMode: MapViewMode;
   previewLegIndex: number;
   orderedRouteIds: string[];
@@ -22,8 +24,10 @@ export function resolveNavigationRouteIds(input: {
   }
 
   const locked = input.lockedRouteId ?? fallback;
+  const tempGuide = input.temporaryGuidanceRouteId?.trim() || null;
   if (input.viewMode === "drive") {
-    return { guidanceRouteId: locked, lineFocusId: locked };
+    const guide = tempGuide && tempGuide !== locked ? tempGuide : locked;
+    return { guidanceRouteId: guide, lineFocusId: guide };
   }
   return { guidanceRouteId: locked, lineFocusId: previewId || locked };
 }

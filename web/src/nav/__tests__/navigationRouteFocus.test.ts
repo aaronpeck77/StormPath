@@ -33,6 +33,34 @@ describe("navigationRouteFocus", () => {
     expect(lineFocusId).toBe("r-b");
   });
 
+  it("uses temporary guidance in drive view without changing map preview lock", () => {
+    const { guidanceRouteId, lineFocusId } = resolveNavigationRouteIds({
+      navigationStarted: true,
+      lockedRouteId: "r-b",
+      temporaryGuidanceRouteId: "r-c",
+      viewMode: "drive",
+      previewLegIndex: 1,
+      orderedRouteIds: ordered,
+      primaryRouteId: "r-a",
+    });
+    expect(guidanceRouteId).toBe("r-c");
+    expect(lineFocusId).toBe("r-c");
+  });
+
+  it("ignores temporary guidance in route compare view", () => {
+    const { guidanceRouteId, lineFocusId } = resolveNavigationRouteIds({
+      navigationStarted: true,
+      lockedRouteId: "r-b",
+      temporaryGuidanceRouteId: "r-c",
+      viewMode: "route",
+      previewLegIndex: 2,
+      orderedRouteIds: ordered,
+      primaryRouteId: "r-a",
+    });
+    expect(guidanceRouteId).toBe("r-b");
+    expect(lineFocusId).toBe("r-c");
+  });
+
   it("falls back to slot order when no lock is set", () => {
     expect(navigationPrimaryRouteIdForMerge(null, ordered)).toBe("r-b");
     expect(navigationPrimaryRouteIdForMerge("r-a", ordered)).toBe("r-a");
