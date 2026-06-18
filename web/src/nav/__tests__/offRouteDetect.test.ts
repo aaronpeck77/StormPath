@@ -59,10 +59,15 @@ describe("shouldTriggerOffRouteReroute", () => {
     ).toBe(true);
   });
 
-  it("requires a wider offset when stopped (GPS drift)", () => {
+  it("ignores lateral offset while stopped (GPS drift at home)", () => {
     expect(shouldTriggerOffRouteReroute(20, { speedMps: 0 })).toBe(false);
-    expect(shouldTriggerOffRouteReroute(39, { speedMps: 0 })).toBe(true);
+    expect(shouldTriggerOffRouteReroute(50, { speedMps: 0 })).toBe(false);
     expect(shouldTriggerOffRouteReroute(20, { speedMps: 5 })).toBe(true);
+  });
+
+  it("does not trigger when crawling below movement threshold", () => {
+    expect(shouldTriggerOffRouteReroute(25, { speedMps: 2 })).toBe(false);
+    expect(shouldTriggerOffRouteReroute(25, { speedMps: 3 })).toBe(true);
   });
 });
 

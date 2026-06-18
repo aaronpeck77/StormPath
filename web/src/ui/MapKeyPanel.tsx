@@ -51,7 +51,7 @@ function Swatch({ color, kind, dashed }: { color: string; kind: SwatchKind; dash
     return (
       <span
         className="map-key__swatch map-key__swatch--polygon"
-        style={{ background: `${color}33`, borderColor: color }}
+        style={{ background: "transparent", borderColor: color }}
         aria-hidden="true"
       />
     );
@@ -182,7 +182,7 @@ const TRAFFIC_GROUP: LegendGroup = {
 const WEATHER_POLY_GROUP: LegendGroup = {
   title: "Weather polygons (NWS map shapes)",
   intro:
-    "Storm shapes from the National Weather Service. Fill is the same hue as the outline at low opacity — color tells you what kind of alert.",
+    "Storm shapes from the National Weather Service — outline only so radar and the basemap stay readable. Color tells you what kind of alert.",
   rows: [
     {
       label: "Severe storm / tornado",

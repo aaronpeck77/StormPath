@@ -3504,7 +3504,7 @@ export default function App() {
    * Route broken into distance/time chunks (start at bottom of panel, destination toward top).
    * Long legs: sliding window follows `userAlongM` so older segments scroll away as you drive.
    */
-  const progressPanelAlongM = navigationStarted ? heavyAdvisoryAlongM : userAlongGuidanceM;
+  const progressPanelAlongM = navigationStarted ? advisoryUserAlongM : userAlongGuidanceM;
   const skipHeavyProgressPanel =
     isUltraLongTripRoute(guidanceRouteLengthM) && !navigationStarted;
   const ultraLongActiveNav =
@@ -3898,7 +3898,7 @@ export default function App() {
     (progressCalloutPanel.outlookTimeline.length > 0 ? 1 : 0) +
     progressCalloutPanel.segments.length;
 
-  /** Open panel with “Start route” at the bottom of the scroll area (list reads ahead toward the top). */
+  /** Open panel with nearest-ahead events at the top of the scroll list. */
   useLayoutEffect(() => {
     const wasOpen = progressCalloutWasOpenRef.current;
     progressCalloutWasOpenRef.current = progressCalloutsOpen;
@@ -3906,7 +3906,7 @@ export default function App() {
       const el = progressCalloutDetailScrollRef.current;
       if (el) {
         requestAnimationFrame(() => {
-          el.scrollTop = el.scrollHeight;
+          el.scrollTop = 0;
         });
       }
     }
@@ -5892,7 +5892,7 @@ export default function App() {
                       stormStripBands={isPlus ? advisoryStormStripBands : null}
                       routeAheadTimeline={isPlus ? routeAheadTimeline : null}
                       routeTotalMeters={guidanceRouteLengthM}
-                      userAlongMeters={navigationStarted ? heavyAdvisoryAlongM : advisoryUserAlongM}
+                      userAlongMeters={advisoryUserAlongM}
                       planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
                       driveEtaMinutes={driveEtaMinutes ?? null}
                       barExpanded={stormBarExpanded}

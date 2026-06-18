@@ -82,6 +82,8 @@ type ItemVisual = {
   wPct: number;
   passed: boolean;
   inside: boolean;
+  locationLine: string;
+  timingDetail: string | null;
   timing: string;
 };
 
@@ -108,9 +110,17 @@ function useTimelineItemVisuals(
         driveEtaMinutes,
         expiresIso: item.expiresIso,
         crossesRoute: item.crossesRoute,
-      }).timingLine;
+      });
 
-      return { sPct, wPct, passed, inside, timing };
+      return {
+        sPct,
+        wPct,
+        passed,
+        inside,
+        locationLine: timing.locationLine,
+        timingDetail: timing.timingDetail,
+        timing: timing.timingLine,
+      };
     });
   }, [items, totalMeters, userAlongMeters, planEtaMinutes, driveEtaMinutes]);
 }
@@ -161,12 +171,19 @@ function RouteHazardLegend({
                 <span className="rhtz__legend-track">{TRACK_META[item.track]?.label ?? item.track}</span>
               ) : null}
               <span className="rhtz__legend-label">{item.label}</span>
+              {vis.locationLine && vis.locationLine !== "On your planned route" ? (
+                <span
+                  className={`rhtz__legend-ahead${vis.inside ? " rhtz__legend-ahead--now" : ""}`}
+                >
+                  {vis.locationLine}
+                </span>
+              ) : null}
               {(() => {
                 const detail = legendDetailText(item);
                 return detail ? <span className="rhtz__legend-detail">{detail}</span> : null;
               })()}
-              {vis.timing && vis.timing !== "On your planned route" ? (
-                <span className="rhtz__legend-timing">{vis.timing}</span>
+              {vis.timingDetail ? (
+                <span className="rhtz__legend-timing">{vis.timingDetail}</span>
               ) : null}
             </span>
           </div>

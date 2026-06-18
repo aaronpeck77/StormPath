@@ -5,7 +5,6 @@ import type { RouteOutlookStep } from "../nav/routeForecastTimeline";
 import {
   buildRouteAheadGlanceCards,
   timelineItemBandColor,
-  timelineTrackFamily,
   type RouteAheadGlanceCard,
   type RouteAheadRelevance,
 } from "../nav/routeAheadSync";
@@ -47,8 +46,75 @@ const RELEVANCE_LABEL: Record<RouteAheadRelevance, string> = {
   clear: "Clearing",
 };
 
-const MIN_BAND_PCT = 1.8;
+const MIN_BAND_PCT = 1.4;
 const MAX_GLANCE_CARDS = 6;
+
+type HazardBandVisual = {
+  id: string;
+  track: TimelineItem["track"];
+  label: string;
+  left: number;
+  width: number;
+  color: string;
+  severity: TimelineItem["severity"];
+  nearby: boolean;
+};
+
+const HAZARD_RAIL_META: Record<
+  TimelineItem["track"],
+  { label: string; sublabelClass: string; railClass: string; bandClass: string }
+> = {
+  nws: {
+    label: "NWS",
+    sublabelClass: "rpgl__hazard-sublabel--nws",
+    railClass: "rpgl__hazard-rail--nws",
+    bandClass: "rpgl__band--nws",
+  },
+  radar: {
+    label: "Radar",
+    sublabelClass: "rpgl__hazard-sublabel--radar",
+    railClass: "rpgl__hazard-rail--radar",
+    bandClass: "rpgl__band--radar",
+  },
+  forecast: {
+    label: "Forecast",
+    sublabelClass: "rpgl__hazard-sublabel--forecast",
+    railClass: "rpgl__hazard-rail--forecast",
+    bandClass: "rpgl__band--forecast",
+  },
+  road: {
+    label: "Road",
+    sublabelClass: "rpgl__hazard-sublabel--road",
+    railClass: "rpgl__hazard-rail--road",
+    bandClass: "rpgl__band--road",
+  },
+};
+
+const HAZARD_RAIL_ORDER: TimelineItem["track"][] = ["nws", "radar", "forecast", "road"];
+
+function HazardRailRow({ track, bands }: { track: TimelineItem["track"]; bands: HazardBandVisual[] }) {
+  if (!bands.length) return null;
+  const meta = HAZARD_RAIL_META[track];
+  return (
+    <div className="rpgl__hazard-row">
+      <span className={`rpgl__hazard-sublabel ${meta.sublabelClass}`}>{meta.label}</span>
+      <div className={`rpgl__hazard-rail ${meta.railClass}`}>
+        {bands.map((band) => (
+          <span
+            key={band.id}
+            className={`rpgl__band ${meta.bandClass} rpgl__band--${band.severity}${band.nearby ? " rpgl__band--nearby" : ""}`}
+            style={{
+              left: `${band.left}%`,
+              width: `${band.width}%`,
+              backgroundColor: band.color,
+            }}
+            title={band.label}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function GlanceCard({
   card,
@@ -71,9 +137,14 @@ function GlanceCard({
           <span className={`rpgl__track rpgl__track--${card.track}`}>{TRACK_BADGE[card.track]}</span>
           <span className={`rpgl__label rpgl__label--${card.severity}`}>{card.label}</span>
         </div>
+        <p
+          className={`rpgl__ahead${card.inside ? " rpgl__ahead--now" : ""}`}
+          aria-label={`Distance along route: ${card.aheadLabel}`}
+        >
+          {card.aheadLabel}
+        </p>
         {card.detailLine ? <p className="rpgl__detail">{card.detailLine}</p> : null}
         <div className="rpgl__chips" aria-hidden>
-          <span className="rpgl__chip rpgl__chip--dist">{card.aheadLabel}</span>
           {card.etaLabel ? <span className="rpgl__chip rpgl__chip--eta">{card.etaLabel}</span> : null}
           {card.relevance ? (
             <span className={`rpgl__chip rpgl__chip--rel rpgl__chip--rel-${card.relevance}`}>
@@ -150,28 +221,38 @@ export function RouteProgressGlancePanel({
     [timeline, totalMeters, userAlongMeters, planEtaMinutes, driveEtaMinutes]
   );
 
-  const bandVisuals = useMemo(() => {
+  const bandVisuals = useMemo((): HazardBandVisual[] => {
     if (totalMeters <= 0) return [];
     return timeline
       .filter((item) => !item.stripMuted && item.endMeters > userAlongMeters)
       .map((item) => {
         const startF = item.startMeters / totalMeters;
         const endF = item.endMeters / totalMeters;
-        const family = timelineTrackFamily(item.track);
         return {
           id: item.id,
+          track: item.track,
+          label: item.label,
           left: routePlotLeftPct(startF),
           width: Math.max(MIN_BAND_PCT, routePlotWidthPct(startF, endF)),
           color: timelineItemBandColor(item),
           severity: item.severity,
-          family,
           nearby: item.crossesRoute === false,
         };
       });
   }, [timeline, totalMeters, userAlongMeters]);
 
-  const weatherBands = useMemo(() => bandVisuals.filter((b) => b.family === "weather"), [bandVisuals]);
-  const roadBands = useMemo(() => bandVisuals.filter((b) => b.family === "road"), [bandVisuals]);
+  const bandsByTrack = useMemo(() => {
+    const map: Record<TimelineItem["track"], HazardBandVisual[]> = {
+      nws: [],
+      radar: [],
+      forecast: [],
+      road: [],
+    };
+    for (const band of bandVisuals) {
+      map[band.track].push(band);
+    }
+    return map;
+  }, [bandVisuals]);
 
   const tickSteps = useMemo(
     () => [...outlookSteps].sort((a, b) => a.fraction - b.fraction),
@@ -245,42 +326,9 @@ export function RouteProgressGlancePanel({
                       <div className="rpgl__hazard-label" style={plotLabelInsetStyle}>
                         Hazards
                       </div>
-                      {weatherBands.length > 0 ? (
-                        <div className="rpgl__hazard-row">
-                          <span className="rpgl__hazard-sublabel rpgl__hazard-sublabel--weather">Weather</span>
-                          <div className="rpgl__hazard-rail">
-                            {weatherBands.map((band) => (
-                              <span
-                                key={band.id}
-                                className={`rpgl__band rpgl__band--weather rpgl__band--${band.severity}${band.nearby ? " rpgl__band--nearby" : ""}`}
-                                style={{
-                                  left: `${band.left}%`,
-                                  width: `${band.width}%`,
-                                  backgroundColor: band.color,
-                                }}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                      {roadBands.length > 0 ? (
-                        <div className="rpgl__hazard-row">
-                          <span className="rpgl__hazard-sublabel rpgl__hazard-sublabel--road">Road</span>
-                          <div className="rpgl__hazard-rail">
-                            {roadBands.map((band) => (
-                              <span
-                                key={band.id}
-                                className={`rpgl__band rpgl__band--road rpgl__band--${band.severity}${band.nearby ? " rpgl__band--nearby" : ""}`}
-                                style={{
-                                  left: `${band.left}%`,
-                                  width: `${band.width}%`,
-                                  backgroundColor: band.color,
-                                }}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
+                      {HAZARD_RAIL_ORDER.map((track) => (
+                        <HazardRailRow key={track} track={track} bands={bandsByTrack[track]} />
+                      ))}
                     </div>
 
                     <div

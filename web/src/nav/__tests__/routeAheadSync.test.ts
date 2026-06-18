@@ -28,7 +28,7 @@ describe("buildRouteAheadGlanceCards", () => {
     });
     expect(cards).toHaveLength(2);
     expect(cards[0]!.id).toBe("near");
-    expect(cards[0]!.aheadLabel).toMatch(/mi/);
+    expect(cards[0]!.aheadLabel).toMatch(/ahead|Now|nearby/i);
     expect(cards[0]!.etaLabel).toMatch(/^~/);
   });
 

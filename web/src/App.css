@@ -349,6 +349,19 @@
   color: #f8fafc;
 }
 
+.rhtz__legend-ahead {
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+  color: #7dd3fc;
+  margin-top: 2px;
+}
+
+.rhtz__legend-ahead--now {
+  color: #fde68a;
+}
+
 .rhtz__legend-detail {
   font-size: 0.8rem;
   font-weight: 500;
@@ -4425,7 +4438,7 @@
 .rpgl__hazard-block {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   box-sizing: border-box;
   width: 100%;
 }
@@ -4458,7 +4471,15 @@
   white-space: nowrap;
 }
 
-.rpgl__hazard-sublabel--weather {
+.rpgl__hazard-sublabel--nws {
+  color: #fca5a5;
+}
+
+.rpgl__hazard-sublabel--radar {
+  color: #7dd3fc;
+}
+
+.rpgl__hazard-sublabel--forecast {
   color: #c4b5fd;
 }
 
@@ -4466,23 +4487,47 @@
   color: #fdba74;
 }
 
+/** @deprecated Combined weather row — use track-specific rows. */
+.rpgl__hazard-sublabel--weather {
+  color: #c4b5fd;
+}
+
 .rpgl__hazard-rail {
   position: relative;
   width: 100%;
-  height: 14px;
-  border-radius: 7px;
+  height: 12px;
+  border-radius: 6px;
   overflow: hidden;
+}
+
+.rpgl__hazard-rail--nws,
+.rpgl__hazard-row:has(.rpgl__hazard-sublabel--nws) .rpgl__hazard-rail {
+  background: rgba(239, 68, 68, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.22);
+}
+
+.rpgl__hazard-rail--radar,
+.rpgl__hazard-row:has(.rpgl__hazard-sublabel--radar) .rpgl__hazard-rail {
+  background: rgba(14, 165, 233, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.24);
+}
+
+.rpgl__hazard-rail--forecast,
+.rpgl__hazard-row:has(.rpgl__hazard-sublabel--forecast) .rpgl__hazard-rail {
+  background: rgba(124, 58, 237, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.22);
+}
+
+.rpgl__hazard-rail--road,
+.rpgl__hazard-row:has(.rpgl__hazard-sublabel--road) .rpgl__hazard-rail {
+  background: rgba(234, 88, 12, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(234, 88, 12, 0.24);
 }
 
 .rpgl__hazard-rail--weather,
 .rpgl__hazard-row:has(.rpgl__hazard-sublabel--weather) .rpgl__hazard-rail {
   background: rgba(124, 58, 237, 0.14);
   box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.22);
-}
-
-.rpgl__hazard-row:has(.rpgl__hazard-sublabel--road) .rpgl__hazard-rail {
-  background: rgba(234, 88, 12, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(234, 88, 12, 0.24);
 }
 
 .rpgl__sync-x-ticks {
@@ -4562,6 +4607,24 @@
   border-radius: 4px;
   opacity: 1;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.rpgl__band--nws {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 0 6px rgba(239, 68, 68, 0.28);
+}
+
+.rpgl__band--radar {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 0 6px rgba(14, 165, 233, 0.32);
+}
+
+.rpgl__band--forecast {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 0 6px rgba(124, 58, 237, 0.28);
 }
 
 .rpgl__band--weather {
@@ -4698,6 +4761,19 @@
   min-width: 0;
 }
 
+.rpgl__ahead {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+  color: #7dd3fc;
+}
+
+.rpgl__ahead--now {
+  color: #fde68a;
+}
+
 .rpgl__detail {
   margin: 0;
   font-size: 0.66rem;
@@ -4784,8 +4860,10 @@
 }
 
 .rpgl__chip--dist {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.16);
+  color: #e0f2fe;
+  font-weight: 800;
+  background: rgba(56, 189, 248, 0.28);
+  border: 1px solid rgba(125, 211, 252, 0.35);
 }
 
 .rpgl__chip--eta {

@@ -5,10 +5,8 @@ import {
 } from "./routeGeometry";
 import type { LngLat } from "./types";
 
-/** Lateral leave before off-route UI (~65 ft moving; wider when stopped — GPS drift). */
+/** Lateral leave before off-route UI (~65 ft) once the driver is actually moving. */
 export const OFF_ROUTE_REROUTE_ENTER_M = 18;
-/** When stopped or crawling, GPS fix can sit 30–40 m off the polyline without leaving the road. */
-export const OFF_ROUTE_REROUTE_ENTER_STATIONARY_M = 38;
 /** Hysteresis so brief GPS noise does not flip-flop reroutes. */
 export const OFF_ROUTE_REROUTE_EXIT_M = 10;
 /** Minimum spacing between silent auto-reroute attempts. */
@@ -23,18 +21,12 @@ const WINDOW_AHEAD_M = 3_500;
 const OFF_ROUTE_HEADING_DELTA_DEG = 38;
 /** Minimum lateral offset (m) before heading mismatch can trigger reroute. */
 const OFF_ROUTE_HEADING_MIN_LATERAL_M = 2;
-/** Minimum speed (m/s) before heading mismatch is considered (~7 mph). */
+/** Minimum speed (m/s) before off-route can latch (~7 mph). Ignores GPS drift while parked. */
 export const OFF_ROUTE_HEADING_MIN_SPEED_MPS = 3;
 
-/** After Go, ignore off-route until the driver moves or grace expires (GPS vs snap mismatch). */
+/** After Go, extra guard while still near the start and not yet driving. */
 export const OFF_ROUTE_NAV_START_GRACE_MS = 50_000;
 export const OFF_ROUTE_NAV_START_GRACE_ALONG_M = 120;
-
-function effectiveEnterThresholdM(speedMps: number): number {
-  return speedMps >= OFF_ROUTE_HEADING_MIN_SPEED_MPS
-    ? OFF_ROUTE_REROUTE_ENTER_M
-    : OFF_ROUTE_REROUTE_ENTER_STATIONARY_M;
-}
 
 export type OffRouteSample = {
   lateralM: number;
@@ -100,8 +92,8 @@ function headingDeltaDegrees(a: number, b: number): number {
 }
 
 /**
- * Plus auto-reroute: leave the corridor quickly, or stay on a different line (heading mismatch)
- * even when GPS lateral error is tiny.
+ * Off-route requires driving — lateral distance alone never latches while stopped (home GPS drift).
+ * When moving: leave the corridor, or drive on a different bearing than the route ahead.
  */
 export function shouldTriggerOffRouteReroute(
   sample: OffRouteSample | number,
@@ -109,13 +101,13 @@ export function shouldTriggerOffRouteReroute(
 ): boolean {
   const lateralM = typeof sample === "number" ? sample : sample.lateralM;
   const speed = ctx?.speedMps ?? 0;
-  const enterM = effectiveEnterThresholdM(speed);
-  if (lateralM > enterM) return true;
+  if (speed < OFF_ROUTE_HEADING_MIN_SPEED_MPS) return false;
+
+  if (lateralM > OFF_ROUTE_REROUTE_ENTER_M) return true;
 
   const heading = ctx?.headingDeg;
   const routeBearing = ctx?.routeBearingDeg;
   if (
-    speed >= OFF_ROUTE_HEADING_MIN_SPEED_MPS &&
     heading != null &&
     routeBearing != null &&
     Number.isFinite(heading) &&

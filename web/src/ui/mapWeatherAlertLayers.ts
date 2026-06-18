@@ -13,10 +13,11 @@ const SRC = "weather-alerts-nws";
 const FILL = "weather-alerts-nws-fill";
 const LINE = "weather-alerts-nws-outline";
 
-/** Light enough to read the basemap + radar; still visible at a glance. */
-const NWS_FILL_OPACITY = 0.26;
-const NWS_LINE_WIDTH = 1.45;
-const NWS_LINE_OPACITY = 0.62;
+/** Invisible — polygon area for tap/hover hit-testing only. */
+const NWS_HIT_FILL_OPACITY = 0;
+/** Visible NWS alert boundaries (no interior shading). */
+const NWS_LINE_WIDTH = 2.35;
+const NWS_LINE_OPACITY = 0.88;
 
 const MOTION_SRC = "weather-alerts-motion";
 const MOTION_LAYER = "weather-alerts-motion-arrows";
@@ -73,11 +74,21 @@ function nwsAlertMapColorExpr(): unknown {
 
 function syncNwsPolygonPaint(map: MapboxMap): void {
   if (map.getLayer(FILL)) {
-    map.setPaintProperty(FILL, "fill-opacity", NWS_FILL_OPACITY);
+    map.setPaintProperty(FILL, "fill-opacity", NWS_HIT_FILL_OPACITY);
+    try {
+      map.setPaintProperty(FILL, "fill-opacity-transition", { duration: 0, delay: 0 });
+    } catch {
+      /* style race */
+    }
   }
   if (map.getLayer(LINE)) {
     map.setPaintProperty(LINE, "line-width", NWS_LINE_WIDTH);
     map.setPaintProperty(LINE, "line-opacity", NWS_LINE_OPACITY);
+    try {
+      map.setPaintProperty(LINE, "line-opacity-transition", { duration: 0, delay: 0 });
+    } catch {
+      /* style race */
+    }
   }
 }
 
@@ -103,18 +114,26 @@ function firstVisibleRouteLineId(map: MapboxMap): string | undefined {
   return undefined;
 }
 
-/** Place warning polygons directly under route lines (above radar and traffic). */
+/**
+ * Place warning outlines above radar and under route lines (outline-only — no fill washout).
+ */
 export function positionWeatherAlertLayersAboveRadar(map: MapboxMap): void {
   if (!map.getLayer(FILL)) return;
   const beforeRoute = firstVisibleRouteLineId(map);
   if (!beforeRoute) return;
   try {
     map.moveLayer(FILL, beforeRoute);
-    if (map.getLayer(LINE)) map.moveLayer(LINE, FILL);
-    if (map.getLayer(MOTION_LAYER)) map.moveLayer(MOTION_LAYER, FILL);
+    if (map.getLayer(LINE)) map.moveLayer(LINE, beforeRoute);
+    if (map.getLayer(MOTION_LAYER)) map.moveLayer(MOTION_LAYER, beforeRoute);
+    if (map.getLayer(MOTION_LABEL_LAYER)) map.moveLayer(MOTION_LABEL_LAYER, beforeRoute);
   } catch {
     /* style race */
   }
+}
+
+/** @deprecated Prefer {@link positionWeatherAlertLayersAboveRadar}. */
+export function positionWeatherAlertLayersBelowRadar(map: MapboxMap): void {
+  positionWeatherAlertLayersAboveRadar(map);
 }
 
 // ─── Storm motion arrow geometry ─────────────────────────────────────────────
@@ -244,7 +263,7 @@ function buildMotionArrowCollection(
 const EMPTY_ALERT_FC: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 /**
- * Draw NWS warning polygons + storm motion arrows under route lines.
+ * Draw NWS warning outlines (no fill) + storm motion arrows under radar / route lines.
  * Arrows are derived from `motionDeg` / `motionMph` properties embedded in features
  * (Severe Thunderstorm and Tornado warnings only — other products have no motion data).
  */
@@ -263,10 +282,11 @@ export function applyWeatherAlertLayers(
   const effective = collection ?? EMPTY_ALERT_FC;
   const hasFeatures = effective.features.length > 0;
 
-  // ── Polygon fill + outline ───────────────────────────────────────────────
+  // ── Invisible hit area + visible outline ───────────────────────────────────
   if (!hasFeatures) {
     const src = map.getSource(SRC) as GeoJSONSource | undefined;
     if (src) src.setData(EMPTY_ALERT_FC);
+    syncNwsPolygonPaint(map);
     removeMotionArrows(map);
     return;
   }
@@ -280,8 +300,8 @@ export function applyWeatherAlertLayers(
       maxzoom: NWS_POLYGON_MAP_MAX_ZOOM,
       paint: {
         "fill-color": nwsAlertMapColorExpr() as DataDrivenPropertyValueSpecification<string>,
-        "fill-opacity": NWS_FILL_OPACITY,
-        "fill-opacity-transition": { duration: 280, delay: 0 },
+        "fill-opacity": NWS_HIT_FILL_OPACITY,
+        "fill-antialias": false,
       },
     };
     const lineLayer: LineLayer = {
@@ -293,8 +313,8 @@ export function applyWeatherAlertLayers(
         "line-color": nwsAlertMapColorExpr() as DataDrivenPropertyValueSpecification<string>,
         "line-width": NWS_LINE_WIDTH,
         "line-opacity": NWS_LINE_OPACITY,
-        "line-opacity-transition": { duration: 280, delay: 0 },
       },
+      layout: { "line-join": "round", "line-cap": "round" },
     };
     if (beforeId) {
       map.addLayer(fillLayer, beforeId);
@@ -318,6 +338,7 @@ export function applyWeatherAlertLayers(
   }
 
   syncNwsPolygonZoomRange(map);
+  syncNwsPolygonPaint(map);
   positionWeatherAlertLayersAboveRadar(map);
 }
 

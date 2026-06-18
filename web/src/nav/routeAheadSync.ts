@@ -310,10 +310,10 @@ export function buildRouteAheadGlanceCards(opts: {
     const enterLabel = fmtMin(timing.enterMin);
     const etaLabel = enterLabel ? `~${enterLabel}` : null;
 
-    let aheadLabel: string;
-    if (timing.inside) aheadLabel = "Now";
-    else if (timing.aheadMeters > 0) aheadLabel = fmtMi(timing.aheadMeters);
-    else aheadLabel = "Ahead";
+    let aheadLabel = timing.locationLine;
+    if (!timing.inside && timing.aheadMeters > 0 && !aheadLabel.includes("ahead")) {
+      aheadLabel = `${fmtMi(timing.aheadMeters)} ahead`;
+    }
 
     cards.push({
       id: item.id,

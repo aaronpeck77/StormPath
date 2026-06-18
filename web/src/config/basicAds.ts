@@ -32,7 +32,9 @@ export type BasicStatusPanelPromos = {
 
 /** Collapsed bar preview; long copy scrolls horizontally in the advisory bar when it doesn’t fit. */
 export const SITEBIBLE_AD_BAR =
-  "SiteBible — security & preparedness reference · App Store";
+  "Coming Soon: SiteBible - Full Building Automation Inventoy Database. Check the App Store";
+
+export const SITEBIBLE_AD_DETAIL = SITEBIBLE_AD_BAR;
 
 /** Until `VITE_SITEBIBLE_URL` points at the live App Store product page. */
 export const SITEBIBLE_APP_STORE_FALLBACK = "https://apps.apple.com/search?term=SiteBible";
@@ -53,11 +55,10 @@ const BUILTIN_PARTNER_ADS: Array<{
   {
     id: "sitebible",
     barText: SITEBIBLE_AD_BAR,
-    detailText:
-      "SiteBible — digital security and preparedness reference. Tap to open on the App Store.",
+    detailText: SITEBIBLE_AD_DETAIL,
     href: (env) => env.siteBibleUrl || SITEBIBLE_APP_STORE_FALLBACK,
     sponsored: true,
-    ctaLabel: "Open on App Store",
+    ctaLabel: "Check the App Store",
   },
   {
     id: "partner-sponsored",
@@ -201,11 +202,10 @@ export function buildBasicNavStatusPanelPromos(env: WebEnv): BasicStatusPanelPro
     ({
       id: "sitebible",
       text: SITEBIBLE_AD_BAR,
-      detailText:
-        "SiteBible — digital security and preparedness reference. Tap to open on the App Store.",
+      detailText: SITEBIBLE_AD_DETAIL,
       href: env.siteBibleUrl || SITEBIBLE_APP_STORE_FALLBACK,
       sponsored: true,
-      ctaLabel: "Open on App Store",
+      ctaLabel: "Check the App Store",
       prominent: true,
     } satisfies AdvisoryPromoLine);
 

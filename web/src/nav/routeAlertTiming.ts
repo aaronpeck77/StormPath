@@ -25,6 +25,11 @@ export type RouteAlertTiming = {
   aheadMeters: number;
   enterMin: number | null;
   exitMin: number | null;
+  /** Prominent along-route position — e.g. "31 mi ahead", "Now". */
+  locationLine: string;
+  /** ETA, zone length, expiry, relevance — secondary to {@link locationLine}. */
+  timingDetail: string | null;
+  /** Full single-line copy (location + detail). */
   timingLine: string;
   relevanceNote: string | null;
   passed: boolean;
@@ -108,28 +113,37 @@ export function formatRouteAlertTiming(opts: RouteAlertTimingInput): RouteAlertT
   const exitLabel = fmtMin(exitMin);
   const rel = relevanceNote(expiresIso, enterMin);
 
-  let timingLine: string;
+  let locationLine: string;
+  const detailParts: string[] = [];
+
   if (passed) {
-    timingLine = "Passed on your route";
+    locationLine = "Passed on your route";
   } else if (!crossesRoute) {
-    timingLine = `Nearby · ${aheadMi} down your route${expiresLabel ? ` · exp ${expiresLabel}` : ""}`;
+    locationLine = `${aheadMi} nearby`;
+    detailParts.push("Along your route corridor");
+    if (expiresLabel) detailParts.push(`exp ${expiresLabel}`);
   } else if (inside) {
-    timingLine = isPoint
-      ? `At this point on your route now${expiresLabel ? ` · exp ${expiresLabel}` : ""}`
-      : `In this zone now · exits in ${exitLabel ?? "—"}${expiresLabel ? ` · exp ${expiresLabel}` : ""}`;
+    locationLine = "Now";
+    if (!isPoint) detailParts.push(`Exits in ${exitLabel ?? "—"}`);
+    if (expiresLabel) detailParts.push(`exp ${expiresLabel}`);
   } else if (isPoint) {
-    timingLine = enterLabel
-      ? `${aheadMi} ahead · ~${enterLabel} drive${expiresLabel ? ` · exp ${expiresLabel}` : ""}`
-      : `${aheadMi} ahead${expiresLabel ? ` · exp ${expiresLabel}` : ""}`;
+    locationLine = `${aheadMi} ahead`;
+    if (enterLabel) detailParts.push(`~${enterLabel} drive`);
+    if (expiresLabel) detailParts.push(`exp ${expiresLabel}`);
   } else {
-    timingLine = enterLabel
-      ? `${aheadMi} ahead · enter in ~${enterLabel} · ${lengthMi} zone${expiresLabel ? ` · exp ${expiresLabel}` : ""}`
-      : `${aheadMi} ahead · ${lengthMi} zone${expiresLabel ? ` · exp ${expiresLabel}` : ""}`;
+    locationLine = `${aheadMi} ahead`;
+    if (enterLabel) detailParts.push(`enter in ~${enterLabel}`);
+    if (lengthMi) detailParts.push(`${lengthMi} zone`);
+    if (expiresLabel) detailParts.push(`exp ${expiresLabel}`);
   }
 
+  let timingDetail = detailParts.length ? detailParts.join(" · ") : null;
   if (rel && !passed) {
-    timingLine = `${timingLine} · ${rel}`;
+    timingDetail = timingDetail ? `${timingDetail} · ${rel}` : rel;
   }
+
+  const timingLine =
+    passed || !timingDetail ? locationLine : `${locationLine} · ${timingDetail}`;
 
   const promoteToTop =
     !passed &&
@@ -141,6 +155,8 @@ export function formatRouteAlertTiming(opts: RouteAlertTimingInput): RouteAlertT
     aheadMeters,
     enterMin,
     exitMin,
+    locationLine,
+    timingDetail,
     timingLine,
     relevanceNote: passed ? null : rel,
     passed,
@@ -155,6 +171,8 @@ export function promoteAtPositionAlertToTop(): RouteAlertTiming {
     aheadMeters: 0,
     enterMin: 0,
     exitMin: null,
+    locationLine: "Now",
+    timingDetail: "At your position",
     timingLine: "At your position now",
     relevanceNote: null,
     passed: false,

@@ -15,9 +15,12 @@ const RADAR_LAYER_B = "rainviewer-radar-layer-b";
 
 /**
  * Opacity for the visible radar layer. Hidden layer stays at 0 during A/B crossfade.
+ * Strong enough to read over basemap; NWS outlines sit below this layer.
  * @see RainViewer color `2` + options `0_1` (no smooth + snow) in rainViewerRadar.tileUrlFromHostAndPath
  */
-export const RAINVIEWER_RADAR_VISIBLE_OPACITY = 0.5;
+export const RAINVIEWER_RADAR_VISIBLE_OPACITY = 0.68;
+
+export const RAINVIEWER_RADAR_LAYER_A = RADAR_LAYER_A;
 
 /**
  * Crossfade duration between dual raster layers (ms). Uses layer opacity, not Mapbox tile fade,
