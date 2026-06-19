@@ -90,6 +90,7 @@ function liftTrafficThenRoutesThenHits(
 ) {
   bringMapboxTrafficLayersToFront(map);
   positionWeatherAlertLayersAboveRadar(map);
+  positionRainViewerRadarUnderRoads(map);
   bringRouteVisualLinesAboveTraffic(map, routeIds, layerPrefix);
   bringRouteHitLayersToTop(map, routeIds, layerPrefix);
 }
@@ -98,11 +99,13 @@ import {
   ensureRainViewerRadarDual,
   RAINVIEWER_RADAR_CROSSFADE_MS,
   RAINVIEWER_RADAR_VISIBLE_OPACITY,
+  positionRainViewerRadarUnderRoads,
   removeRainViewerRadar,
   setRainViewerRadarTilesOnSource,
   setRainViewerRadarLayersVisible,
   waitForRainViewerSideLoaded,
 } from "./mapRadarLayer";
+import { applyNightBasemapReadability } from "./mapNightBasemapReadability";
 
 import { safeStorage } from "../storage/safeStorage";
 import { reportAppHealthSignal } from "../monitoring/appHealthSignals";
@@ -273,44 +276,6 @@ function buildStormHoverPopupContent(feats: mapboxgl.MapboxGeoJSONFeature[]): HT
   }
 
   return root;
-}
-
-/** Dark/navigation night basemaps: stronger labels + slightly bolder road lines (skipped for `streets` preset). */
-function applyNightBasemapReadability(map: mapboxgl.Map): void {
-  const layers = map.getStyle()?.layers;
-  if (!layers) return;
-  for (const layer of layers) {
-    if (layer.type === "symbol") {
-      const layout = layer.layout as Record<string, unknown> | undefined;
-      if (layout?.["text-field"] == null) continue;
-      try {
-        map.setPaintProperty(layer.id, "text-opacity", 1);
-        const haloW = map.getPaintProperty(layer.id, "text-halo-width");
-        if (haloW == null || (typeof haloW === "number" && haloW < 0.85)) {
-          map.setPaintProperty(layer.id, "text-halo-color", "rgba(0,0,0,0.92)");
-          map.setPaintProperty(layer.id, "text-halo-width", 1.45);
-        }
-      } catch {
-        /* data-driven paint */
-      }
-      continue;
-    }
-    if (layer.type !== "line") continue;
-    const src = "source" in layer ? (layer as { source?: string }).source : undefined;
-    const sourceLayer =
-      "source-layer" in layer ? (layer as { "source-layer"?: string })["source-layer"] : undefined;
-    if (src !== "composite" || sourceLayer !== "road") continue;
-    const lid = layer.id.toLowerCase();
-    if (lid.includes("traffic") || lid.includes("route")) continue;
-    try {
-      const op = map.getPaintProperty(layer.id, "line-opacity");
-      if (typeof op === "number" && op > 0 && op < 1) {
-        map.setPaintProperty(layer.id, "line-opacity", Math.min(1, op * 1.12 + 0.06));
-      }
-    } catch {
-      /* data-driven paint */
-    }
-  }
 }
 
 /** Extra top padding when full storm advisory bar is expanded under the guidance bar. */
@@ -1470,7 +1435,22 @@ function DriveMapInner({
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
     if (mapPhase !== "night" || nightBasemapPreset === "streets") return;
-    requestAnimationFrame(() => applyNightBasemapReadability(map));
+    const apply = () => {
+      try {
+        applyNightBasemapReadability(map);
+      } catch {
+        /* style race */
+      }
+    };
+    requestAnimationFrame(apply);
+    const t = window.setTimeout(apply, 120);
+    const t2 = window.setTimeout(apply, 450);
+    const t3 = window.setTimeout(apply, 1200);
+    return () => {
+      window.clearTimeout(t);
+      window.clearTimeout(t2);
+      window.clearTimeout(t3);
+    };
   }, [mapPhase, mapReady, nightBasemapPreset]);
 
   useEffect(() => {
@@ -3044,6 +3024,7 @@ function DriveMapInner({
       radarLoopGeneration += 1;
       const myGen = radarLoopGeneration;
       ensureRainViewerRadarDual(map, url0);
+      positionRainViewerRadarUnderRoads(map);
       positionWeatherAlertLayersAboveRadar(map);
       bringMapboxTrafficLayersToFront(map);
       liftRouteHits();

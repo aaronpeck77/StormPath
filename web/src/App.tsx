@@ -128,6 +128,8 @@ import {
   buildSyncedRouteOutlook,
   ensureRouteOutlookForGraph,
   mergeRouteOutlookSteps,
+  mergeRouteOutlookSamples,
+  resolveRouteOutlookAnchorTempF,
   resyncRouteOutlookSteps,
   tomorrowForecastToWxSamples,
   type StormRouteOutlookBand,
@@ -3580,6 +3582,19 @@ export default function App() {
           })
         : [];
 
+    const tioSamples =
+      tioRouteForecast && planEta && planEta > 0
+        ? tomorrowForecastToWxSamples(tioRouteForecast, planEta)
+        : [];
+    const outlookGraphSamples = mergeRouteOutlookSamples(wxSamples ?? [], tioSamples);
+    const routeOutlookAnchorTempF = resolveRouteOutlookAnchorTempF({
+      nowcastTempF: currentNowcast?.tempF,
+      minutePrecipTempF: tioMinutePrecip?.now?.tempF,
+      hourlyTempF: localHourlyForecast?.hours[0]?.tempF ?? null,
+      headline: wxHeadline,
+      tioRouteForecast,
+    });
+
     if (ultraLongActiveNav) {
       const routeAheadSegments = buildRouteAheadCalloutSegments({
         items: routeAheadTimeline,
@@ -3602,21 +3617,30 @@ export default function App() {
           : [];
 
       const syncedOutlook =
-        wxSamples?.length
+        outlookGraphSamples.length
           ? buildSyncedRouteOutlook({
               forecastHeadline: wxHeadline,
-              samples: wxSamples,
+              samples: outlookGraphSamples,
               totalMeters: totalM,
               userAlongMeters: progressPanelAlongM,
               planEtaMinutes: planEta,
               driveEtaMinutes: driveEtaMinutes ?? null,
             })
-          : [];
+          : wxHeadline
+            ? buildSyncedRouteOutlook({
+                forecastHeadline: wxHeadline,
+                samples: wxSamples,
+                totalMeters: totalM,
+                userAlongMeters: progressPanelAlongM,
+                planEtaMinutes: planEta,
+                driveEtaMinutes: driveEtaMinutes ?? null,
+              })
+            : [];
 
       let outlookTimeline = resyncRouteOutlookSteps(
         mergeRouteOutlookSteps(syncedOutlook, tioOutlook, stormOutlook),
         {
-          samples: wxSamples,
+          samples: outlookGraphSamples,
           totalMeters: totalM,
           userAlongMeters: progressPanelAlongM,
           planEtaMinutes: planEta,
@@ -3628,27 +3652,22 @@ export default function App() {
         outlookTimeline = buildMilestoneRouteOutlook(totalM, planEta, wxHeadline);
       }
 
-      const tioSamples =
-        tioRouteForecast && planEta && planEta > 0
-          ? tomorrowForecastToWxSamples(tioRouteForecast, planEta)
-          : [];
-      const baseOutlookSamples =
-        wxSamples?.length ? wxSamples : tioSamples.length ? tioSamples : [];
       const ensuredOutlook = ensureRouteOutlookForGraph({
         steps: outlookTimeline,
-        samples: baseOutlookSamples,
+        samples: outlookGraphSamples,
         headline: wxHeadline,
         totalMeters: totalM,
         stormBands: stormOutlookBands,
         radarSamples: radarMosaicAlongRoute.samples,
+        anchorTempF: routeOutlookAnchorTempF,
+        tioRouteForecast,
+        planEtaMinutes: planEta,
       });
 
       return {
         routeWide: [],
         outlookTimeline: ensuredOutlook.steps,
-        outlookSamples: ensuredOutlook.samples.length
-          ? ensuredOutlook.samples
-          : baseOutlookSamples,
+        outlookSamples: ensuredOutlook.samples,
         segments: routeAheadSegments.sort((a, b) => b.alongT - a.alongT),
         userAlongT,
         stripTint,
@@ -3681,7 +3700,7 @@ export default function App() {
 
     const syncedOutlook = buildSyncedRouteOutlook({
       forecastHeadline: wxHeadline,
-      samples: wxSamples,
+      samples: outlookGraphSamples.length ? outlookGraphSamples : wxSamples,
       totalMeters: totalM,
       userAlongMeters: progressPanelAlongM,
       planEtaMinutes: planEta,
@@ -3718,7 +3737,7 @@ export default function App() {
         radarMosaicAlongRoute.samples
       ),
       {
-        samples: wxSamples,
+        samples: outlookGraphSamples,
         totalMeters: totalM,
         userAlongMeters: progressPanelAlongM,
         planEtaMinutes: planEta,
@@ -3729,28 +3748,23 @@ export default function App() {
       outlookTimeline = buildMilestoneRouteOutlook(totalM, planEta, wxHeadline);
     }
 
-    const tioSamples =
-      tioRouteForecast && planEta && planEta > 0
-        ? tomorrowForecastToWxSamples(tioRouteForecast, planEta)
-        : [];
-    const baseOutlookSamples =
-      wxSamples?.length ? wxSamples : tioSamples.length ? tioSamples : [];
     const ensuredOutlook = ensureRouteOutlookForGraph({
       steps: outlookTimeline,
-      samples: baseOutlookSamples,
+      samples: outlookGraphSamples,
       headline: wxHeadline,
       totalMeters: totalM,
       stormBands: stormOutlookBands,
       radarSamples: radarMosaicAlongRoute.samples,
+      anchorTempF: routeOutlookAnchorTempF,
+      tioRouteForecast,
+      planEtaMinutes: planEta,
     });
 
     if (bundle.routeWide.length > 0 || ensuredOutlook.steps.length > 0 || mergedSegments.length > 0) {
       return {
         routeWide: bundle.routeWide,
         outlookTimeline: ensuredOutlook.steps,
-        outlookSamples: ensuredOutlook.samples.length
-          ? ensuredOutlook.samples
-          : baseOutlookSamples,
+        outlookSamples: ensuredOutlook.samples,
         segments: mergedSegments,
         userAlongT,
         stripTint,
@@ -3816,6 +3830,9 @@ export default function App() {
     skipHeavyProgressPanel,
     ultraLongActiveNav,
     stormOutlookBands,
+    currentNowcast?.tempF,
+    tioMinutePrecip?.now?.tempF,
+    localHourlyForecast?.hours[0]?.tempF,
   ]);
 
   const deferredProgressCalloutPanel = useDeferredValue(progressCalloutPanel);

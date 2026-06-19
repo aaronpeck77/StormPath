@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   applyRadarOutlookBoost,
+  buildOutlookFromStormAlongRoute,
   buildRouteOutlookFromTomorrowForecast,
   buildRouteOutlookTimeline,
   buildRouteOutlookSeries,
   buildSyncedRouteOutlook,
   ensureRouteOutlookForGraph,
   inferPrecipPctFromConditions,
+  mergeRouteOutlookSamples,
   mergeRouteOutlookSteps,
   precipBarHeight,
   radarIntensityToPrecipPct,
+  resolveRouteOutlookAnchorTempF,
   routeOutlookAriaLabel,
   tomorrowForecastToWxSamples,
 } from "../routeForecastTimeline";
@@ -236,6 +239,40 @@ describe("ensureRouteOutlookForGraph", () => {
     expect(Math.max(...series.map((p) => p.precipPct))).toBeGreaterThan(40);
   });
 
+  it("adds a temperature line when storm bands supply rain only", () => {
+    const ensured = ensureRouteOutlookForGraph({
+      steps: [],
+      samples: [],
+      headline: "",
+      totalMeters: 40_000,
+      stormBands: [
+        { startMeters: 8_000, endMeters: 18_000, headline: "Severe Thunderstorm Warning" },
+        { startMeters: 22_000, endMeters: 30_000, headline: "Heavy rain on route" },
+      ],
+      anchorTempF: 72,
+    });
+    const series = buildRouteOutlookSeries(ensured.steps, ensured.samples);
+    expect(series.some((p) => p.tempF != null)).toBe(true);
+  });
+
+  it("backfills temp on storm-only steps from corridor samples", () => {
+    const ensured = ensureRouteOutlookForGraph({
+      steps: buildOutlookFromStormAlongRoute({
+        totalMeters: 50_000,
+        stormBands: [{ startMeters: 10_000, endMeters: 20_000, headline: "Heavy rain on route" }],
+      }),
+      samples: [
+        { t: 0, precipHint: 0.2, headline: "68°F light rain 40% precip" },
+        { t: 0.5, precipHint: 0.5, headline: "62°F rain 55% precip" },
+        { t: 1, precipHint: 0.1, headline: "58°F clouds 10% precip" },
+      ],
+      headline: "",
+      totalMeters: 50_000,
+    });
+    const series = buildRouteOutlookSeries(ensured.steps, ensured.samples);
+    expect(series.filter((p) => p.tempF != null).length).toBeGreaterThan(1);
+  });
+
   it("fills the graph when only text mentions rain and temp", () => {
     const ensured = ensureRouteOutlookForGraph({
       steps: [],
@@ -246,5 +283,125 @@ describe("ensureRouteOutlookForGraph", () => {
     const series = buildRouteOutlookSeries(ensured.steps, ensured.samples);
     expect(series.length).toBeGreaterThanOrEqual(2);
     expect(series.some((p) => p.precipPct > 0)).toBe(true);
+  });
+
+  it("uses Tomorrow.io temps when OpenWeather hints lack °F", () => {
+    const forecast: RouteForecast = {
+      fetchedAt: Date.now(),
+      intervals: [
+        {
+          etaMinutes: 0,
+          lat: 42,
+          lng: -89,
+          tempF: 70,
+          precipIntensityMmh: 0,
+          precipProbability: 0.2,
+          windSpeedMph: 10,
+          windGustMph: 14,
+          weatherCode: 1001,
+          wetRoadMm: 0,
+        },
+        {
+          etaMinutes: 60,
+          lat: 42.1,
+          lng: -88.5,
+          tempF: 64,
+          precipIntensityMmh: 2,
+          precipProbability: 0.55,
+          windSpeedMph: 12,
+          windGustMph: 18,
+          weatherCode: 4000,
+          wetRoadMm: 0.1,
+        },
+        {
+          etaMinutes: 120,
+          lat: 42.2,
+          lng: -88,
+          tempF: 58,
+          precipIntensityMmh: 1,
+          precipProbability: 0.1,
+          windSpeedMph: 8,
+          windGustMph: 12,
+          weatherCode: 1100,
+          wetRoadMm: 0,
+        },
+      ],
+    };
+    const ensured = ensureRouteOutlookForGraph({
+      steps: buildOutlookFromStormAlongRoute({
+        totalMeters: 50_000,
+        stormBands: [{ startMeters: 10_000, endMeters: 20_000, headline: "Heavy rain on route" }],
+      }),
+      samples: [
+        { t: 0, precipHint: 0.4, headline: "heavy rain" },
+        { t: 0.5, precipHint: 0.6, headline: "thunderstorms" },
+        { t: 1, precipHint: 0.2, headline: "light rain" },
+      ],
+      headline: "",
+      tioRouteForecast: forecast,
+      planEtaMinutes: 120,
+    });
+    const series = buildRouteOutlookSeries(ensured.steps, ensured.samples);
+    expect(series.filter((p) => p.tempF != null).length).toBeGreaterThan(1);
+    expect(Math.max(...series.map((p) => p.tempF ?? 0))).toBeGreaterThan(60);
+  });
+});
+
+describe("mergeRouteOutlookSamples", () => {
+  it("prefers samples that include temperature", () => {
+    const merged = mergeRouteOutlookSamples(
+      [{ t: 0.5, precipHint: 0.7, headline: "Heavy rain on route" }],
+      [{ t: 0.5, precipHint: 0.5, headline: "62°F rain 55% precip" }]
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.headline).toContain("62°F");
+  });
+});
+
+describe("resolveRouteOutlookAnchorTempF", () => {
+  it("falls back through nowcast, minute precip, headline, and TIO", () => {
+    expect(resolveRouteOutlookAnchorTempF({ nowcastTempF: 71 })).toBe(71);
+    expect(resolveRouteOutlookAnchorTempF({ minutePrecipTempF: 68 })).toBe(68);
+    expect(resolveRouteOutlookAnchorTempF({ hourlyTempF: 63 })).toBe(63);
+    expect(
+      resolveRouteOutlookAnchorTempF({ headline: "74°F light rain 40% precip" })
+    ).toBe(74);
+    expect(
+      resolveRouteOutlookAnchorTempF({
+        tioRouteForecast: {
+          fetchedAt: Date.now(),
+          intervals: [
+            {
+              etaMinutes: 0,
+              lat: 42,
+              lng: -89,
+              tempF: 66,
+              precipIntensityMmh: 0,
+              precipProbability: 0,
+              windSpeedMph: 8,
+              windGustMph: 10,
+              weatherCode: 1000,
+              wetRoadMm: 0,
+            },
+          ],
+        },
+      })
+    ).toBe(66);
+  });
+});
+
+describe("buildRouteOutlookSeries temp backfill", () => {
+  it("borrows °F from samples when storm stops only have rain", () => {
+    const steps = buildOutlookFromStormAlongRoute({
+      totalMeters: 50_000,
+      stormBands: [{ startMeters: 10_000, endMeters: 20_000, headline: "Heavy rain on route" }],
+    });
+    const samples = [
+      { t: 0, precipHint: 0.2, headline: "68°F light rain 40% precip" },
+      { t: 0.5, precipHint: 0.5, headline: "62°F rain 55% precip" },
+      { t: 1, precipHint: 0.1, headline: "58°F clouds 10% precip" },
+    ];
+    const series = buildRouteOutlookSeries(steps, samples);
+    expect(series.filter((p) => p.tempF != null).length).toBeGreaterThan(1);
   });
 });

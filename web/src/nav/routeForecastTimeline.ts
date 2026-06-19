@@ -155,6 +155,66 @@ function nearestSample(samples: WxSample[], fraction: number): WxSample | null {
   return best;
 }
 
+function wxSampleHasTemp(sample: WxSample): boolean {
+  return parseWxBody(sample.headline).tempF != null;
+}
+
+/** Merge corridor samples — prefer readings that include °F when OpenWeather hints lack temp. */
+export function mergeRouteOutlookSamples(...groups: WxSample[][]): WxSample[] {
+  const merged = new Map<number, WxSample>();
+  for (const group of groups) {
+    for (const sample of group) {
+      const key = Math.round(sample.t * 400);
+      const prev = merged.get(key);
+      if (!prev) {
+        merged.set(key, sample);
+        continue;
+      }
+      const prevHasTemp = wxSampleHasTemp(prev);
+      const nextHasTemp = wxSampleHasTemp(sample);
+      if (nextHasTemp && !prevHasTemp) {
+        merged.set(key, sample);
+      } else if (prevHasTemp && !nextHasTemp) {
+        merged.set(key, {
+          ...prev,
+          precipHint: Math.max(prev.precipHint, sample.precipHint),
+        });
+      } else {
+        merged.set(key, {
+          t: sample.t,
+          precipHint: Math.max(prev.precipHint, sample.precipHint),
+          headline: nextHasTemp || sample.headline.length > prev.headline.length ? sample.headline : prev.headline,
+        });
+      }
+    }
+  }
+  return [...merged.values()].sort((a, b) => a.t - b.t);
+}
+
+/** Best-effort puck/route temp when storm-only graph stops lack corridor readings. */
+export function resolveRouteOutlookAnchorTempF(opts: {
+  nowcastTempF?: number | null;
+  minutePrecipTempF?: number | null;
+  hourlyTempF?: number | null;
+  headline?: string;
+  tioRouteForecast?: RouteForecast | null;
+}): number | null {
+  if (opts.nowcastTempF != null && Number.isFinite(opts.nowcastTempF)) {
+    return Math.round(opts.nowcastTempF);
+  }
+  if (opts.minutePrecipTempF != null && Number.isFinite(opts.minutePrecipTempF)) {
+    return Math.round(opts.minutePrecipTempF);
+  }
+  if (opts.hourlyTempF != null && Number.isFinite(opts.hourlyTempF)) {
+    return Math.round(opts.hourlyTempF);
+  }
+  const fromHeadline = parseWxBody(opts.headline?.trim() ?? "").tempF;
+  if (fromHeadline != null) return fromHeadline;
+  const iv = opts.tioRouteForecast?.intervals?.[0];
+  if (iv?.tempF != null && Number.isFinite(iv.tempF)) return Math.round(iv.tempF);
+  return null;
+}
+
 function stepsFromHeadline(forecastHeadline: string): RouteOutlookStep[] {
   const parts = forecastHeadline
     .trim()
@@ -406,6 +466,110 @@ export function buildOutlookFromStormAlongRoute(opts: {
   return steps;
 }
 
+type TempStop = { fraction: number; tempF: number };
+
+function interpolateTempAtFraction(fraction: number, stops: TempStop[]): number | null {
+  if (!stops.length) return null;
+  const sorted = [...stops].sort((a, b) => a.fraction - b.fraction);
+  if (sorted.length === 1) return sorted[0]!.tempF;
+
+  const f = Math.max(0, Math.min(1, fraction));
+  if (f <= sorted[0]!.fraction) return sorted[0]!.tempF;
+  const last = sorted[sorted.length - 1]!;
+  if (f >= last.fraction) return last.tempF;
+
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const a = sorted[i]!;
+    const b = sorted[i + 1]!;
+    if (f < a.fraction || f > b.fraction) continue;
+    const span = b.fraction - a.fraction;
+    if (span <= 0.001) return a.tempF;
+    const t = (f - a.fraction) / span;
+    return Math.round(a.tempF + (b.tempF - a.tempF) * t);
+  }
+  return sorted[0]!.tempF;
+}
+
+/** Storm/radar graph stops often have rain but no temp — borrow from corridor samples or headline. */
+function enrichRouteOutlookTemperature(
+  steps: RouteOutlookStep[],
+  opts: {
+    samples?: WxSample[];
+    headline?: string;
+    anchorTempF?: number | null;
+    tioRouteForecast?: RouteForecast | null;
+    planEtaMinutes?: number | null;
+  }
+): RouteOutlookStep[] {
+  if (!steps.length) return steps;
+
+  const tempStops: TempStop[] = [];
+  const seen = new Set<string>();
+
+  const addStop = (fraction: number, tempF: number | null | undefined) => {
+    if (tempF == null || !Number.isFinite(tempF)) return;
+    const key = `${fraction.toFixed(3)}:${tempF}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    tempStops.push({ fraction, tempF: Math.round(tempF) });
+  };
+
+  for (const step of steps) addStop(step.fraction, step.tempF);
+
+  if (opts.samples?.length) {
+    for (const { fraction } of SAMPLE_FRACTIONS) {
+      const sample = nearestSample(opts.samples, fraction);
+      addStop(fraction, parseWxBody(sample?.headline ?? "").tempF);
+    }
+    for (const sample of opts.samples) {
+      addStop(sample.t, parseWxBody(sample.headline).tempF);
+    }
+  }
+
+  if (
+    opts.tioRouteForecast?.intervals.length &&
+    opts.planEtaMinutes != null &&
+    opts.planEtaMinutes > 0
+  ) {
+    for (const iv of opts.tioRouteForecast.intervals) {
+      addStop(iv.etaMinutes / opts.planEtaMinutes, iv.tempF);
+    }
+  }
+
+  const headline = opts.headline?.trim() ?? "";
+
+  for (const step of stepsFromHeadline(headline)) {
+    addStop(step.fraction, step.tempF);
+  }
+
+  if (!tempStops.length && headline) {
+    addStop(0.5, parseWxBody(headline).tempF);
+  }
+
+  const anchorTempF =
+    opts.anchorTempF != null && Number.isFinite(opts.anchorTempF)
+      ? Math.round(opts.anchorTempF)
+      : null;
+
+  if (!tempStops.length && anchorTempF != null) {
+    addStop(0, anchorTempF);
+    addStop(1, anchorTempF);
+  } else if (anchorTempF != null) {
+    if (!tempStops.some((s) => s.fraction <= 0.001)) addStop(0, anchorTempF);
+    if (!tempStops.some((s) => s.fraction >= 0.999)) addStop(1, anchorTempF);
+  }
+
+  if (!tempStops.length) return steps;
+
+  return steps.map((step) => {
+    if (step.tempF != null) return step;
+    const tempF =
+      interpolateTempAtFraction(step.fraction, tempStops) ??
+      (anchorTempF != null ? anchorTempF : null);
+    return tempF != null ? { ...step, tempF } : step;
+  });
+}
+
 export function ensureRouteOutlookForGraph(opts: {
   steps: RouteOutlookStep[];
   samples?: WxSample[];
@@ -413,9 +577,23 @@ export function ensureRouteOutlookForGraph(opts: {
   totalMeters?: number;
   stormBands?: StormRouteOutlookBand[];
   radarSamples?: RadarOutlookSample[];
+  /** Flat temp fallback when corridor APIs only supply rain/storm bands (e.g. nowcast at puck). */
+  anchorTempF?: number | null;
+  tioRouteForecast?: RouteForecast | null;
+  planEtaMinutes?: number | null;
 }): { steps: RouteOutlookStep[]; samples: WxSample[] } {
-  const samples = opts.samples ?? [];
+  const tioSamples =
+    opts.tioRouteForecast && opts.planEtaMinutes && opts.planEtaMinutes > 0
+      ? tomorrowForecastToWxSamples(opts.tioRouteForecast, opts.planEtaMinutes)
+      : [];
+  const samples = mergeRouteOutlookSamples(opts.samples ?? [], tioSamples);
   const headline = opts.headline?.trim() ?? "";
+  const anchorTempF =
+    opts.anchorTempF ??
+    resolveRouteOutlookAnchorTempF({
+      headline,
+      tioRouteForecast: opts.tioRouteForecast,
+    });
   let steps = opts.steps.filter(Boolean);
   const totalMeters = opts.totalMeters ?? 0;
 
@@ -507,6 +685,14 @@ export function ensureRouteOutlookForGraph(opts: {
       });
     }
   }
+
+  steps = enrichRouteOutlookTemperature(steps, {
+    samples,
+    headline,
+    anchorTempF,
+    tioRouteForecast: opts.tioRouteForecast,
+    planEtaMinutes: opts.planEtaMinutes,
+  });
 
   return { steps, samples };
 }
@@ -858,6 +1044,11 @@ function interpolateOutlookSeries(anchors: RouteOutlookPoint[], slices = 12): Ro
  * Dense series for the route outlook line graph — weather sampled along the polyline
  * as the driver moves (not a stationary point forecast).
  */
+function tempFromNearestSample(samples: WxSample[], fraction: number): number | null {
+  const sample = nearestSample(samples, fraction);
+  return parseWxBody(sample?.headline ?? "").tempF;
+}
+
 export function buildRouteOutlookSeries(
   steps: RouteOutlookStep[],
   samples?: WxSample[]
@@ -865,9 +1056,11 @@ export function buildRouteOutlookSeries(
   const anchors: RouteOutlookPoint[] = [];
 
   for (const step of steps) {
+    const tempF =
+      step.tempF ?? (samples?.length ? tempFromNearestSample(samples, step.fraction) : null);
     anchors.push({
       fraction: step.fraction,
-      tempF: step.tempF,
+      tempF,
       precipPct: precipPctFromStep(step),
       shortLabel: step.shortLabel,
       etaLabel: step.etaLabel,
@@ -878,8 +1071,9 @@ export function buildRouteOutlookSeries(
   if (samples?.length) {
     for (const sample of samples) {
       const fraction = Math.max(0, Math.min(1, sample.t));
-      if (steps.some((s) => Math.abs(s.fraction - fraction) < 0.06)) continue;
+      if (anchors.some((a) => Math.abs(a.fraction - fraction) < 0.03)) continue;
       const wx = parseWxBody(sample.headline);
+      if (wx.tempF == null && anchors.some((a) => Math.abs(a.fraction - fraction) < 0.06)) continue;
       const precip = effectivePrecipPct(wx.precipPct, wx.conditions, sample.precipHint);
       const precipPct = precip.precipPct ?? 0;
       anchors.push({

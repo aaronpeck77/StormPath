@@ -14,11 +14,10 @@ const RADAR_LAYER_A = "rainviewer-radar-layer-a";
 const RADAR_LAYER_B = "rainviewer-radar-layer-b";
 
 /**
- * Opacity for the visible radar layer. Hidden layer stays at 0 during A/B crossfade.
- * Strong enough to read over basemap; NWS outlines sit below this layer.
- * @see RainViewer color `2` + options `0_1` (no smooth + snow) in rainViewerRadar.tileUrlFromHostAndPath
+ * Opacity for the visible radar layer (under basemap roads — can stay vivid).
+ * Hidden layer stays at 0 during A/B crossfade.
  */
-export const RAINVIEWER_RADAR_VISIBLE_OPACITY = 0.68;
+export const RAINVIEWER_RADAR_VISIBLE_OPACITY = 0.78;
 
 export const RAINVIEWER_RADAR_LAYER_A = RADAR_LAYER_A;
 
@@ -32,22 +31,52 @@ export const RAINVIEWER_RADAR_CROSSFADE_MS = 2800;
 /** Legacy: crossfade when only one source and tile URLs change (unused by animated dual path). */
 export const RAINVIEWER_RASTER_FADE_MS = 520;
 
-function firstRouteLineBeforeId(map: Map): string | undefined {
-  for (const l of map.getStyle().layers ?? []) {
-    if (l.id.startsWith("route-") && l.id.endsWith("-line")) return l.id;
+function isStormPathLayerId(id: string): boolean {
+  return (
+    id.startsWith("route-") ||
+    id.includes("rainviewer") ||
+    id.startsWith("weather-alerts") ||
+    id === "3d-buildings"
+  );
+}
+
+/** First Mapbox road line layer — radar is inserted here so streets render on top. */
+function firstBasemapRoadLineBeforeId(map: Map): string | undefined {
+  for (const l of map.getStyle()?.layers ?? []) {
+    if (l.type !== "line") continue;
+    if (isStormPathLayerId(l.id)) continue;
+    const src = "source" in l ? (l as { source?: string }).source : undefined;
+    const sourceLayer =
+      "source-layer" in l ? (l as { "source-layer"?: string })["source-layer"] : undefined;
+    if (src === "composite" && sourceLayer === "road") return l.id;
   }
   return undefined;
 }
 
 function firstSymbolBeforeId(map: Map): string | undefined {
-  for (const l of map.getStyle().layers ?? []) {
-    if (l.type === "symbol") return l.id;
+  for (const l of map.getStyle()?.layers ?? []) {
+    if (l.type === "symbol" && !isStormPathLayerId(l.id)) return l.id;
   }
   return undefined;
 }
 
-function insertBeforeId(map: Map): string | undefined {
-  return firstRouteLineBeforeId(map) ?? firstSymbolBeforeId(map);
+/** Anchor radar under basemap roads (labels + route lines stay above). */
+function radarInsertBeforeId(map: Map): string | undefined {
+  return firstBasemapRoadLineBeforeId(map) ?? firstSymbolBeforeId(map);
+}
+
+/** Re-stack radar under Mapbox road lines after style or overlay changes. */
+export function positionRainViewerRadarUnderRoads(map: Map): void {
+  const beforeId = radarInsertBeforeId(map);
+  if (!beforeId) return;
+  for (const id of [RADAR_LAYER_A, RADAR_LAYER_B, LEGACY_RADAR_LAYER]) {
+    if (!map.getLayer(id)) continue;
+    try {
+      map.moveLayer(id, beforeId);
+    } catch {
+      /* style race */
+    }
+  }
 }
 
 function removeLegacyIfPresent(map: Map): void {
@@ -154,14 +183,19 @@ function addRasterPair(
 /**
  * Two stacked raster sources. Layer B is above A. Initialize both to the same frame so the stack is valid.
  */
-export function ensureRainViewerRadarDual(map: Map, initialTileUrlTemplate: string): void {
+export function ensureRainViewerRadarDual(
+  map: Map,
+  initialTileUrlTemplate: string,
+  visibleOpacity: number = RAINVIEWER_RADAR_VISIBLE_OPACITY
+): void {
   removeLegacyIfPresent(map);
   installRainViewerMapErrorFilter(map);
-  const beforeId = insertBeforeId(map);
+  const beforeId = radarInsertBeforeId(map);
 
   if (!map.getSource(RADAR_SOURCE_A)) {
-    addRasterPair(map, RADAR_SOURCE_A, RADAR_LAYER_A, initialTileUrlTemplate, RAINVIEWER_RADAR_VISIBLE_OPACITY, beforeId);
+    addRasterPair(map, RADAR_SOURCE_A, RADAR_LAYER_A, initialTileUrlTemplate, visibleOpacity, beforeId);
     addRasterPair(map, RADAR_SOURCE_B, RADAR_LAYER_B, initialTileUrlTemplate, 0, beforeId);
+    positionRainViewerRadarUnderRoads(map);
     return;
   }
 
@@ -169,7 +203,8 @@ export function ensureRainViewerRadarDual(map: Map, initialTileUrlTemplate: stri
   const b = map.getSource(RADAR_SOURCE_B) as RasterTileSource | undefined;
   if (a && typeof a.setTiles === "function") a.setTiles([initialTileUrlTemplate]);
   if (b && typeof b.setTiles === "function") b.setTiles([initialTileUrlTemplate]);
-  map.setPaintProperty(RADAR_LAYER_A, "raster-opacity", RAINVIEWER_RADAR_VISIBLE_OPACITY);
+  positionRainViewerRadarUnderRoads(map);
+  map.setPaintProperty(RADAR_LAYER_A, "raster-opacity", visibleOpacity);
   map.setPaintProperty(RADAR_LAYER_B, "raster-opacity", 0);
 }
 
@@ -262,7 +297,7 @@ export type RainViewerRadarTopLayer = "a" | "b";
 
 /**
  * Create raster source + layer once, or update tiles if source already exists.
- * Keeps layer under route lines, above basemap.
+ * Keeps layer under basemap roads; route lines and labels stay above.
  * @deprecated For animation, use ensureRainViewerRadarDual + setRainViewerRadarTilesOnSource + opacity crossfade.
  */
 export function ensureRainViewerRadar(map: Map, tileUrlTemplate: string): void {
@@ -279,7 +314,7 @@ export function ensureRainViewerRadar(map: Map, tileUrlTemplate: string): void {
     attribution:
       'Radar © <a href="https://www.rainviewer.com/" target="_blank" rel="noreferrer">RainViewer</a>',
   });
-  const beforeId = insertBeforeId(map);
+  const beforeId = radarInsertBeforeId(map);
   map.addLayer(
     {
       id: LEGACY_RADAR_LAYER,
@@ -292,6 +327,7 @@ export function ensureRainViewerRadar(map: Map, tileUrlTemplate: string): void {
     },
     beforeId
   );
+  positionRainViewerRadarUnderRoads(map);
 }
 
 /** @deprecated Prefer ensureRainViewerRadar — avoids flicker when updating frames */
