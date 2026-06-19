@@ -78,14 +78,7 @@ function isBasemapRoadLayer(layer: { id: string; type: string }): boolean {
 function brightenRoadLineLayer(map: Map, layerId: string): void {
   map.setPaintProperty(layerId, "line-opacity", 1);
   map.setPaintProperty(layerId, "line-color", nightRoadLineColorForLayerId(layerId));
-  try {
-    const width = map.getPaintProperty(layerId, "line-width");
-    if (typeof width === "number" && width > 0) {
-      map.setPaintProperty(layerId, "line-width", width * 1.22);
-    }
-  } catch {
-    /* zoom-interpolated width */
-  }
+  /* Do not widen basemap roads — a wider road stripe makes the route line look off-center. */
 }
 
 function brightenRoadFillLayer(map: Map, layerId: string): void {

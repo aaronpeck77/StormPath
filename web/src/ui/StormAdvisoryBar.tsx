@@ -447,6 +447,10 @@ export function StormAdvisoryBar({
     () => roadDetailRows.find((r) => r.label === "Better route"),
     [roadDetailRows]
   );
+  const alongRouteDetailRows = useMemo(
+    () => roadDetailRows.filter((r) => r.label !== "Better route"),
+    [roadDetailRows]
+  );
   /* Show ROADS when there are road impacts, traffic narrative rows, or a reroute CTA condition. */
   const hasTrafficStop = useMemo(
     () => roadDetailRows.some((r) => /traffic stop|closure/i.test(r.label)),
@@ -1223,6 +1227,26 @@ export function StormAdvisoryBar({
 
         {!basicNavAdvisoryMode ? (
           <div className="storm-advisory-bar__dashboard">
+            {navigationStarted && hasGuidanceRoute && alongRouteDetailRows.length > 0 ? (
+              <div className="storm-advisory-bar__road-rows" role="list" aria-label="Along your route">
+                {alongRouteDetailRows.map((row) => (
+                  <div key={row.label} className="storm-advisory-bar__suggestion-row">
+                    <span className="storm-advisory-bar__suggestion-label">{row.label}</span>
+                    <span className="storm-advisory-bar__suggestion-text">{row.text}</span>
+                    {row.onAction ? (
+                      <button
+                        type="button"
+                        className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
+                        onClick={row.onAction}
+                      >
+                        {row.actionLabel ?? "Open"}
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
             {hasRouteHazardDetail ? (
               <RouteHazardTimeline
                 variant="legendOnly"
@@ -1235,6 +1259,18 @@ export function StormAdvisoryBar({
                 onReroute={onTrafficReroute}
                 rerouteBusy={trafficRerouteBusy}
               />
+            ) : null}
+
+            {navigationStarted &&
+            hasGuidanceRoute &&
+            !hasRouteHazardDetail &&
+            alongRouteDetailRows.length === 0 ? (
+              <p className="storm-advisory-bar__muted storm-advisory-bar__route-clear" role="status">
+                No hazards ahead on your route.
+                {driveEtaMinutes != null && driveEtaMinutes > 0
+                  ? ` About ${formatMinutesAsHoursMinutes(Math.round(driveEtaMinutes))} remaining.`
+                  : null}
+              </p>
             ) : null}
 
             {nwsStatusMessage ? (

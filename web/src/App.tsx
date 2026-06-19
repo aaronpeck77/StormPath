@@ -146,10 +146,13 @@ import {
 import { bannerPrimaryStepIndex } from "./nav/bannerPrimaryStep";
 import {
   measureOffRouteLateral,
+  OFF_ROUTE_CONFIRM_TICKS,
   OFF_ROUTE_NAV_START_GRACE_ALONG_M,
   OFF_ROUTE_NAV_START_GRACE_MS,
   OFF_ROUTE_HEADING_MIN_SPEED_MPS,
   OFF_ROUTE_POLL_MS,
+  OFF_ROUTE_REOFFER_COOLDOWN_MS,
+  shouldOfferOffRouteRejoin,
   shouldTriggerOffRouteReroute,
   shouldExitOffRouteLatch,
 } from "./nav/offRouteDetect";
@@ -802,6 +805,10 @@ export default function App() {
   const offRouteRerouteFailStreakRef = useRef(0);
   /** One map-view offer per off-route episode — avoids repeated view flips. */
   const offRouteChoiceOfferedRef = useRef(false);
+  /** Consecutive off-route polls before latching (filters GPS tangent noise on the corridor). */
+  const offRouteConfirmStreakRef = useRef(0);
+  /** After returning on-route, suppress repeat rejoin popups for a short window. */
+  const offRouteReofferBlockedUntilRef = useRef(0);
   const rejoinShufflePassRef = useRef(0);
   const offRouteRejoinAlongMRef = useRef(0);
   /** City-street auto rejoin follows B without changing the route locked at Go. */
@@ -1890,6 +1897,16 @@ export default function App() {
                 "Auto rejoin on city streets — your locked route stays until you pick B or C on the map."
               );
               window.setTimeout(() => setTapHint(null), 9000);
+            } else if (offRouteSevereRef.current && navigationStartedRef.current) {
+              setViewMode((vm) => (vm === "drive" ? "topdown" : vm));
+              if (!opts?.silent) {
+                setTapHint(
+                  opts?.shuffle
+                    ? "New local rejoin paths — pick B or C on the map to rejoin ahead."
+                    : "Local detour options — pick B or C on the map to rejoin ahead."
+                );
+                window.setTimeout(() => setTapHint(null), 5500);
+              }
             } else if (!opts?.silent) {
               setTapHint(
                 opts?.shuffle
@@ -2130,6 +2147,8 @@ export default function App() {
   const lineFocusId = resolvedLineFocusId;
   const guidanceRouteId = resolvedGuidanceRouteId || primaryRouteId;
   guidanceRouteIdRef.current = guidanceRouteId;
+  const lockedNavigationRouteId =
+    lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? primaryRouteId;
 
   /** During A/B/C compare, highlight the leg the driver tapped (not only the current primary). */
   const driveMapLineFocusId = trafficBypassCompare?.selectedLeg ?? lineFocusId;
@@ -3571,7 +3590,9 @@ export default function App() {
     const wxHeadline =
       guidanceSlice?.forecastHeadline?.trim() ||
       wxOverlay?.headline?.trim() ||
-      corridorWeatherDetail;
+      corridorWeatherDetail ||
+      advisoryNowcastLine ||
+      "";
 
     const stormOutlook =
       totalM > 0
@@ -3747,6 +3768,9 @@ export default function App() {
     if (outlookTimeline.length === 0 && isUltraLongTripRoute(totalM)) {
       outlookTimeline = buildMilestoneRouteOutlook(totalM, planEta, wxHeadline);
     }
+    if (outlookTimeline.length === 0 && navigationStarted && totalM > 0) {
+      outlookTimeline = buildMilestoneRouteOutlook(totalM, planEta, wxHeadline || undefined);
+    }
 
     const ensuredOutlook = ensureRouteOutlookForGraph({
       steps: outlookTimeline,
@@ -3781,7 +3805,14 @@ export default function App() {
       hasStormUi
         ? ["NWS active — open Rt view for warning polygons on the map."]
         : navigationStarted
-          ? ["No corridor alerts yet — check Storm is on in Settings."]
+          ? [
+              liveTrafficNarrative?.progressStartLine ?? "Traffic updating along your route.",
+              wxHeadline
+                ? `Weather along route: ${wxHeadline}`
+                : advisoryNowcastLine
+                  ? `At your position: ${advisoryNowcastLine}`
+                  : "No corridor alerts — local forecast above is at your GPS position.",
+            ]
           : [
               "Open Rt view for NWS warning polygons on the map.",
               "Press Go for live traffic and segment labels on the strip.",
@@ -3830,6 +3861,7 @@ export default function App() {
     skipHeavyProgressPanel,
     ultraLongActiveNav,
     stormOutlookBands,
+    advisoryNowcastLine,
     currentNowcast?.tempF,
     tioMinutePrecip?.now?.tempF,
     localHourlyForecast?.hours[0]?.tempF,
@@ -4272,6 +4304,7 @@ export default function App() {
 
   useEffect(() => {
     offRouteLatchedRef.current = false;
+    offRouteConfirmStreakRef.current = 0;
   }, [guidanceRouteId]);
 
   /** Off-route: never swap the locked leg — open map view and offer B/C rejoin paths. */
@@ -4279,6 +4312,8 @@ export default function App() {
     if (!navigationStarted || !guidanceRoute?.geometry?.length || !destLngLat) {
       offRouteLatchedRef.current = false;
       offRouteChoiceOfferedRef.current = false;
+      offRouteConfirmStreakRef.current = 0;
+      offRouteReofferBlockedUntilRef.current = 0;
       offRouteSevereRef.current = false;
       lastOffRouteSampleRef.current = null;
       setOffRouteSevere(false);
@@ -4291,8 +4326,11 @@ export default function App() {
       setOffRouteSevere(severe);
     };
 
-    const offerRejoinChoices = () => {
+    const offerRejoinChoices = (lateralM: number) => {
       if (offRouteChoiceOfferedRef.current) return;
+      if (!shouldOfferOffRouteRejoin(lateralM, offRouteReofferBlockedUntilRef.current)) {
+        return;
+      }
       offRouteChoiceOfferedRef.current = true;
       const lockedRoute = planRef.current.routes.find(
         (r) => r.id === lockedNavigationRouteIdRef.current
@@ -4322,10 +4360,12 @@ export default function App() {
         );
         window.setTimeout(() => setTapHint(null), 9000);
       } else {
+        setViewMode((vm) => (vm === "drive" ? "topdown" : vm));
+        setFitTrigger((n) => n + 1);
         setTapHint(
           ctx?.roadClass === "highway"
-            ? "Off route on the highway — open map view when ready to pick a rejoin."
-            : "Off your chosen route — open map view or tap More options when ready."
+            ? "Off route — pick B or C on the map to rejoin ahead."
+            : "Off route — pick B or C on the map to rejoin, or tap More options."
         );
         window.setTimeout(() => setTapHint(null), 7000);
       }
@@ -4394,12 +4434,20 @@ export default function App() {
         speedMps: speedMpsRef.current,
         routeBearingDeg: routeBearing,
       };
-      const offRoute = shouldTriggerOffRouteReroute(sample, offRouteCtx);
+      const wouldTrigger = shouldTriggerOffRouteReroute(sample, offRouteCtx);
+      offRouteConfirmStreakRef.current = wouldTrigger
+        ? offRouteConfirmStreakRef.current + 1
+        : 0;
+      const offRoute =
+        wouldTrigger &&
+        offRouteConfirmStreakRef.current >= OFF_ROUTE_CONFIRM_TICKS &&
+        shouldOfferOffRouteRejoin(lat, offRouteReofferBlockedUntilRef.current);
 
       const nearingEnd = totalM > 0 && alongM > totalM - 45;
       if (nearingEnd) {
         offRouteLatchedRef.current = false;
         offRouteChoiceOfferedRef.current = false;
+        offRouteConfirmStreakRef.current = 0;
         setOffRouteSevereIfNeeded(false);
         lastOffRouteSampleRef.current = null;
         return;
@@ -4409,6 +4457,8 @@ export default function App() {
         if (shouldExitOffRouteLatch(lat)) {
           offRouteLatchedRef.current = false;
           offRouteChoiceOfferedRef.current = false;
+          offRouteConfirmStreakRef.current = 0;
+          offRouteReofferBlockedUntilRef.current = Date.now() + OFF_ROUTE_REOFFER_COOLDOWN_MS;
           setOffRouteSevereIfNeeded(false);
           setAutoRejoinGuidanceRouteId(null);
         } else {
@@ -4418,7 +4468,7 @@ export default function App() {
         offRouteLatchedRef.current = true;
         offRouteRejoinAlongMRef.current = alongM;
         setOffRouteSevereIfNeeded(true);
-        offerRejoinChoices();
+        offerRejoinChoices(lat);
       }
     };
 
@@ -4621,6 +4671,8 @@ export default function App() {
     }
     lockedNavigationRouteIdRef.current = null;
     offRouteChoiceOfferedRef.current = false;
+    offRouteConfirmStreakRef.current = 0;
+    offRouteReofferBlockedUntilRef.current = 0;
     rejoinShufflePassRef.current = 0;
     setAutoRejoinGuidanceRouteId(null);
     drivingRejoinRoadClassRef.current = "unknown";
@@ -4808,19 +4860,6 @@ export default function App() {
     };
   }, []);
 
-  /** Route view / map view while navigating: preview A/B/C without changing active guidance. */
-  const handlePreviewRouteSelect = useCallback(
-    (id: string) => {
-      if (!plan.routes.some((r) => r.id === id)) return;
-      const i = orderedRouteIds.indexOf(id);
-      if (i >= 0) setPreviewLegIndex(i);
-      if (!navigationStarted || viewMode === "route" || viewMode === "topdown") {
-        setFitTrigger((n) => n + 1);
-      }
-    },
-    [plan.routes, orderedRouteIds, navigationStarted, viewMode]
-  );
-
   /** Make this leg the primary (slot A / blue); used after Go, hazard “use this route”, and bypass. */
   const handlePromoteRouteToPrimary = useCallback(
     (id: string) => {
@@ -4833,6 +4872,31 @@ export default function App() {
       setAutoRejoinGuidanceRouteId(null);
     },
     [plan.routes, planRouteIds]
+  );
+
+  /** Route view / map view while navigating: preview A/B/C without changing active guidance. */
+  const handlePreviewRouteSelect = useCallback(
+    (id: string) => {
+      if (!plan.routes.some((r) => r.id === id)) return;
+      const lockedId = lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
+      if (offRouteSevere && navigationStarted && lockedId && id !== lockedId) {
+        handlePromoteRouteToPrimary(id);
+        offRouteSevereRef.current = false;
+        offRouteChoiceOfferedRef.current = false;
+        setOffRouteSevere(false);
+        setViewMode("drive");
+        setFitTrigger((n) => n + 1);
+        setTapHint("Rejoin route selected — back to drive view.");
+        window.setTimeout(() => setTapHint(null), 4500);
+        return;
+      }
+      const i = orderedRouteIds.indexOf(id);
+      if (i >= 0) setPreviewLegIndex(i);
+      if (!navigationStarted || viewMode === "route" || viewMode === "topdown") {
+        setFitTrigger((n) => n + 1);
+      }
+    },
+    [plan.routes, orderedRouteIds, navigationStarted, viewMode, offRouteSevere, handlePromoteRouteToPrimary]
   );
 
   const handleTrafficBypassCompareSelect = useCallback((id: "r-a" | "r-b" | "r-c") => {
@@ -5840,6 +5904,8 @@ export default function App() {
             onStormBrowseBoundsChange={undefined}
             trafficBypassCompareActive={Boolean(trafficBypassCompare)}
             trafficBypassCompareHazardLngLat={trafficBypassCompare?.hazardLngLat ?? null}
+            trafficBypassCompareHazardAlongMeters={trafficBypassCompare?.hazardAlongMeters ?? null}
+            rejoinCompareLockedRouteId={lockedNavigationRouteId}
             activityTrailGeoJson={activityTrailGeoJsonForMap}
             sessionRouteLengthM={
               guidanceRouteLengthM > 0 ? guidanceRouteLengthM : maxPlanRouteLengthM

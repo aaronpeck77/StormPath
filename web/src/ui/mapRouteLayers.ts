@@ -365,6 +365,24 @@ export function visibleRouteIdsForHitLayers(
   return routes.map((r) => r.id);
 }
 
+function isStormPathOverlayLayerId(id: string): boolean {
+  return (
+    id.startsWith("route-") ||
+    id.includes("rainviewer") ||
+    id.startsWith("weather-alerts") ||
+    id === "3d-buildings" ||
+    id.startsWith("mapbox-traffic")
+  );
+}
+
+/** Labels/icons — route lines sit just below so they paint over Mapbox road geometry. */
+function firstBasemapSymbolBeforeId(map: mapboxgl.Map): string | undefined {
+  for (const l of map.getStyle()?.layers ?? []) {
+    if (l.type === "symbol" && !isStormPathOverlayLayerId(l.id)) return l.id;
+  }
+  return undefined;
+}
+
 /**
  * Draw route polylines above Mapbox traffic overlays so A/B/C lines stay readable.
  * {@link bringMapboxTrafficLayersToFront} moves traffic to the top of the stack; call this after it,
@@ -375,14 +393,15 @@ export function bringRouteVisualLinesAboveTraffic(
   routeIds: string[],
   layerPrefix = "route"
 ) {
+  const anchorBefore = firstBasemapSymbolBeforeId(map);
   for (const id of routeIds) {
     const lid = `${layerPrefix}-${id}-line`;
-    if (map.getLayer(lid)) {
-      try {
-        map.moveLayer(lid);
-      } catch {
-        /* style teardown */
-      }
+    if (!map.getLayer(lid)) continue;
+    try {
+      if (anchorBefore) map.moveLayer(lid, anchorBefore);
+      map.moveLayer(lid);
+    } catch {
+      /* style teardown */
     }
   }
   positionRouteConditionCasingBelowRouteLines(map, routeIds, layerPrefix);
@@ -479,30 +498,37 @@ export function applyRoutesToMap(
 
     const lineId = `${id}-line`;
     const hitLineId = `${id}-line-hit`;
+    const lineAnchorBefore = firstBasemapSymbolBeforeId(map);
     if (!map.getSource(id)) {
       map.addSource(id, { type: "geojson", data: geojson });
-      map.addLayer({
-        id: lineId,
-        type: "line",
-        source: id,
-        paint: {
-          "line-color": lineColor,
-          "line-width": lineWidth,
-          "line-opacity": lineOpacity,
+      map.addLayer(
+        {
+          id: lineId,
+          type: "line",
+          source: id,
+          paint: {
+            "line-color": lineColor,
+            "line-width": lineWidth,
+            "line-opacity": lineOpacity,
+          },
+          layout: { "line-cap": "round", "line-join": "round" },
         },
-        layout: { "line-cap": "round", "line-join": "round" },
-      });
-      map.addLayer({
-        id: hitLineId,
-        type: "line",
-        source: id,
-        paint: {
-          "line-color": "#000000",
-          "line-width": 22,
-          "line-opacity": 0,
+        lineAnchorBefore
+      );
+      map.addLayer(
+        {
+          id: hitLineId,
+          type: "line",
+          source: id,
+          paint: {
+            "line-color": "#000000",
+            "line-width": 22,
+            "line-opacity": 0,
+          },
+          layout: { "line-cap": "round", "line-join": "round" },
         },
-        layout: { "line-cap": "round", "line-join": "round" },
-      });
+        lineAnchorBefore
+      );
     } else {
       (map.getSource(id) as mapboxgl.GeoJSONSource).setData(geojson);
       map.setPaintProperty(lineId, "line-color", lineColor);
@@ -747,6 +773,41 @@ export function fitMapToTrip(
   return ok;
 }
 
+const ROUTE_COMPARE_DEFAULT_AHEAD_M = 28_000;
+const ROUTE_COMPARE_HAZARD_TAIL_M = 10_000;
+
+/** Trim `sliceRouteAhead` to a local corridor — keeps compare/rejoin framing near the driver. */
+function capRouteAheadWindow(geometry: LngLat[], user: LngLat, maxAheadM: number): LngLat[] {
+  const ahead = sliceRouteAhead(geometry, user);
+  if (ahead.length < 2 || maxAheadM <= 0) return ahead;
+  const out: LngLat[] = [ahead[0]!];
+  let acc = 0;
+  for (let i = 1; i < ahead.length; i++) {
+    const prev = ahead[i - 1]!;
+    const cur = ahead[i]!;
+    acc += haversineMeters(prev, cur);
+    out.push(cur);
+    if (acc >= maxAheadM) break;
+  }
+  return out;
+}
+
+function resolveRouteCompareAheadM(
+  userAlongM: number | null | undefined,
+  hazardAlongM: number | null | undefined
+): number {
+  if (
+    userAlongM != null &&
+    Number.isFinite(userAlongM) &&
+    hazardAlongM != null &&
+    Number.isFinite(hazardAlongM) &&
+    hazardAlongM > userAlongM
+  ) {
+    return Math.max(12_000, hazardAlongM - userAlongM + ROUTE_COMPARE_HAZARD_TAIL_M);
+  }
+  return ROUTE_COMPARE_DEFAULT_AHEAD_M;
+}
+
 /** Local window on the locked leg near the driver — full cross-country A is omitted from the fit. */
 function primaryRouteLocalWindowForOffRouteFit(
   geometry: LngLat[],
@@ -807,6 +868,50 @@ export function fitMapToOffRouteRejoinChoices(
   const fit = buildOffRouteRejoinFitBounds(userLngLat, routes, primaryRouteId);
   if (!fit) return false;
   return applyTripCameraFit(map, fit, padding, maxZoomCeiling, 0.45, 520);
+}
+
+/** Bounds for A/B/C compare: user + hazard + local ahead slices (not the full trip). */
+export function buildRouteCompareLocalFitBounds(
+  user: LngLat,
+  routes: NavRoute[],
+  _primaryRouteId: string,
+  hazardLngLat: LngLat | null,
+  opts?: { userAlongM?: number | null; hazardAlongM?: number | null }
+): TripFitBoundsMode | null {
+  const b = new mapboxgl.LngLatBounds();
+  safeExtendBounds(b, user);
+  if (hazardLngLat) safeExtendBounds(b, hazardLngLat);
+
+  const maxAheadM = resolveRouteCompareAheadM(opts?.userAlongM, opts?.hazardAlongM);
+
+  for (const r of routes) {
+    const geom = r.geometry;
+    if (!geom?.length) continue;
+    extendBoundsWithPolyline(b, capRouteAheadWindow(geom, user, maxAheadM));
+  }
+
+  if (b.isEmpty()) return null;
+  return {
+    bounds: b,
+    directM: boundsDiagonalMeters(b),
+    endpointsOnly: false,
+  };
+}
+
+/** Traffic bypass / hazard compare: zoom to the corridor being decided, not the whole route. */
+export function fitMapToRouteCompareLocal(
+  map: mapboxgl.Map,
+  routes: NavRoute[],
+  userLngLat: LngLat,
+  primaryRouteId: string,
+  hazardLngLat: LngLat | null,
+  padding: mapboxgl.PaddingOptions,
+  maxZoomCeiling = 17.8,
+  opts?: { userAlongM?: number | null; hazardAlongM?: number | null }
+): boolean {
+  const fit = buildRouteCompareLocalFitBounds(userLngLat, routes, primaryRouteId, hazardLngLat, opts);
+  if (!fit) return false;
+  return applyTripCameraFit(map, fit, padding, maxZoomCeiling, 0.5, 560);
 }
 
 export function fitMapToRemainingRoutes(

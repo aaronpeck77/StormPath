@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   measureOffRouteLateral,
+  OFF_ROUTE_HEADING_MIN_LATERAL_M,
   OFF_ROUTE_REROUTE_ENTER_M,
   shouldExitOffRouteLatch,
+  shouldOfferOffRouteRejoin,
   shouldTriggerOffRouteReroute,
 } from "../offRouteDetect";
 import type { LngLat } from "../types";
@@ -49,9 +51,19 @@ describe("shouldTriggerOffRouteReroute", () => {
     ).toBe(false);
   });
 
-  it("triggers on heading mismatch when slightly off-line and moving", () => {
+  it("does not trigger on heading mismatch when still on the corridor", () => {
     expect(
       shouldTriggerOffRouteReroute(2.5, {
+        headingDeg: 90,
+        routeBearingDeg: 0,
+        speedMps: 5,
+      })
+    ).toBe(false);
+  });
+
+  it("triggers on heading mismatch when clearly off-line and moving", () => {
+    expect(
+      shouldTriggerOffRouteReroute(OFF_ROUTE_HEADING_MIN_LATERAL_M + 1, {
         headingDeg: 90,
         routeBearingDeg: 0,
         speedMps: 5,
@@ -75,5 +87,15 @@ describe("shouldExitOffRouteLatch", () => {
   it("clears latch only when back inside exit threshold", () => {
     expect(shouldExitOffRouteLatch(4)).toBe(true);
     expect(shouldExitOffRouteLatch(12)).toBe(false);
+  });
+});
+
+describe("shouldOfferOffRouteRejoin", () => {
+  it("blocks repeat offers during cooldown unless far off corridor", () => {
+    const now = 1_000_000;
+    const blockedUntil = now + 60_000;
+    expect(shouldOfferOffRouteRejoin(10, blockedUntil, now)).toBe(false);
+    expect(shouldOfferOffRouteRejoin(35, blockedUntil, now)).toBe(true);
+    expect(shouldOfferOffRouteRejoin(10, now - 1, now)).toBe(true);
   });
 });

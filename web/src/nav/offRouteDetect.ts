@@ -20,9 +20,15 @@ const WINDOW_AHEAD_M = 3_500;
 /** When moving, heading must differ from the route this much to trigger at low lateral offset. */
 const OFF_ROUTE_HEADING_DELTA_DEG = 38;
 /** Minimum lateral offset (m) before heading mismatch can trigger reroute. */
-const OFF_ROUTE_HEADING_MIN_LATERAL_M = 2;
+export const OFF_ROUTE_HEADING_MIN_LATERAL_M = 12;
 /** Minimum speed (m/s) before off-route can latch (~7 mph). Ignores GPS drift while parked. */
 export const OFF_ROUTE_HEADING_MIN_SPEED_MPS = 3;
+/** Consecutive poll ticks that must agree before showing rejoin alternates. */
+export const OFF_ROUTE_CONFIRM_TICKS = 3;
+/** After returning on-route, wait before offering alternates again (unless far off). */
+export const OFF_ROUTE_REOFFER_COOLDOWN_MS = 90_000;
+/** During cooldown, a clear corridor leave can still trigger immediately. */
+export const OFF_ROUTE_FORCE_REOFFER_LATERAL_M = 32;
 
 /** After Go, extra guard while still near the start and not yet driving. */
 export const OFF_ROUTE_NAV_START_GRACE_MS = 50_000;
@@ -118,6 +124,16 @@ export function shouldTriggerOffRouteReroute(
     return true;
   }
   return false;
+}
+
+/** True when a new rejoin offer is allowed (respects post-on-route cooldown). */
+export function shouldOfferOffRouteRejoin(
+  lateralM: number,
+  reofferBlockedUntilMs: number,
+  nowMs: number = Date.now()
+): boolean {
+  if (nowMs >= reofferBlockedUntilMs) return true;
+  return lateralM >= OFF_ROUTE_FORCE_REOFFER_LATERAL_M;
 }
 
 export function shouldExitOffRouteLatch(lateralM: number): boolean {

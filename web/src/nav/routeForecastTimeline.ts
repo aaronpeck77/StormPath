@@ -656,6 +656,18 @@ export function ensureRouteOutlookForGraph(opts: {
           steps = fromStorm;
         } else if (fromStorm.length === 1 && outlookStepHasChartValue(fromStorm[0]!)) {
           steps = expandOutlookStepToRouteAxis(fromStorm[0]!);
+        } else if (anchorTempF != null) {
+          steps = expandOutlookStepToRouteAxis({
+            key: "local-now",
+            shortLabel: "Now",
+            fraction: 0,
+            tempF: anchorTempF,
+            conditions: headline || "At your position",
+            precipPct: null,
+            precipHint: 0,
+            etaLabel: null,
+            icon: wxIcon(headline || "Clear", 0),
+          });
         }
       }
     }

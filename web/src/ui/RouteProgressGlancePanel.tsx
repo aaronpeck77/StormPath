@@ -317,7 +317,10 @@ export function RouteProgressGlancePanel({
                       ) : (
                         <div className="rpgl__outlook-wait" aria-hidden>
                           <span className="rpgl__outlook-wait-title">Route outlook</span>
-                          <span className="rpgl__outlook-wait-hint">Loading weather along your route…</span>
+                          <span className="rpgl__outlook-wait-hint">
+                            Corridor weather is still loading — use the local forecast in Advisory for
+                            conditions at your position.
+                          </span>
                         </div>
                       )}
                     </div>

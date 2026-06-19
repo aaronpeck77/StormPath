@@ -49,6 +49,7 @@ import {
   bringRouteVisualLinesAboveTraffic,
   fitMapToRemainingRoutes,
   fitMapToOffRouteRejoinChoices,
+  fitMapToRouteCompareLocal,
   fitMapToTrip,
   routeIdFromRouteHitLayerId,
   visibleRouteIdsForHitLayers,
@@ -763,6 +764,10 @@ type Props = {
    * Hazard the user is being asked to plan around — drives the on-map pin and compare camera fit.
    */
   trafficBypassCompareHazardLngLat?: LngLat | null;
+  /** M along the primary leg for the compare hazard — tightens local fit ahead of the jam. */
+  trafficBypassCompareHazardAlongMeters?: number | null;
+  /** Locked route at Go — off-route compare fit keeps A local while framing B/C. */
+  rejoinCompareLockedRouteId?: string | null;
   /** Plus: sparse GPS dots over weeks/months (see About → Activity trail). */
   activityTrailGeoJson?: GeoJSON.FeatureCollection | null;
   /** Active guidance leg length (m) — zoom floors + cross-country perf. */
@@ -1039,6 +1044,8 @@ function DriveMapInner({
   onStormBrowseBoundsChange,
   trafficBypassCompareActive = false,
   trafficBypassCompareHazardLngLat = null,
+  trafficBypassCompareHazardAlongMeters = null,
+  rejoinCompareLockedRouteId = null,
   activityTrailGeoJson = null,
   sessionRouteLengthM = 0,
   activityTrailPlanningBounds = null,
@@ -1435,9 +1442,18 @@ function DriveMapInner({
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
     if (mapPhase !== "night" || nightBasemapPreset === "streets") return;
+    const reliftRoutes = () => {
+      const { routes: rts, lineFocusId: lid, viewMode: vm } = routesForHitRef.current;
+      if (rts.length === 0) return;
+      liftTrafficThenRoutesThenHits(
+        map,
+        visibleRouteIdsForHitLayers(rts, lid, vm, false)
+      );
+    };
     const apply = () => {
       try {
         applyNightBasemapReadability(map);
+        reliftRoutes();
       } catch {
         /* style race */
       }
@@ -1456,10 +1472,19 @@ function DriveMapInner({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
+    const reliftRoutes = () => {
+      const { routes: rts, lineFocusId: lid, viewMode: vm } = routesForHitRef.current;
+      if (rts.length === 0) return;
+      liftTrafficThenRoutesThenHits(
+        map,
+        visibleRouteIdsForHitLayers(rts, lid, vm, false)
+      );
+    };
     const apply = () => {
       try {
         ensureMapboxTrafficConditionLayers(map);
         setMapboxTrafficLayersVisible(map, trafficConditionsOnMap);
+        reliftRoutes();
       } catch {
         /* style race */
       }
@@ -3509,6 +3534,12 @@ function DriveMapInner({
       });
     };
 
+    const compareLockedRouteId =
+      rejoinCompareLockedRouteId?.trim() ||
+      routes.find((r) => r.id === "r-a")?.id ||
+      routes[0]?.id ||
+      lineFocusId;
+
     /** Off-route Mp: fit user + B/C rejoin legs (+ local slice of locked A). */
     const doOffRouteRejoinFit = () => {
       if (userExploringRef.current) return;
@@ -3529,27 +3560,62 @@ function DriveMapInner({
         map,
         routes,
         u,
-        lineFocusId,
+        compareLockedRouteId,
         routeFitPadding(stormBarVisible, stormBarExpanded, routes, lineFocusId, progressRailVisible),
         Math.min(routeFitMaxZoomCeiling(routes, lineFocusId), 17.6)
       );
     };
 
+    /** Hazard / bypass compare: local corridor around user + jam, not the full trip. */
+    const doRouteCompareLocalFit = () => {
+      if (userExploringRef.current) return;
+      if (!mapStyleReadyForCamera(map)) return;
+      const u = userLngLatRef.current;
+      if (!u) return;
+      if (pendingFlatten) {
+        map.off("moveend", pendingFlatten);
+        pendingFlatten = null;
+      }
+      pendingFlatten = () => {
+        pendingFlatten = null;
+        flatten();
+      };
+      map.once("moveend", pendingFlatten);
+      prevTopdownRef.current = true;
+      fitMapToRouteCompareLocal(
+        map,
+        routes,
+        u,
+        compareLockedRouteId,
+        trafficBypassCompareHazardLngLat,
+        routeFitPadding(stormBarVisible, stormBarExpanded, routes, lineFocusId, progressRailVisible),
+        Math.min(routeFitMaxZoomCeiling(routes, lineFocusId), 17.8),
+        {
+          userAlongM: userAlongMeters,
+          hazardAlongM: trafficBypassCompareHazardAlongMeters,
+        }
+      );
+    };
+
     const offRouteCompare = navigationStarted && offRouteRejoinCompareActive;
+    const routeCompareActive = trafficBypassCompareActive;
 
     if (viewMode === "topdown") {
       /* Nav: local street snap once per view/resume — GPS follow is a separate pan effect. */
-      const snapKey = offRouteCompare
-        ? `${viewMode}|${fitTrigger}|${mapResumeTick}|offroute|${offRouteAlternatesFitKey(routes, lineFocusId)}`
-        : navigationStarted
-          ? `${viewMode}|${fitTrigger}|${mapResumeTick}|nav`
-          : `${viewMode}|${fitTrigger}|${mapResumeTick}|plan|${routesPlanningFitKey}`;
+      const snapKey = routeCompareActive
+        ? `${viewMode}|${fitTrigger}|${mapResumeTick}|compare|${compareLockedRouteId}|${lineFocusId}|${trafficBypassCompareHazardLngLat?.[0] ?? ""}|${offRouteAlternatesFitKey(routes, compareLockedRouteId)}`
+        : offRouteCompare
+          ? `${viewMode}|${fitTrigger}|${mapResumeTick}|offroute|${offRouteAlternatesFitKey(routes, compareLockedRouteId)}`
+          : navigationStarted
+            ? `${viewMode}|${fitTrigger}|${mapResumeTick}|nav`
+            : `${viewMode}|${fitTrigger}|${mapResumeTick}|plan|${routesPlanningFitKey}`;
       if (topdownSnapKeyRef.current !== snapKey) {
         topdownSnapKeyRef.current = snapKey;
-        if (offRouteCompare) doOffRouteRejoinFit();
+        if (routeCompareActive) doRouteCompareLocalFit();
+        else if (offRouteCompare) doOffRouteRejoinFit();
         else doTopdownLocalFit();
       }
-    } else if (navigationStarted && destLngLat) {
+    } else if (navigationStarted && destLngLat && !offRouteCompare && !routeCompareActive) {
       const navRouteSnapKey = `${fitTrigger}|${mapResumeTick}|${lineFocusId}`;
       if (navRouteSnapKeyRef.current !== navRouteSnapKey) {
         navRouteSnapKeyRef.current = navRouteSnapKey;
@@ -3585,6 +3651,11 @@ function DriveMapInner({
     chromeLayoutTick,
     routeNavFollowKey,
     offRouteRejoinCompareActive,
+    trafficBypassCompareActive,
+    trafficBypassCompareHazardLngLat,
+    trafficBypassCompareHazardAlongMeters,
+    rejoinCompareLockedRouteId,
+    userAlongMeters,
   ]);
 
   /**
@@ -3773,33 +3844,7 @@ function DriveMapInner({
       return;
     }
 
-    if (trafficBypassCompareActive && followTopdownView) {
-      prevTopdownRef.current = true;
-      const u = userLngLatRef.current;
-      if (!u) return;
-      const b = new mapboxgl.LngLatBounds();
-      safeExtendBounds(b, u);
-      if (destLngLat) safeExtendBounds(b, destLngLat);
-      if (trafficBypassCompareHazardLngLat) safeExtendBounds(b, trafficBypassCompareHazardLngLat);
-      for (const r of routes) {
-        const g = r.geometry;
-        if (!g?.length) continue;
-        for (const pt of g) safeExtendBounds(b, pt as [number, number]);
-      }
-      safeFitBounds(map, b, {
-        padding: hazardOverviewFitPadding(),
-        duration: 600,
-        maxZoom: 11.2,
-        pitch: 0,
-        bearing: 0,
-        essential: true,
-      });
-      return () => {
-        if (!userExploringRef.current) stopMapCamera(map);
-      };
-    }
-
-    if (offRouteRejoinCompareActive && followTopdownView) {
+    if ((trafficBypassCompareActive || offRouteRejoinCompareActive) && followTopdownView) {
       prevTopdownRef.current = true;
       return () => {
         if (!userExploringRef.current) stopMapCamera(map);

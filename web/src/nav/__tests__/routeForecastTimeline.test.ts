@@ -273,6 +273,19 @@ describe("ensureRouteOutlookForGraph", () => {
     expect(series.filter((p) => p.tempF != null).length).toBeGreaterThan(1);
   });
 
+  it("fills the graph from local temperature when corridor APIs are empty", () => {
+    const ensured = ensureRouteOutlookForGraph({
+      steps: [],
+      samples: [],
+      headline: "",
+      totalMeters: 25_000,
+      anchorTempF: 71,
+    });
+    expect(ensured.steps.length).toBeGreaterThanOrEqual(2);
+    const series = buildRouteOutlookSeries(ensured.steps, ensured.samples);
+    expect(series.some((p) => p.tempF === 71)).toBe(true);
+  });
+
   it("fills the graph when only text mentions rain and temp", () => {
     const ensured = ensureRouteOutlookForGraph({
       steps: [],
