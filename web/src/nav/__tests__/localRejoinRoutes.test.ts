@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickLocalRejoinAlongM } from "../localRejoinRoutes";
+import { pickLocalRejoinAlongM } from "../detourRejoin";
 
 describe("pickLocalRejoinAlongM", () => {
   it("targets a point ahead on the locked leg, not the destination", () => {

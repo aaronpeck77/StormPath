@@ -598,7 +598,8 @@ export async function collectMapboxRouteVariants(
   const ultraLongTrip = isUltraLongTripRoute(estTripM);
   const effectivePreferThree = preferThreeRoutes && !ultraLongTrip;
   const effectiveAllowThird = allowLocalTripThirdRoute && !ultraLongTrip;
-  const simplifiedOverview = ultraLongTrip;
+  /** Always request full Mapbox geometry — simplified overview cuts corners off the road network. */
+  const simplifiedOverview = false;
 
   if (opts?.singleRouteFromPosition) {
     const data = await fetchDirectionsPrimary(

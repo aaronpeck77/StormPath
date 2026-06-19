@@ -842,8 +842,8 @@
    * Progress rail foot: inset from viewport bottom so the strip ends just above the bottom chrome.
    * Planning (route / map): clears address + search row. Drive: shorter stack (no address bar) ? longer rail.
    */
-  /* From viewport bottom to strip foot: toolbar + chrome gap + margin above the address row (tune if overlap). */
-  --nav-progress-rail-foot-inset: 122px;
+  /* Fallback until useProgressRailFootInset measures .nav-bottom-stack; match dock reserve. */
+  --nav-progress-rail-foot-inset: var(--nav-dock-above-safe-current, 152px);
   /* Shorter unrotated strip width = shorter vertical bar; legacy trim used in map fit padding */
   --nav-progress-strip-bottom-trim: 68px;
   /* Room under the command bar for Mapbox logo/� (controls use z-index above the stack; strip can stay thin). */
@@ -877,7 +877,7 @@
 }
 
 .app-shell.nav-fullmap.app-shell--basic-ad-banner .nav-route-progress-rail {
-  padding-bottom: calc(var(--nav-progress-rail-foot-inset, 122px) + var(--basic-ad-banner-reserve, 50px));
+  padding-bottom: var(--nav-progress-rail-foot-inset, var(--nav-dock-above-safe-current, 152px));
 }
 
 .app-shell.nav-fullmap.app-shell--basic-ad-banner .map-stage.map-bleed .mapboxgl-ctrl-bottom-left,
@@ -892,19 +892,16 @@
 
 .app-shell.nav-fullmap.nav-drive-ui {
   --nav-dock-above-safe-current: 122px;
-  /* Drive: compass/about + ETA toolbar ? must clear the bottom trip bar (was too short; rail overlapped ETA strip). */
-  --nav-progress-rail-foot-inset: 70px;
 }
 
 /* Map (Mp) while navigating: compact bottom chrome like drive — not the Rt planning search stack. */
 .app-shell.nav-fullmap.nav-mapnav-ui {
   --nav-dock-above-safe-current: 122px;
-  --nav-progress-rail-foot-inset: 70px;
 }
 
-/* Radar mosaic clock in the about row ? needs more clearance above the address pill + progress rail foot */
+/* Radar mosaic clock in the about row — needs more clearance above the address pill + progress rail foot */
 .app-shell.nav-fullmap.nav-radar-frame-time-visible:not(.nav-drive-ui):not(.nav-mapnav-ui) {
-  --nav-progress-rail-foot-inset: 144px;
+  --nav-dock-above-safe-current: 156px;
 }
 
 /* About ? own row above address; left-aligned with search + route below */
@@ -3532,7 +3529,7 @@
   justify-content: stretch;
   /* Inset from the physical right bezel ? was flush against the edge */
   padding-right: max(14px, calc(10px + env(safe-area-inset-right)));
-  padding-bottom: calc(var(--nav-progress-rail-foot-inset, 134px) + env(safe-area-inset-bottom));
+  padding-bottom: var(--nav-progress-rail-foot-inset, var(--nav-dock-above-safe-current, 152px));
   box-sizing: border-box;
   pointer-events: none;
   /* Fill map band: left safe inset → just shy of the progress strip */
@@ -8566,7 +8563,7 @@
  * Do NOT cap with 200px ? that limited the bar to ~2.5" tall. Use full rail column height (100cqh).
  */
 .nav-route-progress-rail .route-progress-strip--side {
-  width: 100cqh;
+  width: var(--nav-progress-rail-strip-length, 100cqh);
   max-width: none;
   transform: rotate(-90deg);
   transform-origin: right top;
@@ -11239,6 +11236,15 @@
   min-width: 0;
 }
 
+.nav-bottom-off-route__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .nav-bottom-off-route__btn {
   flex-shrink: 0;
   padding: 6px 12px;
@@ -12629,17 +12635,15 @@
     --nav-dock-above-safe-current: var(--nav-dock-above-safe);
     /* Match home-indicator inset only ? avoids an extra empty band under the toolbar + attribution. */
     --nav-bottom-reserved: env(safe-area-inset-bottom, 0px);
-    --nav-progress-rail-foot-inset: 112px;
   }
 
   .app-shell.nav-fullmap.nav-drive-ui,
   .app-shell.nav-fullmap.nav-mapnav-ui {
     --nav-dock-above-safe-current: 112px;
-    --nav-progress-rail-foot-inset: 64px;
   }
 
   .app-shell.nav-fullmap.nav-radar-frame-time-visible:not(.nav-drive-ui):not(.nav-mapnav-ui) {
-    --nav-progress-rail-foot-inset: 132px;
+    --nav-dock-above-safe-current: 148px;
   }
 
   .nav-bottom-stack {
@@ -13951,17 +13955,10 @@
   }
 
   /*
-   * Progress rail: portrait reserves huge padding-bottom + short strip for dock under the bar.
-   * Landscape T puts dock on the map side ? full stack height + long strip. Keep default
-   * strip align-self:flex-end so transform-origin:right top + rotate(-90deg) stays on the left edge.
+   * Progress rail foot: use measured/CSS foot inset (landscape side rail usually clears the map-column dock).
    */
   .app-shell.nav-fullmap .nav-route-progress-rail {
-    padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
-  }
-
-  /* Drive: bottom ETA strip still spans the gutter ? use foot inset, not the landscape ?minimal? padding. */
-  .app-shell.nav-fullmap.nav-drive-ui .nav-route-progress-rail {
-    padding-bottom: calc(var(--nav-progress-rail-foot-inset) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: var(--nav-progress-rail-foot-inset, var(--nav-dock-above-safe-current, 8px));
   }
 
   /* Strip length: same 100cqh as portrait ? inner is sized by stretched rail column. */

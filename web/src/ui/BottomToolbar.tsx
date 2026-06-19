@@ -54,6 +54,13 @@ type Props = {
   onRerouteFromHere?: () => void;
   /** When false, hide the off-route strip (e.g. drive auto-reroutes, or Rt/Mp when auto is on). */
   showOffRouteBanner?: boolean;
+  /** Auto-following a temporary detour leg (B/C) back to locked route A. */
+  detourAutoActive?: boolean;
+  /** e.g. "2.1 mi" — distance along locked route to rejoin point. */
+  detourRejoinDistanceLabel?: string | null;
+  /** Alternate detour legs available while off route (manual pick). */
+  detourAltChoices?: { id: string; label: string }[];
+  onDetourPick?: (routeId: string) => void;
   /** Traffic bypass (moved off progress bar) */
   showTrafficBypass?: boolean;
   bypassBusy?: boolean;
@@ -86,6 +93,10 @@ export function BottomToolbar({
   offRouteSevere = false,
   onRerouteFromHere,
   showOffRouteBanner = true,
+  detourAutoActive = false,
+  detourRejoinDistanceLabel = null,
+  detourAltChoices = [],
+  onDetourPick,
   showTrafficBypass = false,
   bypassBusy = false,
   onTrafficBypass,
@@ -140,16 +151,35 @@ export function BottomToolbar({
       }${routeUi ? " nav-bottom-toolbar--route" : ""}`}
       aria-label="Map and trip controls"
     >
-      {showOffRouteBanner && offRouteSevere && (
+      {showOffRouteBanner && (offRouteSevere || detourAutoActive) && (
         <div className="nav-bottom-off-route" role="alert">
           <span className="nav-bottom-off-route__text">
-            Off route — your chosen line stays. B/C are local paths to rejoin ahead.
+            {detourAutoActive
+              ? detourRejoinDistanceLabel
+                ? `Detour — rejoin your route in ${detourRejoinDistanceLabel}.`
+                : "Detour — rejoining your route ahead."
+              : "Off route — your chosen line stays. Pick a local detour to rejoin ahead."}
           </span>
-          {onRerouteFromHere ? (
-            <button type="button" className="nav-bottom-off-route__btn" onClick={onRerouteFromHere}>
-              More options
-            </button>
-          ) : null}
+          <div className="nav-bottom-off-route__actions">
+            {!detourAutoActive &&
+              detourAltChoices.map((alt) =>
+                onDetourPick ? (
+                  <button
+                    key={alt.id}
+                    type="button"
+                    className="nav-bottom-off-route__btn"
+                    onClick={() => onDetourPick(alt.id)}
+                  >
+                    {alt.label}
+                  </button>
+                ) : null
+              )}
+            {onRerouteFromHere ? (
+              <button type="button" className="nav-bottom-off-route__btn" onClick={onRerouteFromHere}>
+                {detourAutoActive ? "Other detour" : "More options"}
+              </button>
+            ) : null}
+          </div>
         </div>
       )}
       {navigationStarted && showTrafficBypass && onTrafficBypass && (

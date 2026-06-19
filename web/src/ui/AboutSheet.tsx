@@ -469,8 +469,9 @@ export function AboutSheet({
                 onChange={(e) => onSettings({ ...settings, autoRerouteEnabled: e.target.checked })}
               />
               <span>
-                <strong>Off-route map choices</strong> — when you leave your chosen route, StormPath opens
-                map view with B/C rejoin options. Your locked route never changes until you pick another leg.
+                <strong>Auto detour</strong> — when you leave your chosen route, StormPath finds a short
+                local path to rejoin ahead and follows it in drive view. Your locked route stays until you
+                rejoin or pick another detour (B/C). Tap <strong>More options</strong> for alternates.
                 {!plus ? <em> (Plus)</em> : null}
               </span>
             </label>

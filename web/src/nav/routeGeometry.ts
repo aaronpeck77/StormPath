@@ -417,7 +417,7 @@ export function normalizeStoredRouteGeometry(geometry: LngLat[]): LngLat[] {
     ? ROUTE_GEOMETRY_STORAGE_VERTICES_EXTREME
     : ROUTE_GEOMETRY_STORAGE_VERTICES_ULTRA;
   if (geometry.length <= cap) return geometry;
-  return subsamplePolylineVertexBudget(geometry, cap);
+  return subsamplePolylineAlongDistance(geometry, cap);
 }
 
 export function geometryForPlanningMapDisplay(geometry: LngLat[]): LngLat[] {
@@ -426,7 +426,7 @@ export function geometryForPlanningMapDisplay(geometry: LngLat[]): LngLat[] {
   if (!isUltraLongTripRoute(totalM)) return geometry;
   const cap = isExtremeTripRoute(totalM) ? 800 : MAP_PLANNING_OVERVIEW_VERTICES;
   if (geometry.length <= cap) return geometry;
-  return subsamplePolylineVertexBudget(geometry, cap);
+  return subsamplePolylineAlongDistance(geometry, cap);
 }
 
 /** Weather/hazard halo segments — dense enough to follow roads on long legs. */

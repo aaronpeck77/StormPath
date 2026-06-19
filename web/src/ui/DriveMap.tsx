@@ -286,9 +286,17 @@ const ROUTE_FIT_STORM_BAR_PEEK_TOP_PX = 46;
 /** Phone collapsed: preview strip under guidance — keep in sync with `.storm-advisory-bar--preview` height. */
 const ROUTE_FIT_STORM_BAR_PHONE_COMPACT_TOP_PX = 34;
 
-/** Progress rail width + gap. */
-const ROUTE_RIGHT_RAIL_PX = 56;
-const ROUTE_RIGHT_RAIL_GAP_PX = 8;
+/** Progress rail column + bezel padding + gap before route endpoints (sync with `.nav-route-progress-rail`). */
+const ROUTE_RIGHT_RAIL_COLUMN_PX = 56;
+const ROUTE_RIGHT_RAIL_BEZEL_PX = 14;
+const ROUTE_RIGHT_RAIL_ENDPOINT_GAP_PX = 16;
+
+type RouteViewAxis = "eastWest" | "northSouth" | "diagonal";
+
+function routeProgressRailRightClearancePx(axis: RouteViewAxis = "diagonal"): number {
+  const base = ROUTE_RIGHT_RAIL_COLUMN_PX + ROUTE_RIGHT_RAIL_BEZEL_PX + ROUTE_RIGHT_RAIL_ENDPOINT_GAP_PX;
+  return axis === "eastWest" ? base + 10 : base;
+}
 
 function stormBarTopExtraPx(visible: boolean, expanded: boolean): number {
   if (!visible) return 0;
@@ -314,7 +322,7 @@ function measuredMapChromeInsets(progressRailVisible: boolean): MapChromeInsets 
   const vh = window.innerHeight;
   let bottom = 0;
   let top = 0;
-  const right = progressRailVisible ? ROUTE_RIGHT_RAIL_PX + ROUTE_RIGHT_RAIL_GAP_PX : 0;
+  const right = progressRailVisible ? routeProgressRailRightClearancePx() : 0;
 
   const bottomStack = document.querySelector<HTMLElement>(".nav-bottom-stack");
   if (bottomStack) {
@@ -337,7 +345,7 @@ function measuredMapChromeInsets(progressRailVisible: boolean): MapChromeInsets 
     top: Math.min(Math.max(0, top), Math.round(vh * 0.35)),
     bottom: Math.min(Math.max(0, bottom), Math.round(vh * 0.45)),
     left: MAIN_MAP_ROUTE_PADDING.left,
-    right: Math.max(right, progressRailVisible ? ROUTE_RIGHT_RAIL_PX + ROUTE_RIGHT_RAIL_GAP_PX : 18),
+    right: Math.max(right, progressRailVisible ? routeProgressRailRightClearancePx() : 18),
   };
 }
 
@@ -376,8 +384,6 @@ function safeAreaInsetsPx(): { top: number; bottom: number } {
     bottom: Math.max(0, cssPxVar("--sp-safe-bottom")),
   };
 }
-
-type RouteViewAxis = "eastWest" | "northSouth" | "diagonal";
 
 function routeViewAxis(
   routes: NavRoute[],
@@ -481,9 +487,9 @@ function routeFitPadding(
 } {
   const p = MAIN_MAP_ROUTE_PADDING;
   const stormTop = stormBarTopExtraPx(stormBarVisible, stormBarExpanded);
-  const rightNeed = progressRailVisible ? ROUTE_RIGHT_RAIL_PX + ROUTE_RIGHT_RAIL_GAP_PX : 18;
-  const planningOverview = !progressRailVisible;
   const axis = routeViewAxis(routes, primaryRouteId);
+  const rightNeed = progressRailVisible ? routeProgressRailRightClearancePx(axis) : 18;
+  const planningOverview = !progressRailVisible;
   if (isNarrowPhoneViewport()) {
     const safe = safeAreaInsetsPx();
     const sidePad = Math.max(p.left, 22);
@@ -491,7 +497,7 @@ function routeFitPadding(
       148 +
       Math.min(34, safe.bottom) +
       (planningOverview && axis === "northSouth" ? 20 : 0);
-    /* Before Go there is no progress rail, so keep the route overview centered in the full map width. */
+    /* When the rail is hidden, keep the route centered in the full map width. */
     return mergeMapChromeInsets(
       {
         top: Math.max(118, 168 - ROUTE_FIT_TOP_TRIM_PX) + stormTop + Math.min(6, safe.top * 0.25),
@@ -618,7 +624,7 @@ function driveCameraEaseOptions(
   progressRailVisible: boolean
 ): { padding: mapboxgl.PaddingOptions; offset: [number, number] } {
   const stormTop = stormBarTopExtraPx(stormBarVisible, stormBarExpanded);
-  const rightNeed = progressRailVisible ? ROUTE_RIGHT_RAIL_PX + ROUTE_RIGHT_RAIL_GAP_PX : 18;
+  const rightNeed = progressRailVisible ? routeProgressRailRightClearancePx() : 18;
   /*
    * Landscape + side-T chrome: bottom dock and top strip sit on the right half only.
    * Portrait-style bottom/top padding is far too tall for ~360–430px viewport height and
@@ -960,6 +966,28 @@ function selectablePoiAtPoint(map: mapboxgl.Map, point: mapboxgl.PointLike): Sel
 function mapEventFromUser(e: unknown): boolean {
   if (!e || typeof e !== "object") return false;
   return (e as { originalEvent?: unknown }).originalEvent != null;
+}
+
+/** Dr view while navigating: lock the map to follow-cam (no manual pan/zoom). */
+function setDriveMapUserGestures(map: mapboxgl.Map, enabled: boolean): void {
+  const handlers = [
+    map.scrollZoom,
+    map.boxZoom,
+    map.dragRotate,
+    map.dragPan,
+    map.keyboard,
+    map.doubleClickZoom,
+    map.touchZoomRotate,
+    map.touchPitch,
+  ];
+  for (const handler of handlers) {
+    try {
+      if (enabled) handler.enable();
+      else handler.disable();
+    } catch {
+      /* map/style teardown */
+    }
+  }
 }
 
 function makePuckEl(): HTMLDivElement {
@@ -1574,6 +1602,20 @@ function DriveMapInner({
       map.setLight(sceneLightForPhase(mapPhase));
     } catch { /* style race */ }
   }, [mapReady, mapPhase]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const lockDriveNav = navigationStarted && viewMode === "drive";
+    setDriveMapUserGestures(map, !lockDriveNav);
+    if (lockDriveNav) {
+      userExploringRef.current = false;
+      if (exploreTimerRef.current) {
+        clearTimeout(exploreTimerRef.current);
+        exploreTimerRef.current = null;
+      }
+    }
+  }, [mapReady, navigationStarted, viewMode]);
 
   useEffect(() => {
     const map = mapRef.current;

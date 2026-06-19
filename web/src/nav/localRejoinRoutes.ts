@@ -1,30 +1,23 @@
-import { METERS_PER_MILE } from "./constants";
+import {
+  orderRejoinRoutesBestFirst,
+  pickLocalRejoinAlongM,
+  type PickRejoinAlongOpts,
+} from "./detourRejoin";
 import { pointAtAlongMeters, polylineLengthMeters } from "./routeGeometry";
 import type { LngLat, NavRoute, TripPlan } from "./types";
 import { collectMapboxRouteVariants } from "../services/mapboxDirectionsRouter";
 import { fetchMapboxSurgicalBypass } from "../services/mapboxRouteAlternatives";
 
-const MI = METERS_PER_MILE;
-
-/** How far ahead on the locked leg to aim for rejoin (m). */
-const REJOIN_OFFSETS_M = [1.2 * MI, 2.2 * MI, 3.2 * MI] as const;
-
-export function pickLocalRejoinAlongM(
-  userAlongM: number,
-  totalM: number,
-  shufflePass = 0
-): number {
-  if (!Number.isFinite(totalM) || totalM <= 0) return 0;
-  const along = Math.max(0, userAlongM);
-  const offset = REJOIN_OFFSETS_M[shufflePass % REJOIN_OFFSETS_M.length]!;
-  const minAhead = Math.min(0.65 * MI, Math.max(350, totalM * 0.02));
-  const target = along + Math.max(minAhead, offset);
-  return Math.min(Math.max(0, totalM - 25), target);
-}
+export { pickLocalRejoinAlongM } from "./detourRejoin";
 
 function altRouteIds(plan: TripPlan, primaryId: string): string[] {
   return plan.routes.filter((r) => r.id !== primaryId).map((r) => r.id);
 }
+
+export type LocalRejoinFetchResult = {
+  routes: NavRoute[];
+  rejoinAlongM: number;
+};
 
 /**
  * Local detour options only — from current GPS to a rejoin point on the locked route ahead.
@@ -40,7 +33,9 @@ export async function fetchLocalRejoinRoutes(opts: {
   shufflePass?: number;
   signal?: AbortSignal;
   isPlus: boolean;
-}): Promise<NavRoute[]> {
+  speedMps?: number;
+  lateralM?: number;
+}): Promise<LocalRejoinFetchResult> {
   const {
     accessToken,
     userLngLat,
@@ -51,13 +46,18 @@ export async function fetchLocalRejoinRoutes(opts: {
     shufflePass = 0,
     signal,
     isPlus,
+    speedMps,
+    lateralM,
   } = opts;
 
   const altIds = altRouteIds(plan, primaryId);
-  if (!altIds.length || lockedGeometry.length < 2) return [];
+  if (!altIds.length || lockedGeometry.length < 2) {
+    return { routes: [], rejoinAlongM: 0 };
+  }
 
+  const pickOpts: PickRejoinAlongOpts = { speedMps, lateralM };
   const totalM = polylineLengthMeters(lockedGeometry);
-  const rejoinM = pickLocalRejoinAlongM(userAlongM, totalM, shufflePass);
+  const rejoinM = pickLocalRejoinAlongM(userAlongM, totalM, shufflePass, pickOpts);
   const rejoinPt = pointAtAlongMeters(lockedGeometry, rejoinM);
 
   const variants = await collectMapboxRouteVariants(accessToken, userLngLat, rejoinPt, {
@@ -80,7 +80,7 @@ export async function fetchLocalRejoinRoutes(opts: {
     if (second) {
       out.push({ ...second, id: altIds[1]!, label: "Rejoin C" });
     } else {
-      const rejoinM2 = pickLocalRejoinAlongM(userAlongM, totalM, shufflePass + 1);
+      const rejoinM2 = pickLocalRejoinAlongM(userAlongM, totalM, shufflePass + 1, pickOpts);
       const rejoinPt2 = pointAtAlongMeters(lockedGeometry, rejoinM2);
       const surgical = await fetchMapboxSurgicalBypass(accessToken, userLngLat, rejoinPt2);
       if (surgical?.geometry.length) {
@@ -96,5 +96,6 @@ export async function fetchLocalRejoinRoutes(opts: {
     }
   }
 
-  return out;
+  const ordered = orderRejoinRoutesBestFirst(out, userLngLat, rejoinPt);
+  return { routes: ordered, rejoinAlongM: rejoinM };
 }

@@ -19,6 +19,7 @@ import { useSavedPlaces } from "./hooks/useSavedPlaces";
 import { useSavedRoutes } from "./hooks/useSavedRoutes";
 import { useRouteRecorder } from "./hooks/useRouteRecorder";
 import { useTurnVoiceGuidance } from "./hooks/useTurnVoiceGuidance";
+import { useProgressRailFootInset } from "./hooks/useProgressRailFootInset";
 import { useSessionOdometerMeters } from "./hooks/useSessionOdometerMeters";
 import {
   useUserLocation,
@@ -157,6 +158,12 @@ import {
   shouldExitOffRouteLatch,
 } from "./nav/offRouteDetect";
 import { fetchLocalRejoinRoutes } from "./nav/localRejoinRoutes";
+import {
+  formatDetourRejoinDistanceM,
+  hasRejoinedLockedRoute,
+  metersRemainingToRejoinOnLockedRoute,
+} from "./nav/detourRejoin";
+import { speakNavigationAlert } from "./nav/navigationVoiceAlert";
 import {
   resolveDrivingRejoinContext,
   shouldLatchHighwayAfterSurface,
@@ -379,7 +386,7 @@ function viewModeAfterCompareCancel(
 
 const MB_TRAFFIC_LINE_SNAP_NOTICE = "Mapbox traffic-aware line";
 /** Route mode: refresh B/C alternates only (primary leg unchanged). */
-/** Snap drawn line to Mapbox’s road network when live delay vs ORS is huge or Mapbox can’t trace the ORS path. */
+/** Snap drawn line to Mapbox’s road network when live delay vs stored geometry is huge or Mapbox can’t trace the path. */
 const MAPBOX_LINE_SNAP_DELAY_MIN = 10;
 /** Applies to both “heavy delay” and untraceable polyline — avoids GPS-driven snap loops in drive/topdown. */
 const MAPBOX_LINE_SNAP_COOLDOWN_MS = 45_000;
@@ -811,8 +818,14 @@ export default function App() {
   const offRouteReofferBlockedUntilRef = useRef(0);
   const rejoinShufflePassRef = useRef(0);
   const offRouteRejoinAlongMRef = useRef(0);
+  /** Along-route meters on locked A where the active detour aims to rejoin. */
+  const [detourRejoinAlongM, setDetourRejoinAlongM] = useState(0);
+  const detourRejoinAlongMRef = useRef(0);
+  detourRejoinAlongMRef.current = detourRejoinAlongM;
   /** City-street auto rejoin follows B without changing the route locked at Go. */
   const [autoRejoinGuidanceRouteId, setAutoRejoinGuidanceRouteId] = useState<string | null>(null);
+  const autoRejoinGuidanceRouteIdRef = useRef<string | null>(null);
+  autoRejoinGuidanceRouteIdRef.current = autoRejoinGuidanceRouteId;
   const drivingRejoinRoadClassRef = useRef<RoadNetworkClass>("unknown");
   const drivingRejoinSurfaceAtRef = useRef<number | null>(null);
   const drivingRejoinModeRef = useRef<DrivingRejoinMode>("manual");
@@ -1840,7 +1853,7 @@ export default function App() {
 
   /** Fetch local rejoin options (B/C) to the locked route ahead — not a full trip replan. */
   const recalcRouteFromHere = useCallback(
-    async (opts?: { silent?: boolean; shuffle?: boolean }) => {
+    async (opts?: { silent?: boolean; shuffle?: boolean; autoFollow?: boolean }) => {
       if (!userLngLat || !destLngLat) return;
       if (env.mapboxToken && !isOnline) {
         if (!opts?.silent) {
@@ -1868,7 +1881,8 @@ export default function App() {
           null;
 
         if (navigationStartedRef.current && lockedId && lockedGeom && lockedGeom.length >= 2 && env.mapboxToken) {
-          const rejoinRoutes = await fetchLocalRejoinRoutes({
+          const lateralNow = lastOffRouteSampleRef.current?.lateralM ?? 0;
+          const { routes: rejoinRoutes, rejoinAlongM } = await fetchLocalRejoinRoutes({
             accessToken: env.mapboxToken,
             userLngLat,
             lockedGeometry: lockedGeom,
@@ -1878,32 +1892,38 @@ export default function App() {
             shufflePass: rejoinShufflePassRef.current,
             signal: altFetch.signal,
             isPlus,
+            speedMps: speedMpsRef.current ?? undefined,
+            lateralM: lateralNow > 0 ? lateralNow : undefined,
           });
           if (epochAtStart !== routeGraphEpochRef.current) return;
           if (rejoinRoutes.length > 0) {
             setPlan((prev) => mergePlanPreservingPrimary(prev, lockedId, rejoinRoutes));
             setFitTrigger((n) => n + 1);
             offRouteRerouteFailStreakRef.current = 0;
-            const firstAlt = rejoinRoutes[0]?.id ?? null;
-            if (
-              opts?.silent &&
-              navigationStartedRef.current &&
-              drivingRejoinModeRef.current === "auto_local" &&
-              firstAlt
-            ) {
-              setAutoRejoinGuidanceRouteId(firstAlt);
+            detourRejoinAlongMRef.current = rejoinAlongM;
+            setDetourRejoinAlongM(rejoinAlongM);
+            const bestId = rejoinRoutes[0]?.id ?? null;
+            const autoFollow =
+              opts?.autoFollow ??
+              (opts?.silent === true && effectiveAutoRerouteRef.current && Boolean(bestId));
+
+            if (autoFollow && bestId) {
+              setAutoRejoinGuidanceRouteId(bestId);
               setViewMode("drive");
-              setTapHint(
-                "Auto rejoin on city streets — your locked route stays until you pick B or C on the map."
+              speakNavigationAlert(
+                "Detour to rejoin your route.",
+                settingVoiceGuidanceEnabled
               );
-              window.setTimeout(() => setTapHint(null), 9000);
+              if (!opts?.silent) {
+                setTapHint("Auto detour — follow to rejoin your locked route ahead.");
+                window.setTimeout(() => setTapHint(null), 7000);
+              }
             } else if (offRouteSevereRef.current && navigationStartedRef.current) {
-              setViewMode((vm) => (vm === "drive" ? "topdown" : vm));
               if (!opts?.silent) {
                 setTapHint(
                   opts?.shuffle
-                    ? "New local rejoin paths — pick B or C on the map to rejoin ahead."
-                    : "Local detour options — pick B or C on the map to rejoin ahead."
+                    ? "New detour options — tap B or C below, or open map view to compare."
+                    : "Local detour options — tap B or C below to rejoin ahead."
                 );
                 window.setTimeout(() => setTapHint(null), 5500);
               }
@@ -1917,6 +1937,13 @@ export default function App() {
             }
             return;
           }
+
+          offRouteRerouteFailStreakRef.current += 1;
+          if (!opts?.silent) {
+            setTapHint("Could not find a local rejoin — try Other detour again.");
+            window.setTimeout(() => setTapHint(null), 6000);
+          }
+          return;
         }
 
         let p: TripPlan;
@@ -2016,6 +2043,7 @@ export default function App() {
       stormAlertsForRouting,
       settingStormEnabled,
       learnEnabled,
+      settingVoiceGuidanceEnabled,
     ]
   );
 
@@ -4221,10 +4249,9 @@ export default function App() {
   ]);
 
   /**
-   * The blue line is ORS/OpenStreetMap; traffic delay comes from Mapbox along that shape. Closures
-   * can show as huge delay while the line still crosses the barricade. Snap the active leg to Mapbox
-   * driving-traffic geometry when delay is extreme or Mapbox can’t trace the ORS polyline.
-   * Disabled during active navigation — the driver-chosen route must not change without approval.
+   * When live traffic delay is extreme or Mapbox cannot trace the stored polyline, refresh the active
+   * leg from Mapbox driving-traffic (full road geometry). Disabled during active navigation — the
+   * driver-chosen route must not change without approval.
    */
   useEffect(() => {
     if (navigationStarted) return;
@@ -4270,7 +4297,7 @@ export default function App() {
                 turnSteps: mb.turnSteps,
                 routeNotices: [
                   ...(r.routeNotices ?? []),
-                  `${MB_TRAFFIC_LINE_SNAP_NOTICE} — follows live road network when ORS can’t match closures/congestion.`,
+                  `${MB_TRAFFIC_LINE_SNAP_NOTICE} — follows live road network when stored geometry no longer matches closures/congestion.`,
                 ],
               }
             : r
@@ -4307,7 +4334,7 @@ export default function App() {
     offRouteConfirmStreakRef.current = 0;
   }, [guidanceRouteId]);
 
-  /** Off-route: never swap the locked leg — open map view and offer B/C rejoin paths. */
+  /** Off-route: short detour to rejoin locked route A — never silent full-trip replan. */
   useEffect(() => {
     if (!navigationStarted || !guidanceRoute?.geometry?.length || !destLngLat) {
       offRouteLatchedRef.current = false;
@@ -4317,6 +4344,8 @@ export default function App() {
       offRouteSevereRef.current = false;
       lastOffRouteSampleRef.current = null;
       setOffRouteSevere(false);
+      setDetourRejoinAlongM(0);
+      detourRejoinAlongMRef.current = 0;
       return;
     }
 
@@ -4346,26 +4375,30 @@ export default function App() {
           : null;
       drivingRejoinModeRef.current = ctx?.mode ?? "manual";
 
-      const autoLocalFetch =
-        effectiveAutoRerouteRef.current && ctx?.mode === "auto_local";
+      const autoDetour = effectiveAutoRerouteRef.current;
 
-      if (autoLocalFetch) {
-        setViewMode((vm) => (vm === "drive" ? "topdown" : vm));
-        setFitTrigger((n) => n + 1);
-        if (!routingRef.current && !altRoutesRefreshInFlightRef.current) {
-          void recalcRouteFromHere({ silent: true });
-        }
-        setTapHint(
-          "Off route — auto local rejoin on city streets. Your locked route stays until you pick B or C."
+      if (!routingRef.current && !altRoutesRefreshInFlightRef.current) {
+        void recalcRouteFromHere({
+          silent: true,
+          autoFollow: autoDetour,
+        });
+      }
+
+      if (autoDetour) {
+        setViewMode("drive");
+        speakNavigationAlert(
+          "Off route. Finding a detour to rejoin ahead.",
+          settingVoiceGuidanceEnabled
         );
-        window.setTimeout(() => setTapHint(null), 9000);
+        if (!routingRef.current) {
+          setTapHint("Off route — auto detour to rejoin your locked route ahead.");
+          window.setTimeout(() => setTapHint(null), 7000);
+        }
       } else {
-        setViewMode((vm) => (vm === "drive" ? "topdown" : vm));
-        setFitTrigger((n) => n + 1);
         setTapHint(
           ctx?.roadClass === "highway"
-            ? "Off route — pick B or C on the map to rejoin ahead."
-            : "Off route — pick B or C on the map to rejoin, or tap More options."
+            ? "Off route — tap B or C below to rejoin ahead."
+            : "Off route — tap B or C below, or Other detour for more paths."
         );
         window.setTimeout(() => setTapHint(null), 7000);
       }
@@ -4383,10 +4416,37 @@ export default function App() {
       const sample = measureOffRouteLateral(pos, geom, userAlongGuidanceMRef.current);
       const lat = sample.lateralM;
       const alongM = sample.alongM;
+      lastOffRouteSampleRef.current = { t: Date.now(), lateralM: lat, alongM };
 
       const lockedRoute = planRef.current.routes.find(
         (r) => r.id === lockedNavigationRouteIdRef.current
       );
+      const lockedGeom = lockedRoute?.geometry;
+
+      if (
+        autoRejoinGuidanceRouteIdRef.current &&
+        lockedGeom &&
+        lockedGeom.length >= 2 &&
+        detourRejoinAlongMRef.current > 0 &&
+        hasRejoinedLockedRoute(
+          pos,
+          lockedGeom,
+          detourRejoinAlongMRef.current,
+          alongM
+        )
+      ) {
+        setAutoRejoinGuidanceRouteId(null);
+        setDetourRejoinAlongM(0);
+        detourRejoinAlongMRef.current = 0;
+        offRouteLatchedRef.current = false;
+        offRouteChoiceOfferedRef.current = false;
+        offRouteConfirmStreakRef.current = 0;
+        offRouteReofferBlockedUntilRef.current = Date.now() + OFF_ROUTE_REOFFER_COOLDOWN_MS;
+        setOffRouteSevereIfNeeded(false);
+        speakNavigationAlert("Back on your route.", settingVoiceGuidanceEnabled);
+        return;
+      }
+
       if (lockedRoute?.geometry?.length) {
         const instantRoad = resolveDrivingRejoinContext({
           guidanceRoute: lockedRoute,
@@ -4454,13 +4514,16 @@ export default function App() {
       }
 
       if (offRouteLatchedRef.current) {
-        if (shouldExitOffRouteLatch(lat)) {
+        if (autoRejoinGuidanceRouteIdRef.current) {
+          setOffRouteSevereIfNeeded(true);
+        } else if (shouldExitOffRouteLatch(lat)) {
           offRouteLatchedRef.current = false;
           offRouteChoiceOfferedRef.current = false;
           offRouteConfirmStreakRef.current = 0;
           offRouteReofferBlockedUntilRef.current = Date.now() + OFF_ROUTE_REOFFER_COOLDOWN_MS;
           setOffRouteSevereIfNeeded(false);
-          setAutoRejoinGuidanceRouteId(null);
+          setDetourRejoinAlongM(0);
+          detourRejoinAlongMRef.current = 0;
         } else {
           setOffRouteSevereIfNeeded(true);
         }
@@ -4483,6 +4546,7 @@ export default function App() {
     recalcRouteFromHere,
     env.mapboxToken,
     isOnline,
+    settingVoiceGuidanceEnabled,
   ]);
 
   const refreshAltRef = useRef(refreshAlternateRoutesOnly);
@@ -4562,6 +4626,8 @@ export default function App() {
     !trafficBypassCompare &&
     Boolean(progressRailRoute?.geometry && progressRailRoute.geometry.length >= 2);
 
+  useProgressRailFootInset(showProgressRail);
+
   /** Matches map: planning uses A/B/C preview; after Go the active leg reads as primary blue. */
   const progressStripRouteColor = useMemo(() => {
     if (!guidanceRoute) return routePickSlotHex(0);
@@ -4569,7 +4635,54 @@ export default function App() {
     return routePickSlotHex(routeSlotIndexFor(guidanceRoute.id, orderedRouteIds));
   }, [guidanceRoute, orderedRouteIds, navigationStarted]);
 
-  const showOffRouteManualBanner = offRouteSevere && navigationStarted;
+  const showOffRouteManualBanner =
+    navigationStarted && (offRouteSevere || Boolean(autoRejoinGuidanceRouteId));
+
+  const detourLockedRouteId = useMemo(() => {
+    if (!navigationStarted) return null;
+    return lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
+  }, [navigationStarted, orderedRouteIds]);
+
+  const detourAltChoices = useMemo(() => {
+    if (!detourLockedRouteId || !offRouteSevere || autoRejoinGuidanceRouteId) return [];
+    return plan.routes
+      .filter((r) => r.id !== detourLockedRouteId)
+      .slice(0, 2)
+      .map((r) => ({
+        id: r.id,
+        label: r.label.replace(/^Rejoin /, "") || r.label,
+      }));
+  }, [plan.routes, detourLockedRouteId, offRouteSevere, autoRejoinGuidanceRouteId]);
+
+  const detourRejoinDistanceLabel = useMemo(() => {
+    if (!navigationStarted || !autoRejoinGuidanceRouteId || !effectiveUserLngLat || !(detourRejoinAlongM > 0)) {
+      return null;
+    }
+    const lockedGeom = detourLockedRouteId
+      ? plan.routes.find((r) => r.id === detourLockedRouteId)?.geometry
+      : null;
+    if (!lockedGeom?.length) return null;
+    const remainingM = metersRemainingToRejoinOnLockedRoute(
+      lockedGeom,
+      detourRejoinAlongM,
+      effectiveUserLngLat,
+      userAlongGuidanceM
+    );
+    return formatDetourRejoinDistanceM(remainingM);
+  }, [
+    navigationStarted,
+    autoRejoinGuidanceRouteId,
+    effectiveUserLngLat,
+    detourRejoinAlongM,
+    detourLockedRouteId,
+    plan.routes,
+    userAlongGuidanceM,
+  ]);
+
+  const detourAutoActive = Boolean(navigationStarted && autoRejoinGuidanceRouteId);
+
+  const offRouteRejoinCompareActive =
+    offRouteSevere && navigationStarted && !autoRejoinGuidanceRouteId && viewMode === "topdown";
 
   const radarFrameTimeLabel = useMemo(() => {
     if (!radarMapOverlayOn || radarFrameUtcSec == null) return null;
@@ -4675,6 +4788,8 @@ export default function App() {
     offRouteReofferBlockedUntilRef.current = 0;
     rejoinShufflePassRef.current = 0;
     setAutoRejoinGuidanceRouteId(null);
+    setDetourRejoinAlongM(0);
+    detourRejoinAlongMRef.current = 0;
     drivingRejoinRoadClassRef.current = "unknown";
     drivingRejoinSurfaceAtRef.current = null;
     drivingRejoinModeRef.current = "manual";
@@ -4870,8 +4985,23 @@ export default function App() {
         lockedNavigationRouteIdRef.current = id;
       }
       setAutoRejoinGuidanceRouteId(null);
+      setDetourRejoinAlongM(0);
+      detourRejoinAlongMRef.current = 0;
     },
     [plan.routes, planRouteIds]
+  );
+
+  const handleFollowDetourRoute = useCallback(
+    (id: string) => {
+      if (!plan.routes.some((r) => r.id === id)) return;
+      const lockedId = lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
+      if (!navigationStartedRef.current || !lockedId || id === lockedId) return;
+      setAutoRejoinGuidanceRouteId(id);
+      setViewMode("drive");
+      setTapHint("Detour selected — follow to rejoin your route.");
+      window.setTimeout(() => setTapHint(null), 4500);
+    },
+    [plan.routes, orderedRouteIds]
   );
 
   /** Route view / map view while navigating: preview A/B/C without changing active guidance. */
@@ -4880,14 +5010,8 @@ export default function App() {
       if (!plan.routes.some((r) => r.id === id)) return;
       const lockedId = lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
       if (offRouteSevere && navigationStarted && lockedId && id !== lockedId) {
-        handlePromoteRouteToPrimary(id);
-        offRouteSevereRef.current = false;
-        offRouteChoiceOfferedRef.current = false;
-        setOffRouteSevere(false);
-        setViewMode("drive");
+        handleFollowDetourRoute(id);
         setFitTrigger((n) => n + 1);
-        setTapHint("Rejoin route selected — back to drive view.");
-        window.setTimeout(() => setTapHint(null), 4500);
         return;
       }
       const i = orderedRouteIds.indexOf(id);
@@ -4896,7 +5020,7 @@ export default function App() {
         setFitTrigger((n) => n + 1);
       }
     },
-    [plan.routes, orderedRouteIds, navigationStarted, viewMode, offRouteSevere, handlePromoteRouteToPrimary]
+    [plan.routes, orderedRouteIds, navigationStarted, viewMode, offRouteSevere, handleFollowDetourRoute]
   );
 
   const handleTrafficBypassCompareSelect = useCallback((id: "r-a" | "r-b" | "r-c") => {
@@ -5015,6 +5139,45 @@ export default function App() {
       }
     }
 
+    /* Full road-following geometry from current GPS — planning preview may be sparse on long legs. */
+    if (env.mapboxToken && userLngLat && destLngLat) {
+      const epochAtStart = routeGraphEpochRef.current;
+      const remainingVias = remainingViaStops(viaStops, activeViaIndex);
+      const viaCoords = remainingVias.map((s) => s.lngLat);
+      void (async () => {
+        try {
+          const fresh = await collectMapboxRouteVariants(env.mapboxToken, userLngLat, destLngLat, {
+            via: viaCoords.length > 0 ? viaCoords : undefined,
+            singleRouteFromPosition: true,
+          });
+          const leg = fresh[0];
+          if (!leg?.geometry?.length || epochAtStart !== routeGraphEpochRef.current) return;
+          if (lockedNavigationRouteIdRef.current !== chosen) return;
+          setPlan((prev) => ({
+            ...prev,
+            routes: prev.routes.map((r) =>
+              r.id === chosen
+                ? {
+                    ...r,
+                    geometry: leg.geometry,
+                    baseEtaMinutes: leg.baseEtaMinutes,
+                    turnSteps: leg.turnSteps,
+                    routeNotices: leg.routeNotices ?? r.routeNotices,
+                    routeNoticeAlongMeters: leg.routeNoticeAlongMeters ?? r.routeNoticeAlongMeters,
+                    hasTolls: leg.hasTolls ?? r.hasTolls,
+                    tollLabels: leg.tollLabels ?? r.tollLabels,
+                  }
+                : r
+            ),
+          }));
+          navGoGeometryRef.current = leg.geometry.map(([a, b]) => [a, b] as LngLat);
+          setFitTrigger((n) => n + 1);
+        } catch {
+          /* keep planning geometry */
+        }
+      })();
+    }
+
     // Learn the preferred A/B/C “role” for this destination area.
     if (payFrequentRoutes && destLngLat && destinationLabel.trim()) {
       const key = areaKeyFromLngLat(destLngLat);
@@ -5045,6 +5208,10 @@ export default function App() {
     plan.routes,
     plan.originLabel,
     userLngLat,
+    viaStops,
+    activeViaIndex,
+    env.mapboxToken,
+    destLngLat,
   ]);
 
   const handleGo = () => {
@@ -5922,8 +6089,8 @@ export default function App() {
             homePreloadBounds={homePreloadBounds}
             searchPickMarkers={searchPickMarkersForMap}
             onSearchPickMarkerClick={searchPickMarkersForMap ? handleSearchPickFromMap : undefined}
-            progressRailVisible={navigationStarted && isPlus}
-            offRouteRejoinCompareActive={offRouteSevere && navigationStarted}
+            progressRailVisible={showProgressRail}
+            offRouteRejoinCompareActive={offRouteRejoinCompareActive}
           />
           </Suspense>
         </div>
@@ -6609,9 +6776,17 @@ export default function App() {
               showRadarButton={!driveModeUi}
               offRouteSevere={offRouteSevere}
               showOffRouteBanner={showOffRouteManualBanner}
+              detourAutoActive={detourAutoActive}
+              detourRejoinDistanceLabel={detourRejoinDistanceLabel}
+              detourAltChoices={detourAltChoices}
+              onDetourPick={handleFollowDetourRoute}
               onRerouteFromHere={
                 env.mapboxToken
-                  ? () => void recalcRouteFromHere({ shuffle: true })
+                  ? () =>
+                      void recalcRouteFromHere({
+                        shuffle: true,
+                        autoFollow: effectiveAutoRerouteEnabled && detourAutoActive,
+                      })
                   : undefined
               }
               showTrafficBypass={showTrafficBypassCta}
