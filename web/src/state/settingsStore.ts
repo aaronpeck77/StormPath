@@ -39,6 +39,7 @@ const LS_WEATHER_HINTS = "stormpath-setting-weather-hints-enabled";
 const LS_AUTO_REROUTE = "stormpath-setting-auto-reroute-enabled";
 const LS_VOICE = "stormpath-setting-voice-guided";
 const LS_GPS_HIGH_REFRESH = "stormpath-setting-gps-high-refresh";
+const LS_MAP_MATCHING = "stormpath-setting-map-matching-enabled";
 const LS_LANDSCAPE_SIDE_HAND = "stormpath-setting-landscape-side-hand";
 
 export type LandscapeSideHand = "right" | "left";
@@ -57,6 +58,8 @@ export interface AppSettings {
   autoRerouteEnabled: boolean;
   voiceGuidanceEnabled: boolean;
   gpsHighRefreshEnabled: boolean;
+  /** While navigating, snap GPS to the road network via Mapbox Map Matching (Plus). */
+  mapMatchingEnabled: boolean;
   landscapeSideHand: LandscapeSideHand;
 }
 
@@ -85,6 +88,7 @@ export interface SettingsState {
   dataSaverHintDismissed: boolean;
   voiceGuidanceEnabled: boolean;
   gpsHighRefreshEnabled: boolean;
+  mapMatchingEnabled: boolean;
   /** Landscape / side view only; portrait ignores. */
   landscapeSideHand: LandscapeSideHand;
 
@@ -98,6 +102,7 @@ export interface SettingsState {
   dismissDataSaverHint: () => void;
   setVoiceGuidanceEnabled: (on: boolean) => void;
   setGpsHighRefreshEnabled: (on: boolean) => void;
+  setMapMatchingEnabled: (on: boolean) => void;
   setLandscapeSideHand: (hand: LandscapeSideHand) => void;
   /**
    * Bulk-apply all 8 persisted toggles from the About sheet in a single store update.
@@ -121,6 +126,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   dataSaverHintDismissed: readDataSaverHintDismissed(),
   voiceGuidanceEnabled: readBoolFlag(LS_VOICE, false),
   gpsHighRefreshEnabled: readBoolFlag(LS_GPS_HIGH_REFRESH, false),
+  mapMatchingEnabled: readBoolFlag(LS_MAP_MATCHING, true),
   landscapeSideHand: safeStorage.get(LS_LANDSCAPE_SIDE_HAND) === "left" ? "left" : "right",
 
   setStormEnabled: (on) => {
@@ -159,6 +165,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     writeBoolFlag(LS_GPS_HIGH_REFRESH, on);
     set({ gpsHighRefreshEnabled: on });
   },
+  setMapMatchingEnabled: (on) => {
+    writeBoolFlag(LS_MAP_MATCHING, on);
+    set({ mapMatchingEnabled: on });
+  },
   setLandscapeSideHand: (hand) => {
     safeStorage.set(LS_LANDSCAPE_SIDE_HAND, hand);
     set({ landscapeSideHand: hand });
@@ -176,6 +186,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     writeBoolFlag(LS_DATA_SAVER, next.dataSaverEnabled);
     writeBoolFlag(LS_VOICE, next.voiceGuidanceEnabled);
     writeBoolFlag(LS_GPS_HIGH_REFRESH, next.gpsHighRefreshEnabled);
+    writeBoolFlag(LS_MAP_MATCHING, next.mapMatchingEnabled);
     safeStorage.set(LS_LANDSCAPE_SIDE_HAND, next.landscapeSideHand);
     set({
       stormEnabled: next.stormEnabled,
@@ -186,6 +197,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       dataSaverEnabled: next.dataSaverEnabled,
       voiceGuidanceEnabled: next.voiceGuidanceEnabled,
       gpsHighRefreshEnabled: next.gpsHighRefreshEnabled,
+      mapMatchingEnabled: next.mapMatchingEnabled,
       landscapeSideHand: next.landscapeSideHand,
     });
   },

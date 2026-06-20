@@ -286,8 +286,16 @@ function routeCoordinatesForMap(route: NavRoute, opts?: ApplyRoutesLayerOptions)
   const viewMode = opts?.viewMode ?? "route";
   const navigating = opts?.navigationStarted ?? false;
   const isOverviewPip = opts?.isOverviewPip ?? false;
-  if (viewMode === "drive" && navigating && !isOverviewPip) {
-    return routeLineGeometryForDriveDisplay(geometry, opts?.userAlongMeters);
+  const along = opts?.userAlongMeters;
+  /** Dr + Mp while navigating: road-faithful slice near the puck (overview line is OK on Rt). */
+  const nearNavLine =
+    navigating &&
+    !isOverviewPip &&
+    (viewMode === "drive" || viewMode === "topdown") &&
+    along != null &&
+    Number.isFinite(along);
+  if (nearNavLine) {
+    return routeLineGeometryForDriveDisplay(geometry, along);
   }
   return geometryForPlanningMapDisplay(geometry);
 }

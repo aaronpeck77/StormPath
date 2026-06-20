@@ -32,6 +32,7 @@ export type OffRoutePollTickInput = {
   totalM: number;
   userAlongGuidanceM: number;
   lockedGeometry: LngLat[] | null | undefined;
+  guidanceCumDist?: Float64Array | null;
   triggerCtx: OffRouteTriggerContext;
   navGoStartedAtMs: number | null;
   nowMs?: number;
@@ -79,7 +80,8 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
   const sample = measureOffRouteLateral(
     input.pos,
     input.guidanceGeometry,
-    input.userAlongGuidanceM
+    input.userAlongGuidanceM,
+    input.guidanceCumDist
   );
   const lat = sample.lateralM;
   const alongM = sample.alongM;

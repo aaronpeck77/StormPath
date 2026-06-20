@@ -54,7 +54,8 @@ export type OffRouteTriggerContext = {
 export function measureOffRouteLateral(
   user: LngLat,
   geometry: LngLat[],
-  alongHintM: number
+  alongHintM: number,
+  cumDistHint?: Float64Array | null
 ): OffRouteSample {
   if (geometry.length < 2) {
     const full = closestAlongRouteMeters(user, geometry);
@@ -74,7 +75,10 @@ export function measureOffRouteLateral(
     };
   }
 
-  const cumDist = buildCumulativeDistances(geometry);
+  const cumDist =
+    cumDistHint && cumDistHint.length === geometry.length
+      ? cumDistHint
+      : buildCumulativeDistances(geometry);
   const windowed = closestPointOnPolylineWindowed(
     user,
     geometry,

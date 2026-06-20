@@ -78,5 +78,8 @@ export function getWebEnv() {
      */
     revenueCatApiKeyIos:
       (import.meta.env.VITE_REVENUECAT_API_KEY_IOS as string | undefined)?.trim() ?? "",
+    /** Opt-in Mapbox Map Matching while navigating (`VITE_MAP_MATCHING_ENABLED=true`). */
+    mapMatchingEnabled:
+      String(import.meta.env.VITE_MAP_MATCHING_ENABLED ?? "").toLowerCase() === "true",
   };
 }

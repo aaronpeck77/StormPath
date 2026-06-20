@@ -8,7 +8,7 @@
  * in dev/CI environments without a Tomorrow.io key.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LngLat } from "../nav/types";
 import {
   fetchOpenWeatherPointHourly24h,
@@ -24,6 +24,13 @@ import {
   type PointHourlyForecast,
   type RouteForecast,
 } from "../services/tomorrowIo";
+import {
+  QUOTA_NO_ROUTE_FORECAST_NOTE,
+  corridorRouteSig,
+  readRouteForecastCache,
+  STALE_ROUTE_FORECAST_NOTE,
+  writeRouteForecastCache,
+} from "../services/routeCorridorWeatherCache";
 
 // ── Minute precip ─────────────────────────────────────────────────────────────
 
@@ -218,9 +225,17 @@ export function useLocalHourlyForecast(
 /** Re-fetch when route changes or every 45 min. */
 const ROUTE_FORECAST_POLL_MS = 45 * 60 * 1000;
 
+export type RouteForecastHookResult = {
+  forecast: RouteForecast | null;
+  bumpRouteForecastRefresh: () => void;
+  routeForecastRefreshing: boolean;
+  routeForecastRefreshBlocked: string | null;
+  routeForecastUsingCache: boolean;
+};
+
 /**
  * Fetches hourly weather conditions along the active route, sampled at regular
- * intervals. Returns null when no route or no API key.
+ * intervals. Returns null forecast when no route or no API key.
  *
  * @param speedMps - Current/estimated driving speed in m/s (used to estimate
  *   ETA at each waypoint).
@@ -230,53 +245,154 @@ export function useTomorrowRouteForecast(
   routeGeometry: LngLat[] | null,
   speedMps: number,
   enabled = false
-): RouteForecast | null {
+): RouteForecastHookResult {
   const [forecast, setForecast] = useState<RouteForecast | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshBlocked, setRefreshBlocked] = useState<string | null>(null);
+  const [usingCache, setUsingCache] = useState(false);
   const lastRouteSig = useRef("");
   const lastFetchTime = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const forceRefreshRef = useRef(false);
+
+  const applyCachedForecast = useCallback(
+    (sig: string, geometry: LngLat[] | null): RouteForecast | null => {
+      const cached = readRouteForecastCache(sig, geometry);
+      if (!cached?.intervals.length) return null;
+      setForecast(cached);
+      setUsingCache(true);
+      return cached;
+    },
+    []
+  );
+
+  const bumpRouteForecastRefresh = useCallback(() => {
+    lastRouteSig.current = "";
+    lastFetchTime.current = 0;
+    forceRefreshRef.current = true;
+    setRefreshBlocked(null);
+    setRefreshing(true);
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   const waypoints = useMemo(
     () => (routeGeometry ? buildTimelinesWaypointsForGeometry(routeGeometry, speedMps) : null),
     [routeGeometry, speedMps]
   );
 
-  const routeSig = useMemo(() => {
-    if (!routeGeometry?.length) return "";
-    const s = routeGeometry;
-    return `${s[0]?.[0]?.toFixed(3)},${s[0]?.[1]?.toFixed(3)}_${s[s.length - 1]?.[0]?.toFixed(3)},${s[s.length - 1]?.[1]?.toFixed(3)}_${s.length}`;
-  }, [routeGeometry]);
+  const routeSig = useMemo(
+    () => (routeGeometry?.length ? corridorRouteSig(routeGeometry) : ""),
+    [routeGeometry]
+  );
 
   useEffect(() => {
-    if (!enabled || !apiKey || !waypoints) {
-      if (!enabled) return;
+    if (!routeSig || !routeGeometry?.length) {
       setForecast(null);
+      setUsingCache(false);
+      setRefreshBlocked(null);
+      lastRouteSig.current = "";
       return;
     }
-    if (isTomorrowIoRateLimited()) return;
+    const cached = readRouteForecastCache(routeSig, routeGeometry);
+    if (cached?.intervals.length) {
+      setForecast(cached);
+      setUsingCache(true);
+    } else {
+      setForecast(null);
+      setUsingCache(false);
+    }
+  }, [routeSig, routeGeometry]);
 
-    const now = Date.now();
-    const routeChanged = routeSig !== lastRouteSig.current;
-    const stale = now - lastFetchTime.current > ROUTE_FORECAST_POLL_MS;
+  useEffect(() => {
+    const force = forceRefreshRef.current;
+    if (force) forceRefreshRef.current = false;
 
-    if (!routeChanged && !stale) return;
+    if (!routeSig) {
+      setRefreshing(false);
+      return;
+    }
+
+    if (!apiKey || !waypoints) {
+      if (force) {
+        setRefreshBlocked("Route weather unavailable — no API key or route shape.");
+      }
+      setRefreshing(false);
+      return;
+    }
+
+    const rateLimited = isTomorrowIoRateLimited();
+    const showCachedOnly = (note: string) => {
+      if (routeGeometry && applyCachedForecast(routeSig, routeGeometry)) {
+        setRefreshBlocked(note);
+      } else {
+        setRefreshBlocked(QUOTA_NO_ROUTE_FORECAST_NOTE);
+      }
+      setRefreshing(false);
+    };
+
+    if (!force) {
+      if (!enabled) {
+        if (!forecast && routeGeometry) applyCachedForecast(routeSig, routeGeometry);
+        setRefreshing(false);
+        return;
+      }
+      if (rateLimited) {
+        showCachedOnly(STALE_ROUTE_FORECAST_NOTE);
+        return;
+      }
+
+      const now = Date.now();
+      const routeChanged = routeSig !== lastRouteSig.current;
+      const stale = now - lastFetchTime.current > ROUTE_FORECAST_POLL_MS;
+
+      if (!routeChanged && !stale) return;
+    } else if (rateLimited) {
+      showCachedOnly(STALE_ROUTE_FORECAST_NOTE);
+      return;
+    }
 
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
-    lastRouteSig.current = routeSig;
-    lastFetchTime.current = now;
+    setRefreshing(true);
+    setRefreshBlocked(null);
 
-    fetchRouteForecast(apiKey, waypoints, ac.signal)
-      .then((f) => { if (!ac.signal.aborted) setForecast(f); })
-      .catch((e) => {
-        if (!ac.signal.aborted && !isTomorrowIoRateLimited()) {
-          if (import.meta.env.DEV) console.warn("[TomorrowIO] route forecast fetch failed:", e);
+    fetchRouteForecast(apiKey, waypoints, ac.signal, force ? { bypassCache: true } : undefined)
+      .then((f) => {
+        if (!ac.signal.aborted) {
+          lastRouteSig.current = routeSig;
+          lastFetchTime.current = Date.now();
+          writeRouteForecastCache(routeSig, f, routeGeometry);
+          setForecast(f);
+          setUsingCache(false);
+          setRefreshBlocked(null);
         }
+      })
+      .catch((e) => {
+        if (!ac.signal.aborted) {
+          const limited = isTomorrowIoRateLimited() || String(e).includes("rate limited");
+          if (limited) {
+            showCachedOnly(STALE_ROUTE_FORECAST_NOTE);
+          } else if (import.meta.env.DEV) {
+            console.warn("[TomorrowIO] route forecast fetch failed:", e);
+          }
+        }
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setRefreshing(false);
       });
 
-    return () => { ac.abort(); };
-  }, [enabled, apiKey, routeSig, waypoints]);
+    return () => {
+      ac.abort();
+    };
+  }, [enabled, apiKey, routeSig, routeGeometry, waypoints, refreshKey, applyCachedForecast, forecast]);
 
-  return forecast;
+  return {
+    forecast,
+    bumpRouteForecastRefresh,
+    routeForecastRefreshing: refreshing,
+    routeForecastRefreshBlocked: refreshBlocked,
+    routeForecastUsingCache: usingCache,
+  };
 }

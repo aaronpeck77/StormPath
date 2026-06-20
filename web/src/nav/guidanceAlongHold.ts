@@ -1,9 +1,6 @@
-import { useMemo, useRef } from "react";
-import {
-  buildCumulativeDistances,
-  closestAlongRouteMeters,
-  closestPointOnPolylineWindowed,
-} from "./routeGeometry";
+import { useEffect, useMemo, useRef } from "react";
+import { closestAlongRouteMeters, closestPointOnPolylineWindowed } from "./routeGeometry";
+import { buildCumulativeDistances, buildCumulativeDistancesAsync } from "./routeGeometryWorkerClient";
 import type { LngLat } from "./types";
 
 /**
@@ -47,10 +44,22 @@ export function useAlongRouteMetersHeldWhenOffLine(
   if (sig !== geomSigRef.current) {
     geomSigRef.current = sig;
     holdRef.current = 0;
-    // Build cumulative distances once per geometry so windowed searches are O(log N + window).
-    cumDistRef.current =
-      geometry && geometry.length >= 2 ? buildCumulativeDistances(geometry) : null;
   }
+
+  useEffect(() => {
+    if (!geometry || geometry.length < 2) {
+      cumDistRef.current = null;
+      return;
+    }
+    cumDistRef.current = buildCumulativeDistances(geometry);
+    let cancelled = false;
+    void buildCumulativeDistancesAsync(geometry).then((asyncCum) => {
+      if (!cancelled && geomSigRef.current === sig) cumDistRef.current = asyncCum;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sig, geometry]);
 
   const closest = useMemo(() => {
     if (!geometry?.length || !pos) return null;

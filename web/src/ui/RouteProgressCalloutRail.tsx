@@ -1,4 +1,4 @@
-import { useLayoutEffect, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 type Props = {
   open: boolean;
@@ -6,13 +6,57 @@ type Props = {
   /** Hide expanded body when there is nothing to show. */
   hasContent: boolean;
   children: ReactNode;
+  /** Re-fetch corridor temp/precip for the route outlook graph. */
+  showRefresh?: boolean;
+  refreshBusy?: boolean;
+  refreshNote?: string | null;
+  /** Info = cached/stale data shown; warn = nothing to show yet. */
+  refreshNoteTone?: "info" | "warn";
+  onRefresh?: () => void;
 };
 
 /**
  * Expanded route-info panel — `position: fixed` over the map (same anchoring pattern as
  * {@link StormAdvisoryBar}). Opened by tapping {@link RouteProgressStrip} on the side rail.
  */
-export function RouteProgressCalloutRail({ open, onOpenChange, hasContent, children }: Props) {
+export function RouteProgressCalloutRail({
+  open,
+  onOpenChange,
+  hasContent,
+  children,
+  showRefresh = false,
+  refreshBusy = false,
+  refreshNote = null,
+  refreshNoteTone = "warn",
+  onRefresh,
+}: Props) {
+  const [tapBusy, setTapBusy] = useState(false);
+  const tapBusyTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (refreshBusy) return;
+    if (tapBusyTimerRef.current != null) return;
+    setTapBusy(false);
+  }, [refreshBusy]);
+
+  useEffect(
+    () => () => {
+      if (tapBusyTimerRef.current != null) window.clearTimeout(tapBusyTimerRef.current);
+    },
+    []
+  );
+
+  const handleRefresh = () => {
+    if (!onRefresh || refreshBusy || tapBusy) return;
+    setTapBusy(true);
+    onRefresh();
+    tapBusyTimerRef.current = window.setTimeout(() => {
+      tapBusyTimerRef.current = null;
+      setTapBusy(false);
+    }, 900);
+  };
+
+  const refreshLabelBusy = refreshBusy || tapBusy;
   useLayoutEffect(() => {
     if (!open || !hasContent) return;
     const bottomStack = document.querySelector<HTMLElement>(".nav-bottom-stack");
@@ -74,23 +118,50 @@ export function RouteProgressCalloutRail({ open, onOpenChange, hasContent, child
           <span className="route-progress-callout-panel__title">Route info</span>
           <span className="route-progress-callout-panel__subtitle">Bands, hazards, and forecast</span>
         </div>
-        <button
-          type="button"
-          className="route-progress-callout-panel__close"
-          onPointerDownCapture={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onOpenChange(false);
-          }}
-          aria-expanded
-          aria-controls="route-progress-callout-panel"
-          title="Close route info"
-          aria-label="Close route info"
-        >
-          Close
-        </button>
+        <div className="route-progress-callout-panel__head-actions">
+          {showRefresh && onRefresh ? (
+            <button
+              type="button"
+              className="route-progress-callout-panel__refresh"
+              disabled={refreshLabelBusy}
+              onPointerDownCapture={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleRefresh();
+              }}
+              title="Reload temperature and precipitation along your route"
+              aria-label="Refresh route weather forecast"
+            >
+              {refreshLabelBusy ? "Refreshing…" : "Refresh"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="route-progress-callout-panel__close"
+            onPointerDownCapture={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onOpenChange(false);
+            }}
+            aria-expanded
+            aria-controls="route-progress-callout-panel"
+            title="Close route info"
+            aria-label="Close route info"
+          >
+            Close
+          </button>
+        </div>
       </div>
+      {refreshNote ? (
+        <p
+          className={`route-progress-callout-panel__refresh-note route-progress-callout-panel__refresh-note--${refreshNoteTone}`}
+          role="status"
+        >
+          {refreshNote}
+        </p>
+      ) : null}
       <div className="route-progress-callout-panel__body">{children}</div>
     </div>
   );

@@ -93,12 +93,18 @@ function cacheKey(apiKey: string, body: Record<string, unknown>): string {
   return `${apiKey.slice(0, 6)}:${JSON.stringify(body)}`;
 }
 
+export type TomorrowIoPostOpts = {
+  /** Skip the in-memory response cache (manual route-info refresh). */
+  bypassCache?: boolean;
+};
+
 /** Run Tomorrow.io POSTs one at a time with spacing, cache, and hourly budget. */
 export function enqueueTomorrowIoPost(
   apiKey: string,
   body: Record<string, unknown>,
   post: (signal?: AbortSignal) => Promise<unknown>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  opts?: TomorrowIoPostOpts
 ): Promise<unknown> {
   if (!apiKey) return Promise.reject(new Error("Tomorrow.io API key missing"));
   if (isTomorrowIoRateLimited()) {
@@ -106,9 +112,13 @@ export function enqueueTomorrowIoPost(
   }
 
   const key = cacheKey(apiKey, body);
-  const hit = responseCache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
-    return Promise.resolve(hit.data);
+  if (opts?.bypassCache) {
+    responseCache.delete(key);
+  } else {
+    const hit = responseCache.get(key);
+    if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+      return Promise.resolve(hit.data);
+    }
   }
 
   const run = async (): Promise<unknown> => {

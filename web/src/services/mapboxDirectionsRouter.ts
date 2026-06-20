@@ -60,6 +60,7 @@ type DirectionsResponse = {
     geometry?: { type?: string; coordinates?: MbCoord[] };
     legs?: {
       steps?: {
+        geometry?: { type?: string; coordinates?: MbCoord[] };
         maneuver?: {
           instruction?: string;
           type?: string;
@@ -235,6 +236,32 @@ function pickMbRouteByTrail(
   return bestScore >= TRAIL_ROUTE_MIN_OVERLAP ? best : undefined;
 }
 
+function appendLineCoords(out: LngLat[], coords: MbCoord[]): void {
+  for (const c of coords) {
+    const lng = c[0];
+    const lat = c[1];
+    if (lng == null || lat == null || !Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+    const pt: LngLat = [lng, lat];
+    const prev = out[out.length - 1];
+    if (prev && prev[0] === pt[0] && prev[1] === pt[1]) continue;
+    out.push(pt);
+  }
+}
+
+/** Step-level Mapbox geometries follow the road graph; overview polylines can chord across curves. */
+export function geometryFromDirectionsSteps(r: MbRoute): LngLat[] | null {
+  const out: LngLat[] = [];
+  for (const leg of r.legs ?? []) {
+    for (const step of leg.steps ?? []) {
+      const geom = step.geometry;
+      const coords = geom?.coordinates;
+      if (geom?.type !== "LineString" || !coords?.length) continue;
+      appendLineCoords(out, coords);
+    }
+  }
+  return out.length >= 2 ? out : null;
+}
+
 function routeFromDirectionsApi(
   r: NonNullable<DirectionsResponse["routes"]>[0],
   id: string,
@@ -243,9 +270,8 @@ function routeFromDirectionsApi(
 ): NavRoute | null {
   const coords = r.geometry?.coordinates;
   if (!coords?.length || r.geometry?.type !== "LineString") return null;
-  const geometry = normalizeStoredRouteGeometry(
-    coords.map(([lng, lat]) => [lng, lat] as LngLat)
-  );
+  const overview = coords.map(([lng, lat]) => [lng, lat] as LngLat);
+  const geometry = normalizeStoredRouteGeometry(geometryFromDirectionsSteps(r) ?? overview);
   const durSec = r.duration;
   if (durSec == null || !Number.isFinite(durSec)) return null;
 

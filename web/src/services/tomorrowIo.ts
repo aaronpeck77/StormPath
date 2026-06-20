@@ -138,9 +138,16 @@ async function postTimelinesOnce(
 function postTimelines(
   apiKey: string,
   body: Record<string, unknown>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  bypassCache = false
 ): Promise<unknown> {
-  return enqueueTomorrowIoPost(apiKey, body, (sig) => postTimelinesOnce(apiKey, body, sig ?? signal), signal);
+  return enqueueTomorrowIoPost(
+    apiKey,
+    body,
+    (sig) => postTimelinesOnce(apiKey, body, sig ?? signal),
+    signal,
+    bypassCache ? { bypassCache: true } : undefined
+  );
 }
 
 /** Converts Tomorrow.io weatherCode to a short human label. */
@@ -431,7 +438,8 @@ async function fetchHourlyTimelineAtLocation(
   lat: number,
   lng: number,
   endHours: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  bypassCache = false
 ): Promise<HourlyByOffset[]> {
   const raw = await postTimelines(
     apiKey,
@@ -451,7 +459,8 @@ async function fetchHourlyTimelineAtLocation(
       startTime: "now",
       endTime: `nowPlus${endHours}h`,
     },
-    signal
+    signal,
+    bypassCache
   ) as {
     data: {
       timelines: Array<{
@@ -478,7 +487,8 @@ async function fetchHourlyTimelineAtLocation(
 export async function fetchRouteForecast(
   apiKey: string,
   waypoints: { lat: number; lng: number; etaMinutes: number }[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  opts?: { bypassCache?: boolean }
 ): Promise<RouteForecast> {
   if (!waypoints.length) return { fetchedAt: Date.now(), intervals: [] };
 
@@ -504,7 +514,8 @@ export async function fetchRouteForecast(
         loc.lat,
         loc.lng,
         endHours,
-        signal
+        signal,
+        opts?.bypassCache ?? false
       );
       timelinesByKey.set(key, hourly);
     })

@@ -26,6 +26,10 @@ import {
   pointAtAlongMeters,
   polylineLengthMeters,
 } from "./routeGeometry";
+import {
+  buildCumulativeDistances,
+  buildCumulativeDistancesAsync,
+} from "./routeGeometryWorkerClient";
 import { formatTripDestinationLabel, remainingViaStops, type TripStop } from "./routeWaypoints";
 import { reconcileSlotOrderWithPlan } from "./routeSlotOrder";
 import type { LngLat, NavRoute, TripPlan } from "./types";
@@ -151,6 +155,32 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   effectiveAutoRerouteRef.current = effectiveAutoRerouteEnabled;
   const guidanceRouteLengthMRef = useRef(guidanceRouteLengthM);
   guidanceRouteLengthMRef.current = guidanceRouteLengthM;
+  const guidanceCumDistRef = useRef<Float64Array | null>(null);
+  const guidanceGeomSigRef = useRef("");
+
+  useEffect(() => {
+    const g = guidanceRoute?.geometry;
+    const sig =
+      g && g.length >= 2
+        ? `${g.length}:${g[0]![0].toFixed(5)}:${g[g.length - 1]![0].toFixed(5)}`
+        : "";
+    if (sig === guidanceGeomSigRef.current) return;
+    guidanceGeomSigRef.current = sig;
+    if (!g || g.length < 2) {
+      guidanceCumDistRef.current = null;
+      return;
+    }
+    guidanceCumDistRef.current = buildCumulativeDistances(g);
+    let cancelled = false;
+    void buildCumulativeDistancesAsync(g).then((asyncCum) => {
+      if (!cancelled && guidanceGeomSigRef.current === sig) {
+        guidanceCumDistRef.current = asyncCum;
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [guidanceRoute?.geometry, guidanceRouteId]);
 
   const syncPollSessionFromRefs = useCallback(() => {
     pollSessionRef.current = {
@@ -499,7 +529,12 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       );
 
       if (lockedRoute?.geometry?.length) {
-        const sampleAlong = measureOffRouteLateral(pos, geom, userAlongGuidanceMRef.current);
+        const sampleAlong = measureOffRouteLateral(
+          pos,
+          geom,
+          userAlongGuidanceMRef.current,
+          guidanceCumDistRef.current
+        );
         const instantRoad = resolveDrivingRejoinContext({
           guidanceRoute: lockedRoute,
           userAlongM: sampleAlong.alongM,
@@ -538,6 +573,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         totalM,
         userAlongGuidanceM: userAlongGuidanceMRef.current,
         lockedGeometry: lockedRoute?.geometry,
+        guidanceCumDist: guidanceCumDistRef.current,
         triggerCtx: {
           headingDeg: headingRef.current,
           speedMps: speedMpsRef.current,

@@ -56,6 +56,7 @@ type Props = {
     autoRerouteEnabled: boolean;
     voiceGuidanceEnabled: boolean;
     gpsHighRefreshEnabled: boolean;
+    mapMatchingEnabled: boolean;
     /** Landscape / side view only — portrait layout ignores this */
     landscapeSideHand: "right" | "left";
   };
@@ -498,6 +499,23 @@ export function AboutSheet({
               <span>
                 <strong>GPS high refresh</strong> — request fresher positions (uses more battery). Turn off if the
                 puck feels jittery.
+              </span>
+            </label>
+
+            <label
+              className={`about-sheet__setting${plus && env.mapboxToken ? "" : " disabled"}`}
+            >
+              <input
+                type="checkbox"
+                checked={settings.mapMatchingEnabled}
+                disabled={!plus || !env.mapboxToken}
+                onChange={(e) => onSettings({ ...settings, mapMatchingEnabled: e.target.checked })}
+              />
+              <span>
+                <strong>Snap GPS to roads</strong> — while navigating, refines your position onto the
+                Mapbox road network (small extra data use). Helps the puck and off-route detection on
+                wide roads and interchanges.
+                {!plus ? <em> (Plus)</em> : !env.mapboxToken ? <em> (Mapbox token required)</em> : null}
               </span>
             </label>
 
