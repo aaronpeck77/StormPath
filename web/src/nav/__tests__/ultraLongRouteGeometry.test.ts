@@ -27,7 +27,7 @@ describe("ultra-long route geometry", () => {
   });
 
   it("caps stored geometry vertices on ultra-long routes", () => {
-    const raw = longTestRoute(40_000);
+    const raw = longTestRoute(8_000);
     expect(polylineLengthMeters(raw)).toBeGreaterThan(ULTRA_LONG_TRIP_ROUTE_M);
     const stored = normalizeStoredRouteGeometry(raw);
     expect(stored.length).toBeLessThanOrEqual(ROUTE_GEOMETRY_STORAGE_VERTICES_ULTRA);

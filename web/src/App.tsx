@@ -18,7 +18,6 @@ import { useFusedSituation } from "./hooks/useFusedSituation";
 import { useSavedPlaces } from "./hooks/useSavedPlaces";
 import { useSavedRoutes } from "./hooks/useSavedRoutes";
 import { useRouteRecorder } from "./hooks/useRouteRecorder";
-import { useTurnVoiceGuidance } from "./hooks/useTurnVoiceGuidance";
 import { useProgressRailFootInset } from "./hooks/useProgressRailFootInset";
 import { useSessionOdometerMeters } from "./hooks/useSessionOdometerMeters";
 import {
@@ -51,11 +50,10 @@ import {
   type ReturnTripLeg,
 } from "./nav/returnTripLeg";
 import type { SavedRoute } from "./nav/savedRoutes";
-import type { LngLat, TripPlan } from "./nav/types";
+import type { LngLat } from "./nav/types";
 import { pickSuggestedActive, scoreTrip } from "./scoring/scoreRoutes";
-import { buildTripFromMapbox, collectMapboxRouteVariants } from "./services/mapboxDirectionsRouter";
+import { collectMapboxRouteVariants } from "./services/mapboxDirectionsRouter";
 import { useAppForeground } from "./hooks/useAppForeground";
-import { isAbortError, routeFetchUserMessage } from "./utils/fetchResilient";
 import { formatDistanceShort, useMilesForLngLat } from "./utils/formatDistance";
 import { useTollPreview } from "./nav/useTollPreview";
 import {
@@ -144,33 +142,10 @@ import {
   pointAtAlongMeters,
   polylineLengthMeters,
 } from "./nav/routeGeometry";
-import { bannerPrimaryStepIndex } from "./nav/bannerPrimaryStep";
-import {
-  measureOffRouteLateral,
-  OFF_ROUTE_CONFIRM_TICKS,
-  OFF_ROUTE_NAV_START_GRACE_ALONG_M,
-  OFF_ROUTE_NAV_START_GRACE_MS,
-  OFF_ROUTE_HEADING_MIN_SPEED_MPS,
-  OFF_ROUTE_POLL_MS,
-  OFF_ROUTE_REOFFER_COOLDOWN_MS,
-  shouldOfferOffRouteRejoin,
-  shouldTriggerOffRouteReroute,
-  shouldExitOffRouteLatch,
-} from "./nav/offRouteDetect";
-import { fetchLocalRejoinRoutes } from "./nav/localRejoinRoutes";
 import {
   formatDetourRejoinDistanceM,
-  hasRejoinedLockedRoute,
   metersRemainingToRejoinOnLockedRoute,
 } from "./nav/detourRejoin";
-import { speakNavigationAlert } from "./nav/navigationVoiceAlert";
-import {
-  resolveDrivingRejoinContext,
-  shouldLatchHighwayAfterSurface,
-  type DrivingRejoinMode,
-  type RoadNetworkClass,
-} from "./nav/drivingRejoinContext";
-import { useAlongRouteMetersHeldWhenOffLine } from "./nav/guidanceAlongHold";
 import {
   auditTripNavDisplay,
   computeRemainingDistanceMeters,
@@ -186,7 +161,6 @@ import {
   ROUTE_AHEAD_HEALTH_REPAIR_COOLDOWN_MS,
 } from "./nav/routeAheadHealth";
 import { reportAppHealthRepair } from "./monitoring/appHealthSignals";
-import { activeTurnStepIndexAlong, turnStepAlongBounds } from "./nav/turnStepAlong";
 import { formatRouteDistanceMi, routeConsiderationSummary } from "./nav/routeSummary";
 import { buildDriveRouteAheadFromImpacts } from "./nav/driveRouteAhead";
 import { pickDriveApproachBanner } from "./nav/driveHazardApproachPreview";
@@ -223,6 +197,10 @@ import {
 } from "./layerStartupPrefs";
 
 const DriveMap = lazy(() => import("./ui/DriveMap"));
+const AboutSheet = lazy(() => import("./ui/AboutSheet").then((m) => ({ default: m.AboutSheet })));
+const SavedDestinationsDrawer = lazy(() =>
+  import("./ui/SavedDestinationsDrawer").then((m) => ({ default: m.SavedDestinationsDrawer }))
+);
 import { SearchBar } from "./ui/SearchBar";
 import type { SearchSuggestion } from "./ui/SearchBar";
 import { BottomToolbar } from "./ui/BottomToolbar";
@@ -232,7 +210,6 @@ import { RouteCycleButton, type RoutePickItem } from "./ui/RoutePickBar";
 import { RouteStopsBar } from "./ui/RouteStopsBar";
 import {
   currentNavTarget,
-  formatTripDestinationLabel,
   MAX_VIA_STOPS,
   remainingViaStops,
 } from "./nav/routeWaypoints";
@@ -244,7 +221,6 @@ import {
   slotOrderAfterSelect,
 } from "./nav/routeSlotOrder";
 import { NameConfirmSheet } from "./ui/NameConfirmSheet";
-import { SavedDestinationsDrawer } from "./ui/SavedDestinationsDrawer";
 import { TopGuidanceBar } from "./ui/TopGuidanceBar";
 import { RecordingRouteBanner } from "./ui/RecordingRouteBanner";
 import { RouteHazardSheet } from "./ui/RouteHazardSheet";
@@ -257,7 +233,6 @@ import { formatEtaDuration } from "./ui/formatEta";
 import { StormAdvisoryBar } from "./ui/StormAdvisoryBar";
 import { DriveHazardApproachBanner } from "./ui/DriveHazardApproachBanner";
 import { ActivityStatusPill } from "./ui/ActivityStatusPill";
-import { AboutSheet } from "./ui/AboutSheet";
 import { Coachmarks } from "./ui/Coachmarks";
 import { resetAllCoachmarks } from "./ui/coachmarks/firstLaunchSteps";
 import { RouteCompareBottomPanel } from "./ui/RouteCompareBottomPanel";
@@ -339,6 +314,8 @@ import {
   useRouteCompareStore,
 } from "./state/routeCompareStore";
 import { useComputeRoutes } from "./nav/useComputeRoutes";
+import { useOffRouteNavigation } from "./nav/useOffRouteNavigation";
+import { useNavigationGuidance } from "./nav/useNavigationGuidance";
 import { useSettingsStore } from "./state/settingsStore";
 import { useRouteCompareActions } from "./state/useRouteCompareActions";
 import { useTripPlanStore } from "./state/tripPlanStore";
@@ -612,8 +589,6 @@ export default function App() {
   const settingAutoRerouteEnabled = useSettingsStore((s) => s.autoRerouteEnabled);
   /** Plus only — Basic always uses the manual off-route Re-route button. */
   const effectiveAutoRerouteEnabled = isPlus && settingAutoRerouteEnabled;
-  const effectiveAutoRerouteRef = useRef(effectiveAutoRerouteEnabled);
-  effectiveAutoRerouteRef.current = effectiveAutoRerouteEnabled;
   const isPlusRef = useRef(isPlus);
   isPlusRef.current = isPlus;
   const settingRadarEnabled = useSettingsStore((s) => s.radarEnabled);
@@ -742,6 +717,9 @@ export default function App() {
   const setNavigationStarted = useTripPlanStore((s) => s.setNavigationStarted);
   const navigationStartedRef = useRef(navigationStarted);
   navigationStartedRef.current = navigationStarted;
+  const userAlongGuidanceMRef = useRef(0);
+  const guidanceRouteGeomRef = useRef<LngLat[] | null>(null);
+  const guidanceRouteLengthMRef = useRef(0);
 
   /** Keep the screen on while navigating on device; allow sleep when done. */
   useEffect(() => {
@@ -804,31 +782,6 @@ export default function App() {
   const setDemoCloseHazardOn = useUiStore((s) => s.setDemoCloseHazardOn);
   const demoPlaybackAlongRef = useRef<number | null>(null);
   demoPlaybackAlongRef.current = demoPlaybackAlongM;
-  const [offRouteSevere, setOffRouteSevere] = useState(false);
-  const offRouteSevereRef = useRef(false);
-  /** Hysteresis: latched true until lateral drops below exit threshold (avoids flapping at one distance). */
-  const offRouteLatchedRef = useRef(false);
-  const lastOffRouteSampleRef = useRef<{ t: number; lateralM: number; alongM: number } | null>(null);
-  const offRouteRerouteFailStreakRef = useRef(0);
-  /** One map-view offer per off-route episode — avoids repeated view flips. */
-  const offRouteChoiceOfferedRef = useRef(false);
-  /** Consecutive off-route polls before latching (filters GPS tangent noise on the corridor). */
-  const offRouteConfirmStreakRef = useRef(0);
-  /** After returning on-route, suppress repeat rejoin popups for a short window. */
-  const offRouteReofferBlockedUntilRef = useRef(0);
-  const rejoinShufflePassRef = useRef(0);
-  const offRouteRejoinAlongMRef = useRef(0);
-  /** Along-route meters on locked A where the active detour aims to rejoin. */
-  const [detourRejoinAlongM, setDetourRejoinAlongM] = useState(0);
-  const detourRejoinAlongMRef = useRef(0);
-  detourRejoinAlongMRef.current = detourRejoinAlongM;
-  /** City-street auto rejoin follows B without changing the route locked at Go. */
-  const [autoRejoinGuidanceRouteId, setAutoRejoinGuidanceRouteId] = useState<string | null>(null);
-  const autoRejoinGuidanceRouteIdRef = useRef<string | null>(null);
-  autoRejoinGuidanceRouteIdRef.current = autoRejoinGuidanceRouteId;
-  const drivingRejoinRoadClassRef = useRef<RoadNetworkClass>("unknown");
-  const drivingRejoinSurfaceAtRef = useRef<number | null>(null);
-  const drivingRejoinModeRef = useRef<DrivingRejoinMode>("manual");
   /** At destination, stationary + no interaction → clearRoute; foreground timer + resume-from-background. */
   const arrivalIdleStartMsRef = useRef<number | null>(null);
   const lastUserInteractionMsRef = useRef<number>(Date.now());
@@ -1851,201 +1804,78 @@ export default function App() {
     return planRouteIds;
   }, [routeSlotOrder, planRouteIds]);
 
-  /** Fetch local rejoin options (B/C) to the locked route ahead — not a full trip replan. */
-  const recalcRouteFromHere = useCallback(
-    async (opts?: { silent?: boolean; shuffle?: boolean; autoFollow?: boolean }) => {
-      if (!userLngLat || !destLngLat) return;
-      if (env.mapboxToken && !isOnline) {
-        if (!opts?.silent) {
-          setTapHint("Offline: route refresh unavailable.");
-          window.setTimeout(() => setTapHint(null), 3500);
-        }
-        return;
-      }
-      if (opts?.shuffle) rejoinShufflePassRef.current += 1;
-      const epochAtStart = routeGraphEpochRef.current;
-      altRoutesFetchAbortRef.current?.abort();
-      const altFetch = new AbortController();
-      altRoutesFetchAbortRef.current = altFetch;
-      altRoutesRefreshInFlightRef.current = true;
-      setRouting(true);
-      setRouteError(null);
-      try {
-        const lockedId =
-          lockedNavigationRouteIdRef.current ??
-          orderedRouteIds[0] ??
-          null;
-        const lockedGeom =
-          (lockedId ? plan.routes.find((r) => r.id === lockedId)?.geometry : null) ??
-          guidanceRouteGeomRef.current ??
-          null;
-
-        if (navigationStartedRef.current && lockedId && lockedGeom && lockedGeom.length >= 2 && env.mapboxToken) {
-          const lateralNow = lastOffRouteSampleRef.current?.lateralM ?? 0;
-          const { routes: rejoinRoutes, rejoinAlongM } = await fetchLocalRejoinRoutes({
-            accessToken: env.mapboxToken,
-            userLngLat,
-            lockedGeometry: lockedGeom,
-            userAlongM: offRouteRejoinAlongMRef.current || userAlongGuidanceMRef.current,
-            plan,
-            primaryId: lockedId,
-            shufflePass: rejoinShufflePassRef.current,
-            signal: altFetch.signal,
-            isPlus,
-            speedMps: speedMpsRef.current ?? undefined,
-            lateralM: lateralNow > 0 ? lateralNow : undefined,
-          });
-          if (epochAtStart !== routeGraphEpochRef.current) return;
-          if (rejoinRoutes.length > 0) {
-            setPlan((prev) => mergePlanPreservingPrimary(prev, lockedId, rejoinRoutes));
-            setFitTrigger((n) => n + 1);
-            offRouteRerouteFailStreakRef.current = 0;
-            detourRejoinAlongMRef.current = rejoinAlongM;
-            setDetourRejoinAlongM(rejoinAlongM);
-            const bestId = rejoinRoutes[0]?.id ?? null;
-            const autoFollow =
-              opts?.autoFollow ??
-              (opts?.silent === true && effectiveAutoRerouteRef.current && Boolean(bestId));
-
-            if (autoFollow && bestId) {
-              setAutoRejoinGuidanceRouteId(bestId);
-              setViewMode("drive");
-              speakNavigationAlert(
-                "Detour to rejoin your route.",
-                settingVoiceGuidanceEnabled
-              );
-              if (!opts?.silent) {
-                setTapHint("Auto detour — follow to rejoin your locked route ahead.");
-                window.setTimeout(() => setTapHint(null), 7000);
-              }
-            } else if (offRouteSevereRef.current && navigationStartedRef.current) {
-              if (!opts?.silent) {
-                setTapHint(
-                  opts?.shuffle
-                    ? "New detour options — tap B or C below, or open map view to compare."
-                    : "Local detour options — tap B or C below to rejoin ahead."
-                );
-                window.setTimeout(() => setTapHint(null), 5500);
-              }
-            } else if (!opts?.silent) {
-              setTapHint(
-                opts?.shuffle
-                  ? "New local rejoin paths — your full route stays until you pick B or C."
-                  : "Local detour options to rejoin your route ahead."
-              );
-              window.setTimeout(() => setTapHint(null), 5500);
-            }
-            return;
-          }
-
-          offRouteRerouteFailStreakRef.current += 1;
-          if (!opts?.silent) {
-            setTapHint("Could not find a local rejoin — try Other detour again.");
-            window.setTimeout(() => setTapHint(null), 6000);
-          }
-          return;
-        }
-
-        let p: TripPlan;
-        let destForMap: [number, number] = destLngLat;
-        let rerouteSnapNotice: string | undefined;
-        if (env.mapboxToken) {
-          const remainingVias = remainingViaStops(viaStops, activeViaIndex);
-          const viaCoords = remainingVias.map((s) => s.lngLat);
-          const snapFromGps = !isPlus;
-          const built = await buildTripFromMapbox(
-            env.mapboxToken,
-            userLngLat,
-            destLngLat,
-            {
-              origin: "Your location",
-              destination: formatTripDestinationLabel(
-                remainingVias,
-                destinationLabel.trim() || "Destination"
-              ),
-            },
-            {
-              signal: altFetch.signal,
-              via: viaCoords.length > 0 ? viaCoords : undefined,
-              allowLocalTripThirdRoute: isPlus,
-              preferThreeRoutes: isPlus,
-              stormAlerts: stormAlertsForRouting,
-              radarAvoidanceEnabled: isPlus && settingStormEnabled,
-              trailRoutePersonalization: isPlus && learnEnabled,
-              singleRouteFromPosition: snapFromGps,
-              rejoinShufflePass: rejoinShufflePassRef.current,
-            }
-          );
-          p = built.plan;
-          destForMap = built.routeDestination;
-          rerouteSnapNotice = built.snapNotice;
-        } else {
-          p = buildMockTripBetween(userLngLat, destLngLat, destinationLabel.trim() || "Destination");
-        }
-        p = !isPlus && p.routes.length > 2 ? { ...p, routes: p.routes.slice(0, 2) } : p;
-        if (epochAtStart !== routeGraphEpochRef.current) return;
-        const primaryId =
-          lockedId ??
-          p.routes[0]?.id ??
-          null;
-        if (primaryId && navigationStartedRef.current) {
-          setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, p.routes));
-        } else {
-          setPlan(p);
-          lockedNavigationRouteIdRef.current = p.routes[0]?.id ?? lockedNavigationRouteIdRef.current;
-        }
-        setDestLngLat(destForMap);
-        const planIds = p.routes.map((r) => r.id);
-        setRouteSlotOrder((prev) => reconcileSlotOrderWithPlan(prev, planIds));
-        setFitTrigger((n) => n + 1);
-        offRouteRerouteFailStreakRef.current = 0;
-        if (!opts?.silent) {
-          if (rerouteSnapNotice) {
-            setTapHint(rerouteSnapNotice);
-            window.setTimeout(() => setTapHint(null), 8500);
-          } else {
-            setTapHint(
-              opts?.shuffle
-                ? "New rejoin options — your chosen route stays until you pick B or C."
-                : "Rejoin options updated from your position."
-            );
-            window.setTimeout(() => setTapHint(null), 5500);
-          }
-        }
-      } catch (e) {
-        if (isAbortError(e)) {
-          return;
-        }
-        const msg =
-          routeFetchUserMessage(e) ?? (e instanceof Error ? e.message : String(e));
-        setRouteError(msg);
-        offRouteRerouteFailStreakRef.current += 1;
-        if (offRouteRerouteFailStreakRef.current >= 2 && !opts?.silent) {
-          setTapHint("Could not fetch rejoin options — try More options again.");
-          window.setTimeout(() => setTapHint(null), 6000);
-        }
-      } finally {
-        setRouting(false);
-        altRoutesRefreshInFlightRef.current = false;
-      }
-    },
-    [
-      userLngLat,
-      destLngLat,
-      viaStops,
-      activeViaIndex,
-      orderedRouteIds,
-      plan,
-      env.mapboxToken,
-      destinationLabel,
-      isOnline,
-      isPlus,
-      stormAlertsForRouting,
-      settingStormEnabled,
-      learnEnabled,
-      settingVoiceGuidanceEnabled,
-    ]
+  const offRouteLockedRouteId =
+    lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
+  const offRouteGuidanceRoute = useMemo(
+    () =>
+      offRouteLockedRouteId
+        ? plan.routes.find((r) => r.id === offRouteLockedRouteId)
+        : undefined,
+    [plan.routes, offRouteLockedRouteId, navigationStarted, orderedRouteIds]
   );
+  const offRouteGuidanceRouteLengthM = useMemo(() => {
+    const g = offRouteGuidanceRoute?.geometry;
+    return g && g.length >= 2 ? polylineLengthMeters(g) : 0;
+  }, [offRouteGuidanceRoute?.geometry]);
+
+  const offRouteNav = useOffRouteNavigation({
+    userLngLat,
+    destLngLat,
+    plan,
+    orderedRouteIds,
+    viaStops,
+    activeViaIndex,
+    destinationLabel,
+    navigationStarted,
+    guidanceRoute: offRouteGuidanceRoute,
+    guidanceRouteLengthM: offRouteGuidanceRouteLengthM,
+    guidanceRouteId: offRouteLockedRouteId ?? primaryRouteId,
+    userAlongGuidanceMRef,
+    viewMode,
+    mapboxToken: env.mapboxToken,
+    isOnline,
+    isPlus,
+    effectiveAutoRerouteEnabled,
+    settingVoiceGuidanceEnabled,
+    settingStormEnabled,
+    learnEnabled,
+    stormAlertsForRouting,
+    lockedNavigationRouteIdRef,
+    routeGraphEpochRef,
+    altRoutesFetchAbortRef,
+    altRoutesRefreshInFlightRef,
+    navigationStartedRef,
+    guidanceRouteGeomRef,
+    userLngLatRef,
+    speedMpsRef,
+    headingRef,
+    navGoStartedAtRef,
+    planRef,
+    destLngLatRef,
+    routingRef,
+    setPlan,
+    setDestLngLat,
+    setRouteSlotOrder,
+    setViewMode,
+    setRouting,
+    setRouteError,
+    setTapHint,
+    setFitTrigger,
+  });
+
+  const {
+    offRouteSevere,
+    autoRejoinGuidanceRouteId,
+    detourRejoinAlongM,
+    recalcRouteFromHere,
+    resetOffRouteNavigation,
+    clearDetourGuidance,
+    handleFollowDetourRoute,
+    showOffRouteManualBanner,
+    detourAltChoices,
+    detourAutoActive,
+    offRouteRejoinCompareActive,
+  } = offRouteNav;
 
   /** After Go: NWS + corridor bands use the locked guidance leg, not the preview leg. */
   const nwsNavCorridorGeom = useMemo(() => {
@@ -2478,15 +2308,22 @@ export default function App() {
   }, [guidanceRoute?.geometry]);
 
   const [alongHoldResetKey, setAlongHoldResetKey] = useState(0);
-  const userAlongGuidanceM = useAlongRouteMetersHeldWhenOffLine(
+  const {
+    userAlongGuidanceM,
+    activeTurnIndex,
+    bannerTurnIndex,
+    metersToBannerManeuver,
+  } = useNavigationGuidance({
+    navigationStarted,
+    settingVoiceGuidanceEnabled,
+    guidanceRouteId,
+    guidanceRouteLengthM,
+    turnSteps,
     effectiveUserLngLat,
-    guidanceRoute?.geometry,
-    alongHoldResetKey
-  );
+    routeGeometry: guidanceRoute?.geometry,
+    alongHoldResetKey,
+  });
 
-  const guidanceRouteGeomRef = useRef<LngLat[] | null>(null);
-  const guidanceRouteLengthMRef = useRef(0);
-  const userAlongGuidanceMRef = useRef(0);
   guidanceRouteGeomRef.current = guidanceRoute?.geometry ?? null;
   guidanceRouteLengthMRef.current = guidanceRouteLengthM;
   navRouteLengthMRef.current = guidanceRouteLengthM;
@@ -2515,39 +2352,6 @@ export default function App() {
       ),
     [advisoryUserAlongM, guidanceRouteLengthM, navigationStarted]
   );
-
-  const turnStepBounds = useMemo(
-    () => turnStepAlongBounds(turnSteps, guidanceRouteLengthM),
-    [turnSteps, guidanceRouteLengthM]
-  );
-
-  const activeTurnIndex = useMemo(
-    () => activeTurnStepIndexAlong(turnStepBounds.end, userAlongGuidanceM),
-    [turnStepBounds.end, userAlongGuidanceM]
-  );
-
-  /**
-   * Banner + voice use the next meaningful maneuver with along-route distance to *that* maneuver.
-   * Minor upcoming steps (continue, slight/bear, etc.) are skipped while still far — see `bannerPrimaryStep`.
-   */
-  const bannerGuidance = useMemo(
-    () =>
-      bannerPrimaryStepIndex(turnSteps, activeTurnIndex, turnStepBounds.start, userAlongGuidanceM),
-    [turnSteps, activeTurnIndex, turnStepBounds.start, userAlongGuidanceM]
-  );
-
-  const bannerTurnIndex = bannerGuidance.primaryIndex;
-  const metersToBannerManeuver = bannerGuidance.metersToPrimaryManeuver;
-  const bannerTurnInstruction = turnSteps[bannerTurnIndex]?.instruction ?? "";
-
-  useTurnVoiceGuidance({
-    enabled: settingVoiceGuidanceEnabled,
-    navigating: navigationStarted,
-    activeTurnIndex: bannerTurnIndex,
-    instruction: bannerTurnInstruction,
-    metersToManeuverEnd: metersToBannerManeuver,
-    routeLegId: guidanceRouteId,
-  });
 
   const speedMph = speedMps != null ? speedMps * 2.23694 : null;
 
@@ -4329,226 +4133,6 @@ export default function App() {
     seriousHazardAutoFlewRef.current.clear();
   }, [guidanceRouteId]);
 
-  useEffect(() => {
-    offRouteLatchedRef.current = false;
-    offRouteConfirmStreakRef.current = 0;
-  }, [guidanceRouteId]);
-
-  /** Off-route: short detour to rejoin locked route A — never silent full-trip replan. */
-  useEffect(() => {
-    if (!navigationStarted || !guidanceRoute?.geometry?.length || !destLngLat) {
-      offRouteLatchedRef.current = false;
-      offRouteChoiceOfferedRef.current = false;
-      offRouteConfirmStreakRef.current = 0;
-      offRouteReofferBlockedUntilRef.current = 0;
-      offRouteSevereRef.current = false;
-      lastOffRouteSampleRef.current = null;
-      setOffRouteSevere(false);
-      setDetourRejoinAlongM(0);
-      detourRejoinAlongMRef.current = 0;
-      return;
-    }
-
-    const setOffRouteSevereIfNeeded = (severe: boolean) => {
-      if (offRouteSevereRef.current === severe) return;
-      offRouteSevereRef.current = severe;
-      setOffRouteSevere(severe);
-    };
-
-    const offerRejoinChoices = (lateralM: number) => {
-      if (offRouteChoiceOfferedRef.current) return;
-      if (!shouldOfferOffRouteRejoin(lateralM, offRouteReofferBlockedUntilRef.current)) {
-        return;
-      }
-      offRouteChoiceOfferedRef.current = true;
-      const lockedRoute = planRef.current.routes.find(
-        (r) => r.id === lockedNavigationRouteIdRef.current
-      );
-      const ctx =
-        lockedRoute?.geometry?.length
-          ? resolveDrivingRejoinContext({
-              guidanceRoute: lockedRoute,
-              userAlongM: offRouteRejoinAlongMRef.current || userAlongGuidanceMRef.current,
-              destLngLat: destLngLatRef.current,
-              latchedRoadClass: drivingRejoinRoadClassRef.current,
-            })
-          : null;
-      drivingRejoinModeRef.current = ctx?.mode ?? "manual";
-
-      const autoDetour = effectiveAutoRerouteRef.current;
-
-      if (!routingRef.current && !altRoutesRefreshInFlightRef.current) {
-        void recalcRouteFromHere({
-          silent: true,
-          autoFollow: autoDetour,
-        });
-      }
-
-      if (autoDetour) {
-        setViewMode("drive");
-        speakNavigationAlert(
-          "Off route. Finding a detour to rejoin ahead.",
-          settingVoiceGuidanceEnabled
-        );
-        if (!routingRef.current) {
-          setTapHint("Off route — auto detour to rejoin your locked route ahead.");
-          window.setTimeout(() => setTapHint(null), 7000);
-        }
-      } else {
-        setTapHint(
-          ctx?.roadClass === "highway"
-            ? "Off route — tap B or C below to rejoin ahead."
-            : "Off route — tap B or C below, or Other detour for more paths."
-        );
-        window.setTimeout(() => setTapHint(null), 7000);
-      }
-    };
-
-    const tick = () => {
-      const pos = userLngLatRef.current;
-      const geom = guidanceRouteGeomRef.current;
-      if (!pos || !geom?.length) return;
-
-      const totalM =
-        guidanceRouteLengthMRef.current > 0
-          ? guidanceRouteLengthMRef.current
-          : polylineLengthMeters(geom);
-      const sample = measureOffRouteLateral(pos, geom, userAlongGuidanceMRef.current);
-      const lat = sample.lateralM;
-      const alongM = sample.alongM;
-      lastOffRouteSampleRef.current = { t: Date.now(), lateralM: lat, alongM };
-
-      const lockedRoute = planRef.current.routes.find(
-        (r) => r.id === lockedNavigationRouteIdRef.current
-      );
-      const lockedGeom = lockedRoute?.geometry;
-
-      if (
-        autoRejoinGuidanceRouteIdRef.current &&
-        lockedGeom &&
-        lockedGeom.length >= 2 &&
-        detourRejoinAlongMRef.current > 0 &&
-        hasRejoinedLockedRoute(
-          pos,
-          lockedGeom,
-          detourRejoinAlongMRef.current,
-          alongM
-        )
-      ) {
-        setAutoRejoinGuidanceRouteId(null);
-        setDetourRejoinAlongM(0);
-        detourRejoinAlongMRef.current = 0;
-        offRouteLatchedRef.current = false;
-        offRouteChoiceOfferedRef.current = false;
-        offRouteConfirmStreakRef.current = 0;
-        offRouteReofferBlockedUntilRef.current = Date.now() + OFF_ROUTE_REOFFER_COOLDOWN_MS;
-        setOffRouteSevereIfNeeded(false);
-        speakNavigationAlert("Back on your route.", settingVoiceGuidanceEnabled);
-        return;
-      }
-
-      if (lockedRoute?.geometry?.length) {
-        const instantRoad = resolveDrivingRejoinContext({
-          guidanceRoute: lockedRoute,
-          userAlongM: alongM,
-          destLngLat: destLngLatRef.current,
-        }).roadClass;
-        const prevRoad = drivingRejoinRoadClassRef.current;
-        if (
-          shouldLatchHighwayAfterSurface(
-            prevRoad,
-            instantRoad,
-            drivingRejoinSurfaceAtRef.current,
-            Date.now()
-          )
-        ) {
-          drivingRejoinRoadClassRef.current = "highway";
-        } else {
-          drivingRejoinRoadClassRef.current = instantRoad;
-          if (instantRoad === "city_streets") {
-            drivingRejoinSurfaceAtRef.current = Date.now();
-          }
-        }
-      }
-
-      const goAt = navGoStartedAtRef.current;
-      const speedNow = speedMpsRef.current ?? 0;
-      if (
-        goAt != null &&
-        Date.now() - goAt < OFF_ROUTE_NAV_START_GRACE_MS &&
-        userAlongGuidanceMRef.current < OFF_ROUTE_NAV_START_GRACE_ALONG_M &&
-        speedNow < OFF_ROUTE_HEADING_MIN_SPEED_MPS
-      ) {
-        return;
-      }
-
-      const routeBearing =
-        totalM > 1
-          ? initialBearingDegrees(
-              pointAtAlongMeters(geom, Math.min(userAlongGuidanceMRef.current, totalM)),
-              pointAtAlongMeters(geom, Math.min(userAlongGuidanceMRef.current + 52, totalM))
-            )
-          : bearingAlongRouteAhead(pos, geom);
-      const offRouteCtx = {
-        headingDeg: headingRef.current,
-        speedMps: speedMpsRef.current,
-        routeBearingDeg: routeBearing,
-      };
-      const wouldTrigger = shouldTriggerOffRouteReroute(sample, offRouteCtx);
-      offRouteConfirmStreakRef.current = wouldTrigger
-        ? offRouteConfirmStreakRef.current + 1
-        : 0;
-      const offRoute =
-        wouldTrigger &&
-        offRouteConfirmStreakRef.current >= OFF_ROUTE_CONFIRM_TICKS &&
-        shouldOfferOffRouteRejoin(lat, offRouteReofferBlockedUntilRef.current);
-
-      const nearingEnd = totalM > 0 && alongM > totalM - 45;
-      if (nearingEnd) {
-        offRouteLatchedRef.current = false;
-        offRouteChoiceOfferedRef.current = false;
-        offRouteConfirmStreakRef.current = 0;
-        setOffRouteSevereIfNeeded(false);
-        lastOffRouteSampleRef.current = null;
-        return;
-      }
-
-      if (offRouteLatchedRef.current) {
-        if (autoRejoinGuidanceRouteIdRef.current) {
-          setOffRouteSevereIfNeeded(true);
-        } else if (shouldExitOffRouteLatch(lat)) {
-          offRouteLatchedRef.current = false;
-          offRouteChoiceOfferedRef.current = false;
-          offRouteConfirmStreakRef.current = 0;
-          offRouteReofferBlockedUntilRef.current = Date.now() + OFF_ROUTE_REOFFER_COOLDOWN_MS;
-          setOffRouteSevereIfNeeded(false);
-          setDetourRejoinAlongM(0);
-          detourRejoinAlongMRef.current = 0;
-        } else {
-          setOffRouteSevereIfNeeded(true);
-        }
-      } else if (offRoute) {
-        offRouteLatchedRef.current = true;
-        offRouteRejoinAlongMRef.current = alongM;
-        setOffRouteSevereIfNeeded(true);
-        offerRejoinChoices(lat);
-      }
-    };
-
-    tick();
-    const id = window.setInterval(tick, OFF_ROUTE_POLL_MS);
-    return () => window.clearInterval(id);
-  }, [
-    navigationStarted,
-    guidanceRoute?.geometry,
-    guidanceRouteLengthM,
-    destLngLat,
-    recalcRouteFromHere,
-    env.mapboxToken,
-    isOnline,
-    settingVoiceGuidanceEnabled,
-  ]);
-
   const refreshAltRef = useRef(refreshAlternateRoutesOnly);
   refreshAltRef.current = refreshAlternateRoutesOnly;
 
@@ -4635,24 +4219,10 @@ export default function App() {
     return routePickSlotHex(routeSlotIndexFor(guidanceRoute.id, orderedRouteIds));
   }, [guidanceRoute, orderedRouteIds, navigationStarted]);
 
-  const showOffRouteManualBanner =
-    navigationStarted && (offRouteSevere || Boolean(autoRejoinGuidanceRouteId));
-
   const detourLockedRouteId = useMemo(() => {
     if (!navigationStarted) return null;
     return lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
   }, [navigationStarted, orderedRouteIds]);
-
-  const detourAltChoices = useMemo(() => {
-    if (!detourLockedRouteId || !offRouteSevere || autoRejoinGuidanceRouteId) return [];
-    return plan.routes
-      .filter((r) => r.id !== detourLockedRouteId)
-      .slice(0, 2)
-      .map((r) => ({
-        id: r.id,
-        label: r.label.replace(/^Rejoin /, "") || r.label,
-      }));
-  }, [plan.routes, detourLockedRouteId, offRouteSevere, autoRejoinGuidanceRouteId]);
 
   const detourRejoinDistanceLabel = useMemo(() => {
     if (!navigationStarted || !autoRejoinGuidanceRouteId || !effectiveUserLngLat || !(detourRejoinAlongM > 0)) {
@@ -4678,11 +4248,6 @@ export default function App() {
     plan.routes,
     userAlongGuidanceM,
   ]);
-
-  const detourAutoActive = Boolean(navigationStarted && autoRejoinGuidanceRouteId);
-
-  const offRouteRejoinCompareActive =
-    offRouteSevere && navigationStarted && !autoRejoinGuidanceRouteId && viewMode === "topdown";
 
   const radarFrameTimeLabel = useMemo(() => {
     if (!radarMapOverlayOn || radarFrameUtcSec == null) return null;
@@ -4783,16 +4348,7 @@ export default function App() {
       navGoGeometryRef.current = null;
     }
     lockedNavigationRouteIdRef.current = null;
-    offRouteChoiceOfferedRef.current = false;
-    offRouteConfirmStreakRef.current = 0;
-    offRouteReofferBlockedUntilRef.current = 0;
-    rejoinShufflePassRef.current = 0;
-    setAutoRejoinGuidanceRouteId(null);
-    setDetourRejoinAlongM(0);
-    detourRejoinAlongMRef.current = 0;
-    drivingRejoinRoadClassRef.current = "unknown";
-    drivingRejoinSurfaceAtRef.current = null;
-    drivingRejoinModeRef.current = "manual";
+    resetOffRouteNavigation();
     routeGraphEpochRef.current += 1;
     routeMainFetchAbortRef.current?.abort();
     routeMainFetchAbortRef.current = null;
@@ -4984,24 +4540,9 @@ export default function App() {
       if (navigationStartedRef.current) {
         lockedNavigationRouteIdRef.current = id;
       }
-      setAutoRejoinGuidanceRouteId(null);
-      setDetourRejoinAlongM(0);
-      detourRejoinAlongMRef.current = 0;
+      clearDetourGuidance();
     },
-    [plan.routes, planRouteIds]
-  );
-
-  const handleFollowDetourRoute = useCallback(
-    (id: string) => {
-      if (!plan.routes.some((r) => r.id === id)) return;
-      const lockedId = lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
-      if (!navigationStartedRef.current || !lockedId || id === lockedId) return;
-      setAutoRejoinGuidanceRouteId(id);
-      setViewMode("drive");
-      setTapHint("Detour selected — follow to rejoin your route.");
-      window.setTimeout(() => setTapHint(null), 4500);
-    },
-    [plan.routes, orderedRouteIds]
+    [plan.routes, planRouteIds, clearDetourGuidance]
   );
 
   /** Route view / map view while navigating: preview A/B/C without changing active guidance. */
@@ -6310,7 +5851,8 @@ export default function App() {
           onPreview={() => void handleTollPreview()}
         />
 
-        <SavedDestinationsDrawer
+        <Suspense fallback={null}>
+          <SavedDestinationsDrawer
           open={savedDrawerOpen}
           onClose={() => setSavedDrawerOpen(false)}
           maxSavedPlaces={savedPlacesMax}
@@ -6345,6 +5887,7 @@ export default function App() {
           onSaveFrequentRoute={(c) => setPendingSave({ kind: "learned", cluster: c })}
           onDismissFrequentRoute={dismissCluster}
         />
+        </Suspense>
 
         {pendingSave?.kind === "route" && (
           <NameConfirmSheet
@@ -6800,7 +6343,8 @@ export default function App() {
         </div>
       </div>
 
-      <AboutSheet
+      <Suspense fallback={null}>
+        <AboutSheet
         open={aboutOpen}
         onClose={() => setAboutOpen(false)}
         payTierProbeKey={payTierProbeKey}
@@ -6836,7 +6380,8 @@ export default function App() {
         }}
         onReplayCoachmarks={handleReplayCoachmarks}
         liveRerouteEnabled
-      />
+        />
+      </Suspense>
 
       <Coachmarks replayKey={coachmarksReplayKey} />
     </div>
