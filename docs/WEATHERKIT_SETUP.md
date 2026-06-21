@@ -56,10 +56,6 @@ VITE_WEATHERKIT_TOKEN_URL=https://stormpath2.netlify.app/.netlify/functions/weat
 
 ## 5. TestFlight / iOS build
 
-Add to GitHub repo secret or `.env.testflight`:
-
-```
-VITE_WEATHERKIT_ENABLED=true
-```
+Add to GitHub repo secret `VITE_WEATHERKIT_ENABLED` = `true` (Settings → Secrets and variables → Actions).
 
 Rebuild IPA. Boot log should show `weatherKit: YES`.
