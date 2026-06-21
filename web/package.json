@@ -41,6 +41,7 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@netlify/functions": "^2.8.2",
     "@resvg/resvg-js": "^2.6.2",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
@@ -49,7 +50,6 @@
     "sharp": "^0.34.5",
     "typescript": "^6.0.3",
     "vite": "^8.0.14",
-    "vitest": "^4.1.7",
-    "@netlify/functions": "^2.8.2"
+    "vitest": "^4.1.7"
   }
 }
