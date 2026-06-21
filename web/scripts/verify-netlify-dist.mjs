@@ -38,17 +38,23 @@ if (!fs.existsSync(iconPath)) {
 }
 
 const stamp = new Date().toISOString();
+const mapboxAtBuild = Boolean(process.env.VITE_MAPBOX_TOKEN?.trim());
+const weatherKitAtBuild =
+  String(process.env.VITE_WEATHERKIT_ENABLED ?? "").toLowerCase() === "true";
 const checkBody = [
   "StormPath Netlify deploy verification",
   `built_at=${stamp}`,
+  `mapbox_token=${mapboxAtBuild ? "baked" : "MISSING"}`,
+  `weatherkit_enabled=${weatherKitAtBuild ? "yes" : "no"}`,
   "csp_weatherkit=yes",
   "csp_tomorrow_io=yes",
   "icons=yes",
   "",
-  "After drag-and-drop deploy, open:",
+  "If mapbox_token=MISSING: Netlify → Environment variables → VITE_MAPBOX_TOKEN",
+  "  scope must include Builds, then Trigger deploy.",
+  "",
+  "After deploy, open:",
   "  https://stormpath2.netlify.app/_deploy-check.txt",
-  "If you still see old errors, check Netlify → stormpath2 → Site configuration → HTTP headers",
-  "and remove any duplicate Content-Security-Policy (it overrides _headers from your folder).",
   "",
 ].join("\n");
 

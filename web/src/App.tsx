@@ -4110,7 +4110,9 @@ export default function App() {
 
         {!env.mapboxToken && (
           <div className="nav-toast nav-toast-warn" role="status">
-            Add <code>VITE_MAPBOX_TOKEN</code> in <code>web/.env</code>.
+            {typeof window !== "undefined" && window.location.hostname.includes("netlify.app")
+              ? "Map unavailable — add VITE_MAPBOX_TOKEN in Netlify env vars (Builds scope), then redeploy."
+              : "Add VITE_MAPBOX_TOKEN in web/.env.local."}
           </div>
         )}
 
