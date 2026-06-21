@@ -404,7 +404,7 @@ export function RouteProgressGlancePanel({
               ))}
               {overflow > 0 ? (
                 <p className="rpgl__overflow" aria-hidden>
-                  +{overflow} more in advisory
+                  +{overflow} more alerts ahead
                 </p>
               ) : null}
             </div>

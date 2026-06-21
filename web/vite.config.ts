@@ -79,13 +79,21 @@ export default defineConfig(({ command }) => ({
     /** Always use this port. If dev “moves” to 5174/5175, another process was still bound to 5173. */
     port: 5173,
     strictPort: true,
-    /* Same-origin proxies in dev (NWS + RainViewer — avoids CORS / 429 error noise). */
+    /* Same-origin proxies in dev (NWS + RainViewer + WeatherKit — avoids CORS / 429 error noise). */
     proxy: {
       "/weather-gov": {
         target: "https://api.weather.gov",
         changeOrigin: true,
         secure: true,
         rewrite: (path) => path.replace(/^\/weather-gov/, ""),
+      },
+      /* Apple WeatherKit REST API rejects CORS preflights from localhost.
+       * Route through the dev server so the request originates from Node, not the browser. */
+      "/weatherkit-api": {
+        target: "https://weatherkit.apple.com",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/weatherkit-api/, ""),
       },
       "/rainviewer-api": {
         target: "https://api.rainviewer.com",
@@ -104,6 +112,12 @@ export default defineConfig(({ command }) => ({
         changeOrigin: true,
         secure: true,
         rewrite: (path) => path.replace(/^\/weather-gov/, ""),
+      },
+      "/weatherkit-api": {
+        target: "https://weatherkit.apple.com",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/weatherkit-api/, ""),
       },
       "/rainviewer-api": {
         target: "https://api.rainviewer.com",

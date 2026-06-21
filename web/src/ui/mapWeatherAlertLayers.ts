@@ -13,12 +13,6 @@ const SRC = "weather-alerts-nws";
 const FILL = "weather-alerts-nws-fill";
 const LINE = "weather-alerts-nws-outline";
 
-/** Invisible — polygon area for tap/hover hit-testing only. */
-const NWS_HIT_FILL_OPACITY = 0;
-/** Visible NWS alert boundaries (no interior shading). */
-const NWS_LINE_WIDTH = 2.35;
-const NWS_LINE_OPACITY = 0.88;
-
 const MOTION_SRC = "weather-alerts-motion";
 const MOTION_LAYER = "weather-alerts-motion-arrows";
 const MOTION_LABEL_SRC = "weather-alerts-motion-labels";
@@ -32,6 +26,42 @@ export const WEATHER_ALERTS_NWS_FILL_LAYER_ID = FILL;
  * Layer is visible below this zoom; at zoom ≥ this value it is hidden (Mapbox `maxzoom`).
  */
 export const NWS_POLYGON_MAP_MAX_ZOOM = 10.75;
+
+/**
+ * Severity-tiered rendering — Tornado Warnings / Extreme alerts punch through at full
+ * weight; lesser advisories (watches, minor) fade to the background so the storm front
+ * stays readable at a glance while driving.
+ *
+ * Extreme  → Tornado Warning, Extreme Wind Warning, etc.     full opacity + thick line + subtle fill
+ * Severe   → Severe Thunderstorm Warning, Flash Flood Warning full opacity, normal line
+ * Moderate → Flash Flood Watch, Winter Storm Watch, etc.      25% — clearly secondary
+ * Minor    → Wind Advisory, Frost Advisory, etc.              10% — barely visible
+ */
+const NWS_LINE_OPACITY_EXPR: unknown = [
+  "match",
+  ["get", "severity"],
+  "Extreme", 0.95,
+  "Severe",  0.88,
+  "Moderate", 0.25,
+  /* Minor + fallback */ 0.10,
+];
+
+const NWS_LINE_WIDTH_EXPR: unknown = [
+  "match",
+  ["get", "severity"],
+  "Extreme", 3.2,
+  "Severe",  2.35,
+  "Moderate", 1.4,
+  /* Minor + fallback */ 1.0,
+];
+
+/** Subtle area fill only on Extreme (tornado) polygons so they stand out. */
+const NWS_FILL_OPACITY_EXPR: unknown = [
+  "match",
+  ["get", "severity"],
+  "Extreme", 0.09,
+  /* all others stay 0 — hit-test only */ 0,
+];
 
 const NWS_KIND_ORDER: NwsMapKind[] = [
   "hydro",
@@ -74,7 +104,7 @@ function nwsAlertMapColorExpr(): unknown {
 
 function syncNwsPolygonPaint(map: MapboxMap): void {
   if (map.getLayer(FILL)) {
-    map.setPaintProperty(FILL, "fill-opacity", NWS_HIT_FILL_OPACITY);
+    map.setPaintProperty(FILL, "fill-opacity", NWS_FILL_OPACITY_EXPR as DataDrivenPropertyValueSpecification<number>);
     try {
       map.setPaintProperty(FILL, "fill-opacity-transition", { duration: 0, delay: 0 });
     } catch {
@@ -82,8 +112,8 @@ function syncNwsPolygonPaint(map: MapboxMap): void {
     }
   }
   if (map.getLayer(LINE)) {
-    map.setPaintProperty(LINE, "line-width", NWS_LINE_WIDTH);
-    map.setPaintProperty(LINE, "line-opacity", NWS_LINE_OPACITY);
+    map.setPaintProperty(LINE, "line-width", NWS_LINE_WIDTH_EXPR as DataDrivenPropertyValueSpecification<number>);
+    map.setPaintProperty(LINE, "line-opacity", NWS_LINE_OPACITY_EXPR as DataDrivenPropertyValueSpecification<number>);
     try {
       map.setPaintProperty(LINE, "line-opacity-transition", { duration: 0, delay: 0 });
     } catch {
@@ -237,17 +267,27 @@ function buildMotionArrowCollection(
 
     const kind = typeof props.kind === "string" ? props.kind : "other";
     const event = typeof props.event === "string" ? props.event : "";
+    const severity = typeof props.severity === "string" ? props.severity : "";
     const color = nwsMapKindHex(nwsMapKindFromEvent(event) !== "other"
       ? nwsMapKindFromEvent(event)
       : kind as NwsMapKind);
 
+    // Match arrow opacity to polygon opacity so lesser alerts don't add arrow clutter.
+    const arrowOpacity =
+      severity === "Extreme" ? 0.95 :
+      severity === "Severe"  ? 0.88 :
+      severity === "Moderate" ? 0.22 : 0.10;
+
     const centroid = geometryCentroid(g);
     const shaftM = 38000 + motionMph * 700;
     const tip = destinationPoint(centroid[0], centroid[1], motionDeg, shaftM);
-    features.push(...stormMotionArrowLines(centroid, motionDeg, motionMph, color));
+    features.push(...stormMotionArrowLines(centroid, motionDeg, motionMph, color).map(af => ({
+      ...af,
+      properties: { ...af.properties, arrowOpacity },
+    })));
     labels.push({
       type: "Feature",
-      properties: { label: nwsMotionLabel(motionDeg, motionMph), labelColor: color },
+      properties: { label: nwsMotionLabel(motionDeg, motionMph), labelColor: color, arrowOpacity },
       geometry: { type: "Point", coordinates: tip },
     });
   }
@@ -300,7 +340,7 @@ export function applyWeatherAlertLayers(
       maxzoom: NWS_POLYGON_MAP_MAX_ZOOM,
       paint: {
         "fill-color": nwsAlertMapColorExpr() as DataDrivenPropertyValueSpecification<string>,
-        "fill-opacity": NWS_HIT_FILL_OPACITY,
+        "fill-opacity": NWS_FILL_OPACITY_EXPR as DataDrivenPropertyValueSpecification<number>,
         "fill-antialias": false,
       },
     };
@@ -311,8 +351,8 @@ export function applyWeatherAlertLayers(
       maxzoom: NWS_POLYGON_MAP_MAX_ZOOM,
       paint: {
         "line-color": nwsAlertMapColorExpr() as DataDrivenPropertyValueSpecification<string>,
-        "line-width": NWS_LINE_WIDTH,
-        "line-opacity": NWS_LINE_OPACITY,
+        "line-width": NWS_LINE_WIDTH_EXPR as DataDrivenPropertyValueSpecification<number>,
+        "line-opacity": NWS_LINE_OPACITY_EXPR as DataDrivenPropertyValueSpecification<number>,
       },
       layout: { "line-join": "round", "line-cap": "round" },
     };
@@ -358,7 +398,8 @@ function applyMotionArrows(
       paint: {
         "line-color": ["get", "arrowColor"] as unknown as DataDrivenPropertyValueSpecification<string>,
         "line-width": 3.5,
-        "line-opacity": 0.95,
+        /* Only show motion arrows for Extreme/Severe features — they're the ones that matter. */
+        "line-opacity": ["coalesce", ["get", "arrowOpacity"], 0.95] as unknown as DataDrivenPropertyValueSpecification<number>,
       },
       layout: { "line-cap": "round", "line-join": "round" },
     };
@@ -389,6 +430,7 @@ function applyMotionArrows(
       },
       paint: {
         "text-color": ["get", "labelColor"] as unknown as DataDrivenPropertyValueSpecification<string>,
+        "text-opacity": ["coalesce", ["get", "arrowOpacity"], 0.95] as unknown as DataDrivenPropertyValueSpecification<number>,
         "text-halo-color": "rgba(15, 23, 42, 0.88)",
         "text-halo-width": 1.4,
       },

@@ -21,8 +21,16 @@ export function getWeatherKitTokenUrl(): string {
   const custom = (import.meta.env.VITE_WEATHERKIT_TOKEN_URL as string | undefined)?.trim();
   if (custom) return custom;
   if (Capacitor.isNativePlatform()) return DEFAULT_TOKEN_URL;
-  if (typeof window !== "undefined" && window.location.origin.startsWith("http")) {
-    return `${window.location.origin}/.netlify/functions/weatherkit-token`;
+  if (typeof window !== "undefined") {
+    const { hostname, protocol, origin } = window.location;
+    // localhost dev server — Netlify functions don't run here, use deployed URL.
+    if (protocol === "http:" && (hostname === "localhost" || hostname === "127.0.0.1")) {
+      return DEFAULT_TOKEN_URL;
+    }
+    // Deployed Netlify site (or preview) — use same-origin function endpoint.
+    if (origin.startsWith("http")) {
+      return `${origin}/.netlify/functions/weatherkit-token`;
+    }
   }
   return DEFAULT_TOKEN_URL;
 }

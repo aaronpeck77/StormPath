@@ -317,6 +317,23 @@ function radarHeadlineForBand(maxIntensity: number, spanFrac: number): string {
   return classifyRadarEcho(maxIntensity, spanFrac)?.headline ?? "Light showers possible";
 }
 
+/**
+ * Strip the verbose "Start: X°F conditions → Quarter: ... → Destination: ..." chain
+ * from corridor detail text. That breakdown is already shown in the progress graph —
+ * it's too much to read in an advisory card while driving.
+ */
+function stripRouteSegmentChain(detail: string): string {
+  const SEGMENT_LABEL = /^(Start|Quarter|Midway|3\/4 mark|Destination)\b/i;
+  return detail
+    .split(/\s*·\s*/)
+    .filter((part) => {
+      const t = part.trim();
+      return t.length > 0 && !SEGMENT_LABEL.test(t) && !t.includes(" → ");
+    })
+    .join(" · ")
+    .trim();
+}
+
 function buildRadarImpact(opts: {
   geometry: LngLat[] | undefined;
   radarIntensity: number;
@@ -386,8 +403,8 @@ function buildRadarImpact(opts: {
       : null;
 
   const detailCore =
-    opts.corridorWeatherDetail.trim() ||
-    opts.forecastHeadline.trim() ||
+    stripRouteSegmentChain(opts.corridorWeatherDetail.trim()) ||
+    stripRouteSegmentChain(opts.forecastHeadline.trim()) ||
     "Precipitation in the corridor";
 
   return {

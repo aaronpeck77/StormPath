@@ -114,6 +114,7 @@ import {
   DRIVE_AHEAD_WINDOW_M,
   TRAFFIC_BYPASS_ENABLED,
 } from "./nav/constants";
+import { routeForecastIntensityFloor, worstCorridorInterval } from "./forecast/corridorForecastModel";
 import type { TrafficOverlay, WeatherOverlay } from "./situation/fusedSnapshot";
 import type { MapViewMode } from "./ui/driveMapTypes";
 import { stormpathVersionLabel } from "./appVersion";
@@ -1880,7 +1881,8 @@ export default function App() {
   const radarMosaicAlongRoute = useRadarBandsAlongRoute(
     radarRouteSamplingEnabled,
     guidanceRoute?.geometry,
-    radarSampleIntervalMs
+    radarSampleIntervalMs,
+    guidanceRoute?.baseEtaMinutes ?? null
   );
 
   // ── Route weather (Tomorrow.io or Apple WeatherKit) ──
@@ -1981,6 +1983,25 @@ export default function App() {
     return null;
   }, [currentNowcast, tioMinutePrecip?.now]);
 
+  /**
+   * Enrich corridor weather detail with the worst forecast interval timing.
+   * "Thunderstorm in ~42 min" surfaces in the advisory bar and progress copy when the
+   * worst corridor segment is mid-route — not just at the destination. No new UI added.
+   */
+  const enrichedCorridorWeatherDetail = useMemo(() => {
+    const base = corridorWeatherDetail;
+    if (!tioRouteForecast?.intervals.length) return base;
+    const worst = worstCorridorInterval(tioRouteForecast);
+    if (!worst) return base;
+    if (worst.severity !== "serious" && worst.severity !== "avoid") return base;
+    const etaLabel = worst.etaMinutes > 0 ? ` in ~${worst.etaMinutes} min` : "";
+    const snapLine = `${worst.headline}${etaLabel} on route · ${worst.detail}`;
+    if (base && !base.toLowerCase().includes(worst.headline.toLowerCase())) {
+      return `${base} · ${snapLine}`;
+    }
+    return snapLine;
+  }, [corridorWeatherDetail, tioRouteForecast]);
+
   const localForecastPanelLoading = useMemo(() => {
     if (!isPlus || !stormBarExpanded || !effectiveUserLngLat) return false;
     const hasData =
@@ -2002,9 +2023,12 @@ export default function App() {
 
   const radarMosaicMaxIntensity = useMemo(() => {
     const s = radarMosaicAlongRoute.samples;
-    if (!s.length) return 0;
-    return Math.max(...s.map((x) => x.intensity));
-  }, [radarMosaicAlongRoute.samples]);
+    const radarMax = s.length ? Math.max(...s.map((x) => x.intensity)) : 0;
+    // Safety floor: if corridor forecast says thunderstorm or high precip probability,
+    // the advisory banner must reflect at least that severity even if radar hasn't caught up yet.
+    const forecastFloor = routeForecastIntensityFloor(tioRouteForecast);
+    return Math.max(radarMax, forecastFloor);
+  }, [radarMosaicAlongRoute.samples, tioRouteForecast]);
 
   const {
     nwsAlertsAffectingActiveRoute,
@@ -2047,7 +2071,7 @@ export default function App() {
     scored,
     lineFocusId,
     trafficOverlay,
-    corridorWeatherDetail,
+    corridorWeatherDetail: enrichedCorridorWeatherDetail,
     radarMosaicSamples: radarMosaicAlongRoute.samples,
     showTrafficCorridorOnRoute,
     showRoadNoticesOnRoute,
@@ -2309,7 +2333,7 @@ export default function App() {
       progressStripAlerts,
       guidanceSlice,
       weatherOverlay,
-      corridorWeatherDetail,
+      corridorWeatherDetail: enrichedCorridorWeatherDetail,
       lineFocusId,
       tioRouteForecast,
       radarMosaicSamples: radarMosaicAlongRoute.samples,

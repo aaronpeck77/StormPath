@@ -1,8 +1,6 @@
 import { useEffect, useMemo } from "react";
 import type { MinutePrecipForecast, RouteForecast } from "../services/tomorrowIo";
-import { isTomorrowIoRateLimited } from "../services/tomorrowIo";
 import {
-  alongRouteSegments,
   arrivalSnapshot,
   compareRouteLegs,
   computeLeaveWindowHint,
@@ -34,7 +32,6 @@ type Props = {
   activeLegId: string;
   onActiveLegChange: (routeId: string) => void;
   driveEtaMinutes: number | null;
-  forecastDataAvailable: boolean;
 };
 
 function sevClass(sev: string): string {
@@ -59,7 +56,6 @@ export function RouteForecastSheet({
   activeLegId,
   onActiveLegChange,
   driveEtaMinutes,
-  forecastDataAvailable,
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -74,10 +70,6 @@ export function RouteForecastSheet({
   const activeForecast = activeLeg ? forecastsByLegId[activeLeg.routeId] ?? null : null;
   const tripEta = Math.max(1, Math.round(driveEtaMinutes ?? activeLeg?.etaMinutes ?? 30));
 
-  const along = useMemo(
-    () => alongRouteSegments(activeForecast, tripEta),
-    [activeForecast, tripEta]
-  );
   const arrival = useMemo(
     () => arrivalSnapshot(activeForecast, activeLeg?.etaMinutes ?? tripEta, driveEtaMinutes),
     [activeForecast, activeLeg?.etaMinutes, tripEta, driveEtaMinutes]
@@ -221,36 +213,6 @@ export function RouteForecastSheet({
           ) : forecastsLoading && legs.length > 1 ? (
             <p className="cfs-muted">Loading forecasts for each route leg…</p>
           ) : null}
-
-          <section className="cfs-panel" aria-label="Along your route">
-            <h3 className="cfs-panel__h">Along your route</h3>
-            {!forecastDataAvailable ? (
-              <p className="cfs-muted">
-                Corridor forecast is not available in this build (Tomorrow.io key was not included when
-                the app was compiled). Install a newer TestFlight build after the key is added to CI, or
-                check About → Support diagnostics for <strong>tomorrowIo=off</strong>.
-              </p>
-            ) : isTomorrowIoRateLimited() ? (
-              <p className="cfs-muted">
-                Tomorrow.io is paused for about an hour (hourly request limit). NWS and radar on the map
-                still work. Try again later or reload after the cooldown.
-              </p>
-            ) : forecastsLoading && !along.length ? (
-              <p className="cfs-muted">Loading corridor forecast…</p>
-            ) : along.length === 0 ? (
-              <p className="cfs-muted">No hourly samples yet — try again after the route finishes loading.</p>
-            ) : (
-              <ol className="cfs-along-list">
-                {along.map((seg, i) => (
-                  <li key={i} className={`cfs-along-item ${sevClass(seg.severity)}`}>
-                    <span className="cfs-along-item__eta">~{formatEtaDuration(seg.etaMinutes)}</span>
-                    <span className="cfs-along-item__label">{seg.label}</span>
-                    <span className="cfs-along-item__detail">{seg.detail}</span>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </section>
 
           {arrival ? (
             <section className={`cfs-panel cfs-arrival ${sevClass(arrival.severity)}`} aria-label="At arrival">

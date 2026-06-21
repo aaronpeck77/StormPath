@@ -1282,7 +1282,7 @@ export function StormAdvisoryBar({
               </div>
             ) : null}
 
-            {hasRouteHazardDetail ? (
+            {hasRouteHazardDetail && (!navigationStarted || barExpanded) ? (
               <RouteHazardTimeline
                 variant="legendOnly"
                 items={advisoryRouteTimeline.filter((item) => !item.stripMuted)}

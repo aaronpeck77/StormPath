@@ -63,7 +63,7 @@ function forecastHeadlineForBand(
   spanFrac: number
 ): string {
   const label = weatherCodeLabel(rep.weatherCode);
-  const longBand = spanFrac >= 0.32;
+  const longBand = spanFrac >= 0.25;
   if (worstSev === "avoid" || worstSev === "serious") {
     return longBand ? `Hazardous weather along much of your route` : `Hazardous: ${label}`;
   }
@@ -118,8 +118,9 @@ export function routeForecastToImpacts(
       const cat = categoryFromInterval(iv);
       return { iv, startM, endM, sev, cat };
     })
-    // Include caution-or-worse segments and any measurable rain.
-    .filter((a) => a.sev !== "info" || a.iv.precipIntensityMmh > 0.05);
+    // Only show caution-or-worse in the forecast strip — light/info-level rain is already
+    // visible in the route graph above and doesn't need a full-width strip band of its own.
+    .filter((a) => a.sev !== "info");
 
   if (!annotated.length) return [];
 
@@ -182,8 +183,8 @@ export function routeForecastToImpacts(
       driverAction: worstSev === "avoid" || worstSev === "serious" ? "prepare" : "watch",
       roadEffect: detailFromInterval(rep.iv),
       detail:
-        band.length > 1 && spanFrac >= 0.25
-          ? `${forecastHeadlineForBand(rep.iv, worstSev, spanFrac)} · ${Math.round(spanFrac * 100)}% of trip`
+        spanFrac >= 0.25
+          ? `${forecastHeadlineForBand(rep.iv, worstSev, spanFrac)} · ~${Math.round(spanFrac * 100)}% of route`
           : detailFromInterval(rep.iv),
       numericSeverity: SEVERITY_TO_NUMERIC[worstSev],
     };

@@ -2,6 +2,10 @@ import type { MinutePrecipForecast, RouteForecast, RouteHourlyInterval } from ".
 import { routeForecastCorridorStress, weatherCodeLabel, weatherCodeSeverity } from "../services/tomorrowIo";
 import type { RouteImpactSeverity } from "../nav/routeImpacts";
 import { formatEtaDuration } from "../ui/formatEta";
+import {
+  RADAR_HEAVY_THRESHOLD,
+  RADAR_REROUTE_THRESHOLD,
+} from "../nav/constants";
 
 export type AlongRouteSegment = {
   etaMinutes: number;
@@ -148,6 +152,56 @@ export function computeLeaveWindowHint(
   }
 
   return null;
+}
+
+/**
+ * Radar intensity floor derived from a corridor forecast — ensures the advisory banner can't
+ * say "light showers possible" when WeatherKit/Tomorrow.io predicts thunderstorms or high precip
+ * probability along the route. Returns a value on the same 0..1 scale as radar echo intensity.
+ */
+export function routeForecastIntensityFloor(forecast: RouteForecast | null | undefined): number {
+  if (!forecast?.intervals.length) return 0;
+  let maxProb = 0;
+  for (const iv of forecast.intervals) {
+    if (iv.weatherCode === 8000) return RADAR_HEAVY_THRESHOLD; // thunderstorm → heavy floor
+    maxProb = Math.max(maxProb, iv.precipProbability);
+  }
+  if (maxProb >= 0.70) return RADAR_REROUTE_THRESHOLD;
+  return 0;
+}
+
+/**
+ * Find the worst-severity corridor interval across all route samples, with its ETA.
+ * Useful for surfacing "Thunderstorm in ~42 min" when the worst cell is mid-route, not at the destination.
+ */
+export function worstCorridorInterval(
+  forecast: RouteForecast | null | undefined
+): { etaMinutes: number; headline: string; detail: string; severity: RouteImpactSeverity } | null {
+  if (!forecast?.intervals.length) return null;
+  const RANK: Record<RouteImpactSeverity, number> = { info: 0, caution: 1, serious: 2, avoid: 3 };
+  let best = forecast.intervals[0]!;
+  let bestRank = RANK[weatherCodeSeverity(best.weatherCode, best.precipIntensityMmh, best.windGustMph)];
+  for (const iv of forecast.intervals) {
+    const r = RANK[weatherCodeSeverity(iv.weatherCode, iv.precipIntensityMmh, iv.windGustMph)];
+    if (r > bestRank) {
+      bestRank = r;
+      best = iv;
+    }
+  }
+  const sev = weatherCodeSeverity(best.weatherCode, best.precipIntensityMmh, best.windGustMph);
+  if (sev === "info") return null;
+  return {
+    etaMinutes: Math.round(best.etaMinutes),
+    headline: weatherCodeLabel(best.weatherCode),
+    detail: [
+      best.precipIntensityMmh >= 0.4 ? `${best.precipIntensityMmh.toFixed(1)} mm/hr` : null,
+      best.windGustMph >= 22 ? `gusts ${Math.round(best.windGustMph)} mph` : null,
+      `${Math.round(best.tempF)}°F`,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    severity: sev,
+  };
 }
 
 export function compareRouteLegs(
