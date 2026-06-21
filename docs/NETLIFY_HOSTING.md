@@ -18,12 +18,26 @@ Source files live in `web/public/` and are copied into `web/dist/` on build.
 - **App Store Connect** listing needs the **https** URLs above for Privacy Policy and Support.
 - **Free Netlify tier** is enough for these static pages.
 
-## Update the live site
+## Update the live site (Git — required for WeatherKit functions)
+
+1. Connect the GitHub repo in Netlify → **Build & deploy** → **Continuous deployment**.
+2. Confirm settings match `netlify.toml`: base **`web`**, command **`npm run build:netlify`**, publish **`dist`**, functions **`netlify/functions`** (under `web/`).
+3. Add **build** environment variables (Site configuration → Environment variables):
+   - **`VITE_MAPBOX_TOKEN`** — your Mapbox public token. Scope: **Builds**. Use **same value in all deploy contexts** (Production + Deploy Previews).
+   - **`VITE_WEATHERKIT_ENABLED`** = `true` (optional until token URL works). Scope: **Builds**.
+4. WeatherKit signing vars (`WEATHERKIT_*`) — scope **Functions** (and Builds if Netlify requires it for secrets).
+5. **Trigger deploy** after changing env vars (Deploys → Deploy project).
+6. Confirm https://stormpath2.netlify.app/_deploy-check.txt shows a fresh `built_at=` timestamp and `csp_weatherkit=yes`.
+7. Confirm https://stormpath2.netlify.app/.netlify/functions/weatherkit-token returns JSON (not “page not found”).
+
+### Legacy drag-and-drop (static site only — no serverless functions)
 
 1. Double-click `web/BUILD_FOR_NETLIFY.bat` on Windows (runs `build:netlify`, which verifies `_headers` and icons).
 2. Netlify → site **stormpath2** → **Deploys** → drag the folder the script opens (not an old copy from a previous run).
 3. Confirm https://stormpath2.netlify.app/_deploy-check.txt shows `csp_tomorrow_io=yes`.
 4. Hard-refresh the app and confirm the console no longer blocks `api.tomorrow.io`.
+
+**Drag-and-drop cannot deploy `weatherkit-token`** — use Git-connected deploy for WeatherKit.
 
 ### CSP still wrong after deploy?
 

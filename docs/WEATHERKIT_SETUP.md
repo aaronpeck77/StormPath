@@ -26,7 +26,7 @@ Netlify → **stormpath2** → Site configuration → Environment variables:
 **Drag-and-drop `dist/` does not deploy serverless functions.**
 
 Connect the GitHub repo in Netlify (or use `netlify deploy --build` from CLI).
-`netlify.toml` at the repo root builds `web/` and publishes `netlify/functions/weatherkit-token`.
+`netlify.toml` builds `web/` and bundles `web/netlify/functions/weatherkit-token`.
 
 Verify after deploy:
 
