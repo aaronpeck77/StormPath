@@ -2454,6 +2454,12 @@ function DriveMapInner({
         routeFitMaxZoomCeiling(routes, lineFocusId),
         {
           onAfterFit: () => {
+            /* Guard: if this effect was cleaned up (nav started, view changed) before the
+             * fitBounds moveend fired, skip the flatten so stale listeners don't fight
+             * the drive-follow camera.  Without this, every verifyPlanningZoom retry
+             * leaves a map.once("moveend") that triggers flatten(pitch:0) after the
+             * drive camera's easeTo fires, creating an oscillation that can last 1–3 s. */
+            if (cancelled) return;
             flatten();
           },
           onlyRouteId: lineFocusId,
