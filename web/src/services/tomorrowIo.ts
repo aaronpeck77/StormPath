@@ -56,7 +56,7 @@ export type PointHourlyForecast = {
   lat: number;
   lng: number;
   hours: PointHourlyInterval[];
-  provider: "tomorrowIo" | "openWeather";
+  provider: "tomorrowIo" | "openWeather" | "weatherKit";
 };
 
 /** 60-minute precipitation outlook for a point. */

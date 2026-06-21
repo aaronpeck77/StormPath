@@ -14,8 +14,9 @@
 #   APP_STORE_CONNECT_ISSUER_ID         Issuer ID from the same page
 #   APP_STORE_CONNECT_API_KEY_CONTENT   The .p8 file: paste full PEM *or* base64 of the file
 #   VITE_MAPBOX_TOKEN                   Mapbox public token (map + search + directions)
-#   VITE_TOMORROW_IO_API_KEY            Tomorrow.io (optional but recommended)
-#   VITE_OPENWEATHER_API_KEY            OpenWeather (optional but recommended)
+#   VITE_TOMORROW_IO_API_KEY            Tomorrow.io (legacy — omit when WeatherKit enabled)
+#   VITE_OPENWEATHER_API_KEY            OpenWeather (legacy — omit when WeatherKit enabled)
+#   VITE_WEATHERKIT_ENABLED             Set to `true` after Netlify token function is live (see docs/WEATHERKIT_SETUP.md)
 #   VITE_SENTRY_DSN                     Sentry DSN for crash reports (optional; see docs/SENTRY_SETUP.md)
 #   VITE_REVENUECAT_API_KEY_IOS         RevenueCat public SDK key — required for App Store track builds
 # TestFlight track: committed web/.env.testflight (Plus for testers).
@@ -76,6 +77,7 @@ jobs:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
+          VITE_WEATHERKIT_ENABLED: ${{ secrets.VITE_WEATHERKIT_ENABLED }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
 
       # Vitest seatbelt — runs in parallel with the build setup if the runner had cores
@@ -98,6 +100,7 @@ jobs:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
+          VITE_WEATHERKIT_ENABLED: ${{ secrets.VITE_WEATHERKIT_ENABLED }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
           VITE_IOS_BUILD_NUMBER: ${{ github.run_number }}
 
@@ -122,6 +125,7 @@ jobs:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
+          VITE_WEATHERKIT_ENABLED: ${{ secrets.VITE_WEATHERKIT_ENABLED }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
           VITE_REVENUECAT_API_KEY_IOS: ${{ secrets.VITE_REVENUECAT_API_KEY_IOS }}
           VITE_IOS_BUILD_NUMBER: ${{ github.run_number }}

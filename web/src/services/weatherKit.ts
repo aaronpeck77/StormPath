@@ -1,0 +1,281 @@
+/**
+ * WeatherKit adapters — same shapes as {@link ./tomorrowIo} so hooks/UI stay unchanged.
+ */
+import type { CurrentNowcast } from "./openWeatherClient";
+import {
+  buildTimelinesWaypointsForGeometry,
+  pickRouteForecastFetchLocations,
+  routeForecastLocationKey,
+  type MinutePrecipForecast,
+  type PointHourlyForecast,
+  type RouteForecast,
+  type RouteHourlyInterval,
+  weatherCodeLabel,
+} from "./tomorrowIo";
+import type { LngLat } from "../nav/types";
+import { fetchWeatherKitAtPoint } from "./weatherKitClient";
+import { isWeatherKitTokenBlocked } from "./weatherKitAuth";
+
+export { isWeatherKitTokenBlocked } from "./weatherKitAuth";
+
+/** Map WeatherKit condition codes to Tomorrow.io-style codes for shared severity logic. */
+export function weatherKitConditionToCode(condition: string): number {
+  const c = condition.toLowerCase();
+  if (c.includes("thunder") || c === "strongstorms") return 8000;
+  if (c === "heavyrain") return 4201;
+  if (c === "rain" || c === "sunshowers") return 4001;
+  if (c === "drizzle") return 4000;
+  if (c.includes("freezing") || c === "sleet") return 6001;
+  if (c === "heavysnow" || c === "blizzard") return 5101;
+  if (c === "snow" || c === "flurries") return 5000;
+  if (c === "fog" || c === "haze" || c === "smoky") return 2000;
+  if (c === "mostlyclear") return 1100;
+  if (c === "partlycloudy") return 1101;
+  if (c === "mostlycloudy") return 1102;
+  if (c === "cloudy") return 1001;
+  return 1000;
+}
+
+function cToF(c: number): number {
+  return (c * 9) / 5 + 32;
+}
+
+/** WeatherKit windSpeed is m/s. */
+function msToMph(ms: number): number {
+  return ms * 2.23694;
+}
+
+function precipTypeToNumber(type: string | undefined): number {
+  const t = (type ?? "").toLowerCase();
+  if (t.includes("snow")) return 2;
+  if (t.includes("sleet") || t.includes("hail")) return 4;
+  if (t.includes("freez")) return 3;
+  if (t.includes("rain")) return 1;
+  return 0;
+}
+
+function estimateWetRoadMm(intensityMmh: number, amountMm: number): number {
+  return Math.min(10, intensityMmh * 0.6 + amountMm * 0.25);
+}
+
+function nearestHourlyForEta(
+  hours: { forecastStart: string; values: ReturnType<typeof mapHourlyValues> }[],
+  etaMinutes: number,
+  fetchedAt: number
+): ReturnType<typeof mapHourlyValues> {
+  let best = hours[0]?.values;
+  let bestDelta = Number.POSITIVE_INFINITY;
+  for (const h of hours) {
+    const offsetMin = (new Date(h.forecastStart).getTime() - fetchedAt) / 60_000;
+    const d = Math.abs(offsetMin - etaMinutes);
+    if (d < bestDelta) {
+      bestDelta = d;
+      best = h.values;
+    }
+  }
+  return (
+    best ?? {
+      temperature: 21,
+      precipitationIntensity: 0,
+      precipitationProbability: 0,
+      windSpeed: 0,
+      windGust: 0,
+      weatherCode: 1000,
+      wetRoadIndex: 0,
+    }
+  );
+}
+
+function mapHourlyValues(h: {
+  temperature: number;
+  precipitationIntensity: number;
+  precipitationChance: number;
+  precipitationAmount: number;
+  windSpeed: number;
+  windGust?: number;
+  conditionCode: string;
+}) {
+  return {
+    temperature: h.temperature,
+    precipitationIntensity: h.precipitationIntensity,
+    precipitationProbability: h.precipitationChance,
+    windSpeed: h.windSpeed,
+    windGust: h.windGust ?? h.windSpeed,
+    weatherCode: weatherKitConditionToCode(h.conditionCode),
+    wetRoadIndex: estimateWetRoadMm(h.precipitationIntensity, h.precipitationAmount),
+  };
+}
+
+export async function fetchWeatherKitMinutePrecip(
+  lat: number,
+  lng: number,
+  signal?: AbortSignal
+): Promise<MinutePrecipForecast> {
+  const raw = await fetchWeatherKitAtPoint(
+    lat,
+    lng,
+    ["currentWeather", "forecastNextHour"],
+    signal
+  );
+  const cur = raw.currentWeather;
+  const minutes = raw.forecastNextHour?.minutes ?? [];
+  const code = weatherKitConditionToCode(cur?.conditionCode ?? "Clear");
+  return {
+    fetchedAt: Date.now(),
+    lat,
+    lng,
+    now: cur
+      ? {
+          tempF: Math.round(cToF(cur.temperature)),
+          windMph: Math.round(msToMph(cur.windSpeed)),
+          conditions: weatherCodeLabel(code),
+        }
+      : undefined,
+    minutes: minutes.map((m) => ({
+      timeIso: m.startTime,
+      precipIntensityMmh: m.precipitationIntensity,
+      precipProbability: m.precipitationChance,
+      precipType: precipTypeToNumber(m.precipitationType),
+    })),
+  };
+}
+
+export async function fetchWeatherKitPointHourly(
+  lat: number,
+  lng: number,
+  signal?: AbortSignal
+): Promise<PointHourlyForecast> {
+  const raw = await fetchWeatherKitAtPoint(lat, lng, ["forecastHourly"], signal);
+  const fetchedAt = Date.now();
+  const hours = (raw.forecastHourly?.hours ?? []).slice(0, 24).map((h) => {
+    const code = weatherKitConditionToCode(h.conditionCode);
+    return {
+      timeIso: h.forecastStart,
+      offsetHours: (new Date(h.forecastStart).getTime() - fetchedAt) / 3_600_000,
+      tempF: Math.round(cToF(h.temperature)),
+      precipIntensityMmh: h.precipitationIntensity,
+      precipProbability: h.precipitationChance,
+      windMph: Math.round(msToMph(h.windSpeed)),
+      conditions: weatherCodeLabel(code),
+    };
+  });
+  return {
+    fetchedAt,
+    lat,
+    lng,
+    hours,
+    provider: "weatherKit",
+  };
+}
+
+export async function fetchWeatherKitCurrentNowcast(
+  lat: number,
+  lng: number,
+  signal?: AbortSignal
+): Promise<CurrentNowcast> {
+  const raw = await fetchWeatherKitAtPoint(lat, lng, ["currentWeather"], signal);
+  const cur = raw.currentWeather;
+  if (!cur) throw new Error("WeatherKit currentWeather missing");
+  const gust = cur.windGust != null ? Math.round(msToMph(cur.windGust)) : null;
+  return {
+    tempF: Math.round(cToF(cur.temperature)),
+    feelsLikeF: Math.round(cToF(cur.temperatureApparent)),
+    windMph: Math.round(msToMph(cur.windSpeed)),
+    windGustMph: gust,
+    conditions: cur.conditionCode.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase(),
+    precipInPerHr: cur.precipitationIntensity / 25.4,
+    humidityPct: Math.round(cur.humidity * 100),
+    fetchedAtMs: Date.now(),
+  };
+}
+
+export async function fetchWeatherKitRouteForecast(
+  waypoints: { lat: number; lng: number; etaMinutes: number }[],
+  signal?: AbortSignal,
+  opts?: { bypassCache?: boolean }
+): Promise<RouteForecast> {
+  if (!waypoints.length) return { fetchedAt: Date.now(), intervals: [] };
+
+  const fetchLocations = pickRouteForecastFetchLocations(waypoints);
+  const timelinesByKey = new Map<
+    string,
+    { forecastStart: string; values: ReturnType<typeof mapHourlyValues> }[]
+  >();
+
+  await Promise.all(
+    fetchLocations.map(async (loc) => {
+      const key = routeForecastLocationKey(loc.lat, loc.lng);
+      const raw = await fetchWeatherKitAtPoint(
+        loc.lat,
+        loc.lng,
+        ["forecastHourly"],
+        signal,
+        opts
+      );
+      const fetchedAt = Date.now();
+      const hours = (raw.forecastHourly?.hours ?? []).map((h) => ({
+        forecastStart: h.forecastStart,
+        values: mapHourlyValues(h),
+      }));
+      timelinesByKey.set(key, hours.length ? hours : []);
+      void fetchedAt;
+    })
+  );
+
+  const fetchedAt = Date.now();
+  const intervals: RouteHourlyInterval[] = waypoints.map((wp) => {
+    const locKey = nearestLocationKey(wp, fetchLocations);
+    const hourly = timelinesByKey.get(locKey) ?? [];
+    const v = nearestHourlyForEta(hourly, wp.etaMinutes, fetchedAt);
+    return {
+      etaMinutes: wp.etaMinutes,
+      lat: wp.lat,
+      lng: wp.lng,
+      tempF: cToF(v.temperature),
+      precipIntensityMmh: v.precipitationIntensity,
+      precipProbability: v.precipitationProbability,
+      windSpeedMph: msToMph(v.windSpeed),
+      windGustMph: msToMph(v.windGust),
+      weatherCode: v.weatherCode,
+      wetRoadMm: v.wetRoadIndex,
+    };
+  });
+
+  return { fetchedAt, intervals };
+}
+
+function nearestLocationKey(
+  wp: { lat: number; lng: number },
+  locations: { lat: number; lng: number }[]
+): string {
+  let best = locations[0]!;
+  let bestD = Number.POSITIVE_INFINITY;
+  for (const loc of locations) {
+    const dLat = wp.lat - loc.lat;
+    const dLng = wp.lng - loc.lng;
+    const d = dLat * dLat + dLng * dLng;
+    if (d < bestD) {
+      bestD = d;
+      best = loc;
+    }
+  }
+  return routeForecastLocationKey(best.lat, best.lng);
+}
+
+/** Re-export geometry helpers used by route forecast hooks. */
+export { buildTimelinesWaypointsForGeometry };
+
+export function weatherKitAvailable(): boolean {
+  return !isWeatherKitTokenBlocked();
+}
+
+export async function fetchWeatherKitRouteForecastForGeometry(
+  geometry: LngLat[],
+  speedMps: number,
+  signal?: AbortSignal,
+  opts?: { bypassCache?: boolean }
+): Promise<RouteForecast> {
+  const waypoints = buildTimelinesWaypointsForGeometry(geometry, speedMps);
+  if (!waypoints?.length) return { fetchedAt: Date.now(), intervals: [] };
+  return fetchWeatherKitRouteForecast(waypoints, signal, opts);
+}

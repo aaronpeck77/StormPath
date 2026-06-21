@@ -1,0 +1,7 @@
+{
+  "name": "stormpath",
+  "private": true,
+  "devDependencies": {
+    "@netlify/functions": "^2.8.2"
+  }
+}

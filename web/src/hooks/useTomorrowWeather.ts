@@ -25,6 +25,12 @@ import {
   type RouteForecast,
 } from "../services/tomorrowIo";
 import {
+  fetchWeatherKitMinutePrecip,
+  fetchWeatherKitPointHourly,
+  fetchWeatherKitRouteForecast,
+  isWeatherKitTokenBlocked,
+} from "../services/weatherKit";
+import {
   QUOTA_NO_ROUTE_FORECAST_NOTE,
   corridorRouteSig,
   readRouteForecastCache,
@@ -63,7 +69,8 @@ export function useTomorrowMinutePrecip(
   /** When false, no network calls (saves Tomorrow.io hourly quota until user opens weather UI). */
   enabled = false,
   /** Slower refresh while navigating — corridor route forecast covers the leg. */
-  slowPollWhileNavigating = false
+  slowPollWhileNavigating = false,
+  weatherKitEnabled = false
 ): MinutePrecipForecast | null {
   const pollMs = slowPollWhileNavigating ? MINUTE_PRECIP_POLL_NAV_MS : MINUTE_PRECIP_POLL_MS;
   const [forecast, setForecast] = useState<MinutePrecipForecast | null>(null);
@@ -72,7 +79,10 @@ export function useTomorrowMinutePrecip(
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!enabled || !apiKey || !userLngLat || isTomorrowIoRateLimited()) return;
+    const hasProvider = weatherKitEnabled || Boolean(apiKey);
+    if (!enabled || !hasProvider || !userLngLat) return;
+    if (!weatherKitEnabled && isTomorrowIoRateLimited()) return;
+    if (weatherKitEnabled && isWeatherKitTokenBlocked()) return;
 
     const now = Date.now();
     const lastLng = lastFetchLngLat.current;
@@ -91,11 +101,15 @@ export function useTomorrowMinutePrecip(
     lastFetchTime.current = now;
     lastFetchLngLat.current = userLngLat;
 
-    fetchMinutePrecip(apiKey, lat, lng, ac.signal)
+    const fetcher = weatherKitEnabled
+      ? fetchWeatherKitMinutePrecip(lat, lng, ac.signal)
+      : fetchMinutePrecip(apiKey, lat, lng, ac.signal);
+
+    fetcher
       .then((f) => { if (!ac.signal.aborted) setForecast(f); })
       .catch((e) => {
-        if (!ac.signal.aborted && !isTomorrowIoRateLimited()) {
-          if (import.meta.env.DEV) console.warn("[TomorrowIO] minute precip fetch failed:", e);
+        if (!ac.signal.aborted && import.meta.env.DEV) {
+          console.warn("[Weather] minute precip fetch failed:", e);
         }
       });
 
@@ -103,6 +117,7 @@ export function useTomorrowMinutePrecip(
   }, [
     enabled,
     apiKey,
+    weatherKitEnabled,
     // Quantise position to ~3 km grid to avoid re-firing on every GPS tick.
     userLngLat ? Math.round(userLngLat[0] * 33) : null,
     userLngLat ? Math.round(userLngLat[1] * 33) : null,
@@ -111,12 +126,13 @@ export function useTomorrowMinutePrecip(
 
   // Set up a timer to re-fetch on poll interval regardless of movement.
   useEffect(() => {
-    if (!enabled || !apiKey || !userLngLat) return;
+    const hasProvider = weatherKitEnabled || Boolean(apiKey);
+    if (!enabled || !hasProvider || !userLngLat) return;
     const id = setInterval(() => {
       lastFetchTime.current = 0; // force refresh on next position update
     }, pollMs);
     return () => clearInterval(id);
-  }, [enabled, apiKey, !!userLngLat, pollMs]);
+  }, [enabled, apiKey, weatherKitEnabled, !!userLngLat, pollMs]);
 
   return forecast;
 }
@@ -136,7 +152,8 @@ export function useLocalHourlyForecast(
   userLngLat: LngLat | null,
   enabled = false,
   /** When false, skip OpenWeather hourly even if a key is set (Tomorrow.io is primary). */
-  openWeatherEnabled = true
+  openWeatherEnabled = true,
+  weatherKitEnabled = false
 ): PointHourlyForecast | null {
   const [forecast, setForecast] = useState<PointHourlyForecast | null>(null);
   const lastFetchLngLat = useRef<LngLat | null>(null);
@@ -145,7 +162,7 @@ export function useLocalHourlyForecast(
 
   useEffect(() => {
     if (!enabled || !userLngLat) return;
-    if (!tioApiKey && !openWeatherApiKey) return;
+    if (!weatherKitEnabled && !tioApiKey && !openWeatherApiKey) return;
 
     const now = Date.now();
     const lastLng = lastFetchLngLat.current;
@@ -163,7 +180,20 @@ export function useLocalHourlyForecast(
     lastFetchLngLat.current = userLngLat;
 
     const run = async () => {
-      if (tioApiKey && !isTomorrowIoRateLimited() && !ac.signal.aborted) {
+      if (weatherKitEnabled && !isWeatherKitTokenBlocked() && !ac.signal.aborted) {
+        try {
+          const f = await fetchWeatherKitPointHourly(lat, lng, ac.signal);
+          if (!ac.signal.aborted) {
+            setForecast(f);
+            return;
+          }
+        } catch (e) {
+          if (!ac.signal.aborted && import.meta.env.DEV) {
+            console.warn("[WeatherKit] point hourly failed:", e);
+          }
+        }
+      }
+      if (tioApiKey && !weatherKitEnabled && !isTomorrowIoRateLimited() && !ac.signal.aborted) {
         try {
           const f = await fetchPointHourlyForecast(tioApiKey, lat, lng, ac.signal);
           if (!ac.signal.aborted) {
@@ -178,6 +208,7 @@ export function useLocalHourlyForecast(
       }
       if (
         openWeatherEnabled &&
+        !weatherKitEnabled &&
         openWeatherApiKey &&
         !isOpenWeatherRateLimited() &&
         !ac.signal.aborted
@@ -204,19 +235,22 @@ export function useLocalHourlyForecast(
     };
   }, [
     enabled,
+    weatherKitEnabled,
     tioApiKey,
     openWeatherApiKey,
+    openWeatherEnabled,
     userLngLat ? Math.round(userLngLat[0] * 20) : null,
     userLngLat ? Math.round(userLngLat[1] * 20) : null,
   ]);
 
   useEffect(() => {
-    if (!enabled || !userLngLat || (!tioApiKey && !openWeatherApiKey)) return;
+    if (!enabled || !userLngLat) return;
+    if (!weatherKitEnabled && !tioApiKey && !openWeatherApiKey) return;
     const id = setInterval(() => {
       lastFetchTime.current = 0;
     }, HOURLY_POINT_POLL_MS);
     return () => clearInterval(id);
-  }, [enabled, openWeatherEnabled, tioApiKey, openWeatherApiKey, !!userLngLat]);
+  }, [enabled, openWeatherEnabled, weatherKitEnabled, tioApiKey, openWeatherApiKey, !!userLngLat]);
 
   return forecast;
 }
@@ -245,7 +279,8 @@ export function useTomorrowRouteForecast(
   apiKey: string,
   routeGeometry: LngLat[] | null,
   speedMps: number,
-  enabled = false
+  enabled = false,
+  weatherKitEnabled = false
 ): RouteForecastHookResult {
   const [forecast, setForecast] = useState<RouteForecast | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -314,7 +349,8 @@ export function useTomorrowRouteForecast(
       return;
     }
 
-    if (!apiKey || !waypoints) {
+    const hasProvider = weatherKitEnabled || Boolean(apiKey);
+    if (!hasProvider || !waypoints) {
       if (force) {
         setRefreshBlocked("Route weather unavailable — no API key or route shape.");
       }
@@ -322,7 +358,9 @@ export function useTomorrowRouteForecast(
       return;
     }
 
-    const rateLimited = isTomorrowIoRateLimited();
+    const rateLimited = weatherKitEnabled
+      ? isWeatherKitTokenBlocked()
+      : isTomorrowIoRateLimited();
     const showCachedOnly = (note: string) => {
       if (routeGeometry && applyCachedForecast(routeSig, routeGeometry)) {
         setRefreshBlocked(note);
@@ -365,7 +403,11 @@ export function useTomorrowRouteForecast(
     // Bypass the per-location cache whenever the route changes or a manual
     // refresh was requested — stale location data is the most common reason
     // the app shows "light rain" when driving into a severe storm.
-    fetchRouteForecast(apiKey, waypoints, ac.signal, (force || isNewRoute) ? { bypassCache: true } : undefined)
+    const fetcher = weatherKitEnabled
+      ? fetchWeatherKitRouteForecast(waypoints, ac.signal, (force || isNewRoute) ? { bypassCache: true } : undefined)
+      : fetchRouteForecast(apiKey, waypoints, ac.signal, (force || isNewRoute) ? { bypassCache: true } : undefined);
+
+    fetcher
       .then((f) => {
         if (!ac.signal.aborted) {
           lastRouteSig.current = routeSig;
@@ -378,11 +420,13 @@ export function useTomorrowRouteForecast(
       })
       .catch((e) => {
         if (!ac.signal.aborted) {
-          const limited = isTomorrowIoRateLimited() || String(e).includes("rate limited");
+          const limited = weatherKitEnabled
+            ? isWeatherKitTokenBlocked() || String(e).includes("token")
+            : isTomorrowIoRateLimited() || String(e).includes("rate limited");
           if (limited) {
             showCachedOnly(STALE_ROUTE_FORECAST_NOTE);
           } else if (import.meta.env.DEV) {
-            console.warn("[TomorrowIO] route forecast fetch failed:", e);
+            console.warn("[Weather] route forecast fetch failed:", e);
           }
         }
       })
@@ -393,7 +437,7 @@ export function useTomorrowRouteForecast(
     return () => {
       ac.abort();
     };
-  }, [enabled, apiKey, routeSig, routeGeometry, waypoints, refreshKey, applyCachedForecast, forecast]);
+  }, [enabled, apiKey, weatherKitEnabled, routeSig, routeGeometry, waypoints, refreshKey, applyCachedForecast, forecast]);
 
   return {
     forecast,

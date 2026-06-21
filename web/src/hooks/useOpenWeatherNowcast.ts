@@ -6,17 +6,19 @@ import {
   isOpenWeatherRateLimited,
   type CurrentNowcast,
 } from "../services/openWeatherClient";
+import { fetchWeatherKitCurrentNowcast, isWeatherKitTokenBlocked } from "../services/weatherKit";
 
 export type UseOpenWeatherNowcastDeps = {
   isPlus: boolean;
   isOnline: boolean;
   openWeatherApiKey: string;
+  weatherKitEnabled?: boolean;
   userLngLat: LngLat | null;
   userLngLatRef: MutableRefObject<LngLat | null>;
 };
 
 export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentNowcast | null {
-  const { isPlus, isOnline, openWeatherApiKey, userLngLat, userLngLatRef } = deps;
+  const { isPlus, isOnline, openWeatherApiKey, weatherKitEnabled = false, userLngLat, userLngLatRef } = deps;
 
   const [currentNowcast, setCurrentNowcast] = useState<CurrentNowcast | null>(null);
   const lastNowcastFixRef = useRef<{ lng: number; lat: number; tMs: number } | null>(null);
@@ -37,8 +39,10 @@ export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentN
       return;
     }
     if (!isOnline) return;
-    if (!openWeatherApiKey) return;
-    if (isOpenWeatherRateLimited()) return;
+    const hasProvider = weatherKitEnabled || Boolean(openWeatherApiKey);
+    if (!hasProvider) return;
+    if (!weatherKitEnabled && isOpenWeatherRateLimited()) return;
+    if (weatherKitEnabled && isWeatherKitTokenBlocked()) return;
     if (!userLngLat) return;
     const [lng, lat] = userLngLat;
     if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
@@ -60,7 +64,11 @@ export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentN
       const movedEnough =
         haversineMeters([lastFailure.lng, lastFailure.lat], [lng, lat]) >= NOW_FAIL_RETRY_MOVE_M;
       const ageMs = now - lastFailure.tMs;
-      const retryMs = isOpenWeatherRateLimited() ? NOW_RATE_LIMIT_RETRY_MS : NOW_FAIL_RETRY_MS;
+      const retryMs = weatherKitEnabled
+        ? 2 * 60 * 1000
+        : isOpenWeatherRateLimited()
+          ? NOW_RATE_LIMIT_RETRY_MS
+          : NOW_FAIL_RETRY_MS;
       if (!movedEnough && ageMs < retryMs) return;
     }
     if (nowcastFetchInFlightRef.current) return;
@@ -68,7 +76,9 @@ export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentN
     void (async () => {
       nowcastFetchInFlightRef.current = true;
       try {
-        const nc = await fetchCurrentNowcast(openWeatherApiKey, lat, lng);
+        const nc = weatherKitEnabled
+          ? await fetchWeatherKitCurrentNowcast(lat, lng)
+          : await fetchCurrentNowcast(openWeatherApiKey, lat, lng);
         lastNowcastFixRef.current = { lng, lat, tMs: nc.fetchedAtMs };
         lastNowcastFailureRef.current = null;
         if (nowcastMountedRef.current) setCurrentNowcast(nc);
@@ -78,14 +88,15 @@ export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentN
         nowcastFetchInFlightRef.current = false;
       }
     })();
-  }, [isPlus, userLngLat, isOnline, openWeatherApiKey]);
+  }, [isPlus, userLngLat, isOnline, openWeatherApiKey, weatherKitEnabled]);
 
   useEffect(() => {
     if (!isPlus) return;
     if (!isOnline) return;
-    if (!openWeatherApiKey) return;
+    if (!weatherKitEnabled && !openWeatherApiKey) return;
     const id = window.setInterval(() => {
-      if (isOpenWeatherRateLimited()) return;
+      if (!weatherKitEnabled && isOpenWeatherRateLimited()) return;
+      if (weatherKitEnabled && isWeatherKitTokenBlocked()) return;
       const cur = userLngLatRef.current;
       if (!cur) return;
       const [lng, lat] = cur;
@@ -94,7 +105,9 @@ export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentN
       void (async () => {
         nowcastFetchInFlightRef.current = true;
         try {
-          const nc = await fetchCurrentNowcast(openWeatherApiKey, lat, lng);
+          const nc = weatherKitEnabled
+            ? await fetchWeatherKitCurrentNowcast(lat, lng)
+            : await fetchCurrentNowcast(openWeatherApiKey, lat, lng);
           lastNowcastFixRef.current = { lng, lat, tMs: nc.fetchedAtMs };
           lastNowcastFailureRef.current = null;
           if (nowcastMountedRef.current) setCurrentNowcast(nc);
@@ -106,7 +119,7 @@ export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentN
       })();
     }, 10 * 60 * 1000);
     return () => window.clearInterval(id);
-  }, [isPlus, isOnline, openWeatherApiKey, userLngLatRef]);
+  }, [isPlus, isOnline, openWeatherApiKey, weatherKitEnabled, userLngLatRef]);
 
   return currentNowcast;
 }

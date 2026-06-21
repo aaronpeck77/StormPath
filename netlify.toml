@@ -1,0 +1,10 @@
+# Git-connected Netlify deploy (stormpath2). Drag-and-drop dist uploads do NOT deploy functions.
+# Connect this repo in Netlify → Site configuration → Build: base `web`, command below.
+
+[build]
+  base = "web"
+  command = "npm run build:netlify"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"

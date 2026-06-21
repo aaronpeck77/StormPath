@@ -5,6 +5,19 @@ import {
   STORMPATH_PUBLIC_TERMS_URL,
 } from "./publicSite";
 
+const DEFAULT_WEATHERKIT_TOKEN_URL =
+  "https://stormpath2.netlify.app/.netlify/functions/weatherkit-token";
+
+function computeWeatherKitTokenUrl(): string {
+  const custom = (import.meta.env.VITE_WEATHERKIT_TOKEN_URL as string | undefined)?.trim();
+  if (custom) return custom;
+  if (Capacitor.isNativePlatform()) return DEFAULT_WEATHERKIT_TOKEN_URL;
+  if (typeof window !== "undefined" && window.location.origin.startsWith("http")) {
+    return `${window.location.origin}/.netlify/functions/weatherkit-token`;
+  }
+  return DEFAULT_WEATHERKIT_TOKEN_URL;
+}
+
 /** Vite injects only vars prefixed with VITE_. Never commit real keys — use `.env.local`. */
 /** Plus: see `billing/payFeatures.ts` and `docs/PAY_TIERS.md` (dev server defaults to Plus). */
 
@@ -36,6 +49,10 @@ export function getWebEnv() {
     mapboxToken: (import.meta.env.VITE_MAPBOX_TOKEN as string | undefined)?.trim() ?? "",
     openWeatherApiKey: (import.meta.env.VITE_OPENWEATHER_API_KEY as string | undefined)?.trim() ?? "",
     tomorrowIoApiKey: (import.meta.env.VITE_TOMORROW_IO_API_KEY as string | undefined)?.trim() ?? "",
+    /** Apple WeatherKit via Netlify JWT token function — scales for App Store users. */
+    weatherKitEnabled:
+      String(import.meta.env.VITE_WEATHERKIT_ENABLED ?? "").toLowerCase() === "true",
+    weatherKitTokenUrl: computeWeatherKitTokenUrl(),
     /** When true, US NWS active alerts (polygons) + advisory strip are available (future: gate on subscription). */
     stormAdvisoryEnabled: import.meta.env.VITE_STORM_ADVISORY_ENABLED !== "false",
     /**

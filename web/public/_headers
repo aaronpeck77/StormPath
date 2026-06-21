@@ -8,7 +8,7 @@
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
   Cross-Origin-Opener-Policy: same-origin
-  Content-Security-Policy: default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com https://*.rainviewer.com https://api.weather.gov https://api.openweathermap.org; connect-src 'self' https://api.mapbox.com https://events.mapbox.com https://*.tiles.mapbox.com https://api.openweathermap.org https://api.weather.gov https://api.rainviewer.com https://*.rainviewer.com https://api.tomorrow.io; worker-src 'self' blob:; manifest-src 'self'
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com https://*.rainviewer.com https://api.weather.gov https://api.openweathermap.org; connect-src 'self' https://api.mapbox.com https://events.mapbox.com https://*.tiles.mapbox.com https://api.openweathermap.org https://api.weather.gov https://api.rainviewer.com https://*.rainviewer.com https://api.tomorrow.io https://weatherkit.apple.com; worker-src 'self' blob:; manifest-src 'self'
 
 # Long-lived cache for fingerprinted Vite assets.
 /assets/*

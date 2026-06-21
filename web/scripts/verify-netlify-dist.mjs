@@ -26,6 +26,9 @@ if (!fs.existsSync(headersPath)) {
 }
 
 const headers = fs.readFileSync(headersPath, "utf8");
+if (!headers.includes("https://weatherkit.apple.com")) {
+  fail("dist/_headers does not allow https://weatherkit.apple.com in connect-src.");
+}
 if (!headers.includes("https://api.tomorrow.io")) {
   fail('dist/_headers does not allow https://api.tomorrow.io in connect-src.');
 }
@@ -38,6 +41,7 @@ const stamp = new Date().toISOString();
 const checkBody = [
   "StormPath Netlify deploy verification",
   `built_at=${stamp}`,
+  "csp_weatherkit=yes",
   "csp_tomorrow_io=yes",
   "icons=yes",
   "",
@@ -51,6 +55,7 @@ const checkBody = [
 fs.writeFileSync(checkPath, checkBody, "utf8");
 
 console.log("Netlify dist verified:");
+console.log("  - dist/_headers includes weatherkit.apple.com");
 console.log("  - dist/_headers includes api.tomorrow.io");
 console.log("  - dist/icons/icon-192.png present");
 console.log(`  - dist/_deploy-check.txt written (${stamp})`);

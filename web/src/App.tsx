@@ -749,6 +749,7 @@ export default function App() {
       `[stormpath boot] ${buildLabel}`,
       "tier:", tierLabel,
       "| mapboxToken:", env.mapboxToken ? "YES" : "NO",
+      "| weatherKit:", env.weatherKitEnabled ? "YES" : "NO",
       "| tomorrowIo:", env.tomorrowIoApiKey ? "YES" : "NO",
       "| stormAdvisory:", env.stormAdvisoryEnabled,
       "| nwsBase:", env.nwsApiBase,
@@ -874,6 +875,7 @@ export default function App() {
     isPlus,
     isOnline,
     openWeatherApiKey: env.openWeatherApiKey,
+    weatherKitEnabled: env.weatherKitEnabled,
     userLngLat,
     userLngLatRef,
   });
@@ -1881,20 +1883,23 @@ export default function App() {
     radarSampleIntervalMs
   );
 
-  // ── Tomorrow.io (free tier ~25 req/hr) — split point vs route to stay under quota ──
-  const tioApiKey = env.tomorrowIoApiKey;
+  // ── Route weather (Tomorrow.io or Apple WeatherKit) ──
+  const weatherKitEnabled = env.weatherKitEnabled;
+  const tioApiKey = weatherKitEnabled ? "" : env.tomorrowIoApiKey;
+  const routeWeatherReady = weatherKitEnabled || Boolean(env.tomorrowIoApiKey);
   const tioWeatherUiOpen = stormBarExpanded;
   const tioBaseEnabled =
-    isPlus && Boolean(tioApiKey) && Boolean(effectiveUserLngLat) && appForeground;
+    isPlus && routeWeatherReady && Boolean(effectiveUserLngLat) && appForeground;
   /** At-your-location minute precip + hourly — always on (data saver waits for expanded bar). */
   const tioPointFetchEnabled =
     tioBaseEnabled && (dataSaverMode ? tioWeatherUiOpen : true);
-  /** OpenWeather hourly is fallback only — skip when Tomorrow.io covers the point card. */
-  const openWeatherHourlyEnabled = tioPointFetchEnabled && !tioApiKey;
+  /** OpenWeather hourly is fallback only — skip when primary provider covers the point card. */
+  const openWeatherHourlyEnabled =
+    tioPointFetchEnabled && !routeWeatherReady;
   /** Corridor hourly along the active leg — route shape only (no GPS required). */
   const tioRouteCorridorEnabled =
     isPlus &&
-    Boolean(tioApiKey) &&
+    routeWeatherReady &&
     appForeground &&
     Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
   /** Fetch while navigating, planning a short route, or advisory weather is expanded. */
@@ -1913,14 +1918,16 @@ export default function App() {
     tioApiKey,
     effectiveUserLngLat ?? null,
     tioPointFetchEnabled,
-    navigationStarted
+    navigationStarted,
+    weatherKitEnabled
   );
   const localHourlyForecast = useLocalHourlyForecast(
     tioApiKey,
     env.openWeatherApiKey,
     effectiveUserLngLat ?? null,
     tioPointFetchEnabled,
-    openWeatherHourlyEnabled
+    openWeatherHourlyEnabled,
+    weatherKitEnabled
   );
   const {
     forecast: tioRouteForecast,
@@ -1932,20 +1939,21 @@ export default function App() {
     tioApiKey,
     isPlus && guidanceRoute?.geometry?.length ? guidanceRoute.geometry : null,
     speedMps ?? 0,
-    tioRouteFetchEnabled
+    tioRouteFetchEnabled,
+    weatherKitEnabled
   );
 
   const handleRefreshRouteInfoWeather = useCallback(() => {
     resetWeatherOverlayThrottle();
     bumpWeatherRefresh();
-    if (tioApiKey && guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2) {
+    if (routeWeatherReady && guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2) {
       bumpRouteForecastRefresh();
     }
   }, [
     resetWeatherOverlayThrottle,
     bumpWeatherRefresh,
     bumpRouteForecastRefresh,
-    tioApiKey,
+    routeWeatherReady,
     guidanceRoute?.geometry,
   ]);
 
@@ -1980,7 +1988,7 @@ export default function App() {
       Boolean(tioMinutePrecip) ||
       (localHourlyForecast?.hours.length ?? 0) > 0;
     if (hasData) return false;
-    return Boolean(tioApiKey) || Boolean(env.openWeatherApiKey);
+    return routeWeatherReady || Boolean(env.openWeatherApiKey);
   }, [
     isPlus,
     stormBarExpanded,
@@ -1988,7 +1996,7 @@ export default function App() {
     currentNowcast,
     tioMinutePrecip,
     localHourlyForecast?.hours.length,
-    tioApiKey,
+    routeWeatherReady,
     env.openWeatherApiKey,
   ]);
 
@@ -3928,8 +3936,11 @@ export default function App() {
                     showRefresh={
                       isPlus &&
                       Boolean(
-                        env.openWeatherApiKey ||
-                          (tioApiKey && guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2)
+                        env.weatherKitEnabled ||
+                          env.openWeatherApiKey ||
+                          (routeWeatherReady &&
+                            guidanceRoute?.geometry &&
+                            guidanceRoute.geometry.length >= 2)
                       )
                     }
                     refreshBusy={routeInfoWeatherRefreshing}
