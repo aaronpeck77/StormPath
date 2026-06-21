@@ -326,13 +326,20 @@ export function nwsEventIsHydro(event: string): boolean {
 }
 
 /**
- * Minor flood/hydro get a mention in the advisory panel but must not paint the progress strip
- * or route line. Only Moderate+ (medium/major) hydro alerts are corridor-prominent.
+ * Only Flash Flood events (Warning/Emergency) with Severe+ NWS severity paint the
+ * progress strip and route line.  All other hydro alerts — Flood Warnings, Watches,
+ * and Advisories — are muted: they appear as NWS map polygons but don't colour the
+ * strip or route line, which reserves those colours for genuinely route-blocking
+ * weather.  Non-hydro alerts (tornadoes, severe thunderstorms, etc.) are always
+ * prominent regardless of severity.
  */
 export function nwsAlertIsStripProminent(a: NormalizedWeatherAlert): boolean {
   const ev = a.event?.trim() ?? "";
   if (!nwsEventIsHydro(ev)) return true;
-  return rankNwsSeverity(a.severity) >= rankNwsSeverity("Moderate");
+  return (
+    /flash\s+flood/i.test(ev) &&
+    rankNwsSeverity(a.severity) >= rankNwsSeverity("Severe")
+  );
 }
 
 /** GeoJSON feature props → same prominence gate as {@link nwsAlertIsStripProminent}. */
@@ -342,16 +349,18 @@ export function nwsMapFeatureIsRouteLineProminent(props: {
 }): boolean {
   const ev = props.event?.trim() ?? "";
   if (!nwsEventIsHydro(ev)) return true;
-  return rankNwsSeverity(props.severity ?? "Unknown") >= rankNwsSeverity("Moderate");
+  return (
+    /flash\s+flood/i.test(ev) &&
+    rankNwsSeverity(props.severity ?? "Unknown") >= rankNwsSeverity("Severe")
+  );
 }
 
-/** Route-line paint: Severe+ only (minor/moderate stay in advisory text). */
+/** Route-line paint: Flash Flood Warning (Severe+) only — mirrors {@link nwsAlertIsStripProminent}. */
 export function nwsMapFeatureIsRouteLinePaint(props: {
   event?: string;
   severity?: string;
 }): boolean {
-  if (!nwsMapFeatureIsRouteLineProminent(props)) return false;
-  return rankNwsSeverity(props.severity ?? "Unknown") >= rankNwsSeverity("Severe");
+  return nwsMapFeatureIsRouteLineProminent(props);
 }
 
 /** Narrow pin for minor hydro on long routes — visible without covering the corridor. */
