@@ -5,10 +5,12 @@ The app never holds your Apple private key — a tiny Netlify function signs sho
 
 ## 1. Apple Developer (you did this)
 
-- **App ID** `com.aaronpeck.stormpath` → enable **WeatherKit** capability
+- **App ID** `com.aaronpeck.stormpath` → enable **WeatherKit** capability (portal only — required for API access)
 - **Services ID** `com.aaronpeck.stormpath.weatherkit`
 - **Key** with WeatherKit enabled → download `.p8` once, note **Key ID**
 - **Team ID** (e.g. `8Y86R5V45T`)
+
+The iOS app uses WeatherKit **REST** via a Netlify JWT token — no WeatherKit entitlement is baked into the IPA, so you do **not** need to regenerate your provisioning profile for WeatherKit.
 
 ## 2. Netlify environment variables
 
