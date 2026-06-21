@@ -8,7 +8,10 @@
  *   WEATHERKIT_PRIVATE_KEY   — Full .p8 PEM; paste with literal \n for newlines
  */
 import crypto from "node:crypto";
-import type { Handler } from "@netlify/functions";
+
+type NetlifyHandler = (
+  event: { httpMethod: string }
+) => Promise<{ statusCode: number; headers?: Record<string, string>; body: string }>;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -69,7 +72,7 @@ function signWeatherKitJwt(): { token: string; expiresAtMs: number } {
   };
 }
 
-export const handler: Handler = async (event) => {
+export const handler: NetlifyHandler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: CORS, body: "" };
   }
