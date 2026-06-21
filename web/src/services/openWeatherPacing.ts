@@ -8,8 +8,8 @@ import { fetchWithTimeout, OPENWEATHER_TIMEOUT_MS } from "../utils/fetchResilien
 const MIN_GAP_MS = 600;
 /** Short TTL so rapidly-changing severe weather is captured quickly. */
 const CACHE_TTL_MS = 12 * 60 * 1000;
-/** After 429 retry sooner — a 1-hour blackout is unsafe in severe-weather conditions. */
-const RATE_LIMIT_COOLDOWN_MS = 12 * 60 * 1000;
+/** After a 429 retry within 5 min — short enough to recover quickly in severe-weather. */
+const RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000;
 /** Soft hourly cap — leaves headroom under the free-tier 60/min limit. */
 const MAX_REQUESTS_PER_HOUR = 30;
 

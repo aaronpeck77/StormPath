@@ -332,6 +332,10 @@ export function useTomorrowRouteForecast(
       setRefreshing(false);
     };
 
+    // Track whether the route itself changed so we can bypass the per-location
+    // in-memory cache.  A brand-new route must never serve 12-min-old data.
+    const isNewRoute = routeSig !== lastRouteSig.current;
+
     if (!force) {
       if (!enabled) {
         if (!forecast && routeGeometry) applyCachedForecast(routeSig, routeGeometry);
@@ -344,10 +348,9 @@ export function useTomorrowRouteForecast(
       }
 
       const now = Date.now();
-      const routeChanged = routeSig !== lastRouteSig.current;
       const stale = now - lastFetchTime.current > ROUTE_FORECAST_POLL_MS;
 
-      if (!routeChanged && !stale) return;
+      if (!isNewRoute && !stale) return;
     } else if (rateLimited) {
       showCachedOnly(STALE_ROUTE_FORECAST_NOTE);
       return;
@@ -359,7 +362,10 @@ export function useTomorrowRouteForecast(
     setRefreshing(true);
     setRefreshBlocked(null);
 
-    fetchRouteForecast(apiKey, waypoints, ac.signal, force ? { bypassCache: true } : undefined)
+    // Bypass the per-location cache whenever the route changes or a manual
+    // refresh was requested — stale location data is the most common reason
+    // the app shows "light rain" when driving into a severe storm.
+    fetchRouteForecast(apiKey, waypoints, ac.signal, (force || isNewRoute) ? { bypassCache: true } : undefined)
       .then((f) => {
         if (!ac.signal.aborted) {
           lastRouteSig.current = routeSig;

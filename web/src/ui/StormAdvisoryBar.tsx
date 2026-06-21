@@ -213,6 +213,8 @@ export type StormAdvisoryBarProps = SharedProps & {
   busyLabel?: string | null;
   /** Shown when forecast data is stale / rate-limited — rotates into the collapsed preview strip. */
   staleWeatherNote?: string | null;
+  /** Called when the user taps "Refresh Weather" from the stale-data banner. */
+  onRefreshWeather?: (() => void) | null;
   /** Drive-mode route-ahead summary (radar tier + brief text). Surfaced in preview when driving. */
   driveRouteAheadLine?: DriveAheadLine | null;
   /** Plus: full NWS + road tools. Basic: life-safety NWS, connectivity, and promo rotation. */
@@ -358,6 +360,7 @@ export function StormAdvisoryBar({
   peekSeverity = null,
   busyLabel = null,
   staleWeatherNote = null,
+  onRefreshWeather = null,
   driveRouteAheadLine = null,
   advisoryTier = "plus",
   ownsPlus = false,
@@ -1195,6 +1198,26 @@ export function StormAdvisoryBar({
           <p className="storm-advisory-bar__offline-note" aria-live="polite">
             <strong>Offline</strong> — reconnect to refresh map tiles and advisories.
           </p>
+        </div>
+      )}
+
+      {staleWeatherNote && (
+        <div className="storm-advisory-bar__stale-row" role="status">
+          <span className="storm-advisory-bar__stale-text">{staleWeatherNote}</span>
+          {onRefreshWeather && (
+            <button
+              type="button"
+              className="storm-advisory-bar__btn storm-advisory-bar__btn--refresh"
+              onPointerDownCapture={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onRefreshWeather();
+              }}
+            >
+              Refresh
+            </button>
+          )}
         </div>
       )}
 

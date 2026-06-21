@@ -2777,6 +2777,9 @@ export default function App() {
     setFitTrigger((n) => n + 1);
     setTollRoutePrompt(null);
     setTollAvoidFailureNote(null);
+    // Force a fresh route weather fetch the moment the user starts driving.
+    // Bypasses the per-location cache so stale data can't mask a developing storm.
+    bumpRouteForecastRefresh();
 
     const pickedForNav = plan.routes.find((r) => r.id === chosen);
     lockedNavigationRouteIdRef.current = chosen;
@@ -2876,7 +2879,7 @@ export default function App() {
     viaStops,
     activeViaIndex,
     env.mapboxToken,
-    destLngLat,
+    bumpRouteForecastRefresh,
   ]);
 
   const handleGo = () => {
@@ -3820,6 +3823,7 @@ export default function App() {
                       onNwsAlertClick={handleAdvisoryNwsClick}
                       busyLabel={activityBusyLabel}
                       staleWeatherNote={routeForecastRefreshBlocked}
+                      onRefreshWeather={handleRefreshRouteInfoWeather}
                       driveRouteAheadLine={driveModeUi ? driveRouteAheadLine : null}
                       advisoryTier={advisoryPlusDetailOn ? "plus" : "basic"}
                       ownsPlus={isPlus}

@@ -7,8 +7,8 @@ import { safeStorage } from "../storage/safeStorage";
 const MIN_GAP_MS = 1200;
 /** Route / point forecasts: short TTL so rapidly-changing severe weather is captured. */
 const CACHE_TTL_MS = 12 * 60 * 1000;
-/** After a 429 retry sooner — a 1-hour blackout is unsafe in severe-weather conditions. */
-const RATE_LIMIT_COOLDOWN_MS = 12 * 60 * 1000;
+/** After a 429 retry within 5 min — short enough to recover quickly in severe-weather. */
+const RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000;
 /** Stay under Tomorrow.io's 25/hr cap — slightly higher than before to support 15-min re-polls. */
 const MAX_REQUESTS_PER_HOUR = 20;
 
@@ -84,8 +84,8 @@ export function noteTomorrowIoRateLimit(): void {
   rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
   persistRateUntil(rateLimitedUntil);
   if (import.meta.env.DEV) {
-    console.warn(
-      "[Tomorrow.io] rate limited — no more API calls for 1 hour (saved in this browser). Corridor forecast and minute precip pause until then."
+      console.warn(
+      "[Tomorrow.io] rate limited — no more API calls for 5 min (saved in this browser). Corridor forecast and minute precip pause until then."
     );
   }
 }

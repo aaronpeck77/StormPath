@@ -7100,6 +7100,38 @@
   color: #bfdbfe;
 }
 
+/* Stale-weather notice row in expanded advisory panel */
+.storm-advisory-bar__stale-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  background: rgba(120, 53, 15, 0.35);
+  border-bottom: 1px solid rgba(251, 191, 36, 0.25);
+  flex-shrink: 0;
+}
+
+.storm-advisory-bar__stale-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #fcd34d;
+}
+
+.storm-advisory-bar__btn--refresh {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  background: rgba(251, 191, 36, 0.14);
+  color: #fcd34d;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 .storm-advisory-bar--expanded .storm-advisory-bar__head {
   flex-direction: row;
   align-items: flex-start;
