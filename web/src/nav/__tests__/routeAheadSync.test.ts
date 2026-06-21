@@ -78,7 +78,7 @@ describe("buildRouteAheadGlanceCards", () => {
     expect(cards).toHaveLength(0);
   });
 
-  it("includes strip-muted minor flood in route status cards", () => {
+  it("excludes strip-muted minor flood from route status cards", () => {
     const cards = buildRouteAheadGlanceCards({
       items: [
         baseItem({ id: "minor-flood", stripMuted: true, severity: "info", label: "Flood Advisory" }),
@@ -88,8 +88,9 @@ describe("buildRouteAheadGlanceCards", () => {
       userAlongMeters: 0,
       planEtaMinutes: 90,
     });
-    expect(cards).toHaveLength(2);
-    expect(cards.map((c) => c.label)).toContain("Flood Advisory");
+    expect(cards).toHaveLength(1);
+    expect(cards.map((c) => c.label)).not.toContain("Flood Advisory");
+    expect(cards.map((c) => c.label)).toContain("Flash Flood Warning");
   });
 });
 
@@ -117,7 +118,7 @@ describe("timelineItemShowsOnRouteLine", () => {
 });
 
 describe("buildRouteAheadCalloutSegments", () => {
-  it("includes strip-muted minor flood in route status text", () => {
+  it("excludes strip-muted minor flood from route status text", () => {
     const segments = buildRouteAheadCalloutSegments({
       items: [
         baseItem({ id: "minor-flood", stripMuted: true, severity: "info", label: "Flood Advisory" }),
@@ -127,7 +128,8 @@ describe("buildRouteAheadCalloutSegments", () => {
       userAlongMeters: 0,
       planEtaMinutes: 90,
     });
-    expect(segments).toHaveLength(2);
-    expect(segments.some((s) => s.title.includes("Flood Advisory"))).toBe(true);
+    expect(segments).toHaveLength(1);
+    expect(segments.some((s) => s.title.includes("Flood Advisory"))).toBe(false);
+    expect(segments.some((s) => s.title.includes("Flash Flood Warning"))).toBe(true);
   });
 });

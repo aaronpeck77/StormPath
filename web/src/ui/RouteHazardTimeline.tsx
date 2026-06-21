@@ -165,7 +165,7 @@ function RouteHazardLegend({
                 : undefined
             }
           >
-            <span className="rhtz__legend-dot" aria-hidden />
+            <span className="rhtz__legend-dot" style={{ background: timelineItemBandColor(item) }} aria-hidden />
             <span className="rhtz__legend-body">
               {showTrackLabel ? (
                 <span className="rhtz__legend-track">{TRACK_META[item.track]?.label ?? item.track}</span>

@@ -996,7 +996,7 @@ export function StormAdvisoryBar({
   ]);
 
   const hasRouteHazardDetail =
-    advisoryRouteTimeline.some((item) => item.endMeters > userAlongMeters) && routeTotalMeters > 0;
+    advisoryRouteTimeline.some((item) => !item.stripMuted && item.endMeters > userAlongMeters) && routeTotalMeters > 0;
 
   const activePreview = previewItems[previewIdx % previewItems.length]!;
   const previewTone: AdvisoryPreviewTone = barExpanded ? "info" : activePreview.tone;
@@ -1250,7 +1250,7 @@ export function StormAdvisoryBar({
             {hasRouteHazardDetail ? (
               <RouteHazardTimeline
                 variant="legendOnly"
-                items={advisoryRouteTimeline}
+                items={advisoryRouteTimeline.filter((item) => !item.stripMuted)}
                 totalMeters={routeTotalMeters}
                 userAlongMeters={userAlongMeters}
                 planEtaMinutes={planEtaMinutes}

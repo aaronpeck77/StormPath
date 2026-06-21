@@ -188,9 +188,9 @@ export function timelineToMapCorridorAlerts(
   return out;
 }
 
-/** Route status text rows — includes minor advisories muted on the strip/map. */
+/** Route status text rows — excludes minor advisories muted on the strip/map. */
 export function timelineItemsForProgressRail(items: TimelineItem[]): TimelineItem[] {
-  return items;
+  return items.filter((item) => !item.stripMuted);
 }
 
 /** Progress-bar info panel rows — brief copy + ETA / still-active timing from advisory logic. */
