@@ -25,10 +25,32 @@ function base64url(input: string | Buffer): string {
   return Buffer.from(input).toString("base64url");
 }
 
-function readPrivateKey(): string | null {
+function normalizePrivateKeyPem(raw: string): string | null {
+  let key = raw.trim();
+  if (!key) return null;
+  if (
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'"))
+  ) {
+    key = key.slice(1, -1).trim();
+  }
+  key = key.replace(/\\n/g, "\n").replace(/\r\n/g, "\n");
+  if (!key.includes("BEGIN")) {
+    key = `-----BEGIN PRIVATE KEY-----\n${key}\n-----END PRIVATE KEY-----`;
+  }
+  return key;
+}
+
+function readPrivateKey(): crypto.KeyObject | null {
   const raw = process.env.WEATHERKIT_PRIVATE_KEY?.trim();
   if (!raw) return null;
-  return raw.includes("\\n") ? raw.replace(/\\n/g, "\n") : raw;
+  const pem = normalizePrivateKeyPem(raw);
+  if (!pem) return null;
+  try {
+    return crypto.createPrivateKey({ key: pem, format: "pem" });
+  } catch {
+    return null;
+  }
 }
 
 function signWeatherKitJwt(): { token: string; expiresAtMs: number } {
@@ -46,7 +68,6 @@ function signWeatherKitJwt(): { token: string; expiresAtMs: number } {
     alg: "ES256",
     kid: keyId,
     id: `${teamId}.${serviceId}`,
-    typ: "JWT",
   };
   const payload = {
     iss: teamId,
@@ -59,11 +80,11 @@ function signWeatherKitJwt(): { token: string; expiresAtMs: number } {
   const encodedPayload = base64url(JSON.stringify(payload));
   const signingInput = `${encodedHeader}.${encodedPayload}`;
 
-  const sign = crypto.createSign("SHA256");
-  sign.update(signingInput);
-  sign.end();
-  const signature = sign
-    .sign({ key: privateKey, dsaEncoding: "ieee-p1363" })
+  const signature = crypto
+    .sign("sha256", Buffer.from(signingInput), {
+      key: privateKey,
+      dsaEncoding: "ieee-p1363",
+    })
     .toString("base64url");
 
   return {
@@ -106,11 +127,14 @@ export const handler: NetlifyHandler = async (event) => {
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "unknown";
+    const pemPresent = Boolean(process.env.WEATHERKIT_PRIVATE_KEY?.trim());
+    const keyParses = Boolean(readPrivateKey());
     const configured = {
       teamId: Boolean(process.env.WEATHERKIT_TEAM_ID?.trim()),
       keyId: Boolean(process.env.WEATHERKIT_KEY_ID?.trim()),
       serviceId: Boolean(process.env.WEATHERKIT_SERVICE_ID?.trim()),
-      privateKey: Boolean(readPrivateKey()),
+      privateKey: pemPresent,
+      privateKeyParses: keyParses,
     };
     return {
       statusCode: 503,
@@ -119,8 +143,12 @@ export const handler: NetlifyHandler = async (event) => {
         error: "WeatherKit token signing not configured",
         hint:
           msg === "WeatherKit env incomplete"
-            ? "One or more WEATHERKIT_* env vars are missing for Functions scope."
-            : "JWT signing failed — check private key format (include BEGIN/END lines).",
+            ? keyParses
+              ? "Env vars present but signing failed — verify KEY_ID matches the .p8 file."
+              : pemPresent
+                ? "Private key present but PEM parse failed. Use one line: -----BEGIN PRIVATE KEY-----\\nMIGT...\\n-----END PRIVATE KEY-----"
+                : "One or more WEATHERKIT_* env vars are missing for Functions scope."
+            : `JWT signing failed: ${msg}`,
         configured,
       }),
     };
