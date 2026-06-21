@@ -104,11 +104,25 @@ export const handler: NetlifyHandler = async (event) => {
       },
       body: JSON.stringify(signed),
     };
-  } catch {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "unknown";
+    const configured = {
+      teamId: Boolean(process.env.WEATHERKIT_TEAM_ID?.trim()),
+      keyId: Boolean(process.env.WEATHERKIT_KEY_ID?.trim()),
+      serviceId: Boolean(process.env.WEATHERKIT_SERVICE_ID?.trim()),
+      privateKey: Boolean(readPrivateKey()),
+    };
     return {
       statusCode: 503,
       headers: { ...CORS, "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "WeatherKit token signing not configured" }),
+      body: JSON.stringify({
+        error: "WeatherKit token signing not configured",
+        hint:
+          msg === "WeatherKit env incomplete"
+            ? "One or more WEATHERKIT_* env vars are missing for Functions scope."
+            : "JWT signing failed — check private key format (include BEGIN/END lines).",
+        configured,
+      }),
     };
   }
 };
