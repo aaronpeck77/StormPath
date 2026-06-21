@@ -5,11 +5,12 @@
 import { safeStorage } from "../storage/safeStorage";
 
 const MIN_GAP_MS = 1200;
-/** Route / point forecasts stay valid long enough to avoid re-fetch on minor UI toggles. */
-const CACHE_TTL_MS = 45 * 60 * 1000;
-const RATE_LIMIT_COOLDOWN_MS = 60 * 60 * 1000;
-/** Stay under Tomorrow.io's 25/hr cap (leave headroom for retries). */
-const MAX_REQUESTS_PER_HOUR = 16;
+/** Route / point forecasts: short TTL so rapidly-changing severe weather is captured. */
+const CACHE_TTL_MS = 12 * 60 * 1000;
+/** After a 429 retry sooner — a 1-hour blackout is unsafe in severe-weather conditions. */
+const RATE_LIMIT_COOLDOWN_MS = 12 * 60 * 1000;
+/** Stay under Tomorrow.io's 25/hr cap — slightly higher than before to support 15-min re-polls. */
+const MAX_REQUESTS_PER_HOUR = 20;
 
 const LS_RATE_UNTIL = "stormpath-tio-rate-until";
 const LS_HOUR_BUDGET = "stormpath-tio-hour-budget";

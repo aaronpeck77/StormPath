@@ -3819,6 +3819,7 @@ export default function App() {
                       hideHeadToggles={!isPlus}
                       onNwsAlertClick={handleAdvisoryNwsClick}
                       busyLabel={activityBusyLabel}
+                      staleWeatherNote={routeForecastRefreshBlocked}
                       driveRouteAheadLine={driveModeUi ? driveRouteAheadLine : null}
                       advisoryTier={advisoryPlusDetailOn ? "plus" : "basic"}
                       ownsPlus={isPlus}

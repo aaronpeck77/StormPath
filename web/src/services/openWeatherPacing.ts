@@ -6,11 +6,12 @@ import { safeStorage } from "../storage/safeStorage";
 import { fetchWithTimeout, OPENWEATHER_TIMEOUT_MS } from "../utils/fetchResilient";
 
 const MIN_GAP_MS = 600;
-const CACHE_TTL_MS = 45 * 60 * 1000;
-/** After 429, pause long enough that dev reloads don't immediately hammer the API again. */
-const RATE_LIMIT_COOLDOWN_MS = 60 * 60 * 1000;
-/** Soft hourly cap — leaves headroom under the free-tier minute burst limit. */
-const MAX_REQUESTS_PER_HOUR = 24;
+/** Short TTL so rapidly-changing severe weather is captured quickly. */
+const CACHE_TTL_MS = 12 * 60 * 1000;
+/** After 429 retry sooner — a 1-hour blackout is unsafe in severe-weather conditions. */
+const RATE_LIMIT_COOLDOWN_MS = 12 * 60 * 1000;
+/** Soft hourly cap — leaves headroom under the free-tier 60/min limit. */
+const MAX_REQUESTS_PER_HOUR = 30;
 
 const LS_RATE_UNTIL = "stormpath-ow-rate-until";
 const LS_HOUR_BUDGET = "stormpath-ow-hour-budget";

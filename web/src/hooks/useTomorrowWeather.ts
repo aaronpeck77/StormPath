@@ -34,9 +34,10 @@ import {
 
 // ── Minute precip ─────────────────────────────────────────────────────────────
 
-/** How often to re-fetch the minute precip (5 min idle; slower while navigating). */
+/** How often to re-fetch the minute precip (5 min idle; shorter while navigating so
+ *  rapidly-developing storms register quickly). */
 const MINUTE_PRECIP_POLL_MS = 5 * 60 * 1000;
-const MINUTE_PRECIP_POLL_NAV_MS = 20 * 60 * 1000;
+const MINUTE_PRECIP_POLL_NAV_MS = 8 * 60 * 1000;
 /** How many meters the user must move before a fresh fetch is triggered. */
 const MINUTE_PRECIP_MOVE_THRESHOLD_M = 3000;
 
@@ -222,8 +223,8 @@ export function useLocalHourlyForecast(
 
 // ── Route forecast ────────────────────────────────────────────────────────────
 
-/** Re-fetch when route changes or every 45 min. */
-const ROUTE_FORECAST_POLL_MS = 45 * 60 * 1000;
+/** Re-fetch when route changes or every 15 min — severe weather can develop fast. */
+const ROUTE_FORECAST_POLL_MS = 15 * 60 * 1000;
 
 export type RouteForecastHookResult = {
   forecast: RouteForecast | null;

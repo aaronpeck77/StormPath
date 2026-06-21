@@ -211,6 +211,8 @@ export type StormAdvisoryBarProps = SharedProps & {
   peekSeverity?: "none" | "info" | "warn" | "severe" | null;
   /** Short "doing something" label (NWS loading, traffic fetching…). Surfaced in preview. */
   busyLabel?: string | null;
+  /** Shown when forecast data is stale / rate-limited — rotates into the collapsed preview strip. */
+  staleWeatherNote?: string | null;
   /** Drive-mode route-ahead summary (radar tier + brief text). Surfaced in preview when driving. */
   driveRouteAheadLine?: DriveAheadLine | null;
   /** Plus: full NWS + road tools. Basic: life-safety NWS, connectivity, and promo rotation. */
@@ -355,6 +357,7 @@ export function StormAdvisoryBar({
   onNwsAlertClick,
   peekSeverity = null,
   busyLabel = null,
+  staleWeatherNote = null,
   driveRouteAheadLine = null,
   advisoryTier = "plus",
   ownsPlus = false,
@@ -682,6 +685,9 @@ export function StormAdvisoryBar({
       if (busyLabel && !barExpanded) {
         trip.push(previewItem({ badge: "Work", raw: bannerMsg(busyLabel) }));
       }
+      if (staleWeatherNote && !barExpanded) {
+        trip.push(previewItem({ badge: "Wx", raw: bannerMsg(staleWeatherNote), tone: "warn" }));
+      }
       for (const p of promoLines) {
         if (isAdvisoryPromoNoise(p)) continue;
         promo.push(previewItem({ badge: "Info", raw: bannerMsg(displayText(p.text)) }));
@@ -733,6 +739,9 @@ export function StormAdvisoryBar({
     }
     if (busyLabel && !barExpanded) {
       trip.push(previewItem({ badge: "Work", raw: bannerMsg(busyLabel) }));
+    }
+    if (staleWeatherNote && !barExpanded) {
+      trip.push(previewItem({ badge: "Wx", raw: bannerMsg(staleWeatherNote), tone: "warn" }));
     }
     if (activeTicker) {
       trip.push(
@@ -810,6 +819,7 @@ export function StormAdvisoryBar({
     hasGuidanceRoute,
     navigationStarted,
     busyLabel,
+    staleWeatherNote,
     barExpanded,
     activeTicker,
     advisoryTier,
@@ -888,6 +898,7 @@ export function StormAdvisoryBar({
     if (worstSev === "caution" || trafficDelayMinutes >= 8 || urgentTopAlerts.length > 0) return "warn";
     if (driveTierSev(driveRouteAheadLine?.radarTier) === "severe") return "severe";
     if (driveTierSev(driveRouteAheadLine?.radarTier) === "warn") return "warn";
+    if (staleWeatherNote) return "warn";
     if (loading) return loadSlow ? "warn" : "info";
     if (tickerMessages.length > 0) return "info";
     if (promoLines.length > 0) return "info";
@@ -898,6 +909,7 @@ export function StormAdvisoryBar({
     showErrorState,
     basicNavAdvisoryMode,
     busyLabel,
+    staleWeatherNote,
     routeImpacts,
     hasTrafficStop,
     trafficDelayMinutes,
