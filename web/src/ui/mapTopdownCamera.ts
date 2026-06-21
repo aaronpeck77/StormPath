@@ -3,9 +3,14 @@ import type { MutableRefObject } from "react";
 
 /** Top-down map view: keep the puck at the visual center; map pans to follow GPS. */
 export const TOPDOWN_PUCK_OFFSET_PX: [number, number] = [0, 0];
-/** Map (Mp) while navigating — street-level on the puck, not Rt whole-route framing. */
-export const TOPDOWN_NAV_STREET_ZOOM = 16;
-export const TOPDOWN_NAV_MIN_ZOOM = 14.25;
+/**
+ * Map (Mp) while navigating — zoomed out enough to see the next 2-3 turns
+ * ahead while still showing street detail.  Less zoomed-in than Dr (which is
+ * tilted 3D at ~zoom 16), but tighter than Rt (whole-route overview).
+ */
+export const TOPDOWN_NAV_STREET_ZOOM = 15;
+/** Minimum zoom enforced in topdown nav mode; below this the view snaps back to TOPDOWN_NAV_STREET_ZOOM. */
+export const TOPDOWN_NAV_MIN_ZOOM = 13.75;
 
 /** Route (Rt): start with regional / state context; user zooms or taps My location for street level. */
 export const ROUTE_VIEW_REGIONAL_ZOOM = 6.95;
@@ -38,7 +43,12 @@ export function resolveTopdownLocalZoom(
   return topdownZoomRef.current;
 }
 
-/** When Mp inherits a wide zoom from Rt overview, snap back to street follow. */
+/**
+ * When Mp inherits a very wide zoom from Rt overview (or topdownZoomRef was
+ * never initialised for navigation), snap back to the default street zoom.
+ * The user can freely zoom anywhere above TOPDOWN_NAV_MIN_ZOOM without being
+ * snapped back on explore-end.
+ */
 export function coerceTopdownNavStreetZoom(
   map: MapboxMap,
   topdownZoomRef: MutableRefObject<number>
@@ -49,12 +59,7 @@ export function coerceTopdownNavStreetZoom(
   } catch {
     /* map torn down */
   }
-  const tooWide = mapZoom < TOPDOWN_NAV_STREET_ZOOM - 0.85;
-  if (
-    mapZoom < TOPDOWN_NAV_MIN_ZOOM ||
-    topdownZoomRef.current < TOPDOWN_NAV_MIN_ZOOM ||
-    tooWide
-  ) {
+  if (mapZoom < TOPDOWN_NAV_MIN_ZOOM || topdownZoomRef.current < TOPDOWN_NAV_MIN_ZOOM) {
     topdownZoomRef.current = TOPDOWN_NAV_STREET_ZOOM;
     return TOPDOWN_NAV_STREET_ZOOM;
   }
