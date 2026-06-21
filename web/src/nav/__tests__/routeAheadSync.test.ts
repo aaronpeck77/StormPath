@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRouteAheadCalloutSegments, buildRouteAheadGlanceCards, timelineToProgressStripBands } from "../routeAheadSync";
+import { buildRouteAheadCalloutSegments, buildRouteAheadGlanceCards, timelineItemShowsOnRouteLine, timelineToProgressStripBands } from "../routeAheadSync";
 import type { TimelineItem } from "../../ui/RouteHazardTimeline";
 
 const baseItem = (overrides: Partial<TimelineItem>): TimelineItem => ({
@@ -78,25 +78,26 @@ describe("buildRouteAheadGlanceCards", () => {
     expect(cards).toHaveLength(0);
   });
 
-  it("skips strip-muted minor flood cards", () => {
+  it("includes strip-muted minor flood in route status cards", () => {
     const cards = buildRouteAheadGlanceCards({
       items: [
-        baseItem({ id: "minor-flood", stripMuted: true, label: "Flood Advisory" }),
+        baseItem({ id: "minor-flood", stripMuted: true, severity: "info", label: "Flood Advisory" }),
         baseItem({ id: "warning", stripMuted: false, label: "Flash Flood Warning" }),
       ],
       totalMeters: 80_000,
       userAlongMeters: 0,
       planEtaMinutes: 90,
     });
-    expect(cards).toHaveLength(1);
-    expect(cards[0]!.label).toBe("Flash Flood Warning");
+    expect(cards).toHaveLength(2);
+    expect(cards.map((c) => c.label)).toContain("Flood Advisory");
   });
 });
 
 describe("timelineToProgressStripBands", () => {
-  it("skips strip-muted minor flood items on the progress rail", () => {
+  it("skips strip-muted and non-serious items on the progress rail", () => {
     const bands = timelineToProgressStripBands([
-      baseItem({ id: "minor-flood", stripMuted: true, label: "Flood Advisory" }),
+      baseItem({ id: "minor-flood", stripMuted: true, severity: "info", label: "Flood Advisory" }),
+      baseItem({ id: "wind-adv", stripMuted: false, severity: "caution", label: "Wind Advisory" }),
       baseItem({ id: "warning", stripMuted: false, label: "Flash Flood Warning" }),
     ]);
     expect(bands).toHaveLength(1);
@@ -104,18 +105,29 @@ describe("timelineToProgressStripBands", () => {
   });
 });
 
+describe("timelineItemShowsOnRouteLine", () => {
+  it("allows serious and avoid only", () => {
+    expect(timelineItemShowsOnRouteLine(baseItem({ severity: "serious" }))).toBe(true);
+    expect(timelineItemShowsOnRouteLine(baseItem({ severity: "avoid" }))).toBe(true);
+    expect(timelineItemShowsOnRouteLine(baseItem({ severity: "caution" }))).toBe(false);
+    expect(timelineItemShowsOnRouteLine(baseItem({ severity: "info", stripMuted: true }))).toBe(
+      false
+    );
+  });
+});
+
 describe("buildRouteAheadCalloutSegments", () => {
-  it("omits strip-muted minor flood rows from the progress info panel", () => {
+  it("includes strip-muted minor flood in route status text", () => {
     const segments = buildRouteAheadCalloutSegments({
       items: [
-        baseItem({ id: "minor-flood", stripMuted: true, label: "Flood Advisory" }),
+        baseItem({ id: "minor-flood", stripMuted: true, severity: "info", label: "Flood Advisory" }),
         baseItem({ id: "warning", stripMuted: false, label: "Flash Flood Warning" }),
       ],
       totalMeters: 80_000,
       userAlongMeters: 0,
       planEtaMinutes: 90,
     });
-    expect(segments).toHaveLength(1);
-    expect(segments[0]!.title).toContain("Flash Flood Warning");
+    expect(segments).toHaveLength(2);
+    expect(segments.some((s) => s.title.includes("Flood Advisory"))).toBe(true);
   });
 });

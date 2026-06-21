@@ -41,12 +41,18 @@ export function corridorHighlightHex(kind: RouteAlertCorridorKind, severity: num
   return severity >= 48 ? "#475569" : "#94a3b8";
 }
 
+/** Only serious+ corridor marks paint the route line and progress strip. */
+export function routeAlertShowsOnRouteLine(a: RouteAlert): boolean {
+  return a.severity >= 75;
+}
+
 /**
  * Strip layout: road notices / construction outrank generic traffic so they stay visible under MAX_STRIP_ALERTS.
  */
 export function augmentAlertsForProgressStrip(base: RouteAlert[]): RouteAlert[] {
-  const hazardsStrip = base.filter((a) => a.id.startsWith("hazard-"));
-  const restStrip = base.filter((a) => !a.id.startsWith("hazard-"));
+  const paintable = base.filter(routeAlertShowsOnRouteLine);
+  const hazardsStrip = paintable.filter((a) => a.id.startsWith("hazard-"));
+  const restStrip = paintable.filter((a) => !a.id.startsWith("hazard-"));
   hazardsStrip.sort((a, b) => b.severity - a.severity);
   restStrip.sort((a, b) => b.severity - a.severity);
   return [...hazardsStrip, ...restStrip].slice(0, MAX_STRIP_ALERTS);

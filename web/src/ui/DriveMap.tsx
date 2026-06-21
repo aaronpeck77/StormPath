@@ -1761,7 +1761,6 @@ function DriveMapInner({
     if (!map) return;
 
     const verifyAndRepair = () => {
-      if (userExploringRef.current) return;
       if (!isMapUsable(map)) return;
       try {
         if (!map.isStyleLoaded()) return;
@@ -2419,7 +2418,7 @@ function DriveMapInner({
     prevPlanningRouteCountRef.current = routes.length;
     const routesJustLoaded = prevCount === 0 && routes.length > 0;
 
-    const forcePlanningFit = !navigationStarted;
+    const forcePlanningFit = !navigationStarted || viewMode === "route";
     /* Any App-driven refit (reroute, slot change, etc.) must win over stale "user exploring" from pan/zoom. */
     if (fitTrigger !== lastForcedPlanningFitTriggerRef.current || routesJustLoaded) {
       lastForcedPlanningFitTriggerRef.current = fitTrigger;
@@ -2615,7 +2614,7 @@ function DriveMapInner({
         routeFitPadding(stormBarVisible, stormBarExpanded, routes, lineFocusId, progressRailVisible),
         Math.min(routeFitMaxZoomCeiling(routes, lineFocusId), 17.8),
         {
-          userAlongM: userAlongMeters,
+          userAlongM: userAlongMetersRef.current ?? 0,
           hazardAlongM: trafficBypassCompareHazardAlongMeters,
         }
       );
@@ -2677,7 +2676,9 @@ function DriveMapInner({
     trafficBypassCompareHazardLngLat,
     trafficBypassCompareHazardAlongMeters,
     rejoinCompareLockedRouteId,
-    userAlongMeters,
+    /* Intentionally omit userAlongMeters — GPS ticks fire every second and would cancel the
+     * pending 160 ms retry timer on every tick, preventing the camera from ever settling on
+     * the route overview.  The compare-mode fits read userAlongMetersRef.current directly. */
   ]);
 
   /**

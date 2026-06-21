@@ -80,7 +80,7 @@ import {
 } from "./services/openWeatherClient";
 import { formatMinutePrecipNowLine } from "./utils/forecastDisplay";
 import { type RouteImpact } from "./nav/routeImpacts";
-import { type RouteAlert } from "./nav/routeAlerts";
+import { type RouteAlert, routeAlertShowsOnRouteLine } from "./nav/routeAlerts";
 import {
   timelineToMapCorridorAlerts,
 } from "./nav/routeAheadSync";
@@ -127,7 +127,24 @@ import {
   writeRoadAdvisoryDetailOn,
 } from "./layerStartupPrefs";
 
-const DriveMap = lazy(() => import("./ui/DriveMap"));
+/** Prod code-split. Normalizes named/default export so React.lazy never hits its broken `%s` log path. */
+const lazyDriveMap = () =>
+  import("./ui/DriveMap").then((m) => {
+    const component = m.default ?? m.DriveMap;
+    if (component == null) {
+      throw new Error("DriveMap failed to load (missing component export). Hard-reload the page.");
+    }
+    return { default: component };
+  });
+
+const DriveMap = lazy(lazyDriveMap);
+
+if (import.meta.hot) {
+  /* React.lazy caches the first import — after DriveMap HMR, reload so lazy picks up the new module. */
+  import.meta.hot.accept("./ui/DriveMap", () => {
+    window.location.reload();
+  });
+}
 const AboutSheet = lazy(() => import("./ui/AboutSheet").then((m) => ({ default: m.AboutSheet })));
 const SavedDestinationsDrawer = lazy(() =>
   import("./ui/SavedDestinationsDrawer").then((m) => ({ default: m.SavedDestinationsDrawer }))
@@ -2100,6 +2117,7 @@ export default function App() {
     const roadFromTimeline = timelineToMapCorridorAlerts(routeAheadTimeline, advisoryRouteImpacts);
     const byId = new Map<string, RouteAlert>();
     for (const a of [...progressStripAlerts, ...roadFromTimeline]) {
+      if (!routeAlertShowsOnRouteLine(a)) continue;
       byId.set(a.id, a);
     }
     return [...byId.values()];

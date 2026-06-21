@@ -147,7 +147,12 @@ export function buildRouteAheadTimeline(opts: BuildRouteAheadTimelineOpts): Time
   return mergeOverlappingTimelineItems(timelineItems, routeTotalMeters);
 }
 
-/** Colored spans for the progress strip and map route halo. */
+export function timelineItemShowsOnRouteLine(item: TimelineItem): boolean {
+  if (item.stripMuted) return false;
+  return item.severity === "serious" || item.severity === "avoid";
+}
+
+/** Colored spans for the progress strip and map route halo — serious hazards only. */
 export function timelineToProgressStripBands(
   items: TimelineItem[],
   opts?: { omitCoarsePreview?: boolean }
@@ -155,7 +160,7 @@ export function timelineToProgressStripBands(
   const out: StormProgressStripBand[] = [];
   for (const item of items) {
     if (opts?.omitCoarsePreview && item.coarsePreview) continue;
-    if (item.stripMuted) continue;
+    if (!timelineItemShowsOnRouteLine(item)) continue;
     const span = item.endMeters - item.startMeters;
     if (span < 8 && item.track !== "nws") continue;
     out.push({
@@ -183,9 +188,9 @@ export function timelineToMapCorridorAlerts(
   return out;
 }
 
-/** Progress strip / map / info panel — skip minor hydro (advisory mention only). */
+/** Route status text rows — includes minor advisories muted on the strip/map. */
 export function timelineItemsForProgressRail(items: TimelineItem[]): TimelineItem[] {
-  return items.filter((item) => !item.stripMuted);
+  return items;
 }
 
 /** Progress-bar info panel rows — brief copy + ETA / still-active timing from advisory logic. */

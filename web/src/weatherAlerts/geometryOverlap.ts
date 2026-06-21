@@ -345,6 +345,15 @@ export function nwsMapFeatureIsRouteLineProminent(props: {
   return rankNwsSeverity(props.severity ?? "Unknown") >= rankNwsSeverity("Moderate");
 }
 
+/** Route-line paint: Severe+ only (minor/moderate stay in advisory text). */
+export function nwsMapFeatureIsRouteLinePaint(props: {
+  event?: string;
+  severity?: string;
+}): boolean {
+  if (!nwsMapFeatureIsRouteLineProminent(props)) return false;
+  return rankNwsSeverity(props.severity ?? "Unknown") >= rankNwsSeverity("Severe");
+}
+
 /** Narrow pin for minor hydro on long routes — visible without covering the corridor. */
 export const MINOR_HYDRO_STRIP_PIN_HALF_M = 3_000;
 
@@ -478,7 +487,7 @@ export function stormOverlapLineFeatures(
     if (!g || (g.type !== "Polygon" && g.type !== "MultiPolygon")) continue;
     const poly = g as GeoJSON.Polygon | GeoJSON.MultiPolygon;
     const props = (f.properties ?? {}) as { kind?: string; event?: string; severity?: string };
-    if (!nwsMapFeatureIsRouteLineProminent(props)) continue;
+    if (!nwsMapFeatureIsRouteLinePaint(props)) continue;
     const hex = nwsAlertLineHexFromMapFeatureProps(props);
     for (const [lo, hi] of alongIntervalsInsidePolygon(route, poly)) {
       const coords = slicePolylineBetweenAlongForDisplay(route, lo, hi, total, sliceOpts);
@@ -529,12 +538,14 @@ export function stormAlongBandsForProgressStrip(
 
   const flush = (endM: number) => {
     if (runStart !== null && runSev && endM > runStart + 5) {
-      bands.push({
-        startM: runStart,
-        endM,
-        lineHex: nwsAlertLineColorHex(runSev),
-        severity: runSev,
-      });
+      if (rankNwsSeverity(runSev) >= rankNwsSeverity("Severe")) {
+        bands.push({
+          startM: runStart,
+          endM,
+          lineHex: nwsAlertLineColorHex(runSev),
+          severity: runSev,
+        });
+      }
     }
     runStart = null;
     runSev = "";
@@ -821,7 +832,11 @@ export function routeStormStripBandsToProgressStrip(
   bands: readonly RouteStormStripBand[]
 ): StormProgressStripBand[] {
   return bands
-    .filter((b) => b.stripProminent)
+    .filter(
+      (b) =>
+        b.stripProminent &&
+        (b.impactSeverity === "serious" || b.impactSeverity === "avoid")
+    )
     .map((b) => ({
       startM: b.startMeters,
       endM: b.endMeters,

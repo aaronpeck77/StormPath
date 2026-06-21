@@ -7,7 +7,7 @@ import {
   type MutableRefObject,
 } from "react";
 import { buildSimpleCalloutBlock } from "./progressCalloutCopy";
-import { buildRouteAheadCalloutSegments, type TimelineItem } from "./routeAheadSync";
+import { buildRouteAheadCalloutSegments, timelineItemShowsOnRouteLine, type TimelineItem } from "./routeAheadSync";
 import {
   buildRouteChunkCalloutList,
   type RouteChunkCalloutItem,
@@ -45,7 +45,9 @@ import type { LngLat, NavRoute } from "./types";
 import type { RouteSituationSlice } from "../situation/types";
 import type { WeatherOverlay } from "../situation/fusedSnapshot";
 import type { RouteForecast } from "../services/tomorrowIo";
+import { isTomorrowIoRateLimited } from "../services/tomorrowIoClient";
 import type { CurrentNowcast } from "../services/openWeatherClient";
+import { isOpenWeatherRateLimited } from "../services/openWeatherPacing";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import type { StormProgressStripBand } from "../weatherAlerts/geometryOverlap";
 
@@ -489,6 +491,15 @@ export function useProgressCalloutPanel(
   const routeAheadHealthRepairAtRef = useRef(0);
   const progressCalloutWasOpenRef = useRef(false);
 
+  // Stable primitive deps for the watchdog — avoids effect re-running every render when
+  // planRoutes/weatherOverlay object references change even though the relevant values haven't.
+  const hasPlannedRoute = Boolean(
+    destLngLat && planRoutes.some((r) => r.geometry && r.geometry.length >= 2)
+  );
+  const _owEntry = weatherOverlay?.[guidanceRouteId];
+  const weatherOverlayHeadline = _owEntry?.headline?.trim() ?? "";
+  const hasWeatherSamples = Boolean(_owEntry?.samples?.length);
+
   /** Route-hazard watchdog — progress strip and progress info panel stay fed from one pipeline. */
   useEffect(() => {
     if (!appForeground) return;
@@ -496,21 +507,19 @@ export function useProgressCalloutPanel(
     if (!hasRoute) return;
 
     const runAudit = () => {
-      const ow = weatherOverlay?.[guidanceRouteId];
       const audit = auditRouteAheadSync({
         hasRouteGeometry: hasRoute,
         isPlus,
         weatherHintsEnabled: settingWeatherHintsEnabled,
-        hasPlannedRoute: Boolean(
-          destLngLat && planRoutes.some((r) => r.geometry && r.geometry.length >= 2)
-        ),
+        hasPlannedRoute,
         navigationStarted,
         outlookStepCount: progressCalloutPanel.outlookTimeline.length,
-        timelineItemCount: routeAheadTimeline.length,
+        timelineItemCount: routeAheadTimeline.filter(timelineItemShowsOnRouteLine).length,
         progressBandCount: routeAheadProgressBands.length,
         corridorWeatherDetail,
-        weatherOverlayHeadline: ow?.headline?.trim() ?? "",
-        hasWeatherSamples: Boolean(ow?.samples?.length),
+        weatherOverlayHeadline,
+        hasWeatherSamples,
+        isWeatherRateLimited: isTomorrowIoRateLimited() || isOpenWeatherRateLimited(),
       });
 
       if (audit.ok) return;
@@ -543,14 +552,15 @@ export function useProgressCalloutPanel(
     settingWeatherHintsEnabled,
     navigationStarted,
     destLngLat,
-    planRoutes,
+    hasPlannedRoute,
     guidanceRoute?.geometry,
     guidanceRouteId,
     progressCalloutPanel.outlookTimeline.length,
     routeAheadTimeline.length,
     routeAheadProgressBands.length,
     corridorWeatherDetail,
-    weatherOverlay,
+    weatherOverlayHeadline,
+    hasWeatherSamples,
     progressCalloutsOpen,
     bumpWeatherRefresh,
     resetWeatherOverlayThrottle,

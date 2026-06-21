@@ -35,6 +35,8 @@ export function auditRouteAheadSync(input: {
   corridorWeatherDetail: string;
   weatherOverlayHeadline: string;
   hasWeatherSamples: boolean;
+  /** True when Tomorrow.io or OpenWeather is currently rate-limited — skip weather_overlay_missing. */
+  isWeatherRateLimited?: boolean;
 }): RouteAheadHealthAudit {
   const issues: RouteAheadHealthIssue[] = [];
   const {
@@ -49,6 +51,7 @@ export function auditRouteAheadSync(input: {
     corridorWeatherDetail,
     weatherOverlayHeadline,
     hasWeatherSamples,
+    isWeatherRateLimited = false,
   } = input;
 
   if (!hasRouteGeometry || !isPlus) {
@@ -60,7 +63,7 @@ export function auditRouteAheadSync(input: {
   const hasCorridorWxCopy =
     corridorWeatherDetail.trim().length > 0 || weatherOverlayHeadline.trim().length > 0;
 
-  if (weatherExpected && !weatherOverlayHeadline.trim() && !hasWeatherSamples) {
+  if (weatherExpected && !weatherOverlayHeadline.trim() && !hasWeatherSamples && !isWeatherRateLimited) {
     issues.push("weather_overlay_missing");
   }
 

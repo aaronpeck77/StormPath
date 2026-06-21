@@ -5,6 +5,7 @@ import type { RouteOutlookStep } from "../nav/routeForecastTimeline";
 import {
   buildRouteAheadGlanceCards,
   timelineItemBandColor,
+  timelineItemShowsOnRouteLine,
   type RouteAheadGlanceCard,
   type RouteAheadRelevance,
 } from "../nav/routeAheadSync";
@@ -224,7 +225,7 @@ export function RouteProgressGlancePanel({
   const bandVisuals = useMemo((): HazardBandVisual[] => {
     if (totalMeters <= 0) return [];
     return timeline
-      .filter((item) => !item.stripMuted && item.endMeters > userAlongMeters)
+      .filter((item) => timelineItemShowsOnRouteLine(item) && item.endMeters > userAlongMeters)
       .map((item) => {
         const startF = item.startMeters / totalMeters;
         const endF = item.endMeters / totalMeters;
