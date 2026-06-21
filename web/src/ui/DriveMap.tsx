@@ -2760,12 +2760,46 @@ function DriveMapInner({
    * Rt / T / Dr: switching back to drive after top-down (or a layout shift) can leave the canvas
    * sized to a stale box — the puck and follow camera sit wrong until a resize. Double-rAF + bump
    * so {@link canCameraFollow} run re-runs after the real layout.
+   *
+   * Also fires timed direct snaps as a belt-and-suspenders failsafe: if the RAF loop can't snap
+   * the camera on its own (e.g. puck marker not yet created, GPS momentarily null, or a stale
+   * moveend listener fights back), these timeouts guarantee the camera reaches pitch 58 within
+   * ~500 ms of entering drive mode.
    */
   useEffect(() => {
     if (viewMode !== "drive" || !navigationStarted || !mapReady) return;
     const map = mapRef.current;
     if (!map) return;
     driveCamResyncRef.current = true;
+
+    const snapDriveCam = () => {
+      if (!isMapUsable(map) || !map.isStyleLoaded()) return;
+      if (viewModeRef.current !== "drive" || !navigationStartedRef.current) return;
+      userExploringRef.current = false;
+      driveCamResyncRef.current = true;
+      const pos = userLngLatRef.current
+        ?? (puckMarkerRef.current ? readMapLngLat(puckMarkerRef.current.getLngLat()) : null);
+      if (!pos) return;
+      const brg =
+        driveRouteBearingDegRef.current != null
+          ? driveRouteBearingDegRef.current
+          : headingRef.current != null
+            ? headingRef.current
+            : map.getBearing();
+      safeEaseTo(map, {
+        center: pos,
+        zoom: driveNavZoomRef.current,
+        pitch: 58,
+        bearing: brg,
+        duration: 0,
+        essential: true,
+      });
+    };
+
+    const t1 = window.setTimeout(snapDriveCam, 80);
+    const t2 = window.setTimeout(snapDriveCam, 260);
+    const t3 = window.setTimeout(snapDriveCam, 600);
+
     const raf0 = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         try {
@@ -2776,7 +2810,12 @@ function DriveMapInner({
         setMapResumeTick((n) => n + 1);
       });
     });
-    return () => cancelAnimationFrame(raf0);
+    return () => {
+      cancelAnimationFrame(raf0);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.clearTimeout(t3);
+    };
   }, [viewMode, navigationStarted, mapReady]);
 
   /** Foreground / style reload can leave drive follow-cam desynced while the puck keeps updating. */
