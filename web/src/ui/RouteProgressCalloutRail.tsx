@@ -50,9 +50,10 @@ export function RouteProgressCalloutRail({
     if (!onRefresh || refreshBusy || tapBusy) return;
     setTapBusy(true);
     onRefresh();
+    // Minimum busy time so the label doesn't flicker on fast fetches.
     tapBusyTimerRef.current = window.setTimeout(() => {
       tapBusyTimerRef.current = null;
-      setTapBusy(false);
+      if (!refreshBusy) setTapBusy(false);
     }, 900);
   };
 

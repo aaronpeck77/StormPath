@@ -3687,6 +3687,7 @@
   appearance: none;
   margin: 0;
   padding: 8px 12px;
+  min-width: 92px;
   min-height: 44px;
   display: inline-flex;
   align-items: center;
@@ -3701,6 +3702,7 @@
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  transition: opacity 0.15s ease, background 0.15s ease;
 }
 
 .route-progress-callout-panel__refresh:disabled {
