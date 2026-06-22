@@ -254,6 +254,8 @@ export type Props = {
   progressRailVisible?: boolean;
   /** Off-route Mp: fit B/C rejoin paths in view instead of street-level puck follow. */
   offRouteRejoinCompareActive?: boolean;
+  /** Dr auto rejoin: faint locked A + green/orange temp leg styling. */
+  rejoinOverlayActive?: boolean;
 };
 
 /** Drive mode: return to follow-cam after the user pans/zooms the map. */
@@ -343,6 +345,7 @@ function DriveMapInner({
   onSearchPickMarkerClick,
   progressRailVisible = true,
   offRouteRejoinCompareActive = false,
+  rejoinOverlayActive = false,
 }: Props) {
   const ultraLongRoute = isUltraLongTripRoute(sessionRouteLengthM);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1646,6 +1649,8 @@ function DriveMapInner({
           isOverviewPip: false,
           routeComparePicker: trafficBypassCompareActive,
           userAlongMeters: userAlongMetersRef.current,
+          rejoinOverlayActive,
+          lockedRouteId: rejoinCompareLockedRouteId,
         }
       );
       liftTrafficThenRoutesThenHits(
@@ -1699,6 +1704,8 @@ function DriveMapInner({
           isOverviewPip: false,
           routeComparePicker: trafficBypassCompareActive,
           userAlongMeters: userAlongMetersRef.current,
+          rejoinOverlayActive,
+          lockedRouteId: rejoinCompareLockedRouteId,
         }
       );
       liftTrafficThenRoutesThenHits(
@@ -1727,6 +1734,8 @@ function DriveMapInner({
     navigationStarted,
     viewMode,
     trafficBypassCompareActive,
+    rejoinOverlayActive,
+    rejoinCompareLockedRouteId,
   ]);
 
   /** Dr / Mp: refresh the ahead-only route slice as the puck moves (throttled — avoids map jank). */

@@ -93,10 +93,6 @@ import {
   polylineLengthMeters,
 } from "./nav/routeGeometry";
 import {
-  formatDetourRejoinDistanceM,
-  metersRemainingToRejoinOnLockedRoute,
-} from "./nav/detourRejoin";
-import {
   computeRemainingDistanceMeters,
   computeRemainingDriveEtaMinutes,
 } from "./nav/tripNavDisplay";
@@ -513,8 +509,6 @@ export default function App() {
   const settingTrafficEnabled = useSettingsStore((s) => s.trafficEnabled);
   const settingWeatherHintsEnabled = useSettingsStore((s) => s.weatherHintsEnabled);
   const settingAutoRerouteEnabled = useSettingsStore((s) => s.autoRerouteEnabled);
-  /** Plus only — Basic always uses the manual off-route Re-route button. */
-  const effectiveAutoRerouteEnabled = isPlus && settingAutoRerouteEnabled;
   const isPlusRef = useRef(isPlus);
   isPlusRef.current = isPlus;
   const settingRadarEnabled = useSettingsStore((s) => s.radarEnabled);
@@ -1138,11 +1132,12 @@ export default function App() {
     guidanceRouteLengthM: offRouteGuidanceRouteLengthM,
     guidanceRouteId: offRouteLockedRouteId ?? primaryRouteId,
     userAlongGuidanceMRef,
+    effectiveUserLngLat: navigationPositionLngLat,
     viewMode,
     mapboxToken: env.mapboxToken,
     isOnline,
     isPlus,
-    effectiveAutoRerouteEnabled,
+    effectiveAutoRerouteEnabled: settingAutoRerouteEnabled,
     settingVoiceGuidanceEnabled,
     settingStormEnabled,
     learnEnabled,
@@ -1171,16 +1166,13 @@ export default function App() {
   });
 
   const {
-    offRouteSevere,
+    showOffRouteManualBanner,
     autoRejoinGuidanceRouteId,
-    detourRejoinAlongM,
-    recalcRouteFromHere,
     resetOffRouteNavigation,
     clearDetourGuidance,
-    handleFollowDetourRoute,
-    showOffRouteManualBanner,
-    detourAltChoices,
+    tryOtherRejoinPath,
     detourAutoActive,
+    detourRejoinDistanceLabel,
     offRouteRejoinCompareActive,
   } = offRouteNav;
 
@@ -2106,6 +2098,8 @@ export default function App() {
     trafficBypassCompare,
     guidanceRouteId,
     planRoutes: plan.routes,
+    lockedNavigationRouteId,
+    temporaryGuidanceRouteId: autoRejoinGuidanceRouteId,
     speedMph,
     turnSteps,
     activeTurnIndex,
@@ -2515,36 +2509,6 @@ export default function App() {
     return routePickSlotHex(routeSlotIndexFor(guidanceRoute.id, orderedRouteIds));
   }, [guidanceRoute, orderedRouteIds, navigationStarted]);
 
-  const detourLockedRouteId = useMemo(() => {
-    if (!navigationStarted) return null;
-    return lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
-  }, [navigationStarted, orderedRouteIds]);
-
-  const detourRejoinDistanceLabel = useMemo(() => {
-    if (!navigationStarted || !autoRejoinGuidanceRouteId || !effectiveUserLngLat || !(detourRejoinAlongM > 0)) {
-      return null;
-    }
-    const lockedGeom = detourLockedRouteId
-      ? plan.routes.find((r) => r.id === detourLockedRouteId)?.geometry
-      : null;
-    if (!lockedGeom?.length) return null;
-    const remainingM = metersRemainingToRejoinOnLockedRoute(
-      lockedGeom,
-      detourRejoinAlongM,
-      effectiveUserLngLat,
-      userAlongGuidanceM
-    );
-    return formatDetourRejoinDistanceM(remainingM);
-  }, [
-    navigationStarted,
-    autoRejoinGuidanceRouteId,
-    effectiveUserLngLat,
-    detourRejoinAlongM,
-    detourLockedRouteId,
-    plan.routes,
-    userAlongGuidanceM,
-  ]);
-
   const radarFrameTimeLabel = useMemo(() => {
     if (!radarMapOverlayOn || radarFrameUtcSec == null) return null;
     /* Frame `time` is a UTC instant; show local wall time so it matches the user’s clock. */
@@ -2726,19 +2690,13 @@ export default function App() {
   const handlePreviewRouteSelect = useCallback(
     (id: string) => {
       if (!plan.routes.some((r) => r.id === id)) return;
-      const lockedId = lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
-      if (offRouteSevere && navigationStarted && lockedId && id !== lockedId) {
-        handleFollowDetourRoute(id);
-        setFitTrigger((n) => n + 1);
-        return;
-      }
       const i = orderedRouteIds.indexOf(id);
       if (i >= 0) setPreviewLegIndex(i);
       if (!navigationStarted || viewMode === "route" || viewMode === "topdown") {
         setFitTrigger((n) => n + 1);
       }
     },
-    [plan.routes, orderedRouteIds, navigationStarted, viewMode, offRouteSevere, handleFollowDetourRoute]
+    [plan.routes, orderedRouteIds, navigationStarted, viewMode]
   );
 
   const handleTrafficBypassCompareSelect = useCallback((id: "r-a" | "r-b" | "r-c") => {
@@ -3196,6 +3154,123 @@ export default function App() {
     [guidanceRoute?.geometry, lineFocusId, advisoryStormStripBands]
   );
 
+  /** Explicit compare from GPS — used for off-route recovery and traffic bypass. Never auto-applies. */
+  const openRouteCompareFromHere = useCallback(
+    async (opts?: {
+      headline?: string;
+      anchorAlongMeters?: number;
+      anchorLngLat?: LngLat;
+      confidence?: "low" | "medium" | "high";
+    }) => {
+      const originLngLat =
+        demoBypassTrafficJamPlus && effectiveUserLngLat ? effectiveUserLngLat : userLngLat;
+      if (!env.mapboxToken || !originLngLat || !destLngLat || !guidanceRoute?.geometry?.length) return;
+      const epochAtStart = routeGraphEpochRef.current;
+      setBypassBusy(true);
+      const geom = guidanceRoute.geometry;
+      const totalM = polylineLengthMeters(geom);
+      const jamAlongM =
+        opts?.anchorAlongMeters ??
+        Math.min(totalM - 50, userAlongGuidanceM + Math.max(600, (totalM - userAlongGuidanceM) * 0.32));
+      const hazardLngLat = opts?.anchorLngLat ?? pointAtAlongMeters(geom, jamAlongM);
+      const compareHeadline = opts?.headline ?? "Routes from your location";
+
+      try {
+        const fresh = await collectMapboxRouteVariants(env.mapboxToken, originLngLat, destLngLat, {
+          allowLocalTripThirdRoute: isPlus,
+          preferThreeRoutes: isPlus,
+          stormAlerts: stormAlertsForRouting,
+          radarAvoidanceEnabled: isPlus && settingStormEnabled,
+          trailRoutePersonalization: isPlus && learnEnabled,
+        });
+
+        if (fresh.length === 0 || epochAtStart !== routeGraphEpochRef.current) {
+          const opened = openRouteCompareFromPlan({
+            headline: compareHeadline,
+            hazardLngLat,
+            hazardAlongMeters: jamAlongM,
+            confidence: opts?.confidence ?? "medium",
+          });
+          if (!opened) {
+            setViewModeBeforeTrafficBypass(null);
+            setTapHint("No alternate routes available right now — try again in a moment.");
+            window.setTimeout(() => setTapHint(null), 6000);
+          }
+          return;
+        }
+
+        const byId = new Map(fresh.map((r) => [r.id, r]));
+        setPlan((prev) => ({
+          ...prev,
+          routes: prev.routes.map((r) => byId.get(r.id) ?? r),
+        }));
+
+        const etaFor = (id: "r-a" | "r-b" | "r-c") => {
+          const r = byId.get(id);
+          return r?.geometry?.length && r.geometry.length >= 2
+            ? Math.max(1, Math.round(r.baseEtaMinutes))
+            : null;
+        };
+        const etaA = etaFor("r-a");
+        if (etaA == null) {
+          setViewModeBeforeTrafficBypass(null);
+          setTapHint("Could not build route options — try again.");
+          window.setTimeout(() => setTapHint(null), 5000);
+          return;
+        }
+
+        activateRouteCompare({
+          headline: compareHeadline,
+          etaA,
+          etaB: etaFor("r-b"),
+          etaC: etaFor("r-c"),
+          hasB: Boolean(byId.get("r-b")?.geometry && byId.get("r-b")!.geometry.length >= 2),
+          hasC: Boolean(byId.get("r-c")?.geometry && byId.get("r-c")!.geometry.length >= 2),
+          confidence: opts?.confidence ?? "medium",
+          selectedLeg: defaultRouteCompareSelection(guidanceRouteId),
+          hazardLngLat,
+          hazardAlongMeters: jamAlongM,
+        });
+      } catch {
+        const opened = openRouteCompareFromPlan({
+          headline: compareHeadline,
+          hazardLngLat,
+          hazardAlongMeters: jamAlongM,
+          confidence: opts?.confidence ?? "medium",
+        });
+        if (!opened) {
+          setViewModeBeforeTrafficBypass(null);
+          setTapHint("Route compare failed — try again when you have a signal.");
+          window.setTimeout(() => setTapHint(null), 5000);
+        }
+      } finally {
+        setBypassBusy(false);
+      }
+    },
+    [
+      env.mapboxToken,
+      userLngLat,
+      effectiveUserLngLat,
+      demoBypassTrafficJamPlus,
+      destLngLat,
+      guidanceRoute,
+      userAlongGuidanceM,
+      isPlus,
+      stormAlertsForRouting,
+      settingStormEnabled,
+      learnEnabled,
+      openRouteCompareFromPlan,
+      activateRouteCompare,
+      guidanceRouteId,
+    ]
+  );
+
+  const handleRouteCompareFromHere = useCallback(() => {
+    void openRouteCompareFromHere({
+      headline: "Routes from your location — your current route stays until you confirm",
+    });
+  }, [openRouteCompareFromHere]);
+
   const handleTrafficBypassFromHere = useCallback(async (opts?: {
     /** Override the jam anchor (m along route). Used by demo paths that need a deterministic point. */
     anchorAlongMeters?: number;
@@ -3204,117 +3279,20 @@ export default function App() {
   }) => {
     if (!TRAFFIC_BYPASS_ENABLED) return;
     if (!isPlus) return;
-    const originLngLat =
-      demoBypassTrafficJamPlus && effectiveUserLngLat ? effectiveUserLngLat : userLngLat;
-    if (!env.mapboxToken || !originLngLat || !destLngLat || !guidanceRoute?.geometry?.length) return;
-    const epochAtStart = routeGraphEpochRef.current;
-    setBypassBusy(true);
-    const geom = guidanceRoute.geometry;
-    const totalM = polylineLengthMeters(geom);
-
     const anchorImpact = opts?.anchorAlongMeters == null
       ? pickTrafficBypassAnchorImpact(routeImpactsForUi)
       : null;
-    const jamAlongM =
-      opts?.anchorAlongMeters ??
-      anchorImpact?.alongMeters ??
-      Math.min(
-        totalM - 50,
-        userAlongGuidanceM + Math.max(600, (totalM - userAlongGuidanceM) * 0.32)
-      );
-    const hazardLngLat =
-      opts?.anchorLngLat ?? anchorImpact?.lngLat ?? pointAtAlongMeters(geom, jamAlongM);
-    const compareHeadline =
-      trafficBypassContext?.headline ?? "Three routes from here to your destination";
-
-    try {
-      /* Same A/B/C builder as initial Go — three distinct end-to-end lines, not surgical splices
-       * on the current leg (those looked like one route with tiny forks). */
-      const fresh = await collectMapboxRouteVariants(env.mapboxToken, originLngLat, destLngLat, {
-        allowLocalTripThirdRoute: isPlus,
-        preferThreeRoutes: isPlus,
-        stormAlerts: stormAlertsForRouting,
-        radarAvoidanceEnabled: isPlus && settingStormEnabled,
-        trailRoutePersonalization: isPlus && learnEnabled,
-      });
-
-      if (fresh.length === 0 || epochAtStart !== routeGraphEpochRef.current) {
-        const opened = openRouteCompareFromPlan({
-          headline: compareHeadline,
-          hazardLngLat,
-          hazardAlongMeters: jamAlongM,
-          confidence: trafficBypassContext?.confidence ?? "medium",
-        });
-        if (!opened) {
-          setViewModeBeforeTrafficBypass(null);
-          setTapHint("No alternate routes available right now — try again in a moment.");
-          window.setTimeout(() => setTapHint(null), 6000);
-        }
-        return;
-      }
-
-      const byId = new Map(fresh.map((r) => [r.id, r]));
-      setPlan((prev) => ({
-        ...prev,
-        routes: prev.routes.map((r) => byId.get(r.id) ?? r),
-      }));
-
-      const etaFor = (id: "r-a" | "r-b" | "r-c") => {
-        const r = byId.get(id);
-        return r?.geometry?.length && r.geometry.length >= 2
-          ? Math.max(1, Math.round(r.baseEtaMinutes))
-          : null;
-      };
-      const etaA = etaFor("r-a");
-      if (etaA == null) {
-        setViewModeBeforeTrafficBypass(null);
-        setTapHint("Could not build route options — try again.");
-        window.setTimeout(() => setTapHint(null), 5000);
-        return;
-      }
-
-      activateRouteCompare({
-        headline: compareHeadline,
-        etaA,
-        etaB: etaFor("r-b"),
-        etaC: etaFor("r-c"),
-        hasB: Boolean(byId.get("r-b")?.geometry && byId.get("r-b")!.geometry.length >= 2),
-        hasC: Boolean(byId.get("r-c")?.geometry && byId.get("r-c")!.geometry.length >= 2),
-        confidence: trafficBypassContext?.confidence ?? "medium",
-        selectedLeg: defaultRouteCompareSelection(guidanceRouteId),
-        hazardLngLat,
-        hazardAlongMeters: jamAlongM,
-      });
-    } catch {
-      const opened = openRouteCompareFromPlan({
-        headline: compareHeadline,
-        hazardLngLat,
-        hazardAlongMeters: jamAlongM,
-        confidence: trafficBypassContext?.confidence ?? "medium",
-      });
-      if (!opened) {
-        setViewModeBeforeTrafficBypass(null);
-        setTapHint("Route compare failed — try again when you have a signal.");
-        window.setTimeout(() => setTapHint(null), 5000);
-      }
-    } finally {
-      setBypassBusy(false);
-    }
+    await openRouteCompareFromHere({
+      headline: trafficBypassContext?.headline ?? "Three routes from here to your destination",
+      anchorAlongMeters: opts?.anchorAlongMeters ?? anchorImpact?.alongMeters,
+      anchorLngLat: opts?.anchorLngLat ?? anchorImpact?.lngLat,
+      confidence: trafficBypassContext?.confidence ?? "medium",
+    });
   }, [
     isPlus,
-    env.mapboxToken,
-    userLngLat,
-    effectiveUserLngLat,
-    demoBypassTrafficJamPlus,
-    destLngLat,
-    guidanceRoute,
     routeImpactsForUi,
-    userAlongGuidanceM,
     trafficBypassContext,
-    openRouteCompareFromPlan,
-    activateRouteCompare,
-    stormAlertsForRouting,
-    settingStormEnabled,
+    openRouteCompareFromHere,
   ]);
 
   /* Hazard sheet's "Try alternate route" CTA is only meaningful when we have Plus + Mapbox +
@@ -3816,6 +3794,7 @@ export default function App() {
             onSearchPickMarkerClick={searchPickMarkersForMap ? handleSearchPickFromMap : undefined}
             progressRailVisible={showProgressRail}
             offRouteRejoinCompareActive={offRouteRejoinCompareActive}
+            rejoinOverlayActive={detourAutoActive && viewMode === "drive"}
           />
           </Suspense>
         </div>
@@ -4523,20 +4502,15 @@ export default function App() {
               onToggleRadar={() => setShowRadar((v) => !v)}
               radarEnabled={settingRadarEnabled}
               showRadarButton={!driveModeUi}
-              offRouteSevere={offRouteSevere}
               showOffRouteBanner={showOffRouteManualBanner}
-              detourAutoActive={detourAutoActive}
-              detourRejoinDistanceLabel={detourRejoinDistanceLabel}
-              detourAltChoices={detourAltChoices}
-              onDetourPick={handleFollowDetourRoute}
-              onRerouteFromHere={
-                env.mapboxToken
-                  ? () =>
-                      void recalcRouteFromHere({
-                        shuffle: true,
-                        autoFollow: effectiveAutoRerouteEnabled && detourAutoActive,
-                      })
-                  : undefined
+              offRouteRejoinActive={detourAutoActive}
+              offRouteRejoinDistanceLabel={detourRejoinDistanceLabel}
+              offRouteOptionsBusy={routing || bypassBusy}
+              onTryOtherRejoin={
+                detourAutoActive || showOffRouteManualBanner ? () => void tryOtherRejoinPath() : undefined
+              }
+              onOffRouteOptions={
+                env.mapboxToken && navigationStarted ? handleRouteCompareFromHere : undefined
               }
               showTrafficBypass={showTrafficBypassCta}
               bypassBusy={bypassBusy}

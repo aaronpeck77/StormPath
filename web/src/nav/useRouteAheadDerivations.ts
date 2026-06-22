@@ -81,6 +81,8 @@ export type UseRouteAheadDerivationsDeps = {
   trafficBypassCompare: TrafficBypassCompareState | null;
   guidanceRouteId: string;
   planRoutes: NavRoute[];
+  lockedNavigationRouteId: string;
+  temporaryGuidanceRouteId?: string | null;
   speedMph: number | null;
   turnSteps: RouteTurnStep[];
   activeTurnIndex: number;
@@ -156,6 +158,8 @@ export function useRouteAheadDerivations(
     trafficBypassCompare,
     guidanceRouteId,
     planRoutes,
+    lockedNavigationRouteId,
+    temporaryGuidanceRouteId,
     speedMph,
     turnSteps,
     activeTurnIndex,
@@ -501,13 +505,30 @@ export function useRouteAheadDerivations(
     trafficBypassContext != null &&
     !trafficBypassCompare;
 
-  /** Dr: only the chosen (focused) leg on the map — alternates stay in Rt / Map views. */
+  /** Dr: active leg; during rejoin also show faint locked A behind green/orange B/C. */
   const driveMapRoutes = useMemo(() => {
     if (trafficBypassCompare || viewMode !== "drive") return planRoutes;
+    const tempId = temporaryGuidanceRouteId?.trim() || null;
+    const lockedId = lockedNavigationRouteId;
+    if (tempId && lockedId && tempId !== lockedId) {
+      const locked = planRoutes.find((r) => r.id === lockedId);
+      const temp = planRoutes.find((r) => r.id === tempId);
+      const out: NavRoute[] = [];
+      if (locked) out.push(locked);
+      if (temp) out.push(temp);
+      if (out.length) return out;
+    }
     const active = planRoutes.find((r) => r.id === guidanceRouteId);
     if (active) return [active];
     return planRoutes.length ? [planRoutes[0]!] : [];
-  }, [trafficBypassCompare, viewMode, guidanceRouteId, planRoutes]);
+  }, [
+    trafficBypassCompare,
+    viewMode,
+    guidanceRouteId,
+    planRoutes,
+    lockedNavigationRouteId,
+    temporaryGuidanceRouteId,
+  ]);
   const progressRailRoute = guidanceRoute ?? driveMapRoutes[0] ?? planRoutes[0];
 
   const postedMph = estimatePostedSpeedMph(speedMph, turnSteps, activeTurnIndex);

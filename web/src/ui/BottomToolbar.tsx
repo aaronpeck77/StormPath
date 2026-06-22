@@ -49,18 +49,13 @@ type Props = {
   /** When false, hide the Rad button entirely (not just inactive). */
   showRadarButton?: boolean;
   radarEnabled?: boolean;
-  /** Far off the polyline — manual reroute from GPS */
-  offRouteSevere?: boolean;
-  onRerouteFromHere?: () => void;
-  /** When false, hide the off-route strip (e.g. drive auto-reroutes, or Rt/Mp when auto is on). */
+  /** Driver left the locked route — inform only; optional explicit compare entry. */
   showOffRouteBanner?: boolean;
-  /** Auto-following a temporary detour leg (B/C) back to locked route A. */
-  detourAutoActive?: boolean;
-  /** e.g. "2.1 mi" — distance along locked route to rejoin point. */
-  detourRejoinDistanceLabel?: string | null;
-  /** Alternate detour legs available while off route (manual pick). */
-  detourAltChoices?: { id: string; label: string }[];
-  onDetourPick?: (routeId: string) => void;
+  offRouteRejoinActive?: boolean;
+  offRouteRejoinDistanceLabel?: string | null;
+  offRouteOptionsBusy?: boolean;
+  onTryOtherRejoin?: () => void;
+  onOffRouteOptions?: () => void;
   /** Traffic bypass (moved off progress bar) */
   showTrafficBypass?: boolean;
   bypassBusy?: boolean;
@@ -90,13 +85,12 @@ export function BottomToolbar({
   onToggleRadar,
   showRadarButton = true,
   radarEnabled = true,
-  offRouteSevere = false,
-  onRerouteFromHere,
-  showOffRouteBanner = true,
-  detourAutoActive = false,
-  detourRejoinDistanceLabel = null,
-  detourAltChoices = [],
-  onDetourPick,
+  showOffRouteBanner = false,
+  offRouteRejoinActive = false,
+  offRouteRejoinDistanceLabel = null,
+  offRouteOptionsBusy = false,
+  onTryOtherRejoin,
+  onOffRouteOptions,
   showTrafficBypass = false,
   bypassBusy = false,
   onTrafficBypass,
@@ -151,35 +145,37 @@ export function BottomToolbar({
       }${routeUi ? " nav-bottom-toolbar--route" : ""}`}
       aria-label="Map and trip controls"
     >
-      {showOffRouteBanner && (offRouteSevere || detourAutoActive) && (
-        <div className="nav-bottom-off-route" role="alert">
+      {showOffRouteBanner && (
+        <div className="nav-bottom-off-route" role="status">
           <span className="nav-bottom-off-route__text">
-            {detourAutoActive
-              ? detourRejoinDistanceLabel
-                ? `Detour — rejoin your route in ${detourRejoinDistanceLabel}.`
-                : "Detour — rejoining your route ahead."
-              : "Off route — your chosen line stays. Pick a local detour to rejoin ahead."}
+            {offRouteRejoinActive
+              ? `Rejoining your blue route${offRouteRejoinDistanceLabel ? ` — ${offRouteRejoinDistanceLabel}` : ""}.`
+              : "Off your chosen route — guidance stays on your line until you pick a new one."}
           </span>
-          <div className="nav-bottom-off-route__actions">
-            {!detourAutoActive &&
-              detourAltChoices.map((alt) =>
-                onDetourPick ? (
-                  <button
-                    key={alt.id}
-                    type="button"
-                    className="nav-bottom-off-route__btn"
-                    onClick={() => onDetourPick(alt.id)}
-                  >
-                    {alt.label}
-                  </button>
-                ) : null
-              )}
-            {onRerouteFromHere ? (
-              <button type="button" className="nav-bottom-off-route__btn" onClick={onRerouteFromHere}>
-                {detourAutoActive ? "Other detour" : "More options"}
-              </button>
-            ) : null}
-          </div>
+          {(onTryOtherRejoin || onOffRouteOptions) && (
+            <div className="nav-bottom-off-route__actions">
+              {onTryOtherRejoin ? (
+                <button
+                  type="button"
+                  className="nav-bottom-off-route__btn"
+                  disabled={offRouteOptionsBusy}
+                  onClick={onTryOtherRejoin}
+                >
+                  {offRouteOptionsBusy ? "Loading…" : "Try other rejoin"}
+                </button>
+              ) : null}
+              {onOffRouteOptions ? (
+                <button
+                  type="button"
+                  className="nav-bottom-off-route__btn"
+                  disabled={offRouteOptionsBusy}
+                  onClick={onOffRouteOptions}
+                >
+                  Route options
+                </button>
+              ) : null}
+            </div>
+          )}
         </div>
       )}
       {navigationStarted && showTrafficBypass && onTrafficBypass && (

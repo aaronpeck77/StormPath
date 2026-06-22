@@ -278,6 +278,9 @@ export type ApplyRoutesLayerOptions = {
   routeComparePicker?: boolean;
   /** Drive mode: slice the active leg from just behind the puck with full road detail. */
   userAlongMeters?: number | null;
+  /** Auto rejoin: draw locked A faint behind green/orange temp guidance. */
+  rejoinOverlayActive?: boolean;
+  lockedRouteId?: string | null;
 };
 
 function routeCoordinatesForMap(route: NavRoute, opts?: ApplyRoutesLayerOptions): LngLat[] {
@@ -492,10 +495,26 @@ export function applyRoutesToMap(
       lineWidth = isFocus ? 7 : isSuggested ? 5 : 4;
       lineOpacity = isFocus ? 0.82 : isSuggested ? 0.55 : 0.38;
     } else {
-      /* Navigating: the active guidance leg is always “primary” blue; alts keep A/B/C hue if visible. */
-      lineColor = isFocus ? routePickSlotHex(0) : slotHex;
-      lineWidth = isFocus ? FOCUSED_ROUTE_LINE_WIDTH : isSuggested ? 5 : 4;
-      lineOpacity = isFocus ? 0.78 : 0.44;
+      const lockedId = opts?.lockedRouteId?.trim() || null;
+      const rejoinOverlay =
+        Boolean(opts?.rejoinOverlayActive) &&
+        Boolean(lockedId) &&
+        lockedId !== lineFocusId;
+      const isLockedBackground = rejoinOverlay && route.id === lockedId && !isFocus;
+
+      if (isLockedBackground) {
+        lineColor = routePickSlotHex(0);
+        lineWidth = 4;
+        lineOpacity = 0.28;
+      } else if (isFocus) {
+        lineColor = slotHex;
+        lineWidth = FOCUSED_ROUTE_LINE_WIDTH;
+        lineOpacity = 0.85;
+      } else {
+        lineColor = slotHex;
+        lineWidth = isSuggested ? 5 : 4;
+        lineOpacity = 0.44;
+      }
     }
 
     const geojson: GeoJSON.Feature<GeoJSON.LineString> = {
