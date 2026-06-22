@@ -425,8 +425,11 @@ export function useTomorrowRouteForecast(
             : isTomorrowIoRateLimited() || String(e).includes("rate limited");
           if (limited) {
             showCachedOnly(STALE_ROUTE_FORECAST_NOTE);
-          } else if (import.meta.env.DEV) {
-            console.warn("[Weather] route forecast fetch failed:", e);
+          } else {
+            if (import.meta.env.DEV) {
+              console.warn("[Weather] route forecast fetch failed:", e);
+            }
+            showCachedOnly("Route weather unavailable — tap Refresh to retry.");
           }
         }
       })

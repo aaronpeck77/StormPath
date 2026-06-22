@@ -2,14 +2,16 @@
  * Apple WeatherKit REST client (https://developer.apple.com/documentation/weatherkitrestapi).
  * Auth: Bearer JWT from {@link fetchWeatherKitToken}.
  */
+import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import { fetchWithTimeout } from "../utils/fetchResilient";
 import { fetchWeatherKitToken } from "./weatherKitAuth";
 
-/* Apple blocks CORS preflights from localhost, so dev builds proxy through Vite.
- * Runtime hostname check is belt-and-suspenders: if the browser has a cached
- * module where import.meta.env.DEV was compiled as false (e.g. after a vite
- * preview session), we still catch localhost:5173 correctly at runtime.
- * Capacitor native uses capacitor://localhost — skip proxy there. */
+/* Apple blocks CORS preflights from browser/WebView origins.
+ * Dev: Vite proxies through the dev server (server-side call, no CORS).
+ * Native (Capacitor): use CapacitorHttp which makes native-level HTTP requests
+ *   that bypass WKWebView CORS restrictions entirely.
+ * Deployed web: same-origin Netlify proxy (not yet wired — keep for future).
+ * Runtime hostname check is belt-and-suspenders for cached DEV=false modules. */
 function resolveWeatherKitBaseUrl(): string {
   if (import.meta.env.DEV) return "/weatherkit-api/api/v1/weather";
   if (
@@ -103,18 +105,46 @@ export async function fetchWeatherKitAtPoint(
   const token = await fetchWeatherKitToken(signal);
   const ds = dataSets.join(",");
   const url = `${BASE_URL}/en-US/${lat.toFixed(4)}/${lng.toFixed(4)}?dataSets=${encodeURIComponent(ds)}`;
+  const authHeaders = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
+  };
 
-  const res = await fetchWithTimeout({
-    input: url,
-    init: {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
-    },
-    timeoutMs: TIMEOUT_MS,
-    externalSignal: signal,
-  });
+  let res: Response;
+  if (Capacitor.isNativePlatform()) {
+    /* On iOS/Android the WebView CORS policy blocks direct calls to weatherkit.apple.com.
+     * CapacitorHttp makes native-level requests that bypass WebView CORS entirely. */
+    try {
+      const hr = await CapacitorHttp.request({
+        url,
+        method: "GET",
+        headers: authHeaders,
+        connectTimeout: TIMEOUT_MS,
+        readTimeout: TIMEOUT_MS,
+        responseType: "json",
+      });
+      const body = typeof hr.data === "string" ? hr.data : JSON.stringify(hr.data ?? {});
+      res = new Response(body, {
+        status: hr.status,
+        headers: new Headers(hr.headers as Record<string, string>),
+      });
+    } catch (e) {
+      /* CapacitorHttp failed — fall through to standard fetch as last resort. */
+      res = await fetchWithTimeout({
+        input: url,
+        init: { headers: authHeaders },
+        timeoutMs: TIMEOUT_MS,
+        externalSignal: signal,
+      });
+    }
+  } else {
+    res = await fetchWithTimeout({
+      input: url,
+      init: { headers: authHeaders },
+      timeoutMs: TIMEOUT_MS,
+      externalSignal: signal,
+    });
+  }
 
   if (res.status === 401 || res.status === 403) {
     throw new Error(`WeatherKit auth ${res.status}`);
