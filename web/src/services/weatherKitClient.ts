@@ -124,7 +124,7 @@ export async function fetchWeatherKitAtPoint(
   lng: number,
   dataSets: WeatherKitDataSet[],
   signal?: AbortSignal,
-  opts?: { bypassCache?: boolean }
+  opts?: { bypassCache?: boolean; country?: string }
 ): Promise<WeatherKitWeatherResponse> {
   const key = cacheKey(lat, lng, dataSets);
   if (!opts?.bypassCache) {
@@ -136,7 +136,9 @@ export async function fetchWeatherKitAtPoint(
 
   const token = await fetchWeatherKitToken(signal);
   const ds = dataSets.join(",");
-  const url = `${BASE_URL}/en-US/${lat.toFixed(4)}/${lng.toFixed(4)}?dataSets=${encodeURIComponent(ds)}`;
+  // weatherAlerts requires a country query param per Apple's WeatherKit REST API spec.
+  const countryParam = opts?.country ? `&country=${encodeURIComponent(opts.country)}` : "";
+  const url = `${BASE_URL}/en-US/${lat.toFixed(4)}/${lng.toFixed(4)}?dataSets=${encodeURIComponent(ds)}${countryParam}`;
   const authHeaders = {
     Authorization: `Bearer ${token}`,
     Accept: "application/json",

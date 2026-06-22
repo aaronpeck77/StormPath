@@ -323,7 +323,7 @@ export function applyWeatherAlertLayers(
   collection: GeoJSON.FeatureCollection | null
 ): void {
   if (import.meta.env.DEV) {
-    console.log("[applyWeatherAlertLayers] features:", collection?.features?.length ?? "null");
+    console.log("[applyWeatherAlertLayers] raw features:", collection?.features?.length ?? "null");
   }
   const beforeId = firstVisibleRouteLineId(map);
 
@@ -341,6 +341,12 @@ export function applyWeatherAlertLayers(
     ),
   };
   const hasFeatures = mapRenderable.features.length > 0;
+  if (import.meta.env.DEV) {
+    const kinds = mapRenderable.features.map(
+      (f) => `${(f.properties as Record<string, unknown>)?.event ?? "?"}(${(f.properties as Record<string, unknown>)?.kind ?? "?"})`
+    );
+    console.log(`[applyWeatherAlertLayers] after filter: ${mapRenderable.features.length}`, kinds);
+  }
 
   // ── Invisible hit area + visible outline ───────────────────────────────────
   if (!hasFeatures) {

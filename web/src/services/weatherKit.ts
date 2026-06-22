@@ -298,18 +298,33 @@ function wkSeverityToNws(s: string): string {
 }
 
 /**
+ * Coarse country code from coordinates — good enough for the `country=` WeatherKit param
+ * which only needs to match the country where the alert is issued.
+ */
+function countryCodeFromCoords(lat: number, lng: number): string {
+  if (lat >= 24 && lat <= 72 && lng >= -180 && lng <= -65) return "US";
+  if (lat >= 42 && lat <= 84 && lng >= -141 && lng <= -52) return "CA";
+  if (lat >= 14 && lat <= 33 && lng >= -118 && lng <= -86) return "MX";
+  if (lat >= 49 && lat <= 61 && lng >= -10 && lng <= 2) return "GB";
+  if (lat >= -44 && lat <= -10 && lng >= 113 && lng <= 154) return "AU";
+  if (lat >= 47 && lat <= 55 && lng >= 6 && lng <= 15) return "DE";
+  if (lat >= 42 && lat <= 51 && lng >= -5 && lng <= 9) return "FR";
+  return "US";
+}
+
+/**
  * Fetch WeatherKit weather alerts at a point.
  * Returns normalized alerts compatible with the NWS advisory pipeline.
- * Works internationally — fills the gap for non-US users where NWS has no coverage.
- * The `countryCode` is stored on the returned alerts for display; WeatherKit
- * auto-resolves alerts from coordinates so no extra URL param is needed.
+ * Works internationally — fills the advisory gap for non-US users where NWS has no coverage.
+ * Apple requires a `country=` query parameter when requesting weatherAlerts.
  */
 export async function fetchWeatherKitAlerts(
   lat: number,
   lng: number,
   signal?: AbortSignal
 ): Promise<NormalizedWeatherAlert[]> {
-  const raw = await fetchWeatherKitAtPoint(lat, lng, ["weatherAlerts"], signal);
+  const country = countryCodeFromCoords(lat, lng);
+  const raw = await fetchWeatherKitAtPoint(lat, lng, ["weatherAlerts"], signal, { country });
   const alerts = raw.weatherAlerts?.alerts ?? [];
 
   return alerts.map((a: WeatherKitAlert): NormalizedWeatherAlert => {
