@@ -268,12 +268,12 @@ export async function fetchMinutePrecip(
   const intervals = raw.data.timelines[0]?.intervals ?? [];
   const first = intervals[0]?.values;
   const tempC = first?.temperature;
-  const windKph = first?.windSpeed;
+  const windMs = first?.windSpeed;
   const now =
     tempC != null && Number.isFinite(tempC)
       ? {
           tempF: Math.round((tempC * 9) / 5 + 32),
-          windMph: Math.round((windKph ?? 0) * 0.621371),
+          windMph: Math.round((windMs ?? 0) * 2.23694),
           conditions: weatherCodeLabel(first?.weatherCode ?? 1000),
         }
       : undefined;
@@ -340,7 +340,7 @@ export async function fetchPointHourlyForecast(
   const intervals = raw.data.timelines[0]?.intervals ?? [];
   const hours: PointHourlyInterval[] = intervals.slice(0, 24).map((iv) => {
     const tempC = iv.values.temperature ?? 0;
-    const windKph = iv.values.windSpeed ?? 0;
+    const windMs = iv.values.windSpeed ?? 0;
     const code = iv.values.weatherCode ?? 1000;
     const offsetHours = (new Date(iv.startTime).getTime() - fetchedAt) / 3_600_000;
     return {
@@ -349,7 +349,7 @@ export async function fetchPointHourlyForecast(
       tempF: Math.round((tempC * 9) / 5 + 32),
       precipIntensityMmh: iv.values.precipitationIntensity ?? 0,
       precipProbability: (iv.values.precipitationProbability ?? 0) / 100,
-      windMph: Math.round(windKph * 0.621371),
+      windMph: Math.round(windMs * 2.23694),
       conditions: weatherCodeLabel(code),
     };
   });
@@ -445,8 +445,8 @@ function intervalFromHourlyTimeline(
   }
   const v = best.values;
   const tempC = v.temperature ?? 0;
-  const windKph = v.windSpeed ?? 0;
-  const gustKph = v.windGust ?? 0;
+  const windMs = v.windSpeed ?? 0;
+  const gustMs = v.windGust ?? 0;
   return {
     etaMinutes: wp.etaMinutes,
     lat: wp.lat,
@@ -454,8 +454,8 @@ function intervalFromHourlyTimeline(
     tempF: tempC * 9 / 5 + 32,
     precipIntensityMmh: v.precipitationIntensity ?? 0,
     precipProbability: (v.precipitationProbability ?? 0) / 100,
-    windSpeedMph: windKph * 0.621371,
-    windGustMph: gustKph * 0.621371,
+    windSpeedMph: windMs * 2.23694,
+    windGustMph: gustMs * 2.23694,
     weatherCode: v.weatherCode ?? 1000,
     wetRoadMm: v.wetRoadIndex ?? 0,
   };
