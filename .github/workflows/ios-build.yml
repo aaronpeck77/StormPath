@@ -39,6 +39,12 @@ on:
           - testflight
           - appstore
 
+# Only one iOS build runs at a time per branch.
+# A newer push cancels any in-progress build so macOS runner minutes aren't wasted.
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-ios:
     runs-on: macos-latest
