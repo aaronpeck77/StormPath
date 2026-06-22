@@ -1,6 +1,6 @@
 import { useMemo, type MutableRefObject } from "react";
 import { routeForecastHasSignificantWeather, type RouteForecast } from "../services/tomorrowIo";
-import { routeForecastToImpacts } from "./tomorrowIoImpacts";
+import { buildWindImpacts, buildForecastSummary } from "./tomorrowIoImpacts";
 import {
   buildRouteImpacts,
   compareRouteImpactPriority,
@@ -334,14 +334,12 @@ export function useRouteAheadDerivations(
     if (tioRouteForecast && guidanceRouteLengthM > 0) {
       const planEta = guidanceRoute?.baseEtaMinutes;
       if (planEta && planEta > 0) {
-        list.push(
-          ...routeForecastToImpacts(
-            tioRouteForecast,
-            geometry,
-            planEta,
-            guidanceRouteLengthM
-          )
-        );
+        // Forecast summary — one consolidated text item at top of advisory list (no bar in graph).
+        const summary = buildForecastSummary(tioRouteForecast, geometry, planEta, guidanceRouteLengthM);
+        if (summary) list.push(summary);
+
+        // Wind track — shows gusts ≥ 25 mph as a dedicated bar row replacing the old forecast bar.
+        list.push(...buildWindImpacts(tioRouteForecast, geometry, planEta, guidanceRouteLengthM));
       }
     }
 
@@ -449,7 +447,7 @@ export function useRouteAheadDerivations(
   /** NWS / radar timeline bands → route outlook graph when forecast APIs are empty. */
   const stormOutlookBands = useMemo((): StormRouteOutlookBand[] => {
     return routeAheadTimeline
-      .filter((item) => item.track === "nws" || item.track === "radar" || item.track === "forecast")
+      .filter((item) => item.track === "nws" || item.track === "radar" || item.track === "wind")
       .map((item) => ({
         startMeters: item.startMeters,
         endMeters: item.endMeters,

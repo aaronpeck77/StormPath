@@ -11,7 +11,7 @@ import type { RouteImpact } from "../nav/routeImpacts";
 export type TimelineItem = {
   id: string;
   /** Which horizontal track this item lives on. */
-  track: "nws" | "radar" | "road" | "forecast";
+  track: "nws" | "radar" | "road" | "forecast" | "wind";
   /** Event / headline label (e.g. "Flood Advisory", "Heavy rain on route"). */
   label: string;
   severity: "info" | "caution" | "serious" | "avoid";
@@ -58,13 +58,13 @@ function pct(meters: number, total: number): number {
 }
 
 const TRACK_META: Record<string, { label: string; emptyText: string }> = {
-  nws:      { label: "NWS",      emptyText: "No active NWS alerts on route" },
-  radar:    { label: "Radar",    emptyText: "No radar precipitation detected" },
-  road:     { label: "Road",     emptyText: "No road hazards detected" },
-  forecast: { label: "Forecast", emptyText: "No significant weather forecast" },
+  nws:   { label: "NWS",   emptyText: "No active NWS alerts on route" },
+  radar: { label: "Radar", emptyText: "No radar precipitation detected" },
+  wind:  { label: "Wind",  emptyText: "No significant wind along route" },
+  road:  { label: "Road",  emptyText: "No road hazards detected" },
 };
 
-const TRACK_ORDER = ["nws", "radar", "forecast", "road"] as const;
+const TRACK_ORDER = ["nws", "radar", "wind", "road"] as const;
 
 /** Minimum visual band width (% of rail) so tiny/point impacts are visible. */
 const MIN_BAND_PCT = 2.5;
@@ -403,7 +403,8 @@ export function impactToTimelineItem(imp: RouteImpact): TimelineItem {
   const track: TimelineItem["track"] =
     imp.source === "radar" ? "radar"
     : imp.source === "nws" ? "nws"
-    : imp.source === "tomorrowIo" ? "forecast"
+    : imp.source === "wind" ? "wind"
+    : imp.source === "tomorrowIo" ? "forecast"  // list-only — not in graph TRACK_ORDER
     : "road";
   return {
     id: imp.id,

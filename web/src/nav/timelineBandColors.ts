@@ -51,6 +51,11 @@ export function timelineItemBandColor(item: TimelineItem): string {
     return corridorHighlightHex("traffic", level);
   }
 
-  /* radar + forecast — violet / sky weather casing (MapKey "weather on route") */
+  /* wind — amber casing to distinguish from rain/radar */
+  if (item.track === "wind") {
+    return corridorHighlightHex("hazard", level);
+  }
+
+  /* radar + forecast — violet / sky weather casing */
   return corridorHighlightHex("weather", level);
 }

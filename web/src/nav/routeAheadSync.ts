@@ -181,7 +181,7 @@ export function timelineToMapCorridorAlerts(
   const byId = new Map(routeImpacts.map((i) => [i.id, i]));
   const out: RouteAlert[] = [];
   for (const item of items) {
-    if (item.track === "nws" || item.track === "radar" || item.track === "forecast") continue;
+    if (item.track === "nws" || item.track === "radar" || item.track === "forecast" || item.track === "wind") continue;
     const imp = byId.get(item.id);
     if (imp) out.push(routeImpactToRouteAlert(imp));
   }
@@ -219,13 +219,11 @@ export function buildRouteAheadCalloutSegments(opts: {
     const midM = (item.startMeters + item.endMeters) / 2;
     const alongT = Math.min(1, Math.max(0, midM / totalMeters));
     const trackLabel =
-      item.track === "nws"
-        ? "NWS"
-        : item.track === "radar"
-          ? "Radar"
-          : item.track === "forecast"
-            ? "Forecast"
-            : "Road";
+      item.track === "nws" ? "NWS"
+      : item.track === "radar" ? "Radar"
+      : item.track === "wind" ? "Wind"
+      : item.track === "forecast" ? "Forecast"
+      : "Road";
     const detail = (item.detailLine ?? "").trim();
     const summaryParts = [detail, timing.timingLine].filter(Boolean);
     const summary = squeezeForSummary(summaryParts.join(" · "), 120);
@@ -301,13 +299,11 @@ export function buildRouteAheadGlanceCards(opts: {
     if (timing.passed) continue;
 
     const trackLabel =
-      item.track === "nws"
-        ? "NWS"
-        : item.track === "radar"
-          ? "Radar"
-          : item.track === "forecast"
-            ? "Forecast"
-            : "Road";
+      item.track === "nws" ? "NWS"
+      : item.track === "radar" ? "Radar"
+      : item.track === "wind" ? "Wind"
+      : item.track === "forecast" ? "Forecast"
+      : "Road";
     const detail = (item.detailLine ?? "").trim();
     const tooltip = [`${trackLabel}: ${item.label}`, detail, timing.timingLine].filter(Boolean).join("\n\n");
     const midM = (item.startMeters + item.endMeters) / 2;

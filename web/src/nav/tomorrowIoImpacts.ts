@@ -192,3 +192,132 @@ export function routeForecastToImpacts(
 
   return impacts;
 }
+
+/** Wind gust severity thresholds (mph). */
+function windSeverity(gustMph: number): RouteImpactSeverity | null {
+  if (gustMph >= 58) return "avoid";    // damaging / high wind warning territory
+  if (gustMph >= 40) return "serious";  // high wind advisory
+  if (gustMph >= 25) return "caution";  // breezy / noticeable
+  return null;                          // below threshold — skip
+}
+
+function windHeadline(gustMph: number, speedMph: number): string {
+  const g = Math.round(gustMph);
+  const s = Math.round(speedMph);
+  if (gustMph >= 58) return `Dangerous Wind — gusts ${g} mph`;
+  if (gustMph >= 40) return `High Wind — gusts ${g} mph`;
+  return `Breezy — gusts ${g} mph (wind ${s} mph)`;
+}
+
+/**
+ * Build wind-track RouteImpacts from ETA-aligned route forecast intervals.
+ * Consecutive waypoints with the same wind severity are merged into one band.
+ * Only gusts ≥ 25 mph are surfaced.
+ */
+export function buildWindImpacts(
+  forecast: RouteForecast,
+  geometry: LngLat[],
+  totalEtaMin: number,
+  totalMeters: number
+): RouteImpact[] {
+  const intervals = forecast.intervals ?? [];
+  if (!intervals.length || totalEtaMin <= 0 || totalMeters <= 0) return [];
+
+  type WindSlice = { iv: RouteHourlyInterval; startM: number; endM: number };
+  const slices: WindSlice[] = [];
+
+  for (let i = 0; i < intervals.length; i++) {
+    const iv = intervals[i]!;
+    const frac = iv.etaMinutes / totalEtaMin;
+    const startM = Math.min(totalMeters, Math.max(0, frac * totalMeters));
+    const nextFrac = i + 1 < intervals.length ? intervals[i + 1]!.etaMinutes / totalEtaMin : 1;
+    const endM = Math.min(totalMeters, nextFrac * totalMeters);
+    if (windSeverity(iv.windGustMph) === null) continue;
+    slices.push({ iv, startM, endM });
+  }
+  if (!slices.length) return [];
+
+  // Merge consecutive slices with the same severity band (gap tolerance: 5 km).
+  type Band = { slices: WindSlice[]; sev: RouteImpactSeverity };
+  const bands: Band[] = [];
+  for (const slice of slices) {
+    const sev = windSeverity(slice.iv.windGustMph)!;
+    const last = bands[bands.length - 1];
+    if (last && last.sev === sev && slice.startM <= last.slices[last.slices.length - 1]!.endM + 5000) {
+      last.slices.push(slice);
+    } else {
+      bands.push({ slices: [slice], sev });
+    }
+  }
+
+  return bands.map((band, i) => {
+    const first = band.slices[0]!;
+    const last = band.slices[band.slices.length - 1]!;
+    const startM = first.startM;
+    const endM = last.endM;
+    const midM = (startM + endM) / 2;
+    const rep = band.slices.reduce((b, s) => (s.iv.windGustMph > b.iv.windGustMph ? s : b));
+    const lngLat = pointAtAlongMeters(geometry, midM);
+    const spanFrac = totalMeters > 0 ? (endM - startM) / totalMeters : 0;
+    const headline = windHeadline(rep.iv.windGustMph, rep.iv.windSpeedMph);
+    const detail = spanFrac >= 0.25
+      ? `${headline} · ~${Math.round(spanFrac * 100)}% of route`
+      : headline;
+
+    return {
+      id: `wind-${i}-${Math.round(startM)}`,
+      category: "wind" as RouteImpactCategory,
+      severity: band.sev,
+      confidence: "medium" as const,
+      source: "wind" as const,
+      lngLat,
+      alongMeters: midM,
+      startMeters: startM,
+      endMeters: endM,
+      distanceAheadMeters: startM,
+      etaAheadMinutes: first.iv.etaMinutes,
+      driverHeadline: headline,
+      driverAction: band.sev === "avoid" ? "prepare" : "watch",
+      roadEffect: detail,
+      detail,
+      numericSeverity: SEVERITY_TO_NUMERIC[band.sev],
+    } as RouteImpact;
+  });
+}
+
+/**
+ * One-line forecast summary item — shown at the top of the advisory list
+ * instead of the old per-segment "Forecast" bars.
+ * Returns null when the route forecast is clear.
+ */
+export function buildForecastSummary(
+  forecast: RouteForecast,
+  geometry: LngLat[],
+  totalEtaMin: number,
+  totalMeters: number
+): RouteImpact | null {
+  const impacts = routeForecastToImpacts(forecast, geometry, totalEtaMin, totalMeters);
+  if (!impacts.length) return null;
+  const worst = impacts.reduce((b, i) =>
+    (i.numericSeverity ?? 0) >= (b.numericSeverity ?? 0) ? i : b
+  );
+  const totalCoverM = impacts.reduce((s, i) => s + (i.endMeters - i.startMeters), 0);
+  const coverFrac = totalMeters > 0 ? Math.min(1, totalCoverM / totalMeters) : 0;
+  const coverSuffix = coverFrac >= 0.75 ? "along most of route"
+    : coverFrac >= 0.4 ? `along ~${Math.round(coverFrac * 100)}% of route`
+    : null;
+  const headline = coverSuffix
+    ? `${worst.driverHeadline} — ${coverSuffix}`
+    : worst.driverHeadline;
+  const midM = totalMeters / 2;
+  return {
+    ...worst,
+    id: "forecast-summary",
+    source: "tomorrowIo" as const,
+    alongMeters: midM,
+    startMeters: 0,
+    endMeters: totalMeters,
+    driverHeadline: headline,
+    detail: worst.detail ?? worst.driverHeadline,
+  };
+}

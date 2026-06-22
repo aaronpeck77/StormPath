@@ -47,6 +47,7 @@ export type RouteImpactSource =
   | "mapboxIncident"
   | "routeNotice"
   | "tomorrowIo"
+  | "wind"
   | "fused";
 
 export type RouteImpactAction =

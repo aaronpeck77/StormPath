@@ -37,6 +37,7 @@ type Props = {
 const TRACK_BADGE: Record<TimelineItem["track"], string> = {
   nws: "NWS",
   radar: "RAD",
+  wind: "WIND",
   forecast: "FCST",
   road: "RD",
 };
@@ -77,6 +78,12 @@ const HAZARD_RAIL_META: Record<
     railClass: "rpgl__hazard-rail--radar",
     bandClass: "rpgl__band--radar",
   },
+  wind: {
+    label: "Wind",
+    sublabelClass: "rpgl__hazard-sublabel--wind",
+    railClass: "rpgl__hazard-rail--wind",
+    bandClass: "rpgl__band--wind",
+  },
   forecast: {
     label: "Forecast",
     sublabelClass: "rpgl__hazard-sublabel--forecast",
@@ -91,7 +98,7 @@ const HAZARD_RAIL_META: Record<
   },
 };
 
-const HAZARD_RAIL_ORDER: TimelineItem["track"][] = ["nws", "radar", "forecast", "road"];
+const HAZARD_RAIL_ORDER: TimelineItem["track"][] = ["nws", "radar", "wind", "road"];
 
 function HazardRailRow({ track, bands }: { track: TimelineItem["track"]; bands: HazardBandVisual[] }) {
   if (!bands.length) return null;
@@ -246,6 +253,7 @@ export function RouteProgressGlancePanel({
     const map: Record<TimelineItem["track"], HazardBandVisual[]> = {
       nws: [],
       radar: [],
+      wind: [],
       forecast: [],
       road: [],
     };
