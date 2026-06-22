@@ -40,19 +40,19 @@ export const NWS_POLYGON_MAP_MAX_ZOOM = 10.75;
 const NWS_LINE_OPACITY_EXPR: unknown = [
   "match",
   ["get", "severity"],
-  "Extreme", 0.95,
-  "Severe",  0.88,
-  "Moderate", 0.25,
-  /* Minor + fallback */ 0.10,
+  "Extreme", 0.85,
+  "Severe",  0.65,
+  "Moderate", 0.20,
+  /* Minor + fallback */ 0.08,
 ];
 
 const NWS_LINE_WIDTH_EXPR: unknown = [
   "match",
   ["get", "severity"],
-  "Extreme", 3.2,
-  "Severe",  2.35,
-  "Moderate", 1.4,
-  /* Minor + fallback */ 1.0,
+  "Extreme", 1.6,
+  "Severe",  1.0,
+  "Moderate", 0.7,
+  /* Minor + fallback */ 0.5,
 ];
 
 /** Subtle area fill only on Extreme (tornado) polygons so they stand out. */
