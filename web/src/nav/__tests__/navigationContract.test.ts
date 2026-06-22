@@ -25,4 +25,10 @@ describe("navigationContract", () => {
     expect(mayRefreshAlternateLegsOnly("navigating", "topdown")).toBe(true);
     expect(mayRefreshAlternateLegsOnly("planning", "route")).toBe(false);
   });
+
+  it("allows auto rejoin overlay only while navigating with setting on", () => {
+    expect(mayAutoRejoinOverlay("navigating", true)).toBe(true);
+    expect(mayAutoRejoinOverlay("navigating", false)).toBe(false);
+    expect(mayAutoRejoinOverlay("planning", true)).toBe(false);
+  });
 });
