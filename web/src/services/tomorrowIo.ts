@@ -9,6 +9,7 @@
  * the user's location or route changes meaningfully.
  */
 
+import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import type { LngLat } from "../nav/types";
 import { pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
 import { enqueueTomorrowIoPost, noteTomorrowIoRateLimit } from "./tomorrowIoClient";
@@ -110,25 +111,52 @@ async function postTimelinesOnce(
   const effectiveSignal = signal ?? controller.signal;
 
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept-Encoding": "gzip",
-      },
-      body: JSON.stringify(body),
-      signal: effectiveSignal,
-    });
-    clearTimeout(timeoutId);
-    if (res.status === 429) {
+    let status: number;
+    let data: unknown;
+
+    if (Capacitor.isNativePlatform()) {
+      /* On iOS/Android the WKWebView CORS policy blocks direct calls to api.tomorrow.io.
+       * CapacitorHttp makes native-level requests that bypass WebView CORS entirely. */
+      clearTimeout(timeoutId);
+      const hr = await CapacitorHttp.request({
+        url,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        data: body,
+        connectTimeout: TIMEOUT_MS,
+        readTimeout: TIMEOUT_MS,
+      });
+      status = hr.status;
+      data = hr.data;
+    } else {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept-Encoding": "gzip",
+        },
+        body: JSON.stringify(body),
+        signal: effectiveSignal,
+      });
+      clearTimeout(timeoutId);
+      status = res.status;
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`Tomorrow.io ${res.status}: ${text.slice(0, 200)}`);
+      }
+      data = await res.json();
+    }
+
+    if (status === 429) {
       noteTomorrowIoRateLimit();
       throw new Error("Tomorrow.io 429");
     }
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Tomorrow.io ${res.status}: ${text.slice(0, 200)}`);
+    if (status < 200 || status >= 300) {
+      throw new Error(`Tomorrow.io ${status}`);
     }
-    return res.json();
+    return data;
   } catch (e) {
     clearTimeout(timeoutId);
     throw e;
