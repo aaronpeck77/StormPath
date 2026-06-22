@@ -4,9 +4,9 @@ import type { LngLat } from "../nav/types";
  * Region / provider codes — add EU, CA, etc. later with new providers.
  * UI and map layers stay agnostic; only fetch/normalize is per-region.
  */
-export type WeatherAlertRegionCode = "US" | "XX";
+export type WeatherAlertRegionCode = "US" | "XX" | string;
 
-export type WeatherAlertProviderId = "nws-us" | "placeholder";
+export type WeatherAlertProviderId = "nws-us" | "placeholder" | "weatherkit";
 
 /** Normalized alert for UI + overlap logic (not raw NWS JSON). */
 export type NormalizedWeatherAlert = {

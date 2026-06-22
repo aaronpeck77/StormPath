@@ -383,6 +383,14 @@
   color: rgba(226, 232, 240, 0.82);
 }
 
+.nws-chip__source {
+  font-size: 0.68rem;
+  font-weight: 400;
+  opacity: 0.55;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+
 /* ??? Phone-first dark chrome (map + search + right rail) ??? */
 
 :root {

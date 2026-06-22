@@ -317,6 +317,9 @@ function nwsChip(
         <span className="nws-chip__dot" aria-hidden />
         <span className="nws-chip__text">
           <span className="nws-chip__label">{a.event}</span>
+          {a.providerId === "weatherkit" ? (
+            <span className="nws-chip__source">Apple WeatherKit</span>
+          ) : null}
           {(() => {
             const detail = nwsChipDetailText(a);
             return detail ? <span className="nws-chip__detail">{detail}</span> : null;

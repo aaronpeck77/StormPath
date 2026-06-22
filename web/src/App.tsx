@@ -246,6 +246,7 @@ import {
 import { useComputeRoutes } from "./nav/useComputeRoutes";
 import { useOffRouteNavigation } from "./nav/useOffRouteNavigation";
 import { useStormCorridorPolling } from "./nav/useStormCorridorPolling";
+import { useWeatherKitAlerts } from "./nav/useWeatherKitAlerts";
 import { useArrivalDetection } from "./nav/useArrivalDetection";
 import { useMapboxTrafficLineSnap } from "./nav/useMapboxTrafficLineSnap";
 import { mapMatchingBuildAllowed } from "./services/mapboxMapMatching";
@@ -1518,6 +1519,23 @@ export default function App() {
     setStormBarExpanded,
   });
 
+  /** WeatherKit alerts at user location — supplementary to NWS for US; primary for international. */
+  const wkAlerts = useWeatherKitAlerts({
+    enabled: Boolean(env.weatherKitEnabled) && Boolean(isPlus) && Boolean(settingStormEnabled),
+    userLngLat: effectiveUserLngLat ?? null,
+    appForeground,
+  });
+
+  /**
+   * Merged alert list for the advisory UI. NWS is primary (has geometry for map + routing);
+   * WeatherKit adds international coverage and any extra local alerts without geometry.
+   * Routing and overlap calculations still use NWS-only `stormCorridorAlerts`.
+   */
+  const allDisplayableAlerts = useMemo(
+    () => [...stormCorridorAlerts, ...wkAlerts],
+    [stormCorridorAlerts, wkAlerts]
+  );
+
   /** Keeps progress-bar fill from snapping to ~0 when the active polyline is replaced (reroute). */
   const tripOdometerM = useSessionOdometerMeters(
     effectiveUserLngLat,
@@ -2329,7 +2347,7 @@ export default function App() {
       guidanceRouteId,
       routeAheadTimeline,
       routeAheadProgressBands,
-      stormCorridorAlerts,
+      stormCorridorAlerts: allDisplayableAlerts,
       progressStripAlerts,
       guidanceSlice,
       weatherOverlay,
@@ -3823,7 +3841,7 @@ export default function App() {
                         !(stormMapGeoJson?.features?.length)
                       }
                       error={isPlus ? stormError : null}
-                      corridorAlerts={isPlus ? stormCorridorAlerts : []}
+                      corridorAlerts={isPlus ? allDisplayableAlerts : []}
                       overlappingAlerts={isPlus ? nwsAlertsForGuidanceAdvisory : []}
                       nwsAtLocationAlerts={isPlus ? stormNwsPuckInside : []}
                       trafficDelayMinutes={guidanceSlice?.trafficDelayMinutes ?? 0}

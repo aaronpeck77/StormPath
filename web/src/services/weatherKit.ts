@@ -13,8 +13,9 @@ import {
   weatherCodeLabel,
 } from "./tomorrowIo";
 import type { LngLat } from "../nav/types";
-import { fetchWeatherKitAtPoint } from "./weatherKitClient";
+import { fetchWeatherKitAtPoint, type WeatherKitAlert } from "./weatherKitClient";
 import { isWeatherKitTokenBlocked } from "./weatherKitAuth";
+import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 
 export { isWeatherKitTokenBlocked } from "./weatherKitAuth";
 
@@ -278,4 +279,56 @@ export async function fetchWeatherKitRouteForecastForGeometry(
   const waypoints = buildTimelinesWaypointsForGeometry(geometry, speedMps);
   if (!waypoints?.length) return { fetchedAt: Date.now(), intervals: [] };
   return fetchWeatherKitRouteForecast(waypoints, signal, opts);
+}
+
+/** Capitalize first letter of each word for display. */
+function titleCase(s: string): string {
+  return s.replace(/\w\S*/g, (t) => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
+}
+
+/** Map WeatherKit severity strings (lowercase) to NWS-style (capitalized). */
+function wkSeverityToNws(s: string): string {
+  const m: Record<string, string> = {
+    extreme: "Extreme",
+    severe: "Severe",
+    moderate: "Moderate",
+    minor: "Minor",
+  };
+  return m[s.toLowerCase()] ?? "Unknown";
+}
+
+/**
+ * Fetch WeatherKit weather alerts at a point.
+ * Returns normalized alerts compatible with the NWS advisory pipeline.
+ * Works internationally — fills the gap for non-US users where NWS has no coverage.
+ * The `countryCode` is stored on the returned alerts for display; WeatherKit
+ * auto-resolves alerts from coordinates so no extra URL param is needed.
+ */
+export async function fetchWeatherKitAlerts(
+  lat: number,
+  lng: number,
+  signal?: AbortSignal
+): Promise<NormalizedWeatherAlert[]> {
+  const raw = await fetchWeatherKitAtPoint(lat, lng, ["weatherAlerts"], signal);
+  const alerts = raw.weatherAlerts?.alerts ?? [];
+
+  return alerts.map((a: WeatherKitAlert): NormalizedWeatherAlert => {
+    const event = a.eventOnset?.trim() || "Weather Alert";
+    return {
+      id: `wk-${a.id ?? `${lat}-${lng}-${event}`}`,
+      regionCode: a.countryCode ?? "XX",
+      providerId: "weatherkit",
+      headline: event,
+      event,
+      description: a.description ?? "",
+      severity: wkSeverityToNws(a.severity ?? ""),
+      urgency: titleCase(a.urgency ?? "Unknown"),
+      certainty: titleCase(a.certainty ?? "Unknown"),
+      ends: a.expireTime ?? a.eventEnd ?? null,
+      geometry: null,
+      areaDesc: a.areaName ?? a.areaId ?? "",
+      stormMotionDeg: null,
+      stormMotionMph: null,
+    };
+  });
 }

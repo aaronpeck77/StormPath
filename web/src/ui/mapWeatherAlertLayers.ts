@@ -300,6 +300,17 @@ function buildMotionArrowCollection(
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
+/**
+ * Only render map polygons for convective (tornado/severe thunderstorm/hurricane) alerts
+ * and any Extreme-severity alert. Everything else (flood, winter, wind advisories, etc.)
+ * stays in the advisory list but is too large and visually cluttered to show on the map.
+ */
+function isMapRenderableAlert(props: Record<string, unknown>): boolean {
+  const kind = typeof props.kind === "string" ? props.kind : "other";
+  const severity = typeof props.severity === "string" ? props.severity : "";
+  return kind === "convective" || severity === "Extreme";
+}
+
 const EMPTY_ALERT_FC: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 /**
@@ -320,7 +331,16 @@ export function applyWeatherAlertLayers(
   // rebuild the WebGL buffers every time the collection flips to/from null
   // (which caused repeated GL_INVALID_OPERATION errors).
   const effective = collection ?? EMPTY_ALERT_FC;
-  const hasFeatures = effective.features.length > 0;
+
+  // Only render convective + Extreme alerts as map polygons — the rest are
+  // available in the advisory list but too area-heavy to show on the map.
+  const mapRenderable: GeoJSON.FeatureCollection = {
+    type: "FeatureCollection",
+    features: effective.features.filter((f) =>
+      isMapRenderableAlert((f.properties ?? {}) as Record<string, unknown>)
+    ),
+  };
+  const hasFeatures = mapRenderable.features.length > 0;
 
   // ── Invisible hit area + visible outline ───────────────────────────────────
   if (!hasFeatures) {
@@ -332,7 +352,7 @@ export function applyWeatherAlertLayers(
   }
 
   if (!map.getSource(SRC)) {
-    map.addSource(SRC, { type: "geojson", data: effective });
+    map.addSource(SRC, { type: "geojson", data: mapRenderable });
     const fillLayer: FillLayer = {
       id: FILL,
       type: "fill",
@@ -364,13 +384,13 @@ export function applyWeatherAlertLayers(
       map.addLayer(lineLayer);
     }
   } else {
-    (map.getSource(SRC) as GeoJSONSource).setData(effective);
+    (map.getSource(SRC) as GeoJSONSource).setData(mapRenderable);
     syncNwsPolygonPaint(map);
     syncNwsPolygonZoomRange(map);
   }
 
   // ── Storm motion arrows ──────────────────────────────────────────────────
-  const motion = buildMotionArrowCollection(effective);
+  const motion = buildMotionArrowCollection(mapRenderable);
   if (motion.arrows.features.length > 0) {
     applyMotionArrows(map, motion.arrows, motion.labels, beforeId);
   } else {

@@ -29,7 +29,9 @@ const TIMEOUT_MS = 12_000;
 export type WeatherKitDataSet =
   | "currentWeather"
   | "forecastHourly"
-  | "forecastNextHour";
+  | "forecastNextHour"
+  | "forecastDaily"
+  | "weatherAlerts";
 
 export type WeatherKitConditionCode = string;
 
@@ -78,6 +80,36 @@ export type WeatherKitWeatherResponse = {
   currentWeather?: WeatherKitCurrentWeather;
   forecastHourly?: { hours: WeatherKitHourly[] };
   forecastNextHour?: { minutes: WeatherKitNextHourMinute[]; summary?: unknown[] };
+  weatherAlerts?: { alerts: WeatherKitAlert[] };
+};
+
+export type WeatherKitAlert = {
+  /** Unique alert identifier. */
+  id: string;
+  /** Short event name e.g. "Tornado Warning", "Orages" */
+  eventOnset: string;
+  eventEnd: string | null;
+  /** Source agency name e.g. "National Weather Service" */
+  eventSource: string;
+  /** "extreme" | "severe" | "moderate" | "minor" | "unknown" */
+  severity: string;
+  /** "immediate" | "expected" | "future" | "past" | "unknown" */
+  urgency: string;
+  /** "observed" | "likely" | "possible" | "unlikely" | "unknown" */
+  certainty: string;
+  /** Human-readable description. */
+  description: string;
+  /** Link to full alert detail on the source agency site. */
+  detailsUrl: string | null;
+  /** ISO 8601 onset time. */
+  effectiveTime: string | null;
+  /** ISO 8601 expiry time. */
+  expireTime: string | null;
+  /** Two-letter country code. */
+  countryCode: string | null;
+  /** Area name e.g. "Champaign; Douglas; Edgar" */
+  areaId: string | null;
+  areaName: string | null;
 };
 
 const responseCache = new Map<string, { at: number; data: WeatherKitWeatherResponse }>();
