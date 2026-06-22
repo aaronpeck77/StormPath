@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+﻿import { useMemo } from "react";
 import { formatRouteAlertTiming } from "../nav/routeAlertTiming";
 import { timelineItemBandColor } from "../nav/timelineBandColors";
 import type { RouteImpact } from "../nav/routeImpacts";
@@ -64,7 +64,7 @@ const TRACK_META: Record<string, { label: string; emptyText: string }> = {
   road:  { label: "Road",  emptyText: "No road hazards detected" },
 };
 
-const TRACK_ORDER = ["nws", "radar", "wind", "road"] as const;
+const TRACK_ORDER = ["nws", "road"] as const; // radar → RouteRadarStrip strata, wind → top graph line
 
 /** Minimum visual band width (% of rail) so tiny/point impacts are visible. */
 const MIN_BAND_PCT = 2.5;

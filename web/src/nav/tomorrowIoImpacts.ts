@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Converts a Tomorrow.io RouteForecast into RouteImpact[] that can be merged
  * into the existing hazard timeline.
  *
@@ -42,9 +42,12 @@ function detailFromInterval(iv: RouteHourlyInterval): string {
 
 function headlineFromInterval(iv: RouteHourlyInterval): string {
   const label = weatherCodeLabel(iv.weatherCode);
+  // Only call something "Hazardous" when there is actual precipitation or winter weather.
+  // High wind with clear sky is handled by the Wind track; labelling it "Hazardous: Mostly cloudy"
+  // is confusing and redundant.
+  const hasPrecip = iv.precipIntensityMmh > 0.05;
   const sev = weatherCodeSeverity(iv.weatherCode, iv.precipIntensityMmh, iv.windGustMph);
-  if (sev === "avoid" || sev === "serious") return `Hazardous: ${label}`;
-  if (sev === "caution") return label;
+  if (hasPrecip && (sev === "avoid" || sev === "serious")) return `Hazardous: ${label}`;
   return label;
 }
 
@@ -288,7 +291,12 @@ export function buildWindImpacts(
 /**
  * One-line forecast summary item — shown at the top of the advisory list
  * instead of the old per-segment "Forecast" bars.
- * Returns null when the route forecast is clear.
+ *
+ * Only covers PRECIPITATION-based hazards. Wind is handled entirely by buildWindImpacts
+ * so wind-only intervals (clear sky + gusts) are excluded here to avoid duplication and
+ * nonsensical entries like "Hazardous: Mostly cloudy".
+ *
+ * Returns null when the route forecast has no meaningful precipitation.
  */
 export function buildForecastSummary(
   forecast: RouteForecast,
@@ -296,12 +304,23 @@ export function buildForecastSummary(
   totalEtaMin: number,
   totalMeters: number
 ): RouteImpact | null {
-  const impacts = routeForecastToImpacts(forecast, geometry, totalEtaMin, totalMeters);
-  if (!impacts.length) return null;
-  const worst = impacts.reduce((b, i) =>
+  const allImpacts = routeForecastToImpacts(forecast, geometry, totalEtaMin, totalMeters);
+
+  // Keep only precipitation-driven impacts. Wind-only intervals (category "wind",
+  // or clear sky with near-zero precip) are already surfaced by the Wind track.
+  const precipImpacts = allImpacts.filter(
+    (imp) => imp.category !== "wind");
+  if (!precipImpacts.length) return null;
+
+  // Also skip if the only remaining impacts are "info"-level clear-weather entries
+  // (nothing worth surfacing as a summary).
+  const meaningful = precipImpacts.filter((imp) => (imp.numericSeverity ?? 0) >= 40);
+  if (!meaningful.length) return null;
+
+  const worst = meaningful.reduce((b, i) =>
     (i.numericSeverity ?? 0) >= (b.numericSeverity ?? 0) ? i : b
   );
-  const totalCoverM = impacts.reduce((s, i) => s + (i.endMeters - i.startMeters), 0);
+  const totalCoverM = meaningful.reduce((s, i) => s + (i.endMeters - i.startMeters), 0);
   const coverFrac = totalMeters > 0 ? Math.min(1, totalCoverM / totalMeters) : 0;
   const coverSuffix = coverFrac >= 0.75 ? "along most of route"
     : coverFrac >= 0.4 ? `along ~${Math.round(coverFrac * 100)}% of route`

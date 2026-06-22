@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type CSSProperties, type RefObject } from "react";
+﻿import { useEffect, useMemo, useRef, type CSSProperties, type RefObject } from "react";
 import type { RouteChunkCalloutItem } from "../nav/routeProgressChunkList";
 import type { WxSample } from "../nav/routeChunkWeather";
 import type { RouteOutlookStep } from "../nav/routeForecastTimeline";
@@ -11,6 +11,7 @@ import {
 } from "../nav/routeAheadSync";
 import type { TimelineItem } from "./RouteHazardTimeline";
 import { RouteOutlookTimeline } from "./RouteOutlookTimeline";
+import { RouteRadarWindStrip } from "./RouteRadarWindStrip";
 import {
   computeRouteAxisMinWidth,
   ROUTE_PLOT_INSET_START,
@@ -23,6 +24,10 @@ type Props = {
   routeWide: RouteChunkCalloutItem[];
   outlookSteps: RouteOutlookStep[];
   outlookSamples?: WxSample[];
+  /** RainViewer mosaic samples for the radar intensity strata */
+  radarSamples?: { t: number; intensity: number }[];
+  /** Wind gust points from TIO forecast intervals (t=0–1 along route, mph) */
+  windPoints?: { t: number; mph: number }[];
   fallbackSegments: RouteChunkCalloutItem[];
   totalMeters: number;
   userAlongMeters: number;
@@ -98,7 +103,7 @@ const HAZARD_RAIL_META: Record<
   },
 };
 
-const HAZARD_RAIL_ORDER: TimelineItem["track"][] = ["nws", "radar", "wind", "road"];
+const HAZARD_RAIL_ORDER: TimelineItem["track"][] = ["nws", "road"]; // radar → strata, wind → graph
 
 function HazardRailRow({ track, bands }: { track: TimelineItem["track"]; bands: HazardBandVisual[] }) {
   if (!bands.length) return null;
@@ -208,6 +213,8 @@ export function RouteProgressGlancePanel({
   routeWide,
   outlookSteps,
   outlookSamples,
+  radarSamples = [],
+  windPoints = [],
   fallbackSegments,
   totalMeters,
   userAlongMeters,
@@ -333,6 +340,15 @@ export function RouteProgressGlancePanel({
                         </div>
                       )}
                     </div>
+
+                    {(radarSamples.length > 0 || windPoints.some((p) => p.mph >= 15)) ? (
+                      <div className="rpgl__radar-strata">
+                        <RouteRadarWindStrip
+                          radarSamples={radarSamples}
+                          windPoints={windPoints}
+                        />
+                      </div>
+                    ) : null}
 
                     <div className="rpgl__hazard-block">
                       <div className="rpgl__hazard-label" style={plotLabelInsetStyle}>

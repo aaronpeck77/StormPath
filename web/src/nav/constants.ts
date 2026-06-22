@@ -1,4 +1,4 @@
-import type { LngLat } from "./types";
+﻿import type { LngLat } from "./types";
 
 /** Meters per statute mile. */
 export const METERS_PER_MILE = 1_609.34;
@@ -73,16 +73,16 @@ export function isSignificantTrafficDelay(
 }
 
 /** Radar intensity that triggers a "heavy weather" alert (storm-core reflectivity). */
-export const RADAR_HEAVY_THRESHOLD = 0.85;
+export const RADAR_HEAVY_THRESHOLD = 0.55; // recalibrated (was 0.85)
 
 /** Radar intensity for a softer “trace showers” band on the progress strip / timeline. */
-export const RADAR_SOFT_THRESHOLD = 0.32;
+export const RADAR_SOFT_THRESHOLD = 0.16; // recalibrated (was 0.32)
 
 /** Radar at/above this value suggests slowing / preparing (solid moderate rain). */
-export const RADAR_REROUTE_THRESHOLD = 0.68;
+export const RADAR_REROUTE_THRESHOLD = 0.38; // recalibrated (was 0.68)
 
 /** Storm-core / very heavy echo — maps to serious severity. */
-export const RADAR_VERY_HEAVY_THRESHOLD = 0.93;
+export const RADAR_VERY_HEAVY_THRESHOLD = 0.75; // recalibrated (was 0.93)
 
 /** Drive-ahead banner: scan window ahead of the user (meters). */
 export const DRIVE_AHEAD_WINDOW_M = 5 * METERS_PER_MILE;

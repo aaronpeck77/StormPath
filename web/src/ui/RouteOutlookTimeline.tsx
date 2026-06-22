@@ -91,7 +91,6 @@ export function RouteOutlookTimeline({
     series.map((p) => ({ fraction: p.fraction, value: p.precipPct })),
     (v) => yPrecip(v, scale.precipMax)
   );
-
   const tempTicks = [scale.tempMax, Math.round((scale.tempMax + scale.tempMin) / 2), scale.tempMin];
   const precipTicks = [scale.precipMax, Math.round(scale.precipMax / 2), 0];
 

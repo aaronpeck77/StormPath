@@ -88,9 +88,11 @@ export function pointHourlyForecastSummary(hours: PointHourlyInterval[]): string
   const firstH = Math.max(0, Math.round(wet[0]!.offsetHours));
   const lastH = Math.round(wet[wet.length - 1]!.offsetHours);
   if (firstH <= 1 && lastH >= 18) return "Precip likely much of the next day";
-  if (firstH <= 1) return `Precip through about ${lastH}h from now`;
-  if (firstH === lastH) return `Precip possible around ${firstH}h from now`;
-  return `Precip possible ${firstH}–${lastH}h from now`;
+  // "through about Xh" was ambiguous — reword as "Rain continuing for ~Xh" or "Rain expected — clearing by Xh"
+  if (firstH <= 1 && lastH <= 2) return `Rain expected — clearing in ~${lastH}h`;
+  if (firstH <= 1) return `Rain expected — clearing around ${lastH}h from now`;
+  if (firstH === lastH) return `Rain possible around ${firstH}h from now`;
+  return `Rain possible ${firstH}–${lastH}h from now`;
 }
 
 export function minutePrecipBannerHint(forecast: MinutePrecipForecast): string {

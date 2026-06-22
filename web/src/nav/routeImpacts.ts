@@ -760,6 +760,14 @@ export function buildRouteImpacts(opts: BuildRouteImpactsOpts): RouteImpact[] {
   list.push(...nwsImpacts);
 
   const hasNwsBand = nwsImpacts.length > 0;
+  if (import.meta.env.DEV) {
+    const mosaicMax = radarMosaicSamples.length
+      ? Math.max(...radarMosaicSamples.map((s) => s.intensity))
+      : 0;
+    console.log(
+      `[buildRouteImpacts] samples=${radarMosaicSamples.length} mosaicMax=${mosaicMax.toFixed(3)} sliceRadar=${(slice?.radarIntensity ?? 0).toFixed(3)} effectiveMax=${radarIntensity.toFixed(3)} hasNws=${hasNwsBand}`
+    );
+  }
   const mosaicSegments = buildRadarMosaicSegmentImpacts({
     geometry,
     samples: radarMosaicSamples,

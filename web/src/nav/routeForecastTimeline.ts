@@ -1,4 +1,4 @@
-import type { WxSample } from "./routeChunkWeather";
+﻿import type { WxSample } from "./routeChunkWeather";
 import {
   RADAR_HEAVY_THRESHOLD,
   RADAR_REROUTE_THRESHOLD,
@@ -26,6 +26,8 @@ export type RouteOutlookStep = {
   /** e.g. "1h 21m" — synced with drive/plan ETA when not in headline */
   etaLabel: string | null;
   icon: string;
+  /** Wind gust speed at this waypoint (mph) — null when not yet fetched */
+  windGustMph?: number | null;
 };
 
 /** One sample on the along-route line graph (space + drive-time, not a fixed location). */
@@ -37,6 +39,8 @@ export type RouteOutlookPoint = {
   shortLabel?: string;
   etaLabel?: string | null;
   conditions?: string;
+  /** Wind gust speed at this point (mph) */
+  windGustMph?: number | null;
 };
 
 const SPLIT_ROUTE_FORECAST = /\s*(?:→|\u2192)\s*/;
@@ -172,18 +176,21 @@ export function mergeRouteOutlookSamples(...groups: WxSample[][]): WxSample[] {
       }
       const prevHasTemp = wxSampleHasTemp(prev);
       const nextHasTemp = wxSampleHasTemp(sample);
+      const mergedWind = sample.windGustMph ?? prev.windGustMph ?? null;
       if (nextHasTemp && !prevHasTemp) {
-        merged.set(key, sample);
+        merged.set(key, { ...sample, windGustMph: mergedWind });
       } else if (prevHasTemp && !nextHasTemp) {
         merged.set(key, {
           ...prev,
           precipHint: Math.max(prev.precipHint, sample.precipHint),
+          windGustMph: mergedWind,
         });
       } else {
         merged.set(key, {
           t: sample.t,
           precipHint: Math.max(prev.precipHint, sample.precipHint),
           headline: nextHasTemp || sample.headline.length > prev.headline.length ? sample.headline : prev.headline,
+          windGustMph: mergedWind,
         });
       }
     }
@@ -259,6 +266,7 @@ function stepsFromSamples(samples: WxSample[]): RouteOutlookStep[] {
       precipHint: precip.precipHint,
       etaLabel: null,
       icon: wxIcon(wx.conditions, precip.precipHint),
+      windGustMph: sample?.windGustMph ?? null,
     };
   });
 }
@@ -294,6 +302,7 @@ export function tomorrowForecastToWxSamples(
       t: Math.min(1, Math.max(0, iv.etaMinutes / planEtaMinutes)),
       precipHint: iv.precipProbability,
       headline: `${Math.round(iv.tempF)}°F ${conditions}${precipSuffix}`,
+      windGustMph: iv.windGustMph > 0 ? Math.round(iv.windGustMph) : null,
     };
   });
 }
@@ -321,6 +330,7 @@ export function buildRouteOutlookFromTomorrowForecast(
       precipHint,
       etaLabel: null,
       icon: wxIcon(conditions, precipHint),
+      windGustMph: iv.windGustMph != null ? Math.round(iv.windGustMph) : null,
     };
   });
 }
@@ -354,6 +364,7 @@ export function buildRouteOutlookTimeline(
           ...step,
           precipPct: precip.precipPct,
           precipHint: precip.precipHint,
+          windGustMph: step.windGustMph ?? sample.windGustMph ?? null,
           icon: wxIcon(step.conditions, precip.precipHint),
         };
       });
@@ -986,6 +997,7 @@ export function mergeRouteOutlookSteps(...groups: RouteOutlookStep[][]): RouteOu
         conditions: pickPrecip.conditions || prev.conditions,
         precipPct: pct > 0 ? pct : null,
         precipHint: hint,
+        windGustMph: step.windGustMph ?? prev.windGustMph ?? null,
         etaLabel: prev.etaLabel ?? step.etaLabel,
         alongMeters: prev.alongMeters ?? step.alongMeters,
         icon: wxIcon(pickPrecip.conditions || prev.conditions, hint),
@@ -1013,6 +1025,9 @@ function mergeCloseOutlookPoints(points: RouteOutlookPoint[], gap = 0.035): Rout
           prev.tempF != null ? Math.round((prev.tempF + p.tempF) / 2) : p.tempF;
       }
       prev.precipPct = Math.max(prev.precipPct, p.precipPct);
+      if (p.windGustMph != null) {
+        prev.windGustMph = prev.windGustMph != null ? Math.round((prev.windGustMph + p.windGustMph) / 2) : p.windGustMph;
+      }
       if (!prev.shortLabel && p.shortLabel) prev.shortLabel = p.shortLabel;
       if (!prev.etaLabel && p.etaLabel) prev.etaLabel = p.etaLabel;
       if (!prev.conditions && p.conditions) prev.conditions = p.conditions;
@@ -1046,7 +1061,12 @@ function interpolateOutlookSeries(anchors: RouteOutlookPoint[], slices = 12): Ro
       } else if (a.tempF != null) tempF = a.tempF;
       else if (b.tempF != null) tempF = b.tempF;
       const precipPct = Math.round(a.precipPct + (b.precipPct - a.precipPct) * t);
-      out.push({ fraction, tempF, precipPct });
+      let windGustMph: number | null = null;
+      if (a.windGustMph != null && b.windGustMph != null) {
+        windGustMph = Math.round(a.windGustMph + (b.windGustMph - a.windGustMph) * t);
+      } else if (a.windGustMph != null) windGustMph = a.windGustMph;
+      else if (b.windGustMph != null) windGustMph = b.windGustMph;
+      out.push({ fraction, tempF, precipPct, windGustMph });
     }
   }
   return mergeCloseOutlookPoints(out, 0.02);
@@ -1074,6 +1094,7 @@ export function buildRouteOutlookSeries(
       fraction: step.fraction,
       tempF,
       precipPct: precipPctFromStep(step),
+      windGustMph: step.windGustMph ?? null,
       shortLabel: step.shortLabel,
       etaLabel: step.etaLabel,
       conditions: step.conditions,
@@ -1092,6 +1113,7 @@ export function buildRouteOutlookSeries(
         fraction,
         tempF: wx.tempF,
         precipPct,
+        windGustMph: sample.windGustMph ?? null,
         conditions: wx.conditions,
       });
     }
@@ -1121,13 +1143,16 @@ export type RouteOutlookChartScale = {
   tempMin: number;
   tempMax: number;
   precipMax: number;
+  windMax: number;
 };
 
 export function outlookChartScale(points: RouteOutlookPoint[]): RouteOutlookChartScale {
   const temps = points.map((p) => p.tempF).filter((t): t is number => t != null && Number.isFinite(t));
   const precipMax = Math.max(20, ...points.map((p) => p.precipPct), 0);
+  const windGusts = points.map((p) => p.windGustMph).filter((g): g is number => g != null && g > 0);
+  const windMax = windGusts.length ? Math.max(30, Math.ceil(Math.max(...windGusts) / 10) * 10) : 0;
   if (!temps.length) {
-    return { tempMin: 50, tempMax: 80, precipMax };
+    return { tempMin: 50, tempMax: 80, precipMax, windMax };
   }
   const lo = Math.min(...temps);
   const hi = Math.max(...temps);
@@ -1136,5 +1161,6 @@ export function outlookChartScale(points: RouteOutlookPoint[]): RouteOutlookChar
     tempMin: lo - pad,
     tempMax: hi + pad,
     precipMax: Math.min(100, Math.ceil(precipMax / 10) * 10),
+    windMax,
   };
 }

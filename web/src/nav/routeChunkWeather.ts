@@ -1,7 +1,13 @@
 import { chordFractionToAlongMeters } from "./routeGeometry";
 import type { LngLat } from "./types";
 
-export type WxSample = { t: number; headline: string; precipHint: number };
+export type WxSample = {
+  t: number;
+  headline: string;
+  precipHint: number;
+  /** Wind gust speed at this route position (mph). Null when not provided. */
+  windGustMph?: number | null;
+};
 
 /** Strip redundant cloud % from OpenWeather one-liners for glanceable UI. */
 export function compactWxHeadline(headline: string): string {

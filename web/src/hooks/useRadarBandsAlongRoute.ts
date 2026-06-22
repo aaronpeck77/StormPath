@@ -68,6 +68,9 @@ export function useRadarBandsAlongRoute(
   const etaKey = planEtaMinutes != null && planEtaMinutes > 5 ? Math.round(planEtaMinutes / 5) : 0;
 
   useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.log(`[radarRoute] enabled=${enabled} geomPts=${geometry?.length ?? 0} eta=${planEtaMinutes ?? "none"}`);
+    }
     if (!enabled || !geometry || geometry.length < 2) {
       setState({ samples: [], updatedAt: null });
       return;
@@ -95,6 +98,12 @@ export function useRadarBandsAlongRoute(
           frame: nearestFrameByTime(pack.frames, targetMs),
         };
       });
+      if (import.meta.env.DEV) {
+        const oldest = Math.min(...pack.frames.map((f) => f.time));
+        const newest = Math.max(...pack.frames.map((f) => f.time));
+        const etaTargetMin = Math.round(((planEtaMinutes ?? 0) * 60_000) / 60_000);
+        console.log(`[radarRoute] frames=${pack.frames.length} oldest=${new Date(oldest*1000).toLocaleTimeString()} newest=${new Date(newest*1000).toLocaleTimeString()} useEta=${useEta} etaMin=${etaTargetMin}`);
+      }
 
       // Group by (framePath + tileKey) so any tile used by multiple samples is fetched once.
       type SampleRef = { t: number; px: number; py: number };
@@ -146,6 +155,10 @@ export function useRadarBandsAlongRoute(
 
       if (cancelled) return;
       if (lastKeyRef.current !== geomKey) return;
+      if (import.meta.env.DEV) {
+        const maxI = out.length ? Math.max(...out.map((s) => s.intensity)) : 0;
+        console.log(`[radarRoute] samples=${out.length} maxIntensity=${maxI.toFixed(3)}`);
+      }
       setState({ samples: out.sort((a, b) => a.t - b.t), updatedAt: Date.now() });
     };
 

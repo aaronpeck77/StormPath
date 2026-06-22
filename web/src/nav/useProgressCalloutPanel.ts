@@ -58,6 +58,8 @@ export type ProgressCalloutPanel = {
   segments: RouteChunkCalloutItem[];
   userAlongT: number;
   stripTint: string;
+  /** Wind gust points sampled directly from TIO forecast intervals (bypasses step merge). */
+  windPoints: { t: number; mph: number }[];
 };
 
 export type UseProgressCalloutPanelDeps = {
@@ -161,6 +163,18 @@ export function useProgressCalloutPanel(
           : routePickSlotHex(routeSlotIndexFor(guidanceRoute.id, orderedRouteIds))
         : "#94a3b8";
 
+    /* Wind gust points sampled directly from TIO intervals — bypasses the step-merge chain. */
+    const planEtaForWind = guidanceRoute?.baseEtaMinutes ?? null;
+    const windPoints: { t: number; mph: number }[] =
+      tioRouteForecast && planEtaForWind && planEtaForWind > 0
+        ? tioRouteForecast.intervals
+            .filter((iv) => iv.windGustMph > 0)
+            .map((iv) => ({
+              t: Math.min(1, Math.max(0, iv.etaMinutes / planEtaForWind)),
+              mph: Math.round(iv.windGustMph),
+            }))
+        : [];
+
     if (skipHeavyProgressPanel) {
       return {
         routeWide: [],
@@ -169,6 +183,7 @@ export function useProgressCalloutPanel(
         segments: [],
         userAlongT: 0,
         stripTint,
+        windPoints,
       };
     }
 
@@ -180,6 +195,7 @@ export function useProgressCalloutPanel(
         segments: [],
         userAlongT: 0,
         stripTint,
+        windPoints,
       };
     }
     const totalM = polylineLengthMeters(g);
@@ -191,6 +207,7 @@ export function useProgressCalloutPanel(
         segments: [],
         userAlongT: 0,
         stripTint,
+        windPoints,
       };
     }
     const userAlongT =
@@ -307,6 +324,7 @@ export function useProgressCalloutPanel(
         segments: routeAheadSegments.sort((a, b) => b.alongT - a.alongT),
         userAlongT,
         stripTint,
+        windPoints,
       };
     }
 
@@ -407,6 +425,7 @@ export function useProgressCalloutPanel(
         segments: mergedSegments,
         userAlongT,
         stripTint,
+        windPoints,
       };
     }
 
@@ -451,6 +470,7 @@ export function useProgressCalloutPanel(
       ],
       userAlongT,
       stripTint,
+      windPoints,
     };
   }, [
     navigationStarted,

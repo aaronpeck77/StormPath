@@ -89,6 +89,178 @@
   transform: translateX(-50%);
 }
 
+/* ── Radar strip (strata between climate graph and NWS/Road bars) ──────────── */
+.rrs {
+  margin: 0 0 4px;
+  padding: 0 2px;
+}
+
+.rrs__label-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.rrs__label {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  color: rgba(56, 189, 248, 0.85);
+  text-transform: uppercase;
+}
+
+.rrs__empty {
+  font-size: 0.58rem;
+  color: rgba(148, 163, 184, 0.55);
+  font-style: italic;
+}
+
+.rrs__chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 40px;
+}
+
+.rrs__svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.rrs__baseline {
+  stroke: rgba(148, 163, 184, 0.15);
+  stroke-width: 1;
+}
+
+.rrs__you-flag {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 0.44rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* ─── RouteRadarWindStrip ─── */
+.rrws {
+  margin: 0 0 4px;
+  padding: 0 2px;
+}
+
+.rrws__label-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 3px;
+  /* indent past the RADAR side label, right-align against chart right pad */
+  padding-left: 34px;
+  padding-right: 36px;
+  justify-content: flex-end;
+}
+
+.rrws__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.rrws__swatch {
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.rrws__swatch--radar {
+  width: 14px;
+  height: 7px;
+  border-radius: 2px;
+  background: rgba(56, 189, 248, 0.55);
+  border: 1px solid rgba(56, 189, 248, 0.7);
+}
+
+.rrws__swatch--wind {
+  width: 18px;
+  height: 2px;
+  /* dashed amber line */
+  background: repeating-linear-gradient(
+    to right,
+    #f59e0b 0px,
+    #f59e0b 5px,
+    transparent 5px,
+    transparent 8px
+  );
+}
+
+.rrws__label {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.rrws__label--radar {
+  color: rgba(56, 189, 248, 0.9);
+}
+
+.rrws__label--wind {
+  color: rgba(245, 158, 11, 0.9);
+}
+
+.rrws__empty {
+  font-size: 0.58rem;
+  color: rgba(148, 163, 184, 0.55);
+  font-style: italic;
+}
+
+.rrws__chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 60px;
+}
+
+.rrws__svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.rrws__baseline {
+  stroke: rgba(148, 163, 184, 0.15);
+  stroke-width: 1;
+}
+
+.rrws__axis-label {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: rgba(245, 158, 11, 0.75);
+  line-height: 1;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* "Radar" label sits in the 34px left-pad area, vertically centred */
+.rrws__radar-side-label {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  text-align: center;
+  font-size: 0.52rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(56, 189, 248, 0.85);
+  line-height: 1;
+  pointer-events: none;
+}
+
 /* Track row */
 .rhtz__row {
   display: flex;
@@ -3913,6 +4085,26 @@
   background: #38bdf8;
 }
 
+.rotl__legend-item--wind .rotl__legend-swatch {
+  background: #f59e0b;
+}
+
+/* In the synced view, make swatches look like short line strokes */
+.rpgl__sync-outlook .rotl__legend-swatch {
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.rotl__legend-axis-hint {
+  margin-left: auto;
+  font-size: 0.5rem;
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.6);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
 .rotl__chart-wrap {
   position: relative;
   width: 100%;
@@ -3954,6 +4146,10 @@
   color: rgba(56, 189, 248, 0.95);
   text-align: left;
   width: 26px;
+}
+
+.rotl__axis-label-html--wind {
+  color: rgba(245, 158, 11, 0.9);
 }
 
 .rotl__marker-html {
@@ -4025,6 +4221,12 @@
 .rotl__line--precip {
   stroke: #38bdf8;
   stroke-width: 2;
+}
+
+.rotl__line--wind {
+  stroke: #f59e0b;
+  stroke-width: 2;
+  stroke-dasharray: 5 3;
 }
 
 .rotl__dot--temp {
@@ -4420,8 +4622,20 @@
 
 /* Glance panel: chart only — driver line aligns to graph top */
 .rpgl__sync-outlook .rotl--synced .rotl__header,
-.rpgl__sync-outlook .rotl--synced .rotl__subtitle,
+.rpgl__sync-outlook .rotl--synced .rotl__subtitle {
+  display: none;
+}
+
+/* Legend IS shown in the synced/Route-Info view — compact, right-aligned over graph */
 .rpgl__sync-outlook .rotl--synced .rotl__legend {
+  margin-bottom: 3px;
+  gap: 10px;
+  justify-content: flex-end !important;
+  padding-right: 36px; /* inset matches chart right pad */
+}
+
+/* No precip dots in the synced strip — temp dots stay */
+.rpgl__sync-outlook .rotl__dot-html--precip {
   display: none;
 }
 
@@ -4493,12 +4707,27 @@
   stroke-width: 2.3;
 }
 
+.rpgl .rotl--synced .rotl__line--wind {
+  stroke: #f59e0b;
+  stroke-width: 2.1;
+  stroke-dasharray: 5 3;
+}
+
 .rpgl .rotl--synced .rotl__precip-fill {
   fill: rgba(56, 189, 248, 0.2);
 }
 
 .rpgl__sync-outlook .rotl--synced .rotl__header .rotl__axis-hint {
   display: none;
+}
+
+.rpgl__radar-strata {
+  margin: 4px 0 2px;
+  padding: 0;
+}
+
+.rpgl__radar-strata .rrws {
+  padding: 0;
 }
 
 .rpgl__hazard-block {

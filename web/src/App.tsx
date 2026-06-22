@@ -1886,8 +1886,11 @@ export default function App() {
         settingWeatherHintsEnabled ||
         progressCalloutsOpen) &&
       (navigationStarted ||
+        // For ultra-long routes (>300 mi) only sample when explicitly requested.
+        // For long routes (100–300 mi) also enable when Storm mode is on — the user
+        // explicitly wants storm data and seeing no Radar bar is confusing.
         (!ultraLongPlannedRoute &&
-          !isLongTripRoute(routeLenForCorridorLean)) ||
+          (!isLongTripRoute(routeLenForCorridorLean) || settingStormEnabled)) ||
         radarMapOverlayOn ||
         progressCalloutsOpen)
   );
@@ -3997,6 +4000,8 @@ export default function App() {
                       routeWide={activeProgressCalloutPanel.routeWide}
                       outlookSteps={activeProgressCalloutPanel.outlookTimeline}
                       outlookSamples={activeProgressCalloutPanel.outlookSamples}
+                      radarSamples={radarMosaicAlongRoute.samples}
+                      windPoints={activeProgressCalloutPanel.windPoints}
                       fallbackSegments={activeProgressCalloutPanel.segments.filter(
                         (s) => !s.key.startsWith("route-ahead-")
                       )}
