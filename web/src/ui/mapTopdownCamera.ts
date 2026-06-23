@@ -4,13 +4,12 @@ import type { MutableRefObject } from "react";
 /** Top-down map view: keep the puck at the visual center; map pans to follow GPS. */
 export const TOPDOWN_PUCK_OFFSET_PX: [number, number] = [0, 0];
 /**
- * Map (Mp) while navigating — zoomed out enough to see the next 2-3 turns
- * ahead while still showing street detail.  Less zoomed-in than Dr (which is
- * tilted 3D at ~zoom 16), but tighter than Rt (whole-route overview).
+ * Map (Mp) while navigating — wide enough for several blocks / upcoming turns
+ * without matching Dr’s street-level 3D zoom. Tighter than Rt (whole-route overview).
  */
-export const TOPDOWN_NAV_STREET_ZOOM = 15;
+export const TOPDOWN_NAV_STREET_ZOOM = 13.5;
 /** Minimum zoom enforced in topdown nav mode; below this the view snaps back to TOPDOWN_NAV_STREET_ZOOM. */
-export const TOPDOWN_NAV_MIN_ZOOM = 13.75;
+export const TOPDOWN_NAV_MIN_ZOOM = 12.5;
 
 /** Route (Rt): start with regional / state context; user zooms or taps My location for street level. */
 export const ROUTE_VIEW_REGIONAL_ZOOM = 6.95;

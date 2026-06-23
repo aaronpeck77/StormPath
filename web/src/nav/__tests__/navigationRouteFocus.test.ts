@@ -7,7 +7,20 @@ import {
 describe("navigationRouteFocus", () => {
   const ordered = ["r-b", "r-a", "r-c"];
 
-  it("uses preview leg for map focus in route view while guidance stays locked", () => {
+  it("uses preview leg for map focus in route view while planning", () => {
+    const { guidanceRouteId, lineFocusId } = resolveNavigationRouteIds({
+      navigationStarted: false,
+      lockedRouteId: "r-b",
+      viewMode: "route",
+      previewLegIndex: 2,
+      orderedRouteIds: ordered,
+      primaryRouteId: "r-a",
+    });
+    expect(guidanceRouteId).toBe("r-c");
+    expect(lineFocusId).toBe("r-c");
+  });
+
+  it("uses locked route for focus and guidance in route view while navigating", () => {
     const { guidanceRouteId, lineFocusId } = resolveNavigationRouteIds({
       navigationStarted: true,
       lockedRouteId: "r-b",
@@ -17,7 +30,7 @@ describe("navigationRouteFocus", () => {
       primaryRouteId: "r-a",
     });
     expect(guidanceRouteId).toBe("r-b");
-    expect(lineFocusId).toBe("r-c");
+    expect(lineFocusId).toBe("r-b");
   });
 
   it("uses locked route for both focus and guidance in drive view", () => {
@@ -33,7 +46,7 @@ describe("navigationRouteFocus", () => {
     expect(lineFocusId).toBe("r-b");
   });
 
-  it("uses temporary guidance in drive view without changing map preview lock", () => {
+  it("uses temporary guidance in drive view during auto rejoin", () => {
     const { guidanceRouteId, lineFocusId } = resolveNavigationRouteIds({
       navigationStarted: true,
       lockedRouteId: "r-b",
@@ -47,7 +60,7 @@ describe("navigationRouteFocus", () => {
     expect(lineFocusId).toBe("r-c");
   });
 
-  it("ignores temporary guidance in route compare view", () => {
+  it("ignores temporary guidance in route view while navigating", () => {
     const { guidanceRouteId, lineFocusId } = resolveNavigationRouteIds({
       navigationStarted: true,
       lockedRouteId: "r-b",
@@ -58,7 +71,7 @@ describe("navigationRouteFocus", () => {
       primaryRouteId: "r-a",
     });
     expect(guidanceRouteId).toBe("r-b");
-    expect(lineFocusId).toBe("r-c");
+    expect(lineFocusId).toBe("r-b");
   });
 
   it("falls back to slot order when no lock is set", () => {

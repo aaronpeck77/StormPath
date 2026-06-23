@@ -82,6 +82,7 @@ import {
   isNarrowPhoneViewport,
   mapStyleReadyForCamera,
   minPlanningRouteZoomFloor,
+  maxRouteOverviewZoomDuringNav,
   offRouteAlternatesFitKey,
   planningRoutesFitKey,
   routeFitMaxZoomCeiling,
@@ -100,6 +101,12 @@ import {
   sceneLightForPhase,
   buildingColorForPhase,
 } from "./mapBasemapStyle";
+import {
+  navigationCameraShouldFitFullRoute,
+  navigationCameraShouldFollowPuckTopdown,
+  navigationRouteOverviewSnapKey,
+  navigationTopdownZoomForViewChange,
+} from "./navigationCamera";
 import {
   TOPDOWN_PUCK_OFFSET_PX,
   TOPDOWN_NAV_STREET_ZOOM,
@@ -2390,7 +2397,9 @@ function DriveMapInner({
     if (routes.length === 0) return;
 
     let enteredRouteView = false;
+    let enteredTopdownNav = false;
     if (prevPlanningViewModeRef.current !== viewMode) {
+      const prevVm = prevPlanningViewModeRef.current;
       prevPlanningViewModeRef.current = viewMode;
       userExploringRef.current = false;
       if (exploreTimerRef.current) {
@@ -2403,6 +2412,13 @@ function DriveMapInner({
         topdownSnapKeyRef.current = "";
         prevTopdownRef.current = false;
         lastForcedPlanningFitTriggerRef.current = null;
+      }
+      if (
+        navigationCameraShouldFollowPuckTopdown(viewMode, navigationStarted) &&
+        prevVm === "route"
+      ) {
+        enteredTopdownNav = true;
+        topdownSnapKeyRef.current = "";
       }
     }
 
@@ -2427,7 +2443,8 @@ function DriveMapInner({
     prevPlanningRouteCountRef.current = routes.length;
     const routesJustLoaded = prevCount === 0 && routes.length > 0;
 
-    const forcePlanningFit = !navigationStarted || viewMode === "route";
+    const forcePlanningFit =
+      !navigationStarted || navigationCameraShouldFitFullRoute(viewMode, navigationStarted);
     /* Any App-driven refit (reroute, slot change, etc.) must win over stale "user exploring" from pan/zoom. */
     if (fitTrigger !== lastForcedPlanningFitTriggerRef.current || routesJustLoaded) {
       lastForcedPlanningFitTriggerRef.current = fitTrigger;
@@ -2479,17 +2496,26 @@ function DriveMapInner({
     };
 
     const verifyPlanningZoom = (attempt: number) => {
-      if (cancelled || navigationStartedRef.current || routes.length === 0) return;
+      if (cancelled || routes.length === 0) return;
+      const vm = viewModeRef.current;
+      if (navigationStartedRef.current && vm !== "route") return;
       if (viewModeRef.current !== "route" && viewModeRef.current !== "topdown") return;
-      if (isUltraLongTripRoute(sessionRouteLengthMRef.current)) return;
       let zoom = 0;
       try {
         zoom = map.getZoom();
       } catch {
         return;
       }
-      const minPlanningZoom = minPlanningRouteZoomFloor(sessionRouteLengthMRef.current);
-      if (zoom >= minPlanningZoom) return;
+      const routeLen = sessionRouteLengthMRef.current;
+      const routeOverviewNav = navigationStartedRef.current && vm === "route";
+      if (routeOverviewNav) {
+        const maxOverviewZoom = maxRouteOverviewZoomDuringNav(routeLen);
+        if (zoom <= maxOverviewZoom + 0.15) return;
+      } else {
+        if (isUltraLongTripRoute(routeLen)) return;
+        const minPlanningZoom = minPlanningRouteZoomFloor(routeLen);
+        if (zoom >= minPlanningZoom) return;
+      }
       if (attempt >= 5) return;
       if (!executePlanningFit()) {
         planningFitRetryTimerRef.current = window.setTimeout(
@@ -2514,7 +2540,9 @@ function DriveMapInner({
 
     const schedulePlanningRouteFit = () => {
       if (executePlanningFit()) {
-        if (!navigationStartedRef.current) {
+        const verifyAfterFit =
+          !navigationStartedRef.current || viewModeRef.current === "route";
+        if (verifyAfterFit) {
           planningFitVerifyTimerRef.current = window.setTimeout(() => verifyPlanningZoom(0), 520);
         }
         return;
@@ -2527,8 +2555,12 @@ function DriveMapInner({
           map.once("idle", retryWhenReady);
           map.once("style.load", retryWhenReady);
           planningFitRetryTimerRef.current = window.setTimeout(retryWhenReady, 160);
-        } else if (!navigationStartedRef.current) {
-          planningFitVerifyTimerRef.current = window.setTimeout(() => verifyPlanningZoom(0), 520);
+        } else {
+          const verifyAfterFit =
+            !navigationStartedRef.current || viewModeRef.current === "route";
+          if (verifyAfterFit) {
+            planningFitVerifyTimerRef.current = window.setTimeout(() => verifyPlanningZoom(0), 520);
+          }
         }
       });
     };
@@ -2548,7 +2580,9 @@ function DriveMapInner({
       const u = userLngLatRef.current;
       if (!u) return;
       const zoom = navigationStarted
-        ? coerceTopdownNavStreetZoom(map, topdownZoomRef)
+        ? enteredTopdownNav
+          ? navigationTopdownZoomForViewChange(map, topdownZoomRef, true, true)
+          : coerceTopdownNavStreetZoom(map, topdownZoomRef)
         : resolveTopdownLocalZoom(topdownZoomRef, false);
       if (pendingFlatten) {
         map.off("moveend", pendingFlatten);
@@ -2654,7 +2688,13 @@ function DriveMapInner({
         else doTopdownLocalFit();
       }
     } else if (viewMode === "route") {
-      const routeOverviewSnapKey = `${viewMode}|${fitTrigger}|${mapResumeTick}|${lineFocusId}|${routesPlanningFitKey}`;
+      const routeOverviewSnapKey = navigationRouteOverviewSnapKey(
+        viewMode,
+        fitTrigger,
+        mapResumeTick,
+        lineFocusId,
+        routesPlanningFitKey
+      );
       if (enteredRouteView || navRouteSnapKeyRef.current !== routeOverviewSnapKey) {
         navRouteSnapKeyRef.current = routeOverviewSnapKey;
         forceRouteOverviewFit();

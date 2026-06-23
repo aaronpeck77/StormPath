@@ -415,5 +415,6 @@ export function impactToTimelineItem(imp: RouteImpact): TimelineItem {
     endMeters: imp.endMeters,
     detailLine: impactDetailLine(imp),
     crossesRoute: true,
+    stripMuted: track === "forecast",
   };
 }

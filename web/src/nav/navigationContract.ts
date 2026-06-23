@@ -1,9 +1,8 @@
 /**
  * StormPath navigation contract — single source of truth for route-change rules.
  *
- * Goal: simple turn-by-turn on the route the driver chose. No silent swaps like
- * mainstream nav apps. When the driver leaves that line, we detect it and only
- * change guidance after an explicit review + confirm.
+ * Nav v1: one locked route after Go. Off-route recovery is automatic (local rejoin, then
+ * full replan fallback). No drive-time route compare or manual rejoin UI.
  */
 
 export type NavigationPhase = "planning" | "navigating";
@@ -12,7 +11,8 @@ export type NavigationPhase = "planning" | "navigating";
 export type LockedRouteChangeReason =
   | "go_lock" /** Driver pressed Go — locks leg id; may snap geometry to roads once. */
   | "go_geometry_snap" /** One-time road-following refresh of the locked leg after Go. */
-  | "driver_promote" /** Driver confirmed a different leg (compare sheet, promote, bypass confirm). */
+  | "off_route_replan_fallback" /** Automatic GPS→destination replan when local rejoin fails. */
+  | "driver_promote" /** Driver confirmed a different leg (compare sheet, promote). */
   | "driver_stop" /** Stop / clear trip. */
   | "replan_destination" /** New destination or full replan before/during nav with preserve flag off. */
   | "forbidden";
@@ -26,12 +26,12 @@ export type RouteCompareIntent =
  * Invariants while `navigationStarted`:
  *
  * 1. `lockedRouteId` never changes except via `driver_promote` or `driver_stop`.
- * 2. Locked leg geometry never changes except `go_geometry_snap` (once after Go).
- * 3. B/C alternate legs may refresh in Route/Map view only — never replaces locked guidance in Drive.
- * 4. Off-route: voice alert + optional auto-rejoin overlay (temporary B/C leg back to locked
- *    route — locked route id unchanged). Full GPS→destination reroute requires compare + confirm.
- * 5. No silent full replan to destination without compare + confirm.
- * 6. Temporary rejoin overlay in Drive view may activate automatically when auto-rejoin is on.
+ * 2. Locked leg geometry may change via `go_geometry_snap` (once after Go) or
+ *    `off_route_replan_fallback` (automatic when local rejoin fails).
+ * 3. B/C alternate legs may refresh in Route/Map view only — never replace locked guidance in Drive.
+ * 4. Off-route: automatic local rejoin overlay in Drive, then automatic full replan if rejoin fails.
+ * 5. No drive-time route compare or manual rejoin shuffle (planning compare remains).
+ * 6. Traffic bypass: offer → compare → explicit confirm only (`trafficBypassFlow.ts`).
  */
 export function mayChangeLockedRouteId(
   phase: NavigationPhase,
@@ -55,6 +55,7 @@ export function mayMutateLockedRouteGeometry(
   if (phase === "planning") return reason !== "forbidden";
   switch (reason) {
     case "go_geometry_snap":
+    case "off_route_replan_fallback":
     case "driver_promote":
     case "driver_stop":
     case "replan_destination":
@@ -69,12 +70,12 @@ export function mayRefreshAlternateLegsOnly(phase: NavigationPhase, viewMode: st
   return phase === "navigating" && (viewMode === "route" || viewMode === "topdown");
 }
 
-/** Full destination reroute always needs compare + confirm. Auto rejoin is separate. */
-export function offRouteFullRerouteRequiresExplicitCompare(): true {
-  return true;
+/** Nav v1: full replan during drive is automatic fallback only — no compare sheet. */
+export function offRouteFullRerouteRequiresExplicitCompare(): false {
+  return false;
 }
 
 /** Auto rejoin may follow a temporary overlay leg without changing the locked route id. */
-export function mayAutoRejoinOverlay(phase: NavigationPhase, autoRejoinEnabled: boolean): boolean {
-  return phase === "navigating" && autoRejoinEnabled;
+export function mayAutoRejoinOverlay(phase: NavigationPhase): boolean {
+  return phase === "navigating";
 }

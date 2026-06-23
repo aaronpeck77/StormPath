@@ -266,12 +266,16 @@ function routeFromDirectionsApi(
   r: NonNullable<DirectionsResponse["routes"]>[0],
   id: string,
   role: NavRoute["role"],
-  label: string
+  label: string,
+  opts?: { skipGeometryNormalize?: boolean }
 ): NavRoute | null {
   const coords = r.geometry?.coordinates;
   if (!coords?.length || r.geometry?.type !== "LineString") return null;
   const overview = coords.map(([lng, lat]) => [lng, lat] as LngLat);
-  const geometry = normalizeStoredRouteGeometry(geometryFromDirectionsSteps(r) ?? overview);
+  const rawGeometry = geometryFromDirectionsSteps(r) ?? overview;
+  const geometry = opts?.skipGeometryNormalize
+    ? rawGeometry
+    : normalizeStoredRouteGeometry(rawGeometry);
   const durSec = r.duration;
   if (durSec == null || !Number.isFinite(durSec)) return null;
 
@@ -645,7 +649,9 @@ export async function collectMapboxRouteVariants(
     const sorted = sortRoutesByDurationAsc(data.routes ?? []);
     const raw = sorted[0];
     if (!raw) return [];
-    const nav = routeFromDirectionsApi(raw, "r-a", "fastest", "Main");
+    const nav = routeFromDirectionsApi(raw, "r-a", "fastest", "Main", {
+      skipGeometryNormalize: true,
+    });
     return nav ? [nav] : [];
   }
 

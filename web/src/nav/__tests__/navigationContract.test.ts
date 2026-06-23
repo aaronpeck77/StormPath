@@ -4,6 +4,7 @@ import {
   mayMutateLockedRouteGeometry,
   mayRefreshAlternateLegsOnly,
   mayAutoRejoinOverlay,
+  offRouteFullRerouteRequiresExplicitCompare,
 } from "../navigationContract";
 
 describe("navigationContract", () => {
@@ -14,8 +15,9 @@ describe("navigationContract", () => {
     expect(mayChangeLockedRouteId("planning", "go_lock")).toBe(true);
   });
 
-  it("allows one-time geometry snap after Go only", () => {
+  it("allows geometry snap after Go and automatic off-route replan fallback", () => {
     expect(mayMutateLockedRouteGeometry("navigating", "go_geometry_snap")).toBe(true);
+    expect(mayMutateLockedRouteGeometry("navigating", "off_route_replan_fallback")).toBe(true);
     expect(mayMutateLockedRouteGeometry("navigating", "go_lock")).toBe(false);
   });
 
@@ -26,9 +28,12 @@ describe("navigationContract", () => {
     expect(mayRefreshAlternateLegsOnly("planning", "route")).toBe(false);
   });
 
-  it("allows auto rejoin overlay only while navigating with setting on", () => {
-    expect(mayAutoRejoinOverlay("navigating", true)).toBe(true);
-    expect(mayAutoRejoinOverlay("navigating", false)).toBe(false);
-    expect(mayAutoRejoinOverlay("planning", true)).toBe(false);
+  it("allows auto rejoin overlay while navigating", () => {
+    expect(mayAutoRejoinOverlay("navigating")).toBe(true);
+    expect(mayAutoRejoinOverlay("planning")).toBe(false);
+  });
+
+  it("does not require compare for automatic off-route full replan in nav v1", () => {
+    expect(offRouteFullRerouteRequiresExplicitCompare()).toBe(false);
   });
 });

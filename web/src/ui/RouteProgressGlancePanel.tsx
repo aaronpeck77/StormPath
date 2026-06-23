@@ -106,12 +106,17 @@ const HAZARD_RAIL_META: Record<
 const HAZARD_RAIL_ORDER: TimelineItem["track"][] = ["nws", "road"]; // radar → strata, wind → graph
 
 function HazardRailRow({ track, bands }: { track: TimelineItem["track"]; bands: HazardBandVisual[] }) {
-  if (!bands.length) return null;
   const meta = HAZARD_RAIL_META[track];
+  const emptyHint =
+    track === "nws" ? "No NWS on route"
+    : track === "road" ? "No road hazards"
+    : "Clear";
   return (
     <div className="rpgl__hazard-row">
       <span className={`rpgl__hazard-sublabel ${meta.sublabelClass}`}>{meta.label}</span>
-      <div className={`rpgl__hazard-rail ${meta.railClass}`}>
+      <div
+        className={`rpgl__hazard-rail ${meta.railClass}${bands.length ? "" : " rpgl__hazard-rail--empty"}`}
+      >
         {bands.map((band) => (
           <span
             key={band.id}
@@ -124,6 +129,9 @@ function HazardRailRow({ track, bands }: { track: TimelineItem["track"]; bands: 
             title={band.label}
           />
         ))}
+        {!bands.length ? (
+          <span className="rpgl__hazard-empty">{emptyHint}</span>
+        ) : null}
       </div>
     </div>
   );

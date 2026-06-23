@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { NavRoute } from "../../nav/types";
-import { routeFitZoomBias, routeViewAxis } from "../mapFitLogic";
+import {
+  maxRouteOverviewZoomDuringNav,
+  routeFitZoomBias,
+  routeViewAxis,
+} from "../mapFitLogic";
 import { smoothDriveBearingDeg } from "../mapDriveCamera";
+import { EXTREME_TRIP_ROUTE_M, LONG_TRIP_ROUTE_M, ULTRA_LONG_TRIP_ROUTE_M } from "../../utils/dataSaver";
 
 function route(id: string, coords: [number, number][]): NavRoute {
   return {
@@ -29,6 +34,12 @@ describe("mapFitLogic", () => {
       [-86.77, 36.17],
     ]);
     expect(routeFitZoomBias([short], "s")).toBeGreaterThan(1.5);
+  });
+
+  it("caps Rt overview zoom during long nav trips", () => {
+    expect(maxRouteOverviewZoomDuringNav(LONG_TRIP_ROUTE_M)).toBeLessThan(10);
+    expect(maxRouteOverviewZoomDuringNav(ULTRA_LONG_TRIP_ROUTE_M)).toBeLessThan(7.5);
+    expect(maxRouteOverviewZoomDuringNav(EXTREME_TRIP_ROUTE_M)).toBeLessThan(6);
   });
 });
 

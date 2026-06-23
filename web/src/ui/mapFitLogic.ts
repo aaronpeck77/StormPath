@@ -1,4 +1,4 @@
-import { isUltraLongTripRoute } from "../utils/dataSaver";
+import { isExtremeTripRoute, isLongTripRoute, isUltraLongTripRoute } from "../utils/dataSaver";
 import { haversineMeters } from "../nav/routeGeometry";
 import type { LngLat, NavRoute } from "../nav/types";
 import { polylineBbox } from "../weatherAlerts/geometryOverlap";
@@ -188,6 +188,14 @@ export function minPlanningRouteZoomFloor(routeLengthM: number): number {
   if (isUltraLongTripRoute(routeLengthM)) return 2.8;
   if (routeLengthM >= 100_000) return 5.5;
   return 7.5;
+}
+
+/** Rt overview while navigating — if zoom is above this, the map is still on Dr/Mp street framing. */
+export function maxRouteOverviewZoomDuringNav(routeLengthM: number): number {
+  if (isExtremeTripRoute(routeLengthM)) return 5.5;
+  if (isUltraLongTripRoute(routeLengthM)) return 6.5;
+  if (isLongTripRoute(routeLengthM)) return 8.5;
+  return 12.5;
 }
 
 export function routeFitPadding(

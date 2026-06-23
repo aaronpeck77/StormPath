@@ -29,10 +29,10 @@ export const TRAFFIC_PROMPT_REROUTE_MINUTES = 10;
 export const TRAFFIC_STRIP_SOFT_MINUTES = 8;
 
 /**
- * Traffic slowdown bypass — route around jams/closures and rejoin on the far side.
- * Disabled until slowdown timing and surgical rejoin are reliable; traffic delay *info* still shows.
+ * Traffic slowdown bypass — compare from GPS, then explicit confirm to switch the locked route.
+ * See `trafficBypassFlow.ts` for the full drive-time sequence.
  */
-export const TRAFFIC_BYPASS_ENABLED = false;
+export const TRAFFIC_BYPASS_ENABLED = true;
 
 /** @deprecated Use {@link TRAFFIC_BYPASS_ENABLED} — auto reroute is controlled by the user setting. */
 export const LIVE_REROUTE_ENABLED = TRAFFIC_BYPASS_ENABLED;

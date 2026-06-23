@@ -1,5 +1,5 @@
 import type { LngLat } from "../nav/types";
-import { haversineMeters } from "../nav/routeGeometry";
+import { closestAlongRouteMeters, haversineMeters } from "../nav/routeGeometry";
 import { fetchWithTimeout } from "../utils/fetchResilient";
 
 export type MapMatchResult = {
@@ -71,15 +71,30 @@ export function mapMatchingBuildAllowed(): boolean {
 const DEFAULT_MIN_CONFIDENCE = 0.35;
 const DEFAULT_MAX_DRIFT_M = 90;
 
-/** Guards against low-confidence snaps and matches far from the raw GPS fix. */
+/** Guards against low-confidence snaps and matches far from the raw GPS fix or route corridor. */
 export function acceptMapMatchSnap(
   raw: LngLat,
   snapped: LngLat,
   confidence: number | null,
-  opts?: { minConfidence?: number; maxDriftM?: number }
+  opts?: {
+    minConfidence?: number;
+    maxDriftM?: number;
+    routeGeometry?: LngLat[];
+    maxRouteLateralM?: number;
+  }
 ): boolean {
   if (confidence == null || confidence < (opts?.minConfidence ?? DEFAULT_MIN_CONFIDENCE)) {
     return false;
   }
-  return haversineMeters(raw, snapped) <= (opts?.maxDriftM ?? DEFAULT_MAX_DRIFT_M);
+  if (haversineMeters(raw, snapped) > (opts?.maxDriftM ?? DEFAULT_MAX_DRIFT_M)) {
+    return false;
+  }
+  const route = opts?.routeGeometry;
+  if (route && route.length >= 2) {
+    const lateral = closestAlongRouteMeters(snapped, route).lateralMetersApprox;
+    if (lateral > (opts?.maxRouteLateralM ?? 80)) {
+      return false;
+    }
+  }
+  return true;
 }

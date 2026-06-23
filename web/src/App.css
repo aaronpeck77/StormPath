@@ -4449,7 +4449,8 @@
 .rpgl__axis-pane {
   flex: 0 0 auto;
   width: 100%;
-  max-height: 52%;
+  /* (1) Rebalance: cap graph height but fit all strata (outlook + radar + hazards + ticks) */
+  max-height: min(44vh, 248px);
   border-bottom: 2px solid rgba(255, 255, 255, 0.22);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
   background: rgba(255, 255, 255, 0.03);
@@ -4458,14 +4459,15 @@
 
 .rpgl__axis-scroll {
   width: 100%;
+  max-height: min(44vh, 248px);
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
-  overscroll-behavior-y: none;
-  touch-action: pan-x;
+  overscroll-behavior-y: contain;
+  touch-action: pan-x pan-y;
   margin: 0;
-  padding: 2px 2px 4px;
+  padding: 1px 2px 2px;
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
 }
@@ -4520,7 +4522,7 @@
 .rpgl__axis-inner {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   width: 100%;
   box-sizing: border-box;
 }
@@ -4531,23 +4533,30 @@
   flex-direction: column;
   gap: 0;
   width: 100%;
+  --rpgl-plot-inset: 8.5%;
 }
 
 .rpgl__sync-head {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: var(--rpgl-plot-inset, 8.5%) minmax(0, 1fr) var(--rpgl-plot-inset, 8.5%);
   align-items: center;
-  gap: 6px;
-  margin-bottom: 3px;
+  gap: 4px;
+  margin-bottom: 2px;
   padding: 0 2px;
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   color: #cbd5e1;
 }
 
+.rpgl__sync-head-you {
+  grid-column: 1;
+  justify-self: end;
+  padding-right: 4px;
+}
+
 .rpgl__sync-head-title {
-  flex: 1;
+  grid-column: 2;
   text-align: center;
   font-size: 0.58rem;
   letter-spacing: 0.05em;
@@ -4555,11 +4564,17 @@
   color: #94a3b8;
 }
 
+.rpgl__sync-head-dest {
+  grid-column: 3;
+  justify-self: start;
+  padding-left: 4px;
+}
+
 .rpgl__sync-body {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 /* YOU line spans weather chart top → hazards rail bottom only */
@@ -4567,7 +4582,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .rpgl__driver-overlay {
@@ -4600,9 +4615,9 @@
 .rpgl__outlook-wait {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  min-height: 96px;
-  padding: 4px 4px 2px;
+  gap: 2px;
+  min-height: 72px;
+  padding: 2px 4px 0;
   justify-content: center;
 }
 
@@ -4626,12 +4641,26 @@
   display: none;
 }
 
-/* Legend IS shown in the synced/Route-Info view — compact, right-aligned over graph */
+/* (2) Dense graph — Route info panel only */
 .rpgl__sync-outlook .rotl--synced .rotl__legend {
-  margin-bottom: 3px;
-  gap: 10px;
-  justify-content: flex-end !important;
-  padding-right: 36px; /* inset matches chart right pad */
+  margin-bottom: 1px;
+  gap: 6px;
+  justify-content: center !important;
+  padding-left: var(--rpgl-plot-inset, 8.5%);
+  padding-right: var(--rpgl-plot-inset, 8.5%);
+  box-sizing: border-box;
+}
+
+.rpgl__sync-outlook .rotl--synced .rotl__chart-wrap {
+  min-height: 72px;
+}
+
+.rpgl__sync-outlook .rotl--synced .rotl__chart {
+  height: 72px;
+}
+
+.rpgl .rotl--synced .rotl__legend-item {
+  font-size: 0.54rem;
 }
 
 /* No precip dots in the synced strip — temp dots stay */
@@ -4643,24 +4672,11 @@
   padding: 0;
 }
 
-.rpgl__sync-outlook .rotl--synced .rotl__chart-wrap {
-  min-height: 96px;
-}
-
-.rpgl__sync-outlook .rotl--synced .rotl__chart {
-  height: 96px;
-}
-
-/* Route outlook graph — slightly larger type for at-a-glance driving */
 .rpgl .rotl--synced .rotl__title {
   font-size: 0.8rem;
 }
 
 .rpgl .rotl--synced .rotl__subtitle {
-  font-size: 0.6rem;
-}
-
-.rpgl .rotl--synced .rotl__legend-item {
   font-size: 0.6rem;
 }
 
@@ -4722,7 +4738,7 @@
 }
 
 .rpgl__radar-strata {
-  margin: 4px 0 2px;
+  margin: 2px 0 0;
   padding: 0;
 }
 
@@ -4730,17 +4746,34 @@
   padding: 0;
 }
 
+.rpgl__radar-strata .rrws__label-row {
+  margin-bottom: 1px;
+  gap: 8px;
+  justify-content: center;
+  padding-left: var(--rpgl-plot-inset, 8.5%);
+  padding-right: var(--rpgl-plot-inset, 8.5%);
+  box-sizing: border-box;
+}
+
+.rpgl__radar-strata .rrws__label {
+  font-size: 0.52rem;
+}
+
+.rpgl__radar-strata .rrws__chart-wrap {
+  height: 44px;
+}
+
 .rpgl__hazard-block {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 3px;
   box-sizing: border-box;
   width: 100%;
 }
 
 .rpgl__hazard-label {
   margin: 0;
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   font-weight: 800;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -4790,8 +4823,8 @@
 .rpgl__hazard-rail {
   position: relative;
   width: 100%;
-  height: 12px;
-  border-radius: 6px;
+  height: 10px;
+  border-radius: 5px;
   overflow: hidden;
 }
 
@@ -4825,9 +4858,23 @@
   box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.22);
 }
 
+.rpgl__hazard-rail--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rpgl__hazard-empty {
+  font-size: 0.5rem;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  color: rgba(148, 163, 184, 0.55);
+  white-space: nowrap;
+}
+
 .rpgl__sync-x-ticks {
   position: relative;
-  height: 28px;
+  height: 20px;
   margin-top: 0;
   z-index: 2;
 }
@@ -4846,14 +4893,14 @@
 }
 
 .rpgl__x-label {
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   font-weight: 800;
   color: #f8fafc;
   line-height: 1.1;
 }
 
 .rpgl__x-eta {
-  font-size: 0.54rem;
+  font-size: 0.5rem;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   color: #cbd5e1;
@@ -8924,7 +8971,7 @@
 }
 
 .route-progress-strip--radar .route-progress-strip__track {
-  box-shadow: inset 0 0 0 1px rgba(168, 85, 247, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(6, 182, 212, 0.42);
 }
 
 .route-progress-strip--edge .route-progress-strip__track-wrap {

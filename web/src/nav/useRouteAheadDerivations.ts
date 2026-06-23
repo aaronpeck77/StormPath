@@ -159,7 +159,6 @@ export function useRouteAheadDerivations(
     guidanceRouteId,
     planRoutes,
     lockedNavigationRouteId,
-    temporaryGuidanceRouteId,
     speedMph,
     turnSteps,
     activeTurnIndex,
@@ -481,7 +480,7 @@ export function useRouteAheadDerivations(
   const routeAlerts = useMemo(
     () =>
       routeImpactsForUi
-        .filter((i) => i.source !== "nws")
+        .filter((i) => i.source !== "nws" && i.source !== "tomorrowIo")
         .map(routeImpactToRouteAlert),
     [routeImpactsForUi]
   );
@@ -505,29 +504,23 @@ export function useRouteAheadDerivations(
     trafficBypassContext != null &&
     !trafficBypassCompare;
 
-  /** Dr: active leg; during rejoin also show faint locked A behind green/orange B/C. */
+  /** Nav v1: one active leg on the map — locked route in Rt/Mp; guidance leg in Dr. */
   const driveMapRoutes = useMemo(() => {
-    if (trafficBypassCompare || viewMode !== "drive") return planRoutes;
-    const tempId = temporaryGuidanceRouteId?.trim() || null;
-    const lockedId = lockedNavigationRouteId;
-    if (tempId && lockedId && tempId !== lockedId) {
-      const locked = planRoutes.find((r) => r.id === lockedId);
-      const temp = planRoutes.find((r) => r.id === tempId);
-      const out: NavRoute[] = [];
-      if (locked) out.push(locked);
-      if (temp) out.push(temp);
-      if (out.length) return out;
+    if (trafficBypassCompare) return planRoutes;
+    if (navigationStarted) {
+      const focusId =
+        viewMode === "drive" ? guidanceRouteId : lockedNavigationRouteId;
+      const active = planRoutes.find((r) => r.id === focusId);
+      if (active) return [active];
     }
-    const active = planRoutes.find((r) => r.id === guidanceRouteId);
-    if (active) return [active];
-    return planRoutes.length ? [planRoutes[0]!] : [];
+    return planRoutes;
   }, [
     trafficBypassCompare,
+    navigationStarted,
     viewMode,
     guidanceRouteId,
     planRoutes,
     lockedNavigationRouteId,
-    temporaryGuidanceRouteId,
   ]);
   const progressRailRoute = guidanceRoute ?? driveMapRoutes[0] ?? planRoutes[0];
 

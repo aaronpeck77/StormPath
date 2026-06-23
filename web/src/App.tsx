@@ -27,7 +27,7 @@ import {
   GPS_STATE_THROTTLE_MS_ULTRA_LONG,
 } from "./hooks/useUserLocation";
 import { useDestinationSearch } from "./hooks/useDestinationSearch";
-import { useMapMatchedNavigationLngLat } from "./hooks/useMapMatchedNavigationLngLat";
+import { useNavigationPosition } from "./hooks/useNavigationPosition";
 import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
 import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
 import { useWeatherOverlayFetch } from "./hooks/useWeatherOverlayFetch";
@@ -104,6 +104,7 @@ import { formatRouteDistanceMi, routeConsiderationSummary } from "./nav/routeSum
 import { buildDriveRouteAheadFromImpacts } from "./nav/driveRouteAhead";
 import { pickDriveApproachBanner } from "./nav/driveHazardApproachPreview";
 import { pickTrafficBypassAnchorImpact } from "./nav/trafficBypassOffer";
+import { trafficBypassOfferHeadline, withTrafficBypassCompareKind } from "./nav/trafficBypassFlow";
 import { earlyApproachMaxMetersForSpeed } from "./nav/surgicalBypassWindow";
 import { unifiedTrafficNarrative, hasLocalizedTrafficIssue } from "./nav/trafficNarrative";
 import {
@@ -420,6 +421,10 @@ export default function App() {
 
   const navGoStartedAtRef = useRef<number | null>(null);
   const navGoGeometryRef = useRef<LngLat[] | null>(null);
+  /** Full step geometry for guidance math — separate from display-tier plan state. */
+  const navigationGuidanceGeometryRef = useRef<LngLat[] | null>(null);
+  const [guidanceGeometryEpoch, setGuidanceGeometryEpoch] = useState(0);
+  const [alongHoldResetKey, setAlongHoldResetKey] = useState(0);
   /** Route id locked at Go — guidance follows this until the driver explicitly switches legs. */
   const lockedNavigationRouteIdRef = useRef<string | null>(null);
 
@@ -516,29 +521,9 @@ export default function App() {
   const dataSaverHintDismissed = useSettingsStore((s) => s.dataSaverHintDismissed);
   const dismissDataSaverHintAction = useSettingsStore((s) => s.dismissDataSaverHint);
   const appForeground = useAppForeground();
-
-  const mapMatchedNavigationLngLat = useMapMatchedNavigationLngLat({
-    rawLngLat: userLngLat,
-    navigationStarted: navActiveForGps,
-    mapboxToken: env.mapboxToken,
-    isOnline,
-    speedMps,
-    appForeground,
-    enabled:
-      mapMatchingBuildAllowed() &&
-      settingMapMatchingEnabled &&
-      isPlus &&
-      Boolean(env.mapboxToken),
-    disabled: Boolean(devLocOverrideLngLat),
-  });
-  const navigationPositionLngLat = useMemo(() => {
-    if (!navActiveForGps) return userLngLat;
-    return mapMatchedNavigationLngLat ?? userLngLat;
-  }, [navActiveForGps, mapMatchedNavigationLngLat, userLngLat]);
-  const navigationPositionLngLatRef = useRef(navigationPositionLngLat);
-  navigationPositionLngLatRef.current = navigationPositionLngLat;
-
+  const navigationMatchGeometryRef = useRef<LngLat[] | undefined>(undefined);
   const dataSaverMode = isDataSaverMode(settingDataSaverEnabled);
+
   const settingVoiceGuidanceEnabled = useSettingsStore((s) => s.voiceGuidanceEnabled);
   /* Storm/advisory state lives in `useWeatherStore` (Phase 4d). Local names + setter
    * signatures preserved so the ~40 read/setter sites in this file are unchanged. The store
@@ -1119,6 +1104,26 @@ export default function App() {
     return g && g.length >= 2 ? polylineLengthMeters(g) : 0;
   }, [offRouteGuidanceRoute?.geometry]);
 
+  const navPosition = useNavigationPosition({
+    rawLngLat: userLngLat,
+    navigationStarted: navActiveForGps,
+    guidanceGeometry: navigationMatchGeometryRef.current,
+    alongHoldResetKey,
+    mapboxToken: env.mapboxToken,
+    isOnline,
+    speedMps,
+    appForeground,
+    mapMatchingEnabled:
+      mapMatchingBuildAllowed() &&
+      settingMapMatchingEnabled &&
+      isPlus &&
+      Boolean(env.mapboxToken),
+    disabled: Boolean(devLocOverrideLngLat),
+  });
+  const navigationPositionLngLat = navPosition.positionLngLat;
+  const navigationPositionLngLatRef = useRef(navigationPositionLngLat);
+  navigationPositionLngLatRef.current = navigationPositionLngLat;
+
   const offRouteNav = useOffRouteNavigation({
     userLngLat: navigationPositionLngLat,
     destLngLat,
@@ -1133,11 +1138,10 @@ export default function App() {
     guidanceRouteId: offRouteLockedRouteId ?? primaryRouteId,
     userAlongGuidanceMRef,
     effectiveUserLngLat: navigationPositionLngLat,
-    viewMode,
     mapboxToken: env.mapboxToken,
     isOnline,
     isPlus,
-    effectiveAutoRerouteEnabled: settingAutoRerouteEnabled,
+    effectiveAutoRerouteEnabled: true,
     settingVoiceGuidanceEnabled,
     settingStormEnabled,
     learnEnabled,
@@ -1166,14 +1170,12 @@ export default function App() {
   });
 
   const {
-    showOffRouteManualBanner,
+    showOffRouteStatusBanner,
     autoRejoinGuidanceRouteId,
     resetOffRouteNavigation,
     clearDetourGuidance,
-    tryOtherRejoinPath,
     detourAutoActive,
     detourRejoinDistanceLabel,
-    offRouteRejoinCompareActive,
   } = offRouteNav;
 
   /** After Go: NWS + corridor bands use the locked guidance leg, not the preview leg. */
@@ -1359,6 +1361,25 @@ export default function App() {
   }, [plan.routes, lineFocusId]);
 
   const guidanceRoute = plan.routes.find((r) => r.id === guidanceRouteId);
+
+  const navigationGuidanceGeometry = useMemo(() => {
+    void guidanceGeometryEpoch;
+    if (!navigationStarted || !guidanceRoute?.geometry?.length) {
+      return guidanceRoute?.geometry;
+    }
+    if (guidanceRoute.id !== lockedNavigationRouteId) {
+      return guidanceRoute.geometry;
+    }
+    return navigationGuidanceGeometryRef.current ?? guidanceRoute.geometry;
+  }, [
+    navigationStarted,
+    guidanceRoute,
+    guidanceRouteId,
+    lockedNavigationRouteId,
+    guidanceGeometryEpoch,
+  ]);
+
+  navigationMatchGeometryRef.current = navigationGuidanceGeometry ?? undefined;
 
   /** Longest planned leg — auto lean NWS fetch on cross-country trips (100+ mi). */
   const maxPlanRouteLengthM = useMemo(() => {
@@ -1652,11 +1673,10 @@ export default function App() {
   ]);
 
   const guidanceRouteLengthM = useMemo(() => {
-    const g = guidanceRoute?.geometry;
+    const g = navigationGuidanceGeometry ?? guidanceRoute?.geometry;
     return g && g.length >= 2 ? polylineLengthMeters(g) : 0;
-  }, [guidanceRoute?.geometry]);
+  }, [navigationGuidanceGeometry, guidanceRoute?.geometry]);
 
-  const [alongHoldResetKey, setAlongHoldResetKey] = useState(0);
   const {
     userAlongGuidanceM,
     activeTurnIndex,
@@ -1668,12 +1688,14 @@ export default function App() {
     guidanceRouteId,
     guidanceRouteLengthM,
     turnSteps,
-    effectiveUserLngLat,
-    routeGeometry: guidanceRoute?.geometry,
+    effectiveUserLngLat: navigationPositionLngLat,
+    routeGeometry: navigationGuidanceGeometry,
     alongHoldResetKey,
+    navigationAlongM: navigationStarted && !autoRejoinGuidanceRouteId ? navPosition.alongM : undefined,
+    speedMps,
   });
 
-  guidanceRouteGeomRef.current = guidanceRoute?.geometry ?? null;
+  guidanceRouteGeomRef.current = navigationGuidanceGeometry ?? guidanceRoute?.geometry ?? null;
   guidanceRouteLengthMRef.current = guidanceRouteLengthM;
   navRouteLengthMRef.current = guidanceRouteLengthM;
   userAlongGuidanceMRef.current = userAlongGuidanceM;
@@ -2105,6 +2127,21 @@ export default function App() {
     activeTurnIndex,
     stormMapGeoJson,
   });
+
+  /** Map fit + draw: full guidance geometry; layers apply display-tier subsampling. */
+  const driveMapRoutesForMap = useMemo(() => {
+    const full = navigationGuidanceGeometry;
+    if (!navigationStarted || !full?.length) return driveMapRoutes;
+    return driveMapRoutes.map((r) =>
+      r.id === lockedNavigationRouteId || r.id === guidanceRouteId ? { ...r, geometry: full } : r
+    );
+  }, [
+    driveMapRoutes,
+    navigationStarted,
+    navigationGuidanceGeometry,
+    lockedNavigationRouteId,
+    guidanceRouteId,
+  ]);
 
   /** Cruise demo puck along the active route polyline at ~posted speed (see `toggleDemoPlaybackPlaying`). */
   useEffect(() => {
@@ -2764,18 +2801,20 @@ export default function App() {
     const totalM = polylineLengthMeters(gr.geometry);
     const userAlong = Number.isFinite(userAlongGuidanceM) ? userAlongGuidanceM : 0;
     const mockJamAlong = Math.min(totalM - 50, userAlong + Math.max(800, (totalM - userAlong) * 0.32));
-    activateRouteCompare({
-      headline: "Demo: mock bypass compare (no network)",
-      etaA: base,
-      etaB: Math.max(6, base - 4),
-      etaC: Math.max(6, base - 2),
-      hasB: true,
-      hasC: true,
-      confidence: "medium",
-      selectedLeg: defaultRouteCompareSelection(guidanceRouteId),
-      hazardLngLat: pointAtAlongMeters(gr.geometry, mockJamAlong),
-      hazardAlongMeters: mockJamAlong,
-    });
+    activateRouteCompare(
+      withTrafficBypassCompareKind({
+        headline: "Demo: mock bypass compare (no network)",
+        etaA: base,
+        etaB: Math.max(6, base - 4),
+        etaC: Math.max(6, base - 2),
+        hasB: true,
+        hasC: true,
+        confidence: "medium",
+        selectedLeg: defaultRouteCompareSelection(guidanceRouteId),
+        hazardLngLat: pointAtAlongMeters(gr.geometry, mockJamAlong),
+        hazardAlongMeters: mockJamAlong,
+      })
+    );
   }, [demoBypassTrafficJamPlus, navigationStarted, guidanceRoute, userAlongGuidanceM, guidanceRouteId, activateRouteCompare]);
 
   const proceedGo = useCallback(() => {
@@ -2798,6 +2837,8 @@ export default function App() {
     navGoGeometryRef.current = pickedForNav?.geometry?.length
       ? pickedForNav.geometry.map(([a, b]) => [a, b] as LngLat)
       : null;
+    navigationGuidanceGeometryRef.current = navGoGeometryRef.current;
+    setGuidanceGeometryEpoch((n) => n + 1);
 
     if (userLngLat && destLngLat) {
       const picked = pickedForNav;
@@ -2850,6 +2891,8 @@ export default function App() {
             ),
           }));
           navGoGeometryRef.current = leg.geometry.map(([a, b]) => [a, b] as LngLat);
+          navigationGuidanceGeometryRef.current = leg.geometry.map(([a, b]) => [a, b] as LngLat);
+          setGuidanceGeometryEpoch((n) => n + 1);
           setFitTrigger((n) => n + 1);
         } catch {
           /* keep planning geometry */
@@ -2982,10 +3025,18 @@ export default function App() {
     }
 
     handlePromoteRouteToPrimary(id);
+    const promoted = plan.routes.find((r) => r.id === id);
+    if (promoted?.geometry?.length && navigationStartedRef.current) {
+      navigationGuidanceGeometryRef.current = promoted.geometry.map(([a, b]) => [a, b] as LngLat);
+      setGuidanceGeometryEpoch((n) => n + 1);
+      setAlongHoldResetKey((n) => n + 1);
+    }
     setTrafficBypassCompare(null);
     setViewModeBeforeTrafficBypass(null);
     setViewMode("drive");
     setFitTrigger((n) => n + 1);
+    setTapHint("Switched to your chosen route.");
+    window.setTimeout(() => setTapHint(null), 5000);
   }, [
     handlePromoteRouteToPrimary,
     proceedGo,
@@ -2996,6 +3047,8 @@ export default function App() {
     setPreviewLegIndex,
     setViewMode,
     setTollRoutePrompt,
+    setTapHint,
+    plan.routes,
   ]);
 
   useEffect(() => {
@@ -3090,7 +3143,7 @@ export default function App() {
         (r) => r.id !== guidanceRouteId && (r.geometry?.length ?? 0) >= 2
       );
       if (!hasB && !hasC && !altWithGeom) return null;
-      return {
+      return withTrafficBypassCompareKind({
         headline: opts.headline,
         etaA,
         etaB: opts.etaOverrides?.etaB ?? (hasB ? etaForSlot("r-b") : null),
@@ -3101,7 +3154,7 @@ export default function App() {
         selectedLeg: defaultRouteCompareSelection(guidanceRouteId),
         hazardLngLat: opts.hazardLngLat,
         hazardAlongMeters: opts.hazardAlongMeters,
-      };
+      });
     },
     [guidanceRoute, plan.routes, scored, driveEtaMinutes, navigationStarted, guidanceRouteId]
   );
@@ -3219,18 +3272,20 @@ export default function App() {
           return;
         }
 
-        activateRouteCompare({
-          headline: compareHeadline,
-          etaA,
-          etaB: etaFor("r-b"),
-          etaC: etaFor("r-c"),
-          hasB: Boolean(byId.get("r-b")?.geometry && byId.get("r-b")!.geometry.length >= 2),
-          hasC: Boolean(byId.get("r-c")?.geometry && byId.get("r-c")!.geometry.length >= 2),
-          confidence: opts?.confidence ?? "medium",
-          selectedLeg: defaultRouteCompareSelection(guidanceRouteId),
-          hazardLngLat,
-          hazardAlongMeters: jamAlongM,
-        });
+        activateRouteCompare(
+          withTrafficBypassCompareKind({
+            headline: compareHeadline,
+            etaA,
+            etaB: etaFor("r-b"),
+            etaC: etaFor("r-c"),
+            hasB: Boolean(byId.get("r-b")?.geometry && byId.get("r-b")!.geometry.length >= 2),
+            hasC: Boolean(byId.get("r-c")?.geometry && byId.get("r-c")!.geometry.length >= 2),
+            confidence: opts?.confidence ?? "medium",
+            selectedLeg: defaultRouteCompareSelection(guidanceRouteId),
+            hazardLngLat,
+            hazardAlongMeters: jamAlongM,
+          })
+        );
       } catch {
         const opened = openRouteCompareFromPlan({
           headline: compareHeadline,
@@ -3265,12 +3320,6 @@ export default function App() {
     ]
   );
 
-  const handleRouteCompareFromHere = useCallback(() => {
-    void openRouteCompareFromHere({
-      headline: "Routes from your location — your current route stays until you confirm",
-    });
-  }, [openRouteCompareFromHere]);
-
   const handleTrafficBypassFromHere = useCallback(async (opts?: {
     /** Override the jam anchor (m along route). Used by demo paths that need a deterministic point. */
     anchorAlongMeters?: number;
@@ -3283,7 +3332,7 @@ export default function App() {
       ? pickTrafficBypassAnchorImpact(routeImpactsForUi)
       : null;
     await openRouteCompareFromHere({
-      headline: trafficBypassContext?.headline ?? "Three routes from here to your destination",
+      headline: trafficBypassOfferHeadline(trafficBypassContext),
       anchorAlongMeters: opts?.anchorAlongMeters ?? anchorImpact?.alongMeters,
       anchorLngLat: opts?.anchorLngLat ?? anchorImpact?.lngLat,
       confidence: trafficBypassContext?.confidence ?? "medium",
@@ -3718,7 +3767,7 @@ export default function App() {
         <div className="map-canvas">
           <Suspense fallback={<div className="drive-map" />}>
           <DriveMap
-            routes={driveMapRoutes}
+            routes={driveMapRoutesForMap}
             lineFocusId={driveMapLineFocusId}
             suggestedRouteId={suggestedRouteId}
             userLngLat={effectiveUserLngLat}
@@ -3793,8 +3842,6 @@ export default function App() {
             searchPickMarkers={searchPickMarkersForMap}
             onSearchPickMarkerClick={searchPickMarkersForMap ? handleSearchPickFromMap : undefined}
             progressRailVisible={showProgressRail}
-            offRouteRejoinCompareActive={offRouteRejoinCompareActive}
-            rejoinOverlayActive={detourAutoActive && viewMode === "drive"}
           />
           </Suspense>
         </div>
@@ -3833,7 +3880,8 @@ export default function App() {
                         env.mapboxToken &&
                         userLngLat &&
                         destLngLat &&
-                        guidanceRoute
+                        guidanceRoute &&
+                        showTrafficBypassCta
                           ? () => void handleTrafficBypassFromHere()
                           : undefined
                       }
@@ -4502,16 +4550,10 @@ export default function App() {
               onToggleRadar={() => setShowRadar((v) => !v)}
               radarEnabled={settingRadarEnabled}
               showRadarButton={!driveModeUi}
-              showOffRouteBanner={showOffRouteManualBanner}
+              showOffRouteBanner={showOffRouteStatusBanner}
               offRouteRejoinActive={detourAutoActive}
               offRouteRejoinDistanceLabel={detourRejoinDistanceLabel}
-              offRouteOptionsBusy={routing || bypassBusy}
-              onTryOtherRejoin={
-                detourAutoActive || showOffRouteManualBanner ? () => void tryOtherRejoinPath() : undefined
-              }
-              onOffRouteOptions={
-                env.mapboxToken && navigationStarted ? handleRouteCompareFromHere : undefined
-              }
+              offRouteOptionsBusy={routing}
               showTrafficBypass={showTrafficBypassCta}
               bypassBusy={bypassBusy}
               onTrafficBypass={

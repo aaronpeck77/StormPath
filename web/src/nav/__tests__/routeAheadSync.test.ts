@@ -104,6 +104,20 @@ describe("timelineToProgressStripBands", () => {
     expect(bands).toHaveLength(1);
     expect(bands[0]!.severity).toBe("serious");
   });
+
+  it("never paints Tomorrow.io forecast bands on the progress strip", () => {
+    const bands = timelineToProgressStripBands([
+      baseItem({
+        id: "forecast-summary",
+        track: "forecast",
+        severity: "serious",
+        label: "Rain along much of your route",
+        startMeters: 0,
+        endMeters: 50_000,
+      }),
+    ]);
+    expect(bands).toHaveLength(0);
+  });
 });
 
 describe("timelineItemShowsOnRouteLine", () => {

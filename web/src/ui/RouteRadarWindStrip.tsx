@@ -88,9 +88,11 @@ export function RouteRadarWindStrip({ radarSamples, windPoints }: Props) {
     [sortedWind, windMax]
   );
 
-  const hasRadar = radarPts.some((p) => p.norm >= 0.16);
+  const hasRadarEcho = radarPts.some((p) => p.norm >= 0.16);
+  const hasRadarTrace =
+    radarPts.length >= 2 && radarPts.some((p) => p.norm >= 0.04);
   const hasWind = windPts.length >= 2;
-  const isEmpty = !hasRadar && !hasWind;
+  const isEmpty = !hasRadarTrace && !hasWind;
 
   const windTicks = hasWind
     ? [windMax, Math.round(windMax / 2), 0].map((mph) => ({
@@ -122,7 +124,7 @@ export function RouteRadarWindStrip({ radarSamples, windPoints }: Props) {
           <line x1={PAD_L} y1={BASELINE_Y} x2={W - PAD_R} y2={BASELINE_Y} className="rrws__baseline" />
 
           {/* ── Radar echo — layered area fills ── */}
-          {hasRadar && radarPts.length >= 2 && (
+          {hasRadarEcho && radarPts.length >= 2 && (
             <>
               <path d={areaPath(radarPts)} fill="rgba(56,189,248,0.15)" />
               {([
@@ -143,6 +145,19 @@ export function RouteRadarWindStrip({ radarSamples, windPoints }: Props) {
                 fill="none"
                 stroke="rgba(56,189,248,0.85)"
                 strokeWidth={1.2}
+                vectorEffect="non-scaling-stroke"
+              />
+            </>
+          )}
+          {hasRadarTrace && !hasRadarEcho && (
+            <>
+              <path d={areaPath(radarPts)} fill="rgba(56,189,248,0.08)" />
+              <path
+                d={linePath(radarPts)}
+                fill="none"
+                stroke="rgba(56,189,248,0.45)"
+                strokeWidth={1.1}
+                strokeDasharray="3 2"
                 vectorEffect="non-scaling-stroke"
               />
             </>

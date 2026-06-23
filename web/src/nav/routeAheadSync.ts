@@ -135,13 +135,13 @@ export function buildRouteAheadTimeline(opts: BuildRouteAheadTimelineOpts): Time
     });
   }
 
-  const { radarImpacts, forecastImpacts, roadImpacts } = splitRouteImpacts(routeImpacts);
+  const { radarImpacts, roadImpacts } = splitRouteImpacts(routeImpacts);
   const pushIfActive = (imp: RouteImpact) => {
     if (imp.endMeters <= userAlongMeters) return;
     timelineItems.push(impactToTimelineItem(imp));
   };
   for (const imp of radarImpacts) pushIfActive(imp);
-  for (const imp of forecastImpacts) pushIfActive(imp);
+  /* Tomorrow.io forecast — outlook graph + advisory text only; never progress-strip bands. */
   for (const imp of roadImpacts) pushIfActive(imp);
 
   return mergeOverlappingTimelineItems(timelineItems, routeTotalMeters);
@@ -160,6 +160,8 @@ export function timelineToProgressStripBands(
   const out: StormProgressStripBand[] = [];
   for (const item of items) {
     if (opts?.omitCoarsePreview && item.coarsePreview) continue;
+    if (item.stripMuted) continue;
+    if (item.track === "forecast") continue;
     if (!timelineItemShowsOnRouteLine(item)) continue;
     const span = item.endMeters - item.startMeters;
     if (span < 8 && item.track !== "nws") continue;

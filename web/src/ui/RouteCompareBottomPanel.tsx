@@ -1,5 +1,6 @@
 import { useRouteCompareStore } from "../state/routeCompareStore";
 import { useTripPlanStore } from "../state/tripPlanStore";
+import { TRAFFIC_BYPASS_CONFIRM_LABEL_NAV } from "../nav/trafficBypassFlow";
 import { TrafficBypassComparePanel } from "./TrafficBypassComparePanel";
 
 interface Props {
@@ -53,7 +54,9 @@ export function RouteCompareBottomPanel({ onSelect, onConfirm, onCancel }: Props
       onConfirm={onConfirm}
       onCancel={onCancel}
       navigationStarted={isTollCompare ? false : navigationStarted}
-      confirmLabel={isTollCompare ? "Use this route" : undefined}
+      confirmLabel={
+        isTollCompare ? "Use this route" : navigationStarted ? TRAFFIC_BYPASS_CONFIRM_LABEL_NAV : "Use this route"
+      }
     />
   );
 }

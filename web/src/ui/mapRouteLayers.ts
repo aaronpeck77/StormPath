@@ -4,7 +4,14 @@ import {
   ROUTE_CORRIDOR_HIGHLIGHT_HALF_SPAN_M,
   type RouteAlert,
 } from "../nav/routeAlerts";
-import { geometryForPlanningMapDisplay, haversineMeters, routeHighlightFrameForMap, routeLineGeometryForDriveDisplay, slicePolylineBetweenAlongForDisplay } from "../nav/routeGeometry";
+import {
+  geometryForPlanningMapDisplay,
+  geometryForRouteOverviewDisplay,
+  haversineMeters,
+  routeHighlightFrameForMap,
+  routeLineGeometryForDriveDisplay,
+  slicePolylineBetweenAlongForDisplay,
+} from "../nav/routeGeometry";
 import { sliceRouteAhead } from "../nav/routeRemaining";
 import type { LngLat, NavRoute } from "../nav/types";
 import {
@@ -299,6 +306,9 @@ function routeCoordinatesForMap(route: NavRoute, opts?: ApplyRoutesLayerOptions)
     Number.isFinite(along);
   if (nearNavLine) {
     return routeLineGeometryForDriveDisplay(geometry, along);
+  }
+  if (viewMode === "route" || isOverviewPip) {
+    return geometryForRouteOverviewDisplay(geometry);
   }
   return geometryForPlanningMapDisplay(geometry);
 }
@@ -598,7 +608,10 @@ function maxZoomForBoundsSpanMeters(spanM: number): number {
   if (spanM < 35000) return 14.9;
   if (spanM < 90000) return 13.8;
   if (spanM < 200000) return 12.7;
-  return 11.8;
+  if (spanM < 500_000) return 10.5;
+  if (spanM < 1_200_000) return 8.5;
+  if (spanM < 2_500_000) return 6.5;
+  return 5.5;
 }
 
 /** Per-point extend is O(n) — long country routes block the main thread. Use a bbox for huge lines. */

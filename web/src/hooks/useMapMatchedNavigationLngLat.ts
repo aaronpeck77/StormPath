@@ -5,12 +5,19 @@ import { mapMatchingBuildAllowed, matchGpsTraceToRoad, acceptMapMatchSnap } from
 
 const TRACE_MAX_POINTS = 6;
 const TRACE_MIN_SPACING_M = 8;
-const MATCH_INTERVAL_MS = 4_000;
-const MATCH_INTERVAL_IDLE_MS = 8_000;
+const MATCH_INTERVAL_MS = 2_500;
+const MATCH_INTERVAL_FAST_MS = 1_800;
+const MATCH_INTERVAL_IDLE_MS = 6_000;
+const FAST_SPEED_MPS = 14;
 const MIN_MATCH_CONFIDENCE = 0.35;
 /** Reject snaps that jump implausibly far from the raw fix (parallel road / bad match). */
 const MAX_SNAP_DRIFT_M = 90;
 const IDLE_SPEED_MPS = 1.2;
+
+export type MapMatchState = {
+  lngLat: LngLat | null;
+  confidence: number | null;
+};
 
 export type MapMatchedNavigationOptions = {
   rawLngLat: LngLat | null;
@@ -23,13 +30,15 @@ export type MapMatchedNavigationOptions = {
   enabled: boolean;
   /** Dev pin / demo playback — keep raw GPS. */
   disabled?: boolean;
+  /** Locked route — reject road snaps that land off the chosen corridor. */
+  routeGeometry?: LngLat[] | null;
 };
 
 /**
  * While navigating, optionally snap GPS to the road graph via Mapbox Map Matching.
  * Returns the latest trusted snap, or null to fall back to raw {@link rawLngLat}.
  */
-export function useMapMatchedNavigationLngLat(opts: MapMatchedNavigationOptions): LngLat | null {
+export function useMapMatchedNavigationLngLat(opts: MapMatchedNavigationOptions): MapMatchState {
   const {
     rawLngLat,
     navigationStarted,
@@ -39,15 +48,18 @@ export function useMapMatchedNavigationLngLat(opts: MapMatchedNavigationOptions)
     appForeground,
     enabled,
     disabled = false,
+    routeGeometry,
   } = opts;
 
-  const [matchedLngLat, setMatchedLngLat] = useState<LngLat | null>(null);
+  const [matched, setMatched] = useState<MapMatchState>({ lngLat: null, confidence: null });
   const traceRef = useRef<LngLat[]>([]);
   const lastMatchMsRef = useRef(0);
   const inFlightRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const rawRef = useRef(rawLngLat);
+  const routeGeomRef = useRef(routeGeometry);
   rawRef.current = rawLngLat;
+  routeGeomRef.current = routeGeometry;
 
   const active =
     enabled &&
@@ -65,7 +77,7 @@ export function useMapMatchedNavigationLngLat(opts: MapMatchedNavigationOptions)
       inFlightRef.current = false;
       abortRef.current?.abort();
       abortRef.current = null;
-      setMatchedLngLat(null);
+      setMatched({ lngLat: null, confidence: null });
     }
   }, [active]);
 
@@ -86,7 +98,11 @@ export function useMapMatchedNavigationLngLat(opts: MapMatchedNavigationOptions)
     if (!active || !rawLngLat) return;
 
     const intervalMs =
-      speedMps != null && speedMps >= IDLE_SPEED_MPS ? MATCH_INTERVAL_MS : MATCH_INTERVAL_IDLE_MS;
+      speedMps != null && speedMps >= FAST_SPEED_MPS
+        ? MATCH_INTERVAL_FAST_MS
+        : speedMps != null && speedMps >= IDLE_SPEED_MPS
+          ? MATCH_INTERVAL_MS
+          : MATCH_INTERVAL_IDLE_MS;
 
     const tick = () => {
       const now = Date.now();
@@ -107,13 +123,17 @@ export function useMapMatchedNavigationLngLat(opts: MapMatchedNavigationOptions)
           lastMatchMsRef.current = Date.now();
           const raw = rawRef.current;
           if (!lngLat || !raw) return;
-          if (!acceptMapMatchSnap(raw, lngLat, confidence, {
-            minConfidence: MIN_MATCH_CONFIDENCE,
-            maxDriftM: MAX_SNAP_DRIFT_M,
-          })) {
+          const route = routeGeomRef.current;
+          if (
+            !acceptMapMatchSnap(raw, lngLat, confidence, {
+              minConfidence: MIN_MATCH_CONFIDENCE,
+              maxDriftM: MAX_SNAP_DRIFT_M,
+              routeGeometry: route && route.length >= 2 ? route : undefined,
+            })
+          ) {
             return;
           }
-          setMatchedLngLat(lngLat);
+          setMatched({ lngLat, confidence });
         })
         .catch(() => {
           /* timeout / offline — keep last snap */
@@ -134,6 +154,6 @@ export function useMapMatchedNavigationLngLat(opts: MapMatchedNavigationOptions)
     };
   }, [active, mapboxToken, rawLngLat?.[0], rawLngLat?.[1], speedMps]);
 
-  if (!active) return null;
-  return matchedLngLat;
+  if (!active) return { lngLat: null, confidence: null };
+  return matched;
 }

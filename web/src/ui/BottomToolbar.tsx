@@ -149,8 +149,8 @@ export function BottomToolbar({
         <div className="nav-bottom-off-route" role="status">
           <span className="nav-bottom-off-route__text">
             {offRouteRejoinActive
-              ? `Rejoining your blue route${offRouteRejoinDistanceLabel ? ` — ${offRouteRejoinDistanceLabel}` : ""}.`
-              : "Off your chosen route — guidance stays on your line until you pick a new one."}
+              ? `Returning to your route${offRouteRejoinDistanceLabel ? ` — ${offRouteRejoinDistanceLabel}` : ""}.`
+              : "Off your route — finding the way back."}
           </span>
           {(onTryOtherRejoin || onOffRouteOptions) && (
             <div className="nav-bottom-off-route__actions">

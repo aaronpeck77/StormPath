@@ -1,6 +1,6 @@
 import { FALLBACK_LNGLAT } from "./constants";
 import type { LngLat } from "./types";
-import { isExtremeTripRoute, isUltraLongTripRoute } from "../utils/dataSaver";
+import { isExtremeTripRoute, isLongTripRoute, isUltraLongTripRoute } from "../utils/dataSaver";
 
 const EARTH_M = 6_371_000;
 
@@ -404,22 +404,40 @@ export function estimateRoadDistanceM(
 }
 
 /** Stored in React state — cap vertices so cross-country legs do not freeze the UI thread. */
-export const ROUTE_GEOMETRY_STORAGE_VERTICES_ULTRA = 5_000;
-export const ROUTE_GEOMETRY_STORAGE_VERTICES_EXTREME = 2_800;
+export const ROUTE_GEOMETRY_STORAGE_VERTICES_LONG = 12_000;
+export const ROUTE_GEOMETRY_STORAGE_VERTICES_ULTRA = 10_000;
+export const ROUTE_GEOMETRY_STORAGE_VERTICES_EXTREME = 16_000;
 /** Planning map overview line — sparse is fine at continent zoom. */
 export const MAP_PLANNING_OVERVIEW_VERTICES = 1_200;
 
 export function normalizeStoredRouteGeometry(geometry: LngLat[]): LngLat[] {
   if (geometry.length < 2) return geometry;
   const totalM = polylineLengthMeters(geometry);
-  if (!isUltraLongTripRoute(totalM)) return geometry;
-  const cap = isExtremeTripRoute(totalM)
-    ? ROUTE_GEOMETRY_STORAGE_VERTICES_EXTREME
-    : ROUTE_GEOMETRY_STORAGE_VERTICES_ULTRA;
+  let cap: number | null = null;
+  if (isExtremeTripRoute(totalM)) cap = ROUTE_GEOMETRY_STORAGE_VERTICES_EXTREME;
+  else if (isUltraLongTripRoute(totalM)) cap = ROUTE_GEOMETRY_STORAGE_VERTICES_ULTRA;
+  else if (isLongTripRoute(totalM)) cap = ROUTE_GEOMETRY_STORAGE_VERTICES_LONG;
+  if (cap == null || geometry.length <= cap) return geometry;
+  return subsamplePolylineAlongDistance(geometry, cap);
+}
+
+/** Rt view + corner PiP — display tier only; guidance math uses full stored geometry. */
+export const ROUTE_OVERVIEW_DISPLAY_VERTICES_LONG = 5_500;
+export const ROUTE_OVERVIEW_DISPLAY_VERTICES_ULTRA = 7_000;
+export const ROUTE_OVERVIEW_DISPLAY_VERTICES_EXTREME = 8_500;
+
+export function geometryForRouteOverviewDisplay(geometry: LngLat[]): LngLat[] {
+  if (geometry.length < 2) return geometry;
+  const totalM = polylineLengthMeters(geometry);
+  if (!isLongTripRoute(totalM)) return geometry;
+  let cap = ROUTE_OVERVIEW_DISPLAY_VERTICES_LONG;
+  if (isExtremeTripRoute(totalM)) cap = ROUTE_OVERVIEW_DISPLAY_VERTICES_EXTREME;
+  else if (isUltraLongTripRoute(totalM)) cap = ROUTE_OVERVIEW_DISPLAY_VERTICES_ULTRA;
   if (geometry.length <= cap) return geometry;
   return subsamplePolylineAlongDistance(geometry, cap);
 }
 
+/** Sparse continent-scale line for planning chrome that never zooms to street level. */
 export function geometryForPlanningMapDisplay(geometry: LngLat[]): LngLat[] {
   if (geometry.length < 2) return geometry;
   const totalM = polylineLengthMeters(geometry);
@@ -432,11 +450,14 @@ export function geometryForPlanningMapDisplay(geometry: LngLat[]): LngLat[] {
 /** Weather/hazard halo segments — dense enough to follow roads on long legs. */
 const HIGHLIGHT_GEOMETRY_VERTEX_BUDGET = 8000;
 
-/** Drive map line: short tail behind puck, full detail ahead (cap only when remaining leg is huge). */
+/** Drive map line: short tail behind puck, local window ahead on long trips. */
 export const DRIVE_LINE_BEHIND_M = 1500;
+/** On 200+ mi trips, only draw this far ahead — keeps vertex budget on local roads. */
+export const DRIVE_LINE_AHEAD_M = 120_000;
 const DRIVE_LINE_MAX_VERTICES = 24_000;
-const DRIVE_LINE_MAX_VERTICES_ULTRA = 6_000;
-const DRIVE_LINE_MAX_VERTICES_EXTREME = 3_500;
+const DRIVE_LINE_MAX_VERTICES_LONG = 14_000;
+const DRIVE_LINE_MAX_VERTICES_ULTRA = 10_000;
+const DRIVE_LINE_MAX_VERTICES_EXTREME = 8_000;
 
 export type RouteHighlightFrame = {
   geometry: LngLat[];
@@ -473,8 +494,8 @@ export function routeHighlightFrameForMap(
 }
 
 /**
- * Active route polyline for drive-mode map rendering — full-resolution slice from just behind the puck
- * to the destination. Only subsamples when the remaining leg is extremely dense (cross-country).
+ * Active route polyline for drive-mode map rendering — slice from just behind the puck
+ * through a local ahead window on long trips (full remaining leg on short routes).
  */
 export function routeLineGeometryForDriveDisplay(
   geometry: LngLat[],
@@ -485,17 +506,22 @@ export function routeLineGeometryForDriveDisplay(
 
   const total = polylineLengthMeters(geometry);
   const startM = Math.max(0, userAlongM - DRIVE_LINE_BEHIND_M);
-  if (total - startM < 2) return geometry;
+  const endM = isLongTripRoute(total)
+    ? Math.min(total, Math.max(startM + 500, userAlongM + DRIVE_LINE_AHEAD_M))
+    : total;
+  if (endM - startM < 2) return geometry;
 
-  let slice = slicePolylineBetweenAlong(geometry, startM, total);
+  let slice = slicePolylineBetweenAlong(geometry, startM, endM);
   if (slice.length < 2) {
-    slice = [pointAtAlongMeters(geometry, startM), pointAtAlongMeters(geometry, total)];
+    slice = [pointAtAlongMeters(geometry, startM), pointAtAlongMeters(geometry, endM)];
   }
   const maxVerts = isExtremeTripRoute(total)
     ? DRIVE_LINE_MAX_VERTICES_EXTREME
     : isUltraLongTripRoute(total)
       ? DRIVE_LINE_MAX_VERTICES_ULTRA
-      : DRIVE_LINE_MAX_VERTICES;
+      : isLongTripRoute(total)
+        ? DRIVE_LINE_MAX_VERTICES_LONG
+        : DRIVE_LINE_MAX_VERTICES;
   if (slice.length > maxVerts) {
     slice = subsamplePolylineAlongDistance(slice, maxVerts);
   }

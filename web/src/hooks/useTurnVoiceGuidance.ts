@@ -1,4 +1,10 @@
 import { useEffect, useRef } from "react";
+import {
+  formatVoiceDistancePrefix,
+  voiceBandOrdinal,
+  voiceBandToSpeak,
+  voiceManeuverThresholds,
+} from "../nav/voiceManeuverTiming";
 
 type Params = {
   enabled: boolean;
@@ -6,24 +12,26 @@ type Params = {
   activeTurnIndex: number;
   instruction: string;
   metersToManeuverEnd: number | null | undefined;
+  speedMps?: number | null;
   /** When the active guidance leg changes (reroute / promote), reset speak memory. */
   routeLegId: string;
 };
 
 /**
- * Hands-free spoken maneuvers while navigating (Web Speech API), any map view.
- * Speaks when the step index changes, and once more when very close (“Now…”).
+ * Hands-free spoken maneuvers while navigating (Web Speech API).
+ * Speaks once per distance band (early → medium → close → now), scaled to speed.
  */
 export function useTurnVoiceGuidance(p: Params): void {
   const lastLegRef = useRef("");
-  const lastFullSpeakIdx = useRef(-1);
-  const spokeProximityForIdx = useRef<number | null>(null);
+  const lastTurnIndexRef = useRef(-1);
+  /** Highest band ordinal already spoken for each turn step index. */
+  const spokeBandOrdinalRef = useRef<Map<number, number>>(new Map());
 
   useEffect(() => {
     if (p.routeLegId !== lastLegRef.current) {
       lastLegRef.current = p.routeLegId;
-      lastFullSpeakIdx.current = -999;
-      spokeProximityForIdx.current = null;
+      lastTurnIndexRef.current = -1;
+      spokeBandOrdinalRef.current = new Map();
     }
   }, [p.routeLegId]);
 
@@ -56,35 +64,32 @@ export function useTurnVoiceGuidance(p: Params): void {
 
     const idx = p.activeTurnIndex;
     const m = p.metersToManeuverEnd;
+    if (m == null || !Number.isFinite(m)) return;
 
-    const indexChanged = idx !== lastFullSpeakIdx.current;
-    if (indexChanged) {
-      lastFullSpeakIdx.current = idx;
-      spokeProximityForIdx.current = null;
-      let prefix = "";
-      if (m != null && Number.isFinite(m) && m > 15) {
-        const ft = m * 3.28084;
-        if (ft < 750) {
-          prefix = `In about ${Math.round(ft)} feet, `;
-        } else {
-          const mi = m / 1609.34;
-          prefix = mi < 10 ? `In about ${mi.toFixed(1)} miles, ` : `In about ${Math.round(mi)} miles, `;
-        }
-      }
-      speak(prefix + text);
-      return;
+    const stepIndexChanged = idx !== lastTurnIndexRef.current;
+    if (stepIndexChanged) {
+      lastTurnIndexRef.current = idx;
+      spokeBandOrdinalRef.current.delete(idx);
     }
 
-    if (m != null && Number.isFinite(m) && m < 80 && spokeProximityForIdx.current !== idx) {
-      spokeProximityForIdx.current = idx;
-      speak(`Now. ${text}`);
-    }
+    const thresholds = voiceManeuverThresholds(p.speedMps);
+    const band = voiceBandToSpeak(m, thresholds, stepIndexChanged);
+    if (!band) return;
+
+    const bandOrd = voiceBandOrdinal(band);
+    const lastSpokenOrd = spokeBandOrdinalRef.current.get(idx) ?? -1;
+    if (bandOrd <= lastSpokenOrd) return;
+
+    spokeBandOrdinalRef.current.set(idx, bandOrd);
+    const prefix = formatVoiceDistancePrefix(m, band);
+    speak(prefix + text);
   }, [
     p.enabled,
     p.navigating,
     p.activeTurnIndex,
     p.instruction,
     p.metersToManeuverEnd,
+    p.speedMps,
     p.routeLegId,
   ]);
 }
