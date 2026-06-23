@@ -1,7 +1,7 @@
 import {
   OFF_ROUTE_CONFIRM_TICKS,
-  OFF_ROUTE_HEADING_MIN_SPEED_MPS,
   OFF_ROUTE_NAV_START_GRACE_ALONG_M,
+  OFF_ROUTE_NAV_START_GRACE_MAX_LATERAL_M,
   OFF_ROUTE_NAV_START_GRACE_MS,
   OFF_ROUTE_REOFFER_COOLDOWN_MS,
   measureOffRouteLateral,
@@ -118,12 +118,11 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
   }
 
   const goAt = input.navGoStartedAtMs;
-  const speedNow = input.triggerCtx.speedMps ?? 0;
   if (
     goAt != null &&
     nowMs - goAt < OFF_ROUTE_NAV_START_GRACE_MS &&
     input.userAlongGuidanceM < OFF_ROUTE_NAV_START_GRACE_ALONG_M &&
-    speedNow < OFF_ROUTE_HEADING_MIN_SPEED_MPS
+    lat < OFF_ROUTE_NAV_START_GRACE_MAX_LATERAL_M
   ) {
     return {
       session,

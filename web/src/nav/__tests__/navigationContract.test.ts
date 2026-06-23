@@ -11,14 +11,13 @@ describe("navigationContract", () => {
   it("locks route id during navigation except explicit promote/stop/replan", () => {
     expect(mayChangeLockedRouteId("navigating", "driver_promote")).toBe(true);
     expect(mayChangeLockedRouteId("navigating", "go_lock")).toBe(false);
-    expect(mayChangeLockedRouteId("navigating", "go_geometry_snap")).toBe(false);
     expect(mayChangeLockedRouteId("planning", "go_lock")).toBe(true);
   });
 
-  it("allows geometry snap after Go and automatic off-route replan fallback", () => {
-    expect(mayMutateLockedRouteGeometry("navigating", "go_geometry_snap")).toBe(true);
-    expect(mayMutateLockedRouteGeometry("navigating", "off_route_replan_fallback")).toBe(true);
+  it("freezes locked leg geometry during navigation", () => {
+    expect(mayMutateLockedRouteGeometry("navigating", "driver_promote")).toBe(true);
     expect(mayMutateLockedRouteGeometry("navigating", "go_lock")).toBe(false);
+    expect(mayMutateLockedRouteGeometry("planning", "go_lock")).toBe(true);
   });
 
   it("refreshes alternates only in route or map view while navigating", () => {
@@ -33,7 +32,7 @@ describe("navigationContract", () => {
     expect(mayAutoRejoinOverlay("planning")).toBe(false);
   });
 
-  it("does not require compare for automatic off-route full replan in nav v1", () => {
-    expect(offRouteFullRerouteRequiresExplicitCompare()).toBe(false);
+  it("requires explicit compare before full replan during drive", () => {
+    expect(offRouteFullRerouteRequiresExplicitCompare()).toBe(true);
   });
 });

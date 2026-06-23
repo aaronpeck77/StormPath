@@ -81,7 +81,7 @@ describe("offRoutePollLogic", () => {
     expect(result.session.offRouteSevere).toBe(false);
   });
 
-  it("ignores off route while parked after Go grace", () => {
+  it("ignores off route during early navigation grace even while moving", () => {
     const result = runOffRoutePollTick({
       session: createOffRoutePollSession(),
       pos: [-77.05, 38.915],
@@ -89,7 +89,7 @@ describe("offRoutePollLogic", () => {
       totalM: 4000,
       userAlongGuidanceM: 20,
       lockedGeometry: locked,
-      triggerCtx: { speedMps: 0 },
+      triggerCtx: { speedMps: 12, headingDeg: 200, routeBearingDeg: 45 },
       navGoStartedAtMs: Date.now() - 1000,
     });
     expect(result.session.offRouteLatched).toBe(false);

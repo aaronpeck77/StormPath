@@ -30,9 +30,11 @@ export const OFF_ROUTE_REOFFER_COOLDOWN_MS = 90_000;
 /** During cooldown, a clear corridor leave can still trigger immediately. */
 export const OFF_ROUTE_FORCE_REOFFER_LATERAL_M = 32;
 
-/** After Go, extra guard while still near the start and not yet driving. */
-export const OFF_ROUTE_NAV_START_GRACE_MS = 50_000;
-export const OFF_ROUTE_NAV_START_GRACE_ALONG_M = 120;
+/** After Go, ignore off-route until the driver has progressed or grace expires. */
+export const OFF_ROUTE_NAV_START_GRACE_MS = 120_000;
+export const OFF_ROUTE_NAV_START_GRACE_ALONG_M = 800;
+/** During grace, only latch when clearly off the chosen corridor (not GPS noise). */
+export const OFF_ROUTE_NAV_START_GRACE_MAX_LATERAL_M = 45;
 
 export type OffRouteSample = {
   lateralM: number;

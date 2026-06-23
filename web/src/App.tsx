@@ -157,7 +157,6 @@ import { RouteCycleButton, type RoutePickItem } from "./ui/RoutePickBar";
 import { RouteStopsBar } from "./ui/RouteStopsBar";
 import {
   currentNavTarget,
-  remainingViaStops,
 } from "./nav/routeWaypoints";
 import { routePickSlotHex } from "./ui/mapRouteStyle";
 import { routeSlotIndexFor } from "./ui/mapRouteLayers";
@@ -2859,47 +2858,6 @@ export default function App() {
       }
     }
 
-    /* Full road-following geometry from current GPS — planning preview may be sparse on long legs. */
-    if (env.mapboxToken && userLngLat && destLngLat) {
-      const epochAtStart = routeGraphEpochRef.current;
-      const remainingVias = remainingViaStops(viaStops, activeViaIndex);
-      const viaCoords = remainingVias.map((s) => s.lngLat);
-      void (async () => {
-        try {
-          const fresh = await collectMapboxRouteVariants(env.mapboxToken, userLngLat, destLngLat, {
-            via: viaCoords.length > 0 ? viaCoords : undefined,
-            singleRouteFromPosition: true,
-          });
-          const leg = fresh[0];
-          if (!leg?.geometry?.length || epochAtStart !== routeGraphEpochRef.current) return;
-          if (lockedNavigationRouteIdRef.current !== chosen) return;
-          setPlan((prev) => ({
-            ...prev,
-            routes: prev.routes.map((r) =>
-              r.id === chosen
-                ? {
-                    ...r,
-                    geometry: leg.geometry,
-                    baseEtaMinutes: leg.baseEtaMinutes,
-                    turnSteps: leg.turnSteps,
-                    routeNotices: leg.routeNotices ?? r.routeNotices,
-                    routeNoticeAlongMeters: leg.routeNoticeAlongMeters ?? r.routeNoticeAlongMeters,
-                    hasTolls: leg.hasTolls ?? r.hasTolls,
-                    tollLabels: leg.tollLabels ?? r.tollLabels,
-                  }
-                : r
-            ),
-          }));
-          navGoGeometryRef.current = leg.geometry.map(([a, b]) => [a, b] as LngLat);
-          navigationGuidanceGeometryRef.current = leg.geometry.map(([a, b]) => [a, b] as LngLat);
-          setGuidanceGeometryEpoch((n) => n + 1);
-          setFitTrigger((n) => n + 1);
-        } catch {
-          /* keep planning geometry */
-        }
-      })();
-    }
-
     // Learn the preferred A/B/C “role” for this destination area.
     if (payFrequentRoutes && destLngLat && destinationLabel.trim()) {
       const key = areaKeyFromLngLat(destLngLat);
@@ -2932,7 +2890,6 @@ export default function App() {
     userLngLat,
     viaStops,
     activeViaIndex,
-    env.mapboxToken,
     bumpRouteForecastRefresh,
   ]);
 

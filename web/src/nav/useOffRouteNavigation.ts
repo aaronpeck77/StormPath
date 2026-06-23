@@ -11,8 +11,6 @@ import {
 } from "./drivingRejoinContext";
 import { fetchLocalRejoinRoutes } from "./localRejoinRoutes";
 import { mergePlanPreservingPrimary } from "./mergePlanRoutes";
-import { remainingViaStops } from "./routeWaypoints";
-import { collectMapboxRouteVariants } from "../services/mapboxDirectionsRouter";
 import { speakNavigationAlert } from "./navigationVoiceAlert";
 import {
   OFF_ROUTE_POLL_MS,
@@ -88,15 +86,13 @@ export interface UseOffRouteNavigationDeps {
 
 export type RecalcRouteFromHereFn = (opts?: { silent?: boolean }) => Promise<void>;
 
-/** Off-route detection + automatic return-to-route (local rejoin, then full replan fallback). */
+/** Off-route detection + temporary rejoin overlay back to the locked route. */
 export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   const {
     userLngLat,
     destLngLat,
     plan,
     orderedRouteIds,
-    viaStops,
-    activeViaIndex,
     navigationStarted,
     guidanceRoute,
     guidanceRouteLengthM,
@@ -107,9 +103,6 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     isOnline,
     isPlus,
     settingVoiceGuidanceEnabled,
-    settingStormEnabled,
-    learnEnabled,
-    stormAlertsForRouting,
     lockedNavigationRouteIdRef,
     routeGraphEpochRef,
     altRoutesFetchAbortRef,
@@ -257,77 +250,6 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     ]
   );
 
-  const applyFullReplanFallback = useCallback(
-    async (signal: AbortSignal, epochAtStart: number, silent: boolean) => {
-      if (!userLngLat || !destLngLat || !mapboxToken) return false;
-      const lockedId = lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
-      if (!lockedId || !navigationStartedRef.current) return false;
-
-      const remainingVias = remainingViaStops(viaStops, activeViaIndex);
-      const viaCoords = remainingVias.map((s) => s.lngLat);
-      const fresh = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
-        via: viaCoords.length > 0 ? viaCoords : undefined,
-        singleRouteFromPosition: true,
-        signal,
-        stormAlerts: stormAlertsForRouting,
-        radarAvoidanceEnabled: isPlus && settingStormEnabled,
-        trailRoutePersonalization: isPlus && learnEnabled,
-      });
-      const leg = fresh[0];
-      if (!leg?.geometry?.length || epochAtStart !== routeGraphEpochRef.current) return false;
-
-      clearDetourGuidance();
-      setPlan((prev) => ({
-        ...prev,
-        routes: prev.routes.map((r) =>
-          r.id === lockedId
-            ? {
-                ...r,
-                geometry: leg.geometry,
-                baseEtaMinutes: leg.baseEtaMinutes,
-                turnSteps: leg.turnSteps,
-                routeNotices: leg.routeNotices ?? r.routeNotices,
-                routeNoticeAlongMeters: leg.routeNoticeAlongMeters ?? r.routeNoticeAlongMeters,
-                hasTolls: leg.hasTolls ?? r.hasTolls,
-                tollLabels: leg.tollLabels ?? r.tollLabels,
-              }
-            : r
-        ),
-      }));
-      setFitTrigger((n) => n + 1);
-      offRouteRerouteFailStreakRef.current = 0;
-      speakNavigationAlert(
-        "Recalculating route from your location.",
-        settingVoiceGuidanceEnabled
-      );
-      if (!silent) {
-        setTapHint("New route from your location.");
-        window.setTimeout(() => setTapHint(null), 6000);
-      }
-      return true;
-    },
-    [
-      userLngLat,
-      destLngLat,
-      mapboxToken,
-      orderedRouteIds,
-      viaStops,
-      activeViaIndex,
-      stormAlertsForRouting,
-      isPlus,
-      settingStormEnabled,
-      learnEnabled,
-      lockedNavigationRouteIdRef,
-      routeGraphEpochRef,
-      navigationStartedRef,
-      clearDetourGuidance,
-      setPlan,
-      setFitTrigger,
-      settingVoiceGuidanceEnabled,
-      setTapHint,
-    ]
-  );
-
   const recalcRouteFromHere = useCallback<RecalcRouteFromHereFn>(
     async (opts) => {
       if (!userLngLat || !destLngLat) return;
@@ -402,13 +324,8 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         }
 
         offRouteRerouteFailStreakRef.current += 1;
-        const replanned = await applyFullReplanFallback(
-          altFetch.signal,
-          epochAtStart,
-          opts?.silent === true
-        );
-        if (!replanned && !opts?.silent) {
-          setTapHint("Could not return to your route — will retry.");
+        if (!opts?.silent) {
+          setTapHint("Could not return to your route — still following your chosen path.");
           window.setTimeout(() => setTapHint(null), 6000);
         }
       } catch (e) {
@@ -416,23 +333,9 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         const msg = routeFetchUserMessage(e) ?? (e instanceof Error ? e.message : String(e));
         setRouteError(msg);
         offRouteRerouteFailStreakRef.current += 1;
-        if (offRouteRerouteFailStreakRef.current >= 2) {
-          try {
-            const replanned = await applyFullReplanFallback(
-              altFetch.signal,
-              epochAtStart,
-              opts?.silent === true
-            );
-            if (!replanned && !opts?.silent) {
-              setTapHint("Route recovery failed — will retry.");
-              window.setTimeout(() => setTapHint(null), 6000);
-            }
-          } catch (fallbackErr) {
-            if (!isAbortError(fallbackErr) && !opts?.silent) {
-              setTapHint("Route recovery failed — will retry.");
-              window.setTimeout(() => setTapHint(null), 6000);
-            }
-          }
+        if (!opts?.silent) {
+          setTapHint("Route recovery failed — still following your chosen path.");
+          window.setTimeout(() => setTapHint(null), 6000);
         }
       } finally {
         setRouting(false);
@@ -461,7 +364,6 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       setTapHint,
       setFitTrigger,
       followDetourRoute,
-      applyFullReplanFallback,
     ]
   );
 
