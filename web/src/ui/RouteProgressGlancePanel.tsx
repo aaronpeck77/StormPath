@@ -5,6 +5,7 @@ import type { RouteOutlookStep } from "../nav/routeForecastTimeline";
 import {
   buildRouteAheadGlanceCards,
   timelineItemBandColor,
+  timelineItemShowsOnRouteGraph,
   timelineItemShowsOnRouteLine,
   type RouteAheadGlanceCard,
   type RouteAheadRelevance,
@@ -66,6 +67,7 @@ type HazardBandVisual = {
   color: string;
   severity: TimelineItem["severity"];
   nearby: boolean;
+  muted: boolean;
 };
 
 const HAZARD_RAIL_META: Record<
@@ -121,7 +123,7 @@ function HazardRailRow({ track, bands }: { track: TimelineItem["track"]; bands: 
         {bands.map((band) => (
           <span
             key={band.id}
-            className={`rpgl__band ${meta.bandClass} rpgl__band--${band.severity}${band.nearby ? " rpgl__band--nearby" : ""}`}
+            className={`rpgl__band ${meta.bandClass} rpgl__band--${band.severity}${band.nearby ? " rpgl__band--nearby" : ""}${band.muted ? " rpgl__band--muted" : ""}`}
             style={{
               left: `${band.left}%`,
               width: `${band.width}%`,
@@ -248,7 +250,7 @@ export function RouteProgressGlancePanel({
   const bandVisuals = useMemo((): HazardBandVisual[] => {
     if (totalMeters <= 0) return [];
     return timeline
-      .filter((item) => timelineItemShowsOnRouteLine(item) && item.endMeters > userAlongMeters)
+      .filter((item) => timelineItemShowsOnRouteGraph(item) && item.endMeters > userAlongMeters)
       .map((item) => {
         const startF = item.startMeters / totalMeters;
         const endF = item.endMeters / totalMeters;
@@ -261,6 +263,7 @@ export function RouteProgressGlancePanel({
           color: timelineItemBandColor(item),
           severity: item.severity,
           nearby: item.crossesRoute === false,
+          muted: Boolean(item.stripMuted),
         };
       });
   }, [timeline, totalMeters, userAlongMeters]);

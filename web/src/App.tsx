@@ -560,10 +560,10 @@ export default function App() {
     () => env.stormAdvisoryEnabled,
     [env.stormAdvisoryEnabled]
   );
-  /** Full Plus detail stream (all NWS + extended scroll content) when Storm + NWS session are enabled. */
+  /** Full Plus detail stream (all NWS + extended scroll content) when Storm is enabled. */
   const advisoryPlusDetailOn = useMemo(
-    () => isPlus && settingStormEnabled && stormSessionOn,
-    [isPlus, settingStormEnabled, stormSessionOn]
+    () => isPlus && settingStormEnabled,
+    [isPlus, settingStormEnabled]
   );
   /** Passed into Mapbox routing — leg C may use an NWS-informed waypoint detour (Plus + Storm on). */
   const stormAlertsForRouting = useMemo((): NormalizedWeatherAlert[] | undefined => {
@@ -3844,7 +3844,7 @@ export default function App() {
                   {showStormAdvisoryChrome ? (
                     <StormAdvisoryBar
                       featureEnabled
-                      sessionOn={advisoryPlusDetailOn}
+                      sessionOn={stormSessionOn}
                       onSessionToggle={onStormSessionToggle}
                       loading={
                         isPlus &&

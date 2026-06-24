@@ -5035,6 +5035,12 @@
   );
 }
 
+/* Muted hydro / advisory — visible on Route Info graph, not painted on the progress strip */
+.rpgl__band--muted {
+  opacity: 0.72;
+  filter: saturate(0.75);
+}
+
 .rpgl__you {
   position: absolute;
   top: -2px;

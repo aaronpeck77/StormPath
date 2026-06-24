@@ -301,14 +301,13 @@ function buildMotionArrowCollection(
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
- * Only render map polygons for convective (tornado/severe thunderstorm/hurricane) alerts
- * and any Extreme-severity alert. Everything else (flood, winter, wind advisories, etc.)
- * stays in the advisory list but is too large and visually cluttered to show on the map.
+ * Only render map polygons for convective alerts and Severe/Extreme warnings.
+ * Minor advisories stay in the advisory list but are too area-heavy for the map.
  */
 function isMapRenderableAlert(props: Record<string, unknown>): boolean {
   const kind = typeof props.kind === "string" ? props.kind : "other";
   const severity = typeof props.severity === "string" ? props.severity : "";
-  return kind === "convective" || severity === "Extreme";
+  return kind === "convective" || severity === "Extreme" || severity === "Severe";
 }
 
 const EMPTY_ALERT_FC: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };

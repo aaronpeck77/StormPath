@@ -152,6 +152,13 @@ export function timelineItemShowsOnRouteLine(item: TimelineItem): boolean {
   return item.severity === "serious" || item.severity === "avoid";
 }
 
+/** Route-info graph NWS rail — show corridor NWS even when muted on the progress strip. */
+export function timelineItemShowsOnRouteGraph(item: TimelineItem): boolean {
+  if (item.track === "nws") return true;
+  if (item.stripMuted) return false;
+  return timelineItemShowsOnRouteLine(item);
+}
+
 /** Colored spans for the progress strip and map route halo — serious hazards only. */
 export function timelineToProgressStripBands(
   items: TimelineItem[],

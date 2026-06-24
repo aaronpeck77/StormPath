@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRouteAheadCalloutSegments, buildRouteAheadGlanceCards, timelineItemShowsOnRouteLine, timelineToProgressStripBands } from "../routeAheadSync";
+import { buildRouteAheadCalloutSegments, buildRouteAheadGlanceCards, timelineItemShowsOnRouteGraph, timelineItemShowsOnRouteLine, timelineToProgressStripBands } from "../routeAheadSync";
 import type { TimelineItem } from "../../ui/RouteHazardTimeline";
 
 const baseItem = (overrides: Partial<TimelineItem>): TimelineItem => ({
@@ -128,6 +128,19 @@ describe("timelineItemShowsOnRouteLine", () => {
     expect(timelineItemShowsOnRouteLine(baseItem({ severity: "info", stripMuted: true }))).toBe(
       false
     );
+  });
+});
+
+describe("timelineItemShowsOnRouteGraph", () => {
+  it("includes strip-muted NWS on the route-info graph rail", () => {
+    expect(
+      timelineItemShowsOnRouteGraph(
+        baseItem({ track: "nws", severity: "serious", stripMuted: true, label: "Flood Warning" })
+      )
+    ).toBe(true);
+    expect(
+      timelineItemShowsOnRouteGraph(baseItem({ track: "road", severity: "caution", stripMuted: true }))
+    ).toBe(false);
   });
 });
 

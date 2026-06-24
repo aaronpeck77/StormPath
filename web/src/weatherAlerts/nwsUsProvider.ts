@@ -603,7 +603,15 @@ async function fetchNwsActiveAlertsFeatures(userAgent: string, retries = NWS_MAX
           if (import.meta.env.DEV) console.log("[NWS national] 304 — using cached", cached.length, "features");
           return cached;
         }
-        /* Rare: 304 without a prior body in this session — fall through to full fetch. */
+        /* 304 without a cached body (new session / cleared cache) — refetch unconditionally. */
+        if (import.meta.env.DEV) console.warn("[NWS national] 304 without cache — refetching full feed");
+        const fullRes = await nwsHttpGet(url, baseHeaders, { signal: ctrl.signal });
+        if (!fullRes.ok) throw new Error(`NWS HTTP ${fullRes.status}`);
+        const nextEtag = fullRes.headers.get("ETag") ?? fullRes.headers.get("etag");
+        const data = (await fullRes.json()) as GeoJSON.FeatureCollection;
+        const features = (data.features ?? []) as NwsFeature[];
+        if (features.length) storeNwsNationalCache(nextEtag, features);
+        return features;
       }
 
       if (!res.ok) throw new Error(`NWS HTTP ${res.status}`);
@@ -611,7 +619,7 @@ async function fetchNwsActiveAlertsFeatures(userAgent: string, retries = NWS_MAX
       const nextEtag = res.headers.get("ETag") ?? res.headers.get("etag");
       const data = (await res.json()) as GeoJSON.FeatureCollection;
       const features = (data.features ?? []) as NwsFeature[];
-      storeNwsNationalCache(nextEtag, features);
+      if (features.length) storeNwsNationalCache(nextEtag, features);
       if (import.meta.env.DEV) {
         console.log(
           "[NWS national] fetched",
