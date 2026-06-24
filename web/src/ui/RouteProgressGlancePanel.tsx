@@ -6,7 +6,6 @@ import {
   buildRouteAheadGlanceCards,
   timelineItemBandColor,
   timelineItemShowsOnRouteGraph,
-  timelineItemShowsOnRouteLine,
   type RouteAheadGlanceCard,
   type RouteAheadRelevance,
 } from "../nav/routeAheadSync";
