@@ -2209,9 +2209,9 @@ function DriveMapInner({
     void loadManifest();
     if (showRadar) manifestTimer = setInterval(() => void loadManifest(), 600_000);
 
-    const onRadarTileError = (e: { sourceId?: string }) => {
+    const onRadarTileError = (e: mapboxgl.ErrorEvent) => {
       if (lastResolvedProvider !== "tomorrow_io" || forceRainViewerForRadar) return;
-      const src = e.sourceId ?? "";
+      const src = (e as mapboxgl.ErrorEvent & { sourceId?: string }).sourceId ?? "";
       if (!src.includes("rainviewer")) return;
       tioTileErrorStreak += 1;
       if (tioTileErrorStreak < 4) return;
