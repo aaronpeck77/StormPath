@@ -22,8 +22,8 @@ export function RouteInfoLegend() {
           through rain.
         </li>
         <li>
-          <strong>Wind gusts</strong> — Tomorrow.io forecast gusts (mph) at spaced points. Orange
-          line; compare with radar to spot windy rain vs dry gust events.
+          <strong>Wind gusts</strong> — calibrated forecast gusts (mph) along your route. Orange
+          line; warnings appear from ~35 mph gusts upward.
         </li>
         <li>
           <strong>NWS / Road</strong> — Bands when National Weather Service warnings or Mapbox

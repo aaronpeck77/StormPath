@@ -10,8 +10,11 @@
  */
 
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
-import type { LngLat } from "../nav/types";
+import {
+  calibratedWindGustMph,
+} from "../nav/windForecastCalib";
 import { pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
+import type { LngLat } from "../nav/types";
 import { enqueueTomorrowIoPost, noteTomorrowIoRateLimit } from "./tomorrowIoClient";
 
 const BASE_URL = "https://api.tomorrow.io/v4/timelines";
@@ -447,6 +450,8 @@ function intervalFromHourlyTimeline(
   const tempC = v.temperature ?? 0;
   const windMs = v.windSpeed ?? 0;
   const gustMs = v.windGust ?? 0;
+  const windSpeedMph = windMs * 2.23694;
+  const rawGustMph = gustMs > 0 ? gustMs * 2.23694 : windSpeedMph;
   return {
     etaMinutes: wp.etaMinutes,
     lat: wp.lat,
@@ -454,8 +459,8 @@ function intervalFromHourlyTimeline(
     tempF: tempC * 9 / 5 + 32,
     precipIntensityMmh: v.precipitationIntensity ?? 0,
     precipProbability: (v.precipitationProbability ?? 0) / 100,
-    windSpeedMph: windMs * 2.23694,
-    windGustMph: gustMs * 2.23694,
+    windSpeedMph,
+    windGustMph: calibratedWindGustMph(windSpeedMph, rawGustMph),
     weatherCode: v.weatherCode ?? 1000,
     wetRoadMm: v.wetRoadIndex ?? 0,
   };

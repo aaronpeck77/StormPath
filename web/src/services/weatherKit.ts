@@ -13,6 +13,7 @@ import {
   weatherCodeLabel,
 } from "./tomorrowIo";
 import type { LngLat } from "../nav/types";
+import { calibratedWindGustMph } from "../nav/windForecastCalib";
 import { fetchWeatherKitAtPoint, type WeatherKitAlert } from "./weatherKitClient";
 import { isWeatherKitTokenBlocked } from "./weatherKitAuth";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
@@ -228,6 +229,8 @@ export async function fetchWeatherKitRouteForecast(
     const locKey = nearestLocationKey(wp, fetchLocations);
     const hourly = timelinesByKey.get(locKey) ?? [];
     const v = nearestHourlyForEta(hourly, wp.etaMinutes, fetchedAt);
+    const windSpeedMph = msToMph(v.windSpeed);
+    const rawGustMph = v.windGust != null ? msToMph(v.windGust) : windSpeedMph;
     return {
       etaMinutes: wp.etaMinutes,
       lat: wp.lat,
@@ -235,8 +238,8 @@ export async function fetchWeatherKitRouteForecast(
       tempF: cToF(v.temperature),
       precipIntensityMmh: v.precipitationIntensity,
       precipProbability: v.precipitationProbability,
-      windSpeedMph: msToMph(v.windSpeed),
-      windGustMph: msToMph(v.windGust),
+      windSpeedMph,
+      windGustMph: calibratedWindGustMph(windSpeedMph, rawGustMph),
       weatherCode: v.weatherCode,
       wetRoadMm: v.wetRoadIndex,
     };

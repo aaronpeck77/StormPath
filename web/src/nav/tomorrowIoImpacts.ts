@@ -8,6 +8,10 @@
 
 import type { RouteForecast, RouteHourlyInterval } from "../services/tomorrowIo";
 import { weatherCodeLabel, weatherCodeSeverity } from "../services/tomorrowIo";
+import {
+  windImpactSeverity,
+  WIND_GUST_CAUTION_MPH,
+} from "./windForecastCalib";
 import type { RouteImpact, RouteImpactCategory, RouteImpactSeverity } from "./routeImpacts";
 import { pointAtAlongMeters } from "./routeGeometry";
 import type { LngLat } from "./types";
@@ -23,7 +27,7 @@ function categoryFromInterval(iv: RouteHourlyInterval): RouteImpactCategory {
   const code = iv.weatherCode;
   if ([5000, 5001, 5100, 5101, 6000, 6001, 6200, 6201, 7000, 7101, 7102].includes(code)) return "winter";
   if (iv.precipIntensityMmh >= 1) return "weather";
-  if (iv.windGustMph >= 45) return "wind";
+  if (iv.windGustMph >= WIND_GUST_CAUTION_MPH) return "wind";
   if (iv.wetRoadMm >= 2) return "flooding";
   return "weather";
 }
@@ -34,7 +38,7 @@ function detailFromInterval(iv: RouteHourlyInterval): string {
     const mm = iv.precipIntensityMmh.toFixed(1);
     parts.push(`precip ${mm} mm/hr`);
   }
-  if (iv.windGustMph >= 20) parts.push(`gusts ${Math.round(iv.windGustMph)} mph`);
+  if (iv.windGustMph >= WIND_GUST_CAUTION_MPH) parts.push(`gusts ${Math.round(iv.windGustMph)} mph`);
   if (iv.wetRoadMm >= 1) parts.push(`standing water ${iv.wetRoadMm.toFixed(1)} mm`);
   parts.push(`${Math.round(iv.tempF)}°F`);
   return parts.join(" · ");
@@ -196,26 +200,23 @@ export function routeForecastToImpacts(
   return impacts;
 }
 
-/** Wind gust severity thresholds (mph). */
+/** Wind gust severity thresholds (mph) — calibrated gusts, driving-oriented. */
 function windSeverity(gustMph: number): RouteImpactSeverity | null {
-  if (gustMph >= 58) return "avoid";    // damaging / high wind warning territory
-  if (gustMph >= 40) return "serious";  // high wind advisory
-  if (gustMph >= 25) return "caution";  // breezy / noticeable
-  return null;                          // below threshold — skip
+  return windImpactSeverity(gustMph);
 }
 
 function windHeadline(gustMph: number, speedMph: number): string {
   const g = Math.round(gustMph);
   const s = Math.round(speedMph);
-  if (gustMph >= 58) return `Dangerous Wind — gusts ${g} mph`;
-  if (gustMph >= 40) return `High Wind — gusts ${g} mph`;
-  return `Breezy — gusts ${g} mph (wind ${s} mph)`;
+  if (gustMph >= 60) return `Dangerous Wind — gusts ${g} mph`;
+  if (gustMph >= 48) return `High Wind — gusts ${g} mph`;
+  return `Windy — gusts ${g} mph (wind ${s} mph)`;
 }
 
 /**
  * Build wind-track RouteImpacts from ETA-aligned route forecast intervals.
  * Consecutive waypoints with the same wind severity are merged into one band.
- * Only gusts ≥ 25 mph are surfaced.
+ * Only gusts ≥ 35 mph (calibrated) are surfaced.
  */
 export function buildWindImpacts(
   forecast: RouteForecast,
@@ -263,9 +264,10 @@ export function buildWindImpacts(
     const lngLat = pointAtAlongMeters(geometry, midM);
     const spanFrac = totalMeters > 0 ? (endM - startM) / totalMeters : 0;
     const headline = windHeadline(rep.iv.windGustMph, rep.iv.windSpeedMph);
-    const detail = spanFrac >= 0.25
-      ? `${headline} · ~${Math.round(spanFrac * 100)}% of route`
-      : headline;
+    const detail =
+      spanFrac >= 0.25 && (band.sev === "serious" || band.sev === "avoid")
+        ? `${headline} · ~${Math.round(spanFrac * 100)}% of route`
+        : headline;
 
     return {
       id: `wind-${i}-${Math.round(startM)}`,
