@@ -4,6 +4,27 @@ import { isExtremeTripRoute, isLongTripRoute, isUltraLongTripRoute } from "../ut
 
 const EARTH_M = 6_371_000;
 
+/** Project `bearingDeg` from (lng, lat) by `distanceM` on the WGS84 spheroid. */
+export function destinationPointMeters(
+  lng: number,
+  lat: number,
+  bearingDeg: number,
+  distanceM: number
+): LngLat {
+  const d = distanceM / EARTH_M;
+  const b = (bearingDeg * Math.PI) / 180;
+  const lat1 = (lat * Math.PI) / 180;
+  const lng1 = (lng * Math.PI) / 180;
+  const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(b));
+  const lng2 =
+    lng1 +
+    Math.atan2(
+      Math.sin(b) * Math.sin(d) * Math.cos(lat1),
+      Math.cos(d) - Math.sin(lat1) * Math.sin(lat2)
+    );
+  return [(lng2 * 180) / Math.PI, (lat2 * 180) / Math.PI];
+}
+
 /** Initial (forward) bearing from `a` to `b`, degrees clockwise from north (0–360). */
 export function initialBearingDegrees(a: LngLat, b: LngLat): number {
   const φ1 = (a[1] * Math.PI) / 180;

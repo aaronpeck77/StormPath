@@ -14,7 +14,8 @@ describe("navigationContract", () => {
     expect(mayChangeLockedRouteId("planning", "go_lock")).toBe(true);
   });
 
-  it("freezes locked leg geometry during navigation", () => {
+  it("freezes locked leg geometry during navigation except explicit driver adopt", () => {
+    expect(mayMutateLockedRouteGeometry("navigating", "driver_stay_on_road")).toBe(true);
     expect(mayMutateLockedRouteGeometry("navigating", "driver_promote")).toBe(true);
     expect(mayMutateLockedRouteGeometry("navigating", "go_lock")).toBe(false);
     expect(mayMutateLockedRouteGeometry("planning", "go_lock")).toBe(true);

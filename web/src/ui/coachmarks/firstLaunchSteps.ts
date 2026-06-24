@@ -71,7 +71,7 @@ export const FIRST_LAUNCH_COACHMARK_STEPS: readonly CoachmarkStep[] = [
     preferredAnchor: "left",
     title: "Open Route info from here",
     body:
-      "This vertical bar on the map is your trip progress. Tap anywhere on the bar to open the Route info panel — colored bands, hazards, NWS weather, traffic, and forecast for what's ahead. There is no separate button anymore.",
+      "This vertical bar on the map is your trip progress. Tap anywhere on the bar to open Route info — corridor weather graphs, radar and wind along the drive, NWS and traffic bands, and hazard cards. Expand “What this panel shows” inside for a full legend.",
   },
 ];
 

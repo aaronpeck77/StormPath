@@ -34,10 +34,21 @@ import { mapMaxBoundsForLngLat, mapMinZoomForSession } from "../config/mapRegion
 import { isUltraLongTripRoute } from "../utils/dataSaver";
 import { continentFromLngLat } from "../services/continents";
 import {
-  fetchRainViewerRadarFrames,
   RAINVIEWER_ANIMATION_DWELL_MS,
-  tileUrlFromHostAndPath,
 } from "../services/rainViewerRadar";
+import {
+  TOMORROW_IO_ANIMATION_CROSSFADE_MS,
+  TOMORROW_IO_ANIMATION_DWELL_MS,
+} from "../services/tomorrowIoRadarTiles";
+import {
+  animationCellsForPack,
+  radarMapProviderForCenter,
+  radarTileUrlForFrame,
+  resolveRadarMapPack,
+  type RadarMapPack,
+  type RadarMapProvider,
+  type RadarFrameHudMeta,
+} from "../services/radarMapPack";
 import { isRainViewerRateLimited, onRainViewerRateLimit, rainViewerRateLimitMsRemaining } from "../services/rainViewerTileFetch";
 import {
   applyRouteConditionHighlights,
@@ -91,6 +102,7 @@ import {
   ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM,
 } from "./mapFitLogic";
 import { driveCameraEaseOptions, smoothDriveBearingDeg } from "./mapDriveCamera";
+import { computePuckTargetBeforeRouteSnap } from "./driveMapPuckTarget";
 import { liftTrafficThenRoutesThenHits } from "./mapLayerStack";
 import {
   type NightBasemapPreset,
@@ -136,8 +148,10 @@ import {
   positionRainViewerRadarUnderRoads,
   removeRainViewerRadar,
   setRainViewerRadarTilesOnSource,
+  setRainViewerRadarDualOpacity,
   setRainViewerRadarLayersVisible,
   waitForRainViewerSideLoaded,
+  setRadarMapTileProvider,
 } from "./mapRadarLayer";
 import { applyNightBasemapReadability } from "./mapNightBasemapReadability";
 
@@ -160,6 +174,10 @@ export type Props = {
   lineFocusId: string;
   suggestedRouteId: string | null;
   userLngLat: [number, number] | null;
+  /** High-frequency GPS refs for the drive puck RAF loop (bypasses React throttle). */
+  liveGpsLngLatRef?: MutableRefObject<LngLat | null>;
+  liveGpsSpeedMpsRef?: MutableRefObject<number | null>;
+  liveGpsHeadingRef?: MutableRefObject<number | null>;
   destLngLat: [number, number] | null;
   /** Numbered markers for intermediate stops (before final destination). */
   viaStops?: TripStop[];
@@ -184,8 +202,8 @@ export type Props = {
   showRadar: boolean;
   /** When false, show the latest radar frame only (no dual-layer animation — saves data). */
   radarAnimate?: boolean;
-  /** RainViewer frame `time` (unix seconds, UTC instant) for the mosaic shown, or null when radar is off / unavailable. */
-  onRadarFrameUtcSec?: (utcSec: number | null) => void;
+  /** Radar frame time (UTC sec) plus provider / loop position for the map HUD. */
+  onRadarFrameUtcSec?: (utcSec: number | null, meta?: RadarFrameHudMeta) => void;
   /** Same corridor points as the progress-strip ticks (weather, notices) — drawn on the active route line. */
   alongRouteAlerts?: RouteAlert[];
   /**
@@ -301,6 +319,9 @@ function DriveMapInner({
   lineFocusId,
   suggestedRouteId,
   userLngLat,
+  liveGpsLngLatRef,
+  liveGpsSpeedMpsRef,
+  liveGpsHeadingRef,
   destLngLat,
   viaStops = [],
   fitTrigger,
@@ -380,6 +401,9 @@ function DriveMapInner({
   onClickRef.current = onMapClick;
   const userLngLatRef = useRef(userLngLat);
   userLngLatRef.current = userLngLat;
+  const liveGpsLngLatRefStable = liveGpsLngLatRef;
+  const liveGpsSpeedMpsRefStable = liveGpsSpeedMpsRef;
+  const liveGpsHeadingRefStable = liveGpsHeadingRef;
   const puckSnapGeomRef = useRef<LngLat[] | null>(null);
   puckSnapGeomRef.current =
     navigationStarted && puckSnapGeometry && puckSnapGeometry.length >= 2 ? puckSnapGeometry : null;
@@ -1161,7 +1185,7 @@ function DriveMapInner({
     if (!navigationStarted || !mapReady) return;
     const marker = puckMarkerRef.current;
     if (!marker) return;
-    const t0 = userLngLatRef.current;
+    const t0 = liveGpsLngLatRefStable?.current ?? userLngLatRef.current;
     if (t0) marker.setLngLat(t0);
 
     let raf = 0;
@@ -1216,11 +1240,21 @@ function DriveMapInner({
     /* Skip Mapbox marker / camera writes when the change is sub-meter — Mapbox repaints on every
      * setLngLat, and at 60 fps even noise far below 1 m can manifest as visible vibration. */
     const NOOP_LNGLAT_DELTA = 0.000005; /* ~0.55 m at the equator; smaller north of 45° */
+    const CAM_NOOP_LNGLAT_DELTA = 0.000001; /* ~0.11 m — follow camera can move more often than the puck marker */
     let lastBearingApplied = NaN;
+
+    const readPuckFollowLngLat = (): LngLat | null =>
+      liveGpsLngLatRefStable?.current ?? userLngLatRef.current;
+
+    const readPuckFollowSpeedMps = (): number | null =>
+      liveGpsSpeedMpsRefStable?.current ?? speedMpsRef.current;
+
+    const readPuckFollowHeading = (): number | null =>
+      liveGpsHeadingRefStable?.current ?? headingRef.current;
 
     const loop = () => {
       if (puckMarkerRef.current !== marker) return;
-      const t = userLngLatRef.current;
+      const t = readPuckFollowLngLat();
       if (t) {
         try {
         const now = performance.now();
@@ -1237,20 +1271,18 @@ function DriveMapInner({
           recomputeApparentSpeed(now);
         }
 
-        // Compute interpolated position between the two most recent fixes.
-        // Cap alpha at 1.0 so we don't overshoot curFix and then have to correct backward when
-        // the next fix arrives — that's the per-second micro-backward "twitch" users perceive.
-        let targetLng: number;
-        let targetLat: number;
-        if (prevFix && curFix && curFix.t > prevFix.t) {
-          const interval = curFix.t - prevFix.t;
-          const alpha = Math.min((now - prevFix.t) / interval, 1.0);
-          targetLng = prevFix.lng + (curFix.lng - prevFix.lng) * alpha;
-          targetLat = prevFix.lat + (curFix.lat - prevFix.lat) * alpha;
-        } else {
-          targetLng = curFix?.lng ?? t[0];
-          targetLat = curFix?.lat ?? t[1];
-        }
+        // Compute interpolated position between the two most recent fixes, then dead-reckon
+        // past the latest fix so motion stays continuous between 1 Hz GPS samples.
+        const followSp = readPuckFollowSpeedMps();
+        const followHdg = readPuckFollowHeading();
+        let [targetLng, targetLat] = computePuckTargetBeforeRouteSnap({
+          now,
+          prevFix,
+          curFix,
+          fallback: t,
+          speedMps: followSp,
+          headingDeg: followHdg,
+        });
 
         // Snap to the route polyline when close enough (hysteresis reduces threshold flicker).
         const geom = puckSnapGeomRef.current;
@@ -1319,7 +1351,7 @@ function DriveMapInner({
          * iOS Core Location frequently reports `speed = -1` (unknown) at low speeds, which arrives
          * here as `null`. We fall back to apparent speed measured directly from consecutive fixes
          * so stationary mode still triggers when the device-reported speed is missing. */
-        const reportedSp = speedMpsRef.current;
+        const reportedSp = followSp;
         const effSp =
           reportedSp != null && reportedSp >= 0
             ? reportedSp
@@ -1401,11 +1433,13 @@ function DriveMapInner({
           const bearingDelta = Number.isFinite(lastBearingApplied)
             ? Math.abs(driveCamBearingSmoothedRef.current - lastBearingApplied)
             : Infinity;
+          const camNoop =
+            effSp != null && effSp >= 1.5 ? CAM_NOOP_LNGLAT_DELTA : NOOP_LNGLAT_DELTA;
           const camMoved =
             !pos || !camCenter
               ? false
-              : Math.abs(camCenter[0] - pos[0]) > NOOP_LNGLAT_DELTA ||
-                Math.abs(camCenter[1] - pos[1]) > NOOP_LNGLAT_DELTA;
+              : Math.abs(camCenter[0] - pos[0]) > camNoop ||
+                Math.abs(camCenter[1] - pos[1]) > camNoop;
           const bearingMoved = bearingDelta > 0.05;
           /* When entering drive view the pitch/zoom may be totally wrong (e.g. flat topdown).
            * Force an easeTo if pitch or zoom are far from drive targets so the view snaps in
@@ -1967,6 +2001,8 @@ function DriveMapInner({
     let manifestTimer: ReturnType<typeof setInterval> | null = null;
     let radarLoopGeneration = 0;
     let lastRadarPathsKey = "";
+    let lastRadarLayerKey = "";
+    let lastResolvedProvider: RadarMapProvider | "" = "";
 
     const clearTimers = () => {
       if (manifestTimer) {
@@ -1986,27 +2022,60 @@ function DriveMapInner({
 
     type RadarCell = { path: string; time: number };
 
+    const mapCenterLngLat = (): LngLat => {
+      const c = map.getCenter();
+      return [c.lng, c.lat];
+    };
+
+    const providerRateLimited = (pack: RadarMapPack) =>
+      pack.provider === "rainviewer" && isRainViewerRateLimited();
+
     /**
      * Load the next frame on the hidden side. With the long crossfade approach the bench side
      * loads during the ~2.8 s blend — plenty of time even on slow connections.
      */
-    const prewarmFrame = (which: "a" | "b", url: string): Promise<void> => {
+    const prewarmFrame = (
+      which: "a" | "b",
+      url: string,
+      crossfadeMs: number
+    ): Promise<void> => {
       setRainViewerRadarTilesOnSource(map, which, url);
-      return waitForRainViewerSideLoaded(map, which, RAINVIEWER_RADAR_CROSSFADE_MS + 1000);
+      return waitForRainViewerSideLoaded(map, which, crossfadeMs + 1000);
     };
 
-    const runRadarFrameLoop = (loopGen: number, host: string, cells: RadarCell[]) => {
+    const emitRadarFrame = (idx: number, pack: RadarMapPack, cells: RadarCell[]) => {
+      const cell = cells[idx];
+      if (!cell) return;
+      onRadarFrameUtcSecRef.current?.(cell.time, {
+        provider: pack.provider,
+        index: idx,
+        total: cells.length,
+        oldestUtcSec: cells[0]!.time,
+        newestUtcSec: cells[cells.length - 1]!.time,
+      });
+    };
+
+    const runRadarFrameLoop = (
+      loopGen: number,
+      pack: RadarMapPack,
+      cells: RadarCell[],
+      apiKey: string | null | undefined
+    ) => {
       const o = RAINVIEWER_RADAR_VISIBLE_OPACITY;
+      const tileUrl = (cell: RadarCell) => radarTileUrlForFrame(pack, cell, apiKey);
+      const isTio = pack.provider === "tomorrow_io";
+      const dwellMs = isTio ? TOMORROW_IO_ANIMATION_DWELL_MS : RAINVIEWER_ANIMATION_DWELL_MS;
+      const crossfadeMs = isTio ? TOMORROW_IO_ANIMATION_CROSSFADE_MS : RAINVIEWER_RADAR_CROSSFADE_MS;
+      const primeDelayMs = isTio ? 350 : 1200;
+      const initialPrimeMs = isTio ? 800 : 3000;
+
       void (async () => {
         let visible: "a" | "b" = "a";
         let idx = 0;
 
-        /* Prime bench side after source A has had time to load — avoids the startup
-         * burst where both sources request tiles simultaneously and hit RainViewer's
-         * rate limit.  1.5 s is enough for A tiles to arrive before B starts. */
-        if (radarAnimate && cells.length > 1 && !isRainViewerRateLimited()) {
-          const nextUrl = tileUrlFromHostAndPath(host, cells[1]!.path);
-          await sleep(3000);
+        if (radarAnimate && cells.length > 1 && !providerRateLimited(pack)) {
+          const nextUrl = tileUrl(cells[1]!);
+          await sleep(initialPrimeMs);
           if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
           setRainViewerRadarTilesOnSource(map, "b", nextUrl);
         }
@@ -2016,39 +2085,51 @@ function DriveMapInner({
           !cancelled &&
           loopGen === radarLoopGeneration &&
           cells.length > 1 &&
-          !isRainViewerRateLimited() &&
+          !providerRateLimited(pack) &&
           mapRef.current === map
         ) {
-          if (userExploringRef.current) {
-            await sleep(400);
-            continue;
-          }
-          /* Show the current frame for its full dwell; bench is loading in parallel. */
-          await sleep(RAINVIEWER_ANIMATION_DWELL_MS);
+          await sleep(dwellMs);
           if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
 
-          /* Cross-fade to the bench (whether tiles finished or not — partial is still smooth). */
+          if (isTio && idx >= cells.length - 1) {
+            /* Forward-only replay: snap back to oldest frame, then march to now again. */
+            idx = 0;
+            emitRadarFrame(0, pack, cells);
+            const restartUrl = tileUrl(cells[0]!);
+            setRainViewerRadarTilesOnSource(map, "a", restartUrl);
+            setRainViewerRadarTilesOnSource(map, "b", restartUrl);
+            setRainViewerRadarDualOpacity(map, o, 0);
+            visible = "a";
+            bringMapboxTrafficLayersToFront(map);
+            liftRouteHits();
+            if (cells.length > 1) {
+              await sleep(primeDelayMs);
+              if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
+              setRainViewerRadarTilesOnSource(map, "b", tileUrl(cells[1]!));
+            }
+            continue;
+          }
+
           const incoming: "a" | "b" = visible === "a" ? "b" : "a";
           const from = visible === "a" ? { a: o, b: 0 } : { a: 0, b: o };
           const to = visible === "a" ? { a: 0, b: o } : { a: o, b: 0 };
-          await animateRainViewerDualCrossfade(map, from, to, RAINVIEWER_RADAR_CROSSFADE_MS);
+          await animateRainViewerDualCrossfade(map, from, to, crossfadeMs);
           if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
 
           visible = incoming;
-          idx = (idx + 1) % cells.length;
-          onRadarFrameUtcSecRef.current?.(cells[idx]!.time);
+          idx = isTio ? idx + 1 : (idx + 1) % cells.length;
+          emitRadarFrame(idx, pack, cells);
           bringMapboxTrafficLayersToFront(map);
           liftRouteHits();
 
-          /* While this frame is on screen, start warming the next one on the bench.
-           * Small delay before pre-warm so successive tile batches don't overlap
-           * and trigger RainViewer rate-limits. */
-          const nextIdx = (idx + 1) % cells.length;
-          const nextUrl = tileUrlFromHostAndPath(host, cells[nextIdx]!.path);
-          await sleep(1200);
-          if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
-          if (!isRainViewerRateLimited()) {
-            void prewarmFrame(incoming === "a" ? "b" : "a", nextUrl);
+          const nextIdx = isTio ? idx + 1 : (idx + 1) % cells.length;
+          if (nextIdx < cells.length) {
+            const nextUrl = tileUrl(cells[nextIdx]!);
+            await sleep(primeDelayMs);
+            if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
+            if (!providerRateLimited(pack)) {
+              void prewarmFrame(incoming === "a" ? "b" : "a", nextUrl, crossfadeMs);
+            }
           }
         }
       })();
@@ -2060,44 +2141,82 @@ function DriveMapInner({
         radarLoopGeneration += 1;
         onRadarFrameUtcSecRef.current?.(null);
         removeRainViewerRadar(map);
+        lastRadarLayerKey = "";
+        lastResolvedProvider = "";
         bringMapboxTrafficLayersToFront(map);
         liftRouteHits();
         return;
       }
-      if (isRainViewerRateLimited()) return;
-      const pack = await fetchRainViewerRadarFrames();
+      const apiKey = getWebEnv().tomorrowIoApiKey;
+      const pack = await resolveRadarMapPack(mapCenterLngLat(), apiKey, { mapAnimation: true });
       if (cancelled || mapRef.current !== map) return;
       if (!pack?.frames.length) {
         radarLoopGeneration += 1;
         onRadarFrameUtcSecRef.current?.(null);
         removeRainViewerRadar(map);
+        lastRadarLayerKey = "";
+        lastResolvedProvider = "";
         bringMapboxTrafficLayersToFront(map);
         liftRouteHits();
         return;
       }
-      const host = pack.host;
-      const cells: RadarCell[] = pack.frames.map((f) => ({ path: f.path, time: f.time }));
-      const pathsKey = cells.map((c) => c.path).join("|");
-      if (pathsKey === lastRadarPathsKey && map.getSource("rainviewer-radar-a")) {
+      if (providerRateLimited(pack)) return;
+      lastResolvedProvider = pack.provider;
+      const cells: RadarCell[] = animationCellsForPack(pack).map((f) => ({
+        path: f.path,
+        time: f.time,
+      }));
+      const pathsKey = `${pack.provider}|${cells.length}|${cells[0]!.path}|${cells.at(-1)!.path}`;
+      const layerKey = `${pack.provider}|${pack.maxZoom}`;
+      const recreate = layerKey !== lastRadarLayerKey;
+      if (pathsKey === lastRadarPathsKey && map.getSource("rainviewer-radar-a") && !recreate) {
         return;
       }
       lastRadarPathsKey = pathsKey;
-      const url0 = tileUrlFromHostAndPath(host, cells[0]!.path);
+      lastRadarLayerKey = layerKey;
+      setRadarMapTileProvider(map, pack.provider);
+      const url0 = radarTileUrlForFrame(pack, cells[0]!, apiKey);
+      if (!url0) return;
       radarLoopGeneration += 1;
       const myGen = radarLoopGeneration;
-      ensureRainViewerRadarDual(map, url0);
+      ensureRainViewerRadarDual(map, url0, RAINVIEWER_RADAR_VISIBLE_OPACITY, {
+        maxZoom: pack.maxZoom,
+        attribution: pack.attribution,
+        recreate,
+      });
       positionRainViewerRadarUnderRoads(map);
       positionWeatherAlertLayersAboveRadar(map);
       bringMapboxTrafficLayersToFront(map);
       liftRouteHits();
-      onRadarFrameUtcSecRef.current?.(cells[0]!.time);
-      if (radarAnimate && cells.length > 1 && !isRainViewerRateLimited()) {
-        runRadarFrameLoop(myGen, host, cells.slice(-2));
+      onRadarFrameUtcSecRef.current?.(cells[0]!.time, {
+        provider: pack.provider,
+        index: 0,
+        total: cells.length,
+        oldestUtcSec: cells[0]!.time,
+        newestUtcSec: cells[cells.length - 1]!.time,
+      });
+      if (radarAnimate && cells.length > 1 && !providerRateLimited(pack)) {
+        runRadarFrameLoop(myGen, pack, cells, apiKey);
       }
     };
 
     void loadManifest();
     if (showRadar) manifestTimer = setInterval(() => void loadManifest(), 600_000);
+
+    let moveEndTimer: ReturnType<typeof setTimeout> | null = null;
+    const onMoveEnd = () => {
+      if (!showRadar || cancelled) return;
+      if (moveEndTimer) clearTimeout(moveEndTimer);
+      moveEndTimer = setTimeout(() => {
+        moveEndTimer = null;
+        const apiKey = getWebEnv().tomorrowIoApiKey;
+        const provider = radarMapProviderForCenter(mapCenterLngLat(), apiKey);
+        if (provider !== lastResolvedProvider) {
+          void loadManifest();
+        }
+      }, 800);
+    };
+    map.on("moveend", onMoveEnd);
 
     let rateLimitResumeTimer: number | null = null;
     const offRateLimit = onRainViewerRateLimit(() => {
@@ -2116,6 +2235,8 @@ function DriveMapInner({
 
     return () => {
       cancelled = true;
+      if (moveEndTimer) clearTimeout(moveEndTimer);
+      map.off("moveend", onMoveEnd);
       offRateLimit();
       if (rateLimitResumeTimer) clearTimeout(rateLimitResumeTimer);
       radarLoopGeneration += 1;

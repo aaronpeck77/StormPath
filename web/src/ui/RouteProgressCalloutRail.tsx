@@ -117,7 +117,9 @@ export function RouteProgressCalloutRail({
       <div className="route-progress-callout-panel__head">
         <div className="route-progress-callout-panel__head-leading">
           <span className="route-progress-callout-panel__title">Route info</span>
-          <span className="route-progress-callout-panel__subtitle">Bands, hazards, and forecast</span>
+          <span className="route-progress-callout-panel__subtitle">
+            Weather, radar, wind, and hazards along your drive
+          </span>
         </div>
         <div className="route-progress-callout-panel__head-actions">
           {showRefresh && onRefresh ? (
@@ -131,8 +133,8 @@ export function RouteProgressCalloutRail({
                 e.stopPropagation();
                 handleRefresh();
               }}
-              title="Reload temperature and precipitation along your route"
-              aria-label="Refresh route weather forecast"
+              title="Reload corridor temperature, rain, wind, and radar samples"
+              aria-label="Refresh route weather and hazard outlook"
             >
               {refreshLabelBusy ? "Refreshing…" : "Refresh"}
             </button>

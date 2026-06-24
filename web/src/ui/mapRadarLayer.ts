@@ -1,8 +1,14 @@
 import type { Map, MapSourceDataEvent, RasterTileSource } from "mapbox-gl";
 import { RAINVIEWER_RADAR_MAX_ZOOM } from "../services/rainViewerRadar";
+import type { RadarMapProvider } from "../services/radarMapPack";
 import { noteRainViewerRateLimit } from "../services/rainViewerTileFetch";
 
 const mapsWithRainViewerErrorFilter = new WeakSet<Map>();
+const radarTileProviderByMap = new WeakMap<Map, RadarMapProvider>();
+
+export function setRadarMapTileProvider(map: Map, provider: RadarMapProvider): void {
+  radarTileProviderByMap.set(map, provider);
+}
 
 /** Legacy single-buffer ids (removed when using dual buffer). */
 const LEGACY_RADAR_SOURCE = "rainviewer-radar";
@@ -91,6 +97,7 @@ export function removeRainViewerRadar(map: Map): void {
   if (map.getLayer(RADAR_LAYER_B)) map.removeLayer(RADAR_LAYER_B);
   if (map.getSource(RADAR_SOURCE_A)) map.removeSource(RADAR_SOURCE_A);
   if (map.getSource(RADAR_SOURCE_B)) map.removeSource(RADAR_SOURCE_B);
+  radarTileProviderByMap.delete(map);
 }
 
 /** Swap tiles without tearing down the source (legacy single-layer animation). */
@@ -115,6 +122,7 @@ function installRainViewerMapErrorFilter(map: Map): void {
   map.on("error", (e) => {
     const src = (e as { sourceId?: string }).sourceId ?? "";
     if (!src.includes("rainviewer")) return;
+    if (radarTileProviderByMap.get(map) === "tomorrow_io") return;
     noteRainViewerRateLimit();
     setRainViewerRadarLayersVisible(map, false);
     if (Date.now() - lastWarnAt < 45_000) return;
@@ -147,7 +155,9 @@ function addRasterPair(
   layerId: string,
   tileUrlTemplate: string,
   opacity: number,
-  beforeId: string | undefined
+  beforeId: string | undefined,
+  maxZoom: number,
+  attribution: string
 ): void {
   installRainViewerMapErrorFilter(map);
   map.addSource(sourceId, {
@@ -155,16 +165,9 @@ function addRasterPair(
     tiles: [tileUrlTemplate],
     tileSize: 256,
     volatile: true,
-    /**
-     * Prevent Mapbox from fetching z=0..2 "overview" tiles on source creation.
-     * Those world-level tiles are never visible and trigger a burst of requests
-     * that hits RainViewer's rate limit, especially when both A and B sources
-     * load simultaneously at startup.
-     */
     minzoom: 3,
-    maxzoom: RAINVIEWER_RADAR_MAX_ZOOM,
-    attribution:
-      'Radar © <a href="https://www.rainviewer.com/" target="_blank" rel="noreferrer">RainViewer</a>',
+    maxzoom: maxZoom,
+    attribution,
   });
   map.addLayer(
     {
@@ -186,15 +189,30 @@ function addRasterPair(
 export function ensureRainViewerRadarDual(
   map: Map,
   initialTileUrlTemplate: string,
-  visibleOpacity: number = RAINVIEWER_RADAR_VISIBLE_OPACITY
+  visibleOpacity: number = RAINVIEWER_RADAR_VISIBLE_OPACITY,
+  opts?: { maxZoom?: number; attribution?: string; recreate?: boolean }
 ): void {
+  if (opts?.recreate) removeRainViewerRadar(map);
   removeLegacyIfPresent(map);
   installRainViewerMapErrorFilter(map);
   const beforeId = radarInsertBeforeId(map);
+  const maxZoom = opts?.maxZoom ?? RAINVIEWER_RADAR_MAX_ZOOM;
+  const attribution =
+    opts?.attribution ??
+    'Radar © <a href="https://www.rainviewer.com/" target="_blank" rel="noreferrer">RainViewer</a>';
 
   if (!map.getSource(RADAR_SOURCE_A)) {
-    addRasterPair(map, RADAR_SOURCE_A, RADAR_LAYER_A, initialTileUrlTemplate, visibleOpacity, beforeId);
-    addRasterPair(map, RADAR_SOURCE_B, RADAR_LAYER_B, initialTileUrlTemplate, 0, beforeId);
+    addRasterPair(
+      map,
+      RADAR_SOURCE_A,
+      RADAR_LAYER_A,
+      initialTileUrlTemplate,
+      visibleOpacity,
+      beforeId,
+      maxZoom,
+      attribution
+    );
+    addRasterPair(map, RADAR_SOURCE_B, RADAR_LAYER_B, initialTileUrlTemplate, 0, beforeId, maxZoom, attribution);
     positionRainViewerRadarUnderRoads(map);
     return;
   }

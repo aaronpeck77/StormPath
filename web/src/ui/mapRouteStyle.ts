@@ -1,19 +1,26 @@
 import type { NavRoute, RouteRole } from "../nav/types";
 
-/** Route A / B — match right-rail buttons and map lines */
-export const ROUTE_A_COLOR = "#3b82f6";
-export const ROUTE_B_COLOR = "#22c55e";
+/** Active route you are following — dark blue on the map. */
+export const ROUTE_ACTIVE_COLOR = "#1e40af";
+/** Alternate / suggested / background legs — light blue. */
+export const ROUTE_SUGGESTED_COLOR = "#7dd3fc";
+
+export const ROUTE_ACTIVE_LINE_WIDTH = 8;
+export const ROUTE_SUGGESTED_LINE_WIDTH = 5;
+
+/** @deprecated use ROUTE_ACTIVE_COLOR */
+export const ROUTE_A_COLOR = ROUTE_ACTIVE_COLOR;
+/** @deprecated use ROUTE_SUGGESTED_COLOR */
+export const ROUTE_B_COLOR = ROUTE_SUGGESTED_COLOR;
 
 export const ROLE_COLOR: Record<RouteRole, string> = {
-  fastest: ROUTE_A_COLOR,
-  balanced: "#0d9488",
-  hazardSmart: ROUTE_B_COLOR,
+  fastest: ROUTE_ACTIVE_COLOR,
+  balanced: "#2563eb",
+  hazardSmart: ROUTE_SUGGESTED_COLOR,
 };
 
-export const ROUTE_C_COLOR = "#f59e0b";
-
-/** A / B / C picker & planning highlight — matches cycle button */
-export const ROUTE_PICK_SLOT_HEX = ["#3b82f6", "#22c55e", "#f59e0b"] as const;
+/** A / B / C picker — blue shades (active slot is darkest). */
+export const ROUTE_PICK_SLOT_HEX = [ROUTE_ACTIVE_COLOR, "#3b82f6", ROUTE_SUGGESTED_COLOR] as const;
 
 export function routePickSlotHex(slotIndex: number): string {
   return ROUTE_PICK_SLOT_HEX[
@@ -21,14 +28,34 @@ export function routePickSlotHex(slotIndex: number): string {
   ]!;
 }
 
-/** Focused leg on main map: bright green, semi-transparent so base map stays readable */
-export const FOCUSED_ROUTE_LINE_COLOR = "#4ade80";
-export const FOCUSED_ROUTE_LINE_OPACITY = 0.55;
-export const FOCUSED_ROUTE_LINE_WIDTH = 8;
+export function routeMapLineStyle(isActive: boolean): {
+  color: string;
+  width: number;
+  opacity: number;
+} {
+  if (isActive) {
+    return {
+      color: ROUTE_ACTIVE_COLOR,
+      width: ROUTE_ACTIVE_LINE_WIDTH,
+      opacity: 0.88,
+    };
+  }
+  return {
+    color: ROUTE_SUGGESTED_COLOR,
+    width: ROUTE_SUGGESTED_LINE_WIDTH,
+    opacity: 0.4,
+  };
+}
+
+/** @deprecated use routeMapLineStyle(true).color */
+export const FOCUSED_ROUTE_LINE_COLOR = ROUTE_ACTIVE_COLOR;
+export const FOCUSED_ROUTE_LINE_OPACITY = 0.88;
+/** @deprecated use ROUTE_ACTIVE_LINE_WIDTH */
+export const FOCUSED_ROUTE_LINE_WIDTH = ROUTE_ACTIVE_LINE_WIDTH;
+
+export const ROUTE_C_COLOR = "#bfdbfe";
 
 export function routeHex(route: NavRoute): string {
-  if (route.id === "r-a" || route.id.startsWith("r-a")) return ROUTE_A_COLOR;
-  if (route.id === "r-b" || route.id.startsWith("r-b")) return ROUTE_B_COLOR;
-  if (route.id === "r-c" || route.id.startsWith("r-c")) return ROUTE_C_COLOR;
-  return ROLE_COLOR[route.role] ?? "#64748b";
+  if (route.id === "r-a" || route.id.startsWith("r-a")) return ROUTE_ACTIVE_COLOR;
+  return ROUTE_SUGGESTED_COLOR;
 }

@@ -11,6 +11,8 @@ import {
 } from "./drivingRejoinContext";
 import { fetchLocalRejoinRoutes } from "./localRejoinRoutes";
 import { mergePlanPreservingPrimary } from "./mergePlanRoutes";
+import { remainingViaStops } from "./routeWaypoints";
+import { collectMapboxRouteVariants } from "../services/mapboxDirectionsRouter";
 import { speakNavigationAlert } from "./navigationVoiceAlert";
 import {
   OFF_ROUTE_POLL_MS,
@@ -82,17 +84,23 @@ export interface UseOffRouteNavigationDeps {
   setRouteError: (msg: string | null) => void;
   setTapHint: (msg: string | null) => void;
   setFitTrigger: (updater: (prev: number) => number) => void;
+  /** Updates full guidance geometry after the driver adopts a new locked path. */
+  adoptLockedRouteGeometry: (geometry: LngLat[]) => void;
 }
 
 export type RecalcRouteFromHereFn = (opts?: { silent?: boolean }) => Promise<void>;
+export type StayOnThisRoadFn = () => Promise<void>;
+export type ReturnToOriginalRouteFn = () => void;
 
-/** Off-route detection + temporary rejoin overlay back to the locked route. */
+/** Off-route detection — driver chooses stay on this road vs return to locked route. */
 export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   const {
     userLngLat,
     destLngLat,
     plan,
     orderedRouteIds,
+    viaStops,
+    activeViaIndex,
     navigationStarted,
     guidanceRoute,
     guidanceRouteLengthM,
@@ -103,6 +111,9 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     isOnline,
     isPlus,
     settingVoiceGuidanceEnabled,
+    settingStormEnabled,
+    learnEnabled,
+    stormAlertsForRouting,
     lockedNavigationRouteIdRef,
     routeGraphEpochRef,
     altRoutesFetchAbortRef,
@@ -122,9 +133,11 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setRouteError,
     setTapHint,
     setFitTrigger,
+    adoptLockedRouteGeometry,
   } = deps;
 
   const [offRouteSevere, setOffRouteSevere] = useState(false);
+  const [offRouteAwaitingDriverChoice, setOffRouteAwaitingDriverChoice] = useState(false);
   const offRouteSevereRef = useRef(false);
   const offRouteRerouteFailStreakRef = useRef(0);
   const offRouteRejoinAlongMRef = useRef(0);
@@ -201,6 +214,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     pollSessionRef.current = resetOffRoutePollSession(pollSessionRef.current);
     offRouteSevereRef.current = false;
     setOffRouteSevere(false);
+    setOffRouteAwaitingDriverChoice(false);
     offRouteRejoinAlongMRef.current = 0;
     setDetourRejoinAlongM(0);
     detourRejoinAlongMRef.current = 0;
@@ -313,7 +327,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           if (bestId) {
             followDetourRoute(
               bestId,
-              "Off your route — finding the way back to your chosen route."
+              opts?.silent ? undefined : "Returning to your original route."
             );
             if (!opts?.silent) {
               setTapHint("Returning to your route.");
@@ -367,6 +381,111 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     ]
   );
 
+  const stayOnThisRoad = useCallback<StayOnThisRoadFn>(async () => {
+    if (!userLngLat || !destLngLat) return;
+    if (mapboxToken && !isOnline) {
+      setTapHint("Offline: can't update route from here.");
+      window.setTimeout(() => setTapHint(null), 3500);
+      return;
+    }
+    const lockedId = lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
+    if (!lockedId || !navigationStartedRef.current || !mapboxToken) return;
+
+    altRoutesFetchAbortRef.current?.abort();
+    const fetchCtrl = new AbortController();
+    altRoutesFetchAbortRef.current = fetchCtrl;
+    altRoutesRefreshInFlightRef.current = true;
+    setRouting(true);
+    setRouteError(null);
+    clearDetourGuidance();
+    setOffRouteAwaitingDriverChoice(false);
+
+    const epochAtStart = routeGraphEpochRef.current;
+    try {
+      const remainingVias = remainingViaStops(viaStops, activeViaIndex);
+      const viaCoords = remainingVias.map((s) => s.lngLat);
+      const fresh = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
+        via: viaCoords.length > 0 ? viaCoords : undefined,
+        singleRouteFromPosition: true,
+        preferBackroads: learnEnabled,
+        signal: fetchCtrl.signal,
+        stormAlerts: stormAlertsForRouting,
+        radarAvoidanceEnabled: isPlus && settingStormEnabled,
+      });
+      const leg = fresh[0];
+      if (!leg?.geometry?.length || epochAtStart !== routeGraphEpochRef.current) return;
+
+      setPlan((prev) => ({
+        ...prev,
+        routes: prev.routes.map((r) =>
+          r.id === lockedId
+            ? {
+                ...r,
+                geometry: leg.geometry,
+                baseEtaMinutes: leg.baseEtaMinutes,
+                turnSteps: leg.turnSteps,
+                routeNotices: leg.routeNotices ?? r.routeNotices,
+                routeNoticeAlongMeters: leg.routeNoticeAlongMeters ?? r.routeNoticeAlongMeters,
+                hasTolls: leg.hasTolls ?? r.hasTolls,
+                tollLabels: leg.tollLabels ?? r.tollLabels,
+              }
+            : r
+        ),
+      }));
+      adoptLockedRouteGeometry(leg.geometry.map(([a, b]) => [a, b] as LngLat));
+      pollSessionRef.current = resetOffRoutePollSession(pollSessionRef.current);
+      offRouteSevereRef.current = false;
+      setOffRouteSevere(false);
+      offRouteRerouteFailStreakRef.current = 0;
+      setFitTrigger((n) => n + 1);
+      setViewMode("drive");
+      speakNavigationAlert("Following your chosen path.", settingVoiceGuidanceEnabled);
+      setTapHint("Following your chosen path.");
+      window.setTimeout(() => setTapHint(null), 5000);
+    } catch (e) {
+      if (isAbortError(e)) return;
+      const msg = routeFetchUserMessage(e) ?? (e instanceof Error ? e.message : String(e));
+      setRouteError(msg);
+      setTapHint("Could not update route — try again.");
+      window.setTimeout(() => setTapHint(null), 5000);
+      setOffRouteAwaitingDriverChoice(true);
+    } finally {
+      setRouting(false);
+      altRoutesRefreshInFlightRef.current = false;
+    }
+  }, [
+    userLngLat,
+    destLngLat,
+    mapboxToken,
+    isOnline,
+    orderedRouteIds,
+    viaStops,
+    activeViaIndex,
+    learnEnabled,
+    stormAlertsForRouting,
+    isPlus,
+    settingStormEnabled,
+    lockedNavigationRouteIdRef,
+    routeGraphEpochRef,
+    altRoutesFetchAbortRef,
+    altRoutesRefreshInFlightRef,
+    navigationStartedRef,
+    clearDetourGuidance,
+    setPlan,
+    adoptLockedRouteGeometry,
+    setRouting,
+    setRouteError,
+    setTapHint,
+    setFitTrigger,
+    setViewMode,
+    settingVoiceGuidanceEnabled,
+  ]);
+
+  const returnToOriginalRoute = useCallback<ReturnToOriginalRouteFn>(() => {
+    setOffRouteAwaitingDriverChoice(false);
+    void recalcRouteFromHere({ silent: false });
+  }, [recalcRouteFromHere]);
+
   useEffect(() => {
     pollSessionRef.current = {
       ...pollSessionRef.current,
@@ -403,19 +522,10 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           : null;
       drivingRejoinModeRef.current = ctx?.mode ?? "manual";
 
-      if (!routingRef.current && !altRoutesRefreshInFlightRef.current) {
-        void recalcRouteFromHere({ silent: true });
-      }
-
+      setOffRouteAwaitingDriverChoice(true);
       setViewMode("drive");
-      speakNavigationAlert(
-        "Off your route. Finding the way back.",
-        settingVoiceGuidanceEnabled
-      );
-      if (!routingRef.current) {
-        setTapHint("Off route — returning to your chosen route.");
-        window.setTimeout(() => setTapHint(null), 6000);
-      }
+      setTapHint("Off your route — stay on this road or return to your original route.");
+      window.setTimeout(() => setTapHint(null), 8000);
     };
 
     const tick = () => {
@@ -585,7 +695,10 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     offRouteSevere,
     autoRejoinGuidanceRouteId,
     detourRejoinAlongM,
+    offRouteAwaitingDriverChoice,
     recalcRouteFromHere,
+    stayOnThisRoad,
+    returnToOriginalRoute,
     resetOffRouteNavigation,
     clearDetourGuidance,
     showOffRouteStatusBanner,

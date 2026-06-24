@@ -12,7 +12,7 @@ import {
   subsamplePolylineVertexBudget,
 } from "../nav/routeGeometry";
 import { isUltraLongTripRoute } from "../utils/dataSaver";
-import { shortenTurnInstruction } from "../nav/turnInstructionShort";
+import { parseExitNumberFromStep, shortenTurnInstruction } from "../nav/turnInstructionShort";
 import {
   loadActivitySamples,
   type ActivitySample,
@@ -65,10 +65,16 @@ type DirectionsResponse = {
           instruction?: string;
           type?: string;
           modifier?: string;
+          /** Roundabout / rotary exit index when present */
+          exit?: number | string;
         };
         name?: string;
         /** Road number per Mapbox (e.g. I 72, US 36) — prefer over long `name` for shields. */
         ref?: string;
+        /** Exit number(s) or names — when Mapbox has them */
+        exits?: string;
+        /** Highway destination signs (e.g. "Springfield") */
+        destinations?: string;
         distance?: number;
         intersections?: {
           geometry_index?: number;
@@ -144,13 +150,23 @@ function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteT
       if (!rawInstr) continue;
       const name = typeof step.name === "string" ? step.name : undefined;
       const ref = typeof step.ref === "string" ? step.ref : undefined;
-      const instr = shortenTurnInstruction(rawInstr, name, ref);
       const mv = step.maneuver;
+      const exits = typeof step.exits === "string" ? step.exits : undefined;
+      const destinations = typeof step.destinations === "string" ? step.destinations : undefined;
+      const exitNumber =
+        parseExitNumberFromStep(rawInstr, exits, mv?.exit) ?? undefined;
+      const instr = shortenTurnInstruction(rawInstr, name, ref, {
+        exits,
+        maneuverExit: mv?.exit,
+        destinations,
+        maneuverType: typeof mv?.type === "string" ? mv.type : undefined,
+      });
       out.push({
         instruction: instr,
         distanceM: typeof step.distance === "number" ? step.distance : undefined,
         maneuverType: typeof mv?.type === "string" ? mv.type : undefined,
         maneuverModifier: typeof mv?.modifier === "string" ? mv.modifier : undefined,
+        exitNumber,
       });
     }
   }
@@ -604,8 +620,10 @@ export async function collectMapboxRouteVariants(
     excludeToll?: boolean;
     /** Plus + learn: prefer alternates that overlap the on-device activity trail. */
     trailRoutePersonalization?: boolean;
-    /** Navigation snap reroute: one route from GPS position, no A/B/C comparison. */
+    /** Navigation snap / stay-on-road: one route from GPS; optional backroads when learn is on. */
     singleRouteFromPosition?: boolean;
+    /** With singleRouteFromPosition: avoid motorways (country-road preference). */
+    preferBackroads?: boolean;
     /** Skip storm/radar leg-C refinement (fast first paint; refine in background). */
     skipStormLegRefinement?: boolean;
     /** Off-route rejoin shuffle — odd passes prefer motorway-excluded alternates for different B/C. */
@@ -639,7 +657,7 @@ export async function collectMapboxRouteVariants(
       hasVia ? via : undefined,
       {
         alternatives: false,
-        excludeMotorway: false,
+        excludeMotorway: Boolean(opts.preferBackroads),
         excludeToll,
         includeDetails,
         simplifiedOverview,

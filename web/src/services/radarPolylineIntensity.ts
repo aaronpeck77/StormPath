@@ -34,6 +34,17 @@ export function echoIntensityFromRgba(r: number, g: number, b: number, a: number
   return clamp01(Math.pow(raw, 1.38));
 }
 
+/** Tomorrow.io precipitationIntensity tiles — blue/cyan → yellow/red heatmap. */
+export function echoIntensityFromPrecipTile(r: number, g: number, b: number, a: number): number {
+  if (a < 16) return 0;
+  const alpha = a / 255;
+  const bright = (r + g + b) / (3 * 255);
+  const warm = Math.max(0, r - Math.max(g, b) * 0.82) / 255;
+  const cool = Math.max(0, b - r * 0.55) / 255;
+  const raw = alpha * Math.max(bright * 0.65, warm * 1.05, cool * 0.45);
+  return clamp01(Math.pow(raw, 1.22));
+}
+
 /**
  * Storm **core** strength (red / magenta / white hail) — ignores yellow–green fringe used for broad precip.
  * Motion arrows should anchor on this score, not {@link echoIntensityFromRgba}.

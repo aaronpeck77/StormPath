@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import type { LngLat } from "../nav/types";
@@ -83,6 +83,13 @@ export type UserLocationOptions = {
   highRefresh?: boolean;
   /** Cap React state updates (ms). Default {@link GPS_STATE_THROTTLE_MS_NORMAL}. */
   stateUpdateThrottleMs?: number;
+};
+
+/** High-frequency GPS refs — updated on every watch callback, not throttled React state. */
+export type UserLocationLiveRefs = {
+  liveLngLatRef: MutableRefObject<LngLat | null>;
+  liveHeadingRef: MutableRefObject<number | null>;
+  liveSpeedMpsRef: MutableRefObject<number | null>;
 };
 
 /** Cap React state updates to avoid effect pile-up on older phones. */
@@ -190,9 +197,15 @@ function watchOpts(highRefresh: boolean): PositionOptions {
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): LocationDetail {
+export function useUserLocation(
+  enabled: boolean,
+  opts?: UserLocationOptions
+): LocationDetail & UserLocationLiveRefs {
   const highRefresh = Boolean(opts?.highRefresh);
   const throttleMs = Math.max(200, opts?.stateUpdateThrottleMs ?? DEFAULT_THROTTLE_MS);
+  const liveLngLatRef = useRef<LngLat | null>(null);
+  const liveHeadingRef = useRef<number | null>(null);
+  const liveSpeedMpsRef = useRef<number | null>(null);
   const [lngLat, setLngLat] = useState<LngLat | null>(null);
   const [heading, setHeading] = useState<number | null>(null);
   const [speedMps, setSpeedMps] = useState<number | null>(null);
@@ -209,6 +222,12 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
     spd: number | null;
   } | null>(null);
   const rafRef = useRef(0);
+
+  const publishLiveFix = (lng: number, lat: number, hdg: number | null, spd: number | null) => {
+    liveLngLatRef.current = [lng, lat];
+    liveHeadingRef.current = hdg;
+    liveSpeedMpsRef.current = spd;
+  };
 
   useEffect(() => {
     if (!enabled) return;
@@ -233,6 +252,7 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
         highRefresh,
         (lng, lat, hdg, spd) => {
           if (cancelled) return;
+          publishLiveFix(lng, lat, hdg, spd);
           const elapsed = Date.now() - lastFlushRef.current;
           if (lastFlushRef.current === 0 || elapsed >= throttleMs) {
             flushNative(lng, lat, hdg, spd);
@@ -276,6 +296,7 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
         setError(null);
         setFixSource("dev-pin");
         setAccuracyM(null);
+        publishLiveFix(override[0], override[1], null, null);
         setLngLat(override);
         setHeading(null);
         setSpeedMps(null);
@@ -337,6 +358,18 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
       return !Number.isFinite(acc) || acc <= 0 || acc > MAX_FIRST_FIX_ACCURACY_M;
     };
 
+    const readBrowserFix = (pos: GeolocationPosition) => {
+      const hdg =
+        pos.coords.heading != null && !Number.isNaN(pos.coords.heading) ? pos.coords.heading : null;
+      const spd = pos.coords.speed != null && pos.coords.speed >= 0 ? pos.coords.speed : null;
+      return {
+        lng: pos.coords.longitude,
+        lat: pos.coords.latitude,
+        hdg,
+        spd,
+      };
+    };
+
     const flush = (pos: GeolocationPosition) => {
       lastFlushRef.current = Date.now();
       pendingRef.current = null;
@@ -344,15 +377,11 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
       setFixSource("browser");
       const acc = pos.coords.accuracy;
       setAccuracyM(Number.isFinite(acc) && acc > 0 ? acc : null);
-      setLngLat([pos.coords.longitude, pos.coords.latitude]);
-      setHeading(
-        pos.coords.heading != null && !Number.isNaN(pos.coords.heading)
-          ? pos.coords.heading
-          : null
-      );
-      setSpeedMps(
-        pos.coords.speed != null && pos.coords.speed >= 0 ? pos.coords.speed : null
-      );
+      const { lng, lat, hdg, spd } = readBrowserFix(pos);
+      publishLiveFix(lng, lat, hdg, spd);
+      setLngLat([lng, lat]);
+      setHeading(hdg);
+      setSpeedMps(spd);
     };
 
     const publishFirstFix = (pos: GeolocationPosition) => {
@@ -367,6 +396,10 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
 
     const onOk = (pos: GeolocationPosition) => {
       if (cancelled) return;
+      if (fixReceived) {
+        const { lng, lat, hdg, spd } = readBrowserFix(pos);
+        publishLiveFix(lng, lat, hdg, spd);
+      }
       if (!fixReceived) {
         if (isTooVagueForInstantShow(pos)) {
           /* Keep coarse / IP guesses off the puck until GPS or Wi‑Fi triangulation narrows —
@@ -480,5 +513,15 @@ export function useUserLocation(enabled: boolean, opts?: UserLocationOptions): L
     };
   }, [enabled, highRefresh, throttleMs]);
 
-  return { lngLat, heading, speedMps, error: error || null, fixSource, accuracyM };
+  return {
+    lngLat,
+    heading,
+    speedMps,
+    error: error || null,
+    fixSource,
+    accuracyM,
+    liveLngLatRef,
+    liveHeadingRef,
+    liveSpeedMpsRef,
+  };
 }

@@ -6,6 +6,7 @@ import {
   buildRouteOutlookTimeline,
   buildRouteOutlookSeries,
   buildSyncedRouteOutlook,
+  effectiveRoutePrecipDisplayPct,
   ensureRouteOutlookForGraph,
   inferPrecipPctFromConditions,
   mergeRouteOutlookSamples,
@@ -134,6 +135,22 @@ describe("inferPrecipPctFromConditions", () => {
   it("estimates rain likelihood from wording when % precip is missing", () => {
     expect(inferPrecipPctFromConditions("light rain")).toBe(65);
     expect(inferPrecipPctFromConditions("thunderstorm with heavy rain")).toBe(75);
+  });
+
+  it("does not treat wind-only wording as rain", () => {
+    expect(inferPrecipPctFromConditions("breezy gusts 38 mph")).toBeNull();
+  });
+});
+
+describe("effectiveRoutePrecipDisplayPct", () => {
+  it("suppresses low model POP without intensity or rain wording", () => {
+    expect(effectiveRoutePrecipDisplayPct(22, 0, "Partly cloudy")).toBe(0);
+    expect(effectiveRoutePrecipDisplayPct(35, 0, "Mostly clear")).toBe(0);
+  });
+
+  it("shows rain when intensity or explicit wording supports it", () => {
+    expect(effectiveRoutePrecipDisplayPct(55, 2, "Light rain")).toBe(55);
+    expect(effectiveRoutePrecipDisplayPct(48, 0, "Light rain")).toBe(48);
   });
 });
 

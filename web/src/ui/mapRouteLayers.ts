@@ -21,7 +21,7 @@ import {
   type StormProgressStripBand,
 } from "../weatherAlerts/geometryOverlap";
 import { safeCameraForBounds, safeEaseTo, safeExtendBounds, safeFitBounds, readMapLngLat } from "./mapCameraSafe";
-import { FOCUSED_ROUTE_LINE_WIDTH, routePickSlotHex } from "./mapRouteStyle";
+import { ROUTE_SUGGESTED_LINE_WIDTH, routeMapLineStyle } from "./mapRouteStyle";
 
 const ROUTE_COND_LEGACY_LAYER = "route-condition-markers-circles";
 const ROUTE_COND_LEGACY_SRC = "route-condition-markers";
@@ -457,9 +457,6 @@ export function applyRoutesToMap(
   layerPrefix = "route",
   opts?: ApplyRoutesLayerOptions
 ): Set<string> {
-  const orderedRouteIds = opts?.orderedRouteIds?.length
-    ? opts.orderedRouteIds
-    : routes.map((r) => r.id);
   const navigationStarted = opts?.navigationStarted ?? false;
   const viewMode = opts?.viewMode ?? "route";
   const isOverviewPip = opts?.isOverviewPip ?? false;
@@ -487,23 +484,21 @@ export function applyRoutesToMap(
     const id = `${layerPrefix}-${route.id}`;
     const isFocus = route.id === lineFocusId;
     const isSuggested = suggestedRouteId != null && route.id === suggestedRouteId && !isFocus;
-    const slot = routeSlotIndexFor(route.id, orderedRouteIds);
-    const slotHex = routePickSlotHex(slot);
 
     let lineColor: string;
     let lineWidth: number;
     let lineOpacity: number;
 
     if (routeComparePicker) {
-      /* Compare sheet: A/B/C slot colors; selected leg pops, others fade */
-      lineColor = slotHex;
-      lineWidth = isFocus ? 10 : 4;
-      lineOpacity = isFocus ? 0.95 : 0.22;
+      const style = routeMapLineStyle(isFocus);
+      lineColor = style.color;
+      lineWidth = isFocus ? 10 : style.width;
+      lineOpacity = isFocus ? 0.95 : 0.24;
     } else if (!navigationStarted) {
-      /* Planning: selected leg uses A/B/C slot color; others same slot hue, dimmed */
-      lineColor = slotHex;
-      lineWidth = isFocus ? 7 : isSuggested ? 5 : 4;
-      lineOpacity = isFocus ? 0.82 : isSuggested ? 0.55 : 0.38;
+      const style = routeMapLineStyle(isFocus);
+      lineColor = style.color;
+      lineWidth = isFocus ? style.width : isSuggested ? ROUTE_SUGGESTED_LINE_WIDTH : style.width - 1;
+      lineOpacity = isFocus ? 0.88 : isSuggested ? 0.52 : 0.36;
     } else {
       const lockedId = opts?.lockedRouteId?.trim() || null;
       const rejoinOverlay =
@@ -513,17 +508,15 @@ export function applyRoutesToMap(
       const isLockedBackground = rejoinOverlay && route.id === lockedId && !isFocus;
 
       if (isLockedBackground) {
-        lineColor = routePickSlotHex(0);
-        lineWidth = 4;
-        lineOpacity = 0.28;
-      } else if (isFocus) {
-        lineColor = slotHex;
-        lineWidth = FOCUSED_ROUTE_LINE_WIDTH;
-        lineOpacity = 0.85;
+        const bg = routeMapLineStyle(false);
+        lineColor = bg.color;
+        lineWidth = bg.width;
+        lineOpacity = 0.26;
       } else {
-        lineColor = slotHex;
-        lineWidth = isSuggested ? 5 : 4;
-        lineOpacity = 0.44;
+        const style = routeMapLineStyle(isFocus);
+        lineColor = style.color;
+        lineWidth = style.width;
+        lineOpacity = style.opacity;
       }
     }
 

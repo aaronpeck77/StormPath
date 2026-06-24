@@ -3,6 +3,8 @@
  * Mapbox raster tiles use the same URL templates (see rainViewerRadar host rewrite in dev).
  */
 
+import { noteTomorrowIoRateLimit } from "./tomorrowIoClient";
+
 const MAX_CONCURRENT = 2;
 const MIN_GAP_MS = 80;
 const RATE_LIMIT_COOLDOWN_MS = 90_000;
@@ -69,15 +71,18 @@ async function throttleGap(): Promise<void> {
   lastFetchAt = Date.now();
 }
 
-async function fetchRadarTileRgbaOnce(url: string): Promise<Uint8ClampedArray | null> {
-  if (isRainViewerRateLimited()) return null;
+async function fetchRadarTileRgbaOnce(
+  url: string,
+  onRateLimit: () => void
+): Promise<Uint8ClampedArray | null> {
+  if (isRainViewerRateLimited() && url.includes("rainviewer")) return null;
 
   await acquireSlot();
   try {
     await throttleGap();
     const res = await fetch(url, { mode: "cors", cache: "force-cache" });
     if (res.status === 429 || res.status === 500 || res.status === 502 || res.status === 503) {
-      noteRainViewerRateLimit();
+      onRateLimit();
       return null;
     }
     if (!res.ok) return null;
@@ -100,7 +105,15 @@ async function fetchRadarTileRgbaOnce(url: string): Promise<Uint8ClampedArray | 
 
 /** Fetch one 256×256 radar tile (cached; respects RainViewer rate limits). */
 export async function fetchRadarTileRgba(url: string): Promise<Uint8ClampedArray | null> {
-  if (isRainViewerRateLimited()) {
+  return fetchMapTileRgba(url, "rainviewer");
+}
+
+/** Fetch one map weather tile — RainViewer or Tomorrow.io. */
+export async function fetchMapTileRgba(
+  url: string,
+  provider: "rainviewer" | "tomorrow_io" = "rainviewer"
+): Promise<Uint8ClampedArray | null> {
+  if (provider === "rainviewer" && isRainViewerRateLimited()) {
     const cached = rgbaCache.get(url);
     if (cached !== undefined) return cached;
     return null;
@@ -109,9 +122,12 @@ export async function fetchRadarTileRgba(url: string): Promise<Uint8ClampedArray
   const cached = rgbaCache.get(url);
   if (cached !== undefined) return cached;
 
+  const onRateLimit =
+    provider === "tomorrow_io" ? noteTomorrowIoRateLimit : noteRainViewerRateLimit;
+
   let p = inFlightByUrl.get(url);
   if (!p) {
-    p = fetchRadarTileRgbaOnce(url).then((data) => {
+    p = fetchRadarTileRgbaOnce(url, onRateLimit).then((data) => {
       rgbaCache.set(url, data);
       return data;
     });

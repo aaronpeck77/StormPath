@@ -43,7 +43,12 @@ export type FetchRainViewerRadarOptions = {
   includeNowcast?: boolean;
   /** Limit `radar.past` to frames at or after `now - pastWindowSec` (default {@link RAINVIEWER_LOOP_PAST_WINDOW_SEC}). */
   pastWindowSec?: number;
+  /** Map overlay animation — use a longer past window (~1 h). */
+  mapAnimation?: boolean;
 };
+
+/** Past window for map radar animation (wider than the 30-min route strip default). */
+export const RAINVIEWER_MAP_ANIMATION_PAST_WINDOW_SEC = 60 * 60;
 
 function normalizeHost(h: string): string {
   return h.replace(/\/$/, "");
@@ -122,7 +127,9 @@ export async function fetchRainViewerRadarFrames(
   opts?: FetchRainViewerRadarOptions
 ): Promise<RainViewerRadarPack | null> {
   const includeNowcast = opts?.includeNowcast ?? false;
-  const pastWindowSec = opts?.pastWindowSec ?? RAINVIEWER_LOOP_PAST_WINDOW_SEC;
+  const pastWindowSec =
+    opts?.pastWindowSec ??
+    (opts?.mapAnimation ? RAINVIEWER_MAP_ANIMATION_PAST_WINDOW_SEC : RAINVIEWER_LOOP_PAST_WINDOW_SEC);
   const data = await fetchRainViewerManifest();
   if (!data) return null;
   const host = normalizeHost(data.host ?? "https://tilecache.rainviewer.com");

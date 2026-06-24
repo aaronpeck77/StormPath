@@ -395,7 +395,7 @@ export function AboutSheet({
                 onChange={(e) => onSettings({ ...settings, radarEnabled: e.target.checked })}
               />
               <span>
-                <strong>Radar</strong> (RainViewer) — enable the Rad button
+                <strong>Radar</strong> — enable the Rad button (US: Tomorrow.io, elsewhere: RainViewer)
               </span>
             </label>
 
@@ -825,15 +825,16 @@ export function AboutSheet({
             <summary>Privacy, safety &amp; data</summary>
             <p className="about-sheet__p">
               <strong>Data:</strong> Map, routing, and traffic use <strong>Mapbox</strong> when configured; live radar
-              mosaic uses <strong>RainViewer</strong>; US warning shapes use <strong>NWS</strong> (api.weather.gov);
+              uses <strong>Tomorrow.io</strong> in the US and <strong>RainViewer</strong> elsewhere; US warning shapes use <strong>NWS</strong> (api.weather.gov);
               route weather samples use <strong>OpenWeather</strong> when enabled in Settings; minute-by-minute precip
               and hourly outlook at your location use <strong>Tomorrow.io</strong> when this build includes the API key
               (no separate off switch).
             </p>
             <p className="about-sheet__p">
-              <strong>Forecasts in the app:</strong> expand the storm advisory bar for local weather at your position;
-              route hazards and timeline details stay in the advisory sections. Map <strong>Rad</strong> is RainViewer;
-              colored NWS shapes follow the <strong>NWS polygons</strong> toggle.
+              <strong>Forecasts in the app:</strong> tap the side progress bar for <strong>Route info</strong>{" "}
+              (corridor temp/rain, route radar strip, wind gusts, NWS + traffic bands, and hazard cards). Expand the
+              storm advisory bar for local weather at your GPS. Map <strong>Rad</strong> is live precipitation radar at the
+              current time; colored NWS shapes follow the <strong>NWS polygons</strong> toggle.
             </p>
             <p className="about-sheet__p">
               <strong>Privacy:</strong> Location is for position, routing, and conditions while you use the app. Plus

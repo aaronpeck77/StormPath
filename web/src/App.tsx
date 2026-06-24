@@ -386,13 +386,18 @@ export default function App() {
   const gpsStateThrottleMs =
     navActiveForGps && isUltraLongTripRoute(maxRouteLenForGps)
       ? GPS_STATE_THROTTLE_MS_ULTRA_LONG
-      : GPS_STATE_THROTTLE_MS_NORMAL;
+      : navActiveForGps
+        ? 200
+        : GPS_STATE_THROTTLE_MS_NORMAL;
   const {
     lngLat: userLngLat,
     heading,
     speedMps,
     error: locationError,
     fixSource: locationFixSource,
+    liveLngLatRef,
+    liveHeadingRef,
+    liveSpeedMpsRef,
   } = useUserLocation(true, {
     highRefresh: settingGpsHighRefreshEnabled,
     stateUpdateThrottleMs: gpsStateThrottleMs,
@@ -1123,6 +1128,13 @@ export default function App() {
   const navigationPositionLngLatRef = useRef(navigationPositionLngLat);
   navigationPositionLngLatRef.current = navigationPositionLngLat;
 
+  const adoptLockedRouteGeometry = useCallback((geometry: LngLat[]) => {
+    navigationGuidanceGeometryRef.current = geometry.map(([a, b]) => [a, b] as LngLat);
+    navGoGeometryRef.current = navigationGuidanceGeometryRef.current;
+    setGuidanceGeometryEpoch((n) => n + 1);
+    setAlongHoldResetKey((n) => n + 1);
+  }, []);
+
   const offRouteNav = useOffRouteNavigation({
     userLngLat: navigationPositionLngLat,
     destLngLat,
@@ -1166,6 +1178,7 @@ export default function App() {
     setRouteError,
     setTapHint,
     setFitTrigger,
+    adoptLockedRouteGeometry,
   });
 
   const {
@@ -1175,6 +1188,8 @@ export default function App() {
     clearDetourGuidance,
     detourAutoActive,
     detourRejoinDistanceLabel,
+    stayOnThisRoad,
+    returnToOriginalRoute,
   } = offRouteNav;
 
   /** After Go: NWS + corridor bands use the locked guidance leg, not the preview leg. */
@@ -1916,7 +1931,8 @@ export default function App() {
     radarRouteSamplingEnabled,
     guidanceRoute?.geometry,
     radarSampleIntervalMs,
-    guidanceRoute?.baseEtaMinutes ?? null
+    guidanceRoute?.baseEtaMinutes ?? null,
+    env.tomorrowIoApiKey
   );
 
   // ── Route weather (Tomorrow.io or Apple WeatherKit) ──
@@ -2545,16 +2561,23 @@ export default function App() {
     return routePickSlotHex(routeSlotIndexFor(guidanceRoute.id, orderedRouteIds));
   }, [guidanceRoute, orderedRouteIds, navigationStarted]);
 
-  const radarFrameTimeLabel = useMemo(() => {
+  const radarFrameClockLabel = useMemo(() => {
     if (!radarMapOverlayOn || radarFrameUtcSec == null) return null;
-    /* Frame `time` is a UTC instant; show local wall time so it matches the user’s clock. */
     return new Date(radarFrameUtcSec * 1000).toLocaleString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }, [radarMapOverlayOn, radarFrameUtcSec]);
+
+  const radarFrameTimeLabel = useMemo(() => {
+    if (!radarFrameClockLabel) return null;
+    return new Date(radarFrameUtcSec! * 1000).toLocaleString(undefined, {
       month: "short",
       day: "numeric",
       hour: "numeric",
       minute: "2-digit",
     });
-  }, [radarMapOverlayOn, radarFrameUtcSec]);
+  }, [radarFrameClockLabel, radarFrameUtcSec]);
 
   const activityTrailGeoJsonForMap = useMemo(() => {
     if (!isPlus || !activityTrailMapOn) return null;
@@ -3728,6 +3751,9 @@ export default function App() {
             lineFocusId={driveMapLineFocusId}
             suggestedRouteId={suggestedRouteId}
             userLngLat={effectiveUserLngLat}
+            liveGpsLngLatRef={navigationStarted ? liveLngLatRef : undefined}
+            liveGpsSpeedMpsRef={navigationStarted ? liveSpeedMpsRef : undefined}
+            liveGpsHeadingRef={navigationStarted ? liveHeadingRef : undefined}
             destLngLat={destLngLat}
             viaStops={viaStops}
             fitTrigger={fitTrigger}
@@ -3746,7 +3772,7 @@ export default function App() {
             onMapFocusComplete={flushMapFocus}
             orderedRouteIds={orderedRouteIds}
             showRadar={radarMapOverlayOn}
-            radarAnimate={!dataSaverMode && !navMapLiteMode}
+            radarAnimate={!dataSaverMode && (!navMapLiteMode || radarMapOverlayOn)}
             onRadarFrameUtcSec={setRadarFrameUtcSec}
             alongRouteAlerts={mapAlongRouteAlertsForDrive}
             corridorRouteGeometry={guidanceRoute?.geometry}
@@ -3899,6 +3925,15 @@ export default function App() {
                   ) : isPlus ? (
                     <div className="nav-top-activity-pill-wrap nav-top-activity-pill-wrap--solo">
                       <ActivityStatusPill busyLabel={activityBusyLabel} />
+                    </div>
+                  ) : null}
+                  {radarMapOverlayOn && radarFrameClockLabel ? (
+                    <div
+                      className="map-radar-frame-time-cluster"
+                      aria-live="polite"
+                      title="Radar mosaic time (local)"
+                    >
+                      {radarFrameClockLabel}
                     </div>
                   ) : null}
                   {hazardApproachAlertsActive && driveApproachBannerPick ? (
@@ -4511,6 +4546,8 @@ export default function App() {
               offRouteRejoinActive={detourAutoActive}
               offRouteRejoinDistanceLabel={detourRejoinDistanceLabel}
               offRouteOptionsBusy={routing}
+              onStayOnThisRoad={() => void stayOnThisRoad()}
+              onReturnToOriginalRoute={returnToOriginalRoute}
               showTrafficBypass={showTrafficBypassCta}
               bypassBusy={bypassBusy}
               onTrafficBypass={

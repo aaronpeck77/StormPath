@@ -77,33 +77,19 @@ function Swatch({ color, kind, dashed }: { color: string; kind: SwatchKind; dash
 const ROUTE_LINE_GROUP: LegendGroup = {
   title: "Route lines",
   intro:
-    "When you're picking a route you'll see up to three options. Once you tap Go, the active route turns blue.",
+    "Dark blue is the route you're following. Light blue lines are other options or your original route while returning.",
   rows: [
     {
-      label: "Route A — primary pick",
+      label: "Active route",
       color: ROUTE_PICK_SLOT_HEX[0],
       kind: "line",
-      blurb: "First option the planner shows. Tap it on the right rail or map to make it active.",
+      blurb: "The path you're driving or have selected — dark blue.",
     },
     {
-      label: "Route B — green alternate",
-      color: ROUTE_PICK_SLOT_HEX[1],
-      kind: "line",
-      blurb: "Second option — usually a slightly different corridor than A.",
-    },
-    {
-      label: "Route C — amber alternate / next-exit bypass",
+      label: "Suggested / alternate",
       color: ROUTE_PICK_SLOT_HEX[2],
       kind: "line",
-      blurb:
-        "Third option in planning. During a bypass it's the side-road / next-exit detour around a hazard.",
-    },
-    {
-      label: "Active route while driving",
-      color: "#1a73e8",
-      kind: "line",
-      blurb:
-        "Once Go is on, the leg you're driving is always blue regardless of which slot you picked.",
+      blurb: "Other options in planning, or a return path while you're off your chosen route.",
     },
   ],
 };

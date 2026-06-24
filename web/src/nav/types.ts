@@ -14,6 +14,8 @@ export interface RouteTurnStep {
   maneuverType?: string;
   /** Mapbox Directions maneuver.modifier */
   maneuverModifier?: string;
+  /** Freeway / ramp exit number when Mapbox supplies it (optional). */
+  exitNumber?: string;
 }
 
 export interface NavRoute {

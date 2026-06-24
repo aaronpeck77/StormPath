@@ -10,6 +10,7 @@ import {
   type RouteAheadRelevance,
 } from "../nav/routeAheadSync";
 import type { TimelineItem } from "./RouteHazardTimeline";
+import { RouteInfoLegend } from "./RouteInfoLegend";
 import { RouteOutlookTimeline } from "./RouteOutlookTimeline";
 import { RouteRadarWindStrip } from "./RouteRadarWindStrip";
 import {
@@ -316,6 +317,7 @@ export function RouteProgressGlancePanel({
 
   return (
     <div className="rpgl">
+      <RouteInfoLegend />
       {showAxis ? (
         <div className="rpgl__axis-pane">
           <div className="rpgl__axis-scroll" aria-label="Route outlook and hazards along your trip">

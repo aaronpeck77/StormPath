@@ -28,6 +28,8 @@ export type RouteOutlookStep = {
   icon: string;
   /** Wind gust speed at this waypoint (mph) — null when not yet fetched */
   windGustMph?: number | null;
+  /** mm/hr at this stop — suppresses chart noise from low POP alone */
+  precipIntensityMmh?: number;
 };
 
 /** One sample on the along-route line graph (space + drive-time, not a fixed location). */
@@ -36,6 +38,8 @@ export type RouteOutlookPoint = {
   tempF: number | null;
   /** 0–100 precip likelihood along your drive at this point on the route */
   precipPct: number;
+  /** mm/hr — when set, gates low POP from painting a noisy rain line */
+  precipIntensityMmh?: number;
   shortLabel?: string;
   etaLabel?: string | null;
   conditions?: string;
@@ -88,8 +92,31 @@ export function inferPrecipPctFromConditions(conditions: string): number | null 
   if (/shower|drizzle/.test(c)) return 45;
   if (/snow|sleet|wintry|hail|blizzard|ice/.test(c)) return 55;
   if (/flood|hydro|surge/.test(c)) return 50;
-  if (/wind|gust/.test(c)) return 35;
   return null;
+}
+
+/**
+ * Rain % for the route outlook chart — not raw model POP.
+ * Long drives often show 15–35% POP at sparse corridor samples even on clear days;
+ * require meaningful intensity, high confidence, or explicit rain wording before drawing the line.
+ */
+export function effectiveRoutePrecipDisplayPct(
+  precipPct: number,
+  precipIntensityMmh = 0,
+  conditions = ""
+): number {
+  const pct = Math.max(0, Math.min(100, precipPct));
+  const c = conditions.toLowerCase();
+  const mentionsPrecip = /rain|shower|drizzle|storm|thunder|snow|sleet|freezing|wintry|hail/.test(c);
+
+  if (precipIntensityMmh >= 0.5) return pct;
+  if (precipIntensityMmh >= 0.12) {
+    return pct >= 35 ? pct : Math.round(pct * 0.45);
+  }
+  if (pct >= 60 && mentionsPrecip) return pct;
+  if (mentionsPrecip && pct >= 45) return Math.min(pct, 55);
+  if (pct >= 50 && mentionsPrecip) return Math.round(pct * 0.6);
+  return 0;
 }
 
 export type StormRouteOutlookBand = {
@@ -301,6 +328,7 @@ export function tomorrowForecastToWxSamples(
     return {
       t: Math.min(1, Math.max(0, iv.etaMinutes / planEtaMinutes)),
       precipHint: iv.precipProbability,
+      precipIntensityMmh: iv.precipIntensityMmh,
       headline: `${Math.round(iv.tempF)}°F ${conditions}${precipSuffix}`,
       windGustMph: iv.windGustMph > 0 ? Math.round(iv.windGustMph) : null,
     };
@@ -328,6 +356,7 @@ export function buildRouteOutlookFromTomorrowForecast(
       conditions,
       precipPct: precipPct > 0 ? precipPct : null,
       precipHint,
+      precipIntensityMmh: iv.precipIntensityMmh,
       etaLabel: null,
       icon: wxIcon(conditions, precipHint),
       windGustMph: iv.windGustMph != null ? Math.round(iv.windGustMph) : null,
@@ -851,8 +880,11 @@ export function precipBarHeight(step: RouteOutlookStep): number {
 }
 
 export function precipPctFromStep(step: RouteOutlookStep): number {
-  if (step.precipPct != null && step.precipPct > 0) return Math.min(100, step.precipPct);
-  return Math.max(0, Math.min(100, Math.round(step.precipHint * 100)));
+  const raw =
+    step.precipPct != null && step.precipPct > 0
+      ? Math.min(100, step.precipPct)
+      : Math.max(0, Math.min(100, Math.round(step.precipHint * 100)));
+  return effectiveRoutePrecipDisplayPct(raw, step.precipIntensityMmh ?? 0, step.conditions);
 }
 
 /**
@@ -918,11 +950,19 @@ export function applyRadarOutlookBoost(
         ? Math.min(100, current + Math.round((radarPct - current) * 0.45))
         : radarPct;
 
+    const rainConditions =
+      /rain|shower|drizzle|storm|thunder|snow/i.test(step.conditions)
+        ? step.conditions
+        : radarPct >= 48
+          ? "Heavy rain on route"
+          : "Rain on route";
+
     return {
       ...step,
       precipPct: boosted,
       precipHint: boosted / 100,
-      icon: wxIcon(step.conditions, boosted / 100),
+      conditions: rainConditions,
+      icon: wxIcon(rainConditions, boosted / 100),
     };
   });
 }
@@ -1038,6 +1078,20 @@ function mergeCloseOutlookPoints(points: RouteOutlookPoint[], gap = 0.035): Rout
   return out;
 }
 
+function smoothPrecipAnchors(points: RouteOutlookPoint[]): RouteOutlookPoint[] {
+  if (points.length <= 2) return points;
+  const sorted = [...points].sort((a, b) => a.fraction - b.fraction);
+  return sorted.map((p, i) => {
+    if (i === 0 || i === sorted.length - 1) return p;
+    const prev = sorted[i - 1]!;
+    const next = sorted[i + 1]!;
+    return {
+      ...p,
+      precipPct: Math.round((prev.precipPct + p.precipPct + next.precipPct) / 3),
+    };
+  });
+}
+
 /** Linear fill between known route forecast stops for a smooth along-drive line. */
 function interpolateOutlookSeries(anchors: RouteOutlookPoint[], slices = 12): RouteOutlookPoint[] {
   if (anchors.length === 0) return [];
@@ -1094,6 +1148,7 @@ export function buildRouteOutlookSeries(
       fraction: step.fraction,
       tempF,
       precipPct: precipPctFromStep(step),
+      precipIntensityMmh: step.precipIntensityMmh,
       windGustMph: step.windGustMph ?? null,
       shortLabel: step.shortLabel,
       etaLabel: step.etaLabel,
@@ -1108,11 +1163,16 @@ export function buildRouteOutlookSeries(
       const wx = parseWxBody(sample.headline);
       if (wx.tempF == null && anchors.some((a) => Math.abs(a.fraction - fraction) < 0.06)) continue;
       const precip = effectivePrecipPct(wx.precipPct, wx.conditions, sample.precipHint);
-      const precipPct = precip.precipPct ?? 0;
+      const precipPct = effectiveRoutePrecipDisplayPct(
+        precip.precipPct ?? Math.round(sample.precipHint * 100),
+        sample.precipIntensityMmh ?? 0,
+        wx.conditions
+      );
       anchors.push({
         fraction,
         tempF: wx.tempF,
         precipPct,
+        precipIntensityMmh: sample.precipIntensityMmh,
         windGustMph: sample.windGustMph ?? null,
         conditions: wx.conditions,
       });
@@ -1121,8 +1181,9 @@ export function buildRouteOutlookSeries(
 
   const merged = mergeCloseOutlookPoints(anchors);
   if (merged.length === 0) return [];
-  if (merged.length === 1) {
-    const p = merged[0]!;
+  const smoothed = smoothPrecipAnchors(merged);
+  if (smoothed.length === 1) {
+    const p = smoothed[0]!;
     const lo = Math.max(0, p.fraction - 0.02);
     const hi = Math.min(1, p.fraction + 0.02);
     if (lo === hi) {
@@ -1136,7 +1197,7 @@ export function buildRouteOutlookSeries(
       { ...p, fraction: hi },
     ];
   }
-  return interpolateOutlookSeries(merged);
+  return interpolateOutlookSeries(smoothed);
 }
 
 export type RouteOutlookChartScale = {

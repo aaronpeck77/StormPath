@@ -3,6 +3,53 @@
  * fuller Mapbox sentences on local streets so names stay visible in town.
  */
 
+export type TurnInstructionShortOpts = {
+  exits?: string;
+  maneuverExit?: number | string;
+  destinations?: string;
+  maneuverType?: string;
+};
+
+/** Best-effort exit label from Mapbox step fields or instruction text. */
+export function parseExitNumberFromStep(
+  instruction: string,
+  exits?: string,
+  maneuverExit?: number | string
+): string | null {
+  const fromField = exits?.trim();
+  if (fromField) {
+    const first = fromField.split(/[;,/]/)[0]?.trim();
+    if (first) return first;
+  }
+  if (maneuverExit != null) {
+    const s = String(maneuverExit).trim();
+    if (s) return s;
+  }
+  const m = instruction.match(/\b(?:take\s+)?exit\s+(\d+[A-Za-z]?)\b/i);
+  return m?.[1] ?? null;
+}
+
+function isExitStyleManeuver(raw: string, maneuverType?: string): boolean {
+  const t = (maneuverType ?? "").toLowerCase();
+  if (t === "off ramp" || t === "ramp" || t === "exit") return true;
+  return /\b(off ramp|on ramp|take (the )?exit|take exit|exit onto)\b/i.test(raw);
+}
+
+function formatExitInstruction(
+  exitNum: string,
+  raw: string,
+  stepName?: string,
+  stepRef?: string,
+  destinations?: string
+): string {
+  const road = pickPrimaryRoadName(raw, stepName, stepRef);
+  const dest = destinations?.split(/[;,]/)[0]?.trim();
+  const parts = [`Exit ${exitNum}`];
+  if (road) parts.push(road);
+  else if (dest) parts.push(`toward ${dest}`);
+  return parts.join(" · ");
+}
+
 /** Normalize to display tokens used in UI + shield regexes. */
 export function pickPrimaryRoadName(instruction: string, stepName?: string, stepRef?: string): string | null {
   const hay = [stepRef, stepName, instruction].filter(Boolean).join(" | ");
@@ -61,9 +108,24 @@ function shortenVerb(instr: string): string {
 /**
  * Mapbox/OSRM full sentence → banner line: compact shields on highways, full Mapbox text on streets.
  */
-export function shortenTurnInstruction(instruction: string, stepName?: string, stepRef?: string): string {
+export function shortenTurnInstruction(
+  instruction: string,
+  stepName?: string,
+  stepRef?: string,
+  opts?: TurnInstructionShortOpts
+): string {
   const raw = instruction.replace(/\s+/g, " ").trim();
   if (!raw) return "";
+  const exitNum = parseExitNumberFromStep(raw, opts?.exits, opts?.maneuverExit);
+  const verb = shortenVerb(raw);
+  if (exitNum) {
+    if (verb === "Roundabout" || /roundabout|rotary/i.test(raw)) {
+      return `Roundabout · exit ${exitNum}`;
+    }
+    if (isExitStyleManeuver(raw, opts?.maneuverType) || verb === "Exit") {
+      return formatExitInstruction(exitNum, raw, stepName, stepRef, opts?.destinations);
+    }
+  }
   const ctx = roadInstructionContext(stepName, stepRef, raw);
 
   if (ctx === "interstate" || ctx === "us_hwy" || ctx === "state_hwy") {

@@ -108,7 +108,7 @@ export function RouteOutlookTimeline({
       </div>
 
       <p className="rotl__subtitle" aria-hidden>
-        Weather you&apos;ll drive through — changes as you move
+        Rain chance when intensity or wording supports it — not every model POP along the corridor
       </p>
 
       <div className="rotl__legend" aria-hidden>

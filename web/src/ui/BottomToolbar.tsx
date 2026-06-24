@@ -49,13 +49,13 @@ type Props = {
   /** When false, hide the Rad button entirely (not just inactive). */
   showRadarButton?: boolean;
   radarEnabled?: boolean;
-  /** Driver left the locked route — inform only; optional explicit compare entry. */
+  /** Driver left the locked route — choose stay vs return. */
   showOffRouteBanner?: boolean;
   offRouteRejoinActive?: boolean;
   offRouteRejoinDistanceLabel?: string | null;
   offRouteOptionsBusy?: boolean;
-  onTryOtherRejoin?: () => void;
-  onOffRouteOptions?: () => void;
+  onStayOnThisRoad?: () => void;
+  onReturnToOriginalRoute?: () => void;
   /** Traffic bypass (moved off progress bar) */
   showTrafficBypass?: boolean;
   bypassBusy?: boolean;
@@ -89,8 +89,8 @@ export function BottomToolbar({
   offRouteRejoinActive = false,
   offRouteRejoinDistanceLabel = null,
   offRouteOptionsBusy = false,
-  onTryOtherRejoin,
-  onOffRouteOptions,
+  onStayOnThisRoad,
+  onReturnToOriginalRoute,
   showTrafficBypass = false,
   bypassBusy = false,
   onTrafficBypass,
@@ -150,28 +150,28 @@ export function BottomToolbar({
           <span className="nav-bottom-off-route__text">
             {offRouteRejoinActive
               ? `Returning to your route${offRouteRejoinDistanceLabel ? ` — ${offRouteRejoinDistanceLabel}` : ""}.`
-              : "Off your route — finding the way back."}
+              : "You're off your route."}
           </span>
-          {(onTryOtherRejoin || onOffRouteOptions) && (
+          {(onStayOnThisRoad || onReturnToOriginalRoute) && (
             <div className="nav-bottom-off-route__actions">
-              {onTryOtherRejoin ? (
+              {onStayOnThisRoad ? (
                 <button
                   type="button"
-                  className="nav-bottom-off-route__btn"
+                  className="nav-bottom-off-route__btn nav-bottom-off-route__btn--primary"
                   disabled={offRouteOptionsBusy}
-                  onClick={onTryOtherRejoin}
+                  onClick={onStayOnThisRoad}
                 >
-                  {offRouteOptionsBusy ? "Loading…" : "Try other rejoin"}
+                  {offRouteOptionsBusy ? "Updating…" : "Stay on this road"}
                 </button>
               ) : null}
-              {onOffRouteOptions ? (
+              {onReturnToOriginalRoute && !offRouteRejoinActive ? (
                 <button
                   type="button"
                   className="nav-bottom-off-route__btn"
                   disabled={offRouteOptionsBusy}
-                  onClick={onOffRouteOptions}
+                  onClick={onReturnToOriginalRoute}
                 >
-                  Route options
+                  Return to original route
                 </button>
               ) : null}
             </div>
@@ -250,7 +250,7 @@ export function BottomToolbar({
                 type="button"
                 title={
                   radarEnabled
-                    ? "Animated precipitation radar (recent ~2 h of mosaics, ~10 min steps)"
+                    ? "Animated precipitation radar (US: Tomorrow.io, elsewhere: RainViewer)"
                     : "Radar disabled in Settings"
                 }
                 className={`nav-mode-sq nav-mode-sq--radar${showRadar ? " active" : ""}`}

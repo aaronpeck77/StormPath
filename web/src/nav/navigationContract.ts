@@ -1,9 +1,8 @@
 /**
  * StormPath navigation contract — single source of truth for route-change rules.
  *
- * Nav v1: one locked route after Go. The chosen leg geometry is frozen at Go.
- * Off-route recovery may use a temporary rejoin overlay only — never silently swap
- * the locked path for a new Mapbox default route.
+ * Nav v1: one locked route after Go. The chosen leg geometry is frozen at Go until the
+ * driver explicitly adopts a new path (stay on this road, traffic bypass confirm, etc.).
  */
 
 export type NavigationPhase = "planning" | "navigating";
@@ -11,6 +10,7 @@ export type NavigationPhase = "planning" | "navigating";
 /** Why the locked route might change — every mutation must map to one of these. */
 export type LockedRouteChangeReason =
   | "go_lock" /** Driver pressed Go — locks leg id and geometry from planning. */
+  | "driver_stay_on_road" /** Driver chose to follow their current road to destination. */
   | "driver_promote" /** Driver confirmed a different leg (compare sheet, promote). */
   | "driver_stop" /** Stop / clear trip. */
   | "replan_destination" /** New destination or full replan before/during nav with preserve flag off. */
@@ -26,9 +26,9 @@ export type RouteCompareIntent =
  *
  * 1. `lockedRouteId` never changes except via `driver_promote` or `driver_stop`.
  * 2. Locked leg geometry is frozen at Go — no silent GPS→destination replans.
- * 3. B/C alternate legs may refresh in Route/Map view only — never replace locked guidance in Drive.
- * 4. Off-route: optional temporary rejoin overlay back to the locked line only.
- * 5. No drive-time route compare or manual rejoin shuffle (planning compare remains).
+ * 3. Driver may adopt a new path via `driver_stay_on_road` or explicit compare confirm.
+ * 4. B/C alternate legs may refresh in Route/Map view only — never replace locked guidance in Drive.
+ * 5. Off-route: driver chooses stay on this road vs return to original (light-blue rejoin overlay).
  * 6. Traffic bypass: offer → compare → explicit confirm only (`trafficBypassFlow.ts`).
  */
 export function mayChangeLockedRouteId(
@@ -52,6 +52,7 @@ export function mayMutateLockedRouteGeometry(
 ): boolean {
   if (phase === "planning") return reason !== "forbidden";
   switch (reason) {
+    case "driver_stay_on_road":
     case "driver_promote":
     case "driver_stop":
     case "replan_destination":
