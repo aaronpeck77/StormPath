@@ -7,10 +7,12 @@ import {
 } from "./rainViewerRadar";
 import {
   buildTomorrowIoRadarFrames,
+  canUseTomorrowIoMapRasterTiles,
   isInTomorrowIoUsPrecipRegion,
   TOMORROW_IO_ANIMATION_FRAME_COUNT,
   TOMORROW_IO_RADAR_MAX_ZOOM,
   tomorrowIoTileUrlFromFrame,
+  verifyTomorrowIoRadarTileAccess,
 } from "./tomorrowIoRadarTiles";
 
 export type RadarMapProvider = "tomorrow_io" | "rainviewer";
@@ -55,14 +57,17 @@ export async function resolveRadarMapPack(
   const provider = opts?.forceRainViewer
     ? "rainviewer"
     : radarMapProviderForCenter(center, tomorrowIoApiKey);
-  if (provider === "tomorrow_io" && tomorrowIoApiKey?.trim()) {
-    return {
-      provider: "tomorrow_io",
-      host: "",
-      frames: buildTomorrowIoRadarFrames(),
-      maxZoom: TOMORROW_IO_RADAR_MAX_ZOOM,
-      attribution: TIO_ATTRIBUTION,
-    };
+  if (provider === "tomorrow_io" && tomorrowIoApiKey?.trim() && canUseTomorrowIoMapRasterTiles()) {
+    const tilesOk = await verifyTomorrowIoRadarTileAccess(tomorrowIoApiKey);
+    if (tilesOk) {
+      return {
+        provider: "tomorrow_io",
+        host: "",
+        frames: buildTomorrowIoRadarFrames(),
+        maxZoom: TOMORROW_IO_RADAR_MAX_ZOOM,
+        attribution: TIO_ATTRIBUTION,
+      };
+    }
   }
 
   const { forceRainViewer: _force, mapAnimation: _mapAnim, ...rvOpts } = opts ?? {};

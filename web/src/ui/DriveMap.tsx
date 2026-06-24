@@ -2003,6 +2003,8 @@ function DriveMapInner({
     let lastRadarPathsKey = "";
     let lastRadarLayerKey = "";
     let lastResolvedProvider: RadarMapProvider | "" = "";
+    let forceRainViewerForRadar = false;
+    let tioTileErrorStreak = 0;
 
     const clearTimers = () => {
       if (manifestTimer) {
@@ -2148,7 +2150,10 @@ function DriveMapInner({
         return;
       }
       const apiKey = getWebEnv().tomorrowIoApiKey;
-      const pack = await resolveRadarMapPack(mapCenterLngLat(), apiKey, { mapAnimation: true });
+      const pack = await resolveRadarMapPack(mapCenterLngLat(), apiKey, {
+        mapAnimation: true,
+        forceRainViewer: forceRainViewerForRadar,
+      });
       if (cancelled || mapRef.current !== map) return;
       if (!pack?.frames.length) {
         radarLoopGeneration += 1;
@@ -2161,6 +2166,7 @@ function DriveMapInner({
         return;
       }
       if (providerRateLimited(pack)) return;
+      if (pack.provider === "rainviewer") tioTileErrorStreak = 0;
       lastResolvedProvider = pack.provider;
       const cells: RadarCell[] = animationCellsForPack(pack).map((f) => ({
         path: f.path,
@@ -2203,6 +2209,19 @@ function DriveMapInner({
     void loadManifest();
     if (showRadar) manifestTimer = setInterval(() => void loadManifest(), 600_000);
 
+    const onRadarTileError = (e: { sourceId?: string }) => {
+      if (lastResolvedProvider !== "tomorrow_io" || forceRainViewerForRadar) return;
+      const src = e.sourceId ?? "";
+      if (!src.includes("rainviewer")) return;
+      tioTileErrorStreak += 1;
+      if (tioTileErrorStreak < 4) return;
+      forceRainViewerForRadar = true;
+      lastRadarPathsKey = "";
+      lastRadarLayerKey = "";
+      void loadManifest();
+    };
+    map.on("error", onRadarTileError);
+
     let moveEndTimer: ReturnType<typeof setTimeout> | null = null;
     const onMoveEnd = () => {
       if (!showRadar || cancelled) return;
@@ -2237,6 +2256,7 @@ function DriveMapInner({
       cancelled = true;
       if (moveEndTimer) clearTimeout(moveEndTimer);
       map.off("moveend", onMoveEnd);
+      map.off("error", onRadarTileError);
       offRateLimit();
       if (rateLimitResumeTimer) clearTimeout(rateLimitResumeTimer);
       radarLoopGeneration += 1;

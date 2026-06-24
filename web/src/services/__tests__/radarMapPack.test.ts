@@ -6,7 +6,16 @@ import {
   resolveRadarMapPack,
 } from "../radarMapPack";
 import { fetchRainViewerRadarFrames } from "../rainViewerRadar";
-import { buildTomorrowIoRadarFrames } from "../tomorrowIoRadarTiles";
+import { buildTomorrowIoRadarFrames, canUseTomorrowIoMapRasterTiles } from "../tomorrowIoRadarTiles";
+
+vi.mock("../tomorrowIoRadarTiles", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../tomorrowIoRadarTiles")>();
+  return {
+    ...actual,
+    canUseTomorrowIoMapRasterTiles: vi.fn(() => true),
+    verifyTomorrowIoRadarTileAccess: vi.fn(async () => true),
+  };
+});
 
 vi.mock("../rainViewerRadar", () => ({
   fetchRainViewerRadarFrames: vi.fn(),
@@ -75,6 +84,17 @@ describe("radarMapPack", () => {
       includeNowcast: true,
       mapAnimation: false,
     });
+  });
+
+  it("falls back to RainViewer when Tomorrow.io map tiles are unavailable", async () => {
+    vi.mocked(canUseTomorrowIoMapRasterTiles).mockReturnValueOnce(false);
+    vi.mocked(fetchRainViewerRadarFrames).mockResolvedValue({
+      host: "tilecache.rainviewer.com",
+      frames: [{ time: 1, path: "/v2/radar/1/256/1_1.png" }],
+    });
+    const pack = await resolveRadarMapPack([-98, 39], "abc", { mapAnimation: true });
+    expect(pack?.provider).toBe("rainviewer");
+    expect(fetchRainViewerRadarFrames).toHaveBeenCalled();
   });
 
   it("limits animation frames per provider", () => {

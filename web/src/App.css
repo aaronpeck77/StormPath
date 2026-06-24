@@ -2155,9 +2155,9 @@
   z-index: 0;
 }
 
-/* Small radar clock under the advisory strip — light text for dark map */
+/* Small radar clock under the advisory strip — left edge, clear of the progress rail */
 .map-radar-frame-time-cluster {
-  align-self: flex-end;
+  align-self: flex-start;
   margin-top: 1px;
   padding: 0 4px;
   pointer-events: none;
@@ -2165,7 +2165,7 @@
   font-weight: 650;
   letter-spacing: 0.02em;
   line-height: 1.2;
-  text-align: right;
+  text-align: left;
   color: rgba(226, 232, 240, 0.94);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   white-space: nowrap;
@@ -11361,16 +11361,17 @@
   gap: 0;
 }
 
-/* Radar frame clock: right side of top dock row ? clear of search / route controls */
+/* Radar frame clock: left side of dock row — clear of the progress rail on the right */
 .nav-radar-frame-time-dock {
-  flex: 1;
+  flex: 0 0 auto;
   min-width: 0;
+  margin-right: auto;
   font-size: 0.58rem;
   font-weight: 650;
   letter-spacing: 0.02em;
   color: rgba(226, 232, 240, 0.94);
-  text-align: right;
-  padding: 2px 0 2px 10px;
+  text-align: left;
+  padding: 2px 10px 2px 4px;
   line-height: 1.2;
   pointer-events: none;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
@@ -14367,10 +14368,12 @@
 
   .app-shell.nav-fullmap .nav-bottom-dock__about-row > .map-about-btn {
     order: 2;
+    flex-shrink: 0;
   }
 
   .app-shell.nav-fullmap .nav-bottom-dock__about-row > .nav-radar-frame-time-dock {
     order: 1;
+    margin-right: auto;
   }
 
   /* Left-handed: bottom chrome hugs physical left ? put ?i? on outer edge (away from map / progress rail). */
@@ -14384,6 +14387,8 @@
 
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row > .nav-radar-frame-time-dock {
     order: 2;
+    margin-right: 0;
+    margin-left: 0;
   }
 
   /*

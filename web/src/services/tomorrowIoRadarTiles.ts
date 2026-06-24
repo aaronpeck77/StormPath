@@ -3,6 +3,8 @@
  * @see https://docs.tomorrow.io/docs/tiles
  */
 
+import { Capacitor } from "@capacitor/core";
+
 export const TOMORROW_IO_RADAR_MAX_ZOOM = 10;
 export const TOMORROW_IO_PRECIP_FIELD = "precipitationIntensity";
 
@@ -59,4 +61,38 @@ export function buildTomorrowIoRadarFrames(opts?: {
 
 export function tomorrowIoTileUrlFromFrame(apiKey: string, timestampIso: string): string {
   return tomorrowIoPrecipTileUrlTemplate(apiKey, timestampIso);
+}
+
+/**
+ * Mapbox GL loads raster tiles through the WebView fetch stack. On Capacitor iOS/Android,
+ * api.tomorrow.io is blocked by WKWebView CORS (same constraint as timelines in tomorrowIo.ts).
+ * Forecast APIs use CapacitorHttp; map tiles cannot — use RainViewer on native instead.
+ */
+export function canUseTomorrowIoMapRasterTiles(): boolean {
+  return !Capacitor.isNativePlatform();
+}
+
+let tileProbeCache: { key: string; ok: boolean } | null = null;
+
+/** Sample tile fetch — mirrors Mapbox raster loading (browser fetch, not CapacitorHttp). */
+export async function verifyTomorrowIoRadarTileAccess(apiKey: string): Promise<boolean> {
+  const key = apiKey.trim();
+  if (!key || !canUseTomorrowIoMapRasterTiles()) return false;
+  if (tileProbeCache?.key === key) return tileProbeCache.ok;
+
+  const template = tomorrowIoPrecipTileUrlTemplate(key, "now");
+  const url = template.replace("{z}", "4").replace("{x}", "14").replace("{y}", "6");
+  let ok = false;
+  try {
+    const res = await fetch(url, { method: "GET", cache: "no-store", mode: "cors" });
+    ok = res.ok;
+  } catch {
+    ok = false;
+  }
+  tileProbeCache = { key, ok };
+  return ok;
+}
+
+export function resetTomorrowIoRadarTileProbeCache(): void {
+  tileProbeCache = null;
 }

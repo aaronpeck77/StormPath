@@ -1,9 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@capacitor/core", () => ({
+  Capacitor: { isNativePlatform: vi.fn(() => false) },
+}));
+
+import { Capacitor } from "@capacitor/core";
 import {
   buildTomorrowIoRadarFrames,
+  canUseTomorrowIoMapRasterTiles,
   isInTomorrowIoUsPrecipRegion,
   tomorrowIoPrecipTileUrlTemplate,
   TOMORROW_IO_RADAR_MAX_ZOOM,
+  verifyTomorrowIoRadarTileAccess,
 } from "../tomorrowIoRadarTiles";
 
 describe("tomorrowIoRadarTiles", () => {
@@ -42,5 +50,11 @@ describe("tomorrowIoRadarTiles", () => {
     expect(url).toContain("api.tomorrow.io/v4/map/tile/{z}/{x}/{y}/precipitationIntensity/");
     expect(url).toContain("apikey=abc123");
     expect(TOMORROW_IO_RADAR_MAX_ZOOM).toBeGreaterThan(7);
+  });
+
+  it("skips Tomorrow.io map raster on native Capacitor", async () => {
+    vi.mocked(Capacitor.isNativePlatform).mockReturnValueOnce(true);
+    expect(canUseTomorrowIoMapRasterTiles()).toBe(false);
+    await expect(verifyTomorrowIoRadarTileAccess("key")).resolves.toBe(false);
   });
 });
