@@ -480,7 +480,7 @@ export function useRouteAheadDerivations(
   const routeAlerts = useMemo(
     () =>
       routeImpactsForUi
-        .filter((i) => i.source !== "nws" && i.source !== "tomorrowIo")
+        .filter((i) => i.source !== "nws" && i.source !== "tomorrowIo" && i.source !== "windGust")
         .map(routeImpactToRouteAlert),
     [routeImpactsForUi]
   );

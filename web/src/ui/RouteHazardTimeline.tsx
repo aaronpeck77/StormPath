@@ -403,7 +403,7 @@ export function impactToTimelineItem(imp: RouteImpact): TimelineItem {
   const track: TimelineItem["track"] =
     imp.source === "radar" ? "radar"
     : imp.source === "nws" ? "nws"
-    : imp.source === "wind" ? "wind"
+    : imp.source === "wind" || imp.source === "windGust" ? "wind"
     : imp.source === "tomorrowIo" ? "forecast"  // list-only — not in graph TRACK_ORDER
     : "road";
   return {
@@ -415,6 +415,6 @@ export function impactToTimelineItem(imp: RouteImpact): TimelineItem {
     endMeters: imp.endMeters,
     detailLine: impactDetailLine(imp),
     crossesRoute: true,
-    stripMuted: track === "forecast",
+    stripMuted: track === "forecast" || imp.source === "windGust",
   };
 }

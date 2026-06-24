@@ -51,11 +51,13 @@ function linePath(pts: { t: number; norm: number }[]): string {
 
 type Props = {
   radarSamples: RadarSample[];
-  /** Wind gust points from TIO forecast (t=0–1 along route). */
+  /** Sustained wind (mph) along route — main amber line. */
   windPoints: WindPoint[];
+  /** Brief gust spikes — tick marks above the sustained line. */
+  gustSpikePoints?: WindPoint[];
 };
 
-export function RouteRadarWindStrip({ radarSamples, windPoints }: Props) {
+export function RouteRadarWindStrip({ radarSamples, windPoints, gustSpikePoints = [] }: Props) {
   /* ── Radar ── */
   const radarPts = useMemo(() => {
     const sorted = [...radarSamples]
@@ -73,6 +75,11 @@ export function RouteRadarWindStrip({ radarSamples, windPoints }: Props) {
   const sortedWind = useMemo(
     () => [...windPoints].filter((p) => p.mph > 0).sort((a, b) => a.t - b.t),
     [windPoints]
+  );
+
+  const sortedGustSpikes = useMemo(
+    () => [...gustSpikePoints].filter((p) => p.mph > 0).sort((a, b) => a.t - b.t),
+    [gustSpikePoints]
   );
 
   const windMax = useMemo(
@@ -108,7 +115,7 @@ export function RouteRadarWindStrip({ radarSamples, windPoints }: Props) {
         <span className="rrws__legend-item">
           <span className="rrws__swatch rrws__swatch--wind" aria-hidden />
           <span className="rrws__label rrws__label--wind">
-            Wind gusts{hasWind ? ` (${windMax} mph max)` : ""}
+            Sustained wind{hasWind ? ` (${windMax} mph max)` : ""}
           </span>
         </span>
         {isEmpty && <span className="rrws__empty">No data</span>}
@@ -163,7 +170,7 @@ export function RouteRadarWindStrip({ radarSamples, windPoints }: Props) {
             </>
           )}
 
-          {/* ── Wind gust line — solid, no fill ── */}
+          {/* ── Sustained wind line ── */}
           {hasWind && (
             <path
               d={linePath(windPts)}
@@ -175,6 +182,26 @@ export function RouteRadarWindStrip({ radarSamples, windPoints }: Props) {
               vectorEffect="non-scaling-stroke"
             />
           )}
+
+          {/* ── Gust spike ticks (localized, not corridor-wide) ── */}
+          {sortedGustSpikes.map((p, i) => {
+            const norm = p.mph / windMax;
+            const x = xPx(p.t);
+            const y = yPx(Math.min(1, norm));
+            return (
+              <line
+                key={`gust-${i}-${p.t}`}
+                x1={x}
+                y1={BASELINE_Y}
+                x2={x}
+                y2={y}
+                stroke="#fb923c"
+                strokeWidth={2}
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
         </svg>
 
         {/* Radar label — sits in the left pad area, vertically centred */}

@@ -22,8 +22,9 @@ export function RouteInfoLegend() {
           through rain.
         </li>
         <li>
-          <strong>Wind gusts</strong> — calibrated forecast gusts (mph) along your route. Orange
-          line; warnings appear from ~35 mph gusts upward.
+          <strong>Wind</strong> — amber line is sustained wind along the route; short orange ticks
+          are brief gust spikes (40+ mph and well above sustained). Corridor warnings use
+          sustained speed; gusts stay localized.
         </li>
         <li>
           <strong>NWS / Road</strong> — Bands when National Weather Service warnings or Mapbox

@@ -30,6 +30,7 @@ type Props = {
   radarSamples?: { t: number; intensity: number }[];
   /** Wind gust points from TIO forecast intervals (t=0–1 along route, mph) */
   windPoints?: { t: number; mph: number }[];
+  gustSpikePoints?: { t: number; mph: number }[];
   fallbackSegments: RouteChunkCalloutItem[];
   totalMeters: number;
   userAlongMeters: number;
@@ -226,6 +227,7 @@ export function RouteProgressGlancePanel({
   outlookSamples,
   radarSamples = [],
   windPoints = [],
+  gustSpikePoints = [],
   fallbackSegments,
   totalMeters,
   userAlongMeters,
@@ -359,6 +361,7 @@ export function RouteProgressGlancePanel({
                         <RouteRadarWindStrip
                           radarSamples={radarSamples}
                           windPoints={windPoints}
+                          gustSpikePoints={gustSpikePoints}
                         />
                       </div>
                     ) : null}

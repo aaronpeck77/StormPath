@@ -48,6 +48,7 @@ export type RouteImpactSource =
   | "routeNotice"
   | "tomorrowIo"
   | "wind"
+  | "windGust"
   | "fused";
 
 export type RouteImpactAction =

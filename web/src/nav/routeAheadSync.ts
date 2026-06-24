@@ -168,7 +168,7 @@ export function timelineToProgressStripBands(
   for (const item of items) {
     if (opts?.omitCoarsePreview && item.coarsePreview) continue;
     if (item.stripMuted) continue;
-    if (item.track === "forecast") continue;
+    if (item.track === "forecast" || item.stripMuted) continue;
     if (!timelineItemShowsOnRouteLine(item)) continue;
     const span = item.endMeters - item.startMeters;
     if (span < 8 && item.track !== "nws") continue;

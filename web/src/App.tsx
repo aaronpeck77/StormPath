@@ -4021,6 +4021,7 @@ export default function App() {
                       outlookSamples={activeProgressCalloutPanel.outlookSamples}
                       radarSamples={radarMosaicAlongRoute.samples}
                       windPoints={activeProgressCalloutPanel.windPoints}
+                      gustSpikePoints={activeProgressCalloutPanel.gustSpikePoints}
                       fallbackSegments={activeProgressCalloutPanel.segments.filter(
                         (s) => !s.key.startsWith("route-ahead-")
                       )}

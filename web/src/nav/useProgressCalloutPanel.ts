@@ -13,6 +13,7 @@ import {
   type RouteChunkCalloutItem,
 } from "./routeProgressChunkList";
 import type { WxSample } from "./routeChunkWeather";
+import { gustSpikeSeverity } from "./windForecastCalib";
 import type { RouteOutlookStep, StormRouteOutlookBand } from "./routeForecastTimeline";
 import {
   applyRadarOutlookBoost,
@@ -60,6 +61,7 @@ export type ProgressCalloutPanel = {
   stripTint: string;
   /** Wind gust points sampled directly from TIO forecast intervals (bypasses step merge). */
   windPoints: { t: number; mph: number }[];
+  gustSpikePoints: { t: number; mph: number }[];
 };
 
 export type UseProgressCalloutPanelDeps = {
@@ -163,12 +165,21 @@ export function useProgressCalloutPanel(
           : routePickSlotHex(routeSlotIndexFor(guidanceRoute.id, orderedRouteIds))
         : "#94a3b8";
 
-    /* Wind gust points sampled directly from TIO intervals — bypasses the step-merge chain. */
+    /* Wind gust points sampled from TIO intervals — sustained speed on graph; spikes as markers. */
     const planEtaForWind = guidanceRoute?.baseEtaMinutes ?? null;
     const windPoints: { t: number; mph: number }[] =
       tioRouteForecast && planEtaForWind && planEtaForWind > 0
         ? tioRouteForecast.intervals
-            .filter((iv) => iv.windGustMph > 0)
+            .filter((iv) => iv.windSpeedMph >= 8)
+            .map((iv) => ({
+              t: Math.min(1, Math.max(0, iv.etaMinutes / planEtaForWind)),
+              mph: Math.round(iv.windSpeedMph),
+            }))
+        : [];
+    const gustSpikePoints: { t: number; mph: number }[] =
+      tioRouteForecast && planEtaForWind && planEtaForWind > 0
+        ? tioRouteForecast.intervals
+            .filter((iv) => gustSpikeSeverity(iv.windSpeedMph, iv.windGustMph) !== null)
             .map((iv) => ({
               t: Math.min(1, Math.max(0, iv.etaMinutes / planEtaForWind)),
               mph: Math.round(iv.windGustMph),
@@ -184,6 +195,7 @@ export function useProgressCalloutPanel(
         userAlongT: 0,
         stripTint,
         windPoints,
+        gustSpikePoints,
       };
     }
 
@@ -196,6 +208,7 @@ export function useProgressCalloutPanel(
         userAlongT: 0,
         stripTint,
         windPoints,
+        gustSpikePoints,
       };
     }
     const totalM = polylineLengthMeters(g);
@@ -208,6 +221,7 @@ export function useProgressCalloutPanel(
         userAlongT: 0,
         stripTint,
         windPoints,
+        gustSpikePoints,
       };
     }
     const userAlongT =
@@ -325,6 +339,7 @@ export function useProgressCalloutPanel(
         userAlongT,
         stripTint,
         windPoints,
+        gustSpikePoints,
       };
     }
 
@@ -426,6 +441,7 @@ export function useProgressCalloutPanel(
         userAlongT,
         stripTint,
         windPoints,
+        gustSpikePoints,
       };
     }
 
@@ -471,6 +487,7 @@ export function useProgressCalloutPanel(
       userAlongT,
       stripTint,
       windPoints,
+      gustSpikePoints,
     };
   }, [
     navigationStarted,

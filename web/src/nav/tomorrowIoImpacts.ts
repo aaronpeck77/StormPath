@@ -9,8 +9,11 @@
 import type { RouteForecast, RouteHourlyInterval } from "../services/tomorrowIo";
 import { weatherCodeLabel, weatherCodeSeverity } from "../services/tomorrowIo";
 import {
-  windImpactSeverity,
-  WIND_GUST_CAUTION_MPH,
+  gustSpikeSeverity,
+  sustainedWindImpactSeverity,
+  WIND_GUST_SPIKE_MAX_ROUTE_FRAC,
+  WIND_SUSTAINED_AVOID_MPH,
+  WIND_SUSTAINED_SERIOUS_MPH,
 } from "./windForecastCalib";
 import type { RouteImpact, RouteImpactCategory, RouteImpactSeverity } from "./routeImpacts";
 import { pointAtAlongMeters } from "./routeGeometry";
@@ -27,7 +30,7 @@ function categoryFromInterval(iv: RouteHourlyInterval): RouteImpactCategory {
   const code = iv.weatherCode;
   if ([5000, 5001, 5100, 5101, 6000, 6001, 6200, 6201, 7000, 7101, 7102].includes(code)) return "winter";
   if (iv.precipIntensityMmh >= 1) return "weather";
-  if (iv.windGustMph >= WIND_GUST_CAUTION_MPH) return "wind";
+  if (sustainedWindImpactSeverity(iv.windSpeedMph)) return "wind";
   if (iv.wetRoadMm >= 2) return "flooding";
   return "weather";
 }
@@ -38,7 +41,11 @@ function detailFromInterval(iv: RouteHourlyInterval): string {
     const mm = iv.precipIntensityMmh.toFixed(1);
     parts.push(`precip ${mm} mm/hr`);
   }
-  if (iv.windGustMph >= WIND_GUST_CAUTION_MPH) parts.push(`gusts ${Math.round(iv.windGustMph)} mph`);
+  if (gustSpikeSeverity(iv.windSpeedMph, iv.windGustMph)) {
+    parts.push(`gusts to ${Math.round(iv.windGustMph)} mph`);
+  } else if (sustainedWindImpactSeverity(iv.windSpeedMph)) {
+    parts.push(`wind ${Math.round(iv.windSpeedMph)} mph`);
+  }
   if (iv.wetRoadMm >= 1) parts.push(`standing water ${iv.wetRoadMm.toFixed(1)} mm`);
   parts.push(`${Math.round(iv.tempF)}°F`);
   return parts.join(" · ");
@@ -50,7 +57,7 @@ function headlineFromInterval(iv: RouteHourlyInterval): string {
   // High wind with clear sky is handled by the Wind track; labelling it "Hazardous: Mostly cloudy"
   // is confusing and redundant.
   const hasPrecip = iv.precipIntensityMmh > 0.05;
-  const sev = weatherCodeSeverity(iv.weatherCode, iv.precipIntensityMmh, iv.windGustMph);
+  const sev = weatherCodeSeverity(iv.weatherCode, iv.precipIntensityMmh, iv.windSpeedMph);
   if (hasPrecip && (sev === "avoid" || sev === "serious")) return `Hazardous: ${label}`;
   return label;
 }
@@ -121,7 +128,7 @@ export function routeForecastToImpacts(
           ? (forecast.intervals[i + 1]!.etaMinutes / totalEtaMin)
           : 1;
       const endM = Math.min(totalMeters, nextFrac * totalMeters);
-      const sev = weatherCodeSeverity(iv.weatherCode, iv.precipIntensityMmh, iv.windGustMph);
+      const sev = weatherCodeSeverity(iv.weatherCode, iv.precipIntensityMmh, iv.windSpeedMph);
       const cat = categoryFromInterval(iv);
       return { iv, startM, endM, sev, cat };
     })
@@ -164,8 +171,8 @@ export function routeForecastToImpacts(
 
     // Representative interval = the one with the highest precip or wind.
     const rep = band.reduce((best, a) =>
-      a.iv.precipIntensityMmh + a.iv.windGustMph * 0.1 >
-      best.iv.precipIntensityMmh + best.iv.windGustMph * 0.1
+      a.iv.precipIntensityMmh + a.iv.windSpeedMph * 0.1 >
+      best.iv.precipIntensityMmh + best.iv.windSpeedMph * 0.1
         ? a
         : best
     );
@@ -200,25 +207,46 @@ export function routeForecastToImpacts(
   return impacts;
 }
 
-/** Wind gust severity thresholds (mph) — calibrated gusts, driving-oriented. */
-function windSeverity(gustMph: number): RouteImpactSeverity | null {
-  return windImpactSeverity(gustMph);
+function intervalSpanMeters(
+  intervals: RouteHourlyInterval[],
+  index: number,
+  totalEtaMin: number,
+  totalMeters: number
+): { startM: number; endM: number } {
+  const iv = intervals[index]!;
+  const frac = iv.etaMinutes / totalEtaMin;
+  const startM = Math.min(totalMeters, Math.max(0, frac * totalMeters));
+  const nextFrac =
+    index + 1 < intervals.length ? intervals[index + 1]!.etaMinutes / totalEtaMin : 1;
+  const endM = Math.min(totalMeters, nextFrac * totalMeters);
+  return { startM, endM };
 }
 
-function windHeadline(gustMph: number, speedMph: number): string {
-  const g = Math.round(gustMph);
+function clampBandSpan(
+  startM: number,
+  endM: number,
+  totalMeters: number,
+  maxFrac: number
+): { startM: number; endM: number } {
+  const maxSpan = totalMeters * maxFrac;
+  const span = endM - startM;
+  if (span <= maxSpan || totalMeters <= 0) return { startM, endM };
+  const mid = (startM + endM) / 2;
+  return { startM: Math.max(0, mid - maxSpan / 2), endM: Math.min(totalMeters, mid + maxSpan / 2) };
+}
+
+function sustainedWindHeadline(speedMph: number): string {
   const s = Math.round(speedMph);
-  if (gustMph >= 60) return `Dangerous Wind — gusts ${g} mph`;
-  if (gustMph >= 48) return `High Wind — gusts ${g} mph`;
-  return `Windy — gusts ${g} mph (wind ${s} mph)`;
+  if (speedMph >= WIND_SUSTAINED_AVOID_MPH) return `Dangerous sustained wind — ${s} mph`;
+  if (speedMph >= WIND_SUSTAINED_SERIOUS_MPH) return `High sustained wind — ${s} mph`;
+  return `Sustained wind — ${s} mph`;
 }
 
-/**
- * Build wind-track RouteImpacts from ETA-aligned route forecast intervals.
- * Consecutive waypoints with the same wind severity are merged into one band.
- * Only gusts ≥ 35 mph (calibrated) are surfaced.
- */
-export function buildWindImpacts(
+function gustSpikeHeadline(gustMph: number, speedMph: number): string {
+  return `Gusts to ${Math.round(gustMph)} mph (wind ${Math.round(speedMph)} mph)`;
+}
+
+function buildSustainedWindImpacts(
   forecast: RouteForecast,
   geometry: LngLat[],
   totalEtaMin: number,
@@ -232,20 +260,16 @@ export function buildWindImpacts(
 
   for (let i = 0; i < intervals.length; i++) {
     const iv = intervals[i]!;
-    const frac = iv.etaMinutes / totalEtaMin;
-    const startM = Math.min(totalMeters, Math.max(0, frac * totalMeters));
-    const nextFrac = i + 1 < intervals.length ? intervals[i + 1]!.etaMinutes / totalEtaMin : 1;
-    const endM = Math.min(totalMeters, nextFrac * totalMeters);
-    if (windSeverity(iv.windGustMph) === null) continue;
+    if (sustainedWindImpactSeverity(iv.windSpeedMph) === null) continue;
+    const { startM, endM } = intervalSpanMeters(intervals, i, totalEtaMin, totalMeters);
     slices.push({ iv, startM, endM });
   }
   if (!slices.length) return [];
 
-  // Merge consecutive slices with the same severity band (gap tolerance: 5 km).
   type Band = { slices: WindSlice[]; sev: RouteImpactSeverity };
   const bands: Band[] = [];
   for (const slice of slices) {
-    const sev = windSeverity(slice.iv.windGustMph)!;
+    const sev = sustainedWindImpactSeverity(slice.iv.windSpeedMph)!;
     const last = bands[bands.length - 1];
     if (last && last.sev === sev && slice.startM <= last.slices[last.slices.length - 1]!.endM + 5000) {
       last.slices.push(slice);
@@ -257,20 +281,20 @@ export function buildWindImpacts(
   return bands.map((band, i) => {
     const first = band.slices[0]!;
     const last = band.slices[band.slices.length - 1]!;
-    const startM = first.startM;
-    const endM = last.endM;
+    let startM = first.startM;
+    let endM = last.endM;
     const midM = (startM + endM) / 2;
-    const rep = band.slices.reduce((b, s) => (s.iv.windGustMph > b.iv.windGustMph ? s : b));
+    const rep = band.slices.reduce((b, s) => (s.iv.windSpeedMph > b.iv.windSpeedMph ? s : b));
     const lngLat = pointAtAlongMeters(geometry, midM);
     const spanFrac = totalMeters > 0 ? (endM - startM) / totalMeters : 0;
-    const headline = windHeadline(rep.iv.windGustMph, rep.iv.windSpeedMph);
+    const headline = sustainedWindHeadline(rep.iv.windSpeedMph);
     const detail =
       spanFrac >= 0.25 && (band.sev === "serious" || band.sev === "avoid")
         ? `${headline} · ~${Math.round(spanFrac * 100)}% of route`
         : headline;
 
     return {
-      id: `wind-${i}-${Math.round(startM)}`,
+      id: `wind-sust-${i}-${Math.round(startM)}`,
       category: "wind" as RouteImpactCategory,
       severity: band.sev,
       confidence: "medium" as const,
@@ -288,6 +312,62 @@ export function buildWindImpacts(
       numericSeverity: SEVERITY_TO_NUMERIC[band.sev],
     } as RouteImpact;
   });
+}
+
+function buildGustSpikeImpacts(
+  forecast: RouteForecast,
+  geometry: LngLat[],
+  totalEtaMin: number,
+  totalMeters: number
+): RouteImpact[] {
+  const intervals = forecast.intervals ?? [];
+  if (!intervals.length || totalEtaMin <= 0 || totalMeters <= 0) return [];
+
+  const impacts: RouteImpact[] = [];
+  for (let i = 0; i < intervals.length; i++) {
+    const iv = intervals[i]!;
+    if (gustSpikeSeverity(iv.windSpeedMph, iv.windGustMph) === null) continue;
+    let { startM, endM } = intervalSpanMeters(intervals, i, totalEtaMin, totalMeters);
+    ({ startM, endM } = clampBandSpan(startM, endM, totalMeters, WIND_GUST_SPIKE_MAX_ROUTE_FRAC));
+    const midM = (startM + endM) / 2;
+    const lngLat = pointAtAlongMeters(geometry, midM);
+    const headline = gustSpikeHeadline(iv.windGustMph, iv.windSpeedMph);
+
+    impacts.push({
+      id: `wind-gust-${i}-${Math.round(startM)}`,
+      category: "wind" as RouteImpactCategory,
+      severity: "caution",
+      confidence: "medium" as const,
+      source: "windGust" as const,
+      lngLat,
+      alongMeters: midM,
+      startMeters: startM,
+      endMeters: endM,
+      distanceAheadMeters: startM,
+      etaAheadMinutes: iv.etaMinutes,
+      driverHeadline: headline,
+      driverAction: "watch",
+      roadEffect: headline,
+      detail: headline,
+      numericSeverity: SEVERITY_TO_NUMERIC.caution,
+    });
+  }
+  return impacts;
+}
+
+/**
+ * Sustained wind drives corridor hazard bands; gust spikes are short localized cautions.
+ */
+export function buildWindImpacts(
+  forecast: RouteForecast,
+  geometry: LngLat[],
+  totalEtaMin: number,
+  totalMeters: number
+): RouteImpact[] {
+  return [
+    ...buildSustainedWindImpacts(forecast, geometry, totalEtaMin, totalMeters),
+    ...buildGustSpikeImpacts(forecast, geometry, totalEtaMin, totalMeters),
+  ];
 }
 
 /**
