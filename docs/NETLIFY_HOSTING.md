@@ -51,6 +51,12 @@ On the deploy details page, Netlify should report that header rules were process
 
 Code default for these URLs: `web/src/config/publicSite.ts`.
 
+## Map radar tiles (App Store scale)
+
+Native US radar uses a **Tomorrow.io tile proxy** (WKWebView CORS). For thousands of users, deploy the **Cloudflare Worker** in `cloudflare/tomorrow-io-tiles/` and set `VITE_TOMORROW_IO_TILE_PROXY_URL` in iOS builds. Step-by-step: **[`CLOUDFLARE_TILES.md`](CLOUDFLARE_TILES.md)**.
+
+The Netlify function `tomorrow-io-tile` remains a valid fallback until Cloudflare is configured.
+
 ## Mapbox token
 
 If you restrict the Mapbox token by URL, include:

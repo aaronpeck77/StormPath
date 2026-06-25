@@ -51,7 +51,7 @@ export function getWebEnv() {
     mapboxToken: (import.meta.env.VITE_MAPBOX_TOKEN as string | undefined)?.trim() ?? "",
     openWeatherApiKey: (import.meta.env.VITE_OPENWEATHER_API_KEY as string | undefined)?.trim() ?? "",
     tomorrowIoApiKey: (import.meta.env.VITE_TOMORROW_IO_API_KEY as string | undefined)?.trim() ?? "",
-    /** CORS-friendly tile proxy for native map radar (default: stormpath2 Netlify function). */
+    /** CORS-friendly tile proxy for native map radar. Prefer Cloudflare Worker at scale — docs/CLOUDFLARE_TILES.md */
     tomorrowIoTileProxyUrl:
       (import.meta.env.VITE_TOMORROW_IO_TILE_PROXY_URL as string | undefined)?.trim() ||
       DEFAULT_TOMORROW_IO_TILE_PROXY_URL,

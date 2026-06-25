@@ -15,6 +15,7 @@
 #   APP_STORE_CONNECT_API_KEY_CONTENT   The .p8 file: paste full PEM *or* base64 of the file
 #   VITE_MAPBOX_TOKEN                   Mapbox public token (map + search + directions)
 #   VITE_TOMORROW_IO_API_KEY            Tomorrow.io (legacy — omit when WeatherKit enabled)
+#   VITE_TOMORROW_IO_TILE_PROXY_URL     Cloudflare tile worker base (see docs/CLOUDFLARE_TILES.md)
 #   VITE_OPENWEATHER_API_KEY            OpenWeather (legacy — omit when WeatherKit enabled)
 #   VITE_WEATHERKIT_ENABLED             Set to `true` after Netlify token function is live (see docs/WEATHERKIT_SETUP.md)
 #   VITE_SENTRY_DSN                     Sentry DSN for crash reports (optional; see docs/SENTRY_SETUP.md)
@@ -82,6 +83,7 @@ jobs:
         env:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
+          VITE_TOMORROW_IO_TILE_PROXY_URL: ${{ secrets.VITE_TOMORROW_IO_TILE_PROXY_URL }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
           VITE_WEATHERKIT_ENABLED: ${{ secrets.VITE_WEATHERKIT_ENABLED }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
@@ -105,6 +107,7 @@ jobs:
         env:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
+          VITE_TOMORROW_IO_TILE_PROXY_URL: ${{ secrets.VITE_TOMORROW_IO_TILE_PROXY_URL }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
           VITE_WEATHERKIT_ENABLED: ${{ secrets.VITE_WEATHERKIT_ENABLED }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
@@ -130,6 +133,7 @@ jobs:
         env:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
+          VITE_TOMORROW_IO_TILE_PROXY_URL: ${{ secrets.VITE_TOMORROW_IO_TILE_PROXY_URL }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
           VITE_WEATHERKIT_ENABLED: ${{ secrets.VITE_WEATHERKIT_ENABLED }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}

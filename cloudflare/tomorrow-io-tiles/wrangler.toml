@@ -1,0 +1,15 @@
+# StormPath Tomorrow.io tile proxy — deploy: npm run deploy (from this folder)
+# Docs: docs/CLOUDFLARE_TILES.md
+
+name = "stormpath-tomorrow-io-tiles"
+main = "src/index.ts"
+compatibility_date = "2024-06-01"
+
+# After first deploy, URL is typically:
+#   https://stormpath-tomorrow-io-tiles.<your-subdomain>.workers.dev/tomorrow-io-tile
+# Set that base (no trailing slash) as VITE_TOMORROW_IO_TILE_PROXY_URL in iOS builds.
+
+# Optional custom domain (uncomment after adding zone in Cloudflare dashboard):
+# [[routes]]
+# pattern = "tiles.stormpath.app/tomorrow-io-tile*"
+# zone_name = "stormpath.app"
