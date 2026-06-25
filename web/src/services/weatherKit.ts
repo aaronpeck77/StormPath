@@ -42,9 +42,9 @@ function cToF(c: number): number {
   return (c * 9) / 5 + 32;
 }
 
-/** WeatherKit windSpeed is m/s. */
-function msToMph(ms: number): number {
-  return ms * 2.23694;
+/** WeatherKit REST windSpeed / windGust are km/h (matches native Wind.speed in km/h). */
+function kphToMph(kph: number): number {
+  return kph * 0.621371;
 }
 
 function precipTypeToNumber(type: string | undefined): number {
@@ -129,7 +129,7 @@ export async function fetchWeatherKitMinutePrecip(
     now: cur
       ? {
           tempF: Math.round(cToF(cur.temperature)),
-          windMph: Math.round(msToMph(cur.windSpeed)),
+          windMph: Math.round(kphToMph(cur.windSpeed)),
           conditions: weatherCodeLabel(code),
         }
       : undefined,
@@ -157,7 +157,7 @@ export async function fetchWeatherKitPointHourly(
       tempF: Math.round(cToF(h.temperature)),
       precipIntensityMmh: h.precipitationIntensity,
       precipProbability: h.precipitationChance,
-      windMph: Math.round(msToMph(h.windSpeed)),
+      windMph: Math.round(kphToMph(h.windSpeed)),
       conditions: weatherCodeLabel(code),
     };
   });
@@ -178,11 +178,11 @@ export async function fetchWeatherKitCurrentNowcast(
   const raw = await fetchWeatherKitAtPoint(lat, lng, ["currentWeather"], signal);
   const cur = raw.currentWeather;
   if (!cur) throw new Error("WeatherKit currentWeather missing");
-  const gust = cur.windGust != null ? Math.round(msToMph(cur.windGust)) : null;
+  const gust = cur.windGust != null ? Math.round(kphToMph(cur.windGust)) : null;
   return {
     tempF: Math.round(cToF(cur.temperature)),
     feelsLikeF: Math.round(cToF(cur.temperatureApparent)),
-    windMph: Math.round(msToMph(cur.windSpeed)),
+    windMph: Math.round(kphToMph(cur.windSpeed)),
     windGustMph: gust,
     conditions: cur.conditionCode.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase(),
     precipInPerHr: cur.precipitationIntensity / 25.4,
@@ -229,8 +229,8 @@ export async function fetchWeatherKitRouteForecast(
     const locKey = nearestLocationKey(wp, fetchLocations);
     const hourly = timelinesByKey.get(locKey) ?? [];
     const v = nearestHourlyForEta(hourly, wp.etaMinutes, fetchedAt);
-    const windSpeedMph = msToMph(v.windSpeed);
-    const rawGustMph = v.windGust != null ? msToMph(v.windGust) : windSpeedMph;
+    const windSpeedMph = kphToMph(v.windSpeed);
+    const rawGustMph = v.windGust != null ? kphToMph(v.windGust) : windSpeedMph;
     return {
       etaMinutes: wp.etaMinutes,
       lat: wp.lat,
