@@ -7,6 +7,8 @@ import {
 
 const DEFAULT_WEATHERKIT_TOKEN_URL =
   "https://stormpath2.netlify.app/.netlify/functions/weatherkit-token";
+const DEFAULT_TOMORROW_IO_TILE_PROXY_URL =
+  "https://stormpath2.netlify.app/.netlify/functions/tomorrow-io-tile";
 
 function computeWeatherKitTokenUrl(): string {
   const custom = (import.meta.env.VITE_WEATHERKIT_TOKEN_URL as string | undefined)?.trim();
@@ -49,6 +51,10 @@ export function getWebEnv() {
     mapboxToken: (import.meta.env.VITE_MAPBOX_TOKEN as string | undefined)?.trim() ?? "",
     openWeatherApiKey: (import.meta.env.VITE_OPENWEATHER_API_KEY as string | undefined)?.trim() ?? "",
     tomorrowIoApiKey: (import.meta.env.VITE_TOMORROW_IO_API_KEY as string | undefined)?.trim() ?? "",
+    /** CORS-friendly tile proxy for native map radar (default: stormpath2 Netlify function). */
+    tomorrowIoTileProxyUrl:
+      (import.meta.env.VITE_TOMORROW_IO_TILE_PROXY_URL as string | undefined)?.trim() ||
+      DEFAULT_TOMORROW_IO_TILE_PROXY_URL,
     /** Apple WeatherKit via Netlify JWT token function — scales for App Store users. */
     weatherKitEnabled:
       String(import.meta.env.VITE_WEATHERKIT_ENABLED ?? "").toLowerCase() === "true",

@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@capacitor/core", () => ({
   Capacitor: { isNativePlatform: vi.fn(() => false) },
+  CapacitorHttp: { request: vi.fn() },
 }));
 
 import { Capacitor } from "@capacitor/core";
@@ -9,12 +10,18 @@ import {
   buildTomorrowIoRadarFrames,
   canUseTomorrowIoMapRasterTiles,
   isInTomorrowIoUsPrecipRegion,
+  resolveTomorrowIoMapTileBase,
   tomorrowIoPrecipTileUrlTemplate,
   TOMORROW_IO_RADAR_MAX_ZOOM,
   verifyTomorrowIoRadarTileAccess,
+  resetTomorrowIoRadarTileProbeCache,
 } from "../tomorrowIoRadarTiles";
 
 describe("tomorrowIoRadarTiles", () => {
+  beforeEach(() => {
+    resetTomorrowIoRadarTileProbeCache();
+    vi.mocked(Capacitor.isNativePlatform).mockReturnValue(false);
+  });
   it("flags CONUS, Alaska, and Hawaii", () => {
     expect(isInTomorrowIoUsPrecipRegion(-98, 39)).toBe(true);
     expect(isInTomorrowIoUsPrecipRegion(-150, 62)).toBe(true);
@@ -47,14 +54,27 @@ describe("tomorrowIoRadarTiles", () => {
 
   it("emits a Mapbox tile template with encoded timestamp", () => {
     const url = tomorrowIoPrecipTileUrlTemplate("abc123", "2026-06-22T18:00:00Z");
-    expect(url).toContain("api.tomorrow.io/v4/map/tile/{z}/{x}/{y}/precipitationIntensity/");
+    expect(url).toContain("/{z}/{x}/{y}/precipitationIntensity/");
     expect(url).toContain("apikey=abc123");
     expect(TOMORROW_IO_RADAR_MAX_ZOOM).toBeGreaterThan(7);
   });
 
-  it("skips Tomorrow.io map raster on native Capacitor", async () => {
-    vi.mocked(Capacitor.isNativePlatform).mockReturnValueOnce(true);
-    expect(canUseTomorrowIoMapRasterTiles()).toBe(false);
-    await expect(verifyTomorrowIoRadarTileAccess("key")).resolves.toBe(false);
+  it("uses a CORS-friendly proxy for map tiles on native Capacitor", async () => {
+    vi.mocked(Capacitor.isNativePlatform).mockReturnValue(true);
+    expect(canUseTomorrowIoMapRasterTiles()).toBe(true);
+    const base = resolveTomorrowIoMapTileBase();
+    expect(base).toContain("tomorrow-io-tile");
+    const url = tomorrowIoPrecipTileUrlTemplate("key", "now");
+    expect(url).toContain(base);
+    expect(url).toContain("apikey=key");
+    vi.mocked(Capacitor.isNativePlatform).mockReturnValue(false);
+  });
+
+  it("probes tile access on native via CapacitorHttp", async () => {
+    vi.mocked(Capacitor.isNativePlatform).mockReturnValue(true);
+    const { CapacitorHttp } = await import("@capacitor/core");
+    vi.mocked(CapacitorHttp.request).mockResolvedValueOnce({ status: 200, data: "" } as never);
+    await expect(verifyTomorrowIoRadarTileAccess("key")).resolves.toBe(true);
+    expect(CapacitorHttp.request).toHaveBeenCalled();
   });
 });

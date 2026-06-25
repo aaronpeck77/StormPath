@@ -2,6 +2,9 @@ export type LngLat = [number, number];
 
 export type RouteRole = "fastest" | "balanced" | "hazardSmart";
 
+/** Mapbox maxspeed sample — meters from route start where a posted limit begins. */
+export type PostedSpeedSample = { alongMeters: number; mph: number };
+
 /** Turn-by-turn step from the directions engine (Mapbox when configured). */
 export interface RouteTurnStep {
   /** Plain-text maneuver line */
@@ -36,6 +39,8 @@ export interface NavRoute {
   hasTolls?: boolean;
   /** Distinct toll road refs/names or booth labels (when known). */
   tollLabels?: string[];
+  /** Posted speed limits from Mapbox Directions maxspeed annotation (follow road signs when in doubt). */
+  postedSpeedSamples?: PostedSpeedSample[];
 }
 
 export interface TripPlan {

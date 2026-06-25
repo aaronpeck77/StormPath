@@ -3,7 +3,7 @@ import { formatEtaDuration } from "./formatEta";
 
 type Props = {
   speedMph: number | null;
-  postedMph: number;
+  postedMph: number | null;
   etaMinutes: number;
   distanceMi: number;
   tripElapsedLabel: string;
@@ -40,8 +40,8 @@ export function DriveHud({
         </div>
         <div className="drive-hud-cell">
           <span className="drive-hud-k">Limit</span>
-          <span className="drive-hud-v">
-            {postedMph}
+          <span className="drive-hud-v" title="Follow posted road signs">
+            {postedMph != null ? postedMph : "—"}
             <small> mph</small>
           </span>
         </div>
@@ -85,33 +85,4 @@ export function DriveHud({
       </div>
     </div>
   );
-}
-
-/**
- * Rough speed limit from movement + maneuver text (not Mapbox maxspeed / exit lanes).
- * Updates as instructions mention highways / ramps / local roads.
- */
-export function estimatePostedSpeedMph(
-  speedMph: number | null,
-  turnSteps: { instruction: string }[],
-  activeIndex: number
-): number {
-  const instr = (turnSteps[activeIndex]?.instruction ?? "").toLowerCase();
-  const highway =
-    /\b(i-|interstate|us-\d|sr-\d|state route|freeway|expressway|turnpike|parkway)\b/i.test(
-      instr
-    ) || /\btake (the |your )?(exit|ramp)\b/i.test(instr);
-  const slowStreet =
-    /\broundabout|rotary|traffic circle|destination|arrive|parking|alley\b/i.test(instr);
-
-  if (highway) {
-    if (speedMph != null && speedMph > 60) return 70;
-    return 65;
-  }
-  if (slowStreet) return 25;
-  if (speedMph == null || speedMph < 6) return 35;
-  if (speedMph >= 52) return 55;
-  if (speedMph >= 38) return 45;
-  if (speedMph >= 24) return 35;
-  return 30;
 }

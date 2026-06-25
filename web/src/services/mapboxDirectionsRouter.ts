@@ -1,4 +1,4 @@
-import type { LngLat, NavRoute, RouteTurnStep, TripPlan } from "../nav/types";
+import type { LngLat, NavRoute, PostedSpeedSample, RouteTurnStep, TripPlan } from "../nav/types";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { detectRouteTollsFromLegs } from "../nav/detectRouteTolls";
 import {
@@ -11,6 +11,10 @@ import {
   routesEffectivelySame,
   subsamplePolylineVertexBudget,
 } from "../nav/routeGeometry";
+import {
+  dedupePostedSpeedSamples,
+  mapboxMaxSpeedToMph,
+} from "../nav/postedSpeed";
 import { isUltraLongTripRoute } from "../utils/dataSaver";
 import { parseExitNumberFromStep, shortenTurnInstruction } from "../nav/turnInstructionShort";
 import {
@@ -85,6 +89,7 @@ type DirectionsResponse = {
       incidents?: MbIncident[];
       annotation?: {
         closure?: boolean[];
+        maxspeed?: unknown[];
       };
     }[];
   }[];
@@ -278,6 +283,36 @@ export function geometryFromDirectionsSteps(r: MbRoute): LngLat[] | null {
   return out.length >= 2 ? out : null;
 }
 
+function buildPostedSpeedSamples(
+  legs: NonNullable<NonNullable<DirectionsResponse["routes"]>[0]["legs"]>,
+  geometry: LngLat[],
+  legStarts: number[] | null
+): PostedSpeedSample[] | undefined {
+  const raw: PostedSpeedSample[] = [];
+  for (let li = 0; li < legs.length; li++) {
+    const maxspeed = legs[li]?.annotation?.maxspeed;
+    if (!maxspeed?.length) continue;
+    let base: number | undefined;
+    if (legStarts && legStarts[li] != null) {
+      base = legStarts[li]!;
+    } else if (legs.length === 1) {
+      base = 0;
+    } else {
+      continue;
+    }
+    for (let s = 0; s < maxspeed.length; s++) {
+      const mph = mapboxMaxSpeedToMph(maxspeed[s]);
+      if (mph == null) continue;
+      const vi = Math.max(0, Math.min(geometry.length - 1, base + s));
+      raw.push({ alongMeters: cumulativeLengthToVertex(geometry, vi), mph });
+    }
+  }
+  if (!raw.length) return undefined;
+  raw.sort((a, b) => a.alongMeters - b.alongMeters);
+  const deduped = dedupePostedSpeedSamples(raw);
+  return deduped.length ? deduped : undefined;
+}
+
 function routeFromDirectionsApi(
   r: NonNullable<DirectionsResponse["routes"]>[0],
   id: string,
@@ -289,6 +324,9 @@ function routeFromDirectionsApi(
   if (!coords?.length || r.geometry?.type !== "LineString") return null;
   const overview = coords.map(([lng, lat]) => [lng, lat] as LngLat);
   const rawGeometry = geometryFromDirectionsSteps(r) ?? overview;
+  const legs = r.legs ?? [];
+  const legStarts = computeLegStartIndices(legs);
+  const postedSpeedSamples = buildPostedSpeedSamples(legs, rawGeometry, legStarts);
   const geometry = opts?.skipGeometryNormalize
     ? rawGeometry
     : normalizeStoredRouteGeometry(rawGeometry);
@@ -309,6 +347,7 @@ function routeFromDirectionsApi(
     routeNoticeAlongMeters: notices.length ? noticeAlong : undefined,
     hasTolls: tollInfo.hasTolls || undefined,
     tollLabels: tollInfo.tollLabels.length ? tollInfo.tollLabels : undefined,
+    postedSpeedSamples,
   };
 }
 
@@ -333,7 +372,7 @@ async function fetchMapboxDirections(
   );
   url.searchParams.set("steps", opts.includeDetails === false ? "false" : "true");
   if (opts.includeDetails !== false) {
-    url.searchParams.set("annotations", "closure");
+    url.searchParams.set("annotations", "closure,maxspeed");
   }
   const exclude = directionsExcludeParam(opts);
   if (exclude) url.searchParams.set("exclude", exclude);
@@ -392,7 +431,7 @@ async function fetchMapboxDirectionsThrough(
   );
   url.searchParams.set("steps", opts.includeDetails === false ? "false" : "true");
   if (opts.includeDetails !== false) {
-    url.searchParams.set("annotations", "closure");
+    url.searchParams.set("annotations", "closure,maxspeed");
   }
   const exclude = directionsExcludeParam(opts);
   if (exclude) url.searchParams.set("exclude", exclude);

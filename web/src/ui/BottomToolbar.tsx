@@ -28,7 +28,7 @@ type Props = {
   onGo: () => void;
   showGo: boolean;
   speedMph: number | null;
-  postedMph: number;
+  postedMph: number | null;
   onStop: () => void;
   hasTrip: boolean;
   /** Planning with no destination: quick return along the reversed last Go route. */
@@ -131,10 +131,13 @@ export function BottomToolbar({
     return () => mq.removeEventListener("change", apply);
   }, []);
 
-  /** Heuristic limit from turn context + GPS — not a legal speed sign. Small buffer reduces GPS jitter. */
+  /** Mapbox posted limit when available — small buffer reduces GPS jitter. */
   const SPEED_OVER_BUFFER_MPH = 3;
   const speedOverPosted =
-    speedMph != null && postedMph > 0 && speedMph > postedMph + SPEED_OVER_BUFFER_MPH;
+    speedMph != null &&
+    postedMph != null &&
+    postedMph > 0 &&
+    speedMph > postedMph + SPEED_OVER_BUFFER_MPH;
 
   return (
     <div
@@ -199,7 +202,7 @@ export function BottomToolbar({
                 <span className="nav-bottom-stat-k">Spd</span>
                 <span
                   className={`nav-bottom-stat-v${speedOverPosted ? " nav-bottom-stat-v--speed-over" : ""}`}
-                  title={speedOverPosted ? "Estimated over heuristic limit — follow posted signs" : undefined}
+                  title={speedOverPosted ? "Over posted speed limit — follow road signs" : undefined}
                 >
                   {speedMph != null ? Math.round(speedMph) : "—"}
                   <small> mph</small>
@@ -207,7 +210,16 @@ export function BottomToolbar({
               </div>
               <div className="nav-bottom-stat">
                 <span className="nav-bottom-stat-k">Lim</span>
-                <span className="nav-bottom-stat-v">{postedMph}</span>
+                <span
+                  className="nav-bottom-stat-v"
+                  title={
+                    postedMph != null
+                      ? "Posted limit from map data — always follow road signs"
+                      : "Speed limit unavailable — follow posted signs"
+                  }
+                >
+                  {postedMph != null ? postedMph : "—"}
+                </span>
               </div>
             </div>
           )}

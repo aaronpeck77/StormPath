@@ -34,15 +34,13 @@ import { mapMaxBoundsForLngLat, mapMinZoomForSession } from "../config/mapRegion
 import { isUltraLongTripRoute } from "../utils/dataSaver";
 import { continentFromLngLat } from "../services/continents";
 import {
-  RAINVIEWER_ANIMATION_DWELL_MS,
-} from "../services/rainViewerRadar";
-import {
   TOMORROW_IO_ANIMATION_CROSSFADE_MS,
-  TOMORROW_IO_ANIMATION_DWELL_MS,
 } from "../services/tomorrowIoRadarTiles";
 import {
   animationCellsForPack,
+  packIncludesFutureNowcast,
   radarMapProviderForCenter,
+  radarMapRegionProvider,
   radarTileUrlForFrame,
   resolveRadarMapPack,
   type RadarMapPack,
@@ -148,7 +146,6 @@ import {
   positionRainViewerRadarUnderRoads,
   removeRainViewerRadar,
   setRainViewerRadarTilesOnSource,
-  setRainViewerRadarDualOpacity,
   setRainViewerRadarLayersVisible,
   waitForRainViewerSideLoaded,
   setRadarMapTileProvider,
@@ -2020,8 +2017,6 @@ function DriveMapInner({
       bringRouteHitLayersToTop(map, ids, "route");
     };
 
-    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
     type RadarCell = { path: string; time: number };
 
     const mapCenterLngLat = (): LngLat => {
@@ -2030,11 +2025,11 @@ function DriveMapInner({
     };
 
     const providerRateLimited = (pack: RadarMapPack) =>
-      pack.provider === "rainviewer" && isRainViewerRateLimited();
+      pack.provider !== "tomorrow_io" && isRainViewerRateLimited();
 
     /**
-     * Load the next frame on the hidden side. With the long crossfade approach the bench side
-     * loads during the ~2.8 s blend — plenty of time even on slow connections.
+     * Load the next frame on the hidden side. Runs during the prior crossfade when possible;
+     * otherwise waits up to crossfadeMs + slack for tiles.
      */
     const prewarmFrame = (
       which: "a" | "b",
@@ -2065,22 +2060,28 @@ function DriveMapInner({
     ) => {
       const o = RAINVIEWER_RADAR_VISIBLE_OPACITY;
       const tileUrl = (cell: RadarCell) => radarTileUrlForFrame(pack, cell, apiKey);
-      const isTio = pack.provider === "tomorrow_io";
-      const dwellMs = isTio ? TOMORROW_IO_ANIMATION_DWELL_MS : RAINVIEWER_ANIMATION_DWELL_MS;
-      const crossfadeMs = isTio ? TOMORROW_IO_ANIMATION_CROSSFADE_MS : RAINVIEWER_RADAR_CROSSFADE_MS;
-      const primeDelayMs = isTio ? 350 : 1200;
-      const initialPrimeMs = isTio ? 800 : 3000;
+      const crossfadeMs =
+        pack.provider === "tomorrow_io" || pack.provider === "hybrid"
+          ? TOMORROW_IO_ANIMATION_CROSSFADE_MS
+          : RAINVIEWER_RADAR_CROSSFADE_MS;
+
+      const nextCellIndex = (current: number): number => {
+        const forwardReplayOnly =
+          pack.provider === "tomorrow_io" && !packIncludesFutureNowcast(pack);
+        if (forwardReplayOnly) {
+          return current + 1 >= cells.length ? 0 : current + 1;
+        }
+        return (current + 1) % cells.length;
+      };
 
       void (async () => {
+        if (cells.length < 2) return;
         let visible: "a" | "b" = "a";
+        let hidden: "a" | "b" = "b";
         let idx = 0;
 
-        if (radarAnimate && cells.length > 1 && !providerRateLimited(pack)) {
-          const nextUrl = tileUrl(cells[1]!);
-          await sleep(initialPrimeMs);
-          if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
-          setRainViewerRadarTilesOnSource(map, "b", nextUrl);
-        }
+        await prewarmFrame(hidden, tileUrl(cells[1]!), crossfadeMs);
+        if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
 
         while (
           radarAnimate &&
@@ -2090,49 +2091,26 @@ function DriveMapInner({
           !providerRateLimited(pack) &&
           mapRef.current === map
         ) {
-          await sleep(dwellMs);
-          if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
-
-          if (isTio && idx >= cells.length - 1) {
-            /* Forward-only replay: snap back to oldest frame, then march to now again. */
-            idx = 0;
-            emitRadarFrame(0, pack, cells);
-            const restartUrl = tileUrl(cells[0]!);
-            setRainViewerRadarTilesOnSource(map, "a", restartUrl);
-            setRainViewerRadarTilesOnSource(map, "b", restartUrl);
-            setRainViewerRadarDualOpacity(map, o, 0);
-            visible = "a";
-            bringMapboxTrafficLayersToFront(map);
-            liftRouteHits();
-            if (cells.length > 1) {
-              await sleep(primeDelayMs);
-              if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
-              setRainViewerRadarTilesOnSource(map, "b", tileUrl(cells[1]!));
-            }
-            continue;
-          }
-
-          const incoming: "a" | "b" = visible === "a" ? "b" : "a";
+          const nextIdx = nextCellIndex(idx);
           const from = visible === "a" ? { a: o, b: 0 } : { a: 0, b: o };
           const to = visible === "a" ? { a: 0, b: o } : { a: o, b: 0 };
+
+          await prewarmFrame(hidden, tileUrl(cells[nextIdx]!), crossfadeMs);
+          if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
+
+          emitRadarFrame(nextIdx, pack, cells);
+
           await animateRainViewerDualCrossfade(map, from, to, crossfadeMs);
           if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
 
-          visible = incoming;
-          idx = isTio ? idx + 1 : (idx + 1) % cells.length;
-          emitRadarFrame(idx, pack, cells);
+          visible = hidden;
+          hidden = visible === "a" ? "b" : "a";
+          idx = nextIdx;
+
+          const followingIdx = nextCellIndex(idx);
+          void prewarmFrame(hidden, tileUrl(cells[followingIdx]!), crossfadeMs);
           bringMapboxTrafficLayersToFront(map);
           liftRouteHits();
-
-          const nextIdx = isTio ? idx + 1 : (idx + 1) % cells.length;
-          if (nextIdx < cells.length) {
-            const nextUrl = tileUrl(cells[nextIdx]!);
-            await sleep(primeDelayMs);
-            if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
-            if (!providerRateLimited(pack)) {
-              void prewarmFrame(incoming === "a" ? "b" : "a", nextUrl, crossfadeMs);
-            }
-          }
         }
       })();
     };
@@ -2210,7 +2188,11 @@ function DriveMapInner({
     if (showRadar) manifestTimer = setInterval(() => void loadManifest(), 600_000);
 
     const onRadarTileError = (e: mapboxgl.ErrorEvent) => {
-      if (lastResolvedProvider !== "tomorrow_io" || forceRainViewerForRadar) return;
+      if (
+        lastResolvedProvider !== "tomorrow_io" ||
+        forceRainViewerForRadar
+      )
+        return;
       const src = (e as mapboxgl.ErrorEvent & { sourceId?: string }).sourceId ?? "";
       if (!src.includes("rainviewer")) return;
       tioTileErrorStreak += 1;
@@ -2230,7 +2212,9 @@ function DriveMapInner({
         moveEndTimer = null;
         const apiKey = getWebEnv().tomorrowIoApiKey;
         const provider = radarMapProviderForCenter(mapCenterLngLat(), apiKey);
-        if (provider !== lastResolvedProvider) {
+        if (
+          radarMapRegionProvider(provider) !== radarMapRegionProvider(lastResolvedProvider)
+        ) {
           void loadManifest();
         }
       }, 800);

@@ -13,12 +13,10 @@ export const RAINVIEWER_RADAR_MAX_ZOOM = 7;
 export const RAINVIEWER_LOOP_PAST_WINDOW_SEC = 30 * 60;
 
 /**
- * Very short pause at each frame before the blend begins.
- * With only ~3 frames per 30-min window, the long crossfade IS the animation —
- * radar appears to flow continuously rather than snap between snapshots.
+ * Pause before each crossfade — 0 keeps frames chaining for continuous motion.
+ * Tile prewarm runs during the prior crossfade instead of waiting here.
  */
-/** Pause on each frame before blending — keeps tile request rate under RainViewer limits. */
-export const RAINVIEWER_ANIMATION_DWELL_MS = 2800;
+export const RAINVIEWER_ANIMATION_DWELL_MS = 0;
 
 type Manifest = {
   host?: string;
@@ -41,14 +39,16 @@ export type FetchRainViewerRadarOptions = {
    * Default false: only `radar.past` (~2 h of observed composite), which matches “what just happened” / latest available mosaic.
    */
   includeNowcast?: boolean;
+  /** Skip `radar.past` and return only `radar.nowcast` frames (for US hybrid map animation). */
+  nowcastOnly?: boolean;
   /** Limit `radar.past` to frames at or after `now - pastWindowSec` (default {@link RAINVIEWER_LOOP_PAST_WINDOW_SEC}). */
   pastWindowSec?: number;
   /** Map overlay animation — use a longer past window (~1 h). */
   mapAnimation?: boolean;
 };
 
-/** Past window for map radar animation (wider than the 30-min route strip default). */
-export const RAINVIEWER_MAP_ANIMATION_PAST_WINDOW_SEC = 60 * 60;
+/** Past window for map radar animation — ~90 min yields more ~10-min steps for smoother loops. */
+export const RAINVIEWER_MAP_ANIMATION_PAST_WINDOW_SEC = 90 * 60;
 
 function normalizeHost(h: string): string {
   return h.replace(/\/$/, "");
@@ -126,23 +126,26 @@ async function fetchRainViewerManifest(): Promise<Manifest | null> {
 export async function fetchRainViewerRadarFrames(
   opts?: FetchRainViewerRadarOptions
 ): Promise<RainViewerRadarPack | null> {
-  const includeNowcast = opts?.includeNowcast ?? false;
+  const nowcastOnly = opts?.nowcastOnly ?? false;
+  const includeNowcast = nowcastOnly || (opts?.includeNowcast ?? false);
   const pastWindowSec =
     opts?.pastWindowSec ??
     (opts?.mapAnimation ? RAINVIEWER_MAP_ANIMATION_PAST_WINDOW_SEC : RAINVIEWER_LOOP_PAST_WINDOW_SEC);
   const data = await fetchRainViewerManifest();
   if (!data) return null;
   const host = normalizeHost(data.host ?? "https://tilecache.rainviewer.com");
-  const pastRaw = data.radar?.past ?? [];
-  const pastSorted: RainViewerRadarFrame[] = [];
-  for (const f of pastRaw) {
-    if (f.path != null && f.time != null) pastSorted.push({ time: f.time, path: f.path });
-  }
-  pastSorted.sort((a, b) => a.time - b.time);
-  const past = filterPastFramesByWindow(pastSorted, pastWindowSec);
   const merged: RainViewerRadarFrame[] = [];
-  for (const f of past) {
-    merged.push(f);
+  if (!nowcastOnly) {
+    const pastRaw = data.radar?.past ?? [];
+    const pastSorted: RainViewerRadarFrame[] = [];
+    for (const f of pastRaw) {
+      if (f.path != null && f.time != null) pastSorted.push({ time: f.time, path: f.path });
+    }
+    pastSorted.sort((a, b) => a.time - b.time);
+    const past = filterPastFramesByWindow(pastSorted, pastWindowSec);
+    for (const f of past) {
+      merged.push(f);
+    }
   }
   if (includeNowcast) {
     const nowcast = data.radar?.nowcast ?? [];

@@ -25,7 +25,7 @@ import {
   WEATHER_PLANNING_DETAIL_AHEAD_M,
 } from "./constants";
 import { radarDisplayIntensity } from "./radarReflectivityScale";
-import { estimatePostedSpeedMph } from "../ui/DriveHud";
+import { postedSpeedMphAt } from "./postedSpeed";
 import type { MapViewMode } from "../ui/driveMapTypes";
 import {
   filterAlertsAffectingRoute,
@@ -41,7 +41,7 @@ import { nwsAlertIsBasicEmergency } from "../weatherAlerts/basicEmergencyFilter"
 import { nwsAlertsForLocalForecast } from "../weatherAlerts/localForecastNws";
 import { quantizeLngLatForHeavyUi } from "../utils/dataSaver";
 import type { TrafficBypassCompareState } from "../state/routeCompareStore";
-import type { LngLat, NavRoute, RouteTurnStep } from "./types";
+import type { LngLat, NavRoute } from "./types";
 import type { RouteSituationSlice } from "../situation/types";
 import type { TrafficOverlay } from "../situation/fusedSnapshot";
 import type { ScoredRoute } from "../scoring/scoreRoutes";
@@ -83,9 +83,6 @@ export type UseRouteAheadDerivationsDeps = {
   planRoutes: NavRoute[];
   lockedNavigationRouteId: string;
   temporaryGuidanceRouteId?: string | null;
-  speedMph: number | null;
-  turnSteps: RouteTurnStep[];
-  activeTurnIndex: number;
   stormMapGeoJson: GeoJSON.FeatureCollection | null;
 };
 
@@ -116,7 +113,7 @@ export type UseRouteAheadDerivationsResult = {
   showTrafficBypassCta: boolean;
   driveMapRoutes: NavRoute[];
   progressRailRoute: NavRoute | undefined;
-  postedMph: number;
+  postedMph: number | null;
   progressStripAlerts: RouteAlert[];
 };
 
@@ -159,9 +156,6 @@ export function useRouteAheadDerivations(
     guidanceRouteId,
     planRoutes,
     lockedNavigationRouteId,
-    speedMph,
-    turnSteps,
-    activeTurnIndex,
     stormMapGeoJson,
   } = deps;
 
@@ -524,7 +518,10 @@ export function useRouteAheadDerivations(
   ]);
   const progressRailRoute = guidanceRoute ?? driveMapRoutes[0] ?? planRoutes[0];
 
-  const postedMph = estimatePostedSpeedMph(speedMph, turnSteps, activeTurnIndex);
+  const postedMph =
+    navigationStarted && guidanceRoute
+      ? postedSpeedMphAt(guidanceRoute, userAlongGuidanceM)
+      : null;
 
   const progressStripAlerts = useMemo(() => augmentAlertsForProgressStrip(routeAlerts), [routeAlerts]);
 

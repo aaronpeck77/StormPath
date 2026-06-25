@@ -17,8 +17,9 @@ export function RouteInfoLegend() {
         </li>
         <li>
           <strong>Radar</strong> — echo along the route at your estimated arrival time on longer
-          trips (RainViewer nowcast). Shorter trips and the live map use Tomorrow.io in the US and
-          RainViewer elsewhere. Shaded area is modeled precipitation, not a guarantee you will drive
+          trips (RainViewer nowcast). The live map uses Tomorrow.io in the US with RainViewer
+          short-term forecast frames at the end of the animation loop; elsewhere it uses RainViewer
+          past and nowcast. Shaded area is modeled precipitation, not a guarantee you will drive
           through rain.
         </li>
         <li>

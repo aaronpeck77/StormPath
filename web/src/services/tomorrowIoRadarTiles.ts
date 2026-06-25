@@ -3,7 +3,7 @@
  * @see https://docs.tomorrow.io/docs/tiles
  */
 
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, CapacitorHttp } from "@capacitor/core";
 
 export const TOMORROW_IO_RADAR_MAX_ZOOM = 10;
 export const TOMORROW_IO_PRECIP_FIELD = "precipitationIntensity";
@@ -11,8 +11,14 @@ export const TOMORROW_IO_PRECIP_FIELD = "precipitationIntensity";
 /** US map animation: 5-min steps × 12 frames ≈ 55 min replay, then loop. */
 export const TOMORROW_IO_ANIMATION_FRAME_COUNT = 12;
 export const TOMORROW_IO_ANIMATION_STEP_MIN = 5;
-export const TOMORROW_IO_ANIMATION_DWELL_MS = 1200;
-export const TOMORROW_IO_ANIMATION_CROSSFADE_MS = 1800;
+/** No dwell — crossfades chain back-to-back for continuous motion. */
+export const TOMORROW_IO_ANIMATION_DWELL_MS = 0;
+export const TOMORROW_IO_ANIMATION_CROSSFADE_MS = 2200;
+
+const TOMORROW_IO_TILE_API = "https://api.tomorrow.io/v4/map/tile";
+const DEFAULT_TOMORROW_IO_TILE_PROXY_URL =
+  "https://stormpath2.netlify.app/.netlify/functions/tomorrow-io-tile";
+const DEV_TILE_PROXY_PREFIX = "/tomorrow-io-tiles";
 
 export type TomorrowIoRadarFrame = { time: number; path: string };
 
@@ -33,11 +39,31 @@ export function isInTomorrowIoUsPrecipRegion(lng: number, lat: number): boolean 
   return false;
 }
 
+/**
+ * Base URL for Mapbox raster tile templates (no trailing slash).
+ * Native Capacitor uses a CORS-friendly proxy — WKWebView blocks direct api.tomorrow.io.
+ */
+export function resolveTomorrowIoMapTileBase(): string {
+  if (Capacitor.isNativePlatform()) {
+    const custom = (import.meta.env.VITE_TOMORROW_IO_TILE_PROXY_URL as string | undefined)?.trim();
+    return (custom || DEFAULT_TOMORROW_IO_TILE_PROXY_URL).replace(/\/$/, "");
+  }
+  if (import.meta.env.DEV) return DEV_TILE_PROXY_PREFIX;
+  if (typeof window !== "undefined" && window.location.origin.startsWith("http")) {
+    return `${window.location.origin}/.netlify/functions/tomorrow-io-tile`;
+  }
+  return TOMORROW_IO_TILE_API;
+}
+
 /** Mapbox raster template — `{z}` / `{x}` / `{y}` placeholders. */
 export function tomorrowIoPrecipTileUrlTemplate(apiKey: string, timestampIso: string): string {
   const ts =
     timestampIso === "now" ? "now" : timestampIso.replace(/:/g, "%3A");
-  return `https://api.tomorrow.io/v4/map/tile/{z}/{x}/{y}/${TOMORROW_IO_PRECIP_FIELD}/${ts}.png?apikey=${encodeURIComponent(apiKey)}`;
+  const base = resolveTomorrowIoMapTileBase();
+  if (base === TOMORROW_IO_TILE_API) {
+    return `${base}/{z}/{x}/{y}/${TOMORROW_IO_PRECIP_FIELD}/${ts}.png?apikey=${encodeURIComponent(apiKey)}`;
+  }
+  return `${base}/{z}/{x}/{y}/${TOMORROW_IO_PRECIP_FIELD}/${ts}.png?apikey=${encodeURIComponent(apiKey)}`;
 }
 
 /** Observed precip frames for animation (5-min steps; US supports up to ~6 h history). */
@@ -63,18 +89,38 @@ export function tomorrowIoTileUrlFromFrame(apiKey: string, timestampIso: string)
   return tomorrowIoPrecipTileUrlTemplate(apiKey, timestampIso);
 }
 
-/**
- * Mapbox GL loads raster tiles through the WebView fetch stack. On Capacitor iOS/Android,
- * api.tomorrow.io is blocked by WKWebView CORS (same constraint as timelines in tomorrowIo.ts).
- * Forecast APIs use CapacitorHttp; map tiles cannot — use RainViewer on native instead.
- */
+/** True when Mapbox can load Tomorrow.io raster tiles on this platform. */
 export function canUseTomorrowIoMapRasterTiles(): boolean {
-  return !Capacitor.isNativePlatform();
+  if (!Capacitor.isNativePlatform()) return true;
+  return Boolean(resolveTomorrowIoMapTileBase());
 }
 
 let tileProbeCache: { key: string; ok: boolean } | null = null;
 
-/** Sample tile fetch — mirrors Mapbox raster loading (browser fetch, not CapacitorHttp). */
+async function probeTileUrl(url: string): Promise<boolean> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const hr = await CapacitorHttp.request({
+        url,
+        method: "GET",
+        connectTimeout: 12_000,
+        readTimeout: 12_000,
+        responseType: "blob",
+      });
+      return hr.status >= 200 && hr.status < 300;
+    } catch {
+      return false;
+    }
+  }
+  try {
+    const res = await fetch(url, { method: "GET", cache: "no-store", mode: "cors" });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Sample tile fetch — uses the same URL template Mapbox raster sources load. */
 export async function verifyTomorrowIoRadarTileAccess(apiKey: string): Promise<boolean> {
   const key = apiKey.trim();
   if (!key || !canUseTomorrowIoMapRasterTiles()) return false;
@@ -82,13 +128,7 @@ export async function verifyTomorrowIoRadarTileAccess(apiKey: string): Promise<b
 
   const template = tomorrowIoPrecipTileUrlTemplate(key, "now");
   const url = template.replace("{z}", "4").replace("{x}", "14").replace("{y}", "6");
-  let ok = false;
-  try {
-    const res = await fetch(url, { method: "GET", cache: "no-store", mode: "cors" });
-    ok = res.ok;
-  } catch {
-    ok = false;
-  }
+  const ok = await probeTileUrl(url);
   tileProbeCache = { key, ok };
   return ok;
 }

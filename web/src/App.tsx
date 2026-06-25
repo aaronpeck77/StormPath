@@ -1693,7 +1693,6 @@ export default function App() {
 
   const {
     userAlongGuidanceM,
-    activeTurnIndex,
     bannerTurnIndex,
     metersToBannerManeuver,
   } = useNavigationGuidance({
@@ -2137,9 +2136,6 @@ export default function App() {
     planRoutes: plan.routes,
     lockedNavigationRouteId,
     temporaryGuidanceRouteId: autoRejoinGuidanceRouteId,
-    speedMph,
-    turnSteps,
-    activeTurnIndex,
     stormMapGeoJson,
   });
 
@@ -2171,7 +2167,7 @@ export default function App() {
       setDemoPlaybackPlaying(false);
       return;
     }
-    const mph = postedMph > 0 ? postedMph : 35;
+    const mph = postedMph ?? 55;
     const mPerSec = (mph * 1609.344) / 3600;
     let last = performance.now();
     let raf = 0;

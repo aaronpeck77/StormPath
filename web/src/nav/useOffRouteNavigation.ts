@@ -428,6 +428,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
                 routeNoticeAlongMeters: leg.routeNoticeAlongMeters ?? r.routeNoticeAlongMeters,
                 hasTolls: leg.hasTolls ?? r.hasTolls,
                 tollLabels: leg.tollLabels ?? r.tollLabels,
+                postedSpeedSamples: leg.postedSpeedSamples ?? r.postedSpeedSamples,
               }
             : r
         ),

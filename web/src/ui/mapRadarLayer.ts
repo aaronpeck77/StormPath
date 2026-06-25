@@ -28,11 +28,13 @@ export const RAINVIEWER_RADAR_VISIBLE_OPACITY = 0.78;
 export const RAINVIEWER_RADAR_LAYER_A = RADAR_LAYER_A;
 
 /**
- * Crossfade duration between dual raster layers (ms). Uses layer opacity, not Mapbox tile fade,
- * so per-tile fade is set to 0 on both layers.
+ * Crossfade duration between dual raster layers (ms). Long enough to blend ~10-min RainViewer steps.
+ * Chained with zero dwell so motion reads as one continuous sweep.
  */
-/** Long blend so radar appears to flow between snapshots rather than snap. ~3 s per frame. */
-export const RAINVIEWER_RADAR_CROSSFADE_MS = 2800;
+export const RAINVIEWER_RADAR_CROSSFADE_MS = 3200;
+
+/** Subtle tile fade on the hidden buffer while prewarming — reduces pop-in before opacity crossfade. */
+export const RAINVIEWER_RADAR_PREWARM_TILE_FADE_MS = 280;
 
 /** Legacy: crossfade when only one source and tile URLs change (unused by animated dual path). */
 export const RAINVIEWER_RASTER_FADE_MS = 520;
@@ -226,14 +228,23 @@ export function ensureRainViewerRadarDual(
   map.setPaintProperty(RADAR_LAYER_B, "raster-opacity", 0);
 }
 
+const pendingTileSwap: Record<"a" | "b", boolean> = { a: false, b: false };
+
 export function setRainViewerRadarTilesOnSource(
   map: Map,
   which: "a" | "b",
   tileUrlTemplate: string
 ): void {
   const id = which === "a" ? RADAR_SOURCE_A : RADAR_SOURCE_B;
+  const layerId = which === "a" ? RADAR_LAYER_A : RADAR_LAYER_B;
   const src = map.getSource(id) as RasterTileSource | undefined;
-  if (src && typeof src.setTiles === "function") src.setTiles([tileUrlTemplate]);
+  if (src && typeof src.setTiles === "function") {
+    pendingTileSwap[which] = true;
+    if (map.getLayer(layerId)) {
+      map.setPaintProperty(layerId, "raster-fade-duration", RAINVIEWER_RADAR_PREWARM_TILE_FADE_MS);
+    }
+    src.setTiles([tileUrlTemplate]);
+  }
 }
 
 export function setRainViewerRadarDualOpacity(map: Map, opacityA: number, opacityB: number): void {
@@ -241,43 +252,63 @@ export function setRainViewerRadarDualOpacity(map: Map, opacityA: number, opacit
   if (map.getLayer(RADAR_LAYER_B)) map.setPaintProperty(RADAR_LAYER_B, "raster-opacity", opacityB);
 }
 
-function easeInOutCubic(t: number): number {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-}
-
-/** After setTiles, wait until Mapbox finishes fetching (or timeout). Uses `sourcedata` for earlier resolve than `idle` alone. */
+/**
+ * After setTiles, wait until viewport tiles for this side are fetched and painted (or timeout).
+ * `isSourceLoaded` alone can stay true from the *previous* frame — require a fresh `content` event.
+ */
 export function waitForRainViewerSideLoaded(
   map: Map,
   which: "a" | "b",
   timeoutMs: number
 ): Promise<void> {
   const sourceId = which === "a" ? RADAR_SOURCE_A : RADAR_SOURCE_B;
+  const layerId = which === "a" ? RADAR_LAYER_A : RADAR_LAYER_B;
   return new Promise((resolve) => {
     let finished = false;
+    let sawNewContent = false;
     const cleanup = () => {
       if (finished) return;
       finished = true;
       map.off("idle", onIdle);
       map.off("sourcedata", onSourceData);
       clearTimeout(t);
+      if (map.getLayer(layerId)) {
+        try {
+          map.setPaintProperty(layerId, "raster-fade-duration", 0);
+        } catch {
+          /* style race */
+        }
+      }
+      pendingTileSwap[which] = false;
       resolve();
     };
-    const tryResolve = () => {
+    const tilesReady = (): boolean => {
       try {
-        if (map.getSource(sourceId) && map.isSourceLoaded(sourceId)) cleanup();
+        if (!map.getSource(sourceId) || !map.isSourceLoaded(sourceId)) return false;
+        if (pendingTileSwap[which] && !sawNewContent) return false;
+        const areTilesLoaded = (map as Map & { areTilesLoaded?: () => boolean }).areTilesLoaded;
+        if (typeof areTilesLoaded === "function" && !areTilesLoaded.call(map)) return false;
+        return true;
       } catch {
-        cleanup();
+        return true;
       }
+    };
+    const tryResolve = () => {
+      if (tilesReady()) cleanup();
     };
     const onIdle = () => tryResolve();
     const onSourceData = (e: MapSourceDataEvent) => {
-      if (e.sourceId === sourceId) tryResolve();
+      if (e.sourceId !== sourceId) return;
+      if (e.sourceDataType === "content" || e.tile) {
+        sawNewContent = true;
+        pendingTileSwap[which] = false;
+      }
+      tryResolve();
     };
     const t = setTimeout(cleanup, timeoutMs);
     map.on("idle", onIdle);
     map.on("sourcedata", onSourceData);
     map.triggerRepaint();
-    queueMicrotask(tryResolve);
   });
 }
 
@@ -300,7 +331,8 @@ export function animateRainViewerDualCrossfade(
         return;
       }
       const t = Math.min(1, (now - start) / durationMs);
-      const e = easeInOutCubic(t);
+      /* Linear blend — chained crossfades read as steady motion (ease-in-out pauses at each frame). */
+      const e = t;
       const oa = Math.max(0, Math.min(1, from.a + (to.a - from.a) * e));
       const ob = Math.max(0, Math.min(1, from.b + (to.b - from.b) * e));
       setRainViewerRadarDualOpacity(map, oa, ob);

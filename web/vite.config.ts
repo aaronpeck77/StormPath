@@ -102,6 +102,12 @@ export default defineConfig(({ command }) => ({
         rewrite: (path) => path.replace(/^\/rainviewer-api/, ""),
       },
       "/rainviewer-tiles": rainViewerTileProxyOptions(),
+      "/tomorrow-io-tiles": {
+        target: "https://api.tomorrow.io",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/tomorrow-io-tiles/, "/v4/map/tile"),
+      },
     },
   },
   /** Same proxy as `server` — only applies if requests use `/weather-gov` (e.g. `VITE_NWS_API_BASE=/weather-gov`). */
@@ -126,6 +132,12 @@ export default defineConfig(({ command }) => ({
         rewrite: (path) => path.replace(/^\/rainviewer-api/, ""),
       },
       "/rainviewer-tiles": rainViewerTileProxyOptions(),
+      "/tomorrow-io-tiles": {
+        target: "https://api.tomorrow.io",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/tomorrow-io-tiles/, "/v4/map/tile"),
+      },
     },
   },
 }));

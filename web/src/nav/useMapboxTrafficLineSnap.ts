@@ -88,6 +88,7 @@ export function useMapboxTrafficLineSnap(deps: UseMapboxTrafficLineSnapDeps): vo
                 geometry: mb.geometry,
                 baseEtaMinutes: Math.max(1, Math.round(mb.durationMinutes)),
                 turnSteps: mb.turnSteps,
+                postedSpeedSamples: undefined,
                 routeNotices: [
                   ...(r.routeNotices ?? []),
                   `${MB_TRAFFIC_LINE_SNAP_NOTICE} — follows live road network when stored geometry no longer matches closures/congestion.`,
