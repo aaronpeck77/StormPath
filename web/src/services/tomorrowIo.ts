@@ -13,7 +13,7 @@ import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import {
   calibratedWindGustMph,
 } from "../nav/windForecastCalib";
-import { pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
+import { pointAtAlongMeters, polylineLengthMeters, subsamplePolylineVertexBudget } from "../nav/routeGeometry";
 import type { LngLat } from "../nav/types";
 import { enqueueTomorrowIoPost, noteTomorrowIoRateLimit } from "./tomorrowIoClient";
 
@@ -63,6 +63,27 @@ export type PointHourlyForecast = {
   provider: "tomorrowIo" | "openWeather" | "weatherKit";
 };
 
+/** One day in a multi-day local outlook. */
+export type PointDailyDay = {
+  dateIso: string;
+  /** Short label e.g. "Wed" */
+  dayLabel: string;
+  highF: number;
+  lowF: number;
+  /** 0–1 */
+  precipChance: number;
+  conditions: string;
+};
+
+/** Multi-day outlook at the user's position (WeatherKit forecastDaily). */
+export type PointDailyForecast = {
+  fetchedAt: number;
+  lat: number;
+  lng: number;
+  days: PointDailyDay[];
+  provider: "weatherKit";
+};
+
 /** 60-minute precipitation outlook for a point. */
 export type MinutePrecipForecast = {
   fetchedAt: number; // Date.now()
@@ -93,6 +114,12 @@ export type RouteHourlyInterval = {
   weatherCode: number;
   /** mm of standing water on road surface (WetRoadIndex). */
   wetRoadMm: number;
+  /** Tomorrow.io lightning flash rate density (optional). */
+  lightningFlashRate?: number;
+  /** Hail probability 0–1 (optional). */
+  hailProbability?: number;
+  /** Hail size mm (optional). */
+  hailSizeMm?: number;
 };
 
 /** Route-aware hourly forecast. */
@@ -363,6 +390,22 @@ export async function fetchPointHourlyForecast(
 // ── Route hourly forecast ─────────────────────────────────────────────────────
 
 export const TIO_ROUTE_FORECAST_MAX_LOCATIONS = 6;
+/** Tomorrow.io polyline max length (m). */
+const TIO_POLYLINE_MAX_M = 70_000;
+const TIO_POLYLINE_MAX_VERTICES = 120;
+
+const ROUTE_FORECAST_FIELDS = [
+  "temperature",
+  "precipitationIntensity",
+  "precipitationProbability",
+  "windSpeed",
+  "windGust",
+  "weatherCode",
+  "wetRoadIndex",
+  "lightningFlashRateDensity",
+  "hailProbability",
+  "hailSize",
+] as const;
 
 type TimelineValues = {
   temperature?: number;
@@ -372,6 +415,9 @@ type TimelineValues = {
   windGust?: number;
   weatherCode?: number;
   wetRoadIndex?: number;
+  lightningFlashRateDensity?: number;
+  hailProbability?: number;
+  hailSize?: number;
 };
 
 type HourlyByOffset = { offsetMin: number; values: TimelineValues };
@@ -463,6 +509,10 @@ function intervalFromHourlyTimeline(
     windGustMph: calibratedWindGustMph(windSpeedMph, rawGustMph),
     weatherCode: v.weatherCode ?? 1000,
     wetRoadMm: v.wetRoadIndex ?? 0,
+    lightningFlashRate: v.lightningFlashRateDensity,
+    hailProbability:
+      v.hailProbability != null ? v.hailProbability / 100 : undefined,
+    hailSizeMm: v.hailSize,
   };
 }
 
@@ -478,15 +528,7 @@ async function fetchHourlyTimelineAtLocation(
     apiKey,
     {
       location: `${lat.toFixed(5)},${lng.toFixed(5)}`,
-      fields: [
-        "temperature",
-        "precipitationIntensity",
-        "precipitationProbability",
-        "windSpeed",
-        "windGust",
-        "weatherCode",
-        "wetRoadIndex",
-      ],
+      fields: [...ROUTE_FORECAST_FIELDS],
       units: "metric",
       timesteps: ["1h"],
       startTime: "now",
@@ -513,20 +555,163 @@ async function fetchHourlyTimelineAtLocation(
   }));
 }
 
+function simplifyPolylineForTio(geometry: LngLat[]): LngLat[] {
+  if (geometry.length <= TIO_POLYLINE_MAX_VERTICES) return geometry;
+  return subsamplePolylineVertexBudget(geometry, TIO_POLYLINE_MAX_VERTICES);
+}
+
+async function fetchPolylineHourlyTimeline(
+  apiKey: string,
+  geometry: LngLat[],
+  endHours: number,
+  signal?: AbortSignal,
+  bypassCache = false
+): Promise<HourlyByOffset[]> {
+  const simplified = simplifyPolylineForTio(geometry);
+  const coordinates = simplified.map(([lng, lat]) => [lng, lat]);
+  const raw = await postTimelines(
+    apiKey,
+    {
+      location: { type: "LineString", coordinates },
+      fields: [...ROUTE_FORECAST_FIELDS],
+      units: "metric",
+      timesteps: ["1h"],
+      startTime: "now",
+      endTime: `nowPlus${endHours}h`,
+    },
+    signal,
+    bypassCache
+  ) as {
+    data: {
+      timelines: Array<{
+        intervals: Array<{
+          startTime: string;
+          values: TimelineValues;
+        }>;
+      }>;
+    };
+  };
+  const hourlyIntervals = raw.data.timelines[0]?.intervals ?? [];
+  const now = Date.now();
+  return hourlyIntervals.map((iv) => ({
+    offsetMin: (new Date(iv.startTime).getTime() - now) / 60_000,
+    values: iv.values,
+  }));
+}
+
+async function fetchRouteForecastPolyline(
+  apiKey: string,
+  geometry: LngLat[],
+  waypoints: { lat: number; lng: number; etaMinutes: number }[],
+  endHours: number,
+  signal?: AbortSignal,
+  bypassCache = false
+): Promise<RouteForecast> {
+  const hourly = await fetchPolylineHourlyTimeline(
+    apiKey,
+    geometry,
+    endHours,
+    signal,
+    bypassCache
+  );
+  const intervals = waypoints.map((wp) => {
+    if (!hourly.length) {
+      return {
+        etaMinutes: wp.etaMinutes,
+        lat: wp.lat,
+        lng: wp.lng,
+        tempF: 70,
+        precipIntensityMmh: 0,
+        precipProbability: 0,
+        windSpeedMph: 0,
+        windGustMph: 0,
+        weatherCode: 1000,
+        wetRoadMm: 0,
+      };
+    }
+    return intervalFromHourlyTimeline(wp, hourly);
+  });
+  return { fetchedAt: Date.now(), intervals };
+}
+
+/**
+ * Merge Tomorrow.io convective fields (lightning / hail) from a corridor polyline into an
+ * existing route forecast (e.g. from WeatherKit). One API call; does not replace temps/wind.
+ */
+export async function enrichRouteForecastConvective(
+  apiKey: string,
+  geometry: LngLat[],
+  forecast: RouteForecast,
+  signal?: AbortSignal
+): Promise<RouteForecast> {
+  if (!forecast.intervals.length || geometry.length < 2) return forecast;
+  if (polylineLengthMeters(geometry) > TIO_POLYLINE_MAX_M) return forecast;
+  const maxEtaMin = Math.max(...forecast.intervals.map((i) => i.etaMinutes));
+  const endHours = Math.ceil(maxEtaMin / 60) + 1;
+  const hourly = await fetchPolylineHourlyTimeline(apiKey, geometry, endHours, signal, true);
+  if (!hourly.length) return forecast;
+
+  const intervals = forecast.intervals.map((iv) => {
+    let best = hourly[0]!;
+    let bestDelta = Math.abs(best.offsetMin - iv.etaMinutes);
+    for (const h of hourly) {
+      const d = Math.abs(h.offsetMin - iv.etaMinutes);
+      if (d < bestDelta) {
+        bestDelta = d;
+        best = h;
+      }
+    }
+    const v = best.values;
+    const lightning = v.lightningFlashRateDensity;
+    const hailP = v.hailProbability;
+    const hailSize = v.hailSize;
+    if (lightning == null && hailP == null && hailSize == null) return iv;
+    return {
+      ...iv,
+      lightningFlashRate: lightning ?? iv.lightningFlashRate,
+      hailProbability:
+        hailP != null ? hailP / 100 : iv.hailProbability,
+      hailSizeMm: hailSize ?? iv.hailSizeMm,
+      weatherCode:
+        (lightning != null && lightning > 0.2) || (hailP != null && hailP > 0.25)
+          ? 8000
+          : iv.weatherCode,
+    };
+  });
+  return { ...forecast, fetchedAt: Date.now(), intervals };
+}
+
 /**
  * Fetches hourly weather at each corridor location (up to
  * {@link TIO_ROUTE_FORECAST_MAX_LOCATIONS} Timelines calls), keyed to ETA at each waypoint.
+ * When `geometry` is ≤ 70 km, uses a single polyline Timelines call instead.
  */
 export async function fetchRouteForecast(
   apiKey: string,
   waypoints: { lat: number; lng: number; etaMinutes: number }[],
   signal?: AbortSignal,
-  opts?: { bypassCache?: boolean }
+  opts?: { bypassCache?: boolean; geometry?: LngLat[] }
 ): Promise<RouteForecast> {
   if (!waypoints.length) return { fetchedAt: Date.now(), intervals: [] };
 
   const maxEtaMin = Math.max(...waypoints.map((w) => w.etaMinutes));
   const endHours = Math.ceil(maxEtaMin / 60) + 1;
+
+  if (
+    opts?.geometry &&
+    opts.geometry.length >= 2 &&
+    polylineLengthMeters(opts.geometry) <= TIO_POLYLINE_MAX_M
+  ) {
+    return fetchRouteForecastPolyline(
+      apiKey,
+      opts.geometry,
+      waypoints,
+      endHours,
+      signal,
+      opts.bypassCache ?? false
+    );
+  }
+
   const fetchLocations = pickRouteForecastFetchLocations(waypoints);
 
   const timelinesByKey = new Map<string, HourlyByOffset[]>();
@@ -617,6 +802,8 @@ export function routeForecastCorridorStress(forecast: RouteForecast): number {
     s = Math.max(s, Math.min(1, (iv.wetRoadMm ?? 0) / 18));
     if (iv.weatherCode === 8000) s = Math.max(s, 0.92);
     if ([6001, 6201].includes(iv.weatherCode)) s = Math.max(s, 0.88);
+    if (iv.windSpeedMph >= 25) s = Math.max(s, 0.35);
+    if (iv.windGustMph >= 35) s = Math.max(s, 0.45);
     if ([5101, 7000, 7101].includes(iv.weatherCode)) s = Math.max(s, 0.72);
     if (iv.windGustMph >= 45) s = Math.max(s, 0.52);
     else if (iv.windGustMph >= 35) s = Math.max(s, 0.3);

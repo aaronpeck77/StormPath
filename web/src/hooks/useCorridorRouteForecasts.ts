@@ -112,7 +112,9 @@ export function useCorridorRouteForecasts(
       }
 
       try {
-        const forecast = await fetchRouteForecast(apiKey, wps, ac.signal);
+        const forecast = await fetchRouteForecast(apiKey, wps, ac.signal, {
+          geometry: leg.geometry,
+        });
         cacheRef.current[leg.routeId] = forecast;
         if (!cancelled) {
           setForecastsByLegId((prev) => ({ ...prev, [leg.routeId]: forecast }));

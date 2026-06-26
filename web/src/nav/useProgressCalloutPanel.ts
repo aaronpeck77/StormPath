@@ -13,7 +13,7 @@ import {
   type RouteChunkCalloutItem,
 } from "./routeProgressChunkList";
 import type { WxSample } from "./routeChunkWeather";
-import { gustSpikeSeverity } from "./windForecastCalib";
+import { buildRouteWindGraphPoints } from "./windForecastCalib";
 import type { RouteOutlookStep, StormRouteOutlookBand } from "./routeForecastTimeline";
 import {
   applyRadarOutlookBoost,
@@ -23,7 +23,6 @@ import {
   buildSyncedRouteOutlook,
   ensureRouteOutlookForGraph,
   mergeRouteOutlookSteps,
-  mergeRouteOutlookSamples,
   resolveRouteOutlookAnchorTempF,
   resyncRouteOutlookSteps,
   tomorrowForecastToWxSamples,
@@ -44,11 +43,10 @@ import type { RouteAlert } from "./routeAlerts";
 import type { UnifiedTrafficNarrative } from "./trafficNarrative";
 import type { LngLat, NavRoute } from "./types";
 import type { RouteSituationSlice } from "../situation/types";
-import type { WeatherOverlay } from "../situation/fusedSnapshot";
 import type { RouteForecast } from "../services/tomorrowIo";
 import { isTomorrowIoRateLimited } from "../services/tomorrowIoClient";
+import { isWeatherKitTokenBlocked } from "../services/weatherKitAuth";
 import type { CurrentNowcast } from "../services/openWeatherClient";
-import { isOpenWeatherRateLimited } from "../services/openWeatherPacing";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import type { StormProgressStripBand } from "../weatherAlerts/geometryOverlap";
 
@@ -77,7 +75,6 @@ export type UseProgressCalloutPanelDeps = {
   stormCorridorAlerts: NormalizedWeatherAlert[];
   progressStripAlerts: RouteAlert[];
   guidanceSlice: RouteSituationSlice | undefined;
-  weatherOverlay: WeatherOverlay | undefined;
   corridorWeatherDetail: string;
   lineFocusId: string;
   tioRouteForecast: RouteForecast | null;
@@ -97,8 +94,7 @@ export type UseProgressCalloutPanelDeps = {
   settingWeatherHintsEnabled: boolean;
   destLngLat: LngLat | null;
   planRoutes: NavRoute[];
-  bumpWeatherRefresh: () => void;
-  resetWeatherOverlayThrottle: () => void;
+  bumpRouteForecastRefresh: () => void;
   bumpTrafficRefresh: () => void;
 };
 
@@ -125,7 +121,6 @@ export function useProgressCalloutPanel(
     stormCorridorAlerts,
     progressStripAlerts,
     guidanceSlice,
-    weatherOverlay,
     corridorWeatherDetail,
     lineFocusId,
     tioRouteForecast,
@@ -145,8 +140,7 @@ export function useProgressCalloutPanel(
     settingWeatherHintsEnabled,
     destLngLat,
     planRoutes,
-    bumpWeatherRefresh,
-    resetWeatherOverlayThrottle,
+    bumpRouteForecastRefresh,
     bumpTrafficRefresh,
   } = deps;
 
@@ -165,26 +159,14 @@ export function useProgressCalloutPanel(
           : routePickSlotHex(routeSlotIndexFor(guidanceRoute.id, orderedRouteIds))
         : "#94a3b8";
 
-    /* Wind gust points sampled from TIO intervals — sustained speed on graph; spikes as markers. */
+    /* Wind along route — from corridor forecast (WeatherKit / Tomorrow.io). */
     const planEtaForWind = guidanceRoute?.baseEtaMinutes ?? null;
-    const windPoints: { t: number; mph: number }[] =
+    const windFromForecast =
       tioRouteForecast && planEtaForWind && planEtaForWind > 0
-        ? tioRouteForecast.intervals
-            .filter((iv) => iv.windSpeedMph >= 8)
-            .map((iv) => ({
-              t: Math.min(1, Math.max(0, iv.etaMinutes / planEtaForWind)),
-              mph: Math.round(iv.windSpeedMph),
-            }))
-        : [];
-    const gustSpikePoints: { t: number; mph: number }[] =
-      tioRouteForecast && planEtaForWind && planEtaForWind > 0
-        ? tioRouteForecast.intervals
-            .filter((iv) => gustSpikeSeverity(iv.windSpeedMph, iv.windGustMph) !== null)
-            .map((iv) => ({
-              t: Math.min(1, Math.max(0, iv.etaMinutes / planEtaForWind)),
-              mph: Math.round(iv.windGustMph),
-            }))
-        : [];
+        ? buildRouteWindGraphPoints(tioRouteForecast.intervals, planEtaForWind)
+        : { windPoints: [], gustSpikePoints: [] };
+    const windPoints = windFromForecast.windPoints;
+    const gustSpikePoints = windFromForecast.gustSpikePoints;
 
     if (skipHeavyProgressPanel) {
       return {
@@ -228,17 +210,22 @@ export function useProgressCalloutPanel(
       totalM > 0 ? Math.min(1, Math.max(0, userAlongGuidanceM / totalM)) : 0;
 
     const planEta = guidanceRoute?.baseEtaMinutes ?? null;
-    const wxOverlay =
-      weatherOverlay?.[guidanceRouteId] ??
-      weatherOverlay?.[lineFocusId] ??
-      (weatherOverlay ? Object.values(weatherOverlay)[0] : undefined);
-    const wxSamples = wxOverlay?.samples;
+    const outlookGraphSamples =
+      tioRouteForecast && planEta && planEta > 0
+        ? tomorrowForecastToWxSamples(tioRouteForecast, planEta)
+        : [];
     const wxHeadline =
       guidanceSlice?.forecastHeadline?.trim() ||
-      wxOverlay?.headline?.trim() ||
       corridorWeatherDetail ||
       advisoryNowcastLine ||
       "";
+    const routeOutlookAnchorTempF = resolveRouteOutlookAnchorTempF({
+      nowcastTempF: currentNowcast?.tempF,
+      minutePrecipTempF: tioMinutePrecip?.now?.tempF,
+      hourlyTempF: localHourlyForecast?.hours[0]?.tempF ?? null,
+      headline: wxHeadline,
+      tioRouteForecast,
+    });
 
     const stormOutlook =
       totalM > 0
@@ -248,19 +235,6 @@ export function useProgressCalloutPanel(
             radarSamples: radarMosaicSamples,
           })
         : [];
-
-    const tioSamples =
-      tioRouteForecast && planEta && planEta > 0
-        ? tomorrowForecastToWxSamples(tioRouteForecast, planEta)
-        : [];
-    const outlookGraphSamples = mergeRouteOutlookSamples(wxSamples ?? [], tioSamples);
-    const routeOutlookAnchorTempF = resolveRouteOutlookAnchorTempF({
-      nowcastTempF: currentNowcast?.tempF,
-      minutePrecipTempF: tioMinutePrecip?.now?.tempF,
-      hourlyTempF: localHourlyForecast?.hours[0]?.tempF ?? null,
-      headline: wxHeadline,
-      tioRouteForecast,
-    });
 
     if (ultraLongActiveNav) {
       const routeAheadSegments = buildRouteAheadCalloutSegments({
@@ -296,7 +270,7 @@ export function useProgressCalloutPanel(
           : wxHeadline
             ? buildSyncedRouteOutlook({
                 forecastHeadline: wxHeadline,
-                samples: wxSamples,
+                samples: outlookGraphSamples,
                 totalMeters: totalM,
                 userAlongMeters: progressPanelAlongM,
                 planEtaMinutes: planEta,
@@ -359,7 +333,7 @@ export function useProgressCalloutPanel(
       userAlongM: progressPanelAlongM,
       planEtaMinutes: planEta,
       slice: guidanceSlice,
-      weatherSamples: wxSamples,
+      weatherSamples: outlookGraphSamples.length ? outlookGraphSamples : undefined,
       laidOutAlerts: laidOut,
       stormBands: routeAheadProgressBands,
       stripTint,
@@ -369,7 +343,7 @@ export function useProgressCalloutPanel(
 
     const syncedOutlook = buildSyncedRouteOutlook({
       forecastHeadline: wxHeadline,
-      samples: outlookGraphSamples.length ? outlookGraphSamples : wxSamples,
+      samples: outlookGraphSamples,
       totalMeters: totalM,
       userAlongMeters: progressPanelAlongM,
       planEtaMinutes: planEta,
@@ -503,7 +477,6 @@ export function useProgressCalloutPanel(
     stormCorridorAlerts,
     progressStripAlerts,
     guidanceSlice,
-    weatherOverlay,
     corridorWeatherDetail,
     lineFocusId,
     tioRouteForecast,
@@ -529,13 +502,14 @@ export function useProgressCalloutPanel(
   const progressCalloutWasOpenRef = useRef(false);
 
   // Stable primitive deps for the watchdog — avoids effect re-running every render when
-  // planRoutes/weatherOverlay object references change even though the relevant values haven't.
+  // planRoutes object references change even though the relevant values haven't.
   const hasPlannedRoute = Boolean(
     destLngLat && planRoutes.some((r) => r.geometry && r.geometry.length >= 2)
   );
-  const _owEntry = weatherOverlay?.[guidanceRouteId];
-  const weatherOverlayHeadline = _owEntry?.headline?.trim() ?? "";
-  const hasWeatherSamples = Boolean(_owEntry?.samples?.length);
+  const routeForecastHeadline = guidanceSlice?.forecastHeadline?.trim() ?? "";
+  const hasWeatherSamples = Boolean(
+    tioRouteForecast?.intervals.length && (guidanceRoute?.baseEtaMinutes ?? 0) > 0
+  );
 
   /** Route-hazard watchdog — progress strip and progress info panel stay fed from one pipeline. */
   useEffect(() => {
@@ -554,9 +528,9 @@ export function useProgressCalloutPanel(
         timelineItemCount: routeAheadTimeline.filter(timelineItemShowsOnRouteLine).length,
         progressBandCount: routeAheadProgressBands.length,
         corridorWeatherDetail,
-        weatherOverlayHeadline,
+        routeForecastHeadline,
         hasWeatherSamples,
-        isWeatherRateLimited: isTomorrowIoRateLimited() || isOpenWeatherRateLimited(),
+        isWeatherRateLimited: isTomorrowIoRateLimited() || isWeatherKitTokenBlocked(),
       });
 
       if (audit.ok) return;
@@ -566,9 +540,8 @@ export function useProgressCalloutPanel(
 
       const actions = repairActionsForRouteAheadIssues(audit.issues);
       for (const action of actions) {
-        if (action === "refresh_weather_overlay") {
-          resetWeatherOverlayThrottle();
-          bumpWeatherRefresh();
+        if (action === "refresh_route_forecast") {
+          bumpRouteForecastRefresh();
         }
         if (action === "refresh_traffic") {
           bumpTrafficRefresh();
@@ -591,16 +564,16 @@ export function useProgressCalloutPanel(
     destLngLat,
     hasPlannedRoute,
     guidanceRoute?.geometry,
+    guidanceRoute?.baseEtaMinutes,
     guidanceRouteId,
     progressCalloutPanel.outlookTimeline.length,
     routeAheadTimeline.length,
     routeAheadProgressBands.length,
     corridorWeatherDetail,
-    weatherOverlayHeadline,
+    routeForecastHeadline,
     hasWeatherSamples,
     progressCalloutsOpen,
-    bumpWeatherRefresh,
-    resetWeatherOverlayThrottle,
+    bumpRouteForecastRefresh,
     bumpTrafficRefresh,
   ]);
 

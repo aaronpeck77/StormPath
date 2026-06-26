@@ -29,10 +29,35 @@ export const TRAFFIC_PROMPT_REROUTE_MINUTES = 10;
 export const TRAFFIC_STRIP_SOFT_MINUTES = 8;
 
 /**
- * Traffic slowdown bypass — compare from GPS, then explicit confirm to switch the locked route.
- * See `trafficBypassFlow.ts` for the full drive-time sequence.
+ * Traffic / hazard bypass — A/B/C compare from GPS, then explicit confirm to switch the locked route.
+ * Off while core navigation (off-route auto-reroute) is hardened.
  */
-export const TRAFFIC_BYPASS_ENABLED = true;
+export const TRAFFIC_BYPASS_ENABLED = false;
+
+/**
+ * Off-route manual choice UI ("Stay on this road" / "Return to original route").
+ * When false, {@link useOffRouteNavigation} auto-recalculates from GPS when off-route is detected.
+ */
+export const MANUAL_OFF_ROUTE_CHOICES_ENABLED = false;
+
+/**
+ * Off-route auto-reroute from GPS (gas stop, missed turn) without driver prompts.
+ * Active when manual choice UI is off; otherwise follows the user's Auto detour setting.
+ */
+export function isAutoOffRouteRerouteActive(userAutoRerouteSetting: boolean): boolean {
+  if (!MANUAL_OFF_ROUTE_CHOICES_ENABLED) return true;
+  return userAutoRerouteSetting;
+}
+
+/** Manual off-route banner + Stay / Return buttons in {@link BottomToolbar}. */
+export function shouldShowManualOffRouteUi(): boolean {
+  return MANUAL_OFF_ROUTE_CHOICES_ENABLED;
+}
+
+/** Traffic bypass chip, compare panel, and hazard approach reroute CTAs. */
+export function shouldShowTrafficBypassUi(): boolean {
+  return TRAFFIC_BYPASS_ENABLED;
+}
 
 /** @deprecated Use {@link TRAFFIC_BYPASS_ENABLED} — auto reroute is controlled by the user setting. */
 export const LIVE_REROUTE_ENABLED = TRAFFIC_BYPASS_ENABLED;

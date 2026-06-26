@@ -1,14 +1,16 @@
 import { useMemo } from "react";
 import type { CurrentNowcast } from "../services/openWeatherClient";
 import { formatNowcastLine } from "../services/openWeatherClient";
-import type { MinutePrecipForecast, PointHourlyForecast } from "../services/tomorrowIo";
+import type { MinutePrecipForecast, PointDailyForecast, PointHourlyForecast } from "../services/tomorrowIo";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
 import {
+  formatDailyDayLabel,
   formatForecastUpdatedAt,
   formatLocalForecastHourLabel,
   formatMinutePrecipNowLine,
   latestForecastFetchedAtMs,
+  pointDailyForecastSummary,
   pointHourlyForecastSummary,
 } from "../utils/forecastDisplay";
 import { formatEtaDuration } from "./formatEta";
@@ -50,6 +52,7 @@ type Props = {
   nowcast?: CurrentNowcast | null;
   minutePrecip?: MinutePrecipForecast | null;
   hourlyForecast?: PointHourlyForecast | null;
+  dailyForecast?: PointDailyForecast | null;
   locationAlerts?: NormalizedWeatherAlert[];
   nwsLoading?: boolean;
   nwsError?: string | null;
@@ -68,6 +71,7 @@ export function AdvisoryLocalForecast({
   nowcast,
   minutePrecip,
   hourlyForecast,
+  dailyForecast,
   locationAlerts = [],
   nwsLoading = false,
   nwsError = null,
@@ -84,7 +88,9 @@ export function AdvisoryLocalForecast({
   const hasNow = Boolean(nowLine);
   const hasHour = !isBasic && Boolean(minutePrecip?.minutes.length);
   const hours = hourlyForecast?.hours ?? [];
+  const days = dailyForecast?.days ?? [];
   const hasDay = hours.length > 0;
+  const hasMultiDay = !isBasic && days.length > 0;
   const hasNws = locationAlerts.length > 0;
   const showNwsBlock =
     !isBasic && (hasNws || nwsLoading || Boolean(nwsError?.trim()));
@@ -92,19 +98,21 @@ export function AdvisoryLocalForecast({
     const ms = latestForecastFetchedAtMs(
       nowcast?.fetchedAtMs,
       minutePrecip?.fetchedAt,
-      hourlyForecast?.fetchedAt
+      hourlyForecast?.fetchedAt,
+      dailyForecast?.fetchedAt
     );
     return ms != null ? formatForecastUpdatedAt(ms) : null;
-  }, [nowcast?.fetchedAtMs, minutePrecip?.fetchedAt, hourlyForecast?.fetchedAt]);
+  }, [nowcast?.fetchedAtMs, minutePrecip?.fetchedAt, hourlyForecast?.fetchedAt, dailyForecast?.fetchedAt]);
 
   if (isBasic) {
     if (!hasNow && !hasDay && !forecastLoading) return null;
-  } else if (!hasNow && !hasHour && !hasDay && !showNwsBlock && !forecastLoading) {
+  } else if (!hasNow && !hasHour && !hasDay && !hasMultiDay && !showNwsBlock && !forecastLoading) {
     return null;
   }
 
   const hourSummary = minutePrecip ? minutePrecipSummary(minutePrecip) : null;
   const daySummary = hasDay ? pointHourlyForecastSummary(hours) : null;
+  const multiDaySummary = hasMultiDay ? pointDailyForecastSummary(days) : null;
   const hourlyProviderLabel =
     hourlyForecast?.provider === "openWeather" ? "OpenWeather · 3 h steps" : "Tomorrow.io";
 
@@ -130,7 +138,7 @@ export function AdvisoryLocalForecast({
         {metaUpdated ? <span className="adv-forecast__updated">{metaUpdated}</span> : null}
       </header>
 
-      {forecastLoading && !hasNow && !hasHour && !hasDay ? (
+      {forecastLoading && !hasNow && !hasHour && !hasDay && !hasMultiDay ? (
         <p className="adv-forecast__nws-status">
           {isBasic ? "Loading local conditions…" : "Loading local forecast…"}
         </p>
@@ -287,6 +295,49 @@ export function AdvisoryLocalForecast({
           </div>
             </>
           )}
+        </div>
+      ) : null}
+
+      {hasMultiDay ? (
+        <div className="adv-forecast__block adv-forecast__block--multiday">
+          <div className="adv-forecast__block-head">
+            <span className="adv-forecast__block-label">Next few days</span>
+            <span className="adv-forecast__block-meta">
+              {dailyForecast
+                ? `${formatForecastUpdatedAt(dailyForecast.fetchedAt)} · WeatherKit`
+                : null}
+            </span>
+          </div>
+          {multiDaySummary ? <p className="adv-forecast__hour-summary">{multiDaySummary}</p> : null}
+          <div
+            className="adv-forecast__daily-scroll"
+            role="img"
+            aria-label={`Daily forecast for ${areaLabel}`}
+          >
+            <div className="adv-forecast__daily-cols">
+              {days.slice(0, 7).map((d, i) => (
+                <div
+                  key={d.dateIso}
+                  className="adv-forecast__daily-col"
+                  title={`${formatDailyDayLabel(d, i)}: ${d.highF}°/${d.lowF}°, ${d.conditions}${
+                    d.precipChance > 0.1 ? `, ${Math.round(d.precipChance * 100)}% rain` : ""
+                  }`}
+                >
+                  <span className="adv-forecast__daily-day">
+                    {formatDailyDayLabel(d, i)}
+                  </span>
+                  <span className="adv-forecast__daily-temp">{d.highF}°</span>
+                  <span className="adv-forecast__daily-low">{d.lowF}°</span>
+                  <div
+                    className="adv-forecast__daily-precip"
+                    style={{
+                      background: precipColor(0, d.precipChance),
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       ) : null}
     </section>

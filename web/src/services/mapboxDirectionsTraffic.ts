@@ -6,7 +6,7 @@ const MAPBOX_MAX_COORDS = 25;
 
 const SAMPLE_TRIES = [25, 16, 8, 3] as const;
 
-/** Evenly sample vertices so the traffic profile follows the ORS corridor approximately. */
+/** Evenly sample vertices so the traffic profile follows the route corridor approximately. */
 export function samplePolylineForMapbox(geometry: LngLat[], max: number): LngLat[] {
   if (geometry.length <= max) return [...geometry];
   const out: LngLat[] = [];
@@ -190,7 +190,7 @@ async function fetchDirectionsOnce(
 
 /**
  * Live traffic-aware duration along a path that follows the given polyline (sampled waypoints).
- * Delay is computed against Mapbox's own free-flow baseline (duration_typical), not ORS.
+ * Delay is computed against Mapbox's own free-flow baseline (duration_typical).
  * Retries with fewer samples if Mapbox rejects the request (e.g. NoRoute).
  */
 /** Best Mapbox-derived fraction along the sampled path for map / fly-to (near-stop wins). */

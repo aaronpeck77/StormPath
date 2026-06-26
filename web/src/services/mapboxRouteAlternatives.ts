@@ -177,7 +177,7 @@ export async function fetchMapboxSurgicalBypass(
 
 /**
  * Single best traffic-aware route (current → destination). Same road network as the map traffic layer;
- * use when the ORS polyline no longer matches drivable roads (closures, etc.).
+ * use when the stored polyline no longer matches drivable roads (closures, etc.).
  */
 export async function fetchMapboxDrivingTrafficRoute(
   accessToken: string,

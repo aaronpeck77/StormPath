@@ -326,6 +326,7 @@ export function useRouteAheadDerivations(
       })),
       nwsAlerts: nwsAlertsAffectingActiveRoute,
       radarMosaicSamples,
+      mapboxIncidents: guidanceRoute?.mapboxIncidents,
     });
 
     if (tioRouteForecast && guidanceRouteLengthM > 0) {

@@ -79,8 +79,18 @@ export type WeatherKitNextHourMinute = {
 export type WeatherKitWeatherResponse = {
   currentWeather?: WeatherKitCurrentWeather;
   forecastHourly?: { hours: WeatherKitHourly[] };
+  forecastDaily?: { days: WeatherKitDailyDay[] };
   forecastNextHour?: { minutes: WeatherKitNextHourMinute[]; summary?: unknown[] };
   weatherAlerts?: { alerts: WeatherKitAlert[] };
+};
+
+export type WeatherKitDailyDay = {
+  forecastStart: string;
+  conditionCode: string;
+  temperatureMax: number;
+  temperatureMin: number;
+  precipitationChance: number;
+  precipitationAmount?: number;
 };
 
 export type WeatherKitAlert = {

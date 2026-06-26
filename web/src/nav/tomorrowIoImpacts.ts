@@ -26,8 +26,18 @@ const SEVERITY_TO_NUMERIC: Record<RouteImpactSeverity, number> = {
   avoid: 90,
 };
 
+function convectiveSeverity(iv: RouteHourlyInterval): RouteImpactSeverity | null {
+  if (iv.hailSizeMm != null && iv.hailSizeMm >= 15) return "avoid";
+  if (iv.hailProbability != null && iv.hailProbability >= 0.45) return "serious";
+  if (iv.lightningFlashRate != null && iv.lightningFlashRate >= 0.35) return "serious";
+  if (iv.lightningFlashRate != null && iv.lightningFlashRate >= 0.12) return "caution";
+  if (iv.hailSizeMm != null && iv.hailSizeMm >= 5) return "caution";
+  return null;
+}
+
 function categoryFromInterval(iv: RouteHourlyInterval): RouteImpactCategory {
   const code = iv.weatherCode;
+  if (convectiveSeverity(iv)) return "weather";
   if ([5000, 5001, 5100, 5101, 6000, 6001, 6200, 6201, 7000, 7101, 7102].includes(code)) return "winter";
   if (iv.precipIntensityMmh >= 1) return "weather";
   if (sustainedWindImpactSeverity(iv.windSpeedMph)) return "wind";
@@ -37,6 +47,15 @@ function categoryFromInterval(iv: RouteHourlyInterval): RouteImpactCategory {
 
 function detailFromInterval(iv: RouteHourlyInterval): string {
   const parts: string[] = [weatherCodeLabel(iv.weatherCode)];
+  if (iv.lightningFlashRate != null && iv.lightningFlashRate >= 0.08) {
+    parts.push("lightning nearby");
+  }
+  if (iv.hailProbability != null && iv.hailProbability >= 0.2) {
+    parts.push(`${Math.round(iv.hailProbability * 100)}% hail risk`);
+  }
+  if (iv.hailSizeMm != null && iv.hailSizeMm >= 2) {
+    parts.push(`hail to ${iv.hailSizeMm.toFixed(0)} mm`);
+  }
   if (iv.precipIntensityMmh > 0) {
     const mm = iv.precipIntensityMmh.toFixed(1);
     parts.push(`precip ${mm} mm/hr`);
@@ -128,7 +147,9 @@ export function routeForecastToImpacts(
           ? (forecast.intervals[i + 1]!.etaMinutes / totalEtaMin)
           : 1;
       const endM = Math.min(totalMeters, nextFrac * totalMeters);
-      const sev = weatherCodeSeverity(iv.weatherCode, iv.precipIntensityMmh, iv.windSpeedMph);
+      const sev =
+        convectiveSeverity(iv) ??
+        weatherCodeSeverity(iv.weatherCode, iv.precipIntensityMmh, iv.windSpeedMph);
       const cat = categoryFromInterval(iv);
       return { iv, startM, endM, sev, cat };
     })

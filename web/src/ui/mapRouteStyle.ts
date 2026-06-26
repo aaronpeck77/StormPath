@@ -1,9 +1,9 @@
 import type { NavRoute, RouteRole } from "../nav/types";
 
-/** Active route you are following — dark blue on the map. */
-export const ROUTE_ACTIVE_COLOR = "#1e40af";
-/** Alternate / suggested / background legs — light blue. */
-export const ROUTE_SUGGESTED_COLOR = "#7dd3fc";
+/** Active route you are following — bright blue on the map. */
+export const ROUTE_ACTIVE_COLOR = "#3b82f6";
+/** Alternate / suggested / background legs — darker blue (still distinct from active). */
+export const ROUTE_SUGGESTED_COLOR = "#1d4ed8";
 
 export const ROUTE_ACTIVE_LINE_WIDTH = 8;
 export const ROUTE_SUGGESTED_LINE_WIDTH = 5;
@@ -19,8 +19,8 @@ export const ROLE_COLOR: Record<RouteRole, string> = {
   hazardSmart: ROUTE_SUGGESTED_COLOR,
 };
 
-/** A / B / C picker — blue shades (active slot is darkest). */
-export const ROUTE_PICK_SLOT_HEX = [ROUTE_ACTIVE_COLOR, "#3b82f6", ROUTE_SUGGESTED_COLOR] as const;
+/** A / B / C picker — blue shades (active slot is brightest). */
+export const ROUTE_PICK_SLOT_HEX = [ROUTE_ACTIVE_COLOR, "#2563eb", ROUTE_SUGGESTED_COLOR] as const;
 
 export function routePickSlotHex(slotIndex: number): string {
   return ROUTE_PICK_SLOT_HEX[
@@ -53,7 +53,7 @@ export const FOCUSED_ROUTE_LINE_OPACITY = 0.88;
 /** @deprecated use ROUTE_ACTIVE_LINE_WIDTH */
 export const FOCUSED_ROUTE_LINE_WIDTH = ROUTE_ACTIVE_LINE_WIDTH;
 
-export const ROUTE_C_COLOR = "#bfdbfe";
+export const ROUTE_C_COLOR = "#1e40af";
 
 export function routeHex(route: NavRoute): string {
   if (route.id === "r-a" || route.id.startsWith("r-a")) return ROUTE_ACTIVE_COLOR;

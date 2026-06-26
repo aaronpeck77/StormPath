@@ -33,7 +33,7 @@ import {
   mergeOverlappingTimelineItems,
 } from "./RouteHazardTimeline";
 import type { TimelineItem } from "./RouteHazardTimeline";
-import type { MinutePrecipForecast, PointHourlyForecast } from "../services/tomorrowIo";
+import type { MinutePrecipForecast, PointDailyForecast, PointHourlyForecast } from "../services/tomorrowIo";
 import { AdvisoryLocalForecast } from "./AdvisoryLocalForecast";
 import type { CurrentNowcast } from "../services/openWeatherClient";
 import { displayText } from "../utils/displayText";
@@ -246,6 +246,8 @@ export type StormAdvisoryBarProps = SharedProps & {
   minutePrecipForecast?: MinutePrecipForecast | null;
   /** 24-hour hourly outlook at the user's position. */
   hourlyForecast?: PointHourlyForecast | null;
+  /** Multi-day outlook (WeatherKit forecastDaily). */
+  dailyForecast?: PointDailyForecast | null;
   /** NWS alerts merged for local forecast (corridor + near you + route context). */
   localForecastNwsAlerts?: NormalizedWeatherAlert[];
   nwsForecastLoading?: boolean;
@@ -376,6 +378,7 @@ export function StormAdvisoryBar({
   forecastAreaLabel = null,
   minutePrecipForecast = null,
   hourlyForecast = null,
+  dailyForecast = null,
   localForecastNwsAlerts = [],
   nwsForecastLoading = false,
   nwsForecastError = null,
@@ -469,9 +472,6 @@ export function StormAdvisoryBar({
     TRAFFIC_BYPASS_ENABLED &&
     (trafficDelayMinutes >= TRAFFIC_DELAY_ALERT_MINUTES || hasTrafficStop) &&
     Boolean(onTrafficReroute);
-  const showTrafficDelayInfoOnly =
-    !TRAFFIC_BYPASS_ENABLED &&
-    (trafficDelayMinutes >= TRAFFIC_DELAY_ALERT_MINUTES || hasTrafficStop);
 
   const bandByAlertId = useMemo(() => {
     const m = new Map<string, StormStripBand>();
@@ -1230,6 +1230,7 @@ export function StormAdvisoryBar({
         (currentNowcast ||
           minutePrecipForecast ||
           hourlyForecast?.hours.length ||
+          dailyForecast?.days.length ||
           localForecastNwsAlerts.length > 0 ||
           nwsForecastLoading ||
           basicForecastLoading) ? (
@@ -1238,6 +1239,7 @@ export function StormAdvisoryBar({
             nowcast={currentNowcast}
             minutePrecip={minutePrecipForecast}
             hourlyForecast={hourlyForecast}
+            dailyForecast={dailyForecast}
             locationAlerts={localForecastNwsAlerts}
             nwsLoading={nwsForecastLoading}
             nwsError={nwsForecastError}
@@ -1347,17 +1349,6 @@ export function StormAdvisoryBar({
                     {betterRouteRow.actionLabel ?? "Open"}
                   </button>
                 ) : null}
-              </div>
-            ) : null}
-
-            {showTrafficDelayInfoOnly && !hasRouteHazardDetail ? (
-              <div className="storm-advisory-bar__suggestion-row">
-                <span className="storm-advisory-bar__suggestion-label">Traffic</span>
-                <span className="storm-advisory-bar__suggestion-text">
-                  {trafficDelayMinutes >= TRAFFIC_DELAY_ALERT_MINUTES
-                    ? `Heavy delay ahead (~${trafficDelayMinutes} min). Consider an alternate route when you can — in-app reroute isn't available yet.`
-                    : "Slowdown or stoppage ahead on your route. Consider an alternate route when you can."}
-                </span>
               </div>
             ) : null}
 

@@ -1,6 +1,10 @@
 import type { MapViewMode } from "./DriveMap";
 import { useEffect, useMemo, useState } from "react";
 import {
+  shouldShowManualOffRouteUi,
+  shouldShowTrafficBypassUi,
+} from "../nav/constants";
+import {
   formatArrivalClockCompact,
   formatEtaDuration,
   formatEtaDurationToolbar,
@@ -148,12 +152,14 @@ export function BottomToolbar({
       }${routeUi ? " nav-bottom-toolbar--route" : ""}`}
       aria-label="Map and trip controls"
     >
-      {showOffRouteBanner && (
+      {shouldShowManualOffRouteUi() && showOffRouteBanner && (
         <div className="nav-bottom-off-route" role="status">
           <span className="nav-bottom-off-route__text">
             {offRouteRejoinActive
               ? `Returning to your route${offRouteRejoinDistanceLabel ? ` — ${offRouteRejoinDistanceLabel}` : ""}.`
-              : "You're off your route."}
+              : offRouteOptionsBusy && !onStayOnThisRoad
+                ? "Updating directions…"
+                : "You're off your route."}
           </span>
           {(onStayOnThisRoad || onReturnToOriginalRoute) && (
             <div className="nav-bottom-off-route__actions">
@@ -181,7 +187,7 @@ export function BottomToolbar({
           )}
         </div>
       )}
-      {navigationStarted && showTrafficBypass && onTrafficBypass && (
+      {navigationStarted && shouldShowTrafficBypassUi() && showTrafficBypass && onTrafficBypass && (
         <div className="nav-bottom-bypass-chip">
           <button
             type="button"

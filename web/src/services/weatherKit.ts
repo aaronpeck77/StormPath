@@ -8,6 +8,8 @@ import {
   routeForecastLocationKey,
   type MinutePrecipForecast,
   type PointHourlyForecast,
+  type PointDailyForecast,
+  type PointDailyDay,
   type RouteForecast,
   type RouteHourlyInterval,
   weatherCodeLabel,
@@ -63,13 +65,13 @@ function estimateWetRoadMm(intensityMmh: number, amountMm: number): number {
 function nearestHourlyForEta(
   hours: { forecastStart: string; values: ReturnType<typeof mapHourlyValues> }[],
   etaMinutes: number,
-  fetchedAt: number
+  tripStartMs: number
 ): ReturnType<typeof mapHourlyValues> {
+  const targetMs = tripStartMs + etaMinutes * 60_000;
   let best = hours[0]?.values;
   let bestDelta = Number.POSITIVE_INFINITY;
   for (const h of hours) {
-    const offsetMin = (new Date(h.forecastStart).getTime() - fetchedAt) / 60_000;
-    const d = Math.abs(offsetMin - etaMinutes);
+    const d = Math.abs(new Date(h.forecastStart).getTime() - targetMs);
     if (d < bestDelta) {
       bestDelta = d;
       best = h.values;
@@ -166,6 +168,37 @@ export async function fetchWeatherKitPointHourly(
     lat,
     lng,
     hours,
+    provider: "weatherKit",
+  };
+}
+
+function formatDailyDayLabel(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { weekday: "short" });
+}
+
+export async function fetchWeatherKitPointDaily(
+  lat: number,
+  lng: number,
+  signal?: AbortSignal
+): Promise<PointDailyForecast> {
+  const raw = await fetchWeatherKitAtPoint(lat, lng, ["forecastDaily"], signal);
+  const fetchedAt = Date.now();
+  const days: PointDailyDay[] = (raw.forecastDaily?.days ?? []).slice(0, 7).map((d) => {
+    const code = weatherKitConditionToCode(d.conditionCode);
+    return {
+      dateIso: d.forecastStart,
+      dayLabel: formatDailyDayLabel(d.forecastStart),
+      highF: Math.round(cToF(d.temperatureMax)),
+      lowF: Math.round(cToF(d.temperatureMin)),
+      precipChance: d.precipitationChance,
+      conditions: weatherCodeLabel(code),
+    };
+  });
+  return {
+    fetchedAt,
+    lat,
+    lng,
+    days,
     provider: "weatherKit",
   };
 }

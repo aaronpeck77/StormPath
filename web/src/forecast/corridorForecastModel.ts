@@ -46,6 +46,21 @@ export type LegCompareResult = {
   narrative: string;
 };
 
+/** One-line corridor headline for fuse / progress copy. */
+export function corridorForecastHeadline(forecast: RouteForecast | null | undefined): string {
+  if (!forecast?.intervals.length) return "";
+  const worst = worstCorridorInterval(forecast);
+  if (worst) {
+    return worst.etaMinutes > 0
+      ? `${worst.headline} — ~${formatEtaDuration(worst.etaMinutes)} into drive`
+      : worst.headline;
+  }
+  const stress = routeForecastCorridorStress(forecast);
+  if (stress >= 0.55) return "Storm stress along route";
+  if (stress >= 0.25) return "Showers possible along route";
+  return "Dry along route";
+}
+
 export function alongRouteSegments(
   forecast: RouteForecast | null,
   tripEtaMinutes: number

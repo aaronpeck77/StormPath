@@ -16,9 +16,15 @@ import { collectMapboxRouteVariants } from "../services/mapboxDirectionsRouter";
 import { speakNavigationAlert } from "./navigationVoiceAlert";
 import {
   OFF_ROUTE_POLL_MS,
+  OFF_ROUTE_REROUTE_THROTTLE_MS,
   measureOffRouteLateral,
   shouldOfferOffRouteRejoin,
 } from "./offRouteDetect";
+import {
+  isAutoOffRouteRerouteActive,
+  MANUAL_OFF_ROUTE_CHOICES_ENABLED,
+  shouldShowManualOffRouteUi,
+} from "./constants";
 import {
   createOffRoutePollSession,
   resetOffRoutePollSession,
@@ -110,6 +116,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     mapboxToken,
     isOnline,
     isPlus,
+    effectiveAutoRerouteEnabled,
     settingVoiceGuidanceEnabled,
     settingStormEnabled,
     learnEnabled,
@@ -158,6 +165,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   guidanceRouteLengthMRef.current = guidanceRouteLengthM;
   const guidanceCumDistRef = useRef<Float64Array | null>(null);
   const guidanceGeomSigRef = useRef("");
+  const lastAutoRerouteAttemptRef = useRef(0);
 
   useEffect(() => {
     const g = guidanceRoute?.geometry;
@@ -426,6 +434,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
                 turnSteps: leg.turnSteps,
                 routeNotices: leg.routeNotices ?? r.routeNotices,
                 routeNoticeAlongMeters: leg.routeNoticeAlongMeters ?? r.routeNoticeAlongMeters,
+                mapboxIncidents: leg.mapboxIncidents ?? r.mapboxIncidents,
                 hasTolls: leg.hasTolls ?? r.hasTolls,
                 tollLabels: leg.tollLabels ?? r.tollLabels,
                 postedSpeedSamples: leg.postedSpeedSamples ?? r.postedSpeedSamples,
@@ -508,6 +517,26 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         return;
       }
       pollSessionRef.current = { ...session, offRouteChoiceOffered: true };
+
+      if (isAutoOffRouteRerouteActive(effectiveAutoRerouteEnabled)) {
+        const now = Date.now();
+        if (
+          routingRef.current ||
+          altRoutesRefreshInFlightRef.current ||
+          now - lastAutoRerouteAttemptRef.current < OFF_ROUTE_REROUTE_THROTTLE_MS
+        ) {
+          return;
+        }
+        lastAutoRerouteAttemptRef.current = now;
+        if (MANUAL_OFF_ROUTE_CHOICES_ENABLED) {
+          setTapHint("Off route — updating directions…");
+          window.setTimeout(() => setTapHint(null), 5000);
+        }
+        void stayOnThisRoad();
+        return;
+      }
+
+      if (!MANUAL_OFF_ROUTE_CHOICES_ENABLED) return;
 
       const lockedRoute = planRef.current.routes.find(
         (r) => r.id === lockedNavigationRouteIdRef.current
@@ -650,6 +679,10 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     userAlongGuidanceMRef,
     setViewMode,
     setTapHint,
+    effectiveAutoRerouteEnabled,
+    stayOnThisRoad,
+    routingRef,
+    altRoutesRefreshInFlightRef,
   ]);
 
   const detourLockedRouteId = useMemo(() => {
@@ -690,7 +723,9 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   const detourAutoActive = Boolean(navigationStarted && autoRejoinGuidanceRouteId);
 
   const showOffRouteStatusBanner =
-    navigationStarted && (offRouteSevere || Boolean(autoRejoinGuidanceRouteId));
+    shouldShowManualOffRouteUi() &&
+    navigationStarted &&
+    (offRouteSevere || Boolean(autoRejoinGuidanceRouteId));
 
   return {
     offRouteSevere,

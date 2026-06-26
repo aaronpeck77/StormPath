@@ -1,4 +1,4 @@
-import type { LngLat, NavRoute, PostedSpeedSample, RouteTurnStep, TripPlan } from "../nav/types";
+import type { LngLat, MapboxRouteIncident, NavRoute, PostedSpeedSample, RouteTurnStep, TripPlan } from "../nav/types";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { detectRouteTollsFromLegs } from "../nav/detectRouteTolls";
 import {
@@ -333,7 +333,8 @@ function routeFromDirectionsApi(
   const durSec = r.duration;
   if (durSec == null || !Number.isFinite(durSec)) return null;
 
-  const { texts: notices, alongMeters: noticeAlong } = collectRouteNoticesWithAlong(r, geometry);
+  const { texts: notices, alongMeters: noticeAlong, incidents: mapboxIncidents } =
+    collectRouteIncidentsWithAlong(r, geometry);
   const tollInfo = detectRouteTollsFromLegs(r.legs);
 
   return {
@@ -345,6 +346,7 @@ function routeFromDirectionsApi(
     turnSteps: parseSteps(r),
     routeNotices: notices.length ? notices : undefined,
     routeNoticeAlongMeters: notices.length ? noticeAlong : undefined,
+    mapboxIncidents: mapboxIncidents.length ? mapboxIncidents : undefined,
     hasTolls: tollInfo.hasTolls || undefined,
     tollLabels: tollInfo.tollLabels.length ? tollInfo.tollLabels : undefined,
     postedSpeedSamples,
@@ -555,15 +557,54 @@ function firstClosureAlongMeters(
   return undefined;
 }
 
-function collectRouteNoticesWithAlong(
+function incidentTypeLabel(typeLbl: string): string {
+  switch (typeLbl) {
+    case "construction":
+      return "Construction";
+    case "accident":
+      return "Accident";
+    case "congestion":
+      return "Congestion";
+    case "disabled_vehicle":
+      return "Disabled vehicle";
+    case "lane_restriction":
+      return "Lane restriction";
+    case "road_closure":
+      return "Road closure";
+    default:
+      return typeLbl ? typeLbl.replace(/_/g, " ") : "Incident";
+  }
+}
+
+function formatIncidentNotice(inc: MapboxRouteIncident): string {
+  const prefix = incidentTypeLabel(inc.type);
+  const impact =
+    inc.impact && inc.impact !== "unknown"
+      ? ` (${inc.impact} impact)`
+      : "";
+  const roads = inc.affectedRoadNames?.filter(Boolean).join(", ");
+  const lanes =
+    inc.numLanesBlocked != null && inc.numLanesBlocked > 0
+      ? ` — ${inc.numLanesBlocked} lane${inc.numLanesBlocked === 1 ? "" : "s"} blocked`
+      : inc.lanesBlocked?.length
+        ? ` — ${inc.lanesBlocked.join(", ")} blocked`
+        : "";
+  return [prefix + impact, roads ? `on ${roads}` : "", inc.description, lanes]
+    .filter(Boolean)
+    .join(" — ");
+}
+
+function collectRouteIncidentsWithAlong(
   route: NonNullable<DirectionsResponse["routes"]>[0],
   geometry: LngLat[]
-): { texts: string[]; alongMeters: (number | undefined)[] } {
+): { incidents: MapboxRouteIncident[]; texts: string[]; alongMeters: (number | undefined)[] } {
+  const incidents: MapboxRouteIncident[] = [];
   const texts: string[] = [];
   const alongMeters: (number | undefined)[] = [];
-  const push = (text: string, along?: number) => {
-    texts.push(text);
-    alongMeters.push(along);
+  const push = (inc: MapboxRouteIncident) => {
+    incidents.push(inc);
+    texts.push(formatIncidentNotice(inc));
+    alongMeters.push(inc.alongMeters);
   };
 
   const legs = route.legs ?? [];
@@ -571,10 +612,12 @@ function collectRouteNoticesWithAlong(
 
   const hasClosure = legs.some((l) => l.annotation?.closure?.some((c) => c === true));
   if (hasClosure) {
-    push(
-      "Road closure on this route — check for detours or construction.",
-      firstClosureAlongMeters(legs, geometry, legStarts)
-    );
+    push({
+      type: "road_closure",
+      impact: "major",
+      description: "Road closure on this route — check for detours or construction.",
+      alongMeters: firstClosureAlongMeters(legs, geometry, legStarts),
+    });
   }
 
   const seen = new Set<string>();
@@ -587,30 +630,31 @@ function collectRouteNoticesWithAlong(
       if (!desc || seen.has(desc)) continue;
       seen.add(desc);
 
-      const roads = inc.affected_road_names?.filter(Boolean).join(", ");
       const typeLbl = inc.type ?? "";
-      const prefix =
-        typeLbl === "construction"
-          ? "Construction"
-          : typeLbl === "accident"
-            ? "Accident"
-            : typeLbl === "congestion"
-              ? "Congestion"
-              : typeLbl === "disabled_vehicle"
-                ? "Disabled vehicle"
-                : typeLbl === "lane_restriction"
-                  ? "Lane restriction"
-                  : typeLbl === "road_closure"
-                    ? "Road closure"
-                    : typeLbl;
-
-      const line = [prefix, roads ? `on ${roads}` : "", desc]
-        .filter(Boolean)
-        .join(" — ");
-      push(line, alongForIncident(geometry, li, legStarts, inc));
+      const roads = inc.affected_road_names?.filter(Boolean);
+      const structured: MapboxRouteIncident = {
+        type: typeLbl || "incident",
+        impact: typeof inc.impact === "string" ? inc.impact : undefined,
+        description: desc,
+        alongMeters: alongForIncident(geometry, li, legStarts, inc),
+        affectedRoadNames: roads?.length ? roads : undefined,
+        numLanesBlocked:
+          typeof inc.num_lanes_blocked === "number" ? inc.num_lanes_blocked : undefined,
+        lanesBlocked: inc.lanes_blocked?.filter(Boolean),
+      };
+      push(structured);
     }
   }
 
+  return { incidents, texts, alongMeters };
+}
+
+/** @deprecated name — returns structured incidents plus legacy string notices. */
+function collectRouteNoticesWithAlong(
+  route: NonNullable<DirectionsResponse["routes"]>[0],
+  geometry: LngLat[]
+): { texts: string[]; alongMeters: (number | undefined)[] } {
+  const { texts, alongMeters } = collectRouteIncidentsWithAlong(route, geometry);
   return { texts, alongMeters };
 }
 

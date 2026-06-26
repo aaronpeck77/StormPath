@@ -8,7 +8,7 @@ Everything needed for full navigation without a subscription:
 
 | Area | Included |
 |------|----------|
-| **Map & routing** | Multi-route (A/B/C), ORS directions, Mapbox style, fit/follow, route view / drive / topdown |
+| **Map & routing** | Multi-route (A/B/C), Mapbox directions + live traffic, fit/follow, route view / drive / topdown |
 | **Search & destination** | Autocomplete, geocode, set destination, trip planning |
 | **Driving** | Turn-by-turn banner, bottom toolbar, reroute / off-route flows |
 | **Saved** | Saved places (★), save current destination, **saved routes**, **record path (GPS)** and save |

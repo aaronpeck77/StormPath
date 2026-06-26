@@ -1,8 +1,8 @@
 import type { RouteTurnStep } from "./types";
 
 /**
- * Map each ORS step to [start,end) along the route polyline (meters), scaled so the
- * last step ends at `routeLengthMeters` (ORS step distances often drift from polyline length).
+ * Map each turn step to [start,end) along the route polyline (meters), scaled so the
+ * last step ends at `routeLengthMeters` (step distances often drift from polyline length).
  */
 export function turnStepAlongBounds(
   turnSteps: RouteTurnStep[],

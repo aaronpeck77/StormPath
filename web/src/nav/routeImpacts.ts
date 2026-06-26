@@ -1,4 +1,4 @@
-import type { LngLat } from "./types";
+import type { LngLat, MapboxRouteIncident } from "./types";
 import type { RouteAlert, RouteAlertCorridorKind } from "./routeAlerts";
 import type { MapboxTrafficLeg } from "../services/mapboxDirectionsTraffic";
 import type { RouteSituationSlice } from "../situation/types";
@@ -538,7 +538,116 @@ function buildTrafficImpact(opts: {
   };
 }
 
-/* ─── Route notices / hazards / construction / closures ─────────── */
+function mapboxImpactToSeverity(
+  impact: string | undefined,
+  type: string,
+  blocks: boolean
+): RouteImpactSeverity {
+  const p = (impact ?? "").toLowerCase();
+  if (blocks || p === "severe" || type === "road_closure") return "avoid";
+  if (p === "major") return "serious";
+  if (p === "moderate") return "caution";
+  if (p === "minor") return "caution";
+  return blocks ? "serious" : "caution";
+}
+
+function mapboxIncidentCategory(type: string): RouteImpactCategory {
+  const t = type.toLowerCase();
+  if (t.includes("closure") || t === "road_closure") return "closure";
+  if (t.includes("construction")) return "construction";
+  if (t.includes("accident") || t.includes("disabled")) return "incident";
+  if (t.includes("congestion")) return "traffic";
+  if (t.includes("lane")) return "incident";
+  return "incident";
+}
+
+function buildMapboxIncidentImpacts(opts: {
+  geometry: LngLat[] | undefined;
+  incidents: MapboxRouteIncident[];
+  userAlongM: number;
+  planEtaMinutes: number | null | undefined;
+  totalMeters: number;
+  userLngLat: LngLat | null;
+}): RouteImpact[] {
+  const { geometry, incidents, userAlongM, totalMeters, userLngLat } = opts;
+  const out: RouteImpact[] = [];
+  const max = Math.min(incidents.length, 6);
+  for (let i = 0; i < max; i++) {
+    const inc = incidents[i]!;
+    const blocks =
+      hazardLikelyBlocksPath(inc.description) ||
+      inc.type === "road_closure" ||
+      (inc.numLanesBlocked != null && inc.numLanesBlocked >= 2);
+    const category = mapboxIncidentCategory(inc.type);
+    const severity = mapboxImpactToSeverity(inc.impact, inc.type, blocks);
+    const anchored =
+      typeof inc.alongMeters === "number" &&
+      Number.isFinite(inc.alongMeters) &&
+      geometry?.length &&
+      totalMeters > 0;
+    const chordT = 0.22 + (i % 5) * 0.11;
+    const alongM = anchored
+      ? Math.max(0, Math.min(totalMeters, inc.alongMeters!))
+      : totalMeters * chordT;
+    const aheadM = Math.max(0, alongM - userAlongM);
+    const eta =
+      totalMeters > 0 && opts.planEtaMinutes != null && Number.isFinite(opts.planEtaMinutes)
+        ? Math.max(0, opts.planEtaMinutes * (aheadM / totalMeters))
+        : null;
+
+    const laneNote =
+      inc.numLanesBlocked != null && inc.numLanesBlocked > 0
+        ? `${inc.numLanesBlocked} lane${inc.numLanesBlocked === 1 ? "" : "s"} blocked`
+        : inc.lanesBlocked?.length
+          ? `${inc.lanesBlocked.join(", ")} blocked`
+          : "";
+    const roads = inc.affectedRoadNames?.filter(Boolean).join(", ");
+    const impactLbl =
+      inc.impact && inc.impact !== "unknown" ? `${inc.impact} impact` : "";
+    const headlineParts = [
+      incidentTypeHeadline(inc.type, blocks),
+      impactLbl,
+      roads ? `on ${roads}` : "",
+    ].filter(Boolean);
+    const headline = headlineParts.join(" · ") || "Road incident ahead";
+
+    let action: RouteImpactAction = "slow";
+    if (severity === "avoid" || blocks) action = "rerouteRecommended";
+    else if (severity === "serious") action = "rerouteAvailable";
+
+    out.push({
+      id: `mapbox-incident-${i}-${inc.type}`,
+      category,
+      severity,
+      confidence: anchored ? "high" : "medium",
+      source: "mapboxIncident",
+      lngLat: alongToLngLat(geometry, alongM, userLngLat),
+      alongMeters: alongM,
+      startMeters: alongM,
+      endMeters: alongM,
+      distanceAheadMeters: aheadM,
+      etaAheadMinutes: eta,
+      driverHeadline: headline,
+      driverAction: action,
+      roadEffect: laneNote || inc.description.slice(0, 120),
+      detail: [inc.description, laneNote].filter(Boolean).join(" · "),
+      numericSeverity: impactSeverityToNumeric(severity),
+    });
+  }
+  return out;
+}
+
+function incidentTypeHeadline(type: string, blocks: boolean): string {
+  const t = type.toLowerCase();
+  if (t.includes("closure") || t === "road_closure") return blocks ? "Closure ahead" : "Road closure";
+  if (t.includes("accident")) return blocks ? "Crash blocking road" : "Accident ahead";
+  if (t.includes("construction")) return blocks ? "Construction blocking lane" : "Construction zone";
+  if (t.includes("congestion")) return "Congestion ahead";
+  if (t.includes("disabled")) return "Disabled vehicle ahead";
+  return "Incident ahead";
+}
+
+/* ─── Route notices / hazards / construction / closures (legacy string notices) ─────────── */
 
 type SliceHazard = { kind: "closure" | "incident" | "lowVisibility" | "restriction"; summary: string; alongMeters?: number };
 
@@ -681,6 +790,8 @@ export type BuildRouteImpactsOpts = {
   nwsAlerts: NormalizedWeatherAlert[];
   /** RainViewer mosaic samples along the route (same tiles as the map overlay). */
   radarMosaicSamples?: RadarMosaicSample[];
+  /** Structured Mapbox incidents on the active leg (preferred over regex on routeNotices). */
+  mapboxIncidents?: MapboxRouteIncident[];
 };
 
 function buildRadarMosaicSegmentImpacts(opts: {
@@ -732,6 +843,7 @@ export function buildRouteImpacts(opts: BuildRouteImpactsOpts): RouteImpact[] {
     nwsBands,
     nwsAlerts,
     radarMosaicSamples = [],
+    mapboxIncidents = [],
   } = opts;
 
   const totalMeters =
@@ -809,15 +921,28 @@ export function buildRouteImpacts(opts: BuildRouteImpactsOpts): RouteImpact[] {
   });
   if (trafficImpact) list.push(trafficImpact);
 
-  const hazardImpacts = buildHazardImpacts({
-    geometry,
-    hazards: (slice?.hazards ?? []) as SliceHazard[],
-    userAlongM,
-    planEtaMinutes,
-    totalMeters,
-    userLngLat,
-  });
-  list.push(...hazardImpacts);
+  if (mapboxIncidents.length > 0) {
+    list.push(
+      ...buildMapboxIncidentImpacts({
+        geometry,
+        incidents: mapboxIncidents,
+        userAlongM,
+        planEtaMinutes,
+        totalMeters,
+        userLngLat,
+      })
+    );
+  } else {
+    const hazardImpacts = buildHazardImpacts({
+      geometry,
+      hazards: (slice?.hazards ?? []) as SliceHazard[],
+      userAlongM,
+      planEtaMinutes,
+      totalMeters,
+      userLngLat,
+    });
+    list.push(...hazardImpacts);
+  }
 
   list.sort(compareRouteImpactPriority);
   return list;

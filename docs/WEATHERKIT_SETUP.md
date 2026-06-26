@@ -46,7 +46,7 @@ In `web/.env.local` (dev) and GitHub Actions / TestFlight secrets:
 VITE_WEATHERKIT_ENABLED=true
 ```
 
-When enabled, Tomorrow.io and OpenWeather keys are ignored for forecasts (NWS + radar unchanged).
+When enabled, route/point forecasts use WeatherKit (Tomorrow.io still supplements convective fields when its key is set). The retired OpenWeather corridor overlay is no longer used along the route.
 
 Optional override for the token URL (native app default is stormpath2):
 

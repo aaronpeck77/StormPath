@@ -30,9 +30,9 @@ import { useDestinationSearch } from "./hooks/useDestinationSearch";
 import { useNavigationPosition } from "./hooks/useNavigationPosition";
 import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
 import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
-import { useWeatherOverlayFetch } from "./hooks/useWeatherOverlayFetch";
 import { useRadarBandsAlongRoute } from "./hooks/useRadarBandsAlongRoute";
 import {
+  useLocalDailyForecast,
   useLocalHourlyForecast,
   useTomorrowMinutePrecip,
   useTomorrowRouteForecast,
@@ -109,10 +109,13 @@ import { earlyApproachMaxMetersForSpeed } from "./nav/surgicalBypassWindow";
 import { unifiedTrafficNarrative, hasLocalizedTrafficIssue } from "./nav/trafficNarrative";
 import {
   DRIVE_AHEAD_WINDOW_M,
+  shouldShowManualOffRouteUi,
+  shouldShowTrafficBypassUi,
   TRAFFIC_BYPASS_ENABLED,
 } from "./nav/constants";
 import { routeForecastIntensityFloor, worstCorridorInterval } from "./forecast/corridorForecastModel";
-import type { TrafficOverlay, WeatherOverlay } from "./situation/fusedSnapshot";
+import { buildRouteWeatherOverlayFromForecast } from "./forecast/routeForecastOverlay";
+import type { TrafficOverlay } from "./situation/fusedSnapshot";
 import type { MapViewMode } from "./ui/driveMapTypes";
 import { stormpathVersionLabel } from "./appVersion";
 import {
@@ -602,9 +605,6 @@ export default function App() {
   const [returnTripLeg, setReturnTripLeg] = useState<ReturnTripLeg | null>(() => loadReturnTripLeg());
   const [fitTrigger, setFitTrigger] = useState(0);
   const [recenterPlanningPuckTick, setRecenterPlanningPuckTick] = useState(0);
-  const [weatherOverlay, setWeatherOverlay] = useState<WeatherOverlay | undefined>(
-    undefined
-  );
   const navigationStarted = useTripPlanStore((s) => s.navigationStarted);
   const setNavigationStarted = useTripPlanStore((s) => s.setNavigationStarted);
   const navigationStartedRef = useRef(navigationStarted);
@@ -883,7 +883,7 @@ export default function App() {
     setTrafficFetchDone,
   });
 
-  const snap = useFusedSituation(plan, weatherOverlay, trafficOverlay);
+  const snap = useFusedSituation(plan, undefined, trafficOverlay);
   const scored = useMemo(() => scoreTrip(plan, snap, "balanced"), [plan, snap]);
 
   const primaryRouteId = plan.routes[0]?.id ?? "";
@@ -1152,7 +1152,7 @@ export default function App() {
     mapboxToken: env.mapboxToken,
     isOnline,
     isPlus,
-    effectiveAutoRerouteEnabled: true,
+    effectiveAutoRerouteEnabled: settingAutoRerouteEnabled,
     settingVoiceGuidanceEnabled,
     settingStormEnabled,
     learnEnabled,
@@ -1413,7 +1413,7 @@ export default function App() {
     Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2) &&
     isLongTripRoute(maxPlanRouteLengthM);
   const turnSteps = guidanceRoute?.turnSteps ?? [];
-  const guidanceSlice = snap.routes.find((r) => r.routeId === guidanceRouteId);
+  const guidanceSliceRaw = snap.routes.find((r) => r.routeId === guidanceRouteId);
 
   /** Map NWS fill: active guidance leg (focused A/B/C), not only slot A after Go. */
   const nwsMapOverlapRouteGeom = useMemo((): LngLat[] | undefined => {
@@ -1453,24 +1453,24 @@ export default function App() {
   );
 
   const liveTrafficNarrative = useMemo(() => {
-    if (!guidanceSlice || !guidanceRoute) return null;
+    if (!guidanceSliceRaw || !guidanceRoute) return null;
     const tLeg = trafficOverlay?.[guidanceRouteId] ?? null;
-    const hasLive = Boolean(guidanceSlice.hasLiveTrafficEstimate && tLeg);
+    const hasLive = Boolean(guidanceSliceRaw.hasLiveTrafficEstimate && tLeg);
     return unifiedTrafficNarrative(
-      guidanceSlice.trafficDelayMinutes,
+      guidanceSliceRaw.trafficDelayMinutes,
       tLeg,
       hasLive,
       tLeg?.mapboxDurationMinutes ?? guidanceRoute.baseEtaMinutes ?? null
     );
-  }, [guidanceSlice, guidanceRoute, guidanceRouteId, trafficOverlay]);
+  }, [guidanceSliceRaw, guidanceRoute, guidanceRouteId, trafficOverlay]);
 
   const trafficDelayMinutesForBypass = useMemo(
     () =>
       Math.max(
-        guidanceSlice?.trafficDelayMinutes ?? 0,
+        guidanceSliceRaw?.trafficDelayMinutes ?? 0,
         demoBypassTrafficJamPlus ? BYPASS_HEAVY_DELAY_MINUTES : 0
       ),
-    [guidanceSlice?.trafficDelayMinutes, demoBypassTrafficJamPlus]
+    [guidanceSliceRaw?.trafficDelayMinutes, demoBypassTrafficJamPlus]
   );
 
   /** With `?demo=bypass` on Plus, optional simulated distance along the primary leg (replay puck / jam-ahead context). */
@@ -1571,7 +1571,7 @@ export default function App() {
   );
 
   const stormRoadDetailRows = useMemo(() => {
-    if (!guidanceRoute?.geometry?.length || !guidanceSlice) return [];
+    if (!guidanceRoute?.geometry?.length || !guidanceSliceRaw) return [];
     const rows: { label: string; text: ReactNode; actionLabel?: string; onAction?: () => void }[] = [];
     const mapbox = Boolean(env.mapboxToken);
 
@@ -1616,7 +1616,7 @@ export default function App() {
         });
       } else if (!trafficFetchDone) {
         rows.push({ label: "Traffic", text: <strong>Fetching live data…</strong> });
-      } else if (guidanceSlice.hasLiveTrafficEstimate) {
+      } else if (guidanceSliceRaw.hasLiveTrafficEstimate) {
         const tLeg = trafficOverlay?.[guidanceRouteId];
         const n = liveTrafficNarrative;
         if (hasLocalizedTrafficIssue(tLeg) && n) {
@@ -1676,7 +1676,7 @@ export default function App() {
     guidanceRoute?.geometry,
     guidanceRoute?.routeNotices,
     guidanceRouteId,
-    guidanceSlice,
+    guidanceSliceRaw,
     isPlus,
     navigationStarted,
     scored,
@@ -1844,56 +1844,6 @@ export default function App() {
     bumpTrafficRefresh,
   });
 
-  /** Merge forecast headline + midpoint sample so the progress strip “heavy wx” band isn’t cloud-only. */
-  const corridorWeatherDetail = useMemo(() => {
-    if (!lineFocusId) return "";
-    const fc = guidanceSlice?.forecastHeadline?.trim() ?? "";
-    const ow = weatherOverlay?.[lineFocusId];
-    const bits: string[] = [];
-    if (fc) bits.push(fc);
-    if (ow?.samples?.length) {
-      const mid = ow.samples[Math.floor(ow.samples.length / 2)];
-      const mh = mid?.headline?.trim() ?? "";
-      if (
-        mh &&
-        !fc.toLowerCase().includes(mh.slice(0, Math.min(14, mh.length)).toLowerCase())
-      ) {
-        bits.push(mh);
-      }
-    }
-    return bits.join(" · ").replace(/\s+/g, " ").trim();
-  }, [lineFocusId, guidanceSlice?.forecastHeadline, weatherOverlay]);
-
-  /** OpenWeather corridor overlay — focused leg (planning + navigation). */
-  const weatherOverlayLegId = lineFocusId || primaryRouteId;
-
-  const weatherOverlayGeomKey = useMemo(() => {
-    if (!weatherOverlayLegId) return "";
-    const g = plan.routes.find((r) => r.id === weatherOverlayLegId)?.geometry;
-    if (!g || g.length < 2) return "";
-    const f = g[0]!;
-    const l = g[g.length - 1]!;
-    return `${weatherOverlayLegId}:${g.length}:${Math.round(f[0] * 1000)}:${Math.round(f[1] * 1000)}:${Math.round(l[0] * 1000)}:${Math.round(l[1] * 1000)}`;
-  }, [weatherOverlayLegId, plan.routes]);
-
-  const { bumpWeatherRefresh, resetWeatherOverlayThrottle, weatherOverlayRefreshing } =
-    useWeatherOverlayFetch({
-    planRef,
-    routingRef,
-    navigationStarted,
-    destLngLat,
-    isPlus,
-    isOnline,
-    openWeatherApiKey: env.openWeatherApiKey,
-    settingWeatherHintsEnabled,
-    settingStormEnabled,
-    dataSaverMode,
-    progressCalloutsOpen,
-    weatherOverlayLegId,
-    weatherOverlayGeomKey,
-    setWeatherOverlay,
-  });
-
   /** Strip + map corridors: honor the Road checkbox — do not force “on” in drive (that hid toggles but left layers active). */
   const showTrafficCorridorOnRoute = isPlus && roadAdvisoryDetailOn && settingTrafficEnabled;
   const showRoadNoticesOnRoute = isPlus && roadAdvisoryDetailOn;
@@ -1980,6 +1930,11 @@ export default function App() {
     openWeatherHourlyEnabled,
     weatherKitEnabled
   );
+  const localDailyForecast = useLocalDailyForecast(
+    effectiveUserLngLat ?? null,
+    tioPointFetchEnabled && weatherKitEnabled,
+    weatherKitEnabled
+  );
   const {
     forecast: tioRouteForecast,
     bumpRouteForecastRefresh,
@@ -1987,28 +1942,47 @@ export default function App() {
     routeForecastRefreshBlocked,
     routeForecastUsingCache,
   } = useTomorrowRouteForecast(
-    tioApiKey,
+    env.tomorrowIoApiKey,
     isPlus && guidanceRoute?.geometry?.length ? guidanceRoute.geometry : null,
     speedMps ?? 0,
     tioRouteFetchEnabled,
     weatherKitEnabled
   );
 
+  const routeWeatherOverlay = useMemo(
+    () =>
+      buildRouteWeatherOverlayFromForecast(
+        tioRouteForecast,
+        lineFocusId || guidanceRouteId,
+        guidanceRoute?.baseEtaMinutes
+      ),
+    [tioRouteForecast, lineFocusId, guidanceRouteId, guidanceRoute?.baseEtaMinutes]
+  );
+
+  const guidanceSlice = useMemo(() => {
+    if (!guidanceSliceRaw) return undefined;
+    const legId = lineFocusId || guidanceRouteId;
+    const wx = routeWeatherOverlay?.[legId];
+    if (!wx) return guidanceSliceRaw;
+    return {
+      ...guidanceSliceRaw,
+      forecastHeadline: wx.headline,
+      radarIntensity: Math.min(1, Math.max(0, wx.precipHint)),
+    };
+  }, [guidanceSliceRaw, lineFocusId, guidanceRouteId, routeWeatherOverlay]);
+
+  const corridorWeatherDetail = useMemo(() => {
+    if (!lineFocusId) return "";
+    return guidanceSlice?.forecastHeadline?.trim() ?? "";
+  }, [lineFocusId, guidanceSlice?.forecastHeadline]);
+
   const handleRefreshRouteInfoWeather = useCallback(() => {
-    resetWeatherOverlayThrottle();
-    bumpWeatherRefresh();
     if (routeWeatherReady && guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2) {
       bumpRouteForecastRefresh();
     }
-  }, [
-    resetWeatherOverlayThrottle,
-    bumpWeatherRefresh,
-    bumpRouteForecastRefresh,
-    routeWeatherReady,
-    guidanceRoute?.geometry,
-  ]);
+  }, [bumpRouteForecastRefresh, routeWeatherReady, guidanceRoute?.geometry]);
 
-  const routeInfoWeatherRefreshing = routeForecastRefreshing || weatherOverlayRefreshing;
+  const routeInfoWeatherRefreshing = routeForecastRefreshing;
 
   const prevProgressCalloutsOpenRef = useRef(false);
   useEffect(() => {
@@ -2056,7 +2030,8 @@ export default function App() {
     const hasData =
       Boolean(currentNowcast) ||
       Boolean(tioMinutePrecip) ||
-      (localHourlyForecast?.hours.length ?? 0) > 0;
+      (localHourlyForecast?.hours.length ?? 0) > 0 ||
+      (localDailyForecast?.days.length ?? 0) > 0;
     if (hasData) return false;
     return routeWeatherReady || Boolean(env.openWeatherApiKey);
   }, [
@@ -2066,6 +2041,7 @@ export default function App() {
     currentNowcast,
     tioMinutePrecip,
     localHourlyForecast?.hours.length,
+    localDailyForecast?.days.length,
     routeWeatherReady,
     env.openWeatherApiKey,
   ]);
@@ -2301,6 +2277,7 @@ export default function App() {
 
   /** Same ~2 mi heads-up in Rt / Map / Dr while navigating — not drive-only. */
   const hazardApproachAlertsActive =
+    TRAFFIC_BYPASS_ENABLED &&
     isPlus &&
     navigationStarted &&
     Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
@@ -2395,7 +2372,6 @@ export default function App() {
       stormCorridorAlerts: allDisplayableAlerts,
       progressStripAlerts,
       guidanceSlice,
-      weatherOverlay,
       corridorWeatherDetail: enrichedCorridorWeatherDetail,
       lineFocusId,
       tioRouteForecast,
@@ -2415,8 +2391,7 @@ export default function App() {
       settingWeatherHintsEnabled,
       destLngLat,
       planRoutes: plan.routes,
-      bumpWeatherRefresh,
-      resetWeatherOverlayThrottle,
+      bumpRouteForecastRefresh,
       bumpTrafficRefresh,
     });
 
@@ -2454,10 +2429,6 @@ export default function App() {
   useEffect(() => {
     if (!settingTrafficEnabled) setTrafficOverlay(undefined);
   }, [settingTrafficEnabled]);
-
-  useEffect(() => {
-    if (!settingWeatherHintsEnabled && !settingStormEnabled) setWeatherOverlay(undefined);
-  }, [settingWeatherHintsEnabled, settingStormEnabled]);
 
   useEffect(() => {
     if (!settingRadarEnabled) {
@@ -3895,6 +3866,7 @@ export default function App() {
                       forecastAreaLabel={isPlus ? forecastAreaLabel : null}
                       minutePrecipForecast={isPlus ? tioMinutePrecip : null}
                       hourlyForecast={isPlus ? localHourlyForecast : null}
+                      dailyForecast={isPlus ? localDailyForecast : null}
                       localForecastNwsAlerts={isPlus ? localForecastNwsAlerts : []}
                       nwsForecastLoading={
                         isPlus &&
@@ -4539,16 +4511,24 @@ export default function App() {
               onToggleRadar={() => setShowRadar((v) => !v)}
               radarEnabled={settingRadarEnabled}
               showRadarButton={!driveModeUi}
-              showOffRouteBanner={showOffRouteStatusBanner}
+              showOffRouteBanner={
+                shouldShowManualOffRouteUi() && showOffRouteStatusBanner
+              }
               offRouteRejoinActive={detourAutoActive}
               offRouteRejoinDistanceLabel={detourRejoinDistanceLabel}
               offRouteOptionsBusy={routing}
-              onStayOnThisRoad={() => void stayOnThisRoad()}
-              onReturnToOriginalRoute={returnToOriginalRoute}
-              showTrafficBypass={showTrafficBypassCta}
+              onStayOnThisRoad={
+                shouldShowManualOffRouteUi() ? () => void stayOnThisRoad() : undefined
+              }
+              onReturnToOriginalRoute={
+                shouldShowManualOffRouteUi() ? returnToOriginalRoute : undefined
+              }
+              showTrafficBypass={shouldShowTrafficBypassUi() && showTrafficBypassCta}
               bypassBusy={bypassBusy}
               onTrafficBypass={
-                TRAFFIC_BYPASS_ENABLED ? () => void handleTrafficBypassFromHere() : undefined
+                shouldShowTrafficBypassUi()
+                  ? () => void handleTrafficBypassFromHere()
+                  : undefined
               }
             />
           </div>
@@ -4593,7 +4573,7 @@ export default function App() {
           window.setTimeout(() => setTapHint(null), 2500);
         }}
         onReplayCoachmarks={handleReplayCoachmarks}
-        liveRerouteEnabled
+        liveRerouteEnabled={shouldShowManualOffRouteUi()}
         />
       </Suspense>
 

@@ -14,7 +14,7 @@ const base = {
   timelineItemCount: 0,
   progressBandCount: 0,
   corridorWeatherDetail: "",
-  weatherOverlayHeadline: "",
+  routeForecastHeadline: "",
   hasWeatherSamples: false,
 };
 
@@ -27,10 +27,10 @@ describe("routeAheadHealth", () => {
     expect(audit.ok).toBe(true);
   });
 
-  it("flags missing overlay when weather hints are on", () => {
+  it("flags missing route forecast when weather hints are on", () => {
     const audit = auditRouteAheadSync(base);
     expect(audit.ok).toBe(false);
-    expect(audit.issues).toContain("weather_overlay_missing");
+    expect(audit.issues).toContain("route_forecast_missing");
     expect(audit.issues).toContain("outlook_empty_weather_expected");
   });
 
@@ -38,7 +38,7 @@ describe("routeAheadHealth", () => {
     const audit = auditRouteAheadSync({
       ...base,
       corridorWeatherDetail: "Start: 72°F · Midway: rain 40%",
-      weatherOverlayHeadline: "Rain along route",
+      routeForecastHeadline: "Rain along route",
     });
     expect(audit.issues).toContain("forecast_detail_without_outlook");
   });
@@ -47,7 +47,7 @@ describe("routeAheadHealth", () => {
     const audit = auditRouteAheadSync({
       ...base,
       outlookStepCount: 5,
-      weatherOverlayHeadline: "Start → End forecast",
+      routeForecastHeadline: "Start → End forecast",
       hasWeatherSamples: true,
       timelineItemCount: 2,
       progressBandCount: 2,
@@ -59,7 +59,7 @@ describe("routeAheadHealth", () => {
     const audit = auditRouteAheadSync({
       ...base,
       outlookStepCount: 5,
-      weatherOverlayHeadline: "ok",
+      routeForecastHeadline: "ok",
       hasWeatherSamples: true,
       timelineItemCount: 3,
       progressBandCount: 0,
@@ -69,7 +69,7 @@ describe("routeAheadHealth", () => {
 
   it("maps issues to repair actions", () => {
     expect(
-      repairActionsForRouteAheadIssues(["weather_overlay_missing", "timeline_bands_desync"])
-    ).toEqual(["refresh_weather_overlay", "refresh_traffic"]);
+      repairActionsForRouteAheadIssues(["route_forecast_missing", "timeline_bands_desync"])
+    ).toEqual(["refresh_route_forecast", "refresh_traffic"]);
   });
 });

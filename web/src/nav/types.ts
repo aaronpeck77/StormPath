@@ -21,6 +21,18 @@ export interface RouteTurnStep {
   exitNumber?: string;
 }
 
+/** Mapbox Directions leg incident (traffic / construction / closure). */
+export type MapboxRouteIncident = {
+  type: string;
+  /** Mapbox impact: unknown | minor | moderate | major | severe */
+  impact?: string;
+  description: string;
+  alongMeters?: number;
+  affectedRoadNames?: string[];
+  numLanesBlocked?: number;
+  lanesBlocked?: string[];
+};
+
 export interface NavRoute {
   id: string;
   role: RouteRole;
@@ -35,6 +47,8 @@ export interface NavRoute {
   routeNotices?: string[];
   /** Same length as `routeNotices` when set — meters from route start for strip/map alignment (Mapbox incidents). */
   routeNoticeAlongMeters?: (number | undefined)[];
+  /** Structured Mapbox incidents — preferred for severity / lane-block copy. */
+  mapboxIncidents?: MapboxRouteIncident[];
   /** Mapbox flagged toll roads or collection points along this leg. */
   hasTolls?: boolean;
   /** Distinct toll road refs/names or booth labels (when known). */

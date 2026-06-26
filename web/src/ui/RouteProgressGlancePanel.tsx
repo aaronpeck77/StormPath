@@ -19,7 +19,7 @@ import {
   routePlotLeftPct,
   routePlotWidthPct,
 } from "./routeAxisLayout";
-import { WIND_GRAPH_MIN_MPH } from "../nav/windForecastCalib";
+import { routeWindGraphVisible } from "../nav/windForecastCalib";
 
 type Props = {
   timeline: TimelineItem[];
@@ -356,7 +356,7 @@ export function RouteProgressGlancePanel({
                       )}
                     </div>
 
-                    {(radarSamples.length > 0 || windPoints.some((p) => p.mph >= WIND_GRAPH_MIN_MPH)) ? (
+                    {(radarSamples.length > 0 || routeWindGraphVisible(windPoints, gustSpikePoints)) ? (
                       <div className="rpgl__radar-strata">
                         <RouteRadarWindStrip
                           radarSamples={radarSamples}

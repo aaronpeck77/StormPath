@@ -24,8 +24,8 @@ export interface ScoredRoute {
 /**
  * Soft “stress” for ranking legs — suggestive only. Does **not** replace Mapbox avoidance of
  * closures/incidents (those affect returned geometry and delays directly).
- * Weather weight uses fused `precipHint` per route (OpenWeather corridor samples merged with
- * Tomorrow.io hourly stress when Storm or Weather hints are on). Future: tighter coupling with live radar mosaic.
+ * Weather weight uses fused corridor forecast stress per route (WeatherKit / Tomorrow.io
+ * when route forecast is loaded). Future: tighter coupling with live radar mosaic.
  */
 function stressFromSlice(
   trafficDelay: number,

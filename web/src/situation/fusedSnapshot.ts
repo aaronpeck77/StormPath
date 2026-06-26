@@ -15,9 +15,8 @@ function effectiveDelayMinutes(delayVsTypical: number, _congestion: CongestionLe
 }
 
 /**
- * Fused view from real sources only: OpenWeather samples (optional), Tomorrow.io corridor hourly
- * forecast stress (optional), Mapbox driving-traffic (optional).
- * No simulated incidents, phases, or fake turn lists.
+ * Fused view from real sources only: route corridor forecast (WeatherKit / Tomorrow.io when passed
+ * in `weather`), Mapbox driving-traffic (optional). No simulated incidents or fake turn lists.
  */
 export function buildFusedSnapshot(
   plan: TripPlan,
@@ -35,7 +34,7 @@ export function buildFusedSnapshot(
       ? effectiveDelayMinutes(leg!.delayVsTypicalMinutes, leg!.congestionSummary)
       : 0;
     const radarIntensity = ow ? Math.min(1, Math.max(0, ow.precipHint)) : 0;
-    /* Empty when OpenWeather is off — NWS/radar copy lives elsewhere; avoid implying "no weather" on the route. */
+    /** Route forecast headline when `weather` is supplied; empty until corridor forecast loads. */
     const forecastHeadline = ow?.headline?.trim() ?? "";
 
     const alongList = r.routeNoticeAlongMeters;
@@ -68,7 +67,7 @@ export function buildFusedSnapshot(
   const hasWx = Boolean(weather && Object.keys(weather).length > 0);
   const hasTraffic = routes.some((x) => x.hasLiveTrafficEstimate);
   const parts: string[] = [];
-  if (hasWx) parts.push("Weather uses corridor samples (OpenWeather and/or Tomorrow.io when configured).");
+  if (hasWx) parts.push("Weather uses corridor forecast along the route (WeatherKit or Tomorrow.io).");
   else parts.push("Weather: not loaded.");
   if (hasTraffic) parts.push("Drive times use Mapbox live traffic along the route shape.");
   else parts.push("Live traffic: add a Mapbox token — static ETA has no real-time congestion.");

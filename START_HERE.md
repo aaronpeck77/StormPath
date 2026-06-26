@@ -48,10 +48,7 @@ The app reads a file named **`.env`** (not `.env.example`).
 1. In Cursor, look at the **left file list** for this project.
 2. Open the folder **`web`**, then open the file **`.env`**.
    - If you **don’t** see `.env`, only `.env.example`: tell the AI assistant in chat *“create my web/.env file”* and paste your three keys when asked, **or** copy `.env.example`, rename the copy to `.env`, then paste your keys into `.env`.
-3. You should see three lines like:
-   - `VITE_MAPBOX_TOKEN=...`
-   - `VITE_ORS_API_KEY=...`
-   - `VITE_OPENWEATHER_API_KEY=...`
+3. At minimum you need **`VITE_MAPBOX_TOKEN=...`** with your Mapbox key after the `=`. Other keys (weather, etc.) are optional — see `web/.env.example`.
 4. Make sure your **real** keys are **after** each `=` sign, then **save** the file (Ctrl+S).
 
 ---
@@ -127,7 +124,7 @@ npm run dev -- --host
 - **Netlify opens on phone but map is blank** — In [Mapbox Account → Access tokens](https://account.mapbox.com/access-tokens/), edit your token’s **URL restrictions** and add `https://stormpath2.netlify.app/*` (or turn restrictions off while testing).
 - **“npm is not recognized”** — Node didn’t install or you need to **close and reopen** Cursor (and the terminal) after installing Node.
 - **Map is blank** — Open **`web/.env`** and check that **`VITE_MAPBOX_TOKEN=`** has your Mapbox key after the `=`. Save, then run **`RUN_APP.bat`** again.
-- **Drive times** — OpenRouteService plans the path and a baseline time; **Mapbox** (same token as the map) supplies **live traffic** on that path. Weather samples use **OpenWeather** if that key is set.
+- **Drive times** — **Mapbox** (same token as the map) plans routes and supplies **live traffic** ETAs. Weather uses **WeatherKit**, **Tomorrow.io**, or **OpenWeather** when those keys are configured — see `web/.env.example`.
 
 You can always say in chat: *“I’m stuck on step X and this is what I see: …”* and paste the **exact** message from the screen (not your secret keys).
 

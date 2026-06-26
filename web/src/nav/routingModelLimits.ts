@@ -4,7 +4,7 @@ export type RoutingLimitsAnchor = { lng: number; lat: number };
 
 /**
  * Plain-language boundaries for what the current stack can and cannot do.
- * (ORS/Mapbox + OpenWeather samples + RainViewer tiles — not a storm-polygon router.)
+ * (Mapbox Directions + weather samples + RainViewer tiles — not a storm-polygon router.)
  */
 export function buildRoutingSystemLimitRows(opts: {
   showRadarOverlay: boolean;
@@ -21,7 +21,7 @@ export function buildRoutingSystemLimitRows(opts: {
     id: "lim-engine",
     tag: "Model",
     text:
-      "Road routers (ORS/Mapbox) optimize geometry, rules, and traffic — they do not read radar pixels. " +
+      "Road routers (Mapbox Directions) optimize geometry, rules, and traffic — they do not read radar pixels. " +
       "Storm motion + your motion are not fed back into a live “weather graph”; auto-detours that chase cells would need custom cost fields and fast refresh.",
     severity: 34,
     overview: true,

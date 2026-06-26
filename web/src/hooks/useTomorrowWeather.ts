@@ -16,16 +16,19 @@ import {
 } from "../services/openWeatherClient";
 import {
   buildTimelinesWaypointsForGeometry,
+  enrichRouteForecastConvective,
   fetchMinutePrecip,
   fetchPointHourlyForecast,
   fetchRouteForecast,
   isTomorrowIoRateLimited,
   type MinutePrecipForecast,
+  type PointDailyForecast,
   type PointHourlyForecast,
   type RouteForecast,
 } from "../services/tomorrowIo";
 import {
   fetchWeatherKitMinutePrecip,
+  fetchWeatherKitPointDaily,
   fetchWeatherKitPointHourly,
   fetchWeatherKitRouteForecast,
   isWeatherKitTokenBlocked,
@@ -255,6 +258,59 @@ export function useLocalHourlyForecast(
   return forecast;
 }
 
+/** Multi-day outlook (WeatherKit forecastDaily). */
+export function useLocalDailyForecast(
+  userLngLat: LngLat | null,
+  enabled = false,
+  weatherKitEnabled = false
+): PointDailyForecast | null {
+  const [forecast, setForecast] = useState<PointDailyForecast | null>(null);
+  const lastFetchLngLat = useRef<LngLat | null>(null);
+  const lastFetchTime = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !userLngLat || !weatherKitEnabled) {
+      setForecast(null);
+      return;
+    }
+    if (isWeatherKitTokenBlocked()) return;
+
+    const now = Date.now();
+    const lastLng = lastFetchLngLat.current;
+    const tooSoon = now - lastFetchTime.current < HOURLY_POINT_POLL_MS;
+    const tooClose =
+      lastLng != null && haversineM(lastLng, userLngLat) < HOURLY_POINT_MOVE_THRESHOLD_M;
+    if (tooSoon && tooClose) return;
+
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const [lng, lat] = userLngLat;
+    lastFetchTime.current = now;
+    lastFetchLngLat.current = userLngLat;
+
+    void fetchWeatherKitPointDaily(lat, lng, ac.signal)
+      .then((f) => {
+        if (!ac.signal.aborted) setForecast(f);
+      })
+      .catch((e) => {
+        if (!ac.signal.aborted && import.meta.env.DEV) {
+          console.warn("[WeatherKit] daily forecast failed:", e);
+        }
+      });
+
+    return () => ac.abort();
+  }, [
+    enabled,
+    weatherKitEnabled,
+    userLngLat ? Math.round(userLngLat[0] * 20) : null,
+    userLngLat ? Math.round(userLngLat[1] * 20) : null,
+  ]);
+
+  return forecast;
+}
+
 // ── Route forecast ────────────────────────────────────────────────────────────
 
 /** Re-fetch when route changes or every 15 min — severe weather can develop fast. */
@@ -403,11 +459,33 @@ export function useTomorrowRouteForecast(
     // Bypass the per-location cache whenever the route changes or a manual
     // refresh was requested — stale location data is the most common reason
     // the app shows "light rain" when driving into a severe storm.
-    const fetcher = weatherKitEnabled
-      ? fetchWeatherKitRouteForecast(waypoints, ac.signal, (force || isNewRoute) ? { bypassCache: true } : undefined)
-      : fetchRouteForecast(apiKey, waypoints, ac.signal, (force || isNewRoute) ? { bypassCache: true } : undefined);
+    const bypass = (force || isNewRoute) ? { bypassCache: true as const } : undefined;
+    const tioOpts = {
+      ...bypass,
+      geometry: routeGeometry ?? undefined,
+    };
 
-    fetcher
+    const runFetch = async (): Promise<RouteForecast> => {
+      if (weatherKitEnabled) {
+        let f = await fetchWeatherKitRouteForecast(waypoints!, ac.signal, bypass);
+        if (
+          apiKey &&
+          routeGeometry?.length &&
+          !isTomorrowIoRateLimited() &&
+          !ac.signal.aborted
+        ) {
+          try {
+            f = await enrichRouteForecastConvective(apiKey, routeGeometry, f, ac.signal);
+          } catch {
+            /* convective enrichment is optional */
+          }
+        }
+        return f;
+      }
+      return fetchRouteForecast(apiKey, waypoints!, ac.signal, tioOpts);
+    };
+
+    void runFetch()
       .then((f) => {
         if (!ac.signal.aborted) {
           lastRouteSig.current = routeSig;

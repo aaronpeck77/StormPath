@@ -1,6 +1,7 @@
 import type {
   MinutePrecipForecast,
   MinutePrecipNowSnapshot,
+  PointDailyDay,
   PointHourlyInterval,
 } from "../services/tomorrowIo";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
@@ -93,6 +94,23 @@ export function pointHourlyForecastSummary(hours: PointHourlyInterval[]): string
   if (firstH <= 1) return `Rain expected — clearing around ${lastH}h from now`;
   if (firstH === lastH) return `Rain possible around ${firstH}h from now`;
   return `Rain possible ${firstH}–${lastH}h from now`;
+}
+
+/** One-line read on the multi-day outlook. */
+export function pointDailyForecastSummary(days: PointDailyDay[]): string {
+  if (!days.length) return "";
+  const wet = days.filter((d) => d.precipChance >= 0.35);
+  if (!wet.length) return "Dry for the next few days";
+  if (wet.length === days.length) return "Rain possible most days ahead";
+  const first = wet[0]!;
+  if (wet.length === 1) return `${first.dayLabel}: ${Math.round(first.precipChance * 100)}% rain`;
+  return `Rain possible ${wet[0]!.dayLabel}–${wet[wet.length - 1]!.dayLabel}`;
+}
+
+/** Short day label for daily chips (Today, Wed, Thu…). */
+export function formatDailyDayLabel(day: PointDailyDay, index: number): string {
+  if (index === 0) return "Today";
+  return day.dayLabel;
 }
 
 export function minutePrecipBannerHint(forecast: MinutePrecipForecast): string {

@@ -77,6 +77,5 @@ Suggested mental layers:
 
 | Credential | Use |
 |------------|-----|
-| **Mapbox token** | Map style + GL (web `VITE_MAPBOX_TOKEN`; mobile `EXPO_PUBLIC_MAPBOX_TOKEN`). Native SDK also needs a **downloads** secret in `mobile/app.json` for `@rnmapbox/maps`. |
-| **OpenRouteService** | Directions: three variants (fastest / recommended / avoid motorways proxy) → `web` loads real polylines when `VITE_ORS_API_KEY` is set. |
-| **OpenWeather** | Current weather sampled along each route → enriches fuse headlines when `VITE_OPENWEATHER_API_KEY` is set. **Production:** proxy keys via your backend; do not ship ORS/OW secrets in public apps. |
+| **Mapbox token** | Map style + GL + **Directions** (multi-route, live traffic, turn-by-turn). Web: `VITE_MAPBOX_TOKEN`; mobile: `EXPO_PUBLIC_MAPBOX_TOKEN`. Native SDK also needs a **downloads** secret in `mobile/app.json` for `@rnmapbox/maps`. |
+| **OpenWeather** | Optional legacy route weather samples when WeatherKit is off. **Production:** proxy keys via your backend; do not ship secrets in public apps. |

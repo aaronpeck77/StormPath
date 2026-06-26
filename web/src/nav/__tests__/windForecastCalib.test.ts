@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildRouteWindGraphPoints,
   calibratedWindGustMph,
   gustSpikeSeverity,
   sustainedWindImpactSeverity,
@@ -36,5 +37,15 @@ describe("windForecastCalib", () => {
     expect(gustSpikeSeverity(29, 42)).toBeNull();
     expect(gustSpikeSeverity(18, 44)).toBe("caution");
     expect(gustSpikeSeverity(28, 28 + WIND_GUST_SPIKE_MIN_EXCESS_MPH)).toBe("caution");
+  });
+
+  it("pads sparse corridor samples so the wind line can render", () => {
+    const { windPoints } = buildRouteWindGraphPoints(
+      [{ etaMinutes: 30, windSpeedMph: 14, windGustMph: 16 }],
+      60
+    );
+    expect(windPoints.length).toBeGreaterThanOrEqual(2);
+    expect(windPoints[0]!.t).toBe(0);
+    expect(windPoints[windPoints.length - 1]!.t).toBe(1);
   });
 });
