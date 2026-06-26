@@ -649,15 +649,6 @@ function collectRouteIncidentsWithAlong(
   return { incidents, texts, alongMeters };
 }
 
-/** @deprecated name — returns structured incidents plus legacy string notices. */
-function collectRouteNoticesWithAlong(
-  route: NonNullable<DirectionsResponse["routes"]>[0],
-  geometry: LngLat[]
-): { texts: string[]; alongMeters: (number | undefined)[] } {
-  const { texts, alongMeters } = collectRouteIncidentsWithAlong(route, geometry);
-  return { texts, alongMeters };
-}
-
 /**
  * Up to 3 traffic-aware routes from Mapbox (alternatives + `exclude=motorway`).
  *
