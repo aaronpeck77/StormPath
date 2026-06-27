@@ -673,6 +673,7 @@ export type RouteStormStripBand = {
   endMeters: number;
   expiresIso: string | null;
   alertId: string | null;
+  onsetIso: string | null;
   crossesRoute: boolean;
   /** Precise polyline intersection vs cheap centroid preview for distant ahead weather. */
   detailTier: "precise" | "coarse";
@@ -821,6 +822,7 @@ export function buildRouteStormStripBands(
       endMeters: endM,
       expiresIso: alert.ends ?? null,
       alertId: alert.id ?? null,
+      onsetIso: alert.onset ?? null,
       crossesRoute,
       detailTier,
       stripProminent,

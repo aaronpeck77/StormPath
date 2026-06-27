@@ -1,5 +1,6 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import type { LngLat, NavRoute } from "../nav/types";
+import type { TrafficOverlay } from "../situation/fusedSnapshot";
 import {
   auditTripNavDisplay,
   computeRemainingDistanceMeters,
@@ -23,6 +24,7 @@ export type UseTripNavDisplayHealthDeps = {
   userAlongGuidanceMRef: MutableRefObject<number>;
   guidanceRouteGeomRef: MutableRefObject<LngLat[] | null>;
   speedMpsRef: MutableRefObject<number | null>;
+  trafficOverlayRef: MutableRefObject<TrafficOverlay | undefined>;
   setAlongHoldResetKey: (updater: (prev: number) => number) => void;
   bumpTrafficRefresh: () => void;
 };
@@ -40,6 +42,7 @@ export function useTripNavDisplayHealth(deps: UseTripNavDisplayHealthDeps): void
     userAlongGuidanceMRef,
     guidanceRouteGeomRef,
     speedMpsRef,
+    trafficOverlayRef,
     setAlongHoldResetKey,
     bumpTrafficRefresh,
   } = deps;
@@ -80,12 +83,19 @@ export function useTripNavDisplayHealth(deps: UseTripNavDisplayHealthDeps): void
           ? Math.round(route.baseEtaMinutes)
           : null;
       const remainingDistanceM = computeRemainingDistanceMeters(true, routeLengthM, alongM);
+      const trafficLeg = trafficOverlayRef.current?.[focusId] ?? null;
+      const liveRemaining =
+        trafficLeg?.mapboxDurationMinutes != null &&
+        Number.isFinite(trafficLeg.mapboxDurationMinutes)
+          ? trafficLeg.mapboxDurationMinutes
+          : null;
       const remainingEtaMinutes = computeRemainingDriveEtaMinutes({
         navigationStarted: true,
         fullEtaMinutes: fullEta,
         routeLengthM,
         alongM,
         hasRouteGeometry: Boolean(guidanceRouteGeomRef.current?.length),
+        liveRemainingEtaMinutes: liveRemaining,
       });
 
       const audit = auditTripNavDisplay({

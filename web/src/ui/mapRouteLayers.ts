@@ -656,7 +656,13 @@ function primaryRouteGeometry(routes: NavRoute[], onlyRouteId?: string | null): 
   return route?.geometry?.length ? route.geometry : null;
 }
 
-/** Short / winding trips: anchor on user + destination so fitBounds pushes them to the padded edges. */
+/** Cross-country legs — endpoint diagonal misses the corridor; fit the full polyline instead. */
+const ENDPOINT_ANCHORED_TRIP_MAX_DIRECT_M = 250_000;
+
+/**
+ * Rt / planning framing: anchor user + destination on the padded edges (same treatment for every
+ * trip under ~155 mi). Only cross-country legs use the full polyline bbox.
+ */
 export function preferEndpointAnchoredTripFit(
   user: LngLat | null,
   dest: LngLat | null,
@@ -664,16 +670,14 @@ export function preferEndpointAnchoredTripFit(
 ): boolean {
   const direct = directTripMeters(user, dest);
   if (!Number.isFinite(direct)) return false;
-  if (!geometry?.length || geometry.length < 2) return true;
+  if (!geometry?.length || geometry.length < 2) return direct < ENDPOINT_ANCHORED_TRIP_MAX_DIRECT_M;
+  if (direct >= ENDPOINT_ANCHORED_TRIP_MAX_DIRECT_M) return false;
   const box = polylineBbox(geometry);
-  if (!box) return direct < 250_000;
+  if (!box) return true;
   const routeSpan = haversineMeters([box.west, box.south], [box.east, box.north]);
-  if (direct < 32_000) {
-    return routeSpan > direct * 1.22 || direct < 24_000;
-  }
-  /* Medium/long trips: endpoint pair unless the driven path extends far beyond start/end. */
-  if (direct < 250_000) return routeSpan <= direct * 1.42;
-  return false;
+  /* Winding local trip: polyline bulges far outside the start/end box — include the path. */
+  if (routeSpan > direct * 1.85) return false;
+  return true;
 }
 
 function extendEndpointPairBounds(b: mapboxgl.LngLatBounds, user: LngLat, dest: LngLat): void {

@@ -10,6 +10,7 @@ import {
 import { augmentAlertsForProgressStrip, type RouteAlert } from "./routeAlerts";
 import {
   buildRouteAheadTimeline,
+  filterAlertsForDriveMap,
   timelineToProgressStripBands,
   type RouteAheadStormBand,
   type TimelineItem,
@@ -280,8 +281,24 @@ export function useRouteAheadDerivations(
   const stormMapGeoJsonForMap = useMemo((): GeoJSON.FeatureCollection | undefined => {
     const g = nwsMapOverlapRouteGeom;
     if (!g?.length) return undefined;
-    /** Map: every alert already fetched for this trip corridor — not only strict polyline hits. */
-    const corridorIds = new Set(stormCorridorAlerts.map((a) => a.id));
+    const etaBands: RouteAheadStormBand[] = routeStormStripBands.map((b) => ({
+      id: b.id,
+      event: b.event,
+      severity: b.impactSeverity,
+      startMeters: b.startMeters,
+      endMeters: b.endMeters,
+      expiresIso: b.expiresIso,
+      onsetIso: b.onsetIso,
+      alertId: b.alertId,
+      crossesRoute: b.crossesRoute,
+    }));
+    const etaFiltered = filterAlertsForDriveMap(stormCorridorAlerts, etaBands, {
+      routeTotalMeters: guidanceRouteLengthM,
+      userAlongMeters: heavyAdvisoryAlongM,
+      planEtaMinutes: guidanceRoute?.baseEtaMinutes ?? null,
+      driveEtaMinutes: driveEtaMinutes ?? null,
+    });
+    const corridorIds = new Set(etaFiltered.map((a) => a.id));
     const byId = new Map<string, GeoJSON.Feature>();
     if (stormMapGeoJson?.features?.length) {
       for (const f of stormMapGeoJson.features) {
@@ -290,7 +307,7 @@ export function useRouteAheadDerivations(
       }
     }
     for (const f of mapGeoJsonFromAlerts(
-      stormCorridorAlerts.filter((a) => a.geometry && !byId.has(a.id))
+      etaFiltered.filter((a) => a.geometry && !byId.has(a.id))
     ).features) {
       const id = String((f.properties as { id?: string } | undefined)?.id ?? "");
       if (id) byId.set(id, f);
@@ -298,7 +315,16 @@ export function useRouteAheadDerivations(
     const features = [...byId.values()];
     if (!features.length) return undefined;
     return { type: "FeatureCollection", features } as GeoJSON.FeatureCollection;
-  }, [stormMapGeoJson, nwsMapOverlapRouteGeom, stormCorridorAlerts]);
+  }, [
+    stormMapGeoJson,
+    nwsMapOverlapRouteGeom,
+    stormCorridorAlerts,
+    routeStormStripBands,
+    guidanceRouteLengthM,
+    heavyAdvisoryAlongM,
+    guidanceRoute?.baseEtaMinutes,
+    driveEtaMinutes,
+  ]);
 
   /**
    * Unified Road Ahead model — every surface (drive status, advisory bar, progress rail, map highlights, bypass)
@@ -396,6 +422,7 @@ export function useRouteAheadDerivations(
         startMeters: b.startMeters,
         endMeters: b.endMeters,
         expiresIso: b.expiresIso,
+        onsetIso: b.onsetIso,
         alertId: b.alertId,
         crossesRoute: b.crossesRoute,
         coarsePreview: b.detailTier === "coarse",

@@ -18,7 +18,7 @@ const WINDOW_BACK_M = 600;
 const WINDOW_AHEAD_M = 3_500;
 
 /** When moving, heading must differ from the route this much to trigger at low lateral offset. */
-const OFF_ROUTE_HEADING_DELTA_DEG = 38;
+export const OFF_ROUTE_HEADING_DELTA_DEG = 38;
 /** Minimum lateral offset (m) before heading mismatch can trigger reroute. */
 export const OFF_ROUTE_HEADING_MIN_LATERAL_M = 12;
 /** Minimum speed (m/s) before off-route can latch (~7 mph). Ignores GPS drift while parked. */
@@ -47,6 +47,8 @@ export type OffRouteTriggerContext = {
   headingDeg?: number | null;
   speedMps?: number | null;
   routeBearingDeg?: number | null;
+  /** Step-aware enter threshold; defaults to {@link OFF_ROUTE_REROUTE_ENTER_M}. */
+  enterThresholdM?: number;
 };
 
 /**
@@ -115,7 +117,8 @@ export function shouldTriggerOffRouteReroute(
   const speed = ctx?.speedMps ?? 0;
   if (speed < OFF_ROUTE_HEADING_MIN_SPEED_MPS) return false;
 
-  if (lateralM > OFF_ROUTE_REROUTE_ENTER_M) return true;
+  const enterM = ctx?.enterThresholdM ?? OFF_ROUTE_REROUTE_ENTER_M;
+  if (lateralM > enterM) return true;
 
   const heading = ctx?.headingDeg;
   const routeBearing = ctx?.routeBearingDeg;

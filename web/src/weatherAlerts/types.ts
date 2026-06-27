@@ -21,6 +21,8 @@ export type NormalizedWeatherAlert = {
   certainty: string;
   /** ISO 8601 when the alert ends, if known */
   ends: string | null;
+  /** ISO 8601 when the hazard is expected to begin (NWS onset / effective). */
+  onset: string | null;
   /** GeoJSON geometry, or null (text-only / marine zones) */
   geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   /** Human-readable area from source */

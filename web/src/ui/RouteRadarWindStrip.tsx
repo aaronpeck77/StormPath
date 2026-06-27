@@ -205,7 +205,7 @@ export function RouteRadarWindStrip({ radarSamples, windPoints, gustSpikePoints 
         </svg>
 
         {/* Radar label — sits in the left pad area, vertically centred */}
-        <span className="rrws__radar-side-label">Radar</span>
+        <span className="rrws__radar-side-label">Radar · now</span>
 
         {/* Wind mph axis labels — right pad */}
         {windTicks.map(({ mph, topPct }) => (

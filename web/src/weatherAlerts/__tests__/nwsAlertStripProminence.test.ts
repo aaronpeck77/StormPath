@@ -18,6 +18,7 @@ function alert(partial: Partial<NormalizedWeatherAlert>): NormalizedWeatherAlert
     urgency: "Expected",
     certainty: "Likely",
     ends: null,
+    onset: null,
     geometry: null,
     areaDesc: "",
     stormMotionDeg: null,

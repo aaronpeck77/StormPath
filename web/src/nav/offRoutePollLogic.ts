@@ -12,6 +12,11 @@ import {
   type OffRouteTriggerContext,
 } from "./offRouteDetect";
 import { hasRejoinedLockedRoute } from "./detourRejoin";
+import type { DrivingRejoinMode } from "./drivingRejoinContext";
+import {
+  classifyOffRouteRecovery,
+  type OffRouteRecoveryAction,
+} from "./offRouteRecoveryPolicy";
 import type { LngLat } from "./types";
 
 export type OffRoutePollSession = {
@@ -23,6 +28,11 @@ export type OffRoutePollSession = {
   offRouteRejoinAlongM: number;
   detourRejoinAlongM: number;
   autoRejoinGuidanceRouteId: string | null;
+  /** When off-route latch began (observation window). */
+  offRouteLatchedAtMs: number;
+  offRouteObservationPeakLateralM: number;
+  offRoutePriorLateralM: number | null;
+  offRouteRecoveryCommitted: boolean;
 };
 
 export type OffRoutePollTickInput = {
@@ -36,12 +46,18 @@ export type OffRoutePollTickInput = {
   triggerCtx: OffRouteTriggerContext;
   navGoStartedAtMs: number | null;
   nowMs?: number;
+  /** Use wait → rejoin → replan ladder (full auto). Manual UI uses immediate offer. */
+  useRecoveryLadder?: boolean;
+  drivingRejoinMode?: DrivingRejoinMode;
+  rejoinFailCount?: number;
 };
 
 export type OffRoutePollTickResult = {
   session: OffRoutePollSession;
   sample: OffRouteSample;
   shouldOfferRejoinChoices: boolean;
+  /** Set when {@link useRecoveryLadder} commits to rejoin or replan. */
+  recoveryAction: Exclude<OffRouteRecoveryAction, "hold"> | null;
   rejoinedLockedRoute: boolean;
   nearDestination: boolean;
 };
@@ -56,6 +72,10 @@ export function createOffRoutePollSession(): OffRoutePollSession {
     offRouteRejoinAlongM: 0,
     detourRejoinAlongM: 0,
     autoRejoinGuidanceRouteId: null,
+    offRouteLatchedAtMs: 0,
+    offRouteObservationPeakLateralM: 0,
+    offRoutePriorLateralM: null,
+    offRouteRecoveryCommitted: false,
   };
 }
 
@@ -70,6 +90,10 @@ export function resetOffRoutePollSession(session: OffRoutePollSession): OffRoute
     offRouteRejoinAlongM: 0,
     detourRejoinAlongM: 0,
     autoRejoinGuidanceRouteId: null,
+    offRouteLatchedAtMs: 0,
+    offRouteObservationPeakLateralM: 0,
+    offRoutePriorLateralM: null,
+    offRouteRecoveryCommitted: false,
   };
 }
 
@@ -85,6 +109,8 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
   );
   const lat = sample.lateralM;
   const alongM = sample.alongM;
+  const useRecoveryLadder = input.useRecoveryLadder !== false;
+  let recoveryAction: Exclude<OffRouteRecoveryAction, "hold"> | null = null;
 
   if (
     session.autoRejoinGuidanceRouteId &&
@@ -107,11 +133,16 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
       offRouteConfirmStreak: 0,
       offRouteReofferBlockedUntil: nowMs + OFF_ROUTE_REOFFER_COOLDOWN_MS,
       offRouteSevere: false,
+      offRouteLatchedAtMs: 0,
+      offRouteObservationPeakLateralM: 0,
+      offRoutePriorLateralM: null,
+      offRouteRecoveryCommitted: false,
     };
     return {
       session,
       sample,
       shouldOfferRejoinChoices: false,
+      recoveryAction: null,
       rejoinedLockedRoute: true,
       nearDestination: false,
     };
@@ -128,6 +159,7 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
       session,
       sample,
       shouldOfferRejoinChoices: false,
+      recoveryAction: null,
       rejoinedLockedRoute: false,
       nearDestination: false,
     };
@@ -151,11 +183,16 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
       offRouteChoiceOffered: false,
       offRouteConfirmStreak: 0,
       offRouteSevere: false,
+      offRouteLatchedAtMs: 0,
+      offRouteObservationPeakLateralM: 0,
+      offRoutePriorLateralM: null,
+      offRouteRecoveryCommitted: false,
     };
     return {
       session,
       sample,
       shouldOfferRejoinChoices: false,
+      recoveryAction: null,
       rejoinedLockedRoute: false,
       nearDestination: true,
     };
@@ -175,21 +212,66 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
         offRouteReofferBlockedUntil: nowMs + OFF_ROUTE_REOFFER_COOLDOWN_MS,
         offRouteSevere: false,
         detourRejoinAlongM: 0,
+        offRouteLatchedAtMs: 0,
+        offRouteObservationPeakLateralM: 0,
+        offRoutePriorLateralM: null,
+        offRouteRecoveryCommitted: false,
       };
     } else {
-      session.offRouteSevere = true;
+      session.offRouteObservationPeakLateralM = Math.max(
+        session.offRouteObservationPeakLateralM,
+        lat
+      );
+
+      if (useRecoveryLadder && !session.offRouteRecoveryCommitted) {
+        const action = classifyOffRouteRecovery({
+          nowMs,
+          latchedAtMs: session.offRouteLatchedAtMs || nowMs,
+          lateralM: lat,
+          priorLateralM: session.offRoutePriorLateralM,
+          lateralPeakM: session.offRouteObservationPeakLateralM,
+          speedMps: input.triggerCtx.speedMps ?? 0,
+          headingDeg: input.triggerCtx.headingDeg ?? null,
+          routeBearingDeg: input.triggerCtx.routeBearingDeg ?? null,
+          rejoinFailCount: input.rejoinFailCount ?? 0,
+          drivingRejoinMode: input.drivingRejoinMode ?? "manual",
+          recoveryCommitted: session.offRouteRecoveryCommitted,
+        });
+
+        if (action === "hold") {
+          session.offRouteSevere = false;
+        } else if (!session.offRouteChoiceOffered) {
+          session.offRouteSevere = true;
+          session.offRouteRecoveryCommitted = true;
+          session.offRouteChoiceOffered = true;
+          shouldOfferRejoinChoices = true;
+          recoveryAction = action;
+        }
+      } else {
+        session.offRouteSevere = true;
+      }
     }
   } else if (offRoute) {
     session.offRouteLatched = true;
     session.offRouteRejoinAlongM = alongM;
-    session.offRouteSevere = true;
-    shouldOfferRejoinChoices = true;
+    session.offRouteLatchedAtMs = nowMs;
+    session.offRouteObservationPeakLateralM = lat;
+    session.offRoutePriorLateralM = null;
+    session.offRouteRecoveryCommitted = false;
+
+    if (!useRecoveryLadder) {
+      session.offRouteSevere = true;
+      shouldOfferRejoinChoices = true;
+    }
   }
+
+  session.offRoutePriorLateralM = lat;
 
   return {
     session,
     sample,
     shouldOfferRejoinChoices,
+    recoveryAction,
     rejoinedLockedRoute: false,
     nearDestination: false,
   };

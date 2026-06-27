@@ -83,6 +83,7 @@ import { type RouteImpact } from "./nav/routeImpacts";
 import { type RouteAlert, routeAlertShowsOnRouteLine } from "./nav/routeAlerts";
 import {
   timelineToMapCorridorAlerts,
+  filterAlertsForDriveMap,
 } from "./nav/routeAheadSync";
 import {
   bearingAlongRouteAhead,
@@ -95,6 +96,7 @@ import {
 import {
   computeRemainingDistanceMeters,
   computeRemainingDriveEtaMinutes,
+  stablePlanRoutesKey,
 } from "./nav/tripNavDisplay";
 import { useTripNavDisplayHealth } from "./nav/useTripNavDisplayHealth";
 import { useRouteAheadDerivations } from "./nav/useRouteAheadDerivations";
@@ -612,6 +614,7 @@ export default function App() {
   const userAlongGuidanceMRef = useRef(0);
   const guidanceRouteGeomRef = useRef<LngLat[] | null>(null);
   const guidanceRouteLengthMRef = useRef(0);
+  const navigationPositionLngLatRef = useRef<LngLat | null>(null);
 
   /** Keep the screen on while navigating on device; allow sleep when done. */
   useEffect(() => {
@@ -683,6 +686,8 @@ export default function App() {
   demoPlaybackAlongRef.current = demoPlaybackAlongM;
   /** At destination, stationary + no interaction → clearRoute; foreground timer + resume-from-background. */
   const [trafficOverlay, setTrafficOverlay] = useState<TrafficOverlay | undefined>(undefined);
+  const trafficOverlayRef = useRef(trafficOverlay);
+  trafficOverlayRef.current = trafficOverlay;
   const [trafficFetchDone, setTrafficFetchDone] = useState(true);
   const mapFocus = useUiStore((s) => s.mapFocus);
   const setMapFocus = useUiStore((s) => s.setMapFocus);
@@ -854,7 +859,7 @@ export default function App() {
   planRef.current = plan;
   const guidanceRouteIdRef = useRef("");
   const navRouteLengthMRef = useRef(0);
-  const planRoutesKeyStable = useMemo(() => plan.routes.map((r) => r.id).join("|"), [plan.routes]);
+  const planRoutesKeyStable = useMemo(() => stablePlanRoutesKey(plan.routes), [plan.routes]);
 
   const currentNowcast = useOpenWeatherNowcast({
     isPlus,
@@ -872,6 +877,7 @@ export default function App() {
     routingRef,
     navRouteLengthMRef,
     planRoutesKeyStable,
+    guidanceGeometryEpoch,
     navigationStarted,
     isPlus,
     isOnline,
@@ -879,6 +885,9 @@ export default function App() {
     mapboxToken: env.mapboxToken,
     dataSaverMode,
     appForeground,
+    userAlongGuidanceMRef,
+    userLngLatRef: navigationPositionLngLatRef,
+    guidanceRouteGeomRef,
     setTrafficOverlay,
     setTrafficFetchDone,
   });
@@ -1125,7 +1134,6 @@ export default function App() {
     disabled: Boolean(devLocOverrideLngLat),
   });
   const navigationPositionLngLat = navPosition.positionLngLat;
-  const navigationPositionLngLatRef = useRef(navigationPositionLngLat);
   navigationPositionLngLatRef.current = navigationPositionLngLat;
 
   const adoptLockedRouteGeometry = useCallback((geometry: LngLat[]) => {
@@ -1789,7 +1797,7 @@ export default function App() {
     userAlongGuidanceM,
   ]);
 
-  /** Full-route ETA from scoring; scale by remaining distance while navigating so it tracks progress. */
+  /** Live Mapbox remaining-leg minutes when available; else scale static / full-route ETA by distance left. */
   const driveEtaMinutes = useMemo(() => {
     const s = scored.find((x) => x.route.id === lineFocusId);
     const full = s
@@ -1797,12 +1805,20 @@ export default function App() {
       : guidanceRoute
         ? Math.round(guidanceRoute.baseEtaMinutes)
         : null;
+    const trafficLeg = trafficOverlay?.[lineFocusId] ?? null;
+    const liveRemaining =
+      navigationStarted &&
+      trafficLeg?.mapboxDurationMinutes != null &&
+      Number.isFinite(trafficLeg.mapboxDurationMinutes)
+        ? trafficLeg.mapboxDurationMinutes
+        : null;
     return computeRemainingDriveEtaMinutes({
       navigationStarted,
       fullEtaMinutes: full,
       routeLengthM: guidanceRouteLengthM,
       alongM: userAlongGuidanceM,
       hasRouteGeometry: Boolean(guidanceRoute?.geometry?.length),
+      liveRemainingEtaMinutes: liveRemaining,
     });
   }, [
     navigationStarted,
@@ -1811,6 +1827,7 @@ export default function App() {
     guidanceRoute,
     guidanceRouteLengthM,
     userAlongGuidanceM,
+    trafficOverlay,
   ]);
 
   const driveDistanceRemainingLabel = useMemo(() => {
@@ -1840,6 +1857,7 @@ export default function App() {
     userAlongGuidanceMRef,
     guidanceRouteGeomRef,
     speedMpsRef,
+    trafficOverlayRef,
     setAlongHoldResetKey,
     bumpTrafficRefresh,
   });
@@ -2217,10 +2235,28 @@ export default function App() {
     const base = stormMapGeoJsonForMap;
     if (base?.features.length) return base;
 
-    const corridorGeom = stormCorridorAlerts.filter((a) => a.geometry);
+    const corridorGeom = filterAlertsForDriveMap(
+      stormCorridorAlerts.filter((a) => a.geometry),
+      advisoryStormStripBands,
+      {
+        routeTotalMeters: guidanceRouteLengthM,
+        userAlongMeters: heavyAdvisoryAlongM,
+        planEtaMinutes: guidanceRoute?.baseEtaMinutes ?? null,
+        driveEtaMinutes: driveEtaMinutes ?? null,
+      }
+    );
     if (corridorGeom.length) return mapGeoJsonFromAlerts(corridorGeom);
 
-    const onRouteGeom = nwsAlertsAffectingActiveRoute.filter((a) => a.geometry);
+    const onRouteGeom = filterAlertsForDriveMap(
+      nwsAlertsAffectingActiveRoute.filter((a) => a.geometry),
+      advisoryStormStripBands,
+      {
+        routeTotalMeters: guidanceRouteLengthM,
+        userAlongMeters: heavyAdvisoryAlongM,
+        planEtaMinutes: guidanceRoute?.baseEtaMinutes ?? null,
+        driveEtaMinutes: driveEtaMinutes ?? null,
+      }
+    );
     if (onRouteGeom.length) return mapGeoJsonFromAlerts(onRouteGeom);
 
     return null;
@@ -2234,6 +2270,11 @@ export default function App() {
     nwsAlertsAffectingActiveRoute,
     stormCorridorAlerts,
     stormMapGeoJson,
+    guidanceRouteLengthM,
+    heavyAdvisoryAlongM,
+    guidanceRoute?.baseEtaMinutes,
+    driveEtaMinutes,
+    advisoryStormStripBands,
   ]);
 
   /** Defer map overlay props so pan/zoom is not competing with advisory recomputes. */

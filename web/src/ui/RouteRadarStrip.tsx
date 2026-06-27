@@ -57,7 +57,7 @@ export function RouteRadarStrip({ samples, userAlongT = 0, stripTint = "#3b82f6"
   return (
     <div className="rrs" aria-label="Radar precipitation intensity along route">
       <div className="rrs__label-row">
-        <span className="rrs__label">Radar</span>
+        <span className="rrs__label">Radar · now</span>
         {!hasAnyEcho && <span className="rrs__empty">No precip detected</span>}
       </div>
       <div className="rrs__chart-wrap">

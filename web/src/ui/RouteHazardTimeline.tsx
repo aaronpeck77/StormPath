@@ -33,6 +33,10 @@ export type TimelineItem = {
   coarsePreview?: boolean;
   /** Minor flood/hydro — listed in advisory / callouts, not painted on progress strip. */
   stripMuted?: boolean;
+  /** Expires before driver ETA — advisory list only, not map/strip. */
+  etaStale?: boolean;
+  /** Onset after now; overlaps driver arrival window. */
+  developingLater?: boolean;
   onClick?: () => void;
 };
 
@@ -59,7 +63,7 @@ function pct(meters: number, total: number): number {
 
 const TRACK_META: Record<string, { label: string; emptyText: string }> = {
   nws:   { label: "NWS",   emptyText: "No active NWS alerts on route" },
-  radar: { label: "Radar", emptyText: "No radar precipitation detected" },
+  radar: { label: "Radar · now", emptyText: "No current radar echo along route" },
   wind:  { label: "Wind",  emptyText: "No significant wind along route" },
   road:  { label: "Road",  emptyText: "No road hazards detected" },
 };

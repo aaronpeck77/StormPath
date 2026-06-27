@@ -7,6 +7,19 @@ import {
 } from "../tripNavDisplay";
 
 describe("tripNavDisplay", () => {
+  it("prefers live remaining-leg Mapbox minutes while navigating", () => {
+    expect(
+      computeRemainingDriveEtaMinutes({
+        navigationStarted: true,
+        fullEtaMinutes: 90,
+        routeLengthM: 51_000,
+        alongM: 0,
+        hasRouteGeometry: true,
+        liveRemainingEtaMinutes: 28,
+      })
+    ).toBe(28);
+  });
+
   it("scales full ETA by remaining distance fraction", () => {
     expect(
       computeRemainingDriveEtaMinutes({

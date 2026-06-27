@@ -440,6 +440,6 @@ export function buildForecastSummary(
     startMeters: 0,
     endMeters: totalMeters,
     driverHeadline: headline,
-    detail: worst.detail ?? worst.driverHeadline,
+    detail: `${worst.detail ?? worst.driverHeadline} — forecast at your ETA along this route`,
   };
 }

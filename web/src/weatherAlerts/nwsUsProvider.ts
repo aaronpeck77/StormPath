@@ -108,6 +108,12 @@ function normalizeFeature(f: NwsFeature, index: number): NormalizedWeatherAlert 
   const urgency = typeof p.urgency === "string" ? p.urgency : "Unknown";
   const certainty = typeof p.certainty === "string" ? p.certainty : "Unknown";
   const ends = typeof p.ends === "string" ? p.ends : null;
+  const onsetRaw =
+    typeof p.onset === "string"
+      ? p.onset
+      : typeof p.effective === "string"
+        ? p.effective
+        : null;
   const areaDesc = typeof p.areaDesc === "string" ? p.areaDesc : "";
 
   const geometry = extractPolygonalGeometry(f.geometry ?? null);
@@ -124,6 +130,7 @@ function normalizeFeature(f: NwsFeature, index: number): NormalizedWeatherAlert 
     urgency,
     certainty,
     ends,
+    onset: onsetRaw,
     geometry,
     areaDesc,
     stormMotionDeg: motion?.bearingDeg ?? null,

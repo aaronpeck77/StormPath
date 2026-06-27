@@ -5,6 +5,8 @@ import {
   runOffRoutePollTick,
 } from "../offRoutePollLogic";
 import { OFF_ROUTE_CONFIRM_TICKS } from "../offRouteDetect";
+import { pointAtAlongMeters } from "../routeGeometry";
+import type { LngLat } from "../types";
 
 const guidance: [number, number][] = [
   [-77.0, 38.9],
@@ -49,6 +51,7 @@ describe("offRoutePollLogic", () => {
         lockedGeometry: locked,
         triggerCtx: { speedMps: 12, headingDeg: 200, routeBearingDeg: 45 },
         navGoStartedAtMs: Date.now() - 120_000,
+        useRecoveryLadder: false,
       });
       session = result.session;
       offer = offer || result.shouldOfferRejoinChoices;
@@ -56,6 +59,36 @@ describe("offRoutePollLogic", () => {
     expect(session.offRouteLatched).toBe(true);
     expect(session.offRouteSevere).toBe(true);
     expect(offer).toBe(true);
+  });
+
+  it("holds recovery during slow pull-off before committing", () => {
+    const now = 1_000_000;
+    const alongM = 500;
+    const anchor = pointAtAlongMeters(guidance, alongM);
+    const pullOff: LngLat = [anchor[0]! + 0.00022, anchor[1]!];
+    const session = {
+      ...createOffRoutePollSession(),
+      offRouteLatched: true,
+      offRouteLatchedAtMs: now,
+      offRouteRejoinAlongM: alongM,
+      offRouteObservationPeakLateralM: 28,
+      offRoutePriorLateralM: 30,
+    };
+    const held = runOffRoutePollTick({
+      session,
+      pos: pullOff,
+      guidanceGeometry: guidance,
+      totalM: 4000,
+      userAlongGuidanceM: alongM,
+      lockedGeometry: locked,
+      triggerCtx: { speedMps: 0.4, headingDeg: 45, routeBearingDeg: 45 },
+      navGoStartedAtMs: now - 120_000,
+      nowMs: now + 3_000,
+      useRecoveryLadder: true,
+    });
+    expect(held.shouldOfferRejoinChoices).toBe(false);
+    expect(held.recoveryAction).toBeNull();
+    expect(held.session.offRouteSevere).toBe(false);
   });
 
   it("clears detour when rejoined onto locked route", () => {

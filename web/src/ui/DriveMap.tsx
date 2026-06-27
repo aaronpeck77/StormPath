@@ -2615,7 +2615,6 @@ function DriveMapInner({
           },
           onlyRouteId: lineFocusId,
           zoomBias: routeFitZoomBias(routes, lineFocusId),
-          forceFullPolyline: true,
         }
       );
     };

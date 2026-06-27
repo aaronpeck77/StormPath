@@ -1,4 +1,18 @@
-import type { LngLat } from "./types";
+import type { LngLat, NavRoute } from "./types";
+
+/** Plan fingerprint — route id alone misses reroute geometry / ETA updates. */
+export function stablePlanRoutesKey(routes: NavRoute[]): string {
+  return routes
+    .map((r) => {
+      const g = r.geometry;
+      if (!g?.length) return `${r.id}:0`;
+      const n = g.length;
+      const a = g[0]!;
+      const b = g[n - 1]!;
+      return `${r.id}:${n}:${a[0].toFixed(4)},${a[1].toFixed(4)}:${b[0].toFixed(4)},${b[1].toFixed(4)}:${Math.round(r.baseEtaMinutes ?? 0)}`;
+    })
+    .join("|");
+}
 import { closestAlongRouteMeters } from "./routeGeometry";
 
 /** Poll while navigating — complements traffic refresh without hammering APIs. */
@@ -30,16 +44,33 @@ export function computeRemainingDistanceMeters(
   return rem <= 0 ? null : rem;
 }
 
-/** Remaining drive minutes: full-route ETA scaled by distance left (matches toolbar). */
+/** Remaining drive minutes: live Mapbox remaining-leg ETA, else full-route ETA scaled by distance left. */
 export function computeRemainingDriveEtaMinutes(input: {
   navigationStarted: boolean;
   fullEtaMinutes: number | null;
   routeLengthM: number;
   alongM: number;
   hasRouteGeometry: boolean;
+  /** Mapbox duration for the remaining path (not the full planned leg). */
+  liveRemainingEtaMinutes?: number | null;
 }): number | null {
-  const { navigationStarted, fullEtaMinutes, routeLengthM, alongM, hasRouteGeometry } = input;
-  if (!navigationStarted || fullEtaMinutes == null || !Number.isFinite(fullEtaMinutes)) return null;
+  const {
+    navigationStarted,
+    fullEtaMinutes,
+    routeLengthM,
+    alongM,
+    hasRouteGeometry,
+    liveRemainingEtaMinutes = null,
+  } = input;
+  if (!navigationStarted) return null;
+  if (
+    liveRemainingEtaMinutes != null &&
+    Number.isFinite(liveRemainingEtaMinutes) &&
+    liveRemainingEtaMinutes > 0
+  ) {
+    return Math.max(1, Math.round(liveRemainingEtaMinutes));
+  }
+  if (fullEtaMinutes == null || !Number.isFinite(fullEtaMinutes)) return null;
   const full = Math.round(fullEtaMinutes);
   if (routeLengthM <= 1 || !hasRouteGeometry) return Math.max(1, full);
   const rem = Math.max(0, routeLengthM - alongM);

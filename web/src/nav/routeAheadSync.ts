@@ -7,11 +7,13 @@ import type { RouteAlert } from "./routeAlerts";
 import type { RouteImpact } from "./routeImpacts";
 import { routeImpactToRouteAlert } from "./routeImpacts";
 import {
+  alertShowsOnDriveMap,
   formatRouteAlertTiming,
   fmtMi,
   fmtMin,
   isAlertExpired,
 } from "./routeAlertTiming";
+import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import type { RouteChunkCalloutItem } from "./routeProgressChunkList";
 import { squeezeForSummary } from "./progressCalloutCopy";
 import type { StormProgressStripBand } from "../weatherAlerts/geometryOverlap";
@@ -34,6 +36,7 @@ export type RouteAheadStormBand = {
   startMeters: number;
   endMeters: number;
   expiresIso: string | null;
+  onsetIso?: string | null;
   alertId: string | null;
   crossesRoute?: boolean;
   /** Distant ahead — timeline only until you get closer. */
@@ -115,6 +118,7 @@ export function buildRouteAheadTimeline(opts: BuildRouteAheadTimelineOpts): Time
       planEtaMinutes,
       driveEtaMinutes,
       expiresIso: band.expiresIso,
+      onsetIso: band.onsetIso,
       crossesRoute: band.crossesRoute,
     });
     if (timing.passed) continue;
@@ -132,6 +136,8 @@ export function buildRouteAheadTimeline(opts: BuildRouteAheadTimelineOpts): Time
       crossesRoute: band.crossesRoute !== false,
       coarsePreview: band.coarsePreview,
       stripMuted: band.stripMuted,
+      etaStale: timing.staleBeforeArrival,
+      developingLater: timing.developingLater,
     });
   }
 
@@ -148,7 +154,7 @@ export function buildRouteAheadTimeline(opts: BuildRouteAheadTimelineOpts): Time
 }
 
 export function timelineItemShowsOnRouteLine(item: TimelineItem): boolean {
-  if (item.stripMuted) return false;
+  if (item.stripMuted || item.etaStale) return false;
   return item.severity === "serious" || item.severity === "avoid";
 }
 
@@ -275,10 +281,43 @@ export type RouteAheadGlanceCard = {
 
 function relevanceKind(note: string | null): RouteAheadRelevance | null {
   if (!note) return null;
-  if (note.includes("still active")) return "active";
+  if (note.includes("still active") || note.includes("Developing")) return "active";
   if (note.includes("ending around")) return "ending";
-  if (note.includes("over before")) return "clear";
+  if (note.includes("over before") || note.includes("after you pass")) return "clear";
   return null;
+}
+
+/** Drop map polygons for alerts that expire before the driver arrives. */
+export function filterAlertsForDriveMap(
+  alerts: NormalizedWeatherAlert[],
+  bands: RouteAheadStormBand[],
+  ctx: {
+    routeTotalMeters: number;
+    userAlongMeters: number;
+    planEtaMinutes: number | null;
+    driveEtaMinutes?: number | null;
+  }
+): NormalizedWeatherAlert[] {
+  if (ctx.routeTotalMeters <= 0 || !bands.length) return alerts;
+  const bandById = new Map(
+    bands.filter((b) => b.alertId).map((b) => [b.alertId!, b] as const)
+  );
+  return alerts.filter((alert) => {
+    const band = bandById.get(alert.id);
+    if (!band) return true;
+    const timing = formatRouteAlertTiming({
+      startMeters: band.startMeters,
+      endMeters: band.endMeters,
+      userAlongMeters: ctx.userAlongMeters,
+      totalMeters: ctx.routeTotalMeters,
+      planEtaMinutes: ctx.planEtaMinutes,
+      driveEtaMinutes: ctx.driveEtaMinutes ?? null,
+      expiresIso: band.expiresIso,
+      onsetIso: band.onsetIso,
+      crossesRoute: band.crossesRoute,
+    });
+    return alertShowsOnDriveMap(timing);
+  });
 }
 
 /** Compact one-line cards for the progress-bar glance panel (driving-safe). */

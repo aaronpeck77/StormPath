@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { NavRoute } from "../../nav/types";
 import {
   maxRouteOverviewZoomDuringNav,
+  minPlanningRouteZoomFloor,
   routeFitZoomBias,
   routeViewAxis,
 } from "../mapFitLogic";
@@ -34,6 +35,11 @@ describe("mapFitLogic", () => {
       [-86.77, 36.17],
     ]);
     expect(routeFitZoomBias([short], "s")).toBeGreaterThan(1.5);
+  });
+
+  it("raises minimum planning zoom for short local routes", () => {
+    expect(minPlanningRouteZoomFloor(8_000)).toBeGreaterThan(10);
+    expect(minPlanningRouteZoomFloor(120_000)).toBeLessThan(7);
   });
 
   it("caps Rt overview zoom during long nav trips", () => {

@@ -99,3 +99,20 @@ describe("shouldOfferOffRouteRejoin", () => {
     expect(shouldOfferOffRouteRejoin(10, now - 1, now)).toBe(true);
   });
 });
+
+describe("enterThresholdM", () => {
+  it("uses custom enter threshold when provided in trigger context", () => {
+    expect(
+      shouldTriggerOffRouteReroute(20, {
+        speedMps: 5,
+        enterThresholdM: 25,
+      })
+    ).toBe(false);
+    expect(
+      shouldTriggerOffRouteReroute(26, {
+        speedMps: 5,
+        enterThresholdM: 25,
+      })
+    ).toBe(true);
+  });
+});

@@ -26,11 +26,17 @@ import {
   shouldShowManualOffRouteUi,
 } from "./constants";
 import {
+  activeTurnStepIndexAlong,
+  metersToCurrentStepEnd,
+  turnStepAlongBounds,
+} from "./turnStepAlong";
+import {
   createOffRoutePollSession,
   resetOffRoutePollSession,
   runOffRoutePollTick,
   type OffRoutePollSession,
 } from "./offRoutePollLogic";
+import { offRouteEnterThresholdM } from "./offRouteRecoveryPolicy";
 import {
   bearingAlongRouteAhead,
   initialBearingDegrees,
@@ -94,8 +100,8 @@ export interface UseOffRouteNavigationDeps {
   adoptLockedRouteGeometry: (geometry: LngLat[]) => void;
 }
 
-export type RecalcRouteFromHereFn = (opts?: { silent?: boolean }) => Promise<void>;
-export type StayOnThisRoadFn = () => Promise<void>;
+export type RecalcRouteFromHereFn = (opts?: { silent?: boolean }) => Promise<boolean>;
+export type StayOnThisRoadFn = (opts?: { silent?: boolean }) => Promise<void>;
 export type ReturnToOriginalRouteFn = () => void;
 
 /** Off-route detection — driver chooses stay on this road vs return to locked route. */
@@ -274,13 +280,13 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
 
   const recalcRouteFromHere = useCallback<RecalcRouteFromHereFn>(
     async (opts) => {
-      if (!userLngLat || !destLngLat) return;
+      if (!userLngLat || !destLngLat) return false;
       if (mapboxToken && !isOnline) {
         if (!opts?.silent) {
           setTapHint("Offline: route refresh unavailable.");
           window.setTimeout(() => setTapHint(null), 3500);
         }
-        return;
+        return false;
       }
       const epochAtStart = routeGraphEpochRef.current;
       altRoutesFetchAbortRef.current?.abort();
@@ -303,7 +309,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           lockedGeom.length < 2 ||
           !mapboxToken
         ) {
-          return;
+          return false;
         }
 
         const lateralNow = lastOffRouteSampleRef.current?.lateralM ?? 0;
@@ -320,7 +326,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           speedMps: speedMpsRef.current ?? undefined,
           lateralM: lateralNow > 0 ? lateralNow : undefined,
         });
-        if (epochAtStart !== routeGraphEpochRef.current) return;
+        if (epochAtStart !== routeGraphEpochRef.current) return false;
         if (rejoinRoutes.length > 0) {
           setPlan((prev) => mergePlanPreservingPrimary(prev, lockedId, rejoinRoutes));
           setFitTrigger((n) => n + 1);
@@ -333,16 +339,16 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           };
           const bestId = rejoinRoutes[0]?.id ?? null;
           if (bestId) {
-            followDetourRoute(
-              bestId,
-              opts?.silent ? undefined : "Returning to your original route."
-            );
+            const voiceLine = opts?.silent
+              ? "Rejoining your route ahead."
+              : "Returning to your original route.";
+            followDetourRoute(bestId, voiceLine);
             if (!opts?.silent) {
               setTapHint("Returning to your route.");
               window.setTimeout(() => setTapHint(null), 6000);
             }
           }
-          return;
+          return true;
         }
 
         offRouteRerouteFailStreakRef.current += 1;
@@ -350,8 +356,9 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           setTapHint("Could not return to your route — still following your chosen path.");
           window.setTimeout(() => setTapHint(null), 6000);
         }
+        return false;
       } catch (e) {
-        if (isAbortError(e)) return;
+        if (isAbortError(e)) return false;
         const msg = routeFetchUserMessage(e) ?? (e instanceof Error ? e.message : String(e));
         setRouteError(msg);
         offRouteRerouteFailStreakRef.current += 1;
@@ -359,6 +366,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           setTapHint("Route recovery failed — still following your chosen path.");
           window.setTimeout(() => setTapHint(null), 6000);
         }
+        return false;
       } finally {
         setRouting(false);
         altRoutesRefreshInFlightRef.current = false;
@@ -389,11 +397,13 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     ]
   );
 
-  const stayOnThisRoad = useCallback<StayOnThisRoadFn>(async () => {
+  const stayOnThisRoad = useCallback<StayOnThisRoadFn>(async (opts) => {
     if (!userLngLat || !destLngLat) return;
     if (mapboxToken && !isOnline) {
-      setTapHint("Offline: can't update route from here.");
-      window.setTimeout(() => setTapHint(null), 3500);
+      if (!opts?.silent) {
+        setTapHint("Offline: can't update route from here.");
+        window.setTimeout(() => setTapHint(null), 3500);
+      }
       return;
     }
     const lockedId = lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
@@ -449,16 +459,23 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       offRouteRerouteFailStreakRef.current = 0;
       setFitTrigger((n) => n + 1);
       setViewMode("drive");
-      speakNavigationAlert("Following your chosen path.", settingVoiceGuidanceEnabled);
-      setTapHint("Following your chosen path.");
-      window.setTimeout(() => setTapHint(null), 5000);
+      const voiceLine = opts?.silent ? "Updating your route." : "Following your chosen path.";
+      speakNavigationAlert(voiceLine, settingVoiceGuidanceEnabled);
+      if (!opts?.silent) {
+        setTapHint("Following your chosen path.");
+        window.setTimeout(() => setTapHint(null), 5000);
+      }
     } catch (e) {
       if (isAbortError(e)) return;
       const msg = routeFetchUserMessage(e) ?? (e instanceof Error ? e.message : String(e));
       setRouteError(msg);
-      setTapHint("Could not update route — try again.");
-      window.setTimeout(() => setTapHint(null), 5000);
-      setOffRouteAwaitingDriverChoice(true);
+      if (!opts?.silent) {
+        setTapHint("Could not update route — try again.");
+        window.setTimeout(() => setTapHint(null), 5000);
+      }
+      if (MANUAL_OFF_ROUTE_CHOICES_ENABLED) {
+        setOffRouteAwaitingDriverChoice(true);
+      }
     } finally {
       setRouting(false);
       altRoutesRefreshInFlightRef.current = false;
@@ -496,6 +513,31 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     void recalcRouteFromHere({ silent: false });
   }, [recalcRouteFromHere]);
 
+  const executeAutoRecovery = useCallback(
+    async (action: "rejoin" | "replan") => {
+      const now = Date.now();
+      if (
+        routingRef.current ||
+        altRoutesRefreshInFlightRef.current ||
+        now - lastAutoRerouteAttemptRef.current < OFF_ROUTE_REROUTE_THROTTLE_MS
+      ) {
+        return;
+      }
+      lastAutoRerouteAttemptRef.current = now;
+
+      if (action === "rejoin") {
+        const rejoined = await recalcRouteFromHere({ silent: true });
+        if (!rejoined) {
+          await stayOnThisRoad({ silent: true });
+        }
+        return;
+      }
+
+      await stayOnThisRoad({ silent: true });
+    },
+    [recalcRouteFromHere, stayOnThisRoad, routingRef, altRoutesRefreshInFlightRef]
+  );
+
   useEffect(() => {
     pollSessionRef.current = {
       ...pollSessionRef.current,
@@ -510,29 +552,23 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       return;
     }
 
-    const offerRejoinChoices = (lateralM: number) => {
+    const useRecoveryLadder = isAutoOffRouteRerouteActive(effectiveAutoRerouteEnabled);
+
+    const offerRejoinChoices = (
+      lateralM: number,
+      recovery: "rejoin" | "replan" | null
+    ) => {
       const session = pollSessionRef.current;
-      if (session.offRouteChoiceOffered) return;
+      if (session.offRouteChoiceOffered && !recovery) return;
       if (!shouldOfferOffRouteRejoin(lateralM, session.offRouteReofferBlockedUntil)) {
         return;
       }
-      pollSessionRef.current = { ...session, offRouteChoiceOffered: true };
+      if (!session.offRouteChoiceOffered) {
+        pollSessionRef.current = { ...session, offRouteChoiceOffered: true };
+      }
 
-      if (isAutoOffRouteRerouteActive(effectiveAutoRerouteEnabled)) {
-        const now = Date.now();
-        if (
-          routingRef.current ||
-          altRoutesRefreshInFlightRef.current ||
-          now - lastAutoRerouteAttemptRef.current < OFF_ROUTE_REROUTE_THROTTLE_MS
-        ) {
-          return;
-        }
-        lastAutoRerouteAttemptRef.current = now;
-        if (MANUAL_OFF_ROUTE_CHOICES_ENABLED) {
-          setTapHint("Off route — updating directions…");
-          window.setTimeout(() => setTapHint(null), 5000);
-        }
-        void stayOnThisRoad();
+      if (useRecoveryLadder) {
+        void executeAutoRecovery(recovery ?? "replan");
         return;
       }
 
@@ -619,6 +655,24 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
             )
           : bearingAlongRouteAhead(pos, pollGeom);
 
+      let metersToStepEnd: number | null = null;
+      if (lockedRoute?.turnSteps?.length && totalM > 0) {
+        const bounds = turnStepAlongBounds(lockedRoute.turnSteps, totalM);
+        const activeIdx = activeTurnStepIndexAlong(bounds.end, alongForPoll);
+        metersToStepEnd = metersToCurrentStepEnd(bounds.end, activeIdx, alongForPoll);
+      }
+      const enterThresholdM = offRouteEnterThresholdM(metersToStepEnd);
+
+      const rejoinCtx = lockedRoute?.geometry?.length
+        ? resolveDrivingRejoinContext({
+            guidanceRoute: lockedRoute,
+            userAlongM: offRouteRejoinAlongMRef.current || alongForPoll,
+            destLngLat: destLngLatRef.current,
+            latchedRoadClass: drivingRejoinRoadClassRef.current,
+          })
+        : null;
+      drivingRejoinModeRef.current = rejoinCtx?.mode ?? "manual";
+
       const result = runOffRoutePollTick({
         session: pollSessionRef.current,
         pos,
@@ -631,8 +685,12 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           headingDeg: headingRef.current,
           speedMps: speedMpsRef.current,
           routeBearingDeg: routeBearing,
+          enterThresholdM,
         },
         navGoStartedAtMs: navGoStartedAtRef.current,
+        useRecoveryLadder,
+        drivingRejoinMode: rejoinCtx?.mode ?? drivingRejoinModeRef.current,
+        rejoinFailCount: offRouteRerouteFailStreakRef.current,
       });
 
       lastOffRouteSampleRef.current = {
@@ -650,7 +708,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       applyPollSession(result.session);
 
       if (result.shouldOfferRejoinChoices) {
-        offerRejoinChoices(result.sample.lateralM);
+        offerRejoinChoices(result.sample.lateralM, result.recoveryAction);
       }
     };
 
@@ -680,7 +738,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setViewMode,
     setTapHint,
     effectiveAutoRerouteEnabled,
-    stayOnThisRoad,
+    executeAutoRecovery,
     routingRef,
     altRoutesRefreshInFlightRef,
   ]);

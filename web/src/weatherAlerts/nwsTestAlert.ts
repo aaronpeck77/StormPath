@@ -19,6 +19,7 @@ export const NWS_TEST_ALERT: NormalizedWeatherAlert = {
   urgency: "Immediate",
   certainty: "Observed",
   ends: null,
+  onset: null,
   geometry: {
     type: "Polygon",
     coordinates: [

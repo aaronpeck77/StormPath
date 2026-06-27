@@ -376,6 +376,7 @@ export async function fetchWeatherKitAlerts(
       urgency: titleCase(a.urgency ?? "Unknown"),
       certainty: titleCase(a.certainty ?? "Unknown"),
       ends: a.expireTime ?? a.eventEnd ?? null,
+      onset: a.eventOnset ?? null,
       geometry: null,
       areaDesc: a.areaName ?? a.areaId ?? "",
       stormMotionDeg: null,

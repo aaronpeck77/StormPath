@@ -177,10 +177,10 @@ const WEATHER_POLY_GROUP: LegendGroup = {
       blurb: "Tornado, severe thunderstorm, hurricane, tropical, storm surge.",
     },
     {
-      label: "Flood / hydro",
+      label: "Flash flood",
       color: nwsMapKindHex("hydro"),
       kind: "polygon",
-      blurb: "Flash flood, river flood, coastal flood, tsunami.",
+      blurb: "Flash Flood Warning or Emergency only — county-scale flood watches and advisories are in the advisory list, not on the map.",
     },
     {
       label: "Winter weather",

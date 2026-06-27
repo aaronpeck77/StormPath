@@ -187,7 +187,10 @@ export function mapStyleReadyForCamera(map: mapboxgl.Map): boolean {
 export function minPlanningRouteZoomFloor(routeLengthM: number): number {
   if (isUltraLongTripRoute(routeLengthM)) return 2.8;
   if (routeLengthM >= 100_000) return 5.5;
-  return 7.5;
+  if (routeLengthM >= 50_000) return 6.5;
+  if (routeLengthM >= 25_000) return 7.5;
+  if (routeLengthM >= 10_000) return 9.5;
+  return 11.5;
 }
 
 /** Rt overview while navigating — if zoom is above this, the map is still on Dr/Mp street framing. */

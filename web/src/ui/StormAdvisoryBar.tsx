@@ -161,6 +161,7 @@ export type StormStripBand = {
   startMeters: number;
   endMeters: number;
   expiresIso: string | null;
+  onsetIso?: string | null;
   /** NWS alert id (when matched) so the bar can wire a tap → alert detail handler. */
   alertId: string | null;
   /**
@@ -298,7 +299,7 @@ function nwsChip(
   a: NormalizedWeatherAlert,
   timingLine: string,
   onClick: ((alert: NormalizedWeatherAlert) => void) | undefined,
-  variant: "urgent" | "secondary"
+  variant: "urgent" | "secondary" | "developing"
 ): ReactNode {
   const sevClass =
     a.severity === "Extreme" || /tornado warning/i.test(a.event ?? "")
@@ -504,6 +505,7 @@ export function StormAdvisoryBar({
           planEtaMinutes,
           driveEtaMinutes,
           expiresIso: band.expiresIso,
+          onsetIso: band.onsetIso ?? a.onset,
           crossesRoute: band.crossesRoute,
         });
         if (!timing.promoteToTop) continue;
@@ -548,6 +550,7 @@ export function StormAdvisoryBar({
           planEtaMinutes,
           driveEtaMinutes,
           expiresIso: band.expiresIso,
+          onsetIso: band.onsetIso ?? a.onset,
           crossesRoute: band.crossesRoute,
         });
         timingLine = timing.timingLine;
@@ -578,9 +581,41 @@ export function StormAdvisoryBar({
   }, [stormStripBands]);
 
   /** At-position-only NWS chips — excludes route timeline rows (same alert + timing). */
+  const developingNwsAlerts = useMemo(() => {
+    if (routeTotalMeters <= 0) return [];
+    return panelNwsAlerts.filter(({ alert }) => {
+      const band = bandByAlertId.get(alert.id);
+      if (!band) return false;
+      const timing = formatRouteAlertTiming({
+        startMeters: band.startMeters,
+        endMeters: band.endMeters,
+        userAlongMeters,
+        totalMeters: routeTotalMeters,
+        planEtaMinutes,
+        driveEtaMinutes,
+        expiresIso: band.expiresIso,
+        onsetIso: band.onsetIso ?? alert.onset,
+        crossesRoute: band.crossesRoute,
+      });
+      return timing.developingLater;
+    });
+  }, [
+    panelNwsAlerts,
+    bandByAlertId,
+    routeTotalMeters,
+    userAlongMeters,
+    planEtaMinutes,
+    driveEtaMinutes,
+  ]);
+
   const panelNwsAlertsExtra = useMemo(
-    () => panelNwsAlerts.filter(({ alert }) => !timelineNwsAlertIds.has(alert.id)),
-    [panelNwsAlerts, timelineNwsAlertIds]
+    () =>
+      panelNwsAlerts.filter(
+        ({ alert }) =>
+          !timelineNwsAlertIds.has(alert.id) &&
+          !developingNwsAlerts.some((d) => d.alert.id === alert.id)
+      ),
+    [panelNwsAlerts, timelineNwsAlertIds, developingNwsAlerts]
   );
 
   /** Only surface NWS status when fetch is blocked — skip “all clear” / “along route” filler. */
@@ -961,8 +996,9 @@ export function StormAdvisoryBar({
             totalMeters: routeTotalMeters,
             planEtaMinutes,
             driveEtaMinutes,
-            expiresIso: band.expiresIso,
-            crossesRoute: band.crossesRoute,
+          expiresIso: band.expiresIso,
+          onsetIso: band.onsetIso,
+          crossesRoute: band.crossesRoute,
           });
           if (timing.passed) continue;
           const extra = stripBandDetail(band);
@@ -1322,6 +1358,18 @@ export function StormAdvisoryBar({
               >
                 {nwsStatusMessage.text}
               </p>
+            ) : null}
+
+            {developingNwsAlerts.length > 0 ? (
+              <ul
+                className="nws-chips nws-chips--developing"
+                role="list"
+                aria-label="Developing weather along your route"
+              >
+                {developingNwsAlerts.map(({ alert, timingLine }) =>
+                  nwsChip(alert, timingLine, onNwsAlertClick, "developing")
+                )}
+              </ul>
             ) : null}
 
             {panelNwsAlertsExtra.length > 0 ? (

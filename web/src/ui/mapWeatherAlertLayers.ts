@@ -303,10 +303,22 @@ function buildMotionArrowCollection(
 /**
  * Only render map polygons for convective alerts and Severe/Extreme warnings.
  * Minor advisories stay in the advisory list but are too area-heavy for the map.
+ *
+ * Hydro (flood) events are deliberately more restrictive: county-scale Flood Warnings
+ * cover enormous areas and obscure the map. Only Flash Flood Warning/Emergency at
+ * Severe+ earns a polygon — mirrors the same rule used on the progress strip.
+ * Regular Flood Warning / Watch / Advisory remain in the advisory list only.
  */
 function isMapRenderableAlert(props: Record<string, unknown>): boolean {
   const kind = typeof props.kind === "string" ? props.kind : "other";
   const severity = typeof props.severity === "string" ? props.severity : "";
+  const event = typeof props.event === "string" ? props.event : "";
+
+  if (kind === "hydro") {
+    // Flash Flood Warning or Flash Flood Emergency at Severe+ only.
+    return /flash\s+flood/i.test(event) && (severity === "Extreme" || severity === "Severe");
+  }
+
   return kind === "convective" || severity === "Extreme" || severity === "Severe";
 }
 

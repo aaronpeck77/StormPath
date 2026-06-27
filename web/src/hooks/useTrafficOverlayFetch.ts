@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
-import type { TripPlan } from "../nav/types";
+import { geometryForRemainingTrafficFetch } from "../nav/routeRemaining";
+import type { LngLat, TripPlan } from "../nav/types";
 import { fetchMapboxTrafficAlongPolyline } from "../services/mapboxDirectionsTraffic";
 import { getTrafficPollIntervalMs } from "../utils/dataSaver";
 import type { TrafficOverlay } from "../situation/fusedSnapshot";
@@ -10,6 +11,8 @@ export type UseTrafficOverlayFetchDeps = {
   routingRef: MutableRefObject<boolean>;
   navRouteLengthMRef: MutableRefObject<number>;
   planRoutesKeyStable: string;
+  /** Bumps when locked navigation geometry is replaced (reroute / rejoin). */
+  guidanceGeometryEpoch: number;
   navigationStarted: boolean;
   isPlus: boolean;
   isOnline: boolean;
@@ -17,6 +20,9 @@ export type UseTrafficOverlayFetchDeps = {
   mapboxToken: string;
   dataSaverMode: boolean;
   appForeground: boolean;
+  userAlongGuidanceMRef: MutableRefObject<number>;
+  userLngLatRef: MutableRefObject<LngLat | null>;
+  guidanceRouteGeomRef: MutableRefObject<LngLat[] | null>;
   setTrafficOverlay: (v: TrafficOverlay | undefined) => void;
   setTrafficFetchDone: (v: boolean) => void;
 };
@@ -35,6 +41,7 @@ export function useTrafficOverlayFetch(
     routingRef,
     navRouteLengthMRef,
     planRoutesKeyStable,
+    guidanceGeometryEpoch,
     navigationStarted,
     isPlus,
     isOnline,
@@ -42,6 +49,9 @@ export function useTrafficOverlayFetch(
     mapboxToken,
     dataSaverMode,
     appForeground,
+    userAlongGuidanceMRef,
+    userLngLatRef,
+    guidanceRouteGeomRef,
     setTrafficOverlay,
     setTrafficFetchDone,
   } = deps;
@@ -99,7 +109,20 @@ export function useTrafficOverlayFetch(
         toFetch.map(async (r) => {
           if (cancelled) return;
           try {
-            const leg = await fetchMapboxTrafficAlongPolyline(mapboxToken, r.geometry);
+            const navGeom = guidanceRouteGeomRef.current;
+            const baseGeom =
+              navGeom && navGeom.length >= 2 && r.id === guidanceRouteIdRef.current
+                ? navGeom
+                : r.geometry;
+            const fetchGeom =
+              navigationStarted && baseGeom.length >= 2
+                ? geometryForRemainingTrafficFetch(
+                    baseGeom,
+                    userAlongGuidanceMRef.current,
+                    userLngLatRef.current
+                  )
+                : baseGeom;
+            const leg = await fetchMapboxTrafficAlongPolyline(mapboxToken, fetchGeom);
             if (import.meta.env.DEV) {
               console.info(
                 "[traffic v2] route",
@@ -136,6 +159,7 @@ export function useTrafficOverlayFetch(
     };
   }, [
     planRoutesKeyStable,
+    guidanceGeometryEpoch,
     mapboxToken,
     settingTrafficEnabled,
     isOnline,
@@ -145,6 +169,9 @@ export function useTrafficOverlayFetch(
     planRef,
     guidanceRouteIdRef,
     routingRef,
+    userAlongGuidanceMRef,
+    userLngLatRef,
+    guidanceRouteGeomRef,
     setTrafficOverlay,
     setTrafficFetchDone,
   ]);
