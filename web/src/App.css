@@ -7746,10 +7746,8 @@
   font-size: 0.95rem;
   line-height: 1.35;
   margin-bottom: 2px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .storm-advisory-bar--expanded .storm-advisory-bar__nws-item-meta,
@@ -8095,6 +8093,14 @@
 .storm-advisory-bar__preview-message-wrap--forecast .storm-advisory-bar__preview-text {
   -webkit-line-clamp: 2;
   line-clamp: 2;
+}
+
+/* NWS alert rotator — show full hazard text (wrap, no ellipsis). */
+.storm-advisory-bar__preview-message-wrap--alert .storm-advisory-bar__preview-text {
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
+  display: block;
 }
 
 .storm-advisory-bar__preview-count {
@@ -8786,10 +8792,8 @@
   line-height: 1.38;
   font-weight: 550;
   color: #fde68a;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .storm-advisory-bar__nws-item--nearby {
@@ -9053,7 +9057,7 @@
     width: min(
       88dvh,
       calc(
-        100dvh - var(--nav-progress-rail-foot-inset, 134px) - max(88px, env(safe-area-inset-top, 0px)) - 8px
+        100dvh - var(--nav-progress-rail-foot-inset, 134px) - max(112px, env(safe-area-inset-top, 0px)) - 8px
       )
     );
     max-width: none;
@@ -9707,6 +9711,12 @@
   box-shadow: none;
 }
 
+.nav-top-cluster .top-guidance-bar--glanceable {
+  padding: var(--turn-drive-pad-y, 10px) var(--turn-drive-pad-x, 10px);
+  gap: 4px;
+  min-height: 0;
+}
+
 .nav-top-cluster .top-guidance-bar--turn-only {
   min-height: 0;
   justify-content: center;
@@ -9764,22 +9774,51 @@
 }
 
 .nav-top-cluster .top-guidance-bar--glanceable .turn-banner-icon {
-  font-size: clamp(1.28rem, 4.2vw, 1.68rem);
-  min-width: 1em;
+  font-size: var(--turn-drive-icon, clamp(1.62rem, 5.2vw, 2.05rem));
+  min-width: 1.05em;
 }
 
 .nav-top-cluster .top-guidance-bar--glanceable .turn-banner-icon--next {
-  font-size: clamp(1.15rem, 3.8vw, 1.52rem);
+  font-size: var(--turn-drive-icon-next, clamp(1.42rem, 4.6vw, 1.82rem));
 }
 
 .nav-top-cluster .top-guidance-bar--glanceable .turn-banner-street,
 .nav-top-cluster .top-guidance-bar--glanceable .turn-banner-next-instr {
-  font-size: 0.76rem;
+  font-size: var(--turn-drive-street, clamp(0.96rem, 3.35vw, 1.2rem));
   line-height: 1.3;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
   overflow: hidden;
+}
+
+.nav-top-cluster .top-guidance-bar--glanceable .turn-banner-dist,
+.nav-top-cluster .top-guidance-bar--glanceable .turn-banner-exit {
+  font-size: var(--turn-drive-meta, clamp(0.76rem, 2.5vw, 0.9rem));
+}
+
+.nav-top-cluster .top-guidance-bar--glanceable .turn-banner-next-label {
+  font-size: var(--turn-drive-then, clamp(0.66rem, 2.1vw, 0.78rem));
+}
+
+.nav-top-cluster .top-guidance-bar--glanceable .turn-banner-next-meta {
+  font-size: var(--turn-drive-next-meta, clamp(0.7rem, 2.2vw, 0.82rem));
+}
+
+.nav-top-cluster .top-guidance-bar--glanceable .turn-banner--split {
+  gap: var(--turn-drive-gap-grid, 6px 10px);
+  align-items: start;
+}
+
+.nav-top-cluster .top-guidance-bar--glanceable .turn-banner-col--primary {
+  align-items: flex-start;
+  gap: var(--turn-drive-gap-col, 8px);
+}
+
+.nav-top-cluster .top-guidance-bar--glanceable .turn-banner-col--next {
+  padding-top: 1px;
+  padding-bottom: 1px;
 }
 
 /* Keep two columns on typical phones; stack only on very narrow widths */
@@ -10108,10 +10147,8 @@
   font-size: 0.52rem;
   line-height: 1.25;
   color: #9aa0a6;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .top-hazards-alert__reroute {
@@ -10175,53 +10212,99 @@
   align-content: center;
 }
 
-/* Drive (Dr): glanceable row ? balance icon size vs street / highway text (two lines when needed) */
+/* Drive (Dr): glanceable row — readable type without oversized chrome */
+.top-guidance-bar--glanceable {
+  --turn-drive-pad-y: 10px;
+  --turn-drive-pad-x: 10px;
+  --turn-drive-street: clamp(0.96rem, 3.35vw, 1.2rem);
+  --turn-drive-meta: clamp(0.76rem, 2.5vw, 0.9rem);
+  --turn-drive-icon: clamp(1.62rem, 5.2vw, 2.05rem);
+  --turn-drive-icon-next: clamp(1.42rem, 4.6vw, 1.82rem);
+  --turn-drive-then: clamp(0.66rem, 2.1vw, 0.78rem);
+  --turn-drive-next-meta: clamp(0.7rem, 2.2vw, 0.82rem);
+  --turn-drive-gap-col: 8px;
+  --turn-drive-gap-grid: 6px 10px;
+  padding: var(--turn-drive-pad-y) var(--turn-drive-pad-x);
+  min-height: 0;
+}
+
+.top-guidance-bar--glanceable .turn-banner--split {
+  gap: var(--turn-drive-gap-grid);
+  align-items: start;
+}
+
 .top-guidance-bar--glanceable .turn-banner-icon {
-  font-size: clamp(1.4rem, 5vw, 1.85rem);
+  font-size: var(--turn-drive-icon);
   line-height: 1;
   min-width: 1.05em;
   text-align: center;
   align-self: start;
-  margin-top: 0.12em;
+  margin-top: 0.06em;
 }
 
 .top-guidance-bar--glanceable .turn-banner-street {
-  font-size: clamp(0.76rem, 2.65vw, 0.98rem);
+  font-size: var(--turn-drive-street);
   font-weight: 780;
-  line-height: 1.28;
+  line-height: 1.3;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
   overflow: hidden;
 }
 
-.top-guidance-bar--glanceable .turn-banner-dist {
-  font-size: clamp(0.58rem, 2vw, 0.72rem);
+.top-guidance-bar--glanceable .turn-banner-dist,
+.top-guidance-bar--glanceable .turn-banner-exit {
+  font-size: var(--turn-drive-meta);
   font-weight: 720;
   color: #ffffff;
   opacity: 1;
 }
 
 .top-guidance-bar--glanceable .turn-banner-icon--next {
-  font-size: clamp(1.25rem, 4.5vw, 1.68rem);
+  font-size: var(--turn-drive-icon-next);
   align-self: start;
-  margin-top: 0.1em;
+  margin-top: 0.04em;
 }
 
 .top-guidance-bar--glanceable .turn-banner-next-instr {
-  /* Match primary ? room for street names + interstate shields */
-  font-size: clamp(0.76rem, 2.65vw, 0.98rem);
+  font-size: var(--turn-drive-street);
   font-weight: 780;
-  line-height: 1.28;
+  line-height: 1.3;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
   overflow: hidden;
 }
 
 .top-guidance-bar--glanceable .turn-banner-next-label {
+  font-size: var(--turn-drive-then);
   font-weight: 750;
   letter-spacing: 0.06em;
+}
+
+.top-guidance-bar--glanceable .turn-banner-next-meta {
+  font-size: var(--turn-drive-next-meta);
+  font-weight: 720;
+}
+
+.top-guidance-bar--glanceable .turn-banner-col--primary {
+  align-items: flex-start;
+  gap: var(--turn-drive-gap-col);
+}
+
+.top-guidance-bar--glanceable .turn-banner-text {
+  gap: 3px;
+}
+
+@media (min-width: 390px) {
+  .top-guidance-bar--glanceable {
+    --turn-drive-street: clamp(1rem, 3.5vw, 1.26rem);
+    --turn-drive-meta: clamp(0.78rem, 2.6vw, 0.92rem);
+    --turn-drive-icon: clamp(1.7rem, 5.4vw, 2.12rem);
+    --turn-drive-icon-next: clamp(1.48rem, 4.8vw, 1.88rem);
+  }
 }
 
 /* Drive: slim strip under advisory ? single row, translucent so turn / advisory state stays readable. */
@@ -11179,6 +11262,16 @@
   font-weight: 750;
 }
 
+.turn-banner-next-label {
+  margin: 0 0 1px;
+  font-size: 0.62rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  line-height: 1.1;
+}
+
 .turn-banner-next-meta-row {
   display: flex;
   flex-direction: row;
@@ -11247,8 +11340,25 @@
 .turn-banner-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
+}
+
+.turn-banner-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.turn-banner-exit {
+  font-size: 0.72rem;
+  color: #fde68a;
+  font-weight: 780;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
 }
 
 .turn-banner-street {
@@ -11280,7 +11390,13 @@
 
 .top-guidance-bar--glanceable .turn-banner-street .road-shield,
 .top-guidance-bar--glanceable .turn-banner-next-instr .road-shield {
-  font-size: 1.02em;
+  font-size: 1.04em;
+  padding: 4px 10px 5px;
+}
+
+.nav-top-cluster .top-guidance-bar--glanceable .turn-banner-street .road-shield,
+.nav-top-cluster .top-guidance-bar--glanceable .turn-banner-next-instr .road-shield {
+  font-size: 1.04em;
   padding: 4px 10px 5px;
 }
 
@@ -13557,7 +13673,7 @@
   }
 
   .map-stage.map-bleed:has(.nav-top-cluster) {
-    --pip-top: calc(max(6px, env(safe-area-inset-top)) + 142px);
+    --pip-top: calc(max(6px, env(safe-area-inset-top)) + 162px);
   }
 
   .route-overview-pip-wrap {
@@ -13827,12 +13943,30 @@
   }
 
   .top-guidance-bar--turn-only .turn-banner-street {
-    font-size: clamp(0.72rem, 2.4vh, 0.88rem);
+    font-size: clamp(0.82rem, 2.6vh, 1rem);
+  }
+
+  .top-guidance-bar--turn-only.top-guidance-bar--glanceable {
+    --turn-drive-street: clamp(0.92rem, 3vh, 1.1rem);
+    --turn-drive-meta: clamp(0.72rem, 2.3vh, 0.86rem);
+    --turn-drive-icon: clamp(1.5rem, 5vh, 1.9rem);
+    --turn-drive-icon-next: clamp(1.32rem, 4.4vh, 1.68rem);
+  }
+
+  .top-guidance-bar--turn-only.top-guidance-bar--glanceable .turn-banner-street,
+  .top-guidance-bar--turn-only.top-guidance-bar--glanceable .turn-banner-next-instr {
+    font-size: var(--turn-drive-street);
   }
 
   .top-guidance-bar--turn-only .turn-banner-dist,
-  .top-guidance-bar--turn-only .turn-banner-continue {
-    font-size: clamp(0.62rem, 2vh, 0.75rem);
+  .top-guidance-bar--turn-only .turn-banner-continue,
+  .top-guidance-bar--turn-only .turn-banner-exit {
+    font-size: clamp(0.68rem, 2.1vh, 0.8rem);
+  }
+
+  .top-guidance-bar--turn-only.top-guidance-bar--glanceable .turn-banner-dist,
+  .top-guidance-bar--turn-only.top-guidance-bar--glanceable .turn-banner-exit {
+    font-size: var(--turn-drive-meta);
   }
 
   .nav-bottom-stack {
@@ -14663,6 +14797,37 @@
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .stormpath-build-stamp {
     right: max(6px, env(safe-area-inset-right));
     left: auto;
+  }
+
+  /*
+   * Expanded advisory + route info: use the full map-column side in landscape. Portrait keeps
+   * preview-aligned sizing; sideways the top cluster is only ~50vw so anchor-based panels felt
+   * cramped. Temporary full-side overlay is OK (covers turn strip, bottom dock, etc.).
+   */
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .storm-advisory-bar--expanded,
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .route-progress-callout-panel--expanded {
+    top: max(0px, env(safe-area-inset-top, 0px)) !important;
+    bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important;
+    left: var(--sp-landscape-map-inset-start) !important;
+    right: max(0px, env(safe-area-inset-right, 0px)) !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 14px 0 0 14px;
+    z-index: 24;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .storm-advisory-bar--expanded,
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .route-progress-callout-panel--expanded {
+    top: max(0px, env(safe-area-inset-top, 0px)) !important;
+    bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important;
+    left: max(0px, env(safe-area-inset-left, 0px)) !important;
+    right: var(--sp-landscape-map-inset-end) !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 0 14px 14px 0;
+    z-index: 24;
   }
 }
 

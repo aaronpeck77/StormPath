@@ -788,7 +788,7 @@ export function StormAdvisoryBar({
       trip.push(
         previewItem({
           badge: activeTicker.badge,
-          raw: bannerMsg(activeTicker.text, BANNER_TICKER_MAX),
+          raw: displayText(activeTicker.text),
           tone: activeTicker.tone,
         })
       );
@@ -1139,6 +1139,10 @@ export function StormAdvisoryBar({
         <span
           className={`storm-advisory-bar__preview-message-wrap${
             !barExpanded && activePreview.localMeta ? " storm-advisory-bar__preview-message-wrap--forecast" : ""
+          }${
+            !barExpanded && activePreview.badge === "Alert"
+              ? " storm-advisory-bar__preview-message-wrap--alert"
+              : ""
           }`}
         >
           {barExpanded ? (

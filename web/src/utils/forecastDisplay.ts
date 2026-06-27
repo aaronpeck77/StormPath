@@ -5,6 +5,7 @@ import type {
   PointHourlyInterval,
 } from "../services/tomorrowIo";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
+import { displayText } from "./displayText";
 import { formatEtaDuration } from "../ui/formatEta";
 
 /** Short place label for forecast headers (Mapbox `place_name` is often a full address). */
@@ -147,12 +148,12 @@ export function buildLocalForecastBannerItem(opts: {
   nwsNearYou?: NormalizedWeatherAlert[] | null;
 }): LocalForecastBannerItem | null {
   const parts: string[] = [];
-  if (opts.nowcastLine) parts.push(truncateBannerText(opts.nowcastLine, 48));
+  if (opts.nowcastLine) parts.push(displayText(opts.nowcastLine));
   if (opts.minutePrecip?.minutes.length) {
     parts.push(minutePrecipBannerHint(opts.minutePrecip));
   }
   const nwsLine = opts.nwsNearYou?.length ? nwsLocalForecastBannerHint(opts.nwsNearYou) : null;
-  if (nwsLine) parts.push(truncateBannerText(nwsLine, 52));
+  if (nwsLine) parts.push(displayText(nwsLine));
   if (!parts.length) return null;
   return {
     badge: "Local",

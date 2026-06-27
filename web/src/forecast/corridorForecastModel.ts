@@ -1,5 +1,10 @@
 import type { MinutePrecipForecast, RouteForecast, RouteHourlyInterval } from "../services/tomorrowIo";
-import { routeForecastCorridorStress, weatherCodeLabel, weatherCodeSeverity } from "../services/tomorrowIo";
+import {
+  routeForecastCorridorStress,
+  routeForecastHasSignificantWeather,
+  weatherCodeLabel,
+  weatherCodeSeverity,
+} from "../services/tomorrowIo";
 import type { RouteImpactSeverity } from "../nav/routeImpacts";
 import { formatEtaDuration } from "../ui/formatEta";
 import {
@@ -46,6 +51,60 @@ export type LegCompareResult = {
   narrative: string;
 };
 
+const PRECIP_WEATHER_CODES = new Set([
+  4000, 4001, 4200, 4201, 5000, 5001, 5100, 5101, 6000, 6001, 6200, 6201, 8000,
+]);
+
+function intervalIsWet(iv: RouteHourlyInterval): boolean {
+  return (
+    iv.precipIntensityMmh > 0.02 ||
+    iv.precipProbability >= 0.2 ||
+    PRECIP_WEATHER_CODES.has(iv.weatherCode)
+  );
+}
+
+function intervalWetScore(iv: RouteHourlyInterval): number {
+  if (!intervalIsWet(iv)) return 0;
+  let score = iv.precipIntensityMmh * 12 + iv.precipProbability * 2.5;
+  if (PRECIP_WEATHER_CODES.has(iv.weatherCode)) score = Math.max(score, 0.35);
+  if (iv.precipProbability >= 0.2) score = Math.max(score, 0.22);
+  if (iv.precipIntensityMmh > 0.02) score = Math.max(score, 0.18);
+  return score;
+}
+
+function wetCorridorInterval(
+  forecast: RouteForecast
+): { etaMinutes: number; headline: string; detail: string; weatherCode: number } | null {
+  let best = forecast.intervals[0]!;
+  let bestScore = intervalWetScore(best);
+  for (const iv of forecast.intervals) {
+    const score = intervalWetScore(iv);
+    if (score > bestScore) {
+      bestScore = score;
+      best = iv;
+    }
+  }
+  if (bestScore <= 0 || !intervalIsWet(best)) return null;
+  return {
+    etaMinutes: Math.round(best.etaMinutes),
+    headline: weatherCodeLabel(best.weatherCode),
+    detail: formatIntervalDetail(best),
+    weatherCode: best.weatherCode,
+  };
+}
+
+function wetCorridorHeadline(forecast: RouteForecast): string | null {
+  const wet = wetCorridorInterval(forecast);
+  if (!wet) return null;
+  const along =
+    wet.etaMinutes > 0 ? ` — ~${formatEtaDuration(wet.etaMinutes)} into drive` : "";
+  const label = wet.headline.trim();
+  if (label && label !== "Clear" && label !== "Unknown" && PRECIP_WEATHER_CODES.has(wet.weatherCode)) {
+    return `${label} along route${along}`;
+  }
+  return `Rain possible along route${along}`;
+}
+
 /** One-line corridor headline for fuse / progress copy. */
 export function corridorForecastHeadline(forecast: RouteForecast | null | undefined): string {
   if (!forecast?.intervals.length) return "";
@@ -58,7 +117,26 @@ export function corridorForecastHeadline(forecast: RouteForecast | null | undefi
   const stress = routeForecastCorridorStress(forecast);
   if (stress >= 0.55) return "Storm stress along route";
   if (stress >= 0.25) return "Showers possible along route";
+  const wetLine = wetCorridorHeadline(forecast);
+  if (wetLine) return wetLine;
+  if (routeForecastHasSignificantWeather(forecast)) return "Rain possible along route";
   return "Dry along route";
+}
+
+/** Mid-route wet interval for route-info detail (includes light rain). */
+export function corridorWetIntervalLine(
+  forecast: RouteForecast | null | undefined
+): string | null {
+  if (!forecast?.intervals.length) return null;
+  const wet = wetCorridorInterval(forecast);
+  if (!wet) return null;
+  const etaLabel = wet.etaMinutes > 0 ? ` in ~${wet.etaMinutes} min` : "";
+  return `${wet.headline}${etaLabel} on route · ${wet.detail}`;
+}
+
+export function corridorWetHeadline(forecast: RouteForecast | null | undefined): string | null {
+  if (!forecast?.intervals.length) return null;
+  return wetCorridorHeadline(forecast);
 }
 
 export function alongRouteSegments(

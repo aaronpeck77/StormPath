@@ -209,14 +209,20 @@ export function TurnBanner({ visible, steps, activeIndex, metersToManeuverEnd }:
         </span>
         <div className="turn-banner-text">
           <span className="turn-banner-street">{instructionWithRoadShields(cur.instruction)}</span>
-          <span className="turn-banner-dist">
-            {alongLabel ? `${alongLabel} ahead` : distLabel ? `${distLabel} ahead` : "Now"}
-          </span>
+          <div className="turn-banner-meta-row">
+            <span className="turn-banner-dist">
+              {alongLabel ? `${alongLabel} ahead` : distLabel ? `${distLabel} ahead` : "Now"}
+            </span>
+            {cur.exitNumber ? (
+              <span className="turn-banner-exit">Exit {cur.exitNumber}</span>
+            ) : null}
+          </div>
         </div>
       </div>
       <div className="turn-banner-col turn-banner-col--next" aria-label="Following maneuver">
         {next ? (
           <>
+            <span className="turn-banner-next-label">Then</span>
             <div className="turn-banner-next-main" key={nextKey}>
               <span className="turn-banner-icon turn-banner-icon--next" aria-hidden>
                 {maneuverIconForStep(next)}
@@ -228,6 +234,11 @@ export function TurnBanner({ visible, steps, activeIndex, metersToManeuverEnd }:
                 <div className="turn-banner-next-meta-row">
                   {formatStepDistanceM(next.distanceM) ? (
                     <span className="turn-banner-next-meta">{formatStepDistanceM(next.distanceM)}</span>
+                  ) : null}
+                  {next.exitNumber ? (
+                    <span className="turn-banner-next-meta turn-banner-next-meta--exit">
+                      Exit {next.exitNumber}
+                    </span>
                   ) : null}
                 </div>
               </div>

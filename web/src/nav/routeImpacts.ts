@@ -17,6 +17,7 @@ import {
   isSignificantTrafficDelay,
 } from "./constants";
 import { classifyRadarEcho, radarDisplayIntensity } from "./radarReflectivityScale";
+import { displayText } from "../utils/displayText";
 
 /**
  * Shared “Road Ahead” impact: any condition the driver will run into on the active route,
@@ -629,7 +630,7 @@ function buildMapboxIncidentImpacts(opts: {
       etaAheadMinutes: eta,
       driverHeadline: headline,
       driverAction: action,
-      roadEffect: laneNote || inc.description.slice(0, 120),
+      roadEffect: laneNote || displayText(inc.description),
       detail: [inc.description, laneNote].filter(Boolean).join(" · "),
       numericSeverity: impactSeverityToNumeric(severity),
     });

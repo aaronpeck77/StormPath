@@ -115,7 +115,7 @@ import {
   shouldShowTrafficBypassUi,
   TRAFFIC_BYPASS_ENABLED,
 } from "./nav/constants";
-import { routeForecastIntensityFloor, worstCorridorInterval } from "./forecast/corridorForecastModel";
+import { routeForecastIntensityFloor, worstCorridorInterval, corridorWetIntervalLine, corridorWetHeadline } from "./forecast/corridorForecastModel";
 import { buildRouteWeatherOverlayFromForecast } from "./forecast/routeForecastOverlay";
 import type { TrafficOverlay } from "./situation/fusedSnapshot";
 import type { MapViewMode } from "./ui/driveMapTypes";
@@ -2030,18 +2030,35 @@ export default function App() {
    * worst corridor segment is mid-route — not just at the destination. No new UI added.
    */
   const enrichedCorridorWeatherDetail = useMemo(() => {
-    const base = corridorWeatherDetail;
+    let base = corridorWeatherDetail;
+    const baseLower = base.toLowerCase();
+    const localLower = advisoryNowcastLine?.toLowerCase() ?? "";
+    if (
+      baseLower.includes("dry along route") &&
+      /\b(rain|drizzle|shower|precip|wet)\b/.test(localLower)
+    ) {
+      base =
+        (tioRouteForecast?.intervals.length
+          ? corridorWetHeadline(tioRouteForecast)
+          : null) ?? "Rain along route";
+    }
     if (!tioRouteForecast?.intervals.length) return base;
     const worst = worstCorridorInterval(tioRouteForecast);
-    if (!worst) return base;
-    if (worst.severity !== "serious" && worst.severity !== "avoid") return base;
-    const etaLabel = worst.etaMinutes > 0 ? ` in ~${worst.etaMinutes} min` : "";
-    const snapLine = `${worst.headline}${etaLabel} on route · ${worst.detail}`;
-    if (base && !base.toLowerCase().includes(worst.headline.toLowerCase())) {
-      return `${base} · ${snapLine}`;
+    if (worst) {
+      const etaLabel = worst.etaMinutes > 0 ? ` in ~${worst.etaMinutes} min` : "";
+      const snapLine = `${worst.headline}${etaLabel} on route · ${worst.detail}`;
+      if (base && !base.toLowerCase().includes(worst.headline.toLowerCase())) {
+        return `${base} · ${snapLine}`;
+      }
+      return snapLine;
     }
-    return snapLine;
-  }, [corridorWeatherDetail, tioRouteForecast]);
+    const wetLine = corridorWetIntervalLine(tioRouteForecast);
+    if (!wetLine) return base;
+    if (base && !base.toLowerCase().includes(wetLine.split(" · ")[0]!.toLowerCase())) {
+      return `${base} · ${wetLine}`;
+    }
+    return wetLine;
+  }, [corridorWeatherDetail, tioRouteForecast, advisoryNowcastLine]);
 
   const localForecastPanelLoading = useMemo(() => {
     if (!isPlus || !stormBarExpanded || !effectiveUserLngLat) return false;
