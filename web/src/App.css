@@ -5476,6 +5476,35 @@
   box-shadow: 0 4px 10px -8px rgba(0, 0, 0, 0.6);
 }
 
+/*
+ * Expanded advisory / route info must paint over bottom search, toolbar, My location, and Mapbox
+ * logo/attribution. The overlay stack (z 5) is otherwise below .nav-bottom-stack (z 6).
+ */
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded, .route-progress-callout-panel--expanded)
+  .nav-drive-overlay-stack {
+  z-index: 25;
+}
+
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded, .route-progress-callout-panel--expanded)
+  .nav-bottom-stack {
+  z-index: 4;
+}
+
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded, .route-progress-callout-panel--expanded)
+  .mapboxgl-ctrl-bottom-left,
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded, .route-progress-callout-panel--expanded)
+  .mapboxgl-ctrl-bottom-right {
+  z-index: 3;
+}
+
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded) .storm-advisory-bar--expanded,
+.map-stage.map-bleed:has(.route-progress-callout-panel--expanded)
+  .route-progress-callout-panel--expanded {
+  bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important;
+  z-index: 26;
+  padding-bottom: max(14px, calc(12px + env(safe-area-inset-bottom, 0px)));
+}
+
 /* When the advisory bar is expanded, lift the cluster above the right-side progress rail so the
  * fixed-position panel + its tap targets stack on top of the rail's ? toggle (which sits at
  * z-index 8 inside its own stacking context, currently at z 6 of the overlay-stack grid). */
@@ -14722,6 +14751,11 @@
     align-items: flex-end;
   }
 
+  /* Mirror right-handed left-edge rule: without this nudge the rotated strip sits flush past the bezel. */
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-route-progress-rail .route-progress-strip--side {
+    transform: translateX(-12px) rotate(-90deg);
+  }
+
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .map-stage.map-bleed > .nav-bottom-stack {
     left: 0;
     right: max(50%, var(--sp-landscape-map-inset-end));
@@ -14800,21 +14834,19 @@
   }
 
   /*
-   * Expanded advisory + route info: use the full map-column side in landscape. Portrait keeps
-   * preview-aligned sizing; sideways the top cluster is only ~50vw so anchor-based panels felt
-   * cramped. Temporary full-side overlay is OK (covers turn strip, bottom dock, etc.).
+   * Expanded advisory + route info: half-screen overlay in landscape so the map + progress
+   * rail stay visible on the opposite side. Right-handed → right half; left-handed → left half.
    */
   .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .storm-advisory-bar--expanded,
   .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .route-progress-callout-panel--expanded {
     top: max(0px, env(safe-area-inset-top, 0px)) !important;
     bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important;
-    left: var(--sp-landscape-map-inset-start) !important;
+    left: max(50%, var(--sp-landscape-map-inset-start)) !important;
     right: max(0px, env(safe-area-inset-right, 0px)) !important;
     width: auto !important;
     max-width: none !important;
     max-height: none !important;
     border-radius: 14px 0 0 14px;
-    z-index: 24;
   }
 
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .storm-advisory-bar--expanded,
@@ -14822,12 +14854,11 @@
     top: max(0px, env(safe-area-inset-top, 0px)) !important;
     bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important;
     left: max(0px, env(safe-area-inset-left, 0px)) !important;
-    right: var(--sp-landscape-map-inset-end) !important;
+    right: max(50%, var(--sp-landscape-map-inset-end)) !important;
     width: auto !important;
     max-width: none !important;
     max-height: none !important;
     border-radius: 0 14px 14px 0;
-    z-index: 24;
   }
 }
 
