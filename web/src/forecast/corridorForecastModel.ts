@@ -2,7 +2,6 @@ import type { MinutePrecipForecast, RouteForecast, RouteHourlyInterval } from ".
 import {
   routeForecastCorridorStress,
   routeForecastHasSignificantWeather,
-  weatherCodeLabel,
   weatherCodeSeverity,
 } from "../services/tomorrowIo";
 import type { RouteImpactSeverity } from "../nav/routeImpacts";
@@ -203,10 +202,6 @@ export function alongRouteSegments(
       windGustMph: iv.windGustMph,
     };
   });
-}
-
-function formatIntervalDetail(iv: RouteHourlyInterval): string {
-  return formatCorridorIntervalDetail(iv);
 }
 
 export function arrivalSnapshot(
