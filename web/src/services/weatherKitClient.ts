@@ -66,6 +66,7 @@ export type WeatherKitHourly = {
   temperatureApparent: number;
   /** Horizontal visibility in meters (when provided by WeatherKit). */
   visibility?: number;
+  uvIndex?: number;
   windDirection: number;
   windGust?: number;
   windSpeed: number;
@@ -93,6 +94,11 @@ export type WeatherKitDailyDay = {
   temperatureMin: number;
   precipitationChance: number;
   precipitationAmount?: number;
+  precipitationType?: string;
+  maxUvIndex?: number;
+  snowfallAmount?: number;
+  daytimeForecast?: { conditionCode?: string; temperatureMax?: number; temperatureMin?: number };
+  overnightForecast?: { conditionCode?: string; temperatureMax?: number; temperatureMin?: number };
 };
 
 export type WeatherKitAlert = {

@@ -316,120 +316,6 @@ export function radarMosaicToProgressStripBands(
   });
 }
 
-function radarHeadlineForBand(maxIntensity: number, spanFrac: number): string {
-  return classifyRadarEcho(maxIntensity, spanFrac)?.headline ?? "Light showers possible";
-}
-
-/**
- * Strip the verbose "Start: X°F conditions → Quarter: ... → Destination: ..." chain
- * from corridor detail text. That breakdown is already shown in the progress graph —
- * it's too much to read in an advisory card while driving.
- */
-function stripRouteSegmentChain(detail: string): string {
-  const SEGMENT_LABEL = /^(Start|Quarter|Midway|3\/4 mark|Destination)\b/i;
-  return detail
-    .split(/\s*·\s*/)
-    .filter((part) => {
-      const t = part.trim();
-      return t.length > 0 && !SEGMENT_LABEL.test(t) && !t.includes(" → ");
-    })
-    .join(" · ")
-    .trim();
-}
-
-function buildRadarImpact(opts: {
-  geometry: LngLat[] | undefined;
-  radarIntensity: number;
-  forecastHeadline: string;
-  corridorWeatherDetail: string;
-  userAlongM: number;
-  planEtaMinutes: number | null | undefined;
-  totalMeters: number;
-  userLngLat: LngLat | null;
-  /** Skip single mid-route card when NWS bands already cover the corridor. */
-  hasNwsBand: boolean;
-  /** Optional along-route fraction from RainViewer mosaic (0..1). */
-  alongFraction?: number;
-  /** Band span (mosaic merge) — when set, start/end meters frame the graph band. */
-  startFraction?: number;
-  endFraction?: number;
-  idSuffix?: string;
-}): RouteImpact | null {
-  const { radarIntensity, hasNwsBand, geometry, totalMeters } = opts;
-  if (hasNwsBand && opts.alongFraction == null && opts.startFraction == null) return null;
-
-  const spanFrac = (() => {
-    if (
-      opts.startFraction != null &&
-      opts.endFraction != null &&
-      Number.isFinite(opts.startFraction) &&
-      Number.isFinite(opts.endFraction) &&
-      totalMeters > 0
-    ) {
-      const startM = totalMeters * Math.max(0, Math.min(1, opts.startFraction));
-      const endM = totalMeters * Math.max(startM, Math.min(1, opts.endFraction));
-      return (endM - startM) / totalMeters;
-    }
-    return 0;
-  })();
-  const echo = classifyRadarEcho(radarIntensity, spanFrac);
-  if (!echo) return null;
-
-  const { severity: sev, action, roadEffect, numericSeverity } = echo;
-
-  let startM: number;
-  let endM: number;
-  if (
-    opts.startFraction != null &&
-    opts.endFraction != null &&
-    Number.isFinite(opts.startFraction) &&
-    Number.isFinite(opts.endFraction) &&
-    totalMeters > 0
-  ) {
-    startM = totalMeters * Math.max(0, Math.min(1, opts.startFraction));
-    endM = totalMeters * Math.max(startM, Math.min(1, opts.endFraction));
-    if (endM - startM < totalMeters * 0.02) endM = Math.min(totalMeters, startM + totalMeters * 0.02);
-  } else {
-    const alongM =
-      opts.alongFraction != null && Number.isFinite(opts.alongFraction)
-        ? totalMeters * Math.max(0, Math.min(1, opts.alongFraction))
-        : totalMeters * 0.52;
-    startM = alongM;
-    endM = alongM;
-  }
-  const alongM = (startM + endM) / 2;
-  const bandSpanFrac = totalMeters > 0 ? (endM - startM) / totalMeters : spanFrac;
-  const aheadM = Math.max(0, startM - opts.userAlongM);
-  const eta =
-    totalMeters > 0 && opts.planEtaMinutes != null && Number.isFinite(opts.planEtaMinutes)
-      ? Math.max(0, opts.planEtaMinutes * (aheadM / totalMeters))
-      : null;
-
-  const detailCore =
-    stripRouteSegmentChain(opts.corridorWeatherDetail.trim()) ||
-    stripRouteSegmentChain(opts.forecastHeadline.trim()) ||
-    "Precipitation in the corridor";
-
-  return {
-    id: opts.idSuffix ? `radar-${opts.idSuffix}` : "radar",
-    category: "weather",
-    severity: sev,
-    confidence: "medium",
-    source: "radar",
-    lngLat: alongToLngLat(geometry, alongM, opts.userLngLat),
-    alongMeters: alongM,
-    startMeters: startM,
-    endMeters: endM,
-    distanceAheadMeters: aheadM,
-    etaAheadMinutes: eta,
-    driverHeadline: radarHeadlineForBand(radarIntensity, bandSpanFrac),
-    driverAction: action,
-    roadEffect,
-    detail: detailCore,
-    numericSeverity,
-  };
-}
-
 /* ─── Mapbox traffic ─────────────────────────────────────────────── */
 
 function trafficNumericToSeverity(numeric: number, hasClosure: boolean): RouteImpactSeverity {
@@ -795,42 +681,6 @@ export type BuildRouteImpactsOpts = {
   mapboxIncidents?: MapboxRouteIncident[];
 };
 
-function buildRadarMosaicSegmentImpacts(opts: {
-  geometry: LngLat[] | undefined;
-  samples: RadarMosaicSample[];
-  forecastHeadline: string;
-  corridorWeatherDetail: string;
-  userAlongM: number;
-  planEtaMinutes: number | null | undefined;
-  totalMeters: number;
-  userLngLat: LngLat | null;
-  hasNwsBand: boolean;
-}): RouteImpact[] {
-  const { samples, totalMeters, hasNwsBand } = opts;
-  if (!samples.length || totalMeters <= 0) return [];
-  const bands = mergeRadarMosaicBands(samples);
-  const out: RouteImpact[] = [];
-  for (let i = 0; i < bands.length; i++) {
-    const band = bands[i]!;
-    const impact = buildRadarImpact({
-      geometry: opts.geometry,
-      radarIntensity: band.maxIntensity,
-      forecastHeadline: opts.forecastHeadline,
-      corridorWeatherDetail: opts.corridorWeatherDetail,
-      userAlongM: opts.userAlongM,
-      planEtaMinutes: opts.planEtaMinutes,
-      totalMeters,
-      userLngLat: opts.userLngLat,
-      hasNwsBand,
-      startFraction: band.startT,
-      endFraction: band.endT,
-      idSuffix: `band-${i}`,
-    });
-    if (impact) out.push(impact);
-  }
-  return out;
-}
-
 export function buildRouteImpacts(opts: BuildRouteImpactsOpts): RouteImpact[] {
   const {
     geometry,
@@ -846,6 +696,7 @@ export function buildRouteImpacts(opts: BuildRouteImpactsOpts): RouteImpact[] {
     radarMosaicSamples = [],
     mapboxIncidents = [],
   } = opts;
+  void corridorWeatherDetail;
 
   const totalMeters =
     opts.totalMeters != null && opts.totalMeters > 0
@@ -857,8 +708,7 @@ export function buildRouteImpacts(opts: BuildRouteImpactsOpts): RouteImpact[] {
     radarMosaicSamples.length > 0
       ? Math.max(...radarMosaicSamples.map((s) => s.intensity))
       : 0;
-  const radarIntensity = Math.max(slice?.radarIntensity ?? 0, mosaicMax);
-  const forecastHeadline = slice?.forecastHeadline ?? "";
+  void mosaicMax;
 
   const list: RouteImpact[] = [];
 
@@ -875,40 +725,11 @@ export function buildRouteImpacts(opts: BuildRouteImpactsOpts): RouteImpact[] {
 
   const hasNwsBand = nwsImpacts.length > 0;
   if (import.meta.env.DEV) {
-    const mosaicMax = radarMosaicSamples.length
-      ? Math.max(...radarMosaicSamples.map((s) => s.intensity))
-      : 0;
     console.log(
-      `[buildRouteImpacts] samples=${radarMosaicSamples.length} mosaicMax=${mosaicMax.toFixed(3)} sliceRadar=${(slice?.radarIntensity ?? 0).toFixed(3)} effectiveMax=${radarIntensity.toFixed(3)} hasNws=${hasNwsBand}`
+      `[buildRouteImpacts] samples=${radarMosaicSamples.length} mosaicMax=${mosaicMax.toFixed(3)} sliceRadar=${(slice?.radarIntensity ?? 0).toFixed(3)} hasNws=${hasNwsBand}`
     );
   }
-  const mosaicSegments = buildRadarMosaicSegmentImpacts({
-    geometry,
-    samples: radarMosaicSamples,
-    forecastHeadline,
-    corridorWeatherDetail,
-    userAlongM,
-    planEtaMinutes,
-    totalMeters,
-    userLngLat,
-    hasNwsBand,
-  });
-  if (mosaicSegments.length > 0) {
-    list.push(...mosaicSegments);
-  } else {
-    const radarImpact = buildRadarImpact({
-      geometry,
-      radarIntensity,
-      forecastHeadline,
-      corridorWeatherDetail,
-      userAlongM,
-      planEtaMinutes,
-      totalMeters,
-      userLngLat,
-      hasNwsBand,
-    });
-    if (radarImpact) list.push(radarImpact);
-  }
+  /* RainViewer along-route echo: route-info radar strata + map overlay only (no RAD alert cards). */
 
   const trafficImpact = buildTrafficImpact({
     geometry,

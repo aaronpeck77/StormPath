@@ -162,13 +162,17 @@ export async function fetchWeatherKitPointHourly(
   const fetchedAt = Date.now();
   const hours = (raw.forecastHourly?.hours ?? []).slice(0, 24).map((h) => {
     const code = weatherKitConditionToCode(h.conditionCode);
+    const gust = h.windGust != null ? Math.round(kphToMph(h.windGust)) : undefined;
     return {
       timeIso: h.forecastStart,
       offsetHours: (new Date(h.forecastStart).getTime() - fetchedAt) / 3_600_000,
       tempF: Math.round(cToF(h.temperature)),
+      feelsLikeF: Math.round(cToF(h.temperatureApparent)),
       precipIntensityMmh: h.precipitationIntensity,
       precipProbability: h.precipitationChance,
+      precipType: precipTypeToNumber(h.precipitationType),
       windMph: Math.round(kphToMph(h.windSpeed)),
+      windGustMph: gust,
       conditions: weatherCodeLabel(code),
     };
   });
@@ -194,13 +198,27 @@ export async function fetchWeatherKitPointDaily(
   const fetchedAt = Date.now();
   const days: PointDailyDay[] = (raw.forecastDaily?.days ?? []).slice(0, 7).map((d) => {
     const code = weatherKitConditionToCode(d.conditionCode);
+    const dayCode = d.daytimeForecast?.conditionCode
+      ? weatherKitConditionToCode(d.daytimeForecast.conditionCode)
+      : code;
+    const nightCode = d.overnightForecast?.conditionCode
+      ? weatherKitConditionToCode(d.overnightForecast.conditionCode)
+      : code;
     return {
       dateIso: d.forecastStart,
       dayLabel: formatDailyDayLabel(d.forecastStart),
       highF: Math.round(cToF(d.temperatureMax)),
       lowF: Math.round(cToF(d.temperatureMin)),
       precipChance: d.precipitationChance,
+      precipType: precipTypeToNumber(d.precipitationType),
+      maxUvIndex: d.maxUvIndex != null ? Math.round(d.maxUvIndex) : undefined,
+      snowfallCm:
+        d.snowfallAmount != null && d.snowfallAmount > 0
+          ? Math.round(d.snowfallAmount * 10) / 10
+          : undefined,
       conditions: weatherCodeLabel(code),
+      daytimeConditions: weatherCodeLabel(dayCode),
+      overnightConditions: weatherCodeLabel(nightCode),
     };
   });
   return {
@@ -229,6 +247,7 @@ export async function fetchWeatherKitCurrentNowcast(
     conditions: cur.conditionCode.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase(),
     precipInPerHr: cur.precipitationIntensity / 25.4,
     humidityPct: Math.round(cur.humidity * 100),
+    uvIndex: Math.round(cur.uvIndex),
     fetchedAtMs: Date.now(),
   };
 }

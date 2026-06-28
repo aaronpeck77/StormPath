@@ -3949,6 +3949,7 @@ export default function App() {
                       }
                       nwsForecastError={isPlus ? stormError : null}
                       basicForecastLoading={isPlus ? localForecastPanelLoading : false}
+                      weatherKitPrimary={env.weatherKitEnabled}
                       onOpenSubscription={() => setAboutOpen(true)}
                       basicStatusPanelPromos={basicStatusPanelPromos}
                       dataSaverHint={

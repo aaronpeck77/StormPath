@@ -141,13 +141,12 @@ export function buildRouteAheadTimeline(opts: BuildRouteAheadTimelineOpts): Time
     });
   }
 
-  const { radarImpacts, roadImpacts } = splitRouteImpacts(routeImpacts);
+  const { roadImpacts } = splitRouteImpacts(routeImpacts);
   const pushIfActive = (imp: RouteImpact) => {
     if (imp.endMeters <= userAlongMeters) return;
     timelineItems.push(impactToTimelineItem(imp));
   };
-  for (const imp of radarImpacts) pushIfActive(imp);
-  /* Tomorrow.io forecast — outlook graph + advisory text only; never progress-strip bands. */
+  /* Radar echo is shown in the route-info graph strata only — not as purple RAD cards. */
   for (const imp of roadImpacts) pushIfActive(imp);
 
   return mergeOverlappingTimelineItems(timelineItems, routeTotalMeters);
@@ -205,7 +204,7 @@ export function timelineToMapCorridorAlerts(
 
 /** Route status text rows — excludes minor advisories muted on the strip/map. */
 export function timelineItemsForProgressRail(items: TimelineItem[]): TimelineItem[] {
-  return items.filter((item) => !item.stripMuted);
+  return items.filter((item) => !item.stripMuted && item.track !== "radar");
 }
 
 /** Progress-bar info panel rows — brief copy + ETA / still-active timing from advisory logic. */

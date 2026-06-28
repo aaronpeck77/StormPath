@@ -294,7 +294,7 @@ describe("buildRouteImpacts traffic gating", () => {
     expect(impacts.some((i) => i.category === "traffic")).toBe(true);
   });
 
-  it("adds radar mosaic bands even without live traffic", () => {
+  it("does not add radar mosaic bands as route alert cards", () => {
     const impacts = buildRouteImpacts({
       geometry: routeGeom,
       userLngLat: routeGeom[0]!,
@@ -311,6 +311,6 @@ describe("buildRouteImpacts traffic gating", () => {
         { t: 0.5, intensity: 0.68 },
       ],
     });
-    expect(impacts.some((i) => i.source === "radar")).toBe(true);
+    expect(impacts.some((i) => i.source === "radar")).toBe(false);
   });
 });

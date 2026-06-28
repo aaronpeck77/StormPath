@@ -28,13 +28,13 @@ import {
 import { TRAFFIC_BYPASS_ENABLED, TRAFFIC_DELAY_ALERT_MINUTES } from "../nav/constants";
 import type { RouteImpact, RouteImpactSeverity } from "../nav/routeImpacts";
 import {
-  RouteHazardTimeline,
   impactToTimelineItem,
   mergeOverlappingTimelineItems,
 } from "./RouteHazardTimeline";
 import type { TimelineItem } from "./RouteHazardTimeline";
 import type { MinutePrecipForecast, PointDailyForecast, PointHourlyForecast } from "../services/tomorrowIo";
 import { AdvisoryLocalForecast } from "./AdvisoryLocalForecast";
+import { AdvisoryRouteHazardsPanel } from "./AdvisoryRouteHazardsPanel";
 import type { CurrentNowcast } from "../services/openWeatherClient";
 import { displayText } from "../utils/displayText";
 import {
@@ -125,18 +125,6 @@ function bannerMsg(text: string, max = BANNER_MSG_MAX): string {
   return truncateBannerText(text, max);
 }
 
-const GENERIC_NWS_CHIP_TIMING = new Set(["On your planned route"]);
-
-function nwsChipDetailText(a: NormalizedWeatherAlert): string | null {
-  const summary = nwsGlanceSummary(a).trim();
-  const ev = (a.event ?? "").trim();
-  if (!summary) return null;
-  if (!ev) return summary;
-  const summaryL = summary.toLowerCase();
-  const evL = ev.toLowerCase();
-  if (summaryL === evL || summaryL.startsWith(`${evL}:`) || summaryL.startsWith(evL)) return null;
-  return summary;
-}
 
 function isAdvisoryPromoNoise(line: AdvisoryPromoLine): boolean {
   return line.id === "sp-weather-upgrades-soon";
@@ -260,6 +248,8 @@ export type StormAdvisoryBarProps = SharedProps & {
   } | null;
   /** Basic: waiting on OpenWeather for the status-panel forecast. Plus: waiting on TIO/OpenWeather. */
   basicForecastLoading?: boolean;
+  /** When true, local forecast UI labels WeatherKit as primary provider. */
+  weatherKitPrimary?: boolean;
   /** Basic: open About → Subscription from the Plus upsell card. */
   onOpenSubscription?: () => void;
   /** Basic status panel layout — partner banner slot, Plus upsell, SiteBible. */
@@ -293,48 +283,6 @@ function impactSectionBucket(i: RouteImpact): "weather" | "road" {
 }
 
 
-
-/** Compact urgent chip — only for hazards that affect you now or very soon on route. */
-function nwsChip(
-  a: NormalizedWeatherAlert,
-  timingLine: string,
-  onClick: ((alert: NormalizedWeatherAlert) => void) | undefined,
-  variant: "urgent" | "secondary" | "developing"
-): ReactNode {
-  const sevClass =
-    a.severity === "Extreme" || /tornado warning/i.test(a.event ?? "")
-      ? "avoid"
-      : a.severity === "Severe" || /warning/i.test(a.event ?? "")
-        ? "serious"
-        : a.severity === "Moderate"
-          ? "caution"
-          : "info";
-  return (
-    <li key={a.id}>
-      <button
-        type="button"
-        className={`nws-chip nws-chip--${variant} nws-chip--${sevClass}`}
-        onClick={() => onClick?.(a)}
-        aria-label={`${a.event} — ${timingLine} — open details`}
-      >
-        <span className="nws-chip__dot" aria-hidden />
-        <span className="nws-chip__text">
-          <span className="nws-chip__label">{a.event}</span>
-          {a.providerId === "weatherkit" ? (
-            <span className="nws-chip__source">Apple WeatherKit</span>
-          ) : null}
-          {(() => {
-            const detail = nwsChipDetailText(a);
-            return detail ? <span className="nws-chip__detail">{detail}</span> : null;
-          })()}
-          {!GENERIC_NWS_CHIP_TIMING.has(timingLine) ? (
-            <span className="nws-chip__timing">{timingLine}</span>
-          ) : null}
-        </span>
-      </button>
-    </li>
-  );
-}
 
 export function StormAdvisoryBar({
   featureEnabled,
@@ -385,6 +333,7 @@ export function StormAdvisoryBar({
   nwsForecastError = null,
   dataSaverHint = null,
   basicForecastLoading = false,
+  weatherKitPrimary = false,
   onOpenSubscription,
   basicStatusPanelPromos = null,
 }: StormAdvisoryBarProps) {
@@ -1286,139 +1235,48 @@ export function StormAdvisoryBar({
             onLocationAlertClick={onNwsAlertClick}
             variant="full"
             forecastLoading={basicForecastLoading}
+            weatherKitPrimary={weatherKitPrimary}
           />
         ) : null}
 
-        {/* Pre-Go hint surfaced once at the very top so it doesn't repeat across sections. */}
-        {!navigationStarted && hasGuidanceRoute && !basicNavAdvisoryMode && (
-          <p className="storm-advisory-bar__pre-go-hint" role="note">
-            <strong>Tap Go</strong> for live traffic and ETA. Below: each warning shows how far down your route it is and
-            whether it may end before you get there.
-          </p>
-        )}
-
-        {!basicNavAdvisoryMode && urgentTopAlerts.length > 0 && (
-          <ul className="nws-chips nws-chips--urgent" role="list" aria-label="Urgent weather affecting you now">
-            {urgentTopAlerts.map(({ alert, timingLine }) =>
-              nwsChip(alert, timingLine, onNwsAlertClick, "urgent")
-            )}
-          </ul>
-        )}
-
         {!basicNavAdvisoryMode ? (
-          <div className="storm-advisory-bar__dashboard">
-            {navigationStarted && hasGuidanceRoute && alongRouteDetailRows.length > 0 ? (
-              <div className="storm-advisory-bar__road-rows" role="list" aria-label="Along your route">
-                {alongRouteDetailRows.map((row) => (
-                  <div key={row.label} className="storm-advisory-bar__suggestion-row">
-                    <span className="storm-advisory-bar__suggestion-label">{row.label}</span>
-                    <span className="storm-advisory-bar__suggestion-text">{row.text}</span>
-                    {row.onAction ? (
-                      <button
-                        type="button"
-                        className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
-                        onClick={row.onAction}
-                      >
-                        {row.actionLabel ?? "Open"}
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
+          <>
+            {forecastAreaLabel &&
+            (currentNowcast ||
+              minutePrecipForecast ||
+              hourlyForecast?.hours.length ||
+              dailyForecast?.days.length ||
+              localForecastNwsAlerts.length > 0 ||
+              nwsForecastLoading ||
+              basicForecastLoading) ? (
+              <div className="adv-dash__split" role="separator" aria-hidden />
             ) : null}
 
-            {hasRouteHazardDetail && (!navigationStarted || barExpanded) ? (
-              <RouteHazardTimeline
-                variant="legendOnly"
-                items={advisoryRouteTimeline.filter((item) => !item.stripMuted)}
-                totalMeters={routeTotalMeters}
-                userAlongMeters={userAlongMeters}
-                planEtaMinutes={planEtaMinutes}
-                driveEtaMinutes={driveEtaMinutes}
-                showRerouteCta={showRerouteCta}
-                onReroute={onTrafficReroute}
-                rerouteBusy={trafficRerouteBusy}
-              />
-            ) : null}
+            <AdvisoryRouteHazardsPanel
+              navigationStarted={navigationStarted}
+              hasGuidanceRoute={hasGuidanceRoute}
+              barExpanded={barExpanded}
+              sessionOn={sessionOn}
+              roadDetailEnabled={roadDetailEnabled}
+              urgentTopAlerts={urgentTopAlerts}
+              alongRouteDetailRows={alongRouteDetailRows}
+              hasRouteHazardDetail={hasRouteHazardDetail}
+              advisoryRouteTimeline={advisoryRouteTimeline}
+              routeTotalMeters={routeTotalMeters}
+              userAlongMeters={userAlongMeters}
+              planEtaMinutes={planEtaMinutes}
+              driveEtaMinutes={driveEtaMinutes}
+              showRerouteCta={showRerouteCta}
+              onTrafficReroute={onTrafficReroute}
+              trafficRerouteBusy={trafficRerouteBusy}
+              nwsStatusMessage={nwsStatusMessage}
+              developingNwsAlerts={developingNwsAlerts}
+              panelNwsAlertsExtra={panelNwsAlertsExtra}
+              betterRouteRow={betterRouteRow}
+              onNwsAlertClick={onNwsAlertClick}
+            />
 
-            {navigationStarted &&
-            hasGuidanceRoute &&
-            !hasRouteHazardDetail &&
-            alongRouteDetailRows.length === 0 ? (
-              <p className="storm-advisory-bar__muted storm-advisory-bar__route-clear" role="status">
-                No hazards ahead on your route.
-                {driveEtaMinutes != null && driveEtaMinutes > 0
-                  ? ` About ${formatMinutesAsHoursMinutes(Math.round(driveEtaMinutes))} remaining.`
-                  : null}
-              </p>
-            ) : null}
-
-            {nwsStatusMessage ? (
-              <p
-                className={`storm-advisory-bar__nws-status${
-                  nwsStatusMessage.tone === "warn" ? " storm-advisory-bar__nws-status--warn" : ""
-                }`}
-                aria-live="polite"
-              >
-                {nwsStatusMessage.text}
-              </p>
-            ) : null}
-
-            {developingNwsAlerts.length > 0 ? (
-              <ul
-                className="nws-chips nws-chips--developing"
-                role="list"
-                aria-label="Developing weather along your route"
-              >
-                {developingNwsAlerts.map(({ alert, timingLine }) =>
-                  nwsChip(alert, timingLine, onNwsAlertClick, "developing")
-                )}
-              </ul>
-            ) : null}
-
-            {panelNwsAlertsExtra.length > 0 ? (
-              <ul
-                className="nws-chips nws-chips--secondary"
-                role="list"
-                aria-label="Weather alerts at your position (not already listed on your route)"
-              >
-                {panelNwsAlertsExtra.map(({ alert, timingLine }) =>
-                  nwsChip(alert, timingLine, onNwsAlertClick, "secondary")
-                )}
-              </ul>
-            ) : null}
-
-            {betterRouteRow ? (
-              <div className="storm-advisory-bar__suggestion-row">
-                <span className="storm-advisory-bar__suggestion-label">{betterRouteRow.label}</span>
-                <span className="storm-advisory-bar__suggestion-text">{betterRouteRow.text}</span>
-                {betterRouteRow.onAction ? (
-                  <button
-                    type="button"
-                    className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
-                    onClick={betterRouteRow.onAction}
-                  >
-                    {betterRouteRow.actionLabel ?? "Open"}
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-
-            {showRerouteCta && onTrafficReroute && !hasRouteHazardDetail ? (
-              <div className="storm-advisory-bar__suggestion-row">
-                <span className="storm-advisory-bar__suggestion-label">Traffic</span>
-                <span className="storm-advisory-bar__suggestion-text">Heavy delay ahead on your route.</span>
-                <button
-                  type="button"
-                  className="storm-advisory-bar__btn storm-advisory-bar__btn--traffic"
-                  onClick={onTrafficReroute}
-                  disabled={trafficRerouteBusy}
-                >
-                  {trafficRerouteBusy ? "Finding route…" : "Reroute around traffic"}
-                </button>
-              </div>
-            ) : null}
-
+            <div className="storm-advisory-bar__dashboard">
             {dataSaverHint ? (
               <div
                 className="storm-advisory-bar__suggestion-row storm-advisory-bar__suggestion-row--data-saver"
@@ -1446,6 +1304,7 @@ export function StormAdvisoryBar({
             ) : null}
 
           </div>
+          </>
         ) : null}
 
               {basicNavAdvisoryMode && basicStatusPanelPromos ? (

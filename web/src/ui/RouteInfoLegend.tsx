@@ -33,8 +33,9 @@ export function RouteInfoLegend() {
           line.
         </li>
         <li>
-          <strong>Cards below</strong> — Same unified Road Ahead list. Badges: NWS, RAD (radar), WIND,
-          FCST (forecast text), RD (road/traffic). Tap Refresh (Plus) to reload corridor weather.
+          <strong>Cards below</strong> — NWS warnings and road/traffic hazards ahead (with distance
+          and ETA). Corridor forecast shows in the outlook graph above, not as vague full-route alert
+          cards. Tap Refresh (Plus) to reload corridor weather.
         </li>
         <li>
           <strong>Not here</strong> — Live map radar (Rad toggle), local forecast at your GPS in the

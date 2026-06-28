@@ -1,6 +1,6 @@
 import { useMemo, type MutableRefObject } from "react";
 import { routeForecastHasSignificantWeather, type RouteForecast } from "../services/tomorrowIo";
-import { buildWindImpacts, buildForecastSummary } from "./tomorrowIoImpacts";
+import { buildWindImpacts } from "./tomorrowIoImpacts";
 import {
   buildRouteImpacts,
   compareRouteImpactPriority,
@@ -358,11 +358,7 @@ export function useRouteAheadDerivations(
     if (tioRouteForecast && guidanceRouteLengthM > 0) {
       const planEta = guidanceRoute?.baseEtaMinutes;
       if (planEta && planEta > 0) {
-        // Forecast summary — one consolidated text item at top of advisory list (no bar in graph).
-        const summary = buildForecastSummary(tioRouteForecast, geometry, planEta, guidanceRouteLengthM);
-        if (summary) list.push(summary);
-
-        // Wind track — shows gusts ≥ 25 mph as a dedicated bar row replacing the old forecast bar.
+        // Wind track — gusts along the corridor (forecast summary cards removed; too vague vs ETA).
         list.push(...buildWindImpacts(tioRouteForecast, geometry, planEta, guidanceRouteLengthM));
       }
     }
@@ -496,13 +492,18 @@ export function useRouteAheadDerivations(
    *
    * NWS-source weather impacts are drawn elsewhere as `stormProgressBands` / map polygons, so we drop
    * them from the corridor list to avoid double-drawing the same area in two color systems.
-   * Radar-source weather impacts pass through — fixing the prior mismatch where heavy rain on the
-   * route was silently filtered out of the progress strip.
+   * Radar mosaic is route-info graph strata only — not alert cards.
    */
   const routeAlerts = useMemo(
     () =>
       routeImpactsForUi
-        .filter((i) => i.source !== "nws" && i.source !== "tomorrowIo" && i.source !== "windGust")
+        .filter(
+          (i) =>
+            i.source !== "nws" &&
+            i.source !== "tomorrowIo" &&
+            i.source !== "windGust" &&
+            i.source !== "radar"
+        )
         .map(routeImpactToRouteAlert),
     [routeImpactsForUi]
   );

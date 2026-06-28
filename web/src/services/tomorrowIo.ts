@@ -52,6 +52,9 @@ export type PointHourlyInterval = {
   precipProbability: number;
   windMph: number;
   conditions: string;
+  feelsLikeF?: number;
+  windGustMph?: number;
+  precipType?: number;
 };
 
 /** 24-hour hourly outlook at the user's position. */
@@ -73,6 +76,14 @@ export type PointDailyDay = {
   /** 0–1 */
   precipChance: number;
   conditions: string;
+  /** Daily max UV index (WeatherKit). */
+  maxUvIndex?: number;
+  /** 0=N/A 1=rain 2=snow 3=freezing rain 4=ice pellets */
+  precipType?: number;
+  /** cm snowfall when significant (WeatherKit). */
+  snowfallCm?: number;
+  daytimeConditions?: string;
+  overnightConditions?: string;
 };
 
 /** Multi-day outlook at the user's position (WeatherKit forecastDaily). */

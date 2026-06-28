@@ -60,6 +60,8 @@ export type CurrentNowcast = {
   precipInPerHr: number;
   /** Relative humidity, 0..100 (rounded). null when missing. */
   humidityPct: number | null;
+  /** UV index 0–11+ when available (WeatherKit). */
+  uvIndex?: number | null;
   /** When this snapshot was fetched (ms epoch). */
   fetchedAtMs: number;
 };
@@ -146,6 +148,10 @@ export function formatNowcastLine(now: CurrentNowcast): string {
   const isHot = now.tempF >= 90;
   if (dt >= 4 || isCold || isHot) {
     parts.push(`Feels ${now.feelsLikeF}\u00b0F`);
+  }
+
+  if (now.uvIndex != null && now.uvIndex >= 6) {
+    parts.push(`UV ${Math.round(now.uvIndex)}`);
   }
 
   if (now.windMph >= 1) {

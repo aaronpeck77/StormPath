@@ -5467,10 +5467,12 @@
   width: auto !important;
   max-width: none !important;
   max-height: none !important;
+  min-height: 0;
   z-index: 14;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  touch-action: pan-y;
   /* Pure-downward drop shadow ? negative spread + matching blur means the shadow never extends
    * horizontally past the panel's actual edges (was reading as "panel spilling off-screen right"). */
   box-shadow: 0 4px 10px -8px rgba(0, 0, 0, 0.6);
@@ -5503,6 +5505,7 @@
   bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important;
   z-index: 26;
   padding-bottom: max(14px, calc(12px + env(safe-area-inset-bottom, 0px)));
+  pointer-events: auto;
 }
 
 /* When the advisory bar is expanded, lift the cluster above the right-side progress rail so the
@@ -5510,6 +5513,8 @@
  * z-index 8 inside its own stacking context, currently at z 6 of the overlay-stack grid). */
 .nav-top-cluster:has(.storm-advisory-bar--expanded) {
   z-index: 16;
+  /* Allow vertical pan inside the expanded advisory scroll body (manipulation blocks it). */
+  touch-action: pan-y;
 }
 
 /* Visual cue when the preview button is the close-tap target while expanded. */
@@ -5518,15 +5523,31 @@
 }
 
 .storm-advisory-bar--expanded .storm-advisory-bar__sections-scroll {
-  flex: 1 1 auto;
+  flex: 1 1 0%;
   min-height: 0;
+  max-height: 100%;
+  overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   display: flex;
   flex-direction: column;
   gap: 14px;
   padding-right: 4px;
   margin-top: 8px;
+}
+
+/* Flex children must not shrink — otherwise overflow:hidden cards clip instead of scrolling. */
+.storm-advisory-bar--expanded .storm-advisory-bar__sections-scroll > * {
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__stale-row,
+.storm-advisory-bar--expanded .storm-advisory-bar__basic-strip,
+.storm-advisory-bar--expanded .storm-advisory-bar__basic-tier-desc {
+  flex-shrink: 0;
 }
 
 /* Stage A: per-section card. Mirrors the iOS-grouped feel from the About sheet. */
@@ -6666,7 +6687,483 @@
 
 /* (Detail cards removed — see .rhtz__legend at top of file.) */
 
-/* — Local forecast card (advisory bar) — */
+/* — Advisory dashboard (HERE / ROUTE) — */
+.adv-dash {
+  margin: 0 0 10px;
+  padding: 0;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.adv-dash--here {
+  border-color: rgba(56, 189, 248, 0.2);
+}
+
+.adv-dash--route {
+  border-color: rgba(251, 191, 36, 0.18);
+}
+
+.adv-dash__zone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.adv-dash--here .adv-dash__zone {
+  border-bottom: 1px solid rgba(56, 189, 248, 0.12);
+}
+
+.adv-dash--route .adv-dash__zone {
+  border-bottom: 1px solid rgba(251, 191, 36, 0.12);
+}
+
+.adv-dash__zone-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.adv-dash__zone-tag {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #e0f2fe;
+  background: rgba(14, 116, 144, 0.55);
+}
+
+.adv-dash__zone-tag--route {
+  color: #fef3c7;
+  background: rgba(120, 53, 15, 0.55);
+}
+
+.adv-dash__zone-place {
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: rgba(255, 255, 255, 0.92);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adv-dash__zone-meta {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.adv-dash__zone-toggles {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.adv-dash__toggle {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.adv-dash__toggle--on {
+  color: rgba(254, 243, 199, 0.9);
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(120, 53, 15, 0.3);
+}
+
+.adv-dash__hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 12px 10px;
+}
+
+.adv-dash__hero-temp {
+  flex-shrink: 0;
+  font-size: 3.25rem;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.adv-dash__hero-degree {
+  font-size: 1.5rem;
+  font-weight: 400;
+  opacity: 0.85;
+  vertical-align: super;
+}
+
+.adv-dash__hero-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.adv-dash__hero-sky {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.adv-dash__hero-fallback {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.adv-dash__stat-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.adv-dash__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.adv-dash__stat-k {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.adv-dash__stat-v {
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: rgba(255, 255, 255, 0.9);
+  font-variant-numeric: tabular-nums;
+}
+
+.adv-dash__stat-u {
+  font-size: 0.72rem;
+  font-weight: 500;
+  opacity: 0.65;
+}
+
+.adv-dash__local-alerts {
+  list-style: none;
+  margin: 0;
+  padding: 0 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.adv-dash__local-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: none;
+  border-left: 3px solid #94a3b8;
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.adv-dash__local-alert--static {
+  cursor: default;
+}
+
+.adv-dash__local-alert--avoid {
+  border-left-color: #ef4444;
+  background: rgba(69, 10, 10, 0.35);
+}
+
+.adv-dash__local-alert--serious {
+  border-left-color: #f97316;
+}
+
+.adv-dash__local-alert--caution {
+  border-left-color: #eab308;
+}
+
+.adv-dash__local-alert--info {
+  border-left-color: #60a5fa;
+}
+
+.adv-dash__local-alert-tag {
+  flex-shrink: 0;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.adv-dash__local-alert-text {
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.adv-dash__strips {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.adv-dash__strip {
+  padding: 10px 12px;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.adv-dash__strip-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.adv-dash__strip-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.adv-dash__strip-answer {
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.adv-dash__strip-note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.adv-dash__bar {
+  display: flex;
+  height: 14px;
+  border-radius: 4px;
+  overflow: hidden;
+  gap: 1px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.adv-dash__bar-cell {
+  flex: 1;
+  min-width: 0;
+}
+
+.adv-dash__hour-scroll,
+.adv-dash__week-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  margin: 0 -4px;
+}
+
+.adv-dash__hour-row,
+.adv-dash__week-row {
+  display: flex;
+  gap: 6px;
+  min-width: min-content;
+  padding: 0 2px 2px;
+}
+
+.adv-dash__hour-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 36px;
+}
+
+.adv-dash__hour-time {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.adv-dash__hour-temp {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.92);
+  font-variant-numeric: tabular-nums;
+}
+
+.adv-dash__hour-precip {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+}
+
+.adv-dash__week-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 40px;
+}
+
+.adv-dash__week-day {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.adv-dash__week-hi {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.adv-dash__week-lo {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.adv-dash__week-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-top: 2px;
+}
+
+.adv-dash__empty,
+.adv-dash__tip,
+.adv-dash__clear {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.adv-dash__tip--warn {
+  color: #fcd34d;
+}
+
+.adv-dash__clear {
+  padding-bottom: 4px;
+  color: rgba(134, 239, 172, 0.85);
+  font-weight: 600;
+}
+
+.adv-dash__feed {
+  display: flex;
+  flex-direction: column;
+}
+
+.adv-dash__feed-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.adv-dash__feed-row--tap {
+  cursor: pointer;
+}
+
+.adv-dash__feed-row--tap:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.adv-dash__feed-row--avoid {
+  background: rgba(69, 10, 10, 0.2);
+}
+
+.adv-dash__feed-row--serious {
+  background: rgba(67, 20, 7, 0.15);
+}
+
+.adv-dash__feed-tag {
+  flex-shrink: 0;
+  min-width: 36px;
+  padding: 2px 0;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  text-align: center;
+  border-radius: 4px;
+  color: rgba(191, 219, 254, 0.9);
+  background: rgba(30, 58, 138, 0.35);
+}
+
+.adv-dash__feed-tag--road {
+  color: #fef3c7;
+  background: rgba(120, 53, 15, 0.4);
+}
+
+.adv-dash__feed-tag--urgent {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.55);
+}
+
+.adv-dash__feed-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.adv-dash__feed-title {
+  font-size: 0.86rem;
+  font-weight: 650;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.adv-dash__feed-detail {
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.adv-dash__feed-timing {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(125, 211, 252, 0.85);
+}
+
+.adv-dash__feed-action {
+  padding: 10px 12px;
+}
+
+.adv-dash__split {
+  height: 1px;
+  margin: 12px 0;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* — Local forecast card (advisory bar) — legacy — */
 .adv-forecast {
   margin: 0 0 14px;
   padding: 12px 14px;
@@ -6674,6 +7171,264 @@
   border: 1px solid rgba(148, 163, 184, 0.22);
   background: linear-gradient(165deg, rgba(30, 41, 59, 0.72) 0%, rgba(15, 23, 42, 0.55) 100%);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+.adv-forecast--local {
+  border-color: rgba(56, 189, 248, 0.28);
+  background: linear-gradient(165deg, rgba(12, 74, 110, 0.35) 0%, rgba(15, 23, 42, 0.58) 100%);
+}
+
+.adv-forecast__scope-hint {
+  margin: 6px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: rgba(186, 230, 253, 0.55);
+}
+
+.adv-forecast__head-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.adv-forecast__provider-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(224, 242, 254, 0.95);
+  background: rgba(14, 116, 144, 0.45);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.adv-forecast__chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.adv-forecast__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.adv-forecast__chip--heat-warn {
+  border-color: rgba(245, 158, 11, 0.65);
+  color: #fde68a;
+}
+
+.adv-forecast__lane-legend {
+  display: flex;
+  gap: 10px;
+  margin-top: 5px;
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.adv-forecast__heat-peak {
+  margin: 0 0 8px;
+  font-size: 0.8rem;
+  color: #fcd34d;
+}
+
+.adv-lf-lanes-head {
+  display: grid;
+  grid-template-columns: 34px repeat(3, 1fr);
+  gap: 3px;
+  margin: 8px 0 4px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.adv-lf-lanes-head__label {
+  grid-column: 1;
+}
+
+.adv-lf-lane {
+  width: 100%;
+  border-radius: 3px;
+  min-height: 8px;
+}
+
+.adv-lf-lane--feels {
+  height: 10px;
+}
+
+.adv-lf-lane--precip {
+  height: 18px;
+}
+
+.adv-lf-lane--wind {
+  align-self: flex-end;
+  width: 100%;
+  min-height: 6px;
+  border-radius: 3px 3px 0 0;
+}
+
+.adv-forecast__daily-cond {
+  font-size: 0.58rem;
+  line-height: 1.2;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.55);
+  max-width: 52px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adv-forecast__daily-signals {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  margin-top: 2px;
+  width: 100%;
+}
+
+.adv-forecast__daily-uv,
+.adv-forecast__daily-precip-tag {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.92);
+  white-space: nowrap;
+}
+
+.storm-advisory-bar__section-divider {
+  height: 1px;
+  margin: 4px 0 16px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(251, 191, 36, 0.45) 20%,
+    rgba(251, 191, 36, 0.45) 80%,
+    transparent 100%
+  );
+}
+
+.storm-advisory-bar__route-panel {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(251, 191, 36, 0.22);
+  background: linear-gradient(165deg, rgba(69, 26, 3, 0.22) 0%, rgba(15, 23, 42, 0.55) 100%);
+}
+
+.storm-advisory-bar__route-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(251, 191, 36, 0.15);
+}
+
+.storm-advisory-bar__route-panel-head-text {
+  min-width: 0;
+}
+
+.storm-advisory-bar__route-panel-title {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(253, 230, 138, 0.9);
+}
+
+.storm-advisory-bar__route-panel-hint {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: rgba(253, 230, 138, 0.5);
+}
+
+.storm-advisory-bar__route-panel-sources {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.storm-advisory-bar__route-source {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.38);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.4);
+}
+
+.storm-advisory-bar__route-source--on {
+  color: rgba(254, 243, 199, 0.92);
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(120, 53, 15, 0.35);
+}
+
+.storm-advisory-bar__route-block {
+  margin-bottom: 10px;
+}
+
+.storm-advisory-bar__route-block-label {
+  margin: 0 0 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.storm-advisory-bar__route-block--urgent .storm-advisory-bar__route-block-label {
+  color: rgba(254, 202, 202, 0.85);
+}
+
+.storm-advisory-bar__route-block--nws .storm-advisory-bar__route-block-label {
+  color: rgba(191, 219, 254, 0.75);
+}
+
+.storm-advisory-bar__route-block--road .storm-advisory-bar__route-block-label {
+  color: rgba(253, 230, 138, 0.7);
+}
+
+.rhtz--grouped {
+  margin-top: 4px;
+}
+
+.rhtz__legend-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rhtz__legend-group-title {
+  margin: 0 0 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
 }
 
 .adv-forecast__head {
@@ -7555,6 +8310,7 @@
   justify-content: flex-start;
   gap: 10px;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .storm-advisory-bar__head-title-stack {

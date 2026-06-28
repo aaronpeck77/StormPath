@@ -48,6 +48,10 @@ export type RouteHazardTimelineProps = {
   driveEtaMinutes?: number | null;
   /** Full graph + legend (advisory legacy) or detailed list only (progress panel has the graph). */
   variant?: "full" | "legendOnly";
+  /** Advisory route panel: split legend into NWS vs road sections. */
+  groupLegendByTrack?: boolean;
+  /** Flat feed rows — no extra header chrome (nested in adv-dash). */
+  compactFeed?: boolean;
   /** Show the reroute button when traffic warrants it. */
   showRerouteCta?: boolean;
   onReroute?: () => void;
@@ -129,14 +133,67 @@ function useTimelineItemVisuals(
   }, [items, totalMeters, userAlongMeters, planEtaMinutes, driveEtaMinutes]);
 }
 
+function LegendEntryRow({
+  item,
+  vis,
+  showTrackLabel,
+}: {
+  item: TimelineItem;
+  vis: ItemVisual;
+  showTrackLabel: boolean;
+}) {
+  return (
+    <li key={item.id}>
+      <div
+        className={`rhtz__legend-item rhtz__legend-item--${item.severity}${item.onClick ? " rhtz__legend-item--tappable" : ""}`}
+        role={item.onClick ? "button" : undefined}
+        tabIndex={item.onClick ? 0 : undefined}
+        onClick={item.onClick}
+        onKeyDown={
+          item.onClick
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  item.onClick?.();
+                }
+              }
+            : undefined
+        }
+      >
+        <span className="rhtz__legend-dot" style={{ background: timelineItemBandColor(item) }} aria-hidden />
+        <span className="rhtz__legend-body">
+          {showTrackLabel ? (
+            <span className="rhtz__legend-track">{TRACK_META[item.track]?.label ?? item.track}</span>
+          ) : null}
+          <span className="rhtz__legend-label">{item.label}</span>
+          {vis.locationLine && vis.locationLine !== "On your planned route" ? (
+            <span className={`rhtz__legend-ahead${vis.inside ? " rhtz__legend-ahead--now" : ""}`}>
+              {vis.locationLine}
+            </span>
+          ) : null}
+          {(() => {
+            const detail = legendDetailText(item);
+            return detail ? <span className="rhtz__legend-detail">{detail}</span> : null;
+          })()}
+          {vis.timingDetail ? <span className="rhtz__legend-timing">{vis.timingDetail}</span> : null}
+        </span>
+      </div>
+    </li>
+  );
+}
+
 function RouteHazardLegend({
   items,
   itemVisuals,
   showTrackLabel = true,
+  groupByTrack = false,
+  compactFeed = false,
 }: {
   items: TimelineItem[];
   itemVisuals: ItemVisual[];
   showTrackLabel?: boolean;
+  groupByTrack?: boolean;
+  compactFeed?: boolean;
 }) {
   const legendEntries = useMemo(
     () =>
@@ -149,49 +206,88 @@ function RouteHazardLegend({
 
   if (!legendEntries.length) return null;
 
+  if (compactFeed) {
+    return (
+      <>
+        {legendEntries.map(({ item, vis }) => {
+          const trackTag =
+            item.track === "road" ? "Road" : item.track === "nws" ? "NWS" : item.track === "wind" ? "Wind" : "Wx";
+          const tagTone = item.track === "road" ? "road" : "nws";
+          const detail = legendDetailText(item);
+          const timing =
+            vis.timingDetail ??
+            (vis.locationLine && vis.locationLine !== "On your planned route" ? vis.locationLine : null);
+          return (
+            <div
+              key={item.id}
+              className={`adv-dash__feed-row adv-dash__feed-row--${item.severity}${item.onClick ? " adv-dash__feed-row--tap" : ""}`}
+              role={item.onClick ? "button" : undefined}
+              tabIndex={item.onClick ? 0 : undefined}
+              onClick={item.onClick}
+              onKeyDown={
+                item.onClick
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        item.onClick?.();
+                      }
+                    }
+                  : undefined
+              }
+            >
+              <span className={`adv-dash__feed-tag adv-dash__feed-tag--${tagTone}`}>{trackTag}</span>
+              <span className="adv-dash__feed-body">
+                <span className="adv-dash__feed-title">{item.label}</span>
+                {detail ? <span className="adv-dash__feed-detail">{detail}</span> : null}
+                {timing ? <span className="adv-dash__feed-timing">{timing}</span> : null}
+              </span>
+            </div>
+          );
+        })}
+      </>
+    );
+  }
+
+  if (groupByTrack) {
+    const nwsEntries = legendEntries.filter(({ item }) => item.track === "nws" || item.track === "wind");
+    const roadEntries = legendEntries.filter(({ item }) => item.track === "road");
+    const otherEntries = legendEntries.filter(
+      ({ item }) => item.track !== "nws" && item.track !== "wind" && item.track !== "road"
+    );
+
+    const renderGroup = (
+      title: string,
+      entries: typeof legendEntries,
+      ariaLabel: string
+    ) => {
+      if (!entries.length) return null;
+      return (
+        <div className="rhtz__legend-group">
+          <p className="rhtz__legend-group-title">{title}</p>
+          <ul className="rhtz__legend" aria-label={ariaLabel}>
+            {entries.map(({ item, vis }) => (
+              <LegendEntryRow key={item.id} item={item} vis={vis} showTrackLabel={showTrackLabel} />
+            ))}
+          </ul>
+        </div>
+      );
+    };
+
+    return (
+      <div className="rhtz__legend-groups">
+        {renderGroup("NWS & weather corridor", nwsEntries, "NWS and weather hazards along your route")}
+        {renderGroup("Road & traffic", roadEntries, "Road hazards along your route")}
+        {otherEntries.length > 0
+          ? renderGroup("Other", otherEntries, "Other hazards along your route")
+          : null}
+      </div>
+    );
+  }
+
   return (
     <ul className="rhtz__legend" aria-label="Hazards along your route in encounter order">
       {legendEntries.map(({ item, vis }) => (
-        <li key={item.id}>
-          <div
-            className={`rhtz__legend-item rhtz__legend-item--${item.severity}${item.onClick ? " rhtz__legend-item--tappable" : ""}`}
-            role={item.onClick ? "button" : undefined}
-            tabIndex={item.onClick ? 0 : undefined}
-            onClick={item.onClick}
-            onKeyDown={
-              item.onClick
-                ? (e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      item.onClick?.();
-                    }
-                  }
-                : undefined
-            }
-          >
-            <span className="rhtz__legend-dot" style={{ background: timelineItemBandColor(item) }} aria-hidden />
-            <span className="rhtz__legend-body">
-              {showTrackLabel ? (
-                <span className="rhtz__legend-track">{TRACK_META[item.track]?.label ?? item.track}</span>
-              ) : null}
-              <span className="rhtz__legend-label">{item.label}</span>
-              {vis.locationLine && vis.locationLine !== "On your planned route" ? (
-                <span
-                  className={`rhtz__legend-ahead${vis.inside ? " rhtz__legend-ahead--now" : ""}`}
-                >
-                  {vis.locationLine}
-                </span>
-              ) : null}
-              {(() => {
-                const detail = legendDetailText(item);
-                return detail ? <span className="rhtz__legend-detail">{detail}</span> : null;
-              })()}
-              {vis.timingDetail ? (
-                <span className="rhtz__legend-timing">{vis.timingDetail}</span>
-              ) : null}
-            </span>
-          </div>
-        </li>
+        <LegendEntryRow key={item.id} item={item} vis={vis} showTrackLabel={showTrackLabel} />
       ))}
     </ul>
   );
@@ -230,6 +326,8 @@ export function RouteHazardTimeline({
   planEtaMinutes,
   driveEtaMinutes = null,
   variant = "full",
+  groupLegendByTrack = false,
+  compactFeed = false,
   showRerouteCta = false,
   onReroute,
   rerouteBusy = false,
@@ -250,13 +348,37 @@ export function RouteHazardTimeline({
 
   if (variant === "legendOnly") {
     if (activeLegendCount === 0 && !showRerouteCta) return null;
+    if (compactFeed) {
+      return (
+        <>
+          <RouteHazardLegend
+            items={items}
+            itemVisuals={itemVisuals}
+            showTrackLabel={false}
+            compactFeed
+          />
+          <RouteHazardReroute
+            showRerouteCta={showRerouteCta}
+            onReroute={onReroute}
+            rerouteBusy={rerouteBusy}
+          />
+        </>
+      );
+    }
     return (
-      <div className="rhtz rhtz--legend-only">
-        <div className="rhtz__header">
-          <span className="rhtz__header-title">On your route</span>
-          <span className="rhtz__header-dest">Nearest ahead first · full detail</span>
-        </div>
-        <RouteHazardLegend items={items} itemVisuals={itemVisuals} showTrackLabel={false} />
+      <div className={`rhtz rhtz--legend-only${groupLegendByTrack ? " rhtz--grouped" : ""}`}>
+        {!groupLegendByTrack ? (
+          <div className="rhtz__header">
+            <span className="rhtz__header-title">On your route</span>
+            <span className="rhtz__header-dest">Nearest ahead first · full detail</span>
+          </div>
+        ) : null}
+        <RouteHazardLegend
+          items={items}
+          itemVisuals={itemVisuals}
+          showTrackLabel={false}
+          groupByTrack={groupLegendByTrack}
+        />
         <RouteHazardReroute
           showRerouteCta={showRerouteCta}
           onReroute={onReroute}
@@ -419,6 +541,6 @@ export function impactToTimelineItem(imp: RouteImpact): TimelineItem {
     endMeters: imp.endMeters,
     detailLine: impactDetailLine(imp),
     crossesRoute: true,
-    stripMuted: track === "forecast" || imp.source === "windGust",
+    stripMuted: track === "forecast" || track === "radar" || imp.source === "windGust",
   };
 }

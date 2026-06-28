@@ -78,6 +78,27 @@ describe("buildRouteAheadGlanceCards", () => {
     expect(cards).toHaveLength(0);
   });
 
+  it("does not surface purple RAD cards in the route-info glance list", () => {
+    const cards = buildRouteAheadGlanceCards({
+      items: [
+        baseItem({
+          id: "radar-band",
+          track: "radar",
+          severity: "serious",
+          label: "Steady rain along much of your route",
+          startMeters: 50_000,
+          endMeters: 80_000,
+        }),
+        baseItem({ id: "warning", stripMuted: false, label: "Flash Flood Warning" }),
+      ],
+      totalMeters: 80_000,
+      userAlongMeters: 0,
+      planEtaMinutes: 90,
+    });
+    expect(cards).toHaveLength(1);
+    expect(cards.every((c) => c.track !== "radar")).toBe(true);
+  });
+
   it("excludes strip-muted minor flood from route status cards", () => {
     const cards = buildRouteAheadGlanceCards({
       items: [
