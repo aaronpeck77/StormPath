@@ -64,6 +64,8 @@ export type WeatherKitHourly = {
   pressure: number;
   temperature: number;
   temperatureApparent: number;
+  /** Horizontal visibility in meters (when provided by WeatherKit). */
+  visibility?: number;
   windDirection: number;
   windGust?: number;
   windSpeed: number;

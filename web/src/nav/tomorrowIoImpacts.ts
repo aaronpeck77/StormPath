@@ -9,6 +9,13 @@
 import type { RouteForecast, RouteHourlyInterval } from "../services/tomorrowIo";
 import { weatherCodeLabel, weatherCodeSeverity } from "../services/tomorrowIo";
 import {
+  corridorMayFreezeOnRoad,
+  corridorWeatherHeadline,
+  formatCorridorIntervalDetail,
+  formatCorridorRoadSurfaceNote,
+  formatCorridorVisibilityNote,
+} from "../forecast/corridorIntervalDisplay";
+import {
   gustSpikeSeverity,
   sustainedWindImpactSeverity,
   WIND_GUST_SPIKE_MAX_ROUTE_FRAC,
@@ -35,10 +42,24 @@ function convectiveSeverity(iv: RouteHourlyInterval): RouteImpactSeverity | null
   return null;
 }
 
+function visibilitySeverity(iv: RouteHourlyInterval): RouteImpactSeverity | null {
+  const note = formatCorridorVisibilityNote(iv);
+  if (note === "Very low visibility") return "serious";
+  if (note === "Low visibility") return "caution";
+  return null;
+}
+
+function freezingRoadSeverity(iv: RouteHourlyInterval): RouteImpactSeverity | null {
+  if (!corridorMayFreezeOnRoad(iv)) return null;
+  return iv.tempF <= 28 ? "serious" : "caution";
+}
+
 function categoryFromInterval(iv: RouteHourlyInterval): RouteImpactCategory {
   const code = iv.weatherCode;
   if (convectiveSeverity(iv)) return "weather";
-  if ([5000, 5001, 5100, 5101, 6000, 6001, 6200, 6201, 7000, 7101, 7102].includes(code)) return "winter";
+  if ([5000, 5001, 5100, 5101, 6000, 6001, 6200, 6201, 7000, 7101, 7102].includes(code))
+    return "winter";
+  if (formatCorridorVisibilityNote(iv)) return "weather";
   if (iv.precipIntensityMmh >= 1) return "weather";
   if (sustainedWindImpactSeverity(iv.windSpeedMph)) return "wind";
   if (iv.wetRoadMm >= 2) return "flooding";
@@ -46,7 +67,7 @@ function categoryFromInterval(iv: RouteHourlyInterval): RouteImpactCategory {
 }
 
 function detailFromInterval(iv: RouteHourlyInterval): string {
-  const parts: string[] = [weatherCodeLabel(iv.weatherCode)];
+  const parts: string[] = [corridorWeatherHeadline(iv.weatherCode)];
   if (iv.lightningFlashRate != null && iv.lightningFlashRate >= 0.08) {
     parts.push("lightning nearby");
   }
@@ -65,13 +86,18 @@ function detailFromInterval(iv: RouteHourlyInterval): string {
   } else if (sustainedWindImpactSeverity(iv.windSpeedMph)) {
     parts.push(`wind ${Math.round(iv.windSpeedMph)} mph`);
   }
-  if (iv.wetRoadMm >= 1) parts.push(`standing water ${iv.wetRoadMm.toFixed(1)} mm`);
-  parts.push(`${Math.round(iv.tempF)}°F`);
+  const road = formatCorridorRoadSurfaceNote(iv);
+  if (road) parts.push(road);
+  else if (iv.wetRoadMm >= 1) parts.push(`standing water ${iv.wetRoadMm.toFixed(1)} mm`);
+  const vis = formatCorridorVisibilityNote(iv);
+  if (vis) parts.push(vis);
+  const tail = formatCorridorIntervalDetail(iv).split(" · ").pop();
+  if (tail) parts.push(tail);
   return parts.join(" · ");
 }
 
 function headlineFromInterval(iv: RouteHourlyInterval): string {
-  const label = weatherCodeLabel(iv.weatherCode);
+  const label = corridorWeatherHeadline(iv.weatherCode);
   // Only call something "Hazardous" when there is actual precipitation or winter weather.
   // High wind with clear sky is handled by the Wind track; labelling it "Hazardous: Mostly cloudy"
   // is confusing and redundant.
@@ -95,7 +121,7 @@ function forecastHeadlineForBand(
   worstSev: RouteImpactSeverity,
   spanFrac: number
 ): string {
-  const label = weatherCodeLabel(rep.weatherCode);
+  const label = corridorWeatherHeadline(rep.weatherCode);
   const longBand = spanFrac >= 0.25;
   if (worstSev === "avoid" || worstSev === "serious") {
     return longBand ? `Hazardous weather along much of your route` : `Hazardous: ${label}`;
@@ -149,6 +175,8 @@ export function routeForecastToImpacts(
       const endM = Math.min(totalMeters, nextFrac * totalMeters);
       const sev =
         convectiveSeverity(iv) ??
+        freezingRoadSeverity(iv) ??
+        visibilitySeverity(iv) ??
         weatherCodeSeverity(iv.weatherCode, iv.precipIntensityMmh, iv.windSpeedMph);
       const cat = categoryFromInterval(iv);
       return { iv, startM, endM, sev, cat };

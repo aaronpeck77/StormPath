@@ -11,6 +11,13 @@ import {
   RADAR_HEAVY_THRESHOLD,
   RADAR_REROUTE_THRESHOLD,
 } from "../nav/constants";
+import {
+  corridorColdestInterval,
+  corridorFreezingInterval,
+  corridorLowVisibilityInterval,
+  corridorWeatherHeadline,
+  formatCorridorIntervalDetail,
+} from "./corridorIntervalDisplay";
 
 export type AlongRouteSegment = {
   etaMinutes: number;
@@ -87,8 +94,8 @@ function wetCorridorInterval(
   if (bestScore <= 0 || !intervalIsWet(best)) return null;
   return {
     etaMinutes: Math.round(best.etaMinutes),
-    headline: weatherCodeLabel(best.weatherCode),
-    detail: formatIntervalDetail(best),
+    headline: corridorWeatherHeadline(best.weatherCode),
+    detail: formatCorridorIntervalDetail(best),
     weatherCode: best.weatherCode,
   };
 }
@@ -139,6 +146,47 @@ export function corridorWetHeadline(forecast: RouteForecast | null | undefined):
   return wetCorridorHeadline(forecast);
 }
 
+function corridorSupplementLine(
+  forecast: RouteForecast,
+  pick: (
+    fc: RouteForecast
+  ) => { etaMinutes: number; headline: string; detail: string } | null
+): string | null {
+  const hit = pick(forecast);
+  if (!hit) return null;
+  const etaLabel = hit.etaMinutes > 0 ? ` in ~${hit.etaMinutes} min` : "";
+  return `${hit.headline}${etaLabel} on route · ${hit.detail}`;
+}
+
+/** Black-ice / refreeze risk when wet pavement is at or below freezing. */
+export function corridorFreezingLine(
+  forecast: RouteForecast | null | undefined
+): string | null {
+  if (!forecast?.intervals.length) return null;
+  return corridorSupplementLine(forecast, corridorFreezingInterval);
+}
+
+/** Coldest feels-like sampled along the corridor (winter wind chill). */
+export function corridorColdLine(forecast: RouteForecast | null | undefined): string | null {
+  if (!forecast?.intervals.length) return null;
+  const cold = corridorColdestInterval(forecast);
+  if (!cold) return null;
+  const etaLabel = cold.etaMinutes > 0 ? ` ~${cold.etaMinutes} min ahead` : "";
+  const feelsPart =
+    cold.feelsLikeF < cold.tempF - 3
+      ? `Feels ${cold.feelsLikeF}°F (${cold.tempF}°F air)${etaLabel}`
+      : `Coldest ${cold.feelsLikeF}°F${etaLabel} on route`;
+  return feelsPart;
+}
+
+/** Fog / low visibility when WeatherKit visibility is below ~1 mi. */
+export function corridorLowVisibilityLine(
+  forecast: RouteForecast | null | undefined
+): string | null {
+  if (!forecast?.intervals.length) return null;
+  return corridorSupplementLine(forecast, corridorLowVisibilityInterval);
+}
+
 export function alongRouteSegments(
   forecast: RouteForecast | null,
   tripEtaMinutes: number
@@ -148,8 +196,8 @@ export function alongRouteSegments(
     const sev = weatherCodeSeverity(iv.weatherCode, iv.precipIntensityMmh, iv.windGustMph);
     return {
       etaMinutes: Math.round(iv.etaMinutes),
-      label: weatherCodeLabel(iv.weatherCode),
-      detail: formatIntervalDetail(iv),
+      label: corridorWeatherHeadline(iv.weatherCode),
+      detail: formatCorridorIntervalDetail(iv),
       severity: sev,
       precipMmh: iv.precipIntensityMmh,
       windGustMph: iv.windGustMph,
@@ -158,12 +206,7 @@ export function alongRouteSegments(
 }
 
 function formatIntervalDetail(iv: RouteHourlyInterval): string {
-  const parts: string[] = [];
-  if (iv.precipIntensityMmh >= 0.4) parts.push(`${iv.precipIntensityMmh.toFixed(1)} mm/hr rain`);
-  if (iv.windGustMph >= 22) parts.push(`gusts ${Math.round(iv.windGustMph)} mph`);
-  if (iv.wetRoadMm >= 1.5) parts.push("wet roads");
-  parts.push(`${Math.round(iv.tempF)}°F`);
-  return parts.join(" · ");
+  return formatCorridorIntervalDetail(iv);
 }
 
 export function arrivalSnapshot(
@@ -185,8 +228,8 @@ export function arrivalSnapshot(
   const sev = weatherCodeSeverity(best.weatherCode, best.precipIntensityMmh, best.windGustMph);
   return {
     etaMinutes: eta,
-    headline: weatherCodeLabel(best.weatherCode),
-    detail: formatIntervalDetail(best),
+    headline: corridorWeatherHeadline(best.weatherCode),
+    detail: formatCorridorIntervalDetail(best),
     severity: sev,
   };
 }
@@ -285,14 +328,8 @@ export function worstCorridorInterval(
   if (sev === "info") return null;
   return {
     etaMinutes: Math.round(best.etaMinutes),
-    headline: weatherCodeLabel(best.weatherCode),
-    detail: [
-      best.precipIntensityMmh >= 0.4 ? `${best.precipIntensityMmh.toFixed(1)} mm/hr` : null,
-      best.windGustMph >= 22 ? `gusts ${Math.round(best.windGustMph)} mph` : null,
-      `${Math.round(best.tempF)}°F`,
-    ]
-      .filter(Boolean)
-      .join(" · "),
+    headline: corridorWeatherHeadline(best.weatherCode),
+    detail: formatCorridorIntervalDetail(best),
     severity: sev,
   };
 }

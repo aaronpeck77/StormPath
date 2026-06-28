@@ -26,11 +26,14 @@ export { isWeatherKitTokenBlocked } from "./weatherKitAuth";
 export function weatherKitConditionToCode(condition: string): number {
   const c = condition.toLowerCase();
   if (c.includes("thunder") || c === "strongstorms") return 8000;
+  if (c === "hail") return 8000;
   if (c === "heavyrain") return 4201;
   if (c === "rain" || c === "sunshowers") return 4001;
   if (c === "drizzle") return 4000;
-  if (c.includes("freezing") || c === "sleet") return 6001;
-  if (c === "heavysnow" || c === "blizzard") return 5101;
+  if (c === "freezingdrizzle") return 6000;
+  if (c === "freezingrain" || c === "wintrymix" || c.includes("freezing") || c === "sleet")
+    return 6001;
+  if (c === "heavysnow" || c === "blizzard" || c === "blowingsnow") return 5101;
   if (c === "snow" || c === "flurries") return 5000;
   if (c === "fog" || c === "haze" || c === "smoky") return 2000;
   if (c === "mostlyclear") return 1100;
@@ -80,33 +83,39 @@ function nearestHourlyForEta(
   return (
     best ?? {
       temperature: 21,
+      temperatureApparent: undefined,
       precipitationIntensity: 0,
       precipitationProbability: 0,
       windSpeed: 0,
       windGust: 0,
       weatherCode: 1000,
       wetRoadIndex: 0,
+      visibilityM: undefined,
     }
   );
 }
 
 function mapHourlyValues(h: {
   temperature: number;
+  temperatureApparent?: number;
   precipitationIntensity: number;
   precipitationChance: number;
   precipitationAmount: number;
   windSpeed: number;
   windGust?: number;
   conditionCode: string;
+  visibility?: number;
 }) {
   return {
     temperature: h.temperature,
+    temperatureApparent: h.temperatureApparent,
     precipitationIntensity: h.precipitationIntensity,
     precipitationProbability: h.precipitationChance,
     windSpeed: h.windSpeed,
     windGust: h.windGust ?? h.windSpeed,
     weatherCode: weatherKitConditionToCode(h.conditionCode),
     wetRoadIndex: estimateWetRoadMm(h.precipitationIntensity, h.precipitationAmount),
+    visibilityM: h.visibility,
   };
 }
 
@@ -264,17 +273,21 @@ export async function fetchWeatherKitRouteForecast(
     const v = nearestHourlyForEta(hourly, wp.etaMinutes, fetchedAt);
     const windSpeedMph = kphToMph(v.windSpeed);
     const rawGustMph = v.windGust != null ? kphToMph(v.windGust) : windSpeedMph;
+    const feelsLikeF =
+      v.temperatureApparent != null ? cToF(v.temperatureApparent) : undefined;
     return {
       etaMinutes: wp.etaMinutes,
       lat: wp.lat,
       lng: wp.lng,
       tempF: cToF(v.temperature),
+      feelsLikeF,
       precipIntensityMmh: v.precipitationIntensity,
       precipProbability: v.precipitationProbability,
       windSpeedMph,
       windGustMph: calibratedWindGustMph(windSpeedMph, rawGustMph),
       weatherCode: v.weatherCode,
       wetRoadMm: v.wetRoadIndex,
+      visibilityM: v.visibilityM,
     };
   });
 

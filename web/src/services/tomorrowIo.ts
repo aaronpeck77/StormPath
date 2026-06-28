@@ -120,6 +120,10 @@ export type RouteHourlyInterval = {
   hailProbability?: number;
   /** Hail size mm (optional). */
   hailSizeMm?: number;
+  /** Apparent temperature °F (WeatherKit temperatureApparent). */
+  feelsLikeF?: number;
+  /** Horizontal visibility meters (WeatherKit). */
+  visibilityM?: number;
 };
 
 /** Route-aware hourly forecast. */
@@ -840,5 +844,11 @@ export function routeForecastCompactHeadline(forecast: RouteForecast): string {
   if (worst.windGustMph >= 28)
     parts.push(`gusts ~${Math.round(worst.windGustMph)} mph`);
   if ((worst.wetRoadMm ?? 0) >= 2.5) parts.push("wet-road signal");
+  if (
+    worst.tempF <= 32 &&
+    ((worst.wetRoadMm ?? 0) >= 0.8 || worst.precipIntensityMmh > 0.02)
+  ) {
+    parts.push(worst.tempF <= 28 ? "icy roads likely" : "wet roads — may freeze");
+  }
   return parts.slice(0, 3).join(" · ");
 }

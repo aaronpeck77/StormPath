@@ -8,6 +8,7 @@ import {
 import { radarDisplayIntensity } from "./radarReflectivityScale";
 import type { RouteForecast, RouteHourlyInterval } from "../services/tomorrowIo";
 import { weatherCodeLabel } from "../services/tomorrowIo";
+import { formatCorridorTempLine } from "../forecast/corridorIntervalDisplay";
 import { formatDurationMinutesMaybe } from "../ui/formatEta";
 
 export type RadarOutlookSample = { t: number; intensity: number };
@@ -329,7 +330,7 @@ export function tomorrowForecastToWxSamples(
       t: Math.min(1, Math.max(0, iv.etaMinutes / planEtaMinutes)),
       precipHint: iv.precipProbability,
       precipIntensityMmh: iv.precipIntensityMmh,
-      headline: `${Math.round(iv.tempF)}°F ${conditions}${precipSuffix}`,
+      headline: `${formatCorridorTempLine(iv)} ${conditions}${precipSuffix}`,
       windGustMph: iv.windGustMph > 0 ? Math.round(iv.windGustMph) : null,
     };
   });

@@ -115,7 +115,7 @@ import {
   shouldShowTrafficBypassUi,
   TRAFFIC_BYPASS_ENABLED,
 } from "./nav/constants";
-import { routeForecastIntensityFloor, worstCorridorInterval, corridorWetIntervalLine, corridorWetHeadline } from "./forecast/corridorForecastModel";
+import { routeForecastIntensityFloor, worstCorridorInterval, corridorWetIntervalLine, corridorWetHeadline, corridorFreezingLine, corridorColdLine, corridorLowVisibilityLine } from "./forecast/corridorForecastModel";
 import { buildRouteWeatherOverlayFromForecast } from "./forecast/routeForecastOverlay";
 import type { TrafficOverlay } from "./situation/fusedSnapshot";
 import type { MapViewMode } from "./ui/driveMapTypes";
@@ -2053,11 +2053,26 @@ export default function App() {
       return snapLine;
     }
     const wetLine = corridorWetIntervalLine(tioRouteForecast);
-    if (!wetLine) return base;
-    if (base && !base.toLowerCase().includes(wetLine.split(" · ")[0]!.toLowerCase())) {
-      return `${base} · ${wetLine}`;
+    if (wetLine) {
+      if (base && !base.toLowerCase().includes(wetLine.split(" · ")[0]!.toLowerCase())) {
+        return `${base} · ${wetLine}`;
+      }
+      return wetLine;
     }
-    return wetLine;
+    const extras: string[] = [];
+    for (const line of [
+      corridorFreezingLine(tioRouteForecast),
+      corridorLowVisibilityLine(tioRouteForecast),
+      corridorColdLine(tioRouteForecast),
+    ]) {
+      if (line && !base.toLowerCase().includes(line.split(" · ")[0]!.toLowerCase())) {
+        extras.push(line);
+      }
+    }
+    if (extras.length) {
+      return base ? `${base} · ${extras.join(" · ")}` : extras.join(" · ");
+    }
+    return base;
   }, [corridorWeatherDetail, tioRouteForecast, advisoryNowcastLine]);
 
   const localForecastPanelLoading = useMemo(() => {

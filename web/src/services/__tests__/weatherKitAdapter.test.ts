@@ -13,6 +13,14 @@ describe("weatherKitConditionToCode", () => {
     expect(weatherKitConditionToCode("Clear")).toBe(1000);
     expect(weatherKitConditionToCode("PartlyCloudy")).toBe(1101);
   });
+
+  it("maps winter condition codes used by WeatherKit", () => {
+    expect(weatherKitConditionToCode("BlowingSnow")).toBe(5101);
+    expect(weatherKitConditionToCode("WintryMix")).toBe(6001);
+    expect(weatherKitConditionToCode("Hail")).toBe(8000);
+    expect(weatherKitConditionToCode("FreezingDrizzle")).toBe(6000);
+    expect(weatherKitConditionToCode("FreezingRain")).toBe(6001);
+  });
 });
 
 describe("WeatherKit wind units", () => {
