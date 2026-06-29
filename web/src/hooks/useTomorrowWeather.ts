@@ -28,8 +28,7 @@ import {
 } from "../services/tomorrowIo";
 import {
   fetchWeatherKitMinutePrecip,
-  fetchWeatherKitPointDaily,
-  fetchWeatherKitPointHourly,
+  fetchWeatherKitPointLocal,
   fetchWeatherKitRouteForecast,
   isWeatherKitTokenBlocked,
 } from "../services/weatherKit";
@@ -185,9 +184,9 @@ export function useLocalHourlyForecast(
     const run = async () => {
       if (weatherKitEnabled && !isWeatherKitTokenBlocked() && !ac.signal.aborted) {
         try {
-          const f = await fetchWeatherKitPointHourly(lat, lng, ac.signal);
+          const { hourly } = await fetchWeatherKitPointLocal(lat, lng, ac.signal);
           if (!ac.signal.aborted) {
-            setForecast(f);
+            setForecast(hourly);
             return;
           }
         } catch (e) {
@@ -274,7 +273,6 @@ export function useLocalDailyForecast(
       setForecast(null);
       return;
     }
-    if (isWeatherKitTokenBlocked()) return;
 
     const now = Date.now();
     const lastLng = lastFetchLngLat.current;
@@ -287,19 +285,22 @@ export function useLocalDailyForecast(
     const ac = new AbortController();
     abortRef.current = ac;
     const [lng, lat] = userLngLat;
-    lastFetchTime.current = now;
-    lastFetchLngLat.current = userLngLat;
 
-    void fetchWeatherKitPointDaily(lat, lng, ac.signal)
-      .then((f) => {
-        if (!ac.signal.aborted) setForecast(f);
-      })
-      .catch((e) => {
+    const run = async () => {
+      if (isWeatherKitTokenBlocked() || ac.signal.aborted) return;
+      lastFetchTime.current = Date.now();
+      lastFetchLngLat.current = userLngLat;
+      try {
+        const { daily } = await fetchWeatherKitPointLocal(lat, lng, ac.signal);
+        if (!ac.signal.aborted) setForecast(daily);
+      } catch (e) {
         if (!ac.signal.aborted && import.meta.env.DEV) {
           console.warn("[WeatherKit] daily forecast failed:", e);
         }
-      });
+      }
+    };
 
+    void run();
     return () => ac.abort();
   }, [
     enabled,
@@ -307,6 +308,23 @@ export function useLocalDailyForecast(
     userLngLat ? Math.round(userLngLat[0] * 20) : null,
     userLngLat ? Math.round(userLngLat[1] * 20) : null,
   ]);
+
+  useEffect(() => {
+    if (!enabled || !userLngLat || !weatherKitEnabled) return;
+    const id = setInterval(() => {
+      lastFetchTime.current = 0;
+    }, HOURLY_POINT_POLL_MS);
+    return () => clearInterval(id);
+  }, [enabled, weatherKitEnabled, !!userLngLat]);
+
+  useEffect(() => {
+    if (!enabled || !userLngLat || !weatherKitEnabled) return;
+    if (!isWeatherKitTokenBlocked()) return;
+    const id = setInterval(() => {
+      lastFetchTime.current = 0;
+    }, 10_000);
+    return () => clearInterval(id);
+  }, [enabled, weatherKitEnabled, !!userLngLat]);
 
   return forecast;
 }

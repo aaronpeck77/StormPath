@@ -203,7 +203,7 @@ export async function fetchOpenWeatherPointHourly24h(
     list?: {
       dt: number;
       dt_txt?: string;
-      main?: { temp?: number };
+      main?: { temp?: number; feels_like?: number; humidity?: number };
       weather?: { description?: string }[];
       pop?: number;
       wind?: { speed?: number };
@@ -221,6 +221,8 @@ export async function fetchOpenWeatherPointHourly24h(
       timeIso: new Date(tMs).toISOString(),
       offsetHours: (tMs - fetchedAt) / 3_600_000,
       tempF: Math.round(it.main?.temp ?? 0),
+      feelsLikeF: Math.round(it.main?.feels_like ?? it.main?.temp ?? 0),
+      humidityPct: it.main?.humidity,
       precipIntensityMmh: rainMm,
       precipProbability: pop,
       windMph: Math.round(it.wind?.speed ?? 0),

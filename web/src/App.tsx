@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties } from "react";
 import { Capacitor } from "@capacitor/core";
 import { KeepAwake } from "@capacitor-community/keep-awake";
 import { getWebEnv } from "./config/env";
@@ -108,7 +108,7 @@ import { pickDriveApproachBanner } from "./nav/driveHazardApproachPreview";
 import { pickTrafficBypassAnchorImpact } from "./nav/trafficBypassOffer";
 import { trafficBypassOfferHeadline, withTrafficBypassCompareKind } from "./nav/trafficBypassFlow";
 import { earlyApproachMaxMetersForSpeed } from "./nav/surgicalBypassWindow";
-import { unifiedTrafficNarrative, hasLocalizedTrafficIssue } from "./nav/trafficNarrative";
+import { unifiedTrafficNarrative } from "./nav/trafficNarrative";
 import {
   DRIVE_AHEAD_WINDOW_M,
   shouldShowManualOffRouteUi,
@@ -1578,122 +1578,6 @@ export default function App() {
     speedMps
   );
 
-  const stormRoadDetailRows = useMemo(() => {
-    if (!guidanceRoute?.geometry?.length || !guidanceSliceRaw) return [];
-    const rows: { label: string; text: ReactNode; actionLabel?: string; onAction?: () => void }[] = [];
-    const mapbox = Boolean(env.mapboxToken);
-
-    if (mapbox) {
-      if (!isPlus) {
-        rows.push({
-          label: "Traffic",
-          text: (
-            <>
-              <strong>Plus feature</strong>{" "}
-              <span className="storm-advisory-bar__road-muted">
-                Live route traffic delay and lane-level stops require Plus.
-              </span>
-            </>
-          ),
-        });
-      } else if (!settingTrafficEnabled) {
-        rows.push({
-          label: "Traffic",
-          text: (
-            <>
-              <strong>Fetches off</strong>{" "}
-              <span className="storm-advisory-bar__road-muted">
-                {isPlus
-                  ? "Turn on Traffic overlay in About → Settings."
-                  : "Plus: enable Traffic overlay in About (Basic has no corridor delay API)."}
-              </span>
-            </>
-          ),
-        });
-      } else if (!navigationStarted) {
-        rows.push({
-          label: "Traffic",
-          text: (
-            <>
-              <strong>Tap Go</strong>{" "}
-              <span className="storm-advisory-bar__road-muted">
-                Live delay and corridor traffic load after navigation starts.
-              </span>
-            </>
-          ),
-        });
-      } else if (!trafficFetchDone) {
-        rows.push({ label: "Traffic", text: <strong>Fetching live data…</strong> });
-      } else if (guidanceSliceRaw.hasLiveTrafficEstimate) {
-        const tLeg = trafficOverlay?.[guidanceRouteId];
-        const n = liveTrafficNarrative;
-        if (hasLocalizedTrafficIssue(tLeg) && n) {
-          rows.push({
-            label: "Traffic",
-            text: <strong>{n.advisoryHeadline}</strong>,
-          });
-          if (n.advisorySubtext) {
-            rows.push({
-              label: n.showAdvisoryDelayRow ? "Details" : "Note",
-              text: <span className="storm-advisory-bar__road-muted">{n.advisorySubtext}</span>,
-            });
-          }
-        } else if (n?.advisoryHeadline === "Clear — little delay") {
-          rows.push({
-            label: "Traffic",
-            text: (
-              <>
-                <strong>Clear</strong>{" "}
-                <span className="storm-advisory-bar__road-muted">— typical flow on this path.</span>
-              </>
-            ),
-          });
-        } else if (!n) {
-          rows.push({ label: "Traffic", text: <strong>Live traffic is updating…</strong> });
-        }
-
-      } else {
-        rows.push({
-          label: "Traffic",
-          text: (
-            <>
-              <strong>Traffic unavailable</strong>{" "}
-              <span className="storm-advisory-bar__road-muted">
-                — Mapbox could not trace this path right now (token scope, transient API issue, or route
-                geometry mismatch). Route guidance still works.
-              </span>
-            </>
-          ),
-        });
-      }
-    } else {
-      rows.push({
-        label: "Traffic",
-        text: (
-          <>
-            <strong>Off</strong>{" "}
-            <span className="storm-advisory-bar__road-muted">— add Mapbox token</span>
-          </>
-        ),
-      });
-    }
-
-    return rows;
-  }, [
-    env.mapboxToken,
-    guidanceRoute?.geometry,
-    guidanceRoute?.routeNotices,
-    guidanceRouteId,
-    guidanceSliceRaw,
-    isPlus,
-    navigationStarted,
-    scored,
-    settingTrafficEnabled,
-    trafficFetchDone,
-    trafficOverlay,
-    liveTrafficNarrative,
-  ]);
-
   const guidanceRouteLengthM = useMemo(() => {
     const g = navigationGuidanceGeometry ?? guidanceRoute?.geometry;
     return g && g.length >= 2 ? polylineLengthMeters(g) : 0;
@@ -1950,7 +1834,10 @@ export default function App() {
   );
   const localDailyForecast = useLocalDailyForecast(
     effectiveUserLngLat ?? null,
-    tioPointFetchEnabled && weatherKitEnabled,
+    Boolean(isPlus) &&
+      weatherKitEnabled &&
+      Boolean(effectiveUserLngLat) &&
+      (tioPointFetchEnabled || stormBarExpanded),
     weatherKitEnabled
   );
   const {
@@ -3596,7 +3483,12 @@ export default function App() {
   }, [routeAlerts, guidanceRoute?.geometry, trafficOverlay, guidanceRouteId]);
 
   const advisoryRoadDetailRows = useMemo(() => {
-    const rows = [...stormRoadDetailRows];
+    const rows: {
+      label: string;
+      text: React.ReactNode;
+      actionLabel?: string;
+      onAction?: () => void;
+    }[] = [];
     const betterRoute = suggestedRouteId && suggestedRouteId !== guidanceRouteId ? suggestedRouteId : null;
     /** ETA minutes comparable to {@link driveEtaMinutes}: full trip before Go; remaining while navigating. */
     const etaForRoadTrafficComparison = (routeId: string): number | null => {
@@ -3635,15 +3527,18 @@ export default function App() {
       });
     }
     if (incidentLikeAlert) {
-      rows.push({
-        label: "Traffic alert",
-        text: (
-          <>
-            <strong>{incidentLikeAlert.detail || incidentLikeAlert.title}</strong>{" "}
-            <span className="storm-advisory-bar__road-muted">— possible slowdown on route.</span>
-          </>
-        ),
-      });
+      const headline = (incidentLikeAlert.detail || incidentLikeAlert.title || "").trim();
+      if (headline) {
+        rows.push({
+          label: "Traffic alert",
+          text: (
+            <>
+              <strong>{headline}</strong>{" "}
+              <span className="storm-advisory-bar__road-muted">Possible slowdown on route.</span>
+            </>
+          ),
+        });
+      }
     }
 
     if (betterRoute) {
@@ -3685,7 +3580,6 @@ export default function App() {
 
     return rows;
   }, [
-    stormRoadDetailRows,
     suggestedRouteId,
     guidanceRouteId,
     scored,

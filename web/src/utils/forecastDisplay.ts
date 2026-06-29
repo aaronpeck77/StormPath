@@ -5,6 +5,7 @@ import type {
   PointHourlyInterval,
 } from "../services/tomorrowIo";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
+import { formatHourlySlotTimeLabel } from "../forecast/localForecastStrips";
 import { displayText } from "./displayText";
 import { formatEtaDuration } from "../ui/formatEta";
 
@@ -59,10 +60,8 @@ export function formatForecastUpdatedShort(fetchedAtMs: number): string {
   });
 }
 
-export function truncateBannerText(text: string, maxLen: number): string {
-  const t = text.trim();
-  if (t.length <= maxLen) return t;
-  return `${t.slice(0, Math.max(0, maxLen - 1)).trimEnd()}…`;
+export function truncateBannerText(text: string, _maxLen?: number): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
 /** Compact “right now” line when OpenWeather is unavailable (uses Tomorrow.io snapshot). */
@@ -73,12 +72,21 @@ export function formatMinutePrecipNowLine(now: MinutePrecipNowSnapshot): string 
   return parts.join(" · ");
 }
 
-/** Short label for an hourly column (Now, 3p, 12a, …). */
-export function formatLocalForecastHourLabel(offsetHours: number, index: number): string {
-  if (index === 0 || offsetHours < 0.75) return "Now";
+/** Hour label for the local hourly strip (Now, 3:00 PM, …). */
+export function formatLocalForecastHourLabel(
+  offsetHours: number,
+  index: number,
+  timeIso?: string
+): string {
+  if (timeIso) {
+    return formatHourlySlotTimeLabel(timeIso);
+  }
+  if (index === 0 || (offsetHours >= 0 && offsetHours < 0.75)) return "Now";
   const d = new Date(Date.now() + offsetHours * 3_600_000);
-  return d.toLocaleTimeString(undefined, { hour: "numeric" }).replace(/\s/g, "");
+  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
+
+export { formatHourlySlotTimeLabel };
 
 /** One-line read on the 24-hour strip. */
 export function pointHourlyForecastSummary(hours: PointHourlyInterval[]): string {

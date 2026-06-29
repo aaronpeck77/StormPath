@@ -22,11 +22,20 @@ function nwsChipDetailText(a: NormalizedWeatherAlert): string | null {
   return summary;
 }
 
+const GENERIC_ROUTE_TRAFFIC_LABELS = new Set(["Traffic", "Details", "Note"]);
+
+function roadDetailRowHasInfo(row: StormRoadDetailRow): boolean {
+  if (GENERIC_ROUTE_TRAFFIC_LABELS.has(row.label)) return false;
+  if (typeof row.text === "string") return row.text.trim().length > 0;
+  return row.text != null;
+}
+
 function FeedRow({
   tag,
   tagTone,
   title,
   detail,
+  detailNode,
   timing,
   sevClass,
   onClick,
@@ -35,16 +44,19 @@ function FeedRow({
   tagTone: "nws" | "road" | "urgent";
   title: string;
   detail?: string | null;
+  detailNode?: ReactNode;
   timing?: string | null;
   sevClass: string;
   onClick?: () => void;
 }) {
   const body = (
     <>
+      <span className={`adv-dash__feed-dot adv-dash__feed-dot--${sevClass}`} aria-hidden />
       <span className={`adv-dash__feed-tag adv-dash__feed-tag--${tagTone}`}>{tag}</span>
       <span className="adv-dash__feed-body">
         <span className="adv-dash__feed-title">{title}</span>
-        {detail ? <span className="adv-dash__feed-detail">{detail}</span> : null}
+        {detailNode ? <span className="adv-dash__feed-detail">{detailNode}</span> : null}
+        {!detailNode && detail ? <span className="adv-dash__feed-detail">{detail}</span> : null}
         {timing && !GENERIC_NWS_CHIP_TIMING.has(timing) ? (
           <span className="adv-dash__feed-timing">{timing}</span>
         ) : null}
@@ -150,7 +162,12 @@ export function AdvisoryRouteHazardsPanel({
   const nwsTimelineCount = activeTimeline.filter((i) => i.track === "nws" || i.track === "wind").length;
   const roadTimelineCount = activeTimeline.filter((i) => i.track === "road").length;
 
-  const hasRoadRows = navigationStarted && hasGuidanceRoute && alongRouteDetailRows.length > 0;
+  const routeFeedRows = useMemo(
+    () => alongRouteDetailRows.filter(roadDetailRowHasInfo),
+    [alongRouteDetailRows]
+  );
+
+  const hasRoadRows = navigationStarted && hasGuidanceRoute && routeFeedRows.length > 0;
   const hasTimeline = hasRouteHazardDetail && (!navigationStarted || barExpanded);
   const showClearRoute =
     navigationStarted &&
@@ -165,26 +182,34 @@ export function AdvisoryRouteHazardsPanel({
     developingNwsAlerts.length +
     panelNwsAlertsExtra.length +
     (hasTimeline ? activeTimeline.length : 0) +
-    alongRouteDetailRows.length;
+    routeFeedRows.length;
 
   const routeSubtitle = useMemo(() => {
-    if (!hasGuidanceRoute) return "Set a route to see hazards";
+    if (!hasGuidanceRoute) return "Set a route to see hazards ahead";
     if (showClearRoute) {
       const eta =
         driveEtaMinutes != null && driveEtaMinutes > 0
-          ? ` · ${formatMinutesAsHoursMinutes(Math.round(driveEtaMinutes))} left`
+          ? ` · ${formatMinutesAsHoursMinutes(Math.round(driveEtaMinutes))} remaining`
           : "";
-      return `Clear ahead${eta}`;
+      return `Clear ahead on your route${eta}`;
     }
     const parts: string[] = [];
     if (nwsTimelineCount + urgentTopAlerts.length > 0) {
-      parts.push(`${nwsTimelineCount + urgentTopAlerts.length} weather`);
+      parts.push(
+        `${nwsTimelineCount + urgentTopAlerts.length} weather ${
+          nwsTimelineCount + urgentTopAlerts.length === 1 ? "hazard" : "hazards"
+        }`
+      );
     }
-    if (roadTimelineCount + alongRouteDetailRows.length > 0) {
-      parts.push(`${roadTimelineCount + alongRouteDetailRows.length} road`);
+    if (roadTimelineCount + routeFeedRows.length > 0) {
+      parts.push(
+        `${roadTimelineCount + routeFeedRows.length} road ${
+          roadTimelineCount + routeFeedRows.length === 1 ? "issue" : "issues"
+        }`
+      );
     }
-    if (parts.length === 0 && feedCount > 0) return `${feedCount} items`;
-    return parts.length ? parts.join(" · ") : "Checking…";
+    if (parts.length === 0 && feedCount > 0) return `${feedCount} items along your route`;
+    return parts.length ? parts.join(" · ") : "Checking your route";
   }, [
     hasGuidanceRoute,
     showClearRoute,
@@ -192,7 +217,7 @@ export function AdvisoryRouteHazardsPanel({
     nwsTimelineCount,
     urgentTopAlerts.length,
     roadTimelineCount,
-    alongRouteDetailRows.length,
+    routeFeedRows.length,
     feedCount,
   ]);
 
@@ -223,6 +248,7 @@ export function AdvisoryRouteHazardsPanel({
         </div>
       </header>
 
+      <div className="adv-dash__block adv-dash__block--route">
       {!navigationStarted && hasGuidanceRoute ? (
         <p className="adv-dash__tip">Tap <strong>Go</strong> for live traffic</p>
       ) : null}
@@ -248,13 +274,14 @@ export function AdvisoryRouteHazardsPanel({
         )}
 
         {hasRoadRows
-          ? alongRouteDetailRows.map((row) => (
+          ? routeFeedRows.map((row) => (
               <FeedRow
                 key={row.label}
                 tag="Road"
                 tagTone="road"
                 title={row.label}
                 detail={typeof row.text === "string" ? row.text : undefined}
+                detailNode={typeof row.text === "string" ? undefined : row.text}
                 sevClass="caution"
                 onClick={row.onAction}
               />
@@ -291,6 +318,7 @@ export function AdvisoryRouteHazardsPanel({
             tagTone="road"
             title={betterRouteRow.label}
             detail={typeof betterRouteRow.text === "string" ? betterRouteRow.text : undefined}
+            detailNode={typeof betterRouteRow.text === "string" ? undefined : betterRouteRow.text}
             sevClass="info"
             onClick={betterRouteRow.onAction}
           />
@@ -304,10 +332,11 @@ export function AdvisoryRouteHazardsPanel({
               onClick={onTrafficReroute}
               disabled={trafficRerouteBusy}
             >
-              {trafficRerouteBusy ? "Finding route…" : "Reroute around traffic"}
+              {trafficRerouteBusy ? "Finding alternate route" : "Reroute around traffic"}
             </button>
           </div>
         ) : null}
+      </div>
       </div>
     </section>
   );

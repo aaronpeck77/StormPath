@@ -53,6 +53,8 @@ export type PointHourlyInterval = {
   windMph: number;
   conditions: string;
   feelsLikeF?: number;
+  /** Relative humidity 0–100 when the provider supplies it. */
+  humidityPct?: number;
   windGustMph?: number;
   precipType?: number;
 };
@@ -84,6 +86,8 @@ export type PointDailyDay = {
   snowfallCm?: number;
   daytimeConditions?: string;
   overnightConditions?: string;
+  /** Peak feels-like / heat index for the day (from hourly when available). */
+  maxFeelsLikeF?: number;
 };
 
 /** Multi-day outlook at the user's position (WeatherKit forecastDaily). */
@@ -353,6 +357,8 @@ export async function fetchPointHourlyForecast(
       location: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
       fields: [
         "temperature",
+        "temperatureApparent",
+        "humidity",
         "precipitationIntensity",
         "precipitationProbability",
         "windSpeed",
@@ -371,6 +377,8 @@ export async function fetchPointHourlyForecast(
           startTime: string;
           values: {
             temperature?: number;
+            temperatureApparent?: number;
+            humidity?: number;
             precipitationIntensity?: number;
             precipitationProbability?: number;
             windSpeed?: number;
@@ -385,13 +393,21 @@ export async function fetchPointHourlyForecast(
   const intervals = raw.data.timelines[0]?.intervals ?? [];
   const hours: PointHourlyInterval[] = intervals.slice(0, 24).map((iv) => {
     const tempC = iv.values.temperature ?? 0;
+    const apparentC = iv.values.temperatureApparent;
     const windMs = iv.values.windSpeed ?? 0;
     const code = iv.values.weatherCode ?? 1000;
     const offsetHours = (new Date(iv.startTime).getTime() - fetchedAt) / 3_600_000;
+    const tempF = Math.round((tempC * 9) / 5 + 32);
+    const feelsLikeF =
+      apparentC != null ? Math.round((apparentC * 9) / 5 + 32) : undefined;
+    const humidityPct =
+      iv.values.humidity != null ? Math.round(iv.values.humidity) : undefined;
     return {
       timeIso: iv.startTime,
       offsetHours,
-      tempF: Math.round((tempC * 9) / 5 + 32),
+      tempF,
+      feelsLikeF,
+      humidityPct,
       precipIntensityMmh: iv.values.precipitationIntensity ?? 0,
       precipProbability: (iv.values.precipitationProbability ?? 0) / 100,
       windMph: Math.round(windMs * 2.23694),

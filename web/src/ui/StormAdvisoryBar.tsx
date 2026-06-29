@@ -44,11 +44,7 @@ import {
 import {
   buildLocalForecastBannerItem,
   latestForecastFetchedAtMs,
-  truncateBannerText,
 } from "../utils/forecastDisplay";
-
-const BANNER_MSG_MAX = 96;
-const BANNER_TICKER_MAX = 110;
 
 /** Collapsed-bar background + ring — one per rotator message. */
 type AdvisoryPreviewTone = "clear" | "weather" | "info" | "warn" | "hazard" | "severe";
@@ -121,8 +117,8 @@ function previewItem(
   };
 }
 
-function bannerMsg(text: string, max = BANNER_MSG_MAX): string {
-  return truncateBannerText(text, max);
+function bannerMsg(text: string): string {
+  return displayText(text);
 }
 
 
@@ -706,7 +702,7 @@ export function StormAdvisoryBar({
       trip.push(
         previewItem({
           badge: "Error",
-          raw: bannerMsg((error || "").trim(), 96),
+          raw: bannerMsg((error || "").trim()),
           tone: "severe",
         })
       );
@@ -788,7 +784,7 @@ export function StormAdvisoryBar({
       promo.push(
         previewItem({
           badge: "Tip",
-          raw: bannerMsg(DATA_SAVER_ADVISORY_TIP, BANNER_TICKER_MAX),
+          raw: bannerMsg(DATA_SAVER_ADVISORY_TIP),
           tone: "info",
         })
       );

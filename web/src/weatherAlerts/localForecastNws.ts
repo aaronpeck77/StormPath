@@ -41,3 +41,28 @@ export function nwsAlertsForLocalForecast(opts: {
   }
   return sortWeatherAlertsBySeverity(out);
 }
+
+export function normalizeNwsEventKey(event: string | null | undefined): string {
+  return (event ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/** Drop duplicate zone copies and repeated event names in the local/route advisory lists. */
+export function dedupeNwsAlertsForDisplay(alerts: NormalizedWeatherAlert[]): NormalizedWeatherAlert[] {
+  const seenId = new Set<string>();
+  const seenEvent = new Set<string>();
+  const out: NormalizedWeatherAlert[] = [];
+  for (const a of alerts) {
+    if (seenId.has(a.id)) continue;
+    const eventKey = normalizeNwsEventKey(a.event);
+    if (eventKey && seenEvent.has(eventKey)) continue;
+    seenId.add(a.id);
+    if (eventKey) seenEvent.add(eventKey);
+    out.push(a);
+  }
+  return out;
+}
+
+export function isHeatRelatedNwsAlert(a: NormalizedWeatherAlert): boolean {
+  const t = `${a.event ?? ""} ${a.headline ?? ""}`.toLowerCase();
+  return /\bheat (advisory|watch|warning|index)\b|\bexcessive heat\b/.test(t);
+}

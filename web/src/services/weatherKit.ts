@@ -153,29 +153,21 @@ export async function fetchWeatherKitMinutePrecip(
   };
 }
 
-export async function fetchWeatherKitPointHourly(
+function formatDailyDayLabel(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { weekday: "long" });
+}
+
+function buildWeatherKitPointHourly(
+  raw: Awaited<ReturnType<typeof fetchWeatherKitAtPoint>>,
   lat: number,
   lng: number,
-  signal?: AbortSignal
-): Promise<PointHourlyForecast> {
-  const raw = await fetchWeatherKitAtPoint(lat, lng, ["forecastHourly"], signal);
-  const fetchedAt = Date.now();
-  const hours = (raw.forecastHourly?.hours ?? []).slice(0, 24).map((h) => {
-    const code = weatherKitConditionToCode(h.conditionCode);
-    const gust = h.windGust != null ? Math.round(kphToMph(h.windGust)) : undefined;
-    return {
-      timeIso: h.forecastStart,
-      offsetHours: (new Date(h.forecastStart).getTime() - fetchedAt) / 3_600_000,
-      tempF: Math.round(cToF(h.temperature)),
-      feelsLikeF: Math.round(cToF(h.temperatureApparent)),
-      precipIntensityMmh: h.precipitationIntensity,
-      precipProbability: h.precipitationChance,
-      precipType: precipTypeToNumber(h.precipitationType),
-      windMph: Math.round(kphToMph(h.windSpeed)),
-      windGustMph: gust,
-      conditions: weatherCodeLabel(code),
-    };
-  });
+  fetchedAt: number
+): PointHourlyForecast {
+  const rawHours = raw.forecastHourly?.hours ?? [];
+  const hours = rawHours
+    .filter((h) => new Date(h.forecastStart).getTime() + 3_600_000 > fetchedAt)
+    .slice(0, 24)
+    .map((h) => mapWeatherKitHourlyPoint(h, fetchedAt));
   return {
     fetchedAt,
     lat,
@@ -185,17 +177,50 @@ export async function fetchWeatherKitPointHourly(
   };
 }
 
-function formatDailyDayLabel(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { weekday: "short" });
+function mapWeatherKitHourlyPoint(
+  h: NonNullable<Awaited<ReturnType<typeof fetchWeatherKitAtPoint>>["forecastHourly"]>["hours"][number],
+  fetchedAt: number
+) {
+  const code = weatherKitConditionToCode(h.conditionCode);
+  const gust = h.windGust != null ? Math.round(kphToMph(h.windGust)) : undefined;
+  return {
+    timeIso: h.forecastStart,
+    offsetHours: (new Date(h.forecastStart).getTime() - fetchedAt) / 3_600_000,
+    tempF: Math.round(cToF(h.temperature)),
+    feelsLikeF: Math.round(cToF(h.temperatureApparent)),
+    humidityPct: Math.round(h.humidity * 100),
+    precipIntensityMmh: h.precipitationIntensity,
+    precipProbability: h.precipitationChance,
+    precipType: precipTypeToNumber(h.precipitationType),
+    windMph: Math.round(kphToMph(h.windSpeed)),
+    windGustMph: gust,
+    conditions: weatherCodeLabel(code),
+  };
 }
 
-export async function fetchWeatherKitPointDaily(
+function maxFeelsLikeByLocalDateFromRawHourly(
+  rawHours: NonNullable<Awaited<ReturnType<typeof fetchWeatherKitAtPoint>>["forecastHourly"]>["hours"]
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const h of rawHours) {
+    const feels = Math.round(cToF(h.temperatureApparent));
+    const key = localDateKey(h.forecastStart);
+    out.set(key, Math.max(out.get(key) ?? -Infinity, feels));
+  }
+  return out;
+}
+
+function localDateKey(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-CA");
+}
+
+function buildWeatherKitPointDaily(
+  raw: Awaited<ReturnType<typeof fetchWeatherKitAtPoint>>,
   lat: number,
   lng: number,
-  signal?: AbortSignal
-): Promise<PointDailyForecast> {
-  const raw = await fetchWeatherKitAtPoint(lat, lng, ["forecastDaily"], signal);
-  const fetchedAt = Date.now();
+  fetchedAt: number
+): PointDailyForecast {
+  const feelsPeakByDate = maxFeelsLikeByLocalDateFromRawHourly(raw.forecastHourly?.hours ?? []);
   const days: PointDailyDay[] = (raw.forecastDaily?.days ?? []).slice(0, 7).map((d) => {
     const code = weatherKitConditionToCode(d.conditionCode);
     const dayCode = d.daytimeForecast?.conditionCode
@@ -219,6 +244,10 @@ export async function fetchWeatherKitPointDaily(
       conditions: weatherCodeLabel(code),
       daytimeConditions: weatherCodeLabel(dayCode),
       overnightConditions: weatherCodeLabel(nightCode),
+      maxFeelsLikeF: (() => {
+        const peak = feelsPeakByDate.get(localDateKey(d.forecastStart));
+        return peak != null && Number.isFinite(peak) ? Math.round(peak) : undefined;
+      })(),
     };
   });
   return {
@@ -228,6 +257,71 @@ export async function fetchWeatherKitPointDaily(
     days,
     provider: "weatherKit",
   };
+}
+
+const LOCAL_POINT_CACHE_MS = 30 * 60 * 1000;
+let localPointCache: {
+  key: string;
+  at: number;
+  hourly: PointHourlyForecast;
+  daily: PointDailyForecast;
+} | null = null;
+let localPointInflight: Promise<{ hourly: PointHourlyForecast; daily: PointDailyForecast }> | null =
+  null;
+
+function localPointKey(lat: number, lng: number): string {
+  return `${lat.toFixed(3)},${lng.toFixed(3)}`;
+}
+
+/** Hourly + daily at the user's position in one WeatherKit request (shared cache). */
+export async function fetchWeatherKitPointLocal(
+  lat: number,
+  lng: number,
+  signal?: AbortSignal
+): Promise<{ hourly: PointHourlyForecast; daily: PointDailyForecast }> {
+  const key = localPointKey(lat, lng);
+  const now = Date.now();
+  if (localPointCache && localPointCache.key === key && now - localPointCache.at < LOCAL_POINT_CACHE_MS) {
+    return { hourly: localPointCache.hourly, daily: localPointCache.daily };
+  }
+  if (localPointInflight) return localPointInflight;
+
+  localPointInflight = fetchWeatherKitAtPoint(
+    lat,
+    lng,
+    ["forecastHourly", "forecastDaily"],
+    signal
+  )
+    .then((raw) => {
+      const fetchedAt = Date.now();
+      const hourly = buildWeatherKitPointHourly(raw, lat, lng, fetchedAt);
+      const daily = buildWeatherKitPointDaily(raw, lat, lng, fetchedAt);
+      localPointCache = { key, at: fetchedAt, hourly, daily };
+      return { hourly, daily };
+    })
+    .finally(() => {
+      localPointInflight = null;
+    });
+
+  return localPointInflight;
+}
+
+export async function fetchWeatherKitPointHourly(
+  lat: number,
+  lng: number,
+  signal?: AbortSignal
+): Promise<PointHourlyForecast> {
+  const { hourly } = await fetchWeatherKitPointLocal(lat, lng, signal);
+  return hourly;
+}
+
+export async function fetchWeatherKitPointDaily(
+  lat: number,
+  lng: number,
+  signal?: AbortSignal
+): Promise<PointDailyForecast> {
+  const { daily } = await fetchWeatherKitPointLocal(lat, lng, signal);
+  return daily;
 }
 
 export async function fetchWeatherKitCurrentNowcast(

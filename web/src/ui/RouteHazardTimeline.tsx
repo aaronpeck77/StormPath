@@ -85,6 +85,18 @@ function legendDetailText(item: TimelineItem): string | null {
   return detail;
 }
 
+function compactFeedItemHasInfo(item: TimelineItem, vis: ItemVisual): boolean {
+  const detail = legendDetailText(item);
+  const timing =
+    vis.timingDetail ??
+    (vis.locationLine && vis.locationLine !== "On your planned route" ? vis.locationLine : null);
+  if (detail || timing) return true;
+  if (item.track !== "road") return item.label.trim().length > 0;
+  const label = item.label.trim().toLowerCase();
+  if (!label || label === "traffic" || label === "traffic alert") return false;
+  return item.label.trim().length > 0;
+}
+
 type ItemVisual = {
   sPct: number;
   wPct: number;
@@ -199,7 +211,7 @@ function RouteHazardLegend({
     () =>
       [...items]
         .map((item, i) => ({ item, vis: itemVisuals[i]! }))
-        .filter(({ vis }) => !vis.passed)
+        .filter(({ item, vis }) => !vis.passed && compactFeedItemHasInfo(item, vis))
         .sort((a, b) => a.item.startMeters - b.item.startMeters),
     [items, itemVisuals]
   );
@@ -235,6 +247,7 @@ function RouteHazardLegend({
                   : undefined
               }
             >
+              <span className={`adv-dash__feed-dot adv-dash__feed-dot--${item.severity}`} aria-hidden />
               <span className={`adv-dash__feed-tag adv-dash__feed-tag--${tagTone}`}>{trackTag}</span>
               <span className="adv-dash__feed-body">
                 <span className="adv-dash__feed-title">{item.label}</span>
@@ -311,7 +324,7 @@ function RouteHazardReroute({
         onClick={onReroute}
         disabled={rerouteBusy}
       >
-        {rerouteBusy ? "Finding route…" : "Reroute around traffic"}
+        {rerouteBusy ? "Finding alternate route" : "Reroute around traffic"}
       </button>
     </p>
   );
