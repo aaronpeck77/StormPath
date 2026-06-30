@@ -136,7 +136,7 @@ const FEELS_LIKE_PROVIDER_TRUST_DELTA_F = 3;
 export function resolveHourFeelsLikeF(h: {
   tempF: number;
   feelsLikeF?: number;
-  humidityPct?: number;
+  humidityPct?: number | null;
   windMph?: number;
 }): number {
   const air = Math.round(h.tempF);
@@ -172,7 +172,7 @@ export function resolveHourFeelsLikeF(h: {
 export function resolveIntervalFeelsLikeF(h: {
   tempF: number;
   feelsLikeF?: number;
-  humidityPct?: number;
+  humidityPct?: number | null;
   windMph?: number;
   windGustMph?: number;
 }): number {
