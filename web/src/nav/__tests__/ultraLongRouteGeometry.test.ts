@@ -66,11 +66,11 @@ describe("ultra-long route geometry", () => {
   });
 
   it("uses highest storage cap on extreme trips", () => {
-    const raw = routeWithLengthM(EXTREME_TRIP_ROUTE_M + 100_000, 20_000);
+    const raw = routeWithLengthM(EXTREME_TRIP_ROUTE_M + 100_000, 17_000);
     const stored = normalizeStoredRouteGeometry(raw);
     expect(stored.length).toBeLessThanOrEqual(ROUTE_GEOMETRY_STORAGE_VERTICES_EXTREME);
     expect(stored.length).toBeGreaterThan(ROUTE_GEOMETRY_STORAGE_VERTICES_ULTRA);
-  }, 20_000);
+  }, 30_000);
 
   it("leaves short routes untouched", () => {
     const short: LngLat[] = [

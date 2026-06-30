@@ -14,6 +14,7 @@
     "build:testflight": "tsc --noEmit && vite build --mode testflight",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:integration": "vitest run src/**/*.integration.test.ts",
     "test:watch": "vitest",
     "cap:sync": "npx cap sync ios",
     "sync:ios-version": "node scripts/sync-ios-version.mjs",

@@ -31,6 +31,8 @@ export default defineConfig(({ command }) => ({
     /* Pure-logic tests only — no DOM. Add `environment: "jsdom"` later if React component tests land. */
     environment: "node",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    /* Live NWS fetches are flaky in CI — run them locally via `npm run test:integration`. */
+    exclude: process.env.CI ? ["src/**/*.integration.test.ts"] : [],
     /* Faster CI; we rarely care about wall-clock test count for ~50 tests. */
     reporters: process.env.CI ? "default" : ["default"],
     /* Keep tests deterministic — no global setup/teardown surprises. */
