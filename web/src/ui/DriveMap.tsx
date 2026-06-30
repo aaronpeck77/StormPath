@@ -222,6 +222,8 @@ export type Props = {
   recenterPlanningPuckTick?: number;
   /** While navigating, smooth the puck along this polyline (closest point) when GPS is near the line. */
   puckSnapGeometry?: LngLat[] | null;
+  /** When false, puck follows raw GPS (off-route / recovery). Default true. */
+  puckSnapEnabled?: boolean;
   /**
    * Best-known along-route distance (meters) for the user — used to seed the puck snap window so
    * the first closest-point search doesn't scan the full geometry and risk latching onto a parallel
@@ -280,8 +282,7 @@ export type Props = {
   rejoinOverlayActive?: boolean;
 };
 
-/** Drive mode: return to follow-cam after the user pans/zooms the map. */
-const DRIVE_EXPLORE_IDLE_MS = 10_000;
+/** Drive mode: return to follow-cam after the user pans/zooms the map (600 ms while navigating). */
 /** ~1/e time constant (seconds) for drive camera bearing toward route/GPS heading (rAF loop). */
 const DRIVE_CAMERA_BEARING_TC_S = 0.58;
 /** Delay before Wi‑Fi tile warm so idle-home camera can finish first. */
@@ -348,6 +349,7 @@ function DriveMapInner({
   stormBarExpanded = true,
   recenterPlanningPuckTick = 0,
   puckSnapGeometry = null,
+  puckSnapEnabled = true,
   snapSeedMeters = null,
   userAlongMeters = null,
   trafficConditionsOnMap = false,
@@ -401,9 +403,13 @@ function DriveMapInner({
   const liveGpsLngLatRefStable = liveGpsLngLatRef;
   const liveGpsSpeedMpsRefStable = liveGpsSpeedMpsRef;
   const liveGpsHeadingRefStable = liveGpsHeadingRef;
+  const puckSnapEnabledRef = useRef(puckSnapEnabled);
+  puckSnapEnabledRef.current = puckSnapEnabled;
   const puckSnapGeomRef = useRef<LngLat[] | null>(null);
   puckSnapGeomRef.current =
-    navigationStarted && puckSnapGeometry && puckSnapGeometry.length >= 2 ? puckSnapGeometry : null;
+    navigationStarted && puckSnapEnabled && puckSnapGeometry && puckSnapGeometry.length >= 2
+      ? puckSnapGeometry
+      : null;
   const snapSeedMetersRef = useRef<number | null>(null);
   snapSeedMetersRef.current = (snapSeedMeters != null && Number.isFinite(snapSeedMeters) && snapSeedMeters >= 0)
     ? snapSeedMeters : null;
@@ -554,7 +560,7 @@ function DriveMapInner({
       routesLengthRef.current === 0
         ? 400
         : navigationStartedRef.current && viewModeRef.current === "drive"
-          ? DRIVE_EXPLORE_IDLE_MS
+          ? 600
           : EXPLORE_IDLE_MS;
     exploreTimerRef.current = window.setTimeout(() => {
       userExploringRef.current = false;
@@ -1239,6 +1245,8 @@ function DriveMapInner({
     const NOOP_LNGLAT_DELTA = 0.000005; /* ~0.55 m at the equator; smaller north of 45° */
     const CAM_NOOP_LNGLAT_DELTA = 0.000001; /* ~0.11 m — follow camera can move more often than the puck marker */
     let lastBearingApplied = NaN;
+    let driveCamFrame = 0;
+    const DRIVE_CAM_FORCE_RESYNC_FRAMES = 75;
 
     const readPuckFollowLngLat = (): LngLat | null =>
       liveGpsLngLatRefStable?.current ?? userLngLatRef.current;
@@ -1388,9 +1396,10 @@ function DriveMapInner({
           map.isStyleLoaded() &&
           viewModeRef.current === "drive" &&
           navigationStartedRef.current &&
-          userLngLatRef.current &&
-          !userExploringRef.current
+          userLngLatRef.current
         ) {
+          driveCamFrame += 1;
+          const forcePeriodicResync = driveCamFrame % DRIVE_CAM_FORCE_RESYNC_FRAMES === 0;
           const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
           const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;
           const easeKey = `${stormBarVisibleRef.current}|${stormBarExpandedRef.current}|${progressRailVisibleRef.current}|${wx}x${wy}`;
@@ -1442,7 +1451,7 @@ function DriveMapInner({
            * Force an easeTo if pitch or zoom are far from drive targets so the view snaps in
            * even when the puck hasn't moved relative to the camera center. */
           const pitchOff = Math.abs(map.getPitch() - 58) > 1;
-          const forceCamSync = driveCamResyncRef.current;
+          const forceCamSync = driveCamResyncRef.current || forcePeriodicResync;
           const applyLayoutOrEntry = pitchOff || forceCamSync || easeLayoutChanged;
           if (camMoved || bearingMoved || applyLayoutOrEntry) {
             if (
@@ -2959,11 +2968,26 @@ function DriveMapInner({
           : headingRef.current != null
             ? headingRef.current
             : map.getBearing();
+      const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
+      const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;
+      const easeKey = `${stormBarVisibleRef.current}|${stormBarExpandedRef.current}|${progressRailVisibleRef.current}|${wx}x${wy}`;
+      let easeCached = driveCamEaseOptsCacheRef.current;
+      if (!easeCached || easeCached.key !== easeKey) {
+        const o = driveCameraEaseOptions(
+          stormBarVisibleRef.current,
+          stormBarExpandedRef.current,
+          progressRailVisibleRef.current
+        );
+        easeCached = { key: easeKey, padding: o.padding, offset: o.offset };
+        driveCamEaseOptsCacheRef.current = easeCached;
+      }
       safeEaseTo(map, {
         center: pos,
         zoom: driveNavZoomRef.current,
         pitch: 58,
         bearing: brg,
+        padding: easeCached?.padding,
+        offset: easeCached?.offset,
         duration: 0,
         essential: true,
       });

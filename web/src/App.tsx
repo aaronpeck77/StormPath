@@ -684,7 +684,7 @@ export default function App() {
   const setDemoCloseHazardOn = useUiStore((s) => s.setDemoCloseHazardOn);
   const demoPlaybackAlongRef = useRef<number | null>(null);
   demoPlaybackAlongRef.current = demoPlaybackAlongM;
-  /** At destination, stationary + no interaction → clearRoute; foreground timer + resume-from-background. */
+  /** At destination, stationary + no interaction → clearRoute; foreground idle timer only (not on app resume). */
   const [trafficOverlay, setTrafficOverlay] = useState<TrafficOverlay | undefined>(undefined);
   const trafficOverlayRef = useRef(trafficOverlay);
   trafficOverlayRef.current = trafficOverlay;
@@ -1192,6 +1192,8 @@ export default function App() {
   const {
     showOffRouteStatusBanner,
     autoRejoinGuidanceRouteId,
+    offRouteLatched,
+    offRouteRejoinAlongM,
     resetOffRouteNavigation,
     clearDetourGuidance,
     detourAutoActive,
@@ -1330,6 +1332,10 @@ export default function App() {
   guidanceRouteIdRef.current = guidanceRouteId;
   const lockedNavigationRouteId =
     lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? primaryRouteId;
+  const lockedNavRouteGeometry = useMemo(() => {
+    const r = plan.routes.find((route) => route.id === lockedNavigationRouteId);
+    return r?.geometry && r.geometry.length >= 2 ? r.geometry : null;
+  }, [plan.routes, lockedNavigationRouteId]);
 
   /** During A/B/C compare, highlight the leg the driver tapped (not only the current primary). */
   const driveMapLineFocusId = trafficBypassCompare?.selectedLeg ?? lineFocusId;
@@ -1596,7 +1602,9 @@ export default function App() {
     effectiveUserLngLat: navigationPositionLngLat,
     routeGeometry: navigationGuidanceGeometry,
     alongHoldResetKey,
-    navigationAlongM: navigationStarted && !autoRejoinGuidanceRouteId ? navPosition.alongM : undefined,
+    navigationAlongM: navigationStarted ? navPosition.alongM : undefined,
+    frozenAlongM:
+      offRouteLatched && offRouteRejoinAlongM > 0 ? offRouteRejoinAlongM : undefined,
     speedMps,
   });
 
@@ -3717,9 +3725,13 @@ export default function App() {
             stormBarExpanded={stormBarExpanded}
             recenterPlanningPuckTick={recenterPlanningPuckTick}
             puckSnapGeometry={
-              navigationStarted && guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2
-                ? guidanceRoute.geometry
-                : null
+              navigationStarted && lockedNavRouteGeometry ? lockedNavRouteGeometry : null
+            }
+            puckSnapEnabled={
+              navigationStarted &&
+              navPosition.onRoute &&
+              !offRouteLatched &&
+              !autoRejoinGuidanceRouteId
             }
             snapSeedMeters={
               Number.isFinite(userAlongGuidanceM) && (userAlongGuidanceM ?? 0) >= 0

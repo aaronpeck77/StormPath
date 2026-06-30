@@ -6,6 +6,7 @@ import {
   precipIsActive,
   precipTypeColor,
   resolveHourFeelsLikeF,
+  resolveIntervalFeelsLikeF,
   type PrecipTypeCode,
   windChillNotable,
   windGustBarColor,
@@ -92,12 +93,19 @@ export function buildNextHourLanes(opts: {
   const h0 = upcoming[0];
   const h1 = upcoming[1] ?? h0;
   const startFeels = Math.round(
-    nowcast?.feelsLikeF ??
-      (h0 ? resolveHourFeelsLikeF(h0) : undefined) ??
+    (nowcast
+      ? resolveHourFeelsLikeF({
+          tempF: nowcast.tempF,
+          feelsLikeF: nowcast.feelsLikeF,
+          humidityPct: nowcast.humidityPct,
+          windMph: nowcast.windGustMph ?? nowcast.windMph,
+        })
+      : undefined) ??
+      (h0 ? resolveIntervalFeelsLikeF(h0) : undefined) ??
       minutePrecip?.now?.tempF ??
       70
   );
-  const endFeels = Math.round(h1 ? resolveHourFeelsLikeF(h1) : startFeels);
+  const endFeels = Math.round(h1 ? resolveIntervalFeelsLikeF(h1) : startFeels);
   const windMph = nowcast?.windMph ?? h0?.windMph ?? minutePrecip?.now?.windMph ?? 0;
   const gustMph = nowcast?.windGustMph ?? h0?.windGustMph ?? windMph;
   const minutes = minutePrecip?.minutes.slice(0, NEXT_HOUR_MINUTES) ?? [];
@@ -135,11 +143,18 @@ export function nextHourPeakFeels(opts: {
   const h0 = upcoming[0];
   const h1 = upcoming[1] ?? h0;
   const startFeels = Math.round(
-    opts.nowcast?.feelsLikeF ??
-      (h0 ? resolveHourFeelsLikeF(h0) : undefined) ??
+    (opts.nowcast
+      ? resolveHourFeelsLikeF({
+          tempF: opts.nowcast.tempF,
+          feelsLikeF: opts.nowcast.feelsLikeF,
+          humidityPct: opts.nowcast.humidityPct,
+          windMph: opts.nowcast.windGustMph ?? opts.nowcast.windMph,
+        })
+      : undefined) ??
+      (h0 ? resolveIntervalFeelsLikeF(h0) : undefined) ??
       0
   );
-  const endFeels = Math.round(h1 ? resolveHourFeelsLikeF(h1) : startFeels);
+  const endFeels = Math.round(h1 ? resolveIntervalFeelsLikeF(h1) : startFeels);
   let peak = Math.max(startFeels, endFeels);
   for (let i = 0; i < NEXT_HOUR_MINUTES; i++) {
     peak = Math.max(peak, Math.round(feelsAtMinute(i, startFeels, endFeels)));
@@ -195,7 +210,7 @@ export function hourlyStripHeadline(hours: PointHourlyInterval[]): string {
   let wetHours = 0;
   let maxGust = 0;
   for (const h of upcoming) {
-    const feels = resolveHourFeelsLikeF(h);
+    const feels = resolveIntervalFeelsLikeF(h);
     if (feels < minFeels) {
       minFeels = feels;
       coldestHour = h;

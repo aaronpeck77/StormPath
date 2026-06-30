@@ -7294,6 +7294,21 @@
   color: #fde68a;
 }
 
+.adv-dash__cold-callout {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  background: rgba(30, 58, 138, 0.28);
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: #bfdbfe;
+}
+
+.adv-dash__strip--cold {
+  border-top: 1px solid rgba(96, 165, 250, 0.12);
+}
+
 .adv-dash__lane-legend {
   display: flex;
   gap: 12px;
@@ -7327,6 +7342,20 @@
   border-color: rgba(148, 163, 184, 0.35);
   background: rgba(15, 23, 42, 0.35);
   color: rgba(255, 255, 255, 0.72);
+}
+
+.adv-dash__week-cold {
+  display: block;
+  margin-top: 2px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(96, 165, 250, 0.55);
+  background: rgba(30, 58, 138, 0.28);
+  font-size: 0.62rem;
+  font-weight: 650;
+  line-height: 1.25;
+  color: #bfdbfe;
+  white-space: normal;
 }
 
 .adv-dash__week-cell--heat {

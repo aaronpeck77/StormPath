@@ -20,7 +20,7 @@ const WINDOW_AHEAD_M = 3_500;
 /** When moving, heading must differ from the route this much to trigger at low lateral offset. */
 export const OFF_ROUTE_HEADING_DELTA_DEG = 38;
 /** Minimum lateral offset (m) before heading mismatch can trigger reroute. */
-export const OFF_ROUTE_HEADING_MIN_LATERAL_M = 12;
+export const OFF_ROUTE_HEADING_MIN_LATERAL_M = 28;
 /** Minimum speed (m/s) before off-route can latch (~7 mph). Ignores GPS drift while parked. */
 export const OFF_ROUTE_HEADING_MIN_SPEED_MPS = 3;
 /** Consecutive poll ticks that must agree before showing rejoin alternates. */

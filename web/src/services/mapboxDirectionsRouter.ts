@@ -141,6 +141,8 @@ type DirectionsFetchOpts = DirectionsFetchExclude & {
   includeDetails?: boolean;
   /** Mapbox `overview=simplified` — fewer vertices on cross-country legs. */
   simplifiedOverview?: boolean;
+  /** Start-point heading (degrees) for `bearings=` when replanning from GPS. */
+  bearingDeg?: number | null;
 };
 
 function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteTurnStep[] {
@@ -353,6 +355,25 @@ function routeFromDirectionsApi(
   };
 }
 
+function applyDirectionsQueryParams(url: URL, opts: DirectionsFetchOpts): void {
+  if (opts.alternatives) url.searchParams.set("alternatives", "true");
+  url.searchParams.set("geometries", "geojson");
+  url.searchParams.set(
+    "overview",
+    opts.simplifiedOverview || opts.includeDetails === false ? "simplified" : "full"
+  );
+  url.searchParams.set("steps", opts.includeDetails === false ? "false" : "true");
+  if (opts.includeDetails !== false) {
+    url.searchParams.set("annotations", "closure,maxspeed");
+  }
+  const exclude = directionsExcludeParam(opts);
+  if (exclude) url.searchParams.set("exclude", exclude);
+  if (opts.bearingDeg != null && Number.isFinite(opts.bearingDeg)) {
+    url.searchParams.set("bearings", `${Math.round(opts.bearingDeg)},45;`);
+    url.searchParams.set("approaches", "curb;");
+  }
+}
+
 async function fetchMapboxDirections(
   accessToken: string,
   start: LngLat,
@@ -366,18 +387,7 @@ async function fetchMapboxDirections(
     `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${o};${d}`
   );
   url.searchParams.set("access_token", accessToken);
-  if (opts.alternatives) url.searchParams.set("alternatives", "true");
-  url.searchParams.set("geometries", "geojson");
-  url.searchParams.set(
-    "overview",
-    opts.simplifiedOverview || opts.includeDetails === false ? "simplified" : "full"
-  );
-  url.searchParams.set("steps", opts.includeDetails === false ? "false" : "true");
-  if (opts.includeDetails !== false) {
-    url.searchParams.set("annotations", "closure,maxspeed");
-  }
-  const exclude = directionsExcludeParam(opts);
-  if (exclude) url.searchParams.set("exclude", exclude);
+  applyDirectionsQueryParams(url, opts);
 
   let lastHttp: { res: Response; data: DirectionsResponse } | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -425,18 +435,7 @@ async function fetchMapboxDirectionsThrough(
     `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coordStr}`
   );
   url.searchParams.set("access_token", accessToken);
-  if (opts.alternatives) url.searchParams.set("alternatives", "true");
-  url.searchParams.set("geometries", "geojson");
-  url.searchParams.set(
-    "overview",
-    opts.simplifiedOverview || opts.includeDetails === false ? "simplified" : "full"
-  );
-  url.searchParams.set("steps", opts.includeDetails === false ? "false" : "true");
-  if (opts.includeDetails !== false) {
-    url.searchParams.set("annotations", "closure,maxspeed");
-  }
-  const exclude = directionsExcludeParam(opts);
-  if (exclude) url.searchParams.set("exclude", exclude);
+  applyDirectionsQueryParams(url, opts);
 
   let lastHttp: { res: Response; data: DirectionsResponse } | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -698,6 +697,8 @@ export async function collectMapboxRouteVariants(
     singleRouteFromPosition?: boolean;
     /** With singleRouteFromPosition: avoid motorways (country-road preference). */
     preferBackroads?: boolean;
+    /** With singleRouteFromPosition: constrain start heading (reduces spurious U-turn replans). */
+    bearingDeg?: number | null;
     /** Skip storm/radar leg-C refinement (fast first paint; refine in background). */
     skipStormLegRefinement?: boolean;
     /** Off-route rejoin shuffle — odd passes prefer motorway-excluded alternates for different B/C. */
@@ -735,6 +736,7 @@ export async function collectMapboxRouteVariants(
         excludeToll,
         includeDetails,
         simplifiedOverview,
+        bearingDeg: opts.bearingDeg,
       },
       signal
     );

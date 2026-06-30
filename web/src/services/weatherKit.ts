@@ -15,6 +15,12 @@ import {
   weatherCodeLabel,
 } from "./tomorrowIo";
 import type { LngLat } from "../nav/types";
+import { resolveHourFeelsLikeF } from "../forecast/localForecastVisual";
+import {
+  accumulateFeelsIntoDailyPeriods,
+  dailyPeriodBoundsFromDays,
+  type DailyApparentExtremes,
+} from "../forecast/localForecastDaily";
 import { calibratedWindGustMph } from "../nav/windForecastCalib";
 import { fetchWeatherKitAtPoint, type WeatherKitAlert } from "./weatherKitClient";
 import { isWeatherKitTokenBlocked } from "./weatherKitAuth";
@@ -166,7 +172,7 @@ function buildWeatherKitPointHourly(
   const rawHours = raw.forecastHourly?.hours ?? [];
   const hours = rawHours
     .filter((h) => new Date(h.forecastStart).getTime() + 3_600_000 > fetchedAt)
-    .slice(0, 24)
+    .slice(0, 48)
     .map((h) => mapWeatherKitHourlyPoint(h, fetchedAt));
   return {
     fetchedAt,
@@ -183,12 +189,20 @@ function mapWeatherKitHourlyPoint(
 ) {
   const code = weatherKitConditionToCode(h.conditionCode);
   const gust = h.windGust != null ? Math.round(kphToMph(h.windGust)) : undefined;
+  const tempF = Math.round(cToF(h.temperature));
+  const humidityPct = Math.round(h.humidity * 100);
+  const windMph = Math.round(kphToMph(h.windSpeed));
   return {
     timeIso: h.forecastStart,
     offsetHours: (new Date(h.forecastStart).getTime() - fetchedAt) / 3_600_000,
-    tempF: Math.round(cToF(h.temperature)),
-    feelsLikeF: Math.round(cToF(h.temperatureApparent)),
-    humidityPct: Math.round(h.humidity * 100),
+    tempF,
+    feelsLikeF: resolveHourFeelsLikeF({
+      tempF,
+      feelsLikeF: Math.round(cToF(h.temperatureApparent)),
+      humidityPct,
+      windMph: gust ?? windMph,
+    }),
+    humidityPct,
     precipIntensityMmh: h.precipitationIntensity,
     precipProbability: h.precipitationChance,
     precipType: precipTypeToNumber(h.precipitationType),
@@ -198,20 +212,28 @@ function mapWeatherKitHourlyPoint(
   };
 }
 
-function maxFeelsLikeByLocalDateFromRawHourly(
-  rawHours: NonNullable<Awaited<ReturnType<typeof fetchWeatherKitAtPoint>>["forecastHourly"]>["hours"]
-): Map<string, number> {
-  const out = new Map<string, number>();
+function apparentExtremesByDailyPeriodFromRawHourly(
+  rawHours: NonNullable<Awaited<ReturnType<typeof fetchWeatherKitAtPoint>>["forecastHourly"]>["hours"],
+  dailyStarts: string[]
+): DailyApparentExtremes[] {
+  const bounds = dailyPeriodBoundsFromDays(dailyStarts.map((dateIso) => ({ dateIso })));
+  const out: DailyApparentExtremes[] = dailyStarts.map(() => ({}));
   for (const h of rawHours) {
-    const feels = Math.round(cToF(h.temperatureApparent));
-    const key = localDateKey(h.forecastStart);
-    out.set(key, Math.max(out.get(key) ?? -Infinity, feels));
+    const hourMs = new Date(h.forecastStart).getTime();
+    if (!Number.isFinite(hourMs)) continue;
+    const tempF = Math.round(cToF(h.temperature));
+    const windMph = Math.round(
+      kphToMph(h.windGust != null ? h.windGust : h.windSpeed)
+    );
+    const feels = resolveHourFeelsLikeF({
+      tempF,
+      feelsLikeF: Math.round(cToF(h.temperatureApparent)),
+      humidityPct: Math.round(h.humidity * 100),
+      windMph,
+    });
+    accumulateFeelsIntoDailyPeriods(bounds, out, hourMs, feels);
   }
   return out;
-}
-
-function localDateKey(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-CA");
 }
 
 function buildWeatherKitPointDaily(
@@ -220,8 +242,13 @@ function buildWeatherKitPointDaily(
   lng: number,
   fetchedAt: number
 ): PointDailyForecast {
-  const feelsPeakByDate = maxFeelsLikeByLocalDateFromRawHourly(raw.forecastHourly?.hours ?? []);
-  const days: PointDailyDay[] = (raw.forecastDaily?.days ?? []).slice(0, 7).map((d) => {
+  const rawDaily = (raw.forecastDaily?.days ?? []).slice(0, 7);
+  const dailyStarts = rawDaily.map((d) => d.forecastStart);
+  const feelsExtremes = apparentExtremesByDailyPeriodFromRawHourly(
+    raw.forecastHourly?.hours ?? [],
+    dailyStarts
+  );
+  const days: PointDailyDay[] = rawDaily.map((d, i) => {
     const code = weatherKitConditionToCode(d.conditionCode);
     const dayCode = d.daytimeForecast?.conditionCode
       ? weatherKitConditionToCode(d.daytimeForecast.conditionCode)
@@ -245,8 +272,12 @@ function buildWeatherKitPointDaily(
       daytimeConditions: weatherCodeLabel(dayCode),
       overnightConditions: weatherCodeLabel(nightCode),
       maxFeelsLikeF: (() => {
-        const peak = feelsPeakByDate.get(localDateKey(d.forecastStart));
+        const peak = feelsExtremes[i]?.maxFeelsLikeF;
         return peak != null && Number.isFinite(peak) ? Math.round(peak) : undefined;
+      })(),
+      minFeelsLikeF: (() => {
+        const low = feelsExtremes[i]?.minFeelsLikeF;
+        return low != null && Number.isFinite(low) ? Math.round(low) : undefined;
       })(),
     };
   });
@@ -333,14 +364,22 @@ export async function fetchWeatherKitCurrentNowcast(
   const cur = raw.currentWeather;
   if (!cur) throw new Error("WeatherKit currentWeather missing");
   const gust = cur.windGust != null ? Math.round(kphToMph(cur.windGust)) : null;
+  const tempF = Math.round(cToF(cur.temperature));
+  const humidityPct = Math.round(cur.humidity * 100);
+  const windMph = Math.round(kphToMph(cur.windSpeed));
   return {
-    tempF: Math.round(cToF(cur.temperature)),
-    feelsLikeF: Math.round(cToF(cur.temperatureApparent)),
+    tempF,
+    feelsLikeF: resolveHourFeelsLikeF({
+      tempF,
+      feelsLikeF: Math.round(cToF(cur.temperatureApparent)),
+      humidityPct,
+      windMph: gust ?? windMph,
+    }),
     windMph: Math.round(kphToMph(cur.windSpeed)),
     windGustMph: gust,
     conditions: cur.conditionCode.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase(),
     precipInPerHr: cur.precipitationIntensity / 25.4,
-    humidityPct: Math.round(cur.humidity * 100),
+    humidityPct,
     uvIndex: Math.round(cur.uvIndex),
     fetchedAtMs: Date.now(),
   };

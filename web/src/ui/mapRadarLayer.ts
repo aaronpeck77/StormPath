@@ -20,10 +20,17 @@ const RADAR_LAYER_A = "rainviewer-radar-layer-a";
 const RADAR_LAYER_B = "rainviewer-radar-layer-b";
 
 /**
- * Opacity for the visible radar layer (under basemap roads — can stay vivid).
- * Hidden layer stays at 0 during A/B crossfade.
+ * Opacity for the visible radar layer (under basemap roads).
+ * Kept moderate so yellow–green fringe does not read as severe storm cores.
  */
-export const RAINVIEWER_RADAR_VISIBLE_OPACITY = 0.78;
+export const RAINVIEWER_RADAR_VISIBLE_OPACITY = 0.58;
+
+/** Mute palette saturation/contrast so StormPath matches calmer consumer radar apps. */
+export const RAINVIEWER_RADAR_RASTER_PAINT = {
+  "raster-saturation": -0.22,
+  "raster-contrast": -0.14,
+  "raster-brightness-max": 0.8,
+} as const;
 
 export const RAINVIEWER_RADAR_LAYER_A = RADAR_LAYER_A;
 
@@ -179,6 +186,7 @@ function addRasterPair(
       paint: {
         "raster-opacity": opacity,
         "raster-fade-duration": 0,
+        ...RAINVIEWER_RADAR_RASTER_PAINT,
       },
     },
     beforeId
@@ -373,6 +381,7 @@ export function ensureRainViewerRadar(map: Map, tileUrlTemplate: string): void {
       paint: {
         "raster-opacity": RAINVIEWER_RADAR_VISIBLE_OPACITY,
         "raster-fade-duration": RAINVIEWER_RASTER_FADE_MS,
+        ...RAINVIEWER_RADAR_RASTER_PAINT,
       },
     },
     beforeId

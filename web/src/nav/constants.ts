@@ -98,16 +98,16 @@ export function isSignificantTrafficDelay(
 }
 
 /** Radar intensity that triggers a "heavy weather" alert (storm-core reflectivity). */
-export const RADAR_HEAVY_THRESHOLD = 0.55; // recalibrated (was 0.85)
+export const RADAR_HEAVY_THRESHOLD = 0.58; // conservative vs consumer radar apps
 
 /** Radar intensity for a softer “trace showers” band on the progress strip / timeline. */
-export const RADAR_SOFT_THRESHOLD = 0.16; // recalibrated (was 0.32)
+export const RADAR_SOFT_THRESHOLD = 0.2;
 
 /** Radar at/above this value suggests slowing / preparing (solid moderate rain). */
-export const RADAR_REROUTE_THRESHOLD = 0.38; // recalibrated (was 0.68)
+export const RADAR_REROUTE_THRESHOLD = 0.42;
 
 /** Storm-core / very heavy echo — maps to serious severity. */
-export const RADAR_VERY_HEAVY_THRESHOLD = 0.75; // recalibrated (was 0.93)
+export const RADAR_VERY_HEAVY_THRESHOLD = 0.78;
 
 /** Drive-ahead banner: scan window ahead of the user (meters). */
 export const DRIVE_AHEAD_WINDOW_M = 5 * METERS_PER_MILE;
@@ -150,5 +150,9 @@ export const ARRIVAL_IDLE_CLEAR_MS = 75_000;
 /** Shorter idle when almost no distance remains along the route. */
 export const ARRIVAL_IDLE_CLEAR_NEAR_MS = 50_000;
 export const ARRIVAL_IDLE_CLEAR_VERY_NEAR_MS = 30_000;
-/** Tab/phone backgrounded at least this long; on next visible, still near dest → clear trip. */
+/** Along-route remaining at or below this — missing GPS speed may still count as stopped (parked at pin). */
+export const ARRIVAL_STATIONARY_UNKNOWN_SPEED_MAX_REMAINING_M = 35;
+/** Tab/phone backgrounded at least this long before pausing arrival checks on resume (GPS re-acquire). */
 export const ARRIVAL_BG_CLEAR_MIN_MS = 45_000;
+/** After a long background, skip arrival auto-clear until GPS/speed restabilize. */
+export const ARRIVAL_BG_RESUME_GRACE_MS = 12_000;

@@ -895,12 +895,12 @@ export function precipPctFromStep(step: RouteOutlookStep): number {
 export function radarIntensityToPrecipPct(intensity: number): number {
   const display = radarDisplayIntensity(intensity);
   if (display < RADAR_SOFT_THRESHOLD) return 0;
-  if (display >= RADAR_VERY_HEAVY_THRESHOLD) return 88;
-  if (display >= RADAR_HEAVY_THRESHOLD) return 68;
-  if (display >= RADAR_REROUTE_THRESHOLD) return 48;
+  if (display >= RADAR_VERY_HEAVY_THRESHOLD) return 72;
+  if (display >= RADAR_HEAVY_THRESHOLD) return 55;
+  if (display >= RADAR_REROUTE_THRESHOLD) return 36;
   const span = RADAR_REROUTE_THRESHOLD - RADAR_SOFT_THRESHOLD;
   const t = span > 0 ? (display - RADAR_SOFT_THRESHOLD) / span : 0;
-  return Math.round(18 + t * 24);
+  return Math.round(12 + t * 18);
 }
 
 function nearestRadarSample(samples: RadarOutlookSample[], fraction: number): RadarOutlookSample | null {
@@ -948,7 +948,7 @@ export function applyRadarOutlookBoost(
 
     const boosted =
       current > 0
-        ? Math.min(100, current + Math.round((radarPct - current) * 0.45))
+        ? Math.min(100, current + Math.round((radarPct - current) * 0.28))
         : radarPct;
 
     const rainConditions =

@@ -15,6 +15,7 @@ import {
 } from "../nav/windForecastCalib";
 import { pointAtAlongMeters, polylineLengthMeters, subsamplePolylineVertexBudget } from "../nav/routeGeometry";
 import type { LngLat } from "../nav/types";
+import { resolveHourFeelsLikeF } from "../forecast/localForecastVisual";
 import { enqueueTomorrowIoPost, noteTomorrowIoRateLimit } from "./tomorrowIoClient";
 
 const BASE_URL = "https://api.tomorrow.io/v4/timelines";
@@ -88,6 +89,8 @@ export type PointDailyDay = {
   overnightConditions?: string;
   /** Peak feels-like / heat index for the day (from hourly when available). */
   maxFeelsLikeF?: number;
+  /** Lowest feels-like / wind chill for the day (from hourly when available). */
+  minFeelsLikeF?: number;
 };
 
 /** Multi-day outlook at the user's position (WeatherKit forecastDaily). */
@@ -398,10 +401,16 @@ export async function fetchPointHourlyForecast(
     const code = iv.values.weatherCode ?? 1000;
     const offsetHours = (new Date(iv.startTime).getTime() - fetchedAt) / 3_600_000;
     const tempF = Math.round((tempC * 9) / 5 + 32);
-    const feelsLikeF =
-      apparentC != null ? Math.round((apparentC * 9) / 5 + 32) : undefined;
     const humidityPct =
       iv.values.humidity != null ? Math.round(iv.values.humidity) : undefined;
+    const windMph = Math.round(windMs * 2.23694);
+    const feelsLikeF = resolveHourFeelsLikeF({
+      tempF,
+      feelsLikeF:
+        apparentC != null ? Math.round((apparentC * 9) / 5 + 32) : undefined,
+      humidityPct,
+      windMph,
+    });
     return {
       timeIso: iv.startTime,
       offsetHours,
@@ -410,7 +419,7 @@ export async function fetchPointHourlyForecast(
       humidityPct,
       precipIntensityMmh: iv.values.precipitationIntensity ?? 0,
       precipProbability: (iv.values.precipitationProbability ?? 0) / 100,
-      windMph: Math.round(windMs * 2.23694),
+      windMph,
       conditions: weatherCodeLabel(code),
     };
   });

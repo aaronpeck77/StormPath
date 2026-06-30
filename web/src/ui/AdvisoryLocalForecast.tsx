@@ -10,17 +10,21 @@ import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
 import {
   feelsLikeCellColor,
   formatHeatIndexLine,
+  formatWindChillLine,
   heatIndexNotable,
-  heatStressLabel,
   hourComfortCallout,
+  isWindChillDisplay,
   dailyPrecipBadge,
   precipDisplayLabel,
   precipIsActive,
   precipTypeColor,
   resolveHourFeelsLikeF,
+  resolveIntervalFeelsLikeF,
   uvIndexColor,
+  windChillNotable,
   type PrecipTypeCode,
 } from "../forecast/localForecastVisual";
+import { enrichDailyWithHourlyApparent } from "../forecast/localForecastDaily";
 import {
   formatDailyDayLabel,
   formatForecastUpdatedAt,
@@ -100,7 +104,10 @@ export function AdvisoryLocalForecast({
   });
 
   const hours = hourlyForecast?.hours ?? [];
-  const days = dailyForecast?.days ?? [];
+  const days = useMemo(
+    () => enrichDailyWithHourlyApparent(dailyForecast?.days ?? [], hours),
+    [dailyForecast?.days, hours]
+  );
   const hasNow = Boolean(nowcast || minutePrecip?.now);
   const hasNextHour = !isBasic && (Boolean(minutePrecip?.minutes.length) || hours.length > 0);
   const hasDay = hours.length > 0;
@@ -139,20 +146,110 @@ export function AdvisoryLocalForecast({
     return formatHeatIndexLine(peak);
   }, [nowcast, hours]);
 
+  const resolvedNowFeels = useMemo(() => {
+    if (!nowcast) return null;
+    return resolveHourFeelsLikeF({
+      tempF: nowcast.tempF,
+      feelsLikeF: nowcast.feelsLikeF,
+      humidityPct: nowcast.humidityPct,
+      windMph: nowcast.windGustMph ?? nowcast.windMph,
+    });
+  }, [nowcast]);
+
   const dayHeatPeakLine = useMemo(() => {
     let maxFeels = -Infinity;
     for (const h of hourSamples) {
-      maxFeels = Math.max(maxFeels, resolveHourFeelsLikeF(h));
+      maxFeels = Math.max(maxFeels, resolveIntervalFeelsLikeF(h));
     }
     if (!Number.isFinite(maxFeels) || !heatIndexNotable(maxFeels)) return null;
     return formatHeatIndexLine(maxFeels);
   }, [hourSamples]);
 
+  const dayColdLine = useMemo(() => {
+    let minFeels = Infinity;
+    let coldestAir = 0;
+    let coldestWind = 0;
+    for (const h of hourSamples) {
+      const feels = resolveIntervalFeelsLikeF(h);
+      if (feels < minFeels) {
+        minFeels = feels;
+        coldestAir = h.tempF;
+        coldestWind = h.windGustMph ?? h.windMph ?? 0;
+      }
+    }
+    if (!Number.isFinite(minFeels) || !windChillNotable(minFeels, coldestAir, coldestWind)) {
+      return null;
+    }
+    return formatWindChillLine(minFeels);
+  }, [hourSamples]);
+
+  const nextHourColdLine = useMemo(() => {
+    const upcoming = upcomingHourlySlots(hours, 2);
+    const h0 = upcoming[0];
+    const h1 = upcoming[1] ?? h0;
+    const slots = [
+      nowcast
+        ? resolveHourFeelsLikeF({
+            tempF: nowcast.tempF,
+            feelsLikeF: nowcast.feelsLikeF,
+            humidityPct: nowcast.humidityPct,
+            windMph: nowcast.windGustMph ?? nowcast.windMph,
+          })
+        : null,
+      h0 ? resolveIntervalFeelsLikeF(h0) : null,
+      h1 ? resolveIntervalFeelsLikeF(h1) : null,
+    ].filter((v): v is number => v != null);
+    if (!slots.length) return null;
+    const minFeels = Math.min(...slots);
+    const coldestAir = Math.min(
+      nowcast?.tempF ?? Infinity,
+      h0?.tempF ?? Infinity,
+      h1?.tempF ?? Infinity
+    );
+    const coldestWind = Math.max(
+      nowcast?.windGustMph ?? nowcast?.windMph ?? 0,
+      h0?.windGustMph ?? h0?.windMph ?? 0,
+      h1?.windGustMph ?? h1?.windMph ?? 0
+    );
+    if (!windChillNotable(minFeels, coldestAir, coldestWind)) return null;
+    return formatWindChillLine(minFeels);
+  }, [nowcast, hours]);
+
+  const weekHeatLine = useMemo(() => {
+    let peak = -Infinity;
+    for (const d of days) {
+      if (d.maxFeelsLikeF != null) peak = Math.max(peak, d.maxFeelsLikeF);
+    }
+    if (!Number.isFinite(peak) || !heatIndexNotable(peak)) return null;
+    return formatHeatIndexLine(peak);
+  }, [days]);
+
+  const weekColdLine = useMemo(() => {
+    let low = Infinity;
+    let lowAir = 0;
+    for (const d of days) {
+      if (d.minFeelsLikeF != null && d.minFeelsLikeF < low) {
+        low = d.minFeelsLikeF;
+        lowAir = d.lowF;
+      }
+    }
+    if (!Number.isFinite(low) || !isWindChillDisplay(low, lowAir)) return null;
+    return formatWindChillLine(low);
+  }, [days]);
+
   const nowHeatLine = useMemo(() => {
-    const feels = nowcast?.feelsLikeF;
-    if (feels == null || !heatIndexNotable(feels)) return null;
-    return formatHeatIndexLine(feels);
-  }, [nowcast?.feelsLikeF]);
+    if (resolvedNowFeels == null || !heatIndexNotable(resolvedNowFeels)) return null;
+    return formatHeatIndexLine(resolvedNowFeels);
+  }, [resolvedNowFeels]);
+
+  const nowColdLine = useMemo(() => {
+    if (resolvedNowFeels == null || !nowcast) return null;
+    if (heatIndexNotable(resolvedNowFeels)) return null;
+    if (!windChillNotable(resolvedNowFeels, nowcast.tempF, nowcast.windGustMph ?? nowcast.windMph)) {
+      return null;
+    }
+    return formatWindChillLine(resolvedNowFeels);
+  }, [resolvedNowFeels, nowcast]);
 
   const displayLocationAlerts = useMemo(() => {
     let alerts = dedupeNwsAlertsForDisplay(locationAlerts);
@@ -205,15 +302,20 @@ export function AdvisoryLocalForecast({
             {heroConditions ? <p className="adv-dash__hero-sky">{heroConditions}</p> : null}
             <div className="adv-dash__stat-grid">
               {nowcast &&
-              (heatIndexNotable(nowcast.feelsLikeF) ||
-                Math.abs(nowcast.feelsLikeF - nowcast.tempF) >= 3) ? (
+              resolvedNowFeels != null &&
+              (heatIndexNotable(resolvedNowFeels) ||
+                Math.abs(resolvedNowFeels - nowcast.tempF) >= 3) ? (
                 <div className="adv-dash__stat">
                   <span className="adv-dash__stat-k">Feels like</span>
                   <span
                     className="adv-dash__stat-v"
-                    style={{ color: heatIndexNotable(nowcast.feelsLikeF) ? feelsLikeCellColor(nowcast.feelsLikeF) : undefined }}
+                    style={{
+                      color: heatIndexNotable(resolvedNowFeels)
+                        ? feelsLikeCellColor(resolvedNowFeels)
+                        : undefined,
+                    }}
                   >
-                    {nowcast.feelsLikeF}°
+                    {resolvedNowFeels}°
                   </span>
                 </div>
               ) : null}
@@ -244,6 +346,7 @@ export function AdvisoryLocalForecast({
               ) : null}
             </div>
             {nowHeatLine ? <p className="adv-dash__heat-callout">{nowHeatLine}</p> : null}
+            {nowColdLine ? <p className="adv-dash__cold-callout">{nowColdLine}</p> : null}
             {!nowcast && minutePrecip?.now ? (
               <p className="adv-dash__hero-fallback">{formatMinutePrecipNowLine(minutePrecip.now)}</p>
             ) : null}
@@ -292,7 +395,7 @@ export function AdvisoryLocalForecast({
           <div
             className={`adv-dash__block adv-dash__block--hour adv-dash__strip adv-dash__strip--micro${
               nextHourHeatLine ? " adv-dash__strip--heat" : ""
-            }`}
+            }${nextHourColdLine ? " adv-dash__strip--cold" : ""}`}
           >
             <div className="adv-dash__strip-head">
               <span className="adv-dash__strip-label">Next hour</span>
@@ -301,8 +404,11 @@ export function AdvisoryLocalForecast({
             {nextHourHeatLine ? (
               <p className="adv-dash__heat-callout">{nextHourHeatLine}</p>
             ) : null}
+            {nextHourColdLine ? (
+              <p className="adv-dash__cold-callout">{nextHourColdLine}</p>
+            ) : null}
             <div className="adv-dash__lane-legend" aria-hidden>
-              <span className="adv-dash__legend-swatch adv-dash__legend-swatch--heat">Heat index</span>
+              <span className="adv-dash__legend-swatch adv-dash__legend-swatch--heat">Heat index (or wind chill)</span>
               <span className="adv-dash__legend-swatch adv-dash__legend-swatch--rain">Rain or snow</span>
               <span className="adv-dash__legend-swatch adv-dash__legend-swatch--wind">Wind</span>
             </div>
@@ -350,7 +456,7 @@ export function AdvisoryLocalForecast({
           <div
             className={`adv-dash__block adv-dash__block--day adv-dash__strip adv-dash__strip--day${
               dayHeatPeakLine ? " adv-dash__strip--heat" : ""
-            }`}
+            }${dayColdLine ? " adv-dash__strip--cold" : ""}`}
           >
             <div className="adv-dash__strip-head">
               <span className="adv-dash__strip-label">Next 24 hours</span>
@@ -359,6 +465,7 @@ export function AdvisoryLocalForecast({
             {dayHeatPeakLine ? (
               <p className="adv-dash__heat-callout">{dayHeatPeakLine}</p>
             ) : null}
+            {dayColdLine ? <p className="adv-dash__cold-callout">{dayColdLine}</p> : null}
             <div className="adv-dash__lane-legend" aria-hidden>
               <span className="adv-dash__legend-swatch adv-dash__legend-swatch--heat">Color = heat index (or wind chill)</span>
               <span className="adv-dash__legend-swatch adv-dash__legend-swatch--rain">Bottom stripe = rain or snow</span>
@@ -366,10 +473,12 @@ export function AdvisoryLocalForecast({
             <div className="adv-dash__hour-scroll" role="img" aria-label={`Hourly forecast at ${areaLabel}`}>
               <div className="adv-dash__hour-row">
                 {hourSamples.map((h) => {
-                  const feels = resolveHourFeelsLikeF(h);
+                  const feels = resolveIntervalFeelsLikeF(h);
                   const air = Math.round(h.tempF);
                   const gust = h.windGustMph ?? h.windMph ?? 0;
                   const comfort = hourComfortCallout(feels, air, gust);
+                  const heatSlot = comfort.kind === "heat";
+                  const coldSlot = comfort.kind === "cold";
                   const timeLabel = formatHourlySlotTimeLabel(h.timeIso);
                   const isNowSlot = timeLabel === "Now";
                   const minutePrecipActive = Boolean(
@@ -403,8 +512,8 @@ export function AdvisoryLocalForecast({
                     <div
                       key={h.timeIso}
                       className={`adv-dash__hour-card${
-                        comfort.kind === "heat" ? " adv-dash__hour-card--heat" : ""
-                      }${comfort.kind === "cold" ? " adv-dash__hour-card--cold" : ""}${
+                        heatSlot ? " adv-dash__hour-card--heat" : ""
+                      }${coldSlot ? " adv-dash__hour-card--cold" : ""}${
                         precip.active ? " adv-dash__hour-card--wet" : ""
                       }`}
                       style={{
@@ -413,25 +522,13 @@ export function AdvisoryLocalForecast({
                       }}
                       title={`${timeLabel}: feels like ${feels}°${
                         air !== feels ? `, air ${air}°` : ""
-                      }${comfort.label ? `, ${comfort.label}` : ""}${
-                        precipLabel ? `, ${precipLabel}` : ", dry"
-                      }${gust >= 18 ? `, gusts to ${Math.round(gust)} mph` : ""}`}
+                      }${precipLabel ? `, ${precipLabel}` : ", dry"}${
+                        gust >= 18 ? `, gusts to ${Math.round(gust)} mph` : ""
+                      }`}
                     >
                       <span className="adv-dash__hour-time">{timeLabel}</span>
                       <span className="adv-dash__hour-temp">{feels}°</span>
-                      {comfort.label ? (
-                        <span
-                          className={
-                            comfort.kind === "cold" ? "adv-dash__hour-cold" : "adv-dash__hour-heat"
-                          }
-                        >
-                          {comfort.label}
-                        </span>
-                      ) : null}
-                      {comfort.kind === "heat" && air !== feels ? (
-                        <span className="adv-dash__hour-air">Air {air}°</span>
-                      ) : null}
-                      {comfort.kind === "cold" && air !== feels ? (
+                      {air !== feels ? (
                         <span className="adv-dash__hour-air">Air {air}°</span>
                       ) : null}
                       {precipLabel ? (
@@ -465,39 +562,67 @@ export function AdvisoryLocalForecast({
               <span className="adv-dash__strip-label">Outlook</span>
             </div>
             <p className="adv-dash__strip-note">
-              {Math.round(hours[0]?.feelsLikeF ?? hours[0]?.tempF ?? 0)}° now · check expanded view for detail
+              {resolveIntervalFeelsLikeF({
+                tempF: hours[0]?.tempF ?? 0,
+                feelsLikeF: hours[0]?.feelsLikeF,
+                humidityPct: hours[0]?.humidityPct,
+                windMph: hours[0]?.windMph,
+                windGustMph: hours[0]?.windGustMph,
+              })}
+              ° now · check expanded view for detail
             </p>
           </div>
         ) : null}
 
         {hasMultiDay ? (
-          <div className="adv-dash__block adv-dash__block--week adv-dash__strip adv-dash__strip--week">
+          <div
+            className={`adv-dash__block adv-dash__block--week adv-dash__strip adv-dash__strip--week${
+              weekHeatLine ? " adv-dash__strip--heat" : ""
+            }${weekColdLine ? " adv-dash__strip--cold" : ""}`}
+          >
             <div className="adv-dash__strip-head">
               <span className="adv-dash__strip-label">Next seven days</span>
             </div>
+            {weekHeatLine ? <p className="adv-dash__heat-callout">{weekHeatLine}</p> : null}
+            {weekColdLine ? <p className="adv-dash__cold-callout">{weekColdLine}</p> : null}
             <div className="adv-dash__week-scroll" role="img" aria-label={`Daily forecast at ${areaLabel}`}>
               <div className="adv-dash__week-row">
                 {days.slice(0, 7).map((d, i) => {
                   const peakFeels = d.maxFeelsLikeF;
-                  const heatLabel = peakFeels != null ? heatStressLabel(peakFeels) : null;
+                  const lowFeels = d.minFeelsLikeF;
+                  const heatDay = peakFeels != null && heatIndexNotable(peakFeels);
+                  const coldDay =
+                    lowFeels != null && isWindChillDisplay(lowFeels, d.lowF);
                   return (
                   <div
                     key={d.dateIso}
-                    className={`adv-dash__week-cell${heatLabel ? " adv-dash__week-cell--heat" : ""}`}
+                    className={`adv-dash__week-cell${heatDay ? " adv-dash__week-cell--heat" : ""}${
+                      coldDay ? " adv-dash__week-cell--cold" : ""
+                    }`}
                   >
                     <span className="adv-dash__week-day">{formatDailyDayLabel(d, i)}</span>
                     <span className="adv-dash__week-hi">{d.highF}° high</span>
                     <span className="adv-dash__week-lo">{d.lowF}° low</span>
-                    {heatLabel && peakFeels != null ? (
+                    {heatDay && peakFeels != null ? (
                       <span
                         className="adv-dash__week-heat"
                         style={{ borderColor: feelsLikeCellColor(peakFeels) }}
                       >
-                        Heat index {peakFeels}° · {heatLabel}
+                        Heat index up to {peakFeels}°
+                        {peakFeels > d.highF + 1 ? ` · Air ${d.highF}°` : ""}
                       </span>
-                    ) : d.maxFeelsLikeF != null && d.maxFeelsLikeF > d.highF + 2 ? (
+                    ) : peakFeels != null && peakFeels > d.highF + 2 ? (
                       <span className="adv-dash__week-heat adv-dash__week-heat--mild">
-                        Feels like up to {d.maxFeelsLikeF}°
+                        Feels like up to {peakFeels}°
+                      </span>
+                    ) : null}
+                    {coldDay && lowFeels != null ? (
+                      <span
+                        className="adv-dash__week-cold"
+                        style={{ borderColor: feelsLikeCellColor(lowFeels) }}
+                      >
+                        Wind chill to {lowFeels}°
+                        {lowFeels < d.lowF - 1 ? ` · Air ${d.lowF}°` : ""}
                       </span>
                     ) : null}
                     {d.daytimeConditions ? (

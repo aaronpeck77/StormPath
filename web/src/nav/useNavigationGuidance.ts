@@ -16,6 +16,8 @@ export interface UseNavigationGuidanceDeps {
   alongHoldResetKey: number;
   /** When set (unified nav position pipeline), skips internal along-route projection. */
   navigationAlongM?: number;
+  /** Freeze turn banner at this along-route distance while off-route / at a stop. */
+  frozenAlongM?: number | null;
   speedMps?: number | null;
 }
 
@@ -31,6 +33,7 @@ export function useNavigationGuidance(deps: UseNavigationGuidanceDeps) {
     routeGeometry,
     alongHoldResetKey,
     navigationAlongM,
+    frozenAlongM,
     speedMps,
   } = deps;
 
@@ -41,9 +44,11 @@ export function useNavigationGuidance(deps: UseNavigationGuidanceDeps) {
   );
 
   const userAlongGuidanceM =
-    navigationStarted && navigationAlongM != null && Number.isFinite(navigationAlongM)
-      ? navigationAlongM
-      : heldAlongM;
+    navigationStarted && frozenAlongM != null && Number.isFinite(frozenAlongM)
+      ? frozenAlongM
+      : navigationStarted && navigationAlongM != null && Number.isFinite(navigationAlongM)
+        ? navigationAlongM
+        : heldAlongM;
 
   const turnStepBounds = useMemo(
     () => turnStepAlongBounds(turnSteps, guidanceRouteLengthM),

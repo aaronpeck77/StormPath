@@ -6,6 +6,7 @@ import {
   ARRIVAL_ROUTE_END_RADIUS_M,
   ARRIVAL_ROUTE_REMAINING_M,
   ARRIVAL_STATIONARY_MAX_SPEED_MPS,
+  ARRIVAL_STATIONARY_UNKNOWN_SPEED_MAX_REMAINING_M,
 } from "./constants";
 import { haversineMeters } from "./routeGeometry";
 import type { LngLat } from "./types";
@@ -58,10 +59,21 @@ export function arrivalIdleClearMs(remainingAlongM: number | null): number {
   return ARRIVAL_IDLE_CLEAR_MS;
 }
 
-/** GPS speed missing is common indoors / on desktop — treat as stopped when near destination. */
-export function isStationaryForArrival(speedMps: number | null | undefined): boolean {
-  if (speedMps == null || !Number.isFinite(speedMps)) return true;
-  return speedMps <= ARRIVAL_STATIONARY_MAX_SPEED_MPS;
+/**
+ * GPS speed is often missing right after resume from background — only treat that as stopped
+ * when essentially no distance remains; otherwise require an explicit low speed reading.
+ */
+export function isStationaryForArrival(
+  speedMps: number | null | undefined,
+  remainingAlongM?: number | null,
+): boolean {
+  if (speedMps != null && Number.isFinite(speedMps)) {
+    return speedMps <= ARRIVAL_STATIONARY_MAX_SPEED_MPS;
+  }
+  return (
+    remainingAlongM != null &&
+    remainingAlongM <= ARRIVAL_STATIONARY_UNKNOWN_SPEED_MAX_REMAINING_M
+  );
 }
 
 /** Map panning shouldn't block auto end-trip; chrome interactions still reset the timer. */

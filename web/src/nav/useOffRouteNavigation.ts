@@ -150,8 +150,11 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   } = deps;
 
   const [offRouteSevere, setOffRouteSevere] = useState(false);
+  const [offRouteLatched, setOffRouteLatched] = useState(false);
+  const [offRouteRejoinAlongM, setOffRouteRejoinAlongM] = useState(0);
   const [offRouteAwaitingDriverChoice, setOffRouteAwaitingDriverChoice] = useState(false);
   const offRouteSevereRef = useRef(false);
+  const offRouteLatchedRef = useRef(false);
   const offRouteRerouteFailStreakRef = useRef(0);
   const offRouteRejoinAlongMRef = useRef(0);
   const [detourRejoinAlongM, setDetourRejoinAlongM] = useState(0);
@@ -210,6 +213,13 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   const applyPollSession = useCallback((session: OffRoutePollSession) => {
     pollSessionRef.current = session;
     offRouteRejoinAlongMRef.current = session.offRouteRejoinAlongM;
+    if (offRouteLatchedRef.current !== session.offRouteLatched) {
+      offRouteLatchedRef.current = session.offRouteLatched;
+      setOffRouteLatched(session.offRouteLatched);
+    }
+    setOffRouteRejoinAlongM((prev) =>
+      prev === session.offRouteRejoinAlongM ? prev : session.offRouteRejoinAlongM
+    );
     if (offRouteSevereRef.current !== session.offRouteSevere) {
       offRouteSevereRef.current = session.offRouteSevere;
       setOffRouteSevere(session.offRouteSevere);
@@ -228,8 +238,11 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     pollSessionRef.current = resetOffRoutePollSession(pollSessionRef.current);
     offRouteSevereRef.current = false;
     setOffRouteSevere(false);
-    setOffRouteAwaitingDriverChoice(false);
+    offRouteLatchedRef.current = false;
+    setOffRouteLatched(false);
+    setOffRouteRejoinAlongM(0);
     offRouteRejoinAlongMRef.current = 0;
+    setOffRouteAwaitingDriverChoice(false);
     setDetourRejoinAlongM(0);
     detourRejoinAlongMRef.current = 0;
     setAutoRejoinGuidanceRouteId(null);
@@ -422,9 +435,12 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     try {
       const remainingVias = remainingViaStops(viaStops, activeViaIndex);
       const viaCoords = remainingVias.map((s) => s.lngLat);
+      const bearingDeg = headingRef.current;
       const fresh = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
         via: viaCoords.length > 0 ? viaCoords : undefined,
         singleRouteFromPosition: true,
+        bearingDeg:
+          bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
         preferBackroads: learnEnabled,
         signal: fetchCtrl.signal,
         stormAlerts: stormAlertsForRouting,
@@ -492,6 +508,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     stormAlertsForRouting,
     isPlus,
     settingStormEnabled,
+    headingRef,
     lockedNavigationRouteIdRef,
     routeGraphEpochRef,
     altRoutesFetchAbortRef,
@@ -787,6 +804,8 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
 
   return {
     offRouteSevere,
+    offRouteLatched,
+    offRouteRejoinAlongM,
     autoRejoinGuidanceRouteId,
     detourRejoinAlongM,
     offRouteAwaitingDriverChoice,

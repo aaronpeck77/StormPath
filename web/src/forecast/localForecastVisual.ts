@@ -116,21 +116,72 @@ export function estimateHeatIndexF(tempF: number, relativeHumidityPct: number): 
   return Math.max(T, hi);
 }
 
-/** Best available feels-like / heat index for an hourly slot. */
+/** NWS wind chill (°F); valid for T ≤ 50°F and wind > 3 mph. */
+export function estimateWindChillF(tempF: number, windMph: number): number | null {
+  const T = tempF;
+  const V = Math.max(windMph, 0);
+  if (T > 50 || V <= 3) return null;
+  const wc =
+    35.74 +
+    0.6215 * T -
+    35.75 * Math.pow(V, 0.16) +
+    0.4275 * T * Math.pow(V, 0.16);
+  return Math.min(T, wc);
+}
+
+/** When provider apparent temp is within this of air, prefer humidity-based heat index in warm weather. */
+const FEELS_LIKE_PROVIDER_TRUST_DELTA_F = 3;
+
+/** Best available feels-like / heat index / wind chill for an hourly slot or current conditions. */
 export function resolveHourFeelsLikeF(h: {
   tempF: number;
   feelsLikeF?: number;
   humidityPct?: number;
+  windMph?: number;
 }): number {
   const air = Math.round(h.tempF);
+  let feels = air;
   if (h.feelsLikeF != null && Number.isFinite(h.feelsLikeF)) {
-    return Math.round(h.feelsLikeF);
+    feels = Math.round(h.feelsLikeF);
   }
-  if (h.humidityPct != null && air >= 75) {
-    const est = estimateHeatIndexF(air, h.humidityPct);
-    if (est != null) return Math.round(est);
+
+  const wind = Math.max(0, h.windMph ?? 0);
+
+  if (h.humidityPct != null && h.humidityPct > 0) {
+    if (air >= 80) {
+      const hi = estimateHeatIndexF(air, h.humidityPct);
+      if (hi != null) feels = Math.max(feels, Math.round(hi));
+    } else if (
+      air >= 75 &&
+      (h.feelsLikeF == null || Math.abs(feels - air) < FEELS_LIKE_PROVIDER_TRUST_DELTA_F)
+    ) {
+      const est = estimateHeatIndexF(air, h.humidityPct);
+      if (est != null) feels = Math.max(feels, Math.round(est));
+    }
   }
-  return air;
+
+  if (air <= 50 && wind > 3) {
+    const wc = estimateWindChillF(air, wind);
+    if (wc != null) feels = Math.min(feels, Math.round(wc));
+  }
+
+  return feels;
+}
+
+/** Resolve apparent temp from a forecast interval (prefers gust for wind chill). */
+export function resolveIntervalFeelsLikeF(h: {
+  tempF: number;
+  feelsLikeF?: number;
+  humidityPct?: number;
+  windMph?: number;
+  windGustMph?: number;
+}): number {
+  return resolveHourFeelsLikeF({
+    tempF: h.tempF,
+    feelsLikeF: h.feelsLikeF,
+    humidityPct: h.humidityPct,
+    windMph: h.windGustMph ?? h.windMph ?? 0,
+  });
 }
 
 export function hourComfortCallout(
@@ -155,7 +206,20 @@ export function heatIndexNotable(feelsF: number): boolean {
 export function formatHeatIndexLine(feelsF: number): string {
   const rounded = Math.round(feelsF);
   const stress = heatStressLabel(rounded);
-  return stress ? `Heat index ${rounded}° · ${stress}` : `Feels like ${rounded}°`;
+  return stress ? `Heat index up to ${rounded}° · ${stress}` : `Feels like ${rounded}°`;
+}
+
+export function formatWindChillLine(feelsF: number): string {
+  const rounded = Math.round(feelsF);
+  const stress = windChillStressLabel(rounded);
+  return stress ? `Wind chill to ${rounded}° · ${stress}` : `Feels like ${rounded}°`;
+}
+
+/** True when a daily low apparent temp should be shown as wind chill (not just air temp). */
+export function isWindChillDisplay(feelsF: number, airF: number): boolean {
+  const feels = Math.round(feelsF);
+  const air = Math.round(airF);
+  return feels <= 40 && air - feels >= 2;
 }
 
 export function windGustBarHeight(gustMph: number, maxGust = 45): string {

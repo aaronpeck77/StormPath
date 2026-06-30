@@ -11,7 +11,9 @@ import {
   precipTypeColor,
   precipTypeShortLabel,
   estimateHeatIndexF,
+  estimateWindChillF,
   resolveHourFeelsLikeF,
+  isWindChillDisplay,
   uvIndexLabel,
   windChillNotable,
   windChillStressLabel,
@@ -62,7 +64,7 @@ describe("localForecastVisual", () => {
     });
     expect(hourComfortCallout(90, 86, 5)).toEqual({
       kind: "heat",
-      label: "Heat index 90° · Hot — stay hydrated",
+      label: "Heat index up to 90° · Hot — stay hydrated",
     });
   });
 
@@ -73,6 +75,21 @@ describe("localForecastVisual", () => {
     expect(hi!).toBeGreaterThan(88);
     expect(resolveHourFeelsLikeF({ tempF: 88, humidityPct: 75 })).toBeGreaterThan(88);
     expect(resolveHourFeelsLikeF({ tempF: 88, feelsLikeF: 96 })).toBe(96);
+  });
+
+  it("computes heat index when provider apparent matches air on a hot humid day", () => {
+    const feels = resolveHourFeelsLikeF({ tempF: 91, feelsLikeF: 91, humidityPct: 60 });
+    expect(feels).toBeGreaterThanOrEqual(100);
+    expect(feels).toBeLessThanOrEqual(104);
+  });
+
+  it("computes wind chill when provider apparent matches air on a cold windy hour", () => {
+    const wc = estimateWindChillF(32, 15);
+    expect(wc).not.toBeNull();
+    expect(wc!).toBeLessThan(32);
+    const feels = resolveHourFeelsLikeF({ tempF: 32, feelsLikeF: 32, windMph: 15 });
+    expect(feels).toBeLessThan(32);
+    expect(isWindChillDisplay(feels, 32)).toBe(true);
   });
 
   it("maps feels-like to warm/cool colors", () => {

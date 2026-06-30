@@ -1,5 +1,5 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
-import { ARRIVAL_BG_CLEAR_MIN_MS } from "./constants";
+import { ARRIVAL_BG_CLEAR_MIN_MS, ARRIVAL_BG_RESUME_GRACE_MS } from "./constants";
 import {
   arrivalIdleClearMs,
   arrivalProximity,
@@ -55,6 +55,8 @@ export function useArrivalDetection(deps: UseArrivalDetectionDeps): void {
   const arrivalHintShownRef = useRef(false);
   const lastUserInteractionMsRef = useRef<number>(Date.now());
   const tabHiddenAtMsRef = useRef<number | null>(null);
+  /** After long background, wait for fresh GPS before auto end-trip (avoids clearing mid-route). */
+  const arrivalResumeGraceUntilMsRef = useRef(0);
 
   useEffect(() => {
     const bump = (e: Event) => {
@@ -107,6 +109,7 @@ export function useArrivalDetection(deps: UseArrivalDetectionDeps): void {
 
     const tick = () => {
       if (demoBypassTrafficJamPlusRef.current) return;
+      if (Date.now() < arrivalResumeGraceUntilMsRef.current) return;
       if (!navigationStartedRef.current) {
         arrivalIdleStartMsRef.current = null;
         arrivalHintShownRef.current = false;
@@ -131,7 +134,7 @@ export function useArrivalDetection(deps: UseArrivalDetectionDeps): void {
         arrivalHintShownRef.current = false;
         return;
       }
-      if (!isStationaryForArrival(speedMpsRef.current)) {
+      if (!isStationaryForArrival(speedMpsRef.current, prox.remainingAlongM)) {
         arrivalIdleStartMsRef.current = null;
         return;
       }
@@ -171,19 +174,9 @@ export function useArrivalDetection(deps: UseArrivalDetectionDeps): void {
       const bgMs = Date.now() - hiddenAt;
       tabHiddenAtMsRef.current = null;
       if (bgMs < ARRIVAL_BG_CLEAR_MIN_MS) return;
-      const pos = navigationPositionLngLatRef.current;
-      const dest = navTargetRef.current;
-      if (!navigationStartedRef.current || !pos || !dest) return;
-      const prox = arrivalProximity({
-        pos,
-        dest,
-        routeGeometry: guidanceRouteGeomRef.current,
-        alongRouteM: userAlongGuidanceMRef.current,
-        routeLengthM: guidanceRouteLengthMRef.current,
-      });
-      if (!prox.near) return;
-      if (!isStationaryForArrival(speedMpsRef.current)) return;
-      runArrivalClear();
+      if (!navigationStartedRef.current) return;
+      // Do not clear on resume — wait for fresh GPS/speed; foreground idle timer still applies.
+      arrivalResumeGraceUntilMsRef.current = Date.now() + ARRIVAL_BG_RESUME_GRACE_MS;
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => {

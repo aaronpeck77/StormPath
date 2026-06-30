@@ -1,4 +1,5 @@
 import type { LngLat } from "../nav/types";
+import { resolveHourFeelsLikeF } from "../forecast/localForecastVisual";
 import { formatEtaDuration } from "../ui/formatEta";
 import type { PointHourlyForecast, PointHourlyInterval } from "./tomorrowIo";
 import { enqueueOpenWeatherGet } from "./openWeatherPacing";
@@ -96,22 +97,25 @@ export async function fetchCurrentNowcast(
   };
 
   const tempF = Math.round(data.main?.temp ?? 0);
-  /* feels_like already accounts for both wind chill (cold + wind) and heat index (hot + humidity)
-   * via OpenWeather's apparent-temperature model, so we don't need to re-compute either ourselves. */
-  const feelsLikeF = Math.round(data.main?.feels_like ?? data.main?.temp ?? 0);
+  const humidityPct =
+    data.main?.humidity != null && Number.isFinite(data.main.humidity)
+      ? Math.round(data.main.humidity)
+      : null;
   const windMph = Math.round(data.wind?.speed ?? 0);
   const gustRaw = data.wind?.gust;
   const windGustMph =
     gustRaw != null && Number.isFinite(gustRaw) ? Math.round(gustRaw) : null;
+  const feelsLikeF = resolveHourFeelsLikeF({
+    tempF,
+    feelsLikeF: Math.round(data.main?.feels_like ?? data.main?.temp ?? 0),
+    humidityPct: humidityPct ?? undefined,
+    windMph: windGustMph ?? windMph,
+  });
   /* Convert mm/hr → in/hr (OpenWeather reports rain/snow in mm regardless of `units=imperial`). */
   const rainMmHr = data.rain?.["1h"] ?? 0;
   const snowMmHr = data.snow?.["1h"] ?? 0;
   const precipInPerHr = (rainMmHr + snowMmHr) / 25.4;
   const conditions = (data.weather?.[0]?.description ?? "conditions").toLowerCase();
-  const humidityPct =
-    data.main?.humidity != null && Number.isFinite(data.main.humidity)
-      ? Math.round(data.main.humidity)
-      : null;
 
   return {
     tempF,
@@ -217,15 +221,23 @@ export async function fetchOpenWeatherPointHourly24h(
     const tMs = it.dt * 1000;
     const pop = it.pop ?? 0;
     const rainMm = (it.rain?.["3h"] ?? it.snow?.["3h"] ?? 0) / 3;
+    const tempF = Math.round(it.main?.temp ?? 0);
+    const humidityPct = it.main?.humidity;
+    const windMph = Math.round(it.wind?.speed ?? 0);
     return {
       timeIso: new Date(tMs).toISOString(),
       offsetHours: (tMs - fetchedAt) / 3_600_000,
-      tempF: Math.round(it.main?.temp ?? 0),
-      feelsLikeF: Math.round(it.main?.feels_like ?? it.main?.temp ?? 0),
-      humidityPct: it.main?.humidity,
+      tempF,
+      feelsLikeF: resolveHourFeelsLikeF({
+        tempF,
+        feelsLikeF: Math.round(it.main?.feels_like ?? it.main?.temp ?? 0),
+        humidityPct,
+        windMph,
+      }),
+      humidityPct,
       precipIntensityMmh: rainMm,
       precipProbability: pop,
-      windMph: Math.round(it.wind?.speed ?? 0),
+      windMph,
       conditions: it.weather?.[0]?.description ?? "conditions",
     };
   });

@@ -11,6 +11,12 @@
  * three strata share one aligned route axis.
  */
 import { useMemo } from "react";
+import {
+  RADAR_HEAVY_THRESHOLD,
+  RADAR_REROUTE_THRESHOLD,
+  RADAR_SOFT_THRESHOLD,
+  RADAR_VERY_HEAVY_THRESHOLD,
+} from "../nav/constants";
 import { radarDisplayIntensity } from "../nav/radarReflectivityScale";
 
 type RadarSample = { t: number; intensity: number };
@@ -95,7 +101,7 @@ export function RouteRadarWindStrip({ radarSamples, windPoints, gustSpikePoints 
     [sortedWind, windMax]
   );
 
-  const hasRadarEcho = radarPts.some((p) => p.norm >= 0.16);
+  const hasRadarEcho = radarPts.some((p) => p.norm >= RADAR_SOFT_THRESHOLD);
   const hasRadarTrace =
     radarPts.length >= 2 && radarPts.some((p) => p.norm >= 0.04);
   const hasWind = windPts.length >= 2;
@@ -133,12 +139,12 @@ export function RouteRadarWindStrip({ radarSamples, windPoints, gustSpikePoints 
           {/* ── Radar echo — layered area fills ── */}
           {hasRadarEcho && radarPts.length >= 2 && (
             <>
-              <path d={areaPath(radarPts)} fill="rgba(56,189,248,0.15)" />
+              <path d={areaPath(radarPts)} fill="rgba(56,189,248,0.10)" />
               {([
-                [0.16, "rgba(56,189,248,0.50)"],
-                [0.38, "rgba(59,130,246,0.68)"],
-                [0.55, "rgba(99,102,241,0.80)"],
-                [0.75, "rgba(139,92,246,0.88)"],
+                [RADAR_SOFT_THRESHOLD, "rgba(56,189,248,0.34)"],
+                [RADAR_REROUTE_THRESHOLD, "rgba(59,130,246,0.48)"],
+                [RADAR_HEAVY_THRESHOLD, "rgba(99,102,241,0.58)"],
+                [RADAR_VERY_HEAVY_THRESHOLD, "rgba(139,92,246,0.68)"],
               ] as [number, string][]).map(([thr, fill]) => {
                 const pts = radarPts.map((p) => ({
                   t: p.t,
@@ -150,7 +156,7 @@ export function RouteRadarWindStrip({ radarSamples, windPoints, gustSpikePoints 
               <path
                 d={linePath(radarPts)}
                 fill="none"
-                stroke="rgba(56,189,248,0.85)"
+                stroke="rgba(56,189,248,0.62)"
                 strokeWidth={1.2}
                 vectorEffect="non-scaling-stroke"
               />

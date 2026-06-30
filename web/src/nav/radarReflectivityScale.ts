@@ -56,7 +56,7 @@ function roadEffectForEcho(display: number): string {
 /** Slight curve so mid-range yellow–green reads lower than raw palette strength. */
 export function radarDisplayIntensity(raw: number): number {
   if (!Number.isFinite(raw) || raw <= 0) return 0;
-  return clamp01(Math.pow(raw, 1.1));
+  return clamp01(Math.pow(raw, 1.34) * 0.92);
 }
 
 /**

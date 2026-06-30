@@ -4,6 +4,12 @@
  * area chart so the driver can see the precipitation profile along the route.
  */
 import { useMemo } from "react";
+import {
+  RADAR_HEAVY_THRESHOLD,
+  RADAR_REROUTE_THRESHOLD,
+  RADAR_SOFT_THRESHOLD,
+  RADAR_VERY_HEAVY_THRESHOLD,
+} from "../nav/constants";
 import { radarDisplayIntensity } from "../nav/radarReflectivityScale";
 import { routePlotLeftPct } from "./routeAxisLayout";
 
@@ -51,7 +57,7 @@ export function RouteRadarStrip({ samples, userAlongT = 0, stripTint = "#3b82f6"
   );
 
 
-  const hasAnyEcho = pts.some((p) => p.display >= 0.16);
+  const hasAnyEcho = pts.some((p) => p.display >= RADAR_SOFT_THRESHOLD);
   const youX = routePlotLeftPct(userAlongT);
 
   return (
@@ -77,14 +83,14 @@ export function RouteRadarStrip({ samples, userAlongT = 0, stripTint = "#3b82f6"
               {/* background fill — lightest tier covers the whole area */}
               <path
                 d={buildAreaPath(pts)}
-                fill="rgba(56,189,248,0.18)"
+                fill="rgba(56,189,248,0.12)"
               />
               {/* stronger fills for each intensity tier, clipped to points that exceed the tier */}
               {([
-                [0.16, "rgba(56,189,248,0.55)"],
-                [0.38, "rgba(59,130,246,0.72)"],
-                [0.55, "rgba(99,102,241,0.82)"],
-                [0.75, "rgba(139,92,246,0.90)"],
+                [RADAR_SOFT_THRESHOLD, "rgba(56,189,248,0.38)"],
+                [RADAR_REROUTE_THRESHOLD, "rgba(59,130,246,0.52)"],
+                [RADAR_HEAVY_THRESHOLD, "rgba(99,102,241,0.62)"],
+                [RADAR_VERY_HEAVY_THRESHOLD, "rgba(139,92,246,0.72)"],
               ] as [number, string][]).map(([threshold, fill]) => {
                 const tierPts = pts.map((p) => ({
                   t: p.t,
@@ -105,7 +111,7 @@ export function RouteRadarStrip({ samples, userAlongT = 0, stripTint = "#3b82f6"
                   .map((p, i) => `${i === 0 ? "M" : "L"}${xPx(p.t).toFixed(1)},${yPx(p.display).toFixed(1)}`)
                   .join(" ")}
                 fill="none"
-                stroke="rgba(56,189,248,0.9)"
+                stroke="rgba(56,189,248,0.65)"
                 strokeWidth={1.5}
                 vectorEffect="non-scaling-stroke"
               />

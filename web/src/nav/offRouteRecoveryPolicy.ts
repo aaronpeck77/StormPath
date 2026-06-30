@@ -7,11 +7,13 @@ import {
 } from "./offRouteDetect";
 
 /** Max observation window before committing rejoin/replan (gas stop, parking). */
-export const OFF_ROUTE_OBSERVATION_MAX_MS = 45_000;
+export const OFF_ROUTE_OBSERVATION_MAX_MS = 120_000;
 /** Short patience for ambiguous moving departures before committing. */
-export const OFF_ROUTE_OBSERVATION_AMBIGUOUS_MS = 8_000;
+export const OFF_ROUTE_OBSERVATION_AMBIGUOUS_MS = 12_000;
 /** Below this speed, treat as stopped/slow pull-off (~5 mph). */
 export const OFF_ROUTE_OBSERVATION_HOLD_SPEED_MPS = 2.2;
+/** Fully stopped — hold indefinitely until the driver moves (fuel, parking). */
+export const OFF_ROUTE_GAS_STOP_HOLD_SPEED_MPS = 1.2;
 /** Lateral cap while slow — still beside the corridor, not a new leg. */
 export const OFF_ROUTE_OBSERVATION_HOLD_LATERAL_M = 55;
 /** Prefer rejoin (not full replan) when lateral is below this. */
@@ -94,6 +96,11 @@ function shouldPreferRejoin(input: OffRouteRecoveryInput): boolean {
   if (input.rejoinFailCount >= 2) return false;
   if (input.lateralM > OFF_ROUTE_REJOIN_MAX_LATERAL_M) return false;
 
+  /* Missed turn beside the corridor — rejoin beats a GPS replan that often adds a U-turn. */
+  if (input.lateralM <= 90 && input.lateralPeakM <= OFF_ROUTE_REJOIN_MAX_LATERAL_M + 15) {
+    return true;
+  }
+
   const diverging = isClearlyDivergingFromRoute(input);
 
   if (input.drivingRejoinMode === "auto_local" && !diverging) return true;
@@ -123,6 +130,15 @@ export function classifyOffRouteRecovery(input: OffRouteRecoveryInput): OffRoute
 
   const elapsed = Math.max(0, input.nowMs - input.latchedAtMs);
   const diverging = isClearlyDivergingFromRoute(input);
+
+  /* Fuel stop / parking: stay in hold until the driver actually moves. */
+  if (
+    !diverging &&
+    input.speedMps < OFF_ROUTE_GAS_STOP_HOLD_SPEED_MPS &&
+    input.lateralM <= OFF_ROUTE_OBSERVATION_HOLD_LATERAL_M
+  ) {
+    return "hold";
+  }
 
   if (!diverging) {
     if (

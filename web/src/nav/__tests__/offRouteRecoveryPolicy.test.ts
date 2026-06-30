@@ -31,12 +31,12 @@ describe("classifyOffRouteRecovery", () => {
     recoveryCommitted: false,
   };
 
-  it("holds while slow and beside the corridor (gas stop)", () => {
-    expect(classifyOffRouteRecovery(base)).toBe("hold");
+  it("holds indefinitely while fully stopped at a gas pump", () => {
     expect(
       classifyOffRouteRecovery({
         ...base,
-        nowMs: base.latchedAtMs + OFF_ROUTE_OBSERVATION_MAX_MS - 1,
+        speedMps: 0.2,
+        nowMs: base.latchedAtMs + OFF_ROUTE_OBSERVATION_MAX_MS + 5_000,
       })
     ).toBe("hold");
   });
@@ -67,15 +67,17 @@ describe("classifyOffRouteRecovery", () => {
     ).toBe("hold");
   });
 
-  it("prefers rejoin on city streets when not diverging", () => {
+  it("prefers rejoin when beside the corridor after a missed turn", () => {
     expect(
       classifyOffRouteRecovery({
         ...base,
         speedMps: 9,
         drivingRejoinMode: "auto_local",
         nowMs: base.latchedAtMs + OFF_ROUTE_OBSERVATION_AMBIGUOUS_MS + 1,
-        lateralM: 30,
-        priorLateralM: 28,
+        lateralM: 35,
+        priorLateralM: 32,
+        headingDeg: 120,
+        routeBearingDeg: 0,
       })
     ).toBe("rejoin");
   });
@@ -85,8 +87,9 @@ describe("classifyOffRouteRecovery", () => {
       classifyOffRouteRecovery({
         ...base,
         speedMps: 14,
-        lateralM: 40,
-        priorLateralM: 35,
+        lateralM: 130,
+        priorLateralM: 125,
+        lateralPeakM: 130,
         headingDeg: 120,
         routeBearingDeg: 0,
         nowMs: base.latchedAtMs + OFF_ROUTE_OBSERVATION_AMBIGUOUS_MS + 1,
@@ -111,12 +114,12 @@ describe("isClearlyDivergingFromRoute", () => {
   it("detects strong heading mismatch while off the corridor", () => {
     expect(
       isClearlyDivergingFromRoute({
-        lateralM: 20,
+        lateralM: 30,
         priorLateralM: 18,
         speedMps: 10,
         headingDeg: 110,
         routeBearingDeg: 0,
-        lateralPeakM: 20,
+        lateralPeakM: 30,
       })
     ).toBe(true);
   });

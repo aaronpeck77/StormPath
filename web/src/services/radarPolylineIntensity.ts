@@ -8,7 +8,7 @@ export const RADAR_MOSAIC_SAMPLE_ZOOM = 7;
  * Meaningful precip along the fastest route before we spend Directions calls on pure radar bypass
  * waypoints (when no NWS polygons apply).
  */
-export const RADAR_PRIMARY_PRECIP_GATE = 0.44;
+export const RADAR_PRIMARY_PRECIP_GATE = 0.5;
 
 /** Fractions along polyline length used when scoring echoes (dense enough for mesoscale cells at z=7). */
 export const RADAR_ROUTE_SAMPLE_FRACTIONS: readonly number[] = [
@@ -25,24 +25,24 @@ export function clamp01(x: number): number {
  * precip and yellow–green fringe do not read as severe as storm cores on consumer apps.
  */
 export function echoIntensityFromRgba(r: number, g: number, b: number, a: number): number {
-  if (a < 24) return 0;
+  if (a < 32) return 0;
   const alpha = a / 255;
   const bright = (r + g + b) / (3 * 255);
   /* Require clearer warm (red/orange) dominance before treating as moderate+ echo. */
-  const warm = Math.max(0, r - Math.max(g, b) * 0.96) / 255;
-  const raw = alpha * Math.max(bright * 0.72, warm * 1.18);
-  return clamp01(Math.pow(raw, 1.38));
+  const warm = Math.max(0, r - Math.max(g, b) * 0.98) / 255;
+  const raw = alpha * Math.max(bright * 0.55, warm * 0.92);
+  return clamp01(Math.pow(raw, 1.52));
 }
 
 /** Tomorrow.io precipitationIntensity tiles — blue/cyan → yellow/red heatmap. */
 export function echoIntensityFromPrecipTile(r: number, g: number, b: number, a: number): number {
-  if (a < 16) return 0;
+  if (a < 20) return 0;
   const alpha = a / 255;
   const bright = (r + g + b) / (3 * 255);
-  const warm = Math.max(0, r - Math.max(g, b) * 0.82) / 255;
-  const cool = Math.max(0, b - r * 0.55) / 255;
-  const raw = alpha * Math.max(bright * 0.65, warm * 1.05, cool * 0.45);
-  return clamp01(Math.pow(raw, 1.22));
+  const warm = Math.max(0, r - Math.max(g, b) * 0.86) / 255;
+  const cool = Math.max(0, b - r * 0.58) / 255;
+  const raw = alpha * Math.max(bright * 0.52, warm * 0.88, cool * 0.36);
+  return clamp01(Math.pow(raw, 1.34));
 }
 
 /**
@@ -50,16 +50,16 @@ export function echoIntensityFromPrecipTile(r: number, g: number, b: number, a: 
  * Motion arrows should anchor on this score, not {@link echoIntensityFromRgba}.
  */
 export function stormCoreIntensityFromRgba(r: number, g: number, b: number, a: number): number {
-  if (a < 18) return 0;
+  if (a < 22) return 0;
   const alpha = a / 255;
   const bright = (r + g + b) / (3 * 255);
-  const warm = Math.max(0, r - Math.max(g, b) * 0.82) / 255;
+  const warm = Math.max(0, r - Math.max(g, b) * 0.86) / 255;
   /* RainViewer palette: white / pink cores at extreme reflectivity */
-  if (bright > 0.82 && r > 175 && a > 160) {
-    return clamp01(0.88 + bright * 0.12);
+  if (bright > 0.86 && r > 185 && a > 175) {
+    return clamp01(0.82 + bright * 0.1);
   }
-  if (warm < 0.26 || bright < 0.46) return 0;
-  return clamp01(Math.pow(alpha * warm * 1.95, 1.12));
+  if (warm < 0.32 || bright < 0.5) return 0;
+  return clamp01(Math.pow(alpha * warm * 1.55, 1.22));
 }
 
 export function tileXY(lng: number, lat: number, z: number): { x: number; y: number; px: number; py: number } {
