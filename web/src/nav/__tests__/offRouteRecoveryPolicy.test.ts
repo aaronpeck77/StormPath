@@ -57,7 +57,7 @@ describe("classifyOffRouteRecovery", () => {
     expect(
       classifyOffRouteRecovery({
         ...base,
-        speedMps: 9,
+        speedMps: 5,
         lateralM: 24,
         priorLateralM: 23,
         headingDeg: 20,

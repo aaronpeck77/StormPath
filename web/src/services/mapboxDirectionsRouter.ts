@@ -793,6 +793,7 @@ export async function collectMapboxRouteVariants(
       excludeToll,
       includeDetails,
       simplifiedOverview,
+      bearingDeg: opts?.bearingDeg,
     },
     signal
   );

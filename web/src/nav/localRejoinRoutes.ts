@@ -35,6 +35,7 @@ export async function fetchLocalRejoinRoutes(opts: {
   isPlus: boolean;
   speedMps?: number;
   lateralM?: number;
+  bearingDeg?: number | null;
 }): Promise<LocalRejoinFetchResult> {
   const {
     accessToken,
@@ -48,6 +49,7 @@ export async function fetchLocalRejoinRoutes(opts: {
     isPlus,
     speedMps,
     lateralM,
+    bearingDeg,
   } = opts;
 
   const altIds = altRouteIds(plan, primaryId);
@@ -66,6 +68,8 @@ export async function fetchLocalRejoinRoutes(opts: {
     allowLocalTripThirdRoute: isPlus && altIds.length >= 2,
     skipStormLegRefinement: true,
     rejoinShufflePass: shufflePass,
+    bearingDeg:
+      bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
   });
 
   const out: NavRoute[] = [];
@@ -96,6 +100,6 @@ export async function fetchLocalRejoinRoutes(opts: {
     }
   }
 
-  const ordered = orderRejoinRoutesBestFirst(out, userLngLat, rejoinPt);
+  const ordered = orderRejoinRoutesBestFirst(out, userLngLat, rejoinPt, bearingDeg);
   return { routes: ordered, rejoinAlongM: rejoinM };
 }

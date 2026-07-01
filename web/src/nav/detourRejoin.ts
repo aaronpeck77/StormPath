@@ -3,13 +3,15 @@ import {
   measureOffRouteLateral,
   OFF_ROUTE_REROUTE_EXIT_M,
 } from "./offRouteDetect";
-import { haversineMeters, polylineLengthMeters } from "./routeGeometry";
+import { haversineMeters, initialBearingDegrees, polylineLengthMeters } from "./routeGeometry";
 import type { LngLat, NavRoute } from "./types";
 
 const MI = METERS_PER_MILE;
 
 /** Shuffle targets for local rejoin — miles ahead on the locked leg. */
 export const REJOIN_OFFSETS_MI = [1.2, 2.2, 3.2, 4.5, 5.5] as const;
+/** Missed-turn / beside-corridor rejoin — aim closer so Mapbox does not U-turn back. */
+export const REJOIN_OFFSETS_NEAR_MI = [0.35, 0.55, 0.85, 1.2, 2.0] as const;
 
 export type PickRejoinAlongOpts = {
   speedMps?: number;
@@ -28,7 +30,10 @@ export function pickLocalRejoinAlongM(
 ): number {
   if (!Number.isFinite(totalM) || totalM <= 0) return 0;
   const along = Math.max(0, userAlongM);
-  const offsetMi = REJOIN_OFFSETS_MI[shufflePass % REJOIN_OFFSETS_MI.length]!;
+  const lateralM = opts?.lateralM ?? 0;
+  const nearMissedTurn = lateralM > 0 && lateralM <= 90;
+  const offsetList = nearMissedTurn ? REJOIN_OFFSETS_NEAR_MI : REJOIN_OFFSETS_MI;
+  const offsetMi = offsetList[shufflePass % offsetList.length]!;
   let offsetM = offsetMi * MI;
 
   const speedMps = opts?.speedMps ?? 0;
@@ -39,7 +44,6 @@ export function pickLocalRejoinAlongM(
     offsetM += (mph - 25) * 15;
   }
 
-  const lateralM = opts?.lateralM ?? 0;
   if (lateralM > 25) {
     offsetM += Math.min(4000, (lateralM - 25) * 40);
   }
@@ -49,11 +53,27 @@ export function pickLocalRejoinAlongM(
   return Math.min(Math.max(0, totalM - 25), target);
 }
 
+function routeStartsWithUturn(r: NavRoute): boolean {
+  const step = r.turnSteps?.[0];
+  if (!step) return false;
+  const mod = (step.maneuverModifier ?? "").toLowerCase();
+  const type = (step.maneuverType ?? "").toLowerCase();
+  const instr = step.instruction ?? "";
+  return mod.includes("uturn") || type.includes("uturn") || /u-?turn/i.test(instr);
+}
+
+function headingDeltaDegrees(a: number, b: number): number {
+  let d = Math.abs(a - b) % 360;
+  if (d > 180) d = 360 - d;
+  return d;
+}
+
 /** Prefer the shortest-time detour that does not wander excessively. */
 export function pickBestRejoinRoute(
   routes: NavRoute[],
   userLngLat: LngLat,
-  rejoinPt: LngLat
+  rejoinPt: LngLat,
+  headingDeg?: number | null
 ): NavRoute | null {
   if (!routes.length) return null;
   if (routes.length === 1) return routes[0]!;
@@ -63,7 +83,18 @@ export function pickBestRejoinRoute(
     const lenM = polylineLengthMeters(r.geometry);
     const etaMin = r.baseEtaMinutes ?? 99;
     const detourRatio = lenM / straightM;
-    const score = etaMin * 2 + detourRatio * 6 + lenM / 1200 + index * 0.05;
+    let score = etaMin * 2 + detourRatio * 6 + lenM / 1200 + index * 0.05;
+    if (routeStartsWithUturn(r)) score += 12;
+    if (
+      headingDeg != null &&
+      Number.isFinite(headingDeg) &&
+      r.geometry.length >= 2
+    ) {
+      const departBearing = initialBearingDegrees(userLngLat, r.geometry[1]!);
+      if (headingDeltaDegrees(headingDeg, departBearing) > 100) {
+        score += 8;
+      }
+    }
     return { r, score };
   });
   scored.sort((a, b) => a.score - b.score);
@@ -74,10 +105,11 @@ export function pickBestRejoinRoute(
 export function orderRejoinRoutesBestFirst(
   routes: NavRoute[],
   userLngLat: LngLat,
-  rejoinPt: LngLat
+  rejoinPt: LngLat,
+  headingDeg?: number | null
 ): NavRoute[] {
   if (routes.length <= 1) return routes;
-  const best = pickBestRejoinRoute(routes, userLngLat, rejoinPt);
+  const best = pickBestRejoinRoute(routes, userLngLat, rejoinPt, headingDeg);
   if (!best) return routes;
   const rest = routes.filter((r) => r.id !== best.id);
   return [best, ...rest];

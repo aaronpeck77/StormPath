@@ -81,6 +81,15 @@ describe("shouldTriggerOffRouteReroute", () => {
     expect(shouldTriggerOffRouteReroute(25, { speedMps: 2 })).toBe(false);
     expect(shouldTriggerOffRouteReroute(25, { speedMps: 3 })).toBe(true);
   });
+
+  it("triggers when full-scan lateral exceeds threshold even if windowed is low", () => {
+    expect(
+      shouldTriggerOffRouteReroute(
+        { lateralM: 12, alongM: 5000, fullScanLateralM: 22 },
+        { speedMps: 8 }
+      )
+    ).toBe(true);
+  });
 });
 
 describe("shouldExitOffRouteLatch", () => {

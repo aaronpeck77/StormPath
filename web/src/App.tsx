@@ -99,6 +99,7 @@ import {
   stablePlanRoutesKey,
 } from "./nav/tripNavDisplay";
 import { useTripNavDisplayHealth } from "./nav/useTripNavDisplayHealth";
+import { useTripSurfaceRecovery } from "./nav/useTripSurfaceRecovery";
 import { useRouteAheadDerivations } from "./nav/useRouteAheadDerivations";
 import { useProgressCalloutPanel } from "./nav/useProgressCalloutPanel";
 import { useNavAlternateRouteRefresh } from "./nav/useNavAlternateRouteRefresh";
@@ -1332,10 +1333,6 @@ export default function App() {
   guidanceRouteIdRef.current = guidanceRouteId;
   const lockedNavigationRouteId =
     lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? primaryRouteId;
-  const lockedNavRouteGeometry = useMemo(() => {
-    const r = plan.routes.find((route) => route.id === lockedNavigationRouteId);
-    return r?.geometry && r.geometry.length >= 2 ? r.geometry : null;
-  }, [plan.routes, lockedNavigationRouteId]);
 
   /** During A/B/C compare, highlight the leg the driver tapped (not only the current primary). */
   const driveMapLineFocusId = trafficBypassCompare?.selectedLeg ?? lineFocusId;
@@ -1604,7 +1601,11 @@ export default function App() {
     alongHoldResetKey,
     navigationAlongM: navigationStarted ? navPosition.alongM : undefined,
     frozenAlongM:
-      offRouteLatched && offRouteRejoinAlongM > 0 ? offRouteRejoinAlongM : undefined,
+      offRouteLatched &&
+      !autoRejoinGuidanceRouteId &&
+      offRouteRejoinAlongM > 0
+        ? offRouteRejoinAlongM
+        : undefined,
     speedMps,
   });
 
@@ -1644,6 +1645,16 @@ export default function App() {
     const geometry = guidanceRoute?.geometry;
     if (!driveModeUi || !effectiveUserLngLat || !geometry || geometry.length < 2) {
       return null;
+    }
+    /** Off-route / detour: follow GPS heading so the puck stays centered and the map rotates with the car. */
+    if (
+      navigationStarted &&
+      (offRouteLatched || autoRejoinGuidanceRouteId) &&
+      heading != null &&
+      Number.isFinite(heading) &&
+      (speedMps ?? 0) >= 2
+    ) {
+      return heading;
     }
     /** Slightly shorter max lookahead than before — long chords across tight corners skewed tangent. */
     const lookAheadM = Math.min(
@@ -1687,6 +1698,9 @@ export default function App() {
     speedMps,
     navigationStarted,
     userAlongGuidanceM,
+    offRouteLatched,
+    autoRejoinGuidanceRouteId,
+    heading,
   ]);
 
   /** Live Mapbox remaining-leg minutes when available; else scale static / full-route ETA by distance left. */
@@ -1894,6 +1908,27 @@ export default function App() {
       bumpRouteForecastRefresh();
     }
   }, [bumpRouteForecastRefresh, routeWeatherReady, guidanceRoute?.geometry]);
+
+  useTripSurfaceRecovery({
+    appForeground,
+    hasActiveTrip:
+      navigationStarted ||
+      Boolean(destLngLat && plan.routes.some((r) => r.geometry && r.geometry.length >= 2)),
+    navigationStarted,
+    orderedRouteIds,
+    planRoutes: plan.routes,
+    guidanceRouteId,
+    routingInFlightRef: altRoutesRefreshInFlightRef,
+    routingRef,
+    setFitTrigger,
+    setAlongHoldResetKey,
+    bumpTrafficRefresh,
+    bumpRouteForecastRefresh,
+    onAutoRepair: () => {
+      setTapHint("Refreshing trip display…");
+      window.setTimeout(() => setTapHint(null), 3500);
+    },
+  });
 
   const routeInfoWeatherRefreshing = routeForecastRefreshing;
 
@@ -3725,13 +3760,14 @@ export default function App() {
             stormBarExpanded={stormBarExpanded}
             recenterPlanningPuckTick={recenterPlanningPuckTick}
             puckSnapGeometry={
-              navigationStarted && lockedNavRouteGeometry ? lockedNavRouteGeometry : null
+              navigationStarted && navigationGuidanceGeometry?.length
+                ? navigationGuidanceGeometry
+                : null
             }
             puckSnapEnabled={
               navigationStarted &&
-              navPosition.onRoute &&
-              !offRouteLatched &&
-              !autoRejoinGuidanceRouteId
+              ((navPosition.onRoute && !offRouteLatched) ||
+                Boolean(autoRejoinGuidanceRouteId))
             }
             snapSeedMeters={
               Number.isFinite(userAlongGuidanceM) && (userAlongGuidanceM ?? 0) >= 0

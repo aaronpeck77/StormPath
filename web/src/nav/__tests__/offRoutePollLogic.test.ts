@@ -128,4 +128,34 @@ describe("offRoutePollLogic", () => {
     expect(result.session.offRouteLatched).toBe(false);
     expect(result.shouldOfferRejoinChoices).toBe(false);
   });
+
+  it("retries recovery after a failed attempt once cooldown elapses", () => {
+    const now = 2_000_000;
+    const alongM = 500;
+    const session = {
+      ...createOffRoutePollSession(),
+      offRouteLatched: true,
+      offRouteLatchedAtMs: now - 20_000,
+      offRouteRejoinAlongM: alongM,
+      offRouteObservationPeakLateralM: 40,
+      offRoutePriorLateralM: 38,
+      offRouteChoiceOffered: true,
+      offRouteRecoveryLastFailMs: now - 16_000,
+    };
+    const result = runOffRoutePollTick({
+      session,
+      pos: [-77.05, 38.85],
+      guidanceGeometry: guidance,
+      totalM: 4000,
+      userAlongGuidanceM: alongM,
+      lockedGeometry: locked,
+      triggerCtx: { speedMps: 12, headingDeg: 120, routeBearingDeg: 45 },
+      navGoStartedAtMs: now - 120_000,
+      nowMs: now,
+      useRecoveryLadder: true,
+      drivingRejoinMode: "auto_local",
+    });
+    expect(result.shouldOfferRejoinChoices).toBe(true);
+    expect(result.recoveryAction).toMatch(/rejoin|replan/);
+  });
 });

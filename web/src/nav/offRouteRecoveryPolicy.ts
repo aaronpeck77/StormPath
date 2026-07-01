@@ -18,6 +18,8 @@ export const OFF_ROUTE_GAS_STOP_HOLD_SPEED_MPS = 1.2;
 export const OFF_ROUTE_OBSERVATION_HOLD_LATERAL_M = 55;
 /** Prefer rejoin (not full replan) when lateral is below this. */
 export const OFF_ROUTE_REJOIN_MAX_LATERAL_M = 120;
+/** After a failed auto-recovery, wait before retrying while still off-route. */
+export const OFF_ROUTE_RECOVERY_RETRY_MS = 15_000;
 /** Mapbox-style: tighter corridor near an upcoming maneuver. */
 export const OFF_ROUTE_NEAR_STEP_M = 80;
 export const OFF_ROUTE_ENTER_NEAR_STEP_M = 14;
@@ -141,6 +143,13 @@ export function classifyOffRouteRecovery(input: OffRouteRecoveryInput): OffRoute
   }
 
   if (!diverging) {
+    const ambiguousMs =
+      input.speedMps >= 10
+        ? 6_000
+        : input.speedMps >= 6
+          ? 8_000
+          : OFF_ROUTE_OBSERVATION_AMBIGUOUS_MS;
+
     if (
       input.speedMps < OFF_ROUTE_OBSERVATION_HOLD_SPEED_MPS &&
       input.lateralM <= OFF_ROUTE_OBSERVATION_HOLD_LATERAL_M &&
@@ -159,7 +168,7 @@ export function classifyOffRouteRecovery(input: OffRouteRecoveryInput): OffRoute
     }
 
     if (
-      elapsed < OFF_ROUTE_OBSERVATION_AMBIGUOUS_MS &&
+      elapsed < ambiguousMs &&
       input.lateralM < OFF_ROUTE_FORCE_REOFFER_LATERAL_M
     ) {
       return "hold";

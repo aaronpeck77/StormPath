@@ -114,11 +114,15 @@ export function shouldTriggerOffRouteReroute(
   ctx?: OffRouteTriggerContext
 ): boolean {
   const lateralM = typeof sample === "number" ? sample : sample.lateralM;
+  const fullScanLateralM =
+    typeof sample === "number" ? lateralM : sample.fullScanLateralM;
+  /** Windowed search can under-report at forks; full scan catches parallel/wrong-leg matches. */
+  const corridorLeaveM = Math.max(lateralM, fullScanLateralM);
   const speed = ctx?.speedMps ?? 0;
   if (speed < OFF_ROUTE_HEADING_MIN_SPEED_MPS) return false;
 
   const enterM = ctx?.enterThresholdM ?? OFF_ROUTE_REROUTE_ENTER_M;
-  if (lateralM > enterM) return true;
+  if (corridorLeaveM > enterM) return true;
 
   const heading = ctx?.headingDeg;
   const routeBearing = ctx?.routeBearingDeg;
@@ -127,7 +131,7 @@ export function shouldTriggerOffRouteReroute(
     routeBearing != null &&
     Number.isFinite(heading) &&
     Number.isFinite(routeBearing) &&
-    lateralM >= OFF_ROUTE_HEADING_MIN_LATERAL_M &&
+    corridorLeaveM >= OFF_ROUTE_HEADING_MIN_LATERAL_M &&
     headingDeltaDegrees(heading, routeBearing) >= OFF_ROUTE_HEADING_DELTA_DEG
   ) {
     return true;

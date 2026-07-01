@@ -15,6 +15,7 @@ import { hasRejoinedLockedRoute } from "./detourRejoin";
 import type { DrivingRejoinMode } from "./drivingRejoinContext";
 import {
   classifyOffRouteRecovery,
+  OFF_ROUTE_RECOVERY_RETRY_MS,
   type OffRouteRecoveryAction,
 } from "./offRouteRecoveryPolicy";
 import type { LngLat } from "./types";
@@ -33,6 +34,8 @@ export type OffRoutePollSession = {
   offRouteObservationPeakLateralM: number;
   offRoutePriorLateralM: number | null;
   offRouteRecoveryCommitted: boolean;
+  /** Last failed auto-recovery — allows retry after cooldown. */
+  offRouteRecoveryLastFailMs: number;
 };
 
 export type OffRoutePollTickInput = {
@@ -76,6 +79,7 @@ export function createOffRoutePollSession(): OffRoutePollSession {
     offRouteObservationPeakLateralM: 0,
     offRoutePriorLateralM: null,
     offRouteRecoveryCommitted: false,
+    offRouteRecoveryLastFailMs: 0,
   };
 }
 
@@ -94,6 +98,7 @@ export function resetOffRoutePollSession(session: OffRoutePollSession): OffRoute
     offRouteObservationPeakLateralM: 0,
     offRoutePriorLateralM: null,
     offRouteRecoveryCommitted: false,
+    offRouteRecoveryLastFailMs: 0,
   };
 }
 
@@ -137,6 +142,7 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
       offRouteObservationPeakLateralM: 0,
       offRoutePriorLateralM: null,
       offRouteRecoveryCommitted: false,
+      offRouteRecoveryLastFailMs: 0,
     };
     return {
       session,
@@ -187,6 +193,7 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
       offRouteObservationPeakLateralM: 0,
       offRoutePriorLateralM: null,
       offRouteRecoveryCommitted: false,
+      offRouteRecoveryLastFailMs: 0,
     };
     return {
       session,
@@ -224,28 +231,41 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
       );
 
       if (useRecoveryLadder && !session.offRouteRecoveryCommitted) {
-        const action = classifyOffRouteRecovery({
-          nowMs,
-          latchedAtMs: session.offRouteLatchedAtMs || nowMs,
-          lateralM: lat,
-          priorLateralM: session.offRoutePriorLateralM,
-          lateralPeakM: session.offRouteObservationPeakLateralM,
-          speedMps: input.triggerCtx.speedMps ?? 0,
-          headingDeg: input.triggerCtx.headingDeg ?? null,
-          routeBearingDeg: input.triggerCtx.routeBearingDeg ?? null,
-          rejoinFailCount: input.rejoinFailCount ?? 0,
-          drivingRejoinMode: input.drivingRejoinMode ?? "manual",
-          recoveryCommitted: session.offRouteRecoveryCommitted,
-        });
+        const retryReady =
+          session.offRouteRecoveryLastFailMs <= 0 ||
+          nowMs - session.offRouteRecoveryLastFailMs >= OFF_ROUTE_RECOVERY_RETRY_MS;
+        const canAttemptRecovery =
+          !session.offRouteChoiceOffered || retryReady;
 
-        if (action === "hold") {
-          session.offRouteSevere = false;
-        } else if (!session.offRouteChoiceOffered) {
+        if (canAttemptRecovery) {
+          const action = classifyOffRouteRecovery({
+            nowMs,
+            latchedAtMs: session.offRouteLatchedAtMs || nowMs,
+            lateralM: lat,
+            priorLateralM: session.offRoutePriorLateralM,
+            lateralPeakM: session.offRouteObservationPeakLateralM,
+            speedMps: input.triggerCtx.speedMps ?? 0,
+            headingDeg: input.triggerCtx.headingDeg ?? null,
+            routeBearingDeg: input.triggerCtx.routeBearingDeg ?? null,
+            rejoinFailCount: input.rejoinFailCount ?? 0,
+            drivingRejoinMode: input.drivingRejoinMode ?? "manual",
+            recoveryCommitted: session.offRouteRecoveryCommitted,
+          });
+
+          if (action === "hold") {
+            session.offRouteSevere = false;
+          } else {
+            session.offRouteSevere = true;
+            if (session.offRouteChoiceOffered && retryReady) {
+              session.offRouteChoiceOffered = false;
+            }
+            if (!session.offRouteChoiceOffered) {
+              shouldOfferRejoinChoices = true;
+              recoveryAction = action;
+            }
+          }
+        } else {
           session.offRouteSevere = true;
-          session.offRouteRecoveryCommitted = true;
-          session.offRouteChoiceOffered = true;
-          shouldOfferRejoinChoices = true;
-          recoveryAction = action;
         }
       } else {
         session.offRouteSevere = true;
