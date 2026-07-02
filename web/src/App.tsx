@@ -106,6 +106,7 @@ import { useProgressCalloutPanel } from "./nav/useProgressCalloutPanel";
 import { useNavAlternateRouteRefresh } from "./nav/useNavAlternateRouteRefresh";
 import { formatRouteDistanceMi, routeConsiderationSummary } from "./nav/routeSummary";
 import { buildDriveRouteAheadFromImpacts } from "./nav/driveRouteAhead";
+import { isDriveOffRouteForwardFraming } from "./nav/driveAlwaysAhead";
 import { pickDriveApproachBanner } from "./nav/driveHazardApproachPreview";
 import { pickTrafficBypassAnchorImpact } from "./nav/trafficBypassOffer";
 import { trafficBypassOfferHeadline, withTrafficBypassCompareKind } from "./nav/trafficBypassFlow";
@@ -1645,10 +1646,27 @@ export default function App() {
 
   const speedMph = speedMps != null ? speedMps * 2.23694 : null;
 
-  /** Drive camera: align with polyline ahead (not device heading — often missing / wrong in-car). */
+  const driveOffRouteForwardFraming = useMemo(
+    () =>
+      isDriveOffRouteForwardFraming({
+        driveModeUi,
+        navigationStarted,
+        onRoute: navPosition.onRoute,
+        offRouteLatched,
+      }),
+    [driveModeUi, navigationStarted, navPosition.onRoute, offRouteLatched]
+  );
+
+  /** Drive camera: polyline ahead on-corridor; vehicle heading / motion when off route. */
   const driveRouteBearingDeg = useMemo(() => {
     const geometry = guidanceRoute?.geometry;
-    if (!driveModeUi || !effectiveUserLngLat || !geometry || geometry.length < 2) {
+    if (
+      driveOffRouteForwardFraming ||
+      !driveModeUi ||
+      !effectiveUserLngLat ||
+      !geometry ||
+      geometry.length < 2
+    ) {
       return null;
     }
     /** Slightly shorter max lookahead than before — long chords across tight corners skewed tangent. */
@@ -1686,6 +1704,7 @@ export default function App() {
     }
     return b;
   }, [
+    driveOffRouteForwardFraming,
     driveModeUi,
     effectiveUserLngLat,
     guidanceRoute?.geometry,
@@ -3737,6 +3756,7 @@ export default function App() {
             navigationStarted={navigationStarted}
             heading={heading}
             driveRouteBearingDeg={driveRouteBearingDeg}
+            driveOffRouteForwardFraming={driveOffRouteForwardFraming}
             speedMps={speedMps}
             allowDestinationPick={allowDestinationPick}
             topdownZoomRef={topdownZoomRef}
@@ -3764,9 +3784,7 @@ export default function App() {
                 : null
             }
             puckSnapEnabled={
-              navigationStarted &&
-              (viewMode === "drive" ||
-                (navPosition.onRoute && !offRouteLatched))
+              navigationStarted && navPosition.onRoute && !offRouteLatched
             }
             snapSeedMeters={
               Number.isFinite(userAlongGuidanceM) && (userAlongGuidanceM ?? 0) >= 0

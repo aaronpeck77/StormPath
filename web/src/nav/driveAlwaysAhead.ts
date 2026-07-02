@@ -26,3 +26,20 @@ export const DRIVE_AHEAD_NAV_START_GRACE_MAX_LATERAL_M = 10;
 export function isDriveAlwaysAheadView(viewMode: string): boolean {
   return viewMode === "drive";
 }
+
+/**
+ * Drive + off the corridor: camera and puck follow forward travel, not the old polyline
+ * tangent back toward where the driver left the route.
+ */
+export function isDriveOffRouteForwardFraming(input: {
+  driveModeUi: boolean;
+  navigationStarted: boolean;
+  onRoute: boolean;
+  offRouteLatched: boolean;
+}): boolean {
+  return (
+    input.driveModeUi &&
+    input.navigationStarted &&
+    (!input.onRoute || input.offRouteLatched)
+  );
+}

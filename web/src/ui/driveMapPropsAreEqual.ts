@@ -25,6 +25,8 @@ export function driveMapPropsAreEqual(prev: Props, next: Props): boolean {
       if (Math.abs(prev.driveRouteBearingDeg - next.driveRouteBearingDeg) > 2) return false;
     } else if (prev.driveRouteBearingDeg !== next.driveRouteBearingDeg) return false;
 
+    if (prev.driveOffRouteForwardFraming !== next.driveOffRouteForwardFraming) return false;
+
     if (prev.heading != null && next.heading != null) {
       if (Math.abs(prev.heading - next.heading) > 3) return false;
     } else if (prev.heading !== next.heading) return false;
@@ -32,6 +34,7 @@ export function driveMapPropsAreEqual(prev: Props, next: Props): boolean {
     if (prev.userLngLat !== next.userLngLat) return false;
     if (prev.userAlongMeters !== next.userAlongMeters) return false;
     if (prev.driveRouteBearingDeg !== next.driveRouteBearingDeg) return false;
+    if (prev.driveOffRouteForwardFraming !== next.driveOffRouteForwardFraming) return false;
     if (prev.heading !== next.heading) return false;
   }
 
@@ -39,6 +42,7 @@ export function driveMapPropsAreEqual(prev: Props, next: Props): boolean {
     "userLngLat",
     "userAlongMeters",
     "driveRouteBearingDeg",
+    "driveOffRouteForwardFraming",
     "heading",
   ]);
   for (const k of Object.keys(prev) as (keyof Props)[]) {

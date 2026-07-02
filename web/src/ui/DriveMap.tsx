@@ -99,7 +99,7 @@ import {
   routeFitZoomBias,
   ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM,
 } from "./mapFitLogic";
-import { driveCameraEaseOptions, smoothDriveBearingDeg } from "./mapDriveCamera";
+import { driveCameraEaseOptions, resolveDriveFollowCameraBearingDeg, smoothDriveBearingDeg } from "./mapDriveCamera";
 import { computePuckTargetBeforeRouteSnap } from "./driveMapPuckTarget";
 import { liftTrafficThenRoutesThenHits } from "./mapLayerStack";
 import {
@@ -184,6 +184,8 @@ export type Props = {
   heading: number | null;
   /** When set (drive + active leg), camera bearing follows the polyline ahead instead of GPS heading. */
   driveRouteBearingDeg?: number | null;
+  /** Off route in drive: camera + puck follow forward travel, not the old polyline behind the driver. */
+  driveOffRouteForwardFraming?: boolean;
   /** Ground speed from Geolocation; used to tighten puck smoothing while moving. */
   speedMps?: number | null;
   allowDestinationPick: boolean;
@@ -327,6 +329,7 @@ function DriveMapInner({
   navigationStarted,
   heading,
   driveRouteBearingDeg = null,
+  driveOffRouteForwardFraming = false,
   speedMps = null,
   allowDestinationPick,
   topdownZoomRef,
@@ -491,6 +494,8 @@ function DriveMapInner({
   headingRef.current = heading;
   const driveRouteBearingDegRef = useRef(driveRouteBearingDeg);
   driveRouteBearingDegRef.current = driveRouteBearingDeg;
+  const driveOffRouteForwardFramingRef = useRef(driveOffRouteForwardFraming);
+  driveOffRouteForwardFramingRef.current = driveOffRouteForwardFraming;
   const stormBarVisibleRef = useRef(stormBarVisible);
   stormBarVisibleRef.current = stormBarVisible;
   const stormBarExpandedRef = useRef(stormBarExpanded);
@@ -1419,12 +1424,14 @@ function DriveMapInner({
             return;
           }
           const { padding, offset } = easeCached;
-          const rawBrg =
-            driveRouteBearingDegRef.current != null
-              ? driveRouteBearingDegRef.current
-              : headingRef.current != null
-                ? headingRef.current
-                : map.getBearing();
+          const rawBrg = resolveDriveFollowCameraBearingDeg({
+            offRouteForward: driveOffRouteForwardFramingRef.current,
+            routeBearingDeg: driveRouteBearingDegRef.current,
+            headingDeg: readPuckFollowHeading(),
+            prevFix,
+            curFix,
+            mapBearing: map.getBearing(),
+          });
           const alphaBrg = 1 - Math.exp(-dt / DRIVE_CAMERA_BEARING_TC_S);
           driveCamBearingSmoothedRef.current = smoothDriveBearingDeg(
             driveCamBearingSmoothedRef.current,
@@ -2962,12 +2969,14 @@ function DriveMapInner({
       const pos = userLngLatRef.current
         ?? (puckMarkerRef.current ? readMapLngLat(puckMarkerRef.current.getLngLat()) : null);
       if (!pos) return;
-      const brg =
-        driveRouteBearingDegRef.current != null
-          ? driveRouteBearingDegRef.current
-          : headingRef.current != null
-            ? headingRef.current
-            : map.getBearing();
+      const brg = resolveDriveFollowCameraBearingDeg({
+        offRouteForward: driveOffRouteForwardFramingRef.current,
+        routeBearingDeg: driveRouteBearingDegRef.current,
+        headingDeg: liveGpsHeadingRefStable?.current ?? headingRef.current,
+        prevFix: null,
+        curFix: null,
+        mapBearing: map.getBearing(),
+      });
       const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
       const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;
       const easeKey = `${stormBarVisibleRef.current}|${stormBarExpandedRef.current}|${progressRailVisibleRef.current}|${wx}x${wy}`;

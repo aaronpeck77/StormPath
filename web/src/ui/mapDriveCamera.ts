@@ -1,4 +1,5 @@
 import type { PaddingOptions } from "mapbox-gl";
+import { haversineMeters, initialBearingDegrees } from "../nav/routeGeometry";
 import {
   isLandscapeHandLeft,
   isLandscapeViewport,
@@ -102,4 +103,41 @@ export function smoothDriveBearingDeg(prev: number | null, raw: number, alpha: n
   if (step < -DRIVE_CAMERA_BEARING_MAX_STEP_DEG) step = -DRIVE_CAMERA_BEARING_MAX_STEP_DEG;
   const next = prev + step;
   return ((next % 360) + 360) % 360;
+}
+
+type DriveFix = { lng: number; lat: number };
+
+/** Drive follow-cam bearing — route tangent on-corridor; heading / motion when off route. */
+export function resolveDriveFollowCameraBearingDeg(input: {
+  offRouteForward: boolean;
+  routeBearingDeg: number | null;
+  headingDeg: number | null;
+  prevFix: DriveFix | null;
+  curFix: DriveFix | null;
+  mapBearing: number;
+  minMotionBearingM?: number;
+}): number {
+  const minMotionM = input.minMotionBearingM ?? 8;
+
+  if (input.offRouteForward) {
+    if (input.headingDeg != null && Number.isFinite(input.headingDeg)) {
+      return input.headingDeg;
+    }
+    if (input.prevFix && input.curFix) {
+      const from: [number, number] = [input.prevFix.lng, input.prevFix.lat];
+      const to: [number, number] = [input.curFix.lng, input.curFix.lat];
+      if (haversineMeters(from, to) >= minMotionM) {
+        return initialBearingDegrees(from, to);
+      }
+    }
+    return input.mapBearing;
+  }
+
+  if (input.routeBearingDeg != null && Number.isFinite(input.routeBearingDeg)) {
+    return input.routeBearingDeg;
+  }
+  if (input.headingDeg != null && Number.isFinite(input.headingDeg)) {
+    return input.headingDeg;
+  }
+  return input.mapBearing;
 }
