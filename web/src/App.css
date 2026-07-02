@@ -5091,9 +5091,8 @@
   font-size: 0.8rem;
   font-weight: 750;
   color: #ffffff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .rpgl__cards {
@@ -5147,7 +5146,7 @@
 .rpgl__card-head {
   display: flex;
   flex-direction: row;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-width: 0;
 }
@@ -5219,12 +5218,10 @@
   flex: 1;
   font-size: 0.82rem;
   font-weight: 800;
-  line-height: 1.15;
+  line-height: 1.35;
   color: #ffffff;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word;
 }
 
 .rpgl__label--avoid,

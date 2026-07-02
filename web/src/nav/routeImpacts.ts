@@ -489,18 +489,19 @@ function buildMapboxIncidentImpacts(opts: {
           ? `${inc.lanesBlocked.join(", ")} blocked`
           : "";
     const roads = inc.affectedRoadNames?.filter(Boolean).join(", ");
+    const roadLocation = roads ? `on ${roads}` : "";
     const impactLbl =
       inc.impact && inc.impact !== "unknown" ? `${inc.impact} impact` : "";
-    const headlineParts = [
-      incidentTypeHeadline(inc.type, blocks),
-      impactLbl,
-      roads ? `on ${roads}` : "",
-    ].filter(Boolean);
-    const headline = headlineParts.join(" · ") || "Road incident ahead";
+    const headline = [incidentTypeHeadline(inc.type, blocks), impactLbl]
+      .filter(Boolean)
+      .join(" · ") || "Road incident ahead";
 
     let action: RouteImpactAction = "slow";
     if (severity === "avoid" || blocks) action = "rerouteRecommended";
     else if (severity === "serious") action = "rerouteAvailable";
+
+    const effectBody = laneNote || displayText(inc.description);
+    const roadEffect = [roadLocation, effectBody].filter(Boolean).join(" · ");
 
     out.push({
       id: `mapbox-incident-${i}-${inc.type}`,
@@ -516,7 +517,7 @@ function buildMapboxIncidentImpacts(opts: {
       etaAheadMinutes: eta,
       driverHeadline: headline,
       driverAction: action,
-      roadEffect: laneNote || displayText(inc.description),
+      roadEffect,
       detail: [inc.description, laneNote].filter(Boolean).join(" · "),
       numericSeverity: impactSeverityToNumeric(severity),
     });
