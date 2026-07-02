@@ -67,6 +67,15 @@ describe("routeAheadHealth", () => {
     expect(audit.issues).toContain("timeline_bands_desync");
   });
 
+  it("ignores missing corridor forecast in drive nav", () => {
+    const audit = auditRouteAheadSync({
+      ...base,
+      navigationStarted: true,
+      advisoryWeatherSyncEnabled: false,
+    });
+    expect(audit.ok).toBe(true);
+  });
+
   it("maps issues to repair actions", () => {
     expect(
       repairActionsForRouteAheadIssues(["route_forecast_missing", "timeline_bands_desync"])

@@ -1,3 +1,7 @@
+import {
+  DRIVE_FORWARD_BEARING_TOLERANCE_DEG,
+  pickBestForwardRoute,
+} from "../nav/forwardRoutePick";
 import type { LngLat, MapboxRouteIncident, NavRoute, PostedSpeedSample, RouteTurnStep, TripPlan } from "../nav/types";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { detectRouteTollsFromLegs } from "../nav/detectRouteTolls";
@@ -143,6 +147,8 @@ type DirectionsFetchOpts = DirectionsFetchExclude & {
   simplifiedOverview?: boolean;
   /** Start-point heading (degrees) for `bearings=` when replanning from GPS. */
   bearingDeg?: number | null;
+  /** Mapbox bearing tolerance (degrees); default 45. */
+  bearingToleranceDeg?: number;
 };
 
 function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteTurnStep[] {
@@ -369,7 +375,8 @@ function applyDirectionsQueryParams(url: URL, opts: DirectionsFetchOpts): void {
   const exclude = directionsExcludeParam(opts);
   if (exclude) url.searchParams.set("exclude", exclude);
   if (opts.bearingDeg != null && Number.isFinite(opts.bearingDeg)) {
-    url.searchParams.set("bearings", `${Math.round(opts.bearingDeg)},45;`);
+    const tol = Math.round(opts.bearingToleranceDeg ?? 45);
+    url.searchParams.set("bearings", `${Math.round(opts.bearingDeg)},${tol};`);
     url.searchParams.set("approaches", "curb;");
   }
 }
@@ -699,6 +706,8 @@ export async function collectMapboxRouteVariants(
     preferBackroads?: boolean;
     /** With singleRouteFromPosition: constrain start heading (reduces spurious U-turn replans). */
     bearingDeg?: number | null;
+    /** Prefer fastest route that departs in front of the driver (not an immediate U-turn). */
+    forwardFirst?: boolean;
     /** Skip storm/radar leg-C refinement (fast first paint; refine in background). */
     skipStormLegRefinement?: boolean;
     /** Off-route rejoin shuffle — odd passes prefer motorway-excluded alternates for different B/C. */
@@ -725,28 +734,38 @@ export async function collectMapboxRouteVariants(
   const simplifiedOverview = false;
 
   if (opts?.singleRouteFromPosition) {
+    const bearing =
+      opts.bearingDeg != null && Number.isFinite(opts.bearingDeg) ? opts.bearingDeg : null;
+    const forwardFirst = Boolean(opts.forwardFirst && bearing != null);
     const data = await fetchDirectionsPrimary(
       accessToken,
       start,
       end,
       hasVia ? via : undefined,
       {
-        alternatives: false,
+        alternatives: forwardFirst,
         excludeMotorway: Boolean(opts.preferBackroads),
         excludeToll,
         includeDetails,
         simplifiedOverview,
-        bearingDeg: opts.bearingDeg,
+        bearingDeg: bearing,
+        bearingToleranceDeg: forwardFirst ? DRIVE_FORWARD_BEARING_TOLERANCE_DEG : undefined,
       },
       signal
     );
     const sorted = sortRoutesByDurationAsc(data.routes ?? []);
-    const raw = sorted[0];
-    if (!raw) return [];
-    const nav = routeFromDirectionsApi(raw, "r-a", "fastest", "Main", {
-      skipGeometryNormalize: true,
-    });
-    return nav ? [nav] : [];
+    const navRoutes: NavRoute[] = [];
+    for (const raw of sorted) {
+      const nav = routeFromDirectionsApi(raw, "r-a", "fastest", "Main", {
+        skipGeometryNormalize: true,
+      });
+      if (nav) navRoutes.push(nav);
+    }
+    if (!navRoutes.length) return [];
+    const picked = forwardFirst
+      ? pickBestForwardRoute(navRoutes, start, bearing) ?? navRoutes[0]!
+      : navRoutes[0]!;
+    return [picked];
   }
 
   /** Leg C should stay a reasonable drive — not a long scenic detour. */

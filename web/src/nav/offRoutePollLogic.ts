@@ -18,6 +18,10 @@ import {
   OFF_ROUTE_RECOVERY_RETRY_MS,
   type OffRouteRecoveryAction,
 } from "./offRouteRecoveryPolicy";
+import {
+  DRIVE_AHEAD_CONFIRM_TICKS,
+  DRIVE_AHEAD_OFF_ROUTE_EXIT_M,
+} from "./driveAlwaysAhead";
 import type { LngLat } from "./types";
 
 export type OffRoutePollSession = {
@@ -53,6 +57,12 @@ export type OffRoutePollTickInput = {
   useRecoveryLadder?: boolean;
   drivingRejoinMode?: DrivingRejoinMode;
   rejoinFailCount?: number;
+  /** Drive view: immediate GPS replan — no hold/rejoin ladder. */
+  driveAlwaysAhead?: boolean;
+  confirmTicks?: number;
+  navStartGraceMs?: number;
+  navStartGraceAlongM?: number;
+  navStartGraceMaxLateralM?: number;
 };
 
 export type OffRoutePollTickResult = {
@@ -155,12 +165,66 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
   }
 
   const goAt = input.navGoStartedAtMs;
+  const graceMs = input.navStartGraceMs ?? OFF_ROUTE_NAV_START_GRACE_MS;
+  const graceAlongM = input.navStartGraceAlongM ?? OFF_ROUTE_NAV_START_GRACE_ALONG_M;
+  const graceMaxLat = input.navStartGraceMaxLateralM ?? OFF_ROUTE_NAV_START_GRACE_MAX_LATERAL_M;
   if (
     goAt != null &&
-    nowMs - goAt < OFF_ROUTE_NAV_START_GRACE_MS &&
-    input.userAlongGuidanceM < OFF_ROUTE_NAV_START_GRACE_ALONG_M &&
-    lat < OFF_ROUTE_NAV_START_GRACE_MAX_LATERAL_M
+    nowMs - goAt < graceMs &&
+    input.userAlongGuidanceM < graceAlongM &&
+    lat < graceMaxLat
   ) {
+    return {
+      session,
+      sample,
+      shouldOfferRejoinChoices: false,
+      recoveryAction: null,
+      rejoinedLockedRoute: false,
+      nearDestination: false,
+    };
+  }
+
+  if (input.driveAlwaysAhead) {
+    const nearDestination = input.totalM > 0 && alongM > input.totalM - 45;
+    if (nearDestination) {
+      session = resetOffRoutePollSession(session);
+      return {
+        session,
+        sample,
+        shouldOfferRejoinChoices: false,
+        recoveryAction: null,
+        rejoinedLockedRoute: false,
+        nearDestination: true,
+      };
+    }
+
+    const wouldTrigger = shouldTriggerOffRouteReroute(sample, input.triggerCtx);
+    const confirmTicks = input.confirmTicks ?? DRIVE_AHEAD_CONFIRM_TICKS;
+    session.offRouteConfirmStreak = wouldTrigger
+      ? session.offRouteConfirmStreak + 1
+      : 0;
+
+    const exitM = DRIVE_AHEAD_OFF_ROUTE_EXIT_M;
+    if (session.offRouteLatched && !wouldTrigger && lat < exitM) {
+      session = resetOffRoutePollSession(session);
+    } else if (
+      wouldTrigger &&
+      (session.offRouteConfirmStreak >= confirmTicks || session.offRouteLatched)
+    ) {
+      session.offRouteLatched = true;
+      session.offRouteSevere = true;
+      session.offRouteRejoinAlongM = alongM;
+      return {
+        session,
+        sample,
+        shouldOfferRejoinChoices: true,
+        recoveryAction: "replan",
+        rejoinedLockedRoute: false,
+        nearDestination: false,
+      };
+    }
+
+    session.offRoutePriorLateralM = lat;
     return {
       session,
       sample,

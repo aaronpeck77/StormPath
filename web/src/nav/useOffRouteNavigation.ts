@@ -15,6 +15,17 @@ import { remainingViaStops } from "./routeWaypoints";
 import { collectMapboxRouteVariants } from "../services/mapboxDirectionsRouter";
 import { speakNavigationAlert } from "./navigationVoiceAlert";
 import {
+  DRIVE_AHEAD_HEADING_DELTA_DEG,
+  DRIVE_AHEAD_HEADING_MIN_LATERAL_M,
+  DRIVE_AHEAD_MIN_SPEED_MPS,
+  DRIVE_AHEAD_NAV_START_GRACE_ALONG_M,
+  DRIVE_AHEAD_NAV_START_GRACE_MAX_LATERAL_M,
+  DRIVE_AHEAD_NAV_START_GRACE_MS,
+  DRIVE_AHEAD_OFF_ROUTE_ENTER_M,
+  DRIVE_AHEAD_REROUTE_THROTTLE_MS,
+  isDriveAlwaysAheadView,
+} from "./driveAlwaysAhead";
+import {
   OFF_ROUTE_POLL_MS,
   OFF_ROUTE_REROUTE_THROTTLE_MS,
   measureOffRouteLateral,
@@ -73,7 +84,6 @@ export interface UseOffRouteNavigationDeps {
   effectiveAutoRerouteEnabled: boolean;
   settingVoiceGuidanceEnabled: boolean;
   settingStormEnabled: boolean;
-  learnEnabled: boolean;
   stormAlertsForRouting: NormalizedWeatherAlert[] | undefined;
   lockedNavigationRouteIdRef: MutableRefObject<string | null>;
   routeGraphEpochRef: MutableRefObject<number>;
@@ -98,6 +108,7 @@ export interface UseOffRouteNavigationDeps {
   setFitTrigger: (updater: (prev: number) => number) => void;
   /** Updates full guidance geometry after the driver adopts a new locked path. */
   adoptLockedRouteGeometry: (geometry: LngLat[]) => void;
+  viewModeRef: MutableRefObject<MapViewMode>;
 }
 
 export type RecalcRouteFromHereFn = (opts?: { silent?: boolean }) => Promise<boolean>;
@@ -125,7 +136,6 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     effectiveAutoRerouteEnabled,
     settingVoiceGuidanceEnabled,
     settingStormEnabled,
-    learnEnabled,
     stormAlertsForRouting,
     lockedNavigationRouteIdRef,
     routeGraphEpochRef,
@@ -147,6 +157,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setTapHint,
     setFitTrigger,
     adoptLockedRouteGeometry,
+    viewModeRef,
   } = deps;
 
   const [offRouteSevere, setOffRouteSevere] = useState(false);
@@ -443,12 +454,14 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       const remainingVias = remainingViaStops(viaStops, activeViaIndex);
       const viaCoords = remainingVias.map((s) => s.lngLat);
       const bearingDeg = headingRef.current;
+      /** Fastest traffic-aware leg from GPS — never exclude motorways on drive replans. */
       const fresh = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
         via: viaCoords.length > 0 ? viaCoords : undefined,
         singleRouteFromPosition: true,
+        forwardFirst: true,
         bearingDeg:
           bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
-        preferBackroads: learnEnabled,
+        preferBackroads: false,
         signal: fetchCtrl.signal,
         stormAlerts: stormAlertsForRouting,
         radarAvoidanceEnabled: isPlus && settingStormEnabled,
@@ -462,6 +475,8 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           r.id === lockedId
             ? {
                 ...r,
+                role: "fastest",
+                label: r.label?.trim() ? r.label : "Main",
                 geometry: leg.geometry,
                 baseEtaMinutes: leg.baseEtaMinutes,
                 turnSteps: leg.turnSteps,
@@ -476,9 +491,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         ),
       }));
       adoptLockedRouteGeometry(leg.geometry.map(([a, b]) => [a, b] as LngLat));
-      pollSessionRef.current = resetOffRoutePollSession(pollSessionRef.current);
-      offRouteSevereRef.current = false;
-      setOffRouteSevere(false);
+      applyPollSession(resetOffRoutePollSession(pollSessionRef.current));
       offRouteRerouteFailStreakRef.current = 0;
       setFitTrigger((n) => n + 1);
       setViewMode("drive");
@@ -513,7 +526,6 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     orderedRouteIds,
     viaStops,
     activeViaIndex,
-    learnEnabled,
     stormAlertsForRouting,
     isPlus,
     settingStormEnabled,
@@ -526,6 +538,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     clearDetourGuidance,
     setPlan,
     adoptLockedRouteGeometry,
+    applyPollSession,
     setRouting,
     setRouteError,
     setTapHint,
@@ -550,15 +563,24 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
 
   const executeAutoRecovery = useCallback(
     async (action: "rejoin" | "replan") => {
+      const driveAhead = isDriveAlwaysAheadView(viewModeRef.current);
+      const throttleMs = driveAhead ? DRIVE_AHEAD_REROUTE_THROTTLE_MS : OFF_ROUTE_REROUTE_THROTTLE_MS;
       const now = Date.now();
       if (
         routingRef.current ||
         altRoutesRefreshInFlightRef.current ||
-        now - lastAutoRerouteAttemptRef.current < OFF_ROUTE_REROUTE_THROTTLE_MS
+        now - lastAutoRerouteAttemptRef.current < throttleMs
       ) {
         return;
       }
       lastAutoRerouteAttemptRef.current = now;
+
+      if (driveAhead) {
+        const replanned = await stayOnThisRoad({ silent: true });
+        if (!replanned) markRecoveryFailed();
+        return;
+      }
+
       pollSessionRef.current = {
         ...pollSessionRef.current,
         offRouteChoiceOffered: true,
@@ -581,6 +603,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       markRecoveryFailed,
       routingRef,
       altRoutesRefreshInFlightRef,
+      viewModeRef,
     ]
   );
 
@@ -604,16 +627,19 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       lateralM: number,
       recovery: "rejoin" | "replan" | null
     ) => {
+      const driveAhead = isDriveAlwaysAheadView(viewModeRef.current);
       const session = pollSessionRef.current;
-      if (session.offRouteChoiceOffered && !recovery) return;
-      if (!shouldOfferOffRouteRejoin(lateralM, session.offRouteReofferBlockedUntil)) {
-        return;
-      }
-      if (!session.offRouteChoiceOffered) {
-        pollSessionRef.current = { ...session, offRouteChoiceOffered: true };
+      if (!driveAhead) {
+        if (session.offRouteChoiceOffered && !recovery) return;
+        if (!shouldOfferOffRouteRejoin(lateralM, session.offRouteReofferBlockedUntil)) {
+          return;
+        }
+        if (!session.offRouteChoiceOffered) {
+          pollSessionRef.current = { ...session, offRouteChoiceOffered: true };
+        }
       }
 
-      if (useRecoveryLadder) {
+      if (useRecoveryLadder || driveAhead) {
         void executeAutoRecovery(recovery ?? "replan");
         return;
       }
@@ -708,6 +734,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         metersToStepEnd = metersToCurrentStepEnd(bounds.end, activeIdx, alongForPoll);
       }
       const enterThresholdM = offRouteEnterThresholdM(metersToStepEnd);
+      const driveAhead = isDriveAlwaysAheadView(viewModeRef.current);
 
       const rejoinCtx = lockedRoute?.geometry?.length
         ? resolveDrivingRejoinContext({
@@ -727,16 +754,30 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         userAlongGuidanceM: alongForPoll,
         lockedGeometry: lockedRoute?.geometry,
         guidanceCumDist: guidanceCumDistRef.current,
-        triggerCtx: {
-          headingDeg: headingRef.current,
-          speedMps: speedMpsRef.current,
-          routeBearingDeg: routeBearing,
-          enterThresholdM,
-        },
+        triggerCtx: driveAhead
+          ? {
+              headingDeg: headingRef.current,
+              speedMps: speedMpsRef.current,
+              routeBearingDeg: routeBearing,
+              enterThresholdM: DRIVE_AHEAD_OFF_ROUTE_ENTER_M,
+              minSpeedMps: DRIVE_AHEAD_MIN_SPEED_MPS,
+              headingMinLateralM: DRIVE_AHEAD_HEADING_MIN_LATERAL_M,
+              headingDeltaDeg: DRIVE_AHEAD_HEADING_DELTA_DEG,
+            }
+          : {
+              headingDeg: headingRef.current,
+              speedMps: speedMpsRef.current,
+              routeBearingDeg: routeBearing,
+              enterThresholdM,
+            },
         navGoStartedAtMs: navGoStartedAtRef.current,
-        useRecoveryLadder,
+        useRecoveryLadder: driveAhead ? false : useRecoveryLadder,
         drivingRejoinMode: rejoinCtx?.mode ?? drivingRejoinModeRef.current,
         rejoinFailCount: offRouteRerouteFailStreakRef.current,
+        driveAlwaysAhead: driveAhead,
+        navStartGraceMs: driveAhead ? DRIVE_AHEAD_NAV_START_GRACE_MS : undefined,
+        navStartGraceAlongM: driveAhead ? DRIVE_AHEAD_NAV_START_GRACE_ALONG_M : undefined,
+        navStartGraceMaxLateralM: driveAhead ? DRIVE_AHEAD_NAV_START_GRACE_MAX_LATERAL_M : undefined,
       });
 
       lastOffRouteSampleRef.current = {
@@ -785,8 +826,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setTapHint,
     effectiveAutoRerouteEnabled,
     executeAutoRecovery,
-    routingRef,
-    altRoutesRefreshInFlightRef,
+    viewModeRef,
   ]);
 
   const detourLockedRouteId = useMemo(() => {

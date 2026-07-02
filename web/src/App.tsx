@@ -100,6 +100,7 @@ import {
 } from "./nav/tripNavDisplay";
 import { useTripNavDisplayHealth } from "./nav/useTripNavDisplayHealth";
 import { useTripSurfaceRecovery } from "./nav/useTripSurfaceRecovery";
+import { buildNavResourceBudget, computeRadarMapOverlayOn, isDriveNavMode } from "./nav/navResourceBudget";
 import { useRouteAheadDerivations } from "./nav/useRouteAheadDerivations";
 import { useProgressCalloutPanel } from "./nav/useProgressCalloutPanel";
 import { useNavAlternateRouteRefresh } from "./nav/useNavAlternateRouteRefresh";
@@ -643,6 +644,8 @@ export default function App() {
   navTargetRef.current = navTargetLngLat;
   const viewMode = useTripPlanStore((s) => s.viewMode);
   const setViewMode = useTripPlanStore((s) => s.setViewMode);
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
   const handleViewModeChange = useCallback(
     (next: MapViewMode) => {
       setViewMode(next);
@@ -655,7 +658,7 @@ export default function App() {
    * The route-compare cancel/confirm handlers read it once via `getViewModeBeforeTrafficBypass()`
    * and clear it via `setViewModeBeforeTrafficBypass(null)`. */
 
-  const driveModeUi = navigationStarted && viewMode === "drive";
+  const driveModeUi = isDriveNavMode(navigationStarted, viewMode);
   /** Third-party AdMob only — house promos (SiteBible, Plus upsell) live in StormAdvisoryBar. */
   const basicAdBanner = useBasicAdMobBanner({
     enabled: !isPlus,
@@ -707,8 +710,8 @@ export default function App() {
   useEffect(() => {
     writeRadarOverlayOn(showRadar);
   }, [showRadar]);
-  /** Radar visible in all modes except drive (too distracting at street level). Paused when app is backgrounded. */
-  const radarMapOverlayOn = showRadar && !driveModeUi && appForeground;
+  /** Radar visible in Route/Map only — paused in drive and when backgrounded. */
+  const radarMapOverlayOn = computeRadarMapOverlayOn(showRadar, driveModeUi, appForeground);
   const [radarFrameUtcSec, setRadarFrameUtcSec] = useState<number | null>(null);
   const seriousHazardAutoFlewRef = useRef<Set<string>>(new Set());
   const [safetyAck, setSafetyAck] = useState(() => {
@@ -1164,7 +1167,6 @@ export default function App() {
     effectiveAutoRerouteEnabled: settingAutoRerouteEnabled,
     settingVoiceGuidanceEnabled,
     settingStormEnabled,
-    learnEnabled,
     stormAlertsForRouting,
     lockedNavigationRouteIdRef,
     routeGraphEpochRef,
@@ -1188,6 +1190,7 @@ export default function App() {
     setTapHint,
     setFitTrigger,
     adoptLockedRouteGeometry,
+    viewModeRef,
   });
 
   const {
@@ -1459,8 +1462,8 @@ export default function App() {
   nwsRouteGeomsForFetchRef.current = nwsRouteGeomsForFetch;
 
   const nwsPollIntervalMs = useMemo(
-    () => getNwsPollIntervalMs(dataSaverMode, navigationStarted, maxPlanRouteLengthM),
-    [dataSaverMode, navigationStarted, maxPlanRouteLengthM]
+    () => getNwsPollIntervalMs(dataSaverMode, navigationStarted, maxPlanRouteLengthM, driveModeUi),
+    [dataSaverMode, navigationStarted, maxPlanRouteLengthM, driveModeUi]
   );
 
   const liveTrafficNarrative = useMemo(() => {
@@ -1601,11 +1604,13 @@ export default function App() {
     alongHoldResetKey,
     navigationAlongM: navigationStarted ? navPosition.alongM : undefined,
     frozenAlongM:
-      offRouteLatched &&
-      !autoRejoinGuidanceRouteId &&
-      offRouteRejoinAlongM > 0
-        ? offRouteRejoinAlongM
-        : undefined,
+      driveModeUi
+        ? undefined
+        : offRouteLatched &&
+            !autoRejoinGuidanceRouteId &&
+            offRouteRejoinAlongM > 0
+          ? offRouteRejoinAlongM
+          : undefined,
     speedMps,
   });
 
@@ -1645,16 +1650,6 @@ export default function App() {
     const geometry = guidanceRoute?.geometry;
     if (!driveModeUi || !effectiveUserLngLat || !geometry || geometry.length < 2) {
       return null;
-    }
-    /** Off-route / detour: follow GPS heading so the puck stays centered and the map rotates with the car. */
-    if (
-      navigationStarted &&
-      (offRouteLatched || autoRejoinGuidanceRouteId) &&
-      heading != null &&
-      Number.isFinite(heading) &&
-      (speedMps ?? 0) >= 2
-    ) {
-      return heading;
     }
     /** Slightly shorter max lookahead than before — long chords across tight corners skewed tangent. */
     const lookAheadM = Math.min(
@@ -1698,9 +1693,6 @@ export default function App() {
     speedMps,
     navigationStarted,
     userAlongGuidanceM,
-    offRouteLatched,
-    autoRejoinGuidanceRouteId,
-    heading,
   ]);
 
   /** Live Mapbox remaining-leg minutes when available; else scale static / full-route ETA by distance left. */
@@ -1777,24 +1769,48 @@ export default function App() {
   /** Sample RainViewer along the route for advisory/timeline whenever a leg is loaded or Rad is on. */
   const routeLenForCorridorLean =
     guidanceRouteLengthM > 0 ? guidanceRouteLengthM : maxPlanRouteLengthM;
-  const ultraLongPlannedRoute = isUltraLongTripRoute(routeLenForCorridorLean);
-  const radarRouteSamplingEnabled = Boolean(
-    guidanceRoute?.geometry &&
-      guidanceRoute.geometry.length >= 2 &&
-      (navigationStarted || hasPlannedRoute) &&
-      (radarMapOverlayOn ||
-        settingStormEnabled ||
-        settingWeatherHintsEnabled ||
-        progressCalloutsOpen) &&
-      (navigationStarted ||
-        // For ultra-long routes (>300 mi) only sample when explicitly requested.
-        // For long routes (100–300 mi) also enable when Storm mode is on — the user
-        // explicitly wants storm data and seeing no Radar bar is confusing.
-        (!ultraLongPlannedRoute &&
-          (!isLongTripRoute(routeLenForCorridorLean) || settingStormEnabled)) ||
-        radarMapOverlayOn ||
-        progressCalloutsOpen)
+  const weatherKitEnabled = env.weatherKitEnabled;
+  const routeWeatherReady = weatherKitEnabled || Boolean(env.tomorrowIoApiKey);
+  const navResourceBudget = useMemo(
+    () =>
+      buildNavResourceBudget({
+        navigationStarted,
+        viewMode,
+        appForeground,
+        showRadar,
+        hasPlannedRoute,
+        hasGuidanceGeometry: Boolean(
+          guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2
+        ),
+        routeLengthM: routeLenForCorridorLean,
+        dataSaverMode,
+        settingStormEnabled,
+        settingWeatherHintsEnabled,
+        progressCalloutsOpen,
+        stormBarExpanded,
+        isPlus: Boolean(isPlus),
+        routeWeatherReady,
+        hasEffectiveUserLngLat: Boolean(effectiveUserLngLat),
+      }),
+    [
+      navigationStarted,
+      viewMode,
+      appForeground,
+      showRadar,
+      hasPlannedRoute,
+      guidanceRoute?.geometry,
+      routeLenForCorridorLean,
+      dataSaverMode,
+      settingStormEnabled,
+      settingWeatherHintsEnabled,
+      progressCalloutsOpen,
+      stormBarExpanded,
+      isPlus,
+      routeWeatherReady,
+      effectiveUserLngLat,
+    ]
   );
+  const radarRouteSamplingEnabled = navResourceBudget.radarRouteSamplingEnabled;
   const radarSampleIntervalMs = getRadarRouteSampleIntervalMs(
     dataSaverMode,
     navigationStarted,
@@ -1809,36 +1825,14 @@ export default function App() {
   );
 
   // ── Route weather (Tomorrow.io or Apple WeatherKit) ──
-  const weatherKitEnabled = env.weatherKitEnabled;
   const tioApiKey = weatherKitEnabled ? "" : env.tomorrowIoApiKey;
-  const routeWeatherReady = weatherKitEnabled || Boolean(env.tomorrowIoApiKey);
-  const tioWeatherUiOpen = stormBarExpanded;
-  const tioBaseEnabled =
-    isPlus && routeWeatherReady && Boolean(effectiveUserLngLat) && appForeground;
-  /** At-your-location minute precip + hourly — always on (data saver waits for expanded bar). */
-  const tioPointFetchEnabled =
-    tioBaseEnabled && (dataSaverMode ? tioWeatherUiOpen : true);
+  /** At-your-location minute precip + hourly — paused in drive unless storm bar is open. */
+  const tioPointFetchEnabled = navResourceBudget.tioPointFetchEnabled;
   /** OpenWeather hourly is fallback only — skip when primary provider covers the point card. */
   const openWeatherHourlyEnabled =
     tioPointFetchEnabled && !routeWeatherReady;
   /** Corridor hourly along the active leg — route shape only (no GPS required). */
-  const tioRouteCorridorEnabled =
-    isPlus &&
-    routeWeatherReady &&
-    appForeground &&
-    Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
-  /** Fetch while navigating, planning a short route, or advisory weather is expanded. */
-  const navLiteForCorridorFetch =
-    navigationStarted && (dataSaverMode || isLongTripRoute(routeLenForCorridorLean));
-  const tioRouteFetchEnabled =
-    tioRouteCorridorEnabled &&
-    !(navLiteForCorridorFetch && !tioWeatherUiOpen && !navigationStarted && !progressCalloutsOpen) &&
-    (dataSaverMode
-      ? tioWeatherUiOpen || navigationStarted || progressCalloutsOpen
-      : tioWeatherUiOpen ||
-        navigationStarted ||
-        progressCalloutsOpen ||
-        (hasPlannedRoute && !isLongTripRoute(routeLenForCorridorLean)));
+  const tioRouteFetchEnabled = navResourceBudget.tioRouteFetchEnabled;
   const tioMinutePrecip = useTomorrowMinutePrecip(
     tioApiKey,
     effectiveUserLngLat ?? null,
@@ -1924,6 +1918,7 @@ export default function App() {
     setAlongHoldResetKey,
     bumpTrafficRefresh,
     bumpRouteForecastRefresh,
+    advisoryForecastRepairEnabled: navResourceBudget.advisoryForecastRepairEnabled,
     onAutoRepair: () => {
       setTapHint("Refreshing trip display…");
       window.setTimeout(() => setTapHint(null), 3500);
@@ -1937,11 +1932,13 @@ export default function App() {
     const justOpened = progressCalloutsOpen && !prevProgressCalloutsOpenRef.current;
     prevProgressCalloutsOpenRef.current = progressCalloutsOpen;
     if (!justOpened) return;
+    if (driveModeUi) return;
     if ((tioRouteForecast?.intervals?.length ?? 0) > 0) return;
     if (!isPlus || !guidanceRoute?.geometry?.length) return;
     handleRefreshRouteInfoWeather();
   }, [
     progressCalloutsOpen,
+    driveModeUi,
     tioRouteForecast?.intervals?.length,
     isPlus,
     guidanceRoute?.geometry?.length,
@@ -2395,6 +2392,8 @@ export default function App() {
       destLngLat,
       planRoutes: plan.routes,
       bumpRouteForecastRefresh,
+      advisoryForecastRepairEnabled: navResourceBudget.advisoryForecastRepairEnabled,
+      advisoryWeatherSyncEnabled: navResourceBudget.advisoryWeatherSyncEnabled,
       bumpTrafficRefresh,
     });
 
@@ -3766,8 +3765,8 @@ export default function App() {
             }
             puckSnapEnabled={
               navigationStarted &&
-              ((navPosition.onRoute && !offRouteLatched) ||
-                Boolean(autoRejoinGuidanceRouteId))
+              (viewMode === "drive" ||
+                (navPosition.onRoute && !offRouteLatched))
             }
             snapSeedMeters={
               Number.isFinite(userAlongGuidanceM) && (userAlongGuidanceM ?? 0) >= 0

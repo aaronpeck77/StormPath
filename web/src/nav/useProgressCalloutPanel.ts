@@ -95,6 +95,10 @@ export type UseProgressCalloutPanelDeps = {
   destLngLat: LngLat | null;
   planRoutes: NavRoute[];
   bumpRouteForecastRefresh: () => void;
+  /** When false (drive nav), skip auto corridor forecast repairs. */
+  advisoryForecastRepairEnabled?: boolean;
+  /** When false (drive nav), skip missing-forecast audit noise. */
+  advisoryWeatherSyncEnabled?: boolean;
   bumpTrafficRefresh: () => void;
 };
 
@@ -141,6 +145,8 @@ export function useProgressCalloutPanel(
     destLngLat,
     planRoutes,
     bumpRouteForecastRefresh,
+    advisoryForecastRepairEnabled = true,
+    advisoryWeatherSyncEnabled = true,
     bumpTrafficRefresh,
   } = deps;
 
@@ -530,6 +536,7 @@ export function useProgressCalloutPanel(
         corridorWeatherDetail,
         routeForecastHeadline,
         hasWeatherSamples,
+        advisoryWeatherSyncEnabled,
         isWeatherRateLimited: isTomorrowIoRateLimited() || isWeatherKitTokenBlocked(),
       });
 
@@ -541,7 +548,7 @@ export function useProgressCalloutPanel(
       const actions = repairActionsForRouteAheadIssues(audit.issues);
       for (const action of actions) {
         if (action === "refresh_route_forecast") {
-          bumpRouteForecastRefresh();
+          if (advisoryForecastRepairEnabled) bumpRouteForecastRefresh();
         }
         if (action === "refresh_traffic") {
           bumpTrafficRefresh();
@@ -573,6 +580,8 @@ export function useProgressCalloutPanel(
     routeForecastHeadline,
     hasWeatherSamples,
     progressCalloutsOpen,
+    advisoryForecastRepairEnabled,
+    advisoryWeatherSyncEnabled,
     bumpRouteForecastRefresh,
     bumpTrafficRefresh,
   ]);

@@ -1,8 +1,8 @@
 /**
  * StormPath navigation contract — single source of truth for route-change rules.
  *
- * Nav v1: one locked route after Go. The chosen leg geometry is frozen at Go until the
- * driver explicitly adopts a new path (stay on this road, traffic bypass confirm, etc.).
+ * Drive view: the locked leg is the road ahead — GPS→destination replans update locked geometry
+ * in place when the driver leaves the corridor. Route/Map view keeps B/C alternates for compare.
  */
 
 export type NavigationPhase = "planning" | "navigating";
@@ -10,7 +10,7 @@ export type NavigationPhase = "planning" | "navigating";
 /** Why the locked route might change — every mutation must map to one of these. */
 export type LockedRouteChangeReason =
   | "go_lock" /** Driver pressed Go — locks leg id and geometry from planning. */
-  | "driver_stay_on_road" /** Driver chose to follow their current road to destination. */
+  | "driver_stay_on_road" /** Auto or manual replan from current GPS with forward bearing. */
   | "driver_promote" /** Driver confirmed a different leg (compare sheet, promote). */
   | "driver_stop" /** Stop / clear trip. */
   | "replan_destination" /** New destination or full replan before/during nav with preserve flag off. */
@@ -25,11 +25,10 @@ export type RouteCompareIntent =
  * Invariants while `navigationStarted`:
  *
  * 1. `lockedRouteId` never changes except via `driver_promote` or `driver_stop`.
- * 2. Locked leg geometry is frozen at Go — no silent GPS→destination replans.
- * 3. Driver may adopt a new path via `driver_stay_on_road` or explicit compare confirm.
- * 4. B/C alternate legs may refresh in Route/Map view only — never replace locked guidance in Drive.
- * 5. Off-route: driver chooses stay on this road vs return to original (light-blue rejoin overlay).
- * 6. Traffic bypass: offer → compare → explicit confirm only (`trafficBypassFlow.ts`).
+ * 2. Locked leg geometry updates when the driver leaves the corridor in Drive (stay on road).
+ * 3. Route/Map view may show B/C alternates; Drive shows one line ahead of the puck.
+ * 4. B/C alternate legs refresh in Route/Map view only — never replace locked guidance in Drive.
+ * 5. Traffic bypass: offer → compare → explicit confirm only (`trafficBypassFlow.ts`).
  */
 export function mayChangeLockedRouteId(
   phase: NavigationPhase,
@@ -67,9 +66,9 @@ export function mayRefreshAlternateLegsOnly(phase: NavigationPhase, viewMode: st
   return phase === "navigating" && (viewMode === "route" || viewMode === "topdown");
 }
 
-/** Nav v1: never silently full-replan the locked leg during drive. */
-export function offRouteFullRerouteRequiresExplicitCompare(): true {
-  return true;
+/** Drive view may auto-replan the locked leg from GPS when the driver leaves the corridor. */
+export function offRouteFullRerouteRequiresExplicitCompare(): boolean {
+  return false;
 }
 
 /** Auto rejoin may follow a temporary overlay leg without changing the locked route id. */

@@ -154,7 +154,6 @@ export function useRouteAheadDerivations(
     roadAdvisoryDetailOn,
     settingTrafficEnabled,
     trafficBypassCompare,
-    guidanceRouteId,
     planRoutes,
     lockedNavigationRouteId,
     stormMapGeoJson,
@@ -527,21 +526,22 @@ export function useRouteAheadDerivations(
     trafficBypassContext != null &&
     !trafficBypassCompare;
 
-  /** Nav v1: one active leg on the map — locked route in Rt/Mp; guidance leg in Dr. */
+  /** Nav: one leg in Dr; all alternates in Rt/Mp for side-by-side compare. */
   const driveMapRoutes = useMemo(() => {
     if (trafficBypassCompare) return planRoutes;
     if (navigationStarted) {
-      const focusId =
-        viewMode === "drive" ? guidanceRouteId : lockedNavigationRouteId;
-      const active = planRoutes.find((r) => r.id === focusId);
-      if (active) return [active];
+      if (viewMode === "drive") {
+        const active = planRoutes.find((r) => r.id === lockedNavigationRouteId);
+        if (active) return [active];
+      } else {
+        return planRoutes;
+      }
     }
     return planRoutes;
   }, [
     trafficBypassCompare,
     navigationStarted,
     viewMode,
-    guidanceRouteId,
     planRoutes,
     lockedNavigationRouteId,
   ]);

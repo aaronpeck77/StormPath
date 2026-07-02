@@ -158,4 +158,30 @@ describe("offRoutePollLogic", () => {
     expect(result.shouldOfferRejoinChoices).toBe(true);
     expect(result.recoveryAction).toMatch(/rejoin|replan/);
   });
+
+  it("drive always ahead replans immediately on small lateral leave", () => {
+    const now = 2_000_000;
+    const alongM = 500;
+    const result = runOffRoutePollTick({
+      session: createOffRoutePollSession(),
+      pos: [-77.05, 38.85],
+      guidanceGeometry: guidance,
+      totalM: 4000,
+      userAlongGuidanceM: alongM,
+      lockedGeometry: locked,
+      triggerCtx: {
+        speedMps: 8,
+        headingDeg: 120,
+        routeBearingDeg: 45,
+        enterThresholdM: 2,
+        minSpeedMps: 1.5,
+        headingMinLateralM: 3,
+      },
+      navGoStartedAtMs: now - 120_000,
+      nowMs: now,
+      driveAlwaysAhead: true,
+    });
+    expect(result.shouldOfferRejoinChoices).toBe(true);
+    expect(result.recoveryAction).toBe("replan");
+  });
 });

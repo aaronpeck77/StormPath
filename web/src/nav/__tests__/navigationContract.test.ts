@@ -33,7 +33,7 @@ describe("navigationContract", () => {
     expect(mayAutoRejoinOverlay("planning")).toBe(false);
   });
 
-  it("requires explicit compare before full replan during drive", () => {
-    expect(offRouteFullRerouteRequiresExplicitCompare()).toBe(true);
+  it("allows auto replan from GPS during drive without compare sheet", () => {
+    expect(offRouteFullRerouteRequiresExplicitCompare()).toBe(false);
   });
 });

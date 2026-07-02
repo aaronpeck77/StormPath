@@ -33,20 +33,7 @@ describe("navigationRouteFocus", () => {
     expect(lineFocusId).toBe("r-b");
   });
 
-  it("uses locked route for both focus and guidance in drive view", () => {
-    const { guidanceRouteId, lineFocusId } = resolveNavigationRouteIds({
-      navigationStarted: true,
-      lockedRouteId: "r-b",
-      viewMode: "drive",
-      previewLegIndex: 2,
-      orderedRouteIds: ordered,
-      primaryRouteId: "r-a",
-    });
-    expect(guidanceRouteId).toBe("r-b");
-    expect(lineFocusId).toBe("r-b");
-  });
-
-  it("uses temporary guidance in drive view during auto rejoin", () => {
+  it("uses locked route in drive view while navigating", () => {
     const { guidanceRouteId, lineFocusId } = resolveNavigationRouteIds({
       navigationStarted: true,
       lockedRouteId: "r-b",
@@ -56,8 +43,8 @@ describe("navigationRouteFocus", () => {
       orderedRouteIds: ordered,
       primaryRouteId: "r-a",
     });
-    expect(guidanceRouteId).toBe("r-c");
-    expect(lineFocusId).toBe("r-c");
+    expect(guidanceRouteId).toBe("r-b");
+    expect(lineFocusId).toBe("r-b");
   });
 
   it("ignores temporary guidance in route view while navigating", () => {

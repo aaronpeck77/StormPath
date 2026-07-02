@@ -49,6 +49,10 @@ export type OffRouteTriggerContext = {
   routeBearingDeg?: number | null;
   /** Step-aware enter threshold; defaults to {@link OFF_ROUTE_REROUTE_ENTER_M}. */
   enterThresholdM?: number;
+  /** Override movement floor (drive-ahead uses a lower threshold). */
+  minSpeedMps?: number;
+  headingMinLateralM?: number;
+  headingDeltaDeg?: number;
 };
 
 /**
@@ -118,21 +122,24 @@ export function shouldTriggerOffRouteReroute(
     typeof sample === "number" ? lateralM : sample.fullScanLateralM;
   /** Windowed search can under-report at forks; full scan catches parallel/wrong-leg matches. */
   const corridorLeaveM = Math.max(lateralM, fullScanLateralM);
+  const minSpeed = ctx?.minSpeedMps ?? OFF_ROUTE_HEADING_MIN_SPEED_MPS;
   const speed = ctx?.speedMps ?? 0;
-  if (speed < OFF_ROUTE_HEADING_MIN_SPEED_MPS) return false;
+  if (speed < minSpeed) return false;
 
   const enterM = ctx?.enterThresholdM ?? OFF_ROUTE_REROUTE_ENTER_M;
   if (corridorLeaveM > enterM) return true;
 
   const heading = ctx?.headingDeg;
   const routeBearing = ctx?.routeBearingDeg;
+  const headingMinLateral = ctx?.headingMinLateralM ?? OFF_ROUTE_HEADING_MIN_LATERAL_M;
+  const headingDelta = ctx?.headingDeltaDeg ?? OFF_ROUTE_HEADING_DELTA_DEG;
   if (
     heading != null &&
     routeBearing != null &&
     Number.isFinite(heading) &&
     Number.isFinite(routeBearing) &&
-    corridorLeaveM >= OFF_ROUTE_HEADING_MIN_LATERAL_M &&
-    headingDeltaDegrees(heading, routeBearing) >= OFF_ROUTE_HEADING_DELTA_DEG
+    corridorLeaveM >= headingMinLateral &&
+    headingDeltaDegrees(heading, routeBearing) >= headingDelta
   ) {
     return true;
   }

@@ -35,6 +35,8 @@ export function auditRouteAheadSync(input: {
   corridorWeatherDetail: string;
   routeForecastHeadline: string;
   hasWeatherSamples: boolean;
+  /** False in drive nav — cached corridor weather is enough; skip missing-forecast repairs. */
+  advisoryWeatherSyncEnabled?: boolean;
   /** True when WeatherKit / Tomorrow.io is currently rate-limited — skip route_forecast_missing. */
   isWeatherRateLimited?: boolean;
 }): RouteAheadHealthAudit {
@@ -51,6 +53,7 @@ export function auditRouteAheadSync(input: {
     corridorWeatherDetail,
     routeForecastHeadline,
     hasWeatherSamples,
+    advisoryWeatherSyncEnabled = true,
     isWeatherRateLimited = false,
   } = input;
 
@@ -59,7 +62,8 @@ export function auditRouteAheadSync(input: {
   }
 
   const tripActive = navigationStarted || hasPlannedRoute;
-  const weatherExpected = weatherHintsEnabled && tripActive;
+  const weatherExpected =
+    advisoryWeatherSyncEnabled && weatherHintsEnabled && tripActive;
   const hasCorridorWxCopy =
     corridorWeatherDetail.trim().length > 0 || routeForecastHeadline.trim().length > 0;
 

@@ -4,6 +4,10 @@ import {
   OFF_ROUTE_REROUTE_EXIT_M,
 } from "./offRouteDetect";
 import { haversineMeters, initialBearingDegrees, polylineLengthMeters } from "./routeGeometry";
+import {
+  headingDeltaDegrees,
+  routeStartsWithUturn,
+} from "./forwardRoutePick";
 import type { LngLat, NavRoute } from "./types";
 
 const MI = METERS_PER_MILE;
@@ -51,21 +55,6 @@ export function pickLocalRejoinAlongM(
   const minAhead = Math.min(0.65 * MI, Math.max(350, totalM * 0.02));
   const target = along + Math.max(minAhead, offsetM);
   return Math.min(Math.max(0, totalM - 25), target);
-}
-
-function routeStartsWithUturn(r: NavRoute): boolean {
-  const step = r.turnSteps?.[0];
-  if (!step) return false;
-  const mod = (step.maneuverModifier ?? "").toLowerCase();
-  const type = (step.maneuverType ?? "").toLowerCase();
-  const instr = step.instruction ?? "";
-  return mod.includes("uturn") || type.includes("uturn") || /u-?turn/i.test(instr);
-}
-
-function headingDeltaDegrees(a: number, b: number): number {
-  let d = Math.abs(a - b) % 360;
-  if (d > 180) d = 360 - d;
-  return d;
 }
 
 /** Prefer the shortest-time detour that does not wander excessively. */

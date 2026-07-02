@@ -45,6 +45,8 @@ export const NWS_POLL_MS_LONG_TRIP = 240_000;
 export const NWS_POLL_MS_DATA_SAVER = 300_000;
 /** While navigating with data saver. */
 export const NWS_POLL_MS_DATA_SAVER_DRIVE = 480_000;
+/** Active drive navigation — NWS alerts stay live, fewer national pulls. */
+export const NWS_POLL_MS_DRIVE_NAV = 180_000;
 
 /** ~100 miles — cross-country routes trigger lean NWS + geometry budgets automatically. */
 export const LONG_TRIP_ROUTE_M = 160_934;
@@ -111,11 +113,13 @@ export const NAV_ROUTE_ALT_REFRESH_MS_NORMAL = 26_000;
 export function getNwsPollIntervalMs(
   dataSaver: boolean,
   navigationStarted: boolean,
-  routeLengthM = 0
+  routeLengthM = 0,
+  driveNavMode = false
 ): number {
   if (dataSaver) {
     return navigationStarted ? NWS_POLL_MS_DATA_SAVER_DRIVE : NWS_POLL_MS_DATA_SAVER;
   }
+  if (driveNavMode) return NWS_POLL_MS_DRIVE_NAV;
   if (isLongTripRoute(routeLengthM)) return NWS_POLL_MS_LONG_TRIP;
   return NWS_POLL_MS_NORMAL;
 }

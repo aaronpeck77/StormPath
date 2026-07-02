@@ -24,6 +24,8 @@ export type UseTripSurfaceRecoveryDeps = {
   setAlongHoldResetKey: (updater: (n: number) => number) => void;
   bumpTrafficRefresh: () => void;
   bumpRouteForecastRefresh: () => void;
+  /** When false (drive nav), skip auto corridor forecast repairs. */
+  advisoryForecastRepairEnabled?: boolean;
   /** Optional — brief user hint when auto-repair runs (not on silent poll ticks). */
   onAutoRepair?: (actions: TripSurfaceRepairAction[]) => void;
 };
@@ -42,6 +44,7 @@ export function useTripSurfaceRecovery(deps: UseTripSurfaceRecoveryDeps): void {
     setAlongHoldResetKey,
     bumpTrafficRefresh,
     bumpRouteForecastRefresh,
+    advisoryForecastRepairEnabled = true,
     onAutoRepair,
   } = deps;
 
@@ -72,7 +75,9 @@ export function useTripSurfaceRecovery(deps: UseTripSurfaceRecoveryDeps): void {
       if (action === "bump_map_fit") setFitTrigger((n) => n + 1);
       if (action === "reset_along_hold") setAlongHoldResetKey((k) => k + 1);
       if (action === "refresh_traffic") bumpTrafficRefresh();
-      if (action === "refresh_forecast") bumpRouteForecastRefresh();
+      if (action === "refresh_forecast" && advisoryForecastRepairEnabled) {
+        bumpRouteForecastRefresh();
+      }
     }
 
     reportAppHealthRepair("trip_surface", audit.issues, actions);
