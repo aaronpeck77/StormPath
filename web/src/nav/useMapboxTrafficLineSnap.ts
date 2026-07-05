@@ -1,6 +1,7 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import type { LngLat, NavRoute, TripPlan } from "./types";
 import { fetchMapboxDrivingTrafficRoute } from "../services/mapboxRouteAlternatives";
+import { isSavedRoutePlanId } from "./planFromSavedRoute";
 import type { TrafficOverlay } from "../situation/fusedSnapshot";
 
 export const MB_TRAFFIC_LINE_SNAP_NOTICE = "Mapbox traffic-aware line";
@@ -49,6 +50,7 @@ export function useMapboxTrafficLineSnap(deps: UseMapboxTrafficLineSnapDeps): vo
   useEffect(() => {
     if (navigationStarted) return;
     if (!mapboxToken || !destLngLat || !guidanceRoute) return;
+    if (isSavedRoutePlanId(lineFocusId)) return;
     if (!trafficFetchDone || routing) return;
 
     const leg = trafficOverlay?.[lineFocusId];

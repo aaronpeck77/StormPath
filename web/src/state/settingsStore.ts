@@ -41,8 +41,12 @@ const LS_VOICE = "stormpath-setting-voice-guided";
 const LS_GPS_HIGH_REFRESH = "stormpath-setting-gps-high-refresh";
 const LS_MAP_MATCHING = "stormpath-setting-map-matching-enabled";
 const LS_LANDSCAPE_SIDE_HAND = "stormpath-setting-landscape-side-hand";
+const LS_RADAR_DISPLAY_MODE = "stormpath-setting-radar-display-mode";
 
 export type LandscapeSideHand = "right" | "left";
+
+/** Map radar: animated loop vs latest frame with storm-motion arrows. */
+export type RadarDisplayMode = "motion" | "still_arrows";
 
 /**
  * Shape passed to / from the About sheet. Mirrors the 8 user-toggleable persisted fields. Kept
@@ -51,6 +55,8 @@ export type LandscapeSideHand = "right" | "left";
  */
 export interface AppSettings {
   radarEnabled: boolean;
+  /** Animated radar loop or latest mosaic with storm-motion arrows. */
+  radarDisplayMode: RadarDisplayMode;
   stormEnabled: boolean;
   trafficEnabled: boolean;
   weatherHintsEnabled: boolean;
@@ -74,11 +80,23 @@ function writeBoolFlag(key: string, on: boolean): void {
   safeStorage.set(key, on ? "1" : "0");
 }
 
+function readRadarDisplayMode(): RadarDisplayMode {
+  const v = safeStorage.get(LS_RADAR_DISPLAY_MODE);
+  if (v === "motion") return "motion";
+  if (v === "still_arrows") return "still_arrows";
+  return "still_arrows";
+}
+
+function writeRadarDisplayMode(mode: RadarDisplayMode): void {
+  safeStorage.set(LS_RADAR_DISPLAY_MODE, mode);
+}
+
 export interface SettingsState {
   /* Map / data toggles (each persists through `layerStartupPrefs` which carries legacy fallback keys). */
   stormEnabled: boolean;
   trafficEnabled: boolean;
   radarEnabled: boolean;
+  radarDisplayMode: RadarDisplayMode;
 
   /* Direct safeStorage flags. */
   weatherHintsEnabled: boolean;
@@ -95,6 +113,7 @@ export interface SettingsState {
   setStormEnabled: (on: boolean) => void;
   setTrafficEnabled: (on: boolean) => void;
   setRadarEnabled: (on: boolean) => void;
+  setRadarDisplayMode: (mode: RadarDisplayMode) => void;
   setWeatherHintsEnabled: (on: boolean) => void;
   setAutoRerouteEnabled: (on: boolean) => void;
   setDataSaverEnabled: (on: boolean) => void;
@@ -120,6 +139,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   stormEnabled: readStormSettingOn(),
   trafficEnabled: readTrafficSettingOn(),
   radarEnabled: readRadarSettingOn(),
+  radarDisplayMode: readRadarDisplayMode(),
   weatherHintsEnabled: readBoolFlag(LS_WEATHER_HINTS, true),
   autoRerouteEnabled: readBoolFlag(LS_AUTO_REROUTE, true),
   dataSaverEnabled: readDataSaverSetting(),
@@ -140,6 +160,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setRadarEnabled: (on) => {
     writeRadarSettingOn(on);
     set({ radarEnabled: on });
+  },
+  setRadarDisplayMode: (mode) => {
+    writeRadarDisplayMode(mode);
+    set({ radarDisplayMode: mode });
   },
   setWeatherHintsEnabled: (on) => {
     writeBoolFlag(LS_WEATHER_HINTS, on);
@@ -181,6 +205,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     writeStormSettingOn(next.stormEnabled);
     writeTrafficSettingOn(next.trafficEnabled);
     writeRadarSettingOn(next.radarEnabled);
+    writeRadarDisplayMode(next.radarDisplayMode);
     writeBoolFlag(LS_WEATHER_HINTS, next.weatherHintsEnabled);
     writeBoolFlag(LS_AUTO_REROUTE, next.autoRerouteEnabled);
     writeBoolFlag(LS_DATA_SAVER, next.dataSaverEnabled);
@@ -192,6 +217,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       stormEnabled: next.stormEnabled,
       trafficEnabled: next.trafficEnabled,
       radarEnabled: next.radarEnabled,
+      radarDisplayMode: next.radarDisplayMode,
       weatherHintsEnabled: next.weatherHintsEnabled,
       autoRerouteEnabled: next.autoRerouteEnabled,
       dataSaverEnabled: next.dataSaverEnabled,

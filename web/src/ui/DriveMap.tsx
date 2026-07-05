@@ -65,7 +65,16 @@ import {
   applyWeatherAlertLayers,
   positionWeatherAlertLayersAboveRadar,
 } from "./mapWeatherAlertLayers";
-import { removeRadarMotionLayers } from "./mapRadarMotionLayer";
+import {
+  applyRadarMotionLayers,
+  removeRadarMotionLayers,
+} from "./mapRadarMotionLayer";
+import {
+  boundsFromGeometry,
+  computeRadarStormMotions,
+  intersectBounds,
+} from "../services/radarStormMotion";
+import { fetchRainViewerRadarFrames } from "../services/rainViewerRadar";
 import {
   bringMapboxTrafficLayersToFront,
   ensureMapboxTrafficConditionLayers,
@@ -201,6 +210,8 @@ export type Props = {
   showRadar: boolean;
   /** When false, show the latest radar frame only (no dual-layer animation — saves data). */
   radarAnimate?: boolean;
+  /** Draw storm-motion arrows from consecutive RainViewer mosaics (still radar mode). */
+  radarStormMotionArrows?: boolean;
   /** Radar frame time (UTC sec) plus provider / loop position for the map HUD. */
   onRadarFrameUtcSec?: (utcSec: number | null, meta?: RadarFrameHudMeta) => void;
   /** Same corridor points as the progress-strip ticks (weather, notices) — drawn on the active route line. */
@@ -342,6 +353,7 @@ function DriveMapInner({
   orderedRouteIds,
   showRadar,
   radarAnimate = true,
+  radarStormMotionArrows = false,
   onRadarFrameUtcSec,
   alongRouteAlerts,
   corridorRouteGeometry = null,
@@ -1909,16 +1921,109 @@ function DriveMapInner({
     else map.once("load", sync);
   }, [mapReady, weatherAlertGeoJson, routes, lineFocusId, navigationStarted, viewMode]);
 
-  /** Radar storm-motion arrows disabled — sampling was misleading; strip any legacy layers. */
+  /** Storm-motion arrows — still radar mode only; uses RainViewer past frames. */
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    try {
-      removeRadarMotionLayers(map);
-    } catch {
-      /* style race */
+    if (!showRadar || !radarStormMotionArrows) {
+      try {
+        removeRadarMotionLayers(map);
+      } catch {
+        /* style race */
+      }
+      return;
     }
-  }, [mapReady, showRadar]);
+
+    let cancelled = false;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const lastKeyRef = { current: "" };
+
+    const run = async () => {
+      try {
+        if (!map.isStyleLoaded()) return;
+        const b = map.getBounds();
+        if (!b) return;
+
+        const viewBox = {
+          west: b.getWest(),
+          south: b.getSouth(),
+          east: b.getEast(),
+          north: b.getNorth(),
+        };
+        const corridor =
+          corridorRouteGeometry ??
+          routes.find((r) => r.id === lineFocusId)?.geometry ??
+          null;
+        const routeBox = corridor?.length ? boundsFromGeometry(corridor) : null;
+        const sampleBox = routeBox ? intersectBounds(viewBox, routeBox) ?? routeBox : viewBox;
+
+        const pack = await fetchRainViewerRadarFrames({ includeNowcast: false });
+        if (cancelled || mapRef.current !== map) return;
+        if (!pack?.frames || pack.frames.length < 2) {
+          removeRadarMotionLayers(map);
+          return;
+        }
+
+        const older = pack.frames[pack.frames.length - 2]!;
+        const newer = pack.frames[pack.frames.length - 1]!;
+        const motionKey = `${pack.frames.map((f) => f.path).join("|")}:${sampleBox.west.toFixed(2)},${sampleBox.south.toFixed(2)}`;
+        if (motionKey === lastKeyRef.current) return;
+        lastKeyRef.current = motionKey;
+
+        const motions = await computeRadarStormMotions(sampleBox, pack.host, older, newer, {
+          referenceLngLat: userLngLat,
+        });
+        if (cancelled || mapRef.current !== map) return;
+        applyRadarMotionLayers(map, motions.length > 0 ? motions : null);
+        positionWeatherAlertLayersAboveRadar(map);
+        liftTrafficThenRoutesThenHits(
+          map,
+          visibleRouteIdsForHitLayers(routes, lineFocusId, viewMode, false)
+        );
+      } catch {
+        if (!cancelled && mapRef.current === map) {
+          try {
+            removeRadarMotionLayers(map);
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    };
+
+    const schedule = () => {
+      if (debounceTimer != null) clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(() => {
+        debounceTimer = null;
+        void run();
+      }, 1400);
+    };
+
+    map.on("moveend", schedule);
+    schedule();
+    const refreshTimer = window.setInterval(schedule, 180_000);
+
+    return () => {
+      cancelled = true;
+      if (debounceTimer != null) clearTimeout(debounceTimer);
+      map.off("moveend", schedule);
+      clearInterval(refreshTimer);
+      try {
+        removeRadarMotionLayers(map);
+      } catch {
+        /* style race */
+      }
+    };
+  }, [
+    mapReady,
+    showRadar,
+    radarStormMotionArrows,
+    corridorRouteGeometry,
+    routes,
+    lineFocusId,
+    userLngLat,
+    viewMode,
+  ]);
 
   useStormNwsHoverPopup({
     mapRef,
@@ -2145,7 +2250,7 @@ function DriveMapInner({
       }
       const apiKey = getWebEnv().tomorrowIoApiKey;
       const pack = await resolveRadarMapPack(mapCenterLngLat(), apiKey, {
-        mapAnimation: true,
+        mapAnimation: radarAnimate,
         forceRainViewer: forceRainViewerForRadar,
       });
       if (cancelled || mapRef.current !== map) return;
@@ -2166,7 +2271,7 @@ function DriveMapInner({
         path: f.path,
         time: f.time,
       }));
-      const pathsKey = `${pack.provider}|${cells.length}|${cells[0]!.path}|${cells.at(-1)!.path}`;
+      const pathsKey = `${pack.provider}|${radarAnimate ? "anim" : "still"}|${cells.length}|${cells[0]!.path}|${cells.at(-1)!.path}`;
       const layerKey = `${pack.provider}|${pack.maxZoom}`;
       const recreate = layerKey !== lastRadarLayerKey;
       if (pathsKey === lastRadarPathsKey && map.getSource("rainviewer-radar-a") && !recreate) {
@@ -2175,7 +2280,9 @@ function DriveMapInner({
       lastRadarPathsKey = pathsKey;
       lastRadarLayerKey = layerKey;
       setRadarMapTileProvider(map, pack.provider);
-      const url0 = radarTileUrlForFrame(pack, cells[0]!, apiKey);
+      const displayCell = radarAnimate ? cells[0]! : cells[cells.length - 1]!;
+      const displayIdx = radarAnimate ? 0 : cells.length - 1;
+      const url0 = radarTileUrlForFrame(pack, displayCell, apiKey);
       if (!url0) return;
       radarLoopGeneration += 1;
       const myGen = radarLoopGeneration;
@@ -2188,9 +2295,9 @@ function DriveMapInner({
       positionWeatherAlertLayersAboveRadar(map);
       bringMapboxTrafficLayersToFront(map);
       liftRouteHits();
-      onRadarFrameUtcSecRef.current?.(cells[0]!.time, {
+      onRadarFrameUtcSecRef.current?.(displayCell.time, {
         provider: pack.provider,
-        index: 0,
+        index: displayIdx,
         total: cells.length,
         oldestUtcSec: cells[0]!.time,
         newestUtcSec: cells[cells.length - 1]!.time,

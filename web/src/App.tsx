@@ -529,6 +529,7 @@ export default function App() {
   const isPlusRef = useRef(isPlus);
   isPlusRef.current = isPlus;
   const settingRadarEnabled = useSettingsStore((s) => s.radarEnabled);
+  const settingRadarDisplayMode = useSettingsStore((s) => s.radarDisplayMode);
   const settingDataSaverEnabled = useSettingsStore((s) => s.dataSaverEnabled);
   const dataSaverHintDismissed = useSettingsStore((s) => s.dataSaverHintDismissed);
   const dismissDataSaverHintAction = useSettingsStore((s) => s.dismissDataSaverHint);
@@ -3453,7 +3454,7 @@ export default function App() {
       setTapHint(
         reverse
           ? "Reversed path — follow the line toward the original start."
-          : "Saved route on map — no new router fetch. Switch routes in Rt view with the route control."
+          : "Saved path on map — follow your recorded line. Tap Go when ready."
       );
       window.setTimeout(() => setTapHint(null), 6000);
     },
@@ -3768,7 +3769,12 @@ export default function App() {
             onMapFocusComplete={flushMapFocus}
             orderedRouteIds={orderedRouteIds}
             showRadar={radarMapOverlayOn}
-            radarAnimate={!dataSaverMode && (!navMapLiteMode || radarMapOverlayOn)}
+            radarAnimate={
+              settingRadarDisplayMode === "motion" &&
+              !dataSaverMode &&
+              (!navMapLiteMode || radarMapOverlayOn)
+            }
+            radarStormMotionArrows={settingRadarDisplayMode === "still_arrows"}
             onRadarFrameUtcSec={setRadarFrameUtcSec}
             alongRouteAlerts={mapAlongRouteAlertsForDrive}
             corridorRouteGeometry={guidanceRoute?.geometry}
@@ -4139,7 +4145,7 @@ export default function App() {
           <NameConfirmSheet
             title="Save recorded path"
             initialName={recordedSuggestName}
-            hint="GPS trace — no turn-by-turn from the router. Ends are labeled so you can run the path forward or reversed later (★ → Routes)."
+            hint="GPS trace — turn prompts are built from your path shape (no router fetch). Run forward or reversed from ★ → Routes."
             confirmLabel="Save route"
             onConfirm={(name) => {
               addSavedTripRoute(
@@ -4586,6 +4592,7 @@ export default function App() {
         }}
         settings={{
           radarEnabled: settingRadarEnabled,
+          radarDisplayMode: settingRadarDisplayMode,
           stormEnabled: settingStormEnabled,
           trafficEnabled: settingTrafficEnabled,
           weatherHintsEnabled: settingWeatherHintsEnabled,

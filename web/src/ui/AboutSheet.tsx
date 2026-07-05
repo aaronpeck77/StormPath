@@ -10,6 +10,7 @@ import { stormpathVersionChipLabel, stormpathVersionLabel } from "../appVersion"
 import { safeStorage } from "../storage/safeStorage";
 import { MapKeyPanel } from "./MapKeyPanel";
 import type { HomeMapFraming } from "../map/homeMapFraming";
+import type { RadarDisplayMode } from "../state/settingsStore";
 import type { HomePuckFollowMode } from "../map/homePuckFollow";
 
 type ActivityTrailPanel = {
@@ -49,6 +50,7 @@ type Props = {
   onHomePuckFollowChange: (mode: HomePuckFollowMode) => void;
   settings: {
     radarEnabled: boolean;
+    radarDisplayMode: RadarDisplayMode;
     stormEnabled: boolean;
     trafficEnabled: boolean;
     weatherHintsEnabled: boolean;
@@ -398,6 +400,41 @@ export function AboutSheet({
                 <strong>Radar</strong> — enable the Rad button (US: Tomorrow.io, elsewhere: RainViewer)
               </span>
             </label>
+
+            <fieldset
+              className={`about-sheet__home-framing${settings.radarEnabled ? "" : " disabled"}`}
+            >
+              <legend className="about-sheet__home-framing-legend">Radar display</legend>
+              <p className="about-sheet__p about-sheet__p--tight">
+                Choose how precipitation shows on the map when radar is on. Storm-motion arrows use
+                RainViewer frames and appear only in still mode.
+              </p>
+              <label className="about-sheet__home-framing-option">
+                <input
+                  type="radio"
+                  name="radar-display-mode"
+                  disabled={!settings.radarEnabled}
+                  checked={settings.radarDisplayMode === "motion"}
+                  onChange={() => onSettings({ ...settings, radarDisplayMode: "motion" })}
+                />
+                <span>
+                  <strong>Motion loop</strong> — crossfade through recent radar frames.
+                </span>
+              </label>
+              <label className="about-sheet__home-framing-option">
+                <input
+                  type="radio"
+                  name="radar-display-mode"
+                  disabled={!settings.radarEnabled}
+                  checked={settings.radarDisplayMode === "still_arrows"}
+                  onChange={() => onSettings({ ...settings, radarDisplayMode: "still_arrows" })}
+                />
+                <span>
+                  <strong>Latest + arrows</strong> — one still mosaic of the newest data with arrows
+                  on strong cells showing direction and speed (default).
+                </span>
+              </label>
+            </fieldset>
 
             <label className={`about-sheet__setting${plus ? "" : " disabled"}`}>
               <input
