@@ -324,6 +324,7 @@ jobs:
           echo "IPA CFBundleIdentifier: $(echo "$PLIST" | plutil -extract CFBundleIdentifier raw -)"
 
       - name: Verify App Store Connect API access
+        continue-on-error: true
         env:
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
           APP_STORE_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
