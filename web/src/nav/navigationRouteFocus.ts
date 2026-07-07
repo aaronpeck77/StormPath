@@ -24,7 +24,13 @@ export function resolveNavigationRouteIds(input: {
   }
 
   const locked = input.lockedRouteId ?? fallback;
-  return { guidanceRouteId: locked, lineFocusId: locked };
+
+  if (input.viewMode === "drive") {
+    return { guidanceRouteId: locked, lineFocusId: locked };
+  }
+
+  /* Route / topdown: compare A/B/C on the map without changing turn-by-turn guidance. */
+  return { guidanceRouteId: locked, lineFocusId: previewId || locked };
 }
 
 /** Primary leg id for mergePlanPreservingPrimary — locked route wins over slot order. */

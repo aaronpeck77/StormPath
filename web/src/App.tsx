@@ -4183,54 +4183,63 @@ export default function App() {
         )}
 
         {!env.mapboxToken && (
-          <div className="nav-toast nav-toast-warn" role="status">
-            {typeof window !== "undefined" && window.location.hostname.includes("netlify.app")
-              ? "Map unavailable — add VITE_MAPBOX_TOKEN in Netlify env vars (Builds scope), then redeploy."
-              : "Add VITE_MAPBOX_TOKEN in web/.env.local."}
+          <div className="nav-toast-stack nav-toast-stack--top" aria-live="polite">
+            <div className="nav-toast nav-toast-warn" role="status">
+              {typeof window !== "undefined" && window.location.hostname.includes("netlify.app")
+                ? "Map unavailable — add VITE_MAPBOX_TOKEN in Netlify env vars (Builds scope), then redeploy."
+                : "Add VITE_MAPBOX_TOKEN in web/.env.local."}
+            </div>
           </div>
         )}
 
         {import.meta.env.DEV && devLocOverrideLngLat && (
-          <div className="nav-toast nav-toast-warn" role="status">
-            <strong>Dev pinned location</strong> — the browser never asks for GPS.{" "}
-            <button
-              type="button"
-              className="nav-toast-inline-btn"
-              onClick={() => {
-                clearDevLocationOverride();
-                window.location.hash = "";
-                window.location.reload();
-              }}
-            >
-              Use real GPS
-            </button>
+          <div className="nav-toast-stack nav-toast-stack--top" aria-live="polite">
+            <div className="nav-toast nav-toast-warn" role="status">
+              <strong>Dev pinned location</strong> — the browser never asks for GPS.{" "}
+              <button
+                type="button"
+                className="nav-toast-inline-btn"
+                onClick={() => {
+                  clearDevLocationOverride();
+                  window.location.hash = "";
+                  window.location.reload();
+                }}
+              >
+                Use real GPS
+              </button>
+            </div>
           </div>
         )}
 
         {import.meta.env.DEV && locationFixSource === "dev-ip" && (
-          <div className="nav-toast nav-toast-warn" role="status">
-            <strong>Approximate dev position (ISP / metro)</strong> — not GPS. Open{" "}
-            <code>http://localhost:5173</code> on this computer, or use the native app, for a real fix.
+          <div className="nav-toast-stack nav-toast-stack--top" role="status">
+            <div className="nav-toast nav-toast-warn">
+              <strong>Approximate dev position (ISP / metro)</strong> — not GPS. Open{" "}
+              <code>http://localhost:5173</code> on this computer, or use the native app, for a real fix.
+            </div>
           </div>
         )}
 
-        {locationError && (
-          <div className="nav-toast nav-toast-err" role="alert">
-            {locationError}
+        {(locationError || routeError) && (
+          <div className="nav-toast-stack nav-toast-stack--top" aria-live="assertive">
+            {locationError ? (
+              <div className="nav-toast nav-toast-err" role="alert">
+                {locationError}
+              </div>
+            ) : null}
+            {routeError ? (
+              <div className="nav-toast nav-toast-err" role="alert">
+                {routeError}
+              </div>
+            ) : null}
           </div>
         )}
 
-        {tapHint && (
-          <div className="nav-toast nav-toast-warn" role="status">
-            {tapHint}
+        {tapHint ? (
+          <div className="nav-toast-stack nav-toast-stack--dock" role="status" aria-live="polite">
+            <div className="nav-toast nav-toast-warn">{tapHint}</div>
           </div>
-        )}
-
-        {routeError && (
-          <div className="nav-toast nav-toast-err" role="alert">
-            {routeError}
-          </div>
-        )}
+        ) : null}
 
         {!safetyAck && (
           <div className="nav-safety-banner" role="dialog" aria-label="Safety notice">

@@ -143,15 +143,51 @@ async function startNativeWatch(
 
   let watchCallId: string | undefined;
   let cancelled = false;
+  let hasFix = false;
+  let errorDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let startupGrace = true;
+  const startupGraceTimer = window.setTimeout(() => {
+    startupGrace = false;
+  }, 12_000);
+
+  const reportGpsLost = () => {
+    if (startupGrace && !hasFix) return;
+    onErr("GPS signal weak or unavailable. Check Settings → Location Services → StormPath is set to While Using.");
+  };
+
+  let neverAcquiredTimer: ReturnType<typeof setTimeout> | null = window.setTimeout(() => {
+    neverAcquiredTimer = null;
+    if (!cancelled && !hasFix) {
+      onErr(
+        "Still waiting for GPS. Confirm Location Services are on for StormPath (While Using) and try stepping outside or disabling Low Power Mode."
+      );
+    }
+  }, 45_000);
 
   const id = await Geolocation.watchPosition(
     { enableHighAccuracy: true, timeout: 20_000, maximumAge: highRefresh ? 0 : 2_000 },
     (pos, err) => {
       if (cancelled) return;
       if (err || !pos) {
-        onErr("GPS signal lost — check that Location Services are enabled for StormPath.");
+        if (hasFix) {
+          if (!errorDebounceTimer) {
+            errorDebounceTimer = window.setTimeout(() => {
+              errorDebounceTimer = null;
+              if (!cancelled) reportGpsLost();
+            }, 4_000);
+          }
+        }
         return;
       }
+      if (errorDebounceTimer) {
+        clearTimeout(errorDebounceTimer);
+        errorDebounceTimer = null;
+      }
+      if (!hasFix && neverAcquiredTimer) {
+        clearTimeout(neverAcquiredTimer);
+        neverAcquiredTimer = null;
+      }
+      hasFix = true;
       onFix(
         pos.coords.longitude,
         pos.coords.latitude,
@@ -165,6 +201,9 @@ async function startNativeWatch(
 
   return () => {
     cancelled = true;
+    window.clearTimeout(startupGraceTimer);
+    if (neverAcquiredTimer) clearTimeout(neverAcquiredTimer);
+    if (errorDebounceTimer) clearTimeout(errorDebounceTimer);
     if (watchCallId != null) {
       void Geolocation.clearWatch({ id: watchCallId });
     }

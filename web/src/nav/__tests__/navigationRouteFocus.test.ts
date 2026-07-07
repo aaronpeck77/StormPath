@@ -20,7 +20,7 @@ describe("navigationRouteFocus", () => {
     expect(lineFocusId).toBe("r-c");
   });
 
-  it("uses locked route for focus and guidance in route view while navigating", () => {
+  it("uses locked route for guidance but preview leg for map focus in route view while navigating", () => {
     const { guidanceRouteId, lineFocusId } = resolveNavigationRouteIds({
       navigationStarted: true,
       lockedRouteId: "r-b",
@@ -30,7 +30,7 @@ describe("navigationRouteFocus", () => {
       primaryRouteId: "r-a",
     });
     expect(guidanceRouteId).toBe("r-b");
-    expect(lineFocusId).toBe("r-b");
+    expect(lineFocusId).toBe("r-c");
   });
 
   it("uses locked route in drive view while navigating", () => {
@@ -58,7 +58,7 @@ describe("navigationRouteFocus", () => {
       primaryRouteId: "r-a",
     });
     expect(guidanceRouteId).toBe("r-b");
-    expect(lineFocusId).toBe("r-b");
+    expect(lineFocusId).toBe("r-c");
   });
 
   it("falls back to slot order when no lock is set", () => {
