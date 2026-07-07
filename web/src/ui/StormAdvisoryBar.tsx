@@ -246,6 +246,8 @@ export type StormAdvisoryBarProps = SharedProps & {
   basicForecastLoading?: boolean;
   /** When true, local forecast UI labels WeatherKit as primary provider. */
   weatherKitPrimary?: boolean;
+  /** User position for local forecast night shading. */
+  forecastLngLat?: [number, number] | null;
   /** Basic: open About → Subscription from the Plus upsell card. */
   onOpenSubscription?: () => void;
   /** Basic status panel layout — partner banner slot, Plus upsell, SiteBible. */
@@ -330,6 +332,7 @@ export function StormAdvisoryBar({
   dataSaverHint = null,
   basicForecastLoading = false,
   weatherKitPrimary = false,
+  forecastLngLat = null,
   onOpenSubscription,
   basicStatusPanelPromos = null,
 }: StormAdvisoryBarProps) {
@@ -1232,6 +1235,7 @@ export function StormAdvisoryBar({
             variant="full"
             forecastLoading={basicForecastLoading}
             weatherKitPrimary={weatherKitPrimary}
+            forecastLngLat={forecastLngLat}
           />
         ) : null}
 

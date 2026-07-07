@@ -1200,6 +1200,8 @@ export default function App() {
     autoRejoinGuidanceRouteId,
     offRouteLatched,
     offRouteRejoinAlongM,
+    offRouteHoldPreviewActive,
+    holdRejoinPreviewRouteId,
     resetOffRouteNavigation,
     clearDetourGuidance,
     detourAutoActive,
@@ -1340,7 +1342,11 @@ export default function App() {
     lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? primaryRouteId;
 
   /** During A/B/C compare, highlight the leg the driver tapped (not only the current primary). */
-  const driveMapLineFocusId = trafficBypassCompare?.selectedLeg ?? lineFocusId;
+  const driveMapLineFocusId =
+    trafficBypassCompare?.selectedLeg ??
+    (offRouteHoldPreviewActive && holdRejoinPreviewRouteId
+      ? holdRejoinPreviewRouteId
+      : lineFocusId);
 
   const suggestedRouteId = useMemo(() => {
     const id = pickSuggestedActive(scored);
@@ -1870,10 +1876,7 @@ export default function App() {
   );
   const localDailyForecast = useLocalDailyForecast(
     effectiveUserLngLat ?? null,
-    Boolean(isPlus) &&
-      weatherKitEnabled &&
-      Boolean(effectiveUserLngLat) &&
-      (tioPointFetchEnabled || stormBarExpanded),
+    navResourceBudget.localDailyForecastEnabled,
     weatherKitEnabled
   );
   const {
@@ -2109,6 +2112,7 @@ export default function App() {
     planRoutes: plan.routes,
     lockedNavigationRouteId,
     temporaryGuidanceRouteId: autoRejoinGuidanceRouteId,
+    offRouteHoldPreviewActive,
     stormMapGeoJson,
   });
 
@@ -3830,6 +3834,8 @@ export default function App() {
             searchPickMarkers={searchPickMarkersForMap}
             onSearchPickMarkerClick={searchPickMarkersForMap ? handleSearchPickFromMap : undefined}
             progressRailVisible={showProgressRail}
+            offRouteRejoinCompareActive={offRouteHoldPreviewActive}
+            rejoinOverlayActive={offRouteHoldPreviewActive}
           />
           </Suspense>
         </div>
@@ -3915,6 +3921,7 @@ export default function App() {
                       nwsForecastError={isPlus ? stormError : null}
                       basicForecastLoading={isPlus ? localForecastPanelLoading : false}
                       weatherKitPrimary={env.weatherKitEnabled}
+                      forecastLngLat={userLngLat}
                       onOpenSubscription={() => setAboutOpen(true)}
                       basicStatusPanelPromos={basicStatusPanelPromos}
                       dataSaverHint={
@@ -4032,6 +4039,7 @@ export default function App() {
                       fallbackSegments={activeProgressCalloutPanel.segments.filter(
                         (s) => !s.key.startsWith("route-ahead-")
                       )}
+                      geometry={progressRailRoute?.geometry ?? null}
                       totalMeters={guidanceRouteLengthM}
                       userAlongMeters={progressPanelAlongM}
                       planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}

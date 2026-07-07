@@ -32,6 +32,8 @@ export type NavResourceBudget = {
   tioRouteFetchEnabled: boolean;
   /** Point minute precip + hourly at the puck. */
   tioPointFetchEnabled: boolean;
+  /** Multi-day outlook at the puck (WeatherKit) — local only, not route corridor. */
+  localDailyForecastEnabled: boolean;
   /** Watchdogs may auto-bump corridor forecast (not manual refresh). */
   advisoryForecastRepairEnabled: boolean;
   /** Route-ahead audit should expect live corridor weather sync. */
@@ -104,6 +106,14 @@ export function buildNavResourceBudget(input: NavResourceBudgetInput): NavResour
         ? input.stormBarExpanded
         : true);
 
+  /** 7-day at your location — not tied to an active route or corridor refresh. */
+  const localDailyForecastEnabled =
+    input.isPlus &&
+    input.routeWeatherReady &&
+    input.hasEffectiveUserLngLat &&
+    input.appForeground &&
+    (input.stormBarExpanded || !input.navigationStarted);
+
   const tioRouteCorridorEnabled =
     input.isPlus &&
     input.routeWeatherReady &&
@@ -136,6 +146,7 @@ export function buildNavResourceBudget(input: NavResourceBudgetInput): NavResour
     radarRouteSamplingEnabled,
     tioRouteFetchEnabled,
     tioPointFetchEnabled,
+    localDailyForecastEnabled,
     advisoryForecastRepairEnabled: !driveNavMode,
     advisoryWeatherSyncEnabled: !driveNavMode,
   };

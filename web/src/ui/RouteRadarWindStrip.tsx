@@ -18,6 +18,8 @@ import {
   RADAR_VERY_HEAVY_THRESHOLD,
 } from "../nav/constants";
 import { radarDisplayIntensity } from "../nav/radarReflectivityScale";
+import type { FractionBand } from "../forecast/chartNightBands";
+import { ChartNightBandLayer } from "./ChartNightBandLayer";
 
 type RadarSample = { t: number; intensity: number };
 type WindPoint = { t: number; mph: number };
@@ -61,9 +63,10 @@ type Props = {
   windPoints: WindPoint[];
   /** Brief gust spikes — tick marks above the sustained line. */
   gustSpikePoints?: WindPoint[];
+  nightBands?: FractionBand[];
 };
 
-export function RouteRadarWindStrip({ radarSamples, windPoints, gustSpikePoints = [] }: Props) {
+export function RouteRadarWindStrip({ radarSamples, windPoints, gustSpikePoints = [], nightBands = [] }: Props) {
   /* ── Radar ── */
   const radarPts = useMemo(() => {
     const sorted = [...radarSamples]
@@ -134,6 +137,14 @@ export function RouteRadarWindStrip({ radarSamples, windPoints, gustSpikePoints 
           preserveAspectRatio="none"
           aria-hidden
         >
+          <ChartNightBandLayer
+            bands={nightBands}
+            xPx={xPx}
+            yTop={PAD_V}
+            yBottom={BASELINE_Y}
+            className="rrws__night-band"
+          />
+
           <line x1={PAD_L} y1={BASELINE_Y} x2={W - PAD_R} y2={BASELINE_Y} className="rrws__baseline" />
 
           {/* ── Radar echo — layered area fills ── */}

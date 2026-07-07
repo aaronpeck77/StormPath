@@ -89,6 +89,7 @@ describe("offRoutePollLogic", () => {
     expect(held.shouldOfferRejoinChoices).toBe(false);
     expect(held.recoveryAction).toBeNull();
     expect(held.session.offRouteSevere).toBe(false);
+    expect(held.shouldPrefetchRejoinPreview).toBe(true);
   });
 
   it("clears detour when rejoined onto locked route", () => {

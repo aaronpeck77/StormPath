@@ -10,6 +10,8 @@ import {
   type RouteAheadRelevance,
 } from "../nav/routeAheadSync";
 import type { TimelineItem } from "./RouteHazardTimeline";
+import type { LngLat } from "../nav/types";
+import { buildRouteChartNightBands } from "../forecast/chartNightBands";
 import { RouteInfoLegend } from "./RouteInfoLegend";
 import { RouteOutlookTimeline } from "./RouteOutlookTimeline";
 import { RouteRadarWindStrip } from "./RouteRadarWindStrip";
@@ -38,6 +40,7 @@ type Props = {
   driveEtaMinutes?: number | null;
   userAlongT: number;
   stripTint: string;
+  geometry?: LngLat[] | null;
   /** Parent scrolls this region vertically (alert list only). */
   detailScrollRef?: RefObject<HTMLDivElement | null>;
 };
@@ -235,6 +238,7 @@ export function RouteProgressGlancePanel({
   driveEtaMinutes = null,
   userAlongT,
   stripTint,
+  geometry = null,
   detailScrollRef,
 }: Props) {
   const glanceCards = useMemo(
@@ -247,6 +251,20 @@ export function RouteProgressGlancePanel({
         driveEtaMinutes,
       }),
     [timeline, totalMeters, userAlongMeters, planEtaMinutes, driveEtaMinutes]
+  );
+
+  const nightBands = useMemo(
+    () =>
+      geometry && geometry.length >= 2 && totalMeters > 0
+        ? buildRouteChartNightBands({
+            geometry,
+            totalMeters,
+            userAlongMeters,
+            planEtaMinutes,
+            driveEtaMinutes,
+          })
+        : [],
+    [geometry, totalMeters, userAlongMeters, planEtaMinutes, driveEtaMinutes]
   );
 
   const bandVisuals = useMemo((): HazardBandVisual[] => {
@@ -344,6 +362,7 @@ export function RouteProgressGlancePanel({
                           variant="synced"
                           showDriverLine={false}
                           showXTicks={false}
+                          nightBands={nightBands}
                         />
                       ) : (
                         <div className="rpgl__outlook-wait" aria-hidden>
@@ -362,6 +381,7 @@ export function RouteProgressGlancePanel({
                           radarSamples={radarSamples}
                           windPoints={windPoints}
                           gustSpikePoints={gustSpikePoints}
+                          nightBands={nightBands}
                         />
                       </div>
                     ) : null}

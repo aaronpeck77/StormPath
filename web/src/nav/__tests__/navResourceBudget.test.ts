@@ -49,8 +49,31 @@ describe("navResourceBudget", () => {
       stormBarExpanded: true,
     });
     expect(budget.tioPointFetchEnabled).toBe(true);
+    expect(budget.localDailyForecastEnabled).toBe(true);
     expect(budget.tioRouteFetchEnabled).toBe(false);
     expect(budget.radarRouteSamplingEnabled).toBe(false);
+  });
+
+  it("loads local 7-day forecast at the puck without an active route", () => {
+    const budget = buildNavResourceBudget({
+      ...base,
+      navigationStarted: false,
+      hasPlannedRoute: false,
+      hasGuidanceGeometry: false,
+      stormBarExpanded: false,
+      viewMode: "topdown",
+    });
+    expect(budget.tioRouteFetchEnabled).toBe(false);
+    expect(budget.localDailyForecastEnabled).toBe(true);
+  });
+
+  it("pauses local 7-day fetch during drive until the storm bar is expanded", () => {
+    const budget = buildNavResourceBudget({
+      ...base,
+      viewMode: "drive",
+      stormBarExpanded: false,
+    });
+    expect(budget.localDailyForecastEnabled).toBe(false);
   });
 
   it("does not sample radar in drive even when storm hints are on", () => {

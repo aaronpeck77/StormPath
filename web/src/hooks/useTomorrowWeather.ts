@@ -269,10 +269,11 @@ export function useLocalDailyForecast(
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!enabled || !userLngLat || !weatherKitEnabled) {
+    if (!userLngLat || !weatherKitEnabled) {
       setForecast(null);
       return;
     }
+    if (!enabled) return;
 
     const now = Date.now();
     const lastLng = lastFetchLngLat.current;

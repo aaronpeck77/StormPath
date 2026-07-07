@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import type { LngLat } from "../nav/types";
 import type { CurrentNowcast } from "../services/openWeatherClient";
 import type { MinutePrecipForecast, PointDailyForecast, PointHourlyForecast } from "../services/tomorrowIo";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
@@ -38,8 +39,12 @@ import {
   hourlyStripHeadline,
   nextHourHeadline,
   nextHourPeakFeels,
+  NEXT_HOUR_MINUTES,
   upcomingHourlySlots,
 } from "../forecast/localForecastStrips";
+import { buildLocalNightBands } from "../forecast/chartNightBands";
+import { isNightAt } from "../forecast/solarDayNight";
+import { ChartNightBandOverlay } from "./ChartNightBandLayer";
 
 function nwsRowSeverityClass(a: NormalizedWeatherAlert): string {
   if (a.severity === "Extreme" || /tornado warning/i.test(a.event ?? "")) return "avoid";
@@ -79,6 +84,8 @@ type Props = {
   variant?: "full" | "basic";
   forecastLoading?: boolean;
   weatherKitPrimary?: boolean;
+  /** Forecast anchor — civil night shading on local strips. */
+  forecastLngLat?: LngLat | null;
 };
 
 export function AdvisoryLocalForecast({
@@ -94,8 +101,11 @@ export function AdvisoryLocalForecast({
   variant = "full",
   forecastLoading = false,
   weatherKitPrimary = false,
+  forecastLngLat = null,
 }: Props) {
   const isBasic = variant === "basic";
+  const forecastLat = forecastLngLat?.[1] ?? null;
+  const forecastLng = forecastLngLat?.[0] ?? null;
   const provider = localProviderLabel({
     weatherKitPrimary,
     hourly: hourlyForecast,
@@ -129,9 +139,39 @@ export function AdvisoryLocalForecast({
   const hourSamples = useMemo(() => upcomingHourlySlots(hours, 24), [hours]);
 
   const nextHourLanes = useMemo(
-    () => buildNextHourLanes({ nowcast, minutePrecip, hours }),
-    [nowcast, minutePrecip, hours]
+    () =>
+      buildNextHourLanes({
+        nowcast,
+        minutePrecip,
+        hours,
+        lat: forecastLat,
+        lng: forecastLng,
+      }),
+    [nowcast, minutePrecip, hours, forecastLat, forecastLng]
   );
+
+  const nextHourNightBands = useMemo(() => {
+    if (forecastLat == null || forecastLng == null) return [];
+    return buildLocalNightBands({
+      lat: forecastLat,
+      lng: forecastLng,
+      durationMs: NEXT_HOUR_MINUTES * 60_000,
+    });
+  }, [forecastLat, forecastLng]);
+
+  const dayNightBands = useMemo(() => {
+    if (forecastLat == null || forecastLng == null || hourSamples.length === 0) return [];
+    const first = new Date(hourSamples[0]!.timeIso).getTime();
+    const last = new Date(hourSamples[hourSamples.length - 1]!.timeIso).getTime();
+    const durationMs = Math.max(3_600_000, last - first + 3_600_000);
+    return buildLocalNightBands({
+      lat: forecastLat,
+      lng: forecastLng,
+      startMs: Number.isFinite(first) ? first : Date.now(),
+      durationMs,
+      segments: hourSamples.length,
+    });
+  }, [forecastLat, forecastLng, hourSamples]);
 
   const nextHourSummary = useMemo(
     () => nextHourHeadline({ nowcast, minutePrecip, hours }),
@@ -413,11 +453,12 @@ export function AdvisoryLocalForecast({
               <span className="adv-dash__legend-swatch adv-dash__legend-swatch--wind">Wind</span>
             </div>
             <div className="adv-dash__micro-stack" aria-label="Next hour at a glance">
+              <ChartNightBandOverlay bands={nextHourNightBands} className="adv-dash__night-overlay" />
               <div className="adv-dash__bar adv-dash__bar--lane" aria-hidden>
                 {nextHourLanes.map((cell, i) => (
                   <div
                     key={`heat-${i}`}
-                    className="adv-dash__bar-cell"
+                    className={`adv-dash__bar-cell${cell.isNight ? " adv-dash__bar-cell--night" : ""}`}
                     style={{ background: cell.heatColor }}
                   />
                 ))}
@@ -426,14 +467,17 @@ export function AdvisoryLocalForecast({
                 {nextHourLanes.map((cell, i) => (
                   <div
                     key={`precip-${i}`}
-                    className="adv-dash__bar-cell"
+                    className={`adv-dash__bar-cell${cell.isNight ? " adv-dash__bar-cell--night" : ""}`}
                     style={{ background: cell.precipColor }}
                   />
                 ))}
               </div>
               <div className="adv-dash__wind-lane" aria-hidden>
                 {nextHourLanes.map((cell, i) => (
-                  <div key={`wind-${i}`} className="adv-dash__wind-cell">
+                  <div
+                    key={`wind-${i}`}
+                    className={`adv-dash__wind-cell${cell.isNight ? " adv-dash__wind-cell--night" : ""}`}
+                  >
                     <span
                       className="adv-dash__wind-fill"
                       style={{ height: cell.windHeightPct, background: cell.windColor }}
@@ -471,7 +515,8 @@ export function AdvisoryLocalForecast({
               <span className="adv-dash__legend-swatch adv-dash__legend-swatch--rain">Bottom stripe = rain or snow</span>
             </div>
             <div className="adv-dash__hour-scroll" role="img" aria-label={`Hourly forecast at ${areaLabel}`}>
-              <div className="adv-dash__hour-row">
+              <div className="adv-dash__hour-row adv-dash__hour-row--timed">
+                <ChartNightBandOverlay bands={dayNightBands} className="adv-dash__night-overlay adv-dash__night-overlay--hours" />
                 {hourSamples.map((h) => {
                   const feels = resolveIntervalFeelsLikeF(h);
                   const air = Math.round(h.tempF);
@@ -481,6 +526,12 @@ export function AdvisoryLocalForecast({
                   const coldSlot = comfort.kind === "cold";
                   const timeLabel = formatHourlySlotTimeLabel(h.timeIso);
                   const isNowSlot = timeLabel === "Now";
+                  const slotMs = new Date(h.timeIso).getTime();
+                  const nightSlot =
+                    forecastLat != null &&
+                    forecastLng != null &&
+                    Number.isFinite(slotMs) &&
+                    isNightAt(forecastLat, forecastLng, slotMs + 1_800_000);
                   const minutePrecipActive = Boolean(
                     minutePrecip?.minutes
                       .slice(0, 15)
@@ -515,7 +566,7 @@ export function AdvisoryLocalForecast({
                         heatSlot ? " adv-dash__hour-card--heat" : ""
                       }${coldSlot ? " adv-dash__hour-card--cold" : ""}${
                         precip.active ? " adv-dash__hour-card--wet" : ""
-                      }`}
+                      }${nightSlot ? " adv-dash__hour-card--night" : ""}`}
                       style={{
                         background: feelsLikeCellColor(feels),
                         borderBottomColor: precip.active ? precipColor : "transparent",

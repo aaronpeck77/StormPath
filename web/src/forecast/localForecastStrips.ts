@@ -12,6 +12,7 @@ import {
   windGustBarColor,
   windGustBarHeight,
 } from "./localForecastVisual";
+import { isNightAt } from "./solarDayNight";
 
 export const NEXT_HOUR_MINUTES = 60;
 
@@ -20,6 +21,7 @@ export type NextHourLaneCell = {
   precipColor: string;
   windColor: string;
   windHeightPct: string;
+  isNight?: boolean;
 };
 
 /** Clock label for an hourly slot — only the active hour reads "Now". */
@@ -87,8 +89,11 @@ export function buildNextHourLanes(opts: {
   nowcast?: CurrentNowcast | null;
   minutePrecip?: MinutePrecipForecast | null;
   hours: PointHourlyInterval[];
+  lat?: number | null;
+  lng?: number | null;
+  nowMs?: number;
 }): NextHourLaneCell[] {
-  const { nowcast, minutePrecip, hours } = opts;
+  const { nowcast, minutePrecip, hours, lat = null, lng = null, nowMs = Date.now() } = opts;
   const upcoming = upcomingHourlySlots(hours, 2);
   const h0 = upcoming[0];
   const h1 = upcoming[1] ?? h0;
@@ -130,6 +135,12 @@ export function buildNextHourLanes(opts: {
       precipColor: precipTypeColor(precipType, precipIntensity, precipProb),
       windColor: windGustBarColor(gustMph),
       windHeightPct: windGustBarHeight(gustMph),
+      isNight:
+        lat != null &&
+        lng != null &&
+        Number.isFinite(lat) &&
+        Number.isFinite(lng) &&
+        isNightAt(lat, lng, nowMs + i * 60_000),
     });
   }
   return cells;

@@ -115,6 +115,9 @@ export type RecalcRouteFromHereFn = (opts?: { silent?: boolean }) => Promise<boo
 export type StayOnThisRoadFn = (opts?: { silent?: boolean }) => Promise<boolean>;
 export type ReturnToOriginalRouteFn = () => void;
 
+/** Throttle hold-phase B/C preview refetches while the recovery ladder waits. */
+const HOLD_REJOIN_PREVIEW_THROTTLE_MS = 28_000;
+
 /** Off-route detection — driver chooses stay on this road vs return to locked route. */
 export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   const {
@@ -174,6 +177,16 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   const [autoRejoinGuidanceRouteId, setAutoRejoinGuidanceRouteId] = useState<string | null>(null);
   const autoRejoinGuidanceRouteIdRef = useRef<string | null>(null);
   autoRejoinGuidanceRouteIdRef.current = autoRejoinGuidanceRouteId;
+  const [holdRejoinPreviewActive, setHoldRejoinPreviewActive] = useState(false);
+  const holdRejoinPreviewActiveRef = useRef(false);
+  const [holdRejoinPreviewRouteId, setHoldRejoinPreviewRouteId] = useState<string | null>(null);
+  const holdRejoinPreviewRouteIdRef = useRef<string | null>(null);
+  holdRejoinPreviewRouteIdRef.current = holdRejoinPreviewRouteId;
+  const [holdRejoinPreviewAlongM, setHoldRejoinPreviewAlongM] = useState(0);
+  const holdRejoinPreviewAlongMRef = useRef(0);
+  holdRejoinPreviewAlongMRef.current = holdRejoinPreviewAlongM;
+  const lastHoldPreviewFetchRef = useRef(0);
+  const holdPreviewFetchInFlightRef = useRef(false);
   const pollSessionRef = useRef<OffRoutePollSession>(createOffRoutePollSession());
   const lastOffRouteSampleRef = useRef<{ t: number; lateralM: number; alongM: number } | null>(
     null
@@ -245,6 +258,19 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     }
   }, []);
 
+  const clearHoldRejoinPreview = useCallback(() => {
+    const hadPreview = holdRejoinPreviewActiveRef.current;
+    holdRejoinPreviewActiveRef.current = false;
+    setHoldRejoinPreviewActive(false);
+    holdRejoinPreviewRouteIdRef.current = null;
+    setHoldRejoinPreviewRouteId(null);
+    holdRejoinPreviewAlongMRef.current = 0;
+    setHoldRejoinPreviewAlongM(0);
+    if (hadPreview && navigationStartedRef.current && viewModeRef.current === "topdown") {
+      setViewMode("drive");
+    }
+  }, [setViewMode, navigationStartedRef, viewModeRef]);
+
   const resetOffRouteNavigation = useCallback(() => {
     pollSessionRef.current = resetOffRoutePollSession(pollSessionRef.current);
     offRouteSevereRef.current = false;
@@ -258,6 +284,14 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     detourRejoinAlongMRef.current = 0;
     setAutoRejoinGuidanceRouteId(null);
     autoRejoinGuidanceRouteIdRef.current = null;
+    holdRejoinPreviewActiveRef.current = false;
+    setHoldRejoinPreviewActive(false);
+    holdRejoinPreviewRouteIdRef.current = null;
+    setHoldRejoinPreviewRouteId(null);
+    holdRejoinPreviewAlongMRef.current = 0;
+    setHoldRejoinPreviewAlongM(0);
+    lastHoldPreviewFetchRef.current = 0;
+    holdPreviewFetchInFlightRef.current = false;
     lastOffRouteSampleRef.current = null;
     drivingRejoinRoadClassRef.current = "unknown";
     drivingRejoinSurfaceAtRef.current = null;
@@ -276,6 +310,106 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     };
   }, []);
 
+  const prefetchHoldRejoinPreview = useCallback(async () => {
+    if (
+      !userLngLat ||
+      !mapboxToken ||
+      !isOnline ||
+      !navigationStartedRef.current ||
+      autoRejoinGuidanceRouteIdRef.current ||
+      holdPreviewFetchInFlightRef.current ||
+      altRoutesRefreshInFlightRef.current ||
+      routingRef.current
+    ) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastHoldPreviewFetchRef.current < HOLD_REJOIN_PREVIEW_THROTTLE_MS) {
+      return;
+    }
+
+    const lockedId = lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
+    const lockedGeom =
+      (lockedId ? planRef.current.routes.find((r) => r.id === lockedId)?.geometry : null) ??
+      guidanceRouteGeomRef.current ??
+      null;
+    if (!lockedId || !lockedGeom || lockedGeom.length < 2) return;
+
+    const epochAtStart = routeGraphEpochRef.current;
+    altRoutesFetchAbortRef.current?.abort();
+    const altFetch = new AbortController();
+    altRoutesFetchAbortRef.current = altFetch;
+    holdPreviewFetchInFlightRef.current = true;
+    lastHoldPreviewFetchRef.current = now;
+
+    try {
+      const lateralNow = lastOffRouteSampleRef.current?.lateralM ?? 0;
+      const bearingDeg = headingRef.current;
+      const failStreak = offRouteRerouteFailStreakRef.current;
+      const { routes: rejoinRoutes, rejoinAlongM } = await fetchLocalRejoinRoutes({
+        accessToken: mapboxToken,
+        userLngLat,
+        lockedGeometry: lockedGeom,
+        userAlongM: offRouteRejoinAlongMRef.current || userAlongGuidanceMRef.current,
+        plan: planRef.current,
+        primaryId: lockedId,
+        shufflePass: failStreak,
+        signal: altFetch.signal,
+        isPlus,
+        speedMps: speedMpsRef.current ?? undefined,
+        lateralM: lateralNow > 0 ? lateralNow : undefined,
+        bearingDeg:
+          bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
+      });
+      if (epochAtStart !== routeGraphEpochRef.current) return;
+      if (!pollSessionRef.current.offRouteLatched || autoRejoinGuidanceRouteIdRef.current) {
+        return;
+      }
+      if (rejoinRoutes.length === 0) return;
+
+      setPlan((prev) => mergePlanPreservingPrimary(prev, lockedId, rejoinRoutes));
+      const bestId = rejoinRoutes[0]?.id ?? null;
+      holdRejoinPreviewAlongMRef.current = rejoinAlongM;
+      setHoldRejoinPreviewAlongM(rejoinAlongM);
+      holdRejoinPreviewRouteIdRef.current = bestId;
+      setHoldRejoinPreviewRouteId(bestId);
+      holdRejoinPreviewActiveRef.current = true;
+      setHoldRejoinPreviewActive(true);
+      setFitTrigger((n) => n + 1);
+      if (viewModeRef.current === "drive") {
+        setViewMode("topdown");
+      }
+    } catch (e) {
+      if (!isAbortError(e)) {
+        lastHoldPreviewFetchRef.current = now - HOLD_REJOIN_PREVIEW_THROTTLE_MS + 8_000;
+      }
+    } finally {
+      holdPreviewFetchInFlightRef.current = false;
+    }
+  }, [
+    userLngLat,
+    mapboxToken,
+    isOnline,
+    isPlus,
+    orderedRouteIds,
+    lockedNavigationRouteIdRef,
+    routeGraphEpochRef,
+    altRoutesFetchAbortRef,
+    navigationStartedRef,
+    guidanceRouteGeomRef,
+    speedMpsRef,
+    userAlongGuidanceMRef,
+    headingRef,
+    planRef,
+    routingRef,
+    altRoutesRefreshInFlightRef,
+    setPlan,
+    setFitTrigger,
+    setViewMode,
+    viewModeRef,
+  ]);
+
   const followDetourRoute = useCallback(
     (id: string, voiceLine?: string) => {
       if (!plan.routes.some((r) => r.id === id)) return;
@@ -283,6 +417,10 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       if (!navigationStartedRef.current || !lockedId || id === lockedId) return;
       setAutoRejoinGuidanceRouteId(id);
       autoRejoinGuidanceRouteIdRef.current = id;
+      holdRejoinPreviewActiveRef.current = false;
+      setHoldRejoinPreviewActive(false);
+      holdRejoinPreviewRouteIdRef.current = null;
+      setHoldRejoinPreviewRouteId(null);
       pollSessionRef.current = {
         ...pollSessionRef.current,
         autoRejoinGuidanceRouteId: id,
@@ -794,6 +932,12 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
 
       applyPollSession(result.session);
 
+      if (result.shouldPrefetchRejoinPreview && useRecoveryLadder) {
+        void prefetchHoldRejoinPreview();
+      } else if (!result.session.offRouteLatched) {
+        clearHoldRejoinPreview();
+      }
+
       if (result.shouldOfferRejoinChoices) {
         offerRejoinChoices(result.sample.lateralM, result.recoveryAction);
       }
@@ -827,6 +971,8 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     effectiveAutoRerouteEnabled,
     executeAutoRecovery,
     viewModeRef,
+    prefetchHoldRejoinPreview,
+    clearHoldRejoinPreview,
   ]);
 
   const detourLockedRouteId = useMemo(() => {
@@ -871,6 +1017,13 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     navigationStarted &&
     (offRouteSevere || Boolean(autoRejoinGuidanceRouteId));
 
+  const offRouteHoldPreviewActive = Boolean(
+    navigationStarted &&
+      holdRejoinPreviewActive &&
+      offRouteLatched &&
+      !autoRejoinGuidanceRouteId
+  );
+
   return {
     offRouteSevere,
     offRouteLatched,
@@ -878,6 +1031,9 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     autoRejoinGuidanceRouteId,
     detourRejoinAlongM,
     offRouteAwaitingDriverChoice,
+    offRouteHoldPreviewActive,
+    holdRejoinPreviewRouteId,
+    holdRejoinPreviewAlongM,
     recalcRouteFromHere,
     stayOnThisRoad,
     returnToOriginalRoute,

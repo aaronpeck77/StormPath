@@ -71,6 +71,10 @@ export type OffRoutePollTickResult = {
   shouldOfferRejoinChoices: boolean;
   /** Set when {@link useRecoveryLadder} commits to rejoin or replan. */
   recoveryAction: Exclude<OffRouteRecoveryAction, "hold"> | null;
+  /**
+   * Hands-free hold phase — prefetch B/C rejoin legs for map preview without committing guidance.
+   */
+  shouldPrefetchRejoinPreview: boolean;
   rejoinedLockedRoute: boolean;
   nearDestination: boolean;
 };
@@ -159,6 +163,7 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
       sample,
       shouldOfferRejoinChoices: false,
       recoveryAction: null,
+      shouldPrefetchRejoinPreview: false,
       rejoinedLockedRoute: true,
       nearDestination: false,
     };
@@ -179,6 +184,7 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
       sample,
       shouldOfferRejoinChoices: false,
       recoveryAction: null,
+      shouldPrefetchRejoinPreview: false,
       rejoinedLockedRoute: false,
       nearDestination: false,
     };
@@ -193,6 +199,7 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
         sample,
         shouldOfferRejoinChoices: false,
         recoveryAction: null,
+        shouldPrefetchRejoinPreview: false,
         rejoinedLockedRoute: false,
         nearDestination: true,
       };
@@ -219,6 +226,7 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
         sample,
         shouldOfferRejoinChoices: true,
         recoveryAction: "replan",
+        shouldPrefetchRejoinPreview: false,
         rejoinedLockedRoute: false,
         nearDestination: false,
       };
@@ -230,6 +238,7 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
       sample,
       shouldOfferRejoinChoices: false,
       recoveryAction: null,
+      shouldPrefetchRejoinPreview: false,
       rejoinedLockedRoute: false,
       nearDestination: false,
     };
@@ -264,12 +273,14 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
       sample,
       shouldOfferRejoinChoices: false,
       recoveryAction: null,
+      shouldPrefetchRejoinPreview: false,
       rejoinedLockedRoute: false,
       nearDestination: true,
     };
   }
 
   let shouldOfferRejoinChoices = false;
+  let shouldPrefetchRejoinPreview = false;
 
   if (session.offRouteLatched) {
     if (session.autoRejoinGuidanceRouteId) {
@@ -351,11 +362,20 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
 
   session.offRoutePriorLateralM = lat;
 
+  if (
+    useRecoveryLadder &&
+    session.offRouteLatched &&
+    !session.autoRejoinGuidanceRouteId
+  ) {
+    shouldPrefetchRejoinPreview = true;
+  }
+
   return {
     session,
     sample,
     shouldOfferRejoinChoices,
     recoveryAction,
+    shouldPrefetchRejoinPreview,
     rejoinedLockedRoute: false,
     nearDestination: false,
   };

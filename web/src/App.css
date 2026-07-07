@@ -4122,6 +4122,61 @@
   background: #38bdf8;
 }
 
+.rotl__legend-item--night .rotl__legend-swatch {
+  background: rgba(15, 23, 42, 0.22);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.rotl__night-band,
+.rrws__night-band {
+  fill: rgba(15, 23, 42, 0.1);
+}
+
+.chart-night-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.chart-night-overlay__band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.12);
+}
+
+.adv-dash__micro-stack,
+.adv-dash__hour-row--timed {
+  position: relative;
+}
+
+.adv-dash__bar-cell--night::after,
+.adv-dash__wind-cell--night::after,
+.adv-dash__hour-card--night::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.14);
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.adv-dash__bar-cell,
+.adv-dash__wind-cell,
+.adv-dash__hour-card {
+  position: relative;
+}
+
+.adv-dash__hour-card--night::after {
+  border-radius: 10px;
+}
+
+.rpgl .rotl--synced .rotl__night-band,
+.rpgl .rrws__night-band {
+  fill: rgba(15, 23, 42, 0.14);
+}
+
 .rotl__legend-item--wind .rotl__legend-swatch {
   background: #f59e0b;
 }

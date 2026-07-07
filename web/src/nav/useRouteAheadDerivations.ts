@@ -84,6 +84,8 @@ export type UseRouteAheadDerivationsDeps = {
   planRoutes: NavRoute[];
   lockedNavigationRouteId: string;
   temporaryGuidanceRouteId?: string | null;
+  /** Auto off-route hold — show B/C rejoin preview on the map before guidance commits. */
+  offRouteHoldPreviewActive?: boolean;
   stormMapGeoJson: GeoJSON.FeatureCollection | null;
 };
 
@@ -156,6 +158,7 @@ export function useRouteAheadDerivations(
     trafficBypassCompare,
     planRoutes,
     lockedNavigationRouteId,
+    offRouteHoldPreviewActive = false,
     stormMapGeoJson,
   } = deps;
 
@@ -529,6 +532,7 @@ export function useRouteAheadDerivations(
   /** Nav: one leg in Dr; all alternates in Rt/Mp for side-by-side compare. */
   const driveMapRoutes = useMemo(() => {
     if (trafficBypassCompare) return planRoutes;
+    if (navigationStarted && offRouteHoldPreviewActive) return planRoutes;
     if (navigationStarted) {
       if (viewMode === "drive") {
         const active = planRoutes.find((r) => r.id === lockedNavigationRouteId);
@@ -541,6 +545,7 @@ export function useRouteAheadDerivations(
   }, [
     trafficBypassCompare,
     navigationStarted,
+    offRouteHoldPreviewActive,
     viewMode,
     planRoutes,
     lockedNavigationRouteId,

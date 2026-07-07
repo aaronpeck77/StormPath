@@ -816,6 +816,28 @@ function etaMinutesAtAlongMeters(
   return effectiveEta * (ahead / remainingM);
 }
 
+/** Wall-clock arrival at a point along the route (ms since epoch). */
+export function arrivalTimeMsAtAlongMeters(
+  targetM: number,
+  opts: {
+    totalMeters: number;
+    userAlongMeters: number;
+    planEtaMinutes: number | null;
+    driveEtaMinutes?: number | null;
+    nowMs?: number;
+  }
+): number | null {
+  const etaMin = etaMinutesAtAlongMeters(
+    targetM,
+    opts.totalMeters,
+    opts.userAlongMeters,
+    opts.planEtaMinutes,
+    opts.driveEtaMinutes
+  );
+  if (etaMin == null || !Number.isFinite(etaMin)) return null;
+  return (opts.nowMs ?? Date.now()) + etaMin * 60_000;
+}
+
 /**
  * Route outlook stops aligned to the same along-route axis as the progress strip,
  * hazard timeline, and advisory panel — ETAs use drive/plan remaining time.
