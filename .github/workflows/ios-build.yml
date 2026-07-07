@@ -323,8 +323,17 @@ jobs:
           echo "IPA CFBundleShortVersionString: $(echo "$PLIST" | plutil -extract CFBundleShortVersionString raw -)"
           echo "IPA CFBundleIdentifier: $(echo "$PLIST" | plutil -extract CFBundleIdentifier raw -)"
 
-      # Upload succeeds with Developer role; polling build status needs App Manager (401 otherwise).
-      - name: Upload to TestFlight
+      - name: Verify App Store Connect API access
+        env:
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: python3 .github/scripts/verify-appstore-connect-api.py
+
+      # Primary: App Store Connect API. Fallback: Transporter (skips app lookup — helps when API returns 403).
+      - name: Upload to TestFlight (App Store Connect API)
+        id: asc_upload
+        continue-on-error: true
         uses: apple-actions/upload-testflight-build@v4
         with:
           app-path: ${{ runner.temp }}/export/App.ipa
@@ -333,6 +342,19 @@ jobs:
           api-key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           api-private-key: ${{ steps.asc_key.outputs.pem }}
           backend: appstore-api
+          uses-non-exempt-encryption: "false"
+          wait-for-processing: "false"
+
+      - name: Upload to TestFlight (Transporter fallback)
+        if: steps.asc_upload.outcome == 'failure'
+        uses: apple-actions/upload-testflight-build@v4
+        with:
+          app-path: ${{ runner.temp }}/export/App.ipa
+          app-type: ios
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          api-key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          api-private-key: ${{ steps.asc_key.outputs.pem }}
+          backend: transporter
           uses-non-exempt-encryption: "false"
           wait-for-processing: "false"
 
