@@ -9,7 +9,7 @@ import {
   verdictForEvent,
 } from "./driverOptions";
 import { denseRadarFractions, radarIntensityAtFraction, type RadarSample } from "./interpolateRadar";
-import type { StormCorridorBand, StormCorridorEvent, StormCorridorIntersectResult } from "./types";
+import type { StormCorridorEvent, StormCorridorIntersectResult } from "./types";
 
 type ThresholdBand = { start: number; end: number; level: "light" | "heavy" };
 
@@ -114,7 +114,6 @@ export function buildStormCorridorIntersect(opts: {
     geometry,
     totalMeters,
     userAlongMeters,
-    planEtaMinutes,
     driveEtaMinutes = null,
     nowMs = Date.now(),
     radarSamples,

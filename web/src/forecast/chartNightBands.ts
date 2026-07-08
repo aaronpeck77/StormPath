@@ -8,9 +8,6 @@ export type FractionBand = { start: number; end: number };
 
 export type NightTransition = { fraction: number; kind: "sunset" | "sunrise" };
 
-
-const ROUTE_SAMPLE_COUNT = 48; // local forecast strips only (buildLocalNightBands)
-
 type NightSample = { start: number; end: number; night: boolean };
 
 /** Merge adjacent night samples into horizontal bands (fraction 0–1). */

@@ -66,7 +66,7 @@ function buildRouteSunContext(opts: {
   driveEtaMinutes?: number | null;
   nowMs?: number;
 }): RouteSunContext | null {
-  const { geometry, totalMeters, userAlongMeters, planEtaMinutes, driveEtaMinutes = null } = opts;
+  const { geometry, totalMeters, userAlongMeters, driveEtaMinutes = null } = opts;
   if (geometry.length < 2 || totalMeters <= 0) return null;
   return {
     geometry,
