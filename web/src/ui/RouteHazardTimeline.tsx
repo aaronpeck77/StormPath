@@ -545,6 +545,10 @@ export function impactToTimelineItem(imp: RouteImpact): TimelineItem {
     : imp.source === "wind" || imp.source === "windGust" ? "wind"
     : imp.source === "tomorrowIo" ? "forecast"  // list-only — not in graph TRACK_ORDER
     : "road";
+  const etaStale =
+    Boolean(imp.suppressFromProgressStrip) ||
+    imp.arrivalVerdict === "may_pass" ||
+    imp.arrivalVerdict === "heads_up_only";
   return {
     id: imp.id,
     track,
@@ -553,7 +557,10 @@ export function impactToTimelineItem(imp: RouteImpact): TimelineItem {
     startMeters: imp.startMeters,
     endMeters: imp.endMeters,
     detailLine: impactDetailLine(imp),
-    crossesRoute: true,
+    expiresIso: imp.hazardExpiresIso,
+    crossesRoute: imp.crossesRoute !== false,
     stripMuted: track === "forecast" || track === "radar" || imp.source === "windGust",
+    etaStale,
+    coarsePreview: imp.coarsePreview,
   };
 }

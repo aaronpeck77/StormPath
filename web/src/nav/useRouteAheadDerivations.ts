@@ -7,6 +7,11 @@ import {
   routeImpactToRouteAlert,
   type RouteImpact,
 } from "./routeImpacts";
+import {
+  applyArrivalVerdictsToImpacts,
+  nextHazardAffectingYouLine,
+  sortImpactsByArrivalPriority,
+} from "./hazardArrivalVerdict";
 import { augmentAlertsForProgressStrip, type RouteAlert } from "./routeAlerts";
 import {
   buildRouteAheadTimeline,
@@ -40,6 +45,11 @@ import { mapGeoJsonFromAlerts } from "../weatherAlerts/mapGeoJsonFromAlerts";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { nwsAlertIsBasicEmergency } from "../weatherAlerts/basicEmergencyFilter";
 import { nwsAlertsForLocalForecast } from "../weatherAlerts/localForecastNws";
+import {
+  mergeStormCorridorAdvisoryLine,
+  resolveStormCorridorIntersect,
+} from "./stormCorridorIntersectBridge";
+import type { StormCorridorIntersectResult } from "../features/stormCorridorIntersect";
 import { quantizeLngLatForHeavyUi } from "../utils/dataSaver";
 import type { TrafficBypassCompareState } from "../state/routeCompareStore";
 import type { LngLat, NavRoute } from "./types";
@@ -114,6 +124,10 @@ export type UseRouteAheadDerivationsResult = {
   routeAlerts: RouteAlert[];
   trafficBypassContext: TrafficBypassOffer | null;
   showTrafficBypassCta: boolean;
+  /** Nearest hazard likely to matter at your ETA — advisory preview line. */
+  nextHazardAtEtaLine: string | null;
+  /** Experimental radar-intersect along route (null when feature off). */
+  stormCorridorIntersect: StormCorridorIntersectResult | null;
   driveMapRoutes: NavRoute[];
   progressRailRoute: NavRoute | undefined;
   postedMph: number | null;
@@ -366,7 +380,13 @@ export function useRouteAheadDerivations(
     }
 
     list.sort(compareRouteImpactPriority);
-    return list;
+    return applyArrivalVerdictsToImpacts({
+      impacts: list,
+      userAlongM: navActive && totalM > 0 ? heavyAdvisoryAlongM : 0,
+      totalMeters: totalM,
+      planEtaMinutes: guidanceRoute?.baseEtaMinutes,
+      driveEtaMinutes: driveEtaMinutes ?? null,
+    });
   }, [
     navigationStarted,
     guidanceRoute?.geometry,
@@ -383,6 +403,7 @@ export function useRouteAheadDerivations(
     tioRouteForecast,
     guidanceRouteLengthM,
     effectiveUserLngLatRef,
+    driveEtaMinutes,
   ]);
 
   /** Filter impacts by the same UI toggles that gated the legacy alert list. */
@@ -403,12 +424,39 @@ export function useRouteAheadDerivations(
    *  RouteImpact fields the bar needs to split rows by source/category and to slot severe NWS
    *  bands into the storm strip (source-attribution + start/end-meters). */
   const advisoryRouteImpacts = useMemo(() => {
-    return [...routeImpactsForUi].sort((a, b) => {
-      const da = a.distanceAheadMeters ?? a.alongMeters;
-      const db = b.distanceAheadMeters ?? b.alongMeters;
-      return da - db;
-    });
+    return sortImpactsByArrivalPriority(routeImpactsForUi);
   }, [routeImpactsForUi]);
+
+  const stormCorridorIntersect = useMemo(
+    () =>
+      resolveStormCorridorIntersect({
+        geometry: guidanceRoute?.geometry,
+        totalMeters: guidanceRouteLengthM,
+        userAlongMeters:
+          navigationStarted && guidanceRouteLengthM > 0 ? heavyAdvisoryAlongM : 0,
+        planEtaMinutes: guidanceRoute?.baseEtaMinutes ?? null,
+        driveEtaMinutes: driveEtaMinutes ?? null,
+        radarSamples: radarMosaicSamples,
+      }),
+    [
+      guidanceRoute?.geometry,
+      guidanceRoute?.baseEtaMinutes,
+      guidanceRouteLengthM,
+      navigationStarted,
+      heavyAdvisoryAlongM,
+      driveEtaMinutes,
+      radarMosaicSamples,
+    ]
+  );
+
+  const nextHazardAtEtaLine = useMemo(
+    () =>
+      mergeStormCorridorAdvisoryLine(
+        stormCorridorIntersect,
+        routeImpactsForUi.length ? nextHazardAffectingYouLine(routeImpactsForUi) : null
+      ),
+    [stormCorridorIntersect, routeImpactsForUi]
+  );
 
   /** Advisory timeline storm bands — same spans as progress strip / map route highlights. */
   const advisoryStormStripBands = useMemo(
@@ -499,6 +547,7 @@ export function useRouteAheadDerivations(
   const routeAlerts = useMemo(
     () =>
       routeImpactsForUi
+        .filter((i) => !i.suppressFromDriveMap)
         .filter(
           (i) =>
             i.source !== "nws" &&
@@ -584,6 +633,8 @@ export function useRouteAheadDerivations(
     routeAlerts,
     trafficBypassContext,
     showTrafficBypassCta,
+    nextHazardAtEtaLine,
+    stormCorridorIntersect,
     driveMapRoutes,
     progressRailRoute,
     postedMph,

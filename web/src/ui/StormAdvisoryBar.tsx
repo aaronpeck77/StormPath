@@ -202,6 +202,8 @@ export type StormAdvisoryBarProps = SharedProps & {
   onRefreshWeather?: (() => void) | null;
   /** Drive-mode route-ahead summary (radar tier + brief text). Surfaced in preview when driving. */
   driveRouteAheadLine?: DriveAheadLine | null;
+  /** Nearest hazard likely to matter at your ETA along the route. */
+  nextHazardAtEtaLine?: string | null;
   /** Plus: full NWS + road tools. Basic: life-safety NWS, connectivity, and promo rotation. */
   advisoryTier?: "plus" | "basic";
   /** Subscription/entitlement state for copy (distinct from current advisoryTier rendering mode). */
@@ -314,6 +316,7 @@ export function StormAdvisoryBar({
   staleWeatherNote = null,
   onRefreshWeather = null,
   driveRouteAheadLine = null,
+  nextHazardAtEtaLine = null,
   advisoryTier = "plus",
   ownsPlus = false,
   promoLines = [],
@@ -741,6 +744,15 @@ export function StormAdvisoryBar({
         })
       );
     }
+    if (nextHazardAtEtaLine?.trim()) {
+      trip.push(
+        previewItem({
+          badge: "Route",
+          raw: bannerMsg(nextHazardAtEtaLine),
+          tone: "warn",
+        })
+      );
+    }
     if (advisoryTier !== "basic" && trafficDelayMinutes >= 8) {
       trip.push(
         previewItem({
@@ -766,6 +778,7 @@ export function StormAdvisoryBar({
 
     const hasRouteContext =
       Boolean(activeTicker) ||
+      Boolean(nextHazardAtEtaLine?.trim()) ||
       trafficDelayMinutes >= 8 ||
       Boolean(showDriveAheadPreview);
     promo.push(previewItem({ badge: "App", raw: SITEBIBLE_AD_BAR }));
@@ -814,6 +827,7 @@ export function StormAdvisoryBar({
     advisoryTier,
     trafficDelayMinutes,
     driveRouteAheadLine,
+    nextHazardAtEtaLine,
     promoLines,
     defaultPreviewText,
     nowcastLine,

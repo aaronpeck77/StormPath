@@ -1,3 +1,4 @@
+import { isDaylightAt } from "../forecast/solarDayNight";
 import { safeStorage } from "../storage/safeStorage";
 
 export const MAP_STYLE_DAY = "mapbox://styles/mapbox/streets-v12";
@@ -36,12 +37,19 @@ export function parseNightBasemapPreset(): NightBasemapPreset {
   return "neutral";
 }
 
-/** Day vs night for style + 3D lighting (local time). */
+/** Day vs night for style + 3D lighting (solar at user location when available). */
 export type MapPhase = "day" | "night";
 
-export function currentMapPhase(): MapPhase {
-  const h = new Date().getHours();
+function clockFallbackMapPhase(nowMs = Date.now()): MapPhase {
+  const h = new Date(nowMs).getHours();
   return h >= 6 && h < 20 ? "day" : "night";
+}
+
+export function currentMapPhase(lngLat?: [number, number] | null, nowMs = Date.now()): MapPhase {
+  if (lngLat && Number.isFinite(lngLat[0]) && Number.isFinite(lngLat[1])) {
+    return isDaylightAt(lngLat[1], lngLat[0], nowMs) ? "day" : "night";
+  }
+  return clockFallbackMapPhase(nowMs);
 }
 
 export function currentMapStyle(phase: MapPhase | undefined, nightPreset: NightBasemapPreset): string {

@@ -544,7 +544,7 @@ function DriveMapInner({
   /** Bumps when bottom/top chrome resizes so route fit padding tracks live UI dead zones. */
   const [chromeLayoutTick, setChromeLayoutTick] = useState(0);
   const [nightBasemapPreset] = useState<NightBasemapPreset>(parseNightBasemapPreset);
-  const [mapPhase, setMapPhase] = useState(currentMapPhase);
+  const [mapPhase, setMapPhase] = useState(() => currentMapPhase(userLngLat));
   const activeStyleRef = useRef(currentMapStyle(mapPhase, nightBasemapPreset));
   const trafficConditionsOnMapRef = useRef(trafficConditionsOnMap);
   trafficConditionsOnMapRef.current = trafficConditionsOnMap;
@@ -619,7 +619,7 @@ function DriveMapInner({
     if (!containerRef.current || !token || mapRef.current) return;
 
     mapboxgl.accessToken = token;
-    activeStyleRef.current = currentMapStyle(currentMapPhase(), nightBasemapPreset);
+    activeStyleRef.current = currentMapStyle(currentMapPhase(userLngLat), nightBasemapPreset);
 
     /* Wrap construction in try/catch so any runtime error in mapboxgl.Map is logged
      * rather than left as a silent React effect failure. */
@@ -770,9 +770,15 @@ function DriveMapInner({
   }, [mapReady, stormBrowseBoundsReporting, onStormBrowseBoundsChange]);
 
   useEffect(() => {
-    const id = window.setInterval(() => setMapPhase(currentMapPhase()), 60_000);
+    const tick = () => setMapPhase(currentMapPhase(userLngLatRef.current));
+    tick();
+    const id = window.setInterval(tick, 60_000);
     return () => window.clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    setMapPhase(currentMapPhase(userLngLat));
+  }, [userLngLat?.[0], userLngLat?.[1]]);
 
   useEffect(() => {
     const map = mapRef.current;

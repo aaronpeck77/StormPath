@@ -726,12 +726,6 @@ export default function App() {
 
   /** Matches Mapbox night basemap window — stronger chrome borders when the basemap is night. */
   const [basemapNight, setBasemapNight] = useState(() => !isMapBasemapDaytime());
-  useEffect(() => {
-    const sync = () => setBasemapNight(!isMapBasemapDaytime());
-    sync();
-    const id = window.setInterval(sync, 60_000);
-    return () => window.clearInterval(id);
-  }, []);
 
   const preferredAreaRouteMapRef = useRef<PreferredAreaRouteMap>(loadPreferredAreaRouteMap());
 
@@ -1513,6 +1507,13 @@ export default function App() {
   const effectiveUserLngLatRef = useRef(effectiveUserLngLat);
   effectiveUserLngLatRef.current = effectiveUserLngLat;
 
+  useEffect(() => {
+    const sync = () => setBasemapNight(!isMapBasemapDaytime(effectiveUserLngLatRef.current));
+    sync();
+    const id = window.setInterval(sync, 60_000);
+    return () => window.clearInterval(id);
+  }, [effectiveUserLngLat?.[0], effectiveUserLngLat?.[1]]);
+
   const forecastAreaLabel = useMemo(() => {
     if (forecastPlaceShort) return forecastPlaceShort;
     if (effectiveUserLngLat) {
@@ -2071,6 +2072,8 @@ export default function App() {
     routeAlerts,
     trafficBypassContext,
     showTrafficBypassCta,
+    nextHazardAtEtaLine,
+    stormCorridorIntersect,
     driveMapRoutes,
     progressRailRoute,
     postedMph,
@@ -2503,6 +2506,7 @@ export default function App() {
      * missed serious NWS warnings. */
     const candidate = deferredRouteImpactsForUi.find(
       (i) =>
+        !i.suppressFromDriveMap &&
         (i.severity === "avoid" || i.severity === "serious") &&
         (i.driverAction === "rerouteRecommended" ||
           i.driverAction === "rerouteAvailable" ||
@@ -3899,6 +3903,7 @@ export default function App() {
                       staleWeatherNote={routeForecastRefreshBlocked}
                       onRefreshWeather={handleRefreshRouteInfoWeather}
                       driveRouteAheadLine={driveModeUi ? driveRouteAheadLine : null}
+                      nextHazardAtEtaLine={isPlus ? nextHazardAtEtaLine : null}
                       advisoryTier={advisoryPlusDetailOn ? "plus" : "basic"}
                       ownsPlus={isPlus}
                       promoLines={advisoryPromoLines}
@@ -4047,6 +4052,7 @@ export default function App() {
                       userAlongT={progressCalloutUserAlongT}
                       stripTint={activeProgressCalloutPanel.stripTint}
                       detailScrollRef={progressCalloutDetailScrollRef}
+                      stormCorridorIntersect={stormCorridorIntersect}
                     />
                   </RouteProgressCalloutRail>
                   <RouteProgressStrip

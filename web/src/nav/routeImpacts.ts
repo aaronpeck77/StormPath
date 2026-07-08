@@ -18,6 +18,7 @@ import {
 } from "./constants";
 import { classifyRadarEcho, radarDisplayIntensity } from "./radarReflectivityScale";
 import { displayText } from "../utils/displayText";
+import type { HazardArrivalVerdictKind } from "./hazardArrivalVerdict";
 
 /**
  * Shared “Road Ahead” impact: any condition the driver will run into on the active route,
@@ -87,6 +88,16 @@ export type RouteImpact = {
   detail: string;
   /** Numeric severity 0..100 — kept so legacy strip / map color code keeps working. */
   numericSeverity: number;
+  /** NWS onset / expiry when known. */
+  hazardOnsetIso?: string | null;
+  hazardExpiresIso?: string | null;
+  crossesRoute?: boolean;
+  coarsePreview?: boolean;
+  /** ETA-at-arrival verdict (see hazardArrivalVerdict.ts). */
+  arrivalVerdict?: HazardArrivalVerdictKind;
+  arrivalVerdictLine?: string;
+  suppressFromDriveMap?: boolean;
+  suppressFromProgressStrip?: boolean;
 };
 
 const SEVERITY_RANK: Record<RouteImpactSeverity, number> = {
@@ -251,6 +262,9 @@ function buildNwsImpacts(opts: {
       endMeters: b.endM,
       distanceAheadMeters,
       etaAheadMinutes,
+      hazardOnsetIso: matchingAlert?.onset ?? null,
+      hazardExpiresIso: matchingAlert?.ends ?? null,
+      crossesRoute: true,
       driverHeadline: insideNow
         ? `${event} — in this segment`
         : `${event} ahead`,

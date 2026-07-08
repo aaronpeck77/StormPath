@@ -11,8 +11,14 @@ import {
 } from "../nav/routeAheadSync";
 import type { TimelineItem } from "./RouteHazardTimeline";
 import type { LngLat } from "../nav/types";
-import { buildRouteChartNightBands } from "../forecast/chartNightBands";
+import { buildRouteChartNightBands, buildRouteNightTransitions } from "../forecast/chartNightBands";
+import {
+  buildRouteSunEvents,
+  routeSunEventAxisLabel,
+} from "../forecast/routeSunEvents";
+import { useMilesForLngLat } from "../utils/formatDistance";
 import { RouteInfoLegend } from "./RouteInfoLegend";
+import { RouteNightAxisOverlay, type NightAxisLabel } from "./RouteNightAxisOverlay";
 import { RouteOutlookTimeline } from "./RouteOutlookTimeline";
 import { RouteRadarWindStrip } from "./RouteRadarWindStrip";
 import {
@@ -22,6 +28,8 @@ import {
   routePlotWidthPct,
 } from "./routeAxisLayout";
 import { routeWindGraphVisible } from "../nav/windForecastCalib";
+import type { StormCorridorIntersectResult } from "../features/stormCorridorIntersect";
+import { RouteStormIntersectOverlay } from "./RouteStormIntersectOverlay";
 
 type Props = {
   timeline: TimelineItem[];
@@ -41,6 +49,8 @@ type Props = {
   userAlongT: number;
   stripTint: string;
   geometry?: LngLat[] | null;
+  /** Experimental radar-intersect overlay (null when feature off). */
+  stormCorridorIntersect?: StormCorridorIntersectResult | null;
   /** Parent scrolls this region vertically (alert list only). */
   detailScrollRef?: RefObject<HTMLDivElement | null>;
 };
@@ -239,6 +249,7 @@ export function RouteProgressGlancePanel({
   userAlongT,
   stripTint,
   geometry = null,
+  stormCorridorIntersect = null,
   detailScrollRef,
 }: Props) {
   const glanceCards = useMemo(
@@ -266,6 +277,71 @@ export function RouteProgressGlancePanel({
         : [],
     [geometry, totalMeters, userAlongMeters, planEtaMinutes, driveEtaMinutes]
   );
+
+  const nightTransitions = useMemo(
+    () =>
+      geometry && geometry.length >= 2 && totalMeters > 0
+        ? buildRouteNightTransitions({
+            geometry,
+            totalMeters,
+            userAlongMeters,
+            planEtaMinutes,
+            driveEtaMinutes,
+          })
+        : [],
+    [geometry, totalMeters, userAlongMeters, planEtaMinutes, driveEtaMinutes]
+  );
+
+  const routeSunEvents = useMemo(
+    () =>
+      geometry && geometry.length >= 2 && totalMeters > 0
+        ? buildRouteSunEvents({
+            geometry,
+            totalMeters,
+            userAlongMeters,
+            planEtaMinutes,
+            driveEtaMinutes,
+          })
+        : [],
+    [geometry, totalMeters, userAlongMeters, planEtaMinutes, driveEtaMinutes]
+  );
+
+  const useMiles = useMilesForLngLat(geometry?.[0] ?? null);
+
+  const nightAxisLabels = useMemo((): NightAxisLabel[] => {
+    if (!geometry || geometry.length < 2 || totalMeters <= 0) return [];
+    const labels: NightAxisLabel[] = [];
+
+    routeSunEvents.forEach((event, index) => {
+      const { title, time, place } = routeSunEventAxisLabel(event, userAlongMeters, useMiles);
+      labels.push({
+        fraction: event.fraction,
+        kind: event.kind,
+        title,
+        time,
+        place,
+        stagger: index % 2 === 1 ? "bottom" : "top",
+      });
+    });
+
+    const nightFromStart =
+      nightBands.some((b) => b.start <= 0.02) &&
+      !routeSunEvents.some((e) => e.kind === "sunset" && e.fraction < 0.06);
+    if (nightFromStart) {
+      labels.unshift({
+        fraction: 0,
+        kind: "night-now",
+        title: "Night",
+        time: "Now",
+        place: "On route",
+        stagger: "top",
+      });
+    }
+
+    return labels;
+  }, [geometry, totalMeters, userAlongMeters, useMiles, nightBands, routeSunEvents]);
+
+  const showNightAxis = nightBands.length > 0 || routeSunEvents.length > 0;
 
   const bandVisuals = useMemo((): HazardBandVisual[] => {
     if (totalMeters <= 0) return [];
@@ -362,7 +438,7 @@ export function RouteProgressGlancePanel({
                           variant="synced"
                           showDriverLine={false}
                           showXTicks={false}
-                          nightBands={nightBands}
+                          showNightLegend={showNightAxis}
                         />
                       ) : (
                         <div className="rpgl__outlook-wait" aria-hidden>
@@ -381,7 +457,6 @@ export function RouteProgressGlancePanel({
                           radarSamples={radarSamples}
                           windPoints={windPoints}
                           gustSpikePoints={gustSpikePoints}
-                          nightBands={nightBands}
                         />
                       </div>
                     ) : null}
@@ -394,6 +469,21 @@ export function RouteProgressGlancePanel({
                         <HazardRailRow key={track} track={track} bands={bandsByTrack[track]} />
                       ))}
                     </div>
+
+                    {showNightAxis ? (
+                      <RouteNightAxisOverlay
+                        bands={nightBands}
+                        transitions={nightTransitions}
+                        labels={nightAxisLabels}
+                      />
+                    ) : null}
+
+                    {stormCorridorIntersect ? (
+                      <RouteStormIntersectOverlay
+                        bands={stormCorridorIntersect.bands}
+                        events={stormCorridorIntersect.events}
+                      />
+                    ) : null}
 
                     <div
                       className="rpgl__driver-overlay"

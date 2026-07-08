@@ -7,7 +7,7 @@ import {
   precipPctFromStep,
   routeOutlookAriaLabel,
 } from "../nav/routeForecastTimeline";
-import type { FractionBand } from "../forecast/chartNightBands";
+import type { FractionBand, NightTransition } from "../forecast/chartNightBands";
 import { routePlotLeftPct } from "./routeAxisLayout";
 import { ChartNightBandLayer } from "./ChartNightBandLayer";
 
@@ -22,6 +22,10 @@ type Props = {
   showXTicks?: boolean;
   /** Subtle civil-night shading behind the plot (fraction 0–1 along route). */
   nightBands?: FractionBand[];
+  /** Vertical dusk/dawn markers along the route axis. */
+  nightTransitions?: NightTransition[];
+  /** Parent overlay draws night — keep legend swatch only. */
+  showNightLegend?: boolean;
 };
 
 const W = 400;
@@ -73,6 +77,8 @@ export function RouteOutlookTimeline({
   showDriverLine = true,
   showXTicks = true,
   nightBands = [],
+  nightTransitions = [],
+  showNightLegend = false,
 }: Props) {
   const synced = variant === "synced";
 
@@ -123,9 +129,9 @@ export function RouteOutlookTimeline({
         <span className="rotl__legend-item rotl__legend-item--precip">
           <span className="rotl__legend-swatch" /> Rain %
         </span>
-        {nightBands.length > 0 ? (
+        {nightBands.length > 0 || showNightLegend ? (
           <span className="rotl__legend-item rotl__legend-item--night">
-            <span className="rotl__legend-swatch" /> Night
+            <span className="rotl__legend-swatch" /> Sunset–sunrise
           </span>
         ) : null}
       </div>
@@ -139,6 +145,7 @@ export function RouteOutlookTimeline({
         >
           <ChartNightBandLayer
             bands={nightBands}
+            transitions={nightTransitions}
             xPx={xPx}
             yTop={PAD.top}
             yBottom={H - PAD.bottom}
