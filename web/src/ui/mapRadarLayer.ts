@@ -35,16 +35,40 @@ export const RAINVIEWER_RADAR_RASTER_PAINT = {
 export const RAINVIEWER_RADAR_LAYER_A = RADAR_LAYER_A;
 
 /**
- * Crossfade duration between dual raster layers (ms). Long enough to blend ~10-min RainViewer steps.
- * Chained with zero dwell so motion reads as one continuous sweep.
+ * Target duration for one full radar history → now sweep (then loop).
+ * ~3.6s gives ~300ms/frame on a 12-frame pack — still snappy, smoother blends.
+ */
+export const RADAR_ANIMATION_LOOP_MS = 3600;
+
+/** Floor / ceiling per-frame crossfade so 2-frame packs aren't sluggish and dense packs don't flash. */
+export const RADAR_ANIMATION_FRAME_MS_MIN = 160;
+export const RADAR_ANIMATION_FRAME_MS_MAX = 480;
+
+/**
+ * Per-frame crossfade so {@link cellCount} frames complete in ~{@link RADAR_ANIMATION_LOOP_MS}.
+ */
+export function radarAnimationCrossfadeMs(cellCount: number): number {
+  const n = Math.max(2, Math.floor(cellCount));
+  const raw = Math.round(RADAR_ANIMATION_LOOP_MS / n);
+  return Math.max(RADAR_ANIMATION_FRAME_MS_MIN, Math.min(RADAR_ANIMATION_FRAME_MS_MAX, raw));
+}
+
+/**
+ * Legacy default crossfade (cinematic pace). Prefer {@link radarAnimationCrossfadeMs} for the live loop.
  */
 export const RAINVIEWER_RADAR_CROSSFADE_MS = 3200;
 
 /** Subtle tile fade on the hidden buffer while prewarming — reduces pop-in before opacity crossfade. */
-export const RAINVIEWER_RADAR_PREWARM_TILE_FADE_MS = 280;
+export const RAINVIEWER_RADAR_PREWARM_TILE_FADE_MS = 180;
 
 /** Legacy: crossfade when only one source and tile URLs change (unused by animated dual path). */
 export const RAINVIEWER_RASTER_FADE_MS = 520;
+
+/** Cosine ease 0→1 — softens start/end without the long “pause” of ease-in-out cubic. */
+export function radarCrossfadeProgress(t: number): number {
+  const x = Math.max(0, Math.min(1, t));
+  return 0.5 - 0.5 * Math.cos(x * Math.PI);
+}
 
 function isStormPathLayerId(id: string): boolean {
   return (
@@ -241,7 +265,9 @@ const pendingTileSwap: Record<"a" | "b", boolean> = { a: false, b: false };
 export function setRainViewerRadarTilesOnSource(
   map: Map,
   which: "a" | "b",
-  tileUrlTemplate: string
+  tileUrlTemplate: string,
+  /** Optional tile fade while the hidden buffer loads (defaults to prewarm constant). */
+  tileFadeMs: number = RAINVIEWER_RADAR_PREWARM_TILE_FADE_MS
 ): void {
   const id = which === "a" ? RADAR_SOURCE_A : RADAR_SOURCE_B;
   const layerId = which === "a" ? RADAR_LAYER_A : RADAR_LAYER_B;
@@ -249,7 +275,11 @@ export function setRainViewerRadarTilesOnSource(
   if (src && typeof src.setTiles === "function") {
     pendingTileSwap[which] = true;
     if (map.getLayer(layerId)) {
-      map.setPaintProperty(layerId, "raster-fade-duration", RAINVIEWER_RADAR_PREWARM_TILE_FADE_MS);
+      map.setPaintProperty(
+        layerId,
+        "raster-fade-duration",
+        Math.max(0, Math.min(400, Math.round(tileFadeMs)))
+      );
     }
     src.setTiles([tileUrlTemplate]);
   }
@@ -328,6 +358,16 @@ export function animateRainViewerDualCrossfade(
 ): Promise<void> {
   return new Promise((resolve) => {
     const start = performance.now();
+    /*
+     * Full A↔B swap: equal-power (sin/cos) keeps mid-blend brightness steadier than
+     * linear opacity (which dips at t=0.5). Partial fades still use cosine-eased lerp.
+     */
+    const fullSwap =
+      Math.abs(from.a - to.b) < 0.02 &&
+      Math.abs(from.b - to.a) < 0.02 &&
+      Math.abs(from.a - from.b) > 0.05;
+    const peak = Math.max(from.a, from.b, to.a, to.b);
+
     const tick = (now: number) => {
       try {
         if (!map.getStyle?.()) {
@@ -338,11 +378,24 @@ export function animateRainViewerDualCrossfade(
         resolve();
         return;
       }
-      const t = Math.min(1, (now - start) / durationMs);
-      /* Linear blend — chained crossfades read as steady motion (ease-in-out pauses at each frame). */
-      const e = t;
-      const oa = Math.max(0, Math.min(1, from.a + (to.a - from.a) * e));
-      const ob = Math.max(0, Math.min(1, from.b + (to.b - from.b) * e));
+      const t = Math.min(1, (now - start) / Math.max(1, durationMs));
+      const e = radarCrossfadeProgress(t);
+      let oa: number;
+      let ob: number;
+      if (fullSwap && peak > 0) {
+        const halfPi = Math.PI / 2;
+        const leavingIsA = from.a >= from.b;
+        if (leavingIsA) {
+          oa = peak * Math.cos(e * halfPi);
+          ob = peak * Math.sin(e * halfPi);
+        } else {
+          oa = peak * Math.sin(e * halfPi);
+          ob = peak * Math.cos(e * halfPi);
+        }
+      } else {
+        oa = Math.max(0, Math.min(1, from.a + (to.a - from.a) * e));
+        ob = Math.max(0, Math.min(1, from.b + (to.b - from.b) * e));
+      }
       setRainViewerRadarDualOpacity(map, oa, ob);
       if (t < 1) requestAnimationFrame(tick);
       else resolve();

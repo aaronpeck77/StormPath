@@ -31,7 +31,7 @@ describe("navResourceBudget", () => {
     expect(budget.advisoryForecastRepairEnabled).toBe(true);
   });
 
-  it("pauses advisory tier while navigating in drive", () => {
+  it("pauses advisory tier while navigating in drive with Route Info closed", () => {
     const budget = buildNavResourceBudget({ ...base, viewMode: "drive" });
     expect(budget.driveNavMode).toBe(true);
     expect(budget.radarMapOverlayOn).toBe(false);
@@ -76,7 +76,19 @@ describe("navResourceBudget", () => {
     expect(budget.localDailyForecastEnabled).toBe(false);
   });
 
-  it("does not sample radar in drive even when storm hints are on", () => {
+  it("does not sample radar in drive when Route Info is closed", () => {
+    const budget = buildNavResourceBudget({
+      ...base,
+      viewMode: "drive",
+      settingStormEnabled: true,
+      settingWeatherHintsEnabled: true,
+      progressCalloutsOpen: false,
+    });
+    expect(budget.radarRouteSamplingEnabled).toBe(false);
+    expect(budget.tioRouteFetchEnabled).toBe(false);
+  });
+
+  it("samples radar and corridor forecast in drive when Route Info is open", () => {
     const budget = buildNavResourceBudget({
       ...base,
       viewMode: "drive",
@@ -84,7 +96,11 @@ describe("navResourceBudget", () => {
       settingWeatherHintsEnabled: true,
       progressCalloutsOpen: true,
     });
-    expect(budget.radarRouteSamplingEnabled).toBe(false);
+    expect(budget.radarMapOverlayOn).toBe(false);
+    expect(budget.radarRouteSamplingEnabled).toBe(true);
+    expect(budget.tioRouteFetchEnabled).toBe(true);
+    expect(budget.advisoryForecastRepairEnabled).toBe(true);
+    expect(budget.advisoryWeatherSyncEnabled).toBe(true);
   });
 
   it("samples radar on a long route when storm mode is on in route view", () => {

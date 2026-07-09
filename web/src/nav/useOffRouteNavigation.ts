@@ -109,6 +109,11 @@ export interface UseOffRouteNavigationDeps {
   /** Updates full guidance geometry after the driver adopts a new locked path. */
   adoptLockedRouteGeometry: (geometry: LngLat[]) => void;
   viewModeRef: MutableRefObject<MapViewMode>;
+  /**
+   * When true, driver is following a learned personal fork — suppress main-corridor
+   * rejoin / hold preview / drive-ahead replan toward the old highway leg.
+   */
+  onPersonalForkRef?: MutableRefObject<boolean>;
 }
 
 export type RecalcRouteFromHereFn = (opts?: { silent?: boolean }) => Promise<boolean>;
@@ -161,6 +166,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setFitTrigger,
     adoptLockedRouteGeometry,
     viewModeRef,
+    onPersonalForkRef,
   } = deps;
 
   const [offRouteSevere, setOffRouteSevere] = useState(false);
@@ -311,6 +317,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   }, []);
 
   const prefetchHoldRejoinPreview = useCallback(async () => {
+    if (onPersonalForkRef?.current) return;
     if (
       !userLngLat ||
       !mapboxToken ||
@@ -916,6 +923,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         navStartGraceMs: driveAhead ? DRIVE_AHEAD_NAV_START_GRACE_MS : undefined,
         navStartGraceAlongM: driveAhead ? DRIVE_AHEAD_NAV_START_GRACE_ALONG_M : undefined,
         navStartGraceMaxLateralM: driveAhead ? DRIVE_AHEAD_NAV_START_GRACE_MAX_LATERAL_M : undefined,
+        onPersonalFork: onPersonalForkRef?.current === true,
       });
 
       lastOffRouteSampleRef.current = {
@@ -973,6 +981,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     viewModeRef,
     prefetchHoldRejoinPreview,
     clearHoldRejoinPreview,
+    onPersonalForkRef,
   ]);
 
   const detourLockedRouteId = useMemo(() => {

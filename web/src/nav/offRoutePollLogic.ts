@@ -63,6 +63,8 @@ export type OffRoutePollTickInput = {
   navStartGraceMs?: number;
   navStartGraceAlongM?: number;
   navStartGraceMaxLateralM?: number;
+  /** Learned personal fork is active — suppress main-corridor rejoin. */
+  onPersonalFork?: boolean;
 };
 
 export type OffRoutePollTickResult = {
@@ -191,6 +193,20 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
   }
 
   if (input.driveAlwaysAhead) {
+    /* Habitual "Your route" — don't GPS-replan back onto the faster main. */
+    if (input.onPersonalFork) {
+      session.offRoutePriorLateralM = lat;
+      return {
+        session,
+        sample,
+        shouldOfferRejoinChoices: false,
+        recoveryAction: null,
+        shouldPrefetchRejoinPreview: false,
+        rejoinedLockedRoute: false,
+        nearDestination: false,
+      };
+    }
+
     const nearDestination = input.totalM > 0 && alongM > input.totalM - 45;
     if (nearDestination) {
       session = resetOffRoutePollSession(session);
@@ -325,6 +341,7 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
             rejoinFailCount: input.rejoinFailCount ?? 0,
             drivingRejoinMode: input.drivingRejoinMode ?? "manual",
             recoveryCommitted: session.offRouteRecoveryCommitted,
+            onPersonalFork: input.onPersonalFork === true,
           });
 
           if (action === "hold") {

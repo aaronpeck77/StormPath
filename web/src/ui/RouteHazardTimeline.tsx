@@ -72,7 +72,7 @@ const TRACK_META: Record<string, { label: string; emptyText: string }> = {
   road:  { label: "Road",  emptyText: "No road hazards detected" },
 };
 
-const TRACK_ORDER = ["nws", "road"] as const; // radar → RouteRadarStrip strata, wind → top graph line
+const TRACK_ORDER = ["nws", "road"] as const; // radar → RouteRadarWindStrip strata, wind → top graph line
 
 /** Minimum visual band width (% of rail) so tiny/point impacts are visible. */
 const MIN_BAND_PCT = 2.5;

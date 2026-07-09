@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LngLat } from "../nav/types";
 import {
   echoIntensityFromPrecipTile,
@@ -7,7 +7,7 @@ import {
   RADAR_ROUTE_SAMPLE_FRACTIONS,
   tileXY,
 } from "../services/radarPolylineIntensity";
-import { fetchMapTileRgba } from "../services/rainViewerTileFetch";
+import { fetchMapTileRgba, isRainViewerRateLimited } from "../services/rainViewerTileFetch";
 import {
   nearestRadarFrameByTimeMs,
   radarMapProviderForCenter,
@@ -15,10 +15,18 @@ import {
   resolveRadarMapPack,
   type RadarMapFrame,
 } from "../services/radarMapPack";
-import { isRainViewerRateLimited } from "../services/rainViewerTileFetch";
 import { buildCumulativeDistances, pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
 
-type RadarSample = { t: number; intensity: number };
+export type RadarSample = { t: number; intensity: number };
+
+export type RadarBandsAlongRouteState = {
+  samples: RadarSample[];
+  updatedAt: number | null;
+  /** Set when RainViewer rate-limits — prior samples are kept. */
+  refreshBlocked: string | null;
+  refreshing: boolean;
+  bumpRadarResample: () => void;
+};
 
 /**
  * Sample the radar mosaic along a route polyline and convert it into coarse "cell intensity"
@@ -35,11 +43,18 @@ export function useRadarBandsAlongRoute(
   /** Trip ETA in minutes. When provided, each sample uses the frame nearest its arrival time. */
   planEtaMinutes?: number | null,
   tomorrowIoApiKey?: string | null
-): { samples: RadarSample[]; updatedAt: number | null } {
-  const [state, setState] = useState<{ samples: RadarSample[]; updatedAt: number | null }>({
+): RadarBandsAlongRouteState {
+  const [state, setState] = useState<{
+    samples: RadarSample[];
+    updatedAt: number | null;
+    refreshBlocked: string | null;
+  }>({
     samples: [],
     updatedAt: null,
+    refreshBlocked: null,
   });
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   const geomKey = useMemo(
     () =>
@@ -53,16 +68,29 @@ export function useRadarBandsAlongRoute(
     return geometry[Math.floor(geometry.length / 2)]!;
   }, [geometry]);
   const lastKeyRef = useRef("");
+  const samplesRef = useRef<RadarSample[]>([]);
+  samplesRef.current = state.samples;
 
   // Bucket ETA to 5-min intervals so minor GPS drift doesn't re-trigger the effect.
   const etaKey = planEtaMinutes != null && planEtaMinutes > 5 ? Math.round(planEtaMinutes / 5) : 0;
+
+  const bumpRadarResample = useCallback(() => {
+    setRefreshTick((n) => n + 1);
+    setRefreshing(true);
+  }, []);
 
   useEffect(() => {
     if (import.meta.env.DEV) {
       console.log(`[radarRoute] enabled=${enabled} geomPts=${geometry?.length ?? 0} eta=${planEtaMinutes ?? "none"}`);
     }
-    if (!enabled || !geometry || geometry.length < 2 || !routeCenter) {
-      setState({ samples: [], updatedAt: null });
+    if (!geometry || geometry.length < 2 || !routeCenter || !geomKey) {
+      setState({ samples: [], updatedAt: null, refreshBlocked: null });
+      setRefreshing(false);
+      return;
+    }
+    if (!enabled) {
+      /* Keep last samples when briefly disabled (e.g. Drive with Route Info closed). */
+      setRefreshing(false);
       return;
     }
     let cancelled = false;
@@ -71,14 +99,26 @@ export function useRadarBandsAlongRoute(
       const useEta = planEtaMinutes != null && planEtaMinutes > 5;
       const mapProvider = radarMapProviderForCenter(routeCenter, tomorrowIoApiKey);
       const stripUsesRainViewer = useEta || mapProvider === "rainviewer";
-      if (stripUsesRainViewer && isRainViewerRateLimited()) return;
+      if (stripUsesRainViewer && isRainViewerRateLimited()) {
+        if (!cancelled) {
+          setState((prev) => ({
+            ...prev,
+            refreshBlocked: "Radar paused — rate limited. Try again in a few minutes.",
+          }));
+          setRefreshing(false);
+        }
+        return;
+      }
       lastKeyRef.current = geomKey;
 
       const pack = await resolveRadarMapPack(routeCenter, tomorrowIoApiKey, {
         includeNowcast: useEta,
         forceRainViewer: useEta,
       });
-      if (!pack?.frames.length) return;
+      if (!pack?.frames.length) {
+        if (!cancelled) setRefreshing(false);
+        return;
+      }
 
       const now = Date.now();
       const totalM = polylineLengthMeters(geometry);
@@ -162,7 +202,12 @@ export function useRadarBandsAlongRoute(
         const maxI = out.length ? Math.max(...out.map((s) => s.intensity)) : 0;
         console.log(`[radarRoute] samples=${out.length} maxIntensity=${maxI.toFixed(3)}`);
       }
-      setState({ samples: out.sort((a, b) => a.t - b.t), updatedAt: Date.now() });
+      setState({
+        samples: out.sort((a, b) => a.t - b.t),
+        updatedAt: Date.now(),
+        refreshBlocked: null,
+      });
+      setRefreshing(false);
     };
 
     void run();
@@ -173,7 +218,25 @@ export function useRadarBandsAlongRoute(
     };
   // etaKey instead of planEtaMinutes to avoid constant re-runs on live ETA jitter
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, geometry, geomKey, pollIntervalMs, etaKey, routeCenter, tomorrowIoApiKey]);
+  }, [enabled, geometry, geomKey, pollIntervalMs, etaKey, routeCenter, tomorrowIoApiKey, refreshTick]);
 
-  return state;
+  return {
+    samples: state.samples,
+    updatedAt: state.updatedAt,
+    refreshBlocked: state.refreshBlocked,
+    refreshing,
+    bumpRadarResample,
+  };
+}
+
+/** Human-readable age for Route Info radar status (e.g. "Radar · 3 min ago"). */
+export function formatRadarSampleAge(updatedAt: number | null, nowMs = Date.now()): string | null {
+  if (updatedAt == null || !Number.isFinite(updatedAt)) return null;
+  const ageSec = Math.max(0, Math.round((nowMs - updatedAt) / 1000));
+  if (ageSec < 45) return "Radar · just now";
+  if (ageSec < 90) return "Radar · 1 min ago";
+  const ageMin = Math.round(ageSec / 60);
+  if (ageMin < 60) return `Radar · ${ageMin} min ago`;
+  const ageHr = Math.round(ageMin / 60);
+  return `Radar · ${ageHr} hr ago`;
 }

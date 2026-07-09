@@ -5,13 +5,16 @@ import {
   type RouteAlert,
 } from "../nav/routeAlerts";
 import {
+  closestAlongRouteMeters,
   geometryForPlanningMapDisplay,
   geometryForRouteOverviewDisplay,
   haversineMeters,
+  pointAtAlongMeters,
   routeHighlightFrameForMap,
   routeLineGeometryForDriveDisplay,
   slicePolylineBetweenAlongForDisplay,
 } from "../nav/routeGeometry";
+import { findRouteDivergenceWindow } from "../nav/routeDivergenceWindow";
 import { sliceRouteAhead } from "../nav/routeRemaining";
 import type { LngLat, NavRoute } from "../nav/types";
 import {
@@ -381,7 +384,9 @@ export function visibleRouteIdsForHitLayers(
   /* Drive (Dr) view: always the active leg only — Rt / Mp show A/B/C for picking. */
   const hideAltsOnMainDrive = viewMode === "drive" && !isOverviewPip;
   if (hideAltsOnMainDrive) {
-    return routes.filter((r) => r.id === lineFocusId).map((r) => r.id);
+    return routes
+      .filter((r) => r.id === lineFocusId || r.id === "r-your-route")
+      .map((r) => r.id);
   }
   return routes.map((r) => r.id);
 }
@@ -464,7 +469,12 @@ export function applyRoutesToMap(
 
   const hideAltsOnMainDrive = viewMode === "drive" && !isOverviewPip;
   const routesToDraw = hideAltsOnMainDrive
-    ? routes.filter((r) => r.id === lineFocusId)
+    ? routes.filter(
+        (r) =>
+          r.id === lineFocusId ||
+          /* Habitual fork branch while still on the main corridor. */
+          r.id === "r-your-route"
+      )
     : routes;
 
   if (routes.length === 0) {
@@ -907,6 +917,44 @@ export function fitMapToOffRouteRejoinChoices(
   return applyTripCameraFit(map, fit, padding, maxZoomCeiling, 0.45, 520);
 }
 
+/** Toll compare: frame where with-tolls vs toll-free diverge (not the whole trip). */
+export function buildTollCompareLocalFitBounds(
+  routes: NavRoute[]
+): TripFitBoundsMode | null {
+  const withTolls = routes.find((r) => r.id === "r-a");
+  const tollFree = routes.find((r) => r.id === "r-b");
+  const geomA = withTolls?.geometry;
+  const geomB = tollFree?.geometry;
+  if (!geomA?.length || !geomB?.length) return null;
+
+  const window = findRouteDivergenceWindow(geomA, geomB);
+  if (!window) return null;
+
+  const padStart = Math.max(0, window.startM - 4_000);
+  const padEnd = window.endM + 4_000;
+  const sliceA = slicePolylineBetweenAlongForDisplay(geomA, padStart, padEnd);
+  const startPt = pointAtAlongMeters(geomA, padStart);
+  const endPt = pointAtAlongMeters(geomA, padEnd);
+  const altStart = closestAlongRouteMeters(startPt, geomB).alongMeters;
+  const altEnd = closestAlongRouteMeters(endPt, geomB).alongMeters;
+  const sliceB = slicePolylineBetweenAlongForDisplay(
+    geomB,
+    Math.min(altStart, altEnd),
+    Math.max(altStart, altEnd)
+  );
+
+  const b = new mapboxgl.LngLatBounds();
+  if (sliceA.length >= 2) extendBoundsWithPolyline(b, sliceA);
+  if (sliceB.length >= 2) extendBoundsWithPolyline(b, sliceB);
+  if (b.isEmpty()) return null;
+
+  return {
+    bounds: b,
+    directM: boundsDiagonalMeters(b),
+    endpointsOnly: false,
+  };
+}
+
 /** Bounds for A/B/C compare: user + hazard + local ahead slices (not the full trip). */
 export function buildRouteCompareLocalFitBounds(
   user: LngLat,
@@ -944,11 +992,20 @@ export function fitMapToRouteCompareLocal(
   hazardLngLat: LngLat | null,
   padding: mapboxgl.PaddingOptions,
   maxZoomCeiling = 17.8,
-  opts?: { userAlongM?: number | null; hazardAlongM?: number | null }
+  opts?: {
+    userAlongM?: number | null;
+    hazardAlongM?: number | null;
+    compareKind?: "traffic" | "toll";
+  }
 ): boolean {
-  const fit = buildRouteCompareLocalFitBounds(userLngLat, routes, primaryRouteId, hazardLngLat, opts);
+  const fit =
+    opts?.compareKind === "toll"
+      ? buildTollCompareLocalFitBounds(routes) ??
+        buildRouteCompareLocalFitBounds(userLngLat, routes, primaryRouteId, hazardLngLat, opts)
+      : buildRouteCompareLocalFitBounds(userLngLat, routes, primaryRouteId, hazardLngLat, opts);
   if (!fit) return false;
-  return applyTripCameraFit(map, fit, padding, maxZoomCeiling, 0.5, 560);
+  const maxZoom = opts?.compareKind === "toll" ? Math.min(maxZoomCeiling, 12.5) : maxZoomCeiling;
+  return applyTripCameraFit(map, fit, padding, maxZoom, 0.5, 560);
 }
 
 export function fitMapToRemainingRoutes(

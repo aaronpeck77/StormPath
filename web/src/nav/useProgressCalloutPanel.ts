@@ -255,7 +255,7 @@ export function useProgressCalloutPanel(
         tioRouteForecast && planEta && planEta > 0
           ? buildSyncedRouteOutlook({
               forecastHeadline: "",
-              samples: tomorrowForecastToWxSamples(tioRouteForecast, planEta),
+              samples: outlookGraphSamples,
               totalMeters: totalM,
               userAlongMeters: progressPanelAlongM,
               planEtaMinutes: planEta,
@@ -360,7 +360,7 @@ export function useProgressCalloutPanel(
       tioRouteForecast && planEta && planEta > 0
         ? buildSyncedRouteOutlook({
             forecastHeadline: "",
-            samples: tomorrowForecastToWxSamples(tioRouteForecast, planEta),
+            samples: outlookGraphSamples,
             totalMeters: totalM,
             userAlongMeters: progressPanelAlongM,
             planEtaMinutes: planEta,

@@ -41,6 +41,8 @@ type Props = {
   /** Wind gust points from TIO forecast intervals (t=0–1 along route, mph) */
   windPoints?: { t: number; mph: number }[];
   gustSpikePoints?: { t: number; mph: number }[];
+  /** Optional status under radar/wind strata (age, rate-limit). */
+  radarStatusNote?: string | null;
   fallbackSegments: RouteChunkCalloutItem[];
   totalMeters: number;
   userAlongMeters: number;
@@ -241,6 +243,7 @@ export function RouteProgressGlancePanel({
   radarSamples = [],
   windPoints = [],
   gustSpikePoints = [],
+  radarStatusNote = null,
   fallbackSegments,
   totalMeters,
   userAlongMeters,
@@ -458,6 +461,11 @@ export function RouteProgressGlancePanel({
                           windPoints={windPoints}
                           gustSpikePoints={gustSpikePoints}
                         />
+                        {radarStatusNote ? (
+                          <p className="rpgl__radar-status" role="status">
+                            {radarStatusNote}
+                          </p>
+                        ) : null}
                       </div>
                     ) : null}
 

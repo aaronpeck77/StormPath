@@ -13,6 +13,7 @@ export const TOMORROW_IO_ANIMATION_FRAME_COUNT = 12;
 export const TOMORROW_IO_ANIMATION_STEP_MIN = 5;
 /** No dwell — crossfades chain back-to-back for continuous motion. */
 export const TOMORROW_IO_ANIMATION_DWELL_MS = 0;
+/** Legacy cinematic pace; live map loop uses {@link radarAnimationCrossfadeMs} (~3s full sweep). */
 export const TOMORROW_IO_ANIMATION_CROSSFADE_MS = 2200;
 
 const TOMORROW_IO_TILE_API = "https://api.tomorrow.io/v4/map/tile";

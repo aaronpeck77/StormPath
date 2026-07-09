@@ -659,8 +659,9 @@ export function AboutSheet({
                 With this on, StormPath saves sparse GPS dots (about every minute while you move) to learn where
                 you usually drive. That helps <strong>frame the map</strong> around your area,{" "}
                 <strong>rank search suggestions</strong> nearer places you know,{" "}
-                <strong>prefer familiar alternates</strong> when A/B/C routes are built, and show the cyan overlay below. Trip
-                detection for “frequent routes” uses a separate path.
+                <strong>prefer familiar alternates</strong> when A/B/C routes are built, offer{" "}
+                <strong>Your route</strong> when you repeatedly leave the main path at the same exit, and show the cyan
+                overlay below. Trip detection for “frequent routes” uses a separate path.
               </p>
               <details className="about-sheet__details about-sheet__details--inline">
                 <summary>How it works</summary>

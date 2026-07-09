@@ -39,6 +39,11 @@ export type OffRouteRecoveryInput = {
   rejoinFailCount: number;
   drivingRejoinMode: DrivingRejoinMode;
   recoveryCommitted: boolean;
+  /**
+   * Driver is on a learned personal fork ("Your route").
+   * Suppress rejoin toward the old main corridor — only recover if they leave the fork.
+   */
+  onPersonalFork?: boolean;
 };
 
 function headingDeltaDegrees(a: number, b: number): number {
@@ -95,6 +100,7 @@ export function isClearlyDivergingFromRoute(input: Pick<
 }
 
 function shouldPreferRejoin(input: OffRouteRecoveryInput): boolean {
+  if (input.onPersonalFork) return false;
   if (input.rejoinFailCount >= 2) return false;
   if (input.lateralM > OFF_ROUTE_REJOIN_MAX_LATERAL_M) return false;
 
@@ -129,6 +135,9 @@ function shouldPreferRejoin(input: OffRouteRecoveryInput): boolean {
  */
 export function classifyOffRouteRecovery(input: OffRouteRecoveryInput): OffRouteRecoveryAction {
   if (input.recoveryCommitted) return "hold";
+
+  /* On a habitual "Your route" detour — never pull back to the faster main. */
+  if (input.onPersonalFork) return "hold";
 
   const elapsed = Math.max(0, input.nowMs - input.latchedAtMs);
   const diverging = isClearlyDivergingFromRoute(input);

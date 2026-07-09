@@ -108,6 +108,38 @@ describe("classifyOffRouteRecovery", () => {
       })
     ).toBe("replan");
   });
+
+  it("holds on a personal fork instead of rejoining the main corridor", () => {
+    expect(
+      classifyOffRouteRecovery({
+        ...base,
+        speedMps: 14,
+        lateralM: 130,
+        priorLateralM: 125,
+        lateralPeakM: 130,
+        headingDeg: 120,
+        routeBearingDeg: 0,
+        nowMs: base.latchedAtMs + OFF_ROUTE_OBSERVATION_AMBIGUOUS_MS + 1,
+        onPersonalFork: true,
+      })
+    ).toBe("hold");
+  });
+
+  it("holds beside the corridor on a personal fork even when rejoin would normally win", () => {
+    expect(
+      classifyOffRouteRecovery({
+        ...base,
+        speedMps: 9,
+        drivingRejoinMode: "auto_local",
+        nowMs: base.latchedAtMs + OFF_ROUTE_OBSERVATION_AMBIGUOUS_MS + 1,
+        lateralM: 35,
+        priorLateralM: 32,
+        headingDeg: 120,
+        routeBearingDeg: 0,
+        onPersonalFork: true,
+      })
+    ).toBe("hold");
+  });
 });
 
 describe("isClearlyDivergingFromRoute", () => {

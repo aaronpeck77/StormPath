@@ -30,7 +30,10 @@ import { useDestinationSearch } from "./hooks/useDestinationSearch";
 import { useNavigationPosition } from "./hooks/useNavigationPosition";
 import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
 import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
-import { useRadarBandsAlongRoute } from "./hooks/useRadarBandsAlongRoute";
+import {
+  formatRadarSampleAge,
+  useRadarBandsAlongRoute,
+} from "./hooks/useRadarBandsAlongRoute";
 import {
   useLocalDailyForecast,
   useLocalHourlyForecast,
@@ -204,6 +207,9 @@ import { NATIVE_PAY_TIER_CHANGED_EVENT, refreshPlusEntitlementFromStore, whenRev
 import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
 import { completedTripFromGeometry } from "./frequentRoutes/tripDetector";
 import { useFrequentRouteLearning } from "./hooks/useFrequentRouteLearning";
+import { usePersonalForkNav } from "./hooks/usePersonalForkNav";
+import { isPersonalForkRouteId, PERSONAL_FORK_ROUTE_ID } from "./personalForks";
+import { YourRouteChip } from "./ui/YourRouteChip";
 import { isMapBasemapDaytime } from "./map/mapBasemapDaytime";
 import {
   readHomeMapFraming,
@@ -425,6 +431,7 @@ export default function App() {
     dismissCluster,
     recordLearnedTrip,
     resetTripLearningMachine,
+    flushActiveLearnedTrip,
   } = useFrequentRouteLearning({
     payUnlocked: payFrequentRoutes,
     userLngLat,
@@ -433,12 +440,16 @@ export default function App() {
 
   const navGoStartedAtRef = useRef<number | null>(null);
   const navGoGeometryRef = useRef<LngLat[] | null>(null);
+  /** Planned main at Go — kept even after committing a personal fork (for fork learning). */
+  const navPlannedMainGeometryRef = useRef<LngLat[] | null>(null);
   /** Full step geometry for guidance math — separate from display-tier plan state. */
   const navigationGuidanceGeometryRef = useRef<LngLat[] | null>(null);
   const [guidanceGeometryEpoch, setGuidanceGeometryEpoch] = useState(0);
   const [alongHoldResetKey, setAlongHoldResetKey] = useState(0);
   /** Route id locked at Go — guidance follows this until the driver explicitly switches legs. */
   const lockedNavigationRouteIdRef = useRef<string | null>(null);
+  /** Suppress off-route rejoin while on a learned "Your route" fork. */
+  const onPersonalForkRef = useRef(false);
 
   const ACTIVITY_TRAIL_MAP_LS = "stormpath-activity-trail-map-on";
   const [activityTrailMapOn, setActivityTrailMapOn] = useState(() => {
@@ -1187,6 +1198,7 @@ export default function App() {
     setFitTrigger,
     adoptLockedRouteGeometry,
     viewModeRef,
+    onPersonalForkRef,
   });
 
   const {
@@ -1628,6 +1640,59 @@ export default function App() {
   navRouteLengthMRef.current = guidanceRouteLengthM;
   userAlongGuidanceMRef.current = userAlongGuidanceM;
 
+  const guidanceIsPersonalFork =
+    isPersonalForkRouteId(lockedNavigationRouteId) ||
+    isPersonalForkRouteId(guidanceRouteId);
+
+  const personalForkMainGeometry = useMemo(() => {
+    if (navPlannedMainGeometryRef.current?.length) return navPlannedMainGeometryRef.current;
+    if (guidanceIsPersonalFork) return null;
+    return navigationGuidanceGeometry ?? guidanceRoute?.geometry ?? null;
+  }, [
+    guidanceIsPersonalFork,
+    navigationGuidanceGeometry,
+    guidanceRoute?.geometry,
+    guidanceGeometryEpoch,
+  ]);
+
+  const personalForkNav = usePersonalForkNav({
+    enabled: Boolean(payFrequentRoutes && learnEnabled),
+    navigationStarted,
+    viewMode,
+    mainGeometry: personalForkMainGeometry,
+    userLngLat: navigationPositionLngLat,
+    userAlongMainM: userAlongGuidanceM,
+    destLngLat,
+    headingDeg: heading,
+    guidanceIsPersonalFork,
+    onPersonalForkRef,
+  });
+
+  /** Plan-time: attach a strong habitual fork as "Your route" beside A/B/C. */
+  const injectYourRouteIntoPlan = personalForkNav.injectYourRouteIntoPlan;
+  const lastInjectedPlanKeyRef = useRef<string>("");
+  useEffect(() => {
+    if (!payFrequentRoutes || !learnEnabled || navigationStarted) return;
+    if (!destLngLat || plan.routes.length < 1) return;
+    if (plan.routes.some((r) => isPersonalForkRouteId(r.id))) return;
+    const key = `${destLngLat[0].toFixed(4)},${destLngLat[1].toFixed(4)}|${plan.routes
+      .map((r) => r.id)
+      .join(",")}`;
+    if (lastInjectedPlanKeyRef.current === key) return;
+    const next = injectYourRouteIntoPlan(plan, destLngLat);
+    if (next.routes.length > plan.routes.length) {
+      lastInjectedPlanKeyRef.current = key;
+      setPlan(next);
+    }
+  }, [
+    payFrequentRoutes,
+    learnEnabled,
+    navigationStarted,
+    destLngLat,
+    plan,
+    injectYourRouteIntoPlan,
+  ]);
+
   /** Advisory timeline / NWS distance — snap to GPS on the route when planning, not only after Go. */
   const advisoryUserAlongM = useMemo(() => {
     const g = guidanceRoute?.geometry;
@@ -1850,6 +1915,13 @@ export default function App() {
     guidanceRoute?.baseEtaMinutes ?? null,
     env.tomorrowIoApiKey
   );
+  const {
+    samples: radarMosaicSamples,
+    updatedAt: radarMosaicUpdatedAt,
+    refreshBlocked: radarRefreshBlocked,
+    refreshing: radarRouteRefreshing,
+    bumpRadarResample,
+  } = radarMosaicAlongRoute;
 
   // ── Route weather (Tomorrow.io or Apple WeatherKit) ──
   const tioApiKey = weatherKitEnabled ? "" : env.tomorrowIoApiKey;
@@ -1922,10 +1994,15 @@ export default function App() {
   }, [lineFocusId, guidanceSlice?.forecastHeadline]);
 
   const handleRefreshRouteInfoWeather = useCallback(() => {
-    if (routeWeatherReady && guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2) {
-      bumpRouteForecastRefresh();
-    }
-  }, [bumpRouteForecastRefresh, routeWeatherReady, guidanceRoute?.geometry]);
+    if (!guidanceRoute?.geometry || guidanceRoute.geometry.length < 2) return;
+    if (routeWeatherReady) bumpRouteForecastRefresh();
+    bumpRadarResample();
+  }, [
+    bumpRouteForecastRefresh,
+    bumpRadarResample,
+    routeWeatherReady,
+    guidanceRoute?.geometry,
+  ]);
 
   useTripSurfaceRecovery({
     appForeground,
@@ -1949,21 +2026,52 @@ export default function App() {
     },
   });
 
-  const routeInfoWeatherRefreshing = routeForecastRefreshing;
+  const routeInfoWeatherRefreshing = routeForecastRefreshing || radarRouteRefreshing;
+
+  const routeInfoRefreshNote = useMemo(() => {
+    if (radarRefreshBlocked) return radarRefreshBlocked;
+    if (routeForecastRefreshBlocked) return routeForecastRefreshBlocked;
+    const age = formatRadarSampleAge(radarMosaicUpdatedAt);
+    if (age && radarMosaicSamples.length > 0) {
+      const ageMin =
+        radarMosaicUpdatedAt != null
+          ? Math.round((Date.now() - radarMosaicUpdatedAt) / 60_000)
+          : 0;
+      if (ageMin >= 8) return age;
+    }
+    return null;
+  }, [
+    radarRefreshBlocked,
+    routeForecastRefreshBlocked,
+    radarMosaicUpdatedAt,
+    radarMosaicSamples.length,
+  ]);
+
+  const routeInfoRefreshNoteTone =
+    radarRefreshBlocked ||
+    (routeForecastRefreshBlocked && !routeForecastUsingCache)
+      ? "warn"
+      : "info";
 
   const prevProgressCalloutsOpenRef = useRef(false);
   useEffect(() => {
     const justOpened = progressCalloutsOpen && !prevProgressCalloutsOpenRef.current;
     prevProgressCalloutsOpenRef.current = progressCalloutsOpen;
     if (!justOpened) return;
-    if (driveModeUi) return;
-    if ((tioRouteForecast?.intervals?.length ?? 0) > 0) return;
     if (!isPlus || !guidanceRoute?.geometry?.length) return;
-    handleRefreshRouteInfoWeather();
+    const missingForecast = (tioRouteForecast?.intervals?.length ?? 0) === 0;
+    const missingRadar = radarMosaicSamples.length === 0;
+    const radarStale =
+      radarMosaicUpdatedAt != null && Date.now() - radarMosaicUpdatedAt > 8 * 60_000;
+    if (missingForecast || missingRadar || radarStale || driveModeUi) {
+      handleRefreshRouteInfoWeather();
+    }
   }, [
     progressCalloutsOpen,
     driveModeUi,
     tioRouteForecast?.intervals?.length,
+    radarMosaicSamples.length,
+    radarMosaicUpdatedAt,
     isPlus,
     guidanceRoute?.geometry?.length,
     handleRefreshRouteInfoWeather,
@@ -2048,13 +2156,13 @@ export default function App() {
   ]);
 
   const radarMosaicMaxIntensity = useMemo(() => {
-    const s = radarMosaicAlongRoute.samples;
+    const s = radarMosaicSamples;
     const radarMax = s.length ? Math.max(...s.map((x) => x.intensity)) : 0;
     // Safety floor: if corridor forecast says thunderstorm or high precip probability,
     // the advisory banner must reflect at least that severity even if radar hasn't caught up yet.
     const forecastFloor = routeForecastIntensityFloor(tioRouteForecast);
     return Math.max(radarMax, forecastFloor);
-  }, [radarMosaicAlongRoute.samples, tioRouteForecast]);
+  }, [radarMosaicSamples, tioRouteForecast]);
 
   const {
     nwsAlertsAffectingActiveRoute,
@@ -2100,7 +2208,7 @@ export default function App() {
     lineFocusId,
     trafficOverlay,
     corridorWeatherDetail: enrichedCorridorWeatherDetail,
-    radarMosaicSamples: radarMosaicAlongRoute.samples,
+    radarMosaicSamples,
     showTrafficCorridorOnRoute,
     showRoadNoticesOnRoute,
     driveEtaMinutes,
@@ -2122,16 +2230,43 @@ export default function App() {
   /** Map fit + draw: full guidance geometry; layers apply display-tier subsampling. */
   const driveMapRoutesForMap = useMemo(() => {
     const full = navigationGuidanceGeometry;
-    if (!navigationStarted || !full?.length) return driveMapRoutes;
-    return driveMapRoutes.map((r) =>
-      r.id === lockedNavigationRouteId || r.id === guidanceRouteId ? { ...r, geometry: full } : r
-    );
+    let routes = driveMapRoutes;
+    if (navigationStarted && full?.length) {
+      routes = routes.map((r) =>
+        r.id === lockedNavigationRouteId || r.id === guidanceRouteId
+          ? { ...r, geometry: full }
+          : r
+      );
+    }
+    /* Approaching a habitual fork: draw the branch beside the main corridor. */
+    if (
+      navigationStarted &&
+      viewMode === "drive" &&
+      personalForkNav.previewGeometry &&
+      personalForkNav.previewGeometry.length >= 2 &&
+      !guidanceIsPersonalFork
+    ) {
+      const preview: (typeof routes)[number] = {
+        id: PERSONAL_FORK_ROUTE_ID,
+        role: "balanced",
+        label: "Your route",
+        geometry: personalForkNav.previewGeometry,
+        baseEtaMinutes: 1,
+      };
+      if (!routes.some((r) => r.id === PERSONAL_FORK_ROUTE_ID)) {
+        routes = [...routes, preview];
+      }
+    }
+    return routes;
   }, [
     driveMapRoutes,
     navigationStarted,
     navigationGuidanceGeometry,
     lockedNavigationRouteId,
     guidanceRouteId,
+    viewMode,
+    personalForkNav.previewGeometry,
+    guidanceIsPersonalFork,
   ]);
 
   /** Cruise demo puck along the active route polyline at ~posted speed (see `toggleDemoPlaybackPlaying`). */
@@ -2402,7 +2537,7 @@ export default function App() {
       corridorWeatherDetail: enrichedCorridorWeatherDetail,
       lineFocusId,
       tioRouteForecast,
-      radarMosaicSamples: radarMosaicAlongRoute.samples,
+      radarMosaicSamples,
       liveTrafficNarrative,
       driveEtaMinutes,
       stormOutlookBands,
@@ -2654,15 +2789,20 @@ export default function App() {
   const clearRoute = () => {
     if (navigationStartedRef.current && payFrequentRoutes && learnEnabled) {
       const started = navGoStartedAtRef.current;
+      const planned = navPlannedMainGeometryRef.current;
       const geom = navGoGeometryRef.current;
       if (geom && started) {
         const trip = completedTripFromGeometry(geom, started);
         if (trip) recordLearnedTrip(trip);
       }
+      const gpsTrip = flushActiveLearnedTrip();
+      personalForkNav.learnFromCompletedNav(planned, gpsTrip);
       resetTripLearningMachine();
       navGoStartedAtRef.current = null;
       navGoGeometryRef.current = null;
+      navPlannedMainGeometryRef.current = null;
     }
+    onPersonalForkRef.current = false;
     lockedNavigationRouteIdRef.current = null;
     resetOffRouteNavigation();
     routeGraphEpochRef.current += 1;
@@ -2736,11 +2876,66 @@ export default function App() {
       setPreviewLegIndex(0);
       if (navigationStartedRef.current) {
         lockedNavigationRouteIdRef.current = id;
+        onPersonalForkRef.current = isPersonalForkRouteId(id);
       }
       clearDetourGuidance();
     },
     [plan.routes, planRouteIds, clearDetourGuidance]
   );
+
+  const commitPersonalFork = useCallback(
+    (forkId?: string) => {
+      const offer = personalForkNav.offer;
+      if (!offer) return;
+      if (forkId && offer.fork.id !== forkId) return;
+      const main =
+        navPlannedMainGeometryRef.current ??
+        personalForkMainGeometry ??
+        guidanceRoute?.geometry ??
+        null;
+      if (!main || main.length < 2) return;
+
+      const your = personalForkNav.buildCommitRoute(offer.fork, main, userAlongGuidanceM);
+      setPlan((prev) => {
+        const without = prev.routes.filter((r) => !isPersonalForkRouteId(r.id));
+        return { ...prev, routes: [...without, your] };
+      });
+      setRouteSlotOrder((prev) => {
+        const cleaned = prev.filter((id) => !isPersonalForkRouteId(id));
+        return slotOrderAfterSelect(cleaned.length ? cleaned : [your.id], your.id);
+      });
+      setPreviewLegIndex(0);
+      lockedNavigationRouteIdRef.current = PERSONAL_FORK_ROUTE_ID;
+      onPersonalForkRef.current = true;
+      adoptLockedRouteGeometry(your.geometry);
+      personalForkNav.markCommitted(offer.fork.id);
+      personalForkNav.noteAutoCommitAttempted(offer.fork.id);
+      resetOffRouteNavigation();
+      clearDetourGuidance();
+      setViewMode("drive");
+      setTapHint("Your route");
+      window.setTimeout(() => setTapHint(null), 4000);
+    },
+    [
+      personalForkNav,
+      personalForkMainGeometry,
+      guidanceRoute?.geometry,
+      userAlongGuidanceM,
+      adoptLockedRouteGeometry,
+      resetOffRouteNavigation,
+      clearDetourGuidance,
+      setViewMode,
+      setTapHint,
+      setPlan,
+      setRouteSlotOrder,
+    ]
+  );
+
+  useEffect(() => {
+    if (!personalForkNav.shouldAutoCommit || !personalForkNav.offer) return;
+    personalForkNav.noteAutoCommitAttempted(personalForkNav.offer.fork.id);
+    commitPersonalFork(personalForkNav.offer.fork.id);
+  }, [personalForkNav.shouldAutoCommit, personalForkNav.offer, commitPersonalFork]);
 
   /** Route view / map view while navigating: preview A/B/C without changing active guidance. */
   const handlePreviewRouteSelect = useCallback(
@@ -2857,6 +3052,22 @@ export default function App() {
       ? pickedForNav.geometry.map(([a, b]) => [a, b] as LngLat)
       : null;
     navigationGuidanceGeometryRef.current = navGoGeometryRef.current;
+    /* Keep the Go-time main for fork learning even if we later commit "Your route". */
+    if (!isPersonalForkRouteId(chosen) && navGoGeometryRef.current?.length) {
+      navPlannedMainGeometryRef.current = navGoGeometryRef.current.map(
+        ([a, b]) => [a, b] as LngLat
+      );
+    } else if (isPersonalForkRouteId(chosen)) {
+      const mainAlt =
+        plan.routes.find((r) => r.id === "r-a") ??
+        plan.routes.find((r) => !isPersonalForkRouteId(r.id));
+      navPlannedMainGeometryRef.current = mainAlt?.geometry?.length
+        ? mainAlt.geometry.map(([a, b]) => [a, b] as LngLat)
+        : navGoGeometryRef.current;
+      onPersonalForkRef.current = true;
+    } else {
+      navPlannedMainGeometryRef.current = navGoGeometryRef.current;
+    }
     setGuidanceGeometryEpoch((n) => n + 1);
 
     if (userLngLat && destLngLat) {
@@ -3820,6 +4031,7 @@ export default function App() {
             trafficBypassCompareActive={Boolean(trafficBypassCompare)}
             trafficBypassCompareHazardLngLat={trafficBypassCompare?.hazardLngLat ?? null}
             trafficBypassCompareHazardAlongMeters={trafficBypassCompare?.hazardAlongMeters ?? null}
+            trafficBypassCompareKind={trafficBypassCompare?.compareKind}
             rejoinCompareLockedRouteId={lockedNavigationRouteId}
             activityTrailGeoJson={activityTrailGeoJsonForMap}
             sessionRouteLengthM={
@@ -3856,6 +4068,15 @@ export default function App() {
                     metersToManeuverEnd={metersToBannerManeuver}
                     glanceable={navigationStarted && viewMode === "drive"}
                   />
+                  {(personalForkNav.showChip || personalForkNav.showCommittedChip) &&
+                  personalForkNav.offer ? (
+                    <YourRouteChip
+                      offer={personalForkNav.offer}
+                      committed={Boolean(personalForkNav.showCommittedChip)}
+                      onTake={() => commitPersonalFork()}
+                      onDismiss={() => personalForkNav.dismissForTrip()}
+                    />
+                  ) : null}
                   {showStormAdvisoryChrome ? (
                     <StormAdvisoryBar
                       featureEnabled
@@ -4027,10 +4248,8 @@ export default function App() {
                       )
                     }
                     refreshBusy={routeInfoWeatherRefreshing}
-                    refreshNote={routeForecastRefreshBlocked}
-                    refreshNoteTone={
-                      routeForecastUsingCache && routeForecastRefreshBlocked ? "info" : "warn"
-                    }
+                    refreshNote={routeInfoRefreshNote}
+                    refreshNoteTone={routeInfoRefreshNoteTone}
                     onRefresh={handleRefreshRouteInfoWeather}
                   >
                     <RouteProgressGlancePanel
@@ -4038,7 +4257,13 @@ export default function App() {
                       routeWide={activeProgressCalloutPanel.routeWide}
                       outlookSteps={activeProgressCalloutPanel.outlookTimeline}
                       outlookSamples={activeProgressCalloutPanel.outlookSamples}
-                      radarSamples={radarMosaicAlongRoute.samples}
+                      radarSamples={radarMosaicSamples}
+                      radarStatusNote={
+                        radarRefreshBlocked ??
+                        (radarMosaicSamples.length > 0
+                          ? formatRadarSampleAge(radarMosaicUpdatedAt)
+                          : null)
+                      }
                       windPoints={activeProgressCalloutPanel.windPoints}
                       gustSpikePoints={activeProgressCalloutPanel.gustSpikePoints}
                       fallbackSegments={activeProgressCalloutPanel.segments.filter(

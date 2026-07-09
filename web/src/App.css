@@ -3711,6 +3711,97 @@
   pointer-events: auto;
 }
 
+/* Habitual fork — Apple Maps–style "Your route" chip under turn guidance */
+.your-route-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(26, 115, 232, 0.35);
+  background: rgba(232, 240, 254, 0.96);
+  color: #174ea6;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.your-route-chip--committed {
+  border-color: rgba(52, 168, 83, 0.4);
+  background: rgba(232, 245, 233, 0.96);
+  color: #137333;
+}
+
+.your-route-chip__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.your-route-chip__title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+}
+
+.your-route-chip__sub {
+  font-size: 0.78rem;
+  opacity: 0.9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.your-route-chip__actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.your-route-chip__btn {
+  border: 1px solid rgba(26, 115, 232, 0.35);
+  background: #fff;
+  color: #174ea6;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.your-route-chip__btn--primary {
+  background: #1a73e8;
+  border-color: #1a73e8;
+  color: #fff;
+}
+
+.app-shell--basemap-night .your-route-chip {
+  background: rgba(24, 40, 72, 0.94);
+  border-color: rgba(138, 180, 248, 0.45);
+  color: #aecbfa;
+}
+
+.app-shell--basemap-night .your-route-chip--committed {
+  background: rgba(20, 48, 32, 0.94);
+  border-color: rgba(129, 201, 149, 0.45);
+  color: #81c995;
+}
+
+.app-shell--basemap-night .your-route-chip__btn {
+  background: rgba(32, 48, 80, 0.95);
+  border-color: rgba(138, 180, 248, 0.4);
+  color: #aecbfa;
+}
+
+.app-shell--basemap-night .your-route-chip__btn--primary {
+  background: #8ab4f8;
+  border-color: #8ab4f8;
+  color: #202124;
+}
+
 /* Turn + storm + hint ? full width under turn bubble */
 .nav-top-route-rail {
   width: 100%;
@@ -5109,6 +5200,19 @@
 .rpgl__radar-strata {
   margin: 2px 0 0;
   padding: 0;
+}
+
+.rpgl__radar-status {
+  margin: 0;
+  padding: 0 2px 2px;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  color: #64748b;
+  opacity: 0.95;
+}
+
+.app-shell--basemap-night .rpgl__radar-status {
+  color: #94a3b8;
 }
 
 .rpgl__radar-strata .rrws {
@@ -10887,6 +10991,17 @@
   border-color: rgba(147, 197, 253, 0.45);
   background: rgba(59, 130, 246, 0.22);
   color: #dbeafe;
+}
+
+.route-hazard-sheet__btn--secondary {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: #f1f5f9;
+}
+
+.route-hazard-sheet__btn--primary:active:not(:disabled),
+.route-hazard-sheet__btn--secondary:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .route-hazard-sheet__btn--ghost {

@@ -146,7 +146,7 @@ export function useTollPreview(deps: UseTollPreviewDeps): () => Promise<void> {
       pendingGoAfterTollRef.current = false;
 
       activateRouteCompare({
-        headline: "Compare toll-free alternative on the map",
+        headline: "Toll difference on map — compare the affected highway",
         etaA: Math.max(1, Math.round(currentRoute.baseEtaMinutes)),
         etaB: Math.max(1, Math.round(tollFreePrimary.baseEtaMinutes)),
         etaC: null,

@@ -74,7 +74,7 @@ export function TollRouteSheet({
           </button>
           <button
             type="button"
-            className="route-hazard-sheet__btn route-hazard-sheet__btn--ghost"
+            className="route-hazard-sheet__btn route-hazard-sheet__btn--secondary"
             onClick={onContinue}
             disabled={busy}
           >

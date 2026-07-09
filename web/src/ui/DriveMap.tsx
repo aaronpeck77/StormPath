@@ -34,9 +34,6 @@ import { mapMaxBoundsForLngLat, mapMinZoomForSession } from "../config/mapRegion
 import { isUltraLongTripRoute } from "../utils/dataSaver";
 import { continentFromLngLat } from "../services/continents";
 import {
-  TOMORROW_IO_ANIMATION_CROSSFADE_MS,
-} from "../services/tomorrowIoRadarTiles";
-import {
   animationCellsForPack,
   packIncludesFutureNowcast,
   radarMapProviderForCenter,
@@ -150,12 +147,13 @@ import { driveMapPropsAreEqual } from "./driveMapPropsAreEqual";
 import {
   animateRainViewerDualCrossfade,
   ensureRainViewerRadarDual,
-  RAINVIEWER_RADAR_CROSSFADE_MS,
+  radarAnimationCrossfadeMs,
   RAINVIEWER_RADAR_VISIBLE_OPACITY,
   positionRainViewerRadarUnderRoads,
   removeRainViewerRadar,
   setRainViewerRadarTilesOnSource,
   setRainViewerRadarLayersVisible,
+  setRainViewerRadarDualOpacity,
   waitForRainViewerSideLoaded,
   setRadarMapTileProvider,
 } from "./mapRadarLayer";
@@ -265,6 +263,8 @@ export type Props = {
   trafficBypassCompareHazardLngLat?: LngLat | null;
   /** M along the primary leg for the compare hazard — tightens local fit ahead of the jam. */
   trafficBypassCompareHazardAlongMeters?: number | null;
+  /** Toll preview frames the diverged toll corridor instead of the full trip. */
+  trafficBypassCompareKind?: "traffic" | "toll";
   /** Locked route at Go — off-route compare fit keeps A local while framing B/C. */
   rejoinCompareLockedRouteId?: string | null;
   /** Plus: sparse GPS dots over weeks/months (see About → Activity trail). */
@@ -374,6 +374,7 @@ function DriveMapInner({
   trafficBypassCompareActive = false,
   trafficBypassCompareHazardLngLat = null,
   trafficBypassCompareHazardAlongMeters = null,
+  trafficBypassCompareKind,
   rejoinCompareLockedRouteId = null,
   activityTrailGeoJson = null,
   sessionRouteLengthM = 0,
@@ -1115,7 +1116,10 @@ function DriveMapInner({
       if (routes.length > 0) {
         const hideAltsOnMainDrive = viewMode === "drive";
         const hitLayerIds = routes
-          .filter((r) => !hideAltsOnMainDrive || r.id === lineFocusId)
+          .filter(
+            (r) =>
+              !hideAltsOnMainDrive || r.id === lineFocusId || r.id === "r-your-route"
+          )
           .map((r) => `route-${r.id}-line-hit`)
           .filter((lid) => map.getLayer(lid));
         if (hitLayerIds.length > 0) {
@@ -2155,16 +2159,22 @@ function DriveMapInner({
       pack.provider !== "tomorrow_io" && isRainViewerRateLimited();
 
     /**
-     * Load the next frame on the hidden side. Runs during the prior crossfade when possible;
-     * otherwise waits up to crossfadeMs + slack for tiles.
+     * Load the next frame on the hidden side. `timeoutMs` is the max wait for tiles
+     * (fast loop uses a short cap so one slow tile doesn't stall the sweep).
      */
     const prewarmFrame = (
       which: "a" | "b",
       url: string,
-      crossfadeMs: number
+      timeoutMs: number,
+      tileFadeMs?: number
     ): Promise<void> => {
-      setRainViewerRadarTilesOnSource(map, which, url);
-      return waitForRainViewerSideLoaded(map, which, crossfadeMs + 1000);
+      setRainViewerRadarTilesOnSource(
+        map,
+        which,
+        url,
+        tileFadeMs ?? Math.min(180, Math.max(80, Math.round(timeoutMs * 0.45)))
+      );
+      return waitForRainViewerSideLoaded(map, which, timeoutMs);
     };
 
     const emitRadarFrame = (idx: number, pack: RadarMapPack, cells: RadarCell[]) => {
@@ -2187,10 +2197,12 @@ function DriveMapInner({
     ) => {
       const o = RAINVIEWER_RADAR_VISIBLE_OPACITY;
       const tileUrl = (cell: RadarCell) => radarTileUrlForFrame(pack, cell, apiKey);
-      const crossfadeMs =
-        pack.provider === "tomorrow_io" || pack.provider === "hybrid"
-          ? TOMORROW_IO_ANIMATION_CROSSFADE_MS
-          : RAINVIEWER_RADAR_CROSSFADE_MS;
+      /* ~3.6s full history→now sweep; scales with frame count. */
+      const crossfadeMs = radarAnimationCrossfadeMs(cells.length);
+      /* In-loop wait must stay ≤ frame time or the loop target slips. */
+      const inLoopPrewarmMs = Math.max(80, Math.min(Math.round(crossfadeMs * 0.55), 220));
+      const prefetchTimeoutMs = 280;
+      const tileFadeMs = Math.min(160, Math.max(90, Math.round(crossfadeMs * 0.4)));
 
       const nextCellIndex = (current: number): number => {
         const forwardReplayOnly =
@@ -2207,7 +2219,18 @@ function DriveMapInner({
         let hidden: "a" | "b" = "b";
         let idx = 0;
 
-        await prewarmFrame(hidden, tileUrl(cells[1]!), crossfadeMs);
+        /* Prefetch every frame once so the loop hits warm tiles. */
+        for (let i = 0; i < cells.length; i++) {
+          if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
+          const side: "a" | "b" = i % 2 === 0 ? "a" : "b";
+          await prewarmFrame(side, tileUrl(cells[i]!), prefetchTimeoutMs, 80);
+        }
+        if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
+
+        setRainViewerRadarTilesOnSource(map, "a", tileUrl(cells[0]!), 0);
+        setRainViewerRadarDualOpacity(map, o, 0);
+        emitRadarFrame(0, pack, cells);
+        await prewarmFrame(hidden, tileUrl(cells[1]!), inLoopPrewarmMs, tileFadeMs);
         if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
 
         while (
@@ -2222,7 +2245,7 @@ function DriveMapInner({
           const from = visible === "a" ? { a: o, b: 0 } : { a: 0, b: o };
           const to = visible === "a" ? { a: 0, b: o } : { a: o, b: 0 };
 
-          await prewarmFrame(hidden, tileUrl(cells[nextIdx]!), crossfadeMs);
+          await prewarmFrame(hidden, tileUrl(cells[nextIdx]!), inLoopPrewarmMs, tileFadeMs);
           if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
 
           emitRadarFrame(nextIdx, pack, cells);
@@ -2235,7 +2258,7 @@ function DriveMapInner({
           idx = nextIdx;
 
           const followingIdx = nextCellIndex(idx);
-          void prewarmFrame(hidden, tileUrl(cells[followingIdx]!), crossfadeMs);
+          void prewarmFrame(hidden, tileUrl(cells[followingIdx]!), inLoopPrewarmMs + 400, tileFadeMs);
           bringMapboxTrafficLayersToFront(map);
           liftRouteHits();
         }
@@ -2918,6 +2941,7 @@ function DriveMapInner({
         {
           userAlongM: userAlongMetersRef.current ?? 0,
           hazardAlongM: trafficBypassCompareHazardAlongMeters,
+          compareKind: trafficBypassCompareKind,
         }
       );
     };
@@ -2983,6 +3007,7 @@ function DriveMapInner({
     trafficBypassCompareActive,
     trafficBypassCompareHazardLngLat,
     trafficBypassCompareHazardAlongMeters,
+    trafficBypassCompareKind,
     rejoinCompareLockedRouteId,
     /* Intentionally omit userAlongMeters — GPS ticks fire every second and would cancel the
      * pending 160 ms retry timer on every tick, preventing the camera from ever settling on
