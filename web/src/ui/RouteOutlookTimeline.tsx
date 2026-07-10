@@ -7,9 +7,7 @@ import {
   precipPctFromStep,
   routeOutlookAriaLabel,
 } from "../nav/routeForecastTimeline";
-import type { FractionBand, NightTransition } from "../forecast/chartNightBands";
 import { routePlotLeftPct } from "./routeAxisLayout";
-import { ChartNightBandLayer } from "./ChartNightBandLayer";
 
 type Props = {
   steps: RouteOutlookStep[];
@@ -20,12 +18,6 @@ type Props = {
   /** When false, parent draws the shared driver line across outlook + hazards. */
   showDriverLine?: boolean;
   showXTicks?: boolean;
-  /** Subtle civil-night shading behind the plot (fraction 0–1 along route). */
-  nightBands?: FractionBand[];
-  /** Vertical dusk/dawn markers along the route axis. */
-  nightTransitions?: NightTransition[];
-  /** Parent overlay draws night — keep legend swatch only. */
-  showNightLegend?: boolean;
 };
 
 const W = 400;
@@ -76,9 +68,6 @@ export function RouteOutlookTimeline({
   variant = "default",
   showDriverLine = true,
   showXTicks = true,
-  nightBands = [],
-  nightTransitions = [],
-  showNightLegend = false,
 }: Props) {
   const synced = variant === "synced";
 
@@ -129,11 +118,6 @@ export function RouteOutlookTimeline({
         <span className="rotl__legend-item rotl__legend-item--precip">
           <span className="rotl__legend-swatch" /> Rain %
         </span>
-        {nightBands.length > 0 || showNightLegend ? (
-          <span className="rotl__legend-item rotl__legend-item--night">
-            <span className="rotl__legend-swatch" /> Sunset–sunrise
-          </span>
-        ) : null}
       </div>
 
       <div className="rotl__chart-wrap">
@@ -143,15 +127,6 @@ export function RouteOutlookTimeline({
           preserveAspectRatio="none"
           aria-hidden
         >
-          <ChartNightBandLayer
-            bands={nightBands}
-            transitions={nightTransitions}
-            xPx={xPx}
-            yTop={PAD.top}
-            yBottom={H - PAD.bottom}
-            className="rotl__night-band"
-          />
-
           {/* grid */}
           {[0.25, 0.5, 0.75].map((f) => (
             <line

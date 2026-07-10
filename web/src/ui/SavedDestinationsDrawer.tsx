@@ -3,6 +3,7 @@ import type { SavedPlace } from "../nav/savedPlaces";
 import type { SavedRoute } from "../nav/savedRoutes";
 import type { LngLat } from "../nav/types";
 import type { FrequentRouteCluster } from "../frequentRoutes/types";
+import { loadRecentDestinations, type RecentDestination } from "../recentSearches";
 
 /* The drawer is a full-screen sheet with a "home" landing page and three drill-in pages
  * (Places / Saved routes / Frequent routes). Each drill-in page gets the entire screen to
@@ -82,8 +83,12 @@ export function SavedDestinationsDrawer({
   /* Drill-in navigation. Resets to "home" each time the drawer opens so users always land
    * on the section index instead of wherever they were last time. */
   const [view, setView] = useState<DrawerView>("home");
+  const [recentDestinations, setRecentDestinations] = useState<RecentDestination[]>([]);
   useEffect(() => {
-    if (open) setView("home");
+    if (open) {
+      setView("home");
+      setRecentDestinations(loadRecentDestinations());
+    }
   }, [open]);
 
   if (!open) return null;
@@ -235,6 +240,28 @@ export function SavedDestinationsDrawer({
                     badge={payFrequentRoutes ? null : "Plus"}
                     onClick={() => setView("frequent")}
                   />
+                </li>
+                <li className="saved-drawer-home-section saved-drawer-home-section--recent">
+                  <h3 className="saved-drawer-home-section__title">Previous destinations</h3>
+                  {recentDestinations.length === 0 ? (
+                    <p className="saved-drawer-recent-empty">
+                      Places you search or set as destination show up here.
+                    </p>
+                  ) : (
+                    <ul className="saved-drawer-recent-list" role="list">
+                      {recentDestinations.map((r) => (
+                        <li key={`${r.placeName}-${r.lngLat[0]}-${r.lngLat[1]}-${r.savedAtMs}`}>
+                          <button
+                            type="button"
+                            className="saved-drawer-recent-row"
+                            onClick={() => onGo(r.lngLat, r.placeName)}
+                          >
+                            <span className="saved-drawer-recent-row__label">{r.placeName}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               </ul>
             </div>

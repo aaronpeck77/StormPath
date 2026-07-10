@@ -1,4 +1,4 @@
-import { isDaylightAt } from "../forecast/solarDayNight";
+import { isNightAt } from "../forecast/solarDayNight";
 import { safeStorage } from "../storage/safeStorage";
 
 export const MAP_STYLE_DAY = "mapbox://styles/mapbox/streets-v12";
@@ -37,17 +37,22 @@ export function parseNightBasemapPreset(): NightBasemapPreset {
   return "neutral";
 }
 
-/** Day vs night for style + 3D lighting (solar at user location when available). */
+/** Day vs night for style + 3D lighting (civil twilight at user location when available). */
 export type MapPhase = "day" | "night";
 
+/** No-GPS fallback — roughly civil twilight in mid-latitudes summer. */
 function clockFallbackMapPhase(nowMs = Date.now()): MapPhase {
   const h = new Date(nowMs).getHours();
-  return h >= 6 && h < 20 ? "day" : "night";
+  return h >= 5 && h < 21 ? "day" : "night";
 }
 
+/**
+ * Map stays in day mode through civil twilight (after geometric sunset / before sunrise).
+ * Flipping at sunset felt too early outdoors in summer evenings.
+ */
 export function currentMapPhase(lngLat?: [number, number] | null, nowMs = Date.now()): MapPhase {
   if (lngLat && Number.isFinite(lngLat[0]) && Number.isFinite(lngLat[1])) {
-    return isDaylightAt(lngLat[1], lngLat[0], nowMs) ? "day" : "night";
+    return isNightAt(lngLat[1], lngLat[0], nowMs) ? "night" : "day";
   }
   return clockFallbackMapPhase(nowMs);
 }

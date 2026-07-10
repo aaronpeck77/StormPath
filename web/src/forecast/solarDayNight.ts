@@ -56,49 +56,54 @@ export function formatSolarLocalTime(ms: number, lat: number, lng: number): stri
 }
 
 /**
- * True when the sun is above the horizon (between sunrise and sunset).
- * Used for map basemap day vs night.
+ * Apparent altitude thresholds for {@link SunCalc.getPosition} (refraction-corrected).
+ * These match getPosition() at getTimes() sunrise/sunset (~−0.35°) and dawn/dusk (~−5.5°),
+ * not the raw geometric angles (−0.833° / −6°) used inside getTimes().
  */
-export function isDaylightAt(lat: number, lng: number, timeMs: number): boolean {
-  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(timeMs)) return true;
-  const t = SunCalc.getTimes(new Date(timeMs), lat, lng);
-  if (t.alwaysDown) return false;
-  if (t.alwaysUp) return true;
+const GEOMETRIC_HORIZON_ALT_DEG = -0.4;
+/** Civil twilight — outdoors still looks bright until the sun is about here. */
+const CIVIL_TWILIGHT_ALT_DEG = -5.5;
 
-  const sunriseMs = sunTimeMs(t.sunrise);
-  const sunsetMs = sunTimeMs(t.sunset);
-  if (sunriseMs != null && sunsetMs != null) {
-    return timeMs >= sunriseMs && timeMs < sunsetMs;
+/**
+ * Sun altitude in degrees at lat/lng. Prefer this over comparing getTimes() dawn/dusk
+ * timestamps — those are anchored to a UTC calendar day and misclassify US evenings
+ * after 00:00 UTC (e.g. 7pm CDT) as "before dawn".
+ */
+export function sunAltitudeDegrees(lat: number, lng: number, timeMs: number): number | null {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(timeMs)) return null;
+  try {
+    const pos = SunCalc.getPosition(new Date(timeMs), lat, lng);
+    const alt = pos?.altitude;
+    return typeof alt === "number" && Number.isFinite(alt) ? alt : null;
+  } catch {
+    return null;
   }
-  return true;
 }
 
-/** True after sunset or before sunrise (astronomical night). Matches map day/night. */
+/**
+ * True when the sun is above the geometric horizon (between sunrise and sunset).
+ * Used for route-graph night bands / sun-crossing events — not the map basemap
+ * (map uses civil twilight via {@link isNightAt}).
+ */
+export function isDaylightAt(lat: number, lng: number, timeMs: number): boolean {
+  const alt = sunAltitudeDegrees(lat, lng, timeMs);
+  if (alt == null) return true;
+  return alt >= GEOMETRIC_HORIZON_ALT_DEG;
+}
+
+/** True after sunset or before sunrise (geometric night). For route graphs / sun events. */
 export function isAstronomicalNightAt(lat: number, lng: number, timeMs: number): boolean {
   return !isDaylightAt(lat, lng, timeMs);
 }
 
 /**
- * True during civil night (after dusk or before dawn) at `lat`/`lng`.
- * Uses civil twilight — for local hourly forecast strips, not route graphs.
+ * True during civil night (sun below −6°) at `lat`/`lng`.
+ * Used for map basemap day/night and local forecast strips — outdoors still looks
+ * bright between geometric sunset and civil dusk.
  */
 export function isNightAt(lat: number, lng: number, timeMs: number): boolean {
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(timeMs)) return false;
-  const t = SunCalc.getTimes(new Date(timeMs), lat, lng);
-  if (t.alwaysDown) return true;
-  if (t.alwaysUp) return false;
-
-  const dawnMs = sunTimeMs(t.dawn);
-  const duskMs = sunTimeMs(t.dusk);
-  if (dawnMs != null && duskMs != null) {
-    return timeMs >= duskMs || timeMs < dawnMs;
-  }
-
-  const sunriseMs = sunTimeMs(t.sunrise);
-  const sunsetMs = sunTimeMs(t.sunset);
-  if (sunriseMs != null && sunsetMs != null) {
-    return timeMs >= sunsetMs || timeMs < sunriseMs;
-  }
-
-  return false;
+  const alt = sunAltitudeDegrees(lat, lng, timeMs);
+  if (alt == null) return false;
+  return alt < CIVIL_TWILIGHT_ALT_DEG;
 }

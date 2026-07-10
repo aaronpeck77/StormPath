@@ -670,8 +670,9 @@ function primaryRouteGeometry(routes: NavRoute[], onlyRouteId?: string | null): 
 const ENDPOINT_ANCHORED_TRIP_MAX_DIRECT_M = 250_000;
 
 /**
- * Rt / planning framing: anchor user + destination on the padded edges (same treatment for every
- * trip under ~155 mi). Only cross-country legs use the full polyline bbox.
+ * Optional endpoint-anchored framing (user + dest on padded edges) for short/medium
+ * straight corridors. Pre-Go planning overview uses {@link FitMapToTripOptions.forceFullPolyline}
+ * instead so every planned route — street or cross-country — fills the map.
  */
 export function preferEndpointAnchoredTripFit(
   user: LngLat | null,

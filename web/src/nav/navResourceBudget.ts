@@ -58,11 +58,9 @@ export function computeRadarMapOverlayOn(
 
 /**
  * Tiered fetch gates while navigating — Drive keeps NWS + traffic + replan;
- * Route/Map keep radar overlay, route sampling, and corridor forecast refresh.
- *
- * Exception: when Route Info (`progressCalloutsOpen`) is open during Drive, allow
- * lean corridor forecast + radar polyline sampling so the graphs stay live.
- * Map radar overlay stays off in Drive.
+ * Route/Map keep radar overlay. Corridor forecast + radar polyline sampling stay
+ * on during active Drive so Route Info graphs remain full-trip and synced even
+ * when the panel is closed. Map radar overlay stays off in Drive.
  */
 export function buildNavResourceBudget(input: NavResourceBudgetInput): NavResourceBudget {
   const driveNavMode = isDriveNavMode(input.navigationStarted, input.viewMode);
@@ -77,6 +75,11 @@ export function buildNavResourceBudget(input: NavResourceBudgetInput): NavResour
   const longTrip = isLongTripRoute(input.routeLengthM);
   /** Route Info panel open — user explicitly wants corridor graphs. */
   const routeInfoOpen = input.progressCalloutsOpen;
+  /**
+   * Active Drive navigation — keep lean corridor weather + radar sampling warm
+   * so reopening Route Info shows the full trip with YOU already mid-axis.
+   */
+  const driveCorridorLive = driveNavMode && input.appForeground;
 
   const radarSampleRequested =
     radarMapOverlayOn ||
@@ -85,7 +88,7 @@ export function buildNavResourceBudget(input: NavResourceBudgetInput): NavResour
       (input.settingStormEnabled ||
         input.settingWeatherHintsEnabled ||
         routeInfoOpen)) ||
-    (driveNavMode && routeInfoOpen);
+    driveCorridorLive;
 
   const radarRouteSamplingEnabled = Boolean(
     input.hasGuidanceGeometry &&
@@ -95,7 +98,8 @@ export function buildNavResourceBudget(input: NavResourceBudgetInput): NavResour
         (!ultraLongPlannedRoute &&
           (!longTrip || input.settingStormEnabled)) ||
         radarMapOverlayOn ||
-        routeInfoOpen)
+        routeInfoOpen ||
+        driveCorridorLive)
   );
 
   const tioBaseEnabled =
@@ -129,12 +133,9 @@ export function buildNavResourceBudget(input: NavResourceBudgetInput): NavResour
   const navLiteForCorridorFetch =
     input.navigationStarted && (input.dataSaverMode || longTrip);
 
-  /** Drive + Route Info open: allow corridor refresh for wind/temp/precip graphs. */
-  const driveRouteInfoCorridor = driveNavMode && routeInfoOpen;
-
   const tioRouteFetchEnabled =
     tioRouteCorridorEnabled &&
-    (driveRouteInfoCorridor ||
+    (driveCorridorLive ||
       (!driveNavMode &&
         !(
           navLiteForCorridorFetch &&
@@ -149,8 +150,6 @@ export function buildNavResourceBudget(input: NavResourceBudgetInput): NavResour
             routeInfoOpen ||
             (input.hasPlannedRoute && !longTrip))));
 
-  const driveRouteInfoLive = driveNavMode && routeInfoOpen;
-
   return {
     driveNavMode,
     planningSurfaceActive,
@@ -159,7 +158,7 @@ export function buildNavResourceBudget(input: NavResourceBudgetInput): NavResour
     tioRouteFetchEnabled,
     tioPointFetchEnabled,
     localDailyForecastEnabled,
-    advisoryForecastRepairEnabled: !driveNavMode || driveRouteInfoLive,
-    advisoryWeatherSyncEnabled: !driveNavMode || driveRouteInfoLive,
+    advisoryForecastRepairEnabled: !driveNavMode || driveCorridorLive,
+    advisoryWeatherSyncEnabled: !driveNavMode || driveCorridorLive,
   };
 }

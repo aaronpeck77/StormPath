@@ -31,15 +31,15 @@ describe("navResourceBudget", () => {
     expect(budget.advisoryForecastRepairEnabled).toBe(true);
   });
 
-  it("pauses advisory tier while navigating in drive with Route Info closed", () => {
+  it("keeps corridor weather warm in drive even with Route Info closed", () => {
     const budget = buildNavResourceBudget({ ...base, viewMode: "drive" });
     expect(budget.driveNavMode).toBe(true);
     expect(budget.radarMapOverlayOn).toBe(false);
-    expect(budget.radarRouteSamplingEnabled).toBe(false);
-    expect(budget.tioRouteFetchEnabled).toBe(false);
+    expect(budget.radarRouteSamplingEnabled).toBe(true);
+    expect(budget.tioRouteFetchEnabled).toBe(true);
     expect(budget.tioPointFetchEnabled).toBe(false);
-    expect(budget.advisoryForecastRepairEnabled).toBe(false);
-    expect(budget.advisoryWeatherSyncEnabled).toBe(false);
+    expect(budget.advisoryForecastRepairEnabled).toBe(true);
+    expect(budget.advisoryWeatherSyncEnabled).toBe(true);
   });
 
   it("still allows point weather in drive when the storm bar is expanded", () => {
@@ -50,8 +50,8 @@ describe("navResourceBudget", () => {
     });
     expect(budget.tioPointFetchEnabled).toBe(true);
     expect(budget.localDailyForecastEnabled).toBe(true);
-    expect(budget.tioRouteFetchEnabled).toBe(false);
-    expect(budget.radarRouteSamplingEnabled).toBe(false);
+    expect(budget.tioRouteFetchEnabled).toBe(true);
+    expect(budget.radarRouteSamplingEnabled).toBe(true);
   });
 
   it("loads local 7-day forecast at the puck without an active route", () => {
@@ -76,7 +76,7 @@ describe("navResourceBudget", () => {
     expect(budget.localDailyForecastEnabled).toBe(false);
   });
 
-  it("does not sample radar in drive when Route Info is closed", () => {
+  it("samples radar and corridor forecast in drive when Route Info is closed", () => {
     const budget = buildNavResourceBudget({
       ...base,
       viewMode: "drive",
@@ -84,8 +84,8 @@ describe("navResourceBudget", () => {
       settingWeatherHintsEnabled: true,
       progressCalloutsOpen: false,
     });
-    expect(budget.radarRouteSamplingEnabled).toBe(false);
-    expect(budget.tioRouteFetchEnabled).toBe(false);
+    expect(budget.radarRouteSamplingEnabled).toBe(true);
+    expect(budget.tioRouteFetchEnabled).toBe(true);
   });
 
   it("samples radar and corridor forecast in drive when Route Info is open", () => {
@@ -101,6 +101,18 @@ describe("navResourceBudget", () => {
     expect(budget.tioRouteFetchEnabled).toBe(true);
     expect(budget.advisoryForecastRepairEnabled).toBe(true);
     expect(budget.advisoryWeatherSyncEnabled).toBe(true);
+  });
+
+  it("pauses drive corridor fetches when backgrounded", () => {
+    const budget = buildNavResourceBudget({
+      ...base,
+      viewMode: "drive",
+      appForeground: false,
+      progressCalloutsOpen: false,
+    });
+    expect(budget.radarRouteSamplingEnabled).toBe(false);
+    expect(budget.tioRouteFetchEnabled).toBe(false);
+    expect(budget.advisoryForecastRepairEnabled).toBe(false);
   });
 
   it("samples radar on a long route when storm mode is on in route view", () => {

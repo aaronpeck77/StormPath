@@ -238,12 +238,27 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       setSearchExpanded(false);
       setSearchText(label);
       setSavedDrawerOpen(false);
+      setViewMode("route");
       const pickMode =
         addingViaStop && useTripPlanStore.getState().destLngLat ? "via" : "destination";
       if (pickMode === "destination") setDestinationLabel(label);
-      void applyTripPlacePick(lngLat, label, pickMode);
+      void (async () => {
+        await applyTripPlacePick(lngLat, label, pickMode);
+        /* Drawer close changes map chrome size — refit once layout settles so the full
+         * route fills the screen the same as any other planned trip. */
+        setFitTrigger((n) => n + 1);
+        window.setTimeout(() => setFitTrigger((n) => n + 1), 280);
+      })();
     },
-    [userLngLat, applyTripPlacePick, locationError, recordRecentSearch, addingViaStop]
+    [
+      userLngLat,
+      applyTripPlacePick,
+      locationError,
+      recordRecentSearch,
+      addingViaStop,
+      setFitTrigger,
+      setViewMode,
+    ]
   );
 
   const handleSavedMarkerClick = useCallback(

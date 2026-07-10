@@ -874,9 +874,15 @@ export function buildSyncedRouteOutlook(opts: {
         driveEtaMinutes
       );
       const fmt = formatDurationMinutesMaybe(enterMin);
+      const midRoute = userAlongMeters / totalMeters > 0.05;
       if (fmt) {
-        etaLabel = step.fraction <= 0.001 ? "Now" : fmt === "now" ? "Now" : fmt;
-      } else if (step.fraction <= 0.001) {
+        /* Full-trip axis: t=0 is Start once you've left the beginning — "Now" is the YOU line. */
+        if (step.fraction <= 0.001 && midRoute) {
+          etaLabel = null;
+        } else {
+          etaLabel = step.fraction <= 0.001 ? "Now" : fmt === "now" ? "Now" : fmt;
+        }
+      } else if (step.fraction <= 0.001 && !midRoute) {
         etaLabel = "Now";
       }
     }

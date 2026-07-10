@@ -1,12 +1,19 @@
 /**
- * Estimate storm-cell motion from two consecutive RainViewer radar mosaics.
- * Arrows anchor on **red / white cell cores** (not green fringe or cluster centroids).
+ * Storm-motion arrows from RainViewer frame pairs (cross-correlation) with optional NWS fallback.
+ * Arrows are omitted unless direction confidence is high; mph is omitted unless speed is reliable.
  */
 
 import { haversineMeters, initialBearingDegrees } from "../nav/routeGeometry";
 import type { LngLat } from "../nav/types";
 import { formatEtaDuration } from "../ui/formatEta";
 import {
+  buildEchoGrid,
+  estimateMotionByCrossCorrelation,
+  GRID_SCAN_STEP,
+  type CrossCorrMotionEstimate,
+} from "./radarEchoCrossCorr";
+import {
+  echoIntensityFromRgba,
   fetchRadarTileRgba,
   RADAR_MOSAIC_SAMPLE_ZOOM,
   stormCoreIntensityFromRgba,
@@ -21,25 +28,24 @@ export type RadarStormMotion = {
   lng: number;
   lat: number;
   bearingDeg: number;
-  speedMph: number;
+  /** Omitted from the map label when null (direction-only arrow). */
+  speedMph: number | null;
   intensity: number;
   minutesToArrive: number | null;
 };
 
 const MOTION_ZOOM = RADAR_MOSAIC_SAMPLE_ZOOM;
-/** Minimum core score to participate in clustering (excludes most green/yellow fringe). */
 const CORE_SEED = 0.58;
-/** Only emit arrows for true cell cores (red+ or white). */
 const CORE_PEAK_MIN = 0.68;
 const CLUSTER_DEG = 0.11;
 const MAX_CELLS = 3;
 const MIN_SPEED_MPH = 8;
-const MIN_SHIFT_M = 1800;
-const MAX_SHIFT_M = 95_000;
+const MIN_SHIFT_M = 3500;
+export const RADAR_STORM_MAX_SPEED_MPH = 55;
 const MAX_BBOX_SPAN_DEG = 5.5;
 const COARSE_STEP = 14;
-const FINE_STEP = 6;
-const LOCAL_MAX_RADIUS_DEG = 0.09;
+const MIN_DIRECTION_CONFIDENCE = 0.54;
+const MIN_SPEED_CONFIDENCE = 0.62;
 
 function clampBounds(b: MapBounds): MapBounds {
   const spanLng = b.east - b.west;
@@ -89,31 +95,11 @@ function lngLatFromTilePixel(z: number, x: number, y: number, px: number, py: nu
   return [lng, lat];
 }
 
-function coreAt(rgba: Uint8ClampedArray, px: number, py: number): number {
-  const idx = (py * 256 + px) * 4;
-  return stormCoreIntensityFromRgba(rgba[idx] ?? 0, rgba[idx + 1] ?? 0, rgba[idx + 2] ?? 0, rgba[idx + 3] ?? 0);
-}
-
-type PeakCell = {
-  peakLng: number;
-  peakLat: number;
-  peak: number;
-};
-
-type Cluster = PeakCell;
+export type PeakCell = { peakLng: number; peakLat: number; peak: number };
 
 function clusterKey(lng: number, lat: number): string {
   const k = 1 / CLUSTER_DEG;
   return `${Math.floor(lng * k)}:${Math.floor(lat * k)}`;
-}
-
-/** Keep the single strongest core pixel per cluster bucket — never average toward green fringe. */
-function upsertCluster(map: Map<string, Cluster>, lng: number, lat: number, intensity: number): void {
-  const key = clusterKey(lng, lat);
-  const prev = map.get(key);
-  if (!prev || intensity > prev.peak) {
-    map.set(key, { peakLng: lng, peakLat: lat, peak: intensity });
-  }
 }
 
 function tileRange(bounds: MapBounds, z: number): { xMin: number; xMax: number; yMin: number; yMax: number } {
@@ -152,136 +138,121 @@ function loadTileRgba(url: string): Promise<Uint8ClampedArray | null> {
   return p;
 }
 
-function scanTileCoarse(
-  rgba: Uint8ClampedArray,
+function intensitySampleFromTiles(
+  tileMap: Map<string, Uint8ClampedArray>,
   z: number,
-  x: number,
-  y: number,
-  bounds: MapBounds,
-  step: number,
-  minCore: number,
-  clusters: Map<string, Cluster>
-): void {
-  for (let py = 0; py < 256; py += step) {
-    for (let px = 0; px < 256; px += step) {
-      const inten = coreAt(rgba, px, py);
-      if (inten < minCore) continue;
-      const [lng, lat] = lngLatFromTilePixel(z, x, y, px, py);
-      if (lng < bounds.west || lng > bounds.east || lat < bounds.south || lat > bounds.north) continue;
-      upsertCluster(clusters, lng, lat, inten);
-    }
-  }
+  lng: number,
+  lat: number,
+  useCore: boolean
+): number {
+  const { x, y, px, py } = tileXY(lng, lat, z);
+  const rgba = tileMap.get(`${x}/${y}`);
+  if (!rgba) return 0;
+  const idx = (py * 256 + px) * 4;
+  const r = rgba[idx] ?? 0;
+  const g = rgba[idx + 1] ?? 0;
+  const b = rgba[idx + 2] ?? 0;
+  const a = rgba[idx + 3] ?? 0;
+  return useCore ? stormCoreIntensityFromRgba(r, g, b, a) : echoIntensityFromRgba(r, g, b, a);
 }
 
-async function scanFramePeaks(
+async function loadTilesInBounds(
   urlTemplate: string,
   z: number,
-  bounds: MapBounds,
-  minCore: number
-): Promise<Map<string, Cluster>> {
+  bounds: MapBounds
+): Promise<Map<string, Uint8ClampedArray>> {
   const { xMin, xMax, yMin, yMax } = tileRange(bounds, z);
-  const clusters = new Map<string, Cluster>();
+  const tileMap = new Map<string, Uint8ClampedArray>();
   for (let x = xMin; x <= xMax; x++) {
     for (let y = yMin; y <= yMax; y++) {
       const url = urlTemplate.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
       const rgba = await loadTileRgba(url);
-      if (!rgba) continue;
-      scanTileCoarse(rgba, z, x, y, bounds, COARSE_STEP, minCore, clusters);
+      if (rgba) tileMap.set(`${x}/${y}`, rgba);
     }
   }
-  return clusters;
+  return tileMap;
 }
 
-/** Refine peak to the brightest core pixel near the coarse maximum. */
-async function refinePeak(
-  urlTemplate: string,
+async function buildFrameEchoGrid(
   z: number,
-  seed: PeakCell
-): Promise<PeakCell> {
-  const { x, y } = tileXY(seed.peakLng, seed.peakLat, z);
-  let best = { ...seed };
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      const url = urlTemplate.replace("{z}", String(z)).replace("{x}", String(x + dx)).replace("{y}", String(y + dy));
-      const rgba = await loadTileRgba(url);
+  bounds: MapBounds,
+  tileMap: Map<string, Uint8ClampedArray>
+) {
+  return buildEchoGrid(bounds, (lng, lat) => intensitySampleFromTiles(tileMap, z, lng, lat, false));
+}
+
+async function findStrongCoreAnchors(
+  z: number,
+  bounds: MapBounds,
+  tileMap: Map<string, Uint8ClampedArray>
+): Promise<PeakCell[]> {
+  const clusters = new Map<string, PeakCell>();
+  const { xMin, xMax, yMin, yMax } = tileRange(bounds, z);
+  for (let x = xMin; x <= xMax; x++) {
+    for (let y = yMin; y <= yMax; y++) {
+      const rgba = tileMap.get(`${x}/${y}`);
       if (!rgba) continue;
-      for (let py = 0; py < 256; py += FINE_STEP) {
-        for (let px = 0; px < 256; px += FINE_STEP) {
-          const [lng, lat] = lngLatFromTilePixel(z, x + dx, y + dy, px, py);
-          if (
-            Math.abs(lng - seed.peakLng) > LOCAL_MAX_RADIUS_DEG ||
-            Math.abs(lat - seed.peakLat) > LOCAL_MAX_RADIUS_DEG
-          ) {
-            continue;
-          }
-          const inten = coreAt(rgba, px, py);
-          if (inten > best.peak) {
-            best = { peakLng: lng, peakLat: lat, peak: inten };
+      for (let py = 0; py < 256; py += COARSE_STEP) {
+        for (let px = 0; px < 256; px += COARSE_STEP) {
+          const idx = (py * 256 + px) * 4;
+          const inten = stormCoreIntensityFromRgba(
+            rgba[idx] ?? 0,
+            rgba[idx + 1] ?? 0,
+            rgba[idx + 2] ?? 0,
+            rgba[idx + 3] ?? 0
+          );
+          if (inten < CORE_PEAK_MIN) continue;
+          const [lng, lat] = lngLatFromTilePixel(z, x, y, px, py);
+          if (lng < bounds.west || lng > bounds.east || lat < bounds.south || lat > bounds.north) continue;
+          const key = clusterKey(lng, lat);
+          const prev = clusters.get(key);
+          if (!prev || inten > prev.peak) {
+            clusters.set(key, { peakLng: lng, peakLat: lat, peak: inten });
           }
         }
       }
     }
   }
-  return best;
+  return [...clusters.values()].sort((a, b) => b.peak - a.peak);
 }
 
-/** Prior frame: brightest core in search disk (not mass-weighted centroid). */
-async function findPriorPeak(
-  urlTemplate: string,
-  z: number,
-  nearLng: number,
-  nearLat: number,
-  radiusDeg: number
-): Promise<PeakCell | null> {
-  const { x, y } = tileXY(nearLng, nearLat, z);
-  let best: PeakCell | null = null;
-  for (let dy = -2; dy <= 2; dy++) {
-    for (let dx = -2; dx <= 2; dx++) {
-      const url = urlTemplate.replace("{z}", String(z)).replace("{x}", String(x + dx)).replace("{y}", String(y + dy));
-      const rgba = await loadTileRgba(url);
-      if (!rgba) continue;
-      for (let py = 0; py < 256; py += FINE_STEP) {
-        for (let px = 0; px < 256; px += FINE_STEP) {
-          const [lng, lat] = lngLatFromTilePixel(z, x + dx, y + dy, px, py);
-          if (Math.abs(lng - nearLng) > radiusDeg || Math.abs(lat - nearLat) > radiusDeg) continue;
-          const inten = coreAt(rgba, px, py);
-          if (inten < CORE_SEED * 0.85) continue;
-          if (!best || inten > best.peak) {
-            best = { peakLng: lng, peakLat: lat, peak: inten };
-          }
-        }
+/** NWS StormMotion from an active alert overlapping the sample box (authoritative when present). */
+export function nwsStormMotionInBounds(
+  alerts: GeoJSON.FeatureCollection | null | undefined,
+  bounds: MapBounds
+): { bearingDeg: number; speedMph: number } | null {
+  if (!alerts?.features?.length) return null;
+  const cx = (bounds.west + bounds.east) / 2;
+  const cy = (bounds.south + bounds.north) / 2;
+
+  for (const f of alerts.features) {
+    const props = f.properties as Record<string, unknown> | null;
+    if (!props) continue;
+    const motionDeg = props.motionDeg;
+    const motionMph = props.motionMph;
+    if (typeof motionDeg !== "number" || typeof motionMph !== "number") continue;
+    if (motionMph < MIN_SPEED_MPH) continue;
+
+    const g = f.geometry;
+    if (!g) continue;
+    if (g.type === "Polygon") {
+      const ring = g.coordinates[0];
+      if (!ring?.length) continue;
+      let west = Infinity;
+      let east = -Infinity;
+      let south = Infinity;
+      let north = -Infinity;
+      for (const c of ring) {
+        west = Math.min(west, c[0]!);
+        east = Math.max(east, c[0]!);
+        south = Math.min(south, c[1]!);
+        north = Math.max(north, c[1]!);
       }
+      if (cx < west || cx > east || cy < south || cy > north) continue;
     }
+    return { bearingDeg: motionDeg, speedMph: motionMph };
   }
-  return best;
-}
-
-/** Drop peaks sitting on fringe: must beat neighbors in a small ring. */
-async function isLocalCoreMaximum(urlTemplate: string, z: number, peak: PeakCell): Promise<boolean> {
-  const ring = [0.04, 0.055, 0.07];
-  const center = peak.peak;
-  for (const d of ring) {
-    for (let a = 0; a < 8; a++) {
-      const bearing = a * 45;
-      const R = 6371000;
-      const dist = d * (Math.PI / 180) * R;
-      const b = (bearing * Math.PI) / 180;
-      const lat1 = (peak.peakLat * Math.PI) / 180;
-      const lng1 = (peak.peakLng * Math.PI) / 180;
-      const lat2 = Math.asin(Math.sin(lat1) * Math.cos(dist / R) + Math.cos(lat1) * Math.sin(dist / R) * Math.cos(b));
-      const lng2 =
-        lng1 +
-        Math.atan2(Math.sin(b) * Math.sin(dist / R) * Math.cos(lat1), Math.cos(dist / R) - Math.sin(lat1) * Math.sin(lat2));
-      const lng = (lng2 * 180) / Math.PI;
-      const lat = (lat2 * 180) / Math.PI;
-      const { x, y, px, py } = tileXY(lng, lat, z);
-      const url = urlTemplate.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
-      const rgba = await loadTileRgba(url);
-      if (!rgba) continue;
-      if (coreAt(rgba, px, py) >= center - 0.04) return false;
-    }
-  }
-  return true;
+  return null;
 }
 
 function approachMinutes(
@@ -307,11 +278,32 @@ function cardinalLabel(bearingDeg: number): string {
 
 export function formatRadarMotionLabel(m: RadarStormMotion): string {
   const dir = cardinalLabel(m.bearingDeg);
-  const spd = `${Math.round(m.speedMph)} mph ${dir}`;
-  if (m.minutesToArrive != null && m.minutesToArrive < 180) {
-    return `${spd} · ~${formatEtaDuration(m.minutesToArrive)}`;
+  if (m.speedMph != null && m.speedMph >= MIN_SPEED_MPH) {
+    const spd = `${Math.round(m.speedMph)} mph ${dir}`;
+    if (m.minutesToArrive != null && m.minutesToArrive < 180) {
+      return `${spd} · ~${formatEtaDuration(m.minutesToArrive)}`;
+    }
+    return spd;
   }
-  return spd;
+  return `→ ${dir}`;
+}
+
+type MotionVector = {
+  bearingDeg: number;
+  speedMph: number;
+  speedConfidence: number;
+  directionConfidence: number;
+  source: "nws" | "crosscorr";
+};
+
+function motionFromCrossCorr(estimate: CrossCorrMotionEstimate): MotionVector {
+  return {
+    bearingDeg: estimate.bearingDeg,
+    speedMph: estimate.speedMph,
+    speedConfidence: estimate.speedConfidence,
+    directionConfidence: estimate.directionConfidence,
+    source: "crosscorr",
+  };
 }
 
 export async function computeRadarStormMotions(
@@ -319,11 +311,15 @@ export async function computeRadarStormMotions(
   host: string,
   frameOlder: { path: string; time: number },
   frameNewer: { path: string; time: number },
-  opts?: { referenceLngLat?: LngLat | null; signal?: AbortSignal }
+  opts?: {
+    referenceLngLat?: LngLat | null;
+    weatherAlerts?: GeoJSON.FeatureCollection | null;
+    signal?: AbortSignal;
+  }
 ): Promise<RadarStormMotion[]> {
   if (isRainViewerRateLimited()) return [];
   const bounds = clampBounds(boundsIn);
-  const dtSec = Math.max(120, frameNewer.time - frameOlder.time);
+  const dtSec = Math.max(300, frameNewer.time - frameOlder.time);
   if (dtSec <= 0) return [];
 
   const urlOlder = tileUrlFromHostAndPath(host, frameOlder.path);
@@ -332,48 +328,164 @@ export async function computeRadarStormMotions(
 
   if (opts?.signal?.aborted) return [];
 
-  const coarse = await scanFramePeaks(urlNewer, z, bounds, CORE_SEED);
-  const ranked = [...coarse.values()].sort((a, b) => b.peak - a.peak).slice(0, 12);
+  const nws = nwsStormMotionInBounds(opts?.weatherAlerts, bounds);
+
+  const [olderTiles, newerTiles] = await Promise.all([
+    loadTilesInBounds(urlOlder, z, bounds),
+    loadTilesInBounds(urlNewer, z, bounds),
+  ]);
+  if (opts?.signal?.aborted) return [];
+
+  let motion: MotionVector | null = null;
+
+  if (nws) {
+    motion = {
+      bearingDeg: nws.bearingDeg,
+      speedMph: nws.speedMph,
+      speedConfidence: 1,
+      directionConfidence: 1,
+      source: "nws",
+    };
+  } else {
+    const [olderGrid, newerGrid] = await Promise.all([
+      buildFrameEchoGrid(z, bounds, olderTiles),
+      buildFrameEchoGrid(z, bounds, newerTiles),
+    ]);
+    const estimate = estimateMotionByCrossCorrelation(
+      olderGrid,
+      newerGrid,
+      dtSec,
+      RADAR_STORM_MAX_SPEED_MPH,
+      MIN_SHIFT_M
+    );
+    if (estimate && estimate.directionConfidence >= MIN_DIRECTION_CONFIDENCE) {
+      motion = motionFromCrossCorr(estimate);
+    }
+  }
+
+  if (!motion || motion.directionConfidence < MIN_DIRECTION_CONFIDENCE) return [];
+
+  const anchors = await findStrongCoreAnchors(z, bounds, newerTiles);
+  const ranked = anchors.slice(0, MAX_CELLS * 2);
+  if (!ranked.length) return [];
+
+  const showSpeed = motion.speedConfidence >= MIN_SPEED_CONFIDENCE;
+  const speedMph = showSpeed ? motion.speedMph : null;
   const out: RadarStormMotion[] = [];
 
-  for (const seed of ranked) {
-    if (opts?.signal?.aborted) return out;
+  for (const peak of ranked) {
     if (out.length >= MAX_CELLS) break;
-
-    let peak = await refinePeak(urlNewer, z, seed);
-    if (peak.peak < CORE_PEAK_MIN) continue;
-    if (!(await isLocalCoreMaximum(urlNewer, z, peak))) continue;
-
-    const prior = await findPriorPeak(urlOlder, z, peak.peakLng, peak.peakLat, 0.36);
-    if (!prior || prior.peak < CORE_SEED * 0.9) continue;
-
-    const from: LngLat = [prior.peakLng, prior.peakLat];
     const to: LngLat = [peak.peakLng, peak.peakLat];
-    const shiftM = haversineMeters(from, to);
-    if (shiftM < MIN_SHIFT_M || shiftM > MAX_SHIFT_M) continue;
-
-    const speedMph = (shiftM / dtSec) * 2.23694;
-    if (speedMph < MIN_SPEED_MPH || speedMph > 95) continue;
-
-    const bearingDeg = initialBearingDegrees(from, to);
-    const minutesToArrive = opts?.referenceLngLat
-      ? approachMinutes(to, bearingDeg, speedMph, opts.referenceLngLat)
-      : null;
-
-    const tooClose = out.some(
-      (m) => haversineMeters([m.lng, m.lat], to) < 28_000
-    );
+    const tooClose = out.some((m) => haversineMeters([m.lng, m.lat], to) < 22_000);
     if (tooClose) continue;
 
     out.push({
       lng: peak.peakLng,
       lat: peak.peakLat,
-      bearingDeg,
+      bearingDeg: motion.bearingDeg,
       speedMph,
       intensity: peak.peak,
-      minutesToArrive,
+      minutesToArrive:
+        speedMph != null && opts?.referenceLngLat
+          ? approachMinutes(to, motion.bearingDeg, speedMph, opts.referenceLngLat)
+          : null,
     });
   }
 
   return out;
 }
+
+// --- legacy exports kept for unit tests ---
+export const maxPlausibleShiftMeters = (dtSec: number) =>
+  Math.min(95_000, dtSec * RADAR_STORM_MAX_SPEED_MPH * 0.44704);
+
+export function bearingSeparationDeg(a: number, b: number): number {
+  return Math.abs(((a - b + 540) % 360) - 180);
+}
+
+export function computeRegionalStormMotion(
+  olderPeaks: PeakCell[],
+  newerPeaks: PeakCell[],
+  dtSec: number
+): { bearingDeg: number; speedMph: number; shiftM: number } | null {
+  let wOld = 0;
+  let wNew = 0;
+  let lngOld = 0;
+  let latOld = 0;
+  let lngNew = 0;
+  let latNew = 0;
+  for (const p of olderPeaks) {
+    if (p.peak < CORE_SEED) continue;
+    const w = (p.peak - CORE_SEED) ** 2;
+    wOld += w;
+    lngOld += p.peakLng * w;
+    latOld += p.peakLat * w;
+  }
+  for (const p of newerPeaks) {
+    if (p.peak < CORE_SEED) continue;
+    const w = (p.peak - CORE_SEED) ** 2;
+    wNew += w;
+    lngNew += p.peakLng * w;
+    latNew += p.peakLat * w;
+  }
+  if (wOld < 1e-8 || wNew < 1e-8) return null;
+  const from: LngLat = [lngOld / wOld, latOld / wOld];
+  const to: LngLat = [lngNew / wNew, latNew / wNew];
+  const shiftM = haversineMeters(from, to);
+  if (shiftM < MIN_SHIFT_M) return null;
+  const speedMph = (shiftM / dtSec) * 2.23694;
+  if (speedMph < MIN_SPEED_MPH || speedMph > RADAR_STORM_MAX_SPEED_MPH) return null;
+  return { bearingDeg: initialBearingDegrees(from, to), speedMph, shiftM };
+}
+
+export function matchStormPeakPairs(
+  newerPeaks: PeakCell[],
+  olderPeaks: PeakCell[],
+  dtSec: number,
+  regionalBearingDeg: number | null = null
+) {
+  type Match = {
+    newer: PeakCell;
+    older: PeakCell;
+    bearingDeg: number;
+    speedMph: number;
+    shiftM: number;
+    score: number;
+  };
+  const cands: Match[] = [];
+  for (const newer of newerPeaks) {
+    if (newer.peak < CORE_PEAK_MIN) continue;
+    for (const older of olderPeaks) {
+      if (older.peak < CORE_SEED * 0.9) continue;
+      const from: LngLat = [older.peakLng, older.peakLat];
+      const to: LngLat = [newer.peakLng, newer.peakLat];
+      const shiftM = haversineMeters(from, to);
+      const maxShift = maxPlausibleShiftMeters(dtSec);
+      if (shiftM < MIN_SHIFT_M || shiftM > maxShift) continue;
+      const speedMph = (shiftM / dtSec) * 2.23694;
+      if (speedMph < MIN_SPEED_MPH || speedMph > RADAR_STORM_MAX_SPEED_MPH) continue;
+      const bearingDeg = initialBearingDegrees(from, to);
+      if (regionalBearingDeg != null && bearingSeparationDeg(bearingDeg, regionalBearingDeg) > 55) {
+        continue;
+      }
+      const distNorm = 1 - shiftM / maxShift;
+      const intenNorm = 1 - Math.abs(newer.peak - older.peak) / 0.24;
+      cands.push({ newer, older, bearingDeg, speedMph, shiftM, score: distNorm * 0.78 + intenNorm * 0.22 });
+    }
+  }
+  cands.sort((a, b) => b.score - a.score);
+  const usedN = new Set<string>();
+  const usedO = new Set<string>();
+  const out: { newer: PeakCell; older: PeakCell; bearingDeg: number; speedMph: number; shiftM: number }[] = [];
+  for (const c of cands) {
+    const nk = clusterKey(c.newer.peakLng, c.newer.peakLat);
+    const ok = clusterKey(c.older.peakLng, c.older.peakLat);
+    if (usedN.has(nk) || usedO.has(ok)) continue;
+    usedN.add(nk);
+    usedO.add(ok);
+    out.push(c);
+  }
+  return out;
+}
+
+export { GRID_SCAN_STEP };

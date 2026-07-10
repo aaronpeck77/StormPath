@@ -42,11 +42,22 @@ describe("isDaylightAt", () => {
 });
 
 describe("currentMapPhase", () => {
-  it("uses solar sunset at the user location", () => {
+  it("stays day through civil twilight after geometric sunset", () => {
     const chicago: [number, number] = [-87.63, 41.88];
     const times = sunTimesAt(41.88, -87.63, new Date("2026-07-07T12:00:00"))!;
     expect(currentMapPhase(chicago, times.sunriseMs + 60_000)).toBe("day");
-    expect(currentMapPhase(chicago, times.sunsetMs + 60_000)).toBe("night");
+    /* Just after sunset outdoors is still bright — keep day basemap. */
+    expect(currentMapPhase(chicago, times.sunsetMs + 60_000)).toBe("day");
+    /* A few minutes after civil dusk — night basemap. */
+    expect(currentMapPhase(chicago, times.duskMs + 5 * 60_000)).toBe("night");
+    expect(currentMapPhase(chicago, times.dawnMs - 5 * 60_000)).toBe("night");
+    expect(currentMapPhase(chicago, times.dawnMs + 60_000)).toBe("day");
+  });
+
+  it("is still day at 7pm Chicago midsummer", () => {
+    const chicago: [number, number] = [-87.63, 41.88];
+    /* 2026-07-07 19:00 CDT = 2026-07-08 00:00 UTC — previously misclassified via UTC day-anchored dusk. */
+    expect(currentMapPhase(chicago, new Date("2026-07-08T00:00:00Z").getTime())).toBe("day");
   });
 });
 

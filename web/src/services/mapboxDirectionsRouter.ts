@@ -192,7 +192,36 @@ function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteT
 /** O(200) per side — corridor overlap / same-shape checks only (not map display). */
 const GEOM_COMPARE_MAX_VERTICES = 200;
 
-/** O(200) per side — corridor overlap, not total-length equality (shared legs are OK). */
+/**
+ * True when two Mapbox options are too alike to offer as A/B.
+ * Prefer keeping Mapbox alternates: shared highway legs are OK if ETA or distance
+ * meaningfully differs, or if corridor overlap is not near-identical.
+ */
+function routesTooSimilarForAlternate(
+  aLine: LngLat[],
+  bLine: LngLat[],
+  aDurS: number | null | undefined,
+  bDurS: number | null | undefined,
+  aDistM: number | null | undefined,
+  bDistM: number | null | undefined
+): boolean {
+  const aDur = typeof aDurS === "number" && Number.isFinite(aDurS) ? aDurS : null;
+  const bDur = typeof bDurS === "number" && Number.isFinite(bDurS) ? bDurS : null;
+  if (aDur != null && bDur != null && aDur > 0) {
+    const dAbs = Math.abs(aDur - bDur);
+    const dRel = dAbs / aDur;
+    if (dAbs >= 90 || dRel >= 0.05) return false;
+  }
+  const aDist = typeof aDistM === "number" && Number.isFinite(aDistM) ? aDistM : null;
+  const bDist = typeof bDistM === "number" && Number.isFinite(bDistM) ? bDistM : null;
+  if (aDist != null && bDist != null && aDist > 0) {
+    const dAbs = Math.abs(aDist - bDist);
+    const dRel = dAbs / aDist;
+    if (dAbs >= 800 || dRel >= 0.05) return false;
+  }
+  return routesEffectivelySame(aLine, bLine, 0.97);
+}
+
 function sameRouteShapeLine(a: LngLat[], b: LngLat[]): boolean {
   const aLite =
     a.length > GEOM_COMPARE_MAX_VERTICES
@@ -728,8 +757,10 @@ export async function collectMapboxRouteVariants(
 
   const estTripM = estimateRoadDistanceM(start, end, hasVia ? via : undefined);
   const ultraLongTrip = isUltraLongTripRoute(estTripM);
-  const effectivePreferThree = preferThreeRoutes && !ultraLongTrip;
-  const effectiveAllowThird = allowLocalTripThirdRoute && !ultraLongTrip;
+  /** Always try A+B on normal trips; Plus may add C. Ultra-long stays Main-only. */
+  const wantMultiRoute = !ultraLongTrip;
+  const effectivePreferThree = preferThreeRoutes && wantMultiRoute;
+  const effectiveAllowThird = allowLocalTripThirdRoute && wantMultiRoute;
   /** Always request full Mapbox geometry — simplified overview cuts corners off the road network. */
   const simplifiedOverview = false;
 
@@ -778,16 +809,16 @@ export async function collectMapboxRouteVariants(
   const abortSignalAny = (
     AbortSignal as unknown as { any?: (signals: AbortSignal[]) => AbortSignal }
   ).any;
-  const canSpecSecondary =
-    effectivePreferThree &&
-    effectiveAllowThird &&
-    typeof abortSignalAny === "function";
 
   let secondaryAbort: AbortController | null = null;
   let secondaryP: Promise<DirectionsResponse> | null = null;
-  if (canSpecSecondary) {
+  /** Always fetch no-interstate in parallel on normal trips — this is often the only distinct B. */
+  if (wantMultiRoute) {
     secondaryAbort = new AbortController();
-    const secSig = signal ? abortSignalAny([signal, secondaryAbort.signal]) : secondaryAbort.signal;
+    const secSig =
+      signal && typeof abortSignalAny === "function"
+        ? abortSignalAny([signal, secondaryAbort.signal])
+        : secondaryAbort.signal;
     secondaryP = fetchDirectionsPrimary(
       accessToken,
       start,
@@ -795,10 +826,7 @@ export async function collectMapboxRouteVariants(
       hasVia ? via : undefined,
       { alternatives: true, excludeMotorway: true, includeDetails, simplifiedOverview },
       secSig
-    ).catch((e) => {
-      if (isAbortError(e)) return { routes: [] as MbRoutes };
-      return { routes: [] as MbRoutes };
-    });
+    ).catch(() => ({ routes: [] as MbRoutes }));
   }
 
   const primaryData = await fetchDirectionsPrimary(
@@ -841,28 +869,67 @@ export async function collectMapboxRouteVariants(
     if (!navA) return [];
     out.push(navA);
 
-    const bCandidates: MbRoute[] = [];
-    for (const r of noMwSorted) {
+    const isPreferredAlternate = (r: MbRoute): boolean => {
       const line = mbRouteLightLine(r);
-      if (line && !sameRouteShapeLine(line, navA.geometry)) bCandidates.push(r);
-    }
+      if (!line) return false;
+      return !routesTooSimilarForAlternate(
+        navA.geometry,
+        line,
+        aRaw.duration,
+        r.duration,
+        aRaw.distance,
+        r.distance
+      );
+    };
 
+    const softNoMw = noMwSorted.filter(isPreferredAlternate);
     let bRaw =
       (trailSamples
-        ? pickMbRouteByTrail(bCandidates, trailSamples, [navA.geometry])
-        : undefined) ??
-      noMwSorted.find((r) => {
-        const c = r.geometry?.coordinates;
-        if (!c?.length) return false;
-        const gLight = coordsToLightLine(c, GEOM_COMPARE_MAX_VERTICES);
-        return !sameRouteShapeLine(gLight, navA.geometry);
-      });
+        ? pickMbRouteByTrail(softNoMw, trailSamples, [navA.geometry])
+        : undefined) ?? softNoMw[0];
+
+    if (!bRaw) {
+      bRaw = primarySorted.slice(1).find(isPreferredAlternate);
+    }
+
+    /**
+     * Always surface a second option when Mapbox (or no-interstate) returned one.
+     * Soft filters above are preferred; last resort keeps any non-identical shape so
+     * the cycle control is not stuck on Main-only.
+     */
+    if (!bRaw) {
+      bRaw =
+        primarySorted.slice(1).find((r) => {
+          const line = mbRouteLightLine(r);
+          return Boolean(line) && !sameRouteShapeLine(line!, navA.geometry);
+        }) ??
+        noMwSorted.find((r) => {
+          const line = mbRouteLightLine(r);
+          return Boolean(line) && !sameRouteShapeLine(line!, navA.geometry);
+        }) ??
+        primarySorted[1] ??
+        noMwSorted[0];
+    }
 
     if (bRaw) {
-      const navB = routeFromDirectionsApi(bRaw, "r-b", "hazardSmart", "No interstate");
-      if (navB && !sameRouteShapeLine(navB.geometry, navA.geometry)) {
-        out.push(navB);
+      const fromNoMw = noMwSorted.includes(bRaw);
+      const navB = routeFromDirectionsApi(
+        bRaw,
+        "r-b",
+        fromNoMw ? "hazardSmart" : "balanced",
+        fromNoMw ? "No interstate" : "Alternate"
+      );
+      if (navB) {
+        const identical = sameRouteShapeLine(navA.geometry, navB.geometry);
+        /* Keep Mapbox's own alternate even when corridors mostly overlap; skip true clones. */
+        if (!identical || bRaw === primarySorted[1]) {
+          out.push(navB);
+        }
       }
+    }
+
+    if (!effectivePreferThree || !effectiveAllowThird) {
+      return out;
     }
 
     const mergedRaw = [...primarySorted, ...noMwSorted];
@@ -950,7 +1017,7 @@ export async function collectMapboxRouteVariants(
     if (secondaryP) {
       const noMwData = await secondaryP;
       noMwSorted = sortRoutesByDurationAsc(noMwData.routes ?? []);
-    } else if (effectivePreferThree) {
+    } else if (wantMultiRoute) {
       const noMwData = await fetchDirectionsPrimary(
         accessToken,
         start,

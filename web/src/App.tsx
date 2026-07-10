@@ -2059,16 +2059,18 @@ export default function App() {
     prevProgressCalloutsOpenRef.current = progressCalloutsOpen;
     if (!justOpened) return;
     if (!isPlus || !guidanceRoute?.geometry?.length) return;
+    /* Only refresh when data is actually missing/stale — Drive keeps corridor
+     * weather warm while the panel is closed, so reopen should show the full
+     * trip already synced (not a cold restart from "now"). */
     const missingForecast = (tioRouteForecast?.intervals?.length ?? 0) === 0;
     const missingRadar = radarMosaicSamples.length === 0;
     const radarStale =
       radarMosaicUpdatedAt != null && Date.now() - radarMosaicUpdatedAt > 8 * 60_000;
-    if (missingForecast || missingRadar || radarStale || driveModeUi) {
+    if (missingForecast || missingRadar || radarStale) {
       handleRefreshRouteInfoWeather();
     }
   }, [
     progressCalloutsOpen,
-    driveModeUi,
     tioRouteForecast?.intervals?.length,
     radarMosaicSamples.length,
     radarMosaicUpdatedAt,
@@ -2181,7 +2183,6 @@ export default function App() {
     trafficBypassContext,
     showTrafficBypassCta,
     nextHazardAtEtaLine,
-    stormCorridorIntersect,
     driveMapRoutes,
     progressRailRoute,
     postedMph,
@@ -4269,7 +4270,6 @@ export default function App() {
                       fallbackSegments={activeProgressCalloutPanel.segments.filter(
                         (s) => !s.key.startsWith("route-ahead-")
                       )}
-                      geometry={progressRailRoute?.geometry ?? null}
                       totalMeters={guidanceRouteLengthM}
                       userAlongMeters={progressPanelAlongM}
                       planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
@@ -4277,7 +4277,6 @@ export default function App() {
                       userAlongT={progressCalloutUserAlongT}
                       stripTint={activeProgressCalloutPanel.stripTint}
                       detailScrollRef={progressCalloutDetailScrollRef}
-                      stormCorridorIntersect={stormCorridorIntersect}
                     />
                   </RouteProgressCalloutRail>
                   <RouteProgressStrip

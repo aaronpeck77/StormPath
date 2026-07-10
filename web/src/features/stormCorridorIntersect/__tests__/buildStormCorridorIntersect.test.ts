@@ -5,8 +5,8 @@ import { radarIntensityAtFraction } from "../interpolateRadar";
 import type { LngLat } from "../../../nav/types";
 
 describe("isStormCorridorIntersectEnabled", () => {
-  it("is on by default in tests", () => {
-    expect(isStormCorridorIntersectEnabled()).toBe(true);
+  it("is off unless VITE_STORM_CORRIDOR_INTERSECT=true", () => {
+    expect(isStormCorridorIntersectEnabled()).toBe(false);
   });
 });
 

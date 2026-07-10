@@ -45,7 +45,7 @@ describe("preferEndpointAnchoredTripFit", () => {
 });
 
 describe("buildTripFitBounds", () => {
-  it("frames planning trips from endpoints when the path stays near the start/end corridor", () => {
+  it("can still use endpoint-only when forceFullPolyline is off", () => {
     const user: [number, number] = [-86.78, 36.16];
     const dest: [number, number] = [-86.66, 36.24];
     const mildDetour = route("r-a", [user, [-86.74, 36.12], [-86.7, 36.2], dest]);
@@ -55,5 +55,18 @@ describe("buildTripFitBounds", () => {
     const ne = fit!.bounds.getNorthEast();
     expect(sw.lng).toBeCloseTo(Math.min(user[0], dest[0]), 2);
     expect(ne.lng).toBeCloseTo(Math.max(user[0], dest[0]), 2);
+  });
+
+  it("frames the full polyline when forceFullPolyline is on (pre-Go overview)", () => {
+    const user: [number, number] = [-86.78, 36.16];
+    const dest: [number, number] = [-86.66, 36.24];
+    const bulge: [number, number] = [-86.9, 36.35];
+    const winding = route("r-a", [user, bulge, dest]);
+    const fit = buildTripFitBounds(user, dest, [winding], "r-a", true);
+    expect(fit?.endpointsOnly).toBe(false);
+    const sw = fit!.bounds.getSouthWest();
+    const ne = fit!.bounds.getNorthEast();
+    expect(sw.lng).toBeLessThanOrEqual(bulge[0] + 1e-9);
+    expect(ne.lat).toBeGreaterThanOrEqual(bulge[1] - 1e-9);
   });
 });

@@ -430,8 +430,8 @@ export function AboutSheet({
                   onChange={() => onSettings({ ...settings, radarDisplayMode: "still_arrows" })}
                 />
                 <span>
-                  <strong>Latest + arrows</strong> — one still mosaic of the newest data with arrows
-                  on strong cells showing direction and speed (default).
+                  <strong>Latest + arrows</strong> — still mosaic with storm-motion arrows on
+                  strong cells (direction from radar; mph only when confident).
                 </span>
               </label>
             </fieldset>

@@ -1974,14 +1974,20 @@ function DriveMapInner({
           return;
         }
 
-        const older = pack.frames[pack.frames.length - 2]!;
         const newer = pack.frames[pack.frames.length - 1]!;
+        const olderIdx = Math.max(0, pack.frames.length - 4);
+        const older = pack.frames[olderIdx]!;
+        if (older.path === newer.path) {
+          removeRadarMotionLayers(map);
+          return;
+        }
         const motionKey = `${pack.frames.map((f) => f.path).join("|")}:${sampleBox.west.toFixed(2)},${sampleBox.south.toFixed(2)}`;
         if (motionKey === lastKeyRef.current) return;
         lastKeyRef.current = motionKey;
 
         const motions = await computeRadarStormMotions(sampleBox, pack.host, older, newer, {
           referenceLngLat: userLngLat,
+          weatherAlerts: weatherAlertGeoJson ?? null,
         });
         if (cancelled || mapRef.current !== map) return;
         applyRadarMotionLayers(map, motions.length > 0 ? motions : null);
@@ -2032,6 +2038,7 @@ function DriveMapInner({
     routes,
     lineFocusId,
     userLngLat,
+    weatherAlertGeoJson,
     viewMode,
   ]);
 
@@ -2746,6 +2753,9 @@ function DriveMapInner({
         map.off("moveend", pendingFlatten);
         pendingFlatten = null;
       }
+      /* Pre-Go: always frame the full active polyline (street or cross-country) as large
+       * as padding allows. Endpoint-only fits leave winding corridors clipped. */
+      const planningOverview = !navigationStartedRef.current;
       return fitMapToTrip(
         map,
         routes,
@@ -2767,6 +2777,7 @@ function DriveMapInner({
           },
           onlyRouteId: lineFocusId,
           zoomBias: routeFitZoomBias(routes, lineFocusId),
+          forceFullPolyline: planningOverview,
         }
       );
     };

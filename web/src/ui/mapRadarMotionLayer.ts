@@ -46,7 +46,7 @@ function motionToGeoJson(motions: RadarStormMotion[]): {
   for (const m of motions) {
     const color = arrowColor(m.intensity);
     /* Short shaft from core — motion continues **out of** the red/white cell, not across green fringe. */
-    const shaftM = Math.min(48_000, 18_000 + m.speedMph * 420);
+    const shaftM = Math.min(48_000, 18_000 + (m.speedMph ?? 22) * 420);
     const headM = shaftM * 0.28;
     const [lng, lat] = [m.lng, m.lat];
     const tip = destinationPoint(lng, lat, m.bearingDeg, shaftM);

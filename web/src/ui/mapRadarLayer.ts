@@ -23,13 +23,13 @@ const RADAR_LAYER_B = "rainviewer-radar-layer-b";
  * Opacity for the visible radar layer (under basemap roads).
  * Kept moderate so yellow–green fringe does not read as severe storm cores.
  */
-export const RAINVIEWER_RADAR_VISIBLE_OPACITY = 0.58;
+export const RAINVIEWER_RADAR_VISIBLE_OPACITY = 0.66;
 
-/** Mute palette saturation/contrast so StormPath matches calmer consumer radar apps. */
+/** Mild mute so colors stay readable without looking neon. */
 export const RAINVIEWER_RADAR_RASTER_PAINT = {
-  "raster-saturation": -0.22,
-  "raster-contrast": -0.14,
-  "raster-brightness-max": 0.8,
+  "raster-saturation": -0.1,
+  "raster-contrast": -0.06,
+  "raster-brightness-max": 0.9,
 } as const;
 
 export const RAINVIEWER_RADAR_LAYER_A = RADAR_LAYER_A;

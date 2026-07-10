@@ -499,10 +499,22 @@ export function useProgressCalloutPanel(
     nwsAlertsAffectingActiveRoute,
   ]);
 
+  /**
+   * Keep graph props live whether Route Info is open or closed so YOU / weather
+   * stay synced to the full trip. Defer only the heavy card list when closed.
+   */
   const deferredProgressCalloutPanel = useDeferredValue(progressCalloutPanel);
   const activeProgressCalloutPanel = progressCalloutsOpen
     ? progressCalloutPanel
-    : deferredProgressCalloutPanel;
+    : {
+        ...deferredProgressCalloutPanel,
+        outlookTimeline: progressCalloutPanel.outlookTimeline,
+        outlookSamples: progressCalloutPanel.outlookSamples,
+        windPoints: progressCalloutPanel.windPoints,
+        gustSpikePoints: progressCalloutPanel.gustSpikePoints,
+        userAlongT: progressCalloutPanel.userAlongT,
+        stripTint: progressCalloutPanel.stripTint,
+      };
 
   const routeAheadHealthRepairAtRef = useRef(0);
   const progressCalloutWasOpenRef = useRef(false);
