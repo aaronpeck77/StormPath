@@ -883,7 +883,7 @@ export async function collectMapboxRouteVariants(
     };
 
     const softNoMw = noMwSorted.filter(isPreferredAlternate);
-    let bRaw =
+    let bRaw: MbRoute | undefined =
       (trailSamples
         ? pickMbRouteByTrail(softNoMw, trailSamples, [navA.geometry])
         : undefined) ?? softNoMw[0];
