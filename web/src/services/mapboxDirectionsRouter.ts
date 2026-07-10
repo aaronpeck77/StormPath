@@ -150,6 +150,49 @@ type DirectionsFetchOpts = DirectionsFetchExclude & {
   bearingToleranceDeg?: number;
 };
 
+/**
+ * Mapbox requires one bearings slot per waypoint (`bearing,tolerance` or empty).
+ * Only the origin is constrained; vias/destination stay unrestricted.
+ */
+export function mapboxBearingsParam(
+  waypointCount: number,
+  bearingDeg: number,
+  toleranceDeg = 45
+): string | null {
+  if (waypointCount < 2 || !Number.isFinite(bearingDeg)) return null;
+  const tol = Math.round(toleranceDeg);
+  const origin = `${Math.round(bearingDeg)},${tol}`;
+  return Array.from({ length: waypointCount }, (_, i) => (i === 0 ? origin : "")).join(";");
+}
+
+function applyDirectionsQueryParams(
+  url: URL,
+  opts: DirectionsFetchOpts,
+  waypointCount: number
+): void {
+  if (opts.alternatives) url.searchParams.set("alternatives", "true");
+  url.searchParams.set("geometries", "geojson");
+  url.searchParams.set(
+    "overview",
+    opts.simplifiedOverview || opts.includeDetails === false ? "simplified" : "full"
+  );
+  url.searchParams.set("steps", opts.includeDetails === false ? "false" : "true");
+  if (opts.includeDetails !== false) {
+    url.searchParams.set("annotations", "closure,maxspeed");
+  }
+  const exclude = directionsExcludeParam(opts);
+  if (exclude) url.searchParams.set("exclude", exclude);
+  if (opts.bearingDeg != null && Number.isFinite(opts.bearingDeg)) {
+    const bearings = mapboxBearingsParam(
+      waypointCount,
+      opts.bearingDeg,
+      opts.bearingToleranceDeg ?? 45
+    );
+    if (bearings) url.searchParams.set("bearings", bearings);
+    /* Do not send `approaches` — a fixed `curb;` only matches 2 waypoints and 422s with vias. */
+  }
+}
+
 function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteTurnStep[] {
   const out: RouteTurnStep[] = [];
   legLoop: for (const leg of route.legs ?? []) {
@@ -389,26 +432,6 @@ function routeFromDirectionsApi(
   };
 }
 
-function applyDirectionsQueryParams(url: URL, opts: DirectionsFetchOpts): void {
-  if (opts.alternatives) url.searchParams.set("alternatives", "true");
-  url.searchParams.set("geometries", "geojson");
-  url.searchParams.set(
-    "overview",
-    opts.simplifiedOverview || opts.includeDetails === false ? "simplified" : "full"
-  );
-  url.searchParams.set("steps", opts.includeDetails === false ? "false" : "true");
-  if (opts.includeDetails !== false) {
-    url.searchParams.set("annotations", "closure,maxspeed");
-  }
-  const exclude = directionsExcludeParam(opts);
-  if (exclude) url.searchParams.set("exclude", exclude);
-  if (opts.bearingDeg != null && Number.isFinite(opts.bearingDeg)) {
-    const tol = Math.round(opts.bearingToleranceDeg ?? 45);
-    url.searchParams.set("bearings", `${Math.round(opts.bearingDeg)},${tol};`);
-    url.searchParams.set("approaches", "curb;");
-  }
-}
-
 async function fetchMapboxDirections(
   accessToken: string,
   start: LngLat,
@@ -422,7 +445,7 @@ async function fetchMapboxDirections(
     `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${o};${d}`
   );
   url.searchParams.set("access_token", accessToken);
-  applyDirectionsQueryParams(url, opts);
+  applyDirectionsQueryParams(url, opts, 2);
 
   let lastHttp: { res: Response; data: DirectionsResponse } | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -470,7 +493,7 @@ async function fetchMapboxDirectionsThrough(
     `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coordStr}`
   );
   url.searchParams.set("access_token", accessToken);
-  applyDirectionsQueryParams(url, opts);
+  applyDirectionsQueryParams(url, opts, coords.length);
 
   let lastHttp: { res: Response; data: DirectionsResponse } | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
