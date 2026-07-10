@@ -5,9 +5,10 @@ import { mapMatchingBuildAllowed, matchGpsTraceToRoad, acceptMapMatchSnap } from
 
 const TRACE_MAX_POINTS = 6;
 const TRACE_MIN_SPACING_M = 8;
-const MATCH_INTERVAL_MS = 2_500;
-const MATCH_INTERVAL_FAST_MS = 1_800;
-const MATCH_INTERVAL_IDLE_MS = 6_000;
+/** Map Matching is billed per request — keep well below the old ~2s cadence. */
+const MATCH_INTERVAL_MS = 12_000;
+const MATCH_INTERVAL_FAST_MS = 8_000;
+const MATCH_INTERVAL_IDLE_MS = 30_000;
 const FAST_SPEED_MPS = 14;
 const MIN_MATCH_CONFIDENCE = 0.35;
 /** Reject snaps that jump implausibly far from the raw fix (parallel road / bad match). */
@@ -145,7 +146,7 @@ export function useMapMatchedNavigationLngLat(opts: MapMatchedNavigationOptions)
     };
 
     tick();
-    const id = window.setInterval(tick, 1_000);
+    const id = window.setInterval(tick, 2_000);
     return () => {
       window.clearInterval(id);
       abortRef.current?.abort();

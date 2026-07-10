@@ -108,7 +108,8 @@ export const RADAR_ROUTE_SAMPLE_MS_NORMAL = 300_000;
 export const RADAR_ROUTE_SAMPLE_MS_LONG_TRIP = 480_000;
 export const RADAR_ROUTE_SAMPLE_MS_DATA_SAVER = 600_000;
 
-export const NAV_ROUTE_ALT_REFRESH_MS_NORMAL = 26_000;
+/** While navigating in Rt/Mp — each tick is 2 Directions calls; keep sparse for Mapbox quota. */
+export const NAV_ROUTE_ALT_REFRESH_MS_NORMAL = 120_000;
 
 export function getNwsPollIntervalMs(
   dataSaver: boolean,

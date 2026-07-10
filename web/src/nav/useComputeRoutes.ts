@@ -164,8 +164,9 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
             {
               signal: mainFetch.signal,
               via: viaCoords.length > 0 ? viaCoords : undefined,
-              allowLocalTripThirdRoute: isPlus,
-              preferThreeRoutes: isPlus,
+              maxRoutes: isPlus ? 2 : 1,
+              allowLocalTripThirdRoute: false,
+              preferThreeRoutes: false,
               stormAlerts: stormAlertsForRouting,
               radarAvoidanceEnabled: isPlus && stormEnabled,
               excludeToll: Boolean(opts?.excludeToll),
@@ -182,7 +183,8 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
         } else {
           p = buildMockTripBetween(userLngLat, end, label);
         }
-        p = !isPlus && p.routes.length > 2 ? { ...p, routes: p.routes.slice(0, 2) } : p;
+        const maxRoutes = isPlus ? 2 : 1;
+        p = p.routes.length > maxRoutes ? { ...p, routes: p.routes.slice(0, maxRoutes) } : p;
         if (epochAtStart !== routeGraphEpochRef.current) {
           return computeRoutesFailed("Route request was superseded.");
         }

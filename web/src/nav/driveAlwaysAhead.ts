@@ -17,7 +17,8 @@ export const DRIVE_AHEAD_CONFIRM_TICKS = 1;
 export const DRIVE_AHEAD_MIN_SPEED_MPS = 1.5;
 export const DRIVE_AHEAD_HEADING_MIN_LATERAL_M = 3;
 export const DRIVE_AHEAD_HEADING_DELTA_DEG = 28;
-export const DRIVE_AHEAD_REROUTE_THROTTLE_MS = 900;
+/** Cap Mapbox Directions churn when GPS jitters off the corridor in drive view. */
+export const DRIVE_AHEAD_REROUTE_THROTTLE_MS = 8_000;
 /** Short post-Go grace — only block tiny GPS noise at the start pin. */
 export const DRIVE_AHEAD_NAV_START_GRACE_MS = 12_000;
 export const DRIVE_AHEAD_NAV_START_GRACE_ALONG_M = 120;

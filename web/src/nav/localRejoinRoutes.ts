@@ -64,8 +64,9 @@ export async function fetchLocalRejoinRoutes(opts: {
 
   const variants = await collectMapboxRouteVariants(accessToken, userLngLat, rejoinPt, {
     signal,
-    preferThreeRoutes: isPlus && altIds.length >= 2,
-    allowLocalTripThirdRoute: isPlus && altIds.length >= 2,
+    maxRoutes: isPlus ? 2 : 1,
+    preferThreeRoutes: false,
+    allowLocalTripThirdRoute: false,
     skipStormLegRefinement: true,
     rejoinShufflePass: shufflePass,
     bearingDeg:

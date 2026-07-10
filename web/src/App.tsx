@@ -74,6 +74,7 @@ import {
   formatCoordsAreaLabel,
   shortenPlaceNameForForecast,
 } from "./utils/forecastDisplay";
+import { shouldRefreshForecastReverseGeocode } from "./utils/forecastReverseGeocodeGate";
 import { mapboxReverseGeocode } from "./services/mapboxGeocode";
 import {
   trafficCongestionAnchorFraction,
@@ -929,8 +930,9 @@ export default function App() {
         return;
       }
       let planNext = entry.plan;
-      if (!isPlus && planNext.routes.length > 2) {
-        planNext = { ...planNext, routes: planNext.routes.slice(0, 2) };
+      const maxCachedRoutes = isPlus ? 2 : 1;
+      if (planNext.routes.length > maxCachedRoutes) {
+        planNext = { ...planNext, routes: planNext.routes.slice(0, maxCachedRoutes) };
       }
       const planIds = planNext.routes.map((r) => r.id);
       const slotNext = isFullSlotPermutation(entry.routeSlotOrder, planIds)
@@ -1001,7 +1003,7 @@ export default function App() {
     const next = plan.routes.length;
     prevRouteCountRef.current = next;
     if (navigationStarted) return;
-    const targetCount = isPlus ? 3 : 2;
+    const targetCount = isPlus ? 2 : 1;
     if (prev < targetCount && next >= targetCount) {
       setViewMode("route");
       setFitTrigger((n) => n + 1);
@@ -1285,8 +1287,9 @@ export default function App() {
         if (env.mapboxToken) {
           const fresh = await collectMapboxRouteVariants(env.mapboxToken, userLngLat, destLngLat, {
             signal: altFetch.signal,
-            allowLocalTripThirdRoute: isPlus,
-            preferThreeRoutes: isPlus,
+            maxRoutes: isPlus ? 2 : 1,
+            allowLocalTripThirdRoute: false,
+            preferThreeRoutes: false,
             stormAlerts: stormAlertsForRouting,
             radarAvoidanceEnabled: isPlus && settingStormEnabled,
             trailRoutePersonalization: isPlus && learnEnabled,
@@ -1535,13 +1538,28 @@ export default function App() {
     return "Your location";
   }, [forecastPlaceShort, effectiveUserLngLat]);
 
+  const forecastReverseGeocodeAtRef = useRef<{ lngLat: LngLat; atMs: number } | null>(null);
   useEffect(() => {
     if (!env.mapboxToken || !effectiveUserLngLat) {
+      forecastReverseGeocodeAtRef.current = null;
       setForecastPlaceShort(null);
       return;
     }
     const [lng, lat] = effectiveUserLngLat;
     if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+    const next: LngLat = [lng, lat];
+    const prev = forecastReverseGeocodeAtRef.current;
+    if (
+      !shouldRefreshForecastReverseGeocode({
+        next,
+        lastLngLat: prev?.lngLat ?? null,
+        lastFetchedAtMs: prev?.atMs ?? null,
+      })
+    ) {
+      return;
+    }
+    /* Stamp before await so GPS ticks during the request do not fan out more Temporary Geocoding calls. */
+    forecastReverseGeocodeAtRef.current = { lngLat: next, atMs: Date.now() };
     let cancelled = false;
     void mapboxReverseGeocode(lng, lat, env.mapboxToken).then((hit) => {
       if (cancelled || !hit?.placeName) return;
@@ -3185,8 +3203,11 @@ export default function App() {
 
       if (id === "r-b") {
         const p =
-          !isPlus && tollCtx.fullTollFreePlan.routes.length > 2
-            ? { ...tollCtx.fullTollFreePlan, routes: tollCtx.fullTollFreePlan.routes.slice(0, 2) }
+          tollCtx.fullTollFreePlan.routes.length > (isPlus ? 2 : 1)
+            ? {
+                ...tollCtx.fullTollFreePlan,
+                routes: tollCtx.fullTollFreePlan.routes.slice(0, isPlus ? 2 : 1),
+              }
             : tollCtx.fullTollFreePlan;
         setPlan(p);
         setRouteSlotOrder(p.routes.map((r) => r.id));
@@ -3419,8 +3440,9 @@ export default function App() {
 
       try {
         const fresh = await collectMapboxRouteVariants(env.mapboxToken, originLngLat, destLngLat, {
-          allowLocalTripThirdRoute: isPlus,
-          preferThreeRoutes: isPlus,
+          maxRoutes: isPlus ? 2 : 1,
+          allowLocalTripThirdRoute: false,
+          preferThreeRoutes: false,
           stormAlerts: stormAlertsForRouting,
           radarAvoidanceEnabled: isPlus && settingStormEnabled,
           trailRoutePersonalization: isPlus && learnEnabled,

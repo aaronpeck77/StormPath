@@ -9,7 +9,6 @@ import {
   closestAlongRouteMeters,
   cumulativeLengthToVertex,
   estimateRoadDistanceM,
-  haversineMeters,
   normalizeStoredRouteGeometry,
   routeCorridorOverlapFraction,
   routesEffectivelySame,
@@ -685,16 +684,15 @@ function collectRouteIncidentsWithAlong(
 }
 
 /**
- * Up to 3 traffic-aware routes from Mapbox (alternatives + `exclude=motorway`).
+ * Up to 2 traffic-aware routes from Mapbox (alternatives + `exclude=motorway`).
  *
  * - **A (`fastest`)** — Main · fastest (may use interstates).
  * - **B (`hazardSmart`)** — No interstate · Mapbox `exclude=motorway` when a distinct shape exists.
- * - **C (`balanced`)** — Country drive · backroads / lower-speed corridor within ~30% of A’s ETA,
- *   preferring no-motorway shapes and higher turn density (avoids weird storm-detour waypoints).
  *
- * For short in-town trips we return only A/B unless Plus allows a third leg.
+ * Cap via `maxRoutes`: Basic = 1 (single Directions call), Plus = 2 (primary + no-interstate).
+ * Ultra-long stays Main-only.
  *
- * Primary `alternatives=true` runs in parallel with `exclude=motorway` when three legs are requested.
+ * Primary `alternatives=true` runs in parallel with `exclude=motorway` when `maxRoutes >= 2`.
  */
 async function fetchDirectionsPrimary(
   accessToken: string,
@@ -718,6 +716,12 @@ export async function collectMapboxRouteVariants(
     signal?: AbortSignal;
     /** Intermediate stops between start and end (Mapbox via points). */
     via?: LngLat[];
+    /**
+     * Max legs to return / fetch for.
+     * `1` = Main only (one Directions call). `2` = A/B (primary + no-interstate).
+     * `3` reserved for legacy Country drive — unused while Plus is capped at 2.
+     */
+    maxRoutes?: number;
     allowLocalTripThirdRoute?: boolean;
     preferThreeRoutes?: boolean;
     includeDetails?: boolean;
@@ -757,10 +761,23 @@ export async function collectMapboxRouteVariants(
 
   const estTripM = estimateRoadDistanceM(start, end, hasVia ? via : undefined);
   const ultraLongTrip = isUltraLongTripRoute(estTripM);
-  /** Always try A+B on normal trips; Plus may add C. Ultra-long stays Main-only. */
-  const wantMultiRoute = !ultraLongTrip;
-  const effectivePreferThree = preferThreeRoutes && wantMultiRoute;
-  const effectiveAllowThird = allowLocalTripThirdRoute && wantMultiRoute;
+  /**
+   * Quota-aware caps: Basic = 1 Directions call, Plus = A/B (2 calls).
+   * Legacy preferThreeRoutes still maps to 3 when maxRoutes is omitted.
+   */
+  const maxRoutes = Math.max(
+    1,
+    Math.min(
+      3,
+      Math.floor(
+        opts?.maxRoutes ??
+          (preferThreeRoutes || allowLocalTripThirdRoute ? 3 : 2)
+      )
+    )
+  );
+  const wantMultiRoute = !ultraLongTrip && maxRoutes >= 2;
+  const effectivePreferThree = wantMultiRoute && maxRoutes >= 3;
+  const effectiveAllowThird = effectivePreferThree && allowLocalTripThirdRoute;
   /** Always request full Mapbox geometry — simplified overview cuts corners off the road network. */
   const simplifiedOverview = false;
 
@@ -802,8 +819,6 @@ export async function collectMapboxRouteVariants(
   /** Leg C should stay a reasonable drive — not a long scenic detour. */
   const MAX_C_ROUTE_DURATION_FACTOR = 1.3;
   const MAX_C_ROUTE_DISTANCE_FACTOR = 1.35;
-  const LOCAL_TRIP_MAX_DISTANCE_M = 18_000;
-  const LOCAL_TRIP_MAX_DURATION_S = 22 * 60;
 
   type MbRoutes = NonNullable<DirectionsResponse["routes"]>;
   const abortSignalAny = (
@@ -835,7 +850,7 @@ export async function collectMapboxRouteVariants(
     end,
     hasVia ? via : undefined,
     {
-      alternatives: true,
+      alternatives: wantMultiRoute,
       excludeMotorway: shuffleMotorways,
       excludeToll,
       includeDetails,
@@ -847,9 +862,9 @@ export async function collectMapboxRouteVariants(
 
   const primarySorted = sortRoutesByDurationAsc(primaryData.routes ?? []);
 
-  const targetPrimaryCount = effectivePreferThree ? 3 : 2;
+  const targetPrimaryCount = maxRoutes;
 
-  if (ultraLongTrip) {
+  if (ultraLongTrip || maxRoutes <= 1) {
     secondaryAbort?.abort();
     const aRaw = primarySorted[0];
     if (!aRaw) return [];
@@ -1038,15 +1053,6 @@ export async function collectMapboxRouteVariants(
   }
 
   const out = mergePools(noMwSorted);
-  const straightLineM = haversineMeters(start, end);
-  const aDurationS = primarySorted[0]?.duration ?? Number.POSITIVE_INFINITY;
-  const localTrip = straightLineM <= LOCAL_TRIP_MAX_DISTANCE_M || aDurationS <= LOCAL_TRIP_MAX_DURATION_S;
-  if (localTrip && !effectiveAllowThird) {
-    return out.slice(0, Math.min(2, out.length));
-  }
-  if (!effectivePreferThree) {
-    return out.slice(0, Math.min(2, out.length));
-  }
   return out.slice(0, Math.min(targetPrimaryCount, out.length));
 }
 
@@ -1058,7 +1064,8 @@ export type BuildTripFromMapboxResult = {
 };
 
 /**
- * Build A/B/C trip from Mapbox Directions (same `TripPlan` shape as the mock router).
+ * Build a trip from Mapbox Directions (same `TripPlan` shape as the mock router).
+ * Route count is capped by `opts.maxRoutes` (Basic 1 / Plus 2).
  */
 export async function buildTripFromMapbox(
   accessToken: string,
@@ -1071,6 +1078,7 @@ export async function buildTripFromMapbox(
   opts?: {
     signal?: AbortSignal;
     via?: LngLat[];
+    maxRoutes?: number;
     allowLocalTripThirdRoute?: boolean;
     preferThreeRoutes?: boolean;
     includeDetails?: boolean;

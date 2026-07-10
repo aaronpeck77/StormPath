@@ -85,8 +85,7 @@ describe("collectMapboxRouteVariants", () => {
     });
 
     const routes = await collectMapboxRouteVariants("tok", start, end, {
-      preferThreeRoutes: true,
-      allowLocalTripThirdRoute: true,
+      maxRoutes: 2,
       includeDetails: true,
     });
 
@@ -109,11 +108,33 @@ describe("collectMapboxRouteVariants", () => {
     });
 
     const routes = await collectMapboxRouteVariants("tok", start, end, {
-      preferThreeRoutes: true,
-      allowLocalTripThirdRoute: true,
+      maxRoutes: 2,
     });
 
     expect(routes.length).toBeGreaterThanOrEqual(2);
     expect(routes.some((r) => r.id === "r-b")).toBe(true);
+  });
+
+  it("Basic maxRoutes=1 uses a single Directions call and returns Main only", async () => {
+    const main = mbRoute(lineCoords(0), 3600, 120_000);
+    const noMw = mbRoute(lineCoords(-0.35), 4200, 135_000);
+    let calls = 0;
+
+    vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
+      calls += 1;
+      const url = String(input);
+      if (url.includes("exclude=motorway")) {
+        return okResponse([noMw]);
+      }
+      return okResponse([main, noMw]);
+    });
+
+    const routes = await collectMapboxRouteVariants("tok", start, end, {
+      maxRoutes: 1,
+    });
+
+    expect(routes).toHaveLength(1);
+    expect(routes[0]!.label).toBe("Main");
+    expect(calls).toBe(1);
   });
 });

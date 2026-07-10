@@ -105,17 +105,19 @@ export function useTollPreview(deps: UseTollPreviewDeps): () => Promise<void> {
           destination: destinationLabel.trim() || "Destination",
         },
         {
-          allowLocalTripThirdRoute: isPlus,
-          preferThreeRoutes: isPlus,
+          maxRoutes: isPlus ? 2 : 1,
+          allowLocalTripThirdRoute: false,
+          preferThreeRoutes: false,
           stormAlerts: stormAlertsForRouting,
           radarAvoidanceEnabled: isPlus && stormEnabled,
           excludeToll: true,
         }
       );
       let tollFreePlan = built.plan;
+      const maxRoutes = isPlus ? 2 : 1;
       tollFreePlan =
-        !isPlus && tollFreePlan.routes.length > 2
-          ? { ...tollFreePlan, routes: tollFreePlan.routes.slice(0, 2) }
+        tollFreePlan.routes.length > maxRoutes
+          ? { ...tollFreePlan, routes: tollFreePlan.routes.slice(0, maxRoutes) }
           : tollFreePlan;
       const tollFreePrimary = tollFreePlan.routes[0];
       if (!tollFreePrimary) {
