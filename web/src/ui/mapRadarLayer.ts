@@ -240,14 +240,12 @@ function applyRainViewerRadarPaint(map: Map, layerId: string, opacity: number): 
   /* Clear prior custom recolor so leftover raster-color* from older revisions don’t stick. */
   for (const key of RADAR_PAINT_KEYS_TO_CLEAR) {
     try {
-      map.setPaintProperty(layerId, key, undefined as unknown as null);
+      map.setPaintProperty(layerId, key, undefined);
     } catch {
       /* property may be unsupported to clear on some builds */
     }
   }
-  for (const [key, value] of Object.entries(RAINVIEWER_RADAR_RASTER_PAINT)) {
-    map.setPaintProperty(layerId, key, value);
-  }
+  map.setPaintProperty(layerId, "raster-resampling", RAINVIEWER_RADAR_RASTER_PAINT["raster-resampling"]);
 }
 
 /**
