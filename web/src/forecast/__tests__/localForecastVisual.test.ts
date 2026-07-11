@@ -6,6 +6,7 @@ import {
   hourComfortCallout,
   dailyPrecipLabel,
   dailyPrecipBadge,
+  dailyPrecipAccentColor,
   precipDisplayLabel,
   precipIsActive,
   precipTypeColor,
@@ -39,6 +40,12 @@ describe("localForecastVisual", () => {
     expect(dailyPrecipLabel({ precipChance: 0.28, precipType: 1 })).toBe("Rain · 28% chance");
     expect(dailyPrecipBadge({ precipChance: 0.28, precipType: 0 })?.type).toBe(1);
     expect(dailyPrecipLabel({ precipChance: 0.08, precipType: 0 })).toBeNull();
+  });
+
+  it("keeps a visible accent for daily precip badges below hourly intensity gates", () => {
+    expect(dailyPrecipAccentColor(1, 0.28)).toBe("#93c5fd");
+    expect(dailyPrecipAccentColor(2, 0.4)).toBe("#e0f2fe");
+    expect(dailyPrecipAccentColor(0, 0.2, 1.2)).toBe("#e0f2fe");
   });
 
   it("labels active hourly precip with percent chance", () => {

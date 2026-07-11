@@ -56,6 +56,31 @@ export function precipTypeColor(
   return "#ef4444";
 }
 
+/**
+ * Visible border/accent for daily precip badges that already passed
+ * {@link dailyPrecipBadge} (chance can be below hourly “active” intensity gates).
+ */
+export function dailyPrecipAccentColor(
+  type: PrecipTypeCode | undefined,
+  precipChance: number,
+  snowfallCm?: number
+): string {
+  const t = (snowfallCm != null && snowfallCm > 0 ? 2 : type ?? 0) as PrecipTypeCode;
+  switch (t) {
+    case 2:
+      return "#e0f2fe";
+    case 3:
+      return "#c084fc";
+    case 4:
+      return "#a78bfa";
+    default:
+      break;
+  }
+  if (precipChance >= 0.7) return "#3b82f6";
+  if (precipChance >= 0.4) return "#60a5fa";
+  return "#93c5fd";
+}
+
 /** Background for feels-like / air temp cells (heat index, wind chill). */
 export function feelsLikeCellColor(feelsF: number): string {
   if (feelsF >= 105) return "rgba(220, 38, 38, 0.92)";

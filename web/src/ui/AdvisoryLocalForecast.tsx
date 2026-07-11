@@ -16,6 +16,7 @@ import {
   hourComfortCallout,
   isWindChillDisplay,
   dailyPrecipBadge,
+  dailyPrecipAccentColor,
   precipDisplayLabel,
   precipIsActive,
   precipTypeColor,
@@ -641,15 +642,28 @@ export function AdvisoryLocalForecast({
                 {days.slice(0, 7).map((d, i) => {
                   const peakFeels = d.maxFeelsLikeF;
                   const lowFeels = d.minFeelsLikeF;
+                  const colorFeels = peakFeels ?? d.highF;
                   const heatDay = peakFeels != null && heatIndexNotable(peakFeels);
                   const coldDay =
                     lowFeels != null && isWindChillDisplay(lowFeels, d.lowF);
+                  const precipBadge = dailyPrecipBadge(d);
+                  const precipAccent = precipBadge
+                    ? dailyPrecipAccentColor(
+                        precipBadge.type,
+                        d.precipChance,
+                        d.snowfallCm
+                      )
+                    : null;
                   return (
                   <div
                     key={d.dateIso}
                     className={`adv-dash__week-cell${heatDay ? " adv-dash__week-cell--heat" : ""}${
                       coldDay ? " adv-dash__week-cell--cold" : ""
-                    }`}
+                    }${precipBadge ? " adv-dash__week-cell--wet" : ""}`}
+                    style={{
+                      background: feelsLikeCellColor(colorFeels),
+                      ...(precipAccent ? { borderBottomColor: precipAccent } : null),
+                    }}
                   >
                     <span className="adv-dash__week-day">{formatDailyDayLabel(d, i)}</span>
                     <span className="adv-dash__week-hi">{d.highF}° high</span>
@@ -679,24 +693,14 @@ export function AdvisoryLocalForecast({
                     {d.daytimeConditions ? (
                       <span className="adv-dash__week-cond">{d.daytimeConditions}</span>
                     ) : null}
-                    {(() => {
-                      const precipBadge = dailyPrecipBadge(d);
-                      if (!precipBadge) return null;
-                      return (
+                    {precipBadge ? (
                       <span
                         className="adv-dash__week-precip"
-                        style={{
-                          borderColor: precipTypeColor(
-                            precipBadge.type,
-                            d.snowfallCm ? 2 : 0,
-                            d.precipChance
-                          ),
-                        }}
+                        style={{ borderColor: precipAccent ?? undefined }}
                       >
                         {precipBadge.label}
                       </span>
-                      );
-                    })()}
+                    ) : null}
                   </div>
                   );
                 })}

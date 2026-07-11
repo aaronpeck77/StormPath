@@ -7646,15 +7646,16 @@
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x pan-y;
-  margin: 0 -4px;
+  margin: 0;
+  padding: 2px 0 4px;
 }
 
 .adv-dash__hour-row,
 .adv-dash__week-row {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   min-width: min-content;
-  padding: 0 2px 2px;
+  padding: 2px 2px 4px;
 }
 
 .adv-dash__hour-cell {
@@ -7787,10 +7788,20 @@
 }
 
 .adv-dash__week-cell--heat {
-  border: 1px solid rgba(245, 158, 11, 0.28);
-  border-radius: 8px;
-  padding: 6px;
-  background: rgba(120, 53, 15, 0.1);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(245, 158, 11, 0.45);
+}
+
+.adv-dash__week-cell--cold {
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(96, 165, 250, 0.5);
+}
+
+.adv-dash__week-cell--wet {
+  border-bottom-width: 3px;
+  border-bottom-style: solid;
 }
 
 .adv-dash__week-cell {
@@ -7801,6 +7812,12 @@
   min-width: 92px;
   max-width: 120px;
   flex-shrink: 0;
+  padding: 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-bottom-width: 3px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+  box-sizing: border-box;
 }
 
 .adv-dash__week-day {
