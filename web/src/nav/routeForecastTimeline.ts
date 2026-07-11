@@ -986,10 +986,14 @@ export function applyRadarOutlookBoost(
           ? "Heavy rain on route"
           : "Rain on route";
 
+    /* Give radar-backed stops enough intensity so display POP isn’t suppressed as “model-only”. */
+    const radarMm = display >= RADAR_REROUTE_THRESHOLD ? 0.55 : 0.18;
+
     return {
       ...step,
       precipPct: boosted,
       precipHint: boosted / 100,
+      precipIntensityMmh: Math.max(step.precipIntensityMmh ?? 0, radarMm),
       conditions: rainConditions,
       icon: wxIcon(rainConditions, boosted / 100),
     };
