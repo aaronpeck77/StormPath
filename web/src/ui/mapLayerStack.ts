@@ -11,11 +11,12 @@ import { bringMapboxTrafficLayersToFront } from "./mapTrafficLayers";
 export function liftTrafficThenRoutesThenHits(
   map: MapboxMap,
   routeIds: string[],
-  layerPrefix = "route"
+  layerPrefix = "route",
+  lineFocusId?: string
 ) {
   bringMapboxTrafficLayersToFront(map);
   positionWeatherAlertLayersAboveRadar(map);
   positionRainViewerRadarUnderRoads(map);
-  bringRouteVisualLinesAboveTraffic(map, routeIds, layerPrefix);
-  bringRouteHitLayersToTop(map, routeIds, layerPrefix);
+  bringRouteVisualLinesAboveTraffic(map, routeIds, layerPrefix, lineFocusId);
+  bringRouteHitLayersToTop(map, routeIds, layerPrefix, lineFocusId);
 }

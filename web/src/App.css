@@ -4206,7 +4206,7 @@
 }
 
 .rotl__legend-item--temp .rotl__legend-swatch {
-  background: #fb923c;
+  background: linear-gradient(90deg, #38bdf8, #fb923c, #ef4444);
 }
 
 .rotl__legend-item--precip .rotl__legend-swatch {
@@ -4440,6 +4440,7 @@
 }
 
 .rotl__line--temp {
+  /* Stroke color set inline via temp blue→red gradient */
   stroke: #fb923c;
 }
 
@@ -5174,7 +5175,7 @@
 }
 
 .rpgl .rotl--synced .rotl__line--temp {
-  stroke: #fb923c;
+  /* Color from blue→red temp gradient (inline); keep weight only */
   stroke-width: 2.5;
 }
 

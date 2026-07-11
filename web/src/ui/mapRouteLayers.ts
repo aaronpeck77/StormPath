@@ -390,12 +390,22 @@ export function visibleRouteIdsForHitLayers(
 ): string[] {
   /* Drive (Dr) view: always the active leg only — Rt / Mp show A/B/C for picking. */
   const hideAltsOnMainDrive = viewMode === "drive" && !isOverviewPip;
-  if (hideAltsOnMainDrive) {
-    return routes
-      .filter((r) => r.id === lineFocusId || r.id === "r-your-route")
-      .map((r) => r.id);
-  }
-  return routes.map((r) => r.id);
+  const ids = hideAltsOnMainDrive
+    ? routes
+        .filter((r) => r.id === lineFocusId || r.id === "r-your-route")
+        .map((r) => r.id)
+    : routes.map((r) => r.id);
+  /* Focus last → bringRoute* leave the active line above alternates. */
+  return sortRouteIdsFocusLast(ids, lineFocusId);
+}
+
+/** Non-focus first, focused route last (top of Mapbox stack). */
+export function sortRouteIdsFocusLast(routeIds: string[], lineFocusId: string): string[] {
+  return [...routeIds].sort((a, b) => {
+    if (a === lineFocusId && b !== lineFocusId) return 1;
+    if (b === lineFocusId && a !== lineFocusId) return -1;
+    return 0;
+  });
 }
 
 function isStormPathOverlayLayerId(id: string): boolean {
@@ -420,14 +430,17 @@ function firstBasemapSymbolBeforeId(map: mapboxgl.Map): string | undefined {
  * Draw route polylines above Mapbox traffic overlays so A/B/C lines stay readable.
  * {@link bringMapboxTrafficLayersToFront} moves traffic to the top of the stack; call this after it,
  * then {@link bringRouteHitLayersToTop}. Optional corridor highlight follows the same route geometry.
+ * Pass {@link lineFocusId} so the active route ends on top of alternates.
  */
 export function bringRouteVisualLinesAboveTraffic(
   map: mapboxgl.Map,
   routeIds: string[],
-  layerPrefix = "route"
+  layerPrefix = "route",
+  lineFocusId?: string
 ) {
   const anchorBefore = firstBasemapSymbolBeforeId(map);
-  for (const id of routeIds) {
+  const ordered = lineFocusId ? sortRouteIdsFocusLast(routeIds, lineFocusId) : routeIds;
+  for (const id of ordered) {
     const casingId = `${layerPrefix}-${id}-line-casing`;
     const lid = `${layerPrefix}-${id}-line`;
     try {
@@ -443,12 +456,18 @@ export function bringRouteVisualLinesAboveTraffic(
       /* style teardown */
     }
   }
-  positionRouteConditionCasingBelowRouteLines(map, routeIds, layerPrefix);
+  positionRouteConditionCasingBelowRouteLines(map, ordered, layerPrefix);
 }
 
 /** Keep invisible hit targets above traffic / radar so route taps still resolve. */
-export function bringRouteHitLayersToTop(map: mapboxgl.Map, routeIds: string[], layerPrefix = "route") {
-  for (const id of routeIds) {
+export function bringRouteHitLayersToTop(
+  map: mapboxgl.Map,
+  routeIds: string[],
+  layerPrefix = "route",
+  lineFocusId?: string
+) {
+  const ordered = lineFocusId ? sortRouteIdsFocusLast(routeIds, lineFocusId) : routeIds;
+  for (const id of ordered) {
     const lid = `${layerPrefix}-${id}-line-hit`;
     if (map.getLayer(lid)) {
       try {

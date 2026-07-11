@@ -117,7 +117,8 @@ export function RouteOverviewPip({
     bringRouteVisualLinesAboveTraffic(
       map,
       routes.map((r) => r.id),
-      "pip-route"
+      "pip-route",
+      lineFocusId
     );
   }, [ready, routes, lineFocusId, suggestedRouteId, orderedRouteIds, navigationStarted]);
 

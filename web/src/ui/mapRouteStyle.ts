@@ -13,7 +13,7 @@ export const ROUTE_SUGGESTED_COLOR = "#f1f5f9";
 
 /** Halo under the colored core so routes stay readable on radar. */
 export const ROUTE_LINE_CASING_COLOR = "#0f172a";
-export const ROUTE_LINE_CASING_WIDTH_EXTRA = 5;
+export const ROUTE_LINE_CASING_WIDTH_EXTRA = 2.5;
 export const ROUTE_LINE_CASING_OPACITY = 0.92;
 
 export const ROUTE_ACTIVE_LINE_WIDTH = 8;

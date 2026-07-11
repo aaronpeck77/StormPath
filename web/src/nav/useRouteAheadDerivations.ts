@@ -513,8 +513,7 @@ export function useRouteAheadDerivations(
   ]);
 
   /**
-   * Progress rail + map halo bands: serious NWS spans, plus radar mosaic where echo crosses the route.
-   * (Radar used to be graph-only — that left both surfaces empty when only RainViewer showed storms.)
+   * Progress rail + map halo: corridor NWS (incl. SWS / advisories) + radar mosaic where echo crosses.
    */
   const routeAheadWeatherBands = useMemo(() => {
     const nwsBands = timelineToProgressStripBands(routeAheadTimeline);

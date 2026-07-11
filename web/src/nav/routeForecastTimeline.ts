@@ -10,6 +10,7 @@ import type { RouteForecast, RouteHourlyInterval } from "../services/tomorrowIo"
 import { weatherCodeLabel } from "../services/tomorrowIo";
 import { formatCorridorTempLine } from "../forecast/corridorIntervalDisplay";
 import { formatDurationMinutesMaybe } from "../ui/formatEta";
+import { routeWindGraphScaleMph } from "./windForecastCalib";
 
 export type RadarOutlookSample = { t: number; intensity: number };
 
@@ -1244,7 +1245,7 @@ export function outlookChartScale(points: RouteOutlookPoint[]): RouteOutlookChar
   const temps = points.map((p) => p.tempF).filter((t): t is number => t != null && Number.isFinite(t));
   const precipMax = Math.max(20, ...points.map((p) => p.precipPct), 0);
   const windGusts = points.map((p) => p.windGustMph).filter((g): g is number => g != null && g > 0);
-  const windMax = windGusts.length ? Math.max(30, Math.ceil(Math.max(...windGusts) / 10) * 10) : 0;
+  const windMax = windGusts.length ? routeWindGraphScaleMph(windGusts) : 0;
   if (!temps.length) {
     return { tempMin: 50, tempMax: 80, precipMax, windMax };
   }

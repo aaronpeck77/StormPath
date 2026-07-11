@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 import type { WxSample } from "../nav/routeChunkWeather";
 import type { RouteOutlookStep } from "../nav/routeForecastTimeline";
 import {
@@ -47,6 +47,32 @@ function yPlotPct(yPx: number): number {
   return (yPx / H) * 100;
 }
 
+/** Blue (cold) → orange → red (hot) for temp markers along the outlook line. */
+function tempDotColor(tempF: number, tempMin: number, tempMax: number): string {
+  const span = Math.max(1, tempMax - tempMin);
+  const t = Math.max(0, Math.min(1, (tempF - tempMin) / span));
+  if (t < 0.45) {
+    const u = t / 0.45;
+    return lerpHex("#38bdf8", "#fb923c", u);
+  }
+  const u = (t - 0.45) / 0.55;
+  return lerpHex("#fb923c", "#ef4444", u);
+}
+
+function lerpHex(a: string, b: string, t: number): string {
+  const parse = (h: string) => [
+    parseInt(h.slice(1, 3), 16),
+    parseInt(h.slice(3, 5), 16),
+    parseInt(h.slice(5, 7), 16),
+  ] as const;
+  const [ar, ag, ab] = parse(a);
+  const [br, bg, bb] = parse(b);
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const bl = Math.round(ab + (bb - ab) * t);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${bl.toString(16).padStart(2, "0")}`;
+}
+
 function linePath(
   points: { fraction: number; value: number | null }[],
   yFn: (v: number) => number
@@ -70,6 +96,7 @@ export function RouteOutlookTimeline({
   showXTicks = true,
 }: Props) {
   const synced = variant === "synced";
+  const tempGradId = useId().replace(/:/g, "");
 
   const series = useMemo(() => buildRouteOutlookSeries(steps, samples), [steps, samples]);
   const scale = useMemo(() => outlookChartScale(series), [series]);
@@ -156,6 +183,22 @@ export function RouteOutlookTimeline({
             />
           ) : null}
 
+          {/* Temp stroke: blue at cold (chart bottom) → red at hot (chart top) */}
+          <defs>
+            <linearGradient
+              id={tempGradId}
+              gradientUnits="userSpaceOnUse"
+              x1={0}
+              y1={yTemp(scale.tempMax, scale.tempMin, scale.tempMax)}
+              x2={0}
+              y2={yTemp(scale.tempMin, scale.tempMin, scale.tempMax)}
+            >
+              <stop offset="0%" stopColor="#ef4444" />
+              <stop offset="45%" stopColor="#fb923c" />
+              <stop offset="100%" stopColor="#38bdf8" />
+            </linearGradient>
+          </defs>
+
           {precipPath ? (
             <path
               d={precipPath}
@@ -167,6 +210,7 @@ export function RouteOutlookTimeline({
             <path
               d={tempPath}
               className="rotl__line rotl__line--temp"
+              style={{ stroke: `url(#${tempGradId})` }}
               vectorEffect="non-scaling-stroke"
             />
           ) : null}
@@ -228,6 +272,7 @@ export function RouteOutlookTimeline({
                     style={{
                       left: `${leftPct}%`,
                       top: `${yPlotPct(yTemp(pt.tempF, scale.tempMin, scale.tempMax))}%`,
+                      background: tempDotColor(pt.tempF, scale.tempMin, scale.tempMax),
                     }}
                   />
                 ) : null}

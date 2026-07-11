@@ -28,8 +28,10 @@ type Props = {
   outlookSamples?: WxSample[];
   /** RainViewer mosaic samples for the radar intensity strata */
   radarSamples?: { t: number; intensity: number }[];
-  /** Wind gust points from TIO forecast intervals (t=0–1 along route, mph) */
+  /** Sustained wind points from corridor forecast intervals (t=0–1 along route, mph) */
   windPoints?: { t: number; mph: number }[];
+  /** Gust envelope along the route (dashed line). */
+  gustLinePoints?: { t: number; mph: number }[];
   gustSpikePoints?: { t: number; mph: number }[];
   /** Optional status under radar/wind strata (age, rate-limit). */
   radarStatusNote?: string | null;
@@ -229,6 +231,7 @@ export function RouteProgressGlancePanel({
   outlookSamples,
   radarSamples = [],
   windPoints = [],
+  gustLinePoints = [],
   gustSpikePoints = [],
   radarStatusNote = null,
   fallbackSegments,
@@ -360,11 +363,13 @@ export function RouteProgressGlancePanel({
                       )}
                     </div>
 
-                    {(radarSamples.length > 0 || routeWindGraphVisible(windPoints, gustSpikePoints)) ? (
+                    {(radarSamples.length > 0 ||
+                      routeWindGraphVisible(windPoints, gustSpikePoints, gustLinePoints)) ? (
                       <div className="rpgl__radar-strata">
                         <RouteRadarWindStrip
                           radarSamples={radarSamples}
                           windPoints={windPoints}
+                          gustLinePoints={gustLinePoints}
                           gustSpikePoints={gustSpikePoints}
                         />
                         {radarStatusNote ? (

@@ -2149,8 +2149,8 @@ function DriveMapInner({
     const liftRouteHits = () => {
       const { routes: rts, lineFocusId: lid, viewMode: vm } = routesForHitRef.current;
       const ids = visibleRouteIdsForHitLayers(rts, lid, vm, false);
-      bringRouteVisualLinesAboveTraffic(map, ids, "route");
-      bringRouteHitLayersToTop(map, ids, "route");
+      bringRouteVisualLinesAboveTraffic(map, ids, "route", lid);
+      bringRouteHitLayersToTop(map, ids, "route", lid);
     };
 
     type RadarCell = { path: string; time: number };

@@ -4290,6 +4290,7 @@ export default function App() {
                           : null)
                       }
                       windPoints={activeProgressCalloutPanel.windPoints}
+                      gustLinePoints={activeProgressCalloutPanel.gustLinePoints}
                       gustSpikePoints={activeProgressCalloutPanel.gustSpikePoints}
                       fallbackSegments={activeProgressCalloutPanel.segments.filter(
                         (s) => !s.key.startsWith("route-ahead-")

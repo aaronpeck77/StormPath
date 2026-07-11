@@ -842,18 +842,12 @@ export type StormProgressStripBand = {
 export function routeStormStripBandsToProgressStrip(
   bands: readonly RouteStormStripBand[]
 ): StormProgressStripBand[] {
-  return bands
-    .filter(
-      (b) =>
-        b.stripProminent &&
-        (b.impactSeverity === "serious" || b.impactSeverity === "avoid")
-    )
-    .map((b) => ({
-      startM: b.startMeters,
-      endM: b.endMeters,
-      lineHex: nwsAlertLineColorHex(b.nwsSeverity),
-      severity: b.nwsSeverity,
-    }));
+  return bands.map((b) => ({
+    startM: b.startMeters,
+    endM: b.endMeters,
+    lineHex: nwsAlertLineColorHex(b.nwsSeverity),
+    severity: b.nwsSeverity,
+  }));
 }
 
 /** Colored route-line segments for map highlights (same spans as the progress strip storm bands). */

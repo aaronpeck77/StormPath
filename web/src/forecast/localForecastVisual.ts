@@ -70,7 +70,6 @@ export function feelsLikeCellColor(feelsF: number): string {
 export function heatStressLabel(feelsF: number): string | null {
   if (feelsF >= 105) return "Extreme heat index";
   if (feelsF >= 95) return "High heat index";
-  if (feelsF >= 85) return "Hot — stay hydrated";
   return null;
 }
 
@@ -200,7 +199,7 @@ export function hourComfortCallout(
 
 /** True when heat index should be called out in the local forecast UI. */
 export function heatIndexNotable(feelsF: number): boolean {
-  return feelsF >= 85;
+  return feelsF >= 95;
 }
 
 export function formatHeatIndexLine(feelsF: number): string {

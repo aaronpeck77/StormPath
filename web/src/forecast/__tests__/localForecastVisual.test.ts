@@ -48,10 +48,10 @@ describe("localForecastVisual", () => {
 
   it("escalates heat stress labels", () => {
     expect(heatStressLabel(70)).toBeNull();
-    expect(heatStressLabel(88)).toBe("Hot — stay hydrated");
+    expect(heatStressLabel(88)).toBeNull();
     expect(heatStressLabel(98)).toBe("High heat index");
-    expect(heatIndexNotable(84)).toBe(false);
-    expect(heatIndexNotable(85)).toBe(true);
+    expect(heatIndexNotable(88)).toBe(false);
+    expect(heatIndexNotable(95)).toBe(true);
   });
 
   it("escalates wind chill labels", () => {
@@ -63,8 +63,12 @@ describe("localForecastVisual", () => {
       label: "Wind chill — bundle up",
     });
     expect(hourComfortCallout(90, 86, 5)).toEqual({
+      kind: null,
+      label: null,
+    });
+    expect(hourComfortCallout(98, 92, 5)).toEqual({
       kind: "heat",
-      label: "Heat index up to 90° · Hot — stay hydrated",
+      label: "Heat index up to 98° · High heat index",
     });
   });
 

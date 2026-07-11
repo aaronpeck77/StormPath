@@ -157,6 +157,22 @@ export function timelineItemShowsOnRouteLine(item: TimelineItem): boolean {
   return item.severity === "serious" || item.severity === "avoid";
 }
 
+/**
+ * Progress strip paint — match Route Info NWS rail for corridor products
+ * (Special Weather Statement, advisories, warnings), not only Severe+.
+ * Road / wind stay serious|avoid so minor road ticks do not flood the rail.
+ */
+export function timelineItemShowsOnProgressStrip(item: TimelineItem): boolean {
+  if (item.etaStale) return false;
+  if (item.track === "forecast" || item.track === "radar") return false;
+  if (item.track === "nws") {
+    // Include strip-muted hydro so grey advisory dashes on Route Info also mark the rail.
+    return true;
+  }
+  if (item.stripMuted) return false;
+  return item.severity === "serious" || item.severity === "avoid";
+}
+
 /** Route-info graph NWS rail — show corridor NWS even when muted on the progress strip. */
 export function timelineItemShowsOnRouteGraph(item: TimelineItem): boolean {
   if (item.track === "nws") return true;
@@ -164,7 +180,7 @@ export function timelineItemShowsOnRouteGraph(item: TimelineItem): boolean {
   return timelineItemShowsOnRouteLine(item);
 }
 
-/** Colored spans for the progress strip and map route halo — serious hazards only. */
+/** Colored spans for the progress strip and map route halo. */
 export function timelineToProgressStripBands(
   items: TimelineItem[],
   opts?: { omitCoarsePreview?: boolean }
@@ -172,9 +188,8 @@ export function timelineToProgressStripBands(
   const out: StormProgressStripBand[] = [];
   for (const item of items) {
     if (opts?.omitCoarsePreview && item.coarsePreview) continue;
-    if (item.stripMuted) continue;
-    if (item.track === "forecast" || item.stripMuted) continue;
-    if (!timelineItemShowsOnRouteLine(item)) continue;
+    if (item.track === "forecast") continue;
+    if (!timelineItemShowsOnProgressStrip(item)) continue;
     const span = item.endMeters - item.startMeters;
     if (span < 8 && item.track !== "nws") continue;
     out.push({
@@ -202,9 +217,11 @@ export function timelineToMapCorridorAlerts(
   return out;
 }
 
-/** Route status text rows — excludes minor advisories muted on the strip/map. */
+/** Route status / glance rows — include every NWS band shown on the Route Info graph. */
 export function timelineItemsForProgressRail(items: TimelineItem[]): TimelineItem[] {
-  return items.filter((item) => !item.stripMuted && item.track !== "radar");
+  return items.filter(
+    (item) => item.track !== "radar" && (item.track === "nws" || !item.stripMuted)
+  );
 }
 
 /** Progress-bar info panel rows — brief copy + ETA / still-active timing from advisory logic. */

@@ -1,11 +1,10 @@
 /**
- * Combined radar echo + wind gust strata.
+ * Combined radar echo + wind strata.
  *
  * Radar intensity (RainViewer mosaic) rises from the baseline as a layered
- * area fill (light-blue → indigo → violet by severity). Wind gusts are
- * overlaid as an amber dashed line on the same 0→1 y-scale so you can see
- * at a glance: both elevated = thunderstorm, wind only = dry gust event,
- * radar only = steady rain without significant wind.
+ * area fill (light-blue → indigo → violet by severity). Wind is a dashed
+ * amber/orange envelope (gust when available, else sustained) on a Y-scale
+ * that fits the data so everyday breezes read as curves.
  *
  * X-axis uses the same 34px (8.5%) inset as RouteOutlookTimeline so all
  * three strata share one aligned route axis.
@@ -18,6 +17,7 @@ import {
   RADAR_VERY_HEAVY_THRESHOLD,
 } from "../nav/constants";
 import { radarDisplayIntensity } from "../nav/radarReflectivityScale";
+import { routeWindGraphScaleMph } from "../nav/windForecastCalib";
 
 type RadarSample = { t: number; intensity: number };
 type WindPoint = { t: number; mph: number };
@@ -57,15 +57,18 @@ function linePath(pts: { t: number; norm: number }[]): string {
 
 type Props = {
   radarSamples: RadarSample[];
-  /** Sustained wind (mph) along route — main amber line. */
-  windPoints: WindPoint[];
-  /** Brief gust spikes — tick marks above the sustained line. */
+  /** @deprecated Sustained line removed — kept for callers; prefer gustLinePoints. */
+  windPoints?: WindPoint[];
+  /** Wind envelope (mph) — dashed line (gust when available). */
+  gustLinePoints?: WindPoint[];
+  /** Brief extreme gust spikes — tick marks. */
   gustSpikePoints?: WindPoint[];
 };
 
 export function RouteRadarWindStrip({
   radarSamples,
-  windPoints,
+  windPoints = [],
+  gustLinePoints = [],
   gustSpikePoints = [],
 }: Props) {
   /* ── Radar ── */
@@ -81,11 +84,11 @@ export function RouteRadarWindStrip({
     return sorted;
   }, [radarSamples]);
 
-  /* ── Wind ── */
-  const sortedWind = useMemo(
-    () => [...windPoints].filter((p) => p.mph > 0).sort((a, b) => a.t - b.t),
-    [windPoints]
-  );
+  /* ── Wind (dashed envelope only) ── */
+  const sortedWindLine = useMemo(() => {
+    const primary = gustLinePoints.length >= 2 ? gustLinePoints : windPoints;
+    return [...primary].filter((p) => p.mph > 0).sort((a, b) => a.t - b.t);
+  }, [gustLinePoints, windPoints]);
 
   const sortedGustSpikes = useMemo(
     () => [...gustSpikePoints].filter((p) => p.mph > 0).sort((a, b) => a.t - b.t),
@@ -94,15 +97,16 @@ export function RouteRadarWindStrip({
 
   const windMax = useMemo(
     () =>
-      sortedWind.length
-        ? Math.max(30, Math.ceil(Math.max(...sortedWind.map((p) => p.mph)) / 10) * 10)
-        : 30,
-    [sortedWind]
+      routeWindGraphScaleMph([
+        ...sortedWindLine.map((p) => p.mph),
+        ...sortedGustSpikes.map((p) => p.mph),
+      ]),
+    [sortedWindLine, sortedGustSpikes]
   );
 
   const windPts = useMemo(
-    () => sortedWind.map((p) => ({ t: p.t, norm: p.mph / windMax, mph: p.mph })),
-    [sortedWind, windMax]
+    () => sortedWindLine.map((p) => ({ t: p.t, norm: p.mph / windMax, mph: p.mph })),
+    [sortedWindLine, windMax]
   );
 
   const hasRadarEcho = radarPts.some((p) => p.norm >= RADAR_SOFT_THRESHOLD);
@@ -119,13 +123,12 @@ export function RouteRadarWindStrip({
     : [];
 
   return (
-    <div className="rrws" aria-label="Radar precipitation and wind gusts along route">
-      {/* Wind key stays in the top row; Radar label moves into the chart's left pad */}
+    <div className="rrws" aria-label="Radar precipitation and wind along route">
       <div className="rrws__label-row">
         <span className="rrws__legend-item">
           <span className="rrws__swatch rrws__swatch--wind" aria-hidden />
           <span className="rrws__label rrws__label--wind">
-            Sustained wind{hasWind ? ` (${windMax} mph max)` : ""}
+            Wind{hasWind ? ` (0–${windMax} mph)` : ""}
           </span>
         </span>
         {isEmpty && <span className="rrws__empty">No data</span>}
@@ -140,7 +143,6 @@ export function RouteRadarWindStrip({
         >
           <line x1={PAD_L} y1={BASELINE_Y} x2={W - PAD_R} y2={BASELINE_Y} className="rrws__baseline" />
 
-          {/* ── Radar echo — layered area fills ── */}
           {hasRadarEcho && radarPts.length >= 2 && (
             <>
               <path d={areaPath(radarPts)} fill="rgba(56,189,248,0.10)" />
@@ -180,20 +182,20 @@ export function RouteRadarWindStrip({
             </>
           )}
 
-          {/* ── Sustained wind line ── */}
+          {/* ── Wind (dashed only) ── */}
           {hasWind && (
             <path
               d={linePath(windPts)}
               fill="none"
               stroke="#f59e0b"
-              strokeWidth={2.5}
+              strokeWidth={2.2}
+              strokeDasharray="5 3"
               strokeLinejoin="round"
               strokeLinecap="round"
               vectorEffect="non-scaling-stroke"
             />
           )}
 
-          {/* ── Gust spike ticks (localized, not corridor-wide) ── */}
           {sortedGustSpikes.map((p, i) => {
             const norm = p.mph / windMax;
             const x = xPx(p.t);
@@ -214,10 +216,8 @@ export function RouteRadarWindStrip({
           })}
         </svg>
 
-        {/* Radar label — sits in the left pad area, vertically centred */}
         <span className="rrws__radar-side-label">Radar · now</span>
 
-        {/* Wind mph axis labels — right pad */}
         {windTicks.map(({ mph, topPct }) => (
           <span key={`wa${mph}`} className="rrws__axis-label" style={{ top: `${topPct.toFixed(1)}%` }}>
             {mph}

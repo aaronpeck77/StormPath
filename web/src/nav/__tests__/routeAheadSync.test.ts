@@ -99,7 +99,7 @@ describe("buildRouteAheadGlanceCards", () => {
     expect(cards.every((c) => c.track !== "radar")).toBe(true);
   });
 
-  it("excludes strip-muted minor flood from route status cards", () => {
+  it("includes strip-muted NWS on glance cards so Route Info messages match the graph", () => {
     const cards = buildRouteAheadGlanceCards({
       items: [
         baseItem({ id: "minor-flood", stripMuted: true, severity: "info", label: "Flood Advisory" }),
@@ -109,21 +109,23 @@ describe("buildRouteAheadGlanceCards", () => {
       userAlongMeters: 0,
       planEtaMinutes: 90,
     });
-    expect(cards).toHaveLength(1);
-    expect(cards.map((c) => c.label)).not.toContain("Flood Advisory");
+    expect(cards.map((c) => c.label)).toContain("Flood Advisory");
     expect(cards.map((c) => c.label)).toContain("Flash Flood Warning");
   });
 });
 
 describe("timelineToProgressStripBands", () => {
-  it("skips strip-muted and non-serious items on the progress rail", () => {
+  it("paints corridor NWS advisories on the progress rail (not only Severe+)", () => {
     const bands = timelineToProgressStripBands([
       baseItem({ id: "minor-flood", stripMuted: true, severity: "info", label: "Flood Advisory" }),
       baseItem({ id: "wind-adv", stripMuted: false, severity: "caution", label: "Wind Advisory" }),
+      baseItem({ id: "sws", stripMuted: false, severity: "caution", label: "Special Weather Statement" }),
       baseItem({ id: "warning", stripMuted: false, label: "Flash Flood Warning" }),
     ]);
-    expect(bands).toHaveLength(1);
-    expect(bands[0]!.severity).toBe("serious");
+    expect(bands).toHaveLength(4);
+    expect(bands.map((b) => b.severity)).toEqual(
+      expect.arrayContaining(["info", "caution", "serious"])
+    );
   });
 
   it("never paints Tomorrow.io forecast bands on the progress strip", () => {
@@ -178,7 +180,7 @@ describe("timelineItemShowsOnRouteGraph", () => {
 });
 
 describe("buildRouteAheadCalloutSegments", () => {
-  it("excludes strip-muted minor flood from route status text", () => {
+  it("includes strip-muted NWS in route status text so messages match the graph", () => {
     const segments = buildRouteAheadCalloutSegments({
       items: [
         baseItem({ id: "minor-flood", stripMuted: true, severity: "info", label: "Flood Advisory" }),
@@ -188,8 +190,8 @@ describe("buildRouteAheadCalloutSegments", () => {
       userAlongMeters: 0,
       planEtaMinutes: 90,
     });
-    expect(segments).toHaveLength(1);
-    expect(segments.some((s) => s.title.includes("Flood Advisory"))).toBe(false);
+    expect(segments).toHaveLength(2);
+    expect(segments.some((s) => s.title.includes("Flood Advisory"))).toBe(true);
     expect(segments.some((s) => s.title.includes("Flash Flood Warning"))).toBe(true);
   });
 });

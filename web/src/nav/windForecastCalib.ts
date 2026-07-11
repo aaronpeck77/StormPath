@@ -18,28 +18,27 @@ export const WIND_GRAPH_MIN_MPH = 18;
 /** Minimum sustained wind to plot on the route graph (below hazard caution). */
 export const WIND_GRAPH_PLOT_MIN_MPH = 6;
 
+/** Soft floor for the wind chart Y-axis — not a hard 30 mph that flattens breezes. */
+export const WIND_GRAPH_SCALE_FLOOR_MPH = 15;
+
 export type RouteWindGraphPoint = { t: number; mph: number };
 
 /**
- * Sustained-wind line + gust spike markers for {@link RouteRadarWindStrip}.
- * Pads sparse corridor samples so the amber line can render (needs ≥2 points).
+ * Y-axis ceiling for {@link RouteRadarWindStrip}.
+ * Fits the data with ~20% headroom so everyday 8–18 mph corridors read as curves,
+ * not a near-baseline flat line under a forced 30 mph scale.
  */
-export function buildRouteWindGraphPoints(
-  intervals: Array<{ etaMinutes: number; windSpeedMph: number; windGustMph: number }>,
-  planEtaMinutes: number
-): { windPoints: RouteWindGraphPoint[]; gustSpikePoints: RouteWindGraphPoint[] } {
-  if (!intervals.length || planEtaMinutes <= 0) {
-    return { windPoints: [], gustSpikePoints: [] };
-  }
+export function routeWindGraphScaleMph(mphValues: number[]): number {
+  if (!mphValues.length) return WIND_GRAPH_SCALE_FLOOR_MPH;
+  const dataMax = Math.max(...mphValues.filter((v) => Number.isFinite(v) && v > 0), 0);
+  if (dataMax <= 0) return WIND_GRAPH_SCALE_FLOOR_MPH;
+  const step = dataMax >= 40 ? 10 : 5;
+  const withHeadroom = dataMax * 1.2;
+  return Math.max(WIND_GRAPH_SCALE_FLOOR_MPH, Math.ceil(withHeadroom / step) * step);
+}
 
-  const windPoints = intervals
-    .filter((iv) => iv.windSpeedMph >= WIND_GRAPH_PLOT_MIN_MPH)
-    .map((iv) => ({
-      t: Math.min(1, Math.max(0, iv.etaMinutes / planEtaMinutes)),
-      mph: Math.round(iv.windSpeedMph),
-    }))
-    .sort((a, b) => a.t - b.t);
-
+function padRouteWindGraphPoints(points: RouteWindGraphPoint[]): RouteWindGraphPoint[] {
+  const windPoints = [...points].sort((a, b) => a.t - b.t);
   if (windPoints.length === 1) {
     const p = windPoints[0]!;
     windPoints.unshift({ t: Math.max(0, p.t - 0.04), mph: p.mph });
@@ -54,25 +53,70 @@ export function buildRouteWindGraphPoints(
       windPoints.push({ t: 1, mph: last.mph });
     }
   }
+  return windPoints;
+}
+
+/**
+ * Sustained-wind line + gust envelope + extreme gust spike markers for
+ * {@link RouteRadarWindStrip}. Pads sparse corridor samples so lines can render (≥2 points).
+ */
+export function buildRouteWindGraphPoints(
+  intervals: Array<{ etaMinutes: number; windSpeedMph: number; windGustMph: number }>,
+  planEtaMinutes: number
+): {
+  windPoints: RouteWindGraphPoint[];
+  gustLinePoints: RouteWindGraphPoint[];
+  gustSpikePoints: RouteWindGraphPoint[];
+} {
+  if (!intervals.length || planEtaMinutes <= 0) {
+    return { windPoints: [], gustLinePoints: [], gustSpikePoints: [] };
+  }
+
+  const toT = (etaMinutes: number) =>
+    Math.min(1, Math.max(0, etaMinutes / planEtaMinutes));
+
+  const windPoints = padRouteWindGraphPoints(
+    intervals
+      .filter((iv) => iv.windSpeedMph >= WIND_GRAPH_PLOT_MIN_MPH)
+      .map((iv) => ({
+        t: toT(iv.etaMinutes),
+        mph: Math.round(iv.windSpeedMph),
+      }))
+  );
+
+  const gustLinePoints = padRouteWindGraphPoints(
+    intervals
+      .filter((iv) => {
+        const gust = Math.max(iv.windGustMph, iv.windSpeedMph);
+        return gust >= WIND_GRAPH_PLOT_MIN_MPH;
+      })
+      .map((iv) => ({
+        t: toT(iv.etaMinutes),
+        mph: Math.round(Math.max(iv.windGustMph, iv.windSpeedMph)),
+      }))
+  );
 
   const gustSpikePoints = intervals
     .filter((iv) => gustSpikeSeverity(iv.windSpeedMph, iv.windGustMph) !== null)
     .map((iv) => ({
-      t: Math.min(1, Math.max(0, iv.etaMinutes / planEtaMinutes)),
+      t: toT(iv.etaMinutes),
       mph: Math.round(iv.windGustMph),
     }));
 
-  return { windPoints, gustSpikePoints };
+  return { windPoints, gustLinePoints, gustSpikePoints };
 }
 
 /** True when the radar/wind strata should render in the progress graph. */
 export function routeWindGraphVisible(
   windPoints: RouteWindGraphPoint[],
-  gustSpikePoints: RouteWindGraphPoint[] = []
+  gustSpikePoints: RouteWindGraphPoint[] = [],
+  gustLinePoints: RouteWindGraphPoint[] = []
 ): boolean {
   return (
+    gustLinePoints.length >= 2 ||
     windPoints.length >= 2 ||
     windPoints.some((p) => p.mph >= WIND_GRAPH_MIN_MPH) ||
+    gustLinePoints.some((p) => p.mph >= WIND_GRAPH_MIN_MPH) ||
     gustSpikePoints.length > 0
   );
 }

@@ -57,8 +57,10 @@ export type ProgressCalloutPanel = {
   segments: RouteChunkCalloutItem[];
   userAlongT: number;
   stripTint: string;
-  /** Wind gust points sampled directly from TIO forecast intervals (bypasses step merge). */
+  /** Sustained wind points from corridor forecast intervals (bypasses step merge). */
   windPoints: { t: number; mph: number }[];
+  /** Gust envelope along the route (dashed line on the wind strip). */
+  gustLinePoints: { t: number; mph: number }[];
   gustSpikePoints: { t: number; mph: number }[];
 };
 
@@ -170,8 +172,9 @@ export function useProgressCalloutPanel(
     const windFromForecast =
       tioRouteForecast && planEtaForWind && planEtaForWind > 0
         ? buildRouteWindGraphPoints(tioRouteForecast.intervals, planEtaForWind)
-        : { windPoints: [], gustSpikePoints: [] };
+        : { windPoints: [], gustLinePoints: [], gustSpikePoints: [] };
     const windPoints = windFromForecast.windPoints;
+    const gustLinePoints = windFromForecast.gustLinePoints;
     const gustSpikePoints = windFromForecast.gustSpikePoints;
 
     if (skipHeavyProgressPanel) {
@@ -183,6 +186,7 @@ export function useProgressCalloutPanel(
         userAlongT: 0,
         stripTint,
         windPoints,
+        gustLinePoints,
         gustSpikePoints,
       };
     }
@@ -196,6 +200,7 @@ export function useProgressCalloutPanel(
         userAlongT: 0,
         stripTint,
         windPoints,
+        gustLinePoints,
         gustSpikePoints,
       };
     }
@@ -209,6 +214,7 @@ export function useProgressCalloutPanel(
         userAlongT: 0,
         stripTint,
         windPoints,
+        gustLinePoints,
         gustSpikePoints,
       };
     }
@@ -319,6 +325,7 @@ export function useProgressCalloutPanel(
         userAlongT,
         stripTint,
         windPoints,
+        gustLinePoints,
         gustSpikePoints,
       };
     }
@@ -421,6 +428,7 @@ export function useProgressCalloutPanel(
         userAlongT,
         stripTint,
         windPoints,
+        gustLinePoints,
         gustSpikePoints,
       };
     }
@@ -467,6 +475,7 @@ export function useProgressCalloutPanel(
       userAlongT,
       stripTint,
       windPoints,
+      gustLinePoints,
       gustSpikePoints,
     };
   }, [
@@ -511,6 +520,7 @@ export function useProgressCalloutPanel(
         outlookTimeline: progressCalloutPanel.outlookTimeline,
         outlookSamples: progressCalloutPanel.outlookSamples,
         windPoints: progressCalloutPanel.windPoints,
+        gustLinePoints: progressCalloutPanel.gustLinePoints,
         gustSpikePoints: progressCalloutPanel.gustSpikePoints,
         userAlongT: progressCalloutPanel.userAlongT,
         stripTint: progressCalloutPanel.stripTint,
