@@ -4,6 +4,7 @@ import { buildWindImpacts } from "./tomorrowIoImpacts";
 import {
   buildRouteImpacts,
   compareRouteImpactPriority,
+  radarMosaicToProgressStripBands,
   routeImpactToRouteAlert,
   type RouteImpact,
 } from "./routeImpacts";
@@ -37,6 +38,7 @@ import {
   filterAlertsAffectingRoute,
   pointInAnyPolygonGeometry,
   buildRouteStormStripBands,
+  mergeProgressStripWeatherBands,
   sortWeatherAlertsBySeverity,
   type RouteStormStripBand,
   type StormProgressStripBand,
@@ -510,10 +512,25 @@ export function useRouteAheadDerivations(
     nwsAlertsForGuidanceAdvisory,
   ]);
 
-  const routeAheadProgressBands = useMemo(
-    () => timelineToProgressStripBands(routeAheadTimeline),
-    [routeAheadTimeline]
-  );
+  /**
+   * Progress rail + map halo bands: serious NWS spans, plus radar mosaic where echo crosses the route.
+   * (Radar used to be graph-only — that left both surfaces empty when only RainViewer showed storms.)
+   */
+  const routeAheadWeatherBands = useMemo(() => {
+    const nwsBands = timelineToProgressStripBands(routeAheadTimeline);
+    const radarBands =
+      showWeatherImpactsOnRoute && guidanceRouteLengthM > 0
+        ? radarMosaicToProgressStripBands(guidanceRouteLengthM, radarMosaicSamples)
+        : [];
+    return mergeProgressStripWeatherBands([...nwsBands, ...radarBands]);
+  }, [
+    routeAheadTimeline,
+    showWeatherImpactsOnRoute,
+    guidanceRouteLengthM,
+    radarMosaicSamples,
+  ]);
+
+  const routeAheadProgressBands = routeAheadWeatherBands;
 
   /** NWS / radar timeline bands → route outlook graph when forecast APIs are empty. */
   const stormOutlookBands = useMemo((): StormRouteOutlookBand[] => {
@@ -526,15 +543,14 @@ export function useRouteAheadDerivations(
       }));
   }, [routeAheadTimeline]);
 
-  /** Map halo — only weather you're approaching soon; distant items stay on timeline/advisory. */
+  /**
+   * Map halo bands — same as the progress rail in Rt/Mp.
+   * Drive keeps a clean blue line (no hazard casings on the polyline).
+   */
   const routeAheadMapBands = useMemo(() => {
-    const bands = timelineToProgressStripBands(routeAheadTimeline, { omitCoarsePreview: true });
-    if (viewMode !== "drive" || !Number.isFinite(heavyAdvisoryAlongM)) return bands;
-    const floorM = Math.max(0, heavyAdvisoryAlongM - 200);
-    return bands
-      .map((b) => ({ ...b, startM: Math.max(b.startM, floorM) }))
-      .filter((b) => b.endM - b.startM >= 8);
-  }, [routeAheadTimeline, viewMode, heavyAdvisoryAlongM]);
+    if (viewMode === "drive") return [];
+    return routeAheadWeatherBands;
+  }, [routeAheadWeatherBands, viewMode]);
 
   /**
    * Project unified impacts back to the legacy `RouteAlert` shape so existing surfaces (progress strip,

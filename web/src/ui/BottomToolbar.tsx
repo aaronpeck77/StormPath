@@ -9,8 +9,9 @@ import {
   formatEtaDuration,
   formatEtaDurationToolbar,
 } from "./formatEta";
+import { ROUTE_ACTIVE_COLOR } from "./mapRouteStyle";
 const VIEW_CYCLE: { mode: MapViewMode; label: string; line: string }[] = [
-  { mode: "route", label: "Rt", line: "#3b82f6" },
+  { mode: "route", label: "Rt", line: ROUTE_ACTIVE_COLOR },
   { mode: "drive", label: "Dr", line: "#22c55e" },
   { mode: "topdown", label: "Mp", line: "#a855f7" },
 ];

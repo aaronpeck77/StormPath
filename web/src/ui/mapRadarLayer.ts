@@ -20,17 +20,34 @@ const RADAR_LAYER_A = "rainviewer-radar-layer-a";
 const RADAR_LAYER_B = "rainviewer-radar-layer-b";
 
 /**
+ * Classic TWC radar tiles only — no custom color remapping.
+ * Bump when map palette or paint changes so DriveMap recreates layers (HMR-safe).
+ */
+export const RADAR_MAP_STYLE_REVISION = 17;
+
+/**
  * Opacity for the visible radar layer (under basemap roads).
- * Kept moderate so yellow–green fringe does not read as severe storm cores.
  */
 export const RAINVIEWER_RADAR_VISIBLE_OPACITY = 0.66;
 
-/** Mild mute so colors stay readable without looking neon. */
+/**
+ * Stock classic palette — do not recolor.
+ */
 export const RAINVIEWER_RADAR_RASTER_PAINT = {
-  "raster-saturation": -0.1,
-  "raster-contrast": -0.06,
-  "raster-brightness-max": 0.9,
+  "raster-resampling": "nearest",
 } as const;
+
+/** Leftover paint from older experiments — clear on apply so remaps don’t stick. */
+const RADAR_PAINT_KEYS_TO_CLEAR = [
+  "raster-color",
+  "raster-color-mix",
+  "raster-color-range",
+  "raster-hue-rotate",
+  "raster-saturation",
+  "raster-contrast",
+  "raster-brightness-max",
+  "raster-brightness-min",
+] as const;
 
 export const RAINVIEWER_RADAR_LAYER_A = RADAR_LAYER_A;
 
@@ -217,6 +234,22 @@ function addRasterPair(
   );
 }
 
+function applyRainViewerRadarPaint(map: Map, layerId: string, opacity: number): void {
+  if (!map.getLayer(layerId)) return;
+  map.setPaintProperty(layerId, "raster-opacity", opacity);
+  /* Clear prior custom recolor so leftover raster-color* from older revisions don’t stick. */
+  for (const key of RADAR_PAINT_KEYS_TO_CLEAR) {
+    try {
+      map.setPaintProperty(layerId, key, undefined as unknown as null);
+    } catch {
+      /* property may be unsupported to clear on some builds */
+    }
+  }
+  for (const [key, value] of Object.entries(RAINVIEWER_RADAR_RASTER_PAINT)) {
+    map.setPaintProperty(layerId, key, value);
+  }
+}
+
 /**
  * Two stacked raster sources. Layer B is above A. Initialize both to the same frame so the stack is valid.
  */
@@ -256,8 +289,9 @@ export function ensureRainViewerRadarDual(
   if (a && typeof a.setTiles === "function") a.setTiles([initialTileUrlTemplate]);
   if (b && typeof b.setTiles === "function") b.setTiles([initialTileUrlTemplate]);
   positionRainViewerRadarUnderRoads(map);
-  map.setPaintProperty(RADAR_LAYER_A, "raster-opacity", visibleOpacity);
-  map.setPaintProperty(RADAR_LAYER_B, "raster-opacity", 0);
+  /* Always re-sync paint — style tweaks must apply without waiting for a full layer recreate. */
+  applyRainViewerRadarPaint(map, RADAR_LAYER_A, visibleOpacity);
+  applyRainViewerRadarPaint(map, RADAR_LAYER_B, 0);
 }
 
 const pendingTileSwap: Record<"a" | "b", boolean> = { a: false, b: false };

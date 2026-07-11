@@ -160,7 +160,7 @@ export function RouteProgressStrip({
     });
   }, [stormBands, totalM]);
 
-  /* Side rail: keep chroma close to the map line (A=blue #3b82f6); edge strip stays slightly muted for contrast on map */
+  /* Side rail: keep chroma close to the map line; edge strip stays slightly muted for contrast on map */
   const trackBg =
     layout === "side"
       ? hexToRgba(routeLineColor, 0.62, 0.12)

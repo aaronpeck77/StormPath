@@ -4,6 +4,7 @@ import {
   compareRouteImpactPriority,
   impactSeverityToNumeric,
   pickRerouteImpactAhead,
+  radarMosaicToProgressStripBands,
   routeImpactToRouteAlert,
   type RouteImpact,
   type RouteImpactAction,
@@ -312,5 +313,20 @@ describe("buildRouteImpacts traffic gating", () => {
       ],
     });
     expect(impacts.some((i) => i.source === "radar")).toBe(false);
+  });
+});
+
+describe("radarMosaicToProgressStripBands", () => {
+  it("paints padded visible bands where mosaic echo crosses the route", () => {
+    const bands = radarMosaicToProgressStripBands(100_000, [
+      { t: 0.2, intensity: 0.05 },
+      { t: 0.55, intensity: 0.85 },
+      { t: 0.58, intensity: 0.9 },
+    ]);
+    expect(bands.length).toBeGreaterThanOrEqual(1);
+    const heavy = bands.find((b) => b.severity === "serious" || b.severity === "caution");
+    expect(heavy).toBeTruthy();
+    expect(heavy!.endM - heavy!.startM).toBeGreaterThanOrEqual(2_500);
+    expect(heavy!.lineHex).toMatch(/^#/);
   });
 });

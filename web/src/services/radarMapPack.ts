@@ -4,6 +4,7 @@ import {
   RAINVIEWER_RADAR_MAX_ZOOM,
   tileUrlFromHostAndPath,
   type FetchRainViewerRadarOptions,
+  type RainViewerTileUrlKind,
 } from "./rainViewerRadar";
 import {
   buildTomorrowIoRadarFrames,
@@ -115,12 +116,20 @@ async function appendRainViewerNowcastToTioPack(
 export async function resolveRadarMapPack(
   center: LngLat | null | undefined,
   tomorrowIoApiKey: string | null | undefined,
-  opts?: FetchRainViewerRadarOptions & { forceRainViewer?: boolean }
+  opts?: FetchRainViewerRadarOptions & {
+    forceRainViewer?: boolean;
+    /**
+     * Opt into US Tomorrow.io precip tiles (route intensity sampling).
+     * Map overlay should omit this — TIO’s hot scale fights StormPath’s soft custom ramp.
+     */
+    allowTomorrowIoMapTiles?: boolean;
+  }
 ): Promise<RadarMapPack | null> {
   const mapAnimation = opts?.mapAnimation ?? !opts?.forceRainViewer;
-  const provider = opts?.forceRainViewer
-    ? "rainviewer"
-    : radarMapProviderForCenter(center, tomorrowIoApiKey);
+  const provider =
+    opts?.forceRainViewer || !opts?.allowTomorrowIoMapTiles
+      ? "rainviewer"
+      : radarMapProviderForCenter(center, tomorrowIoApiKey);
   if (provider === "tomorrow_io" && tomorrowIoApiKey?.trim() && canUseTomorrowIoMapRasterTiles()) {
     const tilesOk = await verifyTomorrowIoRadarTileAccess(tomorrowIoApiKey);
     if (tilesOk) {
@@ -141,7 +150,12 @@ export async function resolveRadarMapPack(
     }
   }
 
-  const { forceRainViewer: _force, mapAnimation: _mapAnim, ...rvOpts } = opts ?? {};
+  const {
+    forceRainViewer: _force,
+    mapAnimation: _mapAnim,
+    allowTomorrowIoMapTiles: _allowTio,
+    ...rvOpts
+  } = opts ?? {};
   const pack = await fetchRainViewerRadarFrames({
     ...rvOpts,
     includeNowcast: rvOpts.includeNowcast ?? mapAnimation,
@@ -160,7 +174,9 @@ export async function resolveRadarMapPack(
 export function radarTileUrlForFrame(
   pack: RadarMapPack,
   frame: RadarMapFrame,
-  tomorrowIoApiKey?: string | null
+  tomorrowIoApiKey?: string | null,
+  /** Map overlay uses a softer palette; sampling keeps Universal Blue for intensity decode. */
+  kind: RainViewerTileUrlKind = "map"
 ): string {
   const tileProvider = tileProviderForFrame(pack, frame);
   if (tileProvider === "tomorrow_io") {
@@ -168,7 +184,7 @@ export function radarTileUrlForFrame(
     if (!key) return "";
     return tomorrowIoTileUrlFromFrame(key, frame.path);
   }
-  return tileUrlFromHostAndPath(pack.host, frame.path);
+  return tileUrlFromHostAndPath(pack.host, frame.path, kind);
 }
 
 export function nearestRadarFrameByTimeMs(

@@ -139,6 +139,18 @@ describe("timelineToProgressStripBands", () => {
     ]);
     expect(bands).toHaveLength(0);
   });
+
+  it("keeps coarse far-route bands unless omitCoarsePreview is set", () => {
+    const coarse = baseItem({
+      id: "far-svr",
+      coarsePreview: true,
+      label: "Severe Thunderstorm Warning",
+      startMeters: 200_000,
+      endMeters: 240_000,
+    });
+    expect(timelineToProgressStripBands([coarse])).toHaveLength(1);
+    expect(timelineToProgressStripBands([coarse], { omitCoarsePreview: true })).toHaveLength(0);
+  });
 });
 
 describe("timelineItemShowsOnRouteLine", () => {

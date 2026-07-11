@@ -148,6 +148,7 @@ import {
   animateRainViewerDualCrossfade,
   ensureRainViewerRadarDual,
   radarAnimationCrossfadeMs,
+  RADAR_MAP_STYLE_REVISION,
   RAINVIEWER_RADAR_VISIBLE_OPACITY,
   positionRainViewerRadarUnderRoads,
   removeRainViewerRadar,
@@ -2070,22 +2071,19 @@ function DriveMapInner({
       const focusGeom = resolveFocusGeom();
       const hasRoute = Boolean(focusGeom?.length);
 
-      if (!hasRoute) {
+      if (!hasRoute || viewMode === "drive") {
         clearRouteConditionHighlights(map);
         return;
       }
 
       if (userExploringRef.current) return;
 
-      const clipBehindAlongM =
-        navigationStarted && viewMode === "drive" ? userAlongMetersRef.current : null;
-
       const changed = applyRouteConditionHighlights(map, {
         alerts: alongRouteAlerts,
         routeGeometry: focusGeom,
         stormGeoJson: weatherAlertGeoJson,
         stormAlongRouteBands,
-        clipBehindAlongM,
+        clipBehindAlongM: null,
       });
       if (changed) {
         liftTrafficThenRoutesThenHits(
@@ -2307,8 +2305,8 @@ function DriveMapInner({
         path: f.path,
         time: f.time,
       }));
-      const pathsKey = `${pack.provider}|${radarAnimate ? "anim" : "still"}|${cells.length}|${cells[0]!.path}|${cells.at(-1)!.path}`;
-      const layerKey = `${pack.provider}|${pack.maxZoom}`;
+      const pathsKey = `${pack.provider}|${radarAnimate ? "anim" : "still"}|${cells.length}|${cells[0]!.path}|${cells.at(-1)!.path}|style${RADAR_MAP_STYLE_REVISION}`;
+      const layerKey = `${pack.provider}|${pack.maxZoom}|style${RADAR_MAP_STYLE_REVISION}`;
       const recreate = layerKey !== lastRadarLayerKey;
       if (pathsKey === lastRadarPathsKey && map.getSource("rainviewer-radar-a") && !recreate) {
         return;
@@ -2411,7 +2409,7 @@ function DriveMapInner({
         /* map may already be torn down */
       }
     };
-  }, [mapReady, showRadar, radarAnimate]);
+  }, [mapReady, showRadar, radarAnimate, RADAR_MAP_STYLE_REVISION]);
 
   /** Idle home (no trip): frame on My location or trail area; retry until GPS + style are ready. */
   const idleHomeAppliedRef = useRef(false);

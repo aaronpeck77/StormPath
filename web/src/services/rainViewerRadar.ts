@@ -63,14 +63,28 @@ export function rainViewerHostForTiles(host: string): string {
   return h;
 }
 
-/** Universal Blue palette (RainViewer color id 2). */
+/**
+ * RainViewer color ids (@see https://www.rainviewer.com/api/color-schemes.html).
+ * Sampling keeps Universal Blue (2). Map uses classic TWC (4) as shipped — no recolor.
+ */
 export const RAINVIEWER_TILE_COLOR = 2;
-/** `0_1` = no smooth blur (less “blooming” intensity), snow colors on. */
+/** Map overlay — classic Weather Channel / TV radar palette. */
+export const RAINVIEWER_MAP_TILE_COLOR = 4;
+/** Sharp bins (no smooth bloom). */
 export const RAINVIEWER_TILE_OPTIONS = "0_1";
+export const RAINVIEWER_MAP_TILE_OPTIONS = "0_1";
 
-/** Full tile URL template for Mapbox raster source. */
-export function tileUrlFromHostAndPath(host: string, path: string): string {
-  return `${rainViewerHostForTiles(host)}${path}/256/{z}/{x}/{y}/${RAINVIEWER_TILE_COLOR}/${RAINVIEWER_TILE_OPTIONS}.png`;
+export type RainViewerTileUrlKind = "sample" | "map";
+
+/** Full tile URL template for Mapbox raster source / mosaic sampling. */
+export function tileUrlFromHostAndPath(
+  host: string,
+  path: string,
+  kind: RainViewerTileUrlKind = "sample"
+): string {
+  const color = kind === "map" ? RAINVIEWER_MAP_TILE_COLOR : RAINVIEWER_TILE_COLOR;
+  const options = kind === "map" ? RAINVIEWER_MAP_TILE_OPTIONS : RAINVIEWER_TILE_OPTIONS;
+  return `${rainViewerHostForTiles(host)}${path}/256/{z}/{x}/{y}/${color}/${options}.png`;
 }
 
 /**

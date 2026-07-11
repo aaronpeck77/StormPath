@@ -319,15 +319,28 @@ export function radarMosaicToProgressStripBands(
   samples: RadarMosaicSample[]
 ): { startM: number; endM: number; lineHex: string; severity: string }[] {
   if (totalM <= 0 || !samples.length) return [];
-  return mergeRadarMosaicBands(samples).map((b) => {
+  /** Single mosaic hits collapse to a point — pad so the rail/map can paint a visible band. */
+  const minSpanM = Math.max(2_500, totalM * 0.025);
+  const out: { startM: number; endM: number; lineHex: string; severity: string }[] = [];
+  for (const b of mergeRadarMosaicBands(samples)) {
     const echo = classifyRadarEcho(b.maxIntensity);
-    return {
-      startM: totalM * Math.max(0, Math.min(1, b.startT)),
-      endM: totalM * Math.max(b.startT, Math.min(1, b.endT)),
-      lineHex: echo?.stripHex ?? "#64748b",
-      severity: echo?.stripLabel ?? "Trace",
-    };
-  });
+    if (!echo) continue;
+    let startM = totalM * Math.max(0, Math.min(1, b.startT));
+    let endM = totalM * Math.max(b.startT, Math.min(1, b.endT));
+    if (endM - startM < minSpanM) {
+      const mid = (startM + endM) / 2;
+      startM = Math.max(0, mid - minSpanM / 2);
+      endM = Math.min(totalM, mid + minSpanM / 2);
+    }
+    if (endM - startM < 8) continue;
+    out.push({
+      startM,
+      endM,
+      lineHex: echo.stripHex,
+      severity: echo.severity,
+    });
+  }
+  return out;
 }
 
 /* ─── Mapbox traffic ─────────────────────────────────────────────── */

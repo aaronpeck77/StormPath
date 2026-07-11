@@ -30,14 +30,30 @@ describe("radarMapPack", () => {
     expect(radarMapProviderForCenter([-98, 39], "")).toBe("rainviewer");
   });
 
-  it("resolves a Tomorrow.io pack without RainViewer fetch when not animating", async () => {
-    const pack = await resolveRadarMapPack([-98, 39], "abc", { mapAnimation: false });
+  it("defaults map overlay to RainViewer even in the US (avoids TIO hot red/magenta scale)", async () => {
+    vi.mocked(fetchRainViewerRadarFrames).mockResolvedValue({
+      host: "tilecache.rainviewer.com",
+      frames: [
+        { time: 1, path: "/past" },
+        { time: 2, path: "/past2" },
+      ],
+    });
+    const pack = await resolveRadarMapPack([-98, 39], "abc", { mapAnimation: true });
+    expect(pack?.provider).toBe("rainviewer");
+    expect(fetchRainViewerRadarFrames).toHaveBeenCalled();
+  });
+
+  it("resolves a Tomorrow.io pack when allowTomorrowIoMapTiles is set (route sampling)", async () => {
+    const pack = await resolveRadarMapPack([-98, 39], "abc", {
+      mapAnimation: false,
+      allowTomorrowIoMapTiles: true,
+    });
     expect(pack?.provider).toBe("tomorrow_io");
     expect(pack?.frames.length).toBeGreaterThan(1);
     expect(fetchRainViewerRadarFrames).not.toHaveBeenCalled();
   });
 
-  it("hybrid US map animation appends RainViewer nowcast after Tomorrow.io past", async () => {
+  it("hybrid US animation appends RainViewer nowcast when TIO map tiles are allowed", async () => {
     const latestTioSec = buildTomorrowIoRadarFrames().at(-1)!.time;
     vi.mocked(fetchRainViewerRadarFrames).mockResolvedValue({
       host: "tilecache.rainviewer.com",
@@ -46,7 +62,10 @@ describe("radarMapPack", () => {
         { time: latestTioSec + 1200, path: "/nowcast/2" },
       ],
     });
-    const pack = await resolveRadarMapPack([-98, 39], "abc", { mapAnimation: true });
+    const pack = await resolveRadarMapPack([-98, 39], "abc", {
+      mapAnimation: true,
+      allowTomorrowIoMapTiles: true,
+    });
     expect(pack?.provider).toBe("hybrid");
     expect(fetchRainViewerRadarFrames).toHaveBeenCalledWith({
       nowcastOnly: true,
@@ -132,7 +151,10 @@ describe("radarMapPack", () => {
       host: "tilecache.rainviewer.com",
       frames: [{ time: 1, path: "/v2/radar/1/256/1_1.png" }],
     });
-    const pack = await resolveRadarMapPack([-98, 39], "abc", { mapAnimation: true });
+    const pack = await resolveRadarMapPack([-98, 39], "abc", {
+      mapAnimation: true,
+      allowTomorrowIoMapTiles: true,
+    });
     expect(pack?.provider).toBe("rainviewer");
     expect(fetchRainViewerRadarFrames).toHaveBeenCalled();
   });

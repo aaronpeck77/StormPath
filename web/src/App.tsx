@@ -2434,8 +2434,10 @@ export default function App() {
   const activeTripMapOverlays =
     navigationStarted ||
     plan.routes.some((r) => r.geometry && r.geometry.length >= 2);
-  const mapAlongRouteAlertsForDrive = activeTripMapOverlays ? deferredMapAlongRouteAlerts : [];
-  const mapStormAlongRouteBandsForDrive = activeTripMapOverlays ? deferredRouteAheadMapBands : [];
+  const mapAlongRouteAlertsForDrive =
+    activeTripMapOverlays && viewMode !== "drive" ? deferredMapAlongRouteAlerts : [];
+  const mapStormAlongRouteBandsForDrive =
+    activeTripMapOverlays && viewMode !== "drive" ? deferredRouteAheadMapBands : [];
   const driveRouteAheadLine = useMemo(() => {
     if (!driveModeUi) return null;
     const g = guidanceRoute?.geometry;

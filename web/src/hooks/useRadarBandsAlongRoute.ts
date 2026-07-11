@@ -114,6 +114,8 @@ export function useRadarBandsAlongRoute(
       const pack = await resolveRadarMapPack(routeCenter, tomorrowIoApiKey, {
         includeNowcast: useEta,
         forceRainViewer: useEta,
+        /* Intensity sampling can use TIO precip tiles; map overlay stays on RainViewer. */
+        allowTomorrowIoMapTiles: !useEta,
       });
       if (!pack?.frames.length) {
         if (!cancelled) setRefreshing(false);
@@ -169,7 +171,7 @@ export function useRadarBandsAlongRoute(
       const out: RadarSample[] = [];
       for (const { frame, tileKey, samples } of groups.values()) {
         if (cancelled) return;
-        const template = radarTileUrlForFrame(pack, frame, tomorrowIoApiKey);
+        const template = radarTileUrlForFrame(pack, frame, tomorrowIoApiKey, "sample");
         if (!template) {
           for (const it of samples) out.push({ t: it.t, intensity: 0 });
           continue;

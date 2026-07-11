@@ -24,7 +24,7 @@ import {
   type StormProgressStripBand,
 } from "../weatherAlerts/geometryOverlap";
 import { safeCameraForBounds, safeEaseTo, safeExtendBounds, safeFitBounds, readMapLngLat } from "./mapCameraSafe";
-import { ROUTE_SUGGESTED_LINE_WIDTH, routeMapLineStyle } from "./mapRouteStyle";
+import { ROUTE_SUGGESTED_LINE_WIDTH, routeMapLineStyle, ROUTE_LINE_CASING_COLOR, ROUTE_LINE_CASING_OPACITY, ROUTE_LINE_CASING_WIDTH_EXTRA } from "./mapRouteStyle";
 
 const ROUTE_COND_LEGACY_LAYER = "route-condition-markers-circles";
 const ROUTE_COND_LEGACY_SRC = "route-condition-markers";
@@ -253,7 +253,7 @@ export function applyRouteConditionHighlights(
   return true;
 }
 
-/** Place hazard halo directly under the lowest route leg line (above traffic). */
+/** Place hazard halo directly under the lowest route leg casing (above traffic). */
 export function positionRouteConditionCasingBelowRouteLines(
   map: mapboxgl.Map,
   routeIds: string[],
@@ -264,7 +264,12 @@ export function positionRouteConditionCasingBelowRouteLines(
   if (!layers?.length) return;
   for (const layer of layers) {
     const lid = layer.id;
-    if (routeIds.some((rid) => lid === `${layerPrefix}-${rid}-line`)) {
+    if (
+      routeIds.some(
+        (rid) =>
+          lid === `${layerPrefix}-${rid}-line-casing` || lid === `${layerPrefix}-${rid}-line`
+      )
+    ) {
       try {
         map.moveLayer(ROUTE_COND_HIGHLIGHT_CASING, lid);
       } catch {
@@ -326,9 +331,11 @@ export function removeStaleRoutes(
     if (keepIds.has(id)) continue;
     const sid = `${layerPrefix}-${id}`;
     const lid = `${sid}-line`;
+    const casingLid = `${sid}-line-casing`;
     const hitLid = `${sid}-line-hit`;
     if (map.getLayer(hitLid)) map.removeLayer(hitLid);
     if (map.getLayer(lid)) map.removeLayer(lid);
+    if (map.getLayer(casingLid)) map.removeLayer(casingLid);
     if (map.getSource(sid)) map.removeSource(sid);
   }
 }
@@ -346,7 +353,7 @@ export function removeAllTripRouteLegLayers(map: mapboxgl.Map, layerPrefix = "ro
     const id = layer.id;
     if (!id.startsWith(`${layerPrefix}-`)) continue;
     if (id.includes("route-condition") || id.startsWith("route-recording")) continue;
-    if (!id.endsWith("-line") && !id.endsWith("-line-hit")) continue;
+    if (!id.endsWith("-line") && !id.endsWith("-line-hit") && !id.endsWith("-line-casing")) continue;
     layerIds.push(id);
     if (typeof layer.source === "string") sourcesToRemove.add(layer.source);
   }
@@ -421,11 +428,17 @@ export function bringRouteVisualLinesAboveTraffic(
 ) {
   const anchorBefore = firstBasemapSymbolBeforeId(map);
   for (const id of routeIds) {
+    const casingId = `${layerPrefix}-${id}-line-casing`;
     const lid = `${layerPrefix}-${id}-line`;
-    if (!map.getLayer(lid)) continue;
     try {
-      if (anchorBefore) map.moveLayer(lid, anchorBefore);
-      map.moveLayer(lid);
+      if (map.getLayer(casingId)) {
+        if (anchorBefore) map.moveLayer(casingId, anchorBefore);
+        map.moveLayer(casingId);
+      }
+      if (map.getLayer(lid)) {
+        if (anchorBefore) map.moveLayer(lid, anchorBefore);
+        map.moveLayer(lid);
+      }
     } catch {
       /* style teardown */
     }
@@ -503,12 +516,12 @@ export function applyRoutesToMap(
       const style = routeMapLineStyle(isFocus);
       lineColor = style.color;
       lineWidth = isFocus ? 10 : style.width;
-      lineOpacity = isFocus ? 0.95 : 0.24;
+      lineOpacity = isFocus ? 0.95 : 0.82;
     } else if (!navigationStarted) {
       const style = routeMapLineStyle(isFocus);
       lineColor = style.color;
-      lineWidth = isFocus ? style.width : isSuggested ? ROUTE_SUGGESTED_LINE_WIDTH : style.width - 1;
-      lineOpacity = isFocus ? 0.88 : isSuggested ? 0.52 : 0.36;
+      lineWidth = isFocus ? style.width : isSuggested ? ROUTE_SUGGESTED_LINE_WIDTH : style.width;
+      lineOpacity = isFocus ? 0.95 : isSuggested ? 0.88 : 0.78;
     } else {
       const lockedId = opts?.lockedRouteId?.trim() || null;
       const rejoinOverlay =
@@ -521,7 +534,7 @@ export function applyRoutesToMap(
         const bg = routeMapLineStyle(false);
         lineColor = bg.color;
         lineWidth = bg.width;
-        lineOpacity = 0.26;
+        lineOpacity = 0.72;
       } else {
         const style = routeMapLineStyle(isFocus);
         lineColor = style.color;
@@ -537,10 +550,26 @@ export function applyRoutesToMap(
     };
 
     const lineId = `${id}-line`;
+    const casingId = `${id}-line-casing`;
     const hitLineId = `${id}-line-hit`;
+    const casingWidth = lineWidth + ROUTE_LINE_CASING_WIDTH_EXTRA;
     const lineAnchorBefore = firstBasemapSymbolBeforeId(map);
     if (!map.getSource(id)) {
       map.addSource(id, { type: "geojson", data: geojson });
+      map.addLayer(
+        {
+          id: casingId,
+          type: "line",
+          source: id,
+          paint: {
+            "line-color": ROUTE_LINE_CASING_COLOR,
+            "line-width": casingWidth,
+            "line-opacity": ROUTE_LINE_CASING_OPACITY,
+          },
+          layout: { "line-cap": "round", "line-join": "round" },
+        },
+        lineAnchorBefore
+      );
       map.addLayer(
         {
           id: lineId,
@@ -571,6 +600,26 @@ export function applyRoutesToMap(
       );
     } else {
       (map.getSource(id) as mapboxgl.GeoJSONSource).setData(geojson);
+      if (!map.getLayer(casingId)) {
+        map.addLayer(
+          {
+            id: casingId,
+            type: "line",
+            source: id,
+            paint: {
+              "line-color": ROUTE_LINE_CASING_COLOR,
+              "line-width": casingWidth,
+              "line-opacity": ROUTE_LINE_CASING_OPACITY,
+            },
+            layout: { "line-cap": "round", "line-join": "round" },
+          },
+          map.getLayer(lineId) ? lineId : lineAnchorBefore
+        );
+      } else {
+        map.setPaintProperty(casingId, "line-color", ROUTE_LINE_CASING_COLOR);
+        map.setPaintProperty(casingId, "line-width", casingWidth);
+        map.setPaintProperty(casingId, "line-opacity", ROUTE_LINE_CASING_OPACITY);
+      }
       map.setPaintProperty(lineId, "line-color", lineColor);
       map.setPaintProperty(lineId, "line-width", lineWidth);
       map.setPaintProperty(lineId, "line-opacity", lineOpacity);

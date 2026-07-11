@@ -98,16 +98,16 @@ export function isSignificantTrafficDelay(
 }
 
 /** Radar intensity that triggers a "heavy weather" alert (storm-core reflectivity). */
-export const RADAR_HEAVY_THRESHOLD = 0.58; // conservative vs consumer radar apps
+export const RADAR_HEAVY_THRESHOLD = 0.64; // dialed up — mid yellow/green should not read as heavy
 
 /** Radar intensity for a softer “trace showers” band on the progress strip / timeline. */
-export const RADAR_SOFT_THRESHOLD = 0.2;
+export const RADAR_SOFT_THRESHOLD = 0.26;
 
 /** Radar at/above this value suggests slowing / preparing (solid moderate rain). */
-export const RADAR_REROUTE_THRESHOLD = 0.42;
+export const RADAR_REROUTE_THRESHOLD = 0.48;
 
 /** Storm-core / very heavy echo — maps to serious severity. */
-export const RADAR_VERY_HEAVY_THRESHOLD = 0.78;
+export const RADAR_VERY_HEAVY_THRESHOLD = 0.8;
 
 /** Drive-ahead banner: scan window ahead of the user (meters). */
 export const DRIVE_AHEAD_WINDOW_M = 5 * METERS_PER_MILE;
