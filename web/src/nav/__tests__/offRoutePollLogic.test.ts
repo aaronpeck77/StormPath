@@ -160,11 +160,42 @@ describe("offRoutePollLogic", () => {
     expect(result.recoveryAction).toMatch(/rejoin|replan/);
   });
 
-  it("drive always ahead replans immediately on small lateral leave", () => {
+  it("drive always ahead ignores small GPS wobble under the enter threshold", () => {
     const now = 2_000_000;
     const alongM = 500;
+    const anchor = pointAtAlongMeters(guidance, alongM);
+    /** ~5–8 m lateral — used to trip the old 2 m drive threshold. */
+    const wobble: LngLat = [anchor[0]! + 0.00007, anchor[1]!];
     const result = runOffRoutePollTick({
       session: createOffRoutePollSession(),
+      pos: wobble,
+      guidanceGeometry: guidance,
+      totalM: 4000,
+      userAlongGuidanceM: alongM,
+      lockedGeometry: locked,
+      triggerCtx: {
+        speedMps: 8,
+        headingDeg: 45,
+        routeBearingDeg: 45,
+        enterThresholdM: 18,
+        minSpeedMps: 1.5,
+        headingMinLateralM: 12,
+      },
+      navGoStartedAtMs: now - 120_000,
+      nowMs: now,
+      driveAlwaysAhead: true,
+    });
+    expect(result.shouldOfferRejoinChoices).toBe(false);
+    expect(result.recoveryAction).toBeNull();
+    expect(result.session.offRouteLatched).toBe(false);
+  });
+
+  it("drive always ahead replans after sustained clear leave", () => {
+    const now = 2_000_000;
+    const alongM = 500;
+    let session = createOffRoutePollSession();
+    let last = runOffRoutePollTick({
+      session,
       pos: [-77.05, 38.85],
       guidanceGeometry: guidance,
       totalM: 4000,
@@ -174,15 +205,41 @@ describe("offRoutePollLogic", () => {
         speedMps: 8,
         headingDeg: 120,
         routeBearingDeg: 45,
-        enterThresholdM: 2,
+        enterThresholdM: 18,
         minSpeedMps: 1.5,
-        headingMinLateralM: 3,
+        headingMinLateralM: 12,
       },
       navGoStartedAtMs: now - 120_000,
       nowMs: now,
       driveAlwaysAhead: true,
+      confirmTicks: 3,
     });
-    expect(result.shouldOfferRejoinChoices).toBe(true);
-    expect(result.recoveryAction).toBe("replan");
+    for (let i = 0; i < 4; i++) {
+      last = runOffRoutePollTick({
+        session: last.session,
+        pos: [-77.05, 38.85],
+        guidanceGeometry: guidance,
+        totalM: 4000,
+        userAlongGuidanceM: alongM,
+        lockedGeometry: locked,
+        triggerCtx: {
+          speedMps: 8,
+          headingDeg: 120,
+          routeBearingDeg: 45,
+          enterThresholdM: 18,
+          minSpeedMps: 1.5,
+          headingMinLateralM: 12,
+        },
+        navGoStartedAtMs: now - 120_000,
+        nowMs: now + (i + 1) * 750,
+        driveAlwaysAhead: true,
+        confirmTicks: 3,
+      });
+      session = last.session;
+      if (last.recoveryAction === "replan") break;
+    }
+    expect(last.shouldOfferRejoinChoices).toBe(true);
+    expect(last.recoveryAction).toBe("replan");
+    expect(session.offRouteLatched).toBe(true);
   });
 });
