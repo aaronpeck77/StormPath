@@ -185,7 +185,6 @@ import { TollFlowSheets } from "./ui/TollFlowSheets";
 import { RouteProgressStrip } from "./ui/RouteProgressStrip";
 import { RouteProgressGlancePanel } from "./ui/RouteProgressGlancePanel";
 import { RouteProgressCalloutRail } from "./ui/RouteProgressCalloutRail";
-import { formatEtaDuration } from "./ui/formatEta";
 import { StormAdvisoryBar } from "./ui/StormAdvisoryBar";
 import { DriveHazardApproachBanner } from "./ui/DriveHazardApproachBanner";
 import { ActivityStatusPill } from "./ui/ActivityStatusPill";
@@ -3795,25 +3794,6 @@ export default function App() {
       actionLabel?: string;
       onAction?: () => void;
     }[] = [];
-    const betterRoute = suggestedRouteId && suggestedRouteId !== guidanceRouteId ? suggestedRouteId : null;
-    /** ETA minutes comparable to {@link driveEtaMinutes}: full trip before Go; remaining while navigating. */
-    const etaForRoadTrafficComparison = (routeId: string): number | null => {
-      const s = scored.find((x) => x.route.id === routeId);
-      if (!s) return null;
-      const full = Math.round(s.effectiveEtaMinutes);
-      if (!navigationStarted) return full;
-      if (routeId === guidanceRouteId && driveEtaMinutes != null) return driveEtaMinutes;
-      const geom = plan.routes.find((r) => r.id === routeId)?.geometry;
-      if (!geom?.length || !effectiveUserLngLat) return full;
-      const totalM = polylineLengthMeters(geom);
-      if (totalM <= 1) return full;
-      const along = Math.max(
-        0,
-        Math.min(totalM, closestAlongRouteMeters(effectiveUserLngLat, geom).alongMeters)
-      );
-      const frac = Math.max(0, totalM - along) / totalM;
-      return Math.max(1, Math.round(full * frac));
-    };
     const tLeg = trafficOverlay?.[guidanceRouteId];
     const hasTrafficStop = Boolean(tLeg?.nearStopFraction != null || tLeg?.hasClosure);
     const incidentLikeAlert = routeAlerts.find((a) => {
@@ -3847,61 +3827,12 @@ export default function App() {
       }
     }
 
-    if (betterRoute) {
-      const curEta = etaForRoadTrafficComparison(guidanceRouteId);
-      const altEta = etaForRoadTrafficComparison(betterRoute);
-      let betterRouteNote: string;
-      if (curEta != null && altEta != null) {
-        const deltaMin = curEta - altEta;
-        if (deltaMin >= 3) {
-          betterRouteNote = `may save about ${formatEtaDuration(deltaMin)}.`;
-        } else if (deltaMin <= -3) {
-          betterRouteNote = `about ${formatEtaDuration(-deltaMin)} longer — suggested for lower stress / fewer hazards.`;
-        } else {
-          betterRouteNote = "similar ETA — suggested for calmer conditions; compare A/B/C in Rt view.";
-        }
-      } else {
-        betterRouteNote = "worth checking now.";
-      }
-      rows.push({
-        label: "Better route",
-        text: (
-          <>
-            <strong>{betterRoute.toUpperCase()}</strong>{" "}
-            <span className="storm-advisory-bar__road-muted">{betterRouteNote}</span>
-          </>
-        ),
-        actionLabel: TRAFFIC_BYPASS_ENABLED ? "Compare routes" : undefined,
-        onAction:
-          TRAFFIC_BYPASS_ENABLED &&
-          isPlus &&
-          env.mapboxToken &&
-          userLngLat &&
-          destLngLat &&
-          guidanceRoute?.geometry?.length
-            ? () => void handleTrafficBypassFromHere()
-            : undefined,
-      });
-    }
-
     return rows;
   }, [
-    suggestedRouteId,
     guidanceRouteId,
-    scored,
     trafficOverlay,
     routeAlerts,
-    driveEtaMinutes,
     handleInspectTrafficStop,
-    handleTrafficBypassFromHere,
-    navigationStarted,
-    effectiveUserLngLat,
-    plan.routes,
-    isPlus,
-    env.mapboxToken,
-    userLngLat,
-    destLngLat,
-    guidanceRoute?.geometry?.length,
   ]);
 
   /** Busy message source — debounced before advisory to avoid layout/rotator flicker. */
@@ -4034,7 +3965,9 @@ export default function App() {
                 : null
             }
             puckSnapEnabled={
-              navigationStarted && navPosition.onRoute && !offRouteLatched
+              /* Keep snap while progress still trusts the corridor — latch alone used to
+               * disable snap on GPS wobble and cause puck/camera thrash. */
+              navigationStarted && navPosition.onRoute
             }
             snapSeedMeters={
               Number.isFinite(userAlongGuidanceM) && (userAlongGuidanceM ?? 0) >= 0

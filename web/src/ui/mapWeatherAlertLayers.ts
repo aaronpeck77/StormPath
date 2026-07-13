@@ -323,6 +323,7 @@ function isMapRenderableAlert(props: Record<string, unknown>): boolean {
 }
 
 const EMPTY_ALERT_FC: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
+let lastWeatherAlertLayerLogKey = "";
 
 /**
  * Draw NWS warning outlines (no fill) + storm motion arrows under radar / route lines.
@@ -333,9 +334,6 @@ export function applyWeatherAlertLayers(
   map: MapboxMap,
   collection: GeoJSON.FeatureCollection | null
 ): void {
-  if (import.meta.env.DEV) {
-    console.log("[applyWeatherAlertLayers] raw features:", collection?.features?.length ?? "null");
-  }
   const beforeId = firstVisibleRouteLineId(map);
 
   // Treat null as empty — keep layers alive so Mapbox doesn't tear down and
@@ -353,10 +351,11 @@ export function applyWeatherAlertLayers(
   };
   const hasFeatures = mapRenderable.features.length > 0;
   if (import.meta.env.DEV) {
-    const kinds = mapRenderable.features.map(
-      (f) => `${(f.properties as Record<string, unknown>)?.event ?? "?"}(${(f.properties as Record<string, unknown>)?.kind ?? "?"})`
-    );
-    console.log(`[applyWeatherAlertLayers] after filter: ${mapRenderable.features.length}`, kinds);
+    const key = `${effective.features.length}->${mapRenderable.features.length}`;
+    if (key !== lastWeatherAlertLayerLogKey) {
+      lastWeatherAlertLayerLogKey = key;
+      console.log("[applyWeatherAlertLayers]", key, "features (raw→map)");
+    }
   }
 
   // ── Invisible hit area + visible outline ───────────────────────────────────

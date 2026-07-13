@@ -127,7 +127,6 @@ export type AdvisoryRouteHazardsPanelProps = {
   nwsStatusMessage: { tone: "muted" | "warn"; text: string } | null;
   developingNwsAlerts: { alert: NormalizedWeatherAlert; timingLine: string }[];
   panelNwsAlertsExtra: { alert: NormalizedWeatherAlert; timingLine: string }[];
-  betterRouteRow: StormRoadDetailRow | undefined;
   onNwsAlertClick?: (alert: NormalizedWeatherAlert) => void;
 };
 
@@ -151,7 +150,6 @@ export function AdvisoryRouteHazardsPanel({
   nwsStatusMessage,
   developingNwsAlerts,
   panelNwsAlertsExtra,
-  betterRouteRow,
   onNwsAlertClick,
 }: AdvisoryRouteHazardsPanelProps) {
   const activeTimeline = useMemo(
@@ -230,7 +228,6 @@ export function AdvisoryRouteHazardsPanel({
     hasTimeline ||
     showClearRoute ||
     nwsStatusMessage ||
-    betterRouteRow ||
     showRerouteStandalone;
 
   if (!hasContent) return null;
@@ -311,18 +308,6 @@ export function AdvisoryRouteHazardsPanel({
         {panelNwsAlertsExtra.map(({ alert, timingLine }) =>
           nwsFeedRow(alert, timingLine, "NWS", "nws", onNwsAlertClick)
         )}
-
-        {betterRouteRow ? (
-          <FeedRow
-            tag="Route"
-            tagTone="road"
-            title={betterRouteRow.label}
-            detail={typeof betterRouteRow.text === "string" ? betterRouteRow.text : undefined}
-            detailNode={typeof betterRouteRow.text === "string" ? undefined : betterRouteRow.text}
-            sevClass="info"
-            onClick={betterRouteRow.onAction}
-          />
-        ) : null}
 
         {showRerouteStandalone ? (
           <div className="adv-dash__feed-action">

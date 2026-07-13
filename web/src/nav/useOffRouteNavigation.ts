@@ -24,6 +24,7 @@ import {
   DRIVE_AHEAD_OFF_ROUTE_ENTER_M,
   DRIVE_AHEAD_REROUTE_THROTTLE_MS,
   isDriveAlwaysAheadView,
+  lockedRoutePrefersBackroads,
 } from "./driveAlwaysAhead";
 import {
   OFF_ROUTE_POLL_MS,
@@ -585,6 +586,10 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     const lockedId = lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
     if (!lockedId || !navigationStartedRef.current || !mapboxToken) return false;
 
+    const lockedRoute = planRef.current.routes.find((r) => r.id === lockedId);
+    const preferBackroads = lockedRoutePrefersBackroads(lockedRoute?.role);
+    const preserveRole = lockedRoute?.role ?? "fastest";
+
     altRoutesFetchAbortRef.current?.abort();
     const fetchCtrl = new AbortController();
     altRoutesFetchAbortRef.current = fetchCtrl;
@@ -599,14 +604,14 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       const remainingVias = remainingViaStops(viaStops, activeViaIndex);
       const viaCoords = remainingVias.map((s) => s.lngLat);
       const bearingDeg = headingRef.current;
-      /** Fastest traffic-aware leg from GPS — never exclude motorways on drive replans. */
+      /** Keep the driver's chosen style (e.g. no-interstate B) — do not force highway fastest. */
       const fresh = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
         via: viaCoords.length > 0 ? viaCoords : undefined,
         singleRouteFromPosition: true,
         forwardFirst: true,
         bearingDeg:
           bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
-        preferBackroads: false,
+        preferBackroads,
         signal: fetchCtrl.signal,
         stormAlerts: stormAlertsForRouting,
         radarAvoidanceEnabled: isPlus && settingStormEnabled,
@@ -620,8 +625,8 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           r.id === lockedId
             ? {
                 ...r,
-                role: "fastest",
-                label: r.label?.trim() ? r.label : "Main",
+                role: preserveRole,
+                label: r.label?.trim() ? r.label : preferBackroads ? "No interstate" : "Main",
                 geometry: leg.geometry,
                 baseEtaMinutes: leg.baseEtaMinutes,
                 turnSteps: leg.turnSteps,
@@ -690,6 +695,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setFitTrigger,
     setViewMode,
     settingVoiceGuidanceEnabled,
+    planRef,
   ]);
 
   const returnToOriginalRoute = useCallback<ReturnToOriginalRouteFn>(() => {
@@ -721,6 +727,15 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       lastAutoRerouteAttemptRef.current = now;
 
       if (driveAhead) {
+        const lockedId = lockedNavigationRouteIdRef.current;
+        const lockedRole = lockedId
+          ? planRef.current.routes.find((r) => r.id === lockedId)?.role
+          : undefined;
+        /* User chose no-interstate / alternate — try rejoin that corridor before a full replan. */
+        if (lockedRoutePrefersBackroads(lockedRole)) {
+          const rejoined = await recalcRouteFromHere({ silent: true });
+          if (rejoined) return;
+        }
         const replanned = await stayOnThisRoad({ silent: true });
         if (!replanned) markRecoveryFailed();
         return;
@@ -749,6 +764,8 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       routingRef,
       altRoutesRefreshInFlightRef,
       viewModeRef,
+      lockedNavigationRouteIdRef,
+      planRef,
     ]
   );
 

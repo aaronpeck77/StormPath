@@ -68,6 +68,8 @@ export function useStormCorridorPolling(deps: UseStormCorridorPollingDeps): void
 
   const nwsFetchGenRef = useRef(0);
   const nwsFetchInFlightRef = useRef(false);
+  /** Wall-clock of last successful corridor apply — effect remounts must not stampede NWS. */
+  const nwsLastOkAtRef = useRef(0);
 
   useEffect(() => {
     if (!settingStormEnabled) {
@@ -189,6 +191,22 @@ export function useStormCorridorPolling(deps: UseStormCorridorPollingDeps): void
       nwsFetchInFlightRef.current = true;
       const hasPriorNws =
         stormMapHasDisplayableRef.current || stormCorridorAlertsRef.current.length > 0;
+      /* Effect remount / geometry key churn — keep existing polygons rather than re-hit NWS. */
+      const minGapMs = Math.min(nwsPollIntervalMs, 90_000);
+      if (hasPriorNws && Date.now() - nwsLastOkAtRef.current < minGapMs) {
+        if (import.meta.env.DEV) {
+          console.log(
+            "[NWS run] skipped — cooldown",
+            Math.round((Date.now() - nwsLastOkAtRef.current) / 1000),
+            "s <",
+            Math.round(minGapMs / 1000),
+            "s"
+          );
+        }
+        nwsFetchInFlightRef.current = false;
+        setStormLoading(false);
+        return;
+      }
       if (!hasPriorNws) setStormLoading(true);
       setStormError(null);
 
@@ -214,6 +232,7 @@ export function useStormCorridorPolling(deps: UseStormCorridorPollingDeps): void
           if (cancelled || nwsFetchGenRef.current !== genAtStart) return;
           setStormCorridorAlerts(merged.alerts);
           setStormMapGeoJson(merged.mapGeoJson);
+          nwsLastOkAtRef.current = Date.now();
           if (import.meta.env.DEV) {
             console.log(
               "[NWS fetch] alerts:",
@@ -246,6 +265,7 @@ export function useStormCorridorPolling(deps: UseStormCorridorPollingDeps): void
           if (cancelled || nwsFetchGenRef.current !== genAtStart) return;
           setStormCorridorAlerts(corridor.alerts);
           setStormMapGeoJson(corridor.mapGeoJson);
+          nwsLastOkAtRef.current = Date.now();
           const atUser = corridor.alerts.filter(
             (a) => a.geometry && pointInAnyPolygonGeometry(lng, lat, a.geometry)
           );

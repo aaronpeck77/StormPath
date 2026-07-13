@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isDriveOffRouteForwardFraming } from "../driveAlwaysAhead";
+import {
+  DRIVE_AHEAD_CONFIRM_TICKS,
+  DRIVE_AHEAD_OFF_ROUTE_ENTER_M,
+  DRIVE_AHEAD_OFF_ROUTE_EXIT_M,
+  isDriveOffRouteForwardFraming,
+  lockedRoutePrefersBackroads,
+} from "../driveAlwaysAhead";
 
 describe("isDriveOffRouteForwardFraming", () => {
   const base = {
@@ -29,5 +35,20 @@ describe("isDriveOffRouteForwardFraming", () => {
         offRouteLatched: true,
       })
     ).toBe(false);
+  });
+});
+
+describe("drive always-ahead thresholds", () => {
+  it("does not treat a few meters of GPS noise as off-route", () => {
+    expect(DRIVE_AHEAD_OFF_ROUTE_ENTER_M).toBeGreaterThanOrEqual(15);
+    expect(DRIVE_AHEAD_OFF_ROUTE_EXIT_M).toBeLessThan(DRIVE_AHEAD_OFF_ROUTE_ENTER_M);
+    expect(DRIVE_AHEAD_CONFIRM_TICKS).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps no-interstate and balanced alternates off motorways on replan", () => {
+    expect(lockedRoutePrefersBackroads("hazardSmart")).toBe(true);
+    expect(lockedRoutePrefersBackroads("balanced")).toBe(true);
+    expect(lockedRoutePrefersBackroads("fastest")).toBe(false);
+    expect(lockedRoutePrefersBackroads(null)).toBe(false);
   });
 });

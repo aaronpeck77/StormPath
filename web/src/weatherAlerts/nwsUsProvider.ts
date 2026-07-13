@@ -24,6 +24,7 @@ import {
   getCachedNwsNationalEtag,
   getCachedNwsNationalFeatures,
   getCachedNwsNationalFetchedAtMs,
+  nwsNationalSoftCacheFresh,
   storeNwsNationalCache,
 } from "./nwsNationalCache";
 
@@ -590,6 +591,20 @@ async function mergeNwsPointSamples(
  * resolves (headers only), leaving the body read unguarded.
  */
 async function fetchNwsActiveAlertsFeatures(userAgent: string, retries = NWS_MAX_RETRIES): Promise<NwsFeature[]> {
+  const soft = getCachedNwsNationalFeatures();
+  if (soft?.length && nwsNationalSoftCacheFresh()) {
+    if (import.meta.env.DEV) {
+      console.log(
+        "[NWS national] soft-cache",
+        soft.length,
+        "features (age",
+        Math.round((Date.now() - getCachedNwsNationalFetchedAtMs()) / 1000),
+        "s)"
+      );
+    }
+    return soft;
+  }
+
   const url = resolveNwsRequestUrl(nwsActiveAlertsUrl());
   const baseHeaders = nwsApiRequestHeaders(userAgent);
   const etag = getCachedNwsNationalEtag();

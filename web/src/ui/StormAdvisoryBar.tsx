@@ -405,16 +405,7 @@ export function StormAdvisoryBar({
     return routeImpacts.filter((i) => impactSectionBucket(i) === "road");
   }, [routeImpacts]);
 
-  /* Pull the "Better route" suggestion out of `roadDetailRows` so it can live in its own section
-   * instead of being nested under Traffic & Corridor (single source of truth for route suggestions). */
-  const betterRouteRow = useMemo(
-    () => roadDetailRows.find((r) => r.label === "Better route"),
-    [roadDetailRows]
-  );
-  const alongRouteDetailRows = useMemo(
-    () => roadDetailRows.filter((r) => r.label !== "Better route"),
-    [roadDetailRows]
-  );
+  const alongRouteDetailRows = roadDetailRows;
   /* Show ROADS when there are road impacts, traffic narrative rows, or a reroute CTA condition. */
   const hasTrafficStop = useMemo(
     () => roadDetailRows.some((r) => /traffic stop|closure/i.test(r.label)),
@@ -1286,7 +1277,6 @@ export function StormAdvisoryBar({
               nwsStatusMessage={nwsStatusMessage}
               developingNwsAlerts={developingNwsAlerts}
               panelNwsAlertsExtra={panelNwsAlertsExtra}
-              betterRouteRow={betterRouteRow}
               onNwsAlertClick={onNwsAlertClick}
             />
 

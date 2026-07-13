@@ -1,22 +1,28 @@
 /**
- * Drive-view navigation: the active road is always the main route.
- * Any lateral leave triggers an immediate GPS→destination replan constrained to
- * forward heading so the polyline stays in front of the driver.
+ * Drive-view navigation: keep the driver on their locked corridor.
+ * Lateral leave triggers replan from GPS→destination; when the locked leg is a
+ * no-interstate / alternate choice, replans keep `preferBackroads` so Mapbox does
+ * not yank the driver onto the highway “fastest” path.
  *
  * Route / map views keep A/B/C alternates; drive shows only the locked leg.
- * Replans use Mapbox driving-traffic fastest (no motorway exclusion), constrained
- * to the driver's heading with forward-first scoring (no immediate U-turn).
+ *
+ * Thresholds are duplicated (not imported from offRouteDetect) so Vite HMR cannot
+ * hit a circular partial-export failure for {@link lockedRoutePrefersBackroads}.
  */
+import type { RouteRole } from "./types";
 
-/** ~6 ft lateral leave before replan while moving in drive view. */
-export const DRIVE_AHEAD_OFF_ROUTE_ENTER_M = 2;
-export const DRIVE_AHEAD_OFF_ROUTE_EXIT_M = 1.5;
-/** One poll tick — no multi-second observation window in drive. */
-export const DRIVE_AHEAD_CONFIRM_TICKS = 1;
+/**
+ * Align with non-drive off-route (~18 m) — not ~6 ft GPS noise.
+ * (A 2 m enter threshold caused constant silent replans onto the highway.)
+ */
+export const DRIVE_AHEAD_OFF_ROUTE_ENTER_M = 18;
+export const DRIVE_AHEAD_OFF_ROUTE_EXIT_M = 10;
+/** Require sustained leave before replan (same as non-drive confirm). */
+export const DRIVE_AHEAD_CONFIRM_TICKS = 3;
 /** ~3.4 mph — still ignore parked GPS drift. */
 export const DRIVE_AHEAD_MIN_SPEED_MPS = 1.5;
-export const DRIVE_AHEAD_HEADING_MIN_LATERAL_M = 3;
-export const DRIVE_AHEAD_HEADING_DELTA_DEG = 28;
+export const DRIVE_AHEAD_HEADING_MIN_LATERAL_M = 12;
+export const DRIVE_AHEAD_HEADING_DELTA_DEG = 32;
 /** Cap Mapbox Directions churn when GPS jitters off the corridor in drive view. */
 export const DRIVE_AHEAD_REROUTE_THROTTLE_MS = 8_000;
 /** Short post-Go grace — only block tiny GPS noise at the start pin. */
@@ -24,13 +30,18 @@ export const DRIVE_AHEAD_NAV_START_GRACE_MS = 12_000;
 export const DRIVE_AHEAD_NAV_START_GRACE_ALONG_M = 120;
 export const DRIVE_AHEAD_NAV_START_GRACE_MAX_LATERAL_M = 10;
 
+/** True when the locked Go route should stay off interstates on silent drive replans. */
+export function lockedRoutePrefersBackroads(role: RouteRole | undefined | null): boolean {
+  return role === "hazardSmart" || role === "balanced";
+}
+
 export function isDriveAlwaysAheadView(viewMode: string): boolean {
   return viewMode === "drive";
 }
 
 /**
- * Drive + off the corridor: camera and puck follow forward travel, not the old polyline
- * tangent back toward where the driver left the route.
+ * Drive + clearly off the corridor: camera and puck follow forward travel, not the old
+ * polyline tangent back toward where the driver left the route.
  */
 export function isDriveOffRouteForwardFraming(input: {
   driveModeUi: boolean;
