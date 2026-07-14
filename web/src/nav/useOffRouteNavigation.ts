@@ -26,6 +26,7 @@ import {
   isDriveAlwaysAheadView,
   lockedRoutePrefersBackroads,
 } from "./driveAlwaysAhead";
+import { mayMutateLockedRouteGeometry } from "./navigationContract";
 import {
   OFF_ROUTE_POLL_MS,
   OFF_ROUTE_REROUTE_THROTTLE_MS,
@@ -576,6 +577,13 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
 
   const stayOnThisRoad = useCallback<StayOnThisRoadFn>(async (opts) => {
     if (!userLngLat || !destLngLat) return false;
+    if (
+      navigationStartedRef.current &&
+      !mayMutateLockedRouteGeometry("navigating", "driver_stay_on_road")
+    ) {
+      /* Locked corridor is frozen — use forward rejoin instead of GPS→dest overwrite. */
+      return recalcRouteFromHere({ silent: opts?.silent });
+    }
     if (mapboxToken && !isOnline) {
       if (!opts?.silent) {
         setTapHint("Offline: can't update route from here.");
@@ -696,6 +704,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setViewMode,
     settingVoiceGuidanceEnabled,
     planRef,
+    recalcRouteFromHere,
   ]);
 
   const returnToOriginalRoute = useCallback<ReturnToOriginalRouteFn>(() => {
@@ -727,17 +736,9 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       lastAutoRerouteAttemptRef.current = now;
 
       if (driveAhead) {
-        const lockedId = lockedNavigationRouteIdRef.current;
-        const lockedRole = lockedId
-          ? planRef.current.routes.find((r) => r.id === lockedId)?.role
-          : undefined;
-        /* User chose no-interstate / alternate — try rejoin that corridor before a full replan. */
-        if (lockedRoutePrefersBackroads(lockedRole)) {
-          const rejoined = await recalcRouteFromHere({ silent: true });
-          if (rejoined) return;
-        }
-        const replanned = await stayOnThisRoad({ silent: true });
-        if (!replanned) markRecoveryFailed();
+        /* Always forward-rejoin onto the locked corridor — never overwrite locked geometry. */
+        const rejoined = await recalcRouteFromHere({ silent: true });
+        if (!rejoined) markRecoveryFailed();
         return;
       }
 
@@ -746,26 +747,18 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         offRouteChoiceOffered: true,
       };
 
-      if (action === "rejoin") {
+      if (action === "rejoin" || action === "replan") {
         const rejoined = await recalcRouteFromHere({ silent: true });
-        if (rejoined) return;
-        const replanned = await stayOnThisRoad({ silent: true });
-        if (!replanned) markRecoveryFailed();
+        if (!rejoined) markRecoveryFailed();
         return;
       }
-
-      const replanned = await stayOnThisRoad({ silent: true });
-      if (!replanned) markRecoveryFailed();
     },
     [
       recalcRouteFromHere,
-      stayOnThisRoad,
       markRecoveryFailed,
       routingRef,
       altRoutesRefreshInFlightRef,
       viewModeRef,
-      lockedNavigationRouteIdRef,
-      planRef,
     ]
   );
 
@@ -802,7 +795,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       }
 
       if (useRecoveryLadder || driveAhead) {
-        void executeAutoRecovery(recovery ?? "replan");
+        void executeAutoRecovery(recovery ?? "rejoin");
         return;
       }
 

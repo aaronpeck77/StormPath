@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  driveGuidanceUsesRejoinOverlay,
   mayChangeLockedRouteId,
   mayMutateLockedRouteGeometry,
   mayRefreshAlternateLegsOnly,
@@ -14,8 +15,8 @@ describe("navigationContract", () => {
     expect(mayChangeLockedRouteId("planning", "go_lock")).toBe(true);
   });
 
-  it("freezes locked leg geometry during navigation except explicit driver adopt", () => {
-    expect(mayMutateLockedRouteGeometry("navigating", "driver_stay_on_road")).toBe(true);
+  it("freezes locked leg geometry — silent stay-on-road overwrite is forbidden", () => {
+    expect(mayMutateLockedRouteGeometry("navigating", "driver_stay_on_road")).toBe(false);
     expect(mayMutateLockedRouteGeometry("navigating", "driver_promote")).toBe(true);
     expect(mayMutateLockedRouteGeometry("navigating", "go_lock")).toBe(false);
     expect(mayMutateLockedRouteGeometry("planning", "go_lock")).toBe(true);
@@ -33,7 +34,13 @@ describe("navigationContract", () => {
     expect(mayAutoRejoinOverlay("planning")).toBe(false);
   });
 
-  it("allows auto replan from GPS during drive without compare sheet", () => {
-    expect(offRouteFullRerouteRequiresExplicitCompare()).toBe(false);
+  it("requires explicit compare for full GPS→dest overwrite of the locked leg", () => {
+    expect(offRouteFullRerouteRequiresExplicitCompare()).toBe(true);
+  });
+
+  it("follows a temporary rejoin stub that is not the locked id", () => {
+    expect(driveGuidanceUsesRejoinOverlay("r-b", "r-a")).toBe(true);
+    expect(driveGuidanceUsesRejoinOverlay("r-a", "r-a")).toBe(false);
+    expect(driveGuidanceUsesRejoinOverlay(null, "r-a")).toBe(false);
   });
 });

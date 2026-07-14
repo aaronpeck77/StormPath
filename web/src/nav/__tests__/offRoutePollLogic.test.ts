@@ -236,10 +236,10 @@ describe("offRoutePollLogic", () => {
         confirmTicks: 3,
       });
       session = last.session;
-      if (last.recoveryAction === "replan") break;
+      if (last.recoveryAction === "rejoin") break;
     }
     expect(last.shouldOfferRejoinChoices).toBe(true);
-    expect(last.recoveryAction).toBe("replan");
+    expect(last.recoveryAction).toBe("rejoin");
     expect(session.offRouteLatched).toBe(true);
   });
 });

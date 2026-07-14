@@ -241,7 +241,7 @@ export function runOffRoutePollTick(input: OffRoutePollTickInput): OffRoutePollT
         session,
         sample,
         shouldOfferRejoinChoices: true,
-        recoveryAction: "replan",
+        recoveryAction: "rejoin",
         shouldPrefetchRejoinPreview: false,
         rejoinedLockedRoute: false,
         nearDestination: false,

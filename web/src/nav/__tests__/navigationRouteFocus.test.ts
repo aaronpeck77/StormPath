@@ -33,7 +33,7 @@ describe("navigationRouteFocus", () => {
     expect(lineFocusId).toBe("r-c");
   });
 
-  it("uses locked route in drive view while navigating", () => {
+  it("follows temporary rejoin stub in drive view while navigating (regression: B lock stayed but guidance ignored stub)", () => {
     const { guidanceRouteId, lineFocusId } = resolveNavigationRouteIds({
       navigationStarted: true,
       lockedRouteId: "r-b",
@@ -43,11 +43,25 @@ describe("navigationRouteFocus", () => {
       orderedRouteIds: ordered,
       primaryRouteId: "r-a",
     });
+    expect(guidanceRouteId).toBe("r-c");
+    expect(lineFocusId).toBe("r-c");
+  });
+
+  it("returns to locked route in drive when rejoin stub clears", () => {
+    const { guidanceRouteId, lineFocusId } = resolveNavigationRouteIds({
+      navigationStarted: true,
+      lockedRouteId: "r-b",
+      temporaryGuidanceRouteId: null,
+      viewMode: "drive",
+      previewLegIndex: 1,
+      orderedRouteIds: ordered,
+      primaryRouteId: "r-a",
+    });
     expect(guidanceRouteId).toBe("r-b");
     expect(lineFocusId).toBe("r-b");
   });
 
-  it("ignores temporary guidance in route view while navigating", () => {
+  it("keeps turn-by-turn on rejoin stub in route view; map focus can still preview", () => {
     const { guidanceRouteId, lineFocusId } = resolveNavigationRouteIds({
       navigationStarted: true,
       lockedRouteId: "r-b",
@@ -57,8 +71,21 @@ describe("navigationRouteFocus", () => {
       orderedRouteIds: ordered,
       primaryRouteId: "r-a",
     });
-    expect(guidanceRouteId).toBe("r-b");
+    expect(guidanceRouteId).toBe("r-c");
     expect(lineFocusId).toBe("r-c");
+  });
+
+  it("ignores temporary guidance ids that are not in the plan slots", () => {
+    const { guidanceRouteId } = resolveNavigationRouteIds({
+      navigationStarted: true,
+      lockedRouteId: "r-b",
+      temporaryGuidanceRouteId: "r-missing",
+      viewMode: "drive",
+      previewLegIndex: 0,
+      orderedRouteIds: ordered,
+      primaryRouteId: "r-a",
+    });
+    expect(guidanceRouteId).toBe("r-b");
   });
 
   it("falls back to slot order when no lock is set", () => {

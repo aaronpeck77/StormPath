@@ -1,13 +1,17 @@
 import type { MapViewMode } from "../ui/driveMapTypes";
+import {
+  driveGuidanceUsesRejoinOverlay,
+  mayAutoRejoinOverlay,
+} from "./navigationContract";
 
 /**
  * While navigating, turn-by-turn follows the route locked at Go.
- * Drive replans the locked leg in place — no temporary B/C detour guidance.
+ * Off-route: a temporary forward rejoin stub may guide until the puck rejoins the lock.
  */
 export function resolveNavigationRouteIds(input: {
   navigationStarted: boolean;
   lockedRouteId: string | null;
-  /** @deprecated Drive no longer follows temporary rejoin legs — locked geometry updates in place. */
+  /** Temporary forward rejoin stub (B/C slot) while off the locked corridor. */
   temporaryGuidanceRouteId?: string | null;
   viewMode: MapViewMode;
   previewLegIndex: number;
@@ -24,12 +28,24 @@ export function resolveNavigationRouteIds(input: {
   }
 
   const locked = input.lockedRouteId ?? fallback;
+  const temp = input.temporaryGuidanceRouteId ?? null;
+  const followRejoin =
+    mayAutoRejoinOverlay("navigating") &&
+    driveGuidanceUsesRejoinOverlay(temp, locked) &&
+    input.orderedRouteIds.includes(temp!);
 
   if (input.viewMode === "drive") {
+    if (followRejoin) {
+      return { guidanceRouteId: temp!, lineFocusId: temp! };
+    }
     return { guidanceRouteId: locked, lineFocusId: locked };
   }
 
-  /* Route / topdown: compare A/B/C on the map without changing turn-by-turn guidance. */
+  /* Route / topdown: compare A/B/C on the map without changing turn-by-turn guidance.
+   * Guidance still follows the rejoin stub when active so banner/ETA stay consistent. */
+  if (followRejoin) {
+    return { guidanceRouteId: temp!, lineFocusId: previewId || temp! };
+  }
   return { guidanceRouteId: locked, lineFocusId: previewId || locked };
 }
 
