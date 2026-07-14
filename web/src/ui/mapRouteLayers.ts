@@ -17,6 +17,7 @@ import {
 import { findRouteDivergenceWindow } from "../nav/routeDivergenceWindow";
 import { sliceRouteAhead } from "../nav/routeRemaining";
 import type { LngLat, NavRoute } from "../nav/types";
+import { routeLineGeometryKind } from "../nav/viewModeContract";
 import {
   polylineBbox,
   stormOverlapLineFeatures,
@@ -305,17 +306,19 @@ function routeCoordinatesForMap(route: NavRoute, opts?: ApplyRoutesLayerOptions)
   const navigating = opts?.navigationStarted ?? false;
   const isOverviewPip = opts?.isOverviewPip ?? false;
   const along = opts?.userAlongMeters;
-  /** Dr + Mp while navigating: road-faithful slice near the puck (overview line is OK on Rt). */
-  const nearNavLine =
-    navigating &&
-    !isOverviewPip &&
-    (viewMode === "drive" || viewMode === "topdown") &&
-    along != null &&
-    Number.isFinite(along);
-  if (nearNavLine) {
+  /**
+   * View-mode contract owns the Dr-vs-overview rule. `driveAhead` is the truncated
+   * ~120 km ahead slice (Dr only). Everything else — Mp, Rt, PiP, planning — uses the
+   * full overview polyline so pinch-out does not show a stub.
+   */
+  const kind = routeLineGeometryKind(viewMode, navigating, {
+    isOverviewPip,
+    userAlongMeters: along ?? null,
+  });
+  if (kind === "driveAhead") {
     return routeLineGeometryForDriveDisplay(geometry, along);
   }
-  if (viewMode === "route" || isOverviewPip) {
+  if (viewMode === "route" || viewMode === "topdown" || isOverviewPip) {
     return geometryForRouteOverviewDisplay(geometry);
   }
   return geometryForPlanningMapDisplay(geometry);

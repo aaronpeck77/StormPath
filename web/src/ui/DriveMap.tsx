@@ -119,10 +119,13 @@ import {
 } from "./mapBasemapStyle";
 import {
   navigationCameraShouldFitFullRoute,
-  navigationCameraShouldFollowPuckTopdown,
   navigationRouteOverviewSnapKey,
   navigationTopdownZoomForViewChange,
 } from "./navigationCamera";
+import {
+  resolveViewEnterDecision,
+  topdownFitNeedsStreetZoomReset,
+} from "./useMapCameraController";
 import {
   TOPDOWN_PUCK_OFFSET_PX,
   TOPDOWN_NAV_STREET_ZOOM,
@@ -295,6 +298,9 @@ export type Props = {
   /** Dr auto rejoin: faint locked A + green/orange temp leg styling. */
   rejoinOverlayActive?: boolean;
 };
+
+/** Alias for App / prop-assembly hooks — same shape as {@link Props}. */
+export type DriveMapProps = Props;
 
 /** Drive mode: return to follow-cam after the user pans/zooms the map (600 ms while navigating). */
 /** ~1/e time constant (seconds) for drive camera bearing toward route/GPS heading (rAF loop). */
@@ -1815,10 +1821,9 @@ function DriveMapInner({
     rejoinCompareLockedRouteId,
   ]);
 
-  /** Dr / Mp: refresh the ahead-only route slice as the puck moves (throttled — avoids map jank). */
+  /** Dr: refresh the ahead-only route slice as the puck moves (throttled — avoids map jank). */
   useEffect(() => {
-    const nearNavLineView = viewMode === "drive" || viewMode === "topdown";
-    if (!mapReady || !nearNavLineView || !navigationStarted || routes.length === 0) return;
+    if (!mapReady || viewMode !== "drive" || !navigationStarted || routes.length === 0) return;
     if (userExploringRef.current) return;
     const along = userAlongMeters;
     if (along == null || !Number.isFinite(along)) return;
@@ -1828,10 +1833,9 @@ function DriveMapInner({
     syncTripRoutesRef.current();
   }, [mapReady, viewMode, navigationStarted, routes.length, userAlongMeters]);
 
-  /** One-shot route slice refresh when explore ends. */
+  /** One-shot drive route-slice refresh when explore ends. */
   useEffect(() => {
-    const nearNavLineView = viewMode === "drive" || viewMode === "topdown";
-    if (!mapReady || !nearNavLineView || !navigationStarted || routes.length === 0) return;
+    if (!mapReady || viewMode !== "drive" || !navigationStarted || routes.length === 0) return;
     if (mapResumeTick === 0) return;
     lastDriveRouteLineSyncAlongRef.current = null;
     syncTripRoutesRef.current();
@@ -2678,29 +2682,34 @@ function DriveMapInner({
     if (viewMode !== "route" && viewMode !== "topdown") return;
     if (routes.length === 0) return;
 
+    /* View-enter decisions come from useMapCameraController → viewModeContract so the
+     * Rt/Mp/Dr transition rules live in one place (see nav/viewModeContract.ts). */
     let enteredRouteView = false;
     let enteredTopdownNav = false;
     if (prevPlanningViewModeRef.current !== viewMode) {
       const prevVm = prevPlanningViewModeRef.current;
       prevPlanningViewModeRef.current = viewMode;
-      userExploringRef.current = false;
-      if (exploreTimerRef.current) {
-        clearTimeout(exploreTimerRef.current);
-        exploreTimerRef.current = null;
+      const decision = resolveViewEnterDecision({
+        prevViewMode: prevVm,
+        nextViewMode: viewMode,
+        navigationStarted,
+      });
+      if (decision.clearExploreLatch) {
+        userExploringRef.current = false;
+        if (exploreTimerRef.current) {
+          clearTimeout(exploreTimerRef.current);
+          exploreTimerRef.current = null;
+        }
       }
-      if (viewMode === "route") {
-        enteredRouteView = true;
-        navRouteSnapKeyRef.current = "";
-        topdownSnapKeyRef.current = "";
+      enteredRouteView = decision.enteredRouteView;
+      enteredTopdownNav = decision.enteredTopdownNav;
+      if (decision.bustRouteOverviewSnapKey) navRouteSnapKeyRef.current = "";
+      if (decision.bustTopdownSnapKey) topdownSnapKeyRef.current = "";
+      if (decision.enteredRouteView) {
         prevTopdownRef.current = false;
-        lastForcedPlanningFitTriggerRef.current = null;
       }
-      if (
-        navigationCameraShouldFollowPuckTopdown(viewMode, navigationStarted) &&
-        prevVm === "route"
-      ) {
-        enteredTopdownNav = true;
-        topdownSnapKeyRef.current = "";
+      if (decision.resetPlanningFitTrigger) {
+        lastForcedPlanningFitTriggerRef.current = null;
       }
     }
 
@@ -2858,14 +2867,22 @@ function DriveMapInner({
       schedulePlanningRouteFit();
     };
 
-    /** Map (Mp): top-down on the user’s position — route lines stay visible; camera does not fit the whole trip. */
+    /** Map (Mp): top-down on the user’s position — full route line stays drawn; camera does not fit the whole trip. */
     const doTopdownLocalFit = () => {
       if (userExploringRef.current) return;
       if (!mapStyleReadyForCamera(map)) return;
       const u = userLngLatRef.current;
       if (!u) return;
+      /* Contract-driven: force street-zoom re-home whenever we just entered Mp OR the
+       * map zoom drifted below the nav min zoom (Rt overview leak). See
+       * useMapCameraController.topdownFitNeedsStreetZoomReset. */
+      const needsStreetZoomReset = topdownFitNeedsStreetZoomReset({
+        map,
+        topdownZoomRef,
+        enteredTopdownNav,
+      });
       const zoom = navigationStarted
-        ? enteredTopdownNav
+        ? needsStreetZoomReset
           ? navigationTopdownZoomForViewChange(map, topdownZoomRef, true, true)
           : coerceTopdownNavStreetZoom(map, topdownZoomRef)
         : resolveTopdownLocalZoom(topdownZoomRef, false);

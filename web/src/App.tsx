@@ -40,7 +40,7 @@ import {
   useTomorrowMinutePrecip,
   useTomorrowRouteForecast,
 } from "./hooks/useTomorrowWeather";
-import { buildMockTripBetween, EMPTY_TRIP } from "./nav/emptyTrip";
+import { buildMockTripBetween } from "./nav/emptyTrip";
 import { mergePlanPreservingPrimary } from "./nav/mergePlanRoutes";
 import {
   navigationPrimaryRouteIdForMerge,
@@ -48,9 +48,7 @@ import {
 } from "./nav/navigationRouteFocus";
 import { tripPlanFromSavedRoute } from "./nav/planFromSavedRoute";
 import {
-  isGenericOriginLabel,
   loadReturnTripLeg,
-  persistReturnTripLegOnGo,
   shortenReturnTripLabel,
   type ReturnTripLeg,
 } from "./nav/returnTripLeg";
@@ -205,11 +203,12 @@ import { useBasicAdMobBanner } from "./hooks/useBasicAdMobBanner";
 import { getPayTier, hasTollBypass, maxSavedPlaces, maxSavedRoutes } from "./billing/payFeatures";
 import { NATIVE_PAY_TIER_CHANGED_EVENT, refreshPlusEntitlementFromStore, whenRevenueCatReady } from "./billing/revenueCat";
 import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
-import { completedTripFromGeometry } from "./frequentRoutes/tripDetector";
 import { useFrequentRouteLearning } from "./hooks/useFrequentRouteLearning";
 import { usePersonalForkNav } from "./hooks/usePersonalForkNav";
 import { isPersonalForkRouteId, PERSONAL_FORK_ROUTE_ID } from "./personalForks";
 import { YourRouteChip } from "./ui/YourRouteChip";
+import { useDriveMapProps } from "./ui/useDriveMapProps";
+import { buildStormAdvisoryBarProps } from "./ui/buildStormAdvisoryBarProps";
 import { isMapBasemapDaytime } from "./map/mapBasemapDaytime";
 import {
   readHomeMapFraming,
@@ -254,6 +253,7 @@ import {
   useRouteCompareStore,
 } from "./state/routeCompareStore";
 import { useComputeRoutes } from "./nav/useComputeRoutes";
+import { useTripLifecycle } from "./nav/useTripLifecycle";
 import { useOffRouteNavigation } from "./nav/useOffRouteNavigation";
 import { useStormCorridorPolling } from "./nav/useStormCorridorPolling";
 import { useWeatherKitAlerts } from "./nav/useWeatherKitAlerts";
@@ -272,10 +272,7 @@ import {
 import { useWeatherStore } from "./state/weatherStore";
 import { safeStorage } from "./storage/safeStorage";
 import {
-  areaKeyFromLngLat,
-  areaLabelFromDestinationLabel,
   loadPreferredAreaRouteMap,
-  savePreferredAreaRouteMap,
   type PreferredAreaRouteMap,
 } from "./preferredAreaRoutes";
 import "./App.css";
@@ -600,9 +597,7 @@ export default function App() {
   const destinationLabel = useTripPlanStore((s) => s.destinationLabel);
   const setDestinationLabel = useTripPlanStore((s) => s.setDestinationLabel);
   const viaStops = useTripPlanStore((s) => s.viaStops);
-  const setViaStops = useTripPlanStore((s) => s.setViaStops);
   const activeViaIndex = useTripPlanStore((s) => s.activeViaIndex);
-  const setActiveViaIndex = useTripPlanStore((s) => s.setActiveViaIndex);
   const searchExpanded = useUiStore((s) => s.searchExpanded);
   const setSearchExpanded = useUiStore((s) => s.setSearchExpanded);
   /** Bumped on Stop/clear — in-flight route fetches must not call setPlan after the user cleared the trip. */
@@ -2806,64 +2801,53 @@ export default function App() {
 
   const idleHomeMapFraming: HomeMapFraming = isPlus ? homeMapFraming : "my_location";
 
-  const clearRoute = () => {
-    if (navigationStartedRef.current && payFrequentRoutes && learnEnabled) {
-      const started = navGoStartedAtRef.current;
-      const planned = navPlannedMainGeometryRef.current;
-      const geom = navGoGeometryRef.current;
-      if (geom && started) {
-        const trip = completedTripFromGeometry(geom, started);
-        if (trip) recordLearnedTrip(trip);
-      }
-      const gpsTrip = flushActiveLearnedTrip();
-      personalForkNav.learnFromCompletedNav(planned, gpsTrip);
-      resetTripLearningMachine();
-      navGoStartedAtRef.current = null;
-      navGoGeometryRef.current = null;
-      navPlannedMainGeometryRef.current = null;
-    }
-    onPersonalForkRef.current = false;
-    lockedNavigationRouteIdRef.current = null;
-    resetOffRouteNavigation();
-    routeGraphEpochRef.current += 1;
-    routeMainFetchAbortRef.current?.abort();
-    routeMainFetchAbortRef.current = null;
-    altRoutesFetchAbortRef.current?.abort();
-    altRoutesFetchAbortRef.current = null;
-    setProgressCalloutsOpen(false);
-    setPlan(EMPTY_TRIP);
-    setDestLngLat(null);
-    setViaStops([]);
-    setActiveViaIndex(0);
-    setAddingViaStop(false);
-    setSearchText("");
-    setDestinationLabel("");
-    setSearchPickHits(null);
-    searchPickQueryRef.current = null;
-    setSuggestions([]);
-    setRouteError(null);
-    setSearchExpanded(true);
-    setAllowAutocomplete(true);
-    setRouteSlotOrder([]);
-    setPreviewLegIndex(0);
-    seriousHazardAutoFlewRef.current.clear();
-    resetNavigationPlanning();
-    setViewMode("topdown");
-    setRecenterPlanningPuckTick((n) => n + 1);
-    setRouteHazardSheet(null);
-    setTollRoutePrompt(null);
-    setTollAvoidFailureNote(null);
-    tollAcceptedRouteIdsRef.current.clear();
-    pendingGoAfterTollRef.current = false;
-    setMapFocus(null);
-    setBypassBusy(false);
-    setRouting(false);
-    setTrafficBypassCompare(null);
-    setTollCompareContext(null);
-    setDemoPlaybackPlaying(false);
-    setDemoPlaybackAlongM(null);
-    void clearActiveTripCache();
-  };
+  /* Phase 3c: Go / Stop / clear trip lifecycle (was inline in App). */
+  const { clearRoute, proceedGo, handleGo, handleStopAndClear } = useTripLifecycle({
+    payFrequentRoutes,
+    learnEnabled,
+    tollBypassEnabled,
+    userLngLat,
+    orderedRouteIds,
+    primaryRouteId,
+    planRouteIds,
+    recordLearnedTrip,
+    flushActiveLearnedTrip,
+    resetTripLearningMachine,
+    learnFromCompletedNav: personalForkNav.learnFromCompletedNav,
+    resetOffRouteNavigation,
+    resetNavigationPlanning,
+    bumpRouteForecastRefresh,
+    setAddingViaStop,
+    setSearchText,
+    setSearchPickHits,
+    setSuggestions,
+    setAllowAutocomplete,
+    searchPickQueryRef,
+    setFitTrigger,
+    setGuidanceGeometryEpoch,
+    setRecenterPlanningPuckTick,
+    setReturnTripLeg,
+    setRouting,
+    setBypassBusy,
+    setRouteError,
+    setTollAvoidFailureNote,
+    setDemoPlaybackPlaying,
+    setDemoPlaybackAlongM,
+    navigationStartedRef,
+    navGoStartedAtRef,
+    navGoGeometryRef,
+    navPlannedMainGeometryRef,
+    navigationGuidanceGeometryRef,
+    lockedNavigationRouteIdRef,
+    onPersonalForkRef,
+    routeGraphEpochRef,
+    routeMainFetchAbortRef,
+    altRoutesFetchAbortRef,
+    seriousHazardAutoFlewRef,
+    tollAcceptedRouteIdsRef,
+    pendingGoAfterTollRef,
+    preferredAreaRouteMapRef,
+  });
 
   const clearRouteRef = useRef(clearRoute);
   clearRouteRef.current = clearRoute;
@@ -3050,115 +3034,6 @@ export default function App() {
       })
     );
   }, [demoBypassTrafficJamPlus, navigationStarted, guidanceRoute, userAlongGuidanceM, guidanceRouteId, activateRouteCompare]);
-
-  const proceedGo = useCallback(() => {
-    const chosen = orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? primaryRouteId;
-    if (!chosen) return;
-    setRouteSlotOrder((prev) => slotOrderAfterSelect(prev.length ? prev : planRouteIds, chosen));
-    setPreviewLegIndex(0);
-    setNavigationStarted(true);
-    setViewMode("drive");
-    setFitTrigger((n) => n + 1);
-    setTollRoutePrompt(null);
-    setTollAvoidFailureNote(null);
-    // Force a fresh route weather fetch the moment the user starts driving.
-    // Bypasses the per-location cache so stale data can't mask a developing storm.
-    bumpRouteForecastRefresh();
-
-    const pickedForNav = plan.routes.find((r) => r.id === chosen);
-    lockedNavigationRouteIdRef.current = chosen;
-    navGoStartedAtRef.current = Date.now();
-    navGoGeometryRef.current = pickedForNav?.geometry?.length
-      ? pickedForNav.geometry.map(([a, b]) => [a, b] as LngLat)
-      : null;
-    navigationGuidanceGeometryRef.current = navGoGeometryRef.current;
-    /* Keep the Go-time main for fork learning even if we later commit "Your route". */
-    if (!isPersonalForkRouteId(chosen) && navGoGeometryRef.current?.length) {
-      navPlannedMainGeometryRef.current = navGoGeometryRef.current.map(
-        ([a, b]) => [a, b] as LngLat
-      );
-    } else if (isPersonalForkRouteId(chosen)) {
-      const mainAlt =
-        plan.routes.find((r) => r.id === "r-a") ??
-        plan.routes.find((r) => !isPersonalForkRouteId(r.id));
-      navPlannedMainGeometryRef.current = mainAlt?.geometry?.length
-        ? mainAlt.geometry.map(([a, b]) => [a, b] as LngLat)
-        : navGoGeometryRef.current;
-      onPersonalForkRef.current = true;
-    } else {
-      navPlannedMainGeometryRef.current = navGoGeometryRef.current;
-    }
-    setGuidanceGeometryEpoch((n) => n + 1);
-
-    if (userLngLat && destLngLat) {
-      const picked = pickedForNav;
-      if (picked?.geometry && picked.geometry.length >= 2) {
-        const [lng, lat] = userLngLat;
-        const originLabel = isGenericOriginLabel(plan.originLabel)
-          ? formatCoordsAreaLabel(lat, lng)
-          : plan.originLabel.trim();
-        setReturnTripLeg(
-          persistReturnTripLegOnGo({
-            returnToLngLat: userLngLat,
-            returnToLabel: originLabel,
-            outboundDestLngLat: destLngLat,
-            outboundDestLabel: destinationLabel.trim() || "Destination",
-            geometry: picked.geometry.map(([a, b]) => [a, b] as LngLat),
-          })
-        );
-      }
-    }
-
-    // Learn the preferred A/B/C “role” for this destination area.
-    if (payFrequentRoutes && destLngLat && destinationLabel.trim()) {
-      const key = areaKeyFromLngLat(destLngLat);
-      const picked = plan.routes.find((r) => r.id === chosen);
-      if (picked) {
-        const now = Date.now();
-        const areaLabel = areaLabelFromDestinationLabel(destinationLabel);
-        const map = preferredAreaRouteMapRef.current;
-        const prev = map[key];
-        map[key] = {
-          areaKey: key,
-          areaLabel,
-          preferredRole: picked.role,
-          pickCount: (prev?.pickCount ?? 0) + 1,
-          lastPickedMs: now,
-        };
-        savePreferredAreaRouteMap(map);
-      }
-    }
-  }, [
-    orderedRouteIds,
-    previewLegIndex,
-    primaryRouteId,
-    planRouteIds,
-    payFrequentRoutes,
-    destLngLat,
-    destinationLabel,
-    plan.routes,
-    plan.originLabel,
-    userLngLat,
-    viaStops,
-    activeViaIndex,
-    bumpRouteForecastRefresh,
-  ]);
-
-  const handleGo = () => {
-    const chosen = orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? primaryRouteId;
-    if (!chosen) return;
-    const route = plan.routes.find((r) => r.id === chosen);
-    if (
-      tollBypassEnabled &&
-      route?.hasTolls &&
-      !tollAcceptedRouteIdsRef.current.has(chosen)
-    ) {
-      pendingGoAfterTollRef.current = true;
-      setTollRoutePrompt({ routeId: chosen, labels: route.tollLabels ?? [] });
-      return;
-    }
-    proceedGo();
-  };
 
   const handleTollContinue = useCallback(() => {
     if (tollRoutePrompt) {
@@ -3616,10 +3491,7 @@ export default function App() {
   ]);
 
   /** Stop navigation and clear the trip (single “cancel everything” control). */
-  const handleStopAndClear = () => {
-    clearRoute();
-    setFitTrigger((n) => n + 1);
-  };
+  /* handleStopAndClear comes from useTripLifecycle (Phase 3c). */
 
   const handleSaveCurrentDestination = useCallback(() => {
     if (!destLngLat) return;
@@ -3885,6 +3757,141 @@ export default function App() {
     return () => window.clearTimeout(id);
   }, [activityBusyRaw]);
 
+  /* Phase 3a: DriveMap prop bag assembled here so App JSX stays a thin spread. */
+  const driveMapProps = useDriveMapProps({
+    routes: driveMapRoutesForMap,
+    lineFocusId: driveMapLineFocusId,
+    suggestedRouteId,
+    userLngLat: effectiveUserLngLat,
+    navigationStarted,
+    liveLngLatRef,
+    liveSpeedMpsRef,
+    liveHeadingRef,
+    destLngLat,
+    viaStops,
+    fitTrigger,
+    viewMode,
+    heading,
+    driveRouteBearingDeg,
+    driveOffRouteForwardFraming,
+    speedMps,
+    allowDestinationPick,
+    topdownZoomRef,
+    onMapClick: handleMapClick,
+    savedPlaces,
+    savedPlacesVisible: showOnMap,
+    onSavedPlaceClick: handleSavedMarkerClick,
+    mapFocus,
+    onMapFocusComplete: flushMapFocus,
+    orderedRouteIds,
+    radarMapOverlayOn,
+    settingRadarDisplayMode,
+    dataSaverMode,
+    navMapLiteMode,
+    onRadarFrameUtcSec: setRadarFrameUtcSec,
+    alongRouteAlerts: mapAlongRouteAlertsForDrive,
+    corridorRouteGeometry: guidanceRoute?.geometry,
+    stormAlongRouteBands: mapStormAlongRouteBandsForDrive,
+    recordingActive,
+    recordingPathPreview,
+    weatherAlertGeoJson: deferredNwsAlertGeoJsonForMap,
+    stormBarVisible: showStormAdvisoryChrome,
+    stormBarExpanded,
+    recenterPlanningPuckTick,
+    navigationGuidanceGeometry,
+    navPositionOnRoute: navPosition.onRoute,
+    userAlongGuidanceM,
+    isPlus,
+    roadAdvisoryDetailOn,
+    settingTrafficEnabled,
+    hasMapboxToken: Boolean(env.mapboxToken),
+    onDriveCameraBearingDeg: handleDriveCameraBearingDeg,
+    trafficBypassCompare,
+    lockedNavigationRouteId,
+    activityTrailGeoJson: activityTrailGeoJsonForMap,
+    guidanceRouteLengthM,
+    maxPlanRouteLengthM,
+    activityTrailPlanningBounds,
+    idleHomeMapFraming,
+    homePuckFollow,
+    idleHomeNoRoutes: plan.routes.length === 0,
+    setHomePuckFollow,
+    learnEnabled,
+    homePreloadEnabled,
+    homePreloadBounds,
+    searchPickMarkers: searchPickMarkersForMap,
+    onSearchPickMarkerClick: handleSearchPickFromMap,
+    progressRailVisible: showProgressRail,
+    offRouteRejoinCompareActive: offRouteHoldPreviewActive,
+  });
+
+  /* Phase 3b: StormAdvisoryBar prop bag (Plus/Basic gating lives in the builder). */
+  const stormAdvisoryBarProps = buildStormAdvisoryBarProps({
+    isPlus,
+    stormSessionOn,
+    onSessionToggle: onStormSessionToggle,
+    stormLoading,
+    stormError,
+    stormCorridorAlertsLength: stormCorridorAlerts.length,
+    stormMapHasFeatures: Boolean(stormMapGeoJson?.features?.length),
+    allDisplayableAlerts,
+    nwsAlertsForGuidanceAdvisory,
+    stormNwsPuckInside,
+    trafficDelayMinutes: guidanceSlice?.trafficDelayMinutes ?? 0,
+    onTrafficReroute:
+      TRAFFIC_BYPASS_ENABLED &&
+      isPlus &&
+      env.mapboxToken &&
+      userLngLat &&
+      destLngLat &&
+      guidanceRoute &&
+      showTrafficBypassCta
+        ? () => void handleTrafficBypassFromHere()
+        : undefined,
+    bypassBusy,
+    roadAdvisoryDetailOn,
+    onRoadDetailToggle: onRoadAdvisoryDetailToggle,
+    hasGuidanceRoute: Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2),
+    advisoryRoadDetailRows,
+    advisoryRouteImpacts,
+    advisoryStormStripBands,
+    routeAheadTimeline,
+    routeTotalMeters: guidanceRouteLengthM,
+    userAlongMeters: advisoryUserAlongM,
+    planEtaMinutes: guidanceRoute?.baseEtaMinutes ?? null,
+    driveEtaMinutes: driveEtaMinutes ?? null,
+    stormBarExpanded,
+    onBarExpandedChange: onStormBarExpandedChange,
+    onNwsAlertClick: handleAdvisoryNwsClick,
+    busyLabel: activityBusyLabel,
+    staleWeatherNote: routeForecastRefreshBlocked,
+    onRefreshWeather: handleRefreshRouteInfoWeather,
+    driveModeUi,
+    driveRouteAheadLine,
+    nextHazardAtEtaLine,
+    advisoryPlusDetailOn,
+    advisoryPromoLines,
+    isOnline,
+    navigationStarted,
+    advisoryNowcastLine,
+    currentNowcast,
+    forecastAreaLabel,
+    tioMinutePrecip,
+    localHourlyForecast,
+    localDailyForecast,
+    localForecastNwsAlerts,
+    localForecastPanelLoading,
+    weatherKitPrimary: env.weatherKitEnabled,
+    forecastLngLat: userLngLat,
+    onOpenSubscription: () => setAboutOpen(true),
+    basicStatusPanelPromos,
+    showDataSaverHint,
+    onOpenDataSaverSettings: () => setAboutOpen(true),
+    onDismissDataSaverHint: () => {
+      dismissDataSaverHintAction();
+    },
+  });
+
   const devPointerStyle = import.meta.env.DEV
     ? ({
         ["--sp-dev-cursor-default"]: DEV_CURSOR_DEFAULT,
@@ -3917,100 +3924,7 @@ export default function App() {
       <div className="map-stage map-bleed">
         <div className="map-canvas">
           <Suspense fallback={<div className="drive-map" />}>
-          <DriveMap
-            routes={driveMapRoutesForMap}
-            lineFocusId={driveMapLineFocusId}
-            suggestedRouteId={suggestedRouteId}
-            userLngLat={effectiveUserLngLat}
-            liveGpsLngLatRef={navigationStarted ? liveLngLatRef : undefined}
-            liveGpsSpeedMpsRef={navigationStarted ? liveSpeedMpsRef : undefined}
-            liveGpsHeadingRef={navigationStarted ? liveHeadingRef : undefined}
-            destLngLat={destLngLat}
-            viaStops={viaStops}
-            fitTrigger={fitTrigger}
-            viewMode={viewMode}
-            navigationStarted={navigationStarted}
-            heading={heading}
-            driveRouteBearingDeg={driveRouteBearingDeg}
-            driveOffRouteForwardFraming={driveOffRouteForwardFraming}
-            speedMps={speedMps}
-            allowDestinationPick={allowDestinationPick}
-            topdownZoomRef={topdownZoomRef}
-            onMapClick={handleMapClick}
-            savedPlaces={savedPlaces}
-            savedPlacesVisible={showOnMap}
-            onSavedPlaceClick={handleSavedMarkerClick}
-            mapFocus={mapFocus}
-            onMapFocusComplete={flushMapFocus}
-            orderedRouteIds={orderedRouteIds}
-            showRadar={radarMapOverlayOn}
-            radarAnimate={
-              settingRadarDisplayMode === "motion" &&
-              !dataSaverMode &&
-              (!navMapLiteMode || radarMapOverlayOn)
-            }
-            radarStormMotionArrows={settingRadarDisplayMode === "still_arrows"}
-            onRadarFrameUtcSec={setRadarFrameUtcSec}
-            alongRouteAlerts={mapAlongRouteAlertsForDrive}
-            corridorRouteGeometry={guidanceRoute?.geometry}
-            stormAlongRouteBands={mapStormAlongRouteBandsForDrive}
-            recordingGeometry={recordingActive ? recordingPathPreview : undefined}
-            weatherAlertGeoJson={deferredNwsAlertGeoJsonForMap}
-            stormBarVisible={showStormAdvisoryChrome}
-            stormBarExpanded={stormBarExpanded}
-            recenterPlanningPuckTick={recenterPlanningPuckTick}
-            puckSnapGeometry={
-              navigationStarted && navigationGuidanceGeometry?.length
-                ? navigationGuidanceGeometry
-                : null
-            }
-            puckSnapEnabled={
-              /* Keep snap while progress still trusts the corridor — latch alone used to
-               * disable snap on GPS wobble and cause puck/camera thrash. */
-              navigationStarted && navPosition.onRoute
-            }
-            snapSeedMeters={
-              Number.isFinite(userAlongGuidanceM) && (userAlongGuidanceM ?? 0) >= 0
-                ? userAlongGuidanceM
-                : null
-            }
-            userAlongMeters={
-              navigationStarted && Number.isFinite(userAlongGuidanceM) ? userAlongGuidanceM : null
-            }
-            trafficConditionsOnMap={Boolean(
-              isPlus &&
-                roadAdvisoryDetailOn &&
-                settingTrafficEnabled &&
-                Boolean(env.mapboxToken)
-            )}
-            onDriveCameraBearingDeg={handleDriveCameraBearingDeg}
-            stormBrowseBoundsReporting={false}
-            onStormBrowseBoundsChange={undefined}
-            trafficBypassCompareActive={Boolean(trafficBypassCompare)}
-            trafficBypassCompareHazardLngLat={trafficBypassCompare?.hazardLngLat ?? null}
-            trafficBypassCompareHazardAlongMeters={trafficBypassCompare?.hazardAlongMeters ?? null}
-            trafficBypassCompareKind={trafficBypassCompare?.compareKind}
-            rejoinCompareLockedRouteId={lockedNavigationRouteId}
-            activityTrailGeoJson={activityTrailGeoJsonForMap}
-            sessionRouteLengthM={
-              guidanceRouteLengthM > 0 ? guidanceRouteLengthM : maxPlanRouteLengthM
-            }
-            activityTrailPlanningBounds={activityTrailPlanningBounds}
-            idleHomeMapFraming={idleHomeMapFraming}
-            homePuckFollow={homePuckFollow}
-            onHomeMapUserPan={() => {
-              if (plan.routes.length === 0 && !navigationStarted) {
-                setHomePuckFollow("explore");
-              }
-            }}
-            homePreloadEnabled={isPlus && learnEnabled && homePreloadEnabled}
-            homePreloadBounds={homePreloadBounds}
-            searchPickMarkers={searchPickMarkersForMap}
-            onSearchPickMarkerClick={searchPickMarkersForMap ? handleSearchPickFromMap : undefined}
-            progressRailVisible={showProgressRail}
-            offRouteRejoinCompareActive={offRouteHoldPreviewActive}
-            rejoinOverlayActive={offRouteHoldPreviewActive}
-          />
+          <DriveMap {...driveMapProps} />
           </Suspense>
         </div>
 
@@ -4036,90 +3950,7 @@ export default function App() {
                     />
                   ) : null}
                   {showStormAdvisoryChrome ? (
-                    <StormAdvisoryBar
-                      featureEnabled
-                      sessionOn={stormSessionOn}
-                      onSessionToggle={onStormSessionToggle}
-                      loading={
-                        isPlus &&
-                        stormLoading &&
-                        stormCorridorAlerts.length === 0 &&
-                        !(stormMapGeoJson?.features?.length)
-                      }
-                      error={isPlus ? stormError : null}
-                      corridorAlerts={isPlus ? allDisplayableAlerts : []}
-                      overlappingAlerts={isPlus ? nwsAlertsForGuidanceAdvisory : []}
-                      nwsAtLocationAlerts={isPlus ? stormNwsPuckInside : []}
-                      trafficDelayMinutes={guidanceSlice?.trafficDelayMinutes ?? 0}
-                      onTrafficReroute={
-                        TRAFFIC_BYPASS_ENABLED &&
-                        isPlus &&
-                        env.mapboxToken &&
-                        userLngLat &&
-                        destLngLat &&
-                        guidanceRoute &&
-                        showTrafficBypassCta
-                          ? () => void handleTrafficBypassFromHere()
-                          : undefined
-                      }
-                      trafficRerouteBusy={bypassBusy}
-                      roadDetailEnabled={isPlus && roadAdvisoryDetailOn}
-                      onRoadDetailToggle={onRoadAdvisoryDetailToggle}
-                      hasGuidanceRoute={Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2)}
-                      roadDetailRows={isPlus ? advisoryRoadDetailRows : []}
-                      routeImpacts={isPlus ? advisoryRouteImpacts : null}
-                      stormStripBands={isPlus ? advisoryStormStripBands : null}
-                      routeAheadTimeline={isPlus ? routeAheadTimeline : null}
-                      routeTotalMeters={guidanceRouteLengthM}
-                      userAlongMeters={advisoryUserAlongM}
-                      planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
-                      driveEtaMinutes={driveEtaMinutes ?? null}
-                      barExpanded={stormBarExpanded}
-                      onBarExpandedChange={onStormBarExpandedChange}
-                      hideHeadToggles={!isPlus}
-                      onNwsAlertClick={handleAdvisoryNwsClick}
-                      busyLabel={activityBusyLabel}
-                      staleWeatherNote={routeForecastRefreshBlocked}
-                      onRefreshWeather={handleRefreshRouteInfoWeather}
-                      driveRouteAheadLine={driveModeUi ? driveRouteAheadLine : null}
-                      nextHazardAtEtaLine={isPlus ? nextHazardAtEtaLine : null}
-                      advisoryTier={advisoryPlusDetailOn ? "plus" : "basic"}
-                      ownsPlus={isPlus}
-                      promoLines={advisoryPromoLines}
-                      isOnline={isOnline}
-                      basicNavAdvisoryMode={!isPlus}
-                      navigationStarted={navigationStarted}
-                      nowcastLine={isPlus ? advisoryNowcastLine : null}
-                      currentNowcast={isPlus ? currentNowcast : null}
-                      forecastAreaLabel={isPlus ? forecastAreaLabel : null}
-                      minutePrecipForecast={isPlus ? tioMinutePrecip : null}
-                      hourlyForecast={isPlus ? localHourlyForecast : null}
-                      dailyForecast={isPlus ? localDailyForecast : null}
-                      localForecastNwsAlerts={isPlus ? localForecastNwsAlerts : []}
-                      nwsForecastLoading={
-                        isPlus &&
-                        stormLoading &&
-                        stormCorridorAlerts.length === 0 &&
-                        !(stormMapGeoJson?.features?.length)
-                      }
-                      nwsForecastError={isPlus ? stormError : null}
-                      basicForecastLoading={isPlus ? localForecastPanelLoading : false}
-                      weatherKitPrimary={env.weatherKitEnabled}
-                      forecastLngLat={userLngLat}
-                      onOpenSubscription={() => setAboutOpen(true)}
-                      basicStatusPanelPromos={basicStatusPanelPromos}
-                      dataSaverHint={
-                        showDataSaverHint
-                          ? {
-                              onOpenSettings: () => setAboutOpen(true),
-                              onDismiss: () => {
-                                /* Store action: persists + flips `dataSaverHintDismissed` in one go. */
-                                dismissDataSaverHintAction();
-                              },
-                            }
-                          : null
-                      }
-                    />
+                    <StormAdvisoryBar {...stormAdvisoryBarProps} />
                   ) : isPlus ? (
                     <div className="nav-top-activity-pill-wrap nav-top-activity-pill-wrap--solo">
                       <ActivityStatusPill busyLabel={activityBusyLabel} />
