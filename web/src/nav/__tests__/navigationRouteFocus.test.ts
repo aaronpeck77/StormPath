@@ -88,6 +88,20 @@ describe("navigationRouteFocus", () => {
     expect(guidanceRouteId).toBe("r-b");
   });
 
+  it("follows synthetic r-rejoin overlay even before slot reconcile", () => {
+    const { guidanceRouteId, lineFocusId } = resolveNavigationRouteIds({
+      navigationStarted: true,
+      lockedRouteId: "r-a",
+      temporaryGuidanceRouteId: "r-rejoin",
+      viewMode: "drive",
+      previewLegIndex: 0,
+      orderedRouteIds: ["r-a"],
+      primaryRouteId: "r-a",
+    });
+    expect(guidanceRouteId).toBe("r-rejoin");
+    expect(lineFocusId).toBe("r-rejoin");
+  });
+
   it("falls back to slot order when no lock is set", () => {
     expect(navigationPrimaryRouteIdForMerge(null, ordered)).toBe("r-b");
     expect(navigationPrimaryRouteIdForMerge("r-a", ordered)).toBe("r-a");

@@ -12,7 +12,7 @@ import {
   type RoadNetworkClass,
 } from "./drivingRejoinContext";
 import { fetchLocalRejoinRoutes } from "./localRejoinRoutes";
-import { mergePlanPreservingPrimary } from "./mergePlanRoutes";
+import { mergePlanPreservingPrimary, rejoinOverlaySlotIds } from "./mergePlanRoutes";
 import { remainingViaStops } from "./routeWaypoints";
 import { collectMapboxRouteVariants } from "../services/mapboxDirectionsRouter";
 import { speakNavigationAlert } from "./navigationVoiceAlert";
@@ -550,16 +550,8 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           return true;
         }
 
-        /* No forward rejoin — temporary GPS→dest overlay in B/C; locked corridor stays frozen. */
-        const altIds = plan.routes.filter((r) => r.id !== lockedId).map((r) => r.id);
-        if (altIds.length === 0) {
-          offRouteRerouteFailStreakRef.current += 1;
-          if (!opts?.silent) {
-            setTapHint("Could not return to your route — still following your chosen path.");
-            window.setTimeout(() => setTapHint(null), 6000);
-          }
-          return false;
-        }
+        /* No forward rejoin — temporary GPS→dest overlay; locked corridor stays frozen. */
+        const altIds = rejoinOverlaySlotIds(plan, lockedId);
 
         const lockedRoute = plan.routes.find((r) => r.id === lockedId);
         const preferBackroads = lockedRoutePrefersBackroads(lockedRoute?.role);

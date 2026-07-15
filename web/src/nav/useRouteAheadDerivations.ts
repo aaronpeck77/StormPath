@@ -174,6 +174,7 @@ export function useRouteAheadDerivations(
     trafficBypassCompare,
     planRoutes,
     lockedNavigationRouteId,
+    temporaryGuidanceRouteId = null,
     offRouteHoldPreviewActive = false,
     stormMapGeoJson,
   } = deps;
@@ -593,17 +594,25 @@ export function useRouteAheadDerivations(
     trafficBypassContext != null &&
     !trafficBypassCompare;
 
-  /** Nav: one leg in Dr; all alternates in Rt/Mp for side-by-side compare. */
+  /** Nav: locked corridor in Dr; include temporary rejoin stub when guiding off-route. */
   const driveMapRoutes = useMemo(() => {
     if (trafficBypassCompare) return planRoutes;
     if (navigationStarted && offRouteHoldPreviewActive) return planRoutes;
     if (navigationStarted) {
       if (viewMode === "drive") {
-        const active = planRoutes.find((r) => r.id === lockedNavigationRouteId);
-        if (active) return [active];
-      } else {
-        return planRoutes;
+        const locked = planRoutes.find((r) => r.id === lockedNavigationRouteId);
+        const tempId = temporaryGuidanceRouteId ?? null;
+        const temp =
+          tempId &&
+          tempId !== lockedNavigationRouteId
+            ? planRoutes.find((r) => r.id === tempId)
+            : null;
+        if (locked && temp) return [locked, temp];
+        if (locked) return [locked];
+        if (temp) return [temp];
+        return [];
       }
+      return planRoutes;
     }
     return planRoutes;
   }, [
@@ -613,6 +622,7 @@ export function useRouteAheadDerivations(
     viewMode,
     planRoutes,
     lockedNavigationRouteId,
+    temporaryGuidanceRouteId,
   ]);
   const progressRailRoute = guidanceRoute ?? driveMapRoutes[0] ?? planRoutes[0];
 

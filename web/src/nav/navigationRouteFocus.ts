@@ -3,6 +3,7 @@ import {
   driveGuidanceUsesRejoinOverlay,
   mayAutoRejoinOverlay,
 } from "./navigationContract";
+import { REJOIN_OVERLAY_ROUTE_ID } from "./mergePlanRoutes";
 
 /**
  * While navigating, turn-by-turn follows the route locked at Go.
@@ -29,10 +30,14 @@ export function resolveNavigationRouteIds(input: {
 
   const locked = input.lockedRouteId ?? fallback;
   const temp = input.temporaryGuidanceRouteId ?? null;
+  /* Prefer ordered slots; still follow synthetic overlay before slot reconcile catches up. */
+  const tempKnown =
+    Boolean(temp) &&
+    (input.orderedRouteIds.includes(temp!) || temp === REJOIN_OVERLAY_ROUTE_ID);
   const followRejoin =
     mayAutoRejoinOverlay("navigating") &&
     driveGuidanceUsesRejoinOverlay(temp, locked) &&
-    input.orderedRouteIds.includes(temp!);
+    tempKnown;
 
   if (input.viewMode === "drive") {
     if (followRejoin) {

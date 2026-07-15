@@ -1533,10 +1533,19 @@ export default function App() {
   }, [forecastPlaceShort, effectiveUserLngLat]);
 
   const forecastReverseGeocodeAtRef = useRef<{ lngLat: LngLat; atMs: number } | null>(null);
+  const forecastGeocodeInFlightRef = useRef(false);
+  const forecastGeocodeFailUntilMsRef = useRef(0);
   useEffect(() => {
-    if (!env.mapboxToken || !effectiveUserLngLat) {
+    if (!env.mapboxToken) {
       forecastReverseGeocodeAtRef.current = null;
+      forecastGeocodeInFlightRef.current = false;
+      forecastGeocodeFailUntilMsRef.current = 0;
       setForecastPlaceShort(null);
+      return;
+    }
+    if (!effectiveUserLngLat) {
+      /* Keep the last town name across brief GPS blips — only reset the throttle stamp. */
+      forecastReverseGeocodeAtRef.current = null;
       return;
     }
     const [lng, lat] = effectiveUserLngLat;
@@ -1552,16 +1561,32 @@ export default function App() {
     ) {
       return;
     }
+    if (forecastGeocodeInFlightRef.current) return;
+    if (Date.now() < forecastGeocodeFailUntilMsRef.current) return;
+
     /* Stamp before await so GPS ticks during the request do not fan out more Temporary Geocoding calls. */
     forecastReverseGeocodeAtRef.current = { lngLat: next, atMs: Date.now() };
-    let cancelled = false;
-    void mapboxReverseGeocode(lng, lat, env.mapboxToken).then((hit) => {
-      if (cancelled || !hit?.placeName) return;
-      setForecastPlaceShort(shortenPlaceNameForForecast(hit.placeName));
-    });
-    return () => {
-      cancelled = true;
-    };
+    forecastGeocodeInFlightRef.current = true;
+    void mapboxReverseGeocode(lng, lat, env.mapboxToken)
+      .then((hit) => {
+        if (!hit?.placeName) {
+          /* Failed lookup — clear stamp and back off briefly so we can retry without quota spam. */
+          forecastReverseGeocodeAtRef.current = null;
+          forecastGeocodeFailUntilMsRef.current = Date.now() + 30_000;
+          return;
+        }
+        forecastGeocodeFailUntilMsRef.current = 0;
+        if (!effectiveUserLngLatRef.current) return;
+        setForecastPlaceShort(shortenPlaceNameForForecast(hit.placeName));
+      })
+      .finally(() => {
+        forecastGeocodeInFlightRef.current = false;
+      });
+    /*
+     * Do not cancel on effect cleanup. effectiveUserLngLat updates every GPS tick; the old
+     * cancelled=true cleanup aborted the only fetch we allow for ~5 minutes, so the label
+     * stayed on raw coordinates forever.
+     */
   }, [effectiveUserLngLat, env.mapboxToken]);
 
   /** Bumps NWS effect when GPS becomes available for browse mode (no Go yet). */
@@ -2244,11 +2269,10 @@ export default function App() {
   const driveMapRoutesForMap = useMemo(() => {
     const full = navigationGuidanceGeometry;
     let routes = driveMapRoutes;
+    /* Only rewrite the active guidance leg — keep locked corridor geom when showing a rejoin stub. */
     if (navigationStarted && full?.length) {
       routes = routes.map((r) =>
-        r.id === lockedNavigationRouteId || r.id === guidanceRouteId
-          ? { ...r, geometry: full }
-          : r
+        r.id === guidanceRouteId ? { ...r, geometry: full } : r
       );
     }
     /* Approaching a habitual fork: draw the branch beside the main corridor. */
@@ -3822,7 +3846,7 @@ export default function App() {
     searchPickMarkers: searchPickMarkersForMap,
     onSearchPickMarkerClick: handleSearchPickFromMap,
     progressRailVisible: showProgressRail,
-    offRouteRejoinCompareActive: offRouteHoldPreviewActive,
+    offRouteRejoinCompareActive: offRouteHoldPreviewActive || detourAutoActive,
   });
 
   /* Phase 3b: StormAdvisoryBar prop bag (Plus/Basic gating lives in the builder). */

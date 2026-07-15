@@ -5,16 +5,13 @@ import {
   pickLocalRejoinAlongM,
   type PickRejoinAlongOpts,
 } from "./detourRejoin";
+import { rejoinOverlaySlotIds } from "./mergePlanRoutes";
 import { pointAtAlongMeters, polylineLengthMeters } from "./routeGeometry";
 import type { LngLat, NavRoute, TripPlan } from "./types";
 import { collectMapboxRouteVariants } from "../services/mapboxDirectionsRouter";
 import { fetchMapboxSurgicalBypass } from "../services/mapboxRouteAlternatives";
 
 export { pickLocalRejoinAlongM } from "./detourRejoin";
-
-function altRouteIds(plan: TripPlan, primaryId: string): string[] {
-  return plan.routes.filter((r) => r.id !== primaryId).map((r) => r.id);
-}
 
 export type LocalRejoinFetchResult = {
   routes: NavRoute[];
@@ -57,10 +54,11 @@ export async function fetchLocalRejoinRoutes(opts: {
     bearingDeg,
   } = opts;
 
-  const altIds = altRouteIds(plan, primaryId);
-  if (!altIds.length || lockedGeometry.length < 2) {
+  if (lockedGeometry.length < 2) {
     return { routes: [], rejoinAlongM: 0 };
   }
+  /* Basic / single-route plans still need one overlay slot for the forward stub. */
+  const altIds = rejoinOverlaySlotIds(plan, primaryId);
 
   const pickOpts: PickRejoinAlongOpts = { speedMps, lateralM };
   const totalM = polylineLengthMeters(lockedGeometry);
