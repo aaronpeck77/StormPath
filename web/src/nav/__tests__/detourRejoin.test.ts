@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   formatDetourRejoinDistanceM,
   hasRejoinedLockedRoute,
+  isReverseRejoinRoute,
   metersRemainingToRejoinOnLockedRoute,
   pickBestRejoinRoute,
   pickLocalRejoinAlongM,
+  resolveRejoinAlongBasisM,
 } from "../detourRejoin";
 import type { NavRoute } from "../types";
 
@@ -34,6 +36,70 @@ describe("pickLocalRejoinAlongM", () => {
   });
 });
 
+describe("resolveRejoinAlongBasisM", () => {
+  it("uses the farthest of leave latch and live along so targets stay ahead", () => {
+    expect(
+      resolveRejoinAlongBasisM({
+        latchedLeaveAlongM: 8_000,
+        liveAlongOnLockedM: 12_000,
+        guidanceAlongM: 11_000,
+      })
+    ).toBe(12_000);
+    expect(
+      resolveRejoinAlongBasisM({
+        latchedLeaveAlongM: 15_000,
+        liveAlongOnLockedM: 9_000,
+      })
+    ).toBe(15_000);
+  });
+});
+
+describe("isReverseRejoinRoute", () => {
+  const user: [number, number] = [-77.0, 38.9];
+
+  it("rejects labeled U-turns", () => {
+    const uturn: NavRoute = {
+      id: "r-b",
+      role: "balanced",
+      label: "B",
+      geometry: [user, [-77.001, 38.901], [-77.02, 38.92]],
+      baseEtaMinutes: 5,
+      turnSteps: [
+        {
+          instruction: "Make a U-turn",
+          maneuverType: "turn",
+          maneuverModifier: "uturn",
+          distanceM: 40,
+        },
+      ],
+    };
+    expect(isReverseRejoinRoute(uturn, user, 45)).toBe(true);
+  });
+
+  it("rejects stubs that depart opposite their own end (line behind the puck)", () => {
+    /* End is north; first step goes south — classic reverse stub. */
+    const reverse: NavRoute = {
+      id: "r-b",
+      role: "balanced",
+      label: "B",
+      geometry: [user, [-77.0, 38.88], [-77.0, 38.95]],
+      baseEtaMinutes: 8,
+    };
+    expect(isReverseRejoinRoute(reverse, user, null)).toBe(true);
+  });
+
+  it("accepts a forward stub toward the rejoin end", () => {
+    const forward: NavRoute = {
+      id: "r-b",
+      role: "balanced",
+      label: "B",
+      geometry: [user, [-77.005, 38.905], [-77.02, 38.92]],
+      baseEtaMinutes: 4,
+    };
+    expect(isReverseRejoinRoute(forward, user, 45)).toBe(false);
+  });
+});
+
 describe("pickBestRejoinRoute", () => {
   const user: [number, number] = [-77.0, 38.9];
   const rejoin: [number, number] = [-77.02, 38.92];
@@ -54,6 +120,17 @@ describe("pickBestRejoinRoute", () => {
       baseEtaMinutes: 4,
     };
     expect(pickBestRejoinRoute([long, short], user, rejoin)?.id).toBe("r-b");
+  });
+
+  it("returns null when every candidate is a reverse stub", () => {
+    const reverse: NavRoute = {
+      id: "r-b",
+      role: "balanced",
+      label: "B",
+      geometry: [user, [-77.0, 38.88], rejoin],
+      baseEtaMinutes: 6,
+    };
+    expect(pickBestRejoinRoute([reverse], user, rejoin, 0)).toBeNull();
   });
 });
 

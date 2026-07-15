@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import {
   formatDetourRejoinDistanceM,
+  isReverseRejoinRoute,
   metersRemainingToRejoinOnLockedRoute,
+  resolveRejoinAlongBasisM,
 } from "./detourRejoin";
 import {
   resolveDrivingRejoinContext,
@@ -356,11 +358,21 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       const lateralNow = lastOffRouteSampleRef.current?.lateralM ?? 0;
       const bearingDeg = headingRef.current;
       const failStreak = offRouteRerouteFailStreakRef.current;
+      const liveAlongOnLocked = measureOffRouteLateral(
+        userLngLat,
+        lockedGeom,
+        userAlongGuidanceMRef.current
+      ).alongM;
+      const rejoinAlongBasis = resolveRejoinAlongBasisM({
+        latchedLeaveAlongM: offRouteRejoinAlongMRef.current,
+        liveAlongOnLockedM: liveAlongOnLocked,
+        guidanceAlongM: userAlongGuidanceMRef.current,
+      });
       const { routes: rejoinRoutes, rejoinAlongM } = await fetchLocalRejoinRoutes({
         accessToken: mapboxToken,
         userLngLat,
         lockedGeometry: lockedGeom,
-        userAlongM: offRouteRejoinAlongMRef.current || userAlongGuidanceMRef.current,
+        userAlongM: rejoinAlongBasis,
         plan: planRef.current,
         primaryId: lockedId,
         shufflePass: failStreak,
@@ -486,11 +498,21 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         const lateralNow = lastOffRouteSampleRef.current?.lateralM ?? 0;
         const bearingDeg = headingRef.current;
         const failStreak = offRouteRerouteFailStreakRef.current;
+        const liveAlongOnLocked = measureOffRouteLateral(
+          userLngLat,
+          lockedGeom,
+          userAlongGuidanceMRef.current
+        ).alongM;
+        const rejoinAlongBasis = resolveRejoinAlongBasisM({
+          latchedLeaveAlongM: offRouteRejoinAlongMRef.current,
+          liveAlongOnLockedM: liveAlongOnLocked,
+          guidanceAlongM: userAlongGuidanceMRef.current,
+        });
         const { routes: rejoinRoutes, rejoinAlongM } = await fetchLocalRejoinRoutes({
           accessToken: mapboxToken,
           userLngLat,
           lockedGeometry: lockedGeom,
-          userAlongM: offRouteRejoinAlongMRef.current || userAlongGuidanceMRef.current,
+          userAlongM: rejoinAlongBasis,
           plan,
           primaryId: lockedId,
           shufflePass: failStreak,
@@ -528,12 +550,81 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           return true;
         }
 
-        offRouteRerouteFailStreakRef.current += 1;
-        if (!opts?.silent) {
-          setTapHint("Could not return to your route — still following your chosen path.");
-          window.setTimeout(() => setTapHint(null), 6000);
+        /* No forward rejoin — temporary GPS→dest overlay in B/C; locked corridor stays frozen. */
+        const altIds = plan.routes.filter((r) => r.id !== lockedId).map((r) => r.id);
+        if (altIds.length === 0) {
+          offRouteRerouteFailStreakRef.current += 1;
+          if (!opts?.silent) {
+            setTapHint("Could not return to your route — still following your chosen path.");
+            window.setTimeout(() => setTapHint(null), 6000);
+          }
+          return false;
         }
-        return false;
+
+        const lockedRoute = plan.routes.find((r) => r.id === lockedId);
+        const preferBackroads = lockedRoutePrefersBackroads(lockedRoute?.role);
+        const remainingVias = remainingViaStops(viaStops, activeViaIndex);
+        const viaCoords = remainingVias.map((s) => s.lngLat);
+        const destLegs = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
+          via: viaCoords.length > 0 ? viaCoords : undefined,
+          signal: altFetch.signal,
+          maxRoutes: isPlus ? 2 : 1,
+          preferThreeRoutes: false,
+          allowLocalTripThirdRoute: false,
+          skipStormLegRefinement: true,
+          singleRouteFromPosition: true,
+          forwardFirst: true,
+          preferBackroads,
+          bearingDeg:
+            bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
+          stormAlerts: stormAlertsForRouting,
+          radarAvoidanceEnabled: isPlus && settingStormEnabled,
+        });
+        if (epochAtStart !== routeGraphEpochRef.current) return false;
+
+        const forwardDest = destLegs.filter(
+          (r) =>
+            r.geometry.length >= 2 &&
+            !isReverseRejoinRoute(r, userLngLat, bearingDeg)
+        );
+        if (forwardDest.length === 0) {
+          offRouteRerouteFailStreakRef.current += 1;
+          if (!opts?.silent) {
+            setTapHint("Could not find a forward path — keep going; we'll try again.");
+            window.setTimeout(() => setTapHint(null), 6000);
+          }
+          return false;
+        }
+
+        const overlayRoutes = forwardDest.slice(0, altIds.length).map((leg, i) => ({
+          ...leg,
+          id: altIds[i]!,
+          label: i === 0 ? "Detour" : "Detour C",
+        }));
+        setPlan((prev) => mergePlanPreservingPrimary(prev, lockedId, overlayRoutes));
+        setFitTrigger((n) => n + 1);
+        offRouteRerouteFailStreakRef.current = 0;
+        /* Clear when driver returns to the locked corridor near current progress. */
+        detourRejoinAlongMRef.current = rejoinAlongBasis;
+        setDetourRejoinAlongM(rejoinAlongBasis);
+        pollSessionRef.current = {
+          ...pollSessionRef.current,
+          detourRejoinAlongM: rejoinAlongBasis,
+          offRouteChoiceOffered: false,
+          offRouteRecoveryLastFailMs: 0,
+        };
+        const bestId = overlayRoutes[0]?.id ?? null;
+        if (bestId) {
+          const voiceLine = opts?.silent
+            ? "Continuing toward your destination."
+            : "Can't rejoin ahead — continuing forward.";
+          followDetourRoute(bestId, voiceLine);
+          if (!opts?.silent) {
+            setTapHint("Continuing forward — original route stays locked.");
+            window.setTimeout(() => setTapHint(null), 6000);
+          }
+        }
+        return true;
       } catch (e) {
         if (isAbortError(e)) return false;
         const msg = routeFetchUserMessage(e) ?? (e instanceof Error ? e.message : String(e));
@@ -557,6 +648,10 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       mapboxToken,
       isOnline,
       isPlus,
+      viaStops,
+      activeViaIndex,
+      stormAlertsForRouting,
+      settingStormEnabled,
       lockedNavigationRouteIdRef,
       routeGraphEpochRef,
       altRoutesFetchAbortRef,

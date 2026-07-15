@@ -5,6 +5,7 @@ import {
 } from "./offRouteDetect";
 import { haversineMeters, initialBearingDegrees, polylineLengthMeters } from "./routeGeometry";
 import {
+  departBearingFromRoute,
   headingDeltaDegrees,
   routeStartsWithUturn,
 } from "./forwardRoutePick";
@@ -14,8 +15,14 @@ const MI = METERS_PER_MILE;
 
 /** Shuffle targets for local rejoin — miles ahead on the locked leg. */
 export const REJOIN_OFFSETS_MI = [1.2, 2.2, 3.2, 4.5, 5.5] as const;
-/** Missed-turn / beside-corridor rejoin — aim closer so Mapbox does not U-turn back. */
-export const REJOIN_OFFSETS_NEAR_MI = [0.35, 0.55, 0.85, 1.2, 2.0] as const;
+/**
+ * Missed-turn / beside-corridor rejoin — still ahead of the leave point.
+ * Keep the closest target ≥ ~0.7 mi so Mapbox does not U-turn to a nearby behind point.
+ */
+export const REJOIN_OFFSETS_NEAR_MI = [0.7, 1.1, 1.6, 2.2, 3.0] as const;
+
+/** Depart more opposite than this vs travel heading → reverse stub (hard reject). */
+export const REJOIN_REVERSE_DEPART_DELTA_DEG = 100;
 
 export type PickRejoinAlongOpts = {
   speedMps?: number;
@@ -52,37 +59,86 @@ export function pickLocalRejoinAlongM(
     offsetM += Math.min(4000, (lateralM - 25) * 40);
   }
 
-  const minAhead = Math.min(0.65 * MI, Math.max(350, totalM * 0.02));
+  const minAhead = Math.min(0.85 * MI, Math.max(500, totalM * 0.02));
   const target = along + Math.max(minAhead, offsetM);
   return Math.min(Math.max(0, totalM - 25), target);
 }
 
-/** Prefer the shortest-time detour that does not wander excessively. */
+/**
+ * True when the stub leaves reverse of travel (labeled U-turn or depart delta).
+ * Soft scoring used to accept these and paint a line behind the puck — hard-reject instead.
+ */
+export function isReverseRejoinRoute(
+  route: NavRoute,
+  userLngLat: LngLat,
+  headingDeg?: number | null
+): boolean {
+  if (route.geometry.length < 2) return true;
+  if (routeStartsWithUturn(route)) return true;
+  const depart = departBearingFromRoute(userLngLat, route.geometry);
+  if (depart == null) return false;
+
+  /* Even without GPS heading: leaving opposite the stub's own end is a U-turn loop. */
+  const end = route.geometry[route.geometry.length - 1]!;
+  const towardEnd = initialBearingDegrees(userLngLat, end);
+  if (
+    Number.isFinite(towardEnd) &&
+    headingDeltaDegrees(towardEnd, depart) > REJOIN_REVERSE_DEPART_DELTA_DEG
+  ) {
+    return true;
+  }
+
+  if (headingDeg == null || !Number.isFinite(headingDeg)) return false;
+  return headingDeltaDegrees(headingDeg, depart) > REJOIN_REVERSE_DEPART_DELTA_DEG;
+}
+
+/** Prefer live progress over a stale leave latch so rejoin targets stay ahead of the puck. */
+export function resolveRejoinAlongBasisM(opts: {
+  latchedLeaveAlongM: number;
+  liveAlongOnLockedM: number;
+  guidanceAlongM?: number;
+}): number {
+  return Math.max(
+    0,
+    opts.latchedLeaveAlongM || 0,
+    opts.liveAlongOnLockedM || 0,
+    opts.guidanceAlongM || 0
+  );
+}
+
+export function filterForwardRejoinRoutes(
+  routes: NavRoute[],
+  userLngLat: LngLat,
+  headingDeg?: number | null
+): NavRoute[] {
+  return routes.filter((r) => !isReverseRejoinRoute(r, userLngLat, headingDeg));
+}
+
+/** Prefer the shortest-time forward detour that does not wander excessively. */
 export function pickBestRejoinRoute(
   routes: NavRoute[],
   userLngLat: LngLat,
   rejoinPt: LngLat,
   headingDeg?: number | null
 ): NavRoute | null {
-  if (!routes.length) return null;
-  if (routes.length === 1) return routes[0]!;
+  const forward = filterForwardRejoinRoutes(routes, userLngLat, headingDeg);
+  if (!forward.length) return null;
+  if (forward.length === 1) return forward[0]!;
 
   const straightM = Math.max(haversineMeters(userLngLat, rejoinPt), 80);
-  const scored = routes.map((r, index) => {
+  const scored = forward.map((r, index) => {
     const lenM = polylineLengthMeters(r.geometry);
     const etaMin = r.baseEtaMinutes ?? 99;
     const detourRatio = lenM / straightM;
     let score = etaMin * 2 + detourRatio * 6 + lenM / 1200 + index * 0.05;
-    if (routeStartsWithUturn(r)) score += 12;
     if (
       headingDeg != null &&
       Number.isFinite(headingDeg) &&
       r.geometry.length >= 2
     ) {
       const departBearing = initialBearingDegrees(userLngLat, r.geometry[1]!);
-      if (headingDeltaDegrees(headingDeg, departBearing) > 100) {
-        score += 8;
-      }
+      const delta = headingDeltaDegrees(headingDeg, departBearing);
+      score += delta * 0.08;
     }
     return { r, score };
   });
@@ -90,17 +146,19 @@ export function pickBestRejoinRoute(
   return scored[0]!.r;
 }
 
-/** Order B/C so the best detour is first — locked route id is unchanged. */
+/** Order B/C so the best forward detour is first — empty if only reverse stubs remain. */
 export function orderRejoinRoutesBestFirst(
   routes: NavRoute[],
   userLngLat: LngLat,
   rejoinPt: LngLat,
   headingDeg?: number | null
 ): NavRoute[] {
-  if (routes.length <= 1) return routes;
-  const best = pickBestRejoinRoute(routes, userLngLat, rejoinPt, headingDeg);
-  if (!best) return routes;
-  const rest = routes.filter((r) => r.id !== best.id);
+  const forward = filterForwardRejoinRoutes(routes, userLngLat, headingDeg);
+  if (!forward.length) return [];
+  if (forward.length === 1) return forward;
+  const best = pickBestRejoinRoute(forward, userLngLat, rejoinPt, headingDeg);
+  if (!best) return [];
+  const rest = forward.filter((r) => r.id !== best.id);
   return [best, ...rest];
 }
 

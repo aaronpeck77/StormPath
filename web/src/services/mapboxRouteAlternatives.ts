@@ -126,7 +126,8 @@ export async function fetchMapboxTrafficAlternatives(
 export async function fetchMapboxSurgicalBypass(
   accessToken: string,
   exitPoint: LngLat,
-  rejoinPoint: LngLat
+  rejoinPoint: LngLat,
+  opts?: { bearingDeg?: number | null }
 ): Promise<MapboxTrafficAltRoute | null> {
   const o = `${exitPoint[0].toFixed(5)},${exitPoint[1].toFixed(5)}`;
   const d = `${rejoinPoint[0].toFixed(5)},${rejoinPoint[1].toFixed(5)}`;
@@ -139,6 +140,13 @@ export async function fetchMapboxSurgicalBypass(
   url.searchParams.set("overview", "full");
   url.searchParams.set("steps", "true");
   url.searchParams.set("exclude", "motorway");
+  const bearing =
+    opts?.bearingDeg != null && Number.isFinite(opts.bearingDeg)
+      ? ((opts.bearingDeg % 360) + 360) % 360
+      : null;
+  if (bearing != null) {
+    url.searchParams.set("bearings", `${Math.round(bearing)},45;`);
+  }
 
   let res: Response;
   try {
