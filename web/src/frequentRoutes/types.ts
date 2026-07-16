@@ -16,4 +16,8 @@ export type FrequentRouteCluster = {
   geometry: LngLat[];
   centerStart: LngLat;
   centerEnd: LngLat;
+  /** Reverse-geocoded place near start (cached on device). */
+  startLabel?: string;
+  /** Reverse-geocoded place near end (cached on device). */
+  endLabel?: string;
 };

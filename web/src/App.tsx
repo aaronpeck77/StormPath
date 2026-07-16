@@ -2,27 +2,21 @@ import {
   lazy,
   Suspense,
   useCallback,
-  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import type { CSSProperties } from "react";
-import { Capacitor } from "@capacitor/core";
-import { KeepAwake } from "@capacitor-community/keep-awake";
 import { getWebEnv } from "./config/env";
-import { DEV_CURSOR_DEFAULT, DEV_CURSOR_POINTER } from "./dev/devCursor";
 import { useFusedSituation } from "./hooks/useFusedSituation";
 import { useSavedPlaces } from "./hooks/useSavedPlaces";
 import { useSavedRoutes } from "./hooks/useSavedRoutes";
 import { useRouteRecorder } from "./hooks/useRouteRecorder";
-import { useProgressRailFootInset } from "./hooks/useProgressRailFootInset";
 import { useSessionOdometerMeters } from "./hooks/useSessionOdometerMeters";
+import { useAppLayerPrefs, shouldShowDataSaverHint } from "./hooks/useAppLayerPrefs";
 import {
   useUserLocation,
   getDevLocationOverrideLngLat,
-  clearDevLocationOverride,
   GPS_STATE_THROTTLE_MS_NORMAL,
   GPS_STATE_THROTTLE_MS_ULTRA_LONG,
 } from "./hooks/useUserLocation";
@@ -30,189 +24,96 @@ import { useDestinationSearch } from "./hooks/useDestinationSearch";
 import { useNavigationPosition } from "./hooks/useNavigationPosition";
 import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
 import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
-import {
-  formatRadarSampleAge,
-  useRadarBandsAlongRoute,
-} from "./hooks/useRadarBandsAlongRoute";
-import {
-  useLocalDailyForecast,
-  useLocalHourlyForecast,
-  useTomorrowMinutePrecip,
-  useTomorrowRouteForecast,
-} from "./hooks/useTomorrowWeather";
-import { buildMockTripBetween } from "./nav/emptyTrip";
-import { mergePlanPreservingPrimary } from "./nav/mergePlanRoutes";
-import {
-  navigationPrimaryRouteIdForMerge,
-  resolveNavigationRouteIds,
-} from "./nav/navigationRouteFocus";
-import { tripPlanFromSavedRoute } from "./nav/planFromSavedRoute";
+import { resolveNavigationRouteIds } from "./nav/navigationRouteFocus";
 import {
   loadReturnTripLeg,
   shortenReturnTripLabel,
   type ReturnTripLeg,
 } from "./nav/returnTripLeg";
-import type { SavedRoute } from "./nav/savedRoutes";
 import type { LngLat } from "./nav/types";
 import { pickSuggestedActive, scoreTrip } from "./scoring/scoreRoutes";
-import { collectMapboxRouteVariants } from "./services/mapboxDirectionsRouter";
 import { useAppForeground } from "./hooks/useAppForeground";
-import { formatDistanceShort, useMilesForLngLat } from "./utils/formatDistance";
 import { useTollPreview } from "./nav/useTollPreview";
 import {
   getNwsPollIntervalMs,
-  getRadarRouteSampleIntervalMs,
   isDataSaverMode,
   isLongTripRoute,
-  isNavMapLiteMode,
   isUltraLongTripRoute,
   quantizeRouteAlongForHeavyUi,
 } from "./utils/dataSaver";
 import {
-  formatCoordsAreaLabel,
-  shortenPlaceNameForForecast,
-} from "./utils/forecastDisplay";
-import { shouldRefreshForecastReverseGeocode } from "./utils/forecastReverseGeocodeGate";
-import { mapboxReverseGeocode } from "./services/mapboxGeocode";
-import {
   trafficCongestionAnchorFraction,
 } from "./services/mapboxDirectionsTraffic";
 import {
-  formatNowcastLine,
-} from "./services/openWeatherClient";
-import { formatMinutePrecipNowLine } from "./utils/forecastDisplay";
-import { type RouteImpact } from "./nav/routeImpacts";
-import { type RouteAlert, routeAlertShowsOnRouteLine } from "./nav/routeAlerts";
-import {
-  timelineToMapCorridorAlerts,
-  filterAlertsForDriveMap,
-} from "./nav/routeAheadSync";
-import {
-  bearingAlongRouteAhead,
   closestAlongRouteMeters,
-  haversineMeters,
-  initialBearingDegrees,
   pointAtAlongMeters,
   polylineLengthMeters,
 } from "./nav/routeGeometry";
-import {
-  computeRemainingDistanceMeters,
-  computeRemainingDriveEtaMinutes,
-  stablePlanRoutesKey,
-} from "./nav/tripNavDisplay";
+import { stablePlanRoutesKey } from "./nav/tripNavDisplay";
 import { useTripNavDisplayHealth } from "./nav/useTripNavDisplayHealth";
 import { useTripSurfaceRecovery } from "./nav/useTripSurfaceRecovery";
-import { buildNavResourceBudget, computeRadarMapOverlayOn, isDriveNavMode } from "./nav/navResourceBudget";
+import { computeRadarMapOverlayOn, isDriveNavMode } from "./nav/navResourceBudget";
 import { useRouteAheadDerivations } from "./nav/useRouteAheadDerivations";
 import { useProgressCalloutPanel } from "./nav/useProgressCalloutPanel";
 import { useNavAlternateRouteRefresh } from "./nav/useNavAlternateRouteRefresh";
-import { formatRouteDistanceMi, routeConsiderationSummary } from "./nav/routeSummary";
-import { buildDriveRouteAheadFromImpacts } from "./nav/driveRouteAhead";
+import { useRefreshAlternateRoutes } from "./nav/useRefreshAlternateRoutes";
+import { useProgressRailChrome } from "./nav/useProgressRailChrome";
+import { useRoutePickItems } from "./nav/buildRoutePickItems";
+import { useDriveEtaLabels } from "./nav/useDriveEtaLabels";
+import { useSeriousHazardAutoFly } from "./nav/useSeriousHazardAutoFly";
 import { isDriveOffRouteForwardFraming } from "./nav/driveAlwaysAhead";
-import { pickDriveApproachBanner } from "./nav/driveHazardApproachPreview";
-import { pickTrafficBypassAnchorImpact } from "./nav/trafficBypassOffer";
-import { trafficBypassOfferHeadline, withTrafficBypassCompareKind } from "./nav/trafficBypassFlow";
-import { earlyApproachMaxMetersForSpeed } from "./nav/surgicalBypassWindow";
 import { unifiedTrafficNarrative } from "./nav/trafficNarrative";
 import {
-  DRIVE_AHEAD_WINDOW_M,
-  shouldShowManualOffRouteUi,
-  shouldShowTrafficBypassUi,
   TRAFFIC_BYPASS_ENABLED,
 } from "./nav/constants";
-import { routeForecastIntensityFloor, worstCorridorInterval, corridorWetIntervalLine, corridorWetHeadline, corridorFreezingLine, corridorColdLine, corridorLowVisibilityLine } from "./forecast/corridorForecastModel";
-import { buildRouteWeatherOverlayFromForecast } from "./forecast/routeForecastOverlay";
+import { useRouteWeatherPipeline } from "./forecast/useRouteWeatherPipeline";
 import type { TrafficOverlay } from "./situation/fusedSnapshot";
 import type { MapViewMode } from "./ui/driveMapTypes";
 import { stormpathVersionLabel } from "./appVersion";
-import {
-  applyLayerStartupMigrations,
-  readNwsSessionOn,
-  readRadarOverlayOn,
-  readRoadAdvisoryDetailOn,
-  writeNwsSessionOn,
-  writeRadarOverlayOn,
-  writeRoadAdvisoryDetailOn,
-} from "./layerStartupPrefs";
+import { applyLayerStartupMigrations } from "./layerStartupPrefs";
+import { AppMapStage } from "./ui/AppMapStage";
+import { buildAppShellClassName, buildDevPointerStyle } from "./ui/appShellChrome";
 
-/** Prod code-split. Normalizes named/default export so React.lazy never hits its broken `%s` log path. */
-const lazyDriveMap = () =>
-  import("./ui/DriveMap").then((m) => {
-    const component = m.default ?? m.DriveMap;
-    if (component == null) {
-      throw new Error("DriveMap failed to load (missing component export). Hard-reload the page.");
-    }
-    return { default: component };
-  });
-
-const DriveMap = lazy(lazyDriveMap);
-
-if (import.meta.hot) {
-  /* React.lazy caches the first import — after DriveMap HMR, reload so lazy picks up the new module. */
-  import.meta.hot.accept("./ui/DriveMap", () => {
-    window.location.reload();
-  });
-}
-const AboutSheet = lazy(() => import("./ui/AboutSheet").then((m) => ({ default: m.AboutSheet })));
 const SavedDestinationsDrawer = lazy(() =>
   import("./ui/SavedDestinationsDrawer").then((m) => ({ default: m.SavedDestinationsDrawer }))
 );
-import { SearchBar } from "./ui/SearchBar";
 import type { SearchSuggestion } from "./ui/SearchBar";
-import { isNarrowPhoneViewport } from "./ui/mapFitLogic";
-import { BottomToolbar } from "./ui/BottomToolbar";
-import { NavMilesLeftBox } from "./ui/NavMilesLeftBox";
-import { DriveCompass } from "./ui/DriveCompass";
-import { RouteCycleButton, type RoutePickItem } from "./ui/RoutePickBar";
-import { RouteStopsBar } from "./ui/RouteStopsBar";
+import { AppBottomChrome } from "./ui/AppBottomChrome";
+import { AppAboutSheetHost } from "./ui/AppAboutSheetHost";
 import {
   currentNavTarget,
 } from "./nav/routeWaypoints";
-import { routePickSlotHex } from "./ui/mapRouteStyle";
-import { routeSlotIndexFor } from "./ui/mapRouteLayers";
 import {
   isFullSlotPermutation,
   reconcileSlotOrderWithPlan,
   slotOrderAfterSelect,
 } from "./nav/routeSlotOrder";
-import { NameConfirmSheet } from "./ui/NameConfirmSheet";
-import { TopGuidanceBar } from "./ui/TopGuidanceBar";
-import { RecordingRouteBanner } from "./ui/RecordingRouteBanner";
-import { RouteHazardSheet } from "./ui/RouteHazardSheet";
-import { TollFlowSheets } from "./ui/TollFlowSheets";
-import { RouteProgressStrip } from "./ui/RouteProgressStrip";
-import { RouteProgressGlancePanel } from "./ui/RouteProgressGlancePanel";
-import { RouteProgressCalloutRail } from "./ui/RouteProgressCalloutRail";
-import { StormAdvisoryBar } from "./ui/StormAdvisoryBar";
-import { DriveHazardApproachBanner } from "./ui/DriveHazardApproachBanner";
-import { ActivityStatusPill } from "./ui/ActivityStatusPill";
+import { useDebouncedBusyLabel } from "./hooks/useDebouncedBusyLabel";
+import { buildAdvisoryRoadDetailRows } from "./ui/buildAdvisoryRoadDetailRows";
+import { PendingSaveSheets } from "./ui/PendingSaveSheets";
+import { AppStatusBanners } from "./ui/AppStatusBanners";
+import { useDemoBypassPlayback } from "./nav/useDemoBypassPlayback";
+import { useDriveApproachBanner } from "./nav/useDriveApproachBanner";
+import { useDriveMapOverlays } from "./nav/useDriveMapOverlays";
+import { useTrafficBypassFlow } from "./nav/useTrafficBypassFlow";
+import { useSavedTripActions, useRecordedSaveLabels } from "./hooks/useSavedTripActions";
+import { useAdvisoryInteractions } from "./hooks/useAdvisoryInteractions";
+import { usePayTierSession } from "./hooks/usePayTierSession";
+import { AppHazardSheetsHost } from "./ui/AppHazardSheetsHost";
+import { AppProgressRail } from "./ui/AppProgressRail";
+import { AppTopNavCluster } from "./ui/AppTopNavCluster";
 import { Coachmarks } from "./ui/Coachmarks";
 import { resetAllCoachmarks } from "./ui/coachmarks/firstLaunchSteps";
-import { RouteCompareBottomPanel } from "./ui/RouteCompareBottomPanel";
 import { pointAlongPolyline } from "./ui/geometryAlong";
-import { mapGeoJsonFromAlerts } from "./weatherAlerts/mapGeoJsonFromAlerts";
-import { routeAlertForNwsAdvisoryClick } from "./weatherAlerts/nwsAsRouteAlerts";
 import type { NormalizedWeatherAlert } from "./weatherAlerts/types";
-import {
-  buildAdvisoryPromoLines,
-  buildBasicNavAdvisoryPromoLines,
-  buildBasicNavStatusPanelPromos,
-} from "./config/basicAds";
-import { payTierTestPanelEnabled } from "./config/env";
 import { useBasicAdMobBanner } from "./hooks/useBasicAdMobBanner";
-import { getPayTier, hasTollBypass, maxSavedPlaces, maxSavedRoutes } from "./billing/payFeatures";
-import { NATIVE_PAY_TIER_CHANGED_EVENT, refreshPlusEntitlementFromStore, whenRevenueCatReady } from "./billing/revenueCat";
 import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
 import { useFrequentRouteLearning } from "./hooks/useFrequentRouteLearning";
 import { usePersonalForkNav } from "./hooks/usePersonalForkNav";
 import { isPersonalForkRouteId, PERSONAL_FORK_ROUTE_ID } from "./personalForks";
-import { YourRouteChip } from "./ui/YourRouteChip";
-import { useDriveMapProps } from "./ui/useDriveMapProps";
-import { buildStormAdvisoryBarProps } from "./ui/buildStormAdvisoryBarProps";
-import { isMapBasemapDaytime } from "./map/mapBasemapDaytime";
+import { useAppMapChromeProps } from "./ui/useAppMapChromeProps";
 import {
   readHomeMapFraming,
-  writeHomeMapFraming,
   type HomeMapFraming,
 } from "./map/homeMapFraming";
 import {
@@ -220,35 +121,19 @@ import {
   writeHomePuckFollow,
   type HomePuckFollowMode,
 } from "./map/homePuckFollow";
+import { readHomePreloadEnabled } from "./map/homePreloadRegion";
 import {
-  estimatePreloadStorageLabel,
-  getHomePreloadBounds,
-  readHomePreloadEnabled,
-  writeHomePreloadEnabled,
-  clearHomePreloadRecord,
-} from "./map/homePreloadRegion";
-import {
-  ACTIVITY_MIN_SAMPLES_PLANNING_MAP,
   ACTIVITY_MIN_SAMPLES_RANK,
   ACTIVITY_SAMPLES_UPDATED_EVENT,
-  activitySamplesToGeoJson,
-  clearActivitySamples,
-  getActivityTrailPlanningBounds,
-  getActivityTrailStats,
-  loadActivitySamples,
   rankSearchSuggestionsByTrailCentroid,
 } from "./frequentRoutes/activitySamples";
+import { useActivityTrailMap } from "./hooks/useActivityTrailMap";
 import { BYPASS_HEAVY_DELAY_MINUTES } from "./nav/constants";
+import { useActiveTripCache } from "./nav/useActiveTripCache";
+import { computeDriveRouteBearing } from "./nav/computeDriveRouteBearing";
+import { useForecastPlaceLabel } from "./hooks/useForecastPlaceLabel";
+import { useBasemapNight } from "./hooks/useBasemapNight";
 import {
-  clearActiveTripCache,
-  loadActiveTripFromCache,
-  MAX_TRIP_CACHE_AGE_MS,
-  saveActiveTripToCache,
-  isRestorableActiveTripEntry,
-} from "./tripCache";
-import {
-  getTollCompareContext,
-  setTollCompareContext,
   type TrafficBypassCompareState,
   useRouteCompareStore,
 } from "./state/routeCompareStore";
@@ -264,11 +149,7 @@ import { useNavigationGuidance } from "./nav/useNavigationGuidance";
 import { useSettingsStore } from "./state/settingsStore";
 import { useRouteCompareActions } from "./state/useRouteCompareActions";
 import { useTripPlanStore } from "./state/tripPlanStore";
-import {
-  getViewModeBeforeTrafficBypass,
-  setViewModeBeforeTrafficBypass,
-  useUiStore,
-} from "./state/uiStore";
+import { useUiStore } from "./state/uiStore";
 import { useWeatherStore } from "./state/weatherStore";
 import { safeStorage } from "./storage/safeStorage";
 import {
@@ -281,93 +162,26 @@ import "./App.css";
  * for future consumers; App.tsx no longer references it directly because the `useState<…>`
  * annotation moved into the store. */
 
-/* `TrafficBypassCompareState` lives in `state/routeCompareStore.ts` (Phase 4c) and is imported
- * at the top of this file. The shape is unchanged — it just lives next to the store that owns
- * it so the panel and store can never drift. */
-
-/** Pre-select the active leg when opening A/B/C compare so Go works without an extra tap. */
-function defaultRouteCompareSelection(guidanceRouteId: string): "r-a" | "r-b" | "r-c" {
-  if (guidanceRouteId === "r-a" || guidanceRouteId === "r-b" || guidanceRouteId === "r-c") {
-    return guidanceRouteId;
-  }
-  return "r-a";
-}
-
-/** Cancel route compare — flat map view, not tilted drive camera. */
-function viewModeAfterCompareCancel(
-  restore: MapViewMode | null | undefined,
-  navigationStarted: boolean
-): MapViewMode {
-  if (navigationStarted && restore === "drive") return "topdown";
-  if (restore) return restore;
-  return navigationStarted ? "topdown" : "route";
-}
-
 /** Route mode: refresh B/C alternates only (primary leg unchanged). */
-/** Best-effort cap for IndexedDB writes while still capturing route refreshes. */
-const TRIP_CACHE_MIN_SAVE_INTERVAL_MS = 20_000;
 
 export default function App() {
   applyLayerStartupMigrations();
   const env = useMemo(() => getWebEnv(), []);
-  /** Demo tools (mock banner, mock close hazard, mock compare) are dev-only. The `?demo=bypass`
-   *  URL flag still has to be present, but we additionally hard-gate on `import.meta.env.DEV` so
-   *  TestFlight / production builds can never surface the demo strip even if the flag leaks in. */
-  const demoBypassTrafficJam = useMemo(() => {
-    if (!import.meta.env.DEV) return false;
-    if (typeof window === "undefined") return false;
-    try {
-      return new URLSearchParams(window.location.search).get("demo") === "bypass";
-    } catch {
-      return false;
-    }
-  }, []);
-  /** Bumped when dev About changes `PAY_TIER_OVERRIDE_LS_KEY` or RevenueCat entitlement updates. */
-  const [payTierProbeKey, setPayTierProbeKey] = useState(0);
-  const reprobePayTier = useCallback(() => setPayTierProbeKey((n) => n + 1), []);
-  useEffect(() => {
-    const handler = () => reprobePayTier();
-    window.addEventListener(NATIVE_PAY_TIER_CHANGED_EVENT, handler);
-    /* Re-read tier after async RevenueCat init may have written entitlement before listener mounted. */
-    queueMicrotask(reprobePayTier);
-    return () => window.removeEventListener(NATIVE_PAY_TIER_CHANGED_EVENT, handler);
-  }, [reprobePayTier]);
-
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-    let cancelled = false;
-    void whenRevenueCatReady().then(async (ready) => {
-      if (cancelled || !ready) return;
-      const outcome = await refreshPlusEntitlementFromStore();
-      if (!cancelled) reprobePayTier();
-      if (import.meta.env.DEV && outcome.status === "error") {
-        console.warn("[RevenueCat] launch entitlement sync:", outcome.message);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [reprobePayTier]);
-  /** Plus vs Basic from `getPayTier()` (build env + native entitlement + optional LS override). */
-  const isPlus = useMemo(() => getPayTier() === "plus", [payTierProbeKey]);
-  const savedPlacesMax = useMemo(() => maxSavedPlaces(), [payTierProbeKey]);
-  const savedRoutesMax = useMemo(() => maxSavedRoutes(), [payTierProbeKey]);
-  const tollBypassEnabled = useMemo(() => hasTollBypass(), [payTierProbeKey]);
-  const advisoryPromoLines = useMemo(
-    () => (isPlus ? buildAdvisoryPromoLines(env, isPlus) : buildBasicNavAdvisoryPromoLines(env)),
-    [env, isPlus]
-  );
-  const basicStatusPanelPromos = useMemo(
-    () => (isPlus ? null : buildBasicNavStatusPanelPromos(env)),
-    [env, isPlus]
-  );
-  /** `?demo=bypass` replay / simulated delay — Plus only (matches Traffic bypass). */
-  const demoBypassTrafficJamPlus = demoBypassTrafficJam && isPlus;
-  const demoBypassTrafficJamPlusRef = useRef(false);
-  demoBypassTrafficJamPlusRef.current = demoBypassTrafficJamPlus;
-  const payFrequentRoutes = isPlus;
-  const tierLabel = isPlus ? "Plus" : "Basic";
-  const [isOnline, setIsOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
+  const {
+    payTierProbeKey,
+    reprobePayTier,
+    isPlus,
+    savedPlacesMax,
+    savedRoutesMax,
+    tollBypassEnabled,
+    advisoryPromoLines,
+    basicStatusPanelPromos,
+    demoBypassTrafficJamPlus,
+    demoBypassTrafficJamPlusRef,
+    payFrequentRoutes,
+    tierLabel,
+    isOnline,
+  } = usePayTierSession({ env });
   /* Settings now live in `useSettingsStore` (Phase 4a). Local names are kept identical so the
    * ~50 read sites and the AboutSheet wiring stay unchanged; the store handles persistence to
    * Capacitor Preferences via `safeStorage` so the per-flag persistence useEffects below could
@@ -382,7 +196,6 @@ export default function App() {
    * persistence side once. Per-toggle handlers elsewhere (toolbar Radar overlay, etc.) operate
    * on App-owned state (`showRadar`), not on the persistent settings, so they don't need the
    * individual setters either. */
-  const applySettings = useSettingsStore((s) => s.applySettings);
   const tripPlanForGps = useTripPlanStore((s) => s.plan);
   const navActiveForGps = useTripPlanStore((s) => s.navigationStarted);
   const maxRouteLenForGps = useMemo(() => {
@@ -433,6 +246,7 @@ export default function App() {
     payUnlocked: payFrequentRoutes,
     userLngLat,
     speedMps,
+    mapboxToken: env.mapboxToken,
   });
 
   const navGoStartedAtRef = useRef<number | null>(null);
@@ -497,7 +311,6 @@ export default function App() {
    * update — used by the route-compare dismiss helper. */
   const pendingSave = useUiStore((s) => s.pendingSave);
   const setPendingSave = useUiStore((s) => s.setPendingSave);
-  const aboutOpen = useUiStore((s) => s.aboutOpen);
   const setAboutOpen = useUiStore((s) => s.setAboutOpen);
   /* Contextual one-shot coachmarks — the {@link Coachmarks} component watches for its
    * tracked targets to become visible and pops a single "Tip" card next to each the first
@@ -513,19 +326,10 @@ export default function App() {
     window.setTimeout(() => setCoachmarksReplayKey((k) => k + 1), 350);
   };
 
-  const [recordedSuggestName, setRecordedSuggestName] = useState("");
-  const [recordedEndLabel, setRecordedEndLabel] = useState("Recorded destination");
-  const [recordedStartLabel, setRecordedStartLabel] = useState("Start of path");
-
-  const [stormSessionOn, setStormSessionOn] = useState(readNwsSessionOn);
-
   /** Never persisted — each route session starts closed; cleared when the plan changes or the trip is stopped. */
   const progressCalloutsOpen = useUiStore((s) => s.progressCalloutsOpen);
   const setProgressCalloutsOpen = useUiStore((s) => s.setProgressCalloutsOpen);
   const progressCalloutDetailScrollRef = useRef<HTMLDivElement | null>(null);
-
-  /** Road & traffic overlay (Hazards strip + map traffic colors). Default on until user turns off. */
-  const [roadAdvisoryDetailOn, setRoadAdvisoryDetailOn] = useState(readRoadAdvisoryDetailOn);
 
   /* Settings (persisted) — toggles that actually reduce background API calls.
    * Sourced from `useSettingsStore` (Phase 4a). Individual `setSettingX` selectors were
@@ -537,7 +341,6 @@ export default function App() {
   const isPlusRef = useRef(isPlus);
   isPlusRef.current = isPlus;
   const settingRadarEnabled = useSettingsStore((s) => s.radarEnabled);
-  const settingRadarDisplayMode = useSettingsStore((s) => s.radarDisplayMode);
   const settingDataSaverEnabled = useSettingsStore((s) => s.dataSaverEnabled);
   const dataSaverHintDismissed = useSettingsStore((s) => s.dataSaverHintDismissed);
   const dismissDataSaverHintAction = useSettingsStore((s) => s.dismissDataSaverHint);
@@ -562,7 +365,6 @@ export default function App() {
   stormCorridorAlertsRef.current = stormCorridorAlerts;
   const stormLoading = useWeatherStore((s) => s.stormLoading);
   const setStormLoading = useWeatherStore((s) => s.setStormLoading);
-  const stormError = useWeatherStore((s) => s.stormError);
   const setStormError = useWeatherStore((s) => s.setStormError);
   const stormBarExpanded = useWeatherStore((s) => s.stormBarExpanded);
   const setStormBarExpanded = useWeatherStore((s) => s.setStormBarExpanded);
@@ -626,16 +428,6 @@ export default function App() {
   const guidanceRouteLengthMRef = useRef(0);
   const navigationPositionLngLatRef = useRef<LngLat | null>(null);
 
-  /** Keep the screen on while navigating on device; allow sleep when done. */
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-    if (navigationStarted) {
-      void KeepAwake.keepAwake();
-    } else {
-      void KeepAwake.allowSleep();
-    }
-  }, [navigationStarted]);
-
   const destLngLatRef = useRef(destLngLat);
   destLngLatRef.current = destLngLat;
   const viaStopsRef = useRef(viaStops);
@@ -683,7 +475,6 @@ export default function App() {
   const setTrafficBypassCompare = useRouteCompareStore((s) => s.setTrafficBypassCompare);
   const trafficBypassCompareRef = useRef<TrafficBypassCompareState | null>(null);
   trafficBypassCompareRef.current = trafficBypassCompare;
-  const [driveApproachDismissedIds, setDriveApproachDismissedIds] = useState(() => new Set<string>());
   const [demoPlaybackAlongM, setDemoPlaybackAlongM] = useState<number | null>(null);
   /** When true, demo puck glides along the active leg at ~posted limit speed (`?demo=bypass` + Plus). */
   const [demoPlaybackPlaying, setDemoPlaybackPlaying] = useState(false);
@@ -694,14 +485,11 @@ export default function App() {
   const setDemoApproachBannerOn = useUiStore((s) => s.setDemoApproachBannerOn);
   const demoCloseHazardOn = useUiStore((s) => s.demoCloseHazardOn);
   const setDemoCloseHazardOn = useUiStore((s) => s.setDemoCloseHazardOn);
-  const demoPlaybackAlongRef = useRef<number | null>(null);
-  demoPlaybackAlongRef.current = demoPlaybackAlongM;
   /** At destination, stationary + no interaction → clearRoute; foreground idle timer only (not on app resume). */
   const [trafficOverlay, setTrafficOverlay] = useState<TrafficOverlay | undefined>(undefined);
   const trafficOverlayRef = useRef(trafficOverlay);
   trafficOverlayRef.current = trafficOverlay;
   const [trafficFetchDone, setTrafficFetchDone] = useState(true);
-  const mapFocus = useUiStore((s) => s.mapFocus);
   const setMapFocus = useUiStore((s) => s.setMapFocus);
   /** Map bearing in drive mode — compass above the info button. */
   const [driveMapBearingDeg, setDriveMapBearingDeg] = useState<number | null>(null);
@@ -713,11 +501,19 @@ export default function App() {
   const [tollAvoidFailureNote, setTollAvoidFailureNote] = useState<string | null>(null);
   const tollAcceptedRouteIdsRef = useRef<Set<string>>(new Set());
   const pendingGoAfterTollRef = useRef(false);
-  /** Map overlay (toolbar Rad). Default ON — weather-first app design. */
-  const [showRadar, setShowRadar] = useState(readRadarOverlayOn);
-  useEffect(() => {
-    writeRadarOverlayOn(showRadar);
-  }, [showRadar]);
+  const {
+    showRadar,
+    setShowRadar,
+    stormSessionOn,
+    onStormSessionToggle,
+    roadAdvisoryDetailOn,
+    onRoadAdvisoryDetailToggle,
+  } = useAppLayerPrefs({
+    navigationStarted,
+    settingTrafficEnabled,
+    settingRadarEnabled,
+    setTrafficOverlay,
+  });
   /** Radar visible in Route/Map only — paused in drive and when backgrounded. */
   const radarMapOverlayOn = computeRadarMapOverlayOn(showRadar, driveModeUi, appForeground);
   const [radarFrameUtcSec, setRadarFrameUtcSec] = useState<number | null>(null);
@@ -729,9 +525,6 @@ export default function App() {
   const setRouteSlotOrder = useTripPlanStore((s) => s.setRouteSlotOrder);
   const previewLegIndex = useTripPlanStore((s) => s.previewLegIndex);
   const setPreviewLegIndex = useTripPlanStore((s) => s.setPreviewLegIndex);
-
-  /** Matches Mapbox night basemap window — stronger chrome borders when the basemap is night. */
-  const [basemapNight, setBasemapNight] = useState(() => !isMapBasemapDaytime());
 
   const preferredAreaRouteMapRef = useRef<PreferredAreaRouteMap>(loadPreferredAreaRouteMap());
 
@@ -754,17 +547,6 @@ export default function App() {
       "| online:", isOnline
     );
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const on = () => setIsOnline(true);
-    const off = () => setIsOnline(false);
-    window.addEventListener("online", on);
-    window.addEventListener("offline", off);
-    return () => {
-      window.removeEventListener("online", on);
-      window.removeEventListener("offline", off);
-    };
-  }, []);
 
   /* Main route-build entry point now lives in `nav/useComputeRoutes.ts` (Phase 4e5c). The
    * hook subscribes to route-compare, trip-plan, and ui stores directly; the remaining 16
@@ -840,27 +622,6 @@ export default function App() {
     ingestRouteSample(userLngLat);
   }, [userLngLat, recordingActive, ingestRouteSample]);
 
-  useEffect(() => {
-    if (!pendingSave || pendingSave.kind !== "recorded") return;
-    setRecordedEndLabel("Recorded destination");
-    setRecordedStartLabel("Start of path");
-    if (!env.mapboxToken) return;
-    const [lng, lat] = pendingSave.destinationLngLat;
-    const start = pendingSave.geometry[0];
-    let cancelled = false;
-    void mapboxReverseGeocode(lng, lat, env.mapboxToken).then((rev) => {
-      if (!cancelled && rev?.placeName) setRecordedEndLabel(rev.placeName);
-    });
-    if (start) {
-      void mapboxReverseGeocode(start[0]!, start[1]!, env.mapboxToken).then((rev) => {
-        if (!cancelled && rev?.placeName) setRecordedStartLabel(rev.placeName);
-      });
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [pendingSave, env.mapboxToken]);
-
   const planRef = useRef(plan);
   planRef.current = plan;
   const guidanceRouteIdRef = useRef("");
@@ -875,7 +636,6 @@ export default function App() {
     userLngLat,
     userLngLatRef,
   });
-  const [forecastPlaceShort, setForecastPlaceShort] = useState<string | null>(null);
 
   const { bumpTrafficRefresh } = useTrafficOverlayFetch({
     planRef,
@@ -906,64 +666,34 @@ export default function App() {
   const planRouteIds = useMemo(() => plan.routes.map((r) => r.id), [plan.routes]);
   const routeSlotOrderKey = useMemo(() => routeSlotOrder.join("|"), [routeSlotOrder]);
 
-  const lastTripCacheSaveMsRef = useRef(0);
-
-  /** One-shot restore after reload / cold start — must run before relying on network for the same trip. */
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const entry = await loadActiveTripFromCache();
-      if (cancelled || !entry) return;
-      if (!isRestorableActiveTripEntry(entry)) {
-        void clearActiveTripCache();
-        return;
-      }
-      const ageMs = Date.now() - entry.savedAtMs;
-      if (!Number.isFinite(ageMs) || ageMs > MAX_TRIP_CACHE_AGE_MS || ageMs < -60_000) {
-        void clearActiveTripCache();
-        return;
-      }
-      let planNext = entry.plan;
-      const maxCachedRoutes = isPlus ? 2 : 1;
-      if (planNext.routes.length > maxCachedRoutes) {
-        planNext = { ...planNext, routes: planNext.routes.slice(0, maxCachedRoutes) };
-      }
-      const planIds = planNext.routes.map((r) => r.id);
-      const slotNext = isFullSlotPermutation(entry.routeSlotOrder, planIds)
-        ? entry.routeSlotOrder
-        : reconcileSlotOrderWithPlan(entry.routeSlotOrder, planIds);
-      const nRoutes = planNext.routes.length;
-      const previewNext =
-        nRoutes > 0 ? Math.min(Math.max(0, entry.previewLegIndex), nRoutes - 1) : 0;
-      let viewNext = entry.viewMode;
-      if (!entry.navigationStarted && viewNext === "drive") {
-        viewNext = "route";
-      }
-      setPlan(planNext);
-      setDestLngLat(entry.destLngLat);
-      setDestinationLabel(entry.destinationLabel);
-      setSearchText(entry.destinationLabel);
-      setNavigationStarted(entry.navigationStarted);
-      if (entry.navigationStarted) {
-        lockedNavigationRouteIdRef.current = slotNext[0] ?? planIds[0] ?? null;
-      }
-      setViewMode(viewNext);
-      setRouteSlotOrder(slotNext);
-      setPreviewLegIndex(previewNext);
-      setSearchExpanded(false);
-      setAllowAutocomplete(false);
-      setRouteError(null);
-      setSuggestLoading(false);
-      setSuggestions([]);
-      setFitTrigger((n) => n + 1);
-      lastTripCacheSaveMsRef.current = Date.now();
-    })();
-    return () => {
-      cancelled = true;
-    };
-    /* Restore once at boot; `isPlus` is intentionally first-paint only so tier overrides mid-session do not replay cache. */
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useActiveTripCache({
+    isPlus,
+    plan,
+    planRoutesKey,
+    routeSlotOrder,
+    routeSlotOrderKey,
+    previewLegIndex,
+    destLngLat,
+    destinationLabel,
+    navigationStarted,
+    viewMode,
+    fitTrigger,
+    lockedNavigationRouteIdRef,
+    setPlan,
+    setDestLngLat,
+    setDestinationLabel,
+    setSearchText,
+    setNavigationStarted,
+    setViewMode,
+    setRouteSlotOrder,
+    setPreviewLegIndex,
+    setSearchExpanded,
+    setAllowAutocomplete,
+    setRouteError,
+    setSuggestLoading,
+    setSuggestions,
+    setFitTrigger,
+  });
 
   useEffect(() => {
     const ids = plan.routes.map((r) => r.id);
@@ -1056,54 +786,6 @@ export default function App() {
     setSearchExpanded(false);
     setFitTrigger((n) => n + 1);
   }, [planRoutesKey, navigationStarted]);
-
-  // Persist the active trip so navigation can keep working after the network drops.
-  useEffect(() => {
-    if (!destLngLat) return;
-    if (!plan.routes.length) return;
-    if (!destinationLabel.trim()) return;
-    if (!fitTrigger) return;
-
-    const now = Date.now();
-    if (now - lastTripCacheSaveMsRef.current < TRIP_CACHE_MIN_SAVE_INTERVAL_MS) return;
-    lastTripCacheSaveMsRef.current = now;
-
-    const entry: Parameters<typeof saveActiveTripToCache>[0] = {
-      version: 1,
-      savedAtMs: now,
-      destLngLat,
-      destinationLabel: destinationLabel.trim(),
-      navigationStarted,
-      viewMode,
-      routeSlotOrder,
-      previewLegIndex,
-      plan,
-    };
-    /* Defer IndexedDB + structured-clone so the first paint after routing isn’t contending on the main thread. */
-    const schedule =
-      typeof requestIdleCallback !== "undefined"
-        ? (cb: () => void) => {
-            const id = requestIdleCallback(() => cb(), { timeout: 4_000 });
-            return () => cancelIdleCallback(id);
-          }
-        : (cb: () => void) => {
-            const t = window.setTimeout(cb, 0);
-            return () => clearTimeout(t);
-          };
-    const clear = schedule(() => {
-      void saveActiveTripToCache(entry);
-    });
-    return clear;
-  }, [
-    fitTrigger,
-    routeSlotOrderKey,
-    previewLegIndex,
-    destLngLat,
-    destinationLabel,
-    navigationStarted,
-    viewMode,
-    planRoutesKey,
-  ]);
 
   const orderedRouteIds = useMemo(() => {
     if (isFullSlotPermutation(routeSlotOrder, planRouteIds)) return routeSlotOrder;
@@ -1260,67 +942,26 @@ export default function App() {
   planRoutesRef.current = plan.routes;
 
   /** Route view while navigating: refresh B/C from current GPS; keep primary (slot A) geometry unchanged. */
-  const refreshAlternateRoutesOnly = useCallback(
-    async (opts?: { allowDuringDrive?: boolean }) => {
-      if (!navigationStarted) return;
-      if (!opts?.allowDuringDrive && viewMode !== "route") return;
-      if (!userLngLat || !destLngLat) return;
-      if (env.mapboxToken && !isOnline) return;
-      const primaryId = navigationPrimaryRouteIdForMerge(
-        lockedNavigationRouteIdRef.current,
-        orderedRouteIds
-      );
-      if (!primaryId || plan.routes.length < 2) return;
-      const epochAtStart = routeGraphEpochRef.current;
-      if (altRoutesRefreshInFlightRef.current) return;
-      altRoutesFetchAbortRef.current?.abort();
-      const altFetch = new AbortController();
-      altRoutesFetchAbortRef.current = altFetch;
-      altRoutesRefreshInFlightRef.current = true;
-      try {
-        if (env.mapboxToken) {
-          const fresh = await collectMapboxRouteVariants(env.mapboxToken, userLngLat, destLngLat, {
-            signal: altFetch.signal,
-            maxRoutes: isPlus ? 2 : 1,
-            allowLocalTripThirdRoute: false,
-            preferThreeRoutes: false,
-            stormAlerts: stormAlertsForRouting,
-            radarAvoidanceEnabled: isPlus && settingStormEnabled,
-            trailRoutePersonalization: isPlus && learnEnabled,
-          });
-          if (fresh.length === 0) return;
-          if (epochAtStart !== routeGraphEpochRef.current) return;
-          setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, fresh));
-        } else {
-          const mock = buildMockTripBetween(
-            userLngLat,
-            destLngLat,
-            destinationLabel.trim() || "Destination"
-          );
-          if (epochAtStart !== routeGraphEpochRef.current) return;
-          setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, mock.routes));
-        }
-      } catch {
-        /* Offline / Mapbox errors — keep prior B/C */
-      } finally {
-        altRoutesRefreshInFlightRef.current = false;
-      }
-    },
-    [
-      navigationStarted,
-      viewMode,
-      userLngLat,
-      destLngLat,
-      orderedRouteIds,
-      plan.routes.length,
-      env.mapboxToken,
-      isOnline,
-      destinationLabel,
-      stormAlertsForRouting,
-      isPlus,
-      settingStormEnabled,
-    ]
-  );
+  const refreshAlternateRoutesOnly = useRefreshAlternateRoutes({
+    navigationStarted,
+    viewMode,
+    userLngLat,
+    destLngLat,
+    mapboxToken: env.mapboxToken,
+    isOnline,
+    destinationLabel,
+    stormAlertsForRouting,
+    isPlus,
+    settingStormEnabled,
+    learnEnabled,
+    orderedRouteIds,
+    planRoutesLength: plan.routes.length,
+    lockedNavigationRouteIdRef,
+    routeGraphEpochRef,
+    altRoutesRefreshInFlightRef,
+    altRoutesFetchAbortRef,
+    setPlan,
+  });
 
   useEffect(() => {
     const n = orderedRouteIds.length;
@@ -1356,48 +997,13 @@ export default function App() {
     return id || null;
   }, [scored]);
 
-  /** Other leg to try when avoiding worst conditions (suggested, else lowest stress). */
-  const alternateBypassRouteId = useMemo(() => {
-    if (plan.routes.length < 2) return null;
-    if (suggestedRouteId && suggestedRouteId !== lineFocusId) return suggestedRouteId;
-    const sorted = [...scored].sort((a, b) => a.stressScore - b.stressScore);
-    return sorted.find((s) => s.route.id !== lineFocusId)?.route.id ?? null;
-  }, [plan.routes.length, scored, suggestedRouteId, lineFocusId]);
-
-  const routePickItems: RoutePickItem[] = useMemo(() => {
-    return orderedRouteIds
-      .map((routeId, slot) => {
-        const route = plan.routes.find((r) => r.id === routeId);
-        if (!route) return null;
-        const s = scored.find((x) => x.route.id === routeId);
-        const eta = s
-          ? Math.round(s.effectiveEtaMinutes)
-          : Math.max(1, Math.round(route.baseEtaMinutes));
-        const letter = String.fromCharCode(65 + Math.min(slot, 25));
-        const routeLabel = route.label.trim() || `Route ${letter}`;
-        const item: RoutePickItem = {
-          id: route.id,
-          letter,
-          routeLabel,
-          etaMinutes: eta,
-          suggested: routeId === suggestedRouteId,
-          softPath: route.role === "hazardSmart",
-          color: routePickSlotHex(slot),
-        };
-        if (route.hasTolls) item.hasTolls = true;
-        return item;
-      })
-      .filter((x): x is RoutePickItem => x != null);
-  }, [scored, suggestedRouteId, orderedRouteIds, plan.routes]);
-
-  const routeDockDetail = useMemo(() => {
-    const r = plan.routes.find((x) => x.id === lineFocusId) ?? plan.routes[0];
-    if (!r?.geometry?.length) return undefined;
-    const dist = formatRouteDistanceMi(r.geometry);
-    const blurb = routeConsiderationSummary(r);
-    const tollNote = r.hasTolls ? "Tolls" : "";
-    return [dist, blurb, tollNote].filter(Boolean).join(" · ");
-  }, [plan.routes, lineFocusId]);
+  const { alternateBypassRouteId, routePickItems, routeDockDetail } = useRoutePickItems({
+    plan,
+    scored,
+    suggestedRouteId,
+    lineFocusId,
+    orderedRouteIds,
+  });
 
   const guidanceRoute = plan.routes.find((r) => r.id === guidanceRouteId);
 
@@ -1431,12 +1037,13 @@ export default function App() {
     return max;
   }, [plan.routes]);
 
-  const showDataSaverHint =
-    isPlus &&
-    !dataSaverMode &&
-    !dataSaverHintDismissed &&
-    Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2) &&
-    isLongTripRoute(maxPlanRouteLengthM);
+  const showDataSaverHint = shouldShowDataSaverHint({
+    isPlus,
+    dataSaverMode,
+    dataSaverHintDismissed,
+    guidanceRouteGeometry: guidanceRoute?.geometry,
+    maxPlanRouteLengthM,
+  });
   const turnSteps = guidanceRoute?.turnSteps ?? [];
   const guidanceSliceRaw = snap.routes.find((r) => r.routeId === guidanceRouteId);
 
@@ -1516,78 +1123,16 @@ export default function App() {
   const effectiveUserLngLatRef = useRef(effectiveUserLngLat);
   effectiveUserLngLatRef.current = effectiveUserLngLat;
 
-  useEffect(() => {
-    const sync = () => setBasemapNight(!isMapBasemapDaytime(effectiveUserLngLatRef.current));
-    sync();
-    const id = window.setInterval(sync, 60_000);
-    return () => window.clearInterval(id);
-  }, [effectiveUserLngLat?.[0], effectiveUserLngLat?.[1]]);
+  const basemapNight = useBasemapNight(
+    effectiveUserLngLatRef,
+    effectiveUserLngLat?.[0],
+    effectiveUserLngLat?.[1]
+  );
 
-  const forecastAreaLabel = useMemo(() => {
-    if (forecastPlaceShort) return forecastPlaceShort;
-    if (effectiveUserLngLat) {
-      const [lng, lat] = effectiveUserLngLat;
-      return formatCoordsAreaLabel(lat, lng);
-    }
-    return "Your location";
-  }, [forecastPlaceShort, effectiveUserLngLat]);
-
-  const forecastReverseGeocodeAtRef = useRef<{ lngLat: LngLat; atMs: number } | null>(null);
-  const forecastGeocodeInFlightRef = useRef(false);
-  const forecastGeocodeFailUntilMsRef = useRef(0);
-  useEffect(() => {
-    if (!env.mapboxToken) {
-      forecastReverseGeocodeAtRef.current = null;
-      forecastGeocodeInFlightRef.current = false;
-      forecastGeocodeFailUntilMsRef.current = 0;
-      setForecastPlaceShort(null);
-      return;
-    }
-    if (!effectiveUserLngLat) {
-      /* Keep the last town name across brief GPS blips — only reset the throttle stamp. */
-      forecastReverseGeocodeAtRef.current = null;
-      return;
-    }
-    const [lng, lat] = effectiveUserLngLat;
-    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
-    const next: LngLat = [lng, lat];
-    const prev = forecastReverseGeocodeAtRef.current;
-    if (
-      !shouldRefreshForecastReverseGeocode({
-        next,
-        lastLngLat: prev?.lngLat ?? null,
-        lastFetchedAtMs: prev?.atMs ?? null,
-      })
-    ) {
-      return;
-    }
-    if (forecastGeocodeInFlightRef.current) return;
-    if (Date.now() < forecastGeocodeFailUntilMsRef.current) return;
-
-    /* Stamp before await so GPS ticks during the request do not fan out more Temporary Geocoding calls. */
-    forecastReverseGeocodeAtRef.current = { lngLat: next, atMs: Date.now() };
-    forecastGeocodeInFlightRef.current = true;
-    void mapboxReverseGeocode(lng, lat, env.mapboxToken)
-      .then((hit) => {
-        if (!hit?.placeName) {
-          /* Failed lookup — clear stamp and back off briefly so we can retry without quota spam. */
-          forecastReverseGeocodeAtRef.current = null;
-          forecastGeocodeFailUntilMsRef.current = Date.now() + 30_000;
-          return;
-        }
-        forecastGeocodeFailUntilMsRef.current = 0;
-        if (!effectiveUserLngLatRef.current) return;
-        setForecastPlaceShort(shortenPlaceNameForForecast(hit.placeName));
-      })
-      .finally(() => {
-        forecastGeocodeInFlightRef.current = false;
-      });
-    /*
-     * Do not cancel on effect cleanup. effectiveUserLngLat updates every GPS tick; the old
-     * cancelled=true cleanup aborted the only fetch we allow for ~5 minutes, so the label
-     * stayed on raw coordinates forever.
-     */
-  }, [effectiveUserLngLat, env.mapboxToken]);
+  const { forecastPlaceShort, forecastAreaLabel } = useForecastPlaceLabel({
+    mapboxToken: env.mapboxToken,
+    effectiveUserLngLat,
+  });
 
   /** Bumps NWS effect when GPS becomes available for browse mode (no Go yet). */
   const nwsBrowseLocationReady = Boolean(effectiveUserLngLat);
@@ -1768,86 +1313,30 @@ export default function App() {
   );
 
   /** Drive camera: polyline ahead on-corridor; vehicle heading / motion when off route. */
-  const driveRouteBearingDeg = useMemo(() => {
-    const geometry = guidanceRoute?.geometry;
-    if (
-      driveOffRouteForwardFraming ||
-      !driveModeUi ||
-      !effectiveUserLngLat ||
-      !geometry ||
-      geometry.length < 2
-    ) {
-      return null;
-    }
-    /** Slightly shorter max lookahead than before — long chords across tight corners skewed tangent. */
-    const lookAheadM = Math.min(
-      155,
-      Math.max(42, 42 + (speedMps != null && speedMps > 0 ? speedMps * 4.5 : 0))
-    );
-    /** If GPS is this far from the point on the line at held progress, use live closest-point tangent. */
-    const OFF_ROUTE_FOR_CAMERA_TANGENT_M = 168;
-
-    const totalM = polylineLengthMeters(geometry);
-    let b: number | null = null;
-
-    /**
-     * While navigating, prefer tangent from **held** along-route progress (same hold as ETA / strip).
-     * That avoids closest-point jumping onto parallel ramps / the wrong side of a fork, which flipped
-     * the camera. Only when the vehicle is clearly far from that anchor do we use live
-     * {@link bearingAlongRouteAhead}.
-     */
-    if (navigationStarted && Number.isFinite(userAlongGuidanceM) && totalM > 1) {
-      const fromAlongM = Math.max(0, Math.min(totalM, userAlongGuidanceM));
-      const heldAnchor = pointAtAlongMeters(geometry, fromAlongM);
-      const distToHeld = haversineMeters(effectiveUserLngLat, heldAnchor);
-      if (distToHeld <= OFF_ROUTE_FOR_CAMERA_TANGENT_M) {
-        const toAlongM = Math.min(totalM, fromAlongM + lookAheadM);
-        const fromPt = pointAtAlongMeters(geometry, fromAlongM);
-        const toPt = pointAtAlongMeters(geometry, Math.max(toAlongM, fromAlongM + 0.5));
-        if (haversineMeters(fromPt, toPt) >= 2.5) {
-          b = initialBearingDegrees(fromPt, toPt);
-        }
-      }
-    }
-    if (b == null) {
-      b = bearingAlongRouteAhead(effectiveUserLngLat, geometry, lookAheadM);
-    }
-    return b;
-  }, [
-    driveOffRouteForwardFraming,
-    driveModeUi,
-    effectiveUserLngLat,
-    guidanceRoute?.geometry,
-    guidanceRoute?.id,
-    speedMps,
-    navigationStarted,
-    userAlongGuidanceM,
-  ]);
-
-  /** Live Mapbox remaining-leg minutes when available; else scale static / full-route ETA by distance left. */
-  const driveEtaMinutes = useMemo(() => {
-    const s = scored.find((x) => x.route.id === lineFocusId);
-    const full = s
-      ? Math.round(s.effectiveEtaMinutes)
-      : guidanceRoute
-        ? Math.round(guidanceRoute.baseEtaMinutes)
-        : null;
-    const trafficLeg = trafficOverlay?.[lineFocusId] ?? null;
-    const liveRemaining =
-      navigationStarted &&
-      trafficLeg?.mapboxDurationMinutes != null &&
-      Number.isFinite(trafficLeg.mapboxDurationMinutes)
-        ? trafficLeg.mapboxDurationMinutes
-        : null;
-    return computeRemainingDriveEtaMinutes({
+  const driveRouteBearingDeg = useMemo(
+    () =>
+      computeDriveRouteBearing({
+        driveOffRouteForwardFraming,
+        driveModeUi,
+        effectiveUserLngLat,
+        geometry: guidanceRoute?.geometry,
+        speedMps,
+        navigationStarted,
+        userAlongGuidanceM,
+      }),
+    [
+      driveOffRouteForwardFraming,
+      driveModeUi,
+      effectiveUserLngLat,
+      guidanceRoute?.geometry,
+      guidanceRoute?.id,
+      speedMps,
       navigationStarted,
-      fullEtaMinutes: full,
-      routeLengthM: guidanceRouteLengthM,
-      alongM: userAlongGuidanceM,
-      hasRouteGeometry: Boolean(guidanceRoute?.geometry?.length),
-      liveRemainingEtaMinutes: liveRemaining,
-    });
-  }, [
+      userAlongGuidanceM,
+    ]
+  );
+
+  const { driveEtaMinutes, driveDistanceRemainingLabel } = useDriveEtaLabels({
     navigationStarted,
     scored,
     lineFocusId,
@@ -1855,22 +1344,8 @@ export default function App() {
     guidanceRouteLengthM,
     userAlongGuidanceM,
     trafficOverlay,
-  ]);
-
-  const driveDistanceRemainingLabel = useMemo(() => {
-    const rem = computeRemainingDistanceMeters(
-      navigationStarted,
-      guidanceRouteLengthM,
-      userAlongGuidanceM
-    );
-    if (rem == null) return null;
-    return formatDistanceShort(rem, useMilesForLngLat(effectiveUserLngLat));
-  }, [
-    navigationStarted,
-    guidanceRouteLengthM,
-    userAlongGuidanceM,
     effectiveUserLngLat,
-  ]);
+  });
 
   useTripNavDisplayHealth({
     navigationStarted,
@@ -1889,157 +1364,57 @@ export default function App() {
     bumpTrafficRefresh,
   });
 
-  /** Strip + map corridors: honor the Road checkbox — do not force “on” in drive (that hid toggles but left layers active). */
-  const showTrafficCorridorOnRoute = isPlus && roadAdvisoryDetailOn && settingTrafficEnabled;
-  const showRoadNoticesOnRoute = isPlus && roadAdvisoryDetailOn;
-  const hasPlannedRoute = Boolean(
-    destLngLat && plan.routes.some((r) => r.geometry && r.geometry.length >= 2)
-  );
-  /** Sample RainViewer along the route for advisory/timeline whenever a leg is loaded or Rad is on. */
-  const routeLenForCorridorLean =
-    guidanceRouteLengthM > 0 ? guidanceRouteLengthM : maxPlanRouteLengthM;
-  const weatherKitEnabled = env.weatherKitEnabled;
-  const routeWeatherReady = weatherKitEnabled || Boolean(env.tomorrowIoApiKey);
-  const navResourceBudget = useMemo(
-    () =>
-      buildNavResourceBudget({
-        navigationStarted,
-        viewMode,
-        appForeground,
-        showRadar,
-        hasPlannedRoute,
-        hasGuidanceGeometry: Boolean(
-          guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2
-        ),
-        routeLengthM: routeLenForCorridorLean,
-        dataSaverMode,
-        settingStormEnabled,
-        settingWeatherHintsEnabled,
-        progressCalloutsOpen,
-        stormBarExpanded,
-        isPlus: Boolean(isPlus),
-        routeWeatherReady,
-        hasEffectiveUserLngLat: Boolean(effectiveUserLngLat),
-      }),
-    [
-      navigationStarted,
-      viewMode,
-      appForeground,
-      showRadar,
-      hasPlannedRoute,
-      guidanceRoute?.geometry,
-      routeLenForCorridorLean,
-      dataSaverMode,
-      settingStormEnabled,
-      settingWeatherHintsEnabled,
-      progressCalloutsOpen,
-      stormBarExpanded,
-      isPlus,
-      routeWeatherReady,
-      effectiveUserLngLat,
-    ]
-  );
-  const radarRouteSamplingEnabled = navResourceBudget.radarRouteSamplingEnabled;
-  const radarSampleIntervalMs = getRadarRouteSampleIntervalMs(
-    dataSaverMode,
-    navigationStarted,
-    routeLenForCorridorLean
-  );
-  const radarMosaicAlongRoute = useRadarBandsAlongRoute(
-    radarRouteSamplingEnabled,
-    guidanceRoute?.geometry,
-    radarSampleIntervalMs,
-    guidanceRoute?.baseEtaMinutes ?? null,
-    env.tomorrowIoApiKey
-  );
   const {
-    samples: radarMosaicSamples,
-    updatedAt: radarMosaicUpdatedAt,
-    refreshBlocked: radarRefreshBlocked,
-    refreshing: radarRouteRefreshing,
-    bumpRadarResample,
-  } = radarMosaicAlongRoute;
-
-  // ── Route weather (Tomorrow.io or Apple WeatherKit) ──
-  const tioApiKey = weatherKitEnabled ? "" : env.tomorrowIoApiKey;
-  /** At-your-location minute precip + hourly — paused in drive unless storm bar is open. */
-  const tioPointFetchEnabled = navResourceBudget.tioPointFetchEnabled;
-  /** OpenWeather hourly is fallback only — skip when primary provider covers the point card. */
-  const openWeatherHourlyEnabled =
-    tioPointFetchEnabled && !routeWeatherReady;
-  /** Corridor hourly along the active leg — route shape only (no GPS required). */
-  const tioRouteFetchEnabled = navResourceBudget.tioRouteFetchEnabled;
-  const tioMinutePrecip = useTomorrowMinutePrecip(
-    tioApiKey,
-    effectiveUserLngLat ?? null,
-    tioPointFetchEnabled,
-    navigationStarted,
-    weatherKitEnabled
-  );
-  const localHourlyForecast = useLocalHourlyForecast(
-    tioApiKey,
-    env.openWeatherApiKey,
-    effectiveUserLngLat ?? null,
-    tioPointFetchEnabled,
-    openWeatherHourlyEnabled,
-    weatherKitEnabled
-  );
-  const localDailyForecast = useLocalDailyForecast(
-    effectiveUserLngLat ?? null,
-    navResourceBudget.localDailyForecastEnabled,
-    weatherKitEnabled
-  );
-  const {
-    forecast: tioRouteForecast,
+    showTrafficCorridorOnRoute,
+    showRoadNoticesOnRoute,
+    navResourceBudget,
+    radarMosaicSamples,
+    radarMosaicUpdatedAt,
+    radarRefreshBlocked,
+    tioMinutePrecip,
+    localHourlyForecast,
+    localDailyForecast,
+    tioRouteForecast,
     bumpRouteForecastRefresh,
-    routeForecastRefreshing,
     routeForecastRefreshBlocked,
-    routeForecastUsingCache,
-  } = useTomorrowRouteForecast(
-    env.tomorrowIoApiKey,
-    isPlus && guidanceRoute?.geometry?.length ? guidanceRoute.geometry : null,
-    speedMps ?? 0,
-    tioRouteFetchEnabled,
-    weatherKitEnabled
-  );
-
-  const routeWeatherOverlay = useMemo(
-    () =>
-      buildRouteWeatherOverlayFromForecast(
-        tioRouteForecast,
-        lineFocusId || guidanceRouteId,
-        guidanceRoute?.baseEtaMinutes
-      ),
-    [tioRouteForecast, lineFocusId, guidanceRouteId, guidanceRoute?.baseEtaMinutes]
-  );
-
-  const guidanceSlice = useMemo(() => {
-    if (!guidanceSliceRaw) return undefined;
-    const legId = lineFocusId || guidanceRouteId;
-    const wx = routeWeatherOverlay?.[legId];
-    if (!wx) return guidanceSliceRaw;
-    return {
-      ...guidanceSliceRaw,
-      forecastHeadline: wx.headline,
-      radarIntensity: Math.min(1, Math.max(0, wx.precipHint)),
-    };
-  }, [guidanceSliceRaw, lineFocusId, guidanceRouteId, routeWeatherOverlay]);
-
-  const corridorWeatherDetail = useMemo(() => {
-    if (!lineFocusId) return "";
-    return guidanceSlice?.forecastHeadline?.trim() ?? "";
-  }, [lineFocusId, guidanceSlice?.forecastHeadline]);
-
-  const handleRefreshRouteInfoWeather = useCallback(() => {
-    if (!guidanceRoute?.geometry || guidanceRoute.geometry.length < 2) return;
-    if (routeWeatherReady) bumpRouteForecastRefresh();
-    bumpRadarResample();
-  }, [
-    bumpRouteForecastRefresh,
-    bumpRadarResample,
     routeWeatherReady,
-    guidanceRoute?.geometry,
-  ]);
+    guidanceSlice,
+    handleRefreshRouteInfoWeather,
+    routeInfoWeatherRefreshing,
+    routeInfoRefreshNote,
+    routeInfoRefreshNoteTone,
+    advisoryNowcastLine,
+    enrichedCorridorWeatherDetail,
+    localForecastPanelLoading,
+    radarMosaicMaxIntensity,
+  } = useRouteWeatherPipeline({
+    isPlus,
+    roadAdvisoryDetailOn,
+    settingTrafficEnabled,
+    destLngLat,
+    planRoutes: plan.routes,
+    guidanceRoute,
+    guidanceRouteId,
+    guidanceRouteLengthM,
+    maxPlanRouteLengthM,
+    navigationStarted,
+    viewMode,
+    appForeground,
+    showRadar,
+    dataSaverMode,
+    settingStormEnabled,
+    settingWeatherHintsEnabled,
+    progressCalloutsOpen,
+    stormBarExpanded,
+    effectiveUserLngLat,
+    speedMps,
+    lineFocusId,
+    guidanceSliceRaw,
+    currentNowcast,
+    weatherKitEnabled: env.weatherKitEnabled,
+    tomorrowIoApiKey: env.tomorrowIoApiKey,
+    openWeatherApiKey: env.openWeatherApiKey,
+  });
 
   useTripSurfaceRecovery({
     appForeground,
@@ -2062,146 +1437,6 @@ export default function App() {
       window.setTimeout(() => setTapHint(null), 3500);
     },
   });
-
-  const routeInfoWeatherRefreshing = routeForecastRefreshing || radarRouteRefreshing;
-
-  const routeInfoRefreshNote = useMemo(() => {
-    if (radarRefreshBlocked) return radarRefreshBlocked;
-    if (routeForecastRefreshBlocked) return routeForecastRefreshBlocked;
-    const age = formatRadarSampleAge(radarMosaicUpdatedAt);
-    if (age && radarMosaicSamples.length > 0) {
-      const ageMin =
-        radarMosaicUpdatedAt != null
-          ? Math.round((Date.now() - radarMosaicUpdatedAt) / 60_000)
-          : 0;
-      if (ageMin >= 8) return age;
-    }
-    return null;
-  }, [
-    radarRefreshBlocked,
-    routeForecastRefreshBlocked,
-    radarMosaicUpdatedAt,
-    radarMosaicSamples.length,
-  ]);
-
-  const routeInfoRefreshNoteTone =
-    radarRefreshBlocked ||
-    (routeForecastRefreshBlocked && !routeForecastUsingCache)
-      ? "warn"
-      : "info";
-
-  const prevProgressCalloutsOpenRef = useRef(false);
-  useEffect(() => {
-    const justOpened = progressCalloutsOpen && !prevProgressCalloutsOpenRef.current;
-    prevProgressCalloutsOpenRef.current = progressCalloutsOpen;
-    if (!justOpened) return;
-    if (!isPlus || !guidanceRoute?.geometry?.length) return;
-    /* Only refresh when data is actually missing/stale — Drive keeps corridor
-     * weather warm while the panel is closed, so reopen should show the full
-     * trip already synced (not a cold restart from "now"). */
-    const missingForecast = (tioRouteForecast?.intervals?.length ?? 0) === 0;
-    const missingRadar = radarMosaicSamples.length === 0;
-    const radarStale =
-      radarMosaicUpdatedAt != null && Date.now() - radarMosaicUpdatedAt > 8 * 60_000;
-    if (missingForecast || missingRadar || radarStale) {
-      handleRefreshRouteInfoWeather();
-    }
-  }, [
-    progressCalloutsOpen,
-    tioRouteForecast?.intervals?.length,
-    radarMosaicSamples.length,
-    radarMosaicUpdatedAt,
-    isPlus,
-    guidanceRoute?.geometry?.length,
-    handleRefreshRouteInfoWeather,
-  ]);
-
-  const advisoryNowcastLine = useMemo(() => {
-    if (currentNowcast) return formatNowcastLine(currentNowcast);
-    if (tioMinutePrecip?.now) return formatMinutePrecipNowLine(tioMinutePrecip.now);
-    return null;
-  }, [currentNowcast, tioMinutePrecip?.now]);
-
-  /**
-   * Enrich corridor weather detail with the worst forecast interval timing.
-   * "Thunderstorm in ~42 min" surfaces in the advisory bar and progress copy when the
-   * worst corridor segment is mid-route — not just at the destination. No new UI added.
-   */
-  const enrichedCorridorWeatherDetail = useMemo(() => {
-    let base = corridorWeatherDetail;
-    const baseLower = base.toLowerCase();
-    const localLower = advisoryNowcastLine?.toLowerCase() ?? "";
-    if (
-      baseLower.includes("dry along route") &&
-      /\b(rain|drizzle|shower|precip|wet)\b/.test(localLower)
-    ) {
-      base =
-        (tioRouteForecast?.intervals.length
-          ? corridorWetHeadline(tioRouteForecast)
-          : null) ?? "Rain along route";
-    }
-    if (!tioRouteForecast?.intervals.length) return base;
-    const worst = worstCorridorInterval(tioRouteForecast);
-    if (worst) {
-      const etaLabel = worst.etaMinutes > 0 ? ` in ~${worst.etaMinutes} min` : "";
-      const snapLine = `${worst.headline}${etaLabel} on route · ${worst.detail}`;
-      if (base && !base.toLowerCase().includes(worst.headline.toLowerCase())) {
-        return `${base} · ${snapLine}`;
-      }
-      return snapLine;
-    }
-    const wetLine = corridorWetIntervalLine(tioRouteForecast);
-    if (wetLine) {
-      if (base && !base.toLowerCase().includes(wetLine.split(" · ")[0]!.toLowerCase())) {
-        return `${base} · ${wetLine}`;
-      }
-      return wetLine;
-    }
-    const extras: string[] = [];
-    for (const line of [
-      corridorFreezingLine(tioRouteForecast),
-      corridorLowVisibilityLine(tioRouteForecast),
-      corridorColdLine(tioRouteForecast),
-    ]) {
-      if (line && !base.toLowerCase().includes(line.split(" · ")[0]!.toLowerCase())) {
-        extras.push(line);
-      }
-    }
-    if (extras.length) {
-      return base ? `${base} · ${extras.join(" · ")}` : extras.join(" · ");
-    }
-    return base;
-  }, [corridorWeatherDetail, tioRouteForecast, advisoryNowcastLine]);
-
-  const localForecastPanelLoading = useMemo(() => {
-    if (!isPlus || !stormBarExpanded || !effectiveUserLngLat) return false;
-    const hasData =
-      Boolean(currentNowcast) ||
-      Boolean(tioMinutePrecip) ||
-      (localHourlyForecast?.hours.length ?? 0) > 0 ||
-      (localDailyForecast?.days.length ?? 0) > 0;
-    if (hasData) return false;
-    return routeWeatherReady || Boolean(env.openWeatherApiKey);
-  }, [
-    isPlus,
-    stormBarExpanded,
-    effectiveUserLngLat,
-    currentNowcast,
-    tioMinutePrecip,
-    localHourlyForecast?.hours.length,
-    localDailyForecast?.days.length,
-    routeWeatherReady,
-    env.openWeatherApiKey,
-  ]);
-
-  const radarMosaicMaxIntensity = useMemo(() => {
-    const s = radarMosaicSamples;
-    const radarMax = s.length ? Math.max(...s.map((x) => x.intensity)) : 0;
-    // Safety floor: if corridor forecast says thunderstorm or high precip probability,
-    // the advisory banner must reflect at least that severity even if radar hasn't caught up yet.
-    const forecastFloor = routeForecastIntensityFloor(tioRouteForecast);
-    return Math.max(radarMax, forecastFloor);
-  }, [radarMosaicSamples, tioRouteForecast]);
 
   const {
     nwsAlertsAffectingActiveRoute,
@@ -2265,299 +1500,78 @@ export default function App() {
     stormMapGeoJson,
   });
 
-  /** Map fit + draw: full guidance geometry; layers apply display-tier subsampling. */
-  const driveMapRoutesForMap = useMemo(() => {
-    const full = navigationGuidanceGeometry;
-    let routes = driveMapRoutes;
-    /* Only rewrite the active guidance leg — keep locked corridor geom when showing a rejoin stub. */
-    if (navigationStarted && full?.length) {
-      routes = routes.map((r) =>
-        r.id === guidanceRouteId ? { ...r, geometry: full } : r
-      );
-    }
-    /* Approaching a habitual fork: draw the branch beside the main corridor. */
-    if (
-      navigationStarted &&
-      viewMode === "drive" &&
-      personalForkNav.previewGeometry &&
-      personalForkNav.previewGeometry.length >= 2 &&
-      !guidanceIsPersonalFork
-    ) {
-      const preview: (typeof routes)[number] = {
-        id: PERSONAL_FORK_ROUTE_ID,
-        role: "balanced",
-        label: "Your route",
-        geometry: personalForkNav.previewGeometry,
-        baseEtaMinutes: 1,
-      };
-      if (!routes.some((r) => r.id === PERSONAL_FORK_ROUTE_ID)) {
-        routes = [...routes, preview];
-      }
-    }
-    return routes;
-  }, [
-    driveMapRoutes,
-    navigationStarted,
-    navigationGuidanceGeometry,
-    lockedNavigationRouteId,
-    guidanceRouteId,
-    viewMode,
-    personalForkNav.previewGeometry,
-    guidanceIsPersonalFork,
-  ]);
-
-  /** Cruise demo puck along the active route polyline at ~posted speed (see `toggleDemoPlaybackPlaying`). */
-  useEffect(() => {
-    if (!demoPlaybackPlaying || !demoBypassTrafficJamPlus || !navigationStarted) return;
-    const g = guidanceRoute?.geometry;
-    if (!g?.length) {
-      setDemoPlaybackPlaying(false);
-      return;
-    }
-    const totalM = polylineLengthMeters(g);
-    if (totalM < 2) {
-      setDemoPlaybackPlaying(false);
-      return;
-    }
-    const mph = postedMph ?? 55;
-    const mPerSec = (mph * 1609.344) / 3600;
-    let last = performance.now();
-    let raf = 0;
-    const step = (now: number) => {
-      const dtSec = Math.min(0.28, Math.max(0, (now - last) / 1000));
-      last = now;
-      const prev = demoPlaybackAlongRef.current;
-      const cur =
-        prev ??
-        (userLngLatRef.current ? closestAlongRouteMeters(userLngLatRef.current, g).alongMeters : totalM * 0.12);
-      const next = Math.min(totalM - 0.5, cur + mPerSec * dtSec);
-      demoPlaybackAlongRef.current = next;
-      setDemoPlaybackAlongM(next);
-      if (next >= totalM - 0.55) {
-        setDemoPlaybackPlaying(false);
-        return;
-      }
-      raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [
-    demoPlaybackPlaying,
+  const { toggleDemoPlaybackPlaying, resetDemoPlaybackAlongRoute } = useDemoBypassPlayback({
     demoBypassTrafficJamPlus,
     navigationStarted,
-    guidanceRoute?.geometry,
+    guidanceRoute,
     guidanceRouteId,
     postedMph,
-  ]);
+    userLngLatRef,
+    demoPlaybackAlongM,
+    setDemoPlaybackAlongM,
+    demoPlaybackPlaying,
+    setDemoPlaybackPlaying,
+  });
 
-  /**
-   * Map line highlights — paint each corridor alert at its real along-route position.
-   *
-   * The progress strip uses {@link layoutStripAlerts} to bunch marks into the “ahead” half so
-   * they’re visible on a small bar; that re-anchoring is wrong for the map, where it makes the
-   * orange halo slide down the route as the puck advances. Map highlights stay anchored to the
-   * actual hazard location (or the impact center for non-spatial alerts) instead.
-   */
-  const mapAlongRouteAlerts = useMemo(() => {
-    const g = guidanceRoute?.geometry;
-    if (!g?.length) return [];
-    const roadFromTimeline = timelineToMapCorridorAlerts(routeAheadTimeline, advisoryRouteImpacts);
-    const byId = new Map<string, RouteAlert>();
-    for (const a of [...progressStripAlerts, ...roadFromTimeline]) {
-      if (!routeAlertShowsOnRouteLine(a)) continue;
-      byId.set(a.id, a);
-    }
-    return [...byId.values()];
-  }, [progressStripAlerts, guidanceRoute?.geometry, routeAheadTimeline, advisoryRouteImpacts]);
-
-  /**
-   * NWS warning polygons on the map (Rt / Mp; hidden in Dr). Independent of radar overlay.
-   * Plus: follows the advisory panel **NWS polygons** checkbox (`stormSessionOn`).
-   */
-  const nwsAlertGeoJsonForMap = useMemo((): GeoJSON.FeatureCollection | null => {
-    if (!isPlus) return null;
-    if (!advisoryLifeSafetyOn || !settingStormEnabled) return null;
-    // Display gate only — fetch effect below keeps `stormMapGeoJson` warm while unchecked.
-    if (isPlus && !stormSessionOn) return null;
-
-    // Browse mode (no route): Plus users see regional alert polygons; basic sees radar only.
-    if (!nwsMapOverlapRouteGeom?.length) {
-      if (!isPlus) return null;
-      const withGeom = stormCorridorAlerts.filter((a) => a.geometry);
-      if (withGeom.length) return mapGeoJsonFromAlerts(withGeom);
-      if (stormMapGeoJson?.features?.length) return stormMapGeoJson;
-      return null;
-    }
-
-    // Route active — corridor-wide polygons (SVR boxes, fog zones, etc. along the trip).
-    const base = stormMapGeoJsonForMap;
-    if (base?.features.length) return base;
-
-    const corridorGeom = filterAlertsForDriveMap(
-      stormCorridorAlerts.filter((a) => a.geometry),
-      advisoryStormStripBands,
-      {
-        routeTotalMeters: guidanceRouteLengthM,
-        userAlongMeters: heavyAdvisoryAlongM,
-        planEtaMinutes: guidanceRoute?.baseEtaMinutes ?? null,
-        driveEtaMinutes: driveEtaMinutes ?? null,
-      }
-    );
-    if (corridorGeom.length) return mapGeoJsonFromAlerts(corridorGeom);
-
-    const onRouteGeom = filterAlertsForDriveMap(
-      nwsAlertsAffectingActiveRoute.filter((a) => a.geometry),
-      advisoryStormStripBands,
-      {
-        routeTotalMeters: guidanceRouteLengthM,
-        userAlongMeters: heavyAdvisoryAlongM,
-        planEtaMinutes: guidanceRoute?.baseEtaMinutes ?? null,
-        driveEtaMinutes: driveEtaMinutes ?? null,
-      }
-    );
-    if (onRouteGeom.length) return mapGeoJsonFromAlerts(onRouteGeom);
-
-    return null;
-  }, [
-    advisoryLifeSafetyOn,
-    settingStormEnabled,
+  const {
+    driveApproachBannerPick,
+    setDriveApproachDismissedIds,
+    hazardApproachAlertsActive,
+  } = useDriveApproachBanner({
     isPlus,
-    stormSessionOn,
-    nwsMapOverlapRouteGeom,
-    stormMapGeoJsonForMap,
-    nwsAlertsAffectingActiveRoute,
-    stormCorridorAlerts,
-    stormMapGeoJson,
-    guidanceRouteLengthM,
-    heavyAdvisoryAlongM,
-    guidanceRoute?.baseEtaMinutes,
-    driveEtaMinutes,
-    advisoryStormStripBands,
-  ]);
-
-  /** Defer map overlay props so pan/zoom is not competing with advisory recomputes. */
-  const deferredMapAlongRouteAlerts = useDeferredValue(mapAlongRouteAlerts);
-  const deferredRouteAheadMapBands = useDeferredValue(routeAheadMapBands);
-  const deferredNwsAlertGeoJsonForMap = useDeferredValue(nwsAlertGeoJsonForMap);
-
-  /** Long-trip / data-saver nav: static radar frame, less background churn. */
-  const navMapLiteMode = isNavMapLiteMode(
     navigationStarted,
-    dataSaverMode,
-    guidanceRouteLengthM
-  );
-
-  const deferredRouteImpactsForUi = useDeferredValue(routeImpactsForUi);
-  /** No active trip — drop deferred corridor overlays immediately (avoid ghost route-line halos). */
-  const activeTripMapOverlays =
-    navigationStarted ||
-    plan.routes.some((r) => r.geometry && r.geometry.length >= 2);
-  const mapAlongRouteAlertsForDrive =
-    activeTripMapOverlays && viewMode !== "drive" ? deferredMapAlongRouteAlerts : [];
-  const mapStormAlongRouteBandsForDrive =
-    activeTripMapOverlays && viewMode !== "drive" ? deferredRouteAheadMapBands : [];
-  const driveRouteAheadLine = useMemo(() => {
-    if (!driveModeUi) return null;
-    const g = guidanceRoute?.geometry;
-    if (!g?.length) return null;
-    const totalMeters = polylineLengthMeters(g);
-    if (totalMeters <= 1) return null;
-    return buildDriveRouteAheadFromImpacts({
-      impacts: routeImpactsForUi,
-      totalMeters,
-      userAlongM: userAlongGuidanceM,
-      planEtaMinutes: guidanceRoute?.baseEtaMinutes,
-    });
-  }, [
-    driveModeUi,
-    guidanceRoute?.geometry,
-    guidanceRoute?.baseEtaMinutes,
+    guidanceRoute,
+    guidanceRouteId,
     userAlongGuidanceM,
+    speedMps,
     routeImpactsForUi,
-  ]);
-
-  /** Same ~2 mi heads-up in Rt / Map / Dr while navigating — not drive-only. */
-  const hazardApproachAlertsActive =
-    TRAFFIC_BYPASS_ENABLED &&
-    isPlus &&
-    navigationStarted &&
-    Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
-
-  /**
-   * Demo (`?demo=bypass` + Plus): fabricate a high-confidence rerouteRecommended impact ~1.4 mi
-   * ahead so we can test the approach banner UI without a real-world hazard. Tapping this banner
-   * routes to {@link openDemoTrafficBypassCompareMock} so the full flow works without Mapbox calls.
-   */
-  const demoApproachBannerImpact = useMemo<RouteImpact | null>(() => {
-    if (!demoBypassTrafficJamPlus) return null;
-    /* "Close hazard" wins when both demos are on so we can verify the adaptive next-exit window. */
-    const usingClose = demoCloseHazardOn;
-    if (!usingClose && !demoApproachBannerOn) return null;
-    const g = guidanceRoute?.geometry;
-    if (!g?.length) return null;
-    const totalM = polylineLengthMeters(g);
-    const userAlong = Number.isFinite(userAlongGuidanceM) ? userAlongGuidanceM : 0;
-    /* Close = 0.6 mi ahead (forces the surgical-bypass tier into "next-exit"). Far = 1.4 mi. */
-    const aheadDistMi = usingClose ? 0.6 : 1.4;
-    const ahead = Math.min(totalM - 100, userAlong + aheadDistMi * 1609.344);
-    const distAhead = Math.max(0, ahead - userAlong);
-    if (distAhead <= 200) return null;
-    return {
-      id: usingClose ? "demo-close-hazard" : "demo-approach-banner",
-      category: "traffic",
-      severity: "serious",
-      confidence: "high",
-      source: "mapboxTraffic",
-      lngLat: pointAtAlongMeters(g, ahead),
-      alongMeters: ahead,
-      startMeters: ahead,
-      endMeters: ahead,
-      distanceAheadMeters: distAhead,
-      etaAheadMinutes: null,
-      driverHeadline: usingClose
-        ? "Demo: hazard right ahead"
-        : "Demo: heavy traffic ahead",
-      driverAction: "rerouteRecommended",
-      roadEffect: usingClose
-        ? "Demo only — tests close-in next-exit bypass behavior."
-        : "Demo only — tap to test the bypass options flow.",
-      detail: usingClose
-        ? "Mock close hazard ~0.6 mi ahead to exercise the adaptive surgical bypass."
-        : "Mock impact to drive the approach banner / compare-panel UI without a real-world hazard.",
-      numericSeverity: 80,
-    };
-  }, [
     demoBypassTrafficJamPlus,
     demoApproachBannerOn,
     demoCloseHazardOn,
-    guidanceRoute?.geometry,
-    userAlongGuidanceM,
-  ]);
+  });
 
-  const driveApproachBannerPick = useMemo(() => {
-    if (!hazardApproachAlertsActive) return null;
-    if (demoApproachBannerImpact) {
-      return {
-        impact: demoApproachBannerImpact,
-        phase: "near" as const,
-      };
-    }
-    return pickDriveApproachBanner(
-      routeImpactsForUi,
-      driveApproachDismissedIds,
-      earlyApproachMaxMetersForSpeed(speedMps)
-    );
-  }, [
-    hazardApproachAlertsActive,
-    demoApproachBannerImpact,
+
+  const {
+    driveMapRoutesForMap,
+    deferredNwsAlertGeoJsonForMap,
+    navMapLiteMode,
+    deferredRouteImpactsForUi,
+    mapAlongRouteAlertsForDrive,
+    mapStormAlongRouteBandsForDrive,
+    driveRouteAheadLine,
+  } = useDriveMapOverlays({
+    navigationGuidanceGeometry,
+    driveMapRoutes,
+    navigationStarted,
+    guidanceRouteId,
+    viewMode,
+    personalForkPreviewGeometry: personalForkNav.previewGeometry,
+    guidanceIsPersonalFork,
+    lockedNavigationRouteId,
+    guidanceRoute,
+    progressStripAlerts,
+    routeAheadTimeline,
+    advisoryRouteImpacts,
+    isPlus,
+    advisoryLifeSafetyOn,
+    settingStormEnabled,
+    stormSessionOn,
+    nwsMapOverlapRouteGeom,
+    stormCorridorAlerts,
+    stormMapGeoJson,
+    stormMapGeoJsonForMap,
+    nwsAlertsAffectingActiveRoute,
+    advisoryStormStripBands,
+    guidanceRouteLengthM,
+    heavyAdvisoryAlongM,
+    driveEtaMinutes,
+    routeAheadMapBands,
+    dataSaverMode,
+    plan,
+    driveModeUi,
     routeImpactsForUi,
-    driveApproachDismissedIds,
-    speedMps,
-  ]);
-
-  useEffect(() => {
-    setDriveApproachDismissedIds(new Set());
-  }, [navigationStarted, guidanceRouteId]);
+    userAlongGuidanceM,
+  });
 
   const { progressPanelAlongM, activeProgressCalloutPanel, progressCalloutUserAlongT, progressCalloutCount } =
     useProgressCalloutPanel({
@@ -2598,17 +1612,6 @@ export default function App() {
       bumpTrafficRefresh,
     });
 
-  /** Map polygon visibility only — NWS poll + `stormMapGeoJson` cache keep running while off. */
-  const onStormSessionToggle = useCallback((on: boolean) => {
-    setStormSessionOn(on);
-    writeNwsSessionOn(on);
-  }, []);
-
-  const onRoadAdvisoryDetailToggle = useCallback((on: boolean) => {
-    setRoadAdvisoryDetailOn(on);
-    writeRoadAdvisoryDetailOn(on);
-  }, []);
-
   const onStormBarExpandedChange = useCallback(
     (expanded: boolean) => {
       setStormBarExpanded(expanded);
@@ -2626,20 +1629,6 @@ export default function App() {
     setFitTrigger,
   });
 
-  /* Persistence for the 10 settings now lives inside `useSettingsStore` (Phase 4a). The
-   * effects below only react to *changes* in a setting to clean up App-owned state — they no
-   * longer call `writeXSettingOn`/`safeStorage.set` since the store action already did that. */
-  useEffect(() => {
-    if (!settingTrafficEnabled) setTrafficOverlay(undefined);
-  }, [settingTrafficEnabled]);
-
-  useEffect(() => {
-    if (!settingRadarEnabled) {
-      setShowRadar(false);
-      writeRadarOverlayOn(false);
-    }
-  }, [settingRadarEnabled]);
-
   useMapboxTrafficLineSnap({
     navigationStarted,
     mapboxToken: env.mapboxToken,
@@ -2656,10 +1645,6 @@ export default function App() {
     setTapHint,
   });
 
-  useEffect(() => {
-    seriousHazardAutoFlewRef.current.clear();
-  }, [guidanceRouteId]);
-
   useNavAlternateRouteRefresh({
     appForeground,
     navigationStarted,
@@ -2672,32 +1657,17 @@ export default function App() {
     refreshAlternateRoutesOnly,
   });
 
-  useEffect(() => {
-    if (!navigationStarted || viewMode !== "drive") return;
-    if (!guidanceRoute?.geometry?.length || !userLngLat) return;
-    /* Auto fly-to a serious upcoming impact (storm, closure, blocked crash). Reads from the unified
-     * impact list so weather is included alongside road incidents — earlier picks were RouteAlert-only and
-     * missed serious NWS warnings. */
-    const candidate = deferredRouteImpactsForUi.find(
-      (i) =>
-        !i.suppressFromDriveMap &&
-        (i.severity === "avoid" || i.severity === "serious") &&
-        (i.driverAction === "rerouteRecommended" ||
-          i.driverAction === "rerouteAvailable" ||
-          i.driverAction === "prepare") &&
-        i.distanceAheadMeters != null &&
-        i.distanceAheadMeters > 0 &&
-        i.distanceAheadMeters <= DRIVE_AHEAD_WINDOW_M
-    );
-    if (!candidate) return;
-    if (seriousHazardAutoFlewRef.current.has(candidate.id)) return;
-    seriousHazardAutoFlewRef.current.add(candidate.id);
-    setMapFocus({
-      kind: "hazardOverview",
-      hazardLng: candidate.lngLat[0]!,
-      hazardLat: candidate.lngLat[1]!,
-    });
-  }, [navigationStarted, viewMode, guidanceRoute?.geometry, guidanceRouteId, heavyAdvisoryAlongM, deferredRouteImpactsForUi]);
+  useSeriousHazardAutoFly({
+    navigationStarted,
+    viewMode,
+    guidanceRouteGeometry: guidanceRoute?.geometry,
+    guidanceRouteId,
+    userLngLat,
+    heavyAdvisoryAlongM,
+    deferredRouteImpactsForUi,
+    seriousHazardAutoFlewRef,
+    setMapFocus,
+  });
 
   /** Rt + Mp: explore / plan on the map; Dr is follow-cam — keep tap-to-dest and ★ off there. */
   const mapPlanningUi = viewMode === "route" || viewMode === "topdown";
@@ -2715,115 +1685,44 @@ export default function App() {
     ? shortenReturnTripLabel(returnTripLeg.returnToLabel)
     : "";
 
-  /** Basic: status strip (forecast + offers). Plus: full storm advisory when enabled. */
-  const showStormAdvisoryChrome = isPlus ? advisoryLifeSafetyOn : true;
+  const {
+    showStormAdvisoryChrome,
+    showProgressRail,
+    progressStripRouteColor,
+    radarFrameClockLabel,
+    radarFrameTimeLabel,
+  } = useProgressRailChrome({
+    isPlus,
+    advisoryLifeSafetyOn,
+    trafficBypassCompare,
+    progressRailRoute,
+    guidanceRoute,
+    orderedRouteIds,
+    navigationStarted,
+    radarMapOverlayOn,
+    radarFrameUtcSec,
+  });
 
-  const showProgressRail =
-    isPlus &&
-    !trafficBypassCompare &&
-    Boolean(progressRailRoute?.geometry && progressRailRoute.geometry.length >= 2);
-
-  useProgressRailFootInset(showProgressRail);
-
-  /** Matches map: planning uses A/B/C preview; after Go the active leg reads as primary blue. */
-  const progressStripRouteColor = useMemo(() => {
-    if (!guidanceRoute) return routePickSlotHex(0);
-    if (navigationStarted) return routePickSlotHex(0);
-    return routePickSlotHex(routeSlotIndexFor(guidanceRoute.id, orderedRouteIds));
-  }, [guidanceRoute, orderedRouteIds, navigationStarted]);
-
-  const radarFrameClockLabel = useMemo(() => {
-    if (!radarMapOverlayOn || radarFrameUtcSec == null) return null;
-    return new Date(radarFrameUtcSec * 1000).toLocaleString(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }, [radarMapOverlayOn, radarFrameUtcSec]);
-
-  const radarFrameTimeLabel = useMemo(() => {
-    if (!radarFrameClockLabel) return null;
-    return new Date(radarFrameUtcSec! * 1000).toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }, [radarFrameClockLabel, radarFrameUtcSec]);
-
-  const activityTrailGeoJsonForMap = useMemo(() => {
-    if (!isPlus || !activityTrailMapOn) return null;
-    const s = loadActivitySamples();
-    if (!s.length) return null;
-    return activitySamplesToGeoJson(s);
-  }, [isPlus, activityTrailMapOn, activityTrailTick]);
-
-  const activityTrailPlanningBounds = useMemo(() => {
-    if (!isPlus || !learnEnabled) return null;
-    return getActivityTrailPlanningBounds(ACTIVITY_MIN_SAMPLES_PLANNING_MAP);
-  }, [isPlus, learnEnabled, activityTrailTick]);
-
-  const homePreloadBounds = useMemo(() => {
-    if (!isPlus || !learnEnabled || !homePreloadEnabled) return null;
-    return getHomePreloadBounds();
-  }, [isPlus, learnEnabled, homePreloadEnabled, activityTrailTick]);
-
-  const homePreloadSizeLabel = useMemo(
-    () => estimatePreloadStorageLabel(homePreloadBounds),
-    [homePreloadBounds]
-  );
-
-  const activityTrailAboutPanel = useMemo(() => {
-    if (!isPlus) return null;
-    const s = getActivityTrailStats();
-    const fmt = (ts: number | null) =>
-      ts == null
-        ? "—"
-        : new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-    return {
-      count: s.count,
-      spanDays: s.spanDays,
-      oldestLabel: fmt(s.oldest),
-      newestLabel: fmt(s.newest),
-      learnEnabled,
-      onLearnEnabledChange: (on: boolean) => setLearnEnabled(on),
-      showOnMap: activityTrailMapOn,
-      onShowOnMapChange: (on: boolean) => {
-        setActivityTrailMapOn(on);
-        safeStorage.set(ACTIVITY_TRAIL_MAP_LS, on ? "1" : "0");
-      },
-      homeMapFraming,
-      onHomeMapFramingChange: (mode: HomeMapFraming) => {
-        setHomeMapFraming(mode);
-        writeHomeMapFraming(mode);
-      },
-      homeAreaAvailable: activityTrailPlanningBounds != null,
-      homePreloadEnabled,
-      onHomePreloadEnabledChange: (on: boolean) => {
-        setHomePreloadEnabled(on);
-        writeHomePreloadEnabled(on);
-      },
-      homePreloadAvailable: homePreloadBounds != null,
-      homePreloadSizeLabel,
-      onClear: () => {
-        clearActivitySamples();
-        clearHomePreloadRecord();
-        setActivityTrailTick((n) => n + 1);
-      },
-    };
-  }, [
+  const {
+    activityTrailGeoJsonForMap,
+    activityTrailPlanningBounds,
+    homePreloadBounds,
+    activityTrailAboutPanel,
+    idleHomeMapFraming,
+  } = useActivityTrailMap({
     isPlus,
     activityTrailMapOn,
-    activityTrailTick,
+    setActivityTrailMapOn,
+    activityTrailMapLsKey: ACTIVITY_TRAIL_MAP_LS,
     learnEnabled,
     setLearnEnabled,
     homeMapFraming,
-    activityTrailPlanningBounds,
+    setHomeMapFraming,
     homePreloadEnabled,
-    homePreloadBounds,
-    homePreloadSizeLabel,
-  ]);
-
-  const idleHomeMapFraming: HomeMapFraming = isPlus ? homeMapFraming : "my_location";
+    setHomePreloadEnabled,
+    activityTrailTick,
+    bumpActivityTrailTick: () => setActivityTrailTick((n) => n + 1),
+  });
 
   /* Phase 3c: Go / Stop / clear trip lifecycle (was inline in App). */
   const { clearRoute, proceedGo, handleGo, handleStopAndClear } = useTripLifecycle({
@@ -2978,87 +1877,6 @@ export default function App() {
     [plan.routes, orderedRouteIds, navigationStarted, viewMode]
   );
 
-  const handleTrafficBypassCompareSelect = useCallback((id: "r-a" | "r-b" | "r-c") => {
-    setTrafficBypassCompare((prev) => (prev ? { ...prev, selectedLeg: id } : null));
-    setFitTrigger((n) => n + 1);
-  }, []);
-
-  const handleTrafficBypassCompareCancel = useCallback(() => {
-    const tollCtx = getTollCompareContext();
-    if (tollCtx) {
-      setTollCompareContext(null);
-      setTrafficBypassCompare(null);
-      setPlan(tollCtx.originalPlan);
-      setRouteSlotOrder(tollCtx.originalSlotOrder);
-      setPreviewLegIndex(tollCtx.originalPreviewLegIndex);
-      setViewModeBeforeTrafficBypass(null);
-      setViewMode(viewModeAfterCompareCancel(tollCtx.originalViewMode, navigationStarted));
-      setFitTrigger((n) => n + 1);
-      const route = tollCtx.originalPlan.routes.find((r) => r.id === tollCtx.originalRouteId);
-      if (
-        tollBypassEnabled &&
-        route?.hasTolls &&
-        !tollAcceptedRouteIdsRef.current.has(tollCtx.originalRouteId)
-      ) {
-        setTollRoutePrompt({ routeId: tollCtx.originalRouteId, labels: route.tollLabels ?? [] });
-      }
-      return;
-    }
-
-    setTrafficBypassCompare(null);
-    const restore = getViewModeBeforeTrafficBypass();
-    setViewModeBeforeTrafficBypass(null);
-    setViewMode(viewModeAfterCompareCancel(restore, navigationStarted));
-    setFitTrigger((n) => n + 1);
-  }, [
-    tollBypassEnabled,
-    navigationStarted,
-    setTrafficBypassCompare,
-    setPlan,
-    setRouteSlotOrder,
-    setPreviewLegIndex,
-    setViewMode,
-    setTollRoutePrompt,
-  ]);
-
-  const toggleDemoPlaybackPlaying = useCallback(() => {
-    if (!demoBypassTrafficJamPlus || !guidanceRoute?.geometry?.length) return;
-    const g = guidanceRoute.geometry;
-    if (polylineLengthMeters(g) < 2) return;
-    setDemoPlaybackPlaying((p) => !p);
-  }, [demoBypassTrafficJamPlus, guidanceRoute]);
-
-  const resetDemoPlaybackAlongRoute = useCallback(() => {
-    setDemoPlaybackPlaying(false);
-    setDemoPlaybackAlongM(null);
-  }, []);
-
-  /** `?demo=bypass`: open A/B/C compare without Mapbox — uses current plan lines for map flags only. */
-  const openDemoTrafficBypassCompareMock = useCallback(() => {
-    if (!demoBypassTrafficJamPlus || !navigationStarted) return;
-    if (trafficBypassCompareRef.current) return;
-    const gr = guidanceRoute;
-    if (!gr?.geometry?.length) return;
-    const base = Math.max(8, Math.round(gr.baseEtaMinutes ?? 30));
-    const totalM = polylineLengthMeters(gr.geometry);
-    const userAlong = Number.isFinite(userAlongGuidanceM) ? userAlongGuidanceM : 0;
-    const mockJamAlong = Math.min(totalM - 50, userAlong + Math.max(800, (totalM - userAlong) * 0.32));
-    activateRouteCompare(
-      withTrafficBypassCompareKind({
-        headline: "Demo: mock bypass compare (no network)",
-        etaA: base,
-        etaB: Math.max(6, base - 4),
-        etaC: Math.max(6, base - 2),
-        hasB: true,
-        hasC: true,
-        confidence: "medium",
-        selectedLeg: defaultRouteCompareSelection(guidanceRouteId),
-        hazardLngLat: pointAtAlongMeters(gr.geometry, mockJamAlong),
-        hazardAlongMeters: mockJamAlong,
-      })
-    );
-  }, [demoBypassTrafficJamPlus, navigationStarted, guidanceRoute, userAlongGuidanceM, guidanceRouteId, activateRouteCompare]);
-
   const handleTollContinue = useCallback(() => {
     if (tollRoutePrompt) {
       tollAcceptedRouteIdsRef.current.add(tollRoutePrompt.routeId);
@@ -3089,77 +1907,6 @@ export default function App() {
     setTollAvoidFailureNote,
     activateRouteCompare,
   });
-
-  const handleTrafficBypassCompareConfirm = useCallback(() => {
-    const tollCtx = getTollCompareContext();
-    const prev = trafficBypassCompareRef.current;
-    const id = prev?.selectedLeg;
-    if (!id) return;
-
-    if (tollCtx) {
-      setTollCompareContext(null);
-      setTrafficBypassCompare(null);
-      setViewModeBeforeTrafficBypass(null);
-
-      if (id === "r-b") {
-        const p =
-          tollCtx.fullTollFreePlan.routes.length > (isPlus ? 2 : 1)
-            ? {
-                ...tollCtx.fullTollFreePlan,
-                routes: tollCtx.fullTollFreePlan.routes.slice(0, isPlus ? 2 : 1),
-              }
-            : tollCtx.fullTollFreePlan;
-        setPlan(p);
-        setRouteSlotOrder(p.routes.map((r) => r.id));
-        setPreviewLegIndex(0);
-        setTollAvoidFailureNote(null);
-        setTollRoutePrompt(null);
-        setTapHint("Updated to a toll-free route.");
-        window.setTimeout(() => setTapHint(null), 5500);
-        setViewMode("route");
-      } else {
-        setPlan(tollCtx.originalPlan);
-        setRouteSlotOrder(tollCtx.originalSlotOrder);
-        setPreviewLegIndex(tollCtx.originalPreviewLegIndex);
-        tollAcceptedRouteIdsRef.current.add(tollCtx.originalRouteId);
-        setTollRoutePrompt(null);
-        if (tollCtx.pendingGo) {
-          pendingGoAfterTollRef.current = false;
-          proceedGo();
-        } else {
-          setViewMode(tollCtx.originalViewMode);
-        }
-      }
-      setFitTrigger((n) => n + 1);
-      return;
-    }
-
-    handlePromoteRouteToPrimary(id);
-    const promoted = plan.routes.find((r) => r.id === id);
-    if (promoted?.geometry?.length && navigationStartedRef.current) {
-      navigationGuidanceGeometryRef.current = promoted.geometry.map(([a, b]) => [a, b] as LngLat);
-      setGuidanceGeometryEpoch((n) => n + 1);
-      setAlongHoldResetKey((n) => n + 1);
-    }
-    setTrafficBypassCompare(null);
-    setViewModeBeforeTrafficBypass(null);
-    setViewMode("drive");
-    setFitTrigger((n) => n + 1);
-    setTapHint("Switched to your chosen route.");
-    window.setTimeout(() => setTapHint(null), 5000);
-  }, [
-    handlePromoteRouteToPrimary,
-    proceedGo,
-    isPlus,
-    setTrafficBypassCompare,
-    setPlan,
-    setRouteSlotOrder,
-    setPreviewLegIndex,
-    setViewMode,
-    setTollRoutePrompt,
-    setTapHint,
-    plan.routes,
-  ]);
 
   useEffect(() => {
     if (!tollBypassEnabled) {
@@ -3194,10 +1941,6 @@ export default function App() {
     setTollRoutePrompt,
   ]);
 
-  const flushMapFocus = useCallback(() => {
-    setMapFocus(null);
-  }, []);
-
   /** Close hazard sheet + advisory panel, then run (helps WKWebView apply view/focus changes). */
   const runAfterHazardSheetAction = useCallback(
     (action: () => void) => {
@@ -3210,6 +1953,65 @@ export default function App() {
     [onStormBarExpandedChange]
   );
 
+  const {
+    handleTrafficBypassCompareSelect,
+    handleTrafficBypassCompareCancel,
+    handleTrafficBypassCompareConfirm,
+    handleTrafficBypassFromHere,
+    openDemoTrafficBypassCompareMock,
+    hazardSheetAlternateAvailable,
+    handleHazardSheetTryAlternate,
+  } = useTrafficBypassFlow({
+    isPlus,
+    mapboxToken: env.mapboxToken,
+    learnEnabled,
+    settingStormEnabled,
+    tollBypassEnabled,
+    navigationStarted,
+    demoBypassTrafficJamPlus,
+    userLngLat,
+    effectiveUserLngLat,
+    destLngLat,
+    destinationLabel,
+    guidanceRoute,
+    guidanceRouteId,
+    userAlongGuidanceM,
+    driveEtaMinutes,
+    plan,
+    scored,
+    stormAlertsForRouting,
+    routeImpactsForUi,
+    trafficBypassContext,
+    alternateBypassRouteId,
+    routeHazardSheet,
+    trafficBypassCompareRef,
+    navigationStartedRef,
+    routeGraphEpochRef,
+    tollAcceptedRouteIdsRef,
+    pendingGoAfterTollRef,
+    setPlan,
+    setRouteSlotOrder,
+    setPreviewLegIndex,
+    setViewMode,
+    setFitTrigger,
+    setTapHint,
+    setTollRoutePrompt,
+    setTollAvoidFailureNote,
+    setTrafficBypassCompare,
+    setBypassBusy,
+    activateRouteCompare,
+    handlePromoteRouteToPrimary,
+    onTrafficConfirmWhileNavigating: (geometry) => {
+      navigationGuidanceGeometryRef.current = geometry;
+      setGuidanceGeometryEpoch((n) => n + 1);
+      setAlongHoldResetKey((n) => n + 1);
+    },
+    proceedGo,
+    computeRoutes,
+    runAfterHazardSheetAction,
+  });
+
+
   const handleDriveCameraBearingDeg = useCallback((deg: number | null) => {
     setDriveMapBearingDeg((prev) => {
       if (deg == null) return null;
@@ -3218,441 +2020,72 @@ export default function App() {
     });
   }, []);
 
-  const buildRouteCompareFromPlan = useCallback(
-    (opts: {
-      headline: string;
-      hazardLngLat: LngLat | null;
-      hazardAlongMeters: number | null;
-      confidence?: "low" | "medium" | "high";
-      etaOverrides?: {
-        etaB?: number | null;
-        etaC?: number | null;
-        hasB?: boolean;
-        hasC?: boolean;
-      };
-    }): TrafficBypassCompareState | null => {
-      if (!guidanceRoute?.geometry?.length) return null;
-      const etaForSlot = (id: "r-a" | "r-b" | "r-c"): number | null => {
-        if (id === "r-a" && navigationStarted && driveEtaMinutes != null) {
-          return Math.max(1, Math.round(driveEtaMinutes));
-        }
-        const s = scored.find((x) => x.route.id === id);
-        if (s) return Math.max(1, Math.round(s.effectiveEtaMinutes));
-        const r = plan.routes.find((x) => x.id === id);
-        return r ? Math.max(1, Math.round(r.baseEtaMinutes)) : null;
-      };
-      const rB = plan.routes.find((r) => r.id === "r-b");
-      const rC = plan.routes.find((r) => r.id === "r-c");
-      const hasB =
-        opts.etaOverrides?.hasB ?? Boolean(rB?.geometry && rB.geometry.length >= 2);
-      const hasC =
-        opts.etaOverrides?.hasC ?? Boolean(rC?.geometry && rC.geometry.length >= 2);
-      const etaA = etaForSlot("r-a");
-      if (etaA == null) return null;
-      const altWithGeom = plan.routes.some(
-        (r) => r.id !== guidanceRouteId && (r.geometry?.length ?? 0) >= 2
-      );
-      if (!hasB && !hasC && !altWithGeom) return null;
-      return withTrafficBypassCompareKind({
-        headline: opts.headline,
-        etaA,
-        etaB: opts.etaOverrides?.etaB ?? (hasB ? etaForSlot("r-b") : null),
-        etaC: opts.etaOverrides?.etaC ?? (hasC ? etaForSlot("r-c") : null),
-        hasB,
-        hasC,
-        confidence: opts.confidence ?? "medium",
-        selectedLeg: defaultRouteCompareSelection(guidanceRouteId),
-        hazardLngLat: opts.hazardLngLat,
-        hazardAlongMeters: opts.hazardAlongMeters,
-      });
-    },
-    [guidanceRoute, plan.routes, scored, driveEtaMinutes, navigationStarted, guidanceRouteId]
-  );
-
-  const openRouteCompareFromPlan = useCallback(
-    (opts: Parameters<typeof buildRouteCompareFromPlan>[0]) => {
-      const state = buildRouteCompareFromPlan(opts);
-      if (!state) return false;
-      activateRouteCompare(state);
-      return true;
-    },
-    [buildRouteCompareFromPlan, activateRouteCompare]
-  );
-
-  const handleQuickReportIssue = useCallback(() => {
-    const to = env.supportEmail?.trim();
-    if (!to) {
-      const site = env.supportUrl?.trim();
-      if (site) window.open(site, "_blank", "noopener,noreferrer");
-      return;
-    }
-    const versionLabel = stormpathVersionLabel();
-    const subject = encodeURIComponent(`StormPath quick issue report (${versionLabel})`);
-    const quickDiag = [
-      `App: StormPath ${versionLabel}`,
-      `Online: ${typeof navigator === "undefined" ? "unknown" : navigator.onLine ? "yes" : "no"}`,
-      `View: ${viewMode}`,
-      `Navigating: ${navigationStarted ? "yes" : "no"}`,
-      `Destination set: ${destLngLat ? "yes" : "no"}`,
-    ].join("\n");
-    const body = encodeURIComponent(
-      `Describe what happened:\n\nExpected:\n\nWhat you were doing (route/area/time):\n\nQuick diagnostics:\n${quickDiag}\n`
-    );
-    window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
-  }, [env.supportEmail, env.supportUrl, viewMode, navigationStarted, destLngLat]);
-
-  const handleAdvisoryNwsClick = useCallback(
-    (alert: NormalizedWeatherAlert) => {
-      if (!lineFocusId) return;
-      const geom = guidanceRoute?.geometry;
-      if (!geom?.length) return;
-      const band = advisoryStormStripBands.find((b) => b.alertId === alert.id);
-      const routeAlert = routeAlertForNwsAdvisoryClick(alert, geom, band ?? null);
-      if (!routeAlert) return;
-      setRouteHazardSheet({
-        routeId: lineFocusId,
-        alerts: [routeAlert],
-      });
-    },
-    [guidanceRoute?.geometry, lineFocusId, advisoryStormStripBands]
-  );
-
-  /** Explicit compare from GPS — used for off-route recovery and traffic bypass. Never auto-applies. */
-  const openRouteCompareFromHere = useCallback(
-    async (opts?: {
-      headline?: string;
-      anchorAlongMeters?: number;
-      anchorLngLat?: LngLat;
-      confidence?: "low" | "medium" | "high";
-    }) => {
-      const originLngLat =
-        demoBypassTrafficJamPlus && effectiveUserLngLat ? effectiveUserLngLat : userLngLat;
-      if (!env.mapboxToken || !originLngLat || !destLngLat || !guidanceRoute?.geometry?.length) return;
-      const epochAtStart = routeGraphEpochRef.current;
-      setBypassBusy(true);
-      const geom = guidanceRoute.geometry;
-      const totalM = polylineLengthMeters(geom);
-      const jamAlongM =
-        opts?.anchorAlongMeters ??
-        Math.min(totalM - 50, userAlongGuidanceM + Math.max(600, (totalM - userAlongGuidanceM) * 0.32));
-      const hazardLngLat = opts?.anchorLngLat ?? pointAtAlongMeters(geom, jamAlongM);
-      const compareHeadline = opts?.headline ?? "Routes from your location";
-
-      try {
-        const fresh = await collectMapboxRouteVariants(env.mapboxToken, originLngLat, destLngLat, {
-          maxRoutes: isPlus ? 2 : 1,
-          allowLocalTripThirdRoute: false,
-          preferThreeRoutes: false,
-          stormAlerts: stormAlertsForRouting,
-          radarAvoidanceEnabled: isPlus && settingStormEnabled,
-          trailRoutePersonalization: isPlus && learnEnabled,
-        });
-
-        if (fresh.length === 0 || epochAtStart !== routeGraphEpochRef.current) {
-          const opened = openRouteCompareFromPlan({
-            headline: compareHeadline,
-            hazardLngLat,
-            hazardAlongMeters: jamAlongM,
-            confidence: opts?.confidence ?? "medium",
-          });
-          if (!opened) {
-            setViewModeBeforeTrafficBypass(null);
-            setTapHint("No alternate routes available right now — try again in a moment.");
-            window.setTimeout(() => setTapHint(null), 6000);
-          }
-          return;
-        }
-
-        const byId = new Map(fresh.map((r) => [r.id, r]));
-        setPlan((prev) => ({
-          ...prev,
-          routes: prev.routes.map((r) => byId.get(r.id) ?? r),
-        }));
-
-        const etaFor = (id: "r-a" | "r-b" | "r-c") => {
-          const r = byId.get(id);
-          return r?.geometry?.length && r.geometry.length >= 2
-            ? Math.max(1, Math.round(r.baseEtaMinutes))
-            : null;
-        };
-        const etaA = etaFor("r-a");
-        if (etaA == null) {
-          setViewModeBeforeTrafficBypass(null);
-          setTapHint("Could not build route options — try again.");
-          window.setTimeout(() => setTapHint(null), 5000);
-          return;
-        }
-
-        activateRouteCompare(
-          withTrafficBypassCompareKind({
-            headline: compareHeadline,
-            etaA,
-            etaB: etaFor("r-b"),
-            etaC: etaFor("r-c"),
-            hasB: Boolean(byId.get("r-b")?.geometry && byId.get("r-b")!.geometry.length >= 2),
-            hasC: Boolean(byId.get("r-c")?.geometry && byId.get("r-c")!.geometry.length >= 2),
-            confidence: opts?.confidence ?? "medium",
-            selectedLeg: defaultRouteCompareSelection(guidanceRouteId),
-            hazardLngLat,
-            hazardAlongMeters: jamAlongM,
-          })
-        );
-      } catch {
-        const opened = openRouteCompareFromPlan({
-          headline: compareHeadline,
-          hazardLngLat,
-          hazardAlongMeters: jamAlongM,
-          confidence: opts?.confidence ?? "medium",
-        });
-        if (!opened) {
-          setViewModeBeforeTrafficBypass(null);
-          setTapHint("Route compare failed — try again when you have a signal.");
-          window.setTimeout(() => setTapHint(null), 5000);
-        }
-      } finally {
-        setBypassBusy(false);
-      }
-    },
-    [
-      env.mapboxToken,
-      userLngLat,
-      effectiveUserLngLat,
-      demoBypassTrafficJamPlus,
-      destLngLat,
-      guidanceRoute,
-      userAlongGuidanceM,
-      isPlus,
-      stormAlertsForRouting,
-      settingStormEnabled,
-      learnEnabled,
-      openRouteCompareFromPlan,
-      activateRouteCompare,
-      guidanceRouteId,
-    ]
-  );
-
-  const handleTrafficBypassFromHere = useCallback(async (opts?: {
-    /** Override the jam anchor (m along route). Used by demo paths that need a deterministic point. */
-    anchorAlongMeters?: number;
-    /** Override the lng/lat shown for the hazard pin. Falls back to the route geometry at the anchor. */
-    anchorLngLat?: LngLat;
-  }) => {
-    if (!TRAFFIC_BYPASS_ENABLED) return;
-    if (!isPlus) return;
-    const anchorImpact = opts?.anchorAlongMeters == null
-      ? pickTrafficBypassAnchorImpact(routeImpactsForUi)
-      : null;
-    await openRouteCompareFromHere({
-      headline: trafficBypassOfferHeadline(trafficBypassContext),
-      anchorAlongMeters: opts?.anchorAlongMeters ?? anchorImpact?.alongMeters,
-      anchorLngLat: opts?.anchorLngLat ?? anchorImpact?.lngLat,
-      confidence: trafficBypassContext?.confidence ?? "medium",
-    });
-  }, [
-    isPlus,
-    routeImpactsForUi,
-    trafficBypassContext,
-    openRouteCompareFromHere,
-  ]);
-
-  /* Hazard sheet's "Try alternate route" CTA is only meaningful when we have Plus + Mapbox +
-   * an active trip. Hoisted out of the JSX IIFE in Phase 4e4 so the render path stays declarative.
-   * Placed below `handleTrafficBypassFromHere` because the handler closes over it. */
-  const hazardSheetAlternateAvailable = useMemo(
-    () =>
-      TRAFFIC_BYPASS_ENABLED &&
-      Boolean(
-        isPlus &&
-          env.mapboxToken &&
-          userLngLat &&
-          destLngLat &&
-          guidanceRoute?.geometry?.length
-      ),
-    [isPlus, env.mapboxToken, userLngLat, destLngLat, guidanceRoute?.geometry?.length]
-  );
-
-  /** Hazard sheet → "Try alternate route": for weather corridors with no pre-built alt,
-   * recompute first, then open the bypass compare; otherwise jump straight into compare. */
-  const handleHazardSheetTryAlternate = useCallback(() => {
-    if (!routeHazardSheet) return;
-    const primary = routeHazardSheet.alerts[0];
-    runAfterHazardSheetAction(() => {
-      if (!hazardSheetAlternateAvailable || !guidanceRoute?.geometry?.length || !destLngLat) {
-        setTapHint("Route compare needs Plus, traffic, and an active trip.");
-        window.setTimeout(() => setTapHint(null), 5500);
-        return;
-      }
-      const geom = guidanceRoute.geometry;
-      let anchorAlongM: number | undefined;
-      let anchorLngLat: LngLat | undefined;
-      if (primary?.alongMeters != null && geom.length) {
-        const totalM = polylineLengthMeters(geom);
-        anchorAlongM = Math.max(0, Math.min(primary.alongMeters, totalM - 1));
-        anchorLngLat = pointAtAlongMeters(geom, anchorAlongM);
-      }
-      const bypassOpts = { anchorAlongMeters: anchorAlongM, anchorLngLat };
-      if (primary?.corridorKind === "weather" && !alternateBypassRouteId) {
-        void (async () => {
-          await computeRoutes(destLngLat, destinationLabel.trim() || "Destination", {
-            preserveNavigation: true,
-          });
-          void handleTrafficBypassFromHere(bypassOpts);
-        })();
-        return;
-      }
-      void handleTrafficBypassFromHere(bypassOpts);
-    });
-  }, [
-    routeHazardSheet,
-    runAfterHazardSheetAction,
-    hazardSheetAlternateAvailable,
-    guidanceRoute,
+  const { handleQuickReportIssue, handleAdvisoryNwsClick } = useAdvisoryInteractions({
+    env,
+    viewMode,
+    navigationStarted,
     destLngLat,
-    destinationLabel,
-    alternateBypassRouteId,
-    computeRoutes,
-    handleTrafficBypassFromHere,
-  ]);
+    lineFocusId,
+    guidanceRoute,
+    advisoryStormStripBands,
+    setRouteHazardSheet,
+  });
 
   /** Stop navigation and clear the trip (single “cancel everything” control). */
   /* handleStopAndClear comes from useTripLifecycle (Phase 3c). */
 
-  const handleSaveCurrentDestination = useCallback(() => {
-    if (!destLngLat) return;
-    if (!canAddPlace) {
-      setTapHint("Basic limit: 2 saved places. Upgrade to Plus for more.");
-      window.setTimeout(() => setTapHint(null), 5500);
-      return;
-    }
-    const name = destinationLabel.trim() || "Saved place";
-    addPlace(name, destLngLat);
-  }, [destLngLat, destinationLabel, addPlace, canAddPlace]);
+  const {
+    recordedSuggestName,
+    recordedEndLabel,
+    recordedStartLabel,
+    setRecordedEndLabel,
+    setRecordedStartLabel,
+    handleSaveCurrentDestination,
+    handleSaveCurrentLocation,
+    openSaveRouteSheet,
+    handleLoadSavedRoute,
+    handleReturnToPreviousDestination,
+    handleStartRecordingPath,
+    handleStopRecordingSave,
+    handleDiscardRecordingPath,
+  } = useSavedTripActions({
+    destLngLat,
+    destinationLabel,
+    userLngLat,
+    locationError,
+    forecastPlaceShort,
+    mapboxToken: env.mapboxToken,
+    canAddPlace,
+    canAddRoute,
+    plan,
+    lineFocusId,
+    returnTripLeg,
+    addPlace,
+    resetNavigationPlanning,
+    setPlan,
+    setDestLngLat,
+    setDestinationLabel,
+    setSearchText,
+    setSearchExpanded,
+    setAllowAutocomplete,
+    setRouteError,
+    setSuggestions,
+    setViewMode,
+    setFitTrigger,
+    setSavedDrawerOpen,
+    setTapHint,
+    setPendingSave,
+    startRouteRecording,
+    tryFinishRecording,
+    discardRouteRecording,
+  });
 
-  const handleSaveCurrentLocation = useCallback(async () => {
-    if (!userLngLat) {
-      setTapHint(
-        locationError ?? "Turn on location first — allow it for this site in browser settings."
-      );
-      window.setTimeout(() => setTapHint(null), 8000);
-      return;
-    }
-    if (!canAddPlace) {
-      setTapHint("Basic limit: 2 saved places. Upgrade to Plus for more.");
-      window.setTimeout(() => setTapHint(null), 5500);
-      return;
-    }
-    const [lng, lat] = userLngLat;
-    let name = forecastPlaceShort ?? formatCoordsAreaLabel(lat, lng);
-    if (!forecastPlaceShort && env.mapboxToken) {
-      const hit = await mapboxReverseGeocode(lng, lat, env.mapboxToken);
-      if (hit?.placeName) name = shortenPlaceNameForForecast(hit.placeName);
-    }
-    addPlace(name, userLngLat);
-    setTapHint(`Saved place: ${name}`);
-    window.setTimeout(() => setTapHint(null), 4500);
-  }, [userLngLat, locationError, forecastPlaceShort, env.mapboxToken, addPlace, canAddPlace]);
-
-  const openSaveRouteSheet = useCallback(() => {
-    if (!canAddRoute) {
-      setTapHint("Basic limit: 1 saved route. Upgrade to Plus for more.");
-      window.setTimeout(() => setTapHint(null), 5500);
-      return;
-    }
-    const r = plan.routes.find((x) => x.id === lineFocusId) ?? plan.routes[0];
-    if (!r?.geometry || r.geometry.length < 2 || !destLngLat) return;
-    setPendingSave({
-      kind: "route",
-      geometry: r.geometry.map(([a, b]) => [a, b]),
-      turnSteps: r.turnSteps,
-      destinationLngLat: [...destLngLat],
-      destinationLabel: destinationLabel.trim() || "Destination",
-    });
-  }, [plan.routes, lineFocusId, destLngLat, destinationLabel, canAddRoute]);
-
-  const handleLoadSavedRoute = useCallback(
-    (sr: SavedRoute, opts?: { reverse?: boolean }) => {
-      const reverse = opts?.reverse ?? false;
-      resetNavigationPlanning();
-      setPlan(tripPlanFromSavedRoute(sr, { reverse }));
-      const dest: LngLat = reverse
-        ? [sr.geometry[0]![0], sr.geometry[0]![1]]
-        : [sr.destinationLngLat[0], sr.destinationLngLat[1]];
-      const label = reverse
-        ? sr.startLabel?.trim() || "Start of path"
-        : sr.destinationLabel;
-      setDestLngLat(dest);
-      setDestinationLabel(label);
-      setSearchText(label);
-      setSearchExpanded(false);
-      setAllowAutocomplete(true);
-      setRouteError(null);
-      setSuggestions([]);
-      setViewMode("route");
-      setFitTrigger((n) => n + 1);
-      setSavedDrawerOpen(false);
-      setTapHint(
-        reverse
-          ? "Reversed path — follow the line toward the original start."
-          : "Saved path on map — follow your recorded line. Tap Go when ready."
-      );
-      window.setTimeout(() => setTapHint(null), 6000);
-    },
-    [resetNavigationPlanning]
-  );
-
-  const handleReturnToPreviousDestination = useCallback(() => {
-    const leg = returnTripLeg ?? loadReturnTripLeg();
-    if (!leg || leg.geometry.length < 2) {
-      setTapHint("No previous trip to return to yet — start a route with Go first.");
-      window.setTimeout(() => setTapHint(null), 5500);
-      return;
-    }
-    if (!userLngLat) {
-      setTapHint(
-        locationError ?? "Turn on location first — allow it for this site in browser settings."
-      );
-      window.setTimeout(() => setTapHint(null), 8000);
-      return;
-    }
-    const sr: SavedRoute = {
-      id: "return-leg",
-      name: "Return",
-      geometry: leg.geometry,
-      destinationLngLat: leg.outboundDestLngLat,
-      destinationLabel: leg.outboundDestLabel,
-      startLabel: leg.returnToLabel,
-      createdAt: leg.savedAtMs,
-    };
-    handleLoadSavedRoute(sr, { reverse: true });
-  }, [returnTripLeg, userLngLat, locationError, handleLoadSavedRoute]);
-
-  const handleStartRecordingPath = useCallback(() => {
-    if (!userLngLat) {
-      setTapHint(locationError ?? "Turn on location to record a path.");
-      window.setTimeout(() => setTapHint(null), 8000);
-      return;
-    }
-    startRouteRecording(userLngLat);
-    setSavedDrawerOpen(false);
-  }, [userLngLat, startRouteRecording, locationError]);
-
-  const handleStopRecordingSave = useCallback(() => {
-    const geom = tryFinishRecording();
-    if (!geom) {
-      setTapHint("Keep driving — need ~150 ft and a few GPS points, then tap Stop & save again.");
-      window.setTimeout(() => setTapHint(null), 5500);
-      return;
-    }
-    const end = geom[geom.length - 1]!;
-    setRecordedSuggestName(
-      `Drive · ${new Date().toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}`
-    );
-    setPendingSave({ kind: "recorded", geometry: geom, destinationLngLat: end });
-  }, [tryFinishRecording]);
-
-  const handleDiscardRecordingPath = useCallback(() => {
-    discardRouteRecording();
-  }, [discardRouteRecording]);
+  useRecordedSaveLabels({
+    pendingSave,
+    mapboxToken: env.mapboxToken,
+    setRecordedEndLabel,
+    setRecordedStartLabel,
+  });
 
   const handleInspectTrafficStop = useCallback(() => {
     const trafficAlert = routeAlerts.find(
@@ -3683,258 +2116,164 @@ export default function App() {
     }
   }, [routeAlerts, guidanceRoute?.geometry, trafficOverlay, guidanceRouteId]);
 
-  const advisoryRoadDetailRows = useMemo(() => {
-    const rows: {
-      label: string;
-      text: React.ReactNode;
-      actionLabel?: string;
-      onAction?: () => void;
-    }[] = [];
-    const tLeg = trafficOverlay?.[guidanceRouteId];
-    const hasTrafficStop = Boolean(tLeg?.nearStopFraction != null || tLeg?.hasClosure);
-    const incidentLikeAlert = routeAlerts.find((a) => {
-      if (a.corridorKind === "traffic" && a.id !== "traffic-delay") return true;
-      if (a.corridorKind !== "hazard") return false;
-      return /\b(accident|crash|incident|closure|closed|blocked|lane\s*closure|work\s*zone|construction)\b/i.test(
-        `${a.title} ${a.detail}`
-      );
-    });
+  const advisoryRoadDetailRows = useMemo(
+    () =>
+      buildAdvisoryRoadDetailRows({
+        guidanceRouteId,
+        trafficOverlay,
+        routeAlerts,
+        onInspectTrafficStop: handleInspectTrafficStop,
+      }),
+    [guidanceRouteId, trafficOverlay, routeAlerts, handleInspectTrafficStop]
+  );
 
-    if (hasTrafficStop) {
-      rows.push({
-        label: "Traffic stop",
-        text: <strong>Stopped/blocked traffic detected on your route</strong>,
-        actionLabel: "Show stop",
-        onAction: handleInspectTrafficStop,
-      });
-    }
-    if (incidentLikeAlert) {
-      const headline = (incidentLikeAlert.detail || incidentLikeAlert.title || "").trim();
-      if (headline) {
-        rows.push({
-          label: "Traffic alert",
-          text: (
-            <>
-              <strong>{headline}</strong>{" "}
-              <span className="storm-advisory-bar__road-muted">Possible slowdown on route.</span>
-            </>
-          ),
-        });
-      }
-    }
-
-    return rows;
-  }, [
-    guidanceRouteId,
-    trafficOverlay,
-    routeAlerts,
-    handleInspectTrafficStop,
-  ]);
-
-  /** Busy message source — debounced before advisory to avoid layout/rotator flicker. */
-  const activityBusyRaw = useMemo(() => {
-    const trafficBusy =
-      isPlus &&
-      navigationStarted &&
-      plan.routes.length > 0 &&
-      !trafficFetchDone &&
-      settingTrafficEnabled &&
-      Boolean(env.mapboxToken) &&
-      isOnline;
-
-    const stormBusy =
-      stormLoading &&
-      advisoryLifeSafetyOn &&
-      stormCorridorAlerts.length === 0 &&
-      !(stormMapGeoJson?.features?.length);
-
-    if (routing) return "Building routes…";
-    if (bypassBusy) return "Checking alternates…";
-    if (suggestLoading) return "Searching…";
-    if (trafficBusy) return "Loading traffic…";
-    if (stormBusy) return "Loading maps & advisories…";
-    return null;
-  }, [
+  const activityBusyLabel = useDebouncedBusyLabel({
     routing,
     bypassBusy,
     suggestLoading,
+    isPlus,
     navigationStarted,
-    plan.routes.length,
+    planRoutesLength: plan.routes.length,
     trafficFetchDone,
     settingTrafficEnabled,
-    env.mapboxToken,
+    mapboxToken: env.mapboxToken,
     isOnline,
     stormLoading,
-    stormCorridorAlerts.length,
-    stormMapGeoJson?.features?.length,
     advisoryLifeSafetyOn,
-    isPlus,
-  ]);
-
-  const [activityBusyLabel, setActivityBusyLabel] = useState<string | null>(null);
-  useEffect(() => {
-    if (!activityBusyRaw) {
-      const id = window.setTimeout(() => setActivityBusyLabel(null), 300);
-      return () => window.clearTimeout(id);
-    }
-    const id = window.setTimeout(() => setActivityBusyLabel(activityBusyRaw), 700);
-    return () => window.clearTimeout(id);
-  }, [activityBusyRaw]);
-
-  /* Phase 3a: DriveMap prop bag assembled here so App JSX stays a thin spread. */
-  const driveMapProps = useDriveMapProps({
-    routes: driveMapRoutesForMap,
-    lineFocusId: driveMapLineFocusId,
-    suggestedRouteId,
-    userLngLat: effectiveUserLngLat,
-    navigationStarted,
-    liveLngLatRef,
-    liveSpeedMpsRef,
-    liveHeadingRef,
-    destLngLat,
-    viaStops,
-    fitTrigger,
-    viewMode,
-    heading,
-    driveRouteBearingDeg,
-    driveOffRouteForwardFraming,
-    speedMps,
-    allowDestinationPick,
-    topdownZoomRef,
-    onMapClick: handleMapClick,
-    savedPlaces,
-    savedPlacesVisible: showOnMap,
-    onSavedPlaceClick: handleSavedMarkerClick,
-    mapFocus,
-    onMapFocusComplete: flushMapFocus,
-    orderedRouteIds,
-    radarMapOverlayOn,
-    settingRadarDisplayMode,
-    dataSaverMode,
-    navMapLiteMode,
-    onRadarFrameUtcSec: setRadarFrameUtcSec,
-    alongRouteAlerts: mapAlongRouteAlertsForDrive,
-    corridorRouteGeometry: guidanceRoute?.geometry,
-    stormAlongRouteBands: mapStormAlongRouteBandsForDrive,
-    recordingActive,
-    recordingPathPreview,
-    weatherAlertGeoJson: deferredNwsAlertGeoJsonForMap,
-    stormBarVisible: showStormAdvisoryChrome,
-    stormBarExpanded,
-    recenterPlanningPuckTick,
-    navigationGuidanceGeometry,
-    navPositionOnRoute: navPosition.onRoute,
-    userAlongGuidanceM,
-    isPlus,
-    roadAdvisoryDetailOn,
-    settingTrafficEnabled,
-    hasMapboxToken: Boolean(env.mapboxToken),
-    onDriveCameraBearingDeg: handleDriveCameraBearingDeg,
-    trafficBypassCompare,
-    lockedNavigationRouteId,
-    activityTrailGeoJson: activityTrailGeoJsonForMap,
-    guidanceRouteLengthM,
-    maxPlanRouteLengthM,
-    activityTrailPlanningBounds,
-    idleHomeMapFraming,
-    homePuckFollow,
-    idleHomeNoRoutes: plan.routes.length === 0,
-    setHomePuckFollow,
-    learnEnabled,
-    homePreloadEnabled,
-    homePreloadBounds,
-    searchPickMarkers: searchPickMarkersForMap,
-    onSearchPickMarkerClick: handleSearchPickFromMap,
-    progressRailVisible: showProgressRail,
-    offRouteRejoinCompareActive: offRouteHoldPreviewActive || detourAutoActive,
+    stormCorridorAlertCount: stormCorridorAlerts.length,
+    stormMapFeatureCount: stormMapGeoJson?.features?.length ?? 0,
   });
 
-  /* Phase 3b: StormAdvisoryBar prop bag (Plus/Basic gating lives in the builder). */
-  const stormAdvisoryBarProps = buildStormAdvisoryBarProps({
-    isPlus,
-    stormSessionOn,
-    onSessionToggle: onStormSessionToggle,
-    stormLoading,
-    stormError,
-    stormCorridorAlertsLength: stormCorridorAlerts.length,
-    stormMapHasFeatures: Boolean(stormMapGeoJson?.features?.length),
-    allDisplayableAlerts,
-    nwsAlertsForGuidanceAdvisory,
-    stormNwsPuckInside,
-    trafficDelayMinutes: guidanceSlice?.trafficDelayMinutes ?? 0,
-    onTrafficReroute:
-      TRAFFIC_BYPASS_ENABLED &&
-      isPlus &&
-      env.mapboxToken &&
-      userLngLat &&
-      destLngLat &&
-      guidanceRoute &&
-      showTrafficBypassCta
-        ? () => void handleTrafficBypassFromHere()
-        : undefined,
-    bypassBusy,
-    roadAdvisoryDetailOn,
-    onRoadDetailToggle: onRoadAdvisoryDetailToggle,
-    hasGuidanceRoute: Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2),
-    advisoryRoadDetailRows,
-    advisoryRouteImpacts,
-    advisoryStormStripBands,
-    routeAheadTimeline,
-    routeTotalMeters: guidanceRouteLengthM,
-    userAlongMeters: advisoryUserAlongM,
-    planEtaMinutes: guidanceRoute?.baseEtaMinutes ?? null,
-    driveEtaMinutes: driveEtaMinutes ?? null,
-    stormBarExpanded,
-    onBarExpandedChange: onStormBarExpandedChange,
-    onNwsAlertClick: handleAdvisoryNwsClick,
-    busyLabel: activityBusyLabel,
-    staleWeatherNote: routeForecastRefreshBlocked,
-    onRefreshWeather: handleRefreshRouteInfoWeather,
-    driveModeUi,
-    driveRouteAheadLine,
-    nextHazardAtEtaLine,
-    advisoryPlusDetailOn,
-    advisoryPromoLines,
-    isOnline,
-    navigationStarted,
-    advisoryNowcastLine,
-    currentNowcast,
-    forecastAreaLabel,
-    tioMinutePrecip,
-    localHourlyForecast,
-    localDailyForecast,
-    localForecastNwsAlerts,
-    localForecastPanelLoading,
-    weatherKitPrimary: env.weatherKitEnabled,
-    forecastLngLat: userLngLat,
-    onOpenSubscription: () => setAboutOpen(true),
-    basicStatusPanelPromos,
-    showDataSaverHint,
-    onOpenDataSaverSettings: () => setAboutOpen(true),
-    onDismissDataSaverHint: () => {
-      dismissDataSaverHintAction();
+  /* Phase 3a/3b + peel: DriveMap + StormAdvisoryBar prop bags assembled together so App JSX
+   * stays a thin spread. */
+  const { driveMapProps, stormAdvisoryBarProps } = useAppMapChromeProps({
+    driveMap: {
+      routes: driveMapRoutesForMap,
+      lineFocusId: driveMapLineFocusId,
+      suggestedRouteId,
+      userLngLat: effectiveUserLngLat,
+      liveLngLatRef,
+      liveSpeedMpsRef,
+      liveHeadingRef,
+      fitTrigger,
+      heading,
+      driveRouteBearingDeg,
+      driveOffRouteForwardFraming,
+      speedMps,
+      allowDestinationPick,
+      topdownZoomRef,
+      onMapClick: handleMapClick,
+      savedPlaces,
+      savedPlacesVisible: showOnMap,
+      onSavedPlaceClick: handleSavedMarkerClick,
+      orderedRouteIds,
+      radarMapOverlayOn,
+      dataSaverMode,
+      navMapLiteMode,
+      onRadarFrameUtcSec: setRadarFrameUtcSec,
+      alongRouteAlerts: mapAlongRouteAlertsForDrive,
+      corridorRouteGeometry: guidanceRoute?.geometry,
+      stormAlongRouteBands: mapStormAlongRouteBandsForDrive,
+      recordingActive,
+      recordingPathPreview,
+      weatherAlertGeoJson: deferredNwsAlertGeoJsonForMap,
+      stormBarVisible: showStormAdvisoryChrome,
+      recenterPlanningPuckTick,
+      navigationGuidanceGeometry,
+      navPositionOnRoute: navPosition.onRoute,
+      userAlongGuidanceM,
+      isPlus,
+      roadAdvisoryDetailOn,
+      hasMapboxToken: Boolean(env.mapboxToken),
+      onDriveCameraBearingDeg: handleDriveCameraBearingDeg,
+      lockedNavigationRouteId,
+      activityTrailGeoJson: activityTrailGeoJsonForMap,
+      guidanceRouteLengthM,
+      maxPlanRouteLengthM,
+      activityTrailPlanningBounds,
+      idleHomeMapFraming,
+      homePuckFollow,
+      setHomePuckFollow,
+      learnEnabled,
+      homePreloadEnabled,
+      homePreloadBounds,
+      searchPickMarkers: searchPickMarkersForMap,
+      onSearchPickMarkerClick: handleSearchPickFromMap,
+      progressRailVisible: showProgressRail,
+      offRouteRejoinCompareActive: offRouteHoldPreviewActive || detourAutoActive,
+    },
+    stormAdvisoryBar: {
+      isPlus,
+      stormSessionOn,
+      onSessionToggle: onStormSessionToggle,
+      allDisplayableAlerts,
+      nwsAlertsForGuidanceAdvisory,
+      stormNwsPuckInside,
+      trafficDelayMinutes: guidanceSlice?.trafficDelayMinutes ?? 0,
+      trafficRerouteEligible: Boolean(
+        TRAFFIC_BYPASS_ENABLED &&
+          isPlus &&
+          env.mapboxToken &&
+          userLngLat &&
+          destLngLat &&
+          guidanceRoute &&
+          showTrafficBypassCta
+      ),
+      onTrafficBypassFromHere: handleTrafficBypassFromHere,
+      bypassBusy,
+      roadAdvisoryDetailOn,
+      onRoadDetailToggle: onRoadAdvisoryDetailToggle,
+      hasGuidanceRoute: Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2),
+      advisoryRoadDetailRows,
+      advisoryRouteImpacts,
+      advisoryStormStripBands,
+      routeAheadTimeline,
+      routeTotalMeters: guidanceRouteLengthM,
+      userAlongMeters: advisoryUserAlongM,
+      planEtaMinutes: guidanceRoute?.baseEtaMinutes ?? null,
+      driveEtaMinutes: driveEtaMinutes ?? null,
+      onBarExpandedChange: onStormBarExpandedChange,
+      onNwsAlertClick: handleAdvisoryNwsClick,
+      busyLabel: activityBusyLabel,
+      staleWeatherNote: routeForecastRefreshBlocked,
+      onRefreshWeather: handleRefreshRouteInfoWeather,
+      driveModeUi,
+      driveRouteAheadLine,
+      nextHazardAtEtaLine,
+      advisoryPlusDetailOn,
+      advisoryPromoLines,
+      isOnline,
+      advisoryNowcastLine,
+      currentNowcast,
+      forecastAreaLabel,
+      tioMinutePrecip,
+      localHourlyForecast,
+      localDailyForecast,
+      localForecastNwsAlerts,
+      localForecastPanelLoading,
+      weatherKitPrimary: env.weatherKitEnabled,
+      forecastLngLat: userLngLat,
+      onOpenAbout: () => setAboutOpen(true),
+      basicStatusPanelPromos,
+      showDataSaverHint,
+      onDismissDataSaverHint: dismissDataSaverHintAction,
     },
   });
 
-  const devPointerStyle = import.meta.env.DEV
-    ? ({
-        ["--sp-dev-cursor-default"]: DEV_CURSOR_DEFAULT,
-        ["--sp-dev-cursor-pointer"]: DEV_CURSOR_POINTER,
-      } as CSSProperties)
-    : undefined;
-
   return (
     <div
-      className={`app-shell nav-fullmap${navigationStarted && viewMode === "drive" ? " nav-drive-ui" : ""}${
-        navigationStarted && viewMode === "topdown" ? " nav-mapnav-ui" : ""
-      }${showProgressRail ? " nav-progress-rail-on" : ""
-      }${trafficBypassCompare ? " nav-route-compare-active" : ""
-      }${basemapNight ? " app-shell--basemap-night" : ""}${settingLandscapeSideHand === "left" ? " app-shell--landscape-hand-left" : ""}${
-        radarMapOverlayOn && radarFrameUtcSec != null ? " nav-radar-frame-time-visible" : ""
-      }${basicAdBanner.reservesBottomSpace ? " app-shell--basic-ad-banner" : ""}${
-        import.meta.env.DEV ? " app-shell--dev-pointer" : ""
-      }`}
-      style={devPointerStyle}
+      className={buildAppShellClassName({
+        navigationStarted,
+        isDriveView: viewMode === "drive",
+        isTopdownView: viewMode === "topdown",
+        showProgressRail,
+        trafficBypassCompareActive: Boolean(trafficBypassCompare),
+        basemapNight,
+        landscapeHandLeft: settingLandscapeSideHand === "left",
+        radarFrameTimeVisible: radarMapOverlayOn && radarFrameUtcSec != null,
+        basicAdBannerReservesSpace: basicAdBanner.reservesBottomSpace,
+      })}
+      style={buildDevPointerStyle()}
     >
       {import.meta.env.DEV ? (
         <div
@@ -3945,192 +2284,104 @@ export default function App() {
           Dev
         </div>
       ) : null}
-      <div className="map-stage map-bleed">
-        <div className="map-canvas">
-          <Suspense fallback={<div className="drive-map" />}>
-          <DriveMap {...driveMapProps} />
-          </Suspense>
-        </div>
-
+      <AppMapStage driveMapProps={driveMapProps}>
         <div className="nav-drive-overlay-stack">
             {!trafficBypassCompare ? (
-            <div className="nav-top-cluster">
-              <div className="nav-top-route-rail">
-                <div className="nav-top-route-rail__main">
-                  <TopGuidanceBar
-                    hasRoute={navigationStarted && plan.routes.length > 0}
-                    turnSteps={turnSteps}
-                    activeTurnIndex={bannerTurnIndex}
-                    metersToManeuverEnd={metersToBannerManeuver}
-                    glanceable={navigationStarted && viewMode === "drive"}
-                  />
-                  {(personalForkNav.showChip || personalForkNav.showCommittedChip) &&
-                  personalForkNav.offer ? (
-                    <YourRouteChip
-                      offer={personalForkNav.offer}
-                      committed={Boolean(personalForkNav.showCommittedChip)}
-                      onTake={() => commitPersonalFork()}
-                      onDismiss={() => personalForkNav.dismissForTrip()}
-                    />
-                  ) : null}
-                  {showStormAdvisoryChrome ? (
-                    <StormAdvisoryBar {...stormAdvisoryBarProps} />
-                  ) : isPlus ? (
-                    <div className="nav-top-activity-pill-wrap nav-top-activity-pill-wrap--solo">
-                      <ActivityStatusPill busyLabel={activityBusyLabel} />
-                    </div>
-                  ) : null}
-                  {radarMapOverlayOn && radarFrameClockLabel ? (
-                    <div
-                      className="map-radar-frame-time-cluster"
-                      aria-live="polite"
-                      title="Radar mosaic time (local)"
-                    >
-                      {radarFrameClockLabel}
-                    </div>
-                  ) : null}
-                  {hazardApproachAlertsActive && driveApproachBannerPick ? (
-                    <DriveHazardApproachBanner
-                      phase={driveApproachBannerPick.phase}
-                      impact={driveApproachBannerPick.impact}
-                      rerouteEnabled={
-                        TRAFFIC_BYPASS_ENABLED &&
-                        (showTrafficBypassCta ||
-                          driveApproachBannerPick.impact.id === "demo-approach-banner" ||
-                          driveApproachBannerPick.impact.id === "demo-close-hazard")
-                      }
-                      onDismiss={() => {
-                        const id = driveApproachBannerPick.impact.id;
-                        if (id === "demo-approach-banner") {
-                          setDemoApproachBannerOn(false);
-                          return;
-                        }
-                        if (id === "demo-close-hazard") {
-                          setDemoCloseHazardOn(false);
-                          return;
-                        }
-                        const key = driveApproachBannerPick.phase === "early" ? `e:${id}` : `n:${id}`;
-                        setDriveApproachDismissedIds((prev) => new Set(prev).add(key));
-                      }}
-                      onPlanAround={() => {
-                        const id = driveApproachBannerPick.impact.id;
-                        if (id === "demo-approach-banner") {
-                          setDemoApproachBannerOn(false);
-                          openDemoTrafficBypassCompareMock();
-                          return;
-                        }
-                        /* Close-hazard demo runs the *real* bypass pipeline against the live route so
-                         * we can validate the adaptive next-exit window end-to-end (not the mock compare).
-                         * We pass the demo impact's anchor explicitly because it isn't in routeImpactsForUi. */
-                        if (id === "demo-close-hazard") {
-                          const closeAnchor = driveApproachBannerPick.impact.alongMeters;
-                          const closeLngLat = driveApproachBannerPick.impact.lngLat;
-                          setDemoCloseHazardOn(false);
-                          void handleTrafficBypassFromHere({
-                            anchorAlongMeters: closeAnchor,
-                            anchorLngLat: closeLngLat,
-                          });
-                          return;
-                        }
-                        void handleTrafficBypassFromHere();
-                      }}
-                      busy={bypassBusy}
-                    />
-                  ) : null}
-                </div>
-              </div>
-            </div>
+            <AppTopNavCluster
+              navigationStarted={navigationStarted}
+              hasPlanRoutes={plan.routes.length > 0}
+              turnSteps={turnSteps}
+              bannerTurnIndex={bannerTurnIndex}
+              metersToBannerManeuver={metersToBannerManeuver}
+              viewMode={viewMode}
+              personalForkShowChip={personalForkNav.showChip}
+              personalForkShowCommittedChip={personalForkNav.showCommittedChip}
+              personalForkOffer={personalForkNav.offer}
+              onTakePersonalFork={() => commitPersonalFork()}
+              onDismissPersonalFork={() => personalForkNav.dismissForTrip()}
+              showStormAdvisoryChrome={showStormAdvisoryChrome}
+              stormAdvisoryBarProps={stormAdvisoryBarProps}
+              isPlus={isPlus}
+              activityBusyLabel={activityBusyLabel}
+              radarMapOverlayOn={radarMapOverlayOn}
+              radarFrameClockLabel={radarFrameClockLabel}
+              hazardApproachAlertsActive={hazardApproachAlertsActive}
+              driveApproachBannerPick={driveApproachBannerPick}
+              showTrafficBypassCta={showTrafficBypassCta}
+              bypassBusy={bypassBusy}
+              setDemoApproachBannerOn={setDemoApproachBannerOn}
+              setDemoCloseHazardOn={setDemoCloseHazardOn}
+              setDriveApproachDismissedIds={setDriveApproachDismissedIds}
+              openDemoTrafficBypassCompareMock={openDemoTrafficBypassCompareMock}
+              handleTrafficBypassFromHere={handleTrafficBypassFromHere}
+            />
             ) : null}
             {showProgressRail && (
-              <div
-                className={`nav-route-progress-rail${progressCalloutsOpen && progressCalloutCount > 0 ? " nav-route-progress-rail--callouts-open" : ""}`}
-              >
-                <div className="nav-route-progress-rail__inner">
-                  <RouteProgressCalloutRail
-                    open={progressCalloutsOpen}
-                    onOpenChange={setProgressCalloutsOpen}
-                    hasContent={progressCalloutCount > 0}
-                    showRefresh={
-                      isPlus &&
-                      Boolean(
-                        env.weatherKitEnabled ||
-                          env.openWeatherApiKey ||
-                          (routeWeatherReady &&
-                            guidanceRoute?.geometry &&
-                            guidanceRoute.geometry.length >= 2)
-                      )
-                    }
-                    refreshBusy={routeInfoWeatherRefreshing}
-                    refreshNote={routeInfoRefreshNote}
-                    refreshNoteTone={routeInfoRefreshNoteTone}
-                    onRefresh={handleRefreshRouteInfoWeather}
-                  >
-                    <RouteProgressGlancePanel
-                      timeline={routeAheadTimeline}
-                      routeWide={activeProgressCalloutPanel.routeWide}
-                      outlookSteps={activeProgressCalloutPanel.outlookTimeline}
-                      outlookSamples={activeProgressCalloutPanel.outlookSamples}
-                      radarSamples={radarMosaicSamples}
-                      radarStatusNote={
-                        radarRefreshBlocked ??
-                        (radarMosaicSamples.length > 0
-                          ? formatRadarSampleAge(radarMosaicUpdatedAt)
-                          : null)
-                      }
-                      windPoints={activeProgressCalloutPanel.windPoints}
-                      gustLinePoints={activeProgressCalloutPanel.gustLinePoints}
-                      gustSpikePoints={activeProgressCalloutPanel.gustSpikePoints}
-                      fallbackSegments={activeProgressCalloutPanel.segments.filter(
-                        (s) => !s.key.startsWith("route-ahead-")
-                      )}
-                      totalMeters={guidanceRouteLengthM}
-                      userAlongMeters={progressPanelAlongM}
-                      planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
-                      driveEtaMinutes={driveEtaMinutes ?? null}
-                      userAlongT={progressCalloutUserAlongT}
-                      stripTint={activeProgressCalloutPanel.stripTint}
-                      detailScrollRef={progressCalloutDetailScrollRef}
-                    />
-                  </RouteProgressCalloutRail>
-                  <RouteProgressStrip
-                    layout="side"
-                    geometry={progressRailRoute!.geometry}
-                    userLngLat={effectiveUserLngLat}
-                    userAlongMeters={userAlongGuidanceM}
-                    alerts={progressStripAlerts}
-                    radarIntensity={guidanceSlice?.radarIntensity ?? 0}
-                    routeLineColor={progressStripRouteColor}
-                    turnSteps={progressRailRoute!.turnSteps ?? turnSteps}
-                    stormBands={routeAheadProgressBands}
-                    driveEndsEmphasis={driveModeUi}
-                    tripOdometerM={tripOdometerM}
-                    tripRelativeProgress={navigationStarted}
-                    routeInfoOpen={progressCalloutsOpen}
-                    onRouteInfoOpenChange={
-                      progressCalloutCount > 0 ? setProgressCalloutsOpen : undefined
-                    }
-                  />
-                </div>
-              </div>
+              <AppProgressRail
+                progressCalloutsOpen={progressCalloutsOpen}
+                onProgressCalloutsOpenChange={setProgressCalloutsOpen}
+                progressCalloutCount={progressCalloutCount}
+                showRefresh={
+                  isPlus &&
+                  Boolean(
+                    env.weatherKitEnabled ||
+                      env.openWeatherApiKey ||
+                      (routeWeatherReady &&
+                        guidanceRoute?.geometry &&
+                        guidanceRoute.geometry.length >= 2)
+                  )
+                }
+                routeInfoWeatherRefreshing={routeInfoWeatherRefreshing}
+                routeInfoRefreshNote={routeInfoRefreshNote}
+                routeInfoRefreshNoteTone={routeInfoRefreshNoteTone}
+                onRefreshRouteInfoWeather={handleRefreshRouteInfoWeather}
+                routeAheadTimeline={routeAheadTimeline}
+                routeWide={activeProgressCalloutPanel.routeWide}
+                outlookSteps={activeProgressCalloutPanel.outlookTimeline}
+                outlookSamples={activeProgressCalloutPanel.outlookSamples}
+                radarMosaicSamples={radarMosaicSamples}
+                radarRefreshBlocked={radarRefreshBlocked}
+                radarMosaicUpdatedAt={radarMosaicUpdatedAt}
+                windPoints={activeProgressCalloutPanel.windPoints}
+                gustLinePoints={activeProgressCalloutPanel.gustLinePoints}
+                gustSpikePoints={activeProgressCalloutPanel.gustSpikePoints}
+                fallbackSegments={activeProgressCalloutPanel.segments.filter(
+                  (s) => !s.key.startsWith("route-ahead-")
+                )}
+                guidanceRouteLengthM={guidanceRouteLengthM}
+                progressPanelAlongM={progressPanelAlongM}
+                planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
+                driveEtaMinutes={driveEtaMinutes ?? null}
+                progressCalloutUserAlongT={progressCalloutUserAlongT}
+                stripTint={activeProgressCalloutPanel.stripTint}
+                progressCalloutDetailScrollRef={progressCalloutDetailScrollRef}
+                progressRailRouteGeometry={progressRailRoute!.geometry}
+                effectiveUserLngLat={effectiveUserLngLat}
+                userAlongGuidanceM={userAlongGuidanceM}
+                progressStripAlerts={progressStripAlerts}
+                radarIntensity={guidanceSlice?.radarIntensity ?? 0}
+                progressStripRouteColor={progressStripRouteColor}
+                progressRailRouteTurnSteps={progressRailRoute!.turnSteps}
+                turnSteps={turnSteps}
+                routeAheadProgressBands={routeAheadProgressBands}
+                driveModeUi={driveModeUi}
+                tripOdometerM={tripOdometerM}
+                navigationStarted={navigationStarted}
+              />
             )}
           </div>
 
-        {routeHazardSheet && (
-          <RouteHazardSheet
-            open
-            alerts={routeHazardSheet.alerts}
-            alternateRouteAvailable={hazardSheetAlternateAvailable}
-            bypassBusy={bypassBusy}
-            onClose={() => setRouteHazardSheet(null)}
-            onTryAlternateRoute={handleHazardSheetTryAlternate}
-          />
-        )}
-
-        <TollFlowSheets
-          avoidFailureNote={tollAvoidFailureNote}
-          busy={tollAvoidBusy || routing}
-          onContinue={handleTollContinue}
-          onPreview={() => void handleTollPreview()}
+        <AppHazardSheetsHost
+          routeHazardSheet={routeHazardSheet}
+          hazardSheetAlternateAvailable={hazardSheetAlternateAvailable}
+          bypassBusy={bypassBusy}
+          onCloseRouteHazardSheet={() => setRouteHazardSheet(null)}
+          handleHazardSheetTryAlternate={handleHazardSheetTryAlternate}
+          tollAvoidFailureNote={tollAvoidFailureNote}
+          tollAvoidBusy={tollAvoidBusy}
+          routing={routing}
+          handleTollContinue={handleTollContinue}
+          handleTollPreview={handleTollPreview}
         />
 
         <Suspense fallback={null}>
@@ -4171,511 +2422,158 @@ export default function App() {
         />
         </Suspense>
 
-        {pendingSave?.kind === "route" && (
-          <NameConfirmSheet
-            title="Save route"
-            initialName={`${pendingSave.destinationLabel} · route`}
-            hint="Restores this line on the map without calling the router again."
-            confirmLabel="Save route"
-            onConfirm={(name) => {
-              addSavedTripRoute(
-                name,
-                pendingSave.destinationLngLat,
-                pendingSave.destinationLabel,
-                pendingSave.geometry,
-                pendingSave.turnSteps
-              );
-              setPendingSave(null);
-              setTapHint("Route saved — ★ → Routes → Use.");
-              window.setTimeout(() => setTapHint(null), 4000);
-            }}
-            onCancel={() => setPendingSave(null)}
-          />
-        )}
-        {pendingSave?.kind === "recorded" && (
-          <NameConfirmSheet
-            title="Save recorded path"
-            initialName={recordedSuggestName}
-            hint="GPS trace — turn prompts are built from your path shape (no router fetch). Run forward or reversed from ★ → Routes."
-            confirmLabel="Save route"
-            onConfirm={(name) => {
-              addSavedTripRoute(
-                name,
-                pendingSave.destinationLngLat,
-                recordedEndLabel.trim() || "Recorded destination",
-                pendingSave.geometry,
-                undefined,
-                recordedStartLabel.trim() || undefined
-              );
-              setPendingSave(null);
-              setTapHint("Recorded route saved — ★ → Routes → Use.");
-              window.setTimeout(() => setTapHint(null), 4000);
-            }}
-            onCancel={() => setPendingSave(null)}
-          />
-        )}
-        {pendingSave?.kind === "learned" && (
-          <NameConfirmSheet
-            title="Save frequent route"
-            initialName={`Commute · ${pendingSave.cluster.count}×`}
-            hint="From Plus trip learning — same polyline behavior as other saved routes (no new router fetch)."
-            confirmLabel="Save route"
-            onConfirm={(name) => {
-              const c = pendingSave.cluster;
-              const end = c.geometry[c.geometry.length - 1]!;
-              addSavedTripRoute(name, end, "Learned destination", c.geometry, undefined);
-              dismissCluster(c.id);
-              setPendingSave(null);
-              setTapHint("Frequent route saved — ★ → Routes → Use.");
-              window.setTimeout(() => setTapHint(null), 4000);
-            }}
-            onCancel={() => setPendingSave(null)}
-          />
-        )}
+        <PendingSaveSheets
+          pendingSave={pendingSave}
+          recordedSuggestName={recordedSuggestName}
+          recordedStartLabel={recordedStartLabel}
+          recordedEndLabel={recordedEndLabel}
+          addSavedTripRoute={addSavedTripRoute}
+          dismissCluster={dismissCluster}
+          setPendingSave={setPendingSave}
+          setTapHint={setTapHint}
+        />
 
-        {!env.mapboxToken && (
-          <div className="nav-toast-stack nav-toast-stack--top" aria-live="polite">
-            <div className="nav-toast nav-toast-warn" role="status">
-              {typeof window !== "undefined" && window.location.hostname.includes("netlify.app")
-                ? "Map unavailable — add VITE_MAPBOX_TOKEN in Netlify env vars (Builds scope), then redeploy."
-                : "Add VITE_MAPBOX_TOKEN in web/.env.local."}
-            </div>
-          </div>
-        )}
+        <AppStatusBanners
+          hasMapboxToken={Boolean(env.mapboxToken)}
+          isNetlifyHost={
+            typeof window !== "undefined" && window.location.hostname.includes("netlify.app")
+          }
+          devLocOverrideLngLat={devLocOverrideLngLat}
+          locationFixSource={locationFixSource}
+          locationError={locationError}
+          routeError={routeError}
+          tapHint={tapHint}
+          safetyAck={safetyAck}
+          onSafetyAck={() => setSafetyAck(true)}
+          onReportIssue={
+            env.supportEmail || env.supportUrl ? handleQuickReportIssue : null
+          }
+          isOnline={isOnline}
+          navigationStarted={navigationStarted}
+          hasPlanRoutes={plan.routes.length > 0}
+          hasDest={Boolean(destLngLat)}
+          driveModeUi={driveModeUi}
+          isPlus={isPlus}
+          demoBypassTrafficJamPlus={demoBypassTrafficJamPlus}
+          demoPlaybackPlaying={demoPlaybackPlaying}
+          demoApproachBannerOn={demoApproachBannerOn}
+          demoCloseHazardOn={demoCloseHazardOn}
+          trafficBypassCompareOpen={Boolean(trafficBypassCompare)}
+          onToggleDemoPlayback={toggleDemoPlaybackPlaying}
+          onResetDemoPlayback={resetDemoPlaybackAlongRoute}
+          onToggleDemoApproachBanner={() => {
+            setDemoApproachBannerOn((v) => !v);
+            if (demoCloseHazardOn) setDemoCloseHazardOn(false);
+          }}
+          onToggleDemoCloseHazard={() => {
+            setDemoCloseHazardOn((v) => !v);
+            if (demoApproachBannerOn) setDemoApproachBannerOn(false);
+          }}
+          onOpenDemoCompare={openDemoTrafficBypassCompareMock}
+        />
 
-        {import.meta.env.DEV && devLocOverrideLngLat && (
-          <div className="nav-toast-stack nav-toast-stack--top" aria-live="polite">
-            <div className="nav-toast nav-toast-warn" role="status">
-              <strong>Dev pinned location</strong> — the browser never asks for GPS.{" "}
-              <button
-                type="button"
-                className="nav-toast-inline-btn"
-                onClick={() => {
-                  clearDevLocationOverride();
-                  window.location.hash = "";
-                  window.location.reload();
-                }}
-              >
-                Use real GPS
-              </button>
-            </div>
-          </div>
-        )}
+        <AppBottomChrome
+          handleTrafficBypassCompareSelect={handleTrafficBypassCompareSelect}
+          handleTrafficBypassCompareConfirm={handleTrafficBypassCompareConfirm}
+          handleTrafficBypassCompareCancel={handleTrafficBypassCompareCancel}
+          recordingActive={recordingActive}
+          trafficBypassCompareActive={Boolean(trafficBypassCompare)}
+          recordingPointCount={recordingPointCount}
+          recordingLengthM={recordingLengthM}
+          handleStopRecordingSave={handleStopRecordingSave}
+          handleDiscardRecordingPath={handleDiscardRecordingPath}
+          navigationStarted={navigationStarted}
+          viewMode={viewMode}
+          driveMapBearingDeg={driveMapBearingDeg}
+          onOpenAbout={() => setAboutOpen(true)}
+          driveDistanceRemainingLabel={driveDistanceRemainingLabel}
+          routePickItems={routePickItems}
+          lineFocusId={lineFocusId}
+          planRouteIds={planRouteIds}
+          previewLegIndex={previewLegIndex}
+          handlePreviewRouteSelect={handlePreviewRouteSelect}
+          routeDockDetail={routeDockDetail}
+          radarMapOverlayOn={radarMapOverlayOn}
+          radarFrameTimeLabel={radarFrameTimeLabel}
+          planRoutesLength={plan.routes.length}
+          userLngLat={userLngLat}
+          onRecenterPlanningPuck={() => {
+            setHomePuckFollow("follow");
+            setRecenterPlanningPuckTick((n) => n + 1);
+          }}
+          showCompactDest={showCompactDest}
+          handleCompactDestOpen={handleCompactDestOpen}
+          destinationLabel={destinationLabel}
+          searchText={searchText}
+          onSearchTextChange={(v) => {
+            setSearchText(v);
+            if (plan.routes.length === 0 || searchExpanded) setAllowAutocomplete(true);
+          }}
+          handleSearchFieldBeginEditing={handleSearchFieldBeginEditing}
+          handleSearchFieldEndEditing={handleSearchFieldEndEditing}
+          handleSearchCancelSuggestions={handleSearchCancelSuggestions}
+          handleSearchDismiss={handleSearchDismiss}
+          onSearchSubmit={() => void handleSearch()}
+          searchPlaceholder={
+            addingViaStop && destLngLat ? "Search your stop" : "Search address or place"
+          }
+          suggestions={suggestions}
+          onPickSuggestion={(h) => void handlePickSuggestion(h)}
+          suggestLoading={suggestLoading}
+          enableSuggestions={allowAutocomplete && (!routeActive || searchExpanded)}
+          viaStops={viaStops}
+          addingViaStop={addingViaStop}
+          canAddStop={Boolean(destLngLat)}
+          onStartAddStop={() => setAddingViaStop(true)}
+          onCancelAddStop={() => setAddingViaStop(false)}
+          handleRemoveViaStop={handleRemoveViaStop}
+          handleViewModeChange={handleViewModeChange}
+          onOpenSaved={() => setSavedDrawerOpen(true)}
+          handleGo={handleGo}
+          showGo={Boolean(plan.routes.length > 0 && primaryRouteId && !navigationStarted)}
+          speedMph={speedMph}
+          postedMph={postedMph}
+          handleStopAndClear={handleStopAndClear}
+          hasTrip={Boolean(plan.routes.length > 0 || destLngLat)}
+          showReturnTripButton={showReturnTripButton}
+          returnTripButtonLabel={returnTripButtonLabel}
+          returnTripTitle={
+            returnTripLeg
+              ? `Return to ${returnTripLeg.returnToLabel} on your previous route (reversed)`
+              : undefined
+          }
+          handleReturnToPreviousDestination={handleReturnToPreviousDestination}
+          showSavedPlacesButton={mapPlanningUi && (!navigationStarted || !routeActive)}
+          driveEtaMinutes={driveEtaMinutes}
+          onToggleRadar={() => setShowRadar((v) => !v)}
+          settingRadarEnabled={settingRadarEnabled}
+          driveModeUi={driveModeUi}
+          showOffRouteStatusBanner={showOffRouteStatusBanner}
+          detourAutoActive={detourAutoActive}
+          detourRejoinDistanceLabel={detourRejoinDistanceLabel}
+          routing={routing}
+          onStayOnThisRoad={() => void stayOnThisRoad()}
+          returnToOriginalRoute={returnToOriginalRoute}
+          showTrafficBypassCta={showTrafficBypassCta}
+          bypassBusy={bypassBusy}
+          onTrafficBypassFromHere={() => void handleTrafficBypassFromHere()}
+        />
+      </AppMapStage>
 
-        {import.meta.env.DEV && locationFixSource === "dev-ip" && (
-          <div className="nav-toast-stack nav-toast-stack--top" role="status">
-            <div className="nav-toast nav-toast-warn">
-              <strong>Approximate dev position (ISP / metro)</strong> — not GPS. Open{" "}
-              <code>http://localhost:5173</code> on this computer, or use the native app, for a real fix.
-            </div>
-          </div>
-        )}
-
-        {(locationError || routeError) && (
-          <div className="nav-toast-stack nav-toast-stack--top" aria-live="assertive">
-            {locationError ? (
-              <div className="nav-toast nav-toast-err" role="alert">
-                {locationError}
-              </div>
-            ) : null}
-            {routeError ? (
-              <div className="nav-toast nav-toast-err" role="alert">
-                {routeError}
-              </div>
-            ) : null}
-          </div>
-        )}
-
-        {tapHint ? (
-          <div className="nav-toast-stack nav-toast-stack--dock" role="status" aria-live="polite">
-            <div className="nav-toast nav-toast-warn">{tapHint}</div>
-          </div>
-        ) : null}
-
-        {!safetyAck && (
-          <div className="nav-safety-banner" role="dialog" aria-label="Safety notice">
-            <div className="nav-safety-banner__text">
-              Do not use StormPath while driving. Use a passenger or pull over. Always follow official warnings and road
-              closures.
-            </div>
-            <div className="nav-safety-banner__actions">
-              {env.supportEmail || env.supportUrl ? (
-                <button type="button" className="nav-safety-banner__btn nav-safety-banner__btn--ghost" onClick={handleQuickReportIssue}>
-                  Report issue
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="nav-safety-banner__btn"
-                onClick={() => {
-                  safeStorage.set("stormpath-safety-ack-v1", "1");
-                  setSafetyAck(true);
-                }}
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!isOnline && (navigationStarted || plan.routes.length > 0 || Boolean(destLngLat)) && (
-          <div
-            className={`nav-offline-banner${driveModeUi ? " nav-offline-banner--drive" : ""}`}
-            role="status"
-            aria-live="polite"
-          >
-            {driveModeUi
-              ? isPlus
-                ? "Offline — cached route; no live traffic, weather, or storm updates."
-                : "Offline — cached route; map and radar may be limited until you reconnect."
-              : isPlus
-                ? "Offline — showing last route. Live updates paused (traffic, weather, storm). See About if layers stay empty after you reconnect."
-                : "Offline — showing last route. Reconnect for map tiles and radar. See About if layers stay empty."}
-          </div>
-        )}
-
-        {demoBypassTrafficJamPlus && driveModeUi && navigationStarted && (
-          <div className="nav-demo-bypass-banner" role="region" aria-label="Plus traffic bypass demo tools">
-            <div className="nav-demo-bypass-banner__top">
-              <span className="nav-demo-bypass-banner__short">Demo</span>
-              <div className="nav-demo-bypass-banner__actions">
-                <button type="button" className="nav-demo-bypass-banner__btn" onClick={toggleDemoPlaybackPlaying}>
-                  {demoPlaybackPlaying ? "Pause" : "Play"}
-                </button>
-                <button type="button" className="nav-demo-bypass-banner__btn" onClick={resetDemoPlaybackAlongRoute}>
-                  Reset puck
-                </button>
-                <button
-                  type="button"
-                  className="nav-demo-bypass-banner__btn"
-                  onClick={() => {
-                    setDemoApproachBannerOn((v) => !v);
-                    if (demoCloseHazardOn) setDemoCloseHazardOn(false);
-                  }}
-                  disabled={Boolean(trafficBypassCompare)}
-                >
-                  {demoApproachBannerOn && !demoCloseHazardOn ? "Hide banner" : "Mock banner"}
-                </button>
-                <button
-                  type="button"
-                  className="nav-demo-bypass-banner__btn"
-                  onClick={() => {
-                    setDemoCloseHazardOn((v) => !v);
-                    if (demoApproachBannerOn) setDemoApproachBannerOn(false);
-                  }}
-                  disabled={Boolean(trafficBypassCompare)}
-                >
-                  {demoCloseHazardOn ? "Hide close" : "Mock close hazard"}
-                </button>
-                <button
-                  type="button"
-                  className="nav-demo-bypass-banner__btn"
-                  onClick={openDemoTrafficBypassCompareMock}
-                  disabled={Boolean(trafficBypassCompare)}
-                >
-                  Mock compare
-                </button>
-              </div>
-            </div>
-            <details className="nav-demo-bypass-banner__details">
-              <summary className="nav-demo-bypass-banner__summary">Demo notes</summary>
-              <div className="nav-demo-bypass-banner__text">
-                URL flag <code>?demo=bypass</code>. <strong>Play</strong> moves the puck at estimated MPH from turn text.{" "}
-                <strong>Mock banner</strong> shows the approach strip with a fake impact ~1.4 mi ahead — tap it to jump
-                to the mock compare. <strong>Mock close hazard</strong> drops one ~0.6 mi ahead so the surgical bypass
-                runs in its <em>next-exit</em> tier (tighter exit/rejoin window). <strong>Mock compare</strong> opens
-                the A/B/C panel directly (no Mapbox call).
-              </div>
-            </details>
-          </div>
-        )}
-
-        <div className="nav-bottom-stack">
-          <RouteCompareBottomPanel
-            onSelect={handleTrafficBypassCompareSelect}
-            onConfirm={handleTrafficBypassCompareConfirm}
-            onCancel={handleTrafficBypassCompareCancel}
-          />
-
-          {recordingActive && !trafficBypassCompare ? (
-            <RecordingRouteBanner
-              pointCount={recordingPointCount}
-              lengthMeters={recordingLengthM}
-              onStopSave={handleStopRecordingSave}
-              onDiscard={handleDiscardRecordingPath}
-            />
-          ) : null}
-          {!trafficBypassCompare ? (
-          <div className="nav-bottom-chrome-wrap">
-            <div className="nav-bottom-dock">
-              {navigationStarted && viewMode === "drive" ? (
-                <div className="nav-bottom-dock__about-row">
-                  <div className="nav-bottom-dock__drive-about-cluster">
-                    <div className="nav-bottom-dock__compass-i-col">
-                      <DriveCompass bearingDeg={driveMapBearingDeg} />
-                      <button
-                        type="button"
-                        className="map-about-btn"
-                        aria-label="About StormPath"
-                        title="About / Settings"
-                        onClick={() => setAboutOpen(true)}
-                      >
-                        i
-                      </button>
-                    </div>
-                    {driveDistanceRemainingLabel ? (
-                      <NavMilesLeftBox label={driveDistanceRemainingLabel} />
-                    ) : null}
-                  </div>
-                </div>
-              ) : navigationStarted && viewMode === "topdown" ? (
-                <div className="nav-bottom-dock__about-row">
-                  <button
-                    type="button"
-                    className="map-about-btn"
-                    aria-label="About StormPath"
-                    title="About / Settings"
-                    onClick={() => setAboutOpen(true)}
-                  >
-                    i
-                  </button>
-                  {driveDistanceRemainingLabel ? (
-                    <NavMilesLeftBox label={driveDistanceRemainingLabel} />
-                  ) : null}
-                  {routePickItems.length >= 1 ? (
-                    <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
-                      <RouteCycleButton
-                        items={routePickItems}
-                        selectedId={lineFocusId}
-                        cycleOrderIds={planRouteIds}
-                        activeSlotIndex={previewLegIndex}
-                        onSelect={handlePreviewRouteSelect}
-                        detail={routeDockDetail}
-                      />
-                    </div>
-                  ) : radarMapOverlayOn && radarFrameTimeLabel ? (
-                    <div
-                      className="nav-radar-frame-time-dock"
-                      aria-live="polite"
-                      title="Radar mosaic time (your local time)"
-                    >
-                      {radarFrameTimeLabel}
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="nav-bottom-dock__plan-stack">
-                  {/* About row hosts the round 'i' info button on the left and, when there are
-                   * routes to cycle, the route-select button inline to its right. The route-select
-                   * button is sized to fit the strip between the 'i' and the dock's right edge —
-                   * which is itself flush against the vertical progress rail — so adding the
-                   * select button doesn't push the rail narrower. */}
-                  {/* About row hosts the round 'i' info button on the left, plus an inline
-                   * action slot to its right. The slot shows route-select while a route is
-                   * loaded, or "My location" while planning (no routes yet). Both share the
-                   * same height + right inset so the dock keeps a single horizontal control
-                   * strip clear of the vertical progress rail. */}
-                  <div className="nav-bottom-dock__about-row">
-                    <button
-                      type="button"
-                      className="map-about-btn"
-                      aria-label="About StormPath"
-                      title="About / Settings"
-                      onClick={() => setAboutOpen(true)}
-                    >
-                      i
-                    </button>
-                    {navigationStarted && driveDistanceRemainingLabel ? (
-                      <NavMilesLeftBox label={driveDistanceRemainingLabel} />
-                    ) : null}
-                    {viewMode === "route" && routePickItems.length >= 1 ? (
-                      <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
-                        <RouteCycleButton
-                          items={routePickItems}
-                          selectedId={lineFocusId}
-                          cycleOrderIds={planRouteIds}
-                          activeSlotIndex={previewLegIndex}
-                          onSelect={handlePreviewRouteSelect}
-                          detail={routeDockDetail}
-                        />
-                      </div>
-                    ) : (viewMode === "route" || viewMode === "topdown") &&
-                      plan.routes.length === 0 &&
-                      userLngLat ? (
-                      <button
-                        type="button"
-                        className="nav-recenter-puck-btn nav-recenter-puck-btn--dock nav-recenter-puck-btn--inline"
-                        title="Center map on your location"
-                        aria-label="Center map on your location"
-                        onClick={() => {
-                          setHomePuckFollow("follow");
-                          setRecenterPlanningPuckTick((n) => n + 1);
-                        }}
-                      >
-                        My location
-                      </button>
-                    ) : radarMapOverlayOn && radarFrameTimeLabel ? (
-                      <div
-                        className="nav-radar-frame-time-dock"
-                        aria-live="polite"
-                        title="Radar mosaic time (your local time)"
-                      >
-                        {radarFrameTimeLabel}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="nav-bottom-dock__search-myloc-row">
-                    <div className="nav-bottom-dock__search-col">
-                      <div className="nav-search-dock">
-                        {showCompactDest ? (
-                          <button
-                            type="button"
-                            className="nav-dest-compact nav-dest-compact--tap"
-                            onClick={handleCompactDestOpen}
-                          >
-                            <span className="nav-dest-compact-label" title={destinationLabel}>
-                              {destinationLabel || "Destination"}
-                            </span>
-                          </button>
-                        ) : (
-                          <>
-                            <SearchBar
-                              value={searchText}
-                              onChange={(v) => {
-                                setSearchText(v);
-                                if (plan.routes.length === 0 || searchExpanded) setAllowAutocomplete(true);
-                              }}
-                              onBeginEditing={handleSearchFieldBeginEditing}
-                              onEndEditing={handleSearchFieldEndEditing}
-                              onCancelSuggestions={handleSearchCancelSuggestions}
-                              onDismiss={handleSearchDismiss}
-                              onSearch={() => void handleSearch()}
-                              placeholder={
-                                addingViaStop && destLngLat ? "Search your stop" : "Search address or place"
-                              }
-                              suggestions={suggestions}
-                              onPickSuggestion={(h) => void handlePickSuggestion(h)}
-                              suggestionsLoading={suggestLoading}
-                              showSuggestionsWhenEmpty={isNarrowPhoneViewport()}
-                              enableSuggestions={allowAutocomplete && (!routeActive || searchExpanded)}
-                            />
-                            {!navigationStarted ? (
-                              <RouteStopsBar
-                                viaStops={viaStops}
-                                addingStop={addingViaStop}
-                                canAddStop={Boolean(destLngLat)}
-                                onStartAddStop={() => setAddingViaStop(true)}
-                                onCancelAddStop={() => setAddingViaStop(false)}
-                                onRemoveStop={handleRemoveViaStop}
-                              />
-                            ) : null}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  {/* Action row removed — both "My location" (planning) and the route-cycle
-                   * button (route loaded) now live inline on the about-row above the search. */}
-                </div>
-              )}
-            </div>
-
-            <BottomToolbar
-              viewMode={viewMode}
-              onViewMode={handleViewModeChange}
-              onOpenSaved={() => setSavedDrawerOpen(true)}
-              navigationStarted={navigationStarted}
-              onGo={handleGo}
-              showGo={Boolean(plan.routes.length > 0 && primaryRouteId && !navigationStarted)}
-              speedMph={speedMph}
-              postedMph={postedMph}
-              onStop={handleStopAndClear}
-              hasTrip={Boolean(plan.routes.length > 0 || destLngLat)}
-              showReturnTripButton={showReturnTripButton}
-              returnTripLabel={returnTripButtonLabel}
-              returnTripTitle={
-                returnTripLeg
-                  ? `Return to ${returnTripLeg.returnToLabel} on your previous route (reversed)`
-                  : undefined
-              }
-              onReturnTrip={handleReturnToPreviousDestination}
-              showSavedPlacesButton={
-                mapPlanningUi &&
-                (!navigationStarted || !routeActive)
-              }
-              showViewCycleButton
-              viewCycleDisabled={!navigationStarted}
-              driveEtaMinutes={driveEtaMinutes}
-              showRadar={radarMapOverlayOn}
-              onToggleRadar={() => setShowRadar((v) => !v)}
-              radarEnabled={settingRadarEnabled}
-              showRadarButton={!driveModeUi}
-              showOffRouteBanner={
-                shouldShowManualOffRouteUi() && showOffRouteStatusBanner
-              }
-              offRouteRejoinActive={detourAutoActive}
-              offRouteRejoinDistanceLabel={detourRejoinDistanceLabel}
-              offRouteOptionsBusy={routing}
-              onStayOnThisRoad={
-                shouldShowManualOffRouteUi() ? () => void stayOnThisRoad() : undefined
-              }
-              onReturnToOriginalRoute={
-                shouldShowManualOffRouteUi() ? returnToOriginalRoute : undefined
-              }
-              showTrafficBypass={shouldShowTrafficBypassUi() && showTrafficBypassCta}
-              bypassBusy={bypassBusy}
-              onTrafficBypass={
-                shouldShowTrafficBypassUi()
-                  ? () => void handleTrafficBypassFromHere()
-                  : undefined
-              }
-            />
-          </div>
-          ) : null}
-        </div>
-      </div>
-
-      <Suspense fallback={null}>
-        <AboutSheet
-        open={aboutOpen}
-        onClose={() => setAboutOpen(false)}
+      <AppAboutSheetHost
         payTierProbeKey={payTierProbeKey}
-        onPayTierOverride={
-          import.meta.env.DEV || payTierTestPanelEnabled() ? reprobePayTier : undefined
-        }
-        activityTrail={activityTrailAboutPanel}
+        reprobePayTier={reprobePayTier}
+        activityTrailAboutPanel={activityTrailAboutPanel}
         homePuckFollow={homePuckFollow}
         onHomePuckFollowChange={(mode) => {
           setHomePuckFollow(mode);
           writeHomePuckFollow(mode);
           if (mode === "follow") setRecenterPlanningPuckTick((n) => n + 1);
         }}
-        settings={{
-          radarEnabled: settingRadarEnabled,
-          radarDisplayMode: settingRadarDisplayMode,
-          stormEnabled: settingStormEnabled,
-          trafficEnabled: settingTrafficEnabled,
-          weatherHintsEnabled: settingWeatherHintsEnabled,
-          dataSaverEnabled: settingDataSaverEnabled,
-          autoRerouteEnabled: settingAutoRerouteEnabled,
-          voiceGuidanceEnabled: settingVoiceGuidanceEnabled,
-          gpsHighRefreshEnabled: settingGpsHighRefreshEnabled,
-          mapMatchingEnabled: settingMapMatchingEnabled,
-          landscapeSideHand: settingLandscapeSideHand,
-        }}
-        onSettings={(next) => {
-          /* `applySettings` persists every field through the same helpers the individual
-           * setters use and batches the state update into a single React re-render. The
-           * `useEffect([settingRadarEnabled])` at the top of this file picks up the radar
-           * overlay clean-up on the next tick. */
-          applySettings(next);
-          setTapHint(`Settings updated (${tierLabel}).`);
-          window.setTimeout(() => setTapHint(null), 2500);
-        }}
+        tierLabel={tierLabel}
         onReplayCoachmarks={handleReplayCoachmarks}
-        liveRerouteEnabled={shouldShowManualOffRouteUi()}
-        />
-      </Suspense>
+        setTapHint={setTapHint}
+      />
 
       <Coachmarks replayKey={coachmarksReplayKey} />
     </div>

@@ -3,6 +3,8 @@ import type { SavedPlace } from "../nav/savedPlaces";
 import type { SavedRoute } from "../nav/savedRoutes";
 import type { LngLat } from "../nav/types";
 import type { FrequentRouteCluster } from "../frequentRoutes/types";
+import { formatFrequentClusterEndpoints } from "../frequentRoutes/enrichClusterLabels";
+import { geometryToPreviewPath } from "../frequentRoutes/routePreviewPath";
 import { loadRecentDestinations, type RecentDestination } from "../recentSearches";
 
 /* The drawer is a full-screen sheet with a "home" landing page and three drill-in pages
@@ -333,53 +335,28 @@ export function SavedDestinationsDrawer({
                       onChange={(e) => onFrequentRoutesLearnEnabled(e.target.checked)}
                     />
                     <span>
-                      <strong>Learn repeated trips</strong> — counts Go navigation legs (home ↔ work count as
-                      one corridor). Sparse GPS trail for search ranking and map framing.
+                      <strong>Learn repeated trips</strong> — same corridor (e.g. home ↔ work) counted after Go →
+                      Stop.
                     </span>
                   </label>
                   <p className="saved-drawer-route-hint saved-drawer-route-hint--tight">
-                    Finish a trip with <strong>Go</strong> then Stop or arrival auto-clear. After two similar legs, a
-                    suggestion appears below.
+                    After two similar legs, suggestions show from → to below.
                   </p>
                   <p className="saved-drawer-pane__subhead">Suggestions</p>
                   <ul className="saved-drawer-list saved-drawer-list--full">
                     {frequentRouteSuggestions.length === 0 && (
                       <li className="saved-drawer-empty">
-                        No suggestions yet. Turn learning on and drive the same commute or errand route twice.
+                        No suggestions yet. Turn learning on and drive the same route twice.
                       </li>
                     )}
                     {frequentRouteSuggestions.map((c) => (
-                      <li key={c.id} className="saved-drawer-row saved-drawer-row--tile saved-drawer-row--learn">
-                        <div className="saved-drawer-tile-head">
-                          <span className="saved-drawer-tile-title">Similar trip · {c.count}×</span>
-                          <p className="saved-drawer-tile-sub saved-drawer-learn-meta">
-                            Last:{" "}
-                            {new Date(c.lastSeen).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          className="saved-drawer-tile-primary"
-                          onClick={() => onTryFrequentRoute(c)}
-                        >
-                          Use suggestion
-                        </button>
-                        <div className="saved-drawer-tile-meta" role="group" aria-label="Suggestion actions">
-                          <button type="button" className="saved-drawer-tile-link" onClick={() => onSaveFrequentRoute(c)}>
-                            Save as route
-                          </button>
-                          <span className="saved-drawer-tile-meta-sep" aria-hidden>
-                            ·
-                          </span>
-                          <button
-                            type="button"
-                            className="saved-drawer-tile-link danger"
-                            onClick={() => onDismissFrequentRoute(c.id)}
-                          >
-                            Dismiss
-                          </button>
-                        </div>
-                      </li>
+                      <FrequentRouteRow
+                        key={c.id}
+                        cluster={c}
+                        onUse={() => onTryFrequentRoute(c)}
+                        onSave={() => onSaveFrequentRoute(c)}
+                        onDismiss={() => onDismissFrequentRoute(c.id)}
+                      />
                     ))}
                   </ul>
                 </>
@@ -419,6 +396,80 @@ function HomeTile({
       </span>
       <span className="saved-drawer-home-tile__hint">{hint}</span>
     </button>
+  );
+}
+
+/** Compact frequent-route suggestion: mini path preview + From → To + actions. */
+function FrequentRouteRow({
+  cluster,
+  onUse,
+  onSave,
+  onDismiss,
+}: {
+  cluster: FrequentRouteCluster;
+  onUse: () => void;
+  onSave: () => void;
+  onDismiss: () => void;
+}) {
+  const { from, to } = formatFrequentClusterEndpoints(cluster, (lng, lat) =>
+    formatLngLatLine([lng, lat])
+  );
+  const previewPath = geometryToPreviewPath(cluster.geometry);
+  const lastLabel = new Date(cluster.lastSeen).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+  const waitingOnNames = !cluster.startLabel?.trim() || !cluster.endLabel?.trim();
+
+  return (
+    <li className="saved-drawer-row saved-drawer-row--freq">
+      <button type="button" className="saved-drawer-freq-main" onClick={onUse}>
+        <span className="saved-drawer-freq-preview" aria-hidden>
+          {previewPath ? (
+            <svg viewBox="0 0 56 28" width="56" height="28" className="saved-drawer-freq-preview__svg">
+              <path d={previewPath} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          ) : (
+            <span className="saved-drawer-freq-preview__empty" />
+          )}
+        </span>
+        <span className="saved-drawer-freq-copy">
+          <span className="saved-drawer-freq-endpoints">
+            <span className="saved-drawer-freq-from">{from}</span>
+            <span className="saved-drawer-freq-arrow" aria-hidden>
+              →
+            </span>
+            <span className="saved-drawer-freq-to">{to}</span>
+          </span>
+          <span className="saved-drawer-freq-meta">
+            <span className="saved-drawer-freq-count">{cluster.count}×</span>
+            <span className="saved-drawer-freq-dot" aria-hidden>
+              ·
+            </span>
+            <span>Last {lastLabel}</span>
+            {waitingOnNames ? (
+              <>
+                <span className="saved-drawer-freq-dot" aria-hidden>
+                  ·
+                </span>
+                <span className="saved-drawer-freq-resolving">Resolving places…</span>
+              </>
+            ) : null}
+          </span>
+        </span>
+      </button>
+      <div className="saved-drawer-freq-actions" role="group" aria-label="Suggestion actions">
+        <button type="button" className="saved-drawer-tile-link" onClick={onSave}>
+          Save
+        </button>
+        <span className="saved-drawer-tile-meta-sep" aria-hidden>
+          ·
+        </span>
+        <button type="button" className="saved-drawer-tile-link danger" onClick={onDismiss}>
+          Dismiss
+        </button>
+      </div>
+    </li>
   );
 }
 

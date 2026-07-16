@@ -11,6 +11,7 @@ import {
   persistFrequentRouteClusters,
   removeFrequentRouteCluster,
 } from "../frequentRoutes/clusters";
+import { enrichFrequentClusterLabels } from "../frequentRoutes/enrichClusterLabels";
 import {
   createInitialTripState,
   forceFinishActiveTrip,
@@ -39,12 +40,14 @@ export function useFrequentRouteLearning(opts: {
   payUnlocked: boolean;
   userLngLat: LngLat | null;
   speedMps: number | null;
+  mapboxToken?: string;
 }) {
   const [clusters, setClusters] = useState<FrequentRouteCluster[]>(() => loadFrequentRouteClusters());
   const [learnEnabled, setLearnEnabled] = useState(() => readOptIn());
   const machineRef = useRef<TripLearningMachineState | null>(null);
   const posRef = useRef<LngLat | null>(null);
   const speedRef = useRef<number | null>(null);
+  const enrichInFlightRef = useRef(false);
 
   useEffect(() => {
     posRef.current = opts.userLngLat;
@@ -88,16 +91,46 @@ export function useFrequentRouteLearning(opts: {
     return () => window.clearInterval(id);
   }, [opts.payUnlocked, learnEnabled, opts.userLngLat]);
 
-  const dismissCluster = useCallback(
-    (id: string) => {
-      setClusters((prev) => {
-        const next = removeFrequentRouteCluster(prev, id);
-        persistFrequentRouteClusters(next);
-        return next;
-      });
-    },
-    []
-  );
+  /* Resolve place names for suggestions so the list shows From → To instead of raw coords. */
+  useEffect(() => {
+    const token = opts.mapboxToken;
+    if (!token || !opts.payUnlocked) return;
+    const needs = clusters.filter(
+      (c) => c.count >= 2 && (!c.startLabel?.trim() || !c.endLabel?.trim())
+    );
+    if (!needs.length || enrichInFlightRef.current) return;
+
+    let cancelled = false;
+    enrichInFlightRef.current = true;
+    void (async () => {
+      try {
+        for (const c of needs.slice(0, 4)) {
+          if (cancelled) break;
+          const enriched = await enrichFrequentClusterLabels(c, token);
+          if (cancelled || !enriched) continue;
+          setClusters((prev) => {
+            const next = prev.map((row) => (row.id === enriched.id ? { ...row, ...enriched } : row));
+            persistFrequentRouteClusters(next);
+            return next;
+          });
+        }
+      } finally {
+        enrichInFlightRef.current = false;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clusters, opts.mapboxToken, opts.payUnlocked]);
+
+  const dismissCluster = useCallback((id: string) => {
+    setClusters((prev) => {
+      const next = removeFrequentRouteCluster(prev, id);
+      persistFrequentRouteClusters(next);
+      return next;
+    });
+  }, []);
 
   const recordLearnedTrip = useCallback((trip: CompletedLearnedTrip) => {
     setClusters((prev) => {

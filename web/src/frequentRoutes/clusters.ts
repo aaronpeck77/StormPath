@@ -52,6 +52,12 @@ export function mergeTripIntoClusters(
 
   const prev = clusters[idx]!;
   const useGeom = trip.geometry.length > prev.geometry.length ? trip.geometry : prev.geometry;
+  const forward =
+    haversineMeters(start, prev.centerStart) <= MATCH_START_END_M &&
+    haversineMeters(end, prev.centerEnd) <= MATCH_START_END_M;
+  const reverse =
+    haversineMeters(start, prev.centerEnd) <= MATCH_START_END_M &&
+    haversineMeters(end, prev.centerStart) <= MATCH_START_END_M;
   const next: FrequentRouteCluster = {
     ...prev,
     count: prev.count + 1,
@@ -59,6 +65,8 @@ export function mergeTripIntoClusters(
     geometry: useGeom,
     centerStart: start,
     centerEnd: end,
+    startLabel: forward ? prev.startLabel : reverse ? prev.endLabel : undefined,
+    endLabel: forward ? prev.endLabel : reverse ? prev.startLabel : undefined,
   };
   const copy = [...clusters];
   copy[idx] = next;
@@ -109,6 +117,8 @@ export function loadFrequentRouteClusters(): FrequentRouteCluster[] {
         geometry,
         centerStart: [cs[0]!, cs[1]!],
         centerEnd: [ce[0]!, ce[1]!],
+        startLabel: typeof o.startLabel === "string" && o.startLabel.trim() ? o.startLabel.trim() : undefined,
+        endLabel: typeof o.endLabel === "string" && o.endLabel.trim() ? o.endLabel.trim() : undefined,
       });
     }
     return out;

@@ -14616,6 +14616,125 @@
   margin: 0;
 }
 
+/* Compact frequent-route suggestion rows */
+.saved-drawer-row--freq {
+  padding: 0;
+  margin-bottom: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(8, 9, 11, 0.45);
+  overflow: hidden;
+  border-bottom: none;
+}
+
+.saved-drawer-row--freq:last-child {
+  margin-bottom: 0;
+}
+
+.saved-drawer-freq-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px 6px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.saved-drawer-freq-main:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.saved-drawer-freq-preview {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 28px;
+  color: #7aa7f3;
+  opacity: 0.9;
+}
+
+.saved-drawer-freq-preview__svg {
+  display: block;
+}
+
+.saved-drawer-freq-preview__empty {
+  display: block;
+  width: 56px;
+  height: 28px;
+  border-radius: 4px;
+  background: rgba(122, 167, 243, 0.12);
+}
+
+.saved-drawer-freq-copy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.saved-drawer-freq-endpoints {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1.25;
+  color: #e8eaed;
+}
+
+.saved-drawer-freq-from,
+.saved-drawer-freq-to {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.saved-drawer-freq-arrow {
+  flex: 0 0 auto;
+  color: #7aa7f3;
+  font-weight: 700;
+}
+
+.saved-drawer-freq-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  color: #8b929a;
+  line-height: 1.3;
+}
+
+.saved-drawer-freq-count {
+  font-weight: 700;
+  color: #b8c0cc;
+}
+
+.saved-drawer-freq-dot {
+  opacity: 0.7;
+}
+
+.saved-drawer-freq-resolving {
+  font-style: italic;
+  color: #7c8490;
+}
+
+.saved-drawer-freq-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 10px 8px;
+}
+
 .saved-drawer-block {
   display: flex;
   flex-direction: column;

@@ -83,16 +83,21 @@ export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps)
       deltaLabel: hasB ? savingsShortVsA(etaA, etaB) : null,
       disabled: !hasB,
     },
-    {
+  ];
+  /* Route C only when a third leg exists — planning is capped at A/B, and toll compare is A vs B. */
+  if (hasC) {
+    options.push({
       id: "r-c",
       badge: "C",
       title: label("r-c"),
       desc: lowConfidence ? "Third option — compare on map" : "Third option — different corridor",
       eta: etaC,
-      deltaLabel: hasC ? savingsShortVsA(etaA, etaC) : null,
-      disabled: !hasC,
-    },
-  ];
+      deltaLabel: savingsShortVsA(etaA, etaC),
+      disabled: false,
+    });
+  }
+
+  const listLabel = hasC ? "A, B, or C — then confirm" : hasB ? "A or B — then confirm" : "Route A — then confirm";
 
   return (
     <div
@@ -116,7 +121,7 @@ export function TrafficBypassComparePanel(props: TrafficBypassComparePanelProps)
           ×
         </button>
       </div>
-      <div className="traffic-bypass-compare__grid" role="list" aria-label="A, B, or C — then confirm">
+      <div className="traffic-bypass-compare__grid" role="list" aria-label={listLabel}>
         {options.map((opt) => (
           <button
             key={opt.id}
