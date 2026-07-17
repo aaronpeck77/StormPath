@@ -7,13 +7,12 @@ import type { NormalizedWeatherAlert } from "./types";
 
 /**
  * NWS warning polygons for the map (Rt / Mp; hidden in Dr).
- * Plus-only; gated by life-safety + storm settings + session checkbox.
+ * Plus-only; gated by life-safety + About → NWS setting (fetch + map + advisory).
  */
 export function buildNwsAlertGeoJsonForMap(input: {
   isPlus: boolean;
   advisoryLifeSafetyOn: boolean;
   settingStormEnabled: boolean;
-  stormSessionOn: boolean;
   nwsMapOverlapRouteGeom: unknown[] | null | undefined;
   stormCorridorAlerts: NormalizedWeatherAlert[];
   stormMapGeoJson: GeoJSON.FeatureCollection | null | undefined;
@@ -27,7 +26,6 @@ export function buildNwsAlertGeoJsonForMap(input: {
 }): GeoJSON.FeatureCollection | null {
   if (!input.isPlus) return null;
   if (!input.advisoryLifeSafetyOn || !input.settingStormEnabled) return null;
-  if (!input.stormSessionOn) return null;
 
   // Browse mode (no route): Plus users see regional alert polygons.
   if (!input.nwsMapOverlapRouteGeom?.length) {

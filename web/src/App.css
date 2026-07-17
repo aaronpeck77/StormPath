@@ -1531,7 +1531,10 @@
 
 .about-sheet__tier-preview {
   margin: 0 0 8px;
-  /* padding/border/radius: .about-sheet__panel ? keep default soft-gray bg from the iOS group */
+}
+
+.about-sheet__tier-preview.about-sheet__settings-card {
+  margin: 0;
 }
 
 /* "Test pay tier" devtools panel sitting between the header and the scrolling sections */
@@ -1657,8 +1660,38 @@
 .about-sheet__settings {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
+}
+
+/* Bordered card for each Settings row/group so items don't blend together. */
+.about-sheet__settings-card {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(0, 0, 0, 0.24);
+  box-sizing: border-box;
+}
+
+.about-sheet__settings-card--muted {
+  opacity: 0.85;
+}
+
+.about-sheet__settings-card.about-sheet__home-framing {
+  margin: 0;
+}
+
+.about-sheet__settings-card.about-sheet__tier-preview {
+  /* Side-view group uses the same card chrome as other settings rows. */
+  padding: 10px 12px;
+}
+
+.about-sheet__home-framing--nested {
+  margin: 10px 0 0;
+  padding: 10px 0 0;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .about-sheet__upgrade-actions {
@@ -2055,6 +2088,19 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-inline-size: 0;
+}
+
+.about-sheet__home-framing.about-sheet__settings-card {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.about-sheet__home-framing.disabled {
+  opacity: 0.55;
 }
 
 .about-sheet__home-framing-legend {
@@ -9248,13 +9294,7 @@
   margin-left: auto;
 }
 
-/* Push the stacked NWS / Road toggles to their own row directly under the Advisory title.
- * The expanded panel is now narrower (left/right insets) so right-aligning the toggles next
- * to the title was clipping under the title's last letter. order: 3 + flex-basis: 100% pairs
- * with the head's `flex-wrap: wrap` so:
- *   row 1: [Advisory title]   ???????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????? [Done]
- *   row 2: [? NWS polygons]
- *          [? Road impacts & traffic] */
+/* Legacy stacked-toggle layout (NWS/Road checkboxes removed; keep rules harmless if unused). */
 .storm-advisory-bar--expanded .storm-advisory-bar__toggles--stacked {
   order: 3;
   flex-basis: 100%;

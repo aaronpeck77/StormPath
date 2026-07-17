@@ -24,8 +24,8 @@ import type {
 
 export type BuildStormAdvisoryBarPropsInput = {
   isPlus: boolean;
-  stormSessionOn: boolean;
-  onSessionToggle: (on: boolean) => void;
+  /** About → NWS master switch (fetch + map polygons + advisory). */
+  settingStormEnabled: boolean;
   stormLoading: boolean;
   stormError: string | null;
   stormCorridorAlertsLength: number;
@@ -37,8 +37,8 @@ export type BuildStormAdvisoryBarPropsInput = {
   /** Pre-resolved: either the bypass handler or undefined (App decides CTA eligibility). */
   onTrafficReroute: (() => void) | undefined;
   bypassBusy: boolean;
-  roadAdvisoryDetailOn: boolean;
-  onRoadDetailToggle: (on: boolean) => void;
+  /** About → Road impacts & traffic master switch. */
+  settingTrafficEnabled: boolean;
   hasGuidanceRoute: boolean;
   advisoryRoadDetailRows: StormRoadDetailRow[];
   advisoryRouteImpacts: RouteImpact[] | null;
@@ -83,8 +83,7 @@ export function buildStormAdvisoryBarProps(
 ): StormAdvisoryBarProps {
   const {
     isPlus,
-    stormSessionOn,
-    onSessionToggle,
+    settingStormEnabled,
     stormLoading,
     stormError,
     stormCorridorAlertsLength,
@@ -95,8 +94,7 @@ export function buildStormAdvisoryBarProps(
     trafficDelayMinutes,
     onTrafficReroute,
     bypassBusy,
-    roadAdvisoryDetailOn,
-    onRoadDetailToggle,
+    settingTrafficEnabled,
     hasGuidanceRoute,
     advisoryRoadDetailRows,
     advisoryRouteImpacts,
@@ -141,8 +139,7 @@ export function buildStormAdvisoryBarProps(
 
   return {
     featureEnabled: true,
-    sessionOn: stormSessionOn,
-    onSessionToggle,
+    sessionOn: isPlus && settingStormEnabled,
     loading: plusNwsLoading,
     error: isPlus ? stormError : null,
     corridorAlerts: isPlus ? allDisplayableAlerts : [],
@@ -151,8 +148,7 @@ export function buildStormAdvisoryBarProps(
     trafficDelayMinutes,
     onTrafficReroute,
     trafficRerouteBusy: bypassBusy,
-    roadDetailEnabled: isPlus && roadAdvisoryDetailOn,
-    onRoadDetailToggle,
+    roadDetailEnabled: isPlus && settingTrafficEnabled,
     hasGuidanceRoute,
     roadDetailRows: isPlus ? advisoryRoadDetailRows : [],
     routeImpacts: isPlus ? advisoryRouteImpacts : null,
@@ -164,7 +160,6 @@ export function buildStormAdvisoryBarProps(
     driveEtaMinutes,
     barExpanded: stormBarExpanded,
     onBarExpandedChange,
-    hideHeadToggles: !isPlus,
     onNwsAlertClick,
     busyLabel,
     staleWeatherNote,

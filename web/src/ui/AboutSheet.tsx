@@ -390,232 +390,238 @@ export function AboutSheet({
           <section className="about-sheet__panel about-sheet__panel--settings">
             <h3 className="about-sheet__h3">Settings</h3>
             <div className="about-sheet__settings">
-            <label className="about-sheet__setting">
-              <input
-                type="checkbox"
-                checked={settings.radarEnabled}
-                onChange={(e) => onSettings({ ...settings, radarEnabled: e.target.checked })}
-              />
-              <span>
-                <strong>Radar</strong> — enable the Rad button (US: Tomorrow.io, elsewhere: RainViewer)
-              </span>
-            </label>
-
-            <fieldset
-              className={`about-sheet__home-framing${settings.radarEnabled ? "" : " disabled"}`}
-            >
-              <legend className="about-sheet__home-framing-legend">Radar display</legend>
-              <p className="about-sheet__p about-sheet__p--tight">
-                Choose how precipitation shows on the map when radar is on. Storm-motion arrows use
-                RainViewer frames and appear only in still mode.
-              </p>
-              <label className="about-sheet__home-framing-option">
-                <input
-                  type="radio"
-                  name="radar-display-mode"
-                  disabled={!settings.radarEnabled}
-                  checked={settings.radarDisplayMode === "motion"}
-                  onChange={() => onSettings({ ...settings, radarDisplayMode: "motion" })}
-                />
-                <span>
-                  <strong>Motion loop</strong> — crossfade through recent radar frames.
-                </span>
-              </label>
-              <label className="about-sheet__home-framing-option">
-                <input
-                  type="radio"
-                  name="radar-display-mode"
-                  disabled={!settings.radarEnabled}
-                  checked={settings.radarDisplayMode === "still_arrows"}
-                  onChange={() => onSettings({ ...settings, radarDisplayMode: "still_arrows" })}
-                />
-                <span>
-                  <strong>Latest + arrows</strong> — still mosaic with storm-motion arrows on
-                  strong cells (direction from radar; mph only when confident).
-                </span>
-              </label>
-            </fieldset>
-
-            <label className={`about-sheet__setting${plus ? "" : " disabled"}`}>
-              <input
-                type="checkbox"
-                checked={settings.stormEnabled}
-                disabled={!plus}
-                onChange={(e) => onSettings({ ...settings, stormEnabled: e.target.checked })}
-              />
-              <span>
-                {plus ? (
-                  <>
-                    <strong>Advisory bar</strong> (NWS) — warning map, route overlap, and hazard details when NWS session
-                    tools are on
-                  </>
-                ) : (
-                  <>
-                    <strong>Status strip</strong> — tips and offers on Basic. Local forecast, NWS hazards, and map
-                    polygons are <em>Plus</em> only.
-                  </>
-                )}
-              </span>
-            </label>
-
-            <label className={`about-sheet__setting${plus ? "" : " disabled"}`}>
-              <input
-                type="checkbox"
-                checked={settings.trafficEnabled}
-                disabled={!plus}
-                onChange={(e) => onSettings({ ...settings, trafficEnabled: e.target.checked })}
-              />
-              <span>
-                <strong>Traffic overlay</strong> (Mapbox) — fetch traffic along routes{" "}
-                {!plus ? <em>(Plus)</em> : null}
-              </span>
-            </label>
-
-            <label className={`about-sheet__setting${plus ? "" : " disabled"}`}>
-              <input
-                type="checkbox"
-                checked={settings.weatherHintsEnabled}
-                disabled={!plus}
-                onChange={(e) => onSettings({ ...settings, weatherHintsEnabled: e.target.checked })}
-              />
-              <span>
-                <strong>Weather hints</strong> (OpenWeather) — sample conditions along routes{" "}
-                {!plus ? <em>(Plus)</em> : null}
-              </span>
-            </label>
-
-            <label className="about-sheet__setting">
-              <input
-                type="checkbox"
-                checked={settings.dataSaverEnabled}
-                onChange={(e) => onSettings({ ...settings, dataSaverEnabled: e.target.checked })}
-              />
-              <span>
-                <strong>Data saver</strong> — slower NWS/traffic refresh, one route leg at a time while
-                planning, static radar (no animation), and Tomorrow.io only when the advisory or corridor
-                forecast is open. Good for long drives on cellular data. Also follows your phone&apos;s
-                &quot;use less data&quot; when set.
-              </span>
-            </label>
-
-            {liveRerouteEnabled ? (
-            <label className={`about-sheet__setting${plus ? "" : " disabled"}`}>
-              <input
-                type="checkbox"
-                checked={settings.autoRerouteEnabled}
-                disabled={!plus}
-                onChange={(e) => onSettings({ ...settings, autoRerouteEnabled: e.target.checked })}
-              />
-              <span>
-                <strong>Auto detour</strong> — when you leave your chosen route, StormPath finds a short
-                local path to rejoin ahead and follows it in drive view. Your locked route stays until you
-                rejoin or pick another detour (B/C). Tap <strong>More options</strong> for alternates.
-                {!plus ? <em> (Plus)</em> : null}
-              </span>
-            </label>
-            ) : null}
-
-            <label className="about-sheet__setting">
-              <input
-                type="checkbox"
-                checked={settings.voiceGuidanceEnabled}
-                onChange={(e) => onSettings({ ...settings, voiceGuidanceEnabled: e.target.checked })}
-              />
-              <span>
-                <strong>Voice prompts</strong> — speak the next maneuver while <strong>Go</strong> navigation is on
-                (any view; device text-to-speech). Use a passenger or pull over to change settings.
-              </span>
-            </label>
-
-            <label className="about-sheet__setting">
-              <input
-                type="checkbox"
-                checked={settings.gpsHighRefreshEnabled}
-                onChange={(e) => onSettings({ ...settings, gpsHighRefreshEnabled: e.target.checked })}
-              />
-              <span>
-                <strong>GPS high refresh</strong> — request fresher positions (uses more battery). Turn off if the
-                puck feels jittery.
-              </span>
-            </label>
-
-            <label
-              className={`about-sheet__setting${plus && env.mapboxToken ? "" : " disabled"}`}
-            >
-              <input
-                type="checkbox"
-                checked={settings.mapMatchingEnabled}
-                disabled={!plus || !env.mapboxToken}
-                onChange={(e) => onSettings({ ...settings, mapMatchingEnabled: e.target.checked })}
-              />
-              <span>
-                <strong>Snap GPS to roads</strong> — while navigating, refines your position onto the
-                Mapbox road network (small extra data use). Helps the puck and off-route detection on
-                wide roads and interchanges.
-                {!plus ? <em> (Plus)</em> : !env.mapboxToken ? <em> (Mapbox token required)</em> : null}
-              </span>
-            </label>
-
-            <fieldset className="about-sheet__home-framing">
-              <legend className="about-sheet__home-framing-legend">Map follow (no active trip)</legend>
-              <p className="about-sheet__p about-sheet__p--tight">
-                Before you set a destination, choose whether the map stays locked on your GPS puck or
-                lets you pan and zoom freely without the camera snapping back.
-              </p>
-              <label className="about-sheet__home-framing-option">
-                <input
-                  type="radio"
-                  name="home-puck-follow"
-                  checked={homePuckFollow === "follow"}
-                  onChange={() => onHomePuckFollowChange("follow")}
-                />
-                <span>
-                  <strong>Keep puck centered</strong> — while you drive, the map moves under you and your
-                  location stays in the middle (tap <strong>My location</strong> anytime to re-center after
-                  panning).
-                </span>
-              </label>
-              <label className="about-sheet__home-framing-option">
-                <input
-                  type="radio"
-                  name="home-puck-follow"
-                  checked={homePuckFollow === "explore"}
-                  onChange={() => onHomePuckFollowChange("explore")}
-                />
-                <span>
-                  <strong>Explore the map</strong> — pan and zoom anywhere; your puck moves on the map but
-                  won&apos;t pull the camera back until you tap <strong>My location</strong>.
-                </span>
-              </label>
-            </fieldset>
-
-            <div
-              className="about-sheet__tier-preview about-sheet__panel about-sheet__panel--settings-inset"
-              role="group"
-              aria-label="Side view handedness"
-            >
-              <p className="about-sheet__tier-preview-label">Side view (landscape) — dominant hand</p>
-              <div className="about-sheet__tier-preview-btns">
-                <button
-                  type="button"
-                  className={`about-sheet__tier-preview-btn${settings.landscapeSideHand === "left" ? " about-sheet__tier-preview-btn--active" : ""}`}
-                  onClick={() => onSettings({ ...settings, landscapeSideHand: "left" })}
+              {/* 1. Radar + display options */}
+              <div
+                className={`about-sheet__settings-card${settings.radarEnabled ? "" : " about-sheet__settings-card--muted"}`}
+              >
+                <label className="about-sheet__setting">
+                  <input
+                    type="checkbox"
+                    checked={settings.radarEnabled}
+                    onChange={(e) => onSettings({ ...settings, radarEnabled: e.target.checked })}
+                  />
+                  <span>
+                    <strong>Radar</strong> — enable the Rad button (US: Tomorrow.io, elsewhere: RainViewer)
+                  </span>
+                </label>
+                <fieldset
+                  className={`about-sheet__home-framing about-sheet__home-framing--nested${settings.radarEnabled ? "" : " disabled"}`}
                 >
-                  Left
-                </button>
-                <button
-                  type="button"
-                  className={`about-sheet__tier-preview-btn${settings.landscapeSideHand === "right" ? " about-sheet__tier-preview-btn--active" : ""}`}
-                  onClick={() => onSettings({ ...settings, landscapeSideHand: "right" })}
-                >
-                  Right
-                </button>
+                  <legend className="about-sheet__home-framing-legend">Radar display</legend>
+                  <p className="about-sheet__p about-sheet__p--tight">
+                    Choose how precipitation shows on the map when radar is on. Storm-motion arrows use
+                    RainViewer frames and appear only in still mode.
+                  </p>
+                  <label className="about-sheet__home-framing-option">
+                    <input
+                      type="radio"
+                      name="radar-display-mode"
+                      disabled={!settings.radarEnabled}
+                      checked={settings.radarDisplayMode === "motion"}
+                      onChange={() => onSettings({ ...settings, radarDisplayMode: "motion" })}
+                    />
+                    <span>
+                      <strong>Motion loop</strong> — crossfade through recent radar frames.
+                    </span>
+                  </label>
+                  <label className="about-sheet__home-framing-option">
+                    <input
+                      type="radio"
+                      name="radar-display-mode"
+                      disabled={!settings.radarEnabled}
+                      checked={settings.radarDisplayMode === "still_arrows"}
+                      onChange={() => onSettings({ ...settings, radarDisplayMode: "still_arrows" })}
+                    />
+                    <span>
+                      <strong>Latest + arrows</strong> — still mosaic with storm-motion arrows on
+                      strong cells (direction from radar; mph only when confident).
+                    </span>
+                  </label>
+                </fieldset>
               </div>
-              <p className="about-sheet__tier-preview-hint">
-                Only applies in landscape. Portrait stays the same — use this when you mount the phone on your other
-                side.
-              </p>
-            </div>
+
+              {/* 2. Map follow */}
+              <fieldset className="about-sheet__settings-card about-sheet__home-framing">
+                <legend className="about-sheet__home-framing-legend">Map follow (no active trip)</legend>
+                <p className="about-sheet__p about-sheet__p--tight">
+                  Before you set a destination, choose whether the map stays locked on your GPS puck or
+                  lets you pan and zoom freely without the camera snapping back.
+                </p>
+                <label className="about-sheet__home-framing-option">
+                  <input
+                    type="radio"
+                    name="home-puck-follow"
+                    checked={homePuckFollow === "follow"}
+                    onChange={() => onHomePuckFollowChange("follow")}
+                  />
+                  <span>
+                    <strong>Keep puck centered</strong> — while you drive, the map moves under you and your
+                    location stays in the middle (tap <strong>My location</strong> anytime to re-center after
+                    panning).
+                  </span>
+                </label>
+                <label className="about-sheet__home-framing-option">
+                  <input
+                    type="radio"
+                    name="home-puck-follow"
+                    checked={homePuckFollow === "explore"}
+                    onChange={() => onHomePuckFollowChange("explore")}
+                  />
+                  <span>
+                    <strong>Explore the map</strong> — pan and zoom anywhere; your puck moves on the map but
+                    won&apos;t pull the camera back until you tap <strong>My location</strong>.
+                  </span>
+                </label>
+              </fieldset>
+
+              {/* 3. Side view */}
+              <div
+                className="about-sheet__settings-card about-sheet__tier-preview"
+                role="group"
+                aria-label="Side view handedness"
+              >
+                <p className="about-sheet__tier-preview-label">Side view (landscape) — dominant hand</p>
+                <div className="about-sheet__tier-preview-btns">
+                  <button
+                    type="button"
+                    className={`about-sheet__tier-preview-btn${settings.landscapeSideHand === "left" ? " about-sheet__tier-preview-btn--active" : ""}`}
+                    onClick={() => onSettings({ ...settings, landscapeSideHand: "left" })}
+                  >
+                    Left
+                  </button>
+                  <button
+                    type="button"
+                    className={`about-sheet__tier-preview-btn${settings.landscapeSideHand === "right" ? " about-sheet__tier-preview-btn--active" : ""}`}
+                    onClick={() => onSettings({ ...settings, landscapeSideHand: "right" })}
+                  >
+                    Right
+                  </button>
+                </div>
+                <p className="about-sheet__tier-preview-hint">
+                  Only applies in landscape. Portrait stays the same — use this when you mount the phone on your other
+                  side.
+                </p>
+              </div>
+
+              {/* 4. Checkbox toggles */}
+              <label className={`about-sheet__setting about-sheet__settings-card${plus ? "" : " disabled"}`}>
+                <input
+                  type="checkbox"
+                  checked={settings.stormEnabled}
+                  disabled={!plus}
+                  onChange={(e) => onSettings({ ...settings, stormEnabled: e.target.checked })}
+                />
+                <span>
+                  {plus ? (
+                    <>
+                      <strong>NWS weather alerts</strong> — fetch warnings, map polygons, and route advisories
+                    </>
+                  ) : (
+                    <>
+                      <strong>Status strip</strong> — tips and offers on Basic. Local forecast, NWS hazards, and map
+                      polygons are <em>Plus</em> only.
+                    </>
+                  )}
+                </span>
+              </label>
+
+              <label className={`about-sheet__setting about-sheet__settings-card${plus ? "" : " disabled"}`}>
+                <input
+                  type="checkbox"
+                  checked={settings.trafficEnabled}
+                  disabled={!plus}
+                  onChange={(e) => onSettings({ ...settings, trafficEnabled: e.target.checked })}
+                />
+                <span>
+                  <strong>Road impacts &amp; traffic</strong> — Mapbox traffic along routes, slowdowns, and road
+                  notices {!plus ? <em>(Plus)</em> : null}
+                </span>
+              </label>
+
+              <label className={`about-sheet__setting about-sheet__settings-card${plus ? "" : " disabled"}`}>
+                <input
+                  type="checkbox"
+                  checked={settings.weatherHintsEnabled}
+                  disabled={!plus}
+                  onChange={(e) => onSettings({ ...settings, weatherHintsEnabled: e.target.checked })}
+                />
+                <span>
+                  <strong>Weather hints</strong> (OpenWeather) — sample conditions along routes{" "}
+                  {!plus ? <em>(Plus)</em> : null}
+                </span>
+              </label>
+
+              <label className="about-sheet__setting about-sheet__settings-card">
+                <input
+                  type="checkbox"
+                  checked={settings.dataSaverEnabled}
+                  onChange={(e) => onSettings({ ...settings, dataSaverEnabled: e.target.checked })}
+                />
+                <span>
+                  <strong>Data saver</strong> — slower NWS/traffic refresh, one route leg at a time while
+                  planning, static radar (no animation), and Tomorrow.io only when the advisory or corridor
+                  forecast is open. Good for long drives on cellular data. Also follows your phone&apos;s
+                  &quot;use less data&quot; when set.
+                </span>
+              </label>
+
+              {liveRerouteEnabled ? (
+                <label className={`about-sheet__setting about-sheet__settings-card${plus ? "" : " disabled"}`}>
+                  <input
+                    type="checkbox"
+                    checked={settings.autoRerouteEnabled}
+                    disabled={!plus}
+                    onChange={(e) => onSettings({ ...settings, autoRerouteEnabled: e.target.checked })}
+                  />
+                  <span>
+                    <strong>Auto detour</strong> — when you leave your chosen route, StormPath finds a short
+                    local path to rejoin ahead and follows it in drive view. Your locked route stays until you
+                    rejoin or pick another detour (B/C). Tap <strong>More options</strong> for alternates.
+                    {!plus ? <em> (Plus)</em> : null}
+                  </span>
+                </label>
+              ) : null}
+
+              <label className="about-sheet__setting about-sheet__settings-card">
+                <input
+                  type="checkbox"
+                  checked={settings.voiceGuidanceEnabled}
+                  onChange={(e) => onSettings({ ...settings, voiceGuidanceEnabled: e.target.checked })}
+                />
+                <span>
+                  <strong>Voice prompts</strong> — speak the next maneuver while <strong>Go</strong> navigation is on
+                  (any view; device text-to-speech). Use a passenger or pull over to change settings.
+                </span>
+              </label>
+
+              <label className="about-sheet__setting about-sheet__settings-card">
+                <input
+                  type="checkbox"
+                  checked={settings.gpsHighRefreshEnabled}
+                  onChange={(e) => onSettings({ ...settings, gpsHighRefreshEnabled: e.target.checked })}
+                />
+                <span>
+                  <strong>GPS high refresh</strong> — request fresher positions (uses more battery). Turn off if the
+                  puck feels jittery.
+                </span>
+              </label>
+
+              <label
+                className={`about-sheet__setting about-sheet__settings-card${plus && env.mapboxToken ? "" : " disabled"}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={settings.mapMatchingEnabled}
+                  disabled={!plus || !env.mapboxToken}
+                  onChange={(e) => onSettings({ ...settings, mapMatchingEnabled: e.target.checked })}
+                />
+                <span>
+                  <strong>Snap GPS to roads</strong> — while navigating, refines your position onto the
+                  Mapbox road network (small extra data use). Helps the puck and off-route detection on
+                  wide roads and interchanges.
+                  {!plus ? <em> (Plus)</em> : !env.mapboxToken ? <em> (Mapbox token required)</em> : null}
+                </span>
+              </label>
             </div>
           </section>
 
@@ -644,7 +650,8 @@ export function AboutSheet({
           {plus && activityTrail && (
             <section className="about-sheet__panel about-sheet__panel--activity">
               <h3 className="about-sheet__h3">Activity trail</h3>
-              <label className="about-sheet__setting">
+              <div className="about-sheet__settings">
+              <label className="about-sheet__setting about-sheet__settings-card">
                 <input
                   type="checkbox"
                   checked={activityTrail.learnEnabled}
@@ -655,40 +662,7 @@ export function AboutSheet({
                   favor your area. Turn off any time; existing dots stay until you erase them.
                 </span>
               </label>
-              <p className="about-sheet__p">
-                With this on, StormPath saves sparse GPS dots (about every minute while you move) to learn where
-                you usually drive. That helps <strong>frame the map</strong> around your area,{" "}
-                <strong>rank search suggestions</strong> nearer places you know,{" "}
-                <strong>prefer familiar alternates</strong> when A/B/C routes are built, offer{" "}
-                <strong>Your route</strong> when you repeatedly leave the main path at the same exit, and show the cyan
-                overlay below. Trip detection for “frequent routes” uses a separate path.
-              </p>
-              <details className="about-sheet__details about-sheet__details--inline">
-                <summary>How it works</summary>
-                <p className="about-sheet__p">
-                  Dots accrue only with the app open; older points drop when storage is full (~22k). Frequent-route rows
-                  in Saved still need similar drives at least twice.
-                </p>
-              </details>
-              <dl className="about-sheet__meta">
-                <div className="about-sheet__meta-row">
-                  <dt>Dots saved</dt>
-                  <dd>{activityTrail.count.toLocaleString()}</dd>
-                </div>
-                {activityTrail.spanDays != null && (
-                  <div className="about-sheet__meta-row">
-                    <dt>Span</dt>
-                    <dd>~{activityTrail.spanDays.toFixed(0)} days</dd>
-                  </div>
-                )}
-                <div className="about-sheet__meta-row">
-                  <dt>Range</dt>
-                  <dd>
-                    {activityTrail.oldestLabel} → {activityTrail.newestLabel}
-                  </dd>
-                </div>
-              </dl>
-              <label className="about-sheet__setting">
+              <label className="about-sheet__setting about-sheet__settings-card">
                 <input
                   type="checkbox"
                   checked={activityTrail.showOnMap}
@@ -698,7 +672,26 @@ export function AboutSheet({
                   <strong>Show activity dots on map</strong> — cyan trail of where you’ve been (zoom in to see density)
                 </span>
               </label>
-              <fieldset className="about-sheet__home-framing">
+              <label
+                className={`about-sheet__setting about-sheet__settings-card${activityTrail.homePreloadAvailable ? "" : " disabled"}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={activityTrail.homePreloadEnabled}
+                  disabled={!activityTrail.homePreloadAvailable}
+                  onChange={(e) => activityTrail.onHomePreloadEnabledChange(e.target.checked)}
+                />
+                <span>
+                  <strong>Preload my usual area (Wi‑Fi only)</strong> — after enough trail dots, quietly
+                  cache map tiles around where you usually drive so the map fills in faster on weak signal.
+                  {activityTrail.homePreloadSizeLabel ? (
+                    <> Estimated cache: {activityTrail.homePreloadSizeLabel}.</>
+                  ) : (
+                    <> Need more dots first.</>
+                  )}
+                </span>
+              </label>
+              <fieldset className="about-sheet__settings-card about-sheet__home-framing">
                 <legend className="about-sheet__home-framing-legend">Home map view (no active trip)</legend>
                 <p className="about-sheet__p about-sheet__p--tight">
                   When you open StormPath or finish a trip, the map centers like{" "}
@@ -741,25 +734,42 @@ export function AboutSheet({
                   </span>
                 </label>
               </fieldset>
-              <label
-                className={`about-sheet__setting${activityTrail.homePreloadAvailable ? "" : " disabled"}`}
-              >
-                <input
-                  type="checkbox"
-                  checked={activityTrail.homePreloadEnabled}
-                  disabled={!activityTrail.homePreloadAvailable}
-                  onChange={(e) => activityTrail.onHomePreloadEnabledChange(e.target.checked)}
-                />
-                <span>
-                  <strong>Preload my usual area (Wi‑Fi only)</strong> — after enough trail dots, quietly
-                  cache map tiles around where you usually drive so the map fills in faster on weak signal.
-                  {activityTrail.homePreloadSizeLabel ? (
-                    <> Estimated cache: {activityTrail.homePreloadSizeLabel}.</>
-                  ) : (
-                    <> Need more dots first.</>
-                  )}
-                </span>
-              </label>
+              <div className="about-sheet__settings-card">
+              <p className="about-sheet__p">
+                With this on, StormPath saves sparse GPS dots (about every minute while you move) to learn where
+                you usually drive. That helps <strong>frame the map</strong> around your area,{" "}
+                <strong>rank search suggestions</strong> nearer places you know,{" "}
+                <strong>prefer familiar alternates</strong> when A/B/C routes are built, offer{" "}
+                <strong>Your route</strong> when you repeatedly leave the main path at the same exit, and show the cyan
+                overlay below. Trip detection for “frequent routes” uses a separate path.
+              </p>
+              <details className="about-sheet__details about-sheet__details--inline">
+                <summary>How it works</summary>
+                <p className="about-sheet__p">
+                  Dots accrue only with the app open; older points drop when storage is full (~22k). Frequent-route rows
+                  in Saved still need similar drives at least twice.
+                </p>
+              </details>
+              <dl className="about-sheet__meta">
+                <div className="about-sheet__meta-row">
+                  <dt>Dots saved</dt>
+                  <dd>{activityTrail.count.toLocaleString()}</dd>
+                </div>
+                {activityTrail.spanDays != null && (
+                  <div className="about-sheet__meta-row">
+                    <dt>Span</dt>
+                    <dd>~{activityTrail.spanDays.toFixed(0)} days</dd>
+                  </div>
+                )}
+                <div className="about-sheet__meta-row">
+                  <dt>Range</dt>
+                  <dd>
+                    {activityTrail.oldestLabel} → {activityTrail.newestLabel}
+                  </dd>
+                </div>
+              </dl>
+              </div>
+              </div>
               <div className="about-sheet__trail-clear">
                 {activityTrailClearStep === "idle" ? (
                   <button
@@ -844,8 +854,8 @@ export function AboutSheet({
                 reroute, or “at your location” forecasts.
               </li>
               <li>
-                <strong>Your settings</strong> — Radar, storm/NWS, traffic, and road overlays can be off in About or the
-                hazard toggles. <strong>Drive</strong> view hides the radar overlay by design.
+                <strong>Your settings</strong> — Radar, NWS, and road/traffic can be off in About.{" "}
+                <strong>Drive</strong> view hides the radar overlay by design.
               </li>
               <li>
                 <strong>Region or build</strong> — NWS polygons are US-focused. Some builds ship without every API key;
@@ -872,7 +882,7 @@ export function AboutSheet({
               <strong>Forecasts in the app:</strong> tap the side progress bar for <strong>Route info</strong>{" "}
               (corridor temp/rain, route radar strip, wind gusts, NWS + traffic bands, and hazard cards). Expand the
               storm advisory bar for local weather at your GPS. Map <strong>Rad</strong> is live precipitation radar at the
-              current time; colored NWS shapes follow the <strong>NWS polygons</strong> toggle.
+              current time; colored NWS shapes follow the <strong>NWS weather alerts</strong> setting in About.
             </p>
             <p className="about-sheet__p">
               <strong>Privacy:</strong> Location is for position, routing, and conditions while you use the app. Plus

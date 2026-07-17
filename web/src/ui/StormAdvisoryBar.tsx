@@ -157,8 +157,8 @@ export type StormStripBand = {
 
 type SharedProps = {
   featureEnabled: boolean;
+  /** Read-only: About → NWS setting (status chip in hazards panel). */
   sessionOn: boolean;
-  onSessionToggle: (on: boolean) => void;
   loading: boolean;
   error: string | null;
   corridorAlerts: NormalizedWeatherAlert[];
@@ -168,8 +168,8 @@ type SharedProps = {
   trafficDelayMinutes: number;
   onTrafficReroute?: () => void;
   trafficRerouteBusy?: boolean;
+  /** Read-only: About → Road impacts & traffic setting (status chip in hazards panel). */
   roadDetailEnabled: boolean;
-  onRoadDetailToggle: (on: boolean) => void;
   hasGuidanceRoute: boolean;
   roadDetailRows: StormRoadDetailRow[];
   /** Unified route impact list (already sorted nearest-first) — drives Weather + Roads sections. */
@@ -190,7 +190,6 @@ type SharedProps = {
 export type StormAdvisoryBarProps = SharedProps & {
   barExpanded: boolean;
   onBarExpandedChange: (expanded: boolean) => void;
-  hideHeadToggles?: boolean;
   onNwsAlertClick?: (alert: NormalizedWeatherAlert) => void;
   /** Optional hazard status severity: drives the collapsed preview border color. */
   peekSeverity?: "none" | "info" | "warn" | "severe" | null;
@@ -287,7 +286,6 @@ function impactSectionBucket(i: RouteImpact): "weather" | "road" {
 export function StormAdvisoryBar({
   featureEnabled,
   sessionOn,
-  onSessionToggle,
   loading,
   error,
   corridorAlerts: _corridorAlerts,
@@ -297,7 +295,6 @@ export function StormAdvisoryBar({
   onTrafficReroute,
   trafficRerouteBusy = false,
   roadDetailEnabled,
-  onRoadDetailToggle,
   hasGuidanceRoute,
   roadDetailRows,
   routeImpacts = null,
@@ -309,7 +306,6 @@ export function StormAdvisoryBar({
   driveEtaMinutes = null,
   barExpanded,
   onBarExpandedChange,
-  hideHeadToggles = false,
   onNwsAlertClick,
   peekSeverity = null,
   busyLabel = null,
@@ -1146,18 +1142,6 @@ export function StormAdvisoryBar({
             </div>
           </div>
         </div>
-        {!hideHeadToggles && (
-          <div className="storm-advisory-bar__toggles storm-advisory-bar__toggles--stacked">
-            <label className="storm-advisory-bar__toggle storm-advisory-bar__toggle--nws">
-              <input type="checkbox" checked={sessionOn} onChange={(e) => onSessionToggle(e.target.checked)} />
-              <span>NWS polygons</span>
-            </label>
-            <label className="storm-advisory-bar__toggle storm-advisory-bar__toggle--road">
-              <input type="checkbox" checked={roadDetailEnabled} onChange={(e) => onRoadDetailToggle(e.target.checked)} />
-              <span>Road impacts &amp; traffic</span>
-            </label>
-          </div>
-        )}
         <button
           type="button"
           className="storm-advisory-bar__collapse-btn"

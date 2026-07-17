@@ -89,7 +89,6 @@ export type UseRouteAheadDerivationsDeps = {
   trafficDelayMinutesForBypass: number;
   mapboxToken: string | undefined;
   destLngLat: LngLat | null;
-  roadAdvisoryDetailOn: boolean;
   settingTrafficEnabled: boolean;
   trafficBypassCompare: TrafficBypassCompareState | null;
   guidanceRouteId: string;
@@ -169,7 +168,6 @@ export function useRouteAheadDerivations(
     trafficDelayMinutesForBypass,
     mapboxToken,
     destLngLat,
-    roadAdvisoryDetailOn,
     settingTrafficEnabled,
     trafficBypassCompare,
     planRoutes,
@@ -588,7 +586,6 @@ export function useRouteAheadDerivations(
         destLngLat &&
         guidanceRoute?.geometry?.length &&
         isPlus &&
-        roadAdvisoryDetailOn &&
         settingTrafficEnabled
     ) &&
     trafficBypassContext != null &&

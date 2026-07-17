@@ -66,7 +66,6 @@ export type UseDriveMapPropsInput = {
   navPositionOnRoute: boolean;
   userAlongGuidanceM: number | null | undefined;
   isPlus: boolean;
-  roadAdvisoryDetailOn: boolean;
   settingTrafficEnabled: boolean;
   hasMapboxToken: boolean;
   onDriveCameraBearingDeg: (deg: number | null) => void;
@@ -138,7 +137,6 @@ export function buildDriveMapProps(
     navPositionOnRoute,
     userAlongGuidanceM,
     isPlus,
-    roadAdvisoryDetailOn,
     settingTrafficEnabled,
     hasMapboxToken,
     onDriveCameraBearingDeg,
@@ -213,9 +211,7 @@ export function buildDriveMapProps(
         : null,
     userAlongMeters:
       navigationStarted && Number.isFinite(userAlongGuidanceM) ? userAlongGuidanceM! : null,
-    trafficConditionsOnMap: Boolean(
-      isPlus && roadAdvisoryDetailOn && settingTrafficEnabled && hasMapboxToken
-    ),
+    trafficConditionsOnMap: Boolean(isPlus && settingTrafficEnabled && hasMapboxToken),
     onDriveCameraBearingDeg,
     stormBrowseBoundsReporting: false,
     onStormBrowseBoundsChange: undefined,

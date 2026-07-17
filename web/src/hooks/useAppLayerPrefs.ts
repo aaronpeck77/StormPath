@@ -1,17 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { KeepAwake } from "@capacitor-community/keep-awake";
 import { isLongTripRoute } from "../utils/dataSaver";
 import type { LngLat } from "../nav/types";
 import type { TrafficOverlay } from "../situation/fusedSnapshot";
-import {
-  readNwsSessionOn,
-  readRadarOverlayOn,
-  readRoadAdvisoryDetailOn,
-  writeNwsSessionOn,
-  writeRadarOverlayOn,
-  writeRoadAdvisoryDetailOn,
-} from "../layerStartupPrefs";
+import { readRadarOverlayOn, writeRadarOverlayOn } from "../layerStartupPrefs";
 
 export type UseAppLayerPrefsDeps = {
   navigationStarted: boolean;
@@ -22,10 +15,9 @@ export type UseAppLayerPrefsDeps = {
 };
 
 /**
- * Consolidates the small persisted-layer toggles that used to be scattered across `App.tsx`:
- * map overlay (Rad), Storm session visibility, and the road/traffic advisory detail toggle.
- * Also owns the two "settings toggle turned off → clear the derived App state" effects and
- * keeps the screen awake while navigating on-device.
+ * Persisted map-layer toggles that used to be scattered across `App.tsx`:
+ * map radar overlay (Rad), plus settings-off cleanup and keep-awake while navigating.
+ * NWS and road/traffic display follow About settings only (no advisory-bar session toggles).
  */
 export function useAppLayerPrefs(deps: UseAppLayerPrefsDeps) {
   const { navigationStarted, settingTrafficEnabled, settingRadarEnabled, setTrafficOverlay } = deps;
@@ -46,20 +38,6 @@ export function useAppLayerPrefs(deps: UseAppLayerPrefsDeps) {
     writeRadarOverlayOn(showRadar);
   }, [showRadar]);
 
-  const [stormSessionOn, setStormSessionOn] = useState(readNwsSessionOn);
-  /** Map polygon visibility only — NWS poll + `stormMapGeoJson` cache keep running while off. */
-  const onStormSessionToggle = useCallback((on: boolean) => {
-    setStormSessionOn(on);
-    writeNwsSessionOn(on);
-  }, []);
-
-  /** Road & traffic overlay (Hazards strip + map traffic colors). Default on until user turns off. */
-  const [roadAdvisoryDetailOn, setRoadAdvisoryDetailOn] = useState(readRoadAdvisoryDetailOn);
-  const onRoadAdvisoryDetailToggle = useCallback((on: boolean) => {
-    setRoadAdvisoryDetailOn(on);
-    writeRoadAdvisoryDetailOn(on);
-  }, []);
-
   useEffect(() => {
     if (!settingTrafficEnabled) setTrafficOverlay(undefined);
   }, [settingTrafficEnabled, setTrafficOverlay]);
@@ -74,10 +52,6 @@ export function useAppLayerPrefs(deps: UseAppLayerPrefsDeps) {
   return {
     showRadar,
     setShowRadar,
-    stormSessionOn,
-    onStormSessionToggle,
-    roadAdvisoryDetailOn,
-    onRoadAdvisoryDetailToggle,
   };
 }
 

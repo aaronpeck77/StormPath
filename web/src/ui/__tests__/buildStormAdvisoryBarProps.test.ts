@@ -6,8 +6,7 @@ function baseInput(
 ) {
   return {
     isPlus: true,
-    stormSessionOn: true,
-    onSessionToggle: vi.fn(),
+    settingStormEnabled: true,
     stormLoading: false,
     stormError: null,
     stormCorridorAlertsLength: 1,
@@ -18,8 +17,7 @@ function baseInput(
     trafficDelayMinutes: 3,
     onTrafficReroute: vi.fn(),
     bypassBusy: false,
-    roadAdvisoryDetailOn: true,
-    onRoadDetailToggle: vi.fn(),
+    settingTrafficEnabled: true,
     hasGuidanceRoute: true,
     advisoryRoadDetailRows: [],
     advisoryRouteImpacts: null,
@@ -68,7 +66,8 @@ describe("buildStormAdvisoryBarProps", () => {
     expect(props.advisoryTier).toBe("plus");
     expect(props.nextHazardAtEtaLine).toBe("Hail in 22 min");
     expect(props.nowcastLine).toBe("72°F");
-    expect(props.hideHeadToggles).toBe(false);
+    expect(props.sessionOn).toBe(true);
+    expect(props.roadDetailEnabled).toBe(true);
     expect(props.basicNavAdvisoryMode).toBe(false);
   });
 
@@ -81,9 +80,18 @@ describe("buildStormAdvisoryBarProps", () => {
     expect(props.nextHazardAtEtaLine).toBeNull();
     expect(props.nowcastLine).toBeNull();
     expect(props.routeImpacts).toBeNull();
-    expect(props.hideHeadToggles).toBe(true);
+    expect(props.sessionOn).toBe(false);
+    expect(props.roadDetailEnabled).toBe(false);
     expect(props.basicNavAdvisoryMode).toBe(true);
     expect(props.advisoryTier).toBe("basic");
+  });
+
+  it("mirrors About NWS / traffic settings on status chips", () => {
+    const off = buildStormAdvisoryBarProps(
+      baseInput({ settingStormEnabled: false, settingTrafficEnabled: false })
+    );
+    expect(off.sessionOn).toBe(false);
+    expect(off.roadDetailEnabled).toBe(false);
   });
 
   it("shows NWS loading only when Plus has no alerts and no map features yet", () => {

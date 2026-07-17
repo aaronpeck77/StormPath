@@ -58,7 +58,6 @@ function baseInput(over: Partial<UseDriveMapPropsInput> = {}): UseDriveMapPropsI
     navPositionOnRoute: true,
     userAlongGuidanceM: 1200,
     isPlus: true,
-    roadAdvisoryDetailOn: true,
     settingTrafficEnabled: true,
     hasMapboxToken: true,
     onDriveCameraBearingDeg: vi.fn(),

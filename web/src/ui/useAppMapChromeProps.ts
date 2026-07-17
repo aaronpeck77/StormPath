@@ -31,7 +31,9 @@ type StoreSourcedStormAdvisoryFields =
   | "stormLoading"
   | "stormError"
   | "stormCorridorAlertsLength"
-  | "stormMapHasFeatures";
+  | "stormMapHasFeatures"
+  | "settingStormEnabled"
+  | "settingTrafficEnabled";
 
 type StormAdvisoryBarChromeInput = Omit<
   BuildStormAdvisoryBarPropsInput,
@@ -68,6 +70,7 @@ export function useAppMapChromeProps(input: UseAppMapChromePropsInput) {
   const viewMode = useTripPlanStore((s) => s.viewMode);
   const planRoutesLength = useTripPlanStore((s) => s.plan.routes.length);
   const settingRadarDisplayMode = useSettingsStore((s) => s.radarDisplayMode);
+  const settingStormEnabled = useSettingsStore((s) => s.stormEnabled);
   const settingTrafficEnabled = useSettingsStore((s) => s.trafficEnabled);
   const stormBarExpanded = useWeatherStore((s) => s.stormBarExpanded);
   const stormLoading = useWeatherStore((s) => s.stormLoading);
@@ -111,6 +114,8 @@ export function useAppMapChromeProps(input: UseAppMapChromePropsInput) {
     stormError,
     stormCorridorAlertsLength,
     stormMapHasFeatures,
+    settingStormEnabled,
+    settingTrafficEnabled,
     onTrafficReroute: trafficRerouteEligible ? () => void onTrafficBypassFromHere() : undefined,
     onOpenSubscription: onOpenAbout,
     onOpenDataSaverSettings: onOpenAbout,

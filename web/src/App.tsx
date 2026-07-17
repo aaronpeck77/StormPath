@@ -465,7 +465,7 @@ export default function App() {
     navigationStarted,
     payTierProbeKey,
   });
-  /** NWS polygons + fetches follow the user’s NWS toggle everywhere (including drive — no auto-on). */
+  /** NWS polygons + fetches follow About → NWS everywhere (including drive — no auto-on). */
   const savedDrawerOpen = useUiStore((s) => s.savedDrawerOpen);
   const setSavedDrawerOpen = useUiStore((s) => s.setSavedDrawerOpen);
   const [bypassBusy, setBypassBusy] = useState(false);
@@ -501,14 +501,7 @@ export default function App() {
   const [tollAvoidFailureNote, setTollAvoidFailureNote] = useState<string | null>(null);
   const tollAcceptedRouteIdsRef = useRef<Set<string>>(new Set());
   const pendingGoAfterTollRef = useRef(false);
-  const {
-    showRadar,
-    setShowRadar,
-    stormSessionOn,
-    onStormSessionToggle,
-    roadAdvisoryDetailOn,
-    onRoadAdvisoryDetailToggle,
-  } = useAppLayerPrefs({
+  const { showRadar, setShowRadar } = useAppLayerPrefs({
     navigationStarted,
     settingTrafficEnabled,
     settingRadarEnabled,
@@ -1389,7 +1382,6 @@ export default function App() {
     radarMosaicMaxIntensity,
   } = useRouteWeatherPipeline({
     isPlus,
-    roadAdvisoryDetailOn,
     settingTrafficEnabled,
     destLngLat,
     planRoutes: plan.routes,
@@ -1489,7 +1481,6 @@ export default function App() {
     trafficDelayMinutesForBypass,
     mapboxToken: env.mapboxToken,
     destLngLat,
-    roadAdvisoryDetailOn,
     settingTrafficEnabled,
     trafficBypassCompare,
     guidanceRouteId,
@@ -1555,7 +1546,6 @@ export default function App() {
     isPlus,
     advisoryLifeSafetyOn,
     settingStormEnabled,
-    stormSessionOn,
     nwsMapOverlapRouteGeom,
     stormCorridorAlerts,
     stormMapGeoJson,
@@ -2183,7 +2173,6 @@ export default function App() {
       navPositionOnRoute: navPosition.onRoute,
       userAlongGuidanceM,
       isPlus,
-      roadAdvisoryDetailOn,
       hasMapboxToken: Boolean(env.mapboxToken),
       onDriveCameraBearingDeg: handleDriveCameraBearingDeg,
       lockedNavigationRouteId,
@@ -2204,8 +2193,6 @@ export default function App() {
     },
     stormAdvisoryBar: {
       isPlus,
-      stormSessionOn,
-      onSessionToggle: onStormSessionToggle,
       allDisplayableAlerts,
       nwsAlertsForGuidanceAdvisory,
       stormNwsPuckInside,
@@ -2221,8 +2208,6 @@ export default function App() {
       ),
       onTrafficBypassFromHere: handleTrafficBypassFromHere,
       bypassBusy,
-      roadAdvisoryDetailOn,
-      onRoadDetailToggle: onRoadAdvisoryDetailToggle,
       hasGuidanceRoute: Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2),
       advisoryRoadDetailRows,
       advisoryRouteImpacts,

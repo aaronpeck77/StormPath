@@ -29,7 +29,6 @@ export type UseDriveMapOverlaysDeps = {
   isPlus: boolean;
   advisoryLifeSafetyOn: boolean;
   settingStormEnabled: boolean;
-  stormSessionOn: boolean;
   nwsMapOverlapRouteGeom: LngLat[] | undefined;
   stormCorridorAlerts: NormalizedWeatherAlert[];
   stormMapGeoJson: GeoJSON.FeatureCollection | null | undefined;
@@ -68,7 +67,6 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
     isPlus,
     advisoryLifeSafetyOn,
     settingStormEnabled,
-    stormSessionOn,
     nwsMapOverlapRouteGeom,
     stormCorridorAlerts,
     stormMapGeoJson,
@@ -144,7 +142,7 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
 
   /**
    * NWS warning polygons on the map (Rt / Mp; hidden in Dr). Independent of radar overlay.
-   * Plus: follows the advisory panel **NWS polygons** checkbox (`stormSessionOn`).
+   * Plus: follows About → NWS (`settingStormEnabled`).
    */
   const nwsAlertGeoJsonForMap = useMemo(
     () =>
@@ -152,7 +150,6 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
         isPlus,
         advisoryLifeSafetyOn,
         settingStormEnabled,
-        stormSessionOn,
         nwsMapOverlapRouteGeom,
         stormCorridorAlerts,
         stormMapGeoJson,
@@ -168,7 +165,6 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
       advisoryLifeSafetyOn,
       settingStormEnabled,
       isPlus,
-      stormSessionOn,
       nwsMapOverlapRouteGeom,
       stormMapGeoJsonForMap,
       nwsAlertsAffectingActiveRoute,

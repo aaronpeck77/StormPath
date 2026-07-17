@@ -32,7 +32,6 @@ import { routeForecastIntensityFloor } from "./corridorForecastModel";
 
 export type UseRouteWeatherPipelineDeps = {
   isPlus: boolean;
-  roadAdvisoryDetailOn: boolean;
   settingTrafficEnabled: boolean;
   destLngLat: LngLat | null;
   planRoutes: NavRoute[];
@@ -98,7 +97,6 @@ export function useRouteWeatherPipeline(
 ): UseRouteWeatherPipelineResult {
   const {
     isPlus,
-    roadAdvisoryDetailOn,
     settingTrafficEnabled,
     destLngLat,
     planRoutes,
@@ -125,9 +123,9 @@ export function useRouteWeatherPipeline(
     openWeatherApiKey,
   } = deps;
 
-  /** Strip + map corridors: honor the Road checkbox — do not force “on” in drive (that hid toggles but left layers active). */
-  const showTrafficCorridorOnRoute = isPlus && roadAdvisoryDetailOn && settingTrafficEnabled;
-  const showRoadNoticesOnRoute = isPlus && roadAdvisoryDetailOn;
+  /** Strip + map corridors: About → Road impacts & traffic (`settingTrafficEnabled`). */
+  const showTrafficCorridorOnRoute = isPlus && settingTrafficEnabled;
+  const showRoadNoticesOnRoute = isPlus && settingTrafficEnabled;
   const hasPlannedRoute = Boolean(
     destLngLat && planRoutes.some((r) => r.geometry && r.geometry.length >= 2)
   );

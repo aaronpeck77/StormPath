@@ -1,6 +1,6 @@
 /**
- * Map layer startup defaults: radar, NWS session, road/traffic strip ON until the user
- * explicitly turns them off (persisted via *-user-pref keys).
+ * Map layer startup defaults: radar overlay ON until the user turns it off
+ * (persisted via *-user-pref keys). NWS + traffic masters live in settings store.
  */
 
 import { safeStorage } from "./storage/safeStorage";
@@ -69,33 +69,6 @@ export function readRadarOverlayOn(): boolean {
 export function writeRadarOverlayOn(on: boolean): void {
   writeUserPref(RADAR_USER_PREF, on);
   safeStorage.set(RADAR_OVERLAY_LEGACY, on ? "1" : "0");
-}
-
-export function readRoadAdvisoryDetailOn(): boolean {
-  const user = readUserPref(ROAD_ADVISORY_USER_PREF);
-  if (user != null) return user;
-  const v = safeStorage.get(ROAD_ADVISORY_LEGACY);
-  if (v === "0") return false;
-  if (v === "1") return true;
-  return true;
-}
-
-export function writeRoadAdvisoryDetailOn(on: boolean): void {
-  writeUserPref(ROAD_ADVISORY_USER_PREF, on);
-  safeStorage.set(ROAD_ADVISORY_LEGACY, on ? "1" : "0");
-}
-
-export function readNwsSessionOn(): boolean {
-  const user = readUserPref(NWS_SESSION_USER_PREF);
-  if (user != null) return user;
-  const v = safeStorage.get(NWS_SESSION_LEGACY);
-  if (v === "off") return false;
-  return true;
-}
-
-export function writeNwsSessionOn(on: boolean): void {
-  writeUserPref(NWS_SESSION_USER_PREF, on);
-  safeStorage.set(NWS_SESSION_LEGACY, on ? "on" : "off");
 }
 
 export function readTrafficSettingOn(): boolean {
