@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>StormPath Control Room</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <style>
+      :root {
+        --bg: #0a0b0d;
+        --panel: #12151a;
+        --line: #232833;
+        --text: #e8eaed;
+        --muted: #94a3b8;
+        --faint: #64748b;
+        --ok: #4ade80;
+        --warn: #fbbf24;
+        --bad: #f87171;
+        --accent: #38bdf8;
+        --ink: #0f172a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+        background:
+          radial-gradient(1200px 500px at 10% -10%, #152033 0%, transparent 55%),
+          radial-gradient(900px 400px at 100% 0%, #1a1510 0%, transparent 50%),
+          var(--bg);
+        color: var(--text);
+      }
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 28px 20px 64px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.65rem;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        margin: 0 0 12px;
+        font-size: 0.78rem;
+        font-weight: 650;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--faint);
+      }
+      .sub {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+        line-height: 1.4;
+        max-width: 42rem;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+      .stack {
+        display: grid;
+        gap: 18px;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 16px;
+      }
+      .grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      }
+      .stat {
+        background: #0d1015;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px;
+      }
+      .stat .v {
+        font-size: 1.35rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      .stat .l {
+        margin-top: 4px;
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        padding: 5px 10px;
+        font-size: 0.78rem;
+        background: #0d1015;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--faint);
+      }
+      .dot.ok {
+        background: var(--ok);
+      }
+      .dot.warn {
+        background: var(--warn);
+      }
+      .dot.bad {
+        background: var(--bad);
+      }
+      input,
+      button,
+      select {
+        font: inherit;
+      }
+      input {
+        width: 100%;
+        background: #0d1015;
+        border: 1px solid var(--line);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 9px 11px;
+      }
+      input:focus {
+        outline: 1px solid var(--accent);
+        border-color: var(--accent);
+      }
+      button {
+        border: 0;
+        border-radius: 8px;
+        padding: 9px 14px;
+        background: var(--accent);
+        color: var(--ink);
+        font-weight: 650;
+        cursor: pointer;
+      }
+      button.ghost {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--line);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px 6px;
+        border-bottom: 1px solid var(--line);
+      }
+      th {
+        color: var(--faint);
+        font-weight: 600;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .faint {
+        color: var(--faint);
+        font-size: 0.8rem;
+      }
+      .bar {
+        height: 8px;
+        background: #1e2430;
+        border-radius: 999px;
+        overflow: hidden;
+        margin-top: 6px;
+      }
+      .bar > i {
+        display: block;
+        height: 100%;
+        background: var(--accent);
+      }
+      .bar.warn > i {
+        background: var(--warn);
+      }
+      .bar.bad > i {
+        background: var(--bad);
+      }
+      a {
+        color: var(--accent);
+      }
+      #gate,
+      #app {
+        display: none;
+      }
+      #gate.show,
+      #app.show {
+        display: block;
+      }
+      .callout {
+        border-left: 3px solid var(--warn);
+        padding: 10px 12px;
+        background: #16120a;
+        border-radius: 0 8px 8px 0;
+        color: #fde68a;
+        font-size: 0.88rem;
+        line-height: 1.45;
+      }
+      .setup details {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: #0d1015;
+      }
+      .setup summary {
+        cursor: pointer;
+        color: var(--muted);
+      }
+      code {
+        font-size: 0.82em;
+        background: #1a2030;
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      .form-grid {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      }
+      label {
+        display: grid;
+        gap: 4px;
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="stack" style="margin-bottom: 22px">
+        <div class="row" style="justify-content: space-between">
+          <div>
+            <h1>StormPath Control Room</h1>
+            <p class="sub">
+              Only the metrics that matter for this app — health, income, Mapbox
+              cost watch, and ship status. Not the whole vendor website.
+            </p>
+          </div>
+          <button type="button" class="ghost" id="lockBtn" hidden>Lock</button>
+        </div>
+      </div>
+
+      <section id="gate">
+        <div class="panel stack">
+          <p class="muted" style="margin: 0">
+            Enter the Control Room secret (Netlify env
+            <code>OPS_HUB_SECRET</code>). On local Vite you can still use health
+            checks + the Mapbox ledger without it — leave blank and continue.
+          </p>
+          <label>
+            Secret
+            <input id="secretInput" type="password" autocomplete="current-password" />
+          </label>
+          <div class="row">
+            <button type="button" id="unlockBtn">Open Control Room</button>
+            <button type="button" class="ghost" id="localOnlyBtn">
+              Local only (no secret)
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section id="app" class="stack">
+        <div class="row" id="healthRow"></div>
+        <p class="faint" id="generatedAt"></p>
+
+        <div class="panel">
+          <h2>Income</h2>
+          <div class="grid" id="incomeGrid"></div>
+          <p class="faint" id="incomeNote" style="margin: 10px 0 0"></p>
+        </div>
+
+        <div class="panel stack">
+          <h2>Mapbox cost watch</h2>
+          <div class="callout">
+            Mapbox does not expose usage on standard plans via API. Once a day,
+            copy the StormPath-relevant counts from
+            <a href="https://account.mapbox.com/" target="_blank" rel="noreferrer"
+              >account.mapbox.com → Statistics</a
+            >
+            into this ledger. Free-tier bars use Mapbox’s published allowances as
+            guide rails.
+          </div>
+          <div class="form-grid">
+            <label>Date (UTC)
+              <input id="mbDate" type="date" />
+            </label>
+            <label>Directions
+              <input id="mbDir" type="number" min="0" step="1" placeholder="0" />
+            </label>
+            <label>Temp. geocoding
+              <input id="mbGeo" type="number" min="0" step="1" placeholder="0" />
+            </label>
+            <label>Map Matching
+              <input id="mbMatch" type="number" min="0" step="1" placeholder="0" />
+            </label>
+            <label>Nav trips
+              <input id="mbNav" type="number" min="0" step="1" placeholder="0" />
+            </label>
+          </div>
+          <div class="row">
+            <button type="button" id="mbSave">Save day</button>
+            <span class="faint">Stored in this browser only</span>
+          </div>
+          <div id="mbBars" class="stack" style="gap: 10px"></div>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Directions</th>
+                <th>Geocode</th>
+                <th>Matching</th>
+                <th>Nav trips</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="mbTable"></tbody>
+          </table>
+        </div>
+
+        <div class="panel">
+          <h2>Ship &amp; crashes</h2>
+          <div class="grid" id="shipGrid"></div>
+        </div>
+
+        <div class="panel setup">
+          <details>
+            <summary>Wire live income / deploy / Sentry (Netlify env)</summary>
+            <div class="stack" style="margin-top: 12px">
+              <p class="faint" style="margin: 0">
+                Set these on the <strong>stormpath2</strong> Netlify site, then
+                redeploy. The Control Room secret unlocks
+                <code>/.netlify/functions/ops-summary</code>.
+              </p>
+              <ul class="faint" style="margin: 0; padding-left: 1.1rem; line-height: 1.6">
+                <li><code>OPS_HUB_SECRET</code> — passphrase you type above</li>
+                <li><code>REVENUECAT_SECRET_API_KEY</code> + <code>REVENUECAT_PROJECT_ID</code></li>
+                <li><code>NETLIFY_AUTH_TOKEN</code> + <code>NETLIFY_SITE_ID</code></li>
+                <li><code>SENTRY_AUTH_TOKEN</code> + <code>SENTRY_ORG</code> + <code>SENTRY_PROJECT</code></li>
+                <li><code>TOMORROW_IO_TILE_PROXY_URL</code> — Workers base URL</li>
+              </ul>
+              <p class="faint" style="margin: 0">
+                Local: <code>http://localhost:5173/ops/</code> · Prod:
+                <code>https://stormpath2.netlify.app/ops/</code>
+              </p>
+            </div>
+          </details>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const SECRET_KEY = "stormpath.ops.secret";
+      const LEDGER_KEY = "stormpath.ops.mapboxLedger";
+      const FREE = {
+        directions: 100_000,
+        geocoding: 100_000,
+        matching: 100_000,
+        navTrips: 1_000,
+      };
+
+      const gate = document.getElementById("gate");
+      const app = document.getElementById("app");
+      const secretInput = document.getElementById("secretInput");
+      const lockBtn = document.getElementById("lockBtn");
+
+      function todayUTC() {
+        return new Date().toISOString().slice(0, 10);
+      }
+
+      function loadLedger() {
+        try {
+          const raw = localStorage.getItem(LEDGER_KEY);
+          const list = raw ? JSON.parse(raw) : [];
+          return Array.isArray(list) ? list : [];
+        } catch {
+          return [];
+        }
+      }
+
+      function saveLedger(list) {
+        localStorage.setItem(LEDGER_KEY, JSON.stringify(list.slice(0, 60)));
+      }
+
+      function monthTotal(list, field) {
+        const prefix = todayUTC().slice(0, 7);
+        return list
+          .filter((r) => String(r.date).startsWith(prefix))
+          .reduce((n, r) => n + (Number(r[field]) || 0), 0);
+      }
+
+      function barHtml(label, used, free) {
+        const pct = Math.min(100, Math.round((used / free) * 100));
+        const cls = pct >= 90 ? "bad" : pct >= 70 ? "warn" : "";
+        return `<div>
+          <div class="row" style="justify-content:space-between">
+            <span>${label}</span>
+            <span class="faint">${used.toLocaleString()} / ${free.toLocaleString()} (${pct}%)</span>
+          </div>
+          <div class="bar ${cls}"><i style="width:${pct}%"></i></div>
+        </div>`;
+      }
+
+      function renderLedger() {
+        const list = loadLedger().sort((a, b) => (a.date < b.date ? 1 : -1));
+        document.getElementById("mbBars").innerHTML = [
+          barHtml("Directions (month)", monthTotal(list, "directions"), FREE.directions),
+          barHtml("Temp. geocoding (month)", monthTotal(list, "geocoding"), FREE.geocoding),
+          barHtml("Map Matching (month)", monthTotal(list, "matching"), FREE.matching),
+          barHtml("Nav trips (month)", monthTotal(list, "navTrips"), FREE.navTrips),
+        ].join("");
+        document.getElementById("mbTable").innerHTML = list
+          .slice(0, 14)
+          .map(
+            (r) => `<tr>
+              <td>${r.date}</td>
+              <td>${Number(r.directions || 0).toLocaleString()}</td>
+              <td>${Number(r.geocoding || 0).toLocaleString()}</td>
+              <td>${Number(r.matching || 0).toLocaleString()}</td>
+              <td>${Number(r.navTrips || 0).toLocaleString()}</td>
+              <td><button type="button" class="ghost" data-del="${r.date}">Del</button></td>
+            </tr>`
+          )
+          .join("");
+        document.querySelectorAll("[data-del]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const date = btn.getAttribute("data-del");
+            saveLedger(loadLedger().filter((r) => r.date !== date));
+            renderLedger();
+          });
+        });
+      }
+
+      function pill(ok, label, detail) {
+        const cls = ok === true ? "ok" : ok === false ? "bad" : "warn";
+        const title = detail ? ` title="${detail.replace(/"/g, "&quot;")}"` : "";
+        return `<span class="pill"${title}><span class="dot ${cls}"></span>${label}</span>`;
+      }
+
+      function stat(v, l) {
+        return `<div class="stat"><div class="v">${v}</div><div class="l">${l}</div></div>`;
+      }
+
+      async function localHealth() {
+        const origin = location.origin;
+        const checks = [
+          ["web", "App", `${origin}/`],
+          ["nws", "NWS proxy", `${origin}/weather-gov/alerts/active?status=actual`],
+          ["rv", "RainViewer", `${origin}/rainviewer-api/public/weather-maps.json`],
+        ];
+        const results = await Promise.all(
+          checks.map(async ([id, label, url]) => {
+            const t0 = performance.now();
+            try {
+              const res = await fetch(url, { cache: "no-store" });
+              return {
+                id,
+                label,
+                ok: res.ok,
+                ms: Math.round(performance.now() - t0),
+                detail: res.ok ? undefined : `HTTP ${res.status}`,
+              };
+            } catch (e) {
+              return {
+                id,
+                label,
+                ok: false,
+                ms: Math.round(performance.now() - t0),
+                detail: e instanceof Error ? e.message : "failed",
+              };
+            }
+          })
+        );
+        return results;
+      }
+
+      async function fetchSummary(secret) {
+        if (!secret) return null;
+        const res = await fetch("/.netlify/functions/ops-summary", {
+          headers: { Authorization: `Bearer ${secret}` },
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `ops-summary HTTP ${res.status}`);
+        }
+        return res.json();
+      }
+
+      async function renderApp(secret) {
+        gate.classList.remove("show");
+        app.classList.add("show");
+        lockBtn.hidden = false;
+        document.getElementById("mbDate").value = todayUTC();
+        renderLedger();
+
+        let summary = null;
+        let summaryError = null;
+        if (secret) {
+          try {
+            summary = await fetchSummary(secret);
+          } catch (e) {
+            summaryError = e instanceof Error ? e.message : "summary failed";
+          }
+        }
+
+        const health = summary?.health?.length
+          ? summary.health
+          : await localHealth();
+
+        document.getElementById("healthRow").innerHTML = health
+          .map((h) =>
+            pill(
+              h.ok,
+              `${h.label}${h.ms != null ? ` ${h.ms}ms` : ""}`,
+              h.detail || (h.status != null ? `HTTP ${h.status}` : "")
+            )
+          )
+          .join("");
+
+        document.getElementById("generatedAt").textContent = summary
+          ? `Live summary ${new Date(summary.generatedAt).toLocaleString()}`
+          : summaryError
+            ? `Live summary unavailable (${summaryError}). Showing local health + Mapbox ledger.`
+            : "Local mode — health from this origin; income needs Netlify secrets.";
+
+        const incomeGrid = document.getElementById("incomeGrid");
+        const incomeNote = document.getElementById("incomeNote");
+        if (summary?.income?.configured && summary.income.metrics?.length) {
+          incomeGrid.innerHTML = summary.income.metrics
+            .map((m) => {
+              const val =
+                typeof m.value === "number"
+                  ? m.unit === "$"
+                    ? `$${m.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                    : m.value.toLocaleString()
+                  : m.value ?? "—";
+              return stat(val, m.name);
+            })
+            .join("");
+          incomeNote.textContent = "RevenueCat overview (StormPath project).";
+        } else {
+          incomeGrid.innerHTML = stat("—", "Plus / MRR");
+          incomeNote.textContent = summary?.income?.error
+            ? summary.income.error
+            : "Add REVENUECAT_SECRET_API_KEY + REVENUECAT_PROJECT_ID on Netlify to show income here.";
+        }
+
+        const ship = [];
+        if (summary?.deploy?.configured) {
+          ship.push(
+            stat(
+              summary.deploy.error
+                ? "err"
+                : summary.deploy.state || "—",
+              `Netlify deploy ${summary.deploy.commitRef || ""}`.trim()
+            )
+          );
+        } else {
+          ship.push(stat("—", "Netlify deploy"));
+        }
+        if (summary?.ios) {
+          const label = summary.ios.error
+            ? "err"
+            : summary.ios.conclusion || summary.ios.status || "—";
+          ship.push(
+            stat(
+              label,
+              summary.ios.htmlUrl
+                ? `<a href="${summary.ios.htmlUrl}" target="_blank" rel="noreferrer">iOS build ${summary.ios.headSha || ""}</a>`
+                : "iOS build"
+            )
+          );
+        } else {
+          ship.push(stat("—", "iOS build"));
+        }
+        if (summary?.sentry?.configured) {
+          ship.push(
+            stat(
+              summary.sentry.error ? "err" : String(summary.sentry.count ?? "—"),
+              "Sentry open issues (14d)"
+            )
+          );
+        } else {
+          ship.push(stat("—", "Sentry open issues"));
+        }
+        document.getElementById("shipGrid").innerHTML = ship.join("");
+        /* Allow HTML in ship labels */
+        document.querySelectorAll("#shipGrid .l").forEach((el) => {
+          if (el.textContent.includes("<a ")) {
+            /* already escaped wrongly — rebuild from summary */
+          }
+        });
+        if (summary?.ios?.htmlUrl) {
+          const cells = document.querySelectorAll("#shipGrid .stat");
+          if (cells[1]) {
+            cells[1].querySelector(".l").innerHTML =
+              `<a href="${summary.ios.htmlUrl}" target="_blank" rel="noreferrer">iOS build ${summary.ios.headSha || ""}</a>`;
+          }
+        }
+      }
+
+      function unlock(secret) {
+        if (secret) sessionStorage.setItem(SECRET_KEY, secret);
+        else sessionStorage.removeItem(SECRET_KEY);
+        return renderApp(secret || "");
+      }
+
+      document.getElementById("unlockBtn").addEventListener("click", () => {
+        unlock(secretInput.value.trim());
+      });
+      document.getElementById("localOnlyBtn").addEventListener("click", () => {
+        unlock("");
+      });
+      lockBtn.addEventListener("click", () => {
+        sessionStorage.removeItem(SECRET_KEY);
+        app.classList.remove("show");
+        gate.classList.add("show");
+        lockBtn.hidden = true;
+      });
+      document.getElementById("mbSave").addEventListener("click", () => {
+        const date = document.getElementById("mbDate").value || todayUTC();
+        const row = {
+          date,
+          directions: Number(document.getElementById("mbDir").value || 0),
+          geocoding: Number(document.getElementById("mbGeo").value || 0),
+          matching: Number(document.getElementById("mbMatch").value || 0),
+          navTrips: Number(document.getElementById("mbNav").value || 0),
+        };
+        const next = loadLedger().filter((r) => r.date !== date);
+        next.push(row);
+        saveLedger(next);
+        renderLedger();
+      });
+
+      const existing = sessionStorage.getItem(SECRET_KEY);
+      if (existing != null) {
+        secretInput.value = existing;
+        unlock(existing);
+      } else {
+        gate.classList.add("show");
+      }
+    </script>
+  </body>
+</html>

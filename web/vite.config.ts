@@ -2,18 +2,47 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 /* `vitest/config` re-exports `defineConfig` with the `test` option typed; the runtime config
  * is identical to `vite`'s, so dev/build are unaffected when Vitest isn't installed. */
-import { defineConfig } from "vitest/config";
+import { defineConfig, type Plugin } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { rainViewerTileProxyOptions } from "./vite.rainViewerProxy";
 
 const pkgPath = fileURLToPath(new URL("./package.json", import.meta.url));
 const { version: appVersion } = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version: string };
 
+/**
+ * Vite's SPA fallback serves the React app for `/ops` and `/ops/`. Rewrite those to the
+ * static Control Room page in `public/ops/index.html` (which already works when requested
+ * by full filename).
+ */
+function stormpathOpsHubPlugin(): Plugin {
+  const rewrite = (
+    req: { url?: string },
+    _res: unknown,
+    next: () => void
+  ) => {
+    const path = req.url?.split("?")[0] ?? "";
+    if (path === "/ops" || path === "/ops/") {
+      req.url = "/ops/index.html";
+    }
+    next();
+  };
+  return {
+    name: "stormpath-ops-hub",
+    configureServer(server) {
+      server.middlewares.use(rewrite);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(rewrite);
+    },
+  };
+}
+
 export default defineConfig(({ command }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
   },
   plugins: [
+    stormpathOpsHubPlugin(),
     react({
       /* React Compiler 1.0 (Phase 5d). The compiler runs as a Babel plugin during the
        * @vitejs/plugin-react transform pass and auto-memoizes hooks/components, eliminating
