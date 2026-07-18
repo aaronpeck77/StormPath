@@ -1,5 +1,9 @@
 node_modules
 dist
+# Local Capacitor plugins ship prebuilt JS under plugins/*/dist (must be committed).
+!plugins/
+!plugins/**/dist/
+!plugins/**/dist/**
 *.local
 .DS_Store
 .env
