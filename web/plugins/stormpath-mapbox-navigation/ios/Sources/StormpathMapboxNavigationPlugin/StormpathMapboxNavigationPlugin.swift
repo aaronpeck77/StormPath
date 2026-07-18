@@ -8,6 +8,8 @@ import MapboxNavigationCore
 /**
  * Mapbox Navigation Core bridge — no NavigationViewController.
  * Progress / route geometry stream to JS so StormPath Dr/Mp/Rt stay on one map.
+ *
+ * MapboxNavigation APIs are @MainActor (SDK 3.x); all session work hops there.
  */
 @objc(StormpathMapboxNavigationPlugin)
 public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -24,7 +26,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     private var sessionActive = false
     private var didEmitArrival = false
     /// Retain voice controller so spoken instructions keep working without UIKit nav UI.
-    private var voiceController: AnyObject?
+    private var voiceController: RouteVoiceController?
 
     @objc func isAvailable(_ call: CAPPluginCall) {
         call.resolve(["available": true])
@@ -54,59 +56,75 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let simulate = call.getBool("simulate") ?? false
 
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else { return }
-            self.tearDownSession(emitCancelled: false)
-
-            // Token must also be in Info.plist as MBXAccessToken (written by sync-ios-version.mjs).
-            // Runtime copy helps when the plist was not synced yet.
-            UserDefaults.standard.set(accessToken, forKey: "MBXAccessToken")
-
-            let coreConfig = CoreConfig(
-                locationSource: simulate ? .simulation() : .live
+            await self.startGuidanceOnMainActor(
+                accessToken: accessToken,
+                coordinates: coordinates,
+                simulate: simulate,
+                call: call
             )
-            let provider = MapboxNavigationProvider(coreConfig: coreConfig)
-            self.navigationProvider = provider
-            self.voiceController = provider.routeVoiceController
-            self.didEmitArrival = false
-
-            let mapboxNavigation = provider.mapboxNavigation
-            let options = NavigationRouteOptions(coordinates: coordinates)
-
-            Task { @MainActor in
-                let request = mapboxNavigation.routingProvider().calculateRoutes(options: options)
-                switch await request.result {
-                case .failure(let error):
-                    self.tearDownSession(emitCancelled: false)
-                    call.reject("Route request failed: \(error.localizedDescription)")
-                case .success(let navigationRoutes):
-                    self.bindObservers(mapboxNavigation: mapboxNavigation)
-                    mapboxNavigation.tripSession().startActiveGuidance(
-                        with: navigationRoutes,
-                        startLegIndex: 0
-                    )
-                    self.sessionActive = true
-                    self.emitRouteGeometry(from: navigationRoutes)
-                    call.resolve(["ok": true])
-                }
-            }
         }
     }
 
     @objc func stop(_ call: CAPPluginCall) {
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             self?.tearDownSession(emitCancelled: true)
             call.resolve()
         }
     }
 
+    @MainActor
+    private func startGuidanceOnMainActor(
+        accessToken: String,
+        coordinates: [CLLocationCoordinate2D],
+        simulate: Bool,
+        call: CAPPluginCall
+    ) async {
+        tearDownSession(emitCancelled: false)
+
+        let coreConfig = CoreConfig(
+            credentials: .init(accessToken: accessToken),
+            locationSource: simulate ? .simulation(initialLocation: nil) : .live
+        )
+        let provider = MapboxNavigationProvider(coreConfig: coreConfig)
+        navigationProvider = provider
+        voiceController = provider.routeVoiceController
+        didEmitArrival = false
+
+        let mapboxNavigation = provider.mapboxNavigation
+        let options = NavigationRouteOptions(coordinates: coordinates)
+
+        do {
+            let navigationRoutes = try await mapboxNavigation
+                .routingProvider()
+                .calculateRoutes(options: options)
+                .value
+
+            bindObservers(mapboxNavigation: mapboxNavigation)
+            mapboxNavigation.tripSession().startActiveGuidance(
+                with: navigationRoutes,
+                startLegIndex: 0
+            )
+            sessionActive = true
+            emitRouteGeometry(from: navigationRoutes)
+            call.resolve(["ok": true])
+        } catch {
+            tearDownSession(emitCancelled: false)
+            call.reject("Route request failed: \(error.localizedDescription)")
+        }
+    }
+
+    @MainActor
     private func bindObservers(mapboxNavigation: MapboxNavigation) {
         cancellables.removeAll()
 
         mapboxNavigation.navigation().routeProgress
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
-                self?.emitProgress(state: state, navigation: mapboxNavigation)
+                Task { @MainActor in
+                    self?.emitProgress(state: state)
+                }
             }
             .store(in: &cancellables)
 
@@ -114,7 +132,9 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             .receive(on: DispatchQueue.main)
             .compactMap { $0 }
             .sink { [weak self] routes in
-                self?.emitRouteGeometry(from: routes)
+                Task { @MainActor in
+                    self?.emitRouteGeometry(from: routes)
+                }
             }
             .store(in: &cancellables)
 
@@ -143,32 +163,30 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             .store(in: &cancellables)
     }
 
-    private func emitProgress(state: RouteProgressState?, navigation: MapboxNavigation) {
+    @MainActor
+    private func emitProgress(state: RouteProgressState?) {
         guard sessionActive, let state else { return }
         let progress = state.routeProgress
-        let matching = navigation.navigation().currentLocationMatching
-        let coord = matching?.enhancedLocation.coordinate
+        let matching = navigationProvider?.mapboxNavigation.navigation().currentLocationMatching
+        guard let coord = matching?.enhancedLocation.coordinate else {
+            // No matched fix yet — skip puck update but keep session alive.
+            return
+        }
+
         let alongM = progress.distanceTraveled
         let remainingM = progress.distanceRemaining
         let stepIndex = progress.currentLegProgress.stepIndex
         let instruction = progress.currentLegProgress.currentStep.instructions
 
-        var payload: [String: Any] = [
+        notifyListeners("progress", data: [
             "alongM": alongM,
             "remainingM": remainingM,
             "onRoute": true,
             "stepIndex": stepIndex,
             "instruction": instruction,
-        ]
-        if let c = coord {
-            payload["lng"] = c.longitude
-            payload["lat"] = c.latitude
-        } else {
-            // No matched fix yet — skip puck update but keep session alive.
-            return
-        }
-
-        notifyListeners("progress", data: payload)
+            "lng": coord.longitude,
+            "lat": coord.latitude,
+        ])
 
         if !didEmitArrival, remainingM >= 0, remainingM < 30, alongM > 50 {
             didEmitArrival = true
@@ -177,6 +195,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    @MainActor
     private func emitRouteGeometry(from routes: NavigationRoutes) {
         // NavigationRoute wraps Directions.Route; shape holds the polyline.
         let coords = routes.mainRoute.route.shape?.coordinates ?? []
@@ -189,6 +208,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         ])
     }
 
+    @MainActor
     private func tearDownSession(emitCancelled: Bool) {
         cancellables.removeAll()
         if sessionActive {
