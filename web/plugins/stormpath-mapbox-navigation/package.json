@@ -1,0 +1,22 @@
+{
+  "name": "@stormpath/mapbox-navigation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mapbox Navigation Core bridge for StormPath Capacitor iOS (Dr engine; StormPath keeps Dr/Mp/Rt UI).",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "files": [
+    "dist/",
+    "ios/Sources",
+    "Package.swift"
+  ],
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  },
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  }
+}

@@ -20,7 +20,8 @@ Configure these **repository secrets** (Settings → Secrets and variables → A
 
 | Secret | Purpose |
 |--------|---------|
-| `VITE_MAPBOX_TOKEN` | Baked into the web build at compile time |
+| `VITE_MAPBOX_TOKEN` | Public Mapbox token — baked into the web build + written to Info.plist as `MBXAccessToken` |
+| `MAPBOX_DOWNLOADS_TOKEN` | Mapbox **secret** token with `Downloads:Read` — CI writes `~/.netrc` on the macOS runner so SPM can download Navigation Core. **You do not need a Mac at your desk**; GitHub Actions is the Mac. |
 | `VITE_TOMORROW_IO_API_KEY` | Tomorrow.io forecast + minute precip (same as `web/.env.local`) — **not** entered in App Store Connect |
 | `VITE_OPENWEATHER_API_KEY` | Optional; route weather hints if you use OpenWeather |
 | `APPLE_CERTIFICATE` | Base64 of distribution `.p12` |
@@ -33,20 +34,18 @@ Configure these **repository secrets** (Settings → Secrets and variables → A
 
 A successful run produces an **IPA** artifact and uploads to **TestFlight** via `xcrun altool`. Install the build in **TestFlight**, smoke-test, then in App Store Connect click **Submit for Review** when ready.
 
-## Local build (optional)
+## Local build (optional — requires a Mac + Xcode)
 
-From the `web` folder:
+Day-to-day you can stay on Windows: push to `master` / run the workflow, then install from **TestFlight**.
+
+A local Xcode archive is only needed if you want to debug native Swift on a Mac. From `web/` on that Mac:
 
 ```bash
 npm ci
-npm run build:ios:testflight   # internal TF-shaped bundle; merges .env.testflight + your .env.local
-# or
-npm run build:ios              # retail-shaped bundle (Basic)
+npm run build:ios:testflight
 ```
 
-Put `VITE_TOMORROW_IO_API_KEY` in **`web/.env.local`** (gitignored) for local archives. CI TestFlight builds need the **GitHub secret** above instead.
-
-Open `web/ios/App/App.xcodeproj` in Xcode, pick a team/signing, **Product → Archive**, then **Distribute App** if you are not using CI.
+Put tokens in **`web/.env.local`** and Mapbox `Downloads:Read` in `~/.netrc` (see plugin README).
 
 ## Version numbers
 

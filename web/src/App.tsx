@@ -22,6 +22,7 @@ import {
 } from "./hooks/useUserLocation";
 import { useDestinationSearch } from "./hooks/useDestinationSearch";
 import { useNavigationPosition } from "./hooks/useNavigationPosition";
+import { useNativeNavSession } from "./nav/useNativeNavSession";
 import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
 import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
 import { resolveNavigationRouteIds } from "./nav/navigationRouteFocus";
@@ -799,9 +800,27 @@ export default function App() {
     return g && g.length >= 2 ? polylineLengthMeters(g) : 0;
   }, [offRouteGuidanceRoute?.geometry]);
 
+  const adoptLockedRouteGeometry = useCallback((geometry: LngLat[]) => {
+    navigationGuidanceGeometryRef.current = geometry.map(([a, b]) => [a, b] as LngLat);
+    navGoGeometryRef.current = navigationGuidanceGeometryRef.current;
+    setGuidanceGeometryEpoch((n) => n + 1);
+    setAlongHoldResetKey((n) => n + 1);
+  }, []);
+
+  /**
+   * iOS Capacitor: Mapbox Navigation Core feeds puck/alongM; DIY snap/off-route pause.
+   * Web / Netlify: hook is inert — DIY nav unchanged. Dr/Mp/Rt stay one DriveMap.
+   */
+  const { nativeNavActive, position: nativeNavPosition } = useNativeNavSession({
+    accessToken: env.mapboxToken,
+    navigationStarted,
+    coords: { userLngLat, viaStops, destLngLat },
+    onRouteGeometry: adoptLockedRouteGeometry,
+  });
+
   const navPosition = useNavigationPosition({
     rawLngLat: userLngLat,
-    navigationStarted: navActiveForGps,
+    navigationStarted: navActiveForGps && !nativeNavActive,
     guidanceGeometry: navigationMatchGeometryRef.current,
     alongHoldResetKey,
     mapboxToken: env.mapboxToken,
@@ -813,17 +832,12 @@ export default function App() {
       settingMapMatchingEnabled &&
       isPlus &&
       Boolean(env.mapboxToken),
-    disabled: Boolean(devLocOverrideLngLat),
+    disabled: Boolean(devLocOverrideLngLat) || nativeNavActive,
   });
-  const navigationPositionLngLat = navPosition.positionLngLat;
+  const effectiveNavPosition =
+    nativeNavActive && nativeNavPosition ? nativeNavPosition : navPosition;
+  const navigationPositionLngLat = effectiveNavPosition.positionLngLat;
   navigationPositionLngLatRef.current = navigationPositionLngLat;
-
-  const adoptLockedRouteGeometry = useCallback((geometry: LngLat[]) => {
-    navigationGuidanceGeometryRef.current = geometry.map(([a, b]) => [a, b] as LngLat);
-    navGoGeometryRef.current = navigationGuidanceGeometryRef.current;
-    setGuidanceGeometryEpoch((n) => n + 1);
-    setAlongHoldResetKey((n) => n + 1);
-  }, []);
 
   const offRouteNav = useOffRouteNavigation({
     userLngLat: navigationPositionLngLat,
@@ -833,7 +847,7 @@ export default function App() {
     viaStops,
     activeViaIndex,
     destinationLabel,
-    navigationStarted,
+    navigationStarted: navigationStarted && !nativeNavActive,
     guidanceRoute: offRouteGuidanceRoute,
     guidanceRouteLengthM: offRouteGuidanceRouteLengthM,
     guidanceRouteId: offRouteLockedRouteId ?? primaryRouteId,
@@ -1191,14 +1205,15 @@ export default function App() {
     metersToBannerManeuver,
   } = useNavigationGuidance({
     navigationStarted,
-    settingVoiceGuidanceEnabled,
+    /** Native Core owns spoken instructions on iOS; keep Web Speech for DIY/web. */
+    settingVoiceGuidanceEnabled: settingVoiceGuidanceEnabled && !nativeNavActive,
     guidanceRouteId,
     guidanceRouteLengthM,
     turnSteps,
     effectiveUserLngLat: navigationPositionLngLat,
     routeGeometry: navigationGuidanceGeometry,
     alongHoldResetKey,
-    navigationAlongM: navigationStarted ? navPosition.alongM : undefined,
+    navigationAlongM: navigationStarted ? effectiveNavPosition.alongM : undefined,
     frozenAlongM:
       driveModeUi
         ? undefined
@@ -1299,10 +1314,10 @@ export default function App() {
       isDriveOffRouteForwardFraming({
         driveModeUi,
         navigationStarted,
-        onRoute: navPosition.onRoute,
+        onRoute: effectiveNavPosition.onRoute,
         offRouteLatched,
       }),
-    [driveModeUi, navigationStarted, navPosition.onRoute, offRouteLatched]
+    [driveModeUi, navigationStarted, effectiveNavPosition.onRoute, offRouteLatched]
   );
 
   /** Drive camera: polyline ahead on-corridor; vehicle heading / motion when off route. */
@@ -2170,7 +2185,7 @@ export default function App() {
       stormBarVisible: showStormAdvisoryChrome,
       recenterPlanningPuckTick,
       navigationGuidanceGeometry,
-      navPositionOnRoute: navPosition.onRoute,
+      navPositionOnRoute: effectiveNavPosition.onRoute,
       userAlongGuidanceM,
       isPlus,
       hasMapboxToken: Boolean(env.mapboxToken),

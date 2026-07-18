@@ -14,6 +14,7 @@
 #   APP_STORE_CONNECT_ISSUER_ID         Issuer ID from the same page
 #   APP_STORE_CONNECT_API_KEY_CONTENT   The .p8 file: paste full PEM *or* base64 of the file
 #   VITE_MAPBOX_TOKEN                   Mapbox public token (map + search + directions)
+#   MAPBOX_DOWNLOADS_TOKEN              Mapbox *secret* token with Downloads:Read (SPM pulls Navigation SDK)
 #   VITE_TOMORROW_IO_API_KEY            Tomorrow.io (legacy — omit when WeatherKit enabled)
 #   VITE_TOMORROW_IO_TILE_PROXY_URL     Cloudflare tile worker base (see docs/CLOUDFLARE_TILES.md)
 #   VITE_OPENWEATHER_API_KEY            OpenWeather (legacy — omit when WeatherKit enabled)
@@ -99,6 +100,29 @@ jobs:
         working-directory: web
         env:
           IOS_BUILD_NUMBER: ${{ github.run_number }}
+          # Also writes MBXAccessToken into Info.plist for Navigation SDK.
+          VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
+
+      # Mapbox Navigation Core is fetched via SPM from api.mapbox.com — needs a secret
+      # token with Downloads:Read on the CI Mac (same as a local ~/.netrc). You do NOT
+      # need a Mac at your desk; this runner is the Mac.
+      - name: Configure Mapbox downloads (.netrc)
+        env:
+          MAPBOX_DOWNLOADS_TOKEN: ${{ secrets.MAPBOX_DOWNLOADS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MAPBOX_DOWNLOADS_TOKEN:-}" ]; then
+            echo "::error::GitHub secret MAPBOX_DOWNLOADS_TOKEN is missing."
+            echo "Create a Mapbox secret token with Downloads:Read, then add it as a repo Action secret."
+            echo "See web/plugins/stormpath-mapbox-navigation/README.md"
+            exit 1
+          fi
+          cat > "$HOME/.netrc" <<EOF
+          machine api.mapbox.com
+          login mapbox
+          password ${MAPBOX_DOWNLOADS_TOKEN}
+          EOF
+          chmod 600 "$HOME/.netrc"
 
       - name: Build web app (TestFlight mode — Plus, support URLs, NWS UA from .env.testflight)
         if: env.BUILD_TRACK == 'testflight'
