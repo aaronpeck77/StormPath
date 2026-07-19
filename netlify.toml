@@ -1,10 +1,15 @@
 # Git-connected Netlify deploy (stormpath2). Drag-and-drop dist uploads do NOT deploy functions.
 # Connect this repo in Netlify → Site configuration → Build: base `web`, command below.
+#
+# ignore: exit 0 = skip this deploy (saves free-tier build minutes). Runs with cwd = base (`web/`).
+# Skips when the push only touched Capacitor iOS / native plugin iOS / things outside `web/`.
+# TestFlight still gets JS from GitHub Actions; Netlify is for the website + serverless functions.
 
 [build]
   base = "web"
   command = "npm run build:netlify"
   publish = "dist"
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ../netlify.toml \":!ios/**\" \":!plugins/**/ios/**\""
 
 [functions]
   directory = "netlify/functions"
