@@ -312,7 +312,10 @@ export default function App() {
    * update — used by the route-compare dismiss helper. */
   const pendingSave = useUiStore((s) => s.pendingSave);
   const setPendingSave = useUiStore((s) => s.setPendingSave);
+  const aboutOpen = useUiStore((s) => s.aboutOpen);
   const setAboutOpen = useUiStore((s) => s.setAboutOpen);
+  /** Bumps DriveMap to hard-snap follow-cam after sheets / background. */
+  const [followCamResyncKey, setFollowCamResyncKey] = useState(0);
   /* Contextual one-shot coachmarks — the {@link Coachmarks} component watches for its
    * tracked targets to become visible and pops a single "Tip" card next to each the first
    * time the user encounters it. Persistence + queue logic live entirely in that component;
@@ -331,6 +334,15 @@ export default function App() {
   const progressCalloutsOpen = useUiStore((s) => s.progressCalloutsOpen);
   const setProgressCalloutsOpen = useUiStore((s) => s.setProgressCalloutsOpen);
   const progressCalloutDetailScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const sheetsWereOpenRef = useRef(false);
+  useEffect(() => {
+    const open = aboutOpen || progressCalloutsOpen;
+    if (sheetsWereOpenRef.current && !open && navigationStarted) {
+      window.setTimeout(() => setFollowCamResyncKey((k) => k + 1), 80);
+    }
+    sheetsWereOpenRef.current = open;
+  }, [aboutOpen, progressCalloutsOpen, navigationStarted]);
 
   /* Settings (persisted) — toggles that actually reduce background API calls.
    * Sourced from `useSettingsStore` (Phase 4a). Individual `setSettingX` selectors were
@@ -811,7 +823,11 @@ export default function App() {
    * iOS Capacitor: Mapbox Navigation Core feeds puck/alongM; DIY snap/off-route pause.
    * Web / Netlify: hook is inert — DIY nav unchanged. Dr/Mp/Rt stay one DriveMap.
    */
-  const { nativeNavActive, position: nativeNavPosition } = useNativeNavSession({
+  const {
+    nativeNavActive,
+    position: nativeNavPosition,
+    guidance: nativeNavGuidance,
+  } = useNativeNavSession({
     accessToken: env.mapboxToken,
     navigationStarted,
     coords: { userLngLat, viaStops, destLngLat },
@@ -1202,8 +1218,8 @@ export default function App() {
 
   const {
     userAlongGuidanceM,
-    bannerTurnIndex,
-    metersToBannerManeuver,
+    bannerTurnIndex: diyBannerTurnIndex,
+    metersToBannerManeuver: diyMetersToBannerManeuver,
   } = useNavigationGuidance({
     navigationStarted,
     /** Native Core owns spoken instructions on iOS; keep Web Speech for DIY/web. */
@@ -1225,6 +1241,27 @@ export default function App() {
           : undefined,
     speedMps,
   });
+
+  /** iOS Core: banner text/distance from Mapbox progress so DIY turnSteps can't drift. */
+  const bannerTurnIndex = useMemo(() => {
+    if (!nativeNavActive || !nativeNavGuidance || turnSteps.length === 0) {
+      return diyBannerTurnIndex;
+    }
+    // Current Core step is in progress; upcoming maneuver is usually the next step.
+    const next = nativeNavGuidance.stepIndex + 1;
+    if (next >= 0 && next < turnSteps.length) return next;
+    return Math.max(0, Math.min(nativeNavGuidance.stepIndex, turnSteps.length - 1));
+  }, [nativeNavActive, nativeNavGuidance, turnSteps.length, diyBannerTurnIndex]);
+
+  const metersToBannerManeuver =
+    nativeNavActive && nativeNavGuidance?.stepRemainingM != null
+      ? nativeNavGuidance.stepRemainingM
+      : diyMetersToBannerManeuver;
+
+  const bannerInstructionOverride =
+    nativeNavActive && nativeNavGuidance?.instruction
+      ? nativeNavGuidance.instruction
+      : null;
 
   guidanceRouteGeomRef.current = navigationGuidanceGeometry ?? guidanceRoute?.geometry ?? null;
   guidanceRouteLengthMRef.current = guidanceRouteLengthM;
@@ -2206,6 +2243,7 @@ export default function App() {
       onSearchPickMarkerClick: handleSearchPickFromMap,
       progressRailVisible: showProgressRail,
       offRouteRejoinCompareActive: offRouteHoldPreviewActive || detourAutoActive,
+      followCamResyncKey,
     },
     stormAdvisoryBar: {
       isPlus,
@@ -2294,6 +2332,7 @@ export default function App() {
               turnSteps={turnSteps}
               bannerTurnIndex={bannerTurnIndex}
               metersToBannerManeuver={metersToBannerManeuver}
+              bannerInstructionOverride={bannerInstructionOverride}
               viewMode={viewMode}
               personalForkShowChip={personalForkNav.showChip}
               personalForkShowCommittedChip={personalForkNav.showCommittedChip}

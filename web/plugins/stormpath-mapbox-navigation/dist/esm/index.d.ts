@@ -3,6 +3,7 @@ export type {
   NavCoordinate,
   StartActiveGuidanceOptions,
   NativeNavProgressEvent,
+  NativeNavGuidance,
   NativeNavRouteChangedEvent,
   NativeNavFinishedEvent,
   StormpathMapboxNavigationPlugin,

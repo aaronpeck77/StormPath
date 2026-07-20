@@ -32,6 +32,10 @@ export type MapboxTrafficLeg = {
   congestionSummary: CongestionLevel;
   /** True when any segment on this leg has a closure annotation. */
   hasClosure: boolean;
+  /** Live Mapbox incidents typed as construction (plan-time gaps; refreshes with traffic poll). */
+  constructionCount: number;
+  /** Short label from the first construction incident, if any. */
+  constructionSummary: string | null;
   /** Approximate position of near-stopped traffic along the leg (0..1), if detected. */
   nearStopFraction: number | null;
   /** First segment at/above heavy congestion along the sampled path (0..1), if any. */
@@ -138,7 +142,7 @@ async function fetchDirectionsOnce(
   url.searchParams.set("access_token", accessToken);
   url.searchParams.set("geometries", "geojson");
   url.searchParams.set("overview", "false");
-  url.searchParams.set("annotations", "congestion_numeric");
+  url.searchParams.set("annotations", "congestion_numeric,closure");
 
   const res = await fetchWithTimeout({
     input: url.toString(),
@@ -177,12 +181,27 @@ async function fetchDirectionsOnce(
     (l) => l.annotation?.closure?.some((c) => c === true)
   ) ?? false;
 
+  const constructionIncidents =
+    route.legs?.flatMap((l) => l.incidents ?? []).filter((inc) => {
+      const t = (inc.type ?? "").toLowerCase();
+      const sub = (inc.sub_type ?? "").toLowerCase();
+      return t.includes("construction") || sub.includes("construction") || sub.includes("lane_restriction");
+    }) ?? [];
+  const constructionCount = constructionIncidents.length;
+  const firstConstruction = constructionIncidents[0];
+  const constructionSummary =
+    firstConstruction?.description?.trim() ||
+    firstConstruction?.long_description?.trim() ||
+    null;
+
   return {
     mapboxDurationMinutes: liveMin,
     typicalDurationMinutes: typicalMin,
     delayVsTypicalMinutes: delayMin,
     congestionSummary: summarizeCongestion(route),
     hasClosure,
+    constructionCount,
+    constructionSummary,
     nearStopFraction: detectNearStopFraction(route),
     firstHeavyCongestionFraction: detectFirstHeavyCongestionFraction(route),
   };

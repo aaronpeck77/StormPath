@@ -9,6 +9,7 @@ import { isSignificantTrafficDelay } from "./constants";
 export function hasLocalizedTrafficIssue(leg: MapboxTrafficLeg | null | undefined): boolean {
   if (!leg) return false;
   if (leg.hasClosure) return true;
+  if ((leg.constructionCount ?? 0) > 0) return true;
   if (leg.nearStopFraction != null) return true;
   if (leg.firstHeavyCongestionFraction != null) return true;
   return false;
@@ -94,6 +95,31 @@ export function unifiedTrafficNarrative(
         mapTitle: "Closure on route",
         mapDetail: "Blocked or closed segment ahead on the corridor.",
         mapSeverity: 90,
+      },
+      leg
+    );
+  }
+
+  if ((leg.constructionCount ?? 0) > 0) {
+    const detail =
+      leg.constructionSummary?.slice(0, 120) ||
+      "Mapbox reports construction on this corridor — watch for workers and changed limits.";
+    return gateTrafficSurfaces(
+      {
+        advisoryHeadline:
+          leg.constructionCount > 1
+            ? `Construction zones ahead (${leg.constructionCount})`
+            : "Construction ahead",
+        advisorySubtext: detail,
+        showAdvisoryDelayRow: d >= 0.1,
+        progressStartLine:
+          d >= 0.1
+            ? `Construction — +${formatDelayMinutesForUi(d)} vs free-flow`
+            : "Construction on route",
+        shouldAddCorridorAlert: true,
+        mapTitle: "Construction on route",
+        mapDetail: detail,
+        mapSeverity: 70,
       },
       leg
     );

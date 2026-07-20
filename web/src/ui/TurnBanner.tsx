@@ -167,12 +167,46 @@ type Props = {
   activeIndex: number;
   /** Along-route distance remaining to that primary maneuver (polyline sync). */
   metersToManeuverEnd?: number | null;
+  /**
+   * When set (iOS native Core), show this instruction instead of `steps[activeIndex]`.
+   * Keeps the banner synced with Mapbox progress when DIY turnSteps diverge.
+   */
+  instructionOverride?: string | null;
 };
 
-export function TurnBanner({ visible, steps, activeIndex, metersToManeuverEnd }: Props) {
+export function TurnBanner({
+  visible,
+  steps,
+  activeIndex,
+  metersToManeuverEnd,
+  instructionOverride = null,
+}: Props) {
   if (!visible) return null;
 
+  const override = instructionOverride?.replace(/\s+/g, " ").trim() || null;
+
   if (steps.length === 0) {
+    if (override) {
+      const remainM = metersToManeuverEnd ?? 0;
+      const alongLabel = formatAlongMeters(remainM);
+      return (
+        <div className="turn-banner turn-banner--split" role="status">
+          <div className="turn-banner-col turn-banner-col--primary">
+            <span className="turn-banner-icon" aria-hidden>
+              {inferManeuverIconFromInstruction(override)}
+            </span>
+            <div className="turn-banner-text">
+              <span className="turn-banner-street">{instructionWithRoadShields(override)}</span>
+              <div className="turn-banner-meta-row">
+                <span className="turn-banner-dist">
+                  {alongLabel ? `${alongLabel} ahead` : "Now"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="turn-banner turn-banner--split" role="status">
         <div className="turn-banner-col turn-banner-col--primary">
@@ -191,6 +225,7 @@ export function TurnBanner({ visible, steps, activeIndex, metersToManeuverEnd }:
   const idx = Math.max(0, Math.min(activeIndex, steps.length - 1));
   const cur = steps[idx]!;
   const next = steps[idx + 1];
+  const primaryInstr = override ?? cur.instruction;
   const remainM = metersToManeuverEnd ?? 0;
   const alongLabel = formatAlongMeters(remainM);
   const distLabel =
@@ -198,17 +233,20 @@ export function TurnBanner({ visible, steps, activeIndex, metersToManeuverEnd }:
     (formatStepDistanceM(cur.distanceM) ? `${formatStepDistanceM(cur.distanceM)}` : "");
 
   // Changing keys on maneuver blocks gives a simple “slides over” feel when the next step becomes current.
-  const primaryKey = useMemo(() => `primary-${idx}-${cur.instruction}`, [idx, cur.instruction]);
+  const primaryKey = useMemo(
+    () => `primary-${idx}-${primaryInstr}`,
+    [idx, primaryInstr]
+  );
   const nextKey = useMemo(() => `next-${idx + 1}-${next?.instruction ?? ""}`, [idx, next?.instruction]);
 
   return (
     <div className="turn-banner turn-banner--split" role="status">
       <div className="turn-banner-col turn-banner-col--primary" key={primaryKey}>
         <span className="turn-banner-icon" aria-hidden>
-          {maneuverIconForStep(cur)}
+          {override ? inferManeuverIconFromInstruction(override) : maneuverIconForStep(cur)}
         </span>
         <div className="turn-banner-text">
-          <span className="turn-banner-street">{instructionWithRoadShields(cur.instruction)}</span>
+          <span className="turn-banner-street">{instructionWithRoadShields(primaryInstr)}</span>
           <div className="turn-banner-meta-row">
             <span className="turn-banner-dist">
               {alongLabel ? `${alongLabel} ahead` : distLabel ? `${distLabel} ahead` : "Now"}

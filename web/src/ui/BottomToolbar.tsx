@@ -221,11 +221,12 @@ export function BottomToolbar({
                   className="nav-bottom-stat-v"
                   title={
                     postedMph != null
-                      ? "Posted limit from map data — always follow road signs"
-                      : "Speed limit unavailable — follow posted signs"
+                      ? "Map estimate only — always obey posted road signs. Not for enforcement."
+                      : "No reliable map limit here — obey posted road signs"
                   }
                 >
                   {postedMph != null ? postedMph : "—"}
+                  {postedMph != null ? <small> est</small> : null}
                 </span>
               </div>
             </div>

@@ -87,6 +87,7 @@ export type UseDriveMapPropsInput = {
   onSearchPickMarkerClick: ((id: string) => void) | undefined;
   progressRailVisible: boolean;
   offRouteRejoinCompareActive: boolean;
+  followCamResyncKey?: number;
 };
 
 export function buildDriveMapProps(
@@ -155,6 +156,7 @@ export function buildDriveMapProps(
     onSearchPickMarkerClick,
     progressRailVisible,
     offRouteRejoinCompareActive,
+    followCamResyncKey = 0,
   } = input;
 
   return {
@@ -234,6 +236,7 @@ export function buildDriveMapProps(
     progressRailVisible,
     offRouteRejoinCompareActive,
     rejoinOverlayActive: offRouteRejoinCompareActive,
+    followCamResyncKey,
   };
 }
 

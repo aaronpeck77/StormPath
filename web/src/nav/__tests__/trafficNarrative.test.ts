@@ -8,6 +8,8 @@ const baseLeg: MapboxTrafficLeg = {
   delayVsTypicalMinutes: 6,
   congestionSummary: "moderate",
   hasClosure: false,
+  constructionCount: 0,
+  constructionSummary: null,
   nearStopFraction: null,
   firstHeavyCongestionFraction: null,
 };
@@ -17,8 +19,9 @@ describe("hasLocalizedTrafficIssue", () => {
     expect(hasLocalizedTrafficIssue(baseLeg)).toBe(false);
   });
 
-  it("is true for closure, near-stop, or heavy segment anchors", () => {
+  it("is true for closure, construction, near-stop, or heavy segment anchors", () => {
     expect(hasLocalizedTrafficIssue({ ...baseLeg, hasClosure: true })).toBe(true);
+    expect(hasLocalizedTrafficIssue({ ...baseLeg, constructionCount: 1 })).toBe(true);
     expect(hasLocalizedTrafficIssue({ ...baseLeg, nearStopFraction: 0.35 })).toBe(true);
     expect(hasLocalizedTrafficIssue({ ...baseLeg, firstHeavyCongestionFraction: 0.42 })).toBe(true);
   });

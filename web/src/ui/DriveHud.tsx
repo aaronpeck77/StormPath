@@ -40,9 +40,16 @@ export function DriveHud({
         </div>
         <div className="drive-hud-cell">
           <span className="drive-hud-k">Limit</span>
-          <span className="drive-hud-v" title="Follow posted road signs">
+          <span
+            className="drive-hud-v"
+            title={
+              postedMph != null
+                ? "Map estimate only — obey posted signs"
+                : "No reliable map limit — obey posted signs"
+            }
+          >
             {postedMph != null ? postedMph : "—"}
-            <small> mph</small>
+            <small>{postedMph != null ? " est" : " mph"}</small>
           </span>
         </div>
         <div className="drive-hud-cell">

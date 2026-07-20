@@ -297,6 +297,8 @@ export type Props = {
   offRouteRejoinCompareActive?: boolean;
   /** Dr auto rejoin: faint locked A + green/orange temp leg styling. */
   rejoinOverlayActive?: boolean;
+  /** Bump after About / Route Info close or resume — hard-snaps follow-cam bearing. */
+  followCamResyncKey?: number;
 };
 
 /** Alias for App / prop-assembly hooks — same shape as {@link Props}. */
@@ -396,6 +398,7 @@ function DriveMapInner({
   progressRailVisible = true,
   offRouteRejoinCompareActive = false,
   rejoinOverlayActive = false,
+  followCamResyncKey = 0,
 }: Props) {
   const ultraLongRoute = isUltraLongTripRoute(sessionRouteLengthM);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -3190,14 +3193,15 @@ function DriveMapInner({
     };
   }, [viewMode, navigationStarted, mapReady]);
 
-  /** Foreground / style reload can leave drive follow-cam desynced while the puck keeps updating. */
+  /** Foreground / style reload / sheet close — hard-snap follow-cam (clear bearing smoother). */
   useEffect(() => {
     if (!mapReady || !navigationStarted || viewMode !== "drive") return;
     const map = mapRef.current;
     if (!map) return;
 
-    const nudgeFollowCam = () => {
+    const nudgeFollowCam = (hard = false) => {
       userExploringRef.current = false;
+      if (hard) driveCamBearingSmoothedRef.current = null;
       driveCamResyncRef.current = true;
       setMapResumeTick((n) => n + 1);
       try {
@@ -3207,12 +3211,12 @@ function DriveMapInner({
       }
     };
 
-    const onStyle = () => nudgeFollowCam();
+    const onStyle = () => nudgeFollowCam(true);
     map.on("style.load", onStyle);
 
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
-      nudgeFollowCam();
+      nudgeFollowCam(true);
     };
     document.addEventListener("visibilitychange", onVisible);
 
@@ -3221,6 +3225,22 @@ function DriveMapInner({
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [mapReady, navigationStarted, viewMode]);
+
+  useEffect(() => {
+    if (!mapReady || !navigationStarted || viewMode !== "drive") return;
+    if (followCamResyncKey <= 0) return;
+    driveCamBearingSmoothedRef.current = null;
+    driveCamResyncRef.current = true;
+    setMapResumeTick((n) => n + 1);
+    const map = mapRef.current;
+    if (map) {
+      try {
+        map.resize();
+      } catch {
+        /* map disposed */
+      }
+    }
+  }, [followCamResyncKey, mapReady, navigationStarted, viewMode]);
 
   /** Report map bearing while driving so the dock compass can keep N aligned with true north. */
   useEffect(() => {

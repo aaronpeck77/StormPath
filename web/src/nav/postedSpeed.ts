@@ -15,8 +15,8 @@ export function mapboxMaxSpeedToMph(entry: unknown): number | null {
   const unit = typeof o.unit === "string" ? o.unit.toLowerCase() : "";
   if (unit === "mph" || unit === "mi/h") return Math.round(speed);
   if (unit === "km/h" || unit === "kph") return Math.round(speed * 0.621371);
-  /* Mapbox US segments are usually mph; metric regions km/h. */
-  return Math.round(speed);
+  /* Missing unit is ambiguous (mph vs km/h) — never guess; wrong Lim invites liability. */
+  return null;
 }
 
 /** Posted limit at `alongMeters` from Mapbox samples (null when data missing). */

@@ -8,10 +8,11 @@ describe("mapboxMaxSpeedToMph", () => {
     expect(mapboxMaxSpeedToMph({ speed: 90, unit: "km/h" })).toBe(56);
   });
 
-  it("returns null for unknown or unlimited", () => {
+  it("returns null for unknown, unlimited, or missing unit", () => {
     expect(mapboxMaxSpeedToMph("unknown")).toBeNull();
     expect(mapboxMaxSpeedToMph({ unlimited: true })).toBeNull();
     expect(mapboxMaxSpeedToMph(null)).toBeNull();
+    expect(mapboxMaxSpeedToMph({ speed: 70 })).toBeNull();
   });
 });
 

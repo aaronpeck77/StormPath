@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import {
   StormpathMapboxNavigation,
+  type NativeNavGuidance,
   type NativeNavProgressEvent,
 } from "@stormpath/mapbox-navigation";
 import type { LngLat } from "./types";
@@ -13,6 +14,8 @@ export type NativeNavSessionCoords = {
   viaStops: TripStop[];
   destLngLat: LngLat | null;
 };
+
+export type { NativeNavGuidance };
 
 function buildCoordinateList(c: NativeNavSessionCoords): { lng: number; lat: number }[] | null {
   if (!c.userLngLat || !c.destLngLat) return null;
@@ -63,6 +66,7 @@ export function useNativeNavSession(opts: {
 
   const [nativeNavActive, setNativeNavActive] = useState(false);
   const [position, setPosition] = useState<NavigationPositionState | null>(null);
+  const [guidance, setGuidance] = useState<NativeNavGuidance | null>(null);
   const startedForNavRef = useRef(false);
   const listenersRef = useRef<{ remove: () => Promise<void> }[]>([]);
   const onRouteGeometryRef = useRef(onRouteGeometry);
@@ -90,6 +94,7 @@ export function useNativeNavSession(opts: {
     startedForNavRef.current = false;
     setNativeNavActive(false);
     setPosition(null);
+    setGuidance(null);
   }, [removeListeners]);
 
   const startNative = useCallback(async () => {
@@ -112,6 +117,19 @@ export function useNativeNavSession(opts: {
             onRoute: e.onRoute,
             source: "route_snap",
           });
+          const instr =
+            typeof e.instruction === "string" && e.instruction.trim()
+              ? e.instruction.trim()
+              : null;
+          const stepRem =
+            e.stepRemainingM != null && Number.isFinite(e.stepRemainingM)
+              ? Math.max(0, e.stepRemainingM)
+              : null;
+          setGuidance({
+            stepIndex: Number.isFinite(e.stepIndex) ? e.stepIndex : 0,
+            stepRemainingM: stepRem,
+            instruction: instr,
+          });
         }),
         StormpathMapboxNavigation.addListener("routeChanged", (e) => {
           const geom = (e.geometry ?? [])
@@ -126,6 +144,7 @@ export function useNativeNavSession(opts: {
           startedForNavRef.current = false;
           setNativeNavActive(false);
           setPosition(null);
+          setGuidance(null);
           onSessionEndedRef.current?.("cancelled");
         }),
         StormpathMapboxNavigation.addListener("error", (e) => {
@@ -193,6 +212,8 @@ export function useNativeNavSession(opts: {
   return {
     nativeNavActive,
     position,
+    /** Banner authority on iOS Core — keep DIY turnSteps as icon fallback only. */
+    guidance,
     stopNative,
   };
 }

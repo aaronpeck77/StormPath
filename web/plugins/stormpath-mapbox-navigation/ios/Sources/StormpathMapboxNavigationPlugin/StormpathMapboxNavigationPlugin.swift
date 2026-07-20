@@ -227,14 +227,22 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let alongM = progress.distanceTraveled
         let remainingM = progress.distanceRemaining
-        let stepIndex = progress.currentLegProgress.stepIndex
-        let instruction = progress.currentLegProgress.currentStep.instructions
+        let legProgress = progress.currentLegProgress
+        let stepIndex = legProgress.stepIndex
+        let stepRemainingM = legProgress.currentStepProgress.distanceRemaining
+        // Prefer visual primary text when present — matches the upcoming maneuver banner.
+        var instruction = legProgress.currentStep.instructions
+        if let primary = legProgress.currentStepProgress.currentVisualInstruction?.primaryInstruction.text,
+           !primary.isEmpty {
+            instruction = primary
+        }
 
         notifyListeners("progress", data: [
             "alongM": alongM,
             "remainingM": remainingM,
             "onRoute": true,
             "stepIndex": stepIndex,
+            "stepRemainingM": stepRemainingM,
             "instruction": instruction,
             "lng": coord.longitude,
             "lat": coord.latitude,

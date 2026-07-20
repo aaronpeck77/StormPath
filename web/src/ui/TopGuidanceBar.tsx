@@ -11,6 +11,8 @@ type Props = {
   /** Index into `turnSteps` for the primary line (meaningful upcoming maneuver). */
   activeTurnIndex: number;
   metersToManeuverEnd?: number | null;
+  /** iOS native Core instruction — overrides DIY turnSteps text when set. */
+  instructionOverride?: string | null;
   /** Drive mode: larger icon + type for at-a-glance reading. */
   glanceable?: boolean;
 };
@@ -20,6 +22,7 @@ export function TopGuidanceBar({
   turnSteps,
   activeTurnIndex,
   metersToManeuverEnd,
+  instructionOverride = null,
   glanceable = false,
 }: Props) {
   /* Resolved once per mount — seasons don't shift mid-session, and the URL override (used for
@@ -38,6 +41,7 @@ export function TopGuidanceBar({
           steps={turnSteps}
           activeIndex={activeTurnIndex}
           metersToManeuverEnd={metersToManeuverEnd}
+          instructionOverride={instructionOverride}
         />
       ) : (
         <div

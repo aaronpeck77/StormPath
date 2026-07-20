@@ -224,6 +224,8 @@ describe("buildRouteImpacts traffic gating", () => {
     delayVsTypicalMinutes: 0.03,
     congestionSummary: "low",
     hasClosure: false,
+    constructionCount: 0,
+    constructionSummary: null,
     nearStopFraction: null,
     firstHeavyCongestionFraction: null,
   };
