@@ -21,8 +21,8 @@ const DRIVE_CAMERA_BEARING_MAX_STEP_DEG = 9;
  */
 const ROUTE_VS_TRAVEL_AGREE_DEG = 55;
 
-/** Prefer GPS course once moving faster than a crawl (~8 mph). */
-const TRAVEL_HEADING_MIN_SPEED_MPS = 3.5;
+/** Min ground speed before successive fixes count as course-over-ground (~4 mph). */
+const TRAVEL_MOTION_MIN_SPEED_MPS = 1.8;
 
 export function drivePuckFollowOffsetY(
   viewportHeight: number,
@@ -117,7 +117,11 @@ export function smoothDriveBearingDeg(prev: number | null, raw: number, alpha: n
 
 type DriveFix = { lng: number; lat: number };
 
-/** Travel direction from GPS course and/or recent motion — keeps the camera behind the puck. */
+/**
+ * Course-over-ground from successive GPS fixes only.
+ * Do NOT use Geolocation `coords.heading` here — on phones that is often the device
+ * compass (which way the handset faces), not the vehicle’s direction of travel.
+ */
 export function resolveTravelBearingDeg(input: {
   headingDeg: number | null;
   prevFix: DriveFix | null;
@@ -125,44 +129,24 @@ export function resolveTravelBearingDeg(input: {
   speedMps?: number | null;
   minMotionBearingM?: number;
 }): number | null {
-  const minMotionM = input.minMotionBearingM ?? 8;
+  const minMotionM = input.minMotionBearingM ?? 6;
   const speed = input.speedMps;
+  void input.headingDeg;
 
-  if (
-    input.headingDeg != null &&
-    Number.isFinite(input.headingDeg) &&
-    speed != null &&
-    Number.isFinite(speed) &&
-    speed >= TRAVEL_HEADING_MIN_SPEED_MPS
-  ) {
-    return input.headingDeg;
+  if (!input.prevFix || !input.curFix) return null;
+  const from: [number, number] = [input.prevFix.lng, input.prevFix.lat];
+  const to: [number, number] = [input.curFix.lng, input.curFix.lat];
+  if (haversineMeters(from, to) < minMotionM) return null;
+  if (speed != null && Number.isFinite(speed) && speed < TRAVEL_MOTION_MIN_SPEED_MPS) {
+    return null;
   }
-
-  if (input.prevFix && input.curFix) {
-    const from: [number, number] = [input.prevFix.lng, input.prevFix.lat];
-    const to: [number, number] = [input.curFix.lng, input.curFix.lat];
-    if (haversineMeters(from, to) >= minMotionM) {
-      return initialBearingDegrees(from, to);
-    }
-  }
-
-  if (
-    input.headingDeg != null &&
-    Number.isFinite(input.headingDeg) &&
-    speed != null &&
-    Number.isFinite(speed) &&
-    speed >= 1.5
-  ) {
-    return input.headingDeg;
-  }
-
-  return null;
+  return initialBearingDegrees(from, to);
 }
 
 /**
  * Drive follow-cam bearing — camera stays behind the puck (travel up-screen).
- * Route look-ahead is used only when it agrees with travel; wild ramp/parking
- * tangents cannot flip the map sideways or upside-down.
+ * Prefers route look-ahead on corridor, but course-over-ground (motion) vetoes
+ * wild ramp/parking tangents. Phone compass heading is never the authority.
  */
 export function resolveDriveFollowCameraBearingDeg(input: {
   offRouteForward: boolean;
@@ -174,31 +158,28 @@ export function resolveDriveFollowCameraBearingDeg(input: {
   minMotionBearingM?: number;
   speedMps?: number | null;
 }): number {
-  const travel = resolveTravelBearingDeg(input);
+  const motion = resolveTravelBearingDeg(input);
+  const route =
+    input.routeBearingDeg != null && Number.isFinite(input.routeBearingDeg)
+      ? input.routeBearingDeg
+      : null;
 
   if (input.offRouteForward) {
-    if (travel != null) return travel;
+    if (motion != null) return motion;
+    // Last resort only when lost with no usable motion track.
     if (input.headingDeg != null && Number.isFinite(input.headingDeg)) {
       return input.headingDeg;
     }
     return input.mapBearing;
   }
 
-  const route =
-    input.routeBearingDeg != null && Number.isFinite(input.routeBearingDeg)
-      ? input.routeBearingDeg
-      : null;
-
-  if (travel != null && route != null) {
-    if (headingDeltaDegrees(travel, route) <= ROUTE_VS_TRAVEL_AGREE_DEG) {
+  if (motion != null && route != null) {
+    if (headingDeltaDegrees(motion, route) <= ROUTE_VS_TRAVEL_AGREE_DEG) {
       return route;
     }
-    return travel;
+    return motion;
   }
-  if (travel != null) return travel;
   if (route != null) return route;
-  if (input.headingDeg != null && Number.isFinite(input.headingDeg)) {
-    return input.headingDeg;
-  }
+  if (motion != null) return motion;
   return input.mapBearing;
 }

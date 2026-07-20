@@ -18,21 +18,21 @@ function driveCameraNeedsCenterSync(
 }
 
 describe("resolveDriveFollowCameraBearingDeg", () => {
-  it("uses vehicle heading when off route in drive", () => {
+  it("uses course-over-ground when off route, not phone compass", () => {
     expect(
       resolveDriveFollowCameraBearingDeg({
         offRouteForward: true,
         routeBearingDeg: 10,
-        headingDeg: 275,
-        prevFix: null,
-        curFix: null,
+        headingDeg: 90,
+        prevFix: { lng: -86.78, lat: 36.16 },
+        curFix: { lng: -86.79, lat: 36.16 },
         mapBearing: 0,
         speedMps: 12,
       })
-    ).toBe(275);
+    ).toBeGreaterThan(260);
   });
 
-  it("ignores backward route tangent when off route", () => {
+  it("falls back to heading only when off route with no motion track", () => {
     expect(
       resolveDriveFollowCameraBearingDeg({
         offRouteForward: true,
@@ -46,34 +46,21 @@ describe("resolveDriveFollowCameraBearingDeg", () => {
     ).toBe(270);
   });
 
-  it("uses motion bearing when heading is missing off route", () => {
-    const brg = resolveDriveFollowCameraBearingDeg({
-      offRouteForward: true,
-      routeBearingDeg: 90,
-      headingDeg: null,
-      prevFix: { lng: -86.78, lat: 36.16 },
-      curFix: { lng: -86.79, lat: 36.16 },
-      mapBearing: 0,
-    });
-    expect(brg).toBeGreaterThan(260);
-    expect(brg).toBeLessThan(280);
-  });
-
-  it("prefers route tangent when it agrees with travel", () => {
+  it("prefers route tangent on corridor when motion agrees", () => {
     expect(
       resolveDriveFollowCameraBearingDeg({
         offRouteForward: false,
-        routeBearingDeg: 88,
-        headingDeg: 90,
-        prevFix: null,
-        curFix: null,
+        routeBearingDeg: 270,
+        headingDeg: 12,
+        prevFix: { lng: -86.78, lat: 36.16 },
+        curFix: { lng: -86.79, lat: 36.16 },
         mapBearing: 0,
         speedMps: 20,
       })
-    ).toBe(88);
+    ).toBe(270);
   });
 
-  it("keeps camera behind the puck when route look-ahead disagrees with travel", () => {
+  it("ignores phone compass when choosing on-corridor bearing", () => {
     expect(
       resolveDriveFollowCameraBearingDeg({
         offRouteForward: false,
@@ -81,37 +68,48 @@ describe("resolveDriveFollowCameraBearingDeg", () => {
         headingDeg: 12,
         prevFix: null,
         curFix: null,
-        mapBearing: 0,
+        mapBearing: 40,
         speedMps: 20,
       })
-    ).toBe(12);
+    ).toBe(88);
   });
 
-  it("rejects near-inverted route bearing at highway speed", () => {
-    expect(
-      resolveDriveFollowCameraBearingDeg({
-        offRouteForward: false,
-        routeBearingDeg: 200,
-        headingDeg: 10,
-        prevFix: null,
-        curFix: null,
-        mapBearing: 45,
-        speedMps: 25,
-      })
-    ).toBe(10);
+  it("keeps camera on course-over-ground when route look-ahead disagrees with motion", () => {
+    const brg = resolveDriveFollowCameraBearingDeg({
+      offRouteForward: false,
+      routeBearingDeg: 10,
+      headingDeg: 200,
+      prevFix: { lng: -86.78, lat: 36.16 },
+      curFix: { lng: -86.79, lat: 36.16 },
+      mapBearing: 45,
+      speedMps: 25,
+    });
+    expect(brg).toBeGreaterThan(260);
+    expect(brg).toBeLessThan(280);
   });
 });
 
 describe("resolveTravelBearingDeg", () => {
-  it("uses GPS heading above crawl speed", () => {
+  it("uses motion between fixes, not Geolocation heading", () => {
     expect(
       resolveTravelBearingDeg({
         headingDeg: 40,
-        prevFix: null,
-        curFix: null,
+        prevFix: { lng: -86.78, lat: 36.16 },
+        curFix: { lng: -86.79, lat: 36.16 },
         speedMps: 8,
       })
-    ).toBe(40);
+    ).toBeGreaterThan(260);
+  });
+
+  it("returns null when not moving enough", () => {
+    expect(
+      resolveTravelBearingDeg({
+        headingDeg: 40,
+        prevFix: { lng: -86.78, lat: 36.16 },
+        curFix: { lng: -86.78001, lat: 36.16 },
+        speedMps: 8,
+      })
+    ).toBeNull();
   });
 });
 
