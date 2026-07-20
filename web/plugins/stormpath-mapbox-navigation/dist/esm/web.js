@@ -10,5 +10,9 @@ export class StormpathMapboxNavigationWeb extends WebPlugin {
     return { ok: false, message: "Native Mapbox Navigation Core is iOS-only." };
   }
 
+  async setVoiceGuidance(options) {
+    return { ok: true, enabled: Boolean(options?.enabled) };
+  }
+
   async stop() {}
 }

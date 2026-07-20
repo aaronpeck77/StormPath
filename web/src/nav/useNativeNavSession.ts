@@ -46,9 +46,20 @@ export function useNativeNavSession(opts: {
   /** Optional: arrive / hard error — App may End trip. */
   onSessionEnded?: (reason: "arrived" | "cancelled" | "error", message?: string) => void;
   simulate?: boolean;
+  /** Info → Voice prompts; must mute Mapbox RouteVoiceController when false. */
+  voiceGuidanceEnabled?: boolean;
 }) {
-  const { accessToken, navigationStarted, coords, onRouteGeometry, onSessionEnded, simulate } =
-    opts;
+  const {
+    accessToken,
+    navigationStarted,
+    coords,
+    onRouteGeometry,
+    onSessionEnded,
+    simulate,
+    voiceGuidanceEnabled = false,
+  } = opts;
+  const voiceGuidanceEnabledRef = useRef(voiceGuidanceEnabled);
+  voiceGuidanceEnabledRef.current = voiceGuidanceEnabled;
 
   const [nativeNavActive, setNativeNavActive] = useState(false);
   const [position, setPosition] = useState<NavigationPositionState | null>(null);
@@ -127,6 +138,7 @@ export function useNativeNavSession(opts: {
         accessToken,
         coordinates,
         simulate: Boolean(simulate),
+        voiceEnabled: voiceGuidanceEnabledRef.current,
       });
       if (!result.ok) {
         await removeListeners();
@@ -163,6 +175,14 @@ export function useNativeNavSession(opts: {
       }
     });
   }, [navigationStarted, startNative, stopNative, nativeNavActive]);
+
+  /** Mid-trip Info toggle — mute/unmute Mapbox voice without restarting Core. */
+  useEffect(() => {
+    if (!isNativeMapboxNavPlatform() || !nativeNavActive) return;
+    void StormpathMapboxNavigation.setVoiceGuidance({
+      enabled: voiceGuidanceEnabled,
+    }).catch(() => undefined);
+  }, [voiceGuidanceEnabled, nativeNavActive]);
 
   useEffect(() => {
     return () => {

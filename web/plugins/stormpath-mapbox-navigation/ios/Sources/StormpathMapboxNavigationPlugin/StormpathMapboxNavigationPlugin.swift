@@ -2,6 +2,7 @@ import Foundation
 import Capacitor
 import Combine
 import CoreLocation
+import AVFoundation
 import MapboxDirections
 import MapboxNavigationCore
 
@@ -18,6 +19,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startActiveGuidance", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setVoiceGuidance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
     ]
 
@@ -27,6 +29,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     private var didEmitArrival = false
     /// Retain voice controller so spoken instructions keep working without UIKit nav UI.
     private var voiceController: RouteVoiceController?
+    private var voiceEnabled = false
 
     @objc func isAvailable(_ call: CAPPluginCall) {
         call.resolve(["available": true])
@@ -55,6 +58,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         let simulate = call.getBool("simulate") ?? false
+        let voice = call.getBool("voiceEnabled") ?? false
 
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -62,8 +66,17 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                 accessToken: accessToken,
                 coordinates: coordinates,
                 simulate: simulate,
+                voiceEnabled: voice,
                 call: call
             )
+        }
+    }
+
+    @objc func setVoiceGuidance(_ call: CAPPluginCall) {
+        let enabled = call.getBool("enabled") ?? false
+        Task { @MainActor [weak self] in
+            self?.applyVoiceEnabled(enabled)
+            call.resolve(["ok": true, "enabled": enabled])
         }
     }
 
@@ -79,6 +92,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         accessToken: String,
         coordinates: [CLLocationCoordinate2D],
         simulate: Bool,
+        voiceEnabled: Bool,
         call: CAPPluginCall
     ) async {
         tearDownSession(emitCancelled: false)
@@ -89,8 +103,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         )
         let provider = MapboxNavigationProvider(coreConfig: coreConfig)
         navigationProvider = provider
-        voiceController = provider.routeVoiceController
         didEmitArrival = false
+        applyVoiceEnabled(voiceEnabled)
 
         let mapboxNavigation = provider.mapboxNavigation
         let options = NavigationRouteOptions(coordinates: coordinates)
@@ -112,6 +126,44 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         } catch {
             tearDownSession(emitCancelled: false)
             call.reject("Route request failed: \(error.localizedDescription)")
+        }
+    }
+
+    @MainActor
+    private func applyVoiceEnabled(_ enabled: Bool) {
+        voiceEnabled = enabled
+        guard let provider = navigationProvider else {
+            voiceController = nil
+            return
+        }
+        if enabled {
+            activateSpeechAudioSession()
+            // Accessing routeVoiceController starts Mapbox spoken instructions.
+            let vc = provider.routeVoiceController
+            vc.speechSynthesizer.muted = false
+            voiceController = vc
+        } else {
+            if let synth = voiceController?.speechSynthesizer {
+                synth.muted = true
+                synth.stopSpeaking()
+            }
+            voiceController = nil
+        }
+    }
+
+    private func activateSpeechAudioSession() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(
+                .playback,
+                mode: .voicePrompt,
+                options: [.duckOthers]
+            )
+            try session.setActive(true, options: [])
+        } catch {
+            // Fall back — prompts may still play at system volume.
+            try? session.setCategory(.playback, options: [.duckOthers])
+            try? session.setActive(true)
         }
     }
 
@@ -211,6 +263,10 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     @MainActor
     private func tearDownSession(emitCancelled: Bool) {
         cancellables.removeAll()
+        if let synth = voiceController?.speechSynthesizer {
+            synth.muted = true
+            synth.stopSpeaking()
+        }
         if sessionActive {
             navigationProvider?.mapboxNavigation.tripSession().setToIdle()
             if emitCancelled {
@@ -218,6 +274,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
         sessionActive = false
+        voiceEnabled = false
         voiceController = nil
         navigationProvider = nil
     }

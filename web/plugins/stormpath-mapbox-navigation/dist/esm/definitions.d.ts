@@ -6,6 +6,8 @@ export type StartActiveGuidanceOptions = {
   coordinates: NavCoordinate[];
   /** Use Mapbox simulated location (Xcode / desk testing). */
   simulate?: boolean;
+  /** When false, do not attach Mapbox RouteVoiceController (Info → Voice prompts). */
+  voiceEnabled?: boolean;
 };
 
 export type NativeNavProgressEvent = {
@@ -30,6 +32,8 @@ export type NativeNavFinishedEvent = {
 export interface StormpathMapboxNavigationPlugin {
   isAvailable(): Promise<{ available: boolean }>;
   startActiveGuidance(options: StartActiveGuidanceOptions): Promise<{ ok: boolean; message?: string }>;
+  /** Mute / unmute Mapbox spoken instructions during an active native session. */
+  setVoiceGuidance(options: { enabled: boolean }): Promise<{ ok: boolean; enabled: boolean }>;
   stop(): Promise<void>;
   addListener(
     eventName: "progress",

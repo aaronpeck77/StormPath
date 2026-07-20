@@ -42,9 +42,11 @@ export function computeDriveRouteBearing(input: ComputeDriveRouteBearingInput): 
     return null;
   }
 
+  /* Shorter look-ahead near forks/ramps reduces sideways camera targets; travel bearing
+   * in mapDriveCamera still vetoes any remaining wild disagreement. */
   const lookAheadM = Math.min(
-    155,
-    Math.max(42, 42 + (speedMps != null && speedMps > 0 ? speedMps * 4.5 : 0))
+    110,
+    Math.max(28, 28 + (speedMps != null && speedMps > 0 ? speedMps * 3.2 : 0))
   );
   const OFF_ROUTE_FOR_CAMERA_TANGENT_M = 168;
   const totalM = polylineLengthMeters(geometry);

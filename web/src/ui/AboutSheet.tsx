@@ -589,8 +589,9 @@ export function AboutSheet({
                   onChange={(e) => onSettings({ ...settings, voiceGuidanceEnabled: e.target.checked })}
                 />
                 <span>
-                  <strong>Voice prompts</strong> — speak the next maneuver while <strong>Go</strong> navigation is on
-                  (any view; device text-to-speech). Use a passenger or pull over to change settings.
+                  <strong>Voice prompts</strong> — speak the next maneuver while <strong>Go</strong> is on.
+                  On iPhone this also mutes Mapbox guidance when off. Volume follows the phone’s media volume
+                  (raise the side buttons while a prompt plays).
                 </span>
               </label>
 
@@ -616,9 +617,9 @@ export function AboutSheet({
                   onChange={(e) => onSettings({ ...settings, mapMatchingEnabled: e.target.checked })}
                 />
                 <span>
-                  <strong>Snap GPS to roads</strong> — while navigating, refines your position onto the
-                  Mapbox road network (small extra data use). Helps the puck and off-route detection on
-                  wide roads and interchanges.
+                  <strong>Snap GPS to roads</strong> — optional Map Matching while on DIY nav (uses
+                  Mapbox quota). Off by default; leave off on iPhone when native guidance is active.
+                  Route snap still keeps the puck on your line.
                   {!plus ? <em> (Plus)</em> : !env.mapboxToken ? <em> (Mapbox token required)</em> : null}
                 </span>
               </label>

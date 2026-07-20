@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveDriveFollowCameraBearingDeg } from "../mapDriveCamera";
+import {
+  resolveDriveFollowCameraBearingDeg,
+  resolveTravelBearingDeg,
+} from "../mapDriveCamera";
 
 /** Mirror of drive follow-cam center drift check in DriveMap (lng/lat delta). */
 function driveCameraNeedsCenterSync(
@@ -24,6 +27,7 @@ describe("resolveDriveFollowCameraBearingDeg", () => {
         prevFix: null,
         curFix: null,
         mapBearing: 0,
+        speedMps: 12,
       })
     ).toBe(275);
   });
@@ -37,6 +41,7 @@ describe("resolveDriveFollowCameraBearingDeg", () => {
         prevFix: null,
         curFix: null,
         mapBearing: 0,
+        speedMps: 10,
       })
     ).toBe(270);
   });
@@ -54,7 +59,21 @@ describe("resolveDriveFollowCameraBearingDeg", () => {
     expect(brg).toBeLessThan(280);
   });
 
-  it("prefers route tangent while on corridor", () => {
+  it("prefers route tangent when it agrees with travel", () => {
+    expect(
+      resolveDriveFollowCameraBearingDeg({
+        offRouteForward: false,
+        routeBearingDeg: 88,
+        headingDeg: 90,
+        prevFix: null,
+        curFix: null,
+        mapBearing: 0,
+        speedMps: 20,
+      })
+    ).toBe(88);
+  });
+
+  it("keeps camera behind the puck when route look-ahead disagrees with travel", () => {
     expect(
       resolveDriveFollowCameraBearingDeg({
         offRouteForward: false,
@@ -63,8 +82,36 @@ describe("resolveDriveFollowCameraBearingDeg", () => {
         prevFix: null,
         curFix: null,
         mapBearing: 0,
+        speedMps: 20,
       })
-    ).toBe(88);
+    ).toBe(12);
+  });
+
+  it("rejects near-inverted route bearing at highway speed", () => {
+    expect(
+      resolveDriveFollowCameraBearingDeg({
+        offRouteForward: false,
+        routeBearingDeg: 200,
+        headingDeg: 10,
+        prevFix: null,
+        curFix: null,
+        mapBearing: 45,
+        speedMps: 25,
+      })
+    ).toBe(10);
+  });
+});
+
+describe("resolveTravelBearingDeg", () => {
+  it("uses GPS heading above crawl speed", () => {
+    expect(
+      resolveTravelBearingDeg({
+        headingDeg: 40,
+        prevFix: null,
+        curFix: null,
+        speedMps: 8,
+      })
+    ).toBe(40);
   });
 });
 

@@ -816,6 +816,7 @@ export default function App() {
     navigationStarted,
     coords: { userLngLat, viaStops, destLngLat },
     onRouteGeometry: adoptLockedRouteGeometry,
+    voiceGuidanceEnabled: settingVoiceGuidanceEnabled,
   });
 
   const navPosition = useNavigationPosition({

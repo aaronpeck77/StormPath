@@ -56,6 +56,7 @@ export function useTurnVoiceGuidance(p: Params): void {
         const u = new SpeechSynthesisUtterance(phrase);
         u.rate = 1;
         u.pitch = 1;
+        u.volume = 1;
         window.speechSynthesis.speak(u);
       } catch {
         /* ignore */

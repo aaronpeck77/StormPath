@@ -1,4 +1,5 @@
 import type { PaddingOptions } from "mapbox-gl";
+import { headingDeltaDegrees } from "../nav/forwardRoutePick";
 import { haversineMeters, initialBearingDegrees } from "../nav/routeGeometry";
 import {
   isLandscapeHandLeft,
@@ -12,7 +13,16 @@ import {
 const DRIVE_PUCK_YARD_LINE = 30;
 
 /** Max camera bearing change per frame (deg) — kills wild spins when route tangent jumps near forks / turns. */
-const DRIVE_CAMERA_BEARING_MAX_STEP_DEG = 11;
+const DRIVE_CAMERA_BEARING_MAX_STEP_DEG = 9;
+
+/**
+ * If route look-ahead disagrees with travel direction by more than this, keep the camera
+ * behind the vehicle (travel) so the map never flips sideways / upside-down at ramps.
+ */
+const ROUTE_VS_TRAVEL_AGREE_DEG = 55;
+
+/** Prefer GPS course once moving faster than a crawl (~8 mph). */
+const TRAVEL_HEADING_MIN_SPEED_MPS = 3.5;
 
 export function drivePuckFollowOffsetY(
   viewportHeight: number,
@@ -107,7 +117,53 @@ export function smoothDriveBearingDeg(prev: number | null, raw: number, alpha: n
 
 type DriveFix = { lng: number; lat: number };
 
-/** Drive follow-cam bearing — route tangent on-corridor; heading / motion when off route. */
+/** Travel direction from GPS course and/or recent motion — keeps the camera behind the puck. */
+export function resolveTravelBearingDeg(input: {
+  headingDeg: number | null;
+  prevFix: DriveFix | null;
+  curFix: DriveFix | null;
+  speedMps?: number | null;
+  minMotionBearingM?: number;
+}): number | null {
+  const minMotionM = input.minMotionBearingM ?? 8;
+  const speed = input.speedMps;
+
+  if (
+    input.headingDeg != null &&
+    Number.isFinite(input.headingDeg) &&
+    speed != null &&
+    Number.isFinite(speed) &&
+    speed >= TRAVEL_HEADING_MIN_SPEED_MPS
+  ) {
+    return input.headingDeg;
+  }
+
+  if (input.prevFix && input.curFix) {
+    const from: [number, number] = [input.prevFix.lng, input.prevFix.lat];
+    const to: [number, number] = [input.curFix.lng, input.curFix.lat];
+    if (haversineMeters(from, to) >= minMotionM) {
+      return initialBearingDegrees(from, to);
+    }
+  }
+
+  if (
+    input.headingDeg != null &&
+    Number.isFinite(input.headingDeg) &&
+    speed != null &&
+    Number.isFinite(speed) &&
+    speed >= 1.5
+  ) {
+    return input.headingDeg;
+  }
+
+  return null;
+}
+
+/**
+ * Drive follow-cam bearing — camera stays behind the puck (travel up-screen).
+ * Route look-ahead is used only when it agrees with travel; wild ramp/parking
+ * tangents cannot flip the map sideways or upside-down.
+ */
 export function resolveDriveFollowCameraBearingDeg(input: {
   offRouteForward: boolean;
   routeBearingDeg: number | null;
@@ -116,26 +172,31 @@ export function resolveDriveFollowCameraBearingDeg(input: {
   curFix: DriveFix | null;
   mapBearing: number;
   minMotionBearingM?: number;
+  speedMps?: number | null;
 }): number {
-  const minMotionM = input.minMotionBearingM ?? 8;
+  const travel = resolveTravelBearingDeg(input);
 
   if (input.offRouteForward) {
+    if (travel != null) return travel;
     if (input.headingDeg != null && Number.isFinite(input.headingDeg)) {
       return input.headingDeg;
-    }
-    if (input.prevFix && input.curFix) {
-      const from: [number, number] = [input.prevFix.lng, input.prevFix.lat];
-      const to: [number, number] = [input.curFix.lng, input.curFix.lat];
-      if (haversineMeters(from, to) >= minMotionM) {
-        return initialBearingDegrees(from, to);
-      }
     }
     return input.mapBearing;
   }
 
-  if (input.routeBearingDeg != null && Number.isFinite(input.routeBearingDeg)) {
-    return input.routeBearingDeg;
+  const route =
+    input.routeBearingDeg != null && Number.isFinite(input.routeBearingDeg)
+      ? input.routeBearingDeg
+      : null;
+
+  if (travel != null && route != null) {
+    if (headingDeltaDegrees(travel, route) <= ROUTE_VS_TRAVEL_AGREE_DEG) {
+      return route;
+    }
+    return travel;
   }
+  if (travel != null) return travel;
+  if (route != null) return route;
   if (input.headingDeg != null && Number.isFinite(input.headingDeg)) {
     return input.headingDeg;
   }

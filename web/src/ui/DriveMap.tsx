@@ -303,8 +303,8 @@ export type Props = {
 export type DriveMapProps = Props;
 
 /** Drive mode: return to follow-cam after the user pans/zooms the map (600 ms while navigating). */
-/** ~1/e time constant (seconds) for drive camera bearing toward route/GPS heading (rAF loop). */
-const DRIVE_CAMERA_BEARING_TC_S = 0.58;
+/** ~1/e time constant (seconds) for drive camera bearing toward travel/route (rAF loop). */
+const DRIVE_CAMERA_BEARING_TC_S = 0.7;
 /** Delay before Wi‑Fi tile warm so idle-home camera can finish first. */
 const HOME_PRELOAD_START_DELAY_MS = 4_500;
 
@@ -1460,6 +1460,7 @@ function DriveMapInner({
             prevFix,
             curFix,
             mapBearing: map.getBearing(),
+            speedMps: effSp,
           });
           const alphaBrg = 1 - Math.exp(-dt / DRIVE_CAMERA_BEARING_TC_S);
           driveCamBearingSmoothedRef.current = smoothDriveBearingDeg(
@@ -3140,6 +3141,7 @@ function DriveMapInner({
         prevFix: null,
         curFix: null,
         mapBearing: map.getBearing(),
+        speedMps: speedMpsRef.current,
       });
       const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
       const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;
