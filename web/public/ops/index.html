@@ -351,7 +351,8 @@
               <p class="faint" style="margin: 0">
                 Set these on the <strong>stormpath2</strong> Netlify site, then
                 redeploy. The Control Room secret unlocks
-                <code>/.netlify/functions/ops-summary</code>.
+                <code>/ops-summary</code> (home-api) or
+                <code>/.netlify/functions/ops-summary</code> (Netlify).
               </p>
               <ul class="faint" style="margin: 0; padding-left: 1.1rem; line-height: 1.6">
                 <li><code>OPS_HUB_SECRET</code> — passphrase you type above</li>
@@ -497,15 +498,32 @@
 
       async function fetchSummary(secret) {
         if (!secret) return null;
-        const res = await fetch("/.netlify/functions/ops-summary", {
-          headers: { Authorization: `Bearer ${secret}` },
-          cache: "no-store",
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error || `ops-summary HTTP ${res.status}`);
+        // Home-api serves /ops-summary; Netlify keeps /.netlify/functions/ops-summary.
+        const candidates = [
+          "/ops-summary",
+          "/.netlify/functions/ops-summary",
+        ];
+        let lastErr = "ops-summary failed";
+        for (const path of candidates) {
+          try {
+            const res = await fetch(path, {
+              headers: { Authorization: `Bearer ${secret}` },
+              cache: "no-store",
+            });
+            if (res.ok) return res.json();
+            const body = await res.json().catch(() => ({}));
+            lastErr = body.error || `ops-summary HTTP ${res.status}`;
+            // 404 = wrong host layout; try next. Auth/config errors stop here.
+            if (res.status !== 404) throw new Error(lastErr);
+          } catch (e) {
+            if (e instanceof TypeError) {
+              lastErr = e.message;
+              continue;
+            }
+            throw e;
+          }
         }
-        return res.json();
+        throw new Error(lastErr);
       }
 
       async function renderApp(secret) {
