@@ -338,11 +338,12 @@ export default function App() {
   const sheetsWereOpenRef = useRef(false);
   useEffect(() => {
     const open = aboutOpen || progressCalloutsOpen;
-    if (sheetsWereOpenRef.current && !open && navigationStarted) {
+    /* navActiveForGps === navigationStarted from tripPlanStore (declared later in this component). */
+    if (sheetsWereOpenRef.current && !open && navActiveForGps) {
       window.setTimeout(() => setFollowCamResyncKey((k) => k + 1), 80);
     }
     sheetsWereOpenRef.current = open;
-  }, [aboutOpen, progressCalloutsOpen, navigationStarted]);
+  }, [aboutOpen, progressCalloutsOpen, navActiveForGps]);
 
   /* Settings (persisted) — toggles that actually reduce background API calls.
    * Sourced from `useSettingsStore` (Phase 4a). Individual `setSettingX` selectors were
