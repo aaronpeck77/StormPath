@@ -228,7 +228,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         let alongM = progress.distanceTraveled
         let remainingM = progress.distanceRemaining
         let legProgress = progress.currentLegProgress
-        let stepIndex = legProgress.stepIndex
+        let stepIndex = globalStepIndex(progress: progress)
         let stepRemainingM = legProgress.currentStepProgress.distanceRemaining
         // Prefer visual primary text when present — matches the upcoming maneuver banner.
         var instruction = legProgress.currentStep.instructions
@@ -255,6 +255,42 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Flatten leg steps into one list so JS stepIndex matches banner indices.
+    @MainActor
+    private func globalStepIndex(progress: RouteProgress) -> Int {
+        var idx = 0
+        let legIndex = progress.legIndex
+        let legs = progress.route.legs
+        for i in 0..<legIndex {
+            guard i < legs.count else { break }
+            idx += legs[i].steps.count
+        }
+        idx += progress.currentLegProgress.stepIndex
+        return idx
+    }
+
+    @MainActor
+    private func turnStepsPayload(from routes: NavigationRoutes) -> [[String: Any]] {
+        var out: [[String: Any]] = []
+        for leg in routes.mainRoute.route.legs {
+            for step in leg.steps {
+                var item: [String: Any] = [
+                    "instruction": step.instructions,
+                    "distanceM": step.distance,
+                    "maneuverType": step.maneuverType.rawValue,
+                ]
+                if let dir = step.maneuverDirection {
+                    item["maneuverModifier"] = dir.rawValue
+                }
+                if let code = step.exitCodes?.first, !code.isEmpty {
+                    item["exitNumber"] = code
+                }
+                out.append(item)
+            }
+        }
+        return out
+    }
+
     @MainActor
     private func emitRouteGeometry(from routes: NavigationRoutes) {
         // NavigationRoute wraps Directions.Route; shape holds the polyline.
@@ -265,6 +301,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         notifyListeners("routeChanged", data: [
             "geometry": geometry,
+            "turnSteps": turnStepsPayload(from: routes),
         ])
     }
 

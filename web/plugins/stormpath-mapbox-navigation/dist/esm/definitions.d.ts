@@ -31,6 +31,14 @@ export type NativeNavGuidance = {
 
 export type NativeNavRouteChangedEvent = {
   geometry: NavCoordinate[];
+  /** Mapbox Core steps for the live route (banner + Then line). */
+  turnSteps?: Array<{
+    instruction: string;
+    distanceM?: number;
+    maneuverType?: string;
+    maneuverModifier?: string;
+    exitNumber?: string;
+  }>;
 };
 
 export type NativeNavFinishedEvent = {

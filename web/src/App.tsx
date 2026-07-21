@@ -828,6 +828,7 @@ export default function App() {
     nativeNavActive,
     position: nativeNavPosition,
     guidance: nativeNavGuidance,
+    turnSteps: nativeTurnSteps,
   } = useNativeNavSession({
     accessToken: env.mapboxToken,
     navigationStarted,
@@ -1243,16 +1244,24 @@ export default function App() {
     speedMps,
   });
 
-  /** iOS Core: banner text/distance from Mapbox progress so DIY turnSteps can't drift. */
+  /** iOS Core: banner uses Mapbox steps + progress so voice, line, and strip stay one route. */
+  const bannerTurnSteps =
+    nativeNavActive && nativeTurnSteps.length > 0 ? nativeTurnSteps : turnSteps;
+
   const bannerTurnIndex = useMemo(() => {
-    if (!nativeNavActive || !nativeNavGuidance || turnSteps.length === 0) {
+    if (!nativeNavActive || !nativeNavGuidance || bannerTurnSteps.length === 0) {
       return diyBannerTurnIndex;
     }
-    // Current Core step is in progress; upcoming maneuver is usually the next step.
+    // Traveling current step; upcoming maneuver is typically the next step in Mapbox's list.
     const next = nativeNavGuidance.stepIndex + 1;
-    if (next >= 0 && next < turnSteps.length) return next;
-    return Math.max(0, Math.min(nativeNavGuidance.stepIndex, turnSteps.length - 1));
-  }, [nativeNavActive, nativeNavGuidance, turnSteps.length, diyBannerTurnIndex]);
+    if (next >= 0 && next < bannerTurnSteps.length) return next;
+    return Math.max(0, Math.min(nativeNavGuidance.stepIndex, bannerTurnSteps.length - 1));
+  }, [
+    nativeNavActive,
+    nativeNavGuidance,
+    bannerTurnSteps.length,
+    diyBannerTurnIndex,
+  ]);
 
   const metersToBannerManeuver =
     nativeNavActive && nativeNavGuidance?.stepRemainingM != null
@@ -2330,7 +2339,7 @@ export default function App() {
             <AppTopNavCluster
               navigationStarted={navigationStarted}
               hasPlanRoutes={plan.routes.length > 0}
-              turnSteps={turnSteps}
+              turnSteps={bannerTurnSteps}
               bannerTurnIndex={bannerTurnIndex}
               metersToBannerManeuver={metersToBannerManeuver}
               bannerInstructionOverride={bannerInstructionOverride}
