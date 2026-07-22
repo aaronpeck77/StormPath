@@ -20,6 +20,9 @@ export type NativeNavProgressEvent = {
   /** Meters remaining on the current step (to the upcoming maneuver). */
   stepRemainingM?: number;
   instruction?: string | null;
+  /** Road name for the step currently being traveled. */
+  currentRoadName?: string | null;
+  currentRoadRef?: string | null;
 };
 
 /** Live turn banner fields from Mapbox Navigation Core (iOS). */
@@ -27,6 +30,8 @@ export type NativeNavGuidance = {
   stepIndex: number;
   stepRemainingM: number | null;
   instruction: string | null;
+  currentRoadName?: string | null;
+  currentRoadRef?: string | null;
 };
 
 export type NativeNavRouteChangedEvent = {
@@ -38,6 +43,8 @@ export type NativeNavRouteChangedEvent = {
     maneuverType?: string;
     maneuverModifier?: string;
     exitNumber?: string;
+    roadName?: string;
+    roadRef?: string;
   }>;
 };
 

@@ -146,7 +146,11 @@ export function resolveTravelBearingDeg(input: {
 /**
  * Drive follow-cam bearing — camera stays behind the puck (travel up-screen).
  * Prefers route look-ahead on corridor, but course-over-ground (motion) vetoes
- * wild ramp/parking tangents. Phone compass heading is never the authority.
+ * wild ramp/parking tangents.
+ *
+ * Phone compass (`headingDeg`) is intentionally unused: on phones it is often
+ * device orientation (landscape mount ≈ 90° sideways), not direction of travel.
+ * Off-route we hold last travel / current map bearing until COG refreshes.
  */
 export function resolveDriveFollowCameraBearingDeg(input: {
   offRouteForward: boolean;
@@ -155,21 +159,25 @@ export function resolveDriveFollowCameraBearingDeg(input: {
   prevFix: DriveFix | null;
   curFix: DriveFix | null;
   mapBearing: number;
+  /** Last good course-over-ground (held across brief GPS gaps / off-route). */
+  lastTravelBearingDeg?: number | null;
   minMotionBearingM?: number;
   speedMps?: number | null;
 }): number {
+  void input.headingDeg;
   const motion = resolveTravelBearingDeg(input);
   const route =
     input.routeBearingDeg != null && Number.isFinite(input.routeBearingDeg)
       ? input.routeBearingDeg
       : null;
+  const lastTravel =
+    input.lastTravelBearingDeg != null && Number.isFinite(input.lastTravelBearingDeg)
+      ? input.lastTravelBearingDeg
+      : null;
 
   if (input.offRouteForward) {
     if (motion != null) return motion;
-    // Last resort only when lost with no usable motion track.
-    if (input.headingDeg != null && Number.isFinite(input.headingDeg)) {
-      return input.headingDeg;
-    }
+    if (lastTravel != null) return lastTravel;
     return input.mapBearing;
   }
 
@@ -181,5 +189,22 @@ export function resolveDriveFollowCameraBearingDeg(input: {
   }
   if (route != null) return route;
   if (motion != null) return motion;
+  if (lastTravel != null) return lastTravel;
   return input.mapBearing;
+}
+
+/**
+ * True when camera bearing matches travel/route within tolerance (heading-up check).
+ * Useful for tests / debug: GO active should keep travel toward the top of the phone.
+ */
+export function isDriveCameraHeadingUp(input: {
+  cameraBearingDeg: number;
+  travelOrRouteBearingDeg: number;
+  maxDeltaDeg?: number;
+}): boolean {
+  if (!Number.isFinite(input.cameraBearingDeg) || !Number.isFinite(input.travelOrRouteBearingDeg)) {
+    return false;
+  }
+  const max = input.maxDeltaDeg ?? 35;
+  return headingDeltaDegrees(input.cameraBearingDeg, input.travelOrRouteBearingDeg) <= max;
 }

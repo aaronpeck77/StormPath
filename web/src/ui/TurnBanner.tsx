@@ -1,5 +1,9 @@
-import { useMemo } from "react";
 import type { ReactNode } from "react";
+import {
+  formatStayOnRoadLabel,
+  resolveStayOnBannerCopy,
+  roadLabelFromContinueInstruction,
+} from "../nav/bannerStayOnCopy";
 import type { RouteTurnStep } from "../nav/types";
 
 /**
@@ -160,6 +164,25 @@ function formatAlongMeters(m: number): string {
   return mi < 10 ? `${mi.toFixed(1)} mi` : `${Math.round(mi)} mi`;
 }
 
+function resolveRoadLabel(input: {
+  currentRoadName?: string | null;
+  currentRoadRef?: string | null;
+  travelingStep?: RouteTurnStep | null;
+  turnInstruction: string;
+}): string | null {
+  const fromLive = formatStayOnRoadLabel({
+    roadName: input.currentRoadName,
+    roadRef: input.currentRoadRef,
+  });
+  if (fromLive) return fromLive;
+  const fromStep = formatStayOnRoadLabel({
+    roadName: input.travelingStep?.roadName,
+    roadRef: input.travelingStep?.roadRef,
+  });
+  if (fromStep) return fromStep;
+  return roadLabelFromContinueInstruction(input.turnInstruction);
+}
+
 type Props = {
   visible: boolean;
   steps: RouteTurnStep[];
@@ -172,6 +195,11 @@ type Props = {
    * Keeps the banner synced with Mapbox progress when DIY turnSteps diverge.
    */
   instructionOverride?: string | null;
+  /** Road currently being traveled (native progress or DIY current step). */
+  currentRoadName?: string | null;
+  currentRoadRef?: string | null;
+  /** Index of the step being traveled (for DIY road name when live props empty). */
+  travelingStepIndex?: number | null;
 };
 
 export function TurnBanner({
@@ -180,6 +208,9 @@ export function TurnBanner({
   activeIndex,
   metersToManeuverEnd,
   instructionOverride = null,
+  currentRoadName = null,
+  currentRoadRef = null,
+  travelingStepIndex = null,
 }: Props) {
   if (!visible) return null;
 
@@ -189,18 +220,28 @@ export function TurnBanner({
     if (override) {
       const remainM = metersToManeuverEnd ?? 0;
       const alongLabel = formatAlongMeters(remainM);
+      const roadLabel = resolveRoadLabel({
+        currentRoadName,
+        currentRoadRef,
+        turnInstruction: override,
+      });
+      const copy = resolveStayOnBannerCopy({
+        remainM,
+        turnInstruction: override,
+        roadLabel,
+        alongLabel,
+        distFallback: "",
+      });
       return (
         <div className="turn-banner turn-banner--split" role="status">
           <div className="turn-banner-col turn-banner-col--primary">
             <span className="turn-banner-icon" aria-hidden>
-              {inferManeuverIconFromInstruction(override)}
+              {copy.stayOnMode ? "↑" : inferManeuverIconFromInstruction(override)}
             </span>
             <div className="turn-banner-text">
-              <span className="turn-banner-street">{instructionWithRoadShields(override)}</span>
+              <span className="turn-banner-street">{instructionWithRoadShields(copy.headline)}</span>
               <div className="turn-banner-meta-row">
-                <span className="turn-banner-dist">
-                  {alongLabel ? `${alongLabel} ahead` : "Now"}
-                </span>
+                <span className="turn-banner-dist">{copy.distLine}</span>
               </div>
             </div>
           </div>
@@ -225,57 +266,86 @@ export function TurnBanner({
   const idx = Math.max(0, Math.min(activeIndex, steps.length - 1));
   const cur = steps[idx]!;
   const next = steps[idx + 1];
+  const travelIdx =
+    travelingStepIndex != null && Number.isFinite(travelingStepIndex)
+      ? Math.max(0, Math.min(Math.floor(travelingStepIndex), steps.length - 1))
+      : Math.max(0, idx - 1);
+  const travelingStep = steps[travelIdx] ?? null;
   const primaryInstr = override ?? cur.instruction;
   const remainM = metersToManeuverEnd ?? 0;
   const alongLabel = formatAlongMeters(remainM);
   const distLabel =
     alongLabel ||
     (formatStepDistanceM(cur.distanceM) ? `${formatStepDistanceM(cur.distanceM)}` : "");
+  const roadLabel = resolveRoadLabel({
+    currentRoadName,
+    currentRoadRef,
+    travelingStep,
+    turnInstruction: primaryInstr,
+  });
+  const copy = resolveStayOnBannerCopy({
+    remainM,
+    turnInstruction: primaryInstr,
+    roadLabel,
+    alongLabel,
+    distFallback: distLabel,
+  });
 
   // Changing keys on maneuver blocks gives a simple “slides over” feel when the next step becomes current.
-  const primaryKey = useMemo(
-    () => `primary-${idx}-${primaryInstr}`,
-    [idx, primaryInstr]
-  );
-  const nextKey = useMemo(() => `next-${idx + 1}-${next?.instruction ?? ""}`, [idx, next?.instruction]);
+  const primaryKey = `primary-${idx}-${copy.headline}-${copy.stayOnMode ? "stay" : "turn"}`;
+  const thenStep = copy.stayOnMode ? cur : next;
+  const thenInstr = copy.stayOnMode ? primaryInstr : next?.instruction ?? "";
+  const nextKey = `next-${idx}-${copy.stayOnMode ? "turn" : "after"}-${thenInstr}`;
+
+  const primaryIcon = copy.stayOnMode
+    ? "↑"
+    : override
+      ? inferManeuverIconFromInstruction(override)
+      : maneuverIconForStep(cur);
 
   return (
     <div className="turn-banner turn-banner--split" role="status">
       <div className="turn-banner-col turn-banner-col--primary" key={primaryKey}>
         <span className="turn-banner-icon" aria-hidden>
-          {override ? inferManeuverIconFromInstruction(override) : maneuverIconForStep(cur)}
+          {primaryIcon}
         </span>
         <div className="turn-banner-text">
-          <span className="turn-banner-street">{instructionWithRoadShields(primaryInstr)}</span>
+          <span className="turn-banner-street">{instructionWithRoadShields(copy.headline)}</span>
           <div className="turn-banner-meta-row">
-            <span className="turn-banner-dist">
-              {alongLabel ? `${alongLabel} ahead` : distLabel ? `${distLabel} ahead` : "Now"}
-            </span>
-            {cur.exitNumber ? (
+            <span className="turn-banner-dist">{copy.distLine}</span>
+            {!copy.stayOnMode && cur.exitNumber ? (
               <span className="turn-banner-exit">Exit {cur.exitNumber}</span>
             ) : null}
           </div>
         </div>
       </div>
       <div className="turn-banner-col turn-banner-col--next" aria-label="Following maneuver">
-        {next ? (
+        {thenStep ? (
           <>
             <span className="turn-banner-next-label">Then</span>
             <div className="turn-banner-next-main" key={nextKey}>
               <span className="turn-banner-icon turn-banner-icon--next" aria-hidden>
-                {maneuverIconForStep(next)}
+                {copy.stayOnMode
+                  ? override
+                    ? inferManeuverIconFromInstruction(primaryInstr)
+                    : maneuverIconForStep(cur)
+                  : maneuverIconForStep(thenStep)}
               </span>
               <div className="turn-banner-next-text">
                 <p className="turn-banner-next-instr">
-                  {instructionWithRoadShields(next.instruction.replace(/\s+/g, " ").trim())}
+                  {instructionWithRoadShields(
+                    (copy.stayOnMode ? primaryInstr : thenStep.instruction).replace(/\s+/g, " ").trim()
+                  )}
                 </p>
                 <div className="turn-banner-next-meta-row">
-                  {formatStepDistanceM(next.distanceM) ? (
-                    <span className="turn-banner-next-meta">{formatStepDistanceM(next.distanceM)}</span>
+                  {!copy.stayOnMode && formatStepDistanceM(thenStep.distanceM) ? (
+                    <span className="turn-banner-next-meta">
+                      {formatStepDistanceM(thenStep.distanceM)}
+                    </span>
                   ) : null}
-                  {next.exitNumber ? (
+                  {thenStep.exitNumber ? (
                     <span className="turn-banner-next-meta turn-banner-next-meta--exit">
-                      Exit {next.exitNumber}
+                      Exit {thenStep.exitNumber}
                     </span>
                   ) : null}
                 </div>

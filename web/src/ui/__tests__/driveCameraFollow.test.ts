@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isDriveCameraHeadingUp,
   resolveDriveFollowCameraBearingDeg,
   resolveTravelBearingDeg,
 } from "../mapDriveCamera";
@@ -32,7 +33,7 @@ describe("resolveDriveFollowCameraBearingDeg", () => {
     ).toBeGreaterThan(260);
   });
 
-  it("falls back to heading only when off route with no motion track", () => {
+  it("ignores phone compass when off route with no motion (keeps map / last travel)", () => {
     expect(
       resolveDriveFollowCameraBearingDeg({
         offRouteForward: true,
@@ -40,10 +41,52 @@ describe("resolveDriveFollowCameraBearingDeg", () => {
         headingDeg: 270,
         prevFix: null,
         curFix: null,
-        mapBearing: 0,
+        mapBearing: 12,
         speedMps: 10,
       })
-    ).toBe(270);
+    ).toBe(12);
+    expect(
+      resolveDriveFollowCameraBearingDeg({
+        offRouteForward: true,
+        routeBearingDeg: 45,
+        headingDeg: 270,
+        prevFix: null,
+        curFix: null,
+        mapBearing: 12,
+        lastTravelBearingDeg: 95,
+        speedMps: 10,
+      })
+    ).toBe(95);
+  });
+
+  it("stays heading-up off route once travel bearing is known", () => {
+    const travel = resolveDriveFollowCameraBearingDeg({
+      offRouteForward: true,
+      routeBearingDeg: null,
+      headingDeg: 90,
+      prevFix: { lng: -86.78, lat: 36.16 },
+      curFix: { lng: -86.79, lat: 36.16 },
+      mapBearing: 0,
+      speedMps: 15,
+    });
+    expect(isDriveCameraHeadingUp({ cameraBearingDeg: travel, travelOrRouteBearingDeg: travel })).toBe(
+      true
+    );
+    // Landscape compass must not win over held travel.
+    const held = resolveDriveFollowCameraBearingDeg({
+      offRouteForward: true,
+      routeBearingDeg: null,
+      headingDeg: 90,
+      prevFix: null,
+      curFix: null,
+      mapBearing: 0,
+      lastTravelBearingDeg: travel,
+      speedMps: 15,
+    });
+    expect(held).toBe(travel);
+    expect(isDriveCameraHeadingUp({ cameraBearingDeg: held, travelOrRouteBearingDeg: travel })).toBe(
+      true
+    );
   });
 
   it("prefers route tangent on corridor when motion agrees", () => {

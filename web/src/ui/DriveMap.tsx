@@ -105,7 +105,12 @@ import {
   routeFitZoomBias,
   ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM,
 } from "./mapFitLogic";
-import { driveCameraEaseOptions, resolveDriveFollowCameraBearingDeg, smoothDriveBearingDeg } from "./mapDriveCamera";
+import {
+  driveCameraEaseOptions,
+  resolveDriveFollowCameraBearingDeg,
+  resolveTravelBearingDeg,
+  smoothDriveBearingDeg,
+} from "./mapDriveCamera";
 import { computePuckTargetBeforeRouteSnap } from "./driveMapPuckTarget";
 import { liftTrafficThenRoutesThenHits } from "./mapLayerStack";
 import {
@@ -492,6 +497,8 @@ function DriveMapInner({
     if (routes.length === 0) prevPlanningRouteCountRef.current = 0;
   }, [routes.length]);
   const driveCamBearingSmoothedRef = useRef<number | null>(null);
+  /** Last course-over-ground while GO is active — hold heading-up across off-route GPS gaps. */
+  const driveLastTravelBearingRef = useRef<number | null>(null);
   /** User-chosen zoom while navigating in Dr — do not snap back to 16.35 after pinch. */
   const driveNavZoomRef = useRef(16.35);
   const navRouteSnapKeyRef = useRef("");
@@ -1456,6 +1463,13 @@ function DriveMapInner({
             return;
           }
           const { padding, offset } = easeCached;
+          const motionBrg = resolveTravelBearingDeg({
+            headingDeg: readPuckFollowHeading(),
+            prevFix,
+            curFix,
+            speedMps: effSp,
+          });
+          if (motionBrg != null) driveLastTravelBearingRef.current = motionBrg;
           const rawBrg = resolveDriveFollowCameraBearingDeg({
             offRouteForward: driveOffRouteForwardFramingRef.current,
             routeBearingDeg: driveRouteBearingDegRef.current,
@@ -1463,6 +1477,7 @@ function DriveMapInner({
             prevFix,
             curFix,
             mapBearing: map.getBearing(),
+            lastTravelBearingDeg: driveLastTravelBearingRef.current,
             speedMps: effSp,
           });
           const alphaBrg = 1 - Math.exp(-dt / DRIVE_CAMERA_BEARING_TC_S);
@@ -2677,6 +2692,7 @@ function DriveMapInner({
   useEffect(() => {
     if (viewMode !== "drive" || !navigationStarted) {
       driveCamBearingSmoothedRef.current = null;
+      driveLastTravelBearingRef.current = null;
     }
   }, [viewMode, navigationStarted]);
 
@@ -3144,6 +3160,8 @@ function DriveMapInner({
         prevFix: null,
         curFix: null,
         mapBearing: map.getBearing(),
+        lastTravelBearingDeg:
+          driveLastTravelBearingRef.current ?? driveCamBearingSmoothedRef.current,
         speedMps: speedMpsRef.current,
       });
       const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;

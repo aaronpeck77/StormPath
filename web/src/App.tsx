@@ -1220,6 +1220,7 @@ export default function App() {
 
   const {
     userAlongGuidanceM,
+    activeTurnIndex: diyTravelingTurnIndex,
     bannerTurnIndex: diyBannerTurnIndex,
     metersToBannerManeuver: diyMetersToBannerManeuver,
   } = useNavigationGuidance({
@@ -1272,6 +1273,18 @@ export default function App() {
     nativeNavActive && nativeNavGuidance?.instruction
       ? nativeNavGuidance.instruction
       : null;
+
+  const bannerTravelingStepIndex = nativeNavActive
+    ? (nativeNavGuidance?.stepIndex ?? 0)
+    : diyTravelingTurnIndex;
+
+  const bannerCurrentRoadName = nativeNavActive
+    ? (nativeNavGuidance?.currentRoadName ?? null)
+    : (bannerTurnSteps[diyTravelingTurnIndex]?.roadName ?? null);
+
+  const bannerCurrentRoadRef = nativeNavActive
+    ? (nativeNavGuidance?.currentRoadRef ?? null)
+    : (bannerTurnSteps[diyTravelingTurnIndex]?.roadRef ?? null);
 
   guidanceRouteGeomRef.current = navigationGuidanceGeometry ?? guidanceRoute?.geometry ?? null;
   guidanceRouteLengthMRef.current = guidanceRouteLengthM;
@@ -2343,6 +2356,9 @@ export default function App() {
               bannerTurnIndex={bannerTurnIndex}
               metersToBannerManeuver={metersToBannerManeuver}
               bannerInstructionOverride={bannerInstructionOverride}
+              bannerCurrentRoadName={bannerCurrentRoadName}
+              bannerCurrentRoadRef={bannerCurrentRoadRef}
+              bannerTravelingStepIndex={bannerTravelingStepIndex}
               viewMode={viewMode}
               personalForkShowChip={personalForkNav.showChip}
               personalForkShowCommittedChip={personalForkNav.showCommittedChip}

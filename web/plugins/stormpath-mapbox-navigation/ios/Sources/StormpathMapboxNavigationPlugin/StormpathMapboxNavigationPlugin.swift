@@ -237,6 +237,10 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             instruction = primary
         }
 
+        let currentStep = legProgress.currentStep
+        let roadName = currentStep.names?.joined(separator: " / ") ?? ""
+        let roadRef = currentStep.codes?.joined(separator: " / ") ?? ""
+
         notifyListeners("progress", data: [
             "alongM": alongM,
             "remainingM": remainingM,
@@ -244,6 +248,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             "stepIndex": stepIndex,
             "stepRemainingM": stepRemainingM,
             "instruction": instruction,
+            "currentRoadName": roadName,
+            "currentRoadRef": roadRef,
             "lng": coord.longitude,
             "lat": coord.latitude,
         ])
@@ -284,6 +290,12 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 if let code = step.exitCodes?.first, !code.isEmpty {
                     item["exitNumber"] = code
+                }
+                if let names = step.names, !names.isEmpty {
+                    item["roadName"] = names.joined(separator: " / ")
+                }
+                if let codes = step.codes, !codes.isEmpty {
+                    item["roadRef"] = codes.joined(separator: " / ")
                 }
                 out.append(item)
             }

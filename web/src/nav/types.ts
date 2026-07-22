@@ -19,6 +19,10 @@ export interface RouteTurnStep {
   maneuverModifier?: string;
   /** Freeway / ramp exit number when Mapbox supplies it (optional). */
   exitNumber?: string;
+  /** Road / street name along this step (Mapbox `name` / step names). */
+  roadName?: string;
+  /** Route shield ref when known (e.g. I 72, US 36). */
+  roadRef?: string;
 }
 
 /** Mapbox Directions leg incident (traffic / construction / closure). */

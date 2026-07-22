@@ -13,6 +13,11 @@ type Props = {
   metersToManeuverEnd?: number | null;
   /** iOS native Core instruction — overrides DIY turnSteps text when set. */
   instructionOverride?: string | null;
+  /** Road currently being traveled (stay-on banner). */
+  currentRoadName?: string | null;
+  currentRoadRef?: string | null;
+  /** DIY / native index of the step being traveled (road name fallback). */
+  travelingStepIndex?: number | null;
   /** Drive mode: larger icon + type for at-a-glance reading. */
   glanceable?: boolean;
 };
@@ -23,6 +28,9 @@ export function TopGuidanceBar({
   activeTurnIndex,
   metersToManeuverEnd,
   instructionOverride = null,
+  currentRoadName = null,
+  currentRoadRef = null,
+  travelingStepIndex = null,
   glanceable = false,
 }: Props) {
   /* Resolved once per mount — seasons don't shift mid-session, and the URL override (used for
@@ -42,6 +50,9 @@ export function TopGuidanceBar({
           activeIndex={activeTurnIndex}
           metersToManeuverEnd={metersToManeuverEnd}
           instructionOverride={instructionOverride}
+          currentRoadName={currentRoadName}
+          currentRoadRef={currentRoadRef}
+          travelingStepIndex={travelingStepIndex}
         />
       ) : (
         <div

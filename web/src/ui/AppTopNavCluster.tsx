@@ -15,6 +15,9 @@ type Props = {
   metersToBannerManeuver: number | null;
   /** iOS native Core turn text when DIY steps are out of sync. */
   bannerInstructionOverride?: string | null;
+  bannerCurrentRoadName?: string | null;
+  bannerCurrentRoadRef?: string | null;
+  bannerTravelingStepIndex?: number | null;
   viewMode: string;
   personalForkShowChip: boolean;
   personalForkShowCommittedChip: boolean;
@@ -46,6 +49,9 @@ export function AppTopNavCluster({
   bannerTurnIndex,
   metersToBannerManeuver,
   bannerInstructionOverride = null,
+  bannerCurrentRoadName = null,
+  bannerCurrentRoadRef = null,
+  bannerTravelingStepIndex = null,
   viewMode,
   personalForkShowChip,
   personalForkShowCommittedChip,
@@ -78,6 +84,9 @@ export function AppTopNavCluster({
             activeTurnIndex={bannerTurnIndex}
             metersToManeuverEnd={metersToBannerManeuver}
             instructionOverride={bannerInstructionOverride}
+            currentRoadName={bannerCurrentRoadName}
+            currentRoadRef={bannerCurrentRoadRef}
+            travelingStepIndex={bannerTravelingStepIndex}
             glanceable={navigationStarted && viewMode === "drive"}
           />
           {(personalForkShowChip || personalForkShowCommittedChip) && personalForkOffer ? (

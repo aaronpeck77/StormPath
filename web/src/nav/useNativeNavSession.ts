@@ -39,6 +39,12 @@ function parseNativeTurnSteps(
     if (typeof s.exitNumber === "string" && s.exitNumber.trim()) {
       step.exitNumber = s.exitNumber.trim();
     }
+    if (typeof s.roadName === "string" && s.roadName.trim()) {
+      step.roadName = s.roadName.trim();
+    }
+    if (typeof s.roadRef === "string" && s.roadRef.trim()) {
+      step.roadRef = s.roadRef.trim();
+    }
     out.push(step);
   }
   return out;
@@ -154,10 +160,20 @@ export function useNativeNavSession(opts: {
             e.stepRemainingM != null && Number.isFinite(e.stepRemainingM)
               ? Math.max(0, e.stepRemainingM)
               : null;
+          const roadName =
+            typeof e.currentRoadName === "string" && e.currentRoadName.trim()
+              ? e.currentRoadName.trim()
+              : null;
+          const roadRef =
+            typeof e.currentRoadRef === "string" && e.currentRoadRef.trim()
+              ? e.currentRoadRef.trim()
+              : null;
           setGuidance({
             stepIndex: Number.isFinite(e.stepIndex) ? e.stepIndex : 0,
             stepRemainingM: stepRem,
             instruction: instr,
+            currentRoadName: roadName,
+            currentRoadRef: roadRef,
           });
         }),
         StormpathMapboxNavigation.addListener("routeChanged", (e: NativeNavRouteChangedEvent) => {

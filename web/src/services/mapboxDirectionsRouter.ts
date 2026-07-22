@@ -222,6 +222,8 @@ function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteT
         maneuverType: typeof mv?.type === "string" ? mv.type : undefined,
         maneuverModifier: typeof mv?.modifier === "string" ? mv.modifier : undefined,
         exitNumber,
+        roadName: name?.trim() || undefined,
+        roadRef: ref?.trim() || undefined,
       });
     }
   }
