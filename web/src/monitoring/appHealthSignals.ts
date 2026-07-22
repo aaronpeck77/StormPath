@@ -2,7 +2,13 @@ import * as Sentry from "@sentry/react";
 import { isCrashReportingEnabled } from "./sentry";
 
 /** Where the watchdog fired — used as a Sentry tag for filtering. */
-export type AppHealthDomain = "nav_display" | "map_layers" | "route_ahead" | "trip_surface";
+export type AppHealthDomain =
+  | "nav_display"
+  | "map_layers"
+  | "route_ahead"
+  | "trip_surface"
+  | "drive_camera"
+  | "live_traffic";
 
 const SIGNAL_COOLDOWN_MS = 5 * 60 * 1000;
 const lastSentAt = new Map<string, number>();

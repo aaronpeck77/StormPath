@@ -53,6 +53,8 @@ import {
 import { stablePlanRoutesKey } from "./nav/tripNavDisplay";
 import { useTripNavDisplayHealth } from "./nav/useTripNavDisplayHealth";
 import { useTripSurfaceRecovery } from "./nav/useTripSurfaceRecovery";
+import { useLiveTrafficHealth } from "./nav/useLiveTrafficHealth";
+import { useDriveCameraHealth } from "./ui/useDriveCameraHealth";
 import { computeRadarMapOverlayOn, isDriveNavMode } from "./nav/navResourceBudget";
 import { useRouteAheadDerivations } from "./nav/useRouteAheadDerivations";
 import { useProgressCalloutPanel } from "./nav/useProgressCalloutPanel";
@@ -507,6 +509,9 @@ export default function App() {
   const setMapFocus = useUiStore((s) => s.setMapFocus);
   /** Map bearing in drive mode — compass above the info button. */
   const [driveMapBearingDeg, setDriveMapBearingDeg] = useState<number | null>(null);
+  /** Live camera bearing for the follow-cam health watchdog (see useDriveCameraHealth below). */
+  const driveMapBearingDegRef = useRef(driveMapBearingDeg);
+  driveMapBearingDegRef.current = driveMapBearingDeg;
   const routeHazardSheet = useUiStore((s) => s.routeHazardSheet);
   const setRouteHazardSheet = useUiStore((s) => s.setRouteHazardSheet);
   const tollRoutePrompt = useRouteCompareStore((s) => s.tollRoutePrompt);
@@ -1512,6 +1517,31 @@ export default function App() {
       setTapHint("Refreshing trip display…");
       window.setTimeout(() => setTapHint(null), 3500);
     },
+  });
+
+  /** Background watchdog + self-heal: drive follow-cam bearing vs ground-truth course-over-ground. */
+  useDriveCameraHealth({
+    navigationStarted,
+    viewMode,
+    appForeground,
+    userLngLatRef: navigationPositionLngLatRef,
+    speedMpsRef,
+    cameraBearingDegRef: driveMapBearingDegRef,
+    onResyncCamera: () => setFollowCamResyncKey((k) => k + 1),
+  });
+
+  /** Background watchdog + self-heal: live Mapbox traffic / construction / closure pipeline. */
+  useLiveTrafficHealth({
+    navigationStarted,
+    appForeground,
+    isPlus,
+    isOnline,
+    settingTrafficEnabled,
+    hasMapboxToken: Boolean(env.mapboxToken),
+    guidanceRouteId,
+    trafficOverlay,
+    speedMpsRef,
+    bumpTrafficRefresh,
   });
 
   const {
