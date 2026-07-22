@@ -297,6 +297,29 @@ describe("buildRouteImpacts traffic gating", () => {
     expect(impacts.some((i) => i.category === "traffic")).toBe(true);
   });
 
+  it("surfaces construction-only incidents even with no closure/near-stop/heavy-congestion anchor", () => {
+    const constructionOnlyLeg: MapboxTrafficLeg = {
+      ...clearLeg,
+      delayVsTypicalMinutes: 2,
+      constructionCount: 2,
+      constructionSummary: "Lane closure for roadwork",
+    };
+    const impacts = buildRouteImpacts({
+      geometry: routeGeom,
+      userLngLat: routeGeom[0]!,
+      userAlongM: 0,
+      planEtaMinutes: 176,
+      slice: liveSlice(2),
+      trafficForRoute: undefined,
+      trafficLeg: constructionOnlyLeg,
+      nwsBands: [],
+      nwsAlerts: [],
+    });
+    const construction = impacts.find((i) => i.category === "construction");
+    expect(construction).toBeTruthy();
+    expect(construction?.roadEffect).toBe("Lane closure for roadwork");
+  });
+
   it("does not add radar mosaic bands as route alert cards", () => {
     const impacts = buildRouteImpacts({
       geometry: routeGeom,

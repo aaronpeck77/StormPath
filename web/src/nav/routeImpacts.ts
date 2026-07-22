@@ -381,7 +381,9 @@ function buildTrafficImpact(opts: {
       ? "high"
       : trafficLeg.firstHeavyCongestionFraction != null
         ? "medium"
-        : "low";
+        : (trafficLeg.constructionCount ?? 0) > 0
+          ? "medium"
+          : "low";
 
   let action: RouteImpactAction = "watch";
   if (trafficLeg.hasClosure) action = "rerouteRecommended";
@@ -423,6 +425,16 @@ function buildTrafficImpact(opts: {
     aheadM = Math.max(0, alongM - userAlongM);
     roadEffect = "Congestion ahead — ease off and add following distance.";
     action = action === "watch" ? "slow" : action;
+  } else if ((trafficLeg.constructionCount ?? 0) > 0) {
+    // No closure / near-stop / heavy congestion signal, but the live traffic poll still
+    // saw construction incidents on this leg — surface it rather than dropping silently.
+    id = "construction-traffic";
+    alongM = totalMeters * 0.5;
+    startM = alongM;
+    endM = alongM;
+    aheadM = Math.max(0, alongM - userAlongM);
+    roadEffect = trafficLeg.constructionSummary || "Construction zone ahead — expect lane shifts.";
+    action = action === "watch" ? "slow" : action;
   } else {
     return null;
   }
@@ -432,9 +444,15 @@ function buildTrafficImpact(opts: {
       ? Math.max(0, opts.planEtaMinutes * (aheadM / totalMeters))
       : null;
 
+  const category: RouteImpactCategory = trafficLeg.hasClosure
+    ? "closure"
+    : id === "construction-traffic"
+      ? "construction"
+      : "traffic";
+
   return {
     id,
-    category: trafficLeg.hasClosure ? "closure" : "traffic",
+    category,
     severity: sev,
     confidence,
     source: "mapboxTraffic",
@@ -458,10 +476,11 @@ function mapboxImpactToSeverity(
   blocks: boolean
 ): RouteImpactSeverity {
   const p = (impact ?? "").toLowerCase();
-  if (blocks || p === "severe" || type === "road_closure") return "avoid";
+  // Mapbox incident `impact` enum is unknown | critical | major | minor | low
+  // ("severe" isn't a documented value, but kept for safety against older/undocumented payloads).
+  if (blocks || p === "critical" || p === "severe" || type === "road_closure") return "avoid";
   if (p === "major") return "serious";
-  if (p === "moderate") return "caution";
-  if (p === "minor") return "caution";
+  if (p === "moderate" || p === "minor" || p === "low") return "caution";
   return blocks ? "serious" : "caution";
 }
 

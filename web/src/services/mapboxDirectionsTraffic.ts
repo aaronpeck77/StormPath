@@ -48,8 +48,12 @@ type DirectionsRoute = {
   legs?: {
     annotation?: {
       congestion_numeric?: (number | null)[];
-      closure?: boolean[];
     };
+    /**
+     * Live-traffic closures on this leg (requires `annotations=closure` + `overview=full`).
+     * Response field is `closures`, NOT a boolean array under `annotation.closure`.
+     */
+    closures?: { geometry_index_start?: number; geometry_index_end?: number }[];
     incidents?: {
       id?: string;
       type?: string;
@@ -63,6 +67,21 @@ type DirectionsRoute = {
     }[];
   }[];
 };
+
+/** True when segment index `i` falls inside any leg closure range. */
+function segmentIsClosed(
+  i: number,
+  closures: { geometry_index_start?: number; geometry_index_end?: number }[] | undefined
+): boolean {
+  if (!closures?.length) return false;
+  return closures.some(
+    (c) =>
+      typeof c.geometry_index_start === "number" &&
+      typeof c.geometry_index_end === "number" &&
+      i >= c.geometry_index_start &&
+      i <= c.geometry_index_end
+  );
+}
 
 type DirectionsResponse = {
   code?: string;
@@ -94,14 +113,13 @@ function detectNearStopFraction(route: DirectionsRoute): number | null {
   let firstNearStop: number | null = null;
   for (const leg of route.legs ?? []) {
     const congestion = leg.annotation?.congestion_numeric ?? [];
-    const closures = leg.annotation?.closure ?? [];
-    const segCount = Math.max(congestion.length, closures.length);
+    const segCount = congestion.length;
     if (segCount <= 0) continue;
     for (let i = 0; i < segCount; i++) {
       const c = congestion[i];
       /* 96+ ≈ nearly stopped; 90 catches many signalized intersections */
       const nearStopByCongestion = typeof c === "number" && c >= 96;
-      const nearStopByClosure = closures[i] === true;
+      const nearStopByClosure = segmentIsClosed(i, leg.closures);
       if ((nearStopByCongestion || nearStopByClosure) && firstNearStop == null) {
         firstNearStop = total + i;
       }
@@ -141,7 +159,10 @@ async function fetchDirectionsOnce(
   );
   url.searchParams.set("access_token", accessToken);
   url.searchParams.set("geometries", "geojson");
-  url.searchParams.set("overview", "false");
+  /* Mapbox requires overview=full for `annotations` to be populated — with `false` the
+   * congestion_numeric / closure arrays come back empty, silently hiding all live
+   * construction / closure / congestion detection while duration still updates. */
+  url.searchParams.set("overview", "full");
   url.searchParams.set("annotations", "congestion_numeric,closure");
 
   const res = await fetchWithTimeout({
@@ -177,9 +198,7 @@ async function fetchDirectionsOnce(
   const liveMin = durationSec / 60;
   const delayMin = Math.max(0, liveMin - typicalMin);
 
-  const hasClosure = route.legs?.some(
-    (l) => l.annotation?.closure?.some((c) => c === true)
-  ) ?? false;
+  const hasClosure = route.legs?.some((l) => (l.closures?.length ?? 0) > 0) ?? false;
 
   const constructionIncidents =
     route.legs?.flatMap((l) => l.incidents ?? []).filter((inc) => {

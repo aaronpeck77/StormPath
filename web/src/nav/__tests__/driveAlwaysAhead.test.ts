@@ -36,6 +36,30 @@ describe("isDriveOffRouteForwardFraming", () => {
       })
     ).toBe(false);
   });
+
+  it("ignores the stale locked-corridor latch while a rejoin leg is on route", () => {
+    // Latched vs the ORIGINAL route, but GPS is on the new rejoin/detour polyline —
+    // camera should frame off the rejoin leg, not fall back to travel-only.
+    expect(
+      isDriveOffRouteForwardFraming({
+        ...base,
+        onRoute: true,
+        offRouteLatched: true,
+        followingTemporaryGuidance: true,
+      })
+    ).toBe(false);
+  });
+
+  it("still frames forward if GPS drifts off the rejoin leg itself", () => {
+    expect(
+      isDriveOffRouteForwardFraming({
+        ...base,
+        onRoute: false,
+        offRouteLatched: true,
+        followingTemporaryGuidance: true,
+      })
+    ).toBe(true);
+  });
 });
 
 describe("drive always-ahead thresholds", () => {

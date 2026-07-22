@@ -91,9 +91,13 @@ type DirectionsResponse = {
       }[];
       incidents?: MbIncident[];
       annotation?: {
-        closure?: boolean[];
         maxspeed?: unknown[];
       };
+      /**
+       * Live-traffic closures (requires `annotations=closure` + `overview=full`).
+       * Response field is `closures`, NOT a boolean array under `annotation.closure`.
+       */
+      closures?: { geometry_index_start?: number; geometry_index_end?: number }[];
     }[];
   }[];
 };
@@ -596,8 +600,8 @@ function firstClosureAlongMeters(
   legStarts: number[] | null
 ): number | undefined {
   for (let li = 0; li < legs.length; li++) {
-    const closure = legs[li]?.annotation?.closure;
-    if (!closure?.length) continue;
+    const closures = legs[li]?.closures;
+    if (!closures?.length) continue;
     let base: number | undefined;
     if (legStarts && legStarts[li] != null) {
       base = legStarts[li]!;
@@ -606,11 +610,13 @@ function firstClosureAlongMeters(
     } else {
       continue;
     }
-    for (let s = 0; s < closure.length; s++) {
-      if (closure[s]) {
-        const vi = Math.max(0, Math.min(geometry.length - 1, base + s));
-        return cumulativeLengthToVertex(geometry, vi);
-      }
+    const starts = closures
+      .map((c) => c.geometry_index_start)
+      .filter((s): s is number => typeof s === "number")
+      .sort((a, b) => a - b);
+    if (starts.length) {
+      const vi = Math.max(0, Math.min(geometry.length - 1, base + starts[0]!));
+      return cumulativeLengthToVertex(geometry, vi);
     }
   }
   return undefined;
@@ -669,7 +675,7 @@ function collectRouteIncidentsWithAlong(
   const legs = route.legs ?? [];
   const legStarts = computeLegStartIndices(legs);
 
-  const hasClosure = legs.some((l) => l.annotation?.closure?.some((c) => c === true));
+  const hasClosure = legs.some((l) => (l.closures?.length ?? 0) > 0);
   if (hasClosure) {
     push({
       type: "road_closure",

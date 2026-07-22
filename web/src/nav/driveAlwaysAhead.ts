@@ -42,16 +42,22 @@ export function isDriveAlwaysAheadView(viewMode: string): boolean {
 /**
  * Drive + clearly off the corridor: camera and puck follow forward travel, not the old
  * polyline tangent back toward where the driver left the route.
+ *
+ * `offRouteLatched` tracks distance to the original **locked** corridor and stays true
+ * while a temporary rejoin/detour leg is actively steering guidance — that leg has its
+ * own valid polyline, so once GPS is on it the camera should use ITS tangent instead of
+ * falling back to travel-only framing (which can look sideways until the driver merges
+ * back onto the original route and the latch finally clears).
  */
 export function isDriveOffRouteForwardFraming(input: {
   driveModeUi: boolean;
   navigationStarted: boolean;
   onRoute: boolean;
   offRouteLatched: boolean;
+  /** True while an auto-rejoin/detour leg (not the original locked route) drives guidance. */
+  followingTemporaryGuidance?: boolean;
 }): boolean {
-  return (
-    input.driveModeUi &&
-    input.navigationStarted &&
-    (!input.onRoute || input.offRouteLatched)
-  );
+  if (!input.driveModeUi || !input.navigationStarted) return false;
+  if (input.followingTemporaryGuidance) return !input.onRoute;
+  return !input.onRoute || input.offRouteLatched;
 }

@@ -1377,8 +1377,16 @@ export default function App() {
         navigationStarted,
         onRoute: effectiveNavPosition.onRoute,
         offRouteLatched,
+        /** Rejoin/detour leg has its own valid polyline — frame off that, not the stale locked-corridor latch. */
+        followingTemporaryGuidance: Boolean(autoRejoinGuidanceRouteId),
       }),
-    [driveModeUi, navigationStarted, effectiveNavPosition.onRoute, offRouteLatched]
+    [
+      driveModeUi,
+      navigationStarted,
+      effectiveNavPosition.onRoute,
+      offRouteLatched,
+      autoRejoinGuidanceRouteId,
+    ]
   );
 
   /** Drive camera: polyline ahead on-corridor; vehicle heading / motion when off route. */
