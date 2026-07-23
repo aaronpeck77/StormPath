@@ -116,7 +116,7 @@
       }
       @media (min-width: 1100px) {
         .meter-grid {
-          grid-template-columns: repeat(5, 1fr);
+          grid-template-columns: repeat(6, 1fr);
         }
       }
       .meter {
@@ -317,14 +317,14 @@
         color: #fecaca;
       }
       .setup details,
-      details.reconcile {
+      details.baseline-form {
         border: 1px solid var(--line);
         border-radius: 10px;
         padding: 10px 12px;
         background: var(--panel-2);
       }
       .setup summary,
-      details.reconcile summary {
+      details.baseline-form summary {
         cursor: pointer;
         color: var(--muted);
       }
@@ -338,6 +338,11 @@
         display: grid;
         gap: 10px;
         grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      }
+      .meter-grid-flex {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
       }
       label {
         display: grid;
@@ -397,65 +402,71 @@
 
         <div class="panel stack">
           <div class="row" style="justify-content: space-between; align-items: baseline">
+            <h2 style="margin: 0">Netlify usage (this billing period)</h2>
+            <span class="faint" id="nlUsageMeta"></span>
+          </div>
+          <div class="callout" id="nlUsageNote"></div>
+          <div id="nlUsageBars" class="meter-grid-flex"></div>
+        </div>
+
+        <div class="panel stack">
+          <div class="row" style="justify-content: space-between; align-items: baseline">
             <h2 style="margin: 0">Mapbox usage (this month)</h2>
             <span class="faint" id="mbLiveMeta"></span>
           </div>
           <div class="callout" id="mbLiveNote">
             StormPath counts Directions / Geocoding / Matching / Search Box /
-            Nav trips from the app. Map loads &amp; tiles still only appear on
-            Mapbox Statistics.
+            Nav trips / Map loads straight from the app — no daily manual entry.
           </div>
           <div id="mbLiveBars" class="meter-grid"></div>
-          <details class="reconcile" id="mbReconcile" open>
-            <summary>Enter Mapbox Statistics numbers (needed until app metering is wired)</summary>
+          <p class="faint" style="margin: 0">
+            Cross-check anytime against
+            <a href="https://account.mapbox.com/statistics/" target="_blank" rel="noreferrer"
+              >account.mapbox.com → Statistics</a
+            >
+            — Mapbox has no API for this, so it's a manual glance, not a sync.
+          </p>
+          <details class="baseline-form" id="mbBaselineForm">
+            <summary id="mbBaselineSummary">Set a starting point (one-time catch-up)</summary>
             <div class="stack" style="margin-top: 12px">
               <p class="faint" style="margin: 0">
-                Cross-check against
-                <a href="https://account.mapbox.com/" target="_blank" rel="noreferrer"
-                  >account.mapbox.com → Statistics</a
-                >.
+                This counter only knows what it's counted itself — it can't see usage from
+                before it existed (or from while it was broken). Copy this month's numbers from
+                <a href="https://account.mapbox.com/statistics/" target="_blank" rel="noreferrer"
+                  >Mapbox Statistics</a
+                >
+                once and StormPath will add everything it counts on top of it. Re-enter anytime
+                to correct — this replaces the old value, it never stacks.
               </p>
               <div class="form-grid">
                 <label
-                  >Date (UTC)
-                  <input id="mbDate" type="date" />
+                  >Map loads
+                  <input id="mbBaseMapLoads" type="number" min="0" step="1" placeholder="0" />
                 </label>
                 <label
                   >Directions
-                  <input id="mbDir" type="number" min="0" step="1" placeholder="0" />
+                  <input id="mbBaseDir" type="number" min="0" step="1" placeholder="0" />
                 </label>
                 <label
                   >Temp. geocoding
-                  <input id="mbGeo" type="number" min="0" step="1" placeholder="0" />
+                  <input id="mbBaseGeo" type="number" min="0" step="1" placeholder="0" />
                 </label>
                 <label
                   >Map Matching
-                  <input id="mbMatch" type="number" min="0" step="1" placeholder="0" />
+                  <input id="mbBaseMatch" type="number" min="0" step="1" placeholder="0" />
                 </label>
                 <label
                   >Nav trips
-                  <input id="mbNav" type="number" min="0" step="1" placeholder="0" />
+                  <input id="mbBaseNav" type="number" min="0" step="1" placeholder="0" />
+                </label>
+                <label
+                  >Search Box
+                  <input id="mbBaseSearch" type="number" min="0" step="1" placeholder="0" />
                 </label>
               </div>
               <div class="row">
-                <button type="button" id="mbSave">Save day</button>
-                <span class="faint">Stored in this browser only</span>
-              </div>
-              <div id="mbBars" class="stack" style="gap: 10px"></div>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Directions</th>
-                      <th>Geocode</th>
-                      <th>Matching</th>
-                      <th>Nav trips</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody id="mbTable"></tbody>
-                </table>
+                <button type="button" id="mbBaseSave">Set starting point</button>
+                <span class="faint" id="mbBaseStatus"></span>
               </div>
             </div>
           </details>
@@ -519,7 +530,10 @@
                   anything until it has this secret too.
                 </li>
                 <li><code>REVENUECAT_SECRET_API_KEY</code> + <code>REVENUECAT_PROJECT_ID</code></li>
-                <li><code>NETLIFY_AUTH_TOKEN</code> + <code>NETLIFY_SITE_ID</code></li>
+                <li>
+                  <code>NETLIFY_AUTH_TOKEN</code> + <code>NETLIFY_SITE_ID</code> — deploy status
+                  AND the Netlify usage panel (bandwidth / build minutes) above
+                </li>
                 <li><code>SENTRY_AUTH_TOKEN</code> + <code>SENTRY_ORG</code> + <code>SENTRY_PROJECT</code></li>
                 <li><code>TOMORROW_IO_TILE_PROXY_URL</code> — Workers base URL</li>
               </ul>

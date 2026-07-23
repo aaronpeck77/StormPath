@@ -162,6 +162,131 @@ async function revenueCatMetrics(): Promise<{
   }
 }
 
+type NetlifyBandwidthUsage = {
+  usedBytes: number;
+  includedBytes: number;
+  periodStart?: string;
+  periodEnd?: string;
+};
+
+type NetlifyBuildUsage = {
+  minutesUsed: number;
+  minutesIncluded: number;
+  buildCount?: number;
+  periodStart?: string;
+  periodEnd?: string;
+};
+
+/**
+ * Netlify's account-level usage (bandwidth, build minutes) so we can watch for a burn-through
+ * without opening the Netlify dashboard by hand. `builds/status` is in Netlify's official
+ * open-api spec (stable). The bandwidth endpoint is NOT documented anywhere by Netlify — it's
+ * the same call their own dashboard makes, reverse-engineered by the community — so it's called
+ * defensively and can simply stop returning data if Netlify ever changes it, without breaking
+ * anything else here.
+ */
+async function netlifyUsage(): Promise<{
+  configured: boolean;
+  accountSlug?: string;
+  bandwidth?: NetlifyBandwidthUsage;
+  builds?: NetlifyBuildUsage;
+  error?: string;
+}> {
+  const token = process.env.NETLIFY_AUTH_TOKEN?.trim();
+  const siteId = process.env.NETLIFY_SITE_ID?.trim();
+  if (!token || !siteId) return { configured: false };
+  try {
+    const siteRes = await fetch(
+      `https://api.netlify.com/api/v1/sites/${encodeURIComponent(siteId)}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(12_000),
+      }
+    );
+    if (!siteRes.ok) {
+      return { configured: true, error: `Netlify site lookup HTTP ${siteRes.status}` };
+    }
+    const site = (await siteRes.json()) as { account_slug?: string };
+    const slug = site.account_slug;
+    if (!slug) return { configured: true, error: "Netlify site has no account_slug" };
+
+    const [bwRes, buildRes] = await Promise.all([
+      fetch(`https://api.netlify.com/api/v1/accounts/${encodeURIComponent(slug)}/bandwidth`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(12_000),
+      }).catch(() => null),
+      fetch(`https://api.netlify.com/api/v1/${encodeURIComponent(slug)}/builds/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(12_000),
+      }).catch(() => null),
+    ]);
+
+    let bandwidth: NetlifyBandwidthUsage | undefined;
+    if (bwRes?.ok) {
+      const b = (await bwRes.json().catch(() => null)) as {
+        used?: number;
+        included?: number;
+        period_start_date?: number;
+        period_end_date?: number;
+      } | null;
+      if (b) {
+        bandwidth = {
+          usedBytes: Number(b.used) || 0,
+          includedBytes: Number(b.included) || 0,
+          periodStart: b.period_start_date
+            ? new Date(b.period_start_date * 1000).toISOString()
+            : undefined,
+          periodEnd: b.period_end_date
+            ? new Date(b.period_end_date * 1000).toISOString()
+            : undefined,
+        };
+      }
+    }
+
+    let builds: NetlifyBuildUsage | undefined;
+    if (buildRes?.ok) {
+      const bs = (await buildRes.json().catch(() => null)) as {
+        build_count?: number;
+        minutes?: {
+          current?: number;
+          included_minutes?: string;
+          included_minutes_with_packs?: string;
+          period_start_date?: string;
+          period_end_date?: string;
+        };
+      } | null;
+      if (bs) {
+        const included = Number(
+          bs.minutes?.included_minutes_with_packs || bs.minutes?.included_minutes || 0
+        );
+        builds = {
+          minutesUsed: Number(bs.minutes?.current) || 0,
+          minutesIncluded: Number.isFinite(included) ? included : 0,
+          buildCount: bs.build_count,
+          periodStart: bs.minutes?.period_start_date,
+          periodEnd: bs.minutes?.period_end_date,
+        };
+      }
+    }
+
+    return {
+      configured: true,
+      accountSlug: slug,
+      bandwidth,
+      builds,
+      error:
+        !bandwidth && !builds
+          ? "Netlify usage endpoints returned nothing (may have changed — they're undocumented)"
+          : undefined,
+    };
+  } catch (e) {
+    return {
+      configured: true,
+      error: e instanceof Error ? e.message : "Netlify usage failed",
+    };
+  }
+}
+
 async function netlifyDeploy(): Promise<{
   configured: boolean;
   state?: string;
@@ -319,7 +444,7 @@ export const handler = async (event: NetlifyEvent) => {
     ""
   );
 
-  const [web, weatherkit, nws, rainviewer, tileWorker, income, deploy, sentry, ios] =
+  const [web, weatherkit, nws, rainviewer, tileWorker, income, deploy, sentry, ios, netlify] =
     await Promise.all([
       probe("web", "Netlify site", `${siteUrl}/`),
       probe(
@@ -348,6 +473,7 @@ export const handler = async (event: NetlifyEvent) => {
       netlifyDeploy(),
       sentryOpenIssues(),
       iosBuild(),
+      netlifyUsage(),
     ]);
 
   return {
@@ -361,9 +487,10 @@ export const handler = async (event: NetlifyEvent) => {
       deploy,
       sentry,
       ios,
+      netlifyUsage: netlify,
       mapboxUsage: await buildMapboxUsageSummary(),
       mapboxNote:
-        "Mapbox has no public Statistics API. StormPath counts its own Directions / Geocoding / Matching / Search Box / Nav trips into mapboxUsage. Map loads/tiles still require account.mapbox.com. Optional paste ledger reconciles against the dashboard.",
+        "Mapbox has no public Statistics API. StormPath counts its own Directions / Geocoding / Matching / Search Box / Nav trips / Map loads into mapboxUsage — no manual reconciliation needed.",
       jeffFixes: await buildJeffFixSummary(),
     }),
   };

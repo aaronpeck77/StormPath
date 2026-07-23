@@ -2,8 +2,8 @@
  * Client-side Mapbox usage meter.
  *
  * Mapbox has no public Statistics API — StormPath counts its own Directions /
- * Geocoding / Matching / Search Box / Nav-trip calls, persists pending deltas,
- * and periodically POSTs them to `ops-usage` so the Control Room can show
+ * Geocoding / Matching / Search Box / Nav-trip / map-load calls, persists pending
+ * deltas, and periodically POSTs them to `ops-usage` so the Control Room can show
  * month-to-date vs free-tier limits.
  */
 
@@ -144,7 +144,8 @@ export async function flushMapboxUsage(): Promise<void> {
     snapshot.counters.geocoding ||
     snapshot.counters.matching ||
     snapshot.counters.navTrips ||
-    snapshot.counters.searchBox;
+    snapshot.counters.searchBox ||
+    snapshot.counters.mapLoads;
   if (!has) return;
 
   const token = ingestToken();

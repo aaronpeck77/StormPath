@@ -17,6 +17,7 @@ describe("mapboxUsageLimits", () => {
       matching: 0,
       navTrips: 0,
       searchBox: 0,
+      mapLoads: 0,
     });
   });
 

@@ -24,6 +24,14 @@ import {
 type MonthBlob = {
   month: string;
   days: Record<string, MapboxUsageDay>;
+  /**
+   * One-time "starting point" set by hand from account.mapbox.com → Statistics — covers usage
+   * that happened before the app's own counting existed/worked for this month (there's no
+   * Mapbox API to backfill this automatically). Overwritten wholesale, not accumulated, so
+   * re-entering a corrected number never double-counts.
+   */
+  baseline?: Partial<MapboxUsageCounters>;
+  baselineSetAt?: string;
 };
 
 function dataDir(): string {
@@ -118,6 +126,25 @@ export async function mergeMapboxUsageDay(
   return next;
 }
 
+/**
+ * Sets (overwrites — never accumulates) the month's manual starting-point correction.
+ * Meant to be entered once from the Control Room, copying whatever Mapbox's own Statistics
+ * page currently shows, so month-to-date totals aren't understated by usage the app's own
+ * counter missed (e.g. before it existed, or while Blobs storage was broken).
+ */
+export async function setMapboxUsageBaseline(
+  month: string,
+  values: Partial<MapboxUsageCounters>
+): Promise<MonthBlob> {
+  const m = /^\d{4}-\d{2}$/.test(month) ? month : utcMonthPrefix();
+  const blob = await loadMonth(m);
+  blob.baseline = clampUsageDeltas(values, 10_000_000);
+  blob.baselineSetAt = new Date().toISOString();
+  blob.month = m;
+  await saveMonth(blob);
+  return blob;
+}
+
 export type MapboxUsageSummary = {
   source: "app_meter";
   month: string;
@@ -127,6 +154,8 @@ export type MapboxUsageSummary = {
   pct: Record<keyof MapboxUsageCounters, number>;
   labels: typeof MAPBOX_USAGE_LABELS;
   dayCount: number;
+  baseline: MapboxUsageCounters;
+  baselineSetAt: string | null;
   note: string;
 };
 
@@ -135,7 +164,8 @@ export async function buildMapboxUsageSummary(
 ): Promise<MapboxUsageSummary> {
   const blob = await loadMonth(month);
   const days = Object.values(blob.days);
-  const totals = sumUsageDays(days);
+  const baseline = addMapboxUsageCounters(emptyMapboxUsageCounters(), blob.baseline ?? {});
+  const totals = addMapboxUsageCounters(sumUsageDays(days), baseline);
   const levels = {} as Record<keyof MapboxUsageCounters, UsageWarnLevel>;
   const pct = {} as Record<keyof MapboxUsageCounters, number>;
   for (const key of Object.keys(MAPBOX_FREE_TIER) as (keyof MapboxUsageCounters)[]) {
@@ -152,7 +182,9 @@ export async function buildMapboxUsageSummary(
     pct,
     labels: MAPBOX_USAGE_LABELS,
     dayCount: days.length,
+    baseline,
+    baselineSetAt: blob.baselineSetAt ?? null,
     note:
-      "Counted by StormPath when the app successfully calls Mapbox. Map loads/tiles are not included — check account.mapbox.com → Statistics for those. Figures can lag or under-count if devices cannot reach ops-usage.",
+      "Counted by StormPath itself — Mapbox has no usage API of its own. Includes map loads (one per map init, GL JS's real billing unit) alongside Directions/Geocoding/Matching/Nav trips/Search Box, plus any manual starting-point correction set in the Control Room. Figures can lag or under-count if devices cannot reach ops-usage, or on older app builds shipped before map-load counting existed.",
   };
 }

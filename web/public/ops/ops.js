@@ -1,11 +1,11 @@
 const SECRET_KEY = "stormpath.ops.secret";
-      const LEDGER_KEY = "stormpath.ops.mapboxLedger";
       const FREE = {
         directions: 100_000,
         geocoding: 100_000,
         matching: 100_000,
         navTrips: 1_000,
         searchBox: 100_000,
+        mapLoads: 50_000,
       };
       const LOCAL_DAYS_KEY = "stormpath.mapboxUsage.localDays.v1";
       const JEFF_LOCAL_LOG_KEY = "stormpath.jeff.localLog.v1";
@@ -17,39 +17,6 @@ const SECRET_KEY = "stormpath.ops.secret";
 
       function todayUTC() {
         return new Date().toISOString().slice(0, 10);
-      }
-
-      function loadLedger() {
-        try {
-          const raw = localStorage.getItem(LEDGER_KEY);
-          const list = raw ? JSON.parse(raw) : [];
-          return Array.isArray(list) ? list : [];
-        } catch {
-          return [];
-        }
-      }
-
-      function saveLedger(list) {
-        localStorage.setItem(LEDGER_KEY, JSON.stringify(list.slice(0, 60)));
-      }
-
-      function monthTotal(list, field) {
-        const prefix = todayUTC().slice(0, 7);
-        return list
-          .filter((r) => String(r.date).startsWith(prefix))
-          .reduce((n, r) => n + (Number(r[field]) || 0), 0);
-      }
-
-      function barHtml(label, used, free) {
-        const pct = Math.min(100, Math.round((used / free) * 100));
-        const cls = pct >= 90 ? "bad" : pct >= 70 ? "warn" : "";
-        return `<div>
-          <div class="row" style="justify-content:space-between">
-            <span>${label}</span>
-            <span class="faint">${used.toLocaleString()} / ${free.toLocaleString()} (${pct}%)</span>
-          </div>
-          <div class="bar ${cls}"><i style="width:${Math.min(100, pct)}%"></i></div>
-        </div>`;
       }
 
       function meterCardHtml(label, used, free) {
@@ -78,6 +45,7 @@ const SECRET_KEY = "stormpath.ops.secret";
             matching: 0,
             navTrips: 0,
             searchBox: 0,
+            mapLoads: 0,
           };
           if (!all || typeof all !== "object") return totals;
           for (const [date, c] of Object.entries(all)) {
@@ -94,6 +62,7 @@ const SECRET_KEY = "stormpath.ops.secret";
             matching: 0,
             navTrips: 0,
             searchBox: 0,
+            mapLoads: 0,
           };
         }
       }
@@ -180,44 +149,119 @@ const SECRET_KEY = "stormpath.ops.secret";
           : "Showing this device's local log only (no live summary) — unlock with the Netlify/home-api secret to see every device.";
       }
 
+      function bytesToGb(n) {
+        return (Number(n) || 0) / 1024 ** 3;
+      }
+
+      function renderNetlifyUsage(nl) {
+        const barsEl = document.getElementById("nlUsageBars");
+        const metaEl = document.getElementById("nlUsageMeta");
+        const noteEl = document.getElementById("nlUsageNote");
+        if (!barsEl || !noteEl) return;
+        noteEl.classList.remove("warn", "bad");
+
+        if (!nl || !nl.configured) {
+          barsEl.innerHTML = "";
+          metaEl.textContent = "";
+          noteEl.textContent =
+            "Add NETLIFY_AUTH_TOKEN + NETLIFY_SITE_ID on Netlify to show this \u2014 the same token already used for deploy status above.";
+          return;
+        }
+        if (nl.error && !nl.bandwidth && !nl.builds) {
+          barsEl.innerHTML = "";
+          metaEl.textContent = "";
+          noteEl.classList.add("warn");
+          noteEl.textContent = `Netlify usage unavailable (${nl.error}). These are the same endpoints Netlify's own dashboard uses, but they're not officially documented, so they can change without notice \u2014 check app.netlify.com \u2192 Billing \u2192 Usage directly if this stays empty.`;
+          return;
+        }
+
+        const cards = [];
+        let worst = 0;
+        if (nl.bandwidth) {
+          const usedGb = bytesToGb(nl.bandwidth.usedBytes);
+          const includedGb = bytesToGb(nl.bandwidth.includedBytes);
+          cards.push(meterCardHtml("Bandwidth (GB)", usedGb, includedGb || 1));
+          if (includedGb > 0) worst = Math.max(worst, (usedGb / includedGb) * 100);
+        }
+        if (nl.builds) {
+          cards.push(
+            meterCardHtml("Build minutes", nl.builds.minutesUsed, nl.builds.minutesIncluded || 1)
+          );
+          if (nl.builds.minutesIncluded > 0) {
+            worst = Math.max(
+              worst,
+              (nl.builds.minutesUsed / nl.builds.minutesIncluded) * 100
+            );
+          }
+        }
+        barsEl.innerHTML = cards.join("");
+
+        const periodStart = nl.builds?.periodStart || nl.bandwidth?.periodStart;
+        const periodEnd = nl.builds?.periodEnd || nl.bandwidth?.periodEnd;
+        metaEl.textContent = periodStart
+          ? `${new Date(periodStart).toLocaleDateString()} \u2013 ${
+              periodEnd ? new Date(periodEnd).toLocaleDateString() : "?"
+            }`
+          : "";
+
+        if (worst >= 90) {
+          noteEl.classList.add("bad");
+          noteEl.textContent = "\u226590% of a Netlify limit used this billing period.";
+        } else if (worst >= 70) {
+          noteEl.classList.add("warn");
+          noteEl.textContent = "\u226570% of a Netlify limit used this billing period.";
+        } else {
+          noteEl.textContent =
+            "From Netlify's own account API \u2014 real numbers, not counted by StormPath.";
+        }
+      }
+
+      const BASELINE_FIELD_IDS = {
+        mapLoads: "mbBaseMapLoads",
+        directions: "mbBaseDir",
+        geocoding: "mbBaseGeo",
+        matching: "mbBaseMatch",
+        navTrips: "mbBaseNav",
+        searchBox: "mbBaseSearch",
+      };
+
+      function fillBaselineForm(summary) {
+        const summaryEl = document.getElementById("mbBaselineSummary");
+        const baseline = summary?.baseline;
+        for (const [key, id] of Object.entries(BASELINE_FIELD_IDS)) {
+          const el = document.getElementById(id);
+          if (!el) continue;
+          const v = baseline?.[key];
+          if (v) el.value = String(v);
+        }
+        if (summaryEl) {
+          summaryEl.textContent = summary?.baselineSetAt
+            ? `Starting point set ${new Date(summary.baselineSetAt).toLocaleString()} — edit or correct it`
+            : "Set a starting point (one-time catch-up)";
+        }
+      }
+
       function renderLiveUsage(summary) {
         const liveEl = document.getElementById("mbLiveBars");
         const metaEl = document.getElementById("mbLiveMeta");
         const noteEl = document.getElementById("mbLiveNote");
-        const reconcile = document.getElementById("mbReconcile");
         const local = readLocalAppMeterMonth();
-        const pasted = {
-          directions: monthTotal(loadLedger(), "directions"),
-          geocoding: monthTotal(loadLedger(), "geocoding"),
-          matching: monthTotal(loadLedger(), "matching"),
-          navTrips: monthTotal(loadLedger(), "navTrips"),
-          searchBox: 0,
-        };
-        const fromApp = summary?.totals || local;
-        /* Show the higher of app-meter vs pasted dashboard numbers so paste works today. */
-        const totals = {
-          directions: Math.max(fromApp.directions || 0, pasted.directions || 0),
-          geocoding: Math.max(fromApp.geocoding || 0, pasted.geocoding || 0),
-          matching: Math.max(fromApp.matching || 0, pasted.matching || 0),
-          navTrips: Math.max(fromApp.navTrips || 0, pasted.navTrips || 0),
-          searchBox: fromApp.searchBox || 0,
-        };
+        const totals = summary?.totals || local;
         const free = summary?.freeTier || FREE;
+        fillBaselineForm(summary);
         const labels = summary?.labels || {
           directions: "Directions",
           geocoding: "Temporary geocoding",
           matching: "Map Matching",
           navTrips: "Navigation trips",
           searchBox: "Search Box",
+          mapLoads: "Map loads (Web)",
         };
         const hasAny = Object.values(totals).some((n) => n > 0);
-        const sourceBits = [];
-        if (summary) sourceBits.push(`${summary.month} · app reports`);
-        else sourceBits.push("This device");
-        if (Object.values(pasted).some((n) => n > 0)) sourceBits.push("includes pasted dashboard");
-        metaEl.textContent = sourceBits.join(" · ");
+        metaEl.textContent = summary ? `${summary.month} · app reports` : "This device only";
 
         liveEl.innerHTML = [
+          meterCardHtml(labels.mapLoads || "Map loads", totals.mapLoads, free.mapLoads || FREE.mapLoads),
           meterCardHtml(labels.directions || "Directions", totals.directions, free.directions),
           meterCardHtml(labels.geocoding || "Geocoding", totals.geocoding, free.geocoding),
           meterCardHtml(labels.matching || "Matching", totals.matching, free.matching),
@@ -229,8 +273,6 @@ const SECRET_KEY = "stormpath.ops.secret";
           ),
         ].join("");
 
-        if (reconcile) reconcile.open = !hasAny;
-
         const worst = Object.keys(free).reduce((w, k) => {
           const pct = free[k] > 0 ? ((totals[k] || 0) / free[k]) * 100 : 0;
           return Math.max(w, pct);
@@ -240,50 +282,18 @@ const SECRET_KEY = "stormpath.ops.secret";
           if (!hasAny) {
             noteEl.classList.add("warn");
             noteEl.textContent =
-              "No Mapbox usage yet. Paste today’s numbers from account.mapbox.com → Statistics in the form below (Directions, Geocoding, Matching, Nav trips). Auto app metering needs OPS_USAGE_INGEST_TOKEN on Netlify AND the matching VITE_OPS_USAGE_INGEST_TOKEN as a GitHub Actions repo secret, then a fresh TestFlight/App Store build — Netlify env vars alone don't reach the phone app. Customers never see any of this.";
+              "No Mapbox usage reported yet. Auto app metering needs OPS_USAGE_INGEST_TOKEN on Netlify AND the matching VITE_OPS_USAGE_INGEST_TOKEN as a GitHub Actions repo secret, then a fresh TestFlight/App Store build — Netlify env vars alone don't reach the phone app. Customers never see any of this.";
           } else if (worst >= 90) {
             noteEl.classList.add("bad");
-            noteEl.textContent =
-              "≥90% of a free tier used this month. Check Mapbox Statistics for map loads/tiles too.";
+            noteEl.textContent = "≥90% of a free tier used this month.";
           } else if (worst >= 70) {
             noteEl.classList.add("warn");
-            noteEl.textContent =
-              "≥70% of a free tier used this month. Map loads/tiles are not included in these cards.";
+            noteEl.textContent = "≥70% of a free tier used this month.";
           } else {
             noteEl.textContent =
-              "Month-to-date vs Mapbox free tiers (ops only). Map loads/tiles still only on Mapbox Statistics.";
+              "Month-to-date vs Mapbox free tiers, counted directly by the app (Mapbox has no usage API of its own).";
           }
         }
-      }
-
-      function renderLedger() {
-        const list = loadLedger().sort((a, b) => (a.date < b.date ? 1 : -1));
-        document.getElementById("mbBars").innerHTML = [
-          barHtml("Directions (month)", monthTotal(list, "directions"), FREE.directions),
-          barHtml("Temp. geocoding (month)", monthTotal(list, "geocoding"), FREE.geocoding),
-          barHtml("Map Matching (month)", monthTotal(list, "matching"), FREE.matching),
-          barHtml("Nav trips (month)", monthTotal(list, "navTrips"), FREE.navTrips),
-        ].join("");
-        document.getElementById("mbTable").innerHTML = list
-          .slice(0, 14)
-          .map(
-            (r) => `<tr>
-              <td>${r.date}</td>
-              <td>${Number(r.directions || 0).toLocaleString()}</td>
-              <td>${Number(r.geocoding || 0).toLocaleString()}</td>
-              <td>${Number(r.matching || 0).toLocaleString()}</td>
-              <td>${Number(r.navTrips || 0).toLocaleString()}</td>
-              <td><button type="button" class="ghost" data-del="${r.date}">Del</button></td>
-            </tr>`
-          )
-          .join("");
-        document.querySelectorAll("[data-del]").forEach((btn) => {
-          btn.addEventListener("click", () => {
-            const date = btn.getAttribute("data-del");
-            saveLedger(loadLedger().filter((r) => r.date !== date));
-            renderLedger();
-          });
-        });
       }
 
       function pill(ok, label, detail) {
@@ -376,8 +386,6 @@ const SECRET_KEY = "stormpath.ops.secret";
         gate.classList.add("hidden");
         app.classList.add("show");
         lockBtn.hidden = false;
-        document.getElementById("mbDate").value = todayUTC();
-        renderLedger();
         renderLiveUsage(null);
 
         let summary = null;
@@ -392,6 +400,8 @@ const SECRET_KEY = "stormpath.ops.secret";
 
         renderLiveUsage(summary?.mapboxUsage || null);
         window.__opsLastMapboxSummary = summary?.mapboxUsage || null;
+
+        renderNetlifyUsage(summary?.netlifyUsage || null);
 
         renderJeffFixes(summary?.jeffFixes || null, Boolean(summary?.jeffFixes));
 
@@ -411,9 +421,9 @@ const SECRET_KEY = "stormpath.ops.secret";
 
         document.getElementById("generatedAt").textContent = summary
           ? `Live summary ${new Date(summary.generatedAt).toLocaleString()}`
-          : summaryError
-            ? `Live summary unavailable (${summaryError}). Showing local health + Mapbox ledger.`
-            : "Local mode — health from this origin; income needs Netlify secrets.";
+            : summaryError
+              ? `Live summary unavailable (${summaryError}). Showing local health + this device's Mapbox counts.`
+              : "Local mode — health from this origin; income needs Netlify secrets.";
 
         const incomeGrid = document.getElementById("incomeGrid");
         const incomeNote = document.getElementById("incomeNote");
@@ -540,20 +550,70 @@ const SECRET_KEY = "stormpath.ops.secret";
         gate.classList.remove("hidden");
         lockBtn.hidden = true;
       });
-      document.getElementById("mbSave").addEventListener("click", () => {
-        const date = document.getElementById("mbDate").value || todayUTC();
-        const row = {
-          date,
-          directions: Number(document.getElementById("mbDir").value || 0),
-          geocoding: Number(document.getElementById("mbGeo").value || 0),
-          matching: Number(document.getElementById("mbMatch").value || 0),
-          navTrips: Number(document.getElementById("mbNav").value || 0),
-        };
-        const next = loadLedger().filter((r) => r.date !== date);
-        next.push(row);
-        saveLedger(next);
-        renderLedger();
-        renderLiveUsage(window.__opsLastMapboxSummary || null);
+
+      function opsUsagePostEndpoints() {
+        const onNetlify =
+          /\.netlify\.app$/i.test(location.hostname) ||
+          location.hostname === "stormpath2.netlify.app";
+        return onNetlify
+          ? ["/.netlify/functions/ops-usage", "/ops-usage"]
+          : ["/ops-usage", "/.netlify/functions/ops-usage"];
+      }
+
+      document.getElementById("mbBaseSave").addEventListener("click", async () => {
+        const statusEl = document.getElementById("mbBaseStatus");
+        const btn = document.getElementById("mbBaseSave");
+        const secret = sessionStorage.getItem(SECRET_KEY) || "";
+        if (!secret) {
+          statusEl.textContent = "Unlock the Control Room with OPS_HUB_SECRET first.";
+          return;
+        }
+        const baseline = {};
+        for (const [key, id] of Object.entries(BASELINE_FIELD_IDS)) {
+          const el = document.getElementById(id);
+          baseline[key] = Number(el?.value || 0);
+        }
+        btn.disabled = true;
+        statusEl.textContent = "Saving\u2026";
+        let ok = false;
+        let lastErr = "Save failed";
+        for (const path of opsUsagePostEndpoints()) {
+          try {
+            const res = await fetch(path, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${secret}`,
+              },
+              body: JSON.stringify({ baseline }),
+              cache: "no-store",
+            });
+            if (res.ok) {
+              ok = true;
+              break;
+            }
+            if (res.status !== 404) {
+              const body = await res.json().catch(() => ({}));
+              lastErr = body.error || `HTTP ${res.status}`;
+              break;
+            }
+          } catch (e) {
+            lastErr = e instanceof Error ? e.message : String(e);
+          }
+        }
+        btn.disabled = false;
+        if (!ok) {
+          statusEl.textContent = lastErr;
+          return;
+        }
+        statusEl.textContent = "Saved.";
+        try {
+          const summary = await fetchSummary(secret);
+          renderLiveUsage(summary?.mapboxUsage || null);
+          window.__opsLastMapboxSummary = summary?.mapboxUsage || null;
+        } catch {
+          /* saved fine — a re-fetch failure here just means the page needs a manual reload */
+        }
       });
 
       const existing = sessionStorage.getItem(SECRET_KEY);

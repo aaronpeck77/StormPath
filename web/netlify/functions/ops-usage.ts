@@ -1,15 +1,18 @@
 /**
  * Mapbox usage ingest + read for StormPath Control Room.
  *
- * POST (Bearer OPS_USAGE_INGEST_TOKEN or OPS_HUB_SECRET): merge day deltas from apps.
+ * POST { deltas } (Bearer OPS_USAGE_INGEST_TOKEN or OPS_HUB_SECRET): merge day deltas from apps.
+ * POST { baseline } (Bearer OPS_HUB_SECRET only): set/replace the month's manual starting-point
+ *   correction — a one-time number copied from account.mapbox.com → Statistics, not a device report.
  * GET  (Bearer OPS_HUB_SECRET): month-to-date totals vs free tiers.
  */
 
 import {
   buildMapboxUsageSummary,
   mergeMapboxUsageDay,
+  setMapboxUsageBaseline,
 } from "./_mapboxUsageStore.ts";
-import { utcToday } from "../../src/monitoring/mapboxUsageLimits.ts";
+import { utcMonthPrefix, utcToday } from "../../src/monitoring/mapboxUsageLimits.ts";
 import { connectBlobsIfLambda } from "./_blobsLambda.ts";
 
 type NetlifyEvent = {
@@ -95,6 +98,49 @@ export const handler = async (event: NetlifyEvent) => {
   }
 
   if (event.httpMethod === "POST") {
+    const body = parseBody(event) as {
+      date?: string;
+      deltas?: Record<string, number>;
+      deviceId?: string;
+      baseline?: Record<string, number>;
+      month?: string;
+    } | null;
+    if (!body || typeof body !== "object") {
+      return {
+        statusCode: 400,
+        headers: CORS,
+        body: JSON.stringify({ error: "Expected JSON body" }),
+      };
+    }
+
+    if (body.baseline && typeof body.baseline === "object") {
+      // Starting-point corrections are an admin action from an unlocked Control Room, not
+      // something any device with the (more widely shared) ingest token should be able to set.
+      if (!canRead(token)) {
+        return {
+          statusCode: 401,
+          headers: CORS,
+          body: JSON.stringify({
+            error: "Unauthorized — starting-point numbers require the Control Room's OPS_HUB_SECRET",
+          }),
+        };
+      }
+      const month =
+        typeof body.month === "string" && /^\d{4}-\d{2}$/.test(body.month)
+          ? body.month
+          : utcMonthPrefix();
+      const blob = await setMapboxUsageBaseline(month, body.baseline);
+      return {
+        statusCode: 200,
+        headers: CORS,
+        body: JSON.stringify({
+          ok: true,
+          baseline: blob.baseline,
+          baselineSetAt: blob.baselineSetAt,
+        }),
+      };
+    }
+
     if (!canIngest(token)) {
       return {
         statusCode: 401,
@@ -103,18 +149,6 @@ export const handler = async (event: NetlifyEvent) => {
           error:
             "Unauthorized — set OPS_USAGE_INGEST_TOKEN (and VITE_OPS_USAGE_INGEST_TOKEN in the app build)",
         }),
-      };
-    }
-    const body = parseBody(event) as {
-      date?: string;
-      deltas?: Record<string, number>;
-      deviceId?: string;
-    } | null;
-    if (!body || typeof body !== "object") {
-      return {
-        statusCode: 400,
-        headers: CORS,
-        body: JSON.stringify({ error: "Expected JSON body" }),
       };
     }
     const date =

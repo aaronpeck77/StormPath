@@ -6,6 +6,7 @@ export type MapboxUsageCounters = {
   matching: number;
   navTrips: number;
   searchBox: number;
+  mapLoads: number;
 };
 
 export type MapboxUsageDay = MapboxUsageCounters & {
@@ -13,13 +14,18 @@ export type MapboxUsageDay = MapboxUsageCounters & {
   updatedAt: string;
 };
 
-/** Published Mapbox free monthly allowances (pay-as-you-go). Nav trips = Navigation SDK trips. */
+/**
+ * Published Mapbox free monthly allowances (pay-as-you-go). Nav trips = Navigation SDK trips.
+ * mapLoads = GL JS "map load" (one per `Map` object init — see docs.mapbox.com/mapbox-gl-js/guides/pricing),
+ * NOT a per-tile count; that's the actual unit Mapbox bills the web map on.
+ */
 export const MAPBOX_FREE_TIER: MapboxUsageCounters = {
   directions: 100_000,
   geocoding: 100_000,
   matching: 100_000,
   navTrips: 1_000,
   searchBox: 100_000,
+  mapLoads: 50_000,
 };
 
 export const MAPBOX_USAGE_LABELS: Record<keyof MapboxUsageCounters, string> = {
@@ -28,6 +34,7 @@ export const MAPBOX_USAGE_LABELS: Record<keyof MapboxUsageCounters, string> = {
   matching: "Map Matching",
   navTrips: "Navigation trips",
   searchBox: "Search Box",
+  mapLoads: "Map loads (Web)",
 };
 
 export function emptyMapboxUsageCounters(): MapboxUsageCounters {
@@ -37,6 +44,7 @@ export function emptyMapboxUsageCounters(): MapboxUsageCounters {
     matching: 0,
     navTrips: 0,
     searchBox: 0,
+    mapLoads: 0,
   };
 }
 
@@ -50,6 +58,7 @@ export function addMapboxUsageCounters(
     matching: Math.max(0, (a.matching || 0) + (Number(b.matching) || 0)),
     navTrips: Math.max(0, (a.navTrips || 0) + (Number(b.navTrips) || 0)),
     searchBox: Math.max(0, (a.searchBox || 0) + (Number(b.searchBox) || 0)),
+    mapLoads: Math.max(0, (a.mapLoads || 0) + (Number(b.mapLoads) || 0)),
   };
 }
 
