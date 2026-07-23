@@ -101,8 +101,24 @@ const SECRET_KEY = "stormpath.ops.secret";
         const liveEl = document.getElementById("mbLiveBars");
         const metaEl = document.getElementById("mbLiveMeta");
         const noteEl = document.getElementById("mbLiveNote");
+        const reconcile = document.getElementById("mbReconcile");
         const local = readLocalAppMeterMonth();
-        const totals = summary?.totals || local;
+        const pasted = {
+          directions: monthTotal(loadLedger(), "directions"),
+          geocoding: monthTotal(loadLedger(), "geocoding"),
+          matching: monthTotal(loadLedger(), "matching"),
+          navTrips: monthTotal(loadLedger(), "navTrips"),
+          searchBox: 0,
+        };
+        const fromApp = summary?.totals || local;
+        /* Show the higher of app-meter vs pasted dashboard numbers so paste works today. */
+        const totals = {
+          directions: Math.max(fromApp.directions || 0, pasted.directions || 0),
+          geocoding: Math.max(fromApp.geocoding || 0, pasted.geocoding || 0),
+          matching: Math.max(fromApp.matching || 0, pasted.matching || 0),
+          navTrips: Math.max(fromApp.navTrips || 0, pasted.navTrips || 0),
+          searchBox: fromApp.searchBox || 0,
+        };
         const free = summary?.freeTier || FREE;
         const labels = summary?.labels || {
           directions: "Directions",
@@ -111,39 +127,48 @@ const SECRET_KEY = "stormpath.ops.secret";
           navTrips: "Navigation trips",
           searchBox: "Search Box",
         };
-        const source = summary
-          ? `${summary.month} · ${summary.dayCount || 0} day(s) reported`
-          : "This device only";
+        const hasAny = Object.values(totals).some((n) => n > 0);
+        const sourceBits = [];
+        if (summary) sourceBits.push(`${summary.month} · app reports`);
+        else sourceBits.push("This device");
+        if (Object.values(pasted).some((n) => n > 0)) sourceBits.push("includes pasted dashboard");
+        metaEl.textContent = sourceBits.join(" · ");
+
         liveEl.innerHTML = [
-          meterCardHtml(labels.directions || "Directions", totals.directions || 0, free.directions),
-          meterCardHtml(labels.geocoding || "Geocoding", totals.geocoding || 0, free.geocoding),
-          meterCardHtml(labels.matching || "Matching", totals.matching || 0, free.matching),
-          meterCardHtml(labels.navTrips || "Nav trips", totals.navTrips || 0, free.navTrips),
+          meterCardHtml(labels.directions || "Directions", totals.directions, free.directions),
+          meterCardHtml(labels.geocoding || "Geocoding", totals.geocoding, free.geocoding),
+          meterCardHtml(labels.matching || "Matching", totals.matching, free.matching),
+          meterCardHtml(labels.navTrips || "Nav trips", totals.navTrips, free.navTrips),
           meterCardHtml(
             labels.searchBox || "Search Box",
-            totals.searchBox || 0,
+            totals.searchBox,
             free.searchBox || FREE.searchBox
           ),
         ].join("");
-        metaEl.textContent = source;
+
+        if (reconcile) reconcile.open = !hasAny;
+
         const worst = Object.keys(free).reduce((w, k) => {
           const pct = free[k] > 0 ? ((totals[k] || 0) / free[k]) * 100 : 0;
           return Math.max(w, pct);
         }, 0);
         if (noteEl) {
           noteEl.classList.remove("warn", "bad");
-          if (worst >= 90) {
+          if (!hasAny) {
+            noteEl.classList.add("warn");
+            noteEl.textContent =
+              "No Mapbox usage yet. Paste today’s numbers from account.mapbox.com → Statistics in the form below (Directions, Geocoding, Matching, Nav trips). Auto app metering needs OPS_USAGE_INGEST_TOKEN on Netlify plus a rebuild — customers never see any of this.";
+          } else if (worst >= 90) {
             noteEl.classList.add("bad");
             noteEl.textContent =
-              "One or more products are at ≥90% of the monthly free tier. Check Mapbox Statistics for map loads/tiles too.";
+              "≥90% of a free tier used this month. Check Mapbox Statistics for map loads/tiles too.";
           } else if (worst >= 70) {
             noteEl.classList.add("warn");
             noteEl.textContent =
-              "One or more products are at ≥70% of the monthly free tier. Map loads/tiles are not included here.";
+              "≥70% of a free tier used this month. Map loads/tiles are not included in these cards.";
           } else {
             noteEl.textContent =
-              summary?.note ||
-              "StormPath-counted API calls vs published free tiers. Customers never see these numbers.";
+              "Month-to-date vs Mapbox free tiers (ops only). Map loads/tiles still only on Mapbox Statistics.";
           }
         }
       }
@@ -270,6 +295,7 @@ const SECRET_KEY = "stormpath.ops.secret";
         }
 
         renderLiveUsage(summary?.mapboxUsage || null);
+        window.__opsLastMapboxSummary = summary?.mapboxUsage || null;
 
         const health = summary?.health?.length
           ? summary.health
@@ -398,6 +424,7 @@ const SECRET_KEY = "stormpath.ops.secret";
         next.push(row);
         saveLedger(next);
         renderLedger();
+        renderLiveUsage(window.__opsLastMapboxSummary || null);
       });
 
       const existing = sessionStorage.getItem(SECRET_KEY);
