@@ -11,6 +11,7 @@
  */
 
 import { buildMapboxUsageSummary } from "./_mapboxUsageStore.ts";
+import { buildJeffFixSummary } from "./_jeffFixLogStore.ts";
 
 type NetlifyEvent = {
   httpMethod: string;
@@ -360,6 +361,7 @@ export const handler = async (event: NetlifyEvent) => {
       mapboxUsage: await buildMapboxUsageSummary(),
       mapboxNote:
         "Mapbox has no public Statistics API. StormPath counts its own Directions / Geocoding / Matching / Search Box / Nav trips into mapboxUsage. Map loads/tiles still require account.mapbox.com. Optional paste ledger reconciles against the dashboard.",
+      jeffFixes: await buildJeffFixSummary(),
     }),
   };
 };

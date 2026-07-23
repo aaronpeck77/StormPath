@@ -1520,6 +1520,10 @@ export default function App() {
     },
   });
 
+  /** Hard-snaps the follow-cam (clears the bearing smoother). Shared by the automatic
+   *  watchdog below and Jeff's manual "fix camera" tap for when the watchdog misses one. */
+  const resyncDriveCamera = useCallback(() => setFollowCamResyncKey((k) => k + 1), []);
+
   /** Background watchdog + self-heal: drive follow-cam bearing vs ground-truth course-over-ground.
    *  Uses the raw live GPS ref (same stream the follow-cam RAF loop itself reads), not the
    *  map-matched/held nav position — a stale corridor snap could otherwise agree with a wrong
@@ -1531,7 +1535,7 @@ export default function App() {
     userLngLatRef: liveLngLatRef,
     speedMpsRef: liveSpeedMpsRef,
     cameraBearingDegRef: driveMapBearingDegRef,
-    onResyncCamera: () => setFollowCamResyncKey((k) => k + 1),
+    onResyncCamera: resyncDriveCamera,
   });
 
   /** Background watchdog + self-heal: live Mapbox traffic / construction / closure pipeline. */
@@ -2267,6 +2271,7 @@ export default function App() {
       heading,
       driveRouteBearingDeg,
       driveOffRouteForwardFraming,
+      followingTemporaryGuidance: Boolean(autoRejoinGuidanceRouteId),
       speedMps,
       allowDestinationPick,
       topdownZoomRef,
@@ -2541,7 +2546,10 @@ export default function App() {
           setTapHint={setTapHint}
         />
 
-        <JeffBadge />
+        <JeffBadge
+          manualCameraFixAvailable={navigationStarted && viewMode === "drive"}
+          onManualCameraFix={resyncDriveCamera}
+        />
 
         <AppStatusBanners
           hasMapboxToken={Boolean(env.mapboxToken)}

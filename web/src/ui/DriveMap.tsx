@@ -203,6 +203,10 @@ export type Props = {
   driveRouteBearingDeg?: number | null;
   /** Off route in drive: camera + puck follow forward travel, not the old polyline behind the driver. */
   driveOffRouteForwardFraming?: boolean;
+  /** True while an auto-rejoin/detour leg (not the original locked route) drives guidance —
+   *  tightens how much the camera trusts that leg's own polyline tangent vs raw GPS motion,
+   *  since a freshly computed rejoin leg's geometry near the merge point is less reliable. */
+  followingTemporaryGuidance?: boolean;
   /** Ground speed from Geolocation; used to tighten puck smoothing while moving. */
   speedMps?: number | null;
   allowDestinationPick: boolean;
@@ -356,6 +360,7 @@ function DriveMapInner({
   heading,
   driveRouteBearingDeg = null,
   driveOffRouteForwardFraming = false,
+  followingTemporaryGuidance = false,
   speedMps = null,
   allowDestinationPick,
   topdownZoomRef,
@@ -527,6 +532,8 @@ function DriveMapInner({
   driveRouteBearingDegRef.current = driveRouteBearingDeg;
   const driveOffRouteForwardFramingRef = useRef(driveOffRouteForwardFraming);
   driveOffRouteForwardFramingRef.current = driveOffRouteForwardFraming;
+  const followingTemporaryGuidanceRef = useRef(followingTemporaryGuidance);
+  followingTemporaryGuidanceRef.current = followingTemporaryGuidance;
   const stormBarVisibleRef = useRef(stormBarVisible);
   stormBarVisibleRef.current = stormBarVisible;
   const stormBarExpandedRef = useRef(stormBarExpanded);
@@ -1480,6 +1487,7 @@ function DriveMapInner({
             mapBearing: map.getBearing(),
             lastTravelBearingDeg: driveLastTravelBearingRef.current,
             speedMps: effSp,
+            followingTemporaryGuidance: followingTemporaryGuidanceRef.current,
           });
           const alphaBrg = 1 - Math.exp(-dt / DRIVE_CAMERA_BEARING_TC_S);
           driveCamBearingSmoothedRef.current = smoothDriveBearingDeg(
@@ -3164,6 +3172,7 @@ function DriveMapInner({
         lastTravelBearingDeg:
           driveLastTravelBearingRef.current ?? driveCamBearingSmoothedRef.current,
         speedMps: speedMpsRef.current,
+        followingTemporaryGuidance: followingTemporaryGuidanceRef.current,
       });
       const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
       const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;

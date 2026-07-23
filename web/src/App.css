@@ -16958,10 +16958,12 @@
    strip at the very bottom-left, which is occupied in both planning and drive view). */
 .jeff-badge {
   position: fixed;
-  left: max(10px, env(safe-area-inset-left, 0px));
+  /* Lines up with the bottom dock's own left inset (compass/i column) instead of sitting
+   * slightly further right than it. */
+  left: max(8px, env(safe-area-inset-left, 0px));
   bottom: calc(
     var(--nav-dock-above-safe-current, var(--nav-dock-above-safe, 152px)) +
-      env(safe-area-inset-bottom, 0px) + 10px
+      env(safe-area-inset-bottom, 0px) + 18px
   );
   z-index: 60;
   display: flex;

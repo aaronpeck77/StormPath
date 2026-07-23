@@ -8,6 +8,7 @@ const SECRET_KEY = "stormpath.ops.secret";
         searchBox: 100_000,
       };
       const LOCAL_DAYS_KEY = "stormpath.mapboxUsage.localDays.v1";
+      const JEFF_LOCAL_LOG_KEY = "stormpath.jeff.localLog.v1";
 
       const gate = document.getElementById("gate");
       const app = document.getElementById("app");
@@ -95,6 +96,88 @@ const SECRET_KEY = "stormpath.ops.secret";
             searchBox: 0,
           };
         }
+      }
+
+      const JEFF_DOMAIN_LABEL = {
+        drive_camera: "Drive camera",
+        live_traffic: "Live traffic",
+      };
+
+      function readLocalJeffLog() {
+        try {
+          const raw = localStorage.getItem(JEFF_LOCAL_LOG_KEY);
+          const list = raw ? JSON.parse(raw) : [];
+          return Array.isArray(list) ? list : [];
+        } catch {
+          return [];
+        }
+      }
+
+      function jeffCountsFromEvents(events) {
+        const c = { drive_camera: 0, live_traffic: 0, manual: 0, total: 0 };
+        for (const e of events) {
+          if (e.domain === "drive_camera" || e.domain === "live_traffic") c[e.domain] += 1;
+          if (e.manual) c.manual += 1;
+          c.total += 1;
+        }
+        return c;
+      }
+
+      function jeffCountsCardHtml(label, counts) {
+        return `<div class="stat">
+          <div class="v">${(counts?.total ?? 0).toLocaleString()}</div>
+          <div class="l">${label}${
+          counts?.manual ? ` · ${counts.manual} manual` : ""
+        }</div>
+        </div>`;
+      }
+
+      function renderJeffFixes(jeffFixes, isLive) {
+        const grid = document.getElementById("jeffCountsGrid");
+        const rows = document.getElementById("jeffRecentRows");
+        const note = document.getElementById("jeffNote");
+        let recent = jeffFixes?.recent;
+        let countsToday = jeffFixes?.countsToday;
+        let counts7d = jeffFixes?.counts7d;
+        let countsMonth = jeffFixes?.countsMonth;
+
+        if (!recent) {
+          // Same-device fallback: this browser's own local Jeff log (no server aggregate).
+          const local = readLocalJeffLog()
+            .slice()
+            .sort((a, b) => b.atMs - a.atMs);
+          recent = local;
+          const now = Date.now();
+          const todayStartMs = new Date(todayUTC() + "T00:00:00.000Z").getTime();
+          const sevenDaysAgoMs = now - 7 * 24 * 60 * 60 * 1000;
+          const monthStartMs = new Date(todayUTC().slice(0, 7) + "-01T00:00:00.000Z").getTime();
+          countsToday = jeffCountsFromEvents(local.filter((e) => e.atMs >= todayStartMs));
+          counts7d = jeffCountsFromEvents(local.filter((e) => e.atMs >= sevenDaysAgoMs));
+          countsMonth = jeffCountsFromEvents(local.filter((e) => e.atMs >= monthStartMs));
+        }
+
+        grid.innerHTML =
+          jeffCountsCardHtml("Fixed today", countsToday) +
+          jeffCountsCardHtml("Fixed last 7 days", counts7d) +
+          jeffCountsCardHtml("Fixed this month", countsMonth);
+
+        rows.innerHTML = recent.length
+          ? recent
+              .slice(0, 40)
+              .map(
+                (e) => `<tr>
+                <td>${new Date(e.atMs).toLocaleString()}</td>
+                <td>${JEFF_DOMAIN_LABEL[e.domain] || e.domain}</td>
+                <td>${e.manual ? "Manual tap" : "Auto watchdog"}</td>
+                <td class="faint">${e.note || ""}</td>
+              </tr>`
+              )
+              .join("")
+          : `<tr><td colspan="4" class="faint">Nothing fixed yet — that's a good sign.</td></tr>`;
+
+        note.textContent = isLive
+          ? jeffFixes?.note || ""
+          : "Showing this device's local log only (no live summary) — unlock with the Netlify/home-api secret to see every device.";
       }
 
       function renderLiveUsage(summary) {
@@ -248,11 +331,15 @@ const SECRET_KEY = "stormpath.ops.secret";
 
       async function fetchSummary(secret) {
         if (!secret) return null;
-        // Home-api serves /ops-summary; Netlify keeps /.netlify/functions/ops-summary.
-        const candidates = [
-          "/ops-summary",
-          "/.netlify/functions/ops-summary",
-        ];
+        // Netlify: /.netlify/functions/ops-summary. Forge home-api: /ops-summary.
+        // Prefer the Netlify path on this host so a 404 HTML SPA page never
+        // gets mistaken for JSON ("Unexpected token '<'").
+        const onNetlify =
+          /\.netlify\.app$/i.test(location.hostname) ||
+          location.hostname === "stormpath2.netlify.app";
+        const candidates = onNetlify
+          ? ["/.netlify/functions/ops-summary", "/ops-summary"]
+          : ["/ops-summary", "/.netlify/functions/ops-summary"];
         let lastErr = "ops-summary failed";
         for (const path of candidates) {
           try {
@@ -260,8 +347,17 @@ const SECRET_KEY = "stormpath.ops.secret";
               headers: { Authorization: `Bearer ${secret}` },
               cache: "no-store",
             });
-            if (res.ok) return res.json();
-            const body = await res.json().catch(() => ({}));
+            const text = await res.text();
+            let body = {};
+            try {
+              body = text ? JSON.parse(text) : {};
+            } catch {
+              // HTML/SPA fallback — try next candidate.
+              lastErr = `ops-summary non-JSON at ${path} (HTTP ${res.status})`;
+              if (res.status === 404 || !res.ok) continue;
+              throw new Error(lastErr);
+            }
+            if (res.ok) return body;
             lastErr = body.error || `ops-summary HTTP ${res.status}`;
             // 404 = wrong host layout; try next. Auth/config errors stop here.
             if (res.status !== 404) throw new Error(lastErr);
@@ -296,6 +392,8 @@ const SECRET_KEY = "stormpath.ops.secret";
 
         renderLiveUsage(summary?.mapboxUsage || null);
         window.__opsLastMapboxSummary = summary?.mapboxUsage || null;
+
+        renderJeffFixes(summary?.jeffFixes || null, Boolean(summary?.jeffFixes));
 
         const health = summary?.health?.length
           ? summary.health
@@ -399,9 +497,40 @@ const SECRET_KEY = "stormpath.ops.secret";
         return renderApp(secret || "");
       }
 
-      document.getElementById("unlockBtn").addEventListener("click", () => {
-        unlock(secretInput.value.trim());
-      });
+      document
+        .getElementById("unlockBtn")
+        .addEventListener("click", async () => {
+          const secret = secretInput.value.trim();
+          const gateError = document.getElementById("gateError");
+          const btn = document.getElementById("unlockBtn");
+          if (!secret) {
+            unlock("");
+            return;
+          }
+          gateError.style.display = "none";
+          btn.disabled = true;
+          btn.textContent = "Checking\u2026";
+          try {
+            // Verify BEFORE unlocking — a wrong secret must never show the app.
+            await fetchSummary(secret);
+            unlock(secret);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (/unauthorized/i.test(msg)) {
+              gateError.textContent =
+                "Wrong secret. Re-copy the exact OPS_HUB_SECRET value from Netlify and try again.";
+              gateError.style.display = "block";
+            } else {
+              // Can't verify at all (e.g. local dev with no serverless
+              // functions running) — that's not a bad password, so let
+              // the user in to the local-only view instead of blocking them.
+              unlock(secret);
+            }
+          } finally {
+            btn.disabled = false;
+            btn.textContent = "Open Control Room";
+          }
+        });
       document.getElementById("localOnlyBtn").addEventListener("click", () => {
         unlock("");
       });

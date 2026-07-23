@@ -9,9 +9,9 @@ import {
 import { reportAppHealthRepair } from "../monitoring/appHealthSignals";
 import { reportJeffSighting, noteForJeffDomain } from "./jeffTheBot";
 
-const POLL_MS = 5_000;
+const POLL_MS = 3_000;
 /** Minimum spacing between automatic camera resyncs — avoid fighting a real GPS-noise blip. */
-const REPAIR_COOLDOWN_MS = 30_000;
+const REPAIR_COOLDOWN_MS = 15_000;
 
 export type UseDriveCameraHealthDeps = {
   navigationStarted: boolean;

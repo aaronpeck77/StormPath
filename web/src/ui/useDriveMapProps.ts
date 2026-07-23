@@ -38,6 +38,7 @@ export type UseDriveMapPropsInput = {
   heading: number | null;
   driveRouteBearingDeg: number | null;
   driveOffRouteForwardFraming: boolean;
+  followingTemporaryGuidance: boolean;
   speedMps: number | null;
   allowDestinationPick: boolean;
   topdownZoomRef: MutableRefObject<number>;
@@ -110,6 +111,7 @@ export function buildDriveMapProps(
     heading,
     driveRouteBearingDeg,
     driveOffRouteForwardFraming,
+    followingTemporaryGuidance,
     speedMps,
     allowDestinationPick,
     topdownZoomRef,
@@ -175,6 +177,7 @@ export function buildDriveMapProps(
     heading,
     driveRouteBearingDeg,
     driveOffRouteForwardFraming,
+    followingTemporaryGuidance,
     speedMps,
     allowDestinationPick,
     topdownZoomRef,

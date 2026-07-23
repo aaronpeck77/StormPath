@@ -13,6 +13,7 @@ import { config as loadEnv } from "dotenv";
 import { handler as weatherkitHandler } from "../netlify/functions/weatherkit-token.ts";
 import { handler as opsSummaryHandler } from "../netlify/functions/ops-summary.ts";
 import { handler as opsUsageHandler } from "../netlify/functions/ops-usage.ts";
+import { handler as opsJeffHandler } from "../netlify/functions/ops-jeff.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: path.join(__dirname, ".env") });
@@ -165,6 +166,11 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (apiPath === "/ops-jeff") {
+      await invokeHandler(opsJeffHandler, req, res, url);
+      return;
+    }
+
     const served = await serveStatic(res, apiPath);
     if (!served) {
       res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
@@ -184,5 +190,6 @@ server.listen(PORT, HOST, () => {
   console.log(`  ops:             http://${HOST}:${PORT}/ops/`);
   console.log(`  ops-summary:     http://${HOST}:${PORT}/ops-summary`);
   console.log(`  ops-usage:       http://${HOST}:${PORT}/ops-usage`);
+  console.log(`  ops-jeff:        http://${HOST}:${PORT}/ops-jeff`);
   console.log(`  (also /stormpath/* aliases)`);
 });

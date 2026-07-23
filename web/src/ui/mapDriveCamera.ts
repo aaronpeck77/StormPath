@@ -27,6 +27,15 @@ const DRIVE_CAMERA_BEARING_MAX_STEP_DEG = 9;
  */
 const ROUTE_VS_TRAVEL_AGREE_DEG = 55;
 
+/**
+ * Tighter agreement threshold used only while following a temporary auto-rejoin/detour leg.
+ * Those legs are short, freshly computed, and often loop through service roads or ramps —
+ * their polyline tangent near the merge point is far less trustworthy than on the original
+ * locked route. Trusting a stale/twisty rejoin tangent up to the normal 55° margin is exactly
+ * how the camera can end up looking noticeably "sideways" while GPS motion itself is fine.
+ */
+const ROUTE_VS_TRAVEL_AGREE_DEG_TEMPORARY_GUIDANCE = 24;
+
 /** Min ground speed before successive fixes count as course-over-ground (~4 mph). */
 const TRAVEL_MOTION_MIN_SPEED_MPS = 1.8;
 
@@ -169,6 +178,9 @@ export function resolveDriveFollowCameraBearingDeg(input: {
   lastTravelBearingDeg?: number | null;
   minMotionBearingM?: number;
   speedMps?: number | null;
+  /** True while an auto-rejoin/detour leg (not the original locked route) drives guidance —
+   *  tightens the route-vs-motion agreement margin (see {@link ROUTE_VS_TRAVEL_AGREE_DEG_TEMPORARY_GUIDANCE}). */
+  followingTemporaryGuidance?: boolean;
 }): number {
   void input.headingDeg;
   const motion = resolveTravelBearingDeg(input);
@@ -188,7 +200,10 @@ export function resolveDriveFollowCameraBearingDeg(input: {
   }
 
   if (motion != null && route != null) {
-    if (headingDeltaDegrees(motion, route) <= ROUTE_VS_TRAVEL_AGREE_DEG) {
+    const agreeMaxDeg = input.followingTemporaryGuidance
+      ? ROUTE_VS_TRAVEL_AGREE_DEG_TEMPORARY_GUIDANCE
+      : ROUTE_VS_TRAVEL_AGREE_DEG;
+    if (headingDeltaDegrees(motion, route) <= agreeMaxDeg) {
       return route;
     }
     return motion;

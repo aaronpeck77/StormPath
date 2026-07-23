@@ -130,6 +130,50 @@ describe("resolveDriveFollowCameraBearingDeg", () => {
     expect(brg).toBeGreaterThan(260);
     expect(brg).toBeLessThan(280);
   });
+
+  it("still trusts a rejoin-leg route tangent that closely agrees with motion", () => {
+    // Motion here is ~270 (westward fixes below); route tangent 280 is only 10° off.
+    const brg = resolveDriveFollowCameraBearingDeg({
+      offRouteForward: false,
+      routeBearingDeg: 280,
+      headingDeg: 12,
+      prevFix: { lng: -86.78, lat: 36.16 },
+      curFix: { lng: -86.79, lat: 36.16 },
+      mapBearing: 0,
+      speedMps: 20,
+      followingTemporaryGuidance: true,
+    });
+    expect(brg).toBe(280);
+  });
+
+  it("distrusts a rejoin-leg route tangent within the normal margin but outside the tighter one", () => {
+    // ~40° disagreement: normally within the 55° on-route margin (would use route), but a
+    // temporary auto-rejoin leg's polyline near the merge is too unreliable to trust that far —
+    // this is the exact "camera looks sideways after rejoin" failure mode from the field.
+    const onRoute = resolveDriveFollowCameraBearingDeg({
+      offRouteForward: false,
+      routeBearingDeg: 310,
+      headingDeg: 12,
+      prevFix: { lng: -86.78, lat: 36.16 },
+      curFix: { lng: -86.79, lat: 36.16 },
+      mapBearing: 0,
+      speedMps: 20,
+    });
+    const rejoining = resolveDriveFollowCameraBearingDeg({
+      offRouteForward: false,
+      routeBearingDeg: 310,
+      headingDeg: 12,
+      prevFix: { lng: -86.78, lat: 36.16 },
+      curFix: { lng: -86.79, lat: 36.16 },
+      mapBearing: 0,
+      speedMps: 20,
+      followingTemporaryGuidance: true,
+    });
+    // Same inputs, only the rejoin flag differs: on-route trusts the route tangent (310);
+    // rejoining falls back to GPS motion instead of the shaky short-leg tangent.
+    expect(onRoute).toBe(310);
+    expect(rejoining).not.toBe(310);
+  });
 });
 
 describe("resolveTravelBearingDeg", () => {

@@ -24,6 +24,7 @@ function baseInput(over: Partial<UseDriveMapPropsInput> = {}): UseDriveMapPropsI
     heading: 90,
     driveRouteBearingDeg: 95,
     driveOffRouteForwardFraming: false,
+    followingTemporaryGuidance: false,
     speedMps: 12,
     allowDestinationPick: false,
     topdownZoomRef: ref(13.5),
