@@ -9,6 +9,7 @@
       :root {
         --bg: #0a0b0d;
         --panel: #12151a;
+        --panel-2: #0d1015;
         --line: #232833;
         --text: #e8eaed;
         --muted: #94a3b8;
@@ -18,6 +19,7 @@
         --bad: #f87171;
         --accent: #38bdf8;
         --ink: #0f172a;
+        --pad: clamp(14px, 2.2vw, 28px);
       }
       * {
         box-sizing: border-box;
@@ -33,13 +35,21 @@
         color: var(--text);
       }
       main {
-        max-width: 980px;
+        width: min(1240px, 100%);
         margin: 0 auto;
-        padding: 28px 20px 64px;
+        padding: var(--pad) var(--pad) 72px;
+      }
+      .hero {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 20px;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 22px;
       }
       h1 {
         margin: 0;
-        font-size: 1.65rem;
+        font-size: clamp(1.35rem, 2.4vw, 1.85rem);
         letter-spacing: -0.02em;
       }
       h2 {
@@ -54,8 +64,8 @@
         margin: 6px 0 0;
         color: var(--muted);
         font-size: 0.95rem;
-        line-height: 1.4;
-        max-width: 42rem;
+        line-height: 1.45;
+        max-width: 46rem;
       }
       .row {
         display: flex;
@@ -70,16 +80,86 @@
       .panel {
         background: var(--panel);
         border: 1px solid var(--line);
-        border-radius: 12px;
+        border-radius: 14px;
         padding: 16px;
+      }
+      .panel--flush {
+        padding: 14px;
+      }
+      /* Desktop: Mapbox wide on top; income + ship side-by-side. Phone: one column. */
+      .dash {
+        display: grid;
+        gap: 18px;
+      }
+      .dash-split {
+        display: grid;
+        gap: 18px;
+      }
+      @media (min-width: 900px) {
+        .dash-split {
+          grid-template-columns: 1fr 1fr;
+          align-items: start;
+        }
+        .panel {
+          padding: 18px 20px;
+        }
       }
       .grid {
         display: grid;
         gap: 12px;
         grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
       }
+      .meter-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+      }
+      @media (min-width: 1100px) {
+        .meter-grid {
+          grid-template-columns: repeat(5, 1fr);
+        }
+      }
+      .meter {
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px 14px 12px;
+        min-width: 0;
+      }
+      .meter.warn {
+        border-color: rgba(251, 191, 36, 0.55);
+        box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.12);
+      }
+      .meter.bad {
+        border-color: rgba(248, 113, 113, 0.55);
+        box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.12);
+      }
+      .meter__label {
+        font-size: 0.72rem;
+        color: var(--muted);
+        letter-spacing: 0.02em;
+        line-height: 1.3;
+      }
+      .meter__value {
+        margin-top: 6px;
+        font-size: clamp(1.35rem, 2.2vw, 1.7rem);
+        font-weight: 750;
+        letter-spacing: -0.03em;
+        font-variant-numeric: tabular-nums;
+      }
+      .meter__meta {
+        margin-top: 4px;
+        font-size: 0.75rem;
+        color: var(--faint);
+        font-variant-numeric: tabular-nums;
+      }
+      .meter__remain {
+        margin-top: 2px;
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
       .stat {
-        background: #0d1015;
+        background: var(--panel-2);
         border: 1px solid var(--line);
         border-radius: 10px;
         padding: 12px;
@@ -88,6 +168,7 @@
         font-size: 1.35rem;
         font-weight: 700;
         letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
       }
       .stat .l {
         margin-top: 4px;
@@ -102,13 +183,14 @@
         border: 1px solid var(--line);
         padding: 5px 10px;
         font-size: 0.78rem;
-        background: #0d1015;
+        background: var(--panel-2);
       }
       .dot {
         width: 8px;
         height: 8px;
         border-radius: 50%;
         background: var(--faint);
+        flex-shrink: 0;
       }
       .dot.ok {
         background: var(--ok);
@@ -126,7 +208,7 @@
       }
       input {
         width: 100%;
-        background: #0d1015;
+        background: var(--panel-2);
         border: 1px solid var(--line);
         color: var(--text);
         border-radius: 8px;
@@ -154,8 +236,13 @@
         opacity: 0.5;
         cursor: not-allowed;
       }
+      .table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
       table {
         width: 100%;
+        min-width: 480px;
         border-collapse: collapse;
         font-size: 0.85rem;
       }
@@ -164,6 +251,7 @@
         text-align: left;
         padding: 8px 6px;
         border-bottom: 1px solid var(--line);
+        font-variant-numeric: tabular-nums;
       }
       th {
         color: var(--faint);
@@ -184,7 +272,7 @@
         background: #1e2430;
         border-radius: 999px;
         overflow: hidden;
-        margin-top: 6px;
+        margin-top: 10px;
       }
       .bar > i {
         display: block;
@@ -200,8 +288,6 @@
       a {
         color: var(--accent);
       }
-      /* App stays hidden until unlock. Gate is visible by default so a blocked/missing
-         script never leaves only the page header (Netlify CSP blocks inline scripts). */
       #app {
         display: none;
       }
@@ -212,21 +298,33 @@
         display: none;
       }
       .callout {
-        border-left: 3px solid var(--warn);
+        border-left: 3px solid var(--accent);
         padding: 10px 12px;
-        background: #16120a;
+        background: #0f1724;
         border-radius: 0 8px 8px 0;
-        color: #fde68a;
+        color: #cbd5e1;
         font-size: 0.88rem;
         line-height: 1.45;
       }
-      .setup details {
+      .callout.warn {
+        border-left-color: var(--warn);
+        background: #16120a;
+        color: #fde68a;
+      }
+      .callout.bad {
+        border-left-color: var(--bad);
+        background: #1a1010;
+        color: #fecaca;
+      }
+      .setup details,
+      details.reconcile {
         border: 1px solid var(--line);
         border-radius: 10px;
         padding: 10px 12px;
-        background: #0d1015;
+        background: var(--panel-2);
       }
-      .setup summary {
+      .setup summary,
+      details.reconcile summary {
         cursor: pointer;
         color: var(--muted);
       }
@@ -247,29 +345,30 @@
         font-size: 0.75rem;
         color: var(--muted);
       }
+      #healthRow {
+        gap: 8px;
+      }
     </style>
   </head>
   <body>
     <main>
-      <div class="stack" style="margin-bottom: 22px">
-        <div class="row" style="justify-content: space-between">
-          <div>
-            <h1>StormPath Control Room</h1>
-            <p class="sub">
-              Only the metrics that matter for this app — health, income, Mapbox
-              cost watch, and ship status. Not the whole vendor website.
-            </p>
-          </div>
-          <button type="button" class="ghost" id="lockBtn" hidden>Lock</button>
+      <header class="hero">
+        <div>
+          <h1>StormPath Control Room</h1>
+          <p class="sub">
+            Private ops board — health, income, Mapbox usage vs free tiers, and
+            ship status. Not shown to customers.
+          </p>
         </div>
-      </div>
+        <button type="button" class="ghost" id="lockBtn" hidden>Lock</button>
+      </header>
 
       <section id="gate">
         <div class="panel stack">
           <p class="muted" style="margin: 0">
-            Enter the Control Room secret (Netlify env
-            <code>OPS_HUB_SECRET</code>). On local Vite you can still use health
-            checks + the Mapbox ledger without it — leave blank and continue.
+            Enter the Control Room secret (Netlify / home-api env
+            <code>OPS_HUB_SECRET</code>). Local Vite can use health + this-device
+            Mapbox counts without it.
           </p>
           <label>
             Secret
@@ -284,49 +383,52 @@
         </div>
       </section>
 
-      <section id="app" class="stack">
-        <div class="row" id="healthRow"></div>
-        <p class="faint" id="generatedAt"></p>
-
-        <div class="panel">
-          <h2>Income</h2>
-          <div class="grid" id="incomeGrid"></div>
-          <p class="faint" id="incomeNote" style="margin: 10px 0 0"></p>
+      <section id="app" class="dash">
+        <div class="panel panel--flush stack" style="gap: 10px">
+          <h2 style="margin: 0">Health</h2>
+          <div class="row" id="healthRow"></div>
+          <p class="faint" id="generatedAt" style="margin: 0"></p>
         </div>
 
         <div class="panel stack">
-          <h2>Mapbox cost watch</h2>
-          <div class="callout" id="mbLiveNote">
-            Mapbox has no public usage API. StormPath counts its own Directions /
-            Geocoding / Matching / Search Box / Nav trips as the app runs, then
-            shows month-to-date vs free-tier limits here.
+          <div class="row" style="justify-content: space-between; align-items: baseline">
+            <h2 style="margin: 0">Mapbox usage (this month)</h2>
+            <span class="faint" id="mbLiveMeta"></span>
           </div>
-          <div id="mbLiveBars" class="stack" style="gap: 10px"></div>
-          <p class="faint" id="mbLiveMeta" style="margin: 0"></p>
-          <details style="margin-top: 8px">
-            <summary class="muted">Optional: paste Mapbox dashboard numbers (reconcile)</summary>
+          <div class="callout" id="mbLiveNote">
+            StormPath counts Directions / Geocoding / Matching / Search Box /
+            Nav trips from the app. Map loads &amp; tiles still only appear on
+            Mapbox Statistics.
+          </div>
+          <div id="mbLiveBars" class="meter-grid"></div>
+          <details class="reconcile">
+            <summary>Optional: paste Mapbox dashboard numbers (reconcile)</summary>
             <div class="stack" style="margin-top: 12px">
               <p class="faint" style="margin: 0">
-                Use this only to cross-check against
+                Cross-check against
                 <a href="https://account.mapbox.com/" target="_blank" rel="noreferrer"
                   >account.mapbox.com → Statistics</a
-                >
-                (map loads/tiles still only appear there).
+                >.
               </p>
               <div class="form-grid">
-                <label>Date (UTC)
+                <label
+                  >Date (UTC)
                   <input id="mbDate" type="date" />
                 </label>
-                <label>Directions
+                <label
+                  >Directions
                   <input id="mbDir" type="number" min="0" step="1" placeholder="0" />
                 </label>
-                <label>Temp. geocoding
+                <label
+                  >Temp. geocoding
                   <input id="mbGeo" type="number" min="0" step="1" placeholder="0" />
                 </label>
-                <label>Map Matching
+                <label
+                  >Map Matching
                   <input id="mbMatch" type="number" min="0" step="1" placeholder="0" />
                 </label>
-                <label>Nav trips
+                <label
+                  >Nav trips
                   <input id="mbNav" type="number" min="0" step="1" placeholder="0" />
                 </label>
               </div>
@@ -335,40 +437,51 @@
                 <span class="faint">Stored in this browser only</span>
               </div>
               <div id="mbBars" class="stack" style="gap: 10px"></div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Directions</th>
-                    <th>Geocode</th>
-                    <th>Matching</th>
-                    <th>Nav trips</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody id="mbTable"></tbody>
-              </table>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Directions</th>
+                      <th>Geocode</th>
+                      <th>Matching</th>
+                      <th>Nav trips</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="mbTable"></tbody>
+                </table>
+              </div>
             </div>
           </details>
         </div>
 
-        <div class="panel">
-          <h2>Ship &amp; crashes</h2>
-          <div class="grid" id="shipGrid"></div>
+        <div class="dash-split">
+          <div class="panel">
+            <h2>Income</h2>
+            <div class="grid" id="incomeGrid"></div>
+            <p class="faint" id="incomeNote" style="margin: 10px 0 0"></p>
+          </div>
+          <div class="panel">
+            <h2>Ship &amp; crashes</h2>
+            <div class="grid" id="shipGrid"></div>
+          </div>
         </div>
 
         <div class="panel setup">
           <details>
-            <summary>Wire live income / deploy / Sentry (Netlify env)</summary>
+            <summary>Wire live income / deploy / Sentry / usage ingest (env)</summary>
             <div class="stack" style="margin-top: 12px">
               <p class="faint" style="margin: 0">
-                Set these on the <strong>stormpath2</strong> Netlify site, then
-                redeploy. The Control Room secret unlocks
-                <code>/ops-summary</code> (home-api) or
-                <code>/.netlify/functions/ops-summary</code> (Netlify).
+                Netlify <strong>stormpath2</strong> and/or home-api
+                <code>.env</code>. Redeploy / restart after changes.
               </p>
               <ul class="faint" style="margin: 0; padding-left: 1.1rem; line-height: 1.6">
-                <li><code>OPS_HUB_SECRET</code> — passphrase you type above</li>
+                <li><code>OPS_HUB_SECRET</code> — unlock passphrase</li>
+                <li>
+                  <code>OPS_USAGE_INGEST_TOKEN</code> +
+                  <code>VITE_OPS_USAGE_INGEST_TOKEN</code> — app Mapbox metering
+                </li>
                 <li><code>REVENUECAT_SECRET_API_KEY</code> + <code>REVENUECAT_PROJECT_ID</code></li>
                 <li><code>NETLIFY_AUTH_TOKEN</code> + <code>NETLIFY_SITE_ID</code></li>
                 <li><code>SENTRY_AUTH_TOKEN</code> + <code>SENTRY_ORG</code> + <code>SENTRY_PROJECT</code></li>
@@ -376,18 +489,20 @@
               </ul>
               <p class="faint" style="margin: 0">
                 Local: <code>http://localhost:5173/ops/</code> · Prod:
-                <code>https://stormpath2.netlify.app/ops/</code>
+                <code>https://stormpath2.netlify.app/ops/</code> · Forge:
+                <code>http://127.0.0.1:8787/ops/</code>
               </p>
             </div>
           </details>
         </div>
       </section>
       <noscript>
-        <p class="callout" style="margin-top:18px">JavaScript is required for the Control Room unlock panel and live metrics.</p>
+        <p class="callout warn" style="margin-top: 18px">
+          JavaScript is required for the Control Room unlock panel and live metrics.
+        </p>
       </noscript>
     </main>
 
     <script src="./ops.js" defer></script>
-
   </body>
 </html>

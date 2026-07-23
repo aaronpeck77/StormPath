@@ -51,6 +51,21 @@ const SECRET_KEY = "stormpath.ops.secret";
         </div>`;
       }
 
+      function meterCardHtml(label, used, free) {
+        const u = Number(used) || 0;
+        const f = Number(free) || 1;
+        const pct = Math.min(999, Math.round((u / f) * 100));
+        const cls = pct >= 90 ? "bad" : pct >= 70 ? "warn" : "";
+        const remain = Math.max(0, f - u);
+        return `<div class="meter ${cls}">
+          <div class="meter__label">${label}</div>
+          <div class="meter__value">${u.toLocaleString()}</div>
+          <div class="meter__meta">${pct}% of ${f.toLocaleString()} free</div>
+          <div class="meter__remain">${remain.toLocaleString()} left this month</div>
+          <div class="bar ${cls}"><i style="width:${Math.min(100, pct)}%"></i></div>
+        </div>`;
+      }
+
       function readLocalAppMeterMonth() {
         try {
           const raw = localStorage.getItem(LOCAL_DAYS_KEY);
@@ -97,25 +112,39 @@ const SECRET_KEY = "stormpath.ops.secret";
           searchBox: "Search Box",
         };
         const source = summary
-          ? `StormPath app meter · ${summary.month} · ${summary.dayCount || 0} day(s) reported`
-          : "This browser only (unlock with OPS_HUB_SECRET for all-device totals)";
+          ? `${summary.month} · ${summary.dayCount || 0} day(s) reported`
+          : "This device only";
         liveEl.innerHTML = [
-          barHtml(labels.directions || "Directions", totals.directions || 0, free.directions),
-          barHtml(labels.geocoding || "Geocoding", totals.geocoding || 0, free.geocoding),
-          barHtml(labels.matching || "Matching", totals.matching || 0, free.matching),
-          barHtml(labels.navTrips || "Nav trips", totals.navTrips || 0, free.navTrips),
-          barHtml(labels.searchBox || "Search Box", totals.searchBox || 0, free.searchBox || FREE.searchBox),
+          meterCardHtml(labels.directions || "Directions", totals.directions || 0, free.directions),
+          meterCardHtml(labels.geocoding || "Geocoding", totals.geocoding || 0, free.geocoding),
+          meterCardHtml(labels.matching || "Matching", totals.matching || 0, free.matching),
+          meterCardHtml(labels.navTrips || "Nav trips", totals.navTrips || 0, free.navTrips),
+          meterCardHtml(
+            labels.searchBox || "Search Box",
+            totals.searchBox || 0,
+            free.searchBox || FREE.searchBox
+          ),
         ].join("");
         metaEl.textContent = source;
-        const hot = Object.keys(free).some((k) => {
+        const worst = Object.keys(free).reduce((w, k) => {
           const pct = free[k] > 0 ? ((totals[k] || 0) / free[k]) * 100 : 0;
-          return pct >= 70;
-        });
+          return Math.max(w, pct);
+        }, 0);
         if (noteEl) {
-          noteEl.textContent = hot
-            ? "Warning: one or more products are at ≥70% of the monthly free tier. Check Mapbox Statistics for map loads/tiles too."
-            : summary?.note ||
-              "Mapbox has no public usage API. These bars are StormPath-counted API calls vs published free tiers.";
+          noteEl.classList.remove("warn", "bad");
+          if (worst >= 90) {
+            noteEl.classList.add("bad");
+            noteEl.textContent =
+              "One or more products are at ≥90% of the monthly free tier. Check Mapbox Statistics for map loads/tiles too.";
+          } else if (worst >= 70) {
+            noteEl.classList.add("warn");
+            noteEl.textContent =
+              "One or more products are at ≥70% of the monthly free tier. Map loads/tiles are not included here.";
+          } else {
+            noteEl.textContent =
+              summary?.note ||
+              "StormPath-counted API calls vs published free tiers. Customers never see these numbers.";
+          }
         }
       }
 
