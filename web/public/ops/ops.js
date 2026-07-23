@@ -240,7 +240,7 @@ const SECRET_KEY = "stormpath.ops.secret";
           if (!hasAny) {
             noteEl.classList.add("warn");
             noteEl.textContent =
-              "No Mapbox usage yet. Paste today’s numbers from account.mapbox.com → Statistics in the form below (Directions, Geocoding, Matching, Nav trips). Auto app metering needs OPS_USAGE_INGEST_TOKEN on Netlify plus a rebuild — customers never see any of this.";
+              "No Mapbox usage yet. Paste today’s numbers from account.mapbox.com → Statistics in the form below (Directions, Geocoding, Matching, Nav trips). Auto app metering needs OPS_USAGE_INGEST_TOKEN on Netlify AND the matching VITE_OPS_USAGE_INGEST_TOKEN as a GitHub Actions repo secret, then a fresh TestFlight/App Store build — Netlify env vars alone don't reach the phone app. Customers never see any of this.";
           } else if (worst >= 90) {
             noteEl.classList.add("bad");
             noteEl.textContent =

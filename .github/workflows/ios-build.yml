@@ -21,6 +21,9 @@
 #   VITE_WEATHERKIT_ENABLED             Set to `true` after Netlify token function is live (see docs/WEATHERKIT_SETUP.md)
 #   VITE_SENTRY_DSN                     Sentry DSN for crash reports (optional; see docs/SENTRY_SETUP.md)
 #   VITE_REVENUECAT_API_KEY_IOS         RevenueCat public SDK key — required for App Store track builds
+#   VITE_OPS_USAGE_INGEST_TOKEN         Control Room usage/Jeff reporting (optional; must match Netlify's
+#                                       OPS_USAGE_INGEST_TOKEN). Without it, TestFlight/App Store builds
+#                                       never report Mapbox usage or Jeff fixes — Control Room stays empty.
 # TestFlight track: committed web/.env.testflight (Plus for testers).
 # App Store track: committed web/.env.production (Basic default) + RevenueCat secret above.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -135,6 +138,7 @@ jobs:
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
           VITE_WEATHERKIT_ENABLED: ${{ secrets.VITE_WEATHERKIT_ENABLED }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_OPS_USAGE_INGEST_TOKEN: ${{ secrets.VITE_OPS_USAGE_INGEST_TOKEN }}
           VITE_IOS_BUILD_NUMBER: ${{ github.run_number }}
 
       - name: Require RevenueCat key (App Store track)
@@ -162,6 +166,7 @@ jobs:
           VITE_WEATHERKIT_ENABLED: ${{ secrets.VITE_WEATHERKIT_ENABLED }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
           VITE_REVENUECAT_API_KEY_IOS: ${{ secrets.VITE_REVENUECAT_API_KEY_IOS }}
+          VITE_OPS_USAGE_INGEST_TOKEN: ${{ secrets.VITE_OPS_USAGE_INGEST_TOKEN }}
           VITE_IOS_BUILD_NUMBER: ${{ github.run_number }}
 
       # ── 5. Sync web assets into the Xcode project ────────────────────────────

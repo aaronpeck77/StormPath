@@ -507,8 +507,16 @@
                 <li><code>OPS_HUB_SECRET</code> — unlock passphrase</li>
                 <li>
                   <code>OPS_USAGE_INGEST_TOKEN</code> +
-                  <code>VITE_OPS_USAGE_INGEST_TOKEN</code> — app Mapbox metering
-                  and Jeff the Fix-It Bot's activity log (same token, no extra setup)
+                  <code>VITE_OPS_USAGE_INGEST_TOKEN</code> on Netlify — app Mapbox metering
+                  and Jeff the Fix-It Bot's activity log (same token for both)
+                </li>
+                <li>
+                  <strong>Also required:</strong> add
+                  <code>VITE_OPS_USAGE_INGEST_TOKEN</code> (same value) as a
+                  <strong>GitHub → Settings → Secrets and variables → Actions</strong> repo
+                  secret, then re-run the iOS build. Netlify env vars only affect the website —
+                  the phone app is built by a separate GitHub Actions pipeline and won't report
+                  anything until it has this secret too.
                 </li>
                 <li><code>REVENUECAT_SECRET_API_KEY</code> + <code>REVENUECAT_PROJECT_ID</code></li>
                 <li><code>NETLIFY_AUTH_TOKEN</code> + <code>NETLIFY_SITE_ID</code></li>
