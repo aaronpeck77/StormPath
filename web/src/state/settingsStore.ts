@@ -146,7 +146,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   dataSaverHintDismissed: readDataSaverHintDismissed(),
   voiceGuidanceEnabled: readBoolFlag(LS_VOICE, false),
   gpsHighRefreshEnabled: readBoolFlag(LS_GPS_HIGH_REFRESH, false),
-  mapMatchingEnabled: readBoolFlag(LS_MAP_MATCHING, true),
+  /* Default off — DIY route-snap + iOS native nav cover guidance; Matching is a paid Plus burn. */
+  mapMatchingEnabled: readBoolFlag(LS_MAP_MATCHING, false),
   landscapeSideHand: safeStorage.get(LS_LANDSCAPE_SIDE_HAND) === "left" ? "left" : "right",
 
   setStormEnabled: (on) => {

@@ -5,15 +5,17 @@ import { mapMatchingBuildAllowed, matchGpsTraceToRoad, acceptMapMatchSnap } from
 
 const TRACE_MAX_POINTS = 6;
 const TRACE_MIN_SPACING_M = 8;
-/** Map Matching is billed per request — keep well below the old ~2s cadence. */
-const MATCH_INTERVAL_MS = 12_000;
-const MATCH_INTERVAL_FAST_MS = 8_000;
-const MATCH_INTERVAL_IDLE_MS = 30_000;
+/** Map Matching is billed per request — stay sparse; route-snap covers most DIY nav. */
+const MATCH_INTERVAL_MS = 25_000;
+const MATCH_INTERVAL_FAST_MS = 18_000;
+const MATCH_INTERVAL_IDLE_MS = 60_000;
 const FAST_SPEED_MPS = 14;
 const MIN_MATCH_CONFIDENCE = 0.35;
 /** Reject snaps that jump implausibly far from the raw fix (parallel road / bad match). */
 const MAX_SNAP_DRIFT_M = 90;
 const IDLE_SPEED_MPS = 1.2;
+/** Reuse last snap without a new API call while GPS stays near it. */
+const REUSE_SNAP_WITHIN_M = 35;
 
 export type MapMatchState = {
   lngLat: LngLat | null;
@@ -53,6 +55,8 @@ export function useMapMatchedNavigationLngLat(opts: MapMatchedNavigationOptions)
   } = opts;
 
   const [matched, setMatched] = useState<MapMatchState>({ lngLat: null, confidence: null });
+  const matchedRef = useRef(matched);
+  matchedRef.current = matched;
   const traceRef = useRef<LngLat[]>([]);
   const lastMatchMsRef = useRef(0);
   const inFlightRef = useRef(false);
@@ -109,6 +113,13 @@ export function useMapMatchedNavigationLngLat(opts: MapMatchedNavigationOptions)
       const now = Date.now();
       if (inFlightRef.current) return;
       if (now - lastMatchMsRef.current < intervalMs) return;
+
+      const prevSnap = matchedRef.current.lngLat;
+      const raw = rawRef.current;
+      if (prevSnap && raw && haversineMeters(prevSnap, raw) <= REUSE_SNAP_WITHIN_M) {
+        lastMatchMsRef.current = now;
+        return;
+      }
 
       const trace = traceRef.current;
       if (trace.length < 2) return;

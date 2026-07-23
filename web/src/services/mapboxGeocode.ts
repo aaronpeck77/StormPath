@@ -1,5 +1,6 @@
 import type { LngLat } from "../nav/types";
 import { fetchWithTimeout, MAPBOX_GEOCODE_TIMEOUT_MS } from "../utils/fetchResilient";
+import { getCachedReverseGeocode, setCachedReverseGeocode } from "./reverseGeocodeCache";
 
 export type GeocodeHit = { lngLat: LngLat; placeName: string };
 
@@ -245,12 +246,15 @@ export async function mapboxAutocomplete(
   return out;
 }
 
-/** Reverse geocode a dropped pin. */
+/** Reverse geocode a dropped pin. Cell-cached to cut Temporary Geocoding bill. */
 export async function mapboxReverseGeocode(
   lng: number,
   lat: number,
   accessToken: string
 ): Promise<GeocodeHit | null> {
+  const cached = getCachedReverseGeocode(lng, lat);
+  if (cached !== undefined) return cached;
+
   const url = new URL(
     `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${lng},${lat}`)}.json`
   );
@@ -272,10 +276,15 @@ export async function mapboxReverseGeocode(
     features?: { center: [number, number]; place_name?: string }[];
   };
   const f = data.features?.[0];
-  if (!f?.center) return null;
+  if (!f?.center) {
+    setCachedReverseGeocode(lng, lat, null);
+    return null;
+  }
   const [flng, flat] = f.center;
-  return {
+  const hit: GeocodeHit = {
     lngLat: [flng, flat],
     placeName: f.place_name ?? `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
   };
+  setCachedReverseGeocode(lng, lat, hit);
+  return hit;
 }

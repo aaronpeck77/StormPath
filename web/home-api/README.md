@@ -46,12 +46,37 @@ Optional multi-app aliases: `/stormpath/weatherkit-token`, `/stormpath/ops/`.
 
 ## Cloudflare Tunnel (after local works)
 
-1. Install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/)
-2. Create a **named** tunnel (stable hostname)
-3. Ingress: `http://127.0.0.1:8787`
-4. From your phone: open `https://<tunnel-host>/health`
+Keep `npm start` running in one window. Tunnel in a **second** window.
 
-Only after that: change TestFlight `VITE_WEATHERKIT_TOKEN_URL` (separate step — ask before cutover).
+### A. Quick test tunnel (tonight — URL changes each run)
+
+1. Install cloudflared (winget):
+
+```powershell
+winget install --id Cloudflare.cloudflared -e
+```
+
+Close and reopen PowerShell, then:
+
+```powershell
+cloudflared tunnel --url http://127.0.0.1:8787
+```
+
+2. Copy the `https://….trycloudflare.com` URL it prints.
+3. On your **phone** (not Forge): open `https://THAT-URL/health`
+4. Then try `https://THAT-URL/weatherkit-token`
+
+Do **not** bake trycloudflare URLs into TestFlight — they change when you restart.
+
+### B. Named tunnel (stable — before app cutover)
+
+1. Cloudflare account at [dash.cloudflare.com](https://dash.cloudflare.com)
+2. `cloudflared tunnel login` (browser approve)
+3. `cloudflared tunnel create home-api`
+4. Config file pointing hostname → `http://127.0.0.1:8787`
+5. `cloudflared tunnel run home-api`
+
+Only after a **stable** hostname works from your phone: change TestFlight `VITE_WEATHERKIT_TOKEN_URL` (separate step).
 
 ## Secrets
 
