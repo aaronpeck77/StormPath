@@ -74,8 +74,11 @@ async function writeMonthBlobs(blob: MonthBlob): Promise<boolean> {
     const store = getStore("stormpath-ops");
     await store.setJSON(`jeff-fixes/${blob.month}`, blob);
     return true;
-  } catch {
-    return false;
+  } catch (e) {
+    // TEMP diagnostic: surface the real Blobs failure instead of silently falling back to a
+    // file write that can't succeed on Netlify's read-only function filesystem. Remove once
+    // root-caused (see chat "Jeff fix not showing up in Control Room").
+    throw new Error(`BLOBS_WRITE_FAILED: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
