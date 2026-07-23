@@ -12,6 +12,7 @@
 
 import { buildMapboxUsageSummary } from "./_mapboxUsageStore.ts";
 import { buildJeffFixSummary } from "./_jeffFixLogStore.ts";
+import { connectBlobsIfLambda } from "./_blobsLambda.ts";
 
 type NetlifyEvent = {
   httpMethod: string;
@@ -307,6 +308,8 @@ export const handler = async (event: NetlifyEvent) => {
       body: JSON.stringify({ error: "Unauthorized" }),
     };
   }
+
+  await connectBlobsIfLambda(event);
 
   const siteUrl = (
     process.env.SITE_URL?.trim() || "https://stormpath2.netlify.app"

@@ -6,6 +6,7 @@
  */
 
 import { appendJeffFixEvents, buildJeffFixSummary } from "./_jeffFixLogStore.ts";
+import { connectBlobsIfLambda } from "./_blobsLambda.ts";
 
 type NetlifyEvent = {
   httpMethod: string;
@@ -69,6 +70,7 @@ export const handler = async (event: NetlifyEvent) => {
     return { statusCode: 204, headers: CORS, body: "" };
   }
 
+  await connectBlobsIfLambda(event);
   const token = bearer(event);
 
   if (event.httpMethod === "GET") {

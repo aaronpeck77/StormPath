@@ -62,8 +62,11 @@ async function readMonthBlobs(month: string): Promise<MonthBlob | null> {
     if (data && typeof data === "object" && (data as MonthBlob).days) {
       return data as MonthBlob;
     }
-  } catch {
-    /* not on Netlify or package missing */
+  } catch (e) {
+    // Falls back to the (non-durable-on-Netlify) file store below. Logged so a regression here
+    // is visible in Netlify's function logs instead of silently losing data again — this exact
+    // path was broken for weeks because Blobs needs `connectLambda(event)` in Lambda-compat mode.
+    console.error("[mapbox-usage] Blobs read failed, falling back:", e);
   }
   return null;
 }
@@ -74,7 +77,8 @@ async function writeMonthBlobs(blob: MonthBlob): Promise<boolean> {
     const store = getStore("stormpath-ops");
     await store.setJSON(`mapbox-usage/${blob.month}`, blob);
     return true;
-  } catch {
+  } catch (e) {
+    console.error("[mapbox-usage] Blobs write failed, falling back:", e);
     return false;
   }
 }

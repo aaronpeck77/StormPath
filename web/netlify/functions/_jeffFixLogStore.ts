@@ -62,8 +62,11 @@ async function readMonthBlobs(month: string): Promise<MonthBlob | null> {
     if (data && typeof data === "object" && (data as MonthBlob).days) {
       return data as MonthBlob;
     }
-  } catch {
-    /* not on Netlify or package missing */
+  } catch (e) {
+    // Falls back to the (non-durable-on-Netlify) file store below. Logged so a regression here
+    // is visible in Netlify's function logs instead of silently losing data again — this exact
+    // path was broken for weeks because Blobs needs `connectLambda(event)` in Lambda-compat mode.
+    console.error("[jeff-fix-log] Blobs read failed, falling back:", e);
   }
   return null;
 }
@@ -75,10 +78,8 @@ async function writeMonthBlobs(blob: MonthBlob): Promise<boolean> {
     await store.setJSON(`jeff-fixes/${blob.month}`, blob);
     return true;
   } catch (e) {
-    // TEMP diagnostic: surface the real Blobs failure instead of silently falling back to a
-    // file write that can't succeed on Netlify's read-only function filesystem. Remove once
-    // root-caused (see chat "Jeff fix not showing up in Control Room").
-    throw new Error(`BLOBS_WRITE_FAILED: ${e instanceof Error ? e.message : String(e)}`);
+    console.error("[jeff-fix-log] Blobs write failed, falling back:", e);
+    return false;
   }
 }
 
