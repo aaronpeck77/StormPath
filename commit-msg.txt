@@ -1,8 +1,0 @@
-Wire VITE_OPS_USAGE_INGEST_TOKEN into the iOS build so the app actually reports.
-
-Netlify env vars only affect the website build — the iOS app that testers/customers
-actually drive with is built by a separate GitHub Actions pipeline that never received
-this token, so Mapbox usage metering and Jeff's fix log silently never sent anything
-even after Netlify was configured correctly. Passes the same secret into both the
-TestFlight and App Store build steps, documents it in .env.example, and updates the
-Control Room copy to call out that this GitHub secret is a separate, required step.
