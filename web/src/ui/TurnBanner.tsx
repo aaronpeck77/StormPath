@@ -4,6 +4,7 @@ import {
   resolveStayOnBannerCopy,
   roadLabelFromContinueInstruction,
 } from "../nav/bannerStayOnCopy";
+import { maneuverIconForStep, resolvePrimaryManeuverIcon } from "../nav/maneuverIcon";
 import type { RouteTurnStep } from "../nav/types";
 
 /**
@@ -49,111 +50,12 @@ function instructionWithRoadShields(text: string): ReactNode {
   return parts.length ? <>{parts}</> : text;
 }
 
-/** Mapbox/OSRM-style maneuver → compact road-sign-like glyph (falls back to instruction heuristics). */
-function mapboxStyleManeuverIcon(mt?: string, mod?: string): string | null {
-  const t = (mt ?? "").toLowerCase();
-  const m = (mod ?? "").toLowerCase();
-  if (
-    t.includes("roundabout") ||
-    t.includes("rotary") ||
-    t === "exit roundabout" ||
-    t === "exit rotary"
-  ) {
-    return "⟳";
-  }
-  if (t === "arrive" || t === "arrive destination") return "◎";
-  if (t === "fork") return "⑂";
-  if (t === "merge") {
-    if (m.includes("left")) return "⤴";
-    if (m.includes("right")) return "⤵";
-    return "⤦";
-  }
-  if (t === "off ramp" || t === "ramp" || t === "exit") {
-    if (m.includes("left")) return "↖";
-    if (m.includes("right")) return "↗";
-    return "↗";
-  }
-  if (t === "turn" || t === "end of road" || t === "continue" || t === "new name" || t === "notification") {
-    if (m.includes("uturn")) return "↻";
-    if (m.includes("sharp left")) return "↲";
-    if (m.includes("slight left")) return "↖";
-    if (m === "left") return "↰";
-    if (m.includes("left")) return "↰";
-    if (m.includes("sharp right")) return "↳";
-    if (m.includes("slight right")) return "↗";
-    if (m === "right") return "↱";
-    if (m.includes("right")) return "↱";
-    if (m.includes("straight")) return "↑";
-  }
-  if (t === "depart") return "↑";
-  return null;
-}
-
-function inferManeuverIconFromInstruction(instr: string): string {
-  const s = instr.toLowerCase();
-  if (/\bu-?turn|uturn|make a u-turn/i.test(instr)) return "↻";
-  if (/roundabout|rotary|traffic circle/i.test(s)) return "⟳";
-  if (/merge|lane ends|lanes end/i.test(s)) return "⤦";
-  if (/fork|keep (left|right)/i.test(s)) return "⑂";
-  if (/destination|arrive|you('ll)? (have )?arrived/i.test(s)) return "◎";
-  if (/slight left|bear left/i.test(s)) return "↖";
-  if (/sharp left|hard left/i.test(s)) return "↲";
-  if (/\bleft\b/.test(s) && /turn|keep|stay|veer/.test(s)) return "↰";
-  if (/slight right|bear right/i.test(s)) return "↗";
-  if (/sharp right|hard right/i.test(s)) return "↳";
-  if (/\bright\b/.test(s) && /turn|keep|stay|veer/.test(s)) return "↱";
-  if (/continue|head|straight|proceed|stay on|follow/i.test(s)) return "↑";
-  return "↑";
-}
-
-function maneuverIconForStep(step: RouteTurnStep): string {
-  const mb = mapboxStyleManeuverIcon(step.maneuverType, step.maneuverModifier);
-  if (mb) return mb;
-  if (step.type != null) return orsManeuverIcon(step.type);
-  return inferManeuverIconFromInstruction(step.instruction);
-}
-
 function formatStepDistanceM(m?: number): string {
   if (m == null || m <= 0) return "";
   const ft = m * 3.28084;
   if (ft < 500) return `${Math.round(ft)} ft`;
   const mi = m / 1609.34;
   return mi < 10 ? `${mi.toFixed(1)} mi` : `${Math.round(mi)} mi`;
-}
-
-function orsManeuverIcon(type?: number): string {
-  if (type == null) return "↑";
-  switch (type) {
-    case 0:
-      return "↰";
-    case 1:
-      return "↱";
-    case 2:
-      return "↲";
-    case 3:
-      return "↳";
-    case 4:
-      return "↖";
-    case 5:
-      return "↗";
-    case 6:
-      return "↑";
-    case 7:
-    case 8:
-      return "⟳";
-    case 9:
-      return "↻";
-    case 10:
-      return "◎";
-    case 11:
-      return "▶";
-    case 12:
-      return "←|";
-    case 13:
-      return "|→";
-    default:
-      return "↑";
-  }
 }
 
 function formatAlongMeters(m: number): string {
@@ -236,7 +138,11 @@ export function TurnBanner({
         <div className="turn-banner turn-banner--split" role="status">
           <div className="turn-banner-col turn-banner-col--primary">
             <span className="turn-banner-icon" aria-hidden>
-              {copy.stayOnMode ? "↑" : inferManeuverIconFromInstruction(override)}
+              {resolvePrimaryManeuverIcon({
+                stayOnMode: copy.stayOnMode,
+                step: { instruction: override },
+                instructionOverride: override,
+              })}
             </span>
             <div className="turn-banner-text">
               <span className="turn-banner-street">{instructionWithRoadShields(copy.headline)}</span>
@@ -297,11 +203,11 @@ export function TurnBanner({
   const thenInstr = copy.stayOnMode ? primaryInstr : next?.instruction ?? "";
   const nextKey = `next-${idx}-${copy.stayOnMode ? "turn" : "after"}-${thenInstr}`;
 
-  const primaryIcon = copy.stayOnMode
-    ? "↑"
-    : override
-      ? inferManeuverIconFromInstruction(override)
-      : maneuverIconForStep(cur);
+  const primaryIcon = resolvePrimaryManeuverIcon({
+    stayOnMode: copy.stayOnMode,
+    step: cur,
+    instructionOverride: override,
+  });
 
   return (
     <div className="turn-banner turn-banner--split" role="status">
@@ -326,9 +232,11 @@ export function TurnBanner({
             <div className="turn-banner-next-main" key={nextKey}>
               <span className="turn-banner-icon turn-banner-icon--next" aria-hidden>
                 {copy.stayOnMode
-                  ? override
-                    ? inferManeuverIconFromInstruction(primaryInstr)
-                    : maneuverIconForStep(cur)
+                  ? resolvePrimaryManeuverIcon({
+                      stayOnMode: false,
+                      step: cur,
+                      instructionOverride: override,
+                    })
                   : maneuverIconForStep(thenStep)}
               </span>
               <div className="turn-banner-next-text">

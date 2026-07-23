@@ -6,6 +6,7 @@ import {
   LIVE_TRAFFIC_STALE_MS,
 } from "./liveTrafficHealth";
 import { reportAppHealthRepair } from "../monitoring/appHealthSignals";
+import { reportJeffSighting, noteForJeffDomain } from "../ui/jeffTheBot";
 
 const POLL_MS = 30_000;
 /** Separate from the normal traffic poll interval — only forces an extra fetch when stuck. */
@@ -85,6 +86,7 @@ export function useLiveTrafficHealth(deps: UseLiveTrafficHealthDeps): void {
       const actions = repairActionsForLiveTrafficIssues(audit.issues);
       if (actions.includes("refresh_traffic")) bumpTrafficRefresh();
       reportAppHealthRepair("live_traffic", audit.issues, actions);
+      reportJeffSighting("live_traffic", noteForJeffDomain("live_traffic"));
       if (import.meta.env.DEV) {
         console.info(
           "[live-traffic-health] no usable traffic leg for",

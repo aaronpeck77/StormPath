@@ -16952,3 +16952,91 @@
     animation: none;
   }
 }
+
+/* Jeff — the little corner mascot for the background health watchdogs.
+   Sits just above the bottom dock/toolbar stack (not in the crowded logo/compass/i-button
+   strip at the very bottom-left, which is occupied in both planning and drive view). */
+.jeff-badge {
+  position: fixed;
+  left: max(10px, env(safe-area-inset-left, 0px));
+  bottom: calc(
+    var(--nav-dock-above-safe-current, var(--nav-dock-above-safe, 152px)) +
+      env(safe-area-inset-bottom, 0px) + 10px
+  );
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  opacity: 0.62;
+  transform: scale(0.86);
+  transition: opacity 220ms ease-out, transform 220ms ease-out;
+}
+
+.jeff-badge--active {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.jeff-badge__avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.06);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  animation: none;
+}
+
+.jeff-badge--active .jeff-badge__avatar {
+  animation: jeff-badge-bounce 900ms ease-in-out 2;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.35), 0 2px 8px rgba(0, 0, 0, 0.22);
+}
+
+@keyframes jeff-badge-bounce {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  30% {
+    transform: translateY(-4px) rotate(-6deg);
+  }
+  60% {
+    transform: translateY(0) rotate(4deg);
+  }
+}
+
+.jeff-badge__note {
+  max-width: 230px;
+  font-size: 0.74rem;
+  line-height: 1.3;
+  color: #0f172a;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+  padding: 0.45rem 0.6rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.16);
+}
+
+.jeff-badge__title {
+  font-weight: 700;
+  font-size: 0.76rem;
+  margin-bottom: 0.15rem;
+}
+
+.jeff-badge__body {
+  color: inherit;
+  opacity: 0.9;
+}
+
+.app-shell--basemap-night .jeff-badge__note {
+  background: #1e293b;
+  color: #e2e8f0;
+  border-color: rgba(226, 232, 240, 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jeff-badge,
+  .jeff-badge__avatar {
+    transition: none;
+    animation: none;
+  }
+}

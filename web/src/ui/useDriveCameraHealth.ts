@@ -7,6 +7,7 @@ import {
   DRIVE_CAMERA_HEADING_STUCK_CONFIRM_TICKS,
 } from "./driveCameraHealth";
 import { reportAppHealthRepair } from "../monitoring/appHealthSignals";
+import { reportJeffSighting, noteForJeffDomain } from "./jeffTheBot";
 
 const POLL_MS = 5_000;
 /** Minimum spacing between automatic camera resyncs — avoid fighting a real GPS-noise blip. */
@@ -96,6 +97,7 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
       const actions = repairActionsForDriveCameraIssues(audit.issues);
       if (actions.includes("resync_camera")) onResyncCamera();
       reportAppHealthRepair("drive_camera", audit.issues, actions);
+      reportJeffSighting("drive_camera", noteForJeffDomain("drive_camera"));
       if (import.meta.env.DEV) {
         console.info("[drive-camera-health] resyncing camera —", audit.issues);
       }

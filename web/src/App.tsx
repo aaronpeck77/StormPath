@@ -95,6 +95,7 @@ import { useDebouncedBusyLabel } from "./hooks/useDebouncedBusyLabel";
 import { buildAdvisoryRoadDetailRows } from "./ui/buildAdvisoryRoadDetailRows";
 import { PendingSaveSheets } from "./ui/PendingSaveSheets";
 import { AppStatusBanners } from "./ui/AppStatusBanners";
+import { JeffBadge } from "./ui/JeffBadge";
 import { useDemoBypassPlayback } from "./nav/useDemoBypassPlayback";
 import { useDriveApproachBanner } from "./nav/useDriveApproachBanner";
 import { useDriveMapOverlays } from "./nav/useDriveMapOverlays";
@@ -1519,13 +1520,16 @@ export default function App() {
     },
   });
 
-  /** Background watchdog + self-heal: drive follow-cam bearing vs ground-truth course-over-ground. */
+  /** Background watchdog + self-heal: drive follow-cam bearing vs ground-truth course-over-ground.
+   *  Uses the raw live GPS ref (same stream the follow-cam RAF loop itself reads), not the
+   *  map-matched/held nav position — a stale corridor snap could otherwise agree with a wrong
+   *  camera bearing and let a real "sideways" case pass unnoticed. */
   useDriveCameraHealth({
     navigationStarted,
     viewMode,
     appForeground,
-    userLngLatRef: navigationPositionLngLatRef,
-    speedMpsRef,
+    userLngLatRef: liveLngLatRef,
+    speedMpsRef: liveSpeedMpsRef,
     cameraBearingDegRef: driveMapBearingDegRef,
     onResyncCamera: () => setFollowCamResyncKey((k) => k + 1),
   });
@@ -2536,6 +2540,8 @@ export default function App() {
           setPendingSave={setPendingSave}
           setTapHint={setTapHint}
         />
+
+        <JeffBadge />
 
         <AppStatusBanners
           hasMapboxToken={Boolean(env.mapboxToken)}

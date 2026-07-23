@@ -106,6 +106,7 @@ import {
   ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM,
 } from "./mapFitLogic";
 import {
+  DRIVE_FOLLOW_PITCH_DEG,
   driveCameraEaseOptions,
   resolveDriveFollowCameraBearingDeg,
   resolveTravelBearingDeg,
@@ -1505,7 +1506,7 @@ function DriveMapInner({
           /* When entering drive view the pitch/zoom may be totally wrong (e.g. flat topdown).
            * Force an easeTo if pitch or zoom are far from drive targets so the view snaps in
            * even when the puck hasn't moved relative to the camera center. */
-          const pitchOff = Math.abs(map.getPitch() - 58) > 1;
+          const pitchOff = Math.abs(map.getPitch() - DRIVE_FOLLOW_PITCH_DEG) > 1;
           const forceCamSync = driveCamResyncRef.current || forcePeriodicResync;
           const applyLayoutOrEntry = pitchOff || forceCamSync || easeLayoutChanged;
           if (camMoved || bearingMoved || applyLayoutOrEntry) {
@@ -1514,7 +1515,7 @@ function DriveMapInner({
               safeEaseTo(map, {
                 center: pos,
                 ...(applyLayoutOrEntry
-                  ? { zoom: driveNavZoomRef.current, pitch: 58 }
+                  ? { zoom: driveNavZoomRef.current, pitch: DRIVE_FOLLOW_PITCH_DEG }
                   : {}),
                 bearing: driveCamBearingSmoothedRef.current,
                 padding,
@@ -3136,7 +3137,7 @@ function DriveMapInner({
    *
    * Also fires timed direct snaps as a belt-and-suspenders failsafe: if the RAF loop can't snap
    * the camera on its own (e.g. puck marker not yet created, GPS momentarily null, or a stale
-   * moveend listener fights back), these timeouts guarantee the camera reaches pitch 58 within
+   * moveend listener fights back), these timeouts guarantee the camera reaches drive pitch within
    * ~500 ms of entering drive mode.
    */
   useEffect(() => {
@@ -3180,7 +3181,7 @@ function DriveMapInner({
       safeEaseTo(map, {
         center: pos,
         zoom: driveNavZoomRef.current,
-        pitch: 58,
+        pitch: DRIVE_FOLLOW_PITCH_DEG,
         bearing: brg,
         padding: easeCached?.padding,
         offset: easeCached?.offset,
@@ -3248,6 +3249,9 @@ function DriveMapInner({
     if (!mapReady || !navigationStarted || viewMode !== "drive") return;
     if (followCamResyncKey <= 0) return;
     driveCamBearingSmoothedRef.current = null;
+    // Also drop the held travel bearing — otherwise a stuck/stale value survives the resync
+    // and the very next frame just re-applies the same wrong heading it "fixed".
+    driveLastTravelBearingRef.current = null;
     driveCamResyncRef.current = true;
     setMapResumeTick((n) => n + 1);
     const map = mapRef.current;

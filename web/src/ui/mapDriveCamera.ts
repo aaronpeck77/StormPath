@@ -12,6 +12,12 @@ import {
 /** Drive follow-cam puck placement — football-field metaphor (% up from bottom toward midfield). */
 const DRIVE_PUCK_YARD_LINE = 30;
 
+/**
+ * Mapbox pitch for Dr follow-cam (0 = top-down, ~85 = near horizon).
+ * Slightly tipped so more of the route ahead stays in frame without going full windshield.
+ */
+export const DRIVE_FOLLOW_PITCH_DEG = 64;
+
 /** Max camera bearing change per frame (deg) — kills wild spins when route tangent jumps near forks / turns. */
 const DRIVE_CAMERA_BEARING_MAX_STEP_DEG = 9;
 
