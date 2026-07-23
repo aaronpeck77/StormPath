@@ -1,5 +1,6 @@
 import type { LngLat } from "../nav/types";
 import { fetchWithTimeout, MAPBOX_TRAFFIC_TIMEOUT_MS } from "../utils/fetchResilient";
+import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
 
 /** Mapbox Directions API limit for coordinates in one request. */
 const MAPBOX_MAX_COORDS = 25;
@@ -185,6 +186,8 @@ async function fetchDirectionsOnce(
     console.warn("[traffic] Mapbox Directions", data.code, data.message ?? "");
     return null;
   }
+
+  recordMapboxUsage("directions");
 
   const route = data.routes?.[0];
   const durationSec = route?.duration;

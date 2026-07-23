@@ -1,5 +1,6 @@
 import type { LngLat } from "../nav/types";
 import { fetchWithTimeout, MAPBOX_GEOCODE_TIMEOUT_MS } from "../utils/fetchResilient";
+import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
 import { getCachedReverseGeocode, setCachedReverseGeocode } from "./reverseGeocodeCache";
 
 export type GeocodeHit = { lngLat: LngLat; placeName: string };
@@ -78,6 +79,7 @@ async function fetchForwardFeatures(
       timeoutMs: MAPBOX_GEOCODE_TIMEOUT_MS,
     });
     if (!res.ok) return [];
+    recordMapboxUsage("geocoding");
     const data = (await res.json()) as { features?: MbxFeature[] };
     return data.features ?? [];
   } catch {
@@ -272,6 +274,7 @@ export async function mapboxReverseGeocode(
     return null;
   }
   if (!res.ok) return null;
+  recordMapboxUsage("geocoding");
   const data = (await res.json()) as {
     features?: { center: [number, number]; place_name?: string }[];
   };

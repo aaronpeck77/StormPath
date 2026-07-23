@@ -5,7 +5,9 @@ const SECRET_KEY = "stormpath.ops.secret";
         geocoding: 100_000,
         matching: 100_000,
         navTrips: 1_000,
+        searchBox: 100_000,
       };
+      const LOCAL_DAYS_KEY = "stormpath.mapboxUsage.localDays.v1";
 
       const gate = document.getElementById("gate");
       const app = document.getElementById("app");
@@ -45,8 +47,76 @@ const SECRET_KEY = "stormpath.ops.secret";
             <span>${label}</span>
             <span class="faint">${used.toLocaleString()} / ${free.toLocaleString()} (${pct}%)</span>
           </div>
-          <div class="bar ${cls}"><i style="width:${pct}%"></i></div>
+          <div class="bar ${cls}"><i style="width:${Math.min(100, pct)}%"></i></div>
         </div>`;
+      }
+
+      function readLocalAppMeterMonth() {
+        try {
+          const raw = localStorage.getItem(LOCAL_DAYS_KEY);
+          const all = raw ? JSON.parse(raw) : {};
+          const prefix = todayUTC().slice(0, 7);
+          const totals = {
+            directions: 0,
+            geocoding: 0,
+            matching: 0,
+            navTrips: 0,
+            searchBox: 0,
+          };
+          if (!all || typeof all !== "object") return totals;
+          for (const [date, c] of Object.entries(all)) {
+            if (!String(date).startsWith(prefix) || !c) continue;
+            for (const k of Object.keys(totals)) {
+              totals[k] += Number(c[k]) || 0;
+            }
+          }
+          return totals;
+        } catch {
+          return {
+            directions: 0,
+            geocoding: 0,
+            matching: 0,
+            navTrips: 0,
+            searchBox: 0,
+          };
+        }
+      }
+
+      function renderLiveUsage(summary) {
+        const liveEl = document.getElementById("mbLiveBars");
+        const metaEl = document.getElementById("mbLiveMeta");
+        const noteEl = document.getElementById("mbLiveNote");
+        const local = readLocalAppMeterMonth();
+        const totals = summary?.totals || local;
+        const free = summary?.freeTier || FREE;
+        const labels = summary?.labels || {
+          directions: "Directions",
+          geocoding: "Temporary geocoding",
+          matching: "Map Matching",
+          navTrips: "Navigation trips",
+          searchBox: "Search Box",
+        };
+        const source = summary
+          ? `StormPath app meter · ${summary.month} · ${summary.dayCount || 0} day(s) reported`
+          : "This browser only (unlock with OPS_HUB_SECRET for all-device totals)";
+        liveEl.innerHTML = [
+          barHtml(labels.directions || "Directions", totals.directions || 0, free.directions),
+          barHtml(labels.geocoding || "Geocoding", totals.geocoding || 0, free.geocoding),
+          barHtml(labels.matching || "Matching", totals.matching || 0, free.matching),
+          barHtml(labels.navTrips || "Nav trips", totals.navTrips || 0, free.navTrips),
+          barHtml(labels.searchBox || "Search Box", totals.searchBox || 0, free.searchBox || FREE.searchBox),
+        ].join("");
+        metaEl.textContent = source;
+        const hot = Object.keys(free).some((k) => {
+          const pct = free[k] > 0 ? ((totals[k] || 0) / free[k]) * 100 : 0;
+          return pct >= 70;
+        });
+        if (noteEl) {
+          noteEl.textContent = hot
+            ? "Warning: one or more products are at ≥70% of the monthly free tier. Check Mapbox Statistics for map loads/tiles too."
+            : summary?.note ||
+              "Mapbox has no public usage API. These bars are StormPath-counted API calls vs published free tiers.";
+        }
       }
 
       function renderLedger() {
@@ -158,6 +228,7 @@ const SECRET_KEY = "stormpath.ops.secret";
         lockBtn.hidden = false;
         document.getElementById("mbDate").value = todayUTC();
         renderLedger();
+        renderLiveUsage(null);
 
         let summary = null;
         let summaryError = null;
@@ -168,6 +239,8 @@ const SECRET_KEY = "stormpath.ops.secret";
             summaryError = e instanceof Error ? e.message : "summary failed";
           }
         }
+
+        renderLiveUsage(summary?.mapboxUsage || null);
 
         const health = summary?.health?.length
           ? summary.health

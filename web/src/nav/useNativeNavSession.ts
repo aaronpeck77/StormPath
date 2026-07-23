@@ -6,6 +6,7 @@ import {
   type NativeNavProgressEvent,
   type NativeNavRouteChangedEvent,
 } from "@stormpath/mapbox-navigation";
+import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
 import type { LngLat, RouteTurnStep } from "./types";
 import type { TripStop } from "./routeWaypoints";
 import type { NavigationPositionState } from "../hooks/useNavigationPosition";
@@ -211,6 +212,7 @@ export function useNativeNavSession(opts: {
         await removeListeners();
         return false;
       }
+      recordMapboxUsage("navTrips");
       setNativeNavActive(true);
       return true;
     } catch (err) {

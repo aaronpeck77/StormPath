@@ -7,7 +7,10 @@
  *   SENTRY_AUTH_TOKEN + SENTRY_ORG + SENTRY_PROJECT
  *   TOMORROW_IO_TILE_PROXY_URL (Workers health)
  *   SITE_URL (defaults to https://stormpath2.netlify.app)
+ *   OPS_USAGE_INGEST_TOKEN — write-only token apps use to report Mapbox usage
  */
+
+import { buildMapboxUsageSummary } from "./_mapboxUsageStore.ts";
 
 type NetlifyEvent = {
   httpMethod: string;
@@ -354,8 +357,9 @@ export const handler = async (event: NetlifyEvent) => {
       deploy,
       sentry,
       ios,
+      mapboxUsage: await buildMapboxUsageSummary(),
       mapboxNote:
-        "Mapbox has no public usage API on standard plans. Log Directions / Geocoding / Matching / Nav from account.mapbox.com → Statistics into the Control Room ledger.",
+        "Mapbox has no public Statistics API. StormPath counts its own Directions / Geocoding / Matching / Search Box / Nav trips into mapboxUsage. Map loads/tiles still require account.mapbox.com. Optional paste ledger reconciles against the dashboard.",
     }),
   };
 };

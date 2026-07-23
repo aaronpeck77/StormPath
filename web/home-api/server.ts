@@ -12,9 +12,13 @@ import { fileURLToPath } from "node:url";
 import { config as loadEnv } from "dotenv";
 import { handler as weatherkitHandler } from "../netlify/functions/weatherkit-token.ts";
 import { handler as opsSummaryHandler } from "../netlify/functions/ops-summary.ts";
+import { handler as opsUsageHandler } from "../netlify/functions/ops-usage.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: path.join(__dirname, ".env") });
+if (!process.env.OPS_USAGE_DATA_DIR) {
+  process.env.OPS_USAGE_DATA_DIR = path.join(__dirname, "data");
+}
 
 const HOST = process.env.HOST?.trim() || "127.0.0.1";
 const PORT = Number(process.env.PORT?.trim() || "8787");
@@ -30,6 +34,8 @@ type NetlifyHandler = (event: {
   httpMethod: string;
   headers?: Record<string, string | undefined>;
   queryStringParameters?: Record<string, string | undefined> | null;
+  body?: string | null;
+  isBase64Encoded?: boolean;
 }) => Promise<NetlifyResult>;
 
 function collectHeaders(req: IncomingMessage): Record<string, string> {
@@ -41,16 +47,32 @@ function collectHeaders(req: IncomingMessage): Record<string, string> {
   return out;
 }
 
+function readRequestBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
 async function invokeHandler(
   handler: NetlifyHandler,
   req: IncomingMessage,
   res: ServerResponse,
   url: URL
 ): Promise<void> {
+  const method = (req.method || "GET").toUpperCase();
+  const body =
+    method === "POST" || method === "PUT" || method === "PATCH"
+      ? await readRequestBody(req)
+      : null;
   const event = {
-    httpMethod: req.method || "GET",
+    httpMethod: method,
     headers: collectHeaders(req),
     queryStringParameters: Object.fromEntries(url.searchParams.entries()),
+    body,
+    isBase64Encoded: false,
   };
   const result = await handler(event);
   res.writeHead(result.statusCode, result.headers ?? {});
@@ -138,6 +160,11 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (apiPath === "/ops-usage") {
+      await invokeHandler(opsUsageHandler, req, res, url);
+      return;
+    }
+
     const served = await serveStatic(res, apiPath);
     if (!served) {
       res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
@@ -156,5 +183,6 @@ server.listen(PORT, HOST, () => {
   console.log(`  weatherkit:      http://${HOST}:${PORT}/weatherkit-token`);
   console.log(`  ops:             http://${HOST}:${PORT}/ops/`);
   console.log(`  ops-summary:     http://${HOST}:${PORT}/ops-summary`);
+  console.log(`  ops-usage:       http://${HOST}:${PORT}/ops-usage`);
   console.log(`  (also /stormpath/* aliases)`);
 });

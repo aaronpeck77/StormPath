@@ -1,6 +1,7 @@
 import type { LngLat } from "../nav/types";
 import { closestAlongRouteMeters, haversineMeters } from "../nav/routeGeometry";
 import { fetchWithTimeout } from "../utils/fetchResilient";
+import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
 
 export type MapMatchResult = {
   /** Snapped coordinate on the road network, or null when matching fails. */
@@ -53,6 +54,7 @@ export async function matchGpsTraceToRoad(
   if (!loc || loc.length < 2) {
     return { lngLat: null, confidence: matching?.confidence ?? null };
   }
+  recordMapboxUsage("matching");
   return {
     lngLat: [loc[0]!, loc[1]!],
     confidence: matching?.confidence ?? null,

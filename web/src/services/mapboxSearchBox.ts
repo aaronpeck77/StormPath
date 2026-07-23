@@ -1,5 +1,6 @@
 import type { LngLat } from "../nav/types";
 import { fetchWithTimeout, MAPBOX_GEOCODE_TIMEOUT_MS } from "../utils/fetchResilient";
+import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
 
 /**
  * Mapbox Search Box API client — purpose-built for business / POI autocomplete with much deeper
@@ -150,6 +151,7 @@ export async function mapboxSearchBoxSuggest(
   } catch {
     return [];
   }
+  recordMapboxUsage("searchBox");
   const list = body.suggestions ?? [];
   const out: SearchBoxSuggestion[] = [];
   for (const s of list) {
@@ -218,6 +220,7 @@ export async function mapboxSearchBoxRetrieve(
   if (!feat || !coords || coords.length < 2) return null;
   const [lng, lat] = coords;
   if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+  recordMapboxUsage("searchBox");
   const props = feat.properties ?? {};
   const name = props.name ?? "";
   const addr = props.full_address ?? props.place_formatted ?? props.address ?? "";

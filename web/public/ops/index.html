@@ -296,50 +296,60 @@
 
         <div class="panel stack">
           <h2>Mapbox cost watch</h2>
-          <div class="callout">
-            Mapbox does not expose usage on standard plans via API. Once a day,
-            copy the StormPath-relevant counts from
-            <a href="https://account.mapbox.com/" target="_blank" rel="noreferrer"
-              >account.mapbox.com → Statistics</a
-            >
-            into this ledger. Free-tier bars use Mapbox’s published allowances as
-            guide rails.
+          <div class="callout" id="mbLiveNote">
+            Mapbox has no public usage API. StormPath counts its own Directions /
+            Geocoding / Matching / Search Box / Nav trips as the app runs, then
+            shows month-to-date vs free-tier limits here.
           </div>
-          <div class="form-grid">
-            <label>Date (UTC)
-              <input id="mbDate" type="date" />
-            </label>
-            <label>Directions
-              <input id="mbDir" type="number" min="0" step="1" placeholder="0" />
-            </label>
-            <label>Temp. geocoding
-              <input id="mbGeo" type="number" min="0" step="1" placeholder="0" />
-            </label>
-            <label>Map Matching
-              <input id="mbMatch" type="number" min="0" step="1" placeholder="0" />
-            </label>
-            <label>Nav trips
-              <input id="mbNav" type="number" min="0" step="1" placeholder="0" />
-            </label>
-          </div>
-          <div class="row">
-            <button type="button" id="mbSave">Save day</button>
-            <span class="faint">Stored in this browser only</span>
-          </div>
-          <div id="mbBars" class="stack" style="gap: 10px"></div>
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Directions</th>
-                <th>Geocode</th>
-                <th>Matching</th>
-                <th>Nav trips</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="mbTable"></tbody>
-          </table>
+          <div id="mbLiveBars" class="stack" style="gap: 10px"></div>
+          <p class="faint" id="mbLiveMeta" style="margin: 0"></p>
+          <details style="margin-top: 8px">
+            <summary class="muted">Optional: paste Mapbox dashboard numbers (reconcile)</summary>
+            <div class="stack" style="margin-top: 12px">
+              <p class="faint" style="margin: 0">
+                Use this only to cross-check against
+                <a href="https://account.mapbox.com/" target="_blank" rel="noreferrer"
+                  >account.mapbox.com → Statistics</a
+                >
+                (map loads/tiles still only appear there).
+              </p>
+              <div class="form-grid">
+                <label>Date (UTC)
+                  <input id="mbDate" type="date" />
+                </label>
+                <label>Directions
+                  <input id="mbDir" type="number" min="0" step="1" placeholder="0" />
+                </label>
+                <label>Temp. geocoding
+                  <input id="mbGeo" type="number" min="0" step="1" placeholder="0" />
+                </label>
+                <label>Map Matching
+                  <input id="mbMatch" type="number" min="0" step="1" placeholder="0" />
+                </label>
+                <label>Nav trips
+                  <input id="mbNav" type="number" min="0" step="1" placeholder="0" />
+                </label>
+              </div>
+              <div class="row">
+                <button type="button" id="mbSave">Save day</button>
+                <span class="faint">Stored in this browser only</span>
+              </div>
+              <div id="mbBars" class="stack" style="gap: 10px"></div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Directions</th>
+                    <th>Geocode</th>
+                    <th>Matching</th>
+                    <th>Nav trips</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="mbTable"></tbody>
+              </table>
+            </div>
+          </details>
         </div>
 
         <div class="panel">

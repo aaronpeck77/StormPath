@@ -5,6 +5,7 @@ import { initRevenueCat } from "./billing/revenueCat";
 import { getWebEnv } from "./config/env";
 import "./index.css";
 import { captureAppException, initCrashReporting, installGlobalErrorHandlers } from "./monitoring/sentry";
+import { startMapboxUsageMeter } from "./monitoring/mapboxUsageMeter";
 import { hydrateSafeStorage } from "./storage/safeStorage";
 
 initCrashReporting();
@@ -86,6 +87,7 @@ hydrateSafeStorage().finally(() => {
    * and the next AboutSheet open reflects entitlement state correctly. No-op on web /
    * unconfigured (missing API key). */
   void initRevenueCat({ iosApiKey: getWebEnv().revenueCatApiKeyIos });
+  startMapboxUsageMeter();
 
   createRoot(document.getElementById("root")!).render(
     <StrictMode>

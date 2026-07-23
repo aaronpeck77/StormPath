@@ -18,6 +18,7 @@ import {
   dedupePostedSpeedSamples,
   mapboxMaxSpeedToMph,
 } from "../nav/postedSpeed";
+import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
 import { isUltraLongTripRoute } from "../utils/dataSaver";
 import { parseExitNumberFromStep, shortenTurnInstruction } from "../nav/turnInstructionShort";
 import {
@@ -472,6 +473,7 @@ async function fetchMapboxDirections(
         }
         throw mapboxDirectionsErrorFromResponse(res, data);
       }
+      recordMapboxUsage("directions");
       return data;
     } catch (e) {
       if (isAbortError(e) || isFetchTimeoutError(e)) throw e;
@@ -520,6 +522,7 @@ async function fetchMapboxDirectionsThrough(
         }
         throw mapboxDirectionsErrorFromResponse(res, data);
       }
+      recordMapboxUsage("directions");
       return data;
     } catch (e) {
       if (isAbortError(e) || isFetchTimeoutError(e)) throw e;

@@ -25,6 +25,10 @@ npm start
 
 Fill `.env` with the same `WEATHERKIT_*` / `OPS_HUB_SECRET` / optional RevenueCat values you use on Netlify.
 
+For Mapbox usage meters in Control Room, also set:
+- `OPS_USAGE_INGEST_TOKEN` — write-only token apps use to POST usage
+- Matching `VITE_OPS_USAGE_INGEST_TOKEN` on the Netlify / TestFlight web build so devices can report
+
 Or double-click `start.bat`.
 
 ## Local checks
@@ -34,6 +38,7 @@ With the server running:
 - http://127.0.0.1:8787/health
 - http://127.0.0.1:8787/weatherkit-token (needs WeatherKit env)
 - http://127.0.0.1:8787/ops/ (Control Room; unlock with `OPS_HUB_SECRET`)
+- http://127.0.0.1:8787/ops-usage (POST from app; GET with hub secret)
 
 Optional multi-app aliases: `/stormpath/weatherkit-token`, `/stormpath/ops/`.
 

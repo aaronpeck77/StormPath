@@ -1,6 +1,7 @@
 import type { LngLat, RouteTurnStep } from "../nav/types";
 import { shortenTurnInstruction } from "../nav/turnInstructionShort";
 import { fetchWithTimeout, MAPBOX_DIRECTIONS_TIMEOUT_MS } from "../utils/fetchResilient";
+import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
 
 type MbCoord = [number, number];
 
@@ -115,6 +116,7 @@ export async function fetchMapboxTrafficAlternatives(
     });
   }
   if (!parsed.length) return null;
+  recordMapboxUsage("directions");
   return parsed;
 }
 
@@ -175,6 +177,7 @@ export async function fetchMapboxSurgicalBypass(
   const geometry = coords.map(([lng, lat]) => [lng, lat] as LngLat);
   const durSec = r.duration;
   if (durSec == null || !Number.isFinite(durSec)) return null;
+  recordMapboxUsage("directions");
   return {
     durationMinutes: durSec / 60,
     distanceMeters: typeof r.distance === "number" ? r.distance : 0,
@@ -230,6 +233,7 @@ export async function fetchMapboxDrivingTrafficRoute(
   const geometry = coords.map(([lng, lat]) => [lng, lat] as LngLat);
   const durSec = r.duration;
   if (durSec == null || !Number.isFinite(durSec)) return null;
+  recordMapboxUsage("directions");
   return {
     durationMinutes: durSec / 60,
     distanceMeters: typeof r.distance === "number" ? r.distance : 0,
