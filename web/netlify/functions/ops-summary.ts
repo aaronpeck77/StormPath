@@ -210,16 +210,24 @@ async function netlifyUsage(): Promise<{
     const slug = site.account_slug;
     if (!slug) return { configured: true, error: "Netlify site has no account_slug" };
 
-    const [bwRes, buildRes] = await Promise.all([
+    const authHeaders = { Authorization: `Bearer ${token}` };
+    // Bandwidth path isn't officially documented — Netlify's UI and community tools have used
+    // both `/accounts/{slug}/bandwidth` and `/{slug}/bandwidth`. Try both.
+    const [bwResAccounts, bwResSlug, buildRes] = await Promise.all([
       fetch(`https://api.netlify.com/api/v1/accounts/${encodeURIComponent(slug)}/bandwidth`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: authHeaders,
+        signal: AbortSignal.timeout(12_000),
+      }).catch(() => null),
+      fetch(`https://api.netlify.com/api/v1/${encodeURIComponent(slug)}/bandwidth`, {
+        headers: authHeaders,
         signal: AbortSignal.timeout(12_000),
       }).catch(() => null),
       fetch(`https://api.netlify.com/api/v1/${encodeURIComponent(slug)}/builds/status`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: authHeaders,
         signal: AbortSignal.timeout(12_000),
       }).catch(() => null),
     ]);
+    const bwRes = bwResAccounts?.ok ? bwResAccounts : bwResSlug?.ok ? bwResSlug : bwResAccounts;
 
     let bandwidth: NetlifyBandwidthUsage | undefined;
     if (bwRes?.ok) {
@@ -245,7 +253,9 @@ async function netlifyUsage(): Promise<{
 
     let builds: NetlifyBuildUsage | undefined;
     if (buildRes?.ok) {
-      const bs = (await buildRes.json().catch(() => null)) as {
+      // Official OpenAPI marks this response as an *array* of buildStatus objects.
+      const raw = await buildRes.json().catch(() => null);
+      const bs = (Array.isArray(raw) ? raw[0] : raw) as {
         build_count?: number;
         minutes?: {
           current?: number;
@@ -269,6 +279,8 @@ async function netlifyUsage(): Promise<{
       }
     }
 
+    const bwStatus = bwRes?.status;
+    const buildStatus = buildRes?.status;
     return {
       configured: true,
       accountSlug: slug,
@@ -276,7 +288,7 @@ async function netlifyUsage(): Promise<{
       builds,
       error:
         !bandwidth && !builds
-          ? "Netlify usage endpoints returned nothing (may have changed — they're undocumented)"
+          ? `Netlify usage endpoints returned nothing (bandwidth HTTP ${bwStatus ?? "n/a"}, builds HTTP ${buildStatus ?? "n/a"})`
           : undefined,
     };
   } catch (e) {

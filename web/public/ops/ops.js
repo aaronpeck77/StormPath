@@ -153,25 +153,40 @@ const SECRET_KEY = "stormpath.ops.secret";
         return (Number(n) || 0) / 1024 ** 3;
       }
 
-      function renderNetlifyUsage(nl) {
+      function renderNetlifyUsage(nl, opts) {
         const barsEl = document.getElementById("nlUsageBars");
         const metaEl = document.getElementById("nlUsageMeta");
         const noteEl = document.getElementById("nlUsageNote");
         if (!barsEl || !noteEl) return;
         noteEl.classList.remove("warn", "bad");
+        const hasLiveSummary = Boolean(opts && opts.hasLiveSummary);
+        const deployConfigured = Boolean(opts && opts.deployConfigured);
 
-        if (!nl || !nl.configured) {
+        if (!nl) {
           barsEl.innerHTML = "";
           metaEl.textContent = "";
-          noteEl.textContent =
-            "Add NETLIFY_AUTH_TOKEN + NETLIFY_SITE_ID on Netlify to show this \u2014 the same token already used for deploy status above.";
+          noteEl.classList.add("warn");
+          noteEl.textContent = hasLiveSummary
+            ? "Live summary came back without Netlify usage \u2014 wait for the latest deploy to finish, then refresh."
+            : "Unlock with OPS_HUB_SECRET on the live stormpath2 site to load Netlify usage. Local-only mode cannot read these account numbers.";
+          return;
+        }
+        if (!nl.configured) {
+          barsEl.innerHTML = "";
+          metaEl.textContent = "";
+          // If Ship & crashes already shows a Netlify deploy status, the same two vars are
+          // working — so "add them" is the wrong advice (old message was confusing people).
+          noteEl.classList.add("warn");
+          noteEl.textContent = deployConfigured
+            ? "Netlify deploy status works, but usage still didn\u2019t load. Refresh after the latest deploy, or check Netlify function logs for ops-summary."
+            : "ops-summary cannot see NETLIFY_AUTH_TOKEN / NETLIFY_SITE_ID on this site yet. Confirm those exact names exist under stormpath2 \u2192 Site configuration \u2192 Environment variables (Production), then Trigger deploy.";
           return;
         }
         if (nl.error && !nl.bandwidth && !nl.builds) {
           barsEl.innerHTML = "";
           metaEl.textContent = "";
           noteEl.classList.add("warn");
-          noteEl.textContent = `Netlify usage unavailable (${nl.error}). These are the same endpoints Netlify's own dashboard uses, but they're not officially documented, so they can change without notice \u2014 check app.netlify.com \u2192 Billing \u2192 Usage directly if this stays empty.`;
+          noteEl.textContent = `Netlify usage unavailable (${nl.error}). Check app.netlify.com \u2192 Billing \u2192 Usage directly if this stays empty.`;
           return;
         }
 
@@ -401,7 +416,10 @@ const SECRET_KEY = "stormpath.ops.secret";
         renderLiveUsage(summary?.mapboxUsage || null);
         window.__opsLastMapboxSummary = summary?.mapboxUsage || null;
 
-        renderNetlifyUsage(summary?.netlifyUsage || null);
+        renderNetlifyUsage(summary?.netlifyUsage || null, {
+          hasLiveSummary: Boolean(summary),
+          deployConfigured: Boolean(summary?.deploy?.configured),
+        });
 
         renderJeffFixes(summary?.jeffFixes || null, Boolean(summary?.jeffFixes));
 
