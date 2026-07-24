@@ -215,10 +215,15 @@ const SECRET_KEY = "stormpath.ops.secret";
 
         const periodStart = nl.builds?.periodStart || nl.bandwidth?.periodStart;
         const periodEnd = nl.builds?.periodEnd || nl.bandwidth?.periodEnd;
-        metaEl.textContent = periodStart
-          ? `${new Date(periodStart).toLocaleDateString()} \u2013 ${
-              periodEnd ? new Date(periodEnd).toLocaleDateString() : "?"
-            }`
+        const fmt = (iso) => {
+          if (!iso) return null;
+          const d = new Date(iso);
+          return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString();
+        };
+        const startLabel = fmt(periodStart);
+        const endLabel = fmt(periodEnd);
+        metaEl.textContent = startLabel
+          ? `${startLabel} \u2013 ${endLabel || "?"}`
           : "";
 
         if (worst >= 90) {

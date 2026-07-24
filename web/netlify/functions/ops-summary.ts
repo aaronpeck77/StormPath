@@ -193,6 +193,32 @@ function netlifySiteId(): string {
   return process.env.NETLIFY_SITE_ID?.trim() || process.env.SITE_ID?.trim() || "";
 }
 
+/** Netlify returns period dates as unix seconds, unix ms, or ISO strings depending on endpoint. */
+function parseNetlifyDate(raw: unknown): string | undefined {
+  if (raw == null || raw === "") return undefined;
+  try {
+    let d: Date;
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+      // Seconds vs milliseconds: < 1e12 ≈ before year ~2001 in ms, so treat as seconds.
+      d = new Date(raw < 1e12 ? raw * 1000 : raw);
+    } else if (typeof raw === "string") {
+      const trimmed = raw.trim();
+      if (/^\d+(\.\d+)?$/.test(trimmed)) {
+        const n = Number(trimmed);
+        d = new Date(n < 1e12 ? n * 1000 : n);
+      } else {
+        d = new Date(trimmed);
+      }
+    } else {
+      return undefined;
+    }
+    if (Number.isNaN(d.getTime())) return undefined;
+    return d.toISOString();
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Netlify's account-level usage (bandwidth, build minutes) so we can watch for a burn-through
  * without opening the Netlify dashboard by hand. `builds/status` is in Netlify's official
@@ -262,19 +288,15 @@ async function netlifyUsage(): Promise<{
       const b = (await bwRes.json().catch(() => null)) as {
         used?: number;
         included?: number;
-        period_start_date?: number;
-        period_end_date?: number;
+        period_start_date?: number | string;
+        period_end_date?: number | string;
       } | null;
       if (b) {
         bandwidth = {
           usedBytes: Number(b.used) || 0,
           includedBytes: Number(b.included) || 0,
-          periodStart: b.period_start_date
-            ? new Date(b.period_start_date * 1000).toISOString()
-            : undefined,
-          periodEnd: b.period_end_date
-            ? new Date(b.period_end_date * 1000).toISOString()
-            : undefined,
+          periodStart: parseNetlifyDate(b.period_start_date),
+          periodEnd: parseNetlifyDate(b.period_end_date),
         };
       }
     }
@@ -289,8 +311,8 @@ async function netlifyUsage(): Promise<{
           current?: number;
           included_minutes?: string;
           included_minutes_with_packs?: string;
-          period_start_date?: string;
-          period_end_date?: string;
+          period_start_date?: string | number;
+          period_end_date?: string | number;
         };
       } | null;
       if (bs) {
@@ -301,8 +323,8 @@ async function netlifyUsage(): Promise<{
           minutesUsed: Number(bs.minutes?.current) || 0,
           minutesIncluded: Number.isFinite(included) ? included : 0,
           buildCount: bs.build_count,
-          periodStart: bs.minutes?.period_start_date,
-          periodEnd: bs.minutes?.period_end_date,
+          periodStart: parseNetlifyDate(bs.minutes?.period_start_date),
+          periodEnd: parseNetlifyDate(bs.minutes?.period_end_date),
         };
       }
     }
