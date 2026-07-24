@@ -13,6 +13,7 @@ const JEFF_DISPLAY_NAME = "Jeff the Fix-It Bot";
 
 const DOMAIN_LABEL: Record<JeffSighting["domain"], string> = {
   drive_camera: "map view",
+  drive_puck: "drive puck",
   live_traffic: "live traffic",
 };
 
@@ -31,8 +32,9 @@ export type JeffBadgeProps = {
  * auto-corrects something, so the fixes aren't completely invisible to the driver.
  *
  * When `manualCameraFixAvailable` is set (drive view + GO), Jeff also stays visible at low
- * opacity as a tap target: if the automatic follow-cam watchdog ever misses a sideways camera,
- * the driver can tap Jeff to force the same camera resync themselves.
+ * opacity as a tap target: if the automatic follow-cam watchdog ever misses a sideways camera
+ * or a puck that has slid off its yard-line, the driver can tap Jeff to force the same
+ * camera resync themselves.
  */
 export function JeffBadge({
   manualCameraFixAvailable = false,
@@ -115,8 +117,9 @@ export function JeffBadge({
             </div>
           ) : isIntro ? (
             <div className="jeff-badge__body">
-              He quietly checks things like the drive camera and live traffic in the background
-              and fixes them automatically. Just now: fixed the {DOMAIN_LABEL[sighting.domain]}.
+              He quietly checks things like the drive camera, puck placement, and live traffic in
+              the background and fixes them automatically. Just now: fixed the{" "}
+              {DOMAIN_LABEL[sighting.domain]}.
               {onManualCameraFix ? " Tap me anytime to straighten the camera yourself." : null}
             </div>
           ) : (

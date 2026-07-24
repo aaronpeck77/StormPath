@@ -513,6 +513,10 @@ export default function App() {
   /** Live camera bearing for the follow-cam health watchdog (see useDriveCameraHealth below). */
   const driveMapBearingDegRef = useRef(driveMapBearingDeg);
   driveMapBearingDegRef.current = driveMapBearingDeg;
+  /** Last course-over-ground from DriveMap — Jeff uses this when its own poll gap is too short. */
+  const driveLastTravelBearingDegRef = useRef<number | null>(null);
+  /** Puck pixel drift from the fixed drive yard-line — Jeff re-pins when the map freezes. */
+  const drivePuckAnchorDriftPxRef = useRef<number | null>(null);
   const routeHazardSheet = useUiStore((s) => s.routeHazardSheet);
   const setRouteHazardSheet = useUiStore((s) => s.setRouteHazardSheet);
   const tollRoutePrompt = useRouteCompareStore((s) => s.tollRoutePrompt);
@@ -1535,6 +1539,8 @@ export default function App() {
     userLngLatRef: liveLngLatRef,
     speedMpsRef: liveSpeedMpsRef,
     cameraBearingDegRef: driveMapBearingDegRef,
+    lastTravelBearingDegRef: driveLastTravelBearingDegRef,
+    puckAnchorDriftPxRef: drivePuckAnchorDriftPxRef,
     onResyncCamera: resyncDriveCamera,
   });
 
@@ -2314,6 +2320,8 @@ export default function App() {
       progressRailVisible: showProgressRail,
       offRouteRejoinCompareActive: offRouteHoldPreviewActive || detourAutoActive,
       followCamResyncKey,
+      lastTravelBearingDegOutRef: driveLastTravelBearingDegRef,
+      puckAnchorDriftPxOutRef: drivePuckAnchorDriftPxRef,
     },
     stormAdvisoryBar: {
       isPlus,

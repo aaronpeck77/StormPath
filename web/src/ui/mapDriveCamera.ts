@@ -166,6 +166,11 @@ export function resolveTravelBearingDeg(input: {
  * Phone compass (`headingDeg`) is intentionally unused: on phones it is often
  * device orientation (landscape mount ≈ 90° sideways), not direction of travel.
  * Off-route we hold last travel / current map bearing until COG refreshes.
+ *
+ * Temporary auto-rejoin legs never win on route-alone: when GPS motion briefly drops
+ * out mid-reroute, falling through to the fresh rejoin tangent is exactly how the
+ * camera can lock sideways across chained detours. Same for {@link preferTravel}
+ * (Jeff / manual resync) — ignore route until travel preference expires.
  */
 export function resolveDriveFollowCameraBearingDeg(input: {
   offRouteForward: boolean;
@@ -181,6 +186,8 @@ export function resolveDriveFollowCameraBearingDeg(input: {
   /** True while an auto-rejoin/detour leg (not the original locked route) drives guidance —
    *  tightens the route-vs-motion agreement margin (see {@link ROUTE_VS_TRAVEL_AGREE_DEG_TEMPORARY_GUIDANCE}). */
   followingTemporaryGuidance?: boolean;
+  /** After a camera resync: ignore route tangents and stay on travel / last travel. */
+  preferTravel?: boolean;
 }): number {
   void input.headingDeg;
   const motion = resolveTravelBearingDeg(input);
@@ -193,10 +200,14 @@ export function resolveDriveFollowCameraBearingDeg(input: {
       ? input.lastTravelBearingDeg
       : null;
 
-  if (input.offRouteForward) {
+  const holdTravelOnly = (): number => {
     if (motion != null) return motion;
     if (lastTravel != null) return lastTravel;
     return input.mapBearing;
+  };
+
+  if (input.preferTravel || input.offRouteForward) {
+    return holdTravelOnly();
   }
 
   if (motion != null && route != null) {
@@ -207,6 +218,10 @@ export function resolveDriveFollowCameraBearingDeg(input: {
       return route;
     }
     return motion;
+  }
+  /* Temporary rejoin: never trust route-alone when motion is unknown — hold travel/map. */
+  if (input.followingTemporaryGuidance) {
+    return holdTravelOnly();
   }
   if (route != null) return route;
   if (motion != null) return motion;

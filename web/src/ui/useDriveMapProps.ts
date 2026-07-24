@@ -89,6 +89,8 @@ export type UseDriveMapPropsInput = {
   progressRailVisible: boolean;
   offRouteRejoinCompareActive: boolean;
   followCamResyncKey?: number;
+  lastTravelBearingDegOutRef?: MutableRefObject<number | null>;
+  puckAnchorDriftPxOutRef?: MutableRefObject<number | null>;
 };
 
 export function buildDriveMapProps(
@@ -159,6 +161,8 @@ export function buildDriveMapProps(
     progressRailVisible,
     offRouteRejoinCompareActive,
     followCamResyncKey = 0,
+    lastTravelBearingDegOutRef,
+    puckAnchorDriftPxOutRef,
   } = input;
 
   return {
@@ -240,6 +244,8 @@ export function buildDriveMapProps(
     offRouteRejoinCompareActive,
     rejoinOverlayActive: offRouteRejoinCompareActive,
     followCamResyncKey,
+    lastTravelBearingDegOutRef,
+    puckAnchorDriftPxOutRef,
   };
 }
 

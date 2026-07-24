@@ -112,6 +112,7 @@ import {
   resolveTravelBearingDeg,
   smoothDriveBearingDeg,
 } from "./mapDriveCamera";
+import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
 import { computePuckTargetBeforeRouteSnap } from "./driveMapPuckTarget";
 import { liftTrafficThenRoutesThenHits } from "./mapLayerStack";
 import {
@@ -309,6 +310,10 @@ export type Props = {
   rejoinOverlayActive?: boolean;
   /** Bump after About / Route Info close or resume — hard-snaps follow-cam bearing. */
   followCamResyncKey?: number;
+  /** Shared with Jeff's camera watchdog: last course-over-ground held by the follow-cam loop. */
+  lastTravelBearingDegOutRef?: MutableRefObject<number | null>;
+  /** Shared with Jeff's puck watchdog: pixel drift from the fixed drive yard-line anchor. */
+  puckAnchorDriftPxOutRef?: MutableRefObject<number | null>;
 };
 
 /** Alias for App / prop-assembly hooks — same shape as {@link Props}. */
@@ -317,6 +322,8 @@ export type DriveMapProps = Props;
 /** Drive mode: return to follow-cam after the user pans/zooms the map (600 ms while navigating). */
 /** ~1/e time constant (seconds) for drive camera bearing toward travel/route (rAF loop). */
 const DRIVE_CAMERA_BEARING_TC_S = 0.7;
+/** After Jeff / auto resync: ignore rejoin-route tangents this long so the camera stays on travel. */
+const DRIVE_CAM_PREFER_TRAVEL_AFTER_RESYNC_MS = 12_000;
 /** Delay before Wi‑Fi tile warm so idle-home camera can finish first. */
 const HOME_PRELOAD_START_DELAY_MS = 4_500;
 
@@ -410,6 +417,8 @@ function DriveMapInner({
   offRouteRejoinCompareActive = false,
   rejoinOverlayActive = false,
   followCamResyncKey = 0,
+  lastTravelBearingDegOutRef,
+  puckAnchorDriftPxOutRef,
 }: Props) {
   const ultraLongRoute = isUltraLongTripRoute(sessionRouteLengthM);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -505,6 +514,8 @@ function DriveMapInner({
   const driveCamBearingSmoothedRef = useRef<number | null>(null);
   /** Last course-over-ground while GO is active — hold heading-up across off-route GPS gaps. */
   const driveLastTravelBearingRef = useRef<number | null>(null);
+  /** After Jeff/manual resync: ignore route tangents until this timestamp (ms). */
+  const driveCamPreferTravelUntilMsRef = useRef(0);
   /** User-chosen zoom while navigating in Dr — do not snap back to 16.35 after pinch. */
   const driveNavZoomRef = useRef(16.35);
   const navRouteSnapKeyRef = useRef("");
@@ -521,6 +532,10 @@ function DriveMapInner({
   onRadarFrameUtcSecRef.current = onRadarFrameUtcSec;
   const onDriveCameraBearingDegRef = useRef(onDriveCameraBearingDeg);
   onDriveCameraBearingDegRef.current = onDriveCameraBearingDeg;
+  const lastTravelBearingDegOutRefStable = useRef(lastTravelBearingDegOutRef);
+  lastTravelBearingDegOutRefStable.current = lastTravelBearingDegOutRef;
+  const puckAnchorDriftPxOutRefStable = useRef(puckAnchorDriftPxOutRef);
+  puckAnchorDriftPxOutRefStable.current = puckAnchorDriftPxOutRef;
   const onStormBrowseBoundsRef = useRef(onStormBrowseBoundsChange);
   onStormBrowseBoundsRef.current = onStormBrowseBoundsChange;
   const routesForHitRef = useRef({ routes, lineFocusId, viewMode });
@@ -1477,7 +1492,12 @@ function DriveMapInner({
             curFix,
             speedMps: effSp,
           });
-          if (motionBrg != null) driveLastTravelBearingRef.current = motionBrg;
+          if (motionBrg != null) {
+            driveLastTravelBearingRef.current = motionBrg;
+            const out = lastTravelBearingDegOutRefStable.current;
+            if (out) out.current = motionBrg;
+          }
+          const preferTravel = performance.now() < driveCamPreferTravelUntilMsRef.current;
           const rawBrg = resolveDriveFollowCameraBearingDeg({
             offRouteForward: driveOffRouteForwardFramingRef.current,
             routeBearingDeg: driveRouteBearingDegRef.current,
@@ -1488,6 +1508,7 @@ function DriveMapInner({
             lastTravelBearingDeg: driveLastTravelBearingRef.current,
             speedMps: effSp,
             followingTemporaryGuidance: followingTemporaryGuidanceRef.current,
+            preferTravel,
           });
           const alphaBrg = 1 - Math.exp(-dt / DRIVE_CAMERA_BEARING_TC_S);
           driveCamBearingSmoothedRef.current = smoothDriveBearingDeg(
@@ -1496,6 +1517,37 @@ function DriveMapInner({
             alphaBrg
           );
           const pos = readMapLngLat(marker.getLngLat());
+          /* Jeff puck watchdog: how far the on-screen puck is from the fixed yard-line
+           * anchor. Null while the driver is freely exploring so a manual pan isn't "fixed". */
+          {
+            const driftOut = puckAnchorDriftPxOutRefStable.current;
+            if (driftOut) {
+              if (userExploringRef.current || !pos) {
+                driftOut.current = null;
+              } else {
+                try {
+                  const screen = map.project(pos);
+                  const canvas = map.getCanvas();
+                  const anchor = expectedDrivePuckScreenAnchorPx({
+                    mapWidth: canvas.clientWidth,
+                    mapHeight: canvas.clientHeight,
+                    padding: {
+                      top: Number(padding.top) || 0,
+                      bottom: Number(padding.bottom) || 0,
+                      left: Number(padding.left) || 0,
+                      right: Number(padding.right) || 0,
+                    },
+                    offset,
+                  });
+                  const dx = screen.x - anchor.x;
+                  const dy = screen.y - anchor.y;
+                  driftOut.current = Math.hypot(dx, dy);
+                } catch {
+                  driftOut.current = null;
+                }
+              }
+            }
+          }
           /* Mirror the marker's no-op guard for the camera. Without this, easeTo runs every
            * frame even when target ≈ current, and Mapbox repaints — even sub-pixel deltas in
            * float math show up as a visible vibration. */
@@ -2702,6 +2754,11 @@ function DriveMapInner({
     if (viewMode !== "drive" || !navigationStarted) {
       driveCamBearingSmoothedRef.current = null;
       driveLastTravelBearingRef.current = null;
+      driveCamPreferTravelUntilMsRef.current = 0;
+      const out = lastTravelBearingDegOutRefStable.current;
+      if (out) out.current = null;
+      const driftOut = puckAnchorDriftPxOutRefStable.current;
+      if (driftOut) driftOut.current = null;
     }
   }, [viewMode, navigationStarted]);
 
@@ -3173,6 +3230,7 @@ function DriveMapInner({
           driveLastTravelBearingRef.current ?? driveCamBearingSmoothedRef.current,
         speedMps: speedMpsRef.current,
         followingTemporaryGuidance: followingTemporaryGuidanceRef.current,
+        preferTravel: performance.now() < driveCamPreferTravelUntilMsRef.current,
       });
       const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
       const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;
@@ -3257,10 +3315,13 @@ function DriveMapInner({
   useEffect(() => {
     if (!mapReady || !navigationStarted || viewMode !== "drive") return;
     if (followCamResyncKey <= 0) return;
-    driveCamBearingSmoothedRef.current = null;
-    // Also drop the held travel bearing — otherwise a stuck/stale value survives the resync
-    // and the very next frame just re-applies the same wrong heading it "fixed".
-    driveLastTravelBearingRef.current = null;
+    // Keep lastTravel — clearing it was causing Jeff's "straightened" tap to re-apply the
+    // already-sideways map/rejoin bearing on the very next frame (see preferTravel).
+    driveCamPreferTravelUntilMsRef.current =
+      performance.now() + DRIVE_CAM_PREFER_TRAVEL_AFTER_RESYNC_MS;
+    const travelTarget =
+      driveLastTravelBearingRef.current ?? driveCamBearingSmoothedRef.current;
+    driveCamBearingSmoothedRef.current = travelTarget;
     driveCamResyncRef.current = true;
     setMapResumeTick((n) => n + 1);
     const map = mapRef.current;
@@ -3269,6 +3330,32 @@ function DriveMapInner({
         map.resize();
       } catch {
         /* map disposed */
+      }
+      if (isMapUsable(map) && map.isStyleLoaded() && travelTarget != null) {
+        const pos =
+          userLngLatRef.current ??
+          (puckMarkerRef.current ? readMapLngLat(puckMarkerRef.current.getLngLat()) : null);
+        if (pos) {
+          const o = driveCameraEaseOptions(
+            stormBarVisibleRef.current,
+            stormBarExpandedRef.current,
+            progressRailVisibleRef.current
+          );
+          if (
+            safeEaseTo(map, {
+              center: pos,
+              zoom: driveNavZoomRef.current,
+              pitch: DRIVE_FOLLOW_PITCH_DEG,
+              bearing: travelTarget,
+              padding: o.padding,
+              offset: o.offset,
+              duration: 0,
+              essential: true,
+            })
+          ) {
+            driveCamResyncRef.current = false;
+          }
+        }
       }
     }
   }, [followCamResyncKey, mapReady, navigationStarted, viewMode]);

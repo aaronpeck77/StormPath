@@ -16970,13 +16970,20 @@
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
-  opacity: 0.62;
+  /* Idle: faded + desaturated so Jeff stays discoverable without competing with the map.
+   * Full color returns while a fix notification is up (--active). */
+  opacity: 0.55;
+  filter: saturate(0.45) brightness(0.92);
   transform: scale(0.86);
-  transition: opacity 220ms ease-out, transform 220ms ease-out;
+  transition:
+    opacity 220ms ease-out,
+    transform 220ms ease-out,
+    filter 220ms ease-out;
 }
 
 .jeff-badge--active {
   opacity: 1;
+  filter: none;
   transform: scale(1);
 }
 

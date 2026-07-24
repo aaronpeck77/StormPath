@@ -6,10 +6,16 @@ import {
   repairActionsForDriveCameraIssues,
   DRIVE_CAMERA_HEADING_STUCK_CONFIRM_TICKS,
 } from "./driveCameraHealth";
+import {
+  auditDrivePuckPlacement,
+  repairActionsForDrivePuckIssues,
+  DRIVE_PUCK_ANCHOR_STUCK_CONFIRM_TICKS,
+} from "./drivePuckHealth";
 import { reportAppHealthRepair } from "../monitoring/appHealthSignals";
 import { reportJeffSighting, noteForJeffDomain } from "./jeffTheBot";
 
-const POLL_MS = 3_000;
+/** Puck drift needs a snappier poll — on a frozen map the puck climbs the route fast. */
+const POLL_MS = 1_500;
 /** Minimum spacing between automatic camera resyncs — avoid fighting a real GPS-noise blip. */
 const REPAIR_COOLDOWN_MS = 15_000;
 
@@ -21,16 +27,19 @@ export type UseDriveCameraHealthDeps = {
   speedMpsRef: MutableRefObject<number | null>;
   /** Live camera bearing actually applied to the map (reported from DriveMap's follow-cam loop). */
   cameraBearingDegRef: MutableRefObject<number | null>;
-  /** Bump the follow-cam resync key — clears the bearing smoother and hard-snaps the camera. */
+  /** Last course-over-ground held by DriveMap — fills GPS gaps where this poll's fixes are too short. */
+  lastTravelBearingDegRef?: MutableRefObject<number | null>;
+  /** Pixel drift of the puck from the fixed drive yard-line anchor (null = not measuring). */
+  puckAnchorDriftPxRef?: MutableRefObject<number | null>;
+  /** Bump the follow-cam resync key — re-centers the map on the puck and snaps bearing. */
   onResyncCamera: () => void;
 };
 
 /**
- * Background watchdog + self-heal for the drive follow-cam: while GO is active in drive view,
- * periodically checks the applied camera bearing against ground-truth course-over-ground.
- * If they disagree for a couple of consecutive polls at real driving speed, forces a camera
- * resync (same repair already used for foreground-resume / sheet-close desyncs) and reports
- * the anomaly so we know it happened even without the driver mentioning it.
+ * Background watchdog + self-heal for drive follow-cam: while GO is active in drive view,
+ * periodically checks (1) applied camera bearing vs course-over-ground and (2) puck screen
+ * position vs the fixed yard-line anchor. Either failure forces the same follow-cam resync
+ * and lights up Jeff so the fix isn't invisible.
  */
 export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
   const {
@@ -40,12 +49,15 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
     userLngLatRef,
     speedMpsRef,
     cameraBearingDegRef,
+    lastTravelBearingDegRef,
+    puckAnchorDriftPxRef,
     onResyncCamera,
   } = deps;
 
   const prevFixRef = useRef<{ lng: number; lat: number } | null>(null);
   const curFixRef = useRef<{ lng: number; lat: number } | null>(null);
-  const badStreakRef = useRef(0);
+  const headingBadStreakRef = useRef(0);
+  const puckBadStreakRef = useRef(0);
   const lastRepairAtRef = useRef(0);
 
   useEffect(() => {
@@ -53,7 +65,8 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
     if (!active) {
       prevFixRef.current = null;
       curFixRef.current = null;
-      badStreakRef.current = 0;
+      headingBadStreakRef.current = 0;
+      puckBadStreakRef.current = 0;
       return;
     }
 
@@ -68,38 +81,66 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
         }
       }
 
-      const travelBearingDeg = resolveTravelBearingDeg({
+      const liveTravel = resolveTravelBearingDeg({
         headingDeg: null,
         prevFix: prevFixRef.current,
         curFix: curFixRef.current,
         speedMps: speedMpsRef.current,
-        minMotionBearingM: 10,
+        /* Match the follow-cam motion floor so Jeff sees the same COG DriveMap trusts. */
+        minMotionBearingM: 6,
       });
+      const held = lastTravelBearingDegRef?.current;
+      const travelBearingDeg =
+        liveTravel ?? (held != null && Number.isFinite(held) ? held : null);
 
-      const audit = auditDriveCameraHeading({
+      const headingAudit = auditDriveCameraHeading({
         travelBearingDeg,
         appliedCameraBearingDeg: cameraBearingDegRef.current,
         speedMps: speedMpsRef.current,
       });
+      if (headingAudit.ok) headingBadStreakRef.current = 0;
+      else headingBadStreakRef.current += 1;
 
-      if (audit.ok) {
-        badStreakRef.current = 0;
-        return;
-      }
-      badStreakRef.current += 1;
-      if (badStreakRef.current < DRIVE_CAMERA_HEADING_STUCK_CONFIRM_TICKS) return;
+      const puckAudit = auditDrivePuckPlacement({
+        driftPx: puckAnchorDriftPxRef?.current ?? null,
+        speedMps: speedMpsRef.current,
+      });
+      if (puckAudit.ok) puckBadStreakRef.current = 0;
+      else puckBadStreakRef.current += 1;
+
+      const headingReady =
+        !headingAudit.ok &&
+        headingBadStreakRef.current >= DRIVE_CAMERA_HEADING_STUCK_CONFIRM_TICKS;
+      const puckReady =
+        !puckAudit.ok &&
+        (puckAudit.severe ||
+          puckBadStreakRef.current >= DRIVE_PUCK_ANCHOR_STUCK_CONFIRM_TICKS);
+      if (!headingReady && !puckReady) return;
 
       const now = Date.now();
       if (now - lastRepairAtRef.current < REPAIR_COOLDOWN_MS) return;
       lastRepairAtRef.current = now;
-      badStreakRef.current = 0;
+      headingBadStreakRef.current = 0;
+      puckBadStreakRef.current = 0;
 
-      const actions = repairActionsForDriveCameraIssues(audit.issues);
+      /* Prefer the more specific puck note when that's what fired; otherwise camera. */
+      if (puckReady) {
+        const actions = repairActionsForDrivePuckIssues(puckAudit.issues);
+        if (actions.includes("resync_camera")) onResyncCamera();
+        reportAppHealthRepair("drive_puck", puckAudit.issues, actions);
+        reportJeffSighting("drive_puck", noteForJeffDomain("drive_puck"));
+        if (import.meta.env.DEV) {
+          console.info("[drive-puck-health] resyncing follow-cam —", puckAudit.issues);
+        }
+        return;
+      }
+
+      const actions = repairActionsForDriveCameraIssues(headingAudit.issues);
       if (actions.includes("resync_camera")) onResyncCamera();
-      reportAppHealthRepair("drive_camera", audit.issues, actions);
+      reportAppHealthRepair("drive_camera", headingAudit.issues, actions);
       reportJeffSighting("drive_camera", noteForJeffDomain("drive_camera"));
       if (import.meta.env.DEV) {
-        console.info("[drive-camera-health] resyncing camera —", audit.issues);
+        console.info("[drive-camera-health] resyncing camera —", headingAudit.issues);
       }
     };
 
@@ -113,6 +154,8 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
     userLngLatRef,
     speedMpsRef,
     cameraBearingDegRef,
+    lastTravelBearingDegRef,
+    puckAnchorDriftPxRef,
     onResyncCamera,
   ]);
 }

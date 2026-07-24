@@ -69,6 +69,7 @@ const SECRET_KEY = "stormpath.ops.secret";
 
       const JEFF_DOMAIN_LABEL = {
         drive_camera: "Drive camera",
+        drive_puck: "Drive puck",
         live_traffic: "Live traffic",
       };
 
@@ -83,9 +84,15 @@ const SECRET_KEY = "stormpath.ops.secret";
       }
 
       function jeffCountsFromEvents(events) {
-        const c = { drive_camera: 0, live_traffic: 0, manual: 0, total: 0 };
+        const c = { drive_camera: 0, drive_puck: 0, live_traffic: 0, manual: 0, total: 0 };
         for (const e of events) {
-          if (e.domain === "drive_camera" || e.domain === "live_traffic") c[e.domain] += 1;
+          if (
+            e.domain === "drive_camera" ||
+            e.domain === "drive_puck" ||
+            e.domain === "live_traffic"
+          ) {
+            c[e.domain] += 1;
+          }
           if (e.manual) c.manual += 1;
           c.total += 1;
         }

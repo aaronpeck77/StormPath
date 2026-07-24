@@ -26,6 +26,16 @@ describe("auditDriveCameraHeading", () => {
     expect(repairActionsForDriveCameraIssues(audit.issues)).toEqual(["resync_camera"]);
   });
 
+  it("flags a ~45° sideways camera that used to slip under the old 55° threshold", () => {
+    const audit = auditDriveCameraHeading({
+      travelBearingDeg: 90,
+      appliedCameraBearingDeg: 45,
+      speedMps: 15,
+    });
+    expect(audit.ok).toBe(false);
+    expect(audit.issues).toContain("camera_bearing_diverged_from_travel");
+  });
+
   it("ignores disagreement while too slow for reliable course-over-ground", () => {
     const audit = auditDriveCameraHeading({
       travelBearingDeg: 90,

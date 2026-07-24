@@ -1,8 +1,8 @@
 /**
  * "Jeff the Fix-It Bot" is the friendly, user-facing name for the app's background watchdog
- * checks — the drive-camera heading audit and the live-traffic staleness audit (see
- * `useDriveCameraHealth` and `useLiveTrafficHealth`). This module is just a tiny pub/sub so
- * those hooks can announce "I just fixed something" without importing any UI, and a small
+ * checks — drive-camera heading, drive-puck yard-line placement, and live-traffic staleness
+ * (see `useDriveCameraHealth` and `useLiveTrafficHealth`). This module is just a tiny pub/sub
+ * so those hooks can announce "I just fixed something" without importing any UI, and a small
  * badge component (`JeffBadge`) can light up to show it happened.
  */
 
@@ -10,7 +10,7 @@ import { recordJeffFix } from "../monitoring/jeffFixLog";
 
 export type JeffSighting = {
   /** Which watchdog caught the issue. */
-  domain: "drive_camera" | "live_traffic";
+  domain: "drive_camera" | "drive_puck" | "live_traffic";
   /** Short, human phrase for what Jeff noticed — shown in the badge's tooltip/detail. */
   note: string;
   atMs: number;
@@ -44,6 +44,7 @@ export function subscribeJeffSightings(listener: Listener): () => void {
 
 const DOMAIN_NOTES: Record<JeffSighting["domain"], string> = {
   drive_camera: "Straightened out the map view",
+  drive_puck: "Pinned the drive puck back in place",
   live_traffic: "Kicked live traffic to refresh",
 };
 

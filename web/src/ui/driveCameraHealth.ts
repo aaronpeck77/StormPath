@@ -2,8 +2,9 @@ import { headingDeltaDegrees } from "../nav/forwardRoutePick";
 
 /** Below this ground speed, GPS course-over-ground is too noisy to trust as "truth". */
 export const DRIVE_CAMERA_HEADING_CHECK_MIN_SPEED_MPS = 4; // ~9 mph
-/** Camera bearing vs real direction of travel beyond this is a visible "sideways" map. */
-export const DRIVE_CAMERA_HEADING_MAX_DISAGREE_DEG = 55;
+/** Camera bearing vs real direction of travel beyond this is a visible "sideways" map.
+ *  55° let partially-sideways rejoins pass; ~40° catches what drivers actually notice. */
+export const DRIVE_CAMERA_HEADING_MAX_DISAGREE_DEG = 40;
 /** Require this many consecutive bad polls before treating it as stuck (ignores one-off GPS blips). */
 export const DRIVE_CAMERA_HEADING_STUCK_CONFIRM_TICKS = 2;
 

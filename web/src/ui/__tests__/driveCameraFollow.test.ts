@@ -174,6 +174,40 @@ describe("resolveDriveFollowCameraBearingDeg", () => {
     expect(onRoute).toBe(310);
     expect(rejoining).not.toBe(310);
   });
+
+  it("never falls through to a sideways rejoin tangent when temporary guidance has no motion yet", () => {
+    // Chained detours: Mapbox paints a hard-left rejoin while GPS COG briefly drops out.
+    // Holding last travel (or map) beats locking the camera to that rejoin polyline.
+    expect(
+      resolveDriveFollowCameraBearingDeg({
+        offRouteForward: false,
+        routeBearingDeg: 10,
+        headingDeg: 12,
+        prevFix: null,
+        curFix: null,
+        mapBearing: 88,
+        lastTravelBearingDeg: 270,
+        speedMps: 18,
+        followingTemporaryGuidance: true,
+      })
+    ).toBe(270);
+  });
+
+  it("preferTravel ignores route after a Jeff resync even when on-corridor", () => {
+    expect(
+      resolveDriveFollowCameraBearingDeg({
+        offRouteForward: false,
+        routeBearingDeg: 10,
+        headingDeg: 12,
+        prevFix: null,
+        curFix: null,
+        mapBearing: 88,
+        lastTravelBearingDeg: 265,
+        speedMps: 18,
+        preferTravel: true,
+      })
+    ).toBe(265);
+  });
 });
 
 describe("resolveTravelBearingDeg", () => {

@@ -7,7 +7,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export type JeffFixDomain = "drive_camera" | "live_traffic";
+export type JeffFixDomain = "drive_camera" | "drive_puck" | "live_traffic";
 
 export type JeffFixEvent = {
   atMs: number;
@@ -103,7 +103,9 @@ function sanitizeEvent(raw: unknown): JeffFixEvent | null {
   const r = raw as Record<string, unknown>;
   const atMs = Number(r.atMs);
   const domain =
-    r.domain === "drive_camera" || r.domain === "live_traffic" ? r.domain : null;
+    r.domain === "drive_camera" || r.domain === "drive_puck" || r.domain === "live_traffic"
+      ? r.domain
+      : null;
   if (!Number.isFinite(atMs) || !domain) return null;
   // Reject nonsense timestamps (far future / far past) rather than trusting the client blindly.
   const now = Date.now();
@@ -151,6 +153,7 @@ export async function appendJeffFixEvents(
 
 export type JeffFixCounts = {
   drive_camera: number;
+  drive_puck: number;
   live_traffic: number;
   manual: number;
   total: number;
@@ -167,7 +170,7 @@ export type JeffFixSummary = {
 };
 
 function emptyCounts(): JeffFixCounts {
-  return { drive_camera: 0, live_traffic: 0, manual: 0, total: 0 };
+  return { drive_camera: 0, drive_puck: 0, live_traffic: 0, manual: 0, total: 0 };
 }
 
 function tally(counts: JeffFixCounts, e: JeffFixEvent): void {
