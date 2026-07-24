@@ -407,6 +407,33 @@
           </div>
           <div class="callout" id="nlUsageNote"></div>
           <div id="nlUsageBars" class="meter-grid-flex"></div>
+          <details class="baseline-form" id="nlCreditsForm">
+            <summary id="nlCreditsSummary">Update credit balance from Netlify dashboard</summary>
+            <div class="stack" style="margin-top: 12px">
+              <p class="faint" style="margin: 0">
+                Free / Personal / Pro plans bill by <strong>credits</strong>, not build minutes.
+                Netlify has no public API for the remaining balance — copy it from
+                <a href="https://app.netlify.com/" target="_blank" rel="noreferrer"
+                  >Usage &amp; billing → Credit balance</a
+                >
+                (Free = 300/month). Re-enter anytime; it replaces the previous snapshot.
+              </p>
+              <div class="form-grid">
+                <label
+                  >Credits remaining
+                  <input id="nlCreditsRemaining" type="number" min="0" step="1" placeholder="89" />
+                </label>
+                <label
+                  >Monthly allotment
+                  <input id="nlCreditsIncluded" type="number" min="1" step="1" value="300" />
+                </label>
+              </div>
+              <div class="row">
+                <button type="button" id="nlCreditsSave">Save credits</button>
+                <span class="faint" id="nlCreditsStatus"></span>
+              </div>
+            </div>
+          </details>
         </div>
 
         <div class="panel stack">

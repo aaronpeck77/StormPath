@@ -12,6 +12,7 @@ import {
   mergeMapboxUsageDay,
   setMapboxUsageBaseline,
 } from "./_mapboxUsageStore.ts";
+import { setNetlifyCredits } from "./_netlifyCreditsStore.ts";
 import { utcMonthPrefix, utcToday } from "../../src/monitoring/mapboxUsageLimits.ts";
 import { connectBlobsIfLambda } from "./_blobsLambda.ts";
 
@@ -104,6 +105,7 @@ export const handler = async (event: NetlifyEvent) => {
       deviceId?: string;
       baseline?: Record<string, number>;
       month?: string;
+      netlifyCredits?: { remaining?: number; included?: number };
     } | null;
     if (!body || typeof body !== "object") {
       return {
@@ -138,6 +140,29 @@ export const handler = async (event: NetlifyEvent) => {
           baseline: blob.baseline,
           baselineSetAt: blob.baselineSetAt,
         }),
+      };
+    }
+
+    if (body.netlifyCredits && typeof body.netlifyCredits === "object") {
+      if (!canRead(token)) {
+        return {
+          statusCode: 401,
+          headers: CORS,
+          body: JSON.stringify({
+            error: "Unauthorized — Netlify credit updates require the Control Room's OPS_HUB_SECRET",
+          }),
+        };
+      }
+      const snap = await setNetlifyCredits({
+        remaining: Number(body.netlifyCredits.remaining),
+        included: body.netlifyCredits.included != null
+          ? Number(body.netlifyCredits.included)
+          : undefined,
+      });
+      return {
+        statusCode: 200,
+        headers: CORS,
+        body: JSON.stringify({ ok: true, credits: snap }),
       };
     }
 

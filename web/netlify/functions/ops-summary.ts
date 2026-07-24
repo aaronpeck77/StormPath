@@ -13,6 +13,10 @@
 import { buildMapboxUsageSummary } from "./_mapboxUsageStore.ts";
 import { buildJeffFixSummary } from "./_jeffFixLogStore.ts";
 import { connectBlobsIfLambda } from "./_blobsLambda.ts";
+import {
+  NETLIFY_FREE_CREDITS,
+  readNetlifyCredits,
+} from "./_netlifyCreditsStore.ts";
 
 type NetlifyEvent = {
   httpMethod: string;
@@ -169,6 +173,14 @@ type NetlifyBandwidthUsage = {
   periodEnd?: string;
 };
 
+type NetlifyCreditsUsage = {
+  remaining: number;
+  included: number;
+  used: number;
+  setAt: string | null;
+  source: "manual" | "unset";
+};
+
 type NetlifyBuildUsage = {
   minutesUsed: number;
   minutesIncluded: number;
@@ -232,16 +244,34 @@ async function netlifyUsage(): Promise<{
   accountSlug?: string;
   bandwidth?: NetlifyBandwidthUsage;
   builds?: NetlifyBuildUsage;
+  credits?: NetlifyCreditsUsage;
   missing?: string[];
   error?: string;
 }> {
   const token = netlifyAuthToken();
   const siteId = netlifySiteId();
+  const creditSnap = await readNetlifyCredits();
+  const credits: NetlifyCreditsUsage = creditSnap
+    ? {
+        remaining: creditSnap.remaining,
+        included: creditSnap.included,
+        used: Math.max(0, creditSnap.included - creditSnap.remaining),
+        setAt: creditSnap.setAt,
+        source: "manual",
+      }
+    : {
+        remaining: NETLIFY_FREE_CREDITS,
+        included: NETLIFY_FREE_CREDITS,
+        used: 0,
+        setAt: null,
+        source: "unset",
+      };
+
   if (!token || !siteId) {
     const missing: string[] = [];
     if (!token) missing.push("NETLIFY_AUTH_TOKEN");
     if (!siteId) missing.push("NETLIFY_SITE_ID (or built-in SITE_ID)");
-    return { configured: false, missing };
+    return { configured: false, missing, credits };
   }
   try {
     const siteRes = await fetch(
@@ -254,6 +284,7 @@ async function netlifyUsage(): Promise<{
     if (!siteRes.ok) {
       return {
         configured: true,
+        credits,
         error:
           siteRes.status === 401 || siteRes.status === 403
             ? `Netlify rejected the auth token (HTTP ${siteRes.status}) — regenerate the personal access token and update NETLIFY_AUTH_TOKEN`
@@ -262,7 +293,9 @@ async function netlifyUsage(): Promise<{
     }
     const site = (await siteRes.json()) as { account_slug?: string };
     const slug = site.account_slug;
-    if (!slug) return { configured: true, error: "Netlify site has no account_slug" };
+    if (!slug) {
+      return { configured: true, credits, error: "Netlify site has no account_slug" };
+    }
 
     const authHeaders = { Authorization: `Bearer ${token}` };
     // Bandwidth path isn't officially documented — Netlify's UI and community tools have used
@@ -330,20 +363,22 @@ async function netlifyUsage(): Promise<{
     }
 
     const bwStatus = bwRes?.status;
-    const buildStatus = buildRes?.status;
     return {
       configured: true,
       accountSlug: slug,
       bandwidth,
+      // Legacy build-minutes kept in the payload for debugging, but Control Room no longer
+      // surfaces them — credit-based plans (Free/Personal/Pro) bill by credits, not minutes.
       builds,
-      error:
-        !bandwidth && !builds
-          ? `Netlify usage endpoints returned nothing (bandwidth HTTP ${bwStatus ?? "n/a"}, builds HTTP ${buildStatus ?? "n/a"})`
-          : undefined,
+      credits,
+      error: !bandwidth
+        ? `Bandwidth endpoint returned nothing (HTTP ${bwStatus ?? "n/a"})`
+        : undefined,
     };
   } catch (e) {
     return {
       configured: true,
+      credits,
       error: e instanceof Error ? e.message : "Netlify usage failed",
     };
   }

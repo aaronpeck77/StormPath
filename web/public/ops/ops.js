@@ -184,7 +184,7 @@ const SECRET_KEY = "stormpath.ops.secret";
             `<strong>Trigger deploy</strong>. Site ID is optional now \u2014 Netlify already provides it automatically.`;
           return;
         }
-        if (nl.error && !nl.bandwidth && !nl.builds) {
+        if (nl.error && !nl.bandwidth && !(nl.credits && nl.credits.source === "manual")) {
           barsEl.innerHTML = "";
           metaEl.textContent = "";
           noteEl.classList.add("warn");
@@ -192,29 +192,42 @@ const SECRET_KEY = "stormpath.ops.secret";
           return;
         }
 
+        const creditsEl = document.getElementById("nlCreditsRemaining");
+        const includedEl = document.getElementById("nlCreditsIncluded");
+        const creditsSummary = document.getElementById("nlCreditsSummary");
+        if (nl.credits) {
+          if (creditsEl && nl.credits.source === "manual") {
+            creditsEl.value = String(nl.credits.remaining);
+          }
+          if (includedEl) includedEl.value = String(nl.credits.included || 300);
+          if (creditsSummary) {
+            creditsSummary.textContent =
+              nl.credits.source === "manual" && nl.credits.setAt
+                ? `Credits last updated ${new Date(nl.credits.setAt).toLocaleString()} \u2014 edit anytime`
+                : "Update credit balance from Netlify dashboard";
+          }
+        }
+
         const cards = [];
         let worst = 0;
+        if (nl.credits) {
+          const used = Number(nl.credits.used) || 0;
+          const included = Number(nl.credits.included) || 300;
+          cards.push(meterCardHtml("Credits used", used, included));
+          if (included > 0) worst = Math.max(worst, (used / included) * 100);
+        }
         if (nl.bandwidth) {
           const usedGb = bytesToGb(nl.bandwidth.usedBytes);
           const includedGb = bytesToGb(nl.bandwidth.includedBytes);
-          cards.push(meterCardHtml("Bandwidth (GB)", usedGb, includedGb || 1));
+          // On credit plans, bandwidth is still reported by Netlify but billed as credits
+          // (20 credits / GB) — keep the GB meter as a live API signal, not the plan limit.
+          cards.push(meterCardHtml("Bandwidth (GB)", usedGb, includedGb > 0 ? includedGb : Math.max(usedGb, 1)));
           if (includedGb > 0) worst = Math.max(worst, (usedGb / includedGb) * 100);
-        }
-        if (nl.builds) {
-          cards.push(
-            meterCardHtml("Build minutes", nl.builds.minutesUsed, nl.builds.minutesIncluded || 1)
-          );
-          if (nl.builds.minutesIncluded > 0) {
-            worst = Math.max(
-              worst,
-              (nl.builds.minutesUsed / nl.builds.minutesIncluded) * 100
-            );
-          }
         }
         barsEl.innerHTML = cards.join("");
 
-        const periodStart = nl.builds?.periodStart || nl.bandwidth?.periodStart;
-        const periodEnd = nl.builds?.periodEnd || nl.bandwidth?.periodEnd;
+        const periodStart = nl.bandwidth?.periodStart;
+        const periodEnd = nl.bandwidth?.periodEnd;
         const fmt = (iso) => {
           if (!iso) return null;
           const d = new Date(iso);
@@ -226,15 +239,20 @@ const SECRET_KEY = "stormpath.ops.secret";
           ? `${startLabel} \u2013 ${endLabel || "?"}`
           : "";
 
-        if (worst >= 90) {
+        if (nl.credits?.source !== "manual") {
+          noteEl.classList.add("warn");
+          noteEl.textContent =
+            "Credits not set yet. Open \u201cUpdate credit balance\u201d below and enter remaining credits from Netlify (you said 89 of 300). Build minutes are not used on Free/Personal/Pro credit plans.";
+        } else if (worst >= 90) {
           noteEl.classList.add("bad");
-          noteEl.textContent = "\u226590% of a Netlify limit used this billing period.";
+          noteEl.textContent =
+            "\u226590% of credits used this billing period \u2014 Free plan pauses when you hit 0.";
         } else if (worst >= 70) {
           noteEl.classList.add("warn");
-          noteEl.textContent = "\u226570% of a Netlify limit used this billing period.";
+          noteEl.textContent = "\u226570% of credits used this billing period.";
         } else {
           noteEl.textContent =
-            "From Netlify's own account API \u2014 real numbers, not counted by StormPath.";
+            "Credits are a manual snapshot from the Netlify dashboard (no public API). Bandwidth GB still comes live from Netlify.";
         }
       }
 
@@ -638,6 +656,61 @@ const SECRET_KEY = "stormpath.ops.secret";
           window.__opsLastMapboxSummary = summary?.mapboxUsage || null;
         } catch {
           /* saved fine — a re-fetch failure here just means the page needs a manual reload */
+        }
+      });
+
+      document.getElementById("nlCreditsSave").addEventListener("click", async () => {
+        const statusEl = document.getElementById("nlCreditsStatus");
+        const btn = document.getElementById("nlCreditsSave");
+        const secret = sessionStorage.getItem(SECRET_KEY) || "";
+        if (!secret) {
+          statusEl.textContent = "Unlock the Control Room with OPS_HUB_SECRET first.";
+          return;
+        }
+        const remaining = Number(document.getElementById("nlCreditsRemaining").value || 0);
+        const included = Number(document.getElementById("nlCreditsIncluded").value || 300);
+        btn.disabled = true;
+        statusEl.textContent = "Saving\u2026";
+        let ok = false;
+        let lastErr = "Save failed";
+        for (const path of opsUsagePostEndpoints()) {
+          try {
+            const res = await fetch(path, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${secret}`,
+              },
+              body: JSON.stringify({ netlifyCredits: { remaining, included } }),
+              cache: "no-store",
+            });
+            if (res.ok) {
+              ok = true;
+              break;
+            }
+            if (res.status !== 404) {
+              const body = await res.json().catch(() => ({}));
+              lastErr = body.error || `HTTP ${res.status}`;
+              break;
+            }
+          } catch (e) {
+            lastErr = e instanceof Error ? e.message : String(e);
+          }
+        }
+        btn.disabled = false;
+        if (!ok) {
+          statusEl.textContent = lastErr;
+          return;
+        }
+        statusEl.textContent = "Saved.";
+        try {
+          const summary = await fetchSummary(secret);
+          renderNetlifyUsage(summary?.netlifyUsage || null, {
+            hasLiveSummary: Boolean(summary),
+            deployConfigured: Boolean(summary?.deploy?.configured),
+          });
+        } catch {
+          /* saved — refresh manually if needed */
         }
       });
 
