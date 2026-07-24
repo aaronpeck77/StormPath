@@ -177,6 +177,22 @@ type NetlifyBuildUsage = {
   periodEnd?: string;
 };
 
+function netlifyAuthToken(): string {
+  // Personal access token — must be a site/team env var whose scope includes Functions
+  // (Builds-only scope is invisible to ops-summary at runtime).
+  return (
+    process.env.NETLIFY_AUTH_TOKEN?.trim() ||
+    process.env.NETLIFY_TOKEN?.trim() ||
+    ""
+  );
+}
+
+function netlifySiteId(): string {
+  // Prefer the explicit ops var; fall back to Netlify's built-in SITE_ID (always available
+  // to Functions for the site that's running the function — no need to paste it by hand).
+  return process.env.NETLIFY_SITE_ID?.trim() || process.env.SITE_ID?.trim() || "";
+}
+
 /**
  * Netlify's account-level usage (bandwidth, build minutes) so we can watch for a burn-through
  * without opening the Netlify dashboard by hand. `builds/status` is in Netlify's official
@@ -190,11 +206,17 @@ async function netlifyUsage(): Promise<{
   accountSlug?: string;
   bandwidth?: NetlifyBandwidthUsage;
   builds?: NetlifyBuildUsage;
+  missing?: string[];
   error?: string;
 }> {
-  const token = process.env.NETLIFY_AUTH_TOKEN?.trim();
-  const siteId = process.env.NETLIFY_SITE_ID?.trim();
-  if (!token || !siteId) return { configured: false };
+  const token = netlifyAuthToken();
+  const siteId = netlifySiteId();
+  if (!token || !siteId) {
+    const missing: string[] = [];
+    if (!token) missing.push("NETLIFY_AUTH_TOKEN");
+    if (!siteId) missing.push("NETLIFY_SITE_ID (or built-in SITE_ID)");
+    return { configured: false, missing };
+  }
   try {
     const siteRes = await fetch(
       `https://api.netlify.com/api/v1/sites/${encodeURIComponent(siteId)}`,
@@ -204,7 +226,13 @@ async function netlifyUsage(): Promise<{
       }
     );
     if (!siteRes.ok) {
-      return { configured: true, error: `Netlify site lookup HTTP ${siteRes.status}` };
+      return {
+        configured: true,
+        error:
+          siteRes.status === 401 || siteRes.status === 403
+            ? `Netlify rejected the auth token (HTTP ${siteRes.status}) — regenerate the personal access token and update NETLIFY_AUTH_TOKEN`
+            : `Netlify site lookup HTTP ${siteRes.status}`,
+      };
     }
     const site = (await siteRes.json()) as { account_slug?: string };
     const slug = site.account_slug;
@@ -306,8 +334,8 @@ async function netlifyDeploy(): Promise<{
   commitRef?: string;
   error?: string;
 }> {
-  const token = process.env.NETLIFY_AUTH_TOKEN?.trim();
-  const siteId = process.env.NETLIFY_SITE_ID?.trim();
+  const token = netlifyAuthToken();
+  const siteId = netlifySiteId();
   if (!token || !siteId) return { configured: false };
   try {
     const res = await fetch(

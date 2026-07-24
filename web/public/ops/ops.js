@@ -174,12 +174,14 @@ const SECRET_KEY = "stormpath.ops.secret";
         if (!nl.configured) {
           barsEl.innerHTML = "";
           metaEl.textContent = "";
-          // If Ship & crashes already shows a Netlify deploy status, the same two vars are
-          // working — so "add them" is the wrong advice (old message was confusing people).
           noteEl.classList.add("warn");
-          noteEl.textContent = deployConfigured
-            ? "Netlify deploy status works, but usage still didn\u2019t load. Refresh after the latest deploy, or check Netlify function logs for ops-summary."
-            : "ops-summary cannot see NETLIFY_AUTH_TOKEN / NETLIFY_SITE_ID on this site yet. Confirm those exact names exist under stormpath2 \u2192 Site configuration \u2192 Environment variables (Production), then Trigger deploy.";
+          const missing = Array.isArray(nl.missing) ? nl.missing.join(" + ") : "NETLIFY_AUTH_TOKEN";
+          noteEl.innerHTML =
+            `Cannot see <code>${missing}</code> from the running function.<br>` +
+            `Most common cause: the variable exists but its <strong>scope is Builds only</strong>. ` +
+            `In Netlify \u2192 stormpath2 \u2192 Environment variables, open <code>NETLIFY_AUTH_TOKEN</code>, ` +
+            `include <strong>Functions</strong> in the scopes (All scopes is fine), save, then ` +
+            `<strong>Trigger deploy</strong>. Site ID is optional now \u2014 Netlify already provides it automatically.`;
           return;
         }
         if (nl.error && !nl.bandwidth && !nl.builds) {
