@@ -64,7 +64,8 @@ import { useProgressRailChrome } from "./nav/useProgressRailChrome";
 import { useRoutePickItems } from "./nav/buildRoutePickItems";
 import { useDriveEtaLabels } from "./nav/useDriveEtaLabels";
 import { useSeriousHazardAutoFly } from "./nav/useSeriousHazardAutoFly";
-import { isDriveOffRouteForwardFraming } from "./nav/driveAlwaysAhead";
+import { isDriveOffRouteForwardFraming, lockedRouteShouldAvoidMotorway } from "./nav/driveAlwaysAhead";
+import { routeGeometryAgreesWithLocked } from "./nav/lockedRouteGeometryGuard";
 import { unifiedTrafficNarrative } from "./nav/trafficNarrative";
 import {
   TRAFFIC_BYPASS_ENABLED,
@@ -823,12 +824,43 @@ export default function App() {
     return g && g.length >= 2 ? polylineLengthMeters(g) : 0;
   }, [offRouteGuidanceRoute?.geometry]);
 
-  const adoptLockedRouteGeometry = useCallback((geometry: LngLat[]) => {
-    navigationGuidanceGeometryRef.current = geometry.map(([a, b]) => [a, b] as LngLat);
-    navGoGeometryRef.current = navigationGuidanceGeometryRef.current;
-    setGuidanceGeometryEpoch((n) => n + 1);
-    setAlongHoldResetKey((n) => n + 1);
-  }, []);
+  const adoptLockedRouteGeometry = useCallback(
+    (geometry: LngLat[], opts?: { force?: boolean }) => {
+      if (geometry.length < 2) return;
+      const next = geometry.map(([a, b]) => [a, b] as LngLat);
+      const goGeom = navGoGeometryRef.current;
+      /* Core recalculates from bare origin→dest and used to overwrite a preferred
+       * (often no-interstate) Go lock with highway-fastest. Keep the Go snapshot
+       * frozen unless this is an explicit driver promote / fork (`force`). */
+      if (
+        !opts?.force &&
+        goGeom &&
+        goGeom.length >= 2 &&
+        !routeGeometryAgreesWithLocked(next, goGeom)
+      ) {
+        if (import.meta.env.DEV) {
+          console.info(
+            "[nav] ignored Core route geometry — diverges from Go-locked corridor"
+          );
+        }
+        return;
+      }
+      navigationGuidanceGeometryRef.current = next;
+      if (opts?.force || !goGeom || goGeom.length < 2) {
+        navGoGeometryRef.current = next;
+      }
+      setGuidanceGeometryEpoch((n) => n + 1);
+      setAlongHoldResetKey((n) => n + 1);
+    },
+    []
+  );
+
+  const nativePreferBackroads = useMemo(() => {
+    const lockedId =
+      lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
+    const locked = lockedId ? plan.routes.find((r) => r.id === lockedId) : undefined;
+    return lockedRouteShouldAvoidMotorway(locked, plan.routes);
+  }, [plan.routes, orderedRouteIds, navigationStarted]);
 
   /**
    * iOS Capacitor: Mapbox Navigation Core feeds puck/alongM; DIY snap/off-route pause.
@@ -845,6 +877,7 @@ export default function App() {
     coords: { userLngLat, viaStops, destLngLat },
     onRouteGeometry: adoptLockedRouteGeometry,
     voiceGuidanceEnabled: settingVoiceGuidanceEnabled,
+    preferBackroads: nativePreferBackroads,
   });
 
   const navPosition = useNavigationPosition({
@@ -1952,7 +1985,7 @@ export default function App() {
       setPreviewLegIndex(0);
       lockedNavigationRouteIdRef.current = PERSONAL_FORK_ROUTE_ID;
       onPersonalForkRef.current = true;
-      adoptLockedRouteGeometry(your.geometry);
+      adoptLockedRouteGeometry(your.geometry, { force: true });
       personalForkNav.markCommitted(offer.fork.id);
       personalForkNav.noteAutoCommitAttempted(offer.fork.id);
       resetOffRouteNavigation();

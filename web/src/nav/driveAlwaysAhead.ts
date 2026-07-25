@@ -35,6 +35,32 @@ export function lockedRoutePrefersBackroads(role: RouteRole | undefined | null):
   return role === "hazardSmart" || role === "balanced";
 }
 
+/**
+ * Whether silent Core / DIY replans should avoid motorways for this lock.
+ * Role-based no-interstate/balanced always qualify. Also true when the driver
+ * locked a slower alternate than the plan's fastest leg (preferred trail / area
+ * routes often promote that blue preview without changing the role tag).
+ */
+export function lockedRouteShouldAvoidMotorway(
+  locked: { id: string; role?: RouteRole | null; baseEtaMinutes?: number } | null | undefined,
+  planRoutes: readonly { id: string; baseEtaMinutes?: number }[]
+): boolean {
+  if (!locked) return false;
+  if (lockedRoutePrefersBackroads(locked.role)) return true;
+  if (planRoutes.length < 2) return false;
+  let fastestId = planRoutes[0]!.id;
+  let fastestEta = planRoutes[0]!.baseEtaMinutes;
+  for (const r of planRoutes) {
+    const eta = r.baseEtaMinutes;
+    if (eta == null || !Number.isFinite(eta)) continue;
+    if (fastestEta == null || !Number.isFinite(fastestEta) || eta < fastestEta) {
+      fastestEta = eta;
+      fastestId = r.id;
+    }
+  }
+  return locked.id !== fastestId;
+}
+
 export function isDriveAlwaysAheadView(viewMode: string): boolean {
   return viewMode === "drive";
 }

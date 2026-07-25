@@ -85,6 +85,8 @@ export function useNativeNavSession(opts: {
   simulate?: boolean;
   /** Info → Voice prompts; must mute Mapbox RouteVoiceController when false. */
   voiceGuidanceEnabled?: boolean;
+  /** Prefer no-interstate when the Go-locked leg is a preferred / slower alternate. */
+  preferBackroads?: boolean;
 }) {
   const {
     accessToken,
@@ -94,9 +96,12 @@ export function useNativeNavSession(opts: {
     onSessionEnded,
     simulate,
     voiceGuidanceEnabled = false,
+    preferBackroads = false,
   } = opts;
   const voiceGuidanceEnabledRef = useRef(voiceGuidanceEnabled);
   voiceGuidanceEnabledRef.current = voiceGuidanceEnabled;
+  const preferBackroadsRef = useRef(preferBackroads);
+  preferBackroadsRef.current = preferBackroads;
 
   const [nativeNavActive, setNativeNavActive] = useState(false);
   const [position, setPosition] = useState<NavigationPositionState | null>(null);
@@ -207,6 +212,7 @@ export function useNativeNavSession(opts: {
         coordinates,
         simulate: Boolean(simulate),
         voiceEnabled: voiceGuidanceEnabledRef.current,
+        preferBackroads: preferBackroadsRef.current,
       });
       if (!result.ok) {
         await removeListeners();

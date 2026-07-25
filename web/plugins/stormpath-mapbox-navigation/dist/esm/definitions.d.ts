@@ -8,6 +8,8 @@ export type StartActiveGuidanceOptions = {
   simulate?: boolean;
   /** When false, do not attach Mapbox RouteVoiceController (Info → Voice prompts). */
   voiceEnabled?: boolean;
+  /** Match StormPath preferred / no-interstate Go locks — exclude motorways. */
+  preferBackroads?: boolean;
 };
 
 export type NativeNavProgressEvent = {

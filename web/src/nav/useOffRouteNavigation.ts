@@ -26,7 +26,7 @@ import {
   DRIVE_AHEAD_OFF_ROUTE_ENTER_M,
   DRIVE_AHEAD_REROUTE_THROTTLE_MS,
   isDriveAlwaysAheadView,
-  lockedRoutePrefersBackroads,
+  lockedRouteShouldAvoidMotorway,
 } from "./driveAlwaysAhead";
 import { mayMutateLockedRouteGeometry } from "./navigationContract";
 import {
@@ -111,7 +111,7 @@ export interface UseOffRouteNavigationDeps {
   setTapHint: (msg: string | null) => void;
   setFitTrigger: (updater: (prev: number) => number) => void;
   /** Updates full guidance geometry after the driver adopts a new locked path. */
-  adoptLockedRouteGeometry: (geometry: LngLat[]) => void;
+  adoptLockedRouteGeometry: (geometry: LngLat[], opts?: { force?: boolean }) => void;
   viewModeRef: MutableRefObject<MapViewMode>;
   /**
    * When true, driver is following a learned personal fork — suppress main-corridor
@@ -382,6 +382,10 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         lateralM: lateralNow > 0 ? lateralNow : undefined,
         bearingDeg:
           bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
+        preferBackroads: lockedRouteShouldAvoidMotorway(
+          planRef.current.routes.find((r) => r.id === lockedId),
+          planRef.current.routes
+        ),
       });
       if (epochAtStart !== routeGraphEpochRef.current) return;
       if (!pollSessionRef.current.offRouteLatched || autoRejoinGuidanceRouteIdRef.current) {
@@ -522,6 +526,10 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           lateralM: lateralNow > 0 ? lateralNow : undefined,
           bearingDeg:
             bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
+          preferBackroads: lockedRouteShouldAvoidMotorway(
+            plan.routes.find((r) => r.id === lockedId),
+            plan.routes
+          ),
         });
         if (epochAtStart !== routeGraphEpochRef.current) return false;
         if (rejoinRoutes.length > 0) {
@@ -554,7 +562,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         const altIds = rejoinOverlaySlotIds(plan, lockedId);
 
         const lockedRoute = plan.routes.find((r) => r.id === lockedId);
-        const preferBackroads = lockedRoutePrefersBackroads(lockedRoute?.role);
+        const preferBackroads = lockedRouteShouldAvoidMotorway(lockedRoute, plan.routes);
         const remainingVias = remainingViaStops(viaStops, activeViaIndex);
         const viaCoords = remainingVias.map((s) => s.lngLat);
         const destLegs = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
@@ -682,8 +690,8 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     if (!lockedId || !navigationStartedRef.current || !mapboxToken) return false;
 
     const lockedRoute = planRef.current.routes.find((r) => r.id === lockedId);
-    const preferBackroads = lockedRoutePrefersBackroads(lockedRoute?.role);
-    const preserveRole = lockedRoute?.role ?? "fastest";
+    const preferBackroads = lockedRouteShouldAvoidMotorway(lockedRoute, planRef.current.routes);
+    const preserveRole = lockedRoute?.role ?? (preferBackroads ? "hazardSmart" : "fastest");
 
     altRoutesFetchAbortRef.current?.abort();
     const fetchCtrl = new AbortController();
@@ -735,7 +743,9 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
             : r
         ),
       }));
-      adoptLockedRouteGeometry(leg.geometry.map(([a, b]) => [a, b] as LngLat));
+      adoptLockedRouteGeometry(leg.geometry.map(([a, b]) => [a, b] as LngLat), {
+        force: true,
+      });
       applyPollSession(resetOffRoutePollSession(pollSessionRef.current));
       offRouteRerouteFailStreakRef.current = 0;
       setFitTrigger((n) => n + 1);

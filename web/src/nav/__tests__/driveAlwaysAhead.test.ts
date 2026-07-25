@@ -5,6 +5,7 @@ import {
   DRIVE_AHEAD_OFF_ROUTE_EXIT_M,
   isDriveOffRouteForwardFraming,
   lockedRoutePrefersBackroads,
+  lockedRouteShouldAvoidMotorway,
 } from "../driveAlwaysAhead";
 
 describe("isDriveOffRouteForwardFraming", () => {
@@ -74,5 +75,17 @@ describe("drive always-ahead thresholds", () => {
     expect(lockedRoutePrefersBackroads("balanced")).toBe(true);
     expect(lockedRoutePrefersBackroads("fastest")).toBe(false);
     expect(lockedRoutePrefersBackroads(null)).toBe(false);
+  });
+
+  it("also avoids motorways when a slower preferred leg is locked without a backroads role", () => {
+    expect(
+      lockedRouteShouldAvoidMotorway(
+        { id: "r-b", role: "fastest", baseEtaMinutes: 45 },
+        [
+          { id: "r-a", baseEtaMinutes: 32 },
+          { id: "r-b", baseEtaMinutes: 45 },
+        ]
+      )
+    ).toBe(true);
   });
 });

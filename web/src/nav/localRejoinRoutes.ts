@@ -38,6 +38,8 @@ export async function fetchLocalRejoinRoutes(opts: {
   speedMps?: number;
   lateralM?: number;
   bearingDeg?: number | null;
+  /** Keep no-interstate / preferred corridors off motorways on the rejoin stub. */
+  preferBackroads?: boolean;
 }): Promise<LocalRejoinFetchResult> {
   const {
     accessToken,
@@ -52,6 +54,7 @@ export async function fetchLocalRejoinRoutes(opts: {
     speedMps,
     lateralM,
     bearingDeg,
+    preferBackroads = false,
   } = opts;
 
   if (lockedGeometry.length < 2) {
@@ -79,6 +82,7 @@ export async function fetchLocalRejoinRoutes(opts: {
       rejoinShufflePass: shuffle,
       singleRouteFromPosition: true,
       forwardFirst: true,
+      preferBackroads,
       bearingDeg:
         bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
     });

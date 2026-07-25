@@ -3,7 +3,11 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type { MutableRefObject } from "react";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { HomeMapFraming } from "../map/homeMapFraming";
-import { resolveIdleHomeFraming } from "../map/homeMapFraming";
+import {
+  IDLE_HOME_TRAIL_BOUNDS_WAIT_MS,
+  resolveIdleHomeCameraAction,
+  resolveIdleHomeFraming,
+} from "../map/homeMapFraming";
 import type { HomePuckFollowMode } from "../map/homePuckFollow";
 import type { TripStop } from "../nav/routeWaypoints";
 import {
@@ -2498,14 +2502,21 @@ function DriveMapInner({
   /** Idle home (no trip): frame on My location or trail area; retry until GPS + style are ready. */
   const idleHomeAppliedRef = useRef(false);
   const hadTrailBoundsRef = useRef(false);
+  /** Once we fit the breadcrumb travel area, don't yank to street zoom if Plus/bounds flicker. */
+  const idleHomeActivityAreaLatchedRef = useRef(false);
+  const idleHomeTrailWaitDeadlineRef = useRef(0);
   useEffect(() => {
     if (routes.length > 0 || navigationStarted || viewMode === "drive") {
       idleHomeAppliedRef.current = false;
+      idleHomeActivityAreaLatchedRef.current = false;
+      idleHomeTrailWaitDeadlineRef.current = 0;
     }
   }, [viewMode, routes.length, navigationStarted]);
 
   useEffect(() => {
     idleHomeAppliedRef.current = false;
+    idleHomeActivityAreaLatchedRef.current = false;
+    idleHomeTrailWaitDeadlineRef.current = 0;
   }, [idleHomeMapFraming]);
 
   useEffect(() => {
@@ -2521,7 +2532,11 @@ function DriveMapInner({
 
   useEffect(() => {
     const hasBounds = activityTrailPlanningBounds != null;
-    if (hasBounds && !hadTrailBoundsRef.current && idleHomeMapFraming === "auto") {
+    if (
+      hasBounds &&
+      !hadTrailBoundsRef.current &&
+      (idleHomeMapFraming === "auto" || idleHomeMapFraming === "activity_area")
+    ) {
       idleHomeAppliedRef.current = false;
     }
     hadTrailBoundsRef.current = hasBounds;
@@ -2533,6 +2548,10 @@ function DriveMapInner({
     if (viewMode !== "route" && viewMode !== "topdown") return;
     if (routes.length > 0 || navigationStarted) return;
 
+    if (idleHomeTrailWaitDeadlineRef.current === 0) {
+      idleHomeTrailWaitDeadlineRef.current = performance.now() + IDLE_HOME_TRAIL_BOUNDS_WAIT_MS;
+    }
+
     const tryApplyIdleHome = (): boolean => {
       if (idleHomeAppliedRef.current) return true;
       if (userExploringRef.current) return false;
@@ -2543,6 +2562,19 @@ function DriveMapInner({
         if (!map.isStyleLoaded()) return false;
       } catch {
         return false;
+      }
+
+      const action = resolveIdleHomeCameraAction({
+        pref: idleHomeMapFraming,
+        trailBounds: activityTrailPlanningBounds,
+        nowMs: performance.now(),
+        waitDeadlineMs: idleHomeTrailWaitDeadlineRef.current,
+        activityAreaLatched: idleHomeActivityAreaLatchedRef.current,
+      });
+      if (action === "defer") return false;
+      if (action === "hold_latched") {
+        idleHomeAppliedRef.current = true;
+        return true;
       }
 
       const framing = resolveIdleHomeFraming(idleHomeMapFraming, activityTrailPlanningBounds);
@@ -2565,6 +2597,7 @@ function DriveMapInner({
           bearing: 0,
           essential: true,
         });
+        if (ok) idleHomeActivityAreaLatchedRef.current = true;
       } else if (viewMode === "topdown") {
         topdownZoomRef.current = ROUTE_VIEW_PLANNING_STREET_ZOOM;
         ok = safeFlyTo(map, {

@@ -59,6 +59,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let simulate = call.getBool("simulate") ?? false
         let voice = call.getBool("voiceEnabled") ?? false
+        let preferBackroads = call.getBool("preferBackroads") ?? false
 
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -67,6 +68,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                 coordinates: coordinates,
                 simulate: simulate,
                 voiceEnabled: voice,
+                preferBackroads: preferBackroads,
                 call: call
             )
         }
@@ -93,6 +95,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         coordinates: [CLLocationCoordinate2D],
         simulate: Bool,
         voiceEnabled: Bool,
+        preferBackroads: Bool,
         call: CAPPluginCall
     ) async {
         tearDownSession(emitCancelled: false)
@@ -108,6 +111,11 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let mapboxNavigation = provider.mapboxNavigation
         let options = NavigationRouteOptions(coordinates: coordinates)
+        // Honor StormPath preferred / no-interstate Go locks — otherwise Core
+        // recalculates bare origin→dest as highway-fastest and yanks the blue line.
+        if preferBackroads {
+            options.roadClassesToAvoid = .motorway
+        }
 
         do {
             let navigationRoutes = try await mapboxNavigation

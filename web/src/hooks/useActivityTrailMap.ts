@@ -99,7 +99,10 @@ export function useActivityTrailMap(deps: UseActivityTrailMapDeps): UseActivityT
     ]
   );
 
-  const idleHomeMapFraming: HomeMapFraming = isPlus ? homeMapFraming : "my_location";
+  /** Prefer the saved home framing even before Plus settles — Basic has no trail bounds,
+   *  so resolveIdleHomeFraming still lands on my_location. Forcing "my_location" while
+   *  isPlus flickers was causing a street-zoom flash after the travel area framed. */
+  const idleHomeMapFraming: HomeMapFraming = homeMapFraming;
 
   return {
     activityTrailGeoJsonForMap,

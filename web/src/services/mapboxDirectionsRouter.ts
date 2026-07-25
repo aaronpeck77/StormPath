@@ -836,9 +836,11 @@ export async function collectMapboxRouteVariants(
       signal
     );
     const sorted = sortRoutesByDurationAsc(data.routes ?? []);
+    const fromPosRole = opts.preferBackroads ? "hazardSmart" : "fastest";
+    const fromPosLabel = opts.preferBackroads ? "No interstate" : "Main";
     const navRoutes: NavRoute[] = [];
     for (const raw of sorted) {
-      const nav = routeFromDirectionsApi(raw, "r-a", "fastest", "Main", {
+      const nav = routeFromDirectionsApi(raw, "r-a", fromPosRole, fromPosLabel, {
         skipGeometryNormalize: true,
       });
       if (nav) navRoutes.push(nav);
