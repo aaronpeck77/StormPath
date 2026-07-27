@@ -47,6 +47,7 @@ export function resolveNavigationRouteIds(input: {
   }
 
   /* Route / topdown: compare A/B/C on the map without changing turn-by-turn guidance.
+   * Off-route picks adopt via resolveNavigatingRouteSelect (promote) so Drive matches.
    * Guidance still follows the rejoin stub when active so banner/ETA stay consistent. */
   if (followRejoin) {
     return { guidanceRouteId: temp!, lineFocusId: previewId || temp! };

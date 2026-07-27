@@ -26,6 +26,7 @@ import { useNativeNavSession } from "./nav/useNativeNavSession";
 import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
 import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
 import { resolveNavigationRouteIds } from "./nav/navigationRouteFocus";
+import { resolveNavigatingRouteSelect } from "./nav/navigatingRouteSelect";
 import {
   loadReturnTripLeg,
   shortenReturnTripLabel,
@@ -1023,6 +1024,7 @@ export default function App() {
     isPlus,
     settingStormEnabled,
     learnEnabled,
+    headingDeg: heading,
     orderedRouteIds,
     planRoutesLength: plan.routes.length,
     lockedNavigationRouteIdRef,
@@ -2015,17 +2017,69 @@ export default function App() {
     commitPersonalFork(personalForkNav.offer.fork.id);
   }, [personalForkNav.shouldAutoCommit, personalForkNav.offer, commitPersonalFork]);
 
-  /** Route view / map view while navigating: preview A/B/C without changing active guidance. */
+  /**
+   * Route / map view while navigating: picking a leg adopts it for Drive too.
+   * Preview-only left Drive on the old lock (often behind the puck) with no line.
+   */
   const handlePreviewRouteSelect = useCallback(
     (id: string) => {
-      if (!plan.routes.some((r) => r.id === id)) return;
+      const picked = plan.routes.find((r) => r.id === id);
+      if (!picked) return;
+
+      const action = resolveNavigatingRouteSelect({
+        navigationStarted,
+        selectedId: id,
+        lockedRouteId: lockedNavigationRouteIdRef.current,
+        temporaryGuidanceRouteId: autoRejoinGuidanceRouteId,
+        offRouteChoiceActive:
+          offRouteLatched || offRouteHoldPreviewActive || Boolean(autoRejoinGuidanceRouteId),
+      });
+
+      if (action.type === "adopt") {
+        handlePromoteRouteToPrimary(id);
+        if (picked.geometry?.length >= 2) {
+          adoptLockedRouteGeometry(
+            picked.geometry.map(([a, b]) => [a, b] as LngLat),
+            { force: true }
+          );
+        }
+        resetOffRouteNavigation();
+        setFitTrigger((n) => n + 1);
+        setTapHint("Following this route.");
+        window.setTimeout(() => setTapHint(null), 4000);
+        return;
+      }
+
+      if (action.type === "return_to_lock") {
+        clearDetourGuidance();
+        resetOffRouteNavigation();
+        const i = orderedRouteIds.indexOf(action.lockedId);
+        if (i >= 0) setPreviewLegIndex(i);
+        setFitTrigger((n) => n + 1);
+        setTapHint("Back on your original route.");
+        window.setTimeout(() => setTapHint(null), 4000);
+        return;
+      }
+
       const i = orderedRouteIds.indexOf(id);
       if (i >= 0) setPreviewLegIndex(i);
       if (!navigationStarted || viewMode === "route" || viewMode === "topdown") {
         setFitTrigger((n) => n + 1);
       }
     },
-    [plan.routes, orderedRouteIds, navigationStarted, viewMode]
+    [
+      plan.routes,
+      orderedRouteIds,
+      navigationStarted,
+      viewMode,
+      autoRejoinGuidanceRouteId,
+      offRouteLatched,
+      offRouteHoldPreviewActive,
+      handlePromoteRouteToPrimary,
+      adoptLockedRouteGeometry,
+      resetOffRouteNavigation,
+      clearDetourGuidance,
+    ]
   );
 
   const handleTollContinue = useCallback(() => {

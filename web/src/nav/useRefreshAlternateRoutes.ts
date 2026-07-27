@@ -3,6 +3,7 @@ import { navigationPrimaryRouteIdForMerge } from "./navigationRouteFocus";
 import { mergePlanPreservingPrimary } from "./mergePlanRoutes";
 import { buildMockTripBetween } from "./emptyTrip";
 import { collectMapboxRouteVariants } from "../services/mapboxDirectionsRouter";
+import { filterForwardRejoinRoutes } from "./detourRejoin";
 import type { LngLat, TripPlan } from "./types";
 import type { MapViewMode } from "../ui/driveMapTypes";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
@@ -20,6 +21,8 @@ export type UseRefreshAlternateRoutesDeps = {
   isPlus: boolean;
   settingStormEnabled: boolean;
   learnEnabled: boolean;
+  /** Travel heading — drop U-turn / behind-puck B/C stubs from refresh. */
+  headingDeg?: number | null;
   orderedRouteIds: string[];
   planRoutesLength: number;
   lockedNavigationRouteIdRef: MutableRefObject<string | null>;
@@ -45,6 +48,7 @@ export function useRefreshAlternateRoutes(
     isPlus,
     settingStormEnabled,
     learnEnabled,
+    headingDeg,
     orderedRouteIds,
     planRoutesLength,
     lockedNavigationRouteIdRef,
@@ -78,21 +82,28 @@ export function useRefreshAlternateRoutes(
             maxRoutes: isPlus ? 2 : 1,
             allowLocalTripThirdRoute: false,
             preferThreeRoutes: false,
+            forwardFirst: true,
+            bearingDeg:
+              headingDeg != null && Number.isFinite(headingDeg) ? headingDeg : undefined,
             stormAlerts: stormAlertsForRouting,
             radarAvoidanceEnabled: isPlus && settingStormEnabled,
             trailRoutePersonalization: isPlus && learnEnabled,
           });
-          if (fresh.length === 0) return;
+          /* Never offer U-turn / reverse stubs the driver already left behind. */
+          const forward = filterForwardRejoinRoutes(fresh, userLngLat, headingDeg);
+          if (forward.length === 0) return;
           if (epochAtStart !== routeGraphEpochRef.current) return;
-          setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, fresh));
+          setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, forward));
         } else {
           const mock = buildMockTripBetween(
             userLngLat,
             destLngLat,
             destinationLabel.trim() || "Destination"
           );
+          const forward = filterForwardRejoinRoutes(mock.routes, userLngLat, headingDeg);
+          if (forward.length === 0) return;
           if (epochAtStart !== routeGraphEpochRef.current) return;
-          setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, mock.routes));
+          setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, forward));
         }
       } catch {
         /* Offline / Mapbox errors — keep prior B/C */
@@ -114,6 +125,7 @@ export function useRefreshAlternateRoutes(
       isPlus,
       settingStormEnabled,
       learnEnabled,
+      headingDeg,
       lockedNavigationRouteIdRef,
       routeGraphEpochRef,
       altRoutesRefreshInFlightRef,

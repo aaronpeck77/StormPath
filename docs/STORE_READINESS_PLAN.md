@@ -6,6 +6,8 @@ Source of truth across chat sessions. Tick boxes as items land. Add notes inline
 
 > **Posture:** TestFlight has 5 beta testers (installed today, 2026‑05‑26). Plus tier on testers comes from `.env.testflight` `VITE_PAY_TIER=plus`. Iteration happens in dev (`npm run dev`); TestFlight only gets a new build after each phase is verified locally.
 
+> **📌 2026-07-24 note (from a SiteBible session):** Was setting up Apple Business, Stripe, and RevenueCat accounts for SiteBible's future multi-seat billing when it came up that **StormPath's Phase 7 is blocked on the exact same RevenueCat account creation step below.** The RevenueCat account being created that night is reusable here — RevenueCat supports multiple "projects" (one per app) under a single account/login, so there's no need for a second signup. Next time you're in a StormPath session: check whether that RevenueCat account already exists, sign in, and create a StormPath project there (bundle id `com.stormpath.app` or whatever `PRODUCT_BUNDLE_IDENTIFIER` currently is) — that's step 2 of the "Remaining" list under Phase 7 below. Steps 1, 3, 4 still need doing regardless (App Store Connect subscription products, pasting the API key into `.env.testflight`/`.env.production`, sandbox testing on a real iPhone).
+
 ---
 
 ## Phase 1 · App Store submission unblockers
@@ -226,7 +228,7 @@ These four steps cannot be done from this codebase — they need your admin acce
   - `stormpath.plus.yearly` — Yearly tier 38 ($39.99/yr) for a ~33% annual discount.
   - Add localized display name + description in English first; Apple's reviewer reads these.
   - Configure the **introductory offer** (free trial recommended — 7 days is industry standard for nav apps) and any promo offers.
-- [ ] **RevenueCat dashboard** (app.revenuecat.com) → Sign up → create a Project for the iOS bundle id `com.stormpath.app` (or whatever your `PRODUCT_BUNDLE_IDENTIFIER` is) → import the App Store products → attach them to an Entitlement named exactly `plus` (lower-case — must match `STORMPATH_PLUS_ENTITLEMENT_ID` in `src/billing/revenueCat.ts`) → create an Offering, add the product packages, mark it **current**.
+- [ ] **RevenueCat dashboard** (app.revenuecat.com) → Sign up → create a Project for the iOS bundle id `com.stormpath.app` (or whatever your `PRODUCT_BUNDLE_IDENTIFIER` is) → import the App Store products → attach them to an Entitlement named exactly `plus` (lower-case — must match `STORMPATH_PLUS_ENTITLEMENT_ID` in `src/billing/revenueCat.ts`) → create an Offering, add the product packages, mark it **current**. *(See the 2026-07-24 note at the top of this doc — you may already have this account from SiteBible setup; just add a new project, don't re-sign-up.)*
 - [ ] **RevenueCat dashboard** → Project Settings → API keys → copy the iOS public SDK key (starts with `appl_`) → paste into `web/.env.testflight` as `VITE_REVENUECAT_API_KEY_IOS=appl_…` (uncomment the line). The same key goes into `web/.env.production` if you create one.
 - [ ] **Sandbox test on a real iPhone** — App Store Connect → Users and Access → Sandbox Testers → create a sandbox account → on iPhone go to Settings → App Store → Sandbox Account → sign in → run a TestFlight build → tap Subscribe in About → Subscription → confirm the purchase sheet appears, the entitlement flips, and Restore works after deleting + reinstalling the app.
 
