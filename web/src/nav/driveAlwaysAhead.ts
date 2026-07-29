@@ -1,8 +1,9 @@
 /**
  * Drive-view navigation: keep the driver on their locked corridor.
- * Lateral leave triggers replan from GPS→destination; when the locked leg is a
- * no-interstate / alternate choice, replans keep `preferBackroads` so Mapbox does
- * not yank the driver onto the highway “fastest” path.
+ * Lateral leave soft-restarts from GPS→destination (same trip, new lock geometry)
+ * so Drive / Route / Map share one ahead line. When the locked leg is a
+ * no-interstate / alternate choice, soft restarts keep `preferBackroads` so Mapbox
+ * does not yank the driver onto the highway “fastest” path.
  *
  * Route / map views keep A/B/C alternates; drive shows only the locked leg.
  *

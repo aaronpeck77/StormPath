@@ -670,14 +670,18 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     ]
   );
 
-  const stayOnThisRoad = useCallback<StayOnThisRoadFn>(async (opts) => {
+  /**
+   * Soft restart: keep destination / vias / trip session, replace locked geometry with a
+   * fresh forward GPS→dest route, and put Drive / Route / Map on that same line.
+   * Not a full Stop — progress rail rebuilds from the new geometry via along reset.
+   */
+  const softRestartRouteFromHere = useCallback<StayOnThisRoadFn>(async (opts) => {
     if (!userLngLat || !destLngLat) return false;
     if (
       navigationStartedRef.current &&
-      !mayMutateLockedRouteGeometry("navigating", "driver_stay_on_road")
+      !mayMutateLockedRouteGeometry("navigating", "off_route_soft_restart")
     ) {
-      /* Locked corridor is frozen — use forward rejoin instead of GPS→dest overwrite. */
-      return recalcRouteFromHere({ silent: opts?.silent });
+      return false;
     }
     if (mapboxToken && !isOnline) {
       if (!opts?.silent) {
@@ -700,6 +704,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setRouting(true);
     setRouteError(null);
     clearDetourGuidance();
+    clearHoldRejoinPreview();
     setOffRouteAwaitingDriverChoice(false);
 
     const epochAtStart = routeGraphEpochRef.current;
@@ -719,7 +724,12 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         stormAlerts: stormAlertsForRouting,
         radarAvoidanceEnabled: isPlus && settingStormEnabled,
       });
-      const leg = fresh[0];
+      const forward = fresh.filter(
+        (r) =>
+          r.geometry.length >= 2 &&
+          !isReverseRejoinRoute(r, userLngLat, bearingDeg)
+      );
+      const leg = forward[0] ?? fresh[0];
       if (!leg?.geometry?.length || epochAtStart !== routeGraphEpochRef.current) return false;
 
       setPlan((prev) => ({
@@ -746,6 +756,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       adoptLockedRouteGeometry(leg.geometry.map(([a, b]) => [a, b] as LngLat), {
         force: true,
       });
+      /* Clean slate on the new corridor — same trip, not a Stop. */
       applyPollSession(resetOffRoutePollSession(pollSessionRef.current));
       offRouteRerouteFailStreakRef.current = 0;
       setFitTrigger((n) => n + 1);
@@ -753,7 +764,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       const voiceLine = opts?.silent ? "Updating your route." : "Following your chosen path.";
       speakNavigationAlert(voiceLine, settingVoiceGuidanceEnabled);
       if (!opts?.silent) {
-        setTapHint("Following your chosen path.");
+        setTapHint("Updated route from here.");
         window.setTimeout(() => setTapHint(null), 5000);
       }
       return true;
@@ -791,6 +802,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     altRoutesRefreshInFlightRef,
     navigationStartedRef,
     clearDetourGuidance,
+    clearHoldRejoinPreview,
     setPlan,
     adoptLockedRouteGeometry,
     applyPollSession,
@@ -801,11 +813,16 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setViewMode,
     settingVoiceGuidanceEnabled,
     planRef,
-    recalcRouteFromHere,
   ]);
+
+  const stayOnThisRoad = useCallback<StayOnThisRoadFn>(
+    async (opts) => softRestartRouteFromHere(opts),
+    [softRestartRouteFromHere]
+  );
 
   const returnToOriginalRoute = useCallback<ReturnToOriginalRouteFn>(() => {
     setOffRouteAwaitingDriverChoice(false);
+    /* Explicit "original route" still tries a forward rejoin stub; soft restart is auto path. */
     void recalcRouteFromHere({ silent: false });
   }, [recalcRouteFromHere]);
 
@@ -819,7 +836,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   }, []);
 
   const executeAutoRecovery = useCallback(
-    async (action: "rejoin" | "replan") => {
+    async (_action: "rejoin" | "replan") => {
       const driveAhead = isDriveAlwaysAheadView(viewModeRef.current);
       const throttleMs = driveAhead ? DRIVE_AHEAD_REROUTE_THROTTLE_MS : OFF_ROUTE_REROUTE_THROTTLE_MS;
       const now = Date.now();
@@ -832,26 +849,17 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       }
       lastAutoRerouteAttemptRef.current = now;
 
-      if (driveAhead) {
-        /* Always forward-rejoin onto the locked corridor — never overwrite locked geometry. */
-        const rejoined = await recalcRouteFromHere({ silent: true });
-        if (!rejoined) markRecoveryFailed();
-        return;
-      }
-
       pollSessionRef.current = {
         ...pollSessionRef.current,
         offRouteChoiceOffered: true,
       };
 
-      if (action === "rejoin" || action === "replan") {
-        const rejoined = await recalcRouteFromHere({ silent: true });
-        if (!rejoined) markRecoveryFailed();
-        return;
-      }
+      /* Soft restart from GPS — same trip, new locked ahead line for Dr/Rt/Mp. */
+      const restarted = await softRestartRouteFromHere({ silent: true });
+      if (!restarted) markRecoveryFailed();
     },
     [
-      recalcRouteFromHere,
+      softRestartRouteFromHere,
       markRecoveryFailed,
       routingRef,
       altRoutesRefreshInFlightRef,

@@ -15,8 +15,9 @@ describe("navigationContract", () => {
     expect(mayChangeLockedRouteId("planning", "go_lock")).toBe(true);
   });
 
-  it("freezes locked leg geometry — silent stay-on-road overwrite is forbidden", () => {
-    expect(mayMutateLockedRouteGeometry("navigating", "driver_stay_on_road")).toBe(false);
+  it("allows soft-restart geometry rewrite while navigating (keeps trip / dest)", () => {
+    expect(mayMutateLockedRouteGeometry("navigating", "off_route_soft_restart")).toBe(true);
+    expect(mayMutateLockedRouteGeometry("navigating", "driver_stay_on_road")).toBe(true);
     expect(mayMutateLockedRouteGeometry("navigating", "driver_promote")).toBe(true);
     expect(mayMutateLockedRouteGeometry("navigating", "go_lock")).toBe(false);
     expect(mayMutateLockedRouteGeometry("planning", "go_lock")).toBe(true);
@@ -34,8 +35,8 @@ describe("navigationContract", () => {
     expect(mayAutoRejoinOverlay("planning")).toBe(false);
   });
 
-  it("requires explicit compare for full GPS→dest overwrite of the locked leg", () => {
-    expect(offRouteFullRerouteRequiresExplicitCompare()).toBe(true);
+  it("does not require compare sheet for off-route soft restart", () => {
+    expect(offRouteFullRerouteRequiresExplicitCompare()).toBe(false);
   });
 
   it("follows a temporary rejoin stub that is not the locked id", () => {
