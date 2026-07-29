@@ -78,8 +78,12 @@ export function useNativeNavSession(opts: {
   accessToken: string;
   navigationStarted: boolean;
   coords: NativeNavSessionCoords;
-  /** When SDK reroutes, adopt geometry into locked guidance corridor. */
-  onRouteGeometry: (geometry: LngLat[]) => void;
+  /**
+   * When SDK starts or reroutes, adopt geometry into the locked guidance corridor.
+   * Mid-trip Core reroutes must use `{ force: true }` — freezing the original Go
+   * polyline leaves Drive with no blue line (alongM is on the new route).
+   */
+  onRouteGeometry: (geometry: LngLat[], opts?: { force?: boolean }) => void;
   /** Optional: arrive / hard error — App may End trip. */
   onSessionEnded?: (reason: "arrived" | "cancelled" | "error", message?: string) => void;
   simulate?: boolean;
@@ -186,7 +190,8 @@ export function useNativeNavSession(opts: {
           const geom = (e.geometry ?? [])
             .filter((p) => Number.isFinite(p.lng) && Number.isFinite(p.lat))
             .map((p) => [p.lng, p.lat] as LngLat);
-          if (geom.length >= 2) onRouteGeometryRef.current(geom);
+          /* Always force — Core's reroute IS the new Go lock for Dr/Rt/Mp. */
+          if (geom.length >= 2) onRouteGeometryRef.current(geom, { force: true });
           const steps = parseNativeTurnSteps(e.turnSteps);
           if (steps.length) setTurnSteps(steps);
         }),

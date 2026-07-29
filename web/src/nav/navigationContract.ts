@@ -6,8 +6,10 @@
  * new locked geometry ahead) so Drive / Route / Map stay on one line — not a full Stop,
  * and not a temporary overlay that only paints in Rt/Mp.
  *
- * Soft restart must preserve the driver's route style (e.g. no-interstate) via
- * preferBackroads — never silently yank a chosen alternate onto Mapbox “fastest.”
+ * Soft restart / Core reroute should preserve route style (e.g. no-interstate) via
+ * preferBackroads when fetching — but once a new corridor is chosen it becomes the
+ * Go lock (`force` adopt). Never keep the old Go polyline frozen while alongM
+ * advances on a different line (that empties the Drive blue line).
  */
 
 export type NavigationPhase = "planning" | "navigating";
@@ -31,10 +33,9 @@ export type RouteCompareIntent =
  * Invariants while `navigationStarted`:
  *
  * 1. `lockedRouteId` never changes except via `driver_promote` or `driver_stop`.
- * 2. Locked leg geometry may soft-restart from GPS when clearly off-route (keeps dest/trip).
- * 3. Route/Map view may show B/C alternates; Drive follows the locked leg after soft restart.
- * 4. B/C alternate legs refresh in Route/Map view only — never replace locked guidance in Drive
- *    unless the driver promotes or soft restart installs a new lock geometry.
+ * 2. Locked leg geometry soft-restarts from GPS (or Core reroute) when off-route — becomes the new Go lock.
+ * 3. After soft restart / Core reroute, Dr/Rt/Mp share that single corridor (stale B/C overlays cleared).
+ * 4. B/C alternate legs may refresh in Route/Map while on-route; they must not leave Drive on a stub.
  * 5. Traffic bypass: offer → compare → explicit confirm only (`trafficBypassFlow.ts`).
  */
 export function mayChangeLockedRouteId(

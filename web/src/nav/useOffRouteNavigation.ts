@@ -3,7 +3,6 @@ import {
   formatDetourRejoinDistanceM,
   isReverseRejoinRoute,
   metersRemainingToRejoinOnLockedRoute,
-  resolveRejoinAlongBasisM,
 } from "./detourRejoin";
 import {
   resolveDrivingRejoinContext,
@@ -11,8 +10,6 @@ import {
   type DrivingRejoinMode,
   type RoadNetworkClass,
 } from "./drivingRejoinContext";
-import { fetchLocalRejoinRoutes } from "./localRejoinRoutes";
-import { mergePlanPreservingPrimary, rejoinOverlaySlotIds } from "./mergePlanRoutes";
 import { remainingViaStops } from "./routeWaypoints";
 import { collectMapboxRouteVariants } from "../services/mapboxDirectionsRouter";
 import { speakNavigationAlert } from "./navigationVoiceAlert";
@@ -29,6 +26,7 @@ import {
   lockedRouteShouldAvoidMotorway,
 } from "./driveAlwaysAhead";
 import { mayMutateLockedRouteGeometry } from "./navigationContract";
+import { planAfterSoftRestartLock } from "./softRestartPlan";
 import {
   OFF_ROUTE_POLL_MS,
   OFF_ROUTE_REROUTE_THROTTLE_MS,
@@ -124,10 +122,7 @@ export type RecalcRouteFromHereFn = (opts?: { silent?: boolean }) => Promise<boo
 export type StayOnThisRoadFn = (opts?: { silent?: boolean }) => Promise<boolean>;
 export type ReturnToOriginalRouteFn = () => void;
 
-/** Throttle hold-phase B/C preview refetches while the recovery ladder waits. */
-const HOLD_REJOIN_PREVIEW_THROTTLE_MS = 28_000;
-
-/** Off-route detection — driver chooses stay on this road vs return to locked route. */
+/** Off-route detection — soft-restarts the locked corridor from GPS when confirmed. */
 export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   const {
     userLngLat,
@@ -163,6 +158,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     destLngLatRef,
     routingRef,
     setPlan,
+    setRouteSlotOrder,
     setViewMode,
     setRouting,
     setRouteError,
@@ -321,352 +317,68 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   }, []);
 
   const prefetchHoldRejoinPreview = useCallback(async () => {
-    if (onPersonalForkRef?.current) return;
-    if (
-      !userLngLat ||
-      !mapboxToken ||
-      !isOnline ||
-      !navigationStartedRef.current ||
-      autoRejoinGuidanceRouteIdRef.current ||
-      holdPreviewFetchInFlightRef.current ||
-      altRoutesRefreshInFlightRef.current ||
-      routingRef.current
-    ) {
-      return;
-    }
+    /* Soft restart owns off-route recovery. Hold-preview B/C overlays left Rt/Mp
+     * with a line while Drive stayed on the frozen Go lock (empty / sideways). */
+  }, []);
 
-    const now = Date.now();
-    if (now - lastHoldPreviewFetchRef.current < HOLD_REJOIN_PREVIEW_THROTTLE_MS) {
-      return;
-    }
-
-    const lockedId = lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
-    const lockedGeom =
-      (lockedId ? planRef.current.routes.find((r) => r.id === lockedId)?.geometry : null) ??
-      guidanceRouteGeomRef.current ??
-      null;
-    if (!lockedId || !lockedGeom || lockedGeom.length < 2) return;
-
-    const epochAtStart = routeGraphEpochRef.current;
-    altRoutesFetchAbortRef.current?.abort();
-    const altFetch = new AbortController();
-    altRoutesFetchAbortRef.current = altFetch;
-    holdPreviewFetchInFlightRef.current = true;
-    lastHoldPreviewFetchRef.current = now;
-
-    try {
-      const lateralNow = lastOffRouteSampleRef.current?.lateralM ?? 0;
-      const bearingDeg = headingRef.current;
-      const failStreak = offRouteRerouteFailStreakRef.current;
-      const liveAlongOnLocked = measureOffRouteLateral(
-        userLngLat,
-        lockedGeom,
-        userAlongGuidanceMRef.current
-      ).alongM;
-      const rejoinAlongBasis = resolveRejoinAlongBasisM({
-        latchedLeaveAlongM: offRouteRejoinAlongMRef.current,
-        liveAlongOnLockedM: liveAlongOnLocked,
-        guidanceAlongM: userAlongGuidanceMRef.current,
-      });
-      const { routes: rejoinRoutes, rejoinAlongM } = await fetchLocalRejoinRoutes({
-        accessToken: mapboxToken,
-        userLngLat,
-        lockedGeometry: lockedGeom,
-        userAlongM: rejoinAlongBasis,
-        plan: planRef.current,
-        primaryId: lockedId,
-        shufflePass: failStreak,
-        signal: altFetch.signal,
-        isPlus,
-        speedMps: speedMpsRef.current ?? undefined,
-        lateralM: lateralNow > 0 ? lateralNow : undefined,
-        bearingDeg:
-          bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
-        preferBackroads: lockedRouteShouldAvoidMotorway(
-          planRef.current.routes.find((r) => r.id === lockedId),
-          planRef.current.routes
-        ),
-      });
-      if (epochAtStart !== routeGraphEpochRef.current) return;
-      if (!pollSessionRef.current.offRouteLatched || autoRejoinGuidanceRouteIdRef.current) {
-        return;
-      }
-      if (rejoinRoutes.length === 0) return;
-
-      setPlan((prev) => mergePlanPreservingPrimary(prev, lockedId, rejoinRoutes));
-      const bestId = rejoinRoutes[0]?.id ?? null;
-      holdRejoinPreviewAlongMRef.current = rejoinAlongM;
-      setHoldRejoinPreviewAlongM(rejoinAlongM);
-      holdRejoinPreviewRouteIdRef.current = bestId;
-      setHoldRejoinPreviewRouteId(bestId);
-      holdRejoinPreviewActiveRef.current = true;
-      setHoldRejoinPreviewActive(true);
-      setFitTrigger((n) => n + 1);
-      if (viewModeRef.current === "drive") {
-        setViewMode("topdown");
-      }
-    } catch (e) {
-      if (!isAbortError(e)) {
-        lastHoldPreviewFetchRef.current = now - HOLD_REJOIN_PREVIEW_THROTTLE_MS + 8_000;
-      }
-    } finally {
-      holdPreviewFetchInFlightRef.current = false;
-    }
-  }, [
-    userLngLat,
-    mapboxToken,
-    isOnline,
-    isPlus,
-    orderedRouteIds,
-    lockedNavigationRouteIdRef,
-    routeGraphEpochRef,
-    altRoutesFetchAbortRef,
-    navigationStartedRef,
-    guidanceRouteGeomRef,
-    speedMpsRef,
-    userAlongGuidanceMRef,
-    headingRef,
-    planRef,
-    routingRef,
-    altRoutesRefreshInFlightRef,
-    setPlan,
-    setFitTrigger,
-    setViewMode,
-    viewModeRef,
-  ]);
-
+  /**
+   * Legacy "follow temp stub" path — now installs that leg as the Go lock so Drive
+   * never paints a second-class overlay while Rt/Mp show a different ahead line.
+   */
   const followDetourRoute = useCallback(
     (id: string, voiceLine?: string) => {
-      if (!plan.routes.some((r) => r.id === id)) return;
+      const stub = planRef.current.routes.find((r) => r.id === id);
       const lockedId = lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
-      if (!navigationStartedRef.current || !lockedId || id === lockedId) return;
-      setAutoRejoinGuidanceRouteId(id);
-      autoRejoinGuidanceRouteIdRef.current = id;
-      holdRejoinPreviewActiveRef.current = false;
-      setHoldRejoinPreviewActive(false);
-      holdRejoinPreviewRouteIdRef.current = null;
-      setHoldRejoinPreviewRouteId(null);
-      pollSessionRef.current = {
-        ...pollSessionRef.current,
-        autoRejoinGuidanceRouteId: id,
-      };
+      if (
+        !navigationStartedRef.current ||
+        !lockedId ||
+        !stub?.geometry ||
+        stub.geometry.length < 2
+      ) {
+        return;
+      }
+      setPlan((prev) =>
+        planAfterSoftRestartLock(prev, lockedId, {
+          geometry: stub.geometry.map(([a, b]) => [a, b] as LngLat),
+          baseEtaMinutes: stub.baseEtaMinutes,
+          turnSteps: stub.turnSteps,
+          routeNotices: stub.routeNotices,
+          routeNoticeAlongMeters: stub.routeNoticeAlongMeters,
+          mapboxIncidents: stub.mapboxIncidents,
+          hasTolls: stub.hasTolls,
+          tollLabels: stub.tollLabels,
+          postedSpeedSamples: stub.postedSpeedSamples,
+          role: stub.role,
+          label: stub.label,
+        })
+      );
+      setRouteSlotOrder(() => [lockedId]);
+      adoptLockedRouteGeometry(stub.geometry.map(([a, b]) => [a, b] as LngLat), {
+        force: true,
+      });
+      clearDetourGuidance();
+      clearHoldRejoinPreview();
+      applyPollSession(resetOffRoutePollSession(pollSessionRef.current));
       setViewMode("drive");
+      setFitTrigger((n) => n + 1);
       if (voiceLine) {
         speakNavigationAlert(voiceLine, settingVoiceGuidanceEnabled);
       }
     },
     [
-      plan.routes,
       orderedRouteIds,
       lockedNavigationRouteIdRef,
       navigationStartedRef,
-      setViewMode,
-      settingVoiceGuidanceEnabled,
-    ]
-  );
-
-  const recalcRouteFromHere = useCallback<RecalcRouteFromHereFn>(
-    async (opts) => {
-      if (!userLngLat || !destLngLat) return false;
-      if (mapboxToken && !isOnline) {
-        if (!opts?.silent) {
-          setTapHint("Offline: route refresh unavailable.");
-          window.setTimeout(() => setTapHint(null), 3500);
-        }
-        return false;
-      }
-      const epochAtStart = routeGraphEpochRef.current;
-      altRoutesFetchAbortRef.current?.abort();
-      const altFetch = new AbortController();
-      altRoutesFetchAbortRef.current = altFetch;
-      altRoutesRefreshInFlightRef.current = true;
-      setRouting(true);
-      setRouteError(null);
-      try {
-        const lockedId = lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
-        const lockedGeom =
-          (lockedId ? plan.routes.find((r) => r.id === lockedId)?.geometry : null) ??
-          guidanceRouteGeomRef.current ??
-          null;
-
-        if (
-          !navigationStartedRef.current ||
-          !lockedId ||
-          !lockedGeom ||
-          lockedGeom.length < 2 ||
-          !mapboxToken
-        ) {
-          return false;
-        }
-
-        const lateralNow = lastOffRouteSampleRef.current?.lateralM ?? 0;
-        const bearingDeg = headingRef.current;
-        const failStreak = offRouteRerouteFailStreakRef.current;
-        const liveAlongOnLocked = measureOffRouteLateral(
-          userLngLat,
-          lockedGeom,
-          userAlongGuidanceMRef.current
-        ).alongM;
-        const rejoinAlongBasis = resolveRejoinAlongBasisM({
-          latchedLeaveAlongM: offRouteRejoinAlongMRef.current,
-          liveAlongOnLockedM: liveAlongOnLocked,
-          guidanceAlongM: userAlongGuidanceMRef.current,
-        });
-        const { routes: rejoinRoutes, rejoinAlongM } = await fetchLocalRejoinRoutes({
-          accessToken: mapboxToken,
-          userLngLat,
-          lockedGeometry: lockedGeom,
-          userAlongM: rejoinAlongBasis,
-          plan,
-          primaryId: lockedId,
-          shufflePass: failStreak,
-          signal: altFetch.signal,
-          isPlus,
-          speedMps: speedMpsRef.current ?? undefined,
-          lateralM: lateralNow > 0 ? lateralNow : undefined,
-          bearingDeg:
-            bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
-          preferBackroads: lockedRouteShouldAvoidMotorway(
-            plan.routes.find((r) => r.id === lockedId),
-            plan.routes
-          ),
-        });
-        if (epochAtStart !== routeGraphEpochRef.current) return false;
-        if (rejoinRoutes.length > 0) {
-          setPlan((prev) => mergePlanPreservingPrimary(prev, lockedId, rejoinRoutes));
-          setFitTrigger((n) => n + 1);
-          offRouteRerouteFailStreakRef.current = 0;
-          detourRejoinAlongMRef.current = rejoinAlongM;
-          setDetourRejoinAlongM(rejoinAlongM);
-          pollSessionRef.current = {
-            ...pollSessionRef.current,
-            detourRejoinAlongM: rejoinAlongM,
-            offRouteChoiceOffered: false,
-            offRouteRecoveryLastFailMs: 0,
-          };
-          const bestId = rejoinRoutes[0]?.id ?? null;
-          if (bestId) {
-            const voiceLine = opts?.silent
-              ? "Rejoining your route ahead."
-              : "Returning to your original route.";
-            followDetourRoute(bestId, voiceLine);
-            if (!opts?.silent) {
-              setTapHint("Returning to your route.");
-              window.setTimeout(() => setTapHint(null), 6000);
-            }
-          }
-          return true;
-        }
-
-        /* No forward rejoin — temporary GPS→dest overlay; locked corridor stays frozen. */
-        const altIds = rejoinOverlaySlotIds(plan, lockedId);
-
-        const lockedRoute = plan.routes.find((r) => r.id === lockedId);
-        const preferBackroads = lockedRouteShouldAvoidMotorway(lockedRoute, plan.routes);
-        const remainingVias = remainingViaStops(viaStops, activeViaIndex);
-        const viaCoords = remainingVias.map((s) => s.lngLat);
-        const destLegs = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
-          via: viaCoords.length > 0 ? viaCoords : undefined,
-          signal: altFetch.signal,
-          maxRoutes: isPlus ? 2 : 1,
-          preferThreeRoutes: false,
-          allowLocalTripThirdRoute: false,
-          skipStormLegRefinement: true,
-          singleRouteFromPosition: true,
-          forwardFirst: true,
-          preferBackroads,
-          bearingDeg:
-            bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
-          stormAlerts: stormAlertsForRouting,
-          radarAvoidanceEnabled: isPlus && settingStormEnabled,
-        });
-        if (epochAtStart !== routeGraphEpochRef.current) return false;
-
-        const forwardDest = destLegs.filter(
-          (r) =>
-            r.geometry.length >= 2 &&
-            !isReverseRejoinRoute(r, userLngLat, bearingDeg)
-        );
-        if (forwardDest.length === 0) {
-          offRouteRerouteFailStreakRef.current += 1;
-          if (!opts?.silent) {
-            setTapHint("Could not find a forward path — keep going; we'll try again.");
-            window.setTimeout(() => setTapHint(null), 6000);
-          }
-          return false;
-        }
-
-        const overlayRoutes = forwardDest.slice(0, altIds.length).map((leg, i) => ({
-          ...leg,
-          id: altIds[i]!,
-          label: i === 0 ? "Detour" : "Detour C",
-        }));
-        setPlan((prev) => mergePlanPreservingPrimary(prev, lockedId, overlayRoutes));
-        setFitTrigger((n) => n + 1);
-        offRouteRerouteFailStreakRef.current = 0;
-        /* Clear when driver returns to the locked corridor near current progress. */
-        detourRejoinAlongMRef.current = rejoinAlongBasis;
-        setDetourRejoinAlongM(rejoinAlongBasis);
-        pollSessionRef.current = {
-          ...pollSessionRef.current,
-          detourRejoinAlongM: rejoinAlongBasis,
-          offRouteChoiceOffered: false,
-          offRouteRecoveryLastFailMs: 0,
-        };
-        const bestId = overlayRoutes[0]?.id ?? null;
-        if (bestId) {
-          const voiceLine = opts?.silent
-            ? "Continuing toward your destination."
-            : "Can't rejoin ahead — continuing forward.";
-          followDetourRoute(bestId, voiceLine);
-          if (!opts?.silent) {
-            setTapHint("Continuing forward — original route stays locked.");
-            window.setTimeout(() => setTapHint(null), 6000);
-          }
-        }
-        return true;
-      } catch (e) {
-        if (isAbortError(e)) return false;
-        const msg = routeFetchUserMessage(e) ?? (e instanceof Error ? e.message : String(e));
-        setRouteError(msg);
-        offRouteRerouteFailStreakRef.current += 1;
-        if (!opts?.silent) {
-          setTapHint("Route recovery failed — still following your chosen path.");
-          window.setTimeout(() => setTapHint(null), 6000);
-        }
-        return false;
-      } finally {
-        setRouting(false);
-        altRoutesRefreshInFlightRef.current = false;
-      }
-    },
-    [
-      userLngLat,
-      destLngLat,
-      orderedRouteIds,
-      plan,
-      mapboxToken,
-      isOnline,
-      isPlus,
-      viaStops,
-      activeViaIndex,
-      stormAlertsForRouting,
-      settingStormEnabled,
-      lockedNavigationRouteIdRef,
-      routeGraphEpochRef,
-      altRoutesFetchAbortRef,
-      altRoutesRefreshInFlightRef,
-      navigationStartedRef,
-      guidanceRouteGeomRef,
-      speedMpsRef,
-      userAlongGuidanceMRef,
-      headingRef,
+      planRef,
       setPlan,
-      setRouting,
-      setRouteError,
-      setTapHint,
+      setRouteSlotOrder,
+      adoptLockedRouteGeometry,
+      clearDetourGuidance,
+      clearHoldRejoinPreview,
+      applyPollSession,
+      setViewMode,
       setFitTrigger,
-      followDetourRoute,
+      settingVoiceGuidanceEnabled,
     ]
   );
 
@@ -732,27 +444,23 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       const leg = forward[0] ?? fresh[0];
       if (!leg?.geometry?.length || epochAtStart !== routeGraphEpochRef.current) return false;
 
-      setPlan((prev) => ({
-        ...prev,
-        routes: prev.routes.map((r) =>
-          r.id === lockedId
-            ? {
-                ...r,
-                role: preserveRole,
-                label: r.label?.trim() ? r.label : preferBackroads ? "No interstate" : "Main",
-                geometry: leg.geometry,
-                baseEtaMinutes: leg.baseEtaMinutes,
-                turnSteps: leg.turnSteps,
-                routeNotices: leg.routeNotices ?? r.routeNotices,
-                routeNoticeAlongMeters: leg.routeNoticeAlongMeters ?? r.routeNoticeAlongMeters,
-                mapboxIncidents: leg.mapboxIncidents ?? r.mapboxIncidents,
-                hasTolls: leg.hasTolls ?? r.hasTolls,
-                tollLabels: leg.tollLabels ?? r.tollLabels,
-                postedSpeedSamples: leg.postedSpeedSamples ?? r.postedSpeedSamples,
-              }
-            : r
-        ),
-      }));
+      /* One Go-like lock — drop stale B/C / rejoin overlays that leave Drive empty. */
+      setPlan((prev) =>
+        planAfterSoftRestartLock(prev, lockedId, {
+          geometry: leg.geometry,
+          baseEtaMinutes: leg.baseEtaMinutes,
+          turnSteps: leg.turnSteps,
+          routeNotices: leg.routeNotices,
+          routeNoticeAlongMeters: leg.routeNoticeAlongMeters,
+          mapboxIncidents: leg.mapboxIncidents,
+          hasTolls: leg.hasTolls,
+          tollLabels: leg.tollLabels,
+          postedSpeedSamples: leg.postedSpeedSamples,
+          role: preserveRole,
+          label: preferBackroads ? "No interstate" : "Main",
+        })
+      );
+      setRouteSlotOrder(() => [lockedId]);
       adoptLockedRouteGeometry(leg.geometry.map(([a, b]) => [a, b] as LngLat), {
         force: true,
       });
@@ -804,6 +512,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     clearDetourGuidance,
     clearHoldRejoinPreview,
     setPlan,
+    setRouteSlotOrder,
     adoptLockedRouteGeometry,
     applyPollSession,
     setRouting,
@@ -815,6 +524,9 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     planRef,
   ]);
 
+  /** @deprecated Overlay rejoin removed — same as soft restart (new Go lock from GPS). */
+  const recalcRouteFromHere = softRestartRouteFromHere;
+
   const stayOnThisRoad = useCallback<StayOnThisRoadFn>(
     async (opts) => softRestartRouteFromHere(opts),
     [softRestartRouteFromHere]
@@ -822,9 +534,8 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
 
   const returnToOriginalRoute = useCallback<ReturnToOriginalRouteFn>(() => {
     setOffRouteAwaitingDriverChoice(false);
-    /* Explicit "original route" still tries a forward rejoin stub; soft restart is auto path. */
-    void recalcRouteFromHere({ silent: false });
-  }, [recalcRouteFromHere]);
+    void softRestartRouteFromHere({ silent: false });
+  }, [softRestartRouteFromHere]);
 
   const markRecoveryFailed = useCallback(() => {
     pollSessionRef.current = {

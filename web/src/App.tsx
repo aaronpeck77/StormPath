@@ -27,6 +27,7 @@ import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
 import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
 import { resolveNavigationRouteIds } from "./nav/navigationRouteFocus";
 import { resolveNavigatingRouteSelect } from "./nav/navigatingRouteSelect";
+import { planAfterSoftRestartLock } from "./nav/softRestartPlan";
 import {
   loadReturnTripLeg,
   shortenReturnTripLabel,
@@ -830,9 +831,10 @@ export default function App() {
       if (geometry.length < 2) return;
       const next = geometry.map(([a, b]) => [a, b] as LngLat);
       const goGeom = navGoGeometryRef.current;
-      /* Core recalculates from bare origin→dest and used to overwrite a preferred
-       * (often no-interstate) Go lock with highway-fastest. Keep the Go snapshot
-       * frozen unless this is an explicit driver promote / fork (`force`). */
+      /* Without force: reject unsolicited Core "fastest" that would yank a preferred
+       * Go lock at session start. Mid-trip Core reroutes / soft restarts MUST pass
+       * force — otherwise alongM advances on the new line while the blue line stays
+       * frozen on the old corridor (empty Drive line). */
       if (
         !opts?.force &&
         goGeom &&
@@ -867,6 +869,35 @@ export default function App() {
    * iOS Capacitor: Mapbox Navigation Core feeds puck/alongM; DIY snap/off-route pause.
    * Web / Netlify: hook is inert — DIY nav unchanged. Dr/Mp/Rt stay one DriveMap.
    */
+  /**
+   * iOS Core start/reroute: install geometry as a new Go lock (force) and collapse the
+   * plan to that single corridor so Dr/Rt/Mp never keep a stale behind-you blue line.
+   */
+  const onNativeRouteGeometry = useCallback(
+    (geometry: LngLat[], opts?: { force?: boolean }) => {
+      if (geometry.length < 2) return;
+      adoptLockedRouteGeometry(geometry, { force: opts?.force ?? true });
+      const lockedId =
+        lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? primaryRouteId;
+      if (!lockedId) return;
+      setPlan((prev) =>
+        planAfterSoftRestartLock(prev, lockedId, {
+          geometry: geometry.map(([a, b]) => [a, b] as LngLat),
+        })
+      );
+      setRouteSlotOrder([lockedId]);
+      setPreviewLegIndex(0);
+    },
+    [
+      adoptLockedRouteGeometry,
+      orderedRouteIds,
+      primaryRouteId,
+      setPlan,
+      setRouteSlotOrder,
+      setPreviewLegIndex,
+    ]
+  );
+
   const {
     nativeNavActive,
     position: nativeNavPosition,
@@ -876,7 +907,7 @@ export default function App() {
     accessToken: env.mapboxToken,
     navigationStarted,
     coords: { userLngLat, viaStops, destLngLat },
-    onRouteGeometry: adoptLockedRouteGeometry,
+    onRouteGeometry: onNativeRouteGeometry,
     voiceGuidanceEnabled: settingVoiceGuidanceEnabled,
     preferBackroads: nativePreferBackroads,
   });
