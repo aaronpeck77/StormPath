@@ -322,67 +322,6 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   }, []);
 
   /**
-   * Legacy "follow temp stub" path — now installs that leg as the Go lock so Drive
-   * never paints a second-class overlay while Rt/Mp show a different ahead line.
-   */
-  const followDetourRoute = useCallback(
-    (id: string, voiceLine?: string) => {
-      const stub = planRef.current.routes.find((r) => r.id === id);
-      const lockedId = lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
-      if (
-        !navigationStartedRef.current ||
-        !lockedId ||
-        !stub?.geometry ||
-        stub.geometry.length < 2
-      ) {
-        return;
-      }
-      setPlan((prev) =>
-        planAfterSoftRestartLock(prev, lockedId, {
-          geometry: stub.geometry.map(([a, b]) => [a, b] as LngLat),
-          baseEtaMinutes: stub.baseEtaMinutes,
-          turnSteps: stub.turnSteps,
-          routeNotices: stub.routeNotices,
-          routeNoticeAlongMeters: stub.routeNoticeAlongMeters,
-          mapboxIncidents: stub.mapboxIncidents,
-          hasTolls: stub.hasTolls,
-          tollLabels: stub.tollLabels,
-          postedSpeedSamples: stub.postedSpeedSamples,
-          role: stub.role,
-          label: stub.label,
-        })
-      );
-      setRouteSlotOrder(() => [lockedId]);
-      adoptLockedRouteGeometry(stub.geometry.map(([a, b]) => [a, b] as LngLat), {
-        force: true,
-      });
-      clearDetourGuidance();
-      clearHoldRejoinPreview();
-      applyPollSession(resetOffRoutePollSession(pollSessionRef.current));
-      setViewMode("drive");
-      setFitTrigger((n) => n + 1);
-      if (voiceLine) {
-        speakNavigationAlert(voiceLine, settingVoiceGuidanceEnabled);
-      }
-    },
-    [
-      orderedRouteIds,
-      lockedNavigationRouteIdRef,
-      navigationStartedRef,
-      planRef,
-      setPlan,
-      setRouteSlotOrder,
-      adoptLockedRouteGeometry,
-      clearDetourGuidance,
-      clearHoldRejoinPreview,
-      applyPollSession,
-      setViewMode,
-      setFitTrigger,
-      settingVoiceGuidanceEnabled,
-    ]
-  );
-
-  /**
    * Soft restart: keep destination / vias / trip session, replace locked geometry with a
    * fresh forward GPS→dest route, and put Drive / Route / Map on that same line.
    * Not a full Stop — progress rail rebuilds from the new geometry via along reset.
