@@ -71,7 +71,7 @@ export function speedLimitRoadKindAt(route: NavRoute | undefined, alongM: number
 /** Snap down to a common US posted-limit bucket (never up). */
 export function snapDownToPostedBucket(mph: number): number {
   const rounded = Math.round(mph);
-  let best = POSTED_BUCKETS_MPH[0]!;
+  let best: number = POSTED_BUCKETS_MPH[0]!;
   for (const b of POSTED_BUCKETS_MPH) {
     if (b <= rounded) best = b;
     else break;

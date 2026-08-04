@@ -113,7 +113,6 @@ import { resetAllCoachmarks } from "./ui/coachmarks/firstLaunchSteps";
 import { pointAlongPolyline } from "./ui/geometryAlong";
 import type { NormalizedWeatherAlert } from "./weatherAlerts/types";
 import { useBasicAdMobBanner } from "./hooks/useBasicAdMobBanner";
-import { learnedClusterToSavedRoute } from "./frequentRoutes/learnedToSaved";
 import { useFrequentRouteLearning } from "./hooks/useFrequentRouteLearning";
 import { usePersonalForkNav } from "./hooks/usePersonalForkNav";
 import { isPersonalForkRouteId, PERSONAL_FORK_ROUTE_ID } from "./personalForks";
@@ -241,7 +240,6 @@ export default function App() {
   headingRef.current = heading;
 
   const {
-    suggestedClusters,
     learnEnabled,
     setLearnEnabled,
     dismissCluster,
