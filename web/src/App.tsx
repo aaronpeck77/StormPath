@@ -98,7 +98,6 @@ import { useDebouncedBusyLabel } from "./hooks/useDebouncedBusyLabel";
 import { buildAdvisoryRoadDetailRows } from "./ui/buildAdvisoryRoadDetailRows";
 import { PendingSaveSheets } from "./ui/PendingSaveSheets";
 import { AppStatusBanners } from "./ui/AppStatusBanners";
-import { JeffBadge } from "./ui/JeffBadge";
 import { useDemoBypassPlayback } from "./nav/useDemoBypassPlayback";
 import { useDriveApproachBanner } from "./nav/useDriveApproachBanner";
 import { useDriveMapOverlays } from "./nav/useDriveMapOverlays";
@@ -1683,6 +1682,7 @@ export default function App() {
     temporaryGuidanceRouteId: autoRejoinGuidanceRouteId,
     offRouteHoldPreviewActive,
     stormMapGeoJson,
+    speedMps,
   });
 
   const { toggleDemoPlaybackPlaying, resetDemoPlaybackAlongRoute } = useDemoBypassPlayback({
@@ -2651,13 +2651,6 @@ export default function App() {
           onDeleteSavedRoute={removeSavedTripRoute}
           onStartRecordingPath={userLngLat && !recordingActive ? handleStartRecordingPath : null}
           recordingActive={recordingActive}
-          payFrequentRoutes={payFrequentRoutes}
-          frequentRouteSuggestions={suggestedClusters}
-          frequentRoutesLearnEnabled={learnEnabled}
-          onFrequentRoutesLearnEnabled={setLearnEnabled}
-          onTryFrequentRoute={(c) => handleLoadSavedRoute(learnedClusterToSavedRoute(c))}
-          onSaveFrequentRoute={(c) => setPendingSave({ kind: "learned", cluster: c })}
-          onDismissFrequentRoute={dismissCluster}
         />
         </Suspense>
 
@@ -2670,11 +2663,6 @@ export default function App() {
           dismissCluster={dismissCluster}
           setPendingSave={setPendingSave}
           setTapHint={setTapHint}
-        />
-
-        <JeffBadge
-          manualCameraFixAvailable={navigationStarted && viewMode === "drive"}
-          onManualCameraFix={resyncDriveCamera}
         />
 
         <AppStatusBanners

@@ -6,7 +6,6 @@ import { getWebEnv } from "./config/env";
 import "./index.css";
 import { captureAppException, initCrashReporting, installGlobalErrorHandlers } from "./monitoring/sentry";
 import { startMapboxUsageMeter } from "./monitoring/mapboxUsageMeter";
-import { startJeffFixLogFlusher } from "./monitoring/jeffFixLog";
 import { hydrateSafeStorage } from "./storage/safeStorage";
 
 initCrashReporting();
@@ -89,7 +88,6 @@ hydrateSafeStorage().finally(() => {
    * unconfigured (missing API key). */
   void initRevenueCat({ iosApiKey: getWebEnv().revenueCatApiKeyIos });
   startMapboxUsageMeter();
-  startJeffFixLogFlusher();
 
   createRoot(document.getElementById("root")!).render(
     <StrictMode>

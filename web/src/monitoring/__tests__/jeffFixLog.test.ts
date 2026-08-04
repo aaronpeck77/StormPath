@@ -28,13 +28,10 @@ describe("jeffFixLog", () => {
     expect(log.at(-1)?.atMs).toBe(129);
   });
 
-  it("every reported Jeff sighting — automatic or manual — lands in the local log", () => {
+  it("reported Jeff sightings no longer write to the Control Room fix log", () => {
     reportJeffSighting("drive_camera", "Straightened out the map view");
     reportJeffSighting("drive_camera", "You straightened out the map view.", true);
 
-    const log = readLocalJeffFixLog();
-    expect(log).toHaveLength(2);
-    expect(log[0].manual).toBe(false);
-    expect(log[1].manual).toBe(true);
+    expect(readLocalJeffFixLog()).toHaveLength(0);
   });
 });

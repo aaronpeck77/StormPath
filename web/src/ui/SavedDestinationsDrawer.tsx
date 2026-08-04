@@ -1,17 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { SavedPlace } from "../nav/savedPlaces";
 import type { SavedRoute } from "../nav/savedRoutes";
 import type { LngLat } from "../nav/types";
-import type { FrequentRouteCluster } from "../frequentRoutes/types";
-import { formatFrequentClusterEndpoints } from "../frequentRoutes/enrichClusterLabels";
-import { geometryToPreviewPath } from "../frequentRoutes/routePreviewPath";
 import { loadRecentDestinations, type RecentDestination } from "../recentSearches";
 
-/* The drawer is a full-screen sheet with a "home" landing page and three drill-in pages
- * (Places / Saved routes / Frequent routes). Each drill-in page gets the entire screen to
- * itself so the rows have plenty of room to read at a glance, and the previous nested-scroll
- * problem (three crammed sections sharing 88vh) goes away. */
-type DrawerView = "home" | "places" | "routes" | "frequent";
+type DrawerView = "home" | "places" | "routes" | "recent";
 
 type Props = {
   open: boolean;
@@ -34,20 +27,28 @@ type Props = {
   onDeleteSavedRoute: (id: string) => void;
   onStartRecordingPath: (() => void) | null;
   recordingActive: boolean;
-  /** Plus: frequent-route learning */
-  payFrequentRoutes: boolean;
-  frequentRouteSuggestions: FrequentRouteCluster[];
-  frequentRoutesLearnEnabled: boolean;
-  onFrequentRoutesLearnEnabled: (on: boolean) => void;
-  onTryFrequentRoute: (c: FrequentRouteCluster) => void;
-  onSaveFrequentRoute: (c: FrequentRouteCluster) => void;
-  onDismissFrequentRoute: (id: string) => void;
   /** Basic tier caps — null = unlimited (Plus). */
   maxSavedPlaces?: number | null;
   maxSavedRoutes?: number | null;
   canSavePlace?: boolean;
   canSaveRoute?: boolean;
 };
+
+function formatLngLatLine(lngLat: LngLat): string {
+  const lng = lngLat[0]!;
+  const lat = lngLat[1]!;
+  const ns = lat >= 0 ? "N" : "S";
+  const ew = lng >= 0 ? "E" : "W";
+  return `${Math.abs(lat).toFixed(4)}° ${ns}, ${Math.abs(lng).toFixed(4)}° ${ew}`;
+}
+
+function formatRelativeWhen(ms: number): string {
+  const days = Math.floor((Date.now() - ms) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days}d ago`;
+  return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 export function SavedDestinationsDrawer({
   open,
@@ -70,22 +71,14 @@ export function SavedDestinationsDrawer({
   onDeleteSavedRoute,
   onStartRecordingPath,
   recordingActive,
-  payFrequentRoutes,
-  frequentRouteSuggestions,
-  frequentRoutesLearnEnabled,
-  onFrequentRoutesLearnEnabled,
-  onTryFrequentRoute,
-  onSaveFrequentRoute,
-  onDismissFrequentRoute,
   maxSavedPlaces = null,
   maxSavedRoutes = null,
   canSavePlace = true,
   canSaveRoute = true,
 }: Props) {
-  /* Drill-in navigation. Resets to "home" each time the drawer opens so users always land
-   * on the section index instead of wherever they were last time. */
   const [view, setView] = useState<DrawerView>("home");
   const [recentDestinations, setRecentDestinations] = useState<RecentDestination[]>([]);
+
   useEffect(() => {
     if (open) {
       setView("home");
@@ -99,25 +92,22 @@ export function SavedDestinationsDrawer({
     view === "home"
       ? "Saved"
       : view === "places"
-        ? "Places"
+        ? "Saved places"
         : view === "routes"
           ? "Saved routes"
-          : "Frequent routes";
+          : "Previous destinations";
 
-  const placeCount = places.length;
-  const routeCount = savedRoutes.length;
-  const frequentCount = payFrequentRoutes ? frequentRouteSuggestions.length : 0;
   const placeLimitHint =
     maxSavedPlaces != null ? `Basic: up to ${maxSavedPlaces} places` : null;
   const routeLimitHint =
-    maxSavedRoutes != null ? `Basic: up to ${maxSavedRoutes} saved route` : null;
+    maxSavedRoutes != null ? `Basic: up to ${maxSavedRoutes} saved routes` : null;
 
   return (
     <>
       <div className="saved-drawer-scrim" role="presentation" onClick={onClose} />
       <div className="saved-drawer saved-drawer--full" role="dialog" aria-labelledby="saved-drawer-title">
         <div className="saved-drawer-head">
-          {view !== "home" && (
+          {view !== "home" ? (
             <button
               type="button"
               className="saved-drawer-back"
@@ -127,6 +117,8 @@ export function SavedDestinationsDrawer({
             >
               ‹
             </button>
+          ) : (
+            <span className="saved-drawer-back-spacer" aria-hidden />
           )}
           <h2 id="saved-drawer-title" className="saved-drawer-title">
             {headerTitle}
@@ -137,352 +129,243 @@ export function SavedDestinationsDrawer({
         </div>
 
         <div className="saved-drawer-body saved-drawer-body--full">
-          {view === "home" && (
+          {view === "home" ? (
             <div className="saved-drawer-home">
-              <div className="saved-drawer-home-panel saved-drawer-home-panel--map">
-                <label className="saved-drawer-toggle saved-drawer-toggle--panel">
-                  <input
-                    type="checkbox"
-                    checked={showOnMap}
-                    onChange={(e) => onToggleShowOnMap(e.target.checked)}
-                  />
-                  <span>Show place pins on map</span>
-                </label>
-              </div>
+              <label className="saved-drawer-map-toggle">
+                <input
+                  type="checkbox"
+                  checked={showOnMap}
+                  onChange={(e) => onToggleShowOnMap(e.target.checked)}
+                />
+                <span>Show place pins on map</span>
+              </label>
 
-              <ul className="saved-drawer-home-list" role="list">
-                <li className="saved-drawer-home-section saved-drawer-home-section--places">
-                  <h3 className="saved-drawer-home-section__title">Places</h3>
-                  {onSaveCurrentLocation || (onSaveCurrent && currentDestLngLat) ? (
-                    <div className="saved-drawer-home-section__actions">
-                      {onSaveCurrentLocation ? (
-                        <button
-                          type="button"
-                          className="saved-drawer-save-current saved-drawer-save-current--home saved-drawer-save-current--location"
-                          onClick={onSaveCurrentLocation}
-                          disabled={!canSavePlace}
-                          title={!canSavePlace ? placeLimitHint ?? undefined : undefined}
-                        >
-                          Save location
-                        </button>
-                      ) : null}
-                      {onSaveCurrent && currentDestLngLat ? (
-                        <button
-                          type="button"
-                          className="saved-drawer-save-current saved-drawer-save-current--home"
-                          onClick={onSaveCurrent}
-                          disabled={!canSavePlace}
-                          title={!canSavePlace ? placeLimitHint ?? undefined : undefined}
-                        >
-                          Save destination
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {placeLimitHint ? (
-                    <p className="saved-drawer-limit-note">{placeLimitHint}</p>
-                  ) : null}
-                  <HomeTile
-                    count={placeCount}
-                    hint="Saved pins — tap to open the list."
-                    onClick={() => setView("places")}
-                  />
-                </li>
-                <li className="saved-drawer-home-section saved-drawer-home-section--routes">
-                  <h3 className="saved-drawer-home-section__title">Saved routes</h3>
-                  {onSaveCurrentRoute || onStartRecordingPath || recordingActive ? (
-                    <div className="saved-drawer-home-section__actions">
-                      {onSaveCurrentRoute ? (
-                        <button
-                          type="button"
-                          className="saved-drawer-save-current saved-drawer-save-current--home"
-                          onClick={onSaveCurrentRoute}
-                          disabled={!canSaveRoute}
-                          title={!canSaveRoute ? routeLimitHint ?? undefined : undefined}
-                        >
-                          Save route
-                        </button>
-                      ) : null}
-                      {onStartRecordingPath ? (
-                        <button
-                          type="button"
-                          className="saved-drawer-save-current saved-drawer-save-current--record saved-drawer-save-current--home"
-                          onClick={onStartRecordingPath}
-                          disabled={!canSaveRoute}
-                          title={!canSaveRoute ? routeLimitHint ?? undefined : undefined}
-                        >
-                          Record path
-                        </button>
-                      ) : null}
-                      {recordingActive ? (
-                        <p className="saved-drawer-recording-note saved-drawer-recording-note--home" role="status">
-                          Recording — stop in the bar above the toolbar.
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {routeLimitHint ? (
-                    <p className="saved-drawer-limit-note">{routeLimitHint}</p>
-                  ) : null}
-                  <HomeTile
-                    count={routeCount}
-                    hint="Full paths you can replay or reverse."
-                    onClick={() => setView("routes")}
-                  />
-                </li>
-                <li className="saved-drawer-home-section saved-drawer-home-section--frequent">
-                  <h3 className="saved-drawer-home-section__title">Frequent routes</h3>
-                  <HomeTile
-                    count={frequentCount}
-                    hint={
-                      payFrequentRoutes
-                        ? "Repeat trips from Go navigation on this device."
-                        : "Plus — repeat-trip learning."
-                    }
-                    badge={payFrequentRoutes ? null : "Plus"}
-                    onClick={() => setView("frequent")}
-                  />
-                </li>
-                <li className="saved-drawer-home-section saved-drawer-home-section--recent">
-                  <h3 className="saved-drawer-home-section__title">Previous destinations</h3>
-                  {recentDestinations.length === 0 ? (
-                    <p className="saved-drawer-recent-empty">
-                      Places you search or set as destination show up here.
-                    </p>
-                  ) : (
-                    <ul className="saved-drawer-recent-list" role="list">
-                      {recentDestinations.map((r) => (
-                        <li key={`${r.placeName}-${r.lngLat[0]}-${r.lngLat[1]}-${r.savedAtMs}`}>
+              <ul className="saved-home-cards" role="list">
+                <li>
+                  <HomeCard
+                    tone="places"
+                    title="Saved places"
+                    count={places.length}
+                    summary="Pins you can set as a destination"
+                    onOpen={() => setView("places")}
+                  >
+                    {onSaveCurrentLocation || (onSaveCurrent && currentDestLngLat) ? (
+                      <div className="saved-home-card__actions">
+                        {onSaveCurrentLocation ? (
                           <button
                             type="button"
-                            className="saved-drawer-recent-row"
-                            onClick={() => onGo(r.lngLat, r.placeName)}
+                            className="saved-chip"
+                            onClick={onSaveCurrentLocation}
+                            disabled={!canSavePlace}
+                            title={!canSavePlace ? placeLimitHint ?? undefined : undefined}
                           >
-                            <span className="saved-drawer-recent-row__label">{r.placeName}</span>
+                            Save location
                           </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                        ) : null}
+                        {onSaveCurrent && currentDestLngLat ? (
+                          <button
+                            type="button"
+                            className="saved-chip"
+                            onClick={onSaveCurrent}
+                            disabled={!canSavePlace}
+                            title={!canSavePlace ? placeLimitHint ?? undefined : undefined}
+                          >
+                            Save destination
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {placeLimitHint ? <p className="saved-home-card__note">{placeLimitHint}</p> : null}
+                  </HomeCard>
+                </li>
+
+                <li>
+                  <HomeCard
+                    tone="routes"
+                    title="Saved routes"
+                    count={savedRoutes.length}
+                    summary="Full paths you can replay or reverse"
+                    onOpen={() => setView("routes")}
+                  >
+                    {onSaveCurrentRoute || onStartRecordingPath || recordingActive ? (
+                      <div className="saved-home-card__actions">
+                        {onSaveCurrentRoute ? (
+                          <button
+                            type="button"
+                            className="saved-chip"
+                            onClick={onSaveCurrentRoute}
+                            disabled={!canSaveRoute}
+                            title={!canSaveRoute ? routeLimitHint ?? undefined : undefined}
+                          >
+                            Save route
+                          </button>
+                        ) : null}
+                        {onStartRecordingPath ? (
+                          <button
+                            type="button"
+                            className="saved-chip saved-chip--accent"
+                            onClick={onStartRecordingPath}
+                            disabled={!canSaveRoute}
+                            title={!canSaveRoute ? routeLimitHint ?? undefined : undefined}
+                          >
+                            Record path
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {recordingActive ? (
+                      <p className="saved-home-card__note saved-home-card__note--live" role="status">
+                        Recording — stop in the bar above the toolbar
+                      </p>
+                    ) : null}
+                    {routeLimitHint ? <p className="saved-home-card__note">{routeLimitHint}</p> : null}
+                  </HomeCard>
+                </li>
+
+                <li>
+                  <HomeCard
+                    tone="recent"
+                    title="Previous destinations"
+                    count={recentDestinations.length}
+                    summary="Recent searches and destinations"
+                    onOpen={() => setView("recent")}
+                  />
                 </li>
               </ul>
             </div>
-          )}
+          ) : null}
 
-          {view === "places" && (
-            <section className="saved-drawer-section" aria-label="Saved places">
-              <p className="saved-drawer-section-kicker">Tap any place to set it as your destination and plan a route.</p>
-              <ul className="saved-drawer-list saved-drawer-list--full">
-                {places.length === 0 && (
-                  <li className="saved-drawer-empty">
-                    No saved places yet. Tap ★ and use <strong>Save current location</strong> for where you
-                    are now, or set a map destination and use <strong>Save destination</strong> on the Saved
-                    home screen.
+          {view === "places" ? (
+            <section className="saved-list-page" aria-label="Saved places">
+              <p className="saved-list-page__lead">Tap a place to plan a route there.</p>
+              <ul className="saved-pick-list" role="list">
+                {places.length === 0 ? (
+                  <li className="saved-pick-empty">
+                    No saved places yet. Use <strong>Save location</strong> or{" "}
+                    <strong>Save destination</strong> on the Saved home screen.
                   </li>
-                )}
-                {places.map((p) => (
-                  <SavedRow key={p.id} place={p} onGo={onGo} onRename={onRename} onDelete={onDelete} />
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {view === "routes" && (
-            <section className="saved-drawer-section" aria-label="Saved routes">
-              <p className="saved-drawer-section-kicker">
-                Use <strong>Save route</strong> or <strong>Record driven path</strong> on the Saved home screen when you
-                have a trip on the map. Use <strong>Rev</strong> on a saved route to flip direction.
-              </p>
-              <p className="saved-drawer-pane__subhead">Your routes</p>
-              <ul className="saved-drawer-list saved-drawer-list--full">
-                {savedRoutes.length === 0 && <li className="saved-drawer-empty">No saved routes yet.</li>}
-                {savedRoutes.map((r) => (
-                  <SavedRouteRow
-                    key={r.id}
-                    route={r}
-                    onGo={onGoSavedRoute}
-                    onRename={onRenameSavedRoute}
-                    onDelete={onDeleteSavedRoute}
-                  />
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {view === "frequent" && (
-            <section className="saved-drawer-section" aria-label="Frequent routes">
-              {!payFrequentRoutes && (
-                <div className="saved-drawer-frequent-upsell">
-                  <p className="saved-drawer-frequent-lead">
-                    <strong>Plus</strong> can notice trips you drive often and suggest them here. Everything stays on
-                    this device.
-                  </p>
-                  <p className="saved-drawer-route-hint saved-drawer-frequent-meta">
-                    Production: subscribe or set <code className="saved-drawer-code">VITE_PAY_TIER=plus</code>. Dev is
-                    usually Plus; to preview this screen set{" "}
-                    <code className="saved-drawer-code">stormpath-pay-tier-override</code> to{" "}
-                    <code className="saved-drawer-code">free</code>. See{" "}
-                    <code className="saved-drawer-code">docs/PAY_TIERS.md</code>.
-                  </p>
-                </div>
-              )}
-              {payFrequentRoutes && (
-                <>
-                  <label className="saved-drawer-toggle saved-drawer-toggle--learn">
-                    <input
-                      type="checkbox"
-                      checked={frequentRoutesLearnEnabled}
-                      onChange={(e) => onFrequentRoutesLearnEnabled(e.target.checked)}
+                ) : (
+                  places.map((p) => (
+                    <SavedPlaceRow
+                      key={p.id}
+                      place={p}
+                      onGo={onGo}
+                      onRename={onRename}
+                      onDelete={onDelete}
                     />
-                    <span>
-                      <strong>Learn repeated trips</strong> — same corridor (e.g. home ↔ work) counted after Go →
-                      Stop.
-                    </span>
-                  </label>
-                  <p className="saved-drawer-route-hint saved-drawer-route-hint--tight">
-                    After two similar legs, suggestions show from → to below.
-                  </p>
-                  <p className="saved-drawer-pane__subhead">Suggestions</p>
-                  <ul className="saved-drawer-list saved-drawer-list--full">
-                    {frequentRouteSuggestions.length === 0 && (
-                      <li className="saved-drawer-empty">
-                        No suggestions yet. Turn learning on and drive the same route twice.
-                      </li>
-                    )}
-                    {frequentRouteSuggestions.map((c) => (
-                      <FrequentRouteRow
-                        key={c.id}
-                        cluster={c}
-                        onUse={() => onTryFrequentRoute(c)}
-                        onSave={() => onSaveFrequentRoute(c)}
-                        onDismiss={() => onDismissFrequentRoute(c.id)}
-                      />
-                    ))}
-                  </ul>
-                </>
-              )}
+                  ))
+                )}
+              </ul>
             </section>
-          )}
+          ) : null}
+
+          {view === "routes" ? (
+            <section className="saved-list-page" aria-label="Saved routes">
+              <p className="saved-list-page__lead">
+                Tap <strong>Go</strong> to use a path, or <strong>Reverse</strong> to flip direction.
+              </p>
+              <ul className="saved-pick-list" role="list">
+                {savedRoutes.length === 0 ? (
+                  <li className="saved-pick-empty">
+                    No saved routes yet. Use <strong>Save route</strong> or{" "}
+                    <strong>Record path</strong> when you have a trip on the map.
+                  </li>
+                ) : (
+                  savedRoutes.map((r) => (
+                    <SavedRouteRow
+                      key={r.id}
+                      route={r}
+                      onGo={onGoSavedRoute}
+                      onRename={onRenameSavedRoute}
+                      onDelete={onDeleteSavedRoute}
+                    />
+                  ))
+                )}
+              </ul>
+            </section>
+          ) : null}
+
+          {view === "recent" ? (
+            <section className="saved-list-page" aria-label="Previous destinations">
+              <p className="saved-list-page__lead">Tap to set as destination and plan a route.</p>
+              <ul className="saved-pick-list" role="list">
+                {recentDestinations.length === 0 ? (
+                  <li className="saved-pick-empty">
+                    Places you search or set as a destination show up here.
+                  </li>
+                ) : (
+                  recentDestinations.map((r) => (
+                    <li
+                      key={`${r.placeName}-${r.lngLat[0]}-${r.lngLat[1]}-${r.savedAtMs}`}
+                      className="saved-pick-row"
+                    >
+                      <button
+                        type="button"
+                        className="saved-pick-row__main"
+                        onClick={() => onGo(r.lngLat, r.placeName)}
+                      >
+                        <span className="saved-pick-row__kind saved-pick-row__kind--recent">
+                          Recent
+                        </span>
+                        <span className="saved-pick-row__title">{r.placeName}</span>
+                        <span className="saved-pick-row__meta">
+                          {formatRelativeWhen(r.savedAtMs)} · {formatLngLatLine(r.lngLat)}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="saved-pick-go"
+                        onClick={() => onGo(r.lngLat, r.placeName)}
+                      >
+                        Go
+                      </button>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </section>
+          ) : null}
         </div>
       </div>
     </>
   );
 }
 
-
-/** Compact tappable row that drills into a Saved section. */
-function HomeTile({
+function HomeCard({
+  tone,
+  title,
   count,
-  hint,
-  badge,
-  onClick,
+  summary,
+  onOpen,
+  children,
 }: {
+  tone: "places" | "routes" | "recent";
+  title: string;
   count: number;
-  hint: string;
-  badge?: string | null;
-  onClick: () => void;
+  summary: string;
+  onOpen: () => void;
+  children?: ReactNode;
 }) {
   return (
-    <button type="button" className="saved-drawer-home-tile" onClick={onClick}>
-      <span className="saved-drawer-home-tile__row">
-        {badge ? (
-          <span className="saved-drawer-home-tile__badge">{badge}</span>
-        ) : (
-          <span className="saved-drawer-home-tile__count">{count}</span>
-        )}
-        <span className="saved-drawer-home-tile__chevron" aria-hidden>
-          ›
-        </span>
-      </span>
-      <span className="saved-drawer-home-tile__hint">{hint}</span>
-    </button>
-  );
-}
-
-/** Compact frequent-route suggestion: mini path preview + From → To + actions. */
-function FrequentRouteRow({
-  cluster,
-  onUse,
-  onSave,
-  onDismiss,
-}: {
-  cluster: FrequentRouteCluster;
-  onUse: () => void;
-  onSave: () => void;
-  onDismiss: () => void;
-}) {
-  const { from, to } = formatFrequentClusterEndpoints(cluster, (lng, lat) =>
-    formatLngLatLine([lng, lat])
-  );
-  const previewPath = geometryToPreviewPath(cluster.geometry);
-  const lastLabel = new Date(cluster.lastSeen).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-  const waitingOnNames = !cluster.startLabel?.trim() || !cluster.endLabel?.trim();
-
-  return (
-    <li className="saved-drawer-row saved-drawer-row--freq">
-      <button type="button" className="saved-drawer-freq-main" onClick={onUse}>
-        <span className="saved-drawer-freq-preview" aria-hidden>
-          {previewPath ? (
-            <svg viewBox="0 0 56 28" width="56" height="28" className="saved-drawer-freq-preview__svg">
-              <path d={previewPath} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          ) : (
-            <span className="saved-drawer-freq-preview__empty" />
-          )}
-        </span>
-        <span className="saved-drawer-freq-copy">
-          <span className="saved-drawer-freq-endpoints">
-            <span className="saved-drawer-freq-from">{from}</span>
-            <span className="saved-drawer-freq-arrow" aria-hidden>
-              →
-            </span>
-            <span className="saved-drawer-freq-to">{to}</span>
-          </span>
-          <span className="saved-drawer-freq-meta">
-            <span className="saved-drawer-freq-count">{cluster.count}×</span>
-            <span className="saved-drawer-freq-dot" aria-hidden>
-              ·
-            </span>
-            <span>Last {lastLabel}</span>
-            {waitingOnNames ? (
-              <>
-                <span className="saved-drawer-freq-dot" aria-hidden>
-                  ·
-                </span>
-                <span className="saved-drawer-freq-resolving">Resolving places…</span>
-              </>
-            ) : null}
-          </span>
-        </span>
-      </button>
-      <div className="saved-drawer-freq-actions" role="group" aria-label="Suggestion actions">
-        <button type="button" className="saved-drawer-tile-link" onClick={onSave}>
-          Save
-        </button>
-        <span className="saved-drawer-tile-meta-sep" aria-hidden>
-          ·
-        </span>
-        <button type="button" className="saved-drawer-tile-link danger" onClick={onDismiss}>
-          Dismiss
+    <div className={`saved-home-card saved-home-card--${tone}`}>
+      <div className="saved-home-card__body">
+        <div className="saved-home-card__top">
+          <span className="saved-home-card__title">{title}</span>
+          <span className="saved-home-card__count">{count}</span>
+        </div>
+        <p className="saved-home-card__summary">{summary}</p>
+        {children}
+      </div>
+      <div className="saved-home-card__footer">
+        <button type="button" className="saved-home-card__open-btn" onClick={onOpen}>
+          Open
         </button>
       </div>
-    </li>
+    </div>
   );
 }
 
-/** One-line coordinates (no geocode — data is only lat/lng). */
-function formatLngLatLine(lngLat: LngLat): string {
-  const lng = lngLat[0]!;
-  const lat = lngLat[1]!;
-  const ns = lat >= 0 ? "N" : "S";
-  const ew = lng >= 0 ? "E" : "W";
-  return `${Math.abs(lat).toFixed(4)}° ${ns}, ${Math.abs(lng).toFixed(4)}° ${ew}`;
-}
-
-function SavedRow({
+function SavedPlaceRow({
   place,
   onGo,
   onRename,
@@ -506,58 +389,57 @@ function SavedRow({
   };
 
   return (
-    <li className="saved-drawer-row saved-drawer-row--tile">
+    <li className="saved-pick-row">
       {editing ? (
-        <div className="saved-drawer-tile-edit">
-          <label className="saved-drawer-tile-label" htmlFor={`saved-place-edit-${place.id}`}>
-            Place name
-          </label>
-          <div className="saved-drawer-edit saved-drawer-edit--tile">
-            <input
-              id={`saved-place-edit-${place.id}`}
-              className="saved-drawer-input"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commit();
-                if (e.key === "Escape") {
-                  setDraft(place.name);
-                  setEditing(false);
-                }
-              }}
-              aria-label="Place name"
-            />
-            <button type="button" className="saved-drawer-mini" onClick={commit}>
-              Save
-            </button>
-          </div>
-          <button type="button" className="saved-drawer-tile-link" onClick={() => setEditing(false)}>
+        <div className="saved-pick-edit">
+          <input
+            className="saved-pick-edit__input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+              if (e.key === "Escape") {
+                setDraft(place.name);
+                setEditing(false);
+              }
+            }}
+            aria-label="Place name"
+            autoFocus
+          />
+          <button type="button" className="saved-pick-go" onClick={commit}>
+            Save
+          </button>
+          <button type="button" className="saved-pick-link" onClick={() => setEditing(false)}>
             Cancel
           </button>
         </div>
       ) : (
         <>
-          <div className="saved-drawer-tile-head">
-            <span className="saved-drawer-tile-title">{place.name}</span>
-            <p className="saved-drawer-tile-coords" title="Saved pin location (no street lookup)">
-              {formatLngLatLine(place.lngLat)}
-            </p>
-          </div>
           <button
             type="button"
-            className="saved-drawer-tile-primary"
+            className="saved-pick-row__main"
             onClick={() => onGo(place.lngLat, place.name)}
           >
-            Set destination and plan route
+            <span className="saved-pick-row__kind saved-pick-row__kind--place">Place</span>
+            <span className="saved-pick-row__title">{place.name}</span>
+            <span className="saved-pick-row__meta">{formatLngLatLine(place.lngLat)}</span>
           </button>
-          <div className="saved-drawer-tile-meta" role="group" aria-label="Place actions">
-            <button type="button" className="saved-drawer-tile-link" onClick={() => setEditing(true)}>
-              Edit name
+          <button
+            type="button"
+            className="saved-pick-go"
+            onClick={() => onGo(place.lngLat, place.name)}
+          >
+            Go
+          </button>
+          <div className="saved-pick-row__tools">
+            <button type="button" className="saved-pick-link" onClick={() => setEditing(true)}>
+              Rename
             </button>
-            <span className="saved-drawer-tile-meta-sep" aria-hidden>
-              ·
-            </span>
-            <button type="button" className="saved-drawer-tile-link danger" onClick={() => onDelete(place.id)}>
+            <button
+              type="button"
+              className="saved-pick-link saved-pick-link--danger"
+              onClick={() => onDelete(place.id)}
+            >
               Remove
             </button>
           </div>
@@ -581,6 +463,8 @@ function SavedRouteRow({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(route.name);
   const nPts = route.geometry.length;
+  const fromLabel = route.startLabel?.trim() || "Start";
+  const toLabel = route.destinationLabel?.trim() || "Destination";
 
   useEffect(() => {
     setDraft(route.name);
@@ -592,68 +476,68 @@ function SavedRouteRow({
   };
 
   return (
-    <li className="saved-drawer-row saved-drawer-row--tile">
+    <li className="saved-pick-row">
       {editing ? (
-        <div className="saved-drawer-tile-edit">
-          <label className="saved-drawer-tile-label" htmlFor={`saved-route-edit-${route.id}`}>
-            Route label
-          </label>
-          <div className="saved-drawer-edit saved-drawer-edit--tile">
-            <input
-              id={`saved-route-edit-${route.id}`}
-              className="saved-drawer-input"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commit();
-                if (e.key === "Escape") {
-                  setDraft(route.name);
-                  setEditing(false);
-                }
-              }}
-              aria-label="Route name"
-            />
-            <button type="button" className="saved-drawer-mini" onClick={commit}>
-              Save
-            </button>
-          </div>
-          <button type="button" className="saved-drawer-tile-link" onClick={() => setEditing(false)}>
+        <div className="saved-pick-edit">
+          <input
+            className="saved-pick-edit__input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+              if (e.key === "Escape") {
+                setDraft(route.name);
+                setEditing(false);
+              }
+            }}
+            aria-label="Route name"
+            autoFocus
+          />
+          <button type="button" className="saved-pick-go" onClick={commit}>
+            Save
+          </button>
+          <button type="button" className="saved-pick-link" onClick={() => setEditing(false)}>
             Cancel
           </button>
         </div>
       ) : (
         <>
-          <div className="saved-drawer-tile-head">
-            <span className="saved-drawer-tile-title">{route.name}</span>
-            <p className="saved-drawer-tile-sub">
-              To <strong>{route.destinationLabel}</strong>
-              {nPts >= 2 ? (
-                <span className="saved-drawer-tile-sub-meta"> · {nPts.toLocaleString()} points on path</span>
-              ) : null}
-            </p>
-            <p className="saved-drawer-tile-coords" title="Route end coordinates">
-              {formatLngLatLine(route.destinationLngLat)}
-            </p>
-          </div>
-          <button type="button" className="saved-drawer-tile-primary" onClick={() => onGo(route)}>
-            Use this saved route
-          </button>
-          <button
-            type="button"
-            className="saved-drawer-tile-secondary"
-            title="Same shape on the map, opposite direction — the old destination becomes your start."
-            onClick={() => onGo(route, { reverse: true })}
-          >
-            Reverse direction
-          </button>
-          <div className="saved-drawer-tile-meta" role="group" aria-label="Route actions">
-            <button type="button" className="saved-drawer-tile-link" onClick={() => setEditing(true)}>
-              Edit name
-            </button>
-            <span className="saved-drawer-tile-meta-sep" aria-hidden>
-              ·
+          <button type="button" className="saved-pick-row__main" onClick={() => onGo(route)}>
+            <span className="saved-pick-row__kind saved-pick-row__kind--route">Route</span>
+            <span className="saved-pick-row__title">{route.name}</span>
+            <span className="saved-pick-row__path">
+              <span className="saved-pick-row__endpoint">{fromLabel}</span>
+              <span className="saved-pick-row__arrow" aria-hidden>
+                →
+              </span>
+              <span className="saved-pick-row__endpoint">{toLabel}</span>
             </span>
-            <button type="button" className="saved-drawer-tile-link danger" onClick={() => onDelete(route.id)}>
+            <span className="saved-pick-row__meta">
+              {nPts >= 2 ? `${nPts.toLocaleString()} points` : "Saved path"}
+            </span>
+          </button>
+          <div className="saved-pick-row__route-actions">
+            <button type="button" className="saved-pick-go" onClick={() => onGo(route)}>
+              Go
+            </button>
+            <button
+              type="button"
+              className="saved-pick-go saved-pick-go--secondary"
+              title="Same path, opposite direction"
+              onClick={() => onGo(route, { reverse: true })}
+            >
+              Reverse
+            </button>
+          </div>
+          <div className="saved-pick-row__tools">
+            <button type="button" className="saved-pick-link" onClick={() => setEditing(true)}>
+              Rename
+            </button>
+            <button
+              type="button"
+              className="saved-pick-link saved-pick-link--danger"
+              onClick={() => onDelete(route.id)}
+            >
               Remove
             </button>
           </div>

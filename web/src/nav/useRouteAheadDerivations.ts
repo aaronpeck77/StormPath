@@ -32,7 +32,8 @@ import {
   WEATHER_PLANNING_DETAIL_AHEAD_M,
 } from "./constants";
 import { radarDisplayIntensity } from "./radarReflectivityScale";
-import { postedSpeedMphAt } from "./postedSpeed";
+import { displayedPostedSpeedMph } from "./postedSpeedSanity";
+import { useCruiseSpeedHintMph } from "./useCruiseSpeedHint";
 import type { MapViewMode } from "../ui/driveMapTypes";
 import {
   filterAlertsAffectingRoute,
@@ -98,6 +99,8 @@ export type UseRouteAheadDerivationsDeps = {
   /** Auto off-route hold — show B/C rejoin preview on the map before guidance commits. */
   offRouteHoldPreviewActive?: boolean;
   stormMapGeoJson: GeoJSON.FeatureCollection | null;
+  /** Live GPS speed (m/s) — cruise median hints posted-limit sanity. */
+  speedMps: number | null;
 };
 
 export type UseRouteAheadDerivationsResult = {
@@ -175,6 +178,7 @@ export function useRouteAheadDerivations(
     temporaryGuidanceRouteId = null,
     offRouteHoldPreviewActive = false,
     stormMapGeoJson,
+    speedMps,
   } = deps;
 
   /** NWS polygons + route bands: corridor alerts that touch or sit ahead of the active leg (~28 mi buffer). */
@@ -623,9 +627,16 @@ export function useRouteAheadDerivations(
   ]);
   const progressRailRoute = guidanceRoute ?? driveMapRoutes[0] ?? planRoutes[0];
 
+  const speedMph = speedMps != null && Number.isFinite(speedMps) ? speedMps * 2.23694 : null;
+  const cruiseMph = useCruiseSpeedHintMph(navigationStarted, speedMph);
+
   const postedMph =
     navigationStarted && guidanceRoute
-      ? postedSpeedMphAt(guidanceRoute, userAlongGuidanceM)
+      ? displayedPostedSpeedMph({
+          route: guidanceRoute,
+          alongMeters: userAlongGuidanceM,
+          cruiseMph,
+        })
       : null;
 
   const progressStripAlerts = useMemo(() => augmentAlertsForProgressStrip(routeAlerts), [routeAlerts]);

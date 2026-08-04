@@ -537,9 +537,9 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
             const useMiles =
               !!prox && (geocodeCountriesForFix(prox) ?? []).some((c) => c === "us" || c === "ca");
             const out: SearchSuggestion[] = sbHits.map((s) => {
-              /* Compose the secondary line as "1.2 mi · 1234 Main St, Decatur, IL" so users can
-               * verify the closest-first ordering at a glance. Distance shows even when the
-               * formatted address is missing (rare). */
+              /* Compose the secondary line as "1.2 mi · 1234 Main St, Decatur, IL 62526" so
+               * users see the full address (number–zip) and can verify closest-first ordering.
+               * Distance shows even when the formatted address is missing (rare). */
               const distLabel = formatDistanceShort(s.distanceMeters, useMiles);
               const secondary =
                 distLabel && s.placeFormatted

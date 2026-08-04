@@ -20,7 +20,7 @@ export type SearchBoxSuggestion = {
   mapboxId: string;
   /** Primary display label — e.g. "Rural King" or "Joe's Pizza". */
   name: string;
-  /** Secondary line — typically the full street address ("123 Main St, Decatur, IL 62526"). */
+  /** Secondary line — full address: number, street, city, state/region, zip ("123 Main St, Decatur, IL 62526"). */
   placeFormatted: string;
   /** poi | address | place | locality | neighborhood | etc. */
   featureType: string;
@@ -79,6 +79,22 @@ type RawSuggestion = {
 type RawSuggestResponse = {
   suggestions?: RawSuggestion[];
 };
+
+/**
+ * Mapbox Search Box splits address parts:
+ *   - `address`        → "123 Main St"
+ *   - `place_formatted`→ "Decatur, Illinois 62526, United States" (no street number)
+ *   - `full_address`   → address + place_formatted
+ * Prefer full_address so suggestion rows show number through zip, not city-only context.
+ */
+function formatSuggestionAddress(s: RawSuggestion): string {
+  const full = s.full_address?.trim();
+  if (full) return full;
+  const street = s.address?.trim() ?? "";
+  const place = s.place_formatted?.trim() ?? "";
+  if (street && place) return `${street}, ${place}`;
+  return street || place || "";
+}
 
 type RawRetrievedFeature = {
   type?: "Feature";
@@ -159,7 +175,7 @@ export async function mapboxSearchBoxSuggest(
     out.push({
       mapboxId: s.mapbox_id,
       name: s.name,
-      placeFormatted: s.place_formatted ?? s.full_address ?? s.address ?? "",
+      placeFormatted: formatSuggestionAddress(s),
       featureType: s.feature_type ?? "unknown",
       distanceMeters: typeof s.distance === "number" ? s.distance : null,
     });

@@ -1,10 +1,7 @@
 /**
- * Client-side log for "Jeff the Fix-It Bot".
- *
- * Persists a local rolling log of every watchdog auto-fix / manual fix tap (see
- * `useDriveCameraHealth`, `useLiveTrafficHealth`, `JeffBadge`), and reports each one to
- * `ops-jeff` so the Control Room can show what Jeff has caught — and when — across devices.
- * Mirrors `mapboxUsageMeter.ts`: same device-id / pending-queue / flush-on-a-timer shape.
+ * Client-side log for "Jeff the Fix-It Bot" — kept for unit tests / legacy local
+ * history. Live app no longer records or flushes Jeff fixes to Control Room
+ * (`reportJeffSighting` no longer calls here; flusher is not started at boot).
  */
 
 import { safeStorage } from "../storage/safeStorage";

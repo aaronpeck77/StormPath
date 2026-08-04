@@ -1,21 +1,17 @@
 /**
- * "Jeff the Fix-It Bot" is the friendly, user-facing name for the app's background watchdog
- * checks — drive-camera heading, drive-puck yard-line placement, and live-traffic staleness
- * (see `useDriveCameraHealth` and `useLiveTrafficHealth`). This module is just a tiny pub/sub
- * so those hooks can announce "I just fixed something" without importing any UI, and a small
- * badge component (`JeffBadge`) can light up to show it happened.
+ * "Jeff the Fix-It Bot" is the friendly name for the app's background watchdog checks —
+ * drive-camera heading, drive-puck yard-line placement, and live-traffic staleness
+ * (see `useDriveCameraHealth` and `useLiveTrafficHealth`). Watchdogs still announce fixes
+ * here so any subscriber can react; the corner badge and Control Room fix log are off.
  */
-
-import { recordJeffFix } from "../monitoring/jeffFixLog";
 
 export type JeffSighting = {
   /** Which watchdog caught the issue. */
   domain: "drive_camera" | "drive_puck" | "live_traffic";
-  /** Short, human phrase for what Jeff noticed — shown in the badge's tooltip/detail. */
+  /** Short, human phrase for what Jeff noticed. */
   note: string;
   atMs: number;
-  /** True when the driver tapped Jeff to force the fix themselves, rather than the watchdog
-   *  catching it automatically. */
+  /** True when a manual camera fix was forced (legacy badge path). */
   manual?: boolean;
 };
 
@@ -23,16 +19,13 @@ type Listener = (sighting: JeffSighting) => void;
 
 const listeners = new Set<Listener>();
 
-/** Called by a health watchdog (or a manual Jeff tap) right after a fix happens. Every
- *  sighting is logged for the Control Room via `recordJeffFix` regardless of how it fired,
- *  so "what Jeff fixed and when" stays accurate whether it was automatic or manual. */
+/** Called by a health watchdog right after a fix. Does not log to Control Room. */
 export function reportJeffSighting(
   domain: JeffSighting["domain"],
   note: string,
   manual = false
 ): void {
   const sighting: JeffSighting = { domain, note, atMs: Date.now(), manual };
-  recordJeffFix(sighting);
   for (const listen of listeners) listen(sighting);
 }
 
