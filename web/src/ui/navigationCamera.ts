@@ -71,13 +71,18 @@ export function navigationTopdownDefaultZoom(): number {
   return TOPDOWN_NAV_STREET_ZOOM;
 }
 
-/** Bust cached snap keys when switching into Rt so overview fit always runs. */
+/**
+ * Bust cached snap keys when switching into Rt / when App bumps fitTrigger / route graph changes.
+ * Intentionally omits mapResumeTick — explore-end must not re-run full-route overview fit (that
+ * yanked zoom back out to “whole trip / Canada” while the destination marker appeared to fly).
+ */
 export function navigationRouteOverviewSnapKey(
   viewMode: MapViewMode,
   fitTrigger: number,
-  mapResumeTick: number,
+  _mapResumeTick: number,
   lineFocusId: string,
   routesKey: string
 ): string {
-  return `${viewMode}|${fitTrigger}|${mapResumeTick}|${lineFocusId}|${routesKey}`;
+  void _mapResumeTick;
+  return `${viewMode}|${fitTrigger}|${lineFocusId}|${routesKey}`;
 }

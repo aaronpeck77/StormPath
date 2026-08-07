@@ -129,7 +129,6 @@ import {
   buildingColorForPhase,
 } from "./mapBasemapStyle";
 import {
-  navigationCameraShouldFitFullRoute,
   navigationRouteOverviewSnapKey,
   navigationTopdownZoomForViewChange,
 } from "./navigationCamera";
@@ -1678,33 +1677,22 @@ function DriveMapInner({
     }
   }, [navigationStarted, mapReady, routes.length, viewMode]);
 
-  /** Leave 3D drive pitch/zoom whenever navigation is off or the user is not in Dr view. */
+  /** Leave 3D drive pitch/bearing whenever navigation is off or the user is not in Dr view. */
   useEffect(() => {
     if (activeDriveCamera) return;
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const pitched =
-      map.getPitch() > 0.5 ||
-      Math.abs(map.getBearing()) > 0.5 ||
-      (routes.length === 0 && !navigationStarted && map.getZoom() > 15.5);
+    if (userExploringRef.current) return;
+    const pitched = map.getPitch() > 0.5 || Math.abs(map.getBearing()) > 0.5;
     if (!pitched) return;
-    userExploringRef.current = false;
+    /* Do not yank a street-level zoom back to regional (~Canada) — that made dest/home markers
+     * fly across the screen. Only flatten pitch/bearing; keep the user's zoom/center. */
     stopMapCamera(map);
     flattenMapCamera(map);
-    const u = userLngLatRef.current;
-    if (!u) return;
-    if (viewMode === "topdown" || routes.length === 0) {
-      prevTopdownRef.current = false;
-      safeFlyTo(map, {
-        center: u,
-        zoom: viewMode === "topdown" ? topdownZoomRef.current : regionalPlanningZoom(),
-        pitch: 0,
-        bearing: 0,
-        padding: ZERO_MAP_PADDING,
-        offset: viewMode === "topdown" ? TOPDOWN_PUCK_OFFSET_PX : [0, 0],
-        duration: 420,
-        essential: true,
-      });
+    try {
+      safeEaseTo(map, { pitch: 0, bearing: 0, duration: 280, essential: true });
+    } catch {
+      /* map disposed */
     }
   }, [
     activeDriveCamera,
@@ -1714,7 +1702,6 @@ function DriveMapInner({
     routes.length,
     fitTrigger,
     recenterPlanningPuckTick,
-    topdownZoomRef,
   ]);
 
   useEffect(() => {
@@ -2853,11 +2840,13 @@ function DriveMapInner({
     prevPlanningRouteCountRef.current = routes.length;
     const routesJustLoaded = prevCount === 0 && routes.length > 0;
 
-    const forcePlanningFit =
-      !navigationStarted || navigationCameraShouldFitFullRoute(viewMode, navigationStarted);
-    /* Any App-driven refit (reroute, slot change, etc.) must win over stale "user exploring" from pan/zoom. */
+    /* Only App-driven events (fitTrigger / first routes / entering Rt) may override a live pan/zoom.
+     * Previously planning always set forcePlanningFit=true, so overview fit ignored exploring and
+     * fought the user — camera zoomed back out and markers looked like they were flying. */
+    let appForcedFit = enteredRouteView;
     if (fitTrigger !== lastForcedPlanningFitTriggerRef.current || routesJustLoaded) {
       lastForcedPlanningFitTriggerRef.current = fitTrigger;
+      appForcedFit = true;
       userExploringRef.current = false;
       if (exploreTimerRef.current) {
         clearTimeout(exploreTimerRef.current);
@@ -2872,7 +2861,7 @@ function DriveMapInner({
     let pendingFlatten: (() => void) | null = null;
 
     const executePlanningFit = (): boolean => {
-      if (userExploringRef.current && !forcePlanningFit) return false;
+      if (userExploringRef.current && !appForcedFit) return false;
       if (!mapStyleReadyForCamera(map)) return false;
       const u = userLngLatRef.current;
       if (pendingFlatten) {
@@ -2910,6 +2899,7 @@ function DriveMapInner({
 
     const verifyPlanningZoom = (attempt: number) => {
       if (cancelled || routes.length === 0) return;
+      if (userExploringRef.current) return;
       const vm = viewModeRef.current;
       if (navigationStartedRef.current && vm !== "route") return;
       if (viewModeRef.current !== "route" && viewModeRef.current !== "topdown") return;
@@ -2982,7 +2972,8 @@ function DriveMapInner({
     const forceRouteOverviewFit = () => {
       topdownSnapKeyRef.current = "";
       prevTopdownRef.current = false;
-      userExploringRef.current = false;
+      /* Keep a live user zoom/pan — only App-forced fits clear exploring above. */
+      if (userExploringRef.current && !appForcedFit) return;
       schedulePlanningRouteFit();
     };
 
@@ -3096,13 +3087,15 @@ function DriveMapInner({
 
     if (viewMode === "topdown") {
       /* Nav: local street snap once per view/resume — GPS follow is a separate pan effect. */
+      /* Planning Mp: omit mapResumeTick so explore-end does not re-home and fight zoom.
+       * Navigating Mp still uses resume tick so follow can re-latch after a manual pan. */
       const snapKey = routeCompareActive
         ? `${viewMode}|${fitTrigger}|${mapResumeTick}|compare|${compareLockedRouteId}|${lineFocusId}|${trafficBypassCompareHazardLngLat?.[0] ?? ""}|${offRouteAlternatesFitKey(routes, compareLockedRouteId)}`
         : offRouteCompare
           ? `${viewMode}|${fitTrigger}|${mapResumeTick}|offroute|${offRouteAlternatesFitKey(routes, compareLockedRouteId)}`
           : navigationStarted
             ? `${viewMode}|${fitTrigger}|${mapResumeTick}|nav`
-            : `${viewMode}|${fitTrigger}|${mapResumeTick}|plan|${routesPlanningFitKey}`;
+            : `${viewMode}|${fitTrigger}|plan|${routesPlanningFitKey}`;
       if (topdownSnapKeyRef.current !== snapKey) {
         topdownSnapKeyRef.current = snapKey;
         if (routeCompareActive) doRouteCompareLocalFit();
