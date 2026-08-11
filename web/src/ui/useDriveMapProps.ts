@@ -53,6 +53,7 @@ export type UseDriveMapPropsInput = {
   settingRadarDisplayMode: RadarDisplayMode;
   dataSaverMode: boolean;
   navMapLiteMode: boolean;
+  isOnline: boolean;
   onRadarFrameUtcSec: (utcSec: number | null, meta?: RadarFrameHudMeta) => void;
   alongRouteAlerts: RouteAlert[];
   corridorRouteGeometry: LngLat[] | null | undefined;
@@ -128,6 +129,7 @@ export function buildDriveMapProps(
     settingRadarDisplayMode,
     dataSaverMode,
     navMapLiteMode,
+    isOnline,
     onRadarFrameUtcSec,
     alongRouteAlerts,
     corridorRouteGeometry,
@@ -246,6 +248,7 @@ export function buildDriveMapProps(
     followCamResyncKey,
     lastTravelBearingDegOutRef,
     puckAnchorDriftPxOutRef,
+    isOnline,
   };
 }
 

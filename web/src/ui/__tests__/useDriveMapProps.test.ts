@@ -39,6 +39,7 @@ function baseInput(over: Partial<UseDriveMapPropsInput> = {}): UseDriveMapPropsI
     settingRadarDisplayMode: "motion",
     dataSaverMode: false,
     navMapLiteMode: false,
+    isOnline: true,
     onRadarFrameUtcSec: vi.fn(),
     alongRouteAlerts: [],
     corridorRouteGeometry: [

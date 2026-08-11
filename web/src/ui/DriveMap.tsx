@@ -16,6 +16,12 @@ import {
 } from "../map/homePreloadRegion";
 import { isWifiConnection } from "../map/mapPreloadNetwork";
 import { warmMapTilesForBounds } from "../map/mapRegionCacheWarm";
+import { prefetchMapTilesForBounds } from "../map/prefetchMapTilesForBounds";
+import {
+  corridorWindowBounds,
+  nextCorridorWindowStartM,
+  shouldPrefetchNextCorridorWindow,
+} from "../map/routeCorridorPreload";
 import {
   findMissingTripRouteLineLayers,
   ROUTE_LAYER_HEALTH_IDLE_DEBOUNCE_MS,
@@ -90,6 +96,7 @@ import {
   safeFitBounds,
   safeFlyTo,
   safePanToCenter,
+  safeJumpTo,
   flattenMapCamera,
   safeSetMapLngLat,
   isMapUsable,
@@ -317,6 +324,8 @@ export type Props = {
   lastTravelBearingDegOutRef?: MutableRefObject<number | null>;
   /** Shared with Jeff's puck watchdog: pixel drift from the fixed drive yard-line anchor. */
   puckAnchorDriftPxOutRef?: MutableRefObject<number | null>;
+  /** Skip corridor HTTP prefetch when offline; resume when back online. */
+  isOnline?: boolean;
 };
 
 /** Alias for App / prop-assembly hooks — same shape as {@link Props}. */
@@ -420,6 +429,7 @@ function DriveMapInner({
   offRouteRejoinCompareActive = false,
   rejoinOverlayActive = false,
   followCamResyncKey = 0,
+  isOnline = true,
   lastTravelBearingDegOutRef,
   puckAnchorDriftPxOutRef,
 }: Props) {
@@ -495,6 +505,11 @@ function DriveMapInner({
   const userExploringRef = useRef(false);
   /** One-shot: force drive follow-cam easeTo even when the puck barely moved (explore end, layout, resume). */
   const driveCamResyncRef = useRef(false);
+  /** Consecutive follow-cam apply failures — escalate to jumpTo under weak Mapbox tile load. */
+  const driveCamFailStreakRef = useRef(0);
+  /** Sliding corridor window start (m) for ahead tile prefetch while navigating. */
+  const corridorWarmStartMRef = useRef(0);
+  const corridorPrefetchInFlightRef = useRef(false);
   const exploreTimerRef = useRef<number | null>(null);
   const lastForcedPlanningFitTriggerRef = useRef<number | null>(null);
   const prevPlanningRouteCountRef = useRef(0);
@@ -911,7 +926,10 @@ function DriveMapInner({
       tileSize: 512,
       maxzoom: 14,
     });
-    map.setTerrain({ source: "mapbox-dem", exaggeration: 1.5 });
+    /* While GO is active, skip DEM automatically — no mid-drive setting. Restores after End. */
+    if (!navigationStarted) {
+      map.setTerrain({ source: "mapbox-dem", exaggeration: 1.5 });
+    }
 
     if (!map.getLayer("3d-buildings")) {
       const layers = map.getStyle()?.layers ?? [];
@@ -940,7 +958,23 @@ function DriveMapInner({
         labelLayerId
       );
     }
-  }, [mapReady, mapPhase]);
+  }, [mapReady, mapPhase, navigationStarted]);
+
+  /**
+   * Automatic while navigating: drop DEM so follow-cam is not blocked on terrain tiles in
+   * weak signal. No About toggle — restores when the trip ends.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (!map.getSource("mapbox-dem")) return;
+    try {
+      if (navigationStarted) map.setTerrain(null);
+      else map.setTerrain({ source: "mapbox-dem", exaggeration: 1.5 });
+    } catch {
+      /* style race */
+    }
+  }, [mapReady, navigationStarted]);
 
   /** Keep 3D building color in sync when phase changes after the layer is already live. */
   useEffect(() => {
@@ -1573,10 +1607,9 @@ function DriveMapInner({
           const forceCamSync = driveCamResyncRef.current || forcePeriodicResync;
           const applyLayoutOrEntry = pitchOff || forceCamSync || easeLayoutChanged;
           if (camMoved || bearingMoved || applyLayoutOrEntry) {
-            if (
-              pos &&
-              safeEaseTo(map, {
-                center: pos,
+            if (pos) {
+              const panOpts = {
+                center: pos as [number, number],
                 ...(applyLayoutOrEntry
                   ? { zoom: driveNavZoomRef.current, pitch: DRIVE_FOLLOW_PITCH_DEG }
                   : {}),
@@ -1584,11 +1617,32 @@ function DriveMapInner({
                 padding,
                 offset,
                 duration: 0,
-                essential: true,
-              })
-            ) {
-              lastBearingApplied = driveCamBearingSmoothedRef.current;
-              if (forceCamSync) driveCamResyncRef.current = false;
+                essential: true as const,
+              };
+              /* jumpTo has no offset — still recenters; pan keeps yard-line offset when healthy. */
+              const jumpOpts = {
+                center: pos as [number, number],
+                zoom: driveNavZoomRef.current,
+                pitch: DRIVE_FOLLOW_PITCH_DEG,
+                bearing: driveCamBearingSmoothedRef.current,
+                padding,
+              };
+              /* Prefer pan (no map.stop) so weak tile fetches don't freeze the transform.
+               * Hard jump on resync / after repeated pan failures — keeps puck on-screen offline. */
+              let ok = false;
+              if (forceCamSync || driveCamFailStreakRef.current >= 2) {
+                ok = safeJumpTo(map, jumpOpts);
+              } else {
+                ok = safePanToCenter(map, panOpts);
+                if (!ok) ok = safeJumpTo(map, jumpOpts);
+              }
+              if (ok) {
+                lastBearingApplied = driveCamBearingSmoothedRef.current;
+                driveCamFailStreakRef.current = 0;
+                if (forceCamSync) driveCamResyncRef.current = false;
+              } else {
+                driveCamFailStreakRef.current += 1;
+              }
             }
           }
         }
@@ -2688,6 +2742,109 @@ function DriveMapInner({
     viewMode,
   ]);
 
+  /**
+   * Before Go: HTTP-prefetch the first corridor window + overlapping next window.
+   * Does not move the Rt camera (unlike home Wi‑Fi warm passes).
+   */
+  useEffect(() => {
+    if (!mapReady || navigationStarted || routes.length === 0) return;
+    if (viewMode !== "route" && viewMode !== "topdown") return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) return;
+    const geom =
+      routes.find((r) => r.id === lineFocusId)?.geometry ?? routes[0]?.geometry ?? null;
+    if (!geom || geom.length < 2) return;
+    const first = corridorWindowBounds(geom, 0);
+    if (!first) return;
+    const token = getWebEnv().mapboxToken;
+    if (!token) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        /* Streets only — no DEM prefetch, no Data saver toggle required. */
+        await prefetchMapTilesForBounds(first, token, {
+          shouldAbort: () => cancelled || navigationStartedRef.current,
+          includeTerrain: false,
+        });
+        if (cancelled || navigationStartedRef.current) return;
+        const nextStart = nextCorridorWindowStartM(0);
+        const next = corridorWindowBounds(geom, nextStart);
+        if (!next) return;
+        await prefetchMapTilesForBounds(next, token, {
+          shouldAbort: () => cancelled || navigationStartedRef.current,
+          includeTerrain: false,
+        });
+        if (!cancelled) corridorWarmStartMRef.current = 0;
+      })();
+    }, 900);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [mapReady, navigationStarted, routesPlanningFitKey, viewMode, lineFocusId]);
+
+  /** While navigating: prefetch the next overlapping corridor window as you approach its edge. */
+  useEffect(() => {
+    if (!mapReady || !navigationStarted) return;
+    if (!isOnline) return;
+    const geom =
+      (puckSnapGeometry && puckSnapGeometry.length >= 2
+        ? puckSnapGeometry
+        : null) ??
+      (corridorRouteGeometry && corridorRouteGeometry.length >= 2
+        ? corridorRouteGeometry
+        : null) ??
+      routes.find((r) => r.id === lineFocusId)?.geometry ??
+      routes[0]?.geometry ??
+      null;
+    if (!geom || geom.length < 2) return;
+    const along = userAlongMeters ?? 0;
+    if (!Number.isFinite(along) || along < 0) return;
+    if (!shouldPrefetchNextCorridorWindow(along, corridorWarmStartMRef.current)) return;
+    if (corridorPrefetchInFlightRef.current) return;
+
+    const token = getWebEnv().mapboxToken;
+    if (!token) return;
+    const nextStart = nextCorridorWindowStartM(corridorWarmStartMRef.current);
+    const next = corridorWindowBounds(geom, nextStart);
+    if (!next) return;
+
+    let cancelled = false;
+    corridorPrefetchInFlightRef.current = true;
+    void (async () => {
+      try {
+        const result = await prefetchMapTilesForBounds(next, token, {
+          shouldAbort: () => cancelled || !navigationStartedRef.current || !isOnline,
+          includeTerrain: false,
+        });
+        if (!cancelled && result === "done") {
+          corridorWarmStartMRef.current = nextStart;
+        }
+      } finally {
+        corridorPrefetchInFlightRef.current = false;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    mapReady,
+    navigationStarted,
+    userAlongMeters,
+    lineFocusId,
+    routesPlanningFitKey,
+    puckSnapGeometry,
+    corridorRouteGeometry,
+    isOnline,
+  ]);
+
+  useEffect(() => {
+    if (navigationStarted) return;
+    corridorWarmStartMRef.current = 0;
+  }, [navigationStarted, routesPlanningFitKey]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || viewMode !== "route" && viewMode !== "topdown") return;
@@ -3368,7 +3525,14 @@ function DriveMapInner({
             progressRailVisibleRef.current
           );
           if (
-            safeEaseTo(map, {
+            safeJumpTo(map, {
+              center: pos,
+              zoom: driveNavZoomRef.current,
+              pitch: DRIVE_FOLLOW_PITCH_DEG,
+              bearing: travelTarget,
+              padding: o.padding,
+            }) ||
+            safePanToCenter(map, {
               center: pos,
               zoom: driveNavZoomRef.current,
               pitch: DRIVE_FOLLOW_PITCH_DEG,
@@ -3380,6 +3544,7 @@ function DriveMapInner({
             })
           ) {
             driveCamResyncRef.current = false;
+            driveCamFailStreakRef.current = 0;
           }
         }
       }

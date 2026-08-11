@@ -167,6 +167,28 @@ export function safePanToCenter(map: Map, options: EaseToOptions): boolean {
   }
 }
 
+type JumpToOptions = Parameters<Map["jumpTo"]>[0];
+
+/**
+ * Hard snap follow-cam (no animation, no {@link stopMapCamera}).
+ * Prefer this when tiles are stalling — `easeTo`/`stop` can freeze the transform while the puck keeps moving.
+ */
+export function safeJumpTo(map: Map, options: JumpToOptions): boolean {
+  if (!isMapReadyForCamera(map)) return false;
+  try {
+    let next = options;
+    if (options.center !== undefined && options.center !== null) {
+      const center = normalizeCenter(options.center as LngLatLike);
+      if (!center) return false;
+      next = { ...options, center };
+    }
+    map.jumpTo(next);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function safeFlyTo(map: Map, options: FlyToOptions): boolean {
   if (!isMapReadyForCamera(map)) return false;
   try {

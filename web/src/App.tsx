@@ -2405,6 +2405,7 @@ export default function App() {
       radarMapOverlayOn,
       dataSaverMode,
       navMapLiteMode,
+      isOnline,
       onRadarFrameUtcSec: setRadarFrameUtcSec,
       alongRouteAlerts: mapAlongRouteAlertsForDrive,
       corridorRouteGeometry: guidanceRoute?.geometry,
