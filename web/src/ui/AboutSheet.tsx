@@ -158,9 +158,9 @@ export function AboutSheet({
     `Plan: ${tierLabel}`,
     `Crash reporting: ${isCrashReportingEnabled() ? "on (automatic for serious errors)" : "off"}`,
     `Online: ${typeof navigator === "undefined" ? "unknown" : navigator.onLine ? "yes" : "no"}`,
-    `Voice: ${settings.voiceGuidanceEnabled ? "on" : "off"}, GPS refresh: ${
-      settings.gpsHighRefreshEnabled ? "high" : "normal"
-    }, Data saver: ${settings.dataSaverEnabled ? "on" : "off"}`,
+    `Voice: ${settings.voiceGuidanceEnabled ? "on" : "off"}, Data saver: ${
+      settings.dataSaverEnabled ? "on" : "off"
+    }`,
     `Landscape UI: ${settings.landscapeSideHand === "left" ? "left hand" : "right hand"}`,
     `Providers: mapbox=${env.mapboxToken ? "on" : "off"}, openweather=${
       env.openWeatherApiKey ? "on" : "off"
@@ -595,34 +595,6 @@ export function AboutSheet({
                 </span>
               </label>
 
-              <label className="about-sheet__setting about-sheet__settings-card">
-                <input
-                  type="checkbox"
-                  checked={settings.gpsHighRefreshEnabled}
-                  onChange={(e) => onSettings({ ...settings, gpsHighRefreshEnabled: e.target.checked })}
-                />
-                <span>
-                  <strong>GPS high refresh</strong> — request fresher positions (uses more battery). Turn off if the
-                  puck feels jittery.
-                </span>
-              </label>
-
-              <label
-                className={`about-sheet__setting about-sheet__settings-card${plus && env.mapboxToken ? "" : " disabled"}`}
-              >
-                <input
-                  type="checkbox"
-                  checked={settings.mapMatchingEnabled}
-                  disabled={!plus || !env.mapboxToken}
-                  onChange={(e) => onSettings({ ...settings, mapMatchingEnabled: e.target.checked })}
-                />
-                <span>
-                  <strong>Snap GPS to roads</strong> — optional Map Matching while on DIY nav (uses
-                  Mapbox quota). Off by default; leave off on iPhone when native guidance is active.
-                  Route snap still keeps the puck on your line.
-                  {!plus ? <em> (Plus)</em> : !env.mapboxToken ? <em> (Mapbox token required)</em> : null}
-                </span>
-              </label>
             </div>
           </section>
 
