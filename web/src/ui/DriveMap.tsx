@@ -505,8 +505,6 @@ function DriveMapInner({
   const userExploringRef = useRef(false);
   /** One-shot: force drive follow-cam easeTo even when the puck barely moved (explore end, layout, resume). */
   const driveCamResyncRef = useRef(false);
-  /** Consecutive follow-cam apply failures — escalate to jumpTo under weak Mapbox tile load. */
-  const driveCamFailStreakRef = useRef(0);
   /** Sliding corridor window start (m) for ahead tile prefetch while navigating. */
   const corridorWarmStartMRef = useRef(0);
   const corridorPrefetchInFlightRef = useRef(false);
@@ -1619,29 +1617,26 @@ function DriveMapInner({
                 duration: 0,
                 essential: true as const,
               };
-              /* jumpTo has no offset — still recenters; pan keeps yard-line offset when healthy. */
-              const jumpOpts = {
-                center: pos as [number, number],
-                zoom: driveNavZoomRef.current,
-                pitch: DRIVE_FOLLOW_PITCH_DEG,
-                bearing: driveCamBearingSmoothedRef.current,
-                padding,
-              };
-              /* Prefer pan (no map.stop) so weak tile fetches don't freeze the transform.
-               * Hard jump on resync / after repeated pan failures — keeps puck on-screen offline. */
-              let ok = false;
-              if (forceCamSync || driveCamFailStreakRef.current >= 2) {
-                ok = safeJumpTo(map, jumpOpts);
-              } else {
-                ok = safePanToCenter(map, panOpts);
-                if (!ok) ok = safeJumpTo(map, jumpOpts);
-              }
+              /* Prefer pan — keeps yard-line offset. Avoid jumpTo on the hot path:
+               * jump recenters without offset and flashes a different map framing
+               * (common under weak tile load when pan briefly fails). */
+              const ok = safePanToCenter(map, panOpts);
               if (ok) {
                 lastBearingApplied = driveCamBearingSmoothedRef.current;
-                driveCamFailStreakRef.current = 0;
                 if (forceCamSync) driveCamResyncRef.current = false;
-              } else {
-                driveCamFailStreakRef.current += 1;
+              } else if (forceCamSync) {
+                /* Intentional resync only — last resort if pan can't apply. */
+                const jumped = safeJumpTo(map, {
+                  center: pos as [number, number],
+                  zoom: driveNavZoomRef.current,
+                  pitch: DRIVE_FOLLOW_PITCH_DEG,
+                  bearing: driveCamBearingSmoothedRef.current,
+                  padding,
+                });
+                if (jumped) {
+                  lastBearingApplied = driveCamBearingSmoothedRef.current;
+                  driveCamResyncRef.current = false;
+                }
               }
             }
           }
@@ -3524,14 +3519,9 @@ function DriveMapInner({
             stormBarExpandedRef.current,
             progressRailVisibleRef.current
           );
+          /* Pan first (keeps yard-line offset). jumpTo only if pan fails — jump has no
+           * offset and was flashing an alternate framing during Jeff / layout resync. */
           if (
-            safeJumpTo(map, {
-              center: pos,
-              zoom: driveNavZoomRef.current,
-              pitch: DRIVE_FOLLOW_PITCH_DEG,
-              bearing: travelTarget,
-              padding: o.padding,
-            }) ||
             safePanToCenter(map, {
               center: pos,
               zoom: driveNavZoomRef.current,
@@ -3541,10 +3531,16 @@ function DriveMapInner({
               offset: o.offset,
               duration: 0,
               essential: true,
+            }) ||
+            safeJumpTo(map, {
+              center: pos,
+              zoom: driveNavZoomRef.current,
+              pitch: DRIVE_FOLLOW_PITCH_DEG,
+              bearing: travelTarget,
+              padding: o.padding,
             })
           ) {
             driveCamResyncRef.current = false;
-            driveCamFailStreakRef.current = 0;
           }
         }
       }
