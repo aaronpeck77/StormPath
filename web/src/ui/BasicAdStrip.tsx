@@ -30,7 +30,7 @@ function PromoRow({
   const className = [
     "storm-advisory-bar__promo",
     line.featured ? "storm-advisory-bar__promo--featured" : "",
-    line.prominent ? "storm-advisory-bar__promo--sitebible" : "",
+    line.prominent ? "storm-advisory-bar__promo--prominent" : "",
     href ? "storm-advisory-bar__promo-link" : "storm-advisory-bar__promo-text",
   ]
     .filter(Boolean)
