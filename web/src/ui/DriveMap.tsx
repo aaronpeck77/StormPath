@@ -142,6 +142,7 @@ import {
 import {
   resolveViewEnterDecision,
   topdownFitNeedsStreetZoomReset,
+  shouldRetryInterruptedRouteOverviewEnter,
 } from "./useMapCameraController";
 import {
   TOPDOWN_PUCK_OFFSET_PX,
@@ -535,6 +536,12 @@ function DriveMapInner({
   /** User-chosen zoom while navigating in Dr — do not snap back to 16.35 after pinch. */
   const driveNavZoomRef = useRef(16.35);
   const navRouteSnapKeyRef = useRef("");
+  /**
+   * Entering Rt while navigating schedules a full-corridor fit, then the view-switch
+   * resize (`mapResumeTick`) remounts this effect and used to skip the fit because the
+   * snap key was already committed. Keep retrying until a fit actually lands.
+   */
+  const pendingRouteOverviewEnterRef = useRef(false);
   const prevPlanningViewModeRef = useRef(viewMode);
   /** Reuse stable padding/offset for drive follow — fresh objects every frame can confuse Mapbox camera updates. */
   const driveCamEaseOptsCacheRef = useRef<{
@@ -1639,6 +1646,32 @@ function DriveMapInner({
                 }
               }
             }
+          }
+        } else if (
+          map &&
+          map.isStyleLoaded() &&
+          viewModeRef.current === "topdown" &&
+          navigationStartedRef.current &&
+          !userExploringRef.current
+        ) {
+          /* Mp: pan every frame with the smoothed puck so the map doesn't sit still
+           * for ~40 m then jump (quantized GPS follow key). Keep pitch/bearing flat. */
+          const pos = readMapLngLat(marker.getLngLat());
+          const camCenter = readMapLngLat(map.getCenter());
+          const camMoved =
+            !!pos &&
+            !!camCenter &&
+            (Math.abs(camCenter[0] - pos[0]) > CAM_NOOP_LNGLAT_DELTA ||
+              Math.abs(camCenter[1] - pos[1]) > CAM_NOOP_LNGLAT_DELTA);
+          if (pos && camMoved) {
+            safePanToCenter(map, {
+              center: pos as [number, number],
+              pitch: 0,
+              bearing: 0,
+              offset: TOPDOWN_PUCK_OFFSET_PX,
+              duration: 0,
+              essential: true,
+            });
           }
         }
         } catch (err) {
@@ -2962,6 +2995,9 @@ function DriveMapInner({
       enteredRouteView = decision.enteredRouteView;
       enteredTopdownNav = decision.enteredTopdownNav;
       if (decision.bustRouteOverviewSnapKey) navRouteSnapKeyRef.current = "";
+      if (decision.enteredRouteView && navigationStarted) {
+        pendingRouteOverviewEnterRef.current = true;
+      }
       if (decision.bustTopdownSnapKey) topdownSnapKeyRef.current = "";
       if (decision.enteredRouteView) {
         prevTopdownRef.current = false;
@@ -3020,10 +3056,11 @@ function DriveMapInner({
         map.off("moveend", pendingFlatten);
         pendingFlatten = null;
       }
-      /* Pre-Go: always frame the full active polyline (street or cross-country) as large
-       * as padding allows. Endpoint-only fits leave winding corridors clipped. */
-      const planningOverview = !navigationStartedRef.current;
-      return fitMapToTrip(
+      /* Pre-Go: always frame the full active polyline. Navigating Rt: same — remaining
+       * corridor overview, not Mp street zoom. Endpoint-only fits look like Mp on short legs. */
+      const planningOverview =
+        !navigationStartedRef.current || viewModeRef.current === "route";
+      const fitted = fitMapToTrip(
         map,
         routes,
         u,
@@ -3047,6 +3084,10 @@ function DriveMapInner({
           forceFullPolyline: planningOverview,
         }
       );
+      if (fitted && viewModeRef.current === "route") {
+        pendingRouteOverviewEnterRef.current = false;
+      }
+      return fitted;
     };
 
     const verifyPlanningZoom = (attempt: number) => {
@@ -3237,6 +3278,8 @@ function DriveMapInner({
     const offRouteCompare = navigationStarted && offRouteRejoinCompareActive;
     const routeCompareActive = trafficBypassCompareActive;
 
+    if (viewMode !== "route") pendingRouteOverviewEnterRef.current = false;
+
     if (viewMode === "topdown") {
       /* Nav: local street snap once per view/resume — GPS follow is a separate pan effect. */
       /* Planning Mp: omit mapResumeTick so explore-end does not re-home and fight zoom.
@@ -3262,7 +3305,15 @@ function DriveMapInner({
         lineFocusId,
         routesPlanningFitKey
       );
-      if (enteredRouteView || navRouteSnapKeyRef.current !== routeOverviewSnapKey) {
+      if (
+        enteredRouteView ||
+        shouldRetryInterruptedRouteOverviewEnter(
+          pendingRouteOverviewEnterRef.current,
+          viewMode,
+          navigationStarted
+        ) ||
+        navRouteSnapKeyRef.current !== routeOverviewSnapKey
+      ) {
         navRouteSnapKeyRef.current = routeOverviewSnapKey;
         forceRouteOverviewFit();
       }
@@ -3603,8 +3654,10 @@ function DriveMapInner({
     const idleHomeFollow = idleHomeScreen && homePuckFollow === "follow";
     const followTopdownView = viewMode === "topdown";
     const followRouteHome = viewMode === "route" && idleHomeFollow;
+    /** Navigating Mp: puck RAF loop pans every frame — this quantized GPS key was ~40 m jumps. */
+    const quantizedTopdownFollow = followTopdownView && !navigationStarted;
 
-    if (!canCameraFollow || (!followTopdownView && !followRouteHome)) {
+    if (!canCameraFollow || (!quantizedTopdownFollow && !followRouteHome)) {
       if (!followTopdownView) prevTopdownRef.current = false;
       return;
     }

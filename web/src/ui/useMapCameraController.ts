@@ -77,6 +77,19 @@ export function resolveViewEnterDecision(args: {
 }
 
 /**
+ * Rt overview fit is scheduled on view enter, then a same-tick resize remounts the
+ * camera effect. Keep retrying until a fit actually lands — otherwise Rt stays at
+ * Mp street zoom.
+ */
+export function shouldRetryInterruptedRouteOverviewEnter(
+  pendingEnter: boolean,
+  viewMode: MapViewMode,
+  navigationStarted: boolean
+): boolean {
+  return pendingEnter && navigationStarted && viewMode === "route";
+}
+
+/**
  * Whether an App-driven refit reason (reroute, slot change, style reload, etc.)
  * should override an active explore latch and force the camera to re-fit.
  */
