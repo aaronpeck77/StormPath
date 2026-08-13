@@ -15,7 +15,7 @@ export type AdvisoryPromoLine = {
   action?: AdvisoryPromoAction;
   /** Primary upsell card styling in the Basic status panel. */
   featured?: boolean;
-  /** Larger partner card in the Basic status panel (SiteBible). */
+  /** Larger partner card styling in the Basic status panel. */
   prominent?: boolean;
   /** Reserved banner placement between forecast and Plus upsell. */
   bannerSlot?: boolean;
@@ -27,23 +27,13 @@ export type BasicStatusPanelPromos = {
   /** Programmatic / partner banner — always reserved; link when `href` is set. */
   partnerSlot: AdvisoryPromoLine;
   plusUpsell: AdvisoryPromoLine;
-  siteBible: AdvisoryPromoLine;
 };
-
-/** Collapsed bar preview; long copy scrolls horizontally in the advisory bar when it doesn’t fit. */
-export const SITEBIBLE_AD_BAR =
-  "Coming Soon: SiteBible - Full Building Automation Inventoy Database. Check the App Store";
-
-export const SITEBIBLE_AD_DETAIL = SITEBIBLE_AD_BAR;
-
-/** Until `VITE_SITEBIBLE_URL` points at the live App Store product page. */
-export const SITEBIBLE_APP_STORE_FALLBACK = "https://apps.apple.com/search?term=SiteBible";
 
 export const PARTNER_AD_BAR = "Sponsored partner offer — tap for details";
 
 type WebEnv = ReturnType<typeof getWebEnv>;
 
-/** First-party partner slots — edit copy here; wire URLs via env. */
+/** Optional partner slot — only surfaces when `VITE_PARTNER_AD_URL` (or JSON override) is set. */
 const BUILTIN_PARTNER_ADS: Array<{
   id: string;
   barText: string;
@@ -52,14 +42,6 @@ const BUILTIN_PARTNER_ADS: Array<{
   sponsored?: boolean;
   ctaLabel?: string;
 }> = [
-  {
-    id: "sitebible",
-    barText: SITEBIBLE_AD_BAR,
-    detailText: SITEBIBLE_AD_DETAIL,
-    href: (env) => env.siteBibleUrl || SITEBIBLE_APP_STORE_FALLBACK,
-    sponsored: true,
-    ctaLabel: "Check the App Store",
-  },
   {
     id: "partner-sponsored",
     barText: PARTNER_AD_BAR,
@@ -109,6 +91,8 @@ function mergeEnvOverrides(lines: AdvisoryPromoLine[], overrides: EnvAdOverride[
   if (overrides.length === 0) return lines;
   const byId = new Map(lines.map((l) => [l.id, l]));
   for (const o of overrides) {
+    /* SiteBible / cross-product ads are not shown in StormPath. */
+    if (o.id === "sitebible") continue;
     const prev = byId.get(o.id);
     byId.set(o.id, {
       ...prev,
@@ -143,7 +127,6 @@ function partnerLines(env: WebEnv): AdvisoryPromoLine[] {
     href: ad.href?.(env),
     sponsored: ad.sponsored,
     ctaLabel: ad.ctaLabel,
-    prominent: ad.id === "sitebible",
   })).filter((ad) => ad.text.length > 0 && (ad.id !== "partner-sponsored" || ad.href));
 }
 
@@ -181,36 +164,33 @@ function connectivityTip(id: string): AdvisoryPromoLine {
   };
 }
 
+function driveSafetyTip(id: string): AdvisoryPromoLine {
+  return {
+    id,
+    text: "Tip: expand this bar for NWS alerts, traffic, and weather along your route.",
+    detailText:
+      "Tip: tap this status bar anytime for NWS alerts, traffic delays, and weather along your route — each alert names the hazard it covers.",
+  };
+}
+
 /**
- * Rotating copy in the advisory strip — weather line, SiteBible, optional Plus upsell (Basic only), tips.
- * Edit defaults in `basicAds.ts` or set `VITE_BASIC_ADS_JSON` / `VITE_SITEBIBLE_URL` / `VITE_UPGRADE_URL`.
+ * Rotating copy in the advisory strip — partner offer (when URL set), optional Plus upsell, tips.
+ * Edit defaults here or set `VITE_BASIC_ADS_JSON` / `VITE_PARTNER_AD_URL` / `VITE_UPGRADE_URL`.
  */
 export function buildAdvisoryPromoLines(env: WebEnv, ownsPlus: boolean): AdvisoryPromoLine[] {
   const lines: AdvisoryPromoLine[] = [...partnerLines(env)];
 
   if (!ownsPlus) lines.push(plusUpsellLine(env, "full"));
   lines.push(connectivityTip("tip-net"));
+  lines.push(driveSafetyTip("tip-status-bar"));
 
   return mergeEnvOverrides(lines, parseEnvBasicAdsJson(env.basicAdsJson));
 }
 
-/** Basic tier status panel: partner banner slot, StormPath Plus upsell, SiteBible. */
+/** Basic tier status panel: partner banner slot + StormPath Plus upsell. */
 export function buildBasicNavStatusPanelPromos(env: WebEnv): BasicStatusPanelPromos {
-  const partners = partnerLines(env);
-  const siteBible =
-    partners.find((p) => p.id === "sitebible") ??
-    ({
-      id: "sitebible",
-      text: SITEBIBLE_AD_BAR,
-      detailText: SITEBIBLE_AD_DETAIL,
-      href: env.siteBibleUrl || SITEBIBLE_APP_STORE_FALLBACK,
-      sponsored: true,
-      ctaLabel: "Check the App Store",
-      prominent: true,
-    } satisfies AdvisoryPromoLine);
-
   const merged = mergeEnvOverrides(
-    [partnerBannerSlot(env), plusUpsellLine(env, "nav-radar"), { ...siteBible, prominent: true }],
+    [partnerBannerSlot(env), plusUpsellLine(env, "nav-radar")],
     parseEnvBasicAdsJson(env.basicAdsJson)
   );
   const byId = new Map(merged.map((l) => [l.id, l]));
@@ -218,14 +198,13 @@ export function buildBasicNavStatusPanelPromos(env: WebEnv): BasicStatusPanelPro
   return {
     partnerSlot: { ...byId.get("partner-sponsored")!, bannerSlot: true },
     plusUpsell: byId.get("sp-plus-upsell")!,
-    siteBible: { ...byId.get("sitebible")!, prominent: true },
   };
 }
 
-/** Basic tier collapsed rotator: Plus upsell, SiteBible, optional partner when URL is set. */
+/** Basic tier collapsed rotator: Plus upsell, optional partner when URL is set, tips. */
 export function buildBasicNavAdvisoryPromoLines(env: WebEnv): AdvisoryPromoLine[] {
   const panel = buildBasicNavStatusPanelPromos(env);
-  const lines: AdvisoryPromoLine[] = [panel.plusUpsell, panel.siteBible];
+  const lines: AdvisoryPromoLine[] = [panel.plusUpsell, connectivityTip("tip-net-basic")];
   if (panel.partnerSlot.href) lines.push(panel.partnerSlot);
   return lines;
 }

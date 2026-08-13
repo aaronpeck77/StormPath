@@ -712,9 +712,10 @@
 .drive-route-info-strip__primary {
   flex: 1 1 0;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.25;
 }
 
 .drive-route-info-strip__dot {
@@ -9601,10 +9602,10 @@
   appearance: none;
   border-width: 1px;
   border-style: solid;
-  /* Typical height: ~2 lines. Grows to 3 lines only when abbreviated copy still wraps. */
+  /* Grow with wrapped alert/status copy — never clip hazard text. */
   min-height: var(--nav-chrome-control, 40px);
   line-height: 1.3;
-  overflow: hidden;
+  overflow: visible;
   transition:
     background 0.35s ease,
     border-color 0.35s ease,
@@ -10104,8 +10105,7 @@
   margin-top: 10px;
 }
 
-.storm-advisory-bar__basic-strip--plus,
-.storm-advisory-bar__basic-strip--sitebible {
+.storm-advisory-bar__basic-strip--plus {
   margin: 0;
   padding: 0;
   border: none;
@@ -10113,8 +10113,7 @@
   gap: 0;
 }
 
-.storm-advisory-bar--expanded .storm-advisory-bar__basic-strip--plus,
-.storm-advisory-bar--expanded .storm-advisory-bar__basic-strip--sitebible {
+.storm-advisory-bar--expanded .storm-advisory-bar__basic-strip--plus {
   padding: 0;
 }
 
@@ -10179,7 +10178,7 @@
   min-height: 104px;
 }
 
-.storm-advisory-bar--expanded .storm-advisory-bar__promo--sitebible {
+.storm-advisory-bar--expanded .storm-advisory-bar__promo--prominent {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -10196,11 +10195,11 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-.storm-advisory-bar--expanded .storm-advisory-bar__promo--sitebible .basic-ad__sponsored {
+.storm-advisory-bar--expanded .storm-advisory-bar__promo--prominent .basic-ad__sponsored {
   font-size: 0.62rem;
 }
 
-.storm-advisory-bar--expanded .storm-advisory-bar__promo--sitebible .storm-advisory-bar__promo-cta {
+.storm-advisory-bar--expanded .storm-advisory-bar__promo--prominent .storm-advisory-bar__promo-cta {
   display: inline-flex;
   padding: 7px 12px;
   font-size: 0.72rem;
@@ -10255,11 +10254,9 @@
 
 .storm-advisory-bar--expanded .storm-advisory-bar__now-chip--ahead .storm-advisory-bar__now-text {
   white-space: normal;
-  overflow: hidden;
-  text-overflow: clip;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  overflow: visible;
+  display: block;
+  word-break: break-word;
 }
 
 .storm-advisory-bar__hazard-ahead-note strong {
@@ -11394,9 +11391,10 @@
   min-width: 0;
   color: #e8eaed;
   font-weight: 550;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  word-break: break-word;
+  line-height: 1.3;
 }
 
 .nav-top-cluster .top-guidance-bar {
@@ -11753,9 +11751,9 @@
   font-size: 0.58rem;
   line-height: 1.25;
   color: #fef3c7;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  word-break: break-word;
 }
 
 .nav-drive-ahead__one strong {
@@ -12008,7 +12006,7 @@
 .drive-hazard-approach.drive-hazard-approach--strip {
   display: flex;
   flex-direction: row;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   margin-top: 4px;
   padding: 3px 6px 3px 8px;
@@ -12021,7 +12019,6 @@
   line-height: 1.2;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
   cursor: pointer;
-  max-height: 2.1rem;
 }
 
 /* Severity is conveyed via a dot before the title (see ::before below) ? never a colored
@@ -12156,7 +12153,6 @@
 .nav-top-cluster .drive-hazard-approach.drive-hazard-approach--strip {
   font-size: 0.6rem;
   padding: 2px 5px 2px 6px;
-  max-height: 1.95rem;
 }
 
 .nav-top-cluster .drive-hazard-approach__chip {
@@ -15867,7 +15863,11 @@
 
   .top-hazards-alert__detail {
     font-size: 0.48rem;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+    white-space: normal;
+    overflow: visible;
+    word-break: break-word;
   }
 
   .top-hazards-alert__reroute {

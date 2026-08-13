@@ -476,7 +476,7 @@ export default function App() {
    * and clear it via `setViewModeBeforeTrafficBypass(null)`. */
 
   const driveModeUi = isDriveNavMode(navigationStarted, viewMode);
-  /** Third-party AdMob only — house promos (SiteBible, Plus upsell) live in StormAdvisoryBar. */
+  /** Third-party AdMob only — house promos (Plus upsell / tips) live in StormAdvisoryBar. */
   const basicAdBanner = useBasicAdMobBanner({
     enabled: !isPlus,
     navigationStarted,
