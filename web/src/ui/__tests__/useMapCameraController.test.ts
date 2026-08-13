@@ -3,6 +3,7 @@ import {
   refitOverridesExploreLatch,
   requiresFullRouteFit,
   resolveViewEnterDecision,
+  shouldRetryInterruptedRouteOverviewEnter,
   topdownFitNeedsStreetZoomReset,
 } from "../useMapCameraController";
 import type { Map as MapboxMap } from "mapbox-gl";
@@ -69,6 +70,18 @@ describe("useMapCameraController — view-enter decisions", () => {
       navigationStarted: false,
     });
     expect(d.enteredTopdownNav).toBe(false);
+  });
+});
+
+describe("useMapCameraController — interrupted Rt enter", () => {
+  it("retries overview fit after view-switch resize while still on navigating Rt", () => {
+    expect(shouldRetryInterruptedRouteOverviewEnter(true, "route", true)).toBe(true);
+  });
+
+  it("does not retry once the fit landed or we left Rt", () => {
+    expect(shouldRetryInterruptedRouteOverviewEnter(false, "route", true)).toBe(false);
+    expect(shouldRetryInterruptedRouteOverviewEnter(true, "topdown", true)).toBe(false);
+    expect(shouldRetryInterruptedRouteOverviewEnter(true, "route", false)).toBe(false);
   });
 });
 
