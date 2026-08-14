@@ -2,6 +2,8 @@
 
 Living checklist for moving StormPath from TestFlight beta → public App Store launch.
 
+**Launch go / no-go (2026-08-14):** use [`APP_STORE_CHECKLIST.md`](APP_STORE_CHECKLIST.md). Several Phase 1 boxes below are stale (armv7 already `arm64`; real AdMob IDs are in `Info.plist` / `.env.production`). Bundle id is **`com.aaronpeck.stormpath`**, not `com.stormpath.app`.
+
 Source of truth across chat sessions. Tick boxes as items land. Add notes inline as decisions evolve.
 
 > **Posture:** TestFlight has 5 beta testers (installed today, 2026‑05‑26). Plus tier on testers comes from `.env.testflight` `VITE_PAY_TIER=plus`. Iteration happens in dev (`npm run dev`); TestFlight only gets a new build after each phase is verified locally.

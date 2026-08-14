@@ -23,14 +23,16 @@ Everything needed for full navigation without a subscription:
 | **Toll bypass** | Toll warning sheet + preview/compare toll-free alternates before Go or when switching legs. Gated by `hasTollBypass()` in `payFeatures.ts`. Basic still shows **Tolls** on route labels. |
 | **Frequent route learning** | Device-local GPS trip detection, clustering, suggestions in ★ drawer, save to favorites. Gated by `hasFrequentRoutesLearning()` → `getPayTier() === "plus"`. |
 
-## Subscription links (About sheet)
+## Subscription (About sheet)
 
-The About → **Subscription** section can show:
+On the **iOS App Store customer IPA**, Plus is an Apple auto-renewable subscription brokered by RevenueCat (`Subscribe` / `Restore purchases`). Money still goes through Apple. See [`APP_STORE_CHECKLIST.md`](APP_STORE_CHECKLIST.md).
 
-- **Upgrade to Plus** — only when the effective tier is Basic. Set `VITE_UPGRADE_URL` to your checkout or App Store app URL (e.g. `https://apps.apple.com/app/id…`).
-- **Manage subscription** — set `VITE_MANAGE_SUBSCRIPTION_URL`. Default in `.env.example`: Apple’s subscription management page (`https://apps.apple.com/account/subscriptions`). Use your Stripe Customer Portal or account URL if you bill outside the App Store.
+Fallback links (web / missing SDK key):
 
-These are build-time env vars (`web/.env` or hosting dashboard). Rebuild after changing them.
+- **Upgrade to Plus** — only when the effective tier is Basic and IAP is not ready. Set `VITE_UPGRADE_URL` if you need a web checkout or App Store product page.
+- **Manage subscription** — defaults to Apple’s page (`https://apps.apple.com/account/subscriptions`). Override with `VITE_MANAGE_SUBSCRIPTION_URL` only if you must.
+
+These are build-time env vars. Rebuild after changing them.
 
 ## Version & About
 

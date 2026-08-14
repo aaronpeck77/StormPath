@@ -2,6 +2,8 @@
 
 One checklist for **you** before sending invites. Testers use [`TESTER_NOTES.md`](TESTER_NOTES.md).
 
+**Public App Store:** this file is the closed-beta checklist. For the customer IPA use [`APP_STORE_CHECKLIST.md`](APP_STORE_CHECKLIST.md). Automated tests **do** exist now (`npm test` in CI).
+
 **Target:** 5–15 people, iOS TestFlight, Plus enabled on the build (not real billing yet).
 
 **No Mac?** Use GitHub only: [`GITHUB_TESTFLIGHT_ONLY.md`](GITHUB_TESTFLIGHT_ONLY.md) — push to `master` → Actions → TestFlight.

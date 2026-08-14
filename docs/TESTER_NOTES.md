@@ -19,7 +19,7 @@ Do this short smoke pass on the actual device before inviting anyone (or after p
 - Tap a result → routes A/B/C build → tap **Go** → drive view follows the puck smoothly.
 - **Compare routes on map** (hazard sheet or advisory): three different lines on the map, tap A/B/C to highlight, **Go** to switch route and return to drive.
 - Cycle the view button (Rt / Dr / Mp). Drive view shows only the active leg; route/topdown show alternates.
-- Advisory bar always shows *something* useful — local weather, NWS, traffic, or the SiteBible/coming-soon fallback. Never blank.
+- Advisory bar always shows *something* useful — local weather, NWS, traffic, or a tip / Plus upsell on Basic. Never blank.
 - Tap the advisory bar to expand. Confirm the panel fits, scrolls if needed, and closes cleanly.
 - Pick a **north/south** destination from the home screen. The lower endpoint should sit clearly above the inline route-select button (not touching it).
 - Progress rail (right edge, Plus only) appears once you're navigating; tap a colored chunk → details open.

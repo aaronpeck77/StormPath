@@ -10,7 +10,7 @@ Order of precedence (see `web/src/billing/payFeatures.ts`):
 
 1. **`stormpath-pay-tier-override`** in `localStorage` — About → “Test pay tier” when the test panel is enabled (dev or explicit prod flag).
 2. **`VITE_PAY_TIER`** at build time — `plus` / `pro` forces Plus for that binary (e.g. internal TestFlight track).
-3. **Native store entitlement** — `readNativePlusEntitlementActive()` in `web/src/billing/storeEntitlement.ts`. Today it is a placeholder: set `localStorage` key `stormpath-native-plus-entitlement` to `active` on device for QA. **Wire StoreKit / Play Billing here** and call `setNativePlusEntitlementActive(true)` after a verified purchase; offer **Restore purchases** that re-reads entitlements and updates this path.
+3. **Native store entitlement** — `readNativePlusEntitlementActive()` in `web/src/billing/storeEntitlement.ts`. RevenueCat (`revenueCat.ts`) sets this after purchase / restore / customer-info updates (`entitlements.active.plus`). The localStorage key `stormpath-native-plus-entitlement=active` remains a QA escape hatch only. **Customer App Store:** see [`APP_STORE_CHECKLIST.md`](APP_STORE_CHECKLIST.md).
 4. **`import.meta.env.DEV`** — Vite dev server only: defaults to **Plus** so features are easy to exercise in the browser.
 5. Otherwise **Basic** (`free`), including **production Capacitor builds** when no override and no entitlement.
 
