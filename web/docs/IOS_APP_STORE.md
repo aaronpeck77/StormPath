@@ -32,7 +32,9 @@ Configure these **repository secrets** (Settings → Secrets and variables → A
 | `APP_STORE_CONNECT_ISSUER_ID` | Issuer ID (same page) |
 | `APP_STORE_CONNECT_API_KEY_CONTENT` | Full `.p8` PEM or base64 (see [`.github/scripts/write-appstore-connect-key.py`](../../.github/scripts/write-appstore-connect-key.py)) |
 
-A successful run produces an **IPA** artifact and uploads to **TestFlight** via `xcrun altool`. Install the build in **TestFlight**, smoke-test, then in App Store Connect click **Submit for Review** when ready.
+Also required for the **App Store customer** track: `VITE_REVENUECAT_API_KEY_IOS` (`appl_…`). Push to `master` builds **TestFlight Plus**. Retail Basic IPA: Actions → Run workflow → `build_track` = `appstore`. See [`../../docs/APP_STORE_CHECKLIST.md`](../../docs/APP_STORE_CHECKLIST.md).
+
+A successful run produces an **IPA** artifact and uploads to **TestFlight** via the App Store Connect API (Transporter fallback). Install in **TestFlight**, smoke-test, then in App Store Connect click **Submit for Review** when ready. Do **not** submit a Plus TestFlight binary as the public customer build.
 
 ## Local build (optional — requires a Mac + Xcode)
 
