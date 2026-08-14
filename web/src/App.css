@@ -1382,6 +1382,13 @@
   gap: 6px;
 }
 
+.about-sheet__ad-hint {
+  margin: 8px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: #9aa0a6;
+}
+
 .about-sheet__title {
   margin: 0;
   font-size: 1.05rem;

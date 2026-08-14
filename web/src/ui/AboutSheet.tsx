@@ -2,6 +2,7 @@ import { Capacitor } from "@capacitor/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PurchasesPackage } from "@revenuecat/purchases-capacitor";
 import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
+import { getBasicBannerCustomerHint, getBasicBannerDebugLine } from "../ads/adMobClient";
 import { getPlusEntitlementDebugSnapshot } from "../billing/revenueCat";
 import { useRevenueCat } from "../billing/useRevenueCat";
 import { getWebEnv } from "../config/env";
@@ -170,9 +171,11 @@ export function AboutSheet({
       env.openWeatherApiKey ? "on" : "off"
     }, tomorrowIo=${env.tomorrowIoApiKey ? "on" : "off"}`,
     iapDebugLine || "iap: loading…",
+    getBasicBannerDebugLine(),
   ];
   const diagnosticsText = diagnosticsLines.join("\n");
   const supportEmail = env.supportEmail.trim();
+  const adHint = Capacitor.isNativePlatform() && !plus ? getBasicBannerCustomerHint() : null;
 
   return (
     <>
@@ -226,6 +229,7 @@ export function AboutSheet({
               </span>
             ) : null}
           </div>
+          {adHint ? <p className="about-sheet__p about-sheet__ad-hint">{adHint}</p> : null}
         </header>
 
         {onPayTierOverride ? (

@@ -36,13 +36,63 @@ let trackingAuthorizationInFlight: Promise<TrackingAuthorizationOutcome> | null 
 export type BasicBannerLoadOutcome = "loaded" | "failed";
 
 let bannerLoadOutcome: BasicBannerLoadOutcome | null = null;
+let bannerLoadFailureMessage = "";
 const bannerLoadListeners = new Set<(outcome: BasicBannerLoadOutcome) => void>();
 
-function setBannerLoadOutcome(outcome: BasicBannerLoadOutcome): void {
+/** Latest UI slot from `useBasicAdMobBanner` — About diagnostics only. */
+let bannerUiSlot: "hidden" | "loading" | "filled" | "empty" = "hidden";
+let bannerOpSerial = 0;
+let bannerOpChain: Promise<void> = Promise.resolve();
+
+function enqueueBannerOp<T>(fn: () => Promise<T>): Promise<T> {
+  const run = bannerOpChain.then(fn, fn);
+  bannerOpChain = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+function setBannerLoadOutcome(outcome: BasicBannerLoadOutcome, failureMessage = ""): void {
   bannerLoadOutcome = outcome;
+  bannerLoadFailureMessage =
+    outcome === "failed" ? failureMessage.trim() || "no fill" : "";
   for (const listener of bannerLoadListeners) {
     listener(outcome);
   }
+}
+
+export function recordBasicBannerUiSlot(
+  slot: "hidden" | "loading" | "filled" | "empty"
+): void {
+  bannerUiSlot = slot;
+}
+
+/** One-line AdMob status for About → Support diagnostics. */
+export function getBasicBannerDebugLine(): string {
+  const mode = resolveAdMobTestModeForDebug() ? "test creatives" : "live";
+  if (!isAdMobSupported()) return `ads: web (no AdMob, ${mode})`;
+  if (bannerUiSlot === "filled") return `ads: showing (${mode})`;
+  if (bannerUiSlot === "loading") return `ads: loading (${mode})`;
+  if (bannerUiSlot === "empty") {
+    const why = bannerLoadFailureMessage || "no fill";
+    return `ads: empty (${mode}, ${why})`;
+  }
+  return `ads: hidden (${mode})`;
+}
+
+/** Short About note when Basic asked Google for a banner and got nothing. */
+export function getBasicBannerCustomerHint(): string | null {
+  if (!isAdMobSupported()) return null;
+  if (bannerUiSlot !== "empty") return null;
+  return "Bottom Google ads are on for Basic. None loaded this session — common on TestFlight before the app is listed on the App Store.";
+}
+
+function resolveAdMobTestModeForDebug(): boolean {
+  return (
+    import.meta.env.DEV ||
+    String(import.meta.env.VITE_ADMOB_TEST_MODE ?? "").toLowerCase() === "true"
+  );
 }
 
 export function subscribeBasicBannerLoad(
@@ -56,8 +106,12 @@ export function subscribeBasicBannerLoad(
 function attachBannerListenersOnce(): void {
   if (!failureListenerAttached) {
     failureListenerAttached = true;
-    AdMob.addListener(BannerAdPluginEvents.FailedToLoad, () => {
-      setBannerLoadOutcome("failed");
+    AdMob.addListener(BannerAdPluginEvents.FailedToLoad, (info) => {
+      const message =
+        info && typeof info === "object" && "message" in info
+          ? String((info as { message?: unknown }).message ?? "")
+          : "";
+      setBannerLoadOutcome("failed", message);
     });
   }
   if (!successListenerAttached) {
@@ -137,44 +191,58 @@ export async function showBasicBanner(opts: {
 }): Promise<boolean> {
   if (!isAdMobSupported()) return false;
   const adId = opts.adUnitId.trim() || ADMOB_TEST_BANNER_UNIT_ID;
+  const mySerial = ++bannerOpSerial;
 
-  if (!initialized) {
-    await initAdMob({ testMode: opts.testMode });
-  }
+  return enqueueBannerOp(async () => {
+    if (mySerial !== bannerOpSerial) return false;
 
-  if (bannerVisible) {
-    await AdMob.hideBanner().catch(() => undefined);
-    bannerVisible = false;
-  }
+    if (!initialized) {
+      await initAdMob({ testMode: opts.testMode });
+    }
+    if (mySerial !== bannerOpSerial) return false;
 
-  bannerLoadOutcome = null;
+    if (bannerVisible) {
+      await AdMob.hideBanner().catch(() => undefined);
+      bannerVisible = false;
+    }
 
-  /* `npa = "non-personalized ads"`. When the user explicitly authorizes tracking we serve
-   * personalized ads; in every other case (denied / restricted / notDetermined / unsupported)
-   * we keep `npa: true` so we never read IDFA without consent. */
-  const trackingStatus = await ensureTrackingAuthorization();
-  const npa = trackingStatus !== "authorized";
+    bannerLoadOutcome = null;
+    bannerLoadFailureMessage = "";
 
-  const options: BannerAdOptions = {
-    adId,
-    adSize: BannerAdSize.BANNER,
-    position: BannerAdPosition.BOTTOM_CENTER,
-    margin: opts.bottomMarginPx,
-    isTesting: opts.testMode,
-    npa,
-  };
+    /* `npa = "non-personalized ads"`. When the user explicitly authorizes tracking we serve
+     * personalized ads; in every other case (denied / restricted / notDetermined / unsupported)
+     * we keep `npa: true` so we never read IDFA without consent. */
+    const trackingStatus = await ensureTrackingAuthorization();
+    if (mySerial !== bannerOpSerial) return false;
+    const npa = trackingStatus !== "authorized";
 
-  attachBannerListenersOnce();
+    const options: BannerAdOptions = {
+      adId,
+      adSize: BannerAdSize.BANNER,
+      position: BannerAdPosition.BOTTOM_CENTER,
+      margin: opts.bottomMarginPx,
+      isTesting: opts.testMode,
+      npa,
+    };
 
-  try {
-    await AdMob.showBanner(options);
-    bannerVisible = true;
-    return true;
-  } catch {
-    setBannerLoadOutcome("failed");
-    bannerVisible = false;
-    return false;
-  }
+    attachBannerListenersOnce();
+
+    try {
+      await AdMob.showBanner(options);
+      if (mySerial !== bannerOpSerial) {
+        await AdMob.removeBanner().catch(() => undefined);
+        bannerVisible = false;
+        return false;
+      }
+      bannerVisible = true;
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "showBanner failed";
+      setBannerLoadOutcome("failed", message);
+      bannerVisible = false;
+      return false;
+    }
+  });
 }
 
 export async function hideBasicBanner(): Promise<void> {
@@ -186,9 +254,13 @@ export async function hideBasicBanner(): Promise<void> {
 /** Remove native banner entirely — use when leaving Basic tier or hiding ads for Plus. */
 export async function teardownBasicBanner(): Promise<void> {
   if (!isAdMobSupported()) return;
-  await AdMob.removeBanner().catch(() => undefined);
-  bannerVisible = false;
-  bannerLoadOutcome = null;
+  bannerOpSerial += 1;
+  await enqueueBannerOp(async () => {
+    await AdMob.removeBanner().catch(() => undefined);
+    bannerVisible = false;
+    bannerLoadOutcome = null;
+    bannerLoadFailureMessage = "";
+  });
 }
 
 export async function removeBasicBanner(): Promise<void> {

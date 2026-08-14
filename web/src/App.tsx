@@ -480,7 +480,6 @@ export default function App() {
   const basicAdBanner = useBasicAdMobBanner({
     enabled: !isPlus,
     navigationStarted,
-    payTierProbeKey,
   });
   /** NWS polygons + fetches follow About → NWS everywhere (including drive — no auto-on). */
   const savedDrawerOpen = useUiStore((s) => s.savedDrawerOpen);
