@@ -4,12 +4,14 @@ Use this when moving from **TestFlight beta** to **public App Store**. Does not 
 
 ## Build flavor
 
-| Track | Command / trigger | Plus tier |
-|-------|-------------------|-----------|
-| TestFlight beta | `build:testflight` / push `master` | Forced Plus (`.env.testflight`) |
-| App Store customer | `npm run build` (not testflight mode) | **Basic** unless IAP works |
+| Track | Command / trigger | Plus tier | How you tell |
+|-------|-------------------|-----------|--------------|
+| TestFlight beta | `build:testflight` / push `master` | Forced Plus (`.env.testflight`) | About chip **TestFlight** |
+| App Store customer | Actions → Run workflow → `build_track` = **`appstore`** (`npm run build:appstore`) | **Basic** until IAP | About chip **App Store** + **Basic** |
 
-Do **not** ship `VITE_PAY_TIER=plus` on the public customer binary.
+CI greps the web bundle for `STORMPATH_FLAVOR_STAMP_*` / `STORMPATH_PLUS_FORCED_*` and **fails** if an appstore build is forced Plus, has the test-tier panel, or AdMob test mode. Do **not** submit a TestFlight Plus IPA.
+
+On device: `i` → header chips must read **App Store** and **Basic** (until Subscribe) before you click Submit for Review.
 
 ## Before submit for review
 
@@ -18,7 +20,8 @@ Do **not** ship `VITE_PAY_TIER=plus` on the public customer binary.
 - [ ] `VITE_PAY_TIER_TEST_PANEL` **not** `true` in production env
 - [ ] **Sentry** `VITE_SENTRY_DSN` in release builds
 - [ ] Screenshots + description for required iPhone sizes
-- [ ] **App Privacy** questionnaire in App Store Connect matches location + diagnostics
+- [ ] **App Privacy** questionnaire in App Store Connect matches location, diagnostics, **Device ID / advertising** (ATT + AdMob), and the live privacy page
+- [ ] Deploy updated `web/public/privacy.html` to https://stormpath2.netlify.app/privacy.html (ATT, RevenueCat, Sentry)
 - [ ] **Export compliance** — `ITSAppUsesNonExemptEncryption` is `false` in `Info.plist` (standard HTTPS only)
 - [ ] Support URL + privacy policy URLs live — **https://stormpath2.netlify.app** ([`NETLIFY_HOSTING.md`](NETLIFY_HOSTING.md))
 - [ ] Test **Basic** build on device (`npm run build` + archive or separate CI job)

@@ -2,12 +2,40 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 /* `vitest/config` re-exports `defineConfig` with the `test` option typed; the runtime config
  * is identical to `vite`'s, so dev/build are unaffected when Vitest isn't installed. */
+import { loadEnv } from "vite";
 import { defineConfig, type Plugin } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { rainViewerTileProxyOptions } from "./vite.rainViewerProxy";
 
+const webRoot = fileURLToPath(new URL(".", import.meta.url));
 const pkgPath = fileURLToPath(new URL("./package.json", import.meta.url));
 const { version: appVersion } = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version: string };
+
+function flavorStamps(command: string, mode: string) {
+  const env = loadEnv(mode, webRoot, "");
+  const flavor = command === "serve" ? "dev" : mode === "testflight" ? "testflight" : "appstore";
+  const plusForced = ["plus", "pro"].includes((env.VITE_PAY_TIER || "").toLowerCase());
+  const testPanel = (env.VITE_PAY_TIER_TEST_PANEL || "").toLowerCase() === "true";
+  const admobTest = (env.VITE_ADMOB_TEST_MODE || "").toLowerCase() === "true";
+  return {
+    __STORMPATH_FLAVOR_STAMP__: JSON.stringify(
+      flavor === "testflight"
+        ? "STORMPATH_FLAVOR_STAMP_testflight"
+        : flavor === "dev"
+          ? "STORMPATH_FLAVOR_STAMP_dev"
+          : "STORMPATH_FLAVOR_STAMP_appstore"
+    ),
+    __STORMPATH_PLUS_FORCED_STAMP__: JSON.stringify(
+      plusForced ? "STORMPATH_PLUS_FORCED_yes" : "STORMPATH_PLUS_FORCED_no"
+    ),
+    __STORMPATH_TEST_PANEL_STAMP__: JSON.stringify(
+      testPanel ? "STORMPATH_TEST_PANEL_yes" : "STORMPATH_TEST_PANEL_no"
+    ),
+    __STORMPATH_ADMOB_TEST_STAMP__: JSON.stringify(
+      admobTest ? "STORMPATH_ADMOB_TEST_yes" : "STORMPATH_ADMOB_TEST_no"
+    ),
+  };
+}
 
 /**
  * Vite's SPA fallback serves the React app for `/ops` and `/ops/`. Rewrite those to the
@@ -37,9 +65,10 @@ function stormpathOpsHubPlugin(): Plugin {
   };
 }
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(({ command, mode }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
+    ...flavorStamps(command, mode),
   },
   plugins: [
     stormpathOpsHubPlugin(),

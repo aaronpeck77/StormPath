@@ -9,9 +9,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "build:appstore": "tsc --noEmit && vite build",
+    "build:appstore": "tsc --noEmit && vite build && node scripts/assert-ios-build-flavor.mjs appstore",
     "build:netlify": "npm run build && node scripts/verify-netlify-dist.mjs",
-    "build:testflight": "tsc --noEmit && vite build --mode testflight",
+    "build:testflight": "tsc --noEmit && vite build --mode testflight && node scripts/assert-ios-build-flavor.mjs testflight",
     "preview": "vite preview",
     "test": "vitest run",
     "test:integration": "vitest run src/**/*.integration.test.ts",
@@ -23,7 +23,8 @@
     "build:ios:testflight": "npm run build:testflight && npm run sync:ios-version && npx cap sync ios",
     "render:app-icon": "node scripts/render-app-icon.mjs",
     "render:app-icon:rainbow": "node scripts/render-app-icon.mjs rainbow",
-    "validate:app-icon": "node scripts/validate-app-icon.mjs"
+    "validate:app-icon": "node scripts/validate-app-icon.mjs",
+    "assert:ios-flavor": "node scripts/assert-ios-build-flavor.mjs"
   },
   "dependencies": {
     "@capacitor-community/admob": "^8.0.0",
