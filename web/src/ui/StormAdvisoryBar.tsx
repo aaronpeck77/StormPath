@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { SITEBIBLE_AD_BAR, type AdvisoryPromoLine, type BasicStatusPanelPromos } from "../config/basicAds";
+import { type AdvisoryPromoLine, type BasicStatusPanelPromos } from "../config/basicAds";
 import { BasicAdStrip } from "./BasicAdStrip";
 import { BasicStatusAdSlot } from "./BasicStatusAdSlot";
 import { limitExpandedPromoLines, mixAdvisoryPreviewItems } from "./advisoryPreviewMix";
@@ -126,7 +126,7 @@ function isAdvisoryPromoNoise(line: AdvisoryPromoLine): boolean {
   return line.id === "sp-weather-upgrades-soon";
 }
 
-/** Collapsed advisory line — CSS clamps to 2–3 lines when needed. */
+/** Collapsed advisory line — full message wraps; never ellipsis-truncated. */
 function AdvisoryPreviewMessage({ raw }: { raw: string }) {
   return <span className="storm-advisory-bar__preview-text">{displayText(raw)}</span>;
 }
@@ -251,7 +251,7 @@ export type StormAdvisoryBarProps = SharedProps & {
   forecastLngLat?: [number, number] | null;
   /** Basic: open About → Subscription from the Plus upsell card. */
   onOpenSubscription?: () => void;
-  /** Basic status panel layout — partner banner slot, Plus upsell, SiteBible. */
+  /** Basic status panel layout — partner banner slot + Plus upsell. */
   basicStatusPanelPromos?: BasicStatusPanelPromos | null;
 };
 
@@ -768,7 +768,6 @@ export function StormAdvisoryBar({
       Boolean(nextHazardAtEtaLine?.trim()) ||
       trafficDelayMinutes >= 8 ||
       Boolean(showDriveAheadPreview);
-    promo.push(previewItem({ badge: "App", raw: SITEBIBLE_AD_BAR }));
     if (hasGuidanceRoute && !hasRouteContext) {
       trip.push(
         previewItem({
@@ -780,7 +779,7 @@ export function StormAdvisoryBar({
       );
     }
     for (const p of promoLines) {
-      if (p.id === "sitebible" || isAdvisoryPromoNoise(p)) continue;
+      if (isAdvisoryPromoNoise(p)) continue;
       promo.push(previewItem({ badge: "Info", raw: bannerMsg(displayText(p.text)) }));
     }
     if (dataSaverHint) {
@@ -1306,13 +1305,6 @@ export function StormAdvisoryBar({
                     expanded
                     className="storm-advisory-bar__basic-strip storm-advisory-bar__basic-strip--plus"
                     aria-label="StormPath Plus upgrade"
-                    onOpenSubscription={onOpenSubscription}
-                  />
-                  <BasicAdStrip
-                    lines={[basicStatusPanelPromos.siteBible]}
-                    expanded
-                    className="storm-advisory-bar__basic-strip storm-advisory-bar__basic-strip--sitebible"
-                    aria-label="SiteBible partner offer"
                     onOpenSubscription={onOpenSubscription}
                   />
                 </div>

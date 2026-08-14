@@ -2,6 +2,7 @@ import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import { initRevenueCat } from "./billing/revenueCat";
+import { stormpathFlavorGuardString } from "./config/buildFlavor";
 import { getWebEnv } from "./config/env";
 import "./index.css";
 import { captureAppException, initCrashReporting, installGlobalErrorHandlers } from "./monitoring/sentry";
@@ -10,6 +11,7 @@ import { hydrateSafeStorage } from "./storage/safeStorage";
 
 initCrashReporting();
 installGlobalErrorHandlers();
+void stormpathFlavorGuardString();
 
 class ErrorBoundary extends Component<
   { children: ReactNode },

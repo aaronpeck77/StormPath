@@ -7,6 +7,7 @@ import { useRevenueCat } from "../billing/useRevenueCat";
 import { getWebEnv } from "../config/env";
 import { isCrashReportingEnabled } from "../monitoring/sentry";
 import { stormpathVersionChipLabel, stormpathVersionLabel } from "../appVersion";
+import { stormpathBuildFlavor, stormpathFlavorChipLabel } from "../config/buildFlavor";
 import { safeStorage } from "../storage/safeStorage";
 import { MapKeyPanel } from "./MapKeyPanel";
 import type { HomeMapFraming } from "../map/homeMapFraming";
@@ -153,9 +154,12 @@ export function AboutSheet({
   if (!open) return null;
 
   const versionLabel = stormpathVersionLabel({ dev });
+  const flavor = stormpathBuildFlavor();
+  const flavorChip = stormpathFlavorChipLabel();
   const diagnosticsLines = [
     `StormPath ${versionLabel}`,
     `Plan: ${tierLabel}`,
+    `Binary: ${flavor}${flavor === "testflight" ? " (forced Plus)" : flavor === "appstore" ? " (Basic until IAP)" : ""}`,
     `Crash reporting: ${isCrashReportingEnabled() ? "on (automatic for serious errors)" : "off"}`,
     `Online: ${typeof navigator === "undefined" ? "unknown" : navigator.onLine ? "yes" : "no"}`,
     `Voice: ${settings.voiceGuidanceEnabled ? "on" : "off"}, Data saver: ${
@@ -209,6 +213,18 @@ export function AboutSheet({
             >
               {tierLabel}
             </span>
+            {Capacitor.isNativePlatform() && flavorChip ? (
+              <span
+                className="about-sheet__chip"
+                title={
+                  flavor === "appstore"
+                    ? "Customer IPA — Basic until Subscribe / Restore. Submit this binary, not TestFlight Plus."
+                    : "Internal TestFlight — Plus is forced on this build. Do not submit this IPA to the App Store."
+                }
+              >
+                {flavorChip}
+              </span>
+            ) : null}
           </div>
         </header>
 

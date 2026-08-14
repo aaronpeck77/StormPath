@@ -30,7 +30,7 @@ function resolveAdMobTestMode(): boolean {
 }
 
 /** Third-party AdMob banner for Basic — browse / route planning only, not while driving.
- *  House promos (SiteBible, Plus upsell) stay in StormAdvisoryBar only. */
+ *  House promos (Plus upsell / tips) stay in StormAdvisoryBar only. */
 export function useBasicAdMobBanner({
   enabled,
   navigationStarted,
