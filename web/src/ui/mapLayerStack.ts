@@ -7,7 +7,10 @@ import { positionWeatherAlertLayersAboveRadar } from "./mapWeatherAlertLayers";
 import { positionRainViewerRadarUnderRoads } from "./mapRadarLayer";
 import { bringMapboxTrafficLayersToFront } from "./mapTrafficLayers";
 
-/** Mapbox traffic is moved to the top of the layer stack; route lines must be lifted above it again. */
+/**
+ * Restack overlays: traffic, then solid route lines, then invisible hit targets.
+ * Basemap road names stay above the colored line so driving labels are not covered.
+ */
 export function liftTrafficThenRoutesThenHits(
   map: MapboxMap,
   routeIds: string[],

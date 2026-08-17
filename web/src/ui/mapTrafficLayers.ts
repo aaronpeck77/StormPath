@@ -1,4 +1,5 @@
 import type { Map } from "mapbox-gl";
+import { moveLayerBelowBasemapLabels } from "./mapBasemapLayerAnchor";
 
 export const MAPBOX_TRAFFIC_LAYER_IDS = [
   "mapbox-traffic-congestion-mh",
@@ -79,12 +80,15 @@ export function setMapboxTrafficLayersVisible(map: Map, visible: boolean): void 
   }
 }
 
-/** Route lines are added after traffic; move traffic back on top so it's visible. */
+/**
+ * Keep traffic above basemap roads and under road-name labels.
+ * Call {@link bringRouteVisualLinesAboveTraffic} after this so the solid route sits on top of traffic.
+ */
 export function bringMapboxTrafficLayersToFront(map: Map): void {
   for (const id of MAPBOX_TRAFFIC_LAYER_IDS) {
     if (!map.getLayer(id)) continue;
     try {
-      map.moveLayer(id);
+      moveLayerBelowBasemapLabels(map, id);
     } catch {
       /* ignore */
     }
