@@ -13,7 +13,7 @@ describe("routeLineWidthByZoom", () => {
       return undefined;
     };
     expect(widthAt(14)).toBe(8);
-    expect(widthAt(17.5)).toBe(18);
+    expect(widthAt(17.5)).toBe(14);
     expect((widthAt(17.5) as number) > (widthAt(14) as number)).toBe(true);
   });
 });

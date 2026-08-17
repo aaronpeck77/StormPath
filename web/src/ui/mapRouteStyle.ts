@@ -21,8 +21,8 @@ export const ROUTE_ACTIVE_LINE_WIDTH = 8;
 export const ROUTE_SUGGESTED_LINE_WIDTH = 6;
 
 /**
- * Street-level width so the blue line fills the pavement in Dr / Mp.
- * Zoom 14 stays at the historic 8px planning width.
+ * Street-level width so the blue line sits on the pavement in Dr / Mp
+ * without covering the whole lane. Zoom 14 stays at the historic 8px.
  */
 export function routeLineWidthByZoom(baseWidth: number): ExpressionSpecification {
   const scale = baseWidth / ROUTE_ACTIVE_LINE_WIDTH;
@@ -38,11 +38,11 @@ export function routeLineWidthByZoom(baseWidth: number): ExpressionSpecification
     14,
     at(8),
     16,
-    at(13),
+    at(10),
     17.5,
-    at(18),
+    at(14),
     19,
-    at(24),
+    at(18),
   ];
 }
 
