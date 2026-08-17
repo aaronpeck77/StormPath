@@ -28,6 +28,26 @@ describe("liftTrafficThenRoutesThenHits", () => {
     expect(ids.indexOf("route-r-a-line-hit")).toBeGreaterThan(ids.indexOf("poi-label"));
   });
 
+  it("keeps the route above streets-v12 pavement when an early oneway symbol exists", () => {
+    const { map, layers } = createFakeMap([
+      { id: "land", type: "fill" },
+      { id: "tunnel-oneway-arrow-blue", type: "symbol" },
+      { id: "road-street", type: "line" },
+      { id: "bridge-motorway-trunk", type: "line" },
+      { id: "road-label", type: "symbol" },
+      { id: "route-r-a-line-casing", type: "line" },
+      { id: "route-r-a-line", type: "line" },
+      { id: "route-r-a-line-hit", type: "line" },
+    ]);
+
+    liftTrafficThenRoutesThenHits(map, ["r-a"], "route", "r-a");
+
+    const ids = layers.map((layer) => layer.id);
+    expect(ids.indexOf("route-r-a-line")).toBeGreaterThan(ids.indexOf("road-street"));
+    expect(ids.indexOf("route-r-a-line")).toBeGreaterThan(ids.indexOf("bridge-motorway-trunk"));
+    expect(ids.indexOf("route-r-a-line")).toBeLessThan(ids.indexOf("road-label"));
+  });
+
   it("puts the focused route above an alternate, still under labels", () => {
     const { map, layers } = createFakeMap([
       { id: "road-street", type: "line" },
