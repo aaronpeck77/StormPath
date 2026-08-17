@@ -29,7 +29,15 @@ import {
   firstBasemapSymbolLayerId,
   moveLayerBelowBasemapLabels,
 } from "./mapBasemapLayerAnchor";
-import { ROUTE_SUGGESTED_LINE_WIDTH, routeMapLineStyle, ROUTE_LINE_CASING_COLOR, ROUTE_LINE_CASING_OPACITY, ROUTE_LINE_CASING_WIDTH_EXTRA } from "./mapRouteStyle";
+import {
+  ROUTE_SUGGESTED_LINE_WIDTH,
+  routeCasingWidthByZoom,
+  routeHitWidthByZoom,
+  routeLineWidthByZoom,
+  routeMapLineStyle,
+  ROUTE_LINE_CASING_COLOR,
+  ROUTE_LINE_CASING_OPACITY,
+} from "./mapRouteStyle";
 
 const ROUTE_COND_LEGACY_LAYER = "route-condition-markers-circles";
 const ROUTE_COND_LEGACY_SRC = "route-condition-markers";
@@ -553,7 +561,9 @@ export function applyRoutesToMap(
     const lineId = `${id}-line`;
     const casingId = `${id}-line-casing`;
     const hitLineId = `${id}-line-hit`;
-    const casingWidth = lineWidth + ROUTE_LINE_CASING_WIDTH_EXTRA;
+    const lineWidthByZoom = routeLineWidthByZoom(lineWidth);
+    const casingWidth = routeCasingWidthByZoom(lineWidth);
+    const hitWidth = routeHitWidthByZoom(lineWidth);
     const lineAnchorBefore = firstBasemapSymbolLayerId(map);
     if (!map.getSource(id)) {
       map.addSource(id, { type: "geojson", data: geojson });
@@ -578,7 +588,7 @@ export function applyRoutesToMap(
           source: id,
           paint: {
             "line-color": lineColor,
-            "line-width": lineWidth,
+            "line-width": lineWidthByZoom,
             "line-opacity": lineOpacity,
           },
           layout: { "line-cap": "round", "line-join": "round" },
@@ -592,7 +602,7 @@ export function applyRoutesToMap(
           source: id,
           paint: {
             "line-color": "#000000",
-            "line-width": 22,
+            "line-width": hitWidth,
             "line-opacity": 0,
           },
           layout: { "line-cap": "round", "line-join": "round" },
@@ -622,8 +632,11 @@ export function applyRoutesToMap(
         map.setPaintProperty(casingId, "line-opacity", ROUTE_LINE_CASING_OPACITY);
       }
       map.setPaintProperty(lineId, "line-color", lineColor);
-      map.setPaintProperty(lineId, "line-width", lineWidth);
+      map.setPaintProperty(lineId, "line-width", lineWidthByZoom);
       map.setPaintProperty(lineId, "line-opacity", lineOpacity);
+      if (map.getLayer(hitLineId)) {
+        map.setPaintProperty(hitLineId, "line-width", hitWidth);
+      }
       if (!map.getLayer(hitLineId)) {
         map.addLayer({
           id: hitLineId,
@@ -631,7 +644,7 @@ export function applyRoutesToMap(
           source: id,
           paint: {
             "line-color": "#000000",
-            "line-width": 22,
+            "line-width": hitWidth,
             "line-opacity": 0,
           },
           layout: { "line-cap": "round", "line-join": "round" },

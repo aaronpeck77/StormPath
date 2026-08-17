@@ -1,3 +1,4 @@
+import type { ExpressionSpecification } from "mapbox-gl";
 import type { NavRoute, RouteRole } from "../nav/types";
 
 /**
@@ -18,6 +19,40 @@ export const ROUTE_LINE_CASING_OPACITY = 0.92;
 
 export const ROUTE_ACTIVE_LINE_WIDTH = 8;
 export const ROUTE_SUGGESTED_LINE_WIDTH = 6;
+
+/**
+ * Street-level width so the blue line fills the pavement in Dr / Mp.
+ * Zoom 14 stays at the historic 8px planning width.
+ */
+export function routeLineWidthByZoom(baseWidth: number): ExpressionSpecification {
+  const scale = baseWidth / ROUTE_ACTIVE_LINE_WIDTH;
+  const at = (n: number) => Math.round(n * scale * 10) / 10;
+  return [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    8,
+    at(2.5),
+    12,
+    at(5),
+    14,
+    at(8),
+    16,
+    at(13),
+    17.5,
+    at(18),
+    19,
+    at(24),
+  ];
+}
+
+export function routeCasingWidthByZoom(baseWidth: number): ExpressionSpecification {
+  return ["+", routeLineWidthByZoom(baseWidth), ROUTE_LINE_CASING_WIDTH_EXTRA];
+}
+
+export function routeHitWidthByZoom(baseWidth: number): ExpressionSpecification {
+  return ["+", routeLineWidthByZoom(baseWidth), 12];
+}
 
 /** @deprecated use ROUTE_ACTIVE_COLOR */
 export const ROUTE_A_COLOR = ROUTE_ACTIVE_COLOR;
