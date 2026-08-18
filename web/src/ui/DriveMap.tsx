@@ -9,6 +9,7 @@ import {
   resolveIdleHomeFraming,
 } from "../map/homeMapFraming";
 import type { HomePuckFollowMode } from "../map/homePuckFollow";
+import { FALLBACK_LNGLAT } from "../nav/constants";
 import type { TripStop } from "../nav/routeWaypoints";
 import {
   markHomePreloadCompleted,
@@ -420,7 +421,7 @@ function DriveMapInner({
   sessionRouteLengthM = 0,
   activityTrailPlanningBounds = null,
   idleHomeMapFraming = "my_location",
-  homePuckFollow = "explore",
+  homePuckFollow = "follow",
   onHomeMapUserPan,
   homePreloadEnabled = false,
   homePreloadBounds = null,
@@ -582,8 +583,8 @@ function DriveMapInner({
   sessionRouteLengthMRef.current = sessionRouteLengthM;
 
   const routesPlanningFitKey = useMemo(
-    () => planningRoutesFitKey(routes, lineFocusId, destLngLat),
-    [routes, lineFocusId, destLngLat]
+    () => planningRoutesFitKey(routes, navigationStarted ? lineFocusId : null, destLngLat),
+    [routes, lineFocusId, destLngLat, navigationStarted]
   );
 
   const token = getWebEnv().mapboxToken;
@@ -689,11 +690,13 @@ function DriveMapInner({
      * rather than left as a silent React effect failure. */
     let map: mapboxgl.Map;
     try {
+      const startCenter = userLngLatRef.current ?? FALLBACK_LNGLAT;
+      const startZoom = userLngLatRef.current ? ROUTE_VIEW_PLANNING_STREET_ZOOM : 4;
       map = new mapboxgl.Map({
         container: containerRef.current,
         style: activeStyleRef.current,
-        center: [-98.5, 39.8],
-        zoom: 4,
+        center: startCenter,
+        zoom: startZoom,
         attributionControl: false,
         dragRotate: true,
         touchPitch: true,
@@ -2570,6 +2573,7 @@ function DriveMapInner({
 
   /** Idle home (no trip): frame on My location or trail area; retry until GPS + style are ready. */
   const idleHomeAppliedRef = useRef(false);
+  const idleHomeHoldingLocateRef = useRef(false);
   const hadTrailBoundsRef = useRef(false);
   /** Once we fit the breadcrumb travel area, don't yank to street zoom if Plus/bounds flicker. */
   const idleHomeActivityAreaLatchedRef = useRef(false);
@@ -2577,6 +2581,7 @@ function DriveMapInner({
   useEffect(() => {
     if (routes.length > 0 || navigationStarted || viewMode === "drive") {
       idleHomeAppliedRef.current = false;
+      idleHomeHoldingLocateRef.current = false;
       idleHomeActivityAreaLatchedRef.current = false;
       idleHomeTrailWaitDeadlineRef.current = 0;
     }
@@ -2584,6 +2589,7 @@ function DriveMapInner({
 
   useEffect(() => {
     idleHomeAppliedRef.current = false;
+    idleHomeHoldingLocateRef.current = false;
     idleHomeActivityAreaLatchedRef.current = false;
     idleHomeTrailWaitDeadlineRef.current = 0;
   }, [idleHomeMapFraming]);
@@ -2592,6 +2598,7 @@ function DriveMapInner({
     if (homePuckFollow !== "follow" || routes.length > 0 || navigationStarted) return;
     userExploringRef.current = false;
     idleHomeAppliedRef.current = false;
+    idleHomeHoldingLocateRef.current = false;
     if (exploreTimerRef.current) {
       clearTimeout(exploreTimerRef.current);
       exploreTimerRef.current = null;
@@ -2623,7 +2630,6 @@ function DriveMapInner({
 
     const tryApplyIdleHome = (): boolean => {
       if (idleHomeAppliedRef.current) return true;
-      if (userExploringRef.current) return false;
       const u = userLngLatRef.current;
       if (!u) return false;
       if (!isMapUsable(map)) return false;
@@ -2633,6 +2639,19 @@ function DriveMapInner({
         return false;
       }
 
+      let stillOnCountryFallback = false;
+      try {
+        const c = map.getCenter();
+        stillOnCountryFallback =
+          map.getZoom() < 6 &&
+          Math.abs(c.lng - FALLBACK_LNGLAT[0]) < 1.2 &&
+          Math.abs(c.lat - FALLBACK_LNGLAT[1]) < 1.2;
+      } catch {
+        stillOnCountryFallback = false;
+      }
+      /* Style-load can look like a user gesture; never leave the CONUS fallback because of that. */
+      if (userExploringRef.current && !stillOnCountryFallback) return false;
+
       const action = resolveIdleHomeCameraAction({
         pref: idleHomeMapFraming,
         trailBounds: activityTrailPlanningBounds,
@@ -2640,17 +2659,25 @@ function DriveMapInner({
         waitDeadlineMs: idleHomeTrailWaitDeadlineRef.current,
         activityAreaLatched: idleHomeActivityAreaLatchedRef.current,
       });
-      if (action === "defer") return false;
+      if (action === "defer") {
+        if (!idleHomeHoldingLocateRef.current) {
+          const jumped = safeJumpTo(map, {
+            center: u,
+            zoom: ROUTE_VIEW_PLANNING_STREET_ZOOM,
+            pitch: 0,
+            bearing: 0,
+            padding: ZERO_MAP_PADDING,
+          });
+          if (jumped) idleHomeHoldingLocateRef.current = true;
+        }
+        return false;
+      }
       if (action === "hold_latched") {
         idleHomeAppliedRef.current = true;
         return true;
       }
 
       const framing = resolveIdleHomeFraming(idleHomeMapFraming, activityTrailPlanningBounds);
-      if (homePuckFollowRef.current === "explore" && framing !== "activity_area") {
-        idleHomeAppliedRef.current = true;
-        return true;
-      }
       let ok = false;
       if (framing === "activity_area" && activityTrailPlanningBounds) {
         const tb = activityTrailPlanningBounds;
@@ -2667,7 +2694,7 @@ function DriveMapInner({
           essential: true,
         });
         if (ok) idleHomeActivityAreaLatchedRef.current = true;
-      } else if (viewMode === "topdown") {
+      } else {
         topdownZoomRef.current = ROUTE_VIEW_PLANNING_STREET_ZOOM;
         ok = safeFlyTo(map, {
           center: u,
@@ -2676,17 +2703,7 @@ function DriveMapInner({
           bearing: 0,
           padding: ZERO_MAP_PADDING,
           offset: TOPDOWN_PUCK_OFFSET_PX,
-          duration: 520,
-          essential: true,
-        });
-      } else {
-        ok = safeEaseTo(map, {
-          center: u,
-          zoom: ROUTE_VIEW_PLANNING_STREET_ZOOM,
-          pitch: 0,
-          bearing: 0,
-          padding: ZERO_MAP_PADDING,
-          duration: 520,
+          duration: stillOnCountryFallback ? 900 : 520,
           essential: true,
         });
       }
@@ -3079,7 +3096,8 @@ function DriveMapInner({
             if (cancelled) return;
             flatten();
           },
-          onlyRouteId: lineFocusId,
+          /* Pre-Go: frame every planned leg so B is on-screen. After Go, stay on the active path. */
+          onlyRouteId: navigationStartedRef.current ? lineFocusId : undefined,
           zoomBias: routeFitZoomBias(routes, lineFocusId),
           forceFullPolyline: planningOverview,
         }

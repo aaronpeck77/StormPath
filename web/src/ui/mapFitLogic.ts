@@ -147,19 +147,27 @@ export function routePrimarySpanMeters(routes: NavRoute[], primaryRouteId?: stri
   return haversineMeters([box.west, box.south], [box.east, box.north]);
 }
 
+function routeGeomFitToken(route: NavRoute | null | undefined): string {
+  const g = route?.geometry;
+  if (!g?.length) return `${route?.id ?? ""}:empty`;
+  const a = g[0]!;
+  const b = g[g.length - 1]!;
+  return `${route?.id ?? ""}:${g.length}:${a[0].toFixed(4)},${a[1].toFixed(4)}|${b[0].toFixed(4)},${b[1].toFixed(4)}`;
+}
+
 export function planningRoutesFitKey(
   routes: NavRoute[],
   primaryRouteId: string | null | undefined,
   dest: LngLat | null | undefined
 ): string {
+  const destKey = dest ? `${dest[0].toFixed(4)},${dest[1].toFixed(4)}` : "";
+  /* Pre-Go (no primary): include every leg so A and B stay in the same overview frame. */
+  if (!primaryRouteId && routes.length > 1) {
+    return `${routes.map((r) => routeGeomFitToken(r)).join("||")}|${destKey}`;
+  }
   const route =
     (primaryRouteId ? routes.find((r) => r.id === primaryRouteId) : null) ?? routes[0] ?? null;
-  const g = route?.geometry;
-  const destKey = dest ? `${dest[0].toFixed(4)},${dest[1].toFixed(4)}` : "";
-  if (!g?.length) return `${route?.id ?? ""}|empty|${destKey}`;
-  const a = g[0]!;
-  const b = g[g.length - 1]!;
-  return `${route?.id ?? ""}|${g.length}|${a[0].toFixed(4)},${a[1].toFixed(4)}|${b[0].toFixed(4)},${b[1].toFixed(4)}|${destKey}`;
+  return `${routeGeomFitToken(route)}|${destKey}`;
 }
 
 export function offRouteAlternatesFitKey(routes: NavRoute[], primaryRouteId: string): string {
