@@ -75,6 +75,44 @@ export function RouteTripleToggle({
   );
 }
 
+/** A/B when Plus has two legs — both options visible. Solo Main still uses the cycle chip. */
+export function RoutePickControl({
+  items,
+  selectedId,
+  onSelect,
+  detail,
+  className = "",
+  cycleOrderIds,
+  activeSlotIndex = null,
+}: {
+  items: RoutePickItem[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  detail?: string;
+  className?: string;
+  cycleOrderIds?: string[];
+  activeSlotIndex?: number | null;
+}) {
+  if (items.length >= 2) {
+    return (
+      <div className={["nav-route-pick-multi", className].filter(Boolean).join(" ")}>
+        <RouteTripleToggle items={items} selectedId={selectedId} onSelect={onSelect} />
+      </div>
+    );
+  }
+  return (
+    <RouteCycleButton
+      items={items}
+      selectedId={selectedId}
+      onSelect={onSelect}
+      detail={detail}
+      className={className}
+      cycleOrderIds={cycleOrderIds}
+      activeSlotIndex={activeSlotIndex}
+    />
+  );
+}
+
 /** Single control: tap cycles Route A → B → C (colors follow each leg, not list order). */
 export function RouteCycleButton({
   items,

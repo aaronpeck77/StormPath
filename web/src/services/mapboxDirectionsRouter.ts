@@ -10,6 +10,8 @@ import {
   cumulativeLengthToVertex,
   estimateRoadDistanceM,
   normalizeStoredRouteGeometry,
+  pointAtAlongMeters,
+  polylineLengthMeters,
   routeCorridorOverlapFraction,
   routesEffectivelySame,
   subsamplePolylineVertexBudget,
@@ -131,16 +133,22 @@ function mapboxDirectionsErrorFromResponse(
 /** Mapbox can return thousands of micro-steps on cross-country legs — enough for any US drive. */
 const MAX_TURN_STEPS = 5000;
 
-/** Mapbox `exclude` query — motorway and toll can be combined. */
+/** Mapbox `exclude` query — motorway, toll, and optional snapped point(s). */
 type DirectionsFetchExclude = {
   excludeMotorway?: boolean;
   excludeToll?: boolean;
+  /** Mapbox `point(lon lat)` excludes — forces a different corridor when Main has no interstate. */
+  excludePoints?: LngLat[];
 };
 
 function directionsExcludeParam(opts: DirectionsFetchExclude): string | undefined {
   const parts: string[] = [];
   if (opts.excludeMotorway) parts.push("motorway");
   if (opts.excludeToll) parts.push("toll");
+  for (const p of opts.excludePoints ?? []) {
+    if (!Number.isFinite(p[0]) || !Number.isFinite(p[1])) continue;
+    parts.push(`point(${p[0].toFixed(5)} ${p[1].toFixed(5)})`);
+  }
   return parts.length > 0 ? parts.join(",") : undefined;
 }
 
@@ -185,8 +193,6 @@ function applyDirectionsQueryParams(
   if (opts.includeDetails !== false) {
     url.searchParams.set("annotations", "closure,maxspeed");
   }
-  const exclude = directionsExcludeParam(opts);
-  if (exclude) url.searchParams.set("exclude", exclude);
   if (opts.bearingDeg != null && Number.isFinite(opts.bearingDeg)) {
     const bearings = mapboxBearingsParam(
       waypointCount,
@@ -195,6 +201,11 @@ function applyDirectionsQueryParams(
     );
     if (bearings) url.searchParams.set("bearings", bearings);
     /* Do not send `approaches` — a fixed `curb;` only matches 2 waypoints and 422s with vias. */
+  }
+  const exclude = directionsExcludeParam(opts);
+  if (exclude) {
+    /* Append last so later searchParams.set cannot re-encode the lon/lat space as `+`. */
+    url.search += `${url.search ? "&" : "?"}exclude=${encodeURIComponent(exclude)}`;
   }
 }
 
@@ -321,6 +332,14 @@ function mbRouteLightLine(r: MbRoute): LngLat[] | null {
   const c = r.geometry?.coordinates;
   if (!c?.length) return null;
   return coordsToLightLine(c, GEOM_COMPARE_MAX_VERTICES);
+}
+
+/** Point partway along Main so Mapbox must leave that road if another corridor exists. */
+function midCorridorExcludePoint(geometry: LngLat[]): LngLat | null {
+  const totalM = polylineLengthMeters(geometry);
+  if (totalM < 2_400) return null;
+  const along = Math.max(800, Math.min(totalM * 0.42, totalM - 800));
+  return pointAtAlongMeters(geometry, along);
 }
 
 function pickMbRouteByTrail(
@@ -723,7 +742,8 @@ function collectRouteIncidentsWithAlong(
  * - **A (`fastest`)** — Main · fastest (may use interstates).
  * - **B (`hazardSmart`)** — No interstate · Mapbox `exclude=motorway` when a distinct shape exists.
  *
- * Cap via `maxRoutes`: Basic = 1 (single Directions call), Plus = 2 (primary + no-interstate).
+ * Cap via `maxRoutes`: Basic = 1 (single Directions call), Plus = 2 (primary + no-interstate
+ * or a point-excluded alternate when the trip has no interstate to avoid).
  * Ultra-long stays Main-only.
  *
  * Primary `alternatives=true` runs in parallel with `exclude=motorway` when `maxRoutes >= 2`.
@@ -971,9 +991,9 @@ export async function collectMapboxRouteVariants(
         fromNoMw ? "No interstate" : "Alternate"
       );
       if (navB) {
-        const identical = sameRouteShapeLine(navA.geometry, navB.geometry);
-        /* Keep Mapbox's own alternate even when corridors mostly overlap; skip true clones. */
-        if (!identical || bRaw === primarySorted[1]) {
+        /* Overlapping corridors are fine; identical clones must not occupy slot B
+         * or the later point-exclude fetch never runs. */
+        if (!sameRouteShapeLine(navA.geometry, navB.geometry)) {
           out.push(navB);
         }
       }
@@ -1089,7 +1109,65 @@ export async function collectMapboxRouteVariants(
   }
 
   const out = mergePools(noMwSorted);
+  if (wantMultiRoute && out.length < 2 && out[0]) {
+    const forced = await fetchForcedDistinctAlternate(
+      accessToken,
+      start,
+      end,
+      hasVia ? via : undefined,
+      out[0],
+      { includeDetails, simplifiedOverview, excludeToll, signal }
+    );
+    if (forced) out.push(forced);
+  }
   return out.slice(0, Math.min(targetPrimaryCount, out.length));
+}
+
+const MAX_FORCED_ALT_DURATION_FACTOR = 1.5;
+
+async function fetchForcedDistinctAlternate(
+  accessToken: string,
+  start: LngLat,
+  end: LngLat,
+  via: LngLat[] | undefined,
+  navA: NavRoute,
+  opts: {
+    includeDetails: boolean;
+    simplifiedOverview: boolean;
+    excludeToll: boolean;
+    signal?: AbortSignal;
+  }
+): Promise<NavRoute | null> {
+  const excludePoint = midCorridorExcludePoint(navA.geometry);
+  if (!excludePoint) return null;
+  try {
+    const data = await fetchDirectionsPrimary(
+      accessToken,
+      start,
+      end,
+      via,
+      {
+        alternatives: true,
+        excludeToll: opts.excludeToll,
+        excludePoints: [excludePoint],
+        includeDetails: opts.includeDetails,
+        simplifiedOverview: opts.simplifiedOverview,
+      },
+      opts.signal
+    );
+    const sorted = sortRoutesByDurationAsc(data.routes ?? []);
+    const maxDurMin = navA.baseEtaMinutes * MAX_FORCED_ALT_DURATION_FACTOR;
+    for (const raw of sorted) {
+      const navB = routeFromDirectionsApi(raw, "r-b", "balanced", "Alternate");
+      if (!navB) continue;
+      if (sameRouteShapeLine(navA.geometry, navB.geometry)) continue;
+      if (navB.baseEtaMinutes > maxDurMin) continue;
+      return navB;
+    }
+  } catch {
+    /* keep Main-only */
+  }
+  return null;
 }
 
 export type BuildTripFromMapboxResult = {
