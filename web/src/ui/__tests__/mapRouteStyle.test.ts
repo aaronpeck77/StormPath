@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ROUTE_ACTIVE_LINE_WIDTH, routeLineWidthByZoom } from "../mapRouteStyle";
+import { ROUTE_ACTIVE_LINE_WIDTH, routeLineWidthByZoom, routeMapLineStyle } from "../mapRouteStyle";
 
 describe("routeLineWidthByZoom", () => {
   it("keeps the historic 8px width at planning zoom and widens at street zoom", () => {
@@ -15,5 +15,15 @@ describe("routeLineWidthByZoom", () => {
     expect(widthAt(14)).toBe(8);
     expect(widthAt(17.5)).toBe(14);
     expect((widthAt(17.5) as number) > (widthAt(14) as number)).toBe(true);
+  });
+});
+
+describe("routeMapLineStyle", () => {
+  it("uses cyan for the inactive alternate so B is visible on streets before Go", () => {
+    const active = routeMapLineStyle(true);
+    const alt = routeMapLineStyle(false);
+    expect(active.color).toBe("#38bdf8");
+    expect(alt.color).toBe("#7dd3fc");
+    expect(alt.color).not.toBe(active.color);
   });
 });

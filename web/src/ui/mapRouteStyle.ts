@@ -7,10 +7,10 @@ import type { NavRoute, RouteRole } from "../nav/types";
  */
 export const ROUTE_ACTIVE_COLOR = "#38bdf8";
 /**
- * Alternate / suggested — near-white so B stays visible on green radar
- * (dark blue was disappearing into the overlay).
+ * Alternate / suggested on the map — light cyan so B is visible on streets
+ * and still reads over green radar (dark blue disappeared into the overlay).
  */
-export const ROUTE_SUGGESTED_COLOR = "#f1f5f9";
+export const ROUTE_SUGGESTED_COLOR = "#7dd3fc";
 
 /** Halo under the colored core so routes stay readable on radar. */
 export const ROUTE_LINE_CASING_COLOR = "#0f172a";
@@ -61,12 +61,12 @@ export const ROUTE_B_COLOR = ROUTE_SUGGESTED_COLOR;
 
 export const ROLE_COLOR: Record<RouteRole, string> = {
   fastest: ROUTE_ACTIVE_COLOR,
-  balanced: "#7dd3fc",
+  balanced: ROUTE_SUGGESTED_COLOR,
   hazardSmart: ROUTE_SUGGESTED_COLOR,
 };
 
-/** A / B / C picker — active sky, mid cyan, alternate light. */
-export const ROUTE_PICK_SLOT_HEX = [ROUTE_ACTIVE_COLOR, "#7dd3fc", ROUTE_SUGGESTED_COLOR] as const;
+/** A / B / C picker — active sky, then the same cyan used for the alternate map line. */
+export const ROUTE_PICK_SLOT_HEX = [ROUTE_ACTIVE_COLOR, ROUTE_SUGGESTED_COLOR, "#bae6fd"] as const;
 
 export function routePickSlotHex(slotIndex: number): string {
   return ROUTE_PICK_SLOT_HEX[

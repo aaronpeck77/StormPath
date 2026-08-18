@@ -255,7 +255,7 @@ export function AppBottomChrome({
             </div>
           ) : (
             <div className="nav-bottom-dock__plan-stack">
-              {/* About row: 'i' on the left; A|B picker or My location in the inline slot. */}
+              {/* About row: 'i' on the left; route-info cycle chip or My location in the inline slot. */}
               <div className="nav-bottom-dock__about-row">
                 <button
                   type="button"

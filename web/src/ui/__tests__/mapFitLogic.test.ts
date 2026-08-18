@@ -3,6 +3,7 @@ import type { NavRoute } from "../../nav/types";
 import {
   maxRouteOverviewZoomDuringNav,
   minPlanningRouteZoomFloor,
+  planningRoutesFitKey,
   routeFitZoomBias,
   routeViewAxis,
 } from "../mapFitLogic";
@@ -46,6 +47,24 @@ describe("mapFitLogic", () => {
     expect(maxRouteOverviewZoomDuringNav(LONG_TRIP_ROUTE_M)).toBeLessThan(10);
     expect(maxRouteOverviewZoomDuringNav(ULTRA_LONG_TRIP_ROUTE_M)).toBeLessThan(7.5);
     expect(maxRouteOverviewZoomDuringNav(EXTREME_TRIP_ROUTE_M)).toBeLessThan(6);
+  });
+
+  it("hashes every pre-Go leg so A and B share one overview frame", () => {
+    const a = route("r-a", [
+      [-86.78, 36.16],
+      [-86.66, 36.24],
+    ]);
+    const b = route("r-b", [
+      [-86.78, 36.16],
+      [-86.95, 36.05],
+      [-86.66, 36.24],
+    ]);
+    const dest: [number, number] = [-86.66, 36.24];
+    const all = planningRoutesFitKey([a, b], null, dest);
+    const onlyA = planningRoutesFitKey([a, b], "r-a", dest);
+    expect(all).toContain("r-a");
+    expect(all).toContain("r-b");
+    expect(all).not.toBe(onlyA);
   });
 });
 
