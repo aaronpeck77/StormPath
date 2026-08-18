@@ -2726,6 +2726,34 @@
  * source order and would therefore win the cascade on phones, reverting the inline placement
  * back to the narrow stacked footprint). Doubling the slot class lifts these to 0,3,0 so the
  * inline variant wins everywhere, including TestFlight. */
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-pick-multi {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-toggle {
+  width: 100%;
+  flex: 1;
+  min-width: 0;
+  height: var(--nav-chrome-about, 32px);
+  min-height: var(--nav-chrome-about, 32px);
+  max-height: var(--nav-chrome-about, 32px);
+  border-radius: 8px;
+}
+
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-toggle__seg {
+  flex: 1;
+  min-width: 0;
+  min-height: 100%;
+  padding: 0 6px;
+  font-size: 0.72rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-cycle-btn {
   width: 100%;
   /* Base .nav-route-cycle-btn caps width at 5.5 rem for the small stacked variants ? explicitly

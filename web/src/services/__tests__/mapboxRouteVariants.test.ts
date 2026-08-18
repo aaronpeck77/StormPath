@@ -115,6 +115,107 @@ describe("collectMapboxRouteVariants", () => {
     expect(routes.some((r) => r.id === "r-b")).toBe(true);
   });
 
+  it("forces a Plus B by excluding a mid-corridor point when no-interstate matches Main", async () => {
+    const main = mbRoute(lineCoords(0), 3600, 120_000);
+    const alt = mbRoute(lineCoords(-0.35), 4200, 135_000);
+    let pointExcludeCalls = 0;
+
+    vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
+      const url = decodeURIComponent(String(input));
+      if (url.includes("point(")) {
+        pointExcludeCalls += 1;
+        return okResponse([alt]);
+      }
+      if (url.includes("exclude=motorway")) {
+        return okResponse([main]);
+      }
+      return okResponse([main]);
+    });
+
+    const routes = await collectMapboxRouteVariants("tok", start, end, {
+      maxRoutes: 2,
+      includeDetails: true,
+    });
+
+    expect(pointExcludeCalls).toBeGreaterThanOrEqual(1);
+    expect(routes.length).toBeGreaterThanOrEqual(2);
+    expect(routes[0]!.label).toBe("Main");
+    expect(routes[1]!.id).toBe("r-b");
+    expect(routes[1]!.label).toBe("Alternate");
+  });
+
+  it("encodes Mapbox point() excludes with %20, not +", async () => {
+    const main = mbRoute(lineCoords(0), 3600, 120_000);
+    const alt = mbRoute(lineCoords(-0.35), 4200, 135_000);
+    const pointUrls: string[] = [];
+
+    vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
+      const url = String(input);
+      if (url.includes("point(") || url.includes("point%28")) {
+        pointUrls.push(url);
+        return okResponse([alt]);
+      }
+      return okResponse([main]);
+    });
+
+    await collectMapboxRouteVariants("tok", start, end, { maxRoutes: 2 });
+
+    expect(pointUrls.length).toBeGreaterThanOrEqual(1);
+    const raw = pointUrls[0]!;
+    expect(raw).toMatch(/exclude=.*point/i);
+    expect(raw).not.toMatch(/point\([^)]+\+/);
+    expect(raw.includes("%20") || decodeURIComponent(raw).includes("point(")).toBe(true);
+  });
+
+  it("drops an identical primary alternate so a point-exclude B can run", async () => {
+    const main = mbRoute(lineCoords(0), 3600, 120_000);
+    const clone = mbRoute(lineCoords(0), 3610, 120_400);
+    const alt = mbRoute(lineCoords(-0.35), 4200, 135_000);
+    let pointExcludeCalls = 0;
+
+    vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
+      const url = decodeURIComponent(String(input));
+      if (url.includes("point(")) {
+        pointExcludeCalls += 1;
+        return okResponse([alt]);
+      }
+      if (url.includes("exclude=motorway")) {
+        return okResponse([main]);
+      }
+      return okResponse([main, clone]);
+    });
+
+    const routes = await collectMapboxRouteVariants("tok", start, end, { maxRoutes: 2 });
+
+    expect(pointExcludeCalls).toBeGreaterThanOrEqual(1);
+    expect(routes).toHaveLength(2);
+    expect(routes[1]!.label).toBe("Alternate");
+  });
+
+  it("does not fetch a point-exclude B when Plus already has two distinct routes", async () => {
+    const main = mbRoute(lineCoords(0), 3600, 120_000);
+    const noMw = mbRoute(lineCoords(-0.35), 4200, 135_000);
+    let pointExcludeCalls = 0;
+
+    vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
+      const url = decodeURIComponent(String(input));
+      if (url.includes("point(")) {
+        pointExcludeCalls += 1;
+        return okResponse([noMw]);
+      }
+      if (url.includes("exclude=motorway")) {
+        return okResponse([noMw]);
+      }
+      return okResponse([main]);
+    });
+
+    const routes = await collectMapboxRouteVariants("tok", start, end, { maxRoutes: 2 });
+
+    expect(routes).toHaveLength(2);
+    expect(routes[1]!.label).toBe("No interstate");
+    expect(pointExcludeCalls).toBe(0);
+  });
+
   it("Basic maxRoutes=1 uses a single Directions call and returns Main only", async () => {
     const main = mbRoute(lineCoords(0), 3600, 120_000);
     const noMw = mbRoute(lineCoords(-0.35), 4200, 135_000);
