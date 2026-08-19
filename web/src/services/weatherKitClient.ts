@@ -147,9 +147,10 @@ export function weatherKitLocationCell(lat: number, lng: number): string {
   return `${lat.toFixed(3)},${lng.toFixed(3)}`;
 }
 
-/** ~1.1 km — alerts / puck polls do not need street-level GPS. */
+/** ~2.2 km — alerts are county-scale; street GPS must not retrigger polls. */
 export function weatherKitAlertPollKey(lat: number, lng: number): string {
-  return `${lat.toFixed(2)},${lng.toFixed(2)}`;
+  const q = (n: number) => (Math.round(n * 50) / 50).toFixed(2);
+  return `${q(lat)},${q(lng)}`;
 }
 
 export function weatherKitUsesPuckBundle(dataSets: WeatherKitDataSet[]): boolean {
@@ -164,8 +165,10 @@ type CachedWeather = {
 
 const responseCache = new Map<string, CachedWeather>();
 const inflight = new Map<string, Promise<WeatherKitWeatherResponse>>();
-const PUCK_CACHE_TTL_MS = 8 * 60 * 1000;
-const ROUTE_HOURLY_TTL_MS = 12 * 60 * 1000;
+/** Current / hourly / daily / minute / alerts — Apple counts each REST hit. */
+export const WEATHERKIT_PUCK_CACHE_TTL_MS = 15 * 60 * 1000;
+/** Corridor hourly is already hour-resolution; reuse cells across reroutes. */
+export const WEATHERKIT_ROUTE_HOURLY_TTL_MS = 20 * 60 * 1000;
 
 export function resetWeatherKitClientCaches(): void {
   responseCache.clear();
@@ -173,7 +176,9 @@ export function resetWeatherKitClientCaches(): void {
 }
 
 function ttlMsFor(dataSets: WeatherKitDataSet[]): number {
-  return weatherKitUsesPuckBundle(dataSets) ? PUCK_CACHE_TTL_MS : ROUTE_HOURLY_TTL_MS;
+  return weatherKitUsesPuckBundle(dataSets)
+    ? WEATHERKIT_PUCK_CACHE_TTL_MS
+    : WEATHERKIT_ROUTE_HOURLY_TTL_MS;
 }
 
 function datasetsCover(have: WeatherKitDataSet[], want: WeatherKitDataSet[]): boolean {

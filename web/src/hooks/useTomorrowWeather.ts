@@ -332,8 +332,8 @@ export function useLocalDailyForecast(
 
 // ── Route forecast ────────────────────────────────────────────────────────────
 
-/** Re-fetch when route changes or every 15 min — severe weather can develop fast. */
-const ROUTE_FORECAST_POLL_MS = 15 * 60 * 1000;
+/** Re-fetch when route changes or every 20 min — hourly corridor data, not radar. */
+const ROUTE_FORECAST_POLL_MS = 20 * 60 * 1000;
 
 export type RouteForecastHookResult = {
   forecast: RouteForecast | null;
@@ -475,10 +475,9 @@ export function useTomorrowRouteForecast(
     setRefreshing(true);
     setRefreshBlocked(null);
 
-    // Bypass the per-location cache whenever the route changes or a manual
-    // refresh was requested — stale location data is the most common reason
-    // the app shows "light rain" when driving into a severe storm.
-    const bypass = (force || isNewRoute) ? { bypassCache: true as const } : undefined;
+    // Manual refresh drops the per-cell cache. A new route still fetches, but
+    // overlapping cells reuse the hourly TTL so A/B switches are not 4× Apple hits.
+    const bypass = force ? { bypassCache: true as const } : undefined;
     const tioOpts = {
       ...bypass,
       geometry: routeGeometry ?? undefined,

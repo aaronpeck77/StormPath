@@ -10,7 +10,7 @@ import { fetchWeatherKitAlerts } from "../services/weatherKit";
 import { weatherKitAlertPollKey } from "../services/weatherKitClient";
 import type { LngLat } from "./types";
 
-const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 min — same cadence as NWS browse
+const POLL_INTERVAL_MS = 15 * 60 * 1000; // county-scale; NWS is still the US primary
 
 export function useWeatherKitAlerts(opts: {
   enabled: boolean;

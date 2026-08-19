@@ -19,6 +19,8 @@ import {
   weatherKitAlertPollKey,
   weatherKitLocationCell,
   weatherKitUsesPuckBundle,
+  WEATHERKIT_PUCK_CACHE_TTL_MS,
+  WEATHERKIT_ROUTE_HOURLY_TTL_MS,
 } from "../weatherKitClient";
 
 function okBody() {
@@ -47,9 +49,14 @@ describe("WeatherKit quota helpers", () => {
     );
   });
 
-  it("keeps alert polls on a ~1 km grid", () => {
+  it("keeps alert polls on a ~2 km grid", () => {
     expect(weatherKitAlertPollKey(38.631, -90.201)).toBe(weatherKitAlertPollKey(38.634, -90.204));
     expect(weatherKitAlertPollKey(38.63, -90.2)).not.toBe(weatherKitAlertPollKey(38.65, -90.2));
+  });
+
+  it("holds puck weather 15 min and corridor hourly 20 min", () => {
+    expect(WEATHERKIT_PUCK_CACHE_TTL_MS).toBe(15 * 60 * 1000);
+    expect(WEATHERKIT_ROUTE_HOURLY_TTL_MS).toBe(20 * 60 * 1000);
   });
 
   it("does not fold corridor hourly into the puck bundle", () => {
@@ -95,5 +102,12 @@ describe("fetchWeatherKitAtPoint", () => {
     const url = String(vi.mocked(fetchWithTimeout).mock.calls[0]![0].input);
     expect(url).toContain("dataSets=forecastHourly");
     expect(url).not.toContain("weatherAlerts");
+  });
+
+  it("reuses corridor hourly at the same cell without another Apple call", async () => {
+    vi.mocked(fetchWithTimeout).mockResolvedValue(okResponse());
+    await fetchWeatherKitAtPoint(38.63, -90.2, ["forecastHourly"]);
+    await fetchWeatherKitAtPoint(38.6301, -90.2001, ["forecastHourly"]);
+    expect(vi.mocked(fetchWithTimeout).mock.calls).toHaveLength(1);
   });
 });

@@ -28,6 +28,9 @@ import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 
 export { isWeatherKitTokenBlocked } from "./weatherKitAuth";
 
+/** Start / mid-thirds / end — enough for the corridor strip without 6× Apple calls. */
+export const WEATHERKIT_ROUTE_MAX_LOCATIONS = 4;
+
 /** Map WeatherKit condition codes to Tomorrow.io-style codes for shared severity logic. */
 export function weatherKitConditionToCode(condition: string): number {
   const c = condition.toLowerCase();
@@ -392,7 +395,10 @@ export async function fetchWeatherKitRouteForecast(
 ): Promise<RouteForecast> {
   if (!waypoints.length) return { fetchedAt: Date.now(), intervals: [] };
 
-  const fetchLocations = pickRouteForecastFetchLocations(waypoints);
+  const fetchLocations = pickRouteForecastFetchLocations(
+    waypoints,
+    WEATHERKIT_ROUTE_MAX_LOCATIONS
+  );
   const timelinesByKey = new Map<
     string,
     { forecastStart: string; values: ReturnType<typeof mapHourlyValues> }[]
