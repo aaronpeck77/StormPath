@@ -651,6 +651,7 @@ export default function App() {
     weatherKitEnabled: env.weatherKitEnabled,
     userLngLat,
     userLngLatRef,
+    appForeground,
   });
 
   const { bumpTrafficRefresh } = useTrafficOverlayFetch({

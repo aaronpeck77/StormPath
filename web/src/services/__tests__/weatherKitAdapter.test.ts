@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { weatherKitConditionToCode } from "../weatherKit";
+import { weatherKitConditionToCode, WEATHERKIT_ROUTE_MAX_LOCATIONS } from "../weatherKit";
+import { pickRouteForecastFetchLocations } from "../tomorrowIo";
 
 /** WeatherKit wind fields are km/h — ~16 km/h is a light breeze (~10 mph), not 36 mph. */
 function kphToMph(kph: number): number {
@@ -20,6 +21,18 @@ describe("weatherKitConditionToCode", () => {
     expect(weatherKitConditionToCode("Hail")).toBe(8000);
     expect(weatherKitConditionToCode("FreezingDrizzle")).toBe(6000);
     expect(weatherKitConditionToCode("FreezingRain")).toBe(6001);
+  });
+});
+
+describe("WeatherKit corridor sampling", () => {
+  it("caps Apple corridor fetches at four points", () => {
+    expect(WEATHERKIT_ROUTE_MAX_LOCATIONS).toBe(4);
+    const wps = Array.from({ length: 12 }, (_, i) => ({
+      lat: 40 + i * 0.2,
+      lng: -75 - i * 0.2,
+      etaMinutes: i * 10,
+    }));
+    expect(pickRouteForecastFetchLocations(wps, WEATHERKIT_ROUTE_MAX_LOCATIONS)).toHaveLength(4);
   });
 });
 
