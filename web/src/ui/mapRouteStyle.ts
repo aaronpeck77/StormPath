@@ -1,5 +1,6 @@
 import type { ExpressionSpecification } from "mapbox-gl";
 import type { NavRoute, RouteRole } from "../nav/types";
+import type { MapViewMode } from "./driveMapTypes";
 
 /**
  * Active route — sky blue (reads over green/yellow radar better than mid blue).
@@ -24,34 +25,62 @@ export const ROUTE_SUGGESTED_LINE_WIDTH = 6;
  * Street-level width so the blue line sits on the pavement in Dr / Mp
  * without covering the whole lane. Zoom 14 stays at the historic 8px.
  */
-export function routeLineWidthByZoom(baseWidth: number): ExpressionSpecification {
+const DRIVE_LINE_WIDTH_STOPS: [number, number][] = [
+  [8, 2.5],
+  [12, 5],
+  [14, 8],
+  [16, 10],
+  [17.5, 14],
+  [19, 18],
+];
+
+/**
+ * Rt overview sits at mid zooms where the Drive curve is still thin.
+ * Nudge those stops up a little for readability; street zoom stays Drive.
+ */
+const ROUTE_VIEW_LINE_WIDTH_STOPS: [number, number][] = [
+  [8, 3.5],
+  [12, 6.5],
+  [14, 10],
+  [16, 10],
+  [17.5, 14],
+  [19, 18],
+];
+
+/** Main Rt map only — Drive, Map, and the corner PiP keep the slim line. */
+export function routeLineWidthViewMode(
+  viewMode: MapViewMode | undefined,
+  isOverviewPip = false
+): MapViewMode {
+  return viewMode === "route" && !isOverviewPip ? "route" : "drive";
+}
+
+export function routeLineWidthByZoom(
+  baseWidth: number,
+  viewMode: MapViewMode = "drive"
+): ExpressionSpecification {
   const scale = baseWidth / ROUTE_ACTIVE_LINE_WIDTH;
   const at = (n: number) => Math.round(n * scale * 10) / 10;
-  return [
-    "interpolate",
-    ["linear"],
-    ["zoom"],
-    8,
-    at(2.5),
-    12,
-    at(5),
-    14,
-    at(8),
-    16,
-    at(10),
-    17.5,
-    at(14),
-    19,
-    at(18),
-  ];
+  const stops = viewMode === "route" ? ROUTE_VIEW_LINE_WIDTH_STOPS : DRIVE_LINE_WIDTH_STOPS;
+  const expr: ExpressionSpecification = ["interpolate", ["linear"], ["zoom"]];
+  for (const [zoom, width] of stops) {
+    expr.push(zoom, at(width));
+  }
+  return expr;
 }
 
-export function routeCasingWidthByZoom(baseWidth: number): ExpressionSpecification {
-  return ["+", routeLineWidthByZoom(baseWidth), ROUTE_LINE_CASING_WIDTH_EXTRA];
+export function routeCasingWidthByZoom(
+  baseWidth: number,
+  viewMode: MapViewMode = "drive"
+): ExpressionSpecification {
+  return ["+", routeLineWidthByZoom(baseWidth, viewMode), ROUTE_LINE_CASING_WIDTH_EXTRA];
 }
 
-export function routeHitWidthByZoom(baseWidth: number): ExpressionSpecification {
-  return ["+", routeLineWidthByZoom(baseWidth), 12];
+export function routeHitWidthByZoom(
+  baseWidth: number,
+  viewMode: MapViewMode = "drive"
+): ExpressionSpecification {
+  return ["+", routeLineWidthByZoom(baseWidth, viewMode), 12];
 }
 
 /** @deprecated use ROUTE_ACTIVE_COLOR */

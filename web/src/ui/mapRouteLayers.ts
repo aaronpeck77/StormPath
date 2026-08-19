@@ -34,6 +34,7 @@ import {
   routeCasingWidthByZoom,
   routeHitWidthByZoom,
   routeLineWidthByZoom,
+  routeLineWidthViewMode,
   routeMapLineStyle,
   ROUTE_LINE_CASING_COLOR,
   ROUTE_LINE_CASING_OPACITY,
@@ -561,9 +562,10 @@ export function applyRoutesToMap(
     const lineId = `${id}-line`;
     const casingId = `${id}-line-casing`;
     const hitLineId = `${id}-line-hit`;
-    const lineWidthByZoom = routeLineWidthByZoom(lineWidth);
-    const casingWidth = routeCasingWidthByZoom(lineWidth);
-    const hitWidth = routeHitWidthByZoom(lineWidth);
+    const lineWidthView = routeLineWidthViewMode(viewMode, isOverviewPip);
+    const lineWidthByZoom = routeLineWidthByZoom(lineWidth, lineWidthView);
+    const casingWidth = routeCasingWidthByZoom(lineWidth, lineWidthView);
+    const hitWidth = routeHitWidthByZoom(lineWidth, lineWidthView);
     const lineAnchorBefore = firstBasemapSymbolLayerId(map);
     if (!map.getSource(id)) {
       map.addSource(id, { type: "geojson", data: geojson });
