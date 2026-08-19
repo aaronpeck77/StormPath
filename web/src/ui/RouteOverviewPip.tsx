@@ -111,7 +111,13 @@ export function RouteOverviewPip({
       lineFocusId,
       suggestedRouteId,
       routeIdsRef.current,
-      "pip-route"
+      "pip-route",
+      {
+        orderedRouteIds,
+        navigationStarted,
+        viewMode: "route",
+        isOverviewPip: true,
+      }
     );
     bringMapboxTrafficLayersToFront(map);
     bringRouteVisualLinesAboveTraffic(
