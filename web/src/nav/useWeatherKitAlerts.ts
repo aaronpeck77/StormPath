@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { fetchWeatherKitAlerts } from "../services/weatherKit";
+import { weatherKitAlertPollKey } from "../services/weatherKitClient";
 import type { LngLat } from "./types";
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 min — same cadence as NWS browse
@@ -19,9 +20,15 @@ export function useWeatherKitAlerts(opts: {
   const { enabled, userLngLat, appForeground } = opts;
   const [alerts, setAlerts] = useState<NormalizedWeatherAlert[]>([]);
   const abortRef = useRef<AbortController | null>(null);
+  const userLngLatRef = useRef(userLngLat);
+  userLngLatRef.current = userLngLat;
+  const pollKey =
+    userLngLat && Number.isFinite(userLngLat[0]) && Number.isFinite(userLngLat[1])
+      ? weatherKitAlertPollKey(userLngLat[1], userLngLat[0])
+      : null;
 
   useEffect(() => {
-    if (!enabled || !appForeground || !userLngLat) {
+    if (!enabled || !appForeground || !pollKey) {
       setAlerts([]);
       return;
     }
@@ -29,11 +36,13 @@ export function useWeatherKitAlerts(opts: {
     let cancelled = false;
 
     const run = async () => {
+      const pos = userLngLatRef.current;
+      if (!pos) return;
       abortRef.current?.abort();
       const ac = new AbortController();
       abortRef.current = ac;
       try {
-        const [lng, lat] = userLngLat;
+        const [lng, lat] = pos;
         const result = await fetchWeatherKitAlerts(lat, lng, ac.signal);
         if (!cancelled) setAlerts(result);
       } catch {
@@ -49,7 +58,7 @@ export function useWeatherKitAlerts(opts: {
       abortRef.current?.abort();
       abortRef.current = null;
     };
-  }, [enabled, appForeground, userLngLat]);
+  }, [enabled, appForeground, pollKey]);
 
   return alerts;
 }
