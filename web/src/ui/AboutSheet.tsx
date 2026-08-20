@@ -630,7 +630,8 @@ export function AboutSheet({
                   onChange={(e) => onSettings({ ...settings, voiceGuidanceEnabled: e.target.checked })}
                 />
                 <span>
-                  <strong>Voice prompts</strong> — speak the next maneuver while <strong>Go</strong> is on.
+                  <strong>Voice prompts</strong> — speak the next maneuver while <strong>Go</strong> is on
+                  and StormPath is on screen. Prompts stop if you leave the app or lock the phone.
                   On iPhone this also mutes Mapbox guidance when off. Volume follows the phone’s media volume
                   (raise the side buttons while a prompt plays).
                 </span>
@@ -899,8 +900,9 @@ export function AboutSheet({
               current time; colored NWS shapes follow the <strong>NWS weather alerts</strong> setting in About.
             </p>
             <p className="about-sheet__p">
-              <strong>Privacy:</strong> Location is for position, routing, and conditions while you use the app. Plus
-              frequent-route data stays on this device unless you sync later.
+              <strong>Privacy:</strong> Location is for position, routing, and conditions. The map can keep
+              your GPS while the screen is locked; spoken turn prompts only play while StormPath is on
+              screen. Plus frequent-route data stays on this device unless you sync later.
             </p>
             <p className="about-sheet__p">
               <strong>Safety:</strong> Follow posted signs and warnings. StormPath may be incomplete — don’t use the app
