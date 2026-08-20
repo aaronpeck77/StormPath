@@ -29,7 +29,7 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>StormPath uses your location to show where you are on the map, follow your route, and give turn-by-turn directions while the app is open.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>StormPath can use your location in the background so navigation and your position on the map keep working if you lock the screen or switch apps briefly. You can change this in Settings.</string>
+	<string>StormPath can use your location in the background so your position on the map and your route stay current if you lock the screen or switch apps briefly. Spoken turn prompts only play while StormPath is on screen. You can change this in Settings.</string>
 	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
 	<dict>
 		<key>LocationAccuracyAuthorizationDescription</key>
@@ -38,7 +38,6 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
-		<string>audio</string>
 	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>

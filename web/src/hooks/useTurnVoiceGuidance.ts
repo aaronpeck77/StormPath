@@ -18,8 +18,8 @@ type Params = {
 };
 
 /**
- * Hands-free spoken maneuvers while navigating (Web Speech API).
- * Speaks once per distance band (early → medium → close → now), scaled to speed.
+ * Spoken maneuvers while StormPath is on screen (Web Speech API).
+ * Does not continue after the user leaves the app or locks the phone.
  */
 export function useTurnVoiceGuidance(p: Params): void {
   const lastLegRef = useRef("");

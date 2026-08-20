@@ -26,6 +26,19 @@ On device: `i` → header chips must read **App Store** and **Basic** (until Sub
 - [ ] Support URL + privacy policy URLs live — **https://stormpath2.netlify.app** ([`NETLIFY_HOSTING.md`](NETLIFY_HOSTING.md))
 - [ ] Test **Basic** build on device (`npm run build` + archive or separate CI job)
 
+## App Review — Guideline 3.1.2(c) + 2.1(b) (subscriptions)
+
+In-app purchase **cannot** be finished from GitHub. After the new **appstore** IPA is in App Store Connect:
+
+1. **Monetization → Subscriptions** — each Plus product (monthly and yearly) must be **Ready to Submit** / attached to this app version. On the version page, check those IAPs so they go in with the binary.
+2. **IAP review screenshot** — About (`i`) → **Subscription**. Must show title **StormPath Plus**, length, price, **Privacy Policy**, and **Terms of Use (EULA)**. Use a **Basic App Store** build, not TestFlight Plus.
+3. **App Privacy** field: `https://stormpath2.netlify.app/privacy.html`
+4. **Terms of Use / EULA**: `https://stormpath2.netlify.app/terms.html`  
+   Either paste that URL in App Store Connect’s **EULA** field (custom EULA) **or** put the same link in the **App Description**.
+5. **Review notes** — tell reviewers: open **i → Subscription**. Spoken turns only play in the foreground; **audio** was removed from `UIBackgroundModes` (2.5.4). **location** remains for navigation.
+
+Confirm the two URLs load in Safari before you reply to Review.
+
 ## Already in the project
 
 - Location usage strings in `web/ios/App/App/Info.plist`

@@ -266,6 +266,25 @@ export function pickDefaultPlusPackage(offering: PurchasesOffering | null): Purc
   return offering.monthly ?? offering.annual ?? offering.availablePackages[0] ?? null;
 }
 
+/** Monthly then yearly then any extras — used so About can list every Plus plan. */
+export function listPlusPackages(offering: PurchasesOffering | null): PurchasesPackage[] {
+  if (!offering) return [];
+  const ordered = [
+    offering.monthly,
+    offering.annual,
+    ...(offering.availablePackages ?? []),
+  ].filter((pkg): pkg is PurchasesPackage => Boolean(pkg));
+  const seen = new Set<string>();
+  const out: PurchasesPackage[] = [];
+  for (const pkg of ordered) {
+    const id = pkg.identifier || pkg.product?.identifier || "";
+    if (id && seen.has(id)) continue;
+    if (id) seen.add(id);
+    out.push(pkg);
+  }
+  return out;
+}
+
 /**
  * Drive a purchase flow for the given package. Surfaces a small, opinionated outcome:
  * `cancelled` (user backed out, no message needed), `error` (with a short user-readable
