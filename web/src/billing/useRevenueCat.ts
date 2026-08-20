@@ -3,6 +3,7 @@ import type { PurchasesPackage } from "@revenuecat/purchases-capacitor";
 import {
   getPlusOffering,
   isRevenueCatReady,
+  listPlusPackages,
   NATIVE_PAY_TIER_CHANGED_EVENT,
   pickDefaultPlusPackage,
   purchasePackage,
@@ -37,6 +38,8 @@ export interface UseRevenueCatResult {
   ready: boolean;
   /** Default package to surface in the Subscribe button. `null` while loading or unavailable. */
   defaultPackage: PurchasesPackage | null;
+  /** Every Plus plan on the current offering (monthly / yearly). */
+  plusPackages: PurchasesPackage[];
   /** Any IAP network action in flight — disables both buttons. */
   busy: boolean;
   /** Subscribe sheet open / purchase in progress. */
@@ -47,8 +50,8 @@ export interface UseRevenueCatResult {
   message: string | null;
   /** Whether `message` should be styled as success (`"success"`) or error (`"error"`). */
   messageKind: "success" | "error" | null;
-  /** Drive purchase flow on the loaded package. No-ops if `defaultPackage` is null. */
-  purchase: () => Promise<void>;
+  /** Drive purchase flow on a listed plan, or the default package. */
+  purchase: (pkg?: PurchasesPackage) => Promise<void>;
   /** Drive restore flow. App Store review requires this exists for any IAP app. */
   restore: () => Promise<void>;
   /** Silent refresh when Basic — e.g. About opened after Apple already shows a subscription. */
@@ -60,6 +63,7 @@ export interface UseRevenueCatResult {
 export function useRevenueCat(): UseRevenueCatResult {
   const [ready, setReady] = useState<boolean>(() => isRevenueCatReady());
   const [defaultPackage, setDefaultPackage] = useState<PurchasesPackage | null>(null);
+  const [plusPackages, setPlusPackages] = useState<PurchasesPackage[]>([]);
   const [busyAction, setBusyAction] = useState<IapBusyAction | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageKind, setMessageKind] = useState<"success" | "error" | null>(null);
@@ -90,8 +94,12 @@ export function useRevenueCat(): UseRevenueCatResult {
     let cancelled = false;
     (async () => {
       const offering = await getPlusOffering();
+      const pkgs = listPlusPackages(offering);
       const pkg = pickDefaultPlusPackage(offering);
-      if (!cancelled) setDefaultPackage(pkg);
+      if (!cancelled) {
+        setPlusPackages(pkgs);
+        setDefaultPackage(pkg);
+      }
     })();
     return () => {
       cancelled = true;
@@ -120,8 +128,9 @@ export function useRevenueCat(): UseRevenueCatResult {
     }
   }, []);
 
-  const purchase = useCallback(async () => {
-    if (!defaultPackage) {
+  const purchase = useCallback(async (pkg?: PurchasesPackage) => {
+    const target = pkg ?? defaultPackage;
+    if (!target) {
       setMessage("Subscription package is still loading. Try again in a moment.");
       setMessageKind("error");
       return;
@@ -129,7 +138,7 @@ export function useRevenueCat(): UseRevenueCatResult {
     setBusyAction("purchase");
     setMessage(null);
     setMessageKind(null);
-    const outcome = await purchasePackage(defaultPackage);
+    const outcome = await purchasePackage(target);
     setBusyAction(null);
     applyOutcome(outcome, "Welcome to Plus! All Plus features are unlocked.", "Purchase completed with Apple, but Plus did not unlock yet. Tap Restore purchases, or try again in a minute.");
   }, [defaultPackage, applyOutcome]);
@@ -179,6 +188,7 @@ export function useRevenueCat(): UseRevenueCatResult {
     () => ({
       ready,
       defaultPackage,
+      plusPackages,
       busy,
       purchasing,
       restoring,
@@ -189,6 +199,6 @@ export function useRevenueCat(): UseRevenueCatResult {
       syncEntitlement,
       clearMessage,
     }),
-    [ready, defaultPackage, busy, purchasing, restoring, message, messageKind, purchase, restore, syncEntitlement, clearMessage]
+    [ready, defaultPackage, plusPackages, busy, purchasing, restoring, message, messageKind, purchase, restore, syncEntitlement, clearMessage]
   );
 }

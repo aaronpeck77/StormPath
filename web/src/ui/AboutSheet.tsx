@@ -1,10 +1,15 @@
 import { Capacitor } from "@capacitor/core";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { PurchasesPackage } from "@revenuecat/purchases-capacitor";
 import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
 import { getBasicBannerCustomerHint, getBasicBannerDebugLine } from "../ads/adMobClient";
 import { getPlusEntitlementDebugSnapshot } from "../billing/revenueCat";
 import { useRevenueCat } from "../billing/useRevenueCat";
+import {
+  formatPlusSubscribeButton,
+  PLUS_AUTO_RENEW_DISCLOSURE,
+  PLUS_SUBSCRIPTION_FALLBACK_PRICE_LINE,
+  PLUS_SUBSCRIPTION_TITLE,
+} from "../billing/subscriptionCopy";
 import { getWebEnv } from "../config/env";
 import { isCrashReportingEnabled } from "../monitoring/sentry";
 import { stormpathVersionChipLabel, stormpathVersionLabel } from "../appVersion";
@@ -106,6 +111,13 @@ export function AboutSheet({
    * resolved successfully (native + non-empty `VITE_REVENUECAT_API_KEY_IOS`); when false,
    * the panel below falls back to the existing `env.upgradeUrl` link. */
   const iap = useRevenueCat();
+  const subscribePackages = iap.plusPackages.length
+    ? iap.plusPackages
+    : iap.defaultPackage
+      ? [iap.defaultPackage]
+      : [];
+  const privacyPolicyHref = env.privacyPolicyUrl;
+  const termsOfUseHref = env.termsUrl;
   const syncedEntitlementOnOpenRef = useRef(false);
   /* Clear any leftover purchase / restore banner the next time the sheet reopens. */
   useEffect(() => {
@@ -291,29 +303,32 @@ export function AboutSheet({
           <section className="about-sheet__panel about-sheet__panel--subscription">
             <h3 className="about-sheet__h3">Subscription</h3>
             <p className="about-sheet__p">
-              You can manage or cancel anytime. Changes apply at the end of the billing period.
+              <strong>{PLUS_SUBSCRIPTION_TITLE}</strong> is an optional auto-renewing subscription.
             </p>
+            <p className="about-sheet__p about-sheet__iap-price">{PLUS_SUBSCRIPTION_FALLBACK_PRICE_LINE}</p>
             <div className="about-sheet__upgrade-actions">
               {!plus && (
                 <>
                   {iap.ready ? (
-                    /* Native IAP path: the in-app "Subscribe" button. RevenueCat handles
-                     * the App Store sheet, receipt validation, and family sharing for us;
-                     * the customer-info listener in `revenueCat.ts` flips the entitlement
-                     * via `setNativePlusEntitlementActive` and dispatches the global event
-                     * App.tsx listens for. */
-                    <button
-                      type="button"
-                      className="about-sheet__upgrade-btn"
-                      onClick={() => void iap.purchase()}
-                      disabled={iap.busy || !iap.defaultPackage}
-                    >
-                      {iap.purchasing
-                        ? "Working…"
-                        : iap.defaultPackage
-                        ? formatSubscribeButtonLabel(iap.defaultPackage)
-                        : "Loading subscription…"}
-                    </button>
+                    subscribePackages.length > 0 ? (
+                      subscribePackages.map((pkg) => (
+                        <button
+                          key={pkg.identifier || pkg.product?.identifier || formatPlusSubscribeButton(pkg)}
+                          type="button"
+                          className="about-sheet__upgrade-btn"
+                          onClick={() => void iap.purchase(pkg)}
+                          disabled={iap.busy}
+                        >
+                          {iap.purchasing
+                            ? "Working…"
+                            : formatPlusSubscribeButton(pkg)}
+                        </button>
+                      ))
+                    ) : (
+                      <button type="button" className="about-sheet__upgrade-btn" disabled>
+                        Loading subscription…
+                      </button>
+                    )
                   ) : Capacitor.isNativePlatform() && env.revenueCatApiKeyIos ? (
                     <button type="button" className="about-sheet__upgrade-btn" disabled>
                       Loading subscription…
@@ -325,7 +340,7 @@ export function AboutSheet({
                       target="_blank"
                       rel="noreferrer"
                     >
-                      Upgrade to Plus
+                      Upgrade to {PLUS_SUBSCRIPTION_TITLE}
                     </a>
                   ) : Capacitor.isNativePlatform() ? (
                     <span className="about-sheet__upgrade-muted">
@@ -339,10 +354,6 @@ export function AboutSheet({
                 </>
               )}
               {iap.ready && (
-                /* App Store Review Guideline 3.1.1 — auto-renewable subscriptions must
-                 * include a Restore Purchases button. Always shown when IAP is wired,
-                 * including for users who already have Plus active (handles "I bought on
-                 * my other iPhone" / "I deleted and reinstalled" cases). */
                 <button
                   type="button"
                   className="about-sheet__upgrade-link"
@@ -365,6 +376,16 @@ export function AboutSheet({
                 <span className="about-sheet__upgrade-muted">Manage-subscription link not set.</span>
               )}
             </div>
+            <p className="about-sheet__iap-legal">{PLUS_AUTO_RENEW_DISCLOSURE}</p>
+            <p className="about-sheet__iap-legal-links">
+              <a href={privacyPolicyHref} target="_blank" rel="noreferrer">
+                Privacy Policy
+              </a>
+              {" · "}
+              <a href={termsOfUseHref} target="_blank" rel="noreferrer">
+                Terms of Use (EULA)
+              </a>
+            </p>
             {iap.message && (
               <p
                 className={
@@ -899,7 +920,7 @@ export function AboutSheet({
                 target="_blank"
                 rel="noreferrer"
               >
-                Terms
+                Terms of Use (EULA)
               </a>
               {" · "}
               {env.supportUrl ? (
@@ -987,30 +1008,3 @@ export function AboutSheet({
   );
 }
 
-/**
- * Build the "Subscribe — $4.99 / month" style label for the IAP button. RevenueCat's
- * `priceString` is locale-formatted by the App Store ($4.99, £4.99, €4,99) so we just
- * append a short period suffix derived from the package identifier. Falls back to plain
- * "Subscribe to Plus" if anything in the shape is unexpected.
- */
-function formatSubscribeButtonLabel(pkg: PurchasesPackage): string {
-  const price = pkg.product?.priceString;
-  if (!price) return "Subscribe to Plus";
-  /* RevenueCat "package types" map to canonical period strings. We surface only the four
-   * we'd realistically configure; anything else we render as just the price. */
-  const period = (() => {
-    switch (pkg.packageType) {
-      case "MONTHLY":
-        return " / mo";
-      case "ANNUAL":
-        return " / yr";
-      case "WEEKLY":
-        return " / wk";
-      case "LIFETIME":
-        return " · lifetime";
-      default:
-        return "";
-    }
-  })();
-  return `Subscribe — ${price}${period}`;
-}

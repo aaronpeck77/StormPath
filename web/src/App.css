@@ -1799,6 +1799,26 @@
   letter-spacing: 0.01em;
 }
 
+.about-sheet__iap-price,
+.about-sheet__iap-legal {
+  margin: 8px 0 0;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.about-sheet__iap-legal-links {
+  margin: 10px 0 0;
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.about-sheet__iap-legal-links a {
+  color: #7dd3fc;
+  text-decoration: underline;
+}
+
 /* Activity trail ? small clear control (kept narrow + right-aligned to avoid accidental hits) */
 .about-sheet__trail-clear {
   margin-top: 12px;

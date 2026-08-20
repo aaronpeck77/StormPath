@@ -6,6 +6,7 @@ import {
   customerHasPlusEntitlement,
   pickCurrentOrFirstOffering,
   pickDefaultPlusPackage,
+  listPlusPackages,
 } from "../revenueCat";
 
 function stubEntitlements(
@@ -157,5 +158,20 @@ describe("pickDefaultPlusPackage", () => {
         availablePackages: [],
       } as never)
     ).toBeNull();
+  });
+});
+
+describe("listPlusPackages", () => {
+  const monthly = { identifier: "$rc_monthly" } as never;
+  const annual = { identifier: "$rc_annual" } as never;
+
+  it("lists monthly then yearly without duplicates", () => {
+    expect(
+      listPlusPackages({
+        monthly,
+        annual,
+        availablePackages: [monthly, annual],
+      } as never)
+    ).toEqual([monthly, annual]);
   });
 });
