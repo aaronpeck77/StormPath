@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { AutocompleteHit } from "../services/mapboxGeocode";
+import { searchSuggestMaxHeightPx, visibleViewportHeightPx } from "./searchSuggestMaxHeight";
 
 export type SearchSuggestion = AutocompleteHit;
 
@@ -48,6 +49,27 @@ export function SearchBar({
       (t.length >= 2 || (showSuggestionsWhenEmpty && t.length <= 1))
   );
 
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showList) return;
+    const wrap = wrapRef.current;
+    const applyMax = () => {
+      const px = searchSuggestMaxHeightPx(visibleViewportHeightPx());
+      wrap?.style.setProperty("--nav-search-suggest-max", `${px}px`);
+    };
+    applyMax();
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", applyMax);
+    vv?.addEventListener("scroll", applyMax);
+    window.addEventListener("resize", applyMax);
+    return () => {
+      vv?.removeEventListener("resize", applyMax);
+      vv?.removeEventListener("scroll", applyMax);
+      window.removeEventListener("resize", applyMax);
+    };
+  }, [showList]);
+
   useEffect(() => {
     if (!showList) return;
     const onKey = (e: KeyboardEvent) => {
@@ -62,7 +84,7 @@ export function SearchBar({
   }, [showList, onEndEditing, onCancelSuggestions]);
 
   return (
-    <div className="nav-search-wrap">
+    <div ref={wrapRef} className="nav-search-wrap">
       <form
         className="nav-search-form"
         role="search"
