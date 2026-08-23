@@ -2,15 +2,31 @@
 
 Automations run in **Cursor’s cloud**. They do not run on phones. Use them to turn a Sentry issue or webhook into a **draft PR** you still review.
 
+## Where this is set up (not Forge)
+
+Forge (the PC) does **not** need to be on, and you do **not** install Sentry there for this loop.
+
+| Place | What it is | Required for |
+|--------|------------|----------------|
+| **GitHub secret `VITE_SENTRY_DSN`** | Baked into TestFlight / App Store IPAs | Phone **sends** crashes and (later) supervisor reports to Sentry |
+| **Optional `web/.env.local` on Forge** | Same DSN for `npm run dev` | Local Chrome tests only |
+| **cursor.com → Automations** | Cloud agent + **Sentry trigger** (OAuth) | Sentry **wakes** an agent. Laptop can be off. |
+| **Netlify `SENTRY_AUTH_TOKEN` / org / project** | Control Room issue counts | Optional ops dashboard — not Cursor |
+
+This Cloud Agent and Cursor on Forge do **not** already have a live Sentry login. Connect Sentry inside the Automation (browser), not as a Forge install.
+
+Cursor’s built-in trigger is **Sentry → Issue created** (filter to `stormpath.health.supervisor.*` or tag `health_domain=supervisor`). A raw webhook is only a fallback.
+
 ## Trigger
 
-**Preferred:** Sentry → Cursor Automation
+**Preferred:** Sentry → Cursor Automation (native Sentry trigger)
 
-1. In Sentry, create an alert (or internal integration webhook) when a new issue matches:
-   - Message starts with `stormpath.health.supervisor.`  
-   - **or** tag `health_domain` = `supervisor`
-2. Point that webhook at the Cursor Automation inbound URL.
-3. Also useful: same Automation on **Slack** if you paste a Sentry link + the extras JSON.
+1. Open [cursor.com/automations](https://cursor.com/automations) in a browser (any PC).
+2. New automation → repo **StormPath** → trigger **Sentry** → **Issue created** → pick the same Sentry project as the DSN.
+3. Paste the agent prompt below. Environment: Cursor Cloud.
+4. Approve Sentry access when Cursor asks (read issues is enough).
+
+Also useful: Slack if you paste a Sentry link + the extras JSON.
 
 **Without Sentry:** phone POSTs `FieldSupervisorReport` JSON to a small Netlify function; that function calls the Automation webhook. Do not invent a token in git — use a Netlify env secret.
 
