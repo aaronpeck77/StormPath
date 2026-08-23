@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  SUPERVISOR_PHONE_WATCH_IDS,
   SUPERVISOR_WATCHES,
   buildFieldReport,
   isAllowedRecovery,
@@ -25,6 +26,23 @@ describe("supervisorWatchList", () => {
     expect(isAllowedRecovery("routing_hang", "abort_and_clear_busy")).toBe(true);
     expect(isAllowedRecovery("routing_hang", "report_only")).toBe(true);
     expect(isAllowedRecovery("routing_hang", "end_nav_to_plan")).toBe(false);
+  });
+
+  it("polls map hold plus the other field stalls on the phone", () => {
+    expect(SUPERVISOR_PHONE_WATCH_IDS).toEqual([
+      "map_low_signal",
+      "false_online",
+      "jeff_drive_camera",
+      "jeff_drive_puck",
+      "jeff_live_traffic",
+      "routing_hang",
+      "search_hang",
+      "bypass_hang",
+      "traffic_overlay_stuck",
+      "storm_alerts_hang",
+    ]);
+    expect(supervisorWatch("map_low_signal").recover).toBe("hold_last_good_map");
+    expect(isAllowedRecovery("map_low_signal", "hold_last_good_map")).toBe(true);
   });
 
   it("rejects unknown watch ids", () => {

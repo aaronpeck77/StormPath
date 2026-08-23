@@ -2,10 +2,9 @@
  * Field-resilience supervisor — watch list, allowed recoveries, and the report
  * payload a phone can emit to Sentry / webhook.
  *
- * This is the contract. The runtime poller is not wired yet; Jeff / drive /
- * traffic / route-ahead health hooks already cover map-while-driving. This
- * module is for *sync / offline / stuck-UI / pending-queue* rules that those
- * hooks do not own.
+ * Phone job (what the driver actually feels): hold last-good map / camera /
+ * road snap in a dead zone (`map_low_signal`). Search + routing hang
+ * recoveries stay as cheap backups.
  *
  * See `docs/FIELD_RESILIENCE_SUPERVISOR.md`.
  */
@@ -19,6 +18,10 @@ export type SupervisorBusyFlag =
   | "stormLoading";
 
 export type SupervisorWatchId =
+  | "map_low_signal"
+  | "jeff_drive_camera"
+  | "jeff_drive_puck"
+  | "jeff_live_traffic"
   | "routing_hang"
   | "search_hang"
   | "bypass_hang"
@@ -32,6 +35,9 @@ export type SupervisorWatchId =
 
 /** Deterministic actions the phone is allowed to take. Never invent new ones on device. */
 export type SupervisorRecovery =
+  | "hold_last_good_map"
+  | "resync_camera"
+  | "refresh_traffic"
   | "abort_and_clear_busy"
   | "keep_last_good_and_clear_busy"
   | "skip_fetch_until_online"
@@ -58,6 +64,34 @@ export type SupervisorWatch = {
  * (routing hang before search hang, etc.).
  */
 export const SUPERVISOR_WATCHES: readonly SupervisorWatch[] = [
+  {
+    id: "map_low_signal",
+    signal: "offline, Capacitor Network down, or Mapbox probe fail while tiles/camera should hold",
+    maxMs: 4_000,
+    recover: "hold_last_good_map",
+    reportWhen: "if_repeated",
+  },
+  {
+    id: "jeff_drive_camera",
+    signal: "Jeff: applied follow-cam bearing vs course-over-ground (useDriveCameraHealth)",
+    maxMs: 3_000,
+    recover: "resync_camera",
+    reportWhen: "if_repeated",
+  },
+  {
+    id: "jeff_drive_puck",
+    signal: "Jeff: puck pixel drift from yard-line anchor (useDriveCameraHealth)",
+    maxMs: 3_000,
+    recover: "resync_camera",
+    reportWhen: "if_repeated",
+  },
+  {
+    id: "jeff_live_traffic",
+    signal: "Jeff: live Mapbox traffic overlay stale while driving (useLiveTrafficHealth)",
+    maxMs: 30_000,
+    recover: "refresh_traffic",
+    reportWhen: "if_repeated",
+  },
   {
     id: "routing_hang",
     signal: "App routing=true via useComputeRoutes / Mapbox Directions (55s timeout)",
@@ -133,6 +167,26 @@ export const SUPERVISOR_WATCHES: readonly SupervisorWatch[] = [
 export const SUPERVISOR_WATCH_IDS: readonly SupervisorWatchId[] =
   SUPERVISOR_WATCHES.map((w) => w.id);
 
+/** Watches the phone actually polls. The rest of the table stays as a contract. */
+export const SUPERVISOR_PHONE_WATCH_IDS: readonly SupervisorWatchId[] = [
+  "map_low_signal",
+  "false_online",
+  "jeff_drive_camera",
+  "jeff_drive_puck",
+  "jeff_live_traffic",
+  "routing_hang",
+  "search_hang",
+  "bypass_hang",
+  "traffic_overlay_stuck",
+  "storm_alerts_hang",
+];
+
+export const JEFF_SUPERVISOR_WATCH_IDS: readonly SupervisorWatchId[] = [
+  "jeff_drive_camera",
+  "jeff_drive_puck",
+  "jeff_live_traffic",
+];
+
 const WATCH_BY_ID = new Map(SUPERVISOR_WATCHES.map((w) => [w.id, w]));
 
 export function supervisorWatch(id: SupervisorWatchId): SupervisorWatch {
@@ -150,7 +204,10 @@ export function isAllowedRecovery(
   recovery: SupervisorRecovery
 ): boolean {
   const w = WATCH_BY_ID.get(id);
-  return w?.recover === recovery || recovery === "report_only";
+  if (!w) return false;
+  if (recovery === w.recover || recovery === "report_only") return true;
+  /* Dead-zone hold is always allowed to override Jeff's normal yank/refresh. */
+  return recovery === "hold_last_good_map" && JEFF_SUPERVISOR_WATCH_IDS.includes(id);
 }
 
 /** Payload phones send to Sentry extras / webhook after a supervisor event. */

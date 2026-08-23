@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { haversineMeters } from "../nav/routeGeometry";
 import type { LngLat } from "../nav/types";
 import { mapMatchingBuildAllowed, matchGpsTraceToRoad, acceptMapMatchSnap } from "../services/mapboxMapMatching";
+import { shouldClearHeldMapMatch } from "../ui/mapLowSignalResilience";
 
 const TRACE_MAX_POINTS = 6;
 const TRACE_MIN_SPACING_M = 8;
@@ -66,7 +67,7 @@ export function useMapMatchedNavigationLngLat(opts: MapMatchedNavigationOptions)
   rawRef.current = rawLngLat;
   routeGeomRef.current = routeGeometry;
 
-  const active =
+  const canFetch =
     enabled &&
     mapMatchingBuildAllowed() &&
     Boolean(mapboxToken) &&
@@ -75,19 +76,20 @@ export function useMapMatchedNavigationLngLat(opts: MapMatchedNavigationOptions)
     appForeground &&
     !disabled;
 
-  useEffect(() => {
-    if (!active) {
-      traceRef.current = [];
-      lastMatchMsRef.current = 0;
-      inFlightRef.current = false;
-      abortRef.current?.abort();
-      abortRef.current = null;
-      setMatched({ lngLat: null, confidence: null });
-    }
-  }, [active]);
+  const clearHeld = shouldClearHeldMapMatch({ navigationStarted, enabled, disabled });
 
   useEffect(() => {
-    if (!active || !rawLngLat) return;
+    if (!clearHeld) return;
+    traceRef.current = [];
+    lastMatchMsRef.current = 0;
+    inFlightRef.current = false;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setMatched({ lngLat: null, confidence: null });
+  }, [clearHeld]);
+
+  useEffect(() => {
+    if (!navigationStarted || disabled || !rawLngLat) return;
 
     const trace = traceRef.current;
     const last = trace[trace.length - 1];
@@ -97,10 +99,10 @@ export function useMapMatchedNavigationLngLat(opts: MapMatchedNavigationOptions)
     } else {
       trace[trace.length - 1] = rawLngLat;
     }
-  }, [active, rawLngLat?.[0], rawLngLat?.[1]]);
+  }, [navigationStarted, disabled, rawLngLat?.[0], rawLngLat?.[1]]);
 
   useEffect(() => {
-    if (!active || !rawLngLat) return;
+    if (!canFetch || !rawLngLat) return;
 
     const intervalMs =
       speedMps != null && speedMps >= FAST_SPEED_MPS
@@ -164,8 +166,8 @@ export function useMapMatchedNavigationLngLat(opts: MapMatchedNavigationOptions)
       abortRef.current = null;
       inFlightRef.current = false;
     };
-  }, [active, mapboxToken, rawLngLat?.[0], rawLngLat?.[1], speedMps]);
+  }, [canFetch, mapboxToken, rawLngLat?.[0], rawLngLat?.[1], speedMps]);
 
-  if (!active) return { lngLat: null, confidence: null };
+  if (clearHeld) return { lngLat: null, confidence: null };
   return matched;
 }
