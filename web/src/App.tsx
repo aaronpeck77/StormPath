@@ -57,6 +57,7 @@ import { useTripNavDisplayHealth } from "./nav/useTripNavDisplayHealth";
 import { useTripSurfaceRecovery } from "./nav/useTripSurfaceRecovery";
 import { useLiveTrafficHealth } from "./nav/useLiveTrafficHealth";
 import { useDriveCameraHealth } from "./ui/useDriveCameraHealth";
+import { useFieldSupervisor } from "./monitoring/useFieldSupervisor";
 import { computeRadarMapOverlayOn, isDriveNavMode } from "./nav/navResourceBudget";
 import { useRouteAheadDerivations } from "./nav/useRouteAheadDerivations";
 import { useProgressCalloutPanel } from "./nav/useProgressCalloutPanel";
@@ -615,6 +616,7 @@ export default function App() {
     handleSearchCancelSuggestions,
     handleSearchDismiss,
     handleCompactDestOpen,
+    abandonAutocomplete,
   } = useDestinationSearch({
     userLngLat,
     userLngLatRef,
@@ -631,6 +633,17 @@ export default function App() {
     setTapHint,
     setRouting,
     setRouteError,
+  });
+
+  useFieldSupervisor({
+    routing,
+    suggestLoading,
+    screen: viewMode,
+    onAbortRouting: () => {
+      routeMainFetchAbortRef.current?.abort();
+      setRouting(false);
+    },
+    onClearSearchBusy: abandonAutocomplete,
   });
 
   useEffect(() => {
