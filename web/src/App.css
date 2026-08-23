@@ -2646,10 +2646,10 @@
   width: auto;
 }
 
-/* Address / search input row matches chrome control height; suggestions still stack below. */
+/* Input stays on the bottom of the dock (above the keyboard). Suggestions grow upward. */
 .nav-search-dock > .nav-search-wrap {
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
 }
 
 .nav-search-dock .nav-search-form {
@@ -3095,7 +3095,7 @@
   list-style: none;
   margin: 0 -10px;
   padding: 0;
-  max-height: 40vh;
+  max-height: var(--nav-search-suggest-max, min(28dvh, 200px));
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   border: none;
@@ -3103,12 +3103,14 @@
   background: transparent;
 }
 
-/* Hairline divider above the suggestion list mirrors the row dividers between suggestions ? gives
- * a clear visual break between the input and the list without a heavy panel border. */
+/* Hairline between the upward list and the input (list is visually above the field). */
 .nav-search-suggestions:not(:empty) {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 0;
+  margin-bottom: 6px;
+  padding-top: 0;
+  padding-bottom: 6px;
+  border-top: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .nav-search-suggestion {
