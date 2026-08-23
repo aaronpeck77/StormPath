@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/react";
 import { isCrashReportingEnabled } from "./sentry";
+import type { FieldSupervisorReport } from "./supervisorWatchList";
 
 /** Where the watchdog fired — used as a Sentry tag for filtering. */
 export type AppHealthDomain =
@@ -9,7 +10,8 @@ export type AppHealthDomain =
   | "trip_surface"
   | "drive_camera"
   | "drive_puck"
-  | "live_traffic";
+  | "live_traffic"
+  | "supervisor";
 
 const SIGNAL_COOLDOWN_MS = 5 * 60 * 1000;
 const lastSentAt = new Map<string, number>();
@@ -53,5 +55,19 @@ export function reportAppHealthRepair(
   reportAppHealthSignal(domain, issues[0] ?? "unknown", {
     issues: issues.join("|"),
     actions: actions.join("|"),
+  });
+}
+
+/** Field supervisor event — message `stormpath.health.supervisor.{watchId}` for Automations. */
+export function reportFieldSupervisorEvent(report: FieldSupervisorReport): void {
+  reportAppHealthSignal("supervisor", report.watchId, {
+    recovered: report.recovered,
+    recovery: report.recovery,
+    online: report.online,
+    navigatorOnLine: report.navigatorOnLine,
+    reachable: report.reachable == null ? "unknown" : report.reachable,
+    screen: report.screen,
+    stuckMs: report.stuckMs,
+    field_report: JSON.stringify(report),
   });
 }

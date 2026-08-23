@@ -85,12 +85,11 @@ Same JSON can POST to a webhook when Sentry is off.
 - Cursor SDK inside the IPA.
 - Automations as a substitute for timeouts / abort / local persistence.
 
-## Build order (when you say go)
+## Build order
 
-1. Wire a poller that only implements `search_hang` + `routing_hang` (highest freeze risk).
-2. Add `.catch()` on destination autocomplete (bug, not a watchdog).
-3. Reachability probe + skip Directions when unreachable.
-4. `online` listener → `flushMapboxUsage`.
-5. Then the rest of the table.
+1. **Done:** `search_hang` + `routing_hang` in `useFieldSupervisor` (wired from `App.tsx`). Autocomplete `.catch()` + search/retrieve `try/finally` so `suggestLoading` / `routing` cannot stick on a throw.
+2. Reachability probe + skip Directions when unreachable.
+3. `online` listener → `flushMapboxUsage`.
+4. Then the rest of the table.
 
 Automation setup (trigger + agent prompt) is in [`CURSOR_AUTOMATION_FIELD_REPORTS.md`](CURSOR_AUTOMATION_FIELD_REPORTS.md).

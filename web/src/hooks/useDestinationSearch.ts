@@ -291,16 +291,23 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
           return;
         }
         setRouting(true);
-        const sessionToken = ensureSearchBoxSessionToken();
-        const retrieved = await mapboxSearchBoxRetrieve(hit.mapboxId, mapboxToken, sessionToken);
-        setRouting(false);
-        if (!retrieved) {
+        try {
+          const sessionToken = ensureSearchBoxSessionToken();
+          const retrieved = await mapboxSearchBoxRetrieve(hit.mapboxId, mapboxToken, sessionToken);
+          if (!retrieved) {
+            setTapHint("Couldn't fetch that place's coordinates. Try another match or hit search.");
+            window.setTimeout(() => setTapHint(null), 6000);
+            return;
+          }
+          lngLat = retrieved.lngLat;
+          placeName = retrieved.placeName;
+        } catch {
           setTapHint("Couldn't fetch that place's coordinates. Try another match or hit search.");
           window.setTimeout(() => setTapHint(null), 6000);
           return;
+        } finally {
+          setRouting(false);
         }
-        lngLat = retrieved.lngLat;
-        placeName = retrieved.placeName;
         /* Session is consumed on retrieve — start a fresh token next time the user types. */
         resetSearchBoxSessionToken();
       }
@@ -354,14 +361,21 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     searchPickQueryRef.current = null;
     setRouting(true);
     setRouteError(null);
-    const hits = await mapboxGeocodeSearch(q, mapboxToken, {
-      proximity: userLngLat ?? undefined,
-      limit: 12,
-      /* Scope to the user's continent so a typo doesn't surface London/Moscow/Sydney for a US
-       * driver. `null` (no GPS yet, or ocean cell) → undefined → no filter (full world). */
-      countries: geocodeCountriesForFix(userLngLat) ?? undefined,
-    });
-    setRouting(false);
+    let hits: SearchSuggestion[] = [];
+    try {
+      hits = await mapboxGeocodeSearch(q, mapboxToken, {
+        proximity: userLngLat ?? undefined,
+        limit: 12,
+        /* Scope to the user's continent so a typo doesn't surface London/Moscow/Sydney for a US
+         * driver. `null` (no GPS yet, or ocean cell) → undefined → no filter (full world). */
+        countries: geocodeCountriesForFix(userLngLat) ?? undefined,
+      });
+    } catch {
+      setRouteError("Search failed. Check the signal and try again.");
+      return;
+    } finally {
+      setRouting(false);
+    }
     if (hits.length === 0) {
       setRouteError("No results for that search.");
       return;
@@ -438,6 +452,13 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     searchPickQueryRef.current = null;
     setSuggestions([]);
     setSuggestLoading(false);
+  }, []);
+
+  /** Supervisor / hang recovery: drop in-flight autocomplete so a late .then cannot restick the spinner. */
+  const abandonAutocomplete = useCallback(() => {
+    searchAutocompleteSeqRef.current += 1;
+    setSuggestLoading(false);
+    setSuggestions([]);
   }, []);
 
   /** × on the search bar — collapse to compact destination and clear stuck suggestion lists. */
@@ -568,6 +589,11 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
           if (seq !== searchAutocompleteSeqRef.current) return;
           setSuggestions(rankSearchSuggestionsWithTrail(hits.slice(0, limit)));
           setSuggestLoading(false);
+        })
+        .catch(() => {
+          if (seq !== searchAutocompleteSeqRef.current) return;
+          setSuggestions([]);
+          setSuggestLoading(false);
         });
     }, 280);
     return () => window.clearTimeout(t);
@@ -611,5 +637,6 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     handleSearchCancelSuggestions,
     handleSearchDismiss,
     handleCompactDestOpen,
+    abandonAutocomplete,
   };
 }
