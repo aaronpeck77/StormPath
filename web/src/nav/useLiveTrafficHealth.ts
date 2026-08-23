@@ -6,6 +6,7 @@ import {
   LIVE_TRAFFIC_STALE_MS,
 } from "./liveTrafficHealth";
 import { reportAppHealthRepair } from "../monitoring/appHealthSignals";
+import { resolveJeffSupervisorRecovery } from "../monitoring/jeffSupervisor";
 import { reportJeffSighting, noteForJeffDomain } from "../ui/jeffTheBot";
 
 const POLL_MS = 30_000;
@@ -23,6 +24,8 @@ export type UseLiveTrafficHealthDeps = {
   trafficOverlay: TrafficOverlay | undefined;
   speedMpsRef: MutableRefObject<number | null>;
   bumpTrafficRefresh: () => void;
+  /** Supervisor dead-zone hold — skip a doomed traffic refresh. */
+  holdLastGoodMap?: boolean;
 };
 
 /**
@@ -44,6 +47,7 @@ export function useLiveTrafficHealth(deps: UseLiveTrafficHealthDeps): void {
     trafficOverlay,
     speedMpsRef,
     bumpTrafficRefresh,
+    holdLastGoodMap = false,
   } = deps;
 
   const lastSuccessAtRef = useRef<number | null>(null);
@@ -80,11 +84,18 @@ export function useLiveTrafficHealth(deps: UseLiveTrafficHealthDeps): void {
         speedMps: speedMpsRef.current,
       });
       if (audit.ok) return;
+      const recovery = resolveJeffSupervisorRecovery({
+        holdLastGoodMap,
+        domain: "live_traffic",
+      });
+      if (recovery === "hold_last_good_map") return;
       if (now - lastRepairAtRef.current < REPAIR_COOLDOWN_MS) return;
       lastRepairAtRef.current = now;
 
       const actions = repairActionsForLiveTrafficIssues(audit.issues);
-      if (actions.includes("refresh_traffic")) bumpTrafficRefresh();
+      if (recovery === "refresh_traffic" && actions.includes("refresh_traffic")) {
+        bumpTrafficRefresh();
+      }
       reportAppHealthRepair("live_traffic", audit.issues, actions);
       reportJeffSighting("live_traffic", noteForJeffDomain("live_traffic"));
       if (import.meta.env.DEV) {
@@ -107,5 +118,6 @@ export function useLiveTrafficHealth(deps: UseLiveTrafficHealthDeps): void {
     hasMapboxToken,
     speedMpsRef,
     bumpTrafficRefresh,
+    holdLastGoodMap,
   ]);
 }

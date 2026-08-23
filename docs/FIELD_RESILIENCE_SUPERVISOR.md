@@ -12,20 +12,18 @@ Phones in dead zones freeze, look “confused,” or drop trip state. That is a 
 
 No in-app LLM. No invented recoveries on device.
 
-## What already exists (do not rebuild)
+## Jeff is the supervisor's drive-map crew
 
-Jeff-style pollers already watch **drive camera, puck, live traffic, route-ahead, nav display, trip surface, map layers**. They call `reportAppHealthRepair` → Sentry (`web/src/monitoring/appHealthSignals.ts`). They do **not** watch busy flags, search hangs, ops queues, or false-online.
+Jeff is **not** a second bot. Camera, puck, and live-traffic polls stay in `useDriveCameraHealth` / `useLiveTrafficHealth`. Recoveries go through `resolveJeffSupervisorRecovery` (`web/src/monitoring/jeffSupervisor.ts`):
 
-| Watch | Code | Recovers |
-|--------|------|----------|
-| Drive heading / puck | `useDriveCameraHealth` | Resync follow-cam |
-| Live traffic stale | `useLiveTrafficHealth` | `bumpTrafficRefresh` |
-| Route-ahead desync | `useProgressCalloutPanel` | Forecast / traffic bump |
-| ETA / along-route | `useTripNavDisplayHealth` | Reset along-hold |
-| Missing geometry / steps | `useTripSurfaceRecovery` | Fit + refresh |
-| Missing route lines | `DriveMap.tsx` | Re-sync layers |
+| Signal | Healthy link | Dead zone (`holdLastGoodMap`) |
+|--------|----------------|-------------------------------|
+| Drive heading / puck | Resync follow-cam | Hold last camera — no yank |
+| Live traffic stale | `bumpTrafficRefresh` | Hold last traffic — no doomed fetch |
 
-Jeff sightings (`jeffTheBot.ts`) do **not** flush to Control Room. `startJeffFixLogFlusher` is not started in `main.tsx`. Leave that as a later reconnect — not required for this supervisor.
+A manual Jeff tap still resyncs on purpose. Badge + sightings stay. Control Room flush is still off.
+
+Other self-heals (route-ahead, ETA, trip surface, route lines) are unchanged and are **not** Jeff.
 
 ## Persistence (what “data loss” means)
 
@@ -41,12 +39,16 @@ The supervisor must **not** wipe Preferences or IndexedDB. Worst allowed trip ac
 
 Source of truth: `web/src/monitoring/supervisorWatchList.ts`.
 
-Busy flags already drive the advisory pill (`useDebouncedBusyLabel`). The supervisor’s job is: **if a flag stays true too long, cancel and clear it** instead of waiting out a 55s Mapbox hang.
+Busy flags already drive the advisory pill (`useDebouncedBusyLabel`). The phone supervisor’s first job is **keep the map moving on last-good tiles**. It also unsticks hung busy flags and decides Jeff’s camera/traffic fixes.
+
+Wired on the phone (`SUPERVISOR_PHONE_WATCH_IDS`): `map_low_signal`, `false_online`, Jeff’s three watches, plus routing / search / bypass / traffic-overlay / storm hangs.
 
 | id | What we watch | Stuck after | Recovery | Report |
 |----|----------------|-------------|----------|--------|
+| `map_low_signal` | Offline / native radio down | 4s | Hold last-good map / camera / road snap | If repeated |
+| `jeff_drive_camera` / `jeff_drive_puck` / `jeff_live_traffic` | Jeff polls | see hooks | Resync / refresh, or hold if dead zone | If repeated |
 | `routing_hang` | `routing` — Directions via `useComputeRoutes` (55s timeout) | 20s | Abort controller + `setRouting(false)`; keep last plan | Always |
-| `search_hang` | `suggestLoading` — `useDestinationSearch` (no `.catch` today) | 12s | Clear loading + suggestions; do not apply stale results | Always |
+| `search_hang` | `suggestLoading` — `useDestinationSearch` | 12s | Clear loading + suggestions; do not apply stale results | Always |
 | `bypass_hang` | `bypassBusy` — traffic bypass / compare | 20s | Abort + clear busy; keep prior compare | Always |
 | `traffic_overlay_stuck` | `trafficFetchDone === false` while driving, traffic on, “online” | 40s | Keep last traffic; mark fetch done | If it repeats |
 | `storm_alerts_hang` | `stormLoading` with empty NWS corridor | 18s | Keep last polygons; clear loading | If still stuck |
@@ -62,7 +64,7 @@ Busy flags already drive the advisory pill (`useDebouncedBusyLabel`). The superv
 
 ## Recovery rules
 
-1. Only run `watch.recover` from the table (or `report_only`).
+1. Only run `watch.recover` from the table, `report_only`, or Jeff’s dead-zone override `hold_last_good_map`.
 2. One recovery per watch per 60s (separate from Sentry’s 5 min health cooldown).
 3. Prefer **keep last good**. Never empty `plan` or `destLngLat` to “fix” a hang.
 4. If `navigator.onLine` is true but the probe fails, set an in-memory `reachable=false` and skip new network work until a probe succeeds or a real `online` event + probe ok.
@@ -87,9 +89,9 @@ Same JSON can POST to a webhook when Sentry is off.
 
 ## Build order
 
-1. **Done:** `search_hang` + `routing_hang` in `useFieldSupervisor` (wired from `App.tsx`). Autocomplete `.catch()` + search/retrieve `try/finally` so `suggestLoading` / `routing` cannot stick on a throw.
-2. Reachability probe + skip Directions when unreachable.
-3. `online` listener → `flushMapboxUsage`.
-4. Then the rest of the table.
+1. **Done:** `search_hang` + `routing_hang` hang recoveries.
+2. **Done:** `map_low_signal` / `false_online` hold last-good map; Jeff merged via `resolveJeffSupervisorRecovery`.
+3. Wired: bypass / traffic-overlay / storm busy-flag unsticks.
+4. Still contract-only: `ops_pending_flush`, `trip_cache_stale`, `go_without_geometry`, `weatherkit_token_hang`.
 
 Automation setup (trigger + agent prompt) is in [`CURSOR_AUTOMATION_FIELD_REPORTS.md`](CURSOR_AUTOMATION_FIELD_REPORTS.md).

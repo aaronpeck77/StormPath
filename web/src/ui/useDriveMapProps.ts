@@ -92,6 +92,7 @@ export type UseDriveMapPropsInput = {
   followCamResyncKey?: number;
   lastTravelBearingDegOutRef?: MutableRefObject<number | null>;
   puckAnchorDriftPxOutRef?: MutableRefObject<number | null>;
+  holdLastGoodMap?: boolean;
 };
 
 export function buildDriveMapProps(
@@ -165,6 +166,7 @@ export function buildDriveMapProps(
     followCamResyncKey = 0,
     lastTravelBearingDegOutRef,
     puckAnchorDriftPxOutRef,
+    holdLastGoodMap = false,
   } = input;
 
   return {
@@ -249,6 +251,7 @@ export function buildDriveMapProps(
     lastTravelBearingDegOutRef,
     puckAnchorDriftPxOutRef,
     isOnline,
+    holdLastGoodMap,
   };
 }
 

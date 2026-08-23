@@ -635,15 +635,26 @@ export default function App() {
     setRouteError,
   });
 
-  useFieldSupervisor({
+  const { holdLastGoodMap } = useFieldSupervisor({
     routing,
     suggestLoading,
+    bypassBusy,
+    trafficFetchDone,
+    trafficWatchEligible: navigationStarted && settingTrafficEnabled && isPlus,
+    stormLoading,
+    stormCorridorEmpty:
+      stormCorridorAlerts.length === 0 && (stormMapGeoJson?.features?.length ?? 0) === 0,
+    navigationStarted,
+    isOnline,
     screen: viewMode,
     onAbortRouting: () => {
       routeMainFetchAbortRef.current?.abort();
       setRouting(false);
     },
     onClearSearchBusy: abandonAutocomplete,
+    onClearBypassBusy: () => setBypassBusy(false),
+    onMarkTrafficFetchDone: () => setTrafficFetchDone(true),
+    onClearStormLoading: () => setStormLoading(false),
   });
 
   useEffect(() => {
@@ -1618,6 +1629,7 @@ export default function App() {
     lastTravelBearingDegRef: driveLastTravelBearingDegRef,
     puckAnchorDriftPxRef: drivePuckAnchorDriftPxRef,
     onResyncCamera: resyncDriveCamera,
+    holdLastGoodMap,
   });
 
   /** Background watchdog + self-heal: live Mapbox traffic / construction / closure pipeline. */
@@ -1632,6 +1644,7 @@ export default function App() {
     trafficOverlay,
     speedMpsRef,
     bumpTrafficRefresh,
+    holdLastGoodMap,
   });
 
   const {
@@ -2452,6 +2465,7 @@ export default function App() {
       followCamResyncKey,
       lastTravelBearingDegOutRef: driveLastTravelBearingDegRef,
       puckAnchorDriftPxOutRef: drivePuckAnchorDriftPxRef,
+      holdLastGoodMap,
     },
     stormAdvisoryBar: {
       isPlus,

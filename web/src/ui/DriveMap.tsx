@@ -125,6 +125,10 @@ import {
   smoothDriveBearingDeg,
 } from "./mapDriveCamera";
 import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
+import {
+  allowBasemapStyleReload,
+  allowFollowCamJumpToFallback,
+} from "./mapLowSignalResilience";
 import { computePuckTargetBeforeRouteSnap } from "./driveMapPuckTarget";
 import { liftTrafficThenRoutesThenHits } from "./mapLayerStack";
 import {
@@ -328,6 +332,8 @@ export type Props = {
   puckAnchorDriftPxOutRef?: MutableRefObject<number | null>;
   /** Skip corridor HTTP prefetch when offline; resume when back online. */
   isOnline?: boolean;
+  /** Supervisor dead-zone hold — keep last tiles/camera; no mid-drive style reload. */
+  holdLastGoodMap?: boolean;
 };
 
 /** Alias for App / prop-assembly hooks — same shape as {@link Props}. */
@@ -432,6 +438,7 @@ function DriveMapInner({
   rejoinOverlayActive = false,
   followCamResyncKey = 0,
   isOnline = true,
+  holdLastGoodMap = false,
   lastTravelBearingDegOutRef,
   puckAnchorDriftPxOutRef,
 }: Props) {
@@ -498,6 +505,8 @@ function DriveMapInner({
   viewModeRef.current = viewMode;
   const navigationStartedRef = useRef(navigationStarted);
   navigationStartedRef.current = navigationStarted;
+  const holdLastGoodMapRef = useRef(holdLastGoodMap);
+  holdLastGoodMapRef.current = holdLastGoodMap;
   const routesLengthRef = useRef(routes.length);
   routesLengthRef.current = routes.length;
   const homePuckFollowRef = useRef(homePuckFollow);
@@ -911,6 +920,8 @@ function DriveMapInner({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    const hold = holdLastGoodMap || !isOnline;
+    if (!allowBasemapStyleReload({ navigationStarted, holdLastGoodMap: hold })) return;
     const want = currentMapStyle(mapPhase, nightBasemapPreset);
     if (want === activeStyleRef.current) return;
     activeStyleRef.current = want;
@@ -921,7 +932,7 @@ function DriveMapInner({
     const onStyle = () => setMapReady(true);
     map.once("style.load", onStyle);
     return () => { map.off("style.load", onStyle); };
-  }, [mapPhase, nightBasemapPreset]);
+  }, [mapPhase, nightBasemapPreset, navigationStarted, holdLastGoodMap, isOnline]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1634,8 +1645,14 @@ function DriveMapInner({
               if (ok) {
                 lastBearingApplied = driveCamBearingSmoothedRef.current;
                 if (forceCamSync) driveCamResyncRef.current = false;
-              } else if (forceCamSync) {
-                /* Intentional resync only — last resort if pan can't apply. */
+              } else if (
+                allowFollowCamJumpToFallback({
+                  intentionalResync: driveCamResyncRef.current,
+                  holdLastGoodMap: holdLastGoodMapRef.current,
+                })
+              ) {
+                /* Intentional Jeff / layout resync only. Periodic ticks must not
+                 * jumpTo — that flashes a different framing when tiles are weak. */
                 const jumped = safeJumpTo(map, {
                   center: pos as [number, number],
                   zoom: driveNavZoomRef.current,
