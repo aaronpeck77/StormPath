@@ -1,0 +1,56 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- StormPath Plus (monthly) App Store IAP promotional image.
+       Not the app icon: night map + three routes + radar cell. Keep lower-left quiet
+       (Apple may overlay the app icon there). No rounded corners. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A2740"/>
+      <stop offset="55%" stop-color="#0E1628"/>
+      <stop offset="100%" stop-color="#070B14"/>
+    </linearGradient>
+    <radialGradient id="radar" cx="720" cy="280" r="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#22D3EE" stop-opacity="0.55"/>
+      <stop offset="45%" stop-color="#0EA5E9" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#0EA5E9" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#sky)"/>
+
+  <!-- Faint road grid (map, not icon) -->
+  <g stroke="#2A3A58" stroke-width="6" opacity="0.55">
+    <path d="M 0 220 L 1024 310"/>
+    <path d="M 0 410 L 1024 470"/>
+    <path d="M 0 620 L 1024 660"/>
+    <path d="M 0 820 L 1024 790"/>
+    <path d="M 180 0 L 240 1024"/>
+    <path d="M 430 0 L 390 1024"/>
+    <path d="M 640 0 L 700 1024"/>
+    <path d="M 860 0 L 820 1024"/>
+  </g>
+
+  <circle cx="720" cy="280" r="210" fill="url(#radar)"/>
+  <circle cx="720" cy="280" r="78" fill="none" stroke="#67E8F9" stroke-width="5" opacity="0.45"/>
+  <circle cx="720" cy="280" r="128" fill="none" stroke="#22D3EE" stroke-width="4" opacity="0.28"/>
+
+  <!-- Three alternate routes — origin kept off the lower-left (Apple overlays the app icon there). -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+    <path d="M 280 930 C 360 780, 420 640, 500 520 C 580 400, 680 280, 860 160"
+          stroke="#38BDF8" stroke-width="28"/>
+    <path d="M 280 930 C 340 820, 400 720, 460 620 C 540 500, 660 440, 860 360"
+          stroke="#FB923C" stroke-width="22"/>
+    <path d="M 280 930 C 420 880, 520 800, 600 700 C 680 600, 760 540, 900 500"
+          stroke="#4ADE80" stroke-width="20"/>
+  </g>
+
+  <!-- Driver puck (upper-right, not lower-left) -->
+  <circle cx="860" cy="160" r="28" fill="#E2E8F0" stroke="#0F172A" stroke-width="8"/>
+  <circle cx="860" cy="160" r="10" fill="#0EA5E9"/>
+</svg>

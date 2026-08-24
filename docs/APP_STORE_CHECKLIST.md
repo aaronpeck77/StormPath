@@ -26,6 +26,36 @@ On device: `i` → header chips must read **App Store** and **Basic** (until Sub
 - [ ] Support URL + privacy policy URLs live — **https://stormpath2.netlify.app** ([`NETLIFY_HOSTING.md`](NETLIFY_HOSTING.md))
 - [ ] Test **Basic** build on device (`npm run build` + archive or separate CI job)
 
+## App Review — Guideline 2.3.2 (IAP promotional image)
+
+Apple rejected **4.20.6 (332)** because the **In-App Purchase promotional image was the app icon**. No new IPA is required.
+
+Images live in `web/assets/store/`:
+
+| File | Use on |
+|------|--------|
+| `stormpath-plus-promo-monthly.png` | Plus **monthly** subscription (and its win-back offer, if any) |
+| `stormpath-plus-promo-yearly.png` | Plus **yearly** subscription (and its win-back offer, if any) |
+
+They are 1024×1024 RGB PNGs, flattened, no rounded corners. They are **not** the storm-cloud app icon. Monthly and yearly are **different** from each other.
+
+### Where to upload (App Store Connect)
+
+Do this on a computer if you can — the phone UI is cramped.
+
+1. Open **[App Store Connect](https://appstoreconnect.apple.com)** → **My Apps** → **StormPath**.
+2. Left sidebar: **Monetization** → **Subscriptions**.
+3. Open the **StormPath Plus** subscription group.
+4. Open **monthly** Plus.
+5. Scroll to **Image** (sometimes labeled promotional / App Store image).
+6. Remove the old picture if it is the app icon. **Choose File** → upload `stormpath-plus-promo-monthly.png`.
+7. **Save**.
+8. Back to the group → open **yearly** Plus → same steps with `stormpath-plus-promo-yearly.png` → **Save**.
+9. If you see a **win-back offer**, open it and give it the matching monthly or yearly image (not the app icon).
+10. Go to the **iOS App** version **4.20.6** → **Resolution Center** / **App Review**. Reply that you replaced the IAP promotional images with unique Plus map artwork (not the app icon), monthly and yearly are different, then **Submit for Review** / **Reply to App Review**.
+
+Do **not** rebuild or re-upload the IPA for this. Do **not** submit a TestFlight Plus build to the store.
+
 ## App Review — Guideline 3.1.2(c) + 2.1(b) (subscriptions)
 
 In-app purchase **cannot** be finished from GitHub. After the new **appstore** IPA is in App Store Connect:
