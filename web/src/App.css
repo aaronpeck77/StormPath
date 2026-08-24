@@ -2650,9 +2650,13 @@
 .nav-search-dock > .nav-search-wrap {
   display: flex;
   flex-direction: column;
+  overflow: visible;
 }
 
 .nav-search-dock .nav-search-form {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
   min-height: var(--nav-chrome-control, 44px);
   height: var(--nav-chrome-control, 44px);
   box-sizing: border-box;
@@ -3086,29 +3090,45 @@
 
 .nav-search-wrap {
   position: relative;
+  overflow: visible;
 }
 
-/* Suggestions list flows out of the search dock as one continuous panel ? no nested card chrome.
- * The negative horizontal margin escapes .nav-search-dock's `padding: 0 10px` so suggestion rows
- * extend edge-to-edge of the dock instead of leaving a wasted strip on the left and right. */
+.nav-search-dock:has(.nav-search-wrap--list-open) {
+  z-index: 8;
+}
+
+.nav-search-dock,
+.nav-bottom-dock__search-col,
+.nav-bottom-dock__search-myloc-row,
+.nav-bottom-dock__plan-stack {
+  overflow: visible;
+}
+
+/* List sits above the typing field and is the only thing that scrolls.
+ * The field stays in the dock — it is not inside this overflow box. */
 .nav-search-suggestions {
   list-style: none;
-  margin: 0 -10px;
+  position: absolute;
+  left: -8px;
+  right: -8px;
+  bottom: 100%;
+  z-index: 4;
+  margin: 0;
   padding: 0;
-  max-height: 40vh;
+  max-height: var(--nav-search-suggest-max, 224px);
+  overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  border: none;
-  border-radius: 0;
-  background: transparent;
+  border: var(--nav-chrome-panel-border);
+  border-bottom: none;
+  border-radius: var(--nav-chrome-radius, 7px) var(--nav-chrome-radius, 7px) 0 0;
+  background: var(--nav-chrome-panel-bg);
+  box-shadow: var(--nav-chrome-panel-shadow);
 }
 
-/* Hairline divider above the suggestion list mirrors the row dividers between suggestions ? gives
- * a clear visual break between the input and the list without a heavy panel border. */
 .nav-search-suggestions:not(:empty) {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 2px;
 }
 
 .nav-search-suggestion {
