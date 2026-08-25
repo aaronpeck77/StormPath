@@ -37,7 +37,7 @@ Images live in `web/assets/store/`:
 | `stormpath-plus-promo-monthly.png` | Plus **monthly** subscription (and its win-back offer, if any) |
 | `stormpath-plus-promo-yearly.png` | Plus **yearly** subscription (and its win-back offer, if any) |
 
-They are 1024×1024 RGB PNGs, flattened, no rounded corners. They are **not** the storm-cloud app icon. Monthly and yearly are **different** from each other.
+They are 1024×1024 RGB PNGs, flattened, no rounded corners. They are **not** the storm-cloud app icon. Monthly and yearly are **different** from each other. Each is a driving map (roads, three routes, destination pin) so it reads as Plus navigation, not an icon.
 
 ### Where to upload (App Store Connect)
 
