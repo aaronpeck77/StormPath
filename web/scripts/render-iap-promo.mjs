@@ -8,7 +8,8 @@
  *   web/assets/store/stormpath-plus-promo-yearly.png
  *
  * Spec: JPG/PNG, 1024×1024, 72 dpi, RGB, flattened, no rounded corners.
- * Must not match the app icon. Monthly and yearly must not match each other.
+ * Same StormPath cloud family as the app icon, but not the icon:
+ * monthly = fall, yearly = winter. The two files must not match each other.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -24,12 +25,12 @@ const jobs = [
   {
     svg: "stormpath-plus-promo-monthly.svg",
     png: "stormpath-plus-promo-monthly.png",
-    flatten: "#070B14",
+    flatten: "#E39A3C",
   },
   {
     svg: "stormpath-plus-promo-yearly.svg",
     png: "stormpath-plus-promo-yearly.png",
-    flatten: "#0B0908",
+    flatten: "#9BB4C8",
   },
 ];
 
