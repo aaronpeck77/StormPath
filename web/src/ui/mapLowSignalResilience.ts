@@ -9,9 +9,17 @@
 
 export function shouldHoldLastGoodMap(input: {
   navigatorOnLine: boolean;
+  /** iOS Network plugin. When true, ignore a stuck `navigator.onLine === false`. */
+  nativeConnected?: boolean | null;
   reachable: boolean | null;
 }): boolean {
-  if (!input.navigatorOnLine) return true;
+  const radioUp =
+    input.nativeConnected === true
+      ? true
+      : input.nativeConnected === false
+        ? false
+        : input.navigatorOnLine;
+  if (!radioUp) return true;
   return input.reachable === false;
 }
 

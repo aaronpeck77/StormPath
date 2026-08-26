@@ -45,7 +45,7 @@ Wired on the phone (`SUPERVISOR_PHONE_WATCH_IDS`): `map_low_signal`, `false_onli
 
 | id | What we watch | Stuck after | Recovery | Report |
 |----|----------------|-------------|----------|--------|
-| `map_low_signal` | Offline / native radio down | 4s | Hold last-good map / camera / road snap | If repeated |
+| `map_low_signal` | Native radio down (not a stuck WKWebView `navigator.onLine`) | 2.5s handoff grace, then hold | Hold last-good map / camera / road snap | If repeated |
 | `jeff_drive_camera` / `jeff_drive_puck` / `jeff_live_traffic` | Jeff polls | see hooks | Resync / refresh, or hold if dead zone | If repeated |
 | `routing_hang` | `routing` — Directions via `useComputeRoutes` (55s timeout) | 20s | Abort controller + `setRouting(false)`; keep last plan | Always |
 | `search_hang` | `suggestLoading` — `useDestinationSearch` | 12s | Clear loading + suggestions; do not apply stale results | Always |
@@ -67,8 +67,8 @@ Wired on the phone (`SUPERVISOR_PHONE_WATCH_IDS`): `map_low_signal`, `false_onli
 1. Only run `watch.recover` from the table, `report_only`, or Jeff’s dead-zone override `hold_last_good_map`.
 2. One recovery per watch per 60s (separate from Sentry’s 5 min health cooldown).
 3. Prefer **keep last good**. Never empty `plan` or `destLngLat` to “fix” a hang.
-4. If `navigator.onLine` is true but the probe fails, set an in-memory `reachable=false` and skip new network work until a probe succeeds or a real `online` event + probe ok.
-5. On a real `online` / foreground: flush mapbox usage pending; retry token if blocked.
+4. If `navigator.onLine` is true but the probe fails, set an in-memory `reachable=false` and skip new network work until a probe succeeds or a real `online` event + probe ok. On iOS, **native** `Network.connected` wins over `navigator.onLine` — a Wi‑Fi → cell handoff must not freeze GO.
+5. On a real `online` / foreground: re-read native Network status, flush mapbox usage pending; retry token if blocked.
 6. If recovery runs and the same watch fires again within 2 minutes → report (even if `reportWhen` is `if_repeated`).
 
 ## Field report
@@ -90,7 +90,7 @@ Same JSON can POST to a webhook when Sentry is off.
 ## Build order
 
 1. **Done:** `search_hang` + `routing_hang` hang recoveries.
-2. **Done:** `map_low_signal` / `false_online` hold last-good map; Jeff merged via `resolveJeffSupervisorRecovery`.
+2. **Done:** `map_low_signal` / `false_online` hold last-good map; Jeff merged via `resolveJeffSupervisorRecovery`. Online uses Capacitor Network + a 2.5s Wi‑Fi→cell grace (`useAppOnline`) so a driveway handoff does not freeze the map.
 3. Wired: bypass / traffic-overlay / storm busy-flag unsticks.
 4. Still contract-only: `ops_pending_flush`, `trip_cache_stale`, `go_without_geometry`, `weatherkit_token_hang`.
 

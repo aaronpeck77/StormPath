@@ -129,7 +129,7 @@ export const SUPERVISOR_WATCHES: readonly SupervisorWatch[] = [
   },
   {
     id: "false_online",
-    signal: "navigator.onLine true but fetch/probe fails (cell dead zone)",
+    signal: "navigator.onLine or native radio looks up but Mapbox probe fails (cell dead zone)",
     maxMs: 8_000,
     recover: "skip_fetch_until_online",
     reportWhen: "if_repeated",
