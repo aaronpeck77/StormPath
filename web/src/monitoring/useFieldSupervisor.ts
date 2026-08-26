@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { STORMPATH_APP_VERSION, stormpathIosBuildNumber } from "../appVersion";
 import { stormpathBuildFlavor } from "../config/buildFlavor";
-import { shouldHoldLastGoodMap } from "../ui/mapLowSignalResilience";
 import { reportFieldSupervisorEvent } from "./appHealthSignals";
 import {
   SUPERVISOR_REPEAT_WINDOW_MS,
@@ -13,6 +12,7 @@ import {
   probeMapReachability,
   readNativeNetworkConnected,
 } from "./mapReachabilityProbe";
+import { NETWORK_RECONNECT_POLL_MS } from "./networkConnectivity";
 import { buildFieldReport, supervisorWatch } from "./supervisorWatchList";
 import type { SupervisorBusyFlag, SupervisorWatchId } from "./supervisorWatchList";
 
@@ -70,15 +70,8 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
     onClearStormLoading,
   } = deps;
 
-  const [reachable, setReachable] = useState<boolean | null>(() =>
-    typeof navigator === "undefined" ? null : navigator.onLine ? null : false
-  );
-  const [holdLastGoodMap, setHoldLastGoodMap] = useState(() =>
-    shouldHoldLastGoodMap({
-      navigatorOnLine: typeof navigator === "undefined" ? true : navigator.onLine,
-      reachable: typeof navigator === "undefined" || navigator.onLine ? null : false,
-    })
-  );
+  const [reachable, setReachable] = useState<boolean | null>(null);
+  const [holdLastGoodMap, setHoldLastGoodMap] = useState(false);
 
   const screenRef = useRef(screen);
   screenRef.current = screen;
@@ -150,20 +143,17 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
   };
 
   useEffect(() => {
-    if (!isOnline) {
-      applyHold("map_low_signal", Date.now());
-      return;
-    }
-
     let cancelled = false;
     const tick = async () => {
+      if (!isOnline) {
+        applyHold("map_low_signal", Date.now());
+        return;
+      }
       const startedAt = Date.now();
       const native = await readNativeNetworkConnected();
       if (cancelled) return;
-      if (native === false) {
-        applyHold("map_low_signal", startedAt);
-        return;
-      }
+      /* Native false while isOnline is still true = Wi‑Fi→cell grace. Do not hold yet. */
+      if (native === false) return;
       const ok = await probeMapReachability({ navigatorOnLine: true });
       if (cancelled) return;
       if (ok) {
@@ -178,8 +168,8 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
 
     void tick();
     const id = window.setInterval(() => {
-      if (navigationStarted || holdRef.current) void tick();
-    }, supervisorWatch("false_online").maxMs);
+      if (!isOnline || navigationStarted || holdRef.current) void tick();
+    }, NETWORK_RECONNECT_POLL_MS);
     return () => {
       cancelled = true;
       window.clearInterval(id);

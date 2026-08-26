@@ -13,6 +13,26 @@ describe("shouldHoldLastGoodMap", () => {
     expect(shouldHoldLastGoodMap({ navigatorOnLine: false, reachable: true })).toBe(true);
   });
 
+  it("does not hold when native radio is up even if navigator.onLine is stuck false", () => {
+    expect(
+      shouldHoldLastGoodMap({
+        navigatorOnLine: false,
+        nativeConnected: true,
+        reachable: null,
+      })
+    ).toBe(false);
+  });
+
+  it("holds when the native radio is down even if the browser still says online", () => {
+    expect(
+      shouldHoldLastGoodMap({
+        navigatorOnLine: true,
+        nativeConnected: false,
+        reachable: true,
+      })
+    ).toBe(true);
+  });
+
   it("holds when a probe says the radio is a lie", () => {
     expect(shouldHoldLastGoodMap({ navigatorOnLine: true, reachable: false })).toBe(true);
   });

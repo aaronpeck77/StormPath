@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
+import { useAppOnline } from "./useAppOnline";
 import type { getWebEnv } from "../config/env";
 import {
   buildAdvisoryPromoLines,
@@ -23,8 +24,7 @@ export type UsePayTierSessionDeps = {
 
 /**
  * Pay-tier probe + RevenueCat sync, plus the Plus-vs-Basic derived flags and promo copy that
- * key off it. Also owns the small `navigator.onLine` mirror (unrelated to billing, but was
- * declared right beside these flags and has no other App-owned dependencies).
+ * key off it. `isOnline` comes from {@link useAppOnline} (native radio + handoff grace).
  */
 export function usePayTierSession(deps: UsePayTierSessionDeps) {
   const { env } = deps;
@@ -86,18 +86,8 @@ export function usePayTierSession(deps: UsePayTierSessionDeps) {
   demoBypassTrafficJamPlusRef.current = demoBypassTrafficJamPlus;
   const payFrequentRoutes = isPlus;
   const tierLabel = isPlus ? "Plus" : "Basic";
-  const [isOnline, setIsOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
-
-  useEffect(() => {
-    const on = () => setIsOnline(true);
-    const off = () => setIsOnline(false);
-    window.addEventListener("online", on);
-    window.addEventListener("offline", off);
-    return () => {
-      window.removeEventListener("online", on);
-      window.removeEventListener("offline", off);
-    };
-  }, []);
+  /** Native radio + handoff grace — not raw `navigator.onLine` (WKWebView lies on Wi‑Fi drop). */
+  const isOnline = useAppOnline();
 
   return {
     payTierProbeKey,
