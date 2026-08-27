@@ -35,3 +35,4 @@ If the secret is **missing**, the app still works; crash reporting is simply off
 
 - Code: `web/src/monitoring/sentry.ts`
 - Workflow env: `.github/workflows/ios-build.yml`
+- Field / dead-zone supervisor (planned): [`FIELD_RESILIENCE_SUPERVISOR.md`](FIELD_RESILIENCE_SUPERVISOR.md), Sentry → PR automation: [`CURSOR_AUTOMATION_FIELD_REPORTS.md`](CURSOR_AUTOMATION_FIELD_REPORTS.md)

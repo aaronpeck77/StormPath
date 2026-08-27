@@ -34,5 +34,8 @@ jobs:
       - name: Typecheck and build
         run: npm run build
 
+      - name: Assert production bundle is App Store flavor (not forced Plus)
+        run: node scripts/assert-ios-build-flavor.mjs appstore
+
       - name: Unit tests
         run: npm test

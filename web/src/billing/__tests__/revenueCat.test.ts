@@ -4,6 +4,9 @@ import {
   PLUS_SUBSCRIPTION_PRODUCT_IDS,
   STORMPATH_PLUS_ENTITLEMENT_ID,
   customerHasPlusEntitlement,
+  pickCurrentOrFirstOffering,
+  pickDefaultPlusPackage,
+  listPlusPackages,
 } from "../revenueCat";
 
 function stubEntitlements(
@@ -91,5 +94,84 @@ describe("customerHasPlusEntitlement", () => {
       }),
     });
     expect(customerHasPlusEntitlement(info)).toBe(false);
+  });
+});
+
+describe("pickCurrentOrFirstOffering", () => {
+  const monthlyOffering = { identifier: "default", availablePackages: [] } as never;
+  const otherOffering = { identifier: "backup", availablePackages: [] } as never;
+
+  it("uses the Current offering when set", () => {
+    expect(
+      pickCurrentOrFirstOffering({
+        current: monthlyOffering,
+        all: { backup: otherOffering },
+      })
+    ).toBe(monthlyOffering);
+  });
+
+  it("falls back to the first offering if Current is missing", () => {
+    expect(
+      pickCurrentOrFirstOffering({
+        current: null,
+        all: { backup: otherOffering },
+      })
+    ).toBe(otherOffering);
+  });
+});
+
+describe("pickDefaultPlusPackage", () => {
+  const monthly = { identifier: "$rc_monthly" } as never;
+  const annual = { identifier: "$rc_annual" } as never;
+  const other = { identifier: "custom" } as never;
+
+  it("prefers monthly, then annual, then any package", () => {
+    expect(
+      pickDefaultPlusPackage({
+        monthly,
+        annual,
+        availablePackages: [other],
+      } as never)
+    ).toBe(monthly);
+    expect(
+      pickDefaultPlusPackage({
+        monthly: null,
+        annual,
+        availablePackages: [other],
+      } as never)
+    ).toBe(annual);
+    expect(
+      pickDefaultPlusPackage({
+        monthly: null,
+        annual: null,
+        availablePackages: [other],
+      } as never)
+    ).toBe(other);
+  });
+
+  it("returns null with no offering or packages", () => {
+    expect(pickDefaultPlusPackage(null)).toBeNull();
+    expect(
+      pickDefaultPlusPackage({
+        monthly: null,
+        annual: null,
+        availablePackages: [],
+      } as never)
+    ).toBeNull();
+  });
+});
+
+describe("listPlusPackages", () => {
+  const monthly = { identifier: "$rc_monthly" } as never;
+  const annual = { identifier: "$rc_annual" } as never;
+
+  it("lists monthly then yearly without duplicates", () => {
+    expect(
+      listPlusPackages({
+        monthly,
+        annual,
+        availablePackages: [monthly, annual],
+      } as never)
+    ).toEqual([monthly, annual]);
   });
 });

@@ -15,10 +15,20 @@ export type UseOpenWeatherNowcastDeps = {
   weatherKitEnabled?: boolean;
   userLngLat: LngLat | null;
   userLngLatRef: MutableRefObject<LngLat | null>;
+  /** Pause REST polls in background — last nowcast stays on screen. */
+  appForeground?: boolean;
 };
 
 export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentNowcast | null {
-  const { isPlus, isOnline, openWeatherApiKey, weatherKitEnabled = false, userLngLat, userLngLatRef } = deps;
+  const {
+    isPlus,
+    isOnline,
+    openWeatherApiKey,
+    weatherKitEnabled = false,
+    userLngLat,
+    userLngLatRef,
+    appForeground = true,
+  } = deps;
 
   const [currentNowcast, setCurrentNowcast] = useState<CurrentNowcast | null>(null);
   const lastNowcastFixRef = useRef<{ lng: number; lat: number; tMs: number } | null>(null);
@@ -38,6 +48,7 @@ export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentN
       setCurrentNowcast(null);
       return;
     }
+    if (!appForeground) return;
     if (!isOnline) return;
     const hasProvider = weatherKitEnabled || Boolean(openWeatherApiKey);
     if (!hasProvider) return;
@@ -47,7 +58,7 @@ export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentN
     const [lng, lat] = userLngLat;
     if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
 
-    const NOW_REFRESH_MS = 10 * 60 * 1000;
+    const NOW_REFRESH_MS = 15 * 60 * 1000;
     const NOW_FAR_M = 25_000;
     const NOW_FAIL_RETRY_MS = 90 * 1000;
     const NOW_FAIL_RETRY_MOVE_M = 5_000;
@@ -88,10 +99,11 @@ export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentN
         nowcastFetchInFlightRef.current = false;
       }
     })();
-  }, [isPlus, userLngLat, isOnline, openWeatherApiKey, weatherKitEnabled]);
+  }, [isPlus, userLngLat, isOnline, openWeatherApiKey, weatherKitEnabled, appForeground]);
 
   useEffect(() => {
     if (!isPlus) return;
+    if (!appForeground) return;
     if (!isOnline) return;
     if (!weatherKitEnabled && !openWeatherApiKey) return;
     const id = window.setInterval(() => {
@@ -117,9 +129,9 @@ export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentN
           nowcastFetchInFlightRef.current = false;
         }
       })();
-    }, 10 * 60 * 1000);
+    }, 15 * 60 * 1000);
     return () => window.clearInterval(id);
-  }, [isPlus, isOnline, openWeatherApiKey, weatherKitEnabled, userLngLatRef]);
+  }, [isPlus, isOnline, openWeatherApiKey, weatherKitEnabled, userLngLatRef, appForeground]);
 
   return currentNowcast;
 }

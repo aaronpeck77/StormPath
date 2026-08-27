@@ -16,6 +16,7 @@ Source files live in `web/public/` and are copied into `web/dist/` on build.
 
 - **TestFlight / iPhone app** does not require Netlify — legal pages are bundled in the IPA.
 - **App Store Connect** listing needs the **https** URLs above for Privacy Policy and Support.
+- **App Store customer IPA:** do **not** put `[skip netlify]` on the GitHub push. Connect fetches the live privacy page; the `appstore` Actions track refuses to build until https://stormpath2.netlify.app/privacy.html includes ATT / RevenueCat / Sentry.
 - **Free Netlify tier** is enough for these static pages.
 
 ## Update the live site (Git — required for WeatherKit functions)

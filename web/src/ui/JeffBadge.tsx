@@ -19,9 +19,8 @@ export type JeffBadgeProps = {
 };
 
 /**
- * Tiny corner mascot for the background watchdogs (see `useDriveCameraHealth`,
- * `useLiveTrafficHealth`). Goes full color for a few seconds whenever a watchdog catches
- * and auto-corrects something — no popup copy, so he stays out of the driver's way.
+ * Tiny corner mascot for the supervisor's drive-map crew (Jeff). Goes full color
+ * for a few seconds after an auto-fix — no popup copy, so he stays out of the way.
  *
  * When `manualCameraFixAvailable` is set (drive view + GO), Jeff also stays visible at low
  * opacity as a tap target for a manual camera resync.

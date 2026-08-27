@@ -130,11 +130,91 @@ export type WeatherKitAlert = {
   areaName: string | null;
 };
 
-const responseCache = new Map<string, { at: number; data: WeatherKitWeatherResponse }>();
-const CACHE_TTL_MS = 5 * 60 * 1000;
+/**
+ * One REST call covers every puck weather hook (nowcast, minute rain, hourly/daily, alerts).
+ * Corridor hourly along a route stays a single-dataset fetch so we do not 5× those points.
+ */
+export const WEATHERKIT_PUCK_DATASETS: WeatherKitDataSet[] = [
+  "currentWeather",
+  "forecastHourly",
+  "forecastDaily",
+  "forecastNextHour",
+  "weatherAlerts",
+];
 
-function cacheKey(lat: number, lng: number, dataSets: WeatherKitDataSet[]): string {
-  return `${lat.toFixed(4)},${lng.toFixed(4)}:${dataSets.join(",")}`;
+/** ~110 m cell — GPS wander should not miss cache. */
+export function weatherKitLocationCell(lat: number, lng: number): string {
+  return `${lat.toFixed(3)},${lng.toFixed(3)}`;
+}
+
+/** ~2.2 km — alerts are county-scale; street GPS must not retrigger polls. */
+export function weatherKitAlertPollKey(lat: number, lng: number): string {
+  const q = (n: number) => (Math.round(n * 50) / 50).toFixed(2);
+  return `${q(lat)},${q(lng)}`;
+}
+
+export function weatherKitUsesPuckBundle(dataSets: WeatherKitDataSet[]): boolean {
+  return !(dataSets.length === 1 && dataSets[0] === "forecastHourly");
+}
+
+type CachedWeather = {
+  at: number;
+  data: WeatherKitWeatherResponse;
+  dataSets: WeatherKitDataSet[];
+};
+
+const responseCache = new Map<string, CachedWeather>();
+const inflight = new Map<string, Promise<WeatherKitWeatherResponse>>();
+/** Current / hourly / daily / minute / alerts — Apple counts each REST hit. */
+export const WEATHERKIT_PUCK_CACHE_TTL_MS = 15 * 60 * 1000;
+/** Corridor hourly is already hour-resolution; reuse cells across reroutes. */
+export const WEATHERKIT_ROUTE_HOURLY_TTL_MS = 20 * 60 * 1000;
+
+export function resetWeatherKitClientCaches(): void {
+  responseCache.clear();
+  inflight.clear();
+}
+
+function ttlMsFor(dataSets: WeatherKitDataSet[]): number {
+  return weatherKitUsesPuckBundle(dataSets)
+    ? WEATHERKIT_PUCK_CACHE_TTL_MS
+    : WEATHERKIT_ROUTE_HOURLY_TTL_MS;
+}
+
+function datasetsCover(have: WeatherKitDataSet[], want: WeatherKitDataSet[]): boolean {
+  return want.every((d) => have.includes(d));
+}
+
+function readFreshCache(
+  cell: string,
+  want: WeatherKitDataSet[]
+): WeatherKitWeatherResponse | null {
+  const ttl = ttlMsFor(want);
+  const now = Date.now();
+  for (const [key, hit] of responseCache) {
+    if (!key.startsWith(`${cell}|`)) continue;
+    if (now - hit.at >= ttl) continue;
+    if (datasetsCover(hit.dataSets, want)) return hit.data;
+  }
+  return null;
+}
+
+function dropCellCache(cell: string): void {
+  for (const key of [...responseCache.keys()]) {
+    if (key.startsWith(`${cell}|`)) responseCache.delete(key);
+  }
+}
+
+/** Coarse country for `weatherAlerts` — same boxes as the alerts adapter. */
+export function weatherKitCountryCode(lat: number, lng: number): string {
+  if (lat >= 24 && lat <= 72 && lng >= -180 && lng <= -65) return "US";
+  if (lat >= 42 && lat <= 84 && lng >= -141 && lng <= -52) return "CA";
+  if (lat >= 14 && lat <= 33 && lng >= -118 && lng <= -86) return "MX";
+  if (lat >= 49 && lat <= 61 && lng >= -10 && lng <= 2) return "GB";
+  if (lat >= -44 && lat <= -10 && lng >= 113 && lng <= 154) return "AU";
+  if (lat >= 47 && lat <= 55 && lng >= 6 && lng <= 15) return "DE";
+  if (lat >= 42 && lat <= 51 && lng >= -5 && lng <= 9) return "FR";
+  return "US";
 }
 
 export async function fetchWeatherKitAtPoint(
@@ -144,44 +224,65 @@ export async function fetchWeatherKitAtPoint(
   signal?: AbortSignal,
   opts?: { bypassCache?: boolean; country?: string }
 ): Promise<WeatherKitWeatherResponse> {
-  const key = cacheKey(lat, lng, dataSets);
+  const cell = weatherKitLocationCell(lat, lng);
+  const fetchSets = weatherKitUsesPuckBundle(dataSets) ? WEATHERKIT_PUCK_DATASETS : dataSets;
+  const country =
+    opts?.country ??
+    (fetchSets.includes("weatherAlerts") ? weatherKitCountryCode(lat, lng) : undefined);
+  const requestKey = `${cell}|${fetchSets.join(",")}|${country ?? ""}`;
+
   if (!opts?.bypassCache) {
-    const hit = responseCache.get(key);
-    if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data;
+    const hit = readFreshCache(cell, dataSets);
+    if (hit) return hit;
+    const pending = inflight.get(requestKey);
+    if (pending) return pending;
   } else {
-    responseCache.delete(key);
+    dropCellCache(cell);
   }
 
-  const token = await fetchWeatherKitToken(signal);
-  const ds = dataSets.join(",");
-  // weatherAlerts requires a country query param per Apple's WeatherKit REST API spec.
-  const countryParam = opts?.country ? `&country=${encodeURIComponent(opts.country)}` : "";
-  const url = `${BASE_URL}/en-US/${lat.toFixed(4)}/${lng.toFixed(4)}?dataSets=${encodeURIComponent(ds)}${countryParam}`;
-  const authHeaders = {
-    Authorization: `Bearer ${token}`,
-    Accept: "application/json",
-  };
+  const pending = inflight.get(requestKey);
+  if (pending && !opts?.bypassCache) return pending;
 
-  let res: Response;
-  if (Capacitor.isNativePlatform()) {
-    /* On iOS/Android the WebView CORS policy blocks direct calls to weatherkit.apple.com.
-     * CapacitorHttp makes native-level requests that bypass WebView CORS entirely. */
-    try {
-      const hr = await CapacitorHttp.request({
-        url,
-        method: "GET",
-        headers: authHeaders,
-        connectTimeout: TIMEOUT_MS,
-        readTimeout: TIMEOUT_MS,
-        responseType: "json",
-      });
-      const body = typeof hr.data === "string" ? hr.data : JSON.stringify(hr.data ?? {});
-      res = new Response(body, {
-        status: hr.status,
-        headers: new Headers(hr.headers as Record<string, string>),
-      });
-    } catch (e) {
-      /* CapacitorHttp failed — fall through to standard fetch as last resort. */
+  let started!: Promise<WeatherKitWeatherResponse>;
+  started = (async () => {
+    const token = await fetchWeatherKitToken(signal);
+    const ds = fetchSets.join(",");
+    // weatherAlerts requires a country query param per Apple's WeatherKit REST API spec.
+    const countryParam = country ? `&country=${encodeURIComponent(country)}` : "";
+    const url = `${BASE_URL}/en-US/${lat.toFixed(4)}/${lng.toFixed(4)}?dataSets=${encodeURIComponent(ds)}${countryParam}`;
+    const authHeaders = {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+    };
+
+    let res: Response;
+    if (Capacitor.isNativePlatform()) {
+      /* On iOS/Android the WebView CORS policy blocks direct calls to weatherkit.apple.com.
+       * CapacitorHttp makes native-level requests that bypass WebView CORS entirely. */
+      try {
+        const hr = await CapacitorHttp.request({
+          url,
+          method: "GET",
+          headers: authHeaders,
+          connectTimeout: TIMEOUT_MS,
+          readTimeout: TIMEOUT_MS,
+          responseType: "json",
+        });
+        const body = typeof hr.data === "string" ? hr.data : JSON.stringify(hr.data ?? {});
+        res = new Response(body, {
+          status: hr.status,
+          headers: new Headers(hr.headers as Record<string, string>),
+        });
+      } catch {
+        /* CapacitorHttp failed — fall through to standard fetch as last resort. */
+        res = await fetchWithTimeout({
+          input: url,
+          init: { headers: authHeaders },
+          timeoutMs: TIMEOUT_MS,
+          externalSignal: signal,
+        });
+      }
+    } else {
       res = await fetchWithTimeout({
         input: url,
         init: { headers: authHeaders },
@@ -189,24 +290,21 @@ export async function fetchWeatherKitAtPoint(
         externalSignal: signal,
       });
     }
-  } else {
-    res = await fetchWithTimeout({
-      input: url,
-      init: { headers: authHeaders },
-      timeoutMs: TIMEOUT_MS,
-      externalSignal: signal,
-    });
-  }
 
-  if (res.status === 401 || res.status === 403) {
-    throw new Error(`WeatherKit auth ${res.status}`);
-  }
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`WeatherKit ${res.status}: ${text.slice(0, 160)}`);
-  }
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(`WeatherKit auth ${res.status}`);
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`WeatherKit ${res.status}: ${text.slice(0, 160)}`);
+    }
 
-  const data = (await res.json()) as WeatherKitWeatherResponse;
-  responseCache.set(key, { at: Date.now(), data });
-  return data;
+    const data = (await res.json()) as WeatherKitWeatherResponse;
+    responseCache.set(requestKey, { at: Date.now(), data, dataSets: fetchSets });
+    return data;
+  })().finally(() => {
+    if (inflight.get(requestKey) === started) inflight.delete(requestKey);
+  });
+  inflight.set(requestKey, started);
+  return started;
 }

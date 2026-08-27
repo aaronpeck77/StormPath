@@ -75,6 +75,37 @@ export function RouteTripleToggle({
   );
 }
 
+/** Route-info chip: shows the on-screen leg; tap cycles to the next distinct path. */
+export function RoutePickControl({
+  items,
+  selectedId,
+  onSelect,
+  detail,
+  className = "",
+  cycleOrderIds,
+  activeSlotIndex = null,
+}: {
+  items: RoutePickItem[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  detail?: string;
+  className?: string;
+  cycleOrderIds?: string[];
+  activeSlotIndex?: number | null;
+}) {
+  return (
+    <RouteCycleButton
+      items={items}
+      selectedId={selectedId}
+      onSelect={onSelect}
+      detail={detail}
+      className={className}
+      cycleOrderIds={cycleOrderIds}
+      activeSlotIndex={activeSlotIndex}
+    />
+  );
+}
+
 /** Single control: tap cycles Route A → B → C (colors follow each leg, not list order). */
 export function RouteCycleButton({
   items,

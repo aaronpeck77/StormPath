@@ -154,6 +154,30 @@ jobs:
             exit 1
           fi
 
+      - name: Require live privacy policy (App Store track)
+        if: env.BUILD_TRACK == 'appstore'
+        run: |
+          set -euo pipefail
+          URL="https://stormpath2.netlify.app/privacy.html"
+          echo "App Store Connect uses this URL. It must match the ATT/AdMob/RevenueCat copy."
+          ok=0
+          for i in 1 2 3 4 5 6 7 8; do
+            html="$(curl -fsSL "$URL" || true)"
+            if printf '%s' "$html" | grep -q "App Tracking Transparency" \
+              && printf '%s' "$html" | grep -q "RevenueCat" \
+              && printf '%s' "$html" | grep -q "Sentry"; then
+              echo "Live privacy policy OK: $URL"
+              ok=1
+              break
+            fi
+            echo "Attempt $i: $URL is missing ATT/RevenueCat/Sentry copy. Waiting for Netlify…"
+            sleep 20
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::$URL is stale. Push to master without [skip netlify] so Netlify deploys web/public/privacy.html, then re-run the appstore track."
+            exit 1
+          fi
+
       - name: Build web app (App Store mode — Basic default, IAP via RevenueCat)
         if: env.BUILD_TRACK == 'appstore'
         run: npm run build:appstore

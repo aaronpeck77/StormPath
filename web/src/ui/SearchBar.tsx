@@ -62,7 +62,7 @@ export function SearchBar({
   }, [showList, onEndEditing, onCancelSuggestions]);
 
   return (
-    <div className="nav-search-wrap">
+    <div className={`nav-search-wrap${showList ? " nav-search-wrap--list-open" : ""}`}>
       <form
         className="nav-search-form"
         role="search"
@@ -79,7 +79,14 @@ export function SearchBar({
           className="nav-search-input"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          onFocus={() => onBeginEditing?.()}
+          onFocus={(e) => {
+            onBeginEditing?.();
+            /* Keep the field where it is — iOS otherwise scrolls the focused input to the top. */
+            const input = e.currentTarget;
+            window.setTimeout(() => {
+              input.scrollIntoView({ block: "nearest", inline: "nearest" });
+            }, 0);
+          }}
           onBlur={() => {
             // Allow taps on suggestion buttons without the input blur immediately
             // clearing the list (mobile browsers often blur before firing click).

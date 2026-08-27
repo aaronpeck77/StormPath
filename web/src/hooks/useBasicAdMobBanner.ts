@@ -4,6 +4,7 @@ import { getPayTier } from "../billing/payFeatures";
 import {
   ADMOB_TEST_BANNER_UNIT_ID,
   isAdMobSupported,
+  recordBasicBannerUiSlot,
   showBasicBanner,
   subscribeBasicBannerLoad,
   teardownBasicBanner,
@@ -14,8 +15,6 @@ type Args = {
   enabled: boolean;
   /** Hide while actively navigating (Drive / Go). */
   navigationStarted: boolean;
-  /** Bumped when pay tier override changes so ads tear down immediately on Plus. */
-  payTierProbeKey: number;
 };
 
 export type BasicAdBannerSlotState = "hidden" | "loading" | "filled" | "empty";
@@ -29,16 +28,44 @@ function resolveAdMobTestMode(): boolean {
   );
 }
 
+/** Lift chrome only while a banner is loading or on screen — not for a failed/no-fill gap. */
+export function bannerShouldReserveBottomSpace(opts: {
+  isBasicTier: boolean;
+  enabled: boolean;
+  navigationStarted: boolean;
+  native: boolean;
+  slotState: BasicAdBannerSlotState;
+  /** Local `npm run dev` in a browser — no native AdMob, still pad so layout matches device. */
+  devWebPlaceholder: boolean;
+}): boolean {
+  if (!opts.isBasicTier || !opts.enabled || opts.navigationStarted) return false;
+  if (opts.devWebPlaceholder) return true;
+  if (!opts.native) return false;
+  return opts.slotState === "loading" || opts.slotState === "filled";
+}
+
+/**
+ * Stale `showBasicBanner()` results must not overwrite a newer effect's slot.
+ * `showBanner` resolving true only means the native request started, not that a creative filled.
+ */
+export function slotStateAfterShowAttempt(args: {
+  cancelled: boolean;
+  shown: boolean;
+}): BasicAdBannerSlotState | null {
+  if (args.cancelled) return null;
+  if (!args.shown) return "empty";
+  return null;
+}
+
 /** Third-party AdMob banner for Basic — browse / route planning only, not while driving.
- *  House promos (SiteBible, Plus upsell) stay in StormAdvisoryBar only. */
+ *  House promos (Plus upsell / tips) stay in StormAdvisoryBar only. */
 export function useBasicAdMobBanner({
   enabled,
   navigationStarted,
-  payTierProbeKey,
 }: Args): {
   slotState: BasicAdBannerSlotState;
   testMode: boolean;
-  /** Lift bottom chrome while Basic idle — dev web reserves layout only; device also shows native AdMob. */
+  /** Lift bottom chrome while Basic idle — device shows native AdMob when filled. */
   reservesBottomSpace: boolean;
 } {
   const env = getWebEnv();
@@ -46,6 +73,10 @@ export function useBasicAdMobBanner({
   const [slotState, setSlotState] = useState<BasicAdBannerSlotState>("hidden");
   const testMode = resolveAdMobTestMode();
   const isBasicTier = getPayTier() !== "plus";
+
+  useEffect(() => {
+    recordBasicBannerUiSlot(slotState);
+  }, [slotState]);
 
   useEffect(() => {
     if (!isAdMobSupported()) {
@@ -85,9 +116,10 @@ export function useBasicAdMobBanner({
       testMode,
       bottomMarginPx: 0,
     }).then((shown) => {
-      if (cancelled || !shown) {
+      const next = slotStateAfterShowAttempt({ cancelled, shown });
+      if (next) {
         window.clearTimeout(timeoutId);
-        setSlotState("empty");
+        setSlotState(next);
       }
     });
 
@@ -100,7 +132,7 @@ export function useBasicAdMobBanner({
         void teardownBasicBanner();
       }
     };
-  }, [enabled, isBasicTier, navigationStarted, env.admobBannerUnitId, testMode, payTierProbeKey]);
+  }, [enabled, isBasicTier, navigationStarted, env.admobBannerUnitId, testMode]);
 
   useEffect(() => {
     return () => {
@@ -108,13 +140,14 @@ export function useBasicAdMobBanner({
     };
   }, []);
 
-  const reservesBottomSpace =
-    isBasicTier &&
-    enabled &&
-    !navigationStarted &&
-    (import.meta.env.DEV && !isAdMobSupported()
-      ? true
-      : isAdMobSupported() && slotState !== "hidden");
+  const reservesBottomSpace = bannerShouldReserveBottomSpace({
+    isBasicTier,
+    enabled,
+    navigationStarted,
+    native: isAdMobSupported(),
+    slotState,
+    devWebPlaceholder: Boolean(import.meta.env.DEV && !isAdMobSupported()),
+  });
 
   return { slotState, testMode, reservesBottomSpace };
 }

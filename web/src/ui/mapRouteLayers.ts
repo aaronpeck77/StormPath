@@ -25,7 +25,20 @@ import {
   type StormProgressStripBand,
 } from "../weatherAlerts/geometryOverlap";
 import { safeCameraForBounds, safeEaseTo, safeExtendBounds, safeFitBounds, readMapLngLat } from "./mapCameraSafe";
-import { ROUTE_SUGGESTED_LINE_WIDTH, routeMapLineStyle, ROUTE_LINE_CASING_COLOR, ROUTE_LINE_CASING_OPACITY, ROUTE_LINE_CASING_WIDTH_EXTRA } from "./mapRouteStyle";
+import {
+  firstBasemapSymbolLayerId,
+  moveLayerBelowBasemapLabels,
+} from "./mapBasemapLayerAnchor";
+import {
+  ROUTE_SUGGESTED_LINE_WIDTH,
+  routeCasingWidthByZoom,
+  routeHitWidthByZoom,
+  routeLineWidthByZoom,
+  routeLineWidthViewMode,
+  routeMapLineStyle,
+  ROUTE_LINE_CASING_COLOR,
+  ROUTE_LINE_CASING_OPACITY,
+} from "./mapRouteStyle";
 
 const ROUTE_COND_LEGACY_LAYER = "route-condition-markers-circles";
 const ROUTE_COND_LEGACY_SRC = "route-condition-markers";
@@ -411,27 +424,9 @@ export function sortRouteIdsFocusLast(routeIds: string[], lineFocusId: string): 
   });
 }
 
-function isStormPathOverlayLayerId(id: string): boolean {
-  return (
-    id.startsWith("route-") ||
-    id.includes("rainviewer") ||
-    id.startsWith("weather-alerts") ||
-    id === "3d-buildings" ||
-    id.startsWith("mapbox-traffic")
-  );
-}
-
-/** Labels/icons — route lines sit just below so they paint over Mapbox road geometry. */
-function firstBasemapSymbolBeforeId(map: mapboxgl.Map): string | undefined {
-  for (const l of map.getStyle()?.layers ?? []) {
-    if (l.type === "symbol" && !isStormPathOverlayLayerId(l.id)) return l.id;
-  }
-  return undefined;
-}
-
 /**
- * Draw route polylines above Mapbox traffic overlays so A/B/C lines stay readable.
- * {@link bringMapboxTrafficLayersToFront} moves traffic to the top of the stack; call this after it,
+ * Draw route polylines above Mapbox traffic and under basemap labels (road names stay readable).
+ * {@link bringMapboxTrafficLayersToFront} parks traffic under those same labels; call this after it,
  * then {@link bringRouteHitLayersToTop}. Optional corridor highlight follows the same route geometry.
  * Pass {@link lineFocusId} so the active route ends on top of alternates.
  */
@@ -441,20 +436,13 @@ export function bringRouteVisualLinesAboveTraffic(
   layerPrefix = "route",
   lineFocusId?: string
 ) {
-  const anchorBefore = firstBasemapSymbolBeforeId(map);
   const ordered = lineFocusId ? sortRouteIdsFocusLast(routeIds, lineFocusId) : routeIds;
   for (const id of ordered) {
     const casingId = `${layerPrefix}-${id}-line-casing`;
     const lid = `${layerPrefix}-${id}-line`;
     try {
-      if (map.getLayer(casingId)) {
-        if (anchorBefore) map.moveLayer(casingId, anchorBefore);
-        map.moveLayer(casingId);
-      }
-      if (map.getLayer(lid)) {
-        if (anchorBefore) map.moveLayer(lid, anchorBefore);
-        map.moveLayer(lid);
-      }
+      if (map.getLayer(casingId)) moveLayerBelowBasemapLabels(map, casingId);
+      if (map.getLayer(lid)) moveLayerBelowBasemapLabels(map, lid);
     } catch {
       /* style teardown */
     }
@@ -574,8 +562,11 @@ export function applyRoutesToMap(
     const lineId = `${id}-line`;
     const casingId = `${id}-line-casing`;
     const hitLineId = `${id}-line-hit`;
-    const casingWidth = lineWidth + ROUTE_LINE_CASING_WIDTH_EXTRA;
-    const lineAnchorBefore = firstBasemapSymbolBeforeId(map);
+    const lineWidthView = routeLineWidthViewMode(viewMode, isOverviewPip);
+    const lineWidthByZoom = routeLineWidthByZoom(lineWidth, lineWidthView);
+    const casingWidth = routeCasingWidthByZoom(lineWidth, lineWidthView);
+    const hitWidth = routeHitWidthByZoom(lineWidth, lineWidthView);
+    const lineAnchorBefore = firstBasemapSymbolLayerId(map);
     if (!map.getSource(id)) {
       map.addSource(id, { type: "geojson", data: geojson });
       map.addLayer(
@@ -599,7 +590,7 @@ export function applyRoutesToMap(
           source: id,
           paint: {
             "line-color": lineColor,
-            "line-width": lineWidth,
+            "line-width": lineWidthByZoom,
             "line-opacity": lineOpacity,
           },
           layout: { "line-cap": "round", "line-join": "round" },
@@ -613,7 +604,7 @@ export function applyRoutesToMap(
           source: id,
           paint: {
             "line-color": "#000000",
-            "line-width": 22,
+            "line-width": hitWidth,
             "line-opacity": 0,
           },
           layout: { "line-cap": "round", "line-join": "round" },
@@ -643,8 +634,11 @@ export function applyRoutesToMap(
         map.setPaintProperty(casingId, "line-opacity", ROUTE_LINE_CASING_OPACITY);
       }
       map.setPaintProperty(lineId, "line-color", lineColor);
-      map.setPaintProperty(lineId, "line-width", lineWidth);
+      map.setPaintProperty(lineId, "line-width", lineWidthByZoom);
       map.setPaintProperty(lineId, "line-opacity", lineOpacity);
+      if (map.getLayer(hitLineId)) {
+        map.setPaintProperty(hitLineId, "line-width", hitWidth);
+      }
       if (!map.getLayer(hitLineId)) {
         map.addLayer({
           id: hitLineId,
@@ -652,7 +646,7 @@ export function applyRoutesToMap(
           source: id,
           paint: {
             "line-color": "#000000",
-            "line-width": 22,
+            "line-width": hitWidth,
             "line-opacity": 0,
           },
           layout: { "line-cap": "round", "line-join": "round" },

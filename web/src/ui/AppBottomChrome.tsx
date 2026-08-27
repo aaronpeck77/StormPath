@@ -6,7 +6,7 @@ import { RouteCompareBottomPanel } from "./RouteCompareBottomPanel";
 import { RecordingRouteBanner } from "./RecordingRouteBanner";
 import { DriveCompass } from "./DriveCompass";
 import { NavMilesLeftBox } from "./NavMilesLeftBox";
-import { RouteCycleButton, type RoutePickItem } from "./RoutePickBar";
+import { RoutePickControl, type RoutePickItem } from "./RoutePickBar";
 import { SearchBar, type SearchSuggestion } from "./SearchBar";
 import { RouteStopsBar } from "./RouteStopsBar";
 import { BottomToolbar } from "./BottomToolbar";
@@ -234,7 +234,7 @@ export function AppBottomChrome({
               ) : null}
               {routePickItems.length >= 1 ? (
                 <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
-                  <RouteCycleButton
+                  <RoutePickControl
                     items={routePickItems}
                     selectedId={lineFocusId}
                     cycleOrderIds={planRouteIds}
@@ -255,16 +255,7 @@ export function AppBottomChrome({
             </div>
           ) : (
             <div className="nav-bottom-dock__plan-stack">
-              {/* About row hosts the round 'i' info button on the left and, when there are
-               * routes to cycle, the route-select button inline to its right. The route-select
-               * button is sized to fit the strip between the 'i' and the dock's right edge —
-               * which is itself flush against the vertical progress rail — so adding the
-               * select button doesn't push the rail narrower. */}
-              {/* About row hosts the round 'i' info button on the left, plus an inline
-               * action slot to its right. The slot shows route-select while a route is
-               * loaded, or "My location" while planning (no routes yet). Both share the
-               * same height + right inset so the dock keeps a single horizontal control
-               * strip clear of the vertical progress rail. */}
+              {/* About row: 'i' on the left; route-info cycle chip or My location in the inline slot. */}
               <div className="nav-bottom-dock__about-row">
                 <button
                   type="button"
@@ -278,37 +269,37 @@ export function AppBottomChrome({
                 {navigationStarted && driveDistanceRemainingLabel ? (
                   <NavMilesLeftBox label={driveDistanceRemainingLabel} />
                 ) : null}
-                {viewMode === "route" && routePickItems.length >= 1 ? (
-                  <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
-                    <RouteCycleButton
-                      items={routePickItems}
-                      selectedId={lineFocusId}
-                      cycleOrderIds={planRouteIds}
-                      activeSlotIndex={previewLegIndex}
-                      onSelect={handlePreviewRouteSelect}
-                      detail={routeDockDetail}
-                    />
-                  </div>
-                ) : (viewMode === "route" || viewMode === "topdown") &&
-                  planRoutesLength === 0 &&
-                  userLngLat ? (
-                  <button
-                    type="button"
-                    className="nav-recenter-puck-btn nav-recenter-puck-btn--dock nav-recenter-puck-btn--inline"
-                    title="Center map on your location"
-                    aria-label="Center map on your location"
-                    onClick={onRecenterPlanningPuck}
-                  >
-                    My location
-                  </button>
-                ) : radarMapOverlayOn && radarFrameTimeLabel ? (
-                  <div
-                    className="nav-radar-frame-time-dock"
-                    aria-live="polite"
-                    title="Radar mosaic time (your local time)"
-                  >
-                    {radarFrameTimeLabel}
-                  </div>
+                {viewMode === "route" || viewMode === "topdown" ? (
+                  routePickItems.length >= 1 ? (
+                    <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
+                      <RoutePickControl
+                        items={routePickItems}
+                        selectedId={lineFocusId}
+                        cycleOrderIds={planRouteIds}
+                        activeSlotIndex={previewLegIndex}
+                        onSelect={handlePreviewRouteSelect}
+                        detail={routeDockDetail}
+                      />
+                    </div>
+                  ) : planRoutesLength === 0 && userLngLat ? (
+                    <button
+                      type="button"
+                      className="nav-recenter-puck-btn nav-recenter-puck-btn--dock nav-recenter-puck-btn--inline"
+                      title="Center map on your location"
+                      aria-label="Center map on your location"
+                      onClick={onRecenterPlanningPuck}
+                    >
+                      My location
+                    </button>
+                  ) : radarMapOverlayOn && radarFrameTimeLabel ? (
+                    <div
+                      className="nav-radar-frame-time-dock"
+                      aria-live="polite"
+                      title="Radar mosaic time (your local time)"
+                    >
+                      {radarFrameTimeLabel}
+                    </div>
+                  ) : null
                 ) : null}
               </div>
               <div className="nav-bottom-dock__search-myloc-row">

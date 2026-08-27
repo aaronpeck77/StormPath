@@ -57,6 +57,7 @@ import { useTripNavDisplayHealth } from "./nav/useTripNavDisplayHealth";
 import { useTripSurfaceRecovery } from "./nav/useTripSurfaceRecovery";
 import { useLiveTrafficHealth } from "./nav/useLiveTrafficHealth";
 import { useDriveCameraHealth } from "./ui/useDriveCameraHealth";
+import { useFieldSupervisor } from "./monitoring/useFieldSupervisor";
 import { computeRadarMapOverlayOn, isDriveNavMode } from "./nav/navResourceBudget";
 import { useRouteAheadDerivations } from "./nav/useRouteAheadDerivations";
 import { useProgressCalloutPanel } from "./nav/useProgressCalloutPanel";
@@ -476,11 +477,10 @@ export default function App() {
    * and clear it via `setViewModeBeforeTrafficBypass(null)`. */
 
   const driveModeUi = isDriveNavMode(navigationStarted, viewMode);
-  /** Third-party AdMob only — house promos (SiteBible, Plus upsell) live in StormAdvisoryBar. */
+  /** Third-party AdMob only — house promos (Plus upsell / tips) live in StormAdvisoryBar. */
   const basicAdBanner = useBasicAdMobBanner({
     enabled: !isPlus,
     navigationStarted,
-    payTierProbeKey,
   });
   /** NWS polygons + fetches follow About → NWS everywhere (including drive — no auto-on). */
   const savedDrawerOpen = useUiStore((s) => s.savedDrawerOpen);
@@ -616,6 +616,7 @@ export default function App() {
     handleSearchCancelSuggestions,
     handleSearchDismiss,
     handleCompactDestOpen,
+    abandonAutocomplete,
   } = useDestinationSearch({
     userLngLat,
     userLngLatRef,
@@ -632,6 +633,28 @@ export default function App() {
     setTapHint,
     setRouting,
     setRouteError,
+  });
+
+  const { holdLastGoodMap } = useFieldSupervisor({
+    routing,
+    suggestLoading,
+    bypassBusy,
+    trafficFetchDone,
+    trafficWatchEligible: navigationStarted && settingTrafficEnabled && isPlus,
+    stormLoading,
+    stormCorridorEmpty:
+      stormCorridorAlerts.length === 0 && (stormMapGeoJson?.features?.length ?? 0) === 0,
+    navigationStarted,
+    isOnline,
+    screen: viewMode,
+    onAbortRouting: () => {
+      routeMainFetchAbortRef.current?.abort();
+      setRouting(false);
+    },
+    onClearSearchBusy: abandonAutocomplete,
+    onClearBypassBusy: () => setBypassBusy(false),
+    onMarkTrafficFetchDone: () => setTrafficFetchDone(true),
+    onClearStormLoading: () => setStormLoading(false),
   });
 
   useEffect(() => {
@@ -652,6 +675,7 @@ export default function App() {
     weatherKitEnabled: env.weatherKitEnabled,
     userLngLat,
     userLngLatRef,
+    appForeground,
   });
 
   const { bumpTrafficRefresh } = useTrafficOverlayFetch({
@@ -1605,6 +1629,7 @@ export default function App() {
     lastTravelBearingDegRef: driveLastTravelBearingDegRef,
     puckAnchorDriftPxRef: drivePuckAnchorDriftPxRef,
     onResyncCamera: resyncDriveCamera,
+    holdLastGoodMap,
   });
 
   /** Background watchdog + self-heal: live Mapbox traffic / construction / closure pipeline. */
@@ -1619,6 +1644,7 @@ export default function App() {
     trafficOverlay,
     speedMpsRef,
     bumpTrafficRefresh,
+    holdLastGoodMap,
   });
 
   const {
@@ -2439,6 +2465,7 @@ export default function App() {
       followCamResyncKey,
       lastTravelBearingDegOutRef: driveLastTravelBearingDegRef,
       puckAnchorDriftPxOutRef: drivePuckAnchorDriftPxRef,
+      holdLastGoodMap,
     },
     stormAdvisoryBar: {
       isPlus,

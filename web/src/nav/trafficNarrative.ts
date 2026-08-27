@@ -102,8 +102,8 @@ export function unifiedTrafficNarrative(
 
   if ((leg.constructionCount ?? 0) > 0) {
     const detail =
-      leg.constructionSummary?.slice(0, 120) ||
-      "Mapbox reports construction on this corridor — watch for workers and changed limits.";
+      (leg.constructionSummary?.trim() ||
+        "Mapbox reports construction on this corridor — watch for workers and changed limits.");
     return gateTrafficSurfaces(
       {
         advisoryHeadline:

@@ -72,10 +72,13 @@ function entitlementKeyGrantsPlus(key: string): boolean {
   return norm.includes("stormpath") && (norm.includes("plus") || norm.includes("pro"));
 }
 
-/** App Store product IDs that grant Plus — fallback when RC subscription exists but entitlement map is empty. */
+/** App Store product IDs that grant Plus — fallback when RC subscription exists but entitlement map is empty.
+ *  Include both the intended ids and the RC rows already created (`storm.path.*`) so Restore still matches. */
 export const PLUS_SUBSCRIPTION_PRODUCT_IDS = [
   "stormpath.plus.monthly",
   "stormpath.plus.yearly",
+  "storm.path.monthly",
+  "storm.path.yearly",
 ] as const;
 
 let configured = false;
@@ -231,23 +234,55 @@ export const NATIVE_PAY_TIER_CHANGED_EVENT = "stormpath:native-pay-tier-changed"
 
 /**
  * Fetch the current RevenueCat offering. Returns `null` on web, when not configured, when
- * no current offering is set in the dashboard, or on transient network errors. Callers
- * should treat `null` as "show the URL fallback for now."
+ * no offerings exist, or on transient network errors. Callers should treat `null` as
+ * "show the URL fallback for now."
+ *
+ * If the dashboard forgot to mark an offering Current, use the first offering so Subscribe
+ * still appears (yearly-only is fine — {@link pickDefaultPlusPackage} prefers monthly then annual).
  */
 export async function getPlusOffering(): Promise<PurchasesOffering | null> {
   if (!configured) return null;
   try {
     const offerings = await Purchases.getOfferings();
-    return offerings.current ?? null;
+    return pickCurrentOrFirstOffering(offerings);
   } catch {
     return null;
   }
 }
 
-/** Convenience: returns the offering's monthly package if present, else the first available package. */
+/** Prefer the dashboard Current offering; otherwise the first offering in `all`. */
+export function pickCurrentOrFirstOffering(offerings: {
+  current?: PurchasesOffering | null;
+  all?: Record<string, PurchasesOffering> | null;
+}): PurchasesOffering | null {
+  if (offerings.current) return offerings.current;
+  const all = offerings.all ? Object.values(offerings.all) : [];
+  return all[0] ?? null;
+}
+
+/** Monthly if present, else yearly, else whatever package is on the offering. */
 export function pickDefaultPlusPackage(offering: PurchasesOffering | null): PurchasesPackage | null {
   if (!offering) return null;
-  return offering.monthly ?? offering.availablePackages[0] ?? null;
+  return offering.monthly ?? offering.annual ?? offering.availablePackages[0] ?? null;
+}
+
+/** Monthly then yearly then any extras — used so About can list every Plus plan. */
+export function listPlusPackages(offering: PurchasesOffering | null): PurchasesPackage[] {
+  if (!offering) return [];
+  const ordered = [
+    offering.monthly,
+    offering.annual,
+    ...(offering.availablePackages ?? []),
+  ].filter((pkg): pkg is PurchasesPackage => Boolean(pkg));
+  const seen = new Set<string>();
+  const out: PurchasesPackage[] = [];
+  for (const pkg of ordered) {
+    const id = pkg.identifier || pkg.product?.identifier || "";
+    if (id && seen.has(id)) continue;
+    if (id) seen.add(id);
+    out.push(pkg);
+  }
+  return out;
 }
 
 /**

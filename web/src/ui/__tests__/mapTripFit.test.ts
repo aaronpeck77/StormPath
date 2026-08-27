@@ -69,4 +69,17 @@ describe("buildTripFitBounds", () => {
     expect(sw.lng).toBeLessThanOrEqual(bulge[0] + 1e-9);
     expect(ne.lat).toBeGreaterThanOrEqual(bulge[1] - 1e-9);
   });
+
+  it("unions every planned leg when onlyRouteId is omitted (pre-Go A+B)", () => {
+    const user: [number, number] = [-86.78, 36.16];
+    const dest: [number, number] = [-86.66, 36.24];
+    const main = route("r-a", [user, [-86.72, 36.2], dest]);
+    const altBulge: [number, number] = [-86.95, 36.05];
+    const alt = route("r-b", [user, altBulge, dest]);
+    const fit = buildTripFitBounds(user, dest, [main, alt], undefined, true);
+    expect(fit?.endpointsOnly).toBe(false);
+    const sw = fit!.bounds.getSouthWest();
+    expect(sw.lng).toBeLessThanOrEqual(altBulge[0] + 1e-9);
+    expect(sw.lat).toBeLessThanOrEqual(altBulge[1] + 1e-9);
+  });
 });

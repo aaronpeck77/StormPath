@@ -1,8 +1,9 @@
 /**
- * "Jeff the Fix-It Bot" is the friendly name for the app's background watchdog checks —
- * drive-camera heading, drive-puck yard-line placement, and live-traffic staleness
- * (see `useDriveCameraHealth` and `useLiveTrafficHealth`). Watchdogs still announce fixes
- * here so any subscriber can react; the corner badge and Control Room fix log are off.
+ * Jeff is the supervisor's drive-map crew — camera heading, puck yard-line, and
+ * live-traffic staleness (`useDriveCameraHealth`, `useLiveTrafficHealth`).
+ * Recoveries go through `resolveJeffSupervisorRecovery`: hold last-good in a
+ * dead zone, yank/refresh only when the link is healthy. Sightings still feed
+ * the corner badge; the Control Room fix log is off.
  */
 
 export type JeffSighting = {
