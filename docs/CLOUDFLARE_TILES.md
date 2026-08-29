@@ -1,5 +1,28 @@
 # Cloudflare tile proxy (App Store scale)
 
+## Turn it on
+
+You already pay for Cloudflare. I cannot log into that account from here. Add two GitHub secrets, then we deploy the Worker and point TestFlight at it.
+
+1. Open **[dash.cloudflare.com](https://dash.cloudflare.com)** and sign in.
+2. Click the **Workers & Pages** product (left). Copy **Account ID** from the right side of that page.
+3. Top-right profile → **My Profile** → **API Tokens** → **Create Token**.
+4. Use the **Edit Cloudflare Workers** template → **Continue to summary** → **Create Token**. Copy the token once.
+5. Open **GitHub → StormPath → Settings → Secrets and variables → Actions → New repository secret**. Add:
+
+| Name | Value |
+|------|--------|
+| `CLOUDFLARE_API_TOKEN` | the token from step 4 |
+| `CLOUDFLARE_ACCOUNT_ID` | the Account ID from step 2 |
+
+6. Tell me those two secrets are in. I will run **Actions → Deploy Cloudflare tiles**. The log prints a `*.workers.dev` URL.
+7. Add one more secret: `VITE_TOMORROW_IO_TILE_PROXY_URL` = `https://THAT-HOST/tomorrow-io-tile` (no trailing slash).
+8. Next TestFlight build (push `master`) bakes that URL into the IPA. Radar then uses Cloudflare. Netlify stays as fallback.
+
+Do **not** paste the token into chat.
+
+---
+
 Tomorrow.io map radar on **TestFlight / App Store** cannot call `api.tomorrow.io` directly from the Mapbox WebView (CORS). StormPath uses a **tile proxy** with the same path shape as the Netlify function:
 
 ```text

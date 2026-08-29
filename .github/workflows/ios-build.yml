@@ -17,6 +17,8 @@
 #   MAPBOX_DOWNLOADS_TOKEN              Mapbox *secret* token with Downloads:Read (SPM pulls Navigation SDK)
 #   VITE_TOMORROW_IO_API_KEY            Tomorrow.io (legacy — omit when WeatherKit enabled)
 #   VITE_TOMORROW_IO_TILE_PROXY_URL     Cloudflare tile worker base (see docs/CLOUDFLARE_TILES.md)
+#   CLOUDFLARE_API_TOKEN                Workers deploy (workflow: Deploy Cloudflare tiles)
+#   CLOUDFLARE_ACCOUNT_ID               Same workflow
 #   VITE_OPENWEATHER_API_KEY            OpenWeather (legacy — omit when WeatherKit enabled)
 #   VITE_WEATHERKIT_ENABLED             Set to `true` after Netlify token function is live (see docs/WEATHERKIT_SETUP.md)
 #   VITE_SENTRY_DSN                     Sentry DSN for crash reports (optional; see docs/SENTRY_SETUP.md)
