@@ -1,0 +1,76 @@
+# Deploy the Tomorrow.io radar tile Worker (edge cache for native radar).
+# Docs: docs/CLOUDFLARE_TILES.md
+#
+# GitHub Secrets (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN      Workers edit token (dash.cloudflare.com → My Profile → API Tokens)
+#   CLOUDFLARE_ACCOUNT_ID     Right sidebar on any Workers page
+#   VITE_TOMORROW_IO_API_KEY  Already used for iOS builds — reused as the Worker secret
+#
+# After the first successful run, copy the workers.dev URL from the log and set:
+#   VITE_TOMORROW_IO_TILE_PROXY_URL = https://<that-host>/tomorrow-io-tile
+# Then ship a new TestFlight so the IPA points at Cloudflare.
+
+name: Deploy Cloudflare tiles
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "cloudflare/tomorrow-io-tiles/**"
+      - ".github/workflows/cloudflare-tiles.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: cloudflare-tiles-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: cloudflare/tomorrow-io-tiles
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: cloudflare/tomorrow-io-tiles/package-lock.json
+
+      - name: Require Cloudflare secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID under GitHub → Settings → Secrets → Actions."
+            echo "See docs/CLOUDFLARE_TILES.md (Turn it on)."
+            exit 1
+          fi
+
+      - name: Install
+        run: npm ci
+
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+
+      - name: Store Tomorrow.io key on the Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TOMORROW_IO_API_KEY: ${{ secrets.TOMORROW_IO_API_KEY || secrets.VITE_TOMORROW_IO_API_KEY }}
+        run: |
+          if [ -z "$TOMORROW_IO_API_KEY" ]; then
+            echo "No TOMORROW_IO_API_KEY or VITE_TOMORROW_IO_API_KEY secret — Worker will need ?apikey= from the app."
+            exit 0
+          fi
+          printf '%s' "$TOMORROW_IO_API_KEY" | npx wrangler secret put TOMORROW_IO_API_KEY
