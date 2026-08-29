@@ -18,7 +18,7 @@ Jeff is **not** a second bot. Camera, puck, and live-traffic polls stay in `useD
 
 | Signal | Healthy link | Dead zone (`holdLastGoodMap`) |
 |--------|----------------|-------------------------------|
-| Drive heading / puck | Resync follow-cam | Hold last camera — no yank |
+| Drive heading / puck | Resync follow-cam | **Still** resync follow-cam (GPS on last-good tiles) — do not freeze the camera |
 | Live traffic stale | `bumpTrafficRefresh` | Hold last traffic — no doomed fetch |
 
 A manual Jeff tap still resyncs on purpose. Badge + sightings stay. Control Room flush is still off.

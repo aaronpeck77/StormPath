@@ -390,9 +390,18 @@ export function geometryFromDirectionsSteps(r: MbRoute): LngLat[] | null {
 
 function buildPostedSpeedSamples(
   legs: NonNullable<NonNullable<DirectionsResponse["routes"]>[0]["legs"]>,
-  geometry: LngLat[],
+  /** Route overview LineString — Mapbox maxspeed annotations align to this, not step geometry. */
+  overviewGeometry: LngLat[],
+  /** Stored drive polyline (often denser step geometry); samples are scaled onto its length. */
+  detailedGeometry: LngLat[],
   legStarts: number[] | null
 ): PostedSpeedSample[] | undefined {
+  if (overviewGeometry.length < 2) return undefined;
+  const overviewLen = polylineLengthMeters(overviewGeometry);
+  const detailedLen = polylineLengthMeters(detailedGeometry);
+  const scale =
+    overviewLen > 1 && detailedLen > 1 ? detailedLen / overviewLen : 1;
+
   const raw: PostedSpeedSample[] = [];
   for (let li = 0; li < legs.length; li++) {
     const maxspeed = legs[li]?.annotation?.maxspeed;
@@ -408,8 +417,10 @@ function buildPostedSpeedSamples(
     for (let s = 0; s < maxspeed.length; s++) {
       const mph = mapboxMaxSpeedToMph(maxspeed[s]);
       if (mph == null) continue;
-      const vi = Math.max(0, Math.min(geometry.length - 1, base + s));
-      raw.push({ alongMeters: cumulativeLengthToVertex(geometry, vi), mph });
+      /* Annotation index s is the start vertex of segment s on the overview polyline. */
+      const vi = Math.max(0, Math.min(overviewGeometry.length - 1, base + s));
+      const alongOverview = cumulativeLengthToVertex(overviewGeometry, vi);
+      raw.push({ alongMeters: alongOverview * scale, mph });
     }
   }
   if (!raw.length) return undefined;
@@ -431,7 +442,7 @@ function routeFromDirectionsApi(
   const rawGeometry = geometryFromDirectionsSteps(r) ?? overview;
   const legs = r.legs ?? [];
   const legStarts = computeLegStartIndices(legs);
-  const postedSpeedSamples = buildPostedSpeedSamples(legs, rawGeometry, legStarts);
+  const postedSpeedSamples = buildPostedSpeedSamples(legs, overview, rawGeometry, legStarts);
   const geometry = opts?.skipGeometryNormalize
     ? rawGeometry
     : normalizeStoredRouteGeometry(rawGeometry);

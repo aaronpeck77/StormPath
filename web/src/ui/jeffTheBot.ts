@@ -1,9 +1,8 @@
 /**
  * Jeff is the supervisor's drive-map crew — camera heading, puck yard-line, and
  * live-traffic staleness (`useDriveCameraHealth`, `useLiveTrafficHealth`).
- * Recoveries go through `resolveJeffSupervisorRecovery`: hold last-good in a
- * dead zone, yank/refresh only when the link is healthy. Sightings still feed
- * the corner badge; the Control Room fix log is off.
+ * Recoveries go through `resolveJeffSupervisorRecovery`: in a dead zone skip
+ * doomed traffic fetches, but still resync the GPS follow-cam on last-good tiles.
  */
 
 export type JeffSighting = {

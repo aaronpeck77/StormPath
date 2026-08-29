@@ -71,7 +71,7 @@ import { useRoutePickItems } from "./nav/buildRoutePickItems";
 import { useDriveEtaLabels } from "./nav/useDriveEtaLabels";
 import { useSeriousHazardAutoFly } from "./nav/useSeriousHazardAutoFly";
 import { isDriveOffRouteForwardFraming, lockedRouteShouldAvoidMotorway } from "./nav/driveAlwaysAhead";
-import { routeGeometryAgreesWithLocked } from "./nav/lockedRouteGeometryGuard";
+import { shouldAdoptNativeRouteGeometry } from "./nav/lockedRouteGeometryGuard";
 import { unifiedTrafficNarrative } from "./nav/trafficNarrative";
 import {
   TRAFFIC_BYPASS_ENABLED,
@@ -852,26 +852,21 @@ export default function App() {
   }, [offRouteGuidanceRoute?.geometry]);
 
   const adoptLockedRouteGeometry = useCallback(
-    (geometry: LngLat[], opts?: { force?: boolean }) => {
-      if (geometry.length < 2) return;
+    (geometry: LngLat[], opts?: { force?: boolean }): boolean => {
+      if (geometry.length < 2) return false;
       const next = geometry.map(([a, b]) => [a, b] as LngLat);
       const goGeom = navGoGeometryRef.current;
       /* Without force: reject unsolicited Core "fastest" that would yank a preferred
        * Go lock at session start. Mid-trip Core reroutes / soft restarts MUST pass
        * force — otherwise alongM advances on the new line while the blue line stays
        * frozen on the old corridor (empty Drive line). */
-      if (
-        !opts?.force &&
-        goGeom &&
-        goGeom.length >= 2 &&
-        !routeGeometryAgreesWithLocked(next, goGeom)
-      ) {
+      if (!shouldAdoptNativeRouteGeometry(next, goGeom, Boolean(opts?.force))) {
         if (import.meta.env.DEV) {
           console.info(
             "[nav] ignored Core route geometry — diverges from Go-locked corridor"
           );
         }
-        return;
+        return false;
       }
       navigationGuidanceGeometryRef.current = next;
       if (opts?.force || !goGeom || goGeom.length < 2) {
@@ -879,6 +874,7 @@ export default function App() {
       }
       setGuidanceGeometryEpoch((n) => n + 1);
       setAlongHoldResetKey((n) => n + 1);
+      return true;
     },
     []
   );
@@ -895,16 +891,20 @@ export default function App() {
    * Web / Netlify: hook is inert — DIY nav unchanged. Dr/Mp/Rt stay one DriveMap.
    */
   /**
-   * iOS Core start/reroute: install geometry as a new Go lock (force) and collapse the
-   * plan to that single corridor so Dr/Rt/Mp never keep a stale behind-you blue line.
+   * iOS Core start/reroute: adopt geometry only when it matches the Go lock (or force on
+   * mid-trip reroute). Never silently replace a chosen alternate with Core "fastest."
    */
   const onNativeRouteGeometry = useCallback(
-    (geometry: LngLat[], opts?: { force?: boolean }) => {
-      if (geometry.length < 2) return;
-      adoptLockedRouteGeometry(geometry, { force: opts?.force ?? true });
+    (geometry: LngLat[], opts?: { force?: boolean }): boolean => {
+      if (geometry.length < 2) return false;
+      const force = Boolean(opts?.force);
+      const adopted = adoptLockedRouteGeometry(geometry, { force });
+      if (!adopted) return false;
       const lockedId =
         lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? primaryRouteId;
-      if (!lockedId) return;
+      if (!lockedId) return true;
+      /* Mid-trip Core reroute: collapse to the live corridor. Session-start agreement
+       * may refine the locked leg without yanking id/geometry to highway-fastest. */
       setPlan((prev) =>
         planAfterSoftRestartLock(prev, lockedId, {
           geometry: geometry.map(([a, b]) => [a, b] as LngLat),
@@ -912,6 +912,7 @@ export default function App() {
       );
       setRouteSlotOrder([lockedId]);
       setPreviewLegIndex(0);
+      return true;
     },
     [
       adoptLockedRouteGeometry,
@@ -931,7 +932,12 @@ export default function App() {
   } = useNativeNavSession({
     accessToken: env.mapboxToken,
     navigationStarted,
-    coords: { userLngLat, viaStops, destLngLat },
+    coords: {
+      userLngLat,
+      viaStops,
+      destLngLat,
+      lockedCorridor: navGoGeometryRef.current,
+    },
     onRouteGeometry: onNativeRouteGeometry,
     voiceGuidanceEnabled: settingVoiceGuidanceEnabled,
     preferBackroads: nativePreferBackroads,

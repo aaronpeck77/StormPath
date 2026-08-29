@@ -56,3 +56,19 @@ export function routeGeometryAgreesWithLocked(
   }
   return checks > 0 && hits / checks >= minFrac;
 }
+
+/**
+ * Whether to install Core / soft-restart geometry onto the Go lock.
+ * Mid-trip reroutes pass `force`. Session-start Core "fastest" without force is
+ * rejected when it diverges from the corridor the driver locked at Go.
+ */
+export function shouldAdoptNativeRouteGeometry(
+  candidate: LngLat[],
+  lockedGoGeometry: LngLat[] | null | undefined,
+  force: boolean
+): boolean {
+  if (candidate.length < 2) return false;
+  if (force) return true;
+  if (!lockedGoGeometry || lockedGoGeometry.length < 2) return true;
+  return routeGeometryAgreesWithLocked(candidate, lockedGoGeometry);
+}

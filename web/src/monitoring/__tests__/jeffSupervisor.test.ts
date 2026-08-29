@@ -9,13 +9,13 @@ describe("jeffSupervisor", () => {
     expect(jeffSupervisorWatchId("live_traffic")).toBe("jeff_live_traffic");
   });
 
-  it("holds last-good in a dead zone instead of yanking the camera or refreshing traffic", () => {
+  it("keeps GPS camera fixes in a dead zone; only traffic stays on hold", () => {
     expect(
       resolveJeffSupervisorRecovery({ holdLastGoodMap: true, domain: "drive_camera" })
-    ).toBe("hold_last_good_map");
+    ).toBe("resync_camera");
     expect(
       resolveJeffSupervisorRecovery({ holdLastGoodMap: true, domain: "drive_puck" })
-    ).toBe("hold_last_good_map");
+    ).toBe("resync_camera");
     expect(
       resolveJeffSupervisorRecovery({ holdLastGoodMap: true, domain: "live_traffic" })
     ).toBe("hold_last_good_map");

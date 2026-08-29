@@ -17,13 +17,17 @@ export function jeffSupervisorWatchId(domain: JeffSupervisorDomain): SupervisorW
 
 /**
  * Jeff is the supervisor's drive-map crew — same eyes, one decision.
- * In a dead zone he holds last-good. With a real link he still straightens
- * the camera / puck or kicks traffic.
+ * Dead zone: hold last-good **tiles** / skip doomed traffic fetches, but still
+ * straighten the camera when the puck has drifted off the yard-line (GPS follow
+ * must keep working while Mapbox easeTo stalls under weak tiles).
  */
 export function resolveJeffSupervisorRecovery(input: {
   holdLastGoodMap: boolean;
   domain: JeffSupervisorDomain;
 }): SupervisorRecovery {
-  if (input.holdLastGoodMap) return "hold_last_good_map";
+  if (input.holdLastGoodMap) {
+    if (input.domain === "live_traffic") return "hold_last_good_map";
+    return "resync_camera";
+  }
   return supervisorWatch(jeffSupervisorWatchId(input.domain)).recover;
 }

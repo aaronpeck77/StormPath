@@ -105,20 +105,24 @@ describe("allowBasemapStyleReload", () => {
 });
 
 describe("follow-cam repairs", () => {
-  it("skips automatic Jeff resync while holding last-good", () => {
-    expect(allowAutomaticFollowCamResync(true)).toBe(false);
+  it("always allows automatic GPS follow resync (hold is tiles/traffic only)", () => {
+    expect(allowAutomaticFollowCamResync(true)).toBe(true);
     expect(allowAutomaticFollowCamResync(false)).toBe(true);
   });
 
-  it("allows jumpTo only for an intentional resync on a healthy link", () => {
+  it("allows jumpTo when GPS follow is stalled even under hold", () => {
     expect(
-      allowFollowCamJumpToFallback({ intentionalResync: true, holdLastGoodMap: false })
+      allowFollowCamJumpToFallback({
+        intentionalResync: false,
+        holdLastGoodMap: true,
+        gpsFollowStalled: true,
+      })
+    ).toBe(true);
+    expect(
+      allowFollowCamJumpToFallback({ intentionalResync: true, holdLastGoodMap: true })
     ).toBe(true);
     expect(
       allowFollowCamJumpToFallback({ intentionalResync: false, holdLastGoodMap: false })
-    ).toBe(false);
-    expect(
-      allowFollowCamJumpToFallback({ intentionalResync: true, holdLastGoodMap: true })
     ).toBe(false);
   });
 });

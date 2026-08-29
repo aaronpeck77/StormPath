@@ -3,12 +3,21 @@
  *
  * The phone supervisor sets {@link shouldHoldLastGoodMap} when the radio is
  * down or a reachability probe fails. While that hold is on, keep last-good
- * tiles, camera, and road snap — do not reload the basemap or hard-jump the
- * follow-cam. GPS can still move the puck on tiles already in memory.
+ * **tiles** and road snap — do **not** reload the basemap or refresh traffic.
+ * GPS follow-cam must keep tracking the puck on those tiles (pan / jumpTo).
  */
 
 /** Keep hold this long after the link looks healthy again — brief cell flaps. */
 export const HOLD_CLEAR_HYSTERESIS_MS = 4_500;
+
+/**
+ * After pan "succeeds" but the puck is still this far from the yard-line anchor,
+ * treat Mapbox `easeTo` as stalled (common under weak tiles) and hard-jump.
+ */
+export const FOLLOW_CAM_STALL_DRIFT_PX = 110;
+
+/** Consecutive stalled frames before jumpTo (avoids a one-frame flash). */
+export const FOLLOW_CAM_STALL_FRAMES_BEFORE_JUMP = 3;
 
 export function shouldHoldLastGoodMap(input: {
   navigatorOnLine: boolean;
@@ -28,7 +37,7 @@ export function shouldHoldLastGoodMap(input: {
 
 /**
  * Do not drop {@link holdLastGoodMap} on the first healthy probe — wait out
- * short dead-zone blips so day/night style reload and Jeff resync do not thrash.
+ * short dead-zone blips so day/night style reload does not thrash.
  */
 export function shouldClearLastGoodMapHold(input: {
   holdActive: boolean;
@@ -59,20 +68,26 @@ export function allowBasemapStyleReload(input: {
   return !input.navigationStarted && !input.holdLastGoodMap;
 }
 
-/** Jeff auto-resync jumpTo feels like a snap after the map froze in a dead zone. */
-export function allowAutomaticFollowCamResync(holdLastGoodMap: boolean): boolean {
-  return !holdLastGoodMap;
+/**
+ * GPS follow resync is always allowed — hold is about tiles/style/traffic, not freezing the camera.
+ * @deprecated Prefer {@link allowFollowCamJumpToFallback} with `gpsFollowStalled`.
+ */
+export function allowAutomaticFollowCamResync(_holdLastGoodMap: boolean): boolean {
+  return true;
 }
 
 /**
- * `jumpTo` skips the yard-line offset and flashes a different framing.
- * Only after an intentional resync (Jeff tap / layout), never a periodic tick.
+ * Hard `jumpTo` when pan fails or the transform is stalled.
+ * Dead-zone hold must **not** block this — otherwise the puck drives off a frozen map.
  */
 export function allowFollowCamJumpToFallback(input: {
   intentionalResync: boolean;
   holdLastGoodMap: boolean;
+  /** Pan returned false, or puck still far from yard-line after pan. */
+  gpsFollowStalled?: boolean;
 }): boolean {
-  return input.intentionalResync && !input.holdLastGoodMap;
+  if (input.gpsFollowStalled) return true;
+  return input.intentionalResync;
 }
 
 /** Wipe the last Map Matching snap only when GO ends or matching is off — not when the cell drops. */

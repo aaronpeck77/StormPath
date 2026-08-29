@@ -110,7 +110,16 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         applyVoiceEnabled(voiceEnabled)
 
         let mapboxNavigation = provider.mapboxNavigation
-        let options = NavigationRouteOptions(coordinates: coordinates)
+        // Intermediate points shape the corridor without becoming stop legs — otherwise
+        // Core only gets origin→dest and recalculates highway-fastest over a Go alternate.
+        let waypoints: [Waypoint] = coordinates.enumerated().map { index, coordinate in
+            var waypoint = Waypoint(coordinate: coordinate)
+            if index > 0 && index < coordinates.count - 1 {
+                waypoint.separatesLegs = false
+            }
+            return waypoint
+        }
+        let options = NavigationRouteOptions(waypoints: waypoints)
         // Honor StormPath preferred / no-interstate Go locks — otherwise Core
         // recalculates bare origin→dest as highway-fastest and yanks the blue line.
         if preferBackroads {

@@ -9,13 +9,16 @@ export type SpeedLimitRoadKind =
   | "local"
   | "unknown";
 
-/** Hard ceiling for a plausible posted limit on this road class (mph). */
+/**
+ * Soft ceiling for absurd OSM/Mapbox values only — not a guess of the real limit.
+ * Kept loose so we do not invent a lower Lim when Mapbox is already in a normal range.
+ */
 export const SPEED_LIMIT_CLASS_CAP_MPH: Record<SpeedLimitRoadKind, number> = {
-  interstate: 80,
-  us_state: 65,
-  county_arterial: 55,
-  local: 45,
-  unknown: 70,
+  interstate: 85,
+  us_state: 75,
+  county_arterial: 70,
+  local: 55,
+  unknown: 85,
 };
 
 const POSTED_BUCKETS_MPH = [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80] as const;
@@ -81,50 +84,37 @@ export function snapDownToPostedBucket(mph: number): number {
 
 export type SanitizePostedSpeedInput = {
   mapboxMph: number | null;
-  /** Steady cruise median (mph); null when not enough recent moving samples. */
-  cruiseMph: number | null;
+  /**
+   * @deprecated Ignored — cruise-based down-nudges made Lim follow traffic speed,
+   * not the posted sign. Kept optional so call sites can drop it gradually.
+   */
+  cruiseMph?: number | null;
   roadKind: SpeedLimitRoadKind;
 };
 
 /**
- * Sanity-check Mapbox posted limit using road class + cruise speed.
+ * Light sanity on Mapbox posted limit.
  * Never invents a limit when Mapbox has none. Never raises Mapbox's value.
+ * Does not use GPS cruise speed (that made Lim wrong in congestion).
  */
 export function sanitizePostedSpeedMph(input: SanitizePostedSpeedInput): number | null {
-  const { mapboxMph, cruiseMph, roadKind } = input;
+  const { mapboxMph, roadKind } = input;
   if (mapboxMph == null || !Number.isFinite(mapboxMph) || mapboxMph <= 0) return null;
 
   const classCap = SPEED_LIMIT_CLASS_CAP_MPH[roadKind];
-  let out = Math.min(Math.round(mapboxMph), classCap);
-
-  /* Interstate: class cap only — cruise often lags the limit in traffic. */
-  if (roadKind === "interstate") return out;
-
-  const cruiseOk =
-    cruiseMph != null &&
-    Number.isFinite(cruiseMph) &&
-    cruiseMph >= 25 &&
-    cruiseMph <= 85;
-
-  if (cruiseOk && out > cruiseMph! + 8) {
-    /* Mapbox still well above steady cruise after class cap — nudge toward cruise. */
-    out = Math.min(out, snapDownToPostedBucket(cruiseMph! + 2), classCap);
-  }
-
-  return out;
+  return Math.min(Math.round(mapboxMph), classCap);
 }
 
-/** Mapbox sample at alongM, then road-class + cruise sanity. */
+/** Mapbox sample at alongM, then road-class absurdity cap only. */
 export function displayedPostedSpeedMph(opts: {
   route: NavRoute | undefined;
   alongMeters: number;
-  cruiseMph: number | null;
+  cruiseMph?: number | null;
 }): number | null {
   const mapboxMph = postedSpeedMphAt(opts.route, opts.alongMeters);
   const roadKind = speedLimitRoadKindAt(opts.route, opts.alongMeters);
   return sanitizePostedSpeedMph({
     mapboxMph,
-    cruiseMph: opts.cruiseMph,
     roadKind,
   });
 }

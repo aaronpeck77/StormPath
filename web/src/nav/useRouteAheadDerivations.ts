@@ -33,7 +33,6 @@ import {
 } from "./constants";
 import { radarDisplayIntensity } from "./radarReflectivityScale";
 import { displayedPostedSpeedMph } from "./postedSpeedSanity";
-import { useCruiseSpeedHintMph } from "./useCruiseSpeedHint";
 import type { MapViewMode } from "../ui/driveMapTypes";
 import {
   filterAlertsAffectingRoute,
@@ -178,7 +177,6 @@ export function useRouteAheadDerivations(
     temporaryGuidanceRouteId = null,
     offRouteHoldPreviewActive = false,
     stormMapGeoJson,
-    speedMps,
   } = deps;
 
   /** NWS polygons + route bands: corridor alerts that touch or sit ahead of the active leg (~28 mi buffer). */
@@ -627,15 +625,11 @@ export function useRouteAheadDerivations(
   ]);
   const progressRailRoute = guidanceRoute ?? driveMapRoutes[0] ?? planRoutes[0];
 
-  const speedMph = speedMps != null && Number.isFinite(speedMps) ? speedMps * 2.23694 : null;
-  const cruiseMph = useCruiseSpeedHintMph(navigationStarted, speedMph);
-
   const postedMph =
     navigationStarted && guidanceRoute
       ? displayedPostedSpeedMph({
           route: guidanceRoute,
           alongMeters: userAlongGuidanceM,
-          cruiseMph,
         })
       : null;
 

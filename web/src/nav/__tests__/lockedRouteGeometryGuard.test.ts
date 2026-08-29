@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { lockedRouteShouldAvoidMotorway } from "../driveAlwaysAhead";
-import { routeGeometryAgreesWithLocked } from "../lockedRouteGeometryGuard";
+import {
+  routeGeometryAgreesWithLocked,
+  shouldAdoptNativeRouteGeometry,
+} from "../lockedRouteGeometryGuard";
 import type { LngLat } from "../types";
 
 describe("lockedRouteShouldAvoidMotorway", () => {
@@ -63,5 +66,33 @@ describe("routeGeometryAgreesWithLocked", () => {
       locked[locked.length - 1]!,
     ];
     expect(routeGeometryAgreesWithLocked(candidate, locked)).toBe(false);
+  });
+});
+
+describe("shouldAdoptNativeRouteGeometry", () => {
+  const locked: LngLat[] = [
+    [-86.78, 36.16],
+    [-86.79, 36.17],
+    [-86.8, 36.18],
+    [-86.81, 36.19],
+  ];
+  const fastestFork: LngLat[] = [
+    locked[0]!,
+    [-86.7, 36.165],
+    [-86.65, 36.175],
+    locked[locked.length - 1]!,
+  ];
+
+  it("rejects session-start Core fastest that diverges from Go lock", () => {
+    expect(shouldAdoptNativeRouteGeometry(fastestFork, locked, false)).toBe(false);
+  });
+
+  it("accepts mid-trip force even when geometry diverges", () => {
+    expect(shouldAdoptNativeRouteGeometry(fastestFork, locked, true)).toBe(true);
+  });
+
+  it("accepts Core geometry that tracks the Go lock without force", () => {
+    const refined = locked.map(([lng, lat]) => [lng + 0.0001, lat] as LngLat);
+    expect(shouldAdoptNativeRouteGeometry(refined, locked, false)).toBe(true);
   });
 });

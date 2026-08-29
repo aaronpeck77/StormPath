@@ -128,6 +128,8 @@ import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
 import {
   allowBasemapStyleReload,
   allowFollowCamJumpToFallback,
+  FOLLOW_CAM_STALL_DRIFT_PX,
+  FOLLOW_CAM_STALL_FRAMES_BEFORE_JUMP,
 } from "./mapLowSignalResilience";
 import { computePuckTargetBeforeRouteSnap } from "./driveMapPuckTarget";
 import { liftTrafficThenRoutesThenHits } from "./mapLayerStack";
@@ -1369,6 +1371,7 @@ function DriveMapInner({
     const CAM_NOOP_LNGLAT_DELTA = 0.000001; /* ~0.11 m — follow camera can move more often than the puck marker */
     let lastBearingApplied = NaN;
     let driveCamFrame = 0;
+    let driveCamStallFrames = 0;
     const DRIVE_CAM_FORCE_RESYNC_FRAMES = 75;
 
     const readPuckFollowLngLat = (): LngLat | null =>
@@ -1638,21 +1641,48 @@ function DriveMapInner({
                 duration: 0,
                 essential: true as const,
               };
-              /* Prefer pan — keeps yard-line offset. Avoid jumpTo on the hot path:
-               * jump recenters without offset and flashes a different map framing
-               * (common under weak tile load when pan briefly fails). */
+              /* Prefer pan — keeps yard-line offset. When tiles stall, easeTo can
+               * "succeed" while the transform freezes; detect that via screen drift
+               * and hard-jump (including under dead-zone hold). */
               const ok = safePanToCenter(map, panOpts);
-              if (ok) {
+              let stallDriftPx: number | null = null;
+              if (pos) {
+                try {
+                  const screen = map.project(pos);
+                  const canvas = map.getCanvas();
+                  const anchor = expectedDrivePuckScreenAnchorPx({
+                    mapWidth: canvas.clientWidth,
+                    mapHeight: canvas.clientHeight,
+                    padding: {
+                      top: Number(padding.top) || 0,
+                      bottom: Number(padding.bottom) || 0,
+                      left: Number(padding.left) || 0,
+                      right: Number(padding.right) || 0,
+                    },
+                    offset,
+                  });
+                  stallDriftPx = Math.hypot(screen.x - anchor.x, screen.y - anchor.y);
+                } catch {
+                  stallDriftPx = null;
+                }
+              }
+              const gpsFollowStalled =
+                !ok ||
+                (stallDriftPx != null && stallDriftPx >= FOLLOW_CAM_STALL_DRIFT_PX);
+              if (gpsFollowStalled) driveCamStallFrames += 1;
+              else driveCamStallFrames = 0;
+
+              if (ok && !gpsFollowStalled) {
                 lastBearingApplied = driveCamBearingSmoothedRef.current;
                 if (forceCamSync) driveCamResyncRef.current = false;
               } else if (
+                driveCamStallFrames >= FOLLOW_CAM_STALL_FRAMES_BEFORE_JUMP &&
                 allowFollowCamJumpToFallback({
-                  intentionalResync: driveCamResyncRef.current,
+                  intentionalResync: driveCamResyncRef.current || forceCamSync,
                   holdLastGoodMap: holdLastGoodMapRef.current,
+                  gpsFollowStalled: true,
                 })
               ) {
-                /* Intentional Jeff / layout resync only. Periodic ticks must not
-                 * jumpTo — that flashes a different framing when tiles are weak. */
                 const jumped = safeJumpTo(map, {
                   center: pos as [number, number],
                   zoom: driveNavZoomRef.current,
@@ -1663,6 +1693,7 @@ function DriveMapInner({
                 if (jumped) {
                   lastBearingApplied = driveCamBearingSmoothedRef.current;
                   driveCamResyncRef.current = false;
+                  driveCamStallFrames = 0;
                 }
               }
             }

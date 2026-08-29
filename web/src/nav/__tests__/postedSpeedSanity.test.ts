@@ -58,26 +58,22 @@ describe("sanitizePostedSpeedMph", () => {
     ).toBe(45);
   });
 
-  it("caps county highways at 55 even without cruise", () => {
+  it("does not pull Lim down toward cruise speed in traffic", () => {
     expect(
-      sanitizePostedSpeedMph({ mapboxMph: 70, cruiseMph: null, roadKind: "county_arterial" })
+      sanitizePostedSpeedMph({ mapboxMph: 55, cruiseMph: 32, roadKind: "county_arterial" })
+    ).toBe(55);
+  });
+
+  it("caps only absurd county values above the soft ceiling", () => {
+    expect(
+      sanitizePostedSpeedMph({ mapboxMph: 90, cruiseMph: null, roadKind: "county_arterial" })
     ).toBe(SPEED_LIMIT_CLASS_CAP_MPH.county_arterial);
   });
 
-  it("lowers county 70 toward cruise when driver is ~58", () => {
-    const out = sanitizePostedSpeedMph({
-      mapboxMph: 70,
-      cruiseMph: 58,
-      roadKind: "county_arterial",
-    });
-    /* Class cap alone brings 70 → 55; cruise keeps it from staying high. */
-    expect(out).toBe(55);
-  });
-
-  it("uses cruise to pull unknown-road 70 down when cruising ~58", () => {
+  it("leaves a normal county 55 alone", () => {
     expect(
-      sanitizePostedSpeedMph({ mapboxMph: 70, cruiseMph: 58, roadKind: "unknown" })
-    ).toBe(60);
+      sanitizePostedSpeedMph({ mapboxMph: 55, cruiseMph: null, roadKind: "county_arterial" })
+    ).toBe(55);
   });
 
   it("leaves interstate 70 alone when cruising under the limit", () => {
@@ -86,7 +82,7 @@ describe("sanitizePostedSpeedMph", () => {
     ).toBe(70);
   });
 
-  it("caps local streets", () => {
-    expect(sanitizePostedSpeedMph({ mapboxMph: 55, cruiseMph: null, roadKind: "local" })).toBe(45);
+  it("caps absurd local-street values", () => {
+    expect(sanitizePostedSpeedMph({ mapboxMph: 70, cruiseMph: null, roadKind: "local" })).toBe(55);
   });
 });
