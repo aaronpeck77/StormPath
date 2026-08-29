@@ -1,0 +1,22 @@
+{
+  "name": "@stormpath/speech",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AVSpeech bridge for StormPath advisory voice (turns stay on Mapbox Nav Core).",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "files": [
+    "dist/",
+    "ios/Sources",
+    "Package.swift"
+  ],
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  },
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  }
+}

@@ -4,6 +4,7 @@ import {
   allowBasemapStyleReload,
   allowFollowCamJumpToFallback,
   shouldClearHeldMapMatch,
+  shouldClearLastGoodMapHold,
   shouldHoldLastGoodMap,
 } from "../mapLowSignalResilience";
 
@@ -40,6 +41,49 @@ describe("shouldHoldLastGoodMap", () => {
   it("does not hold on a healthy link", () => {
     expect(shouldHoldLastGoodMap({ navigatorOnLine: true, reachable: true })).toBe(false);
     expect(shouldHoldLastGoodMap({ navigatorOnLine: true, reachable: null })).toBe(false);
+  });
+});
+
+describe("shouldClearLastGoodMapHold", () => {
+  it("waits out brief flaps before clearing the hold", () => {
+    const first = shouldClearLastGoodMapHold({
+      holdActive: true,
+      linkHealthy: true,
+      healthySinceMs: null,
+      nowMs: 1_000,
+      hysteresisMs: 4_000,
+    });
+    expect(first.clear).toBe(false);
+    expect(first.healthySinceMs).toBe(1_000);
+
+    const tooSoon = shouldClearLastGoodMapHold({
+      holdActive: true,
+      linkHealthy: true,
+      healthySinceMs: 1_000,
+      nowMs: 3_000,
+      hysteresisMs: 4_000,
+    });
+    expect(tooSoon.clear).toBe(false);
+
+    const ready = shouldClearLastGoodMapHold({
+      holdActive: true,
+      linkHealthy: true,
+      healthySinceMs: 1_000,
+      nowMs: 5_500,
+      hysteresisMs: 4_000,
+    });
+    expect(ready.clear).toBe(true);
+  });
+
+  it("resets the healthy timer when the link drops again", () => {
+    const drop = shouldClearLastGoodMapHold({
+      holdActive: true,
+      linkHealthy: false,
+      healthySinceMs: 1_000,
+      nowMs: 2_000,
+    });
+    expect(drop.clear).toBe(false);
+    expect(drop.healthySinceMs).toBeNull();
   });
 });
 

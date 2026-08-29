@@ -13,12 +13,18 @@ import {
 } from "../frequentRoutes/clusters";
 import { enrichFrequentClusterLabels } from "../frequentRoutes/enrichClusterLabels";
 import {
+  clearTripLearningMachinePersist,
+  loadTripLearningMachine,
+  saveTripLearningMachine,
+} from "../frequentRoutes/tripLearningPersist";
+import {
   createInitialTripState,
   forceFinishActiveTrip,
   processTripSample,
   type TripLearningMachineState,
 } from "../frequentRoutes/tripDetector";
 import type { CompletedLearnedTrip, FrequentRouteCluster } from "../frequentRoutes/types";
+import { useDeviceMotionActivity } from "./useDeviceMotionActivity";
 import { safeStorage } from "../storage/safeStorage";
 
 const OPT_IN_KEY = "stormpath-frequent-routes-opt-in";
@@ -48,6 +54,9 @@ export function useFrequentRouteLearning(opts: {
   const posRef = useRef<LngLat | null>(null);
   const speedRef = useRef<number | null>(null);
   const enrichInFlightRef = useRef(false);
+  const motionActivity = useDeviceMotionActivity(opts.payUnlocked && learnEnabled);
+  const motionRef = useRef(motionActivity);
+  motionRef.current = motionActivity;
 
   useEffect(() => {
     posRef.current = opts.userLngLat;
@@ -56,7 +65,7 @@ export function useFrequentRouteLearning(opts: {
 
   useEffect(() => {
     if (!machineRef.current) {
-      machineRef.current = createInitialTripState(Date.now());
+      machineRef.current = loadTripLearningMachine(Date.now());
     }
   }, []);
 
@@ -65,6 +74,7 @@ export function useFrequentRouteLearning(opts: {
     setLearnEnabled(on);
     if (!on) {
       machineRef.current = createInitialTripState(Date.now());
+      clearTripLearningMachinePersist();
     }
   }, []);
 
@@ -77,8 +87,10 @@ export function useFrequentRouteLearning(opts: {
       if (!p || !machineRef.current) return;
       const now = Date.now();
       tryAppendActivitySample(now, p, sp);
-      const { state, trip } = processTripSample(machineRef.current, now, p, sp);
+      const hint = motionRef.current === "unknown" ? null : motionRef.current;
+      const { state, trip } = processTripSample(machineRef.current, now, p, sp, hint);
       machineRef.current = state;
+      saveTripLearningMachine(state, now);
       if (trip) {
         setClusters((prev) => {
           const next = mergeTripIntoClusters(prev, trip);
@@ -90,6 +102,29 @@ export function useFrequentRouteLearning(opts: {
 
     return () => window.clearInterval(id);
   }, [opts.payUnlocked, learnEnabled, opts.userLngLat]);
+
+  /* Persist across brief lock-screen / tab background without ending the trip. */
+  useEffect(() => {
+    const onHide = () => {
+      const s = machineRef.current;
+      if (s) saveTripLearningMachine(s, Date.now());
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        onHide();
+        return;
+      }
+      if (!machineRef.current || machineRef.current.phase === "idle") {
+        machineRef.current = loadTripLearningMachine(Date.now());
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onHide);
+    };
+  }, []);
 
   /* Resolve place names for suggestions so the list shows From → To instead of raw coords. */
   useEffect(() => {
@@ -142,6 +177,7 @@ export function useFrequentRouteLearning(opts: {
 
   const resetTripLearningMachine = useCallback(() => {
     machineRef.current = createInitialTripState(Date.now());
+    clearTripLearningMachinePersist();
   }, []);
 
   const flushActiveLearnedTrip = useCallback((): CompletedLearnedTrip | null => {
@@ -151,6 +187,7 @@ export function useFrequentRouteLearning(opts: {
     const now = Date.now();
     const { state, trip } = forceFinishActiveTrip(machine, now, p);
     machineRef.current = state;
+    clearTripLearningMachinePersist();
     if (trip) {
       recordLearnedTrip(trip);
     }

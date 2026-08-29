@@ -18,6 +18,9 @@ let package = Package(
         .package(name: "CapacitorNetwork", path: "..\..\..\node_modules\@capacitor\network"),
         .package(name: "CapacitorPreferences", path: "..\..\..\node_modules\@capacitor\preferences"),
         .package(name: "StormpathMapboxNavigation", path: "..\..\..\plugins\stormpath-mapbox-navigation"),
+        .package(name: "StormpathDeviceMotion", path: "..\..\..\plugins\stormpath-device-motion"),
+        .package(name: "StormpathSpeech", path: "..\..\..\plugins\stormpath-speech"),
+        .package(name: "StormpathCarSession", path: "..\..\..\plugins\stormpath-car-session"),
         .package(name: "RevenuecatPurchasesCapacitor", path: "..\..\..\node_modules\@revenuecat\purchases-capacitor")
     ],
     targets: [
@@ -32,6 +35,9 @@ let package = Package(
                 .product(name: "CapacitorNetwork", package: "CapacitorNetwork"),
                 .product(name: "CapacitorPreferences", package: "CapacitorPreferences"),
                 .product(name: "StormpathMapboxNavigation", package: "StormpathMapboxNavigation"),
+                .product(name: "StormpathDeviceMotion", package: "StormpathDeviceMotion"),
+                .product(name: "StormpathSpeech", package: "StormpathSpeech"),
+                .product(name: "StormpathCarSession", package: "StormpathCarSession"),
                 .product(name: "RevenuecatPurchasesCapacitor", package: "RevenuecatPurchasesCapacitor")
             ]
         )

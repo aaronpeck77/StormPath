@@ -628,9 +628,10 @@ export function AboutSheet({
                   onChange={(e) => onSettings({ ...settings, voiceGuidanceEnabled: e.target.checked })}
                 />
                 <span>
-                  <strong>Voice prompts</strong> — speak the next maneuver while <strong>Go</strong> is on
-                  and StormPath is on screen. Prompts stop if you leave the app or lock the phone.
-                  On iPhone this also mutes Mapbox guidance when off. Volume follows the phone’s media volume
+                  <strong>Voice prompts</strong> — speak the next maneuver while <strong>Go</strong> is on,
+                  plus short hazard / route-ahead / conditions lines when they change. Prompts stop if you
+                  leave the app or lock the phone. On iPhone, turns use Mapbox guidance; advisories use
+                  StormPath speech and will not interrupt a turn. Volume follows the phone’s media volume
                   (raise the side buttons while a prompt plays).
                 </span>
               </label>

@@ -67,7 +67,7 @@ Wired on the phone (`SUPERVISOR_PHONE_WATCH_IDS`): `map_low_signal`, `false_onli
 1. Only run `watch.recover` from the table, `report_only`, or Jeff’s dead-zone override `hold_last_good_map`.
 2. One recovery per watch per 60s (separate from Sentry’s 5 min health cooldown).
 3. Prefer **keep last good**. Never empty `plan` or `destLngLat` to “fix” a hang.
-4. If `navigator.onLine` is true but the probe fails, set an in-memory `reachable=false` and skip new network work until a probe succeeds or a real `online` event + probe ok. On iOS, **native** `Network.connected` wins over `navigator.onLine` — a Wi‑Fi → cell handoff must not freeze GO.
+4. If `navigator.onLine` is true but the probe fails, set an in-memory `reachable=false` and skip new network work until a probe succeeds or a real `online` event + probe ok. On iOS, **native** `Network.connected` wins over `navigator.onLine` — a Wi‑Fi → cell handoff must not freeze GO. After a healthy probe, keep `holdLastGoodMap` for a short hysteresis (`HOLD_CLEAR_HYSTERESIS_MS` in `mapLowSignalResilience.ts`) so brief dead-zone blips do not thrash style reload / Jeff resync.
 5. On a real `online` / foreground: re-read native Network status, flush mapbox usage pending; retry token if blocked.
 6. If recovery runs and the same watch fires again within 2 minutes → report (even if `reportWhen` is `if_repeated`).
 

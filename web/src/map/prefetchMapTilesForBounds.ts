@@ -1,9 +1,9 @@
 import type { CorridorBounds } from "./routeCorridorPreload";
 
 /** Zooms that matter for Drive follow without downloading a state atlas. */
-const DEFAULT_ZOOMS = [11, 12, 13] as const;
+const DEFAULT_ZOOMS = [10, 11, 12, 13] as const;
 /** Hard cap per warm pass — keeps Mapbox + radio load bounded in weak signal. */
-const DEFAULT_MAX_TILES = 72;
+const DEFAULT_MAX_TILES = 96;
 
 function lngToTileX(lng: number, z: number): number {
   return Math.floor(((lng + 180) / 360) * 2 ** z);

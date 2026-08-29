@@ -283,12 +283,15 @@ Ship web fixes without App Store re‑review (Apple permits for non‑native cod
 
 ## Phase 10 · CarPlay (optional, separate effort)
 
-Big lift. Only after Phases 1–9 are stable and product validated.
+Big lift. Only after Phases 1–9 are stable and product validated. See **`docs/CARPLAY.md`**.
 
-- [ ] Apply for the CarPlay nav app entitlement at developer.apple.com (separate approval).
-- [ ] Build a Swift CarPlay scene as a separate target in the Xcode project.
-- [ ] Bridge to existing routing/voice/turn logic via Capacitor plugin or shared file.
+- [ ] Apply for the CarPlay nav app entitlement at developer.apple.com (Maps / `carplay-maps`).
+- [x] Scaffold: `@stormpath/car-session` UserDefaults mirror + `App/CarPlay/` stub scene + entitlements example.
+- [ ] After entitlement: wire scene manifest + `StormPath.entitlements`, add CarPlay files to the App target.
+- [ ] Share Mapbox Navigation Core session with CarPlay maneuvers / map.
 - [ ] Pass Apple's CarPlay nav app review (strict — they expect production traction).
+
+Advisory TTS (item 1) ships separately via `@stormpath/speech` + `useAdvisoryVoiceGuidance` (About → Voice prompts).
 
 ---
 

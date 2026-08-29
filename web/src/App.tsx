@@ -25,6 +25,8 @@ import { useNavigationPosition } from "./hooks/useNavigationPosition";
 import { useNativeNavSession } from "./nav/useNativeNavSession";
 import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
 import { useNearbyPoiTip } from "./hooks/useNearbyPoiTip";
+import { useAdvisoryVoiceGuidance } from "./hooks/useAdvisoryVoiceGuidance";
+import { useCarSessionPublish } from "./hooks/useCarSessionPublish";
 import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
 import { resolveNavigationRouteIds } from "./nav/navigationRouteFocus";
 import { resolveNavigatingRouteSelect } from "./nav/navigatingRouteSelect";
@@ -1794,6 +1796,21 @@ export default function App() {
     userAlongGuidanceM,
   });
 
+
+  useAdvisoryVoiceGuidance({
+    enabled: settingVoiceGuidanceEnabled,
+    navigationStarted,
+    nextHazardAtEtaLine,
+    driveRouteAheadLine,
+    nowcastLine: advisoryNowcastLine,
+  });
+  useCarSessionPublish({
+    navigationStarted,
+    destinationLabel,
+    nextHazardAtEtaLine,
+    driveRouteAheadLine,
+    nowcastLine: advisoryNowcastLine,
+  });
   const { progressPanelAlongM, activeProgressCalloutPanel, progressCalloutUserAlongT, progressCalloutCount } =
     useProgressCalloutPanel({
       navigationStarted,

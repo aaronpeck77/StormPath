@@ -15,6 +15,7 @@ import {
 import { NETWORK_RECONNECT_POLL_MS } from "./networkConnectivity";
 import { buildFieldReport, supervisorWatch } from "./supervisorWatchList";
 import type { SupervisorBusyFlag, SupervisorWatchId } from "./supervisorWatchList";
+import { shouldClearLastGoodMapHold } from "../ui/mapLowSignalResilience";
 
 export type UseFieldSupervisorDeps = {
   routing: boolean;
@@ -81,6 +82,8 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
   holdRef.current = holdLastGoodMap;
   const lastHoldClearedAtRef = useRef<number | null>(null);
   const lastMapReportAtRef = useRef<number | null>(null);
+  /** When the link first looked healthy again while still holding last-good. */
+  const holdHealthySinceMsRef = useRef<number | null>(null);
 
   const onAbortRoutingRef = useRef(onAbortRouting);
   onAbortRoutingRef.current = onAbortRouting;
@@ -122,6 +125,7 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
 
   const applyHold = (watchId: "map_low_signal" | "false_online", startedAtMs: number) => {
     const wasHold = holdRef.current;
+    holdHealthySinceMsRef.current = null;
     setReachable(false);
     setHoldLastGoodMap(true);
     if (wasHold) return;
@@ -138,8 +142,26 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
 
   const clearHold = () => {
     if (holdRef.current) lastHoldClearedAtRef.current = Date.now();
+    holdHealthySinceMsRef.current = null;
     setReachable(true);
     setHoldLastGoodMap(false);
+  };
+
+  const maybeClearHoldAfterHealthy = () => {
+    setReachable(true);
+    if (!holdRef.current) {
+      holdHealthySinceMsRef.current = null;
+      return;
+    }
+    const now = Date.now();
+    const decision = shouldClearLastGoodMapHold({
+      holdActive: true,
+      linkHealthy: true,
+      healthySinceMs: holdHealthySinceMsRef.current,
+      nowMs: now,
+    });
+    holdHealthySinceMsRef.current = decision.healthySinceMs;
+    if (decision.clear) clearHold();
   };
 
   useEffect(() => {
@@ -157,9 +179,10 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
       const ok = await probeMapReachability({ navigatorOnLine: true });
       if (cancelled) return;
       if (ok) {
-        clearHold();
+        maybeClearHoldAfterHealthy();
         return;
       }
+      holdHealthySinceMsRef.current = null;
       /* Probe fails on a locked-down desktop too — only hold while GO (or already holding). */
       if (navigationStarted || holdRef.current) {
         applyHold("false_online", startedAt);
