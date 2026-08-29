@@ -15,6 +15,10 @@ export type ProbeMapReachabilityDeps = {
 /**
  * Cheap "can we reach the map host" check. `navigator.onLine` stays true in many
  * dead zones; a timed-out fetch does not.
+ *
+ * Uses `no-cors`: Mapbox's bare origin does not send ACAO for localhost, so a
+ * normal CORS fetch fails loudly in DevTools and looks "unreachable" even when
+ * the network is fine. Opaque success still means the host answered.
  */
 export async function probeMapReachability(deps: ProbeMapReachabilityDeps = {}): Promise<boolean> {
   const online =
@@ -28,6 +32,7 @@ export async function probeMapReachability(deps: ProbeMapReachabilityDeps = {}):
   try {
     await fetchImpl(REACHABILITY_URL, {
       method: "GET",
+      mode: "no-cors",
       cache: "no-store",
       signal: ac.signal,
     });

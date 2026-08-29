@@ -24,6 +24,7 @@ import { useDestinationSearch } from "./hooks/useDestinationSearch";
 import { useNavigationPosition } from "./hooks/useNavigationPosition";
 import { useNativeNavSession } from "./nav/useNativeNavSession";
 import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
+import { useNearbyPoiTip } from "./hooks/useNearbyPoiTip";
 import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
 import { resolveNavigationRouteIds } from "./nav/navigationRouteFocus";
 import { resolveNavigatingRouteSelect } from "./nav/navigatingRouteSelect";
@@ -481,6 +482,7 @@ export default function App() {
   const basicAdBanner = useBasicAdMobBanner({
     enabled: !isPlus,
     navigationStarted,
+    stormBarExpanded,
   });
   /** NWS polygons + fetches follow About → NWS everywhere (including drive — no auto-on). */
   const savedDrawerOpen = useUiStore((s) => s.savedDrawerOpen);
@@ -669,7 +671,7 @@ export default function App() {
   const planRoutesKeyStable = useMemo(() => stablePlanRoutesKey(plan.routes), [plan.routes]);
 
   const currentNowcast = useOpenWeatherNowcast({
-    isPlus,
+    enabled: true,
     isOnline,
     openWeatherApiKey: env.openWeatherApiKey,
     weatherKitEnabled: env.weatherKitEnabled,
@@ -1709,6 +1711,17 @@ export default function App() {
     speedMps,
   });
 
+  const nearbyPoiTipLine = useNearbyPoiTip({
+    enabled: Boolean(env.mapboxToken),
+    mapboxToken: env.mapboxToken,
+    userLngLat: effectiveUserLngLat ?? userLngLat,
+    speedMps,
+    navigationStarted,
+    hazardBannerActive: Boolean(nextHazardAtEtaLine),
+    isOnline,
+    appForeground,
+  });
+
   const { toggleDemoPlaybackPlaying, resetDemoPlaybackAlongRoute } = useDemoBypassPlayback({
     demoBypassTrafficJamPlus,
     navigationStarted,
@@ -2507,6 +2520,7 @@ export default function App() {
       advisoryNowcastLine,
       currentNowcast,
       forecastAreaLabel,
+      nearbyPoiTipLine,
       tioMinutePrecip,
       localHourlyForecast,
       localDailyForecast,

@@ -10,11 +10,15 @@ describe("probeMapReachability", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("treats any HTTP response as reachable (401 still means the host answered)", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 401 }));
+  it("treats any fetch resolve as reachable (incl. opaque no-cors / 401)", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     await expect(
       probeMapReachability({ navigatorOnLine: true, fetchImpl: fetchImpl as unknown as typeof fetch })
     ).resolves.toBe(true);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ mode: "no-cors" })
+    );
   });
 
   it("treats a network / timeout throw as unreachable", async () => {

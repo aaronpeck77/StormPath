@@ -84,7 +84,8 @@ function readRadarDisplayMode(): RadarDisplayMode {
   const v = safeStorage.get(LS_RADAR_DISPLAY_MODE);
   if (v === "motion") return "motion";
   if (v === "still_arrows") return "still_arrows";
-  return "still_arrows";
+  /** First launch / no pref: play the radar motion loop (both tiers). */
+  return "motion";
 }
 
 function writeRadarDisplayMode(mode: RadarDisplayMode): void {

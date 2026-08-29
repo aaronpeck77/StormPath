@@ -427,7 +427,7 @@ function DriveMapInner({
   sessionRouteLengthM = 0,
   activityTrailPlanningBounds = null,
   idleHomeMapFraming = "my_location",
-  homePuckFollow = "follow",
+  homePuckFollow = "explore",
   onHomeMapUserPan,
   homePreloadEnabled = false,
   homePreloadBounds = null,

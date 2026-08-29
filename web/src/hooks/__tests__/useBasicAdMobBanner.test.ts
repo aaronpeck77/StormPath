@@ -31,6 +31,23 @@ describe("bannerShouldReserveBottomSpace", () => {
     expect(bannerShouldReserveBottomSpace({ ...shown, native: false })).toBe(false);
   });
 
+  it("reserves while navigating only when the advisory panel is expanded", () => {
+    expect(
+      bannerShouldReserveBottomSpace({
+        ...shown,
+        navigationStarted: true,
+        stormBarExpanded: false,
+      })
+    ).toBe(false);
+    expect(
+      bannerShouldReserveBottomSpace({
+        ...shown,
+        navigationStarted: true,
+        stormBarExpanded: true,
+      })
+    ).toBe(true);
+  });
+
   it("pads local browser dev so layout matches the phone", () => {
     expect(
       bannerShouldReserveBottomSpace({

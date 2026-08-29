@@ -4,24 +4,29 @@ Single source of truth for what ships in each tier. Code gates live in `web/src/
 
 ## Basic (free)
 
-Everything needed for full navigation without a subscription:
+Full navigation with ads and a compact local nowcast — no corridor weather stack:
 
 | Area | Included |
 |------|----------|
 | **Map & routing** | Multi-route (A/B/C), Mapbox directions + live traffic, fit/follow, route view / drive / topdown |
 | **Search & destination** | Autocomplete, geocode, set destination, trip planning |
 | **Driving** | Turn-by-turn banner, bottom toolbar, reroute / off-route flows |
-| **Saved** | Saved places (★), save current destination, **saved routes**, **record path (GPS)** and save |
-| **Situation** | Fused weather/traffic/hazards along routes, scoring, hazard sheet, Mapbox traffic when configured |
-| **Storm advisory (US)** | NWS active-alert polygons + advisory strip when **not** disabled by env (`VITE_STORM_ADVISORY_ENABLED=false`). *Not* pay-gated today — only env. You can move it behind Plus later in `payFeatures` if you want. |
+| **Saved** | Saved places (★) and routes with Basic caps (`BASIC_MAX_SAVED_*` in `payFeatures.ts`) |
+| **Local nowcast** | Current conditions on the advisory banner + compact expanded panel (`hasLocalForecast()`). **No** 24h hourly, 7-day, or NWS location-alert list on that page |
+| **Ads** | Partner “Advertisement” slot on the expanded Basic advisory; AdMob banner when idle, and again while navigating if the advisory panel is open |
+| **Sparse tips** | Occasional nearby POI one-liners in the banner rotator (throttled Search Box) |
 
 ## Plus (paid)
 
 | Feature | Notes |
 |---------|--------|
-| **Route progress rail** | Right-edge strip while navigating: trip progress, radar/traffic/hazard ticks, segment callouts, route outlook timeline. Gated in `App.tsx` on `isPlus`. |
-| **Toll bypass** | Toll warning sheet + preview/compare toll-free alternates before Go or when switching legs. Gated by `hasTollBypass()` in `payFeatures.ts`. Basic still shows **Tolls** on route labels. |
-| **Frequent route learning** | Device-local GPS trip detection, clustering, suggestions in ★ drawer, save to favorites. Gated by `hasFrequentRoutesLearning()` → `getPayTier() === "plus"`. |
+| **Corridor / NWS** | Active-alert polygons, advisory corridor strip, life-safety + route hazard detail |
+| **Local forecast (full)** | Hourly (24h), multi-day outlook, minute precip, NWS alerts near you on the advisory page |
+| **Route progress rail** | Right-edge strip while navigating (progress, radar/traffic/hazard ticks). Gated on `isPlus` |
+| **Traffic overlay & road detail** | Mapbox traffic corridor tools and road-impact rows when About toggles allow |
+| **Toll bypass** | Toll warning sheet + toll-free alternate compare (`hasTollBypass()`) |
+| **Frequent route learning** | Device-local trip detection / suggestions (`hasFrequentRoutesLearning()`) |
+| **No AdMob** | Plus does not show the Basic AdMob / partner ad chrome |
 
 ## Subscription links (About sheet)
 

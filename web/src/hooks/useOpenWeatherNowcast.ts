@@ -9,7 +9,8 @@ import {
 import { fetchWeatherKitCurrentNowcast, isWeatherKitTokenBlocked } from "../services/weatherKit";
 
 export type UseOpenWeatherNowcastDeps = {
-  isPlus: boolean;
+  /** When false, clear and stop polling (e.g. offline-only builds). Default: on for Basic + Plus. */
+  enabled?: boolean;
   isOnline: boolean;
   openWeatherApiKey: string;
   weatherKitEnabled?: boolean;
@@ -21,7 +22,7 @@ export type UseOpenWeatherNowcastDeps = {
 
 export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentNowcast | null {
   const {
-    isPlus,
+    enabled = true,
     isOnline,
     openWeatherApiKey,
     weatherKitEnabled = false,
@@ -44,7 +45,7 @@ export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentN
   }, []);
 
   useEffect(() => {
-    if (!isPlus) {
+    if (!enabled) {
       setCurrentNowcast(null);
       return;
     }
@@ -99,10 +100,10 @@ export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentN
         nowcastFetchInFlightRef.current = false;
       }
     })();
-  }, [isPlus, userLngLat, isOnline, openWeatherApiKey, weatherKitEnabled, appForeground]);
+  }, [enabled, userLngLat, isOnline, openWeatherApiKey, weatherKitEnabled, appForeground]);
 
   useEffect(() => {
-    if (!isPlus) return;
+    if (!enabled) return;
     if (!appForeground) return;
     if (!isOnline) return;
     if (!weatherKitEnabled && !openWeatherApiKey) return;
@@ -131,7 +132,7 @@ export function useOpenWeatherNowcast(deps: UseOpenWeatherNowcastDeps): CurrentN
       })();
     }, 15 * 60 * 1000);
     return () => window.clearInterval(id);
-  }, [isPlus, isOnline, openWeatherApiKey, weatherKitEnabled, userLngLatRef, appForeground]);
+  }, [enabled, isOnline, openWeatherApiKey, weatherKitEnabled, userLngLatRef, appForeground]);
 
   return currentNowcast;
 }

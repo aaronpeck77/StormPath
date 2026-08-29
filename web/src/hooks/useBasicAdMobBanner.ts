@@ -13,8 +13,10 @@ import {
 type Args = {
   /** Basic tier only — Plus never shows AdMob. */
   enabled: boolean;
-  /** Hide while actively navigating (Drive / Go). */
+  /** Hide while actively navigating (Drive / Go), unless advisory is expanded. */
   navigationStarted: boolean;
+  /** When Basic expands the advisory panel, keep ads visible even while navigating. */
+  stormBarExpanded?: boolean;
 };
 
 export type BasicAdBannerSlotState = "hidden" | "loading" | "filled" | "empty";
@@ -33,12 +35,15 @@ export function bannerShouldReserveBottomSpace(opts: {
   isBasicTier: boolean;
   enabled: boolean;
   navigationStarted: boolean;
+  stormBarExpanded?: boolean;
   native: boolean;
   slotState: BasicAdBannerSlotState;
   /** Local `npm run dev` in a browser — no native AdMob, still pad so layout matches device. */
   devWebPlaceholder: boolean;
 }): boolean {
-  if (!opts.isBasicTier || !opts.enabled || opts.navigationStarted) return false;
+  if (!opts.isBasicTier || !opts.enabled) return false;
+  /* While navigating, only lift chrome if the advisory page is open (in-panel monetization). */
+  if (opts.navigationStarted && !opts.stormBarExpanded) return false;
   if (opts.devWebPlaceholder) return true;
   if (!opts.native) return false;
   return opts.slotState === "loading" || opts.slotState === "filled";
@@ -57,11 +62,11 @@ export function slotStateAfterShowAttempt(args: {
   return null;
 }
 
-/** Third-party AdMob banner for Basic — browse / route planning only, not while driving.
- *  House promos (Plus upsell / tips) stay in StormAdvisoryBar only. */
+/** Third-party AdMob for Basic — idle chrome, and again when the advisory panel is open while navigating. */
 export function useBasicAdMobBanner({
   enabled,
   navigationStarted,
+  stormBarExpanded = false,
 }: Args): {
   slotState: BasicAdBannerSlotState;
   testMode: boolean;
@@ -84,7 +89,8 @@ export function useBasicAdMobBanner({
       return undefined;
     }
 
-    const shouldShow = enabled && isBasicTier && !navigationStarted;
+    const shouldShow =
+      enabled && isBasicTier && (!navigationStarted || stormBarExpanded);
     const adUnitId = env.admobBannerUnitId || ADMOB_TEST_BANNER_UNIT_ID;
 
     if (!shouldShow) {
@@ -132,7 +138,14 @@ export function useBasicAdMobBanner({
         void teardownBasicBanner();
       }
     };
-  }, [enabled, isBasicTier, navigationStarted, env.admobBannerUnitId, testMode]);
+  }, [
+    enabled,
+    isBasicTier,
+    navigationStarted,
+    stormBarExpanded,
+    env.admobBannerUnitId,
+    testMode,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -144,6 +157,7 @@ export function useBasicAdMobBanner({
     isBasicTier,
     enabled,
     navigationStarted,
+    stormBarExpanded,
     native: isAdMobSupported(),
     slotState,
     devWebPlaceholder: Boolean(import.meta.env.DEV && !isAdMobSupported()),

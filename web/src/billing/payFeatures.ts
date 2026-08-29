@@ -57,9 +57,12 @@ export function hasTollBypass(): boolean {
   return hasPlusTier();
 }
 
-/** At-your-location forecast card (Tomorrow.io / OpenWeather) in the advisory bar. */
+/**
+ * At-your-location **nowcast** (current conditions) — Basic and Plus.
+ * Hourly / 7-day / NWS location alerts on the advisory page remain Plus-only in the UI.
+ */
 export function hasLocalForecast(): boolean {
-  return hasPlusTier();
+  return true;
 }
 
 /** Basic tier saved-item caps (Plus = unlimited). */

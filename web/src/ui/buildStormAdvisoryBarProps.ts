@@ -76,6 +76,7 @@ export type BuildStormAdvisoryBarPropsInput = {
   showDataSaverHint: boolean;
   onOpenDataSaverSettings: () => void;
   onDismissDataSaverHint: () => void;
+  nearbyPoiTipLine?: string | null;
 };
 
 export function buildStormAdvisoryBarProps(
@@ -132,6 +133,7 @@ export function buildStormAdvisoryBarProps(
     showDataSaverHint,
     onOpenDataSaverSettings,
     onDismissDataSaverHint,
+    nearbyPoiTipLine = null,
   } = input;
 
   const plusNwsLoading =
@@ -172,16 +174,19 @@ export function buildStormAdvisoryBarProps(
     isOnline,
     basicNavAdvisoryMode: !isPlus,
     navigationStarted,
-    nowcastLine: isPlus ? advisoryNowcastLine : null,
-    currentNowcast: isPlus ? currentNowcast : null,
-    forecastAreaLabel: isPlus ? forecastAreaLabel : null,
+    /* Basic + Plus: current conditions / nowcast for banner + compact panel. */
+    nowcastLine: advisoryNowcastLine,
+    nearbyPoiTipLine,
+    currentNowcast,
+    forecastAreaLabel,
     minutePrecipForecast: isPlus ? tioMinutePrecip : null,
+    /* 24h / 7-day / location NWS alerts — Plus only. */
     hourlyForecast: isPlus ? localHourlyForecast : null,
     dailyForecast: isPlus ? localDailyForecast : null,
     localForecastNwsAlerts: isPlus ? localForecastNwsAlerts : [],
     nwsForecastLoading: plusNwsLoading,
     nwsForecastError: isPlus ? stormError : null,
-    basicForecastLoading: isPlus ? localForecastPanelLoading : false,
+    basicForecastLoading: localForecastPanelLoading,
     weatherKitPrimary,
     forecastLngLat,
     onOpenSubscription,

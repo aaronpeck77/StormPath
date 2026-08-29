@@ -67,11 +67,11 @@ describe("hasLocalForecast", () => {
     vi.unstubAllEnvs();
   });
 
-  it("is Plus-only", () => {
+  it("is available on Basic and Plus", () => {
     vi.stubEnv("DEV", false);
     vi.stubEnv("VITE_PAY_TIER", "");
     vi.stubEnv("VITE_PAY_TIER_TEST_PANEL", "true");
-    expect(hasLocalForecast()).toBe(false);
+    expect(hasLocalForecast()).toBe(true);
     safeStorage.set(PAY_TIER_OVERRIDE_LS_KEY, "plus");
     expect(hasLocalForecast()).toBe(true);
   });

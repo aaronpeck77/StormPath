@@ -71,14 +71,19 @@ describe("buildStormAdvisoryBarProps", () => {
     expect(props.basicNavAdvisoryMode).toBe(false);
   });
 
-  it("Basic strips Plus-only corridor data and forces basic tier", () => {
+  it("Basic keeps local nowcast but strips Plus corridor data", () => {
     const props = buildStormAdvisoryBarProps(
       baseInput({ isPlus: false, advisoryPlusDetailOn: false })
     );
     expect(props.corridorAlerts).toEqual([]);
     expect(props.overlappingAlerts).toEqual([]);
     expect(props.nextHazardAtEtaLine).toBeNull();
-    expect(props.nowcastLine).toBeNull();
+    expect(props.nowcastLine).toBe("72°F");
+    expect(props.currentNowcast).toBeNull();
+    expect(props.forecastAreaLabel).toBe("Springfield, IL");
+    expect(props.hourlyForecast).toBeNull();
+    expect(props.dailyForecast).toBeNull();
+    expect(props.localForecastNwsAlerts).toEqual([]);
     expect(props.routeImpacts).toBeNull();
     expect(props.sessionOn).toBe(false);
     expect(props.roadDetailEnabled).toBe(false);

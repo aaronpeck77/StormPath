@@ -450,8 +450,7 @@ export function AboutSheet({
                 >
                   <legend className="about-sheet__home-framing-legend">Radar display</legend>
                   <p className="about-sheet__p about-sheet__p--tight">
-                    Choose how precipitation shows on the map when radar is on. Storm-motion arrows use
-                    RainViewer frames and appear only in still mode.
+                    Choose how precipitation shows on the map when radar is on.
                   </p>
                   <label className="about-sheet__home-framing-option">
                     <input
@@ -474,8 +473,7 @@ export function AboutSheet({
                       onChange={() => onSettings({ ...settings, radarDisplayMode: "still_arrows" })}
                     />
                     <span>
-                      <strong>Latest + arrows</strong> — still mosaic with storm-motion arrows on
-                      strong cells (direction from radar; mph only when confident).
+                      <strong>Latest frame</strong> — single current mosaic (lighter on data).
                     </span>
                   </label>
                 </fieldset>

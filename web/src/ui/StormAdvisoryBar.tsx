@@ -224,6 +224,8 @@ export type StormAdvisoryBarProps = SharedProps & {
    * drivers see a quick read of conditions at a glance.
    */
   nowcastLine?: string | null;
+  /** Sparse Mapbox POI tip while navigating (low priority in the rotator). */
+  nearbyPoiTipLine?: string | null;
   /** OpenWeather snapshot at the user's position (expanded local forecast card). */
   currentNowcast?: CurrentNowcast | null;
   /** Human place label, e.g. "Springfield, IL". */
@@ -320,6 +322,7 @@ export function StormAdvisoryBar({
   basicNavAdvisoryMode = false,
   navigationStarted,
   nowcastLine = null,
+  nearbyPoiTipLine = null,
   currentNowcast = null,
   forecastAreaLabel = null,
   minutePrecipForecast = null,
@@ -623,14 +626,14 @@ export function StormAdvisoryBar({
   const activeTicker = tickerMessages[tickerIdx];
 
   const localForecastBanner = useMemo(() => {
-    if (basicNavAdvisoryMode || !forecastAreaLabel) return null;
+    if (!forecastAreaLabel) return null;
     return buildLocalForecastBannerItem({
       areaLabel: forecastAreaLabel,
       nowcastLine,
-      minutePrecip: minutePrecipForecast,
+      minutePrecip: basicNavAdvisoryMode ? null : minutePrecipForecast,
       fetchedAtMs: latestForecastFetchedAtMs(
         currentNowcast?.fetchedAtMs,
-        minutePrecipForecast?.fetchedAt
+        basicNavAdvisoryMode ? undefined : minutePrecipForecast?.fetchedAt
       ),
       nwsNearYou:
         basicNavAdvisoryMode || !localForecastNwsAlerts.length ? null : localForecastNwsAlerts,
@@ -658,7 +661,24 @@ export function StormAdvisoryBar({
           })
         );
       }
-      if (hasGuidanceRoute) {
+      if (localForecastBanner) {
+        trip.push(
+          previewItem({
+            ...localForecastBanner,
+            tone: localForecastBannerTone(localForecastBanner, []),
+          })
+        );
+      } else if (nowcastLine) {
+        trip.push(
+          previewItem({
+            badge: "Now",
+            raw: bannerMsg(nowcastLine),
+            tone: conditionsLinePreviewTone(nowcastLine),
+          })
+        );
+      }
+      /* Pre-Go only — never after navigation has started. */
+      if (hasGuidanceRoute && !navigationStarted) {
         trip.push(previewItem({ badge: "Nav", raw: bannerMsg("Route set — tap Go when ready.") }));
       }
       if (busyLabel && !barExpanded) {
@@ -670,6 +690,15 @@ export function StormAdvisoryBar({
       for (const p of promoLines) {
         if (isAdvisoryPromoNoise(p)) continue;
         promo.push(previewItem({ badge: "Info", raw: bannerMsg(displayText(p.text)) }));
+      }
+      if (nearbyPoiTipLine?.trim()) {
+        promo.push(
+          previewItem({
+            badge: "Nearby",
+            raw: bannerMsg(nearbyPoiTipLine.trim()),
+            tone: "info",
+          })
+        );
       }
 
       let mixed = mixAdvisoryPreviewItems(trip, promo);
@@ -791,6 +820,15 @@ export function StormAdvisoryBar({
         })
       );
     }
+    if (nearbyPoiTipLine?.trim()) {
+      promo.push(
+        previewItem({
+          badge: "Nearby",
+          raw: bannerMsg(nearbyPoiTipLine.trim()),
+          tone: "info",
+        })
+      );
+    }
 
     let mixed = mixAdvisoryPreviewItems(trip, promo);
     if (mixed.length === 0) {
@@ -817,6 +855,7 @@ export function StormAdvisoryBar({
     promoLines,
     defaultPreviewText,
     nowcastLine,
+    nearbyPoiTipLine,
     localForecastBanner,
     localForecastNwsAlerts,
     dataSaverHint,
@@ -1201,6 +1240,48 @@ export function StormAdvisoryBar({
       )}
 
       <div className="storm-advisory-bar__sections-scroll">
+        {basicNavAdvisoryMode &&
+        forecastAreaLabel &&
+        (currentNowcast || nowcastLine || basicForecastLoading) ? (
+          <AdvisoryLocalForecast
+            areaLabel={forecastAreaLabel}
+            nowcast={currentNowcast}
+            minutePrecip={null}
+            hourlyForecast={null}
+            dailyForecast={null}
+            locationAlerts={[]}
+            nwsLoading={false}
+            nwsError={null}
+            variant="basic"
+            forecastLoading={basicForecastLoading}
+            weatherKitPrimary={weatherKitPrimary}
+            forecastLngLat={forecastLngLat}
+          />
+        ) : null}
+
+        {basicNavAdvisoryMode && basicStatusPanelPromos ? (
+          <div
+            className="storm-advisory-bar__basic-promos"
+            aria-label="Advertisement and StormPath Plus"
+          >
+            <BasicStatusAdSlot line={basicStatusPanelPromos.partnerSlot} expanded />
+            <BasicAdStrip
+              lines={[basicStatusPanelPromos.plusUpsell]}
+              expanded
+              className="storm-advisory-bar__basic-strip storm-advisory-bar__basic-strip--plus"
+              aria-label="StormPath Plus upgrade"
+              onOpenSubscription={onOpenSubscription}
+            />
+          </div>
+        ) : basicNavAdvisoryMode && expandedPromoLines.length > 0 ? (
+          <BasicAdStrip
+            lines={expandedPromoLines}
+            expanded
+            aria-label="StormPath Plus and partner offers"
+            onOpenSubscription={onOpenSubscription}
+          />
+        ) : null}
+
         {forecastAreaLabel &&
         !basicNavAdvisoryMode &&
         (currentNowcast ||
@@ -1293,29 +1374,6 @@ export function StormAdvisoryBar({
           </div>
           </>
         ) : null}
-
-              {basicNavAdvisoryMode && basicStatusPanelPromos ? (
-                <div
-                  className="storm-advisory-bar__basic-promos"
-                  aria-label="StormPath Plus and partner offers"
-                >
-                  <BasicStatusAdSlot line={basicStatusPanelPromos.partnerSlot} expanded />
-                  <BasicAdStrip
-                    lines={[basicStatusPanelPromos.plusUpsell]}
-                    expanded
-                    className="storm-advisory-bar__basic-strip storm-advisory-bar__basic-strip--plus"
-                    aria-label="StormPath Plus upgrade"
-                    onOpenSubscription={onOpenSubscription}
-                  />
-                </div>
-              ) : basicNavAdvisoryMode && expandedPromoLines.length > 0 ? (
-                <BasicAdStrip
-                  lines={expandedPromoLines}
-                  expanded
-                  aria-label="StormPath Plus and partner offers"
-                  onOpenSubscription={onOpenSubscription}
-                />
-              ) : null}
           </div>
         </div>
       )}
