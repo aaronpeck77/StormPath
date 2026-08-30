@@ -9,6 +9,24 @@ const MAX_CONCURRENT = 2;
 const MIN_GAP_MS = 80;
 const RATE_LIMIT_COOLDOWN_MS = 90_000;
 
+/** Mapbox `error` has no HTTP status — only pause after a real burst, not one dead tile. */
+export const RADAR_TILE_ERROR_PAUSE_COUNT = 8;
+export const RADAR_TILE_ERROR_WINDOW_MS = 5_000;
+
+/** True 429 only. 5xx / proxy blips must not freeze radar for 90s. */
+export function radarTileHttpShouldCooldown(status: number): boolean {
+  return status === 429;
+}
+
+export function shouldTripRadarTileErrorPause(
+  errorTimesMs: readonly number[],
+  nowMs: number,
+  windowMs = RADAR_TILE_ERROR_WINDOW_MS,
+  count = RADAR_TILE_ERROR_PAUSE_COUNT
+): boolean {
+  return errorTimesMs.filter((t) => nowMs - t <= windowMs).length >= count;
+}
+
 let rateLimitedUntil = 0;
 let lastRateLimitLogAt = 0;
 let inFlight = 0;
@@ -81,7 +99,7 @@ async function fetchRadarTileRgbaOnce(
   try {
     await throttleGap();
     const res = await fetch(url, { mode: "cors", cache: "force-cache" });
-    if (res.status === 429 || res.status === 500 || res.status === 502 || res.status === 503) {
+    if (radarTileHttpShouldCooldown(res.status)) {
       onRateLimit();
       return null;
     }

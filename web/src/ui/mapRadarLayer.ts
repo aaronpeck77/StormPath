@@ -1,7 +1,11 @@
 import type { Map, MapSourceDataEvent, RasterTileSource } from "mapbox-gl";
 import { RAINVIEWER_RADAR_MAX_ZOOM } from "../services/rainViewerRadar";
 import type { RadarMapProvider } from "../services/radarMapPack";
-import { noteRainViewerRateLimit } from "../services/rainViewerTileFetch";
+import {
+  noteRainViewerRateLimit,
+  RADAR_TILE_ERROR_WINDOW_MS,
+  shouldTripRadarTileErrorPause,
+} from "../services/rainViewerTileFetch";
 
 const mapsWithRainViewerErrorFilter = new WeakSet<Map>();
 const radarTileProviderByMap = new WeakMap<Map, RadarMapProvider>();
@@ -169,10 +173,18 @@ function installRainViewerMapErrorFilter(map: Map): void {
   if (mapsWithRainViewerErrorFilter.has(map)) return;
   mapsWithRainViewerErrorFilter.add(map);
   let lastWarnAt = 0;
+  const recentErrorAtMs: number[] = [];
   map.on("error", (e) => {
     const src = (e as { sourceId?: string }).sourceId ?? "";
     if (!src.includes("rainviewer")) return;
     if (radarTileProviderByMap.get(map) === "tomorrow_io") return;
+    const now = Date.now();
+    recentErrorAtMs.push(now);
+    while (recentErrorAtMs.length && now - recentErrorAtMs[0]! > RADAR_TILE_ERROR_WINDOW_MS) {
+      recentErrorAtMs.shift();
+    }
+    if (!shouldTripRadarTileErrorPause(recentErrorAtMs, now)) return;
+    recentErrorAtMs.length = 0;
     noteRainViewerRateLimit();
     setRainViewerRadarLayersVisible(map, false);
     if (Date.now() - lastWarnAt < 45_000) return;
