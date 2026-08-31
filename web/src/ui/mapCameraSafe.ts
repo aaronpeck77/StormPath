@@ -102,6 +102,46 @@ function isMapReadyForCamera(map: Map | null | undefined): map is Map {
   }
 }
 
+/**
+ * Follow-cam must keep running when Mapbox is waiting on failed tile fetches.
+ * `isStyleLoaded()` stays false while sources are "loading" after Wi‑Fi→cell —
+ * gating on it freezes the camera while the puck keeps moving off-screen.
+ */
+export function isMapReadyForFollowCam(map: Map | null | undefined): map is Map {
+  return isMapUsable(map);
+}
+
+export type HardFollowCameraOpts = {
+  center: LngLat;
+  zoom: number;
+  pitch: number;
+  bearing: number;
+};
+
+/**
+ * Direct transform write for dead-zone / stalled follow — bypasses easeTo queues
+ * that freeze under weak tiles. Does not require {@link Map.isStyleLoaded}.
+ */
+export function safeHardFollowCamera(map: Map, opts: HardFollowCameraOpts): boolean {
+  if (!isMapReadyForFollowCam(map)) return false;
+  const center = normalizeCenter(opts.center);
+  if (!center) return false;
+  try {
+    try {
+      map.stop();
+    } catch {
+      /* ignore */
+    }
+    map.setCenter(center);
+    if (Number.isFinite(opts.zoom)) map.setZoom(opts.zoom);
+    if (Number.isFinite(opts.bearing)) map.setBearing(opts.bearing);
+    if (Number.isFinite(opts.pitch)) map.setPitch(opts.pitch);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function setMapCanvasCursor(map: Map | null | undefined, cursor: string): void {
   if (!isMapUsable(map)) return;
   try {
@@ -170,11 +210,12 @@ export function safePanToCenter(map: Map, options: EaseToOptions): boolean {
 type JumpToOptions = Parameters<Map["jumpTo"]>[0];
 
 /**
- * Hard snap follow-cam (no animation, no {@link stopMapCamera}).
- * Prefer this when tiles are stalling — `easeTo`/`stop` can freeze the transform while the puck keeps moving.
+ * Hard snap follow-cam (no animation). Prefer when tiles stall — `easeTo` can
+ * freeze the transform while the puck keeps moving. Allows follow when the style
+ * is still "loading" tiles (Wi‑Fi→cell); only the container must be usable.
  */
 export function safeJumpTo(map: Map, options: JumpToOptions): boolean {
-  if (!isMapReadyForCamera(map)) return false;
+  if (!isMapReadyForFollowCam(map)) return false;
   try {
     let next = options;
     if (options.center !== undefined && options.center !== null) {
@@ -182,10 +223,23 @@ export function safeJumpTo(map: Map, options: JumpToOptions): boolean {
       if (!center) return false;
       next = { ...options, center };
     }
+    try {
+      map.stop();
+    } catch {
+      /* ignore */
+    }
     map.jumpTo(next);
     return true;
   } catch {
-    return false;
+    /* jumpTo can throw if style workers are mid-teardown — try hard setters. */
+    const center = options.center != null ? normalizeCenter(options.center as LngLatLike) : null;
+    if (!center) return false;
+    return safeHardFollowCamera(map, {
+      center,
+      zoom: typeof options.zoom === "number" ? options.zoom : map.getZoom(),
+      pitch: typeof options.pitch === "number" ? options.pitch : map.getPitch(),
+      bearing: typeof options.bearing === "number" ? options.bearing : map.getBearing(),
+    });
   }
 }
 

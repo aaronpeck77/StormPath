@@ -34,7 +34,7 @@ export type UseDriveCameraHealthDeps = {
   puckAnchorDriftPxRef?: MutableRefObject<number | null>;
   /** Bump the follow-cam resync key — re-centers the map on the puck and snaps bearing. */
   onResyncCamera: () => void;
-  /** Supervisor dead-zone hold — skip automatic jumpTo resync; keep last camera. */
+  /** Supervisor dead-zone hold — still resync camera; only traffic fetches stay held. */
   holdLastGoodMap?: boolean;
 };
 
@@ -43,7 +43,7 @@ export type UseDriveCameraHealthDeps = {
  * periodically checks (1) applied camera bearing vs course-over-ground and (2) puck screen
  * position vs the fixed yard-line anchor. Either failure forces the same follow-cam resync
  * and lights up Jeff so the fix isn't invisible. Jeff reports to the supervisor:
- * dead-zone hold skips the yank; a healthy link still resyncs.
+ * dead-zone hold still resyncs the camera (tiles stay; GPS follow must not freeze).
  */
 export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
   const {

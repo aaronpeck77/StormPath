@@ -98,6 +98,8 @@ import {
   safeFlyTo,
   safePanToCenter,
   safeJumpTo,
+  safeHardFollowCamera,
+  isMapReadyForFollowCam,
   flattenMapCamera,
   safeSetMapLngLat,
   isMapUsable,
@@ -509,6 +511,8 @@ function DriveMapInner({
   navigationStartedRef.current = navigationStarted;
   const holdLastGoodMapRef = useRef(holdLastGoodMap);
   holdLastGoodMapRef.current = holdLastGoodMap;
+  const isOnlineRef = useRef(isOnline);
+  isOnlineRef.current = isOnline;
   const routesLengthRef = useRef(routes.length);
   routesLengthRef.current = routes.length;
   const homePuckFollowRef = useRef(homePuckFollow);
@@ -716,6 +720,8 @@ function DriveMapInner({
         touchZoomRotate: true,
         boxZoom: true,
         doubleClickZoom: true,
+        /* Keep more corridor tiles in RAM so Wi‑Fi→cell can paint from cache longer. */
+        maxTileCacheSize: 500,
       });
     } catch (e) {
       console.error("[map] constructor threw", e);
@@ -1515,11 +1521,13 @@ function DriveMapInner({
           safeSetMapLngLat(marker, [nextLng, nextLat]);
         }
 
-        /* Drive camera must track the smoothed puck — not raw GPS `easeTo` — or the map lurches while the puck glides. */
+        /* Drive camera must track the smoothed puck — not raw GPS `easeTo` — or the map lurches while the puck glides.
+         * Do NOT gate on isStyleLoaded(): after Wi‑Fi→cell, Mapbox keeps sources "loading" on failed
+         * tile fetches and isStyleLoaded stays false — that froze the camera while the puck drove off-screen. */
         const map = mapRef.current;
         if (
           map &&
-          map.isStyleLoaded() &&
+          isMapReadyForFollowCam(map) &&
           viewModeRef.current === "drive" &&
           navigationStartedRef.current &&
           userLngLatRef.current
@@ -1643,7 +1651,22 @@ function DriveMapInner({
               };
               /* Prefer pan — keeps yard-line offset. When tiles stall, easeTo can
                * "succeed" while the transform freezes; detect that via screen drift
-               * and hard-jump (including under dead-zone hold). */
+               * and hard-jump (including under dead-zone hold).
+               * Under hold: skip easeTo entirely — Mapbox queues freeze on failed tiles. */
+              const holdTiles = holdLastGoodMapRef.current || !isOnlineRef.current;
+              if (holdTiles) {
+                const hardOk = safeHardFollowCamera(map, {
+                  center: pos as [number, number],
+                  zoom: driveNavZoomRef.current,
+                  pitch: DRIVE_FOLLOW_PITCH_DEG,
+                  bearing: driveCamBearingSmoothedRef.current,
+                });
+                if (hardOk) {
+                  lastBearingApplied = driveCamBearingSmoothedRef.current;
+                  driveCamResyncRef.current = false;
+                  driveCamStallFrames = 0;
+                }
+              } else {
               const ok = safePanToCenter(map, panOpts);
               let stallDriftPx: number | null = null;
               if (pos) {
@@ -1683,24 +1706,32 @@ function DriveMapInner({
                   gpsFollowStalled: true,
                 })
               ) {
-                const jumped = safeJumpTo(map, {
-                  center: pos as [number, number],
-                  zoom: driveNavZoomRef.current,
-                  pitch: DRIVE_FOLLOW_PITCH_DEG,
-                  bearing: driveCamBearingSmoothedRef.current,
-                  padding,
-                });
-                if (jumped) {
+                const hardOk =
+                  safeHardFollowCamera(map, {
+                    center: pos as [number, number],
+                    zoom: driveNavZoomRef.current,
+                    pitch: DRIVE_FOLLOW_PITCH_DEG,
+                    bearing: driveCamBearingSmoothedRef.current,
+                  }) ||
+                  safeJumpTo(map, {
+                    center: pos as [number, number],
+                    zoom: driveNavZoomRef.current,
+                    pitch: DRIVE_FOLLOW_PITCH_DEG,
+                    bearing: driveCamBearingSmoothedRef.current,
+                    padding,
+                  });
+                if (hardOk) {
                   lastBearingApplied = driveCamBearingSmoothedRef.current;
                   driveCamResyncRef.current = false;
                   driveCamStallFrames = 0;
                 }
               }
+              }
             }
           }
         } else if (
           map &&
-          map.isStyleLoaded() &&
+          isMapReadyForFollowCam(map) &&
           viewModeRef.current === "topdown" &&
           navigationStartedRef.current &&
           !userExploringRef.current
@@ -2836,8 +2867,8 @@ function DriveMapInner({
   ]);
 
   /**
-   * Before Go: HTTP-prefetch the first corridor window + overlapping next window.
-   * Does not move the Rt camera (unlike home Wi‑Fi warm passes).
+   * Before Go: warm Mapbox's own tile cache for the first corridor window (Wi‑Fi),
+   * plus HTTP-prefetch the overlapping next window. Camera is restored after warm.
    */
   useEffect(() => {
     if (!mapReady || navigationStarted || routes.length === 0) return;
@@ -2854,11 +2885,20 @@ function DriveMapInner({
     let cancelled = false;
     const timer = window.setTimeout(() => {
       void (async () => {
-        /* Streets only — no DEM prefetch, no Data saver toggle required. */
-        await prefetchMapTilesForBounds(first, token, {
-          shouldAbort: () => cancelled || navigationStartedRef.current,
-          includeTerrain: false,
-        });
+        const onWifi = await isWifiConnection();
+        if (cancelled || navigationStartedRef.current) return;
+        const map = mapRef.current;
+        /* Fill GL tile cache on Wi‑Fi so Drive keeps painting after the handoff. */
+        if (onWifi && map && isMapUsable(map)) {
+          await warmMapTilesForBounds(map, first, () =>
+            cancelled || navigationStartedRef.current || userExploringRef.current
+          );
+        } else {
+          await prefetchMapTilesForBounds(first, token, {
+            shouldAbort: () => cancelled || navigationStartedRef.current,
+            includeTerrain: false,
+          });
+        }
         if (cancelled || navigationStartedRef.current) return;
         const nextStart = nextCorridorWindowStartM(0);
         const next = corridorWindowBounds(geom, nextStart);
@@ -3626,7 +3666,7 @@ function DriveMapInner({
       } catch {
         /* map disposed */
       }
-      if (isMapUsable(map) && map.isStyleLoaded() && travelTarget != null) {
+      if (isMapUsable(map) && travelTarget != null) {
         const pos =
           userLngLatRef.current ??
           (puckMarkerRef.current ? readMapLngLat(puckMarkerRef.current.getLngLat()) : null);
@@ -3636,9 +3676,19 @@ function DriveMapInner({
             stormBarExpandedRef.current,
             progressRailVisibleRef.current
           );
-          /* Pan first (keeps yard-line offset). jumpTo only if pan fails — jump has no
-           * offset and was flashing an alternate framing during Jeff / layout resync. */
-          if (
+          /* Hold / weak tiles: hard setters. Otherwise pan (yard-line) then jump. */
+          if (holdLastGoodMapRef.current || !isOnlineRef.current) {
+            if (
+              safeHardFollowCamera(map, {
+                center: pos,
+                zoom: driveNavZoomRef.current,
+                pitch: DRIVE_FOLLOW_PITCH_DEG,
+                bearing: travelTarget,
+              })
+            ) {
+              driveCamResyncRef.current = false;
+            }
+          } else if (
             safePanToCenter(map, {
               center: pos,
               zoom: driveNavZoomRef.current,
@@ -3648,6 +3698,12 @@ function DriveMapInner({
               offset: o.offset,
               duration: 0,
               essential: true,
+            }) ||
+            safeHardFollowCamera(map, {
+              center: pos,
+              zoom: driveNavZoomRef.current,
+              pitch: DRIVE_FOLLOW_PITCH_DEG,
+              bearing: travelTarget,
             }) ||
             safeJumpTo(map, {
               center: pos,
