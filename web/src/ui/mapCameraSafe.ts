@@ -207,6 +207,28 @@ export function safePanToCenter(map: Map, options: EaseToOptions): boolean {
   }
 }
 
+/**
+ * 60fps Drive follow: duration-0 easeTo with padding+offset, **no** `map.stop()`.
+ * Stopping every frame fights the next write and looks like along-road jitter.
+ * Does not require {@link Map.isStyleLoaded}. Never use setCenter here — that drops
+ * the yard-line offset and leaps the map up/down the road.
+ */
+export function safeFollowCamTo(map: Map, options: EaseToOptions): boolean {
+  if (!isMapReadyForFollowCam(map)) return false;
+  try {
+    let next: EaseToOptions = { ...options, duration: 0, essential: true };
+    if (options.center !== undefined && options.center !== null) {
+      const center = normalizeCenter(options.center);
+      if (!center) return false;
+      next = { ...next, center };
+    }
+    map.easeTo(next);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 type JumpToOptions = Parameters<Map["jumpTo"]>[0];
 
 /**

@@ -48,10 +48,10 @@ export function computePuckTargetBeforeRouteSnap(input: {
       speedMps != null && speedMps >= 0 ? speedMps : fixSpeed != null && fixSpeed >= 0 ? fixSpeed : null;
     if (effSp == null || effSp < 0.7) return [curFix.lng, curFix.lat];
 
-    const bearing =
-      headingDeg != null && Number.isFinite(headingDeg)
-        ? headingDeg
-        : initialBearingDegrees([prevFix.lng, prevFix.lat], [curFix.lng, curFix.lat]);
+    /* Course-over-ground only — phone compass is device orientation, not travel.
+     * Using it here shot the puck forward/back along the road between GPS ticks. */
+    void headingDeg;
+    const bearing = initialBearingDegrees([prevFix.lng, prevFix.lat], [curFix.lng, curFix.lat]);
     return destinationPointMeters(curFix.lng, curFix.lat, bearing, effSp * overshootS);
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveNavigationProgress, NAV_PROGRESS_LATERAL_TRUST_M } from "../navigationProgress";
+import { resolveNavigationProgress, NAV_PROGRESS_LATERAL_TRUST_M, stabilizeAlongMeters } from "../navigationProgress";
 import type { LngLat } from "../types";
 
 function northRoute(count: number, startLat = 41): LngLat[] {
@@ -41,5 +41,29 @@ describe("resolveNavigationProgress", () => {
     expect(result.source).toBe("held");
     expect(result.onRoute).toBe(false);
     expect(result.alongM).toBe(heldAlong);
+  });
+});
+
+describe("stabilizeAlongMeters", () => {
+  it("ignores reverse chatter while moving at speed", () => {
+    expect(
+      stabilizeAlongMeters({
+        prevAlongM: 2_000,
+        proposedAlongM: 1_700,
+        speedMps: 18,
+        dtS: 0.2,
+      })
+    ).toBe(2_000);
+  });
+
+  it("caps a huge forward jump between updates", () => {
+    const next = stabilizeAlongMeters({
+      prevAlongM: 2_000,
+      proposedAlongM: 8_000,
+      speedMps: 15,
+      dtS: 0.2,
+    });
+    expect(next).toBeLessThan(3_000);
+    expect(next).toBeGreaterThan(2_000);
   });
 });
