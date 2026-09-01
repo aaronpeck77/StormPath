@@ -61,6 +61,7 @@ import { useTripSurfaceRecovery } from "./nav/useTripSurfaceRecovery";
 import { useLiveTrafficHealth } from "./nav/useLiveTrafficHealth";
 import { useDriveCameraHealth } from "./ui/useDriveCameraHealth";
 import { useFieldSupervisor } from "./monitoring/useFieldSupervisor";
+import { useDriveSubsystemFlags } from "./monitoring/useDriveSubsystemFlags";
 import { computeRadarMapOverlayOn, isDriveNavMode } from "./nav/navResourceBudget";
 import { useRouteAheadDerivations } from "./nav/useRouteAheadDerivations";
 import { useProgressCalloutPanel } from "./nav/useProgressCalloutPanel";
@@ -327,6 +328,8 @@ export default function App() {
   const setAboutOpen = useUiStore((s) => s.setAboutOpen);
   /** Bumps DriveMap to hard-snap follow-cam after sheets / background. */
   const [followCamResyncKey, setFollowCamResyncKey] = useState(0);
+  /** Remounts the Drive puck RAF loop — same unstick as a home-button soft reset. */
+  const [driveLoopEpoch, setDriveLoopEpoch] = useState(0);
   /* Contextual one-shot coachmarks — the {@link Coachmarks} component watches for its
    * tracked targets to become visible and pops a single "Tip" card next to each the first
    * time the user encounters it. Persistence + queue logic live entirely in that component;
@@ -641,28 +644,6 @@ export default function App() {
     setTapHint,
     setRouting,
     setRouteError,
-  });
-
-  const { holdLastGoodMap } = useFieldSupervisor({
-    routing,
-    suggestLoading,
-    bypassBusy,
-    trafficFetchDone,
-    trafficWatchEligible: navigationStarted && settingTrafficEnabled && isPlus,
-    stormLoading,
-    stormCorridorEmpty:
-      stormCorridorAlerts.length === 0 && (stormMapGeoJson?.features?.length ?? 0) === 0,
-    navigationStarted,
-    isOnline,
-    screen: viewMode,
-    onAbortRouting: () => {
-      routeMainFetchAbortRef.current?.abort();
-      setRouting(false);
-    },
-    onClearSearchBusy: abandonAutocomplete,
-    onClearBypassBusy: () => setBypassBusy(false),
-    onMarkTrafficFetchDone: () => setTrafficFetchDone(true),
-    onClearStormLoading: () => setStormLoading(false),
   });
 
   useEffect(() => {
@@ -1043,7 +1024,52 @@ export default function App() {
     detourRejoinDistanceLabel,
     stayOnThisRoad,
     returnToOriginalRoute,
+    lastOffRouteSampleRef,
   } = offRouteNav;
+
+  const { driveStallActive, offRouteHangActive } = useDriveSubsystemFlags({
+    navigationStarted,
+    offRouteLatched,
+    userLngLatRef,
+    userAlongMRef: userAlongGuidanceMRef,
+    lastOffRouteSampleRef,
+    rerouteInFlightRef: altRoutesRefreshInFlightRef,
+  });
+
+  const { holdLastGoodMap } = useFieldSupervisor({
+    routing,
+    suggestLoading,
+    bypassBusy,
+    trafficFetchDone,
+    trafficWatchEligible: navigationStarted && settingTrafficEnabled && isPlus,
+    stormLoading,
+    stormCorridorEmpty:
+      stormCorridorAlerts.length === 0 && (stormMapGeoJson?.features?.length ?? 0) === 0,
+    navigationStarted,
+    isOnline,
+    screen: viewMode,
+    driveStallActive,
+    offRouteHangActive,
+    onAbortRouting: () => {
+      routeMainFetchAbortRef.current?.abort();
+      setRouting(false);
+    },
+    onClearSearchBusy: abandonAutocomplete,
+    onClearBypassBusy: () => setBypassBusy(false),
+    onMarkTrafficFetchDone: () => setTrafficFetchDone(true),
+    onClearStormLoading: () => setStormLoading(false),
+    onSoftResyncDrive: () => {
+      setFollowCamResyncKey((k) => k + 1);
+      setAlongHoldResetKey((k) => k + 1);
+      setDriveLoopEpoch((k) => k + 1);
+    },
+    onRetryOffRoute: () => {
+      altRoutesFetchAbortRef.current?.abort();
+      altRoutesRefreshInFlightRef.current = false;
+      setRouting(false);
+      void stayOnThisRoad({ silent: true });
+    },
+  });
 
   /** After Go: NWS + corridor bands use the locked guidance leg, not the preview leg. */
   const nwsNavCorridorGeom = useMemo(() => {
@@ -2518,6 +2544,7 @@ export default function App() {
       progressRailVisible: showProgressRail,
       offRouteRejoinCompareActive: offRouteHoldPreviewActive || detourAutoActive,
       followCamResyncKey,
+      driveLoopEpoch,
       lastTravelBearingDegOutRef: driveLastTravelBearingDegRef,
       puckAnchorDriftPxOutRef: drivePuckAnchorDriftPxRef,
       holdLastGoodMap,

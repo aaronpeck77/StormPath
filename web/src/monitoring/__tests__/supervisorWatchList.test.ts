@@ -40,7 +40,11 @@ describe("supervisorWatchList", () => {
       "bypass_hang",
       "traffic_overlay_stuck",
       "storm_alerts_hang",
+      "drive_loop_stall",
+      "off_route_hang",
     ]);
+    expect(supervisorWatch("drive_loop_stall").recover).toBe("soft_resync_drive");
+    expect(supervisorWatch("off_route_hang").recover).toBe("retry_off_route");
     expect(supervisorWatch("map_low_signal").recover).toBe("hold_last_good_map");
     expect(isAllowedRecovery("map_low_signal", "hold_last_good_map")).toBe(true);
   });

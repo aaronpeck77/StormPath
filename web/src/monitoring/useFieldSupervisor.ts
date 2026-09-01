@@ -33,6 +33,10 @@ export type UseFieldSupervisorDeps = {
   onClearBypassBusy: () => void;
   onMarkTrafficFetchDone: () => void;
   onClearStormLoading: () => void;
+  driveStallActive?: boolean;
+  offRouteHangActive?: boolean;
+  onSoftResyncDrive?: () => void;
+  onRetryOffRoute?: () => void;
 };
 
 export type FieldSupervisorState = {
@@ -69,6 +73,10 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
     onClearBypassBusy,
     onMarkTrafficFetchDone,
     onClearStormLoading,
+    driveStallActive = false,
+    offRouteHangActive = false,
+    onSoftResyncDrive,
+    onRetryOffRoute,
   } = deps;
 
   const [reachable, setReachable] = useState<boolean | null>(null);
@@ -95,6 +103,10 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
   onMarkTrafficFetchDoneRef.current = onMarkTrafficFetchDone;
   const onClearStormLoadingRef = useRef(onClearStormLoading);
   onClearStormLoadingRef.current = onClearStormLoading;
+  const onSoftResyncDriveRef = useRef(onSoftResyncDrive);
+  onSoftResyncDriveRef.current = onSoftResyncDrive;
+  const onRetryOffRouteRef = useRef(onRetryOffRoute);
+  onRetryOffRouteRef.current = onRetryOffRoute;
 
   const emit = (
     watchId: SupervisorWatchId,
@@ -239,6 +251,22 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
     recover: () => onClearStormLoadingRef.current(),
     emit,
     busy: () => ({ stormLoading: false }),
+  });
+
+  useStuckWatch({
+    active: navigationStarted && driveStallActive,
+    watchId: "drive_loop_stall",
+    recover: () => onSoftResyncDriveRef.current?.(),
+    emit,
+    busy: () => ({ routing: false }),
+  });
+
+  useStuckWatch({
+    active: navigationStarted && offRouteHangActive,
+    watchId: "off_route_hang",
+    recover: () => onRetryOffRouteRef.current?.(),
+    emit,
+    busy: () => ({ routing: false }),
   });
 
   return { holdLastGoodMap, reachable };

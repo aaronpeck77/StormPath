@@ -31,7 +31,9 @@ export type SupervisorWatchId =
   | "ops_pending_flush"
   | "trip_cache_stale"
   | "go_without_geometry"
-  | "weatherkit_token_hang";
+  | "weatherkit_token_hang"
+  | "drive_loop_stall"
+  | "off_route_hang";
 
 /** Deterministic actions the phone is allowed to take. Never invent new ones on device. */
 export type SupervisorRecovery =
@@ -45,6 +47,8 @@ export type SupervisorRecovery =
   | "restore_trip_from_idb"
   | "end_nav_to_plan"
   | "probe_reachability"
+  | "soft_resync_drive"
+  | "retry_off_route"
   | "report_only";
 
 export type SupervisorWatch = {
@@ -162,6 +166,20 @@ export const SUPERVISOR_WATCHES: readonly SupervisorWatch[] = [
     recover: "abort_and_clear_busy",
     reportWhen: "if_repeated",
   },
+  {
+    id: "drive_loop_stall",
+    signal: "GO + GPS moving but along-track / puck frozen (soft-reset used to unstick)",
+    maxMs: 1_000,
+    recover: "soft_resync_drive",
+    reportWhen: "if_repeated",
+  },
+  {
+    id: "off_route_hang",
+    signal: "Off-route latched with hung reroute fetch or silent poll",
+    maxMs: 1_000,
+    recover: "retry_off_route",
+    reportWhen: "always_after_recovery",
+  },
 ];
 
 export const SUPERVISOR_WATCH_IDS: readonly SupervisorWatchId[] =
@@ -179,6 +197,8 @@ export const SUPERVISOR_PHONE_WATCH_IDS: readonly SupervisorWatchId[] = [
   "bypass_hang",
   "traffic_overlay_stuck",
   "storm_alerts_hang",
+  "drive_loop_stall",
+  "off_route_hang",
 ];
 
 export const JEFF_SUPERVISOR_WATCH_IDS: readonly SupervisorWatchId[] = [

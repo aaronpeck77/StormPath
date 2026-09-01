@@ -41,7 +41,7 @@ Source of truth: `web/src/monitoring/supervisorWatchList.ts`.
 
 Busy flags already drive the advisory pill (`useDebouncedBusyLabel`). The phone supervisor’s first job is **keep the map moving on last-good tiles**. It also unsticks hung busy flags and decides Jeff’s camera/traffic fixes.
 
-Wired on the phone (`SUPERVISOR_PHONE_WATCH_IDS`): `map_low_signal`, `false_online`, Jeff’s three watches, plus routing / search / bypass / traffic-overlay / storm hangs.
+Wired on the phone (`SUPERVISOR_PHONE_WATCH_IDS`): `map_low_signal`, `false_online`, Jeff’s three watches, routing / search / bypass / traffic-overlay / storm hangs, plus **Drive loop stall** and **off-route hang** (same unstick as a home-button soft reset).
 
 | id | What we watch | Stuck after | Recovery | Report |
 |----|----------------|-------------|----------|--------|
@@ -57,6 +57,8 @@ Wired on the phone (`SUPERVISOR_PHONE_WATCH_IDS`): `map_low_signal`, `false_onli
 | `trip_cache_stale` | Active trip but no IndexedDB save past the 20s throttle + slack | 45s | Best-effort `saveActiveTripToCache` only — never delete | If still stuck |
 | `go_without_geometry` | `navigationStarted` with no route line / no GPS | 15s | Exit GO back to plan; keep dest + last plan | Always |
 | `weatherkit_token_hang` | Token `fetch` with **no** timeout (`weatherKitAuth.ts`) | 12s | Abort token; use 2 min block already in auth | If it repeats |
+| `drive_loop_stall` | GO + GPS moved ~40m but along-track barely moved | 8s detect, then 1s | Soft-resync Drive: remount puck RAF, reset along hold, Jeff camera snap | If repeated |
+| `off_route_hang` | Off-route latched + hung reroute (>20s) or silent poll (>12s) | detect, then 1s | Abort stuck fetch + silent route-from-here | Always |
 
 **Do not** abort Mapbox **tile** loads just because the pill is busy. Tiles are not these flags.
 
@@ -92,6 +94,7 @@ Same JSON can POST to a webhook when Sentry is off.
 1. **Done:** `search_hang` + `routing_hang` hang recoveries.
 2. **Done:** `map_low_signal` / `false_online` hold last-good map; Jeff merged via `resolveJeffSupervisorRecovery`. Online uses Capacitor Network + a 2.5s Wi‑Fi→cell grace (`useAppOnline`) so a driveway handoff does not freeze the map.
 3. Wired: bypass / traffic-overlay / storm busy-flag unsticks.
-4. Still contract-only: `ops_pending_flush`, `trip_cache_stale`, `go_without_geometry`, `weatherkit_token_hang`.
+4. Wired: `drive_loop_stall` (soft-resync Drive) and `off_route_hang` (abort + route-from-here).
+5. Still contract-only: `ops_pending_flush`, `trip_cache_stale`, `go_without_geometry`, `weatherkit_token_hang`.
 
 Automation setup (trigger + agent prompt) is in [`CURSOR_AUTOMATION_FIELD_REPORTS.md`](CURSOR_AUTOMATION_FIELD_REPORTS.md).

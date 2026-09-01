@@ -337,6 +337,8 @@ export type Props = {
   rejoinOverlayActive?: boolean;
   /** Bump after About / Route Info close or resume — hard-snaps follow-cam bearing. */
   followCamResyncKey?: number;
+  /** Supervisor remounts the Drive puck RAF loop without leaving the app. */
+  driveLoopEpoch?: number;
   /** Shared with Jeff's camera watchdog: last course-over-ground held by the follow-cam loop. */
   lastTravelBearingDegOutRef?: MutableRefObject<number | null>;
   /** Shared with Jeff's puck watchdog: pixel drift from the fixed drive yard-line anchor. */
@@ -448,6 +450,7 @@ function DriveMapInner({
   offRouteRejoinCompareActive = false,
   rejoinOverlayActive = false,
   followCamResyncKey = 0,
+  driveLoopEpoch = 0,
   isOnline = true,
   holdLastGoodMap = false,
   lastTravelBearingDegOutRef,
@@ -1774,7 +1777,7 @@ function DriveMapInner({
     return () => cancelAnimationFrame(raf);
     /* Boolean(userLngLat): when nav starts before GPS / restore, first RAF run can bail (no marker).
      * After the puck effect creates the marker, we must re-arm RAF without listing coords (avoids GPS jitter resets). */
-  }, [navigationStarted, mapReady, Boolean(userLngLat)]);
+  }, [navigationStarted, mapReady, Boolean(userLngLat), driveLoopEpoch]);
 
   /* Omit userLngLat from deps — GPS ticks would re-run Mapbox marker alignment every frame and jitter the puck. */
   useEffect(() => {
