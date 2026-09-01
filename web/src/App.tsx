@@ -71,7 +71,11 @@ import { useRoutePickItems } from "./nav/buildRoutePickItems";
 import { useDriveEtaLabels } from "./nav/useDriveEtaLabels";
 import { useSeriousHazardAutoFly } from "./nav/useSeriousHazardAutoFly";
 import { isDriveOffRouteForwardFraming, lockedRouteShouldAvoidMotorway } from "./nav/driveAlwaysAhead";
-import { shouldAdoptNativeRouteGeometry } from "./nav/lockedRouteGeometryGuard";
+import {
+  nativeGeometryApplyPolicy,
+  shouldAdoptNativeRouteGeometry,
+  shouldReplaceGoPolylineOnNativeAdopt,
+} from "./nav/lockedRouteGeometryGuard";
 import { unifiedTrafficNarrative } from "./nav/trafficNarrative";
 import {
   TRAFFIC_BYPASS_ENABLED,
@@ -877,12 +881,16 @@ export default function App() {
         }
         return false;
       }
-      navigationGuidanceGeometryRef.current = next;
-      if (opts?.force || !goGeom || goGeom.length < 2) {
-        navGoGeometryRef.current = next;
+      const apply = nativeGeometryApplyPolicy(Boolean(opts?.force));
+      /* Session-start refine: keep the Go-locked polyline. Replacing it and bumping
+       * epoch reset snap/along every Core emit and made the puck leap. */
+      if (!shouldReplaceGoPolylineOnNativeAdopt(Boolean(opts?.force), Boolean(goGeom && goGeom.length >= 2))) {
+        return true;
       }
+      navigationGuidanceGeometryRef.current = next;
+      navGoGeometryRef.current = next;
       setGuidanceGeometryEpoch((n) => n + 1);
-      setAlongHoldResetKey((n) => n + 1);
+      if (apply.resetAlongHold) setAlongHoldResetKey((n) => n + 1);
       return true;
     },
     []
@@ -912,8 +920,10 @@ export default function App() {
       const lockedId =
         lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? primaryRouteId;
       if (!lockedId) return true;
-      /* Mid-trip Core reroute: collapse to the live corridor. Session-start agreement
-       * may refine the locked leg without yanking id/geometry to highway-fastest. */
+      const apply = nativeGeometryApplyPolicy(force);
+      /* Session-start: keep A/B/C and the Go lock. Collapsing to one slot
+       * relabeled chosen B as A and made Drive look like it stole the route. */
+      if (!apply.collapsePlanToLocked) return true;
       setPlan((prev) =>
         planAfterSoftRestartLock(prev, lockedId, {
           geometry: geometry.map(([a, b]) => [a, b] as LngLat),

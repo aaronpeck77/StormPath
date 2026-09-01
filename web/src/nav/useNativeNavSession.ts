@@ -7,8 +7,8 @@ import {
   type NativeNavRouteChangedEvent,
 } from "@stormpath/mapbox-navigation";
 import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
-import { DRIVE_AHEAD_NAV_START_GRACE_MS } from "./driveAlwaysAhead";
 import { buildNativeGuidanceCoordinates } from "./nativeGuidanceCoords";
+import { shouldFeedNativeProgressToUi } from "./lockedRouteGeometryGuard";
 import type { LngLat, RouteTurnStep } from "./types";
 import type { TripStop } from "./routeWaypoints";
 import type { NavigationPositionState } from "../hooks/useNavigationPosition";
@@ -74,9 +74,8 @@ export function useNativeNavSession(opts: {
   coords: NativeNavSessionCoords;
   /**
    * When SDK starts or reroutes, adopt geometry into the locked guidance corridor.
-   * Mid-trip Core reroutes must use `{ force: true }` — freezing the original Go
-   * polyline leaves Drive with no blue line (alongM is on the new route).
-   * Returns false when session-start Core geometry was rejected (keep Go lock).
+   * Session-start Core "fastest" must not force-adopt — keep the Go lock.
+   * Returns false when Core geometry was rejected (DIY stays on the chosen route).
    */
   onRouteGeometry: (geometry: LngLat[], opts?: { force?: boolean }) => boolean | void;
   /** Optional: arrive / hard error — App may End trip. */
@@ -107,9 +106,9 @@ export function useNativeNavSession(opts: {
   const [guidance, setGuidance] = useState<NativeNavGuidance | null>(null);
   const [turnSteps, setTurnSteps] = useState<RouteTurnStep[]>([]);
   const startedForNavRef = useRef(false);
-  /** After Go-start grace, later Core updates are mid-trip reroutes (force-adopt). */
-  const allowForceAdoptRef = useRef(false);
-  const forceAdoptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Core calculated a different corridor — DIY owns this trip; do not restart Core. */
+  const nativeAbandonedRef = useRef(false);
+  const corridorAdoptedRef = useRef(false);
   const listenersRef = useRef<{ remove: () => Promise<void> }[]>([]);
   const onRouteGeometryRef = useRef(onRouteGeometry);
   onRouteGeometryRef.current = onRouteGeometry;
@@ -117,13 +116,6 @@ export function useNativeNavSession(opts: {
   onSessionEndedRef.current = onSessionEnded;
   const coordsRef = useRef(coords);
   coordsRef.current = coords;
-
-  const clearForceAdoptTimer = useCallback(() => {
-    if (forceAdoptTimerRef.current != null) {
-      clearTimeout(forceAdoptTimerRef.current);
-      forceAdoptTimerRef.current = null;
-    }
-  }, []);
 
   const removeListeners = useCallback(async () => {
     const list = listenersRef.current;
@@ -133,7 +125,6 @@ export function useNativeNavSession(opts: {
 
   const stopNative = useCallback(async () => {
     await removeListeners();
-    clearForceAdoptTimer();
     try {
       if (isNativeMapboxNavPlatform()) {
         await StormpathMapboxNavigation.stop();
@@ -142,12 +133,12 @@ export function useNativeNavSession(opts: {
       /* ignore */
     }
     startedForNavRef.current = false;
-    allowForceAdoptRef.current = false;
+    corridorAdoptedRef.current = false;
     setNativeNavActive(false);
     setPosition(null);
     setGuidance(null);
     setTurnSteps([]);
-  }, [removeListeners, clearForceAdoptTimer]);
+  }, [removeListeners]);
 
   const startNative = useCallback(async () => {
     if (!isNativeMapboxNavPlatform()) return false;
@@ -160,11 +151,18 @@ export function useNativeNavSession(opts: {
       if (!avail.available) return false;
 
       await removeListeners();
-      clearForceAdoptTimer();
-      allowForceAdoptRef.current = false;
+      corridorAdoptedRef.current = false;
 
       const handles = await Promise.all([
         StormpathMapboxNavigation.addListener("progress", (e: NativeNavProgressEvent) => {
+          if (
+            !shouldFeedNativeProgressToUi({
+              abandoned: nativeAbandonedRef.current,
+              corridorAdopted: corridorAdoptedRef.current,
+            })
+          ) {
+            return;
+          }
           setPosition({
             positionLngLat: [e.lng, e.lat],
             alongM: e.alongM,
@@ -196,25 +194,33 @@ export function useNativeNavSession(opts: {
           });
         }),
         StormpathMapboxNavigation.addListener("routeChanged", (e: NativeNavRouteChangedEvent) => {
+          if (nativeAbandonedRef.current) return;
           const geom = (e.geometry ?? [])
             .filter((p) => Number.isFinite(p.lng) && Number.isFinite(p.lat))
             .map((p) => [p.lng, p.lat] as LngLat);
-          /* Session start (possibly double-emitted): never force — keep Go alternate.
-           * After the post-start grace window, Core mid-trip reroutes may force-adopt. */
-          const force = allowForceAdoptRef.current;
+          /* Never force from a timer — that stole Go-locked B after ~12s.
+           * Off-route soft restart force-adopts through JS, not this listener. */
           const adopted =
-            geom.length >= 2 ? onRouteGeometryRef.current(geom, { force }) !== false : false;
+            geom.length >= 2 ? onRouteGeometryRef.current(geom, { force: false }) !== false : false;
+          if (!adopted) {
+            nativeAbandonedRef.current = true;
+            corridorAdoptedRef.current = false;
+            setNativeNavActive(false);
+            setPosition(null);
+            setGuidance(null);
+            return;
+          }
+          corridorAdoptedRef.current = true;
+          setNativeNavActive(true);
           const steps = parseNativeTurnSteps(e.turnSteps);
-          /* Only replace turn list when the corridor was accepted — otherwise keep
-           * planning steps for the Go-locked alternate. */
-          if (adopted && steps.length) setTurnSteps(steps);
+          if (steps.length) setTurnSteps(steps);
         }),
         StormpathMapboxNavigation.addListener("arrived", () => {
           void stopNative().then(() => onSessionEndedRef.current?.("arrived"));
         }),
         StormpathMapboxNavigation.addListener("cancelled", () => {
           startedForNavRef.current = false;
-          allowForceAdoptRef.current = false;
+          corridorAdoptedRef.current = false;
           setNativeNavActive(false);
           setPosition(null);
           setGuidance(null);
@@ -238,40 +244,43 @@ export function useNativeNavSession(opts: {
         await removeListeners();
         return false;
       }
+      if (nativeAbandonedRef.current) {
+        await stopNative();
+        nativeAbandonedRef.current = true;
+        return false;
+      }
       recordMapboxUsage("navTrips");
-      clearForceAdoptTimer();
-      forceAdoptTimerRef.current = setTimeout(() => {
-        allowForceAdoptRef.current = true;
-        forceAdoptTimerRef.current = null;
-      }, DRIVE_AHEAD_NAV_START_GRACE_MS);
-      setNativeNavActive(true);
-      return true;
+      /* Keep DIY until Core geometry is adopted — avoids a puck on Core's
+       * fastest line while the blue line is still the Go-locked B. */
+      return corridorAdoptedRef.current;
     } catch (err) {
       console.warn("[nativeNav] start failed", err);
       await removeListeners();
-      clearForceAdoptTimer();
       setNativeNavActive(false);
       return false;
     }
-  }, [accessToken, removeListeners, clearForceAdoptTimer, simulate, stopNative]);
+  }, [accessToken, removeListeners, simulate, stopNative]);
 
   /** Start Core when Go flips navigationStarted; stop when trip ends. */
   useEffect(() => {
     if (!isNativeMapboxNavPlatform()) return;
 
     if (!navigationStarted) {
+      nativeAbandonedRef.current = false;
+      corridorAdoptedRef.current = false;
       if (startedForNavRef.current || nativeNavActive) {
         void stopNative();
       }
       return;
     }
 
+    if (nativeAbandonedRef.current) return;
     if (startedForNavRef.current) return;
     startedForNavRef.current = true;
     void startNative().then((ok) => {
       if (!ok) {
-        // Fall back to DIY — leave navigationStarted true.
-        startedForNavRef.current = false;
+        // Fall back to DIY — leave navigationStarted true. Abandoned trips stay abandoned.
+        if (!nativeAbandonedRef.current) startedForNavRef.current = false;
         setNativeNavActive(false);
       }
     });

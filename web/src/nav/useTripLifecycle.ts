@@ -5,6 +5,7 @@ import {
   persistReturnTripLegOnGo,
   type ReturnTripLeg,
 } from "./returnTripLeg";
+import { resolveGoLockRouteId, shouldPromoteChosenToSlotAOnGo } from "./goLockRoute";
 import { slotOrderAfterSelect } from "./routeSlotOrder";
 import type { LngLat, NavRoute } from "./types";
 import { completedTripFromGeometry } from "../frequentRoutes/tripDetector";
@@ -288,10 +289,17 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
   ]);
 
   const proceedGo = useCallback(() => {
-    const chosen = orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? primaryRouteId;
+    const chosen = resolveGoLockRouteId({
+      orderedRouteIds,
+      previewLegIndex,
+      primaryRouteId,
+    });
     if (!chosen) return;
-    setRouteSlotOrder((prev) => slotOrderAfterSelect(prev.length ? prev : planRouteIds, chosen));
-    setPreviewLegIndex(0);
+    /* Keep A/B/C letters. Promoting B to slot A on Go made the chip flip to A. */
+    if (shouldPromoteChosenToSlotAOnGo()) {
+      setRouteSlotOrder((prev) => slotOrderAfterSelect(prev.length ? prev : planRouteIds, chosen));
+      setPreviewLegIndex(0);
+    }
     setNavigationStarted(true);
     setViewMode("drive");
     setFitTrigger((n) => n + 1);
@@ -395,7 +403,11 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
   ]);
 
   const handleGo = useCallback(() => {
-    const chosen = orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? primaryRouteId;
+    const chosen = resolveGoLockRouteId({
+      orderedRouteIds,
+      previewLegIndex,
+      primaryRouteId,
+    });
     if (!chosen) return;
     const route = plan.routes.find((r) => r.id === chosen);
     if (

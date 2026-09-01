@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { lockedRouteShouldAvoidMotorway } from "../driveAlwaysAhead";
 import {
+  nativeGeometryApplyPolicy,
   routeGeometryAgreesWithLocked,
   shouldAdoptNativeRouteGeometry,
+  shouldFeedNativeProgressToUi,
+  shouldReplaceGoPolylineOnNativeAdopt,
 } from "../lockedRouteGeometryGuard";
 import type { LngLat } from "../types";
 
@@ -94,5 +97,49 @@ describe("shouldAdoptNativeRouteGeometry", () => {
   it("accepts Core geometry that tracks the Go lock without force", () => {
     const refined = locked.map(([lng, lat]) => [lng + 0.0001, lat] as LngLat);
     expect(shouldAdoptNativeRouteGeometry(refined, locked, false)).toBe(true);
+  });
+});
+
+describe("nativeGeometryApplyPolicy", () => {
+  it("does not reset along or collapse A/B/C on session-start adopt", () => {
+    expect(nativeGeometryApplyPolicy(false)).toEqual({
+      resetAlongHold: false,
+      collapsePlanToLocked: false,
+    });
+  });
+
+  it("resets along and collapses only on mid-trip force", () => {
+    expect(nativeGeometryApplyPolicy(true)).toEqual({
+      resetAlongHold: true,
+      collapsePlanToLocked: true,
+    });
+  });
+});
+
+describe("shouldReplaceGoPolylineOnNativeAdopt", () => {
+  it("keeps the Go polyline on session-start Core refine", () => {
+    expect(shouldReplaceGoPolylineOnNativeAdopt(false, true)).toBe(false);
+  });
+
+  it("replaces when there is no Go lock yet, or on mid-trip force", () => {
+    expect(shouldReplaceGoPolylineOnNativeAdopt(false, false)).toBe(true);
+    expect(shouldReplaceGoPolylineOnNativeAdopt(true, true)).toBe(true);
+  });
+});
+
+describe("shouldFeedNativeProgressToUi", () => {
+  it("ignores Core puck/alongM when the Go lock rejected Core geometry", () => {
+    expect(
+      shouldFeedNativeProgressToUi({ abandoned: true, corridorAdopted: false })
+    ).toBe(false);
+    expect(
+      shouldFeedNativeProgressToUi({ abandoned: false, corridorAdopted: false })
+    ).toBe(false);
+  });
+
+  it("feeds Core progress only after the corridor is adopted", () => {
+    expect(
+      shouldFeedNativeProgressToUi({ abandoned: false, corridorAdopted: true })
+    ).toBe(true);
   });
 });

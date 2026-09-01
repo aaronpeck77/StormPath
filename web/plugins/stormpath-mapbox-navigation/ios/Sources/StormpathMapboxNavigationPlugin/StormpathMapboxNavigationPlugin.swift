@@ -100,10 +100,14 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     ) async {
         tearDownSession(emitCancelled: false)
 
-        let coreConfig = CoreConfig(
+        var coreConfig = CoreConfig(
             credentials: .init(accessToken: accessToken),
             locationSource: simulate ? .simulation(initialLocation: nil) : .live
         )
+        // StormPath owns off-route recovery. Core "faster route" / auto-reroute
+        // silently swapped a Go-locked B onto highway A and thrashed the puck.
+        coreConfig.routingConfig.rerouteConfig.detectsReroute = false
+        coreConfig.routingConfig.fasterRouteDetectionConfig = nil
         let provider = MapboxNavigationProvider(coreConfig: coreConfig)
         navigationProvider = provider
         didEmitArrival = false
@@ -116,6 +120,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             var waypoint = Waypoint(coordinate: coordinate)
             if index > 0 && index < coordinates.count - 1 {
                 waypoint.separatesLegs = false
+                // Keep Core on the sampled B corridor instead of cutting to the highway.
+                waypoint.coordinateAccuracy = 40
             }
             return waypoint
         }
