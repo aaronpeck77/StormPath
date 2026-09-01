@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useTurnVoiceGuidance } from "../hooks/useTurnVoiceGuidance";
 import { bannerPrimaryStepIndex } from "./bannerPrimaryStep";
 import { useAlongRouteMetersHeldWhenOffLine } from "./guidanceAlongHold";
+import { stabilizeAlongMeters } from "./navigationProgress";
 import { activeTurnStepIndexAlong, turnStepAlongBounds } from "./turnStepAlong";
 import type { LngLat, RouteTurnStep } from "./types";
 
@@ -43,12 +44,32 @@ export function useNavigationGuidance(deps: UseNavigationGuidanceDeps) {
     alongHoldResetKey
   );
 
-  const userAlongGuidanceM =
+  const alongStabRef = useRef({ along: 0, t: 0, reset: -1 });
+  if (alongStabRef.current.reset !== alongHoldResetKey) {
+    alongStabRef.current = { along: 0, t: 0, reset: alongHoldResetKey };
+  }
+
+  const rawAlongM =
     navigationStarted && frozenAlongM != null && Number.isFinite(frozenAlongM)
       ? frozenAlongM
       : navigationStarted && navigationAlongM != null && Number.isFinite(navigationAlongM)
         ? navigationAlongM
         : heldAlongM;
+
+  let userAlongGuidanceM = rawAlongM;
+  if (navigationStarted && Number.isFinite(rawAlongM)) {
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const prevT = alongStabRef.current.t;
+    const dtS = prevT > 0 ? (now - prevT) / 1000 : 0.35;
+    const prevAlong = prevT > 0 ? alongStabRef.current.along : rawAlongM;
+    userAlongGuidanceM = stabilizeAlongMeters({
+      prevAlongM: prevAlong,
+      proposedAlongM: rawAlongM,
+      speedMps: speedMps ?? null,
+      dtS: dtS,
+    });
+    alongStabRef.current = { along: userAlongGuidanceM, t: now, reset: alongHoldResetKey };
+  }
 
   const turnStepBounds = useMemo(
     () => turnStepAlongBounds(turnSteps, guidanceRouteLengthM),

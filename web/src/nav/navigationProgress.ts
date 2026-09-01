@@ -12,6 +12,26 @@ const BACK_SEARCH_M = 600;
 const AHEAD_SEARCH_M = 3_500;
 const MAX_FORWARD_JUMP_M = 8_000;
 
+/** Event-level alongM (Core / GPS). Caps teleports and ignores reverse chatter while rolling. */
+export function stabilizeAlongMeters(input: {
+  prevAlongM: number;
+  proposedAlongM: number;
+  speedMps: number | null;
+  dtS: number;
+}): number {
+  const prev = Number.isFinite(input.prevAlongM) ? input.prevAlongM : 0;
+  const proposed = input.proposedAlongM;
+  if (!Number.isFinite(proposed)) return prev;
+  const dt = Math.max(0.05, Math.min(2.5, input.dtS));
+  const speed =
+    input.speedMps != null && Number.isFinite(input.speedMps) ? Math.max(0, input.speedMps) : null;
+  const maxFwd = Math.max(20, (speed ?? 22) * dt * 3 + 14);
+  const maxBack = speed != null && speed > 2.2 ? 8 : 28;
+  if (proposed > prev + maxFwd) return prev + maxFwd;
+  if (proposed < prev - maxBack) return prev;
+  return proposed;
+}
+
 export type NavigationProgressSource = "map_matched" | "route_snap" | "held";
 
 export type RouteProjection = {

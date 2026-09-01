@@ -33,6 +33,21 @@ describe("computePuckTargetBeforeRouteSnap", () => {
     expect(ahead[1]).toBeCloseTo(cur.lat, 3);
   });
 
+  it("ignores phone compass when dead-reckoning", () => {
+    const prev: PuckFix = { lng: -86.78, lat: 36.16, t: 1000 };
+    const cur: PuckFix = { lng: -86.779, lat: 36.16, t: 2000 };
+    const ahead = computePuckTargetBeforeRouteSnap({
+      now: 2500,
+      prevFix: prev,
+      curFix: cur,
+      fallback: [-86.78, 36.16],
+      speedMps: 20,
+      headingDeg: 270,
+      maxDeadReckonS: 2.5,
+    });
+    expect(ahead[0]).toBeGreaterThan(cur.lng);
+  });
+
   it("holds at the latest fix when speed is unknown and stationary", () => {
     const prev: PuckFix = { lng: -86.78, lat: 36.16, t: 1000 };
     const cur: PuckFix = { lng: -86.779, lat: 36.161, t: 2000 };
