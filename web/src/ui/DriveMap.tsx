@@ -1416,12 +1416,25 @@ function DriveMapInner({
         // past the latest fix so motion stays continuous between 1 Hz GPS samples.
         const followSp = readPuckFollowSpeedMps();
         const followHdg = readPuckFollowHeading();
+        const reportedSpEarly = followSp;
+        const effSpEarly =
+          reportedSpEarly != null && reportedSpEarly >= 0
+            ? reportedSpEarly
+            : apparentSpeedMps != null
+              ? apparentSpeedMps
+              : null;
+        /* No speed yet (just hit Go) or crawling GPS wobble → parked. */
+        const parkedAlong =
+          effSpEarly == null ||
+          effSpEarly < 1.4 ||
+          (apparentSpeedMps != null && apparentSpeedMps < 1.0);
+
         let [targetLng, targetLat] = computePuckTargetBeforeRouteSnap({
           now,
           prevFix,
           curFix,
           fallback: t,
-          speedMps: followSp,
+          speedMps: parkedAlong ? 0 : followSp,
           headingDeg: followHdg,
         });
 
@@ -1451,8 +1464,9 @@ function DriveMapInner({
             prevAlongM: snappedAlongSmooth,
             navAlongM: navAlong,
             dtS: dt,
-            speedMps: followSp,
+            speedMps: parkedAlong ? 0 : followSp,
             routeTotalM: snapRouteTotalM,
+            parked: parkedAlong,
           });
           const pt = pointAtAlongMeters(geom, snappedAlongSmooth);
           targetLng = pt[0]!;

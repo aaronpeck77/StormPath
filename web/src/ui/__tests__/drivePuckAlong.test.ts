@@ -26,15 +26,57 @@ describe("tickOnRoutePuckAlong", () => {
     expect(next).toBeGreaterThan(1_000);
   });
 
-  it("coasts forward between nav ticks at travel speed", () => {
+  it("coasts toward nav along while rolling, but never past it", () => {
     const next = tickOnRoutePuckAlong({
       prevAlongM: 1_000,
-      navAlongM: 1_000.4,
+      navAlongM: 1_020,
       dtS: 0.05,
       speedMps: 20,
       routeTotalM: 50_000,
     });
-    expect(next).toBeGreaterThan(1_000.5);
-    expect(next).toBeLessThan(1_005);
+    expect(next).toBeGreaterThan(1_000);
+    expect(next).toBeLessThanOrEqual(1_020);
+  });
+
+  it("stays put at Go when sitting still", () => {
+    let along = 0;
+    for (let i = 0; i < 180; i++) {
+      along = tickOnRoutePuckAlong({
+        prevAlongM: along,
+        navAlongM: 0,
+        dtS: 0.016,
+        speedMps: 0,
+        routeTotalM: 50_000,
+        parked: true,
+      });
+    }
+    expect(along).toBeLessThan(1);
+  });
+
+  it("does not invent motion past nav along when speed is wrongly high while parked", () => {
+    let along = 0;
+    for (let i = 0; i < 180; i++) {
+      along = tickOnRoutePuckAlong({
+        prevAlongM: along,
+        navAlongM: 0,
+        dtS: 0.016,
+        speedMps: 16,
+        routeTotalM: 50_000,
+        parked: true,
+      });
+    }
+    expect(along).toBeLessThan(1);
+  });
+
+  it("ignores GPS projecting far down the route while parked", () => {
+    const next = tickOnRoutePuckAlong({
+      prevAlongM: 5,
+      navAlongM: 120,
+      dtS: 0.016,
+      speedMps: 0.3,
+      routeTotalM: 50_000,
+      parked: true,
+    });
+    expect(next).toBe(5);
   });
 });

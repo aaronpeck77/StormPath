@@ -66,4 +66,15 @@ describe("stabilizeAlongMeters", () => {
     expect(next).toBeLessThan(3_000);
     expect(next).toBeGreaterThan(2_000);
   });
+
+  it("does not walk along the route while parked", () => {
+    expect(
+      stabilizeAlongMeters({
+        prevAlongM: 0,
+        proposedAlongM: 80,
+        speedMps: 0.2,
+        dtS: 0.4,
+      })
+    ).toBe(0);
+  });
 });
