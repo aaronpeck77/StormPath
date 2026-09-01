@@ -27,9 +27,7 @@ export function stabilizeAlongMeters(input: {
     input.speedMps != null && Number.isFinite(input.speedMps) ? Math.max(0, input.speedMps) : null;
   /* Parked / unknown speed: do not walk alongM down the corridor from GPS wobble. */
   if (speed == null || speed < 1.4) {
-    if (proposed > prev + 12) return prev;
-    if (proposed < prev - 12) return prev;
-    return proposed;
+    return prev;
   }
   const maxFwd = Math.max(20, speed * dt * 3 + 14);
   const maxBack = speed > 2.2 ? 8 : 28;

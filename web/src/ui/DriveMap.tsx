@@ -36,7 +36,6 @@ import {
   buildCumulativeDistances,
   closestPointOnPolyline,
   closestPointOnPolylineWindowed,
-  haversineMeters,
   pointAtAlongMeters,
 } from "../nav/routeGeometry";
 import { getWebEnv } from "../config/env";
@@ -132,7 +131,7 @@ import {
   FOLLOW_CAM_STALL_DRIFT_PX,
 } from "./mapLowSignalResilience";
 import { computePuckTargetBeforeRouteSnap } from "./driveMapPuckTarget";
-import { tickOnRoutePuckAlong } from "./drivePuckAlong";
+import { isParkedForAlongPuck, netApparentSpeedMps, tickOnRoutePuckAlong } from "./drivePuckAlong";
 import {
   pickDriveFollowCamWrite,
   shouldRepairFollowCamStall,
@@ -1361,18 +1360,7 @@ function DriveMapInner({
     let apparentSpeedMps: number | null = null;
     const recomputeApparentSpeed = (now: number) => {
       while (fixSamples.length > 1 && now - fixSamples[0]!.t > FIX_WINDOW_MS) fixSamples.shift();
-      if (fixSamples.length < 2) {
-        apparentSpeedMps = null;
-        return;
-      }
-      let dist = 0;
-      for (let i = 1; i < fixSamples.length; i += 1) {
-        const a = fixSamples[i - 1]!;
-        const b = fixSamples[i]!;
-        dist += haversineMeters([a.lng, a.lat], [b.lng, b.lat]);
-      }
-      const span = (fixSamples[fixSamples.length - 1]!.t - fixSamples[0]!.t) / 1000;
-      apparentSpeedMps = span > 0 ? dist / span : null;
+      apparentSpeedMps = netApparentSpeedMps(fixSamples, now, FIX_WINDOW_MS);
     };
 
     /* Skip Mapbox marker / camera writes when the change is sub-meter — Mapbox repaints on every
@@ -1416,18 +1404,11 @@ function DriveMapInner({
         // past the latest fix so motion stays continuous between 1 Hz GPS samples.
         const followSp = readPuckFollowSpeedMps();
         const followHdg = readPuckFollowHeading();
-        const reportedSpEarly = followSp;
-        const effSpEarly =
-          reportedSpEarly != null && reportedSpEarly >= 0
-            ? reportedSpEarly
-            : apparentSpeedMps != null
-              ? apparentSpeedMps
-              : null;
-        /* No speed yet (just hit Go) or crawling GPS wobble → parked. */
-        const parkedAlong =
-          effSpEarly == null ||
-          effSpEarly < 1.4 ||
-          (apparentSpeedMps != null && apparentSpeedMps < 1.0);
+        /* Leftover iOS speed must not unpark — GPS net motion is the truth. */
+        const parkedAlong = isParkedForAlongPuck({
+          reportedSpeedMps: followSp,
+          apparentSpeedMps: apparentSpeedMps,
+        });
 
         let [targetLng, targetLat] = computePuckTargetBeforeRouteSnap({
           now,

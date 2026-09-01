@@ -77,4 +77,26 @@ describe("stabilizeAlongMeters", () => {
       })
     ).toBe(0);
   });
+
+  it("does not creep along from GPS wobble while parked", () => {
+    expect(
+      stabilizeAlongMeters({
+        prevAlongM: 0,
+        proposedAlongM: 8,
+        speedMps: 0.2,
+        dtS: 0.4,
+      })
+    ).toBe(0);
+  });
+
+  it("holds along when speed is still unknown at Go", () => {
+    expect(
+      stabilizeAlongMeters({
+        prevAlongM: 0,
+        proposedAlongM: 40,
+        speedMps: null,
+        dtS: 0.4,
+      })
+    ).toBe(0);
+  });
 });
