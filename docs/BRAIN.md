@@ -4,6 +4,18 @@
 
 **Do not start Brain items until Bill says the store build is stable** — then revisit this file.
 
+### Stability gate (Bill confirms when ready)
+
+Say *“store is stable — open the Brain”* when these are good enough for v1, not perfect:
+
+- [ ] TestFlight build from current `master` (map handoff fix `e2520ed`+)
+- [ ] Wi‑Fi → weak cell: map/camera keeps following puck (no restart needed)
+- [ ] Alternate route at Go stays locked in Drive
+- [ ] No show-stopper crashes on a real drive
+- [ ] App Store submit path clear (signing, metadata, review notes)
+
+Until then: **ship and soak only** — no Brain UX work.
+
 ---
 
 ## Dark Sky–inspired route nowcast (post-launch)
