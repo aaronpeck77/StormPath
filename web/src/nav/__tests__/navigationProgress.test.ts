@@ -78,25 +78,36 @@ describe("stabilizeAlongMeters", () => {
     ).toBe(0);
   });
 
-  it("does not creep along from GPS wobble while parked", () => {
+  it("follows a normal GPS tick even when iOS speed dips on a corner", () => {
     expect(
       stabilizeAlongMeters({
-        prevAlongM: 0,
-        proposedAlongM: 8,
-        speedMps: 0.2,
+        prevAlongM: 2_000,
+        proposedAlongM: 2_014,
+        speedMps: 0.4,
         dtS: 0.4,
       })
-    ).toBe(0);
+    ).toBe(2_014);
   });
 
-  it("holds along when speed is still unknown at Go", () => {
-    expect(
-      stabilizeAlongMeters({
-        prevAlongM: 0,
-        proposedAlongM: 40,
-        speedMps: null,
-        dtS: 0.4,
-      })
-    ).toBe(0);
+  it("does not freeze along when speed is unknown mid-route", () => {
+    const next = stabilizeAlongMeters({
+      prevAlongM: 2_000,
+      proposedAlongM: 2_030,
+      speedMps: null,
+      dtS: 0.4,
+    });
+    expect(next).toBeGreaterThan(2_020);
+    expect(next).toBeLessThanOrEqual(2_030);
+  });
+
+  it("caps a huge projection at Go when speed is still unknown", () => {
+    const next = stabilizeAlongMeters({
+      prevAlongM: 0,
+      proposedAlongM: 40,
+      speedMps: null,
+      dtS: 0.4,
+    });
+    expect(next).toBeGreaterThan(0);
+    expect(next).toBeLessThanOrEqual(40);
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isParkedForAlongPuck,
   netApparentSpeedMps,
+  recentGpsStepMeters,
   tickOnRoutePuckAlong,
 } from "../drivePuckAlong";
 
@@ -84,19 +85,35 @@ describe("tickOnRoutePuckAlong", () => {
     expect(next).toBe(5);
   });
 
-  it("does not creep toward a nearby nav along while parked", () => {
-    let along = 0;
-    for (let i = 0; i < 180; i++) {
+  it("does not freeze when CL speed dips but GPS is still rolling", () => {
+    let along = 1_000;
+    for (let i = 0; i < 60; i++) {
       along = tickOnRoutePuckAlong({
         prevAlongM: along,
-        navAlongM: 10,
+        navAlongM: 1_240,
+        dtS: 0.016,
+        speedMps: 0.4,
+        routeTotalM: 50_000,
+        parked: false,
+      });
+    }
+    expect(along).toBeGreaterThan(1_070);
+  });
+
+  it("catches up within about a second after a freeze", () => {
+    let along = 1_000;
+    for (let i = 0; i < 60; i++) {
+      along = tickOnRoutePuckAlong({
+        prevAlongM: along,
+        navAlongM: 1_080,
         dtS: 0.016,
         speedMps: 16,
         routeTotalM: 50_000,
-        parked: true,
+        parked: false,
       });
     }
-    expect(along).toBe(0);
+    expect(along).toBeGreaterThan(1_070);
+    expect(along).toBeLessThanOrEqual(1_080);
   });
 });
 
@@ -126,6 +143,57 @@ describe("isParkedForAlongPuck", () => {
         apparentSpeedMps: 14,
       })
     ).toBe(false);
+  });
+
+  it("does not freeze on a corner when iOS speed dips", () => {
+    expect(
+      isParkedForAlongPuck({
+        reportedSpeedMps: 0.4,
+        apparentSpeedMps: 12,
+      })
+    ).toBe(false);
+  });
+
+  it("does not freeze through a GPS gap once already rolling", () => {
+    expect(
+      isParkedForAlongPuck({
+        reportedSpeedMps: 0.3,
+        apparentSpeedMps: null,
+        wasRolling: true,
+      })
+    ).toBe(false);
+  });
+
+  it("re-parks after a stop when GPS is clearly still", () => {
+    expect(
+      isParkedForAlongPuck({
+        reportedSpeedMps: 0.3,
+        apparentSpeedMps: 0.3,
+        wasRolling: true,
+      })
+    ).toBe(true);
+  });
+
+  it("unparks on a single real GPS step even if the 6s window is still diluted", () => {
+    expect(
+      isParkedForAlongPuck({
+        reportedSpeedMps: 0.2,
+        apparentSpeedMps: 0.8,
+        recentStepM: 12,
+      })
+    ).toBe(false);
+  });
+});
+
+describe("recentGpsStepMeters", () => {
+  it("returns the last GPS tick distance", () => {
+    const samples = [
+      { lng: -86.78, lat: 36.16, t: 0 },
+      { lng: -86.78, lat: 36.16012, t: 1000 },
+    ];
+    const step = recentGpsStepMeters(samples);
+    expect(step).not.toBeNull();
+    expect(step!).toBeGreaterThan(10);
   });
 });
 

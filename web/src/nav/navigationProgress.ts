@@ -25,12 +25,16 @@ export function stabilizeAlongMeters(input: {
   const dt = Math.max(0.05, Math.min(2.5, input.dtS));
   const speed =
     input.speedMps != null && Number.isFinite(input.speedMps) ? Math.max(0, input.speedMps) : null;
-  /* Parked / unknown speed: do not walk alongM down the corridor from GPS wobble. */
-  if (speed == null || speed < 1.4) {
-    return prev;
+  /* Known-slow: ignore driveway teleports, but follow a normal 1 Hz GPS tick.
+   * Freezing every update here is what left the puck 4–5 s behind on a corner. */
+  if (speed != null && speed < 1.4) {
+    if (proposed > prev + 25) return prev;
+    if (proposed < prev - 12) return prev;
+    return proposed;
   }
-  const maxFwd = Math.max(20, speed * dt * 3 + 14);
-  const maxBack = speed > 2.2 ? 8 : 28;
+  const effSpeed = speed ?? 16;
+  const maxFwd = Math.max(20, effSpeed * dt * 3 + 14);
+  const maxBack = (speed != null && speed > 2.2) ? 8 : 28;
   if (proposed > prev + maxFwd) return prev + maxFwd;
   if (proposed < prev - maxBack) return prev;
   return proposed;

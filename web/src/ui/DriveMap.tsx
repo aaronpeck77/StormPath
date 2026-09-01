@@ -131,7 +131,12 @@ import {
   FOLLOW_CAM_STALL_DRIFT_PX,
 } from "./mapLowSignalResilience";
 import { computePuckTargetBeforeRouteSnap } from "./driveMapPuckTarget";
-import { isParkedForAlongPuck, netApparentSpeedMps, tickOnRoutePuckAlong } from "./drivePuckAlong";
+import {
+  isParkedForAlongPuck,
+  netApparentSpeedMps,
+  recentGpsStepMeters,
+  tickOnRoutePuckAlong,
+} from "./drivePuckAlong";
 import {
   pickDriveFollowCamWrite,
   shouldRepairFollowCamStall,
@@ -1358,6 +1363,7 @@ function DriveMapInner({
     const fixSamples: FixSample[] = [];
     const FIX_WINDOW_MS = 6_000;
     let apparentSpeedMps: number | null = null;
+    let alongRollingLatch = false;
     const recomputeApparentSpeed = (now: number) => {
       while (fixSamples.length > 1 && now - fixSamples[0]!.t > FIX_WINDOW_MS) fixSamples.shift();
       apparentSpeedMps = netApparentSpeedMps(fixSamples, now, FIX_WINDOW_MS);
@@ -1404,11 +1410,14 @@ function DriveMapInner({
         // past the latest fix so motion stays continuous between 1 Hz GPS samples.
         const followSp = readPuckFollowSpeedMps();
         const followHdg = readPuckFollowHeading();
-        /* Leftover iOS speed must not unpark — GPS net motion is the truth. */
+        /* Leftover iOS speed must not unpark. CL speed dips on a corner must not freeze. */
         const parkedAlong = isParkedForAlongPuck({
           reportedSpeedMps: followSp,
           apparentSpeedMps: apparentSpeedMps,
+          recentStepM: recentGpsStepMeters(fixSamples),
+          wasRolling: alongRollingLatch,
         });
+        alongRollingLatch = !parkedAlong;
 
         let [targetLng, targetLat] = computePuckTargetBeforeRouteSnap({
           now,

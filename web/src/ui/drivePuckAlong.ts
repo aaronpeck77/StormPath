@@ -3,7 +3,7 @@ import type { LngLat } from "../nav/types";
 
 /**
  * Along-route puck: pin to corridor progress, not raw GPS lerp.
- * Must not coast while the vehicle is sitting still (Go in the driveway).
+ * Must not coast while sitting still at Go — and must not freeze through a corner.
  */
 
 /** Ignore reverse along jumps larger than this while rolling (meters). */
@@ -12,6 +12,10 @@ export const ON_ROUTE_REVERSE_IGNORE_M = 8;
 export const ON_ROUTE_ALONG_TC_S = 0.28;
 /** Below this, treat as parked — do not dead-reckon along the blue line. */
 export const ON_ROUTE_PARKED_SPEED_MPS = 1.4;
+/** One GPS tick this far is driving, not driveway wobble. */
+export const ON_ROUTE_UNPARK_STEP_M = 10;
+/** Re-park only when GPS net motion has clearly stopped. */
+export const ON_ROUTE_REPARK_SPEED_MPS = 0.7;
 /** Window for GPS net displacement → apparent speed. */
 export const APPARENT_SPEED_WINDOW_MS = 6_000;
 
@@ -37,22 +41,46 @@ export function netApparentSpeedMps(
   return haversineMeters([a.lng, a.lat], [b.lng, b.lat]) / span;
 }
 
+/** Distance between the two newest GPS samples (one 1 Hz tick). */
+export function recentGpsStepMeters(samples: GpsSpeedSample[]): number | null {
+  if (samples.length < 2) return null;
+  const a = samples[samples.length - 2]!;
+  const b = samples[samples.length - 1]!;
+  const dt = (b.t - a.t) / 1000;
+  if (!(dt > 0) || dt > 2.5) return null;
+  return haversineMeters([a.lng, a.lat], [b.lng, b.lat]);
+}
+
 /**
- * Parked unless GPS is actually translating.
- * Leftover iOS Core Location speed must not unpark — that is what rolled the
- * puck down the blue line after Go while sitting in the driveway.
+ * Parked at Go when leftover iOS speed is high but GPS is still.
+ * Not parked through a corner when Core Location speed dips or goes unknown.
  */
 export function isParkedForAlongPuck(input: {
   reportedSpeedMps: number | null;
   apparentSpeedMps: number | null;
+  recentStepM?: number | null;
+  wasRolling?: boolean;
 }): boolean {
-  const reported = input.reportedSpeedMps;
-  if (reported != null && Number.isFinite(reported) && reported < ON_ROUTE_PARKED_SPEED_MPS) {
-    return true;
-  }
   const apparent = input.apparentSpeedMps;
-  if (apparent == null || !Number.isFinite(apparent)) return true;
-  return apparent < ON_ROUTE_PARKED_SPEED_MPS;
+  const reported = input.reportedSpeedMps;
+  const step = input.recentStepM;
+  const gpsMoving =
+    (apparent != null && Number.isFinite(apparent) && apparent >= ON_ROUTE_PARKED_SPEED_MPS) ||
+    (step != null && Number.isFinite(step) && step >= ON_ROUTE_UNPARK_STEP_M);
+
+  if (gpsMoving) return false;
+
+  if (input.wasRolling) {
+    const gpsStill =
+      apparent != null && Number.isFinite(apparent) && apparent < ON_ROUTE_REPARK_SPEED_MPS;
+    const reportedMoving =
+      reported != null && Number.isFinite(reported) && reported >= ON_ROUTE_PARKED_SPEED_MPS;
+    if (gpsStill && !reportedMoving) return true;
+    /* GPS gap on a turn: keep rolling so the puck does not freeze. */
+    return false;
+  }
+
+  return true;
 }
 
 export function tickOnRoutePuckAlong(input: {
@@ -61,7 +89,7 @@ export function tickOnRoutePuckAlong(input: {
   dtS: number;
   speedMps: number | null;
   routeTotalM: number;
-  /** True when GPS/speed says the vehicle is not moving. */
+  /** True when GPS/speed says the vehicle is not moving. Explicit false wins over low CL speed. */
   parked?: boolean;
 }): number {
   const total = Math.max(0, input.routeTotalM);
@@ -72,7 +100,7 @@ export function tickOnRoutePuckAlong(input: {
     : prev;
   const speed =
     input.speedMps != null && Number.isFinite(input.speedMps) ? Math.max(0, input.speedMps) : 0;
-  const parked = Boolean(input.parked) || speed < ON_ROUTE_PARKED_SPEED_MPS;
+  const parked = input.parked != null ? Boolean(input.parked) : speed < ON_ROUTE_PARKED_SPEED_MPS;
 
   if (parked) {
     /* Hold the yard line. Do not blend toward GPS/nav along — that still looks like driving. */
@@ -87,11 +115,14 @@ export function tickOnRoutePuckAlong(input: {
   let next = prev + (target - prev) * alpha;
   /* Coast only toward nav along that is already ahead — never invent motion past it. */
   if (target > prev + 1) {
-    const coast = prev + speed * dt;
+    const coast = prev + Math.max(speed, 0) * dt;
     next = Math.min(target, Math.max(next, coast));
   }
 
-  const cap = Math.max(2.4, Math.max(speed, 8) * dt * 2.5);
+  /* If we froze through a turn, catch up within ~1 s instead of trailing 4–5 s. */
+  const behind = target - prev;
+  const catchUp = behind > 20 ? Math.max(speed, 16) * dt * 6 : Math.max(speed, 8) * dt * 2.5;
+  const cap = Math.max(2.4, catchUp);
   if (next > prev + cap) next = prev + cap;
   if (next < prev - cap) next = prev - cap;
   if (next > target) next = target;
