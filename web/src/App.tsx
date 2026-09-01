@@ -815,22 +815,31 @@ export default function App() {
       Math.abs(prev[1] - destLngLat[1]) > 1e-8;
     if (!destChanged) return;
     prevDestLngLatRef.current = destLngLat;
-    setViewMode("route");
+    if (viewMode !== "route") setViewMode("route");
     setSearchExpanded(false);
+    /* First dest hydrate while routes already exist: route-count effect owns the single fit. */
+    if (!prev && plan.routes.length > 0) return;
     setFitTrigger((n) => n + 1);
-  }, [destLngLat, navigationStarted, setViewMode, setSearchExpanded]);
+  }, [destLngLat, navigationStarted, setViewMode, setSearchExpanded, viewMode, plan.routes.length]);
 
   /**
    * Replanning can replace A/B/C while keeping the same slot ids (`r-a|r-b|r-c`) and the same route
-   * count — nothing else re-fires then. Force Rt + refit whenever the route graph changes.
+   * count — nothing else re-fires then. Force Rt + refit when the graph identity changes after
+   * the first hydrate (first key is already handled by route-count / dest effects — double fit
+   * caused the startup zoom flash).
    */
+  const prevPlanRoutesKeyRef = useRef("");
   useEffect(() => {
     if (navigationStarted) return;
     if (!plan.routes.length) return;
-    setViewMode("route");
+    const prev = prevPlanRoutesKeyRef.current;
+    prevPlanRoutesKeyRef.current = planRoutesKey;
+    if (viewMode !== "route") setViewMode("route");
     setSearchExpanded(false);
+    if (!prev) return;
+    if (prev === planRoutesKey) return;
     setFitTrigger((n) => n + 1);
-  }, [planRoutesKey, navigationStarted]);
+  }, [planRoutesKey, navigationStarted, viewMode]);
 
   const orderedRouteIds = useMemo(() => {
     if (isFullSlotPermutation(routeSlotOrder, planRouteIds)) return routeSlotOrder;

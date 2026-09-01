@@ -40,7 +40,7 @@ export function noteRainViewerRateLimit(): void {
 
 const rateLimitListeners = new Set<() => void>();
 
-/** Run when RainViewer enters a cooldown (hide layers, pause animation, etc.). */
+/** Run when RainViewer enters a cooldown (pause animation / extra fetches). */
 export function onRainViewerRateLimit(listener: () => void): () => void {
   rateLimitListeners.add(listener);
   return () => rateLimitListeners.delete(listener);

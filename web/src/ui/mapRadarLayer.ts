@@ -169,18 +169,29 @@ function installRainViewerMapErrorFilter(map: Map): void {
   if (mapsWithRainViewerErrorFilter.has(map)) return;
   mapsWithRainViewerErrorFilter.add(map);
   let lastWarnAt = 0;
+  let errorStreak = 0;
+  let streakWindowStart = 0;
   map.on("error", (e) => {
     const src = (e as { sourceId?: string }).sourceId ?? "";
     if (!src.includes("rainviewer")) return;
+    /* Tomorrow.io tiles also use rainviewer-* source ids when proxied — don't treat as RV 429. */
     if (radarTileProviderByMap.get(map) === "tomorrow_io") return;
+    const now = Date.now();
+    if (now - streakWindowStart > 8_000) {
+      errorStreak = 0;
+      streakWindowStart = now;
+    }
+    errorStreak += 1;
+    /* One bad tile is common at loop wrap / coverage edge — keep the last frame visible.
+     * Only pause extra fetches after a real burst (likely rate limit). */
+    if (errorStreak < 6) return;
     noteRainViewerRateLimit();
-    setRainViewerRadarLayersVisible(map, false);
-    if (Date.now() - lastWarnAt < 45_000) return;
-    lastWarnAt = Date.now();
+    if (now - lastWarnAt < 45_000) return;
+    lastWarnAt = now;
     if (import.meta.env.DEV) {
       console.warn(
-        "[RainViewer] Some radar tiles failed to load (often rate limit or out-of-coverage). " +
-          "Pausing animation ~90s; map radar may look patchy until then."
+        "[RainViewer] Several radar tiles failed (often rate limit or coverage). " +
+          "Keeping last frame; pausing extra fetches ~90s."
       );
     }
   });

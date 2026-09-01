@@ -16,7 +16,6 @@ import {
   shouldSkipHomePreloadThrottle,
 } from "../map/homePreloadRegion";
 import { isWifiConnection } from "../map/mapPreloadNetwork";
-import { warmMapTilesForBounds } from "../map/mapRegionCacheWarm";
 import { prefetchMapTilesForBounds } from "../map/prefetchMapTilesForBounds";
 import {
   corridorWindowBounds,
@@ -2463,8 +2462,10 @@ function DriveMapInner({
         let hidden: "a" | "b" = "b";
         let idx = 0;
 
-        /* Prefetch every frame once so the loop hits warm tiles. */
-        for (let i = 0; i < cells.length; i++) {
+        /* Prefetch only the first few frames — warming the whole history burst often trip
+         * RainViewer rate limits and stopped the loop after one sweep. */
+        const prefetchCount = Math.min(cells.length, 3);
+        for (let i = 0; i < prefetchCount; i++) {
           if (cancelled || loopGen !== radarLoopGeneration || mapRef.current !== map) return;
           const side: "a" | "b" = i % 2 === 0 ? "a" : "b";
           await prewarmFrame(side, tileUrl(cells[i]!), prefetchTimeoutMs, 80);
@@ -2620,13 +2621,23 @@ function DriveMapInner({
     let rateLimitResumeTimer: number | null = null;
     const offRateLimit = onRainViewerRateLimit(() => {
       if (!showRadar || mapRef.current !== map) return;
-      setRainViewerRadarLayersVisible(map, false);
+      /* Pause the loop via providerRateLimited — do NOT hide layers (blank map felt like radar died). */
+      radarLoopGeneration += 1;
+      try {
+        setRainViewerRadarLayersVisible(map, true);
+        /* Mid-crossfade leave both sides half-faded — pin one full frame. */
+        setRainViewerRadarDualOpacity(map, RAINVIEWER_RADAR_VISIBLE_OPACITY, 0);
+      } catch {
+        /* style race */
+      }
       if (rateLimitResumeTimer) window.clearTimeout(rateLimitResumeTimer);
       rateLimitResumeTimer = window.setTimeout(() => {
         rateLimitResumeTimer = null;
         if (cancelled || mapRef.current !== map || !showRadar) return;
         if (!isRainViewerRateLimited()) {
           setRainViewerRadarLayersVisible(map, true);
+          /* Force loadManifest past pathsKey early-return so the loop restarts. */
+          lastRadarPathsKey = "";
           void loadManifest();
         }
       }, rainViewerRateLimitMsRemaining() + 500);
@@ -2739,16 +2750,7 @@ function DriveMapInner({
         activityAreaLatched: idleHomeActivityAreaLatchedRef.current,
       });
       if (action === "defer") {
-        if (!idleHomeHoldingLocateRef.current) {
-          const jumped = safeJumpTo(map, {
-            center: u,
-            zoom: ROUTE_VIEW_PLANNING_STREET_ZOOM,
-            pitch: 0,
-            bearing: 0,
-            padding: ZERO_MAP_PADDING,
-          });
-          if (jumped) idleHomeHoldingLocateRef.current = true;
-        }
+        /* Stay on CONUS / current frame — street-zoom-then-activity-area fit was the startup flicker. */
         return false;
       }
       if (action === "hold_latched") {
@@ -2833,17 +2835,14 @@ function DriveMapInner({
       if (!(await isWifiConnection())) return;
       if (userExploringRef.current || navigationStartedRef.current) return;
 
-      const map = mapRef.current;
-      if (!map || !isMapUsable(map)) return;
-      try {
-        if (!map.isStyleLoaded()) return;
-      } catch {
-        return;
-      }
-
-      const result = await warmMapTilesForBounds(map, homePreloadBounds, () =>
-        cancelled || userExploringRef.current || navigationStartedRef.current
-      );
+      const token = getWebEnv().mapboxToken;
+      if (!token) return;
+      /* HTTP prefetch only — never move the live camera (warmMapTilesForBounds caused zoom flicker). */
+      const result = await prefetchMapTilesForBounds(homePreloadBounds, token, {
+        shouldAbort: () =>
+          cancelled || userExploringRef.current || navigationStartedRef.current,
+        includeTerrain: false,
+      });
       if (result === "done" && !cancelled) {
         markHomePreloadCompleted(homePreloadBounds);
       }
@@ -2867,8 +2866,8 @@ function DriveMapInner({
   ]);
 
   /**
-   * Before Go: warm Mapbox's own tile cache for the first corridor window (Wi‑Fi),
-   * plus HTTP-prefetch the overlapping next window. Camera is restored after warm.
+   * Before Go: HTTP-prefetch corridor windows into the browser cache.
+   * Do not warm via live-map fitBounds — that zooms the viewport then snaps back.
    */
   useEffect(() => {
     if (!mapReady || navigationStarted || routes.length === 0) return;
@@ -2885,20 +2884,10 @@ function DriveMapInner({
     let cancelled = false;
     const timer = window.setTimeout(() => {
       void (async () => {
-        const onWifi = await isWifiConnection();
-        if (cancelled || navigationStartedRef.current) return;
-        const map = mapRef.current;
-        /* Fill GL tile cache on Wi‑Fi so Drive keeps painting after the handoff. */
-        if (onWifi && map && isMapUsable(map)) {
-          await warmMapTilesForBounds(map, first, () =>
-            cancelled || navigationStartedRef.current || userExploringRef.current
-          );
-        } else {
-          await prefetchMapTilesForBounds(first, token, {
-            shouldAbort: () => cancelled || navigationStartedRef.current,
-            includeTerrain: false,
-          });
-        }
+        await prefetchMapTilesForBounds(first, token, {
+          shouldAbort: () => cancelled || navigationStartedRef.current,
+          includeTerrain: false,
+        });
         if (cancelled || navigationStartedRef.current) return;
         const nextStart = nextCorridorWindowStartM(0);
         const next = corridorWindowBounds(geom, nextStart);
