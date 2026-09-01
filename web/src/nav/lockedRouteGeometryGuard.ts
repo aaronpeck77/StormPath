@@ -72,3 +72,39 @@ export function shouldAdoptNativeRouteGeometry(
   if (!lockedGoGeometry || lockedGoGeometry.length < 2) return true;
   return routeGeometryAgreesWithLocked(candidate, lockedGoGeometry);
 }
+
+/**
+ * Session-start Core `routeChanged` (even an agreeing refine) used to:
+ * - bump along-hold → puck jumps back to 0 then leaps forward
+ * - collapse A/B/C to one slot → chosen B relabels as A
+ * Only a true mid-trip force (off-route / explicit promote) may do those.
+ */
+export function nativeGeometryApplyPolicy(force: boolean): {
+  resetAlongHold: boolean;
+  collapsePlanToLocked: boolean;
+} {
+  if (force) {
+    return { resetAlongHold: true, collapsePlanToLocked: true };
+  }
+  return { resetAlongHold: false, collapsePlanToLocked: false };
+}
+
+/** Session-start Core refine must not replace the Go polyline (puck/along reset). */
+export function shouldReplaceGoPolylineOnNativeAdopt(
+  force: boolean,
+  hasLockedGoGeometry: boolean
+): boolean {
+  return force || !hasLockedGoGeometry;
+}
+
+/**
+ * True when Core progress may drive the puck / alongM.
+ * Rejected session-start geometry must not feed UI — Core's fastest line vs the
+ * Go lock is what made the puck leap forward and back.
+ */
+export function shouldFeedNativeProgressToUi(input: {
+  abandoned: boolean;
+  corridorAdopted: boolean;
+}): boolean {
+  return input.corridorAdopted && !input.abandoned;
+}

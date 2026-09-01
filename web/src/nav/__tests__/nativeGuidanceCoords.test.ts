@@ -21,8 +21,28 @@ describe("buildNativeGuidanceCoordinates", () => {
     });
     expect(coords).not.toBeNull();
     expect(coords!.length).toBeGreaterThanOrEqual(2);
-    expect(coords![0]).toEqual({ lng: -86.78, lat: 36.16 });
+    expect(coords![0]).toEqual({ lng: -86.5, lat: 36.0 });
     expect(coords![coords!.length - 1]).toEqual({ lng: -86.82, lat: 36.2 });
+  });
+
+  it("starts Core from the remaining corridor near GPS, not the original origin", () => {
+    const long: LngLat[] = [];
+    for (let i = 0; i <= 20; i++) {
+      long.push([-86.78, 36.16 + i * 0.01]);
+    }
+    const user: LngLat = [-86.78, 36.26];
+    const coords = buildNativeGuidanceCoordinates({
+      userLngLat: user,
+      viaStops: [],
+      destLngLat: long[long.length - 1]!,
+      lockedCorridor: long,
+      maxCoords: 8,
+    });
+    expect(coords).not.toBeNull();
+    expect(coords![0]).toEqual({ lng: user[0], lat: user[1] });
+    expect(coords![coords!.length - 1]!.lat).toBeCloseTo(36.36, 2);
+    /* Must not still be pinned at the plan origin miles behind the puck. */
+    expect(coords!.some((c) => c.lat < 36.2)).toBe(false);
   });
 
   it("falls back to origin → vias → dest when no corridor", () => {
