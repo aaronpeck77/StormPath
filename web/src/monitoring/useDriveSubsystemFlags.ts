@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { haversineMeters } from "../nav/routeGeometry";
 import {
+  DRIVE_LOOP_STALL_WINDOW_MS,
   isDriveLoopStalled,
   isOffRouteSubsystemHung,
 } from "../nav/driveSubsystemHealth";
@@ -107,7 +108,7 @@ export function useDriveSubsystemFlags(opts: {
         })
       );
 
-      if (windowMs >= 8_000) {
+      if (windowMs >= DRIVE_LOOP_STALL_WINDOW_MS) {
         w.gps = gps;
         w.along = along;
         w.atMs = now;

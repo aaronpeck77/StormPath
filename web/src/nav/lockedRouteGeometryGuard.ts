@@ -66,7 +66,8 @@ export function routeGeometryAgreesWithLocked(
  * Mid-trip Core reroute from the driver's GPS (left the Go lock).
  * Session-start "fastest" steal starts on the locked corridor — this must stay false then.
  */
-export const OFF_ROUTE_NATIVE_USER_LATERAL_M = 40;
+/** ~70 ft — adopt a Core reroute once the driver has clearly left the lock. */
+export const OFF_ROUTE_NATIVE_USER_LATERAL_M = 22;
 export const OFF_ROUTE_NATIVE_START_NEAR_USER_M = 150;
 
 export function shouldForceAdoptOffRouteNativeGeometry(input: {
@@ -82,15 +83,15 @@ export function shouldForceAdoptOffRouteNativeGeometry(input: {
 }
 
 /**
- * Apple 4.20.7 (`4ecb648`) always force-adopted Core `routeChanged`.
- * Session-start still must not steal Go-locked B; every later Core reroute
- * (off-route) is the new lock — same as that submitted IPA.
+ * Force-adopt only when the driver has left the Go lock.
+ * Treating every later Core emit as force (4.20.7 restore) reset along,
+ * collapsed A/B/C, and made the puck / zoom leap on session-start refine.
  */
 export function nativeRouteChangedShouldForce(input: {
   isFirstRouteChanged: boolean;
   driverAlreadyOffLockedCorridor: boolean;
 }): boolean {
-  if (!input.isFirstRouteChanged) return true;
+  void input.isFirstRouteChanged;
   return input.driverAlreadyOffLockedCorridor;
 }
 

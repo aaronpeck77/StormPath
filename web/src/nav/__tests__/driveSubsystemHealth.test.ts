@@ -13,12 +13,23 @@ describe("isDriveLoopStalled", () => {
     ).toBe(false);
   });
 
-  it("fires when GPS moved but along-track did not (frozen Drive)", () => {
+  it("does not treat along-damping / city GPS as a freeze", () => {
     expect(
       isDriveLoopStalled({
         navigationStarted: true,
         windowMs: 8_000,
         gpsMovedM: 55,
+        alongMovedM: 2,
+      })
+    ).toBe(false);
+  });
+
+  it("fires only after a long GPS move with along-track stuck", () => {
+    expect(
+      isDriveLoopStalled({
+        navigationStarted: true,
+        windowMs: 20_000,
+        gpsMovedM: 180,
         alongMovedM: 2,
       })
     ).toBe(true);

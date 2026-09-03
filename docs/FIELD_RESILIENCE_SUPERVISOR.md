@@ -57,7 +57,7 @@ Wired on the phone (`SUPERVISOR_PHONE_WATCH_IDS`): `map_low_signal`, `false_onli
 | `trip_cache_stale` | Active trip but no IndexedDB save past the 20s throttle + slack | 45s | Best-effort `saveActiveTripToCache` only — never delete | If still stuck |
 | `go_without_geometry` | `navigationStarted` with no route line / no GPS | 15s | Exit GO back to plan; keep dest + last plan | Always |
 | `weatherkit_token_hang` | Token `fetch` with **no** timeout (`weatherKitAuth.ts`) | 12s | Abort token; use 2 min block already in auth | If it repeats |
-| `drive_loop_stall` | GO + GPS moved ~40m but along-track barely moved (**not** while off-route — that is expected) | 8s detect, then 1s | Soft-resync Drive: remount puck RAF, reset along hold, Jeff camera snap | If repeated |
+| `drive_loop_stall` | GO + GPS moved ~160m over 20s but along-track barely moved (**not** while off-route) | 20s detect, then 1s | Remount puck RAF only — no camera snap / along reset | If repeated |
 | `off_route_hang` | Off-route latched + hung reroute (>20s). Does not abort a live fetch for stale poll samples. | detect, then 1s | Abort stuck fetch + silent route-from-here | Always |
 
 **Do not** abort Mapbox **tile** loads just because the pill is busy. Tiles are not these flags.

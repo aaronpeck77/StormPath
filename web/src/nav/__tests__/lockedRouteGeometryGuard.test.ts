@@ -136,11 +136,20 @@ describe("shouldForceAdoptOffRouteNativeGeometry", () => {
 });
 
 describe("nativeRouteChangedShouldForce", () => {
-  it("matches Apple 4.20.7: later Core reroutes always force", () => {
+  it("does not force later Core emits while still on the Go lock", () => {
     expect(
       nativeRouteChangedShouldForce({
         isFirstRouteChanged: false,
         driverAlreadyOffLockedCorridor: false,
+      })
+    ).toBe(false);
+  });
+
+  it("forces a later Core emit only when the driver left the lock", () => {
+    expect(
+      nativeRouteChangedShouldForce({
+        isFirstRouteChanged: false,
+        driverAlreadyOffLockedCorridor: true,
       })
     ).toBe(true);
   });

@@ -3,8 +3,9 @@
  * already unsticks. Keep recoveries listed — do not invent new ones on device.
  */
 
-export const DRIVE_LOOP_STALL_WINDOW_MS = 8_000;
-export const DRIVE_LOOP_STALL_GPS_M = 40;
+/** Long enough that along-damping and 1 Hz GPS cannot look frozen. */
+export const DRIVE_LOOP_STALL_WINDOW_MS = 20_000;
+export const DRIVE_LOOP_STALL_GPS_M = 160;
 export const DRIVE_LOOP_STALL_ALONG_M = 8;
 export const OFF_ROUTE_REROUTE_HANG_MS = 20_000;
 export const OFF_ROUTE_SAMPLE_STALE_MS = 12_000;

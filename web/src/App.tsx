@@ -1059,8 +1059,8 @@ export default function App() {
     onMarkTrafficFetchDone: () => setTrafficFetchDone(true),
     onClearStormLoading: () => setStormLoading(false),
     onSoftResyncDrive: () => {
-      setFollowCamResyncKey((k) => k + 1);
-      setAlongHoldResetKey((k) => k + 1);
+      /* Remount the puck RAF only. Camera snap + along reset is what made
+       * zoom and the puck fly after a stall false-positive. */
       setDriveLoopEpoch((k) => k + 1);
     },
     onRetryOffRoute: () => {
