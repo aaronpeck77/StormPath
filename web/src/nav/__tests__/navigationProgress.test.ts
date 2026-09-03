@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  resolveNavigationProgress,
-  projectOntoRouteNearProgress,
-  NAV_PROGRESS_LATERAL_TRUST_M,
-  stabilizeAlongMeters,
-} from "../navigationProgress";
+import { resolveNavigationProgress, NAV_PROGRESS_LATERAL_TRUST_M } from "../navigationProgress";
 import type { LngLat } from "../types";
 
 function northRoute(count: number, startLat = 41): LngLat[] {
@@ -46,85 +41,5 @@ describe("resolveNavigationProgress", () => {
     expect(result.source).toBe("held");
     expect(result.onRoute).toBe(false);
     expect(result.alongM).toBe(heldAlong);
-  });
-});
-
-describe("projectOntoRouteNearProgress", () => {
-  it("does not pin a reload full-scan onto the dest tail when GPS is still far", () => {
-    const geometry = northRoute(200, 41);
-    const dest = geometry[geometry.length - 1]!;
-    const offDest: LngLat = [dest[0] + 0.006, dest[1]];
-    const proj = projectOntoRouteNearProgress(offDest, geometry, 0);
-    const totalLat = 41 + 199 * 0.001;
-    expect(proj.alongM).toBeLessThan(199 * 111);
-    expect(Math.abs(dest[1] - totalLat)).toBeLessThan(0.002);
-  });
-});
-
-describe("stabilizeAlongMeters", () => {
-  it("ignores reverse chatter while moving at speed", () => {
-    expect(
-      stabilizeAlongMeters({
-        prevAlongM: 2_000,
-        proposedAlongM: 1_700,
-        speedMps: 18,
-        dtS: 0.2,
-      })
-    ).toBe(2_000);
-  });
-
-  it("caps a huge forward jump between updates", () => {
-    const next = stabilizeAlongMeters({
-      prevAlongM: 2_000,
-      proposedAlongM: 8_000,
-      speedMps: 15,
-      dtS: 0.2,
-    });
-    expect(next).toBeLessThan(3_000);
-    expect(next).toBeGreaterThan(2_000);
-  });
-
-  it("does not walk along the route while parked", () => {
-    expect(
-      stabilizeAlongMeters({
-        prevAlongM: 0,
-        proposedAlongM: 80,
-        speedMps: 0.2,
-        dtS: 0.4,
-      })
-    ).toBe(0);
-  });
-
-  it("follows a normal GPS tick even when iOS speed dips on a corner", () => {
-    expect(
-      stabilizeAlongMeters({
-        prevAlongM: 2_000,
-        proposedAlongM: 2_014,
-        speedMps: 0.4,
-        dtS: 0.4,
-      })
-    ).toBe(2_014);
-  });
-
-  it("does not freeze along when speed is unknown mid-route", () => {
-    const next = stabilizeAlongMeters({
-      prevAlongM: 2_000,
-      proposedAlongM: 2_030,
-      speedMps: null,
-      dtS: 0.4,
-    });
-    expect(next).toBeGreaterThan(2_020);
-    expect(next).toBeLessThanOrEqual(2_030);
-  });
-
-  it("caps a huge projection at Go when speed is still unknown", () => {
-    const next = stabilizeAlongMeters({
-      prevAlongM: 0,
-      proposedAlongM: 40,
-      speedMps: null,
-      dtS: 0.4,
-    });
-    expect(next).toBeGreaterThan(0);
-    expect(next).toBeLessThanOrEqual(40);
   });
 });

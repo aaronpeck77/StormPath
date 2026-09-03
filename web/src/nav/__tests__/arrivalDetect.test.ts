@@ -33,27 +33,4 @@ describe("arrivalProximity", () => {
     });
     expect(prox.near).toBe(false);
   });
-
-  it("does not treat along-at-dest as arrived when GPS is still mid-route", () => {
-    const prox = arrivalProximity({
-      pos: farPos,
-      dest,
-      routeGeometry: [farPos, dest],
-      alongRouteM: 11_960,
-      routeLengthM: 12_000,
-    });
-    expect(prox.near).toBe(false);
-    expect(prox.remainingAlongM).toBeLessThan(50);
-  });
-
-  it("is near when along is at dest and GPS is at the pin", () => {
-    const prox = arrivalProximity({
-      pos: dest,
-      dest,
-      routeGeometry: [farPos, dest],
-      alongRouteM: 11_960,
-      routeLengthM: 12_000,
-    });
-    expect(prox.near).toBe(true);
-  });
 });

@@ -90,7 +90,6 @@ describe("buildDriveMapProps", () => {
     expect(props.puckSnapEnabled).toBe(true);
     expect(props.puckSnapGeometry).toHaveLength(2);
     expect(props.userAlongMeters).toBe(1200);
-    expect(props.driveLoopEpoch).toBe(0);
     expect(props.liveGpsLngLatRef).toBeDefined();
   });
 

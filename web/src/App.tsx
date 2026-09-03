@@ -328,8 +328,6 @@ export default function App() {
   const setAboutOpen = useUiStore((s) => s.setAboutOpen);
   /** Bumps DriveMap to hard-snap follow-cam after sheets / background. */
   const [followCamResyncKey, setFollowCamResyncKey] = useState(0);
-  /** Remounts the Drive puck RAF loop — same unstick as a home-button soft reset. */
-  const [driveLoopEpoch, setDriveLoopEpoch] = useState(0);
   /* Contextual one-shot coachmarks — the {@link Coachmarks} component watches for its
    * tracked targets to become visible and pops a single "Tip" card next to each the first
    * time the user encounters it. Persistence + queue logic live entirely in that component;
@@ -800,31 +798,22 @@ export default function App() {
       Math.abs(prev[1] - destLngLat[1]) > 1e-8;
     if (!destChanged) return;
     prevDestLngLatRef.current = destLngLat;
-    if (viewMode !== "route") setViewMode("route");
+    setViewMode("route");
     setSearchExpanded(false);
-    /* First dest hydrate while routes already exist: route-count effect owns the single fit. */
-    if (!prev && plan.routes.length > 0) return;
     setFitTrigger((n) => n + 1);
-  }, [destLngLat, navigationStarted, setViewMode, setSearchExpanded, viewMode, plan.routes.length]);
+  }, [destLngLat, navigationStarted, setViewMode, setSearchExpanded]);
 
   /**
    * Replanning can replace A/B/C while keeping the same slot ids (`r-a|r-b|r-c`) and the same route
-   * count — nothing else re-fires then. Force Rt + refit when the graph identity changes after
-   * the first hydrate (first key is already handled by route-count / dest effects — double fit
-   * caused the startup zoom flash).
+   * count — nothing else re-fires then. Force Rt + refit whenever the route graph changes.
    */
-  const prevPlanRoutesKeyRef = useRef("");
   useEffect(() => {
     if (navigationStarted) return;
     if (!plan.routes.length) return;
-    const prev = prevPlanRoutesKeyRef.current;
-    prevPlanRoutesKeyRef.current = planRoutesKey;
-    if (viewMode !== "route") setViewMode("route");
+    setViewMode("route");
     setSearchExpanded(false);
-    if (!prev) return;
-    if (prev === planRoutesKey) return;
     setFitTrigger((n) => n + 1);
-  }, [planRoutesKey, navigationStarted, viewMode]);
+  }, [planRoutesKey, navigationStarted]);
 
   const orderedRouteIds = useMemo(() => {
     if (isFullSlotPermutation(routeSlotOrder, planRouteIds)) return routeSlotOrder;
@@ -1059,9 +1048,7 @@ export default function App() {
     onMarkTrafficFetchDone: () => setTrafficFetchDone(true),
     onClearStormLoading: () => setStormLoading(false),
     onSoftResyncDrive: () => {
-      /* Remount the puck RAF only. Camera snap + along reset is what made
-       * zoom and the puck fly after a stall false-positive. */
-      setDriveLoopEpoch((k) => k + 1);
+      /* Apple-review camera: do not remount Drive or snap follow-cam from the stall watchdog. */
     },
     onRetryOffRoute: () => {
       altRoutesFetchAbortRef.current?.abort();
@@ -2544,7 +2531,6 @@ export default function App() {
       progressRailVisible: showProgressRail,
       offRouteRejoinCompareActive: offRouteHoldPreviewActive || detourAutoActive,
       followCamResyncKey,
-      driveLoopEpoch,
       lastTravelBearingDegOutRef: driveLastTravelBearingDegRef,
       puckAnchorDriftPxOutRef: drivePuckAnchorDriftPxRef,
       holdLastGoodMap,

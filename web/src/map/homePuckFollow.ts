@@ -8,8 +8,8 @@ export type HomePuckFollowMode = "follow" | "explore";
 export function readHomePuckFollow(): HomePuckFollowMode {
   const v = safeStorage.get(LS_HOME_PUCK_FOLLOW);
   if (v === "explore" || v === "follow") return v;
-  /** First launch / no trip: free pan & zoom — My location re-enables follow. */
-  return "explore";
+  /** First launch: lock the puck in the middle of the page. Pan still switches to explore. */
+  return "follow";
 }
 
 export function writeHomePuckFollow(mode: HomePuckFollowMode): void {

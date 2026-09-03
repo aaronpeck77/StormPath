@@ -36,15 +36,11 @@ export function arrivalProximity(args: {
     Number.isFinite(alongRouteM)
   ) {
     remainingAlongM = Math.max(0, routeLengthM - alongRouteM);
-    const end = routeGeometry[routeGeometry.length - 1]!;
-    const nearEnd = haversineMeters(pos, end) <= ARRIVAL_ROUTE_END_RADIUS_M;
-    const nearDest = haversineMeters(pos, dest) <= ARRIVAL_DEST_RADIUS_M;
-    /* Along remaining alone is not arrival — resume can walk along to the
-     * destination while GPS is still mid-route. */
-    if (remainingAlongM <= ARRIVAL_ROUTE_REMAINING_M && (nearEnd || nearDest)) {
+    if (remainingAlongM <= ARRIVAL_ROUTE_REMAINING_M) {
       return { near: true, remainingAlongM };
     }
-    if (nearEnd) {
+    const end = routeGeometry[routeGeometry.length - 1]!;
+    if (haversineMeters(pos, end) <= ARRIVAL_ROUTE_END_RADIUS_M) {
       return { near: true, remainingAlongM };
     }
   }

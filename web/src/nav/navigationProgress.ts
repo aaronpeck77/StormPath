@@ -2,14 +2,8 @@ import { acceptMapMatchSnap } from "../services/mapboxMapMatching";
 import {
   closestAlongRouteMeters,
   closestPointOnPolylineWindowed,
-  haversineMeters,
-  polylineLengthMeters,
 } from "./routeGeometry";
 import { buildCumulativeDistances } from "./routeGeometryWorkerClient";
-import {
-  RESUME_FALSE_ARRIVAL_GPS_M,
-  RESUME_FALSE_ARRIVAL_TAIL_M,
-} from "./resumeAlongSnap";
 import type { LngLat } from "./types";
 
 /** Lateral trust band for along-route progress (matches drive camera + off-route enter). */
@@ -17,34 +11,6 @@ export const NAV_PROGRESS_LATERAL_TRUST_M = 52;
 const BACK_SEARCH_M = 600;
 const AHEAD_SEARCH_M = 3_500;
 const MAX_FORWARD_JUMP_M = 8_000;
-
-/** Event-level alongM (Core / GPS). Caps teleports and ignores reverse chatter while rolling. */
-export function stabilizeAlongMeters(input: {
-  prevAlongM: number;
-  proposedAlongM: number;
-  speedMps: number | null;
-  dtS: number;
-}): number {
-  const prev = Number.isFinite(input.prevAlongM) ? input.prevAlongM : 0;
-  const proposed = input.proposedAlongM;
-  if (!Number.isFinite(proposed)) return prev;
-  const dt = Math.max(0.05, Math.min(2.5, input.dtS));
-  const speed =
-    input.speedMps != null && Number.isFinite(input.speedMps) ? Math.max(0, input.speedMps) : null;
-  /* Known-slow: ignore driveway teleports, but follow a normal 1 Hz GPS tick.
-   * Freezing every update here is what left the puck 4–5 s behind on a corner. */
-  if (speed != null && speed < 1.4) {
-    if (proposed > prev + 25) return prev;
-    if (proposed < prev - 12) return prev;
-    return proposed;
-  }
-  const effSpeed = speed ?? 16;
-  const maxFwd = Math.max(20, effSpeed * dt * 3 + 14);
-  const maxBack = (speed != null && speed > 2.2) ? 8 : 28;
-  if (proposed > prev + maxFwd) return prev + maxFwd;
-  if (proposed < prev - maxBack) return prev;
-  return proposed;
-}
 
 export type NavigationProgressSource = "map_matched" | "route_snap" | "held";
 
@@ -82,18 +48,6 @@ export function projectOntoRouteNearProgress(
     };
   }
   const full = closestAlongRouteMeters(pos, geometry);
-  /* Reload / along=0 full scan can match the destination tail on an out-and-back. */
-  const total = cum[geometry.length - 1] ?? polylineLengthMeters(geometry);
-  const end = geometry[geometry.length - 1]!;
-  if (
-    total > 400 &&
-    total - full.alongMeters <= RESUME_FALSE_ARRIVAL_TAIL_M &&
-    haversineMeters(pos, end) > RESUME_FALSE_ARRIVAL_GPS_M
-  ) {
-    const cut = Math.max(80, total - RESUME_FALSE_ARRIVAL_TAIL_M - 80);
-    const clipped = closestPointOnPolylineWindowed(pos, geometry, cum, 0, 0, cut);
-    return { alongM: clipped.alongMeters, lateralM: clipped.lateralMetersApprox };
-  }
   return { alongM: full.alongMeters, lateralM: full.lateralMetersApprox };
 }
 
