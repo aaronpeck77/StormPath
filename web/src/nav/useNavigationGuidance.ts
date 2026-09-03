@@ -1,8 +1,16 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useTurnVoiceGuidance } from "../hooks/useTurnVoiceGuidance";
 import { bannerPrimaryStepIndex } from "./bannerPrimaryStep";
 import { useAlongRouteMetersHeldWhenOffLine } from "./guidanceAlongHold";
+import {
+  clearPersistedNavAlong,
+  navAlongGeomSig,
+  readPersistedNavAlong,
+  writePersistedNavAlong,
+} from "./navAlongPersist";
 import { stabilizeAlongMeters } from "./navigationProgress";
+import { nextAlongAfterResume } from "./resumeAlongSnap";
+import { haversineMeters } from "./routeGeometry";
 import { activeTurnStepIndexAlong, turnStepAlongBounds } from "./turnStepAlong";
 import type { LngLat, RouteTurnStep } from "./types";
 
@@ -45,9 +53,37 @@ export function useNavigationGuidance(deps: UseNavigationGuidanceDeps) {
   );
 
   const alongStabRef = useRef({ along: 0, t: 0, reset: -1 });
+  const resumeSnapRef = useRef(false);
+  const persistSigRef = useRef("");
+  const geomSig = navAlongGeomSig(routeGeometry);
+
   if (alongStabRef.current.reset !== alongHoldResetKey) {
     alongStabRef.current = { along: 0, t: 0, reset: alongHoldResetKey };
   }
+
+  if (geomSig && persistSigRef.current !== geomSig) {
+    persistSigRef.current = geomSig;
+    const persisted = readPersistedNavAlong(geomSig);
+    if (persisted != null && persisted > 0 && alongStabRef.current.along <= 1) {
+      alongStabRef.current = { ...alongStabRef.current, along: persisted, t: 0 };
+    }
+  }
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") resumeSnapRef.current = true;
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pageshow", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pageshow", onVis);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!navigationStarted) clearPersistedNavAlong();
+  }, [navigationStarted]);
 
   const rawAlongM =
     navigationStarted && frozenAlongM != null && Number.isFinite(frozenAlongM)
@@ -61,14 +97,36 @@ export function useNavigationGuidance(deps: UseNavigationGuidanceDeps) {
     const now = typeof performance !== "undefined" ? performance.now() : Date.now();
     const prevT = alongStabRef.current.t;
     const dtS = prevT > 0 ? (now - prevT) / 1000 : 0.35;
-    const prevAlong = prevT > 0 ? alongStabRef.current.along : rawAlongM;
-    userAlongGuidanceM = stabilizeAlongMeters({
-      prevAlongM: prevAlong,
-      proposedAlongM: rawAlongM,
-      speedMps: speedMps ?? null,
-      dtS: dtS,
-    });
-    alongStabRef.current = { along: userAlongGuidanceM, t: now, reset: alongHoldResetKey };
+    const prevAlong = alongStabRef.current.along;
+    const unseeded = prevT === 0 && prevAlong <= 1;
+    const dest = routeGeometry && routeGeometry.length >= 2
+      ? routeGeometry[routeGeometry.length - 1]!
+      : null;
+    const gpsToDestM =
+      dest && effectiveUserLngLat ? haversineMeters(effectiveUserLngLat, dest) : null;
+
+    if (unseeded && rawAlongM <= 1) {
+      userAlongGuidanceM = rawAlongM;
+    } else {
+      userAlongGuidanceM = nextAlongAfterResume({
+        prevAlongM: prevAlong,
+        proposedAlongM: rawAlongM,
+        resumeSnap: resumeSnapRef.current,
+        unseeded,
+        routeLengthM: guidanceRouteLengthM,
+        gpsToDestM,
+        stabilize: ({ prevAlongM, proposedAlongM }) =>
+          stabilizeAlongMeters({
+            prevAlongM,
+            proposedAlongM,
+            speedMps: speedMps ?? null,
+            dtS,
+          }),
+      });
+      resumeSnapRef.current = false;
+      alongStabRef.current = { along: userAlongGuidanceM, t: now, reset: alongHoldResetKey };
+      if (geomSig && userAlongGuidanceM > 1) writePersistedNavAlong(geomSig, userAlongGuidanceM);
+    }
   }
 
   const turnStepBounds = useMemo(

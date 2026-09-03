@@ -2,8 +2,14 @@ import { acceptMapMatchSnap } from "../services/mapboxMapMatching";
 import {
   closestAlongRouteMeters,
   closestPointOnPolylineWindowed,
+  haversineMeters,
+  polylineLengthMeters,
 } from "./routeGeometry";
 import { buildCumulativeDistances } from "./routeGeometryWorkerClient";
+import {
+  RESUME_FALSE_ARRIVAL_GPS_M,
+  RESUME_FALSE_ARRIVAL_TAIL_M,
+} from "./resumeAlongSnap";
 import type { LngLat } from "./types";
 
 /** Lateral trust band for along-route progress (matches drive camera + off-route enter). */
@@ -76,6 +82,18 @@ export function projectOntoRouteNearProgress(
     };
   }
   const full = closestAlongRouteMeters(pos, geometry);
+  /* Reload / along=0 full scan can match the destination tail on an out-and-back. */
+  const total = cum[geometry.length - 1] ?? polylineLengthMeters(geometry);
+  const end = geometry[geometry.length - 1]!;
+  if (
+    total > 400 &&
+    total - full.alongMeters <= RESUME_FALSE_ARRIVAL_TAIL_M &&
+    haversineMeters(pos, end) > RESUME_FALSE_ARRIVAL_GPS_M
+  ) {
+    const cut = Math.max(80, total - RESUME_FALSE_ARRIVAL_TAIL_M - 80);
+    const clipped = closestPointOnPolylineWindowed(pos, geometry, cum, 0, 0, cut);
+    return { alongM: clipped.alongMeters, lateralM: clipped.lateralMetersApprox };
+  }
   return { alongM: full.alongMeters, lateralM: full.lateralMetersApprox };
 }
 

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { resolveNavigationProgress, NAV_PROGRESS_LATERAL_TRUST_M, stabilizeAlongMeters } from "../navigationProgress";
+import {
+  resolveNavigationProgress,
+  projectOntoRouteNearProgress,
+  NAV_PROGRESS_LATERAL_TRUST_M,
+  stabilizeAlongMeters,
+} from "../navigationProgress";
 import type { LngLat } from "../types";
 
 function northRoute(count: number, startLat = 41): LngLat[] {
@@ -41,6 +46,18 @@ describe("resolveNavigationProgress", () => {
     expect(result.source).toBe("held");
     expect(result.onRoute).toBe(false);
     expect(result.alongM).toBe(heldAlong);
+  });
+});
+
+describe("projectOntoRouteNearProgress", () => {
+  it("does not pin a reload full-scan onto the dest tail when GPS is still far", () => {
+    const geometry = northRoute(200, 41);
+    const dest = geometry[geometry.length - 1]!;
+    const offDest: LngLat = [dest[0] + 0.006, dest[1]];
+    const proj = projectOntoRouteNearProgress(offDest, geometry, 0);
+    const totalLat = 41 + 199 * 0.001;
+    expect(proj.alongM).toBeLessThan(199 * 111);
+    expect(Math.abs(dest[1] - totalLat)).toBeLessThan(0.002);
   });
 });
 

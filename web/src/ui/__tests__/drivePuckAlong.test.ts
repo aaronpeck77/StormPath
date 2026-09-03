@@ -100,6 +100,19 @@ describe("tickOnRoutePuckAlong", () => {
     expect(along).toBeGreaterThan(1_070);
   });
 
+  it("snaps to current along on resume instead of tracing the trip", () => {
+    const next = tickOnRoutePuckAlong({
+      prevAlongM: 0,
+      navAlongM: 18_400,
+      dtS: 0.016,
+      speedMps: null,
+      routeTotalM: 50_000,
+      parked: false,
+      snap: true,
+    });
+    expect(next).toBe(18_400);
+  });
+
   it("catches up within about a second after a freeze", () => {
     let along = 1_000;
     for (let i = 0; i < 60; i++) {

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { readPersistedNavAlong, writePersistedNavAlong } from "../nav/navAlongPersist";
 import { resolveNavigationProgress } from "../nav/navigationProgress";
 import { buildCumulativeDistances, buildCumulativeDistancesAsync } from "../nav/routeGeometryWorkerClient";
 import type { LngLat } from "../nav/types";
@@ -72,7 +73,8 @@ export function useNavigationPosition(opts: UseNavigationPositionOptions): Navig
 
   if (sig !== geomSigRef.current) {
     geomSigRef.current = sig;
-    alongHoldRef.current = 0;
+    const persisted = sig ? readPersistedNavAlong(sig) : null;
+    alongHoldRef.current = persisted != null && persisted > 0 ? persisted : 0;
   }
 
   useEffect(() => {
@@ -122,6 +124,7 @@ export function useNavigationPosition(opts: UseNavigationPositionOptions): Navig
 
   if (resolved.onRoute) {
     alongHoldRef.current = resolved.alongM;
+    if (sig) writePersistedNavAlong(sig, resolved.alongM);
   }
 
   return {

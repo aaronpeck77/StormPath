@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { readPersistedNavAlong } from "./navAlongPersist";
 import { closestAlongRouteMeters, closestPointOnPolylineWindowed } from "./routeGeometry";
 import { buildCumulativeDistances, buildCumulativeDistancesAsync } from "./routeGeometryWorkerClient";
 import type { LngLat } from "./types";
@@ -43,7 +44,8 @@ export function useAlongRouteMetersHeldWhenOffLine(
 
   if (sig !== geomSigRef.current) {
     geomSigRef.current = sig;
-    holdRef.current = 0;
+    const persisted = sig ? readPersistedNavAlong(sig) : null;
+    holdRef.current = persisted != null && persisted > 0 ? persisted : 0;
   }
 
   useEffect(() => {

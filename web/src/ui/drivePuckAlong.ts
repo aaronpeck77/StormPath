@@ -91,6 +91,8 @@ export function tickOnRoutePuckAlong(input: {
   routeTotalM: number;
   /** True when GPS/speed says the vehicle is not moving. Explicit false wins over low CL speed. */
   parked?: boolean;
+  /** Phone-call / page refresh: jump to nav along instead of tracing the traveled path. */
+  snap?: boolean;
 }): number {
   const total = Math.max(0, input.routeTotalM);
   const dt = Math.max(0.008, Math.min(0.12, input.dtS));
@@ -101,6 +103,10 @@ export function tickOnRoutePuckAlong(input: {
   const speed =
     input.speedMps != null && Number.isFinite(input.speedMps) ? Math.max(0, input.speedMps) : 0;
   const parked = input.parked != null ? Boolean(input.parked) : speed < ON_ROUTE_PARKED_SPEED_MPS;
+
+  if (input.snap) {
+    return target;
+  }
 
   if (parked) {
     /* Hold the yard line. Do not blend toward GPS/nav along — that still looks like driving. */

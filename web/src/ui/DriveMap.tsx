@@ -36,8 +36,10 @@ import {
   buildCumulativeDistances,
   closestPointOnPolyline,
   closestPointOnPolylineWindowed,
+  haversineMeters,
   pointAtAlongMeters,
 } from "../nav/routeGeometry";
+import { isFalseArrivalAlong, shouldSnapAlongToCurrent } from "../nav/resumeAlongSnap";
 import { getWebEnv } from "../config/env";
 import { mapMaxBoundsForLngLat, mapMinZoomForSession } from "../config/mapRegion";
 import { isUltraLongTripRoute } from "../utils/dataSaver";
@@ -532,6 +534,8 @@ function DriveMapInner({
   const userExploringRef = useRef(false);
   /** One-shot: force drive follow-cam easeTo even when the puck barely moved (explore end, layout, resume). */
   const driveCamResyncRef = useRef(false);
+  /** Phone-call / page refresh: jump puck to current along instead of tracing the trip. */
+  const puckResumeSnapRef = useRef(false);
   /** Sliding corridor window start (m) for ahead tile prefetch while navigating. */
   const corridorWarmStartMRef = useRef(0);
   const corridorPrefetchInFlightRef = useRef(false);
@@ -1453,13 +1457,33 @@ function DriveMapInner({
             snappedAlongSmooth = navAlong;
           }
           if (snappedAlongSmooth == null) snappedAlongSmooth = navAlong;
+          const dest = geom[geom.length - 1]!;
+          const gpsToDestM = haversineMeters(t, dest);
+          const falseArrival = isFalseArrivalAlong({
+            proposedAlongM: navAlong,
+            routeLengthM: snapRouteTotalM,
+            gpsToDestM,
+          });
+          const puckSnap =
+            !falseArrival &&
+            (puckResumeSnapRef.current ||
+              shouldSnapAlongToCurrent({
+                prevAlongM: snappedAlongSmooth,
+                proposedAlongM: navAlong,
+                resumeSnap: puckResumeSnapRef.current,
+                unseeded: snappedAlongSmooth <= 1,
+                routeLengthM: snapRouteTotalM,
+                gpsToDestM,
+              }));
+          if (puckResumeSnapRef.current) puckResumeSnapRef.current = false;
           snappedAlongSmooth = tickOnRoutePuckAlong({
             prevAlongM: snappedAlongSmooth,
-            navAlongM: navAlong,
+            navAlongM: falseArrival ? snappedAlongSmooth : navAlong,
             dtS: dt,
             speedMps: parkedAlong ? 0 : followSp,
             routeTotalM: snapRouteTotalM,
             parked: parkedAlong,
+            snap: puckSnap,
           });
           const pt = pointAtAlongMeters(geom, snappedAlongSmooth);
           targetLng = pt[0]!;
@@ -3636,13 +3660,16 @@ function DriveMapInner({
 
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
+      puckResumeSnapRef.current = true;
       nudgeFollowCam(true);
     };
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onVisible);
 
     return () => {
       map.off("style.load", onStyle);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onVisible);
     };
   }, [mapReady, navigationStarted, viewMode]);
 
