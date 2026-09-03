@@ -14,8 +14,11 @@ export function isDriveLoopStalled(input: {
   windowMs: number;
   gpsMovedM: number;
   alongMovedM: number;
+  /** Off-route: GPS moves, along-track does not — that is healthy, not a frozen Drive. */
+  offRouteLatched?: boolean;
 }): boolean {
   if (!input.navigationStarted) return false;
+  if (input.offRouteLatched) return false;
   if (input.windowMs < DRIVE_LOOP_STALL_WINDOW_MS) return false;
   if (input.gpsMovedM < DRIVE_LOOP_STALL_GPS_M) return false;
   return input.alongMovedM < DRIVE_LOOP_STALL_ALONG_M;
@@ -28,8 +31,9 @@ export function isOffRouteSubsystemHung(input: {
   lastSampleAgeMs: number | null;
 }): boolean {
   if (!input.navigationStarted || !input.offRouteLatched) return false;
-  if (input.rerouteInFlightMs != null && input.rerouteInFlightMs >= OFF_ROUTE_REROUTE_HANG_MS) {
-    return true;
+  /* In-flight fetch: only the 20s timeout. Stale-sample hang must not abort a live reroute. */
+  if (input.rerouteInFlightMs != null) {
+    return input.rerouteInFlightMs >= OFF_ROUTE_REROUTE_HANG_MS;
   }
   if (input.lastSampleAgeMs != null && input.lastSampleAgeMs >= OFF_ROUTE_SAMPLE_STALE_MS) {
     return true;

@@ -8,7 +8,11 @@ import {
 } from "@stormpath/mapbox-navigation";
 import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
 import { buildNativeGuidanceCoordinates } from "./nativeGuidanceCoords";
-import { shouldFeedNativeProgressToUi } from "./lockedRouteGeometryGuard";
+import {
+  nativeRouteChangedShouldForce,
+  shouldFeedNativeProgressToUi,
+  shouldForceAdoptOffRouteNativeGeometry,
+} from "./lockedRouteGeometryGuard";
 import type { LngLat, RouteTurnStep } from "./types";
 import type { TripStop } from "./routeWaypoints";
 import type { NavigationPositionState } from "../hooks/useNavigationPosition";
@@ -74,8 +78,8 @@ export function useNativeNavSession(opts: {
   coords: NativeNavSessionCoords;
   /**
    * When SDK starts or reroutes, adopt geometry into the locked guidance corridor.
-   * Session-start Core "fastest" must not force-adopt — keep the Go lock.
-   * Returns false when Core geometry was rejected (DIY stays on the chosen route).
+   * First emit: keep Go-locked B unless already off-route.
+   * Later emits (Apple 4.20.7): Core's reroute IS the new lock — always force.
    */
   onRouteGeometry: (geometry: LngLat[], opts?: { force?: boolean }) => boolean | void;
   /** Optional: arrive / hard error — App may End trip. */
@@ -109,6 +113,8 @@ export function useNativeNavSession(opts: {
   /** Core calculated a different corridor — DIY owns this trip; do not restart Core. */
   const nativeAbandonedRef = useRef(false);
   const corridorAdoptedRef = useRef(false);
+  /** First Core `routeChanged` this session — later ones are mid-trip reroutes. */
+  const firstRouteChangedRef = useRef(true);
   const listenersRef = useRef<{ remove: () => Promise<void> }[]>([]);
   const onRouteGeometryRef = useRef(onRouteGeometry);
   onRouteGeometryRef.current = onRouteGeometry;
@@ -134,6 +140,7 @@ export function useNativeNavSession(opts: {
     }
     startedForNavRef.current = false;
     corridorAdoptedRef.current = false;
+    firstRouteChangedRef.current = true;
     setNativeNavActive(false);
     setPosition(null);
     setGuidance(null);
@@ -152,6 +159,7 @@ export function useNativeNavSession(opts: {
 
       await removeListeners();
       corridorAdoptedRef.current = false;
+      firstRouteChangedRef.current = true;
 
       const handles = await Promise.all([
         StormpathMapboxNavigation.addListener("progress", (e: NativeNavProgressEvent) => {
@@ -194,20 +202,24 @@ export function useNativeNavSession(opts: {
           });
         }),
         StormpathMapboxNavigation.addListener("routeChanged", (e: NativeNavRouteChangedEvent) => {
-          if (nativeAbandonedRef.current) return;
           const geom = (e.geometry ?? [])
             .filter((p) => Number.isFinite(p.lng) && Number.isFinite(p.lat))
             .map((p) => [p.lng, p.lat] as LngLat);
-          /* Never force from a timer — that stole Go-locked B after ~12s.
-           * Off-route soft restart force-adopts through JS, not this listener. */
-          const adopted =
-            geom.length >= 2 ? onRouteGeometryRef.current(geom, { force: false }) !== false : false;
+          if (geom.length < 2) return;
+          const isFirst = firstRouteChangedRef.current;
+          firstRouteChangedRef.current = false;
+          /* 4.20.7 submitted IPA: always force. Keep B only on the first emit. */
+          const force = nativeRouteChangedShouldForce({
+            isFirstRouteChanged: isFirst,
+            driverAlreadyOffLockedCorridor: shouldForceAdoptOffRouteNativeGeometry({
+              candidate: geom,
+              locked: coordsRef.current.lockedCorridor,
+              userLngLat: coordsRef.current.userLngLat,
+            }),
+          });
+          const adopted = onRouteGeometryRef.current(geom, { force }) !== false;
           if (!adopted) {
-            nativeAbandonedRef.current = true;
-            corridorAdoptedRef.current = false;
-            setNativeNavActive(false);
-            setPosition(null);
-            setGuidance(null);
+            /* Session-start fastest steal — keep Core alive so off-route can still reroute. */
             return;
           }
           corridorAdoptedRef.current = true;
@@ -244,15 +256,9 @@ export function useNativeNavSession(opts: {
         await removeListeners();
         return false;
       }
-      if (nativeAbandonedRef.current) {
-        await stopNative();
-        nativeAbandonedRef.current = true;
-        return false;
-      }
       recordMapboxUsage("navTrips");
-      /* Keep DIY until Core geometry is adopted — avoids a puck on Core's
-       * fastest line while the blue line is still the Go-locked B. */
-      return corridorAdoptedRef.current;
+      setNativeNavActive(true);
+      return true;
     } catch (err) {
       console.warn("[nativeNav] start failed", err);
       await removeListeners();
@@ -268,19 +274,18 @@ export function useNativeNavSession(opts: {
     if (!navigationStarted) {
       nativeAbandonedRef.current = false;
       corridorAdoptedRef.current = false;
+      firstRouteChangedRef.current = true;
       if (startedForNavRef.current || nativeNavActive) {
         void stopNative();
       }
       return;
     }
 
-    if (nativeAbandonedRef.current) return;
     if (startedForNavRef.current) return;
     startedForNavRef.current = true;
     void startNative().then((ok) => {
       if (!ok) {
-        // Fall back to DIY — leave navigationStarted true. Abandoned trips stay abandoned.
-        if (!nativeAbandonedRef.current) startedForNavRef.current = false;
+        startedForNavRef.current = false;
         setNativeNavActive(false);
       }
     });

@@ -88,6 +88,7 @@ export function useDriveSubsystemFlags(opts: {
           windowMs,
           gpsMovedM,
           alongMovedM,
+          offRouteLatched,
         })
       );
 

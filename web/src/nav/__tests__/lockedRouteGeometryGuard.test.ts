@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { lockedRouteShouldAvoidMotorway } from "../driveAlwaysAhead";
 import {
   nativeGeometryApplyPolicy,
+  nativeRouteChangedShouldForce,
   routeGeometryAgreesWithLocked,
   shouldAdoptNativeRouteGeometry,
   shouldFeedNativeProgressToUi,
+  shouldForceAdoptOffRouteNativeGeometry,
   shouldReplaceGoPolylineOnNativeAdopt,
 } from "../lockedRouteGeometryGuard";
 import type { LngLat } from "../types";
@@ -97,6 +99,68 @@ describe("shouldAdoptNativeRouteGeometry", () => {
   it("accepts Core geometry that tracks the Go lock without force", () => {
     const refined = locked.map(([lng, lat]) => [lng + 0.0001, lat] as LngLat);
     expect(shouldAdoptNativeRouteGeometry(refined, locked, false)).toBe(true);
+  });
+});
+
+describe("shouldForceAdoptOffRouteNativeGeometry", () => {
+  const locked: LngLat[] = [
+    [-86.78, 36.16],
+    [-86.79, 36.17],
+    [-86.8, 36.18],
+  ];
+
+  it("is false while the driver is still on the Go lock (session-start steal)", () => {
+    expect(
+      shouldForceAdoptOffRouteNativeGeometry({
+        candidate: [
+          locked[0]!,
+          [-86.7, 36.165],
+          locked[locked.length - 1]!,
+        ],
+        locked,
+        userLngLat: locked[1],
+      })
+    ).toBe(false);
+  });
+
+  it("is true when the driver left the lock and Core starts near GPS", () => {
+    const user: LngLat = [-86.74, 36.14];
+    expect(
+      shouldForceAdoptOffRouteNativeGeometry({
+        candidate: [user, [-86.73, 36.13], [-86.72, 36.12]],
+        locked,
+        userLngLat: user,
+      })
+    ).toBe(true);
+  });
+});
+
+describe("nativeRouteChangedShouldForce", () => {
+  it("matches Apple 4.20.7: later Core reroutes always force", () => {
+    expect(
+      nativeRouteChangedShouldForce({
+        isFirstRouteChanged: false,
+        driverAlreadyOffLockedCorridor: false,
+      })
+    ).toBe(true);
+  });
+
+  it("does not steal Go-locked B on the first session emit", () => {
+    expect(
+      nativeRouteChangedShouldForce({
+        isFirstRouteChanged: true,
+        driverAlreadyOffLockedCorridor: false,
+      })
+    ).toBe(false);
+  });
+
+  it("forces the first emit only if already off the lock", () => {
+    expect(
+      nativeRouteChangedShouldForce({
+        isFirstRouteChanged: true,
+        driverAlreadyOffLockedCorridor: true,
+      })
+    ).toBe(true);
   });
 });
 

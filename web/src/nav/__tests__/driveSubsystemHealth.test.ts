@@ -24,13 +24,14 @@ describe("isDriveLoopStalled", () => {
     ).toBe(true);
   });
 
-  it("is healthy when along-track is keeping up with GPS", () => {
+  it("does not treat off-route (GPS moving, along frozen) as a Drive freeze", () => {
     expect(
       isDriveLoopStalled({
         navigationStarted: true,
         windowMs: 8_000,
         gpsMovedM: 55,
-        alongMovedM: 48,
+        alongMovedM: 2,
+        offRouteLatched: true,
       })
     ).toBe(false);
   });
@@ -59,14 +60,14 @@ describe("isOffRouteSubsystemHung", () => {
     ).toBe(true);
   });
 
-  it("fires when the off-route poll goes silent", () => {
+  it("does not abort a live reroute just because poll samples look stale", () => {
     expect(
       isOffRouteSubsystemHung({
         navigationStarted: true,
         offRouteLatched: true,
-        rerouteInFlightMs: null,
+        rerouteInFlightMs: 5_000,
         lastSampleAgeMs: 13_000,
       })
-    ).toBe(true);
+    ).toBe(false);
   });
 });

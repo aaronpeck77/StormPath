@@ -62,6 +62,38 @@ export function routeGeometryAgreesWithLocked(
  * Mid-trip reroutes pass `force`. Session-start Core "fastest" without force is
  * rejected when it diverges from the corridor the driver locked at Go.
  */
+/**
+ * Mid-trip Core reroute from the driver's GPS (left the Go lock).
+ * Session-start "fastest" steal starts on the locked corridor — this must stay false then.
+ */
+export const OFF_ROUTE_NATIVE_USER_LATERAL_M = 40;
+export const OFF_ROUTE_NATIVE_START_NEAR_USER_M = 150;
+
+export function shouldForceAdoptOffRouteNativeGeometry(input: {
+  candidate: LngLat[];
+  locked: LngLat[] | null | undefined;
+  userLngLat: LngLat | null | undefined;
+}): boolean {
+  const { candidate, locked, userLngLat } = input;
+  if (!userLngLat || !locked || locked.length < 2 || candidate.length < 2) return false;
+  const userToLocked = closestPointOnPolyline(userLngLat, locked).lateralMetersApprox;
+  if (userToLocked < OFF_ROUTE_NATIVE_USER_LATERAL_M) return false;
+  return haversineMeters(candidate[0]!, userLngLat) < OFF_ROUTE_NATIVE_START_NEAR_USER_M;
+}
+
+/**
+ * Apple 4.20.7 (`4ecb648`) always force-adopted Core `routeChanged`.
+ * Session-start still must not steal Go-locked B; every later Core reroute
+ * (off-route) is the new lock — same as that submitted IPA.
+ */
+export function nativeRouteChangedShouldForce(input: {
+  isFirstRouteChanged: boolean;
+  driverAlreadyOffLockedCorridor: boolean;
+}): boolean {
+  if (!input.isFirstRouteChanged) return true;
+  return input.driverAlreadyOffLockedCorridor;
+}
+
 export function shouldAdoptNativeRouteGeometry(
   candidate: LngLat[],
   lockedGoGeometry: LngLat[] | null | undefined,
