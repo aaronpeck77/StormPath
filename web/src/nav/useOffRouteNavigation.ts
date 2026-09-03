@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import {
   formatDetourRejoinDistanceM,
-  isReverseRejoinRoute,
   metersRemainingToRejoinOnLockedRoute,
 } from "./detourRejoin";
 import {
@@ -23,10 +22,13 @@ import {
   DRIVE_AHEAD_OFF_ROUTE_ENTER_M,
   DRIVE_AHEAD_REROUTE_THROTTLE_MS,
   isDriveAlwaysAheadView,
-  lockedRouteShouldAvoidMotorway,
 } from "./driveAlwaysAhead";
 import { mayMutateLockedRouteGeometry } from "./navigationContract";
-import { planAfterSoftRestartLock } from "./softRestartPlan";
+import {
+  assignOffRouteReplanSlots,
+  offRouteReplanSlotIds,
+  planAfterOffRouteReplan,
+} from "./softRestartPlan";
 import {
   OFF_ROUTE_POLL_MS,
   OFF_ROUTE_REROUTE_THROTTLE_MS,
@@ -108,8 +110,11 @@ export interface UseOffRouteNavigationDeps {
   setRouteError: (msg: string | null) => void;
   setTapHint: (msg: string | null) => void;
   setFitTrigger: (updater: (prev: number) => number) => void;
+  setPreviewLegIndex: (updater: number | ((prev: number) => number)) => void;
   /** Updates full guidance geometry after the driver adopts a new locked path. */
   adoptLockedRouteGeometry: (geometry: LngLat[], opts?: { force?: boolean }) => void;
+  /** iOS: restart Mapbox Core on the new GPS→dest corridor. No-op on web. */
+  restartNativeNav?: () => Promise<boolean | void>;
   viewModeRef: MutableRefObject<MapViewMode>;
   /**
    * When true, driver is following a learned personal fork — suppress main-corridor
@@ -164,7 +169,9 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setRouteError,
     setTapHint,
     setFitTrigger,
+    setPreviewLegIndex,
     adoptLockedRouteGeometry,
+    restartNativeNav,
     viewModeRef,
     onPersonalForkRef,
   } = deps;
@@ -322,9 +329,8 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   }, []);
 
   /**
-   * Soft restart: keep destination / vias / trip session, replace locked geometry with a
-   * fresh forward GPS→dest route, and put Drive / Route / Map on that same line.
-   * Not a full Stop — progress rail rebuilds from the new geometry via along reset.
+   * Missed turn: forget the old corridor, plan a new GPS→dest A (and B),
+   * lock Drive on A. Map / Route show both.
    */
   const softRestartRouteFromHere = useCallback<StayOnThisRoadFn>(async (opts) => {
     if (!userLngLat || !destLngLat) return false;
@@ -341,12 +347,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       }
       return false;
     }
-    const lockedId = lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
-    if (!lockedId || !navigationStartedRef.current || !mapboxToken) return false;
-
-    const lockedRoute = planRef.current.routes.find((r) => r.id === lockedId);
-    const preferBackroads = lockedRouteShouldAvoidMotorway(lockedRoute, planRef.current.routes);
-    const preserveRole = lockedRoute?.role ?? (preferBackroads ? "hazardSmart" : "fastest");
+    if (!navigationStartedRef.current || !mapboxToken) return false;
 
     altRoutesFetchAbortRef.current?.abort();
     const fetchCtrl = new AbortController();
@@ -363,55 +364,37 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       const remainingVias = remainingViaStops(viaStops, activeViaIndex);
       const viaCoords = remainingVias.map((s) => s.lngLat);
       const bearingDeg = headingRef.current;
-      /** Keep the driver's chosen style (e.g. no-interstate B) — do not force highway fastest. */
       const fresh = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
         via: viaCoords.length > 0 ? viaCoords : undefined,
-        singleRouteFromPosition: true,
+        maxRoutes: 2,
         forwardFirst: true,
         bearingDeg:
           bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
-        preferBackroads,
         signal: fetchCtrl.signal,
         stormAlerts: stormAlertsForRouting,
         radarAvoidanceEnabled: isPlus && settingStormEnabled,
       });
-      const forward = fresh.filter(
-        (r) =>
-          r.geometry.length >= 2 &&
-          !isReverseRejoinRoute(r, userLngLat, bearingDeg)
-      );
-      const leg = forward[0] ?? fresh[0];
-      if (!leg?.geometry?.length || epochAtStart !== routeGraphEpochRef.current) return false;
+      const nextRoutes = assignOffRouteReplanSlots(fresh, userLngLat, bearingDeg);
+      const primary = nextRoutes[0];
+      if (!primary?.geometry?.length || epochAtStart !== routeGraphEpochRef.current) return false;
 
-      /* One Go-like lock — drop stale B/C / rejoin overlays that leave Drive empty. */
-      setPlan((prev) =>
-        planAfterSoftRestartLock(prev, lockedId, {
-          geometry: leg.geometry,
-          baseEtaMinutes: leg.baseEtaMinutes,
-          turnSteps: leg.turnSteps,
-          routeNotices: leg.routeNotices,
-          routeNoticeAlongMeters: leg.routeNoticeAlongMeters,
-          mapboxIncidents: leg.mapboxIncidents,
-          hasTolls: leg.hasTolls,
-          tollLabels: leg.tollLabels,
-          postedSpeedSamples: leg.postedSpeedSamples,
-          role: preserveRole,
-          label: preferBackroads ? "No interstate" : "Main",
-        })
-      );
-      setRouteSlotOrder(() => [lockedId]);
-      adoptLockedRouteGeometry(leg.geometry.map(([a, b]) => [a, b] as LngLat), {
+      lockedNavigationRouteIdRef.current = primary.id;
+      setPlan((prev) => planAfterOffRouteReplan(prev, nextRoutes));
+      setRouteSlotOrder(() => offRouteReplanSlotIds(nextRoutes));
+      setPreviewLegIndex(0);
+      adoptLockedRouteGeometry(primary.geometry.map(([a, b]) => [a, b] as LngLat), {
         force: true,
       });
-      /* Clean slate on the new corridor — same trip, not a Stop. */
       applyPollSession(resetOffRoutePollSession(pollSessionRef.current));
       offRouteRerouteFailStreakRef.current = 0;
       setFitTrigger((n) => n + 1);
-      setViewMode("drive");
-      const voiceLine = opts?.silent ? "Updating your route." : "Following your chosen path.";
+      if (restartNativeNav) {
+        void restartNativeNav();
+      }
+      const voiceLine = opts?.silent ? "Updating your route." : "New route from here.";
       speakNavigationAlert(voiceLine, settingVoiceGuidanceEnabled);
       if (!opts?.silent) {
-        setTapHint("Updated route from here.");
+        setTapHint(nextRoutes.length > 1 ? "New route from here — B is on Map / Route." : "New route from here.");
         window.setTimeout(() => setTapHint(null), 5000);
       }
       return true;
@@ -436,7 +419,6 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     destLngLat,
     mapboxToken,
     isOnline,
-    orderedRouteIds,
     viaStops,
     activeViaIndex,
     stormAlertsForRouting,
@@ -452,15 +434,15 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     clearHoldRejoinPreview,
     setPlan,
     setRouteSlotOrder,
+    setPreviewLegIndex,
     adoptLockedRouteGeometry,
+    restartNativeNav,
     applyPollSession,
     setRouting,
     setRouteError,
     setTapHint,
     setFitTrigger,
-    setViewMode,
     settingVoiceGuidanceEnabled,
-    planRef,
   ]);
 
   /** @deprecated Overlay rejoin removed — same as soft restart (new Go lock from GPS). */

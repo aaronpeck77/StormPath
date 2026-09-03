@@ -110,6 +110,7 @@ export function useNativeNavSession(opts: {
   const [guidance, setGuidance] = useState<NativeNavGuidance | null>(null);
   const [turnSteps, setTurnSteps] = useState<RouteTurnStep[]>([]);
   const startedForNavRef = useRef(false);
+  const nativeRestartingRef = useRef(false);
   /** Core calculated a different corridor — DIY owns this trip; do not restart Core. */
   const nativeAbandonedRef = useRef(false);
   const corridorAdoptedRef = useRef(false);
@@ -281,6 +282,7 @@ export function useNativeNavSession(opts: {
       return;
     }
 
+    if (nativeRestartingRef.current) return;
     if (startedForNavRef.current) return;
     startedForNavRef.current = true;
     void startNative().then((ok) => {
@@ -305,6 +307,19 @@ export function useNativeNavSession(opts: {
     };
   }, [stopNative]);
 
+  const restartNative = useCallback(async () => {
+    if (!isNativeMapboxNavPlatform()) return false;
+    nativeRestartingRef.current = true;
+    nativeAbandonedRef.current = false;
+    try {
+      await stopNative();
+      startedForNavRef.current = true;
+      return await startNative();
+    } finally {
+      nativeRestartingRef.current = false;
+    }
+  }, [startNative, stopNative]);
+
   return {
     nativeNavActive,
     position,
@@ -313,5 +328,6 @@ export function useNativeNavSession(opts: {
     /** Live Mapbox Core turn list — same route as the blue line / voice. */
     turnSteps,
     stopNative,
+    restartNative,
   };
 }

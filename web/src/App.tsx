@@ -918,6 +918,7 @@ export default function App() {
     position: nativeNavPosition,
     guidance: nativeNavGuidance,
     turnSteps: nativeTurnSteps,
+    restartNative,
   } = useNativeNavSession({
     accessToken: env.mapboxToken,
     navigationStarted,
@@ -961,7 +962,7 @@ export default function App() {
     viaStops,
     activeViaIndex,
     destinationLabel,
-    navigationStarted: navigationStarted && !nativeNavActive,
+    navigationStarted,
     guidanceRoute: offRouteGuidanceRoute,
     guidanceRouteLengthM: offRouteGuidanceRouteLengthM,
     guidanceRouteId: offRouteLockedRouteId ?? primaryRouteId,
@@ -995,7 +996,9 @@ export default function App() {
     setRouteError,
     setTapHint,
     setFitTrigger,
+    setPreviewLegIndex,
     adoptLockedRouteGeometry,
+    restartNativeNav: restartNative,
     viewModeRef,
     onPersonalForkRef,
   });
