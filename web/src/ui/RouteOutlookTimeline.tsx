@@ -22,29 +22,45 @@ type Props = {
 
 const W = 400;
 const H = 108;
+/** Compact per-track height in the Route info synced stack. */
+const H_SYNC = 38;
 const PAD = { top: 10, right: 34, bottom: 22, left: 34 };
+const PAD_SYNC = { top: 5, right: 30, bottom: 5, left: 34 };
 
-function xPx(fraction: number): number {
-  const innerW = W - PAD.left - PAD.right;
-  return PAD.left + Math.max(0, Math.min(1, fraction)) * innerW;
+function xPx(fraction: number, padL = PAD.left, padR = PAD.right): number {
+  const innerW = W - padL - padR;
+  return padL + Math.max(0, Math.min(1, fraction)) * innerW;
 }
 
-function yTemp(tempF: number, tempMin: number, tempMax: number): number {
-  const innerH = H - PAD.top - PAD.bottom;
+function yTemp(
+  tempF: number,
+  tempMin: number,
+  tempMax: number,
+  h = H,
+  padT = PAD.top,
+  padB = PAD.bottom
+): number {
+  const innerH = h - padT - padB;
   const span = Math.max(1, tempMax - tempMin);
   const norm = (tempF - tempMin) / span;
-  return PAD.top + innerH * (1 - Math.max(0, Math.min(1, norm)));
+  return padT + innerH * (1 - Math.max(0, Math.min(1, norm)));
 }
 
-function yPrecip(pct: number, precipMax: number): number {
-  const innerH = H - PAD.top - PAD.bottom;
+function yPrecip(
+  pct: number,
+  precipMax: number,
+  h = H,
+  padT = PAD.top,
+  padB = PAD.bottom
+): number {
+  const innerH = h - padT - padB;
   const norm = pct / Math.max(1, precipMax);
-  return PAD.top + innerH * (1 - Math.max(0, Math.min(1, norm)));
+  return padT + innerH * (1 - Math.max(0, Math.min(1, norm)));
 }
 
 /** Overlay positions use the same % axis as hazard rails (not stretched SVG text). */
-function yPlotPct(yPx: number): number {
-  return (yPx / H) * 100;
+function yPlotPct(yPxVal: number, h = H): number {
+  return (yPxVal / h) * 100;
 }
 
 /** Blue (cold) → orange → red (hot) for temp markers along the outlook line. */
@@ -75,13 +91,15 @@ function lerpHex(a: string, b: string, t: number): string {
 
 function linePath(
   points: { fraction: number; value: number | null }[],
-  yFn: (v: number) => number
+  yFn: (v: number) => number,
+  padL = PAD.left,
+  padR = PAD.right
 ): string {
   const parts: string[] = [];
   for (const p of points) {
     if (p.value == null || !Number.isFinite(p.value)) continue;
     const cmd = parts.length === 0 ? "M" : "L";
-    parts.push(`${cmd}${xPx(p.fraction).toFixed(1)},${yFn(p.value).toFixed(1)}`);
+    parts.push(`${cmd}${xPx(p.fraction, padL, padR).toFixed(1)},${yFn(p.value).toFixed(1)}`);
   }
   return parts.join(" ");
 }
@@ -121,6 +139,141 @@ export function RouteOutlookTimeline({
   const tempTicks = [scale.tempMax, Math.round((scale.tempMax + scale.tempMin) / 2), scale.tempMin];
   const precipTicks = [scale.precipMax, Math.round(scale.precipMax / 2), 0];
 
+  /* ── Synced Route-info stack: Temp + Rain each get their own labeled row ── */
+  if (synced) {
+    const pad = PAD_SYNC;
+    const h = H_SYNC;
+    const syncTempPath = linePath(
+      series.map((p) => ({ fraction: p.fraction, value: p.tempF })),
+      (v) => yTemp(v, scale.tempMin, scale.tempMax, h, pad.top, pad.bottom),
+      pad.left,
+      pad.right
+    );
+    const syncPrecipPath = linePath(
+      series.map((p) => ({ fraction: p.fraction, value: p.precipPct })),
+      (v) => yPrecip(v, scale.precipMax, h, pad.top, pad.bottom),
+      pad.left,
+      pad.right
+    );
+    const syncTempTicks = [
+      scale.tempMax,
+      Math.round((scale.tempMax + scale.tempMin) / 2),
+      scale.tempMin,
+    ];
+    const syncPrecipTicks = [scale.precipMax, Math.round(scale.precipMax / 2), 0];
+
+    return (
+      <div className="rotl rotl--line rotl--synced" role="img" aria-label={aria}>
+        <div className="rpgl__layer rpgl__layer--temp">
+          <span className="rpgl__layer-label rpgl__layer-label--temp">Temp</span>
+          <div className="rpgl__layer-plot">
+            <svg
+              className="rotl__chart rotl__chart--sync-track"
+              viewBox={`0 0 ${W} ${h}`}
+              preserveAspectRatio="none"
+              aria-hidden
+            >
+              <line
+                x1={pad.left}
+                y1={h - pad.bottom}
+                x2={W - pad.right}
+                y2={h - pad.bottom}
+                className="rotl__baseline"
+              />
+              <defs>
+                <linearGradient
+                  id={tempGradId}
+                  gradientUnits="userSpaceOnUse"
+                  x1={0}
+                  y1={yTemp(scale.tempMax, scale.tempMin, scale.tempMax, h, pad.top, pad.bottom)}
+                  x2={0}
+                  y2={yTemp(scale.tempMin, scale.tempMin, scale.tempMax, h, pad.top, pad.bottom)}
+                >
+                  <stop offset="0%" stopColor="#ef4444" />
+                  <stop offset="45%" stopColor="#fb923c" />
+                  <stop offset="100%" stopColor="#38bdf8" />
+                </linearGradient>
+              </defs>
+              {syncTempPath ? (
+                <path
+                  d={syncTempPath}
+                  className="rotl__line rotl__line--temp"
+                  style={{ stroke: `url(#${tempGradId})` }}
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : null}
+            </svg>
+            <div className="rotl__chart-overlay" aria-hidden>
+              {syncTempTicks.map((t, i) => (
+                <span
+                  key={`stl-${i}`}
+                  className="rotl__axis-label-html rotl__axis-label-html--right"
+                  style={{
+                    top: `${yPlotPct(
+                      yTemp(t, scale.tempMin, scale.tempMax, h, pad.top, pad.bottom),
+                      h
+                    )}%`,
+                  }}
+                >
+                  {t}°
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="rpgl__layer rpgl__layer--rain">
+          <span className="rpgl__layer-label rpgl__layer-label--rain">Rain</span>
+          <div className="rpgl__layer-plot">
+            <svg
+              className="rotl__chart rotl__chart--sync-track"
+              viewBox={`0 0 ${W} ${h}`}
+              preserveAspectRatio="none"
+              aria-hidden
+            >
+              <line
+                x1={pad.left}
+                y1={h - pad.bottom}
+                x2={W - pad.right}
+                y2={h - pad.bottom}
+                className="rotl__baseline"
+              />
+              {syncPrecipPath ? (
+                <path
+                  d={`${syncPrecipPath} L${xPx(series[series.length - 1]!.fraction, pad.left, pad.right).toFixed(1)},${h - pad.bottom} L${xPx(series[0]!.fraction, pad.left, pad.right).toFixed(1)},${h - pad.bottom} Z`}
+                  className="rotl__precip-fill"
+                />
+              ) : null}
+              {syncPrecipPath ? (
+                <path
+                  d={syncPrecipPath}
+                  className="rotl__line rotl__line--precip"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : null}
+            </svg>
+            <div className="rotl__chart-overlay" aria-hidden>
+              {syncPrecipTicks.map((p, i) => (
+                <span
+                  key={`spl-${i}`}
+                  className="rotl__axis-label-html rotl__axis-label-html--right"
+                  style={{
+                    top: `${yPlotPct(
+                      yPrecip(p, scale.precipMax, h, pad.top, pad.bottom),
+                      h
+                    )}%`,
+                  }}
+                >
+                  {p}%
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`rotl rotl--line${synced ? " rotl--synced" : ""}`}
@@ -130,7 +283,7 @@ export function RouteOutlookTimeline({
       <div className="rotl__header">
         <span className="rotl__title">Route outlook</span>
         <span className="rotl__axis-hint" aria-hidden>
-          {synced ? "Along your drive · YOU → DEST" : "Along route"}
+          Along route
         </span>
       </div>
 
@@ -154,7 +307,6 @@ export function RouteOutlookTimeline({
           preserveAspectRatio="none"
           aria-hidden
         >
-          {/* grid */}
           {[0.25, 0.5, 0.75].map((f) => (
             <line
               key={`g-${f}`}
@@ -166,7 +318,6 @@ export function RouteOutlookTimeline({
             />
           ))}
 
-          {/* baseline */}
           <line
             x1={PAD.left}
             y1={H - PAD.bottom}
@@ -175,7 +326,6 @@ export function RouteOutlookTimeline({
             className="rotl__baseline"
           />
 
-          {/* precip area fill */}
           {precipPath ? (
             <path
               d={`${precipPath} L${xPx(series[series.length - 1]!.fraction).toFixed(1)},${H - PAD.bottom} L${xPx(series[0]!.fraction).toFixed(1)},${H - PAD.bottom} Z`}
@@ -183,7 +333,6 @@ export function RouteOutlookTimeline({
             />
           ) : null}
 
-          {/* Temp stroke: blue at cold (chart bottom) → red at hot (chart top) */}
           <defs>
             <linearGradient
               id={tempGradId}
@@ -215,7 +364,6 @@ export function RouteOutlookTimeline({
             />
           ) : null}
 
-          {/* YOU — only when not using the shared parent driver line */}
           {showDriverLine && userAlongT > 0.01 && userAlongT < 0.995 ? (
             <line
               x1={youX}
@@ -289,28 +437,31 @@ export function RouteOutlookTimeline({
         </div>
 
         {showXTicks ? (
-        <div className="rotl__x-ticks" aria-hidden>
-          {tickSteps.map((step) => (
-            <div
-              key={`tick-${step.key}`}
-              className="rotl__x-tick"
-              style={{ left: `${routePlotLeftPct(step.fraction)}%` }}
-              title={step.etaLabel ? `~${step.etaLabel} into trip` : undefined}
-            >
-              <span className="rotl__x-label">{step.shortLabel}</span>
-              {step.etaLabel ? (
-                <span className="rotl__x-eta">{step.etaLabel}</span>
-              ) : step.fraction <= 0.001 ? (
-                <span className="rotl__x-eta">Now</span>
-              ) : null}
-            </div>
-          ))}
-          {showDriverLine && userAlongT > 0.01 && userAlongT < 0.995 ? (
-            <div className="rotl__you-flag" style={{ left: `${routePlotLeftPct(userAlongT)}%`, color: stripTint }}>
-              YOU
-            </div>
-          ) : null}
-        </div>
+          <div className="rotl__x-ticks" aria-hidden>
+            {tickSteps.map((step) => (
+              <div
+                key={`tick-${step.key}`}
+                className="rotl__x-tick"
+                style={{ left: `${routePlotLeftPct(step.fraction)}%` }}
+                title={step.etaLabel ? `~${step.etaLabel} into trip` : undefined}
+              >
+                <span className="rotl__x-label">{step.shortLabel}</span>
+                {step.etaLabel ? (
+                  <span className="rotl__x-eta">{step.etaLabel}</span>
+                ) : step.fraction <= 0.001 ? (
+                  <span className="rotl__x-eta">Now</span>
+                ) : null}
+              </div>
+            ))}
+            {showDriverLine && userAlongT > 0.01 && userAlongT < 0.995 ? (
+              <div
+                className="rotl__you-flag"
+                style={{ left: `${routePlotLeftPct(userAlongT)}%`, color: stripTint }}
+              >
+                YOU
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </div>

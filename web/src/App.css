@@ -4913,25 +4913,39 @@
   gap: 0;
   width: 100%;
   --rpgl-plot-inset: 8.5%;
+  --rpgl-track-label-w: 3.15rem;
 }
 
 .rpgl__sync-head {
   display: grid;
-  grid-template-columns: var(--rpgl-plot-inset, 8.5%) minmax(0, 1fr) var(--rpgl-plot-inset, 8.5%);
+  grid-template-columns: var(--rpgl-track-label-w) minmax(0, 1fr);
   align-items: center;
-  gap: 4px;
-  margin-bottom: 2px;
-  padding: 0 2px;
+  gap: 6px;
+  margin-bottom: 3px;
+  padding: 0 2px 0 0;
   font-size: 0.58rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   color: #cbd5e1;
 }
 
+.rpgl__sync-head-gutter {
+  display: block;
+  width: 100%;
+}
+
+.rpgl__sync-head-plot {
+  display: grid;
+  grid-template-columns: var(--rpgl-plot-inset, 8.5%) minmax(0, 1fr) var(--rpgl-plot-inset, 8.5%);
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
 .rpgl__sync-head-you {
   grid-column: 1;
   justify-self: end;
-  padding-right: 4px;
+  padding-right: 2px;
 }
 
 .rpgl__sync-head-title {
@@ -4946,7 +4960,90 @@
 .rpgl__sync-head-dest {
   grid-column: 3;
   justify-self: start;
-  padding-left: 4px;
+  padding-left: 2px;
+}
+
+/* Shared labeled track rows: Temp / Rain / Radar / Wind / NWS / Road */
+.rpgl__layer {
+  display: grid;
+  grid-template-columns: var(--rpgl-track-label-w, 3.15rem) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 3px 4px 3px 2px;
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+}
+
+.rpgl__layer + .rpgl__layer {
+  margin-top: 3px;
+}
+
+.rpgl__layer--temp {
+  background: rgba(251, 146, 60, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(251, 146, 60, 0.2);
+}
+
+.rpgl__layer--rain {
+  background: rgba(56, 189, 248, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.22);
+}
+
+.rpgl__layer--radar {
+  background: rgba(14, 165, 233, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.2);
+}
+
+.rpgl__layer--wind {
+  background: rgba(245, 158, 11, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.22);
+}
+
+.rpgl__layer--nws {
+  background: rgba(239, 68, 68, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.2);
+}
+
+.rpgl__layer--road {
+  background: rgba(234, 88, 12, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(234, 88, 12, 0.2);
+}
+
+.rpgl__layer-label {
+  margin: 0;
+  font-size: 0.56rem;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  white-space: nowrap;
+  text-align: right;
+  padding-right: 2px;
+}
+
+.rpgl__layer-label--temp {
+  color: #fdba74;
+}
+
+.rpgl__layer-label--rain {
+  color: #7dd3fc;
+}
+
+.rpgl__layer-label--radar {
+  color: #7dd3fc;
+}
+
+.rpgl__layer-label--wind {
+  color: #fbbf24;
+}
+
+.rpgl__layer-plot {
+  position: relative;
+  width: 100%;
+  min-width: 0;
 }
 
 .rpgl__sync-body {
@@ -4961,7 +5058,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 /* Night/day overlay — spans outlook + radar + hazard rails on shared route axis */
@@ -5168,7 +5265,11 @@
 
 .rpgl__driver-overlay {
   position: absolute;
-  inset: 0;
+  top: 0;
+  bottom: 0;
+  /* Align with plot column — skip the shared left name gutter */
+  left: calc(var(--rpgl-track-label-w, 3.15rem) + 6px);
+  right: 4px;
   z-index: 12;
   pointer-events: none;
 }
@@ -5216,116 +5317,58 @@
   color: #94a3b8;
 }
 
-/* Glance panel: chart only — driver line aligns to graph top */
-.rpgl__sync-outlook .rotl--synced .rotl__header,
-.rpgl__sync-outlook .rotl--synced .rotl__subtitle {
-  display: none;
-}
-
-/* (2) Dense graph — Route info panel only */
-.rpgl__sync-outlook .rotl--synced .rotl__legend {
-  margin-bottom: 1px;
-  gap: 6px;
-  justify-content: center !important;
-  padding-left: var(--rpgl-plot-inset, 8.5%);
-  padding-right: var(--rpgl-plot-inset, 8.5%);
-  box-sizing: border-box;
-}
-
-.rpgl__sync-outlook .rotl--synced .rotl__chart-wrap {
-  min-height: 72px;
-}
-
-.rpgl__sync-outlook .rotl--synced .rotl__chart {
-  height: 72px;
-}
-
-.rpgl .rotl--synced .rotl__legend-item {
-  font-size: 0.54rem;
-}
-
-/* No precip dots in the synced strip — temp dots stay */
-.rpgl__sync-outlook .rotl__dot-html--precip {
-  display: none;
-}
-
-.rpgl__sync-outlook .rotl--line.rotl--synced {
+/* Glance panel: labeled Temp / Rain tracks */
+.rpgl__sync-outlook .rotl--synced {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   padding: 0;
 }
 
-.rpgl .rotl--synced .rotl__title {
-  font-size: 0.8rem;
+.rpgl__sync-outlook .rotl--synced .rotl__header,
+.rpgl__sync-outlook .rotl--synced .rotl__subtitle,
+.rpgl__sync-outlook .rotl--synced .rotl__legend {
+  display: none;
 }
 
-.rpgl .rotl--synced .rotl__subtitle {
-  font-size: 0.6rem;
+.rpgl__sync-outlook .rotl--synced .rotl__chart--sync-track {
+  display: block;
+  width: 100%;
+  height: 34px;
 }
 
-.rpgl .rotl--synced .rotl__axis-label,
+.rpgl__sync-outlook .rpgl__layer-plot {
+  min-height: 34px;
+}
+
 .rpgl .rotl--synced .rotl__axis-label-html {
-  font-size: 9px;
-}
-
-.rpgl .rotl--synced .rotl__x-label {
-  font-size: 0.62rem;
-}
-
-.rpgl .rotl--synced .rotl__x-eta {
-  font-size: 0.54rem;
-}
-
-.rpgl .rotl--synced .rotl__grid {
-  stroke: rgba(203, 213, 225, 0.28);
-}
-
-.rpgl .rotl--synced .rotl__baseline {
-  stroke: rgba(203, 213, 225, 0.45);
-}
-
-.rpgl .rotl--synced .rotl__axis-label {
-  fill: #e2e8f0;
-}
-
-.rpgl .rotl--synced .rotl__axis-label--left {
-  fill: #fdba74;
-}
-
-.rpgl .rotl--synced .rotl__axis-label--right {
-  fill: #7dd3fc;
+  font-size: 8px;
 }
 
 .rpgl .rotl--synced .rotl__line--temp {
-  /* Color from blue→red temp gradient (inline); keep weight only */
-  stroke-width: 2.5;
+  stroke-width: 2.4;
 }
 
 .rpgl .rotl--synced .rotl__line--precip {
   stroke: #38bdf8;
-  stroke-width: 2.3;
-}
-
-.rpgl .rotl--synced .rotl__line--wind {
-  stroke: #f59e0b;
-  stroke-width: 2.1;
-  stroke-dasharray: 5 3;
+  stroke-width: 2.2;
 }
 
 .rpgl .rotl--synced .rotl__precip-fill {
-  fill: rgba(56, 189, 248, 0.2);
-}
-
-.rpgl__sync-outlook .rotl--synced .rotl__header .rotl__axis-hint {
-  display: none;
+  fill: rgba(56, 189, 248, 0.22);
 }
 
 .rpgl__radar-strata {
-  margin: 2px 0 0;
+  margin: 0;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .rpgl__radar-status {
   margin: 0;
-  padding: 0 2px 2px;
+  padding: 0 2px 2px calc(var(--rpgl-track-label-w, 3.15rem) + 6px);
   font-size: 0.68rem;
   line-height: 1.25;
   color: #64748b;
@@ -5336,25 +5379,27 @@
   color: #94a3b8;
 }
 
-.rpgl__radar-strata .rrws {
+.rpgl__radar-strata .rrws--layered {
   padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
-.rpgl__radar-strata .rrws__label-row {
-  margin-bottom: 1px;
-  gap: 8px;
-  justify-content: center;
-  padding-left: var(--rpgl-plot-inset, 8.5%);
-  padding-right: var(--rpgl-plot-inset, 8.5%);
-  box-sizing: border-box;
+.rpgl__radar-strata .rrws__svg {
+  display: block;
+  width: 100%;
+  height: 32px;
 }
 
-.rpgl__radar-strata .rrws__label {
-  font-size: 0.52rem;
+.rpgl__radar-strata .rpgl__layer-plot {
+  min-height: 32px;
 }
 
-.rpgl__radar-strata .rrws__chart-wrap {
-  height: 44px;
+.rpgl__radar-strata .rrws__axis-label {
+  right: 2px;
+  font-size: 8px;
 }
 
 .rpgl__hazard-block {
@@ -5365,32 +5410,33 @@
   width: 100%;
 }
 
-.rpgl__hazard-label {
-  margin: 0;
-  font-size: 0.6rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: #ef4444;
-  line-height: 1.1;
-}
-
-.rpgl__hazard-row {
-  display: grid;
-  grid-template-columns: 4.1rem minmax(0, 1fr);
-  align-items: center;
-  gap: 6px;
+/* Hazard rails reuse .rpgl__layer; keep rail height compact */
+.rpgl__hazard-rail {
+  position: relative;
   width: 100%;
+  height: 14px;
+  border-radius: 5px;
+  overflow: hidden;
 }
 
-.rpgl__hazard-sublabel {
-  margin: 0;
-  font-size: 0.54rem;
-  font-weight: 850;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  line-height: 1.1;
-  white-space: nowrap;
+.rpgl__hazard-rail--nws {
+  background: rgba(239, 68, 68, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.22);
+}
+
+.rpgl__hazard-rail--road {
+  background: rgba(234, 88, 12, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(234, 88, 12, 0.24);
+}
+
+.rpgl__hazard-rail--radar {
+  background: rgba(14, 165, 233, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.24);
+}
+
+.rpgl__hazard-rail--forecast {
+  background: rgba(124, 58, 237, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.22);
 }
 
 .rpgl__hazard-sublabel--nws {
@@ -5409,47 +5455,13 @@
   color: #fdba74;
 }
 
+.rpgl__hazard-sublabel--wind {
+  color: #fbbf24;
+}
+
 /** @deprecated Combined weather row — use track-specific rows. */
 .rpgl__hazard-sublabel--weather {
   color: #c4b5fd;
-}
-
-.rpgl__hazard-rail {
-  position: relative;
-  width: 100%;
-  height: 10px;
-  border-radius: 5px;
-  overflow: hidden;
-}
-
-.rpgl__hazard-rail--nws,
-.rpgl__hazard-row:has(.rpgl__hazard-sublabel--nws) .rpgl__hazard-rail {
-  background: rgba(239, 68, 68, 0.1);
-  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.22);
-}
-
-.rpgl__hazard-rail--radar,
-.rpgl__hazard-row:has(.rpgl__hazard-sublabel--radar) .rpgl__hazard-rail {
-  background: rgba(14, 165, 233, 0.1);
-  box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.24);
-}
-
-.rpgl__hazard-rail--forecast,
-.rpgl__hazard-row:has(.rpgl__hazard-sublabel--forecast) .rpgl__hazard-rail {
-  background: rgba(124, 58, 237, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.22);
-}
-
-.rpgl__hazard-rail--road,
-.rpgl__hazard-row:has(.rpgl__hazard-sublabel--road) .rpgl__hazard-rail {
-  background: rgba(234, 88, 12, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(234, 88, 12, 0.24);
-}
-
-.rpgl__hazard-rail--weather,
-.rpgl__hazard-row:has(.rpgl__hazard-sublabel--weather) .rpgl__hazard-rail {
-  background: rgba(124, 58, 237, 0.14);
-  box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.22);
 }
 
 .rpgl__hazard-rail--empty {
@@ -5469,7 +5481,8 @@
 .rpgl__sync-x-ticks {
   position: relative;
   height: 20px;
-  margin-top: 0;
+  margin-top: 2px;
+  margin-left: calc(var(--rpgl-track-label-w, 3.15rem) + 6px);
   z-index: 2;
 }
 

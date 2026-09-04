@@ -7,7 +7,7 @@
  * that fits the data so everyday breezes read as curves.
  *
  * X-axis uses the same 34px (8.5%) inset as RouteOutlookTimeline so all
- * three strata share one aligned route axis.
+ * strata share one aligned route axis.
  */
 import { useMemo } from "react";
 import {
@@ -23,9 +23,9 @@ type RadarSample = { t: number; intensity: number };
 type WindPoint = { t: number; mph: number };
 
 const W = 400;
-const H = 60;
-const PAD_L = 34;   // matches RouteOutlookTimeline PAD.left
-const PAD_R = 34;   // matches RouteOutlookTimeline PAD.right
+const H = 36;
+const PAD_L = 34;
+const PAD_R = 34;
 const PAD_V = 4;
 
 const INNER_W = W - PAD_L - PAD_R;
@@ -54,7 +54,6 @@ function linePath(pts: { t: number; norm: number }[]): string {
     .join(" ");
 }
 
-
 type Props = {
   radarSamples: RadarSample[];
   /** @deprecated Sustained line removed — kept for callers; prefer gustLinePoints. */
@@ -71,20 +70,19 @@ export function RouteRadarWindStrip({
   gustLinePoints = [],
   gustSpikePoints = [],
 }: Props) {
-  /* ── Radar ── */
   const radarPts = useMemo(() => {
     const sorted = [...radarSamples]
       .sort((a, b) => a.t - b.t)
       .map((s) => ({ t: s.t, norm: radarDisplayIntensity(s.intensity) }));
-    // Anchor to t=0 and t=1 so the fill spans the full route axis
     if (sorted.length > 0) {
       if (sorted[0]!.t > 0.01) sorted.unshift({ t: 0, norm: sorted[0]!.norm });
-      if (sorted[sorted.length - 1]!.t < 0.99) sorted.push({ t: 1, norm: sorted[sorted.length - 1]!.norm });
+      if (sorted[sorted.length - 1]!.t < 0.99) {
+        sorted.push({ t: 1, norm: sorted[sorted.length - 1]!.norm });
+      }
     }
     return sorted;
   }, [radarSamples]);
 
-  /* ── Wind (dashed envelope only) ── */
   const sortedWindLine = useMemo(() => {
     const primary = gustLinePoints.length >= 2 ? gustLinePoints : windPoints;
     return [...primary].filter((p) => p.mph > 0).sort((a, b) => a.t - b.t);
@@ -123,107 +121,138 @@ export function RouteRadarWindStrip({
     : [];
 
   return (
-    <div className="rrws" aria-label="Radar precipitation and wind along route">
-      <div className="rrws__label-row">
-        <span className="rrws__legend-item">
-          <span className="rrws__swatch rrws__swatch--wind" aria-hidden />
-          <span className="rrws__label rrws__label--wind">
-            Wind{hasWind ? ` (0–${windMax} mph)` : ""}
-          </span>
-        </span>
-        {isEmpty && <span className="rrws__empty">No data</span>}
+    <div className="rrws rrws--layered" aria-label="Radar precipitation and wind along route">
+      <div className="rpgl__layer rpgl__layer--radar">
+        <span className="rpgl__layer-label rpgl__layer-label--radar">Radar</span>
+        <div className="rpgl__layer-plot">
+          <svg
+            className="rrws__svg"
+            viewBox={`0 0 ${W} ${H}`}
+            preserveAspectRatio="none"
+            aria-hidden
+          >
+            <line
+              x1={PAD_L}
+              y1={BASELINE_Y}
+              x2={W - PAD_R}
+              y2={BASELINE_Y}
+              className="rrws__baseline"
+            />
+
+            {hasRadarEcho && radarPts.length >= 2 && (
+              <>
+                <path d={areaPath(radarPts)} fill="rgba(56,189,248,0.10)" />
+                {(
+                  [
+                    [RADAR_SOFT_THRESHOLD, "rgba(56,189,248,0.34)"],
+                    [RADAR_REROUTE_THRESHOLD, "rgba(59,130,246,0.48)"],
+                    [RADAR_HEAVY_THRESHOLD, "rgba(99,102,241,0.58)"],
+                    [RADAR_VERY_HEAVY_THRESHOLD, "rgba(139,92,246,0.68)"],
+                  ] as [number, string][]
+                ).map(([thr, fill]) => {
+                  const pts = radarPts.map((p) => ({
+                    t: p.t,
+                    norm: Math.max(0, p.norm - thr) / (1 - thr),
+                  }));
+                  if (!pts.some((p) => p.norm > 0)) return null;
+                  return <path key={`r${thr}`} d={areaPath(pts)} fill={fill} />;
+                })}
+                <path
+                  d={linePath(radarPts)}
+                  fill="none"
+                  stroke="rgba(56,189,248,0.62)"
+                  strokeWidth={1.2}
+                  vectorEffect="non-scaling-stroke"
+                />
+              </>
+            )}
+            {hasRadarTrace && !hasRadarEcho && (
+              <>
+                <path d={areaPath(radarPts)} fill="rgba(56,189,248,0.08)" />
+                <path
+                  d={linePath(radarPts)}
+                  fill="none"
+                  stroke="rgba(56,189,248,0.45)"
+                  strokeWidth={1.1}
+                  strokeDasharray="3 2"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </>
+            )}
+            {isEmpty && !hasWind ? (
+              <text
+                x={W / 2}
+                y={H / 2 + 3}
+                textAnchor="middle"
+                className="rrws__empty-svg"
+                fontSize="9"
+                fill="rgba(148,163,184,0.55)"
+              >
+                No radar echo
+              </text>
+            ) : null}
+          </svg>
+        </div>
       </div>
 
-      <div className="rrws__chart-wrap">
-        <svg
-          className="rrws__svg"
-          viewBox={`0 0 ${W} ${H}`}
-          preserveAspectRatio="none"
-          aria-hidden
-        >
-          <line x1={PAD_L} y1={BASELINE_Y} x2={W - PAD_R} y2={BASELINE_Y} className="rrws__baseline" />
-
-          {hasRadarEcho && radarPts.length >= 2 && (
-            <>
-              <path d={areaPath(radarPts)} fill="rgba(56,189,248,0.10)" />
-              {([
-                [RADAR_SOFT_THRESHOLD, "rgba(56,189,248,0.34)"],
-                [RADAR_REROUTE_THRESHOLD, "rgba(59,130,246,0.48)"],
-                [RADAR_HEAVY_THRESHOLD, "rgba(99,102,241,0.58)"],
-                [RADAR_VERY_HEAVY_THRESHOLD, "rgba(139,92,246,0.68)"],
-              ] as [number, string][]).map(([thr, fill]) => {
-                const pts = radarPts.map((p) => ({
-                  t: p.t,
-                  norm: Math.max(0, p.norm - thr) / (1 - thr),
-                }));
-                if (!pts.some((p) => p.norm > 0)) return null;
-                return <path key={`r${thr}`} d={areaPath(pts)} fill={fill} />;
-              })}
-              <path
-                d={linePath(radarPts)}
-                fill="none"
-                stroke="rgba(56,189,248,0.62)"
-                strokeWidth={1.2}
-                vectorEffect="non-scaling-stroke"
-              />
-            </>
-          )}
-          {hasRadarTrace && !hasRadarEcho && (
-            <>
-              <path d={areaPath(radarPts)} fill="rgba(56,189,248,0.08)" />
-              <path
-                d={linePath(radarPts)}
-                fill="none"
-                stroke="rgba(56,189,248,0.45)"
-                strokeWidth={1.1}
-                strokeDasharray="3 2"
-                vectorEffect="non-scaling-stroke"
-              />
-            </>
-          )}
-
-          {/* ── Wind (dashed only) ── */}
-          {hasWind && (
-            <path
-              d={linePath(windPts)}
-              fill="none"
-              stroke="#f59e0b"
-              strokeWidth={2.2}
-              strokeDasharray="5 3"
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
-            />
-          )}
-
-          {sortedGustSpikes.map((p, i) => {
-            const norm = p.mph / windMax;
-            const x = xPx(p.t);
-            const y = yPx(Math.min(1, norm));
-            return (
+      {hasWind ? (
+        <div className="rpgl__layer rpgl__layer--wind">
+          <span className="rpgl__layer-label rpgl__layer-label--wind">Wind</span>
+          <div className="rpgl__layer-plot">
+            <svg
+              className="rrws__svg"
+              viewBox={`0 0 ${W} ${H}`}
+              preserveAspectRatio="none"
+              aria-hidden
+            >
               <line
-                key={`gust-${i}-${p.t}`}
-                x1={x}
+                x1={PAD_L}
                 y1={BASELINE_Y}
-                x2={x}
-                y2={y}
-                stroke="#fb923c"
-                strokeWidth={2}
+                x2={W - PAD_R}
+                y2={BASELINE_Y}
+                className="rrws__baseline"
+              />
+              <path
+                d={linePath(windPts)}
+                fill="none"
+                stroke="#f59e0b"
+                strokeWidth={2.2}
+                strokeDasharray="5 3"
+                strokeLinejoin="round"
                 strokeLinecap="round"
                 vectorEffect="non-scaling-stroke"
               />
-            );
-          })}
-        </svg>
-
-        <span className="rrws__radar-side-label">Radar · now</span>
-
-        {windTicks.map(({ mph, topPct }) => (
-          <span key={`wa${mph}`} className="rrws__axis-label" style={{ top: `${topPct.toFixed(1)}%` }}>
-            {mph}
-          </span>
-        ))}
-      </div>
+              {sortedGustSpikes.map((p, i) => {
+                const norm = p.mph / windMax;
+                const x = xPx(p.t);
+                const y = yPx(Math.min(1, norm));
+                return (
+                  <line
+                    key={`gust-${i}-${p.t}`}
+                    x1={x}
+                    y1={BASELINE_Y}
+                    x2={x}
+                    y2={y}
+                    stroke="#fb923c"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                );
+              })}
+            </svg>
+            {windTicks.map(({ mph, topPct }) => (
+              <span
+                key={`wa${mph}`}
+                className="rrws__axis-label"
+                style={{ top: `${topPct.toFixed(1)}%` }}
+              >
+                {mph}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

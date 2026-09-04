@@ -15,7 +15,6 @@ import { RouteOutlookTimeline } from "./RouteOutlookTimeline";
 import { RouteRadarWindStrip } from "./RouteRadarWindStrip";
 import {
   computeRouteAxisMinWidth,
-  ROUTE_PLOT_INSET_START,
   routePlotLeftPct,
   routePlotWidthPct,
 } from "./routeAxisLayout";
@@ -120,10 +119,12 @@ function HazardRailRow({ track, bands }: { track: TimelineItem["track"]; bands: 
     : track === "road" ? "No road hazards"
     : "Clear";
   return (
-    <div className="rpgl__hazard-row">
-      <span className={`rpgl__hazard-sublabel ${meta.sublabelClass}`}>{meta.label}</span>
+    <div className={`rpgl__layer rpgl__layer--${track} rpgl__hazard-row`}>
+      <span className={`rpgl__layer-label rpgl__hazard-sublabel ${meta.sublabelClass}`}>
+        {meta.label}
+      </span>
       <div
-        className={`rpgl__hazard-rail ${meta.railClass}${bands.length ? "" : " rpgl__hazard-rail--empty"}`}
+        className={`rpgl__layer-plot rpgl__hazard-rail ${meta.railClass}${bands.length ? "" : " rpgl__hazard-rail--empty"}`}
       >
         {bands.map((band) => (
           <span
@@ -309,9 +310,6 @@ export function RouteProgressGlancePanel({
   }, [activeScrollCardId]);
   const driverLeftPct = routePlotLeftPct(userAlongT);
   const showAxis = outlookSteps.length > 0 || bandVisuals.length > 0 || totalMeters > 0;
-  const plotLabelInsetStyle = {
-    paddingLeft: `${ROUTE_PLOT_INSET_START * 100}%`,
-  } as CSSProperties;
 
   const axisMinWidth = useMemo(
     () =>
@@ -336,9 +334,12 @@ export function RouteProgressGlancePanel({
             <div className="rpgl__axis-inner" style={{ minWidth: axisMinWidth }}>
               <div className="rpgl__sync-stack">
                 <div className="rpgl__sync-head">
-                  <span className="rpgl__sync-head-you">YOU</span>
-                  <span className="rpgl__sync-head-title">Along your route</span>
-                  <span className="rpgl__sync-head-dest">DEST</span>
+                  <span className="rpgl__sync-head-gutter" aria-hidden />
+                  <div className="rpgl__sync-head-plot">
+                    <span className="rpgl__sync-head-you">YOU</span>
+                    <span className="rpgl__sync-head-title">Along your route</span>
+                    <span className="rpgl__sync-head-dest">DEST</span>
+                  </div>
                 </div>
 
                 <div className="rpgl__sync-body">
@@ -381,9 +382,6 @@ export function RouteProgressGlancePanel({
                     ) : null}
 
                     <div className="rpgl__hazard-block">
-                      <div className="rpgl__hazard-label" style={plotLabelInsetStyle}>
-                        Hazards
-                      </div>
                       {HAZARD_RAIL_ORDER.map((track) => (
                         <HazardRailRow key={track} track={track} bands={bandsByTrack[track]} />
                       ))}
