@@ -6,7 +6,49 @@
 export const FOLLOW_CAM_JUMP_REPAIR_COOLDOWN_MS = 1_200;
 export const FOLLOW_CAM_STALL_FRAMES_BEFORE_REPAIR = 8;
 
+/** Stay on hard follow until style is loaded this many frames in a row. */
+export const FOLLOW_CAM_STYLE_OK_FRAMES_TO_PAN = 12;
+/** Only leave yard-line pan after this many consecutive pan failures. */
+export const FOLLOW_CAM_PAN_FAIL_FRAMES_TO_HARD = 8;
+
 export type DriveFollowCamWrite = "skip" | "jump_with_offset";
+
+/**
+ * One camera writer at a time. Pan (yard-line offset), hard setCenter (no
+ * offset), and jumpTo (padding, no offset) are three different framings —
+ * switching them every frame is the Drive "three-angle blur".
+ */
+export type FollowCamWriter = "pan" | "hard";
+
+export function advanceFollowCamWriter(input: {
+  holdTiles: boolean;
+  styleLoaded: boolean;
+  writer: FollowCamWriter;
+  styleOkStreak: number;
+  panFailStreak: number;
+  styleOkToPan?: number;
+  panFailsToHard?: number;
+}): { writer: FollowCamWriter; styleOkStreak: number; panFailStreak: number } {
+  const styleOkToPan = input.styleOkToPan ?? FOLLOW_CAM_STYLE_OK_FRAMES_TO_PAN;
+  const panFailsToHard = input.panFailsToHard ?? FOLLOW_CAM_PAN_FAIL_FRAMES_TO_HARD;
+
+  if (input.holdTiles) {
+    return { writer: "hard", styleOkStreak: 0, panFailStreak: 0 };
+  }
+
+  if (input.writer === "hard") {
+    const styleOkStreak = input.styleLoaded ? input.styleOkStreak + 1 : 0;
+    if (styleOkStreak >= styleOkToPan) {
+      return { writer: "pan", styleOkStreak: 0, panFailStreak: 0 };
+    }
+    return { writer: "hard", styleOkStreak, panFailStreak: 0 };
+  }
+
+  if (input.panFailStreak >= panFailsToHard) {
+    return { writer: "hard", styleOkStreak: 0, panFailStreak: 0 };
+  }
+  return { writer: "pan", styleOkStreak: 0, panFailStreak: input.panFailStreak };
+}
 
 export function pickDriveFollowCamWrite(input: {
   camMoved: boolean;

@@ -127,10 +127,11 @@ import {
   smoothDriveBearingDeg,
 } from "./mapDriveCamera";
 import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
+import { allowBasemapStyleReload } from "./mapLowSignalResilience";
 import {
-  allowBasemapStyleReload,
-  allowFollowCamJumpToFallback,
-} from "./mapLowSignalResilience";
+  advanceFollowCamWriter,
+  type FollowCamWriter,
+} from "./driveFollowCamWrite";
 import { computePuckTargetBeforeRouteSnap } from "./driveMapPuckTarget";
 import { liftTrafficThenRoutesThenHits } from "./mapLayerStack";
 import {
@@ -511,6 +512,7 @@ function DriveMapInner({
   holdLastGoodMapRef.current = holdLastGoodMap;
   const isOnlineRef = useRef(isOnline);
   isOnlineRef.current = isOnline;
+  const followCamWriterRef = useRef<FollowCamWriter>("pan");
   const routesLengthRef = useRef(routes.length);
   routesLengthRef.current = routes.length;
   const homePuckFollowRef = useRef(homePuckFollow);
@@ -1375,6 +1377,9 @@ function DriveMapInner({
     const CAM_NOOP_LNGLAT_DELTA = 0.000001; /* ~0.11 m — follow camera can move more often than the puck marker */
     let lastBearingApplied = NaN;
     let driveCamFrame = 0;
+    let followWriter: FollowCamWriter = followCamWriterRef.current;
+    let followStyleOkStreak = 0;
+    let followPanFailStreak = 0;
     const DRIVE_CAM_FORCE_RESYNC_FRAMES = 75;
 
     const readPuckFollowLngLat = (): LngLat | null =>
@@ -1646,55 +1651,66 @@ function DriveMapInner({
                 duration: 0,
                 essential: true as const,
               };
-              /* Prefer pan — keeps yard-line offset. Avoid jumpTo on the hot path:
-               * jump recenters without offset and flashes a different map framing
-               * (common under weak tile load when pan briefly fails).
-               * Under hold: skip easeTo entirely — Mapbox queues freeze on failed tiles. */
+              /* One writer per stretch. Pan (yard-line), hard setCenter, and jumpTo
+               * are three framings — mixing them every frame is the Drive blur. */
               const holdTiles = holdLastGoodMapRef.current || !isOnlineRef.current;
-              if (holdTiles) {
-                const hardOk = safeHardFollowCamera(map, {
-                  center: pos as [number, number],
-                  zoom: driveNavZoomRef.current,
-                  pitch: DRIVE_FOLLOW_PITCH_DEG,
-                  bearing: driveCamBearingSmoothedRef.current,
-                });
+              let styleLoaded = false;
+              try {
+                styleLoaded = map.isStyleLoaded();
+              } catch {
+                styleLoaded = false;
+              }
+              const latched = advanceFollowCamWriter({
+                holdTiles,
+                styleLoaded,
+                writer: followWriter,
+                styleOkStreak: followStyleOkStreak,
+                panFailStreak: followPanFailStreak,
+              });
+              followWriter = latched.writer;
+              followStyleOkStreak = latched.styleOkStreak;
+              followPanFailStreak = latched.panFailStreak;
+              followCamWriterRef.current = followWriter;
+
+              const hardOpts = {
+                center: pos as [number, number],
+                zoom: driveNavZoomRef.current,
+                pitch: DRIVE_FOLLOW_PITCH_DEG,
+                bearing: driveCamBearingSmoothedRef.current,
+              };
+              if (followWriter === "hard") {
+                const hardOk = safeHardFollowCamera(map, hardOpts);
                 if (hardOk) {
                   lastBearingApplied = driveCamBearingSmoothedRef.current;
                   driveCamResyncRef.current = false;
                 }
               } else {
-              const ok = safePanToCenter(map, panOpts);
-              if (ok) {
-                lastBearingApplied = driveCamBearingSmoothedRef.current;
-                if (forceCamSync) driveCamResyncRef.current = false;
-              } else if (
-                allowFollowCamJumpToFallback({
-                  intentionalResync: driveCamResyncRef.current,
-                  holdLastGoodMap: holdLastGoodMapRef.current,
-                  gpsFollowStalled: true,
-                })
-              ) {
-                /* Pan failed (style still "loading" after Wi‑Fi→cell) — hard-set
-                 * the transform so the puck does not drive off a frozen map. */
-                const jumped =
-                  safeHardFollowCamera(map, {
-                    center: pos as [number, number],
-                    zoom: driveNavZoomRef.current,
-                    pitch: DRIVE_FOLLOW_PITCH_DEG,
-                    bearing: driveCamBearingSmoothedRef.current,
-                  }) ||
-                  safeJumpTo(map, {
-                    center: pos as [number, number],
-                    zoom: driveNavZoomRef.current,
-                    pitch: DRIVE_FOLLOW_PITCH_DEG,
-                    bearing: driveCamBearingSmoothedRef.current,
-                    padding,
-                  });
-                if (jumped) {
+                const ok = safePanToCenter(map, panOpts);
+                if (ok) {
+                  followPanFailStreak = 0;
                   lastBearingApplied = driveCamBearingSmoothedRef.current;
-                  driveCamResyncRef.current = false;
+                  if (forceCamSync) driveCamResyncRef.current = false;
+                } else {
+                  followPanFailStreak += 1;
+                  const toHard = advanceFollowCamWriter({
+                    holdTiles,
+                    styleLoaded,
+                    writer: followWriter,
+                    styleOkStreak: followStyleOkStreak,
+                    panFailStreak: followPanFailStreak,
+                  });
+                  followWriter = toHard.writer;
+                  followStyleOkStreak = toHard.styleOkStreak;
+                  followPanFailStreak = toHard.panFailStreak;
+                  followCamWriterRef.current = followWriter;
+                  if (followWriter === "hard") {
+                    const hardOk = safeHardFollowCamera(map, hardOpts);
+                    if (hardOk) {
+                      lastBearingApplied = driveCamBearingSmoothedRef.current;
+                      driveCamResyncRef.current = false;
+                    }
+                  }
                 }
-              }
               }
             }
           }
@@ -3645,8 +3661,12 @@ function DriveMapInner({
             stormBarExpandedRef.current,
             progressRailVisibleRef.current
           );
-          /* Hold / weak tiles: hard setters. Otherwise pan (yard-line) then jump. */
-          if (holdLastGoodMapRef.current || !isOnlineRef.current) {
+          /* Same single writer as the RAF loop — do not chain pan → hard → jump. */
+          const useHard =
+            followCamWriterRef.current === "hard" ||
+            holdLastGoodMapRef.current ||
+            !isOnlineRef.current;
+          if (useHard) {
             if (
               safeHardFollowCamera(map, {
                 center: pos,
@@ -3667,19 +3687,6 @@ function DriveMapInner({
               offset: o.offset,
               duration: 0,
               essential: true,
-            }) ||
-            safeHardFollowCamera(map, {
-              center: pos,
-              zoom: driveNavZoomRef.current,
-              pitch: DRIVE_FOLLOW_PITCH_DEG,
-              bearing: travelTarget,
-            }) ||
-            safeJumpTo(map, {
-              center: pos,
-              zoom: driveNavZoomRef.current,
-              pitch: DRIVE_FOLLOW_PITCH_DEG,
-              bearing: travelTarget,
-              padding: o.padding,
             })
           ) {
             driveCamResyncRef.current = false;
