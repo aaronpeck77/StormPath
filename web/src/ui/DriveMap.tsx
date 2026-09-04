@@ -129,6 +129,14 @@ import {
 import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
 import { allowBasemapStyleReload } from "./mapLowSignalResilience";
 import {
+  DRIVE_FOLLOW_ZOOM_DEFAULT,
+  DRIVE_FOLLOW_ZOOM_MIN,
+  driveFollowBlocksWideFit,
+  guardDriveFollowCamera,
+  rememberDriveFollowZoom,
+  repairStoredDriveFollowZoom,
+} from "./driveFollowZoomGuard";
+import {
   advanceFollowCamWriter,
   type FollowCamWriter,
 } from "./driveFollowCamWrite";
@@ -550,7 +558,7 @@ function DriveMapInner({
   /** After Jeff/manual resync: ignore route tangents until this timestamp (ms). */
   const driveCamPreferTravelUntilMsRef = useRef(0);
   /** User-chosen zoom while navigating in Dr — do not snap back to 16.35 after pinch. */
-  const driveNavZoomRef = useRef(16.35);
+  const driveNavZoomRef = useRef(DRIVE_FOLLOW_ZOOM_DEFAULT);
   const navRouteSnapKeyRef = useRef("");
   /**
    * Entering Rt while navigating schedules a full-corridor fit, then the view-switch
@@ -1055,7 +1063,7 @@ function DriveMapInner({
       try {
         const z = map.getZoom();
         if (navigationStartedRef.current && viewModeRef.current === "drive") {
-          driveNavZoomRef.current = z;
+          driveNavZoomRef.current = rememberDriveFollowZoom(z, driveNavZoomRef.current);
         }
         if (viewModeRef.current === "topdown") {
           topdownZoomRef.current = z;
@@ -1106,16 +1114,27 @@ function DriveMapInner({
     try {
       map.setMaxBounds(mapSessionBounds);
       map.setMinZoom(
-        mapMinZoomForSession({
-          navigationStarted,
-          hasContinent: mapHasContinent,
-          ultraLongRoute,
-        })
+        navigationStarted && viewMode === "drive"
+          ? DRIVE_FOLLOW_ZOOM_MIN
+          : mapMinZoomForSession({
+              navigationStarted,
+              hasContinent: mapHasContinent,
+              ultraLongRoute,
+            })
       );
+      if (navigationStarted && viewMode === "drive") {
+        try {
+          if (map.getZoom() < DRIVE_FOLLOW_ZOOM_MIN) {
+            map.setZoom(repairStoredDriveFollowZoom(driveNavZoomRef));
+          }
+        } catch {
+          /* map disposed */
+        }
+      }
     } catch {
       /* map disposed */
     }
-  }, [mapReady, mapSessionBounds, navigationStarted, mapHasContinent, ultraLongRoute]);
+  }, [mapReady, mapSessionBounds, navigationStarted, viewMode, mapHasContinent, ultraLongRoute]);
 
   /** Mobile: URL bar / rotation / safe-area change the map container — Mapbox must resize or the canvas stays wrong and the puck can disappear. */
   useEffect(() => {
@@ -1152,6 +1171,14 @@ function DriveMapInner({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !mapFocus) return;
+    if (
+      driveFollowBlocksWideFit({
+        navigationStarted: navigationStartedRef.current,
+        viewMode: viewModeRef.current,
+      })
+    ) {
+      return;
+    }
 
     beginUserExploreRef.current();
 
@@ -1635,21 +1662,18 @@ function DriveMapInner({
            * Force an easeTo if pitch or zoom are far from drive targets so the view snaps in
            * even when the puck hasn't moved relative to the camera center. */
           const pitchOff = Math.abs(map.getPitch() - DRIVE_FOLLOW_PITCH_DEG) > 1;
+          let mapZoomNow = NaN;
+          try {
+            mapZoomNow = map.getZoom();
+          } catch {
+            mapZoomNow = NaN;
+          }
+          const zoomOff =
+            Number.isFinite(mapZoomNow) && mapZoomNow < DRIVE_FOLLOW_ZOOM_MIN;
           const forceCamSync = driveCamResyncRef.current || forcePeriodicResync;
-          const applyLayoutOrEntry = pitchOff || forceCamSync || easeLayoutChanged;
+          const applyLayoutOrEntry = pitchOff || forceCamSync || easeLayoutChanged || zoomOff;
           if (camMoved || bearingMoved || applyLayoutOrEntry) {
             if (pos) {
-              const panOpts = {
-                center: pos as [number, number],
-                ...(applyLayoutOrEntry
-                  ? { zoom: driveNavZoomRef.current, pitch: DRIVE_FOLLOW_PITCH_DEG }
-                  : {}),
-                bearing: driveCamBearingSmoothedRef.current,
-                padding,
-                offset,
-                duration: 0,
-                essential: true as const,
-              };
               /* Yard-line pan vs hard setCenter are two road framings. Switching
                * them when tiles flap looks like the puck leaping forward/back.
                * Hard only while tiles are held (+ clear delay). Failed pan skips. */
@@ -1664,10 +1688,27 @@ function DriveMapInner({
               followHoldFalseSinceMs = latched.holdFalseSinceMs;
               followCamWriterRef.current = followWriter;
 
+              const guarded = guardDriveFollowCamera({
+                center: pos as [number, number],
+                zoom: repairStoredDriveFollowZoom(driveNavZoomRef),
+                puck: pos as [number, number],
+              });
+              const panOpts = {
+                center: guarded.center,
+                ...(applyLayoutOrEntry
+                  ? { zoom: guarded.zoom, pitch: DRIVE_FOLLOW_PITCH_DEG }
+                  : {}),
+                bearing: driveCamBearingSmoothedRef.current,
+                padding,
+                offset,
+                duration: 0,
+                essential: true as const,
+              };
+
               if (followWriter === "hard") {
                 const hardOk = safeHardFollowCamera(map, {
-                  center: pos as [number, number],
-                  zoom: driveNavZoomRef.current,
+                  center: guarded.center,
+                  zoom: guarded.zoom,
                   pitch: DRIVE_FOLLOW_PITCH_DEG,
                   bearing: driveCamBearingSmoothedRef.current,
                 });
@@ -3465,7 +3506,7 @@ function DriveMapInner({
     if (!mapReady) return;
     if (navigationStarted && !wasNavRef.current) {
       userExploringRef.current = false;
-      driveNavZoomRef.current = 16.35;
+      driveNavZoomRef.current = DRIVE_FOLLOW_ZOOM_DEFAULT;
       driveCamResyncRef.current = true;
       if (exploreTimerRef.current) {
         clearTimeout(exploreTimerRef.current);
@@ -3502,7 +3543,7 @@ function DriveMapInner({
     driveCamResyncRef.current = true;
 
     const snapDriveCam = () => {
-      if (!isMapUsable(map) || !map.isStyleLoaded()) return;
+      if (!isMapReadyForFollowCam(map)) return;
       if (viewModeRef.current !== "drive" || !navigationStartedRef.current) return;
       userExploringRef.current = false;
       driveCamResyncRef.current = true;
@@ -3535,9 +3576,14 @@ function DriveMapInner({
         easeCached = { key: easeKey, padding: o.padding, offset: o.offset };
         driveCamEaseOptsCacheRef.current = easeCached;
       }
-      safeEaseTo(map, {
+      const guarded = guardDriveFollowCamera({
         center: pos,
-        zoom: driveNavZoomRef.current,
+        zoom: repairStoredDriveFollowZoom(driveNavZoomRef),
+        puck: pos,
+      });
+      safeEaseTo(map, {
+        center: guarded.center,
+        zoom: guarded.zoom,
         pitch: DRIVE_FOLLOW_PITCH_DEG,
         bearing: brg,
         padding: easeCached?.padding,
@@ -3636,11 +3682,16 @@ function DriveMapInner({
             followCamWriterRef.current === "hard" ||
             holdLastGoodMapRef.current ||
             !isOnlineRef.current;
+          const guarded = guardDriveFollowCamera({
+            center: pos,
+            zoom: repairStoredDriveFollowZoom(driveNavZoomRef),
+            puck: pos,
+          });
           if (useHard) {
             if (
               safeHardFollowCamera(map, {
-                center: pos,
-                zoom: driveNavZoomRef.current,
+                center: guarded.center,
+                zoom: guarded.zoom,
                 pitch: DRIVE_FOLLOW_PITCH_DEG,
                 bearing: travelTarget,
               })
@@ -3649,8 +3700,8 @@ function DriveMapInner({
             }
           } else if (
             safePanToCenter(map, {
-              center: pos,
-              zoom: driveNavZoomRef.current,
+              center: guarded.center,
+              zoom: guarded.zoom,
               pitch: DRIVE_FOLLOW_PITCH_DEG,
               bearing: travelTarget,
               padding: o.padding,
