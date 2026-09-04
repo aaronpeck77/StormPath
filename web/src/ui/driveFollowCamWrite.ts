@@ -6,48 +6,40 @@
 export const FOLLOW_CAM_JUMP_REPAIR_COOLDOWN_MS = 1_200;
 export const FOLLOW_CAM_STALL_FRAMES_BEFORE_REPAIR = 8;
 
-/** Stay on hard follow until style is loaded this many frames in a row. */
-export const FOLLOW_CAM_STYLE_OK_FRAMES_TO_PAN = 12;
-/** Only leave yard-line pan after this many consecutive pan failures. */
-export const FOLLOW_CAM_PAN_FAIL_FRAMES_TO_HARD = 8;
+/**
+ * After tile-hold clears, keep hard follow this long so a flapping radio /
+ * `isStyleLoaded()` does not snap yard-line pan ↔ centered setCenter
+ * (puck looks like it is leaping forward and back along the road).
+ */
+export const FOLLOW_CAM_HOLD_CLEAR_MS = 3_000;
 
 export type DriveFollowCamWrite = "skip" | "jump_with_offset";
 
 /**
- * One camera writer at a time. Pan (yard-line offset), hard setCenter (no
- * offset), and jumpTo (padding, no offset) are three different framings —
- * switching them every frame is the Drive "three-angle blur".
+ * One camera writer at a time. Pan (yard-line offset) vs hard setCenter
+ * (no offset) are two road framings — do not switch them from tile-load flaps.
+ * Hard only while tiles are held, plus a short clear delay.
  */
 export type FollowCamWriter = "pan" | "hard";
 
 export function advanceFollowCamWriter(input: {
   holdTiles: boolean;
-  styleLoaded: boolean;
   writer: FollowCamWriter;
-  styleOkStreak: number;
-  panFailStreak: number;
-  styleOkToPan?: number;
-  panFailsToHard?: number;
-}): { writer: FollowCamWriter; styleOkStreak: number; panFailStreak: number } {
-  const styleOkToPan = input.styleOkToPan ?? FOLLOW_CAM_STYLE_OK_FRAMES_TO_PAN;
-  const panFailsToHard = input.panFailsToHard ?? FOLLOW_CAM_PAN_FAIL_FRAMES_TO_HARD;
-
+  holdFalseSinceMs: number | null;
+  nowMs: number;
+  holdClearMs?: number;
+}): { writer: FollowCamWriter; holdFalseSinceMs: number | null } {
   if (input.holdTiles) {
-    return { writer: "hard", styleOkStreak: 0, panFailStreak: 0 };
+    return { writer: "hard", holdFalseSinceMs: null };
   }
-
+  const since = input.holdFalseSinceMs ?? input.nowMs;
   if (input.writer === "hard") {
-    const styleOkStreak = input.styleLoaded ? input.styleOkStreak + 1 : 0;
-    if (styleOkStreak >= styleOkToPan) {
-      return { writer: "pan", styleOkStreak: 0, panFailStreak: 0 };
+    const wait = input.holdClearMs ?? FOLLOW_CAM_HOLD_CLEAR_MS;
+    if (input.nowMs - since < wait) {
+      return { writer: "hard", holdFalseSinceMs: since };
     }
-    return { writer: "hard", styleOkStreak, panFailStreak: 0 };
   }
-
-  if (input.panFailStreak >= panFailsToHard) {
-    return { writer: "hard", styleOkStreak: 0, panFailStreak: 0 };
-  }
-  return { writer: "pan", styleOkStreak: 0, panFailStreak: input.panFailStreak };
+  return { writer: "pan", holdFalseSinceMs: since };
 }
 
 export function pickDriveFollowCamWrite(input: {

@@ -1378,8 +1378,7 @@ function DriveMapInner({
     let lastBearingApplied = NaN;
     let driveCamFrame = 0;
     let followWriter: FollowCamWriter = followCamWriterRef.current;
-    let followStyleOkStreak = 0;
-    let followPanFailStreak = 0;
+    let followHoldFalseSinceMs: number | null = followWriter === "hard" ? null : Date.now();
     const DRIVE_CAM_FORCE_RESYNC_FRAMES = 75;
 
     const readPuckFollowLngLat = (): LngLat | null =>
@@ -1651,35 +1650,27 @@ function DriveMapInner({
                 duration: 0,
                 essential: true as const,
               };
-              /* One writer per stretch. Pan (yard-line), hard setCenter, and jumpTo
-               * are three framings — mixing them every frame is the Drive blur. */
+              /* Yard-line pan vs hard setCenter are two road framings. Switching
+               * them when tiles flap looks like the puck leaping forward/back.
+               * Hard only while tiles are held (+ clear delay). Failed pan skips. */
               const holdTiles = holdLastGoodMapRef.current || !isOnlineRef.current;
-              let styleLoaded = false;
-              try {
-                styleLoaded = map.isStyleLoaded();
-              } catch {
-                styleLoaded = false;
-              }
               const latched = advanceFollowCamWriter({
                 holdTiles,
-                styleLoaded,
                 writer: followWriter,
-                styleOkStreak: followStyleOkStreak,
-                panFailStreak: followPanFailStreak,
+                holdFalseSinceMs: followHoldFalseSinceMs,
+                nowMs: Date.now(),
               });
               followWriter = latched.writer;
-              followStyleOkStreak = latched.styleOkStreak;
-              followPanFailStreak = latched.panFailStreak;
+              followHoldFalseSinceMs = latched.holdFalseSinceMs;
               followCamWriterRef.current = followWriter;
 
-              const hardOpts = {
-                center: pos as [number, number],
-                zoom: driveNavZoomRef.current,
-                pitch: DRIVE_FOLLOW_PITCH_DEG,
-                bearing: driveCamBearingSmoothedRef.current,
-              };
               if (followWriter === "hard") {
-                const hardOk = safeHardFollowCamera(map, hardOpts);
+                const hardOk = safeHardFollowCamera(map, {
+                  center: pos as [number, number],
+                  zoom: driveNavZoomRef.current,
+                  pitch: DRIVE_FOLLOW_PITCH_DEG,
+                  bearing: driveCamBearingSmoothedRef.current,
+                });
                 if (hardOk) {
                   lastBearingApplied = driveCamBearingSmoothedRef.current;
                   driveCamResyncRef.current = false;
@@ -1687,29 +1678,8 @@ function DriveMapInner({
               } else {
                 const ok = safePanToCenter(map, panOpts);
                 if (ok) {
-                  followPanFailStreak = 0;
                   lastBearingApplied = driveCamBearingSmoothedRef.current;
                   if (forceCamSync) driveCamResyncRef.current = false;
-                } else {
-                  followPanFailStreak += 1;
-                  const toHard = advanceFollowCamWriter({
-                    holdTiles,
-                    styleLoaded,
-                    writer: followWriter,
-                    styleOkStreak: followStyleOkStreak,
-                    panFailStreak: followPanFailStreak,
-                  });
-                  followWriter = toHard.writer;
-                  followStyleOkStreak = toHard.styleOkStreak;
-                  followPanFailStreak = toHard.panFailStreak;
-                  followCamWriterRef.current = followWriter;
-                  if (followWriter === "hard") {
-                    const hardOk = safeHardFollowCamera(map, hardOpts);
-                    if (hardOk) {
-                      lastBearingApplied = driveCamBearingSmoothedRef.current;
-                      driveCamResyncRef.current = false;
-                    }
-                  }
                 }
               }
             }
