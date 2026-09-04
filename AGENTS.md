@@ -39,6 +39,7 @@ Driving-first multi-route navigation / "route command center" with Mapbox map, t
 - `docs/NETLIFY_HOSTING.md`, `docs/BETA_READINESS.md`, `docs/TESTER_NOTES.md`
 - `docs/GITHUB_TESTFLIGHT_ONLY.md` — TestFlight without Mac
 - `web/docs/IOS_APP_STORE.md` — Capacitor / App Store path under `web/ios/`
+- `docs/GOLD_STANDARD.md` — **sealed known-good tip** (`gold/current` + dated `gold/…` tags). Do not move gold unless Bill asks to seal/promote.
 - `docs/BRAIN.md` — **Forge idea notebook** (retain ideas, make connections). Not an in-app feature. Implement a Brain idea only when Bill asks; big Dark Sky–style nowcast waits until App Store v1 is stable unless he pulls it forward.
 
 ## Context Bill shared (business / legal — do not ignore)
