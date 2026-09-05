@@ -192,6 +192,7 @@ import {
   setRainViewerRadarTilesOnSource,
   setRainViewerRadarLayersVisible,
   setRainViewerRadarDualOpacity,
+  snapRainViewerRadarToSolidFrame,
   waitForRainViewerSideLoaded,
   setRadarMapTileProvider,
 } from "./mapRadarLayer";
@@ -2505,9 +2506,44 @@ function DriveMapInner({
       })();
     };
 
+    let rateLimitResumeTimer: number | null = null;
+    const clearRateLimitResume = () => {
+      if (rateLimitResumeTimer != null) {
+        window.clearTimeout(rateLimitResumeTimer);
+        rateLimitResumeTimer = null;
+      }
+    };
+    /**
+     * RainViewer cooldown: keep the last painted frame on screen and keep retrying
+     * until the cooldown clears (one-shot resume used to miss and leave Rad on / map blank).
+     */
+    const scheduleRateLimitResume = () => {
+      clearRateLimitResume();
+      const waitMs = Math.max(750, rainViewerRateLimitMsRemaining() + 400);
+      rateLimitResumeTimer = window.setTimeout(() => {
+        rateLimitResumeTimer = null;
+        if (cancelled || mapRef.current !== map || !showRadar) return;
+        if (isRainViewerRateLimited()) {
+          scheduleRateLimitResume();
+          return;
+        }
+        setRainViewerRadarLayersVisible(map, true);
+        lastRadarPathsKey = "";
+        void loadManifest();
+      }, waitMs);
+    };
+
+    const freezeRadarForRateLimit = () => {
+      if (!showRadar || mapRef.current !== map) return;
+      radarLoopGeneration += 1;
+      snapRainViewerRadarToSolidFrame(map, RAINVIEWER_RADAR_VISIBLE_OPACITY);
+      scheduleRateLimitResume();
+    };
+
     const loadManifest = async () => {
       if (!showRadar) {
         clearTimers();
+        clearRateLimitResume();
         radarLoopGeneration += 1;
         onRadarFrameUtcSecRef.current?.(null);
         removeRainViewerRadar(map);
@@ -2533,7 +2569,11 @@ function DriveMapInner({
         liftRouteHits();
         return;
       }
-      if (providerRateLimited(pack)) return;
+      if (providerRateLimited(pack)) {
+        snapRainViewerRadarToSolidFrame(map, RAINVIEWER_RADAR_VISIBLE_OPACITY);
+        scheduleRateLimitResume();
+        return;
+      }
       if (pack.provider === "rainviewer") tioTileErrorStreak = 0;
       lastResolvedProvider = pack.provider;
       const cells: RadarCell[] = animationCellsForPack(pack).map((f) => ({
@@ -2577,7 +2617,10 @@ function DriveMapInner({
     };
 
     void loadManifest();
-    if (showRadar) manifestTimer = setInterval(() => void loadManifest(), 600_000);
+    if (showRadar) {
+      manifestTimer = setInterval(() => void loadManifest(), 600_000);
+      if (isRainViewerRateLimited()) scheduleRateLimitResume();
+    }
 
     const onRadarTileError = (e: mapboxgl.ErrorEvent) => {
       if (
@@ -2613,19 +2656,8 @@ function DriveMapInner({
     };
     map.on("moveend", onMoveEnd);
 
-    let rateLimitResumeTimer: number | null = null;
     const offRateLimit = onRainViewerRateLimit(() => {
-      if (!showRadar || mapRef.current !== map) return;
-      setRainViewerRadarLayersVisible(map, false);
-      if (rateLimitResumeTimer) window.clearTimeout(rateLimitResumeTimer);
-      rateLimitResumeTimer = window.setTimeout(() => {
-        rateLimitResumeTimer = null;
-        if (cancelled || mapRef.current !== map || !showRadar) return;
-        if (!isRainViewerRateLimited()) {
-          setRainViewerRadarLayersVisible(map, true);
-          void loadManifest();
-        }
-      }, rainViewerRateLimitMsRemaining() + 500);
+      freezeRadarForRateLimit();
     });
 
     return () => {
@@ -2634,7 +2666,7 @@ function DriveMapInner({
       map.off("moveend", onMoveEnd);
       map.off("error", onRadarTileError);
       offRateLimit();
-      if (rateLimitResumeTimer) clearTimeout(rateLimitResumeTimer);
+      clearRateLimitResume();
       radarLoopGeneration += 1;
       onRadarFrameUtcSecRef.current?.(null);
       clearTimers();

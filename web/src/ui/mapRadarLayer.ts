@@ -191,7 +191,7 @@ function installRainViewerMapErrorFilter(map: Map): void {
     if (import.meta.env.DEV) {
       console.warn(
         "[RainViewer] Several radar tiles failed (often rate limit or coverage). " +
-          "Keeping last frame; pausing extra fetches ~90s."
+          "Keeping last frame visible; pausing animation/extra fetches ~90s."
       );
     }
   });
@@ -331,6 +331,34 @@ export function setRainViewerRadarTilesOnSource(
 export function setRainViewerRadarDualOpacity(map: Map, opacityA: number, opacityB: number): void {
   if (map.getLayer(RADAR_LAYER_A)) map.setPaintProperty(RADAR_LAYER_A, "raster-opacity", opacityA);
   if (map.getLayer(RADAR_LAYER_B)) map.setPaintProperty(RADAR_LAYER_B, "raster-opacity", opacityB);
+}
+
+/**
+ * Freeze the dual buffer on the stronger side so a mid-crossfade does not leave
+ * radar ghosted/blank while animation is paused (e.g. RainViewer rate limit).
+ */
+export function snapRainViewerRadarToSolidFrame(
+  map: Map,
+  visibleOpacity: number = RAINVIEWER_RADAR_VISIBLE_OPACITY
+): void {
+  if (!map.getLayer(RADAR_LAYER_A) && !map.getLayer(RADAR_LAYER_B)) return;
+  const readOpacity = (id: string): number => {
+    if (!map.getLayer(id)) return 0;
+    try {
+      const v = map.getPaintProperty(id, "raster-opacity");
+      return typeof v === "number" ? v : 0;
+    } catch {
+      return 0;
+    }
+  };
+  const a = readOpacity(RADAR_LAYER_A);
+  const b = readOpacity(RADAR_LAYER_B);
+  if (a >= b) {
+    setRainViewerRadarDualOpacity(map, visibleOpacity, 0);
+  } else {
+    setRainViewerRadarDualOpacity(map, 0, visibleOpacity);
+  }
+  setRainViewerRadarLayersVisible(map, true);
 }
 
 /**
