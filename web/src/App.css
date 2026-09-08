@@ -7329,6 +7329,64 @@
   color: rgba(255, 255, 255, 0.4);
 }
 
+/* WeatherKit 5.2.5 — Apple Weather trademark + legal link */
+.apple-weather-attr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 8px;
+  padding: 6px 2px 2px;
+}
+
+.apple-weather-attr__mark-link {
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+}
+
+.apple-weather-attr__mark {
+  display: block;
+  height: 18px;
+  width: auto;
+  max-width: 140px;
+  object-fit: contain;
+}
+
+.apple-weather-attr__text-mark {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(248, 250, 252, 0.92);
+  text-decoration: none;
+}
+
+.apple-weather-attr__legal {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: rgba(147, 197, 253, 0.95);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.adv-dash__apple-weather {
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+  margin-top: 10px;
+  padding-top: 8px;
+}
+
+.rpgl__apple-weather {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.about-sheet__apple-weather {
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.35);
+}
+
 .adv-dash__zone-toggles {
   display: flex;
   gap: 4px;

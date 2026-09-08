@@ -27,6 +27,7 @@ import {
   type PrecipTypeCode,
 } from "../forecast/localForecastVisual";
 import { enrichDailyWithHourlyApparent } from "../forecast/localForecastDaily";
+import { AppleWeatherAttribution } from "./AppleWeatherAttribution";
 import {
   formatDailyDayLabel,
   formatForecastUpdatedAt,
@@ -59,14 +60,25 @@ function titleCase(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+function usesAppleWeather(opts: {
+  weatherKitPrimary: boolean;
+  hourly?: PointHourlyForecast | null;
+  daily?: PointDailyForecast | null;
+}): boolean {
+  return (
+    opts.weatherKitPrimary ||
+    opts.hourly?.provider === "weatherKit" ||
+    opts.daily?.provider === "weatherKit"
+  );
+}
+
 function localProviderLabel(opts: {
   weatherKitPrimary: boolean;
   hourly?: PointHourlyForecast | null;
   daily?: PointDailyForecast | null;
   hasNowcast: boolean;
 }): string {
-  if (opts.weatherKitPrimary) return "WeatherKit";
-  if (opts.hourly?.provider === "weatherKit" || opts.daily?.provider === "weatherKit") return "WeatherKit";
+  if (usesAppleWeather(opts)) return " Weather";
   if (opts.hourly?.provider === "openWeather") return "OpenWeather";
   if (opts.hasNowcast) return "OpenWeather";
   return "Forecast";
@@ -107,6 +119,11 @@ export function AdvisoryLocalForecast({
   const isBasic = variant === "basic";
   const forecastLat = forecastLngLat?.[1] ?? null;
   const forecastLng = forecastLngLat?.[0] ?? null;
+  const showAppleWeatherAttr = usesAppleWeather({
+    weatherKitPrimary,
+    hourly: hourlyForecast,
+    daily: dailyForecast,
+  });
   const provider = localProviderLabel({
     weatherKitPrimary,
     hourly: hourlyForecast,
@@ -712,10 +729,12 @@ export function AdvisoryLocalForecast({
             <div className="adv-dash__strip-head">
               <span className="adv-dash__strip-label">Next seven days</span>
             </div>
-            <p className="adv-dash__strip-note">Loading daily forecast from WeatherKit</p>
+            <p className="adv-dash__strip-note">Loading daily forecast from  Weather</p>
           </div>
         ) : null}
       </div>
+
+      {showAppleWeatherAttr ? <AppleWeatherAttribution theme="dark" className="adv-dash__apple-weather" /> : null}
     </section>
   );
 }

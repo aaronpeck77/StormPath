@@ -1,7 +1,11 @@
 /**
  * In-panel guide for the Route info graph — kept here so product copy tracks the glance panel layers.
  */
+import { getWebEnv } from "../config/env";
+import { AppleWeatherAttribution } from "./AppleWeatherAttribution";
+
 export function RouteInfoLegend() {
+  const weatherKit = getWebEnv().weatherKitEnabled;
   return (
     <details className="rpgl__help">
       <summary className="rpgl__help-summary">What this panel shows</summary>
@@ -12,8 +16,12 @@ export function RouteInfoLegend() {
         </li>
         <li>
           <strong>Route outlook</strong> — Temperature (orange) and rain chance (blue) sampled along
-          your corridor from Tomorrow.io and OpenWeather. The rain line only rises when intensity or
-          wording supports it — not every low model probability.
+          your corridor
+          {weatherKit
+            ? " from  Weather (Apple WeatherKit)"
+            : " from Tomorrow.io and OpenWeather"}
+          . The rain line only rises when intensity or wording supports it — not every low model
+          probability.
         </li>
         <li>
           <strong>Radar</strong> — echo along the route at your estimated arrival time on longer
@@ -42,6 +50,7 @@ export function RouteInfoLegend() {
           storm bar, and turn-by-turn on the top banner.
         </li>
       </ul>
+      {weatherKit ? <AppleWeatherAttribution theme="dark" className="rpgl__apple-weather" /> : null}
     </details>
   );
 }
