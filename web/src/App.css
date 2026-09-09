@@ -7389,13 +7389,14 @@
   white-space: nowrap;
 }
 
-/* Mapbox logo only — clear gap under chrome (z below stack so it never covers buttons). */
+/* Mapbox logo only — pin near the physical bottom (do not add safe-area here;
+ * that lifts it into the chrome). Nudge right so the phone corner curve does not clip it. */
 .map-legal-attr-strip {
   position: absolute;
-  left: max(6px, env(safe-area-inset-left, 0px));
+  left: max(22px, calc(env(safe-area-inset-left, 0px) + 14px));
   right: auto;
-  bottom: calc(2px + env(safe-area-inset-bottom, 0px));
-  z-index: 5;
+  bottom: 3px;
+  z-index: 8;
   height: var(--attribution-strip-h, 18px);
   display: flex;
   align-items: center;
@@ -7459,7 +7460,7 @@
 }
 
 .app-shell.nav-fullmap.app-shell--basic-ad-banner .map-legal-attr-strip {
-  bottom: calc(var(--basic-ad-banner-reserve, 50px) + 2px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--basic-ad-banner-reserve, 50px) + 3px);
 }
 
 /* Prefer our strip — hide the default Mapbox corner logo (keep compact © i). */
