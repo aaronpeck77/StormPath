@@ -16,7 +16,7 @@ import { stormpathVersionChipLabel, stormpathVersionLabel } from "../appVersion"
 import { stormpathBuildFlavor, stormpathFlavorChipLabel } from "../config/buildFlavor";
 import { safeStorage } from "../storage/safeStorage";
 import { MapKeyPanel } from "./MapKeyPanel";
-import { AppleWeatherAttribution } from "./AppleWeatherAttribution";
+import { StormPathSourcesAttribution } from "./StormPathSourcesAttribution";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import type { RadarDisplayMode } from "../state/settingsStore";
 import type { HomePuckFollowMode } from "../map/homePuckFollow";
@@ -892,9 +892,11 @@ export function AboutSheet({
               corridor and local forecasts use <strong> Weather</strong> (Apple WeatherKit) when enabled for this build,
               with optional Tomorrow.io / OpenWeather fallbacks when those keys are present.
             </p>
-            {env.weatherKitEnabled ? (
-              <AppleWeatherAttribution theme="dark" className="about-sheet__apple-weather" />
-            ) : null}
+            <StormPathSourcesAttribution
+              theme="dark"
+              includeAppleWeather={env.weatherKitEnabled}
+              className="about-sheet__apple-weather"
+            />
             <p className="about-sheet__p">
               <strong>Forecasts in the app:</strong> tap the side progress bar for <strong>Route info</strong>{" "}
               (corridor temp/rain, route radar strip, wind gusts, NWS + traffic bands, and hazard cards). Expand the

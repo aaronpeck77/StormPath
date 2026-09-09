@@ -27,7 +27,7 @@ import {
   type PrecipTypeCode,
 } from "../forecast/localForecastVisual";
 import { enrichDailyWithHourlyApparent } from "../forecast/localForecastDaily";
-import { AppleWeatherAttribution } from "./AppleWeatherAttribution";
+import { StormPathSourcesAttribution } from "./StormPathSourcesAttribution";
 import {
   formatDailyDayLabel,
   formatForecastUpdatedAt,
@@ -734,7 +734,11 @@ export function AdvisoryLocalForecast({
         ) : null}
       </div>
 
-      {showAppleWeatherAttr ? <AppleWeatherAttribution theme="dark" className="adv-dash__apple-weather" /> : null}
+      <StormPathSourcesAttribution
+        theme="dark"
+        includeAppleWeather={showAppleWeatherAttr}
+        className="adv-dash__apple-weather"
+      />
     </section>
   );
 }

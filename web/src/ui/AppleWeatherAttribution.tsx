@@ -10,12 +10,14 @@ type Props = {
   /** Dark UI (advisory / night map) uses the light mark asset. */
   theme?: "light" | "dark";
   className?: string;
+  /** Single-line strip under the map chrome (mark + Sources). */
+  compact?: boolean;
 };
 
 /**
  * Required WeatherKit attribution: Apple Weather trademark + legal source link (5.2.5).
  */
-export function AppleWeatherAttribution({ theme = "dark", className }: Props) {
+export function AppleWeatherAttribution({ theme = "dark", className, compact = false }: Props) {
   const [attr, setAttr] = useState<WeatherKitAttribution>(WEATHERKIT_ATTRIBUTION_FALLBACK);
 
   useEffect(() => {
@@ -33,7 +35,9 @@ export function AppleWeatherAttribution({ theme = "dark", className }: Props) {
 
   return (
     <div
-      className={`apple-weather-attr${className ? ` ${className}` : ""}`}
+      className={`apple-weather-attr${compact ? " apple-weather-attr--compact" : ""}${
+        className ? ` ${className}` : ""
+      }`}
       role="contentinfo"
       aria-label="Apple Weather attribution"
     >
@@ -49,7 +53,7 @@ export function AppleWeatherAttribution({ theme = "dark", className }: Props) {
             className="apple-weather-attr__mark"
             src={markUrl}
             alt=" Weather"
-            height={18}
+            height={compact ? 12 : 18}
             decoding="async"
           />
         </a>
@@ -64,7 +68,7 @@ export function AppleWeatherAttribution({ theme = "dark", className }: Props) {
         </a>
       )}
       <a className="apple-weather-attr__legal" href={legalHref} target="_blank" rel="noreferrer">
-        Other data sources
+        {compact ? "Sources" : "Other data sources"}
       </a>
     </div>
   );

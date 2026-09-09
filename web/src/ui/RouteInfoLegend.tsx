@@ -2,7 +2,7 @@
  * In-panel guide for the Route info graph — kept here so product copy tracks the glance panel layers.
  */
 import { getWebEnv } from "../config/env";
-import { AppleWeatherAttribution } from "./AppleWeatherAttribution";
+import { StormPathSourcesAttribution } from "./StormPathSourcesAttribution";
 
 export function RouteInfoLegend() {
   const weatherKit = getWebEnv().weatherKitEnabled;
@@ -50,7 +50,11 @@ export function RouteInfoLegend() {
           storm bar, and turn-by-turn on the top banner.
         </li>
       </ul>
-      {weatherKit ? <AppleWeatherAttribution theme="dark" className="rpgl__apple-weather" /> : null}
+      <StormPathSourcesAttribution
+        theme="dark"
+        includeAppleWeather={weatherKit}
+        className="rpgl__apple-weather"
+      />
     </details>
   );
 }

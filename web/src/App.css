@@ -1028,7 +1028,7 @@
   /* Shorter unrotated strip width = shorter vertical bar; legacy trim used in map fit padding */
   --nav-progress-strip-bottom-trim: 68px;
   /* Room under the command bar for Mapbox logo/� (controls use z-index above the stack; strip can stay thin). */
-  --attribution-strip-h: 14px;
+  --attribution-strip-h: 20px;
   /* Padding under .nav-bottom-stack ? keeps toolbar/search above the logo (Mapbox z-index above stack). */
   --nav-bottom-reserved: calc(2px + env(safe-area-inset-bottom, 0px) + var(--attribution-strip-h, 14px));
   /* Route PiP: snug under top cluster (overridden when .nav-top-cluster present) */
@@ -7366,6 +7366,127 @@
   color: rgba(147, 197, 253, 0.95);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+.apple-weather-attr--compact {
+  margin: 0;
+  padding: 0;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.apple-weather-attr--compact .apple-weather-attr__mark {
+  height: 12px;
+  max-width: 90px;
+}
+
+.apple-weather-attr--compact .apple-weather-attr__text-mark {
+  font-size: 0.58rem;
+}
+
+.apple-weather-attr--compact .apple-weather-attr__legal {
+  font-size: 0.55rem;
+  white-space: nowrap;
+}
+
+/* Always-on Mapbox + Apple Weather strip under bottom chrome */
+.map-legal-attr-strip {
+  position: absolute;
+  left: max(6px, env(safe-area-inset-left, 0px));
+  right: calc(56px + max(6px, env(safe-area-inset-right, 0px)));
+  bottom: max(1px, calc(env(safe-area-inset-bottom, 0px) - 2px));
+  z-index: 8;
+  height: var(--attribution-strip-h, 20px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.map-legal-attr-strip > * {
+  pointer-events: auto;
+}
+
+.map-legal-attr-strip__mapbox.mapboxgl-ctrl-logo {
+  position: static;
+  display: block;
+  width: 66px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+  background-repeat: no-repeat;
+  background-position: left center;
+  background-size: contain;
+}
+
+.map-legal-attr-strip__name {
+  font-size: 0.55rem;
+  font-weight: 650;
+  color: rgba(226, 232, 240, 0.72);
+  text-decoration: none;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+}
+
+.map-legal-attr-strip__osm {
+  font-size: 0.55rem;
+  font-weight: 650;
+  color: rgba(226, 232, 240, 0.72);
+  text-decoration: none;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+}
+
+.sp-sources-attr {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sp-sources-attr__also {
+  margin: 0;
+  font-size: 0.62rem;
+  line-height: 1.35;
+  color: rgba(203, 213, 225, 0.82);
+}
+
+.sp-sources-attr__also-label {
+  margin-right: 4px;
+  font-weight: 700;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.sp-sources-attr__chip a {
+  color: rgba(147, 197, 253, 0.95);
+  text-decoration: none;
+  font-weight: 650;
+}
+
+.sp-sources-attr__chip a:hover {
+  text-decoration: underline;
+}
+
+.sp-sources-attr__sep {
+  margin: 0 5px;
+  color: rgba(148, 163, 184, 0.55);
+}
+
+.sp-sources-attr--compact .sp-sources-attr__also {
+  font-size: 0.55rem;
+}
+
+.app-shell.nav-fullmap.app-shell--basic-ad-banner .map-legal-attr-strip {
+  bottom: calc(var(--basic-ad-banner-reserve, 50px) + max(1px, calc(env(safe-area-inset-bottom, 0px) - 2px)));
+}
+
+/* Prefer our strip — hide the default Mapbox corner logo (keep compact © i). */
+.map-stage.map-bleed .mapboxgl-ctrl-logo {
+  display: none !important;
+}
+
+.map-stage.map-bleed .map-legal-attr-strip .mapboxgl-ctrl-logo {
+  display: block !important;
 }
 
 .adv-dash__apple-weather {

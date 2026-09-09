@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import type { DriveMapProps } from "./DriveMap";
+import { MapLegalAttributionStrip } from "./MapLegalAttributionStrip";
 
 /** Prod code-split. Normalizes named/default export so React.lazy never hits its broken `%s` log path. */
 const lazyDriveMap = () =>
@@ -35,6 +36,7 @@ export function AppMapStage({ driveMapProps, children }: AppMapStageProps) {
           <DriveMap {...driveMapProps} />
         </Suspense>
       </div>
+      <MapLegalAttributionStrip />
       {children}
     </div>
   );
