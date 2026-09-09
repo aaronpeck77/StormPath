@@ -1027,10 +1027,10 @@
   --nav-progress-rail-foot-inset: var(--nav-dock-above-safe-current, 152px);
   /* Shorter unrotated strip width = shorter vertical bar; legacy trim used in map fit padding */
   --nav-progress-strip-bottom-trim: 68px;
-  /* Room under the command bar for Mapbox logo/� (controls use z-index above the stack; strip can stay thin). */
-  --attribution-strip-h: 20px;
-  /* Padding under .nav-bottom-stack ? keeps toolbar/search above the logo (Mapbox z-index above stack). */
-  --nav-bottom-reserved: calc(2px + env(safe-area-inset-bottom, 0px) + var(--attribution-strip-h, 14px));
+  /* Room under the command bar for Mapbox logo (controls sit in this strip only). */
+  --attribution-strip-h: 18px;
+  /* Padding under .nav-bottom-stack — keeps toolbar/search above the logo. */
+  --nav-bottom-reserved: calc(4px + env(safe-area-inset-bottom, 0px) + var(--attribution-strip-h, 18px));
   /* Route PiP: snug under top cluster (overridden when .nav-top-cluster present) */
   --pip-top: calc(max(8px, env(safe-area-inset-top)) + 80px + var(--rail-panel-gap));
   /* Bottom chrome: square-aligned panels + toolbar */
@@ -7389,19 +7389,19 @@
   white-space: nowrap;
 }
 
-/* Always-on Mapbox + Apple Weather strip under bottom chrome */
+/* Mapbox logo only — clear gap under chrome (z below stack so it never covers buttons). */
 .map-legal-attr-strip {
   position: absolute;
   left: max(6px, env(safe-area-inset-left, 0px));
-  right: calc(56px + max(6px, env(safe-area-inset-right, 0px)));
-  bottom: max(1px, calc(env(safe-area-inset-bottom, 0px) - 2px));
-  z-index: 8;
-  height: var(--attribution-strip-h, 20px);
+  right: auto;
+  bottom: calc(2px + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+  height: var(--attribution-strip-h, 18px);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0;
   pointer-events: none;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .map-legal-attr-strip > * {
@@ -7411,31 +7411,13 @@
 .map-legal-attr-strip__mapbox.mapboxgl-ctrl-logo {
   position: static;
   display: block;
-  width: 66px;
-  height: 16px;
+  width: 58px;
+  height: 14px;
   margin: 0;
   flex-shrink: 0;
   background-repeat: no-repeat;
   background-position: left center;
   background-size: contain;
-}
-
-.map-legal-attr-strip__name {
-  font-size: 0.55rem;
-  font-weight: 650;
-  color: rgba(226, 232, 240, 0.72);
-  text-decoration: none;
-  white-space: nowrap;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
-}
-
-.map-legal-attr-strip__osm {
-  font-size: 0.55rem;
-  font-weight: 650;
-  color: rgba(226, 232, 240, 0.72);
-  text-decoration: none;
-  white-space: nowrap;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
 }
 
 .sp-sources-attr {
@@ -7477,7 +7459,7 @@
 }
 
 .app-shell.nav-fullmap.app-shell--basic-ad-banner .map-legal-attr-strip {
-  bottom: calc(var(--basic-ad-banner-reserve, 50px) + max(1px, calc(env(safe-area-inset-bottom, 0px) - 2px)));
+  bottom: calc(var(--basic-ad-banner-reserve, 50px) + 2px + env(safe-area-inset-bottom, 0px));
 }
 
 /* Prefer our strip — hide the default Mapbox corner logo (keep compact © i). */

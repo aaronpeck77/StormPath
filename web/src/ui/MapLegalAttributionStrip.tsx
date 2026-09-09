@@ -1,10 +1,11 @@
 /**
- * Always-on legal strip in the reserved gap under the bottom chrome.
- * Mapbox logo + short map/radar/alert names. Full  Weather mark stays on weather panels.
+ * Always-on Mapbox logo in the reserved gap under the bottom chrome.
+ * OSM / RainViewer / NWS / WeatherKit names live on weather panels & About — not the map face.
+ * Compact Mapbox © attribution (“i”) still covers OSM in the map control.
  */
 export function MapLegalAttributionStrip() {
   return (
-    <div className="map-legal-attr-strip" aria-label="Map data attribution">
+    <div className="map-legal-attr-strip" aria-label="Mapbox">
       <a
         className="map-legal-attr-strip__mapbox mapboxgl-ctrl-logo"
         href="https://www.mapbox.com/about/maps/"
@@ -13,30 +14,6 @@ export function MapLegalAttributionStrip() {
         aria-label="Mapbox"
         title="Mapbox"
       />
-      <a
-        className="map-legal-attr-strip__name"
-        href="https://www.openstreetmap.org/copyright"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        © OSM
-      </a>
-      <a
-        className="map-legal-attr-strip__name"
-        href="https://www.rainviewer.com/"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        RainViewer
-      </a>
-      <a
-        className="map-legal-attr-strip__name"
-        href="https://www.weather.gov/"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        NWS
-      </a>
     </div>
   );
 }
