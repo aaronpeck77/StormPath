@@ -1,5 +1,4 @@
 import { safeStorage } from "../storage/safeStorage";
-import type { LngLat } from "../nav/types";
 
 const LS_HOME_PUCK_FOLLOW = "stormpath-home-puck-follow";
 
@@ -15,17 +14,4 @@ export function readHomePuckFollow(): HomePuckFollowMode {
 
 export function writeHomePuckFollow(mode: HomePuckFollowMode): void {
   safeStorage.set(LS_HOME_PUCK_FOLLOW, mode);
-}
-
-/**
- * Home is only “no trip yet”. A map-tapped destination with routes still loading
- * is planning — if we keep home puck-follow on, the camera yanks back to GPS
- * while dest-fit frames the pin. The pin looks unplaced; the map and puck fight.
- */
-export function isIdleHomeScreen(input: {
-  routesLength: number;
-  navigationStarted: boolean;
-  destLngLat: LngLat | null | undefined;
-}): boolean {
-  return input.routesLength === 0 && !input.navigationStarted && !input.destLngLat;
 }

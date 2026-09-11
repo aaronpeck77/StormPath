@@ -113,8 +113,8 @@ export function isMapReadyForFollowCam(map: Map | null | undefined): map is Map 
 
 export type HardFollowCameraOpts = {
   center: LngLat;
-  zoom?: number;
-  pitch?: number;
+  zoom: number;
+  pitch: number;
   bearing: number;
 };
 
@@ -133,9 +133,9 @@ export function safeHardFollowCamera(map: Map, opts: HardFollowCameraOpts): bool
       /* ignore */
     }
     map.setCenter(center);
-    if (typeof opts.zoom === "number" && Number.isFinite(opts.zoom)) map.setZoom(opts.zoom);
+    if (Number.isFinite(opts.zoom)) map.setZoom(opts.zoom);
     if (Number.isFinite(opts.bearing)) map.setBearing(opts.bearing);
-    if (typeof opts.pitch === "number" && Number.isFinite(opts.pitch)) map.setPitch(opts.pitch);
+    if (Number.isFinite(opts.pitch)) map.setPitch(opts.pitch);
     return true;
   } catch {
     return false;

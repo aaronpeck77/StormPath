@@ -1950,8 +1950,7 @@ export default function App() {
 
   /** Rt + Mp: explore / plan on the map; Dr is follow-cam — keep tap-to-dest and ★ off there. */
   const mapPlanningUi = viewMode === "route" || viewMode === "topdown";
-  /** Planning taps must work even if view is briefly still Drive before the kick-out effect. */
-  const allowDestinationPick = !navigationStarted;
+  const allowDestinationPick = mapPlanningUi;
   const routeActive = plan.routes.length > 0;
   const showCompactDest = routeActive && !searchExpanded;
   const showReturnTripButton =

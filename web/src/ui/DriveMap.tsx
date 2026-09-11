@@ -8,7 +8,7 @@ import {
   resolveIdleHomeCameraAction,
   resolveIdleHomeFraming,
 } from "../map/homeMapFraming";
-import { isIdleHomeScreen, type HomePuckFollowMode } from "../map/homePuckFollow";
+import type { HomePuckFollowMode } from "../map/homePuckFollow";
 import { FALLBACK_LNGLAT } from "../nav/constants";
 import type { TripStop } from "../nav/routeWaypoints";
 import {
@@ -135,7 +135,6 @@ import {
   guardDriveFollowCamera,
   rememberDriveFollowZoom,
   repairStoredDriveFollowZoom,
-  shouldWriteDriveFollowZoom,
 } from "./driveFollowZoomGuard";
 import {
   advanceFollowCamWriter,
@@ -193,7 +192,6 @@ import {
   setRainViewerRadarTilesOnSource,
   setRainViewerRadarLayersVisible,
   setRainViewerRadarDualOpacity,
-  snapRainViewerRadarToSolidFrame,
   waitForRainViewerSideLoaded,
   setRadarMapTileProvider,
 } from "./mapRadarLayer";
@@ -542,11 +540,7 @@ function DriveMapInner({
   const planningFitRetryTimerRef = useRef<number | null>(null);
   const planningFitVerifyTimerRef = useRef<number | null>(null);
   const activeDriveCamera = navigationStarted && viewMode === "drive";
-  const idleHomeScreen = isIdleHomeScreen({
-    routesLength: routes.length,
-    navigationStarted,
-    destLngLat,
-  });
+  const idleHomeScreen = routes.length === 0 && !navigationStarted;
   const topdownFollowKey = userLngLat
     ? `${Math.round(userLngLat[0] * 2500)}|${Math.round(userLngLat[1] * 2500)}`
     : null;
@@ -1412,7 +1406,6 @@ function DriveMapInner({
     let driveCamFrame = 0;
     let followWriter: FollowCamWriter = followCamWriterRef.current;
     let followHoldFalseSinceMs: number | null = followWriter === "hard" ? null : Date.now();
-    let followZoomWriteAtMs = 0;
     const DRIVE_CAM_FORCE_RESYNC_FRAMES = 75;
 
     const readPuckFollowLngLat = (): LngLat | null =>
@@ -1675,27 +1668,21 @@ function DriveMapInner({
           } catch {
             mapZoomNow = NaN;
           }
-          const nowMs = Date.now();
-          const writeZoom = shouldWriteDriveFollowZoom({
-            liveZoom: mapZoomNow,
-            lastZoomWriteAtMs: followZoomWriteAtMs,
-            nowMs,
-          });
+          const zoomOff =
+            Number.isFinite(mapZoomNow) && mapZoomNow < DRIVE_FOLLOW_ZOOM_MIN;
           const forceCamSync = driveCamResyncRef.current || forcePeriodicResync;
-          /* Layout / pitch / periodic resync must not send zoom — that fights Mapbox
-           * when getZoom() glitches and looks like zoom flying out of control. */
-          const applyLayoutOrEntry = pitchOff || forceCamSync || easeLayoutChanged || writeZoom;
+          const applyLayoutOrEntry = pitchOff || forceCamSync || easeLayoutChanged || zoomOff;
           if (camMoved || bearingMoved || applyLayoutOrEntry) {
             if (pos) {
               /* Yard-line pan vs hard setCenter are two road framings. Switching
                * them when tiles flap looks like the puck leaping forward/back.
-               * Hard only while supervisor holds tiles — not every offline blip. */
-              const holdTiles = holdLastGoodMapRef.current;
+               * Hard only while tiles are held (+ clear delay). Failed pan skips. */
+              const holdTiles = holdLastGoodMapRef.current || !isOnlineRef.current;
               const latched = advanceFollowCamWriter({
                 holdTiles,
                 writer: followWriter,
                 holdFalseSinceMs: followHoldFalseSinceMs,
-                nowMs,
+                nowMs: Date.now(),
               });
               followWriter = latched.writer;
               followHoldFalseSinceMs = latched.holdFalseSinceMs;
@@ -1706,14 +1693,11 @@ function DriveMapInner({
                 zoom: repairStoredDriveFollowZoom(driveNavZoomRef),
                 puck: pos as [number, number],
               });
-              const zoomPitch = writeZoom
-                ? { zoom: guarded.zoom, pitch: DRIVE_FOLLOW_PITCH_DEG }
-                : pitchOff
-                  ? { pitch: DRIVE_FOLLOW_PITCH_DEG }
-                  : {};
               const panOpts = {
                 center: guarded.center,
-                ...zoomPitch,
+                ...(applyLayoutOrEntry
+                  ? { zoom: guarded.zoom, pitch: DRIVE_FOLLOW_PITCH_DEG }
+                  : {}),
                 bearing: driveCamBearingSmoothedRef.current,
                 padding,
                 offset,
@@ -1724,22 +1708,19 @@ function DriveMapInner({
               if (followWriter === "hard") {
                 const hardOk = safeHardFollowCamera(map, {
                   center: guarded.center,
-                  ...(writeZoom
-                    ? { zoom: guarded.zoom, pitch: DRIVE_FOLLOW_PITCH_DEG }
-                    : {}),
+                  zoom: guarded.zoom,
+                  pitch: DRIVE_FOLLOW_PITCH_DEG,
                   bearing: driveCamBearingSmoothedRef.current,
                 });
                 if (hardOk) {
                   lastBearingApplied = driveCamBearingSmoothedRef.current;
                   driveCamResyncRef.current = false;
-                  if (writeZoom) followZoomWriteAtMs = nowMs;
                 }
               } else {
                 const ok = safePanToCenter(map, panOpts);
                 if (ok) {
                   lastBearingApplied = driveCamBearingSmoothedRef.current;
                   if (forceCamSync) driveCamResyncRef.current = false;
-                  if (writeZoom) followZoomWriteAtMs = nowMs;
                 }
               }
             }
@@ -2524,44 +2505,9 @@ function DriveMapInner({
       })();
     };
 
-    let rateLimitResumeTimer: number | null = null;
-    const clearRateLimitResume = () => {
-      if (rateLimitResumeTimer != null) {
-        window.clearTimeout(rateLimitResumeTimer);
-        rateLimitResumeTimer = null;
-      }
-    };
-    /**
-     * RainViewer cooldown: keep the last painted frame on screen and keep retrying
-     * until the cooldown clears (one-shot resume used to miss and leave Rad on / map blank).
-     */
-    const scheduleRateLimitResume = () => {
-      clearRateLimitResume();
-      const waitMs = Math.max(750, rainViewerRateLimitMsRemaining() + 400);
-      rateLimitResumeTimer = window.setTimeout(() => {
-        rateLimitResumeTimer = null;
-        if (cancelled || mapRef.current !== map || !showRadar) return;
-        if (isRainViewerRateLimited()) {
-          scheduleRateLimitResume();
-          return;
-        }
-        setRainViewerRadarLayersVisible(map, true);
-        lastRadarPathsKey = "";
-        void loadManifest();
-      }, waitMs);
-    };
-
-    const freezeRadarForRateLimit = () => {
-      if (!showRadar || mapRef.current !== map) return;
-      radarLoopGeneration += 1;
-      snapRainViewerRadarToSolidFrame(map, RAINVIEWER_RADAR_VISIBLE_OPACITY);
-      scheduleRateLimitResume();
-    };
-
     const loadManifest = async () => {
       if (!showRadar) {
         clearTimers();
-        clearRateLimitResume();
         radarLoopGeneration += 1;
         onRadarFrameUtcSecRef.current?.(null);
         removeRainViewerRadar(map);
@@ -2587,11 +2533,7 @@ function DriveMapInner({
         liftRouteHits();
         return;
       }
-      if (providerRateLimited(pack)) {
-        snapRainViewerRadarToSolidFrame(map, RAINVIEWER_RADAR_VISIBLE_OPACITY);
-        scheduleRateLimitResume();
-        return;
-      }
+      if (providerRateLimited(pack)) return;
       if (pack.provider === "rainviewer") tioTileErrorStreak = 0;
       lastResolvedProvider = pack.provider;
       const cells: RadarCell[] = animationCellsForPack(pack).map((f) => ({
@@ -2635,10 +2577,7 @@ function DriveMapInner({
     };
 
     void loadManifest();
-    if (showRadar) {
-      manifestTimer = setInterval(() => void loadManifest(), 600_000);
-      if (isRainViewerRateLimited()) scheduleRateLimitResume();
-    }
+    if (showRadar) manifestTimer = setInterval(() => void loadManifest(), 600_000);
 
     const onRadarTileError = (e: mapboxgl.ErrorEvent) => {
       if (
@@ -2674,8 +2613,19 @@ function DriveMapInner({
     };
     map.on("moveend", onMoveEnd);
 
+    let rateLimitResumeTimer: number | null = null;
     const offRateLimit = onRainViewerRateLimit(() => {
-      freezeRadarForRateLimit();
+      if (!showRadar || mapRef.current !== map) return;
+      setRainViewerRadarLayersVisible(map, false);
+      if (rateLimitResumeTimer) window.clearTimeout(rateLimitResumeTimer);
+      rateLimitResumeTimer = window.setTimeout(() => {
+        rateLimitResumeTimer = null;
+        if (cancelled || mapRef.current !== map || !showRadar) return;
+        if (!isRainViewerRateLimited()) {
+          setRainViewerRadarLayersVisible(map, true);
+          void loadManifest();
+        }
+      }, rainViewerRateLimitMsRemaining() + 500);
     });
 
     return () => {
@@ -2684,7 +2634,7 @@ function DriveMapInner({
       map.off("moveend", onMoveEnd);
       map.off("error", onRadarTileError);
       offRateLimit();
-      clearRateLimitResume();
+      if (rateLimitResumeTimer) clearTimeout(rateLimitResumeTimer);
       radarLoopGeneration += 1;
       onRadarFrameUtcSecRef.current?.(null);
       clearTimers();
@@ -3028,11 +2978,7 @@ function DriveMapInner({
     const map = mapRef.current;
     if (!map || !mapReady || viewMode !== "route" && viewMode !== "topdown") return;
     if (routes.length > 0 || navigationStarted) return;
-    userExploringRef.current = false;
-    if (exploreTimerRef.current) {
-      clearTimeout(exploreTimerRef.current);
-      exploreTimerRef.current = null;
-    }
+    if (userExploringRef.current) return;
     const u = userLngLatRef.current;
     if (!u || !destLngLat) return;
     if (viewMode === "topdown") {
@@ -3733,7 +3679,9 @@ function DriveMapInner({
           );
           /* Same single writer as the RAF loop — do not chain pan → hard → jump. */
           const useHard =
-            followCamWriterRef.current === "hard" || holdLastGoodMapRef.current;
+            followCamWriterRef.current === "hard" ||
+            holdLastGoodMapRef.current ||
+            !isOnlineRef.current;
           const guarded = guardDriveFollowCamera({
             center: pos,
             zoom: repairStoredDriveFollowZoom(driveNavZoomRef),
