@@ -16,6 +16,7 @@ import {
 import type { LngLat, RouteTurnStep } from "./types";
 import type { TripStop } from "./routeWaypoints";
 import type { NavigationPositionState } from "../hooks/useNavigationPosition";
+import { createNativeDrivePoseHold } from "./nativeDrivePoseHold";
 
 export type NativeNavSessionCoords = {
   userLngLat: LngLat | null;
@@ -116,6 +117,7 @@ export function useNativeNavSession(opts: {
   const corridorAdoptedRef = useRef(false);
   /** First Core `routeChanged` this session — later ones are mid-trip reroutes. */
   const firstRouteChangedRef = useRef(true);
+  const poseHoldRef = useRef(createNativeDrivePoseHold());
   const listenersRef = useRef<{ remove: () => Promise<void> }[]>([]);
   const onRouteGeometryRef = useRef(onRouteGeometry);
   onRouteGeometryRef.current = onRouteGeometry;
@@ -142,6 +144,7 @@ export function useNativeNavSession(opts: {
     startedForNavRef.current = false;
     corridorAdoptedRef.current = false;
     firstRouteChangedRef.current = true;
+    poseHoldRef.current.reset();
     setNativeNavActive(false);
     setPosition(null);
     setGuidance(null);
@@ -161,6 +164,7 @@ export function useNativeNavSession(opts: {
       await removeListeners();
       corridorAdoptedRef.current = false;
       firstRouteChangedRef.current = true;
+      poseHoldRef.current.reset();
 
       const handles = await Promise.all([
         StormpathMapboxNavigation.addListener("progress", (e: NativeNavProgressEvent) => {
@@ -172,11 +176,18 @@ export function useNativeNavSession(opts: {
           ) {
             return;
           }
-          setPosition({
-            positionLngLat: [e.lng, e.lat],
+          const held = poseHoldRef.current.accept({
+            lng: e.lng,
+            lat: e.lat,
             alongM: e.alongM,
+            headingDeg: e.headingDeg ?? null,
+            speedMps: e.speedMps ?? null,
+          });
+          setPosition({
+            positionLngLat: [held.pose.lng, held.pose.lat],
+            alongM: held.pose.alongM,
             onRoute: e.onRoute,
-            source: "route_snap",
+            source: held.held || e.poseHeld ? "held" : "route_snap",
           });
           const instr =
             typeof e.instruction === "string" && e.instruction.trim()

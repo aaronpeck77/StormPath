@@ -11,21 +11,57 @@
 - When Bill is ready to ship a change, pick an idea out of Brain and implement it in `web/` / docs as usual
 - Active ship / bugfix work stays in chat and code — Brain is for *later* and *thinking*
 
-**Current product focus:** App Store v1 stable first. Brain items below wait until Bill says so (or asks to pull one idea forward).
+**Current product focus:** Store app stays on **`master`** (4.20.8, leave it alone). **Brain Priority 1 is open** on branch **`native/drive`** — thicken the native Drive shell so following feels like Apple / Google / Waze. See `docs/NATIVE_TRACK.md`. Other Brain ideas wait.
 
-### Stability gate (optional cue before big Brain builds)
+### Dual track (do not mix)
 
-Say *“store is stable — open the Brain”* when v1 is good enough, or name a section anytime to work one idea:
+| Track | Branch | Rule |
+|-------|--------|------|
+| Live App Store / gold-restore web Drive | `master` | Do not merge native experiments here. Do not “fix” store nav from `native/drive`. |
+| Native Drive (P1) | `native/drive` | Daily work. TestFlight only when Bill asks. Never App Store until he promotes. |
 
-- [ ] TestFlight from current `master` (map handoff fix `e2520ed`+)
-- [ ] Wi‑Fi → weak cell: map/camera keeps following puck
-- [ ] Alternate route at Go stays locked in Drive
-- [ ] No show-stopper crashes on a real drive
-- [ ] App Store path clear (signing, metadata, review)
+### Stability gate (store path — leave alone for now)
+
+Store binary accepted ~Sep 11, 2026 (4.20.8). Soak testers. Do not bump / resubmit unless Bill asks.
+
+- [x] App Store path clear — **4.20.8** accepted ~Sep 11, 2026
+- [ ] Testers like the store build (people, not more weather)
+- [ ] Alternate route at Go stays locked in Drive (store / `master`)
+- [ ] No show-stopper crashes on a real drive (store)
 
 ---
 
-## Dark Sky–inspired route nowcast (post-launch idea)
+## Priority 1 — Native-feel navigation (OPEN on `native/drive`)
+
+**Bill’s call (Sep 11, 2026):** Store version is good enough to leave alone. What’s missing is **following** — puck on screen, cam that does not freeze or fly to Canada — vs Apple / Google / Waze. Thicken the **native shell**; keep web for weather, Route info, About.
+
+**Do not:** throw away the Capacitor/web app. Do not rewrite About/weather in SwiftUI. Do not merge this into `master` or ship store from this branch until Bill says the soak is better than gold.
+
+### Build order
+
+1. **Native last-good pose** (first slice, this branch) — Mapbox Navigation Core already snaps after Go. Hold leaps / radio flaps in **Swift** (`DrivePoseHold`) before JS sees the puck. JS mirrors the same rules (`nativeDrivePoseHold.ts`).
+2. **Native follow-cam owner** — iOS decides zoom/center; WebView map becomes a slave, not the writer.
+3. **Native puck layer** — draw the chevron in UIKit / Mapbox Maps if WebView GL still flakes.
+4. **Optional later:** full Mapbox Maps iOS under the chrome. Not a product rewrite.
+
+Existing plugin: `web/plugins/stormpath-mapbox-navigation/` (`StormpathMapboxNavigationPlugin.swift`).
+
+### How to work this idea
+
+```bash
+git fetch origin
+git switch native/drive
+```
+
+Cue phrases: *“open Brain P1”* (already open), *“native cam next”*, *“TestFlight this native branch”* (only when Bill asks).
+
+---
+
+## Dark Sky–inspired route nowcast (shelved Sep 10, 2026)
+
+**Bill’s call:** We may never go this direction. StormPath **already surpasses** what Dark Sky did (radar, corridor, NWS, advisory, graphs). What’s missing is **following**, not another weather product. Native-feel Drive (Priority 1) is the survival problem.
+
+**Status:** Shelved. Do not pull forward, do not implement, do not treat as next Brain item. Keep the notes below as archive only.
 
 **Context (Aug 2026):** Dark Sky was loved for hyperlocal clarity (“rain in 12 minutes *here*”), minute-level curves, glanceable UI, and context that changed emphasis (rain vs wind vs temp). Apple Weather has much of the data but buries the answer. StormPath’s lane is **not** a weather app clone — it’s **Dark Sky clarity for the corridor you’re driving**.
 
@@ -73,5 +109,7 @@ Say *“store is stable — open the Brain”* when v1 is good enough, or name a
 
 - Read this file when Bill mentions Brain, post-launch ideas, or Dark Sky direction
 - Add new sections below as ideas appear; connect them when related
-- **Never** treat Brain content as something to auto-ship into the IPA
-- Implement only what Bill explicitly asks to build from a Brain idea
+- **Never** treat Brain content as something to auto-ship into the IPA / App Store
+- **Priority 1** is native-feel Drive on `native/drive` (opened). Dark Sky is archive-only — do not pull it forward
+- Do not merge `native/drive` into `master` or run the App Store workflow from it unless Bill asks
+- Implement other Brain ideas only when Bill explicitly asks

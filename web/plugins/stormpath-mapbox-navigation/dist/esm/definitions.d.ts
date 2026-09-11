@@ -25,6 +25,12 @@ export type NativeNavProgressEvent = {
   /** Road name for the step currently being traveled. */
   currentRoadName?: string | null;
   currentRoadRef?: string | null;
+  /** Course from Mapbox enhanced location (degrees). */
+  headingDeg?: number | null;
+  /** Speed from Mapbox enhanced location (m/s). */
+  speedMps?: number | null;
+  /** True when native last-good pose rejected a leap. */
+  poseHeld?: boolean;
 };
 
 /** Live turn banner fields from Mapbox Navigation Core (iOS). */

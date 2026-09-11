@@ -35,7 +35,8 @@ chmod 600 ~/.netrc
 - `isAvailable()` → `{ available: boolean }` (true only on native iOS with plugin)
 - `startActiveGuidance({ accessToken, coordinates: [{lng,lat}], simulate? })`
 - `stop()`
-- Events: `progress`, `routeChanged`, `arrived`, `cancelled`, `error`
+- Events: `progress` (`lng`/`lat`/`alongM`, plus `headingDeg`/`speedMps`/`poseHeld` when Core has a fix), `routeChanged`, `arrived`, `cancelled`, `error`
+- Native last-good pose (`DrivePoseHold.swift`) rejects Canada-scale puck leaps before JS sees them. JS mirrors the same rules in `web/src/nav/nativeDrivePoseHold.ts`.
 
 ## Cost
 

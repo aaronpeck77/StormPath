@@ -1,0 +1,33 @@
+# Native Drive track (`native/drive`)
+
+**Store / customers:** stay on **`master`**. The live App Store app (4.20.8) is that path. Do **not** merge this branch, run the **appstore** workflow from it, or “fix” store nav from here until Bill says the native soak is better than gold.
+
+**This branch:** Brain **Priority 1** — thicken the **native shell** so Drive feels like Apple / Google / Waze (puck stays on screen, cam does not freeze or fly to Canada). Web UI (weather, Route info, About) stays web.
+
+## Two apps, one repo
+
+| Track | Branch | What Bill does |
+|-------|--------|----------------|
+| Store / gold-restore web Drive | `master` | Leave alone. TestFlight only if he asks. |
+| Native Drive | `native/drive` | Daily work. TestFlight **testflight** track when he asks — never App Store until promoted. |
+
+Forge leftover desktop camera experiments are **not** this track (stashed off `master`).
+
+## What “aggressive native” means (in order)
+
+1. **Native last-good pose** (this branch, first slice) — Mapbox Navigation Core already snaps after Go. Hold leaps / radio flaps in **Swift** before JS sees the puck.
+2. **Native follow-cam owner** — iOS decides zoom/center; WebView map becomes a slave, not the writer.
+3. **Native puck layer** — draw the chevron in UIKit/Mapbox Maps if WebView GL still flakes.
+4. **Optional later:** full Mapbox Maps iOS under the chrome. Not a SwiftUI rewrite of About/weather.
+
+## How to work
+
+```bash
+git fetch origin
+git switch native/drive
+git pull
+```
+
+Push **this branch only**. CI iOS workflow does **not** auto-run on `native/drive` (only `master` / `main`).
+
+When a native slice is solid on a phone TestFlight, Bill can promote (merge/cherry-pick) — never the other way around while store is “good enough.”

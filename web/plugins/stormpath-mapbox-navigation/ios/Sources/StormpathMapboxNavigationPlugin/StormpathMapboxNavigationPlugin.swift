@@ -30,6 +30,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     /// Retain voice controller so spoken instructions keep working without UIKit nav UI.
     private var voiceController: RouteVoiceController?
     private var voiceEnabled = false
+    /// Last-good puck — reject Core leaps before JS / DriveMap see them.
+    private var poseHold = DrivePoseHold()
 
     @objc func isAvailable(_ call: CAPPluginCall) {
         call.resolve(["available": true])
@@ -242,13 +244,22 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     private func emitProgress(state: RouteProgressState?) {
         guard sessionActive, let state else { return }
         let progress = state.routeProgress
-        let matching = navigationProvider?.mapboxNavigation.navigation().currentLocationMatching
-        guard let coord = matching?.enhancedLocation.coordinate else {
+        guard let matching = navigationProvider?.mapboxNavigation.navigation().currentLocationMatching else {
             // No matched fix yet — skip puck update but keep session alive.
             return
         }
-
-        let alongM = progress.distanceTraveled
+        let loc = matching.enhancedLocation
+        let coord = loc.coordinate
+        let headingDeg: Double? = loc.course >= 0 ? loc.course : nil
+        let speedMps: Double? = loc.speed >= 0 ? loc.speed : nil
+        let accepted = poseHold.accept(DrivePoseSample(
+            coordinate: coord,
+            alongM: progress.distanceTraveled,
+            headingDeg: headingDeg,
+            speedMps: speedMps
+        ))
+        let pose = accepted.sample
+        let alongM = pose.alongM
         let remainingM = progress.distanceRemaining
         let legProgress = progress.currentLegProgress
         let stepIndex = globalStepIndex(progress: progress)
@@ -264,7 +275,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         let roadName = currentStep.names?.joined(separator: " / ") ?? ""
         let roadRef = currentStep.codes?.joined(separator: " / ") ?? ""
 
-        notifyListeners("progress", data: [
+        var payload: [String: Any] = [
             "alongM": alongM,
             "remainingM": remainingM,
             "onRoute": true,
@@ -273,9 +284,17 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             "instruction": instruction,
             "currentRoadName": roadName,
             "currentRoadRef": roadRef,
-            "lng": coord.longitude,
-            "lat": coord.latitude,
-        ])
+            "lng": pose.coordinate.longitude,
+            "lat": pose.coordinate.latitude,
+            "poseHeld": accepted.held,
+        ]
+        if let heading = pose.headingDeg {
+            payload["headingDeg"] = heading
+        }
+        if let speed = pose.speedMps {
+            payload["speedMps"] = speed
+        }
+        notifyListeners("progress", data: payload)
 
         if !didEmitArrival, remainingM >= 0, remainingM < 30, alongM > 50 {
             didEmitArrival = true
@@ -357,5 +376,6 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         voiceEnabled = false
         voiceController = nil
         navigationProvider = nil
+        poseHold.reset()
     }
 }
