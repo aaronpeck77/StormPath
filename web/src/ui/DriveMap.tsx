@@ -8,7 +8,7 @@ import {
   resolveIdleHomeCameraAction,
   resolveIdleHomeFraming,
 } from "../map/homeMapFraming";
-import type { HomePuckFollowMode } from "../map/homePuckFollow";
+import { isIdleHomeScreen, type HomePuckFollowMode } from "../map/homePuckFollow";
 import { FALLBACK_LNGLAT } from "../nav/constants";
 import type { TripStop } from "../nav/routeWaypoints";
 import {
@@ -542,7 +542,11 @@ function DriveMapInner({
   const planningFitRetryTimerRef = useRef<number | null>(null);
   const planningFitVerifyTimerRef = useRef<number | null>(null);
   const activeDriveCamera = navigationStarted && viewMode === "drive";
-  const idleHomeScreen = routes.length === 0 && !navigationStarted;
+  const idleHomeScreen = isIdleHomeScreen({
+    routesLength: routes.length,
+    navigationStarted,
+    destLngLat,
+  });
   const topdownFollowKey = userLngLat
     ? `${Math.round(userLngLat[0] * 2500)}|${Math.round(userLngLat[1] * 2500)}`
     : null;
@@ -3024,7 +3028,11 @@ function DriveMapInner({
     const map = mapRef.current;
     if (!map || !mapReady || viewMode !== "route" && viewMode !== "topdown") return;
     if (routes.length > 0 || navigationStarted) return;
-    if (userExploringRef.current) return;
+    userExploringRef.current = false;
+    if (exploreTimerRef.current) {
+      clearTimeout(exploreTimerRef.current);
+      exploreTimerRef.current = null;
+    }
     const u = userLngLatRef.current;
     if (!u || !destLngLat) return;
     if (viewMode === "topdown") {
