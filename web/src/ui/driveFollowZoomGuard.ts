@@ -68,3 +68,21 @@ export function driveFollowBlocksWideFit(input: {
 }): boolean {
   return input.navigationStarted && input.viewMode === "drive";
 }
+
+/** Do not rewrite Drive zoom every frame — that is the “zoom out of control” fight. */
+export const DRIVE_FOLLOW_ZOOM_REPAIR_COOLDOWN_MS = 1_500;
+
+/**
+ * Hot-loop zoom write: only a continent-scale leak, and only once per cooldown.
+ * User pinch is stored separately; periodic layout / Jeff ticks must not send zoom.
+ */
+export function shouldWriteDriveFollowZoom(input: {
+  liveZoom: number;
+  lastZoomWriteAtMs: number;
+  nowMs: number;
+  cooldownMs?: number;
+}): boolean {
+  if (!isDriveContinentZoom(input.liveZoom)) return false;
+  const wait = input.cooldownMs ?? DRIVE_FOLLOW_ZOOM_REPAIR_COOLDOWN_MS;
+  return input.nowMs - input.lastZoomWriteAtMs >= wait;
+}

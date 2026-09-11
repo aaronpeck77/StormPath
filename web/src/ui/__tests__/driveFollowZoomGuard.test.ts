@@ -8,6 +8,7 @@ import {
   isDriveContinentZoom,
   rememberDriveFollowZoom,
   repairStoredDriveFollowZoom,
+  shouldWriteDriveFollowZoom,
 } from "../driveFollowZoomGuard";
 
 describe("drive follow zoom block", () => {
@@ -56,6 +57,30 @@ describe("drive follow zoom block", () => {
     });
     expect(guarded.center).toEqual(puck);
     expect(guarded.zoom).toBe(16.1);
+  });
+
+  it("does not rewrite street zoom on the hot loop (same-binary zoom fight)", () => {
+    expect(
+      shouldWriteDriveFollowZoom({
+        liveZoom: 16.2,
+        lastZoomWriteAtMs: 0,
+        nowMs: 50,
+      })
+    ).toBe(false);
+    expect(
+      shouldWriteDriveFollowZoom({
+        liveZoom: 6.95,
+        lastZoomWriteAtMs: 10_000,
+        nowMs: 10_200,
+      })
+    ).toBe(false);
+    expect(
+      shouldWriteDriveFollowZoom({
+        liveZoom: 6.95,
+        lastZoomWriteAtMs: 10_000,
+        nowMs: 12_000,
+      })
+    ).toBe(true);
   });
 
   it("blocks wide fits while Drive follow is active", () => {

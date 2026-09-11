@@ -135,6 +135,7 @@ import {
   guardDriveFollowCamera,
   rememberDriveFollowZoom,
   repairStoredDriveFollowZoom,
+  shouldWriteDriveFollowZoom,
 } from "./driveFollowZoomGuard";
 import {
   advanceFollowCamWriter,
@@ -1407,6 +1408,7 @@ function DriveMapInner({
     let driveCamFrame = 0;
     let followWriter: FollowCamWriter = followCamWriterRef.current;
     let followHoldFalseSinceMs: number | null = followWriter === "hard" ? null : Date.now();
+    let followZoomWriteAtMs = 0;
     const DRIVE_CAM_FORCE_RESYNC_FRAMES = 75;
 
     const readPuckFollowLngLat = (): LngLat | null =>
@@ -1669,21 +1671,27 @@ function DriveMapInner({
           } catch {
             mapZoomNow = NaN;
           }
-          const zoomOff =
-            Number.isFinite(mapZoomNow) && mapZoomNow < DRIVE_FOLLOW_ZOOM_MIN;
+          const nowMs = Date.now();
+          const writeZoom = shouldWriteDriveFollowZoom({
+            liveZoom: mapZoomNow,
+            lastZoomWriteAtMs: followZoomWriteAtMs,
+            nowMs,
+          });
           const forceCamSync = driveCamResyncRef.current || forcePeriodicResync;
-          const applyLayoutOrEntry = pitchOff || forceCamSync || easeLayoutChanged || zoomOff;
+          /* Layout / pitch / periodic resync must not send zoom — that fights Mapbox
+           * when getZoom() glitches and looks like zoom flying out of control. */
+          const applyLayoutOrEntry = pitchOff || forceCamSync || easeLayoutChanged || writeZoom;
           if (camMoved || bearingMoved || applyLayoutOrEntry) {
             if (pos) {
               /* Yard-line pan vs hard setCenter are two road framings. Switching
                * them when tiles flap looks like the puck leaping forward/back.
-               * Hard only while tiles are held (+ clear delay). Failed pan skips. */
-              const holdTiles = holdLastGoodMapRef.current || !isOnlineRef.current;
+               * Hard only while supervisor holds tiles — not every offline blip. */
+              const holdTiles = holdLastGoodMapRef.current;
               const latched = advanceFollowCamWriter({
                 holdTiles,
                 writer: followWriter,
                 holdFalseSinceMs: followHoldFalseSinceMs,
-                nowMs: Date.now(),
+                nowMs,
               });
               followWriter = latched.writer;
               followHoldFalseSinceMs = latched.holdFalseSinceMs;
@@ -1694,11 +1702,14 @@ function DriveMapInner({
                 zoom: repairStoredDriveFollowZoom(driveNavZoomRef),
                 puck: pos as [number, number],
               });
+              const zoomPitch = writeZoom
+                ? { zoom: guarded.zoom, pitch: DRIVE_FOLLOW_PITCH_DEG }
+                : pitchOff
+                  ? { pitch: DRIVE_FOLLOW_PITCH_DEG }
+                  : {};
               const panOpts = {
                 center: guarded.center,
-                ...(applyLayoutOrEntry
-                  ? { zoom: guarded.zoom, pitch: DRIVE_FOLLOW_PITCH_DEG }
-                  : {}),
+                ...zoomPitch,
                 bearing: driveCamBearingSmoothedRef.current,
                 padding,
                 offset,
@@ -1709,19 +1720,22 @@ function DriveMapInner({
               if (followWriter === "hard") {
                 const hardOk = safeHardFollowCamera(map, {
                   center: guarded.center,
-                  zoom: guarded.zoom,
-                  pitch: DRIVE_FOLLOW_PITCH_DEG,
+                  ...(writeZoom
+                    ? { zoom: guarded.zoom, pitch: DRIVE_FOLLOW_PITCH_DEG }
+                    : {}),
                   bearing: driveCamBearingSmoothedRef.current,
                 });
                 if (hardOk) {
                   lastBearingApplied = driveCamBearingSmoothedRef.current;
                   driveCamResyncRef.current = false;
+                  if (writeZoom) followZoomWriteAtMs = nowMs;
                 }
               } else {
                 const ok = safePanToCenter(map, panOpts);
                 if (ok) {
                   lastBearingApplied = driveCamBearingSmoothedRef.current;
                   if (forceCamSync) driveCamResyncRef.current = false;
+                  if (writeZoom) followZoomWriteAtMs = nowMs;
                 }
               }
             }
@@ -3711,9 +3725,7 @@ function DriveMapInner({
           );
           /* Same single writer as the RAF loop — do not chain pan → hard → jump. */
           const useHard =
-            followCamWriterRef.current === "hard" ||
-            holdLastGoodMapRef.current ||
-            !isOnlineRef.current;
+            followCamWriterRef.current === "hard" || holdLastGoodMapRef.current;
           const guarded = guardDriveFollowCamera({
             center: pos,
             zoom: repairStoredDriveFollowZoom(driveNavZoomRef),
