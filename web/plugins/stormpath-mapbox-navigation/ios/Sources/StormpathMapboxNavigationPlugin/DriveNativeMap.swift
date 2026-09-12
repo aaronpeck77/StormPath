@@ -1,4 +1,6 @@
 import Combine
+import CoreLocation
+import MapboxMaps
 import MapboxNavigationCore
 import UIKit
 import WebKit
@@ -25,6 +27,8 @@ final class DriveNativeMap {
             let map = NavigationMapView(
                 location: nav.locationMatching.map(\.enhancedLocation).eraseToAnyPublisher(),
                 routeProgress: nav.routeProgress.map(\.?.routeProgress).eraseToAnyPublisher(),
+                routeRefreshing: nav.routeRefreshing.eraseToAnyPublisher(),
+                heading: nav.heading,
                 predictiveCacheManager: predictiveCacheManager
             )
             map.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -39,7 +43,7 @@ final class DriveNativeMap {
         mapView?.isHidden = false
         makeWebViewClear(webView, clear: true)
         if let lastRoutes {
-            mapView?.show(lastRoutes, routeAnnotationKinds: [])
+            mapView?.show(lastRoutes, routeAnnotationKinds: Set<RouteAnnotationKind>())
         }
         mapView?.update(navigationCameraState: .following)
     }
@@ -47,7 +51,7 @@ final class DriveNativeMap {
     func show(routes: NavigationRoutes) {
         lastRoutes = routes
         guard let mapView, !mapView.isHidden else { return }
-        mapView.show(routes, routeAnnotationKinds: [])
+        mapView.show(routes, routeAnnotationKinds: Set<RouteAnnotationKind>())
         mapView.update(navigationCameraState: .following)
     }
 
