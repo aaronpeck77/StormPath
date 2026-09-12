@@ -397,6 +397,15 @@ export function routeIdFromRouteHitLayerId(layerId: string): string | null {
   return layerId.slice(prefix.length, -suffix.length);
 }
 
+/** Drive hides alts only when there is a single corridor. Plus A/B stay visible. */
+export function hideAlternateRoutesOnDrive(
+  viewMode: MapViewMode,
+  routeCount: number,
+  isOverviewPip = false
+): boolean {
+  return viewMode === "drive" && !isOverviewPip && routeCount < 2;
+}
+
 /** Route legs that currently have map layers (matches {@link applyRoutesToMap} visibility). */
 export function visibleRouteIdsForHitLayers(
   routes: NavRoute[],
@@ -404,8 +413,8 @@ export function visibleRouteIdsForHitLayers(
   viewMode: MapViewMode,
   isOverviewPip = false
 ): string[] {
-  /* Drive (Dr) view: always the active leg only — Rt / Mp show A/B/C for picking. */
-  const hideAltsOnMainDrive = viewMode === "drive" && !isOverviewPip;
+  /* Drive (Dr) view: single corridor only. Plus A/B stay on the map for picking. */
+  const hideAltsOnMainDrive = hideAlternateRoutesOnDrive(viewMode, routes.length, isOverviewPip);
   const ids = hideAltsOnMainDrive
     ? routes
         .filter((r) => r.id === lineFocusId || r.id === "r-your-route")
@@ -490,7 +499,7 @@ export function applyRoutesToMap(
   const isOverviewPip = opts?.isOverviewPip ?? false;
   const routeComparePicker = Boolean(opts?.routeComparePicker && viewMode === "topdown");
 
-  const hideAltsOnMainDrive = viewMode === "drive" && !isOverviewPip;
+  const hideAltsOnMainDrive = hideAlternateRoutesOnDrive(viewMode, routes.length, isOverviewPip);
   const routesToDraw = hideAltsOnMainDrive
     ? routes.filter(
         (r) =>

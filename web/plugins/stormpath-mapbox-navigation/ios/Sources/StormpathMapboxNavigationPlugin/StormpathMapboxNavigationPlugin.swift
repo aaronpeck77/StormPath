@@ -416,18 +416,10 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @MainActor
     private func applyDrivePuckVisible(_ visible: Bool) {
-        if visible {
-            guard puckOverlay == nil else { return }
-            guard let host = webView?.superview ?? bridge?.viewController?.view else { return }
-            let overlay = DrivePuckOverlay(frame: host.bounds)
-            overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            overlay.tag = 0x53504452 // "SPDR"
-            host.addSubview(overlay)
-            overlay.applyLayout()
-            puckOverlay = overlay
-        } else {
-            puckOverlay?.removeFromSuperview()
-            puckOverlay = nil
-        }
+        // Native chevron sits on the UIKit host above the WebView, so it covers
+        // About / weather / Route info. Parked — Drive uses the web puck.
+        _ = visible
+        puckOverlay?.removeFromSuperview()
+        puckOverlay = nil
     }
 }

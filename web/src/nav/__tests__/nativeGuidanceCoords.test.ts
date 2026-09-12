@@ -45,6 +45,22 @@ describe("buildNativeGuidanceCoordinates", () => {
     expect(coords!.some((c) => c.lat < 36.2)).toBe(false);
   });
 
+  it("does not feed Core a dense sample that can loop off-road", () => {
+    const long: LngLat[] = [];
+    for (let i = 0; i <= 40; i++) {
+      long.push([-86.78 + i * 0.002, 36.16 + i * 0.003]);
+    }
+    const coords = buildNativeGuidanceCoordinates({
+      userLngLat: long[8]!,
+      viaStops: [],
+      destLngLat: long[long.length - 1]!,
+      lockedCorridor: long,
+      maxCoords: 25,
+    });
+    expect(coords).not.toBeNull();
+    expect(coords!.length).toBeLessThanOrEqual(2);
+  });
+
   it("falls back to origin → vias → dest when no corridor", () => {
     const coords = buildNativeGuidanceCoordinates({
       userLngLat: [-86.78, 36.16],

@@ -216,6 +216,18 @@ export function AppBottomChrome({
                 {driveDistanceRemainingLabel ? (
                   <NavMilesLeftBox label={driveDistanceRemainingLabel} />
                 ) : null}
+                {routePickItems.length >= 2 ? (
+                  <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
+                    <RoutePickControl
+                      items={routePickItems}
+                      selectedId={lineFocusId}
+                      cycleOrderIds={planRouteIds}
+                      activeSlotIndex={previewLegIndex}
+                      onSelect={handlePreviewRouteSelect}
+                      detail={routeDockDetail}
+                    />
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : navigationStarted && viewMode === "topdown" ? (

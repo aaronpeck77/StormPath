@@ -1204,6 +1204,7 @@ html:has(.app-shell--native-drive-map) #root {
 .nav-bottom-dock__drive-about-cluster {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 6px;
   min-width: 0;

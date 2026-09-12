@@ -66,6 +66,7 @@ import {
   fitMapToOffRouteRejoinChoices,
   fitMapToRouteCompareLocal,
   fitMapToTrip,
+  hideAlternateRoutesOnDrive,
   routeIdFromRouteHitLayerId,
   visibleRouteIdsForHitLayers,
 } from "./mapRouteLayers";
@@ -128,6 +129,7 @@ import {
 } from "./mapDriveCamera";
 import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
 import { shouldUseNativeFollowCam } from "../nav/nativeDriveFollowCam";
+import { NATIVE_DRIVE_PUCK_OVERLAY_ENABLED } from "../nav/nativeDriveMapShell";
 import { isNativeMapboxNavPlatform } from "../nav/useNativeNavSession";
 import { StormpathMapboxNavigation } from "@stormpath/mapbox-navigation";
 import { allowBasemapStyleReload } from "./mapLowSignalResilience";
@@ -1261,7 +1263,7 @@ function DriveMapInner({
     const click = (e: mapboxgl.MapMouseEvent) => {
       /* Consume taps on the route corridor so they don’t move the destination pin; hazard details are via Hazards + progress strip. */
       if (routes.length > 0) {
-        const hideAltsOnMainDrive = viewMode === "drive";
+        const hideAltsOnMainDrive = hideAlternateRoutesOnDrive(viewMode, routes.length);
         const hitLayerIds = routes
           .filter(
             (r) =>
@@ -1851,7 +1853,7 @@ function DriveMapInner({
     const isDriveView = navigationStarted && viewMode === "drive";
     el.classList.toggle("map-user-puck--driving", navigationStarted);
     const hideWebPuck = Boolean(
-      (nativeFollowCamera || nativeDriveMapActive) && navigationStarted && viewMode === "drive"
+      nativeDriveMapActive && navigationStarted && viewMode === "drive"
     );
     el.classList.toggle("map-user-puck--native-hidden", hideWebPuck);
     try {
@@ -1864,7 +1866,11 @@ function DriveMapInner({
   }, [navigationStarted, viewMode, mapReady, Boolean(nativeFollowCamera), nativeDriveMapActive]);
 
   const nativeDrivePuckOn = Boolean(
-    nativeFollowCamera && navigationStarted && viewMode === "drive" && !nativeDriveMapActive
+    NATIVE_DRIVE_PUCK_OVERLAY_ENABLED &&
+      nativeFollowCamera &&
+      navigationStarted &&
+      viewMode === "drive" &&
+      !nativeDriveMapActive
   );
   useEffect(() => {
     if (!isNativeMapboxNavPlatform()) return;

@@ -9,6 +9,7 @@ import {
   DRIVE_FOLLOW_ZOOM_DEFAULT,
 } from "../ui/driveFollowZoomGuard";
 import { DRIVE_FOLLOW_PITCH_DEG } from "../ui/mapDriveCamera";
+import { NATIVE_DRIVE_FOLLOW_CAM_ENABLED } from "./nativeDriveMapShell";
 
 export type NativeDriveFollowCamera = {
   lng: number;
@@ -115,7 +116,8 @@ export function shouldUseNativeFollowCam(input: {
   userExploring: boolean;
 }): boolean {
   return Boolean(
-    input.camera &&
+    NATIVE_DRIVE_FOLLOW_CAM_ENABLED &&
+      input.camera &&
       input.navigationStarted &&
       input.viewMode === "drive" &&
       !input.userExploring
