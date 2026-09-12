@@ -3,9 +3,9 @@ name: Web tests
 
 on:
   push:
-    branches: [main, master, native/drive]
+    branches: [main, master, StormPath-Native-Drive]
   pull_request:
-    branches: [main, master, native/drive]
+    branches: [main, master, StormPath-Native-Drive]
   workflow_dispatch:
 
 jobs:

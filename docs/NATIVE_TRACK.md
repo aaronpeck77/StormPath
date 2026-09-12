@@ -1,4 +1,4 @@
-# Native Drive track (`native/drive`)
+# StormPath Native Drive (`StormPath-Native-Drive`)
 
 **Store / customers:** stay on **`master`**. The live App Store app (4.20.8) is that path. Do **not** merge this branch, run the **appstore** workflow from it, or “fix” store nav from here until Bill says the native soak is better than gold.
 
@@ -9,7 +9,7 @@
 | Track | Branch | What Bill does |
 |-------|--------|----------------|
 | Store / gold-restore web Drive | `master` | Leave alone. TestFlight only if he asks. |
-| Native Drive | `native/drive` | Daily work. TestFlight **testflight** track when he asks — never App Store until promoted. |
+| Native Drive | `StormPath-Native-Drive` | Daily work. TestFlight **testflight** track when he asks — never App Store until promoted. |
 
 Forge leftover desktop camera experiments are **not** this track (stashed off `master`).
 
@@ -24,10 +24,10 @@ Forge leftover desktop camera experiments are **not** this track (stashed off `m
 
 ```bash
 git fetch origin
-git switch native/drive
+git switch StormPath-Native-Drive
 git pull
 ```
 
-Push **this branch only**. CI iOS workflow does **not** auto-run on `native/drive` (only `master` / `main`).
+Push **this branch only**. CI iOS workflow does **not** auto-run on `StormPath-Native-Drive` (only `master` / `main`).
 
 When a native slice is solid on a phone TestFlight, Bill can promote (merge/cherry-pick) — never the other way around while store is “good enough.”

@@ -11,14 +11,14 @@
 - When Bill is ready to ship a change, pick an idea out of Brain and implement it in `web/` / docs as usual
 - Active ship / bugfix work stays in chat and code — Brain is for *later* and *thinking*
 
-**Current product focus:** Store app stays on **`master`** (4.20.8, leave it alone). **Brain Priority 1 is open** on branch **`native/drive`** — thicken the native Drive shell so following feels like Apple / Google / Waze. See `docs/NATIVE_TRACK.md`. Other Brain ideas wait.
+**Current product focus:** Store app stays on **`master`** (4.20.8, leave it alone). **Brain Priority 1 is open** on branch **`StormPath-Native-Drive`** — thicken the native Drive shell so following feels like Apple / Google / Waze. See `docs/NATIVE_TRACK.md`. Other Brain ideas wait.
 
 ### Dual track (do not mix)
 
 | Track | Branch | Rule |
 |-------|--------|------|
-| Live App Store / gold-restore web Drive | `master` | Do not merge native experiments here. Do not “fix” store nav from `native/drive`. |
-| Native Drive (P1) | `native/drive` | Daily work. TestFlight only when Bill asks. Never App Store until he promotes. |
+| Live App Store / gold-restore web Drive | `master` | Do not merge native experiments here. Do not “fix” store nav from `StormPath-Native-Drive`. |
+| Native Drive (P1) | `StormPath-Native-Drive` | Daily work. TestFlight only when Bill asks. Never App Store until he promotes. |
 
 ### Stability gate (store path — leave alone for now)
 
@@ -31,7 +31,7 @@ Store binary accepted ~Sep 11, 2026 (4.20.8). Soak testers. Do not bump / resubm
 
 ---
 
-## Priority 1 — Native-feel navigation (OPEN on `native/drive`)
+## Priority 1 — Native-feel navigation (OPEN on `StormPath-Native-Drive`)
 
 **Bill’s call (Sep 11, 2026):** Store version is good enough to leave alone. What’s missing is **following** — puck on screen, cam that does not freeze or fly to Canada — vs Apple / Google / Waze. Thicken the **native shell**; keep web for weather, Route info, About.
 
@@ -50,7 +50,7 @@ Existing plugin: `web/plugins/stormpath-mapbox-navigation/` (`StormpathMapboxNav
 
 ```bash
 git fetch origin
-git switch native/drive
+git switch StormPath-Native-Drive
 ```
 
 Cue phrases: *“open Brain P1”* (already open), *“native cam next”*, *“TestFlight this native branch”* (only when Bill asks).
@@ -110,6 +110,6 @@ Cue phrases: *“open Brain P1”* (already open), *“native cam next”*, *“
 - Read this file when Bill mentions Brain, post-launch ideas, or Dark Sky direction
 - Add new sections below as ideas appear; connect them when related
 - **Never** treat Brain content as something to auto-ship into the IPA / App Store
-- **Priority 1** is native-feel Drive on `native/drive` (opened). Dark Sky is archive-only — do not pull it forward
-- Do not merge `native/drive` into `master` or run the App Store workflow from it unless Bill asks
+- **Priority 1** is native-feel Drive on `StormPath-Native-Drive` (opened). Dark Sky is archive-only — do not pull it forward
+- Do not merge `StormPath-Native-Drive` into `master` or run the App Store workflow from it unless Bill asks
 - Implement other Brain ideas only when Bill explicitly asks
