@@ -329,7 +329,7 @@ function routeCoordinatesForMap(route: NavRoute, opts?: ApplyRoutesLayerOptions)
     userAlongMeters: along ?? null,
   });
   if (kind === "driveAhead") {
-    return routeLineGeometryForDriveDisplay(geometry, along);
+    return routeLineGeometryForDriveDisplay(geometry, along ?? 0);
   }
   if (viewMode === "route" || viewMode === "topdown" || isOverviewPip) {
     return geometryForRouteOverviewDisplay(geometry);

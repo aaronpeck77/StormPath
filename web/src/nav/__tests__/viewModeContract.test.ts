@@ -79,11 +79,11 @@ describe("viewModeContract — route line geometry", () => {
     expect(routeLineGeometryKind("route", false)).toBe("overview");
   });
 
-  it("Dr falls back to overview when the along offset is missing", () => {
+  it("Dr keeps the local ahead slice when the along offset is missing", () => {
     expect(routeLineGeometryKind("drive", true, { userAlongMeters: null })).toBe(
-      "overview"
+      "driveAhead"
     );
-    expect(routeLineGeometryKind("drive", true)).toBe("overview");
+    expect(routeLineGeometryKind("drive", true)).toBe("driveAhead");
   });
 
   it("planning uses overview in every view", () => {

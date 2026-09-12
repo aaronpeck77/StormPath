@@ -19,6 +19,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "StormpathMapboxNavigation"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "prepareActiveGuidance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startActiveGuidance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setVoiceGuidance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setDrivePuckVisible", returnType: CAPPluginReturnPromise),
@@ -41,6 +42,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     private var nativeMap: DriveNativeMap?
     private var pendingNativeMapVisible = false
     private var lastNavRoutes: NavigationRoutes?
+    /// Fingerprint of the last prepared / started corridor so Go can skip a second plan.
+    private var preparedRouteKey = ""
 
     @objc func isAvailable(_ call: CAPPluginCall) {
         call.resolve(["available": true])
@@ -56,18 +59,6 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        var coordinates: [CLLocationCoordinate2D] = []
-        coordinates.reserveCapacity(rawCoords.count)
-        for obj in rawCoords {
-            let lngNum = obj["lng"] as? Double ?? (obj["lng"] as? NSNumber)?.doubleValue
-            let latNum = obj["lat"] as? Double ?? (obj["lat"] as? NSNumber)?.doubleValue
-            guard let lng = lngNum, let lat = latNum else {
-                call.reject("coordinates entries need numeric lng/lat")
-                return
-            }
-            coordinates.append(CLLocationCoordinate2D(latitude: lat, longitude: lng))
-        }
-
         let simulate = call.getBool("simulate") ?? false
         let voice = call.getBool("voiceEnabled") ?? false
         let preferBackroads = call.getBool("preferBackroads") ?? false
@@ -76,9 +67,30 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self else { return }
             await self.startGuidanceOnMainActor(
                 accessToken: accessToken,
-                coordinates: coordinates,
+                waypoints: self.parseWaypoints(from: rawCoords),
                 simulate: simulate,
                 voiceEnabled: voice,
+                preferBackroads: preferBackroads,
+                call: call
+            )
+        }
+    }
+
+    @objc func prepareActiveGuidance(_ call: CAPPluginCall) {
+        guard let accessToken = call.getString("accessToken"), !accessToken.isEmpty else {
+            call.reject("accessToken required")
+            return
+        }
+        guard let rawCoords = call.getArray("coordinates", JSObject.self), rawCoords.count >= 2 else {
+            call.reject("coordinates must include at least origin and destination")
+            return
+        }
+        let preferBackroads = call.getBool("preferBackroads") ?? false
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.prepareGuidanceOnMainActor(
+                accessToken: accessToken,
+                waypoints: self.parseWaypoints(from: rawCoords),
                 preferBackroads: preferBackroads,
                 call: call
             )
@@ -117,54 +129,162 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    private struct IncomingWaypoint {
+        var coordinate: CLLocationCoordinate2D
+        var separatesLegs: Bool
+        var headingDeg: Double?
+    }
+
+    private func parseWaypoints(from rawCoords: [JSObject]) -> [IncomingWaypoint] {
+        var out: [IncomingWaypoint] = []
+        out.reserveCapacity(rawCoords.count)
+        for (index, obj) in rawCoords.enumerated() {
+            let lngNum = obj["lng"] as? Double ?? (obj["lng"] as? NSNumber)?.doubleValue
+            let latNum = obj["lat"] as? Double ?? (obj["lat"] as? NSNumber)?.doubleValue
+            guard let lng = lngNum, let lat = latNum else { continue }
+            let separates: Bool
+            if let flag = obj["separatesLegs"] as? Bool {
+                separates = flag
+            } else if let flag = (obj["separatesLegs"] as? NSNumber)?.boolValue {
+                separates = flag
+            } else {
+                separates = index > 0 && index < rawCoords.count - 1 ? false : true
+            }
+            let heading = obj["headingDeg"] as? Double ?? (obj["headingDeg"] as? NSNumber)?.doubleValue
+            out.append(IncomingWaypoint(
+                coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng),
+                separatesLegs: separates,
+                headingDeg: heading
+            ))
+        }
+        return out
+    }
+
+    private func makeWaypoints(_ incoming: [IncomingWaypoint]) -> [Waypoint] {
+        incoming.enumerated().map { index, item in
+            var waypoint = Waypoint(coordinate: item.coordinate)
+            if index > 0 && index < incoming.count - 1 {
+                waypoint.separatesLegs = item.separatesLegs
+                waypoint.coordinateAccuracy = item.separatesLegs ? 25 : 80
+            }
+            if index == 0, let heading = item.headingDeg, heading >= 0 {
+                waypoint.heading = heading
+                waypoint.headingAccuracy = 90
+            }
+            return waypoint
+        }
+    }
+
+    private func routeKey(waypoints: [IncomingWaypoint], preferBackroads: Bool) -> String {
+        guard let first = waypoints.first, let last = waypoints.last else { return "" }
+        return "\(first.coordinate.latitude),\(first.coordinate.longitude)|\(last.coordinate.latitude),\(last.coordinate.longitude)|\(waypoints.count)|\(preferBackroads)"
+    }
+
+    @MainActor
+    private func makeCoreConfig(accessToken: String, simulate: Bool) -> CoreConfig {
+        var coreConfig = CoreConfig(
+            credentials: .init(accessToken: accessToken),
+            locationSource: simulate ? .simulation(initialLocation: nil) : .live
+        )
+        // Tiles + routing graph along the trip so tunnels / dead zones keep following.
+        coreConfig.predictiveCacheConfig = PredictiveCacheConfig()
+        // Off-route recovery is Core's job. Do not auto-swap a locked B for a faster highway.
+        coreConfig.routingConfig.rerouteConfig.detectsReroute = true
+        coreConfig.routingConfig.fasterRouteDetectionConfig = nil
+        return coreConfig
+    }
+
+    @MainActor
+    private func prepareGuidanceOnMainActor(
+        accessToken: String,
+        waypoints incoming: [IncomingWaypoint],
+        preferBackroads: Bool,
+        call: CAPPluginCall
+    ) async {
+        guard incoming.count >= 2 else {
+            call.reject("coordinates must include at least origin and destination")
+            return
+        }
+        if sessionActive {
+            call.resolve(["ok": true, "prepared": true, "skipped": true])
+            return
+        }
+        let key = routeKey(waypoints: incoming, preferBackroads: preferBackroads)
+        if lastNavRoutes != nil, navigationProvider != nil, preparedRouteKey == key {
+            call.resolve(["ok": true, "prepared": true, "cached": true])
+            return
+        }
+
+        tearDownSession(emitCancelled: false)
+        let provider = MapboxNavigationProvider(coreConfig: makeCoreConfig(accessToken: accessToken, simulate: false))
+        navigationProvider = provider
+        let options = NavigationRouteOptions(waypoints: makeWaypoints(incoming))
+        if preferBackroads {
+            options.roadClassesToAvoid = .motorway
+        }
+        do {
+            let navigationRoutes = try await provider.mapboxNavigation
+                .routingProvider()
+                .calculateRoutes(options: options)
+                .value
+            lastNavRoutes = navigationRoutes
+            preparedRouteKey = key
+            call.resolve(["ok": true, "prepared": true])
+        } catch {
+            tearDownSession(emitCancelled: false)
+            call.reject("Route request failed: \(error.localizedDescription)")
+        }
+    }
+
     @MainActor
     private func startGuidanceOnMainActor(
         accessToken: String,
-        coordinates: [CLLocationCoordinate2D],
+        waypoints incoming: [IncomingWaypoint],
         simulate: Bool,
         voiceEnabled: Bool,
         preferBackroads: Bool,
         call: CAPPluginCall
     ) async {
-        tearDownSession(emitCancelled: false)
+        guard incoming.count >= 2 else {
+            call.reject("coordinates must include at least origin and destination")
+            return
+        }
+        let key = routeKey(waypoints: incoming, preferBackroads: preferBackroads)
+        let canReusePrepared = !sessionActive
+            && lastNavRoutes != nil
+            && navigationProvider != nil
+            && preparedRouteKey == key
+            && !simulate
 
-        var coreConfig = CoreConfig(
-            credentials: .init(accessToken: accessToken),
-            locationSource: simulate ? .simulation(initialLocation: nil) : .live
-        )
-        // StormPath owns off-route recovery. Core "faster route" / auto-reroute
-        // silently swapped a Go-locked B onto highway A and thrashed the puck.
-        coreConfig.routingConfig.rerouteConfig.detectsReroute = false
-        coreConfig.routingConfig.fasterRouteDetectionConfig = nil
-        let provider = MapboxNavigationProvider(coreConfig: coreConfig)
-        navigationProvider = provider
+        if !canReusePrepared {
+            tearDownSession(emitCancelled: false)
+            navigationProvider = MapboxNavigationProvider(
+                coreConfig: makeCoreConfig(accessToken: accessToken, simulate: simulate)
+            )
+        }
+
+        guard let provider = navigationProvider else {
+            call.reject("Navigation provider missing")
+            return
+        }
         didEmitArrival = false
         applyVoiceEnabled(voiceEnabled)
 
         let mapboxNavigation = provider.mapboxNavigation
-        // Intermediate points shape the corridor without becoming stop legs — otherwise
-        // Core only gets origin→dest and recalculates highway-fastest over a Go alternate.
-        let waypoints: [Waypoint] = coordinates.enumerated().map { index, coordinate in
-            var waypoint = Waypoint(coordinate: coordinate)
-            if index > 0 && index < coordinates.count - 1 {
-                waypoint.separatesLegs = false
-                // Keep Core on the sampled B corridor instead of cutting to the highway.
-                waypoint.coordinateAccuracy = 40
-            }
-            return waypoint
-        }
-        let options = NavigationRouteOptions(waypoints: waypoints)
-        // Honor StormPath preferred / no-interstate Go locks — otherwise Core
-        // recalculates bare origin→dest as highway-fastest and yanks the blue line.
-        if preferBackroads {
-            options.roadClassesToAvoid = .motorway
-        }
-
         do {
-            let navigationRoutes = try await mapboxNavigation
-                .routingProvider()
-                .calculateRoutes(options: options)
-                .value
+            let navigationRoutes: NavigationRoutes
+            if canReusePrepared, let prepared = lastNavRoutes {
+                navigationRoutes = prepared
+            } else {
+                let options = NavigationRouteOptions(waypoints: makeWaypoints(incoming))
+                if preferBackroads {
+                    options.roadClassesToAvoid = .motorway
+                }
+                navigationRoutes = try await mapboxNavigation
+                    .routingProvider()
+                    .calculateRoutes(options: options)
+                    .value
+            }
 
             bindObservers(mapboxNavigation: mapboxNavigation)
             mapboxNavigation.tripSession().startActiveGuidance(
@@ -173,11 +293,12 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             )
             sessionActive = true
             lastNavRoutes = navigationRoutes
+            preparedRouteKey = key
             emitRouteGeometry(from: navigationRoutes)
             if pendingNativeMapVisible {
                 applyNativeMapVisible(true)
             }
-            call.resolve(["ok": true])
+            call.resolve(["ok": true, "reused": canReusePrepared])
         } catch {
             tearDownSession(emitCancelled: false)
             call.reject("Route request failed: \(error.localizedDescription)")
@@ -425,6 +546,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         poseHold.reset()
         followCam.reset()
         lastNavRoutes = nil
+        preparedRouteKey = ""
         pendingNativeMapVisible = false
         nativeMap?.detach(webView: webView)
         nativeMap = nil

@@ -534,6 +534,8 @@ function DriveMapInner({
   nativeFollowCameraRef.current = nativeFollowCamera;
   const nativeDriveMapActiveRef = useRef(nativeDriveMapActive);
   nativeDriveMapActiveRef.current = nativeDriveMapActive;
+  const [nativeMapHoleReady, setNativeMapHoleReady] = useState(false);
+  const punchNativeHole = nativeDriveMapActive && nativeMapHoleReady;
   const holdLastGoodMapRef = useRef(holdLastGoodMap);
   holdLastGoodMapRef.current = holdLastGoodMap;
   const isOnlineRef = useRef(isOnline);
@@ -1853,7 +1855,7 @@ function DriveMapInner({
     const isDriveView = navigationStarted && viewMode === "drive";
     el.classList.toggle("map-user-puck--driving", navigationStarted);
     const hideWebPuck = Boolean(
-      nativeDriveMapActive && navigationStarted && viewMode === "drive"
+      punchNativeHole && navigationStarted && viewMode === "drive"
     );
     el.classList.toggle("map-user-puck--native-hidden", hideWebPuck);
     try {
@@ -1863,7 +1865,7 @@ function DriveMapInner({
     } catch {
       /* older mapbox */
     }
-  }, [navigationStarted, viewMode, mapReady, Boolean(nativeFollowCamera), nativeDriveMapActive]);
+  }, [navigationStarted, viewMode, mapReady, Boolean(nativeFollowCamera), punchNativeHole]);
 
   const nativeDrivePuckOn = Boolean(
     NATIVE_DRIVE_PUCK_OVERLAY_ENABLED &&
@@ -1879,7 +1881,22 @@ function DriveMapInner({
 
   useEffect(() => {
     if (!isNativeMapboxNavPlatform()) return;
-    void StormpathMapboxNavigation.setNativeMapVisible({ visible: nativeDriveMapActive }).catch(() => undefined);
+    let cancelled = false;
+    if (nativeDriveMapActive) {
+      void StormpathMapboxNavigation.setNativeMapVisible({ visible: true })
+        .then(() => {
+          if (!cancelled) setNativeMapHoleReady(true);
+        })
+        .catch(() => {
+          if (!cancelled) setNativeMapHoleReady(false);
+        });
+    } else {
+      setNativeMapHoleReady(false);
+      void StormpathMapboxNavigation.setNativeMapVisible({ visible: false }).catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+    };
   }, [nativeDriveMapActive]);
 
   /** After route compare or end of navigation, re-run topdown init and flatten pitch. */
@@ -1945,24 +1962,13 @@ function DriveMapInner({
     if (userExploringRef.current) return;
     const pitched = map.getPitch() > 0.5 || Math.abs(map.getBearing()) > 0.5;
     if (!pitched) return;
+    /* Rt / Mp fits already include pitch 0. A second flatten here fights the frame. */
+    if (viewMode === "route" || viewMode === "topdown") return;
     /* Do not yank a street-level zoom back to regional (~Canada) — that made dest/home markers
      * fly across the screen. Only flatten pitch/bearing; keep the user's zoom/center. */
     stopMapCamera(map);
     flattenMapCamera(map);
-    try {
-      safeEaseTo(map, { pitch: 0, bearing: 0, duration: 280, essential: true });
-    } catch {
-      /* map disposed */
-    }
-  }, [
-    activeDriveCamera,
-    mapReady,
-    viewMode,
-    navigationStarted,
-    routes.length,
-    fitTrigger,
-    recenterPlanningPuckTick,
-  ]);
+  }, [activeDriveCamera, mapReady, viewMode, navigationStarted]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -3243,20 +3249,10 @@ function DriveMapInner({
       }
     }
 
-    const flatten = () => {
-      safeEaseTo(map, { pitch: 0, bearing: 0, duration: 240, essential: true });
-    };
-
-    let pendingFlatten: (() => void) | null = null;
-
     const executePlanningFit = (): boolean => {
       if (userExploringRef.current && !appForcedFit) return false;
       if (!mapStyleReadyForCamera(map)) return false;
       const u = userLngLatRef.current;
-      if (pendingFlatten) {
-        map.off("moveend", pendingFlatten);
-        pendingFlatten = null;
-      }
       /* Pre-Go: always frame the full active polyline. Navigating Rt: same — remaining
        * corridor overview, not Mp street zoom. Endpoint-only fits look like Mp on short legs. */
       const planningOverview =
@@ -3271,15 +3267,7 @@ function DriveMapInner({
         },
         routeFitMaxZoomCeiling(routes, lineFocusId),
         {
-          onAfterFit: () => {
-            /* Guard: if this effect was cleaned up (nav started, view changed) before the
-             * fitBounds moveend fired, skip the flatten so stale listeners don't fight
-             * the drive-follow camera.  Without this, every verifyPlanningZoom retry
-             * leaves a map.once("moveend") that triggers flatten(pitch:0) after the
-             * drive camera's easeTo fires, creating an oscillation that can last 1–3 s. */
-            if (cancelled) return;
-            flatten();
-          },
+          onAfterFit: undefined,
           /* Pre-Go: frame every planned leg so B is on-screen. After Go, stay on the active path. */
           onlyRouteId: navigationStartedRef.current ? lineFocusId : undefined,
           zoomBias: routeFitZoomBias(routes, lineFocusId),
@@ -3391,15 +3379,6 @@ function DriveMapInner({
           ? navigationTopdownZoomForViewChange(map, topdownZoomRef, true, true)
           : coerceTopdownNavStreetZoom(map, topdownZoomRef)
         : resolveTopdownLocalZoom(topdownZoomRef, false);
-      if (pendingFlatten) {
-        map.off("moveend", pendingFlatten);
-        pendingFlatten = null;
-      }
-      pendingFlatten = () => {
-        pendingFlatten = null;
-        flatten();
-      };
-      map.once("moveend", pendingFlatten);
       prevTopdownRef.current = false;
       safeFlyTo(map, {
         center: u,
@@ -3425,15 +3404,6 @@ function DriveMapInner({
       if (!mapStyleReadyForCamera(map)) return;
       const u = userLngLatRef.current;
       if (!u) return;
-      if (pendingFlatten) {
-        map.off("moveend", pendingFlatten);
-        pendingFlatten = null;
-      }
-      pendingFlatten = () => {
-        pendingFlatten = null;
-        flatten();
-      };
-      map.once("moveend", pendingFlatten);
       prevTopdownRef.current = true;
       fitMapToOffRouteRejoinChoices(
         map,
@@ -3451,15 +3421,6 @@ function DriveMapInner({
       if (!mapStyleReadyForCamera(map)) return;
       const u = userLngLatRef.current;
       if (!u) return;
-      if (pendingFlatten) {
-        map.off("moveend", pendingFlatten);
-        pendingFlatten = null;
-      }
-      pendingFlatten = () => {
-        pendingFlatten = null;
-        flatten();
-      };
-      map.once("moveend", pendingFlatten);
       prevTopdownRef.current = true;
       fitMapToRouteCompareLocal(
         map,
@@ -3528,10 +3489,6 @@ function DriveMapInner({
       clearPlanningFitTimers();
       map.off("idle", retryWhenReady);
       map.off("style.load", retryWhenReady);
-      if (pendingFlatten) {
-        map.off("moveend", pendingFlatten);
-        pendingFlatten = null;
-      }
     };
   }, [
     mapReady,
@@ -4109,7 +4066,7 @@ function DriveMapInner({
   return (
     <div
       ref={containerRef}
-      className={nativeDriveMapActive ? "drive-map drive-map--native-shell" : "drive-map"}
+      className={punchNativeHole ? "drive-map drive-map--native-shell" : "drive-map"}
     />
   );
 }

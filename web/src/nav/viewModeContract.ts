@@ -102,8 +102,8 @@ export function routeLineGeometryKind(
   if (opts?.isOverviewPip) return "overview";
   if (!navigationStarted) return "overview";
   if (viewMode !== "drive") return "overview";
-  const along = opts?.userAlongMeters;
-  if (along == null || !Number.isFinite(along)) return "overview";
+  /* Missing along used to fall back to continent overview — IL→CA then
+   * drew 800-point chords through yards until the first GPS snap. */
   return "driveAhead";
 }
 

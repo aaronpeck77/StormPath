@@ -1,8 +1,15 @@
-export type NavCoordinate = { lng: number; lat: number };
+export type NavCoordinate = {
+  lng: number;
+  lat: number;
+  /** True = real stop. False = silent corridor shape. */
+  separatesLegs?: boolean;
+  /** Departing bearing for the origin (degrees). */
+  headingDeg?: number;
+};
 
 export type StartActiveGuidanceOptions = {
   accessToken: string;
-  /** Origin → vias → destination (WGS84). */
+  /** Origin → silent shapes / vias → destination (WGS84). */
   coordinates: NavCoordinate[];
   /** Use Mapbox simulated location (Xcode / desk testing). */
   simulate?: boolean;
@@ -69,7 +76,19 @@ export type NativeNavFinishedEvent = {
 
 export interface StormpathMapboxNavigationPlugin {
   isAvailable(): Promise<{ available: boolean }>;
-  startActiveGuidance(options: StartActiveGuidanceOptions): Promise<{ ok: boolean; message?: string }>;
+  /** Calculate Core routes while the driver is still on Rt (Go then starts instantly). */
+  prepareActiveGuidance(options: StartActiveGuidanceOptions): Promise<{
+    ok: boolean;
+    prepared?: boolean;
+    cached?: boolean;
+    skipped?: boolean;
+    message?: string;
+  }>;
+  startActiveGuidance(options: StartActiveGuidanceOptions): Promise<{
+    ok: boolean;
+    reused?: boolean;
+    message?: string;
+  }>;
   /** Mute / unmute Mapbox spoken instructions during an active native session. */
   setVoiceGuidance(options: { enabled: boolean }): Promise<{ ok: boolean; enabled: boolean }>;
   /** Pin / hide the native heading-up Drive puck overlay. */

@@ -11,7 +11,7 @@
 - When Bill is ready to ship a change, pick an idea out of Brain and implement it in `web/` / docs as usual
 - Active ship / bugfix work stays in chat and code — Brain is for *later* and *thinking*
 
-**Current product focus:** Store app stays on **`master`** (4.20.8, leave it alone). **Brain Priority 1 is open** on branch **`native/drive`** — thicken the native Drive shell so following feels like Apple / Google / Waze. See `docs/NATIVE_TRACK.md`. Other Brain ideas wait.
+**Current product focus:** Store app stays on **`master`** (4.20.8, leave it alone — wait until it actually appears on the store before any new App Store submit). **Brain Priority 1 is open** on branch **`native/drive`** — Core owns Drive after Go. **Priority 2** (revisit later): Download this trip for offline. See `docs/NATIVE_TRACK.md`.
 
 ### Dual track (do not mix)
 
@@ -42,7 +42,9 @@ Store binary accepted ~Sep 11, 2026 (4.20.8). Soak testers. Do not bump / resubm
 1. **Native last-good pose** — done (`DrivePoseHold` + `nativeDrivePoseHold.ts`).
 2. **Native follow-cam owner** — done (`DriveFollowCam` + DriveMap slave apply).
 3. **Native puck overlay** — done (`DrivePuckOverlay`, heading-up, 30-yard line).
-4. **Native map under chrome** — in progress (`DriveNativeMap` / `NavigationMapView`). Not a SwiftUI rewrite of About/weather.
+4. **Native map under chrome** — in TestFlight soak (`DriveNativeMap` / `NavigationMapView`). Core prepares the locked corridor before Go, owns the Drive line / puck / reroute, predictive-caches tiles along the trip. Not a SwiftUI rewrite of About/weather.
+
+**Bill (Sep 12, 2026):** TestFlight this branch to soak. Do **not** send this train to the App Store until 4.20.8 is actually live on the store and he decides the native soak is better.
 
 Existing plugin: `web/plugins/stormpath-mapbox-navigation/` (`StormpathMapboxNavigationPlugin.swift`).
 
@@ -53,7 +55,29 @@ git fetch origin
 git switch native/drive
 ```
 
-Cue phrases: *“open Brain P1”* (already open), *“native cam next”*, *“TestFlight this native branch”* (only when Bill asks).
+Cue phrases: *“open Brain P1”* (already open), *“TestFlight this native branch”* (only when Bill asks), *“offline trip download”* (P2 — do not build until he asks).
+
+---
+
+## Priority 2 — Download this trip for offline (REVISIT later)
+
+**Bill’s call (Sep 12, 2026):** Good feature. Do **not** build it in the current native Drive soak. Park it here as the next Brain priority after P1 following is solid on a phone.
+
+**What it is:** After a route is planned (on Wi‑Fi), a StormPath control: **Download this trip**. Native `TileStore` saves a **corridor tube** around the locked A/B (plus a bit around start/end) — map tiles + navigation tiles — so Core can follow and reroute with no cell. When the trip ends, offer **Remove downloaded trip**.
+
+**What it is not:** “Download the United States.” That blows Mapbox’s ~750 tile-pack cap and fills the phone. Not a full StormPath-offline mode — weather, radar, NWS, live traffic, and search still need the network.
+
+**Why it waits:** P1 has to own the Drive line first. A download button in front of the old thinned web polyline would not retain anyone. Needs a real UI (size estimate, progress, cancel, storage warning) and native iOS work the web map cannot do.
+
+**Build notes (when Bill opens this):**
+
+- Corridor geometry, not a state/country bbox. Highway zoom in the middle, street zoom near start/end if size is huge.
+- Wi‑Fi preferred. Show “about X MB / ~N minutes.”
+- Use the same Mapbox Navigation `TileStore` already created by Core (`tilestoreConfig.navigatorLocation.tileStore`).
+- Predictive cache (already on after Go) stays; this is the *before you leave driveway* pack.
+- Web / Netlify: no-op. Phone only.
+
+Cue phrases: *“open Brain P2”*, *“offline trip download”*, *“download this trip.”*
 
 ---
 
@@ -110,6 +134,6 @@ Cue phrases: *“open Brain P1”* (already open), *“native cam next”*, *“
 - Read this file when Bill mentions Brain, post-launch ideas, or Dark Sky direction
 - Add new sections below as ideas appear; connect them when related
 - **Never** treat Brain content as something to auto-ship into the IPA / App Store
-- **Priority 1** is native-feel Drive on `native/drive` (opened). Dark Sky is archive-only — do not pull it forward
+- **Priority 1** is native-feel Drive on `native/drive` (opened / TestFlight soak). **Priority 2** is offline trip download — revisit later, do not build until Bill asks. Dark Sky is archive-only — do not pull it forward
 - Do not merge `native/drive` into `master` or run the App Store workflow from it unless Bill asks
 - Implement other Brain ideas only when Bill explicitly asks

@@ -6,6 +6,10 @@ export class StormpathMapboxNavigationWeb extends WebPlugin {
     return { available: false };
   }
 
+  async prepareActiveGuidance() {
+    return { ok: false, message: "Native Mapbox Navigation Core is iOS-only." };
+  }
+
   async startActiveGuidance() {
     return { ok: false, message: "Native Mapbox Navigation Core is iOS-only." };
   }

@@ -18,7 +18,8 @@ Forge leftover desktop camera experiments are **not** this track (stashed off `m
 1. **Native last-good pose** — done. Hold leaps in Swift before JS sees the puck.
 2. **Native follow-cam owner** — done. iOS decides zoom/center/bearing/pitch; DriveMap applies only.
 3. **Native puck overlay** — done. Heading-up chevron pinned to the 30-yard line.
-4. **Native map under chrome** — in progress. `NavigationMapView` under the WebView after Go (route + puck + follow-cam). Weather/About stay web. Mp/Rt stay on the web map.
+4. **Native map under chrome** — in TestFlight soak. `NavigationMapView` under the WebView after Go (route + puck + follow-cam). Core prepares the locked corridor before Go. Weather/About stay web. Mp/Rt stay on the web map.
+5. **Download this trip (offline corridor)** — Brain **Priority 2**. Do not build until Bill opens it. See `docs/BRAIN.md`.
 
 ## How to work
 

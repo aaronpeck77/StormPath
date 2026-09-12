@@ -22,13 +22,14 @@ import {
   parseNativeDriveFollowCamera,
   type NativeDriveFollowCamera,
 } from "./nativeDriveFollowCam";
-
 export type NativeNavSessionCoords = {
   userLngLat: LngLat | null;
   viaStops: TripStop[];
   destLngLat: LngLat | null;
-  /** Go-locked corridor — seed Core so it does not yank to highway-fastest. */
+  /** Planned / Go-locked corridor — seed Core so it does not yank to highway-fastest. */
   lockedCorridor?: LngLat[] | null;
+  /** Travel heading at the origin so Core departs on the street you're on. */
+  headingDeg?: number | null;
 };
 
 export type { NativeNavGuidance };
@@ -65,8 +66,16 @@ function parseNativeTurnSteps(
   return out;
 }
 
-function buildCoordinateList(c: NativeNavSessionCoords): { lng: number; lat: number }[] | null {
+function buildCoordinateList(c: NativeNavSessionCoords) {
   return buildNativeGuidanceCoordinates(c);
+}
+
+function prepareRouteKey(c: NativeNavSessionCoords, preferBackroads: boolean): string {
+  const dest = c.destLngLat;
+  const corridor = c.lockedCorridor;
+  if (!dest || !corridor || corridor.length < 2) return "";
+  const last = corridor[corridor.length - 1]!;
+  return `${dest[0].toFixed(4)},${dest[1].toFixed(4)}|${last[0].toFixed(4)},${last[1].toFixed(4)}|${corridor.length}|${preferBackroads ? "b" : "a"}`;
 }
 
 export function isNativeMapboxNavPlatform(): boolean {
@@ -132,6 +141,7 @@ export function useNativeNavSession(opts: {
   onSessionEndedRef.current = onSessionEnded;
   const coordsRef = useRef(coords);
   coordsRef.current = coords;
+  const prepareKeyRef = useRef("");
 
   const removeListeners = useCallback(async () => {
     const list = listenersRef.current;
@@ -149,6 +159,7 @@ export function useNativeNavSession(opts: {
       /* ignore */
     }
     startedForNavRef.current = false;
+    prepareKeyRef.current = "";
     corridorAdoptedRef.current = false;
     firstRouteChangedRef.current = true;
     poseHoldRef.current.reset();
@@ -299,6 +310,28 @@ export function useNativeNavSession(opts: {
       return false;
     }
   }, [accessToken, removeListeners, simulate, stopNative]);
+
+  const pendingPrepareKey = prepareRouteKey(coords, preferBackroads);
+
+  /** While Rt is on screen, Core plans the locked corridor so Go does not wait a second minute. */
+  useEffect(() => {
+    if (!isNativeMapboxNavPlatform()) return;
+    if (navigationStarted || !accessToken) return;
+    if (!pendingPrepareKey || prepareKeyRef.current === pendingPrepareKey) return;
+    const coordinates = buildCoordinateList(coordsRef.current);
+    if (!coordinates || coordinates.length < 2) return;
+    const timer = window.setTimeout(() => {
+      prepareKeyRef.current = pendingPrepareKey;
+      void StormpathMapboxNavigation.prepareActiveGuidance({
+        accessToken,
+        coordinates,
+        preferBackroads: preferBackroadsRef.current,
+      }).catch(() => {
+        prepareKeyRef.current = "";
+      });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [accessToken, navigationStarted, pendingPrepareKey]);
 
   /** Start Core when Go flips navigationStarted; stop when trip ends. */
   useEffect(() => {

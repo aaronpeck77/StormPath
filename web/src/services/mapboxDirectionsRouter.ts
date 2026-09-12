@@ -185,10 +185,7 @@ function applyDirectionsQueryParams(
 ): void {
   if (opts.alternatives) url.searchParams.set("alternatives", "true");
   url.searchParams.set("geometries", "geojson");
-  url.searchParams.set(
-    "overview",
-    opts.simplifiedOverview || opts.includeDetails === false ? "simplified" : "full"
-  );
+  url.searchParams.set("overview", opts.simplifiedOverview ? "simplified" : "full");
   url.searchParams.set("steps", opts.includeDetails === false ? "false" : "true");
   if (opts.includeDetails !== false) {
     url.searchParams.set("annotations", "closure,maxspeed");
@@ -817,7 +814,6 @@ export async function collectMapboxRouteVariants(
   const hasVia = via.length > 0;
   const allowLocalTripThirdRoute = Boolean(opts?.allowLocalTripThirdRoute);
   const preferThreeRoutes = Boolean(opts?.preferThreeRoutes);
-  const includeDetails = opts?.includeDetails !== false;
   const excludeToll = Boolean(opts?.excludeToll);
   const trailSamples: ActivitySample[] | null = opts?.trailRoutePersonalization
     ? loadActivitySamples()
@@ -826,6 +822,8 @@ export async function collectMapboxRouteVariants(
 
   const estTripM = estimateRoadDistanceM(start, end, hasVia ? via : undefined);
   const ultraLongTrip = isUltraLongTripRoute(estTripM);
+  /** Skip step/annotation payloads on 300+ mi trips — they dominate plan time. */
+  const includeDetails = opts?.includeDetails !== false && !ultraLongTrip;
   /**
    * Quota-aware caps: Basic = 1 Directions call, Plus = A/B (2 calls).
    * Legacy preferThreeRoutes still maps to 3 when maxRoutes is omitted.

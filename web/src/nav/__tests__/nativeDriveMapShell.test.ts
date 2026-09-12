@@ -28,4 +28,14 @@ describe("shouldUseNativeDriveMapShell", () => {
       })
     ).toBe(false);
   });
+
+  it("keeps the native Drive map on ultra-long trips", () => {
+    expect(
+      shouldUseNativeDriveMapShell({
+        nativeNavActive: true,
+        navigationStarted: true,
+        viewMode: "drive",
+      })
+    ).toBe(true);
+  });
 });

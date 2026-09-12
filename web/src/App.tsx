@@ -928,7 +928,13 @@ export default function App() {
       userLngLat,
       viaStops,
       destLngLat,
-      lockedCorridor: navGoGeometryRef.current,
+      lockedCorridor:
+        navGoGeometryRef.current ??
+        plan.routes.find(
+          (r) => r.id === (orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0])
+        )?.geometry ??
+        null,
+      headingDeg: driveLastTravelBearingDegRef.current,
     },
     onRouteGeometry: onNativeRouteGeometry,
     voiceGuidanceEnabled: settingVoiceGuidanceEnabled,

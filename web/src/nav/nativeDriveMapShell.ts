@@ -5,7 +5,10 @@ export const NATIVE_DRIVE_FOLLOW_CAM_ENABLED = false;
 /** Swift chevron sits above the WebView — it covers About / weather. Use the web puck. */
 export const NATIVE_DRIVE_PUCK_OVERLAY_ENABLED = false;
 
-/** True when Drive should punch a hole in the WebView and show the iOS NavigationMapView. */
+/**
+ * Drive after Go uses the native map for every trip length — including IL→CA.
+ * Long trips are why Core owns the line; JS must not fall back to a thinned web polyline.
+ */
 export function shouldUseNativeDriveMapShell(input: {
   nativeNavActive: boolean;
   navigationStarted: boolean;
