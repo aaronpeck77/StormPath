@@ -40,8 +40,8 @@ Driving-first multi-route navigation / "route command center" with Mapbox map, t
 - `docs/GITHUB_TESTFLIGHT_ONLY.md` — TestFlight without Mac
 - `web/docs/IOS_APP_STORE.md` — Capacitor / App Store path under `web/ios/`
 - `docs/GOLD_STANDARD.md` — **sealed known-good tip** (`gold/current` + dated `gold/…` tags). Do not move gold unless Bill asks to seal/promote.
-- `docs/BRAIN.md` — **Forge idea notebook**. **Priority 1 (open on `StormPath-Native-Drive`):** native-feel Drive (cam/puck/reliability vs Apple/Google/Waze). Dark Sky glance is **shelved**. See `docs/NATIVE_TRACK.md`.
-- Dual track: **`master`** = live App Store / leave it alone. **`StormPath-Native-Drive`** = native shell work. Do not merge native into master or ship store from it unless Bill asks.
+- `docs/BRAIN.md` — **Forge idea notebook**. **Priority 1 (open on `native/drive`):** native-feel Drive (cam/puck/reliability vs Apple/Google/Waze). Dark Sky glance is **shelved**. See `docs/NATIVE_TRACK.md`.
+- Dual track: **`master`** = live App Store / leave it alone. **`native/drive`** = native shell work. Do not merge native into master or ship store from it unless Bill asks.
 
 ## Context Bill shared (business / legal — do not ignore)
 
@@ -57,4 +57,4 @@ Driving-first multi-route navigation / "route command center" with Mapbox map, t
 
 ## After web runs
 
-Ask Bill what he wants next. If he is on the native track, stay on `StormPath-Native-Drive` (pose hold → follow-cam → puck). Store/`master` only when he asks.
+Ask Bill what he wants next. If he is on the native track, stay on `native/drive` (pose hold → follow-cam → puck). Store/`master` only when he asks.
