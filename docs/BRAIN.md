@@ -42,7 +42,7 @@ Store binary accepted ~Sep 11, 2026 (4.20.8). Soak testers. Do not bump / resubm
 1. **Native last-good pose** — done (`DrivePoseHold` + `nativeDrivePoseHold.ts`).
 2. **Native follow-cam owner** — done (`DriveFollowCam` + DriveMap slave apply).
 3. **Native puck overlay** — done (`DrivePuckOverlay`, heading-up, 30-yard line).
-4. **Optional later:** full Mapbox Maps iOS under the chrome. Not a product rewrite.
+4. **Native map under chrome** — in progress (`DriveNativeMap` / `NavigationMapView`). Not a SwiftUI rewrite of About/weather.
 
 Existing plugin: `web/plugins/stormpath-mapbox-navigation/` (`StormpathMapboxNavigationPlugin.swift`).
 

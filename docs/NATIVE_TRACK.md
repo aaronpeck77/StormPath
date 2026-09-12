@@ -18,7 +18,7 @@ Forge leftover desktop camera experiments are **not** this track (stashed off `m
 1. **Native last-good pose** — done. Hold leaps in Swift before JS sees the puck.
 2. **Native follow-cam owner** — done. iOS decides zoom/center/bearing/pitch; DriveMap applies only.
 3. **Native puck overlay** — done. Heading-up chevron pinned to the 30-yard line.
-4. **Optional later:** full Mapbox Maps iOS under the chrome. Not a SwiftUI rewrite of About/weather.
+4. **Native map under chrome** — in progress. `NavigationMapView` under the WebView after Go (route + puck + follow-cam). Weather/About stay web. Mp/Rt stay on the web map.
 
 ## How to work
 

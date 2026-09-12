@@ -22,6 +22,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "startActiveGuidance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setVoiceGuidance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setDrivePuckVisible", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setNativeMapVisible", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
     ]
 
@@ -36,6 +37,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     private var poseHold = DrivePoseHold()
     private var followCam = DriveFollowCam()
     private var puckOverlay: DrivePuckOverlay?
+    private var nativeMap = DriveNativeMap()
+    private var lastNavRoutes: NavigationRoutes?
 
     @objc func isAvailable(_ call: CAPPluginCall) {
         call.resolve(["available": true])
@@ -85,6 +88,26 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         Task { @MainActor [weak self] in
             self?.applyVoiceEnabled(enabled)
             call.resolve(["ok": true, "enabled": enabled])
+        }
+    }
+
+    @objc func setNativeMapVisible(_ call: CAPPluginCall) {
+        let visible = call.getBool("visible") ?? false
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if visible, let provider = self.navigationProvider, let host = self.webView?.superview, let wv = self.webView {
+                self.nativeMap.attach(
+                    host: host,
+                    webView: wv,
+                    navigation: provider.mapboxNavigation,
+                    predictiveCacheManager: provider.predictiveCacheManager,
+                    routes: self.lastNavRoutes
+                )
+                self.applyDrivePuckVisible(false)
+            } else if let wv = self.webView {
+                self.nativeMap.setVisible(false, webView: wv)
+            }
+            call.resolve(["ok": true, "visible": visible])
         }
     }
 
@@ -158,7 +181,17 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                 startLegIndex: 0
             )
             sessionActive = true
-            applyDrivePuckVisible(true)
+            lastNavRoutes = navigationRoutes
+            if let host = self.webView?.superview, let wv = self.webView {
+                self.nativeMap.attach(
+                    host: host,
+                    webView: wv,
+                    navigation: mapboxNavigation,
+                    predictiveCacheManager: provider.predictiveCacheManager,
+                    routes: navigationRoutes
+                )
+            }
+            applyDrivePuckVisible(false)
             emitRouteGeometry(from: navigationRoutes)
             call.resolve(["ok": true])
         } catch {
@@ -377,6 +410,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         let geometry: [[String: Double]] = coords.map { c in
             ["lng": c.longitude, "lat": c.latitude]
         }
+        lastNavRoutes = routes
+        nativeMap.show(routes: routes)
         notifyListeners("routeChanged", data: [
             "geometry": geometry,
             "turnSteps": turnStepsPayload(from: routes),
@@ -402,6 +437,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         navigationProvider = nil
         poseHold.reset()
         followCam.reset()
+        lastNavRoutes = nil
+        nativeMap.detach(webView: webView)
         applyDrivePuckVisible(false)
     }
 

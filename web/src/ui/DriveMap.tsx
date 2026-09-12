@@ -353,6 +353,8 @@ export type Props = {
    * DriveMap applies this sample and does not write its own follow-cam.
    */
   nativeFollowCamera?: import("../nav/nativeDriveFollowCam").NativeDriveFollowCamera | null;
+  /** iOS NavigationMapView is the visible Drive map — hide the WebView GL canvas. */
+  nativeDriveMapActive?: boolean;
 };
 
 /** Alias for App / prop-assembly hooks — same shape as {@link Props}. */
@@ -461,6 +463,7 @@ function DriveMapInner({
   lastTravelBearingDegOutRef,
   puckAnchorDriftPxOutRef,
   nativeFollowCamera = null,
+  nativeDriveMapActive = false,
 }: Props) {
   const ultraLongRoute = isUltraLongTripRoute(sessionRouteLengthM);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -527,6 +530,8 @@ function DriveMapInner({
   navigationStartedRef.current = navigationStarted;
   const nativeFollowCameraRef = useRef(nativeFollowCamera);
   nativeFollowCameraRef.current = nativeFollowCamera;
+  const nativeDriveMapActiveRef = useRef(nativeDriveMapActive);
+  nativeDriveMapActiveRef.current = nativeDriveMapActive;
   const holdLastGoodMapRef = useRef(holdLastGoodMap);
   holdLastGoodMapRef.current = holdLastGoodMap;
   const isOnlineRef = useRef(isOnline);
@@ -1569,7 +1574,8 @@ function DriveMapInner({
           isMapReadyForFollowCam(map) &&
           viewModeRef.current === "drive" &&
           navigationStartedRef.current &&
-          userLngLatRef.current
+          userLngLatRef.current &&
+          !nativeDriveMapActiveRef.current
         ) {
           const nativeCam = nativeFollowCameraRef.current;
           if (
@@ -1845,7 +1851,7 @@ function DriveMapInner({
     const isDriveView = navigationStarted && viewMode === "drive";
     el.classList.toggle("map-user-puck--driving", navigationStarted);
     const hideWebPuck = Boolean(
-      nativeFollowCamera && navigationStarted && viewMode === "drive"
+      (nativeFollowCamera || nativeDriveMapActive) && navigationStarted && viewMode === "drive"
     );
     el.classList.toggle("map-user-puck--native-hidden", hideWebPuck);
     try {
@@ -1855,13 +1861,20 @@ function DriveMapInner({
     } catch {
       /* older mapbox */
     }
-  }, [navigationStarted, viewMode, mapReady, Boolean(nativeFollowCamera)]);
+  }, [navigationStarted, viewMode, mapReady, Boolean(nativeFollowCamera), nativeDriveMapActive]);
 
-  const nativeDrivePuckOn = Boolean(nativeFollowCamera && navigationStarted && viewMode === "drive");
+  const nativeDrivePuckOn = Boolean(
+    nativeFollowCamera && navigationStarted && viewMode === "drive" && !nativeDriveMapActive
+  );
   useEffect(() => {
     if (!isNativeMapboxNavPlatform()) return;
     void StormpathMapboxNavigation.setDrivePuckVisible({ visible: nativeDrivePuckOn }).catch(() => undefined);
   }, [nativeDrivePuckOn]);
+
+  useEffect(() => {
+    if (!isNativeMapboxNavPlatform()) return;
+    void StormpathMapboxNavigation.setNativeMapVisible({ visible: nativeDriveMapActive }).catch(() => undefined);
+  }, [nativeDriveMapActive]);
 
   /** After route compare or end of navigation, re-run topdown init and flatten pitch. */
   useEffect(() => {
@@ -4087,7 +4100,12 @@ function DriveMapInner({
     );
   }
 
-  return <div ref={containerRef} className="drive-map" />;
+  return (
+    <div
+      ref={containerRef}
+      className={nativeDriveMapActive ? "drive-map drive-map--native-shell" : "drive-map"}
+    />
+  );
 }
 
 export const DriveMap = memo(DriveMapInner, driveMapPropsAreEqual);

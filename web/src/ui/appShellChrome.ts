@@ -11,6 +11,7 @@ export type AppShellClassNameFlags = {
   landscapeHandLeft: boolean;
   radarFrameTimeVisible: boolean;
   basicAdBannerReservesSpace: boolean;
+  nativeDriveMap: boolean;
 };
 
 /** Root `.app-shell` class list — one flag per UI mode/overlay that changes shell layout. */
@@ -25,6 +26,7 @@ export function buildAppShellClassName(flags: AppShellClassNameFlags): string {
     landscapeHandLeft,
     radarFrameTimeVisible,
     basicAdBannerReservesSpace,
+    nativeDriveMap,
   } = flags;
   return [
     "app-shell",
@@ -37,6 +39,7 @@ export function buildAppShellClassName(flags: AppShellClassNameFlags): string {
     landscapeHandLeft ? "app-shell--landscape-hand-left" : "",
     radarFrameTimeVisible ? "nav-radar-frame-time-visible" : "",
     basicAdBannerReservesSpace ? "app-shell--basic-ad-banner" : "",
+    nativeDriveMap ? "app-shell--native-drive-map" : "",
     import.meta.env.DEV ? "app-shell--dev-pointer" : "",
   ]
     .filter(Boolean)

@@ -578,6 +578,24 @@
   color: #e8eaed;
 }
 
+/* Native NavigationMapView shows through the WebView during Drive. */
+.app-shell--native-drive-map,
+.app-shell--native-drive-map .map-stage.map-bleed,
+.app-shell--native-drive-map .map-canvas {
+  background: transparent !important;
+}
+
+html:has(.app-shell--native-drive-map),
+html:has(.app-shell--native-drive-map) body,
+html:has(.app-shell--native-drive-map) #root {
+  background: transparent !important;
+}
+
+.drive-map--native-shell {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Dark Mapbox basemap (7p?6a local): thin light rims ? must beat .app-shell.nav-fullmap chrome vars */
 .app-shell--basemap-night .map-about-btn {
   border-color: rgba(255, 255, 255, 0.5);

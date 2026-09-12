@@ -74,6 +74,8 @@ export interface StormpathMapboxNavigationPlugin {
   setVoiceGuidance(options: { enabled: boolean }): Promise<{ ok: boolean; enabled: boolean }>;
   /** Pin / hide the native heading-up Drive puck overlay. */
   setDrivePuckVisible(options: { visible: boolean }): Promise<{ ok: boolean; visible: boolean }>;
+  /** Show / hide the native NavigationMapView under the WebView (Drive after Go). */
+  setNativeMapVisible(options: { visible: boolean }): Promise<{ ok: boolean; visible: boolean }>;
   stop(): Promise<void>;
   addListener(
     eventName: "progress",

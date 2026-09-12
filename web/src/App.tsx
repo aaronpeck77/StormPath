@@ -23,6 +23,7 @@ import {
 import { useDestinationSearch } from "./hooks/useDestinationSearch";
 import { useNavigationPosition } from "./hooks/useNavigationPosition";
 import { useNativeNavSession } from "./nav/useNativeNavSession";
+import { shouldUseNativeDriveMapShell } from "./nav/nativeDriveMapShell";
 import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
 import { useNearbyPoiTip } from "./hooks/useNearbyPoiTip";
 import { useAdvisoryVoiceGuidance } from "./hooks/useAdvisoryVoiceGuidance";
@@ -2539,6 +2540,11 @@ export default function App() {
       puckAnchorDriftPxOutRef: drivePuckAnchorDriftPxRef,
       holdLastGoodMap,
       nativeFollowCamera: nativeNavActive ? nativeFollowCamera : null,
+      nativeDriveMapActive: shouldUseNativeDriveMapShell({
+        nativeNavActive,
+        navigationStarted,
+        viewMode,
+      }),
     },
     stormAdvisoryBar: {
       isPlus,
@@ -2607,6 +2613,11 @@ export default function App() {
         landscapeHandLeft: settingLandscapeSideHand === "left",
         radarFrameTimeVisible: radarMapOverlayOn && radarFrameUtcSec != null,
         basicAdBannerReservesSpace: basicAdBanner.reservesBottomSpace,
+        nativeDriveMap: shouldUseNativeDriveMapShell({
+          nativeNavActive,
+          navigationStarted,
+          viewMode,
+        }),
       })}
       style={buildDevPointerStyle()}
     >

@@ -94,6 +94,7 @@ export type UseDriveMapPropsInput = {
   puckAnchorDriftPxOutRef?: MutableRefObject<number | null>;
   holdLastGoodMap?: boolean;
   nativeFollowCamera?: DriveMapProps["nativeFollowCamera"];
+  nativeDriveMapActive?: boolean;
 };
 
 export function buildDriveMapProps(
@@ -169,6 +170,7 @@ export function buildDriveMapProps(
     puckAnchorDriftPxOutRef,
     holdLastGoodMap = false,
     nativeFollowCamera = null,
+    nativeDriveMapActive = false,
   } = input;
 
   return {
@@ -255,6 +257,7 @@ export function buildDriveMapProps(
     isOnline,
     holdLastGoodMap,
     nativeFollowCamera,
+    nativeDriveMapActive,
   };
 }
 
