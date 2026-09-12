@@ -37,6 +37,9 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     private var poseHold = DrivePoseHold()
     private var followCam = DriveFollowCam()
     private var puckOverlay: DrivePuckOverlay?
+    /// Nil at init — create on the main actor. Do not `= DriveNativeMap()` here.
+    private var nativeMap: DriveNativeMap?
+    private var pendingNativeMapVisible = false
     private var lastNavRoutes: NavigationRoutes?
 
     @objc func isAvailable(_ call: CAPPluginCall) {
@@ -92,7 +95,11 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func setNativeMapVisible(_ call: CAPPluginCall) {
         let visible = call.getBool("visible") ?? false
-        call.resolve(["ok": true, "visible": visible])
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.applyNativeMapVisible(visible)
+            call.resolve(["ok": true, "visible": visible])
+        }
     }
 
     @objc func setDrivePuckVisible(_ call: CAPPluginCall) {
@@ -167,6 +174,9 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             sessionActive = true
             lastNavRoutes = navigationRoutes
             emitRouteGeometry(from: navigationRoutes)
+            if pendingNativeMapVisible {
+                applyNativeMapVisible(true)
+            }
             call.resolve(["ok": true])
         } catch {
             tearDownSession(emitCancelled: false)
@@ -325,6 +335,9 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         payload["camBearing"] = cam.bearing
         payload["camPitch"] = cam.pitch
         payload["camZoom"] = cam.zoom
+        if nativeMap?.isShowing == true {
+            nativeMap?.applyFollowCamera(cam)
+        }
         notifyListeners("progress", data: payload)
 
         if !didEmitArrival, remainingM >= 0, remainingM < 30, alongM > 50 {
@@ -385,6 +398,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             ["lng": c.longitude, "lat": c.latitude]
         }
         lastNavRoutes = routes
+        nativeMap?.show(routes: routes)
         notifyListeners("routeChanged", data: [
             "geometry": geometry,
             "turnSteps": turnStepsPayload(from: routes),
@@ -411,7 +425,31 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         poseHold.reset()
         followCam.reset()
         lastNavRoutes = nil
+        pendingNativeMapVisible = false
+        nativeMap?.detach(webView: webView)
+        nativeMap = nil
         applyDrivePuckVisible(false)
+    }
+
+    @MainActor
+    private func applyNativeMapVisible(_ visible: Bool) {
+        pendingNativeMapVisible = visible
+        guard visible else {
+            nativeMap?.setVisible(false, webView: webView)
+            return
+        }
+        guard let provider = navigationProvider, let host = webView?.superview, let wv = webView else {
+            return
+        }
+        let map = nativeMap ?? DriveNativeMap()
+        nativeMap = map
+        map.attach(
+            host: host,
+            webView: wv,
+            navigation: provider.mapboxNavigation,
+            predictiveCacheManager: provider.predictiveCacheManager,
+            routes: lastNavRoutes
+        )
     }
 
     @MainActor

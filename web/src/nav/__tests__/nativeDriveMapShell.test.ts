@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 import { shouldUseNativeDriveMapShell } from "../nativeDriveMapShell";
 
 describe("shouldUseNativeDriveMapShell", () => {
-  it("stays on the web map while the native map shell is parked", () => {
+  it("uses the native map in Drive after Go when Core is active", () => {
     expect(
       shouldUseNativeDriveMapShell({
         nativeNavActive: true,
         navigationStarted: true,
         viewMode: "drive",
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("stays on the web map for Mp/Rt or planning", () => {

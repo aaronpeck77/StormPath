@@ -2,6 +2,8 @@
 
 Use this when moving from **TestFlight beta** to **public App Store**. Does not replace beta workflow in [`GITHUB_TESTFLIGHT_ONLY.md`](GITHUB_TESTFLIGHT_ONLY.md).
 
+**Closed train:** **4.20.8** is approved. Apple rejects any new binary still labeled 4.20.8 (ITMS-90186 / ITMS-90062), including TestFlight. Next upload must be **> 4.20.8** (`native/drive` is **4.21.1**). Do not re-upload store/`master` 4.20.8.
+
 ## Build flavor
 
 | Track | Command / trigger | Plus tier | How you tell |

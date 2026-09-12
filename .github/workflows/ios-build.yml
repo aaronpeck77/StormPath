@@ -106,6 +106,33 @@ jobs:
           # Also writes MBXAccessToken into Info.plist for Navigation SDK.
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
 
+      # 4.20.8 is the approved store train (ITMS-90186 / ITMS-90062). Apple rejects
+      # any new binary that still says 4.20.8 — including TestFlight. Fail here
+      # instead of archiving for 40 minutes and emailing Bill.
+      - name: Refuse closed App Store marketing train
+        working-directory: web
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          ver = str(json.load(open("package.json"))["version"])
+          def parts(v: str):
+              xs = []
+              for p in v.split("."):
+                  try:
+                      xs.append(int(p))
+                  except ValueError:
+                      xs.append(0)
+              return tuple((xs + [0, 0, 0])[:3])
+          if parts(ver) <= (4, 20, 8):
+              print(
+                  f"::error::Marketing version {ver} is closed. "
+                  "Last approved store train is 4.20.8 (ITMS-90186 / ITMS-90062). "
+                  "Bump web/package.json above 4.20.8 before uploading."
+              )
+              sys.exit(1)
+          print(f"Marketing version {ver} is open for new builds.")
+          PY
+
       # Mapbox Navigation Core is fetched via SPM from api.mapbox.com — needs a secret
       # token with Downloads:Read on the CI Mac (same as a local ~/.netrc). You do NOT
       # need a Mac at your desk; this runner is the Mac.
