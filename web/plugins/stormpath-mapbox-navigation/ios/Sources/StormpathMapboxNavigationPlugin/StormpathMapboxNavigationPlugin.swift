@@ -37,7 +37,6 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     private var poseHold = DrivePoseHold()
     private var followCam = DriveFollowCam()
     private var puckOverlay: DrivePuckOverlay?
-    private var nativeMap = DriveNativeMap()
     private var lastNavRoutes: NavigationRoutes?
 
     @objc func isAvailable(_ call: CAPPluginCall) {
@@ -93,22 +92,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func setNativeMapVisible(_ call: CAPPluginCall) {
         let visible = call.getBool("visible") ?? false
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            if visible, let provider = self.navigationProvider, let host = self.webView?.superview, let wv = self.webView {
-                self.nativeMap.attach(
-                    host: host,
-                    webView: wv,
-                    navigation: provider.mapboxNavigation,
-                    predictiveCacheManager: provider.predictiveCacheManager,
-                    routes: self.lastNavRoutes
-                )
-                self.applyDrivePuckVisible(false)
-            } else if let wv = self.webView {
-                self.nativeMap.setVisible(false, webView: wv)
-            }
-            call.resolve(["ok": true, "visible": visible])
-        }
+        call.resolve(["ok": true, "visible": visible])
     }
 
     @objc func setDrivePuckVisible(_ call: CAPPluginCall) {
@@ -401,7 +385,6 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             ["lng": c.longitude, "lat": c.latitude]
         }
         lastNavRoutes = routes
-        nativeMap.show(routes: routes)
         notifyListeners("routeChanged", data: [
             "geometry": geometry,
             "turnSteps": turnStepsPayload(from: routes),
@@ -428,7 +411,6 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         poseHold.reset()
         followCam.reset()
         lastNavRoutes = nil
-        nativeMap.detach(webView: webView)
         applyDrivePuckVisible(false)
     }
 
