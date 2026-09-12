@@ -301,9 +301,8 @@ jobs:
       # rejects as "does not support provisioning profiles".
       - name: Build archive
         run: |
+          set +e
           set -o pipefail
-          # Last command must be this pipeline — its exit status becomes the step status (do not add a
-          # separate `exit ${PIPESTATUS[0]}` line; `bash -e` / shell quirks can interfere).
           xcodebuild archive \
             -project web/ios/App/App.xcodeproj \
             -scheme App \
@@ -312,6 +311,13 @@ jobs:
             -destination "generic/platform=iOS" \
             CODE_SIGNING_REQUIRED=YES \
             2>&1 | tee /tmp/xcodebuild.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            echo "::group::Compiler errors"
+            grep -E "error:|fatal error:" /tmp/xcodebuild.log | head -80 || true
+            echo "::endgroup::"
+            exit "$status"
+          fi
 
       # ── 10. Export the IPA ────────────────────────────────────────────────────
       - name: Export IPA

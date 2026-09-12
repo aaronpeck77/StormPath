@@ -12,10 +12,9 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.3.4"),
-        .package(url: "https://github.com/mapbox/mapbox-navigation-ios.git", from: "3.26.0"),
-        // NavigationMapView's public API uses MapView / PuckType — SwiftPM will not
-        // let us import those from a transitive MapboxNavigationCore dependency.
-        .package(url: "https://github.com/mapbox/mapbox-maps-ios.git", from: "11.26.0"),
+        // Pin the pair. `from: 3.26.0` floats CI to 3.30.x (Maps 11.30) and the archive dies.
+        .package(url: "https://github.com/mapbox/mapbox-navigation-ios.git", exact: "3.26.0"),
+        .package(url: "https://github.com/mapbox/mapbox-maps-ios.git", exact: "11.26.0"),
     ],
     targets: [
         .target(
