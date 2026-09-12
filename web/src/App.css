@@ -3354,6 +3354,11 @@
     0 1px 0 rgba(0, 0, 0, 0.15);
 }
 
+.map-user-puck--native-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .map-dest-marker {
   width: 18px;
   height: 18px;

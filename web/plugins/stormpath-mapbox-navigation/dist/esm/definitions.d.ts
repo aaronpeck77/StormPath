@@ -31,6 +31,12 @@ export type NativeNavProgressEvent = {
   speedMps?: number | null;
   /** True when native last-good pose rejected a leap. */
   poseHeld?: boolean;
+  /** Native follow-cam sample (iOS owns framing). */
+  camLng?: number;
+  camLat?: number;
+  camBearing?: number;
+  camPitch?: number;
+  camZoom?: number;
 };
 
 /** Live turn banner fields from Mapbox Navigation Core (iOS). */
@@ -66,6 +72,8 @@ export interface StormpathMapboxNavigationPlugin {
   startActiveGuidance(options: StartActiveGuidanceOptions): Promise<{ ok: boolean; message?: string }>;
   /** Mute / unmute Mapbox spoken instructions during an active native session. */
   setVoiceGuidance(options: { enabled: boolean }): Promise<{ ok: boolean; enabled: boolean }>;
+  /** Pin / hide the native heading-up Drive puck overlay. */
+  setDrivePuckVisible(options: { visible: boolean }): Promise<{ ok: boolean; visible: boolean }>;
   stop(): Promise<void>;
   addListener(
     eventName: "progress",

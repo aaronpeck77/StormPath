@@ -37,6 +37,8 @@ chmod 600 ~/.netrc
 - `stop()`
 - Events: `progress` (`lng`/`lat`/`alongM`, plus `headingDeg`/`speedMps`/`poseHeld` when Core has a fix), `routeChanged`, `arrived`, `cancelled`, `error`
 - Native last-good pose (`DrivePoseHold.swift`) rejects Canada-scale puck leaps before JS sees them. JS mirrors the same rules in `web/src/nav/nativeDrivePoseHold.ts`.
+- Native follow-cam (`DriveFollowCam.swift`) owns center / bearing / pitch / zoom after Go. DriveMap applies the sample and does not write its own follow-cam.
+- Native heading-up puck overlay (`DrivePuckOverlay.swift`) sits on the 30-yard line. `setDrivePuckVisible` shows/hides it.
 
 ## Cost
 

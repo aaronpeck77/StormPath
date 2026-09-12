@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import Capacitor
 import Combine
 import CoreLocation
@@ -20,6 +21,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startActiveGuidance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setVoiceGuidance", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setDrivePuckVisible", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
     ]
 
@@ -32,6 +34,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     private var voiceEnabled = false
     /// Last-good puck — reject Core leaps before JS / DriveMap see them.
     private var poseHold = DrivePoseHold()
+    private var followCam = DriveFollowCam()
+    private var puckOverlay: DrivePuckOverlay?
 
     @objc func isAvailable(_ call: CAPPluginCall) {
         call.resolve(["available": true])
@@ -81,6 +85,14 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         Task { @MainActor [weak self] in
             self?.applyVoiceEnabled(enabled)
             call.resolve(["ok": true, "enabled": enabled])
+        }
+    }
+
+    @objc func setDrivePuckVisible(_ call: CAPPluginCall) {
+        let visible = call.getBool("visible") ?? false
+        Task { @MainActor [weak self] in
+            self?.applyDrivePuckVisible(visible)
+            call.resolve(["ok": true, "visible": visible])
         }
     }
 
@@ -146,6 +158,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                 startLegIndex: 0
             )
             sessionActive = true
+            applyDrivePuckVisible(true)
             emitRouteGeometry(from: navigationRoutes)
             call.resolve(["ok": true])
         } catch {
@@ -294,6 +307,17 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         if let speed = pose.speedMps {
             payload["speedMps"] = speed
         }
+        let cam = followCam.next(
+            lng: pose.coordinate.longitude,
+            lat: pose.coordinate.latitude,
+            headingDeg: pose.headingDeg,
+            speedMps: pose.speedMps
+        )
+        payload["camLng"] = cam.lng
+        payload["camLat"] = cam.lat
+        payload["camBearing"] = cam.bearing
+        payload["camPitch"] = cam.pitch
+        payload["camZoom"] = cam.zoom
         notifyListeners("progress", data: payload)
 
         if !didEmitArrival, remainingM >= 0, remainingM < 30, alongM > 50 {
@@ -377,5 +401,24 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         voiceController = nil
         navigationProvider = nil
         poseHold.reset()
+        followCam.reset()
+        applyDrivePuckVisible(false)
+    }
+
+    @MainActor
+    private func applyDrivePuckVisible(_ visible: Bool) {
+        if visible {
+            guard puckOverlay == nil else { return }
+            guard let host = webView?.superview ?? bridge?.viewController?.view else { return }
+            let overlay = DrivePuckOverlay(frame: host.bounds)
+            overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            overlay.tag = 0x53504452 // "SPDR"
+            host.addSubview(overlay)
+            overlay.applyLayout()
+            puckOverlay = overlay
+        } else {
+            puckOverlay?.removeFromSuperview()
+            puckOverlay = nil
+        }
     }
 }

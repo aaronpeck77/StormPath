@@ -916,6 +916,7 @@ export default function App() {
   const {
     nativeNavActive,
     position: nativeNavPosition,
+    followCamera: nativeFollowCamera,
     guidance: nativeNavGuidance,
     turnSteps: nativeTurnSteps,
     restartNative,
@@ -2537,6 +2538,7 @@ export default function App() {
       lastTravelBearingDegOutRef: driveLastTravelBearingDegRef,
       puckAnchorDriftPxOutRef: drivePuckAnchorDriftPxRef,
       holdLastGoodMap,
+      nativeFollowCamera: nativeNavActive ? nativeFollowCamera : null,
     },
     stormAdvisoryBar: {
       isPlus,

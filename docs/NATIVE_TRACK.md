@@ -15,9 +15,9 @@ Forge leftover desktop camera experiments are **not** this track (stashed off `m
 
 ## What “aggressive native” means (in order)
 
-1. **Native last-good pose** (this branch, first slice) — Mapbox Navigation Core already snaps after Go. Hold leaps / radio flaps in **Swift** before JS sees the puck.
-2. **Native follow-cam owner** — iOS decides zoom/center; WebView map becomes a slave, not the writer.
-3. **Native puck layer** — draw the chevron in UIKit/Mapbox Maps if WebView GL still flakes.
+1. **Native last-good pose** — done. Hold leaps in Swift before JS sees the puck.
+2. **Native follow-cam owner** — done. iOS decides zoom/center/bearing/pitch; DriveMap applies only.
+3. **Native puck overlay** — done. Heading-up chevron pinned to the 30-yard line.
 4. **Optional later:** full Mapbox Maps iOS under the chrome. Not a SwiftUI rewrite of About/weather.
 
 ## How to work

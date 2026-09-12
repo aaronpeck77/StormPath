@@ -127,6 +127,9 @@ import {
   smoothDriveBearingDeg,
 } from "./mapDriveCamera";
 import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
+import { shouldUseNativeFollowCam } from "../nav/nativeDriveFollowCam";
+import { isNativeMapboxNavPlatform } from "../nav/useNativeNavSession";
+import { StormpathMapboxNavigation } from "@stormpath/mapbox-navigation";
 import { allowBasemapStyleReload } from "./mapLowSignalResilience";
 import {
   DRIVE_FOLLOW_ZOOM_DEFAULT,
@@ -345,6 +348,11 @@ export type Props = {
   isOnline?: boolean;
   /** Supervisor dead-zone hold — keep last tiles/camera; no mid-drive style reload. */
   holdLastGoodMap?: boolean;
+  /**
+   * Native Drive follow-cam (iOS Navigation Core). When set in Drive after Go,
+   * DriveMap applies this sample and does not write its own follow-cam.
+   */
+  nativeFollowCamera?: import("../nav/nativeDriveFollowCam").NativeDriveFollowCamera | null;
 };
 
 /** Alias for App / prop-assembly hooks — same shape as {@link Props}. */
@@ -452,6 +460,7 @@ function DriveMapInner({
   holdLastGoodMap = false,
   lastTravelBearingDegOutRef,
   puckAnchorDriftPxOutRef,
+  nativeFollowCamera = null,
 }: Props) {
   const ultraLongRoute = isUltraLongTripRoute(sessionRouteLengthM);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -516,6 +525,8 @@ function DriveMapInner({
   viewModeRef.current = viewMode;
   const navigationStartedRef = useRef(navigationStarted);
   navigationStartedRef.current = navigationStarted;
+  const nativeFollowCameraRef = useRef(nativeFollowCamera);
+  nativeFollowCameraRef.current = nativeFollowCamera;
   const holdLastGoodMapRef = useRef(holdLastGoodMap);
   holdLastGoodMapRef.current = holdLastGoodMap;
   const isOnlineRef = useRef(isOnline);
@@ -1560,6 +1571,65 @@ function DriveMapInner({
           navigationStartedRef.current &&
           userLngLatRef.current
         ) {
+          const nativeCam = nativeFollowCameraRef.current;
+          if (
+            nativeCam &&
+            shouldUseNativeFollowCam({
+              camera: nativeCam,
+              navigationStarted: true,
+              viewMode: "drive",
+              userExploring: userExploringRef.current,
+            })
+          ) {
+            const guarded = guardDriveFollowCamera({
+              center: [nativeCam.lng, nativeCam.lat],
+              zoom: nativeCam.zoom,
+              puck: [nativeCam.lng, nativeCam.lat],
+            });
+            const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
+            const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;
+            const easeKey = `${stormBarVisibleRef.current}|${stormBarExpandedRef.current}|${progressRailVisibleRef.current}|${wx}x${wy}`;
+            let easeCached = driveCamEaseOptsCacheRef.current;
+            if (!easeCached || easeCached.key !== easeKey) {
+              const o = driveCameraEaseOptions(
+                stormBarVisibleRef.current,
+                stormBarExpandedRef.current,
+                progressRailVisibleRef.current
+              );
+              easeCached = { key: easeKey, padding: o.padding, offset: o.offset };
+              driveCamEaseOptsCacheRef.current = easeCached;
+            }
+            const holdTiles = holdLastGoodMapRef.current || !isOnlineRef.current;
+            const applied = holdTiles
+              ? safeHardFollowCamera(map, {
+                  center: guarded.center,
+                  zoom: guarded.zoom,
+                  pitch: nativeCam.pitch,
+                  bearing: nativeCam.bearing,
+                })
+              : safePanToCenter(map, {
+                  center: guarded.center,
+                  zoom: guarded.zoom,
+                  pitch: nativeCam.pitch,
+                  bearing: nativeCam.bearing,
+                  padding: easeCached.padding,
+                  offset: easeCached.offset,
+                  duration: 0,
+                  essential: true,
+                }) ||
+                safeHardFollowCamera(map, {
+                  center: guarded.center,
+                  zoom: guarded.zoom,
+                  pitch: nativeCam.pitch,
+                  bearing: nativeCam.bearing,
+                });
+            if (applied) {
+              lastBearingApplied = nativeCam.bearing;
+              driveCamBearingSmoothedRef.current = nativeCam.bearing;
+              driveCamResyncRef.current = false;
+              onDriveCameraBearingDegRef.current?.(nativeCam.bearing);
+            }
+          } else {
           driveCamFrame += 1;
           const forcePeriodicResync = driveCamFrame % DRIVE_CAM_FORCE_RESYNC_FRAMES === 0;
           const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
@@ -1725,6 +1795,7 @@ function DriveMapInner({
               }
             }
           }
+          }
         } else if (
           map &&
           isMapReadyForFollowCam(map) &&
@@ -1773,6 +1844,10 @@ function DriveMapInner({
     const el = marker.getElement();
     const isDriveView = navigationStarted && viewMode === "drive";
     el.classList.toggle("map-user-puck--driving", navigationStarted);
+    const hideWebPuck = Boolean(
+      nativeFollowCamera && navigationStarted && viewMode === "drive"
+    );
+    el.classList.toggle("map-user-puck--native-hidden", hideWebPuck);
     try {
       marker.setOffset(isDriveView ? DRIVE_PUCK_MARKER_OFFSET_PX : [0, 0]);
       marker.setPitchAlignment(navigationStarted ? "viewport" : "map");
@@ -1780,7 +1855,13 @@ function DriveMapInner({
     } catch {
       /* older mapbox */
     }
-  }, [navigationStarted, viewMode, mapReady]);
+  }, [navigationStarted, viewMode, mapReady, Boolean(nativeFollowCamera)]);
+
+  const nativeDrivePuckOn = Boolean(nativeFollowCamera && navigationStarted && viewMode === "drive");
+  useEffect(() => {
+    if (!isNativeMapboxNavPlatform()) return;
+    void StormpathMapboxNavigation.setDrivePuckVisible({ visible: nativeDrivePuckOn }).catch(() => undefined);
+  }, [nativeDrivePuckOn]);
 
   /** After route compare or end of navigation, re-run topdown init and flatten pitch. */
   useEffect(() => {

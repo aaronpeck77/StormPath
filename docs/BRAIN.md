@@ -39,9 +39,9 @@ Store binary accepted ~Sep 11, 2026 (4.20.8). Soak testers. Do not bump / resubm
 
 ### Build order
 
-1. **Native last-good pose** (first slice, this branch) — Mapbox Navigation Core already snaps after Go. Hold leaps / radio flaps in **Swift** (`DrivePoseHold`) before JS sees the puck. JS mirrors the same rules (`nativeDrivePoseHold.ts`).
-2. **Native follow-cam owner** — iOS decides zoom/center; WebView map becomes a slave, not the writer.
-3. **Native puck layer** — draw the chevron in UIKit / Mapbox Maps if WebView GL still flakes.
+1. **Native last-good pose** — done (`DrivePoseHold` + `nativeDrivePoseHold.ts`).
+2. **Native follow-cam owner** — done (`DriveFollowCam` + DriveMap slave apply).
+3. **Native puck overlay** — done (`DrivePuckOverlay`, heading-up, 30-yard line).
 4. **Optional later:** full Mapbox Maps iOS under the chrome. Not a product rewrite.
 
 Existing plugin: `web/plugins/stormpath-mapbox-navigation/` (`StormpathMapboxNavigationPlugin.swift`).

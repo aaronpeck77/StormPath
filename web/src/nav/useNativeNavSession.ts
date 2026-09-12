@@ -17,6 +17,11 @@ import type { LngLat, RouteTurnStep } from "./types";
 import type { TripStop } from "./routeWaypoints";
 import type { NavigationPositionState } from "../hooks/useNavigationPosition";
 import { createNativeDrivePoseHold } from "./nativeDrivePoseHold";
+import {
+  createNativeDriveFollowCam,
+  parseNativeDriveFollowCamera,
+  type NativeDriveFollowCamera,
+} from "./nativeDriveFollowCam";
 
 export type NativeNavSessionCoords = {
   userLngLat: LngLat | null;
@@ -108,6 +113,7 @@ export function useNativeNavSession(opts: {
 
   const [nativeNavActive, setNativeNavActive] = useState(false);
   const [position, setPosition] = useState<NavigationPositionState | null>(null);
+  const [followCamera, setFollowCamera] = useState<NativeDriveFollowCamera | null>(null);
   const [guidance, setGuidance] = useState<NativeNavGuidance | null>(null);
   const [turnSteps, setTurnSteps] = useState<RouteTurnStep[]>([]);
   const startedForNavRef = useRef(false);
@@ -118,6 +124,7 @@ export function useNativeNavSession(opts: {
   /** First Core `routeChanged` this session — later ones are mid-trip reroutes. */
   const firstRouteChangedRef = useRef(true);
   const poseHoldRef = useRef(createNativeDrivePoseHold());
+  const followCamRef = useRef(createNativeDriveFollowCam());
   const listenersRef = useRef<{ remove: () => Promise<void> }[]>([]);
   const onRouteGeometryRef = useRef(onRouteGeometry);
   onRouteGeometryRef.current = onRouteGeometry;
@@ -145,8 +152,10 @@ export function useNativeNavSession(opts: {
     corridorAdoptedRef.current = false;
     firstRouteChangedRef.current = true;
     poseHoldRef.current.reset();
+    followCamRef.current.reset();
     setNativeNavActive(false);
     setPosition(null);
+    setFollowCamera(null);
     setGuidance(null);
     setTurnSteps([]);
   }, [removeListeners]);
@@ -165,6 +174,8 @@ export function useNativeNavSession(opts: {
       corridorAdoptedRef.current = false;
       firstRouteChangedRef.current = true;
       poseHoldRef.current.reset();
+      followCamRef.current.reset();
+      setFollowCamera(null);
 
       const handles = await Promise.all([
         StormpathMapboxNavigation.addListener("progress", (e: NativeNavProgressEvent) => {
@@ -189,6 +200,16 @@ export function useNativeNavSession(opts: {
             onRoute: e.onRoute,
             source: held.held || e.poseHeld ? "held" : "route_snap",
           });
+          const nativeCam = parseNativeDriveFollowCamera(e);
+          setFollowCamera(
+            nativeCam ??
+              followCamRef.current.next({
+                lng: held.pose.lng,
+                lat: held.pose.lat,
+                headingDeg: held.pose.headingDeg,
+                speedMps: held.pose.speedMps,
+              })
+          );
           const instr =
             typeof e.instruction === "string" && e.instruction.trim()
               ? e.instruction.trim()
@@ -334,6 +355,7 @@ export function useNativeNavSession(opts: {
   return {
     nativeNavActive,
     position,
+    followCamera,
     /** Live Mapbox Core banner fields (instruction + distance). */
     guidance,
     /** Live Mapbox Core turn list — same route as the blue line / voice. */
