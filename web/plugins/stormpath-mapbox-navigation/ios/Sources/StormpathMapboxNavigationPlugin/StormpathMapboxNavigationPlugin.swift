@@ -456,7 +456,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         payload["camBearing"] = cam.bearing
         payload["camPitch"] = cam.pitch
         payload["camZoom"] = cam.zoom
-        if nativeMap?.isShowing == true {
+        if pendingNativeMapVisible || nativeMap != nil {
             nativeMap?.applyFollowCamera(cam)
         }
         notifyListeners("progress", data: payload)

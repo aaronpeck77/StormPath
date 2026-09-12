@@ -11,9 +11,11 @@ import WebKit
 final class DriveNativeMap {
     private var mapView: NavigationMapView?
     private var lastRoutes: NavigationRoutes?
+    private weak var hostedWebView: UIView?
     private var webViewWasOpaque = true
     private var webViewBackground: UIColor?
     private var scrollBackground: UIColor?
+    private var revealedThroughWebView = false
 
     @MainActor
     func attach(
@@ -24,6 +26,7 @@ final class DriveNativeMap {
         routes: NavigationRoutes?
     ) {
         lastRoutes = routes ?? lastRoutes
+        hostedWebView = webView
         if mapView == nil {
             let nav = navigation.navigation()
             let map = NavigationMapView(
@@ -33,15 +36,19 @@ final class DriveNativeMap {
             )
             map.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             map.frame = host.bounds
-            map.puckType = .puck3D(.navigationDefault)
+            map.puckType = .puck2D(Self.stormpathPuck2D())
             map.puckBearing = .course
             map.showsAlternatives = false
             map.showsRelativeDurationsOnAlternativeManuever = false
+            map.navigationCamera.stop()
+            map.isHidden = true
             host.insertSubview(map, belowSubview: webView)
             mapView = map
+            applyStormPathStyle(on: map)
         }
-        mapView?.isHidden = false
-        makeWebViewClear(webView, clear: true)
+        /* Keep the WebView opaque until follow-cam has framed street level.
+         * Clearing it here flashes Mapbox's default globe / triangle puck. */
+        makeWebViewClear(webView, clear: false)
         if let lastRoutes {
             mapView?.show(lastRoutes, routeAnnotationKinds: [])
         }
@@ -51,31 +58,54 @@ final class DriveNativeMap {
     @MainActor
     func show(routes: NavigationRoutes) {
         lastRoutes = routes
-        guard let mapView, !mapView.isHidden else { return }
-        mapView.show(routes, routeAnnotationKinds: [])
+        mapView?.show(routes, routeAnnotationKinds: [])
     }
 
     @MainActor
     func applyFollowCamera(_ sample: DriveFollowCameraSample) {
-        guard let mapView, !mapView.isHidden else { return }
+        guard let mapView else { return }
         mapView.navigationCamera.stop()
         let height = mapView.bounds.height
-        let bottomPad = height > 1 ? height * 0.32 : 180
+        let width = mapView.bounds.width
+        /* 30-yard line: puck ~70% down the screen, road ahead above. Bottom padding
+         * alone shoved the puck into the top third (what Bill saw after Go). */
+        let topPad = height > 1 ? height * 0.58 : 320
+        let bottomPad = height > 1 ? height * 0.18 : 120
+        let sidePad = width > 1 ? max(16, width * 0.04) : 20
         let options = CameraOptions(
             center: CLLocationCoordinate2D(latitude: sample.lat, longitude: sample.lng),
-            padding: UIEdgeInsets(top: 0, left: 0, bottom: bottomPad, right: 0),
+            padding: UIEdgeInsets(top: topPad, left: sidePad, bottom: bottomPad, right: sidePad),
             zoom: sample.zoom,
             bearing: sample.bearing,
             pitch: sample.pitch
         )
         mapView.mapView.mapboxMap.setCamera(to: options)
+        if !revealedThroughWebView {
+            revealedThroughWebView = true
+            mapView.isHidden = false
+            if let hostedWebView {
+                makeWebViewClear(hostedWebView, clear: true)
+            }
+        }
     }
 
     @MainActor
     func setVisible(_ visible: Bool, webView: UIView?) {
-        mapView?.isHidden = !visible
-        if let webView {
-            makeWebViewClear(webView, clear: visible)
+        if !visible {
+            revealedThroughWebView = false
+            mapView?.isHidden = true
+            if let webView {
+                makeWebViewClear(webView, clear: false)
+            }
+            return
+        }
+        hostedWebView = webView ?? hostedWebView
+        /* Stay hidden until applyFollowCamera frames the puck. */
+        if revealedThroughWebView {
+            mapView?.isHidden = false
+            if let hostedWebView {
+                makeWebViewClear(hostedWebView, clear: true)
+            }
         }
     }
 
@@ -87,12 +117,44 @@ final class DriveNativeMap {
         mapView?.removeFromSuperview()
         mapView = nil
         lastRoutes = nil
+        hostedWebView = nil
+        revealedThroughWebView = false
     }
 
     @MainActor
     var isShowing: Bool {
         guard let mapView else { return false }
         return !mapView.isHidden
+    }
+
+    @MainActor
+    private func applyStormPathStyle(on map: NavigationMapView) {
+        let uri = StyleURI(rawValue: "mapbox://styles/mapbox/streets-v12") ?? .streets
+        map.mapView.mapboxMap.loadStyle(uri)
+    }
+
+    /// StormPath web puck: blue circle, white ring — not the SDK 3D triangle.
+    private static func stormpathPuck2D() -> Puck2DConfiguration {
+        var config = Puck2DConfiguration.makeDefault(showBearing: true)
+        config.topImage = stormpathPuckDotImage(size: 22)
+        config.opacity = 1
+        return config
+    }
+
+    private static func stormpathPuckDotImage(size: CGFloat) -> UIImage {
+        let scale = UIScreen.main.scale
+        let px = size * scale
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: px, height: px))
+        return renderer.image { ctx in
+            let rect = CGRect(x: 0, y: 0, width: px, height: px).insetBy(dx: scale, dy: scale)
+            let ring = UIBezierPath(ovalIn: rect)
+            UIColor.white.setFill()
+            ring.fill()
+            let inner = rect.insetBy(dx: 3 * scale, dy: 3 * scale)
+            let dot = UIBezierPath(ovalIn: inner)
+            UIColor(red: 26 / 255, green: 115 / 255, blue: 232 / 255, alpha: 1).setFill()
+            dot.fill()
+        }
     }
 
     @MainActor

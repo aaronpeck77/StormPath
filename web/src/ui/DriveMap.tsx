@@ -535,7 +535,10 @@ function DriveMapInner({
   const nativeDriveMapActiveRef = useRef(nativeDriveMapActive);
   nativeDriveMapActiveRef.current = nativeDriveMapActive;
   const [nativeMapHoleReady, setNativeMapHoleReady] = useState(false);
-  const punchNativeHole = nativeDriveMapActive && nativeMapHoleReady;
+  /** Keep StormPath's web map up until Core has a street-level follow-cam sample. */
+  const punchNativeHole = Boolean(
+    nativeDriveMapActive && nativeMapHoleReady && nativeFollowCamera
+  );
   const holdLastGoodMapRef = useRef(holdLastGoodMap);
   holdLastGoodMapRef.current = holdLastGoodMap;
   const isOnlineRef = useRef(isOnline);
@@ -3250,6 +3253,7 @@ function DriveMapInner({
     }
 
     const executePlanningFit = (): boolean => {
+      if (viewModeRef.current === "drive") return false;
       if (userExploringRef.current && !appForcedFit) return false;
       if (!mapStyleReadyForCamera(map)) return false;
       const u = userLngLatRef.current;
