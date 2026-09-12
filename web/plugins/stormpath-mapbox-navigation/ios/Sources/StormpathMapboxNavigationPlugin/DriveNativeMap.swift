@@ -16,6 +16,8 @@ final class DriveNativeMap {
     private var webViewBackground: UIColor?
     private var scrollBackground: UIColor?
     private var revealedThroughWebView = false
+    private var styleReady = false
+    private var lastFollowSample: DriveFollowCameraSample?
 
     @MainActor
     func attach(
@@ -63,30 +65,10 @@ final class DriveNativeMap {
 
     @MainActor
     func applyFollowCamera(_ sample: DriveFollowCameraSample) {
-        guard let mapView else { return }
-        mapView.navigationCamera.stop()
-        let height = mapView.bounds.height
-        let width = mapView.bounds.width
-        /* 30-yard line: puck ~70% down the screen, road ahead above. Bottom padding
-         * alone shoved the puck into the top third (what Bill saw after Go). */
-        let topPad = height > 1 ? height * 0.58 : 320
-        let bottomPad = height > 1 ? height * 0.18 : 120
-        let sidePad = width > 1 ? max(16, width * 0.04) : 20
-        let options = CameraOptions(
-            center: CLLocationCoordinate2D(latitude: sample.lat, longitude: sample.lng),
-            padding: UIEdgeInsets(top: topPad, left: sidePad, bottom: bottomPad, right: sidePad),
-            zoom: sample.zoom,
-            bearing: sample.bearing,
-            pitch: sample.pitch
-        )
-        mapView.mapView.mapboxMap.setCamera(to: options)
-        if !revealedThroughWebView {
-            revealedThroughWebView = true
-            mapView.isHidden = false
-            if let hostedWebView {
-                makeWebViewClear(hostedWebView, clear: true)
-            }
-        }
+        lastFollowSample = sample
+        guard styleReady else { return }
+        writeFollowCamera(sample)
+        revealIfFramed()
     }
 
     @MainActor
@@ -119,6 +101,8 @@ final class DriveNativeMap {
         lastRoutes = nil
         hostedWebView = nil
         revealedThroughWebView = false
+        styleReady = false
+        lastFollowSample = nil
     }
 
     @MainActor
@@ -128,9 +112,52 @@ final class DriveNativeMap {
     }
 
     @MainActor
+    private func writeFollowCamera(_ sample: DriveFollowCameraSample) {
+        guard let mapView else { return }
+        mapView.navigationCamera.stop()
+        let height = mapView.bounds.height
+        let width = mapView.bounds.width
+        /* 30-yard line: puck ~70% down the screen, road ahead above. */
+        let topPad = height > 1 ? height * 0.58 : 320
+        let bottomPad = height > 1 ? height * 0.18 : 120
+        let sidePad = width > 1 ? max(16, width * 0.04) : 20
+        let options = CameraOptions(
+            center: CLLocationCoordinate2D(latitude: sample.lat, longitude: sample.lng),
+            padding: UIEdgeInsets(top: topPad, left: sidePad, bottom: bottomPad, right: sidePad),
+            zoom: sample.zoom,
+            bearing: sample.bearing,
+            pitch: max(sample.pitch, 64)
+        )
+        mapView.mapView.mapboxMap.setCamera(to: options)
+    }
+
+    @MainActor
+    private func revealIfFramed() {
+        guard styleReady, lastFollowSample != nil, !revealedThroughWebView else { return }
+        revealedThroughWebView = true
+        mapView?.isHidden = false
+        if let hostedWebView {
+            makeWebViewClear(hostedWebView, clear: true)
+        }
+    }
+
+    @MainActor
     private func applyStormPathStyle(on map: NavigationMapView) {
+        styleReady = false
         let uri = StyleURI(rawValue: "mapbox://styles/mapbox/streets-v12") ?? .streets
-        map.mapView.mapboxMap.loadStyle(uri)
+        map.mapView.mapboxMap.loadStyle(uri) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.styleReady = true
+                if let routes = self.lastRoutes {
+                    self.mapView?.show(routes, routeAnnotationKinds: [])
+                }
+                if let sample = self.lastFollowSample {
+                    self.writeFollowCamera(sample)
+                    self.revealIfFramed()
+                }
+            }
+        }
     }
 
     /// StormPath web puck: blue circle, white ring — not the SDK 3D triangle.

@@ -539,6 +539,8 @@ function DriveMapInner({
   const punchNativeHole = Boolean(
     nativeDriveMapActive && nativeMapHoleReady && nativeFollowCamera
   );
+  const punchNativeHoleRef = useRef(punchNativeHole);
+  punchNativeHoleRef.current = punchNativeHole;
   const holdLastGoodMapRef = useRef(holdLastGoodMap);
   holdLastGoodMapRef.current = holdLastGoodMap;
   const isOnlineRef = useRef(isOnline);
@@ -1582,7 +1584,7 @@ function DriveMapInner({
           viewModeRef.current === "drive" &&
           navigationStartedRef.current &&
           userLngLatRef.current &&
-          !nativeDriveMapActiveRef.current
+          !punchNativeHoleRef.current
         ) {
           const nativeCam = nativeFollowCameraRef.current;
           if (
