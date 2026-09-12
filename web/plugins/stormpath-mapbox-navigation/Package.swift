@@ -12,9 +12,8 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.3.4"),
-        // Pin the pair. `from: 3.26.0` floats CI to 3.30.x (Maps 11.30) and the archive dies.
+        // Pin. `from: 3.26.0` floated CI to 3.30.x and the archive died.
         .package(url: "https://github.com/mapbox/mapbox-navigation-ios.git", exact: "3.26.0"),
-        .package(url: "https://github.com/mapbox/mapbox-maps-ios.git", exact: "11.26.0"),
     ],
     targets: [
         .target(
@@ -24,7 +23,6 @@ let package = Package(
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
                 .product(name: "MapboxNavigationCore", package: "mapbox-navigation-ios"),
                 .product(name: "MapboxDirections", package: "mapbox-navigation-ios"),
-                .product(name: "MapboxMaps", package: "mapbox-maps-ios"),
             ],
             path: "ios/Sources/StormpathMapboxNavigationPlugin"
         )

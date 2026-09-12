@@ -316,6 +316,9 @@ jobs:
             echo "::group::Compiler errors"
             grep -E "error:|fatal error:" /tmp/xcodebuild.log | head -80 || true
             echo "::endgroup::"
+            grep -E "error:|fatal error:" /tmp/xcodebuild.log | head -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
             exit "$status"
           fi
 

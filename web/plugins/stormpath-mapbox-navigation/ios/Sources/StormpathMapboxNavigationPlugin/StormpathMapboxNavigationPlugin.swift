@@ -182,16 +182,6 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             )
             sessionActive = true
             lastNavRoutes = navigationRoutes
-            if let host = self.webView?.superview, let wv = self.webView {
-                self.nativeMap.attach(
-                    host: host,
-                    webView: wv,
-                    navigation: mapboxNavigation,
-                    predictiveCacheManager: provider.predictiveCacheManager,
-                    routes: navigationRoutes
-                )
-            }
-            applyDrivePuckVisible(false)
             emitRouteGeometry(from: navigationRoutes)
             call.resolve(["ok": true])
         } catch {
