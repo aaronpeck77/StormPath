@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   ROUTE_ACTIVE_LINE_WIDTH,
+  ROUTE_LINE_CASING_COLOR,
+  ROUTE_LINE_CASING_WIDTH_EXTRA,
+  routeCasingWidthByZoom,
   routeLineWidthByZoom,
   routeLineWidthViewMode,
   routeMapLineStyle,
@@ -42,6 +45,18 @@ describe("routeLineWidthViewMode", () => {
     expect(routeLineWidthViewMode("route", true)).toBe("drive");
     expect(routeLineWidthViewMode("drive")).toBe("drive");
     expect(routeLineWidthViewMode("topdown")).toBe("drive");
+  });
+});
+
+describe("route casing", () => {
+  it("uses a thin black outline around the colored line", () => {
+    expect(ROUTE_LINE_CASING_COLOR).toBe("#000000");
+    expect(ROUTE_LINE_CASING_WIDTH_EXTRA).toBeLessThan(2);
+    const core = routeLineWidthByZoom(ROUTE_ACTIVE_LINE_WIDTH, "drive");
+    const casing = routeCasingWidthByZoom(ROUTE_ACTIVE_LINE_WIDTH, "drive");
+    expect(casing[0]).toBe("+");
+    expect(casing[1]).toEqual(core);
+    expect(casing[2]).toBe(ROUTE_LINE_CASING_WIDTH_EXTRA);
   });
 });
 

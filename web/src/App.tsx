@@ -476,7 +476,6 @@ export default function App() {
   const handleViewModeChange = useCallback(
     (next: MapViewMode) => {
       setViewMode(next);
-      if (next === "route") setFitTrigger((n) => n + 1);
     },
     [setViewMode]
   );

@@ -1,4 +1,9 @@
-import { clearDevLocationOverride } from "../hooks/useUserLocation";
+import { useEffect, useState } from "react";
+import {
+  clearDevLocationOverride,
+  isTransientGpsLocationError,
+  TRANSIENT_GPS_BANNER_MS,
+} from "../hooks/useUserLocation";
 import { safeStorage } from "../storage/safeStorage";
 
 type Props = {
@@ -61,6 +66,22 @@ export function AppStatusBanners(props: Props) {
     onOpenDemoCompare,
   } = props;
 
+  const [hideTransientGps, setHideTransientGps] = useState(false);
+  useEffect(() => {
+    if (!isTransientGpsLocationError(locationError)) {
+      setHideTransientGps(false);
+      return;
+    }
+    setHideTransientGps(false);
+    const t = window.setTimeout(() => setHideTransientGps(true), TRANSIENT_GPS_BANNER_MS);
+    return () => window.clearTimeout(t);
+  }, [locationError]);
+
+  const shownLocationError =
+    locationError && !(hideTransientGps && isTransientGpsLocationError(locationError))
+      ? locationError
+      : null;
+
   return (
     <>
       {!hasMapboxToken && (
@@ -101,11 +122,11 @@ export function AppStatusBanners(props: Props) {
         </div>
       )}
 
-      {(locationError || routeError) && (
+      {(shownLocationError || routeError) && (
         <div className="nav-toast-stack nav-toast-stack--top" aria-live="assertive">
-          {locationError ? (
+          {shownLocationError ? (
             <div className="nav-toast nav-toast-err" role="alert">
-              {locationError}
+              {shownLocationError}
             </div>
           ) : null}
           {routeError ? (

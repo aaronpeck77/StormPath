@@ -435,8 +435,7 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
 
   const handleStopAndClear = useCallback(() => {
     clearRoute();
-    setFitTrigger((n) => n + 1);
-  }, [clearRoute, setFitTrigger]);
+  }, [clearRoute]);
 
   return { clearRoute, proceedGo, handleGo, handleStopAndClear };
 }

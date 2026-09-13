@@ -4,7 +4,7 @@ import type { MapViewMode } from "./driveMapTypes";
 
 /**
  * Active route — sky blue (reads over green/yellow radar better than mid blue).
- * White casing in mapRouteLayers keeps it separated from radar wash.
+ * Thin black casing in mapRouteLayers keeps the line readable on streets and radar.
  */
 export const ROUTE_ACTIVE_COLOR = "#38bdf8";
 /**
@@ -13,10 +13,10 @@ export const ROUTE_ACTIVE_COLOR = "#38bdf8";
  */
 export const ROUTE_SUGGESTED_COLOR = "#7dd3fc";
 
-/** Halo under the colored core so routes stay readable on radar. */
-export const ROUTE_LINE_CASING_COLOR = "#0f172a";
-export const ROUTE_LINE_CASING_WIDTH_EXTRA = 2.5;
-export const ROUTE_LINE_CASING_OPACITY = 0.92;
+/** Hairline black outline around the colored core. */
+export const ROUTE_LINE_CASING_COLOR = "#000000";
+export const ROUTE_LINE_CASING_WIDTH_EXTRA = 1.6;
+export const ROUTE_LINE_CASING_OPACITY = 1;
 
 export const ROUTE_ACTIVE_LINE_WIDTH = 8;
 export const ROUTE_SUGGESTED_LINE_WIDTH = 6;

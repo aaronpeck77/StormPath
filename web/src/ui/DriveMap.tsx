@@ -116,7 +116,6 @@ import {
   routeFitMaxZoomCeiling,
   routeFitPadding,
   routeFitZoomBias,
-  ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM,
 } from "./mapFitLogic";
 import {
   DRIVE_FOLLOW_PITCH_DEG,
@@ -2054,7 +2053,7 @@ function DriveMapInner({
 
     /** When there are no routes, always try to strip trip line layers; retry if style is mid-transition. */
     const clearTripRouteLayers = () => {
-      if (cancelled || !map.isStyleLoaded()) return;
+      if (cancelled) return;
       routeIdsRef.current = applyRoutesToMap(
         map,
         [],
@@ -3082,48 +3081,6 @@ function DriveMapInner({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || viewMode !== "route" && viewMode !== "topdown") return;
-    if (routes.length > 0 || navigationStarted) return;
-    if (userExploringRef.current) return;
-    const u = userLngLatRef.current;
-    if (!u || !destLngLat) return;
-    if (viewMode === "topdown") {
-      prevTopdownRef.current = false;
-      safeFlyTo(map, {
-        center: u,
-        zoom: resolveTopdownLocalZoom(topdownZoomRef, false),
-        pitch: 0,
-        bearing: 0,
-        padding: ZERO_MAP_PADDING,
-        offset: TOPDOWN_PUCK_OFFSET_PX,
-        duration: 480,
-        essential: true,
-      });
-      return;
-    }
-    fitMapToTrip(
-      map,
-      [],
-      u,
-      destLngLat,
-      routeFitPadding(stormBarVisible, stormBarExpanded, [], null, progressRailVisible),
-      ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM,
-      {}
-    );
-  }, [
-    mapReady,
-    viewMode,
-    routes.length,
-    navigationStarted,
-    destLngLat,
-    fitTrigger,
-    stormBarVisible,
-    stormBarExpanded,
-    progressRailVisible,
-  ]);
-
-  useEffect(() => {
-    const map = mapRef.current;
     if (!map || !mapReady || routes.length > 0) return;
     if (viewMode !== "route" && viewMode !== "topdown") return;
     if (recenterPlanningPuckTick === 0) return;
@@ -3265,6 +3222,7 @@ function DriveMapInner({
           onlyRouteId: navigationStartedRef.current ? lineFocusId : undefined,
           zoomBias: routeFitZoomBias(routes, lineFocusId),
           forceFullPolyline: planningOverview,
+          durationMs: 0,
         }
       );
       if (fitted && viewModeRef.current === "route") {
@@ -3331,7 +3289,7 @@ function DriveMapInner({
         bearing: 0,
         padding: ZERO_MAP_PADDING,
         offset: TOPDOWN_PUCK_OFFSET_PX,
-        duration: navigationStarted ? 340 : 480,
+        duration: 0,
         essential: true,
       });
     };
@@ -3446,7 +3404,6 @@ function DriveMapInner({
     stormBarExpanded,
     lineFocusId,
     progressRailVisible,
-    chromeLayoutTick,
     offRouteRejoinCompareActive,
     trafficBypassCompareActive,
     trafficBypassCompareHazardLngLat,

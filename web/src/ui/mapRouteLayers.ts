@@ -512,6 +512,11 @@ export function applyRoutesToMap(
   if (routes.length === 0) {
     removeStaleRoutes(map, new Set(), prevIds, layerPrefix);
     removeAllTripRouteLegLayers(map, layerPrefix);
+    try {
+      map.triggerRepaint();
+    } catch {
+      /* map mid-teardown */
+    }
     return new Set();
   }
 
@@ -719,6 +724,8 @@ export type FitMapToTripOptions = {
   zoomBias?: number;
   /** Planning overview: always frame the full polyline, not just user→destination endpoints. */
   forceFullPolyline?: boolean;
+  /** Camera move length. 0 = one snap (no mid-ease hops). */
+  durationMs?: number;
 };
 
 export type TripFitBoundsMode = {
@@ -887,7 +894,14 @@ export function fitMapToTrip(
 
   const finish = () => opts?.onAfterFit?.();
   map.once("moveend", finish);
-  const ok = applyTripCameraFit(map, fit, padding, maxZoomCeiling, opts?.zoomBias ?? 0, 360);
+  const ok = applyTripCameraFit(
+    map,
+    fit,
+    padding,
+    maxZoomCeiling,
+    opts?.zoomBias ?? 0,
+    opts?.durationMs ?? 360
+  );
   if (!ok) {
     map.off("moveend", finish);
     opts?.onAfterFit?.();
