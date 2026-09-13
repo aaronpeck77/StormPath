@@ -512,6 +512,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @MainActor
     private func emitRouteGeometry(from routes: NavigationRoutes) {
+        guard sessionActive else { return }
         // NavigationRoute wraps Directions.Route; shape holds the polyline.
         let coords = routes.mainRoute.route.shape?.coordinates ?? []
         guard !coords.isEmpty else { return }
@@ -528,29 +529,36 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @MainActor
     private func tearDownSession(emitCancelled: Bool) {
+        let wasActive = sessionActive
+        /* Observers must no-op before Core is idled or the provider is released. */
+        sessionActive = false
         cancellables.removeAll()
         if let synth = voiceController?.speechSynthesizer {
             synth.muted = true
             synth.stopSpeaking()
         }
-        if sessionActive {
-            navigationProvider?.mapboxNavigation.tripSession().setToIdle()
+        voiceController = nil
+        voiceEnabled = false
+
+        /* NavigationMapView stays subscribed to Core publishers until it is off-screen. */
+        nativeMap?.detach(webView: webView)
+        nativeMap = nil
+        applyDrivePuckVisible(false)
+
+        let provider = navigationProvider
+        navigationProvider = nil
+        if wasActive {
+            provider?.mapboxNavigation.tripSession().setToIdle()
             if emitCancelled {
                 notifyListeners("cancelled", data: ["reason": "cancelled"])
             }
         }
-        sessionActive = false
-        voiceEnabled = false
-        voiceController = nil
-        navigationProvider = nil
+
         poseHold.reset()
         followCam.reset()
         lastNavRoutes = nil
         preparedRouteKey = ""
         pendingNativeMapVisible = false
-        nativeMap?.detach(webView: webView)
-        nativeMap = nil
-        applyDrivePuckVisible(false)
     }
 
     @MainActor

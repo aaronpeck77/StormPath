@@ -51,7 +51,8 @@ describe("routeLineWidthViewMode", () => {
 describe("route casing", () => {
   it("uses a thin black outline around the colored line", () => {
     expect(ROUTE_LINE_CASING_COLOR).toBe("#000000");
-    expect(ROUTE_LINE_CASING_WIDTH_EXTRA).toBeLessThan(2);
+    expect(ROUTE_LINE_CASING_WIDTH_EXTRA).toBeGreaterThanOrEqual(4);
+    expect(ROUTE_LINE_CASING_WIDTH_EXTRA).toBeLessThan(8);
     const core = routeLineWidthByZoom(ROUTE_ACTIVE_LINE_WIDTH, "drive");
     const casing = routeCasingWidthByZoom(ROUTE_ACTIVE_LINE_WIDTH, "drive");
     expect(casing[0]).toBe("+");

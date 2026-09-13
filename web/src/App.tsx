@@ -915,6 +915,7 @@ export default function App() {
     guidance: nativeNavGuidance,
     turnSteps: nativeTurnSteps,
     restartNative,
+    stopNative,
   } = useNativeNavSession({
     accessToken: env.mapboxToken,
     navigationStarted,
@@ -2050,6 +2051,7 @@ export default function App() {
     tollAcceptedRouteIdsRef,
     pendingGoAfterTollRef,
     preferredAreaRouteMapRef,
+    stopNativeGuidance: stopNative,
   });
 
   const clearRouteRef = useRef(clearRoute);

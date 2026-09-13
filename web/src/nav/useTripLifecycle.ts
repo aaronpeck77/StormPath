@@ -6,6 +6,7 @@ import {
   type ReturnTripLeg,
 } from "./returnTripLeg";
 import { resolveGoLockRouteId, shouldPromoteChosenToSlotAOnGo } from "./goLockRoute";
+import { stopGuidanceThenClearTrip } from "./tripStop";
 import { slotOrderAfterSelect } from "./routeSlotOrder";
 import type { LngLat, NavRoute } from "./types";
 import { completedTripFromGeometry } from "../frequentRoutes/tripDetector";
@@ -88,6 +89,8 @@ export type UseTripLifecycleDeps = {
   tollAcceptedRouteIdsRef: MutableRefObject<Set<string>>;
   pendingGoAfterTollRef: MutableRefObject<boolean>;
   preferredAreaRouteMapRef: MutableRefObject<PreferredAreaRouteMap>;
+  /** iOS Core session — stop this before wiping the web trip so Stop does not crash. */
+  stopNativeGuidance?: () => Promise<void>;
 };
 
 export type TripLifecycleActions = {
@@ -155,6 +158,7 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     tollAcceptedRouteIdsRef,
     pendingGoAfterTollRef,
     preferredAreaRouteMapRef,
+    stopNativeGuidance,
   } = deps;
 
   const plan = useTripPlanStore((s) => s.plan);
@@ -197,6 +201,7 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     }
     onPersonalForkRef.current = false;
     lockedNavigationRouteIdRef.current = null;
+    navigationGuidanceGeometryRef.current = null;
     resetOffRouteNavigation();
     routeGraphEpochRef.current += 1;
     routeMainFetchAbortRef.current?.abort();
@@ -245,6 +250,7 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     navGoGeometryRef,
     onPersonalForkRef,
     lockedNavigationRouteIdRef,
+    navigationGuidanceGeometryRef,
     routeGraphEpochRef,
     routeMainFetchAbortRef,
     altRoutesFetchAbortRef,
@@ -432,8 +438,8 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
   ]);
 
   const handleStopAndClear = useCallback(() => {
-    clearRoute();
-  }, [clearRoute]);
+    void stopGuidanceThenClearTrip(stopNativeGuidance, clearRoute);
+  }, [clearRoute, stopNativeGuidance]);
 
   return { clearRoute, proceedGo, handleGo, handleStopAndClear };
 }

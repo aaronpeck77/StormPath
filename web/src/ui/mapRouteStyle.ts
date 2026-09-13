@@ -13,9 +13,13 @@ export const ROUTE_ACTIVE_COLOR = "#38bdf8";
  */
 export const ROUTE_SUGGESTED_COLOR = "#7dd3fc";
 
-/** Hairline black outline around the colored core. */
+/**
+ * Black outline around the colored core.
+ * +1.6 was a hairline — on a phone it vanished into the blue anti-alias.
+ * +5 is ~2.5px per side: thin, but you can see it on pavement and radar.
+ */
 export const ROUTE_LINE_CASING_COLOR = "#000000";
-export const ROUTE_LINE_CASING_WIDTH_EXTRA = 1.6;
+export const ROUTE_LINE_CASING_WIDTH_EXTRA = 5;
 export const ROUTE_LINE_CASING_OPACITY = 1;
 
 export const ROUTE_ACTIVE_LINE_WIDTH = 8;

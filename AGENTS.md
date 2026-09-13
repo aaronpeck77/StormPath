@@ -54,6 +54,7 @@ Driving-first multi-route navigation / "route command center" with Mapbox map, t
 - Do not commit `.env` files or Apple certificates/keys.
 - Prefer fixing what Bill hits in testing over large refactors.
 - If he also has SiteBible open, treat them as separate products/folders.
+- Keep thinking about parked Brain items (`docs/BRAIN.md`, `docs/BRAIN_THINKING.md`) while doing other work. Jot connections. Do not build P2/P3 until he asks.
 
 ## After web runs
 

@@ -10,8 +10,9 @@
 - Link related thoughts (weather UX ↔ route advisory ↔ tiers ↔ map behavior)
 - When Bill is ready to ship a change, pick an idea out of Brain and implement it in `web/` / docs as usual
 - Active ship / bugfix work stays in chat and code — Brain is for *later* and *thinking*
+- **Keep thinking** the way people do: while other work is open, jot connections in `docs/BRAIN_THINKING.md`. Do not wait for Bill to say “work on Brain.” Do not install P2/P3 from those notes.
 
-**Current product focus:** Store app stays on **`master`** (4.20.8, leave it alone — wait until it actually appears on the store before any new App Store submit). **Brain Priority 1 is open** on branch **`native/drive`** — Core owns Drive after Go. **Priority 2** (revisit later): Download this trip for offline. See `docs/NATIVE_TRACK.md`.
+**Current product focus:** Store app stays on **`master`** (4.20.8, leave it alone — wait until it actually appears on the store before any new App Store submit). **Brain Priority 1 is open** on branch **`native/drive`** — Core owns Drive after Go. **Priority 2** (revisit later): Download this trip for offline. **Priority 3** (revisit later, keep — this one sells): interstate / freeway jam bypass. See `docs/NATIVE_TRACK.md`.
 
 ### Dual track (do not mix)
 
@@ -55,7 +56,7 @@ git fetch origin
 git switch native/drive
 ```
 
-Cue phrases: *“open Brain P1”* (already open), *“TestFlight this native branch”* (only when Bill asks), *“offline trip download”* (P2 — do not build until he asks).
+Cue phrases: *“open Brain P1”* (already open), *“TestFlight this native branch”* (only when Bill asks), *“offline trip download”* (P2 — do not build until he asks), *“interstate jam bypass”* (P3 — do not build until he asks).
 
 ---
 
@@ -78,6 +79,39 @@ Cue phrases: *“open Brain P1”* (already open), *“TestFlight this native br
 - Web / Netlify: no-op. Phone only.
 
 Cue phrases: *“open Brain P2”*, *“offline trip download”*, *“download this trip.”*
+
+---
+
+## Priority 3 — Interstate / freeway jam bypass (KEEP — revisit later)
+
+**Bill’s call (Sep 12, 2026):** Shelf it for now. **Do not install** on the current native Drive soak. He **really wants this in the app eventually**. A smooth detour around a line of traffic you could sit in for hours is what sells StormPath to people who live on interstates and freeways.
+
+**What it is:** While driving the locked highway, detect a backup / blockage **ahead in time to act**, then offer (and later optionally auto-take) a **surgical hop**: off before the jam, around on surface streets, **back on the same highway past the cause**. Not “recalculate the whole trip to dest.” Not off-route recovery after you already left the road.
+
+**What it is not:** Everyday rush-hour red segments. Weather-cell chasing. Waze-style crowd reports (we do not have that feed). Auto-yanking at 70 mph onto an exit you cannot make.
+
+**Why it waits:** P1 has to own the Drive line first (Core after Go). The last web bypass fight was real: `TRAFFIC_BYPASS_ENABLED` is **false** because A/B compare + locked-corridor swaps fought off-route reroute. Doing the same from web while Core owns snap / line / reroute will fight again. Build this **into Core’s corridor**, or as a Core-approved alternate, not a second web polyline.
+
+**Why it matters (keep this):** Interstate travelers will forgive a lot if you get them **off a two-hour standstill**. That is retention, not a nice-to-have weather graph.
+
+### Already in the repo (do not rewrite from zero)
+
+- Detect: Mapbox live traffic / incidents / closures on the locked line (`useTrafficOverlayFetch`, ~90 s poll; slower on long trip / data saver).
+- Offer window: ~5 mi ahead, ~6 min / up to 8 mi at interstate speed (`earlyApproachMaxMetersForSpeed`). Refuse if you have under ~30 s to the jam.
+- Surgical math: `computeSurgicalBypassWindow` — plenty = exit ~2 mi before, rejoin ~3 mi past; tighter as you close in.
+- Side-road call: `fetchMapboxSurgicalBypass` (`exclude=motorway` from exit point to rejoin point).
+- Old UI: traffic bypass compare + About **Auto detour** (today Auto detour = *left the route, find a way back* — different problem).
+
+### Build notes (when Bill opens this)
+
+1. **Warn first** — banner / voice: “Backup ~6 mi — wreck / blockage.” Must be earlier than the last exit that still works.
+2. **Plus option:** “Offer interstate bypass” — one side-road hop, driver taps to take it.
+3. **Auto-take** only after the hop is trustworthy (right exit, not a farm loop, clean on-ramp past the cause).
+4. Owner is **Core** (or Core-accepted alternate), not a web geometry swap that Core then “corrects.”
+5. Skip when there is no usable frontage / next exit (rural interstate with nothing beside the fence).
+6. High-confidence incidents / closures / stopped traffic only — not every delay pip.
+
+Cue phrases: *“open Brain P3”*, *“interstate jam bypass”*, *“freeway detour”*, *“shelf the traffic bypass.”*
 
 ---
 
@@ -129,11 +163,28 @@ Cue phrases: *“open Brain P2”*, *“offline trip download”*, *“download 
 
 ---
 
+## Background thinking (how humans do it)
+
+Bill (Sep 12, 2026): Think about Brain items **while we work on other things**, and while he is at work or asleep. People don’t only think when they sit down to “do the feature.”
+
+**During other StormPath work (every chat):** If a fix, TestFlight report, or Core/map change touches following, tiles, traffic, or a locked corridor, add a short dated note under the matching priority in `docs/BRAIN_THINKING.md` (one tight paragraph is enough). Still ship only what Bill asked for that turn.
+
+**Credits:** Notes sitting in these files cost nothing. A nightly / looping agent **does** burn monthly Cursor credits every time it wakes. Do **not** start that job unless Bill asks. Thinking during a normal chat (a short note while fixing something else) uses that same chat’s credits — not a second meter.
+
+**While he is away:** A nightly Cursor Automation on Forge can append thinking-only notes. Do not start that job until he says to set it up. A loop in an open chat only runs while Cursor is awake.
+
+**Never from thinking notes:** commit, push, TestFlight, App Store, flip `TRAFFIC_BYPASS_ENABLED`, or build P2/P3.
+
+Cue phrases: *“think in the Brain”*, *“Brain notes”*, *“set up nightly Brain think”*.
+
+---
+
 ## How agents should treat Brain
 
 - Read this file when Bill mentions Brain, post-launch ideas, or Dark Sky direction
+- Read and append `docs/BRAIN_THINKING.md` when current work sheds light on a parked priority
 - Add new sections below as ideas appear; connect them when related
 - **Never** treat Brain content as something to auto-ship into the IPA / App Store
-- **Priority 1** is native-feel Drive on `native/drive` (opened / TestFlight soak). **Priority 2** is offline trip download — revisit later, do not build until Bill asks. Dark Sky is archive-only — do not pull it forward
+- **Priority 1** is native-feel Drive on `native/drive` (opened / TestFlight soak). **Priority 2** is offline trip download — revisit later, do not build until Bill asks. **Priority 3** is interstate / freeway jam bypass — **keep**, revisit later, do not build until Bill asks. Dark Sky is archive-only — do not pull it forward
 - Do not merge `native/drive` into `master` or run the App Store workflow from it unless Bill asks
 - Implement other Brain ideas only when Bill explicitly asks
