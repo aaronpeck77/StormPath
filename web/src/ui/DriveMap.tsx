@@ -2960,8 +2960,9 @@ function DriveMapInner({
   ]);
 
   /**
-   * Before Go: warm Mapbox's own tile cache for the first corridor window (Wi‑Fi),
-   * plus HTTP-prefetch the overlapping next window. Camera is restored after warm.
+   * Before Go: HTTP-prefetch tiles for the first corridor window + next overlap.
+   * Do NOT warm via fitBounds on the live map — that was the “jump to first leg
+   * then back to full route” flash when setting a dest or tapping A/B.
    */
   useEffect(() => {
     if (!mapReady || navigationStarted || routes.length === 0) return;
@@ -2978,20 +2979,11 @@ function DriveMapInner({
     let cancelled = false;
     const timer = window.setTimeout(() => {
       void (async () => {
-        const onWifi = await isWifiConnection();
         if (cancelled || navigationStartedRef.current) return;
-        const map = mapRef.current;
-        /* Fill GL tile cache on Wi‑Fi so Drive keeps painting after the handoff. */
-        if (onWifi && map && isMapUsable(map)) {
-          await warmMapTilesForBounds(map, first, () =>
-            cancelled || navigationStartedRef.current || userExploringRef.current
-          );
-        } else {
-          await prefetchMapTilesForBounds(first, token, {
-            shouldAbort: () => cancelled || navigationStartedRef.current,
-            includeTerrain: false,
-          });
-        }
+        await prefetchMapTilesForBounds(first, token, {
+          shouldAbort: () => cancelled || navigationStartedRef.current,
+          includeTerrain: false,
+        });
         if (cancelled || navigationStartedRef.current) return;
         const nextStart = nextCorridorWindowStartM(0);
         const next = corridorWindowBounds(geom, nextStart);

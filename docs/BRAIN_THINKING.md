@@ -32,6 +32,6 @@ Do not auto-take until that hop is boring: right exit, not a farm loop, on-ramp 
 
 Core must go idle and drop the NavigationMapView **before** the web trip is wiped. Nilling `MapboxNavigationProvider` while the map is still subscribed (or while `setToIdle` is in flight) is a hard crash. Same rule when P3 later installs a hop: never swap the web line while Core is still the live session.
 
-### 2026-09-13 — Stop race + dest hop
+### 2026-09-13 — Corridor warm stole the camera
 
-Stop must await in-flight Core teardown (no early return) and serialize prepare/start/stop on one mutex — overlapping providers crash. Pre-Go camera holds until `routing` finishes, then one full-corridor overview (no dest street-zoom middle step).
+Pre-Go Wi‑Fi tile warm used `fitBounds` on the first ~25 mi window, then restored — that was the A/B “first leg then full route” hop. Prefetch HTTP only; leave the overview camera alone.
