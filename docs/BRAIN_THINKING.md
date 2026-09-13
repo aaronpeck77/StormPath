@@ -32,6 +32,6 @@ Do not auto-take until that hop is boring: right exit, not a farm loop, on-ramp 
 
 Core must go idle and drop the NavigationMapView **before** the web trip is wiped. Nilling `MapboxNavigationProvider` while the map is still subscribed (or while `setToIdle` is in flight) is a hard crash. Same rule when P3 later installs a hop: never swap the web line while Core is still the live session.
 
-### 2026-09-13 — Rt edge strip + linger Core
+### 2026-09-13 — Rt edge strip + Core teardown
 
-Rt is puck + dest on a thin rim, then zoom-in as remaining shortens. Stop still needs the provider to linger after `setToIdle` — same-turn release was the crash. Do not start a credit-burning think loop.
+Rt is puck + dest on a thin rim, then zoom-in as remaining shortens. Never keep two `MapboxNavigationProvider`s (linger-while-Go crashed). On Stop: idle, wait ~400ms on the `stop()` promise, then release. Prepare uses a coreEpoch so a late plan cannot reinstall after Go.

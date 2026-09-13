@@ -28,11 +28,10 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     private var navigationProvider: MapboxNavigationProvider?
-    /// Held after Stop so Core can unwind. Releasing the provider on the same
-    /// turn as `setToIdle` is what crashed the IPA.
-    private var lingeringProvider: MapboxNavigationProvider?
     private var cancellables = Set<AnyCancellable>()
     private var sessionActive = false
+    /// Prevents overlapping prepare / Go / Stop tears (two providers = hard crash).
+    private var tearDownInFlight = false
     private var didEmitArrival = false
     /// Retain voice controller so spoken instructions keep working without UIKit nav UI.
     private var voiceController: RouteVoiceController?
@@ -47,6 +46,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     private var lastNavRoutes: NavigationRoutes?
     /// Fingerprint of the last prepared / started corridor so Go can skip a second plan.
     private var preparedRouteKey = ""
+    /// Bumped on every tearDown so an in-flight prepare cannot install a stale provider after Go.
+    private var coreEpoch = 0
 
     @objc func isAvailable(_ call: CAPPluginCall) {
         call.resolve(["available": true])
@@ -127,7 +128,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func stop(_ call: CAPPluginCall) {
         Task { @MainActor [weak self] in
-            self?.tearDownSession(emitCancelled: true)
+            await self?.tearDownSession(emitCancelled: true)
             call.resolve()
         }
     }
@@ -218,7 +219,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        tearDownSession(emitCancelled: false)
+        await tearDownSession(emitCancelled: false)
+        let epoch = coreEpoch
         let provider = MapboxNavigationProvider(coreConfig: makeCoreConfig(accessToken: accessToken, simulate: false))
         navigationProvider = provider
         let options = NavigationRouteOptions(waypoints: makeWaypoints(incoming))
@@ -230,11 +232,19 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                 .routingProvider()
                 .calculateRoutes(options: options)
                 .value
+            guard epoch == coreEpoch else {
+                call.resolve(["ok": true, "prepared": false, "superseded": true])
+                return
+            }
             lastNavRoutes = navigationRoutes
             preparedRouteKey = key
             call.resolve(["ok": true, "prepared": true])
         } catch {
-            tearDownSession(emitCancelled: false)
+            guard epoch == coreEpoch else {
+                call.resolve(["ok": true, "prepared": false, "superseded": true])
+                return
+            }
+            await tearDownSession(emitCancelled: false)
             call.reject("Route request failed: \(error.localizedDescription)")
         }
     }
@@ -260,7 +270,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             && !simulate
 
         if !canReusePrepared {
-            tearDownSession(emitCancelled: false)
+            await tearDownSession(emitCancelled: false)
             navigationProvider = MapboxNavigationProvider(
                 coreConfig: makeCoreConfig(accessToken: accessToken, simulate: simulate)
             )
@@ -303,7 +313,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             call.resolve(["ok": true, "reused": canReusePrepared])
         } catch {
-            tearDownSession(emitCancelled: false)
+            await tearDownSession(emitCancelled: false)
             call.reject("Route request failed: \(error.localizedDescription)")
         }
     }
@@ -467,7 +477,9 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         if !didEmitArrival, remainingM >= 0, remainingM < 30, alongM > 50 {
             didEmitArrival = true
             notifyListeners("arrived", data: ["reason": "arrived"])
-            tearDownSession(emitCancelled: false)
+            Task { @MainActor [weak self] in
+                await self?.tearDownSession(emitCancelled: false)
+            }
         }
     }
 
@@ -530,11 +542,23 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         ])
     }
 
+    /**
+     * Idle + drop Core. Never keep a second `MapboxNavigationProvider` around —
+     * lingering one while Go creates another hard-crashed the IPA.
+     * After a live session, wait briefly so Core finishes its last ticks before release.
+     */
     @MainActor
-    private func tearDownSession(emitCancelled: Bool) {
+    private func tearDownSession(emitCancelled: Bool) async {
+        if tearDownInFlight {
+            return
+        }
+        tearDownInFlight = true
+        defer { tearDownInFlight = false }
+
         let wasActive = sessionActive
         /* Observers must no-op before Core is idled or the provider is released. */
         sessionActive = false
+        coreEpoch += 1
         cancellables.removeAll()
         if let synth = voiceController?.speechSynthesizer {
             synth.muted = true
@@ -555,25 +579,16 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             if emitCancelled {
                 notifyListeners("cancelled", data: ["reason": "cancelled"])
             }
+            /* Drain Core on the Stop path only — JS awaits `stop()` before clearTrip. */
+            try? await Task.sleep(nanoseconds: 400_000_000)
         }
+        /* `provider` released here — never overlap with a newly installed provider. */
 
         poseHold.reset()
         followCam.reset()
         lastNavRoutes = nil
         preparedRouteKey = ""
         pendingNativeMapVisible = false
-
-        /* Keep the provider alive across a turn of the run loop. Core still
-         * delivers a last progress/reroute tick after idle; nilling it here
-         * was a hard crash on Stop. */
-        lingeringProvider = provider
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            guard let self else { return }
-            if self.lingeringProvider === provider {
-                self.lingeringProvider = nil
-            }
-        }
     }
 
     @MainActor
