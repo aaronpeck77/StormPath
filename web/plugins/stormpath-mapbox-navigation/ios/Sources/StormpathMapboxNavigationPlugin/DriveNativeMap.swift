@@ -164,7 +164,7 @@ final class DriveNativeMap {
     @MainActor
     private func addStormPathBuildings() {
         guard let mapView else { return }
-        let style = mapView.mapView.mapboxMap
+        guard let style = mapView.mapView.mapboxMap else { return }
         let layerId = "stormpath-3d-buildings"
         if style.layerExists(withId: layerId) { return }
         do {
