@@ -2027,7 +2027,6 @@ export default function App() {
     setSuggestions,
     setAllowAutocomplete,
     searchPickQueryRef,
-    setFitTrigger,
     setGuidanceGeometryEpoch,
     setRecenterPlanningPuckTick,
     setReturnTripLeg,

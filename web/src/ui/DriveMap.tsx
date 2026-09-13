@@ -1,7 +1,7 @@
 import mapboxgl from "../mapboxCapacitorWorker";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { MutableRefObject } from "react";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import {
   IDLE_HOME_TRAIL_BOUNDS_WAIT_MS,
@@ -646,8 +646,6 @@ function DriveMapInner({
     setHighlightClipTick((n) => n + 1);
   }, [mapResumeTick, navigationStarted, viewMode]);
 
-  /** Bumps when bottom/top chrome resizes so route fit padding tracks live UI dead zones. */
-  const [chromeLayoutTick, setChromeLayoutTick] = useState(0);
   const [nightBasemapPreset] = useState<NightBasemapPreset>(parseNightBasemapPreset);
   const [mapPhase, setMapPhase] = useState(() => currentMapPhase(userLngLat));
   const activeStyleRef = useRef(currentMapStyle(mapPhase, nightBasemapPreset));
@@ -693,32 +691,6 @@ function DriveMapInner({
       setMapResumeTick((n) => n + 1);
     }, idleMs);
   };
-
-  useLayoutEffect(() => {
-    const bottomStack = document.querySelector<HTMLElement>(".nav-bottom-stack");
-    const topCluster = document.querySelector<HTMLElement>(".nav-top-cluster");
-    if (!bottomStack && !topCluster) return;
-
-    let raf = 0;
-    const bump = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => setChromeLayoutTick((n) => n + 1));
-    };
-
-    const ro = new ResizeObserver(bump);
-    if (bottomStack) ro.observe(bottomStack);
-    if (topCluster) ro.observe(topCluster);
-    window.addEventListener("resize", bump);
-    window.addEventListener("orientationchange", bump);
-    bump();
-
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      window.removeEventListener("resize", bump);
-      window.removeEventListener("orientationchange", bump);
-    };
-  }, []);
 
   useEffect(() => {
     if (!containerRef.current || !token || mapRef.current) return;

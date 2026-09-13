@@ -64,7 +64,6 @@ export type UseTripLifecycleDeps = {
   setAllowAutocomplete: (v: boolean) => void;
   searchPickQueryRef: MutableRefObject<string | null>;
 
-  setFitTrigger: Dispatch<SetStateAction<number>>;
   setGuidanceGeometryEpoch: Dispatch<SetStateAction<number>>;
   setRecenterPlanningPuckTick: Dispatch<SetStateAction<number>>;
   setReturnTripLeg: (leg: ReturnTripLeg | null) => void;
@@ -133,7 +132,6 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     setSuggestions,
     setAllowAutocomplete,
     searchPickQueryRef,
-    setFitTrigger,
     setGuidanceGeometryEpoch,
     setRecenterPlanningPuckTick,
     setReturnTripLeg,
