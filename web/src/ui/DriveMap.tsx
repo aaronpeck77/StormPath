@@ -115,7 +115,7 @@ import {
   planningRoutesFitKey,
   routeFitMaxZoomCeiling,
   routeFitPadding,
-  routeFitZoomBias,
+  routeOverviewProgressBucket,
 } from "./mapFitLogic";
 import {
   DRIVE_FOLLOW_PITCH_DEG,
@@ -158,9 +158,12 @@ import {
   navigationTopdownZoomForViewChange,
 } from "./navigationCamera";
 import {
+  PLANNING_ROUTE_FIT_SETTLE_MS,
   resolveViewEnterDecision,
-  topdownFitNeedsStreetZoomReset,
+  routeOverviewFitIsAppForced,
+  shouldDebouncePlanningOverviewFit,
   shouldRetryInterruptedRouteOverviewEnter,
+  topdownFitNeedsStreetZoomReset,
 } from "./useMapCameraController";
 import {
   TOPDOWN_PUCK_OFFSET_PX,
@@ -508,6 +511,8 @@ function DriveMapInner({
     userAlongMeters != null && Number.isFinite(userAlongMeters) && userAlongMeters >= 0
       ? userAlongMeters
       : null;
+  const destLngLatRef = useRef(destLngLat);
+  destLngLatRef.current = destLngLat;
   /** Throttle map hazard-halo clip refreshes — full corridor reslice was blocking UI on long routes. */
   const lastHighlightClipAlongRef = useRef<number | null>(null);
   const [highlightClipTick, setHighlightClipTick] = useState(0);
@@ -626,6 +631,15 @@ function DriveMapInner({
     () => planningRoutesFitKey(routes, navigationStarted ? lineFocusId : null, destLngLat),
     [routes, lineFocusId, destLngLat, navigationStarted]
   );
+  const routeOverviewProgressKey = useMemo(() => {
+    if (!navigationStarted || viewMode !== "route") return "plan";
+    const along =
+      userAlongMeters != null && Number.isFinite(userAlongMeters) && userAlongMeters > 0
+        ? userAlongMeters
+        : 0;
+    const remaining = Math.max(0, sessionRouteLengthM - along);
+    return routeOverviewProgressBucket(remaining);
+  }, [navigationStarted, viewMode, userAlongMeters, sessionRouteLengthM]);
 
   const token = getWebEnv().mapboxToken;
   const mapSessionBounds = useMemo(
@@ -3134,7 +3148,7 @@ function DriveMapInner({
       enteredRouteView = decision.enteredRouteView;
       enteredTopdownNav = decision.enteredTopdownNav;
       if (decision.bustRouteOverviewSnapKey) navRouteSnapKeyRef.current = "";
-      if (decision.enteredRouteView && navigationStarted) {
+      if (decision.enteredRouteView) {
         pendingRouteOverviewEnterRef.current = true;
       }
       if (decision.bustTopdownSnapKey) topdownSnapKeyRef.current = "";
@@ -3160,8 +3174,12 @@ function DriveMapInner({
     };
 
     /* Only App-driven events (fitTrigger / entering Rt) may override a live pan/zoom.
-     * First route lines bump fitTrigger from planRoutesKey — one overview, not dest-then-route hops. */
-    let appForcedFit = enteredRouteView;
+     * A same-tick toolbar resize remounts this effect and can set the explore latch
+     * via movestart — pending Rt enter must still win or Rt stays at Mp zoom. */
+    let appForcedFit = routeOverviewFitIsAppForced(
+      enteredRouteView,
+      pendingRouteOverviewEnterRef.current
+    );
     if (fitTrigger !== lastForcedPlanningFitTriggerRef.current) {
       lastForcedPlanningFitTriggerRef.current = fitTrigger;
       appForcedFit = true;
@@ -3178,26 +3196,31 @@ function DriveMapInner({
       if (userExploringRef.current && !appForcedFit) return false;
       if (!mapStyleReadyForCamera(map)) return false;
       const u = userLngLatRef.current;
-      /* Pre-Go: always frame the full active polyline. Navigating Rt: same — remaining
-       * corridor overview, not Mp street zoom. Endpoint-only fits look like Mp on short legs. */
-      const planningOverview =
-        !navigationStartedRef.current || viewModeRef.current === "route";
+      /* Rt: puck + dest sit in a thin edge strip. Navigating Rt drops the
+       * driven tail so the frame zooms in as the remaining trip shortens. */
+      const navigatingRt = Boolean(
+        navigationStartedRef.current && viewModeRef.current === "route"
+      );
+      const easeNavRt =
+        navigatingRt &&
+        !pendingRouteOverviewEnterRef.current &&
+        !enteredRouteView;
       const fitted = fitMapToTrip(
         map,
         routes,
         u,
-        destLngLat,
+        destLngLatRef.current,
         {
           ...routeFitPadding(stormBarVisible, stormBarExpanded, routes, lineFocusId, progressRailVisible),
         },
         routeFitMaxZoomCeiling(routes, lineFocusId),
         {
           onAfterFit: undefined,
-          /* Pre-Go: frame every planned leg so B is on-screen. After Go, stay on the active path. */
           onlyRouteId: navigationStartedRef.current ? lineFocusId : undefined,
-          zoomBias: routeFitZoomBias(routes, lineFocusId),
-          forceFullPolyline: planningOverview,
-          durationMs: 0,
+          zoomBias: 0,
+          forceFullPolyline: false,
+          remainingFromUser: navigatingRt,
+          durationMs: easeNavRt ? 480 : 0,
         }
       );
       if (fitted && viewModeRef.current === "route") {
@@ -3338,13 +3361,13 @@ function DriveMapInner({
         else doTopdownLocalFit();
       }
     } else if (viewMode === "route") {
-      const routeOverviewSnapKey = navigationRouteOverviewSnapKey(
+      const routeOverviewSnapKey = `${navigationRouteOverviewSnapKey(
         viewMode,
         fitTrigger,
         mapResumeTick,
         lineFocusId,
         routesPlanningFitKey
-      );
+      )}|${routeOverviewProgressKey}`;
       if (
         enteredRouteView ||
         shouldRetryInterruptedRouteOverviewEnter(
@@ -3355,7 +3378,15 @@ function DriveMapInner({
         navRouteSnapKeyRef.current !== routeOverviewSnapKey
       ) {
         navRouteSnapKeyRef.current = routeOverviewSnapKey;
-        forceRouteOverviewFit();
+        if (shouldDebouncePlanningOverviewFit(navigationStarted)) {
+          clearPlanningFitTimers();
+          planningFitRetryTimerRef.current = window.setTimeout(() => {
+            planningFitRetryTimerRef.current = null;
+            if (!cancelled) forceRouteOverviewFit();
+          }, PLANNING_ROUTE_FIT_SETTLE_MS);
+        } else {
+          forceRouteOverviewFit();
+        }
       }
     } else {
       topdownSnapKeyRef.current = "";
@@ -3372,7 +3403,7 @@ function DriveMapInner({
     fitTrigger,
     viewMode,
     routesPlanningFitKey,
-    destLngLat,
+    routeOverviewProgressKey,
     navigationStarted,
     mapResumeTick,
     stormBarVisible,

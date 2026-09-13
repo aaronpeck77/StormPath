@@ -35,9 +35,9 @@ export function stormBarTopExtraPx(visible: boolean, expanded: boolean): number 
   return ROUTE_FIT_STORM_BAR_PEEK_TOP_PX;
 }
 
-const ROUTE_FIT_TOP_TRIM_PX = 36;
-const ROUTE_FIT_EDGE_INSET_PX = 12;
 const MAP_CHROME_FIT_GAP_PX = 12;
+/** Thin rim around the visible map — puck and dest sit in this strip. */
+export const ROUTE_EDGE_STRIP_PX = 12;
 
 type MapChromeInsets = { top: number; bottom: number; left: number; right: number };
 
@@ -160,14 +160,43 @@ export function planningRoutesFitKey(
   primaryRouteId: string | null | undefined,
   dest: LngLat | null | undefined
 ): string {
-  const destKey = dest ? `${dest[0].toFixed(4)},${dest[1].toFixed(4)}` : "";
+  /* Dest pin is already on the polyline. Including it here refit when Mapbox
+   * snapped the pin a few meters — that was the dest zoom hop. */
+  void dest;
   /* Pre-Go (no primary): include every leg so A and B stay in the same overview frame. */
   if (!primaryRouteId && routes.length > 1) {
-    return `${routes.map((r) => routeGeomFitToken(r)).join("||")}|${destKey}`;
+    return routes.map((r) => routeGeomFitToken(r)).join("||");
   }
   const route =
     (primaryRouteId ? routes.find((r) => r.id === primaryRouteId) : null) ?? routes[0] ?? null;
-  return `${routeGeomFitToken(route)}|${destKey}`;
+  return routeGeomFitToken(route);
+}
+
+/**
+ * Quantize remaining meters so Rt re-frames as the trip shortens, not every GPS tick.
+ * Near dest the buckets get tighter so zoom can walk all the way in.
+ */
+export function routeOverviewProgressBucket(remainingM: number): string {
+  if (!Number.isFinite(remainingM) || remainingM <= 0) return "0";
+  if (remainingM <= 250) return "arrive";
+  if (remainingM <= 1200) return `c${Math.round(remainingM / 80)}`;
+  if (remainingM <= 8000) return `n${Math.round(remainingM / 350)}`;
+  if (remainingM <= 40_000) return `m${Math.round(remainingM / 1400)}`;
+  return `f${Math.round(remainingM / 5000)}`;
+}
+
+export function padChromeWithEdgeStrip(chrome: {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}): { top: number; bottom: number; left: number; right: number } {
+  return {
+    top: chrome.top + ROUTE_EDGE_STRIP_PX,
+    bottom: chrome.bottom + ROUTE_EDGE_STRIP_PX,
+    left: chrome.left + ROUTE_EDGE_STRIP_PX,
+    right: chrome.right + ROUTE_EDGE_STRIP_PX,
+  };
 }
 
 export function offRouteAlternatesFitKey(routes: NavRoute[], primaryRouteId: string): string {
@@ -216,72 +245,18 @@ export function routeFitPadding(
   primaryRouteId?: string | null,
   progressRailVisible = true
 ): { top: number; bottom: number; left: number; right: number } {
-  const p = MAIN_MAP_ROUTE_PADDING;
+  void routes;
+  void primaryRouteId;
   const stormTop = stormBarTopExtraPx(stormBarVisible, stormBarExpanded);
-  const axis = routeViewAxis(routes, primaryRouteId);
-  const rightNeed = progressRailVisible ? routeProgressRailRightClearancePx(axis) : 18;
-  const planningOverview = !progressRailVisible;
-  if (isNarrowPhoneViewport()) {
-    const safe = safeAreaInsetsPx();
-    const sidePad = Math.max(p.left, 22);
-    const planningBottom =
-      148 + Math.min(34, safe.bottom) + (planningOverview && axis === "northSouth" ? 20 : 0);
-    return mergeMapChromeInsets(
-      {
-        top: Math.max(118, 168 - ROUTE_FIT_TOP_TRIM_PX) + stormTop + Math.min(6, safe.top * 0.25),
-        bottom: planningBottom,
-        left: sidePad,
-        right: planningOverview ? sidePad : Math.max(88, rightNeed),
-      },
-      measuredMapChromeInsets(progressRailVisible)
-    );
-  }
-  if (isLandscapeViewport()) {
-    const handLeft = isLandscapeHandLeft();
-    const vw = typeof window !== "undefined" ? window.innerWidth : 1280;
-    const nearEdge = Math.max(ROUTE_FIT_EDGE_INSET_PX, 10);
-    const rightUiNeed = Math.max(Math.max(p.right, rightNeed), nearEdge);
-    const leftUiNeed = Math.max(Math.max(p.left, rightNeed), nearEdge);
-
-    const nonEastWestRightPad = Math.round(vw * 0.5) + nearEdge;
-    const eastWestRightPad = Math.round(vw * 0.34) + nearEdge;
-    const nonEastWestLeftPad = Math.round(vw * 0.5) + nearEdge;
-    const eastWestLeftPad = Math.round(vw * 0.34) + nearEdge;
-
-    const leftPad = handLeft
-      ? Math.max(axis === "eastWest" ? eastWestLeftPad : nonEastWestLeftPad, leftUiNeed)
-      : axis === "eastWest"
-        ? Math.max(nearEdge, rightNeed + 10)
-        : Math.max(nearEdge, rightNeed + 6);
-    const rightPad = handLeft
-      ? rightUiNeed
-      : Math.max(axis === "eastWest" ? eastWestRightPad : nonEastWestRightPad, rightUiNeed);
-    return mergeMapChromeInsets(
-      axis === "eastWest"
-        ? {
-            top: Math.max(74, p.top + stormTop - ROUTE_FIT_TOP_TRIM_PX - 22),
-            bottom: Math.max(144, p.bottom - 20),
-            left: leftPad,
-            right: rightPad,
-          }
-        : {
-            top: Math.max(20, 18 + Math.min(18, stormTop)),
-            bottom: Math.max(120, p.bottom - 48),
-            left: leftPad,
-            right: rightPad,
-          },
-      measuredMapChromeInsets(progressRailVisible)
-    );
-  }
-  return mergeMapChromeInsets(
-    {
-      top: Math.max(128, p.top + stormTop - ROUTE_FIT_TOP_TRIM_PX),
-      bottom: p.bottom,
-      left: p.left,
-      right: planningOverview ? p.left : Math.max(p.right, rightNeed),
-    },
-    measuredMapChromeInsets(progressRailVisible)
-  );
+  const rail = progressRailVisible ? routeProgressRailRightClearancePx() : 10;
+  const fallback: MapChromeInsets = {
+    top: Math.max(56, 48 + Math.min(stormTop, 28)),
+    bottom: isNarrowPhoneViewport() ? 92 : 88,
+    left: 10,
+    right: rail,
+  };
+  const chrome = mergeMapChromeInsets(fallback, measuredMapChromeInsets(progressRailVisible));
+  return padChromeWithEdgeStrip(chrome);
 }
 
 /** Upper zoom for route fitBounds — short trips need street-level; long trips stay capped by span heuristic. */

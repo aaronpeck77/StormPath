@@ -105,6 +105,10 @@ export function RouteProgressCalloutRail({
   }, [open, hasContent]);
 
   const showPanel = open && hasContent;
+  useLayoutEffect(() => {
+    document.documentElement.classList.toggle("route-info-open", showPanel);
+    return () => document.documentElement.classList.remove("route-info-open");
+  }, [showPanel]);
   if (!showPanel) return null;
 
   return (

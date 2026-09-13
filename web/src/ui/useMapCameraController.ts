@@ -79,14 +79,30 @@ export function resolveViewEnterDecision(args: {
 /**
  * Rt overview fit is scheduled on view enter, then a same-tick resize remounts the
  * camera effect. Keep retrying until a fit actually lands — otherwise Rt stays at
- * Mp street zoom.
+ * Mp street zoom. Planning uses the same retry: dest/A/B hops also remount the effect.
  */
 export function shouldRetryInterruptedRouteOverviewEnter(
   pendingEnter: boolean,
   viewMode: MapViewMode,
-  navigationStarted: boolean
+  _navigationStarted?: boolean
 ): boolean {
-  return pendingEnter && navigationStarted && viewMode === "route";
+  void _navigationStarted;
+  return pendingEnter && viewMode === "route";
+}
+
+/** Wait for A+B (and dest snap) to land as one frame instead of zoom-hopping. */
+export const PLANNING_ROUTE_FIT_SETTLE_MS = 280;
+
+export function shouldDebouncePlanningOverviewFit(navigationStarted: boolean): boolean {
+  return !navigationStarted;
+}
+
+/** Pending Rt enter must win over a resize/move that set the explore latch. */
+export function routeOverviewFitIsAppForced(
+  enteredRouteView: boolean,
+  pendingRouteOverviewEnter: boolean
+): boolean {
+  return enteredRouteView || pendingRouteOverviewEnter;
 }
 
 /**

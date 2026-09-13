@@ -724,6 +724,11 @@ export type FitMapToTripOptions = {
   zoomBias?: number;
   /** Planning overview: always frame the full polyline, not just user→destination endpoints. */
   forceFullPolyline?: boolean;
+  /**
+   * Navigating Rt: drop the already-driven tail so puck + dest stay on the
+   * padded edges and zoom tightens as the remaining trip shortens.
+   */
+  remainingFromUser?: boolean;
   /** Camera move length. 0 = one snap (no mid-ease hops). */
   durationMs?: number;
 };
@@ -772,6 +777,22 @@ export function preferEndpointAnchoredTripFit(
   return true;
 }
 
+/** Remaining path from the puck forward — omits the driven tail so Rt can zoom in. */
+function sliceRemainingForOverviewFit(geometry: LngLat[], user: LngLat): LngLat[] {
+  if (geometry.length < 2) return geometry;
+  let bestI = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < geometry.length; i++) {
+    const [lng, lat] = geometry[i]!;
+    const d = (lng - user[0]) ** 2 + (lat - user[1]) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      bestI = i;
+    }
+  }
+  return [user, ...geometry.slice(bestI + 1)];
+}
+
 function extendEndpointPairBounds(b: mapboxgl.LngLatBounds, user: LngLat, dest: LngLat): void {
   safeExtendBounds(b, user);
   safeExtendBounds(b, dest);
@@ -788,13 +809,18 @@ export function buildTripFitBounds(
   dest: LngLat | null,
   routes: NavRoute[],
   onlyRouteId?: string | null,
-  forceFullPolyline = false
+  forceFullPolyline = false,
+  remainingFromUser = false
 ): TripFitBoundsMode | null {
   const geometry = primaryRouteGeometry(routes, onlyRouteId);
+  const remainingGeom =
+    remainingFromUser && user && geometry?.length
+      ? sliceRemainingForOverviewFit(geometry, user)
+      : geometry;
   const directM = directTripMeters(user, dest);
   const endpointsOnly = forceFullPolyline
     ? false
-    : preferEndpointAnchoredTripFit(user, dest, geometry);
+    : preferEndpointAnchoredTripFit(user, dest, remainingGeom);
   const b = new mapboxgl.LngLatBounds();
 
   if (endpointsOnly && user && dest) {
@@ -802,7 +828,9 @@ export function buildTripFitBounds(
   } else {
     if (user) safeExtendBounds(b, user);
     if (dest) safeExtendBounds(b, dest);
-    if (onlyRouteId) {
+    if (remainingFromUser) {
+      if (remainingGeom?.length) extendBoundsWithPolyline(b, remainingGeom);
+    } else if (onlyRouteId) {
       const one = routes.find((r) => r.id === onlyRouteId);
       if (one?.geometry?.length) extendBoundsWithPolyline(b, one.geometry);
       else for (const r of routes) extendBoundsWithPolyline(b, r.geometry);
@@ -886,7 +914,14 @@ export function fitMapToTrip(
   maxZoomCeiling = 18,
   opts?: FitMapToTripOptions
 ): boolean {
-  const fit = buildTripFitBounds(user, dest, routes, opts?.onlyRouteId, opts?.forceFullPolyline);
+  const fit = buildTripFitBounds(
+    user,
+    dest,
+    routes,
+    opts?.onlyRouteId,
+    opts?.forceFullPolyline,
+    opts?.remainingFromUser
+  );
   if (!fit) {
     opts?.onAfterFit?.();
     return false;

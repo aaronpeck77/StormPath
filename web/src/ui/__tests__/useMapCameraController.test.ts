@@ -3,6 +3,7 @@ import {
   refitOverridesExploreLatch,
   requiresFullRouteFit,
   resolveViewEnterDecision,
+  routeOverviewFitIsAppForced,
   shouldRetryInterruptedRouteOverviewEnter,
   topdownFitNeedsStreetZoomReset,
 } from "../useMapCameraController";
@@ -81,7 +82,16 @@ describe("useMapCameraController — interrupted Rt enter", () => {
   it("does not retry once the fit landed or we left Rt", () => {
     expect(shouldRetryInterruptedRouteOverviewEnter(false, "route", true)).toBe(false);
     expect(shouldRetryInterruptedRouteOverviewEnter(true, "topdown", true)).toBe(false);
-    expect(shouldRetryInterruptedRouteOverviewEnter(true, "route", false)).toBe(false);
+  });
+
+  it("retries planning Rt enter after a dest/A-B remount", () => {
+    expect(shouldRetryInterruptedRouteOverviewEnter(true, "route", false)).toBe(true);
+  });
+
+  it("treats a pending Rt enter as an app-forced fit", () => {
+    expect(routeOverviewFitIsAppForced(false, true)).toBe(true);
+    expect(routeOverviewFitIsAppForced(true, false)).toBe(true);
+    expect(routeOverviewFitIsAppForced(false, false)).toBe(false);
   });
 });
 

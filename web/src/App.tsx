@@ -350,13 +350,13 @@ export default function App() {
 
   const sheetsWereOpenRef = useRef(false);
   useEffect(() => {
-    const open = aboutOpen || progressCalloutsOpen;
-    /* navActiveForGps === navigationStarted from tripPlanStore (declared later in this component). */
-    if (sheetsWereOpenRef.current && !open && navActiveForGps) {
+    /* About is a full sheet that can change the map box. Route info is a fixed
+     * overlay — resyncing on close was the blur/route-hop when returning to the map. */
+    if (sheetsWereOpenRef.current && !aboutOpen && navActiveForGps) {
       window.setTimeout(() => setFollowCamResyncKey((k) => k + 1), 80);
     }
-    sheetsWereOpenRef.current = open;
-  }, [aboutOpen, progressCalloutsOpen, navActiveForGps]);
+    sheetsWereOpenRef.current = aboutOpen;
+  }, [aboutOpen, navActiveForGps]);
 
   /* Settings (persisted) — toggles that actually reduce background API calls.
    * Sourced from `useSettingsStore` (Phase 4a). Individual `setSettingX` selectors were

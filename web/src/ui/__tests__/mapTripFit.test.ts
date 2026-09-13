@@ -82,4 +82,17 @@ describe("buildTripFitBounds", () => {
     expect(sw.lng).toBeLessThanOrEqual(altBulge[0] + 1e-9);
     expect(sw.lat).toBeLessThanOrEqual(altBulge[1] + 1e-9);
   });
+
+  it("navigating remaining fit drops the driven tail so the frame can zoom in", () => {
+    const origin: [number, number] = [-87.6, 41.8];
+    const mid: [number, number] = [-90.0, 38.6];
+    const dest: [number, number] = [-118.24, 34.05];
+    const cross = route("r-a", [origin, mid, dest]);
+    const full = buildTripFitBounds(origin, dest, [cross], "r-a", false, false);
+    const remaining = buildTripFitBounds(mid, dest, [cross], "r-a", false, true);
+    expect(remaining).toBeTruthy();
+    const fullEast = full!.bounds.getNorthEast().lng;
+    const remEast = remaining!.bounds.getNorthEast().lng;
+    expect(remEast).toBeLessThan(fullEast);
+  });
 });

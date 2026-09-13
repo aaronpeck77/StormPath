@@ -127,6 +127,8 @@ export function useNativeNavSession(opts: {
   const [turnSteps, setTurnSteps] = useState<RouteTurnStep[]>([]);
   const startedForNavRef = useRef(false);
   const nativeRestartingRef = useRef(false);
+  /** Stop already in flight — do not tear Core down a second time from the nav-ended effect. */
+  const nativeStoppingRef = useRef(false);
   /** Core calculated a different corridor — DIY owns this trip; do not restart Core. */
   const nativeAbandonedRef = useRef(false);
   const corridorAdoptedRef = useRef(false);
@@ -150,6 +152,9 @@ export function useNativeNavSession(opts: {
   }, []);
 
   const stopNative = useCallback(async () => {
+    if (nativeStoppingRef.current) return;
+    nativeStoppingRef.current = true;
+    startedForNavRef.current = false;
     await removeListeners();
     try {
       if (isNativeMapboxNavPlatform()) {
@@ -158,7 +163,6 @@ export function useNativeNavSession(opts: {
     } catch {
       /* ignore */
     }
-    startedForNavRef.current = false;
     prepareKeyRef.current = "";
     corridorAdoptedRef.current = false;
     firstRouteChangedRef.current = true;
@@ -169,6 +173,7 @@ export function useNativeNavSession(opts: {
     setFollowCamera(null);
     setGuidance(null);
     setTurnSteps([]);
+    nativeStoppingRef.current = false;
   }, [removeListeners]);
 
   const startNative = useCallback(async () => {
@@ -341,7 +346,7 @@ export function useNativeNavSession(opts: {
       nativeAbandonedRef.current = false;
       corridorAdoptedRef.current = false;
       firstRouteChangedRef.current = true;
-      if (startedForNavRef.current || nativeNavActive) {
+      if (!nativeStoppingRef.current && (startedForNavRef.current || nativeNavActive)) {
         void stopNative();
       }
       return;

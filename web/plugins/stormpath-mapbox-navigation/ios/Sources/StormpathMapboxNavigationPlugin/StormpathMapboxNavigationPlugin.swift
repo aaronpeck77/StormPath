@@ -28,6 +28,9 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     private var navigationProvider: MapboxNavigationProvider?
+    /// Held after Stop so Core can unwind. Releasing the provider on the same
+    /// turn as `setToIdle` is what crashed the IPA.
+    private var lingeringProvider: MapboxNavigationProvider?
     private var cancellables = Set<AnyCancellable>()
     private var sessionActive = false
     private var didEmitArrival = false
@@ -559,6 +562,18 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         lastNavRoutes = nil
         preparedRouteKey = ""
         pendingNativeMapVisible = false
+
+        /* Keep the provider alive across a turn of the run loop. Core still
+         * delivers a last progress/reroute tick after idle; nilling it here
+         * was a hard crash on Stop. */
+        lingeringProvider = provider
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard let self else { return }
+            if self.lingeringProvider === provider {
+                self.lingeringProvider = nil
+            }
+        }
     }
 
     @MainActor

@@ -6068,26 +6068,27 @@ html:has(.app-shell--native-drive-map) #root {
  * Expanded advisory / route info must paint over bottom search, toolbar, My location, and Mapbox
  * logo/attribution. The overlay stack (z 5) is otherwise below .nav-bottom-stack (z 6).
  */
-.map-stage.map-bleed:has(.storm-advisory-bar--expanded, .route-progress-callout-panel--expanded)
-  .nav-drive-overlay-stack {
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded) .nav-drive-overlay-stack,
+html.route-info-open .map-stage.map-bleed .nav-drive-overlay-stack {
   z-index: 25;
 }
 
-.map-stage.map-bleed:has(.storm-advisory-bar--expanded, .route-progress-callout-panel--expanded)
-  .nav-bottom-stack {
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded) .nav-bottom-stack,
+html.route-info-open .map-stage.map-bleed .nav-bottom-stack {
   z-index: 4;
 }
 
-.map-stage.map-bleed:has(.storm-advisory-bar--expanded, .route-progress-callout-panel--expanded)
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded)
   .mapboxgl-ctrl-bottom-left,
-.map-stage.map-bleed:has(.storm-advisory-bar--expanded, .route-progress-callout-panel--expanded)
-  .mapboxgl-ctrl-bottom-right {
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded)
+  .mapboxgl-ctrl-bottom-right,
+html.route-info-open .map-stage.map-bleed .mapboxgl-ctrl-bottom-left,
+html.route-info-open .map-stage.map-bleed .mapboxgl-ctrl-bottom-right {
   z-index: 3;
 }
 
 .map-stage.map-bleed:has(.storm-advisory-bar--expanded) .storm-advisory-bar--expanded,
-.map-stage.map-bleed:has(.route-progress-callout-panel--expanded)
-  .route-progress-callout-panel--expanded {
+html.route-info-open .route-progress-callout-panel--expanded {
   bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important;
   z-index: 26;
   padding-bottom: max(14px, calc(12px + env(safe-area-inset-bottom, 0px)));
