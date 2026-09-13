@@ -40,7 +40,7 @@ import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
  *
  * **Why a config bag instead of yet more store subscriptions:** the remaining 16 deps are
  * either App-owned `useState` (`setRouting`, `setRouteError`, `setTapHint`,
- * `setTollAvoidFailureNote`, `setFitTrigger`), env values (`mapboxToken`), live data
+ * `setTollAvoidFailureNote`), env values (`mapboxToken`), live data
  * (`userLngLat`, `stormAlertsForRouting`), pay-tier flags (`isPlus`, `payFrequentRoutes`),
  * the App-owned `resetNavigationPlanning` reducer, or imperative refs that exist for
  * race-condition handling (`routeGraphEpochRef`, `routeMainFetchAbortRef`,
@@ -74,7 +74,6 @@ export interface UseComputeRoutesDeps {
   setRouteError: (msg: string | null) => void;
   setTapHint: (msg: string | null) => void;
   setTollAvoidFailureNote: (note: string | null) => void;
-  setFitTrigger: (updater: (prev: number) => number) => void;
 }
 
 export type ComputeRoutesFn = (
@@ -102,7 +101,6 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
     setRouteError,
     setTapHint,
     setTollAvoidFailureNote,
-    setFitTrigger,
   } = deps;
 
   const setTollRoutePrompt = useRouteCompareStore((s) => s.setTollRoutePrompt);
@@ -215,7 +213,6 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
         setPreviewLegIndex(0);
         setDestLngLat(destForMap);
         setViewMode("route");
-        setFitTrigger((n) => n + 1);
         setSearchExpanded(false);
         if (opts?.excludeToll) {
           setTollAvoidFailureNote(null);
@@ -251,7 +248,6 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
       setRouteError,
       setTapHint,
       setTollAvoidFailureNote,
-      setFitTrigger,
       setTollRoutePrompt,
       setPlan,
       setRouteSlotOrder,

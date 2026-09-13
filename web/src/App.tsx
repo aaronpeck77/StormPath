@@ -597,7 +597,6 @@ export default function App() {
     setRouteError,
     setTapHint,
     setTollAvoidFailureNote,
-    setFitTrigger,
   });
 
   const {
@@ -639,7 +638,6 @@ export default function App() {
     activityTrailTick,
     savedPlaces,
     setSavedDrawerOpen,
-    setFitTrigger,
     setTapHint,
     setRouting,
     setRouteError,
@@ -759,7 +757,6 @@ export default function App() {
     const targetCount = isPlus ? 2 : 1;
     if (prev < targetCount && next >= targetCount) {
       setViewMode("route");
-      setFitTrigger((n) => n + 1);
     }
   }, [plan.routes.length, isPlus, navigationStarted]);
 
@@ -785,7 +782,7 @@ export default function App() {
   }, [navigationStarted, viewMode, plan.routes.length]);
 
   const prevDestLngLatRef = useRef<LngLat | null>(null);
-  /** Every new destination → Rt view + map refit (endpoint pair before routes load, full trip after). */
+  /** New destination → Rt view. Camera waits for route lines, then one overview fit. */
   useEffect(() => {
     if (navigationStarted) return;
     if (!destLngLat) {
@@ -801,19 +798,17 @@ export default function App() {
     prevDestLngLatRef.current = destLngLat;
     setViewMode("route");
     setSearchExpanded(false);
-    setFitTrigger((n) => n + 1);
   }, [destLngLat, navigationStarted, setViewMode, setSearchExpanded]);
 
   /**
    * Replanning can replace A/B/C while keeping the same slot ids (`r-a|r-b|r-c`) and the same route
-   * count — nothing else re-fires then. Force Rt + refit whenever the route graph changes.
+   * count. Stay on Rt — DriveMap frames once from the new route graph, not a second fitTrigger hop.
    */
   useEffect(() => {
     if (navigationStarted) return;
     if (!plan.routes.length) return;
     setViewMode("route");
     setSearchExpanded(false);
-    setFitTrigger((n) => n + 1);
   }, [planRoutesKey, navigationStarted]);
 
   const orderedRouteIds = useMemo(() => {

@@ -2,17 +2,17 @@ import { describe, expect, it } from "vitest";
 import { shouldUseNativeDriveMapShell } from "../nativeDriveMapShell";
 
 describe("shouldUseNativeDriveMapShell", () => {
-  it("uses the native map in Drive after Go when Core is active", () => {
+  it("keeps Drive on the web map so pitch and 3D buildings stay visible", () => {
     expect(
       shouldUseNativeDriveMapShell({
         nativeNavActive: true,
         navigationStarted: true,
         viewMode: "drive",
       })
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it("stays on the web map for Mp/Rt or planning", () => {
+  it("stays off for Mp/Rt or when Core is not running", () => {
     expect(
       shouldUseNativeDriveMapShell({
         nativeNavActive: true,
@@ -27,15 +27,5 @@ describe("shouldUseNativeDriveMapShell", () => {
         viewMode: "drive",
       })
     ).toBe(false);
-  });
-
-  it("keeps the native Drive map on ultra-long trips", () => {
-    expect(
-      shouldUseNativeDriveMapShell({
-        nativeNavActive: true,
-        navigationStarted: true,
-        viewMode: "drive",
-      })
-    ).toBe(true);
   });
 });

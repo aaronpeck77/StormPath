@@ -156,7 +156,32 @@ final class DriveNativeMap {
                     self.writeFollowCamera(sample)
                     self.revealIfFramed()
                 }
+                self.addStormPathBuildings()
             }
+        }
+    }
+
+    @MainActor
+    private func addStormPathBuildings() {
+        guard let mapView else { return }
+        let style = mapView.mapView.mapboxMap
+        let layerId = "stormpath-3d-buildings"
+        if style.layerExists(withId: layerId) { return }
+        do {
+            var buildings = FillExtrusionLayer(id: layerId, source: "composite")
+            buildings.sourceLayer = "building"
+            buildings.minZoom = 13
+            buildings.filter = Exp(.eq) {
+                Exp(.get) { "extrude" }
+                "true"
+            }
+            buildings.fillExtrusionColor = .constant(StyleColor(UIColor(white: 0.78, alpha: 1)))
+            buildings.fillExtrusionHeight = .expression(Exp(.get) { "height" })
+            buildings.fillExtrusionBase = .expression(Exp(.get) { "min_height" })
+            buildings.fillExtrusionOpacity = .constant(0.8)
+            try style.addLayer(buildings)
+        } catch {
+            /* streets-v12 may already extrude buildings; pitch is what makes them read 3D. */
         }
     }
 

@@ -33,7 +33,6 @@ export interface UseDestinationSearchDeps {
   activityTrailTick: number;
   savedPlaces: SavedPlace[];
   setSavedDrawerOpen: (open: boolean) => void;
-  setFitTrigger: (updater: (prev: number) => number) => void;
   setTapHint: (msg: string | null) => void;
   setRouting: (busy: boolean) => void;
   setRouteError: (msg: string | null) => void;
@@ -52,7 +51,6 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     activityTrailTick,
     savedPlaces,
     setSavedDrawerOpen,
-    setFitTrigger,
     setTapHint,
     setRouting,
     setRouteError,
@@ -188,7 +186,6 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
         addingViaStop && useTripPlanStore.getState().destLngLat ? "via" : "destination";
       setSearchText(pinLabel);
       setViewMode("route");
-      setFitTrigger((n) => n + 1);
       setSearchExpanded(false);
 
       if (pickMode === "via") {
@@ -242,13 +239,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       const pickMode =
         addingViaStop && useTripPlanStore.getState().destLngLat ? "via" : "destination";
       if (pickMode === "destination") setDestinationLabel(label);
-      void (async () => {
-        await applyTripPlacePick(lngLat, label, pickMode);
-        /* Drawer close changes map chrome size — refit once layout settles so the full
-         * route fills the screen the same as any other planned trip. */
-        setFitTrigger((n) => n + 1);
-        window.setTimeout(() => setFitTrigger((n) => n + 1), 280);
-      })();
+      void applyTripPlacePick(lngLat, label, pickMode);
     },
     [
       userLngLat,
@@ -256,7 +247,6 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       locationError,
       recordRecentSearch,
       addingViaStop,
-      setFitTrigger,
       setViewMode,
     ]
   );

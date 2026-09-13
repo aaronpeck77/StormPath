@@ -302,7 +302,6 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     }
     setNavigationStarted(true);
     setViewMode("drive");
-    setFitTrigger((n) => n + 1);
     setTollRoutePrompt(null);
     setTollAvoidFailureNote(null);
     // Force a fresh route weather fetch the moment the user starts driving.
@@ -388,7 +387,6 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     setPreviewLegIndex,
     setNavigationStarted,
     setViewMode,
-    setFitTrigger,
     setTollRoutePrompt,
     setTollAvoidFailureNote,
     lockedNavigationRouteIdRef,

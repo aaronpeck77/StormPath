@@ -111,8 +111,6 @@ import {
   hazardOverviewFitPadding,
   isNarrowPhoneViewport,
   mapStyleReadyForCamera,
-  minPlanningRouteZoomFloor,
-  maxRouteOverviewZoomDuringNav,
   offRouteAlternatesFitKey,
   planningRoutesFitKey,
   routeFitMaxZoomCeiling,
@@ -560,10 +558,8 @@ function DriveMapInner({
   const corridorPrefetchInFlightRef = useRef(false);
   const exploreTimerRef = useRef<number | null>(null);
   const lastForcedPlanningFitTriggerRef = useRef<number | null>(null);
-  const prevPlanningRouteCountRef = useRef(0);
   const planningFitRafRef = useRef<number | null>(null);
   const planningFitRetryTimerRef = useRef<number | null>(null);
-  const planningFitVerifyTimerRef = useRef<number | null>(null);
   const activeDriveCamera = navigationStarted && viewMode === "drive";
   const idleHomeScreen = routes.length === 0 && !navigationStarted;
   const topdownFollowKey = userLngLat
@@ -574,9 +570,6 @@ function DriveMapInner({
       ? `${Math.round(userLngLat[0] * 2500)}|${Math.round(userLngLat[1] * 2500)}`
       : null;
 
-  useEffect(() => {
-    if (routes.length === 0) prevPlanningRouteCountRef.current = 0;
-  }, [routes.length]);
   const driveCamBearingSmoothedRef = useRef<number | null>(null);
   /** Last course-over-ground while GO is active — hold heading-up across off-route GPS gaps. */
   const driveLastTravelBearingRef = useRef<number | null>(null);
@@ -978,17 +971,18 @@ function DriveMapInner({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    if (map.getSource("mapbox-dem")) return;
 
-    map.addSource("mapbox-dem", {
-      type: "raster-dem",
-      url: "mapbox://mapbox.mapbox-terrain-dem-v1",
-      tileSize: 512,
-      maxzoom: 14,
-    });
-    /* While GO is active, skip DEM automatically — no mid-drive setting. Restores after End. */
-    if (!navigationStarted) {
-      map.setTerrain({ source: "mapbox-dem", exaggeration: 1.5 });
+    if (!map.getSource("mapbox-dem")) {
+      map.addSource("mapbox-dem", {
+        type: "raster-dem",
+        url: "mapbox://mapbox.mapbox-terrain-dem-v1",
+        tileSize: 512,
+        maxzoom: 14,
+      });
+      /* While GO is active, skip DEM automatically — no mid-drive setting. Restores after End. */
+      if (!navigationStarted) {
+        map.setTerrain({ source: "mapbox-dem", exaggeration: 1.5 });
+      }
     }
 
     if (!map.getLayer("3d-buildings")) {
@@ -1007,12 +1001,12 @@ function DriveMapInner({
           "source-layer": "building",
           filter: ["==", "extrude", "true"],
           type: "fill-extrusion",
-          minzoom: 14,
+          minzoom: 13,
           paint: {
             "fill-extrusion-color": buildingColorForPhase(mapPhase),
             "fill-extrusion-height": ["get", "height"],
             "fill-extrusion-base": ["get", "min_height"],
-            "fill-extrusion-opacity": 0.6,
+            "fill-extrusion-opacity": 0.78,
           },
         },
         labelLayerId
@@ -1043,6 +1037,7 @@ function DriveMapInner({
     if (!map.getLayer("3d-buildings")) return;
     try {
       map.setPaintProperty("3d-buildings", "fill-extrusion-color", buildingColorForPhase(mapPhase));
+      map.setPaintProperty("3d-buildings", "fill-extrusion-opacity", 0.78);
     } catch { /* layer not ready */ }
   }, [mapReady, mapPhase]);
 
@@ -3230,21 +3225,12 @@ function DriveMapInner({
         window.clearTimeout(planningFitRetryTimerRef.current);
         planningFitRetryTimerRef.current = null;
       }
-      if (planningFitVerifyTimerRef.current != null) {
-        window.clearTimeout(planningFitVerifyTimerRef.current);
-        planningFitVerifyTimerRef.current = null;
-      }
     };
 
-    const prevCount = prevPlanningRouteCountRef.current;
-    prevPlanningRouteCountRef.current = routes.length;
-    const routesJustLoaded = prevCount === 0 && routes.length > 0;
-
-    /* Only App-driven events (fitTrigger / first routes / entering Rt) may override a live pan/zoom.
-     * Previously planning always set forcePlanningFit=true, so overview fit ignored exploring and
-     * fought the user — camera zoomed back out and markers looked like they were flying. */
+    /* Only App-driven events (fitTrigger / entering Rt) may override a live pan/zoom.
+     * First route lines bump fitTrigger from planRoutesKey — one overview, not dest-then-route hops. */
     let appForcedFit = enteredRouteView;
-    if (fitTrigger !== lastForcedPlanningFitTriggerRef.current || routesJustLoaded) {
+    if (fitTrigger !== lastForcedPlanningFitTriggerRef.current) {
       lastForcedPlanningFitTriggerRef.current = fitTrigger;
       appForcedFit = true;
       userExploringRef.current = false;
@@ -3256,6 +3242,7 @@ function DriveMapInner({
 
     const executePlanningFit = (): boolean => {
       if (viewModeRef.current === "drive") return false;
+      if (routes.length === 0) return false;
       if (userExploringRef.current && !appForcedFit) return false;
       if (!mapStyleReadyForCamera(map)) return false;
       const u = userLngLatRef.current;
@@ -3286,74 +3273,25 @@ function DriveMapInner({
       return fitted;
     };
 
-    const verifyPlanningZoom = (attempt: number) => {
-      if (cancelled || routes.length === 0) return;
-      if (userExploringRef.current) return;
-      const vm = viewModeRef.current;
-      if (navigationStartedRef.current && vm !== "route") return;
-      if (viewModeRef.current !== "route" && viewModeRef.current !== "topdown") return;
-      let zoom = 0;
-      try {
-        zoom = map.getZoom();
-      } catch {
-        return;
-      }
-      const routeLen = sessionRouteLengthMRef.current;
-      const routeOverviewNav = navigationStartedRef.current && vm === "route";
-      if (routeOverviewNav) {
-        const maxOverviewZoom = maxRouteOverviewZoomDuringNav(routeLen);
-        if (zoom <= maxOverviewZoom + 0.15) return;
-      } else {
-        if (isUltraLongTripRoute(routeLen)) return;
-        const minPlanningZoom = minPlanningRouteZoomFloor(routeLen);
-        if (zoom >= minPlanningZoom) return;
-      }
-      if (attempt >= 5) return;
-      if (!executePlanningFit()) {
-        planningFitRetryTimerRef.current = window.setTimeout(
-          () => verifyPlanningZoom(attempt + 1),
-          220 + attempt * 180
-        );
-        return;
-      }
-      planningFitVerifyTimerRef.current = window.setTimeout(
-        () => verifyPlanningZoom(attempt + 1),
-        480 + attempt * 120
-      );
-    };
-
+    let planningFitRetried = false;
     const retryWhenReady = () => {
-      if (cancelled) return;
-      if (!executePlanningFit()) verifyPlanningZoom(1);
-      else {
-        planningFitVerifyTimerRef.current = window.setTimeout(() => verifyPlanningZoom(0), 520);
-      }
+      if (cancelled || planningFitRetried) return;
+      planningFitRetried = true;
+      map.off("idle", retryWhenReady);
+      map.off("style.load", retryWhenReady);
+      executePlanningFit();
     };
 
     const schedulePlanningRouteFit = () => {
-      if (executePlanningFit()) {
-        const verifyAfterFit =
-          !navigationStartedRef.current || viewModeRef.current === "route";
-        if (verifyAfterFit) {
-          planningFitVerifyTimerRef.current = window.setTimeout(() => verifyPlanningZoom(0), 520);
-        }
-        return;
-      }
+      if (executePlanningFit()) return;
       clearPlanningFitTimers();
       planningFitRafRef.current = requestAnimationFrame(() => {
         planningFitRafRef.current = null;
         if (cancelled) return;
-        if (!executePlanningFit()) {
-          map.once("idle", retryWhenReady);
-          map.once("style.load", retryWhenReady);
-          planningFitRetryTimerRef.current = window.setTimeout(retryWhenReady, 160);
-        } else {
-          const verifyAfterFit =
-            !navigationStartedRef.current || viewModeRef.current === "route";
-          if (verifyAfterFit) {
-            planningFitVerifyTimerRef.current = window.setTimeout(() => verifyPlanningZoom(0), 520);
-          }
-        }
+        if (executePlanningFit()) return;
+        map.once("idle", retryWhenReady);
+        map.once("style.load", retryWhenReady);
+        planningFitRetryTimerRef.current = window.setTimeout(retryWhenReady, 160);
       });
     };
 
@@ -3548,7 +3486,6 @@ function DriveMapInner({
         } catch {
           /* map disposed */
         }
-        setMapResumeTick((n) => n + 1);
       });
     });
     return () => cancelAnimationFrame(raf0);
@@ -3594,10 +3531,7 @@ function DriveMapInner({
    * sized to a stale box — the puck and follow camera sit wrong until a resize. Double-rAF + bump
    * so {@link canCameraFollow} run re-runs after the real layout.
    *
-   * Also fires timed direct snaps as a belt-and-suspenders failsafe: if the RAF loop can't snap
-   * the camera on its own (e.g. puck marker not yet created, GPS momentarily null, or a stale
-   * moveend listener fights back), these timeouts guarantee the camera reaches drive pitch within
-   * ~500 ms of entering drive mode.
+   * One Drive snap after chrome settles. Extra timed hops were fighting the follow-cam.
    */
   useEffect(() => {
     if (viewMode !== "drive" || !navigationStarted || !mapReady) return;
@@ -3657,8 +3591,6 @@ function DriveMapInner({
     };
 
     const t1 = window.setTimeout(snapDriveCam, 80);
-    const t2 = window.setTimeout(snapDriveCam, 260);
-    const t3 = window.setTimeout(snapDriveCam, 600);
 
     const raf0 = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -3667,14 +3599,11 @@ function DriveMapInner({
         } catch {
           /* map disposed */
         }
-        setMapResumeTick((n) => n + 1);
       });
     });
     return () => {
       cancelAnimationFrame(raf0);
       window.clearTimeout(t1);
-      window.clearTimeout(t2);
-      window.clearTimeout(t3);
     };
   }, [viewMode, navigationStarted, mapReady]);
 
