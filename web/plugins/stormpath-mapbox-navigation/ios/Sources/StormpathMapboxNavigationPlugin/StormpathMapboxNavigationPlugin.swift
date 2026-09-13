@@ -32,6 +32,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     private var sessionActive = false
     /// Prevents overlapping prepare / Go / Stop tears (two providers = hard crash).
     private var tearDownInFlight = false
+    /// Serialize prepare / start / stop so a route fetch cannot overlap a new provider.
+    private var coreMutexBusy = false
     private var didEmitArrival = false
     /// Retain voice controller so spoken instructions keep working without UIKit nav UI.
     private var voiceController: RouteVoiceController?
@@ -128,9 +130,26 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func stop(_ call: CAPPluginCall) {
         Task { @MainActor [weak self] in
-            await self?.tearDownSession(emitCancelled: true)
+            guard let self else {
+                call.resolve()
+                return
+            }
+            await self.withCoreMutex {
+                await self.tearDownSession(emitCancelled: true)
+            }
             call.resolve()
         }
+    }
+
+    /** One Core mutation at a time — overlapping prepare + Go left two providers alive. */
+    @MainActor
+    private func withCoreMutex(_ body: () async -> Void) async {
+        while coreMutexBusy {
+            try? await Task.sleep(nanoseconds: 25_000_000)
+        }
+        coreMutexBusy = true
+        defer { coreMutexBusy = false }
+        await body()
     }
 
     private struct IncomingWaypoint {
@@ -209,43 +228,45 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("coordinates must include at least origin and destination")
             return
         }
-        if sessionActive {
-            call.resolve(["ok": true, "prepared": true, "skipped": true])
-            return
-        }
-        let key = routeKey(waypoints: incoming, preferBackroads: preferBackroads)
-        if lastNavRoutes != nil, navigationProvider != nil, preparedRouteKey == key {
-            call.resolve(["ok": true, "prepared": true, "cached": true])
-            return
-        }
+        await withCoreMutex {
+            if sessionActive {
+                call.resolve(["ok": true, "prepared": true, "skipped": true])
+                return
+            }
+            let key = routeKey(waypoints: incoming, preferBackroads: preferBackroads)
+            if lastNavRoutes != nil, navigationProvider != nil, preparedRouteKey == key {
+                call.resolve(["ok": true, "prepared": true, "cached": true])
+                return
+            }
 
-        await tearDownSession(emitCancelled: false)
-        let epoch = coreEpoch
-        let provider = MapboxNavigationProvider(coreConfig: makeCoreConfig(accessToken: accessToken, simulate: false))
-        navigationProvider = provider
-        let options = NavigationRouteOptions(waypoints: makeWaypoints(incoming))
-        if preferBackroads {
-            options.roadClassesToAvoid = .motorway
-        }
-        do {
-            let navigationRoutes = try await provider.mapboxNavigation
-                .routingProvider()
-                .calculateRoutes(options: options)
-                .value
-            guard epoch == coreEpoch else {
-                call.resolve(["ok": true, "prepared": false, "superseded": true])
-                return
-            }
-            lastNavRoutes = navigationRoutes
-            preparedRouteKey = key
-            call.resolve(["ok": true, "prepared": true])
-        } catch {
-            guard epoch == coreEpoch else {
-                call.resolve(["ok": true, "prepared": false, "superseded": true])
-                return
-            }
             await tearDownSession(emitCancelled: false)
-            call.reject("Route request failed: \(error.localizedDescription)")
+            let epoch = coreEpoch
+            let provider = MapboxNavigationProvider(coreConfig: makeCoreConfig(accessToken: accessToken, simulate: false))
+            navigationProvider = provider
+            let options = NavigationRouteOptions(waypoints: makeWaypoints(incoming))
+            if preferBackroads {
+                options.roadClassesToAvoid = .motorway
+            }
+            do {
+                let navigationRoutes = try await provider.mapboxNavigation
+                    .routingProvider()
+                    .calculateRoutes(options: options)
+                    .value
+                guard epoch == coreEpoch, navigationProvider === provider else {
+                    call.resolve(["ok": true, "prepared": false, "superseded": true])
+                    return
+                }
+                lastNavRoutes = navigationRoutes
+                preparedRouteKey = key
+                call.resolve(["ok": true, "prepared": true])
+            } catch {
+                guard epoch == coreEpoch else {
+                    call.resolve(["ok": true, "prepared": false, "superseded": true])
+                    return
+                }
+                await tearDownSession(emitCancelled: false)
+                call.reject("Route request failed: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -262,59 +283,66 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("coordinates must include at least origin and destination")
             return
         }
-        let key = routeKey(waypoints: incoming, preferBackroads: preferBackroads)
-        let canReusePrepared = !sessionActive
-            && lastNavRoutes != nil
-            && navigationProvider != nil
-            && preparedRouteKey == key
-            && !simulate
+        await withCoreMutex {
+            let key = routeKey(waypoints: incoming, preferBackroads: preferBackroads)
+            let canReusePrepared = !sessionActive
+                && lastNavRoutes != nil
+                && navigationProvider != nil
+                && preparedRouteKey == key
+                && !simulate
 
-        if !canReusePrepared {
-            await tearDownSession(emitCancelled: false)
-            navigationProvider = MapboxNavigationProvider(
-                coreConfig: makeCoreConfig(accessToken: accessToken, simulate: simulate)
-            )
-        }
+            if !canReusePrepared {
+                await tearDownSession(emitCancelled: false)
+                navigationProvider = MapboxNavigationProvider(
+                    coreConfig: makeCoreConfig(accessToken: accessToken, simulate: simulate)
+                )
+            }
 
-        guard let provider = navigationProvider else {
-            call.reject("Navigation provider missing")
-            return
-        }
-        didEmitArrival = false
-        applyVoiceEnabled(voiceEnabled)
+            guard let provider = navigationProvider else {
+                call.reject("Navigation provider missing")
+                return
+            }
+            didEmitArrival = false
+            applyVoiceEnabled(voiceEnabled)
 
-        let mapboxNavigation = provider.mapboxNavigation
-        do {
-            let navigationRoutes: NavigationRoutes
-            if canReusePrepared, let prepared = lastNavRoutes {
-                navigationRoutes = prepared
-            } else {
-                let options = NavigationRouteOptions(waypoints: makeWaypoints(incoming))
-                if preferBackroads {
-                    options.roadClassesToAvoid = .motorway
+            let mapboxNavigation = provider.mapboxNavigation
+            do {
+                let navigationRoutes: NavigationRoutes
+                if canReusePrepared, let prepared = lastNavRoutes {
+                    navigationRoutes = prepared
+                } else {
+                    let options = NavigationRouteOptions(waypoints: makeWaypoints(incoming))
+                    if preferBackroads {
+                        options.roadClassesToAvoid = .motorway
+                    }
+                    navigationRoutes = try await mapboxNavigation
+                        .routingProvider()
+                        .calculateRoutes(options: options)
+                        .value
                 }
-                navigationRoutes = try await mapboxNavigation
-                    .routingProvider()
-                    .calculateRoutes(options: options)
-                    .value
-            }
 
-            bindObservers(mapboxNavigation: mapboxNavigation)
-            mapboxNavigation.tripSession().startActiveGuidance(
-                with: navigationRoutes,
-                startLegIndex: 0
-            )
-            sessionActive = true
-            lastNavRoutes = navigationRoutes
-            preparedRouteKey = key
-            emitRouteGeometry(from: navigationRoutes)
-            if pendingNativeMapVisible {
-                applyNativeMapVisible(true)
+                guard navigationProvider === provider else {
+                    call.reject("Navigation session was replaced")
+                    return
+                }
+
+                bindObservers(mapboxNavigation: mapboxNavigation)
+                mapboxNavigation.tripSession().startActiveGuidance(
+                    with: navigationRoutes,
+                    startLegIndex: 0
+                )
+                sessionActive = true
+                lastNavRoutes = navigationRoutes
+                preparedRouteKey = key
+                emitRouteGeometry(from: navigationRoutes)
+                if pendingNativeMapVisible {
+                    applyNativeMapVisible(true)
+                }
+                call.resolve(["ok": true, "reused": canReusePrepared])
+            } catch {
+                await tearDownSession(emitCancelled: false)
+                call.reject("Route request failed: \(error.localizedDescription)")
             }
-            call.resolve(["ok": true, "reused": canReusePrepared])
-        } catch {
-            await tearDownSession(emitCancelled: false)
-            call.reject("Route request failed: \(error.localizedDescription)")
         }
     }
 
@@ -543,20 +571,29 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     /**
-     * Idle + drop Core. Never keep a second `MapboxNavigationProvider` around —
-     * lingering one while Go creates another hard-crashed the IPA.
-     * After a live session, wait briefly so Core finishes its last ticks before release.
+     * Idle + drop Core. Never keep a second `MapboxNavigationProvider` around.
+     * Callers must hold `withCoreMutex` (prepare / start / stop).
+     * After a live session, wait so Core finishes last ticks before release.
      */
     @MainActor
     private func tearDownSession(emitCancelled: Bool) async {
-        if tearDownInFlight {
+        /* A second stop must wait — early return used to resolve JS clearTrip while Core still lived. */
+        while tearDownInFlight {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        if navigationProvider == nil && !sessionActive {
+            poseHold.reset()
+            followCam.reset()
+            lastNavRoutes = nil
+            preparedRouteKey = ""
+            pendingNativeMapVisible = false
             return
         }
+
         tearDownInFlight = true
         defer { tearDownInFlight = false }
 
         let wasActive = sessionActive
-        /* Observers must no-op before Core is idled or the provider is released. */
         sessionActive = false
         coreEpoch += 1
         cancellables.removeAll()
@@ -567,22 +604,20 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         voiceController = nil
         voiceEnabled = false
 
-        /* NavigationMapView stays subscribed to Core publishers until it is off-screen. */
         nativeMap?.detach(webView: webView)
         nativeMap = nil
         applyDrivePuckVisible(false)
 
         let provider = navigationProvider
-        navigationProvider = nil
         if wasActive {
             provider?.mapboxNavigation.tripSession().setToIdle()
+            /* Drain before release so Stop does not dealloc mid-callback. */
+            try? await Task.sleep(nanoseconds: 550_000_000)
             if emitCancelled {
                 notifyListeners("cancelled", data: ["reason": "cancelled"])
             }
-            /* Drain Core on the Stop path only — JS awaits `stop()` before clearTrip. */
-            try? await Task.sleep(nanoseconds: 400_000_000)
         }
-        /* `provider` released here — never overlap with a newly installed provider. */
+        navigationProvider = nil
 
         poseHold.reset()
         followCam.reset()

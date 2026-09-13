@@ -2491,6 +2491,7 @@ export default function App() {
       liveHeadingRef,
       fitTrigger,
       heading,
+      routeBuildBusy: routing,
       driveRouteBearingDeg,
       driveOffRouteForwardFraming,
       followingTemporaryGuidance: Boolean(autoRejoinGuidanceRouteId),

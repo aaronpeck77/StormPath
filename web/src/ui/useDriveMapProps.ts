@@ -35,6 +35,7 @@ export type UseDriveMapPropsInput = {
   viaStops: TripStop[];
   fitTrigger: number;
   viewMode: MapViewMode;
+  routeBuildBusy?: boolean;
   heading: number | null;
   driveRouteBearingDeg: number | null;
   driveOffRouteForwardFraming: boolean;
@@ -114,6 +115,7 @@ export function buildDriveMapProps(
     viaStops,
     fitTrigger,
     viewMode,
+    routeBuildBusy = false,
     heading,
     driveRouteBearingDeg,
     driveOffRouteForwardFraming,
@@ -186,6 +188,7 @@ export function buildDriveMapProps(
     fitTrigger,
     viewMode,
     navigationStarted,
+    routeBuildBusy,
     heading,
     driveRouteBearingDeg,
     driveOffRouteForwardFraming,

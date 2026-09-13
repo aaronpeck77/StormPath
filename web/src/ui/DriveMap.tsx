@@ -231,6 +231,8 @@ export type Props = {
   fitTrigger: number;
   viewMode: MapViewMode;
   navigationStarted: boolean;
+  /** True while Mapbox is building A/B — hold the camera until the final plan lands. */
+  routeBuildBusy?: boolean;
   heading: number | null;
   /** When set (drive + active leg), camera bearing follows the polyline ahead instead of GPS heading. */
   driveRouteBearingDeg?: number | null;
@@ -407,6 +409,7 @@ function DriveMapInner({
   fitTrigger,
   viewMode,
   navigationStarted,
+  routeBuildBusy = false,
   heading,
   driveRouteBearingDeg = null,
   driveOffRouteForwardFraming = false,
@@ -3124,7 +3127,16 @@ function DriveMapInner({
     const map = mapRef.current;
     if (!map || !mapReady) return;
     if (viewMode !== "route" && viewMode !== "topdown") return;
-    if (routes.length === 0) return;
+
+    /* Dest chosen, routes not ready — keep the current frame. Do not street-zoom
+     * toward the pin; the overview fit runs once when the plan finishes. */
+    if (routes.length === 0) {
+      if (!navigationStarted && destLngLat && viewMode === "route") {
+        pendingRouteOverviewEnterRef.current = true;
+        stopMapCamera(map);
+      }
+      return;
+    }
 
     /* View-enter decisions come from useMapCameraController → viewModeContract so the
      * Rt/Mp/Dr transition rules live in one place (see nav/viewModeContract.ts). */
@@ -3173,6 +3185,17 @@ function DriveMapInner({
       }
     };
 
+    /* Wait for A/B to finish — intermediate setPlan paints were the zoom-in-then-out hop. */
+    if (!navigationStarted && routeBuildBusy) {
+      pendingRouteOverviewEnterRef.current = true;
+      clearPlanningFitTimers();
+      stopMapCamera(map);
+      return () => {
+        cancelled = true;
+        clearPlanningFitTimers();
+      };
+    }
+
     /* Only App-driven events (fitTrigger / entering Rt) may override a live pan/zoom.
      * A same-tick toolbar resize remounts this effect and can set the explore latch
      * via movestart — pending Rt enter must still win or Rt stays at Mp zoom. */
@@ -3218,7 +3241,8 @@ function DriveMapInner({
           onAfterFit: undefined,
           onlyRouteId: navigationStartedRef.current ? lineFocusId : undefined,
           zoomBias: 0,
-          forceFullPolyline: false,
+          /* Pre-Go: full corridor so we never street-zoom the dest then pull back. */
+          forceFullPolyline: !navigatingRt,
           remainingFromUser: navigatingRt,
           durationMs: easeNavRt ? 480 : 0,
         }
@@ -3405,6 +3429,7 @@ function DriveMapInner({
     routesPlanningFitKey,
     routeOverviewProgressKey,
     navigationStarted,
+    routeBuildBusy,
     mapResumeTick,
     stormBarVisible,
     stormBarExpanded,

@@ -32,6 +32,6 @@ Do not auto-take until that hop is boring: right exit, not a farm loop, on-ramp 
 
 Core must go idle and drop the NavigationMapView **before** the web trip is wiped. Nilling `MapboxNavigationProvider` while the map is still subscribed (or while `setToIdle` is in flight) is a hard crash. Same rule when P3 later installs a hop: never swap the web line while Core is still the live session.
 
-### 2026-09-13 — Rt edge strip + Core teardown
+### 2026-09-13 — Stop race + dest hop
 
-Rt is puck + dest on a thin rim, then zoom-in as remaining shortens. Never keep two `MapboxNavigationProvider`s (linger-while-Go crashed). On Stop: idle, wait ~400ms on the `stop()` promise, then release. Prepare uses a coreEpoch so a late plan cannot reinstall after Go.
+Stop must await in-flight Core teardown (no early return) and serialize prepare/start/stop on one mutex — overlapping providers crash. Pre-Go camera holds until `routing` finishes, then one full-corridor overview (no dest street-zoom middle step).
