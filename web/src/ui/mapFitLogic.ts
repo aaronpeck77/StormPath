@@ -93,21 +93,6 @@ export function isLandscapeHandLeft(): boolean {
   return Boolean(document.querySelector(".app-shell--landscape-hand-left"));
 }
 
-function cssPxVar(name: string): number {
-  if (typeof window === "undefined") return 0;
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  if (!v) return 0;
-  const n = Number.parseFloat(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function safeAreaInsetsPx(): { top: number; bottom: number } {
-  return {
-    top: Math.max(0, cssPxVar("--sp-safe-top")),
-    bottom: Math.max(0, cssPxVar("--sp-safe-bottom")),
-  };
-}
-
 export function routeViewAxis(routes: NavRoute[], primaryRouteId?: string | null): RouteViewAxis {
   const route =
     (primaryRouteId ? routes.find((r) => r.id === primaryRouteId) : null) ??
