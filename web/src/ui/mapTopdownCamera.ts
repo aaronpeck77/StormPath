@@ -7,9 +7,9 @@ export const TOPDOWN_PUCK_OFFSET_PX: [number, number] = [0, 0];
  * Map (Mp) while navigating — wide enough for several blocks / upcoming turns
  * without matching Dr’s street-level 3D zoom. Tighter than Rt (whole-route overview).
  */
-export const TOPDOWN_NAV_STREET_ZOOM = 13.5;
+export const TOPDOWN_NAV_STREET_ZOOM = 12.8;
 /** Minimum zoom enforced in topdown nav mode; below this the view snaps back to TOPDOWN_NAV_STREET_ZOOM. */
-export const TOPDOWN_NAV_MIN_ZOOM = 12.5;
+export const TOPDOWN_NAV_MIN_ZOOM = 11.8;
 
 /** Route (Rt): start with regional / state context; user zooms or taps My location for street level. */
 export const ROUTE_VIEW_REGIONAL_ZOOM = 6.95;
@@ -18,6 +18,8 @@ export const ROUTE_VIEW_REGIONAL_ZOOM_PHONE = 6.35;
 
 /** Planning “My location” / recenter — street-level framing. */
 export const ROUTE_VIEW_PLANNING_STREET_ZOOM = 14.2;
+/** Planning Mp button — a bit wider than idle-home street zoom so the first flip is not cramped. */
+export const TOPDOWN_PLANNING_ZOOM = 13.4;
 
 export function regionalPlanningZoom(): number {
   if (typeof window === "undefined") return ROUTE_VIEW_REGIONAL_ZOOM;
@@ -36,8 +38,8 @@ export function resolveTopdownLocalZoom(
     }
     return topdownZoomRef.current;
   }
-  if (topdownZoomRef.current < ROUTE_VIEW_PLANNING_STREET_ZOOM - 0.5) {
-    topdownZoomRef.current = ROUTE_VIEW_PLANNING_STREET_ZOOM;
+  if (topdownZoomRef.current < TOPDOWN_PLANNING_ZOOM - 0.5) {
+    topdownZoomRef.current = TOPDOWN_PLANNING_ZOOM;
   }
   return topdownZoomRef.current;
 }

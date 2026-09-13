@@ -560,7 +560,7 @@ function DriveMapInner({
   const planningFitRafRef = useRef<number | null>(null);
   const planningFitRetryTimerRef = useRef<number | null>(null);
   const activeDriveCamera = navigationStarted && viewMode === "drive";
-  const idleHomeScreen = routes.length === 0 && !navigationStarted;
+  const idleHomeScreen = routes.length === 0 && !navigationStarted && !destLngLat;
   const topdownFollowKey = userLngLat
     ? `${Math.round(userLngLat[0] * 2500)}|${Math.round(userLngLat[1] * 2500)}`
     : null;
@@ -2280,7 +2280,9 @@ function DriveMapInner({
         const routeBox = corridor?.length ? boundsFromGeometry(corridor) : null;
         const sampleBox = routeBox ? intersectBounds(viewBox, routeBox) ?? routeBox : viewBox;
 
-        const pack = await fetchRainViewerRadarFrames({ includeNowcast: false });
+        const pack = await fetchRainViewerRadarFrames({
+          includeNowcast: Boolean(corridor?.length),
+        });
         if (cancelled || mapRef.current !== map) return;
         if (!pack?.frames || pack.frames.length < 2) {
           removeRadarMotionLayers(map);
@@ -2731,13 +2733,13 @@ function DriveMapInner({
   const idleHomeActivityAreaLatchedRef = useRef(false);
   const idleHomeTrailWaitDeadlineRef = useRef(0);
   useEffect(() => {
-    if (routes.length > 0 || navigationStarted || viewMode === "drive") {
+    if (routes.length > 0 || navigationStarted || viewMode === "drive" || destLngLat) {
       idleHomeAppliedRef.current = false;
       idleHomeHoldingLocateRef.current = false;
       idleHomeActivityAreaLatchedRef.current = false;
       idleHomeTrailWaitDeadlineRef.current = 0;
     }
-  }, [viewMode, routes.length, navigationStarted]);
+  }, [viewMode, routes.length, navigationStarted, destLngLat]);
 
   useEffect(() => {
     idleHomeAppliedRef.current = false;
@@ -2747,7 +2749,7 @@ function DriveMapInner({
   }, [idleHomeMapFraming]);
 
   useEffect(() => {
-    if (homePuckFollow !== "follow" || routes.length > 0 || navigationStarted) return;
+    if (homePuckFollow !== "follow" || routes.length > 0 || navigationStarted || destLngLat) return;
     userExploringRef.current = false;
     idleHomeAppliedRef.current = false;
     idleHomeHoldingLocateRef.current = false;
@@ -2756,7 +2758,7 @@ function DriveMapInner({
       exploreTimerRef.current = null;
     }
     setMapResumeTick((n) => n + 1);
-  }, [homePuckFollow, routes.length, navigationStarted]);
+  }, [homePuckFollow, routes.length, navigationStarted, destLngLat]);
 
   useEffect(() => {
     const hasBounds = activityTrailPlanningBounds != null;
@@ -2774,7 +2776,7 @@ function DriveMapInner({
     const map = mapRef.current;
     if (!map || !mapReady) return;
     if (viewMode !== "route" && viewMode !== "topdown") return;
-    if (routes.length > 0 || navigationStarted) return;
+    if (routes.length > 0 || navigationStarted || destLngLat) return;
 
     if (idleHomeTrailWaitDeadlineRef.current === 0) {
       idleHomeTrailWaitDeadlineRef.current = performance.now() + IDLE_HOME_TRAIL_BOUNDS_WAIT_MS;
@@ -2886,6 +2888,7 @@ function DriveMapInner({
     activityTrailPlanningBounds,
     idleHomeMapFraming,
     homePuckFollow,
+    destLngLat,
   ]);
 
   const homePreloadBoundsKey = homePreloadBounds
@@ -3407,17 +3410,8 @@ function DriveMapInner({
     if (viewMode === "drive" && navigationStarted) {
       driveCamResyncRef.current = true;
     }
-    const map = mapRef.current;
-    const raf0 = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        try {
-          map?.resize();
-        } catch {
-          /* map disposed */
-        }
-      });
-    });
-    return () => cancelAnimationFrame(raf0);
+    /* Do not resize here — a post-snap resize after the one-shot Rt/Mp/Dr camera
+     * is what made the map blur/vibrate for about a second on view switch. */
   }, [mapReady, viewMode, navigationStarted, topdownZoomRef]);
 
   const canCameraFollow = Boolean(

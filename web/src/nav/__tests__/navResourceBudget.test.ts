@@ -125,6 +125,19 @@ describe("navResourceBudget", () => {
     expect(budget.radarRouteSamplingEnabled).toBe(true);
   });
 
+  it("keeps corridor wind/rain forecast on a long planned route before Go", () => {
+    const budget = buildNavResourceBudget({
+      ...base,
+      navigationStarted: false,
+      viewMode: "route",
+      routeLengthM: LONG_TRIP_ROUTE_M + 1,
+      progressCalloutsOpen: false,
+      stormBarExpanded: false,
+    });
+    expect(budget.tioRouteFetchEnabled).toBe(true);
+    expect(budget.radarRouteSamplingEnabled).toBe(true);
+  });
+
   it("turns off map radar overlay when backgrounded", () => {
     const budget = buildNavResourceBudget({
       ...base,

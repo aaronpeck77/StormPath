@@ -33,7 +33,7 @@ export type RadarBandsAlongRouteState = {
  * values per sample. Uses the same fractions as route scoring ({@link RADAR_ROUTE_SAMPLE_FRACTIONS}).
  *
  * Map overlay provider split: US → Tomorrow.io when keyed, elsewhere RainViewer. This hook uses the
- * same split for short trips. On longer trips (ETA &gt; 5 min) it always uses RainViewer **nowcast**
+ * same split for short trips. On any planned trip with an ETA it uses RainViewer **nowcast**
  * frames so each sample can reflect where echoes are modeled when you arrive — even on US routes.
  */
 export function useRadarBandsAlongRoute(
@@ -72,7 +72,7 @@ export function useRadarBandsAlongRoute(
   samplesRef.current = state.samples;
 
   // Bucket ETA to 5-min intervals so minor GPS drift doesn't re-trigger the effect.
-  const etaKey = planEtaMinutes != null && planEtaMinutes > 5 ? Math.round(planEtaMinutes / 5) : 0;
+  const etaKey = planEtaMinutes != null && planEtaMinutes > 0 ? Math.round(planEtaMinutes / 5) : 0;
 
   const bumpRadarResample = useCallback(() => {
     setRefreshTick((n) => n + 1);
@@ -96,7 +96,7 @@ export function useRadarBandsAlongRoute(
     let cancelled = false;
 
     const run = async () => {
-      const useEta = planEtaMinutes != null && planEtaMinutes > 5;
+      const useEta = planEtaMinutes != null && planEtaMinutes > 0;
       const mapProvider = radarMapProviderForCenter(routeCenter, tomorrowIoApiKey);
       const stripUsesRainViewer = useEta || mapProvider === "rainviewer";
       if (stripUsesRainViewer && isRainViewerRateLimited()) {

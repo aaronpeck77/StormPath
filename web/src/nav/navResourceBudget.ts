@@ -148,7 +148,7 @@ export function buildNavResourceBudget(input: NavResourceBudgetInput): NavResour
           : input.stormBarExpanded ||
             input.navigationStarted ||
             routeInfoOpen ||
-            (input.hasPlannedRoute && !longTrip))));
+            input.hasPlannedRoute)));
 
   return {
     driveNavMode,
