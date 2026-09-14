@@ -127,6 +127,7 @@ import {
 import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
 import { shouldUseNativeFollowCam } from "../nav/nativeDriveFollowCam";
 import {
+  NATIVE_DRIVE_MAP_ENABLED,
   NATIVE_DRIVE_PUCK_OVERLAY_ENABLED,
 } from "../nav/nativeDriveMapShell";
 import { isNativeMapboxNavPlatform } from "../nav/useNativeNavSession";
@@ -555,6 +556,20 @@ function DriveMapInner({
   useEffect(() => {
     if (nativeMapShowing) hadNativeShellThisTripRef.current = true;
   }, [nativeMapShowing]);
+  /**
+   * First Go on native shell: freeze the web (customer) map camera until native
+   * punches through. Snapping web to street follow-cam during that wait fights
+   * the native reveal and looks like jumping between two maps.
+   */
+  const holdFirstNativeGoRef = useRef(false);
+  holdFirstNativeGoRef.current = Boolean(
+    NATIVE_DRIVE_MAP_ENABLED &&
+      isNativeMapboxNavPlatform() &&
+      navigationStarted &&
+      viewMode === "drive" &&
+      !punchNativeHole &&
+      !hadNativeShellThisTripRef.current
+  );
   const holdLastGoodMapRef = useRef(holdLastGoodMap);
   holdLastGoodMapRef.current = holdLastGoodMap;
   const isOnlineRef = useRef(isOnline);
@@ -1582,7 +1597,8 @@ function DriveMapInner({
           viewModeRef.current === "drive" &&
           navigationStartedRef.current &&
           userLngLatRef.current &&
-          !punchNativeHoleRef.current
+          !punchNativeHoleRef.current &&
+          !holdFirstNativeGoRef.current
         ) {
           const nativeCam = nativeFollowCameraRef.current;
           if (
@@ -1949,12 +1965,18 @@ function DriveMapInner({
   }, [nativeDriveMapActive, nativeMapShowing, nativeFollowCamera, nativeMapHoleReady]);
 
   /**
-   * Entering Dr from Mp/Rt: snap web follow-cam to the puck immediately.
-   * Do not wait for native shell / route ready — route lines can appear after.
+   * Entering Dr from Mp/Rt (after native already punched once this trip): snap web
+   * follow-cam. First Go holds the planning frame until native reveals — no mid-wait
+   * street zoom on the customer web map.
    */
   useEffect(() => {
     if (!mapReady || !navigationStarted || viewMode !== "drive") return;
     if (punchNativeHole) return;
+    if (holdFirstNativeGoRef.current) {
+      const map = mapRef.current;
+      if (map) stopMapCamera(map);
+      return;
+    }
     const map = mapRef.current;
     const u = userLngLatRef.current;
     if (!map || !u) return;
@@ -3576,7 +3598,7 @@ function DriveMapInner({
         (viewMode === "topdown" && !(idleHomeScreen && homePuckFollow === "explore")))
   );
 
-  /** On Go: clear "user exploring" so the drive camera is not stuck; nudge follow + size after nav chrome. */
+  /** On Go: clear explore latch. First native Go freezes the web camera (no street thrash). */
   const wasNavRef = useRef(false);
   useEffect(() => {
     const map = mapRef.current;
@@ -3584,39 +3606,53 @@ function DriveMapInner({
     if (navigationStarted && !wasNavRef.current) {
       userExploringRef.current = false;
       driveNavZoomRef.current = DRIVE_FOLLOW_ZOOM_DEFAULT;
-      driveCamResyncRef.current = true;
       if (exploreTimerRef.current) {
         clearTimeout(exploreTimerRef.current);
         exploreTimerRef.current = null;
       }
-      setMapResumeTick((n) => n + 1);
-      if (map) {
-        requestAnimationFrame(() => {
-          try {
-            map.resize();
-          } catch {
-            /* map disposed */
-          }
-        });
+      const holdNativeFirstGo = Boolean(
+        NATIVE_DRIVE_MAP_ENABLED &&
+          isNativeMapboxNavPlatform() &&
+          viewMode === "drive" &&
+          !hadNativeShellThisTripRef.current
+      );
+      if (holdNativeFirstGo) {
+        if (map) stopMapCamera(map);
+      } else {
+        driveCamResyncRef.current = true;
+        setMapResumeTick((n) => n + 1);
+        if (map) {
+          requestAnimationFrame(() => {
+            try {
+              map.resize();
+            } catch {
+              /* map disposed */
+            }
+          });
+        }
       }
     }
     wasNavRef.current = navigationStarted;
-  }, [mapReady, navigationStarted]);
+  }, [mapReady, navigationStarted, viewMode]);
 
   /**
-   * Rt / T / Dr: switching back to drive after top-down (or a layout shift) can leave the canvas
-   * sized to a stale box — the puck and follow camera sit wrong until a resize. Double-rAF + bump
-   * so {@link canCameraFollow} run re-runs after the real layout.
-   *
-   * One Drive snap after chrome settles. Extra timed hops were fighting the follow-cam.
+   * One Drive snap after chrome settles. Skip on first native Go while the web
+   * (customer) map is held frozen until native punches — otherwise web street
+   * follow-cam and native reveal fight and jump between two images.
    */
   useEffect(() => {
     if (viewMode !== "drive" || !navigationStarted || !mapReady) return;
+    if (holdFirstNativeGoRef.current) {
+      const map = mapRef.current;
+      if (map) stopMapCamera(map);
+      return;
+    }
     const map = mapRef.current;
     if (!map) return;
     driveCamResyncRef.current = true;
 
     const snapDriveCam = () => {
+      if (holdFirstNativeGoRef.current) return;
       if (!isMapReadyForFollowCam(map)) return;
       if (viewModeRef.current !== "drive" || !navigationStartedRef.current) return;
       userExploringRef.current = false;
@@ -3682,7 +3718,7 @@ function DriveMapInner({
       cancelAnimationFrame(raf0);
       window.clearTimeout(t1);
     };
-  }, [viewMode, navigationStarted, mapReady]);
+  }, [viewMode, navigationStarted, mapReady, punchNativeHole]);
 
   /** Foreground / style reload / sheet close — hard-snap follow-cam (clear bearing smoother). */
   useEffect(() => {

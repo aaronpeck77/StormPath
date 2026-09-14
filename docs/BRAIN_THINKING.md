@@ -75,3 +75,7 @@ Bill: Eau Claire ~6–7h, 100% thunderstorms at arrival on weather apps, StormPa
 ### 2026-09-14 — Graph scale + Go camera
 
 Bill: rain/wind responding but want more curve movement; Go zooms a random spot then puck. Tighten precip/wind/radar chart scales. Drop first-Go overview hold — snap Dr to current location immediately.
+
+### 2026-09-14 — Go still needs web until native punches
+
+Bill: after dropping the hold, Go jumped between images then sat on the old customer web map before native. That web layer is intentional — hole punches only after native is framed. Fix is freeze web on the planning frame (no street follow-cam) until punch, one cut — not delete the web map.
