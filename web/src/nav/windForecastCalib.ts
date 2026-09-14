@@ -16,24 +16,23 @@ export const WIND_GUST_SPIKE_MIN_EXCESS_MPH = 14;
 export const WIND_GRAPH_MIN_MPH = 18;
 
 /** Minimum sustained wind to plot on the route graph (below hazard caution). */
-export const WIND_GRAPH_PLOT_MIN_MPH = 6;
+export const WIND_GRAPH_PLOT_MIN_MPH = 4;
 
-/** Soft floor for the wind chart Y-axis — not a hard 30 mph that flattens breezes. */
-export const WIND_GRAPH_SCALE_FLOOR_MPH = 15;
+/** Soft floor for the wind chart Y-axis — low enough that 8–18 mph corridors still curve. */
+export const WIND_GRAPH_SCALE_FLOOR_MPH = 12;
 
 export type RouteWindGraphPoint = { t: number; mph: number };
 
 /**
  * Y-axis ceiling for {@link RouteRadarWindStrip}.
- * Fits the data with ~20% headroom so everyday 8–18 mph corridors read as curves,
- * not a near-baseline flat line under a forced 30 mph scale.
+ * Fits the data with modest headroom so everyday breezes read as curves.
  */
 export function routeWindGraphScaleMph(mphValues: number[]): number {
   if (!mphValues.length) return WIND_GRAPH_SCALE_FLOOR_MPH;
   const dataMax = Math.max(...mphValues.filter((v) => Number.isFinite(v) && v > 0), 0);
   if (dataMax <= 0) return WIND_GRAPH_SCALE_FLOOR_MPH;
   const step = dataMax >= 40 ? 10 : 5;
-  const withHeadroom = dataMax * 1.2;
+  const withHeadroom = dataMax * 1.1;
   return Math.max(WIND_GRAPH_SCALE_FLOOR_MPH, Math.ceil(withHeadroom / step) * step);
 }
 

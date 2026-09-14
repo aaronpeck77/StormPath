@@ -178,16 +178,17 @@ final class DriveNativeMap {
                 guard let self else { return }
                 self.styleReady = true
                 self.applyStormPathPuck(on: map)
-                /* Pitch before first progress tick so the hole never flashes flat 2D. */
-                var boot = CameraOptions()
-                boot.pitch = 64
-                map.mapView.mapboxMap.setCamera(to: boot)
                 if let routes = self.lastRoutes {
                     self.mapView?.show(routes, routeAnnotationKinds: [])
                 }
+                /* Prefer last follow sample so first paint is the puck, not Mapbox default. */
                 if let sample = self.lastFollowSample {
                     self.writeFollowCamera(sample)
                     self.revealIfFramed()
+                } else {
+                    var boot = CameraOptions()
+                    boot.pitch = 64
+                    map.mapView.mapboxMap.setCamera(to: boot)
                 }
                 self.addStormPathBuildings()
             }

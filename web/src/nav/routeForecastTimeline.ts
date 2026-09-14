@@ -1246,7 +1246,12 @@ export type RouteOutlookChartScale = {
 
 export function outlookChartScale(points: RouteOutlookPoint[]): RouteOutlookChartScale {
   const temps = points.map((p) => p.tempF).filter((t): t is number => t != null && Number.isFinite(t));
-  const precipMax = Math.max(20, ...points.map((p) => p.precipPct), 0);
+  const dataPrecip = Math.max(0, ...points.map((p) => p.precipPct), 0);
+  /* Tight Y-axis so 10–40% corridor rain reads as a curve, not a flat baseline under a 20–100 floor. */
+  const precipMax =
+    dataPrecip <= 0
+      ? 10
+      : Math.min(100, Math.max(10, Math.ceil((dataPrecip * 1.12) / 5) * 5));
   const windGusts = points.map((p) => p.windGustMph).filter((g): g is number => g != null && g > 0);
   const windMax = windGusts.length ? routeWindGraphScaleMph(windGusts) : 0;
   if (!temps.length) {
@@ -1258,7 +1263,7 @@ export function outlookChartScale(points: RouteOutlookPoint[]): RouteOutlookChar
   return {
     tempMin: lo - pad,
     tempMax: hi + pad,
-    precipMax: Math.min(100, Math.ceil(precipMax / 10) * 10),
+    precipMax,
     windMax,
   };
 }

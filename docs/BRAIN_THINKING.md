@@ -71,3 +71,7 @@ Ultra-long pre-Go Route Info blanked outlook graphs; Dr browse with Rad off skip
 ### 2026-09-14 — Corridor hours must use Mapbox plan ETA
 
 Bill: Eau Claire ~6–7h, 100% thunderstorms at arrival on weather apps, StormPath graphs/alerts clear. Root: waypoints stamped ETAs from parked speed fallback (~34 mph) so we sampled the wrong forecast hour along the corridor; graph then keyed those hours against Mapbox’s real duration. Fix: stamp waypoint ETAs from `baseEtaMinutes`, invalidate mis-timed cache, denser WeatherKit corridor points.
+
+### 2026-09-14 — Graph scale + Go camera
+
+Bill: rain/wind responding but want more curve movement; Go zooms a random spot then puck. Tighten precip/wind/radar chart scales. Drop first-Go overview hold — snap Dr to current location immediately.

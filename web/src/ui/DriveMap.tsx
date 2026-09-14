@@ -556,16 +556,6 @@ function DriveMapInner({
   useEffect(() => {
     if (nativeMapShowing) hadNativeShellThisTripRef.current = true;
   }, [nativeMapShowing]);
-  /** First Go on native shell: hold planning camera until the hole punches. */
-  const holdFirstNativeGoRef = useRef(false);
-  holdFirstNativeGoRef.current = Boolean(
-    NATIVE_DRIVE_MAP_ENABLED &&
-      isNativeMapboxNavPlatform() &&
-      navigationStarted &&
-      viewMode === "drive" &&
-      !punchNativeHole &&
-      !hadNativeShellThisTripRef.current
-  );
   const holdLastGoodMapRef = useRef(holdLastGoodMap);
   holdLastGoodMapRef.current = holdLastGoodMap;
   const isOnlineRef = useRef(isOnline);
@@ -1593,8 +1583,7 @@ function DriveMapInner({
           viewModeRef.current === "drive" &&
           navigationStartedRef.current &&
           userLngLatRef.current &&
-          !punchNativeHoleRef.current &&
-          !holdFirstNativeGoRef.current
+          !punchNativeHoleRef.current
         ) {
           const nativeCam = nativeFollowCameraRef.current;
           if (
@@ -1961,14 +1950,12 @@ function DriveMapInner({
   }, [nativeDriveMapActive, nativeMapShowing, nativeFollowCamera, nativeMapHoleReady]);
 
   /**
-   * Entering Dr from Mp/Rt: snap web follow-cam so chrome and map match before native punches.
-   * First Go with native shell pending: hold the planning frame (no mid-Go jump).
+   * Entering Dr from Mp/Rt: snap web follow-cam to the puck immediately.
+   * Do not wait for native shell / route ready — route lines can appear after.
    */
   useEffect(() => {
     if (!mapReady || !navigationStarted || viewMode !== "drive") return;
     if (punchNativeHole) return;
-    /* First Go: keep the overview until native is ready. */
-    if (holdFirstNativeGoRef.current) return;
     const map = mapRef.current;
     const u = userLngLatRef.current;
     if (!map || !u) return;

@@ -40,6 +40,16 @@ function yPx(norm: number): number {
   return PAD_V + INNER_H * (1 - Math.max(0, Math.min(1, norm)));
 }
 
+/**
+ * Stretch light corridor echo so Route Info radar strata move more.
+ * Hazards still use absolute {@link radarDisplayIntensity} thresholds for band fills.
+ */
+export function radarGraphNorm(display: number, routeMaxDisplay: number): number {
+  if (!(display > 0)) return 0;
+  const ceiling = Math.max(routeMaxDisplay * 1.08, RADAR_SOFT_THRESHOLD * 0.85, 0.12);
+  return Math.min(1, display / ceiling);
+}
+
 function areaPath(pts: { t: number; norm: number }[]): string {
   if (pts.length < 2) return "";
   const line = pts
@@ -71,13 +81,18 @@ export function RouteRadarWindStrip({
   gustSpikePoints = [],
 }: Props) {
   const radarPts = useMemo(() => {
-    const sorted = [...radarSamples]
+    const displays = radarSamples.map((s) => ({
+      t: s.t,
+      display: radarDisplayIntensity(s.intensity),
+    }));
+    const routeMax = Math.max(0, ...displays.map((d) => d.display));
+    const sorted = [...displays]
       .sort((a, b) => a.t - b.t)
-      .map((s) => ({ t: s.t, norm: radarDisplayIntensity(s.intensity) }));
+      .map((s) => ({ t: s.t, norm: radarGraphNorm(s.display, routeMax), display: s.display }));
     if (sorted.length > 0) {
-      if (sorted[0]!.t > 0.01) sorted.unshift({ t: 0, norm: sorted[0]!.norm });
+      if (sorted[0]!.t > 0.01) sorted.unshift({ ...sorted[0]!, t: 0 });
       if (sorted[sorted.length - 1]!.t < 0.99) {
-        sorted.push({ t: 1, norm: sorted[sorted.length - 1]!.norm });
+        sorted.push({ ...sorted[sorted.length - 1]!, t: 1 });
       }
     }
     return sorted;
@@ -107,7 +122,7 @@ export function RouteRadarWindStrip({
     [sortedWindLine, windMax]
   );
 
-  const hasRadarEcho = radarPts.some((p) => p.norm >= RADAR_SOFT_THRESHOLD);
+  const hasRadarEcho = radarPts.some((p) => p.display >= RADAR_SOFT_THRESHOLD);
   const hasRadarTrace =
     radarPts.length >= 2 && radarPts.some((p) => p.norm >= 0.04);
   const hasWind = windPts.length >= 2;
@@ -152,7 +167,7 @@ export function RouteRadarWindStrip({
                 ).map(([thr, fill]) => {
                   const pts = radarPts.map((p) => ({
                     t: p.t,
-                    norm: Math.max(0, p.norm - thr) / (1 - thr),
+                    norm: Math.max(0, p.display - thr) / (1 - thr),
                   }));
                   if (!pts.some((p) => p.norm > 0)) return null;
                   return <path key={`r${thr}`} d={areaPath(pts)} fill={fill} />;
