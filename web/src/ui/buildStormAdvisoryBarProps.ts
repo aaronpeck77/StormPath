@@ -14,6 +14,7 @@ import type {
   StormRoadDetailRow,
   StormStripBand,
 } from "./StormAdvisoryBar";
+import type { CorridorTimingExplainLine } from "../nav/corridorTimingExplain";
 
 /**
  * StormAdvisoryBar prop assembly — Phase 3b.
@@ -57,6 +58,7 @@ export type BuildStormAdvisoryBarPropsInput = {
   driveModeUi: boolean;
   driveRouteAheadLine: DriveAheadLine | null;
   nextHazardAtEtaLine: string | null;
+  corridorTimingLines?: CorridorTimingExplainLine[];
   advisoryPlusDetailOn: boolean;
   advisoryPromoLines: AdvisoryPromoLine[];
   isOnline: boolean;
@@ -114,6 +116,7 @@ export function buildStormAdvisoryBarProps(
     driveModeUi,
     driveRouteAheadLine,
     nextHazardAtEtaLine,
+    corridorTimingLines = [],
     advisoryPlusDetailOn,
     advisoryPromoLines,
     isOnline,
@@ -168,6 +171,7 @@ export function buildStormAdvisoryBarProps(
     onRefreshWeather,
     driveRouteAheadLine: driveModeUi ? driveRouteAheadLine : null,
     nextHazardAtEtaLine: isPlus ? nextHazardAtEtaLine : null,
+    corridorTimingLines: isPlus ? corridorTimingLines : [],
     advisoryTier: advisoryPlusDetailOn ? "plus" : "basic",
     ownsPlus: isPlus,
     promoLines: advisoryPromoLines,

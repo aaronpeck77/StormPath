@@ -15,6 +15,7 @@ import { nwsAlertIsBasicEmergency } from "../weatherAlerts/basicEmergencyFilter"
 import { nwsAlertIsStripProminent } from "../weatherAlerts/geometryOverlap";
 import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
 import type { DriveAheadLine, DriveAheadRadarTier } from "../nav/driveRouteAhead";
+import type { CorridorTimingExplainLine } from "../nav/corridorTimingExplain";
 import {
   formatDriveAheadBrief,
   formatMinutesAsHoursMinutes,
@@ -103,6 +104,7 @@ function defaultPreviewTone(badge: string | null, raw: string): AdvisoryPreviewT
   if (b === "traffic") return "warn";
   if (b === "local" || b === "now") return conditionsLinePreviewTone(raw);
   if (b === "load" || b === "plan" || b === "work") return "info";
+  if (b === "timing" || b === "wx") return "info";
   if (b === "app" || b === "drive" || b === "nav" || b === "info") return "info";
   if (/no hazard|no urgent|no life-safety/.test(r)) return "clear";
   return "info";
@@ -203,6 +205,8 @@ export type StormAdvisoryBarProps = SharedProps & {
   driveRouteAheadLine?: DriveAheadLine | null;
   /** Nearest hazard likely to matter at your ETA along the route. */
   nextHazardAtEtaLine?: string | null;
+  /** Now-map vs ETA corridor timing explain lines (collapsed ticker only). */
+  corridorTimingLines?: CorridorTimingExplainLine[];
   /** Plus: full NWS + road tools. Basic: life-safety NWS, connectivity, and promo rotation. */
   advisoryTier?: "plus" | "basic";
   /** Subscription/entitlement state for copy (distinct from current advisoryTier rendering mode). */
@@ -315,6 +319,7 @@ export function StormAdvisoryBar({
   onRefreshWeather = null,
   driveRouteAheadLine = null,
   nextHazardAtEtaLine = null,
+  corridorTimingLines = [],
   advisoryTier = "plus",
   ownsPlus = false,
   promoLines = [],
@@ -760,6 +765,17 @@ export function StormAdvisoryBar({
         })
       );
     }
+    for (const timingLine of corridorTimingLines) {
+      const raw = timingLine.text?.trim();
+      if (!raw) continue;
+      trip.push(
+        previewItem({
+          badge: timingLine.badge,
+          raw: bannerMsg(raw),
+          tone: timingLine.tone,
+        })
+      );
+    }
     if (nextHazardAtEtaLine?.trim()) {
       trip.push(
         previewItem({
@@ -795,6 +811,7 @@ export function StormAdvisoryBar({
     const hasRouteContext =
       Boolean(activeTicker) ||
       Boolean(nextHazardAtEtaLine?.trim()) ||
+      corridorTimingLines.some((l) => l.text?.trim()) ||
       trafficDelayMinutes >= 8 ||
       Boolean(showDriveAheadPreview);
     if (hasGuidanceRoute && !hasRouteContext) {
@@ -852,6 +869,7 @@ export function StormAdvisoryBar({
     trafficDelayMinutes,
     driveRouteAheadLine,
     nextHazardAtEtaLine,
+    corridorTimingLines,
     promoLines,
     defaultPreviewText,
     nowcastLine,

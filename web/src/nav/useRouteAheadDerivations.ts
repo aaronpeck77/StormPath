@@ -22,7 +22,14 @@ import {
   type TimelineItem,
 } from "./routeAheadSync";
 import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
-import type { StormRouteOutlookBand } from "./routeForecastTimeline";
+import {
+  buildRouteOutlookFromTomorrowForecast,
+  type StormRouteOutlookBand,
+} from "./routeForecastTimeline";
+import {
+  buildCorridorTimingExplainLines,
+  type CorridorTimingExplainLine,
+} from "./corridorTimingExplain";
 import { computeTrafficBypassOffer, type TrafficBypassOffer } from "./trafficBypassOffer";
 import {
   TRAFFIC_BYPASS_ENABLED,
@@ -129,6 +136,8 @@ export type UseRouteAheadDerivationsResult = {
   showTrafficBypassCta: boolean;
   /** Nearest hazard likely to matter at your ETA — advisory preview line. */
   nextHazardAtEtaLine: string | null;
+  /** Now-map vs ETA corridor contradiction lines for advisory ticker. */
+  corridorTimingLines: CorridorTimingExplainLine[];
   /** Experimental radar-intersect along route (null when feature off). */
   stormCorridorIntersect: StormCorridorIntersectResult | null;
   driveMapRoutes: NavRoute[];
@@ -461,6 +470,44 @@ export function useRouteAheadDerivations(
     [stormCorridorIntersect, routeImpactsForUi]
   );
 
+  const corridorTimingLines = useMemo(() => {
+    const hasActiveRoute = Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
+    if (!hasActiveRoute || guidanceRouteLengthM <= 0) return [];
+    const userAlongT = Math.max(
+      0,
+      Math.min(1, (navigationStarted ? heavyAdvisoryAlongM : 0) / guidanceRouteLengthM)
+    );
+    const planEta = guidanceRoute?.baseEtaMinutes ?? null;
+    const remainingEtaMinutes =
+      driveEtaMinutes != null && Number.isFinite(driveEtaMinutes)
+        ? driveEtaMinutes
+        : planEta != null && Number.isFinite(planEta)
+          ? planEta * Math.max(0, 1 - userAlongT)
+          : null;
+    const outlookSteps =
+      tioRouteForecast && planEta != null && planEta > 0
+        ? buildRouteOutlookFromTomorrowForecast(tioRouteForecast, planEta)
+        : [];
+    return buildCorridorTimingExplainLines({
+      hasActiveRoute,
+      userAlongT,
+      remainingEtaMinutes,
+      radarSamples: radarMosaicSamples,
+      outlookSteps,
+      routeImpacts: routeImpactsForUi,
+    });
+  }, [
+    guidanceRoute?.geometry,
+    guidanceRoute?.baseEtaMinutes,
+    guidanceRouteLengthM,
+    navigationStarted,
+    heavyAdvisoryAlongM,
+    driveEtaMinutes,
+    tioRouteForecast,
+    radarMosaicSamples,
+    routeImpactsForUi,
+  ]);
+
   /** Advisory timeline storm bands — same spans as progress strip / map route highlights. */
   const advisoryStormStripBands = useMemo(
     () =>
@@ -661,6 +708,7 @@ export function useRouteAheadDerivations(
     trafficBypassContext,
     showTrafficBypassCta,
     nextHazardAtEtaLine,
+    corridorTimingLines,
     stormCorridorIntersect,
     driveMapRoutes,
     progressRailRoute,
