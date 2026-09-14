@@ -127,7 +127,6 @@ import {
 import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
 import { shouldUseNativeFollowCam } from "../nav/nativeDriveFollowCam";
 import {
-  NATIVE_DRIVE_MAP_ENABLED,
   NATIVE_DRIVE_PUCK_OVERLAY_ENABLED,
 } from "../nav/nativeDriveMapShell";
 import { isNativeMapboxNavPlatform } from "../nav/useNativeNavSession";
