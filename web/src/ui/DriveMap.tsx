@@ -1869,8 +1869,9 @@ function DriveMapInner({
     const el = marker.getElement();
     const isDriveView = navigationStarted && viewMode === "drive";
     el.classList.toggle("map-user-puck--driving", navigationStarted);
-    /* Native shell hides the web GL canvas only — keep the DOM puck so Drive always has a dot. */
-    el.classList.toggle("map-user-puck--native-hidden", false);
+    /* Native 3D puck owns Drive; hide the flat web dot while the shell is punched. */
+    const hideWebPuck = Boolean(punchNativeHole && navigationStarted && viewMode === "drive");
+    el.classList.toggle("map-user-puck--native-hidden", hideWebPuck);
     try {
       marker.setOffset(isDriveView ? DRIVE_PUCK_MARKER_OFFSET_PX : [0, 0]);
       marker.setPitchAlignment(navigationStarted ? "viewport" : "map");

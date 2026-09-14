@@ -64,4 +64,16 @@ describe("resolveStayOnBannerCopy", () => {
     expect(copy.stayOnMode).toBe(false);
     expect(copy.distLine).toBe("12 mi ahead");
   });
+
+  it("survives a missing instruction (Stop mid-render)", () => {
+    const copy = resolveStayOnBannerCopy({
+      remainM: 500,
+      turnInstruction: undefined as unknown as string,
+      roadLabel: null,
+      alongLabel: "",
+      distFallback: "",
+    });
+    expect(copy.stayOnMode).toBe(false);
+    expect(copy.headline).toBe("Continue");
+  });
 });

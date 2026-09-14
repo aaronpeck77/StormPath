@@ -2707,13 +2707,13 @@ export default function App() {
                 progressCalloutUserAlongT={progressCalloutUserAlongT}
                 stripTint={activeProgressCalloutPanel.stripTint}
                 progressCalloutDetailScrollRef={progressCalloutDetailScrollRef}
-                progressRailRouteGeometry={progressRailRoute!.geometry}
+                progressRailRouteGeometry={progressRailRoute?.geometry ?? []}
                 effectiveUserLngLat={effectiveUserLngLat}
                 userAlongGuidanceM={userAlongGuidanceM}
                 progressStripAlerts={progressStripAlerts}
                 radarIntensity={guidanceSlice?.radarIntensity ?? 0}
                 progressStripRouteColor={progressStripRouteColor}
-                progressRailRouteTurnSteps={progressRailRoute!.turnSteps}
+                progressRailRouteTurnSteps={progressRailRoute?.turnSteps ?? []}
                 turnSteps={turnSteps}
                 routeAheadProgressBands={routeAheadProgressBands}
                 driveModeUi={driveModeUi}

@@ -12,15 +12,16 @@ import type { RouteTurnStep } from "../nav/types";
  * Mapbox often writes "Interstate 55" or "I 55" — normalize to I-## for the shield row.
  */
 function instructionWithRoadShields(text: string): ReactNode {
+  const safe = typeof text === "string" ? text : "";
   const re =
     /\b(?:I-(\d{1,3})|I\s+(\d{1,3})|Interstate\s+(\d{1,3})|US-(\d{1,3})|US\s+(\d{1,3})|SR-(\d{1,3})|SR\s+(\d{1,3}))\b/gi;
   const parts: ReactNode[] = [];
   let last = 0;
   let m: RegExpExecArray | null;
   let key = 0;
-  while ((m = re.exec(text)) !== null) {
+  while ((m = re.exec(safe)) !== null) {
     if (m.index > last) {
-      parts.push(text.slice(last, m.index));
+      parts.push(safe.slice(last, m.index));
     }
     const i = m[1] ?? m[2] ?? m[3];
     const us = m[4] ?? m[5];
@@ -44,10 +45,10 @@ function instructionWithRoadShields(text: string): ReactNode {
     );
     last = m.index + m[0].length;
   }
-  if (last < text.length) {
-    parts.push(text.slice(last));
+  if (last < safe.length) {
+    parts.push(safe.slice(last));
   }
-  return parts.length ? <>{parts}</> : text;
+  return parts.length ? <>{parts}</> : safe;
 }
 
 function formatStepDistanceM(m?: number): string {
@@ -116,7 +117,10 @@ export function TurnBanner({
 }: Props) {
   if (!visible) return null;
 
-  const override = instructionOverride?.replace(/\s+/g, " ").trim() || null;
+  const override =
+    typeof instructionOverride === "string"
+      ? instructionOverride.replace(/\s+/g, " ").trim() || null
+      : null;
 
   if (steps.length === 0) {
     if (override) {
@@ -170,14 +174,32 @@ export function TurnBanner({
   }
 
   const idx = Math.max(0, Math.min(activeIndex, steps.length - 1));
-  const cur = steps[idx]!;
+  const cur = steps[idx];
+  if (!cur) {
+    return (
+      <div className="turn-banner turn-banner--split" role="status">
+        <div className="turn-banner-col turn-banner-col--primary">
+          <span className="turn-banner-icon" aria-hidden>
+            ○
+          </span>
+          <div className="turn-banner-text">
+            <span className="turn-banner-street">Continue on route</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
   const next = steps[idx + 1];
   const travelIdx =
     travelingStepIndex != null && Number.isFinite(travelingStepIndex)
       ? Math.max(0, Math.min(Math.floor(travelingStepIndex), steps.length - 1))
       : Math.max(0, idx - 1);
   const travelingStep = steps[travelIdx] ?? null;
-  const primaryInstr = override ?? cur.instruction;
+  const primaryInstr =
+    override ??
+    (typeof cur.instruction === "string" && cur.instruction.trim()
+      ? cur.instruction.replace(/\s+/g, " ").trim()
+      : "Continue");
   const remainM = metersToManeuverEnd ?? 0;
   const alongLabel = formatAlongMeters(remainM);
   const distLabel =
@@ -200,7 +222,11 @@ export function TurnBanner({
   // Changing keys on maneuver blocks gives a simple “slides over” feel when the next step becomes current.
   const primaryKey = `primary-${idx}-${copy.headline}-${copy.stayOnMode ? "stay" : "turn"}`;
   const thenStep = copy.stayOnMode ? cur : next;
-  const thenInstr = copy.stayOnMode ? primaryInstr : next?.instruction ?? "";
+  const thenInstr = copy.stayOnMode
+    ? primaryInstr
+    : typeof next?.instruction === "string"
+      ? next.instruction
+      : "";
   const nextKey = `next-${idx}-${copy.stayOnMode ? "turn" : "after"}-${thenInstr}`;
 
   const primaryIcon = resolvePrimaryManeuverIcon({
@@ -242,7 +268,15 @@ export function TurnBanner({
               <div className="turn-banner-next-text">
                 <p className="turn-banner-next-instr">
                   {instructionWithRoadShields(
-                    (copy.stayOnMode ? primaryInstr : thenStep.instruction).replace(/\s+/g, " ").trim()
+                    (
+                      copy.stayOnMode
+                        ? primaryInstr
+                        : typeof thenStep.instruction === "string"
+                          ? thenStep.instruction
+                          : ""
+                    )
+                      .replace(/\s+/g, " ")
+                      .trim() || "Continue"
                   )}
                 </p>
                 <div className="turn-banner-next-meta-row">

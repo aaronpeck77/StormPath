@@ -52,10 +52,24 @@ class ErrorBoundary extends Component<
           <h1 style={{ fontSize: "1.4rem", margin: "0 0 12px" }}>
             Something went wrong
           </h1>
-          <p style={{ fontSize: "0.9rem", color: "#94a3b8", margin: "0 0 20px", maxWidth: "320px" }}>
+          <p style={{ fontSize: "0.9rem", color: "#94a3b8", margin: "0 0 12px", maxWidth: "320px" }}>
             StormPath hit an unexpected error. Tap below to reload. If this keeps happening, use About →
             Support diagnostics to send feedback.
           </p>
+          {this.state.error.message ? (
+            <p
+              style={{
+                fontSize: "0.75rem",
+                color: "#64748b",
+                margin: "0 0 20px",
+                maxWidth: "340px",
+                wordBreak: "break-word",
+                fontFamily: "ui-monospace, monospace",
+              }}
+            >
+              {this.state.error.message}
+            </p>
+          ) : null}
           <button
             onClick={() => window.location.reload()}
             style={{

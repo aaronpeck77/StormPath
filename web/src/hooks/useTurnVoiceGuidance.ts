@@ -45,7 +45,8 @@ export function useTurnVoiceGuidance(p: Params): void {
       return;
     }
 
-    const text = p.instruction.replace(/\s+/g, " ").trim();
+    const text =
+      typeof p.instruction === "string" ? p.instruction.replace(/\s+/g, " ").trim() : "";
     if (!text) return;
 
     if (typeof window === "undefined" || !window.speechSynthesis) return;

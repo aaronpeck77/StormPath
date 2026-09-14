@@ -2,6 +2,8 @@
  * End native Core (if any) before wiping the web trip.
  * Stopping both at once is what crashed the IPA on Stop.
  */
+import { captureAppException } from "../monitoring/sentry";
+
 export async function stopGuidanceThenClearTrip(
   stopNativeGuidance: (() => Promise<void>) | undefined,
   clearTrip: () => void
@@ -9,9 +11,13 @@ export async function stopGuidanceThenClearTrip(
   if (stopNativeGuidance) {
     try {
       await stopNativeGuidance();
-    } catch {
-      /* web / plugin missing */
+    } catch (err) {
+      captureAppException(err, { source: "stop_native_guidance" });
     }
   }
-  clearTrip();
+  try {
+    clearTrip();
+  } catch (err) {
+    captureAppException(err, { source: "clear_trip_after_stop" });
+  }
 }

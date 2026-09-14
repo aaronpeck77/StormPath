@@ -8,7 +8,7 @@ export const NATIVE_DRIVE_MAP_ENABLED = true;
 export const NATIVE_DRIVE_FOLLOW_CAM_ENABLED = true;
 /**
  * Extra UIKit chevron above the WebView. Off — it covers About / weather.
- * NavigationMapView already draws the StormPath blue puck.
+ * NavigationMapView draws Mapbox's 3D navigation puck after Go.
  */
 export const NATIVE_DRIVE_PUCK_OVERLAY_ENABLED = false;
 

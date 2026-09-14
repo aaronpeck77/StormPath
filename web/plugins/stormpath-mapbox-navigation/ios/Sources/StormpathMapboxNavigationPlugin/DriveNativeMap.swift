@@ -196,8 +196,10 @@ final class DriveNativeMap {
 
     @MainActor
     private func applyStormPathPuck(on map: NavigationMapView) {
-        map.puckType = .puck2D(Self.stormpathPuck2D())
+        /* Built-in Nav SDK 3D chevron (not the flat blue 2D disc). Re-apply after style load. */
+        map.puckType = .puck3D(.navigationDefault)
         map.puckBearing = .course
+        map.mapView.location.options.puckBearingEnabled = true
     }
 
     @MainActor
@@ -227,35 +229,6 @@ final class DriveNativeMap {
             try style.addLayer(buildings)
         } catch {
             /* Style may already extrude buildings; pitch is what makes them read 3D. */
-        }
-    }
-
-    /// Visible StormPath blue dot — prefer makeDefault base so Maps keeps a location layer.
-    private static func stormpathPuck2D() -> Puck2DConfiguration {
-        var config = Puck2DConfiguration.makeDefault(showBearing: false)
-        config.topImage = stormpathPuckDotImage()
-        config.bearingImage = nil
-        config.shadowImage = nil
-        config.scale = .constant(1.0)
-        config.showsAccuracyRing = false
-        config.opacity = 1
-        return config
-    }
-
-    /// Simple opaque disc (web puck colors). Avoids fancy draws that can vanish at night.
-    private static func stormpathPuckDotImage() -> UIImage {
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = UIScreen.main.scale
-        format.opaque = false
-        let size: CGFloat = 28
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size), format: format)
-        return renderer.image { _ in
-            let ring = UIBezierPath(ovalIn: CGRect(x: 1, y: 1, width: size - 2, height: size - 2))
-            UIColor.white.setFill()
-            ring.fill()
-            let inner = UIBezierPath(ovalIn: CGRect(x: 5, y: 5, width: size - 10, height: size - 10))
-            UIColor(red: 26 / 255, green: 115 / 255, blue: 232 / 255, alpha: 1).setFill()
-            inner.fill()
         }
     }
 

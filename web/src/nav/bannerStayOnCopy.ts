@@ -28,6 +28,7 @@ export function formatStayOnRoadLabel(input: {
  * names are missing (DIY / web path).
  */
 export function roadLabelFromContinueInstruction(instruction: string): string | null {
+  if (typeof instruction !== "string") return null;
   const s = instruction.replace(/\s+/g, " ").trim();
   if (!s) return null;
   const m =
@@ -56,7 +57,10 @@ export function resolveStayOnBannerCopy(input: {
   alongLabel: string;
   distFallback: string;
 }): StayOnBannerCopy {
-  const turn = input.turnInstruction.replace(/\s+/g, " ").trim() || "Continue";
+  const turn =
+    typeof input.turnInstruction === "string" && input.turnInstruction.trim()
+      ? input.turnInstruction.replace(/\s+/g, " ").trim()
+      : "Continue";
   const far =
     Number.isFinite(input.remainM) &&
     input.remainM >= STAY_ON_BANNER_MIN_M &&
