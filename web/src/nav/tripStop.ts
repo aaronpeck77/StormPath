@@ -6,8 +6,17 @@ import { captureAppException } from "../monitoring/sentry";
 
 export async function stopGuidanceThenClearTrip(
   stopNativeGuidance: (() => Promise<void>) | undefined,
-  clearTrip: () => void
+  clearTrip: () => void,
+  /** Drop turn banner / Drive chrome before async Core teardown (avoids mid-render throws). */
+  endNavChrome?: () => void
 ): Promise<void> {
+  if (endNavChrome) {
+    try {
+      endNavChrome();
+    } catch (err) {
+      captureAppException(err, { source: "end_nav_chrome_on_stop" });
+    }
+  }
   if (stopNativeGuidance) {
     try {
       await stopNativeGuidance();

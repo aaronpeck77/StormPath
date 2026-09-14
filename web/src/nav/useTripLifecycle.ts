@@ -438,8 +438,10 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
   ]);
 
   const handleStopAndClear = useCallback(() => {
-    void stopGuidanceThenClearTrip(stopNativeGuidance, clearRoute);
-  }, [clearRoute, stopNativeGuidance]);
+    void stopGuidanceThenClearTrip(stopNativeGuidance, clearRoute, () => {
+      setNavigationStarted(false);
+    });
+  }, [clearRoute, setNavigationStarted, stopNativeGuidance]);
 
   return { clearRoute, proceedGo, handleGo, handleStopAndClear };
 }

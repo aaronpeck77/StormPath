@@ -8,19 +8,43 @@ import "./index.css";
 import { captureAppException, initCrashReporting, installGlobalErrorHandlers } from "./monitoring/sentry";
 import { startMapboxUsageMeter } from "./monitoring/mapboxUsageMeter";
 import { hydrateSafeStorage } from "./storage/safeStorage";
+import { clearActiveTripCache } from "./tripCache";
 
 initCrashReporting();
 installGlobalErrorHandlers();
 void stormpathFlavorGuardString();
 
+const EB_RELOAD_AT_KEY = "sp_error_boundary_reload_at";
+const EB_RELOAD_LOOP_MS = 4_000;
+
+/** Wipe trip cache and reload home. Returns false if a reload just failed (loop guard). */
+function tryScheduleHomeReload(): boolean {
+  try {
+    const prev = Number(sessionStorage.getItem(EB_RELOAD_AT_KEY) || "0");
+    const now = Date.now();
+    if (Number.isFinite(prev) && prev > 0 && now - prev < EB_RELOAD_LOOP_MS) {
+      return false;
+    }
+    sessionStorage.setItem(EB_RELOAD_AT_KEY, String(now));
+  } catch {
+    /* private mode / storage blocked — still try reload once */
+  }
+  void clearActiveTripCache()
+    .catch(() => undefined)
+    .finally(() => {
+      window.location.reload();
+    });
+  return true;
+}
+
 class ErrorBoundary extends Component<
   { children: ReactNode },
-  { error: Error | null }
+  { error: Error | null; reloading: boolean }
 > {
-  state: { error: Error | null } = { error: null };
+  state: { error: Error | null; reloading: boolean } = { error: null, reloading: false };
 
   static getDerivedStateFromError(error: Error) {
-    return { error };
+    return { error, reloading: true };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
@@ -29,10 +53,27 @@ class ErrorBoundary extends Component<
       componentStack: info.componentStack,
       source: "react_error_boundary",
     });
+    if (!tryScheduleHomeReload()) {
+      this.setState({ reloading: false });
+    }
   }
 
   render() {
     if (this.state.error) {
+      /* Stop / mid-trip throws: blank flash → clear trip cache → home. No Reload tap. */
+      if (this.state.reloading) {
+        return (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "#0a0b0d",
+            }}
+            aria-hidden
+          />
+        );
+      }
+
       return (
         <div
           style={{
@@ -112,4 +153,13 @@ hydrateSafeStorage().finally(() => {
       </ErrorBoundary>
     </StrictMode>
   );
+
+  /* After a healthy boot, allow a future Stop throw to auto-reload again. */
+  window.setTimeout(() => {
+    try {
+      sessionStorage.removeItem(EB_RELOAD_AT_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, EB_RELOAD_LOOP_MS + 1_000);
 });

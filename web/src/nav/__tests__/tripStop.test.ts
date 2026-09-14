@@ -2,16 +2,19 @@ import { describe, expect, it, vi } from "vitest";
 import { stopGuidanceThenClearTrip } from "../tripStop";
 
 describe("stopGuidanceThenClearTrip", () => {
-  it("clears the trip after native guidance has stopped", async () => {
+  it("ends chrome, then native, then clears the trip", async () => {
     const order: string[] = [];
+    const endChrome = vi.fn(() => {
+      order.push("chrome");
+    });
     const stop = vi.fn(async () => {
       order.push("stop");
     });
     const clear = vi.fn(() => {
       order.push("clear");
     });
-    await stopGuidanceThenClearTrip(stop, clear);
-    expect(order).toEqual(["stop", "clear"]);
+    await stopGuidanceThenClearTrip(stop, clear, endChrome);
+    expect(order).toEqual(["chrome", "stop", "clear"]);
   });
 
   it("still clears if native stop throws", async () => {
