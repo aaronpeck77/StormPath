@@ -14,10 +14,22 @@ Source files live in `web/public/` and are copied into `web/dist/` on build.
 
 ## TestFlight vs Netlify
 
-- **TestFlight / iPhone app** does not require Netlify — legal pages are bundled in the IPA.
+- **TestFlight / iPhone app** does not require Netlify — legal pages are bundled in the IPA. Most `native/drive` pushes should **not** trigger a Netlify build (see ignore rules below).
 - **App Store Connect** listing needs the **https** URLs above for Privacy Policy and Support.
 - **App Store customer IPA:** do **not** put `[skip netlify]` on the GitHub push. Connect fetches the live privacy page; the `appstore` Actions track refuses to build until https://stormpath2.netlify.app/privacy.html includes ATT / RevenueCat / Sentry.
-- **Free Netlify tier** is enough for these static pages.
+- **Free Netlify tier** is enough for these static pages — do not burn minutes on Drive/UI-only commits.
+
+## When Netlify builds (credit saver)
+
+`web/scripts/netlify-ignore.sh` + `netlify.toml` skip deploys unless something Netlify actually hosts changed:
+
+| Builds when these change | Skips (no credit burn) |
+|--------------------------|-------------------------|
+| `web/netlify/functions/**` (WeatherKit, tile proxies, ops) | `web/src/**` Drive / Route info / nav UI |
+| `web/public/**` (privacy, terms, support, ops hub) | Capacitor `ios/`, native plugins |
+| `netlify.toml`, `web/package.json` / lock | Branch deploys & deploy previews (`native/drive`, PRs) |
+
+To **force** a full Netlify SPA rebuild after a `web/src` change (rare — browser users on stormpath2): touch a file under `web/public/` (e.g. edit `_headers` or a legal page) or run **Deploys → Trigger deploy** in the Netlify UI.
 
 ## Update the live site (Git — required for WeatherKit functions)
 

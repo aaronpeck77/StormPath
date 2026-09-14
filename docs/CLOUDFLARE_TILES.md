@@ -1,29 +1,81 @@
 # Cloudflare tile proxy (App Store scale)
 
-Tomorrow.io map radar on **TestFlight / App Store** cannot call `api.tomorrow.io` directly from the Mapbox WebView (CORS). StormPath uses a **tile proxy** with the same path shape as the Netlify function:
+StormPath proxies **map radar tiles** so phones do not each hammer the upstream APIs.
+There are two proxies:
+
+| Provider | Why proxy | Code |
+|----------|-----------|------|
+| **Tomorrow.io** | CORS on Capacitor + API-key rate limits | `cloudflare/tomorrow-io-tiles` + Netlify `tomorrow-io-tile` |
+| **RainViewer** | Public tilecache 429s shut off animated radar | `cloudflare/rainviewer-tiles` + Netlify `rainviewer-tile` |
 
 ```text
+# Tomorrow.io
 {PROXY_BASE}/tomorrow-io-tile/{z}/{x}/{y}/precipitationIntensity/{timestamp}.png?apikey=...
+
+# RainViewer (same path shape as tilecache.rainviewer.com after the proxy prefix)
+{PROXY_BASE}/rainviewer-tile/v2/radar/{frame}/256/{z}/{x}/{y}/{color}/{options}.png
 ```
 
-**Netlify** (`stormpath2` function) is fine for launch and low traffic. For **thousands of users**, use this **Cloudflare Worker** — it caches each unique tile at the edge so one origin fetch serves every driver viewing the same radar frame.
+**Netlify** (`stormpath2` functions) is fine for launch and low traffic. For **thousands of users**, deploy the **Cloudflare Workers** — each caches unique tiles at the edge so one origin fetch serves every driver viewing the same radar frame.
 
 | Service | Role |
 |---------|------|
-| **Cloudflare Worker** (`cloudflare/tomorrow-io-tiles`) | Scalable, edge-cached TIO map tiles for native app |
-| **Netlify** (`stormpath2`) | Static site, legal pages, `weatherkit-token`, web app, **fallback** tile proxy |
-| **RainViewer** | Direct from app (no proxy); hybrid nowcast segment |
+| **Cloudflare** `stormpath-tomorrow-io-tiles` | Scalable, edge-cached TIO map tiles |
+| **Cloudflare** `stormpath-rainviewer-tiles` | Scalable, edge-cached RainViewer tiles (animation + nowcast) |
+| **Netlify** (`stormpath2`) | Static site, legal pages, `weatherkit-token`, web app, **fallback** tile proxies |
+
+Animated radar stays on. The proxy is what makes that safe at scale.
 
 ---
 
-## 1. Create a Cloudflare account
+## RainViewer proxy (animated radar)
+
+### Netlify (default — ships with the next `web/` deploy)
+
+Function: `web/netlify/functions/rainviewer-tile.ts`  
+Default app URL (baked when env unset):
+
+`https://stormpath2.netlify.app/.netlify/functions/rainviewer-tile`
+
+No API key. After Netlify deploys this function, TestFlight builds that include the client change will load RV tiles through it automatically.
+
+### Cloudflare Worker (recommended at scale)
+
+```bash
+cd cloudflare/rainviewer-tiles
+npm install
+npx wrangler login
+npm run deploy
+```
+
+Set GitHub / build secret (and optional local `.env`):
+
+```text
+VITE_RAINVIEWER_TILE_PROXY_URL=https://stormpath-rainviewer-tiles.<your-subdomain>.workers.dev/rainviewer-tile
+```
+
+No trailing slash. Same path shape as Netlify.
+
+### Quick check
+
+```text
+https://stormpath2.netlify.app/.netlify/functions/rainviewer-tile/v2/radar/<frameFromManifest>/256/5/8/12/4/0_1.png
+```
+
+Should return a PNG. On the Worker, `GET /health` returns `ok`.
+
+---
+
+## Tomorrow.io proxy
+
+Tomorrow.io map radar on **TestFlight / App Store** cannot call `api.tomorrow.io` directly from the Mapbox WebView (CORS). StormPath uses a **tile proxy** with the path shape above.
+
+### 1. Create a Cloudflare account
 
 1. Go to [dash.cloudflare.com](https://dash.cloudflare.com) and sign up (free tier is enough to start).
 2. No domain is required for the first deploy — you get a `*.workers.dev` URL.
 
----
-
-## 2. Install Wrangler (one time)
+### 2. Install Wrangler (one time)
 
 From the repo root:
 
@@ -35,9 +87,7 @@ npx wrangler login
 
 `wrangler login` opens a browser to authorize the CLI.
 
----
-
-## 3. Set the Tomorrow.io API key (server-side)
+### 3. Set the Tomorrow.io API key (server-side)
 
 Store your key as a **Worker secret** (not in git):
 
@@ -114,7 +164,7 @@ Site → Environment variables → **Builds**:
 
 1. US location, map radar **on**.
 2. Attribution should still show Tomorrow.io (not RainViewer) when the proxy works.
-3. If the worker is down, the app falls back to RainViewer after repeated tile errors.
+3. If the worker is down, the app falls back to RainViewer after repeated tile errors — and RainViewer now also uses its own proxy (see above).
 
 ---
 
