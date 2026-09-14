@@ -118,6 +118,9 @@ export function effectiveRoutePrecipDisplayPct(
   if (pct >= 60 && mentionsPrecip) return pct;
   if (mentionsPrecip && pct >= 45) return Math.min(pct, 55);
   if (pct >= 50 && mentionsPrecip) return Math.round(pct * 0.6);
+  /* WeatherKit/TIO often flag afternoon storms as Cloudy + high POP with 0 mm/h. */
+  if (pct >= 55) return Math.round(pct * 0.55);
+  if (pct >= 45) return Math.round(pct * 0.4);
   return 0;
 }
 

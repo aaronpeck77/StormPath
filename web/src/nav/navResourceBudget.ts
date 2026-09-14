@@ -80,9 +80,22 @@ export function buildNavResourceBudget(input: NavResourceBudgetInput): NavResour
    * so reopening Route Info shows the full trip with YOU already mid-axis.
    */
   const driveCorridorLive = driveNavMode && input.appForeground;
+  /**
+   * Pre-Go trip browse — Rt/Mp are planning surfaces; Dr before Go is too
+   * (common while reviewing a planned leg). Without this, Rad-off + Dr blanked
+   * along-route radar samples even with Route Info open.
+   */
+  const preGoTripBrowse =
+    !input.navigationStarted &&
+    input.hasPlannedRoute &&
+    (planningSurfaceActive || input.viewMode === "drive");
 
   const radarSampleRequested =
     radarMapOverlayOn ||
+    (preGoTripBrowse &&
+      (input.settingStormEnabled ||
+        input.settingWeatherHintsEnabled ||
+        routeInfoOpen)) ||
     (planningSurfaceActive &&
       !driveNavMode &&
       (input.settingStormEnabled ||

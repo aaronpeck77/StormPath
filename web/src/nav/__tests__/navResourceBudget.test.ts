@@ -138,6 +138,21 @@ describe("navResourceBudget", () => {
     expect(budget.radarRouteSamplingEnabled).toBe(true);
   });
 
+  it("samples radar while browsing a planned trip in Drive before Go (Rad off)", () => {
+    const budget = buildNavResourceBudget({
+      ...base,
+      navigationStarted: false,
+      viewMode: "drive",
+      showRadar: false,
+      progressCalloutsOpen: true,
+      stormBarExpanded: false,
+    });
+    expect(budget.driveNavMode).toBe(false);
+    expect(budget.radarMapOverlayOn).toBe(false);
+    expect(budget.radarRouteSamplingEnabled).toBe(true);
+    expect(budget.tioRouteFetchEnabled).toBe(true);
+  });
+
   it("turns off map radar overlay when backgrounded", () => {
     const budget = buildNavResourceBudget({
       ...base,

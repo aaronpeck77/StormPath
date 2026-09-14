@@ -153,10 +153,12 @@ export function useProgressCalloutPanel(
   } = deps;
 
   const progressPanelAlongM = navigationStarted ? advisoryUserAlongM : userAlongGuidanceM;
-  const skipHeavyProgressPanel =
-    isUltraLongTripRoute(guidanceRouteLengthM) && !navigationStarted;
-  const ultraLongActiveNav =
-    navigationStarted && isUltraLongTripRoute(guidanceRouteLengthM);
+  /**
+   * Ultra-long legs (~300+ mi) use the lean outlook path (forecast + radar + route-ahead
+   * segments) instead of the full chunk callout list — but never blank the weather graphs
+   * while planning. Blanking made Route Info look “storm-blind” on long trip previews.
+   */
+  const ultraLongLeanOutlook = isUltraLongTripRoute(guidanceRouteLengthM);
 
   const progressCalloutPanel = useMemo((): ProgressCalloutPanel => {
     const g = guidanceRoute?.geometry;
@@ -176,20 +178,6 @@ export function useProgressCalloutPanel(
     const windPoints = windFromForecast.windPoints;
     const gustLinePoints = windFromForecast.gustLinePoints;
     const gustSpikePoints = windFromForecast.gustSpikePoints;
-
-    if (skipHeavyProgressPanel) {
-      return {
-        routeWide: [],
-        outlookTimeline: [],
-        outlookSamples: [],
-        segments: [],
-        userAlongT: 0,
-        stripTint,
-        windPoints,
-        gustLinePoints,
-        gustSpikePoints,
-      };
-    }
 
     if (!g?.length) {
       return {
@@ -248,7 +236,7 @@ export function useProgressCalloutPanel(
           })
         : [];
 
-    if (ultraLongActiveNav) {
+    if (ultraLongLeanOutlook) {
       const routeAheadSegments = buildRouteAheadCalloutSegments({
         items: routeAheadTimeline,
         totalMeters: totalM,
@@ -291,7 +279,10 @@ export function useProgressCalloutPanel(
             : [];
 
       let outlookTimeline = resyncRouteOutlookSteps(
-        mergeRouteOutlookSteps(syncedOutlook, tioOutlook, stormOutlook),
+        applyRadarOutlookBoost(
+          mergeRouteOutlookSteps(syncedOutlook, tioOutlook, stormOutlook),
+          radarMosaicSamples
+        ),
         {
           samples: outlookGraphSamples,
           totalMeters: totalM,
@@ -498,8 +489,7 @@ export function useProgressCalloutPanel(
     radarMosaicSamples,
     liveTrafficNarrative,
     driveEtaMinutes,
-    skipHeavyProgressPanel,
-    ultraLongActiveNav,
+    ultraLongLeanOutlook,
     stormOutlookBands,
     advisoryNowcastLine,
     currentNowcast?.tempF,

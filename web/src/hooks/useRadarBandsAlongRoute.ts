@@ -125,14 +125,30 @@ export function useRadarBandsAlongRoute(
       const now = Date.now();
       const totalM = polylineLengthMeters(geometry);
       const cumDist = buildCumulativeDistances(geometry);
+      const newestFrameMs = Math.max(...pack.frames.map((f) => f.time * 1000));
+      const nowFrame = nearestRadarFrameByTimeMs(pack.frames, now);
 
-      const pts = RADAR_ROUTE_SAMPLE_FRACTIONS.map((t) => {
-        const targetMs = useEta ? now + t * (planEtaMinutes ?? 0) * 60_000 : now;
-        return {
-          t,
-          lngLat: pointAtAlongMeters(geometry, totalM * t, cumDist),
-          frame: nearestRadarFrameByTimeMs(pack.frames, targetMs),
-        };
+      /**
+       * ETA sampling uses RainViewer nowcast (~1–2h). Beyond that horizon the last
+       * frame was wrongly treated as “arrival weather” and often painted the route
+       * clear while a live cell still sat on the polyline. Dual-sample now + ETA
+       * and keep the stronger echo so Route Info radar strata match the map.
+       */
+      const pts = RADAR_ROUTE_SAMPLE_FRACTIONS.flatMap((t) => {
+        const lngLat = pointAtAlongMeters(geometry, totalM * t, cumDist);
+        if (!useEta) {
+          return [{ t, lngLat, frame: nowFrame }];
+        }
+        const targetMs = now + t * (planEtaMinutes ?? 0) * 60_000;
+        const etaFrame = nearestRadarFrameByTimeMs(pack.frames, targetMs);
+        const beyondHorizon = targetMs > newestFrameMs + 2 * 60_000;
+        if (beyondHorizon || etaFrame.path === nowFrame.path) {
+          return [{ t, lngLat, frame: beyondHorizon ? nowFrame : etaFrame }];
+        }
+        return [
+          { t, lngLat, frame: etaFrame },
+          { t, lngLat, frame: nowFrame },
+        ];
       });
       if (import.meta.env.DEV) {
         const oldest = Math.min(...pack.frames.map((f) => f.time));
@@ -168,12 +184,14 @@ export function useRadarBandsAlongRoute(
         pack.provider === "tomorrow_io" ? echoIntensityFromPrecipTile : echoIntensityFromRgba;
       const tileProvider = pack.provider === "tomorrow_io" ? "tomorrow_io" : "rainviewer";
 
-      const out: RadarSample[] = [];
+      const intensityByT = new Map<number, number>();
       for (const { frame, tileKey, samples } of groups.values()) {
         if (cancelled) return;
         const template = radarTileUrlForFrame(pack, frame, tomorrowIoApiKey, "sample");
         if (!template) {
-          for (const it of samples) out.push({ t: it.t, intensity: 0 });
+          for (const it of samples) {
+            if (!intensityByT.has(it.t)) intensityByT.set(it.t, 0);
+          }
           continue;
         }
         const [zStr, xStr, yStr] = tileKey.split("/");
@@ -184,7 +202,7 @@ export function useRadarBandsAlongRoute(
         const rgba = await fetchMapTileRgba(url, tileProvider);
         for (const it of samples) {
           if (!rgba) {
-            out.push({ t: it.t, intensity: 0 });
+            if (!intensityByT.has(it.t)) intensityByT.set(it.t, 0);
             continue;
           }
           const idx = (it.py * 256 + it.px) * 4;
@@ -194,9 +212,14 @@ export function useRadarBandsAlongRoute(
             rgba[idx + 2] ?? 0,
             rgba[idx + 3] ?? 0
           );
-          out.push({ t: it.t, intensity });
+          intensityByT.set(it.t, Math.max(intensityByT.get(it.t) ?? 0, intensity));
         }
       }
+
+      const out: RadarSample[] = [...intensityByT.entries()].map(([t, intensity]) => ({
+        t,
+        intensity,
+      }));
 
       if (cancelled) return;
       if (lastKeyRef.current !== geomKey) return;
