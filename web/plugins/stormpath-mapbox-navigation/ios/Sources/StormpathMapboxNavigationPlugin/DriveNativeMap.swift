@@ -75,6 +75,9 @@ final class DriveNativeMap {
     func applyFollowCamera(_ sample: DriveFollowCameraSample) {
         lastFollowSample = sample
         guard styleReady else { return }
+        if let mapView {
+            applyStormPathPuck(on: mapView)
+        }
         writeFollowCamera(sample)
         revealIfFramed()
     }
@@ -227,105 +230,32 @@ final class DriveNativeMap {
         }
     }
 
-    /// Match `.map-user-puck` / `--driving`: ~22pt blue sphere. No Mapbox bearing disc.
+    /// Visible StormPath blue dot — prefer makeDefault base so Maps keeps a location layer.
     private static func stormpathPuck2D() -> Puck2DConfiguration {
-        var config = Puck2DConfiguration(
-            topImage: stormpathPuckDotImage(),
-            bearingImage: nil,
-            shadowImage: nil,
-            scale: .constant(0.55),
-            showsAccuracyRing: false
-        )
+        var config = Puck2DConfiguration.makeDefault(showBearing: false)
+        config.topImage = stormpathPuckDotImage()
+        config.bearingImage = nil
+        config.shadowImage = nil
+        config.scale = .constant(1.0)
+        config.showsAccuracyRing = false
         config.opacity = 1
         return config
     }
 
-    /// Bakes the web CSS look (radial highlight + ring + soft shadow) into one image.
+    /// Simple opaque disc (web puck colors). Avoids fancy draws that can vanish at night.
     private static func stormpathPuckDotImage() -> UIImage {
         let format = UIGraphicsImageRendererFormat.default()
         format.scale = UIScreen.main.scale
         format.opaque = false
-        /* Content ~22pt; canvas pads for shadow. scale 0.55 on the puck keeps screen size near web. */
-        let canvasPt: CGFloat = 40
-        let discPt: CGFloat = 22
-        let renderer = UIGraphicsImageRenderer(
-            size: CGSize(width: canvasPt, height: canvasPt),
-            format: format
-        )
-        return renderer.image { ctx in
-            let cg = ctx.cgContext
-            let scale = format.scale
-            let px = canvasPt * scale
-            let discPx = discPt * scale
-            let center = CGPoint(x: px / 2, y: px / 2 - 0.5 * scale)
-            let radius = discPx / 2
-
-            cg.saveGState()
-            cg.setShadow(
-                offset: CGSize(width: 0, height: 2.5 * scale),
-                blur: 5 * scale,
-                color: UIColor(white: 0, alpha: 0.4).cgColor
-            )
-            cg.setFillColor(UIColor.black.cgColor)
-            cg.fillEllipse(in: CGRect(
-                x: center.x - radius,
-                y: center.y - radius,
-                width: discPx,
-                height: discPx
-            ))
-            cg.restoreGState()
-
-            let ring = UIBezierPath(
-                ovalIn: CGRect(x: center.x - radius, y: center.y - radius, width: discPx, height: discPx)
-            )
+        let size: CGFloat = 28
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size), format: format)
+        return renderer.image { _ in
+            let ring = UIBezierPath(ovalIn: CGRect(x: 1, y: 1, width: size - 2, height: size - 2))
             UIColor.white.setFill()
             ring.fill()
-
-            let inset = 3 * scale
-            let innerRect = CGRect(
-                x: center.x - radius + inset,
-                y: center.y - radius + inset,
-                width: discPx - inset * 2,
-                height: discPx - inset * 2
-            )
-            let colors = [
-                UIColor(red: 107 / 255, green: 184 / 255, blue: 255 / 255, alpha: 1).cgColor,
-                UIColor(red: 26 / 255, green: 115 / 255, blue: 232 / 255, alpha: 1).cgColor,
-                UIColor(red: 10 / 255, green: 61 / 255, blue: 145 / 255, alpha: 1).cgColor,
-            ] as CFArray
-            if let gradient = CGGradient(
-                colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                colors: colors,
-                locations: [0, 0.42, 1]
-            ) {
-                cg.saveGState()
-                cg.addEllipse(in: innerRect)
-                cg.clip()
-                let highlight = CGPoint(
-                    x: innerRect.minX + innerRect.width * 0.32,
-                    y: innerRect.minY + innerRect.height * 0.26
-                )
-                cg.drawRadialGradient(
-                    gradient,
-                    startCenter: highlight,
-                    startRadius: 0,
-                    endCenter: CGPoint(x: innerRect.midX, y: innerRect.midY),
-                    endRadius: innerRect.width * 0.72,
-                    options: [.drawsAfterEndLocation]
-                )
-                cg.restoreGState()
-            }
-
-            cg.saveGState()
-            cg.setFillColor(UIColor(white: 1, alpha: 0.35).cgColor)
-            let gloss = CGRect(
-                x: innerRect.minX + innerRect.width * 0.18,
-                y: innerRect.minY + innerRect.height * 0.12,
-                width: innerRect.width * 0.45,
-                height: innerRect.height * 0.28
-            )
-            cg.fillEllipse(in: gloss)
-            cg.restoreGState()
+            let inner = UIBezierPath(ovalIn: CGRect(x: 5, y: 5, width: size - 10, height: size - 10))
+            UIColor(red: 26 / 255, green: 115 / 255, blue: 232 / 255, alpha: 1).setFill()
+            inner.fill()
         }
     }
 

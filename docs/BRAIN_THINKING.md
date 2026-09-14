@@ -44,6 +44,6 @@ Even with mutex + 550ms drain, releasing the provider on Stop killed the IPA. So
 
 Bill: no baby steps. `NATIVE_DRIVE_MAP_ENABLED` + follow-cam **on**. After Go in Dr, NavigationMapView is the road; web map punches transparent and does not easeTo. Mp/Rt still web. Soft-stop stays required so turning the shell on does not reintroduce the Stop crash.
 
-### 2026-09-13 — Dr chrome, Mp camera
+### 2026-09-13 — Go jump, no puck, Stop crash
 
-View button flipped `viewMode` to Dr while the web camera stayed top-down (native hole not punched yet / no hard resync). Entering Dr now hard-snaps web follow-cam until native reveals; Rt/Mp bust snap keys + resize. Native map takes the web day/night style URL so Go does not flash a daytime streets basemap at night.
+Go: hold planning frame until native reveals (one cut). Puck: keep web DOM puck over transparent canvas; native puck scale back to 1. Stop: soft-stop skips `setToIdle` (crash suspect); idle only on next prepare/Go tearDown.

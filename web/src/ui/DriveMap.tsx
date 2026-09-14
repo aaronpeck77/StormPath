@@ -126,7 +126,10 @@ import {
 } from "./mapDriveCamera";
 import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
 import { shouldUseNativeFollowCam } from "../nav/nativeDriveFollowCam";
-import { NATIVE_DRIVE_PUCK_OVERLAY_ENABLED } from "../nav/nativeDriveMapShell";
+import {
+  NATIVE_DRIVE_MAP_ENABLED,
+  NATIVE_DRIVE_PUCK_OVERLAY_ENABLED,
+} from "../nav/nativeDriveMapShell";
 import { isNativeMapboxNavPlatform } from "../nav/useNativeNavSession";
 import { StormpathMapboxNavigation } from "@stormpath/mapbox-navigation";
 import { allowBasemapStyleReload } from "./mapLowSignalResilience";
@@ -542,9 +545,27 @@ function DriveMapInner({
   const [nativeMapHoleReady, setNativeMapHoleReady] = useState(false);
   /** Only punch the web map once native NavigationMapView is actually showing. */
   const [nativeMapShowing, setNativeMapShowing] = useState(false);
+  /** After native shell has shown once this trip, Mp→Dr may snap web while native re-reveals. */
+  const hadNativeShellThisTripRef = useRef(false);
   const punchNativeHole = Boolean(nativeDriveMapActive && nativeMapShowing);
   const punchNativeHoleRef = useRef(punchNativeHole);
   punchNativeHoleRef.current = punchNativeHole;
+  useEffect(() => {
+    if (!navigationStarted) hadNativeShellThisTripRef.current = false;
+  }, [navigationStarted]);
+  useEffect(() => {
+    if (nativeMapShowing) hadNativeShellThisTripRef.current = true;
+  }, [nativeMapShowing]);
+  /** First Go on native shell: hold planning camera until the hole punches. */
+  const holdFirstNativeGoRef = useRef(false);
+  holdFirstNativeGoRef.current = Boolean(
+    NATIVE_DRIVE_MAP_ENABLED &&
+      isNativeMapboxNavPlatform() &&
+      navigationStarted &&
+      viewMode === "drive" &&
+      !punchNativeHole &&
+      !hadNativeShellThisTripRef.current
+  );
   const holdLastGoodMapRef = useRef(holdLastGoodMap);
   holdLastGoodMapRef.current = holdLastGoodMap;
   const isOnlineRef = useRef(isOnline);
@@ -1572,7 +1593,8 @@ function DriveMapInner({
           viewModeRef.current === "drive" &&
           navigationStartedRef.current &&
           userLngLatRef.current &&
-          !punchNativeHoleRef.current
+          !punchNativeHoleRef.current &&
+          !holdFirstNativeGoRef.current
         ) {
           const nativeCam = nativeFollowCameraRef.current;
           if (
@@ -1847,10 +1869,8 @@ function DriveMapInner({
     const el = marker.getElement();
     const isDriveView = navigationStarted && viewMode === "drive";
     el.classList.toggle("map-user-puck--driving", navigationStarted);
-    const hideWebPuck = Boolean(
-      punchNativeHole && navigationStarted && viewMode === "drive"
-    );
-    el.classList.toggle("map-user-puck--native-hidden", hideWebPuck);
+    /* Native shell hides the web GL canvas only — keep the DOM puck so Drive always has a dot. */
+    el.classList.toggle("map-user-puck--native-hidden", false);
     try {
       marker.setOffset(isDriveView ? DRIVE_PUCK_MARKER_OFFSET_PX : [0, 0]);
       marker.setPitchAlignment(navigationStarted ? "viewport" : "map");
@@ -1940,12 +1960,14 @@ function DriveMapInner({
   }, [nativeDriveMapActive, nativeMapShowing, nativeFollowCamera, nativeMapHoleReady]);
 
   /**
-   * Entering Dr must leave Mp/Rt framing immediately on the web map until native punches.
-   * Otherwise chrome flips to Dr while the camera stays top-down.
+   * Entering Dr from Mp/Rt: snap web follow-cam so chrome and map match before native punches.
+   * First Go with native shell pending: hold the planning frame (no mid-Go jump).
    */
   useEffect(() => {
     if (!mapReady || !navigationStarted || viewMode !== "drive") return;
     if (punchNativeHole) return;
+    /* First Go: keep the overview until native is ready. */
+    if (holdFirstNativeGoRef.current) return;
     const map = mapRef.current;
     const u = userLngLatRef.current;
     if (!map || !u) return;
@@ -1966,7 +1988,7 @@ function DriveMapInner({
       map.getBearing();
     stopMapCamera(map);
     safeHardFollowCamera(map, { center, zoom, pitch, bearing });
-  }, [mapReady, navigationStarted, viewMode, punchNativeHole]);
+  }, [mapReady, navigationStarted, viewMode, punchNativeHole, nativeDriveMapActive, nativeMapShowing]);
 
   /** After route compare or end of navigation, re-run topdown init and flatten pitch. */
   useEffect(() => {

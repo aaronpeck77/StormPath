@@ -592,8 +592,14 @@ html:has(.app-shell--native-drive-map) #root {
 }
 
 .drive-map--native-shell {
-  opacity: 0;
+  /* Keep DOM markers (StormPath puck) visible over native tiles; only hide the web GL canvas. */
   pointer-events: none;
+  background: transparent;
+}
+
+.drive-map--native-shell .mapboxgl-canvas-container,
+.drive-map--native-shell .mapboxgl-canvas {
+  opacity: 0 !important;
 }
 
 /* Dark Mapbox basemap (7p?6a local): thin light rims ? must beat .app-shell.nav-fullmap chrome vars */

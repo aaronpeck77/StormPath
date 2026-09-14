@@ -616,10 +616,9 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         nativeMap = nil
         applyDrivePuckVisible(false)
 
-        if wasActive, let provider = navigationProvider {
-            provider.mapboxNavigation.tripSession().setToIdle()
-            try? await Task.sleep(nanoseconds: 300_000_000)
-        }
+        /* Do not call setToIdle on Stop — that path still hard-crashed the IPA.
+         * Provider stays alive (muted, no observers). Next prepare/Go tearDown idles + releases. */
+        _ = wasActive
 
         poseHold.reset()
         followCam.reset()
@@ -665,10 +664,11 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         applyDrivePuckVisible(false)
 
         let provider = navigationProvider
-        if wasActive {
+        /* Always idle before release — soft-stop may have left guidance running. */
+        if provider != nil {
             provider?.mapboxNavigation.tripSession().setToIdle()
             try? await Task.sleep(nanoseconds: 400_000_000)
-            if emitCancelled {
+            if emitCancelled && wasActive {
                 notifyListeners("cancelled", data: ["reason": "cancelled"])
             }
         }
