@@ -540,8 +540,13 @@ export const handler = async (event: NetlifyEvent) => {
     /\/$/,
     ""
   );
+  const rainViewerTileProxy = (
+    process.env.RAINVIEWER_TILE_PROXY_URL?.trim() ||
+    process.env.VITE_RAINVIEWER_TILE_PROXY_URL?.trim() ||
+    `${siteUrl}/.netlify/functions/rainviewer-tile`
+  ).replace(/\/$/, "");
 
-  const [web, weatherkit, nws, rainviewer, tileWorker, income, deploy, sentry, ios, netlify] =
+  const [web, weatherkit, nws, rainviewer, tileWorker, rainviewerTiles, income, deploy, sentry, ios, netlify] =
     await Promise.all([
       probe("web", "Netlify site", `${siteUrl}/`),
       probe(
@@ -566,6 +571,13 @@ export const handler = async (event: NetlifyEvent) => {
             ms: 0,
             detail: "TOMORROW_IO_TILE_PROXY_URL not set",
           } satisfies Probe),
+      rainViewerTileProxy.includes("workers.dev")
+        ? probe("rv_tiles", "RainViewer tile proxy", `${rainViewerTileProxy.replace(/\/rainviewer-tile$/, "")}/health`)
+        : probe(
+            "rv_tiles",
+            "RainViewer tile fn",
+            `${siteUrl}/.netlify/functions/rainviewer-tile`
+          ),
       revenueCatMetrics(),
       netlifyDeploy(),
       sentryOpenIssues(),
@@ -579,7 +591,7 @@ export const handler = async (event: NetlifyEvent) => {
     body: JSON.stringify({
       generatedAt: new Date().toISOString(),
       siteUrl,
-      health: [web, weatherkit, nws, rainviewer, tileWorker],
+      health: [web, weatherkit, nws, rainviewer, tileWorker, rainviewerTiles],
       income,
       deploy,
       sentry,

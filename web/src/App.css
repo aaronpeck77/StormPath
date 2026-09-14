@@ -4818,7 +4818,22 @@ html:has(.app-shell--native-drive-map) #root {
   width: 100%;
   flex: 1 1 0;
   min-height: 0;
-  overflow: hidden;
+  /* One vertical scroll for graph + alert cards; graph keeps its own horizontal pan. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+}
+
+.rpgl::-webkit-scrollbar {
+  width: 5px;
+}
+
+.rpgl::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.4);
 }
 
 .rpgl__help {
@@ -4854,13 +4869,10 @@ html:has(.app-shell--native-drive-map) #root {
   margin-bottom: 0;
 }
 
-/* Top: weather + hazards axis — horizontal scroll only (no vertical freefloat) */
+/* Graph block — natural height; scrolls up with the page. Horizontal pan only inside. */
 .rpgl__axis-pane {
   flex: 0 0 auto;
   width: 100%;
-  /* Tall enough for Temp/Rain/Radar/Wind/NWS/Road + ticks; lock Y so only X pans */
-  --rpgl-axis-max-h: min(52vh, 296px);
-  max-height: var(--rpgl-axis-max-h);
   border-bottom: 2px solid rgba(255, 255, 255, 0.22);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
   background: rgba(255, 255, 255, 0.03);
@@ -4869,7 +4881,6 @@ html:has(.app-shell--native-drive-map) #root {
 
 .rpgl__axis-scroll {
   width: 100%;
-  max-height: var(--rpgl-axis-max-h);
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
@@ -4882,25 +4893,18 @@ html:has(.app-shell--native-drive-map) #root {
   scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
 }
 
-/* Bottom: alert cards — vertical scroll only */
+/* Alert cards — same page scroll as the graph (not a nested vertical scroller). */
 .rpgl__detail-scroll {
-  flex: 1 1 0;
-  min-height: 0;
+  flex: 0 0 auto;
   width: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior-y: contain;
-  overscroll-behavior-x: none;
-  touch-action: pan-y;
+  overflow: visible;
   padding: 8px 0 4px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
 }
 
-/* Only the detail pane — fill panel when axis is hidden */
+/* Only the detail pane when axis is hidden — still one page scroll on .rpgl */
 .rpgl__detail-scroll--solo {
-  flex: 1 1 0;
+  flex: 0 0 auto;
+  overflow: visible;
 }
 
 .rpgl__detail-scroll > * {
@@ -4909,15 +4913,6 @@ html:has(.app-shell--native-drive-map) #root {
 
 .rpgl__detail-scroll > * + * {
   margin-top: 10px;
-}
-
-.rpgl__detail-scroll::-webkit-scrollbar {
-  width: 5px;
-}
-
-.rpgl__detail-scroll::-webkit-scrollbar-thumb {
-  border-radius: 4px;
-  background: rgba(148, 163, 184, 0.4);
 }
 
 .rpgl__axis-scroll::-webkit-scrollbar {

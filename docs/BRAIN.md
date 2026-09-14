@@ -179,6 +179,19 @@ Cue phrases: *“think in the Brain”*, *“Brain notes”*, *“set up nightly
 
 ---
 
+## Radar tile scale (parked ops — remind when customers grow)
+
+**Bill (Sep 14, 2026):** Keep animated radar. Launch uses Netlify `rainviewer-tile` so phones share a cache instead of each hammering RainViewer. If radar rate limits / “lots of users” come back:
+
+1. Deploy Cloudflare Worker `cloudflare/rainviewer-tiles` (`npm run deploy` in that folder)
+2. Set GitHub / build secret `VITE_RAINVIEWER_TILE_PROXY_URL` to  
+   `https://stormpath-rainviewer-tiles.<subdomain>.workers.dev/rainviewer-tile`
+3. New TestFlight / store build so the IPA picks up the Worker URL
+
+Full steps: `docs/CLOUDFLARE_TILES.md` (RainViewer section). Same pattern as Tomorrow.io tiles. Do not deploy until Bill asks — just remind him.
+
+---
+
 ## How agents should treat Brain
 
 - Read this file when Bill mentions Brain, post-launch ideas, or Dark Sky direction

@@ -52,6 +52,7 @@ Driving-first multi-route navigation / "route command center" with Mapbox map, t
 
 - Do not deploy to Netlify / TestFlight / App Store unless Bill asks.
 - Do not commit `.env` files or Apple certificates/keys.
+- Netlify should not rebuild on every GitHub push: `web/scripts/netlify-ignore.sh` skips Drive/UI-only and branch deploys. Only functions / `public/` / Netlify config should spend build minutes (see `docs/NETLIFY_HOSTING.md`).
 - Prefer fixing what Bill hits in testing over large refactors.
 - If he also has SiteBible open, treat them as separate products/folders.
 - Keep thinking about parked Brain items (`docs/BRAIN.md`, `docs/BRAIN_THINKING.md`) while doing other work. Jot connections. Do not build P2/P3 until he asks.

@@ -1,0 +1,11 @@
+# StormPath RainViewer tile proxy — deploy: npm run deploy (from this folder)
+# Docs: docs/CLOUDFLARE_TILES.md (RainViewer section)
+
+name = "stormpath-rainviewer-tiles"
+main = "src/index.ts"
+compatibility_date = "2024-06-01"
+
+# After first deploy, URL is typically:
+#   https://stormpath-rainviewer-tiles.<your-subdomain>.workers.dev/rainviewer-tile
+# Set that base (no trailing slash) as VITE_RAINVIEWER_TILE_PROXY_URL in iOS builds.
+# Until then, the app defaults to the Netlify function on stormpath2.

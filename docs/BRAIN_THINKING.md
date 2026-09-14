@@ -52,6 +52,11 @@ Go: hold planning frame until native reveals (one cut). Puck: keep web DOM puck 
 
 Bill clarified: Stop does not close the IPA — ErrorBoundary + Reload. Likely TurnBanner / stay-on copy calling `.replace` / `.toLowerCase` on a cleared native instruction mid-render. Soft-stop stays; harden banner + icon paths. Puck: drop flat 2D disc for `.puck3D(.navigationDefault)` once pitched.
 
-### 2026-09-13 — Stop Reload = just press home for me
+### 2026-09-14 — RainViewer needs the same proxy idea as Tomorrow.io
 
-Still throws after every Stop. Pragmatic: ErrorBoundary auto-clears trip cache and reloads (skip the button). Also drop `navigationStarted` before Core teardown so the banner unmounts first.
+Netlify/Cloudflare already shielded TIO tiles. Animated radar still hit `tilecache.rainviewer.com` per phone → public 429 → overlay off. Proxy + edge cache for RV tiles (Netlify function + Worker) so animation can stay on at scale.
+
+### 2026-09-14 — Cloudflare Worker when customer count hurts radar
+
+Bill: save for later. Netlify RV proxy first; if many users bring rate limits back, remind him to deploy `cloudflare/rainviewer-tiles` + `VITE_RAINVIEWER_TILE_PROXY_URL`. Parked in `docs/BRAIN.md` + `.cursor/rules/rainviewer-scale-cloudflare.mdc`.
+

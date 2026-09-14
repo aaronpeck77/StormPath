@@ -326,7 +326,7 @@ export function RouteProgressGlancePanel({
     routeWide.length > 0 || visibleCards.length > 0 || fallbackSegments.length > 0;
 
   return (
-    <div className="rpgl">
+    <div className="rpgl" ref={detailScrollRef}>
       <RouteInfoLegend />
       {showAxis ? (
         <div className="rpgl__axis-pane">
@@ -431,7 +431,6 @@ export function RouteProgressGlancePanel({
       {hasDetail ? (
         <div
           className={`rpgl__detail-scroll${showAxis ? "" : " rpgl__detail-scroll--solo"}`}
-          ref={detailScrollRef}
           aria-label="Hazards and route details"
         >
           {routeWide.length > 0 ? (

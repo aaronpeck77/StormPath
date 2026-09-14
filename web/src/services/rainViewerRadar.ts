@@ -1,10 +1,18 @@
 /**
  * RainViewer public API — precipitation radar tiles (no API key).
+ * Tiles go through StormPath's proxy (Netlify / Cloudflare) so many phones share
+ * one cached origin fetch — direct tilecache.rainviewer.com rate-limits shut the overlay off.
  * @see https://www.rainviewer.com/api.html
  * @see https://www.rainviewer.com/api/weather-maps-api.html (max zoom 7 — higher z returns error tiles)
+ * @see docs/CLOUDFLARE_TILES.md
  */
+import { Capacitor } from "@capacitor/core";
+
 const TILE_CACHE_ORIGIN = "https://tilecache.rainviewer.com";
 const DEV_TILE_PREFIX = "/rainviewer-tiles";
+/** Fallback when Cloudflare Worker URL is unset — deploys with Netlify `rainviewer-tile` function. */
+const DEFAULT_RAINVIEWER_TILE_PROXY_URL =
+  "https://stormpath2.netlify.app/.netlify/functions/rainviewer-tile";
 
 /** RainViewer only serves z=0..7; Mapbox must overzoom above that or tiles show “zoom level not supported”. */
 export const RAINVIEWER_RADAR_MAX_ZOOM = 7;
@@ -54,13 +62,30 @@ function normalizeHost(h: string): string {
   return h.replace(/\/$/, "");
 }
 
-/** Same-origin tile URLs in Vite dev (avoids CORS noise when RainViewer throttles). */
-export function rainViewerHostForTiles(host: string): string {
-  const h = normalizeHost(host);
-  if (import.meta.env.DEV && h.startsWith(TILE_CACHE_ORIGIN)) {
-    return DEV_TILE_PREFIX;
+/**
+ * Base URL for Mapbox / sampling tile templates (no trailing slash).
+ * Native + production use the StormPath proxy; Vite dev keeps the local soft-fail proxy.
+ */
+export function resolveRainViewerTileBase(): string {
+  if (Capacitor.isNativePlatform()) {
+    const custom = (import.meta.env.VITE_RAINVIEWER_TILE_PROXY_URL as string | undefined)?.trim();
+    return (custom || DEFAULT_RAINVIEWER_TILE_PROXY_URL).replace(/\/$/, "");
   }
-  return h;
+  if (import.meta.env.DEV) return DEV_TILE_PREFIX;
+  const custom = (import.meta.env.VITE_RAINVIEWER_TILE_PROXY_URL as string | undefined)?.trim();
+  if (custom) return custom.replace(/\/$/, "");
+  if (typeof window !== "undefined" && window.location.origin.startsWith("http")) {
+    return `${window.location.origin}/.netlify/functions/rainviewer-tile`;
+  }
+  return DEFAULT_RAINVIEWER_TILE_PROXY_URL;
+}
+
+/**
+ * Host prefix for tile URL templates. Manifest `host` is ignored — tiles always
+ * go through {@link resolveRainViewerTileBase} so phones share the edge cache.
+ */
+export function rainViewerHostForTiles(_host: string): string {
+  return resolveRainViewerTileBase();
 }
 
 /**
@@ -147,7 +172,7 @@ export async function fetchRainViewerRadarFrames(
     (opts?.mapAnimation ? RAINVIEWER_MAP_ANIMATION_PAST_WINDOW_SEC : RAINVIEWER_LOOP_PAST_WINDOW_SEC);
   const data = await fetchRainViewerManifest();
   if (!data) return null;
-  const host = normalizeHost(data.host ?? "https://tilecache.rainviewer.com");
+  const host = normalizeHost(data.host ?? TILE_CACHE_ORIGIN);
   const merged: RainViewerRadarFrame[] = [];
   if (!nowcastOnly) {
     const pastRaw = data.radar?.past ?? [];
