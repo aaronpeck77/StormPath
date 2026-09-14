@@ -72,23 +72,29 @@ final class DriveNativeMap {
     }
 
     @MainActor
-    func setVisible(_ visible: Bool, webView: UIView?) {
+    func setVisible(_ visible: Bool, webView: UIView?) -> Bool {
         if !visible {
             revealedThroughWebView = false
             mapView?.isHidden = true
             if let webView {
                 makeWebViewClear(webView, clear: false)
             }
-            return
+            return false
         }
         hostedWebView = webView ?? hostedWebView
-        /* Stay hidden until applyFollowCamera frames the puck. */
-        if revealedThroughWebView {
-            mapView?.isHidden = false
-            if let hostedWebView {
-                makeWebViewClear(hostedWebView, clear: true)
-            }
+        /* Re-entering Dr after Mp/Rt: reuse last follow sample so the hole is never blank. */
+        if styleReady, let sample = lastFollowSample {
+            writeFollowCamera(sample)
+            revealedThroughWebView = false
+            revealIfFramed()
+            return revealedThroughWebView
         }
+        /* First Go — wait for progress to frame, then reveal. Keep WebView opaque until then. */
+        mapView?.isHidden = true
+        if let hostedWebView {
+            makeWebViewClear(hostedWebView, clear: false)
+        }
+        return false
     }
 
     @MainActor

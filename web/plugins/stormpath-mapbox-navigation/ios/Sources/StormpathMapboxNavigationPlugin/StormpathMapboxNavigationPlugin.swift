@@ -115,8 +115,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         let visible = call.getBool("visible") ?? false
         Task { @MainActor [weak self] in
             guard let self else { return }
-            self.applyNativeMapVisible(visible)
-            call.resolve(["ok": true, "visible": visible])
+            let revealed = self.applyNativeMapVisible(visible)
+            call.resolve(["ok": true, "visible": visible, "revealed": revealed])
         }
     }
 
@@ -501,6 +501,9 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         if pendingNativeMapVisible || nativeMap != nil {
             nativeMap?.applyFollowCamera(cam)
         }
+        if let showing = nativeMap?.isShowing {
+            payload["nativeMapShowing"] = showing
+        }
         notifyListeners("progress", data: payload)
 
         if !didEmitArrival, remainingM >= 0, remainingM < 30, alongM > 50 {
@@ -678,14 +681,14 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @MainActor
-    private func applyNativeMapVisible(_ visible: Bool) {
+    private func applyNativeMapVisible(_ visible: Bool) -> Bool {
         pendingNativeMapVisible = visible
         guard visible else {
             nativeMap?.setVisible(false, webView: webView)
-            return
+            return false
         }
         guard let provider = navigationProvider, let host = webView?.superview, let wv = webView else {
-            return
+            return false
         }
         let map = nativeMap ?? DriveNativeMap()
         nativeMap = map
@@ -696,6 +699,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             predictiveCacheManager: provider.predictiveCacheManager,
             routes: lastNavRoutes
         )
+        return map.setVisible(true, webView: wv)
     }
 
     @MainActor

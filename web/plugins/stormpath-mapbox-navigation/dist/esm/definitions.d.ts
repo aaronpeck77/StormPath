@@ -44,6 +44,8 @@ export type NativeNavProgressEvent = {
   camBearing?: number;
   camPitch?: number;
   camZoom?: number;
+  /** True when native Drive map is visible through the WebView. */
+  nativeMapShowing?: boolean;
 };
 
 /** Live turn banner fields from Mapbox Navigation Core (iOS). */
@@ -94,7 +96,12 @@ export interface StormpathMapboxNavigationPlugin {
   /** Pin / hide the native heading-up Drive puck overlay. */
   setDrivePuckVisible(options: { visible: boolean }): Promise<{ ok: boolean; visible: boolean }>;
   /** Show / hide the native NavigationMapView under the WebView (Drive after Go). */
-  setNativeMapVisible(options: { visible: boolean }): Promise<{ ok: boolean; visible: boolean }>;
+  setNativeMapVisible(options: { visible: boolean }): Promise<{
+    ok: boolean;
+    visible: boolean;
+    /** True when NavigationMapView is framed and showing through the WebView. */
+    revealed?: boolean;
+  }>;
   stop(): Promise<void>;
   addListener(
     eventName: "progress",

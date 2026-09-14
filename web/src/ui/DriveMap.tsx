@@ -540,10 +540,9 @@ function DriveMapInner({
   const nativeDriveMapActiveRef = useRef(nativeDriveMapActive);
   nativeDriveMapActiveRef.current = nativeDriveMapActive;
   const [nativeMapHoleReady, setNativeMapHoleReady] = useState(false);
-  /** Keep StormPath's web map up until Core has a street-level follow-cam sample. */
-  const punchNativeHole = Boolean(
-    nativeDriveMapActive && nativeMapHoleReady && nativeFollowCamera
-  );
+  /** Only punch the web map once native NavigationMapView is actually showing. */
+  const [nativeMapShowing, setNativeMapShowing] = useState(false);
+  const punchNativeHole = Boolean(nativeDriveMapActive && nativeMapShowing);
   const punchNativeHoleRef = useRef(punchNativeHole);
   punchNativeHoleRef.current = punchNativeHole;
   const holdLastGoodMapRef = useRef(holdLastGoodMap);
@@ -592,6 +591,12 @@ function DriveMapInner({
    */
   const pendingRouteOverviewEnterRef = useRef(false);
   const prevPlanningViewModeRef = useRef(viewMode);
+  /** Keep enter-decision prev accurate when Dr is active (route/topdown effect skips Dr). */
+  useEffect(() => {
+    if (viewMode === "drive") {
+      prevPlanningViewModeRef.current = "drive";
+    }
+  }, [viewMode]);
   /** Reuse stable padding/offset for drive follow — fresh objects every frame can confuse Mapbox camera updates. */
   const driveCamEaseOptsCacheRef = useRef<{
     key: string;
@@ -1871,21 +1876,64 @@ function DriveMapInner({
     if (!isNativeMapboxNavPlatform()) return;
     let cancelled = false;
     if (nativeDriveMapActive) {
+      setNativeMapShowing(false);
       void StormpathMapboxNavigation.setNativeMapVisible({ visible: true })
-        .then(() => {
-          if (!cancelled) setNativeMapHoleReady(true);
+        .then((r) => {
+          if (cancelled) return;
+          setNativeMapHoleReady(true);
+          if (r && typeof r === "object" && "revealed" in r && (r as { revealed?: boolean }).revealed) {
+            setNativeMapShowing(true);
+          }
         })
         .catch(() => {
-          if (!cancelled) setNativeMapHoleReady(false);
+          if (!cancelled) {
+            setNativeMapHoleReady(false);
+            setNativeMapShowing(false);
+          }
         });
     } else {
       setNativeMapHoleReady(false);
+      setNativeMapShowing(false);
       void StormpathMapboxNavigation.setNativeMapVisible({ visible: false }).catch(() => undefined);
+      /* Web map was opacity-0 under the native shell — resize so Mp/Rt fits work. */
+      const map = mapRef.current;
+      if (map) {
+        try {
+          map.resize();
+        } catch {
+          /* style race */
+        }
+        requestAnimationFrame(() => {
+          try {
+            map.resize();
+          } catch {
+            /* style race */
+          }
+          setMapResumeTick((n) => n + 1);
+        });
+      }
     }
     return () => {
       cancelled = true;
     };
   }, [nativeDriveMapActive]);
+
+  /** Progress can reveal the native map after the first follow-cam tick (first Go). */
+  useEffect(() => {
+    if (!nativeDriveMapActive || nativeMapShowing || !nativeFollowCamera || !nativeMapHoleReady) return;
+    let cancelled = false;
+    void StormpathMapboxNavigation.setNativeMapVisible({ visible: true })
+      .then((r) => {
+        if (cancelled) return;
+        if (r && typeof r === "object" && "revealed" in r && (r as { revealed?: boolean }).revealed) {
+          setNativeMapShowing(true);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [nativeDriveMapActive, nativeMapShowing, nativeFollowCamera, nativeMapHoleReady]);
 
   /** After route compare or end of navigation, re-run topdown init and flatten pitch. */
   useEffect(() => {
