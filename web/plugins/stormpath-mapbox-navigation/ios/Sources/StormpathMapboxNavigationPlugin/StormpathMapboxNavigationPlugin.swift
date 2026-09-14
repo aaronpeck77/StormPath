@@ -113,9 +113,10 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func setNativeMapVisible(_ call: CAPPluginCall) {
         let visible = call.getBool("visible") ?? false
+        let styleUrl = call.getString("styleUrl")
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let revealed = self.applyNativeMapVisible(visible)
+            let revealed = self.applyNativeMapVisible(visible, styleUrl: styleUrl)
             call.resolve(["ok": true, "visible": visible, "revealed": revealed])
         }
     }
@@ -681,7 +682,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @MainActor
-    private func applyNativeMapVisible(_ visible: Bool) -> Bool {
+    private func applyNativeMapVisible(_ visible: Bool, styleUrl: String? = nil) -> Bool {
         pendingNativeMapVisible = visible
         guard visible else {
             nativeMap?.setVisible(false, webView: webView)
@@ -697,7 +698,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             webView: wv,
             navigation: provider.mapboxNavigation,
             predictiveCacheManager: provider.predictiveCacheManager,
-            routes: lastNavRoutes
+            routes: lastNavRoutes,
+            styleUrl: styleUrl
         )
         return map.setVisible(true, webView: wv)
     }

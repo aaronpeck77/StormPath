@@ -96,7 +96,11 @@ export interface StormpathMapboxNavigationPlugin {
   /** Pin / hide the native heading-up Drive puck overlay. */
   setDrivePuckVisible(options: { visible: boolean }): Promise<{ ok: boolean; visible: boolean }>;
   /** Show / hide the native NavigationMapView under the WebView (Drive after Go). */
-  setNativeMapVisible(options: { visible: boolean }): Promise<{
+  setNativeMapVisible(options: {
+    visible: boolean;
+    /** Match the web basemap (day streets / night dark or navigation-night). */
+    styleUrl?: string;
+  }): Promise<{
     ok: boolean;
     visible: boolean;
     /** True when NavigationMapView is framed and showing through the WebView. */

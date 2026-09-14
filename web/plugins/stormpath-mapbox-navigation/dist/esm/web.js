@@ -23,7 +23,11 @@ export class StormpathMapboxNavigationWeb extends WebPlugin {
   }
 
   async setNativeMapVisible(options) {
-    return { ok: true, visible: Boolean(options?.visible) };
+    return {
+      ok: true,
+      visible: Boolean(options?.visible),
+      revealed: false,
+    };
   }
 
   async stop() {}

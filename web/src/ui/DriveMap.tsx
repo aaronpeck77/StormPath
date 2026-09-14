@@ -1875,9 +1875,10 @@ function DriveMapInner({
   useEffect(() => {
     if (!isNativeMapboxNavPlatform()) return;
     let cancelled = false;
+    const styleUrl = activeStyleRef.current;
     if (nativeDriveMapActive) {
       setNativeMapShowing(false);
-      void StormpathMapboxNavigation.setNativeMapVisible({ visible: true })
+      void StormpathMapboxNavigation.setNativeMapVisible({ visible: true, styleUrl })
         .then((r) => {
           if (cancelled) return;
           setNativeMapHoleReady(true);
@@ -1922,7 +1923,10 @@ function DriveMapInner({
   useEffect(() => {
     if (!nativeDriveMapActive || nativeMapShowing || !nativeFollowCamera || !nativeMapHoleReady) return;
     let cancelled = false;
-    void StormpathMapboxNavigation.setNativeMapVisible({ visible: true })
+    void StormpathMapboxNavigation.setNativeMapVisible({
+      visible: true,
+      styleUrl: activeStyleRef.current,
+    })
       .then((r) => {
         if (cancelled) return;
         if (r && typeof r === "object" && "revealed" in r && (r as { revealed?: boolean }).revealed) {
@@ -1934,6 +1938,35 @@ function DriveMapInner({
       cancelled = true;
     };
   }, [nativeDriveMapActive, nativeMapShowing, nativeFollowCamera, nativeMapHoleReady]);
+
+  /**
+   * Entering Dr must leave Mp/Rt framing immediately on the web map until native punches.
+   * Otherwise chrome flips to Dr while the camera stays top-down.
+   */
+  useEffect(() => {
+    if (!mapReady || !navigationStarted || viewMode !== "drive") return;
+    if (punchNativeHole) return;
+    const map = mapRef.current;
+    const u = userLngLatRef.current;
+    if (!map || !u) return;
+    userExploringRef.current = false;
+    if (exploreTimerRef.current) {
+      clearTimeout(exploreTimerRef.current);
+      exploreTimerRef.current = null;
+    }
+    driveCamResyncRef.current = true;
+    const cam = nativeFollowCameraRef.current;
+    const center: [number, number] = cam ? [cam.lng, cam.lat] : u;
+    const zoom = cam?.zoom ?? driveNavZoomRef.current ?? DRIVE_FOLLOW_ZOOM_DEFAULT;
+    const pitch = cam?.pitch ?? DRIVE_FOLLOW_PITCH_DEG;
+    const bearing =
+      cam?.bearing ??
+      driveCamBearingSmoothedRef.current ??
+      driveLastTravelBearingRef.current ??
+      map.getBearing();
+    stopMapCamera(map);
+    safeHardFollowCamera(map, { center, zoom, pitch, bearing });
+  }, [mapReady, navigationStarted, viewMode, punchNativeHole]);
 
   /** After route compare or end of navigation, re-run topdown init and flatten pitch. */
   useEffect(() => {
@@ -3497,6 +3530,11 @@ function DriveMapInner({
         topdownZoomRef.current = TOPDOWN_NAV_STREET_ZOOM;
       }
       prevTopdownRef.current = false;
+      topdownSnapKeyRef.current = "";
+    }
+    if (viewMode === "route" && navigationStarted) {
+      pendingRouteOverviewEnterRef.current = true;
+      navRouteSnapKeyRef.current = "";
     }
     userExploringRef.current = false;
     if (exploreTimerRef.current) {
@@ -3506,7 +3544,18 @@ function DriveMapInner({
     if (viewMode === "drive" && navigationStarted) {
       driveCamResyncRef.current = true;
     }
-    /* Do not resize here — a post-snap resize after the one-shot Rt/Mp/Dr camera
+    if (navigationStarted && (viewMode === "route" || viewMode === "topdown")) {
+      const map = mapRef.current;
+      if (map) {
+        try {
+          map.resize();
+        } catch {
+          /* style race */
+        }
+      }
+      setMapResumeTick((n) => n + 1);
+    }
+    /* Do not resize here on Dr — a post-snap resize after the one-shot Rt/Mp/Dr camera
      * is what made the map blur/vibrate for about a second on view switch. */
   }, [mapReady, viewMode, navigationStarted, topdownZoomRef]);
 

@@ -18,6 +18,8 @@ final class DriveNativeMap {
     private var revealedThroughWebView = false
     private var styleReady = false
     private var lastFollowSample: DriveFollowCameraSample?
+    /** Matches the web basemap (day streets / night dark or navigation-night). */
+    private var styleUrl = "mapbox://styles/mapbox/streets-v12"
 
     @MainActor
     func attach(
@@ -25,10 +27,14 @@ final class DriveNativeMap {
         webView: UIView,
         navigation: MapboxNavigation,
         predictiveCacheManager: PredictiveCacheManager?,
-        routes: NavigationRoutes?
+        routes: NavigationRoutes?,
+        styleUrl: String?
     ) {
         lastRoutes = routes ?? lastRoutes
         hostedWebView = webView
+        if let styleUrl, !styleUrl.isEmpty {
+            self.styleUrl = styleUrl
+        }
         if mapView == nil {
             let nav = navigation.navigation()
             let map = NavigationMapView(
@@ -38,8 +44,7 @@ final class DriveNativeMap {
             )
             map.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             map.frame = host.bounds
-            map.puckType = .puck2D(Self.stormpathPuck2D())
-            map.puckBearing = .course
+            applyStormPathPuck(on: map)
             map.showsAlternatives = false
             map.showsRelativeDurationsOnAlternativeManuever = false
             map.navigationCamera.stop()
@@ -47,6 +52,9 @@ final class DriveNativeMap {
             host.insertSubview(map, belowSubview: webView)
             mapView = map
             applyStormPathStyle(on: map)
+        } else if let map = mapView {
+            /* Style may change (day→night) between trips — reload only when URL differs. */
+            applyStormPathStyleIfNeeded(on: map)
         }
         /* Keep the WebView opaque until follow-cam has framed street level.
          * Clearing it here flashes Mapbox's default globe / triangle puck. */
@@ -148,13 +156,25 @@ final class DriveNativeMap {
     }
 
     @MainActor
+    private func applyStormPathStyleIfNeeded(on map: NavigationMapView) {
+        let current = map.mapView.mapboxMap.styleURI?.rawValue
+        if current == styleUrl, styleReady {
+            applyStormPathPuck(on: map)
+            return
+        }
+        applyStormPathStyle(on: map)
+    }
+
+    @MainActor
     private func applyStormPathStyle(on map: NavigationMapView) {
         styleReady = false
-        let uri = StyleURI(rawValue: "mapbox://styles/mapbox/streets-v12") ?? .streets
+        revealedThroughWebView = false
+        let uri = StyleURI(rawValue: styleUrl) ?? StyleURI(rawValue: "mapbox://styles/mapbox/streets-v12") ?? .streets
         map.mapView.mapboxMap.loadStyle(uri) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 self.styleReady = true
+                self.applyStormPathPuck(on: map)
                 /* Pitch before first progress tick so the hole never flashes flat 2D. */
                 var boot = CameraOptions()
                 boot.pitch = 64
@@ -172,11 +192,19 @@ final class DriveNativeMap {
     }
 
     @MainActor
+    private func applyStormPathPuck(on map: NavigationMapView) {
+        map.puckType = .puck2D(Self.stormpathPuck2D())
+        map.puckBearing = .course
+    }
+
+    @MainActor
     private func addStormPathBuildings() {
         guard let mapView else { return }
         guard let style = mapView.mapView.mapboxMap else { return }
         let layerId = "stormpath-3d-buildings"
-        if style.layerExists(withId: layerId) { return }
+        if style.layerExists(withId: layerId) {
+            try? style.removeLayer(withId: layerId)
+        }
         do {
             var buildings = FillExtrusionLayer(id: layerId, source: "composite")
             buildings.sourceLayer = "building"
@@ -185,45 +213,53 @@ final class DriveNativeMap {
                 Exp(.get) { "extrude" }
                 "true"
             }
-            buildings.fillExtrusionColor = .constant(StyleColor(UIColor(white: 0.78, alpha: 1)))
+            let night = styleUrl.contains("dark") || styleUrl.contains("night")
+            let fill = night
+                ? UIColor(white: 0.22, alpha: 1)
+                : UIColor(white: 0.78, alpha: 1)
+            buildings.fillExtrusionColor = .constant(StyleColor(fill))
             buildings.fillExtrusionHeight = .expression(Exp(.get) { "height" })
             buildings.fillExtrusionBase = .expression(Exp(.get) { "min_height" })
-            buildings.fillExtrusionOpacity = .constant(0.8)
+            buildings.fillExtrusionOpacity = .constant(night ? 0.9 : 0.8)
             try style.addLayer(buildings)
         } catch {
-            /* streets-v12 may already extrude buildings; pitch is what makes them read 3D. */
+            /* Style may already extrude buildings; pitch is what makes them read 3D. */
         }
     }
 
-    /// Match `.map-user-puck` / `--driving`: 22px blue sphere, white ring, soft shadow.
-    /// Do not use `makeDefault(showBearing:)` — that adds Mapbox's large flat bearing disc.
+    /// Match `.map-user-puck` / `--driving`: ~22pt blue sphere. No Mapbox bearing disc.
     private static func stormpathPuck2D() -> Puck2DConfiguration {
         var config = Puck2DConfiguration(
             topImage: stormpathPuckDotImage(),
             bearingImage: nil,
             shadowImage: nil,
-            scale: .constant(1.0),
+            scale: .constant(0.55),
             showsAccuracyRing: false
         )
         config.opacity = 1
         return config
     }
 
-    /// Bakes the web CSS look (radial highlight + ring + drop shadow) into one image.
+    /// Bakes the web CSS look (radial highlight + ring + soft shadow) into one image.
     private static func stormpathPuckDotImage() -> UIImage {
-        let scale = UIScreen.main.scale
-        /* 22pt disc + room for the CSS-like shadow so Mapbox does not upscale a tiny bitmap. */
-        let canvasPt: CGFloat = 32
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = UIScreen.main.scale
+        format.opaque = false
+        /* Content ~22pt; canvas pads for shadow. scale 0.55 on the puck keeps screen size near web. */
+        let canvasPt: CGFloat = 40
         let discPt: CGFloat = 22
-        let px = canvasPt * scale
-        let discPx = discPt * scale
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: px, height: px))
+        let renderer = UIGraphicsImageRenderer(
+            size: CGSize(width: canvasPt, height: canvasPt),
+            format: format
+        )
         return renderer.image { ctx in
             let cg = ctx.cgContext
+            let scale = format.scale
+            let px = canvasPt * scale
+            let discPx = discPt * scale
             let center = CGPoint(x: px / 2, y: px / 2 - 0.5 * scale)
             let radius = discPx / 2
 
-            /* Soft drop shadow (0 3px 8px rgba(0,0,0,0.4)) */
             cg.saveGState()
             cg.setShadow(
                 offset: CGSize(width: 0, height: 2.5 * scale),
@@ -239,14 +275,12 @@ final class DriveNativeMap {
             ))
             cg.restoreGState()
 
-            /* White ring (3px border) */
             let ring = UIBezierPath(
                 ovalIn: CGRect(x: center.x - radius, y: center.y - radius, width: discPx, height: discPx)
             )
             UIColor.white.setFill()
             ring.fill()
 
-            /* Inner disc — radial like #6bb8ff → #1a73e8 → #0a3d91 */
             let inset = 3 * scale
             let innerRect = CGRect(
                 x: center.x - radius + inset,
@@ -282,7 +316,6 @@ final class DriveNativeMap {
                 cg.restoreGState()
             }
 
-            /* Specular rim */
             cg.saveGState()
             cg.setFillColor(UIColor(white: 1, alpha: 0.35).cgColor)
             let gloss = CGRect(
