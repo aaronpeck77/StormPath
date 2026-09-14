@@ -21,6 +21,7 @@ import {
   fetchPointHourlyForecast,
   fetchRouteForecast,
   isTomorrowIoRateLimited,
+  routeForecastEtasAlignWithPlan,
   type MinutePrecipForecast,
   type PointDailyForecast,
   type PointHourlyForecast,
@@ -355,7 +356,9 @@ export function useTomorrowRouteForecast(
   routeGeometry: LngLat[] | null,
   speedMps: number,
   enabled = false,
-  weatherKitEnabled = false
+  weatherKitEnabled = false,
+  /** Mapbox / guidance trip duration — aligns hourly samples to drive ETA. */
+  planEtaMinutes: number | null = null
 ): RouteForecastHookResult {
   const [forecast, setForecast] = useState<RouteForecast | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -371,11 +374,12 @@ export function useTomorrowRouteForecast(
     (sig: string, geometry: LngLat[] | null): RouteForecast | null => {
       const cached = readRouteForecastCache(sig, geometry);
       if (!cached?.intervals.length) return null;
+      if (!routeForecastEtasAlignWithPlan(cached, planEtaMinutes)) return null;
       setForecast(cached);
       setUsingCache(true);
       return cached;
     },
-    []
+    [planEtaMinutes]
   );
 
   const bumpRouteForecastRefresh = useCallback(() => {
@@ -388,14 +392,22 @@ export function useTomorrowRouteForecast(
   }, []);
 
   const waypoints = useMemo(
-    () => (routeGeometry ? buildTimelinesWaypointsForGeometry(routeGeometry, speedMps) : null),
-    [routeGeometry, speedMps]
+    () =>
+      routeGeometry
+        ? buildTimelinesWaypointsForGeometry(routeGeometry, speedMps, planEtaMinutes)
+        : null,
+    [routeGeometry, speedMps, planEtaMinutes]
   );
 
-  const routeSig = useMemo(
-    () => (routeGeometry?.length ? corridorRouteSig(routeGeometry) : ""),
-    [routeGeometry]
-  );
+  const routeSig = useMemo(() => {
+    if (!routeGeometry?.length) return "";
+    const geom = corridorRouteSig(routeGeometry);
+    const etaBucket =
+      planEtaMinutes != null && planEtaMinutes > 0
+        ? Math.round(planEtaMinutes / 20)
+        : 0;
+    return etaBucket > 0 ? `${geom}|e${etaBucket}` : geom;
+  }, [routeGeometry, planEtaMinutes]);
 
   useEffect(() => {
     if (!routeSig || !routeGeometry?.length) {
@@ -406,14 +418,14 @@ export function useTomorrowRouteForecast(
       return;
     }
     const cached = readRouteForecastCache(routeSig, routeGeometry);
-    if (cached?.intervals.length) {
+    if (cached?.intervals.length && routeForecastEtasAlignWithPlan(cached, planEtaMinutes)) {
       setForecast(cached);
       setUsingCache(true);
     } else {
       setForecast(null);
       setUsingCache(false);
     }
-  }, [routeSig, routeGeometry]);
+  }, [routeSig, routeGeometry, planEtaMinutes]);
 
   useEffect(() => {
     const force = forceRefreshRef.current;

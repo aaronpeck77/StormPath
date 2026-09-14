@@ -101,7 +101,7 @@ export function useCorridorRouteForecasts(
         return;
       }
 
-      const wps = buildTimelinesWaypointsForGeometry(leg.geometry, speedMps);
+      const wps = buildTimelinesWaypointsForGeometry(leg.geometry, speedMps, leg.etaMinutes);
       if (!wps?.length) {
         cacheRef.current[leg.routeId] = null;
         if (!cancelled) {

@@ -233,7 +233,8 @@ export function useRouteWeatherPipeline(
     isPlus && guidanceRoute?.geometry?.length ? guidanceRoute.geometry : null,
     speedMps ?? 0,
     tioRouteFetchEnabled,
-    weatherKitEnabled
+    weatherKitEnabled,
+    guidanceRoute?.baseEtaMinutes ?? null
   );
 
   const routeWeatherOverlay = useMemo(
