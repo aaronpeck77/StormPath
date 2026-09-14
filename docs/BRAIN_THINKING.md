@@ -39,3 +39,7 @@ Pre-Go Wi‑Fi tile warm used `fitBounds` on the first ~25 mi window, then resto
 ### 2026-09-13 — Stop still crashed after idle+drain+nil
 
 Even with mutex + 550ms drain, releasing the provider on Stop killed the IPA. Soft-stop now: `setToIdle`, drop sinks, **keep** the provider (Mapbox’s own pattern). Full nil only on the next prepare/Go under the mutex. Do not bring back a second overlapping provider.
+
+### 2026-09-13 — Full native Drive (one owner)
+
+Bill: no baby steps. `NATIVE_DRIVE_MAP_ENABLED` + follow-cam **on**. After Go in Dr, NavigationMapView is the road; web map punches transparent and does not easeTo. Mp/Rt still web. Soft-stop stays required so turning the shell on does not reintroduce the Stop crash.

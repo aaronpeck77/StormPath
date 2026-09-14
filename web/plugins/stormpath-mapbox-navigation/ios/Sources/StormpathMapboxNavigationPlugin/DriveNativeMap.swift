@@ -149,6 +149,10 @@ final class DriveNativeMap {
             Task { @MainActor in
                 guard let self else { return }
                 self.styleReady = true
+                /* Pitch before first progress tick so the hole never flashes flat 2D. */
+                var boot = CameraOptions()
+                boot.pitch = 64
+                map.mapView.mapboxMap.setCamera(to: boot)
                 if let routes = self.lastRoutes {
                     self.mapView?.show(routes, routeAnnotationKinds: [])
                 }

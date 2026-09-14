@@ -45,7 +45,7 @@ describe("createNativeDriveFollowCam", () => {
 describe("shouldUseNativeFollowCam", () => {
   const camera = { lng: -90, lat: 38, bearing: 10, pitch: 64, zoom: 16.35 };
 
-  it("stays off while the native follow-cam writer is parked", () => {
+  it("owns Drive follow-cam when Core is guiding", () => {
     expect(
       shouldUseNativeFollowCam({
         camera,
@@ -53,7 +53,7 @@ describe("shouldUseNativeFollowCam", () => {
         viewMode: "drive",
         userExploring: false,
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("releases for Mp, explore, or missing sample", () => {
