@@ -134,8 +134,10 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.resolve()
                 return
             }
+            /* Soft-idle only — nilling the provider on Stop hard-crashed the IPA
+             * even after a drain sleep. Mapbox examples keep the provider alive. */
             await self.withCoreMutex {
-                await self.tearDownSession(emitCancelled: true)
+                await self.softStopGuidance()
             }
             call.resolve()
         }
@@ -362,7 +364,6 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             if let synth = voiceController?.speechSynthesizer {
                 synth.muted = true
-                synth.stopSpeaking()
             }
             voiceController = nil
         }
@@ -506,7 +507,10 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             didEmitArrival = true
             notifyListeners("arrived", data: ["reason": "arrived"])
             Task { @MainActor [weak self] in
-                await self?.tearDownSession(emitCancelled: false)
+                guard let self else { return }
+                await self.withCoreMutex {
+                    await self.softStopGuidance()
+                }
             }
         }
     }
@@ -571,13 +575,13 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     /**
-     * Idle + drop Core. Never keep a second `MapboxNavigationProvider` around.
-     * Callers must hold `withCoreMutex` (prepare / start / stop).
-     * After a live session, wait so Core finishes last ticks before release.
+     * User Stop / arrival: idle Core, drop observers, **keep** `MapboxNavigationProvider`.
+     * Releasing the provider on Stop (even after a drain) hard-crashed the IPA.
+     * Next prepare / Go calls `tearDownSession` under the mutex and replaces it.
+     * Callers must hold `withCoreMutex`.
      */
     @MainActor
-    private func tearDownSession(emitCancelled: Bool) async {
-        /* A second stop must wait — early return used to resolve JS clearTrip while Core still lived. */
+    private func softStopGuidance() async {
         while tearDownInFlight {
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
@@ -599,7 +603,55 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         cancellables.removeAll()
         if let synth = voiceController?.speechSynthesizer {
             synth.muted = true
-            synth.stopSpeaking()
+            /* Skip stopSpeaking — it raced Core's own speech teardown on Stop. */
+        }
+        voiceController = nil
+        voiceEnabled = false
+
+        nativeMap?.detach(webView: webView)
+        nativeMap = nil
+        applyDrivePuckVisible(false)
+
+        if wasActive, let provider = navigationProvider {
+            provider.mapboxNavigation.tripSession().setToIdle()
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+
+        poseHold.reset()
+        followCam.reset()
+        lastNavRoutes = nil
+        preparedRouteKey = ""
+        pendingNativeMapVisible = false
+        /* Keep navigationProvider until prepare / Go tearDown replaces it. */
+    }
+
+    /**
+     * Full Core release before installing a replacement provider (prepare / Go).
+     * Callers must hold `withCoreMutex`. Never overlap two providers.
+     */
+    @MainActor
+    private func tearDownSession(emitCancelled: Bool) async {
+        while tearDownInFlight {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        if navigationProvider == nil && !sessionActive {
+            poseHold.reset()
+            followCam.reset()
+            lastNavRoutes = nil
+            preparedRouteKey = ""
+            pendingNativeMapVisible = false
+            return
+        }
+
+        tearDownInFlight = true
+        defer { tearDownInFlight = false }
+
+        let wasActive = sessionActive
+        sessionActive = false
+        coreEpoch += 1
+        cancellables.removeAll()
+        if let synth = voiceController?.speechSynthesizer {
+            synth.muted = true
         }
         voiceController = nil
         voiceEnabled = false
@@ -611,8 +663,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         let provider = navigationProvider
         if wasActive {
             provider?.mapboxNavigation.tripSession().setToIdle()
-            /* Drain before release so Stop does not dealloc mid-callback. */
-            try? await Task.sleep(nanoseconds: 550_000_000)
+            try? await Task.sleep(nanoseconds: 400_000_000)
             if emitCancelled {
                 notifyListeners("cancelled", data: ["reason": "cancelled"])
             }

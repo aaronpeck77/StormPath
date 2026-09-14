@@ -35,3 +35,7 @@ Core must go idle and drop the NavigationMapView **before** the web trip is wipe
 ### 2026-09-13 — Corridor warm stole the camera
 
 Pre-Go Wi‑Fi tile warm used `fitBounds` on the first ~25 mi window, then restored — that was the A/B “first leg then full route” hop. Prefetch HTTP only; leave the overview camera alone.
+
+### 2026-09-13 — Stop still crashed after idle+drain+nil
+
+Even with mutex + 550ms drain, releasing the provider on Stop killed the IPA. Soft-stop now: `setToIdle`, drop sinks, **keep** the provider (Mapbox’s own pattern). Full nil only on the next prepare/Go under the mutex. Do not bring back a second overlapping provider.
