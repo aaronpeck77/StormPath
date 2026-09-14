@@ -1,0 +1,95 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- StormPath Plus yearly promo: same icon family (single cloud mass), winter scene.
+       Not the app icon: icy sky, no lightning, snow instead of rain. -->
+  <defs>
+    <linearGradient id="cloud-main" x1="512" y1="220" x2="512" y2="460" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#E8EEF4"/>
+      <stop offset="35%" stop-color="#C5D0DC"/>
+      <stop offset="72%" stop-color="#8A97AA"/>
+      <stop offset="100%" stop-color="#5A6578"/>
+    </linearGradient>
+    <radialGradient id="cloud-highlight" cx="460" cy="280" r="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#C5D0DC" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="cloud-shadow" x="-18%" y="-18%" width="136%" height="136%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#2A3848" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#9BB4C8"/>
+
+  <g filter="url(#cloud-shadow)">
+    <path
+      d="M 160 400
+         C 150 318 228 248 330 236
+         C 378 196 468 184 544 208
+         C 612 182 712 188 776 232
+         C 852 220 910 278 904 342
+         C 948 368 940 418 888 442
+         C 906 472 872 502 812 512
+         H 212
+         C 152 502 126 468 148 432
+         C 118 408 128 418 160 400 Z"
+      fill="url(#cloud-main)"
+    />
+    <path
+      d="M 160 400
+         C 150 318 228 248 330 236
+         C 378 196 468 184 544 208
+         C 612 182 712 188 776 232
+         C 852 220 910 278 904 342
+         C 948 368 940 418 888 442
+         C 906 472 872 502 812 512
+         H 212
+         C 152 502 126 468 148 432
+         C 118 408 128 418 160 400 Z"
+      fill="url(#cloud-highlight)"
+    />
+    <path
+      d="M 204 468 Q 512 492 820 468 L 820 498 Q 512 522 204 498 Z"
+      fill="#4A5568"
+      opacity="0.28"
+    />
+  </g>
+
+  <!-- Snow: soft flakes + dots. No bolt, no rain streaks. -->
+  <g fill="#FFFFFF" stroke="#E2E8F0" stroke-width="2">
+    <g transform="translate(250 560)">
+      <circle cx="0" cy="0" r="8" stroke="none"/>
+      <path d="M 0 -20 L 0 20 M -17 -10 L 17 10 M -17 10 L 17 -10" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(360 620)">
+      <circle cx="0" cy="0" r="11" stroke="none"/>
+      <path d="M 0 -26 L 0 26 M -22 -13 L 22 13 M -22 13 L 22 -13" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(470 548)">
+      <circle cx="0" cy="0" r="7" stroke="none"/>
+      <path d="M 0 -18 L 0 18 M -16 -9 L 16 9 M -16 9 L 16 -9" fill="none" stroke="#F8FAFC" stroke-width="3.5" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(580 640)">
+      <circle cx="0" cy="0" r="10" stroke="none"/>
+      <path d="M 0 -24 L 0 24 M -21 -12 L 21 12 M -21 12 L 21 -12" fill="none" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(690 560)">
+      <circle cx="0" cy="0" r="8" stroke="none"/>
+      <path d="M 0 -20 L 0 20 M -17 -10 L 17 10 M -17 10 L 17 -10" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(790 610)">
+      <circle cx="0" cy="0" r="9" stroke="none"/>
+      <path d="M 0 -22 L 0 22 M -19 -11 L 19 11 M -19 11 L 19 -11" fill="none" stroke="#F1F5F9" stroke-width="4" stroke-linecap="round"/>
+    </g>
+  </g>
+  <g fill="#FFFFFF">
+    <circle cx="300" cy="720" r="6" opacity="0.95"/>
+    <circle cx="410" cy="700" r="4.5" opacity="0.9"/>
+    <circle cx="520" cy="740" r="7" opacity="0.95"/>
+    <circle cx="640" cy="710" r="5" opacity="0.88"/>
+    <circle cx="740" cy="730" r="6" opacity="0.92"/>
+    <circle cx="330" cy="800" r="4" opacity="0.8"/>
+    <circle cx="500" cy="800" r="5.5" opacity="0.85"/>
+    <circle cx="680" cy="790" r="4.5" opacity="0.82"/>
+    <circle cx="820" cy="700" r="5" opacity="0.9"/>
+    <circle cx="230" cy="680" r="3.5" opacity="0.75"/>
+  </g>
+</svg>
