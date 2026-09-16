@@ -9,6 +9,7 @@ import {
   DRIVE_FOLLOW_ZOOM_DEFAULT,
 } from "../ui/driveFollowZoomGuard";
 import { DRIVE_FOLLOW_PITCH_DEG } from "../ui/mapDriveCamera";
+import { haversineMeters } from "./routeGeometry";
 import { NATIVE_DRIVE_FOLLOW_CAM_ENABLED } from "./nativeDriveMapShell";
 
 export type NativeDriveFollowCamera = {
@@ -115,6 +116,29 @@ export function parseNativeDriveFollowCamera(raw: {
       raw.camPitch != null && Number.isFinite(raw.camPitch) ? raw.camPitch : DRIVE_FOLLOW_PITCH_DEG,
     zoom: clampDriveFollowZoom(raw.camZoom),
   };
+}
+
+/** Parked GPS wobble is 5–10 m per fix; the puck damps it, a raw camera write does not. */
+export const PARKED_CAM_HOLD_M = 12;
+export const PARKED_CAM_HOLD_DEG = 25;
+
+/**
+ * True when a stationary sample is close enough to the last applied one to be wobble
+ * rather than movement. Holding the camera is what keeps the map still at a light.
+ */
+export function shouldHoldParkedFollowCam(input: {
+  stationary: boolean;
+  held: { lng: number; lat: number; bearing: number } | null;
+  next: { lng: number; lat: number; bearing: number };
+}): boolean {
+  if (!input.stationary || !input.held) return false;
+  const moved = haversineMeters(
+    [input.held.lng, input.held.lat],
+    [input.next.lng, input.next.lat]
+  );
+  if (!Number.isFinite(moved) || moved >= PARKED_CAM_HOLD_M) return false;
+  const turn = Math.abs((((input.next.bearing - input.held.bearing) % 360) + 540) % 360 - 180);
+  return turn < PARKED_CAM_HOLD_DEG;
 }
 
 /** True when DriveMap must apply native cam and must not write its own follow-cam. */

@@ -126,7 +126,10 @@ import {
   smoothDriveBearingDeg,
 } from "./mapDriveCamera";
 import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
-import { shouldUseNativeFollowCam } from "../nav/nativeDriveFollowCam";
+import {
+  shouldHoldParkedFollowCam,
+  shouldUseNativeFollowCam,
+} from "../nav/nativeDriveFollowCam";
 import {
   NATIVE_DRIVE_MAP_ENABLED,
   NATIVE_DRIVE_PUCK_OVERLAY_ENABLED,
@@ -585,6 +588,8 @@ function DriveMapInner({
   const userExploringRef = useRef(false);
   /** One-shot: force drive follow-cam easeTo even when the puck barely moved (explore end, layout, resume). */
   const driveCamResyncRef = useRef(false);
+  /** Last native cam sample actually written — anchor for the parked wobble hold. */
+  const nativeCamAppliedRef = useRef<{ lng: number; lat: number; bearing: number } | null>(null);
   /** Sliding corridor window start (m) for ahead tile prefetch while navigating. */
   const corridorWarmStartMRef = useRef(0);
   const corridorPrefetchInFlightRef = useRef(false);
@@ -1630,7 +1635,18 @@ function DriveMapInner({
               driveCamEaseOptsCacheRef.current = easeCached;
             }
             const holdTiles = holdLastGoodMapRef.current || !isOnlineRef.current;
-            const applied = holdTiles
+            /* Stopped at a light, Core keeps reporting wobble. Writing it straight to the
+             * camera is the twitch — the puck's own damping never sees this path. */
+            const parkedHold =
+              !driveCamResyncRef.current &&
+              shouldHoldParkedFollowCam({
+                stationary: isStationary,
+                held: nativeCamAppliedRef.current,
+                next: { lng: nativeCam.lng, lat: nativeCam.lat, bearing: nativeCam.bearing },
+              });
+            const applied = parkedHold
+              ? false
+              : holdTiles
               ? safeHardFollowCamera(map, {
                   center: guarded.center,
                   zoom: guarded.zoom,
@@ -1654,6 +1670,11 @@ function DriveMapInner({
                   bearing: nativeCam.bearing,
                 });
             if (applied) {
+              nativeCamAppliedRef.current = {
+                lng: nativeCam.lng,
+                lat: nativeCam.lat,
+                bearing: nativeCam.bearing,
+              };
               lastBearingApplied = nativeCam.bearing;
               driveCamBearingSmoothedRef.current = nativeCam.bearing;
               driveCamResyncRef.current = false;

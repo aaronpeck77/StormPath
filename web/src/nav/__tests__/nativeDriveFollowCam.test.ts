@@ -3,6 +3,8 @@ import {
   createNativeDriveFollowCam,
   nativeDriveFollowZoomForSpeed,
   parseNativeDriveFollowCamera,
+  PARKED_CAM_HOLD_M,
+  shouldHoldParkedFollowCam,
   shouldUseNativeFollowCam,
 } from "../nativeDriveFollowCam";
 import { DRIVE_FOLLOW_PITCH_DEG } from "../../ui/mapDriveCamera";
@@ -39,6 +41,35 @@ describe("createNativeDriveFollowCam", () => {
       camZoom: 6.2,
     });
     expect(parsed?.zoom).toBe(DRIVE_FOLLOW_ZOOM_DEFAULT);
+  });
+});
+
+describe("shouldHoldParkedFollowCam", () => {
+  const held = { lng: -90.2, lat: 38.63, bearing: 90 };
+  /** ~1e-4 deg of longitude at 38°N is roughly 8.7 m. */
+  const wobble = { lng: -90.2001, lat: 38.63, bearing: 96 };
+
+  it("holds the camera through GPS wobble while parked", () => {
+    expect(shouldHoldParkedFollowCam({ stationary: true, held, next: wobble })).toBe(true);
+  });
+
+  it("never holds while moving, however small the step", () => {
+    expect(shouldHoldParkedFollowCam({ stationary: false, held, next: wobble })).toBe(false);
+  });
+
+  it("releases once the sample moves further than wobble", () => {
+    const rolled = { lng: -90.2, lat: 38.6306, bearing: 90 }; /* ~67 m north */
+    expect(shouldHoldParkedFollowCam({ stationary: true, held, next: rolled })).toBe(false);
+    expect(PARKED_CAM_HOLD_M).toBeLessThan(67);
+  });
+
+  it("releases when the car turns in place", () => {
+    const spun = { lng: -90.2, lat: 38.63, bearing: 190 };
+    expect(shouldHoldParkedFollowCam({ stationary: true, held, next: spun })).toBe(false);
+  });
+
+  it("applies the first sample of a trip", () => {
+    expect(shouldHoldParkedFollowCam({ stationary: true, held: null, next: wobble })).toBe(false);
   });
 });
 
