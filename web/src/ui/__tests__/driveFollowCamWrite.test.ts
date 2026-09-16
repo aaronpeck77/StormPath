@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   advanceFollowCamWriter,
   driveFollowCamAllowsSetCenterHotLoop,
+  nativeFollowCamAllowsSameFrameHardFallback,
   pickDriveFollowCamWrite,
   shouldRepairFollowCamStall,
   FOLLOW_CAM_HOLD_CLEAR_MS,
@@ -11,6 +12,10 @@ import {
 describe("drive follow-cam writes", () => {
   it("never uses setCenter on the 60fps Drive loop (yard-line offset fight)", () => {
     expect(driveFollowCamAllowsSetCenterHotLoop()).toBe(false);
+  });
+
+  it("does not hard-fallback Core-to-web pan in the same frame (two-image flicker)", () => {
+    expect(nativeFollowCamAllowsSameFrameHardFallback()).toBe(false);
   });
 
   it("jumps with offset when the puck or bearing moved", () => {

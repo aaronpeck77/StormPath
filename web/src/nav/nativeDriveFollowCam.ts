@@ -156,3 +156,30 @@ export function shouldUseNativeFollowCam(input: {
       !input.userExploring
   );
 }
+
+/**
+ * Core hands ~1 sample/s. Re-applying that pose at 60 fps while pan (yard-line
+ * offset) and hard setCenter (no offset) take turns is the two-image flicker on
+ * the StormPath map. Native NavigationMapView never did that — one writer, one
+ * sample. Skip the web write until the sample actually moved.
+ */
+export const NATIVE_FOLLOW_CAM_WEB_MOVE_M = 0.8;
+export const NATIVE_FOLLOW_CAM_WEB_BEARING_DEG = 0.45;
+export const NATIVE_FOLLOW_CAM_WEB_ZOOM = 0.04;
+
+export function nativeFollowCamNeedsWebWrite(input: {
+  next: NativeDriveFollowCamera;
+  lastApplied: { lng: number; lat: number; bearing: number; pitch?: number; zoom?: number } | null;
+  resync: boolean;
+}): boolean {
+  if (input.resync || !input.lastApplied) return true;
+  const a = input.lastApplied;
+  const n = input.next;
+  const moved = haversineMeters([a.lng, a.lat], [n.lng, n.lat]);
+  if (Number.isFinite(moved) && moved >= NATIVE_FOLLOW_CAM_WEB_MOVE_M) return true;
+  const turn = Math.abs((((n.bearing - a.bearing) % 360) + 540) % 360 - 180);
+  if (turn >= NATIVE_FOLLOW_CAM_WEB_BEARING_DEG) return true;
+  if (a.zoom != null && Math.abs(n.zoom - a.zoom) >= NATIVE_FOLLOW_CAM_WEB_ZOOM) return true;
+  if (a.pitch != null && Math.abs(n.pitch - a.pitch) >= 0.5) return true;
+  return false;
+}
