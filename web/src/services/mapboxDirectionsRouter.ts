@@ -5,6 +5,7 @@ import {
 import type { LngLat, MapboxRouteIncident, NavRoute, PostedSpeedSample, RouteTurnStep, TripPlan } from "../nav/types";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { detectRouteTollsFromLegs } from "../nav/detectRouteTolls";
+import { collectRoadControls } from "../nav/roadControls";
 import {
   closestAlongRouteMeters,
   cumulativeLengthToVertex,
@@ -90,6 +91,12 @@ type DirectionsResponse = {
           geometry_index?: number;
           classes?: string[];
           toll_collection?: { name?: string; type?: string };
+          /** [lng, lat] of the intersection itself. */
+          location?: MbCoord;
+          traffic_signal?: boolean;
+          stop_sign?: boolean;
+          yield_sign?: boolean;
+          railway_crossing?: boolean;
         }[];
       }[];
       incidents?: MbIncident[];
@@ -463,6 +470,7 @@ function routeFromDirectionsApi(
     hasTolls: tollInfo.hasTolls || undefined,
     tollLabels: tollInfo.tollLabels.length ? tollInfo.tollLabels : undefined,
     postedSpeedSamples,
+    roadControls: collectRoadControls(legs),
   };
 }
 

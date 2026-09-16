@@ -106,6 +106,17 @@ export interface StormpathMapboxNavigationPlugin {
     /** True when NavigationMapView is framed and showing through the WebView. */
     revealed?: boolean;
   }>;
+  /**
+   * Controlled intersections for the native Drive map (signals / stop / yield / rail),
+   * from Mapbox Directions `intersections`. Pass an empty array to clear.
+   */
+  setRoadControls(options: {
+    points: Array<{
+      lng: number;
+      lat: number;
+      kind: "traffic_signal" | "stop_sign" | "yield_sign" | "railway_crossing";
+    }>;
+  }): Promise<{ ok: boolean; count: number }>;
   stop(): Promise<void>;
   addListener(
     eventName: "progress",

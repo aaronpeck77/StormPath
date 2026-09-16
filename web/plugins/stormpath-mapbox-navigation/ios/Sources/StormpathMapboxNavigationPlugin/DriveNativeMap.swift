@@ -5,6 +5,22 @@ import MapboxNavigationCore
 import UIKit
 import WebKit
 
+/// A controlled intersection on the driven corridor (Mapbox Directions intersection flags).
+struct DriveRoadControl {
+    enum Kind: String, CaseIterable {
+        case trafficSignal = "traffic_signal"
+        case stopSign = "stop_sign"
+        case yieldSign = "yield_sign"
+        case railwayCrossing = "railway_crossing"
+
+        var imageId: String { "sp-control-\(rawValue)" }
+    }
+
+    let lng: Double
+    let lat: Double
+    let kind: Kind
+}
+
 /// Native NavigationMapView under the Capacitor WebView — tiles / route / puck / follow-cam.
 /// Not @MainActor: CAPPlugin property init is nonisolated (Xcode 26 isolation error).
 /// Create the instance from a MainActor Task; touch UIKit only from @MainActor methods.
@@ -18,6 +34,9 @@ final class DriveNativeMap {
     private var revealedThroughWebView = false
     private var styleReady = false
     private var lastFollowSample: DriveFollowCameraSample?
+    private var roadControls: [DriveRoadControl] = []
+    private static let roadControlSourceId = "stormpath-road-controls"
+    private static let roadControlLayerId = "stormpath-road-controls-icons"
     /** Matches the web basemap (day streets / night dark or navigation-night). */
     private var styleUrl = "mapbox://styles/mapbox/streets-v12"
 
@@ -196,6 +215,7 @@ final class DriveNativeMap {
                     map.mapView.mapboxMap.setCamera(to: boot)
                 }
                 self.addStormPathBuildings()
+                self.applyRoadControls(on: map)
             }
         }
     }
@@ -217,7 +237,7 @@ final class DriveNativeMap {
         map.mapView.location.options.puckBearingEnabled = true
     }
 
-    private static func renderPuckImage(
+    private static func renderMapImage(
         size: CGSize,
         _ draw: (CGContext, CGRect) -> Void
     ) -> UIImage {
@@ -230,7 +250,7 @@ final class DriveNativeMap {
     }
 
     /** Dome body — white ring, top-left lit gradient, specular cap. */
-    private static let puckDomeImage: UIImage = renderPuckImage(
+    private static let puckDomeImage: UIImage = renderMapImage(
         size: CGSize(width: 30, height: 30)
     ) { ctx, rect in
         ctx.setFillColor(UIColor.white.cgColor)
@@ -269,7 +289,7 @@ final class DriveNativeMap {
     }
 
     /** Course nose — sits under the dome, only the tip shows ahead of it. */
-    private static let puckNoseImage: UIImage = renderPuckImage(
+    private static let puckNoseImage: UIImage = renderMapImage(
         size: CGSize(width: 26, height: 42)
     ) { ctx, rect in
         let tip = CGPoint(x: rect.midX, y: rect.minY + 1)
@@ -288,7 +308,7 @@ final class DriveNativeMap {
     }
 
     /** Ground shadow — soft radial blob so the dome looks lifted off the road. */
-    private static let puckShadowImage: UIImage = renderPuckImage(
+    private static let puckShadowImage: UIImage = renderMapImage(
         size: CGSize(width: 42, height: 42)
     ) { ctx, rect in
         let colors = [
@@ -349,6 +369,177 @@ final class DriveNativeMap {
         } catch {
             /* Style may already extrude buildings; pitch is what makes them read 3D. */
         }
+    }
+
+    /// Signals / stop / yield / rail crossings for the current corridor. Empty clears them.
+    @MainActor
+    func setRoadControls(_ points: [DriveRoadControl]) {
+        roadControls = points
+        guard styleReady, let mapView else { return }
+        applyRoadControls(on: mapView)
+    }
+
+    @MainActor
+    private func applyRoadControls(on map: NavigationMapView) {
+        let style = map.mapView.mapboxMap
+        guard !roadControls.isEmpty else {
+            if style.layerExists(withId: Self.roadControlLayerId) {
+                try? style.removeLayer(withId: Self.roadControlLayerId)
+            }
+            if style.sourceExists(withId: Self.roadControlSourceId) {
+                try? style.removeSource(withId: Self.roadControlSourceId)
+            }
+            return
+        }
+
+        /* Re-adding an existing id just replaces it, and a style reload drops them all. */
+        for kind in DriveRoadControl.Kind.allCases {
+            try? style.addImage(Self.roadControlImage(kind), id: kind.imageId)
+        }
+
+        var features: [Feature] = []
+        features.reserveCapacity(roadControls.count)
+        for point in roadControls {
+            var feature = Feature(
+                geometry: .point(
+                    Point(CLLocationCoordinate2D(latitude: point.lat, longitude: point.lng))
+                )
+            )
+            feature.properties = ["icon": .string(point.kind.imageId)]
+            features.append(feature)
+        }
+        let collection = FeatureCollection(features: features)
+
+        if style.sourceExists(withId: Self.roadControlSourceId) {
+            style.updateGeoJSONSource(
+                withId: Self.roadControlSourceId,
+                geoJSON: .featureCollection(collection)
+            )
+        } else {
+            var source = GeoJSONSource(id: Self.roadControlSourceId)
+            source.data = .featureCollection(collection)
+            try? style.addSource(source)
+        }
+
+        guard !style.layerExists(withId: Self.roadControlLayerId) else { return }
+        var layer = SymbolLayer(id: Self.roadControlLayerId, source: Self.roadControlSourceId)
+        /* Street level only — signal heads are noise on a state-wide view. */
+        layer.minZoom = 13
+        layer.iconImage = .expression(Exp(.get) { "icon" })
+        layer.iconAllowOverlap = .constant(false)
+        layer.iconSize = .expression(
+            Exp(.interpolate) {
+                Exp(.linear)
+                Exp(.zoom)
+                13
+                0.5
+                15
+                0.72
+                17
+                0.95
+            }
+        )
+        try? style.addLayer(layer)
+    }
+
+    private static func roadControlImage(_ kind: DriveRoadControl.Kind) -> UIImage {
+        switch kind {
+        case .trafficSignal: return signalIconImage
+        case .stopSign: return stopIconImage
+        case .yieldSign: return yieldIconImage
+        case .railwayCrossing: return railIconImage
+        }
+    }
+
+    /** Signal head — dark body, three lamps, readable at a glance while moving. */
+    private static let signalIconImage: UIImage = renderMapImage(
+        size: CGSize(width: 20, height: 20)
+    ) { ctx, rect in
+        let w = rect.width * 0.46
+        let h = rect.height * 0.86
+        let body = CGRect(x: (rect.width - w) / 2, y: (rect.height - h) / 2, width: w, height: h)
+        let path = UIBezierPath(roundedRect: body, cornerRadius: w * 0.3)
+        ctx.setFillColor(UIColor(red: 0.06, green: 0.09, blue: 0.16, alpha: 0.95).cgColor)
+        ctx.addPath(path.cgPath)
+        ctx.fillPath()
+        ctx.setStrokeColor(UIColor(white: 1, alpha: 0.9).cgColor)
+        ctx.setLineWidth(1)
+        ctx.addPath(path.cgPath)
+        ctx.strokePath()
+
+        let lamps: [UIColor] = [
+            UIColor(red: 0.97, green: 0.44, blue: 0.44, alpha: 1),
+            UIColor(red: 0.98, green: 0.75, blue: 0.14, alpha: 1),
+            UIColor(red: 0.20, green: 0.83, blue: 0.60, alpha: 1),
+        ]
+        let lampR = w * 0.24
+        for (i, color) in lamps.enumerated() {
+            ctx.setFillColor(color.cgColor)
+            let cy = body.minY + body.height * (0.22 + Double(i) * 0.28)
+            ctx.fillEllipse(in: CGRect(
+                x: rect.midX - lampR,
+                y: cy - lampR,
+                width: lampR * 2,
+                height: lampR * 2
+            ))
+        }
+    }
+
+    private static let stopIconImage: UIImage = renderMapImage(
+        size: CGSize(width: 20, height: 20)
+    ) { ctx, rect in
+        let radius = rect.width * 0.42
+        let path = UIBezierPath()
+        for i in 0..<8 {
+            let angle = (Double.pi / 4) * Double(i) + Double.pi / 8
+            let point = CGPoint(
+                x: rect.midX + radius * cos(angle),
+                y: rect.midY + radius * sin(angle)
+            )
+            if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        }
+        path.close()
+        ctx.setFillColor(UIColor(red: 0.86, green: 0.15, blue: 0.15, alpha: 1).cgColor)
+        ctx.addPath(path.cgPath)
+        ctx.fillPath()
+        ctx.setStrokeColor(UIColor(white: 1, alpha: 0.95).cgColor)
+        ctx.setLineWidth(1.4)
+        ctx.addPath(path.cgPath)
+        ctx.strokePath()
+    }
+
+    private static let yieldIconImage: UIImage = renderMapImage(
+        size: CGSize(width: 20, height: 20)
+    ) { ctx, rect in
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: rect.width * 0.1, y: rect.height * 0.22))
+        path.addLine(to: CGPoint(x: rect.width * 0.9, y: rect.height * 0.22))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.height * 0.86))
+        path.close()
+        ctx.setFillColor(UIColor(red: 0.99, green: 0.95, blue: 0.95, alpha: 1).cgColor)
+        ctx.addPath(path.cgPath)
+        ctx.fillPath()
+        ctx.setStrokeColor(UIColor(red: 0.86, green: 0.15, blue: 0.15, alpha: 1).cgColor)
+        ctx.setLineWidth(2.4)
+        ctx.addPath(path.cgPath)
+        ctx.strokePath()
+    }
+
+    private static let railIconImage: UIImage = renderMapImage(
+        size: CGSize(width: 20, height: 20)
+    ) { ctx, rect in
+        let disc = rect.insetBy(dx: rect.width * 0.08, dy: rect.height * 0.08)
+        ctx.setFillColor(UIColor(red: 0.98, green: 0.80, blue: 0.08, alpha: 1).cgColor)
+        ctx.fillEllipse(in: disc)
+        ctx.setStrokeColor(UIColor(red: 0.06, green: 0.09, blue: 0.16, alpha: 0.9).cgColor)
+        ctx.setLineWidth(1.2)
+        ctx.strokeEllipse(in: disc)
+        ctx.setLineWidth(2.2)
+        ctx.move(to: CGPoint(x: rect.width * 0.3, y: rect.height * 0.3))
+        ctx.addLine(to: CGPoint(x: rect.width * 0.7, y: rect.height * 0.7))
+        ctx.move(to: CGPoint(x: rect.width * 0.7, y: rect.height * 0.3))
+        ctx.addLine(to: CGPoint(x: rect.width * 0.3, y: rect.height * 0.7))
+        ctx.strokePath()
     }
 
     @MainActor

@@ -12,6 +12,7 @@ export type SoftRestartLegPatch = {
   hasTolls?: NavRoute["hasTolls"];
   tollLabels?: NavRoute["tollLabels"];
   postedSpeedSamples?: NavRoute["postedSpeedSamples"];
+  roadControls?: NavRoute["roadControls"];
   role?: NavRoute["role"];
   label?: string;
 };
@@ -92,6 +93,7 @@ export function planAfterSoftRestartLock(
     hasTolls: patch.hasTolls ?? prev?.hasTolls,
     tollLabels: patch.tollLabels ?? prev?.tollLabels,
     postedSpeedSamples: patch.postedSpeedSamples ?? prev?.postedSpeedSamples,
+    roadControls: patch.roadControls ?? prev?.roadControls,
   };
   return { ...plan, routes: [next] };
 }

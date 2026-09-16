@@ -30,5 +30,9 @@ export class StormpathMapboxNavigationWeb extends WebPlugin {
     };
   }
 
+  async setRoadControls(options) {
+    return { ok: true, count: options?.points?.length ?? 0 };
+  }
+
   async stop() {}
 }

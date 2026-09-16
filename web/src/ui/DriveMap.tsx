@@ -78,6 +78,7 @@ import {
   applyRadarMotionLayers,
   removeRadarMotionLayers,
 } from "./mapRadarMotionLayer";
+import { applyRoadControlLayers } from "./mapRoadControlLayers";
 import {
   boundsFromGeometry,
   computeRadarStormMotions,
@@ -1947,6 +1948,18 @@ function DriveMapInner({
     };
   }, [nativeDriveMapActive]);
 
+  /** Same signals / stops the web map draws, pushed to the native Drive map. */
+  const nativeRoadControls = useMemo(
+    () => (nativeDriveMapActive ? (routes.find((r) => r.id === lineFocusId)?.roadControls ?? []) : []),
+    [nativeDriveMapActive, routes, lineFocusId]
+  );
+  useEffect(() => {
+    if (!isNativeMapboxNavPlatform()) return;
+    void StormpathMapboxNavigation.setRoadControls({
+      points: nativeRoadControls.map((p) => ({ lng: p.lngLat[0], lat: p.lngLat[1], kind: p.kind })),
+    }).catch(() => undefined);
+  }, [nativeRoadControls]);
+
   /** Progress can reveal the native map after the first follow-cam tick (first Go). */
   useEffect(() => {
     if (!nativeDriveMapActive || nativeMapShowing || !nativeFollowCamera || !nativeMapHoleReady) return;
@@ -2375,6 +2388,25 @@ function DriveMapInner({
     if (map.isStyleLoaded()) sync();
     else map.once("load", sync);
   }, [mapReady, weatherAlertGeoJson, routes, lineFocusId, navigationStarted, viewMode]);
+
+  /** Signals / stop / yield / rail crossings on the corridor (Mapbox intersection flags). */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const controls = routes.find((r) => r.id === lineFocusId)?.roadControls ?? null;
+    const sync = () => {
+      try {
+        applyRoadControlLayers(map, controls);
+      } catch {
+        /* style race — next route or style change re-applies */
+      }
+    };
+    if (map.isStyleLoaded()) sync();
+    else map.once("load", sync);
+    return () => {
+      map.off("load", sync);
+    };
+  }, [mapReady, routes, lineFocusId]);
 
   /** Storm-motion arrows — still radar mode only; uses RainViewer past frames. */
   useEffect(() => {

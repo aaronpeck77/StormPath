@@ -24,6 +24,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setVoiceGuidance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setDrivePuckVisible", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setNativeMapVisible", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setRoadControls", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
     ]
 
@@ -118,6 +119,25 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self else { return }
             let revealed = self.applyNativeMapVisible(visible, styleUrl: styleUrl)
             call.resolve(["ok": true, "visible": visible, "revealed": revealed])
+        }
+    }
+
+    @objc func setRoadControls(_ call: CAPPluginCall) {
+        let raw = call.getArray("points", JSObject.self) ?? []
+        var points: [DriveRoadControl] = []
+        points.reserveCapacity(raw.count)
+        for entry in raw {
+            guard
+                let lng = entry["lng"] as? Double,
+                let lat = entry["lat"] as? Double,
+                let kindRaw = entry["kind"] as? String,
+                let kind = DriveRoadControl.Kind(rawValue: kindRaw)
+            else { continue }
+            points.append(DriveRoadControl(lng: lng, lat: lat, kind: kind))
+        }
+        Task { @MainActor [weak self] in
+            self?.nativeMap?.setRoadControls(points)
+            call.resolve(["ok": true, "count": points.count])
         }
     }
 

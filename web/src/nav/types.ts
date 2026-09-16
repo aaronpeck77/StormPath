@@ -59,7 +59,18 @@ export interface NavRoute {
   tollLabels?: string[];
   /** Posted speed limits from Mapbox Directions maxspeed annotation (follow road signs when in doubt). */
   postedSpeedSamples?: PostedSpeedSample[];
+  /** Signals / stop / yield / rail crossings on this leg (Mapbox intersection flags). */
+  roadControls?: RoadControlPoint[];
 }
+
+/** What kind of control sits at an intersection on the route. */
+export type RoadControlKind = "traffic_signal" | "stop_sign" | "yield_sign" | "railway_crossing";
+
+/** One controlled intersection along the route, from Mapbox Directions `intersections`. */
+export type RoadControlPoint = {
+  lngLat: LngLat;
+  kind: RoadControlKind;
+};
 
 export interface TripPlan {
   originLabel: string;
