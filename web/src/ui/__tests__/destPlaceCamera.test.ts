@@ -1,0 +1,57 @@
+import { describe, expect, it } from "vitest";
+import {
+  DEST_PLACE_MIN_ZOOM,
+  destPlaceHoldZoom,
+  destPlaceNeedsStreetRestore,
+  destPlaceRejectsRegionalZoom,
+  shouldHoldDestPlaceFrame,
+} from "../destPlaceCamera";
+import {
+  ROUTE_VIEW_PLANNING_STREET_ZOOM,
+  ROUTE_VIEW_REGIONAL_ZOOM,
+  ROUTE_VIEW_REGIONAL_ZOOM_PHONE,
+} from "../mapTopdownCamera";
+
+describe("destPlaceCamera", () => {
+  it("treats a just-tapped dest with no routes as a hold, not home follow", () => {
+    expect(
+      shouldHoldDestPlaceFrame({
+        destLngLat: [-86.78, 36.16],
+        routesLength: 0,
+        navigationStarted: false,
+      })
+    ).toBe(true);
+  });
+
+  it("releases the hold once a plan exists or Go has started", () => {
+    expect(
+      shouldHoldDestPlaceFrame({
+        destLngLat: [-86.78, 36.16],
+        routesLength: 1,
+        navigationStarted: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldHoldDestPlaceFrame({
+        destLngLat: [-86.78, 36.16],
+        routesLength: 0,
+        navigationStarted: true,
+      })
+    ).toBe(false);
+  });
+
+  it("snaps Canada / Rt regional zoom back to street, keeping a street tap", () => {
+    expect(destPlaceHoldZoom(ROUTE_VIEW_REGIONAL_ZOOM)).toBe(ROUTE_VIEW_PLANNING_STREET_ZOOM);
+    expect(destPlaceHoldZoom(ROUTE_VIEW_REGIONAL_ZOOM_PHONE)).toBe(ROUTE_VIEW_PLANNING_STREET_ZOOM);
+    expect(destPlaceHoldZoom(4)).toBe(ROUTE_VIEW_PLANNING_STREET_ZOOM);
+    expect(destPlaceHoldZoom(14.2)).toBe(14.2);
+    expect(destPlaceNeedsStreetRestore(6.95)).toBe(true);
+    expect(destPlaceNeedsStreetRestore(14.2)).toBe(false);
+    expect(DEST_PLACE_MIN_ZOOM).toBeGreaterThan(ROUTE_VIEW_REGIONAL_ZOOM);
+  });
+
+  it("rejects the regional Canada zoom as a dest-place target", () => {
+    expect(destPlaceRejectsRegionalZoom(ROUTE_VIEW_REGIONAL_ZOOM)).toBe(true);
+    expect(destPlaceRejectsRegionalZoom(ROUTE_VIEW_PLANNING_STREET_ZOOM)).toBe(false);
+  });
+});

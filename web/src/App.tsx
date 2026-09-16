@@ -24,6 +24,7 @@ import { useDestinationSearch } from "./hooks/useDestinationSearch";
 import { useNavigationPosition } from "./hooks/useNavigationPosition";
 import { useNativeNavSession } from "./nav/useNativeNavSession";
 import { shouldUseNativeDriveMapShell } from "./nav/nativeDriveMapShell";
+import { allowsMapDestinationPick } from "./nav/viewModeContract";
 import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
 import { useNearbyPoiTip } from "./hooks/useNearbyPoiTip";
 import { useAdvisoryVoiceGuidance } from "./hooks/useAdvisoryVoiceGuidance";
@@ -1955,9 +1956,10 @@ export default function App() {
     setMapFocus,
   });
 
-  /** Rt + Mp: explore / plan on the map; Dr is follow-cam — keep tap-to-dest and ★ off there. */
+  /** Rt + Mp: explore / plan on the map; Dr is follow-cam after Go. */
   const mapPlanningUi = viewMode === "route" || viewMode === "topdown";
-  const allowDestinationPick = mapPlanningUi;
+  /** Planning taps must work even if view is briefly still Drive before the kick-out to Rt. */
+  const allowDestinationPick = allowsMapDestinationPick(navigationStarted);
   const routeActive = plan.routes.length > 0;
   const showCompactDest = routeActive && !searchExpanded;
   const showReturnTripButton =

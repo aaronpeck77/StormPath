@@ -215,6 +215,13 @@ export function minPlanningRouteZoomFloor(routeLengthM: number): number {
   return 11.5;
 }
 
+/** Keep a computed fit zoom at or above the planning floor so a local dest cannot fly to Canada. */
+export function clampPlanningFitZoom(computedZoom: number, spanM: number): number {
+  const floor = minPlanningRouteZoomFloor(spanM);
+  if (!Number.isFinite(computedZoom)) return floor;
+  return Math.max(floor, computedZoom);
+}
+
 /** Rt overview while navigating — if zoom is above this, the map is still on Dr/Mp street framing. */
 export function maxRouteOverviewZoomDuringNav(routeLengthM: number): number {
   if (isExtremeTripRoute(routeLengthM)) return 5.5;
