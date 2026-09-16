@@ -91,8 +91,8 @@ export function useMapboxTrafficLineSnap(deps: UseMapboxTrafficLineSnapDeps): vo
                 baseEtaMinutes: Math.max(1, Math.round(mb.durationMinutes)),
                 turnSteps: mb.turnSteps,
                 postedSpeedSamples: undefined,
-                /* Snapped to a different line — the old signal nodes may not be on it. */
-                roadControls: undefined,
+                /* Old signal nodes may not be on the new line — take the snapped line's own. */
+                roadControls: mb.roadControls,
                 routeNotices: [
                   ...(r.routeNotices ?? []),
                   `${MB_TRAFFIC_LINE_SNAP_NOTICE} — follows live road network when stored geometry no longer matches closures/congestion.`,

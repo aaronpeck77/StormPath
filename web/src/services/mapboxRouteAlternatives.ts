@@ -1,4 +1,5 @@
-import type { LngLat, RouteTurnStep } from "../nav/types";
+import type { LngLat, RoadControlPoint, RouteTurnStep } from "../nav/types";
+import { collectRoadControls } from "../nav/roadControls";
 import { shortenTurnInstruction } from "../nav/turnInstructionShort";
 import { fetchWithTimeout, MAPBOX_DIRECTIONS_TIMEOUT_MS } from "../utils/fetchResilient";
 import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
@@ -18,6 +19,13 @@ type DirectionsResponse = {
         name?: string;
         ref?: string;
         distance?: number;
+        intersections?: {
+          location?: number[];
+          traffic_signal?: boolean;
+          stop_sign?: boolean;
+          yield_sign?: boolean;
+          railway_crossing?: boolean;
+        }[];
       }[];
     }[];
   }[];
@@ -28,6 +36,7 @@ export type MapboxTrafficAltRoute = {
   distanceMeters: number;
   geometry: LngLat[];
   turnSteps: RouteTurnStep[];
+  roadControls?: RoadControlPoint[];
 };
 
 function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteTurnStep[] {
@@ -239,5 +248,7 @@ export async function fetchMapboxDrivingTrafficRoute(
     distanceMeters: typeof r.distance === "number" ? r.distance : 0,
     geometry,
     turnSteps: parseSteps(r),
+    /* Snapped line carries its own signal / stop nodes — recompute, never inherit. */
+    roadControls: collectRoadControls(r.legs),
   };
 }
