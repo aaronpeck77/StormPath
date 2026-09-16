@@ -3,6 +3,7 @@ import type { NavRoute } from "../../nav/types";
 import {
   maxRouteOverviewZoomDuringNav,
   minPlanningRouteZoomFloor,
+  clampPlanningFitZoom,
   padChromeWithEdgeStrip,
   planningRoutesFitKey,
   ROUTE_EDGE_STRIP_PX,
@@ -44,6 +45,11 @@ describe("mapFitLogic", () => {
   it("raises minimum planning zoom for short local routes", () => {
     expect(minPlanningRouteZoomFloor(8_000)).toBeGreaterThan(10);
     expect(minPlanningRouteZoomFloor(120_000)).toBeLessThan(7);
+  });
+
+  it("will not let a local dest fit land at Canada-scale zoom", () => {
+    expect(clampPlanningFitZoom(6.95, 8_000)).toBeGreaterThan(10);
+    expect(clampPlanningFitZoom(14.2, 8_000)).toBe(14.2);
   });
 
   it("caps Rt overview zoom during long nav trips", () => {

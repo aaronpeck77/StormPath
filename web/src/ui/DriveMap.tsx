@@ -8,7 +8,7 @@ import {
   resolveIdleHomeCameraAction,
   resolveIdleHomeFraming,
 } from "../map/homeMapFraming";
-import type { HomePuckFollowMode } from "../map/homePuckFollow";
+import { isIdleHomeScreen, type HomePuckFollowMode } from "../map/homePuckFollow";
 import { FALLBACK_LNGLAT } from "../nav/constants";
 import type { TripStop } from "../nav/routeWaypoints";
 import {
@@ -146,6 +146,11 @@ import {
   rememberDriveFollowZoom,
   repairStoredDriveFollowZoom,
 } from "./driveFollowZoomGuard";
+import {
+  destPlaceHoldZoom,
+  destPlaceNeedsStreetRestore,
+  shouldHoldDestPlaceFrame,
+} from "./destPlaceCamera";
 import {
   advanceFollowCamWriter,
   type FollowCamWriter,
@@ -599,7 +604,11 @@ function DriveMapInner({
   const planningFitRafRef = useRef<number | null>(null);
   const planningFitRetryTimerRef = useRef<number | null>(null);
   const activeDriveCamera = navigationStarted && viewMode === "drive";
-  const idleHomeScreen = routes.length === 0 && !navigationStarted && !destLngLat;
+  const idleHomeScreen = isIdleHomeScreen({
+    routesLength: routes.length,
+    navigationStarted,
+    destLngLat,
+  });
   const topdownFollowKey = userLngLat
     ? `${Math.round(userLngLat[0] * 2500)}|${Math.round(userLngLat[1] * 2500)}`
     : null;
@@ -3294,17 +3303,66 @@ function DriveMapInner({
     }
   }, [viewMode, navigationStarted]);
 
+  /**
+   * Dest tap on the StormPath map: cancel in-flight home-follow / regional flies,
+   * hold street zoom at the current center so the pin stays where the user tapped.
+   * Canada-scale zoom (~6.9 Rt regional) snaps back to street. Overview waits for routes.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (
+      !shouldHoldDestPlaceFrame({
+        destLngLat,
+        routesLength: routes.length,
+        navigationStarted,
+      })
+    ) {
+      return;
+    }
+    userExploringRef.current = false;
+    if (exploreTimerRef.current) {
+      clearTimeout(exploreTimerRef.current);
+      exploreTimerRef.current = null;
+    }
+    pendingRouteOverviewEnterRef.current = true;
+    stopMapCamera(map);
+    let zNow = NaN;
+    try {
+      zNow = map.getZoom();
+    } catch {
+      return;
+    }
+    if (!destPlaceNeedsStreetRestore(zNow)) {
+      flattenMapCamera(map);
+      return;
+    }
+    let center: [number, number] | null = null;
+    try {
+      const c = map.getCenter();
+      if (isValidLngLat(c.lng, c.lat)) center = [c.lng, c.lat];
+    } catch {
+      center = null;
+    }
+    if (!center) return;
+    safeJumpTo(map, {
+      center,
+      zoom: destPlaceHoldZoom(zNow),
+      pitch: 0,
+      bearing: 0,
+      padding: ZERO_MAP_PADDING,
+    });
+  }, [mapReady, destLngLat, routes.length, navigationStarted]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
     if (viewMode !== "route" && viewMode !== "topdown") return;
 
-    /* Dest chosen, routes not ready — keep the current frame. Do not street-zoom
-     * toward the pin; the overview fit runs once when the plan finishes. */
+    /* Dest chosen, routes not ready — dest-place hold owns the camera until the plan paints. */
     if (routes.length === 0) {
-      if (!navigationStarted && destLngLat && viewMode === "route") {
+      if (!navigationStarted && destLngLat) {
         pendingRouteOverviewEnterRef.current = true;
-        stopMapCamera(map);
       }
       return;
     }

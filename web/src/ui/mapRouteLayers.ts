@@ -29,6 +29,7 @@ import {
   firstBasemapSymbolLayerId,
   moveLayerBelowBasemapLabels,
 } from "./mapBasemapLayerAnchor";
+import { clampPlanningFitZoom, minPlanningRouteZoomFloor } from "./mapFitLogic";
 import {
   ROUTE_SUGGESTED_LINE_WIDTH,
   routeCasingWidthByZoom,
@@ -885,10 +886,12 @@ function applyTripCameraFit(
     bearing: 0,
     pitch: 0,
   });
+  const spanForFloor = Number.isFinite(spanM) && spanM > 0 ? spanM : fit.directM;
   if (!cam?.center || cam.zoom == null || !Number.isFinite(cam.zoom)) {
     return safeFitBounds(map, fit.bounds, {
       padding,
       maxZoom,
+      minZoom: minPlanningRouteZoomFloor(spanForFloor),
       duration: durationMs,
       bearing: 0,
       pitch: 0,
@@ -897,7 +900,7 @@ function applyTripCameraFit(
   }
   return safeEaseTo(map, {
     center: cam.center,
-    zoom: cam.zoom,
+    zoom: clampPlanningFitZoom(cam.zoom, spanForFloor),
     bearing: 0,
     pitch: 0,
     duration: durationMs,

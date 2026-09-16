@@ -95,7 +95,7 @@ export function useAppMapChromeProps(input: UseAppMapChromePropsInput) {
     onMapFocusComplete,
     stormBarExpanded,
     trafficBypassCompare,
-    idleHomeNoRoutes: planRoutesLength === 0,
+    idleHomeNoRoutes: planRoutesLength === 0 && !destLngLat,
   });
 
   const {

@@ -10,6 +10,7 @@ import {
   showsAlternateLegs,
   showsRadarMotionOverlay,
   showsRouteConditionHighlights,
+  allowsMapDestinationPick,
   viewModePhase,
 } from "../viewModeContract";
 
@@ -157,5 +158,10 @@ describe("viewModeContract — overlays", () => {
     expect(showsRadarMotionOverlay("drive", false)).toBe(false);
     expect(showsRadarMotionOverlay("route", false)).toBe(true);
     expect(showsRadarMotionOverlay("topdown", false)).toBe(true);
+  });
+
+  it("lets dest taps land before Go in every view, including Drive", () => {
+    expect(allowsMapDestinationPick(false)).toBe(true);
+    expect(allowsMapDestinationPick(true)).toBe(false);
   });
 });
