@@ -381,7 +381,7 @@ final class DriveNativeMap {
 
     @MainActor
     private func applyRoadControls(on map: NavigationMapView) {
-        let style = map.mapView.mapboxMap
+        guard let style = map.mapView.mapboxMap else { return }
         guard !roadControls.isEmpty else {
             if style.layerExists(withId: Self.roadControlLayerId) {
                 try? style.removeLayer(withId: Self.roadControlLayerId)
