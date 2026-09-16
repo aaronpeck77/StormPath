@@ -9,6 +9,9 @@ import WebKit
 /// Not @MainActor: CAPPlugin property init is nonisolated (Xcode 26 isolation error).
 /// Create the instance from a MainActor Task; touch UIKit only from @MainActor methods.
 final class DriveNativeMap {
+    /** Bill: keep the 3D puck, just not truck-sized on the road ahead. */
+    private static let puckScaleFactor = 0.7
+
     private var mapView: NavigationMapView?
     private var lastRoutes: NavigationRoutes?
     private weak var hostedWebView: UIView?
@@ -202,10 +205,14 @@ final class DriveNativeMap {
 
     @MainActor
     private func applyStormPathPuck(on map: NavigationMapView) {
-        /* Flat 2D disc + course — smaller than Mapbox's 3D navigation chevron. */
-        var config = Puck2DConfiguration.makeDefault(showBearing: true)
-        config.pulsing = .none
-        map.puckType = .puck2D(config)
+        /* 3D navigation puck (reads as a vehicle at pitch), shrunk from the SDK default
+         * so it does not dominate the lane. Scale is only touched when the default is a
+         * constant — an expression default is left alone rather than guessed at. */
+        var config = Puck3DConfiguration.navigationDefault
+        if case .constant(let scale) = config.modelScale {
+            config.modelScale = .constant(scale.map { $0 * DriveNativeMap.puckScaleFactor })
+        }
+        map.puckType = .puck3D(config)
         map.puckBearing = .course
         map.mapView.location.options.puckBearingEnabled = true
     }

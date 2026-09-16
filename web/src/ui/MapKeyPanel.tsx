@@ -77,7 +77,7 @@ function Swatch({ color, kind, dashed }: { color: string; kind: SwatchKind; dash
 const ROUTE_LINE_GROUP: LegendGroup = {
   title: "Route lines",
   intro:
-    "Sky blue is the route you're following. Light gray is the other option — both use a dark outline so they stay visible over radar.",
+    "Sky blue is the route you're following. Pale blue is the other option — both use a dark outline so they stay visible over radar.",
   rows: [
     {
       label: "Active route",
@@ -87,9 +87,9 @@ const ROUTE_LINE_GROUP: LegendGroup = {
     },
     {
       label: "Suggested / alternate",
-      color: ROUTE_PICK_SLOT_HEX[2],
+      color: ROUTE_PICK_SLOT_HEX[1],
       kind: "line",
-      blurb: "Other options in planning, or a return path while you're off your chosen route — light gray with a dark outline.",
+      blurb: "Other options in planning, or a return path while you're off your chosen route — pale blue with a dark outline.",
     },
   ],
 };

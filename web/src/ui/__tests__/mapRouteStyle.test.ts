@@ -66,7 +66,7 @@ describe("routeMapLineStyle", () => {
     const active = routeMapLineStyle(true);
     const alt = routeMapLineStyle(false);
     expect(active.color).toBe("#38bdf8");
-    expect(alt.color).toBe("#7dd3fc");
+    expect(alt.color).toBe("#bae6fd");
     expect(alt.color).not.toBe(active.color);
   });
 });

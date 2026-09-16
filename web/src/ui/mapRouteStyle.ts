@@ -8,10 +8,11 @@ import type { MapViewMode } from "./driveMapTypes";
  */
 export const ROUTE_ACTIVE_COLOR = "#38bdf8";
 /**
- * Alternate / suggested on the map — light cyan so B is visible on streets
- * and still reads over green radar (dark blue disappeared into the overlay).
+ * Alternate / suggested on the map — pale blue. Rt / Mp use the same sky blue as
+ * Drive for the leg you're taking, so the unused leg has to sit clearly lighter
+ * (the old #7dd3fc read as the same line at a glance).
  */
-export const ROUTE_SUGGESTED_COLOR = "#7dd3fc";
+export const ROUTE_SUGGESTED_COLOR = "#bae6fd";
 
 /**
  * Black outline around the colored core.
@@ -100,7 +101,7 @@ export const ROLE_COLOR: Record<RouteRole, string> = {
 };
 
 /** A / B / C picker — active sky, then the same cyan used for the alternate map line. */
-export const ROUTE_PICK_SLOT_HEX = [ROUTE_ACTIVE_COLOR, ROUTE_SUGGESTED_COLOR, "#bae6fd"] as const;
+export const ROUTE_PICK_SLOT_HEX = [ROUTE_ACTIVE_COLOR, ROUTE_SUGGESTED_COLOR, "#e0f2fe"] as const;
 
 export function routePickSlotHex(slotIndex: number): string {
   return ROUTE_PICK_SLOT_HEX[
