@@ -14139,6 +14139,12 @@ html.route-info-open .route-progress-callout-panel--expanded {
   color: #9aa0a6;
 }
 
+/* Road-class average, not map data — dimmer so it never reads like a posted sign. */
+.nav-bottom-stat-v--limit-guess {
+  color: #9aa0a6;
+  font-weight: 700;
+}
+
 /* Heuristic vs estimated limit ? subtle red + soft pulse (honors reduced motion) */
 .nav-bottom-stat-v--speed-over {
   color: #f87171;

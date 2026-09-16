@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  postedSpeedForDisplay,
   sanitizePostedSpeedMph,
   snapDownToPostedBucket,
   speedLimitRoadKindAt,
@@ -84,5 +85,62 @@ describe("sanitizePostedSpeedMph", () => {
 
   it("caps absurd local-street values", () => {
     expect(sanitizePostedSpeedMph({ mapboxMph: 70, cruiseMph: null, roadKind: "local" })).toBe(55);
+  });
+});
+
+describe("postedSpeedForDisplay", () => {
+  const route = (steps: NavRoute["turnSteps"], samples?: NavRoute["postedSpeedSamples"]): NavRoute => ({
+    id: "a",
+    role: "fastest",
+    label: "A",
+    geometry: [
+      [0, 0],
+      [1, 0],
+    ],
+    baseEtaMinutes: 10,
+    turnSteps: steps,
+    postedSpeedSamples: samples,
+  });
+
+  it("prefers Mapbox data and does not flag it as a class estimate", () => {
+    const r = route(
+      [{ instruction: "Continue on County Highway 18", distanceM: 3000 }],
+      [{ alongMeters: 0, mph: 45 }]
+    );
+    expect(postedSpeedForDisplay({ route: r, alongMeters: 100 })).toEqual({
+      mph: 45,
+      classEstimate: false,
+    });
+  });
+
+  it("falls back to the road-class average when Mapbox has nothing", () => {
+    const interstate = route([
+      { instruction: "Continue on I-72 East", distanceM: 5000, roadRef: "I 72" },
+    ]);
+    expect(postedSpeedForDisplay({ route: interstate, alongMeters: 100 })).toEqual({
+      mph: 70,
+      classEstimate: true,
+    });
+
+    const county = route([{ instruction: "Continue on County Highway 18", distanceM: 3000 }]);
+    expect(postedSpeedForDisplay({ route: county, alongMeters: 100 })).toEqual({
+      mph: 55,
+      classEstimate: true,
+    });
+
+    const local = route([
+      { instruction: "Turn right onto Main Street", distanceM: 400, roadName: "Main Street" },
+    ]);
+    expect(postedSpeedForDisplay({ route: local, alongMeters: 100 })).toEqual({
+      mph: 30,
+      classEstimate: true,
+    });
+  });
+
+  it("stays blank when the road class is unknown", () => {
+    expect(postedSpeedForDisplay({ route: undefined, alongMeters: 100 })).toEqual({
+      mph: null,
+      classEstimate: false,
+    });
   });
 });

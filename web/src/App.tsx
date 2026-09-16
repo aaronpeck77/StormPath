@@ -1718,6 +1718,7 @@ export default function App() {
     driveMapRoutes,
     progressRailRoute,
     postedMph,
+    postedMphIsClassEstimate,
     progressStripAlerts,
   } = useRouteAheadDerivations({
     nwsMapOverlapRouteGeom,
@@ -2882,6 +2883,7 @@ export default function App() {
           showGo={Boolean(plan.routes.length > 0 && primaryRouteId && !navigationStarted)}
           speedMph={speedMph}
           postedMph={postedMph}
+          postedMphIsClassEstimate={postedMphIsClassEstimate}
           handleStopAndClear={handleStopAndClear}
           hasTrip={Boolean(plan.routes.length > 0 || destLngLat)}
           showReturnTripButton={showReturnTripButton}

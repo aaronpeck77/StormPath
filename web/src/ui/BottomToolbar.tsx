@@ -34,6 +34,8 @@ type Props = {
   showGo: boolean;
   speedMph: number | null;
   postedMph: number | null;
+  /** Lim is a road-class average, not map data — never drives the over-speed warning. */
+  postedMphIsClassEstimate?: boolean;
   onStop: () => void;
   hasTrip: boolean;
   /** Planning with no destination: quick return along the reversed last Go route. */
@@ -76,6 +78,7 @@ export function BottomToolbar({
   showGo,
   speedMph,
   postedMph,
+  postedMphIsClassEstimate = false,
   onStop,
   hasTrip,
   showReturnTripButton = false,
@@ -142,6 +145,7 @@ export function BottomToolbar({
     speedMph != null &&
     postedMph != null &&
     postedMph > 0 &&
+    !postedMphIsClassEstimate &&
     speedMph > postedMph + SPEED_OVER_BUFFER_MPH;
 
   return (
@@ -218,15 +222,17 @@ export function BottomToolbar({
               <div className="nav-bottom-stat">
                 <span className="nav-bottom-stat-k">Lim</span>
                 <span
-                  className="nav-bottom-stat-v"
+                  className={`nav-bottom-stat-v${postedMphIsClassEstimate ? " nav-bottom-stat-v--limit-guess" : ""}`}
                   title={
-                    postedMph != null
-                      ? "Map estimate only — always obey posted road signs. Not for enforcement."
-                      : "No reliable map limit here — obey posted road signs"
+                    postedMph == null
+                      ? "No reliable map limit here — obey posted road signs"
+                      : postedMphIsClassEstimate
+                        ? "No map limit here — typical limit for this class of road. Obey posted road signs."
+                        : "Map estimate only — always obey posted road signs. Not for enforcement."
                   }
                 >
                   {postedMph != null ? postedMph : "—"}
-                  {postedMph != null ? <small> est</small> : null}
+                  {postedMph != null ? <small>{postedMphIsClassEstimate ? " ~est" : " est"}</small> : null}
                 </span>
               </div>
             </div>

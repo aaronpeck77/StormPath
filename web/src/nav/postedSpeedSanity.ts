@@ -21,6 +21,31 @@ export const SPEED_LIMIT_CLASS_CAP_MPH: Record<SpeedLimitRoadKind, number> = {
   unknown: 85,
 };
 
+/**
+ * Class fallback used only when Mapbox has no `maxspeed` for the segment.
+ *
+ * Averaged from five state codes / driver manuals (Sept 2026):
+ *   rural interstate — IL 70, MO 70, IN 70, OH 70, KY 65  → 69, call it 70
+ *   US / state route — IL 55 (65 four-lane divided), MO 60 (55 lettered),
+ *                      IN 55 (60 rural divided), OH 55 (60 two-lane designated),
+ *                      KY 55  → ~56, held at 55 so a divided-highway guess
+ *                      never reads above the two-lane statute
+ *   county / township — 55 in all five
+ *   city surface street — IL 30, MO ~30, IN 30, OH 25 (35 on state routes),
+ *                      KY 35  → ~31, held at 30
+ *
+ * Never used to raise or replace a real Mapbox value, and always surfaced to the
+ * driver as an estimate. Urban interstates run 55–65, so this can read high in a
+ * metro; the sign on the post is the only limit that counts.
+ */
+export const SPEED_LIMIT_CLASS_ESTIMATE_MPH: Record<SpeedLimitRoadKind, number | null> = {
+  interstate: 70,
+  us_state: 55,
+  county_arterial: 55,
+  local: 30,
+  unknown: null,
+};
+
 const POSTED_BUCKETS_MPH = [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80] as const;
 
 const INTERSTATE_RE =
@@ -117,4 +142,28 @@ export function displayedPostedSpeedMph(opts: {
     mapboxMph,
     roadKind,
   });
+}
+
+export type PostedSpeedDisplay = {
+  mph: number | null;
+  /** True when the number came from the road-class table, not Mapbox data. */
+  classEstimate: boolean;
+};
+
+/**
+ * Limit for the Lim / Limit readout: Mapbox's value when it exists, otherwise the
+ * road-class average. The caller must show `classEstimate` differently and must not
+ * drive an over-speed warning off it.
+ */
+export function postedSpeedForDisplay(opts: {
+  route: NavRoute | undefined;
+  alongMeters: number;
+}): PostedSpeedDisplay {
+  const mapboxMph = displayedPostedSpeedMph(opts);
+  if (mapboxMph != null) return { mph: mapboxMph, classEstimate: false };
+
+  const roadKind = speedLimitRoadKindAt(opts.route, opts.alongMeters);
+  const guess = SPEED_LIMIT_CLASS_ESTIMATE_MPH[roadKind];
+  if (guess == null) return { mph: null, classEstimate: false };
+  return { mph: guess, classEstimate: true };
 }

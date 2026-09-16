@@ -90,8 +90,16 @@ export function buildNavResourceBudget(input: NavResourceBudgetInput): NavResour
     input.hasPlannedRoute &&
     (planningSurfaceActive || input.viewMode === "drive");
 
+  /**
+   * Rail pre-warm — the progress rail stays hidden until Go, so nothing can ask for
+   * its samples by opening Route Info while planning. Start filling as soon as a
+   * destination is set so the graphs are populated by the time Go is pressed.
+   */
+  const preGoRailWarm = preGoTripBrowse && !input.dataSaverMode;
+
   const radarSampleRequested =
     radarMapOverlayOn ||
+    preGoRailWarm ||
     (preGoTripBrowse &&
       (input.settingStormEnabled ||
         input.settingWeatherHintsEnabled ||

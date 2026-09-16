@@ -4,6 +4,8 @@ import { formatEtaDuration } from "./formatEta";
 type Props = {
   speedMph: number | null;
   postedMph: number | null;
+  /** Lim is a road-class average rather than map data. */
+  postedMphIsClassEstimate?: boolean;
   etaMinutes: number;
   distanceMi: number;
   tripElapsedLabel: string;
@@ -17,6 +19,7 @@ type Props = {
 export function DriveHud({
   speedMph,
   postedMph,
+  postedMphIsClassEstimate = false,
   etaMinutes,
   distanceMi,
   tripElapsedLabel,
@@ -43,13 +46,17 @@ export function DriveHud({
           <span
             className="drive-hud-v"
             title={
-              postedMph != null
-                ? "Map estimate only — obey posted signs"
-                : "No reliable map limit — obey posted signs"
+              postedMph == null
+                ? "No reliable map limit — obey posted signs"
+                : postedMphIsClassEstimate
+                  ? "Typical limit for this class of road — obey posted signs"
+                  : "Map estimate only — obey posted signs"
             }
           >
             {postedMph != null ? postedMph : "—"}
-            <small>{postedMph != null ? " est" : " mph"}</small>
+            <small>
+              {postedMph == null ? " mph" : postedMphIsClassEstimate ? " ~est" : " est"}
+            </small>
           </span>
         </div>
         <div className="drive-hud-cell">

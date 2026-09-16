@@ -82,6 +82,7 @@ type Props = {
   showGo: boolean;
   speedMph: number | null;
   postedMph: number | null;
+  postedMphIsClassEstimate: boolean;
   handleStopAndClear: () => void;
   hasTrip: boolean;
   showReturnTripButton: boolean;
@@ -158,6 +159,7 @@ export function AppBottomChrome({
   showGo,
   speedMph,
   postedMph,
+  postedMphIsClassEstimate,
   handleStopAndClear,
   hasTrip,
   showReturnTripButton,
@@ -363,6 +365,7 @@ export function AppBottomChrome({
           showGo={showGo}
           speedMph={speedMph}
           postedMph={postedMph}
+          postedMphIsClassEstimate={postedMphIsClassEstimate}
           onStop={handleStopAndClear}
           hasTrip={hasTrip}
           showReturnTripButton={showReturnTripButton}

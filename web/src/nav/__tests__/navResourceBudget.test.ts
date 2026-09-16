@@ -153,6 +153,34 @@ describe("navResourceBudget", () => {
     expect(budget.tioRouteFetchEnabled).toBe(true);
   });
 
+  it("warms rail data once a destination is set, even with storm and hints off", () => {
+    const budget = buildNavResourceBudget({
+      ...base,
+      navigationStarted: false,
+      viewMode: "route",
+      showRadar: false,
+      settingStormEnabled: false,
+      settingWeatherHintsEnabled: false,
+      progressCalloutsOpen: false,
+    });
+    expect(budget.radarRouteSamplingEnabled).toBe(true);
+    expect(budget.tioRouteFetchEnabled).toBe(true);
+  });
+
+  it("leaves the pre-Go rail warm-up off in data saver", () => {
+    const budget = buildNavResourceBudget({
+      ...base,
+      navigationStarted: false,
+      viewMode: "route",
+      showRadar: false,
+      dataSaverMode: true,
+      settingStormEnabled: false,
+      settingWeatherHintsEnabled: false,
+      progressCalloutsOpen: false,
+    });
+    expect(budget.radarRouteSamplingEnabled).toBe(false);
+  });
+
   it("turns off map radar overlay when backgrounded", () => {
     const budget = buildNavResourceBudget({
       ...base,

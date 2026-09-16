@@ -39,7 +39,7 @@ import {
   WEATHER_PLANNING_DETAIL_AHEAD_M,
 } from "./constants";
 import { radarDisplayIntensity } from "./radarReflectivityScale";
-import { displayedPostedSpeedMph } from "./postedSpeedSanity";
+import { postedSpeedForDisplay } from "./postedSpeedSanity";
 import type { MapViewMode } from "../ui/driveMapTypes";
 import {
   filterAlertsAffectingRoute,
@@ -143,6 +143,8 @@ export type UseRouteAheadDerivationsResult = {
   driveMapRoutes: NavRoute[];
   progressRailRoute: NavRoute | undefined;
   postedMph: number | null;
+  /** Lim came from the road-class average, not Mapbox — show it as a guess. */
+  postedMphIsClassEstimate: boolean;
   progressStripAlerts: RouteAlert[];
 };
 
@@ -672,13 +674,15 @@ export function useRouteAheadDerivations(
   ]);
   const progressRailRoute = guidanceRoute ?? driveMapRoutes[0] ?? planRoutes[0];
 
-  const postedMph =
+  const postedSpeed =
     navigationStarted && guidanceRoute
-      ? displayedPostedSpeedMph({
+      ? postedSpeedForDisplay({
           route: guidanceRoute,
           alongMeters: userAlongGuidanceM,
         })
       : null;
+  const postedMph = postedSpeed?.mph ?? null;
+  const postedMphIsClassEstimate = postedSpeed?.classEstimate ?? false;
 
   const progressStripAlerts = useMemo(() => augmentAlertsForProgressStrip(routeAlerts), [routeAlerts]);
 
@@ -713,6 +717,7 @@ export function useRouteAheadDerivations(
     driveMapRoutes,
     progressRailRoute,
     postedMph,
+    postedMphIsClassEstimate,
     progressStripAlerts,
   };
 }

@@ -9,9 +9,6 @@ import WebKit
 /// Not @MainActor: CAPPlugin property init is nonisolated (Xcode 26 isolation error).
 /// Create the instance from a MainActor Task; touch UIKit only from @MainActor methods.
 final class DriveNativeMap {
-    /** Bill: keep the 3D puck, just not truck-sized on the road ahead. */
-    private static let puckScaleFactor = 0.7
-
     private var mapView: NavigationMapView?
     private var lastRoutes: NavigationRoutes?
     private weak var hostedWebView: UIView?
@@ -205,16 +202,112 @@ final class DriveNativeMap {
 
     @MainActor
     private func applyStormPathPuck(on map: NavigationMapView) {
-        /* 3D navigation puck (reads as a vehicle at pitch), shrunk from the SDK default
-         * so it does not dominate the lane. Scale is only touched when the default is a
-         * constant — an expression default is left alone rather than guessed at. */
-        var config = Puck3DConfiguration.navigationDefault
-        if case .constant(let scale) = config.modelScale {
-            config.modelScale = .constant(scale.map { $0 * DriveNativeMap.puckScaleFactor })
-        }
-        map.puckType = .puck3D(config)
+        /* Raised blue dome with a short course nose and a ground shadow. Mapbox's only
+         * bundled 3D model is the big arrow, so the dimension is drawn here instead:
+         * shadow and bearing nose render under the dome, dome on top. */
+        var config = Puck2DConfiguration(
+            topImage: DriveNativeMap.puckDomeImage,
+            bearingImage: DriveNativeMap.puckNoseImage,
+            shadowImage: DriveNativeMap.puckShadowImage,
+            scale: .constant(1.0)
+        )
+        config.pulsing = .none
+        map.puckType = .puck2D(config)
         map.puckBearing = .course
         map.mapView.location.options.puckBearingEnabled = true
+    }
+
+    private static func renderPuckImage(
+        size: CGSize,
+        _ draw: (CGContext, CGRect) -> Void
+    ) -> UIImage {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = false
+        format.scale = 3
+        return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+            draw(ctx.cgContext, CGRect(origin: .zero, size: size))
+        }
+    }
+
+    /** Dome body — white ring, top-left lit gradient, specular cap. */
+    private static let puckDomeImage: UIImage = renderPuckImage(
+        size: CGSize(width: 30, height: 30)
+    ) { ctx, rect in
+        ctx.setFillColor(UIColor.white.cgColor)
+        ctx.fillEllipse(in: rect)
+
+        let body = rect.insetBy(dx: 2, dy: 2)
+        ctx.saveGState()
+        ctx.addEllipse(in: body)
+        ctx.clip()
+        let colors = [
+            UIColor(red: 0.49, green: 0.83, blue: 0.99, alpha: 1).cgColor,
+            UIColor(red: 0.02, green: 0.40, blue: 0.70, alpha: 1).cgColor,
+        ] as CFArray
+        if let gradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: colors,
+            locations: [0, 1]
+        ) {
+            ctx.drawRadialGradient(
+                gradient,
+                startCenter: CGPoint(x: body.midX - body.width * 0.22, y: body.midY - body.height * 0.26),
+                startRadius: 0,
+                endCenter: CGPoint(x: body.midX, y: body.midY),
+                endRadius: body.width * 0.78,
+                options: [.drawsAfterEndLocation]
+            )
+        }
+        ctx.setFillColor(UIColor(white: 1, alpha: 0.30).cgColor)
+        ctx.fillEllipse(in: CGRect(
+            x: body.minX + body.width * 0.22,
+            y: body.minY + body.height * 0.13,
+            width: body.width * 0.36,
+            height: body.height * 0.22
+        ))
+        ctx.restoreGState()
+    }
+
+    /** Course nose — sits under the dome, only the tip shows ahead of it. */
+    private static let puckNoseImage: UIImage = renderPuckImage(
+        size: CGSize(width: 26, height: 42)
+    ) { ctx, rect in
+        let tip = CGPoint(x: rect.midX, y: rect.minY + 1)
+        let path = UIBezierPath()
+        path.move(to: tip)
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX - 3, y: rect.midY + 2),
+            controlPoint: CGPoint(x: rect.maxX - 3, y: rect.minY + 9)
+        )
+        path.addLine(to: CGPoint(x: rect.minX + 3, y: rect.midY + 2))
+        path.addQuadCurve(to: tip, controlPoint: CGPoint(x: rect.minX + 3, y: rect.minY + 9))
+        path.close()
+        ctx.setFillColor(UIColor(red: 0.05, green: 0.62, blue: 0.91, alpha: 0.92).cgColor)
+        ctx.addPath(path.cgPath)
+        ctx.fillPath()
+    }
+
+    /** Ground shadow — soft radial blob so the dome looks lifted off the road. */
+    private static let puckShadowImage: UIImage = renderPuckImage(
+        size: CGSize(width: 42, height: 42)
+    ) { ctx, rect in
+        let colors = [
+            UIColor(white: 0, alpha: 0.34).cgColor,
+            UIColor(white: 0, alpha: 0).cgColor,
+        ] as CFArray
+        guard let gradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: colors,
+            locations: [0, 1]
+        ) else { return }
+        ctx.drawRadialGradient(
+            gradient,
+            startCenter: CGPoint(x: rect.midX, y: rect.midY + 2),
+            startRadius: 0,
+            endCenter: CGPoint(x: rect.midX, y: rect.midY + 2),
+            endRadius: rect.width * 0.5,
+            options: []
+        )
     }
 
     /**
