@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  anticipateNativeCamBearingDeg,
   createNativeDriveFollowCam,
   nativeDriveFollowZoomForSpeed,
   parseNativeDriveFollowCamera,
@@ -42,6 +43,62 @@ describe("createNativeDriveFollowCam", () => {
       camZoom: 6.2,
     });
     expect(parsed?.zoom).toBe(DRIVE_FOLLOW_ZOOM_DEFAULT);
+  });
+});
+
+describe("anticipateNativeCamBearingDeg", () => {
+  it("leans toward the route ahead so the turn is visible before it arrives", () => {
+    const out = anticipateNativeCamBearingDeg({
+      coreBearingDeg: 0,
+      routeAheadBearingDeg: 40,
+      speedMps: 12,
+    });
+    expect(out).toBeGreaterThan(0);
+    expect(out).toBeLessThan(40);
+  });
+
+  it("does not swing the camera while parked or crawling", () => {
+    expect(
+      anticipateNativeCamBearingDeg({
+        coreBearingDeg: 0,
+        routeAheadBearingDeg: 40,
+        speedMps: 0.3,
+      })
+    ).toBe(0);
+  });
+
+  it("keeps Core's bearing when the route tangent disagrees wildly", () => {
+    expect(
+      anticipateNativeCamBearingDeg({
+        coreBearingDeg: 10,
+        routeAheadBearingDeg: 190,
+        speedMps: 20,
+      })
+    ).toBe(10);
+  });
+
+  it("anticipates across the 360 seam without spinning the map", () => {
+    const out = anticipateNativeCamBearingDeg({
+      coreBearingDeg: 350,
+      routeAheadBearingDeg: 20,
+      speedMps: 20,
+    });
+    /* 30 deg of turn, leaned partway → just past north (wrapped), not back through 180. */
+    const shortest = (((out - 350) % 360) + 540) % 360 - 180;
+    expect(shortest).toBeGreaterThan(0);
+    expect(shortest).toBeLessThan(30);
+    expect(out).toBeGreaterThanOrEqual(0);
+    expect(out).toBeLessThan(360);
+  });
+
+  it("passes Core straight through with no route tangent", () => {
+    expect(
+      anticipateNativeCamBearingDeg({
+        coreBearingDeg: 128,
+        routeAheadBearingDeg: null,
+        speedMps: 20,
+      })
+    ).toBe(128);
   });
 });
 

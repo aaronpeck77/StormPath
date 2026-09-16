@@ -128,10 +128,12 @@ import {
 } from "./mapDriveCamera";
 import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
 import {
+  anticipateNativeCamBearingDeg,
   shouldHoldParkedFollowCam,
   shouldUseNativeFollowCam,
   nativeFollowCamNeedsWebWrite,
 } from "../nav/nativeDriveFollowCam";
+import { centerForPuckScreenAnchor } from "./driveFollowCamAnchor";
 import {
   NATIVE_DRIVE_MAP_ENABLED,
   NATIVE_DRIVE_PUCK_OVERLAY_ENABLED,
@@ -1698,11 +1700,26 @@ function DriveMapInner({
               userExploring: userExploringRef.current,
             })
           ) {
+            /* Follow the *smoothed* puck, not Core's ~1 Hz sample. The marker glides at
+             * 60 fps while a raw sample steps once a second — that mismatch is the puck
+             * sliding forward then snapping back to the yard line. One motion source. */
+            const camCenter: [number, number] = [nextLng, nextLat];
             const guarded = guardDriveFollowCamera({
-              center: [nativeCam.lng, nativeCam.lat],
+              center: camCenter,
               zoom: nativeCam.zoom,
-              puck: [nativeCam.lng, nativeCam.lat],
+              puck: camCenter,
             });
+            /* Core's bearing also steps at 1 Hz. Smooth it, and lean into the turn. */
+            const targetBearing = anticipateNativeCamBearingDeg({
+              coreBearingDeg: nativeCam.bearing,
+              routeAheadBearingDeg: driveRouteBearingDegRef.current,
+              speedMps: effSp,
+            });
+            const camBearing = smoothDriveBearingDeg(
+              driveCamBearingSmoothedRef.current,
+              targetBearing,
+              1 - Math.exp(-dt / DRIVE_CAMERA_BEARING_TC_S)
+            );
             const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
             const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;
             const easeKey = `${stormBarVisibleRef.current}|${stormBarExpandedRef.current}|${progressRailVisibleRef.current}|${wx}x${wy}`;
@@ -1724,13 +1741,24 @@ function DriveMapInner({
               shouldHoldParkedFollowCam({
                 stationary: isStationary,
                 held: nativeCamAppliedRef.current,
-                next: { lng: nativeCam.lng, lat: nativeCam.lat, bearing: nativeCam.bearing },
+                next: { lng: camCenter[0], lat: camCenter[1], bearing: camBearing },
               });
-            const needsWrite = nativeFollowCamNeedsWebWrite({
-              next: nativeCam,
-              lastApplied: nativeCamAppliedRef.current,
-              resync: driveCamResyncRef.current,
-            });
+            /* `moved` is the marker's own sub-half-meter gate, so the camera writes on
+             * exactly the frames the puck actually glided — smooth while rolling, still
+             * when parked. Bearing and zoom can move on their own. */
+            const needsWrite =
+              moved ||
+              nativeFollowCamNeedsWebWrite({
+                next: {
+                  lng: camCenter[0],
+                  lat: camCenter[1],
+                  bearing: camBearing,
+                  pitch: nativeCam.pitch,
+                  zoom: nativeCam.zoom,
+                },
+                lastApplied: nativeCamAppliedRef.current,
+                resync: driveCamResyncRef.current,
+              });
             /* Count events, not frames: this loop runs at 60 fps against a ~1 Hz
              * sample, so bumping per frame reported 60x reality in About. */
             if (parkedHold && needsWrite) bumpDriveDiag("camParkedHold");
@@ -1747,13 +1775,44 @@ function DriveMapInner({
             followWriter = latched.writer;
             followHoldFalseSinceMs = latched.holdFalseSinceMs;
             followCamWriterRef.current = followWriter;
-            const hardWrite = () =>
-              safeHardFollowCamera(map, {
+            /* setCenter has no Mapbox `offset`, so a plain hard write centers the puck —
+             * that is the climb toward the top of the screen on a dead cell. Shift the
+             * center by the same pixel delta the yard-line offset would have applied. */
+            const hardWrite = () => {
+              const ok = safeHardFollowCamera(map, {
                 center: guarded.center,
                 zoom: guarded.zoom,
                 pitch: nativeCam.pitch,
-                bearing: nativeCam.bearing,
+                bearing: camBearing,
               });
+              if (!ok) return false;
+              const anchored = centerForPuckScreenAnchor({
+                project: (ll) => map.project(ll),
+                unproject: (pt) => map.unproject(pt),
+                center: guarded.center,
+                puck: guarded.center,
+                anchor: expectedDrivePuckScreenAnchorPx({
+                  mapWidth: map.getContainer().clientWidth,
+                  mapHeight: map.getContainer().clientHeight,
+                  padding: easeCached.padding as unknown as {
+                    top: number;
+                    bottom: number;
+                    left: number;
+                    right: number;
+                  },
+                  offset: easeCached.offset,
+                }),
+              });
+              if (anchored && anchored !== guarded.center) {
+                safeHardFollowCamera(map, {
+                  center: anchored,
+                  zoom: guarded.zoom,
+                  pitch: nativeCam.pitch,
+                  bearing: camBearing,
+                });
+              }
+              return true;
+            };
             let applied = false;
             if (!parkedHold && needsWrite) {
               if (followWriter === "hard") {
@@ -1763,7 +1822,7 @@ function DriveMapInner({
                   center: guarded.center,
                   zoom: guarded.zoom,
                   pitch: nativeCam.pitch,
-                  bearing: nativeCam.bearing,
+                  bearing: camBearing,
                   padding: easeCached.padding,
                   offset: easeCached.offset,
                   duration: 0,
@@ -1780,16 +1839,16 @@ function DriveMapInner({
             if (applied) {
               bumpDriveDiag("camApplied");
               nativeCamAppliedRef.current = {
-                lng: nativeCam.lng,
-                lat: nativeCam.lat,
-                bearing: nativeCam.bearing,
+                lng: camCenter[0],
+                lat: camCenter[1],
+                bearing: camBearing,
                 pitch: nativeCam.pitch,
                 zoom: nativeCam.zoom,
               };
-              lastBearingApplied = nativeCam.bearing;
-              driveCamBearingSmoothedRef.current = nativeCam.bearing;
+              lastBearingApplied = camBearing;
+              driveCamBearingSmoothedRef.current = camBearing;
               driveCamResyncRef.current = false;
-              onDriveCameraBearingDegRef.current?.(nativeCam.bearing);
+              onDriveCameraBearingDegRef.current?.(camBearing);
             }
           } else {
           driveCamFrame += 1;

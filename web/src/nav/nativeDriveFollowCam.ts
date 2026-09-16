@@ -163,6 +163,42 @@ export function shouldUseNativeFollowCam(input: {
  * the StormPath map. Native NavigationMapView never did that — one writer, one
  * sample. Skip the web write until the sample actually moved.
  */
+/**
+ * Turn anticipation on top of Core's bearing.
+ *
+ * Core reports course over ground — where the car points *now* — so on the web map
+ * the turn arrives before the camera does. The route tangent ahead of the puck
+ * (`computeDriveRouteBearing`, which already looks ~4.5 s down the corridor and
+ * stretches past a near maneuver) is the anticipation; lean partway toward it.
+ *
+ * Guards: only while actually moving, and only when the two roughly agree. A large
+ * disagreement means the route tangent is stale or we are off it, and Core wins.
+ */
+export const NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS = 2.2;
+export const NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG = 75;
+export const NATIVE_CAM_ANTICIPATE_WEIGHT = 0.45;
+
+export function anticipateNativeCamBearingDeg(input: {
+  coreBearingDeg: number;
+  routeAheadBearingDeg: number | null | undefined;
+  speedMps: number | null | undefined;
+  weight?: number;
+}): number {
+  const core = input.coreBearingDeg;
+  if (!Number.isFinite(core)) return core;
+  const ahead = input.routeAheadBearingDeg;
+  if (ahead == null || !Number.isFinite(ahead)) return core;
+  const speed = input.speedMps;
+  if (speed == null || !Number.isFinite(speed) || speed < NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS) {
+    return core;
+  }
+  const delta = (((ahead - core) % 360) + 540) % 360 - 180;
+  if (Math.abs(delta) > NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG) return core;
+  const weight = input.weight ?? NATIVE_CAM_ANTICIPATE_WEIGHT;
+  const next = core + delta * weight;
+  return ((next % 360) + 360) % 360;
+}
+
 export const NATIVE_FOLLOW_CAM_WEB_MOVE_M = 0.8;
 export const NATIVE_FOLLOW_CAM_WEB_BEARING_DEG = 0.45;
 export const NATIVE_FOLLOW_CAM_WEB_ZOOM = 0.04;
