@@ -1545,6 +1545,7 @@ export default function App() {
         speedMps,
         navigationStarted,
         userAlongGuidanceM,
+        metersToManeuver: metersToBannerManeuver,
       }),
     [
       driveOffRouteForwardFraming,
@@ -1555,6 +1556,7 @@ export default function App() {
       speedMps,
       navigationStarted,
       userAlongGuidanceM,
+      metersToBannerManeuver,
     ]
   );
 

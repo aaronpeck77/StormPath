@@ -79,3 +79,15 @@ Bill: rain/wind responding but want more curve movement; Go zooms a random spot 
 ### 2026-09-14 — Go still needs web until native punches
 
 Bill: after dropping the hold, Go jumped between images then sat on the old customer web map before native. That web layer is intentional — hole punches only after native is framed. Fix is freeze web on the planning frame (no street follow-cam) until punch, one cut — not delete the web map.
+
+### 2026-09-15 — Follow-cam turn anticipation is distance-only
+
+Web route bearing samples ~28–110 m ahead (`speed * 3.2`), then COG vetoes if >55° off. Maneuver steps know turns for banner/off-route only — no camera anticipation. Native `DriveFollowCam` uses heading only, no polyline look-ahead. Small lever: bump `lookAheadM` in `computeDriveRouteBearing` (or ~2–3 s × speed when near `metersToCurrentStepEnd`).
+
+### 2026-09-15 — Go lock vs silent soft restart
+
+Go locks the previewed chip (`goLockRoute.ts`); Drive guidance follows that id. Contract says soft restart should keep no-interstate via `preferBackroads`, and `lockedRouteShouldAvoidMotorway` feeds native Core — but DIY `softRestartRouteFromHere` still fetches multi-route without `preferBackroads` and relocks onto new Main (`r-a`). Plus Drive still shows the blue A/B cycle chip and map alts. Tightening lock-after-Go is mostly: pass preferBackroads on soft restart, hide RoutePick in DR, hide map alts when `viewMode === "drive"`.
+
+### 2026-09-15 — Drive-test fix pack shipped
+
+Bill’s seven items: lock DR (no A/B chip/alts; soft restart preferBackroads; B auto-tags +ETA); mild turn look-ahead; shell transparency only after punch; slim route + 2D puck; YOU rail from polyline progress not odometer=0; native route under road-label.

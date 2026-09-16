@@ -39,6 +39,7 @@ export function createNativeDriveFollowCam(): {
     lat: number;
     headingDeg: number | null;
     speedMps: number | null;
+    stepRemainingM?: number | null;
   }) => NativeDriveFollowCamera;
   reset: () => void;
 } {
@@ -54,6 +55,7 @@ export function createNativeDriveFollowCam(): {
           ? input.headingDeg
           : null;
       const speed = input.speedMps;
+      const speedN = speed != null && Number.isFinite(speed) ? Math.max(0, speed) : 0;
       const moving = speed == null || !Number.isFinite(speed) || speed >= TRAVEL_MIN_SPEED_MPS;
       let raw: number;
       if (heading != null && (moving || lastBearing == null)) {
@@ -63,7 +65,14 @@ export function createNativeDriveFollowCam(): {
       } else {
         raw = heading ?? 0;
       }
-      const bearing = smoothDriveBearingDeg(lastBearing, raw, BEARING_ALPHA);
+      const stepRem = input.stepRemainingM;
+      const nearTurn =
+        stepRem != null &&
+        Number.isFinite(stepRem) &&
+        stepRem >= 0 &&
+        stepRem <= Math.max(60, speedN * 3);
+      const alpha = nearTurn ? 0.48 : BEARING_ALPHA;
+      const bearing = smoothDriveBearingDeg(lastBearing, raw, alpha);
       lastBearing = bearing;
       return {
         lng: input.lng,

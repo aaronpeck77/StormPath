@@ -207,7 +207,7 @@ export function useProgressCalloutPanel(
       };
     }
     const userAlongT =
-      totalM > 0 ? Math.min(1, Math.max(0, userAlongGuidanceM / totalM)) : 0;
+      totalM > 0 ? Math.min(1, Math.max(0, progressPanelAlongM / totalM)) : 0;
 
     const planEta = guidanceRoute?.baseEtaMinutes ?? null;
     const outlookGraphSamples =

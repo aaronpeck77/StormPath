@@ -216,18 +216,7 @@ export function AppBottomChrome({
                 {driveDistanceRemainingLabel ? (
                   <NavMilesLeftBox label={driveDistanceRemainingLabel} />
                 ) : null}
-                {routePickItems.length >= 2 ? (
-                  <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
-                    <RoutePickControl
-                      items={routePickItems}
-                      selectedId={lineFocusId}
-                      cycleOrderIds={planRouteIds}
-                      activeSlotIndex={previewLegIndex}
-                      onSelect={handlePreviewRouteSelect}
-                      detail={routeDockDetail}
-                    />
-                  </div>
-                ) : null}
+                {/* Drive locks one corridor — A/B cycle stays on Rt / Mp only. */}
               </div>
             </div>
           ) : navigationStarted && viewMode === "topdown" ? (

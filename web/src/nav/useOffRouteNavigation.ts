@@ -22,6 +22,7 @@ import {
   DRIVE_AHEAD_OFF_ROUTE_ENTER_M,
   DRIVE_AHEAD_REROUTE_THROTTLE_MS,
   isDriveAlwaysAheadView,
+  lockedRouteShouldAvoidMotorway,
 } from "./driveAlwaysAhead";
 import { mayMutateLockedRouteGeometry } from "./navigationContract";
 import {
@@ -364,10 +365,18 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       const remainingVias = remainingViaStops(viaStops, activeViaIndex);
       const viaCoords = remainingVias.map((s) => s.lngLat);
       const bearingDeg = headingRef.current;
+      const lockedId = lockedNavigationRouteIdRef.current;
+      const locked =
+        (lockedId ? planRef.current.routes.find((r) => r.id === lockedId) : undefined) ??
+        guidanceRoute ??
+        null;
+      const preferBackroads = lockedRouteShouldAvoidMotorway(locked, planRef.current.routes);
       const fresh = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
         via: viaCoords.length > 0 ? viaCoords : undefined,
-        maxRoutes: 2,
+        maxRoutes: preferBackroads ? 1 : 2,
         forwardFirst: true,
+        singleRouteFromPosition: preferBackroads,
+        preferBackroads,
         bearingDeg:
           bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
         signal: fetchCtrl.signal,
@@ -443,6 +452,8 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setTapHint,
     setFitTrigger,
     settingVoiceGuidanceEnabled,
+    guidanceRoute,
+    planRef,
   ]);
 
   /** @deprecated Overlay rejoin removed — same as soft restart (new Go lock from GPS). */

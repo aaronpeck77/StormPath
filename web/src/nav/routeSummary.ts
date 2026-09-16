@@ -30,3 +30,25 @@ export function routeConsiderationSummary(route: NavRoute): string {
   if (route.role === "balanced") return "Country drive · backroads";
   return "Route option";
 }
+
+/**
+ * Chip / dock label: consideration blurb, plus ETA delta vs the plan's fastest leg
+ * so B reads as "No interstate · +8 min" instead of a bare letter.
+ */
+export function routePickDisplayLabel(
+  route: NavRoute,
+  etaMinutes: number,
+  fastestEtaMinutes: number | null | undefined
+): string {
+  const blurb = routeConsiderationSummary(route);
+  const fastest =
+    fastestEtaMinutes != null && Number.isFinite(fastestEtaMinutes)
+      ? Math.round(fastestEtaMinutes)
+      : null;
+  const eta = Math.round(etaMinutes);
+  if (fastest != null && eta - fastest >= 1 && route.role !== "fastest") {
+    return `${blurb} · +${eta - fastest} min`;
+  }
+  if (route.role === "fastest") return blurb.includes("fastest") ? "Main" : blurb;
+  return blurb;
+}

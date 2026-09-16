@@ -578,16 +578,18 @@
   color: #e8eaed;
 }
 
-/* Native NavigationMapView shows through the WebView during Drive. */
-.app-shell--native-drive-map,
-.app-shell--native-drive-map .map-stage.map-bleed,
-.app-shell--native-drive-map .map-canvas {
+/* Native NavigationMapView shows through only after the hole punches (canvas opacity 0).
+ * Gating on .drive-map--native-shell avoids clearing the shell while the customer web map
+ * is still opaque — that race peeked the old map under native. */
+.app-shell--native-drive-map:has(.drive-map--native-shell),
+.app-shell--native-drive-map:has(.drive-map--native-shell) .map-stage.map-bleed,
+.app-shell--native-drive-map:has(.drive-map--native-shell) .map-canvas {
   background: transparent !important;
 }
 
-html:has(.app-shell--native-drive-map),
-html:has(.app-shell--native-drive-map) body,
-html:has(.app-shell--native-drive-map) #root {
+html:has(.drive-map--native-shell),
+html:has(.drive-map--native-shell) body,
+html:has(.drive-map--native-shell) #root {
   background: transparent !important;
 }
 
@@ -3361,14 +3363,14 @@ html:has(.app-shell--native-drive-map) #root {
 
 /* Map markers (GPS puck + destination) */
 .map-user-puck {
-  width: 22px;
-  height: 22px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: radial-gradient(circle at 32% 28%, #5eb3ff 0%, #1a73e8 42%, #0d47a1 100%);
-  border: 3px solid #fff;
+  border: 2px solid #fff;
   box-shadow:
     0 1px 2px rgba(255, 255, 255, 0.35) inset,
-    0 2px 6px rgba(0, 0, 0, 0.35);
+    0 2px 5px rgba(0, 0, 0, 0.35);
 }
 
 .map-user-puck--driving {
@@ -5313,7 +5315,6 @@ html:has(.app-shell--native-drive-map) #root {
     0 0 0 1px rgba(255, 255, 255, 0.55),
     0 0 14px color-mix(in srgb, var(--rpgl-driver-color, #94a3b8) 85%, transparent);
   opacity: 1;
-  transition: left 0.4s ease-out;
 }
 
 .rpgl__sync-outlook {

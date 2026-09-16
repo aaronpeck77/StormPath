@@ -15,6 +15,8 @@ export type ComputeDriveRouteBearingInput = {
   speedMps: number | null | undefined;
   navigationStarted: boolean;
   userAlongGuidanceM: number;
+  /** Meters to the next banner maneuver — near-turn bump so the cam swings a little early. */
+  metersToManeuver?: number | null;
 };
 
 /**
@@ -30,6 +32,7 @@ export function computeDriveRouteBearing(input: ComputeDriveRouteBearingInput): 
     speedMps,
     navigationStarted,
     userAlongGuidanceM,
+    metersToManeuver = null,
   } = input;
 
   if (
@@ -42,12 +45,19 @@ export function computeDriveRouteBearing(input: ComputeDriveRouteBearingInput): 
     return null;
   }
 
-  /* Shorter look-ahead near forks/ramps reduces sideways camera targets; travel bearing
-   * in mapDriveCamera still vetoes any remaining wild disagreement. */
-  const lookAheadM = Math.min(
-    110,
-    Math.max(28, 28 + (speedMps != null && speedMps > 0 ? speedMps * 3.2 : 0))
-  );
+  const speed = speedMps != null && speedMps > 0 ? speedMps : 0;
+  /* Mild turn anticipation: look farther down the corridor (~4.5 s of travel). */
+  let lookAheadM = Math.min(140, Math.max(40, 40 + speed * 4.5));
+  /* Within ~2–3 s of the next turn, stretch past the maneuver so the chord includes post-turn heading. */
+  if (
+    metersToManeuver != null &&
+    Number.isFinite(metersToManeuver) &&
+    metersToManeuver >= 0 &&
+    metersToManeuver <= Math.max(60, speed * 3)
+  ) {
+    lookAheadM = Math.min(180, lookAheadM + Math.max(40, speed * 2));
+  }
+
   const OFF_ROUTE_FOR_CAMERA_TANGENT_M = 168;
   const totalM = polylineLengthMeters(geometry);
   let b: number | null = null;

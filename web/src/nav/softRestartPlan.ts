@@ -41,11 +41,18 @@ export function assignOffRouteReplanSlots(
   const pool = forward.length > 0 ? forward : usable;
   const primary = pickBestForwardRoute(pool, userLngLat, headingDeg) ?? pool[0];
   if (!primary) return [];
+  /** Keep no-interstate / backroads identity when soft restart fetched with preferBackroads. */
+  const primaryBackroads =
+    primary.role === "hazardSmart" || primary.role === "balanced";
   const a: NavRoute = {
     ...primary,
     id: "r-a",
-    role: "fastest",
-    label: "Main",
+    role: primaryBackroads ? primary.role! : "fastest",
+    label: primaryBackroads
+      ? primary.role === "hazardSmart"
+        ? "No interstate"
+        : primary.label?.trim() || "Alternate"
+      : "Main",
   };
   const alt = pool.find((r) => r !== primary);
   if (!alt) return [a];

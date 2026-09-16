@@ -22,16 +22,26 @@ struct DriveFollowCam {
     private let travelMinSpeed = 1.8
     private let bearingAlpha = 0.35
     private let maxBearingStep = 9.0
+    /** Near a maneuver, track heading changes a little faster so the cam swings early. */
+    private let nearTurnBearingAlpha = 0.48
+    private let nearTurnMaxBearingStep = 12.0
 
     mutating func reset() {
         lastBearing = nil
     }
 
-    mutating func next(lng: Double, lat: Double, headingDeg: Double?, speedMps: Double?) -> DriveFollowCameraSample {
+    mutating func next(
+        lng: Double,
+        lat: Double,
+        headingDeg: Double?,
+        speedMps: Double?,
+        stepRemainingM: Double? = nil
+    ) -> DriveFollowCameraSample {
         let heading: Double? = {
             guard let h = headingDeg, h >= 0 else { return nil }
             return h
         }()
+        let speed = speedMps ?? 0
         let moving = speedMps == nil || speedMps! >= travelMinSpeed
         let raw: Double
         if let heading, moving || lastBearing == nil {
@@ -41,7 +51,13 @@ struct DriveFollowCam {
         } else {
             raw = heading ?? 0
         }
-        let bearing = smoothBearing(from: lastBearing, to: raw)
+        let nearTurn =
+            stepRemainingM != nil
+            && stepRemainingM! >= 0
+            && stepRemainingM! <= max(60.0, max(0, speed) * 3.0)
+        let alpha = nearTurn ? nearTurnBearingAlpha : bearingAlpha
+        let maxStep = nearTurn ? nearTurnMaxBearingStep : maxBearingStep
+        let bearing = smoothBearing(from: lastBearing, to: raw, alpha: alpha, maxStep: maxStep)
         lastBearing = bearing
         return DriveFollowCameraSample(
             lng: lng,
@@ -71,14 +87,14 @@ struct DriveFollowCam {
         return min(maxZoom, zoom)
     }
 
-    private func smoothBearing(from prev: Double?, to raw: Double) -> Double {
+    private func smoothBearing(from prev: Double?, to raw: Double, alpha: Double, maxStep: Double) -> Double {
         guard let prev else { return normalize(raw) }
         var d = raw - prev
         while d > 180 { d -= 360 }
         while d < -180 { d += 360 }
         d = min(179, max(-179, d))
-        var step = d * bearingAlpha
-        step = min(maxBearingStep, max(-maxBearingStep, step))
+        var step = d * alpha
+        step = min(maxStep, max(-maxStep, step))
         return normalize(prev + step)
     }
 

@@ -492,7 +492,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             lng: pose.coordinate.longitude,
             lat: pose.coordinate.latitude,
             headingDeg: pose.headingDeg,
-            speedMps: pose.speedMps
+            speedMps: pose.speedMps,
+            stepRemainingM: stepRemainingM
         )
         payload["camLng"] = cam.lng
         payload["camLat"] = cam.lat

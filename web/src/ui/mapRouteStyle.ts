@@ -19,23 +19,24 @@ export const ROUTE_SUGGESTED_COLOR = "#7dd3fc";
  * +5 is ~2.5px per side: thin, but you can see it on pavement and radar.
  */
 export const ROUTE_LINE_CASING_COLOR = "#000000";
-export const ROUTE_LINE_CASING_WIDTH_EXTRA = 5;
+/** Slimmer outline so the core can sit closer to road width without a fat halo. */
+export const ROUTE_LINE_CASING_WIDTH_EXTRA = 4;
 export const ROUTE_LINE_CASING_OPACITY = 1;
 
 export const ROUTE_ACTIVE_LINE_WIDTH = 8;
 export const ROUTE_SUGGESTED_LINE_WIDTH = 6;
 
 /**
- * Street-level width so the blue line sits on the pavement in Dr / Mp
- * without covering the whole lane. Zoom 14 stays at the historic 8px.
+ * Street-level width — closer to pavement width so shields stay readable.
+ * ~half the prior street curve (was 8→18 at zoom 14–19).
  */
 const DRIVE_LINE_WIDTH_STOPS: [number, number][] = [
-  [8, 2.5],
-  [12, 5],
-  [14, 8],
-  [16, 10],
-  [17.5, 14],
-  [19, 18],
+  [8, 1.8],
+  [12, 3.2],
+  [14, 4.5],
+  [16, 5.5],
+  [17.5, 7],
+  [19, 9],
 ];
 
 /**
@@ -43,12 +44,12 @@ const DRIVE_LINE_WIDTH_STOPS: [number, number][] = [
  * Nudge those stops up a little for readability; street zoom stays Drive.
  */
 const ROUTE_VIEW_LINE_WIDTH_STOPS: [number, number][] = [
-  [8, 3.5],
-  [12, 6.5],
-  [14, 10],
-  [16, 10],
-  [17.5, 14],
-  [19, 18],
+  [8, 2.5],
+  [12, 4.5],
+  [14, 6],
+  [16, 6],
+  [17.5, 7],
+  [19, 9],
 ];
 
 /** Main Rt map only — Drive, Map, and the corner PiP keep the slim line. */

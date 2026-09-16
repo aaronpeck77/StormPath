@@ -1902,7 +1902,10 @@ function DriveMapInner({
     let cancelled = false;
     const styleUrl = activeStyleRef.current;
     if (nativeDriveMapActive) {
-      setNativeMapShowing(false);
+      /* First Go this trip: hold punch until native frames. Mp→Dr: keep hole if already punched. */
+      if (!hadNativeShellThisTripRef.current) {
+        setNativeMapShowing(false);
+      }
       void StormpathMapboxNavigation.setNativeMapVisible({ visible: true, styleUrl })
         .then((r) => {
           if (cancelled) return;

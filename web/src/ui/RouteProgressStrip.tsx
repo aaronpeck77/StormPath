@@ -90,7 +90,14 @@ export function RouteProgressStrip({
   const denom = tripOdometerM + remainingM;
   const tripProgress =
     tripRelativeProgress && denom > 1 ? Math.min(1, Math.max(0, tripOdometerM / denom)) : polylineProgress;
-  const progress = tripProgress;
+  /**
+   * Prefer along-route progress for the YOU cursor. Trip odometer often stays 0 with
+   * creep filtering / small GPS steps, which stuck the marker at the start.
+   */
+  const progress =
+    tripRelativeProgress && tripOdometerM > 2
+      ? Math.max(polylineProgress, tripProgress)
+      : polylineProgress;
 
   const laidOut = useMemo(() => {
     if (!geometry?.length || totalM <= 0) return [];

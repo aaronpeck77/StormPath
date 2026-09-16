@@ -397,13 +397,13 @@ export function routeIdFromRouteHitLayerId(layerId: string): string | null {
   return layerId.slice(prefix.length, -suffix.length);
 }
 
-/** Drive hides alts only when there is a single corridor. Plus A/B stay visible. */
+/** Drive always shows the locked corridor only — A/B stay on Rt / Mp for compare. */
 export function hideAlternateRoutesOnDrive(
   viewMode: MapViewMode,
-  routeCount: number,
+  _routeCount: number,
   isOverviewPip = false
 ): boolean {
-  return viewMode === "drive" && !isOverviewPip && routeCount < 2;
+  return viewMode === "drive" && !isOverviewPip;
 }
 
 /** Route legs that currently have map layers (matches {@link applyRoutesToMap} visibility). */

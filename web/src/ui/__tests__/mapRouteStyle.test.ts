@@ -18,20 +18,20 @@ function widthAtZoom(expr: ReturnType<typeof routeLineWidthByZoom>, zoom: number
 }
 
 describe("routeLineWidthByZoom", () => {
-  it("keeps Drive at the historic 8px planning stop and slimmer street zoom", () => {
+  it("keeps Drive street zoom close to pavement width", () => {
     const expr = routeLineWidthByZoom(ROUTE_ACTIVE_LINE_WIDTH, "drive");
     expect(expr[0]).toBe("interpolate");
-    expect(widthAtZoom(expr, 14)).toBe(8);
-    expect(widthAtZoom(expr, 17.5)).toBe(14);
+    expect(widthAtZoom(expr, 14)).toBe(4.5);
+    expect(widthAtZoom(expr, 17.5)).toBe(7);
     expect((widthAtZoom(expr, 17.5) as number) > (widthAtZoom(expr, 14) as number)).toBe(true);
   });
 
   it("widens Rt a little at overview zoom without changing street zoom", () => {
     const drive = routeLineWidthByZoom(ROUTE_ACTIVE_LINE_WIDTH, "drive");
     const route = routeLineWidthByZoom(ROUTE_ACTIVE_LINE_WIDTH, "route");
-    expect(widthAtZoom(route, 8)).toBe(3.5);
-    expect(widthAtZoom(route, 12)).toBe(6.5);
-    expect(widthAtZoom(route, 14)).toBe(10);
+    expect(widthAtZoom(route, 8)).toBe(2.5);
+    expect(widthAtZoom(route, 12)).toBe(4.5);
+    expect(widthAtZoom(route, 14)).toBe(6);
     expect(widthAtZoom(route, 12)).toBeGreaterThan(widthAtZoom(drive, 12) as number);
     expect(widthAtZoom(route, 14)).toBeGreaterThan(widthAtZoom(drive, 14) as number);
     expect(widthAtZoom(route, 17.5)).toBe(widthAtZoom(drive, 17.5));

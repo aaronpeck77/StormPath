@@ -44,6 +44,7 @@ final class DriveNativeMap {
             )
             map.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             map.frame = host.bounds
+            applyStormPathRouteStyle(on: map)
             applyStormPathPuck(on: map)
             map.showsAlternatives = false
             map.showsRelativeDurationsOnAlternativeManuever = false
@@ -68,6 +69,9 @@ final class DriveNativeMap {
     @MainActor
     func show(routes: NavigationRoutes) {
         lastRoutes = routes
+        if let mapView {
+            applyStormPathRouteStyle(on: mapView)
+        }
         mapView?.show(routes, routeAnnotationKinds: [])
     }
 
@@ -177,6 +181,7 @@ final class DriveNativeMap {
             Task { @MainActor in
                 guard let self else { return }
                 self.styleReady = true
+                self.applyStormPathRouteStyle(on: map)
                 self.applyStormPathPuck(on: map)
                 if let routes = self.lastRoutes {
                     self.mapView?.show(routes, routeAnnotationKinds: [])
@@ -197,10 +202,23 @@ final class DriveNativeMap {
 
     @MainActor
     private func applyStormPathPuck(on map: NavigationMapView) {
-        /* Built-in Nav SDK 3D chevron (not the flat blue 2D disc). Re-apply after style load. */
-        map.puckType = .puck3D(.navigationDefault)
+        /* Flat 2D disc + course — smaller than Mapbox's 3D navigation chevron. */
+        var config = Puck2DConfiguration.makeDefault(showBearing: true)
+        config.pulsing = .none
+        map.puckType = .puck2D(config)
         map.puckBearing = .course
         map.mapView.location.options.puckBearingEnabled = true
+    }
+
+    /**
+     * Keep the route under road names/shields and closer to pavement width.
+     * Web map already parks route under `road-label`; native Nav defaults sit on top / thick.
+     */
+    @MainActor
+    private func applyStormPathRouteStyle(on map: NavigationMapView) {
+        map.customRouteLineLayerPosition = .below("road-label")
+        map.routeColor = UIColor(red: 0.22, green: 0.74, blue: 0.97, alpha: 1) /* #38bdf8 */
+        map.routeCasingColor = UIColor(white: 0.05, alpha: 0.85)
     }
 
     @MainActor
