@@ -75,3 +75,11 @@ export function shouldRepairFollowCamStall(input: {
 export function driveFollowCamAllowsSetCenterHotLoop(): boolean {
   return false;
 }
+
+/**
+ * Core-to-web Drive: a failed yard-line pan must not hard-write a second
+ * framing this frame. That pan↔setCenter fight is the two-image flicker.
+ */
+export function nativeFollowCamAllowsSameFrameHardFallback(): boolean {
+  return false;
+}

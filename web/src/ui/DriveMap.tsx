@@ -130,6 +130,7 @@ import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
 import {
   shouldHoldParkedFollowCam,
   shouldUseNativeFollowCam,
+  nativeFollowCamNeedsWebWrite,
 } from "../nav/nativeDriveFollowCam";
 import {
   NATIVE_DRIVE_MAP_ENABLED,
@@ -153,6 +154,7 @@ import {
 } from "./destPlaceCamera";
 import {
   advanceFollowCamWriter,
+  nativeFollowCamAllowsSameFrameHardFallback,
   type FollowCamWriter,
 } from "./driveFollowCamWrite";
 import { computePuckTargetBeforeRouteSnap } from "./driveMapPuckTarget";
@@ -595,7 +597,13 @@ function DriveMapInner({
   /** One-shot: force drive follow-cam easeTo even when the puck barely moved (explore end, layout, resume). */
   const driveCamResyncRef = useRef(false);
   /** Last native cam sample actually written — anchor for the parked wobble hold. */
-  const nativeCamAppliedRef = useRef<{ lng: number; lat: number; bearing: number } | null>(null);
+  const nativeCamAppliedRef = useRef<{
+    lng: number;
+    lat: number;
+    bearing: number;
+    pitch: number;
+    zoom: number;
+  } | null>(null);
   /** Sliding corridor window start (m) for ahead tile prefetch while navigating. */
   const corridorWarmStartMRef = useRef(0);
   const corridorPrefetchInFlightRef = useRef(false);
@@ -1656,6 +1664,15 @@ function DriveMapInner({
               });
             if (parkedHold) bumpDriveDiag("camParkedHold");
             if (holdTiles) bumpDriveDiag("lowSignalHolds");
+            const latched = advanceFollowCamWriter({
+              holdTiles,
+              writer: followWriter,
+              holdFalseSinceMs: followHoldFalseSinceMs,
+              nowMs: Date.now(),
+            });
+            followWriter = latched.writer;
+            followHoldFalseSinceMs = latched.holdFalseSinceMs;
+            followCamWriterRef.current = followWriter;
             const hardWrite = () =>
               safeHardFollowCamera(map, {
                 center: guarded.center,
@@ -1664,8 +1681,13 @@ function DriveMapInner({
                 bearing: nativeCam.bearing,
               });
             let applied = false;
-            if (!parkedHold) {
-              if (holdTiles) {
+            const needsWrite = nativeFollowCamNeedsWebWrite({
+              next: nativeCam,
+              lastApplied: nativeCamAppliedRef.current,
+              resync: driveCamResyncRef.current,
+            });
+            if (!parkedHold && needsWrite) {
+              if (followWriter === "hard") {
                 applied = hardWrite();
               } else {
                 applied = safePanToCenter(map, {
@@ -1678,7 +1700,7 @@ function DriveMapInner({
                   duration: 0,
                   essential: true,
                 });
-                if (!applied) {
+                if (!applied && nativeFollowCamAllowsSameFrameHardFallback()) {
                   bumpDriveDiag("camHardFallback");
                   applied = hardWrite();
                 }
@@ -1690,6 +1712,8 @@ function DriveMapInner({
                 lng: nativeCam.lng,
                 lat: nativeCam.lat,
                 bearing: nativeCam.bearing,
+                pitch: nativeCam.pitch,
+                zoom: nativeCam.zoom,
               };
               lastBearingApplied = nativeCam.bearing;
               driveCamBearingSmoothedRef.current = nativeCam.bearing;

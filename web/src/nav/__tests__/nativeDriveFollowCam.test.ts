@@ -6,6 +6,7 @@ import {
   PARKED_CAM_HOLD_M,
   shouldHoldParkedFollowCam,
   shouldUseNativeFollowCam,
+  nativeFollowCamNeedsWebWrite,
 } from "../nativeDriveFollowCam";
 import { DRIVE_FOLLOW_PITCH_DEG } from "../../ui/mapDriveCamera";
 import { DRIVE_FOLLOW_ZOOM_DEFAULT, DRIVE_FOLLOW_ZOOM_MIN } from "../../ui/driveFollowZoomGuard";
@@ -112,5 +113,42 @@ describe("shouldUseNativeFollowCam", () => {
         userExploring: false,
       })
     ).toBe(false);
+  });
+});
+
+describe("nativeFollowCamNeedsWebWrite", () => {
+  const sample = { lng: -90.2, lat: 38.63, bearing: 90, pitch: 64, zoom: 16.35 };
+
+  it("writes the first sample and a resync", () => {
+    expect(nativeFollowCamNeedsWebWrite({ next: sample, lastApplied: null, resync: false })).toBe(
+      true
+    );
+    expect(
+      nativeFollowCamNeedsWebWrite({ next: sample, lastApplied: sample, resync: true })
+    ).toBe(true);
+  });
+
+  it("does not re-apply the same Core pose at 60 fps (47 samples vs 2519 writes)", () => {
+    let last = sample;
+    let writes = 0;
+    for (let i = 0; i < 2519; i++) {
+      const next =
+        i % 54 === 0
+          ? { ...sample, lng: sample.lng + i * 0.00002, bearing: sample.bearing + i * 0.01 }
+          : last;
+      if (nativeFollowCamNeedsWebWrite({ next, lastApplied: last, resync: false })) {
+        writes += 1;
+        last = next;
+      }
+    }
+    expect(writes).toBeLessThan(80);
+    expect(writes).toBeGreaterThan(20);
+  });
+
+  it("writes when the car actually moved", () => {
+    const moved = { ...sample, lat: 38.631 };
+    expect(nativeFollowCamNeedsWebWrite({ next: moved, lastApplied: sample, resync: false })).toBe(
+      true
+    );
   });
 });
