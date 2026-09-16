@@ -22,7 +22,13 @@ Do not auto-take until that hop is boring: right exit, not a farm loop, on-ramp 
 
 ## P2 — Download this trip
 
-*(empty — add a note when corridor cache / Core TileStore work teaches us something)*
+### 2026-09-15 — Predictive cache has two halves; only one survived the map swap
+
+`PredictiveCacheConfig()` is still set on `CoreConfig`, so Core keeps caching the **routing graph** along the trip — that is why guidance, snap and reroute survive a dead cell. The **map tile** half only fills when `provider.predictiveCacheManager` is handed to a `NavigationMapView`, and with `NATIVE_DRIVE_MAP_ENABLED = false` nothing takes it. TileStore is also unreadable from the WebView: private pack format, native process, no per-tile byte API.
+
+Our JS stand-in (`routeCorridorPreload` + `prefetchMapTilesForBounds`) warms z10–13 while Drive follows at 16.35, so a dead cell falls back to a stretched z13 parent — roads, no streets. Two cheap follow-ups when Bill asks: a short high-zoom window (next ~8 mi at z15–16, tight pad) and confirming our single-source `mapbox-streets-v8` URLs actually match the composite+`sku` URLs the style requests, or every warmed tile is a cache miss.
+
+Real parity would be a `WKURLSchemeHandler` tile proxy in Swift serving GL JS from disk. That is the foundation P2 wants anyway — do not build it until he asks.
 
 ---
 
@@ -87,6 +93,18 @@ Web route bearing samples ~28–110 m ahead (`speed * 3.2`), then COG vetoes if 
 ### 2026-09-15 — Go lock vs silent soft restart
 
 Go locks the previewed chip (`goLockRoute.ts`); Drive guidance follows that id. Contract says soft restart should keep no-interstate via `preferBackroads`, and `lockedRouteShouldAvoidMotorway` feeds native Core — but DIY `softRestartRouteFromHere` still fetches multi-route without `preferBackroads` and relocks onto new Main (`r-a`). Plus Drive still shows the blue A/B cycle chip and map alts. Tightening lock-after-Go is mostly: pass preferBackroads on soft restart, hide RoutePick in DR, hide map alts when `viewMode === "drive"`.
+
+### 2026-09-15 — Road controls on both maps; one-map direction
+
+Bill wants StormPath's look with native function. Worth remembering both maps already load the same style URL, so the split is renderer + paint, not basemap. Signals / stop / yield / rail now come from Directions `intersections` (data we already fetch) and draw on the web map and the native Drive map — proof that "native-only" detail is often just route data. Direction agreed for later: stop stacking two live maps in Drive, keep one renderer and bridge the other's data. Mapbox Standard is the optional third step but re-shuffles ~29 custom layers.
+
+### 2026-09-15 — Drawn dome puck, rail warm-up, class speed limits
+
+Mapbox's only bundled 3D model is the arrow Bill dislikes, so the puck is now a drawn dome (gradient + specular + ground shadow + short course nose) via `Puck2DConfiguration` images. Real 3D later means bundling our own `.glb`. Rail stays hidden until Go but its corridor data now warms as soon as a destination is set (`preGoRailWarm`), which also removes the pre-Go mis-tap that moved the destination. Lim falls back to a road-class average (interstate 70 / state 55 / county 55 / city 30, averaged from IL, MO, IN, OH, KY codes) marked `~est` and excluded from the over-speed warning.
+
+### 2026-09-15 — Puck back to 3D, colors, rail after Go
+
+Bill wants the 3D puck kept (just not lane-sized), so native uses `Puck3DConfiguration.navigationDefault` scaled 0.7 instead of the flat 2D disc. Rt/Mp now read like Drive: taken leg is the same sky blue, unused leg pale blue. Progress rail only after Go — note Route info opens from that rail, so pre-Go corridor graphs need another door if he wants them while planning. Speed limit: Apple exposes no public posted-limit API; Core's `SpeedLimit` off nav status is the accurate path vs static Directions `maxspeed`.
 
 ### 2026-09-15 — Drive-test fix pack shipped
 
