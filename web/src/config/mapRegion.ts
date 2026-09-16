@@ -1,5 +1,6 @@
 import { continentFromLngLat, type ContinentCode } from "../services/continents";
 import type { LngLat } from "../nav/types";
+import { DEST_PLACE_MIN_ZOOM } from "../ui/destPlaceCamera";
 
 /** Mapbox `maxBounds` — southwest corner, northeast corner. */
 export type MapLngLatBounds = [[number, number], [number, number]];
@@ -63,14 +64,20 @@ export function mapMaxBoundsForLngLat(lngLat: LngLat | null | undefined): MapLng
   return padMapBounds(CONTINENT_MAP_BOUNDS[code]);
 }
 
-/** Floor zoom so active navigation can't pull back to a whole-world view. */
+/** Floor zoom so dest-pick / Drive cannot pull back to a whole-continent view. */
 export function mapMinZoomForSession(opts: {
   navigationStarted: boolean;
   hasContinent: boolean;
   /** Cross-country legs need continent-scale zoom even while navigating. */
   ultraLongRoute?: boolean;
+  /**
+   * No route lines yet (home or dest pin not routed). Pinch-out at minZoom 3
+   * is the Canada fly — keep the floor above Rt regional / globe.
+   */
+  pinPlacing?: boolean;
 }): number {
-  if (opts.ultraLongRoute) return opts.hasContinent ? 2 : 2;
+  if (opts.ultraLongRoute) return 2;
+  if (opts.pinPlacing) return DEST_PLACE_MIN_ZOOM;
   if (opts.navigationStarted && opts.hasContinent) return 3;
   if (opts.hasContinent) return 3;
   return 2;
