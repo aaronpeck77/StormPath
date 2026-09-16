@@ -150,8 +150,16 @@ import {
 import {
   destPlaceHoldZoom,
   destPlaceNeedsStreetRestore,
+  exploreIdleMsForPinPlacing,
+  isPlanningPinPlacing,
   shouldHoldDestPlaceFrame,
 } from "./destPlaceCamera";
+import {
+  destTapStartFromTouchCount,
+  isDestFingerTap,
+  shouldAcceptDestTap,
+  type DestTapPoint,
+} from "./mapDestTap";
 import {
   advanceFollowCamWriter,
   nativeFollowCamAllowsSameFrameHardFallback,
@@ -190,7 +198,7 @@ import {
   regionalPlanningZoom,
 } from "./mapTopdownCamera";
 import { selectablePoiAtPoint } from "./mapPoiPick";
-import { mapEventFromUser, setDriveMapUserGestures } from "./mapDriveGestures";
+import { mapEventFromUser, setDriveMapUserGestures, setDoubleClickZoomEnabled } from "./mapDriveGestures";
 import {
   makePuckEl,
   makeDestEl,
@@ -608,6 +616,8 @@ function DriveMapInner({
   const corridorWarmStartMRef = useRef(0);
   const corridorPrefetchInFlightRef = useRef(false);
   const exploreTimerRef = useRef<number | null>(null);
+  const destTapStartRef = useRef<DestTapPoint | null>(null);
+  const lastDestTapMsRef = useRef(0);
   const lastForcedPlanningFitTriggerRef = useRef<number | null>(null);
   const planningFitRafRef = useRef<number | null>(null);
   const planningFitRetryTimerRef = useRef<number | null>(null);
@@ -744,15 +754,21 @@ function DriveMapInner({
         userExploringRef.current = false;
         exploreTimerRef.current = null;
         setMapResumeTick((n) => n + 1);
-      }, 800);
+      }, exploreIdleMsForPinPlacing(true, 800));
       return;
     }
-    const idleMs =
+    const pinPlacing = isPlanningPinPlacing({
+      routesLength: routesLengthRef.current,
+      navigationStarted: navigationStartedRef.current,
+    });
+    const idleMs = exploreIdleMsForPinPlacing(
+      pinPlacing,
       routesLengthRef.current === 0
         ? 400
         : navigationStartedRef.current && viewModeRef.current === "drive"
           ? 600
-          : EXPLORE_IDLE_MS;
+          : EXPLORE_IDLE_MS
+    );
     exploreTimerRef.current = window.setTimeout(() => {
       userExploringRef.current = false;
       exploreTimerRef.current = null;
@@ -787,7 +803,8 @@ function DriveMapInner({
         dragPan: true,
         touchZoomRotate: true,
         boxZoom: true,
-        doubleClickZoom: true,
+        /* Single tap places dest. Double-tap zoom was eating the pin on iPhone. */
+        doubleClickZoom: false,
         /* Keep more corridor tiles in RAM so Wi‑Fi→cell can paint from cache longer. */
         maxTileCacheSize: 500,
       });
@@ -805,6 +822,10 @@ function DriveMapInner({
         navigationStarted: navigationStartedRef.current,
         hasContinent: mapHasContinent,
         ultraLongRoute: isUltraLongTripRoute(sessionRouteLengthMRef.current),
+        pinPlacing: isPlanningPinPlacing({
+          routesLength: routesLengthRef.current,
+          navigationStarted: navigationStartedRef.current,
+        }),
       })
     );
 
@@ -1044,13 +1065,15 @@ function DriveMapInner({
           filter: ["==", "extrude", "true"],
           type: "fill-extrusion",
           minzoom: 13,
+          /* Taps on extrusions query this layer and throw on iOS — dest pin never drops. */
+          interactive: false,
           paint: {
             "fill-extrusion-color": buildingColorForPhase(mapPhase),
             "fill-extrusion-height": ["get", "height"],
             "fill-extrusion-base": ["get", "min_height"],
             "fill-extrusion-opacity": 0.78,
           },
-        },
+        } as unknown as mapboxgl.LayerSpecification,
         labelLayerId
       );
     }
@@ -1097,6 +1120,7 @@ function DriveMapInner({
     if (!map || !mapReady) return;
     const lockDriveNav = navigationStarted && viewMode === "drive";
     setDriveMapUserGestures(map, !lockDriveNav);
+    setDoubleClickZoomEnabled(map, !lockDriveNav && !allowDestinationPick);
     if (lockDriveNav) {
       userExploringRef.current = false;
       if (exploreTimerRef.current) {
@@ -1104,7 +1128,7 @@ function DriveMapInner({
         exploreTimerRef.current = null;
       }
     }
-  }, [mapReady, navigationStarted, viewMode]);
+  }, [mapReady, navigationStarted, viewMode, allowDestinationPick]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1182,6 +1206,10 @@ function DriveMapInner({
               navigationStarted,
               hasContinent: mapHasContinent,
               ultraLongRoute,
+              pinPlacing: isPlanningPinPlacing({
+                routesLength: routes.length,
+                navigationStarted,
+              }),
             })
       );
       if (navigationStarted && viewMode === "drive") {
@@ -1196,7 +1224,7 @@ function DriveMapInner({
     } catch {
       /* map disposed */
     }
-  }, [mapReady, mapSessionBounds, navigationStarted, viewMode, mapHasContinent, ultraLongRoute]);
+  }, [mapReady, mapSessionBounds, navigationStarted, viewMode, mapHasContinent, ultraLongRoute, routes.length]);
 
   /** Mobile: URL bar / rotation / safe-area change the map container — Mapbox must resize or the canvas stays wrong and the puck can disappear. */
   useEffect(() => {
@@ -1304,9 +1332,9 @@ function DriveMapInner({
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
-    const click = (e: mapboxgl.MapMouseEvent) => {
-      /* Consume taps on the route corridor so they don’t move the destination pin; hazard details are via Hazards + progress strip. */
-      if (routes.length > 0) {
+    const tapHitsRoute = (point: mapboxgl.PointLike): boolean => {
+      if (routes.length === 0) return false;
+      try {
         const hideAltsOnMainDrive = hideAlternateRoutesOnDrive(viewMode, routes.length);
         const hitLayerIds = routes
           .filter(
@@ -1315,28 +1343,57 @@ function DriveMapInner({
           )
           .map((r) => `route-${r.id}-line-hit`)
           .filter((lid) => map.getLayer(lid));
-        if (hitLayerIds.length > 0) {
-          const feats = map.queryRenderedFeatures(e.point, { layers: hitLayerIds });
-          const lid = feats[0]?.layer?.id;
-          if (lid && routeIdFromRouteHitLayerId(lid)) {
-            return;
-          }
-        }
+        if (hitLayerIds.length === 0) return false;
+        const feats = map.queryRenderedFeatures(point, { layers: hitLayerIds });
+        const lid = feats[0]?.layer?.id;
+        return Boolean(lid && routeIdFromRouteHitLayerId(lid));
+      } catch {
+        return false;
       }
-
-      if (!allowDestinationPick) return;
-      const poi = selectablePoiAtPoint(map, e.point);
-      if (poi) {
-        onClickRef.current(poi.lngLat[0], poi.lngLat[1]);
-        return;
-      }
-      const clickLngLat = readMapLngLat(e.lngLat);
-      if (!clickLngLat) return;
-      onClickRef.current(clickLngLat[0], clickLngLat[1]);
     };
+
+    const placeDestAtEvent = (point: mapboxgl.PointLike, lngLat: unknown) => {
+      if (!allowDestinationPick) return;
+      if (tapHitsRoute(point)) return;
+      let poi = null;
+      try {
+        poi = selectablePoiAtPoint(map, point);
+      } catch {
+        poi = null;
+      }
+      const dest = poi?.lngLat ?? readMapLngLat(lngLat);
+      if (!dest) return;
+      const now = performance.now();
+      if (!shouldAcceptDestTap(lastDestTapMsRef.current, now)) return;
+      lastDestTapMsRef.current = now;
+      onClickRef.current(dest[0], dest[1]);
+    };
+
+    const click = (e: mapboxgl.MapMouseEvent) => {
+      placeDestAtEvent(e.point, e.lngLat);
+    };
+
+    const touchstart = (e: mapboxgl.MapTouchEvent) => {
+      const touches = e.originalEvent?.touches?.length ?? 0;
+      destTapStartRef.current = destTapStartFromTouchCount(touches, e.point, performance.now());
+    };
+
+    const touchend = (e: mapboxgl.MapTouchEvent) => {
+      const remaining = e.originalEvent?.touches?.length ?? 0;
+      const end = { x: e.point.x, y: e.point.y, t: performance.now() };
+      const start = destTapStartRef.current;
+      destTapStartRef.current = null;
+      if (!isDestFingerTap(start, end, remaining)) return;
+      placeDestAtEvent(e.point, e.lngLat);
+    };
+
     map.on("click", click);
+    map.on("touchstart", touchstart);
+    map.on("touchend", touchend);
     return () => {
       map.off("click", click);
+      map.off("touchstart", touchstart);
+      map.off("touchend", touchend);
     };
   }, [mapReady, allowDestinationPick, routes, lineFocusId, navigationStarted, viewMode]);
 
@@ -1355,7 +1412,12 @@ function DriveMapInner({
         clearHover();
         return;
       }
-      const poi = selectablePoiAtPoint(map, e.point);
+      let poi = null;
+      try {
+        poi = selectablePoiAtPoint(map, e.point);
+      } catch {
+        poi = null;
+      }
       if (!poi) {
         clearHover();
         return;

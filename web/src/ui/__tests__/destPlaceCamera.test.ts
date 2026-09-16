@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   DEST_PLACE_MIN_ZOOM,
+  PIN_PLACE_EXPLORE_IDLE_MS,
   destPlaceHoldZoom,
   destPlaceNeedsStreetRestore,
   destPlaceRejectsRegionalZoom,
+  exploreIdleMsForPinPlacing,
+  isPlanningPinPlacing,
   shouldHoldDestPlaceFrame,
 } from "../destPlaceCamera";
 import {
@@ -53,5 +56,17 @@ describe("destPlaceCamera", () => {
   it("rejects the regional Canada zoom as a dest-place target", () => {
     expect(destPlaceRejectsRegionalZoom(ROUTE_VIEW_REGIONAL_ZOOM)).toBe(true);
     expect(destPlaceRejectsRegionalZoom(ROUTE_VIEW_PLANNING_STREET_ZOOM)).toBe(false);
+  });
+
+  it("treats home / unrouted dest-pick as pin placing", () => {
+    expect(isPlanningPinPlacing({ routesLength: 0, navigationStarted: false })).toBe(true);
+    expect(isPlanningPinPlacing({ routesLength: 1, navigationStarted: false })).toBe(false);
+    expect(isPlanningPinPlacing({ routesLength: 0, navigationStarted: true })).toBe(false);
+  });
+
+  it("does not snap home follow back 400ms after a dest-pick pinch", () => {
+    expect(exploreIdleMsForPinPlacing(true, 400)).toBe(PIN_PLACE_EXPLORE_IDLE_MS);
+    expect(exploreIdleMsForPinPlacing(true, 400)).toBeGreaterThan(1000);
+    expect(exploreIdleMsForPinPlacing(false, 400)).toBe(400);
   });
 });
