@@ -6,6 +6,9 @@
  * writes the parked gate swallowed, whether tiles warmed) without a Mac, a
  * debugger, or anything leaving the phone — Bill copies the text and pastes it.
  *
+ * Count events, never frames. The Drive loop runs at 60 fps against Core's ~1 Hz
+ * sample, so a per-frame bump reports 60x reality and reads as a catastrophe.
+ *
  * Deliberately no coordinates, no timestamps, no route identity. Counters only,
  * so the copied block stays as personal-data-free as the rest of that panel.
  */
@@ -14,7 +17,7 @@ export type DriveDiagKey =
   | "coreSamples"
   | "camApplied"
   | "camParkedHold"
-  | "camHardFallback"
+  | "camWriteFailed"
   | "lowSignalHolds"
   | "tileWarmDone"
   | "tileWarmFailed"
@@ -24,7 +27,7 @@ export type DriveDiagSnapshot = {
   coreSamples: number;
   camApplied: number;
   camParkedHold: number;
-  camHardFallback: number;
+  camWriteFailed: number;
   lowSignalHolds: number;
   tileWarmDone: number;
   tileWarmFailed: number;
@@ -39,7 +42,7 @@ function emptySnapshot(): DriveDiagSnapshot {
     coreSamples: 0,
     camApplied: 0,
     camParkedHold: 0,
-    camHardFallback: 0,
+    camWriteFailed: 0,
     lowSignalHolds: 0,
     tileWarmDone: 0,
     tileWarmFailed: 0,
@@ -97,7 +100,7 @@ export function formatDriveDiagLines(
     `Drive: ${mins != null ? `${mins.toFixed(1)} min` : "just started"}, Core ${
       snap.coreSamples
     } samples${rate ? ` (${rate}/s)` : ""}`,
-    `Camera: ${snap.camApplied} applied, ${snap.camParkedHold} parked holds, ${snap.camHardFallback} hard fallbacks`,
+    `Camera: ${snap.camApplied} applied, ${snap.camParkedHold} parked holds, ${snap.camWriteFailed} write fails`,
     `Signal: ${snap.lowSignalHolds} map holds, tiles ${snap.tileWarmDone} warm / ${snap.tileWarmFailed} failed`,
     `Route: ${snap.roadControls} road controls, ${snap.offRoute} off-route`,
   ];

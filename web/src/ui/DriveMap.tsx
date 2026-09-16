@@ -612,6 +612,8 @@ function DriveMapInner({
     pitch: number;
     zoom: number;
   } | null>(null);
+  /** Edge-detect for the low-signal map hold so diagnostics count holds, not frames. */
+  const lowSignalHeldRef = useRef(false);
   /** Sliding corridor window start (m) for ahead tile prefetch while navigating. */
   const corridorWarmStartMRef = useRef(0);
   const corridorPrefetchInFlightRef = useRef(false);
@@ -1724,8 +1726,18 @@ function DriveMapInner({
                 held: nativeCamAppliedRef.current,
                 next: { lng: nativeCam.lng, lat: nativeCam.lat, bearing: nativeCam.bearing },
               });
-            if (parkedHold) bumpDriveDiag("camParkedHold");
-            if (holdTiles) bumpDriveDiag("lowSignalHolds");
+            const needsWrite = nativeFollowCamNeedsWebWrite({
+              next: nativeCam,
+              lastApplied: nativeCamAppliedRef.current,
+              resync: driveCamResyncRef.current,
+            });
+            /* Count events, not frames: this loop runs at 60 fps against a ~1 Hz
+             * sample, so bumping per frame reported 60x reality in About. */
+            if (parkedHold && needsWrite) bumpDriveDiag("camParkedHold");
+            if (holdTiles !== lowSignalHeldRef.current) {
+              lowSignalHeldRef.current = holdTiles;
+              if (holdTiles) bumpDriveDiag("lowSignalHolds");
+            }
             const latched = advanceFollowCamWriter({
               holdTiles,
               writer: followWriter,
@@ -1743,11 +1755,6 @@ function DriveMapInner({
                 bearing: nativeCam.bearing,
               });
             let applied = false;
-            const needsWrite = nativeFollowCamNeedsWebWrite({
-              next: nativeCam,
-              lastApplied: nativeCamAppliedRef.current,
-              resync: driveCamResyncRef.current,
-            });
             if (!parkedHold && needsWrite) {
               if (followWriter === "hard") {
                 applied = hardWrite();
@@ -1763,10 +1770,12 @@ function DriveMapInner({
                   essential: true,
                 });
                 if (!applied && nativeFollowCamAllowsSameFrameHardFallback()) {
-                  bumpDriveDiag("camHardFallback");
                   applied = hardWrite();
                 }
               }
+              /* A pan that returns false is the radio / tile stall showing up —
+               * the old counter sat behind the disabled fallback and read 0 forever. */
+              if (!applied) bumpDriveDiag("camWriteFailed");
             }
             if (applied) {
               bumpDriveDiag("camApplied");

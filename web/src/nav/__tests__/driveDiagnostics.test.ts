@@ -38,12 +38,20 @@ describe("driveDiagnostics", () => {
     expect(lines[0]).toContain("1.00/s");
   });
 
-  it("separates parked holds from real camera writes", () => {
+  it("separates parked holds and failed writes from real camera writes", () => {
     bumpDriveDiag("camApplied", 12);
     bumpDriveDiag("camParkedHold", 9);
-    bumpDriveDiag("camHardFallback", 1);
+    bumpDriveDiag("camWriteFailed", 1);
     const lines = formatDriveDiagLines(driveDiagSnapshot(), 61_000);
-    expect(lines[1]).toBe("Camera: 12 applied, 9 parked holds, 1 hard fallbacks");
+    expect(lines[1]).toBe("Camera: 12 applied, 9 parked holds, 1 write fails");
+  });
+
+  /* The 42s field trip reported 2519 applies against ~42 samples — a per-frame bump. */
+  it("keeps camera writes in the same order as Core samples", () => {
+    bumpDriveDiag("coreSamples", 42);
+    bumpDriveDiag("camApplied", 40);
+    const snap = driveDiagSnapshot();
+    expect(snap.camApplied).toBeLessThanOrEqual(snap.coreSamples * 3);
   });
 
   it("shows tile warm and low-signal holds together", () => {
