@@ -18,7 +18,7 @@ Forge leftover desktop camera experiments are **not** this track (stashed off `m
 1. **Native last-good pose** — done. Hold leaps in Swift before JS sees the puck.
 2. **Native follow-cam owner** — done. iOS decides zoom/center/bearing/pitch; DriveMap applies only.
 3. **Native puck overlay** — done. Heading-up chevron pinned to the 30-yard line.
-4. **Native map under chrome** — **ON** (`NATIVE_DRIVE_MAP_ENABLED` + follow-cam). `NavigationMapView` under the WebView after Go (route + puck + follow-cam). Soft-stop keeps Core provider on Stop. Weather/About stay web. Mp/Rt stay on the web map.
+4. **Native map under chrome** — **OFF** as of Sep 15 2026 (`NATIVE_DRIVE_MAP_ENABLED = false`). It was on Sep 13–15 and taught us what we needed: reliability came from steps 1–2 (one owner on the Core side), not from the native renderer. Stacking `NavigationMapView` under the WebView is what made Drive flicker and show the old map through, so Drive is back on the StormPath map with Core still owning snap / position / follow-cam / voice / reroute / stop. The whole native path stays in place behind the flag for A/B. Known trade: we give up Core's predictive tile cache for the *map*, so watch tile behavior on a dead cell (`mapLowSignalResilience` holds the last good map during nav).
 5. **Download this trip (offline corridor)** — Brain **Priority 2**. Do not build until Bill opens it. See `docs/BRAIN.md`.
 
 ## How to work
