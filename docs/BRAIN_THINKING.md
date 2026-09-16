@@ -109,3 +109,11 @@ Bill wants the 3D puck kept (just not lane-sized), so native uses `Puck3DConfigu
 ### 2026-09-15 — Drive-test fix pack shipped
 
 Bill’s seven items: lock DR (no A/B chip/alts; soft restart preferBackroads; B auto-tags +ETA); mild turn look-ahead; shell transparency only after punch; slim route + 2D puck; YOU rail from polyline progress not odometer=0; native route under road-label.
+
+### 2026-09-15 - MapboxMap is IUO; binding it to a let breaks the archive
+
+Second time this has cost a CI run (c771eaa buildings, 16ff5ee road controls). `map.mapView.mapboxMap` is `MapboxMap!`: chaining straight off it compiles, but `let style = map.mapView.mapboxMap` decays to `MapboxMap?` and every member call after it errors - one line, ten annotations. Always `guard let style = map.mapView.mapboxMap else { return }`. Web tests never catch this; only the iOS archive does.
+
+### 2026-09-15 - Parked twitch: the native cam path skips the puck's damping
+
+Bill sitting still, map twitching. The smoothed-puck loop damps stationary GPS wobble hard (blendTc 2.4s), but the native-cam branch writes Core's raw sample straight to the map, so the puck sat still while the camera hopped. Fixed with a parked hold (12 m / 25 deg, released by driveCamResyncRef) in `shouldHoldParkedFollowCam`. Lesson for P1: every camera owner needs its own stationary gate - one owner on the Core side does not inherit the web loop's smoothing.

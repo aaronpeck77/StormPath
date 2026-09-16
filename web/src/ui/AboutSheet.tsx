@@ -2,6 +2,7 @@ import { Capacitor } from "@capacitor/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
 import { getBasicBannerCustomerHint, getBasicBannerDebugLine } from "../ads/adMobClient";
+import { driveDiagSnapshot, formatDriveDiagLines } from "../nav/driveDiagnostics";
 import { getPlusEntitlementDebugSnapshot } from "../billing/revenueCat";
 import { useRevenueCat } from "../billing/useRevenueCat";
 import {
@@ -170,6 +171,8 @@ export function AboutSheet({
   const versionLabel = stormpathVersionLabel({ dev });
   const flavor = stormpathBuildFlavor();
   const flavorChip = stormpathFlavorChipLabel();
+  /* Empty until a trip has run — normal installs see the same panel as always. */
+  const driveDiagLines = formatDriveDiagLines(driveDiagSnapshot());
   const diagnosticsLines = [
     `StormPath ${versionLabel}`,
     `Plan: ${tierLabel}`,
@@ -185,6 +188,7 @@ export function AboutSheet({
     }, tomorrowIo=${env.tomorrowIoApiKey ? "on" : "off"}`,
     iapDebugLine || "iap: loading…",
     getBasicBannerDebugLine(),
+    ...driveDiagLines,
   ];
   const diagnosticsText = diagnosticsLines.join("\n");
   const supportEmail = env.supportEmail.trim();
@@ -948,6 +952,14 @@ export function AboutSheet({
               info — version, toggles, and which data providers are configured) so we can tell an app bug from a network
               or provider issue faster.
             </p>
+            {driveDiagLines.length > 0 ? (
+              <div className="about-sheet__drive-diag">
+                <strong>Last drive</strong>
+                {driveDiagLines.map((line) => (
+                  <span key={line}>{line}</span>
+                ))}
+              </div>
+            ) : null}
             <label className="about-sheet__setting about-sheet__setting--stack">
               <span>
                 <strong>Your message</strong> (problem report, suggestion/request, or how StormPath is doing)

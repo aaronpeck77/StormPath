@@ -79,6 +79,7 @@ import {
   removeRadarMotionLayers,
 } from "./mapRadarMotionLayer";
 import { applyRoadControlLayers } from "./mapRoadControlLayers";
+import { bumpDriveDiag, setDriveDiagRoadControls } from "../nav/driveDiagnostics";
 import {
   boundsFromGeometry,
   computeRadarStormMotions,
@@ -1644,16 +1645,21 @@ function DriveMapInner({
                 held: nativeCamAppliedRef.current,
                 next: { lng: nativeCam.lng, lat: nativeCam.lat, bearing: nativeCam.bearing },
               });
-            const applied = parkedHold
-              ? false
-              : holdTiles
-              ? safeHardFollowCamera(map, {
-                  center: guarded.center,
-                  zoom: guarded.zoom,
-                  pitch: nativeCam.pitch,
-                  bearing: nativeCam.bearing,
-                })
-              : safePanToCenter(map, {
+            if (parkedHold) bumpDriveDiag("camParkedHold");
+            if (holdTiles) bumpDriveDiag("lowSignalHolds");
+            const hardWrite = () =>
+              safeHardFollowCamera(map, {
+                center: guarded.center,
+                zoom: guarded.zoom,
+                pitch: nativeCam.pitch,
+                bearing: nativeCam.bearing,
+              });
+            let applied = false;
+            if (!parkedHold) {
+              if (holdTiles) {
+                applied = hardWrite();
+              } else {
+                applied = safePanToCenter(map, {
                   center: guarded.center,
                   zoom: guarded.zoom,
                   pitch: nativeCam.pitch,
@@ -1662,14 +1668,15 @@ function DriveMapInner({
                   offset: easeCached.offset,
                   duration: 0,
                   essential: true,
-                }) ||
-                safeHardFollowCamera(map, {
-                  center: guarded.center,
-                  zoom: guarded.zoom,
-                  pitch: nativeCam.pitch,
-                  bearing: nativeCam.bearing,
                 });
+                if (!applied) {
+                  bumpDriveDiag("camHardFallback");
+                  applied = hardWrite();
+                }
+              }
+            }
             if (applied) {
+              bumpDriveDiag("camApplied");
               nativeCamAppliedRef.current = {
                 lng: nativeCam.lng,
                 lat: nativeCam.lat,
@@ -2415,6 +2422,7 @@ function DriveMapInner({
     const map = mapRef.current;
     if (!map || !mapReady) return;
     const controls = routes.find((r) => r.id === lineFocusId)?.roadControls ?? null;
+    setDriveDiagRoadControls(controls?.length ?? 0);
     const sync = () => {
       try {
         applyRoadControlLayers(map, controls);
@@ -3205,7 +3213,10 @@ function DriveMapInner({
           includeTerrain: false,
         });
         if (!cancelled && result === "done") {
+          bumpDriveDiag("tileWarmDone");
           corridorWarmStartMRef.current = nextStart;
+        } else if (!cancelled && result === "failed") {
+          bumpDriveDiag("tileWarmFailed");
         }
       } finally {
         corridorPrefetchInFlightRef.current = false;

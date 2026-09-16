@@ -16,6 +16,7 @@ import {
 import type { LngLat, RouteTurnStep } from "./types";
 import type { TripStop } from "./routeWaypoints";
 import type { NavigationPositionState } from "../hooks/useNavigationPosition";
+import { bumpDriveDiag, resetDriveDiag } from "./driveDiagnostics";
 import { createNativeDrivePoseHold } from "./nativeDrivePoseHold";
 import {
   createNativeDriveFollowCam,
@@ -192,6 +193,8 @@ export function useNativeNavSession(opts: {
       poseHoldRef.current.reset();
       followCamRef.current.reset();
       setFollowCamera(null);
+      /* Counters describe this trip — About's diagnostics block reads them after. */
+      resetDriveDiag();
 
       const handles = await Promise.all([
         StormpathMapboxNavigation.addListener("progress", (e: NativeNavProgressEvent) => {
@@ -203,6 +206,7 @@ export function useNativeNavSession(opts: {
           ) {
             return;
           }
+          bumpDriveDiag("coreSamples");
           const held = poseHoldRef.current.accept({
             lng: e.lng,
             lat: e.lat,

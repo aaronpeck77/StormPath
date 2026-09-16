@@ -2207,6 +2207,25 @@ html:has(.drive-map--native-shell) #root {
   min-height: 72px;
 }
 
+.about-sheet__drive-diag {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.45);
+  color: #cbd5e1;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.about-sheet__drive-diag strong {
+  color: #e2e8f0;
+}
+
 .about-sheet__actions {
   flex-shrink: 0;
   display: flex;
