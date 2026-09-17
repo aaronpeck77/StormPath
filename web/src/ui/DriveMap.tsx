@@ -826,7 +826,8 @@ function DriveMapInner({
         navigationStarted: navigationStartedRef.current,
         hasContinent: mapHasContinent,
         ultraLongRoute: isUltraLongTripRoute(sessionRouteLengthMRef.current),
-        pinPlacing: isPlanningPinPlacing({
+        pinPlacing: shouldHoldDestPlaceFrame({
+          destLngLat: destLngLatRef.current,
           routesLength: routesLengthRef.current,
           navigationStarted: navigationStartedRef.current,
         }),
@@ -1210,7 +1211,13 @@ function DriveMapInner({
               navigationStarted,
               hasContinent: mapHasContinent,
               ultraLongRoute,
-              pinPlacing: isPlanningPinPlacing({
+              /**
+               * Floor only while a dropped pin has no plan yet. Keying it on "no routes"
+               * locked the whole map at ~11.2 — you could not pinch out past a small city
+               * to look at weather, which is most of what the map is for before a trip.
+               */
+              pinPlacing: shouldHoldDestPlaceFrame({
+                destLngLat,
                 routesLength: routes.length,
                 navigationStarted,
               }),
@@ -1228,7 +1235,16 @@ function DriveMapInner({
     } catch {
       /* map disposed */
     }
-  }, [mapReady, mapSessionBounds, navigationStarted, viewMode, mapHasContinent, ultraLongRoute, routes.length]);
+  }, [
+    mapReady,
+    mapSessionBounds,
+    navigationStarted,
+    viewMode,
+    mapHasContinent,
+    ultraLongRoute,
+    routes.length,
+    destLngLat,
+  ]);
 
   /** Mobile: URL bar / rotation / safe-area change the map container — Mapbox must resize or the canvas stays wrong and the puck can disappear. */
   useEffect(() => {

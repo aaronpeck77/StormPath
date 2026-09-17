@@ -71,8 +71,9 @@ export function mapMinZoomForSession(opts: {
   /** Cross-country legs need continent-scale zoom even while navigating. */
   ultraLongRoute?: boolean;
   /**
-   * No route lines yet (home or dest pin not routed). Pinch-out at minZoom 3
+   * A dest pin is dropped and the plan has not painted yet. Pinch-out at minZoom 3
    * is the Canada fly — keep the floor above Rt regional / globe.
+   * Not "no routes": an empty map must still zoom out to check weather.
    */
   pinPlacing?: boolean;
 }): number {

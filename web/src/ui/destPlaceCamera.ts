@@ -36,7 +36,12 @@ export function destPlaceNeedsStreetRestore(mapZoom: number | null | undefined):
   return mapZoom < DEST_PLACE_MIN_ZOOM;
 }
 
-/** Dest is set, routes have not painted yet — hold; do not fit the continent. */
+/**
+ * Dest is set, routes have not painted yet — hold; do not fit the continent.
+ * This is also the only window that gets the pinch-out zoom floor (see
+ * mapMinZoomForSession). A dropped pin can be stranded at continent scale; an
+ * empty map cannot, and locking that map at city zoom broke weather browsing.
+ */
 export function shouldHoldDestPlaceFrame(input: {
   destLngLat: LngLat | null | undefined;
   routesLength: number;
@@ -46,8 +51,9 @@ export function shouldHoldDestPlaceFrame(input: {
 }
 
 /**
- * Home / dest-pick: no trip lines yet. Pinch-out must not be allowed to reach
- * Rt regional (~6.9) or Mapbox’s zoom&lt;6 globe — that is the Canada fly.
+ * Home / dest-pick: no trip lines yet, so hold the frame the user zoomed to instead
+ * of yanking back to the puck mid-tap. Explore-idle only — do NOT use this for the
+ * zoom floor, which must key on a dropped pin (`shouldHoldDestPlaceFrame`).
  */
 export function isPlanningPinPlacing(input: {
   routesLength: number;

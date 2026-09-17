@@ -43,6 +43,27 @@ describe("destPlaceCamera", () => {
     ).toBe(false);
   });
 
+  /**
+   * Regression: the pinch-out floor used to key on "no routes", which locked an empty
+   * map at DEST_PLACE_MIN_ZOOM — you could not zoom out past a small city to see weather.
+   */
+  it("does not hold the frame when no pin has been dropped", () => {
+    expect(
+      shouldHoldDestPlaceFrame({
+        destLngLat: null,
+        routesLength: 0,
+        navigationStarted: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldHoldDestPlaceFrame({
+        destLngLat: undefined,
+        routesLength: 0,
+        navigationStarted: false,
+      })
+    ).toBe(false);
+  });
+
   it("snaps Canada / Rt regional zoom back to street, keeping a street tap", () => {
     expect(destPlaceHoldZoom(ROUTE_VIEW_REGIONAL_ZOOM)).toBe(ROUTE_VIEW_PLANNING_STREET_ZOOM);
     expect(destPlaceHoldZoom(ROUTE_VIEW_REGIONAL_ZOOM_PHONE)).toBe(ROUTE_VIEW_PLANNING_STREET_ZOOM);
