@@ -5,14 +5,16 @@ import type { MapViewMode } from "./driveMapTypes";
 /**
  * Active route — sky blue (reads over green/yellow radar better than mid blue).
  * Thin black casing in mapRouteLayers keeps the line readable on streets and radar.
+ * Rollback (pre Sep 16 field test): active #38bdf8, suggested #bae6fd — both washed
+ * out in daylight, so each moved one step darker.
  */
-export const ROUTE_ACTIVE_COLOR = "#38bdf8";
+export const ROUTE_ACTIVE_COLOR = "#0ea5e9";
 /**
- * Alternate / suggested on the map — pale blue. Rt / Mp use the same sky blue as
+ * Alternate / suggested on the map — mid blue. Rt / Mp use the same sky blue as
  * Drive for the leg you're taking, so the unused leg has to sit clearly lighter
- * (the old #7dd3fc read as the same line at a glance).
+ * while still being visible against pavement.
  */
-export const ROUTE_SUGGESTED_COLOR = "#bae6fd";
+export const ROUTE_SUGGESTED_COLOR = "#7dd3fc";
 
 /**
  * Black outline around the colored core.
@@ -20,7 +22,10 @@ export const ROUTE_SUGGESTED_COLOR = "#bae6fd";
  * +5 is ~2.5px per side: thin, but you can see it on pavement and radar.
  */
 export const ROUTE_LINE_CASING_COLOR = "#000000";
-/** Slimmer outline so the core can sit closer to road width without a fat halo. */
+/**
+ * Total extra width, so half lands on each side: 4 = the 2 px per side Bill asked for.
+ * Raise to 6 if it still does not read on pavement (that is 3 px per side).
+ */
 export const ROUTE_LINE_CASING_WIDTH_EXTRA = 4;
 export const ROUTE_LINE_CASING_OPACITY = 1;
 

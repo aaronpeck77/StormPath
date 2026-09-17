@@ -61,12 +61,29 @@ describe("route casing", () => {
   });
 });
 
+/** Rough perceived brightness, enough to prove "darker" without a color library. */
+function luminance(hex: string): number {
+  const n = parseInt(hex.replace("#", ""), 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
 describe("routeMapLineStyle", () => {
-  it("uses cyan for the inactive alternate so B is visible on streets before Go", () => {
+  it("uses a darker blue for the active line and a lighter one for the alternate", () => {
     const active = routeMapLineStyle(true);
     const alt = routeMapLineStyle(false);
-    expect(active.color).toBe("#38bdf8");
-    expect(alt.color).toBe("#bae6fd");
+    expect(active.color).toBe("#0ea5e9");
+    expect(alt.color).toBe("#7dd3fc");
     expect(alt.color).not.toBe(active.color);
+    /* The alternate must stay clearly lighter or A and B read as one line. */
+    expect(luminance(alt.color)).toBeGreaterThan(luminance(active.color));
+  });
+
+  /* Sep 16 field test: both lines washed out in daylight. */
+  it("keeps both lines darker than the pre-field-test pair", () => {
+    expect(luminance(routeMapLineStyle(true).color)).toBeLessThan(luminance("#38bdf8"));
+    expect(luminance(routeMapLineStyle(false).color)).toBeLessThan(luminance("#bae6fd"));
   });
 });

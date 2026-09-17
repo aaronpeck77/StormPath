@@ -21,7 +21,8 @@ export type NativeDriveFollowCamera = {
 };
 
 const TRAVEL_MIN_SPEED_MPS = 1.8;
-const HIGHWAY_ZOOM = 15.1;
+/** Sep 16: 15.1 → 15.35 so the highway frame tightens with the city frame. */
+const HIGHWAY_ZOOM = 15.35;
 const SPEED_ZOOM_START_MPS = 11;
 const SPEED_ZOOM_END_MPS = 28;
 const BEARING_ALPHA = 0.35;

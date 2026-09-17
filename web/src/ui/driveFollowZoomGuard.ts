@@ -10,7 +10,8 @@ import type { LngLat } from "../nav/types";
  * these helpers so that cannot happen again.
  */
 
-export const DRIVE_FOLLOW_ZOOM_DEFAULT = 16.35;
+/** Sep 16: 16.35 → 16.6. Rollback value is 16.35 (see DRIVE_FOLLOW_PITCH_DEG). */
+export const DRIVE_FOLLOW_ZOOM_DEFAULT = 16.6;
 /** Below this is city / state / Canada — not a Drive follow picture. */
 export const DRIVE_FOLLOW_ZOOM_MIN = 12.5;
 export const DRIVE_FOLLOW_ZOOM_MAX = 18.5;

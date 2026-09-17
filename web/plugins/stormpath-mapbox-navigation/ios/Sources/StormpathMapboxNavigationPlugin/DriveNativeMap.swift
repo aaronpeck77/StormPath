@@ -166,7 +166,7 @@ final class DriveNativeMap {
             padding: UIEdgeInsets(top: topPad, left: sidePad, bottom: bottomPad, right: sidePad),
             zoom: sample.zoom,
             bearing: sample.bearing,
-            pitch: max(sample.pitch, 64)
+            pitch: max(sample.pitch, 68)
         )
         mapView.mapView.mapboxMap.setCamera(to: options)
     }

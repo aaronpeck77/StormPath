@@ -15,8 +15,14 @@ const DRIVE_PUCK_YARD_LINE = 30;
 /**
  * Mapbox pitch for Dr follow-cam (0 = top-down, ~85 = near horizon).
  * Slightly tipped so more of the route ahead stays in frame without going full windshield.
+ *
+ * ROLLBACK SETTINGS (Sep 15 framing, restore all three together — the Swift copies
+ * in DriveFollowCam.swift must match or Core's sample overrides the web value):
+ *   pitch 64, DRIVE_FOLLOW_ZOOM_DEFAULT 16.35, HIGHWAY_ZOOM 15.1
+ * Sep 16: tipped up and zoomed in so less map hides behind the advisory bar and the
+ * turn banner, and more road shows ahead.
  */
-export const DRIVE_FOLLOW_PITCH_DEG = 64;
+export const DRIVE_FOLLOW_PITCH_DEG = 68;
 
 /** Max camera bearing change per frame (deg) — kills wild spins when route tangent jumps near forks / turns. */
 const DRIVE_CAMERA_BEARING_MAX_STEP_DEG = 9;

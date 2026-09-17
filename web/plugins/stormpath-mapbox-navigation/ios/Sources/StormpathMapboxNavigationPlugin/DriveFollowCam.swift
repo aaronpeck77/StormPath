@@ -12,11 +12,16 @@ struct DriveFollowCameraSample {
 struct DriveFollowCam {
     private var lastBearing: Double?
 
-    private let pitch = 64.0
-    private let defaultZoom = 16.35
+    /**
+     * Framing Bill drives with. These win over the web constants because the web
+     * camera applies this sample — change both or nothing changes on the phone.
+     * ROLLBACK (Sep 15): pitch 64, defaultZoom 16.35, highwayZoom 15.1.
+     */
+    private let pitch = 68.0
+    private let defaultZoom = 16.6
     private let minZoom = 12.5
     private let maxZoom = 18.5
-    private let highwayZoom = 15.1
+    private let highwayZoom = 15.35
     private let speedZoomStart = 11.0
     private let speedZoomEnd = 28.0
     private let travelMinSpeed = 1.8
