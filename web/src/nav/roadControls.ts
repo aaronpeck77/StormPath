@@ -13,6 +13,25 @@ type IntersectionLike = {
 
 type LegLike = { steps?: { intersections?: IntersectionLike[] }[] };
 
+/**
+ * Which kinds we draw. Stop and yield flags come from OSM tagging and are missing on
+ * most residential streets — a Sep 16 probe returned 0–2 stop signs per 2 mi where
+ * every block has one, against 14 signals in 3.8 downtown mi. A layer that shows one
+ * stop sign in ten teaches you to distrust the signals too, so only the well-covered
+ * kinds draw. Collection keeps all four; add "stop_sign" back here if coverage improves.
+ */
+export const ROAD_CONTROL_DISPLAY_KINDS: readonly RoadControlKind[] = [
+  "traffic_signal",
+  "railway_crossing",
+];
+
+export function displayedRoadControls(
+  points: RoadControlPoint[] | null | undefined
+): RoadControlPoint[] {
+  if (!points?.length) return [];
+  return points.filter((p) => ROAD_CONTROL_DISPLAY_KINDS.includes(p.kind));
+}
+
 /** One node can carry several flags — show the one the driver actually obeys. */
 function roadControlKindOf(ix: IntersectionLike): RoadControlKind | null {
   if (ix.traffic_signal === true) return "traffic_signal";

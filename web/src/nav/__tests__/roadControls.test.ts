@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { collectRoadControls, MAX_ROAD_CONTROLS } from "../roadControls";
+import {
+  collectRoadControls,
+  displayedRoadControls,
+  MAX_ROAD_CONTROLS,
+  ROAD_CONTROL_DISPLAY_KINDS,
+} from "../roadControls";
 
 describe("collectRoadControls", () => {
   it("pulls signals, stops, yields and rail crossings off intersections", () => {
@@ -67,5 +72,25 @@ describe("collectRoadControls", () => {
       traffic_signal: true,
     }));
     expect(collectRoadControls([{ steps: [{ intersections }] }])).toHaveLength(MAX_ROAD_CONTROLS);
+  });
+});
+
+describe("displayedRoadControls", () => {
+  /** OSM tags most signals and rail crossings, but few residential stop signs. */
+  it("draws only the kinds whose data is trustworthy", () => {
+    const drawn = displayedRoadControls([
+      { lngLat: [-89.1, 39.8], kind: "traffic_signal" },
+      { lngLat: [-89.11, 39.81], kind: "stop_sign" },
+      { lngLat: [-89.12, 39.82], kind: "yield_sign" },
+      { lngLat: [-89.13, 39.83], kind: "railway_crossing" },
+    ]);
+    expect(drawn.map((p) => p.kind)).toEqual(["traffic_signal", "railway_crossing"]);
+    expect(ROAD_CONTROL_DISPLAY_KINDS).not.toContain("stop_sign");
+  });
+
+  it("handles an empty or missing corridor", () => {
+    expect(displayedRoadControls(undefined)).toEqual([]);
+    expect(displayedRoadControls(null)).toEqual([]);
+    expect(displayedRoadControls([{ lngLat: [-89.1, 39.8], kind: "stop_sign" }])).toEqual([]);
   });
 });

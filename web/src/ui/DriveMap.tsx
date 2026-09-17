@@ -79,6 +79,7 @@ import {
   removeRadarMotionLayers,
 } from "./mapRadarMotionLayer";
 import { applyRoadControlLayers } from "./mapRoadControlLayers";
+import { displayedRoadControls } from "../nav/roadControls";
 import { bumpDriveDiag, setDriveDiagRoadControls } from "../nav/driveDiagnostics";
 import {
   boundsFromGeometry,
@@ -2157,7 +2158,10 @@ function DriveMapInner({
 
   /** Same signals / stops the web map draws, pushed to the native Drive map. */
   const nativeRoadControls = useMemo(
-    () => (nativeDriveMapActive ? (routes.find((r) => r.id === lineFocusId)?.roadControls ?? []) : []),
+    () =>
+      nativeDriveMapActive
+        ? displayedRoadControls(routes.find((r) => r.id === lineFocusId)?.roadControls)
+        : [],
     [nativeDriveMapActive, routes, lineFocusId]
   );
   useEffect(() => {
@@ -2600,8 +2604,9 @@ function DriveMapInner({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const controls = routes.find((r) => r.id === lineFocusId)?.roadControls ?? null;
-    setDriveDiagRoadControls(controls?.length ?? 0);
+    /* Count what actually draws, so About matches the map. */
+    const controls = displayedRoadControls(routes.find((r) => r.id === lineFocusId)?.roadControls);
+    setDriveDiagRoadControls(controls.length);
     const sync = () => {
       try {
         applyRoadControlLayers(map, controls);
