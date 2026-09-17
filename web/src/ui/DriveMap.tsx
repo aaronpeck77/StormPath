@@ -2595,8 +2595,15 @@ function DriveMapInner({
     };
     if (map.isStyleLoaded()) sync();
     else map.once("load", sync);
+    /**
+     * A style swap (day→night, basemap change) drops the source, the icon images, and
+     * the layer. Route deps have not changed, so nothing would put them back until the
+     * next reroute — re-apply on styledata instead.
+     */
+    map.on("styledata", sync);
     return () => {
       map.off("load", sync);
+      map.off("styledata", sync);
     };
   }, [mapReady, routes, lineFocusId]);
 

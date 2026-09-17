@@ -179,8 +179,14 @@ export function applyRoadControlLayers(
       minzoom: ROAD_CONTROL_MIN_ZOOM,
       layout: {
         "icon-image": ["get", "icon"],
-        "icon-size": ["interpolate", ["linear"], ["zoom"], 13, 0.5, 15, 0.72, 17, 0.95],
-        "icon-allow-overlap": false,
+        "icon-size": ["interpolate", ["linear"], ["zoom"], 13, 0.6, 15, 0.85, 17, 1.05],
+        /**
+         * Must both be true. Symbol collision runs bottom-up, so this layer sits last
+         * and loses every fight with basemap street labels — with placement on, a city
+         * corridor drew almost nothing. Signals are small; let them overlap.
+         */
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
         "icon-anchor": "center",
       },
       paint: {
