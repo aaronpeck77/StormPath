@@ -4,6 +4,10 @@ import {
   driveDiagSnapshot,
   formatDriveDiagLines,
   hydrateDriveDiagFromJson,
+  noteViewDroneEnd,
+  noteViewDroneSkip,
+  noteViewDroneStart,
+  noteViewDroneTap,
   persistDriveDiagNow,
   resetDriveDiag,
   setDriveDiagRoadControls,
@@ -101,5 +105,53 @@ describe("driveDiagnostics", () => {
     expect(driveDiagSnapshot().roadControls).toBe(0);
     setDriveDiagRoadControls(-4);
     expect(driveDiagSnapshot().roadControls).toBe(0);
+  });
+
+  it("records a parked Dr/Mp/Rt session so About has a trail without Core samples", () => {
+    resetDriveDiag(1_000);
+    const parked = { ...driveDiagSnapshot(), startedAtMs: null, coreSamples: 0 };
+    expect(formatDriveDiagLines(parked, 2_000)).toEqual([]);
+
+    noteViewDroneSkip("first");
+    expect(driveDiagSnapshot().startedAtMs).toBe(1_000);
+    expect(formatDriveDiagLines({ ...driveDiagSnapshot(), startedAtMs: null, coreSamples: 0 }, 2_000)).toEqual(
+      []
+    );
+
+    noteViewDroneTap("drive", "topdown");
+    noteViewDroneStart();
+    noteViewDroneEnd("done", 0, 1402);
+    noteViewDroneTap("topdown", "route");
+    noteViewDroneStart();
+    noteViewDroneEnd("done", 12, 1390);
+    noteViewDroneTap("route", "drive");
+    noteViewDroneSkip("no_from");
+
+    const snap = driveDiagSnapshot();
+    expect(snap.viewTaps).toBe(3);
+    expect(snap.droneStarts).toBe(2);
+    expect(snap.droneDone).toBe(2);
+    expect(snap.droneLast).toBe("Rt>Dr");
+    expect(snap.droneTrail).toContain("Dr>Mp ok 1402ms");
+    expect(snap.droneTrail).toContain("Mp>Rt fail12 1390ms");
+    expect(snap.droneTrail).toContain("Rt>Dr noFrom");
+
+    const lines = formatDriveDiagLines(snap, 8_000);
+    expect(lines[4]).toContain("3 taps");
+    expect(lines[4]).toContain("2 start / 2 done");
+    expect(lines[6]).toContain("last Rt>Dr");
+    expect(lines[7]).toContain("Dr>Mp ok 1402ms");
+  });
+
+  it("keeps view-drone counters across a Core reconnect hydrate", () => {
+    noteViewDroneTap("route", "drive");
+    noteViewDroneStart();
+    persistDriveDiagNow();
+    const raw = JSON.stringify(driveDiagSnapshot());
+    resetDriveDiag(9_000);
+    hydrateDriveDiagFromJson(raw);
+    expect(driveDiagSnapshot().viewTaps).toBe(1);
+    expect(driveDiagSnapshot().droneStarts).toBe(1);
+    expect(driveDiagSnapshot().droneLast).toBe("Rt>Dr");
   });
 });

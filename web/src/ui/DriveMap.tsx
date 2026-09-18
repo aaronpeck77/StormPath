@@ -81,7 +81,15 @@ import {
 } from "./mapRadarMotionLayer";
 import { applyRoadControlLayers } from "./mapRoadControlLayers";
 import { displayedRoadControls } from "../nav/roadControls";
-import { bumpDriveDiag, setDriveDiagRoadControls } from "../nav/driveDiagnostics";
+import {
+  bumpDriveDiag,
+  noteViewDroneEnd,
+  noteViewDroneSkip,
+  noteViewDroneStart,
+  noteViewDroneTap,
+  noteViewDroneWriteFail,
+  setDriveDiagRoadControls,
+} from "../nav/driveDiagnostics";
 import {
   boundsFromGeometry,
   computeRadarStormMotions,
@@ -170,10 +178,8 @@ import {
   applyContinuousDroneFrame,
   mapDroneDurationMs,
   MAP_VIEW_FLY_MS,
+  mapViewFlySkipReason,
   readMapDronePose,
-  shouldAnimateMapViewFly,
-  shouldTrackPuckThroughDrone,
-  type MapDroneLookAt,
   type MapDronePose,
 } from "./mapViewFly";
 import {
@@ -750,61 +756,40 @@ function DriveMapInner({
   const [mapReady, setMapReady] = useState(false);
   const [mapResumeTick, setMapResumeTick] = useState(0);
 
-  const stopViewDrone = () => {
+  const stopViewDrone = (end: "abort" | "silent" = "abort") => {
+    const wasLive = viewDroneActiveRef.current;
     if (viewDroneRafRef.current) {
       cancelAnimationFrame(viewDroneRafRef.current);
       viewDroneRafRef.current = 0;
     }
     viewDroneActiveRef.current = false;
+    if (end === "abort" && wasLive) noteViewDroneEnd("abort");
   };
 
-  const startViewDrone = (to: MapDronePose, lookAtLngLat: [number, number] | null): boolean => {
+  const startViewDrone = (to: MapDronePose): boolean => {
     const map = mapRef.current;
     if (!map) return false;
     const from = readMapDronePose(map, lastDroneOffsetRef.current);
     if (!from) return false;
-    stopViewDrone();
+    if (viewDroneRafRef.current) {
+      cancelAnimationFrame(viewDroneRafRef.current);
+      viewDroneRafRef.current = 0;
+      noteViewDroneEnd("retarget");
+    }
+    /* Keep the flag true across restart — a false gap lets fit/snap steal the shot. */
+    viewDroneActiveRef.current = true;
     stopMapCamera(map);
     userExploringRef.current = false;
     if (exploreTimerRef.current) {
       window.clearTimeout(exploreTimerRef.current);
       exploreTimerRef.current = null;
     }
-    let lookAt: MapDroneLookAt | null = null;
-    if (lookAtLngLat) {
-      try {
-        const screen = map.project(lookAtLngLat);
-        const canvas = map.getCanvas();
-        const w = canvas.clientWidth;
-        const h = canvas.clientHeight;
-        if (
-          Number.isFinite(screen.x) &&
-          Number.isFinite(screen.y) &&
-          w > 0 &&
-          h > 0
-        ) {
-          lookAt = {
-            lng: lookAtLngLat[0],
-            lat: lookAtLngLat[1],
-            fromScreen: { x: screen.x, y: screen.y },
-            toAnchor: expectedDrivePuckScreenAnchorPx({
-              mapWidth: w,
-              mapHeight: h,
-              padding: to.padding,
-              offset: to.offset,
-            }),
-          };
-        }
-      } catch {
-        lookAt = null;
-      }
-    }
     const durationMs = mapDroneDurationMs(from, to);
-    viewDroneActiveRef.current = true;
-    viewFlyUntilMsRef.current = performance.now() + durationMs + 48;
-    applyContinuousDroneFrame(map, from, to, 0, lookAt);
+    viewFlyUntilMsRef.current = performance.now() + durationMs + 80;
     lastDroneOffsetRef.current = from.offset;
     const t0 = performance.now();
+    let shotWriteFails = 0;
+    noteViewDroneStart();
     const tick = (now: number) => {
       if (!viewDroneActiveRef.current) return;
       const m = mapRef.current;
@@ -813,14 +798,19 @@ function DriveMapInner({
         return;
       }
       const u = Math.min(1, (now - t0) / durationMs);
-      const pose = applyContinuousDroneFrame(m, from, to, u, lookAt);
+      const { pose, ok } = applyContinuousDroneFrame(m, from, to, u);
+      if (!ok) {
+        shotWriteFails += 1;
+        noteViewDroneWriteFail();
+      }
       lastDroneOffsetRef.current = pose.offset;
       if (u < 1) {
         viewDroneRafRef.current = requestAnimationFrame(tick);
       } else {
         viewDroneRafRef.current = 0;
         viewDroneActiveRef.current = false;
-        viewFlyUntilMsRef.current = performance.now() + 32;
+        viewFlyUntilMsRef.current = performance.now() + 48;
+        noteViewDroneEnd("done", shotWriteFails, now - t0);
         if (viewModeRef.current === "drive") {
           try {
             m.setMinZoom(DRIVE_FOLLOW_ZOOM_MIN);
@@ -927,7 +917,24 @@ function DriveMapInner({
         zoomBias: 0,
       }
     );
-    if (!cam) return null;
+    if (!cam) {
+      const ll = puck ?? readMapLngLat(map.getCenter());
+      if (!ll) return null;
+      return {
+        lng: ll[0],
+        lat: ll[1],
+        zoom: 10,
+        pitch: 0,
+        bearing: 0,
+        padding: {
+          top: Number(padding.top) || 0,
+          bottom: Number(padding.bottom) || 0,
+          left: Number(padding.left) || 0,
+          right: Number(padding.right) || 0,
+        },
+        offset: [0, 0],
+      };
+    }
     return {
       lng: cam.lng,
       lat: cam.lat,
@@ -949,34 +956,47 @@ function DriveMapInner({
   useEffect(() => {
     const prev = prevViewFlyModeRef.current;
     prevViewFlyModeRef.current = viewMode;
-    if (!mapReady) return;
-    const map = mapRef.current;
-    if (!map) return;
-    if (
-      !shouldAnimateMapViewFly({
-        prevViewMode: prev,
-        nextViewMode: viewMode,
-        destPlaceHold: shouldHoldDestPlaceFrame({
-          destLngLat,
-          routesLength: routes.length,
-          navigationStarted,
-        }),
-        offRouteCompare: navigationStarted && offRouteRejoinCompareActive,
-        routeCompare: trafficBypassCompareActive,
-      })
-    ) {
+    const flyInput = {
+      prevViewMode: prev,
+      nextViewMode: viewMode,
+      destPlaceHold: shouldHoldDestPlaceFrame({
+        destLngLat,
+        routesLength: routes.length,
+        navigationStarted,
+      }),
+      offRouteCompare: navigationStarted && offRouteRejoinCompareActive,
+      routeCompare: trafficBypassCompareActive,
+    };
+    if (!mapReady || !mapRef.current) {
+      if (prev != null && prev !== viewMode) {
+        noteViewDroneTap(prev, viewMode);
+        noteViewDroneSkip("not_ready");
+      }
       return;
     }
-    const to = droneTargetForView(map, viewMode);
-    const puck =
-      (puckMarkerRef.current ? readMapLngLat(puckMarkerRef.current.getLngLat()) : null) ??
-      userLngLatRef.current;
-    const lookAt = shouldTrackPuckThroughDrone(viewMode) ? puck : null;
-    if (to && startViewDrone(to, lookAt)) {
+    const skip = mapViewFlySkipReason(flyInput);
+    if (skip === "same") return;
+    if (skip === "first") {
+      noteViewDroneSkip("first");
+      return;
+    }
+    if (prev != null && prev !== viewMode) noteViewDroneTap(prev, viewMode);
+    if (skip) {
+      noteViewDroneSkip(skip);
+      return;
+    }
+    const to = droneTargetForView(mapRef.current, viewMode);
+    if (!to) {
+      noteViewDroneSkip("no_to");
+      return;
+    }
+    if (startViewDrone(to)) {
       if (viewMode === "route") pendingRouteOverviewEnterRef.current = false;
       return;
     }
-    viewFlyUntilMsRef.current = performance.now() + MAP_VIEW_FLY_MS + 80;
+    noteViewDroneSkip("no_from");
+    /* Do not freeze follow-cam for 1.3s when the drone failed to start — that
+     * is the hung / "nothing happened" tap. */
   }, [
     viewMode,
     mapReady,
@@ -4061,15 +4081,13 @@ function DriveMapInner({
           : coerceTopdownNavStreetZoom(map, topdownZoomRef)
         : resolveTopdownLocalZoom(topdownZoomRef, false);
       prevTopdownRef.current = false;
-      safeFlyTo(map, {
+      /* jumpTo — flyTo is a second zoom-out-then-in if the drone already ran. */
+      safeJumpTo(map, {
         center: u,
         zoom,
         pitch: 0,
         bearing: 0,
         padding: ZERO_MAP_PADDING,
-        offset: TOPDOWN_PUCK_OFFSET_PX,
-        duration: performance.now() < viewFlyUntilMsRef.current ? MAP_VIEW_FLY_MS : 0,
-        essential: true,
       });
     };
 

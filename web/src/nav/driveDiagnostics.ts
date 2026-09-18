@@ -37,7 +37,34 @@ export type DriveDiagSnapshot = {
   /** Gauge, not a counter — controls currently drawn on the focused route. */
   roadControls: number;
   startedAtMs: number | null;
+  viewTaps: number;
+  droneStarts: number;
+  droneDone: number;
+  droneAbort: number;
+  droneSkipFirst: number;
+  droneSkipSame: number;
+  droneSkipHold: number;
+  droneSkipCompare: number;
+  droneSkipNotReady: number;
+  droneFailNoTo: number;
+  droneFailNoFrom: number;
+  droneWriteFail: number;
+  /** Last attempted pair, e.g. Rt>Dr — no coordinates. */
+  droneLast: string;
+  /** Last few outcomes, e.g. Mp>Rt done · Rt>Dr fail47 */
+  droneTrail: string;
 };
+
+export type ViewDroneSkip =
+  | "first"
+  | "same"
+  | "hold"
+  | "compare"
+  | "not_ready"
+  | "no_to"
+  | "no_from";
+
+export type ViewDroneEnd = "done" | "abort" | "retarget";
 
 const STORAGE_KEY = "stormpath.driveDiag.v1";
 
@@ -54,6 +81,20 @@ function emptySnapshot(): DriveDiagSnapshot {
     offRoute: 0,
     roadControls: 0,
     startedAtMs: null,
+    viewTaps: 0,
+    droneStarts: 0,
+    droneDone: 0,
+    droneAbort: 0,
+    droneSkipFirst: 0,
+    droneSkipSame: 0,
+    droneSkipHold: 0,
+    droneSkipCompare: 0,
+    droneSkipNotReady: 0,
+    droneFailNoTo: 0,
+    droneFailNoFrom: 0,
+    droneWriteFail: 0,
+    droneLast: "",
+    droneTrail: "",
   };
 }
 
@@ -83,6 +124,20 @@ function applyParsed(parsed: Partial<DriveDiagSnapshot>): void {
       typeof parsed.startedAtMs === "number" && Number.isFinite(parsed.startedAtMs)
         ? parsed.startedAtMs
         : null,
+    viewTaps: asCount(parsed.viewTaps),
+    droneStarts: asCount(parsed.droneStarts),
+    droneDone: asCount(parsed.droneDone),
+    droneAbort: asCount(parsed.droneAbort),
+    droneSkipFirst: asCount(parsed.droneSkipFirst),
+    droneSkipSame: asCount(parsed.droneSkipSame),
+    droneSkipHold: asCount(parsed.droneSkipHold),
+    droneSkipCompare: asCount(parsed.droneSkipCompare),
+    droneSkipNotReady: asCount(parsed.droneSkipNotReady),
+    droneFailNoTo: asCount(parsed.droneFailNoTo),
+    droneFailNoFrom: asCount(parsed.droneFailNoFrom),
+    droneWriteFail: asCount(parsed.droneWriteFail),
+    droneLast: typeof parsed.droneLast === "string" ? parsed.droneLast.slice(0, 24) : "",
+    droneTrail: typeof parsed.droneTrail === "string" ? parsed.droneTrail.slice(0, 160) : "",
   };
 }
 
@@ -165,6 +220,72 @@ export function driveDiagSnapshot(): DriveDiagSnapshot {
   return { ...state };
 }
 
+function viewToken(mode: string): string {
+  if (mode === "drive") return "Dr";
+  if (mode === "topdown") return "Mp";
+  if (mode === "route") return "Rt";
+  return mode.slice(0, 2) || "?";
+}
+
+function pushDroneTrail(entry: string): void {
+  const parts = state.droneTrail ? state.droneTrail.split(" · ") : [];
+  parts.push(entry);
+  state.droneTrail = parts.slice(-6).join(" · ");
+}
+
+function touchTripClock(): void {
+  if (state.startedAtMs == null) state.startedAtMs = Date.now();
+}
+
+/** A Dr/Mp/Rt tap we intended to fly. */
+export function noteViewDroneTap(fromMode: string, toMode: string): void {
+  touchTripClock();
+  state.viewTaps += 1;
+  state.droneLast = `${viewToken(fromMode)}>${viewToken(toMode)}`;
+  persistDriveDiagSoon();
+}
+
+export function noteViewDroneSkip(reason: ViewDroneSkip): void {
+  /* First paint is DriveMap mount, not a trip — keep About quiet. */
+  if (reason !== "first") touchTripClock();
+  if (reason === "first") state.droneSkipFirst += 1;
+  else if (reason === "same") state.droneSkipSame += 1;
+  else if (reason === "hold") state.droneSkipHold += 1;
+  else if (reason === "compare") state.droneSkipCompare += 1;
+  else if (reason === "not_ready") state.droneSkipNotReady += 1;
+  else if (reason === "no_to") state.droneFailNoTo += 1;
+  else state.droneFailNoFrom += 1;
+  if (reason === "no_to" || reason === "no_from") {
+    pushDroneTrail(`${state.droneLast || "??"} ${reason === "no_to" ? "noTo" : "noFrom"}`);
+  }
+  persistDriveDiagSoon();
+}
+
+export function noteViewDroneStart(): void {
+  touchTripClock();
+  state.droneStarts += 1;
+  persistDriveDiagSoon();
+}
+
+export function noteViewDroneWriteFail(): void {
+  state.droneWriteFail += 1;
+  persistDriveDiagSoon();
+}
+
+export function noteViewDroneEnd(end: ViewDroneEnd, writeFails = 0, ms?: number): void {
+  if (end === "done") state.droneDone += 1;
+  else state.droneAbort += 1;
+  const tag =
+    end === "done"
+      ? writeFails > 0
+        ? `fail${writeFails}`
+        : "ok"
+      : end;
+  const dur = typeof ms === "number" && Number.isFinite(ms) ? ` ${Math.round(ms)}ms` : "";
+  pushDroneTrail(`${state.droneLast || "??"} ${tag}${dur}`);
+  persistDriveDiagSoon();
+}
+
 function formatDriveAge(startedAtMs: number | null, nowMs: number): string | null {
   if (startedAtMs == null || !Number.isFinite(startedAtMs)) return null;
   const ms = nowMs - startedAtMs;
@@ -188,7 +309,14 @@ export function formatDriveDiagLines(
   snap: DriveDiagSnapshot,
   nowMs: number = Date.now()
 ): string[] {
-  if (snap.startedAtMs == null && snap.coreSamples === 0) return [];
+  if (
+    snap.startedAtMs == null &&
+    snap.coreSamples === 0 &&
+    snap.viewTaps === 0 &&
+    snap.droneStarts === 0
+  ) {
+    return [];
+  }
 
   const age = formatDriveAge(snap.startedAtMs, nowMs);
   const mins = minutesSince(snap.startedAtMs, nowMs);
@@ -204,6 +332,12 @@ export function formatDriveDiagLines(
     `Camera: ${snap.camApplied} applied, ${snap.camParkedHold} parked holds, ${snap.camWriteFailed} write fails, ${snap.camReclaim} reclaims`,
     `Signal: ${snap.lowSignalHolds} map holds, tiles ${snap.tileWarmDone} warm / ${snap.tileWarmFailed} failed`,
     `Route: ${snap.roadControls} road controls, ${snap.offRoute} off-route`,
+    `Views: ${snap.viewTaps} taps, drone ${snap.droneStarts} start / ${snap.droneDone} done / ${snap.droneAbort} abort`,
+    `Skip: first ${snap.droneSkipFirst}, same ${snap.droneSkipSame}, hold ${snap.droneSkipHold}, cmp ${snap.droneSkipCompare}, wait ${snap.droneSkipNotReady}, no-to ${snap.droneFailNoTo}, no-from ${snap.droneFailNoFrom}`,
+    `Drone writes: ${snap.droneWriteFail} fails${
+      snap.droneLast ? `, last ${snap.droneLast}` : ""
+    }`,
+    `Trail: ${snap.droneTrail || "none"}`,
   ];
   return lines;
 }

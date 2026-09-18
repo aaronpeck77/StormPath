@@ -6,6 +6,7 @@ import {
   droneTiltT,
   lerpMapDronePose,
   mapDroneDurationMs,
+  mapViewFlySkipReason,
   shouldAnimateMapViewFly,
   shouldTrackPuckThroughDrone,
 } from "../mapViewFly";
@@ -30,9 +31,11 @@ describe("shouldAnimateMapViewFly", () => {
 
   it("jumps on first paint, same view, dest-hold, or compare", () => {
     expect(shouldAnimateMapViewFly({ prevViewMode: null, nextViewMode: "drive" })).toBe(false);
+    expect(mapViewFlySkipReason({ prevViewMode: null, nextViewMode: "drive" })).toBe("first");
     expect(
       shouldAnimateMapViewFly({ prevViewMode: "drive", nextViewMode: "drive" })
     ).toBe(false);
+    expect(mapViewFlySkipReason({ prevViewMode: "drive", nextViewMode: "drive" })).toBe("same");
     expect(
       shouldAnimateMapViewFly({
         prevViewMode: "drive",
@@ -41,12 +44,26 @@ describe("shouldAnimateMapViewFly", () => {
       })
     ).toBe(false);
     expect(
+      mapViewFlySkipReason({
+        prevViewMode: "drive",
+        nextViewMode: "route",
+        destPlaceHold: true,
+      })
+    ).toBe("hold");
+    expect(
       shouldAnimateMapViewFly({
         prevViewMode: "drive",
         nextViewMode: "topdown",
         offRouteCompare: true,
       })
     ).toBe(false);
+    expect(
+      mapViewFlySkipReason({
+        prevViewMode: "drive",
+        nextViewMode: "topdown",
+        offRouteCompare: true,
+      })
+    ).toBe("compare");
   });
 
   it("still flies after a pinch/pan — the shot starts from wherever they were looking", () => {
@@ -147,7 +164,7 @@ describe("lerpMapDronePose", () => {
   });
 });
 
-describe("droneTiltT", () => {
+describe("drone motion", () => {
   const pad = { top: 0, bottom: 0, left: 0, right: 0 };
   const overview = {
     lng: -90,
@@ -168,60 +185,17 @@ describe("droneTiltT", () => {
     offset: [0, 200] as [number, number],
   };
 
-  it("holds pitch near the start while zooming in, then tips — still continuous", () => {
-    expect(droneTiltT(overview, drive, 0)).toBe(0);
-    expect(droneTiltT(overview, drive, 0.2)).toBe(0);
-    expect(droneTiltT(overview, drive, 0.6)).toBeGreaterThan(0.2);
-    expect(droneTiltT(overview, drive, 1)).toBe(1);
+  it("moves pitch with zoom so the first third is not a hang", () => {
     const early = lerpMapDronePose(overview, drive, 0.22);
-    expect(early.pitch).toBeLessThan(4);
+    expect(early.pitch).toBeGreaterThan(10);
     expect(early.zoom).toBeGreaterThan(overview.zoom + 1);
+    expect(droneTiltT(overview, drive, 0.22)).toBeCloseTo(0.22);
   });
 
-  it("flattens first when pulling up from Drive", () => {
-    expect(droneTiltT(drive, overview, 0.5)).toBeGreaterThan(0.9);
-    expect(droneTiltT(drive, overview, 1)).toBe(1);
-    const mid = lerpMapDronePose(drive, overview, 0.5);
-    expect(mid.pitch).toBeLessThan(8);
-    expect(mid.zoom).toBeGreaterThan(overview.zoom);
-    expect(mid.zoom).toBeLessThan(drive.zoom);
-  });
-});
-
-describe("mapDroneDurationMs", () => {
-  const pad = { top: 0, bottom: 0, left: 0, right: 0 };
-  const drive = {
-    lng: -90,
-    lat: 38,
-    zoom: 16.6,
-    pitch: 68,
-    bearing: 90,
-    padding: pad,
-    offset: [0, 200] as [number, number],
-  };
-  const map = {
-    ...drive,
-    zoom: 16.2,
-    pitch: 0,
-    bearing: 0,
-    offset: [0, 0] as [number, number],
-  };
-  const route = {
-    lng: -90.3,
-    lat: 38.4,
-    zoom: 8,
-    pitch: 0,
-    bearing: 0,
-    padding: pad,
-    offset: [0, 0] as [number, number],
-  };
-
-  it("gives a longer shot to a big zoom than a Dr↔Mp tilt", () => {
-    const tilt = mapDroneDurationMs(drive, map);
-    const dive = mapDroneDurationMs(route, drive);
-    expect(tilt).toBeGreaterThanOrEqual(MAP_VIEW_FLY_MS);
-    expect(dive).toBeGreaterThan(tilt);
-    expect(dive).toBeLessThanOrEqual(MAP_VIEW_FLY_MAX_MS);
+  it("uses one duration so Rt→Dr cannot stall longer than Dr→Mp", () => {
+    expect(mapDroneDurationMs(overview, drive)).toBe(MAP_VIEW_FLY_MS);
+    expect(mapDroneDurationMs(drive, overview)).toBe(MAP_VIEW_FLY_MS);
+    expect(MAP_VIEW_FLY_MS).toBe(MAP_VIEW_FLY_MAX_MS);
   });
 });
 
