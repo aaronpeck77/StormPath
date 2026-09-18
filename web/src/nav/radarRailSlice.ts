@@ -165,3 +165,6 @@ export function pickEvenSpacedItems<T>(items: T[], cap: number): T[] {
 
 /** Max mosaic frames to sample for the moving rail (past → now). */
 export const RADAR_RAIL_LOOP_FRAME_CAP = 5;
+
+/** One rail sweep (past → now). Slower than the map overlay so the colors are readable. */
+export const RADAR_RAIL_LOOP_MS = 6000;

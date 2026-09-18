@@ -8,6 +8,8 @@ import { isMapReadyForFollowCam, readMapLngLat, safePanToCenter } from "./mapCam
  * Mapbox flyTo zooms out then in (two shots). We lerp pose every frame instead.
  */
 export const MAP_VIEW_FLY_MS = 1100;
+/** Rt → Dr: slower so the camera can sit on the puck, then descend, then pitch behind. */
+export const MAP_VIEW_DESCEND_MS = 1700;
 
 export type MapDronePose = {
   lng: number;
@@ -50,24 +52,69 @@ export function mapDroneEase(u: number): number {
   return x * x * (3 - 2 * x);
 }
 
+function mix(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
 export function lerpMapDronePose(from: MapDronePose, to: MapDronePose, u: number): MapDronePose {
   const t = mapDroneEase(u);
   const bearing = from.bearing + shortestBearingDeltaDeg(from.bearing, to.bearing) * t;
   return {
-    lng: from.lng + (to.lng - from.lng) * t,
-    lat: from.lat + (to.lat - from.lat) * t,
-    zoom: from.zoom + (to.zoom - from.zoom) * t,
-    pitch: from.pitch + (to.pitch - from.pitch) * t,
+    lng: mix(from.lng, to.lng, t),
+    lat: mix(from.lat, to.lat, t),
+    zoom: mix(from.zoom, to.zoom, t),
+    pitch: mix(from.pitch, to.pitch, t),
     bearing: ((bearing % 360) + 360) % 360,
     padding: {
-      top: from.padding.top + (to.padding.top - from.padding.top) * t,
-      bottom: from.padding.bottom + (to.padding.bottom - from.padding.bottom) * t,
-      left: from.padding.left + (to.padding.left - from.padding.left) * t,
-      right: from.padding.right + (to.padding.right - from.padding.right) * t,
+      top: mix(from.padding.top, to.padding.top, t),
+      bottom: mix(from.padding.bottom, to.padding.bottom, t),
+      left: mix(from.padding.left, to.padding.left, t),
+      right: mix(from.padding.right, to.padding.right, t),
     },
     offset: [
-      from.offset[0] + (to.offset[0] - from.offset[0]) * t,
-      from.offset[1] + (to.offset[1] - from.offset[1]) * t,
+      mix(from.offset[0], to.offset[0], t),
+      mix(from.offset[1], to.offset[1], t),
+    ],
+  };
+}
+
+function segmentEase(u: number, start: number, end: number): number {
+  if (end <= start) return u >= end ? 1 : 0;
+  return mapDroneEase((u - start) / (end - start));
+}
+
+/**
+ * Wide overview → Drive. Pan to the puck while still zoomed out, zoom down onto
+ * it, then pitch/rotate behind the vehicle. Lerping center and zoom together is
+ * what made Rt→Dr look like the map rushing past.
+ */
+export function shouldDescendOntoDrive(from: MapDronePose, to: MapDronePose): boolean {
+  return to.zoom - from.zoom >= 2.4 && to.pitch - from.pitch >= 20;
+}
+
+export function lerpDescendOntoDrive(from: MapDronePose, to: MapDronePose, u: number): MapDronePose {
+  const x = Math.max(0, Math.min(1, u));
+  const centerT = segmentEase(x, 0, 0.34);
+  const zoomT = segmentEase(x, 0.14, 0.84);
+  const pitchT = segmentEase(x, 0.46, 1);
+  const bearingT = segmentEase(x, 0.5, 1);
+  const padT = zoomT;
+  const bearing = from.bearing + shortestBearingDeltaDeg(from.bearing, to.bearing) * bearingT;
+  return {
+    lng: mix(from.lng, to.lng, centerT),
+    lat: mix(from.lat, to.lat, centerT),
+    zoom: mix(from.zoom, to.zoom, zoomT),
+    pitch: mix(from.pitch, to.pitch, pitchT),
+    bearing: ((bearing % 360) + 360) % 360,
+    padding: {
+      top: mix(from.padding.top, to.padding.top, padT),
+      bottom: mix(from.padding.bottom, to.padding.bottom, padT),
+      left: mix(from.padding.left, to.padding.left, padT),
+      right: mix(from.padding.right, to.padding.right, padT),
+    },
+    offset: [
+      mix(from.offset[0], to.offset[0], pitchT),
+      mix(from.offset[1], to.offset[1], pitchT),
     ],
   };
 }

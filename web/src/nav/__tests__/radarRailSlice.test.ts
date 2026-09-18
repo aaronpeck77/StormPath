@@ -5,6 +5,7 @@ import {
   radarMapSliceHex,
   radarRailSliceGradientCss,
   radarSliceAtLoopT,
+  RADAR_RAIL_LOOP_MS,
   RADAR_SLICE_MIN_RAW,
 } from "../radarRailSlice";
 
@@ -65,5 +66,10 @@ describe("radarSliceAtLoopT", () => {
   it("keeps first and last when capping frames", () => {
     const items = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     expect(pickEvenSpacedItems(items, 5)).toEqual([0, 2, 5, 7, 9]);
+  });
+
+  it("plays slower than the map overlay so the colors stay readable", () => {
+    expect(RADAR_RAIL_LOOP_MS).toBeGreaterThan(4500);
+    expect(RADAR_RAIL_LOOP_MS).toBeLessThan(8000);
   });
 });

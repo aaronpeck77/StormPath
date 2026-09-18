@@ -167,10 +167,13 @@ import {
 } from "./driveFollowSmooth";
 import {
   applyMapDronePose,
+  lerpDescendOntoDrive,
   lerpMapDronePose,
+  MAP_VIEW_DESCEND_MS,
   MAP_VIEW_FLY_MS,
   readMapDronePose,
   shouldAnimateMapViewFly,
+  shouldDescendOntoDrive,
   type MapDronePose,
 } from "./mapViewFly";
 import {
@@ -762,8 +765,10 @@ function DriveMapInner({
     if (!from) return false;
     stopViewDrone();
     stopMapCamera(map);
+    const descend = shouldDescendOntoDrive(from, to);
+    const durationMs = descend ? MAP_VIEW_DESCEND_MS : MAP_VIEW_FLY_MS;
     viewDroneActiveRef.current = true;
-    viewFlyUntilMsRef.current = performance.now() + MAP_VIEW_FLY_MS + 48;
+    viewFlyUntilMsRef.current = performance.now() + durationMs + 48;
     const t0 = performance.now();
     const tick = (now: number) => {
       if (!viewDroneActiveRef.current) return;
@@ -772,8 +777,8 @@ function DriveMapInner({
         stopViewDrone();
         return;
       }
-      const u = Math.min(1, (now - t0) / MAP_VIEW_FLY_MS);
-      const pose = lerpMapDronePose(from, to, u);
+      const u = Math.min(1, (now - t0) / durationMs);
+      const pose = descend ? lerpDescendOntoDrive(from, to, u) : lerpMapDronePose(from, to, u);
       applyMapDronePose(m, pose);
       lastDroneOffsetRef.current = pose.offset;
       if (u < 1) {

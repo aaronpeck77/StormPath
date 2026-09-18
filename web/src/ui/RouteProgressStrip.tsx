@@ -13,9 +13,9 @@ import type { LngLat, RouteTurnStep } from "../nav/types";
 import {
   radarRailSliceGradientCss,
   radarSliceAtLoopT,
+  RADAR_RAIL_LOOP_MS,
   type RadarSliceSample,
 } from "../nav/radarRailSlice";
-import { RADAR_ANIMATION_LOOP_MS } from "./mapRadarLayer";
 
 export type StormProgressBand = { startM: number; endM: number; lineHex: string; severity?: string };
 
@@ -192,7 +192,7 @@ export function RouteProgressStrip({
     const tick = (now: number) => {
       if (now - lastPaint >= 80) {
         lastPaint = now;
-        setRadarLoopT(((now / RADAR_ANIMATION_LOOP_MS) % 1 + 1) % 1);
+        setRadarLoopT(((now / RADAR_RAIL_LOOP_MS) % 1 + 1) % 1);
       }
       raf = requestAnimationFrame(tick);
     };
