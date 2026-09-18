@@ -914,6 +914,53 @@ function applyTripCameraFit(
   });
 }
 
+/** Compute the Rt overview camera without applying it — for the Dr/Mp/Rt drone lerp. */
+export function previewTripOverviewCamera(
+  map: mapboxgl.Map,
+  routes: NavRoute[],
+  user: LngLat | null,
+  dest: LngLat | null,
+  padding: mapboxgl.PaddingOptions,
+  maxZoomCeiling = 18,
+  opts?: Pick<
+    FitMapToTripOptions,
+    "onlyRouteId" | "forceFullPolyline" | "remainingFromUser" | "zoomBias"
+  >
+): { lng: number; lat: number; zoom: number } | null {
+  const fit = buildTripFitBounds(
+    user,
+    dest,
+    routes,
+    opts?.onlyRouteId,
+    opts?.forceFullPolyline,
+    opts?.remainingFromUser
+  );
+  if (!fit) return null;
+  const spanM = boundsDiagonalMeters(fit.bounds);
+  const maxZoom = computeTripFitMaxZoom(
+    spanM,
+    fit.directM,
+    fit.endpointsOnly,
+    maxZoomCeiling,
+    opts?.zoomBias ?? 0
+  );
+  const cam = safeCameraForBounds(map, fit.bounds, {
+    padding,
+    maxZoom,
+    bearing: 0,
+    pitch: 0,
+  });
+  const spanForFloor = Number.isFinite(spanM) && spanM > 0 ? spanM : fit.directM;
+  if (!cam?.center || cam.zoom == null || !Number.isFinite(cam.zoom)) return null;
+  const ll = readMapLngLat(cam.center);
+  if (!ll) return null;
+  return {
+    lng: ll[0],
+    lat: ll[1],
+    zoom: clampPlanningFitZoom(cam.zoom, spanForFloor),
+  };
+}
+
 export function fitMapToTrip(
   map: mapboxgl.Map,
   routes: NavRoute[],

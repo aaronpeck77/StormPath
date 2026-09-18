@@ -26,6 +26,7 @@ type Props = {
   outlookSteps: RouteOutlookStep[];
   outlookSamples: WxSample[] | undefined;
   radarMosaicSamples: { t: number; intensity: number }[];
+  radarSliceLoopFrames?: { t: number; intensity: number }[][];
   radarRefreshBlocked: string | null;
   radarMosaicUpdatedAt: number | null;
   windPoints: { t: number; mph: number }[];
@@ -69,6 +70,7 @@ export function AppProgressRail({
   outlookSteps,
   outlookSamples,
   radarMosaicSamples,
+  radarSliceLoopFrames,
   radarRefreshBlocked,
   radarMosaicUpdatedAt,
   windPoints,
@@ -144,6 +146,7 @@ export function AppProgressRail({
           turnSteps={progressRailRouteTurnSteps ?? turnSteps}
           stormBands={routeAheadProgressBands}
           radarSliceSamples={radarMosaicSamples}
+          radarSliceLoopFrames={radarSliceLoopFrames}
           driveEndsEmphasis={driveModeUi}
           tripOdometerM={tripOdometerM}
           tripRelativeProgress={navigationStarted}

@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   type RouteAlert,
   corridorHighlightHex,
@@ -10,7 +10,12 @@ import { RADAR_HEAVY_THRESHOLD } from "../nav/constants";
 import { closestAlongRouteMeters, polylineLengthMeters } from "../nav/routeGeometry";
 import { turnStepAlongBounds } from "../nav/turnStepAlong";
 import type { LngLat, RouteTurnStep } from "../nav/types";
-import { radarRailSliceGradientCss, type RadarSliceSample } from "../nav/radarRailSlice";
+import {
+  radarRailSliceGradientCss,
+  radarSliceAtLoopT,
+  type RadarSliceSample,
+} from "../nav/radarRailSlice";
+import { RADAR_ANIMATION_LOOP_MS } from "./mapRadarLayer";
 
 export type StormProgressBand = { startM: number; endM: number; lineHex: string; severity?: string };
 
@@ -35,6 +40,8 @@ type Props = {
    * colors (green/yellow/red) where a cell actually crosses the line.
    */
   radarSliceSamples?: RadarSliceSample[];
+  /** Mosaic frames (past → now). When 2+, the rail plays the storm moving. */
+  radarSliceLoopFrames?: RadarSliceSample[][];
   /** Tap colored corridor span → open details for that strip alert (same payload as the map corridor). */
   onCorridorBandClick?: (alert: RouteAlert) => void;
   /** Tap storm-colored span → NWS details for warnings overlapping that segment. */
@@ -76,6 +83,7 @@ export function RouteProgressStrip({
   layout = "fullBleed",
   stormBands = [],
   radarSliceSamples,
+  radarSliceLoopFrames,
   onCorridorBandClick,
   onStormBandClick,
   driveEndsEmphasis = false,
@@ -174,10 +182,31 @@ export function RouteProgressStrip({
     });
   }, [stormBands, totalM]);
 
-  const radarSliceCss = useMemo(
-    () => (totalM > 0 ? radarRailSliceGradientCss(radarSliceSamples) : null),
-    [radarSliceSamples, totalM]
-  );
+  const [radarLoopT, setRadarLoopT] = useState(0);
+  const playRadarLoop = (radarSliceLoopFrames?.length ?? 0) >= 2;
+
+  useEffect(() => {
+    if (!playRadarLoop) return;
+    let raf = 0;
+    let lastPaint = 0;
+    const tick = (now: number) => {
+      if (now - lastPaint >= 80) {
+        lastPaint = now;
+        setRadarLoopT(((now / RADAR_ANIMATION_LOOP_MS) % 1 + 1) % 1);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playRadarLoop]);
+
+  const radarSliceCss = useMemo(() => {
+    if (totalM <= 0) return null;
+    const moving = playRadarLoop
+      ? radarSliceAtLoopT(radarSliceLoopFrames, radarLoopT)
+      : radarSliceSamples;
+    return radarRailSliceGradientCss(moving);
+  }, [playRadarLoop, radarSliceLoopFrames, radarLoopT, radarSliceSamples, totalM]);
 
   /* Side rail: keep chroma close to the map line; edge strip stays slightly muted for contrast on map */
   const trackBg =

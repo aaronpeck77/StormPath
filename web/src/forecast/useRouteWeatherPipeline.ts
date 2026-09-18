@@ -63,6 +63,7 @@ export type UseRouteWeatherPipelineResult = {
   showRoadNoticesOnRoute: boolean;
   navResourceBudget: NavResourceBudget;
   radarMosaicSamples: RadarSample[];
+  radarSliceLoopFrames: RadarSample[][];
   radarMosaicUpdatedAt: number | null;
   radarRefreshBlocked: string | null;
   tioMinutePrecip: MinutePrecipForecast | null;
@@ -187,6 +188,7 @@ export function useRouteWeatherPipeline(
   );
   const {
     samples: radarMosaicSamples,
+    loopFrames: radarSliceLoopFrames,
     updatedAt: radarMosaicUpdatedAt,
     refreshBlocked: radarRefreshBlocked,
     refreshing: radarRouteRefreshing,
@@ -384,6 +386,7 @@ export function useRouteWeatherPipeline(
     showRoadNoticesOnRoute,
     navResourceBudget,
     radarMosaicSamples,
+    radarSliceLoopFrames,
     radarMosaicUpdatedAt,
     radarRefreshBlocked,
     tioMinutePrecip,

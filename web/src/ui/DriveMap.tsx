@@ -67,6 +67,7 @@ import {
   fitMapToRouteCompareLocal,
   fitMapToTrip,
   hideAlternateRoutesOnDrive,
+  previewTripOverviewCamera,
   routeIdFromRouteHitLayerId,
   visibleRouteIdsForHitLayers,
 } from "./mapRouteLayers";
@@ -164,7 +165,14 @@ import {
   drivePuckBlendTcS,
   smoothDriveZoom,
 } from "./driveFollowSmooth";
-import { MAP_VIEW_FLY_MS, shouldAnimateMapViewFly } from "./mapViewFly";
+import {
+  applyMapDronePose,
+  lerpMapDronePose,
+  MAP_VIEW_FLY_MS,
+  readMapDronePose,
+  shouldAnimateMapViewFly,
+  type MapDronePose,
+} from "./mapViewFly";
 import {
   destTapStartFromTouchCount,
   isDestFingerTap,
@@ -613,6 +621,9 @@ function DriveMapInner({
   const userExploringRef = useRef(false);
   /** While a Dr/Mp/Rt fly is in the air, follow-cam must not fight it. */
   const viewFlyUntilMsRef = useRef(0);
+  const viewDroneRafRef = useRef(0);
+  const viewDroneActiveRef = useRef(false);
+  const lastDroneOffsetRef = useRef<[number, number]>([0, 0]);
   /** One-shot: force drive follow-cam easeTo even when the puck barely moved (explore end, layout, resume). */
   const driveCamResyncRef = useRef(false);
   /** Last native cam sample actually written — anchor for the parked wobble hold. */
@@ -736,14 +747,170 @@ function DriveMapInner({
   const [mapReady, setMapReady] = useState(false);
   const [mapResumeTick, setMapResumeTick] = useState(0);
 
+  const stopViewDrone = () => {
+    if (viewDroneRafRef.current) {
+      cancelAnimationFrame(viewDroneRafRef.current);
+      viewDroneRafRef.current = 0;
+    }
+    viewDroneActiveRef.current = false;
+  };
+
+  const startViewDrone = (to: MapDronePose): boolean => {
+    const map = mapRef.current;
+    if (!map) return false;
+    const from = readMapDronePose(map, lastDroneOffsetRef.current);
+    if (!from) return false;
+    stopViewDrone();
+    stopMapCamera(map);
+    viewDroneActiveRef.current = true;
+    viewFlyUntilMsRef.current = performance.now() + MAP_VIEW_FLY_MS + 48;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      if (!viewDroneActiveRef.current) return;
+      const m = mapRef.current;
+      if (!m) {
+        stopViewDrone();
+        return;
+      }
+      const u = Math.min(1, (now - t0) / MAP_VIEW_FLY_MS);
+      const pose = lerpMapDronePose(from, to, u);
+      applyMapDronePose(m, pose);
+      lastDroneOffsetRef.current = pose.offset;
+      if (u < 1) {
+        viewDroneRafRef.current = requestAnimationFrame(tick);
+      } else {
+        viewDroneRafRef.current = 0;
+        viewDroneActiveRef.current = false;
+        viewFlyUntilMsRef.current = performance.now() + 32;
+      }
+    };
+    viewDroneRafRef.current = requestAnimationFrame(tick);
+    return true;
+  };
+
+  const droneTargetForView = (map: mapboxgl.Map, next: typeof viewMode): MapDronePose | null => {
+    const puck =
+      (puckMarkerRef.current ? readMapLngLat(puckMarkerRef.current.getLngLat()) : null) ??
+      userLngLatRef.current;
+    if (next === "drive") {
+      if (!puck) return null;
+      const ease = driveCameraEaseOptions(
+        stormBarVisibleRef.current,
+        stormBarExpandedRef.current,
+        progressRailVisibleRef.current
+      );
+      const nativeCam = nativeFollowCameraRef.current;
+      const useNative = Boolean(
+        nativeCam &&
+          shouldUseNativeFollowCam({
+            camera: nativeCam,
+            navigationStarted: navigationStartedRef.current,
+            viewMode: "drive",
+            userExploring: userExploringRef.current,
+          })
+      );
+      const brg = useNative && nativeCam
+        ? nativeCam.bearing
+        : resolveDriveFollowCameraBearingDeg({
+            offRouteForward: driveOffRouteForwardFramingRef.current,
+            routeBearingDeg: driveRouteBearingDegRef.current,
+            headingDeg: liveGpsHeadingRefStable?.current ?? headingRef.current,
+            prevFix: null,
+            curFix: null,
+            mapBearing: map.getBearing(),
+            lastTravelBearingDeg:
+              driveLastTravelBearingRef.current ?? driveCamBearingSmoothedRef.current,
+            speedMps: speedMpsRef.current,
+            followingTemporaryGuidance: followingTemporaryGuidanceRef.current,
+            preferTravel: performance.now() < driveCamPreferTravelUntilMsRef.current,
+          });
+      const zoom = useNative && nativeCam
+        ? nativeCam.zoom
+        : repairStoredDriveFollowZoom(driveNavZoomRef);
+      const pitch = useNative && nativeCam ? nativeCam.pitch : DRIVE_FOLLOW_PITCH_DEG;
+      const guarded = guardDriveFollowCamera({ center: puck, zoom, puck });
+      return {
+        lng: guarded.center[0],
+        lat: guarded.center[1],
+        zoom: guarded.zoom,
+        pitch,
+        bearing: ((brg % 360) + 360) % 360,
+        padding: {
+          top: Number(ease.padding.top) || 0,
+          bottom: Number(ease.padding.bottom) || 0,
+          left: Number(ease.padding.left) || 0,
+          right: Number(ease.padding.right) || 0,
+        },
+        offset: ease.offset,
+      };
+    }
+    if (next === "topdown") {
+      if (!puck) return null;
+      const zoom = navigationStarted
+        ? coerceTopdownNavStreetZoom(map, topdownZoomRef)
+        : resolveTopdownLocalZoom(topdownZoomRef, false);
+      return {
+        lng: puck[0],
+        lat: puck[1],
+        zoom,
+        pitch: 0,
+        bearing: 0,
+        padding: { top: 0, bottom: 0, left: 0, right: 0 },
+        offset: TOPDOWN_PUCK_OFFSET_PX,
+      };
+    }
+    const navigatingRt = Boolean(navigationStartedRef.current);
+    const padding = routeFitPadding(
+      stormBarVisible,
+      stormBarExpanded,
+      routes,
+      lineFocusId,
+      progressRailVisible
+    );
+    const cam = previewTripOverviewCamera(
+      map,
+      routes,
+      puck,
+      destLngLatRef.current,
+      padding,
+      routeFitMaxZoomCeiling(routes, lineFocusId),
+      {
+        onlyRouteId: navigatingRt ? lineFocusId : undefined,
+        forceFullPolyline: !navigatingRt,
+        remainingFromUser: navigatingRt,
+        zoomBias: 0,
+      }
+    );
+    if (!cam) return null;
+    return {
+      lng: cam.lng,
+      lat: cam.lat,
+      zoom: cam.zoom,
+      pitch: 0,
+      bearing: 0,
+      padding: {
+        top: Number(padding.top) || 0,
+        bottom: Number(padding.bottom) || 0,
+        left: Number(padding.left) || 0,
+        right: Number(padding.right) || 0,
+      },
+      offset: [0, 0],
+    };
+  };
+
+  useEffect(() => () => stopViewDrone(), []);
+
   useEffect(() => {
     const prev = prevViewFlyModeRef.current;
     prevViewFlyModeRef.current = viewMode;
     if (!mapReady) return;
+    const map = mapRef.current;
+    if (!map) return;
     if (
       !shouldAnimateMapViewFly({
         prevViewMode: prev,
         nextViewMode: viewMode,
+        userExploring: userExploringRef.current,
         destPlaceHold: shouldHoldDestPlaceFrame({
           destLngLat,
           routesLength: routes.length,
@@ -755,6 +922,11 @@ function DriveMapInner({
     ) {
       return;
     }
+    const to = droneTargetForView(map, viewMode);
+    if (to && startViewDrone(to)) {
+      if (viewMode === "route") pendingRouteOverviewEnterRef.current = false;
+      return;
+    }
     viewFlyUntilMsRef.current = performance.now() + MAP_VIEW_FLY_MS + 80;
   }, [
     viewMode,
@@ -764,6 +936,10 @@ function DriveMapInner({
     navigationStarted,
     offRouteRejoinCompareActive,
     trafficBypassCompareActive,
+    stormBarVisible,
+    stormBarExpanded,
+    progressRailVisible,
+    lineFocusId,
   ]);
 
   /** After pan/zoom ends, refresh halo clip once follow resumes. */
@@ -1747,7 +1923,8 @@ function DriveMapInner({
           userLngLatRef.current &&
           !punchNativeHoleRef.current &&
           !holdFirstNativeGoRef.current &&
-          now >= viewFlyUntilMsRef.current
+          now >= viewFlyUntilMsRef.current &&
+          !viewDroneActiveRef.current
         ) {
           const nativeCam = nativeFollowCameraRef.current;
           if (
@@ -1901,6 +2078,7 @@ function DriveMapInner({
               if (!applied) bumpDriveDiag("camWriteFailed");
             }
             if (applied) {
+              lastDroneOffsetRef.current = easeCached.offset;
               bumpDriveDiag("camApplied");
               nativeCamAppliedRef.current = {
                 lng: camCenter[0],
@@ -2071,12 +2249,14 @@ function DriveMapInner({
                 if (hardOk) {
                   lastBearingApplied = driveCamBearingSmoothedRef.current;
                   driveCamResyncRef.current = false;
+                  lastDroneOffsetRef.current = offset;
                 }
               } else {
                 const ok = safePanToCenter(map, panOpts);
                 if (ok) {
                   lastBearingApplied = driveCamBearingSmoothedRef.current;
                   if (forceCamSync) driveCamResyncRef.current = false;
+                  lastDroneOffsetRef.current = offset;
                 }
               }
             }
@@ -2088,7 +2268,8 @@ function DriveMapInner({
           viewModeRef.current === "topdown" &&
           navigationStartedRef.current &&
           !userExploringRef.current &&
-          now >= viewFlyUntilMsRef.current
+          now >= viewFlyUntilMsRef.current &&
+          !viewDroneActiveRef.current
         ) {
           /* Mp: pan every frame with the smoothed puck so the map doesn't sit still
            * for ~40 m then jump (quantized GPS follow key). Keep pitch/bearing flat. */
@@ -2108,6 +2289,7 @@ function DriveMapInner({
               duration: 0,
               essential: true,
             });
+            lastDroneOffsetRef.current = TOPDOWN_PUCK_OFFSET_PX;
           }
         }
         } catch (err) {
@@ -3675,6 +3857,7 @@ function DriveMapInner({
     }
 
     const executePlanningFit = (): boolean => {
+      if (viewDroneActiveRef.current) return true;
       if (viewModeRef.current === "drive") return false;
       if (routes.length === 0) return false;
       if (userExploringRef.current && !appForcedFit) return false;
@@ -3748,6 +3931,7 @@ function DriveMapInner({
 
     /** Map (Mp): top-down on the user’s position — full route line stays drawn; camera does not fit the whole trip. */
     const doTopdownLocalFit = () => {
+      if (viewDroneActiveRef.current) return;
       if (userExploringRef.current) return;
       if (!mapStyleReadyForCamera(map)) return;
       const u = userLngLatRef.current;
@@ -3864,7 +4048,9 @@ function DriveMapInner({
         navRouteSnapKeyRef.current !== routeOverviewSnapKey
       ) {
         navRouteSnapKeyRef.current = routeOverviewSnapKey;
-        if (shouldDebouncePlanningOverviewFit(navigationStarted)) {
+        if (viewDroneActiveRef.current) {
+          pendingRouteOverviewEnterRef.current = false;
+        } else if (shouldDebouncePlanningOverviewFit(navigationStarted)) {
           clearPlanningFitTimers();
           planningFitRetryTimerRef.current = window.setTimeout(() => {
             planningFitRetryTimerRef.current = null;
@@ -3914,6 +4100,17 @@ function DriveMapInner({
    */
   useEffect(() => {
     if (!mapReady) return;
+    userExploringRef.current = false;
+    if (exploreTimerRef.current) {
+      clearTimeout(exploreTimerRef.current);
+      exploreTimerRef.current = null;
+    }
+    if (viewDroneActiveRef.current) {
+      if (viewMode === "drive" && navigationStarted) {
+        driveCamResyncRef.current = true;
+      }
+      return;
+    }
     if (viewMode === "topdown" && navigationStarted) {
       if (topdownZoomRef.current < TOPDOWN_NAV_MIN_ZOOM) {
         topdownZoomRef.current = TOPDOWN_NAV_STREET_ZOOM;
@@ -3924,11 +4121,6 @@ function DriveMapInner({
     if (viewMode === "route" && navigationStarted) {
       pendingRouteOverviewEnterRef.current = true;
       navRouteSnapKeyRef.current = "";
-    }
-    userExploringRef.current = false;
-    if (exploreTimerRef.current) {
-      clearTimeout(exploreTimerRef.current);
-      exploreTimerRef.current = null;
     }
     if (viewMode === "drive" && navigationStarted) {
       driveCamResyncRef.current = true;
@@ -4007,6 +4199,7 @@ function DriveMapInner({
     }
     const map = mapRef.current;
     if (!map) return;
+    if (viewDroneActiveRef.current) return;
     driveCamResyncRef.current = true;
 
     const snapDriveCam = () => {

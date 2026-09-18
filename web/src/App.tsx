@@ -1594,6 +1594,7 @@ export default function App() {
     showRoadNoticesOnRoute,
     navResourceBudget,
     radarMosaicSamples,
+    radarSliceLoopFrames,
     radarMosaicUpdatedAt,
     radarRefreshBlocked,
     tioMinutePrecip,
@@ -2699,6 +2700,7 @@ export default function App() {
                 outlookSteps={activeProgressCalloutPanel.outlookTimeline}
                 outlookSamples={activeProgressCalloutPanel.outlookSamples}
                 radarMosaicSamples={radarMosaicSamples}
+                radarSliceLoopFrames={radarSliceLoopFrames}
                 radarRefreshBlocked={radarRefreshBlocked}
                 radarMosaicUpdatedAt={radarMosaicUpdatedAt}
                 windPoints={activeProgressCalloutPanel.windPoints}

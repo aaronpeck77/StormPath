@@ -9,24 +9,99 @@ import {
 } from "../services/radarPolylineIntensity";
 import { fetchMapTileRgba, isRainViewerRateLimited } from "../services/rainViewerTileFetch";
 import {
+  animationCellsForPack,
   nearestRadarFrameByTimeMs,
   radarMapProviderForCenter,
   radarTileUrlForFrame,
   resolveRadarMapPack,
   type RadarMapFrame,
+  type RadarMapPack,
 } from "../services/radarMapPack";
 import { buildCumulativeDistances, pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
+import { pickEvenSpacedItems, RADAR_RAIL_LOOP_FRAME_CAP } from "../nav/radarRailSlice";
 
 export type RadarSample = { t: number; intensity: number };
 
 export type RadarBandsAlongRouteState = {
   samples: RadarSample[];
+  /** Mosaic frames along the corridor (past → now) for the moving rail. */
+  loopFrames: RadarSample[][];
   updatedAt: number | null;
   /** Set when RainViewer rate-limits — prior samples are kept. */
   refreshBlocked: string | null;
   refreshing: boolean;
   bumpRadarResample: () => void;
 };
+
+type SamplePt = { t: number; lngLat: LngLat; frame: RadarMapFrame };
+
+async function sampleRadarIntensities(
+  pack: RadarMapPack,
+  pts: SamplePt[],
+  tomorrowIoApiKey: string | null | undefined,
+  cancelled: () => boolean
+): Promise<RadarSample[]> {
+  type SampleRef = { t: number; px: number; py: number };
+  const groups = new Map<string, { frame: RadarMapFrame; tileKey: string; samples: SampleRef[] }>();
+  const Z = RADAR_MOSAIC_SAMPLE_ZOOM;
+
+  for (const p of pts) {
+    const [lng, lat] = p.lngLat;
+    const { x, y, px, py } = tileXY(lng, lat, Z);
+    const tileKey = `${Z}/${x}/${y}`;
+    const groupId = `${p.frame.path}|${tileKey}`;
+    const existing = groups.get(groupId);
+    if (existing) {
+      existing.samples.push({ t: p.t, px, py });
+    } else {
+      groups.set(groupId, {
+        frame: p.frame,
+        tileKey,
+        samples: [{ t: p.t, px, py }],
+      });
+    }
+  }
+
+  const intensityFromRgba =
+    pack.provider === "tomorrow_io" ? echoIntensityFromPrecipTile : echoIntensityFromRgba;
+  const tileProvider = pack.provider === "tomorrow_io" ? "tomorrow_io" : "rainviewer";
+
+  const intensityByT = new Map<number, number>();
+  for (const { frame, tileKey, samples } of groups.values()) {
+    if (cancelled()) return [];
+    const template = radarTileUrlForFrame(pack, frame, tomorrowIoApiKey, "sample");
+    if (!template) {
+      for (const it of samples) {
+        if (!intensityByT.has(it.t)) intensityByT.set(it.t, 0);
+      }
+      continue;
+    }
+    const [zStr, xStr, yStr] = tileKey.split("/");
+    const url = template
+      .replace("{z}", zStr!)
+      .replace("{x}", xStr!)
+      .replace("{y}", yStr!);
+    const rgba = await fetchMapTileRgba(url, tileProvider);
+    for (const it of samples) {
+      if (!rgba) {
+        if (!intensityByT.has(it.t)) intensityByT.set(it.t, 0);
+        continue;
+      }
+      const idx = (it.py * 256 + it.px) * 4;
+      const intensity = intensityFromRgba(
+        rgba[idx] ?? 0,
+        rgba[idx + 1] ?? 0,
+        rgba[idx + 2] ?? 0,
+        rgba[idx + 3] ?? 0
+      );
+      intensityByT.set(it.t, Math.max(intensityByT.get(it.t) ?? 0, intensity));
+    }
+  }
+
+  return [...intensityByT.entries()]
+    .map(([t, intensity]) => ({ t, intensity }))
+    .sort((a, b) => a.t - b.t);
+}
 
 /**
  * Sample the radar mosaic along a route polyline and convert it into coarse "cell intensity"
@@ -46,10 +121,12 @@ export function useRadarBandsAlongRoute(
 ): RadarBandsAlongRouteState {
   const [state, setState] = useState<{
     samples: RadarSample[];
+    loopFrames: RadarSample[][];
     updatedAt: number | null;
     refreshBlocked: string | null;
   }>({
     samples: [],
+    loopFrames: [],
     updatedAt: null,
     refreshBlocked: null,
   });
@@ -84,7 +161,7 @@ export function useRadarBandsAlongRoute(
       console.log(`[radarRoute] enabled=${enabled} geomPts=${geometry?.length ?? 0} eta=${planEtaMinutes ?? "none"}`);
     }
     if (!geometry || geometry.length < 2 || !routeCenter || !geomKey) {
-      setState({ samples: [], updatedAt: null, refreshBlocked: null });
+      setState({ samples: [], loopFrames: [], updatedAt: null, refreshBlocked: null });
       setRefreshing(false);
       return;
     }
@@ -159,76 +236,34 @@ export function useRadarBandsAlongRoute(
         );
       }
 
-      type SampleRef = { t: number; px: number; py: number };
-      const groups = new Map<string, { frame: RadarMapFrame; tileKey: string; samples: SampleRef[] }>();
-      const Z = RADAR_MOSAIC_SAMPLE_ZOOM;
+      const cancelledFn = () => cancelled;
+      const out = await sampleRadarIntensities(pack, pts, tomorrowIoApiKey, cancelledFn);
+      if (cancelled) return;
+      if (lastKeyRef.current !== geomKey) return;
 
-      for (const p of pts) {
-        const [lng, lat] = p.lngLat as LngLat;
-        const { x, y, px, py } = tileXY(lng, lat, Z);
-        const tileKey = `${Z}/${x}/${y}`;
-        const groupId = `${p.frame.path}|${tileKey}`;
-        const existing = groups.get(groupId);
-        if (existing) {
-          existing.samples.push({ t: p.t, px, py });
-        } else {
-          groups.set(groupId, {
-            frame: p.frame,
-            tileKey,
-            samples: [{ t: p.t, px, py }],
-          });
-        }
-      }
-
-      const intensityFromRgba =
-        pack.provider === "tomorrow_io" ? echoIntensityFromPrecipTile : echoIntensityFromRgba;
-      const tileProvider = pack.provider === "tomorrow_io" ? "tomorrow_io" : "rainviewer";
-
-      const intensityByT = new Map<number, number>();
-      for (const { frame, tileKey, samples } of groups.values()) {
+      const loopCells = pickEvenSpacedItems(animationCellsForPack(pack), RADAR_RAIL_LOOP_FRAME_CAP);
+      const loopFrames: RadarSample[][] = [];
+      for (const cell of loopCells) {
         if (cancelled) return;
-        const template = radarTileUrlForFrame(pack, frame, tomorrowIoApiKey, "sample");
-        if (!template) {
-          for (const it of samples) {
-            if (!intensityByT.has(it.t)) intensityByT.set(it.t, 0);
-          }
-          continue;
-        }
-        const [zStr, xStr, yStr] = tileKey.split("/");
-        const url = template
-          .replace("{z}", zStr!)
-          .replace("{x}", xStr!)
-          .replace("{y}", yStr!);
-        const rgba = await fetchMapTileRgba(url, tileProvider);
-        for (const it of samples) {
-          if (!rgba) {
-            if (!intensityByT.has(it.t)) intensityByT.set(it.t, 0);
-            continue;
-          }
-          const idx = (it.py * 256 + it.px) * 4;
-          const intensity = intensityFromRgba(
-            rgba[idx] ?? 0,
-            rgba[idx + 1] ?? 0,
-            rgba[idx + 2] ?? 0,
-            rgba[idx + 3] ?? 0
-          );
-          intensityByT.set(it.t, Math.max(intensityByT.get(it.t) ?? 0, intensity));
-        }
+        const loopPts: SamplePt[] = RADAR_ROUTE_SAMPLE_FRACTIONS.map((t) => ({
+          t,
+          lngLat: pointAtAlongMeters(geometry, totalM * t, cumDist),
+          frame: cell,
+        }));
+        loopFrames.push(await sampleRadarIntensities(pack, loopPts, tomorrowIoApiKey, cancelledFn));
       }
-
-      const out: RadarSample[] = [...intensityByT.entries()].map(([t, intensity]) => ({
-        t,
-        intensity,
-      }));
 
       if (cancelled) return;
       if (lastKeyRef.current !== geomKey) return;
       if (import.meta.env.DEV) {
         const maxI = out.length ? Math.max(...out.map((s) => s.intensity)) : 0;
-        console.log(`[radarRoute] samples=${out.length} maxIntensity=${maxI.toFixed(3)}`);
+        console.log(
+          `[radarRoute] samples=${out.length} maxIntensity=${maxI.toFixed(3)} loopFrames=${loopFrames.length}`
+        );
       }
       setState({
-        samples: out.sort((a, b) => a.t - b.t),
+        samples: out,
+        loopFrames,
         updatedAt: Date.now(),
         refreshBlocked: null,
       });
@@ -247,6 +282,7 @@ export function useRadarBandsAlongRoute(
 
   return {
     samples: state.samples,
+    loopFrames: state.loopFrames,
     updatedAt: state.updatedAt,
     refreshBlocked: state.refreshBlocked,
     refreshing,
