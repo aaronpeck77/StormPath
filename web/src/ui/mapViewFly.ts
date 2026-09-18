@@ -8,8 +8,11 @@ import { isMapReadyForFollowCam, readMapLngLat, safePanToCenter } from "./mapCam
  * Mapbox flyTo zooms out then in (two shots). We lerp pose every frame instead.
  */
 export const MAP_VIEW_FLY_MS = 1100;
-/** Rt → Dr: slower so the camera can sit on the puck, then descend, then pitch behind. */
-export const MAP_VIEW_DESCEND_MS = 1700;
+/** Rt → Dr bird-dive: hover on the puck, zoom down, then settle behind. */
+export const MAP_VIEW_DESCEND_MS = 2100;
+
+/** Keep the puck visually centered while diving — Drive chrome only in the settle. */
+export const DESCEND_DIVE_PADDING = { top: 72, bottom: 72, left: 40, right: 40 };
 
 export type MapDronePose = {
   lng: number;
@@ -84,37 +87,46 @@ function segmentEase(u: number, start: number, end: number): number {
 }
 
 /**
- * Wide overview → Drive. Pan to the puck while still zoomed out, zoom down onto
- * it, then pitch/rotate behind the vehicle. Lerping center and zoom together is
- * what made Rt→Dr look like the map rushing past.
+ * Wide overview → Drive. The puck stays on screen the whole time: lock the
+ * camera on it at overview zoom, zoom down like a bird, then pitch behind.
+ * Panning from the route centroid while zooming is what made the map rush past.
  */
 export function shouldDescendOntoDrive(from: MapDronePose, to: MapDronePose): boolean {
   return to.zoom - from.zoom >= 2.4 && to.pitch - from.pitch >= 20;
 }
 
+/** First frame of the dive: same altitude, already looking at the puck. */
+export function lockDescendStartToPuck(from: MapDronePose, to: MapDronePose): MapDronePose {
+  return {
+    ...from,
+    lng: to.lng,
+    lat: to.lat,
+    padding: { ...DESCEND_DIVE_PADDING },
+    offset: [0, 0],
+  };
+}
+
 export function lerpDescendOntoDrive(from: MapDronePose, to: MapDronePose, u: number): MapDronePose {
   const x = Math.max(0, Math.min(1, u));
-  const centerT = segmentEase(x, 0, 0.34);
-  const zoomT = segmentEase(x, 0.14, 0.84);
-  const pitchT = segmentEase(x, 0.46, 1);
-  const bearingT = segmentEase(x, 0.5, 1);
-  const padT = zoomT;
-  const bearing = from.bearing + shortestBearingDeltaDeg(from.bearing, to.bearing) * bearingT;
+  const zoomT = segmentEase(x, 0.1, 0.68);
+  const settleT = segmentEase(x, 0.58, 1);
+  const bearing = from.bearing + shortestBearingDeltaDeg(from.bearing, to.bearing) * settleT;
+  const divePad = from.padding;
   return {
-    lng: mix(from.lng, to.lng, centerT),
-    lat: mix(from.lat, to.lat, centerT),
+    lng: to.lng,
+    lat: to.lat,
     zoom: mix(from.zoom, to.zoom, zoomT),
-    pitch: mix(from.pitch, to.pitch, pitchT),
+    pitch: mix(from.pitch, to.pitch, settleT),
     bearing: ((bearing % 360) + 360) % 360,
     padding: {
-      top: mix(from.padding.top, to.padding.top, padT),
-      bottom: mix(from.padding.bottom, to.padding.bottom, padT),
-      left: mix(from.padding.left, to.padding.left, padT),
-      right: mix(from.padding.right, to.padding.right, padT),
+      top: mix(divePad.top, to.padding.top, settleT),
+      bottom: mix(divePad.bottom, to.padding.bottom, settleT),
+      left: mix(divePad.left, to.padding.left, settleT),
+      right: mix(divePad.right, to.padding.right, settleT),
     },
     offset: [
-      mix(from.offset[0], to.offset[0], pitchT),
-      mix(from.offset[1], to.offset[1], pitchT),
+      mix(from.offset[0], to.offset[0], settleT),
+      mix(from.offset[1], to.offset[1], settleT),
     ],
   };
 }

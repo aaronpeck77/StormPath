@@ -4,6 +4,7 @@ import {
   MAP_VIEW_FLY_MS,
   lerpDescendOntoDrive,
   lerpMapDronePose,
+  lockDescendStartToPuck,
   shouldAnimateMapViewFly,
   shouldDescendOntoDrive,
 } from "../mapViewFly";
@@ -119,18 +120,27 @@ describe("lerpDescendOntoDrive", () => {
     expect(MAP_VIEW_DESCEND_MS).toBeGreaterThan(MAP_VIEW_FLY_MS);
   });
 
-  it("sits on the puck before zooming in", () => {
-    const early = lerpDescendOntoDrive(from, to, 0.28);
-    expect(Math.abs(early.lng - to.lng)).toBeLessThan(Math.abs(from.lng - to.lng) * 0.25);
-    expect(early.zoom).toBeLessThan((from.zoom + to.zoom) / 2);
-    expect(early.pitch).toBeLessThan(12);
+  it("never leaves the puck — center is the Drive target the whole dive", () => {
+    const start = lockDescendStartToPuck(from, to);
+    expect(start.lng).toBe(to.lng);
+    expect(start.lat).toBe(to.lat);
+    expect(start.zoom).toBe(from.zoom);
+    for (const u of [0, 0.2, 0.45, 0.7, 1]) {
+      const pose = lerpDescendOntoDrive(start, to, u);
+      expect(pose.lng).toBe(to.lng);
+      expect(pose.lat).toBe(to.lat);
+    }
   });
 
-  it("zooms down then pitches behind the puck", () => {
-    const mid = lerpDescendOntoDrive(from, to, 0.62);
+  it("hovers then zooms down before pitching behind the puck", () => {
+    const start = lockDescendStartToPuck(from, to);
+    const hover = lerpDescendOntoDrive(start, to, 0.08);
+    expect(hover.zoom).toBeCloseTo(from.zoom, 1);
+    expect(hover.pitch).toBeLessThan(4);
+    const mid = lerpDescendOntoDrive(start, to, 0.5);
     expect(mid.zoom).toBeGreaterThan((from.zoom + to.zoom) / 2);
-    expect(mid.pitch).toBeLessThan(to.pitch * 0.7);
-    const late = lerpDescendOntoDrive(from, to, 0.92);
+    expect(mid.pitch).toBeLessThan(12);
+    const late = lerpDescendOntoDrive(start, to, 0.92);
     expect(late.pitch).toBeGreaterThan(to.pitch * 0.7);
     expect(late.zoom).toBeGreaterThan(to.zoom - 0.8);
   });

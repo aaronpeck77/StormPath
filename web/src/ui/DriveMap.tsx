@@ -169,6 +169,7 @@ import {
   applyMapDronePose,
   lerpDescendOntoDrive,
   lerpMapDronePose,
+  lockDescendStartToPuck,
   MAP_VIEW_DESCEND_MS,
   MAP_VIEW_FLY_MS,
   readMapDronePose,
@@ -761,11 +762,12 @@ function DriveMapInner({
   const startViewDrone = (to: MapDronePose): boolean => {
     const map = mapRef.current;
     if (!map) return false;
-    const from = readMapDronePose(map, lastDroneOffsetRef.current);
-    if (!from) return false;
+    const fromRaw = readMapDronePose(map, lastDroneOffsetRef.current);
+    if (!fromRaw) return false;
     stopViewDrone();
     stopMapCamera(map);
-    const descend = shouldDescendOntoDrive(from, to);
+    const descend = shouldDescendOntoDrive(fromRaw, to);
+    const from = descend ? lockDescendStartToPuck(fromRaw, to) : fromRaw;
     const durationMs = descend ? MAP_VIEW_DESCEND_MS : MAP_VIEW_FLY_MS;
     viewDroneActiveRef.current = true;
     viewFlyUntilMsRef.current = performance.now() + durationMs + 48;
