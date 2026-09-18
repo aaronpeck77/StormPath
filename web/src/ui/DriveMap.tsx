@@ -158,6 +158,14 @@ import {
   shouldHoldDestPlaceFrame,
 } from "./destPlaceCamera";
 import {
+  DRIVE_CAMERA_BEARING_TC_S,
+  DRIVE_CAMERA_ZOOM_TC_S,
+  DRIVE_SNAP_ALONG_TC_S,
+  drivePuckBlendTcS,
+  smoothDriveZoom,
+} from "./driveFollowSmooth";
+import { MAP_VIEW_FLY_MS, shouldAnimateMapViewFly } from "./mapViewFly";
+import {
   destTapStartFromTouchCount,
   isDestFingerTap,
   shouldAcceptDestTap,
@@ -391,8 +399,6 @@ export type Props = {
 export type DriveMapProps = Props;
 
 /** Drive mode: return to follow-cam after the user pans/zooms the map (600 ms while navigating). */
-/** ~1/e time constant (seconds) for drive camera bearing toward travel/route (rAF loop). */
-const DRIVE_CAMERA_BEARING_TC_S = 0.7;
 /** After Jeff / auto resync: ignore rejoin-route tangents this long so the camera stays on travel. */
 const DRIVE_CAM_PREFER_TRAVEL_AFTER_RESYNC_MS = 12_000;
 /** Delay before Wi‑Fi tile warm so idle-home camera can finish first. */
@@ -605,6 +611,8 @@ function DriveMapInner({
   const onHomeMapUserPanRef = useRef(onHomeMapUserPan);
   onHomeMapUserPanRef.current = onHomeMapUserPan;
   const userExploringRef = useRef(false);
+  /** While a Dr/Mp/Rt fly is in the air, follow-cam must not fight it. */
+  const viewFlyUntilMsRef = useRef(0);
   /** One-shot: force drive follow-cam easeTo even when the puck barely moved (explore end, layout, resume). */
   const driveCamResyncRef = useRef(false);
   /** Last native cam sample actually written — anchor for the parked wobble hold. */
@@ -641,6 +649,8 @@ function DriveMapInner({
       : null;
 
   const driveCamBearingSmoothedRef = useRef<number | null>(null);
+  /** Core zoom steps ~1 Hz with speed — blend so the frame breathes instead of ticking. */
+  const driveCamZoomSmoothedRef = useRef<number | null>(null);
   /** Last course-over-ground while GO is active — hold heading-up across off-route GPS gaps. */
   const driveLastTravelBearingRef = useRef<number | null>(null);
   /** After Jeff/manual resync: ignore route tangents until this timestamp (ms). */
@@ -661,6 +671,7 @@ function DriveMapInner({
       prevPlanningViewModeRef.current = "drive";
     }
   }, [viewMode]);
+  const prevViewFlyModeRef = useRef<MapViewMode | null>(null);
   /** Reuse stable padding/offset for drive follow — fresh objects every frame can confuse Mapbox camera updates. */
   const driveCamEaseOptsCacheRef = useRef<{
     key: string;
@@ -724,6 +735,36 @@ function DriveMapInner({
   );
   const [mapReady, setMapReady] = useState(false);
   const [mapResumeTick, setMapResumeTick] = useState(0);
+
+  useEffect(() => {
+    const prev = prevViewFlyModeRef.current;
+    prevViewFlyModeRef.current = viewMode;
+    if (!mapReady) return;
+    if (
+      !shouldAnimateMapViewFly({
+        prevViewMode: prev,
+        nextViewMode: viewMode,
+        destPlaceHold: shouldHoldDestPlaceFrame({
+          destLngLat,
+          routesLength: routes.length,
+          navigationStarted,
+        }),
+        offRouteCompare: navigationStarted && offRouteRejoinCompareActive,
+        routeCompare: trafficBypassCompareActive,
+      })
+    ) {
+      return;
+    }
+    viewFlyUntilMsRef.current = performance.now() + MAP_VIEW_FLY_MS + 80;
+  }, [
+    viewMode,
+    mapReady,
+    destLngLat,
+    routes.length,
+    navigationStarted,
+    offRouteRejoinCompareActive,
+    trafficBypassCompareActive,
+  ]);
 
   /** After pan/zoom ends, refresh halo clip once follow resumes. */
   useEffect(() => {
@@ -1633,7 +1674,7 @@ function DriveMapInner({
               const rawAlong = snap.alongMeters;
               if (snappedAlongSmooth == null) snappedAlongSmooth = rawAlong;
               else {
-                const alphaAlong = 1 - Math.exp(-dt / 0.32);
+                const alphaAlong = 1 - Math.exp(-dt / DRIVE_SNAP_ALONG_TC_S);
                 snappedAlongSmooth += (rawAlong - snappedAlongSmooth) * alphaAlong;
               }
               applyAlongSmooth(snappedAlongSmooth);
@@ -1660,7 +1701,8 @@ function DriveMapInner({
          *
          * iOS Core Location frequently reports `speed = -1` (unknown) at low speeds, which arrives
          * here as `null`. We fall back to apparent speed measured directly from consecutive fixes
-         * so stationary mode still triggers when the device-reported speed is missing. */
+         * so stationary mode still triggers when the device-reported speed is missing.
+         * Tunables live in driveFollowSmooth.ts (rollback values documented there). */
         const reportedSp = followSp;
         const effSp =
           reportedSp != null && reportedSp >= 0
@@ -1670,12 +1712,11 @@ function DriveMapInner({
               : null;
         const isStationary = effSp != null && effSp < 0.7;
         const isCrawling = effSp != null && effSp >= 0.7 && effSp < 2.0;
-        /* TC = how long it takes the puck to converge to the target. Longer = more damping.
-         *   stationary  → 2.4s   (heavy damping — pin the puck through GPS wobble while parked)
-         *   crawling    → 0.32s  (light damping in stop-and-go traffic)
-         *   snapped     → 0.145s (existing tuning)
-         *   free / fast → 0.095s (existing tuning) */
-        const blendTc = isStationary ? 2.4 : isCrawling ? 0.32 : snapLatched ? 0.145 : 0.095;
+        const blendTc = drivePuckBlendTcS({
+          stationary: isStationary,
+          crawling: isCrawling,
+          snapped: snapLatched,
+        });
         const blend = 1 - Math.exp(-dt / blendTc);
         const cur = readMapLngLat(marker.getLngLat());
         if (!cur) {
@@ -1705,7 +1746,8 @@ function DriveMapInner({
           navigationStartedRef.current &&
           userLngLatRef.current &&
           !punchNativeHoleRef.current &&
-          !holdFirstNativeGoRef.current
+          !holdFirstNativeGoRef.current &&
+          now >= viewFlyUntilMsRef.current
         ) {
           const nativeCam = nativeFollowCameraRef.current;
           if (
@@ -1721,9 +1763,14 @@ function DriveMapInner({
              * 60 fps while a raw sample steps once a second — that mismatch is the puck
              * sliding forward then snapping back to the yard line. One motion source. */
             const camCenter: [number, number] = [nextLng, nextLat];
+            const camZoom = smoothDriveZoom(
+              driveCamZoomSmoothedRef.current,
+              nativeCam.zoom,
+              1 - Math.exp(-dt / DRIVE_CAMERA_ZOOM_TC_S)
+            );
             const guarded = guardDriveFollowCamera({
               center: camCenter,
-              zoom: nativeCam.zoom,
+              zoom: camZoom,
               puck: camCenter,
             });
             /* Core's bearing also steps at 1 Hz. Smooth it, and lean into the turn. */
@@ -1771,7 +1818,7 @@ function DriveMapInner({
                   lat: camCenter[1],
                   bearing: camBearing,
                   pitch: nativeCam.pitch,
-                  zoom: nativeCam.zoom,
+                  zoom: camZoom,
                 },
                 lastApplied: nativeCamAppliedRef.current,
                 resync: driveCamResyncRef.current,
@@ -1860,10 +1907,11 @@ function DriveMapInner({
                 lat: camCenter[1],
                 bearing: camBearing,
                 pitch: nativeCam.pitch,
-                zoom: nativeCam.zoom,
+                zoom: camZoom,
               };
               lastBearingApplied = camBearing;
               driveCamBearingSmoothedRef.current = camBearing;
+              driveCamZoomSmoothedRef.current = camZoom;
               driveCamResyncRef.current = false;
               onDriveCameraBearingDegRef.current?.(camBearing);
             }
@@ -2039,7 +2087,8 @@ function DriveMapInner({
           isMapReadyForFollowCam(map) &&
           viewModeRef.current === "topdown" &&
           navigationStartedRef.current &&
-          !userExploringRef.current
+          !userExploringRef.current &&
+          now >= viewFlyUntilMsRef.current
         ) {
           /* Mp: pan every frame with the smoothed puck so the map doesn't sit still
            * for ~40 m then jump (quantized GPS follow key). Keep pitch/bearing flat. */
@@ -3476,6 +3525,7 @@ function DriveMapInner({
   useEffect(() => {
     if (viewMode !== "drive" || !navigationStarted) {
       driveCamBearingSmoothedRef.current = null;
+      driveCamZoomSmoothedRef.current = null;
       driveLastTravelBearingRef.current = null;
       driveCamPreferTravelUntilMsRef.current = 0;
       const out = lastTravelBearingDegOutRefStable.current;
@@ -3639,6 +3689,7 @@ function DriveMapInner({
         navigatingRt &&
         !pendingRouteOverviewEnterRef.current &&
         !enteredRouteView;
+      const flyMs = performance.now() < viewFlyUntilMsRef.current ? MAP_VIEW_FLY_MS : 0;
       const fitted = fitMapToTrip(
         map,
         routes,
@@ -3655,7 +3706,7 @@ function DriveMapInner({
           /* Pre-Go: full corridor so we never street-zoom the dest then pull back. */
           forceFullPolyline: !navigatingRt,
           remainingFromUser: navigatingRt,
-          durationMs: easeNavRt ? 480 : 0,
+          durationMs: flyMs || (easeNavRt ? 480 : 0),
         }
       );
       if (fitted && viewModeRef.current === "route") {
@@ -3722,7 +3773,7 @@ function DriveMapInner({
         bearing: 0,
         padding: ZERO_MAP_PADDING,
         offset: TOPDOWN_PUCK_OFFSET_PX,
-        duration: 0,
+        duration: performance.now() < viewFlyUntilMsRef.current ? MAP_VIEW_FLY_MS : 0,
         essential: true,
       });
     };
@@ -4005,7 +4056,7 @@ function DriveMapInner({
         bearing: brg,
         padding: easeCached?.padding,
         offset: easeCached?.offset,
-        duration: 0,
+        duration: performance.now() < viewFlyUntilMsRef.current ? MAP_VIEW_FLY_MS : 0,
         essential: true,
       });
     };
@@ -4035,7 +4086,10 @@ function DriveMapInner({
 
     const nudgeFollowCam = (hard = false) => {
       userExploringRef.current = false;
-      if (hard) driveCamBearingSmoothedRef.current = null;
+      if (hard) {
+        driveCamBearingSmoothedRef.current = null;
+        driveCamZoomSmoothedRef.current = null;
+      }
       driveCamResyncRef.current = true;
       setMapResumeTick((n) => n + 1);
       try {

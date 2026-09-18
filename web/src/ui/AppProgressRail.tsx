@@ -143,6 +143,7 @@ export function AppProgressRail({
           routeLineColor={progressStripRouteColor}
           turnSteps={progressRailRouteTurnSteps ?? turnSteps}
           stormBands={routeAheadProgressBands}
+          radarSliceSamples={radarMosaicSamples}
           driveEndsEmphasis={driveModeUi}
           tripOdometerM={tripOdometerM}
           tripRelativeProgress={navigationStarted}

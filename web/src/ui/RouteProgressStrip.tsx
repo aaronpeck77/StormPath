@@ -10,6 +10,7 @@ import { RADAR_HEAVY_THRESHOLD } from "../nav/constants";
 import { closestAlongRouteMeters, polylineLengthMeters } from "../nav/routeGeometry";
 import { turnStepAlongBounds } from "../nav/turnStepAlong";
 import type { LngLat, RouteTurnStep } from "../nav/types";
+import { radarRailSliceGradientCss, type RadarSliceSample } from "../nav/radarRailSlice";
 
 export type StormProgressBand = { startM: number; endM: number; lineHex: string; severity?: string };
 
@@ -29,6 +30,11 @@ type Props = {
   layout?: "fullBleed" | "side";
   /** NWS polygon overlap along the route — same spans as colored lines on the map. */
   stormBands?: StormProgressBand[];
+  /**
+   * Live mosaic samples along the corridor. Painted as a thin slice in map radar
+   * colors (green/yellow/red) where a cell actually crosses the line.
+   */
+  radarSliceSamples?: RadarSliceSample[];
   /** Tap colored corridor span → open details for that strip alert (same payload as the map corridor). */
   onCorridorBandClick?: (alert: RouteAlert) => void;
   /** Tap storm-colored span → NWS details for warnings overlapping that segment. */
@@ -69,6 +75,7 @@ export function RouteProgressStrip({
   turnSteps,
   layout = "fullBleed",
   stormBands = [],
+  radarSliceSamples,
   onCorridorBandClick,
   onStormBandClick,
   driveEndsEmphasis = false,
@@ -167,6 +174,11 @@ export function RouteProgressStrip({
     });
   }, [stormBands, totalM]);
 
+  const radarSliceCss = useMemo(
+    () => (totalM > 0 ? radarRailSliceGradientCss(radarSliceSamples) : null),
+    [radarSliceSamples, totalM]
+  );
+
   /* Side rail: keep chroma close to the map line; edge strip stays slightly muted for contrast on map */
   const trackBg =
     layout === "side"
@@ -213,6 +225,13 @@ export function RouteProgressStrip({
           />
         ) : null}
         <div className="route-progress-strip__track" style={{ backgroundColor: trackBg }}>
+          {radarSliceCss ? (
+            <div
+              className="route-progress-strip__radar-slice"
+              style={{ backgroundImage: radarSliceCss }}
+              aria-hidden
+            />
+          ) : null}
           <div className="route-progress-strip__end-cap route-progress-strip__end-cap--start" aria-hidden />
           <div className="route-progress-strip__end-cap route-progress-strip__end-cap--end" aria-hidden />
           <div

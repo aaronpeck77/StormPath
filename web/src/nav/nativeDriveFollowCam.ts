@@ -200,9 +200,9 @@ export function anticipateNativeCamBearingDeg(input: {
   return ((next % 360) + 360) % 360;
 }
 
-export const NATIVE_FOLLOW_CAM_WEB_MOVE_M = 0.8;
-export const NATIVE_FOLLOW_CAM_WEB_BEARING_DEG = 0.45;
-export const NATIVE_FOLLOW_CAM_WEB_ZOOM = 0.04;
+export const NATIVE_FOLLOW_CAM_WEB_MOVE_M = 0.28;
+export const NATIVE_FOLLOW_CAM_WEB_BEARING_DEG = 0.28;
+export const NATIVE_FOLLOW_CAM_WEB_ZOOM = 0.02;
 
 export function nativeFollowCamNeedsWebWrite(input: {
   next: NativeDriveFollowCamera;

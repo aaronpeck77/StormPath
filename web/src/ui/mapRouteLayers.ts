@@ -593,6 +593,8 @@ export function applyRoutesToMap(
             "line-color": ROUTE_LINE_CASING_COLOR,
             "line-width": casingWidth,
             "line-opacity": ROUTE_LINE_CASING_OPACITY,
+            /* Default blur swallows a 2 px peek under the blue core. */
+            "line-blur": 0,
           },
           layout: { "line-cap": "round", "line-join": "round" },
         },
@@ -607,6 +609,7 @@ export function applyRoutesToMap(
             "line-color": lineColor,
             "line-width": lineWidthByZoom,
             "line-opacity": lineOpacity,
+            "line-blur": 0,
           },
           layout: { "line-cap": "round", "line-join": "round" },
         },
@@ -638,6 +641,7 @@ export function applyRoutesToMap(
               "line-color": ROUTE_LINE_CASING_COLOR,
               "line-width": casingWidth,
               "line-opacity": ROUTE_LINE_CASING_OPACITY,
+              "line-blur": 0,
             },
             layout: { "line-cap": "round", "line-join": "round" },
           },
@@ -647,10 +651,12 @@ export function applyRoutesToMap(
         map.setPaintProperty(casingId, "line-color", ROUTE_LINE_CASING_COLOR);
         map.setPaintProperty(casingId, "line-width", casingWidth);
         map.setPaintProperty(casingId, "line-opacity", ROUTE_LINE_CASING_OPACITY);
+        map.setPaintProperty(casingId, "line-blur", 0);
       }
       map.setPaintProperty(lineId, "line-color", lineColor);
       map.setPaintProperty(lineId, "line-width", lineWidthByZoom);
       map.setPaintProperty(lineId, "line-opacity", lineOpacity);
+      map.setPaintProperty(lineId, "line-blur", 0);
       if (map.getLayer(hitLineId)) {
         map.setPaintProperty(hitLineId, "line-width", hitWidth);
       }

@@ -18,16 +18,17 @@ export const ROUTE_SUGGESTED_COLOR = "#7dd3fc";
 
 /**
  * Black outline around the colored core.
- * +1.6 was a hairline — on a phone it vanished into the blue anti-alias.
- * +5 is ~2.5px per side: thin, but you can see it on pavement and radar.
+ * +4 (2 px/side) was in the code twice and still vanished on the phone: Mapbox
+ * anti-aliases the blue over the peek, and Drive pitch 68 foreshortens the stripe.
+ * Street extra 8 ≈ 4 px/side in the style, which reads as ~2 px after pitch/AA.
+ * Overview stays thinner so Rt does not grow a fat black tube.
  */
 export const ROUTE_LINE_CASING_COLOR = "#000000";
-/**
- * Total extra width, so half lands on each side: 4 = the 2 px per side Bill asked for.
- * Raise to 6 if it still does not read on pavement (that is 3 px per side).
- */
-export const ROUTE_LINE_CASING_WIDTH_EXTRA = 4;
+/** Street-level extra (Drive / Map). Half of this is each side. */
+export const ROUTE_LINE_CASING_WIDTH_EXTRA = 8;
 export const ROUTE_LINE_CASING_OPACITY = 1;
+/** Overview extra — enough to see, not a halo. */
+const ROUTE_LINE_CASING_WIDTH_EXTRA_OVERVIEW = 3;
 
 export const ROUTE_ACTIVE_LINE_WIDTH = 8;
 export const ROUTE_SUGGESTED_LINE_WIDTH = 6;
@@ -80,11 +81,27 @@ export function routeLineWidthByZoom(
   return expr;
 }
 
+export function routeCasingExtraByZoom(): ExpressionSpecification {
+  return [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    10,
+    ROUTE_LINE_CASING_WIDTH_EXTRA_OVERVIEW,
+    14,
+    5,
+    16,
+    ROUTE_LINE_CASING_WIDTH_EXTRA,
+    18,
+    ROUTE_LINE_CASING_WIDTH_EXTRA,
+  ];
+}
+
 export function routeCasingWidthByZoom(
   baseWidth: number,
   viewMode: MapViewMode = "drive"
 ): ExpressionSpecification {
-  return ["+", routeLineWidthByZoom(baseWidth, viewMode), ROUTE_LINE_CASING_WIDTH_EXTRA];
+  return ["+", routeLineWidthByZoom(baseWidth, viewMode), routeCasingExtraByZoom()];
 }
 
 export function routeHitWidthByZoom(

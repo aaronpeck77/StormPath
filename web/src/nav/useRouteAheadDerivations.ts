@@ -563,23 +563,28 @@ export function useRouteAheadDerivations(
   ]);
 
   /**
-   * Progress rail + map halo: corridor NWS (incl. SWS / advisories) + radar mosaic where echo crosses.
+   * Map halo: corridor NWS + padded radar mosaic.
+   * The rail paints radar as a color slice from the same samples — do not also
+   * put indigo mosaic bands on the strip or they cover the map colors.
    */
+  const routeAheadNwsBands = useMemo(
+    () => timelineToProgressStripBands(routeAheadTimeline),
+    [routeAheadTimeline]
+  );
   const routeAheadWeatherBands = useMemo(() => {
-    const nwsBands = timelineToProgressStripBands(routeAheadTimeline);
     const radarBands =
       showWeatherImpactsOnRoute && guidanceRouteLengthM > 0
         ? radarMosaicToProgressStripBands(guidanceRouteLengthM, radarMosaicSamples)
         : [];
-    return mergeProgressStripWeatherBands([...nwsBands, ...radarBands]);
+    return mergeProgressStripWeatherBands([...routeAheadNwsBands, ...radarBands]);
   }, [
-    routeAheadTimeline,
+    routeAheadNwsBands,
     showWeatherImpactsOnRoute,
     guidanceRouteLengthM,
     radarMosaicSamples,
   ]);
 
-  const routeAheadProgressBands = routeAheadWeatherBands;
+  const routeAheadProgressBands = routeAheadNwsBands;
 
   /** NWS / radar timeline bands → route outlook graph when forecast APIs are empty. */
   const stormOutlookBands = useMemo((): StormRouteOutlookBand[] => {

@@ -8,6 +8,7 @@ import {
   routeProgressRailRightClearancePx,
   stormBarTopExtraPx,
 } from "./mapFitLogic";
+import { DRIVE_CAMERA_BEARING_MAX_STEP_DEG } from "./driveFollowSmooth";
 
 /** Drive follow-cam puck placement — football-field metaphor (% up from bottom toward midfield). */
 const DRIVE_PUCK_YARD_LINE = 30;
@@ -23,9 +24,6 @@ const DRIVE_PUCK_YARD_LINE = 30;
  * turn banner, and more road shows ahead.
  */
 export const DRIVE_FOLLOW_PITCH_DEG = 68;
-
-/** Max camera bearing change per frame (deg) — kills wild spins when route tangent jumps near forks / turns. */
-const DRIVE_CAMERA_BEARING_MAX_STEP_DEG = 9;
 
 /**
  * If route look-ahead disagrees with travel direction by more than this, keep the camera

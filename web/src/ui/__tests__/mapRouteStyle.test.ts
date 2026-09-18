@@ -3,6 +3,7 @@ import {
   ROUTE_ACTIVE_LINE_WIDTH,
   ROUTE_LINE_CASING_COLOR,
   ROUTE_LINE_CASING_WIDTH_EXTRA,
+  routeCasingExtraByZoom,
   routeCasingWidthByZoom,
   routeLineWidthByZoom,
   routeLineWidthViewMode,
@@ -48,16 +49,28 @@ describe("routeLineWidthViewMode", () => {
   });
 });
 
+function extraAtZoom(expr: ReturnType<typeof routeCasingExtraByZoom>, zoom: number) {
+  const stops = expr.slice(3);
+  for (let i = 0; i < stops.length; i += 2) {
+    if (stops[i] === zoom) return stops[i + 1];
+  }
+  return undefined;
+}
+
 describe("route casing", () => {
-  it("uses a thin black outline around the colored line", () => {
+  it("uses a black outline that is wide enough to survive Drive pitch and anti-alias", () => {
     expect(ROUTE_LINE_CASING_COLOR).toBe("#000000");
-    expect(ROUTE_LINE_CASING_WIDTH_EXTRA).toBeGreaterThanOrEqual(4);
-    expect(ROUTE_LINE_CASING_WIDTH_EXTRA).toBeLessThan(8);
+    /* +4 vanished on the phone. Street extra 8 ≈ 4 px/side in the style. */
+    expect(ROUTE_LINE_CASING_WIDTH_EXTRA).toBeGreaterThanOrEqual(8);
+    expect(ROUTE_LINE_CASING_WIDTH_EXTRA).toBeLessThanOrEqual(10);
     const core = routeLineWidthByZoom(ROUTE_ACTIVE_LINE_WIDTH, "drive");
     const casing = routeCasingWidthByZoom(ROUTE_ACTIVE_LINE_WIDTH, "drive");
     expect(casing[0]).toBe("+");
     expect(casing[1]).toEqual(core);
-    expect(casing[2]).toBe(ROUTE_LINE_CASING_WIDTH_EXTRA);
+    expect(extraAtZoom(routeCasingExtraByZoom(), 16)).toBe(ROUTE_LINE_CASING_WIDTH_EXTRA);
+    expect(extraAtZoom(routeCasingExtraByZoom(), 10) as number).toBeLessThan(
+      ROUTE_LINE_CASING_WIDTH_EXTRA
+    );
   });
 });
 
