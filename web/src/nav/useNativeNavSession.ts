@@ -177,6 +177,8 @@ export function useNativeNavSession(opts: {
     nativeStoppingRef.current = false;
   }, [removeListeners]);
 
+  const prevNavStartedRef = useRef<boolean | null>(null);
+
   const startNative = useCallback(async () => {
     if (!isNativeMapboxNavPlatform()) return false;
     if (!accessToken) return false;
@@ -193,8 +195,6 @@ export function useNativeNavSession(opts: {
       poseHoldRef.current.reset();
       followCamRef.current.reset();
       setFollowCamera(null);
-      /* Counters describe this trip — About's diagnostics block reads them after. */
-      resetDriveDiag();
 
       const handles = await Promise.all([
         StormpathMapboxNavigation.addListener("progress", (e: NativeNavProgressEvent) => {
@@ -346,6 +346,9 @@ export function useNativeNavSession(opts: {
   useEffect(() => {
     if (!isNativeMapboxNavPlatform()) return;
 
+    const prevNav = prevNavStartedRef.current;
+    prevNavStartedRef.current = navigationStarted;
+
     if (!navigationStarted) {
       nativeAbandonedRef.current = false;
       corridorAdoptedRef.current = false;
@@ -355,6 +358,10 @@ export function useNativeNavSession(opts: {
       }
       return;
     }
+
+    /* Genuine Go (false → true). Core reconnect / WebView remount must keep the trip counters
+     * or About reads "0.6 s, all zeros" after a long drive. */
+    if (prevNav === false) resetDriveDiag();
 
     if (nativeRestartingRef.current) return;
     if (startedForNavRef.current) return;

@@ -119,7 +119,12 @@ export function driveCameraEaseOptions(
   };
 }
 
-export function smoothDriveBearingDeg(prev: number | null, raw: number, alpha: number): number {
+export function smoothDriveBearingDeg(
+  prev: number | null,
+  raw: number,
+  alpha: number,
+  maxStepDeg: number = DRIVE_CAMERA_BEARING_MAX_STEP_DEG
+): number {
   if (prev == null || !Number.isFinite(prev)) return raw;
   if (!Number.isFinite(raw)) return prev;
   let d = raw - prev;
@@ -127,9 +132,11 @@ export function smoothDriveBearingDeg(prev: number | null, raw: number, alpha: n
   while (d < -180) d += 360;
   if (d > 179) d = 179;
   if (d < -179) d = -179;
+  const cap =
+    Number.isFinite(maxStepDeg) && maxStepDeg > 0 ? maxStepDeg : DRIVE_CAMERA_BEARING_MAX_STEP_DEG;
   let step = d * alpha;
-  if (step > DRIVE_CAMERA_BEARING_MAX_STEP_DEG) step = DRIVE_CAMERA_BEARING_MAX_STEP_DEG;
-  if (step < -DRIVE_CAMERA_BEARING_MAX_STEP_DEG) step = -DRIVE_CAMERA_BEARING_MAX_STEP_DEG;
+  if (step > cap) step = cap;
+  if (step < -cap) step = -cap;
   const next = prev + step;
   return ((next % 360) + 360) % 360;
 }

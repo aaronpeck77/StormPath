@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  MAP_VIEW_DESCEND_MS,
+  MAP_VIEW_FLY_MAX_MS,
   MAP_VIEW_FLY_MS,
-  lerpDescendOntoDrive,
+  droneLookAtScreen,
+  droneTiltT,
   lerpMapDronePose,
-  lockDescendStartToPuck,
+  mapDroneDurationMs,
   shouldAnimateMapViewFly,
-  shouldDescendOntoDrive,
+  shouldTrackPuckThroughDrone,
 } from "../mapViewFly";
 
 describe("shouldAnimateMapViewFly", () => {
@@ -23,21 +24,14 @@ describe("shouldAnimateMapViewFly", () => {
     expect(shouldAnimateMapViewFly({ prevViewMode: "drive", nextViewMode: "route" })).toBe(
       true
     );
-    expect(MAP_VIEW_FLY_MS).toBeLessThan(1400);
     expect(MAP_VIEW_FLY_MS).toBeGreaterThan(500);
+    expect(MAP_VIEW_FLY_MS).toBeLessThanOrEqual(MAP_VIEW_FLY_MAX_MS);
   });
 
-  it("jumps on first paint, same view, pinch, dest-hold, or compare", () => {
+  it("jumps on first paint, same view, dest-hold, or compare", () => {
     expect(shouldAnimateMapViewFly({ prevViewMode: null, nextViewMode: "drive" })).toBe(false);
     expect(
       shouldAnimateMapViewFly({ prevViewMode: "drive", nextViewMode: "drive" })
-    ).toBe(false);
-    expect(
-      shouldAnimateMapViewFly({
-        prevViewMode: "drive",
-        nextViewMode: "route",
-        userExploring: true,
-      })
     ).toBe(false);
     expect(
       shouldAnimateMapViewFly({
@@ -53,6 +47,23 @@ describe("shouldAnimateMapViewFly", () => {
         offRouteCompare: true,
       })
     ).toBe(false);
+  });
+
+  it("still flies after a pinch/pan — the shot starts from wherever they were looking", () => {
+    expect(
+      shouldAnimateMapViewFly({ prevViewMode: "topdown", nextViewMode: "route" })
+    ).toBe(true);
+    expect(
+      shouldAnimateMapViewFly({ prevViewMode: "route", nextViewMode: "drive" })
+    ).toBe(true);
+  });
+});
+
+describe("shouldTrackPuckThroughDrone", () => {
+  it("keeps the puck in Dr and Mp, pans out for Rt", () => {
+    expect(shouldTrackPuckThroughDrone("drive")).toBe(true);
+    expect(shouldTrackPuckThroughDrone("topdown")).toBe(true);
+    expect(shouldTrackPuckThroughDrone("route")).toBe(false);
   });
 });
 
@@ -77,6 +88,24 @@ describe("lerpMapDronePose", () => {
     offset: [0, 0] as [number, number],
   };
 
+  it("starts on the live camera — never teleports the first frame", () => {
+    const start = lerpMapDronePose(from, to, 0);
+    expect(start.lng).toBe(from.lng);
+    expect(start.lat).toBe(from.lat);
+    expect(start.zoom).toBe(from.zoom);
+    expect(start.pitch).toBe(from.pitch);
+    expect(start.offset[1]).toBe(from.offset[1]);
+  });
+
+  it("lands on the target pose", () => {
+    const end = lerpMapDronePose(from, to, 1);
+    expect(end.lng).toBe(to.lng);
+    expect(end.lat).toBe(to.lat);
+    expect(end.zoom).toBe(to.zoom);
+    expect(end.pitch).toBe(to.pitch);
+    expect(end.bearing).toBeCloseTo(10, 5);
+  });
+
   it("does not reverse zoom (no flyTo zoom-out-then-in)", () => {
     const a = lerpMapDronePose(from, to, 0.25);
     const b = lerpMapDronePose(from, to, 0.5);
@@ -91,57 +120,123 @@ describe("lerpMapDronePose", () => {
     const mid = lerpMapDronePose(from, to, 0.5);
     expect(mid.bearing).toBeCloseTo(0, 5);
   });
+
+  it("pans continuously toward the target — no first-frame leap to the puck", () => {
+    const overview = {
+      lng: -90,
+      lat: 38,
+      zoom: 7.5,
+      pitch: 0,
+      bearing: 0,
+      padding: pad,
+      offset: [0, 0] as [number, number],
+    };
+    const drive = {
+      lng: -90.4,
+      lat: 38.5,
+      zoom: 16.6,
+      pitch: 68,
+      bearing: 90,
+      padding: { top: 172, bottom: 156, left: 104, right: 104 },
+      offset: [0, 220] as [number, number],
+    };
+    const early = lerpMapDronePose(overview, drive, 0.05);
+    expect(Math.abs(early.lng - overview.lng)).toBeLessThan(Math.abs(drive.lng - overview.lng) * 0.2);
+    expect(early.lng).not.toBe(drive.lng);
+    expect(early.lat).not.toBe(drive.lat);
+  });
 });
 
-describe("lerpDescendOntoDrive", () => {
+describe("droneTiltT", () => {
   const pad = { top: 0, bottom: 0, left: 0, right: 0 };
-  const from = {
+  const overview = {
     lng: -90,
     lat: 38,
-    zoom: 7.5,
+    zoom: 8,
     pitch: 0,
     bearing: 0,
     padding: pad,
     offset: [0, 0] as [number, number],
   };
-  const to = {
-    lng: -90.4,
-    lat: 38.5,
+  const drive = {
+    lng: -90.1,
+    lat: 38.1,
+    zoom: 16.6,
+    pitch: 68,
+    bearing: 40,
+    padding: pad,
+    offset: [0, 200] as [number, number],
+  };
+
+  it("holds pitch near the start while zooming in, then tips — still continuous", () => {
+    expect(droneTiltT(overview, drive, 0)).toBe(0);
+    expect(droneTiltT(overview, drive, 0.2)).toBe(0);
+    expect(droneTiltT(overview, drive, 0.6)).toBeGreaterThan(0.2);
+    expect(droneTiltT(overview, drive, 1)).toBe(1);
+    const early = lerpMapDronePose(overview, drive, 0.22);
+    expect(early.pitch).toBeLessThan(4);
+    expect(early.zoom).toBeGreaterThan(overview.zoom + 1);
+  });
+
+  it("flattens first when pulling up from Drive", () => {
+    expect(droneTiltT(drive, overview, 0.5)).toBeGreaterThan(0.9);
+    expect(droneTiltT(drive, overview, 1)).toBe(1);
+    const mid = lerpMapDronePose(drive, overview, 0.5);
+    expect(mid.pitch).toBeLessThan(8);
+    expect(mid.zoom).toBeGreaterThan(overview.zoom);
+    expect(mid.zoom).toBeLessThan(drive.zoom);
+  });
+});
+
+describe("mapDroneDurationMs", () => {
+  const pad = { top: 0, bottom: 0, left: 0, right: 0 };
+  const drive = {
+    lng: -90,
+    lat: 38,
     zoom: 16.6,
     pitch: 68,
     bearing: 90,
-    padding: { top: 172, bottom: 156, left: 104, right: 104 },
-    offset: [0, 220] as [number, number],
+    padding: pad,
+    offset: [0, 200] as [number, number],
+  };
+  const map = {
+    ...drive,
+    zoom: 16.2,
+    pitch: 0,
+    bearing: 0,
+    offset: [0, 0] as [number, number],
+  };
+  const route = {
+    lng: -90.3,
+    lat: 38.4,
+    zoom: 8,
+    pitch: 0,
+    bearing: 0,
+    padding: pad,
+    offset: [0, 0] as [number, number],
   };
 
-  it("uses the descend path for overview → Drive", () => {
-    expect(shouldDescendOntoDrive(from, to)).toBe(true);
-    expect(shouldDescendOntoDrive(to, from)).toBe(false);
-    expect(MAP_VIEW_DESCEND_MS).toBeGreaterThan(MAP_VIEW_FLY_MS);
+  it("gives a longer shot to a big zoom than a Dr↔Mp tilt", () => {
+    const tilt = mapDroneDurationMs(drive, map);
+    const dive = mapDroneDurationMs(route, drive);
+    expect(tilt).toBeGreaterThanOrEqual(MAP_VIEW_FLY_MS);
+    expect(dive).toBeGreaterThan(tilt);
+    expect(dive).toBeLessThanOrEqual(MAP_VIEW_FLY_MAX_MS);
   });
+});
 
-  it("never leaves the puck — center is the Drive target the whole dive", () => {
-    const start = lockDescendStartToPuck(from, to);
-    expect(start.lng).toBe(to.lng);
-    expect(start.lat).toBe(to.lat);
-    expect(start.zoom).toBe(from.zoom);
-    for (const u of [0, 0.2, 0.45, 0.7, 1]) {
-      const pose = lerpDescendOntoDrive(start, to, u);
-      expect(pose.lng).toBe(to.lng);
-      expect(pose.lat).toBe(to.lat);
-    }
-  });
-
-  it("hovers then zooms down before pitching behind the puck", () => {
-    const start = lockDescendStartToPuck(from, to);
-    const hover = lerpDescendOntoDrive(start, to, 0.08);
-    expect(hover.zoom).toBeCloseTo(from.zoom, 1);
-    expect(hover.pitch).toBeLessThan(4);
-    const mid = lerpDescendOntoDrive(start, to, 0.5);
-    expect(mid.zoom).toBeGreaterThan((from.zoom + to.zoom) / 2);
-    expect(mid.pitch).toBeLessThan(12);
-    const late = lerpDescendOntoDrive(start, to, 0.92);
-    expect(late.pitch).toBeGreaterThan(to.pitch * 0.7);
-    expect(late.zoom).toBeGreaterThan(to.zoom - 0.8);
+describe("droneLookAtScreen", () => {
+  it("slides the puck from its current pixel to the destination yard-line", () => {
+    const lookAt = {
+      lng: -90,
+      lat: 38,
+      fromScreen: { x: 40, y: 60 },
+      toAnchor: { x: 200, y: 500 },
+    };
+    expect(droneLookAtScreen(lookAt, 0)).toEqual(lookAt.fromScreen);
+    expect(droneLookAtScreen(lookAt, 1)).toEqual(lookAt.toAnchor);
+    const mid = droneLookAtScreen(lookAt, 0.5);
+    expect(mid.x).toBeGreaterThan(40);
+    expect(mid.x).toBeLessThan(200);
   });
 });

@@ -14,11 +14,10 @@ import {
 import { reportAppHealthRepair } from "../monitoring/appHealthSignals";
 import { resolveJeffSupervisorRecovery } from "../monitoring/jeffSupervisor";
 import { reportJeffSighting, noteForJeffDomain } from "./jeffTheBot";
-
-/** Puck drift needs a snappier poll — on a frozen map the puck climbs the route fast. */
-const POLL_MS = 1_500;
-/** Minimum spacing between automatic camera resyncs — avoid fighting a real GPS-noise blip. */
-const REPAIR_COOLDOWN_MS = 15_000;
+import {
+  DRIVE_CAMERA_HEALTH_POLL_MS,
+  jeffRepairCooldownMs,
+} from "./driveCameraRules";
 
 export type UseDriveCameraHealthDeps = {
   navigationStarted: boolean;
@@ -133,7 +132,11 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
       }
 
       const now = Date.now();
-      if (now - lastRepairAtRef.current < REPAIR_COOLDOWN_MS) return;
+      const cool = jeffRepairCooldownMs({
+        puckReady,
+        puckSevere: puckReady && puckAudit.severe,
+      });
+      if (now - lastRepairAtRef.current < cool) return;
       lastRepairAtRef.current = now;
       headingBadStreakRef.current = 0;
       puckBadStreakRef.current = 0;
@@ -160,7 +163,7 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
     };
 
     tick();
-    const id = window.setInterval(tick, POLL_MS);
+    const id = window.setInterval(tick, DRIVE_CAMERA_HEALTH_POLL_MS);
     return () => window.clearInterval(id);
   }, [
     navigationStarted,

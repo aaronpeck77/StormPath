@@ -3,12 +3,19 @@ import {
   bumpDriveDiag,
   driveDiagSnapshot,
   formatDriveDiagLines,
+  hydrateDriveDiagFromJson,
+  persistDriveDiagNow,
   resetDriveDiag,
   setDriveDiagRoadControls,
 } from "../driveDiagnostics";
 
 describe("driveDiagnostics", () => {
   beforeEach(() => {
+    try {
+      sessionStorage.removeItem("stormpath.driveDiag.v1");
+    } catch {
+      /* node */
+    }
     resetDriveDiag(1_000);
   });
 
@@ -43,7 +50,7 @@ describe("driveDiagnostics", () => {
     bumpDriveDiag("camParkedHold", 9);
     bumpDriveDiag("camWriteFailed", 1);
     const lines = formatDriveDiagLines(driveDiagSnapshot(), 61_000);
-    expect(lines[1]).toBe("Camera: 12 applied, 9 parked holds, 1 write fails");
+    expect(lines[1]).toBe("Camera: 12 applied, 9 parked holds, 1 write fails, 0 reclaims");
   });
 
   /* The 42s field trip reported 2519 applies against ~42 samples — a per-frame bump. */
@@ -60,6 +67,25 @@ describe("driveDiagnostics", () => {
     bumpDriveDiag("tileWarmFailed", 1);
     const lines = formatDriveDiagLines(driveDiagSnapshot(), 61_000);
     expect(lines[2]).toBe("Signal: 3 map holds, tiles 4 warm / 1 failed");
+  });
+
+  it("shows a sub-minute trip in seconds so a 0.6s dump is obvious", () => {
+    const lines = formatDriveDiagLines(driveDiagSnapshot(), 1_600);
+    expect(lines[0]).toContain("0.6 s");
+  });
+
+  it("survives an in-memory wipe the way a Core reconnect used to", () => {
+    bumpDriveDiag("coreSamples", 40);
+    bumpDriveDiag("camApplied", 38);
+    persistDriveDiagNow();
+    const raw = JSON.stringify(driveDiagSnapshot());
+    resetDriveDiag(9_000);
+    expect(driveDiagSnapshot().coreSamples).toBe(0);
+    hydrateDriveDiagFromJson(raw);
+    const snap = driveDiagSnapshot();
+    expect(snap.coreSamples).toBe(40);
+    expect(snap.camApplied).toBe(38);
+    expect(snap.startedAtMs).toBe(1_000);
   });
 
   it("clears counters on the next Go", () => {

@@ -25,9 +25,11 @@ export const DRIVE_PUCK_BLEND_STATIONARY_TC_S = 2.4;
 /** Along-meters latch while snapped — longer = less along-route jitter. */
 export const DRIVE_SNAP_ALONG_TC_S = 0.45;
 
-/** Camera bearing toward travel / anticipated route. */
+/** Camera bearing toward travel / anticipated route — cruise (straight) only.
+ *  Corners use driveBearingCatchUp in driveCameraRules.ts so the map
+ *  rights itself instead of dragging the old heading through the turn. */
 export const DRIVE_CAMERA_BEARING_TC_S = 1.0;
-/** Cap per-frame bearing change so a bad tangent cannot whip the map. */
+/** Cap per-frame bearing change on cruise so a bad tangent cannot whip the map. */
 export const DRIVE_CAMERA_BEARING_MAX_STEP_DEG = 6.5;
 
 /**

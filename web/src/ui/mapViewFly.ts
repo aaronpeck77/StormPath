@@ -2,17 +2,18 @@ import type { Map } from "mapbox-gl";
 import type { MapViewMode } from "./driveMapTypes";
 import type { LngLat } from "../nav/types";
 import { isMapReadyForFollowCam, readMapLngLat, safePanToCenter } from "./mapCameraSafe";
+import { centerForPuckScreenAnchor } from "./driveFollowCamAnchor";
 
 /**
- * Continuous "drone" move between Dr / Mp / Rt.
- * Mapbox flyTo zooms out then in (two shots). We lerp pose every frame instead.
+ * Dr / Mp / Rt is one drone shot. Never a cut.
+ *
+ * Mapbox flyTo zooms out then in (two images). lockDescendStartToPuck jumped
+ * the center onto the puck at overview zoom (another cut). This file is the
+ * only writer while the shot is in the air: lerp every channel from the live
+ * camera to the target pose. Follow-cam / fit / snap yield until it lands.
  */
-export const MAP_VIEW_FLY_MS = 1100;
-/** Rt → Dr bird-dive: hover on the puck, zoom down, then settle behind. */
-export const MAP_VIEW_DESCEND_MS = 2100;
-
-/** Keep the puck visually centered while diving — Drive chrome only in the settle. */
-export const DESCEND_DIVE_PADDING = { top: 72, bottom: 72, left: 40, right: 40 };
+export const MAP_VIEW_FLY_MS = 1200;
+export const MAP_VIEW_FLY_MAX_MS = 2000;
 
 export type MapDronePose = {
   lng: number;
@@ -24,12 +25,18 @@ export type MapDronePose = {
   offset: [number, number];
 };
 
+export type MapDroneLookAt = {
+  lng: number;
+  lat: number;
+  fromScreen: { x: number; y: number };
+  toAnchor: { x: number; y: number };
+};
+
 export const ZERO_DRONE_PADDING = { top: 0, bottom: 0, left: 0, right: 0 };
 
 export function shouldAnimateMapViewFly(input: {
   prevViewMode: MapViewMode | null;
   nextViewMode: MapViewMode;
-  userExploring?: boolean;
   destPlaceHold?: boolean;
   offRouteCompare?: boolean;
   routeCompare?: boolean;
@@ -38,8 +45,14 @@ export function shouldAnimateMapViewFly(input: {
   if (input.prevViewMode === input.nextViewMode) return false;
   if (input.destPlaceHold) return false;
   if (input.offRouteCompare || input.routeCompare) return false;
-  if (input.userExploring) return false;
+  /* A pinch/pan on Mp or Rt must not cancel the drone. The shot starts from the
+   * live camera (wherever they were looking) and lands on the tapped view. */
   return true;
+}
+
+/** Drive and Map keep the puck in the shot; Route pans out to the trip. */
+export function shouldTrackPuckThroughDrone(nextViewMode: MapViewMode): boolean {
+  return nextViewMode === "drive" || nextViewMode === "topdown";
 }
 
 export function shortestBearingDeltaDeg(from: number, to: number): number {
@@ -59,75 +72,76 @@ function mix(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
-export function lerpMapDronePose(from: MapDronePose, to: MapDronePose, u: number): MapDronePose {
-  const t = mapDroneEase(u);
-  const bearing = from.bearing + shortestBearingDeltaDeg(from.bearing, to.bearing) * t;
-  return {
-    lng: mix(from.lng, to.lng, t),
-    lat: mix(from.lat, to.lat, t),
-    zoom: mix(from.zoom, to.zoom, t),
-    pitch: mix(from.pitch, to.pitch, t),
-    bearing: ((bearing % 360) + 360) % 360,
-    padding: {
-      top: mix(from.padding.top, to.padding.top, t),
-      bottom: mix(from.padding.bottom, to.padding.bottom, t),
-      left: mix(from.padding.left, to.padding.left, t),
-      right: mix(from.padding.right, to.padding.right, t),
-    },
-    offset: [
-      mix(from.offset[0], to.offset[0], t),
-      mix(from.offset[1], to.offset[1], t),
-    ],
-  };
-}
-
 function segmentEase(u: number, start: number, end: number): number {
   if (end <= start) return u >= end ? 1 : 0;
-  return mapDroneEase((u - start) / (end - start));
+  const x = Math.max(0, Math.min(1, u));
+  if (x <= start) return 0;
+  if (x >= end) return 1;
+  return mapDroneEase((x - start) / (end - start));
 }
 
 /**
- * Wide overview → Drive. The puck stays on screen the whole time: lock the
- * camera on it at overview zoom, zoom down like a bird, then pitch behind.
- * Panning from the route centroid while zooming is what made the map rush past.
+ * Zoom-in: pan/zoom first, tip into Drive later (still one shot — pitch never jumps).
+ * Zoom-out: flatten first, then pull up. Same-zoom (Dr↔Mp): everything together.
  */
-export function shouldDescendOntoDrive(from: MapDronePose, to: MapDronePose): boolean {
-  return to.zoom - from.zoom >= 2.4 && to.pitch - from.pitch >= 20;
+export function droneTiltT(from: MapDronePose, to: MapDronePose, u: number): number {
+  const zoomingIn = to.zoom - from.zoom >= 1.2;
+  const zoomingOut = from.zoom - to.zoom >= 1.2;
+  if (zoomingIn) return segmentEase(u, 0.28, 1);
+  if (zoomingOut) return segmentEase(u, 0, 0.55);
+  return mapDroneEase(u);
 }
 
-/** First frame of the dive: same altitude, already looking at the puck. */
-export function lockDescendStartToPuck(from: MapDronePose, to: MapDronePose): MapDronePose {
+export function mapDroneDurationMs(from: MapDronePose, to: MapDronePose): number {
+  const z = Math.abs(to.zoom - from.zoom);
+  const p = Math.abs(to.pitch - from.pitch);
+  const b = Math.abs(shortestBearingDeltaDeg(from.bearing, to.bearing));
+  const ms = MAP_VIEW_FLY_MS + z * 90 + p * 5 + b * 2;
+  return Math.max(MAP_VIEW_FLY_MS, Math.min(MAP_VIEW_FLY_MAX_MS, Math.round(ms)));
+}
+
+export function posesNearlyEqual(a: MapDronePose, b: MapDronePose, eps = 1e-4): boolean {
+  if (Math.abs(a.lng - b.lng) > eps) return false;
+  if (Math.abs(a.lat - b.lat) > eps) return false;
+  if (Math.abs(a.zoom - b.zoom) > 1e-3) return false;
+  if (Math.abs(a.pitch - b.pitch) > 1e-3) return false;
+  if (Math.abs(shortestBearingDeltaDeg(a.bearing, b.bearing)) > 1e-2) return false;
+  return true;
+}
+
+/**
+ * Continuous pose. u=0 is exactly `from` (no teleport). u=1 is exactly `to`.
+ * Zoom never reverses. Pitch/offset may lag on a zoom-in but they start at `from`.
+ */
+export function lerpMapDronePose(from: MapDronePose, to: MapDronePose, u: number): MapDronePose {
+  const x = Math.max(0, Math.min(1, u));
+  const mainT = mapDroneEase(x);
+  const tiltT = droneTiltT(from, to, x);
+  const bearing = from.bearing + shortestBearingDeltaDeg(from.bearing, to.bearing) * mainT;
   return {
-    ...from,
-    lng: to.lng,
-    lat: to.lat,
-    padding: { ...DESCEND_DIVE_PADDING },
-    offset: [0, 0],
+    lng: mix(from.lng, to.lng, mainT),
+    lat: mix(from.lat, to.lat, mainT),
+    zoom: mix(from.zoom, to.zoom, mainT),
+    pitch: mix(from.pitch, to.pitch, tiltT),
+    bearing: ((bearing % 360) + 360) % 360,
+    padding: {
+      top: mix(from.padding.top, to.padding.top, mainT),
+      bottom: mix(from.padding.bottom, to.padding.bottom, mainT),
+      left: mix(from.padding.left, to.padding.left, mainT),
+      right: mix(from.padding.right, to.padding.right, mainT),
+    },
+    offset: [
+      mix(from.offset[0], to.offset[0], tiltT),
+      mix(from.offset[1], to.offset[1], tiltT),
+    ],
   };
 }
 
-export function lerpDescendOntoDrive(from: MapDronePose, to: MapDronePose, u: number): MapDronePose {
-  const x = Math.max(0, Math.min(1, u));
-  const zoomT = segmentEase(x, 0.1, 0.68);
-  const settleT = segmentEase(x, 0.58, 1);
-  const bearing = from.bearing + shortestBearingDeltaDeg(from.bearing, to.bearing) * settleT;
-  const divePad = from.padding;
+export function droneLookAtScreen(lookAt: MapDroneLookAt, u: number): { x: number; y: number } {
+  const t = mapDroneEase(u);
   return {
-    lng: to.lng,
-    lat: to.lat,
-    zoom: mix(from.zoom, to.zoom, zoomT),
-    pitch: mix(from.pitch, to.pitch, settleT),
-    bearing: ((bearing % 360) + 360) % 360,
-    padding: {
-      top: mix(divePad.top, to.padding.top, settleT),
-      bottom: mix(divePad.bottom, to.padding.bottom, settleT),
-      left: mix(divePad.left, to.padding.left, settleT),
-      right: mix(divePad.right, to.padding.right, settleT),
-    },
-    offset: [
-      mix(from.offset[0], to.offset[0], settleT),
-      mix(from.offset[1], to.offset[1], settleT),
-    ],
+    x: mix(lookAt.fromScreen.x, lookAt.toAnchor.x, t),
+    y: mix(lookAt.fromScreen.y, lookAt.toAnchor.y, t),
   };
 }
 
@@ -182,4 +196,34 @@ export function applyMapDronePose(map: Map, pose: MapDronePose): boolean {
     duration: 0,
     essential: true,
   });
+}
+
+/**
+ * Write one interpolated frame. When `lookAt` is set (Dr / Mp), the puck's
+ * screen position slides from where it is now to the destination yard-line —
+ * the camera pans to keep it, instead of leaping to it.
+ */
+export function applyContinuousDroneFrame(
+  map: Map,
+  from: MapDronePose,
+  to: MapDronePose,
+  u: number,
+  lookAt: MapDroneLookAt | null
+): MapDronePose {
+  const pose = lerpMapDronePose(from, to, u);
+  applyMapDronePose(map, pose);
+  if (!lookAt) return pose;
+  const anchor = droneLookAtScreen(lookAt, u);
+  const next = centerForPuckScreenAnchor({
+    project: (ll) => map.project(ll),
+    unproject: (pt) => map.unproject(pt),
+    center: [pose.lng, pose.lat],
+    puck: [lookAt.lng, lookAt.lat],
+    anchor,
+    minShiftPx: 0.25,
+  });
+  if (!next) return pose;
+  const corrected: MapDronePose = { ...pose, lng: next[0], lat: next[1] };
+  applyMapDronePose(map, corrected);
+  return corrected;
 }
