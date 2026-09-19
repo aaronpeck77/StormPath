@@ -18,6 +18,7 @@ import {
   DRIVE_CAMERA_HEALTH_POLL_MS,
   jeffRepairCooldownMs,
 } from "./driveCameraRules";
+import { noteDriveDiagJeffResync } from "../nav/driveDiagnostics";
 
 export type UseDriveCameraHealthDeps = {
   navigationStarted: boolean;
@@ -144,7 +145,10 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
       /* Prefer the more specific puck note when that's what fired; otherwise camera. */
       if (puckReady) {
         const actions = repairActionsForDrivePuckIssues(puckAudit.issues);
-        if (recovery === "resync_camera" && actions.includes("resync_camera")) onResyncCamera();
+        if (recovery === "resync_camera" && actions.includes("resync_camera")) {
+          onResyncCamera();
+          noteDriveDiagJeffResync();
+        }
         reportAppHealthRepair("drive_puck", puckAudit.issues, actions);
         reportJeffSighting("drive_puck", noteForJeffDomain("drive_puck"));
         if (import.meta.env.DEV) {
@@ -154,7 +158,10 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
       }
 
       const actions = repairActionsForDriveCameraIssues(headingAudit.issues);
-      if (recovery === "resync_camera" && actions.includes("resync_camera")) onResyncCamera();
+      if (recovery === "resync_camera" && actions.includes("resync_camera")) {
+        onResyncCamera();
+        noteDriveDiagJeffResync();
+      }
       reportAppHealthRepair("drive_camera", headingAudit.issues, actions);
       reportJeffSighting("drive_camera", noteForJeffDomain("drive_camera"));
       if (import.meta.env.DEV) {

@@ -19,6 +19,34 @@ export const FOLLOW_CAM_STALL_DRIFT_PX = 110;
 /** Consecutive stalled frames before jumpTo (avoids a one-frame flash). */
 export const FOLLOW_CAM_STALL_FRAMES_BEFORE_JUMP = 3;
 
+/**
+ * App-online stays true for a 2.5s Wi‑Fi→cell grace so GO does not freeze.
+ * The map must hold as soon as native radio is down — that grace is what
+ * walked the camera onto missing tiles (432: 718 write fails, flashes).
+ */
+export function shouldApplyMapHoldOnNativeRadioDown(input: {
+  nativeConnected: boolean | null;
+  navigationStarted: boolean;
+  alreadyHolding: boolean;
+}): boolean {
+  return input.nativeConnected === false && (input.navigationStarted || input.alreadyHolding);
+}
+
+/** Failed yard-line pans in a row before we freeze the last good picture. */
+export const WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE = 3;
+
+/** Do not walk the camera onto uncached tiles. Resync is the one snap when the radio returns. */
+export function shouldFreezeFollowCamOnWeakTiles(input: {
+  holdTiles: boolean;
+  writeFailStreak: number;
+  resync: boolean;
+  failFreezeAfter?: number;
+}): boolean {
+  if (input.resync) return false;
+  if (input.holdTiles) return true;
+  return input.writeFailStreak >= (input.failFreezeAfter ?? WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE);
+}
+
 export function shouldHoldLastGoodMap(input: {
   navigatorOnLine: boolean;
   /** iOS Network plugin. When true, ignore a stuck `navigator.onLine === false`. */

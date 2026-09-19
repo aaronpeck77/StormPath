@@ -3,10 +3,76 @@ import {
   allowAutomaticFollowCamResync,
   allowBasemapStyleReload,
   allowFollowCamJumpToFallback,
+  shouldApplyMapHoldOnNativeRadioDown,
   shouldClearHeldMapMatch,
   shouldClearLastGoodMapHold,
+  shouldFreezeFollowCamOnWeakTiles,
   shouldHoldLastGoodMap,
 } from "../mapLowSignalResilience";
+
+describe("shouldApplyMapHoldOnNativeRadioDown", () => {
+  it("holds the map during GO as soon as native radio is down", () => {
+    expect(
+      shouldApplyMapHoldOnNativeRadioDown({
+        nativeConnected: false,
+        navigationStarted: true,
+        alreadyHolding: false,
+      })
+    ).toBe(true);
+  });
+
+  it("does not hold while planning just because native is down", () => {
+    expect(
+      shouldApplyMapHoldOnNativeRadioDown({
+        nativeConnected: false,
+        navigationStarted: false,
+        alreadyHolding: false,
+      })
+    ).toBe(false);
+  });
+
+  it("keeps an existing hold if native is still down", () => {
+    expect(
+      shouldApplyMapHoldOnNativeRadioDown({
+        nativeConnected: false,
+        navigationStarted: false,
+        alreadyHolding: true,
+      })
+    ).toBe(true);
+  });
+});
+
+describe("shouldFreezeFollowCamOnWeakTiles", () => {
+  it("freezes on a tile hold so the camera does not walk onto missing tiles", () => {
+    expect(
+      shouldFreezeFollowCamOnWeakTiles({
+        holdTiles: true,
+        writeFailStreak: 0,
+        resync: false,
+      })
+    ).toBe(true);
+  });
+
+  it("freezes after a few failed pans even before the supervisor hold latches", () => {
+    expect(
+      shouldFreezeFollowCamOnWeakTiles({
+        holdTiles: false,
+        writeFailStreak: 3,
+        resync: false,
+      })
+    ).toBe(true);
+  });
+
+  it("allows one snap when the radio returns", () => {
+    expect(
+      shouldFreezeFollowCamOnWeakTiles({
+        holdTiles: true,
+        writeFailStreak: 8,
+        resync: true,
+      })
+    ).toBe(false);
+  });
+});
 
 describe("shouldHoldLastGoodMap", () => {
   it("holds immediately when the browser says offline", () => {

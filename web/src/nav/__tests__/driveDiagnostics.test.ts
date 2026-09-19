@@ -7,10 +7,15 @@ import {
   noteViewDroneEnd,
   noteViewDroneSkip,
   noteViewDroneStart,
+  noteDriveDiagCamFailStreak,
+  noteDriveDiagCamFreeze,
+  noteDriveDiagJeffResync,
+  noteDriveDiagRadioHold,
   noteViewDroneTap,
   persistDriveDiagNow,
   resetDriveDiag,
   setDriveDiagRoadControls,
+  setDriveDiagRouteLengthM,
 } from "../driveDiagnostics";
 
 describe("driveDiagnostics", () => {
@@ -70,7 +75,7 @@ describe("driveDiagnostics", () => {
     bumpDriveDiag("tileWarmDone", 4);
     bumpDriveDiag("tileWarmFailed", 1);
     const lines = formatDriveDiagLines(driveDiagSnapshot(), 61_000);
-    expect(lines[2]).toBe("Signal: 3 map holds, tiles 4 warm / 1 failed");
+    expect(lines[3]).toBe("Signal: 3 map holds, tiles 4 warm / 1 failed");
   });
 
   it("shows a sub-minute trip in seconds so a 0.6s dump is obvious", () => {
@@ -137,10 +142,10 @@ describe("driveDiagnostics", () => {
     expect(snap.droneTrail).toContain("Rt>Dr noFrom");
 
     const lines = formatDriveDiagLines(snap, 8_000);
-    expect(lines[4]).toContain("3 taps");
-    expect(lines[4]).toContain("2 start / 2 done");
-    expect(lines[6]).toContain("last Rt>Dr");
-    expect(lines[7]).toContain("Dr>Mp ok 1402ms");
+    expect(lines[6]).toContain("3 taps");
+    expect(lines[6]).toContain("2 start / 2 done");
+    expect(lines[8]).toContain("last Rt>Dr");
+    expect(lines[9]).toContain("Dr>Mp ok 1402ms");
   });
 
   it("records a pre-shot wait so a 5s Dr>Mp hitch is visible", () => {
@@ -148,6 +153,22 @@ describe("driveDiagnostics", () => {
     noteViewDroneStart();
     noteViewDroneEnd("done", 0, 1401, 3720);
     expect(driveDiagSnapshot().droneTrail).toContain("Dr>Mp ok 1401ms wait3720");
+  });
+
+  it("reports radio holds, trip size, and cam health without coordinates", () => {
+    setDriveDiagRouteLengthM(90_000);
+    noteDriveDiagRadioHold(true, 1_000);
+    noteDriveDiagRadioHold(false, 13_000);
+    noteDriveDiagCamFreeze();
+    noteDriveDiagCamFailStreak(12);
+    noteDriveDiagJeffResync();
+    const lines = formatDriveDiagLines(driveDiagSnapshot(), 20_000);
+    expect(lines[0]).toContain("50-100mi");
+    expect(lines[2]).toContain("freeze 1");
+    expect(lines[2]).toContain("max fail streak 12");
+    expect(lines[2]).toContain("Jeff 1");
+    expect(lines[4]).toBe("Radio: 1 holds (12s, longest 12s)");
+    expect(lines.join("\n")).not.toMatch(/-?\d+\.\d{3},/);
   });
 
   it("keeps view-drone counters across a Core reconnect hydrate", () => {

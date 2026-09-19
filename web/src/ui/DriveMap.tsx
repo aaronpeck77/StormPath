@@ -83,12 +83,16 @@ import { applyRoadControlLayers } from "./mapRoadControlLayers";
 import { displayedRoadControls } from "../nav/roadControls";
 import {
   bumpDriveDiag,
+  noteDriveDiagCamFailStreak,
+  noteDriveDiagCamFreeze,
   noteViewDroneEnd,
   noteViewDroneSkip,
   noteViewDroneStart,
   noteViewDroneTap,
   noteViewDroneWriteFail,
+  setDriveDiagCamWriter,
   setDriveDiagRoadControls,
+  setDriveDiagRouteLengthM,
 } from "../nav/driveDiagnostics";
 import {
   boundsFromGeometry,
@@ -152,7 +156,11 @@ import {
 } from "../nav/nativeDriveMapShell";
 import { isNativeMapboxNavPlatform } from "../nav/useNativeNavSession";
 import { StormpathMapboxNavigation } from "@stormpath/mapbox-navigation";
-import { allowBasemapStyleReload } from "./mapLowSignalResilience";
+import {
+  allowBasemapStyleReload,
+  shouldFreezeFollowCamOnWeakTiles,
+  WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE,
+} from "./mapLowSignalResilience";
 import {
   DRIVE_FOLLOW_ZOOM_DEFAULT,
   DRIVE_FOLLOW_ZOOM_MIN,
@@ -761,6 +769,12 @@ function DriveMapInner({
   );
   const [mapReady, setMapReady] = useState(false);
   const [mapResumeTick, setMapResumeTick] = useState(0);
+
+  useEffect(() => {
+    if (navigationStarted && sessionRouteLengthM > 0) {
+      setDriveDiagRouteLengthM(sessionRouteLengthM);
+    }
+  }, [navigationStarted, sessionRouteLengthM]);
 
   const stopViewDrone = (end: "abort" | "silent" = "abort") => {
     const wasLive = viewDroneActiveRef.current;
@@ -1894,6 +1908,8 @@ function DriveMapInner({
     let driveCamFrame = 0;
     let followWriter: FollowCamWriter = followCamWriterRef.current;
     let followHoldFalseSinceMs: number | null = followWriter === "hard" ? null : Date.now();
+    let followWriteFailStreak = 0;
+    let camFreezeLatched = false;
     let puckReclaimLatched = false;
     const DRIVE_CAM_FORCE_RESYNC_FRAMES = 75;
 
@@ -2179,7 +2195,6 @@ function DriveMapInner({
               reportPuckSight(map, camCenter, easeCached.padding, easeCached.offset),
               effSp
             );
-            const holdTiles = holdLastGoodMapRef.current || !isOnlineRef.current;
             /* Stopped at a light, Core keeps reporting wobble. Writing it straight to the
              * camera is the twitch — the puck's own damping never sees this path. */
             const parkedHold =
@@ -2215,9 +2230,24 @@ function DriveMapInner({
             } else if (!parkedHold) {
               parkedHoldCountedRef.current = false;
             }
-            if (holdTiles !== lowSignalHeldRef.current) {
-              lowSignalHeldRef.current = holdTiles;
-              if (holdTiles) bumpDriveDiag("lowSignalHolds");
+            const radioHold = holdLastGoodMapRef.current || !isOnlineRef.current;
+            const holdTiles = radioHold || followWriteFailStreak >= WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE;
+            if (radioHold !== lowSignalHeldRef.current) {
+              const wasHold = lowSignalHeldRef.current;
+              lowSignalHeldRef.current = radioHold;
+              if (radioHold) bumpDriveDiag("lowSignalHolds");
+              if (wasHold && !radioHold) driveCamResyncRef.current = true;
+            }
+            const freezeCam = shouldFreezeFollowCamOnWeakTiles({
+              holdTiles,
+              writeFailStreak: followWriteFailStreak,
+              resync: driveCamResyncRef.current,
+            });
+            if (freezeCam && !camFreezeLatched) {
+              camFreezeLatched = true;
+              noteDriveDiagCamFreeze();
+            } else if (!freezeCam) {
+              camFreezeLatched = false;
             }
             const latched = advanceFollowCamWriter({
               holdTiles,
@@ -2228,6 +2258,7 @@ function DriveMapInner({
             followWriter = latched.writer;
             followHoldFalseSinceMs = latched.holdFalseSinceMs;
             followCamWriterRef.current = followWriter;
+            setDriveDiagCamWriter(followWriter);
             /* setCenter has no Mapbox `offset`, so a plain hard write centers the puck —
              * that is the climb toward the top of the screen on a dead cell. Shift the
              * center by the same pixel delta the yard-line offset would have applied. */
@@ -2267,7 +2298,7 @@ function DriveMapInner({
               return true;
             };
             let applied = false;
-            if (!parkedHold && needsWrite) {
+            if (!parkedHold && needsWrite && !freezeCam) {
               if (followWriter === "hard") {
                 applied = hardWrite();
               } else {
@@ -2285,9 +2316,13 @@ function DriveMapInner({
                   applied = hardWrite();
                 }
               }
-              /* A pan that returns false is the radio / tile stall showing up —
-               * the old counter sat behind the disabled fallback and read 0 forever. */
-              if (!applied) bumpDriveDiag("camWriteFailed");
+              if (!applied) {
+                followWriteFailStreak += 1;
+                noteDriveDiagCamFailStreak(followWriteFailStreak);
+                bumpDriveDiag("camWriteFailed");
+              } else {
+                followWriteFailStreak = 0;
+              }
             }
             if (applied) {
               lastDroneOffsetRef.current = easeCached.offset;
@@ -2399,6 +2434,16 @@ function DriveMapInner({
                * them when tiles flap looks like the puck leaping forward/back.
                * Hard only while tiles are held (+ clear delay). Failed pan skips. */
               const holdTiles = holdLastGoodMapRef.current || !isOnlineRef.current;
+              if (
+                shouldFreezeFollowCamOnWeakTiles({
+                  holdTiles,
+                  writeFailStreak: followWriteFailStreak,
+                  resync: forceCamSync,
+                })
+              ) {
+                raf = requestAnimationFrame(loop);
+                return;
+              }
               const latched = advanceFollowCamWriter({
                 holdTiles,
                 writer: followWriter,

@@ -15,7 +15,11 @@ import {
 import { NETWORK_RECONNECT_POLL_MS } from "./networkConnectivity";
 import { buildFieldReport, supervisorWatch } from "./supervisorWatchList";
 import type { SupervisorBusyFlag, SupervisorWatchId } from "./supervisorWatchList";
-import { shouldClearLastGoodMapHold } from "../ui/mapLowSignalResilience";
+import { noteDriveDiagRadioHold } from "../nav/driveDiagnostics";
+import {
+  shouldApplyMapHoldOnNativeRadioDown,
+  shouldClearLastGoodMapHold,
+} from "../ui/mapLowSignalResilience";
 
 export type UseFieldSupervisorDeps = {
   routing: boolean;
@@ -140,6 +144,7 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
     holdHealthySinceMsRef.current = null;
     setReachable(false);
     setHoldLastGoodMap(true);
+    noteDriveDiagRadioHold(true);
     if (wasHold) return;
     const now = Date.now();
     const isRepeat =
@@ -157,6 +162,7 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
     holdHealthySinceMsRef.current = null;
     setReachable(true);
     setHoldLastGoodMap(false);
+    noteDriveDiagRadioHold(false);
   };
 
   const maybeClearHoldAfterHealthy = () => {
@@ -186,7 +192,18 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
       const startedAt = Date.now();
       const native = await readNativeNetworkConnected();
       if (cancelled) return;
-      /* Native false while isOnline is still true = Wi‑Fi→cell grace. Do not hold yet. */
+      /* isOnline can stay true during the 2.5s Wi‑Fi→cell grace. Hold the map
+       * immediately so follow-cam does not write into a dead radio. */
+      if (
+        shouldApplyMapHoldOnNativeRadioDown({
+          nativeConnected: native,
+          navigationStarted,
+          alreadyHolding: holdRef.current,
+        })
+      ) {
+        applyHold("map_low_signal", Date.now());
+        return;
+      }
       if (native === false) return;
       const ok = await probeMapReachability({ navigatorOnLine: true });
       if (cancelled) return;

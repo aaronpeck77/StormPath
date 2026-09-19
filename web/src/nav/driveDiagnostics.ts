@@ -53,6 +53,17 @@ export type DriveDiagSnapshot = {
   droneLast: string;
   /** Last few outcomes, e.g. Mp>Rt done · Rt>Dr fail47 */
   droneTrail: string;
+  radioHolds: number;
+  radioHoldSec: number;
+  radioHoldLongestSec: number;
+  /** Set while a hold is open so About can include the live stretch. */
+  radioHoldOpenAtMs: number | null;
+  camFreeze: number;
+  camFailStreakMax: number;
+  jeffResync: number;
+  /** Bucket only — never exact miles or a place name. */
+  routeBucket: string;
+  camWriter: string;
 };
 
 export type ViewDroneSkip =
@@ -95,6 +106,15 @@ function emptySnapshot(): DriveDiagSnapshot {
     droneWriteFail: 0,
     droneLast: "",
     droneTrail: "",
+    radioHolds: 0,
+    radioHoldSec: 0,
+    radioHoldLongestSec: 0,
+    radioHoldOpenAtMs: null,
+    camFreeze: 0,
+    camFailStreakMax: 0,
+    jeffResync: 0,
+    routeBucket: "",
+    camWriter: "",
   };
 }
 
@@ -138,6 +158,18 @@ function applyParsed(parsed: Partial<DriveDiagSnapshot>): void {
     droneWriteFail: asCount(parsed.droneWriteFail),
     droneLast: typeof parsed.droneLast === "string" ? parsed.droneLast.slice(0, 24) : "",
     droneTrail: typeof parsed.droneTrail === "string" ? parsed.droneTrail.slice(0, 160) : "",
+    radioHolds: asCount(parsed.radioHolds),
+    radioHoldSec: asCount(parsed.radioHoldSec),
+    radioHoldLongestSec: asCount(parsed.radioHoldLongestSec),
+    radioHoldOpenAtMs:
+      typeof parsed.radioHoldOpenAtMs === "number" && Number.isFinite(parsed.radioHoldOpenAtMs)
+        ? parsed.radioHoldOpenAtMs
+        : null,
+    camFreeze: asCount(parsed.camFreeze),
+    camFailStreakMax: asCount(parsed.camFailStreakMax),
+    jeffResync: asCount(parsed.jeffResync),
+    routeBucket: typeof parsed.routeBucket === "string" ? parsed.routeBucket.slice(0, 12) : "",
+    camWriter: typeof parsed.camWriter === "string" ? parsed.camWriter.slice(0, 8) : "",
   };
 }
 
@@ -213,6 +245,61 @@ export function bumpDriveDiag(key: DriveDiagKey, by = 1): void {
 
 export function setDriveDiagRoadControls(count: number): void {
   state.roadControls = Number.isFinite(count) ? Math.max(0, Math.round(count)) : 0;
+  persistDriveDiagSoon();
+}
+
+export function routeLengthBucketMi(meters: number): string {
+  if (!Number.isFinite(meters) || meters <= 0) return "";
+  const mi = meters / 1609.344;
+  if (mi < 20) return "<20mi";
+  if (mi < 50) return "20-50mi";
+  if (mi < 100) return "50-100mi";
+  return "100+mi";
+}
+
+export function setDriveDiagRouteLengthM(meters: number): void {
+  const bucket = routeLengthBucketMi(meters);
+  if (!bucket || bucket === state.routeBucket) return;
+  state.routeBucket = bucket;
+  persistDriveDiagSoon();
+}
+
+export function noteDriveDiagRadioHold(active: boolean, nowMs: number = Date.now()): void {
+  if (active) {
+    if (state.radioHoldOpenAtMs != null) return;
+    state.radioHolds += 1;
+    state.radioHoldOpenAtMs = nowMs;
+    persistDriveDiagSoon();
+    return;
+  }
+  if (state.radioHoldOpenAtMs == null) return;
+  const sec = Math.max(0, Math.round((nowMs - state.radioHoldOpenAtMs) / 1000));
+  state.radioHoldOpenAtMs = null;
+  state.radioHoldSec += sec;
+  if (sec > state.radioHoldLongestSec) state.radioHoldLongestSec = sec;
+  persistDriveDiagSoon();
+}
+
+export function noteDriveDiagCamFailStreak(streak: number): void {
+  if (!Number.isFinite(streak) || streak <= state.camFailStreakMax) return;
+  state.camFailStreakMax = Math.round(streak);
+  persistDriveDiagSoon();
+}
+
+export function noteDriveDiagCamFreeze(): void {
+  state.camFreeze += 1;
+  persistDriveDiagSoon();
+}
+
+export function noteDriveDiagJeffResync(): void {
+  state.jeffResync += 1;
+  persistDriveDiagSoon();
+}
+
+export function setDriveDiagCamWriter(writer: string): void {
+  if (writer !== "pan" && writer !== "hard") return;
+  if (state.camWriter === writer) return;
+  state.camWriter = writer;
   persistDriveDiagSoon();
 }
 
@@ -334,12 +421,24 @@ export function formatDriveDiagLines(
       ? (snap.coreSamples / (mins * 60)).toFixed(2)
       : null;
 
+  let holdSec = snap.radioHoldSec;
+  let holdLongest = snap.radioHoldLongestSec;
+  if (snap.radioHoldOpenAtMs != null) {
+    const live = Math.max(0, Math.round((nowMs - snap.radioHoldOpenAtMs) / 1000));
+    holdSec += live;
+    if (live > holdLongest) holdLongest = live;
+  }
+
   const lines = [
     `Drive: ${age ?? "just started"}, Core ${snap.coreSamples} samples${
       rate ? ` (${rate}/s)` : ""
-    }`,
+    }${snap.routeBucket ? `, ${snap.routeBucket}` : ""}`,
     `Camera: ${snap.camApplied} applied, ${snap.camParkedHold} parked holds, ${snap.camWriteFailed} write fails, ${snap.camReclaim} reclaims`,
+    `Cam health: freeze ${snap.camFreeze}, max fail streak ${snap.camFailStreakMax}, Jeff ${snap.jeffResync}${
+      snap.camWriter ? `, writer ${snap.camWriter}` : ""
+    }`,
     `Signal: ${snap.lowSignalHolds} map holds, tiles ${snap.tileWarmDone} warm / ${snap.tileWarmFailed} failed`,
+    `Radio: ${snap.radioHolds} holds (${holdSec}s, longest ${holdLongest}s)`,
     `Route: ${snap.roadControls} road controls, ${snap.offRoute} off-route`,
     `Views: ${snap.viewTaps} taps, drone ${snap.droneStarts} start / ${snap.droneDone} done / ${snap.droneAbort} abort`,
     `Skip: first ${snap.droneSkipFirst}, same ${snap.droneSkipSame}, hold ${snap.droneSkipHold}, cmp ${snap.droneSkipCompare}, wait ${snap.droneSkipNotReady}, no-to ${snap.droneFailNoTo}, no-from ${snap.droneFailNoFrom}`,
