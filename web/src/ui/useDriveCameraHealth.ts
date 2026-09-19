@@ -34,16 +34,18 @@ export type UseDriveCameraHealthDeps = {
   puckAnchorDriftPxRef?: MutableRefObject<number | null>;
   /** Bump the follow-cam resync key — re-centers the map on the puck and snaps bearing. */
   onResyncCamera: () => void;
-  /** Supervisor dead-zone hold — still resync camera; only traffic fetches stay held. */
+  /** Supervisor dead-zone hold — Jeff stands down; DriveMap snaps once when this clears. */
   holdLastGoodMap?: boolean;
+  /** App-online. False is enough to hold Jeff even if the supervisor latch is late. */
+  isOnline?: boolean;
 };
 
 /**
  * Background watchdog + self-heal for drive follow-cam: while GO is active in drive view,
  * periodically checks (1) applied camera bearing vs course-over-ground and (2) puck screen
  * position vs the fixed yard-line anchor. Either failure forces the same follow-cam resync
- * and lights up Jeff so the fix isn't invisible. Jeff reports to the supervisor:
- * dead-zone hold still resyncs the camera (tiles stay; GPS follow must not freeze).
+ * and lights up Jeff so the fix isn't invisible. Dead-zone hold freezes the
+ * last picture — Jeff must not yank (434: 331 resyncs in 8 min).
  */
 export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
   const {
@@ -57,6 +59,7 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
     puckAnchorDriftPxRef,
     onResyncCamera,
     holdLastGoodMap = false,
+    isOnline = true,
   } = deps;
 
   const prevFixRef = useRef<{ lng: number; lat: number } | null>(null);
@@ -124,6 +127,7 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
       const jeffDomain = puckReady ? "drive_puck" : "drive_camera";
       const recovery = resolveJeffSupervisorRecovery({
         holdLastGoodMap,
+        isOnline,
         domain: jeffDomain,
       });
       if (recovery === "hold_last_good_map") {
@@ -183,5 +187,6 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
     puckAnchorDriftPxRef,
     onResyncCamera,
     holdLastGoodMap,
+    isOnline,
   ]);
 }

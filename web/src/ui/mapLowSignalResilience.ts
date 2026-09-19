@@ -3,8 +3,8 @@
  *
  * The phone supervisor sets {@link shouldHoldLastGoodMap} when the radio is
  * down or a reachability probe fails. While that hold is on, keep last-good
- * **tiles** and road snap — do **not** reload the basemap or refresh traffic.
- * GPS follow-cam must keep tracking the puck on those tiles (pan / jumpTo).
+ * **tiles** and road snap — do **not** reload the basemap, refresh traffic,
+ * or yank the camera. Jeff stands down; one snap when the hold clears.
  */
 
 /** Keep hold this long after the link looks healthy again — brief cell flaps. */
@@ -35,15 +35,16 @@ export function shouldApplyMapHoldOnNativeRadioDown(input: {
 /** Failed yard-line pans in a row before we freeze the last good picture. */
 export const WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE = 3;
 
-/** Do not walk the camera onto uncached tiles. Resync is the one snap when the radio returns. */
+/** Do not walk the camera onto uncached tiles. Resync is the one snap after the hold clears. */
 export function shouldFreezeFollowCamOnWeakTiles(input: {
   holdTiles: boolean;
   writeFailStreak: number;
   resync: boolean;
   failFreezeAfter?: number;
 }): boolean {
-  if (input.resync) return false;
+  /* Hold wins over Jeff resync — 434 yanked 331 times because resync unfroze the picture. */
   if (input.holdTiles) return true;
+  if (input.resync) return false;
   return input.writeFailStreak >= (input.failFreezeAfter ?? WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE);
 }
 

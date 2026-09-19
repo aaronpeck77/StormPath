@@ -17,17 +17,23 @@ export function jeffSupervisorWatchId(domain: JeffSupervisorDomain): SupervisorW
 
 /**
  * Jeff is the supervisor's drive-map crew — same eyes, one decision.
- * Dead zone: hold last-good **tiles** / skip doomed traffic fetches, but still
- * straighten the camera when the puck has drifted off the yard-line (GPS follow
- * must keep working while Mapbox easeTo stalls under weak tiles).
+ * Dead zone: freeze the last good picture. Do not yank the camera — that was
+ * 434's 331 Jeff yanks in an 8 min park trip (115s radio hold). One snap
+ * when the hold clears (DriveMap), not a 400ms watchdog.
  */
+export function jeffShouldHoldDriveCamera(input: {
+  holdLastGoodMap: boolean;
+  isOnline?: boolean;
+}): boolean {
+  if (input.holdLastGoodMap) return true;
+  return input.isOnline === false;
+}
+
 export function resolveJeffSupervisorRecovery(input: {
   holdLastGoodMap: boolean;
   domain: JeffSupervisorDomain;
+  isOnline?: boolean;
 }): SupervisorRecovery {
-  if (input.holdLastGoodMap) {
-    if (input.domain === "live_traffic") return "hold_last_good_map";
-    return "resync_camera";
-  }
+  if (jeffShouldHoldDriveCamera(input)) return "hold_last_good_map";
   return supervisorWatch(jeffSupervisorWatchId(input.domain)).recover;
 }

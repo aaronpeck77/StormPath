@@ -63,10 +63,20 @@ describe("shouldFreezeFollowCamOnWeakTiles", () => {
     ).toBe(true);
   });
 
-  it("allows one snap when the radio returns", () => {
+  it("ignores Jeff resync while tiles are still held", () => {
     expect(
       shouldFreezeFollowCamOnWeakTiles({
         holdTiles: true,
+        writeFailStreak: 0,
+        resync: true,
+      })
+    ).toBe(true);
+  });
+
+  it("allows one snap after the hold clears", () => {
+    expect(
+      shouldFreezeFollowCamOnWeakTiles({
+        holdTiles: false,
         writeFailStreak: 8,
         resync: true,
       })

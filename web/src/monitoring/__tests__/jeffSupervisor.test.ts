@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { isAllowedRecovery } from "../supervisorWatchList";
-import { jeffSupervisorWatchId, resolveJeffSupervisorRecovery } from "../jeffSupervisor";
+import {
+  jeffShouldHoldDriveCamera,
+  jeffSupervisorWatchId,
+  resolveJeffSupervisorRecovery,
+} from "../jeffSupervisor";
 
 describe("jeffSupervisor", () => {
   it("maps Jeff domains onto supervisor watches", () => {
@@ -9,15 +13,25 @@ describe("jeffSupervisor", () => {
     expect(jeffSupervisorWatchId("live_traffic")).toBe("jeff_live_traffic");
   });
 
-  it("keeps GPS camera fixes in a dead zone; only traffic stays on hold", () => {
+  it("stands Jeff down in a dead zone — camera, puck, and traffic all hold", () => {
+    expect(jeffShouldHoldDriveCamera({ holdLastGoodMap: true })).toBe(true);
+    expect(jeffShouldHoldDriveCamera({ holdLastGoodMap: false, isOnline: false })).toBe(true);
+    expect(jeffShouldHoldDriveCamera({ holdLastGoodMap: false, isOnline: true })).toBe(false);
     expect(
       resolveJeffSupervisorRecovery({ holdLastGoodMap: true, domain: "drive_camera" })
-    ).toBe("resync_camera");
+    ).toBe("hold_last_good_map");
     expect(
       resolveJeffSupervisorRecovery({ holdLastGoodMap: true, domain: "drive_puck" })
-    ).toBe("resync_camera");
+    ).toBe("hold_last_good_map");
     expect(
       resolveJeffSupervisorRecovery({ holdLastGoodMap: true, domain: "live_traffic" })
+    ).toBe("hold_last_good_map");
+    expect(
+      resolveJeffSupervisorRecovery({
+        holdLastGoodMap: false,
+        isOnline: false,
+        domain: "drive_puck",
+      })
     ).toBe("hold_last_good_map");
   });
 

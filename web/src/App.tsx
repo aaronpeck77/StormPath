@@ -1682,6 +1682,7 @@ export default function App() {
     puckAnchorDriftPxRef: drivePuckAnchorDriftPxRef,
     onResyncCamera: resyncDriveCamera,
     holdLastGoodMap,
+    isOnline,
   });
 
   /** Background watchdog + self-heal: live Mapbox traffic / construction / closure pipeline. */
