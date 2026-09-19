@@ -140,7 +140,7 @@ import {
   smoothDriveBearingDeg,
 } from "./mapDriveCamera";
 import { headingDeltaDegrees } from "../nav/forwardRoutePick";
-import { expectedDrivePuckScreenAnchorPx, readDrivePuckAnchorDrift } from "./drivePuckHealth";
+import { readDrivePuckAnchorDrift } from "./drivePuckHealth";
 import { driveBearingCatchUp, shouldReclaimDrivePuckThisFrame } from "./driveCameraRules";
 import {
   anticipateNativeCamBearingDeg,
