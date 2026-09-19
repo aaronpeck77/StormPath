@@ -180,7 +180,6 @@ import {
   MAP_VIEW_FLY_MS,
   mapViewFlySkipReason,
   readMapDronePose,
-  shouldTrackPuckThroughDrone,
   type MapDronePose,
 } from "./mapViewFly";
 import {
@@ -633,9 +632,12 @@ function DriveMapInner({
   const viewFlyUntilMsRef = useRef(0);
   const viewDroneRafRef = useRef(0);
   const viewDroneActiveRef = useRef(false);
+  const viewDroneGenRef = useRef(0);
   const lastDroneOffsetRef = useRef<[number, number]>([0, 0]);
   /** Drone already framed Drive — enter-Dr hard snap must not cut the landing. */
   const droneLandedDriveRef = useRef(false);
+  /** Skip fitMapToTrip after an Rt drone so idle/style cannot jump to a second overview. */
+  const droneLandedRouteUntilMsRef = useRef(0);
   const parkedHoldCountedRef = useRef(false);
   /** One-shot: force drive follow-cam easeTo even when the puck barely moved (explore end, layout, resume). */
   const driveCamResyncRef = useRef(false);
@@ -772,6 +774,9 @@ function DriveMapInner({
 
   const settleFollowCamAfterDrone = (pose: MapDronePose) => {
     lastDroneOffsetRef.current = pose.offset;
+    if (viewModeRef.current === "route") {
+      droneLandedRouteUntilMsRef.current = performance.now() + 2000;
+    }
     if (viewModeRef.current !== "drive") return;
     driveCamResyncRef.current = false;
     nativeCamAppliedRef.current = {
@@ -809,17 +814,32 @@ function DriveMapInner({
       exploreTimerRef.current = null;
     }
     const durationMs = mapDroneDurationMs(from, to);
-    viewFlyUntilMsRef.current = performance.now() + durationMs + 80;
+    /* Hold follow-cam until the first tick starts the real clock — iOS rAF
+     * timestamps can sit still while Mapbox flattens Drive pitch, which made
+     * Dr→Mp report ~5s on 431. */
+    viewFlyUntilMsRef.current = performance.now() + durationMs + 400;
     lastDroneOffsetRef.current = from.offset;
-    const t0 = performance.now();
+    const scheduledAt = performance.now();
+    viewDroneGenRef.current += 1;
+    const gen = viewDroneGenRef.current;
+    let t0 = 0;
+    let waitMs = 0;
     let shotWriteFails = 0;
+    let ended = false;
     noteViewDroneStart();
-    const tick = (now: number) => {
-      if (!viewDroneActiveRef.current) return;
+    const tick = () => {
+      if (ended || gen !== viewDroneGenRef.current || !viewDroneActiveRef.current) return;
       const m = mapRef.current;
       if (!m) {
+        ended = true;
         stopViewDrone();
         return;
+      }
+      const now = performance.now();
+      if (t0 === 0) {
+        t0 = now;
+        waitMs = now - scheduledAt;
+        viewFlyUntilMsRef.current = t0 + durationMs + 80;
       }
       const u = Math.min(1, (now - t0) / durationMs);
       const { pose, ok } = applyContinuousDroneFrame(m, from, to, u, puck);
@@ -831,11 +851,12 @@ function DriveMapInner({
       if (u < 1) {
         viewDroneRafRef.current = requestAnimationFrame(tick);
       } else {
+        ended = true;
         viewDroneRafRef.current = 0;
         viewDroneActiveRef.current = false;
         viewFlyUntilMsRef.current = performance.now() + 48;
         settleFollowCamAfterDrone(pose);
-        noteViewDroneEnd("done", shotWriteFails, now - t0);
+        noteViewDroneEnd("done", shotWriteFails, now - t0, waitMs);
         if (viewModeRef.current === "drive") {
           try {
             m.setMinZoom(DRIVE_FOLLOW_ZOOM_MIN);
@@ -1015,10 +1036,9 @@ function DriveMapInner({
       noteViewDroneSkip("no_to");
       return;
     }
-    const puckLl = shouldTrackPuckThroughDrone(viewMode)
-      ? (puckMarkerRef.current ? readMapLngLat(puckMarkerRef.current.getLngLat()) : null) ??
-        userLngLatRef.current
-      : null;
+    const puckLl =
+      (puckMarkerRef.current ? readMapLngLat(puckMarkerRef.current.getLngLat()) : null) ??
+      userLngLatRef.current;
     const puck =
       puckLl && Number.isFinite(puckLl[0]) && Number.isFinite(puckLl[1])
         ? { lng: puckLl[0], lat: puckLl[1] }
@@ -4033,7 +4053,14 @@ function DriveMapInner({
     }
 
     const executePlanningFit = (): boolean => {
-      if (viewDroneActiveRef.current) return true;
+      if (
+        viewDroneActiveRef.current ||
+        performance.now() < viewFlyUntilMsRef.current ||
+        performance.now() < droneLandedRouteUntilMsRef.current
+      ) {
+        if (viewModeRef.current === "route") pendingRouteOverviewEnterRef.current = false;
+        return true;
+      }
       if (viewModeRef.current === "drive") return false;
       if (routes.length === 0) return false;
       if (userExploringRef.current && !appForcedFit) return false;
@@ -4048,7 +4075,6 @@ function DriveMapInner({
         navigatingRt &&
         !pendingRouteOverviewEnterRef.current &&
         !enteredRouteView;
-      const flyMs = performance.now() < viewFlyUntilMsRef.current ? MAP_VIEW_FLY_MS : 0;
       const fitted = fitMapToTrip(
         map,
         routes,
@@ -4065,7 +4091,7 @@ function DriveMapInner({
           /* Pre-Go: full corridor so we never street-zoom the dest then pull back. */
           forceFullPolyline: !navigatingRt,
           remainingFromUser: navigatingRt,
-          durationMs: flyMs || (easeNavRt ? 480 : 0),
+          durationMs: easeNavRt ? 480 : 0,
         }
       );
       if (fitted && viewModeRef.current === "route") {
@@ -4279,7 +4305,10 @@ function DriveMapInner({
       clearTimeout(exploreTimerRef.current);
       exploreTimerRef.current = null;
     }
-    if (viewDroneActiveRef.current) {
+    if (
+      viewDroneActiveRef.current ||
+      performance.now() < viewFlyUntilMsRef.current
+    ) {
       if (viewMode === "drive" && navigationStarted) {
         driveCamResyncRef.current = true;
       }

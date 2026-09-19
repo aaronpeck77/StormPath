@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAP_VIEW_FLY_MAX_MS,
   MAP_VIEW_FLY_MS,
+  MAP_VIEW_FLY_OVERVIEW_MS,
   droneLookAtScreen,
   droneTiltT,
   lerpMapDronePose,
@@ -193,6 +194,40 @@ describe("lerpMapDronePose", () => {
     expect(end.lng).toBe(drive.lng);
     expect(end.lat).toBe(drive.lat);
   });
+
+  it("climbs out to Route over the car, then trucks — no centroid smear", () => {
+    const drive = {
+      lng: -90.4,
+      lat: 38.5,
+      zoom: 16.6,
+      pitch: 68,
+      bearing: 90,
+      padding: pad,
+      offset: [0, 220] as [number, number],
+    };
+    const route = {
+      lng: -91.2,
+      lat: 37.4,
+      zoom: 8,
+      pitch: 0,
+      bearing: 0,
+      padding: pad,
+      offset: [0, 0] as [number, number],
+    };
+    const puck = { lng: -90.4, lat: 38.5 };
+    const start = lerpMapDronePose(drive, route, 0, puck);
+    expect(start.lng).toBe(drive.lng);
+    expect(start.lat).toBe(drive.lat);
+    const climb = lerpMapDronePose(drive, route, 0.3, puck);
+    const smearLng = drive.lng + (route.lng - drive.lng) * 0.3;
+    expect(Math.abs(climb.lng - drive.lng)).toBeLessThan(0.05);
+    expect(Math.abs(climb.lng - drive.lng)).toBeLessThan(Math.abs(smearLng - drive.lng));
+    expect(climb.zoom).toBeLessThan(drive.zoom);
+    expect(climb.pitch).toBeLessThan(drive.pitch);
+    const end = lerpMapDronePose(drive, route, 1, puck);
+    expect(end.lng).toBe(route.lng);
+    expect(end.lat).toBe(route.lat);
+  });
 });
 
 describe("drone motion", () => {
@@ -223,10 +258,13 @@ describe("drone motion", () => {
     expect(droneTiltT(overview, drive, 0.22)).toBeCloseTo(0.22);
   });
 
-  it("uses one duration so Rt→Dr cannot stall longer than Dr→Mp", () => {
-    expect(mapDroneDurationMs(overview, drive)).toBe(MAP_VIEW_FLY_MS);
-    expect(mapDroneDurationMs(drive, overview)).toBe(MAP_VIEW_FLY_MS);
-    expect(MAP_VIEW_FLY_MS).toBe(MAP_VIEW_FLY_MAX_MS);
+  it("gives Route hops more time than a Dr↔Mp rotate", () => {
+    expect(mapDroneDurationMs(overview, drive)).toBe(MAP_VIEW_FLY_OVERVIEW_MS);
+    expect(mapDroneDurationMs(drive, overview)).toBe(MAP_VIEW_FLY_OVERVIEW_MS);
+    const mapView = { ...drive, zoom: 15.4, pitch: 0, bearing: 0 };
+    expect(mapDroneDurationMs(drive, mapView)).toBe(MAP_VIEW_FLY_MS);
+    expect(MAP_VIEW_FLY_OVERVIEW_MS).toBeLessThanOrEqual(MAP_VIEW_FLY_MAX_MS);
+    expect(MAP_VIEW_FLY_MS).toBeLessThan(MAP_VIEW_FLY_OVERVIEW_MS);
   });
 });
 

@@ -11,9 +11,10 @@ import { isMapReadyForFollowCam, readMapLngLat } from "./mapCameraSafe";
  * only writer while the shot is in the air: lerp every channel from the live
  * camera to the target pose. Follow-cam / fit / snap yield until it lands.
  */
-/** One consistent shot — long enough to read, short enough it cannot stall. */
+/** Dr↔Mp is a rotate/flatten over the car. Rt hops need more time to climb or dive. */
 export const MAP_VIEW_FLY_MS = 1400;
-export const MAP_VIEW_FLY_MAX_MS = 1400;
+export const MAP_VIEW_FLY_OVERVIEW_MS = 2200;
+export const MAP_VIEW_FLY_MAX_MS = 2200;
 
 export type MapDronePose = {
   lng: number;
@@ -87,7 +88,9 @@ export function droneTiltT(_from: MapDronePose, _to: MapDronePose, u: number): n
   return mapDroneEase(u);
 }
 
-export function mapDroneDurationMs(_from?: MapDronePose, _to?: MapDronePose): number {
+export function mapDroneDurationMs(from?: MapDronePose, to?: MapDronePose): number {
+  if (!from || !to) return MAP_VIEW_FLY_MS;
+  if (Math.abs(to.zoom - from.zoom) >= 3) return MAP_VIEW_FLY_OVERVIEW_MS;
   return MAP_VIEW_FLY_MS;
 }
 
@@ -105,10 +108,20 @@ export function posesNearlyEqual(a: MapDronePose, b: MapDronePose, eps = 1e-4): 
  * Still u=0 on the live camera — never a first-frame leap.
  */
 export const MAP_VIEW_DRONE_PUCK_PULL = 0.42;
+/** Stay over the current view while climbing, then truck to the trip. Dr→Mp is this without the truck. */
+export const MAP_VIEW_DRONE_CLIMB_HOLD = 0.45;
+
+function isFiniteLngLat(p: { lng: number; lat: number } | null | undefined): p is {
+  lng: number;
+  lat: number;
+} {
+  return Boolean(p && Number.isFinite(p.lng) && Number.isFinite(p.lat));
+}
 
 /**
  * Continuous pose. u=0 is exactly `from` (no teleport). u=1 is exactly `to`.
- * When `puck` is set (Dr / Mp), the center swings past the car then lands on `to`.
+ * Dr↔Mp: rotate/flatten over the car. Rt out: hold the subject, then truck.
+ * Rt in: swing past the puck, then land on the Drive/Map pose.
  */
 export function lerpMapDronePose(
   from: MapDronePose,
@@ -118,9 +131,19 @@ export function lerpMapDronePose(
 ): MapDronePose {
   const t = mapDroneEase(u);
   const bearing = from.bearing + shortestBearingDeltaDeg(from.bearing, to.bearing) * t;
+  const zoomingOut = from.zoom - to.zoom >= 3;
+  const zoomingIn = to.zoom - from.zoom >= 3;
   let lng = mix(from.lng, to.lng, t);
   let lat = mix(from.lat, to.lat, t);
-  if (puck && Number.isFinite(puck.lng) && Number.isFinite(puck.lat)) {
+  if (zoomingOut) {
+    const holdLng = isFiniteLngLat(puck) ? mix(from.lng, puck.lng, Math.min(1, t / 0.25)) : from.lng;
+    const holdLat = isFiniteLngLat(puck) ? mix(from.lat, puck.lat, Math.min(1, t / 0.25)) : from.lat;
+    const panT = mapDroneEase(
+      Math.max(0, (u - MAP_VIEW_DRONE_CLIMB_HOLD) / (1 - MAP_VIEW_DRONE_CLIMB_HOLD))
+    );
+    lng = mix(holdLng, to.lng, panT);
+    lat = mix(holdLat, to.lat, panT);
+  } else if (zoomingIn && isFiniteLngLat(puck)) {
     const pull = mapDroneEase(Math.min(1, u / MAP_VIEW_DRONE_PUCK_PULL));
     lng = mix(mix(from.lng, puck.lng, pull), to.lng, t);
     lat = mix(mix(from.lat, puck.lat, pull), to.lat, t);

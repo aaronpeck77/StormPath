@@ -143,6 +143,13 @@ describe("driveDiagnostics", () => {
     expect(lines[7]).toContain("Dr>Mp ok 1402ms");
   });
 
+  it("records a pre-shot wait so a 5s Dr>Mp hitch is visible", () => {
+    noteViewDroneTap("drive", "topdown");
+    noteViewDroneStart();
+    noteViewDroneEnd("done", 0, 1401, 3720);
+    expect(driveDiagSnapshot().droneTrail).toContain("Dr>Mp ok 1401ms wait3720");
+  });
+
   it("keeps view-drone counters across a Core reconnect hydrate", () => {
     noteViewDroneTap("route", "drive");
     noteViewDroneStart();

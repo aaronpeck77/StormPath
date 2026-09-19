@@ -272,7 +272,12 @@ export function noteViewDroneWriteFail(): void {
   persistDriveDiagSoon();
 }
 
-export function noteViewDroneEnd(end: ViewDroneEnd, writeFails = 0, ms?: number): void {
+export function noteViewDroneEnd(
+  end: ViewDroneEnd,
+  writeFails = 0,
+  ms?: number,
+  waitMs?: number
+): void {
   if (end === "done") state.droneDone += 1;
   else state.droneAbort += 1;
   const tag =
@@ -282,7 +287,11 @@ export function noteViewDroneEnd(end: ViewDroneEnd, writeFails = 0, ms?: number)
         : "ok"
       : end;
   const dur = typeof ms === "number" && Number.isFinite(ms) ? ` ${Math.round(ms)}ms` : "";
-  pushDroneTrail(`${state.droneLast || "??"} ${tag}${dur}`);
+  const wait =
+    typeof waitMs === "number" && Number.isFinite(waitMs) && waitMs >= 80
+      ? ` wait${Math.round(waitMs)}`
+      : "";
+  pushDroneTrail(`${state.droneLast || "??"} ${tag}${dur}${wait}`);
   persistDriveDiagSoon();
 }
 
