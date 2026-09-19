@@ -180,6 +180,7 @@ import {
   MAP_VIEW_FLY_MS,
   mapViewFlySkipReason,
   readMapDronePose,
+  shouldTrackPuckThroughDrone,
   type MapDronePose,
 } from "./mapViewFly";
 import {
@@ -633,6 +634,9 @@ function DriveMapInner({
   const viewDroneRafRef = useRef(0);
   const viewDroneActiveRef = useRef(false);
   const lastDroneOffsetRef = useRef<[number, number]>([0, 0]);
+  /** Drone already framed Drive — enter-Dr hard snap must not cut the landing. */
+  const droneLandedDriveRef = useRef(false);
+  const parkedHoldCountedRef = useRef(false);
   /** One-shot: force drive follow-cam easeTo even when the puck barely moved (explore end, layout, resume). */
   const driveCamResyncRef = useRef(false);
   /** Last native cam sample actually written — anchor for the parked wobble hold. */
@@ -766,7 +770,26 @@ function DriveMapInner({
     if (end === "abort" && wasLive) noteViewDroneEnd("abort");
   };
 
-  const startViewDrone = (to: MapDronePose): boolean => {
+  const settleFollowCamAfterDrone = (pose: MapDronePose) => {
+    lastDroneOffsetRef.current = pose.offset;
+    if (viewModeRef.current !== "drive") return;
+    driveCamResyncRef.current = false;
+    nativeCamAppliedRef.current = {
+      lng: pose.lng,
+      lat: pose.lat,
+      bearing: pose.bearing,
+      pitch: pose.pitch,
+      zoom: pose.zoom,
+    };
+    driveCamBearingSmoothedRef.current = pose.bearing;
+    driveCamZoomSmoothedRef.current = pose.zoom;
+    droneLandedDriveRef.current = true;
+  };
+
+  const startViewDrone = (
+    to: MapDronePose,
+    puck: { lng: number; lat: number } | null
+  ): boolean => {
     const map = mapRef.current;
     if (!map) return false;
     const from = readMapDronePose(map, lastDroneOffsetRef.current);
@@ -778,6 +801,7 @@ function DriveMapInner({
     }
     /* Keep the flag true across restart — a false gap lets fit/snap steal the shot. */
     viewDroneActiveRef.current = true;
+    droneLandedDriveRef.current = false;
     stopMapCamera(map);
     userExploringRef.current = false;
     if (exploreTimerRef.current) {
@@ -798,7 +822,7 @@ function DriveMapInner({
         return;
       }
       const u = Math.min(1, (now - t0) / durationMs);
-      const { pose, ok } = applyContinuousDroneFrame(m, from, to, u);
+      const { pose, ok } = applyContinuousDroneFrame(m, from, to, u, puck);
       if (!ok) {
         shotWriteFails += 1;
         noteViewDroneWriteFail();
@@ -810,6 +834,7 @@ function DriveMapInner({
         viewDroneRafRef.current = 0;
         viewDroneActiveRef.current = false;
         viewFlyUntilMsRef.current = performance.now() + 48;
+        settleFollowCamAfterDrone(pose);
         noteViewDroneEnd("done", shotWriteFails, now - t0);
         if (viewModeRef.current === "drive") {
           try {
@@ -990,7 +1015,15 @@ function DriveMapInner({
       noteViewDroneSkip("no_to");
       return;
     }
-    if (startViewDrone(to)) {
+    const puckLl = shouldTrackPuckThroughDrone(viewMode)
+      ? (puckMarkerRef.current ? readMapLngLat(puckMarkerRef.current.getLngLat()) : null) ??
+        userLngLatRef.current
+      : null;
+    const puck =
+      puckLl && Number.isFinite(puckLl[0]) && Number.isFinite(puckLl[1])
+        ? { lng: puckLl[0], lat: puckLl[1] }
+        : null;
+    if (startViewDrone(to, puck)) {
       if (viewMode === "route") pendingRouteOverviewEnterRef.current = false;
       return;
     }
@@ -2154,7 +2187,14 @@ function DriveMapInner({
               });
             /* Count events, not frames: this loop runs at 60 fps against a ~1 Hz
              * sample, so bumping per frame reported 60x reality in About. */
-            if (parkedHold && needsWrite) bumpDriveDiag("camParkedHold");
+            if (parkedHold && needsWrite) {
+              if (!parkedHoldCountedRef.current) {
+                parkedHoldCountedRef.current = true;
+                bumpDriveDiag("camParkedHold");
+              }
+            } else if (!parkedHold) {
+              parkedHoldCountedRef.current = false;
+            }
             if (holdTiles !== lowSignalHeldRef.current) {
               lowSignalHeldRef.current = holdTiles;
               if (holdTiles) bumpDriveDiag("lowSignalHolds");
@@ -2559,6 +2599,11 @@ function DriveMapInner({
     if (punchNativeHole) return;
     if (viewDroneActiveRef.current || performance.now() < viewFlyUntilMsRef.current) {
       driveCamResyncRef.current = true;
+      return;
+    }
+    if (droneLandedDriveRef.current) {
+      droneLandedDriveRef.current = false;
+      driveCamResyncRef.current = false;
       return;
     }
     if (holdFirstNativeGoRef.current) {

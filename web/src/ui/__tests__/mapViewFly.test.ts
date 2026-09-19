@@ -162,6 +162,37 @@ describe("lerpMapDronePose", () => {
     expect(early.lng).not.toBe(drive.lng);
     expect(early.lat).not.toBe(drive.lat);
   });
+
+  it("swings past the puck on the way to Drive without leaping on frame 0", () => {
+    const overview = {
+      lng: -90,
+      lat: 38,
+      zoom: 7.5,
+      pitch: 0,
+      bearing: 0,
+      padding: pad,
+      offset: [0, 0] as [number, number],
+    };
+    const drive = {
+      lng: -90.05,
+      lat: 38.05,
+      zoom: 16.6,
+      pitch: 68,
+      bearing: 90,
+      padding: pad,
+      offset: [0, 220] as [number, number],
+    };
+    const puck = { lng: -90.4, lat: 38.5 };
+    const start = lerpMapDronePose(overview, drive, 0, puck);
+    expect(start.lng).toBe(overview.lng);
+    expect(start.lat).toBe(overview.lat);
+    const mid = lerpMapDronePose(overview, drive, 0.35, puck);
+    const linear = lerpMapDronePose(overview, drive, 0.35);
+    expect(Math.abs(mid.lng - puck.lng)).toBeLessThan(Math.abs(linear.lng - puck.lng));
+    const end = lerpMapDronePose(overview, drive, 1, puck);
+    expect(end.lng).toBe(drive.lng);
+    expect(end.lat).toBe(drive.lat);
+  });
 });
 
 describe("drone motion", () => {

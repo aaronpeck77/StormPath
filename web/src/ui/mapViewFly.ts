@@ -101,15 +101,33 @@ export function posesNearlyEqual(a: MapDronePose, b: MapDronePose, eps = 1e-4): 
 }
 
 /**
- * Continuous pose. u=0 is exactly `from` (no teleport). u=1 is exactly `to`.
- * Zoom never reverses. Pitch/offset may lag on a zoom-in but they start at `from`.
+ * Reach the puck before the dive finishes so Rt→Dr does not lose the car.
+ * Still u=0 on the live camera — never a first-frame leap.
  */
-export function lerpMapDronePose(from: MapDronePose, to: MapDronePose, u: number): MapDronePose {
+export const MAP_VIEW_DRONE_PUCK_PULL = 0.42;
+
+/**
+ * Continuous pose. u=0 is exactly `from` (no teleport). u=1 is exactly `to`.
+ * When `puck` is set (Dr / Mp), the center swings past the car then lands on `to`.
+ */
+export function lerpMapDronePose(
+  from: MapDronePose,
+  to: MapDronePose,
+  u: number,
+  puck?: { lng: number; lat: number } | null
+): MapDronePose {
   const t = mapDroneEase(u);
   const bearing = from.bearing + shortestBearingDeltaDeg(from.bearing, to.bearing) * t;
+  let lng = mix(from.lng, to.lng, t);
+  let lat = mix(from.lat, to.lat, t);
+  if (puck && Number.isFinite(puck.lng) && Number.isFinite(puck.lat)) {
+    const pull = mapDroneEase(Math.min(1, u / MAP_VIEW_DRONE_PUCK_PULL));
+    lng = mix(mix(from.lng, puck.lng, pull), to.lng, t);
+    lat = mix(mix(from.lat, puck.lat, pull), to.lat, t);
+  }
   return {
-    lng: mix(from.lng, to.lng, t),
-    lat: mix(from.lat, to.lat, t),
+    lng,
+    lat,
     zoom: mix(from.zoom, to.zoom, t),
     pitch: mix(from.pitch, to.pitch, t),
     bearing: ((bearing % 360) + 360) % 360,
@@ -208,8 +226,9 @@ export function applyContinuousDroneFrame(
   map: Map,
   from: MapDronePose,
   to: MapDronePose,
-  u: number
+  u: number,
+  puck?: { lng: number; lat: number } | null
 ): { pose: MapDronePose; ok: boolean } {
-  const pose = lerpMapDronePose(from, to, u);
+  const pose = lerpMapDronePose(from, to, u, puck);
   return { pose, ok: writeDronePose(map, pose) };
 }
