@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { centerForPuckScreenAnchor } from "../driveFollowCamAnchor";
+import {
+  centerForPuckScreenAnchor,
+  yardLineCenterAfterHardFollow,
+} from "../driveFollowCamAnchor";
 
 /**
  * Fake projection: 1 degree = 100 px, y inverted like a screen. Enough to prove the
@@ -59,5 +62,17 @@ describe("centerForPuckScreenAnchor", () => {
       anchor: { x: 400, y: 400 },
     });
     expect(next).toBeNull();
+  });
+
+  it("drops a midfield puck to the 30-yard anchor after a hard setCenter", () => {
+    const next = yardLineCenterAfterHardFollow({
+      unproject,
+      mapWidth: 800,
+      mapHeight: 600,
+      padding: { top: 0, bottom: 0, left: 0, right: 0 },
+      offset: [0, 100],
+      centerScreen: { x: 400, y: 300 },
+    });
+    expect(next).toEqual([4, -2]);
   });
 });

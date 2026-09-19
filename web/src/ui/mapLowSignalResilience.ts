@@ -35,14 +35,15 @@ export function shouldApplyMapHoldOnNativeRadioDown(input: {
 /** Failed yard-line pans in a row before we freeze the last good picture. */
 export const WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE = 3;
 
-/** Do not walk the camera onto uncached tiles. Resync is the one snap after the hold clears. */
+/** Do not walk the camera onto uncached tiles. `holdTiles` is radio hold only. */
 export function shouldFreezeFollowCamOnWeakTiles(input: {
   holdTiles: boolean;
   writeFailStreak: number;
   resync: boolean;
   failFreezeAfter?: number;
 }): boolean {
-  /* Hold wins over Jeff resync — 434 yanked 331 times because resync unfroze the picture. */
+  /* Radio hold wins over Jeff resync. Fail-streak freeze must yield so one snap
+   * can reset the 435 deadlock (0 applies, puck stuck at midfield). */
   if (input.holdTiles) return true;
   if (input.resync) return false;
   return input.writeFailStreak >= (input.failFreezeAfter ?? WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE);

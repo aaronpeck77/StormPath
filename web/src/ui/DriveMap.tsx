@@ -115,7 +115,6 @@ import {
   safeFlyTo,
   safePanToCenter,
   safeJumpTo,
-  safeHardFollowCamera,
   isMapReadyForFollowCam,
   flattenMapCamera,
   safeSetMapLngLat,
@@ -149,7 +148,7 @@ import {
   shouldUseNativeFollowCam,
   nativeFollowCamNeedsWebWrite,
 } from "../nav/nativeDriveFollowCam";
-import { centerForPuckScreenAnchor } from "./driveFollowCamAnchor";
+import { writeHardFollowToYardLine } from "./driveFollowCamAnchor";
 import {
   NATIVE_DRIVE_MAP_ENABLED,
   NATIVE_DRIVE_PUCK_OVERLAY_ENABLED,
@@ -159,7 +158,6 @@ import { StormpathMapboxNavigation } from "@stormpath/mapbox-navigation";
 import {
   allowBasemapStyleReload,
   shouldFreezeFollowCamOnWeakTiles,
-  WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE,
 } from "./mapLowSignalResilience";
 import {
   DRIVE_FOLLOW_ZOOM_DEFAULT,
@@ -2231,7 +2229,10 @@ function DriveMapInner({
               parkedHoldCountedRef.current = false;
             }
             const radioHold = holdLastGoodMapRef.current || !isOnlineRef.current;
-            const holdTiles = radioHold || followWriteFailStreak >= WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE;
+            /* Writer latch is radio only. Folding fail-streak into holdTiles froze
+             * the camera for the rest of the 435 park trip (0 applies, puck at 50). */
+            const holdTiles = radioHold;
+            if (driveCamResyncRef.current) followWriteFailStreak = 0;
             if (radioHold !== lowSignalHeldRef.current) {
               const wasHold = lowSignalHeldRef.current;
               lowSignalHeldRef.current = radioHold;
@@ -2239,7 +2240,7 @@ function DriveMapInner({
               if (wasHold && !radioHold) driveCamResyncRef.current = true;
             }
             const freezeCam = shouldFreezeFollowCamOnWeakTiles({
-              holdTiles,
+              holdTiles: radioHold,
               writeFailStreak: followWriteFailStreak,
               resync: driveCamResyncRef.current,
             });
@@ -2262,41 +2263,20 @@ function DriveMapInner({
             /* setCenter has no Mapbox `offset`, so a plain hard write centers the puck —
              * that is the climb toward the top of the screen on a dead cell. Shift the
              * center by the same pixel delta the yard-line offset would have applied. */
-            const hardWrite = () => {
-              const ok = safeHardFollowCamera(map, {
+            const hardWrite = () =>
+              writeHardFollowToYardLine(map, {
                 center: guarded.center,
                 zoom: guarded.zoom,
                 pitch: nativeCam.pitch,
                 bearing: camBearing,
+                padding: easeCached.padding as unknown as {
+                  top: number;
+                  bottom: number;
+                  left: number;
+                  right: number;
+                },
+                offset: easeCached.offset,
               });
-              if (!ok) return false;
-              const anchored = centerForPuckScreenAnchor({
-                project: (ll) => map.project(ll),
-                unproject: (pt) => map.unproject(pt),
-                center: guarded.center,
-                puck: guarded.center,
-                anchor: expectedDrivePuckScreenAnchorPx({
-                  mapWidth: map.getContainer().clientWidth,
-                  mapHeight: map.getContainer().clientHeight,
-                  padding: easeCached.padding as unknown as {
-                    top: number;
-                    bottom: number;
-                    left: number;
-                    right: number;
-                  },
-                  offset: easeCached.offset,
-                }),
-              });
-              if (anchored && anchored !== guarded.center) {
-                safeHardFollowCamera(map, {
-                  center: anchored,
-                  zoom: guarded.zoom,
-                  pitch: nativeCam.pitch,
-                  bearing: camBearing,
-                });
-              }
-              return true;
-            };
             let applied = false;
             if (!parkedHold && needsWrite && !freezeCam) {
               if (followWriter === "hard") {
@@ -2434,6 +2414,7 @@ function DriveMapInner({
                * them when tiles flap looks like the puck leaping forward/back.
                * Hard only while tiles are held (+ clear delay). Failed pan skips. */
               const holdTiles = holdLastGoodMapRef.current || !isOnlineRef.current;
+              if (driveCamResyncRef.current) followWriteFailStreak = 0;
               if (
                 shouldFreezeFollowCamOnWeakTiles({
                   holdTiles,
@@ -2472,11 +2453,18 @@ function DriveMapInner({
               };
 
               if (followWriter === "hard") {
-                const hardOk = safeHardFollowCamera(map, {
+                const hardOk = writeHardFollowToYardLine(map, {
                   center: guarded.center,
                   zoom: guarded.zoom,
                   pitch: DRIVE_FOLLOW_PITCH_DEG,
                   bearing: driveCamBearingSmoothedRef.current,
+                  padding: padding as unknown as {
+                    top: number;
+                    bottom: number;
+                    left: number;
+                    right: number;
+                  },
+                  offset,
                 });
                 if (hardOk) {
                   lastBearingApplied = driveCamBearingSmoothedRef.current;
@@ -2695,7 +2683,24 @@ function DriveMapInner({
       driveLastTravelBearingRef.current ??
       map.getBearing();
     stopMapCamera(map);
-    safeHardFollowCamera(map, { center, zoom, pitch, bearing });
+    const o = driveCameraEaseOptions(
+      stormBarVisibleRef.current,
+      stormBarExpandedRef.current,
+      progressRailVisibleRef.current
+    );
+    writeHardFollowToYardLine(map, {
+      center,
+      zoom,
+      pitch,
+      bearing,
+      padding: o.padding as unknown as {
+        top: number;
+        bottom: number;
+        left: number;
+        right: number;
+      },
+      offset: o.offset,
+    });
   }, [mapReady, navigationStarted, viewMode, punchNativeHole, nativeDriveMapActive, nativeMapShowing]);
 
   /** After route compare or end of navigation, re-run topdown init and flatten pitch. */
@@ -4574,11 +4579,7 @@ function DriveMapInner({
     setMapResumeTick((n) => n + 1);
     const map = mapRef.current;
     if (map) {
-      try {
-        map.resize();
-      } catch {
-        /* map disposed */
-      }
+      /* Do not resize on every Jeff tick — 435 did that 515 times and kept the puck at midfield. */
       if (isMapUsable(map) && travelTarget != null) {
         const pos =
           userLngLatRef.current ??
@@ -4601,11 +4602,18 @@ function DriveMapInner({
           });
           if (useHard) {
             if (
-              safeHardFollowCamera(map, {
+              writeHardFollowToYardLine(map, {
                 center: guarded.center,
                 zoom: guarded.zoom,
                 pitch: DRIVE_FOLLOW_PITCH_DEG,
                 bearing: travelTarget,
+                padding: o.padding as unknown as {
+                  top: number;
+                  bottom: number;
+                  left: number;
+                  right: number;
+                },
+                offset: o.offset,
               })
             ) {
               driveCamResyncRef.current = false;
