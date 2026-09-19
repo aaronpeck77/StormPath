@@ -141,7 +141,7 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
   );
 
   /**
-   * NWS warning polygons on the map (Rt / Mp; hidden in Dr). Independent of radar overlay.
+   * NWS warning polygons on the map (Rt / Mp; hidden in Dr). Watches stay in the list.
    * Plus: follows About → NWS (`settingStormEnabled`).
    */
   const nwsAlertGeoJsonForMap = useMemo(

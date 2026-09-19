@@ -3,11 +3,12 @@ import {
   type RouteAheadStormBand,
 } from "../nav/routeAheadSync";
 import { mapGeoJsonFromAlerts } from "./mapGeoJsonFromAlerts";
+import { filterNwsMapWarningFeatures } from "./nwsMapPolygon";
 import type { NormalizedWeatherAlert } from "./types";
 
 /**
  * NWS warning polygons for the map (Rt / Mp; hidden in Dr).
- * Plus-only; gated by life-safety + About → NWS setting (fetch + map + advisory).
+ * Watches stay in the advisory list. Plus-only; gated by life-safety + About → NWS.
  */
 export function buildNwsAlertGeoJsonForMap(input: {
   isPlus: boolean;
@@ -27,16 +28,15 @@ export function buildNwsAlertGeoJsonForMap(input: {
   if (!input.isPlus) return null;
   if (!input.advisoryLifeSafetyOn || !input.settingStormEnabled) return null;
 
-  // Browse mode (no route): Plus users see regional alert polygons.
+  // Browse mode (no route): Plus users see regional warning polygons.
   if (!input.nwsMapOverlapRouteGeom?.length) {
     const withGeom = input.stormCorridorAlerts.filter((a) => a.geometry);
     if (withGeom.length) return mapGeoJsonFromAlerts(withGeom);
-    if (input.stormMapGeoJson?.features?.length) return input.stormMapGeoJson;
-    return null;
+    return filterNwsMapWarningFeatures(input.stormMapGeoJson);
   }
 
-  // Route active — corridor-wide polygons along the trip.
-  const base = input.stormMapGeoJsonForMap;
+  // Route active — corridor-wide warning polygons along the trip.
+  const base = filterNwsMapWarningFeatures(input.stormMapGeoJsonForMap);
   if (base?.features.length) return base;
 
   const timingCtx = {

@@ -168,13 +168,13 @@ const TRAFFIC_GROUP: LegendGroup = {
 const WEATHER_POLY_GROUP: LegendGroup = {
   title: "Weather polygons (NWS map shapes)",
   intro:
-    "Storm shapes from the National Weather Service — outline only so radar and the basemap stay readable. Color tells you what kind of alert.",
+    "Warning outlines from the National Weather Service on Rt and Mp — not watches, and never in Drive. Color tells you what kind of warning.",
   rows: [
     {
       label: "Severe storm / tornado",
       color: nwsMapKindHex("convective"),
       kind: "polygon",
-      blurb: "Tornado, severe thunderstorm, hurricane, tropical, storm surge.",
+      blurb: "Tornado Warning, Severe Thunderstorm Warning, hurricane / tropical warning. Watches stay in the advisory list.",
     },
     {
       label: "Flash flood",
@@ -186,37 +186,37 @@ const WEATHER_POLY_GROUP: LegendGroup = {
       label: "Winter weather",
       color: nwsMapKindHex("winter"),
       kind: "polygon",
-      blurb: "Ice, snow, blizzard, wind chill, freeze.",
+      blurb: "Winter Storm / Ice Storm / Blizzard Warning. Watches and advisories stay in the list.",
     },
     {
       label: "High wind",
       color: nwsMapKindHex("wind"),
       kind: "polygon",
-      blurb: "Wind advisory or warning, blowing dust.",
+      blurb: "High Wind or Extreme Wind Warning. Wind advisories stay in the list.",
     },
     {
       label: "Fire weather",
       color: nwsMapKindHex("fire"),
       kind: "polygon",
-      blurb: "Red flag warning, fire weather watch.",
+      blurb: "Red Flag Warning only — fire weather watches stay in the list.",
     },
     {
       label: "Heat",
       color: nwsMapKindHex("heat"),
       kind: "polygon",
-      blurb: "Excessive heat advisory or warning.",
+      blurb: "Excessive Heat Warning. Advisories stay in the list.",
     },
     {
       label: "Marine",
       color: nwsMapKindHex("marine"),
       kind: "polygon",
-      blurb: "Small craft, gale, high surf, beach hazards.",
+      blurb: "Gale or Storm Warning. Small-craft advisories stay in the list.",
     },
     {
       label: "Visibility",
       color: nwsMapKindHex("vis"),
       kind: "polygon",
-      blurb: "Dense fog, freezing fog, smoke.",
+      blurb: "Dense Fog Warning when NWS rates it Severe. Advisories stay in the list.",
     },
   ],
 };
