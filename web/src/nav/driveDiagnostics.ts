@@ -64,6 +64,8 @@ export type DriveDiagSnapshot = {
   /** Bucket only — never exact miles or a place name. */
   routeBucket: string;
   camWriter: string;
+  /** Which pipeline the puck is reading: Core's matched pose, or raw GPS + JS snap. */
+  poseSource: string;
 };
 
 export type ViewDroneSkip =
@@ -115,6 +117,7 @@ function emptySnapshot(): DriveDiagSnapshot {
     jeffResync: 0,
     routeBucket: "",
     camWriter: "",
+    poseSource: "",
   };
 }
 
@@ -170,6 +173,7 @@ function applyParsed(parsed: Partial<DriveDiagSnapshot>): void {
     jeffResync: asCount(parsed.jeffResync),
     routeBucket: typeof parsed.routeBucket === "string" ? parsed.routeBucket.slice(0, 12) : "",
     camWriter: typeof parsed.camWriter === "string" ? parsed.camWriter.slice(0, 8) : "",
+    poseSource: typeof parsed.poseSource === "string" ? parsed.poseSource.slice(0, 8) : "",
   };
 }
 
@@ -303,6 +307,17 @@ export function setDriveDiagCamWriter(writer: string): void {
   persistDriveDiagSoon();
 }
 
+/**
+ * Called from the 60 fps loop, so it must stay a cheap no-op until the pipeline
+ * actually changes — a persist per frame would thrash sessionStorage.
+ */
+export function setDriveDiagPoseSource(source: string): void {
+  if (source !== "core" && source !== "gps") return;
+  if (state.poseSource === source) return;
+  state.poseSource = source;
+  persistDriveDiagSoon();
+}
+
 export function driveDiagSnapshot(): DriveDiagSnapshot {
   return { ...state };
 }
@@ -432,7 +447,9 @@ export function formatDriveDiagLines(
   const lines = [
     `Drive: ${age ?? "just started"}, Core ${snap.coreSamples} samples${
       rate ? ` (${rate}/s)` : ""
-    }${snap.routeBucket ? `, ${snap.routeBucket}` : ""}`,
+    }${snap.routeBucket ? `, ${snap.routeBucket}` : ""}${
+      snap.poseSource ? `, puck ${snap.poseSource}` : ""
+    }`,
     `Camera: ${snap.camApplied} applied, ${snap.camParkedHold} parked holds, ${snap.camWriteFailed} write fails, ${snap.camReclaim} reclaims`,
     `Cam health: freeze ${snap.camFreeze}, max fail streak ${snap.camFailStreakMax}, Jeff ${snap.jeffResync}${
       snap.camWriter ? `, writer ${snap.camWriter}` : ""

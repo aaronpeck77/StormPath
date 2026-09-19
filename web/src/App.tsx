@@ -917,6 +917,7 @@ export default function App() {
     turnSteps: nativeTurnSteps,
     restartNative,
     stopNative,
+    coreRerouteHealthRef,
   } = useNativeNavSession({
     accessToken: env.mapboxToken,
     navigationStarted,
@@ -1003,6 +1004,7 @@ export default function App() {
     setPreviewLegIndex,
     adoptLockedRouteGeometry,
     restartNativeNav: restartNative,
+    coreRerouteHealthRef,
     viewModeRef,
     onPersonalForkRef,
   });

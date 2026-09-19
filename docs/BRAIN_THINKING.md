@@ -34,6 +34,56 @@ Real parity would be a `WKURLSchemeHandler` tile proxy in Swift serving GL JS fr
 
 ## P1 — Native-feel Drive
 
+### 2026-09-19 — 435: puck at the 50, Jeff 515
+
+Park loop again. Hold did keep a stable picture (better). Dr puck sat at midfield the whole time. Camera 0 applied / Jeff 515 / writer hard. Fail-streak was folded into holdTiles so freeze never lifted, and Jeff's resync was a bare setCenter (no 30-yard offset) plus resize. Checks exist — they were the ones slamming it to the 50.
+
+### 2026-09-19 — Jeff vs freeze in the park dead zone
+
+434 outbound 8 min: Core 424 @ 0.89/s, radio 128s (longest 115s), Jeff **331**, freeze 11, writer hard. Return after cell: 5 min, 39s hold, Jeff 79. Core stayed on the route. Old Jeff policy still yanked the camera during hold so the puck looked like it left the screen. Stand Jeff down on hold; one snap when the radio returns.
+
+### 2026-09-19 — Warning polygons on Mp / Rt, never Dr
+
+Bill wants Severe Thunderstorm / Tornado **Warning** outlines on the map, especially ahead of the front. Watches stay in the list. Dr stays clean. They were already fetched; Rt hid them after zoom 11 and convective watches still drew. Local only until after the next drive — no TestFlight from this note.
+
+### 2026-09-19 — About dump: radio hold, freeze, trip size
+
+Customer-safe extras so a pasted About block can tell a Wi‑Fi drop from a long-corridor stall: radio hold count + seconds, cam freeze / max fail streak / Jeff, trip bucket (`<20mi` … `100+mi`). Still no coordinates or place names.
+
+### 2026-09-19 — Wi‑Fi drop walked the camera off the last good tiles
+
+432 outbound: 4.1 min, Core 264 at 1.08/s, 7127 cam applies, 718 write fails, 1 map hold. Left home Wi‑Fi: camera left the yard-line and flashed other map images until cell came back. Return trip died in the house dead zone and never recovered. App-online grace keeps GO alive for 2.5s while native is already down — follow-cam kept easeTo onto missing tiles. Hold the map the instant native radio is down; freeze the last picture; one snap when the radio returns.
+
+### 2026-09-18 — ~100 mi is where this phone starts to struggle
+
+432 drone is good enough to leave. Bill: around 100 miles the app gets noticeably slower and some functions flake — might just be an older phone with memory maxed. Do not tune that tonight. On the drive, if it happens again, About dump plus whether Rt (full polyline + fit) is the first thing to fall over. Long-corridor work is already next to P2 tile warm; do not build a “shorten the line” hack from this note.
+
+### 2026-09-18 — Dr→Mp is the model; Rt was a centroid smear
+
+Bill: Dr→Mp was the one that felt right (slow rotate/flatten into a map). Rt in/out is still not one shot. Linear center from the car to the trip centroid is a smear, and fitMapToTrip could jump after the drone. Climb: hold the car while zooming out, then truck. Dive: puck pull. Do not fit a second overview after an Rt landing.
+
+### 2026-09-18 — 431 dump: Dr→Mp is 5.1s, landing fight is gone
+
+Parked cycle: 11 taps, drone writes 0, camera 0/0/0. Rt↔Dr and Mp↔Rt ~1400ms. Dr→Mp 5147ms and 5158ms twice. Follow-cam no longer cuts. The flatten from pitch 68 starves iOS rAF timestamps if the clock starts before the first frame. Start the 1.4s clock on the first tick; trail will show `wait3700` if Mapbox stalled before the shot.
+
+### 2026-09-18 — Camera motion vs a dead cell
+
+Bill: hops looked OK at home on fast Wi‑Fi; can the camera be native so a bad cell cannot wreck it? The drone `jumpTo` is already local — no radio. What a dead cell breaks is *tiles*, and any writer that waits on `isStyleLoaded` (the 91 follow-cam fails after Rt→Dr). Flipping the native map back on would get Core's tile cache, but stacking NavigationMapView under the WebView is the flicker we already turned off. Connection-proof motion is: never easeTo after a hop, hold last tiles, prefetch. Real offline corridor is P2.
+
+### 2026-09-18 — 430 dump: hops finished, follow-cam cut the landing
+
+Parked view cycle on 430: 8 taps, 8 start/8 done, drone writes 0 fails, every hop ~1400ms. Not a skipped shot. Camera 3 applied / 1440 parked holds / 91 write fails — enter-Dr set resync so parked hold was off, then easeTo failed on loading tiles after Rt→Dr. Linear centroid lerp also lost the puck (map flying by). Next: seed follow-cam from the landing pose, skip the enter-Dr snap, pull the path through the puck.
+
+### 2026-09-18 — Long-drive camera: wipe the rules, not DriveMap
+
+Bill's long drive: diagnostic 0.6s/zeros, puck vanished then came back, camera late on corners, blank map until it self-corrected, drone still rough. Do not delete DriveMap. The command rules were the mess: Jeff waited 1.5s+15s and never measured drift on the native-cam path; bearing TC 1.0s/6.5° dragged through turns; startNative reset counters on every Core reconnect. New owner is `driveCameraRules.ts` — same-frame reclaim when the puck leaves the yard-line or canvas, corner catch-up, Jeff as backup, diagnostics persist for the whole trip. Dr/Mp/Rt stays the puck-locked dive.
+
+### 2026-09-18 — Drone hang was easeTo + a fake freeze
+
+Field: transitions choppy, hung, or missing. `easeTo` no-ops when mid-zoom tiles make `isStyleLoaded` false — rAF kept ticking, camera sat. A failed start also set `viewFlyUntilMs` for 1.3s so follow-cam froze on a tap that never flew. Pitch lag + smoothstep made the first third look stuck. Now: linear lerp, one `jumpTo` per frame (no stop), no freeze if start fails.
+
+### 2026-09-18 — Dr/Mp/Rt is one drone shot, never a cut
+
 ### 2026-09-12 — Stop after Go
 
 Core must go idle and drop the NavigationMapView **before** the web trip is wiped. Nilling `MapboxNavigationProvider` while the map is still subscribed (or while `setToIdle` is in flight) is a hard crash. Same rule when P3 later installs a hop: never swap the web line while Core is still the live session.
@@ -117,3 +167,47 @@ Second time this has cost a CI run (c771eaa buildings, 16ff5ee road controls). `
 ### 2026-09-15 - Parked twitch: the native cam path skips the puck's damping
 
 Bill sitting still, map twitching. The smoothed-puck loop damps stationary GPS wobble hard (blendTc 2.4s), but the native-cam branch writes Core's raw sample straight to the map, so the puck sat still while the camera hopped. Fixed with a parked hold (12 m / 25 deg, released by driveCamResyncRef) in `shouldHoldParkedFollowCam`. Lesson for P1: every camera owner needs its own stationary gate - one owner on the Core side does not inherit the web loop's smoothing.
+
+### 2026-09-17 - Rt→Dr: keep the puck, bird-dive, then settle
+
+Bill still lost the puck: we were panning from the overview centroid to the car, so the map rushed past until the last street-pitch bit. New dive locks lng/lat on the puck from frame 0 (same altitude), zooms down with the puck centered, and only then pitches/offsets behind. The settle is the part he already liked.
+
+### 2026-09-17 - Rt→Dr must descend onto the puck, not pan while zooming
+
+Linear pose lerp from overview center to the puck while zoom 8→16.6 is the map rushing past, then a slam into Drive. Descend path: pan to the puck at overview zoom, zoom down onto it, pitch/rotate behind last. ~1.7s. Rail loop is its own 6s clock — leave the map overlay at 3.6s.
+
+### 2026-09-17 - Drone fly + moving rail slice
+
+Bill: the Dr/Mp/Rt cut still flicked mid-move, and the rail colors sat still like a snapshot. FlyTo zooms out then in (two shots) and the Rt/Mp resize+snap was a second writer. New owner is a ~1.1s rAF pose lerp from the live camera, restartable every tap, follow-cam/fit/resize skipped while it flies. Rail now samples a few mosaic frames along the corridor and plays them on the same loop as map radar so the cell walks the line.
+
+### 2026-09-17 - Rail slice + view fly are pose/paint, not new owners
+
+Two Bill ideas shipped as thin layers. Radar on the rail is the existing mosaic samples in map colors (green/yellow/red) where a cell crosses — NWS polygons stay as alert bands; indigo mosaic bands no longer cover the slice. Dr/Mp/Rt fly is a 520 ms camera move with follow-cam paused until it lands. Skip the fly on pinch, dest-hold, and compare so we do not fight those owners. If tomorrow's drive feels like the camera is late into Drive, the first suspect is viewFlyUntilMs overlapping the 60 fps loop.
+
+### 2026-09-17 - Route casing was present and still invisible
+
+Bill asked twice for a 2 px black outline. The layer was already there (`+4` extra = 2 px/side) and still vanished: Drive pitch plus Mapbox anti-alias covers a 2 px peek, and night mode hides black on black (he already accepted that). Street extra is now 8 with `line-blur: 0`; overview stays thinner. If he still cannot see it in day, the remaining suspect is contrast against dark pavement, not a missing layer.
+
+### 2026-09-17 - Drive "ticks" were also Core zoom stepping at 1 Hz
+
+Position was already following the smoothed puck, but Core's speed→zoom curve still landed raw once a second, so the frame breathed in steps on acceleration. Sep 17 polish blends zoom (TC ~1.35s, capped step) and lengthens puck/bearing/along TCs a notch. Knobs live in `driveFollowSmooth.ts` with rollback values — if Bill says it lags turns, snap those back before touching framing again.
+
+### 2026-09-16 - Camera guards keyed on the wrong condition lock the map
+
+Two in one night. The dest-pin floor keyed on "no routes", so every pre-trip map was pinned at ~11.2 and Bill could not pinch out to check weather - the guard's real window is "pin dropped, plan not painted" (`shouldHoldDestPlaceFrame`). And road-control icons were collected fine but never drew, because symbol placement runs bottom-up and the topmost layer yields to basemap labels. Pattern for P1: each new Drive guard needs its narrowest true condition written down, or it grows into a mode lock. Also worth remembering road controls are corridor-only by construction (Directions intersections), so nothing shows without a route - if that feels wrong to Bill later, it needs a different data source, not a wider guard.
+
+### 2026-09-16 - Framing constants live in two places now
+
+Tipping Drive up (pitch 64 -> 68) and zooming in (16.35 -> 16.6, highway 15.1 -> 15.35) had to be edited in `DriveFollowCam.swift` as well as the web constants: Core owns the sample, so the web value is only the fallback when a sample has no `camPitch`. Anything that looks like a "camera setting" is now a pair, and only the Swift half changes what Bill sees on the phone. Rollback values are recorded next to `DRIVE_FOLLOW_PITCH_DEG`. For P1 this argues for one shared framing source the plugin reads, instead of two hand-synced copies.
+
+### 2026-09-19 - P1: the camera stopped being many writers
+
+The 435 dump (0 applies, Jeff 515, puck at the 50) was not one more hold/freeze bug, it was the design: rAF follow, Jeff, drone, enter-Drive snap and the chrome settle snap each called Mapbox. Now one reducer (`driveCameraQueue`) answers one question per frame - drone > radio hold > resync > follow - and only the rAF loop writes. Jeff and the chrome snap publish intents. Steady hard-follow also writes one pose instead of setCenter-then-correct (`canPreShiftYardLineCenter`). Watch the next dump for "Cam health: freeze 0" with Jeff still counting: that would mean Jeff is sensing fine and no longer yanking.
+
+### 2026-09-19 - Warm the zoom the driver is looking at, and the URL the style asks for
+
+Two separate misses in the same feature. The corridor warm filled z10-13 while Drive sits at z16.6, and it built `mapbox.mapbox-streets-v8` URLs while the style requests one composite URL (plus a per-session `sku`), so "tiles warm" in About was a cache entry nobody reads. New `driveZoomTileWarm` does the next ~8 mi at z15-16 with a tight pad, groups read off the live style, and aborts the moment the radio holds. Still not P2 - no packs, no TileStore, no native map.
+
+### 2026-09-19 - One pose, one reroute owner
+
+The puck was fed raw GPS and snapped to the polyline in JS while Core was already map-matching the same car at 1 Hz - two opinions that only disagree in a dead zone. While Core is fresh the puck now interpolates Core's enhanced location and the DIY snap is skipped (`drivePoseSource`, About shows `puck core`). Same shape for reroute: Core owns it, DIY plans only when Core is absent, abandoned, quiet, or had 12 s after a confirmed off-route and produced nothing (`rerouteOwner`). If a future drive ever shows the puck on a frontage road while the banner is right, the suspect is Core's matching, not our snap - check `puck core` vs `puck gps` first.

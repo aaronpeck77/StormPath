@@ -55,6 +55,11 @@ import {
 } from "./offRoutePollLogic";
 import { offRouteEnterThresholdM } from "./offRouteRecoveryPolicy";
 import {
+  diyMayPlanReroute,
+  resolveRerouteOwner,
+  type CoreRerouteHealth,
+} from "./rerouteOwner";
+import {
   bearingAlongRouteAhead,
   initialBearingDegrees,
   pointAtAlongMeters,
@@ -117,6 +122,12 @@ export interface UseOffRouteNavigationDeps {
   adoptLockedRouteGeometry: (geometry: LngLat[], opts?: { force?: boolean }) => void;
   /** iOS: restart Mapbox Core on the new GPS→dest corridor. No-op on web. */
   restartNativeNav?: () => Promise<boolean | void>;
+  /**
+   * Live Core reroute health. While Core owns the reroute, this hook still detects
+   * and reports off-route but does not plan — no duplicate Directions call and no
+   * Core stop/start mid-drive.
+   */
+  coreRerouteHealthRef?: MutableRefObject<CoreRerouteHealth>;
   viewModeRef: MutableRefObject<MapViewMode>;
   /**
    * When true, driver is following a learned personal fork — suppress main-corridor
@@ -174,6 +185,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setPreviewLegIndex,
     adoptLockedRouteGeometry,
     restartNativeNav,
+    coreRerouteHealthRef,
     viewModeRef,
     onPersonalForkRef,
   } = deps;
@@ -214,6 +226,8 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   const guidanceCumDistRef = useRef<Float64Array | null>(null);
   const guidanceGeomSigRef = useRef("");
   const lastAutoRerouteAttemptRef = useRef(0);
+  /** Start of the current off-route episode — Core's grace window is measured from here. */
+  const offRouteSinceMsRef = useRef<number | null>(null);
 
   useEffect(() => {
     const g = guidanceRoute?.geometry;
@@ -254,6 +268,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     offRouteRejoinAlongMRef.current = session.offRouteRejoinAlongM;
     if (offRouteLatchedRef.current !== session.offRouteLatched) {
       if (session.offRouteLatched) bumpDriveDiag("offRoute");
+      offRouteSinceMsRef.current = session.offRouteLatched ? Date.now() : null;
       offRouteLatchedRef.current = session.offRouteLatched;
       setOffRouteLatched(session.offRouteLatched);
     }
@@ -309,6 +324,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     lastHoldPreviewFetchRef.current = 0;
     holdPreviewFetchInFlightRef.current = false;
     lastOffRouteSampleRef.current = null;
+    offRouteSinceMsRef.current = null;
     drivingRejoinRoadClassRef.current = "unknown";
     drivingRejoinSurfaceAtRef.current = null;
     drivingRejoinModeRef.current = "manual";
@@ -492,6 +508,17 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       ) {
         return;
       }
+
+      /* Core reroutes on its own and hands back geometry through `routeChanged`.
+       * Planning here as well meant a second Directions call and a Core stop/start
+       * mid-drive. Detection and the banner stay; only the planning waits. */
+      const owner = resolveRerouteOwner({
+        health: coreRerouteHealthRef?.current,
+        offRouteSinceMs: offRouteSinceMsRef.current,
+        nowMs: now,
+      });
+      if (!diyMayPlanReroute(owner)) return;
+
       lastAutoRerouteAttemptRef.current = now;
 
       pollSessionRef.current = {
@@ -508,6 +535,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       markRecoveryFailed,
       routingRef,
       altRoutesRefreshInFlightRef,
+      coreRerouteHealthRef,
       viewModeRef,
     ]
   );

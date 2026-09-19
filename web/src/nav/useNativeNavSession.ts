@@ -18,6 +18,7 @@ import type { TripStop } from "./routeWaypoints";
 import type { NavigationPositionState } from "../hooks/useNavigationPosition";
 import { bumpDriveDiag, resetDriveDiag } from "./driveDiagnostics";
 import { createNativeDrivePoseHold } from "./nativeDrivePoseHold";
+import type { CoreRerouteHealth } from "./rerouteOwner";
 import {
   createNativeDriveFollowCam,
   parseNativeDriveFollowCamera,
@@ -132,6 +133,16 @@ export function useNativeNavSession(opts: {
   const nativeStoppingRef = useRef(false);
   /** Core calculated a different corridor — DIY owns this trip; do not restart Core. */
   const nativeAbandonedRef = useRef(false);
+  /**
+   * Live view of whether Core can still own a reroute. The DIY off-route poll reads
+   * this instead of planning in parallel (see {@link resolveRerouteOwner}).
+   */
+  const coreRerouteHealthRef = useRef<CoreRerouteHealth>({
+    active: false,
+    abandoned: false,
+    lastProgressAtMs: null,
+    lastRouteChangedAtMs: null,
+  });
   const corridorAdoptedRef = useRef(false);
   /** First Core `routeChanged` this session — later ones are mid-trip reroutes. */
   const firstRouteChangedRef = useRef(true);
@@ -169,6 +180,12 @@ export function useNativeNavSession(opts: {
     firstRouteChangedRef.current = true;
     poseHoldRef.current.reset();
     followCamRef.current.reset();
+    coreRerouteHealthRef.current = {
+      active: false,
+      abandoned: false,
+      lastProgressAtMs: null,
+      lastRouteChangedAtMs: null,
+    };
     setNativeNavActive(false);
     setPosition(null);
     setFollowCamera(null);
@@ -194,6 +211,12 @@ export function useNativeNavSession(opts: {
       firstRouteChangedRef.current = true;
       poseHoldRef.current.reset();
       followCamRef.current.reset();
+      coreRerouteHealthRef.current = {
+        active: false,
+        abandoned: false,
+        lastProgressAtMs: null,
+        lastRouteChangedAtMs: null,
+      };
       setFollowCamera(null);
 
       const handles = await Promise.all([
@@ -207,6 +230,12 @@ export function useNativeNavSession(opts: {
             return;
           }
           bumpDriveDiag("coreSamples");
+          coreRerouteHealthRef.current = {
+            ...coreRerouteHealthRef.current,
+            active: true,
+            abandoned: nativeAbandonedRef.current,
+            lastProgressAtMs: Date.now(),
+          };
           const held = poseHoldRef.current.accept({
             lng: e.lng,
             lat: e.lat,
@@ -276,6 +305,14 @@ export function useNativeNavSession(opts: {
             return;
           }
           corridorAdoptedRef.current = true;
+          /* Core delivered a corridor. On a mid-trip emit that *is* the reroute, so
+           * the DIY poll must not also call Directions for this off-route episode. */
+          if (!isFirst) {
+            coreRerouteHealthRef.current = {
+              ...coreRerouteHealthRef.current,
+              lastRouteChangedAtMs: Date.now(),
+            };
+          }
           setNativeNavActive(true);
           const steps = parseNativeTurnSteps(e.turnSteps);
           if (steps.length) setTurnSteps(steps);
@@ -405,6 +442,8 @@ export function useNativeNavSession(opts: {
     nativeNavActive,
     position,
     followCamera,
+    /** Read by the DIY off-route poll to stay out of Core's way. */
+    coreRerouteHealthRef,
     /** Live Mapbox Core banner fields (instruction + distance). */
     guidance,
     /** Live Mapbox Core turn list — same route as the blue line / voice. */

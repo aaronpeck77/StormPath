@@ -19,6 +19,18 @@ import { isWifiConnection } from "../map/mapPreloadNetwork";
 import { warmMapTilesForBounds } from "../map/mapRegionCacheWarm";
 import { prefetchMapTilesForBounds } from "../map/prefetchMapTilesForBounds";
 import {
+  readMapVectorTilesetGroups,
+  styleMatchedTileUrl,
+} from "../map/mapStyleTileSources";
+import {
+  DRIVE_WARM_MAX_TILES,
+  DRIVE_WARM_ZOOMS,
+  driveZoomWindowBounds,
+  nextDriveZoomWindowStartM,
+  shouldRunDriveZoomWarm,
+  shouldWarmNextDriveZoomWindow,
+} from "../map/driveZoomTileWarm";
+import {
   corridorWindowBounds,
   nextCorridorWindowStartM,
   shouldPrefetchNextCorridorWindow,
@@ -91,9 +103,16 @@ import {
   noteViewDroneTap,
   noteViewDroneWriteFail,
   setDriveDiagCamWriter,
+  setDriveDiagPoseSource,
   setDriveDiagRoadControls,
   setDriveDiagRouteLengthM,
 } from "../nav/driveDiagnostics";
+import {
+  drivePoseCountsAsSnapped,
+  pickDrivePoseSource,
+  shouldSnapPuckToRoute,
+  type DrivePoseSource,
+} from "../nav/drivePoseSource";
 import {
   boundsFromGeometry,
   computeRadarStormMotions,
@@ -157,8 +176,12 @@ import { isNativeMapboxNavPlatform } from "../nav/useNativeNavSession";
 import { StormpathMapboxNavigation } from "@stormpath/mapbox-navigation";
 import {
   allowBasemapStyleReload,
-  shouldFreezeFollowCamOnWeakTiles,
+  WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE,
 } from "./mapLowSignalResilience";
+import {
+  driveCameraCommandFreezes,
+  resolveDriveCameraCommand,
+} from "./driveCameraQueue";
 import {
   DRIVE_FOLLOW_ZOOM_DEFAULT,
   DRIVE_FOLLOW_ZOOM_MIN,
@@ -183,7 +206,6 @@ import {
 import {
   applyContinuousDroneFrame,
   mapDroneDurationMs,
-  MAP_VIEW_FLY_MS,
   mapViewFlySkipReason,
   readMapDronePose,
   type MapDronePose,
@@ -592,8 +614,13 @@ function DriveMapInner({
   navigationStartedRef.current = navigationStarted;
   const nativeFollowCameraRef = useRef(nativeFollowCamera);
   nativeFollowCameraRef.current = nativeFollowCamera;
+  /** When Core last reported. A new object arrives on every progress event, parked or not. */
+  const coreSampleAtMsRef = useRef<number | null>(null);
   const nativeDriveMapActiveRef = useRef(nativeDriveMapActive);
   nativeDriveMapActiveRef.current = nativeDriveMapActive;
+  useEffect(() => {
+    coreSampleAtMsRef.current = nativeFollowCamera ? performance.now() : null;
+  }, [nativeFollowCamera]);
   const [nativeMapHoleReady, setNativeMapHoleReady] = useState(false);
   /** Only punch the web map once native NavigationMapView is actually showing. */
   const [nativeMapShowing, setNativeMapShowing] = useState(false);
@@ -660,6 +687,9 @@ function DriveMapInner({
   /** Sliding corridor window start (m) for ahead tile prefetch while navigating. */
   const corridorWarmStartMRef = useRef(0);
   const corridorPrefetchInFlightRef = useRef(false);
+  /** Separate, much shorter sliding window for the zoom Drive actually renders. */
+  const driveZoomWarmStartMRef = useRef<number | null>(null);
+  const driveZoomWarmInFlightRef = useRef(false);
   const exploreTimerRef = useRef<number | null>(null);
   const destTapStartRef = useRef<DestTapPoint | null>(null);
   const lastDestTapMsRef = useRef(0);
@@ -1968,8 +1998,25 @@ function DriveMapInner({
       driveCamResyncRef.current = true;
     };
 
-    const readPuckFollowLngLat = (): LngLat | null =>
+    const readGpsLngLat = (): LngLat | null =>
       liveGpsLngLatRefStable?.current ?? userLngLatRef.current;
+
+    /**
+     * Core's enhanced location is already map-matched and pose-held, so while it is
+     * fresh it *is* the puck. Raw GPS + the JS snap is the fallback path for
+     * web-only Go and for a Core that stopped reporting.
+     */
+    const readPuckPose = (nowMs: number): { source: DrivePoseSource; lngLat: LngLat | null } => {
+      const cam = nativeFollowCameraRef.current;
+      const source = pickDrivePoseSource({
+        coreFollowActive: Boolean(cam) && navigationStartedRef.current,
+        corePose: cam,
+        coreSampleAtMs: coreSampleAtMsRef.current,
+        nowMs,
+      });
+      if (source === "core" && cam) return { source, lngLat: [cam.lng, cam.lat] };
+      return { source: "gps", lngLat: readGpsLngLat() };
+    };
 
     const readPuckFollowSpeedMps = (): number | null =>
       liveGpsSpeedMpsRefStable?.current ?? speedMpsRef.current;
@@ -1979,14 +2026,17 @@ function DriveMapInner({
 
     const loop = () => {
       if (puckMarkerRef.current !== marker) return;
-      const t = readPuckFollowLngLat();
+      const nowForPose = performance.now();
+      const pose = readPuckPose(nowForPose);
+      const t = pose.lngLat;
+      setDriveDiagPoseSource(pose.source);
       if (t) {
         try {
-        const now = performance.now();
+        const now = nowForPose;
         const dt = Math.min(0.12, (now - lastTs) / 1000);
         lastTs = now;
 
-        // Detect a new GPS sample arriving.
+        // Detect a new pose sample arriving (Core ~1 Hz, or a GPS fix).
         if (t[0] !== lastSeenLng || t[1] !== lastSeenLat) {
           prevFix = curFix;
           curFix = { lng: t[0], lat: t[1], t: now };
@@ -2010,7 +2060,8 @@ function DriveMapInner({
         });
 
         // Snap to the route polyline when close enough (hysteresis reduces threshold flicker).
-        const geom = puckSnapGeomRef.current;
+        // Skipped on a Core pose — that point came out of Mapbox's own map matcher.
+        const geom = shouldSnapPuckToRoute(pose.source) ? puckSnapGeomRef.current : null;
         if (geom && geom.length >= 2) {
           const g0 = geom[0]!;
           const geomKey = `${geom.length}:${g0[0].toFixed(5)},${g0[1].toFixed(5)}`;
@@ -2089,7 +2140,10 @@ function DriveMapInner({
         const blendTc = drivePuckBlendTcS({
           stationary: isStationary,
           crawling: isCrawling,
-          snapped: snapLatched,
+          snapped: drivePoseCountsAsSnapped({
+            source: pose.source,
+            diySnapLatched: snapLatched,
+          }),
         });
         const blend = 1 - Math.exp(-dt / blendTc);
         const cur = readMapLngLat(marker.getLngLat());
@@ -2239,17 +2293,6 @@ function DriveMapInner({
               if (radioHold) bumpDriveDiag("lowSignalHolds");
               if (wasHold && !radioHold) driveCamResyncRef.current = true;
             }
-            const freezeCam = shouldFreezeFollowCamOnWeakTiles({
-              holdTiles: radioHold,
-              writeFailStreak: followWriteFailStreak,
-              resync: driveCamResyncRef.current,
-            });
-            if (freezeCam && !camFreezeLatched) {
-              camFreezeLatched = true;
-              noteDriveDiagCamFreeze();
-            } else if (!freezeCam) {
-              camFreezeLatched = false;
-            }
             const latched = advanceFollowCamWriter({
               holdTiles,
               writer: followWriter,
@@ -2277,8 +2320,30 @@ function DriveMapInner({
                 },
                 offset: easeCached.offset,
               });
+            /* One decision, one write. Everything that used to call Mapbox on its own
+             * (Jeff, reclaim, hold clear) now arrives here as an intent. */
+            const cmd = resolveDriveCameraCommand({
+              droneActive: false /* the outer gate already yielded to the drone */,
+              flyWindowOpen: false,
+              radioHold,
+              writeFailStreak: followWriteFailStreak,
+              failFreezeAfter: WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE,
+              resyncRequested: driveCamResyncRef.current,
+              exploring: userExploringRef.current,
+              parkedHold,
+              poseChanged: needsWrite,
+              writer: followWriter,
+            });
+            if (driveCameraCommandFreezes(cmd)) {
+              if (!camFreezeLatched) {
+                camFreezeLatched = true;
+                noteDriveDiagCamFreeze();
+              }
+            } else {
+              camFreezeLatched = false;
+            }
             let applied = false;
-            if (!parkedHold && needsWrite && !freezeCam) {
+            if (cmd.kind === "write") {
               if (followWriter === "hard") {
                 applied = hardWrite();
               } else {
@@ -2415,13 +2480,20 @@ function DriveMapInner({
                * Hard only while tiles are held (+ clear delay). Failed pan skips. */
               const holdTiles = holdLastGoodMapRef.current || !isOnlineRef.current;
               if (driveCamResyncRef.current) followWriteFailStreak = 0;
-              if (
-                shouldFreezeFollowCamOnWeakTiles({
-                  holdTiles,
-                  writeFailStreak: followWriteFailStreak,
-                  resync: forceCamSync,
-                })
-              ) {
+              /* Same queue as the Core path — web-only GO must not grow its own rules. */
+              const webCmd = resolveDriveCameraCommand({
+                droneActive: false,
+                flyWindowOpen: false,
+                radioHold: holdTiles,
+                writeFailStreak: followWriteFailStreak,
+                failFreezeAfter: WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE,
+                resyncRequested: forceCamSync,
+                exploring: false /* gated upstream */,
+                parkedHold: false,
+                poseChanged: true /* this block only runs when the pose moved */,
+                writer: followWriter,
+              });
+              if (webCmd.kind !== "write") {
                 raf = requestAnimationFrame(loop);
                 return;
               }
@@ -3824,18 +3896,21 @@ function DriveMapInner({
     const timer = window.setTimeout(() => {
       void (async () => {
         if (cancelled || navigationStartedRef.current) return;
-        await prefetchMapTilesForBounds(first, token, {
-          shouldAbort: () => cancelled || navigationStartedRef.current,
+        /* Warm the style's own composite URL, or the cache entry never gets read. */
+        const styleMap = mapRef.current;
+        const groups = styleMap ? readMapVectorTilesetGroups(styleMap) : [];
+        const warmOpts = {
           includeTerrain: false,
-        });
+          tilesetGroups: groups,
+          transformUrl: styleMap ? (u: string) => styleMatchedTileUrl(styleMap, u) : undefined,
+          shouldAbort: () => cancelled || navigationStartedRef.current,
+        };
+        await prefetchMapTilesForBounds(first, token, warmOpts);
         if (cancelled || navigationStartedRef.current) return;
         const nextStart = nextCorridorWindowStartM(0);
         const next = corridorWindowBounds(geom, nextStart);
         if (!next) return;
-        await prefetchMapTilesForBounds(next, token, {
-          shouldAbort: () => cancelled || navigationStartedRef.current,
-          includeTerrain: false,
-        });
+        await prefetchMapTilesForBounds(next, token, warmOpts);
         if (!cancelled) corridorWarmStartMRef.current = 0;
       })();
     }, 900);
@@ -3874,11 +3949,14 @@ function DriveMapInner({
 
     let cancelled = false;
     corridorPrefetchInFlightRef.current = true;
+    const corridorMap = mapRef.current;
     void (async () => {
       try {
         const result = await prefetchMapTilesForBounds(next, token, {
           shouldAbort: () => cancelled || !navigationStartedRef.current || !isOnline,
           includeTerrain: false,
+          tilesetGroups: corridorMap ? readMapVectorTilesetGroups(corridorMap) : [],
+          transformUrl: corridorMap ? (u) => styleMatchedTileUrl(corridorMap, u) : undefined,
         });
         if (!cancelled && result === "done") {
           bumpDriveDiag("tileWarmDone");
@@ -3905,9 +3983,102 @@ function DriveMapInner({
     isOnline,
   ]);
 
+  /**
+   * Drive-zoom warm: the next ~8 mi at z15–16, using the tileset groups the live
+   * style requests. The regional z10–13 warm is the wrong picture for a camera
+   * sitting at z16.6 — that mismatch is why the park dead zone still went blank
+   * with "tiles warm" in the dump.
+   */
+  useEffect(() => {
+    if (!mapReady || !navigationStarted) return;
+    if (
+      !shouldRunDriveZoomWarm({
+        navigationStarted,
+        isOnline,
+        holdLastGoodMap,
+        inFlight: driveZoomWarmInFlightRef.current,
+      })
+    ) {
+      return;
+    }
+    const geom =
+      (puckSnapGeometry && puckSnapGeometry.length >= 2 ? puckSnapGeometry : null) ??
+      (corridorRouteGeometry && corridorRouteGeometry.length >= 2
+        ? corridorRouteGeometry
+        : null) ??
+      routes.find((r) => r.id === lineFocusId)?.geometry ??
+      routes[0]?.geometry ??
+      null;
+    if (!geom || geom.length < 2) return;
+    const along = userAlongMeters ?? 0;
+    if (!Number.isFinite(along) || along < 0) return;
+
+    /* First pass starts at the driver. After that, slide with overlap. */
+    const started = driveZoomWarmStartMRef.current;
+    const nextStart =
+      started == null
+        ? Math.max(0, along)
+        : shouldWarmNextDriveZoomWindow(along, started)
+          ? nextDriveZoomWindowStartM(started)
+          : null;
+    if (nextStart == null) return;
+
+    const bounds = driveZoomWindowBounds(geom, nextStart);
+    if (!bounds) return;
+    const token = getWebEnv().mapboxToken;
+    if (!token) return;
+    const map = mapRef.current;
+    const groups = map ? readMapVectorTilesetGroups(map) : [];
+
+    let cancelled = false;
+    driveZoomWarmInFlightRef.current = true;
+    void (async () => {
+      try {
+        const result = await prefetchMapTilesForBounds(bounds, token, {
+          zooms: DRIVE_WARM_ZOOMS,
+          maxTiles: DRIVE_WARM_MAX_TILES,
+          includeTerrain: false,
+          tilesetGroups: groups,
+          transformUrl: map ? (u) => styleMatchedTileUrl(map, u) : undefined,
+          pacingMs: 90,
+          /* Drop the moment the radio holds — failed fetches help nobody. */
+          shouldAbort: () =>
+            cancelled ||
+            !navigationStartedRef.current ||
+            !isOnlineRef.current ||
+            holdLastGoodMapRef.current,
+        });
+        if (cancelled) return;
+        if (result === "done") {
+          bumpDriveDiag("tileWarmDone");
+          driveZoomWarmStartMRef.current = nextStart;
+        } else if (result === "failed") {
+          bumpDriveDiag("tileWarmFailed");
+        }
+      } finally {
+        driveZoomWarmInFlightRef.current = false;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    mapReady,
+    navigationStarted,
+    userAlongMeters,
+    lineFocusId,
+    routesPlanningFitKey,
+    puckSnapGeometry,
+    corridorRouteGeometry,
+    isOnline,
+    holdLastGoodMap,
+  ]);
+
   useEffect(() => {
     if (navigationStarted) return;
     corridorWarmStartMRef.current = 0;
+    driveZoomWarmStartMRef.current = null;
   }, [navigationStarted, routesPlanningFitKey]);
 
   useEffect(() => {
@@ -4480,34 +4651,11 @@ function DriveMapInner({
         followingTemporaryGuidance: followingTemporaryGuidanceRef.current,
         preferTravel: performance.now() < driveCamPreferTravelUntilMsRef.current,
       });
-      const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
-      const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;
-      const easeKey = `${stormBarVisibleRef.current}|${stormBarExpandedRef.current}|${progressRailVisibleRef.current}|${wx}x${wy}`;
-      let easeCached = driveCamEaseOptsCacheRef.current;
-      if (!easeCached || easeCached.key !== easeKey) {
-        const o = driveCameraEaseOptions(
-          stormBarVisibleRef.current,
-          stormBarExpandedRef.current,
-          progressRailVisibleRef.current
-        );
-        easeCached = { key: easeKey, padding: o.padding, offset: o.offset };
-        driveCamEaseOptsCacheRef.current = easeCached;
-      }
-      const guarded = guardDriveFollowCamera({
-        center: pos,
-        zoom: repairStoredDriveFollowZoom(driveNavZoomRef),
-        puck: pos,
-      });
-      safeEaseTo(map, {
-        center: guarded.center,
-        zoom: guarded.zoom,
-        pitch: DRIVE_FOLLOW_PITCH_DEG,
-        bearing: brg,
-        padding: easeCached?.padding,
-        offset: easeCached?.offset,
-        duration: performance.now() < viewFlyUntilMsRef.current ? MAP_VIEW_FLY_MS : 0,
-        essential: true,
-      });
+      /* Seed the bearing and let the follow loop place the frame. This snap used to
+       * `safeEaseTo` here, which needs isStyleLoaded() — on a weak radio it no-oped
+       * and counted against the fail streak while the loop framed the same pose. */
+      driveCamBearingSmoothedRef.current = brg;
+      setMapResumeTick((n) => n + 1);
     };
 
     const t1 = window.setTimeout(snapDriveCam, 80);
@@ -4575,66 +4723,12 @@ function DriveMapInner({
     const travelTarget =
       driveLastTravelBearingRef.current ?? driveCamBearingSmoothedRef.current;
     driveCamBearingSmoothedRef.current = travelTarget;
+    /* Jeff is a sensor, not a writer. He publishes the Resync intent and the rAF
+     * loop performs the single write on the next frame, at the yard line, using
+     * the latched writer. 435 is what happens when this effect calls Mapbox
+     * itself: 515 bare setCenters, a resize per tick, puck stuck at midfield. */
     driveCamResyncRef.current = true;
     setMapResumeTick((n) => n + 1);
-    const map = mapRef.current;
-    if (map) {
-      /* Do not resize on every Jeff tick — 435 did that 515 times and kept the puck at midfield. */
-      if (isMapUsable(map) && travelTarget != null) {
-        const pos =
-          userLngLatRef.current ??
-          (puckMarkerRef.current ? readMapLngLat(puckMarkerRef.current.getLngLat()) : null);
-        if (pos) {
-          const o = driveCameraEaseOptions(
-            stormBarVisibleRef.current,
-            stormBarExpandedRef.current,
-            progressRailVisibleRef.current
-          );
-          /* Same single writer as the RAF loop — do not chain pan → hard → jump. */
-          const useHard =
-            followCamWriterRef.current === "hard" ||
-            holdLastGoodMapRef.current ||
-            !isOnlineRef.current;
-          const guarded = guardDriveFollowCamera({
-            center: pos,
-            zoom: repairStoredDriveFollowZoom(driveNavZoomRef),
-            puck: pos,
-          });
-          if (useHard) {
-            if (
-              writeHardFollowToYardLine(map, {
-                center: guarded.center,
-                zoom: guarded.zoom,
-                pitch: DRIVE_FOLLOW_PITCH_DEG,
-                bearing: travelTarget,
-                padding: o.padding as unknown as {
-                  top: number;
-                  bottom: number;
-                  left: number;
-                  right: number;
-                },
-                offset: o.offset,
-              })
-            ) {
-              driveCamResyncRef.current = false;
-            }
-          } else if (
-            safePanToCenter(map, {
-              center: guarded.center,
-              zoom: guarded.zoom,
-              pitch: DRIVE_FOLLOW_PITCH_DEG,
-              bearing: travelTarget,
-              padding: o.padding,
-              offset: o.offset,
-              duration: 0,
-              essential: true,
-            })
-          ) {
-            driveCamResyncRef.current = false;
-          }
-        }
-      }
-    }
   }, [followCamResyncKey, mapReady, navigationStarted, viewMode]);
 
   /** Report map bearing while driving so the dock compass can keep N aligned with true north. */

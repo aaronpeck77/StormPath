@@ -6,7 +6,6 @@ import {
   shouldApplyMapHoldOnNativeRadioDown,
   shouldClearHeldMapMatch,
   shouldClearLastGoodMapHold,
-  shouldFreezeFollowCamOnWeakTiles,
   shouldHoldLastGoodMap,
 } from "../mapLowSignalResilience";
 
@@ -39,48 +38,6 @@ describe("shouldApplyMapHoldOnNativeRadioDown", () => {
         alreadyHolding: true,
       })
     ).toBe(true);
-  });
-});
-
-describe("shouldFreezeFollowCamOnWeakTiles", () => {
-  it("freezes on a tile hold so the camera does not walk onto missing tiles", () => {
-    expect(
-      shouldFreezeFollowCamOnWeakTiles({
-        holdTiles: true,
-        writeFailStreak: 0,
-        resync: false,
-      })
-    ).toBe(true);
-  });
-
-  it("freezes after a few failed pans even before the supervisor hold latches", () => {
-    expect(
-      shouldFreezeFollowCamOnWeakTiles({
-        holdTiles: false,
-        writeFailStreak: 3,
-        resync: false,
-      })
-    ).toBe(true);
-  });
-
-  it("ignores Jeff resync while tiles are still held", () => {
-    expect(
-      shouldFreezeFollowCamOnWeakTiles({
-        holdTiles: true,
-        writeFailStreak: 0,
-        resync: true,
-      })
-    ).toBe(true);
-  });
-
-  it("allows one snap after the hold clears", () => {
-    expect(
-      shouldFreezeFollowCamOnWeakTiles({
-        holdTiles: false,
-        writeFailStreak: 8,
-        resync: true,
-      })
-    ).toBe(false);
   });
 });
 

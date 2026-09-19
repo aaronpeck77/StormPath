@@ -32,22 +32,12 @@ export function shouldApplyMapHoldOnNativeRadioDown(input: {
   return input.nativeConnected === false && (input.navigationStarted || input.alreadyHolding);
 }
 
-/** Failed yard-line pans in a row before we freeze the last good picture. */
+/**
+ * Failed yard-line pans in a row before we freeze the last good picture. The freeze
+ * decision itself lives in the camera queue (`resolveDriveCameraCommand`) so there
+ * is exactly one place that can stop a write.
+ */
 export const WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE = 3;
-
-/** Do not walk the camera onto uncached tiles. `holdTiles` is radio hold only. */
-export function shouldFreezeFollowCamOnWeakTiles(input: {
-  holdTiles: boolean;
-  writeFailStreak: number;
-  resync: boolean;
-  failFreezeAfter?: number;
-}): boolean {
-  /* Radio hold wins over Jeff resync. Fail-streak freeze must yield so one snap
-   * can reset the 435 deadlock (0 applies, puck stuck at midfield). */
-  if (input.holdTiles) return true;
-  if (input.resync) return false;
-  return input.writeFailStreak >= (input.failFreezeAfter ?? WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE);
-}
 
 export function shouldHoldLastGoodMap(input: {
   navigatorOnLine: boolean;

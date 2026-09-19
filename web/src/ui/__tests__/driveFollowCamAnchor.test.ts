@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  canPreShiftYardLineCenter,
   centerForPuckScreenAnchor,
   yardLineCenterAfterHardFollow,
+  yardLineShiftLngLat,
 } from "../driveFollowCamAnchor";
 
 /**
@@ -74,5 +76,65 @@ describe("centerForPuckScreenAnchor", () => {
       centerScreen: { x: 400, y: 300 },
     });
     expect(next).toEqual([4, -2]);
+  });
+});
+
+describe("one-pose hard follow", () => {
+  it("measures the yard-line shift as a reusable lng/lat delta", () => {
+    const shift = yardLineShiftLngLat({
+      unproject,
+      mapWidth: 800,
+      mapHeight: 600,
+      padding: { top: 0, bottom: 0, left: 0, right: 0 },
+      offset: [0, 100],
+    });
+    /* Same 100 px "up" correction as the two-step path, expressed as a delta. */
+    expect(shift).not.toBeNull();
+    expect(shift!.dLng).toBeCloseTo(0, 6);
+    expect(shift!.dLat).toBeCloseTo(1, 6);
+  });
+
+  it("reports no shift when the anchor already is the canvas middle", () => {
+    const shift = yardLineShiftLngLat({
+      unproject,
+      mapWidth: 800,
+      mapHeight: 600,
+      padding: { top: 0, bottom: 0, left: 0, right: 0 },
+      offset: [0, 0],
+    });
+    expect(shift).toEqual({ dLng: 0, dLat: 0 });
+  });
+
+  it("pre-shifts a steady follow frame (one Mapbox write)", () => {
+    expect(
+      canPreShiftYardLineCenter({
+        current: { zoom: 16.6, pitch: 60, bearing: 91 },
+        target: { zoom: 16.6, pitch: 60, bearing: 90 },
+      })
+    ).toBe(true);
+  });
+
+  it("refuses to pre-shift an entry / post-freeze frame", () => {
+    expect(
+      canPreShiftYardLineCenter({
+        current: { zoom: 8, pitch: 0, bearing: 0 },
+        target: { zoom: 16.6, pitch: 60, bearing: 90 },
+      })
+    ).toBe(false);
+    expect(
+      canPreShiftYardLineCenter({
+        current: null,
+        target: { zoom: 16.6, pitch: 60, bearing: 90 },
+      })
+    ).toBe(false);
+  });
+
+  it("treats bearing wrap as close, not as a 359 degree jump", () => {
+    expect(
+      canPreShiftYardLineCenter({
+        current: { zoom: 16.6, pitch: 60, bearing: 359.5 },
+        target: { zoom: 16.6, pitch: 60, bearing: 0.5 },
+      })
+    ).toBe(true);
   });
 });
