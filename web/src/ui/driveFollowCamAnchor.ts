@@ -10,6 +10,7 @@
 import type { Map } from "mapbox-gl";
 import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
 import { safeHardFollowCamera } from "./mapCameraSafe";
+import { haversineMeters } from "../nav/routeGeometry";
 
 export type ScreenPoint = { x: number; y: number };
 
@@ -102,72 +103,39 @@ export function yardLineCenterAfterHardFollow(input: {
 }
 
 /**
- * Geographic delta for the yard-line shift, measured on the *current* transform.
- * Screen points near the center unproject to a delta that depends on zoom, pitch
- * and bearing but not on where the center happens to be, so a follow frame that
- * is already at the Drive pose can pre-shift and write once.
+ * How far the yard-line correction may move the camera from the puck. The offset is
+ * a fraction of the screen at Drive zoom, so this is generous; it exists only to
+ * reject a near-horizon `unproject` blow-up.
  */
-export function yardLineShiftLngLat(input: {
-  unproject: (point: [number, number]) => { lng: number; lat: number };
-  mapWidth: number;
-  mapHeight: number;
-  padding: YardLinePadding;
-  offset: readonly [number, number];
-}): { dLng: number; dLat: number } | null {
-  const w = input.mapWidth;
-  const h = input.mapHeight;
-  if (!(w > 0) || !(h > 0)) return null;
-  const anchor = expectedDrivePuckScreenAnchorPx({
-    mapWidth: w,
-    mapHeight: h,
-    padding: input.padding,
-    offset: input.offset,
-  });
-  const mid = { x: w / 2, y: h / 2 };
-  const dx = mid.x - anchor.x;
-  const dy = mid.y - anchor.y;
-  if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return { dLng: 0, dLat: 0 };
-  try {
-    const from = input.unproject([mid.x, mid.y]);
-    const to = input.unproject([mid.x + dx, mid.y + dy]);
-    const dLng = to.lng - from.lng;
-    const dLat = to.lat - from.lat;
-    if (!Number.isFinite(dLng) || !Number.isFinite(dLat)) return null;
-    return { dLng, dLat };
-  } catch {
-    return null;
-  }
-}
+export const YARD_LINE_CORRECTION_MAX_M = 1_500;
 
-/** Tolerances where the live transform is close enough to reuse for the shift. */
-export const YARD_LINE_PRESHIFT_BEARING_TOL_DEG = 1.5;
-export const YARD_LINE_PRESHIFT_ZOOM_TOL = 0.02;
-export const YARD_LINE_PRESHIFT_PITCH_TOL_DEG = 0.5;
-
-export function canPreShiftYardLineCenter(input: {
-  current: { zoom: number; pitch: number; bearing: number } | null;
-  target: { zoom: number; pitch: number; bearing: number };
-}): boolean {
-  const c = input.current;
-  if (!c) return false;
-  if (!Number.isFinite(c.zoom) || !Number.isFinite(c.pitch) || !Number.isFinite(c.bearing)) {
-    return false;
-  }
-  if (Math.abs(c.zoom - input.target.zoom) > YARD_LINE_PRESHIFT_ZOOM_TOL) return false;
-  if (Math.abs(c.pitch - input.target.pitch) > YARD_LINE_PRESHIFT_PITCH_TOL_DEG) return false;
-  let dBrg = Math.abs(((c.bearing - input.target.bearing) % 360 + 540) % 360 - 180);
-  if (!Number.isFinite(dBrg)) dBrg = 360;
-  return dBrg <= YARD_LINE_PRESHIFT_BEARING_TOL_DEG;
+export function yardLineCorrectionIsSane(
+  puck: [number, number],
+  corrected: [number, number]
+): boolean {
+  if (!Number.isFinite(corrected[0]) || !Number.isFinite(corrected[1])) return false;
+  /* Latitude past the Mercator limit means the unproject landed off the world. */
+  if (Math.abs(corrected[1]) > 85) return false;
+  const moved = haversineMeters(puck, corrected);
+  if (!Number.isFinite(moved)) return false;
+  return moved <= YARD_LINE_CORRECTION_MAX_M;
 }
 
 /**
  * Hard follow that keeps the Drive 30-yard line. Both the rAF loop and Jeff's
  * resync intent land here.
  *
- * Steady state writes **one** pose: the shift is measured on the live transform
- * (already at the Drive zoom/pitch and within a degree of bearing) and folded
- * into the center. Only an entry / post-freeze frame, where the live transform
- * is nowhere near the Drive pose, falls back to write-then-correct.
+ * **Write, then measure, then correct — do not try to pre-compute the shift.**
+ * 439 shipped a "one pose" version that folded the yard-line offset into the
+ * center before writing, on the assumption that `setCenter(X)` lands X at canvas
+ * middle. It does not: `easeTo({ padding })` leaves *persistent* padding on the
+ * transform, so `setCenter` lands X at the padded center. Adding our own
+ * padding-derived shift on top double-counted it, and in landscape (asymmetric
+ * left/right padding) that threw the puck sideways about half a block the moment
+ * Go handed the camera to the hard path.
+ *
+ * Projecting the center *after* the write is the only way to learn where it
+ * actually landed. The extra `setCenter` is cheap; guessing is not.
  */
 export function writeHardFollowToYardLine(
   map: Map,
@@ -180,6 +148,7 @@ export function writeHardFollowToYardLine(
     offset: readonly [number, number];
   }
 ): boolean {
+  if (!safeHardFollowCamera(map, opts)) return false;
   let w = 0;
   let h = 0;
   try {
@@ -187,32 +156,8 @@ export function writeHardFollowToYardLine(
     w = el.clientWidth;
     h = el.clientHeight;
   } catch {
-    return safeHardFollowCamera(map, opts);
+    return true;
   }
-
-  let live: { zoom: number; pitch: number; bearing: number } | null = null;
-  try {
-    live = { zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() };
-  } catch {
-    live = null;
-  }
-  if (canPreShiftYardLineCenter({ current: live, target: opts })) {
-    const shift = yardLineShiftLngLat({
-      unproject: (pt) => map.unproject(pt),
-      mapWidth: w,
-      mapHeight: h,
-      padding: opts.padding,
-      offset: opts.offset,
-    });
-    if (shift) {
-      return safeHardFollowCamera(map, {
-        ...opts,
-        center: [opts.center[0] + shift.dLng, opts.center[1] + shift.dLat],
-      });
-    }
-  }
-
-  if (!safeHardFollowCamera(map, opts)) return false;
   let centerScreen: ScreenPoint | undefined;
   try {
     const p = map.project(opts.center);
@@ -229,6 +174,11 @@ export function writeHardFollowToYardLine(
     centerScreen,
   });
   if (!next) return true;
+  /* Drive sits at pitch ~64, so the corrected screen point can land close to the
+   * horizon where `unproject` returns a point kilometres away. The yard line is a
+   * few hundred metres of ground at this zoom — anything past the sanity radius is
+   * a projection artifact, and applying it would put the camera on empty map. */
+  if (!yardLineCorrectionIsSane(opts.center, next)) return true;
   safeHardFollowCamera(map, {
     center: next,
     zoom: opts.zoom,

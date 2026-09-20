@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  canPreShiftYardLineCenter,
   centerForPuckScreenAnchor,
   yardLineCenterAfterHardFollow,
-  yardLineShiftLngLat,
+  yardLineCorrectionIsSane,
+  YARD_LINE_CORRECTION_MAX_M,
 } from "../driveFollowCamAnchor";
 
 /**
@@ -79,62 +79,60 @@ describe("centerForPuckScreenAnchor", () => {
   });
 });
 
-describe("one-pose hard follow", () => {
-  it("measures the yard-line shift as a reusable lng/lat delta", () => {
-    const shift = yardLineShiftLngLat({
+/**
+ * 439 regression: a pre-computed shift assumed `setCenter` lands the center at
+ * canvas middle. With landscape padding it lands at the *padded* center, so the
+ * correction double-counted padding and threw the puck sideways at Go. The
+ * correction must be measured from where the center actually projected.
+ */
+describe("yard-line correction uses the measured center, not canvas middle", () => {
+  const padding = { top: 0, bottom: 0, left: 200, right: 0 };
+
+  it("takes the real projected center into account", () => {
+    /* Asymmetric padding: the anchor sits right of canvas middle. */
+    const measured = yardLineCenterAfterHardFollow({
       unproject,
       mapWidth: 800,
       mapHeight: 600,
-      padding: { top: 0, bottom: 0, left: 0, right: 0 },
+      padding,
+      offset: [0, 100],
+      centerScreen: { x: 500, y: 300 },
+    });
+    const assumedMid = yardLineCenterAfterHardFollow({
+      unproject,
+      mapWidth: 800,
+      mapHeight: 600,
+      padding,
       offset: [0, 100],
     });
-    /* Same 100 px "up" correction as the two-step path, expressed as a delta. */
-    expect(shift).not.toBeNull();
-    expect(shift!.dLng).toBeCloseTo(0, 6);
-    expect(shift!.dLat).toBeCloseTo(1, 6);
+    expect(measured).not.toBeNull();
+    expect(assumedMid).not.toBeNull();
+    /* The two disagree — which is exactly why guessing the center is not allowed. */
+    expect(measured![0]).not.toBeCloseTo(assumedMid![0], 6);
   });
 
-  it("reports no shift when the anchor already is the canvas middle", () => {
-    const shift = yardLineShiftLngLat({
-      unproject,
-      mapWidth: 800,
-      mapHeight: 600,
-      padding: { top: 0, bottom: 0, left: 0, right: 0 },
-      offset: [0, 0],
-    });
-    expect(shift).toEqual({ dLng: 0, dLat: 0 });
+  it("rejects a near-horizon unproject blow-up instead of driving the camera off", () => {
+    const puck: [number, number] = [-88.95, 39.84];
+    /* A few hundred metres is the real yard-line correction. */
+    expect(yardLineCorrectionIsSane(puck, [-88.95, 39.8425])).toBe(true);
+    /* What a near-horizon unproject produces: kilometres away, or off the world. */
+    expect(yardLineCorrectionIsSane(puck, [-88.95, 41.5])).toBe(false);
+    expect(yardLineCorrectionIsSane(puck, [-88.95, 89.9])).toBe(false);
+    expect(yardLineCorrectionIsSane(puck, [Number.NaN, 39.84])).toBe(false);
+    expect(YARD_LINE_CORRECTION_MAX_M).toBeGreaterThan(500);
   });
 
-  it("pre-shifts a steady follow frame (one Mapbox write)", () => {
+  it("does not move the camera when the center already sits on the anchor", () => {
+    const anchorX = padding.left + (800 - padding.left) / 2;
     expect(
-      canPreShiftYardLineCenter({
-        current: { zoom: 16.6, pitch: 60, bearing: 91 },
-        target: { zoom: 16.6, pitch: 60, bearing: 90 },
+      yardLineCenterAfterHardFollow({
+        unproject,
+        mapWidth: 800,
+        mapHeight: 600,
+        padding,
+        offset: [0, 0],
+        centerScreen: { x: anchorX, y: 300 },
       })
-    ).toBe(true);
-  });
-
-  it("refuses to pre-shift an entry / post-freeze frame", () => {
-    expect(
-      canPreShiftYardLineCenter({
-        current: { zoom: 8, pitch: 0, bearing: 0 },
-        target: { zoom: 16.6, pitch: 60, bearing: 90 },
-      })
-    ).toBe(false);
-    expect(
-      canPreShiftYardLineCenter({
-        current: null,
-        target: { zoom: 16.6, pitch: 60, bearing: 90 },
-      })
-    ).toBe(false);
-  });
-
-  it("treats bearing wrap as close, not as a 359 degree jump", () => {
-    expect(
-      canPreShiftYardLineCenter({
-        current: { zoom: 16.6, pitch: 60, bearing: 359.5 },
-        target: { zoom: 16.6, pitch: 60, bearing: 0.5 },
-      })
-    ).toBe(true);
+    ).toBeNull();
   });
 });
