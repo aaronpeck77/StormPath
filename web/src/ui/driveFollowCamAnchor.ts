@@ -4,7 +4,10 @@
  * Mapbox `offset` lives on the animation options, so `easeTo` can hold the puck
  * on the 30-yard line but `setCenter` / `jumpTo` cannot — they center it. When a
  * dead cell latches the hard writer, that difference is what makes the puck climb
- * up the screen. Shifting the center by the same pixel delta restores the framing.
+ * up the screen, so the hard path has to solve for the offset center itself.
+ *
+ * The one rule here: **solve in ground space, never in screen pixels.** Drive runs at
+ * pitch 68, where pixels and metres are nowhere near proportional.
  */
 
 import type { Map } from "mapbox-gl";
@@ -21,85 +24,88 @@ export type YardLinePadding = {
   right: number;
 };
 
-/**
- * Center that puts `puck` on `anchor`. Screen-space math, so it needs the map's
- * current projection — pass `map.project` / `map.unproject` (both stay valid while
- * tiles are stalled, since they are transform math, not rendered data).
- */
-export function centerForPuckScreenAnchor(input: {
-  project: (lngLat: [number, number]) => ScreenPoint;
-  unproject: (point: [number, number]) => { lng: number; lat: number };
-  center: [number, number];
-  puck: [number, number];
-  anchor: ScreenPoint;
-  /** Ignore sub-pixel corrections so a parked puck cannot jitter the center. */
-  minShiftPx?: number;
-}): [number, number] | null {
-  const minShift = input.minShiftPx ?? 0.5;
-  let puckPt: ScreenPoint;
-  let centerPt: ScreenPoint;
-  try {
-    puckPt = input.project(input.puck);
-    centerPt = input.project(input.center);
-  } catch {
-    return null;
-  }
-  if (
-    !Number.isFinite(puckPt.x) ||
-    !Number.isFinite(puckPt.y) ||
-    !Number.isFinite(centerPt.x) ||
-    !Number.isFinite(centerPt.y)
-  ) {
-    return null;
-  }
-
-  const dx = puckPt.x - input.anchor.x;
-  const dy = puckPt.y - input.anchor.y;
-  if (Math.abs(dx) < minShift && Math.abs(dy) < minShift) return input.center;
-
-  try {
-    const next = input.unproject([centerPt.x + dx, centerPt.y + dy]);
-    if (!Number.isFinite(next.lng) || !Number.isFinite(next.lat)) return null;
-    return [next.lng, next.lat];
-  } catch {
-    return null;
-  }
+/* Web Mercator, GL JS's own unit square. The ground plane is uniformly scaled here,
+ * so a screen point's offset from the center is a constant vector regardless of where
+ * the center is — which is what makes the solve below exact. Latitude is not linear
+ * in this space, so the arithmetic has to happen here and not in degrees. */
+function mercatorX(lng: number): number {
+  return (180 + lng) / 360;
+}
+function mercatorY(lat: number): number {
+  return (
+    (180 - (180 / Math.PI) * Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360))) / 360
+  );
+}
+function lngFromMercatorX(x: number): number {
+  return x * 360 - 180;
+}
+function latFromMercatorY(y: number): number {
+  return (360 / Math.PI) * Math.atan(Math.exp(((180 - y * 360) * Math.PI) / 180)) - 90;
 }
 
 /**
- * After `setCenter(puck)` the puck sits at canvas mid (50-yard). This is the
- * center that drops it back to the 30-yard anchor. Uses canvas mid when
- * `project` is stale — Jeff's 435 path centered 515 times and never shifted.
+ * Center that makes `puck` land on the screen point `anchor`.
+ *
+ * This is the solve `Transform.setLocationAtPoint` performs, and it has to be done
+ * this way. The tempting version — reflect the anchor across the center *in screen
+ * pixels*, then unproject — is what shipped, and it is wrong under pitch. Screen
+ * space is not linear in ground distance at pitch 68: a point 72 px above center is
+ * ~3.7 camera-heights out while a point 72 px below is ~1.8, so reflecting pixels
+ * overshoots the correction by nearly 2x and throws the puck at the bottom edge.
+ * The Jeff resyncs that follow fight the same overshoot, which is why the puck never
+ * settled on the yard line.
+ *
+ * Do it in ground space instead. `anchorGround - center` is the Mercator offset that
+ * lands on `anchor`; the puck sits on the anchor exactly when the center is that
+ * offset *behind* it.
+ *
+ * `unproject` is transform math, not rendered data, so it stays valid while tiles are
+ * stalled — this works in a dead zone.
  */
-export function yardLineCenterAfterHardFollow(input: {
+export function centerPuttingPuckAtScreenPoint(input: {
   unproject: (point: [number, number]) => { lng: number; lat: number };
+  /** The map's current center — the reference `unproject` is measured against. */
+  center: [number, number];
+  puck: [number, number];
+  anchor: ScreenPoint;
+}): [number, number] | null {
+  if (!Number.isFinite(input.anchor.x) || !Number.isFinite(input.anchor.y)) return null;
+  let anchorGround: { lng: number; lat: number };
+  try {
+    anchorGround = input.unproject([input.anchor.x, input.anchor.y]);
+  } catch {
+    return null;
+  }
+  if (!Number.isFinite(anchorGround.lng) || !Number.isFinite(anchorGround.lat)) return null;
+  if (Math.abs(anchorGround.lat) > 85) return null;
+
+  const dx = mercatorX(anchorGround.lng) - mercatorX(input.center[0]);
+  const dy = mercatorY(anchorGround.lat) - mercatorY(input.center[1]);
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return null;
+
+  const nextX = mercatorX(input.puck[0]) - dx;
+  const nextY = mercatorY(input.puck[1]) - dy;
+  if (!(nextY > 0) || !(nextY < 1)) return null;
+  const lng = lngFromMercatorX(nextX);
+  const lat = latFromMercatorY(nextY);
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+  return [lng, lat];
+}
+
+/** The Drive yard-line anchor in screen pixels for the current chrome. */
+export function driveYardLineAnchorPx(input: {
   mapWidth: number;
   mapHeight: number;
   padding: YardLinePadding;
   offset: readonly [number, number];
-  centerScreen?: ScreenPoint;
-}): [number, number] | null {
-  const w = input.mapWidth;
-  const h = input.mapHeight;
-  if (!(w > 0) || !(h > 0)) return null;
-  const anchor = expectedDrivePuckScreenAnchorPx({
-    mapWidth: w,
-    mapHeight: h,
+}): ScreenPoint | null {
+  if (!(input.mapWidth > 0) || !(input.mapHeight > 0)) return null;
+  return expectedDrivePuckScreenAnchorPx({
+    mapWidth: input.mapWidth,
+    mapHeight: input.mapHeight,
     padding: input.padding,
     offset: input.offset,
   });
-  const mid = input.centerScreen ?? { x: w / 2, y: h / 2 };
-  if (!Number.isFinite(mid.x) || !Number.isFinite(mid.y)) return null;
-  const dx = mid.x - anchor.x;
-  const dy = mid.y - anchor.y;
-  if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return null;
-  try {
-    const next = input.unproject([mid.x + dx, mid.y + dy]);
-    if (!Number.isFinite(next.lng) || !Number.isFinite(next.lat)) return null;
-    return [next.lng, next.lat];
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -125,17 +131,15 @@ export function yardLineCorrectionIsSane(
  * Hard follow that keeps the Drive 30-yard line. Both the rAF loop and Jeff's
  * resync intent land here.
  *
- * **Write, then measure, then correct — do not try to pre-compute the shift.**
- * 439 shipped a "one pose" version that folded the yard-line offset into the
- * center before writing, on the assumption that `setCenter(X)` lands X at canvas
- * middle. It does not: `easeTo({ padding })` leaves *persistent* padding on the
- * transform, so `setCenter` lands X at the padded center. Adding our own
- * padding-derived shift on top double-counted it, and in landscape (asymmetric
- * left/right padding) that threw the puck sideways about half a block the moment
- * Go handed the camera to the hard path.
+ * Write the pose first, then solve for the center that puts the puck on the yard
+ * line and write that. The pose has to go in first because the solve depends on the
+ * live zoom, pitch and bearing — measuring against the *previous* frame's pose is
+ * how you get a correction that was right one frame ago.
  *
- * Projecting the center *after* the write is the only way to learn where it
- * actually landed. The extra `setCenter` is cheap; guessing is not.
+ * The pan path gets this for free: `easeTo({ padding, offset })` runs Mapbox's own
+ * `setLocationAtPoint`. `setCenter` has no `offset`, so it centers the puck at
+ * midfield and we have to reproduce that solve ourselves — see
+ * {@link centerPuttingPuckAtScreenPoint} for why it must be ground space, not pixels.
  */
 export function writeHardFollowToYardLine(
   map: Map,
@@ -149,35 +153,32 @@ export function writeHardFollowToYardLine(
   }
 ): boolean {
   if (!safeHardFollowCamera(map, opts)) return false;
-  let w = 0;
-  let h = 0;
+  let anchor: ScreenPoint | null = null;
   try {
     const el = map.getContainer();
-    w = el.clientWidth;
-    h = el.clientHeight;
+    anchor = driveYardLineAnchorPx({
+      mapWidth: el.clientWidth,
+      mapHeight: el.clientHeight,
+      padding: opts.padding,
+      offset: opts.offset,
+    });
   } catch {
     return true;
   }
-  let centerScreen: ScreenPoint | undefined;
-  try {
-    const p = map.project(opts.center);
-    if (Number.isFinite(p.x) && Number.isFinite(p.y)) centerScreen = p;
-  } catch {
-    centerScreen = undefined;
-  }
-  const next = yardLineCenterAfterHardFollow({
+  if (!anchor) return true;
+  const next = centerPuttingPuckAtScreenPoint({
     unproject: (pt) => map.unproject(pt),
-    mapWidth: w,
-    mapHeight: h,
-    padding: opts.padding,
-    offset: opts.offset,
-    centerScreen,
+    /* `safeHardFollowCamera` just centered on the puck, so this is the reference
+     * the unproject below is measured against. */
+    center: opts.center,
+    puck: opts.center,
+    anchor,
   });
   if (!next) return true;
-  /* Drive sits at pitch ~64, so the corrected screen point can land close to the
-   * horizon where `unproject` returns a point kilometres away. The yard line is a
-   * few hundred metres of ground at this zoom — anything past the sanity radius is
-   * a projection artifact, and applying it would put the camera on empty map. */
+  /* Drive sits at pitch 68, where a screen point near the horizon unprojects
+   * kilometres out. The yard line is a few hundred metres of ground at this zoom, so
+   * anything past the sanity radius is a projection artifact — applying it would park
+   * the camera on empty map. */
   if (!yardLineCorrectionIsSane(opts.center, next)) return true;
   safeHardFollowCamera(map, {
     center: next,

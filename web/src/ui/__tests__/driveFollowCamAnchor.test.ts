@@ -1,138 +1,199 @@
 import { describe, expect, it } from "vitest";
 import {
-  centerForPuckScreenAnchor,
-  yardLineCenterAfterHardFollow,
+  centerPuttingPuckAtScreenPoint,
+  driveYardLineAnchorPx,
   yardLineCorrectionIsSane,
   YARD_LINE_CORRECTION_MAX_M,
 } from "../driveFollowCamAnchor";
 
 /**
- * Fake projection: 1 degree = 100 px, y inverted like a screen. Enough to prove the
- * shift direction, which is the part that decides whether the puck climbs.
+ * A pitched pinhole camera, because the whole point of this module is that a pitched
+ * projection is *not* linear in screen pixels. Flat-earth ground plane, bearing 0
+ * (north up), which is enough to pin the along-track arithmetic that was wrong.
  */
-const project = (ll: [number, number]) => ({ x: ll[0] * 100, y: -ll[1] * 100 });
-const unproject = (pt: [number, number]) => ({ lng: pt[0] / 100, lat: -pt[1] / 100 });
+const VIEW_W = 844;
+const VIEW_H = 390;
+const MID = { x: VIEW_W / 2, y: VIEW_H / 2 };
+const PITCH_DEG = 68;
+/** Focal length in px for Mapbox's default fov at this viewport height. */
+const FOCAL_PX = 586;
+/** Camera height above ground, in the same ground units as the distances below. */
+const CAM_H = 220;
+const GROUND_PX_TO_M = 1.21;
+const M_PER_DEG_LAT = 111_320;
+const M_PER_DEG_LNG = 85_300; // ~lat 40
 
-describe("centerForPuckScreenAnchor", () => {
-  it("shifts the center so a centered puck drops back to the yard line", () => {
-    /* Puck and center coincide → projects to viewport center (400, 300 here). */
-    const next = centerForPuckScreenAnchor({
-      project,
-      unproject,
-      center: [4, -3],
-      puck: [4, -3],
-      anchor: { x: 400, y: 400 }, // yard line sits 100 px below center
+const toRad = (deg: number): number => (deg * Math.PI) / 180;
+
+/** Ground distance from the camera nadir for a screen row, in metres. */
+function alongMetersAtScreenY(screenY: number): number {
+  const upPx = MID.y - screenY;
+  const phi = Math.atan(upPx / FOCAL_PX);
+  return CAM_H * Math.tan(toRad(PITCH_DEG) + phi) * GROUND_PX_TO_M;
+}
+
+const CENTER_ALONG_M = alongMetersAtScreenY(MID.y);
+
+function makeUnproject(center: [number, number]) {
+  return ([x, y]: [number, number]): { lng: number; lat: number } => {
+    const northM = alongMetersAtScreenY(y) - CENTER_ALONG_M;
+    return {
+      lng: center[0] + ((x - MID.x) * GROUND_PX_TO_M) / M_PER_DEG_LNG,
+      lat: center[1] + northM / M_PER_DEG_LAT,
+    };
+  };
+}
+
+/** Landscape, right-hand UI: asymmetric padding plus the yard-line offset. */
+const LANDSCAPE_PADDING = { top: 52, bottom: 48, left: 72, right: 430 };
+const LANDSCAPE_OFFSET = [10, 72] as const;
+
+describe("driveYardLineAnchorPx", () => {
+  it("puts the puck near the 30-yard line (≈30% up from the bottom)", () => {
+    const anchor = driveYardLineAnchorPx({
+      mapWidth: VIEW_W,
+      mapHeight: VIEW_H,
+      padding: LANDSCAPE_PADDING,
+      offset: LANDSCAPE_OFFSET,
     });
-    expect(next).not.toBeNull();
-    /* Camera center must move "up" in screen space so the puck lands lower. */
-    expect(next![1]).toBeGreaterThan(-3);
-    expect(next![0]).toBeCloseTo(4, 6);
+    expect(anchor).not.toBeNull();
+    const upFromBottom = (VIEW_H - anchor!.y) / VIEW_H;
+    expect(upFromBottom).toBeGreaterThan(0.25);
+    expect(upFromBottom).toBeLessThan(0.36);
   });
 
-  it("leaves the center alone when the puck is already on the anchor", () => {
-    const center: [number, number] = [4, -3];
-    const next = centerForPuckScreenAnchor({
-      project,
-      unproject,
-      center,
-      puck: center,
-      anchor: { x: 400, y: 300 },
-    });
-    expect(next).toBe(center);
-  });
-
-  it("ignores sub-pixel drift so a parked puck cannot jitter the center", () => {
-    const center: [number, number] = [4, -3];
-    const next = centerForPuckScreenAnchor({
-      project,
-      unproject,
-      center,
-      puck: center,
-      anchor: { x: 400.2, y: 300.2 },
-    });
-    expect(next).toBe(center);
-  });
-
-  it("returns null rather than a bad center when projection throws", () => {
-    const next = centerForPuckScreenAnchor({
-      project: () => {
-        throw new Error("map mid-teardown");
-      },
-      unproject,
-      center: [4, -3],
-      puck: [4, -3],
-      anchor: { x: 400, y: 400 },
-    });
-    expect(next).toBeNull();
-  });
-
-  it("drops a midfield puck to the 30-yard anchor after a hard setCenter", () => {
-    const next = yardLineCenterAfterHardFollow({
-      unproject,
-      mapWidth: 800,
-      mapHeight: 600,
-      padding: { top: 0, bottom: 0, left: 0, right: 0 },
-      offset: [0, 100],
-      centerScreen: { x: 400, y: 300 },
-    });
-    expect(next).toEqual([4, -2]);
+  it("returns null for a collapsed container", () => {
+    expect(
+      driveYardLineAnchorPx({
+        mapWidth: 0,
+        mapHeight: VIEW_H,
+        padding: LANDSCAPE_PADDING,
+        offset: LANDSCAPE_OFFSET,
+      })
+    ).toBeNull();
   });
 });
 
-/**
- * 439 regression: a pre-computed shift assumed `setCenter` lands the center at
- * canvas middle. With landscape padding it lands at the *padded* center, so the
- * correction double-counted padding and threw the puck sideways at Go. The
- * correction must be measured from where the center actually projected.
- */
-describe("yard-line correction uses the measured center, not canvas middle", () => {
-  const padding = { top: 0, bottom: 0, left: 200, right: 0 };
+describe("centerPuttingPuckAtScreenPoint", () => {
+  const puck: [number, number] = [-88.95, 39.84];
+  const anchor = driveYardLineAnchorPx({
+    mapWidth: VIEW_W,
+    mapHeight: VIEW_H,
+    padding: LANDSCAPE_PADDING,
+    offset: LANDSCAPE_OFFSET,
+  })!;
 
-  it("takes the real projected center into account", () => {
-    /* Asymmetric padding: the anchor sits right of canvas middle. */
-    const measured = yardLineCenterAfterHardFollow({
-      unproject,
-      mapWidth: 800,
-      mapHeight: 600,
-      padding,
-      offset: [0, 100],
-      centerScreen: { x: 500, y: 300 },
+  /**
+   * The exact answer: the camera center must sit ahead of the puck by the ground
+   * distance between the anchor row and the center row.
+   */
+  const requiredAheadM = CENTER_ALONG_M - alongMetersAtScreenY(anchor.y);
+
+  it("solves the along-track shift exactly under pitch", () => {
+    const next = centerPuttingPuckAtScreenPoint({
+      unproject: makeUnproject(puck),
+      center: puck,
+      puck,
+      anchor,
     });
-    const assumedMid = yardLineCenterAfterHardFollow({
-      unproject,
-      mapWidth: 800,
-      mapHeight: 600,
-      padding,
-      offset: [0, 100],
-    });
-    expect(measured).not.toBeNull();
-    expect(assumedMid).not.toBeNull();
-    /* The two disagree — which is exactly why guessing the center is not allowed. */
-    expect(measured![0]).not.toBeCloseTo(assumedMid![0], 6);
+    expect(next).not.toBeNull();
+    const aheadM = (next![1] - puck[1]) * M_PER_DEG_LAT;
+    /* Ahead of the puck, so the puck falls back to the yard line. */
+    expect(aheadM).toBeGreaterThan(0);
+    expect(aheadM).toBeCloseTo(requiredAheadM, 0);
   });
 
-  it("rejects a near-horizon unproject blow-up instead of driving the camera off", () => {
-    const puck: [number, number] = [-88.95, 39.84];
-    /* A few hundred metres is the real yard-line correction. */
+  it("does not overshoot the way reflecting screen pixels did", () => {
+    /* The shipped bug: reflect the anchor across the center in pixels, then
+     * unproject. At pitch 68 the row above center is much further out than the row
+     * below, so this lands roughly twice as far ahead and threw the puck at the
+     * bottom edge — then Jeff fought the same overshoot on every resync. */
+    const unproject = makeUnproject(puck);
+    const reflected = unproject([
+      MID.x + (MID.x - anchor.x),
+      MID.y + (MID.y - anchor.y),
+    ]);
+    const reflectedAheadM = (reflected.lat - puck[1]) * M_PER_DEG_LAT;
+    expect(reflectedAheadM).toBeGreaterThan(requiredAheadM * 1.6);
+
+    const next = centerPuttingPuckAtScreenPoint({
+      unproject,
+      center: puck,
+      puck,
+      anchor,
+    });
+    expect((next![1] - puck[1]) * M_PER_DEG_LAT).toBeLessThan(reflectedAheadM * 0.75);
+  });
+
+  it("carries the lateral half of asymmetric landscape padding", () => {
+    const next = centerPuttingPuckAtScreenPoint({
+      unproject: makeUnproject(puck),
+      center: puck,
+      puck,
+      anchor,
+    });
+    /* Right-hand UI puts chrome over the right half, so the anchor sits left of canvas
+     * middle. To draw the puck left of center the camera center must move the other
+     * way — right of the puck. Getting this sign wrong is the half-block swing. */
+    expect(next![0]).toBeGreaterThan(puck[0]);
+    const lateralM = (next![0] - puck[0]) * M_PER_DEG_LNG;
+    expect(lateralM).toBeCloseTo((MID.x - anchor.x) * GROUND_PX_TO_M, 0);
+  });
+
+  it("is a no-op shift when the anchor already is the center", () => {
+    const next = centerPuttingPuckAtScreenPoint({
+      unproject: makeUnproject(puck),
+      center: puck,
+      puck,
+      anchor: MID,
+    });
+    expect(next![0]).toBeCloseTo(puck[0], 9);
+    expect(next![1]).toBeCloseTo(puck[1], 9);
+  });
+
+  it("gives up when unproject throws or returns garbage", () => {
+    expect(
+      centerPuttingPuckAtScreenPoint({
+        unproject: () => {
+          throw new Error("style mid-teardown");
+        },
+        center: puck,
+        puck,
+        anchor,
+      })
+    ).toBeNull();
+    expect(
+      centerPuttingPuckAtScreenPoint({
+        unproject: () => ({ lng: Number.NaN, lat: 39.84 }),
+        center: puck,
+        puck,
+        anchor,
+      })
+    ).toBeNull();
+    /* Near-horizon unproject can land off the world. */
+    expect(
+      centerPuttingPuckAtScreenPoint({
+        unproject: () => ({ lng: -88.95, lat: 89.9 }),
+        center: puck,
+        puck,
+        anchor,
+      })
+    ).toBeNull();
+  });
+});
+
+describe("yardLineCorrectionIsSane", () => {
+  const puck: [number, number] = [-88.95, 39.84];
+
+  it("accepts a real yard-line correction and rejects a projection blow-up", () => {
     expect(yardLineCorrectionIsSane(puck, [-88.95, 39.8425])).toBe(true);
-    /* What a near-horizon unproject produces: kilometres away, or off the world. */
     expect(yardLineCorrectionIsSane(puck, [-88.95, 41.5])).toBe(false);
     expect(yardLineCorrectionIsSane(puck, [-88.95, 89.9])).toBe(false);
     expect(yardLineCorrectionIsSane(puck, [Number.NaN, 39.84])).toBe(false);
-    expect(YARD_LINE_CORRECTION_MAX_M).toBeGreaterThan(500);
   });
 
-  it("does not move the camera when the center already sits on the anchor", () => {
-    const anchorX = padding.left + (800 - padding.left) / 2;
-    expect(
-      yardLineCenterAfterHardFollow({
-        unproject,
-        mapWidth: 800,
-        mapHeight: 600,
-        padding,
-        offset: [0, 0],
-        centerScreen: { x: anchorX, y: 300 },
-      })
-    ).toBeNull();
+  it("leaves room for the real shift at Drive zoom", () => {
+    const requiredM = CENTER_ALONG_M - alongMetersAtScreenY(VIEW_H * 0.7);
+    expect(YARD_LINE_CORRECTION_MAX_M).toBeGreaterThan(requiredM * 2);
   });
 });
