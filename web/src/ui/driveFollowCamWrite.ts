@@ -28,8 +28,19 @@ export function advanceFollowCamWriter(input: {
   holdFalseSinceMs: number | null;
   nowMs: number;
   holdClearMs?: number;
+  /**
+   * Last time a yard-line pan returned false. The radio saying "up" is not proof
+   * that tiles are back: 438 flipped to `pan` 3 s after the hold cleared, then ate
+   * 137 failed pans and 24 freezes because `isStyleLoaded()` was still false.
+   * Treat a recent failure as its own hold.
+   */
+  lastPanFailAtMs?: number | null;
 }): { writer: FollowCamWriter; holdFalseSinceMs: number | null } {
-  if (input.holdTiles) {
+  const panFailedRecently =
+    input.lastPanFailAtMs != null &&
+    Number.isFinite(input.lastPanFailAtMs) &&
+    input.nowMs - input.lastPanFailAtMs < (input.holdClearMs ?? FOLLOW_CAM_HOLD_CLEAR_MS);
+  if (input.holdTiles || panFailedRecently) {
     return { writer: "hard", holdFalseSinceMs: null };
   }
   const since = input.holdFalseSinceMs ?? input.nowMs;

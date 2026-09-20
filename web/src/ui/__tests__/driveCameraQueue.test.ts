@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  driveCameraCommandFreezes,
+  driveCameraCommandDegraded,
   driveCameraCommandWrites,
+  driveCameraDegrade,
   resolveDriveCameraCommand,
   type DriveCameraFrame,
 } from "../driveCameraQueue";
@@ -13,7 +14,6 @@ function frame(over: Partial<DriveCameraFrame> = {}): DriveCameraFrame {
     flyWindowOpen: false,
     radioHold: false,
     writeFailStreak: 0,
-    failFreezeAfter: 3,
     resyncRequested: false,
     exploring: false,
     parkedHold: false,
@@ -24,9 +24,9 @@ function frame(over: Partial<DriveCameraFrame> = {}): DriveCameraFrame {
 }
 
 describe("resolveDriveCameraCommand", () => {
-  it("writes the normal follow frame", () => {
+  it("writes the normal follow frame on the pan path", () => {
     const cmd = resolveDriveCameraCommand(frame());
-    expect(cmd).toEqual({ kind: "write", writer: "pan", resync: false });
+    expect(cmd).toEqual({ kind: "write", writer: "pan", resync: false, degraded: null });
     expect(driveCameraCommandWrites(cmd)).toBe(true);
   });
 
@@ -43,31 +43,40 @@ describe("resolveDriveCameraCommand", () => {
     });
   });
 
-  it("radio hold beats a resync so the camera never walks onto dead tiles", () => {
-    const cmd = resolveDriveCameraCommand(frame({ radioHold: true, resyncRequested: true }));
-    expect(cmd).toEqual({ kind: "freeze", reason: "radio_hold" });
-    expect(driveCameraCommandFreezes(cmd)).toBe(true);
+  /* 438: a held radio used to return `freeze`, so 125 s of dead zone meant 125 s of
+   * no camera writes and the puck drove off a frozen map. It must keep following. */
+  it("keeps following on a held radio, degraded to the hard writer", () => {
+    const cmd = resolveDriveCameraCommand(frame({ radioHold: true }));
+    expect(cmd).toEqual({ kind: "write", writer: "hard", resync: false, degraded: "radio_hold" });
+    expect(driveCameraCommandWrites(cmd)).toBe(true);
+    expect(driveCameraCommandDegraded(cmd)).toBe("radio_hold");
   });
 
-  it("takes the one snap once the hold clears", () => {
-    expect(resolveDriveCameraCommand(frame({ radioHold: false, resyncRequested: true }))).toEqual({
+  it("never returns a command that skips the write because of signal", () => {
+    for (const f of [
+      frame({ radioHold: true }),
+      frame({ writeFailStreak: 1 }),
+      frame({ writeFailStreak: 99 }),
+      frame({ radioHold: true, writeFailStreak: 99 }),
+    ]) {
+      expect(resolveDriveCameraCommand(f).kind).toBe("write");
+    }
+  });
+
+  /* One failed pan means isStyleLoaded() is false; the next pan fails the same way. */
+  it("degrades after a single failed pan instead of retrying easeTo", () => {
+    expect(resolveDriveCameraCommand(frame({ writeFailStreak: 1 }))).toEqual({
       kind: "write",
-      writer: "pan",
-      resync: true,
+      writer: "hard",
+      resync: false,
+      degraded: "write_fails",
     });
   });
 
-  it("freezes after the weak-tile fail streak", () => {
-    expect(resolveDriveCameraCommand(frame({ writeFailStreak: 3 }))).toEqual({
-      kind: "freeze",
-      reason: "weak_tiles",
-    });
-  });
-
-  it("a resync breaks the weak-tile freeze (435 deadlock)", () => {
+  it("still takes the re-pin snap while degraded", () => {
     expect(
-      resolveDriveCameraCommand(frame({ writeFailStreak: 9, resyncRequested: true, writer: "hard" }))
-    ).toEqual({ kind: "write", writer: "hard", resync: true });
+      resolveDriveCameraCommand(frame({ radioHold: true, resyncRequested: true }))
+    ).toEqual({ kind: "write", writer: "hard", resync: true, degraded: "radio_hold" });
   });
 
   it("does not fight the driver mid-pinch", () => {
@@ -82,6 +91,7 @@ describe("resolveDriveCameraCommand", () => {
       kind: "write",
       writer: "pan",
       resync: true,
+      degraded: null,
     });
   });
 
@@ -96,14 +106,17 @@ describe("resolveDriveCameraCommand", () => {
     });
   });
 
-  it("never reports a write for a yield/freeze/idle frame", () => {
-    for (const f of [
-      frame({ droneActive: true }),
-      frame({ radioHold: true }),
-      frame({ writeFailStreak: 5 }),
-      frame({ poseChanged: false }),
-    ]) {
+  it("reports no write for a yield or idle frame", () => {
+    for (const f of [frame({ droneActive: true }), frame({ poseChanged: false })]) {
       expect(driveCameraCommandWrites(resolveDriveCameraCommand(f))).toBe(false);
     }
+  });
+});
+
+describe("driveCameraDegrade", () => {
+  it("prefers the radio reason when both are true", () => {
+    expect(driveCameraDegrade({ radioHold: true, writeFailStreak: 5 })).toBe("radio_hold");
+    expect(driveCameraDegrade({ radioHold: false, writeFailStreak: 5 })).toBe("write_fails");
+    expect(driveCameraDegrade({ radioHold: false, writeFailStreak: 0 })).toBeNull();
   });
 });

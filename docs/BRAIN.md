@@ -76,6 +76,7 @@ Cue phrases: *“open Brain P1”* (already open), *“TestFlight this native br
 - Wi‑Fi preferred. Show “about X MB / ~N minutes.”
 - Use the same Mapbox Navigation `TileStore` already created by Core (`tilestoreConfig.navigatorLocation.tileStore`).
 - Predictive cache (already on after Go) stays; this is the *before you leave driveway* pack.
+- **Already shipped, do not rebuild:** the in-drive **Drive-zoom warm** (`web/src/map/driveZoomTileWarm.ts`, Sep 19 2026) keeps the next ~8 mi warm at z15–16 while driving. That is the cheap half of offline and it is done. P2 is the *pre-trip pack with UI* — size estimate, progress, cancel, remove — not a bigger sliding window.
 - Web / Netlify: no-op. Phone only.
 
 Cue phrases: *“open Brain P2”*, *“offline trip download”*, *“download this trip.”*

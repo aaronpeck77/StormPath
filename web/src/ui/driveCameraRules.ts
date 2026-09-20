@@ -6,8 +6,15 @@
  * fit/resize, flyTo, parked hold) grew the "camera is messed up in lots of ways"
  * field report. Keep new behavior here first, then call it from DriveMap.
  *
+ * The *when may we write at all* half of this contract now lives in
+ * `driveCameraQueue.ts` (`resolveDriveCameraCommand`): one decision, one Mapbox
+ * write per frame, priority drone > radio hold > resync > follow. This file keeps
+ * the *how hard* tuning (bearing catch-up, reclaim, Jeff cooldowns).
+ *
  * What the camera must do:
- *  1. One follow owner while Drive is live (rAF loop). Jeff only nudges that owner.
+ *  1. One follow owner while Drive is live (rAF loop). Every other source — Jeff,
+ *     the chrome-settle snap, reclaim, hold-clear — publishes an intent and must
+ *     never call Mapbox itself.
  *  2. Stay behind the puck; if the puck leaves the yard-line or the canvas, yank
  *     the camera back on *this frame*, not on a seconds-later watchdog.
  *  3. Cruise bearing stays smooth; corners catch up faster than a 1 s glide.

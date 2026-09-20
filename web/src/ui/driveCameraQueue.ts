@@ -10,26 +10,43 @@
  * The rule now: every source publishes an *intent*. The rAF loop asks this
  * reducer for the single command to run this frame. Jeff never touches Mapbox.
  *
- * Priority: drone > radio-hold freeze > resync > follow.
- *  - Drone owns the shot (Dr/Mp/Rt must never be cut).
- *  - Radio hold keeps the last good picture instead of walking onto dead tiles.
- *  - Resync is the one snap that re-pins the puck (hold clear, Jeff, reclaim).
- *  - Follow is the normal per-frame glide.
+ * ## A radio hold must not stop the camera (438)
+ *
+ * This file used to answer `freeze` while the radio was held, on the theory that
+ * we should not walk the camera onto uncached tiles. Build 438 proved that wrong
+ * in the worst way: 125 s of hold in a 240 s drive meant 125 s of *no camera
+ * writes*, so the puck simply drove off a frozen map — the exact thing the driver
+ * reported twice.
+ *
+ * The freeze was only ever needed because Jeff was yanking the camera during
+ * holds. The queue already removed that. And the two writers are not equal:
+ * `safePanToCenter` goes through `easeTo`, which requires `isStyleLoaded()` and
+ * no-ops while tiles are stalled, but `safeHardFollowCamera` is a direct
+ * transform write that works with no tiles at all. So a held radio now means
+ * **keep following with the hard writer**. Missing tiles render as background —
+ * which is what every other nav app shows — while the puck stays on its line.
+ *
+ * Priority: drone > resync > follow. Degrading to the hard writer is orthogonal:
+ * it can happen on any of those.
  */
 
 import type { FollowCamWriter } from "./driveFollowCamWrite";
+
+/** Why this frame must use the direct transform write instead of a yard-line pan. */
+export type DriveCameraDegrade = "radio_hold" | "write_fails";
 
 export type DriveCameraFrame = {
   /** A view drone shot owns the camera until its clock expires. */
   droneActive: boolean;
   /** Post-drone settle window (`viewFlyUntilMs`) — follow must not cut the landing. */
   flyWindowOpen: boolean;
-  /** Supervisor dead-zone hold or app-offline: keep the last painted frame. */
+  /** Supervisor dead-zone hold or app-offline. Degrades the writer; never stops it. */
   radioHold: boolean;
-  /** Consecutive failed writes — weak tiles, before the supervisor latches. */
+  /**
+   * Consecutive failed writes. One is enough to degrade: a failed pan means
+   * `isStyleLoaded()` is false, and the next pan will fail for the same reason.
+   */
   writeFailStreak: number;
-  /** Failed writes that trip a freeze when the radio still looks up. */
-  failFreezeAfter: number;
   /** Someone asked for the one re-pin snap (Jeff, reclaim, hold clear, view enter). */
   resyncRequested: boolean;
   /** Driver is pinching / panning — do not fight them. */
@@ -45,12 +62,29 @@ export type DriveCameraFrame = {
 export type DriveCameraCommand =
   /** Drone (or its landing window) owns the camera — follow yields, no write. */
   | { kind: "yield"; reason: "drone" | "fly_window" }
-  /** Hold the last good picture. No Mapbox call at all. */
-  | { kind: "freeze"; reason: "radio_hold" | "weak_tiles" }
   /** The one write for this frame. `resync` marks the re-pin snap. */
-  | { kind: "write"; writer: FollowCamWriter; resync: boolean }
+  | {
+      kind: "write";
+      writer: FollowCamWriter;
+      resync: boolean;
+      /** Non-null when the writer was forced to `hard` by a hold or failures. */
+      degraded: DriveCameraDegrade | null;
+    }
   /** Nothing worth writing. */
   | { kind: "idle"; reason: "exploring" | "parked" | "no_change" };
+
+/**
+ * A held radio or a failing pan both mean the same thing for this frame: the
+ * `easeTo` path is unavailable, so write the transform directly.
+ */
+export function driveCameraDegrade(frame: {
+  radioHold: boolean;
+  writeFailStreak: number;
+}): DriveCameraDegrade | null {
+  if (frame.radioHold) return "radio_hold";
+  if (frame.writeFailStreak > 0) return "write_fails";
+  return null;
+}
 
 /**
  * Single decision point. Order matters and is the whole contract — a caller that
@@ -60,26 +94,20 @@ export function resolveDriveCameraCommand(frame: DriveCameraFrame): DriveCameraC
   if (frame.droneActive) return { kind: "yield", reason: "drone" };
   if (frame.flyWindowOpen) return { kind: "yield", reason: "fly_window" };
 
-  /* Radio hold beats resync: letting Jeff unfreeze the picture is what walked the
-   * camera onto missing tiles for a whole dead-zone trip. The snap happens after
-   * the hold clears, because the clear edge is what sets `resyncRequested`. */
-  if (frame.radioHold) return { kind: "freeze", reason: "radio_hold" };
+  const degraded = driveCameraDegrade(frame);
+  const writer: FollowCamWriter = degraded ? "hard" : frame.writer;
 
-  /* A resync must be able to break a weak-tile freeze, or a bad streak deadlocks
-   * the camera for the rest of the trip (435: 0 applies, puck stuck at midfield). */
-  if (!frame.resyncRequested && frame.writeFailStreak >= frame.failFreezeAfter) {
-    return { kind: "freeze", reason: "weak_tiles" };
-  }
-
+  /* A resync outranks the comfort gates: it is the frame that re-pins the puck
+   * after a hold, a reclaim, or entering Drive. */
   if (frame.resyncRequested) {
-    return { kind: "write", writer: frame.writer, resync: true };
+    return { kind: "write", writer, resync: true, degraded };
   }
 
   if (frame.exploring) return { kind: "idle", reason: "exploring" };
   if (frame.parkedHold) return { kind: "idle", reason: "parked" };
   if (!frame.poseChanged) return { kind: "idle", reason: "no_change" };
 
-  return { kind: "write", writer: frame.writer, resync: false };
+  return { kind: "write", writer, resync: false, degraded };
 }
 
 /** True when this frame performs a Mapbox camera call. */
@@ -88,9 +116,10 @@ export function driveCameraCommandWrites(cmd: DriveCameraCommand): boolean {
 }
 
 /**
- * Freeze episodes are counted once per episode in About, not per frame — a 60 fps
- * loop reported 60x reality before diagnostics counted events.
+ * True when the camera is following on the direct-transform path. About reports
+ * this through the `writer` gauge; a real freeze is now only a *failed* hard
+ * write, which means the map itself is gone.
  */
-export function driveCameraCommandFreezes(cmd: DriveCameraCommand): boolean {
-  return cmd.kind === "freeze";
+export function driveCameraCommandDegraded(cmd: DriveCameraCommand): DriveCameraDegrade | null {
+  return cmd.kind === "write" ? cmd.degraded : null;
 }

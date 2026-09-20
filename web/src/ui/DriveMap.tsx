@@ -174,14 +174,8 @@ import {
 } from "../nav/nativeDriveMapShell";
 import { isNativeMapboxNavPlatform } from "../nav/useNativeNavSession";
 import { StormpathMapboxNavigation } from "@stormpath/mapbox-navigation";
-import {
-  allowBasemapStyleReload,
-  WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE,
-} from "./mapLowSignalResilience";
-import {
-  driveCameraCommandFreezes,
-  resolveDriveCameraCommand,
-} from "./driveCameraQueue";
+import { allowBasemapStyleReload } from "./mapLowSignalResilience";
+import { resolveDriveCameraCommand } from "./driveCameraQueue";
 import {
   DRIVE_FOLLOW_ZOOM_DEFAULT,
   DRIVE_FOLLOW_ZOOM_MIN,
@@ -1937,6 +1931,8 @@ function DriveMapInner({
     let followWriter: FollowCamWriter = followCamWriterRef.current;
     let followHoldFalseSinceMs: number | null = followWriter === "hard" ? null : Date.now();
     let followWriteFailStreak = 0;
+    /** Last failed yard-line pan — keeps the writer hard while tiles are still down. */
+    let followPanFailAtMs: number | null = null;
     let camFreezeLatched = false;
     let puckReclaimLatched = false;
     const DRIVE_CAM_FORCE_RESYNC_FRAMES = 75;
@@ -2283,9 +2279,6 @@ function DriveMapInner({
               parkedHoldCountedRef.current = false;
             }
             const radioHold = holdLastGoodMapRef.current || !isOnlineRef.current;
-            /* Writer latch is radio only. Folding fail-streak into holdTiles froze
-             * the camera for the rest of the 435 park trip (0 applies, puck at 50). */
-            const holdTiles = radioHold;
             if (driveCamResyncRef.current) followWriteFailStreak = 0;
             if (radioHold !== lowSignalHeldRef.current) {
               const wasHold = lowSignalHeldRef.current;
@@ -2294,10 +2287,11 @@ function DriveMapInner({
               if (wasHold && !radioHold) driveCamResyncRef.current = true;
             }
             const latched = advanceFollowCamWriter({
-              holdTiles,
+              holdTiles: radioHold,
               writer: followWriter,
               holdFalseSinceMs: followHoldFalseSinceMs,
               nowMs: Date.now(),
+              lastPanFailAtMs: followPanFailAtMs,
             });
             followWriter = latched.writer;
             followHoldFalseSinceMs = latched.holdFalseSinceMs;
@@ -2321,30 +2315,23 @@ function DriveMapInner({
                 offset: easeCached.offset,
               });
             /* One decision, one write. Everything that used to call Mapbox on its own
-             * (Jeff, reclaim, hold clear) now arrives here as an intent. */
+             * (Jeff, reclaim, hold clear) now arrives here as an intent. A held radio
+             * degrades the writer to the direct transform — it never stops the camera,
+             * which is what let the puck leave a frozen map for 125 s in 438. */
             const cmd = resolveDriveCameraCommand({
               droneActive: false /* the outer gate already yielded to the drone */,
               flyWindowOpen: false,
               radioHold,
               writeFailStreak: followWriteFailStreak,
-              failFreezeAfter: WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE,
               resyncRequested: driveCamResyncRef.current,
               exploring: userExploringRef.current,
               parkedHold,
               poseChanged: needsWrite,
               writer: followWriter,
             });
-            if (driveCameraCommandFreezes(cmd)) {
-              if (!camFreezeLatched) {
-                camFreezeLatched = true;
-                noteDriveDiagCamFreeze();
-              }
-            } else {
-              camFreezeLatched = false;
-            }
             let applied = false;
             if (cmd.kind === "write") {
-              if (followWriter === "hard") {
+              if (cmd.writer === "hard") {
                 applied = hardWrite();
               } else {
                 applied = safePanToCenter(map, {
@@ -2357,6 +2344,12 @@ function DriveMapInner({
                   duration: 0,
                   essential: true,
                 });
+                if (!applied) {
+                  /* Remember *when* the pan failed so the writer stays hard for the
+                   * whole bad stretch instead of flipping back 3 s after the radio
+                   * claims to be up while tiles are still missing. */
+                  followPanFailAtMs = Date.now();
+                }
                 if (!applied && nativeFollowCamAllowsSameFrameHardFallback()) {
                   applied = hardWrite();
                 }
@@ -2365,8 +2358,15 @@ function DriveMapInner({
                 followWriteFailStreak += 1;
                 noteDriveDiagCamFailStreak(followWriteFailStreak);
                 bumpDriveDiag("camWriteFailed");
+                /* A hard write failing is the only real freeze left: the transform
+                 * path needs no tiles, so this means the map itself is gone. */
+                if (cmd.writer === "hard" && !camFreezeLatched) {
+                  camFreezeLatched = true;
+                  noteDriveDiagCamFreeze();
+                }
               } else {
                 followWriteFailStreak = 0;
+                camFreezeLatched = false;
               }
             }
             if (applied) {
@@ -2480,13 +2480,23 @@ function DriveMapInner({
                * Hard only while tiles are held (+ clear delay). Failed pan skips. */
               const holdTiles = holdLastGoodMapRef.current || !isOnlineRef.current;
               if (driveCamResyncRef.current) followWriteFailStreak = 0;
+              const latched = advanceFollowCamWriter({
+                holdTiles,
+                writer: followWriter,
+                holdFalseSinceMs: followHoldFalseSinceMs,
+                nowMs: Date.now(),
+                lastPanFailAtMs: followPanFailAtMs,
+              });
+              followWriter = latched.writer;
+              followHoldFalseSinceMs = latched.holdFalseSinceMs;
+              followCamWriterRef.current = followWriter;
+
               /* Same queue as the Core path — web-only GO must not grow its own rules. */
               const webCmd = resolveDriveCameraCommand({
                 droneActive: false,
                 flyWindowOpen: false,
                 radioHold: holdTiles,
                 writeFailStreak: followWriteFailStreak,
-                failFreezeAfter: WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE,
                 resyncRequested: forceCamSync,
                 exploring: false /* gated upstream */,
                 parkedHold: false,
@@ -2497,15 +2507,6 @@ function DriveMapInner({
                 raf = requestAnimationFrame(loop);
                 return;
               }
-              const latched = advanceFollowCamWriter({
-                holdTiles,
-                writer: followWriter,
-                holdFalseSinceMs: followHoldFalseSinceMs,
-                nowMs: Date.now(),
-              });
-              followWriter = latched.writer;
-              followHoldFalseSinceMs = latched.holdFalseSinceMs;
-              followCamWriterRef.current = followWriter;
 
               const guarded = guardDriveFollowCamera({
                 center: pos as [number, number],
@@ -2524,7 +2525,7 @@ function DriveMapInner({
                 essential: true as const,
               };
 
-              if (followWriter === "hard") {
+              if (webCmd.writer === "hard") {
                 const hardOk = writeHardFollowToYardLine(map, {
                   center: guarded.center,
                   zoom: guarded.zoom,
@@ -2542,6 +2543,7 @@ function DriveMapInner({
                   lastBearingApplied = driveCamBearingSmoothedRef.current;
                   driveCamResyncRef.current = false;
                   lastDroneOffsetRef.current = offset;
+                  followWriteFailStreak = 0;
                 }
               } else {
                 const ok = safePanToCenter(map, panOpts);
@@ -2549,6 +2551,10 @@ function DriveMapInner({
                   lastBearingApplied = driveCamBearingSmoothedRef.current;
                   if (forceCamSync) driveCamResyncRef.current = false;
                   lastDroneOffsetRef.current = offset;
+                  followWriteFailStreak = 0;
+                } else {
+                  followPanFailAtMs = Date.now();
+                  followWriteFailStreak += 1;
                 }
               }
             }

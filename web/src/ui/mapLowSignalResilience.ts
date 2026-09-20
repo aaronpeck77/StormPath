@@ -32,12 +32,13 @@ export function shouldApplyMapHoldOnNativeRadioDown(input: {
   return input.nativeConnected === false && (input.navigationStarted || input.alreadyHolding);
 }
 
-/**
- * Failed yard-line pans in a row before we freeze the last good picture. The freeze
- * decision itself lives in the camera queue (`resolveDriveCameraCommand`) so there
- * is exactly one place that can stop a write.
+/*
+ * There is no longer a "freeze the camera on weak tiles" threshold. 438 showed that
+ * holding the picture while the puck keeps driving is worse than showing bare
+ * background: the puck simply leaves the screen. A failed pan now degrades the
+ * follow write to the direct transform path — see `driveCameraQueue.ts`. The hold
+ * below is still about tiles, style reload, and traffic, never the camera.
  */
-export const WEAK_TILE_WRITE_FAILS_BEFORE_FREEZE = 3;
 
 export function shouldHoldLastGoodMap(input: {
   navigatorOnLine: boolean;
