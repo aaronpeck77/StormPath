@@ -10,6 +10,7 @@ import {
   type RoadNetworkClass,
 } from "./drivingRejoinContext";
 import { remainingViaStops } from "./routeWaypoints";
+import { lockedRouteKind, offRouteReplanCopy } from "./routeSummary";
 import { collectMapboxRouteVariants } from "../services/mapboxDirectionsRouter";
 import { speakNavigationAlert } from "./navigationVoiceAlert";
 import {
@@ -418,10 +419,14 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       if (restartNativeNav) {
         void restartNativeNav();
       }
-      const voiceLine = opts?.silent ? "Updating your route." : "New route from here.";
-      speakNavigationAlert(voiceLine, settingVoiceGuidanceEnabled);
-      if (!opts?.silent) {
-        setTapHint(nextRoutes.length > 1 ? "New route from here — B is on Map / Route." : "New route from here.");
+      const copy = offRouteReplanCopy({
+        kind: lockedRouteKind(primary),
+        silent: Boolean(opts?.silent),
+        hasAlternate: nextRoutes.length > 1,
+      });
+      speakNavigationAlert(copy.voice, settingVoiceGuidanceEnabled);
+      if (copy.hint) {
+        setTapHint(copy.hint);
         window.setTimeout(() => setTapHint(null), 5000);
       }
       return true;

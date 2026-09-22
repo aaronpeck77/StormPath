@@ -148,6 +148,29 @@ describe("driveDiagnostics", () => {
     expect(lines[9]).toContain("Dr>Mp ok 1402ms");
   });
 
+  it("counts a retarget on its own and keeps the shot label that left the pad", () => {
+    noteViewDroneTap("route", "drive");
+    noteViewDroneStart();
+    noteViewDroneTap("drive", "topdown");
+    noteViewDroneEnd("retarget");
+    const snap = driveDiagSnapshot();
+    expect(snap.droneAbort).toBe(0);
+    expect(snap.droneRetarget).toBe(1);
+    expect(snap.droneTrail).toContain("Rt>Dr retarget");
+    expect(snap.droneTrail).not.toContain("??");
+    const lines = formatDriveDiagLines(snap, 8_000);
+    expect(lines[6]).toContain("0 abort / 1 retarget");
+  });
+
+  it("keeps the in-flight label when Go resets the counters", () => {
+    noteViewDroneTap("route", "topdown");
+    noteViewDroneStart();
+    resetDriveDiag(5_000);
+    noteViewDroneEnd("done", 0, 2202);
+    expect(driveDiagSnapshot().droneTrail).toContain("Rt>Mp ok 2202ms");
+    expect(driveDiagSnapshot().droneTrail).not.toContain("??");
+  });
+
   it("records a pre-shot wait so a 5s Dr>Mp hitch is visible", () => {
     noteViewDroneTap("drive", "topdown");
     noteViewDroneStart();

@@ -16,8 +16,8 @@ Do this short smoke pass on the actual device before inviting anyone (or after p
 - App launches without crashing; the home screen shows the season-themed StormPath logo + cloud.
 - Address bar accepts both an address and a business name (closest-first results).
 - With a route loaded: open the address bar, then tap **×** on the right — bar collapses to the one-line destination (not stuck open).
-- Tap a result → routes A/B/C build → tap **Go** → drive view follows the puck smoothly.
-- **Compare routes on map** (hazard sheet or advisory): three different lines on the map, tap A/B/C to highlight, **Go** to switch route and return to drive.
+- Tap a result → routes A and B build (fastest, and no-interstate when one exists) → tap **Go** → drive view follows the puck smoothly.
+- **Compare routes on map** (hazard sheet or advisory): the two lines on the map, tap A or B to highlight, **Go** to switch route and return to drive.
 - Cycle the view button (Rt / Dr / Mp). Drive view shows only the active leg; route/topdown show alternates.
 - Advisory bar always shows *something* useful — local weather, NWS, traffic, or the SiteBible/coming-soon fallback. Never blank.
 - Tap the advisory bar to expand. Confirm the panel fits, scrolls if needed, and closes cleanly.
@@ -39,7 +39,7 @@ What to focus on:
 - Drive a familiar route and tell me anywhere the map/turn directions felt wrong.
 - Open the advisory bar (the colored strip near the top) and tell me if anything
   there read as confusing or wrong.
-- Try **Compare routes on map** if you hit a hazard — do the three options look different, and does Go switch you cleanly?
+- Try **Compare routes on map** if you hit a hazard — do A and B look different, and does Go switch you cleanly?
 - If the address bar gets in the way, use the **×** on the right to collapse it.
 - Try searching for a business name, not just an address.
 - Tap the `i` button (bottom-left) — everything you need to configure or
@@ -67,11 +67,11 @@ A multi-route driving app with live weather, traffic, and road-hazard awareness 
 
 ### What you can do
 
-- **Plan a trip.** Type an address or a business name. The app shows up to three route options (A/B/C). Tap one to make it active, then tap **Go** to start.
+- **Plan a trip.** Type an address or a business name. The app shows two route options: **A** is the fastest, **B** is no-interstate when a different road exists. Tap one to make it active, then tap **Go**. Leaving the road keeps that choice: fastest stays fastest, no-interstate stays off the highway. To change it, stop and pick the other one.
 - **Drive.** The blue puck is you. The blue line is your active route. Colored bands under the line mean weather, traffic, or hazards ahead.
 - **See conditions.** The top advisory bar rotates through local weather, route forecasts, NWS alerts, traffic delays, and tips. Tap it to expand.
 - **Save places and routes.** Tap the star button to save a destination or a route you've driven for one-tap access later.
-- **Change route while driving.** Hazard popup or advisory → **Compare routes on map** → pick A, B, or C → **Go**.
+- **Change route while driving.** Hazard popup or advisory → **Compare routes on map** → pick A or B → **Go**.
 - **Dismiss search.** Tap **×** on the address bar to collapse it when you don't need to change destination.
 - **Switch views.** The two-letter button (Rt / Dr / Mp) cycles between route plan, drive, and top-down map.
 - **Find anything you need.** The `i` info button (bottom-left) opens settings, the **map color legend**, your saved places, the activity-trail toggle, the help/tips replay, and the support form.

@@ -41,6 +41,8 @@ export type DriveDiagSnapshot = {
   droneStarts: number;
   droneDone: number;
   droneAbort: number;
+  /** A new view tap replaced a shot already in the air. Not a failure. */
+  droneRetarget: number;
   droneSkipFirst: number;
   droneSkipSame: number;
   droneSkipHold: number;
@@ -98,6 +100,7 @@ function emptySnapshot(): DriveDiagSnapshot {
     droneStarts: 0,
     droneDone: 0,
     droneAbort: 0,
+    droneRetarget: 0,
     droneSkipFirst: 0,
     droneSkipSame: 0,
     droneSkipHold: 0,
@@ -151,6 +154,7 @@ function applyParsed(parsed: Partial<DriveDiagSnapshot>): void {
     droneStarts: asCount(parsed.droneStarts),
     droneDone: asCount(parsed.droneDone),
     droneAbort: asCount(parsed.droneAbort),
+    droneRetarget: asCount(parsed.droneRetarget),
     droneSkipFirst: asCount(parsed.droneSkipFirst),
     droneSkipSame: asCount(parsed.droneSkipSame),
     droneSkipHold: asCount(parsed.droneSkipHold),
@@ -363,9 +367,17 @@ export function noteViewDroneSkip(reason: ViewDroneSkip): void {
   persistDriveDiagSoon();
 }
 
+/**
+ * Label captured when the shot left the pad. A later tap overwrites `droneLast`,
+ * and Go's `resetDriveDiag` clears it, so the landing must not read the live field
+ * or the trail opens with `??`.
+ */
+let activeShotLabel = "";
+
 export function noteViewDroneStart(): void {
   touchTripClock();
   state.droneStarts += 1;
+  activeShotLabel = state.droneLast || "??";
   persistDriveDiagSoon();
 }
 
@@ -381,6 +393,7 @@ export function noteViewDroneEnd(
   waitMs?: number
 ): void {
   if (end === "done") state.droneDone += 1;
+  else if (end === "retarget") state.droneRetarget += 1;
   else state.droneAbort += 1;
   const tag =
     end === "done"
@@ -393,7 +406,8 @@ export function noteViewDroneEnd(
     typeof waitMs === "number" && Number.isFinite(waitMs) && waitMs >= 80
       ? ` wait${Math.round(waitMs)}`
       : "";
-  pushDroneTrail(`${state.droneLast || "??"} ${tag}${dur}${wait}`);
+  const label = activeShotLabel || state.droneLast || "??";
+  pushDroneTrail(`${label} ${tag}${dur}${wait}`);
   persistDriveDiagSoon();
 }
 
@@ -457,7 +471,7 @@ export function formatDriveDiagLines(
     `Signal: ${snap.lowSignalHolds} map holds, tiles ${snap.tileWarmDone} warm / ${snap.tileWarmFailed} failed`,
     `Radio: ${snap.radioHolds} holds (${holdSec}s, longest ${holdLongest}s)`,
     `Route: ${snap.roadControls} road controls, ${snap.offRoute} off-route`,
-    `Views: ${snap.viewTaps} taps, drone ${snap.droneStarts} start / ${snap.droneDone} done / ${snap.droneAbort} abort`,
+    `Views: ${snap.viewTaps} taps, drone ${snap.droneStarts} start / ${snap.droneDone} done / ${snap.droneAbort} abort / ${snap.droneRetarget} retarget`,
     `Skip: first ${snap.droneSkipFirst}, same ${snap.droneSkipSame}, hold ${snap.droneSkipHold}, cmp ${snap.droneSkipCompare}, wait ${snap.droneSkipNotReady}, no-to ${snap.droneFailNoTo}, no-from ${snap.droneFailNoFrom}`,
     `Drone writes: ${snap.droneWriteFail} fails${
       snap.droneLast ? `, last ${snap.droneLast}` : ""
