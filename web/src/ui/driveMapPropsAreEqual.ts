@@ -25,6 +25,10 @@ export function driveMapPropsAreEqual(prev: Props, next: Props): boolean {
       if (Math.abs(prev.driveRouteBearingDeg - next.driveRouteBearingDeg) > 2) return false;
     } else if (prev.driveRouteBearingDeg !== next.driveRouteBearingDeg) return false;
 
+    if (prev.metersToBannerManeuver != null && next.metersToBannerManeuver != null) {
+      if (Math.abs(prev.metersToBannerManeuver - next.metersToBannerManeuver) > 12) return false;
+    } else if (prev.metersToBannerManeuver !== next.metersToBannerManeuver) return false;
+
     if (prev.driveOffRouteForwardFraming !== next.driveOffRouteForwardFraming) return false;
 
     if (prev.heading != null && next.heading != null) {
@@ -34,6 +38,7 @@ export function driveMapPropsAreEqual(prev: Props, next: Props): boolean {
     if (prev.userLngLat !== next.userLngLat) return false;
     if (prev.userAlongMeters !== next.userAlongMeters) return false;
     if (prev.driveRouteBearingDeg !== next.driveRouteBearingDeg) return false;
+    if (prev.metersToBannerManeuver !== next.metersToBannerManeuver) return false;
     if (prev.driveOffRouteForwardFraming !== next.driveOffRouteForwardFraming) return false;
     if (prev.heading !== next.heading) return false;
   }
@@ -42,6 +47,7 @@ export function driveMapPropsAreEqual(prev: Props, next: Props): boolean {
     "userLngLat",
     "userAlongMeters",
     "driveRouteBearingDeg",
+    "metersToBannerManeuver",
     "driveOffRouteForwardFraming",
     "heading",
   ]);

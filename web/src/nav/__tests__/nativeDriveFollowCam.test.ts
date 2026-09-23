@@ -47,14 +47,50 @@ describe("createNativeDriveFollowCam", () => {
 });
 
 describe("anticipateNativeCamBearingDeg", () => {
-  it("leans toward the route ahead so the turn is visible before it arrives", () => {
+  it("leans a little toward the route ahead so the turn is visible before it arrives", () => {
     const out = anticipateNativeCamBearingDeg({
       coreBearingDeg: 0,
       routeAheadBearingDeg: 40,
       speedMps: 12,
     });
     expect(out).toBeGreaterThan(0);
-    expect(out).toBeLessThan(40);
+    expect(out).toBeLessThan(16);
+  });
+
+  it("stays on Core until the turn is actually close", () => {
+    expect(
+      anticipateNativeCamBearingDeg({
+        coreBearingDeg: 0,
+        routeAheadBearingDeg: 40,
+        speedMps: 14,
+        metersToManeuver: 120,
+      })
+    ).toBe(0);
+    const near = anticipateNativeCamBearingDeg({
+      coreBearingDeg: 0,
+      routeAheadBearingDeg: 40,
+      speedMps: 14,
+      metersToManeuver: 25,
+    });
+    expect(near).toBeGreaterThan(0);
+    expect(near).toBeLessThan(12);
+  });
+
+  it("does not yank then drop when the chord is a hard corner", () => {
+    /* Old cutoff: 70° leaned ~30°, 76° snapped to Core — the swing-back. */
+    const mid = anticipateNativeCamBearingDeg({
+      coreBearingDeg: 0,
+      routeAheadBearingDeg: 70,
+      speedMps: 14,
+    });
+    expect(mid).toBe(0);
+    const near = anticipateNativeCamBearingDeg({
+      coreBearingDeg: 0,
+      routeAheadBearingDeg: 40,
+      speedMps: 14,
+    });
+    expect(near).toBeGreaterThan(0);
+    expect(near).toBeLessThan(12);
   });
 
   it("does not swing the camera while parked or crawling", () => {

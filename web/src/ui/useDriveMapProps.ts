@@ -38,6 +38,7 @@ export type UseDriveMapPropsInput = {
   routeBuildBusy?: boolean;
   heading: number | null;
   driveRouteBearingDeg: number | null;
+  metersToBannerManeuver?: number | null;
   driveOffRouteForwardFraming: boolean;
   followingTemporaryGuidance: boolean;
   speedMps: number | null;
@@ -118,6 +119,7 @@ export function buildDriveMapProps(
     routeBuildBusy = false,
     heading,
     driveRouteBearingDeg,
+    metersToBannerManeuver = null,
     driveOffRouteForwardFraming,
     followingTemporaryGuidance,
     speedMps,
@@ -191,6 +193,7 @@ export function buildDriveMapProps(
     routeBuildBusy,
     heading,
     driveRouteBearingDeg,
+    metersToBannerManeuver,
     driveOffRouteForwardFraming,
     followingTemporaryGuidance,
     speedMps,

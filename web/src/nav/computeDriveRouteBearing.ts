@@ -15,7 +15,7 @@ export type ComputeDriveRouteBearingInput = {
   speedMps: number | null | undefined;
   navigationStarted: boolean;
   userAlongGuidanceM: number;
-  /** Meters to the next banner maneuver — near-turn bump so the cam swings a little early. */
+  /** Meters to the next banner maneuver — only stretch look-ahead in the last ~1.6 s. */
   metersToManeuver?: number | null;
 };
 
@@ -46,16 +46,17 @@ export function computeDriveRouteBearing(input: ComputeDriveRouteBearingInput): 
   }
 
   const speed = speedMps != null && speedMps > 0 ? speedMps : 0;
-  /* Mild turn anticipation: look farther down the corridor (~4.5 s of travel). */
-  let lookAheadM = Math.min(140, Math.max(40, 40 + speed * 4.5));
-  /* Within ~2–3 s of the next turn, stretch past the maneuver so the chord includes post-turn heading. */
+  /* Stay on the approach road. 4.5 s / 140 m cut the corner of the next turn while
+   * the car was still straight, then the camera swung back — Bill, build 443. */
+  let lookAheadM = Math.min(80, Math.max(28, 28 + speed * 2.2));
+  /* Only in the last ~1.6 s, peek just past the maneuver — not a block early. */
   if (
     metersToManeuver != null &&
     Number.isFinite(metersToManeuver) &&
     metersToManeuver >= 0 &&
-    metersToManeuver <= Math.max(60, speed * 3)
+    metersToManeuver <= Math.max(32, speed * 1.6)
   ) {
-    lookAheadM = Math.min(180, lookAheadM + Math.max(40, speed * 2));
+    lookAheadM = Math.min(100, lookAheadM + Math.max(16, speed * 1.1));
   }
 
   const OFF_ROUTE_FOR_CAMERA_TANGENT_M = 168;

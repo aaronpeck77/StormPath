@@ -169,20 +169,23 @@ export function shouldUseNativeFollowCam(input: {
  *
  * Core reports course over ground — where the car points *now* — so on the web map
  * the turn arrives before the camera does. The route tangent ahead of the puck
- * (`computeDriveRouteBearing`, which already looks ~4.5 s down the corridor and
- * stretches past a near maneuver) is the anticipation; lean partway toward it.
+ * (`computeDriveRouteBearing`) is a short peek; lean a little toward it.
  *
- * Guards: only while actually moving, and only when the two roughly agree. A large
- * disagreement means the route tangent is stale or we are off it, and Core wins.
+ * 443 swung out then back: a 140 m chord cut the corner (~70°) while still on the
+ * straight, then at ~75° the old hard cutoff dropped the lean to zero. Fade the
+ * weight as the delta grows, and keep the lean small so Core still owns the frame.
  */
 export const NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS = 2.2;
-export const NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG = 75;
-export const NATIVE_CAM_ANTICIPATE_WEIGHT = 0.45;
+export const NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG = 50;
+export const NATIVE_CAM_ANTICIPATE_WEIGHT = 0.22;
+/** Stay on Core until the next turn is about this close (~2.5 s at 16 m/s). */
+export const NATIVE_CAM_ANTICIPATE_START_M = 42;
 
 export function anticipateNativeCamBearingDeg(input: {
   coreBearingDeg: number;
   routeAheadBearingDeg: number | null | undefined;
   speedMps: number | null | undefined;
+  metersToManeuver?: number | null;
   weight?: number;
 }): number {
   const core = input.coreBearingDeg;
@@ -193,9 +196,17 @@ export function anticipateNativeCamBearingDeg(input: {
   if (speed == null || !Number.isFinite(speed) || speed < NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS) {
     return core;
   }
+  const toTurn = input.metersToManeuver;
+  if (toTurn != null && Number.isFinite(toTurn)) {
+    const startM = Math.max(NATIVE_CAM_ANTICIPATE_START_M, speed * 2.5);
+    if (toTurn > startM) return core;
+  }
   const delta = (((ahead - core) % 360) + 540) % 360 - 180;
-  if (Math.abs(delta) > NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG) return core;
-  const weight = input.weight ?? NATIVE_CAM_ANTICIPATE_WEIGHT;
+  const absD = Math.abs(delta);
+  if (absD > NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG) return core;
+  const cap = NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG;
+  const fade = 1 - absD / cap;
+  const weight = (input.weight ?? NATIVE_CAM_ANTICIPATE_WEIGHT) * fade;
   const next = core + delta * weight;
   return ((next % 360) + 360) % 360;
 }

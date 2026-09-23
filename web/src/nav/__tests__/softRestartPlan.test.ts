@@ -150,4 +150,21 @@ describe("assignOffRouteReplanSlots", () => {
     expect(slots.some((r) => r.id === "r-b")).toBe(true);
     expect(slots[0]?.geometry[1]?.[1]).toBeGreaterThan(36.16);
   });
+
+  it("refuses to install a reverse highway loop when that is the only option", () => {
+    const user: [number, number] = [-86.78, 36.16];
+    const loopNorthThenSouth: NavRoute = {
+      id: "r-x",
+      role: "fastest",
+      label: "Main",
+      geometry: [
+        user,
+        [-86.78, 36.22],
+        [-86.7, 36.22],
+        [-86.7, 36.1],
+      ],
+      baseEtaMinutes: 40,
+    };
+    expect(assignOffRouteReplanSlots([loopNorthThenSouth], user, 180)).toEqual([]);
+  });
 });

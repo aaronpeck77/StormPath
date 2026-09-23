@@ -309,6 +309,8 @@ export type Props = {
   heading: number | null;
   /** When set (drive + active leg), camera bearing follows the polyline ahead instead of GPS heading. */
   driveRouteBearingDeg?: number | null;
+  /** Distance to the next banner turn — gates camera lean so we do not swing a block early. */
+  metersToBannerManeuver?: number | null;
   /** Off route in drive: camera + puck follow forward travel, not the old polyline behind the driver. */
   driveOffRouteForwardFraming?: boolean;
   /** True while an auto-rejoin/detour leg (not the original locked route) drives guidance —
@@ -483,6 +485,7 @@ function DriveMapInner({
   routeBuildBusy = false,
   heading,
   driveRouteBearingDeg = null,
+  metersToBannerManeuver = null,
   driveOffRouteForwardFraming = false,
   followingTemporaryGuidance = false,
   speedMps = null,
@@ -753,6 +756,8 @@ function DriveMapInner({
   headingRef.current = heading;
   const driveRouteBearingDegRef = useRef(driveRouteBearingDeg);
   driveRouteBearingDegRef.current = driveRouteBearingDeg;
+  const metersToBannerManeuverRef = useRef(metersToBannerManeuver);
+  metersToBannerManeuverRef.current = metersToBannerManeuver;
   const driveOffRouteForwardFramingRef = useRef(driveOffRouteForwardFraming);
   driveOffRouteForwardFramingRef.current = driveOffRouteForwardFraming;
   const followingTemporaryGuidanceRef = useRef(followingTemporaryGuidance);
@@ -2203,6 +2208,7 @@ function DriveMapInner({
               coreBearingDeg: nativeCam.bearing,
               routeAheadBearingDeg: driveRouteBearingDegRef.current,
               speedMps: effSp,
+              metersToManeuver: metersToBannerManeuverRef.current,
             });
             const motionBrg = resolveTravelBearingDeg({
               headingDeg: readPuckFollowHeading(),

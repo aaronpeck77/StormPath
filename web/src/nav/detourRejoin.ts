@@ -65,21 +65,21 @@ export function pickLocalRejoinAlongM(
 }
 
 /**
- * True when the stub leaves reverse of travel (labeled U-turn or depart delta).
- * Soft scoring used to accept these and paint a line behind the puck — hard-reject instead.
+ * First step goes the opposite way from the destination (or from travel heading).
+ * That is the "go north to the interstate you passed, then come back south" loop:
+ * each replan from farther south makes the ETA worse. Used on both DIY slots and
+ * Core force-adopt — a labeled U-turn is sufficient but not required.
  */
-export function isReverseRejoinRoute(
-  route: NavRoute,
+export function isReverseDepartGeometry(
+  geometry: LngLat[],
   userLngLat: LngLat,
   headingDeg?: number | null
 ): boolean {
-  if (route.geometry.length < 2) return true;
-  if (routeStartsWithUturn(route)) return true;
-  const depart = departBearingFromRoute(userLngLat, route.geometry);
+  if (geometry.length < 2) return true;
+  const depart = departBearingFromRoute(userLngLat, geometry);
   if (depart == null) return false;
 
-  /* Even without GPS heading: leaving opposite the stub's own end is a U-turn loop. */
-  const end = route.geometry[route.geometry.length - 1]!;
+  const end = geometry[geometry.length - 1]!;
   const towardEnd = initialBearingDegrees(userLngLat, end);
   if (
     Number.isFinite(towardEnd) &&
@@ -90,6 +90,20 @@ export function isReverseRejoinRoute(
 
   if (headingDeg == null || !Number.isFinite(headingDeg)) return false;
   return headingDeltaDegrees(headingDeg, depart) > REJOIN_REVERSE_DEPART_DELTA_DEG;
+}
+
+/**
+ * True when the stub leaves reverse of travel (labeled U-turn or depart delta).
+ * Soft scoring used to accept these and paint a line behind the puck — hard-reject instead.
+ */
+export function isReverseRejoinRoute(
+  route: NavRoute,
+  userLngLat: LngLat,
+  headingDeg?: number | null
+): boolean {
+  if (route.geometry.length < 2) return true;
+  if (routeStartsWithUturn(route)) return true;
+  return isReverseDepartGeometry(route.geometry, userLngLat, headingDeg);
 }
 
 /** Prefer live progress over a stale leave latch so rejoin targets stay ahead of the puck. */

@@ -33,6 +33,7 @@ import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
 import { resolveNavigationRouteIds } from "./nav/navigationRouteFocus";
 import { resolveNavigatingRouteSelect } from "./nav/navigatingRouteSelect";
 import { planAfterSoftRestartLock } from "./nav/softRestartPlan";
+import { isReverseDepartGeometry } from "./nav/detourRejoin";
 import {
   loadReturnTripLeg,
   shortenReturnTripLabel,
@@ -880,6 +881,16 @@ export default function App() {
   const onNativeRouteGeometry = useCallback(
     (geometry: LngLat[], opts?: { force?: boolean }): boolean => {
       if (geometry.length < 2) return false;
+      const user = userLngLatRef.current;
+      if (
+        user &&
+        isReverseDepartGeometry(geometry, user, driveLastTravelBearingDegRef.current)
+      ) {
+        if (import.meta.env.DEV) {
+          console.info("[nav] ignored Core reroute — reverse depart toward dest");
+        }
+        return false;
+      }
       const force = Boolean(opts?.force);
       const adopted = adoptLockedRouteGeometry(geometry, { force });
       if (!adopted) return false;
@@ -2503,6 +2514,7 @@ export default function App() {
       heading,
       routeBuildBusy: routing,
       driveRouteBearingDeg,
+      metersToBannerManeuver,
       driveOffRouteForwardFraming,
       followingTemporaryGuidance: Boolean(autoRejoinGuidanceRouteId),
       speedMps,

@@ -35,6 +35,33 @@ describe("computeDriveRouteBearing", () => {
     ).toBeNull();
   });
 
+  it("does not stretch look-ahead a block before the turn", () => {
+    const far = computeDriveRouteBearing({
+      driveOffRouteForwardFraming: false,
+      driveModeUi: true,
+      effectiveUserLngLat: [-90.2, 38.6],
+      geometry: geom,
+      speedMps: 14,
+      navigationStarted: true,
+      userAlongGuidanceM: 0,
+      metersToManeuver: 120,
+    });
+    const near = computeDriveRouteBearing({
+      driveOffRouteForwardFraming: false,
+      driveModeUi: true,
+      effectiveUserLngLat: [-90.2, 38.6],
+      geometry: geom,
+      speedMps: 14,
+      navigationStarted: true,
+      userAlongGuidanceM: 0,
+      metersToManeuver: 20,
+    });
+    expect(far).not.toBeNull();
+    expect(near).not.toBeNull();
+    expect(Number.isFinite(far)).toBe(true);
+    expect(Number.isFinite(near)).toBe(true);
+  });
+
   it("returns a finite bearing when on corridor in drive mode", () => {
     const b = computeDriveRouteBearing({
       driveOffRouteForwardFraming: false,

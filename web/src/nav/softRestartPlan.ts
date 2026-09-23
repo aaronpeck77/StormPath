@@ -39,8 +39,10 @@ export function assignOffRouteReplanSlots(
 ): NavRoute[] {
   const usable = fresh.filter((r) => r.geometry.length >= 2);
   const forward = usable.filter((r) => !isReverseRejoinRoute(r, userLngLat, headingDeg));
-  const pool = forward.length > 0 ? forward : usable;
-  const primary = pickBestForwardRoute(pool, userLngLat, headingDeg) ?? pool[0];
+  /* A loop back to a highway behind the driver is not better than no replan.
+   * Installing it is how ETA grew as he drove toward home (builds 441–443). */
+  if (forward.length === 0) return [];
+  const primary = pickBestForwardRoute(forward, userLngLat, headingDeg) ?? forward[0];
   if (!primary) return [];
   /** Keep no-interstate / backroads identity when soft restart fetched with preferBackroads. */
   const primaryBackroads =
@@ -55,7 +57,7 @@ export function assignOffRouteReplanSlots(
         : primary.label?.trim() || "Alternate"
       : "Main",
   };
-  const alt = pool.find((r) => r !== primary);
+  const alt = forward.find((r) => r !== primary);
   if (!alt) return [a];
   const b: NavRoute = {
     ...alt,

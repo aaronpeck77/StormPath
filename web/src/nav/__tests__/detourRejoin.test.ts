@@ -88,6 +88,18 @@ describe("isReverseRejoinRoute", () => {
     expect(isReverseRejoinRoute(reverse, user, null)).toBe(true);
   });
 
+  it("rejects a northbound interstate hop when the destination is south (homeward loop)", () => {
+    const loop: NavRoute = {
+      id: "r-a",
+      role: "fastest",
+      label: "Main",
+      geometry: [user, [-77.0, 39.05], [-76.9, 39.05], [-76.9, 38.7]],
+      baseEtaMinutes: 55,
+    };
+    expect(isReverseRejoinRoute(loop, user, 180)).toBe(true);
+    expect(isReverseRejoinRoute(loop, user, null)).toBe(true);
+  });
+
   it("accepts a forward stub toward the rejoin end", () => {
     const forward: NavRoute = {
       id: "r-b",

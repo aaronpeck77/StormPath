@@ -33,10 +33,13 @@ If all of the above pass, the build is good to invite.
 Edit per build, but the structure below works as a starting template:
 
 ```
-This build adds [the 2-3 most user-visible things in this build].
+This build: no more reverse highway loop when you leave the interstate,
+and the drive camera waits until you are close to the turn before it leans.
 
 What to focus on:
 - Drive a familiar route and tell me anywhere the map/turn directions felt wrong.
+- If you leave a highway, does it try to send you backwards onto it?
+- On ordinary turns, does the camera swing out early and then swing back?
 - Open the advisory bar (the colored strip near the top) and tell me if anything
   there read as confusing or wrong.
 - Try **Compare routes on map** if you hit a hazard — do A and B look different, and does Go switch you cleanly?
