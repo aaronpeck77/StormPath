@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeDriveRouteBearing } from "../computeDriveRouteBearing";
+import { computeDriveRouteBearing, driveRouteLookAheadMeters } from "../computeDriveRouteBearing";
 import type { LngLat } from "../types";
 
 const geom: LngLat[] = [
@@ -36,6 +36,14 @@ describe("computeDriveRouteBearing", () => {
   });
 
   it("does not stretch look-ahead a block before the turn", () => {
+    const far = driveRouteLookAheadMeters(14, 160);
+    const near = driveRouteLookAheadMeters(14, 50);
+    expect(near).toBeGreaterThan(far);
+    expect(far).toBeLessThan(110);
+    expect(near).toBeGreaterThan(90);
+  });
+
+  it("computes a bearing far and near a maneuver", () => {
     const far = computeDriveRouteBearing({
       driveOffRouteForwardFraming: false,
       driveModeUi: true,

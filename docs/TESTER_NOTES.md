@@ -34,7 +34,7 @@ Edit per build, but the structure below works as a starting template:
 
 ```
 This build: no more reverse highway loop when you leave the interstate,
-and the drive camera waits until you are close to the turn before it leans.
+and the drive camera starts to turn before the corner, not after.
 
 What to focus on:
 - Drive a familiar route and tell me anywhere the map/turn directions felt wrong.

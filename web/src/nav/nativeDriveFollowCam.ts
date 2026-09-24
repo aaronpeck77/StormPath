@@ -168,18 +168,28 @@ export function shouldUseNativeFollowCam(input: {
  * Turn anticipation on top of Core's bearing.
  *
  * Core reports course over ground — where the car points *now* — so on the web map
- * the turn arrives before the camera does. The route tangent ahead of the puck
- * (`computeDriveRouteBearing`) is a short peek; lean a little toward it.
+ * the turn arrives before the camera does. Lean toward the route tangent ahead
+ * (`computeDriveRouteBearing`) starting ~4 s out.
  *
- * 443 swung out then back: a 140 m chord cut the corner (~70°) while still on the
- * straight, then at ~75° the old hard cutoff dropped the lean to zero. Fade the
- * weight as the delta grows, and keep the lean small so Core still owns the frame.
+ * 443 swung out then back: a 140 m always-on chord cut the corner (~70°) while
+ * still on the straight, then a hard cutoff dropped the lean to zero. Last night's
+ * wait (2.5 s / 42 m, 50° cutoff) overcorrected — the camera turned after the car.
+ * Start earlier, keep the fade so a far chord cannot yank, and still lean on a
+ * real 60–70° city corner.
  */
 export const NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS = 2.2;
-export const NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG = 50;
-export const NATIVE_CAM_ANTICIPATE_WEIGHT = 0.22;
-/** Stay on Core until the next turn is about this close (~2.5 s at 16 m/s). */
-export const NATIVE_CAM_ANTICIPATE_START_M = 42;
+export const NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG = 78;
+export const NATIVE_CAM_ANTICIPATE_FULL_WEIGHT_DEG = 36;
+export const NATIVE_CAM_ANTICIPATE_FADE_FLOOR = 0.38;
+export const NATIVE_CAM_ANTICIPATE_WEIGHT = 0.38;
+/** Start leaning ~4 s before the banner turn (not after it). */
+export const NATIVE_CAM_ANTICIPATE_START_M = 72;
+export const NATIVE_CAM_ANTICIPATE_START_SECONDS = 4;
+
+export function anticipateNativeCamStartMeters(speedMps: number): number {
+  const speed = speedMps > 0 && Number.isFinite(speedMps) ? speedMps : 0;
+  return Math.max(NATIVE_CAM_ANTICIPATE_START_M, speed * NATIVE_CAM_ANTICIPATE_START_SECONDS);
+}
 
 export function anticipateNativeCamBearingDeg(input: {
   coreBearingDeg: number;
@@ -198,14 +208,17 @@ export function anticipateNativeCamBearingDeg(input: {
   }
   const toTurn = input.metersToManeuver;
   if (toTurn != null && Number.isFinite(toTurn)) {
-    const startM = Math.max(NATIVE_CAM_ANTICIPATE_START_M, speed * 2.5);
-    if (toTurn > startM) return core;
+    if (toTurn > anticipateNativeCamStartMeters(speed)) return core;
   }
   const delta = (((ahead - core) % 360) + 540) % 360 - 180;
   const absD = Math.abs(delta);
   if (absD > NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG) return core;
-  const cap = NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG;
-  const fade = 1 - absD / cap;
+  const fadeStart = NATIVE_CAM_ANTICIPATE_FULL_WEIGHT_DEG;
+  const fadeSpan = NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG - fadeStart;
+  const fade =
+    absD <= fadeStart
+      ? 1
+      : Math.max(NATIVE_CAM_ANTICIPATE_FADE_FLOOR, 1 - (absD - fadeStart) / fadeSpan);
   const weight = (input.weight ?? NATIVE_CAM_ANTICIPATE_WEIGHT) * fade;
   const next = core + delta * weight;
   return ((next % 360) + 360) % 360;
