@@ -92,6 +92,8 @@ export function shouldRetryInterruptedRouteOverviewEnter(
 
 /** Wait for A+B (and dest snap) to land as one frame instead of zoom-hopping. */
 export const PLANNING_ROUTE_FIT_SETTLE_MS = 280;
+/** Long Mapbox plans can miss the first idle — keep asking before we give up and show an endpoint. */
+export const PLANNING_FIT_RETRY_MS = [180, 600, 1400, 2800] as const;
 
 export function shouldDebouncePlanningOverviewFit(navigationStarted: boolean): boolean {
   return !navigationStarted;

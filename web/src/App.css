@@ -2456,6 +2456,12 @@ html:has(.drive-map--native-shell) #root {
   color: #78350f;
 }
 
+.nav-toast-info {
+  background: #e0f2fe;
+  border: 1px solid #7dd3fc;
+  color: #0c4a6e;
+}
+
 .nav-toast-err {
   background: #fee2e2;
   border: 1px solid #fca5a5;

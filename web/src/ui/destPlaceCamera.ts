@@ -1,4 +1,6 @@
+import { haversineMeters } from "../nav/routeGeometry";
 import type { LngLat } from "../nav/types";
+import { isValidLngLatPair } from "./mapCameraSafe";
 import { ROUTE_VIEW_PLANNING_STREET_ZOOM, ROUTE_VIEW_REGIONAL_ZOOM } from "./mapTopdownCamera";
 
 /**
@@ -6,8 +8,8 @@ import { ROUTE_VIEW_PLANNING_STREET_ZOOM, ROUTE_VIEW_REGIONAL_ZOOM } from "./map
  *
  * Rt regional / “Canada” zoom is ~6.3–7.0. A tap that sets dest used to race home
  * puck-follow, a camera-stop, and then a continent fit — pin looked unplaced and
- * the puck flew off the page. Hold the current street frame until the plan is
- * ready. Only restore zoom when the map is already at that regional scale.
+ * the puck flew off the page. Hold a street frame on the puck (or the pin) until
+ * the plan is ready. Never street-zoom the current continent midpoint.
  */
 
 /** Below this is city / state / Canada — dest tap must not land here. */
@@ -65,4 +67,65 @@ export function isPlanningPinPlacing(input: {
 /** Regional planning zoom is the Canada fly — dest place must never target it. */
 export function destPlaceRejectsRegionalZoom(zoom: number): boolean {
   return zoom <= ROUTE_VIEW_REGIONAL_ZOOM + 0.2;
+}
+
+/** Street-zoom of a continent center is the "random field" Bill saw while Mapbox thinks. */
+const DEST_PLACE_WAIT_NEAR_M = 8_000;
+
+function firstValidLngLat(
+  ...candidates: Array<LngLat | null | undefined>
+): LngLat | null {
+  for (const c of candidates) {
+    if (isValidLngLatPair(c)) return c;
+  }
+  return null;
+}
+
+/**
+ * Where the wait camera should sit: puck, dest, or the tap they were already looking at.
+ * Never the midpoint of a zoomed-out weather/home frame.
+ */
+export function destPlaceHoldCenter(input: {
+  mapCenter: LngLat | null | undefined;
+  userLngLat: LngLat | null | undefined;
+  destLngLat: LngLat;
+  mapZoom: number | null | undefined;
+}): LngLat {
+  const dest = input.destLngLat;
+  const user = isValidLngLatPair(input.userLngLat) ? input.userLngLat : null;
+  if (destPlaceNeedsStreetRestore(input.mapZoom)) {
+    return user ?? dest;
+  }
+  return firstValidLngLat(input.mapCenter, user, dest) ?? dest;
+}
+
+/**
+ * Same as {@link destPlaceHoldCenter}, but if the street frame is nowhere near
+ * the puck or the pin, snap to the puck so a long plan does not sit on a random road.
+ */
+export function destPlaceWaitCenter(input: {
+  mapCenter: LngLat | null | undefined;
+  userLngLat: LngLat | null | undefined;
+  destLngLat: LngLat;
+  mapZoom: number | null | undefined;
+}): LngLat {
+  const dest = input.destLngLat;
+  const user = isValidLngLatPair(input.userLngLat) ? input.userLngLat : null;
+  const hold = destPlaceHoldCenter(input);
+  if (!user) return hold;
+  if (haversineMeters(hold, user) < DEST_PLACE_WAIT_NEAR_M) return hold;
+  if (haversineMeters(hold, dest) < DEST_PLACE_WAIT_NEAR_M) return hold;
+  return user;
+}
+
+export function destPlaceHoldCamera(input: {
+  mapCenter: LngLat | null | undefined;
+  userLngLat: LngLat | null | undefined;
+  destLngLat: LngLat;
+  mapZoom: number | null | undefined;
+}): { center: LngLat; zoom: number } {
+  return {
+    center: destPlaceWaitCenter(input),
+    zoom: destPlaceHoldZoom(input.mapZoom),
+  };
 }

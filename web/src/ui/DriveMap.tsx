@@ -78,6 +78,7 @@ import {
   fitMapToOffRouteRejoinChoices,
   fitMapToRouteCompareLocal,
   fitMapToTrip,
+  fitMapToTripEndpoints,
   hideAlternateRoutesOnDrive,
   previewTripOverviewCamera,
   routeIdFromRouteHitLayerId,
@@ -185,6 +186,7 @@ import {
   repairStoredDriveFollowZoom,
 } from "./driveFollowZoomGuard";
 import {
+  destPlaceHoldCamera,
   destPlaceHoldZoom,
   destPlaceNeedsStreetRestore,
   exploreIdleMsForPinPlacing,
@@ -231,6 +233,7 @@ import {
   navigationTopdownZoomForViewChange,
 } from "./navigationCamera";
 import {
+  PLANNING_FIT_RETRY_MS,
   PLANNING_ROUTE_FIT_SETTLE_MS,
   resolveViewEnterDecision,
   routeOverviewFitIsAppForced,
@@ -452,6 +455,46 @@ const HOME_PRELOAD_START_DELAY_MS = 4_500;
 const DRIVE_PUCK_MARKER_OFFSET_PX: [number, number] = [0, 0];
 
 const ZERO_MAP_PADDING: mapboxgl.PaddingOptions = { top: 0, bottom: 0, left: 0, right: 0 };
+
+function writePlanningWaitCamera(
+  map: mapboxgl.Map,
+  dest: [number, number] | null | undefined,
+  user: [number, number] | null | undefined
+): boolean {
+  if (!isValidLngLatPair(dest)) return false;
+  let zNow = NaN;
+  let mapCenter: [number, number] | null = null;
+  try {
+    zNow = map.getZoom();
+    const c = map.getCenter();
+    if (isValidLngLat(c.lng, c.lat)) mapCenter = [c.lng, c.lat];
+  } catch {
+    return false;
+  }
+  const cam = destPlaceHoldCamera({
+    mapCenter,
+    userLngLat: user,
+    destLngLat: dest,
+    mapZoom: zNow,
+  });
+  if (
+    mapCenter &&
+    !destPlaceNeedsStreetRestore(zNow) &&
+    Math.abs(cam.center[0] - mapCenter[0]) < 1e-5 &&
+    Math.abs(cam.center[1] - mapCenter[1]) < 1e-5 &&
+    Math.abs(cam.zoom - zNow) < 0.08
+  ) {
+    flattenMapCamera(map);
+    return true;
+  }
+  return safeJumpTo(map, {
+    center: cam.center,
+    zoom: cam.zoom,
+    pitch: 0,
+    bearing: 0,
+    padding: ZERO_MAP_PADDING,
+  });
+}
 
 const SAVED_PLACE_DOT_MIN_ZOOM = 7;
 const SAVED_PLACE_DOT_FULL_ZOOM = 12.5;
@@ -4170,31 +4213,7 @@ function DriveMapInner({
     }
     pendingRouteOverviewEnterRef.current = true;
     stopMapCamera(map);
-    let zNow = NaN;
-    try {
-      zNow = map.getZoom();
-    } catch {
-      return;
-    }
-    if (!destPlaceNeedsStreetRestore(zNow)) {
-      flattenMapCamera(map);
-      return;
-    }
-    let center: [number, number] | null = null;
-    try {
-      const c = map.getCenter();
-      if (isValidLngLat(c.lng, c.lat)) center = [c.lng, c.lat];
-    } catch {
-      center = null;
-    }
-    if (!center) return;
-    safeJumpTo(map, {
-      center,
-      zoom: destPlaceHoldZoom(zNow),
-      pitch: 0,
-      bearing: 0,
-      padding: ZERO_MAP_PADDING,
-    });
+    writePlanningWaitCamera(map, destLngLat, userLngLatRef.current);
   }, [mapReady, destLngLat, routes.length, navigationStarted]);
 
   useEffect(() => {
@@ -4262,6 +4281,7 @@ function DriveMapInner({
       pendingRouteOverviewEnterRef.current = true;
       clearPlanningFitTimers();
       stopMapCamera(map);
+      writePlanningWaitCamera(map, destLngLatRef.current, userLngLatRef.current);
       return () => {
         cancelled = true;
         clearPlanningFitTimers();
@@ -4297,7 +4317,9 @@ function DriveMapInner({
       if (viewModeRef.current === "drive") return false;
       if (routes.length === 0) return false;
       if (userExploringRef.current && !appForcedFit) return false;
-      if (!mapStyleReadyForCamera(map)) return false;
+      /* Planning jumpTo does not need isStyleLoaded — waiting here left long trips
+       * stuck on the dest-hold street crop after Mapbox already had a line. */
+      if (navigationStartedRef.current && !mapStyleReadyForCamera(map)) return false;
       const u = userLngLatRef.current;
       /* Rt: puck + dest sit in a thin edge strip. Navigating Rt drops the
        * driven tail so the frame zooms in as the remaining trip shortens. */
@@ -4333,25 +4355,64 @@ function DriveMapInner({
       return fitted;
     };
 
-    let planningFitRetried = false;
+    let planningFitAttempt = 0;
+    const landPlanningFitOrEndpoint = () => {
+      if (executePlanningFit()) return;
+      if (navigationStartedRef.current || viewModeRef.current !== "route") return;
+      const pad = routeFitPadding(
+        stormBarVisible,
+        stormBarExpanded,
+        routes,
+        lineFocusId,
+        progressRailVisible
+      );
+      const maxZ = routeFitMaxZoomCeiling(routes, lineFocusId);
+      if (fitMapToTripEndpoints(map, userLngLatRef.current, destLngLatRef.current, pad, maxZ)) {
+        pendingRouteOverviewEnterRef.current = false;
+        return;
+      }
+      const proof = destLngLatRef.current ?? userLngLatRef.current;
+      if (!proof) return;
+      if (
+        safeJumpTo(map, {
+          center: proof,
+          zoom: destPlaceHoldZoom(ROUTE_VIEW_PLANNING_STREET_ZOOM),
+          pitch: 0,
+          bearing: 0,
+          padding: ZERO_MAP_PADDING,
+        })
+      ) {
+        pendingRouteOverviewEnterRef.current = false;
+      }
+    };
+
     const retryWhenReady = () => {
-      if (cancelled || planningFitRetried) return;
-      planningFitRetried = true;
+      if (cancelled) return;
       map.off("idle", retryWhenReady);
       map.off("style.load", retryWhenReady);
-      executePlanningFit();
+      if (executePlanningFit()) return;
+      if (planningFitAttempt >= PLANNING_FIT_RETRY_MS.length) {
+        landPlanningFitOrEndpoint();
+        return;
+      }
+      const wait = PLANNING_FIT_RETRY_MS[planningFitAttempt]!;
+      planningFitAttempt += 1;
+      map.once("idle", retryWhenReady);
+      map.once("style.load", retryWhenReady);
+      planningFitRetryTimerRef.current = window.setTimeout(retryWhenReady, wait);
     };
 
     const schedulePlanningRouteFit = () => {
       if (executePlanningFit()) return;
       clearPlanningFitTimers();
+      planningFitAttempt = 0;
       planningFitRafRef.current = requestAnimationFrame(() => {
         planningFitRafRef.current = null;
         if (cancelled) return;
         if (executePlanningFit()) return;
         map.once("idle", retryWhenReady);
         map.once("style.load", retryWhenReady);
-        planningFitRetryTimerRef.current = window.setTimeout(retryWhenReady, 160);
+        retryWhenReady();
       });
     };
 

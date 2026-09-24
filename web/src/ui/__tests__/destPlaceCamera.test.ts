@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   DEST_PLACE_MIN_ZOOM,
   PIN_PLACE_EXPLORE_IDLE_MS,
+  destPlaceHoldCenter,
   destPlaceHoldZoom,
   destPlaceNeedsStreetRestore,
   destPlaceRejectsRegionalZoom,
+  destPlaceWaitCenter,
   exploreIdleMsForPinPlacing,
   isPlanningPinPlacing,
   shouldHoldDestPlaceFrame,
@@ -83,6 +85,40 @@ describe("destPlaceCamera", () => {
     expect(isPlanningPinPlacing({ routesLength: 0, navigationStarted: false })).toBe(true);
     expect(isPlanningPinPlacing({ routesLength: 1, navigationStarted: false })).toBe(false);
     expect(isPlanningPinPlacing({ routesLength: 0, navigationStarted: true })).toBe(false);
+  });
+
+  it("does not street-zoom a continent midpoint while the plan is thinking", () => {
+    const puck: [number, number] = [-86.78, 36.16];
+    const dest: [number, number] = [-87.63, 41.88];
+    const midwest: [number, number] = [-92.2, 38.6];
+    expect(
+      destPlaceHoldCenter({
+        mapCenter: midwest,
+        userLngLat: puck,
+        destLngLat: dest,
+        mapZoom: ROUTE_VIEW_REGIONAL_ZOOM,
+      })
+    ).toEqual(puck);
+    expect(
+      destPlaceWaitCenter({
+        mapCenter: midwest,
+        userLngLat: puck,
+        destLngLat: dest,
+        mapZoom: 14.2,
+      })
+    ).toEqual(puck);
+  });
+
+  it("keeps a street dest tap on the pin", () => {
+    const dest: [number, number] = [-87.63, 41.88];
+    expect(
+      destPlaceWaitCenter({
+        mapCenter: dest,
+        userLngLat: [-86.78, 36.16],
+        destLngLat: dest,
+        mapZoom: 14.2,
+      })
+    ).toEqual(dest);
   });
 
   it("does not snap home follow back 400ms after a dest-pick pinch", () => {

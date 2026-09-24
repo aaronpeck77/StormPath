@@ -24,7 +24,14 @@ import {
   stormStripBandsToLineFeatures,
   type StormProgressStripBand,
 } from "../weatherAlerts/geometryOverlap";
-import { safeCameraForBounds, safeEaseTo, safeExtendBounds, safeFitBounds, readMapLngLat } from "./mapCameraSafe";
+import {
+  safeCameraForBounds,
+  safeEaseTo,
+  safeExtendBounds,
+  safeFitBounds,
+  safeJumpTo,
+  readMapLngLat,
+} from "./mapCameraSafe";
 import {
   firstBasemapSymbolLayerId,
   moveLayerBelowBasemapLabels,
@@ -904,9 +911,21 @@ function applyTripCameraFit(
       essential: true,
     });
   }
+  const zoom = clampPlanningFitZoom(cam.zoom, spanForFloor);
+  /* Planning uses duration 0 — easeTo no-ops while long-trip tiles load, so the
+   * overview never lands and the map stays on the dest-hold street crop. */
+  if (durationMs <= 0) {
+    return safeJumpTo(map, {
+      center: cam.center,
+      zoom,
+      bearing: 0,
+      pitch: 0,
+      padding,
+    });
+  }
   return safeEaseTo(map, {
     center: cam.center,
-    zoom: clampPlanningFitZoom(cam.zoom, spanForFloor),
+    zoom,
     bearing: 0,
     pitch: 0,
     duration: durationMs,
@@ -998,6 +1017,28 @@ export function fitMapToTrip(
     opts?.onAfterFit?.();
   }
   return ok;
+}
+
+/** Last-ditch planning frame: puck + dest only, so a line is on screen even if the full polyline fit missed. */
+export function fitMapToTripEndpoints(
+  map: mapboxgl.Map,
+  user: [number, number] | null,
+  dest: [number, number] | null,
+  padding: mapboxgl.PaddingOptions,
+  maxZoomCeiling = 18
+): boolean {
+  if (!user || !dest) return false;
+  const b = new mapboxgl.LngLatBounds();
+  extendEndpointPairBounds(b, user, dest);
+  if (b.isEmpty()) return false;
+  return applyTripCameraFit(
+    map,
+    { bounds: b, directM: haversineMeters(user, dest), endpointsOnly: true },
+    padding,
+    maxZoomCeiling,
+    0,
+    0
+  );
 }
 
 const ROUTE_COMPARE_DEFAULT_AHEAD_M = 28_000;

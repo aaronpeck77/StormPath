@@ -442,7 +442,7 @@ export default function App() {
   const routingRef = useRef(routing);
   routingRef.current = routing;
 
-  /** B/C leg refresh — must not flip global `routing` (advisory shows "Building routes…"). */
+  /** B/C leg refresh — must not flip global `routing` (advisory shows "Planning your route…"). */
   const altRoutesRefreshInFlightRef = useRef(false);
   const [tapHint, setTapHint] = useState<string | null>(null);
   const [returnTripLeg, setReturnTripLeg] = useState<ReturnTripLeg | null>(() => loadReturnTripLeg());
@@ -2812,6 +2812,7 @@ export default function App() {
           locationError={locationError}
           routeError={routeError}
           tapHint={tapHint}
+          planningRoute={routing && !navigationStarted && Boolean(destLngLat)}
           safetyAck={safetyAck}
           onSafetyAck={() => setSafetyAck(true)}
           onReportIssue={
