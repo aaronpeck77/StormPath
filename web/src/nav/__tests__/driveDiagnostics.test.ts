@@ -9,11 +9,19 @@ import {
   noteViewDroneStart,
   noteDriveDiagCamFailStreak,
   noteDriveDiagCamFreeze,
+  noteDriveDiagCamLean,
+  noteDriveDiagDoubledBack,
+  noteDriveDiagEta,
   noteDriveDiagJeffResync,
+  noteDriveDiagOffRoute,
   noteDriveDiagRadioHold,
+  noteDriveDiagRouteLock,
+  noteDriveDiagYou,
   noteViewDroneTap,
   persistDriveDiagNow,
   resetDriveDiag,
+  setDriveDiagCamWriter,
+  setDriveDiagLiveLengthM,
   setDriveDiagRoadControls,
   setDriveDiagRouteLengthM,
 } from "../driveDiagnostics";
@@ -206,5 +214,68 @@ describe("driveDiagnostics", () => {
     expect(driveDiagSnapshot().viewTaps).toBe(1);
     expect(driveDiagSnapshot().droneStarts).toBe(1);
     expect(driveDiagSnapshot().droneLast).toBe("Rt>Dr");
+  });
+
+  it("keeps the planned bucket and still shows a shorter live corridor", () => {
+    setDriveDiagRouteLengthM(90_000);
+    setDriveDiagLiveLengthM(8_000);
+    const line = formatDriveDiagLines(driveDiagSnapshot(), 20_000)[0]!;
+    expect(line).toContain("plan 50-100mi");
+    expect(line).toContain("live <20mi");
+  });
+
+  it("counts a corner lean once, and a drop back to Core once", () => {
+    noteDriveDiagCamLean(22, false);
+    noteDriveDiagCamLean(30, false);
+    noteDriveDiagCamLean(2, false);
+    noteDriveDiagCamLean(0, true);
+    noteDriveDiagCamLean(0, true);
+    const snap = driveDiagSnapshot();
+    expect(snap.leanApplies).toBe(1);
+    expect(snap.leanMaxDeg).toBe(30);
+    expect(snap.leanDrops).toBe(1);
+    expect(formatDriveDiagLines(snap, 8_000).join("\n")).toContain("Lean: 1 applies, max 30°, 1 drops");
+  });
+
+  it("remembers when GPS is far ahead of Core on the YOU line", () => {
+    noteDriveDiagYou(100, 8_000, 10_000);
+    noteDriveDiagYou(9_500, 9_800, 10_000);
+    const lines = formatDriveDiagLines(driveDiagSnapshot(), 8_000);
+    expect(lines.join("\n")).toContain("YOU: gps 3/4, core start");
+  });
+
+  it("records the camera on the longest radio hold", () => {
+    setDriveDiagCamWriter("pan");
+    noteDriveDiagRadioHold(true, 1_000);
+    noteDriveDiagCamFreeze();
+    bumpDriveDiag("camReclaim");
+    noteDriveDiagRadioHold(false, 121_000);
+    noteDriveDiagRadioHold(true, 130_000);
+    noteDriveDiagRadioHold(false, 140_000);
+    const radio = formatDriveDiagLines(driveDiagSnapshot(), 150_000)[4]!;
+    expect(radio).toContain("longest 120s");
+    expect(radio).toContain("pan freeze 1 reclaim 1 Jeff 0");
+  });
+
+  it("records an ETA jump near the end and which clock it came from", () => {
+    noteDriveDiagEta(4, 400, "line");
+    noteDriveDiagEta(28, 400, "live");
+    noteDriveDiagEta(30, 300, "live");
+    const eta = formatDriveDiagLines(driveDiagSnapshot(), 8_000).join("\n");
+    expect(eta).toContain("ETA: jump 24min at <1mi (live)");
+  });
+
+  it("counts one doubled-back line and one lock change after Go", () => {
+    noteDriveDiagRouteLock(false, true);
+    noteDriveDiagRouteLock(true, true);
+    noteDriveDiagRouteLock(true, true);
+    noteDriveDiagDoubledBack("line-a");
+    noteDriveDiagDoubledBack("line-a");
+    noteDriveDiagOffRoute(true, 1_000);
+    noteDriveDiagOffRoute(false, 7_000);
+    const route = formatDriveDiagLines(driveDiagSnapshot(), 20_000)[5]!;
+    expect(route).toContain("lock backroads, switched 1");
+    expect(route).toContain("doubled back 1");
+    expect(route).toContain("off-route (6s, longest 6s)");
   });
 });

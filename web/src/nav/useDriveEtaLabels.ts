@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { LngLat, NavRoute } from "./types";
 import type { ScoredRoute } from "../scoring/scoreRoutes";
 import type { TrafficOverlay } from "../situation/fusedSnapshot";
@@ -7,6 +7,7 @@ import {
   computeRemainingDriveEtaMinutes,
 } from "./tripNavDisplay";
 import { formatDistanceShort, useMilesForLngLat } from "../utils/formatDistance";
+import { noteDriveDiagEta } from "./driveDiagnostics";
 
 export interface UseDriveEtaLabelsDeps {
   navigationStarted: boolean;
@@ -68,6 +69,28 @@ export function useDriveEtaLabels(deps: UseDriveEtaLabelsDeps): UseDriveEtaLabel
     guidanceRouteLengthM,
     userAlongGuidanceM,
     trafficOverlay,
+  ]);
+
+  useEffect(() => {
+    if (!navigationStarted || driveEtaMinutes == null) return;
+    const distanceLeftM = computeRemainingDistanceMeters(
+      true,
+      guidanceRouteLengthM,
+      userAlongGuidanceM
+    );
+    const leg = trafficOverlay?.[lineFocusId] ?? null;
+    const source =
+      leg?.mapboxDurationMinutes != null && Number.isFinite(leg.mapboxDurationMinutes)
+        ? "live"
+        : "line";
+    noteDriveDiagEta(driveEtaMinutes, distanceLeftM, source);
+  }, [
+    navigationStarted,
+    driveEtaMinutes,
+    guidanceRouteLengthM,
+    userAlongGuidanceM,
+    trafficOverlay,
+    lineFocusId,
   ]);
 
   const driveDistanceRemainingLabel = useMemo(() => {

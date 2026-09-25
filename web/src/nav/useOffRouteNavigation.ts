@@ -47,7 +47,7 @@ import {
   metersToCurrentStepEnd,
   turnStepAlongBounds,
 } from "./turnStepAlong";
-import { bumpDriveDiag } from "./driveDiagnostics";
+import { bumpDriveDiag, noteDriveDiagOffRoute } from "./driveDiagnostics";
 import {
   createOffRoutePollSession,
   resetOffRoutePollSession,
@@ -269,6 +269,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     offRouteRejoinAlongMRef.current = session.offRouteRejoinAlongM;
     if (offRouteLatchedRef.current !== session.offRouteLatched) {
       if (session.offRouteLatched) bumpDriveDiag("offRoute");
+      noteDriveDiagOffRoute(session.offRouteLatched);
       offRouteSinceMsRef.current = session.offRouteLatched ? Date.now() : null;
       offRouteLatchedRef.current = session.offRouteLatched;
       setOffRouteLatched(session.offRouteLatched);

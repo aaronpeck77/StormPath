@@ -102,11 +102,11 @@ import {
   noteViewDroneSkip,
   noteViewDroneStart,
   noteViewDroneTap,
+  noteDriveDiagCamLean,
   noteViewDroneWriteFail,
   setDriveDiagCamWriter,
   setDriveDiagPoseSource,
   setDriveDiagRoadControls,
-  setDriveDiagRouteLengthM,
 } from "../nav/driveDiagnostics";
 import {
   drivePoseCountsAsSnapped,
@@ -164,6 +164,9 @@ import { readDrivePuckAnchorDrift } from "./drivePuckHealth";
 import { driveBearingCatchUp, shouldReclaimDrivePuckThisFrame } from "./driveCameraRules";
 import {
   anticipateNativeCamBearingDeg,
+  anticipateNativeCamStartMeters,
+  NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG,
+  NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS,
   shouldHoldParkedFollowCam,
   shouldUseNativeFollowCam,
   nativeFollowCamNeedsWebWrite,
@@ -839,12 +842,6 @@ function DriveMapInner({
   );
   const [mapReady, setMapReady] = useState(false);
   const [mapResumeTick, setMapResumeTick] = useState(0);
-
-  useEffect(() => {
-    if (navigationStarted && sessionRouteLengthM > 0) {
-      setDriveDiagRouteLengthM(sessionRouteLengthM);
-    }
-  }, [navigationStarted, sessionRouteLengthM]);
 
   const stopViewDrone = (end: "abort" | "silent" = "abort") => {
     const wasLive = viewDroneActiveRef.current;
@@ -2247,12 +2244,33 @@ function DriveMapInner({
               puck: camCenter,
             });
             /* Core's bearing also steps at 1 Hz. Smooth it on cruise; catch up on corners. */
+            const coreBearing = nativeCam.bearing;
+            const aheadBearing = driveRouteBearingDegRef.current;
+            const toTurn = metersToBannerManeuverRef.current;
             const targetBearing = anticipateNativeCamBearingDeg({
-              coreBearingDeg: nativeCam.bearing,
-              routeAheadBearingDeg: driveRouteBearingDegRef.current,
+              coreBearingDeg: coreBearing,
+              routeAheadBearingDeg: aheadBearing,
               speedMps: effSp,
-              metersToManeuver: metersToBannerManeuverRef.current,
+              metersToManeuver: toTurn,
             });
+            const leanDeg = Math.abs(headingDeltaDegrees(coreBearing, targetBearing));
+            const speedOk =
+              effSp != null &&
+              Number.isFinite(effSp) &&
+              effSp >= NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS;
+            const inWindow =
+              speedOk &&
+              toTurn != null &&
+              Number.isFinite(toTurn) &&
+              toTurn <= anticipateNativeCamStartMeters(effSp);
+            const rawAhead =
+              aheadBearing != null && Number.isFinite(aheadBearing)
+                ? Math.abs(headingDeltaDegrees(coreBearing, aheadBearing))
+                : 0;
+            noteDriveDiagCamLean(
+              leanDeg,
+              inWindow && rawAhead > NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG && leanDeg < 1
+            );
             const motionBrg = resolveTravelBearingDeg({
               headingDeg: readPuckFollowHeading(),
               prevFix,

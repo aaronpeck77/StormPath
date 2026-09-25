@@ -73,6 +73,14 @@ import { useRefreshAlternateRoutes } from "./nav/useRefreshAlternateRoutes";
 import { useProgressRailChrome } from "./nav/useProgressRailChrome";
 import { useRoutePickItems } from "./nav/buildRoutePickItems";
 import { useDriveEtaLabels } from "./nav/useDriveEtaLabels";
+import {
+  noteDriveDiagDoubledBack,
+  noteDriveDiagRouteLock,
+  noteDriveDiagYou,
+  setDriveDiagLiveLengthM,
+  setDriveDiagRouteLengthM,
+} from "./nav/driveDiagnostics";
+import { routeDoublesBack } from "./nav/routeDoublesBack";
 import { useSeriousHazardAutoFly } from "./nav/useSeriousHazardAutoFly";
 import { isDriveOffRouteForwardFraming, lockedRouteShouldAvoidMotorway } from "./nav/driveAlwaysAhead";
 import {
@@ -872,6 +880,10 @@ export default function App() {
     return lockedRouteShouldAvoidMotorway(locked, plan.routes);
   }, [plan.routes, orderedRouteIds, navigationStarted, previewLegIndex]);
 
+  useEffect(() => {
+    noteDriveDiagRouteLock(nativePreferBackroads, navigationStarted);
+  }, [nativePreferBackroads, navigationStarted]);
+
   /**
    * iOS Capacitor: Mapbox Navigation Core feeds puck/alongM; DIY snap/off-route pause.
    * Web / Netlify: hook is inert — DIY nav unchanged. Dr/Mp/Rt stay one DriveMap.
@@ -1379,6 +1391,26 @@ export default function App() {
     return g && g.length >= 2 ? polylineLengthMeters(g) : 0;
   }, [navigationGuidanceGeometry, guidanceRoute?.geometry]);
 
+  useEffect(() => {
+    if (!navigationStarted) return;
+    if (maxPlanRouteLengthM > 0) setDriveDiagRouteLengthM(maxPlanRouteLengthM);
+    if (guidanceRouteLengthM > 0) setDriveDiagLiveLengthM(guidanceRouteLengthM);
+  }, [navigationStarted, maxPlanRouteLengthM, guidanceRouteLengthM]);
+
+  useEffect(() => {
+    if (!navigationStarted || !navigationGuidanceGeometry || navigationGuidanceGeometry.length < 4) {
+      return;
+    }
+    const g = navigationGuidanceGeometry;
+    const a = g[0]!;
+    const b = g[g.length - 1]!;
+    const sig = `${g.length}:${a[0].toFixed(3)}:${b[1].toFixed(3)}:${Math.round(guidanceRouteLengthM)}`;
+    const timer = window.setTimeout(() => {
+      if (routeDoublesBack(g)) noteDriveDiagDoubledBack(sig);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [navigationStarted, navigationGuidanceGeometry, guidanceRouteLengthM]);
+
   const {
     userAlongGuidanceM,
     activeTurnIndex: diyTravelingTurnIndex,
@@ -1520,6 +1552,22 @@ export default function App() {
     }
     return projected;
   }, [guidanceRoute?.geometry, navigationStarted, userAlongGuidanceM, effectiveUserLngLat]);
+
+  useEffect(() => {
+    if (!navigationStarted || guidanceRouteLengthM <= 1) return;
+    const g = guidanceRoute?.geometry;
+    const gpsAlongM =
+      g && g.length >= 2 && effectiveUserLngLat
+        ? closestAlongRouteMeters(effectiveUserLngLat, g).alongMeters
+        : 0;
+    noteDriveDiagYou(userAlongGuidanceM, gpsAlongM, guidanceRouteLengthM);
+  }, [
+    navigationStarted,
+    guidanceRouteLengthM,
+    guidanceRoute?.geometry,
+    userAlongGuidanceM,
+    effectiveUserLngLat,
+  ]);
 
   /** Throttle heavy advisory recompute (timeline, impacts) — turn banner keeps precise along-m. */
   const heavyAdvisoryAlongM = useMemo(
