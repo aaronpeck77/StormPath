@@ -187,6 +187,8 @@ describe("driveDiagnostics", () => {
     noteDriveDiagJeffResync();
     const lines = formatDriveDiagLines(driveDiagSnapshot(), 20_000);
     expect(lines[0]).toContain("50-100mi");
+    setDriveDiagRouteLengthM(8_000);
+    expect(formatDriveDiagLines(driveDiagSnapshot(), 20_000)[0]).toContain("50-100mi");
     expect(lines[2]).toContain("freeze 1");
     expect(lines[2]).toContain("max fail streak 12");
     expect(lines[2]).toContain("Jeff 1");

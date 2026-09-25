@@ -174,14 +174,15 @@ export function shouldUseNativeFollowCam(input: {
  * 443 swung out then back: a 140 m always-on chord cut the corner (~70°) while
  * still on the straight, then a hard cutoff dropped the lean to zero. Last night's
  * wait (2.5 s / 42 m, 50° cutoff) overcorrected — the camera turned after the car.
- * Start earlier, keep the fade so a far chord cannot yank, and still lean on a
- * real 60–70° city corner.
+ * Start earlier. The phone pass (weight 0.38, fade floor 0.38) still only moved
+ * a 70° corner about 10° — Core caught up after the car. A city corner should
+ * lead by roughly a third of the turn, and a wild chord still drops to Core.
  */
 export const NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS = 2.2;
 export const NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG = 78;
-export const NATIVE_CAM_ANTICIPATE_FULL_WEIGHT_DEG = 36;
-export const NATIVE_CAM_ANTICIPATE_FADE_FLOOR = 0.38;
-export const NATIVE_CAM_ANTICIPATE_WEIGHT = 0.38;
+export const NATIVE_CAM_ANTICIPATE_FULL_WEIGHT_DEG = 55;
+export const NATIVE_CAM_ANTICIPATE_FADE_FLOOR = 0.72;
+export const NATIVE_CAM_ANTICIPATE_WEIGHT = 0.62;
 /** Start leaning ~4 s before the banner turn (not after it). */
 export const NATIVE_CAM_ANTICIPATE_START_M = 72;
 export const NATIVE_CAM_ANTICIPATE_START_SECONDS = 4;

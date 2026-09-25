@@ -244,8 +244,7 @@ export function buildDriveMapProps(
     trafficBypassCompareKind: trafficBypassCompare?.compareKind,
     rejoinCompareLockedRouteId: lockedNavigationRouteId,
     activityTrailGeoJson,
-    sessionRouteLengthM:
-      guidanceRouteLengthM > 0 ? guidanceRouteLengthM : maxPlanRouteLengthM,
+    sessionRouteLengthM: Math.max(guidanceRouteLengthM, maxPlanRouteLengthM),
     activityTrailPlanningBounds,
     idleHomeMapFraming,
     homePuckFollow,

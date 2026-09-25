@@ -54,8 +54,8 @@ describe("anticipateNativeCamBearingDeg", () => {
       routeAheadBearingDeg: 40,
       speedMps: 12,
     });
-    expect(out).toBeGreaterThan(8);
-    expect(out).toBeLessThan(22);
+    expect(out).toBeGreaterThan(18);
+    expect(out).toBeLessThan(32);
   });
 
   it("starts leaning about 4 s out, not after the corner", () => {
@@ -75,8 +75,8 @@ describe("anticipateNativeCamBearingDeg", () => {
       speedMps: 14,
       metersToManeuver: 60,
     });
-    expect(approaching).toBeGreaterThan(8);
-    expect(approaching).toBeLessThan(22);
+    expect(approaching).toBeGreaterThan(18);
+    expect(approaching).toBeLessThan(32);
   });
 
   it("still leans on a 70° city corner without the 443 yank-and-drop", () => {
@@ -85,15 +85,15 @@ describe("anticipateNativeCamBearingDeg", () => {
       routeAheadBearingDeg: 70,
       speedMps: 14,
     });
-    expect(hard).toBeGreaterThan(6);
-    expect(hard).toBeLessThan(24);
+    expect(hard).toBeGreaterThan(22);
+    expect(hard).toBeLessThan(40);
     const mid = anticipateNativeCamBearingDeg({
       coreBearingDeg: 0,
       routeAheadBearingDeg: 40,
       speedMps: 14,
     });
-    expect(mid).toBeGreaterThan(8);
-    expect(mid).toBeLessThan(22);
+    expect(mid).toBeGreaterThan(18);
+    expect(mid).toBeLessThan(32);
   });
 
   it("does not swing the camera while parked or crawling", () => {
@@ -124,8 +124,8 @@ describe("anticipateNativeCamBearingDeg", () => {
     });
     /* 30 deg of turn, leaned partway → just past north (wrapped), not back through 180. */
     const shortest = (((out - 350) % 360) + 540) % 360 - 180;
-    expect(shortest).toBeGreaterThan(0);
-    expect(shortest).toBeLessThan(30);
+    expect(shortest).toBeGreaterThan(10);
+    expect(shortest).toBeLessThan(28);
     expect(out).toBeGreaterThanOrEqual(0);
     expect(out).toBeLessThan(360);
   });

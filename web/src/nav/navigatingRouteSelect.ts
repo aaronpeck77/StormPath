@@ -3,8 +3,8 @@
  * preview-highlight it. Preview-only left Drive on the locked corridor (often behind
  * the puck after an off-route leave) with no line for the route the driver just picked.
  *
- * On-route compare stays preview-only; adopt kicks in when off-route / rejoin choices
- * are active so Drive stays on the same page as Rt/Mp.
+ * A different A/B tap while navigating adopts that leg — including on-route.
+ * Preview-only left Drive on A after the driver had already chosen B.
  */
 
 export type NavigatingRouteSelectAction =
@@ -14,9 +14,9 @@ export type NavigatingRouteSelectAction =
 
 /**
  * Decide what a route tap means while navigating.
- * - Off-route / rejoin choice + different from active guidance → adopt for Drive.
- * - Locked corridor while a temporary rejoin stub is guiding → drop stub, resume lock.
- * - Otherwise → preview/highlight only.
+ * - A different A/B leg → adopt it for Drive and for later replans.
+ * - The original lock while a rejoin stub is guiding → drop the stub.
+ * - The leg already being followed → highlight only.
  */
 export function resolveNavigatingRouteSelect(input: {
   navigationStarted: boolean;
@@ -27,13 +27,11 @@ export function resolveNavigatingRouteSelect(input: {
   offRouteChoiceActive?: boolean;
 }): NavigatingRouteSelectAction {
   if (!input.navigationStarted) return { type: "preview" };
+  void input.offRouteChoiceActive;
 
   const locked = input.lockedRouteId;
   const temp = input.temporaryGuidanceRouteId ?? null;
   const active = temp || locked;
-  const mustSyncDrive = Boolean(input.offRouteChoiceActive || temp);
-
-  if (!mustSyncDrive) return { type: "preview" };
 
   if (temp && locked && input.selectedId === locked && input.selectedId !== temp) {
     return { type: "return_to_lock", lockedId: locked };

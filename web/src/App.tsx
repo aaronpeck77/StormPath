@@ -864,11 +864,13 @@ export default function App() {
   );
 
   const nativePreferBackroads = useMemo(() => {
-    const lockedId =
-      lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
+    const previewId = orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? null;
+    const lockedId = navigationStarted
+      ? (lockedNavigationRouteIdRef.current ?? previewId)
+      : previewId;
     const locked = lockedId ? plan.routes.find((r) => r.id === lockedId) : undefined;
     return lockedRouteShouldAvoidMotorway(locked, plan.routes);
-  }, [plan.routes, orderedRouteIds, navigationStarted]);
+  }, [plan.routes, orderedRouteIds, navigationStarted, previewLegIndex]);
 
   /**
    * iOS Capacitor: Mapbox Navigation Core feeds puck/alongM; DIY snap/off-route pause.
@@ -1507,13 +1509,16 @@ export default function App() {
   const advisoryUserAlongM = useMemo(() => {
     const g = guidanceRoute?.geometry;
     if (!g?.length) return 0;
+    const projected = effectiveUserLngLat
+      ? closestAlongRouteMeters(effectiveUserLngLat, g).alongMeters
+      : 0;
+    /* Core alongM resets when the corridor is replaced, which pinned Route Info's
+     * YOU line on the far left late in the trip. GPS on this same line is the
+     * progress they can see. */
     if (navigationStarted && Number.isFinite(userAlongGuidanceM) && userAlongGuidanceM >= 0) {
-      return userAlongGuidanceM;
+      return Math.max(userAlongGuidanceM, projected);
     }
-    if (effectiveUserLngLat) {
-      return closestAlongRouteMeters(effectiveUserLngLat, g).alongMeters;
-    }
-    return 0;
+    return projected;
   }, [guidanceRoute?.geometry, navigationStarted, userAlongGuidanceM, effectiveUserLngLat]);
 
   /** Throttle heavy advisory recompute (timeline, impacts) — turn banner keeps precise along-m. */
@@ -2197,6 +2202,11 @@ export default function App() {
         setFitTrigger((n) => n + 1);
         setTapHint("Following this route.");
         window.setTimeout(() => setTapHint(null), 4000);
+        /* Lock ref is already B. Restart after paint so Core gets B's corridor
+         * and the no-interstate flag, not the A session it started on. */
+        window.setTimeout(() => {
+          void restartNative();
+        }, 0);
         return;
       }
 
@@ -2229,6 +2239,7 @@ export default function App() {
       adoptLockedRouteGeometry,
       resetOffRouteNavigation,
       clearDetourGuidance,
+      restartNative,
     ]
   );
 

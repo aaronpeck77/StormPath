@@ -265,9 +265,20 @@ export function routeLengthBucketMi(meters: number): string {
   return "100+mi";
 }
 
+function routeBucketRank(bucket: string): number {
+  if (bucket === "100+mi") return 4;
+  if (bucket === "50-100mi") return 3;
+  if (bucket === "20-50mi") return 2;
+  if (bucket === "<20mi") return 1;
+  return 0;
+}
+
 export function setDriveDiagRouteLengthM(meters: number): void {
   const bucket = routeLengthBucketMi(meters);
-  if (!bucket || bucket === state.routeBucket) return;
+  if (!bucket) return;
+  /* A short Core corridor must not erase the trip they actually planned.
+   * 446 commutes were 50+ mi and both dumps still said <20mi. */
+  if (routeBucketRank(bucket) <= routeBucketRank(state.routeBucket)) return;
   state.routeBucket = bucket;
   persistDriveDiagSoon();
 }
