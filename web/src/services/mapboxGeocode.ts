@@ -1,4 +1,5 @@
 import type { LngLat } from "../nav/types";
+import { haversineMeters } from "../nav/routeGeometry";
 import { fetchWithTimeout, MAPBOX_GEOCODE_TIMEOUT_MS } from "../utils/fetchResilient";
 import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
 import { getCachedReverseGeocode, setCachedReverseGeocode } from "./reverseGeocodeCache";
@@ -290,4 +291,29 @@ export async function mapboxReverseGeocode(
   };
   setCachedReverseGeocode(lng, lat, hit);
   return hit;
+}
+
+/**
+ * One nearby place for the drive banner. Geocoding is per request (100k free).
+ * Search Box /suggest is per session (500 free) and bills even when nobody picks a row,
+ * so a one-shot tip must not use it.
+ */
+export async function mapboxNearbyPoi(
+  query: string,
+  accessToken: string,
+  proximity: LngLat
+): Promise<{ name: string; distanceMeters: number } | null> {
+  const features = await fetchForwardFeatures(query, accessToken, {
+    types: "poi",
+    limit: 1,
+    proximity,
+  });
+  const feature = features[0];
+  if (!feature?.center) return null;
+  const name = (feature.place_name ?? "").split(",")[0]?.trim();
+  if (!name) return null;
+  return {
+    name,
+    distanceMeters: haversineMeters(proximity, feature.center),
+  };
 }

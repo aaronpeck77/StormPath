@@ -55,13 +55,17 @@ export function useNearbyPoiTip(args: Args): string | null {
     }
     if (inFlightRef.current || !mapboxToken.trim()) return;
 
+    /* Stamp before the request. A moving puck re-runs this effect and used to
+     * cancel the result, then ask again on the next fix — one billed session
+     * per update while driving slowly. */
+    lastFetchMsRef.current = Date.now();
+    lastLngLatRef.current = userLngLat;
+
     let cancelled = false;
     inFlightRef.current = true;
     void fetchNearbyPoiTip({ mapboxToken, userLngLat })
       .then((next) => {
         if (cancelled || !next) return;
-        lastFetchMsRef.current = next.fetchedAtMs;
-        lastLngLatRef.current = next.lngLat;
         setTip(next);
       })
       .finally(() => {
