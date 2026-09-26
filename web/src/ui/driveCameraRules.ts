@@ -41,6 +41,8 @@ export const DRIVE_PUCK_SOFT_REPAIR_COOLDOWN_MS = 400;
 
 /** Error vs target (deg) where a corner must stop using the cruise glide. */
 export const DRIVE_BEARING_CORNER_ERR_DEG = 14;
+/** After the corner, finish centering the road ahead before dropping to the 1s cruise. */
+export const DRIVE_BEARING_SETTLE_ERR_DEG = 6;
 /** Error where a sharp turn may take a bigger per-frame step. */
 export const DRIVE_BEARING_SHARP_ERR_DEG = 35;
 
@@ -57,7 +59,8 @@ export type DriveBearingCatchUp = {
 export function driveBearingCatchUp(errorDeg: number): DriveBearingCatchUp {
   const e = Number.isFinite(errorDeg) ? Math.abs(errorDeg) : 0;
   if (e >= DRIVE_BEARING_SHARP_ERR_DEG) return { tcS: 0.22, maxStepDeg: 18 };
-  if (e >= DRIVE_BEARING_CORNER_ERR_DEG) return { tcS: 0.38, maxStepDeg: 12 };
+  if (e >= DRIVE_BEARING_CORNER_ERR_DEG) return { tcS: 0.32, maxStepDeg: 14 };
+  if (e >= DRIVE_BEARING_SETTLE_ERR_DEG) return { tcS: 0.55, maxStepDeg: 9 };
   return { tcS: DRIVE_CAMERA_BEARING_TC_S, maxStepDeg: DRIVE_CAMERA_BEARING_MAX_STEP_DEG };
 }
 

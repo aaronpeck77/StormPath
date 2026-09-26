@@ -16,7 +16,7 @@ import {
 import type { LngLat, RouteTurnStep } from "./types";
 import type { TripStop } from "./routeWaypoints";
 import type { NavigationPositionState } from "../hooks/useNavigationPosition";
-import { bumpDriveDiag, resetDriveDiag } from "./driveDiagnostics";
+import { bumpDriveDiag, noteDriveDiagRouteLock, resetDriveDiag } from "./driveDiagnostics";
 import { createNativeDrivePoseHold } from "./nativeDrivePoseHold";
 import type { CoreRerouteHealth } from "./rerouteOwner";
 import {
@@ -398,7 +398,12 @@ export function useNativeNavSession(opts: {
 
     /* Genuine Go (false → true). Core reconnect / WebView remount must keep the trip counters
      * or About reads "0.6 s, all zeros" after a long drive. */
-    if (prevNav === false) resetDriveDiag();
+    if (prevNav === false) {
+      resetDriveDiag();
+      /* The App effect notes the lock first, then this reset wipes it. Write it
+       * again or About never shows fastest vs no-interstate. */
+      noteDriveDiagRouteLock(preferBackroadsRef.current, true);
+    }
 
     if (nativeRestartingRef.current) return;
     if (startedForNavRef.current) return;

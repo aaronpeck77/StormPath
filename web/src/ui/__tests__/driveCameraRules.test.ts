@@ -26,6 +26,14 @@ describe("driveBearingCatchUp", () => {
     expect(corner.maxStepDeg).toBeGreaterThan(DRIVE_CAMERA_BEARING_MAX_STEP_DEG);
   });
 
+  it("finishes centering the road ahead quicker than the cruise glide", () => {
+    const settle = driveBearingCatchUp(8);
+    const cruise = driveBearingCatchUp(4);
+    const corner = driveBearingCatchUp(20);
+    expect(settle.tcS).toBeLessThan(cruise.tcS);
+    expect(settle.tcS).toBeGreaterThan(corner.tcS);
+  });
+
   it("takes a sharper step on a 90-degree turn", () => {
     const sharp = driveBearingCatchUp(90);
     const corner = driveBearingCatchUp(20);

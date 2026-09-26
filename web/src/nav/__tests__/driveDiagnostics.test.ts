@@ -265,6 +265,15 @@ describe("driveDiagnostics", () => {
     expect(eta).toContain("ETA: jump 24min at <1mi (live)");
   });
 
+  it("keeps the route rule when Go clears the trip counters first", () => {
+    noteDriveDiagRouteLock(false, true);
+    resetDriveDiag(5_000);
+    noteDriveDiagRouteLock(true, true);
+    const route = formatDriveDiagLines(driveDiagSnapshot(), 20_000)[5]!;
+    expect(route).toContain("lock backroads");
+    expect(route).not.toContain("switched");
+  });
+
   it("counts one doubled-back line and one lock change after Go", () => {
     noteDriveDiagRouteLock(false, true);
     noteDriveDiagRouteLock(true, true);

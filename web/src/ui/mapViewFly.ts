@@ -11,10 +11,11 @@ import { isMapReadyForFollowCam, readMapLngLat } from "./mapCameraSafe";
  * only writer while the shot is in the air: lerp every channel from the live
  * camera to the target pose. Follow-cam / fit / snap yield until it lands.
  */
-/** Dr↔Mp is a rotate/flatten over the car. Rt hops need more time to climb or dive. */
-export const MAP_VIEW_FLY_MS = 1400;
-export const MAP_VIEW_FLY_OVERVIEW_MS = 2200;
-export const MAP_VIEW_FLY_MAX_MS = 2200;
+/** Dr↔Mp is a rotate/flatten over the car. Rt hops need more time to climb or dive.
+ *  A little under the old 1.4s / 2.2s so the tapped view is on screen sooner. */
+export const MAP_VIEW_FLY_MS = 1200;
+export const MAP_VIEW_FLY_OVERVIEW_MS = 1900;
+export const MAP_VIEW_FLY_MAX_MS = 1900;
 
 export type MapDronePose = {
   lng: number;
