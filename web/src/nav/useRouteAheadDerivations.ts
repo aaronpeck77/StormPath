@@ -66,7 +66,7 @@ import type { RouteSituationSlice } from "../situation/types";
 import type { TrafficOverlay } from "../situation/fusedSnapshot";
 import type { ScoredRoute } from "../scoring/scoreRoutes";
 import { useRoutePlaceAnchors } from "./useRoutePlaceAnchors";
-import { placeReferencePhrase } from "./routePlaceReference";
+import { placeReferencePhrase, type RoutePlaceAnchor } from "./routePlaceReference";
 import { pointAtAlongMeters } from "./routeGeometry";
 
 export type UseRouteAheadDerivationsDeps = {
@@ -149,6 +149,8 @@ export type UseRouteAheadDerivationsResult = {
   /** Lim came from the road-class average, not Mapbox — show it as a guess. */
   postedMphIsClassEstimate: boolean;
   progressStripAlerts: RouteAlert[];
+  /** Exit signs plus city centers used to phrase alerts. */
+  routePlaceAnchors: RoutePlaceAnchor[];
 };
 
 export function useRouteAheadDerivations(
