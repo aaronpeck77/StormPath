@@ -32,6 +32,53 @@ describe("tripNavDisplay", () => {
     ).toBe(30);
   });
 
+  it("does not show the whole planned trip as time left on a short corridor", () => {
+    const planM = 80 * 1609.34;
+    const corridorM = 18 * 1609.34;
+    expect(
+      computeRemainingDriveEtaMinutes({
+        navigationStarted: true,
+        fullEtaMinutes: 120,
+        routeLengthM: corridorM,
+        alongM: 0,
+        hasRouteGeometry: true,
+        planLengthM: planM,
+        liveRemainingEtaMinutes: 118,
+      })
+    ).toBe(27);
+  });
+
+  it("keeps a live remaining duration that is not the whole trip", () => {
+    const planM = 80 * 1609.34;
+    const corridorM = 18 * 1609.34;
+    expect(
+      computeRemainingDriveEtaMinutes({
+        navigationStarted: true,
+        fullEtaMinutes: 120,
+        routeLengthM: corridorM,
+        alongM: 0,
+        hasRouteGeometry: true,
+        planLengthM: planM,
+        liveRemainingEtaMinutes: 24,
+      })
+    ).toBe(24);
+  });
+
+  it("uses the odometer when along resets to the start of the full line", () => {
+    const planM = 80 * 1609.34;
+    expect(
+      computeRemainingDriveEtaMinutes({
+        navigationStarted: true,
+        fullEtaMinutes: 120,
+        routeLengthM: planM,
+        alongM: 0,
+        hasRouteGeometry: true,
+        planLengthM: planM,
+        tripOdometerM: 40 * 1609.34,
+      })
+    ).toBe(60);
+  });
+
   it("returns null remaining distance when not navigating", () => {
     expect(computeRemainingDistanceMeters(false, 10_000, 0)).toBeNull();
   });

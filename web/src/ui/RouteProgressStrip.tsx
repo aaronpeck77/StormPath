@@ -7,6 +7,7 @@ import {
 } from "../nav/routeAlerts";
 import { layoutStripAlerts } from "../nav/stripAlertLayout";
 import { RADAR_HEAVY_THRESHOLD } from "../nav/constants";
+import { driveRailProgressFraction } from "../nav/driveRailProgress";
 import { closestAlongRouteMeters, polylineLengthMeters } from "../nav/routeGeometry";
 import { turnStepAlongBounds } from "../nav/turnStepAlong";
 import type { LngLat, RouteTurnStep } from "../nav/types";
@@ -100,19 +101,16 @@ export function RouteProgressStrip({
     geometry?.length && userLngLat ? closestAlongRouteMeters(userLngLat, geometry).alongMeters : 0;
   const userAlong =
     userAlongMeters != null && Number.isFinite(userAlongMeters) ? userAlongMeters : internalAlong;
-  const remainingM = totalM > 0 ? Math.max(0, totalM - userAlong) : 0;
-  const polylineProgress = totalM > 0 ? Math.min(1, Math.max(0, userAlong / totalM)) : 0;
-  const denom = tripOdometerM + remainingM;
-  const tripProgress =
-    tripRelativeProgress && denom > 1 ? Math.min(1, Math.max(0, tripOdometerM / denom)) : polylineProgress;
   /**
-   * Prefer along-route progress for the YOU cursor. Trip odometer often stays 0 with
-   * creep filtering / small GPS steps, which stuck the marker at the start.
+   * Same fraction Route Info uses for its YOU line. Odometer keeps the puck moving
+   * when along-meters snap back; a real along that is farther still wins.
    */
-  const progress =
-    tripRelativeProgress && tripOdometerM > 2
-      ? Math.max(polylineProgress, tripProgress)
-      : polylineProgress;
+  const progress = driveRailProgressFraction({
+    totalM,
+    userAlongM: userAlong,
+    tripOdometerM,
+    tripRelative: tripRelativeProgress,
+  });
 
   const laidOut = useMemo(() => {
     if (!geometry?.length || totalM <= 0) return [];

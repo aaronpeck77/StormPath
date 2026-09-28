@@ -3,6 +3,7 @@
  */
 
 import { formatDurationMinutesMaybe } from "../ui/formatEta";
+import { locationWithPlace } from "./routePlaceReference";
 
 const METERS_PER_MILE = 1609.344;
 
@@ -27,6 +28,10 @@ export type RouteAlertTimingInput = {
   onsetIso?: string | null;
   /** false → corridor buffer only, route line does not cross polygon */
   crossesRoute?: boolean;
+  /** One town or exit clause. Combined with the miles-ahead line when it fits. */
+  placePhrase?: string | null;
+  /** Alert title — skip the place clause when the title already names it. */
+  placeLabel?: string | null;
 };
 
 export type RouteAlertTiming = {
@@ -124,6 +129,8 @@ export function formatRouteAlertTiming(opts: RouteAlertTimingInput): RouteAlertT
     expiresIso,
     onsetIso,
     crossesRoute = true,
+    placePhrase = null,
+    placeLabel = null,
   } = opts;
 
   const passed = endMeters <= userAlongMeters;
@@ -182,6 +189,8 @@ export function formatRouteAlertTiming(opts: RouteAlertTimingInput): RouteAlertT
     if (lengthMi) detailParts.push(`${lengthMi} zone`);
     if (expiresLabel) detailParts.push(`exp ${expiresLabel}`);
   }
+
+  locationLine = locationWithPlace(locationLine, placePhrase, placeLabel);
 
   let timingDetail = detailParts.length ? detailParts.join(" · ") : null;
   const relevanceNote = passed

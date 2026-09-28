@@ -2,7 +2,8 @@ import { useDeferredValue, useMemo } from "react";
 import { buildMapAlongRouteAlerts } from "./buildMapAlongRouteAlerts";
 import { buildNwsAlertGeoJsonForMap } from "../weatherAlerts/buildNwsAlertGeoJsonForMap";
 import { buildDriveRouteAheadFromImpacts, type DriveAheadLine } from "./driveRouteAhead";
-import { polylineLengthMeters } from "./routeGeometry";
+import { pointAtAlongMeters, polylineLengthMeters } from "./routeGeometry";
+import { placeReferencePhrase, type RoutePlaceAnchor } from "./routePlaceReference";
 import { isNavMapLiteMode } from "../utils/dataSaver";
 import { PERSONAL_FORK_ROUTE_ID } from "../personalForks";
 import type { TimelineItem, RouteAheadStormBand } from "./routeAheadSync";
@@ -23,6 +24,7 @@ export type UseDriveMapOverlaysDeps = {
   guidanceIsPersonalFork: boolean;
   lockedNavigationRouteId: string | undefined;
   guidanceRoute: NavRoute | undefined;
+  routePlaceAnchors?: RoutePlaceAnchor[];
   progressStripAlerts: RouteAlert[];
   routeAheadTimeline: TimelineItem[];
   advisoryRouteImpacts: RouteImpact[];
@@ -61,6 +63,7 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
     guidanceIsPersonalFork,
     lockedNavigationRouteId,
     guidanceRoute,
+    routePlaceAnchors = [],
     progressStripAlerts,
     routeAheadTimeline,
     advisoryRouteImpacts,
@@ -210,6 +213,10 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
       totalMeters,
       userAlongM: userAlongGuidanceM,
       planEtaMinutes: guidanceRoute?.baseEtaMinutes,
+      placePhraseAt: (alongM) => {
+        if (!routePlaceAnchors.length) return null;
+        return placeReferencePhrase(pointAtAlongMeters(g, alongM), routePlaceAnchors, "nearby");
+      },
     });
   }, [
     driveModeUi,
@@ -217,6 +224,7 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
     guidanceRoute?.baseEtaMinutes,
     userAlongGuidanceM,
     routeImpactsForUi,
+    routePlaceAnchors,
   ]);
 
   return {

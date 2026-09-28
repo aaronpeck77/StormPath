@@ -10,6 +10,32 @@ export type TurnInstructionShortOpts = {
   maneuverType?: string;
 };
 
+const ROAD_SHIELD =
+  /\b(?:I[-\s]?\d{1,3}|Interstate|US[-\s]?\d{1,3}|SR[-\s]?\d{1,3}|Hwy|Highway|Freeway|Expressway|Tollway|Parkway|Route\s+\d{1,3})\b/i;
+
+/** First town or city in a Mapbox `destinations` string. Road shields are not places. */
+export function placeNameFromDestinations(destinations: string | undefined | null): string | null {
+  if (!destinations) return null;
+  const parts = destinations
+    .split(/[;,]/)
+    .map((s) => s.trim().replace(/\s+/g, " "))
+    .filter(Boolean);
+  for (const name of parts) {
+    if (name.length < 3 || name.length > 32) continue;
+    if (ROAD_SHIELD.test(name)) continue;
+    if (/^\d/.test(name)) continue;
+    return name;
+  }
+  return null;
+}
+
+/** "toward Springfield" already baked into a stored instruction. */
+export function placeNameFromInstruction(instruction: string | undefined | null): string | null {
+  if (!instruction) return null;
+  const m = instruction.match(/\btoward\s+([^·,;]+)/i);
+  return placeNameFromDestinations(m?.[1]);
+}
+
 /** Best-effort exit label from Mapbox step fields or instruction text. */
 export function parseExitNumberFromStep(
   instruction: string,

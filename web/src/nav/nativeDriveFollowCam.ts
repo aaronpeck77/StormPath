@@ -174,17 +174,25 @@ export function shouldUseNativeFollowCam(input: {
  * 443 swung out then back: a 140 m always-on chord cut the corner (~70°) while
  * still on the straight, then a hard cutoff dropped the lean to zero. Last night's
  * wait (2.5 s / 42 m, 50° cutoff) overcorrected — the camera turned after the car.
- * Start earlier. The phone pass (weight 0.38, fade floor 0.38) still only moved
- * a 70° corner about 10° — Core caught up after the car. A city corner should
- * lead by roughly a third of the turn, and a wild chord still drops to Core.
+ * Start earlier. A third-of-the-turn lean (weight 0.62, hard drop at 78°) is what
+ * 450 felt like: the camera stayed straight until the car was in the corner,
+ * flipped back to Core when the exit street was steeper than 78°, then eased
+ * onto the new road after the driver was already going straight.
+ * A city corner should be mostly turned before the car is, then sit on the
+ * exit heading as the car comes out. Only a reversal (the chord pointing
+ * back up the road) drops to Core.
  */
 export const NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS = 2.2;
-export const NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG = 78;
-export const NATIVE_CAM_ANTICIPATE_FULL_WEIGHT_DEG = 55;
-export const NATIVE_CAM_ANTICIPATE_FADE_FLOOR = 0.72;
-export const NATIVE_CAM_ANTICIPATE_WEIGHT = 0.62;
+/** Above this, the chord is a U-turn / wrong-way, not the next street. */
+export const NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG = 125;
+/** Full lead through a city left or right. Fade only as it approaches a reversal. */
+export const NATIVE_CAM_ANTICIPATE_FULL_WEIGHT_DEG = 95;
+export const NATIVE_CAM_ANTICIPATE_FADE_FLOOR = 0.55;
+export const NATIVE_CAM_ANTICIPATE_WEIGHT = 0.88;
+/** Once the car and the road ahead agree, the target is that forward heading. */
+export const NATIVE_CAM_ANTICIPATE_MATCH_DEG = 12;
 /** Start leaning ~4 s before the banner turn (not after it). */
-export const NATIVE_CAM_ANTICIPATE_START_M = 72;
+export const NATIVE_CAM_ANTICIPATE_START_M = 85;
 export const NATIVE_CAM_ANTICIPATE_START_SECONDS = 4;
 
 export function anticipateNativeCamStartMeters(speedMps: number): number {
@@ -214,6 +222,7 @@ export function anticipateNativeCamBearingDeg(input: {
   const delta = (((ahead - core) % 360) + 540) % 360 - 180;
   const absD = Math.abs(delta);
   if (absD > NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG) return core;
+  if (absD <= NATIVE_CAM_ANTICIPATE_MATCH_DEG) return ((ahead % 360) + 360) % 360;
   const fadeStart = NATIVE_CAM_ANTICIPATE_FULL_WEIGHT_DEG;
   const fadeSpan = NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG - fadeStart;
   const fade =

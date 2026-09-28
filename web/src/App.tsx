@@ -1633,7 +1633,9 @@ export default function App() {
     lineFocusId,
     guidanceRoute,
     guidanceRouteLengthM,
+    planLengthM: maxPlanRouteLengthM,
     userAlongGuidanceM,
+    tripOdometerM,
     trafficOverlay,
     effectiveUserLngLat,
   });
@@ -1789,6 +1791,7 @@ export default function App() {
     postedMph,
     postedMphIsClassEstimate,
     progressStripAlerts,
+    routePlaceAnchors,
   } = useRouteAheadDerivations({
     nwsMapOverlapRouteGeom,
     stormCorridorAlerts,
@@ -1890,6 +1893,7 @@ export default function App() {
     guidanceIsPersonalFork,
     lockedNavigationRouteId,
     guidanceRoute,
+    routePlaceAnchors,
     progressStripAlerts,
     routeAheadTimeline,
     advisoryRouteImpacts,
@@ -1933,6 +1937,7 @@ export default function App() {
       navigationStarted,
       advisoryUserAlongM,
       userAlongGuidanceM,
+      tripOdometerM,
       guidanceRouteLengthM,
       guidanceRoute,
       orderedRouteIds,

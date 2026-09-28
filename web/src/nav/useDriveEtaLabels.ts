@@ -15,7 +15,11 @@ export interface UseDriveEtaLabelsDeps {
   lineFocusId: string;
   guidanceRoute: NavRoute | undefined;
   guidanceRouteLengthM: number;
+  /** Longest planned leg. The live corridor is often much shorter. */
+  planLengthM: number;
   userAlongGuidanceM: number;
+  /** Meters already driven. Keeps a full-line along reset from restoring the whole trip clock. */
+  tripOdometerM: number;
   trafficOverlay: TrafficOverlay | undefined;
   effectiveUserLngLat: LngLat | null;
 }
@@ -33,7 +37,9 @@ export function useDriveEtaLabels(deps: UseDriveEtaLabelsDeps): UseDriveEtaLabel
     lineFocusId,
     guidanceRoute,
     guidanceRouteLengthM,
+    planLengthM,
     userAlongGuidanceM,
+    tripOdometerM,
     trafficOverlay,
     effectiveUserLngLat,
   } = deps;
@@ -59,6 +65,8 @@ export function useDriveEtaLabels(deps: UseDriveEtaLabelsDeps): UseDriveEtaLabel
       routeLengthM: guidanceRouteLengthM,
       alongM: userAlongGuidanceM,
       hasRouteGeometry: Boolean(guidanceRoute?.geometry?.length),
+      planLengthM,
+      tripOdometerM,
       liveRemainingEtaMinutes: liveRemaining,
     });
   }, [
@@ -67,7 +75,9 @@ export function useDriveEtaLabels(deps: UseDriveEtaLabelsDeps): UseDriveEtaLabel
     lineFocusId,
     guidanceRoute,
     guidanceRouteLengthM,
+    planLengthM,
     userAlongGuidanceM,
+    tripOdometerM,
     trafficOverlay,
   ]);
 

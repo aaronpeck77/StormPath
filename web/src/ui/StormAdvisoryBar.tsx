@@ -26,6 +26,7 @@ import {
   isAlertExpired,
   promoteAtPositionAlertToTop,
 } from "../nav/routeAlertTiming";
+import { placePhraseMatchingSpan } from "../nav/routePlaceReference";
 import { TRAFFIC_BYPASS_ENABLED, TRAFFIC_DELAY_ALERT_MINUTES } from "../nav/constants";
 import type { RouteImpact, RouteImpactSeverity } from "../nav/routeImpacts";
 import {
@@ -453,6 +454,8 @@ export function StormAdvisoryBar({
           expiresIso: band.expiresIso,
           onsetIso: band.onsetIso ?? a.onset,
           crossesRoute: band.crossesRoute,
+          placePhrase: placePhraseMatchingSpan(routeAheadTimeline, band.startMeters, band.endMeters),
+          placeLabel: a.event,
         });
         if (!timing.promoteToTop) continue;
         if (!nwsAlertIsStripProminent(a)) continue;
@@ -470,6 +473,7 @@ export function StormAdvisoryBar({
     userAlongMeters,
     planEtaMinutes,
     driveEtaMinutes,
+    routeAheadTimeline,
   ]);
 
   /** Non–life-safety alerts at your position or on the route — shown below the hazard graph. */
@@ -498,6 +502,8 @@ export function StormAdvisoryBar({
           expiresIso: band.expiresIso,
           onsetIso: band.onsetIso ?? a.onset,
           crossesRoute: band.crossesRoute,
+          placePhrase: placePhraseMatchingSpan(routeAheadTimeline, band.startMeters, band.endMeters),
+          placeLabel: a.event,
         });
         timingLine = timing.timingLine;
       }
@@ -515,6 +521,7 @@ export function StormAdvisoryBar({
     userAlongMeters,
     planEtaMinutes,
     driveEtaMinutes,
+    routeAheadTimeline,
   ]);
 
   /** NWS alert ids on the route hazard list — skip duplicate chip rows below. */

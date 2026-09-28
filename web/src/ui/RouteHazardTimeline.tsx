@@ -35,6 +35,8 @@ export type TimelineItem = {
   stripMuted?: boolean;
   /** Expires before driver ETA — advisory list only, not map/strip. */
   etaStale?: boolean;
+  /** One town or exit clause for this span. Miles-ahead stays on the timing line. */
+  placePhrase?: string | null;
   /** Onset after now; overlaps driver arrival window. */
   developingLater?: boolean;
   onClick?: () => void;
@@ -130,6 +132,8 @@ function useTimelineItemVisuals(
         driveEtaMinutes,
         expiresIso: item.expiresIso,
         crossesRoute: item.crossesRoute,
+        placePhrase: item.placePhrase,
+        placeLabel: item.label,
       });
 
       return {

@@ -44,13 +44,24 @@ export function computeRemainingDistanceMeters(
   return rem <= 0 ? null : rem;
 }
 
-/** Remaining drive minutes: live Mapbox remaining-leg ETA, else full-route ETA scaled by distance left. */
+/**
+ * Remaining drive minutes.
+ * Live Mapbox minutes win when they describe the road still ahead.
+ * Otherwise the planned trip ETA is scaled by miles left on this line divided by the
+ * planned trip — not by how full the current (often short) corridor is.
+ * A live answer that is still the whole-trip clock, after the corridor has shrunk,
+ * is the "2 hours left" lie and is dropped in favor of that scale.
+ */
 export function computeRemainingDriveEtaMinutes(input: {
   navigationStarted: boolean;
   fullEtaMinutes: number | null;
   routeLengthM: number;
   alongM: number;
   hasRouteGeometry: boolean;
+  /** Planned trip length. Longer than `routeLengthM` when Core is on a short corridor. */
+  planLengthM?: number | null;
+  /** Straight-line miles already driven. Used when along snaps back to the start of a full line. */
+  tripOdometerM?: number | null;
   /** Mapbox duration for the remaining path (not the full planned leg). */
   liveRemainingEtaMinutes?: number | null;
 }): number | null {
@@ -60,22 +71,84 @@ export function computeRemainingDriveEtaMinutes(input: {
     routeLengthM,
     alongM,
     hasRouteGeometry,
+    planLengthM = null,
+    tripOdometerM = null,
     liveRemainingEtaMinutes = null,
   } = input;
   if (!navigationStarted) return null;
+  const full =
+    fullEtaMinutes != null && Number.isFinite(fullEtaMinutes) ? Math.round(fullEtaMinutes) : null;
+  const scaled = scaledRemainingMinutes({
+    full,
+    routeLengthM,
+    alongM,
+    hasRouteGeometry,
+    planLengthM,
+    tripOdometerM,
+  });
   if (
     liveRemainingEtaMinutes != null &&
     Number.isFinite(liveRemainingEtaMinutes) &&
     liveRemainingEtaMinutes > 0
   ) {
-    return Math.max(1, Math.round(liveRemainingEtaMinutes));
+    const live = Math.max(1, Math.round(liveRemainingEtaMinutes));
+    if (scaled != null && liveDurationIsWholeTrip(live, full, scaled, routeLengthM, alongM, planLengthM)) {
+      return scaled;
+    }
+    return live;
   }
-  if (fullEtaMinutes == null || !Number.isFinite(fullEtaMinutes)) return null;
-  const full = Math.round(fullEtaMinutes);
+  if (scaled != null) return scaled;
+  if (full == null) return null;
+  return Math.max(1, full);
+}
+
+function scaledRemainingMinutes(input: {
+  full: number | null;
+  routeLengthM: number;
+  alongM: number;
+  hasRouteGeometry: boolean;
+  planLengthM: number | null;
+  tripOdometerM: number | null;
+}): number | null {
+  const { full, routeLengthM, alongM, hasRouteGeometry, planLengthM, tripOdometerM } = input;
+  if (full == null) return null;
   if (routeLengthM <= 1 || !hasRouteGeometry) return Math.max(1, full);
-  const rem = Math.max(0, routeLengthM - alongM);
-  const frac = rem / routeLengthM;
-  return Math.max(1, Math.round(full * frac));
+  const planM =
+    planLengthM != null && Number.isFinite(planLengthM) && planLengthM > 1
+      ? Math.max(planLengthM, routeLengthM)
+      : routeLengthM;
+  const along = Number.isFinite(alongM) ? Math.max(0, alongM) : 0;
+  let rem = Math.max(0, routeLengthM - along);
+  const odometer =
+    tripOdometerM != null && Number.isFinite(tripOdometerM) ? Math.max(0, tripOdometerM) : 0;
+  /* Core along reset to the start of a line that is still the whole plan. */
+  if (routeLengthM > planM * 0.75 && along <= 800 && odometer > along + 1609) {
+    rem = Math.max(0, planM - odometer);
+  }
+  const frac = planM > 1 ? rem / planM : rem / routeLengthM;
+  return Math.max(1, Math.round(full * Math.min(1, Math.max(0, frac))));
+}
+
+/** Live minutes are still the planned trip, while the line ahead is only a slice of it. */
+function liveDurationIsWholeTrip(
+  liveMin: number,
+  fullMin: number | null,
+  scaledMin: number,
+  routeLengthM: number,
+  alongM: number,
+  planLengthM: number | null
+): boolean {
+  if (fullMin == null || fullMin <= 1) return false;
+  const planM =
+    planLengthM != null && Number.isFinite(planLengthM) && planLengthM > 1
+      ? Math.max(planLengthM, routeLengthM)
+      : routeLengthM;
+  if (planM <= 1) return false;
+  const along = Number.isFinite(alongM) ? Math.max(0, alongM) : 0;
+  const corridorRem = Math.max(0, routeLengthM - along);
+  const remFrac = corridorRem / planM;
+  if (remFrac >= 0.8) return false;
+  return liveMin >= fullMin - 12 && liveMin > scaledMin + 15;
 }
 
 export function auditTripNavDisplay(input: {

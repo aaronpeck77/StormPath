@@ -56,6 +56,8 @@ export type BuildRouteAheadTimelineOpts = {
   stripBandDetail?: (
     band: RouteAheadStormBand
   ) => { severityLabel: string | null; detail: string | null };
+  /** Town or exit for a point along this route. One clause, already shortened. */
+  placePhraseAt?: (alongM: number) => string | null;
 };
 
 function impactSectionBucket(i: RouteImpact): "weather" | "road" {
@@ -102,6 +104,7 @@ export function buildRouteAheadTimeline(opts: BuildRouteAheadTimelineOpts): Time
     stormStripBands,
     routeImpacts,
     stripBandDetail,
+    placePhraseAt,
   } = opts;
 
   if (routeTotalMeters <= 0) return [];
@@ -138,13 +141,16 @@ export function buildRouteAheadTimeline(opts: BuildRouteAheadTimelineOpts): Time
       stripMuted: band.stripMuted,
       etaStale: timing.staleBeforeArrival,
       developingLater: timing.developingLater,
+      placePhrase: placePhraseAt?.((band.startMeters + band.endMeters) / 2) ?? null,
     });
   }
 
   const { roadImpacts } = splitRouteImpacts(routeImpacts);
   const pushIfActive = (imp: RouteImpact) => {
     if (imp.endMeters <= userAlongMeters) return;
-    timelineItems.push(impactToTimelineItem(imp));
+    const item = impactToTimelineItem(imp);
+    item.placePhrase = placePhraseAt?.((imp.startMeters + imp.endMeters) / 2) ?? null;
+    timelineItems.push(item);
   };
   /* Radar echo is shown in the route-info graph strata only — not as purple RAD cards. */
   for (const imp of roadImpacts) pushIfActive(imp);
@@ -246,6 +252,8 @@ export function buildRouteAheadCalloutSegments(opts: {
       driveEtaMinutes,
       expiresIso: item.expiresIso,
       crossesRoute: item.crossesRoute,
+      placePhrase: item.placePhrase,
+      placeLabel: item.label,
     });
     const midM = (item.startMeters + item.endMeters) / 2;
     const alongT = Math.min(1, Math.max(0, midM / totalMeters));
@@ -359,6 +367,8 @@ export function buildRouteAheadGlanceCards(opts: {
       driveEtaMinutes,
       expiresIso: item.expiresIso,
       crossesRoute: item.crossesRoute,
+      placePhrase: item.placePhrase,
+      placeLabel: item.label,
     });
     if (timing.passed) continue;
 

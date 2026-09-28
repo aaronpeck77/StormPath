@@ -7949,25 +7949,23 @@ html.route-info-open .route-progress-callout-panel--expanded {
   line-height: 1.2;
   padding: 2px 4px;
   border-radius: 4px;
-  border: 1px solid rgba(96, 165, 250, 0.45);
-  background: rgba(30, 58, 138, 0.28);
-  color: #dbeafe;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(15, 23, 42, 0.35);
+  color: #fff;
   white-space: normal;
 }
 
 .adv-dash__hour-wind-tag {
-  border-color: rgba(251, 191, 36, 0.45);
-  background: rgba(120, 53, 15, 0.28);
-  color: #fde68a;
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(15, 23, 42, 0.35);
+  color: #fff;
 }
 
-.adv-dash__hour-card .adv-dash__hour-temp {
-  color: rgba(15, 23, 42, 0.92);
-  text-shadow: 0 0 8px rgba(255, 255, 255, 0.35);
-}
-
-.adv-dash__hour-card .adv-dash__hour-time {
-  color: rgba(15, 23, 42, 0.72);
+.adv-dash__hour-card .adv-dash__hour-temp,
+.adv-dash__hour-card .adv-dash__hour-time,
+.adv-dash__hour-card .adv-dash__hour-air {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
 }
 
 .adv-dash__hour-card .adv-dash__hour-heat {

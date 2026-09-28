@@ -1,4 +1,4 @@
-import { useMemo, type MutableRefObject } from "react";
+import { useCallback, useMemo, type MutableRefObject } from "react";
 import { routeForecastHasSignificantWeather, type RouteForecast } from "../services/tomorrowIo";
 import { buildWindImpacts } from "./tomorrowIoImpacts";
 import {
@@ -65,6 +65,9 @@ import type { LngLat, NavRoute } from "./types";
 import type { RouteSituationSlice } from "../situation/types";
 import type { TrafficOverlay } from "../situation/fusedSnapshot";
 import type { ScoredRoute } from "../scoring/scoreRoutes";
+import { useRoutePlaceAnchors } from "./useRoutePlaceAnchors";
+import { placeReferencePhrase } from "./routePlaceReference";
+import { pointAtAlongMeters } from "./routeGeometry";
 
 export type UseRouteAheadDerivationsDeps = {
   nwsMapOverlapRouteGeom: LngLat[] | undefined;
@@ -189,6 +192,20 @@ export function useRouteAheadDerivations(
     offRouteHoldPreviewActive = false,
     stormMapGeoJson,
   } = deps;
+
+  const routePlaceAnchors = useRoutePlaceAnchors(
+    guidanceRoute?.turnSteps,
+    guidanceRoute?.geometry,
+    mapboxToken
+  );
+  const placePhraseAt = useCallback(
+    (alongM: number) => {
+      const g = guidanceRoute?.geometry;
+      if (!g || g.length < 2 || routePlaceAnchors.length === 0) return null;
+      return placeReferencePhrase(pointAtAlongMeters(g, alongM), routePlaceAnchors, "full");
+    },
+    [guidanceRoute?.geometry, routePlaceAnchors]
+  );
 
   /** NWS polygons + route bands: corridor alerts that touch or sit ahead of the active leg (~28 mi buffer). */
   const alertsOnActiveRouteGeom = useMemo(() => {
@@ -551,6 +568,7 @@ export function useRouteAheadDerivations(
           detail: nwsGlanceSummary(matched) ?? null,
         };
       },
+      placePhraseAt,
     });
   }, [
     guidanceRouteLengthM,
@@ -560,6 +578,7 @@ export function useRouteAheadDerivations(
     advisoryStormStripBands,
     advisoryRouteImpacts,
     nwsAlertsForGuidanceAdvisory,
+    placePhraseAt,
   ]);
 
   /**
@@ -724,5 +743,6 @@ export function useRouteAheadDerivations(
     postedMph,
     postedMphIsClassEstimate,
     progressStripAlerts,
+    routePlaceAnchors,
   };
 }

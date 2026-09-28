@@ -23,7 +23,11 @@ import {
 } from "../nav/postedSpeed";
 import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
 import { isUltraLongTripRoute } from "../utils/dataSaver";
-import { parseExitNumberFromStep, shortenTurnInstruction } from "../nav/turnInstructionShort";
+import {
+  parseExitNumberFromStep,
+  placeNameFromDestinations,
+  shortenTurnInstruction,
+} from "../nav/turnInstructionShort";
 import {
   loadActivitySamples,
   type ActivitySample,
@@ -230,6 +234,7 @@ function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteT
       const destinations = typeof step.destinations === "string" ? step.destinations : undefined;
       const exitNumber =
         parseExitNumberFromStep(rawInstr, exits, mv?.exit) ?? undefined;
+      const towardPlace = placeNameFromDestinations(destinations) ?? undefined;
       const instr = shortenTurnInstruction(rawInstr, name, ref, {
         exits,
         maneuverExit: mv?.exit,
@@ -242,6 +247,7 @@ function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteT
         maneuverType: typeof mv?.type === "string" ? mv.type : undefined,
         maneuverModifier: typeof mv?.modifier === "string" ? mv.modifier : undefined,
         exitNumber,
+        towardPlace,
         roadName: name?.trim() || undefined,
         roadRef: ref?.trim() || undefined,
       });

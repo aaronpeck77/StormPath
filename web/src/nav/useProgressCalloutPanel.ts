@@ -28,6 +28,7 @@ import {
   tomorrowForecastToWxSamples,
 } from "./routeForecastTimeline";
 import { layoutStripAlerts } from "./stripAlertLayout";
+import { driveRailProgressFraction } from "./driveRailProgress";
 import { polylineLengthMeters } from "./routeGeometry";
 import {
   auditRouteAheadSync,
@@ -68,6 +69,8 @@ export type UseProgressCalloutPanelDeps = {
   navigationStarted: boolean;
   advisoryUserAlongM: number;
   userAlongGuidanceM: number;
+  /** Same odometer the side rail uses, so Route Info's YOU line matches that puck. */
+  tripOdometerM: number;
   guidanceRouteLengthM: number;
   guidanceRoute: NavRoute | undefined;
   orderedRouteIds: string[];
@@ -118,6 +121,7 @@ export function useProgressCalloutPanel(
     navigationStarted,
     advisoryUserAlongM,
     userAlongGuidanceM,
+    tripOdometerM,
     guidanceRouteLengthM,
     guidanceRoute,
     orderedRouteIds,
@@ -152,7 +156,31 @@ export function useProgressCalloutPanel(
     bumpTrafficRefresh,
   } = deps;
 
-  const progressPanelAlongM = navigationStarted ? advisoryUserAlongM : userAlongGuidanceM;
+  /**
+   * While driving, YOU on Route Info is the side-rail puck: farther of Core's along
+   * and the trip odometer, on the planned line. GPS-only along lagged that puck
+   * whenever Core sat at the start of a replaced corridor.
+   */
+  const progressPanelAlongM = useMemo(() => {
+    if (!navigationStarted) return userAlongGuidanceM;
+    const g = guidanceRoute?.geometry;
+    const totalM = g && g.length >= 2 ? polylineLengthMeters(g) : 0;
+    if (totalM <= 1) return advisoryUserAlongM;
+    return (
+      driveRailProgressFraction({
+        totalM,
+        userAlongM: userAlongGuidanceM,
+        tripOdometerM,
+        tripRelative: true,
+      }) * totalM
+    );
+  }, [
+    navigationStarted,
+    userAlongGuidanceM,
+    advisoryUserAlongM,
+    guidanceRoute?.geometry,
+    tripOdometerM,
+  ]);
   /**
    * Ultra-long legs (~300+ mi) use the lean outlook path (forecast + radar + route-ahead
    * segments) instead of the full chunk callout list — but never blank the weather graphs

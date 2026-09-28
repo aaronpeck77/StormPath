@@ -58,9 +58,11 @@ export type DriveBearingCatchUp = {
  */
 export function driveBearingCatchUp(errorDeg: number): DriveBearingCatchUp {
   const e = Number.isFinite(errorDeg) ? Math.abs(errorDeg) : 0;
-  if (e >= DRIVE_BEARING_SHARP_ERR_DEG) return { tcS: 0.22, maxStepDeg: 18 };
-  if (e >= DRIVE_BEARING_CORNER_ERR_DEG) return { tcS: 0.32, maxStepDeg: 14 };
-  if (e >= DRIVE_BEARING_SETTLE_ERR_DEG) return { tcS: 0.55, maxStepDeg: 9 };
+  if (e >= DRIVE_BEARING_SHARP_ERR_DEG) return { tcS: 0.18, maxStepDeg: 22 };
+  if (e >= DRIVE_BEARING_CORNER_ERR_DEG) return { tcS: 0.22, maxStepDeg: 18 };
+  /* The car is already on the new street. Close the last degrees with the turn,
+   * not on the highway glide. */
+  if (e >= DRIVE_BEARING_SETTLE_ERR_DEG) return { tcS: 0.2, maxStepDeg: 16 };
   return { tcS: DRIVE_CAMERA_BEARING_TC_S, maxStepDeg: DRIVE_CAMERA_BEARING_MAX_STEP_DEG };
 }
 
