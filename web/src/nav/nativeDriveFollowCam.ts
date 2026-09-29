@@ -167,20 +167,14 @@ export function shouldUseNativeFollowCam(input: {
 /**
  * Turn anticipation on top of Core's bearing.
  *
- * Core reports course over ground — where the car points *now* — so on the web map
- * the turn arrives before the camera does. Lean toward the route tangent ahead
- * (`computeDriveRouteBearing`) starting ~4 s out.
- *
- * 443 swung out then back: a 140 m always-on chord cut the corner (~70°) while
- * still on the straight, then a hard cutoff dropped the lean to zero. Last night's
- * wait (2.5 s / 42 m, 50° cutoff) overcorrected — the camera turned after the car.
- * Start earlier. A third-of-the-turn lean (weight 0.62, hard drop at 78°) is what
- * 450 felt like: the camera stayed straight until the car was in the corner,
- * flipped back to Core when the exit street was steeper than 78°, then eased
- * onto the new road after the driver was already going straight.
- * A city corner should be mostly turned before the car is, then sit on the
- * exit heading as the car comes out. Only a reversal (the chord pointing
- * back up the road) drops to Core.
+ * The camera is a drone behind the puck. Core's course is where the car points
+ * now, so a drone that copies it turns with the car and is still straightening
+ * after the car is already going forward. Aim a short lead toward the route
+ * ahead so the yaw starts a little before the car and stays just in front of it.
+ * Once the remaining turn is inside that lead, the target is the road ahead, so
+ * the view is facing forward as the car comes out. A full pre-rotation (most of
+ * a 90° corner while still on the straight) swings the next street into view
+ * too early. Only a reversal drops back to Core.
  */
 export const NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS = 2.2;
 /** Above this, the chord is a U-turn / wrong-way, not the next street. */
@@ -188,12 +182,15 @@ export const NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG = 125;
 /** Full lead through a city left or right. Fade only as it approaches a reversal. */
 export const NATIVE_CAM_ANTICIPATE_FULL_WEIGHT_DEG = 95;
 export const NATIVE_CAM_ANTICIPATE_FADE_FLOOR = 0.55;
-export const NATIVE_CAM_ANTICIPATE_WEIGHT = 0.88;
+/** Degrees the drone stays ahead of the car toward the exit, once the turn is here. */
+export const NATIVE_CAM_ANTICIPATE_LEAD_DEG = 24;
+/** Fraction of that lead when the window first opens, so the yaw eases in. */
+export const NATIVE_CAM_ANTICIPATE_LEAD_EDGE = 0.35;
 /** Once the car and the road ahead agree, the target is that forward heading. */
 export const NATIVE_CAM_ANTICIPATE_MATCH_DEG = 12;
-/** Start leaning ~4 s before the banner turn (not after it). */
-export const NATIVE_CAM_ANTICIPATE_START_M = 85;
-export const NATIVE_CAM_ANTICIPATE_START_SECONDS = 4;
+/** Start the lead a little before the banner turn. */
+export const NATIVE_CAM_ANTICIPATE_START_M = 105;
+export const NATIVE_CAM_ANTICIPATE_START_SECONDS = 4.5;
 
 export function anticipateNativeCamStartMeters(speedMps: number): number {
   const speed = speedMps > 0 && Number.isFinite(speedMps) ? speedMps : 0;
@@ -229,7 +226,18 @@ export function anticipateNativeCamBearingDeg(input: {
     absD <= fadeStart
       ? 1
       : Math.max(NATIVE_CAM_ANTICIPATE_FADE_FLOOR, 1 - (absD - fadeStart) / fadeSpan);
-  const weight = (input.weight ?? NATIVE_CAM_ANTICIPATE_WEIGHT) * fade;
+  const startM = anticipateNativeCamStartMeters(speed);
+  let proximity = 1;
+  if (toTurn != null && Number.isFinite(toTurn) && startM > 1) {
+    proximity = 1 - Math.min(1, Math.max(0, toTurn) / startM);
+  }
+  const leadDeg =
+    NATIVE_CAM_ANTICIPATE_LEAD_DEG *
+    (NATIVE_CAM_ANTICIPATE_LEAD_EDGE + (1 - NATIVE_CAM_ANTICIPATE_LEAD_EDGE) * proximity);
+  const weight =
+    input.weight != null && Number.isFinite(input.weight)
+      ? input.weight * fade
+      : Math.min(1, leadDeg / Math.max(absD, 0.5)) * fade;
   const next = core + delta * weight;
   return ((next % 360) + 360) % 360;
 }

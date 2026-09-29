@@ -40,11 +40,11 @@ export const DRIVE_CAMERA_HEADING_REPAIR_COOLDOWN_MS = 2_500;
 export const DRIVE_PUCK_SOFT_REPAIR_COOLDOWN_MS = 400;
 
 /** Error vs target (deg) where a corner must stop using the cruise glide. */
-export const DRIVE_BEARING_CORNER_ERR_DEG = 14;
-/** After the corner, finish centering the road ahead before dropping to the 1s cruise. */
-export const DRIVE_BEARING_SETTLE_ERR_DEG = 6;
-/** Error where a sharp turn may take a bigger per-frame step. */
-export const DRIVE_BEARING_SHARP_ERR_DEG = 35;
+export const DRIVE_BEARING_CORNER_ERR_DEG = 16;
+/** Last degrees of a turn. Still faster than cruise, so the road is centered as the car comes out. */
+export const DRIVE_BEARING_SETTLE_ERR_DEG = 2.5;
+/** Error where a sharp turn may take a slightly quicker step. */
+export const DRIVE_BEARING_SHARP_ERR_DEG = 32;
 
 export type DriveBearingCatchUp = {
   tcS: number;
@@ -52,17 +52,15 @@ export type DriveBearingCatchUp = {
 };
 
 /**
- * Straight highway keeps the long glide (no tick). Once the target is already
- * around a corner, shorten the time constant and raise the per-frame cap so
- * the camera rights itself instead of dragging the old heading down the next street.
+ * Straight highway keeps the long glide (no tick). Through a turn the drone
+ * tracks a short lead: fluid, not a snap, and the last degrees stay on that
+ * same quick glide so the road is already in front when the car is straight.
  */
 export function driveBearingCatchUp(errorDeg: number): DriveBearingCatchUp {
   const e = Number.isFinite(errorDeg) ? Math.abs(errorDeg) : 0;
-  if (e >= DRIVE_BEARING_SHARP_ERR_DEG) return { tcS: 0.18, maxStepDeg: 22 };
-  if (e >= DRIVE_BEARING_CORNER_ERR_DEG) return { tcS: 0.22, maxStepDeg: 18 };
-  /* The car is already on the new street. Close the last degrees with the turn,
-   * not on the highway glide. */
-  if (e >= DRIVE_BEARING_SETTLE_ERR_DEG) return { tcS: 0.2, maxStepDeg: 16 };
+  if (e >= DRIVE_BEARING_SHARP_ERR_DEG) return { tcS: 0.22, maxStepDeg: 11 };
+  if (e >= DRIVE_BEARING_CORNER_ERR_DEG) return { tcS: 0.28, maxStepDeg: 9 };
+  if (e >= DRIVE_BEARING_SETTLE_ERR_DEG) return { tcS: 0.16, maxStepDeg: 8 };
   return { tcS: DRIVE_CAMERA_BEARING_TC_S, maxStepDeg: DRIVE_CAMERA_BEARING_MAX_STEP_DEG };
 }
 

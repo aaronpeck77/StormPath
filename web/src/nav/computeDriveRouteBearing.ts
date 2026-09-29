@@ -15,7 +15,7 @@ export type ComputeDriveRouteBearingInput = {
   speedMps: number | null | undefined;
   navigationStarted: boolean;
   userAlongGuidanceM: number;
-  /** Meters to the next banner maneuver — stretch look-ahead in the last ~3.4 s. */
+  /** Meters to the next banner maneuver — stretch look-ahead a little before the turn. */
   metersToManeuver?: number | null;
 };
 
@@ -23,11 +23,11 @@ export type ComputeDriveRouteBearingInput = {
 export const DRIVE_ROUTE_LOOKAHEAD_MIN_M = 36;
 export const DRIVE_ROUTE_LOOKAHEAD_MAX_M = 110;
 export const DRIVE_ROUTE_LOOKAHEAD_SECONDS = 3.2;
-/** Peek past the maneuver so the camera starts rotating before the car does. */
-export const DRIVE_ROUTE_STRETCH_SECONDS = 3.4;
-export const DRIVE_ROUTE_STRETCH_MIN_M = 55;
-export const DRIVE_ROUTE_STRETCH_ADD_SECONDS = 1.6;
-export const DRIVE_ROUTE_STRETCH_ADD_MIN_M = 28;
+/** Peek past the maneuver a little earlier so the chord includes the next street before the car yaws. */
+export const DRIVE_ROUTE_STRETCH_SECONDS = 4.4;
+export const DRIVE_ROUTE_STRETCH_MIN_M = 80;
+export const DRIVE_ROUTE_STRETCH_ADD_SECONDS = 1.8;
+export const DRIVE_ROUTE_STRETCH_ADD_MIN_M = 36;
 export const DRIVE_ROUTE_STRETCH_CAP_M = 140;
 
 export function driveRouteLookAheadMeters(

@@ -48,19 +48,19 @@ describe("createNativeDriveFollowCam", () => {
 });
 
 describe("anticipateNativeCamBearingDeg", () => {
-  it("leans toward the route ahead so the turn is visible before it arrives", () => {
+  it("leads the car by a little toward the route ahead, not the whole corner", () => {
     const out = anticipateNativeCamBearingDeg({
       coreBearingDeg: 0,
       routeAheadBearingDeg: 40,
       speedMps: 12,
     });
-    expect(out).toBeGreaterThan(30);
-    expect(out).toBeLessThan(40);
+    expect(out).toBeGreaterThan(18);
+    expect(out).toBeLessThan(32);
   });
 
-  it("starts leaning about 4 s out, not after the corner", () => {
-    expect(anticipateNativeCamStartMeters(14)).toBeGreaterThan(55);
-    expect(anticipateNativeCamStartMeters(14)).toBeLessThan(100);
+  it("starts a small lead a little before the turn and stays quiet a block out", () => {
+    expect(anticipateNativeCamStartMeters(14)).toBeGreaterThan(90);
+    expect(anticipateNativeCamStartMeters(14)).toBeLessThan(130);
     expect(
       anticipateNativeCamBearingDeg({
         coreBearingDeg: 0,
@@ -75,25 +75,37 @@ describe("anticipateNativeCamBearingDeg", () => {
       speedMps: 14,
       metersToManeuver: 60,
     });
-    expect(approaching).toBeGreaterThan(30);
-    expect(approaching).toBeLessThan(40);
+    expect(approaching).toBeGreaterThan(8);
+    expect(approaching).toBeLessThan(22);
   });
 
-  it("turns most of a city corner ahead of the car and stays there", () => {
-    const hard = anticipateNativeCamBearingDeg({
-      coreBearingDeg: 0,
-      routeAheadBearingDeg: 70,
-      speedMps: 14,
-    });
-    expect(hard).toBeGreaterThan(55);
-    expect(hard).toBeLessThan(70);
+  it("stays just ahead of the car through a city corner", () => {
     const city = anticipateNativeCamBearingDeg({
       coreBearingDeg: 0,
       routeAheadBearingDeg: 90,
       speedMps: 11,
     });
-    expect(city).toBeGreaterThan(70);
-    expect(city).toBeLessThan(90);
+    expect(city).toBeGreaterThan(18);
+    expect(city).toBeLessThan(30);
+    const midTurn = anticipateNativeCamBearingDeg({
+      coreBearingDeg: 50,
+      routeAheadBearingDeg: 90,
+      speedMps: 11,
+      metersToManeuver: 15,
+    });
+    expect(midTurn).toBeGreaterThan(68);
+    expect(midTurn).toBeLessThan(82);
+  });
+
+  it("aims down the exit street once the remaining turn is inside the lead", () => {
+    expect(
+      anticipateNativeCamBearingDeg({
+        coreBearingDeg: 70,
+        routeAheadBearingDeg: 90,
+        speedMps: 11,
+        metersToManeuver: 12,
+      })
+    ).toBe(90);
   });
 
   it("sits on the forward heading once the car has finished the turn", () => {
@@ -133,10 +145,10 @@ describe("anticipateNativeCamBearingDeg", () => {
       routeAheadBearingDeg: 20,
       speedMps: 20,
     });
-    /* 30 deg of turn, mostly leaned → just past north (wrapped), not back through 180. */
+    /* 30 deg of turn, a short lead past north, not a spin back through 180. */
     const shortest = (((out - 350) % 360) + 540) % 360 - 180;
-    expect(shortest).toBeGreaterThan(20);
-    expect(shortest).toBeLessThan(30);
+    expect(shortest).toBeGreaterThan(18);
+    expect(shortest).toBeLessThan(28);
     expect(out).toBeGreaterThanOrEqual(0);
     expect(out).toBeLessThan(360);
   });

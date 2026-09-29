@@ -14,10 +14,17 @@ import {
 
 describe("driveBearingCatchUp", () => {
   it("keeps the cruise glide on a straight highway", () => {
-    expect(driveBearingCatchUp(4)).toEqual({
+    expect(driveBearingCatchUp(1.5)).toEqual({
       tcS: DRIVE_CAMERA_BEARING_TC_S,
       maxStepDeg: DRIVE_CAMERA_BEARING_MAX_STEP_DEG,
     });
+  });
+
+  it("closes the last few degrees with the turn", () => {
+    const tail = driveBearingCatchUp(4);
+    const cruise = driveBearingCatchUp(1.5);
+    expect(tail.tcS).toBeLessThan(cruise.tcS * 0.4);
+    expect(tail.maxStepDeg).toBeGreaterThan(cruise.maxStepDeg);
   });
 
   it("rights a corner faster than the cruise 1s glide", () => {
@@ -28,7 +35,7 @@ describe("driveBearingCatchUp", () => {
 
   it("finishes centering the road ahead with the turn, not the cruise glide", () => {
     const settle = driveBearingCatchUp(8);
-    const cruise = driveBearingCatchUp(4);
+    const cruise = driveBearingCatchUp(1.5);
     expect(settle.tcS).toBeLessThan(cruise.tcS * 0.4);
     expect(settle.maxStepDeg).toBeGreaterThan(cruise.maxStepDeg);
   });
