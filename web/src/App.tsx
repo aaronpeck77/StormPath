@@ -2798,7 +2798,6 @@ export default function App() {
                 progressCalloutDetailScrollRef={progressCalloutDetailScrollRef}
                 progressRailRouteGeometry={progressRailRoute?.geometry ?? []}
                 effectiveUserLngLat={effectiveUserLngLat}
-                userAlongGuidanceM={userAlongGuidanceM}
                 progressStripAlerts={progressStripAlerts}
                 radarIntensity={guidanceSlice?.radarIntensity ?? 0}
                 progressStripRouteColor={progressStripRouteColor}

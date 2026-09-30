@@ -43,7 +43,6 @@ type Props = {
 
   progressRailRouteGeometry: LngLat[];
   effectiveUserLngLat: LngLat | null;
-  userAlongGuidanceM: number;
   progressStripAlerts: RouteAlert[];
   radarIntensity: number;
   progressStripRouteColor: string;
@@ -86,7 +85,6 @@ export function AppProgressRail({
   progressCalloutDetailScrollRef,
   progressRailRouteGeometry,
   effectiveUserLngLat,
-  userAlongGuidanceM,
   progressStripAlerts,
   radarIntensity,
   progressStripRouteColor,
