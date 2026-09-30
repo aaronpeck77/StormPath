@@ -141,6 +141,25 @@ export function smoothDriveBearingDeg(
   return ((next % 360) + 360) % 360;
 }
 
+/** Move a heading toward another at a limited rate. Core's course arrives in steps; this is the sweep. */
+export function easeHeadingDeg(
+  prev: number | null,
+  next: number,
+  maxDegPerSec: number,
+  dtS: number
+): number {
+  if (!Number.isFinite(next)) return prev != null && Number.isFinite(prev) ? prev : next;
+  if (prev == null || !Number.isFinite(prev)) return ((next % 360) + 360) % 360;
+  let d = next - prev;
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  const dt = Number.isFinite(dtS) && dtS > 0 ? Math.min(0.12, dtS) : 0.016;
+  const cap = Math.max(1, maxDegPerSec) * dt;
+  if (d > cap) d = cap;
+  if (d < -cap) d = -cap;
+  return ((prev + d) % 360 + 360) % 360;
+}
+
 type DriveFix = { lng: number; lat: number };
 
 /**

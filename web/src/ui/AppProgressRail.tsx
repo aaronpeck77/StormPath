@@ -139,7 +139,7 @@ export function AppProgressRail({
           layout="side"
           geometry={progressRailRouteGeometry}
           userLngLat={effectiveUserLngLat}
-          userAlongMeters={userAlongGuidanceM}
+          userAlongMeters={progressPanelAlongM}
           alerts={progressStripAlerts}
           radarIntensity={radarIntensity}
           routeLineColor={progressStripRouteColor}

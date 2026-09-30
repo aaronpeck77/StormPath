@@ -168,13 +168,11 @@ export function shouldUseNativeFollowCam(input: {
  * Turn anticipation on top of Core's bearing.
  *
  * The camera is a drone behind the puck. Core's course is where the car points
- * now, so a drone that copies it turns with the car and is still straightening
- * after the car is already going forward. Aim a short lead toward the route
- * ahead so the yaw starts a little before the car and stays just in front of it.
- * Once the remaining turn is inside that lead, the target is the road ahead, so
- * the view is facing forward as the car comes out. A full pre-rotation (most of
- * a 90° corner while still on the straight) swings the next street into view
- * too early. Only a reversal drops back to Core.
+ * now, and it arrives in steps, so copying it kicks the map through the turn.
+ * Aim toward the road ahead. The lean starts small and grows as the turn
+ * arrives, so the view is on the next street as the car comes out. The sweep
+ * is rate-limited elsewhere; this only picks the heading. A full swing while
+ * still a block out is too early. Only a reversal drops back to Core.
  */
 export const NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS = 2.2;
 /** Above this, the chord is a U-turn / wrong-way, not the next street. */
@@ -182,10 +180,8 @@ export const NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG = 125;
 /** Full lead through a city left or right. Fade only as it approaches a reversal. */
 export const NATIVE_CAM_ANTICIPATE_FULL_WEIGHT_DEG = 95;
 export const NATIVE_CAM_ANTICIPATE_FADE_FLOOR = 0.55;
-/** Degrees the drone stays ahead of the car toward the exit, once the turn is here. */
-export const NATIVE_CAM_ANTICIPATE_LEAD_DEG = 24;
-/** Fraction of that lead when the window first opens, so the yaw eases in. */
-export const NATIVE_CAM_ANTICIPATE_LEAD_EDGE = 0.35;
+/** Fraction of the corner when the window first opens. The rest grows in as the turn arrives. */
+export const NATIVE_CAM_ANTICIPATE_LEAD_EDGE = 0.12;
 /** Once the car and the road ahead agree, the target is that forward heading. */
 export const NATIVE_CAM_ANTICIPATE_MATCH_DEG = 12;
 /** Start the lead a little before the banner turn. */
@@ -231,13 +227,10 @@ export function anticipateNativeCamBearingDeg(input: {
   if (toTurn != null && Number.isFinite(toTurn) && startM > 1) {
     proximity = 1 - Math.min(1, Math.max(0, toTurn) / startM);
   }
-  const leadDeg =
-    NATIVE_CAM_ANTICIPATE_LEAD_DEG *
-    (NATIVE_CAM_ANTICIPATE_LEAD_EDGE + (1 - NATIVE_CAM_ANTICIPATE_LEAD_EDGE) * proximity);
+  const shaped = proximity * proximity * proximity;
+  const blend = NATIVE_CAM_ANTICIPATE_LEAD_EDGE + (1 - NATIVE_CAM_ANTICIPATE_LEAD_EDGE) * shaped;
   const weight =
-    input.weight != null && Number.isFinite(input.weight)
-      ? input.weight * fade
-      : Math.min(1, leadDeg / Math.max(absD, 0.5)) * fade;
+    input.weight != null && Number.isFinite(input.weight) ? input.weight * fade : blend * fade;
   const next = core + delta * weight;
   return ((next % 360) + 360) % 360;
 }

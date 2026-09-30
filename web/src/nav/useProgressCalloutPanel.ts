@@ -157,9 +157,10 @@ export function useProgressCalloutPanel(
   } = deps;
 
   /**
-   * While driving, YOU on Route Info is the side-rail puck: farther of Core's along
-   * and the trip odometer, on the planned line. GPS-only along lagged that puck
-   * whenever Core sat at the start of a replaced corridor.
+   * While driving, YOU and the side rail share one place on the planned line:
+   * farther of Core's along, GPS on that same line, and the trip odometer.
+   * Core alone sits at the start after a corridor replace, which left both
+   * pucks early in the trip.
    */
   const progressPanelAlongM = useMemo(() => {
     if (!navigationStarted) return userAlongGuidanceM;
@@ -169,7 +170,7 @@ export function useProgressCalloutPanel(
     return (
       driveRailProgressFraction({
         totalM,
-        userAlongM: userAlongGuidanceM,
+        userAlongM: Math.max(userAlongGuidanceM, advisoryUserAlongM),
         tripOdometerM,
         tripRelative: true,
       }) * totalM

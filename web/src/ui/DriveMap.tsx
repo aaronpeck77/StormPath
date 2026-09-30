@@ -157,11 +157,16 @@ import {
   driveCameraEaseOptions,
   resolveDriveFollowCameraBearingDeg,
   resolveTravelBearingDeg,
+  easeHeadingDeg,
   smoothDriveBearingDeg,
 } from "./mapDriveCamera";
 import { headingDeltaDegrees } from "../nav/forwardRoutePick";
 import { readDrivePuckAnchorDrift } from "./drivePuckHealth";
-import { driveBearingCatchUp, shouldReclaimDrivePuckThisFrame } from "./driveCameraRules";
+import {
+  driveBearingCatchUp,
+  driveBearingFrameStepDeg,
+  shouldReclaimDrivePuckThisFrame,
+} from "./driveCameraRules";
 import {
   anticipateNativeCamBearingDeg,
   anticipateNativeCamStartMeters,
@@ -754,6 +759,9 @@ function DriveMapInner({
       : null;
 
   const driveCamBearingSmoothedRef = useRef<number | null>(null);
+  /** Core course and the route chord, swept so a 1 Hz sample cannot kick the turn. */
+  const driveCamCoreEasedRef = useRef<number | null>(null);
+  const driveCamAheadEasedRef = useRef<number | null>(null);
   /** Core zoom steps ~1 Hz with speed — blend so the frame breathes instead of ticking. */
   const driveCamZoomSmoothedRef = useRef<number | null>(null);
   /** Last course-over-ground while GO is active — hold heading-up across off-route GPS gaps. */
@@ -2243,17 +2251,31 @@ function DriveMapInner({
               zoom: camZoom,
               puck: camCenter,
             });
-            /* Core's bearing also steps at 1 Hz. Smooth it on cruise; catch up on corners. */
+            /* Core's bearing steps at ~1 Hz. Sweep it, and the route chord, so the
+             * turn is one motion instead of a kick on each sample. */
             const coreBearing = nativeCam.bearing;
             const aheadBearing = driveRouteBearingDegRef.current;
             const toTurn = metersToBannerManeuverRef.current;
+            const easedCore = easeHeadingDeg(driveCamCoreEasedRef.current, coreBearing, 48, dt);
+            driveCamCoreEasedRef.current = easedCore;
+            const easedAhead =
+              aheadBearing != null && Number.isFinite(aheadBearing)
+                ? easeHeadingDeg(driveCamAheadEasedRef.current, aheadBearing, 36, dt)
+                : null;
+            if (easedAhead != null) driveCamAheadEasedRef.current = easedAhead;
             const targetBearing = anticipateNativeCamBearingDeg({
+              coreBearingDeg: easedCore,
+              routeAheadBearingDeg: easedAhead,
+              speedMps: effSp,
+              metersToManeuver: toTurn,
+            });
+            const aimBearing = anticipateNativeCamBearingDeg({
               coreBearingDeg: coreBearing,
               routeAheadBearingDeg: aheadBearing,
               speedMps: effSp,
               metersToManeuver: toTurn,
             });
-            const leanDeg = Math.abs(headingDeltaDegrees(coreBearing, targetBearing));
+            const leanDeg = Math.abs(headingDeltaDegrees(coreBearing, aimBearing));
             const speedOk =
               effSp != null &&
               Number.isFinite(effSp) &&
@@ -2291,7 +2313,7 @@ function DriveMapInner({
               driveCamBearingSmoothedRef.current,
               targetBearing,
               1 - Math.exp(-dt / catchUp.tcS),
-              catchUp.maxStepDeg
+              driveBearingFrameStepDeg(bearingErr, dt)
             );
             const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
             const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;
@@ -2507,7 +2529,7 @@ function DriveMapInner({
             driveCamBearingSmoothedRef.current,
             rawBrg,
             1 - Math.exp(-dt / catchUp.tcS),
-            catchUp.maxStepDeg
+            driveBearingFrameStepDeg(bearingErr, dt)
           );
           const pos = readMapLngLat(marker.getLngLat());
           maybeReclaimPuck(reportPuckSight(map, pos, padding, offset), effSp);

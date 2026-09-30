@@ -8,6 +8,7 @@ import {
   DRIVE_CAMERA_HEADING_REPAIR_COOLDOWN_MS,
   DRIVE_CAMERA_HEALTH_POLL_MS,
   driveBearingCatchUp,
+  driveBearingFrameStepDeg,
   jeffRepairCooldownMs,
   shouldReclaimDrivePuckThisFrame,
 } from "../driveCameraRules";
@@ -38,6 +39,12 @@ describe("driveBearingCatchUp", () => {
     const cruise = driveBearingCatchUp(1.5);
     expect(settle.tcS).toBeLessThan(cruise.tcS * 0.4);
     expect(settle.maxStepDeg).toBeGreaterThan(cruise.maxStepDeg);
+  });
+
+  it("does not dump a turn into one frame after a hitch", () => {
+    const step = driveBearingFrameStepDeg(90, 0.1);
+    expect(step).toBeLessThan(5);
+    expect(step).toBeGreaterThan(2);
   });
 
   it("takes a sharper step on a 90-degree turn", () => {

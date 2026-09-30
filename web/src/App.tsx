@@ -1560,7 +1560,8 @@ export default function App() {
       g && g.length >= 2 && effectiveUserLngLat
         ? closestAlongRouteMeters(effectiveUserLngLat, g).alongMeters
         : 0;
-    noteDriveDiagYou(userAlongGuidanceM, gpsAlongM, guidanceRouteLengthM);
+    const planM = g && g.length >= 2 ? polylineLengthMeters(g) : guidanceRouteLengthM;
+    noteDriveDiagYou(userAlongGuidanceM, gpsAlongM, planM);
   }, [
     navigationStarted,
     guidanceRouteLengthM,

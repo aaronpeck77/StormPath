@@ -51,17 +51,30 @@ export type DriveBearingCatchUp = {
   maxStepDeg: number;
 };
 
+/** How fast the drone may yaw through a turn. A higher cap is a kick, not a sweep. */
+export const DRIVE_BEARING_TURN_YAW_DEG_S = 34;
+export const DRIVE_BEARING_CRUISE_YAW_DEG_S = 14;
+
 /**
  * Straight highway keeps the long glide (no tick). Through a turn the drone
- * tracks a short lead: fluid, not a snap, and the last degrees stay on that
- * same quick glide so the road is already in front when the car is straight.
+ * sweeps onto the road ahead. The per-frame cap is only a safety stop; the
+ * yaw rate is what keeps one Core sample from kicking the map.
  */
 export function driveBearingCatchUp(errorDeg: number): DriveBearingCatchUp {
   const e = Number.isFinite(errorDeg) ? Math.abs(errorDeg) : 0;
-  if (e >= DRIVE_BEARING_SHARP_ERR_DEG) return { tcS: 0.22, maxStepDeg: 11 };
-  if (e >= DRIVE_BEARING_CORNER_ERR_DEG) return { tcS: 0.28, maxStepDeg: 9 };
-  if (e >= DRIVE_BEARING_SETTLE_ERR_DEG) return { tcS: 0.16, maxStepDeg: 8 };
+  if (e >= DRIVE_BEARING_SHARP_ERR_DEG) return { tcS: 0.45, maxStepDeg: 12 };
+  if (e >= DRIVE_BEARING_CORNER_ERR_DEG) return { tcS: 0.55, maxStepDeg: 10 };
+  if (e >= DRIVE_BEARING_SETTLE_ERR_DEG) return { tcS: 0.32, maxStepDeg: 8 };
   return { tcS: DRIVE_CAMERA_BEARING_TC_S, maxStepDeg: DRIVE_CAMERA_BEARING_MAX_STEP_DEG };
+}
+
+/** Degrees the camera may rotate this frame. Scales with dt so a hitch cannot dump the turn. */
+export function driveBearingFrameStepDeg(errorDeg: number, dtS: number): number {
+  const catchUp = driveBearingCatchUp(errorDeg);
+  const dt = Number.isFinite(dtS) && dtS > 0 ? Math.min(0.12, dtS) : 0.016;
+  const turning = Math.abs(errorDeg) >= DRIVE_BEARING_SETTLE_ERR_DEG;
+  const rate = turning ? DRIVE_BEARING_TURN_YAW_DEG_S : DRIVE_BEARING_CRUISE_YAW_DEG_S;
+  return Math.min(catchUp.maxStepDeg, Math.max(0.12, rate * dt));
 }
 
 export type DrivePuckReclaimInput = {
