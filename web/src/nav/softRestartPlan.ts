@@ -1,5 +1,6 @@
 import { isReverseRejoinRoute } from "./detourRejoin";
 import { pickBestForwardRoute } from "./forwardRoutePick";
+import { routeDoublesBack } from "./routeDoublesBack";
 import type { LngLat, NavRoute, TripPlan } from "./types";
 
 export type SoftRestartLegPatch = {
@@ -38,9 +39,12 @@ export function assignOffRouteReplanSlots(
   headingDeg: number | null
 ): NavRoute[] {
   const usable = fresh.filter((r) => r.geometry.length >= 2);
-  const forward = usable.filter((r) => !isReverseRejoinRoute(r, userLngLat, headingDeg));
-  /* A loop back to a highway behind the driver is not better than no replan.
-   * Installing it is how ETA grew as he drove toward home (builds 441–443). */
+  const forward = usable.filter(
+    (r) => !isReverseRejoinRoute(r, userLngLat, headingDeg) && !routeDoublesBack(r.geometry)
+  );
+  /* A loop back to a highway behind the driver, or a line that returns to a
+   * point it already passed, is not better than no replan. Installing it is
+   * how the remaining time grew as he got closer to the pin. */
   if (forward.length === 0) return [];
   const primary = pickBestForwardRoute(forward, userLngLat, headingDeg) ?? forward[0];
   if (!primary) return [];

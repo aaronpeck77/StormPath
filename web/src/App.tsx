@@ -905,6 +905,12 @@ export default function App() {
         }
         return false;
       }
+      if (routeDoublesBack(geometry)) {
+        if (import.meta.env.DEV) {
+          console.info("[nav] ignored Core reroute — line returns to a point already passed");
+        }
+        return false;
+      }
       const force = Boolean(opts?.force);
       const adopted = adoptLockedRouteGeometry(geometry, { force });
       if (!adopted) return false;
@@ -2801,7 +2807,11 @@ export default function App() {
                 progressStripAlerts={progressStripAlerts}
                 radarIntensity={guidanceSlice?.radarIntensity ?? 0}
                 progressStripRouteColor={progressStripRouteColor}
-                progressRailRouteTurnSteps={progressRailRoute?.turnSteps ?? []}
+                progressRailRouteTurnSteps={
+                  progressRailRoute?.turnSteps && progressRailRoute.turnSteps.length >= 2
+                    ? progressRailRoute.turnSteps
+                    : undefined
+                }
                 turnSteps={turnSteps}
                 routeAheadProgressBands={routeAheadProgressBands}
                 driveModeUi={driveModeUi}

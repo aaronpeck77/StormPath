@@ -141,7 +141,11 @@ export function AppProgressRail({
           alerts={progressStripAlerts}
           radarIntensity={radarIntensity}
           routeLineColor={progressStripRouteColor}
-          turnSteps={progressRailRouteTurnSteps ?? turnSteps}
+          turnSteps={
+            progressRailRouteTurnSteps && progressRailRouteTurnSteps.length >= 2
+              ? progressRailRouteTurnSteps
+              : turnSteps
+          }
           stormBands={routeAheadProgressBands}
           radarSliceSamples={radarMosaicSamples}
           radarSliceLoopFrames={radarSliceLoopFrames}

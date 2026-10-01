@@ -167,4 +167,33 @@ describe("assignOffRouteReplanSlots", () => {
     };
     expect(assignOffRouteReplanSlots([loopNorthThenSouth], user, 180)).toEqual([]);
   });
+
+  it("refuses a forward line that comes back to a point it already passed", () => {
+    const lat0 = 40;
+    const lng0 = -89;
+    const at = (northM: number, eastM: number): [number, number] => [
+      lng0 + eastM / (111_320 * Math.cos((lat0 * Math.PI) / 180)),
+      lat0 + northM / 111_320,
+    ];
+    const user = at(0, 0);
+    const townLoop: NavRoute = {
+      id: "r-x",
+      role: "hazardSmart",
+      label: "No interstate",
+      geometry: [at(0, 0), at(0, 700), at(700, 700), at(700, 0), at(0, 0), at(0, -500)],
+      baseEtaMinutes: 30,
+    };
+    const ahead: NavRoute = {
+      id: "r-y",
+      role: "fastest",
+      label: "Ahead",
+      geometry: [user, at(0, 800), at(2_000, 800)],
+      baseEtaMinutes: 18,
+    };
+    expect(assignOffRouteReplanSlots([townLoop], user, 90)).toEqual([]);
+    const slots = assignOffRouteReplanSlots([townLoop, ahead], user, 90);
+    expect(slots).toHaveLength(1);
+    expect(slots[0]?.id).toBe("r-a");
+    expect(slots[0]?.geometry[1]?.[1]).toBeCloseTo(at(0, 800)[1], 4);
+  });
 });
