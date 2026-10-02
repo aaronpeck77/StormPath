@@ -118,6 +118,14 @@ describe("liveDriveAlignBearing", () => {
     expect(driveAlignLookAheadMeters(8)).toBe(driveAlignLookAheadMeters(8));
   });
 
+  it("reads only about two seconds of road so a slow corner can finish straight", () => {
+    for (const speed of [4, 6, 8, 11]) {
+      const look = driveAlignLookAheadMeters(speed);
+      expect(look / speed).toBeLessThanOrEqual(2.05);
+      expect(look / speed).toBeGreaterThan(1.2);
+    }
+  });
+
   it("faces the next street by the corner and does not swing back", () => {
     const geom = northThenEast();
     const cum = buildCumulativeDistances(geom);
@@ -163,6 +171,51 @@ describe("liveDriveAlignBearing", () => {
     });
     expect(b).not.toBeNull();
     expect(b!).toBeLessThan(8);
+  });
+
+  it("ignores a one-frame reversal and follows it once it holds", () => {
+    const lat0 = 38.63;
+    const lng0 = -90.2;
+    const north = 40 / 111320;
+    const geom: LngLat[] = [
+      [lng0, lat0],
+      [lng0, lat0 + north],
+      [lng0, lat0],
+    ];
+    const cum = buildCumulativeDistances(geom);
+    const state: LiveAlignBearingState = { geomKey: "", cum: null, alongM: null };
+    const approach = liveDriveAlignBearing({
+      state,
+      geometry: geom,
+      puck: pointAtAlongMeters(geom, 8, cum),
+      speedMps: 6,
+      seedAlongM: 0,
+      offRoute: false,
+    });
+    expect(approach).not.toBeNull();
+    expect(approach!).toBeLessThan(8);
+    const corner = pointAtAlongMeters(geom, cum[1]!, cum);
+    const first = liveDriveAlignBearing({
+      state,
+      geometry: geom,
+      puck: corner,
+      speedMps: 6,
+      seedAlongM: cum[1]!,
+      offRoute: false,
+    });
+    expect(Math.abs(signedDelta(approach!, first!))).toBeLessThan(8);
+    let held: number | null = first;
+    for (let i = 0; i < 2; i++) {
+      held = liveDriveAlignBearing({
+        state,
+        geometry: geom,
+        puck: corner,
+        speedMps: 6,
+        seedAlongM: cum[1]!,
+        offRoute: false,
+      });
+    }
+    expect(held!).toBeGreaterThan(170);
   });
 
   it("does not follow the route while the car is off it", () => {

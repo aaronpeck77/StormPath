@@ -57,22 +57,30 @@ export function driveRouteLookAheadMeters(
 }
 
 /**
- * How far ahead the drive camera reads the road. Continuous with speed —
- * the stretch used for the banner chord steps the heading when it turns on.
+ * How far ahead the drive camera reads the road.
+ * About two seconds of travel. A longer chord stays diagonal across the
+ * corner until the car has driven that whole distance — at a slow turn
+ * that was 10–12 seconds, and the shortcut can point the wrong way.
+ * The camera still does not yaw until the corner is inside this window.
  */
-export const DRIVE_ALIGN_LOOKAHEAD_MIN_M = 32;
-export const DRIVE_ALIGN_LOOKAHEAD_MAX_M = 72;
+export const DRIVE_ALIGN_LOOKAHEAD_MIN_M = 8;
+export const DRIVE_ALIGN_LOOKAHEAD_MAX_M = 24;
 export const DRIVE_ALIGN_LOOKAHEAD_SECONDS = 2;
+/** One-frame reversal. A real turn changes the chord gradually. */
+export const DRIVE_ALIGN_SPIKE_DEG = 100;
+/** Frames a reversed heading must hold before it is real, not a snap. */
+export const DRIVE_ALIGN_SPIKE_HOLD_FRAMES = 3;
 
 export function driveAlignLookAheadMeters(speedMps: number): number {
   const speed = speedMps > 0 && Number.isFinite(speedMps) ? speedMps : 0;
   return Math.min(
     DRIVE_ALIGN_LOOKAHEAD_MAX_M,
-    Math.max(
-      DRIVE_ALIGN_LOOKAHEAD_MIN_M,
-      DRIVE_ALIGN_LOOKAHEAD_MIN_M + speed * DRIVE_ALIGN_LOOKAHEAD_SECONDS
-    )
+    Math.max(DRIVE_ALIGN_LOOKAHEAD_MIN_M, speed * DRIVE_ALIGN_LOOKAHEAD_SECONDS)
   );
+}
+
+function signedHeadingDelta(from: number, to: number): number {
+  return ((((to - from) % 360) + 540) % 360) - 180;
 }
 
 /** Bearing of the road from `alongM` to `alongM + lookAheadM`. */
@@ -95,6 +103,10 @@ export type LiveAlignBearingState = {
   geomKey: string;
   cum: Float64Array | null;
   alongM: number | null;
+  /** Last heading handed to the camera. A one-frame reversal is ignored. */
+  bearingDeg?: number | null;
+  pendingBearingDeg?: number | null;
+  pendingHits?: number;
 };
 
 /**
@@ -113,7 +125,12 @@ export function liveDriveAlignBearing(input: {
   seedAlongM: number | null;
   offRoute: boolean;
 }): number | null {
-  if (input.offRoute) return null;
+  if (input.offRoute) {
+    input.state.bearingDeg = null;
+    input.state.pendingBearingDeg = null;
+    input.state.pendingHits = 0;
+    return null;
+  }
   const geometry = input.geometry;
   if (!geometry || geometry.length < 2) return null;
   const g0 = geometry[0]!;
@@ -123,6 +140,9 @@ export function liveDriveAlignBearing(input: {
     input.state.cum = buildCumulativeDistances(geometry);
     input.state.alongM =
       input.seedAlongM != null && Number.isFinite(input.seedAlongM) ? input.seedAlongM : 0;
+    input.state.bearingDeg = null;
+    input.state.pendingBearingDeg = null;
+    input.state.pendingHits = 0;
   }
   const cum = input.state.cum;
   if (!cum) return null;
@@ -139,12 +159,44 @@ export function liveDriveAlignBearing(input: {
   if (snap.lateralMetersApprox > 100) return null;
   input.state.alongM = snap.alongMeters;
   const speed = input.speedMps != null && Number.isFinite(input.speedMps) ? input.speedMps : 0;
-  return bearingAheadFromAlongM(
+  const raw = bearingAheadFromAlongM(
     geometry,
     snap.alongMeters,
     driveAlignLookAheadMeters(speed),
     cum
   );
+  if (raw == null) return null;
+  return acceptAlignBearing(input.state, raw);
+}
+
+/** Keep the last good heading when one sample reverses. A real turn is gradual. */
+function acceptAlignBearing(state: LiveAlignBearingState, next: number): number {
+  const prev = state.bearingDeg;
+  if (prev == null || !Number.isFinite(prev)) {
+    state.bearingDeg = next;
+    state.pendingBearingDeg = null;
+    state.pendingHits = 0;
+    return next;
+  }
+  if (Math.abs(signedHeadingDelta(prev, next)) <= DRIVE_ALIGN_SPIKE_DEG) {
+    state.bearingDeg = next;
+    state.pendingBearingDeg = null;
+    state.pendingHits = 0;
+    return next;
+  }
+  const pending = state.pendingBearingDeg;
+  const same =
+    pending != null && Number.isFinite(pending) && Math.abs(signedHeadingDelta(pending, next)) <= 25;
+  const hits = (same ? state.pendingHits ?? 0 : 0) + 1;
+  state.pendingBearingDeg = next;
+  state.pendingHits = hits;
+  if (hits >= DRIVE_ALIGN_SPIKE_HOLD_FRAMES) {
+    state.bearingDeg = next;
+    state.pendingBearingDeg = null;
+    state.pendingHits = 0;
+    return next;
+  }
+  return prev;
 }
 
 /**
