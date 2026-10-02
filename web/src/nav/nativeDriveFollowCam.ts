@@ -165,21 +165,19 @@ export function shouldUseNativeFollowCam(input: {
  * sample. Skip the web write until the sample actually moved.
  */
 /**
- * Turn anticipation on top of Core's bearing.
+ * No early lean. The camera target is the car's heading, the way MapLibre and
+ * Ferrostar follow course instead of peeking down the next street.
  *
- * The camera is a drone behind the puck. As a turn arrives it swings about
- * halfway into the corner and waits there, including while the car is stopped
- * at the light. When the car's own heading catches that halfway view, the
- * camera falls in with the car and finishes straight down the next street.
- * The exit heading only moves further into the same turn, so a flickering
- * chord cannot flip the view back and forth.
+ * The old halfway hold leaned, then a chord flicker or a stop snapped it back —
+ * the flip. Straightening after the turn is the yaw rate in driveCameraRules,
+ * not a second heading blended in here.
  */
 export const NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS = 2.2;
-/** Above this, the chord is a U-turn / wrong-way, not the next street. */
+/** Kept so diagnostics can still tell a wild chord from a normal bend. */
 export const NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG = 125;
 /** A bend smaller than this stays on the car's heading. */
 export const NATIVE_CAM_ANTICIPATE_COMMIT_DEG = 22;
-/** Halfway into the turn, then wait. */
+/** Unused while anticipation is off. Left so older call sites still import. */
 export const NATIVE_CAM_ANTICIPATE_HALF = 0.5;
 /** Once the car and the road ahead agree, the target is that forward heading. */
 export const NATIVE_CAM_ANTICIPATE_MATCH_DEG = 12;
@@ -196,11 +194,7 @@ function wrapHeadingDeg(deg: number): number {
   return ((deg % 360) + 360) % 360;
 }
 
-function headingDeltaSigned(fromDeg: number, toDeg: number): number {
-  return ((((toDeg - fromDeg) % 360) + 540) % 360) - 180;
-}
-
-/** Frozen halfway view for the turn the camera is already waiting on. */
+/** Old halfway-hold shape. Anticipation is off, so this stays empty. */
 export type TurnCamHold = {
   approachDeg: number;
   exitDeg: number;
@@ -208,6 +202,10 @@ export type TurnCamHold = {
   frozen: boolean;
 };
 
+/**
+ * Face the car. Do not blend toward the street ahead. A held lean is cleared
+ * so a previous turn cannot keep the camera cocked.
+ */
 export function resolveTurnCameraBearing(input: {
   coreBearingDeg: number;
   routeAheadBearingDeg: number | null | undefined;
@@ -216,67 +214,8 @@ export function resolveTurnCameraBearing(input: {
   hold: TurnCamHold | null;
 }): { bearingDeg: number; hold: TurnCamHold | null } {
   const core = input.coreBearingDeg;
-  if (!Number.isFinite(core)) return { bearingDeg: core, hold: input.hold };
-  const speed = input.speedMps;
-  const moving =
-    speed != null && Number.isFinite(speed) && speed >= NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS;
-  const toTurn = input.metersToManeuver;
-  const startM = anticipateNativeCamStartMeters(
-    speed != null && Number.isFinite(speed) ? speed : 0
-  );
-  const inWindow = toTurn == null || !Number.isFinite(toTurn) || toTurn <= startM;
-  const ahead = input.routeAheadBearingDeg;
-  const aheadOk = ahead != null && Number.isFinite(ahead);
-
-  let hold = input.hold;
-  if (hold && aheadOk && !hold.frozen && moving) {
-    const existing = headingDeltaSigned(hold.approachDeg, hold.exitDeg);
-    const next = headingDeltaSigned(hold.approachDeg, ahead);
-    const sameWay = existing === 0 || next === 0 || existing * next > 0;
-    if (sameWay && Math.abs(next) > Math.abs(existing) && Math.abs(next) <= NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG) {
-      hold = { ...hold, exitDeg: wrapHeadingDeg(ahead) };
-    }
-  }
-
-  if (hold) {
-    const turn = headingDeltaSigned(hold.approachDeg, hold.exitDeg);
-    const wait = wrapHeadingDeg(hold.approachDeg + turn * NATIVE_CAM_ANTICIPATE_HALF);
-    const progressed = headingDeltaSigned(hold.approachDeg, core);
-    const caughtUp =
-      Math.abs(turn) < 1 ||
-      (turn > 0
-        ? progressed >= turn * NATIVE_CAM_ANTICIPATE_HALF - 6
-        : progressed <= turn * NATIVE_CAM_ANTICIPATE_HALF + 6);
-    const finished = Math.abs(headingDeltaSigned(core, hold.exitDeg)) <= NATIVE_CAM_ANTICIPATE_MATCH_DEG;
-    const abandoned =
-      toTurn != null &&
-      Number.isFinite(toTurn) &&
-      toTurn > startM + 40 &&
-      Math.abs(progressed) < 12;
-    if (abandoned) return { bearingDeg: wrapHeadingDeg(core), hold: null };
-    if (finished) return { bearingDeg: wrapHeadingDeg(hold.exitDeg), hold: null };
-    const close = toTurn != null && Number.isFinite(toTurn) && toTurn <= 22;
-    const carHasTurned = Math.abs(progressed) > 10;
-    const frozen = hold.frozen || !moving || close || carHasTurned;
-    const nextHold = frozen === hold.frozen ? hold : { ...hold, frozen };
-    if (!caughtUp) return { bearingDeg: wait, hold: nextHold };
-    return { bearingDeg: wrapHeadingDeg(core), hold: nextHold };
-  }
-
-  if (!moving || !inWindow || !aheadOk) return { bearingDeg: wrapHeadingDeg(core), hold: null };
-  const delta = headingDeltaSigned(core, ahead);
-  const absD = Math.abs(delta);
-  if (absD <= NATIVE_CAM_ANTICIPATE_MATCH_DEG) return { bearingDeg: wrapHeadingDeg(ahead), hold: null };
-  if (absD < NATIVE_CAM_ANTICIPATE_COMMIT_DEG || absD > NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG) {
-    return { bearingDeg: wrapHeadingDeg(core), hold: null };
-  }
-  const approachDeg = wrapHeadingDeg(core);
-  const exitDeg = wrapHeadingDeg(ahead);
-  const close = toTurn != null && Number.isFinite(toTurn) && toTurn <= 22;
-  return {
-    bearingDeg: wrapHeadingDeg(approachDeg + delta * NATIVE_CAM_ANTICIPATE_HALF),
-    hold: { approachDeg, exitDeg, frozen: close || !moving },
-  };
+  if (!Number.isFinite(core)) return { bearingDeg: core, hold: null };
+  return { bearingDeg: wrapHeadingDeg(core), hold: null };
 }
 
 export function anticipateNativeCamBearingDeg(input: {

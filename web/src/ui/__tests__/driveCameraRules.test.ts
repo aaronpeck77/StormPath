@@ -43,8 +43,15 @@ describe("driveBearingCatchUp", () => {
 
   it("does not dump a turn into one frame after a hitch", () => {
     const step = driveBearingFrameStepDeg(90, 0.1);
-    expect(step).toBeLessThan(5);
-    expect(step).toBeGreaterThan(2);
+    expect(step).toBeLessThan(16);
+    expect(step).toBeGreaterThan(8);
+  });
+
+  it("straightens a 90 degree corner in about a second, not a slow sweep", () => {
+    const frame = driveBearingFrameStepDeg(90, 1 / 60);
+    const frames = Math.ceil(90 / frame);
+    expect(frames / 60).toBeLessThan(1.1);
+    expect(frames / 60).toBeGreaterThan(0.5);
   });
 
   it("takes a sharper step on a 90-degree turn", () => {

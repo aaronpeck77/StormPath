@@ -51,8 +51,14 @@ export type DriveBearingCatchUp = {
   maxStepDeg: number;
 };
 
-/** How fast the drone may yaw through a turn. A higher cap is a kick, not a sweep. */
-export const DRIVE_BEARING_TURN_YAW_DEG_S = 34;
+/**
+ * Once the car has turned, get the new street up the screen before a short
+ * block is gone. ~110°/s puts a 90° corner straight in about 0.8 s. The
+ * per-frame cap still blocks a one-frame flip.
+ */
+export const DRIVE_BEARING_TURN_YAW_DEG_S = 110;
+/** Last part of the turn. Faster than cruise, slower than the corner sweep. */
+export const DRIVE_BEARING_SETTLE_YAW_DEG_S = 48;
 export const DRIVE_BEARING_CRUISE_YAW_DEG_S = 14;
 
 /**
@@ -72,8 +78,13 @@ export function driveBearingCatchUp(errorDeg: number): DriveBearingCatchUp {
 export function driveBearingFrameStepDeg(errorDeg: number, dtS: number): number {
   const catchUp = driveBearingCatchUp(errorDeg);
   const dt = Number.isFinite(dtS) && dtS > 0 ? Math.min(0.12, dtS) : 0.016;
-  const turning = Math.abs(errorDeg) >= DRIVE_BEARING_SETTLE_ERR_DEG;
-  const rate = turning ? DRIVE_BEARING_TURN_YAW_DEG_S : DRIVE_BEARING_CRUISE_YAW_DEG_S;
+  const e = Math.abs(errorDeg);
+  const rate =
+    e >= DRIVE_BEARING_CORNER_ERR_DEG
+      ? DRIVE_BEARING_TURN_YAW_DEG_S
+      : e >= DRIVE_BEARING_SETTLE_ERR_DEG
+        ? DRIVE_BEARING_SETTLE_YAW_DEG_S
+        : DRIVE_BEARING_CRUISE_YAW_DEG_S;
   return Math.min(catchUp.maxStepDeg, Math.max(0.12, rate * dt));
 }
 

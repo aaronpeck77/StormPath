@@ -2250,7 +2250,7 @@ function DriveMapInner({
               zoom: camZoom,
               puck: camCenter,
             });
-            /* Halfway into the turn, then wait — even at a light — until the car arrives. */
+            /* No early lean. Target is the car's heading; the yaw rate straightens the new street. */
             const coreBearing = nativeCam.bearing;
             const aheadBearing = driveRouteBearingDegRef.current;
             const toTurn = metersToBannerManeuverRef.current;

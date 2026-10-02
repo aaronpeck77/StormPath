@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   anticipateNativeCamBearingDeg,
-  anticipateNativeCamStartMeters,
   resolveTurnCameraBearing,
   createNativeDriveFollowCam,
   nativeDriveFollowZoomForSpeed,
@@ -49,108 +48,35 @@ describe("createNativeDriveFollowCam", () => {
 });
 
 describe("anticipateNativeCamBearingDeg", () => {
-  it("waits about halfway into the turn", () => {
-    const out = anticipateNativeCamBearingDeg({
-      coreBearingDeg: 0,
-      routeAheadBearingDeg: 40,
-      speedMps: 12,
-    });
-    expect(out).toBeGreaterThan(16);
-    expect(out).toBeLessThan(24);
-  });
-
-  it("starts a small lead a little before the turn and stays quiet a block out", () => {
-    expect(anticipateNativeCamStartMeters(14)).toBeGreaterThan(90);
-    expect(anticipateNativeCamStartMeters(14)).toBeLessThan(130);
+  it("stays on the car heading instead of leaning into the next street", () => {
     expect(
       anticipateNativeCamBearingDeg({
         coreBearingDeg: 0,
         routeAheadBearingDeg: 40,
-        speedMps: 14,
-        metersToManeuver: 160,
+        speedMps: 12,
+        metersToManeuver: 40,
       })
     ).toBe(0);
-    const approaching = anticipateNativeCamBearingDeg({
-      coreBearingDeg: 0,
-      routeAheadBearingDeg: 40,
-      speedMps: 14,
-      metersToManeuver: 60,
-    });
-    expect(approaching).toBeGreaterThan(16);
-    expect(approaching).toBeLessThan(24);
-  });
-
-  it("holds halfway and then falls in with the car", () => {
-    const city = anticipateNativeCamBearingDeg({
-      coreBearingDeg: 0,
-      routeAheadBearingDeg: 90,
-      speedMps: 11,
-      metersToManeuver: 40,
-    });
-    expect(city).toBeGreaterThan(40);
-    expect(city).toBeLessThan(50);
-    let hold = resolveTurnCameraBearing({
-      coreBearingDeg: 0,
-      routeAheadBearingDeg: 40,
-      speedMps: 11,
-      metersToManeuver: 50,
-      hold: null,
-    }).hold;
-    const grown = resolveTurnCameraBearing({
-      coreBearingDeg: 0,
-      routeAheadBearingDeg: 90,
-      speedMps: 11,
-      metersToManeuver: 40,
-      hold,
-    });
-    expect(grown.bearingDeg).toBeGreaterThan(40);
-    expect(grown.bearingDeg).toBeLessThan(50);
-    hold = grown.hold;
-    const flicker = resolveTurnCameraBearing({
-      coreBearingDeg: 0,
-      routeAheadBearingDeg: 8,
-      speedMps: 11,
-      metersToManeuver: 40,
-      hold,
-    });
-    expect(flicker.bearingDeg).toBe(grown.bearingDeg);
-    const stopped = resolveTurnCameraBearing({
-      coreBearingDeg: 0,
-      routeAheadBearingDeg: 90,
-      speedMps: 0.2,
-      metersToManeuver: 12,
-      hold: flicker.hold,
-    });
-    expect(stopped.bearingDeg).toBe(grown.bearingDeg);
-    expect(stopped.hold).not.toBeNull();
-    const caught = resolveTurnCameraBearing({
-      coreBearingDeg: 50,
-      routeAheadBearingDeg: 90,
-      speedMps: 8,
-      metersToManeuver: 8,
-      hold: stopped.hold,
-    });
-    expect(caught.bearingDeg).toBe(50);
-    const done = resolveTurnCameraBearing({
-      coreBearingDeg: 84,
-      routeAheadBearingDeg: 90,
-      speedMps: 8,
-      metersToManeuver: 0,
-      hold: caught.hold,
-    });
-    expect(done.bearingDeg).toBe(90);
-    expect(done.hold).toBeNull();
-  });
-
-  it("sits on the forward heading once the car has finished the turn", () => {
     expect(
       anticipateNativeCamBearingDeg({
-        coreBearingDeg: 80,
+        coreBearingDeg: 0,
         routeAheadBearingDeg: 90,
         speedMps: 11,
-        metersToManeuver: 20,
+        metersToManeuver: 40,
       })
-    ).toBe(90);
+    ).toBe(0);
+  });
+
+  it("drops a held lean so a previous turn cannot keep the camera cocked", () => {
+    const out = resolveTurnCameraBearing({
+      coreBearingDeg: 10,
+      routeAheadBearingDeg: 90,
+      speedMps: 11,
+      metersToManeuver: 30,
+      hold: { approachDeg: 0, exitDeg: 90, frozen: true },
+    });
+    expect(out.bearingDeg).toBe(10);
+    expect(out.hold).toBeNull();
   });
 
   it("does not swing the camera while parked or crawling", () => {
@@ -173,18 +99,14 @@ describe("anticipateNativeCamBearingDeg", () => {
     ).toBe(10);
   });
 
-  it("anticipates across the 360 seam without spinning the map", () => {
-    const out = anticipateNativeCamBearingDeg({
-      coreBearingDeg: 350,
-      routeAheadBearingDeg: 20,
-      speedMps: 20,
-    });
-    /* 30 deg of turn, halfway past north, not a spin back through 180. */
-    const shortest = (((out - 350) % 360) + 540) % 360 - 180;
-    expect(shortest).toBeGreaterThan(12);
-    expect(shortest).toBeLessThan(18);
-    expect(out).toBeGreaterThanOrEqual(0);
-    expect(out).toBeLessThan(360);
+  it("does not spin across the 360 seam toward the road ahead", () => {
+    expect(
+      anticipateNativeCamBearingDeg({
+        coreBearingDeg: 350,
+        routeAheadBearingDeg: 20,
+        speedMps: 20,
+      })
+    ).toBe(350);
   });
 
   it("passes Core straight through with no route tangent", () => {
