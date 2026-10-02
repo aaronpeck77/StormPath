@@ -1,5 +1,8 @@
 import {
   bearingAlongRouteAhead,
+  buildCumulativeDistances,
+  closestPointOnPolyline,
+  closestPointOnPolylineWindowed,
   haversineMeters,
   initialBearingDegrees,
   pointAtAlongMeters,
@@ -51,6 +54,97 @@ export function driveRouteLookAheadMeters(
     );
   }
   return lookAheadM;
+}
+
+/**
+ * How far ahead the drive camera reads the road. Continuous with speed —
+ * the stretch used for the banner chord steps the heading when it turns on.
+ */
+export const DRIVE_ALIGN_LOOKAHEAD_MIN_M = 32;
+export const DRIVE_ALIGN_LOOKAHEAD_MAX_M = 72;
+export const DRIVE_ALIGN_LOOKAHEAD_SECONDS = 2;
+
+export function driveAlignLookAheadMeters(speedMps: number): number {
+  const speed = speedMps > 0 && Number.isFinite(speedMps) ? speedMps : 0;
+  return Math.min(
+    DRIVE_ALIGN_LOOKAHEAD_MAX_M,
+    Math.max(
+      DRIVE_ALIGN_LOOKAHEAD_MIN_M,
+      DRIVE_ALIGN_LOOKAHEAD_MIN_M + speed * DRIVE_ALIGN_LOOKAHEAD_SECONDS
+    )
+  );
+}
+
+/** Bearing of the road from `alongM` to `alongM + lookAheadM`. */
+export function bearingAheadFromAlongM(
+  geometry: LngLat[],
+  alongM: number,
+  lookAheadM: number,
+  cumDist?: Float64Array
+): number | null {
+  if (geometry.length < 2 || !Number.isFinite(alongM)) return null;
+  const la = Math.max(8, lookAheadM);
+  const from = pointAtAlongMeters(geometry, alongM, cumDist);
+  const to = pointAtAlongMeters(geometry, alongM + la, cumDist);
+  if (haversineMeters(from, to) < 2.5) return null;
+  return initialBearingDegrees(from, to);
+}
+
+/** Closest-point memory for the 60 fps camera. Rebuilt when the polyline changes. */
+export type LiveAlignBearingState = {
+  geomKey: string;
+  cum: Float64Array | null;
+  alongM: number | null;
+};
+
+/**
+ * Road heading at the puck, every frame.
+ *
+ * The React route bearing only moves when the map re-renders, and Core's
+ * course is smoothed once a second — that pair is the 6 s crooked line and
+ * the one-hertz jumps. The puck is already gliding between those samples,
+ * so the camera reads the polyline under it directly.
+ */
+export function liveDriveAlignBearing(input: {
+  state: LiveAlignBearingState;
+  geometry: LngLat[] | null | undefined;
+  puck: LngLat;
+  speedMps: number | null;
+  seedAlongM: number | null;
+  offRoute: boolean;
+}): number | null {
+  if (input.offRoute) return null;
+  const geometry = input.geometry;
+  if (!geometry || geometry.length < 2) return null;
+  const g0 = geometry[0]!;
+  const key = `${geometry.length}:${g0[0].toFixed(5)},${g0[1].toFixed(5)}`;
+  if (key !== input.state.geomKey || !input.state.cum) {
+    input.state.geomKey = key;
+    input.state.cum = buildCumulativeDistances(geometry);
+    input.state.alongM =
+      input.seedAlongM != null && Number.isFinite(input.seedAlongM) ? input.seedAlongM : 0;
+  }
+  const cum = input.state.cum;
+  if (!cum) return null;
+  const seed =
+    input.state.alongM != null && Number.isFinite(input.state.alongM)
+      ? input.state.alongM
+      : input.seedAlongM != null && Number.isFinite(input.seedAlongM)
+        ? input.seedAlongM
+        : 0;
+  let snap = closestPointOnPolylineWindowed(input.puck, geometry, cum, seed, 120, 200);
+  if (snap.lateralMetersApprox > 100) {
+    snap = closestPointOnPolyline(input.puck, geometry);
+  }
+  if (snap.lateralMetersApprox > 100) return null;
+  input.state.alongM = snap.alongMeters;
+  const speed = input.speedMps != null && Number.isFinite(input.speedMps) ? input.speedMps : 0;
+  return bearingAheadFromAlongM(
+    geometry,
+    snap.alongMeters,
+    driveAlignLookAheadMeters(speed),
+    cum
+  );
 }
 
 /**

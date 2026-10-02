@@ -27,6 +27,7 @@ import {
   DRIVE_CAMERA_BEARING_MAX_STEP_DEG,
   DRIVE_CAMERA_BEARING_TC_S,
 } from "./driveFollowSmooth";
+import { easeHeadingDeg } from "./mapDriveCamera";
 import {
   DRIVE_PUCK_ANCHOR_CHECK_MIN_SPEED_MPS,
   DRIVE_PUCK_ANCHOR_SEVERE_DRIFT_PX,
@@ -52,11 +53,19 @@ export type DriveBearingCatchUp = {
 };
 
 /**
- * Once the car has turned, get the new street up the screen before a short
- * block is gone. ~110°/s puts a 90° corner straight in about 0.8 s. The
- * per-frame cap still blocks a one-frame flip.
+ * Line the road up the middle. 200°/s turns a 90° corner in under half a
+ * second. The step is capped by the frame time, so it cannot flip in one paint.
  */
-export const DRIVE_BEARING_TURN_YAW_DEG_S = 110;
+export const DRIVE_BEARING_ALIGN_DEG_S = 200;
+
+export function alignDriveBearingDeg(
+  prev: number | null,
+  target: number,
+  dtS: number
+): number {
+  const dt = Number.isFinite(dtS) && dtS > 0 ? Math.min(0.05, dtS) : 0.016;
+  return easeHeadingDeg(prev, target, DRIVE_BEARING_ALIGN_DEG_S, dt);
+}
 /** Last part of the turn. Faster than cruise, slower than the corner sweep. */
 export const DRIVE_BEARING_SETTLE_YAW_DEG_S = 48;
 export const DRIVE_BEARING_CRUISE_YAW_DEG_S = 14;
@@ -81,7 +90,7 @@ export function driveBearingFrameStepDeg(errorDeg: number, dtS: number): number 
   const e = Math.abs(errorDeg);
   const rate =
     e >= DRIVE_BEARING_CORNER_ERR_DEG
-      ? DRIVE_BEARING_TURN_YAW_DEG_S
+      ? DRIVE_BEARING_ALIGN_DEG_S
       : e >= DRIVE_BEARING_SETTLE_ERR_DEG
         ? DRIVE_BEARING_SETTLE_YAW_DEG_S
         : DRIVE_BEARING_CRUISE_YAW_DEG_S;

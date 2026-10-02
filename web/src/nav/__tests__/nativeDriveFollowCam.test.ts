@@ -48,15 +48,7 @@ describe("createNativeDriveFollowCam", () => {
 });
 
 describe("anticipateNativeCamBearingDeg", () => {
-  it("stays on the car heading instead of leaning into the next street", () => {
-    expect(
-      anticipateNativeCamBearingDeg({
-        coreBearingDeg: 0,
-        routeAheadBearingDeg: 40,
-        speedMps: 12,
-        metersToManeuver: 40,
-      })
-    ).toBe(0);
+  it("faces the road ahead so the line can line up without waiting on the car", () => {
     expect(
       anticipateNativeCamBearingDeg({
         coreBearingDeg: 0,
@@ -64,29 +56,36 @@ describe("anticipateNativeCamBearingDeg", () => {
         speedMps: 11,
         metersToManeuver: 40,
       })
-    ).toBe(0);
+    ).toBe(90);
+    expect(
+      anticipateNativeCamBearingDeg({
+        coreBearingDeg: 350,
+        routeAheadBearingDeg: 20,
+        speedMps: 12,
+      })
+    ).toBe(20);
   });
 
   it("drops a held lean so a previous turn cannot keep the camera cocked", () => {
     const out = resolveTurnCameraBearing({
       coreBearingDeg: 10,
-      routeAheadBearingDeg: 90,
+      routeAheadBearingDeg: 80,
       speedMps: 11,
       metersToManeuver: 30,
       hold: { approachDeg: 0, exitDeg: 90, frozen: true },
     });
-    expect(out.bearingDeg).toBe(10);
+    expect(out.bearingDeg).toBe(80);
     expect(out.hold).toBeNull();
   });
 
-  it("does not swing the camera while parked or crawling", () => {
+  it("faces the road ahead even while crawling, when the chord is sane", () => {
     expect(
       anticipateNativeCamBearingDeg({
         coreBearingDeg: 0,
         routeAheadBearingDeg: 40,
         speedMps: 0.3,
       })
-    ).toBe(0);
+    ).toBe(40);
   });
 
   it("keeps Core's bearing when the route tangent disagrees wildly", () => {
@@ -97,16 +96,6 @@ describe("anticipateNativeCamBearingDeg", () => {
         speedMps: 20,
       })
     ).toBe(10);
-  });
-
-  it("does not spin across the 360 seam toward the road ahead", () => {
-    expect(
-      anticipateNativeCamBearingDeg({
-        coreBearingDeg: 350,
-        routeAheadBearingDeg: 20,
-        speedMps: 20,
-      })
-    ).toBe(350);
   });
 
   it("passes Core straight through with no route tangent", () => {

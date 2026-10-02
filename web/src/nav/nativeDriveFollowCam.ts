@@ -165,12 +165,8 @@ export function shouldUseNativeFollowCam(input: {
  * sample. Skip the web write until the sample actually moved.
  */
 /**
- * No early lean. The camera target is the car's heading, the way MapLibre and
- * Ferrostar follow course instead of peeking down the next street.
- *
- * The old halfway hold leaned, then a chord flicker or a stop snapped it back —
- * the flip. Straightening after the turn is the yaw rate in driveCameraRules,
- * not a second heading blended in here.
+ * No early halfway hold. The camera target is the road ahead when that
+ * heading is sane. DriveMap eases onto it. A wild chord stays on the car.
  */
 export const NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS = 2.2;
 /** Kept so diagnostics can still tell a wild chord from a normal bend. */
@@ -203,8 +199,12 @@ export type TurnCamHold = {
 };
 
 /**
- * Face the car. Do not blend toward the street ahead. A held lean is cleared
- * so a previous turn cannot keep the camera cocked.
+ * The camera faces the road ahead, not the car's lagged course.
+ *
+ * Core's heading is smoothed once a second, so following it left the route
+ * crooked for about 6 s and stepped it in jumps. The route bearing is the
+ * line that should run up the middle. A wild chord (U-turn / wrong way)
+ * stays on the car so the map does not spin the long way.
  */
 export function resolveTurnCameraBearing(input: {
   coreBearingDeg: number;
@@ -215,7 +215,13 @@ export function resolveTurnCameraBearing(input: {
 }): { bearingDeg: number; hold: TurnCamHold | null } {
   const core = input.coreBearingDeg;
   if (!Number.isFinite(core)) return { bearingDeg: core, hold: null };
-  return { bearingDeg: wrapHeadingDeg(core), hold: null };
+  const ahead = input.routeAheadBearingDeg;
+  if (ahead == null || !Number.isFinite(ahead)) return { bearingDeg: wrapHeadingDeg(core), hold: null };
+  const delta = ((((ahead - core) % 360) + 540) % 360) - 180;
+  if (Math.abs(delta) > NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG) {
+    return { bearingDeg: wrapHeadingDeg(core), hold: null };
+  }
+  return { bearingDeg: wrapHeadingDeg(ahead), hold: null };
 }
 
 export function anticipateNativeCamBearingDeg(input: {

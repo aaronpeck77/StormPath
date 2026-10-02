@@ -157,13 +157,15 @@ import {
   driveCameraEaseOptions,
   resolveDriveFollowCameraBearingDeg,
   resolveTravelBearingDeg,
-  smoothDriveBearingDeg,
 } from "./mapDriveCamera";
+import {
+  liveDriveAlignBearing,
+  type LiveAlignBearingState,
+} from "../nav/computeDriveRouteBearing";
 import { headingDeltaDegrees } from "../nav/forwardRoutePick";
 import { readDrivePuckAnchorDrift } from "./drivePuckHealth";
 import {
-  driveBearingCatchUp,
-  driveBearingFrameStepDeg,
+  alignDriveBearingDeg,
   shouldReclaimDrivePuckThisFrame,
 } from "./driveCameraRules";
 import {
@@ -1987,6 +1989,8 @@ function DriveMapInner({
     let followPanFailAtMs: number | null = null;
     let camFreezeLatched = false;
     let puckReclaimLatched = false;
+    /** Road heading sampled from the gliding puck, not from the 1 Hz React bearing. */
+    const alignBearingState: LiveAlignBearingState = { geomKey: "", cum: null, alongM: null };
     const DRIVE_CAM_FORCE_RESYNC_FRAMES = 75;
 
     const reportPuckSight = (
@@ -2227,6 +2231,15 @@ function DriveMapInner({
           !viewDroneActiveRef.current
         ) {
           const nativeCam = nativeFollowCameraRef.current;
+          const liveAhead = liveDriveAlignBearing({
+            state: alignBearingState,
+            geometry: puckSnapGeomRef.current,
+            puck: [nextLng, nextLat],
+            speedMps: effSp,
+            seedAlongM: userAlongMetersRef.current,
+            offRoute: driveOffRouteForwardFramingRef.current,
+          });
+          const aheadBearing = liveAhead ?? driveRouteBearingDegRef.current;
           if (
             nativeCam &&
             shouldUseNativeFollowCam({
@@ -2250,9 +2263,8 @@ function DriveMapInner({
               zoom: camZoom,
               puck: camCenter,
             });
-            /* No early lean. Target is the car's heading; the yaw rate straightens the new street. */
+            /* Face the road under the puck and sweep onto it. Core's 1 Hz heading was the 6 s crooked line. */
             const coreBearing = nativeCam.bearing;
-            const aheadBearing = driveRouteBearingDegRef.current;
             const toTurn = metersToBannerManeuverRef.current;
             const turned = resolveTurnCameraBearing({
               coreBearingDeg: coreBearing,
@@ -2292,16 +2304,10 @@ function DriveMapInner({
               const out = lastTravelBearingDegOutRefStable.current;
               if (out) out.current = motionBrg;
             }
-            const bearingErr = headingDeltaDegrees(
-              driveCamBearingSmoothedRef.current ?? targetBearing,
-              targetBearing
-            );
-            const catchUp = driveBearingCatchUp(bearingErr);
-            const camBearing = smoothDriveBearingDeg(
+            const camBearing = alignDriveBearingDeg(
               driveCamBearingSmoothedRef.current,
               targetBearing,
-              1 - Math.exp(-dt / catchUp.tcS),
-              driveBearingFrameStepDeg(bearingErr, dt)
+              dt
             );
             const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
             const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;
@@ -2498,7 +2504,7 @@ function DriveMapInner({
           const preferTravel = performance.now() < driveCamPreferTravelUntilMsRef.current;
           const rawBrg = resolveDriveFollowCameraBearingDeg({
             offRouteForward: driveOffRouteForwardFramingRef.current,
-            routeBearingDeg: driveRouteBearingDegRef.current,
+            routeBearingDeg: aheadBearing,
             headingDeg: readPuckFollowHeading(),
             prevFix,
             curFix,
@@ -2508,16 +2514,12 @@ function DriveMapInner({
             followingTemporaryGuidance: followingTemporaryGuidanceRef.current,
             preferTravel,
           });
-          const bearingErr = headingDeltaDegrees(
-            driveCamBearingSmoothedRef.current ?? rawBrg,
-            rawBrg
-          );
-          const catchUp = driveBearingCatchUp(bearingErr);
-          driveCamBearingSmoothedRef.current = smoothDriveBearingDeg(
+          /* Ease from the last bearing the map actually showed. Advancing the
+           * ref when the write is skipped dumps the missed frames as a jump. */
+          const camBearing = alignDriveBearingDeg(
             driveCamBearingSmoothedRef.current,
             rawBrg,
-            1 - Math.exp(-dt / catchUp.tcS),
-            driveBearingFrameStepDeg(bearingErr, dt)
+            dt
           );
           const pos = readMapLngLat(marker.getLngLat());
           maybeReclaimPuck(reportPuckSight(map, pos, padding, offset), effSp);
@@ -2526,7 +2528,7 @@ function DriveMapInner({
            * float math show up as a visible vibration. */
           const camCenter = readMapLngLat(map.getCenter());
           const bearingDelta = Number.isFinite(lastBearingApplied)
-            ? Math.abs(driveCamBearingSmoothedRef.current - lastBearingApplied)
+            ? Math.abs(headingDeltaDegrees(lastBearingApplied, camBearing))
             : Infinity;
           const camNoop =
             effSp != null && effSp >= 1.5 ? CAM_NOOP_LNGLAT_DELTA : NOOP_LNGLAT_DELTA;
@@ -2595,7 +2597,7 @@ function DriveMapInner({
                 ...(applyLayoutOrEntry
                   ? { zoom: guarded.zoom, pitch: DRIVE_FOLLOW_PITCH_DEG }
                   : {}),
-                bearing: driveCamBearingSmoothedRef.current,
+                bearing: camBearing,
                 padding,
                 offset,
                 duration: 0,
@@ -2607,7 +2609,7 @@ function DriveMapInner({
                   center: guarded.center,
                   zoom: guarded.zoom,
                   pitch: DRIVE_FOLLOW_PITCH_DEG,
-                  bearing: driveCamBearingSmoothedRef.current,
+                  bearing: camBearing,
                   padding: padding as unknown as {
                     top: number;
                     bottom: number;
@@ -2617,7 +2619,8 @@ function DriveMapInner({
                   offset,
                 });
                 if (hardOk) {
-                  lastBearingApplied = driveCamBearingSmoothedRef.current;
+                  lastBearingApplied = camBearing;
+                  driveCamBearingSmoothedRef.current = camBearing;
                   driveCamResyncRef.current = false;
                   lastDroneOffsetRef.current = offset;
                   followWriteFailStreak = 0;
@@ -2625,7 +2628,8 @@ function DriveMapInner({
               } else {
                 const ok = safePanToCenter(map, panOpts);
                 if (ok) {
-                  lastBearingApplied = driveCamBearingSmoothedRef.current;
+                  lastBearingApplied = camBearing;
+                  driveCamBearingSmoothedRef.current = camBearing;
                   if (forceCamSync) driveCamResyncRef.current = false;
                   lastDroneOffsetRef.current = offset;
                   followWriteFailStreak = 0;
