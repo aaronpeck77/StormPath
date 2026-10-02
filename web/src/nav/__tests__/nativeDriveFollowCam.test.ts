@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   anticipateNativeCamBearingDeg,
   anticipateNativeCamStartMeters,
+  resolveTurnCameraBearing,
   createNativeDriveFollowCam,
   nativeDriveFollowZoomForSpeed,
   parseNativeDriveFollowCamera,
@@ -48,14 +49,14 @@ describe("createNativeDriveFollowCam", () => {
 });
 
 describe("anticipateNativeCamBearingDeg", () => {
-  it("faces the road ahead once the turn is here", () => {
+  it("waits about halfway into the turn", () => {
     const out = anticipateNativeCamBearingDeg({
       coreBearingDeg: 0,
       routeAheadBearingDeg: 40,
       speedMps: 12,
     });
-    expect(out).toBeGreaterThan(36);
-    expect(out).toBeLessThanOrEqual(40);
+    expect(out).toBeGreaterThan(16);
+    expect(out).toBeLessThan(24);
   });
 
   it("starts a small lead a little before the turn and stays quiet a block out", () => {
@@ -75,26 +76,70 @@ describe("anticipateNativeCamBearingDeg", () => {
       speedMps: 14,
       metersToManeuver: 60,
     });
-    expect(approaching).toBeGreaterThan(4);
-    expect(approaching).toBeLessThan(14);
+    expect(approaching).toBeGreaterThan(16);
+    expect(approaching).toBeLessThan(24);
   });
 
-  it("grows onto the next street as the car reaches the turn", () => {
+  it("holds halfway and then falls in with the car", () => {
     const city = anticipateNativeCamBearingDeg({
       coreBearingDeg: 0,
       routeAheadBearingDeg: 90,
       speedMps: 11,
-      metersToManeuver: 0,
+      metersToManeuver: 40,
     });
-    expect(city).toBe(90);
-    const midTurn = anticipateNativeCamBearingDeg({
-      coreBearingDeg: 50,
+    expect(city).toBeGreaterThan(40);
+    expect(city).toBeLessThan(50);
+    let hold = resolveTurnCameraBearing({
+      coreBearingDeg: 0,
+      routeAheadBearingDeg: 40,
+      speedMps: 11,
+      metersToManeuver: 50,
+      hold: null,
+    }).hold;
+    const grown = resolveTurnCameraBearing({
+      coreBearingDeg: 0,
       routeAheadBearingDeg: 90,
       speedMps: 11,
-      metersToManeuver: 15,
+      metersToManeuver: 40,
+      hold,
     });
-    expect(midTurn).toBeGreaterThan(70);
-    expect(midTurn).toBeLessThan(84);
+    expect(grown.bearingDeg).toBeGreaterThan(40);
+    expect(grown.bearingDeg).toBeLessThan(50);
+    hold = grown.hold;
+    const flicker = resolveTurnCameraBearing({
+      coreBearingDeg: 0,
+      routeAheadBearingDeg: 8,
+      speedMps: 11,
+      metersToManeuver: 40,
+      hold,
+    });
+    expect(flicker.bearingDeg).toBe(grown.bearingDeg);
+    const stopped = resolveTurnCameraBearing({
+      coreBearingDeg: 0,
+      routeAheadBearingDeg: 90,
+      speedMps: 0.2,
+      metersToManeuver: 12,
+      hold: flicker.hold,
+    });
+    expect(stopped.bearingDeg).toBe(grown.bearingDeg);
+    expect(stopped.hold).not.toBeNull();
+    const caught = resolveTurnCameraBearing({
+      coreBearingDeg: 50,
+      routeAheadBearingDeg: 90,
+      speedMps: 8,
+      metersToManeuver: 8,
+      hold: stopped.hold,
+    });
+    expect(caught.bearingDeg).toBe(50);
+    const done = resolveTurnCameraBearing({
+      coreBearingDeg: 84,
+      routeAheadBearingDeg: 90,
+      speedMps: 8,
+      metersToManeuver: 0,
+      hold: caught.hold,
+    });
+    expect(done.bearingDeg).toBe(90);
+    expect(done.hold).toBeNull();
   });
 
   it("sits on the forward heading once the car has finished the turn", () => {
@@ -134,10 +179,10 @@ describe("anticipateNativeCamBearingDeg", () => {
       routeAheadBearingDeg: 20,
       speedMps: 20,
     });
-    /* 30 deg of turn, onto the road ahead, not a spin back through 180. */
+    /* 30 deg of turn, halfway past north, not a spin back through 180. */
     const shortest = (((out - 350) % 360) + 540) % 360 - 180;
-    expect(shortest).toBeGreaterThan(28);
-    expect(shortest).toBeLessThanOrEqual(30);
+    expect(shortest).toBeGreaterThan(12);
+    expect(shortest).toBeLessThan(18);
     expect(out).toBeGreaterThanOrEqual(0);
     expect(out).toBeLessThan(360);
   });

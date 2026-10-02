@@ -157,7 +157,6 @@ import {
   driveCameraEaseOptions,
   resolveDriveFollowCameraBearingDeg,
   resolveTravelBearingDeg,
-  easeHeadingDeg,
   smoothDriveBearingDeg,
 } from "./mapDriveCamera";
 import { headingDeltaDegrees } from "../nav/forwardRoutePick";
@@ -168,8 +167,9 @@ import {
   shouldReclaimDrivePuckThisFrame,
 } from "./driveCameraRules";
 import {
-  anticipateNativeCamBearingDeg,
   anticipateNativeCamStartMeters,
+  resolveTurnCameraBearing,
+  type TurnCamHold,
   NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG,
   NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS,
   shouldHoldParkedFollowCam,
@@ -759,9 +759,8 @@ function DriveMapInner({
       : null;
 
   const driveCamBearingSmoothedRef = useRef<number | null>(null);
-  /** Core course and the route chord, swept so a 1 Hz sample cannot kick the turn. */
-  const driveCamCoreEasedRef = useRef<number | null>(null);
-  const driveCamAheadEasedRef = useRef<number | null>(null);
+  /** Halfway view held through a turn, including a stop at the light. */
+  const driveTurnCamHoldRef = useRef<TurnCamHold | null>(null);
   /** Core zoom steps ~1 Hz with speed — blend so the frame breathes instead of ticking. */
   const driveCamZoomSmoothedRef = useRef<number | null>(null);
   /** Last course-over-ground while GO is active — hold heading-up across off-route GPS gaps. */
@@ -2251,31 +2250,20 @@ function DriveMapInner({
               zoom: camZoom,
               puck: camCenter,
             });
-            /* Core's bearing steps at ~1 Hz. Sweep it, and the route chord, so the
-             * turn is one motion instead of a kick on each sample. */
+            /* Halfway into the turn, then wait — even at a light — until the car arrives. */
             const coreBearing = nativeCam.bearing;
             const aheadBearing = driveRouteBearingDegRef.current;
             const toTurn = metersToBannerManeuverRef.current;
-            const easedCore = easeHeadingDeg(driveCamCoreEasedRef.current, coreBearing, 48, dt);
-            driveCamCoreEasedRef.current = easedCore;
-            const easedAhead =
-              aheadBearing != null && Number.isFinite(aheadBearing)
-                ? easeHeadingDeg(driveCamAheadEasedRef.current, aheadBearing, 36, dt)
-                : null;
-            if (easedAhead != null) driveCamAheadEasedRef.current = easedAhead;
-            const targetBearing = anticipateNativeCamBearingDeg({
-              coreBearingDeg: easedCore,
-              routeAheadBearingDeg: easedAhead,
-              speedMps: effSp,
-              metersToManeuver: toTurn,
-            });
-            const aimBearing = anticipateNativeCamBearingDeg({
+            const turned = resolveTurnCameraBearing({
               coreBearingDeg: coreBearing,
               routeAheadBearingDeg: aheadBearing,
               speedMps: effSp,
               metersToManeuver: toTurn,
+              hold: driveTurnCamHoldRef.current,
             });
-            const leanDeg = Math.abs(headingDeltaDegrees(coreBearing, aimBearing));
+            driveTurnCamHoldRef.current = turned.hold;
+            const targetBearing = turned.bearingDeg;
+            const leanDeg = Math.abs(headingDeltaDegrees(coreBearing, targetBearing));
             const speedOk =
               effSp != null &&
               Number.isFinite(effSp) &&

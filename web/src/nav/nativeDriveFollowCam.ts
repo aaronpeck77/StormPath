@@ -167,21 +167,20 @@ export function shouldUseNativeFollowCam(input: {
 /**
  * Turn anticipation on top of Core's bearing.
  *
- * The camera is a drone behind the puck. Core's course is where the car points
- * now, and it arrives in steps, so copying it kicks the map through the turn.
- * Aim toward the road ahead. The lean starts small and grows as the turn
- * arrives, so the view is on the next street as the car comes out. The sweep
- * is rate-limited elsewhere; this only picks the heading. A full swing while
- * still a block out is too early. Only a reversal drops back to Core.
+ * The camera is a drone behind the puck. As a turn arrives it swings about
+ * halfway into the corner and waits there, including while the car is stopped
+ * at the light. When the car's own heading catches that halfway view, the
+ * camera falls in with the car and finishes straight down the next street.
+ * The exit heading only moves further into the same turn, so a flickering
+ * chord cannot flip the view back and forth.
  */
 export const NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS = 2.2;
 /** Above this, the chord is a U-turn / wrong-way, not the next street. */
 export const NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG = 125;
-/** Full lead through a city left or right. Fade only as it approaches a reversal. */
-export const NATIVE_CAM_ANTICIPATE_FULL_WEIGHT_DEG = 95;
-export const NATIVE_CAM_ANTICIPATE_FADE_FLOOR = 0.55;
-/** Fraction of the corner when the window first opens. The rest grows in as the turn arrives. */
-export const NATIVE_CAM_ANTICIPATE_LEAD_EDGE = 0.12;
+/** A bend smaller than this stays on the car's heading. */
+export const NATIVE_CAM_ANTICIPATE_COMMIT_DEG = 22;
+/** Halfway into the turn, then wait. */
+export const NATIVE_CAM_ANTICIPATE_HALF = 0.5;
 /** Once the car and the road ahead agree, the target is that forward heading. */
 export const NATIVE_CAM_ANTICIPATE_MATCH_DEG = 12;
 /** Start the lead a little before the banner turn. */
@@ -193,46 +192,106 @@ export function anticipateNativeCamStartMeters(speedMps: number): number {
   return Math.max(NATIVE_CAM_ANTICIPATE_START_M, speed * NATIVE_CAM_ANTICIPATE_START_SECONDS);
 }
 
+function wrapHeadingDeg(deg: number): number {
+  return ((deg % 360) + 360) % 360;
+}
+
+function headingDeltaSigned(fromDeg: number, toDeg: number): number {
+  return ((((toDeg - fromDeg) % 360) + 540) % 360) - 180;
+}
+
+/** Frozen halfway view for the turn the camera is already waiting on. */
+export type TurnCamHold = {
+  approachDeg: number;
+  exitDeg: number;
+  /** Exit heading no longer grows. The camera sits until the car arrives. */
+  frozen: boolean;
+};
+
+export function resolveTurnCameraBearing(input: {
+  coreBearingDeg: number;
+  routeAheadBearingDeg: number | null | undefined;
+  speedMps: number | null | undefined;
+  metersToManeuver?: number | null;
+  hold: TurnCamHold | null;
+}): { bearingDeg: number; hold: TurnCamHold | null } {
+  const core = input.coreBearingDeg;
+  if (!Number.isFinite(core)) return { bearingDeg: core, hold: input.hold };
+  const speed = input.speedMps;
+  const moving =
+    speed != null && Number.isFinite(speed) && speed >= NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS;
+  const toTurn = input.metersToManeuver;
+  const startM = anticipateNativeCamStartMeters(
+    speed != null && Number.isFinite(speed) ? speed : 0
+  );
+  const inWindow = toTurn == null || !Number.isFinite(toTurn) || toTurn <= startM;
+  const ahead = input.routeAheadBearingDeg;
+  const aheadOk = ahead != null && Number.isFinite(ahead);
+
+  let hold = input.hold;
+  if (hold && aheadOk && !hold.frozen && moving) {
+    const existing = headingDeltaSigned(hold.approachDeg, hold.exitDeg);
+    const next = headingDeltaSigned(hold.approachDeg, ahead);
+    const sameWay = existing === 0 || next === 0 || existing * next > 0;
+    if (sameWay && Math.abs(next) > Math.abs(existing) && Math.abs(next) <= NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG) {
+      hold = { ...hold, exitDeg: wrapHeadingDeg(ahead) };
+    }
+  }
+
+  if (hold) {
+    const turn = headingDeltaSigned(hold.approachDeg, hold.exitDeg);
+    const wait = wrapHeadingDeg(hold.approachDeg + turn * NATIVE_CAM_ANTICIPATE_HALF);
+    const progressed = headingDeltaSigned(hold.approachDeg, core);
+    const caughtUp =
+      Math.abs(turn) < 1 ||
+      (turn > 0
+        ? progressed >= turn * NATIVE_CAM_ANTICIPATE_HALF - 6
+        : progressed <= turn * NATIVE_CAM_ANTICIPATE_HALF + 6);
+    const finished = Math.abs(headingDeltaSigned(core, hold.exitDeg)) <= NATIVE_CAM_ANTICIPATE_MATCH_DEG;
+    const abandoned =
+      toTurn != null &&
+      Number.isFinite(toTurn) &&
+      toTurn > startM + 40 &&
+      Math.abs(progressed) < 12;
+    if (abandoned) return { bearingDeg: wrapHeadingDeg(core), hold: null };
+    if (finished) return { bearingDeg: wrapHeadingDeg(hold.exitDeg), hold: null };
+    const close = toTurn != null && Number.isFinite(toTurn) && toTurn <= 22;
+    const carHasTurned = Math.abs(progressed) > 10;
+    const frozen = hold.frozen || !moving || close || carHasTurned;
+    const nextHold = frozen === hold.frozen ? hold : { ...hold, frozen };
+    if (!caughtUp) return { bearingDeg: wait, hold: nextHold };
+    return { bearingDeg: wrapHeadingDeg(core), hold: nextHold };
+  }
+
+  if (!moving || !inWindow || !aheadOk) return { bearingDeg: wrapHeadingDeg(core), hold: null };
+  const delta = headingDeltaSigned(core, ahead);
+  const absD = Math.abs(delta);
+  if (absD <= NATIVE_CAM_ANTICIPATE_MATCH_DEG) return { bearingDeg: wrapHeadingDeg(ahead), hold: null };
+  if (absD < NATIVE_CAM_ANTICIPATE_COMMIT_DEG || absD > NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG) {
+    return { bearingDeg: wrapHeadingDeg(core), hold: null };
+  }
+  const approachDeg = wrapHeadingDeg(core);
+  const exitDeg = wrapHeadingDeg(ahead);
+  const close = toTurn != null && Number.isFinite(toTurn) && toTurn <= 22;
+  return {
+    bearingDeg: wrapHeadingDeg(approachDeg + delta * NATIVE_CAM_ANTICIPATE_HALF),
+    hold: { approachDeg, exitDeg, frozen: close || !moving },
+  };
+}
+
 export function anticipateNativeCamBearingDeg(input: {
   coreBearingDeg: number;
   routeAheadBearingDeg: number | null | undefined;
   speedMps: number | null | undefined;
   metersToManeuver?: number | null;
-  weight?: number;
 }): number {
-  const core = input.coreBearingDeg;
-  if (!Number.isFinite(core)) return core;
-  const ahead = input.routeAheadBearingDeg;
-  if (ahead == null || !Number.isFinite(ahead)) return core;
-  const speed = input.speedMps;
-  if (speed == null || !Number.isFinite(speed) || speed < NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS) {
-    return core;
-  }
-  const toTurn = input.metersToManeuver;
-  if (toTurn != null && Number.isFinite(toTurn)) {
-    if (toTurn > anticipateNativeCamStartMeters(speed)) return core;
-  }
-  const delta = (((ahead - core) % 360) + 540) % 360 - 180;
-  const absD = Math.abs(delta);
-  if (absD > NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG) return core;
-  if (absD <= NATIVE_CAM_ANTICIPATE_MATCH_DEG) return ((ahead % 360) + 360) % 360;
-  const fadeStart = NATIVE_CAM_ANTICIPATE_FULL_WEIGHT_DEG;
-  const fadeSpan = NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG - fadeStart;
-  const fade =
-    absD <= fadeStart
-      ? 1
-      : Math.max(NATIVE_CAM_ANTICIPATE_FADE_FLOOR, 1 - (absD - fadeStart) / fadeSpan);
-  const startM = anticipateNativeCamStartMeters(speed);
-  let proximity = 1;
-  if (toTurn != null && Number.isFinite(toTurn) && startM > 1) {
-    proximity = 1 - Math.min(1, Math.max(0, toTurn) / startM);
-  }
-  const shaped = proximity * proximity * proximity;
-  const blend = NATIVE_CAM_ANTICIPATE_LEAD_EDGE + (1 - NATIVE_CAM_ANTICIPATE_LEAD_EDGE) * shaped;
-  const weight =
-    input.weight != null && Number.isFinite(input.weight) ? input.weight * fade : blend * fade;
-  const next = core + delta * weight;
-  return ((next % 360) + 360) % 360;
+  return resolveTurnCameraBearing({
+    coreBearingDeg: input.coreBearingDeg,
+    routeAheadBearingDeg: input.routeAheadBearingDeg,
+    speedMps: input.speedMps,
+    metersToManeuver: input.metersToManeuver,
+    hold: null,
+  }).bearingDeg;
 }
 
 export const NATIVE_FOLLOW_CAM_WEB_MOVE_M = 0.28;
