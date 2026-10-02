@@ -7,6 +7,7 @@ import { DRIVE_PUCK_ANCHOR_SEVERE_DRIFT_PX } from "../drivePuckHealth";
 import {
   DRIVE_CAMERA_HEADING_REPAIR_COOLDOWN_MS,
   DRIVE_CAMERA_HEALTH_POLL_MS,
+  alignDriveBearingDeg,
   driveBearingCatchUp,
   driveBearingFrameStepDeg,
   jeffRepairCooldownMs,
@@ -44,14 +45,22 @@ describe("driveBearingCatchUp", () => {
   it("does not dump a turn into one frame after a hitch", () => {
     const step = driveBearingFrameStepDeg(90, 0.1);
     expect(step).toBeLessThan(16);
-    expect(step).toBeGreaterThan(8);
+    expect(step).toBeGreaterThan(6);
   });
 
-  it("straightens a 90 degree corner in about a second, not a slow sweep", () => {
-    const frame = driveBearingFrameStepDeg(90, 1 / 60);
-    const frames = Math.ceil(90 / frame);
-    expect(frames / 60).toBeLessThan(1.1);
-    expect(frames / 60).toBeGreaterThan(0.5);
+  it("lines a 90 degree road up in under a second, one small step at a time", () => {
+    let bearing = 0;
+    let frames = 0;
+    let maxStep = 0;
+    while (bearing < 85 && frames < 120) {
+      const next = alignDriveBearingDeg(bearing, 90, 1 / 60);
+      maxStep = Math.max(maxStep, next - bearing);
+      bearing = next;
+      frames += 1;
+    }
+    expect(frames / 60).toBeLessThan(0.6);
+    expect(frames / 60).toBeGreaterThan(0.3);
+    expect(maxStep).toBeLessThan(6);
   });
 
   it("takes a sharper step on a 90-degree turn", () => {
