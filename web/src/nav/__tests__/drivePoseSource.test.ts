@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CORE_POSE_STALE_MS,
+  corePuckRouteHoldMeters,
   drivePoseCountsAsSnapped,
   pickDrivePoseSource,
   shouldSnapPuckToRoute,
@@ -82,9 +83,18 @@ describe("pickDrivePoseSource", () => {
 });
 
 describe("shouldSnapPuckToRoute", () => {
-  it("skips the second snap on a Core pose and keeps it for GPS", () => {
+  it("skips the wide snap on a Core pose and keeps it for GPS", () => {
     expect(shouldSnapPuckToRoute("core")).toBe(false);
     expect(shouldSnapPuckToRoute("gps")).toBe(true);
+  });
+});
+
+describe("corePuckRouteHoldMeters", () => {
+  it("holds a Core puck that is a lane off the line and lets go before the other carriageway", () => {
+    expect(corePuckRouteHoldMeters(false)).toBeGreaterThan(8);
+    expect(corePuckRouteHoldMeters(false)).toBeLessThan(25);
+    expect(corePuckRouteHoldMeters(true)).toBeGreaterThan(corePuckRouteHoldMeters(false));
+    expect(corePuckRouteHoldMeters(true)).toBeLessThan(40);
   });
 });
 

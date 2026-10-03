@@ -111,6 +111,7 @@ import {
 import {
   drivePoseCountsAsSnapped,
   pickDrivePoseSource,
+  corePuckRouteHoldMeters,
   shouldSnapPuckToRoute,
   type DrivePoseSource,
 } from "../nav/drivePoseSource";
@@ -166,6 +167,7 @@ import { headingDeltaDegrees } from "../nav/forwardRoutePick";
 import { readDrivePuckAnchorDrift } from "./drivePuckHealth";
 import {
   alignDriveBearingDeg,
+  createDriveBearingAlignState,
   shouldReclaimDrivePuckThisFrame,
 } from "./driveCameraRules";
 import {
@@ -761,6 +763,8 @@ function DriveMapInner({
       : null;
 
   const driveCamBearingSmoothedRef = useRef<number | null>(null);
+  /** Steady turn sweep, same pace as a view change. Kept across frames. */
+  const driveBearingAlignRef = useRef(createDriveBearingAlignState());
   /** Halfway view held through a turn, including a stop at the light. */
   const driveTurnCamHoldRef = useRef<TurnCamHold | null>(null);
   /** Core zoom steps ~1 Hz with speed — blend so the frame breathes instead of ticking. */
@@ -2111,9 +2115,14 @@ function DriveMapInner({
           headingDeg: followHdg,
         });
 
-        // Snap to the route polyline when close enough (hysteresis reduces threshold flicker).
-        // Skipped on a Core pose — that point came out of Mapbox's own map matcher.
-        const geom = shouldSnapPuckToRoute(pose.source) ? puckSnapGeomRef.current : null;
+        // GPS uses the wide snap. Core is already matched, but a straight guess between
+        // samples walks off a curve and the next sample yanks the puck back. Hold Core
+        // on the drawn line when it is only a lane or two off.
+        const freeSnap = shouldSnapPuckToRoute(pose.source);
+        const holdCore = pose.source === "core";
+        const geom = freeSnap || holdCore ? puckSnapGeomRef.current : null;
+        const snapInM = freeSnap ? SNAP_IN_M : corePuckRouteHoldMeters(false);
+        const snapOutM = freeSnap ? SNAP_OUT_M : corePuckRouteHoldMeters(true);
         if (geom && geom.length >= 2) {
           const g0 = geom[0]!;
           const geomKey = `${geom.length}:${g0[0].toFixed(5)},${g0[1].toFixed(5)}`;
@@ -2147,7 +2156,7 @@ function DriveMapInner({
             targetLat = pt[1]!;
           };
           if (snapLatched) {
-            if (latM <= SNAP_OUT_M) {
+            if (latM <= snapOutM) {
               const rawAlong = snap.alongMeters;
               if (snappedAlongSmooth == null) snappedAlongSmooth = rawAlong;
               else {
@@ -2159,7 +2168,7 @@ function DriveMapInner({
               snapLatched = false;
               snappedAlongSmooth = null;
             }
-          } else if (latM < SNAP_IN_M) {
+          } else if (latM < snapInM) {
             snapLatched = true;
             snappedAlongSmooth = snap.alongMeters;
             applyAlongSmooth(snappedAlongSmooth);
@@ -2307,7 +2316,8 @@ function DriveMapInner({
             const camBearing = alignDriveBearingDeg(
               driveCamBearingSmoothedRef.current,
               targetBearing,
-              dt
+              dt,
+              driveBearingAlignRef.current
             );
             const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
             const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;
@@ -2519,7 +2529,8 @@ function DriveMapInner({
           const camBearing = alignDriveBearingDeg(
             driveCamBearingSmoothedRef.current,
             rawBrg,
-            dt
+            dt,
+            driveBearingAlignRef.current
           );
           const pos = readMapLngLat(marker.getLngLat());
           maybeReclaimPuck(reportPuckSight(map, pos, padding, offset), effSp);

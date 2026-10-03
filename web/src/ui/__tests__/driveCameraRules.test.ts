@@ -8,6 +8,7 @@ import {
   DRIVE_CAMERA_HEADING_REPAIR_COOLDOWN_MS,
   DRIVE_CAMERA_HEALTH_POLL_MS,
   alignDriveBearingDeg,
+  createDriveBearingAlignState,
   driveBearingCatchUp,
   driveBearingFrameStepDeg,
   jeffRepairCooldownMs,
@@ -48,19 +49,34 @@ describe("driveBearingCatchUp", () => {
     expect(step).toBeGreaterThan(6);
   });
 
-  it("lines a 90 degree road up in under a second, one small step at a time", () => {
+  it("sweeps a 90 degree turn in about the same time as a view change", () => {
+    const state = createDriveBearingAlignState();
     let bearing = 0;
     let frames = 0;
-    let maxStep = 0;
-    while (bearing < 85 && frames < 120) {
-      const next = alignDriveBearingDeg(bearing, 90, 1 / 60);
-      maxStep = Math.max(maxStep, next - bearing);
+    const steps: number[] = [];
+    while (bearing < 85 && frames < 180) {
+      const next = alignDriveBearingDeg(bearing, 90, 1 / 60, state);
+      steps.push(next - bearing);
       bearing = next;
       frames += 1;
     }
-    expect(frames / 60).toBeLessThan(0.6);
-    expect(frames / 60).toBeGreaterThan(0.3);
-    expect(maxStep).toBeLessThan(6);
+    const seconds = frames / 60;
+    expect(seconds).toBeGreaterThan(1.0);
+    expect(seconds).toBeLessThan(1.35);
+    const mid = steps.slice(8, 40);
+    const mean = mid.reduce((sum, step) => sum + step, 0) / mid.length;
+    for (const step of mid) {
+      expect(Math.abs(step - mean)).toBeLessThan(0.2);
+    }
+  });
+
+  it("does not whip a small heading twitch", () => {
+    const state = createDriveBearingAlignState();
+    let bearing = 0;
+    for (let i = 0; i < 8; i += 1) {
+      bearing = alignDriveBearingDeg(bearing, 4, 1 / 60, state);
+    }
+    expect(bearing).toBeLessThan(1);
   });
 
   it("takes a sharper step on a 90-degree turn", () => {

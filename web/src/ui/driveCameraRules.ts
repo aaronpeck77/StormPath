@@ -53,18 +53,71 @@ export type DriveBearingCatchUp = {
 };
 
 /**
- * Line the road up the middle. 200°/s turns a 90° corner in under half a
- * second. The step is capped by the frame time, so it cannot flip in one paint.
+ * A corner sweeps the way a Dr↔Mp view change does: one steady rotate, done
+ * in about 1.2s. A fixed degrees-per-second chase whipped every kink in the line.
  */
+export const DRIVE_BEARING_ALIGN_S = 1.2;
+/** A smaller change is polyline noise, not a turn. */
+export const DRIVE_BEARING_ALIGN_COMMIT_DEG = 8;
+/** Still used when a frame step has to be capped. Not the follow-cam sweep. */
 export const DRIVE_BEARING_ALIGN_DEG_S = 200;
+
+export type DriveBearingAlignState = {
+  /** Degrees per second for the turn in progress. Empty on a straight road. */
+  rateDegS: number | null;
+  sign: number;
+};
+
+export function createDriveBearingAlignState(): DriveBearingAlignState {
+  return { rateDegS: null, sign: 0 };
+}
+
+function shortestBearingDelta(from: number, to: number): number {
+  return ((((to - from) % 360) + 540) % 360) - 180;
+}
 
 export function alignDriveBearingDeg(
   prev: number | null,
   target: number,
-  dtS: number
+  dtS: number,
+  state?: DriveBearingAlignState
 ): number {
-  const dt = Number.isFinite(dtS) && dtS > 0 ? Math.min(0.05, dtS) : 0.016;
-  return easeHeadingDeg(prev, target, DRIVE_BEARING_ALIGN_DEG_S, dt);
+  const dt = Number.isFinite(dtS) && dtS > 0 ? Math.min(0.12, dtS) : 0.016;
+  if (!Number.isFinite(target)) {
+    return prev != null && Number.isFinite(prev) ? prev : target;
+  }
+  if (prev == null || !Number.isFinite(prev)) {
+    return ((target % 360) + 360) % 360;
+  }
+  const err = shortestBearingDelta(prev, target);
+  const abs = Math.abs(err);
+  const sign = err > 0 ? 1 : err < 0 ? -1 : 0;
+  let rate: number;
+  if (state) {
+    const sameWay = state.rateDegS != null && state.sign === sign && abs >= 1.5;
+    if (sameWay) {
+      const committedSpan = state.rateDegS! * DRIVE_BEARING_ALIGN_S;
+      if (abs > committedSpan + 10) {
+        state.rateDegS = abs / DRIVE_BEARING_ALIGN_S;
+      }
+      rate = state.rateDegS!;
+    } else if (abs >= DRIVE_BEARING_ALIGN_COMMIT_DEG) {
+      state.rateDegS = abs / DRIVE_BEARING_ALIGN_S;
+      state.sign = sign;
+      rate = state.rateDegS;
+    } else {
+      state.rateDegS = null;
+      state.sign = 0;
+      rate = Math.max(6, abs / DRIVE_BEARING_ALIGN_S);
+    }
+    if (abs < 1.5) {
+      state.rateDegS = null;
+      state.sign = 0;
+    }
+  } else {
+    rate = Math.max(6, abs / DRIVE_BEARING_ALIGN_S);
+  }
+  return easeHeadingDeg(prev, target, rate, dt);
 }
 /** Last part of the turn. Faster than cruise, slower than the corner sweep. */
 export const DRIVE_BEARING_SETTLE_YAW_DEG_S = 48;

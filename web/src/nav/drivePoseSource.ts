@@ -49,6 +49,19 @@ export function shouldSnapPuckToRoute(source: DrivePoseSource): boolean {
 }
 
 /**
+ * Core's point is already map-matched. A straight guess between those samples
+ * still walks off a curve, and the next sample yanks the puck back onto the line.
+ * Hold it on our drawn route when it is only a lane or two off — not so wide that
+ * the other carriageway wins.
+ */
+export const CORE_PUCK_ROUTE_HOLD_IN_M = 18;
+export const CORE_PUCK_ROUTE_HOLD_OUT_M = 30;
+
+export function corePuckRouteHoldMeters(latched: boolean): number {
+  return latched ? CORE_PUCK_ROUTE_HOLD_OUT_M : CORE_PUCK_ROUTE_HOLD_IN_M;
+}
+
+/**
  * A Core pose is already on the road, so the puck should use the snapped (tighter)
  * blend constant even though the JS snap never ran.
  */
