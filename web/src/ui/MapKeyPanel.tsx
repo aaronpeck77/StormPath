@@ -1,6 +1,8 @@
 import { ROUTE_PICK_SLOT_HEX } from "./mapRouteStyle";
 import { corridorHighlightHex } from "../nav/routeAlerts";
 import { nwsMapKindHex } from "../weatherAlerts/nwsMapKind";
+import { puckColorById } from "./puckColor";
+import { useSettingsStore } from "../state/settingsStore";
 
 /**
  * What every color / banner / pin on the map means while driving. Lives inside the About sheet
@@ -228,7 +230,7 @@ const PUCK_PIN_GROUP: LegendGroup = {
       label: "You / current GPS position",
       color: "#1a73e8",
       kind: "pin",
-      blurb: "Blue puck. Brighter and outlined while driving so it pops on either basemap.",
+      blurb: "Your position. Change the color in Info if it blends into the blue route line.",
     },
     {
       label: "Hazard pin",
@@ -296,6 +298,7 @@ const GROUPS: LegendGroup[] = [
 ];
 
 export function MapKeyPanel() {
+  const puckFill = puckColorById(useSettingsStore((s) => s.puckColor)).fill;
   return (
     <section className="about-sheet__panel about-sheet__panel--map-key">
       <h3 className="about-sheet__h3">Map key</h3>
@@ -310,7 +313,11 @@ export function MapKeyPanel() {
           <ul className="map-key__rows">
             {group.rows.map((row) => (
               <li key={row.label} className="map-key__row">
-                <Swatch color={row.color} kind={row.kind} dashed={row.dashed} />
+                <Swatch
+                  color={row.label.startsWith("You") ? puckFill : row.color}
+                  kind={row.kind}
+                  dashed={row.dashed}
+                />
                 <div className="map-key__row-text">
                   <span className="map-key__row-label">{row.label}</span>
                   <span className="map-key__row-blurb">{row.blurb}</span>

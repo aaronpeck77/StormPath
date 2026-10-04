@@ -568,6 +568,10 @@
 :root {
   --sp-safe-top: env(safe-area-inset-top, 0px);
   --sp-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --puck-highlight: #6bb8ff;
+  --puck-fill: #1a73e8;
+  --puck-edge: #0a3d91;
+  --puck-stroke: #fff;
 }
 
 .app-shell {
@@ -1614,6 +1618,40 @@ html:has(.drive-map--native-shell) #root {
   font-size: 0.68rem;
   line-height: 1.32;
   color: #64748b;
+}
+
+.about-sheet__puck-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.about-sheet__puck-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 17, 21, 0.85);
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.about-sheet__puck-color--active {
+  border-color: rgba(99, 102, 241, 0.55);
+  background: rgba(99, 102, 241, 0.22);
+  color: #e8eaed;
+}
+
+.about-sheet__puck-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 /* Whole sheet is the only scroll container ? no nested scrollers */
@@ -3391,15 +3429,25 @@ html:has(.drive-map--native-shell) #root {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: radial-gradient(circle at 32% 28%, #5eb3ff 0%, #1a73e8 42%, #0d47a1 100%);
-  border: 2px solid #fff;
+  background: radial-gradient(
+    circle at 32% 28%,
+    var(--puck-highlight) 0%,
+    var(--puck-fill) 42%,
+    var(--puck-edge) 100%
+  );
+  border: 2px solid var(--puck-stroke);
   box-shadow:
     0 1px 2px rgba(255, 255, 255, 0.35) inset,
     0 2px 5px rgba(0, 0, 0, 0.35);
 }
 
 .map-user-puck--driving {
-  background: radial-gradient(circle at 32% 26%, #6bb8ff 0%, #1a73e8 38%, #0a3d91 100%);
+  background: radial-gradient(
+    circle at 32% 26%,
+    var(--puck-highlight) 0%,
+    var(--puck-fill) 38%,
+    var(--puck-edge) 100%
+  );
   box-shadow:
     0 1px 2px rgba(255, 255, 255, 0.45) inset,
     0 3px 8px rgba(0, 0, 0, 0.4),
@@ -13498,8 +13546,8 @@ html.route-info-open .route-progress-callout-panel--expanded {
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: #3b82f6;
-  border: 2px solid #fff;
+  background: var(--puck-fill);
+  border: 2px solid var(--puck-stroke);
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
 }
 

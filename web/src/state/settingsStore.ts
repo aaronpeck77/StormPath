@@ -8,6 +8,7 @@ import {
   writeTrafficSettingOn,
 } from "../layerStartupPrefs";
 import { safeStorage } from "../storage/safeStorage";
+import { puckColorById, type PuckColorId } from "../ui/puckColor";
 import {
   dismissDataSaverHint as persistDismissDataSaverHint,
   LS_DATA_SAVER,
@@ -41,6 +42,7 @@ const LS_VOICE = "stormpath-setting-voice-guided";
 const LS_GPS_HIGH_REFRESH = "stormpath-setting-gps-high-refresh";
 const LS_MAP_MATCHING = "stormpath-setting-map-matching-enabled";
 const LS_LANDSCAPE_SIDE_HAND = "stormpath-setting-landscape-side-hand";
+const LS_PUCK_COLOR = "stormpath-setting-puck-color";
 const LS_RADAR_DISPLAY_MODE = "stormpath-setting-radar-display-mode";
 
 export type LandscapeSideHand = "right" | "left";
@@ -67,6 +69,8 @@ export interface AppSettings {
   /** While navigating, snap GPS to the road network via Mapbox Map Matching (Plus). */
   mapMatchingEnabled: boolean;
   landscapeSideHand: LandscapeSideHand;
+  /** Map puck. Blue is the default; the others stand off the blue route line. */
+  puckColor: PuckColorId;
 }
 
 function readBoolFlag(key: string, defaultValue: boolean): boolean {
@@ -110,6 +114,7 @@ export interface SettingsState {
   mapMatchingEnabled: boolean;
   /** Landscape / side view only; portrait ignores. */
   landscapeSideHand: LandscapeSideHand;
+  puckColor: PuckColorId;
 
   setStormEnabled: (on: boolean) => void;
   setTrafficEnabled: (on: boolean) => void;
@@ -124,6 +129,7 @@ export interface SettingsState {
   setGpsHighRefreshEnabled: (on: boolean) => void;
   setMapMatchingEnabled: (on: boolean) => void;
   setLandscapeSideHand: (hand: LandscapeSideHand) => void;
+  setPuckColor: (color: PuckColorId) => void;
   /**
    * Bulk-apply all 8 persisted toggles from the About sheet in a single store update.
    *
@@ -150,6 +156,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   /* Default off — DIY route-snap + iOS native nav cover guidance; Matching is a paid Plus burn. */
   mapMatchingEnabled: readBoolFlag(LS_MAP_MATCHING, false),
   landscapeSideHand: safeStorage.get(LS_LANDSCAPE_SIDE_HAND) === "left" ? "left" : "right",
+  puckColor: puckColorById(safeStorage.get(LS_PUCK_COLOR)).id,
 
   setStormEnabled: (on) => {
     writeStormSettingOn(on);
@@ -199,6 +206,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     safeStorage.set(LS_LANDSCAPE_SIDE_HAND, hand);
     set({ landscapeSideHand: hand });
   },
+  setPuckColor: (color) => {
+    const id = puckColorById(color).id;
+    safeStorage.set(LS_PUCK_COLOR, id);
+    set({ puckColor: id });
+  },
   applySettings: (next) => {
     /* Persist each field through its existing helper so the storage shape stays identical to
      * the individual setters (legacy fallback keys in `layerStartupPrefs`, `safeStorage` for
@@ -215,6 +227,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     writeBoolFlag(LS_GPS_HIGH_REFRESH, next.gpsHighRefreshEnabled);
     writeBoolFlag(LS_MAP_MATCHING, next.mapMatchingEnabled);
     safeStorage.set(LS_LANDSCAPE_SIDE_HAND, next.landscapeSideHand);
+    safeStorage.set(LS_PUCK_COLOR, puckColorById(next.puckColor).id);
     set({
       stormEnabled: next.stormEnabled,
       trafficEnabled: next.trafficEnabled,
@@ -227,6 +240,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       gpsHighRefreshEnabled: next.gpsHighRefreshEnabled,
       mapMatchingEnabled: next.mapMatchingEnabled,
       landscapeSideHand: next.landscapeSideHand,
+      puckColor: puckColorById(next.puckColor).id,
     });
   },
 }));

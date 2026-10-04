@@ -17,6 +17,7 @@ import { stormpathVersionChipLabel, stormpathVersionLabel } from "../appVersion"
 import { stormpathBuildFlavor, stormpathFlavorChipLabel } from "../config/buildFlavor";
 import { safeStorage } from "../storage/safeStorage";
 import { MapKeyPanel } from "./MapKeyPanel";
+import { PUCK_COLORS, puckColorById, type PuckColorId } from "./puckColor";
 import { StormPathSourcesAttribution } from "./StormPathSourcesAttribution";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import type { RadarDisplayMode } from "../state/settingsStore";
@@ -70,6 +71,7 @@ type Props = {
     mapMatchingEnabled: boolean;
     /** Landscape / side view only — portrait layout ignores this */
     landscapeSideHand: "right" | "left";
+    puckColor: PuckColorId;
   };
   onSettings: (next: Props["settings"]) => void;
   /** Replays the first-launch coachmark walk-through. Resets the suppression flag and asks
@@ -183,6 +185,7 @@ export function AboutSheet({
       settings.dataSaverEnabled ? "on" : "off"
     }`,
     `Landscape UI: ${settings.landscapeSideHand === "left" ? "left hand" : "right hand"}`,
+    `Puck color: ${puckColorById(settings.puckColor).label.toLowerCase()}`,
     `Providers: mapbox=${env.mapboxToken ? "on" : "off"}, openweather=${
       env.openWeatherApiKey ? "on" : "off"
     }, tomorrowIo=${env.tomorrowIoApiKey ? "on" : "off"}`,
@@ -544,6 +547,33 @@ export function AboutSheet({
                 <p className="about-sheet__tier-preview-hint">
                   Only applies in landscape. Portrait stays the same — use this when you mount the phone on your other
                   side.
+                </p>
+              </div>
+
+              <div className="about-sheet__settings-card about-sheet__tier-preview" role="group" aria-label="Puck color">
+                <p className="about-sheet__tier-preview-label">Puck color</p>
+                <div className="about-sheet__puck-colors">
+                  {PUCK_COLORS.map((color) => {
+                    const active = settings.puckColor === color.id;
+                    return (
+                      <button
+                        key={color.id}
+                        type="button"
+                        className={`about-sheet__puck-color${active ? " about-sheet__puck-color--active" : ""}`}
+                        aria-pressed={active}
+                        onClick={() => onSettings({ ...settings, puckColor: color.id })}
+                      >
+                        <span
+                          className="about-sheet__puck-swatch"
+                          style={{ background: color.fill, borderColor: color.stroke }}
+                        />
+                        {color.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="about-sheet__tier-preview-hint">
+                  The route line stays blue. Orange, gold, or white is easier to pick out on it.
                 </p>
               </div>
 

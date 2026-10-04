@@ -44,6 +44,7 @@ export function AppAboutSheetHost({
   const gpsHighRefreshEnabled = useSettingsStore((s) => s.gpsHighRefreshEnabled);
   const mapMatchingEnabled = useSettingsStore((s) => s.mapMatchingEnabled);
   const landscapeSideHand = useSettingsStore((s) => s.landscapeSideHand);
+  const puckColor = useSettingsStore((s) => s.puckColor);
 
   const settings = useMemo(
     () => ({
@@ -58,6 +59,7 @@ export function AppAboutSheetHost({
       gpsHighRefreshEnabled,
       mapMatchingEnabled,
       landscapeSideHand,
+      puckColor,
     }),
     [
       radarEnabled,
@@ -71,6 +73,7 @@ export function AppAboutSheetHost({
       gpsHighRefreshEnabled,
       mapMatchingEnabled,
       landscapeSideHand,
+      puckColor,
     ]
   );
 
