@@ -85,6 +85,7 @@ import { useSeriousHazardAutoFly } from "./nav/useSeriousHazardAutoFly";
 import { isDriveOffRouteForwardFraming, lockedRouteShouldAvoidMotorway } from "./nav/driveAlwaysAhead";
 import {
   nativeGeometryApplyPolicy,
+  rerouteAsksForTurnAlreadyMissed,
   shouldAdoptNativeRouteGeometry,
   shouldReplaceGoPolylineOnNativeAdopt,
 } from "./nav/lockedRouteGeometryGuard";
@@ -171,6 +172,7 @@ import { useArrivalDetection } from "./nav/useArrivalDetection";
 import { useMapboxTrafficLineSnap } from "./nav/useMapboxTrafficLineSnap";
 import { mapMatchingBuildAllowed } from "./services/mapboxMapMatching";
 import { useNavigationGuidance } from "./nav/useNavigationGuidance";
+import { applyPuckColor } from "./ui/puckColor";
 import { useSettingsStore } from "./state/settingsStore";
 import { useRouteCompareActions } from "./state/useRouteCompareActions";
 import { useTripPlanStore } from "./state/tripPlanStore";
@@ -216,6 +218,10 @@ export default function App() {
   const settingMapMatchingEnabled = useSettingsStore((s) => s.mapMatchingEnabled);
   /** Landscape / side view only — CSS mirrors chrome when "left"; portrait ignores */
   const settingLandscapeSideHand = useSettingsStore((s) => s.landscapeSideHand);
+  const settingPuckColor = useSettingsStore((s) => s.puckColor);
+  useEffect(() => {
+    applyPuckColor(settingPuckColor);
+  }, [settingPuckColor]);
   /* Phase 4e3: the About sheet is the only consumer of the individual `setSettingX` setters.
    * `applySettings` writes through all 8 fields in one batched store update and runs each
    * persistence side once. Per-toggle handlers elsewhere (toolbar Radar overlay, etc.) operate
@@ -912,6 +918,20 @@ export default function App() {
         return false;
       }
       const force = Boolean(opts?.force);
+      if (
+        force &&
+        user &&
+        rerouteAsksForTurnAlreadyMissed({
+          geometry,
+          userLngLat: user,
+          travelHeadingDeg: driveLastTravelBearingDegRef.current,
+        })
+      ) {
+        if (import.meta.env.DEV) {
+          console.info("[nav] ignored Core reroute — turn is already too late");
+        }
+        return false;
+      }
       const adopted = adoptLockedRouteGeometry(geometry, { force });
       if (!adopted) return false;
       const lockedId =

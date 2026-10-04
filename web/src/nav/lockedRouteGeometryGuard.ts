@@ -1,6 +1,8 @@
+import { headingDeltaDegrees } from "./forwardRoutePick";
 import {
   closestPointOnPolyline,
   haversineMeters,
+  initialBearingDegrees,
   pointAtAlongMeters,
   polylineLengthMeters,
 } from "./routeGeometry";
@@ -66,9 +68,40 @@ export function routeGeometryAgreesWithLocked(
  * Mid-trip Core reroute from the driver's GPS (left the Go lock).
  * Session-start "fastest" steal starts on the locked corridor — this must stay false then.
  */
-/** ~70 ft — adopt a Core reroute once the driver has clearly left the lock. */
-export const OFF_ROUTE_NATIVE_USER_LATERAL_M = 22;
+/**
+ * Adopt a Core reroute only after the car is clearly off the lock.
+ * An overpass or a tight street often shifts GPS by 20–35 m. That is not a new route.
+ */
+export const OFF_ROUTE_NATIVE_USER_LATERAL_M = 42;
 export const OFF_ROUTE_NATIVE_START_NEAR_USER_M = 150;
+/** How far along a replacement line we read before deciding it is a missed turn. */
+export const LATE_REROUTE_LOOK_M = 36;
+/** A replacement that leaves this far from the way the car is pointing is already too late. */
+export const LATE_REROUTE_DEPART_DELTA_DEG = 50;
+
+/**
+ * True when a mid-trip replacement asks for a turn the car is not already making.
+ * Under an overpass the fix jumps, Core builds a line that turns immediately, and
+ * the driver is past that turn before the line appears. Keep the lock instead.
+ */
+export function rerouteAsksForTurnAlreadyMissed(input: {
+  geometry: LngLat[];
+  userLngLat: LngLat | null | undefined;
+  travelHeadingDeg: number | null | undefined;
+}): boolean {
+  const heading = input.travelHeadingDeg;
+  const user = input.userLngLat;
+  const geometry = input.geometry;
+  if (!user || geometry.length < 2) return false;
+  if (heading == null || !Number.isFinite(heading)) return false;
+  const snap = closestPointOnPolyline(user, geometry);
+  const from = pointAtAlongMeters(geometry, snap.alongMeters);
+  const to = pointAtAlongMeters(geometry, snap.alongMeters + LATE_REROUTE_LOOK_M);
+  if (haversineMeters(from, to) < 8) return false;
+  const depart = initialBearingDegrees(from, to);
+  if (!Number.isFinite(depart)) return false;
+  return headingDeltaDegrees(heading, depart) > LATE_REROUTE_DEPART_DELTA_DEG;
+}
 
 export function shouldForceAdoptOffRouteNativeGeometry(input: {
   candidate: LngLat[];

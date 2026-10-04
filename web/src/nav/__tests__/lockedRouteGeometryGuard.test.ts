@@ -3,6 +3,7 @@ import { lockedRouteShouldAvoidMotorway } from "../driveAlwaysAhead";
 import {
   nativeGeometryApplyPolicy,
   nativeRouteChangedShouldForce,
+  rerouteAsksForTurnAlreadyMissed,
   routeGeometryAgreesWithLocked,
   shouldAdoptNativeRouteGeometry,
   shouldFeedNativeProgressToUi,
@@ -132,6 +133,53 @@ describe("shouldForceAdoptOffRouteNativeGeometry", () => {
         userLngLat: user,
       })
     ).toBe(true);
+  });
+
+  it("does not treat an overpass-sized slip as leaving the road", () => {
+    const lat = 38.63;
+    const lng = -90.2;
+    const north = 400 / 111320;
+    const east30 = 30 / (111320 * Math.cos((lat * Math.PI) / 180));
+    const road: LngLat[] = [
+      [lng, lat],
+      [lng, lat + north],
+    ];
+    const slipped: LngLat = [lng + east30, lat + north / 2];
+    expect(
+      shouldForceAdoptOffRouteNativeGeometry({
+        candidate: [slipped, [slipped[0] + east30, slipped[1]]],
+        locked: road,
+        userLngLat: slipped,
+      })
+    ).toBe(false);
+  });
+});
+
+describe("rerouteAsksForTurnAlreadyMissed", () => {
+  const lat = 38.63;
+  const lng = -90.2;
+  const north = 200 / 111320;
+  const east = 200 / (111320 * Math.cos((lat * Math.PI) / 180));
+  const user: LngLat = [lng, lat];
+
+  it("keeps the lock when the replacement turns and the car is still going straight", () => {
+    expect(
+      rerouteAsksForTurnAlreadyMissed({
+        geometry: [user, [lng + east, lat]],
+        userLngLat: user,
+        travelHeadingDeg: 0,
+      })
+    ).toBe(true);
+  });
+
+  it("allows a replacement that continues the way the car is pointing", () => {
+    expect(
+      rerouteAsksForTurnAlreadyMissed({
+        geometry: [user, [lng, lat + north]],
+        userLngLat: user,
+        travelHeadingDeg: 0,
+      })
+    ).toBe(false);
   });
 });
 
