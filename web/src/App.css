@@ -3017,6 +3017,12 @@ html:has(.drive-map--native-shell) #root {
   gap: 2px;
 }
 
+.nav-dest-compact > .nav-dest-compact--tap {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
 .nav-dest-compact--tap {
   display: block;
   width: 100%;

@@ -69,11 +69,13 @@ type Props = {
 
   /* Via-stop bar */
   viaStops: TripStop[];
+  activeViaIndex: number;
   addingViaStop: boolean;
   canAddStop: boolean;
   onStartAddStop: () => void;
   onCancelAddStop: () => void;
   handleRemoveViaStop: (index: number) => void;
+  handleSkipViaStop: (index: number) => void;
 
   /* Bottom toolbar */
   handleViewModeChange: (m: MapViewMode) => void;
@@ -148,11 +150,13 @@ export function AppBottomChrome({
   suggestLoading,
   enableSuggestions,
   viaStops,
+  activeViaIndex,
   addingViaStop,
   canAddStop,
   onStartAddStop,
   onCancelAddStop,
   handleRemoveViaStop,
+  handleSkipViaStop,
   handleViewModeChange,
   onOpenSaved,
   handleGo,
@@ -309,15 +313,26 @@ export function AppBottomChrome({
                 <div className="nav-bottom-dock__search-col">
                   <div className="nav-search-dock">
                     {showCompactDest ? (
-                      <button
-                        type="button"
-                        className="nav-dest-compact nav-dest-compact--tap"
-                        onClick={handleCompactDestOpen}
-                      >
-                        <span className="nav-dest-compact-label" title={destinationLabel}>
-                          {destinationLabel || "Destination"}
-                        </span>
-                      </button>
+                      <div className="nav-dest-compact">
+                        <button
+                          type="button"
+                          className="nav-dest-compact--tap"
+                          onClick={handleCompactDestOpen}
+                        >
+                          <span className="nav-dest-compact-label" title={destinationLabel}>
+                            {destinationLabel || "Destination"}
+                          </span>
+                        </button>
+                        {navigationStarted && activeViaIndex < viaStops.length ? (
+                          <button
+                            type="button"
+                            className="nav-dest-compact-btn"
+                            onClick={() => handleSkipViaStop(activeViaIndex)}
+                          >
+                            Skip stop
+                          </button>
+                        ) : null}
+                      </div>
                     ) : (
                       <>
                         <SearchBar

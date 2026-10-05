@@ -2,6 +2,10 @@ import {
   DRIVE_FORWARD_BEARING_TOLERANCE_DEG,
   pickBestForwardRoute,
 } from "../nav/forwardRoutePick";
+import {
+  ALTERNATE_MAX_DISTANCE_FACTOR,
+  ALTERNATE_MAX_DURATION_FACTOR,
+} from "../nav/routePreference";
 import type { LngLat, MapboxRouteIncident, NavRoute, PostedSpeedSample, RouteTurnStep, TripPlan } from "../nav/types";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { detectRouteTollsFromLegs } from "../nav/detectRouteTolls";
@@ -976,43 +980,35 @@ export async function collectMapboxRouteVariants(
       );
     };
 
-    const softNoMw = noMwSorted.filter(isPreferredAlternate);
+    const withinProgress = (r: MbRoute): boolean => {
+      const dur = r.duration ?? Infinity;
+      const dist = r.distance ?? Infinity;
+      const aDur = aRaw.duration ?? 0;
+      const aDist = aRaw.distance ?? 0;
+      if (!(aDur > 0) || !(aDist > 0)) return false;
+      return dur <= aDur * ALTERNATE_MAX_DURATION_FACTOR && dist <= aDist * ALTERNATE_MAX_DISTANCE_FACTOR;
+    };
+    const progressAlternate = (r: MbRoute): boolean =>
+      isPreferredAlternate(r) && withinProgress(r);
+
+    const noMwFit = noMwSorted.filter(progressAlternate);
+    const primaryFit = primarySorted.slice(1).filter(progressAlternate);
+    const pool = [...primaryFit, ...noMwFit];
     let bRaw: MbRoute | undefined =
       (trailSamples
-        ? pickMbRouteByTrail(softNoMw, trailSamples, [navA.geometry])
-        : undefined) ?? softNoMw[0];
+        ? pickMbRouteByTrail(pool, trailSamples, [navA.geometry])
+        : undefined) ?? undefined;
 
-    if (!bRaw) {
-      bRaw = primarySorted.slice(1).find(isPreferredAlternate);
-    }
-
-    /**
-     * Always surface a second option when Mapbox (or no-interstate) returned one.
-     * Soft filters above are preferred; last resort keeps any non-identical shape so
-     * the cycle control is not stuck on Main-only.
-     */
-    if (!bRaw) {
-      bRaw =
-        primarySorted.slice(1).find((r) => {
-          const line = mbRouteLightLine(r);
-          return Boolean(line) && !sameRouteShapeLine(line!, navA.geometry);
-        }) ??
-        noMwSorted.find((r) => {
-          const line = mbRouteLightLine(r);
-          return Boolean(line) && !sameRouteShapeLine(line!, navA.geometry);
-        }) ??
-        primarySorted[1] ??
-        noMwSorted[0];
+    /* Closest in time to Main. A no-interstate line wins only when it is
+     * nearly as quick — a long wander around the highway is thrown away. */
+    if (!bRaw && pool.length) {
+      const bestDur = Math.min(...pool.map((r) => r.duration ?? Infinity));
+      const close = pool.filter((r) => (r.duration ?? Infinity) <= bestDur * 1.08);
+      bRaw = close.find((r) => noMwSorted.includes(r)) ?? close[0] ?? pool[0];
     }
 
     if (bRaw) {
-      const fromNoMw = noMwSorted.includes(bRaw);
-      const navB = routeFromDirectionsApi(
-        bRaw,
-        "r-b",
-        fromNoMw ? "hazardSmart" : "balanced",
-        fromNoMw ? "No interstate" : "Alternate"
-      );
+      const navB = routeFromDirectionsApi(bRaw, "r-b", "balanced", "Alternate");
       if (navB) {
         /* Overlapping corridors are fine; identical clones must not occupy slot B
          * or the later point-exclude fetch never runs. */
@@ -1146,7 +1142,7 @@ export async function collectMapboxRouteVariants(
   return out.slice(0, Math.min(targetPrimaryCount, out.length));
 }
 
-const MAX_FORCED_ALT_DURATION_FACTOR = 1.5;
+const MAX_FORCED_ALT_DURATION_FACTOR = ALTERNATE_MAX_DURATION_FACTOR;
 
 async function fetchForcedDistinctAlternate(
   accessToken: string,
@@ -1185,6 +1181,9 @@ async function fetchForcedDistinctAlternate(
       if (!navB) continue;
       if (sameRouteShapeLine(navA.geometry, navB.geometry)) continue;
       if (navB.baseEtaMinutes > maxDurMin) continue;
+      const mainDist = polylineLengthMeters(navA.geometry);
+      const altDist = polylineLengthMeters(navB.geometry);
+      if (mainDist > 0 && altDist > mainDist * ALTERNATE_MAX_DISTANCE_FACTOR) continue;
       return navB;
     }
   } catch {

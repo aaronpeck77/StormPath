@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { reloadPersistedSettings, useSettingsStore } from "../../state/settingsStore";
+import { __resetSafeStorageForTests, safeStorage } from "../../storage/safeStorage";
 import { applyPuckColor, puckColorById } from "../puckColor";
 
 describe("puckColorById", () => {
@@ -14,5 +16,17 @@ describe("puckColorById", () => {
 
   it("does nothing when there is no page yet", () => {
     expect(() => applyPuckColor("gold")).not.toThrow();
+  });
+});
+
+describe("reloadPersistedSettings", () => {
+  it("picks up a puck color saved before the store was created", () => {
+    __resetSafeStorageForTests();
+    useSettingsStore.setState({ puckColor: "blue" });
+    safeStorage.set("stormpath-setting-puck-color", "orange");
+    reloadPersistedSettings();
+    expect(useSettingsStore.getState().puckColor).toBe("orange");
+    __resetSafeStorageForTests();
+    reloadPersistedSettings();
   });
 });

@@ -18,7 +18,6 @@ type Props = {
   bannerCurrentRoadName?: string | null;
   bannerCurrentRoadRef?: string | null;
   bannerTravelingStepIndex?: number | null;
-  viewMode: string;
   personalForkShowChip: boolean;
   personalForkShowCommittedChip: boolean;
   personalForkOffer: PersonalForkOffer | null;
@@ -52,7 +51,6 @@ export function AppTopNavCluster({
   bannerCurrentRoadName = null,
   bannerCurrentRoadRef = null,
   bannerTravelingStepIndex = null,
-  viewMode,
   personalForkShowChip,
   personalForkShowCommittedChip,
   personalForkOffer,
@@ -87,7 +85,7 @@ export function AppTopNavCluster({
             currentRoadName={bannerCurrentRoadName}
             currentRoadRef={bannerCurrentRoadRef}
             travelingStepIndex={bannerTravelingStepIndex}
-            glanceable={navigationStarted && viewMode === "drive"}
+            glanceable={navigationStarted}
           />
           {(personalForkShowChip || personalForkShowCommittedChip) && personalForkOffer ? (
             <YourRouteChip

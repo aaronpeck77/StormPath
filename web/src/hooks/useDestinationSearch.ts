@@ -147,14 +147,14 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
   );
 
   const handleRemoveViaStop = useCallback(
-    (index: number) => {
+    async (index: number) => {
       const finalDest = useTripPlanStore.getState().destLngLat;
       const finalLabel = useTripPlanStore.getState().destinationLabel;
       const next = useTripPlanStore.getState().viaStops.filter((_, i) => i !== index);
       setViaStops(next);
       setActiveViaIndex((i) => Math.min(i, Math.max(0, next.length)));
       if (finalDest) {
-        void computeRoutes(finalDest, finalLabel.trim() || "Destination", {
+        await computeRoutes(finalDest, finalLabel.trim() || "Destination", {
           preserveNavigation: navigationStarted,
         });
       }

@@ -1,6 +1,8 @@
 import { isReverseRejoinRoute } from "./detourRejoin";
 import { pickBestForwardRoute } from "./forwardRoutePick";
+import { polylineLengthMeters } from "./routeGeometry";
 import { routeDoublesBack } from "./routeDoublesBack";
+import { routeFitsAlternateCap, type RoutingPreference } from "./routePreference";
 import type { LngLat, NavRoute, TripPlan } from "./types";
 
 export type SoftRestartLegPatch = {
@@ -32,44 +34,49 @@ export function offRouteReplanSlotIds(routes: NavRoute[]): string[] {
   return routes.filter((r) => r.geometry.length >= 2).slice(0, 2).map((r) => r.id);
 }
 
-/** Pick forward A (and B when Mapbox gave a distinct alternate). */
+function asMain(route: NavRoute): NavRoute {
+  return { ...route, id: "r-a", role: "fastest", label: "Main" };
+}
+
+function asAlternate(route: NavRoute, id: "r-a" | "r-b"): NavRoute {
+  return { ...route, id, role: "balanced", label: "Alternate" };
+}
+
+function alternateFits(candidate: NavRoute, main: NavRoute): boolean {
+  return routeFitsAlternateCap({
+    etaMinutes: candidate.baseEtaMinutes,
+    distanceM: polylineLengthMeters(candidate.geometry),
+    mainEtaMinutes: main.baseEtaMinutes,
+    mainDistanceM: polylineLengthMeters(main.geometry),
+  });
+}
+
+/**
+ * Pick a forward line from here. Fastest locks Main. Alternate locks the
+ * different line when it is still within the progress cap, and keeps Main
+ * available. A line that turns back or returns to a point already passed
+ * is dropped — that is how the remaining time grew as he got closer.
+ */
 export function assignOffRouteReplanSlots(
   fresh: NavRoute[],
   userLngLat: LngLat,
-  headingDeg: number | null
+  headingDeg: number | null,
+  preference: RoutingPreference = "fastest"
 ): NavRoute[] {
   const usable = fresh.filter((r) => r.geometry.length >= 2);
   const forward = usable.filter(
     (r) => !isReverseRejoinRoute(r, userLngLat, headingDeg) && !routeDoublesBack(r.geometry)
   );
-  /* A loop back to a highway behind the driver, or a line that returns to a
-   * point it already passed, is not better than no replan. Installing it is
-   * how the remaining time grew as he got closer to the pin. */
   if (forward.length === 0) return [];
   const primary = pickBestForwardRoute(forward, userLngLat, headingDeg) ?? forward[0];
   if (!primary) return [];
-  /** Keep no-interstate / backroads identity when soft restart fetched with preferBackroads. */
-  const primaryBackroads =
-    primary.role === "hazardSmart" || primary.role === "balanced";
-  const a: NavRoute = {
-    ...primary,
-    id: "r-a",
-    role: primaryBackroads ? primary.role! : "fastest",
-    label: primaryBackroads
-      ? primary.role === "hazardSmart"
-        ? "No interstate"
-        : primary.label?.trim() || "Alternate"
-      : "Main",
-  };
-  const alt = forward.find((r) => r !== primary);
-  if (!alt) return [a];
-  const b: NavRoute = {
-    ...alt,
-    id: "r-b",
-    role: alt.role === "hazardSmart" ? "hazardSmart" : "balanced",
-    label: alt.role === "hazardSmart" ? "No interstate" : "Alternate",
-  };
-  return [a, b];
+  const main = asMain(primary);
+  const altSrc = forward.find((r) => r !== primary && alternateFits(r, primary));
+  const alt = altSrc ? asAlternate(altSrc, "r-b") : null;
+  if (preference === "alternate" && altSrc) {
+    return [asAlternate(altSrc, "r-a"), { ...main, id: "r-b" }];
+  }
+  return alt ? [main, alt] : [main];
 }
 
 /**

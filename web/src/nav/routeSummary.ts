@@ -23,6 +23,7 @@ export function routeConsiderationSummary(route: NavRoute): string {
   if (L.includes("no interstate") || L.includes("no highway") || /\bhighway\b/.test(L)) {
     return "No interstate";
   }
+  if (L.includes("alternate")) return "Alternate";
   if (L.includes("main")) return "Main · fastest";
   if (L.includes("shortest")) return "Shorter distance";
   if (route.role === "fastest") return "Main · fastest";
@@ -54,17 +55,18 @@ export function routePickDisplayLabel(
 }
 
 /** What rule the locked (or just-replanned) leg is following. */
-export type LockedRouteKind = "fastest" | "no_interstate" | "backroads" | "unknown";
+export type LockedRouteKind = "fastest" | "no_interstate" | "backroads" | "alternate" | "unknown";
 
 export function lockedRouteKind(route: {
   role?: NavRoute["role"] | null;
   label?: string | null;
 } | null | undefined): LockedRouteKind {
   if (!route) return "unknown";
+  const L = (route.label ?? "").toLowerCase();
+  if (L.includes("alternate")) return "alternate";
   if (route.role === "hazardSmart") return "no_interstate";
   if (route.role === "balanced") return "backroads";
   if (route.role === "fastest") return "fastest";
-  const L = (route.label ?? "").toLowerCase();
   if (L.includes("no interstate") || L.includes("no highway")) return "no_interstate";
   if (L.includes("scenic") || L.includes("country")) return "backroads";
   if (L.includes("main") || L.includes("fastest")) return "fastest";
@@ -85,6 +87,12 @@ export function offRouteReplanCopy(input: {
     return {
       voice: input.silent ? "Updating — staying off interstates." : "New route — staying off interstates.",
       hint: input.silent ? null : "New route — staying off interstates.",
+    };
+  }
+  if (input.kind === "alternate") {
+    return {
+      voice: input.silent ? "Updating your alternate." : "New alternate from here.",
+      hint: input.silent ? null : "New alternate from here.",
     };
   }
   if (input.kind === "backroads") {

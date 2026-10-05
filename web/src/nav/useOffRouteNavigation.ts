@@ -10,6 +10,7 @@ import {
   type RoadNetworkClass,
 } from "./drivingRejoinContext";
 import { remainingViaStops } from "./routeWaypoints";
+import type { RoutingPreference } from "./routePreference";
 import { lockedRouteKind, offRouteReplanCopy } from "./routeSummary";
 import { collectMapboxRouteVariants } from "../services/mapboxDirectionsRouter";
 import { speakNavigationAlert } from "./navigationVoiceAlert";
@@ -21,9 +22,9 @@ import {
   DRIVE_AHEAD_NAV_START_GRACE_MAX_LATERAL_M,
   DRIVE_AHEAD_NAV_START_GRACE_MS,
   DRIVE_AHEAD_OFF_ROUTE_ENTER_M,
+  DRIVE_REANCHOR_LATERAL_M,
   DRIVE_AHEAD_REROUTE_THROTTLE_MS,
   isDriveAlwaysAheadView,
-  lockedRouteShouldAvoidMotorway,
 } from "./driveAlwaysAhead";
 import { mayMutateLockedRouteGeometry } from "./navigationContract";
 import {
@@ -98,6 +99,8 @@ export interface UseOffRouteNavigationDeps {
   settingStormEnabled: boolean;
   stormAlertsForRouting: NormalizedWeatherAlert[] | undefined;
   lockedNavigationRouteIdRef: MutableRefObject<string | null>;
+  /** Fastest vs alternate. Set when the driver picks a leg. Replans do not change it. */
+  routingPreferenceRef: MutableRefObject<RoutingPreference>;
   routeGraphEpochRef: MutableRefObject<number>;
   altRoutesFetchAbortRef: MutableRefObject<AbortController | null>;
   altRoutesRefreshInFlightRef: MutableRefObject<boolean>;
@@ -164,6 +167,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     settingStormEnabled,
     stormAlertsForRouting,
     lockedNavigationRouteIdRef,
+    routingPreferenceRef,
     routeGraphEpochRef,
     altRoutesFetchAbortRef,
     altRoutesRefreshInFlightRef,
@@ -385,25 +389,22 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       const remainingVias = remainingViaStops(viaStops, activeViaIndex);
       const viaCoords = remainingVias.map((s) => s.lngLat);
       const bearingDeg = headingRef.current;
-      const lockedId = lockedNavigationRouteIdRef.current;
-      const locked =
-        (lockedId ? planRef.current.routes.find((r) => r.id === lockedId) : undefined) ??
-        guidanceRoute ??
-        null;
-      const preferBackroads = lockedRouteShouldAvoidMotorway(locked, planRef.current.routes);
       const fresh = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
         via: viaCoords.length > 0 ? viaCoords : undefined,
-        maxRoutes: preferBackroads ? 1 : 2,
+        maxRoutes: 2,
         forwardFirst: true,
-        singleRouteFromPosition: preferBackroads,
-        preferBackroads,
         bearingDeg:
           bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
         signal: fetchCtrl.signal,
         stormAlerts: stormAlertsForRouting,
         radarAvoidanceEnabled: isPlus && settingStormEnabled,
       });
-      const nextRoutes = assignOffRouteReplanSlots(fresh, userLngLat, bearingDeg);
+      const nextRoutes = assignOffRouteReplanSlots(
+        fresh,
+        userLngLat,
+        bearingDeg,
+        routingPreferenceRef.current
+      );
       const primary = nextRoutes[0];
       if (!primary?.geometry?.length || epochAtStart !== routeGraphEpochRef.current) return false;
 
@@ -458,7 +459,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     isPlus,
     settingStormEnabled,
     headingRef,
-    lockedNavigationRouteIdRef,
+    routingPreferenceRef,
     routeGraphEpochRef,
     altRoutesFetchAbortRef,
     altRoutesRefreshInFlightRef,
@@ -523,7 +524,9 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         offRouteSinceMs: offRouteSinceMsRef.current,
         nowMs: now,
       });
-      if (!diyMayPlanReroute(owner)) return;
+      const lateralM = lastOffRouteSampleRef.current?.lateralM ?? 0;
+      /* Far off the drawn line: do not wait for Core to drag the old corridor back. */
+      if (lateralM < DRIVE_REANCHOR_LATERAL_M && !diyMayPlanReroute(owner)) return;
 
       lastAutoRerouteAttemptRef.current = now;
 

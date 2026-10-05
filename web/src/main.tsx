@@ -7,6 +7,7 @@ import { getWebEnv } from "./config/env";
 import "./index.css";
 import { captureAppException, initCrashReporting, installGlobalErrorHandlers } from "./monitoring/sentry";
 import { startMapboxUsageMeter } from "./monitoring/mapboxUsageMeter";
+import { reloadPersistedSettings } from "./state/settingsStore";
 import { hydrateSafeStorage } from "./storage/safeStorage";
 import { clearActiveTripCache } from "./tripCache";
 
@@ -137,6 +138,7 @@ class ErrorBoundary extends Component<
 /* Block first render until persisted settings/saved-data are in the in-memory cache so
  * `useState(() => readSetting())` initializers and other sync reads see real values. */
 hydrateSafeStorage().finally(() => {
+  reloadPersistedSettings();
   /* Fire-and-forget RevenueCat init. Doesn't block first paint — the SDK takes ~100-300 ms
    * on cold start and the AboutSheet (where its UI lives) is several taps deep. If the user
    * opens AboutSheet before init resolves, `isRevenueCatReady()` returns false and the panel

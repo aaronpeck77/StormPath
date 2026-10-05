@@ -81,6 +81,10 @@ import {
   setDriveDiagRouteLengthM,
 } from "./nav/driveDiagnostics";
 import { routeDoublesBack } from "./nav/routeDoublesBack";
+import {
+  routingPreferenceForLockedRoute,
+  type RoutingPreference,
+} from "./nav/routePreference";
 import { useSeriousHazardAutoFly } from "./nav/useSeriousHazardAutoFly";
 import { isDriveOffRouteForwardFraming, lockedRouteShouldAvoidMotorway } from "./nav/driveAlwaysAhead";
 import {
@@ -109,6 +113,7 @@ import { AppBottomChrome } from "./ui/AppBottomChrome";
 import { AppAboutSheetHost } from "./ui/AppAboutSheetHost";
 import {
   currentNavTarget,
+  remainingViaStops,
 } from "./nav/routeWaypoints";
 import {
   isFullSlotPermutation,
@@ -289,6 +294,8 @@ export default function App() {
   const [alongHoldResetKey, setAlongHoldResetKey] = useState(0);
   /** Route id locked at Go — guidance follows this until the driver explicitly switches legs. */
   const lockedNavigationRouteIdRef = useRef<string | null>(null);
+  const routingPreferenceRef = useRef<RoutingPreference>("fastest");
+  const navPreferenceArmedRef = useRef(false);
   /** Suppress off-route rejoin while on a learned "Your route" fork. */
   const onPersonalForkRef = useRef(false);
 
@@ -890,6 +897,19 @@ export default function App() {
     noteDriveDiagRouteLock(nativePreferBackroads, navigationStarted);
   }, [nativePreferBackroads, navigationStarted]);
 
+  useEffect(() => {
+    if (!navigationStarted) {
+      navPreferenceArmedRef.current = false;
+      routingPreferenceRef.current = "fastest";
+      return;
+    }
+    if (navPreferenceArmedRef.current) return;
+    navPreferenceArmedRef.current = true;
+    const id = lockedNavigationRouteIdRef.current;
+    const route = id ? plan.routes.find((r) => r.id === id) : undefined;
+    routingPreferenceRef.current = routingPreferenceForLockedRoute(route);
+  }, [navigationStarted, plan.routes]);
+
   /**
    * iOS Capacitor: Mapbox Navigation Core feeds puck/alongM; DIY snap/off-route pause.
    * Web / Netlify: hook is inert — DIY nav unchanged. Dr/Mp/Rt stay one DriveMap.
@@ -974,7 +994,7 @@ export default function App() {
     navigationStarted,
     coords: {
       userLngLat,
-      viaStops,
+      viaStops: remainingViaStops(viaStops, activeViaIndex),
       destLngLat,
       lockedCorridor:
         navGoGeometryRef.current ??
@@ -986,8 +1006,32 @@ export default function App() {
     },
     onRouteGeometry: onNativeRouteGeometry,
     voiceGuidanceEnabled: settingVoiceGuidanceEnabled,
-    preferBackroads: nativePreferBackroads,
+    /* No hard motorway ban. A reroute may use an interstate when that is the
+     * sensible way on. The fastest/alternate choice is applied from here. */
+    preferBackroads: false,
   });
+
+  const handleSkipViaStop = useCallback(
+    async (index: number) => {
+      await handleRemoveViaStop(index);
+      const nextPlan = useTripPlanStore.getState().plan;
+      const lockedId = lockedNavigationRouteIdRef.current;
+      const route =
+        (lockedId ? nextPlan.routes.find((r) => r.id === lockedId) : undefined) ??
+        nextPlan.routes[0];
+      if (route && route.geometry.length >= 2) {
+        adoptLockedRouteGeometry(
+          route.geometry.map(([a, b]) => [a, b] as LngLat),
+          { force: true }
+        );
+      }
+      /* Let the new line land in the Core coords, then start guidance from here. */
+      window.setTimeout(() => {
+        void restartNative();
+      }, 0);
+    },
+    [handleRemoveViaStop, adoptLockedRouteGeometry, restartNative]
+  );
 
   const navPosition = useNavigationPosition({
     rawLngLat: userLngLat,
@@ -1032,6 +1076,7 @@ export default function App() {
     settingStormEnabled,
     stormAlertsForRouting,
     lockedNavigationRouteIdRef,
+    routingPreferenceRef,
     routeGraphEpochRef,
     altRoutesFetchAbortRef,
     altRoutesRefreshInFlightRef,
@@ -1437,6 +1482,41 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [navigationStarted, navigationGuidanceGeometry, guidanceRouteLengthM]);
 
+  const [routeSignalNote, setRouteSignalNote] = useState<null | "weak" | "back">(null);
+  useEffect(() => {
+    if (!navigationStarted || !nativeNavActive || !isOnline) {
+      setRouteSignalNote(null);
+      return;
+    }
+    let weak = false;
+    let backTimer = 0;
+    const id = window.setInterval(() => {
+      const last = coreRerouteHealthRef.current.lastProgressAtMs;
+      const moving = (speedMpsRef.current ?? 0) > 1.5;
+      const age = last == null ? null : Date.now() - last;
+      const stale = age != null && age > 12_000 && moving;
+      if (stale && !weak) {
+        weak = true;
+        setRouteSignalNote("weak");
+        return;
+      }
+      if (!stale && weak && age != null && age < 4_000) {
+        weak = false;
+        setRouteSignalNote("back");
+        window.clearTimeout(backTimer);
+        backTimer = window.setTimeout(() => {
+          setRouteSignalNote((cur) => (cur === "back" ? null : cur));
+        }, 6_000);
+      }
+    }, 2_000);
+    return () => {
+      window.clearInterval(id);
+      window.clearTimeout(backTimer);
+    };
+  }, [navigationStarted, nativeNavActive, isOnline]);
+
+  const guidanceLive = routeSignalNote !== "weak";
+
   const {
     userAlongGuidanceM,
     activeTurnIndex: diyTravelingTurnIndex,
@@ -1452,9 +1532,10 @@ export default function App() {
     effectiveUserLngLat: navigationPositionLngLat,
     routeGeometry: navigationGuidanceGeometry,
     alongHoldResetKey,
-    navigationAlongM: navigationStarted ? effectiveNavPosition.alongM : undefined,
+    navigationAlongM:
+      navigationStarted && guidanceLive ? effectiveNavPosition.alongM : undefined,
     frozenAlongM:
-      driveModeUi
+      !guidanceLive || driveModeUi
         ? undefined
         : offRouteLatched &&
             !autoRejoinGuidanceRouteId &&
@@ -1466,10 +1547,10 @@ export default function App() {
 
   /** iOS Core: banner uses Mapbox steps + progress so voice, line, and strip stay one route. */
   const bannerTurnSteps =
-    nativeNavActive && nativeTurnSteps.length > 0 ? nativeTurnSteps : turnSteps;
+    guidanceLive && nativeNavActive && nativeTurnSteps.length > 0 ? nativeTurnSteps : turnSteps;
 
   const bannerTurnIndex = useMemo(() => {
-    if (!nativeNavActive || !nativeNavGuidance || bannerTurnSteps.length === 0) {
+    if (!guidanceLive || !nativeNavActive || !nativeNavGuidance || bannerTurnSteps.length === 0) {
       return diyBannerTurnIndex;
     }
     // Traveling current step; upcoming maneuver is typically the next step in Mapbox's list.
@@ -1478,32 +1559,36 @@ export default function App() {
     return Math.max(0, Math.min(nativeNavGuidance.stepIndex, bannerTurnSteps.length - 1));
   }, [
     nativeNavActive,
+    guidanceLive,
     nativeNavGuidance,
     bannerTurnSteps.length,
     diyBannerTurnIndex,
   ]);
 
   const metersToBannerManeuver =
-    nativeNavActive && nativeNavGuidance?.stepRemainingM != null
+    guidanceLive && nativeNavActive && nativeNavGuidance?.stepRemainingM != null
       ? nativeNavGuidance.stepRemainingM
       : diyMetersToBannerManeuver;
 
   const bannerInstructionOverride =
-    nativeNavActive && nativeNavGuidance?.instruction
+    guidanceLive && nativeNavActive && nativeNavGuidance?.instruction
       ? nativeNavGuidance.instruction
       : null;
 
-  const bannerTravelingStepIndex = nativeNavActive
-    ? (nativeNavGuidance?.stepIndex ?? 0)
-    : diyTravelingTurnIndex;
+  const bannerTravelingStepIndex =
+    guidanceLive && nativeNavActive
+      ? (nativeNavGuidance?.stepIndex ?? 0)
+      : diyTravelingTurnIndex;
 
-  const bannerCurrentRoadName = nativeNavActive
-    ? (nativeNavGuidance?.currentRoadName ?? null)
-    : (bannerTurnSteps[diyTravelingTurnIndex]?.roadName ?? null);
+  const bannerCurrentRoadName =
+    guidanceLive && nativeNavActive
+      ? (nativeNavGuidance?.currentRoadName ?? null)
+      : (bannerTurnSteps[diyTravelingTurnIndex]?.roadName ?? null);
 
-  const bannerCurrentRoadRef = nativeNavActive
-    ? (nativeNavGuidance?.currentRoadRef ?? null)
-    : (bannerTurnSteps[diyTravelingTurnIndex]?.roadRef ?? null);
+  const bannerCurrentRoadRef =
+    guidanceLive && nativeNavActive
+      ? (nativeNavGuidance?.currentRoadRef ?? null)
+      : (bannerTurnSteps[diyTravelingTurnIndex]?.roadRef ?? null);
 
   guidanceRouteGeomRef.current = navigationGuidanceGeometry ?? guidanceRoute?.geometry ?? null;
   guidanceRouteLengthMRef.current = guidanceRouteLengthM;
@@ -2191,6 +2276,9 @@ export default function App() {
       setPreviewLegIndex(0);
       if (navigationStartedRef.current) {
         lockedNavigationRouteIdRef.current = id;
+        routingPreferenceRef.current = routingPreferenceForLockedRoute(
+          plan.routes.find((r) => r.id === id)
+        );
         onPersonalForkRef.current = isPersonalForkRouteId(id);
       }
       clearDetourGuidance();
@@ -2759,7 +2847,6 @@ export default function App() {
               bannerCurrentRoadName={bannerCurrentRoadName}
               bannerCurrentRoadRef={bannerCurrentRoadRef}
               bannerTravelingStepIndex={bannerTravelingStepIndex}
-              viewMode={viewMode}
               personalForkShowChip={personalForkNav.showChip}
               personalForkShowCommittedChip={personalForkNav.showCommittedChip}
               personalForkOffer={personalForkNav.offer}
@@ -2913,6 +3000,7 @@ export default function App() {
             env.supportEmail || env.supportUrl ? handleQuickReportIssue : null
           }
           isOnline={isOnline}
+          routeSignalNote={routeSignalNote}
           navigationStarted={navigationStarted}
           hasPlanRoutes={plan.routes.length > 0}
           hasDest={Boolean(destLngLat)}
@@ -2986,11 +3074,15 @@ export default function App() {
           suggestLoading={suggestLoading}
           enableSuggestions={allowAutocomplete && (!routeActive || searchExpanded)}
           viaStops={viaStops}
+          activeViaIndex={activeViaIndex}
           addingViaStop={addingViaStop}
           canAddStop={Boolean(destLngLat)}
           onStartAddStop={() => setAddingViaStop(true)}
           onCancelAddStop={() => setAddingViaStop(false)}
           handleRemoveViaStop={handleRemoveViaStop}
+          handleSkipViaStop={(index) => {
+            void handleSkipViaStop(index);
+          }}
           handleViewModeChange={handleViewModeChange}
           onOpenSaved={() => setSavedDrawerOpen(true)}
           handleGo={handleGo}

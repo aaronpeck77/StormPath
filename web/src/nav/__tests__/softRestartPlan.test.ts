@@ -142,7 +142,7 @@ describe("assignOffRouteReplanSlots", () => {
         [-86.76, 36.165],
         [-86.6, 36.2],
       ],
-      baseEtaMinutes: 24,
+      baseEtaMinutes: 22,
     };
     const slots = assignOffRouteReplanSlots([reverse, forward, alt], user, 20);
     expect(slots[0]?.id).toBe("r-a");
@@ -195,5 +195,26 @@ describe("assignOffRouteReplanSlots", () => {
     expect(slots).toHaveLength(1);
     expect(slots[0]?.id).toBe("r-a");
     expect(slots[0]?.geometry[1]?.[1]).toBeCloseTo(at(0, 800)[1], 4);
+  });
+
+  it("follows the alternate from here when that is the choice and it still makes progress", () => {
+    const user: [number, number] = [-86.78, 36.16];
+    const main: NavRoute = {
+      id: "r-y",
+      role: "fastest",
+      label: "Ahead",
+      geometry: [user, [-86.77, 36.17], [-86.6, 36.2]],
+      baseEtaMinutes: 20,
+    };
+    const alt: NavRoute = {
+      id: "r-z",
+      role: "balanced",
+      label: "Alternate",
+      geometry: [user, [-86.76, 36.165], [-86.6, 36.2]],
+      baseEtaMinutes: 22,
+    };
+    const slots = assignOffRouteReplanSlots([main, alt], user, 20, "alternate");
+    expect(slots[0]?.label).toBe("Alternate");
+    expect(slots[1]?.label).toBe("Main");
   });
 });

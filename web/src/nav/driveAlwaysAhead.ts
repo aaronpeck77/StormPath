@@ -1,9 +1,8 @@
 /**
  * Drive-view navigation: keep the driver on their locked corridor.
  * Lateral leave soft-restarts from GPS→destination (same trip, new lock geometry)
- * so Drive / Route / Map share one ahead line. When the locked leg is a
- * no-interstate / alternate choice, soft restarts keep `preferBackroads` so Mapbox
- * does not yank the driver onto the highway “fastest” path.
+ * so Drive / Route / Map share one ahead line. The driver's choice (fastest or
+ * alternate) sticks. The drawn line does not, and an alternate is not a motorway ban.
  *
  * Route / map views keep A/B/C alternates; drive shows only the locked leg.
  *
@@ -26,6 +25,11 @@ export const DRIVE_AHEAD_HEADING_MIN_LATERAL_M = 12;
 export const DRIVE_AHEAD_HEADING_DELTA_DEG = 32;
 /** Cap Mapbox Directions churn when GPS jitters off the corridor in drive view. */
 export const DRIVE_AHEAD_REROUTE_THROTTLE_MS = 8_000;
+/**
+ * Clearly off the drawn line — about a quarter mile. Past a bridge slip and a
+ * missed turn. Build a new line from here instead of waiting on the old one.
+ */
+export const DRIVE_REANCHOR_LATERAL_M = 400;
 /** Short post-Go grace — only block tiny GPS noise at the start pin. */
 export const DRIVE_AHEAD_NAV_START_GRACE_MS = 12_000;
 export const DRIVE_AHEAD_NAV_START_GRACE_ALONG_M = 120;
@@ -49,6 +53,10 @@ export function lockedRouteShouldAvoidMotorway(
   if (!locked) return false;
   if (lockedRoutePrefersBackroads(locked.role)) return true;
   if (planRoutes.length < 2) return false;
+  /* Main stays Main. A construction detour can make this leg's ETA longer than
+   * the other option; that must not flip the rest of the trip onto no-interstate. */
+  const primary = planRoutes.find((r) => r.id === "r-a") ?? planRoutes[0]!;
+  if (locked.role === "fastest" && locked.id === primary.id) return false;
   let fastestId = planRoutes[0]!.id;
   let fastestEta = planRoutes[0]!.baseEtaMinutes;
   for (const r of planRoutes) {

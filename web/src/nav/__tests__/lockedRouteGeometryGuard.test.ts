@@ -38,6 +38,18 @@ describe("lockedRouteShouldAvoidMotorway", () => {
     ).toBe(true);
   });
 
+  it("keeps a Main lock on motorways after a detour makes that leg slower", () => {
+    expect(
+      lockedRouteShouldAvoidMotorway(
+        { id: "r-a", role: "fastest", baseEtaMinutes: 55 },
+        [
+          { id: "r-a", baseEtaMinutes: 55 },
+          { id: "r-b", baseEtaMinutes: 40 },
+        ]
+      )
+    ).toBe(false);
+  });
+
   it("allows motorways when the locked leg is the fastest", () => {
     expect(
       lockedRouteShouldAvoidMotorway(

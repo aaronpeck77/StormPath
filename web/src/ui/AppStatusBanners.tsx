@@ -20,6 +20,8 @@ type Props = {
   onSafetyAck: () => void;
   onReportIssue: (() => void) | null;
   isOnline: boolean;
+  /** Live guidance paused, or just came back, while the phone still says online. */
+  routeSignalNote?: null | "weak" | "back";
   navigationStarted: boolean;
   hasPlanRoutes: boolean;
   hasDest: boolean;
@@ -52,6 +54,7 @@ export function AppStatusBanners(props: Props) {
     onSafetyAck,
     onReportIssue,
     isOnline,
+    routeSignalNote = null,
     navigationStarted,
     hasPlanRoutes,
     hasDest,
@@ -177,6 +180,26 @@ export function AppStatusBanners(props: Props) {
               OK
             </button>
           </div>
+        </div>
+      )}
+
+      {isOnline && navigationStarted && routeSignalNote === "weak" && (
+        <div
+          className={`nav-offline-banner${driveModeUi ? " nav-offline-banner--drive" : ""}`}
+          role="status"
+          aria-live="polite"
+        >
+          Weak signal. Directions and the miles to the next turn may pause. They catch up when the signal improves.
+        </div>
+      )}
+
+      {isOnline && navigationStarted && routeSignalNote === "back" && (
+        <div
+          className={`nav-offline-banner${driveModeUi ? " nav-offline-banner--drive" : ""}`}
+          role="status"
+          aria-live="polite"
+        >
+          Signal is back. Directions are updating.
         </div>
       )}
 

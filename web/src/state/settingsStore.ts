@@ -142,21 +142,51 @@ export interface SettingsState {
   applySettings: (next: AppSettings) => void;
 }
 
+function readPersistedSettings(): Pick<
+  SettingsState,
+  | "stormEnabled"
+  | "trafficEnabled"
+  | "radarEnabled"
+  | "radarDisplayMode"
+  | "weatherHintsEnabled"
+  | "autoRerouteEnabled"
+  | "dataSaverEnabled"
+  | "dataSaverHintDismissed"
+  | "voiceGuidanceEnabled"
+  | "gpsHighRefreshEnabled"
+  | "mapMatchingEnabled"
+  | "landscapeSideHand"
+  | "puckColor"
+> {
+  return {
+    stormEnabled: readStormSettingOn(),
+    trafficEnabled: readTrafficSettingOn(),
+    radarEnabled: readRadarSettingOn(),
+    radarDisplayMode: readRadarDisplayMode(),
+    weatherHintsEnabled: readBoolFlag(LS_WEATHER_HINTS, true),
+    autoRerouteEnabled: readBoolFlag(LS_AUTO_REROUTE, true),
+    dataSaverEnabled: readDataSaverSetting(),
+    dataSaverHintDismissed: readDataSaverHintDismissed(),
+    voiceGuidanceEnabled: readBoolFlag(LS_VOICE, false),
+    gpsHighRefreshEnabled: readBoolFlag(LS_GPS_HIGH_REFRESH, false),
+    mapMatchingEnabled: readBoolFlag(LS_MAP_MATCHING, false),
+    landscapeSideHand: safeStorage.get(LS_LANDSCAPE_SIDE_HAND) === "left" ? "left" : "right",
+    puckColor: puckColorById(safeStorage.get(LS_PUCK_COLOR)).id,
+  };
+}
+
+/**
+ * The store is created when this module is first imported, which is before
+ * `hydrateSafeStorage()` fills the cache on iOS. Without this, a cold start
+ * keeps the defaults (blue puck) even though Preferences has the saved color.
+ * Call once after hydration, before the first React render.
+ */
+export function reloadPersistedSettings(): void {
+  useSettingsStore.setState(readPersistedSettings());
+}
+
 export const useSettingsStore = create<SettingsState>((set) => ({
-  stormEnabled: readStormSettingOn(),
-  trafficEnabled: readTrafficSettingOn(),
-  radarEnabled: readRadarSettingOn(),
-  radarDisplayMode: readRadarDisplayMode(),
-  weatherHintsEnabled: readBoolFlag(LS_WEATHER_HINTS, true),
-  autoRerouteEnabled: readBoolFlag(LS_AUTO_REROUTE, true),
-  dataSaverEnabled: readDataSaverSetting(),
-  dataSaverHintDismissed: readDataSaverHintDismissed(),
-  voiceGuidanceEnabled: readBoolFlag(LS_VOICE, false),
-  gpsHighRefreshEnabled: readBoolFlag(LS_GPS_HIGH_REFRESH, false),
-  /* Default off — DIY route-snap + iOS native nav cover guidance; Matching is a paid Plus burn. */
-  mapMatchingEnabled: readBoolFlag(LS_MAP_MATCHING, false),
-  landscapeSideHand: safeStorage.get(LS_LANDSCAPE_SIDE_HAND) === "left" ? "left" : "right",
-  puckColor: puckColorById(safeStorage.get(LS_PUCK_COLOR)).id,
+  ...readPersistedSettings(),
 
   setStormEnabled: (on) => {
     writeStormSettingOn(on);
