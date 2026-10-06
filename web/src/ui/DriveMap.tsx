@@ -4,6 +4,7 @@ import type { MutableRefObject } from "react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import {
+  IDLE_HOME_LOCATE_POLL_MS,
   IDLE_HOME_TRAIL_BOUNDS_WAIT_MS,
   resolveIdleHomeCameraAction,
   resolveIdleHomeFraming,
@@ -3898,17 +3899,21 @@ function DriveMapInner({
 
     if (tryApplyIdleHome()) return;
 
+    let pollId = 0;
     const onReady = () => {
-      tryApplyIdleHome();
+      if (tryApplyIdleHome() && pollId) {
+        window.clearInterval(pollId);
+        pollId = 0;
+      }
     };
     map.on("load", onReady);
     map.on("style.load", onReady);
-    const timers = [250, 800, 2000, 4500].map((ms) => window.setTimeout(onReady, ms));
+    pollId = window.setInterval(onReady, IDLE_HOME_LOCATE_POLL_MS);
 
     return () => {
       map.off("load", onReady);
       map.off("style.load", onReady);
-      for (const id of timers) window.clearTimeout(id);
+      if (pollId) window.clearInterval(pollId);
     };
   }, [
     mapReady,
@@ -4919,13 +4924,21 @@ function DriveMapInner({
     }
 
     const followPuck = () => {
-      if (userExploringRef.current) return;
       const u = userLngLatRef.current;
       if (!u) return;
+      let countryZoom = false;
+      try {
+        countryZoom = map.getZoom() < 6;
+      } catch {
+        countryZoom = false;
+      }
+      /* A load flicker can look like a pan. Do not leave the opening country view because of it. */
+      if (userExploringRef.current && !countryZoom) return;
 
       if (followRouteHome) {
         safePanToCenter(map, {
           center: u,
+          ...(countryZoom ? { zoom: ROUTE_VIEW_PLANNING_STREET_ZOOM } : {}),
           pitch: 0,
           bearing: 0,
         });

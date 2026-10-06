@@ -58,7 +58,7 @@ import {
   pointAtAlongMeters,
   polylineLengthMeters,
 } from "./nav/routeGeometry";
-import { stablePlanRoutesKey } from "./nav/tripNavDisplay";
+import { fartherAlongMeters, stablePlanRoutesKey } from "./nav/tripNavDisplay";
 import { useTripNavDisplayHealth } from "./nav/useTripNavDisplayHealth";
 import { useTripSurfaceRecovery } from "./nav/useTripSurfaceRecovery";
 import { useLiveTrafficHealth } from "./nav/useLiveTrafficHealth";
@@ -1593,7 +1593,6 @@ export default function App() {
   guidanceRouteGeomRef.current = navigationGuidanceGeometry ?? guidanceRoute?.geometry ?? null;
   guidanceRouteLengthMRef.current = guidanceRouteLengthM;
   navRouteLengthMRef.current = guidanceRouteLengthM;
-  userAlongGuidanceMRef.current = userAlongGuidanceM;
 
   const guidanceIsPersonalFork =
     isPersonalForkRouteId(lockedNavigationRouteId) ||
@@ -1659,7 +1658,7 @@ export default function App() {
      * YOU line on the far left late in the trip. GPS on this same line is the
      * progress they can see. */
     if (navigationStarted && Number.isFinite(userAlongGuidanceM) && userAlongGuidanceM >= 0) {
-      return Math.max(userAlongGuidanceM, projected);
+      return fartherAlongMeters(userAlongGuidanceM, projected);
     }
     return projected;
   }, [guidanceRoute?.geometry, navigationStarted, userAlongGuidanceM, effectiveUserLngLat]);
@@ -1739,6 +1738,29 @@ export default function App() {
     ]
   );
 
+  /**
+   * Core distance-traveled can sit at the start of the line while the puck is
+   * already near the end. Miles, the clock, and the traffic slice use the
+   * farther of the two, same as the progress rail.
+   */
+  const clockAlongM = useMemo(() => {
+    if (!navigationStarted) return userAlongGuidanceM;
+    const g = navigationGuidanceGeometry ?? guidanceRoute?.geometry;
+    if (!g || g.length < 2) return userAlongGuidanceM;
+    const gps = effectiveUserLngLat
+      ? closestAlongRouteMeters(effectiveUserLngLat, g).alongMeters
+      : 0;
+    return fartherAlongMeters(userAlongGuidanceM, gps, guidanceRouteLengthM);
+  }, [
+    navigationStarted,
+    navigationGuidanceGeometry,
+    guidanceRoute?.geometry,
+    effectiveUserLngLat,
+    userAlongGuidanceM,
+    guidanceRouteLengthM,
+  ]);
+  userAlongGuidanceMRef.current = clockAlongM;
+
   const { driveEtaMinutes, driveDistanceRemainingLabel } = useDriveEtaLabels({
     navigationStarted,
     scored,
@@ -1746,7 +1768,7 @@ export default function App() {
     guidanceRoute,
     guidanceRouteLengthM,
     planLengthM: maxPlanRouteLengthM,
-    userAlongGuidanceM,
+    userAlongGuidanceM: clockAlongM,
     tripOdometerM,
     trafficOverlay,
     effectiveUserLngLat,

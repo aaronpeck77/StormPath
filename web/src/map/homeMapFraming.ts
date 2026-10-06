@@ -7,6 +7,11 @@ export type HomeMapFraming = "auto" | "my_location" | "activity_area";
 
 /** Wait this long for trail bounds / Plus to settle before falling back to My location. */
 export const IDLE_HOME_TRAIL_BOUNDS_WAIT_MS = 1_500;
+/**
+ * Startup locate. A few one-shot timers lose the race with the map style and the
+ * first GPS fix, and the camera stays on the middle of the country.
+ */
+export const IDLE_HOME_LOCATE_POLL_MS = 1_000;
 
 export function readHomeMapFraming(): HomeMapFraming {
   const v = safeStorage.get(LS_HOME_MAP_FRAMING);

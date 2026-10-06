@@ -34,6 +34,25 @@ export type TripNavDisplayAudit = {
   remainingEtaMinutes: number | null;
 };
 
+/**
+ * Miles and the clock follow whichever point is farther along the drawn line.
+ * Core's distance-traveled resets to the start when its corridor is replaced.
+ * The phone's place on that same line does not.
+ */
+export function fartherAlongMeters(
+  coreAlongM: number,
+  gpsAlongM: number,
+  routeLengthM?: number | null
+): number {
+  const core = Number.isFinite(coreAlongM) && coreAlongM > 0 ? coreAlongM : 0;
+  const gps = Number.isFinite(gpsAlongM) && gpsAlongM > 0 ? gpsAlongM : 0;
+  let along = Math.max(core, gps);
+  if (routeLengthM != null && Number.isFinite(routeLengthM) && routeLengthM > 1) {
+    along = Math.min(along, routeLengthM);
+  }
+  return along;
+}
+
 export function computeRemainingDistanceMeters(
   navigationStarted: boolean,
   routeLengthM: number,

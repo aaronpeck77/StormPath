@@ -3,6 +3,7 @@ import {
   auditTripNavDisplay,
   computeRemainingDistanceMeters,
   computeRemainingDriveEtaMinutes,
+  fartherAlongMeters,
   repairActionsForIssues,
 } from "../tripNavDisplay";
 
@@ -77,6 +78,27 @@ describe("tripNavDisplay", () => {
         tripOdometerM: 40 * 1609.34,
       })
     ).toBe(60);
+  });
+
+  it("uses the farther point when Core's traveled distance reset to the start", () => {
+    expect(fartherAlongMeters(40, 80_000, 100_000)).toBe(80_000);
+    expect(fartherAlongMeters(90_000, 1_000, 100_000)).toBe(90_000);
+    expect(fartherAlongMeters(40, 250_000, 100_000)).toBe(100_000);
+  });
+
+  it("drops a whole-trip live clock once the car is near the end of the line", () => {
+    expect(
+      computeRemainingDriveEtaMinutes({
+        navigationStarted: true,
+        fullEtaMinutes: 90,
+        routeLengthM: 100_000,
+        alongM: fartherAlongMeters(40, 80_000, 100_000),
+        hasRouteGeometry: true,
+        planLengthM: 100_000,
+        liveRemainingEtaMinutes: 88,
+      })
+    ).toBe(18);
+    expect(computeRemainingDistanceMeters(true, 100_000, 80_000)).toBe(20_000);
   });
 
   it("returns null remaining distance when not navigating", () => {
