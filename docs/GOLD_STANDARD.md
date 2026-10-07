@@ -7,9 +7,9 @@
 | Field | Value |
 |-------|--------|
 | Moving pointer | branch `gold/current` |
-| This archive tag | `gold/2026-09-04-nav-solid` |
-| Commit | `29e3242` — *Block Drive from flying out to Canada-scale zoom.* |
-| Why sealed | Phone soak Sep 4 2026: nav “as good as I could ask for”; small polish still OK later |
+| This archive tag | `gold/2026-10-07-drive-solid` |
+| Commit | `e8085ce` — *Drive: keep the miles and the clock on the car, and open the map on the driver.* |
+| Why sealed | Phone soak Oct 7 2026, TestFlight 464: two real drives, line held, off-route recovered, he called it the new gold. Arrival can still swing about 20 minutes on a live traffic answer. Previous archive `gold/2026-09-04-nav-solid` (`29e3242`) stays. |
 
 ## What landed on the phone today (before this seal)
 
