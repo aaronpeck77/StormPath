@@ -161,10 +161,12 @@ export function AboutSheet({
 
   const [activityTrailClearStep, setActivityTrailClearStep] = useState<"idle" | "confirm">("idle");
   const [activityTrailClearAck, setActivityTrailClearAck] = useState(false);
+  const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   useEffect(() => {
     if (!open) {
       setActivityTrailClearStep("idle");
       setActivityTrailClearAck(false);
+      setDiagnosticsCopied(false);
     }
   }, [open]);
 
@@ -982,14 +984,6 @@ export function AboutSheet({
               info — version, toggles, and which data providers are configured) so we can tell an app bug from a network
               or provider issue faster.
             </p>
-            {driveDiagLines.length > 0 ? (
-              <div className="about-sheet__drive-diag">
-                <strong>Last drive</strong>
-                {driveDiagLines.map((line) => (
-                  <span key={line}>{line}</span>
-                ))}
-              </div>
-            ) : null}
             <label className="about-sheet__setting about-sheet__setting--stack">
               <span>
                 <strong>Your message</strong> (problem report, suggestion/request, or how StormPath is doing)
@@ -1009,9 +1003,10 @@ export function AboutSheet({
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(diagnosticsText);
+                    setDiagnosticsCopied(true);
                   } catch {
-                    // Fallback: prompt lets users copy manually.
                     window.prompt("Copy diagnostics", diagnosticsText);
+                    setDiagnosticsCopied(false);
                   }
                 }}
               >
@@ -1034,6 +1029,11 @@ export function AboutSheet({
                 Email feedback with diagnostics
               </button>
             </div>
+            {diagnosticsCopied ? (
+              <p className="about-sheet__p" role="status">
+                Diagnostics copied.
+              </p>
+            ) : null}
             <p className="about-sheet__p">
               {supportEmail ? (
                 <>

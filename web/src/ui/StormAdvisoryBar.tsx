@@ -8,7 +8,6 @@ import {
 } from "react";
 import { type AdvisoryPromoLine, type BasicStatusPanelPromos } from "../config/basicAds";
 import { BasicAdStrip } from "./BasicAdStrip";
-import { BasicStatusAdSlot } from "./BasicStatusAdSlot";
 import { limitExpandedPromoLines, mixAdvisoryPreviewItems } from "./advisoryPreviewMix";
 import { sortWeatherAlertsBySeverity, type NormalizedWeatherAlert } from "../weatherAlerts";
 import { nwsAlertIsBasicEmergency } from "../weatherAlerts/basicEmergencyFilter";
@@ -1287,9 +1286,8 @@ export function StormAdvisoryBar({
         {basicNavAdvisoryMode && basicStatusPanelPromos ? (
           <div
             className="storm-advisory-bar__basic-promos"
-            aria-label="Advertisement and StormPath Plus"
+            aria-label="StormPath Plus"
           >
-            <BasicStatusAdSlot line={basicStatusPanelPromos.partnerSlot} expanded />
             <BasicAdStrip
               lines={[basicStatusPanelPromos.plusUpsell]}
               expanded

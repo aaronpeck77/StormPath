@@ -13,9 +13,9 @@ import {
 type Args = {
   /** Basic tier only — Plus never shows AdMob. */
   enabled: boolean;
-  /** Hide while actively navigating (Drive / Go), unless advisory is expanded. */
+  /** Hide for the whole trip. Ads return on the home screen, before Go. */
   navigationStarted: boolean;
-  /** When Basic expands the advisory panel, keep ads visible even while navigating. */
+  /** Kept for callers. Opening Status during a trip does not bring ads back. */
   stormBarExpanded?: boolean;
 };
 
@@ -42,8 +42,7 @@ export function bannerShouldReserveBottomSpace(opts: {
   devWebPlaceholder: boolean;
 }): boolean {
   if (!opts.isBasicTier || !opts.enabled) return false;
-  /* While navigating, only lift chrome if the advisory page is open (in-panel monetization). */
-  if (opts.navigationStarted && !opts.stormBarExpanded) return false;
+  if (opts.navigationStarted) return false;
   if (opts.devWebPlaceholder) return true;
   if (!opts.native) return false;
   return opts.slotState === "loading" || opts.slotState === "filled";
@@ -62,7 +61,7 @@ export function slotStateAfterShowAttempt(args: {
   return null;
 }
 
-/** Third-party AdMob for Basic — idle chrome, and again when the advisory panel is open while navigating. */
+/** Third-party AdMob for Basic on the home screen. Hidden for the whole trip. */
 export function useBasicAdMobBanner({
   enabled,
   navigationStarted,
@@ -89,8 +88,7 @@ export function useBasicAdMobBanner({
       return undefined;
     }
 
-    const shouldShow =
-      enabled && isBasicTier && (!navigationStarted || stormBarExpanded);
+    const shouldShow = enabled && isBasicTier && !navigationStarted;
     const adUnitId = env.admobBannerUnitId || ADMOB_TEST_BANNER_UNIT_ID;
 
     if (!shouldShow) {
