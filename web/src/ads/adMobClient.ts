@@ -28,8 +28,6 @@ export type TrackingAuthorizationOutcome =
 
 let initialized = false;
 let bannerVisible = false;
-let failureListenerAttached = false;
-let successListenerAttached = false;
 let trackingAuthorization: TrackingAuthorizationOutcome | null = null;
 let trackingAuthorizationInFlight: Promise<TrackingAuthorizationOutcome> | null = null;
 
@@ -38,6 +36,10 @@ export type BasicBannerLoadOutcome = "loaded" | "failed";
 let bannerLoadOutcome: BasicBannerLoadOutcome | null = null;
 let bannerLoadFailureMessage = "";
 const bannerLoadListeners = new Set<(outcome: BasicBannerLoadOutcome) => void>();
+/** Native banner height in CSS pixels. 0 means the banner is gone. */
+let bannerHeightPx = 0;
+const bannerHeightListeners = new Set<(heightPx: number) => void>();
+let bannerListenersReady: Promise<void> | null = null;
 
 /** Latest UI slot from `useBasicAdMobBanner` — About diagnostics only. */
 let bannerUiSlot: "hidden" | "loading" | "filled" | "empty" = "hidden";
@@ -103,23 +105,60 @@ export function subscribeBasicBannerLoad(
   return () => bannerLoadListeners.delete(listener);
 }
 
-function attachBannerListenersOnce(): void {
-  if (!failureListenerAttached) {
-    failureListenerAttached = true;
-    AdMob.addListener(BannerAdPluginEvents.FailedToLoad, (info) => {
-      const message =
-        info && typeof info === "object" && "message" in info
-          ? String((info as { message?: unknown }).message ?? "")
-          : "";
-      setBannerLoadOutcome("failed", message);
-    });
+/** Height AdMob last reported. 0 when the banner is hidden, removed, or failed. */
+export function subscribeBasicBannerHeight(listener: (heightPx: number) => void): () => void {
+  bannerHeightListeners.add(listener);
+  listener(bannerHeightPx);
+  return () => bannerHeightListeners.delete(listener);
+}
+
+/** Pull a banner height out of the plugin's SizeChanged payload. */
+export function readBannerHeightPx(info: unknown): number {
+  if (typeof info === "number" && Number.isFinite(info)) return info > 0 ? Math.round(info) : 0;
+  if (!info || typeof info !== "object") return 0;
+  const rec = info as { height?: unknown; size?: { height?: unknown } };
+  const raw =
+    rec.height ?? (rec.size && typeof rec.size === "object" ? rec.size.height : undefined);
+  const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.round(n);
+}
+
+export function getBasicBannerHeightPx(): number {
+  return bannerHeightPx;
+}
+
+function publishBannerHeight(heightPx: number): void {
+  const next = heightPx > 0 ? Math.round(heightPx) : 0;
+  if (next === bannerHeightPx) return;
+  bannerHeightPx = next;
+  for (const listener of bannerHeightListeners) listener(next);
+}
+
+/**
+ * Register before the first show. The plugin draws the banner above the WebView
+ * and will not replay SizeChanged if we subscribe late.
+ */
+function ensureBannerListeners(): Promise<void> {
+  if (!bannerListenersReady) {
+    bannerListenersReady = Promise.all([
+      AdMob.addListener(BannerAdPluginEvents.FailedToLoad, (info) => {
+        const message =
+          info && typeof info === "object" && "message" in info
+            ? String((info as { message?: unknown }).message ?? "")
+            : "";
+        setBannerLoadOutcome("failed", message);
+        publishBannerHeight(0);
+      }),
+      AdMob.addListener(BannerAdPluginEvents.Loaded, () => {
+        setBannerLoadOutcome("loaded");
+      }),
+      AdMob.addListener(BannerAdPluginEvents.SizeChanged, (info) => {
+        publishBannerHeight(readBannerHeightPx(info));
+      }),
+    ]).then(() => undefined);
   }
-  if (!successListenerAttached) {
-    successListenerAttached = true;
-    AdMob.addListener(BannerAdPluginEvents.Loaded, () => {
-      setBannerLoadOutcome("loaded");
-    });
-  }
+  return bannerListenersReady;
 }
 
 export function isAdMobSupported(): boolean {
@@ -225,13 +264,14 @@ export async function showBasicBanner(opts: {
       npa,
     };
 
-    attachBannerListenersOnce();
+    await ensureBannerListeners();
 
     try {
       await AdMob.showBanner(options);
       if (mySerial !== bannerOpSerial) {
         await AdMob.removeBanner().catch(() => undefined);
         bannerVisible = false;
+        publishBannerHeight(0);
         return false;
       }
       bannerVisible = true;
@@ -240,6 +280,7 @@ export async function showBasicBanner(opts: {
       const message = err instanceof Error ? err.message : "showBanner failed";
       setBannerLoadOutcome("failed", message);
       bannerVisible = false;
+      publishBannerHeight(0);
       return false;
     }
   });
@@ -249,6 +290,7 @@ export async function hideBasicBanner(): Promise<void> {
   if (!isAdMobSupported() || !bannerVisible) return;
   await AdMob.hideBanner().catch(() => undefined);
   bannerVisible = false;
+  publishBannerHeight(0);
 }
 
 /** Remove native banner entirely — use when leaving Basic tier or hiding ads for Plus. */
@@ -260,6 +302,7 @@ export async function teardownBasicBanner(): Promise<void> {
     bannerVisible = false;
     bannerLoadOutcome = null;
     bannerLoadFailureMessage = "";
+    publishBannerHeight(0);
   });
 }
 

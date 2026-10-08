@@ -103,7 +103,7 @@ import type { MapViewMode } from "./ui/driveMapTypes";
 import { stormpathVersionLabel } from "./appVersion";
 import { applyLayerStartupMigrations } from "./layerStartupPrefs";
 import { AppMapStage } from "./ui/AppMapStage";
-import { buildAppShellClassName, buildDevPointerStyle } from "./ui/appShellChrome";
+import { buildAppShellClassName, buildAppShellStyle } from "./ui/appShellChrome";
 
 const SavedDestinationsDrawer = lazy(() =>
   import("./ui/SavedDestinationsDrawer").then((m) => ({ default: m.SavedDestinationsDrawer }))
@@ -2845,7 +2845,7 @@ export default function App() {
           viewMode,
         }),
       })}
-      style={buildDevPointerStyle()}
+      style={buildAppShellStyle(basicAdBanner.bannerLiftPx)}
     >
       {import.meta.env.DEV ? (
         <div

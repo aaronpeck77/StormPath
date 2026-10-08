@@ -1084,7 +1084,8 @@ html:has(.drive-map--native-shell) #root {
 }
 
 .app-shell.nav-fullmap.app-shell--basic-ad-banner .nav-bottom-stack {
-  padding-bottom: calc(var(--nav-bottom-reserved) + var(--basic-ad-banner-reserve, 50px));
+  /* Shift the whole dock. Phone CSS resets padding-bottom and would leave the buttons under the ad. */
+  bottom: var(--basic-ad-banner-reserve, 50px);
 }
 
 .app-shell.nav-fullmap.app-shell--basic-ad-banner .nav-route-progress-rail {
@@ -15879,6 +15880,10 @@ html.route-info-open .route-progress-callout-panel--expanded {
   .nav-bottom-stack {
     gap: 2px;
     padding-bottom: var(--nav-bottom-reserved);
+  }
+
+  .app-shell.nav-fullmap.app-shell--basic-ad-banner .nav-bottom-stack {
+    bottom: var(--basic-ad-banner-reserve, 50px);
   }
 
   .map-stage.map-bleed .mapboxgl-ctrl-bottom-left,
