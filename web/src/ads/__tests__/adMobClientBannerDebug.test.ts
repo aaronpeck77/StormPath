@@ -14,7 +14,11 @@ vi.mock("@capacitor-community/admob", () => ({
     trackingAuthorizationStatus: vi.fn(),
     requestTrackingAuthorization: vi.fn(),
   },
-  BannerAdPluginEvents: { FailedToLoad: "failedToLoad", Loaded: "loaded" },
+  BannerAdPluginEvents: {
+    FailedToLoad: "failedToLoad",
+    Loaded: "loaded",
+    SizeChanged: "bannerAdSizeChanged",
+  },
   BannerAdPosition: { BOTTOM_CENTER: "BOTTOM_CENTER" },
   BannerAdSize: { BANNER: "BANNER" },
 }));
@@ -23,8 +27,18 @@ import { Capacitor } from "@capacitor/core";
 import {
   getBasicBannerCustomerHint,
   getBasicBannerDebugLine,
+  readBannerHeightPx,
   recordBasicBannerUiSlot,
 } from "../adMobClient";
+
+describe("readBannerHeightPx", () => {
+  it("reads the plugin size and treats a hidden banner as zero", () => {
+    expect(readBannerHeightPx({ width: 320, height: 50 })).toBe(50);
+    expect(readBannerHeightPx({ size: { height: 90 } })).toBe(90);
+    expect(readBannerHeightPx({ height: 0 })).toBe(0);
+    expect(readBannerHeightPx(null)).toBe(0);
+  });
+});
 
 describe("getBasicBannerDebugLine", () => {
   it("reports web when not native", () => {

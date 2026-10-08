@@ -46,6 +46,16 @@ export function buildAppShellClassName(flags: AppShellClassNameFlags): string {
     .join(" ");
 }
 
+/** Shell style: dev cursor, plus the live AdMob height so bottom controls clear the banner. */
+export function buildAppShellStyle(adBannerLiftPx: number): CSSProperties | undefined {
+  const dev = buildDevPointerStyle();
+  if (!(adBannerLiftPx > 0)) return dev;
+  const lift = {
+    ["--basic-ad-banner-reserve" as string]: `${Math.round(adBannerLiftPx)}px`,
+  } as CSSProperties;
+  return dev ? { ...dev, ...lift } : lift;
+}
+
 /** Dev-only cursor override so custom pointer glyphs don't leak into production builds. */
 export function buildDevPointerStyle(): CSSProperties | undefined {
   if (!import.meta.env.DEV) return undefined;
