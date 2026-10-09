@@ -174,6 +174,29 @@ async function startNativeWatch(
     }
   }, 45_000);
 
+  void Geolocation.getCurrentPosition({
+    enableHighAccuracy: false,
+    maximumAge: 300_000,
+    timeout: 4_000,
+  })
+    .then((pos) => {
+      if (cancelled || hasFix || !pos) return;
+      hasFix = true;
+      if (neverAcquiredTimer) {
+        clearTimeout(neverAcquiredTimer);
+        neverAcquiredTimer = null;
+      }
+      onFix(
+        pos.coords.longitude,
+        pos.coords.latitude,
+        pos.coords.heading != null && !Number.isNaN(pos.coords.heading) ? pos.coords.heading : null,
+        pos.coords.speed != null && pos.coords.speed >= 0 ? pos.coords.speed : null
+      );
+    })
+    .catch(() => {
+      /* Watch still supplies a fresh fix. */
+    });
+
   const id = await Geolocation.watchPosition(
     { enableHighAccuracy: true, timeout: 20_000, maximumAge: highRefresh ? 0 : 2_000 },
     (pos, err) => {

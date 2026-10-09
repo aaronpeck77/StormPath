@@ -2394,10 +2394,29 @@ html:has(.drive-map--native-shell) #root {
   transform: scale(0.97);
 }
 
+.drive-map-frame {
+  position: absolute;
+  inset: 0;
+}
+
 .drive-map {
   width: 100%;
   height: 100%;
   touch-action: none;
+}
+
+.drive-map-opening {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a0b0d;
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  pointer-events: none;
 }
 
 /* Mapbox logo + �: default corners, bottom safe inset (same on web and phone ? sits in strip under floating chrome) */

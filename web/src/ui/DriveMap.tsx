@@ -18,6 +18,7 @@ import {
 } from "../map/homePreloadRegion";
 import { isWifiConnection } from "../map/mapPreloadNetwork";
 import { warmMapTilesForBounds } from "../map/mapRegionCacheWarm";
+import { neighborhoodBounds, readLastMapOpen, writeLastMapOpen } from "../map/lastMapOpen";
 import { prefetchMapTilesForBounds } from "../map/prefetchMapTilesForBounds";
 import {
   readMapVectorTilesetGroups,
@@ -602,6 +603,9 @@ function DriveMapInner({
 }: Props) {
   const ultraLongRoute = isUltraLongTripRoute(sessionRouteLengthM);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [showOpeningCover, setShowOpeningCover] = useState(
+    () => readLastMapOpen() == null && userLngLat == null
+  );
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const puckMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const destMarkerRef = useRef<mapboxgl.Marker | null>(null);
@@ -1227,14 +1231,22 @@ function DriveMapInner({
     /* Wrap construction in try/catch so any runtime error in mapboxgl.Map is logged
      * rather than left as a silent React effect failure. */
     let map: mapboxgl.Map;
+    const live = userLngLatRef.current;
+    const remembered = live ? null : readLastMapOpen();
     try {
-      const startCenter = userLngLatRef.current ?? FALLBACK_LNGLAT;
-      const startZoom = userLngLatRef.current ? ROUTE_VIEW_PLANNING_STREET_ZOOM : 4;
+      const startCenter = live ?? (remembered ? ([remembered.lng, remembered.lat] as [number, number]) : FALLBACK_LNGLAT);
+      /* No saved place yet: stay covered. Zoom stays at street level so the globe never flashes. */
+      const startZoom = live
+        ? ROUTE_VIEW_PLANNING_STREET_ZOOM
+        : remembered
+          ? remembered.zoom
+          : ROUTE_VIEW_PLANNING_STREET_ZOOM;
       map = new mapboxgl.Map({
         container: containerRef.current,
         style: activeStyleRef.current,
         center: startCenter,
         zoom: startZoom,
+        bearing: remembered?.bearing ?? 0,
         attributionControl: false,
         dragRotate: true,
         touchPitch: true,
@@ -1269,8 +1281,8 @@ function DriveMapInner({
       })
     );
 
-    /* Force Mercator projection. mapbox-gl 3.x defaults to globe at zoom < 6 (our
-     * initial zoom is 4), and globe projection on Capacitor's WebKit/WebGL2 context
+    /* Force Mercator projection. mapbox-gl 3.x defaults to globe at zoom < 6, and globe
+     * projection on Capacitor's WebKit/WebGL2 context
      * never completes a frame — the map renders only the atmosphere ring with no
      * continents drawn. Mercator is also how every classic nav app (Apple Maps,
      * Google Maps mobile, Waze) renders; globe was a desktop showpiece, not a fit
@@ -1286,6 +1298,38 @@ function DriveMapInner({
     map.on("error", (e: { error?: unknown }) => {
       console.warn("[map] mapbox-gl error", e?.error ?? e);
     });
+
+    let lastOpenWriteMs = 0;
+    const rememberOpenFrame = (force: boolean) => {
+      try {
+        if (!isMapUsable(map)) return;
+        const c = map.getCenter();
+        const zoom = map.getZoom();
+        const now = Date.now();
+        if (!force && now - lastOpenWriteMs < 4_000) return;
+        lastOpenWriteMs = now;
+        writeLastMapOpen({ lng: c.lng, lat: c.lat, zoom, bearing: map.getBearing() });
+      } catch {
+        /* map disposed */
+      }
+    };
+    const onMoveEndRemember = () => rememberOpenFrame(false);
+    const onHideRemember = () => {
+      if (document.visibilityState === "hidden") rememberOpenFrame(true);
+    };
+    const onPageHideRemember = () => rememberOpenFrame(true);
+    map.on("moveend", onMoveEndRemember);
+    document.addEventListener("visibilitychange", onHideRemember);
+    window.addEventListener("pagehide", onPageHideRemember);
+
+    if (remembered && token) {
+      void prefetchMapTilesForBounds(neighborhoodBounds(remembered.lng, remembered.lat), token, {
+        zooms: [14, 15],
+        maxTiles: 18,
+        includeTerrain: false,
+        pacingMs: 20,
+      });
+    }
 
     const installTrafficLayers = () => {
       try {
@@ -1321,6 +1365,9 @@ function DriveMapInner({
     } else map.once("load", onLoad);
 
     return () => {
+      map.off("moveend", onMoveEndRemember);
+      document.removeEventListener("visibilitychange", onHideRemember);
+      window.removeEventListener("pagehide", onPageHideRemember);
       map.off("style.load", installTrafficLayers);
       map.off("load", onLoad);
       puckMarkerRef.current?.remove();
@@ -1334,6 +1381,42 @@ function DriveMapInner({
       if (exploreTimerRef.current) clearTimeout(exploreTimerRef.current);
     };
   }, [token]);
+
+  useEffect(() => {
+    if (!showOpeningCover) return;
+    if (!userLngLat) return;
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const reveal = () => {
+      try {
+        if (!isMapUsable(map)) return false;
+        const z = map.getZoom();
+        const c = map.getCenter();
+        const stillFactory =
+          z < 10 &&
+          Math.abs(c.lng - FALLBACK_LNGLAT[0]) < 0.02 &&
+          Math.abs(c.lat - FALLBACK_LNGLAT[1]) < 0.02;
+        return !stillFactory && z >= 10;
+      } catch {
+        return false;
+      }
+    };
+    if (reveal()) {
+      setShowOpeningCover(false);
+      return;
+    }
+    const id = window.setInterval(() => {
+      if (reveal()) {
+        window.clearInterval(id);
+        setShowOpeningCover(false);
+      }
+    }, 200);
+    const giveUp = window.setTimeout(() => setShowOpeningCover(false), 12_000);
+    return () => {
+      window.clearInterval(id);
+      window.clearTimeout(giveUp);
+    };
+  }, [showOpeningCover, userLngLat, mapReady]);
 
   useEffect(() => {
     safeStorage.set(NIGHT_MAP_STYLE_LS_KEY, nightBasemapPreset);
@@ -5150,10 +5233,17 @@ function DriveMapInner({
   }
 
   return (
-    <div
-      ref={containerRef}
-      className={punchNativeHole ? "drive-map drive-map--native-shell" : "drive-map"}
-    />
+    <div className="drive-map-frame">
+      <div
+        ref={containerRef}
+        className={punchNativeHole ? "drive-map drive-map--native-shell" : "drive-map"}
+      />
+      {showOpeningCover ? (
+        <div className="drive-map-opening" role="status">
+          Finding you
+        </div>
+      ) : null}
+    </div>
   );
 }
 
