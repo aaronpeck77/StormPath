@@ -217,4 +217,26 @@ describe("assignOffRouteReplanSlots", () => {
     expect(slots[0]?.label).toBe("Alternate");
     expect(slots[1]?.label).toBe("Main");
   });
+
+  it("keeps Basic on the one forward line", () => {
+    const user: [number, number] = [-86.78, 36.16];
+    const main: NavRoute = {
+      id: "r-y",
+      role: "fastest",
+      label: "Ahead",
+      geometry: [user, [-86.77, 36.17], [-86.6, 36.2]],
+      baseEtaMinutes: 20,
+    };
+    const alt: NavRoute = {
+      id: "r-z",
+      role: "balanced",
+      label: "Alternate",
+      geometry: [user, [-86.76, 36.165], [-86.6, 36.2]],
+      baseEtaMinutes: 22,
+    };
+    const slots = assignOffRouteReplanSlots([main, alt], user, 20, "fastest", 1);
+    expect(slots).toHaveLength(1);
+    expect(slots[0]?.id).toBe("r-a");
+    expect(slots[0]?.label).toBe("Main");
+  });
 });

@@ -24,8 +24,13 @@ export type SoftRestartLegPatch = {
  * Missed turn / off-route: forget the old corridor and install a fresh
  * GPS→dest plan. Drive follows A; Map / Route show A + B when present.
  */
-export function planAfterOffRouteReplan(plan: TripPlan, routes: NavRoute[]): TripPlan {
-  const next = routes.filter((r) => r.geometry.length >= 2).slice(0, 2);
+export function planAfterOffRouteReplan(
+  plan: TripPlan,
+  routes: NavRoute[],
+  maxRoutes = 2
+): TripPlan {
+  const cap = maxRoutes < 2 ? 1 : 2;
+  const next = routes.filter((r) => r.geometry.length >= 2).slice(0, cap);
   if (!next.length) return plan;
   return { ...plan, routes: next };
 }
@@ -61,7 +66,9 @@ export function assignOffRouteReplanSlots(
   fresh: NavRoute[],
   userLngLat: LngLat,
   headingDeg: number | null,
-  preference: RoutingPreference = "fastest"
+  preference: RoutingPreference = "fastest",
+  /** Basic stays on one line. Plus may keep Main and a forward alternate. */
+  maxRoutes = 2
 ): NavRoute[] {
   const usable = fresh.filter((r) => r.geometry.length >= 2);
   const forward = usable.filter(
@@ -71,6 +78,7 @@ export function assignOffRouteReplanSlots(
   const primary = pickBestForwardRoute(forward, userLngLat, headingDeg) ?? forward[0];
   if (!primary) return [];
   const main = asMain(primary);
+  if (maxRoutes < 2) return [main];
   const altSrc = forward.find((r) => r !== primary && alternateFits(r, primary));
   const alt = altSrc ? asAlternate(altSrc, "r-b") : null;
   if (preference === "alternate" && altSrc) {

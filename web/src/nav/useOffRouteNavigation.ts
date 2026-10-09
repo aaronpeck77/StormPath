@@ -22,8 +22,10 @@ import {
   DRIVE_AHEAD_NAV_START_GRACE_MAX_LATERAL_M,
   DRIVE_AHEAD_NAV_START_GRACE_MS,
   DRIVE_AHEAD_OFF_ROUTE_ENTER_M,
-  DRIVE_REANCHOR_LATERAL_M,
-  DRIVE_AHEAD_REROUTE_THROTTLE_MS,
+  DRIVE_TURN_OFF_CONFIRM_TICKS,
+  DRIVE_TURN_OFF_THROTTLE_MS,
+  driveReroutePace,
+  driveTurnedOffRoute,
   isDriveAlwaysAheadView,
 } from "./driveAlwaysAhead";
 import { mayMutateLockedRouteGeometry } from "./navigationContract";
@@ -223,7 +225,15 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   const lastOffRouteSampleRef = useRef<{ t: number; lateralM: number; alongM: number } | null>(
     null
   );
+  /** Heading vs the line ahead, so a real turn does not wait on the old corridor. */
+  const driveDepartPoseRef = useRef<{
+    headingDeg: number | null;
+    routeBearingDeg: number | null;
+    speedMps: number;
+  }>({ headingDeg: null, routeBearingDeg: null, speedMps: 0 });
   const drivingRejoinRoadClassRef = useRef<RoadNetworkClass>("unknown");
+  /** Instant street class — not the highway latch — so a city turn does not wait like a freeway. */
+  const instantRoadClassRef = useRef<RoadNetworkClass>("unknown");
   const drivingRejoinSurfaceAtRef = useRef<number | null>(null);
   const drivingRejoinModeRef = useRef<DrivingRejoinMode>("manual");
   const guidanceRouteLengthMRef = useRef(guidanceRouteLengthM);
@@ -332,6 +342,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     lastOffRouteSampleRef.current = null;
     offRouteSinceMsRef.current = null;
     drivingRejoinRoadClassRef.current = "unknown";
+    instantRoadClassRef.current = "unknown";
     drivingRejoinSurfaceAtRef.current = null;
     drivingRejoinModeRef.current = "manual";
   }, []);
@@ -389,9 +400,10 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       const remainingVias = remainingViaStops(viaStops, activeViaIndex);
       const viaCoords = remainingVias.map((s) => s.lngLat);
       const bearingDeg = headingRef.current;
+      const routeCap = isPlus ? 2 : 1;
       const fresh = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
         via: viaCoords.length > 0 ? viaCoords : undefined,
-        maxRoutes: 2,
+        maxRoutes: routeCap,
         forwardFirst: true,
         bearingDeg:
           bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
@@ -403,13 +415,14 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         fresh,
         userLngLat,
         bearingDeg,
-        routingPreferenceRef.current
+        routingPreferenceRef.current,
+        routeCap
       );
       const primary = nextRoutes[0];
       if (!primary?.geometry?.length || epochAtStart !== routeGraphEpochRef.current) return false;
 
       lockedNavigationRouteIdRef.current = primary.id;
-      setPlan((prev) => planAfterOffRouteReplan(prev, nextRoutes));
+      setPlan((prev) => planAfterOffRouteReplan(prev, nextRoutes, routeCap));
       setRouteSlotOrder(() => offRouteReplanSlotIds(nextRoutes));
       setPreviewLegIndex(0);
       adoptLockedRouteGeometry(primary.geometry.map(([a, b]) => [a, b] as LngLat), {
@@ -506,8 +519,24 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   const executeAutoRecovery = useCallback(
     async (_action: "rejoin" | "replan") => {
       const driveAhead = isDriveAlwaysAheadView(viewModeRef.current);
-      const throttleMs = driveAhead ? DRIVE_AHEAD_REROUTE_THROTTLE_MS : OFF_ROUTE_REROUTE_THROTTLE_MS;
+      const pace = driveReroutePace(driveAhead ? instantRoadClassRef.current : "highway");
       const now = Date.now();
+      const lateralM = lastOffRouteSampleRef.current?.lateralM ?? 0;
+      const pose = driveDepartPoseRef.current;
+      /* A turn off the line is not a freeway slip. Draw forward now. */
+      const turnedOff =
+        driveAhead &&
+        driveTurnedOffRoute({
+          headingDeg: pose.headingDeg,
+          routeBearingDeg: pose.routeBearingDeg,
+          speedMps: pose.speedMps,
+          lateralM,
+        });
+      const throttleMs = turnedOff
+        ? DRIVE_TURN_OFF_THROTTLE_MS
+        : driveAhead
+          ? pace.throttleMs
+          : OFF_ROUTE_REROUTE_THROTTLE_MS;
       if (
         routingRef.current ||
         altRoutesRefreshInFlightRef.current ||
@@ -517,16 +546,20 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       }
 
       /* Core reroutes on its own and hands back geometry through `routeChanged`.
-       * Planning here as well meant a second Directions call and a Core stop/start
-       * mid-drive. Detection and the banner stay; only the planning waits. */
-      const owner = resolveRerouteOwner({
-        health: coreRerouteHealthRef?.current,
-        offRouteSinceMs: offRouteSinceMsRef.current,
-        nowMs: now,
-      });
-      const lateralM = lastOffRouteSampleRef.current?.lateralM ?? 0;
-      /* Far off the drawn line: do not wait for Core to drag the old corridor back. */
-      if (lateralM < DRIVE_REANCHOR_LATERAL_M && !diyMayPlanReroute(owner)) return;
+       * On a freeway, wait so we do not fire a second Directions call and restart
+       * Core. On a city street that wait is longer than the next block, so plan
+       * from here once the turn is real. A heading that has left the line does
+       * not wait for either. */
+      if (!turnedOff) {
+        const owner = resolveRerouteOwner({
+          health: coreRerouteHealthRef?.current,
+          offRouteSinceMs: offRouteSinceMsRef.current,
+          nowMs: now,
+          graceMs: driveAhead ? pace.coreGraceMs : undefined,
+        });
+        /* Far off the drawn line: do not wait for Core to drag the old corridor back. */
+        if (lateralM < pace.reanchorLateralM && !diyMayPlanReroute(owner)) return;
+      }
 
       lastAutoRerouteAttemptRef.current = now;
 
@@ -630,11 +663,12 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
             ? guidanceRouteLengthMRef.current
             : polylineLengthMeters(pollGeom);
 
-      const alongForPoll = measureOffRouteLateral(
+      const pollLeave = measureOffRouteLateral(
         pos,
         pollGeom,
         userAlongGuidanceMRef.current
-      ).alongM;
+      );
+      const alongForPoll = pollLeave.alongM;
 
       if (lockedRoute?.geometry?.length) {
         const sampleAlong = measureOffRouteLateral(pos, lockedGeom, alongForPoll);
@@ -643,6 +677,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           userAlongM: sampleAlong.alongM,
           destLngLat: destLngLatRef.current,
         }).roadClass;
+        instantRoadClassRef.current = instantRoad;
         const prevRoad = drivingRejoinRoadClassRef.current;
         if (
           shouldLatchHighwayAfterSurface(
@@ -677,6 +712,17 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       }
       const enterThresholdM = offRouteEnterThresholdM(metersToStepEnd);
       const driveAhead = isDriveAlwaysAheadView(viewModeRef.current);
+      driveDepartPoseRef.current = {
+        headingDeg: headingRef.current,
+        routeBearingDeg: routeBearing,
+        speedMps: speedMpsRef.current ?? 0,
+      };
+      const turnedOff = driveTurnedOffRoute({
+        headingDeg: headingRef.current,
+        routeBearingDeg: routeBearing,
+        speedMps: speedMpsRef.current ?? 0,
+        lateralM: pollLeave.lateralM,
+      });
 
       const rejoinCtx = lockedRoute?.geometry?.length
         ? resolveDrivingRejoinContext({
@@ -717,6 +763,11 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         drivingRejoinMode: rejoinCtx?.mode ?? drivingRejoinModeRef.current,
         rejoinFailCount: offRouteRerouteFailStreakRef.current,
         driveAlwaysAhead: driveAhead,
+        confirmTicks: driveAhead
+          ? turnedOff
+            ? DRIVE_TURN_OFF_CONFIRM_TICKS
+            : driveReroutePace(instantRoadClassRef.current).confirmTicks
+          : undefined,
         navStartGraceMs: driveAhead ? DRIVE_AHEAD_NAV_START_GRACE_MS : undefined,
         navStartGraceAlongM: driveAhead ? DRIVE_AHEAD_NAV_START_GRACE_ALONG_M : undefined,
         navStartGraceMaxLateralM: driveAhead ? DRIVE_AHEAD_NAV_START_GRACE_MAX_LATERAL_M : undefined,

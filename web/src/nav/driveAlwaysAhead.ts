@@ -9,6 +9,8 @@
  * Thresholds are duplicated (not imported from offRouteDetect) so Vite HMR cannot
  * hit a circular partial-export failure for {@link lockedRoutePrefersBackroads}.
  */
+import { headingDeltaDegrees } from "./forwardRoutePick";
+import { CORE_REROUTE_GRACE_MS } from "./rerouteOwner";
 import type { RouteRole } from "./types";
 
 /**
@@ -27,9 +29,78 @@ export const DRIVE_AHEAD_HEADING_DELTA_DEG = 32;
 export const DRIVE_AHEAD_REROUTE_THROTTLE_MS = 8_000;
 /**
  * Clearly off the drawn line — about a quarter mile. Past a bridge slip and a
- * missed turn. Build a new line from here instead of waiting on the old one.
+ * missed turn on a highway. Build a new line from here instead of waiting on the old one.
  */
 export const DRIVE_REANCHOR_LATERAL_M = 400;
+/**
+ * City blocks are often 80–120 m. Two agreeing polls, then draw before the next
+ * cross street — do not wait out a freeway-length Core grace.
+ */
+export const DRIVE_AHEAD_CONFIRM_TICKS_CITY = 2;
+/** Past a real turn (~90 ft), still short of the next intersection. */
+export const DRIVE_REANCHOR_CITY_LATERAL_M = 28;
+/** Retry a missed city fetch before the driver reaches the next street. */
+export const DRIVE_AHEAD_REROUTE_THROTTLE_CITY_MS = 2_500;
+/** Core may already be rerouting. If it has not, plan from here. */
+export const CORE_REROUTE_GRACE_CITY_MS = 1_000;
+/**
+ * A real turn off the drawn line — not a curve or a lane change.
+ * Plan forward immediately so the next intersection is still ahead.
+ */
+export const DRIVE_TURN_OFF_HEADING_DELTA_DEG = 55;
+/** ~7 mph. A creep into a lot is not "I took the other road." */
+export const DRIVE_TURN_OFF_MIN_SPEED_MPS = 3;
+export const DRIVE_TURN_OFF_MIN_LATERAL_M = 12;
+/** Two polls agree, then draw. Do not wait for a third sample. */
+export const DRIVE_TURN_OFF_CONFIRM_TICKS = 2;
+/** Retry a missed forward plan before the next cross street. */
+export const DRIVE_TURN_OFF_THROTTLE_MS = 2_000;
+
+/**
+ * The car has turned off the locked line and is still moving.
+ * That is a new trip from here, in the direction they are facing.
+ */
+export function driveTurnedOffRoute(input: {
+  headingDeg: number | null | undefined;
+  routeBearingDeg: number | null | undefined;
+  speedMps: number | null | undefined;
+  lateralM: number | null | undefined;
+}): boolean {
+  const heading = input.headingDeg;
+  const routeBearing = input.routeBearingDeg;
+  const speed = input.speedMps ?? 0;
+  const lateral = input.lateralM ?? 0;
+  if (heading == null || routeBearing == null) return false;
+  if (!Number.isFinite(heading) || !Number.isFinite(routeBearing)) return false;
+  if (!(speed >= DRIVE_TURN_OFF_MIN_SPEED_MPS)) return false;
+  if (!(lateral >= DRIVE_TURN_OFF_MIN_LATERAL_M)) return false;
+  return headingDeltaDegrees(heading, routeBearing) >= DRIVE_TURN_OFF_HEADING_DELTA_DEG;
+}
+
+export type DriveReroutePace = {
+  confirmTicks: number;
+  reanchorLateralM: number;
+  throttleMs: number;
+  coreGraceMs: number;
+};
+
+/** Highway keeps the long wait. City streets must show a line before the next block. */
+export function driveReroutePace(roadClass: "highway" | "city_streets" | "unknown" | null | undefined): DriveReroutePace {
+  if (roadClass === "city_streets") {
+    return {
+      confirmTicks: DRIVE_AHEAD_CONFIRM_TICKS_CITY,
+      reanchorLateralM: DRIVE_REANCHOR_CITY_LATERAL_M,
+      throttleMs: DRIVE_AHEAD_REROUTE_THROTTLE_CITY_MS,
+      coreGraceMs: CORE_REROUTE_GRACE_CITY_MS,
+    };
+  }
+  return {
+    confirmTicks: DRIVE_AHEAD_CONFIRM_TICKS,
+    reanchorLateralM: DRIVE_REANCHOR_LATERAL_M,
+    throttleMs: DRIVE_AHEAD_REROUTE_THROTTLE_MS,
+    coreGraceMs: CORE_REROUTE_GRACE_MS,
+  };
+}
 /** Short post-Go grace — only block tiny GPS noise at the start pin. */
 export const DRIVE_AHEAD_NAV_START_GRACE_MS = 12_000;
 export const DRIVE_AHEAD_NAV_START_GRACE_ALONG_M = 120;
