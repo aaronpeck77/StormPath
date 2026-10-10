@@ -56,7 +56,7 @@ describe("buildPassengerAdvisoryLine", () => {
     const line = buildPassengerAdvisoryLine(greenup);
     expect(line?.badge).toBe("Leave");
     expect(text(line)).toBe(
-      `If you leave now, you may meet severe weather by Greenup. Waiting about 20 minutes, until around ${formatPassengerClock(NOW + 20 * 60_000)}, may let you miss it.`
+      `If you leave now, you may meet a Severe Thunderstorm Warning by Greenup. Waiting about 20 minutes, until around ${formatPassengerClock(NOW + 20 * 60_000)}, may let you miss it.`
     );
   });
 
@@ -65,11 +65,11 @@ describe("buildPassengerAdvisoryLine", () => {
       ...greenup,
       impacts: [impact({ hazardExpiresIso: new Date(NOW + 4 * 60 * 60_000).toISOString() })],
     });
-    expect(text(line)).toBe("If you leave now, you may meet severe weather by Greenup.");
+    expect(text(line)).toBe("If you leave now, you may meet a Severe Thunderstorm Warning by Greenup.");
     expect(text(line)).not.toMatch(/Waiting about/);
   });
 
-  it("stays quiet for a shower, a far storm, a watch, and a storm that will be gone", () => {
+  it("stays quiet for a shower, a watch, and a storm that will be gone", () => {
     expect(
       buildPassengerAdvisoryLine({
         ...greenup,
@@ -79,25 +79,19 @@ describe("buildPassengerAdvisoryLine", () => {
     expect(
       buildPassengerAdvisoryLine({
         ...greenup,
-        impacts: [impact({ etaAheadMinutes: 80 })],
+        impacts: [impact({ driverHeadline: "Severe Thunderstorm Watch", severity: "serious", etaAheadMinutes: 80 })],
       })
     ).toBeNull();
     expect(
       buildPassengerAdvisoryLine({
         ...greenup,
-        impacts: [impact({ driverHeadline: "Severe Thunderstorm Watch", severity: "serious" })],
+        impacts: [impact({ arrivalVerdict: "may_pass", etaAheadMinutes: 30 })],
       })
     ).toBeNull();
     expect(
       buildPassengerAdvisoryLine({
         ...greenup,
-        impacts: [impact({ arrivalVerdict: "may_pass" })],
-      })
-    ).toBeNull();
-    expect(
-      buildPassengerAdvisoryLine({
-        ...greenup,
-        impacts: [impact({ arrivalVerdict: "uncertain" })],
+        impacts: [impact({ arrivalVerdict: "uncertain", etaAheadMinutes: 200 })],
       })
     ).toBeNull();
   });
@@ -114,7 +108,7 @@ describe("buildPassengerAdvisoryLine", () => {
       impacts: [impact({ hazardExpiresIso: null, etaAheadMinutes: 30 })],
       minutePrecip: { fetchedAt: NOW, lat: 39.2, lng: -88.1, minutes },
     });
-    expect(text(line)).toBe("If you leave now, you may meet severe weather by Greenup.");
+    expect(text(line)).toBe("If you leave now, you may meet a Severe Thunderstorm Warning by Greenup.");
   });
 
   it("uses minute rain only when the severe weather is at the start", () => {
@@ -156,6 +150,55 @@ describe("buildPassengerAdvisoryLine", () => {
       metersToManeuver: 80,
       driveEtaMinutes: 50,
       turnSteps: [{ instruction: "toward Casey", distanceM: 12_000, towardPlace: "Casey" }],
+    });
+    expect(line).toBeNull();
+  });
+
+  it("tells the driver they are heading into a hurricane hours down the route", () => {
+    const line = buildPassengerAdvisoryLine({
+      ...greenup,
+      impacts: [
+        impact({
+          driverHeadline: "Hurricane Warning ahead",
+          etaAheadMinutes: 300,
+          lngLat: [-85.7, 30.2],
+        }),
+      ],
+      placeAnchors: [{ lngLat: [-85.7, 30.2], place: "Panama City", exitNumber: null }],
+    });
+    expect(line?.badge).toBe("Ahead");
+    expect(text(line)).toBe(
+      "The path we're taking heads into a hurricane near Panama City, about 5 hours ahead. It still looks like it will be there when we arrive."
+    );
+  });
+
+  it("says when a far blizzard will be gone before arrival", () => {
+    const line = buildPassengerAdvisoryLine({
+      ...greenup,
+      impacts: [
+        impact({
+          driverHeadline: "Blizzard Warning ahead",
+          etaAheadMinutes: 180,
+          arrivalVerdict: "may_pass",
+          hazardExpiresIso: null,
+        }),
+      ],
+    });
+    expect(text(line)).toBe(
+      "The path we're taking heads into a blizzard near Greenup, about 3 hours ahead. It looks like it may be gone before we get there."
+    );
+  });
+
+  it("stays quiet on a far watch that is not a named storm", () => {
+    const line = buildPassengerAdvisoryLine({
+      ...greenup,
+      impacts: [
+        impact({
+          driverHeadline: "Wind Advisory ahead",
+          severity: "serious",
+          etaAheadMinutes: 200,
+        }),
+      ],
     });
     expect(line).toBeNull();
   });

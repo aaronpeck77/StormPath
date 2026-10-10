@@ -64,11 +64,16 @@ export function buildPassengerAdvisoryLine(input: {
   }
 
   const hit = pickSevereAhead(input.impacts);
-  if (!hit) return null;
+  if (!hit) return headingIntoLine(input);
 
   const place = nearestTownName(hit.lngLat, input.placeAnchors);
   const where = place ? `by ${place}` : "ahead";
-  const kind = icy(hit) ? "icy weather" : "severe weather";
+  const named = headingRank(hit.driverHeadline) > 0 ? eventName(hit.driverHeadline) : null;
+  const kind = named
+    ? `${/^[aeiou]/i.test(named) ? "an" : "a"} ${named}`
+    : icy(hit)
+      ? "icy weather"
+      : "severe weather";
   const eta = hit.etaAheadMinutes ?? 0;
 
   if (!input.navigationStarted) {
@@ -78,11 +83,13 @@ export function buildPassengerAdvisoryLine(input: {
         ? waitFromMinutes(input.minutePrecip, input.nowMs)
         : null);
     if (eta <= 8) {
+      const lead = (named ? kind : "Severe weather");
+      const titled = lead[0]!.toUpperCase() + lead.slice(1);
       return {
         badge: "Leave",
         text: wait
-          ? `Severe weather is close now. Waiting about ${wait.waitMin} minutes, until around ${formatPassengerClock(wait.untilMs)}, may let it pass before you go.`
-          : "Severe weather is close now. Waiting until it passes may be worth considering before you go.",
+          ? `${titled} is close now. Waiting about ${wait.waitMin} minutes, until around ${formatPassengerClock(wait.untilMs)}, may let it pass before you go.`
+          : `${titled} is close now. Waiting until it passes may be worth considering before you go.`,
       };
     }
     const meet = `If you leave now, you may meet ${kind} ${where}.`;
@@ -106,6 +113,98 @@ export function buildPassengerAdvisoryLine(input: {
     badge: "Ahead",
     text: `${kind[0]!.toUpperCase()}${kind.slice(1)} may still be ${where}. ${town.name} is about ${town.etaMin} minutes ahead, if you want to let it pass.`,
   };
+}
+
+function headingIntoLine(input: {
+  impacts: RouteImpact[] | null | undefined;
+  placeAnchors: RoutePlaceAnchor[] | null | undefined;
+}): PassengerAdvisoryLine | null {
+  const hit = pickHeadingInto(input.impacts);
+  if (!hit) return null;
+  const storm = friendlyStorm(hit.driverHeadline);
+  const place = nearestTownName(hit.lngLat, input.placeAnchors);
+  const where = place ? ` near ${place}` : "";
+  const eta = etaPhrase(hit.etaAheadMinutes).replace(/^ about /, "");
+  const clock = eta ? `, about ${eta}` : "";
+  const when =
+    hit.arrivalVerdict === "may_pass"
+      ? "It looks like it may be gone before we get there."
+      : "It still looks like it will be there when we arrive.";
+  return {
+    badge: "Ahead",
+    text: `The path we're taking heads into ${storm}${where}${clock}. ${when}`,
+  };
+}
+
+function friendlyStorm(headline: string): string {
+  const watch = /\bwatch\b/i.test(headline);
+  if (/hurricane/i.test(headline)) return watch ? "a hurricane watch" : "a hurricane";
+  if (/typhoon/i.test(headline)) return watch ? "a typhoon watch" : "a typhoon";
+  if (/tropical storm/i.test(headline)) return watch ? "a tropical storm watch" : "a tropical storm";
+  if (/blizzard/i.test(headline)) return watch ? "a blizzard watch" : "a blizzard";
+  if (/ice storm/i.test(headline)) return watch ? "an ice storm watch" : "an ice storm";
+  if (/storm surge/i.test(headline)) return "a storm surge";
+  if (/extreme wind/i.test(headline)) return "extreme wind";
+  if (/tornado/i.test(headline)) return watch ? "a tornado watch" : "a tornado";
+  if (/severe thunderstorm/i.test(headline)) return watch ? "a severe thunderstorm watch" : "a severe thunderstorm";
+  const event = eventName(headline).toLowerCase();
+  return /^[aeiou]/i.test(event) ? `an ${event}` : `a ${event}`;
+}
+
+function pickHeadingInto(impacts: RouteImpact[] | null | undefined): RouteImpact | null {
+  if (!impacts?.length) return null;
+  let best: RouteImpact | null = null;
+  let bestRank = 0;
+  let bestEta = Infinity;
+  for (const impact of impacts) {
+    if (impact.coarsePreview || impact.confidence === "low") continue;
+    if (impact.arrivalVerdict !== "affects_you" && impact.arrivalVerdict !== "may_pass") continue;
+    const eta = impact.etaAheadMinutes;
+    if (eta == null || !Number.isFinite(eta) || eta < 0) continue;
+    if (eta <= PASSENGER_NEAR_MIN) continue;
+    const rank = headingRank(impact.driverHeadline);
+    if (rank <= 0) continue;
+    if (rank > bestRank || (rank === bestRank && eta < bestEta)) {
+      best = impact;
+      bestRank = rank;
+      bestEta = eta;
+    }
+  }
+  return best;
+}
+
+function headingRank(headline: string): number {
+  if (
+    /hurricane warning|typhoon warning|storm surge warning|tornado warning|extreme wind warning|blizzard warning|ice storm warning/i.test(
+      headline
+    )
+  ) {
+    return 5;
+  }
+  if (/hurricane watch|typhoon watch|tropical storm warning|blizzard watch|ice storm watch/i.test(headline)) {
+    return 4;
+  }
+  if (/severe thunderstorm warning|tornado watch/i.test(headline)) return 3;
+  if (/\bwarning\b/i.test(headline)) return 2;
+  return 0;
+}
+
+function eventName(headline: string): string {
+  return headline
+    .replace(/\s+—\s+in this segment$/i, "")
+    .replace(/\s+ahead$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function etaPhrase(etaMin: number | null): string {
+  if (etaMin == null || !Number.isFinite(etaMin) || etaMin < 1) return "";
+  if (etaMin < 60) return ` about ${Math.round(etaMin)} minutes ahead`;
+  const h = Math.floor(etaMin / 60);
+  const m = Math.round(etaMin % 60);
+  const hourWord = h === 1 ? "hour" : "hours";
+  const clock = m > 0 ? `${h} ${hourWord} ${m} minutes` : h === 1 ? "1 hour" : `${h} hours`;
+  return ` about ${clock} ahead`;
 }
 
 function icy(impact: RouteImpact): boolean {
