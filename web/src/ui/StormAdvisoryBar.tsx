@@ -215,6 +215,8 @@ export type StormAdvisoryBarProps = SharedProps & {
   promoLines?: AdvisoryPromoLine[];
   /** Browser / PWA online flag — surfaced for Basic. */
   isOnline?: boolean;
+  /** Radio is up but the map host is not answering, or the drive is holding last-good tiles. */
+  dataLow?: boolean;
   /**
    * Basic (nav + radar only): keep the advisory strip for status and tips, but omit NWS/weather panels
    * and preview rotation that references forecasts, NWS loads, or hazard lists.
@@ -327,6 +329,7 @@ export function StormAdvisoryBar({
   ownsPlus = false,
   promoLines = [],
   isOnline = true,
+  dataLow = false,
   basicNavAdvisoryMode = false,
   navigationStarted,
   nowcastLine = null,
@@ -667,11 +670,13 @@ export function StormAdvisoryBar({
       const trip: AdvisoryPreviewItem[] = [];
       const promo: AdvisoryPreviewItem[] = [];
 
-      if (!isOnline) {
+      if (!isOnline || dataLow) {
         trip.push(
           previewItem({
-            badge: "Offline",
-            raw: bannerMsg("Offline — reconnect for map and radar."),
+            badge: "Data",
+            raw: bannerMsg(
+              "Data is low. Find better cell coverage or Wi-Fi for accurate performance."
+            ),
             tone: "warn",
           })
         );
@@ -735,11 +740,13 @@ export function StormAdvisoryBar({
     const trip: AdvisoryPreviewItem[] = [];
     const promo: AdvisoryPreviewItem[] = [];
 
-    if (!isOnline) {
+    if (!isOnline || dataLow) {
       trip.push(
         previewItem({
-          badge: "Offline",
-          raw: bannerMsg("Offline — reconnect for map and advisories."),
+          badge: "Data",
+          raw: bannerMsg(
+            "Data is low. Find better cell coverage or Wi-Fi for accurate performance."
+          ),
           tone: "warn",
         })
       );
@@ -883,6 +890,7 @@ export function StormAdvisoryBar({
   }, [
     basicNavAdvisoryMode,
     isOnline,
+    dataLow,
     showErrorState,
     error,
     loading,

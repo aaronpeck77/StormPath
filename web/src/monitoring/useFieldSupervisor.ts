@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import { STORMPATH_APP_VERSION, stormpathIosBuildNumber } from "../appVersion";
 import { stormpathBuildFlavor } from "../config/buildFlavor";
 import { reportFieldSupervisorEvent } from "./appHealthSignals";
@@ -47,6 +48,8 @@ export type FieldSupervisorState = {
   /** Last-good tiles / camera / road snap — skip Jeff jump and basemap reload. */
   holdLastGoodMap: boolean;
   reachable: boolean | null;
+  /** Before Go, the map host did not answer. Advisory can warn. Camera stays free. */
+  linkTooWeak: boolean;
 };
 
 type BusySnapshot = Partial<Record<SupervisorBusyFlag, boolean>>;
@@ -85,6 +88,8 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
 
   const [reachable, setReachable] = useState<boolean | null>(null);
   const [holdLastGoodMap, setHoldLastGoodMap] = useState(false);
+  /** Map host did not answer before a trip. Camera is not frozen. The bar can say so. */
+  const [linkTooWeak, setLinkTooWeak] = useState(false);
 
   const screenRef = useRef(screen);
   screenRef.current = screen;
@@ -92,6 +97,8 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
   reachableRef.current = reachable;
   const holdRef = useRef(holdLastGoodMap);
   holdRef.current = holdLastGoodMap;
+  const linkTooWeakRef = useRef(linkTooWeak);
+  linkTooWeakRef.current = linkTooWeak;
   const lastHoldClearedAtRef = useRef<number | null>(null);
   const lastMapReportAtRef = useRef<number | null>(null);
   /** When the link first looked healthy again while still holding last-good. */
@@ -208,10 +215,20 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
       const ok = await probeMapReachability({ navigatorOnLine: true });
       if (cancelled) return;
       if (ok) {
+        if (linkTooWeakRef.current) {
+          linkTooWeakRef.current = false;
+          setLinkTooWeak(false);
+        }
         maybeClearHoldAfterHealthy();
         return;
       }
       holdHealthySinceMsRef.current = null;
+      if (Capacitor.isNativePlatform() && !navigationStarted) {
+        if (!linkTooWeakRef.current) {
+          linkTooWeakRef.current = true;
+          setLinkTooWeak(true);
+        }
+      }
       /* Probe fails on a locked-down desktop too — only hold while GO (or already holding). */
       if (navigationStarted || holdRef.current) {
         applyHold("false_online", startedAt);
@@ -220,7 +237,7 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
 
     void tick();
     const id = window.setInterval(() => {
-      if (!isOnline || navigationStarted || holdRef.current) void tick();
+      if (!isOnline || navigationStarted || holdRef.current || linkTooWeakRef.current) void tick();
     }, NETWORK_RECONNECT_POLL_MS);
     return () => {
       cancelled = true;
@@ -286,7 +303,7 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
     busy: () => ({ routing: false }),
   });
 
-  return { holdLastGoodMap, reachable };
+  return { holdLastGoodMap, reachable, linkTooWeak };
 }
 
 function useStuckWatch(opts: {

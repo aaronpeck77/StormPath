@@ -3,6 +3,8 @@ import {
   auditTripNavDisplay,
   computeRemainingDistanceMeters,
   computeRemainingDriveEtaMinutes,
+  easeRemainingEtaMinutes,
+  emptyEtaEaseState,
   fartherAlongMeters,
   repairActionsForIssues,
 } from "../tripNavDisplay";
@@ -99,6 +101,53 @@ describe("tripNavDisplay", () => {
       })
     ).toBe(18);
     expect(computeRemainingDistanceMeters(true, 100_000, 80_000)).toBe(20_000);
+  });
+
+  it("drops a live answer whose free-flow time is a longer road than the miles left", () => {
+    const planM = 80 * 1609.34;
+    expect(
+      computeRemainingDriveEtaMinutes({
+        navigationStarted: true,
+        fullEtaMinutes: 90,
+        routeLengthM: planM,
+        alongM: planM * 0.75,
+        hasRouteGeometry: true,
+        planLengthM: planM,
+        liveRemainingEtaMinutes: 72,
+        typicalRemainingMinutes: 70,
+      })
+    ).toBe(23);
+  });
+
+  it("keeps a live delay when the free-flow time still matches the miles left", () => {
+    const planM = 80 * 1609.34;
+    expect(
+      computeRemainingDriveEtaMinutes({
+        navigationStarted: true,
+        fullEtaMinutes: 90,
+        routeLengthM: planM,
+        alongM: planM * 0.75,
+        hasRouteGeometry: true,
+        planLengthM: planM,
+        liveRemainingEtaMinutes: 38,
+        typicalRemainingMinutes: 24,
+      })
+    ).toBe(38);
+  });
+
+  it("steps a higher arrival time up instead of jumping", () => {
+    const state = emptyEtaEaseState();
+    expect(easeRemainingEtaMinutes(state, 20, 20_000, 0)).toBe(20);
+    expect(easeRemainingEtaMinutes(state, 35, 20_000, 1_000)).toBe(22);
+    expect(easeRemainingEtaMinutes(state, 35, 19_000, 10_000)).toBe(22);
+    expect(easeRemainingEtaMinutes(state, 35, 19_000, 50_000)).toBe(24);
+    expect(easeRemainingEtaMinutes(state, 18, 16_000, 60_000)).toBe(18);
+  });
+
+  it("accepts a higher time at once when the road ahead got longer", () => {
+    const state = emptyEtaEaseState();
+    expect(easeRemainingEtaMinutes(state, 20, 12_000, 0)).toBe(20);
+    expect(easeRemainingEtaMinutes(state, 40, 20_000, 1_000)).toBe(40);
   });
 
   it("returns null remaining distance when not navigating", () => {

@@ -1,10 +1,12 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { LngLat, NavRoute } from "./types";
 import type { ScoredRoute } from "../scoring/scoreRoutes";
 import type { TrafficOverlay } from "../situation/fusedSnapshot";
 import {
   computeRemainingDistanceMeters,
   computeRemainingDriveEtaMinutes,
+  easeRemainingEtaMinutes,
+  emptyEtaEaseState,
 } from "./tripNavDisplay";
 import { formatDistanceShort, useMilesForLngLat } from "../utils/formatDistance";
 import { noteDriveDiagEta } from "./driveDiagnostics";
@@ -44,8 +46,10 @@ export function useDriveEtaLabels(deps: UseDriveEtaLabelsDeps): UseDriveEtaLabel
     effectiveUserLngLat,
   } = deps;
 
-  /** Live Mapbox remaining-leg minutes when available; else scale static / full-route ETA by distance left. */
-  const driveEtaMinutes = useMemo(() => {
+  const etaEaseRef = useRef(emptyEtaEaseState());
+
+  /** Live Mapbox remaining-leg minutes when they match the road still left; else scale the planned trip. */
+  const rawDriveEtaMinutes = useMemo(() => {
     const s = scored.find((x) => x.route.id === lineFocusId);
     const full = s
       ? Math.round(s.effectiveEtaMinutes)
@@ -59,6 +63,12 @@ export function useDriveEtaLabels(deps: UseDriveEtaLabelsDeps): UseDriveEtaLabel
       Number.isFinite(trafficLeg.mapboxDurationMinutes)
         ? trafficLeg.mapboxDurationMinutes
         : null;
+    const typicalRemaining =
+      liveRemaining != null &&
+      trafficLeg?.typicalDurationMinutes != null &&
+      Number.isFinite(trafficLeg.typicalDurationMinutes)
+        ? trafficLeg.typicalDurationMinutes
+        : null;
     return computeRemainingDriveEtaMinutes({
       navigationStarted,
       fullEtaMinutes: full,
@@ -68,6 +78,7 @@ export function useDriveEtaLabels(deps: UseDriveEtaLabelsDeps): UseDriveEtaLabel
       planLengthM,
       tripOdometerM,
       liveRemainingEtaMinutes: liveRemaining,
+      typicalRemainingMinutes: typicalRemaining,
     });
   }, [
     navigationStarted,
@@ -81,19 +92,33 @@ export function useDriveEtaLabels(deps: UseDriveEtaLabelsDeps): UseDriveEtaLabel
     trafficOverlay,
   ]);
 
+  const distanceLeftM = computeRemainingDistanceMeters(
+    navigationStarted,
+    guidanceRouteLengthM,
+    userAlongGuidanceM
+  );
+  if (!navigationStarted) etaEaseRef.current = emptyEtaEaseState();
+  const driveEtaMinutes = easeRemainingEtaMinutes(
+    etaEaseRef.current,
+    rawDriveEtaMinutes,
+    distanceLeftM,
+    Date.now()
+  );
+
   useEffect(() => {
     if (!navigationStarted || driveEtaMinutes == null) return;
-    const distanceLeftM = computeRemainingDistanceMeters(
+    const distanceLeftMForNote = computeRemainingDistanceMeters(
       true,
       guidanceRouteLengthM,
       userAlongGuidanceM
     );
     const leg = trafficOverlay?.[lineFocusId] ?? null;
+    const liveMin = leg?.mapboxDurationMinutes;
     const source =
-      leg?.mapboxDurationMinutes != null && Number.isFinite(leg.mapboxDurationMinutes)
+      liveMin != null && Number.isFinite(liveMin) && driveEtaMinutes === Math.round(liveMin)
         ? "live"
         : "line";
-    noteDriveDiagEta(driveEtaMinutes, distanceLeftM, source);
+    noteDriveDiagEta(driveEtaMinutes, distanceLeftMForNote, source);
   }, [
     navigationStarted,
     driveEtaMinutes,

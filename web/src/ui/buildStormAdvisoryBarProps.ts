@@ -67,6 +67,7 @@ export type BuildStormAdvisoryBarPropsInput = {
   advisoryPlusDetailOn: boolean;
   advisoryPromoLines: AdvisoryPromoLine[];
   isOnline: boolean;
+  dataLow?: boolean;
   navigationStarted: boolean;
   advisoryNowcastLine: string | null;
   currentNowcast: CurrentNowcast | null;
@@ -129,6 +130,7 @@ export function buildStormAdvisoryBarProps(
     advisoryPlusDetailOn,
     advisoryPromoLines,
     isOnline,
+    dataLow = false,
     navigationStarted,
     advisoryNowcastLine,
     currentNowcast,
@@ -203,6 +205,7 @@ export function buildStormAdvisoryBarProps(
     ownsPlus: isPlus,
     promoLines: advisoryPromoLines,
     isOnline,
+    dataLow,
     basicNavAdvisoryMode: !isPlus,
     navigationStarted,
     /* Basic + Plus: current conditions / nowcast for banner + compact panel. */

@@ -1130,7 +1130,7 @@ export default function App() {
     rerouteInFlightRef: altRoutesRefreshInFlightRef,
   });
 
-  const { holdLastGoodMap } = useFieldSupervisor({
+  const { holdLastGoodMap, linkTooWeak } = useFieldSupervisor({
     routing,
     suggestLoading,
     bypassBusy,
@@ -2811,6 +2811,7 @@ export default function App() {
       advisoryPlusDetailOn,
       advisoryPromoLines,
       isOnline,
+      dataLow: holdLastGoodMap || linkTooWeak,
       advisoryNowcastLine,
       currentNowcast,
       forecastAreaLabel,
