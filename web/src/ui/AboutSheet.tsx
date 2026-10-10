@@ -21,6 +21,7 @@ import { PUCK_COLORS, puckColorById, type PuckColorId } from "./puckColor";
 import { StormPathSourcesAttribution } from "./StormPathSourcesAttribution";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import type { RadarDisplayMode } from "../state/settingsStore";
+import type { GuidanceLanguagePref } from "../utils/guidanceLanguage";
 import type { HomePuckFollowMode } from "../map/homePuckFollow";
 
 type ActivityTrailPanel = {
@@ -72,6 +73,7 @@ type Props = {
     /** Landscape / side view only — portrait layout ignores this */
     landscapeSideHand: "right" | "left";
     puckColor: PuckColorId;
+    guidanceLanguage: GuidanceLanguagePref;
   };
   onSettings: (next: Props["settings"]) => void;
   /** Replays the first-launch coachmark walk-through. Resets the suppression flag and asks
@@ -657,6 +659,28 @@ export function AboutSheet({
                   </span>
                 </label>
               ) : null}
+
+              <label className="about-sheet__setting about-sheet__settings-card">
+                <span>
+                  <strong>Spoken language</strong>
+                  <select
+                    value={settings.guidanceLanguage}
+                    onChange={(e) =>
+                      onSettings({
+                        ...settings,
+                        guidanceLanguage: (e.target.value === "en" ? "en" : "system") as GuidanceLanguagePref,
+                      })
+                    }
+                    style={{ display: "block", marginTop: 8, maxWidth: "100%" }}
+                  >
+                    <option value="system">Phone language</option>
+                    <option value="en">English</option>
+                  </select>
+                  Turn-by-turn, place search, and weather phrases follow this. The buttons stay in
+                  English. Choose English here if the phone is in another language and you want the
+                  voice in English. The change applies the next time you plan a route.
+                </span>
+              </label>
 
               <label className="about-sheet__setting about-sheet__settings-card">
                 <input

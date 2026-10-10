@@ -45,6 +45,7 @@ export function AppAboutSheetHost({
   const mapMatchingEnabled = useSettingsStore((s) => s.mapMatchingEnabled);
   const landscapeSideHand = useSettingsStore((s) => s.landscapeSideHand);
   const puckColor = useSettingsStore((s) => s.puckColor);
+  const guidanceLanguage = useSettingsStore((s) => s.guidanceLanguage);
 
   const settings = useMemo(
     () => ({
@@ -60,6 +61,7 @@ export function AppAboutSheetHost({
       mapMatchingEnabled,
       landscapeSideHand,
       puckColor,
+      guidanceLanguage,
     }),
     [
       radarEnabled,
@@ -74,6 +76,7 @@ export function AppAboutSheetHost({
       mapMatchingEnabled,
       landscapeSideHand,
       puckColor,
+      guidanceLanguage,
     ]
   );
 

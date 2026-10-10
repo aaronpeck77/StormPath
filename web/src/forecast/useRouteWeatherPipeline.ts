@@ -21,6 +21,7 @@ import type {
 } from "../services/tomorrowIo";
 import { getRadarRouteSampleIntervalMs } from "../utils/dataSaver";
 import { formatMinutePrecipNowLine } from "../utils/forecastDisplay";
+import { roadUsesMiles, weatherUsesFahrenheit } from "../utils/displayUnits";
 import { formatNowcastLine, type CurrentNowcast } from "../services/openWeatherClient";
 import {
   buildNavResourceBudget,
@@ -331,10 +332,14 @@ export function useRouteWeatherPipeline(
   ]);
 
   const advisoryNowcastLine = useMemo(() => {
-    if (currentNowcast) return formatNowcastLine(currentNowcast);
-    if (tioMinutePrecip?.now) return formatMinutePrecipNowLine(tioMinutePrecip.now);
+    const units = {
+      miles: roadUsesMiles(effectiveUserLngLat),
+      fahrenheit: weatherUsesFahrenheit(effectiveUserLngLat),
+    };
+    if (currentNowcast) return formatNowcastLine(currentNowcast, units);
+    if (tioMinutePrecip?.now) return formatMinutePrecipNowLine(tioMinutePrecip.now, units);
     return null;
-  }, [currentNowcast, tioMinutePrecip?.now]);
+  }, [currentNowcast, tioMinutePrecip?.now, effectiveUserLngLat]);
 
   /**
    * Enrich corridor weather detail with the worst forecast interval timing.

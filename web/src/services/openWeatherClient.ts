@@ -143,15 +143,25 @@ export async function fetchCurrentNowcast(
  *   - Add precip rate when ≥ 0.01 in/hr.
  *   - Fall back to a short conditions clause when there's room.
  */
-export function formatNowcastLine(now: CurrentNowcast): string {
+export function formatNowcastLine(
+  now: CurrentNowcast,
+  units?: { miles?: boolean; fahrenheit?: boolean }
+): string {
+  const fahrenheit = units?.fahrenheit !== false;
+  const miles = units?.miles !== false;
+  const temp = (f: number) =>
+    fahrenheit ? Math.round(f) : Math.round(((f - 32) * 5) / 9);
+  const tempUnit = fahrenheit ? "\u00b0F" : "\u00b0C";
+  const wind = (mph: number) => (miles ? Math.round(mph) : Math.round(mph * 1.60934));
+  const windUnit = miles ? "mph" : "km/h";
   const parts: string[] = [];
-  parts.push(`${now.tempF}\u00b0F`);
+  parts.push(`${temp(now.tempF)}${tempUnit}`);
 
   const dt = Math.abs(now.feelsLikeF - now.tempF);
   const isCold = now.tempF < 35;
   const isHot = now.tempF >= 90;
   if (dt >= 4 || isCold || isHot) {
-    parts.push(`Feels ${now.feelsLikeF}\u00b0F`);
+    parts.push(`Feels ${temp(now.feelsLikeF)}${tempUnit}`);
   }
 
   if (now.uvIndex != null && now.uvIndex >= 6) {
@@ -160,18 +170,22 @@ export function formatNowcastLine(now: CurrentNowcast): string {
 
   if (now.windMph >= 1) {
     if (now.windGustMph != null && now.windGustMph >= now.windMph + 8) {
-      parts.push(`Wind ${now.windMph} g${now.windGustMph} mph`);
+      parts.push(`Wind ${wind(now.windMph)} g${wind(now.windGustMph)} ${windUnit}`);
     } else {
-      parts.push(`Wind ${now.windMph} mph`);
+      parts.push(`Wind ${wind(now.windMph)} ${windUnit}`);
     }
   }
 
   if (now.precipInPerHr >= 0.01) {
-    /* Use 2 decimals when light, 1 when heavier, so the number always reads cleanly. */
-    const fmt = now.precipInPerHr < 0.1 ? now.precipInPerHr.toFixed(2) : now.precipInPerHr.toFixed(1);
-    /* Pick rain vs snow word from conditions when possible; default to "Precip". */
     const isSnow = /snow|sleet|flurr/i.test(now.conditions);
-    parts.push(`${isSnow ? "Snow" : "Rain"} ${fmt} in/hr`);
+    if (miles) {
+      const fmt = now.precipInPerHr < 0.1 ? now.precipInPerHr.toFixed(2) : now.precipInPerHr.toFixed(1);
+      parts.push(`${isSnow ? "Snow" : "Rain"} ${fmt} in/hr`);
+    } else {
+      const mm = now.precipInPerHr * 25.4;
+      const fmt = mm < 1 ? mm.toFixed(1) : String(Math.round(mm));
+      parts.push(`${isSnow ? "Snow" : "Rain"} ${fmt} mm/h`);
+    }
   }
 
   /* Add a short conditions clause as the tail when nothing more important is competing. We keep

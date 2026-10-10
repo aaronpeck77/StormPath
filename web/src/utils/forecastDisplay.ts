@@ -65,9 +65,16 @@ export function truncateBannerText(text: string, _maxLen?: number): string {
 }
 
 /** Compact “right now” line when OpenWeather is unavailable (uses Tomorrow.io snapshot). */
-export function formatMinutePrecipNowLine(now: MinutePrecipNowSnapshot): string {
-  const parts = [`${now.tempF}°F`];
-  if (now.windMph >= 1) parts.push(`Wind ${now.windMph} mph`);
+export function formatMinutePrecipNowLine(
+  now: MinutePrecipNowSnapshot,
+  units?: { miles?: boolean; fahrenheit?: boolean }
+): string {
+  const fahrenheit = units?.fahrenheit !== false;
+  const miles = units?.miles !== false;
+  const temp = fahrenheit ? Math.round(now.tempF) : Math.round(((now.tempF - 32) * 5) / 9);
+  const wind = miles ? Math.round(now.windMph) : Math.round(now.windMph * 1.60934);
+  const parts = [`${temp}${fahrenheit ? "°F" : "°C"}`];
+  if (now.windMph >= 1) parts.push(`Wind ${wind} ${miles ? "mph" : "km/h"}`);
   if (now.conditions) parts.push(now.conditions);
   return parts.join(" · ");
 }

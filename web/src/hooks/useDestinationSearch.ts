@@ -18,6 +18,7 @@ import {
 import { useTripPlanStore } from "../state/tripPlanStore";
 import { useUiStore } from "../state/uiStore";
 import { formatDistanceShort } from "../utils/formatDistance";
+import { roadUsesMiles } from "../utils/displayUnits";
 import { isNarrowPhoneViewport } from "../ui/mapFitLogic";
 import type { SearchSuggestion } from "../ui/SearchBar";
 
@@ -544,9 +545,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
         .then(async (sbHits) => {
           if (seq !== searchAutocompleteSeqRef.current) return null;
           if (sbHits.length > 0) {
-            /* North America defaults to miles for distance display, everywhere else metric. */
-            const useMiles =
-              !!prox && (geocodeCountriesForFix(prox) ?? []).some((c) => c === "us" || c === "ca");
+            const useMiles = roadUsesMiles(prox ?? null);
             const out: SearchSuggestion[] = sbHits.map((s) => {
               /* Compose the secondary line as "1.2 mi · 1234 Main St, Decatur, IL 62526" so
                * users see the full address (number–zip) and can verify closest-first ordering.

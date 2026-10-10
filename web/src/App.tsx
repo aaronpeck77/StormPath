@@ -179,6 +179,10 @@ import { mapMatchingBuildAllowed } from "./services/mapboxMapMatching";
 import { useNavigationGuidance } from "./nav/useNavigationGuidance";
 import { applyPuckColor } from "./ui/puckColor";
 import { useSettingsStore } from "./state/settingsStore";
+import { allowUsSpeedLimitGuess, roadUsesMiles } from "./utils/displayUnits";
+import { resolveGuidanceLanguage, weatherKitLanguageTag } from "./utils/guidanceLanguage";
+import { setMapboxSearchLanguage } from "./services/mapboxSearchBox";
+import { setWeatherKitLanguage } from "./services/weatherKitClient";
 import { useRouteCompareActions } from "./state/useRouteCompareActions";
 import { useTripPlanStore } from "./state/tripPlanStore";
 import { useUiStore } from "./state/uiStore";
@@ -399,6 +403,12 @@ export default function App() {
   const dataSaverMode = isDataSaverMode(settingDataSaverEnabled);
 
   const settingVoiceGuidanceEnabled = useSettingsStore((s) => s.voiceGuidanceEnabled);
+  const settingGuidanceLanguage = useSettingsStore((s) => s.guidanceLanguage);
+  const guidanceLanguageCode = resolveGuidanceLanguage(settingGuidanceLanguage);
+  useEffect(() => {
+    setMapboxSearchLanguage(guidanceLanguageCode);
+    setWeatherKitLanguage(weatherKitLanguageTag(guidanceLanguageCode));
+  }, [guidanceLanguageCode]);
   /* Storm/advisory state lives in `useWeatherStore` (Phase 4d). Local names + setter
    * signatures preserved so the ~40 read/setter sites in this file are unchanged. The store
    * action for `setStormBarExpanded` writes through to `safeStorage` so persistence and React
@@ -1006,6 +1016,7 @@ export default function App() {
     },
     onRouteGeometry: onNativeRouteGeometry,
     voiceGuidanceEnabled: settingVoiceGuidanceEnabled,
+    guidanceLanguage: guidanceLanguageCode,
     /* No hard motorway ban. A reroute may use an interstate when that is the
      * sensible way on. The fastest/alternate choice is applied from here. */
     preferBackroads: false,
@@ -3116,8 +3127,15 @@ export default function App() {
           handleGo={handleGo}
           showGo={Boolean(plan.routes.length > 0 && primaryRouteId && !navigationStarted)}
           speedMph={speedMph}
-          postedMph={postedMph}
-          postedMphIsClassEstimate={postedMphIsClassEstimate}
+          postedMph={
+            postedMph != null && postedMphIsClassEstimate && !allowUsSpeedLimitGuess(effectiveUserLngLat)
+              ? null
+              : postedMph
+          }
+          postedMphIsClassEstimate={
+            postedMphIsClassEstimate && allowUsSpeedLimitGuess(effectiveUserLngLat)
+          }
+          useMiles={roadUsesMiles(effectiveUserLngLat)}
           handleStopAndClear={handleStopAndClear}
           hasTrip={Boolean(plan.routes.length > 0 || destLngLat)}
           showReturnTripButton={showReturnTripButton}

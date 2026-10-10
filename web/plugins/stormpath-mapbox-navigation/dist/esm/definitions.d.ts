@@ -17,6 +17,8 @@ export type StartActiveGuidanceOptions = {
   voiceEnabled?: boolean;
   /** Match StormPath preferred / no-interstate Go locks — exclude motorways. */
   preferBackroads?: boolean;
+  /** Mapbox instruction language, for example "en" or "it". */
+  language?: string;
 };
 
 export type NativeNavProgressEvent = {

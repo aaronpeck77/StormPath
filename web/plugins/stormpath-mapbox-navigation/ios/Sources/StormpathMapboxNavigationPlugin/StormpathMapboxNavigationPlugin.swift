@@ -69,6 +69,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         let simulate = call.getBool("simulate") ?? false
         let voice = call.getBool("voiceEnabled") ?? false
         let preferBackroads = call.getBool("preferBackroads") ?? false
+        let language = call.getString("language") ?? "en"
 
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -78,6 +79,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                 simulate: simulate,
                 voiceEnabled: voice,
                 preferBackroads: preferBackroads,
+                language: language,
                 call: call
             )
         }
@@ -93,12 +95,14 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         let preferBackroads = call.getBool("preferBackroads") ?? false
+        let language = call.getString("language") ?? "en"
         Task { @MainActor [weak self] in
             guard let self else { return }
             await self.prepareGuidanceOnMainActor(
                 accessToken: accessToken,
                 waypoints: self.parseWaypoints(from: rawCoords),
                 preferBackroads: preferBackroads,
+                language: language,
                 call: call
             )
         }
@@ -221,9 +225,16 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func routeKey(waypoints: [IncomingWaypoint], preferBackroads: Bool) -> String {
+    private func routeKey(waypoints: [IncomingWaypoint], preferBackroads: Bool, language: String) -> String {
         guard let first = waypoints.first, let last = waypoints.last else { return "" }
-        return "\(first.coordinate.latitude),\(first.coordinate.longitude)|\(last.coordinate.latitude),\(last.coordinate.longitude)|\(waypoints.count)|\(preferBackroads)"
+        return "\(first.coordinate.latitude),\(first.coordinate.longitude)|\(last.coordinate.latitude),\(last.coordinate.longitude)|\(waypoints.count)|\(preferBackroads)|\(language)"
+    }
+
+    private func applyInstructionLanguage(_ options: NavigationRouteOptions, language: String) {
+        let code = language.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !code.isEmpty {
+            options.locale = Locale(identifier: code)
+        }
     }
 
     @MainActor
@@ -245,6 +256,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         accessToken: String,
         waypoints incoming: [IncomingWaypoint],
         preferBackroads: Bool,
+        language: String,
         call: CAPPluginCall
     ) async {
         guard incoming.count >= 2 else {
@@ -256,7 +268,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.resolve(["ok": true, "prepared": true, "skipped": true])
                 return
             }
-            let key = routeKey(waypoints: incoming, preferBackroads: preferBackroads)
+            let key = routeKey(waypoints: incoming, preferBackroads: preferBackroads, language: language)
             if lastNavRoutes != nil, navigationProvider != nil, preparedRouteKey == key {
                 call.resolve(["ok": true, "prepared": true, "cached": true])
                 return
@@ -267,6 +279,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             let provider = MapboxNavigationProvider(coreConfig: makeCoreConfig(accessToken: accessToken, simulate: false))
             navigationProvider = provider
             let options = NavigationRouteOptions(waypoints: makeWaypoints(incoming))
+            applyInstructionLanguage(options, language: language)
             if preferBackroads {
                 options.roadClassesToAvoid = .motorway
             }
@@ -300,6 +313,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         simulate: Bool,
         voiceEnabled: Bool,
         preferBackroads: Bool,
+        language: String,
         call: CAPPluginCall
     ) async {
         guard incoming.count >= 2 else {
@@ -307,7 +321,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         await withCoreMutex {
-            let key = routeKey(waypoints: incoming, preferBackroads: preferBackroads)
+            let key = routeKey(waypoints: incoming, preferBackroads: preferBackroads, language: language)
             let canReusePrepared = !sessionActive
                 && lastNavRoutes != nil
                 && navigationProvider != nil
@@ -335,6 +349,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                     navigationRoutes = prepared
                 } else {
                     let options = NavigationRouteOptions(waypoints: makeWaypoints(incoming))
+                    applyInstructionLanguage(options, language: language)
                     if preferBackroads {
                         options.roadClassesToAvoid = .motorway
                     }

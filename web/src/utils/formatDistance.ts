@@ -1,3 +1,5 @@
+import { roadUsesMiles } from "./displayUnits";
+
 /** Short distance for UI chips (search, toolbar, banners). */
 export function formatDistanceShort(meters: number | null, useMiles: boolean): string {
   if (meters == null || !Number.isFinite(meters) || meters < 0) return "";
@@ -13,9 +15,7 @@ export function formatDistanceShort(meters: number | null, useMiles: boolean): s
   return `${Math.round(km)} km`;
 }
 
-/** Rough North America default for distance units when no explicit preference. */
+/** Miles in the US and the UK. Kilometers everywhere else, including Ireland. */
 export function useMilesForLngLat(lngLat: [number, number] | null | undefined): boolean {
-  if (!lngLat) return true;
-  const lng = lngLat[0];
-  return lng >= -170 && lng <= -50;
+  return roadUsesMiles(lngLat);
 }

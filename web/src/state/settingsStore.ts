@@ -15,6 +15,7 @@ import {
   readDataSaverHintDismissed,
   readDataSaverSetting,
 } from "../utils/dataSaver";
+import type { GuidanceLanguagePref } from "../utils/guidanceLanguage";
 
 /**
  * Persistent user-settings store (Zustand).
@@ -43,6 +44,7 @@ const LS_GPS_HIGH_REFRESH = "stormpath-setting-gps-high-refresh";
 const LS_MAP_MATCHING = "stormpath-setting-map-matching-enabled";
 const LS_LANDSCAPE_SIDE_HAND = "stormpath-setting-landscape-side-hand";
 const LS_PUCK_COLOR = "stormpath-setting-puck-color";
+const LS_GUIDANCE_LANGUAGE = "stormpath-setting-guidance-language";
 const LS_RADAR_DISPLAY_MODE = "stormpath-setting-radar-display-mode";
 
 export type LandscapeSideHand = "right" | "left";
@@ -71,6 +73,8 @@ export interface AppSettings {
   landscapeSideHand: LandscapeSideHand;
   /** Map puck. Blue is the default; the others stand off the blue route line. */
   puckColor: PuckColorId;
+  /** Turn-by-turn, search, and weather phrases. The rest of the app stays English. */
+  guidanceLanguage: GuidanceLanguagePref;
 }
 
 function readBoolFlag(key: string, defaultValue: boolean): boolean {
@@ -90,6 +94,10 @@ function readRadarDisplayMode(): RadarDisplayMode {
   if (v === "still_arrows") return "still_arrows";
   /** First launch / no pref: play the radar motion loop (both tiers). */
   return "motion";
+}
+
+function readGuidanceLanguage(): GuidanceLanguagePref {
+  return safeStorage.get(LS_GUIDANCE_LANGUAGE) === "en" ? "en" : "system";
 }
 
 function writeRadarDisplayMode(mode: RadarDisplayMode): void {
@@ -115,6 +123,7 @@ export interface SettingsState {
   /** Landscape / side view only; portrait ignores. */
   landscapeSideHand: LandscapeSideHand;
   puckColor: PuckColorId;
+  guidanceLanguage: GuidanceLanguagePref;
 
   setStormEnabled: (on: boolean) => void;
   setTrafficEnabled: (on: boolean) => void;
@@ -130,6 +139,7 @@ export interface SettingsState {
   setMapMatchingEnabled: (on: boolean) => void;
   setLandscapeSideHand: (hand: LandscapeSideHand) => void;
   setPuckColor: (color: PuckColorId) => void;
+  setGuidanceLanguage: (pref: GuidanceLanguagePref) => void;
   /**
    * Bulk-apply all 8 persisted toggles from the About sheet in a single store update.
    *
@@ -157,6 +167,7 @@ function readPersistedSettings(): Pick<
   | "mapMatchingEnabled"
   | "landscapeSideHand"
   | "puckColor"
+  | "guidanceLanguage"
 > {
   return {
     stormEnabled: readStormSettingOn(),
@@ -172,6 +183,7 @@ function readPersistedSettings(): Pick<
     mapMatchingEnabled: readBoolFlag(LS_MAP_MATCHING, false),
     landscapeSideHand: safeStorage.get(LS_LANDSCAPE_SIDE_HAND) === "left" ? "left" : "right",
     puckColor: puckColorById(safeStorage.get(LS_PUCK_COLOR)).id,
+    guidanceLanguage: readGuidanceLanguage(),
   };
 }
 
@@ -241,6 +253,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     safeStorage.set(LS_PUCK_COLOR, id);
     set({ puckColor: id });
   },
+  setGuidanceLanguage: (pref) => {
+    const next = pref === "en" ? "en" : "system";
+    safeStorage.set(LS_GUIDANCE_LANGUAGE, next);
+    set({ guidanceLanguage: next });
+  },
   applySettings: (next) => {
     /* Persist each field through its existing helper so the storage shape stays identical to
      * the individual setters (legacy fallback keys in `layerStartupPrefs`, `safeStorage` for
@@ -258,6 +275,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     writeBoolFlag(LS_MAP_MATCHING, next.mapMatchingEnabled);
     safeStorage.set(LS_LANDSCAPE_SIDE_HAND, next.landscapeSideHand);
     safeStorage.set(LS_PUCK_COLOR, puckColorById(next.puckColor).id);
+    safeStorage.set(LS_GUIDANCE_LANGUAGE, next.guidanceLanguage === "en" ? "en" : "system");
     set({
       stormEnabled: next.stormEnabled,
       trafficEnabled: next.trafficEnabled,
@@ -271,6 +289,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       mapMatchingEnabled: next.mapMatchingEnabled,
       landscapeSideHand: next.landscapeSideHand,
       puckColor: puckColorById(next.puckColor).id,
+      guidanceLanguage: next.guidanceLanguage === "en" ? "en" : "system",
     });
   },
 }));

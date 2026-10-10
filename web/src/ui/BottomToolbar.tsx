@@ -9,6 +9,7 @@ import {
   formatEtaDuration,
   formatEtaDurationToolbar,
 } from "./formatEta";
+import { displaySpeed, speedUnitLabel } from "../utils/displayUnits";
 import { ROUTE_ACTIVE_COLOR } from "./mapRouteStyle";
 const VIEW_CYCLE: { mode: MapViewMode; label: string; line: string }[] = [
   { mode: "route", label: "Rt", line: ROUTE_ACTIVE_COLOR },
@@ -34,6 +35,8 @@ type Props = {
   showGo: boolean;
   speedMph: number | null;
   postedMph: number | null;
+  /** False outside the US and the UK: show km/h. The mph values above stay in miles for the over-speed check. */
+  useMiles?: boolean;
   /** Lim is a road-class average, not map data — never drives the over-speed warning. */
   postedMphIsClassEstimate?: boolean;
   onStop: () => void;
@@ -78,6 +81,7 @@ export function BottomToolbar({
   showGo,
   speedMph,
   postedMph,
+  useMiles = true,
   postedMphIsClassEstimate = false,
   onStop,
   hasTrip,
@@ -215,8 +219,8 @@ export function BottomToolbar({
                   className={`nav-bottom-stat-v${speedOverPosted ? " nav-bottom-stat-v--speed-over" : ""}`}
                   title={speedOverPosted ? "Over posted speed limit — follow road signs" : undefined}
                 >
-                  {speedMph != null ? Math.round(speedMph) : "—"}
-                  <small> mph</small>
+                  {speedMph != null ? displaySpeed(speedMph, useMiles) : "—"}
+                  <small> {speedUnitLabel(useMiles)}</small>
                 </span>
               </div>
               <div className="nav-bottom-stat">
@@ -231,7 +235,7 @@ export function BottomToolbar({
                         : "Map estimate only — always obey posted road signs. Not for enforcement."
                   }
                 >
-                  {postedMph != null ? postedMph : "—"}
+                  {postedMph != null ? displaySpeed(postedMph, useMiles) : "—"}
                   {postedMph != null ? <small>{postedMphIsClassEstimate ? " ~est" : " est"}</small> : null}
                 </span>
               </div>

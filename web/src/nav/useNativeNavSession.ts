@@ -72,12 +72,12 @@ function buildCoordinateList(c: NativeNavSessionCoords) {
   return buildNativeGuidanceCoordinates(c);
 }
 
-function prepareRouteKey(c: NativeNavSessionCoords, preferBackroads: boolean): string {
+function prepareRouteKey(c: NativeNavSessionCoords, preferBackroads: boolean, language: string): string {
   const dest = c.destLngLat;
   const corridor = c.lockedCorridor;
   if (!dest || !corridor || corridor.length < 2) return "";
   const last = corridor[corridor.length - 1]!;
-  return `${dest[0].toFixed(4)},${dest[1].toFixed(4)}|${last[0].toFixed(4)},${last[1].toFixed(4)}|${corridor.length}|${preferBackroads ? "b" : "a"}`;
+  return `${dest[0].toFixed(4)},${dest[1].toFixed(4)}|${last[0].toFixed(4)},${last[1].toFixed(4)}|${corridor.length}|${preferBackroads ? "b" : "a"}|${language}`;
 }
 
 export function isNativeMapboxNavPlatform(): boolean {
@@ -106,6 +106,8 @@ export function useNativeNavSession(opts: {
   voiceGuidanceEnabled?: boolean;
   /** Prefer no-interstate when the Go-locked leg is a preferred / slower alternate. */
   preferBackroads?: boolean;
+  /** Mapbox turn language. "en" or the phone language. */
+  guidanceLanguage?: string;
 }) {
   const {
     accessToken,
@@ -116,11 +118,14 @@ export function useNativeNavSession(opts: {
     simulate,
     voiceGuidanceEnabled = false,
     preferBackroads = false,
+    guidanceLanguage = "en",
   } = opts;
   const voiceGuidanceEnabledRef = useRef(voiceGuidanceEnabled);
   voiceGuidanceEnabledRef.current = voiceGuidanceEnabled;
   const preferBackroadsRef = useRef(preferBackroads);
   preferBackroadsRef.current = preferBackroads;
+  const guidanceLanguageRef = useRef(guidanceLanguage);
+  guidanceLanguageRef.current = guidanceLanguage;
 
   const [nativeNavActive, setNativeNavActive] = useState(false);
   const [position, setPosition] = useState<NavigationPositionState | null>(null);
@@ -341,6 +346,7 @@ export function useNativeNavSession(opts: {
         simulate: Boolean(simulate),
         voiceEnabled: voiceGuidanceEnabledRef.current,
         preferBackroads: preferBackroadsRef.current,
+        language: guidanceLanguageRef.current,
       });
       if (!result.ok) {
         await removeListeners();
@@ -357,7 +363,7 @@ export function useNativeNavSession(opts: {
     }
   }, [accessToken, removeListeners, simulate, stopNative]);
 
-  const pendingPrepareKey = prepareRouteKey(coords, preferBackroads);
+  const pendingPrepareKey = prepareRouteKey(coords, preferBackroads, guidanceLanguage);
 
   /** While Rt is on screen, Core plans the locked corridor so Go does not wait a second minute. */
   useEffect(() => {
@@ -372,6 +378,7 @@ export function useNativeNavSession(opts: {
         accessToken,
         coordinates,
         preferBackroads: preferBackroadsRef.current,
+        language: guidanceLanguageRef.current,
       }).catch(() => {
         prepareKeyRef.current = "";
       });
