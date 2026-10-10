@@ -15,6 +15,7 @@ import { nwsAlertIsStripProminent } from "../weatherAlerts/geometryOverlap";
 import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
 import type { DriveAheadLine, DriveAheadRadarTier } from "../nav/driveRouteAhead";
 import type { CorridorTimingExplainLine } from "../nav/corridorTimingExplain";
+import type { PassengerAdvisoryLine } from "../nav/passengerAdvisory";
 import {
   formatDriveAheadBrief,
   formatMinutesAsHoursMinutes,
@@ -228,6 +229,8 @@ export type StormAdvisoryBarProps = SharedProps & {
    * drivers see a quick read of conditions at a glance.
    */
   nowcastLine?: string | null;
+  /** One departure or pull-off suggestion. Local forecast and the opened panels stay as they are. */
+  passengerLine?: PassengerAdvisoryLine | null;
   /** Sparse Mapbox POI tip while navigating (low priority in the rotator). */
   nearbyPoiTipLine?: string | null;
   /** OpenWeather snapshot at the user's position (expanded local forecast card). */
@@ -327,6 +330,7 @@ export function StormAdvisoryBar({
   basicNavAdvisoryMode = false,
   navigationStarted,
   nowcastLine = null,
+  passengerLine = null,
   nearbyPoiTipLine = null,
   currentNowcast = null,
   forecastAreaLabel = null,
@@ -711,6 +715,15 @@ export function StormAdvisoryBar({
           })
         );
       }
+      if (passengerLine) {
+        trip.push(
+          previewItem({
+            badge: passengerLine.badge,
+            raw: bannerMsg(passengerLine.text),
+            tone: "warn",
+          })
+        );
+      }
 
       let mixed = mixAdvisoryPreviewItems(trip, promo);
       if (mixed.length === 0) {
@@ -852,6 +865,15 @@ export function StormAdvisoryBar({
         })
       );
     }
+    if (passengerLine) {
+      trip.push(
+        previewItem({
+          badge: passengerLine.badge,
+          raw: bannerMsg(passengerLine.text),
+          tone: "warn",
+        })
+      );
+    }
 
     let mixed = mixAdvisoryPreviewItems(trip, promo);
     if (mixed.length === 0) {
@@ -879,6 +901,7 @@ export function StormAdvisoryBar({
     promoLines,
     defaultPreviewText,
     nowcastLine,
+    passengerLine,
     nearbyPoiTipLine,
     localForecastBanner,
     localForecastNwsAlerts,

@@ -15,6 +15,9 @@ import type {
   StormStripBand,
 } from "./StormAdvisoryBar";
 import type { CorridorTimingExplainLine } from "../nav/corridorTimingExplain";
+import { buildPassengerAdvisoryLine } from "../nav/passengerAdvisory";
+import type { RoutePlaceAnchor } from "../nav/routePlaceReference";
+import type { RouteTurnStep } from "../nav/types";
 
 /**
  * StormAdvisoryBar prop assembly — Phase 3b.
@@ -43,6 +46,8 @@ export type BuildStormAdvisoryBarPropsInput = {
   hasGuidanceRoute: boolean;
   advisoryRoadDetailRows: StormRoadDetailRow[];
   advisoryRouteImpacts: RouteImpact[] | null;
+  /** Weather impacts before the Plus-only UI filter, so Basic can still hear a close warning. */
+  passengerRouteImpacts?: RouteImpact[] | null;
   advisoryStormStripBands: StormStripBand[] | null;
   routeAheadTimeline: TimelineItem[] | null;
   routeTotalMeters: number;
@@ -79,6 +84,9 @@ export type BuildStormAdvisoryBarPropsInput = {
   onOpenDataSaverSettings: () => void;
   onDismissDataSaverHint: () => void;
   nearbyPoiTipLine?: string | null;
+  routePlaceAnchors?: RoutePlaceAnchor[] | null;
+  turnSteps?: RouteTurnStep[] | null;
+  metersToManeuver?: number | null;
 };
 
 export function buildStormAdvisoryBarProps(
@@ -101,6 +109,7 @@ export function buildStormAdvisoryBarProps(
     hasGuidanceRoute,
     advisoryRoadDetailRows,
     advisoryRouteImpacts,
+    passengerRouteImpacts = null,
     advisoryStormStripBands,
     routeAheadTimeline,
     routeTotalMeters,
@@ -137,7 +146,25 @@ export function buildStormAdvisoryBarProps(
     onOpenDataSaverSettings,
     onDismissDataSaverHint,
     nearbyPoiTipLine = null,
+    routePlaceAnchors = null,
+    turnSteps = null,
+    metersToManeuver = null,
   } = input;
+
+  const passengerLine = buildPassengerAdvisoryLine({
+    hasRoute: hasGuidanceRoute,
+    navigationStarted,
+    metersToManeuver,
+    nowMs: Date.now(),
+    impacts: passengerRouteImpacts ?? advisoryRouteImpacts,
+    placeAnchors: routePlaceAnchors,
+    turnSteps,
+    userAlongM: userAlongMeters,
+    totalM: routeTotalMeters,
+    planEtaMinutes,
+    driveEtaMinutes,
+    minutePrecip: tioMinutePrecip,
+  });
 
   const plusNwsLoading =
     isPlus && stormLoading && stormCorridorAlertsLength === 0 && !stormMapHasFeatures;
@@ -180,6 +207,7 @@ export function buildStormAdvisoryBarProps(
     navigationStarted,
     /* Basic + Plus: current conditions / nowcast for banner + compact panel. */
     nowcastLine: advisoryNowcastLine,
+    passengerLine,
     nearbyPoiTipLine,
     currentNowcast,
     forecastAreaLabel,
