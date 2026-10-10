@@ -61,7 +61,7 @@ describe("bannerShouldReserveBottomSpace", () => {
         navigationStarted: true,
         bannerHeightPx: 90,
       })
-    ).toBe(true);
+    ).toBe(false);
     expect(basicAdChromeLiftPx({ reservesBottomSpace: true, bannerHeightPx: 90 })).toBe(90);
     expect(basicAdChromeLiftPx({ reservesBottomSpace: true, bannerHeightPx: 0 })).toBe(50);
     expect(basicAdChromeLiftPx({ reservesBottomSpace: false, bannerHeightPx: 90 })).toBe(0);

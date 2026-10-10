@@ -17,6 +17,30 @@ import {
 /** Best-effort cap for IndexedDB writes while still capturing route refreshes. */
 export const TRIP_CACHE_MIN_SAVE_INTERVAL_MS = 20_000;
 
+/**
+ * Ads must wait until this is true. Otherwise a reopen paints the banner
+ * before the saved trip comes back, and the banner covers Stop.
+ */
+let tripBootSettled = false;
+const tripBootListeners = new Set<() => void>();
+
+export function isTripBootSettled(): boolean {
+  return tripBootSettled;
+}
+
+export function subscribeTripBootSettled(listener: () => void): () => void {
+  tripBootListeners.add(listener);
+  return () => {
+    tripBootListeners.delete(listener);
+  };
+}
+
+function markTripBootSettled(): void {
+  if (tripBootSettled) return;
+  tripBootSettled = true;
+  for (const listener of tripBootListeners) listener();
+}
+
 export type UseActiveTripCacheDeps = {
   isPlus: boolean;
   plan: TripPlan;
@@ -82,6 +106,7 @@ export function useActiveTripCache(deps: UseActiveTripCacheDeps): void {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      try {
       const entry = await loadActiveTripFromCache();
       if (cancelled || !entry) return;
       if (!isRestorableActiveTripEntry(entry)) {
@@ -128,6 +153,9 @@ export function useActiveTripCache(deps: UseActiveTripCacheDeps): void {
       setSuggestions([]);
       setFitTrigger((n) => n + 1);
       lastTripCacheSaveMsRef.current = Date.now();
+      } finally {
+        if (!cancelled) markTripBootSettled();
+      }
     })();
     return () => {
       cancelled = true;

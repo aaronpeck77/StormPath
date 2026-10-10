@@ -11,6 +11,7 @@ import {
   subscribeBasicBannerLoad,
   teardownBasicBanner,
 } from "../ads/adMobClient";
+import { isTripBootSettled, subscribeTripBootSettled } from "../nav/useActiveTripCache";
 
 type Args = {
   /** Basic tier only — Plus never shows AdMob. */
@@ -52,11 +53,12 @@ export function bannerShouldReserveBottomSpace(opts: {
   /** Local `npm run dev` in a browser — no native AdMob, still pad so layout matches device. */
   devWebPlaceholder: boolean;
 }): boolean {
+  /* An active trip never keeps the banner, even if AdMob still reports a height. */
+  if (opts.navigationStarted) return false;
   const height =
     opts.bannerHeightPx != null && Number.isFinite(opts.bannerHeightPx) ? opts.bannerHeightPx : 0;
   if (height > 0) return true;
   if (!opts.isBasicTier || !opts.enabled) return false;
-  if (opts.navigationStarted) return false;
   if (opts.devWebPlaceholder) return true;
   if (!opts.native) return false;
   return opts.slotState === "loading" || opts.slotState === "filled";
@@ -102,6 +104,7 @@ export function useBasicAdMobBanner({
   const showRef = useRef(false);
   const [slotState, setSlotState] = useState<BasicAdBannerSlotState>("hidden");
   const [bannerHeightPx, setBannerHeightPx] = useState(0);
+  const [tripBootSettled, setTripBootSettled] = useState(isTripBootSettled);
   const testMode = resolveAdMobTestMode();
   const isBasicTier = getPayTier() !== "plus";
 
@@ -111,13 +114,25 @@ export function useBasicAdMobBanner({
 
   useEffect(() => subscribeBasicBannerHeight(setBannerHeightPx), []);
 
+  useEffect(() => subscribeTripBootSettled(() => setTripBootSettled(true)), []);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (!navigationStarted) return;
+      void teardownBasicBanner();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [navigationStarted]);
+
   useEffect(() => {
     if (!isAdMobSupported()) {
       setSlotState("hidden");
       return undefined;
     }
 
-    const shouldShow = enabled && isBasicTier && !navigationStarted;
+    const shouldShow = enabled && isBasicTier && tripBootSettled && !navigationStarted;
     const adUnitId = env.admobBannerUnitId || ADMOB_TEST_BANNER_UNIT_ID;
 
     if (!shouldShow) {
@@ -172,6 +187,7 @@ export function useBasicAdMobBanner({
   }, [
     enabled,
     isBasicTier,
+    tripBootSettled,
     navigationStarted,
     stormBarExpanded,
     env.admobBannerUnitId,
