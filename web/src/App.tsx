@@ -1984,8 +1984,12 @@ export default function App() {
   const stormyBrief = useMemo(() => {
     const focus = plan.routes.find((r) => r.id === lineFocusId) ?? plan.routes[0];
     const facts = stormyFactsFromImpacts(routeImpactsForUi, roadUsesMiles(effectiveUserLngLat));
-    return { ...facts, roads: stormyRoadRefs(focus?.turnSteps) };
-  }, [plan.routes, lineFocusId, routeImpactsForUi, effectiveUserLngLat]);
+    return {
+      ...facts,
+      roads: stormyRoadRefs(focus?.turnSteps),
+      forecast: (advisoryNowcastLine ?? "").replace(/\s+/g, " ").trim(),
+    };
+  }, [plan.routes, lineFocusId, routeImpactsForUi, effectiveUserLngLat, advisoryNowcastLine]);
 
   const nearbyPoiTipLine = useNearbyPoiTip({
     enabled: Boolean(env.mapboxToken),
@@ -3143,6 +3147,7 @@ export default function App() {
           stormyWeather={stormyBrief.weather}
           stormyTraffic={stormyBrief.traffic}
           stormyRoads={stormyBrief.roads}
+          stormyForecast={stormyBrief.forecast}
           metersToManeuver={metersToBannerManeuver}
           onStormyAct={runStormyAct}
           driveDistanceRemainingLabel={driveDistanceRemainingLabel}

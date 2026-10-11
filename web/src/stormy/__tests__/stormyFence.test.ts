@@ -19,6 +19,7 @@ const packet = {
   weather: ["Rain for the next 20 miles."],
   traffic: ["Congestion on I-75."],
   roads: ["I-75"],
+  forecast: "72°F and clear",
 };
 
 describe("acceptStormyPacket", () => {

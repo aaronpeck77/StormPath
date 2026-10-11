@@ -114,6 +114,7 @@ type Props = {
   stormyWeather?: string[];
   stormyTraffic?: string[];
   stormyRoads?: string[];
+  stormyForecast?: string;
   metersToManeuver: number | null;
   onStormyAct?: (reply: StormyReply) => Promise<string | void>;
 };
@@ -201,6 +202,7 @@ export function AppBottomChrome({
   stormyWeather = [],
   stormyTraffic = [],
   stormyRoads = [],
+  stormyForecast = "",
   metersToManeuver,
   onStormyAct,
 }: Props) {
@@ -219,6 +221,7 @@ export function AppBottomChrome({
     weather: stormyWeather,
     traffic: stormyTraffic,
     roads: stormyRoads,
+    forecast: stormyForecast,
   };
   return (
     <div className="nav-bottom-stack">

@@ -40,6 +40,11 @@ function armStormyReadyChime(): () => void {
   };
 }
 
+function driverLine(line: string): string {
+  if (!/\bpacket\b/i.test(line)) return line;
+  return "Where do you want to go?";
+}
+
 async function waitUntilStormyQuiet(maxMs = 2200): Promise<void> {
   const start = Date.now();
   let heardHer = false;
@@ -52,16 +57,15 @@ async function waitUntilStormyQuiet(maxMs = 2200): Promise<void> {
 }
 
 /**
- * One tap to talk to Stormy. She is on the map at every stage.
- * A close turn keeps the button quiet so navigation can speak.
+ * One tap to talk to Stormy. She stays on the map during a drive.
+ * Turn prompts are not interrupted. The button stays tappable.
  */
 export function StormyButton({ packet, onAct }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [note, setNote] = useState("");
-  const turnSoon = packet.driving && packet.turnImminent;
 
   async function onTalk() {
-    if (phase !== "idle" || turnSoon) return;
+    if (phase !== "idle") return;
     setNote("");
     const playReady = armStormyReadyChime();
     setPhase("hello");
@@ -85,7 +89,7 @@ export function StormyButton({ packet, onAct }: Props) {
         setPhase("idle");
         return;
       }
-      const spoken = (await onAct?.(reply)) || reply.say;
+      const spoken = driverLine((await onAct?.(reply)) || reply.say);
       if (!spoken) {
         setPhase("idle");
         return;
@@ -119,8 +123,8 @@ export function StormyButton({ packet, onAct }: Props) {
       type="button"
       className={`stormy-call-btn${phase !== "idle" ? " stormy-call-btn--busy" : ""}`}
       aria-label="Talk to Stormy"
-      title={turnSoon ? "A turn is coming. Stormy will wait." : note || "Talk to Stormy"}
-      disabled={turnSoon || phase !== "idle"}
+      title={note || "Talk to Stormy"}
+      disabled={phase !== "idle"}
       onClick={() => void onTalk()}
     >
       {label}

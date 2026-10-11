@@ -1206,7 +1206,12 @@ html:has(.drive-map--native-shell) #root {
 }
 
 .stormy-call-btn {
+  position: relative;
+  z-index: 6;
+  pointer-events: auto;
+  touch-action: manipulation;
   flex-shrink: 0;
+  min-width: 4.5rem;
   box-sizing: border-box;
   height: var(--nav-chrome-about, 32px);
   padding: 0 8px;

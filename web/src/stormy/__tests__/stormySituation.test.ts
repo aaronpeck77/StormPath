@@ -19,6 +19,7 @@ const packet: StormyPacket = {
   weather: ["Rain for the next 20 miles, 12 miles ahead."],
   traffic: ["Congestion ahead, on I-75, 8 miles ahead."],
   roads: ["I-75", "I-24"],
+  forecast: "72°F and clear",
 };
 
 describe("stormyFactsFromImpacts", () => {

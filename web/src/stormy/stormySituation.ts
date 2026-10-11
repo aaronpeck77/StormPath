@@ -69,6 +69,16 @@ export function answerStormySituation(question: string, packet: StormyPacket): S
     return say([lead, tail].filter(Boolean).join(" "), "explain_ahead");
   }
 
+  if (
+    /\b(local forecast|forecast here|weather here|weather right now|my forecast)\b/.test(lower) ||
+    (/\blocal\b/.test(lower) && /\b(forecast|weather)\b/.test(lower))
+  ) {
+    return say(
+      packet.forecast ? `Right now, ${packet.forecast.replace(/[.!?]+$/g, "")}.` : "I don't have a local forecast yet.",
+      "explain_ahead"
+    );
+  }
+
   const wantsWeather = /\b(weather|forecast|rain|snow|storms?|fog|wind|icy)\b/.test(lower);
   const road = roadTokenFromSpeech(lower);
   const wantsTraffic =

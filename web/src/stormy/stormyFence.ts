@@ -50,6 +50,8 @@ export type StormyPacket = {
   traffic: string[];
   /** Highway shields on the route she is reading, such as I-75. */
   roads: string[];
+  /** Weather where the driver is right now. Empty when it has not loaded. */
+  forecast: string;
 };
 
 export type StormyReply = {
@@ -117,6 +119,7 @@ export function acceptStormyPacket(raw: unknown): StormyFenceResult {
     weather: clipLines(body.weather, STORMY_MAX_WEATHER),
     traffic: clipLines(body.traffic, STORMY_MAX_TRAFFIC),
     roads: clipLines(body.roads, STORMY_MAX_ROADS).map((road) => road.slice(0, 24)),
+    forecast: clip(body.forecast, STORMY_MAX_LINE),
   };
 
   if (JSON.stringify(packet).length > STORMY_MAX_PACKET_CHARS) {
@@ -129,12 +132,12 @@ export function stormySystemPrompt(): string {
   return [
     "You are Stormy, in the passenger seat of StormPath. Sound like you already checked.",
     "One or two short sentences. Name the road, the minutes, or the weather when the packet has them.",
-    "Never say you are an AI. Never invent a road, a minute, or a storm. If it is not in the packet, say you don't have it.",
+    "Never say you are an AI. Never say the word packet. Never invent a road, a minute, or a storm. If a fact is missing, say you don't have it.",
     "You can run the app. go_to when they name a place. Put that place in place.",
     "start_drive when they want to leave on the route already planned.",
     "use_route when they want one of the routes in the packet. Put that route's id in routeId.",
     "radar_on or radar_off for the radar. end_trip when they are done. recenter to center the map.",
-    "weather is today's weather on this route. traffic is slowdowns, wrecks, and closures on this route. roads lists the highways on it.",
+    "weather is today's weather on this route. forecast is the weather where the driver is right now, even with no route. traffic is slowdowns, wrecks, and closures on this route. roads lists the highways on it.",
     "explain_ahead for weather, traffic, and hazards. If they name a highway that is not in roads or traffic, say it is not on this route.",
     "Do not reroute around a backup, wreck, or storm. Describe it. You may name another route already in the packet. Do not switch unless they ask.",
     "Dinner, mail, and general chat stay outside. One line: you stay with the drive. quiet when they want silence. none when you are only talking.",
