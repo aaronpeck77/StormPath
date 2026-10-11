@@ -2,20 +2,60 @@ import { useEffect, useState } from "react";
 import { PASSENGER_TURN_QUIET_M } from "../nav/passengerAdvisory";
 import { askStormy } from "../stormy/askStormy";
 import { listenForStormy } from "../stormy/listenForStormy";
-import type { StormyPacket } from "../stormy/stormyFence";
-import { speakStormpathLine } from "../services/stormpathSpeech";
+import type { StormyPacket, StormyReply } from "../stormy/stormyFence";
+import { interpretStormyRequest } from "../stormy/stormyHands";
+import { isStormpathSpeechBusy, speakStormpathLine } from "../services/stormpathSpeech";
 
 type Props = {
   packet: StormyPacket;
+  /** Run a passenger action. Return a line to speak instead of the model's line. */
+  onAct?: (reply: StormyReply) => Promise<string | void>;
 };
 
-type Phase = "idle" | "listening" | "thinking";
+type Phase = "idle" | "hello" | "listening" | "thinking";
+
+/** Built on the tap so iOS still allows sound after she says hello. */
+function armStormyReadyChime(): () => void {
+  const Ctx =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctx) return () => {};
+  const ctx = new Ctx();
+  void ctx.resume();
+  return () => {
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(740, now);
+    osc.frequency.exponentialRampToValueAtTime(988, now + 0.08);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.07, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.18);
+    osc.onended = () => void ctx.close();
+  };
+}
+
+async function waitUntilStormyQuiet(maxMs = 2200): Promise<void> {
+  const start = Date.now();
+  let heardHer = false;
+  while (Date.now() - start < maxMs) {
+    const busy = await isStormpathSpeechBusy();
+    if (busy) heardHer = true;
+    else if (heardHer || Date.now() - start > 400) return;
+    await new Promise((resolve) => window.setTimeout(resolve, 70));
+  }
+}
 
 /**
  * One tap to talk to Stormy. She is on the map at every stage.
  * A close turn keeps the button quiet so navigation can speak.
  */
-export function StormyButton({ packet }: Props) {
+export function StormyButton({ packet, onAct }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [note, setNote] = useState("");
   const turnSoon = packet.driving && packet.turnImminent;
@@ -23,8 +63,14 @@ export function StormyButton({ packet }: Props) {
   async function onTalk() {
     if (phase !== "idle" || turnSoon) return;
     setNote("");
-    setPhase("listening");
+    const playReady = armStormyReadyChime();
+    setPhase("hello");
     try {
+      const spoke = await speakStormpathLine("Hello.");
+      if (spoke) await waitUntilStormyQuiet();
+      setPhase("listening");
+      playReady();
+      await new Promise((resolve) => window.setTimeout(resolve, 180));
       const question = await listenForStormy();
       if (!question) {
         setNote("Didn't catch that.");
@@ -32,14 +78,20 @@ export function StormyButton({ packet }: Props) {
         return;
       }
       setPhase("thinking");
-      const reply = await askStormy({ ...packet, question });
-      if (reply.action === "quiet" || !reply.say) {
-        setNote(reply.action === "quiet" ? "Quiet." : "");
+      const local = interpretStormyRequest(question, packet);
+      const reply = local ?? (await askStormy({ ...packet, question }));
+      if (reply.action === "quiet") {
+        setNote("Quiet.");
         setPhase("idle");
         return;
       }
-      setNote(reply.needsYes ? reply.say : "");
-      await speakStormpathLine(reply.say, { interrupt: false });
+      const spoken = (await onAct?.(reply)) || reply.say;
+      if (!spoken) {
+        setPhase("idle");
+        return;
+      }
+      setNote("");
+      await speakStormpathLine(spoken, { interrupt: false });
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       setNote(/hear|denied|unavailable|microphone/i.test(message) ? "No mic" : "No answer");
@@ -55,7 +107,13 @@ export function StormyButton({ packet }: Props) {
   }, [note, phase]);
 
   const label =
-    phase === "listening" ? "Listening" : phase === "thinking" ? "…" : note || "Stormy";
+    phase === "hello"
+      ? "Hello"
+      : phase === "listening"
+        ? "Listening"
+        : phase === "thinking"
+          ? "…"
+          : note || "Stormy";
   return (
     <button
       type="button"

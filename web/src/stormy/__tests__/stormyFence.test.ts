@@ -16,6 +16,9 @@ const packet = {
   driving: true,
   turnImminent: false,
   question: "What's ahead?",
+  weather: ["Rain for the next 20 miles."],
+  traffic: ["Congestion on I-75."],
+  roads: ["I-75"],
 };
 
 describe("acceptStormyPacket", () => {
@@ -44,26 +47,35 @@ describe("clampStormyReply", () => {
         { say: "Heavy rain ahead.", action: "explain_ahead" },
         { ...packet, turnImminent: true }
       )
-    ).toEqual({ say: "", action: "none", needsYes: false });
+    ).toEqual({ say: "", action: "none", needsYes: false, place: "", routeId: "", drive: false });
   });
 
-  it("asks before offering another route", () => {
+  it("switches to the other listed route instead of only asking", () => {
     expect(
       clampStormyReply({ say: "Route B avoids the flood.", action: "offer_alternate" }, packet)
     ).toEqual({
       say: "Route B avoids the flood.",
-      action: "offer_alternate",
-      needsYes: true,
+      action: "use_route",
+      needsYes: false,
+      place: "",
+      routeId: "b",
+      drive: false,
     });
   });
 
-  it("will not offer an alternate when only one route is in the packet", () => {
+  it("will not switch to a route that is not in the packet", () => {
     const reply = clampStormyReply(
-      { say: "Take the secret road.", action: "offer_alternate" },
+      { say: "Take the secret road.", action: "use_route", routeId: "secret" },
       { ...packet, routes: packet.routes.slice(0, 1) }
     );
     expect(reply.action).toBe("explain_ahead");
-    expect(reply.needsYes).toBe(false);
+    expect(reply.routeId).toBe("");
+  });
+
+  it("keeps a place she was told to drive to", () => {
+    expect(
+      clampStormyReply({ say: "Heading to O'Hare.", action: "go_to", place: "O'Hare" }, packet)
+    ).toMatchObject({ action: "go_to", place: "O'Hare" });
   });
 
   it("clears speech when she is told to be quiet", () => {
@@ -71,6 +83,9 @@ describe("clampStormyReply", () => {
       say: "",
       action: "quiet",
       needsYes: false,
+      place: "",
+      routeId: "",
+      drive: false,
     });
   });
 

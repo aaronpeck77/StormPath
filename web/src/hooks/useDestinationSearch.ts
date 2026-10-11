@@ -333,20 +333,20 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     [handlePickSuggestion]
   );
 
-  const handleSearch = useCallback(async () => {
-    const q = searchText.trim();
-    if (!q) return;
+  const handleSearch = useCallback(async (queryOverride?: string, pickFirst = false) => {
+    const q = (typeof queryOverride === "string" ? queryOverride : searchText).trim();
+    if (!q) return null;
     if (!userLngLat) {
       setTapHint(
         locationError ?? "Turn on location before searching — or use HTTPS if you opened this page from a home Wi‑Fi address."
       );
       window.setTimeout(() => setTapHint(null), 8000);
-      return;
+      return null;
     }
     if (!mapboxToken) {
       setTapHint("Mapbox token needed for address search.");
       window.setTimeout(() => setTapHint(null), 4000);
-      return;
+      return null;
     }
     setSearchPickHits(null);
     searchPickQueryRef.current = null;
@@ -363,15 +363,15 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       });
     } catch {
       setRouteError("Search failed. Check the signal and try again.");
-      return;
+      return null;
     } finally {
       setRouting(false);
     }
     if (hits.length === 0) {
       setRouteError("No results for that search.");
-      return;
+      return null;
     }
-    if (hits.length === 1) {
+    if (hits.length === 1 || pickFirst) {
       const hit = hits[0]!;
       recordRecentSearch(hit.placeName, hit.lngLat);
       setAllowAutocomplete(true);
@@ -380,7 +380,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
         addingViaStop && useTripPlanStore.getState().destLngLat ? "via" : "destination";
       if (pickMode === "destination") setDestinationLabel(hit.placeName);
       await applyTripPlacePick(hit.lngLat, hit.placeName, pickMode);
-      return;
+      return hit.placeName;
     }
     searchPickQueryRef.current = q;
     setSearchPickHits(hits);
@@ -388,7 +388,8 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     setAllowAutocomplete(true);
     setTapHint(`${hits.length} matches — tap an orange pin or a result below.`);
     window.setTimeout(() => setTapHint(null), 10_000);
-  }, [searchText, userLngLat, mapboxToken, computeRoutes, locationError, recordRecentSearch]);
+    return null;
+  }, [searchText, userLngLat, mapboxToken, computeRoutes, locationError, recordRecentSearch, addingViaStop, applyTripPlacePick]);
 
   const searchPickMarkersForMap = useMemo((): { id: string; lngLat: LngLat; label: string }[] | null => {
     if (!searchPickHits || searchPickHits.length < 2) return null;

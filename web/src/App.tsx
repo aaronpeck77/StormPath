@@ -40,6 +40,8 @@ import {
   type ReturnTripLeg,
 } from "./nav/returnTripLeg";
 import type { LngLat } from "./nav/types";
+import type { StormyReply } from "./stormy/stormyFence";
+import { stormyFactsFromImpacts, stormyRoadRefs } from "./stormy/stormySituation";
 import { pickSuggestedActive, scoreTrip } from "./scoring/scoreRoutes";
 import { useAppForeground } from "./hooks/useAppForeground";
 import { useTollPreview } from "./nav/useTollPreview";
@@ -1979,6 +1981,12 @@ export default function App() {
     speedMps,
   });
 
+  const stormyBrief = useMemo(() => {
+    const focus = plan.routes.find((r) => r.id === lineFocusId) ?? plan.routes[0];
+    const facts = stormyFactsFromImpacts(routeImpactsForUi, roadUsesMiles(effectiveUserLngLat));
+    return { ...facts, roads: stormyRoadRefs(focus?.turnSteps) };
+  }, [plan.routes, lineFocusId, routeImpactsForUi, effectiveUserLngLat]);
+
   const nearbyPoiTipLine = useNearbyPoiTip({
     enabled: Boolean(env.mapboxToken),
     mapboxToken: env.mapboxToken,
@@ -2443,6 +2451,59 @@ export default function App() {
       clearDetourGuidance,
       restartNative,
     ]
+  );
+
+  const runStormyAct = useCallback(
+    async (reply: StormyReply): Promise<string | void> => {
+      if (reply.action === "go_to" && reply.place.trim()) {
+        const name = await handleSearch(reply.place, true);
+        if (!name) return "I couldn't find that.";
+        const eta = useTripPlanStore.getState().plan.routes[0]?.baseEtaMinutes;
+        const minutes =
+          eta != null && Number.isFinite(eta) ? ` About ${Math.round(eta)} minutes.` : "";
+        if (reply.drive) {
+          handleGo();
+          return `Heading to ${name}.${minutes}`;
+        }
+        return `Route to ${name} is ready.${minutes}`;
+      }
+      if (reply.action === "start_drive") {
+        const routes = useTripPlanStore.getState().plan.routes;
+        if (!routes.length) return "Tell me where to go first.";
+        handleGo();
+        const eta = routes[0]?.baseEtaMinutes;
+        return eta != null && Number.isFinite(eta)
+          ? `Let's go. About ${Math.round(eta)} minutes.`
+          : reply.say || "Let's go.";
+      }
+      if (reply.action === "use_route") {
+        const route = useTripPlanStore.getState().plan.routes.find((r) => r.id === reply.routeId);
+        if (!route) return "I don't have that route.";
+        handlePreviewRouteSelect(route.id);
+        const eta = route.baseEtaMinutes;
+        return eta != null && Number.isFinite(eta)
+          ? `Taking ${route.label}. About ${Math.round(eta)} minutes.`
+          : reply.say || `Taking ${route.label}.`;
+      }
+      if (reply.action === "radar_on") {
+        setShowRadar(true);
+        return reply.say || "Radar's on.";
+      }
+      if (reply.action === "radar_off") {
+        setShowRadar(false);
+        return reply.say || "Radar's off.";
+      }
+      if (reply.action === "end_trip") {
+        handleStopAndClear();
+        return reply.say || "Trip's done.";
+      }
+      if (reply.action === "recenter") {
+        setHomePuckFollow("follow");
+        setRecenterPlanningPuckTick((n) => n + 1);
+        return reply.say || "Centered on you.";
+      }
+    },
+    [handleSearch, handleGo, handlePreviewRouteSelect, handleStopAndClear, setShowRadar]
   );
 
   const handleTollContinue = useCallback(() => {
@@ -3079,7 +3140,11 @@ export default function App() {
           onOpenAbout={() => setAboutOpen(true)}
           stormyAheadLine={driveRouteAheadLine?.text ?? null}
           stormyHazardLine={nextHazardAtEtaLine}
+          stormyWeather={stormyBrief.weather}
+          stormyTraffic={stormyBrief.traffic}
+          stormyRoads={stormyBrief.roads}
           metersToManeuver={metersToBannerManeuver}
+          onStormyAct={runStormyAct}
           driveDistanceRemainingLabel={driveDistanceRemainingLabel}
           routePickItems={routePickItems}
           lineFocusId={lineFocusId}
