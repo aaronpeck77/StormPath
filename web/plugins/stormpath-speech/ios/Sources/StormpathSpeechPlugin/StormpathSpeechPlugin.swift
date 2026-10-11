@@ -41,7 +41,7 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         let voices = AVSpeechSynthesisVoice.speechVoices().filter { voice in
             guard voice.language.hasPrefix("en") else { return false }
             let id = (voice.identifier + " " + voice.name).lowercased()
-            return !skip.contains { id.contains($0) }
+            return !skip.contains(where: { id.contains($0) })
         }
         func score(_ voice: AVSpeechSynthesisVoice) -> Int {
             let quality: Int
