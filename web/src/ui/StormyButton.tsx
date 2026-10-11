@@ -40,14 +40,16 @@ export function StormyButton({ packet }: Props) {
       }
       setNote(reply.needsYes ? reply.say : "");
       await speakStormpathLine(reply.say, { interrupt: false });
-    } catch {
-      setNote("Stormy could not answer.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      setNote(/hear|denied|unavailable|microphone/i.test(message) ? "No mic" : "No answer");
     } finally {
       setPhase("idle");
     }
   }
 
-  const label = phase === "listening" ? "Listening" : phase === "thinking" ? "…" : "Stormy";
+  const label =
+    phase === "listening" ? "Listening" : phase === "thinking" ? "…" : note || "Stormy";
   return (
     <button
       type="button"

@@ -66,23 +66,47 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     /// One remark, recognized on the phone. The microphone is not streamed.
+    /// Resolve the call before stopping the engine. Stopping on the main thread
+    /// deadlocks the audio tap and leaves the button on Listening.
     @objc func listen(_ call: CAPPluginCall) {
-        SFSpeechRecognizer.requestAuthorization { status in
-            DispatchQueue.main.async {
-                guard status == .authorized else {
-                    call.reject("speech recognition denied")
-                    return
-                }
-                AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                    DispatchQueue.main.async {
-                        guard granted else {
-                            call.reject("microphone denied")
-                            return
-                        }
-                        self.startOnDeviceListen(call)
+        switch SFSpeechRecognizer.authorizationStatus() {
+        case .authorized:
+            ensureMicThenListen(call)
+        case .denied, .restricted:
+            call.reject("speech recognition denied")
+        case .notDetermined:
+            SFSpeechRecognizer.requestAuthorization { status in
+                DispatchQueue.main.async {
+                    guard status == .authorized else {
+                        call.reject("speech recognition denied")
+                        return
                     }
+                    self.ensureMicThenListen(call)
                 }
             }
+        @unknown default:
+            call.reject("speech recognition unavailable")
+        }
+    }
+
+    private func ensureMicThenListen(_ call: CAPPluginCall) {
+        switch AVAudioSession.sharedInstance().recordPermission {
+        case .granted:
+            startOnDeviceListen(call)
+        case .denied:
+            call.reject("microphone denied")
+        case .undetermined:
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                DispatchQueue.main.async {
+                    guard granted else {
+                        call.reject("microphone denied")
+                        return
+                    }
+                    self.startOnDeviceListen(call)
+                }
+            }
+        @unknown default:
+            call.reject("microphone unavailable")
         }
     }
 
@@ -124,34 +148,29 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
+        let teardown = DispatchQueue(label: "stormpath.speech.listen")
         var finished = false
         var latest = ""
         func finish(_ text: String) {
             if finished { return }
             finished = true
-            engine.stop()
-            input.removeTap(onBus: 0)
-            request.endAudio()
             call.resolve(["text": text])
+            teardown.async {
+                input.removeTap(onBus: 0)
+                engine.stop()
+                request.endAudio()
+            }
         }
 
-        recognizer.recognitionTask(with: request) { result, error in
-            if let text = result?.bestTranscription.formattedString {
-                latest = text
-                if result?.isFinal == true {
-                    DispatchQueue.main.async { finish(text) }
-                    return
-                }
-            }
-            if error != nil {
-                DispatchQueue.main.async { finish(latest) }
+        recognizer.recognitionTask(with: request) { result, _ in
+            let text = result?.bestTranscription.formattedString ?? ""
+            let isFinal = result?.isFinal == true
+            DispatchQueue.main.async {
+                if !text.isEmpty { latest = text }
+                if isFinal && !latest.isEmpty { finish(latest) }
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
-            engine.stop()
-            request.endAudio()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 9) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 7) {
             finish(latest)
         }
     }
