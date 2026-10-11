@@ -2,7 +2,7 @@ import type { StormyPacket, StormyReply } from "./stormyFence";
 import { answerStormySituation } from "./stormySituation";
 import { asksAboutStormyVoice, STORMY_VOICE_HINT } from "./stormyVoiceHint";
 
-const EMPTY = { needsYes: false, place: "", routeId: "", drive: false, stop: false, clarify: "" } as const;
+const EMPTY = { needsYes: false, place: "", routeId: "", drive: false, stop: false, thenPlace: "", clarify: "" } as const;
 
 function reply(say: string, action: StormyReply["action"], extra?: Partial<StormyReply>): StormyReply {
   return { say, action, ...EMPTY, ...extra };
@@ -38,6 +38,16 @@ export function interpretStormyRequest(question: string, packet: StormyPacket): 
   }
   if (/\bdestination\b/.test(lower) && /\b(?:set|pick|choose|change)\b/.test(lower) && !placeFrom(q)) {
     return reply("Where do you want to go?", "none", { clarify: "place" });
+  }
+
+  const two = twoPlaces(q);
+  if (two) {
+    return reply(`First ${two.stop}, then ${two.dest}.`, "go_to", {
+      place: two.stop,
+      thenPlace: two.dest,
+      stop: true,
+      drive: false,
+    });
   }
 
   const errand = errandPlace(q, lower);
@@ -77,6 +87,27 @@ export function interpretStormyRequest(question: string, packet: StormyPacket): 
   }
 
   return answerStormySituation(q, packet);
+}
+
+/** "Gas station then Walmart" is a stop plus a final destination. The app allows one stop. */
+function twoPlaces(question: string): { stop: string; dest: string } | null {
+  const match = question.match(
+    /\b(?:take me|drive me|get me|navigate|head|go|i (?:want|wanna|need|would like|'d like) to go)\s+to\s+(.+?)\s+(?:and\s+)?then\s+(?:(?:go|head)\s+)?(?:to\s+)?(.+)$/i
+  );
+  if (!match?.[1] || !match[2]) return null;
+  const stop = tidyPlace(match[1]);
+  const dest = tidyPlace(match[2]);
+  if (!stop || !dest) return null;
+  if (/^(?:me|us)$/i.test(stop) || /^(?:me|us)$/i.test(dest)) return null;
+  return { stop, dest };
+}
+
+function tidyPlace(raw: string): string {
+  const cleaned = cleanPlace(raw).place;
+  return cleaned
+    .replace(/\b(?:in|at)\s+the\s+(?:city|town)\s+closest\s+to\s+me\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function onATrip(packet: StormyPacket): boolean {

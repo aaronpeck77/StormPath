@@ -54,6 +54,7 @@ function answeredPlace(
     routeId: "",
     drive,
     stop,
+    thenPlace: "",
     clarify,
   };
 }

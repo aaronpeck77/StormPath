@@ -264,24 +264,23 @@ export function AppBottomChrome({
         <div className="nav-bottom-dock">
           {navigationStarted && viewMode === "drive" ? (
             <div className="nav-bottom-dock__about-row">
-              <div className="nav-bottom-dock__drive-about-cluster">
-                <div className="nav-bottom-dock__compass-i-col">
-                  <DriveCompass bearingDeg={driveMapBearingDeg} />
-                  <button
-                    type="button"
-                    className="map-about-btn"
-                    aria-label="About StormPath"
-                    title="About / Settings"
-                    onClick={onOpenAbout}
-                  >
-                    i
-                  </button>
+              <div className="nav-bottom-dock__info-stormy-col">
+                <DriveCompass bearingDeg={driveMapBearingDeg} />
+                <button
+                  type="button"
+                  className="map-about-btn"
+                  aria-label="About StormPath"
+                  title="About / Settings"
+                  onClick={onOpenAbout}
+                >
+                  i
+                </button>
+                <div className="nav-bottom-dock__stormy-row">
                   <StormyButton packet={stormyPacket} onAct={onStormyAct} />
+                  {driveDistanceRemainingLabel ? (
+                    <NavMilesLeftBox label={driveDistanceRemainingLabel} />
+                  ) : null}
                 </div>
-                {driveDistanceRemainingLabel ? (
-                  <NavMilesLeftBox label={driveDistanceRemainingLabel} />
-                ) : null}
-                {/* Drive locks one corridor — A/B cycle stays on Rt / Mp only. */}
               </div>
             </div>
           ) : navigationStarted && viewMode === "topdown" ? (
@@ -296,31 +295,33 @@ export function AppBottomChrome({
                 >
                   i
                 </button>
-                <StormyButton packet={stormyPacket} onAct={onStormyAct} />
+                <div className="nav-bottom-dock__stormy-row">
+                  <StormyButton packet={stormyPacket} onAct={onStormyAct} />
+                  {driveDistanceRemainingLabel ? (
+                    <NavMilesLeftBox label={driveDistanceRemainingLabel} />
+                  ) : null}
+                  {routePickItems.length >= 1 ? (
+                    <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
+                      <RoutePickControl
+                        items={routePickItems}
+                        selectedId={lineFocusId}
+                        cycleOrderIds={planRouteIds}
+                        activeSlotIndex={previewLegIndex}
+                        onSelect={handlePreviewRouteSelect}
+                        detail={routeDockDetail}
+                      />
+                    </div>
+                  ) : radarMapOverlayOn && radarFrameTimeLabel ? (
+                    <div
+                      className="nav-radar-frame-time-dock"
+                      aria-live="polite"
+                      title="Radar mosaic time (your local time)"
+                    >
+                      {radarFrameTimeLabel}
+                    </div>
+                  ) : null}
+                </div>
               </div>
-              {driveDistanceRemainingLabel ? (
-                <NavMilesLeftBox label={driveDistanceRemainingLabel} />
-              ) : null}
-              {routePickItems.length >= 1 ? (
-                <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
-                  <RoutePickControl
-                    items={routePickItems}
-                    selectedId={lineFocusId}
-                    cycleOrderIds={planRouteIds}
-                    activeSlotIndex={previewLegIndex}
-                    onSelect={handlePreviewRouteSelect}
-                    detail={routeDockDetail}
-                  />
-                </div>
-              ) : radarMapOverlayOn && radarFrameTimeLabel ? (
-                <div
-                  className="nav-radar-frame-time-dock"
-                  aria-live="polite"
-                  title="Radar mosaic time (your local time)"
-                >
-                  {radarFrameTimeLabel}
-                </div>
-              ) : null}
             </div>
           ) : (
             <div className="nav-bottom-dock__plan-stack">
@@ -336,43 +337,45 @@ export function AppBottomChrome({
                   >
                     i
                   </button>
-                  <StormyButton packet={stormyPacket} onAct={onStormyAct} />
+                  <div className="nav-bottom-dock__stormy-row">
+                    <StormyButton packet={stormyPacket} onAct={onStormyAct} />
+                    {navigationStarted && driveDistanceRemainingLabel ? (
+                      <NavMilesLeftBox label={driveDistanceRemainingLabel} />
+                    ) : null}
+                    {viewMode === "route" || viewMode === "topdown" ? (
+                      routePickItems.length >= 1 ? (
+                        <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
+                          <RoutePickControl
+                            items={routePickItems}
+                            selectedId={lineFocusId}
+                            cycleOrderIds={planRouteIds}
+                            activeSlotIndex={previewLegIndex}
+                            onSelect={handlePreviewRouteSelect}
+                            detail={routeDockDetail}
+                          />
+                        </div>
+                      ) : planRoutesLength === 0 && userLngLat ? (
+                        <button
+                          type="button"
+                          className="nav-recenter-puck-btn nav-recenter-puck-btn--dock nav-recenter-puck-btn--inline"
+                          title="Center map on your location"
+                          aria-label="Center map on your location"
+                          onClick={onRecenterPlanningPuck}
+                        >
+                          My location
+                        </button>
+                      ) : radarMapOverlayOn && radarFrameTimeLabel ? (
+                        <div
+                          className="nav-radar-frame-time-dock"
+                          aria-live="polite"
+                          title="Radar mosaic time (your local time)"
+                        >
+                          {radarFrameTimeLabel}
+                        </div>
+                      ) : null
+                    ) : null}
+                  </div>
                 </div>
-                {navigationStarted && driveDistanceRemainingLabel ? (
-                  <NavMilesLeftBox label={driveDistanceRemainingLabel} />
-                ) : null}
-                {viewMode === "route" || viewMode === "topdown" ? (
-                  routePickItems.length >= 1 ? (
-                    <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
-                      <RoutePickControl
-                        items={routePickItems}
-                        selectedId={lineFocusId}
-                        cycleOrderIds={planRouteIds}
-                        activeSlotIndex={previewLegIndex}
-                        onSelect={handlePreviewRouteSelect}
-                        detail={routeDockDetail}
-                      />
-                    </div>
-                  ) : planRoutesLength === 0 && userLngLat ? (
-                    <button
-                      type="button"
-                      className="nav-recenter-puck-btn nav-recenter-puck-btn--dock nav-recenter-puck-btn--inline"
-                      title="Center map on your location"
-                      aria-label="Center map on your location"
-                      onClick={onRecenterPlanningPuck}
-                    >
-                      My location
-                    </button>
-                  ) : radarMapOverlayOn && radarFrameTimeLabel ? (
-                    <div
-                      className="nav-radar-frame-time-dock"
-                      aria-live="polite"
-                      title="Radar mosaic time (your local time)"
-                    >
-                      {radarFrameTimeLabel}
-                    </div>
-                  ) : null
-                ) : null}
               </div>
               <div className="nav-bottom-dock__search-myloc-row">
                 <div className="nav-bottom-dock__search-col">

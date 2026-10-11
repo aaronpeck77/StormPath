@@ -76,6 +76,8 @@ export type StormyReply = {
   drive: boolean;
   /** Add the place as a stop on the current route instead of replacing the destination. */
   stop: boolean;
+  /** Final destination when place is a stop they named first. Empty for a single place. */
+  thenPlace: string;
   /** place: she asked where. choice: she asked which nearby place. Empty means she is not waiting. */
   clarify: "" | "place" | "choice";
 };
@@ -87,8 +89,8 @@ export type StormyFenceResult =
   | { ok: true; packet: StormyPacket }
   | { ok: false; error: string };
 
-const QUIET_REPLY: StormyReply = { say: "", action: "quiet", needsYes: false, place: "", routeId: "", drive: false, stop: false, clarify: "" };
-const SILENT_REPLY: StormyReply = { say: "", action: "none", needsYes: false, place: "", routeId: "", drive: false, stop: false, clarify: "" };
+const QUIET_REPLY: StormyReply = { say: "", action: "quiet", needsYes: false, place: "", routeId: "", drive: false, stop: false, thenPlace: "", clarify: "" };
+const SILENT_REPLY: StormyReply = { say: "", action: "none", needsYes: false, place: "", routeId: "", drive: false, stop: false, thenPlace: "", clarify: "" };
 
 function clip(value: unknown, max: number): string {
   if (typeof value !== "string") return "";
@@ -214,6 +216,7 @@ export function clampStormyReply(raw: unknown, packet: StormyPacket): StormyRepl
     routeId: action === "use_route" ? routeId : "",
     drive: action === "go_to" && obj.drive === true,
     stop: action === "go_to" && obj.stop === true,
+    thenPlace: action === "go_to" ? clip(obj.thenPlace, STORMY_MAX_LINE) : "",
     clarify: action === "none" && obj.clarify === "place" ? "place" : "",
   };
 }

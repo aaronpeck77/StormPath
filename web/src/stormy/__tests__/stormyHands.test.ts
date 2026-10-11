@@ -117,6 +117,21 @@ describe("interpretStormyRequest", () => {
     expect(reply?.action).toBe("explain_ahead");
   });
 
+  it("hears a stop and then a destination", () => {
+    expect(
+      interpretStormyRequest(
+        "I want to go to the nearest gas station then to the Walmart in the city closest to me Mount Zion",
+        packet
+      )
+    ).toMatchObject({
+      action: "go_to",
+      place: "nearest gas station",
+      thenPlace: "Walmart Mount Zion",
+      stop: true,
+      drive: false,
+    });
+  });
+
   it("leaves a worry for the model", () => {
     expect(interpretStormyRequest("Should I be worried?", packet)).toBeNull();
   });

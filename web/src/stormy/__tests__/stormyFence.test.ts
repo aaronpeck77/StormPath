@@ -53,7 +53,7 @@ describe("clampStormyReply", () => {
         { say: "Heavy rain ahead.", action: "explain_ahead" },
         { ...packet, turnImminent: true }
       )
-    ).toEqual({ say: "", action: "none", needsYes: false, place: "", routeId: "", drive: false, stop: false, clarify: "" });
+    ).toEqual({ say: "", action: "none", needsYes: false, place: "", routeId: "", drive: false, stop: false, thenPlace: "", clarify: "" });
   });
 
   it("switches to the other listed route instead of only asking", () => {
@@ -67,6 +67,7 @@ describe("clampStormyReply", () => {
       routeId: "b",
       drive: false,
       stop: false,
+      thenPlace: "",
       clarify: "",
     });
   });
@@ -95,6 +96,7 @@ describe("clampStormyReply", () => {
       routeId: "",
       drive: false,
       stop: false,
+      thenPlace: "",
       clarify: "",
     });
   });
