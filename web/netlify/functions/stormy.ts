@@ -10,7 +10,7 @@ import {
   stormySystemPrompt,
   type StormyPacket,
   type StormyReply,
-} from "../../src/stormy/stormyFence";
+} from "../../src/stormy/stormyFence.ts";
 
 type NetlifyEvent = {
   httpMethod: string;
