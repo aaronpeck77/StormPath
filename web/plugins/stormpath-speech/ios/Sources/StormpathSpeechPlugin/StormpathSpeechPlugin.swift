@@ -45,10 +45,16 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         func score(_ voice: AVSpeechSynthesisVoice) -> Int {
             let quality: Int
-            switch voice.quality {
-            case .premium: quality = 300
-            case .enhanced: quality = 200
-            default: quality = 0
+            if #available(iOS 16.0, *) {
+                switch voice.quality {
+                case .premium: quality = 300
+                case .enhanced: quality = 200
+                default: quality = 0
+                }
+            } else if voice.quality == .enhanced {
+                quality = 200
+            } else {
+                quality = 0
             }
             let id = (voice.identifier + " " + voice.name).lowercased()
             let named = (id.contains("ava") || id.contains("zoe") || id.contains("samantha") || id.contains("allison") || id.contains("siri")) ? 20 : 0
@@ -85,10 +91,18 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let utterance = AVSpeechUtterance(string: text)
         let voice = stormyVoice()
+        let natural: Bool
         if let voice {
             utterance.voice = voice
+            let id = voice.identifier.lowercased()
+            if #available(iOS 16.0, *) {
+                natural = voice.quality == .premium || voice.quality == .enhanced || id.contains("premium") || id.contains("enhanced")
+            } else {
+                natural = voice.quality == .enhanced || id.contains("premium") || id.contains("enhanced")
+            }
+        } else {
+            natural = false
         }
-        let natural = voice?.quality == .premium || voice?.quality == .enhanced
         let paced = natural ? min(rate, Float(0.48)) : min(rate, Float(0.42))
         utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate, min(AVSpeechUtteranceMaximumSpeechRate, paced))
         utterance.pitchMultiplier = natural ? 1.0 : 1.03
