@@ -20,6 +20,24 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private let synthesizer = AVSpeechSynthesizer()
 
+    /// Premium or enhanced English voice when the phone has one. Compact is the fallback.
+    private func stormyVoice() -> AVSpeechSynthesisVoice? {
+        let voices = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
+        func score(_ voice: AVSpeechSynthesisVoice) -> Int {
+            let quality: Int
+            switch voice.quality {
+            case .premium: quality = 300
+            case .enhanced: quality = 200
+            default: quality = 100
+            }
+            let id = (voice.identifier + " " + voice.name).lowercased()
+            let named = (id.contains("ava") || id.contains("zoe") || id.contains("samantha") || id.contains("allison")) ? 20 : 0
+            let us = voice.language == "en-US" ? 10 : 0
+            return quality + named + us
+        }
+        return voices.max { score($0) < score($1) } ?? AVSpeechSynthesisVoice(language: "en-US")
+    }
+
     @objc func speak(_ call: CAPPluginCall) {
         guard let text = call.getString("text")?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else {
@@ -47,7 +65,7 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate, min(AVSpeechUtteranceMaximumSpeechRate, rate))
         utterance.volume = 1.0
-        if let voice = AVSpeechSynthesisVoice(language: "en-US") {
+        if let voice = stormyVoice() {
             utterance.voice = voice
         }
         synthesizer.speak(utterance)

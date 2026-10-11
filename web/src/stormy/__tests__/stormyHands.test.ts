@@ -16,6 +16,10 @@ const packet: StormyPacket = {
   traffic: [],
   roads: [],
   forecast: "72°F and clear",
+  destination: "",
+  eta: "",
+  milesLeft: "",
+  stops: [],
 };
 
 describe("interpretStormyRequest", () => {
@@ -77,7 +81,27 @@ describe("interpretStormyRequest", () => {
     expect(interpretStormyRequest("What's my local forecast?", packet)?.say).toContain("72°F");
   });
 
-  it("leaves ordinary questions for the model", () => {
-    expect(interpretStormyRequest("What's ahead?", packet)).toBeNull();
+  it("adds coffee as a stop once a trip is going", () => {
+    expect(interpretStormyRequest("Find me a place to get a coffee", { ...packet, driving: true })).toMatchObject({
+      action: "go_to",
+      place: "coffee",
+      stop: true,
+    });
+  });
+
+  it("talks through the trip instead of handing it off", () => {
+    const reply = interpretStormyRequest("How's the trip?", {
+      ...packet,
+      destination: "Decatur",
+      eta: "42 minutes",
+      weather: ["Rain for the next 20 miles."],
+    });
+    expect(reply?.say).toContain("Decatur");
+    expect(reply?.say).toContain("42 minutes");
+    expect(reply?.action).toBe("explain_ahead");
+  });
+
+  it("leaves a worry for the model", () => {
+    expect(interpretStormyRequest("Should I be worried?", packet)).toBeNull();
   });
 });

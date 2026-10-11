@@ -20,6 +20,10 @@ const packet = {
   traffic: ["Congestion on I-75."],
   roads: ["I-75"],
   forecast: "72°F and clear",
+  destination: "Decatur",
+  eta: "42 minutes",
+  milesLeft: "30 mi",
+  stops: [],
 };
 
 describe("acceptStormyPacket", () => {
@@ -48,7 +52,7 @@ describe("clampStormyReply", () => {
         { say: "Heavy rain ahead.", action: "explain_ahead" },
         { ...packet, turnImminent: true }
       )
-    ).toEqual({ say: "", action: "none", needsYes: false, place: "", routeId: "", drive: false, clarify: "" });
+    ).toEqual({ say: "", action: "none", needsYes: false, place: "", routeId: "", drive: false, stop: false, clarify: "" });
   });
 
   it("switches to the other listed route instead of only asking", () => {
@@ -61,6 +65,7 @@ describe("clampStormyReply", () => {
       place: "",
       routeId: "b",
       drive: false,
+      stop: false,
       clarify: "",
     });
   });
@@ -88,6 +93,7 @@ describe("clampStormyReply", () => {
       place: "",
       routeId: "",
       drive: false,
+      stop: false,
       clarify: "",
     });
   });

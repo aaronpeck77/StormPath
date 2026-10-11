@@ -47,8 +47,22 @@ export function hitsForPlace(query: string, hits: NearbyHit[], prepared: Prepare
 
 export type NearbyChoice =
   | { kind: "pick"; id: string }
-  | { kind: "ask"; say: string; ids: [string, string] }
+  | { kind: "ask"; say: string; ids: string[] }
   | { kind: "none" };
+
+/** Two or more matches: name up to three and let the driver pick. One match can be used. */
+export function offerPlaceChoices(hits: NearbyHit[]): NearbyChoice {
+  if (hits.length === 0) return { kind: "none" };
+  const first = hits[0]!;
+  if (hits.length === 1) return { kind: "pick", id: first.id };
+  const shown = hits.slice(0, 3);
+  const labels = shown.map(choiceLabel);
+  const say =
+    shown.length === 2
+      ? `I found two. ${labels[0]}, or ${labels[1]}?`
+      : `I found three. ${labels[0]}, ${labels[1]}, or ${labels[2] ?? "one more"}?`;
+  return { kind: "ask", say, ids: shown.map((hit) => hit.id) };
+}
 
 /**
  * One clear winner, or one question when two businesses are neck and neck.
@@ -74,6 +88,7 @@ export function matchClarifiedChoice(utterance: string, hits: NearbyHit[]): stri
   if (!lower || hits.length === 0) return null;
   if (/\b(?:first|closest|nearest|that one|this one)\b/.test(lower)) return hits[0]!.id;
   if (/\b(?:second|other|other one|farther|further)\b/.test(lower) && hits[1]) return hits[1].id;
+  if (/\b(?:third|last)\b/.test(lower) && hits[2]) return hits[2].id;
   const found = hits.find((hit) => {
     const words = `${hit.name} ${hit.detail}`
       .toLowerCase()

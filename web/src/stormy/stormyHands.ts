@@ -1,7 +1,7 @@
 import type { StormyPacket, StormyReply } from "./stormyFence";
 import { answerStormySituation } from "./stormySituation";
 
-const EMPTY = { needsYes: false, place: "", routeId: "", drive: false, clarify: "" } as const;
+const EMPTY = { needsYes: false, place: "", routeId: "", drive: false, stop: false, clarify: "" } as const;
 
 function reply(say: string, action: StormyReply["action"], extra?: Partial<StormyReply>): StormyReply {
   return { say, action, ...EMPTY, ...extra };
@@ -36,11 +36,19 @@ export function interpretStormyRequest(question: string, packet: StormyPacket): 
     return reply("Where do you want to go?", "none", { clarify: "place" });
   }
 
+  const errand = errandPlace(q, lower);
+  if (errand) return goErrand(errand, packet);
+  if (/\badd a stop\b/.test(lower)) {
+    return reply("What should I add as a stop?", "none", { clarify: "place", stop: true });
+  }
+
   const place = placeFrom(q);
   if (place) {
-    return reply(place.drive ? `Heading to ${place.place}.` : `Planning a route to ${place.place}.`, "go_to", {
+    const asStop = onATrip(packet) && looksLikeErrand(place.place);
+    return reply(asStop ? `Adding a stop at ${place.place}.` : place.drive ? `Heading to ${place.place}.` : `Planning a route to ${place.place}.`, "go_to", {
       place: place.place,
-      drive: place.drive,
+      drive: asStop ? packet.driving : place.drive,
+      stop: asStop,
     });
   }
 
@@ -65,6 +73,38 @@ export function interpretStormyRequest(question: string, packet: StormyPacket): 
   }
 
   return answerStormySituation(q, packet);
+}
+
+function onATrip(packet: StormyPacket): boolean {
+  return packet.driving || packet.routes.length > 0 || packet.destination.trim().length > 0;
+}
+
+function goErrand(place: string, packet: StormyPacket): StormyReply {
+  const asStop = onATrip(packet);
+  return reply(asStop ? `Adding a stop for ${place}.` : `Looking for ${place}.`, "go_to", {
+    place,
+    drive: packet.driving,
+    stop: asStop,
+  });
+}
+
+function looksLikeErrand(place: string): boolean {
+  return /\b(?:coffee|cafe|starbucks|dunkin|restaurant|mcdonald|food|gas|fuel)\b/i.test(place);
+}
+
+function errandPlace(question: string, lower: string): string | null {
+  if (!/\b(?:coffee|cafe|starbucks|dunkin|eat|food|hungry|lunch|dinner|breakfast|restaurant|gas|fuel)\b/.test(lower)) {
+    return null;
+  }
+  const named = question.match(/\b(?:stop at|add a stop (?:at|for)|stop for|grab|get some|get a|get)\s+(.+)$/i);
+  if (named?.[1]) {
+    const place = cleanPlace(named[1]).place;
+    if (place && !/^(?:me|us|some|a|the)$/i.test(place)) return place;
+  }
+  if (/\b(?:coffee|cafe|starbucks|dunkin)\b/.test(lower)) return "coffee";
+  if (/\b(?:gas|fuel)\b/.test(lower)) return "gas station";
+  if (/\b(?:eat|food|hungry|lunch|dinner|breakfast|restaurant)\b/.test(lower)) return "restaurant";
+  return null;
 }
 
 function isStop(lower: string): boolean {

@@ -2462,27 +2462,25 @@ export default function App() {
   const runStormyAct = useCallback(
     async (reply: StormyReply): Promise<StormyActResult> => {
       if (reply.clarify === "choice" && reply.place.trim()) {
-        const chosen = await acceptSpokenChoice(reply.place);
+        const chosen = await acceptSpokenChoice(reply.place, reply.stop);
         if (chosen) {
-          if (reply.drive) handleGo();
           const eta = useTripPlanStore.getState().plan.routes[0]?.baseEtaMinutes;
           const minutes = eta != null && Number.isFinite(eta) ? ` About ${Math.round(eta)} minutes.` : "";
-          return reply.drive ? `Heading to ${chosen}.${minutes}` : `Route to ${chosen} is ready.${minutes}`;
+          return reply.stop
+            ? `Stop added at ${chosen}. You're still on the way.${minutes}`
+            : `That's ${chosen}. Say go when you want to leave.${minutes}`;
         }
       }
       if (reply.action === "go_to" && reply.place.trim()) {
-        const found = await resolveSpokenPlace(reply.place);
+        const found = await resolveSpokenPlace(reply.place, reply.stop);
         if (found.kind === "ask") return { say: found.say, clarify: "choice" };
         if (found.kind === "miss") return "I couldn't find that.";
         const name = found.name;
         const eta = useTripPlanStore.getState().plan.routes[0]?.baseEtaMinutes;
         const minutes =
           eta != null && Number.isFinite(eta) ? ` About ${Math.round(eta)} minutes.` : "";
-        if (reply.drive) {
-          handleGo();
-          return `Heading to ${name}.${minutes}`;
-        }
-        return `Route to ${name} is ready.${minutes}`;
+        if (reply.stop) return `Stop added at ${name}. You're still on the way.${minutes}`;
+        return `That's ${name}. Say go when you want to leave.${minutes}`;
       }
       if (reply.action === "start_drive") {
         const routes = useTripPlanStore.getState().plan.routes;

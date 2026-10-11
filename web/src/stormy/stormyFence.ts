@@ -22,7 +22,7 @@ export const STORMY_ACTIONS = [
 export type StormyAction = (typeof STORMY_ACTIONS)[number];
 
 export const STORMY_MAX_PACKET_CHARS = 6_000;
-export const STORMY_MAX_SAY_CHARS = 220;
+export const STORMY_MAX_SAY_CHARS = 420;
 export const STORMY_MAX_HAZARDS = 6;
 export const STORMY_MAX_ROUTES = 3;
 export const STORMY_MAX_LINE = 240;
@@ -52,6 +52,14 @@ export type StormyPacket = {
   roads: string[];
   /** Weather where the driver is right now. Empty when it has not loaded. */
   forecast: string;
+  /** Where the route is headed. Empty before a destination is set. */
+  destination: string;
+  /** Spoken time left, such as "42 minutes". Empty when unknown. */
+  eta: string;
+  /** Spoken distance left. Empty when unknown. */
+  milesLeft: string;
+  /** Stops already on the route. */
+  stops: string[];
 };
 
 export type StormyReply = {
@@ -64,6 +72,8 @@ export type StormyReply = {
   routeId: string;
   /** go_to also starts the drive when she was told to leave, not only to plan. */
   drive: boolean;
+  /** Add the place as a stop on the current route instead of replacing the destination. */
+  stop: boolean;
   /** place: she asked where. choice: she asked which nearby place. Empty means she is not waiting. */
   clarify: "" | "place" | "choice";
 };
@@ -75,8 +85,8 @@ export type StormyFenceResult =
   | { ok: true; packet: StormyPacket }
   | { ok: false; error: string };
 
-const QUIET_REPLY: StormyReply = { say: "", action: "quiet", needsYes: false, place: "", routeId: "", drive: false, clarify: "" };
-const SILENT_REPLY: StormyReply = { say: "", action: "none", needsYes: false, place: "", routeId: "", drive: false, clarify: "" };
+const QUIET_REPLY: StormyReply = { say: "", action: "quiet", needsYes: false, place: "", routeId: "", drive: false, stop: false, clarify: "" };
+const SILENT_REPLY: StormyReply = { say: "", action: "none", needsYes: false, place: "", routeId: "", drive: false, stop: false, clarify: "" };
 
 function clip(value: unknown, max: number): string {
   if (typeof value !== "string") return "";
@@ -125,6 +135,10 @@ export function acceptStormyPacket(raw: unknown): StormyFenceResult {
     traffic: clipLines(body.traffic, STORMY_MAX_TRAFFIC),
     roads: clipLines(body.roads, STORMY_MAX_ROADS).map((road) => road.slice(0, 24)),
     forecast: clip(body.forecast, STORMY_MAX_LINE),
+    destination: clip(body.destination, STORMY_MAX_LINE),
+    eta: clip(body.eta, 40),
+    milesLeft: clip(body.milesLeft, 40),
+    stops: clipLines(body.stops, 3),
   };
 
   if (JSON.stringify(packet).length > STORMY_MAX_PACKET_CHARS) {
@@ -135,8 +149,9 @@ export function acceptStormyPacket(raw: unknown): StormyFenceResult {
 
 export function stormySystemPrompt(): string {
   return [
-    "You are Stormy, in the passenger seat of StormPath. Sound like you already checked.",
-    "One or two short sentences. Name the road, the minutes, or the weather when the packet has them.",
+    "You are Stormy, a person in the passenger seat. Talk like you are on the trip with them.",
+    "Two or three spoken sentences is fine when the trip has detail. Use destination, eta, milesLeft, stops, weather, traffic, forecast, and roads.",
+    "Food, coffee, and gas are part of the trip. A stop is added onto the route they are already driving.",
     "Never say you are an AI. Never say the word packet. Never invent a road, a minute, or a storm. If a fact is missing, say you don't have it.",
     "You can run the app. go_to when they name a place. Put that place in place.",
     "start_drive when they want to leave on the route already planned.",
@@ -145,7 +160,7 @@ export function stormySystemPrompt(): string {
     "weather is today's weather on this route. forecast is the weather where the driver is right now, even with no route. traffic is slowdowns, wrecks, and closures on this route. roads lists the highways on it.",
     "explain_ahead for weather, traffic, and hazards. If they name a highway that is not in roads or traffic, say it is not on this route.",
     "Do not reroute around a backup, wreck, or storm. Describe it. You may name another route already in the packet. Do not switch unless they ask.",
-    "Dinner, mail, and general chat stay outside. One line: you stay with the drive. quiet when they want silence. none when you are only talking.",
+    "Mail, jokes, and anything that is not about this trip stay outside. quiet when they want silence. none when you are only talking.",
     "If turnImminent is true, return an empty say and action none.",
     "go_to plans the route. Set drive true only when they want to leave now, not when they only asked to plan.",
     "If you need one missing detail, ask one short question and set clarify to place. Otherwise clarify is empty.",
@@ -195,6 +210,7 @@ export function clampStormyReply(raw: unknown, packet: StormyPacket): StormyRepl
     place,
     routeId: action === "use_route" ? routeId : "",
     drive: action === "go_to" && obj.drive === true,
+    stop: action === "go_to" && obj.stop === true,
     clarify: action === "none" && obj.clarify === "place" ? "place" : "",
   };
 }

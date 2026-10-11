@@ -222,6 +222,10 @@ export function AppBottomChrome({
     traffic: stormyTraffic,
     roads: stormyRoads,
     forecast: stormyForecast,
+    destination: destinationLabel.trim(),
+    eta: driveEtaMinutes != null && Number.isFinite(driveEtaMinutes) ? `${Math.round(driveEtaMinutes)} minutes` : "",
+    milesLeft: (driveDistanceRemainingLabel ?? "").trim(),
+    stops: viaStops.map((stop) => stop.label).filter(Boolean).slice(0, 3),
   };
   return (
     <div className="nav-bottom-stack">

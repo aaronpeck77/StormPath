@@ -17,8 +17,24 @@ export function getStormyUrl(): string {
   return DEFAULT_STORMY_URL;
 }
 
+/** Old servers only keep aheadLine and hazards. Put the trip facts there too. */
+function packetForModel(packet: StormyPacket): StormyPacket {
+  const facts = [
+    packet.destination && `Destination ${packet.destination}`,
+    packet.eta && `${packet.eta} left`,
+    packet.milesLeft,
+    packet.stops[0] && `Stop at ${packet.stops[0]}`,
+    packet.forecast && `Here: ${packet.forecast}`,
+  ]
+    .filter(Boolean)
+    .join(". ");
+  const ahead = [packet.aheadLine, facts].filter(Boolean).join(". ").slice(0, 240);
+  const hazards = [...packet.hazards, ...packet.weather, ...packet.traffic].filter(Boolean).slice(0, 6);
+  return { ...packet, aheadLine: ahead, hazards };
+}
+
 export async function askStormy(packet: StormyPacket): Promise<StormyReply> {
-  const accepted = acceptStormyPacket(packet);
+  const accepted = acceptStormyPacket(packetForModel(packet));
   if (!accepted.ok) throw new Error(accepted.error);
   const token = (import.meta.env.VITE_STORMY_CLIENT_TOKEN as string | undefined)?.trim();
   const response = await fetch(getStormyUrl(), {

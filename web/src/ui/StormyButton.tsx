@@ -43,7 +43,8 @@ function armStormyReadyChime(): () => void {
 function answeredPlace(
   question: string,
   clarify: "" | "place" | "choice",
-  drive: boolean
+  drive: boolean,
+  stop: boolean
 ): StormyReply {
   return {
     say: "",
@@ -52,6 +53,7 @@ function answeredPlace(
     place: question,
     routeId: "",
     drive,
+    stop,
     clarify,
   };
 }
@@ -94,14 +96,16 @@ export function StormyButton({ packet, onAct }: Props) {
       let question = await listenForStormy();
       let clarify: "" | "place" | "choice" = "";
       let drive = false;
+      let stop = false;
       for (let round = 0; round < 3 && question; round += 1) {
         setPhase("thinking");
         const reply: StormyReply =
           clarify === "place" || clarify === "choice"
-            ? answeredPlace(question, clarify, drive)
+            ? answeredPlace(question, clarify, drive, stop)
             : (interpretStormyRequest(question, packet) ?? (await askStormy({ ...packet, question })));
         if (reply.clarify === "place" && clarify !== "place") {
           drive = reply.drive;
+          stop = reply.stop;
           clarify = "place";
           setPhase("listening");
           await speakStormpathLine(reply.say, { interrupt: false });
@@ -115,6 +119,7 @@ export function StormyButton({ packet, onAct }: Props) {
         const outcome: StormyActResult = await onAct?.(reply);
         if (outcome && typeof outcome === "object") {
           drive = outcome.clarify === "place" || reply.drive;
+          stop = reply.stop;
           clarify = outcome.clarify;
           setPhase("listening");
           await speakStormpathLine(outcome.say, { interrupt: false });

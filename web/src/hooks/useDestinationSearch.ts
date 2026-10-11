@@ -12,9 +12,9 @@ import {
 import { geocodeCountriesForFix } from "../services/continents";
 import { haversineMeters } from "../nav/routeGeometry";
 import {
-  chooseNearby,
   hitsForPlace,
   matchClarifiedChoice,
+  offerPlaceChoices,
   preparePlaceQuery,
   type NearbyHit,
 } from "../stormy/placeQuery";
@@ -47,6 +47,8 @@ export interface UseDestinationSearchDeps {
   setRouting: (busy: boolean) => void;
   setRouteError: (msg: string | null) => void;
 }
+
+type SpokenOption = NearbyHit & { lngLat: LngLat; placeName: string };
 
 function toNearbyHit(hit: SearchBoxSuggestion): NearbyHit {
   return {
@@ -121,7 +123,11 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
   /** Query string that produced {@link searchPickHits}; cleared when the user edits the field. */
   const searchPickQueryRef = useRef<string | null>(null);
   /** Two nearby businesses Stormy just asked the driver to choose between. */
-  const stormyChoiceRef = useRef<SearchBoxSuggestion[]>([]);
+  const stormyChoiceRef = useRef<SpokenOption[]>([]);
+  /** While the driver is choosing a pin, don't let autocomplete wipe that list. */
+  const placeOptionsLockRef = useRef(false);
+  const placeOptionsQueryRef = useRef("");
+  const spokenStopRef = useRef(false);
 
   const applyTripPlacePick = useCallback(
     async (lngLat: LngLat, label: string, mode: "destination" | "via") => {
@@ -284,6 +290,8 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
 
   const handlePickSuggestion = useCallback(
     async (hit: SearchSuggestion) => {
+      placeOptionsLockRef.current = false;
+      placeOptionsQueryRef.current = "";
       if (!userLngLat) {
         setTapHint(
           locationError ?? "Turn on location before picking a place."
@@ -329,8 +337,23 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       setAllowAutocomplete(true);
       setSuggestions([]);
       setSearchText(placeName);
+      stormyChoiceRef.current = [];
+      const asStop = spokenStopRef.current;
+      spokenStopRef.current = false;
+      const dest = useTripPlanStore.getState().destLngLat;
+      if (asStop && dest) {
+        const destLabel = useTripPlanStore.getState().destinationLabel;
+        setViaStops([{ lngLat, label: placeName }]);
+        setActiveViaIndex(0);
+        setAddingViaStop(false);
+        setSearchExpanded(false);
+        await computeRoutes(dest, destLabel.trim() || "Destination", {
+          preserveNavigation: navigationStarted,
+        });
+        return;
+      }
       const pickMode =
-        addingViaStop && useTripPlanStore.getState().destLngLat ? "via" : "destination";
+        addingViaStop && dest ? "via" : "destination";
       if (pickMode === "destination") setDestinationLabel(placeName);
       await applyTripPlacePick(lngLat, placeName, pickMode);
     },
@@ -343,6 +366,11 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       ensureSearchBoxSessionToken,
       resetSearchBoxSessionToken,
       addingViaStop,
+      computeRoutes,
+      navigationStarted,
+      setActiveViaIndex,
+      setSearchExpanded,
+      setViaStops,
     ]
   );
 
@@ -355,31 +383,75 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
   );
 
   const commitSpokenPlace = useCallback(
-    async (lngLat: LngLat, placeName: string) => {
+    async (lngLat: LngLat, placeName: string, asStop = false) => {
+      placeOptionsLockRef.current = false;
+      placeOptionsQueryRef.current = "";
+      spokenStopRef.current = false;
+      stormyChoiceRef.current = [];
       recordRecentSearch(placeName, lngLat);
       setAllowAutocomplete(true);
       setSearchText(placeName);
       setSuggestions([]);
-      const pickMode = addingViaStop && useTripPlanStore.getState().destLngLat ? "via" : "destination";
+      setSearchPickHits(null);
+      const dest = useTripPlanStore.getState().destLngLat;
+      const destLabel = useTripPlanStore.getState().destinationLabel;
+      if (asStop && dest) {
+        setViaStops([{ lngLat, label: placeName }]);
+        setActiveViaIndex(0);
+        setAddingViaStop(false);
+        await computeRoutes(dest, destLabel.trim() || "Destination", {
+          preserveNavigation: navigationStarted,
+        });
+        return placeName;
+      }
+      const pickMode = addingViaStop && dest ? "via" : "destination";
       if (pickMode === "destination") setDestinationLabel(placeName);
       await applyTripPlacePick(lngLat, placeName, pickMode);
       return placeName;
     },
-    [addingViaStop, applyTripPlacePick, recordRecentSearch]
+    [addingViaStop, applyTripPlacePick, computeRoutes, navigationStarted, recordRecentSearch, setActiveViaIndex, setViaStops]
   );
 
   const retrieveSpokenHit = useCallback(
-    async (hit: SearchBoxSuggestion, sessionToken: string) => {
+    async (hit: SearchBoxSuggestion, sessionToken: string, asStop = false) => {
       const retrieved = await mapboxSearchBoxRetrieve(hit.mapboxId, mapboxToken, sessionToken);
       if (!retrieved) return null;
       resetSearchBoxSessionToken();
-      return commitSpokenPlace(retrieved.lngLat, retrieved.placeName);
+      return commitSpokenPlace(retrieved.lngLat, retrieved.placeName, asStop);
     },
     [commitSpokenPlace, mapboxToken, resetSearchBoxSessionToken]
   );
 
+  const presentPlaceOptions = useCallback(
+    (query: string, options: SpokenOption[], asStop: boolean) => {
+      placeOptionsLockRef.current = true;
+      placeOptionsQueryRef.current = query;
+      spokenStopRef.current = asStop;
+      stormyChoiceRef.current = options;
+      const rows: SearchSuggestion[] = options.map((option) => ({
+        id: option.id,
+        lngLat: option.lngLat,
+        placeName: option.name,
+        secondary: option.detail,
+        featureType: option.featureType,
+      }));
+      setSearchExpanded(true);
+      setSearchEditing(true);
+      setAllowAutocomplete(true);
+      setSearchText(query);
+      setSuggestions(rows);
+      setSearchPickHits(rows);
+      searchPickQueryRef.current = query;
+      setTapHint("Tell me which one, or tap it on the map.");
+    },
+    [setSearchEditing, setSearchExpanded, setTapHint]
+  );
+
   const resolveSpokenPlace = useCallback(
-    async (raw: string): Promise<{ kind: "go"; name: string } | { kind: "ask"; say: string } | { kind: "miss" }> => {
+    async (
+      raw: string,
+      asStop = false
+    ): Promise<{ kind: "go"; name: string } | { kind: "ask"; say: string } | { kind: "miss" }> => {
       const prepared = preparePlaceQuery(raw);
       if (!prepared.query) return { kind: "miss" };
       if (!userLngLat || !mapboxToken) return { kind: "miss" };
@@ -396,18 +468,44 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
         prepared
       );
       const byId = new Map(suggestions.map((hit) => [hit.mapboxId, hit]));
-      const choice = chooseNearby(ranked, prepared.wantClosest);
+      const choice = offerPlaceChoices(ranked);
       if (choice.kind === "ask") {
-        stormyChoiceRef.current = choice.ids.flatMap((id) => {
+        const shown = choice.ids.flatMap((id) => {
           const hit = byId.get(id);
           return hit ? [hit] : [];
         });
-        return { kind: "ask", say: choice.say };
+        const options = (
+          await Promise.all(
+            shown.map(async (hit) => {
+              const retrieved = await mapboxSearchBoxRetrieve(hit.mapboxId, mapboxToken, sessionToken);
+              if (!retrieved) return null;
+              return {
+                id: hit.mapboxId,
+                name: hit.name,
+                detail: hit.placeFormatted || "",
+                featureType: hit.featureType,
+                distanceMeters: hit.distanceMeters,
+                lngLat: retrieved.lngLat,
+                placeName: retrieved.placeName,
+              } satisfies SpokenOption;
+            })
+          )
+        ).filter((option): option is SpokenOption => option != null);
+        resetSearchBoxSessionToken();
+        if (options.length >= 2) {
+          presentPlaceOptions(prepared.query, options, asStop);
+          return { kind: "ask", say: choice.say };
+        }
+        const only = options[0];
+        if (only) {
+          const name = await commitSpokenPlace(only.lngLat, only.placeName, asStop);
+          return { kind: "go", name };
+        }
       }
       if (choice.kind === "pick") {
         const hit = byId.get(choice.id);
         if (hit) {
-          const name = await retrieveSpokenHit(hit, sessionToken);
+          const name = await retrieveSpokenHit(hit, sessionToken, asStop);
           if (name) return { kind: "go", name };
         }
       }
@@ -416,28 +514,60 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
         limit: 8,
         countries,
       });
-      const closest = [...geo].sort(
+      const sorted = [...geo].sort(
         (a, b) => haversineMeters(userLngLat, a.lngLat) - haversineMeters(userLngLat, b.lngLat)
-      )[0];
+      );
+      const geoHits: NearbyHit[] = sorted.map((hit) => ({
+        id: hit.id,
+        name: hit.placeName,
+        detail: hit.secondary ?? "",
+        featureType: hit.featureType ?? "unknown",
+        distanceMeters: haversineMeters(userLngLat, hit.lngLat),
+      }));
+      const geoChoice = offerPlaceChoices(geoHits);
+      if (geoChoice.kind === "ask") {
+        const options = geoChoice.ids.flatMap((id) => {
+          const hit = sorted.find((item) => item.id === id);
+          if (!hit) return [];
+          return [
+            {
+              id: hit.id,
+              name: hit.placeName,
+              detail: hit.secondary ?? "",
+              featureType: hit.featureType ?? "unknown",
+              distanceMeters: haversineMeters(userLngLat, hit.lngLat),
+              lngLat: hit.lngLat,
+              placeName: hit.placeName,
+            },
+          ];
+        });
+        if (options.length >= 2) {
+          presentPlaceOptions(prepared.query, options, asStop);
+          return { kind: "ask", say: geoChoice.say };
+        }
+      }
+      const closest = sorted[0];
       if (!closest) return { kind: "miss" };
-      const name = await commitSpokenPlace(closest.lngLat, closest.placeName);
+      const name = await commitSpokenPlace(closest.lngLat, closest.placeName, asStop);
       return { kind: "go", name };
     },
-    [commitSpokenPlace, mapboxToken, retrieveSpokenHit, userLngLat]
+    [commitSpokenPlace, mapboxToken, presentPlaceOptions, resetSearchBoxSessionToken, retrieveSpokenHit, userLngLat]
   );
 
   const acceptSpokenChoice = useCallback(
-    async (utterance: string): Promise<string | null> => {
+    async (utterance: string, asStop = false): Promise<string | null> => {
       const pending = stormyChoiceRef.current;
-      if (!pending.length || !mapboxToken) return null;
-      const id = matchClarifiedChoice(utterance, pending.map(toNearbyHit));
+      if (!pending.length) return null;
+      const id = matchClarifiedChoice(utterance, pending);
       stormyChoiceRef.current = [];
+      placeOptionsLockRef.current = false;
+      placeOptionsQueryRef.current = "";
       if (!id) return null;
-      const hit = pending.find((item) => item.mapboxId === id);
+      const hit = pending.find((item) => item.id === id);
       if (!hit) return null;
-      return retrieveSpokenHit(hit, mintSearchBoxSessionToken());
+      return commitSpokenPlace(hit.lngLat, hit.placeName, asStop);
     },
-    [mapboxToken, retrieveSpokenHit]
+    [commitSpokenPlace]
   );
 
   const handleSearch = useCallback(async (queryOverride?: string, pickFirst = false) => {
@@ -617,6 +747,8 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
   );
 
   useEffect(() => {
+    if (placeOptionsLockRef.current && searchText.trim() === placeOptionsQueryRef.current) return;
+    placeOptionsLockRef.current = false;
     if (!searchExpanded && planRoutesLength > 0) {
       setSearchEditing(false);
       setSuggestions([]);

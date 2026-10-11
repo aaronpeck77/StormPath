@@ -20,6 +20,10 @@ const packet: StormyPacket = {
   traffic: ["Congestion ahead, on I-75, 8 miles ahead."],
   roads: ["I-75", "I-24"],
   forecast: "72°F and clear",
+  destination: "Decatur",
+  eta: "42 minutes",
+  milesLeft: "30 mi",
+  stops: [],
 };
 
 describe("stormyFactsFromImpacts", () => {
@@ -96,11 +100,13 @@ describe("answerStormySituation", () => {
     expect(reply?.say.toLowerCase()).not.toContain("taking");
   });
 
-  it("stays with the drive when asked for something else", () => {
-    expect(answerStormySituation("What's for dinner?", packet)?.say).toBe("I'll stay with the drive.");
+  it("stays with the trip when asked for something else", () => {
+    expect(answerStormySituation("Tell me a joke", packet)?.say).toBe("I'll stay with the trip.");
   });
 
-  it("leaves an open trip question for the model", () => {
-    expect(answerStormySituation("What's ahead?", packet)).toBeNull();
+  it("answers what is ahead from the trip she already has", () => {
+    const reply = answerStormySituation("What's ahead?", packet);
+    expect(reply?.action).toBe("explain_ahead");
+    expect(reply?.say).toContain("Decatur");
   });
 });

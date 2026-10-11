@@ -14,7 +14,7 @@ export type StormyImpactFact = {
   distanceAheadMeters?: number | null;
 };
 
-const EMPTY_REPLY = { needsYes: false, place: "", routeId: "", drive: false, clarify: "" } as const;
+const EMPTY_REPLY = { needsYes: false, place: "", routeId: "", drive: false, stop: false, clarify: "" } as const;
 
 export function stormyFactsFromImpacts(
   impacts: StormyImpactFact[],
@@ -51,8 +51,11 @@ export function answerStormySituation(question: string, packet: StormyPacket): S
   const lower = question.toLowerCase().replace(/[.!?]+$/g, "").trim();
   if (!lower) return null;
 
-  if (/\b(dinner|restaurant|lunch|breakfast|email|e-mail|text my|who won|tell me a joke|play a song)\b/.test(lower)) {
-    return say("I'll stay with the drive.", "none");
+  const trip = answerTripDetail(lower, packet);
+  if (trip) return trip;
+
+  if (/\b(email|e-mail|text my|who won|tell me a joke|play a song)\b/.test(lower)) {
+    return say("I'll stay with the trip.", "none");
   }
 
   const around =
@@ -90,6 +93,45 @@ export function answerStormySituation(question: string, packet: StormyPacket): S
   if (wantsWeather) parts.push(weatherLine(packet));
   if (wantsTraffic) parts.push(trafficLine(packet, road));
   return say(spoken(parts), "explain_ahead");
+}
+
+function answerTripDetail(lower: string, packet: StormyPacket): StormyReply | null {
+  if (/\b(?:how long|how much longer|eta|time left|when do we get|how far|miles left|how many miles)\b/.test(lower)) {
+    if (!packet.eta && !packet.milesLeft) return say("I don't have a time for this trip yet.", "explain_ahead");
+    const time = packet.eta ? `About ${packet.eta} left` : "I don't have a time";
+    const far = packet.milesLeft ? `, ${packet.milesLeft}` : "";
+    const dest = packet.destination ? `. Still going to ${packet.destination}` : "";
+    return say(`${time}${far}${dest}.`, "explain_ahead");
+  }
+  if (/\b(?:where are we going|where we going|what's the destination|whats the destination|where to)\b/.test(lower)) {
+    if (!packet.destination) return say("No destination yet. Tell me where you want to go.", "explain_ahead");
+    const stop = packet.stops[0] ? ` We'll stop at ${packet.stops[0]} on the way.` : "";
+    return say(`We're going to ${packet.destination}.${stop}`, "explain_ahead");
+  }
+  if (
+    /\b(?:tell me about|how's|hows|how is|what's ahead|whats ahead|what do i need to know|what should i know)\b/.test(
+      lower
+    ) &&
+    /\b(?:trip|drive|route|ahead|rest)\b/.test(lower)
+  ) {
+    return say(tripBrief(packet), "explain_ahead");
+  }
+  return null;
+}
+
+function tripBrief(packet: StormyPacket): string {
+  const parts: string[] = [];
+  if (packet.destination) parts.push(`We're going to ${packet.destination}.`);
+  if (packet.eta || packet.milesLeft) {
+    parts.push([packet.eta ? `About ${packet.eta} left` : "", packet.milesLeft].filter(Boolean).join(", ") + ".");
+  }
+  if (packet.stops[0]) parts.push(`There's a stop at ${packet.stops[0]}.`);
+  if (packet.weather[0]) parts.push(packet.weather[0].endsWith(".") ? packet.weather[0] : `${packet.weather[0]}.`);
+  else if (packet.forecast) parts.push(`Right here it's ${packet.forecast.replace(/[.]+$/g, "")}.`);
+  if (packet.traffic[0]) parts.push(packet.traffic[0].endsWith(".") ? packet.traffic[0] : `${packet.traffic[0]}.`);
+  else if (packet.routes.length) parts.push("Traffic is clear on this route.");
+  if (!parts.length) return "Set a destination and I can walk you through the trip.";
+  return parts.slice(0, 4).join(" ");
 }
 
 function weatherLine(packet: StormyPacket): string {

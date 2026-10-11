@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { chooseNearby, hitsForPlace, matchClarifiedChoice, preparePlaceQuery, type NearbyHit } from "../placeQuery";
+import {
+  chooseNearby,
+  hitsForPlace,
+  matchClarifiedChoice,
+  offerPlaceChoices,
+  preparePlaceQuery,
+  type NearbyHit,
+} from "../placeQuery";
 
 const mcdonalds: NearbyHit[] = [
   {
@@ -44,6 +51,17 @@ describe("hitsForPlace", () => {
     const prepared = preparePlaceQuery("the nearest McDonald's");
     const hits = hitsForPlace(prepared.query, mcdonalds, prepared);
     expect(hits.map((hit) => hit.id)).toEqual(["close", "also"]);
+  });
+});
+
+describe("offerPlaceChoices", () => {
+  it("names the closest places instead of leaving on the first one", () => {
+    const choice = offerPlaceChoices(hitsForPlace("McDonald's", mcdonalds, preparePlaceQuery("McDonald's")));
+    expect(choice.kind).toBe("ask");
+    if (choice.kind !== "ask") return;
+    expect(choice.ids[0]).toBe("close");
+    expect(choice.say).toMatch(/\?$/);
+    expect(choice.say).toContain("Eldorado");
   });
 });
 
