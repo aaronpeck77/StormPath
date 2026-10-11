@@ -218,7 +218,9 @@ export function AboutSheet({
               <h2 id="about-sheet-title" className="about-sheet__title">
                 StormPath
               </h2>
-              <p className="about-sheet__tagline">Multi-route driving with live conditions on your route.</p>
+              <p className="about-sheet__tagline">
+                Multi-route driving with live conditions on your route. Stormy is included with Plus.
+              </p>
             </div>
             <button type="button" className="about-sheet__close" onClick={onClose} aria-label="Close info">
               Close
@@ -317,7 +319,8 @@ export function AboutSheet({
           <section className="about-sheet__panel about-sheet__panel--subscription">
             <h3 className="about-sheet__h3">Subscription</h3>
             <p className="about-sheet__p">
-              <strong>{PLUS_SUBSCRIPTION_TITLE}</strong> is an optional auto-renewing subscription.
+              <strong>{PLUS_SUBSCRIPTION_TITLE}</strong> is an optional auto-renewing subscription. It includes
+              Stormy at the same price.
             </p>
             <p className="about-sheet__p about-sheet__iap-price">{PLUS_SUBSCRIPTION_FALLBACK_PRICE_LINE}</p>
             <div className="about-sheet__upgrade-actions">
@@ -418,6 +421,10 @@ export function AboutSheet({
             <details className="about-sheet__panel about-sheet__panel--subscription about-sheet__details">
               <summary>What Plus adds</summary>
               <ul className="about-sheet__bullets" aria-label="Plus features">
+                <li>
+                  <strong>Stormy</strong> — the Stormy button sets one place, starts or stops the route, and reads the
+                  trip. Included with Plus.
+                </li>
                 <li>
                   <strong>NWS</strong> — full storm map, every active warning, route overlap, and hazard details (Plus
                   only; Basic is navigation, radar, and limited saved places/routes)
@@ -939,7 +946,7 @@ export function AboutSheet({
                 or Wi‑Fi. Offline mode keeps your last route; live layers pause until you reconnect.
               </li>
               <li>
-                <strong>Provider delay or outage</strong> — Mapbox, NWS, RainViewer, OpenWeather, or Tomorrow.io can be
+                <strong>Provider delay or outage</strong> — Mapbox, NWS, RainViewer, OpenWeather, Tomorrow.io, or Claude can be
                 slow, rate-limited, or down. We show a short note in the advisory bar when we know which feed failed.
               </li>
               <li>
@@ -968,7 +975,8 @@ export function AboutSheet({
               <strong>Data:</strong> Map, routing, and traffic use <strong>Mapbox</strong> when configured; live radar
               uses <strong>Tomorrow.io</strong> in the US and <strong>RainViewer</strong> elsewhere; US warning shapes use <strong>NWS</strong> (api.weather.gov);
               corridor and local forecasts use <strong> Weather</strong> (Apple WeatherKit) when enabled for this build,
-              with optional Tomorrow.io / OpenWeather fallbacks when those keys are present.
+              with optional Tomorrow.io / OpenWeather fallbacks when those keys are present. Stormy sends the words you
+              say and a short trip summary to <strong>Claude</strong> (Anthropic). The microphone stays on the phone.
             </p>
             <StormPathSourcesAttribution
               theme="dark"
