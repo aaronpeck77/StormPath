@@ -1,7 +1,7 @@
 import type { StormyPacket, StormyReply } from "./stormyFence";
 import { answerStormySituation } from "./stormySituation";
 
-const EMPTY = { needsYes: false, place: "", routeId: "", drive: false } as const;
+const EMPTY = { needsYes: false, place: "", routeId: "", drive: false, clarify: "" } as const;
 
 function reply(say: string, action: StormyReply["action"], extra?: Partial<StormyReply>): StormyReply {
   return { say, action, ...EMPTY, ...extra };
@@ -33,7 +33,7 @@ export function interpretStormyRequest(question: string, packet: StormyPacket): 
     return reply("Centered on you.", "recenter");
   }
   if (/\bdestination\b/.test(lower) && /\b(?:set|pick|choose|change)\b/.test(lower) && !placeFrom(q)) {
-    return reply("Where do you want to go?", "none");
+    return reply("Where do you want to go?", "none", { clarify: "place" });
   }
 
   const place = placeFrom(q);

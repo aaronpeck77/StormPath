@@ -40,7 +40,7 @@ import {
   type ReturnTripLeg,
 } from "./nav/returnTripLeg";
 import type { LngLat } from "./nav/types";
-import type { StormyReply } from "./stormy/stormyFence";
+import type { StormyActResult, StormyReply } from "./stormy/stormyFence";
 import { stormyFactsFromImpacts, stormyRoadRefs } from "./stormy/stormySituation";
 import { pickSuggestedActive, scoreTrip } from "./scoring/scoreRoutes";
 import { useAppForeground } from "./hooks/useAppForeground";
@@ -653,6 +653,8 @@ export default function App() {
     handlePickSuggestion,
     handleSearchPickFromMap,
     handleSearch,
+    resolveSpokenPlace,
+    acceptSpokenChoice,
     searchPickMarkersForMap,
     handleSearchFieldBeginEditing,
     handleSearchFieldEndEditing,
@@ -2458,10 +2460,21 @@ export default function App() {
   );
 
   const runStormyAct = useCallback(
-    async (reply: StormyReply): Promise<string | void> => {
+    async (reply: StormyReply): Promise<StormyActResult> => {
+      if (reply.clarify === "choice" && reply.place.trim()) {
+        const chosen = await acceptSpokenChoice(reply.place);
+        if (chosen) {
+          if (reply.drive) handleGo();
+          const eta = useTripPlanStore.getState().plan.routes[0]?.baseEtaMinutes;
+          const minutes = eta != null && Number.isFinite(eta) ? ` About ${Math.round(eta)} minutes.` : "";
+          return reply.drive ? `Heading to ${chosen}.${minutes}` : `Route to ${chosen} is ready.${minutes}`;
+        }
+      }
       if (reply.action === "go_to" && reply.place.trim()) {
-        const name = await handleSearch(reply.place, true);
-        if (!name) return "I couldn't find that.";
+        const found = await resolveSpokenPlace(reply.place);
+        if (found.kind === "ask") return { say: found.say, clarify: "choice" };
+        if (found.kind === "miss") return "I couldn't find that.";
+        const name = found.name;
         const eta = useTripPlanStore.getState().plan.routes[0]?.baseEtaMinutes;
         const minutes =
           eta != null && Number.isFinite(eta) ? ` About ${Math.round(eta)} minutes.` : "";
@@ -2473,7 +2486,7 @@ export default function App() {
       }
       if (reply.action === "start_drive") {
         const routes = useTripPlanStore.getState().plan.routes;
-        if (!routes.length) return "Tell me where to go first.";
+        if (!routes.length) return { say: "Where do you want to go?", clarify: "place" };
         handleGo();
         const eta = routes[0]?.baseEtaMinutes;
         return eta != null && Number.isFinite(eta)
@@ -2507,7 +2520,7 @@ export default function App() {
         return reply.say || "Centered on you.";
       }
     },
-    [handleSearch, handleGo, handlePreviewRouteSelect, handleStopAndClear, setShowRadar]
+    [resolveSpokenPlace, acceptSpokenChoice, handleGo, handlePreviewRouteSelect, handleStopAndClear, setShowRadar]
   );
 
   const handleTollContinue = useCallback(() => {

@@ -64,14 +64,19 @@ export type StormyReply = {
   routeId: string;
   /** go_to also starts the drive when she was told to leave, not only to plan. */
   drive: boolean;
+  /** place: she asked where. choice: she asked which nearby place. Empty means she is not waiting. */
+  clarify: "" | "place" | "choice";
 };
+
+/** What the app did. A clarify result means she asked something and should listen once more. */
+export type StormyActResult = string | void | { say: string; clarify: "place" | "choice" };
 
 export type StormyFenceResult =
   | { ok: true; packet: StormyPacket }
   | { ok: false; error: string };
 
-const QUIET_REPLY: StormyReply = { say: "", action: "quiet", needsYes: false, place: "", routeId: "", drive: false };
-const SILENT_REPLY: StormyReply = { say: "", action: "none", needsYes: false, place: "", routeId: "", drive: false };
+const QUIET_REPLY: StormyReply = { say: "", action: "quiet", needsYes: false, place: "", routeId: "", drive: false, clarify: "" };
+const SILENT_REPLY: StormyReply = { say: "", action: "none", needsYes: false, place: "", routeId: "", drive: false, clarify: "" };
 
 function clip(value: unknown, max: number): string {
   if (typeof value !== "string") return "";
@@ -143,7 +148,8 @@ export function stormySystemPrompt(): string {
     "Dinner, mail, and general chat stay outside. One line: you stay with the drive. quiet when they want silence. none when you are only talking.",
     "If turnImminent is true, return an empty say and action none.",
     "go_to plans the route. Set drive true only when they want to leave now, not when they only asked to plan.",
-    'Reply with JSON only: {"say":"...","action":"none|quiet|explain_ahead|go_to|start_drive|use_route|radar_on|radar_off|end_trip|recenter","place":"","routeId":"","drive":false}.',
+    "If you need one missing detail, ask one short question and set clarify to place. Otherwise clarify is empty.",
+    'Reply with JSON only: {"say":"...","action":"none|quiet|explain_ahead|go_to|start_drive|use_route|radar_on|radar_off|end_trip|recenter","place":"","routeId":"","drive":false,"clarify":""}.',
   ].join(" ");
 }
 
@@ -189,5 +195,6 @@ export function clampStormyReply(raw: unknown, packet: StormyPacket): StormyRepl
     place,
     routeId: action === "use_route" ? routeId : "",
     drive: action === "go_to" && obj.drive === true,
+    clarify: action === "none" && obj.clarify === "place" ? "place" : "",
   };
 }

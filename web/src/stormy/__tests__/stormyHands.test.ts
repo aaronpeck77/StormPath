@@ -62,7 +62,10 @@ describe("interpretStormyRequest", () => {
   });
 
   it("asks where when no place was named", () => {
-    expect(interpretStormyRequest("Set a destination for me", packet)?.say).toBe("Where do you want to go?");
+    expect(interpretStormyRequest("Set a destination for me", packet)).toMatchObject({
+      say: "Where do you want to go?",
+      clarify: "place",
+    });
   });
 
   it("hits go and stops a route", () => {

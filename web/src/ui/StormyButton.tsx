@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 import { PASSENGER_TURN_QUIET_M } from "../nav/passengerAdvisory";
 import { askStormy } from "../stormy/askStormy";
 import { listenForStormy } from "../stormy/listenForStormy";
-import type { StormyPacket, StormyReply } from "../stormy/stormyFence";
+import type { StormyActResult, StormyPacket, StormyReply } from "../stormy/stormyFence";
 import { interpretStormyRequest } from "../stormy/stormyHands";
 import { isStormpathSpeechBusy, speakStormpathLine } from "../services/stormpathSpeech";
 
 type Props = {
   packet: StormyPacket;
   /** Run a passenger action. Return a line to speak instead of the model's line. */
-  onAct?: (reply: StormyReply) => Promise<string | void>;
+  onAct?: (reply: StormyReply) => Promise<StormyActResult>;
 };
 
 type Phase = "idle" | "hello" | "listening" | "thinking";
@@ -37,6 +37,22 @@ function armStormyReadyChime(): () => void {
     osc.start(now);
     osc.stop(now + 0.18);
     osc.onended = () => void ctx.close();
+  };
+}
+
+function answeredPlace(
+  question: string,
+  clarify: "" | "place" | "choice",
+  drive: boolean
+): StormyReply {
+  return {
+    say: "",
+    action: "go_to",
+    needsYes: false,
+    place: question,
+    routeId: "",
+    drive,
+    clarify,
   };
 }
 
@@ -75,27 +91,41 @@ export function StormyButton({ packet, onAct }: Props) {
       setPhase("listening");
       playReady();
       await new Promise((resolve) => window.setTimeout(resolve, 180));
-      const question = await listenForStormy();
-      if (!question) {
-        setNote("Didn't catch that.");
-        setPhase("idle");
+      let question = await listenForStormy();
+      let clarify: "" | "place" | "choice" = "";
+      let drive = false;
+      for (let round = 0; round < 3 && question; round += 1) {
+        setPhase("thinking");
+        const reply: StormyReply =
+          clarify === "place" || clarify === "choice"
+            ? answeredPlace(question, clarify, drive)
+            : (interpretStormyRequest(question, packet) ?? (await askStormy({ ...packet, question })));
+        if (reply.clarify === "place" && clarify !== "place") {
+          drive = reply.drive;
+          clarify = "place";
+          setPhase("listening");
+          await speakStormpathLine(reply.say, { interrupt: false });
+          question = await listenForStormy();
+          continue;
+        }
+        if (reply.action === "quiet") {
+          setNote("Quiet.");
+          return;
+        }
+        const outcome: StormyActResult = await onAct?.(reply);
+        if (outcome && typeof outcome === "object") {
+          drive = outcome.clarify === "place" || reply.drive;
+          clarify = outcome.clarify;
+          setPhase("listening");
+          await speakStormpathLine(outcome.say, { interrupt: false });
+          question = await listenForStormy();
+          continue;
+        }
+        const spoken = driverLine((typeof outcome === "string" ? outcome : "") || reply.say);
+        if (spoken) await speakStormpathLine(spoken, { interrupt: false });
         return;
       }
-      setPhase("thinking");
-      const local = interpretStormyRequest(question, packet);
-      const reply = local ?? (await askStormy({ ...packet, question }));
-      if (reply.action === "quiet") {
-        setNote("Quiet.");
-        setPhase("idle");
-        return;
-      }
-      const spoken = driverLine((await onAct?.(reply)) || reply.say);
-      if (!spoken) {
-        setPhase("idle");
-        return;
-      }
-      setNote("");
-      await speakStormpathLine(spoken, { interrupt: false });
+      if (!question) setNote("Didn't catch that.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       setNote(/hear|denied|unavailable|microphone/i.test(message) ? "No mic" : "No answer");

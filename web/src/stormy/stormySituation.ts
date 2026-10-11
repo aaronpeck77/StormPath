@@ -14,7 +14,7 @@ export type StormyImpactFact = {
   distanceAheadMeters?: number | null;
 };
 
-const EMPTY_REPLY = { needsYes: false, place: "", routeId: "", drive: false } as const;
+const EMPTY_REPLY = { needsYes: false, place: "", routeId: "", drive: false, clarify: "" } as const;
 
 export function stormyFactsFromImpacts(
   impacts: StormyImpactFact[],

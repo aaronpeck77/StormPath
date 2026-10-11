@@ -13,7 +13,7 @@ import { BottomToolbar } from "./BottomToolbar";
 import { isNarrowPhoneViewport } from "./mapFitLogic";
 import { StormyButton, stormyTurnImminent } from "./StormyButton";
 import { useTripPlanStore } from "../state/tripPlanStore";
-import type { StormyPacket, StormyReply } from "../stormy/stormyFence";
+import type { StormyActResult, StormyPacket, StormyReply } from "../stormy/stormyFence";
 
 type Props = {
   /* Traffic-bypass compare panel */
@@ -116,7 +116,7 @@ type Props = {
   stormyRoads?: string[];
   stormyForecast?: string;
   metersToManeuver: number | null;
-  onStormyAct?: (reply: StormyReply) => Promise<string | void>;
+  onStormyAct?: (reply: StormyReply) => Promise<StormyActResult>;
 };
 
 /** Bottom dock chrome — route-compare panel, recording banner, the about/search/toolbar dock, and BottomToolbar. */
