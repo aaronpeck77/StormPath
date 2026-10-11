@@ -11,6 +11,9 @@ import { SearchBar, type SearchSuggestion } from "./SearchBar";
 import { RouteStopsBar } from "./RouteStopsBar";
 import { BottomToolbar } from "./BottomToolbar";
 import { isNarrowPhoneViewport } from "./mapFitLogic";
+import { StormyButton, stormyTurnImminent } from "./StormyButton";
+import { useTripPlanStore } from "../state/tripPlanStore";
+import type { StormyPacket } from "../stormy/stormyFence";
 
 type Props = {
   /* Traffic-bypass compare panel */
@@ -106,6 +109,9 @@ type Props = {
   showTrafficBypassCta: boolean;
   bypassBusy: boolean;
   onTrafficBypassFromHere: () => void;
+  stormyAheadLine: string | null;
+  stormyHazardLine: string | null;
+  metersToManeuver: number | null;
 };
 
 /** Bottom dock chrome — route-compare panel, recording banner, the about/search/toolbar dock, and BottomToolbar. */
@@ -186,7 +192,23 @@ export function AppBottomChrome({
   showTrafficBypassCta,
   bypassBusy,
   onTrafficBypassFromHere,
+  stormyAheadLine,
+  stormyHazardLine,
+  metersToManeuver,
 }: Props) {
+  const planRoutes = useTripPlanStore((s) => s.plan.routes);
+  const stormyPacket: StormyPacket = {
+    aheadLine: (stormyAheadLine || destinationLabel || "").trim(),
+    hazards: stormyHazardLine ? [stormyHazardLine] : [],
+    routes: planRoutes.slice(0, 3).map((route) => ({
+      id: route.id,
+      label: route.label,
+      summary: `${Math.round(route.baseEtaMinutes)} min`,
+    })),
+    driving: navigationStarted,
+    turnImminent: stormyTurnImminent(navigationStarted, metersToManeuver),
+    question: "",
+  };
   return (
     <div className="nav-bottom-stack">
       <RouteCompareBottomPanel
@@ -221,6 +243,7 @@ export function AppBottomChrome({
                     i
                   </button>
                 </div>
+                <StormyButton packet={stormyPacket} />
                 {driveDistanceRemainingLabel ? (
                   <NavMilesLeftBox label={driveDistanceRemainingLabel} />
                 ) : null}
@@ -238,6 +261,7 @@ export function AppBottomChrome({
               >
                 i
               </button>
+              <StormyButton packet={stormyPacket} />
               {driveDistanceRemainingLabel ? (
                 <NavMilesLeftBox label={driveDistanceRemainingLabel} />
               ) : null}
@@ -275,6 +299,7 @@ export function AppBottomChrome({
                 >
                   i
                 </button>
+                <StormyButton packet={stormyPacket} />
                 {navigationStarted && driveDistanceRemainingLabel ? (
                   <NavMilesLeftBox label={driveDistanceRemainingLabel} />
                 ) : null}

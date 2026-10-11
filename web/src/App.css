@@ -1205,6 +1205,33 @@ html:has(.drive-map--native-shell) #root {
   justify-content: center;
 }
 
+.stormy-call-btn {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  height: var(--nav-chrome-about, 32px);
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(18, 20, 24, 0.38);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.stormy-call-btn--busy,
+.stormy-call-btn:disabled {
+  opacity: 0.72;
+}
+
+.nav-bottom-dock__about-row > .stormy-call-btn {
+  margin-right: auto;
+}
+
 .map-about-btn:hover,
 .map-about-btn:focus-visible {
   color: rgba(255, 255, 255, 0.95);
@@ -17218,6 +17245,11 @@ html.route-info-open .route-progress-callout-panel--expanded {
     flex-shrink: 0;
   }
 
+  .app-shell.nav-fullmap .nav-bottom-dock__about-row > .stormy-call-btn {
+    order: 3;
+    margin-right: 0;
+  }
+
   .app-shell.nav-fullmap .nav-bottom-dock__about-row > .nav-radar-frame-time-dock {
     order: 1;
     margin-right: auto;
@@ -17230,6 +17262,11 @@ html.route-info-open .route-progress-callout-panel--expanded {
 
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row > .map-about-btn {
     order: 1;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row > .stormy-call-btn {
+    order: 2;
+    margin-right: 0;
   }
 
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row > .nav-radar-frame-time-dock {

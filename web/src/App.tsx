@@ -3077,6 +3077,9 @@ export default function App() {
           viewMode={viewMode}
           driveMapBearingDeg={driveMapBearingDeg}
           onOpenAbout={() => setAboutOpen(true)}
+          stormyAheadLine={driveRouteAheadLine?.text ?? null}
+          stormyHazardLine={nextHazardAtEtaLine}
+          metersToManeuver={metersToBannerManeuver}
           driveDistanceRemainingLabel={driveDistanceRemainingLabel}
           routePickItems={routePickItems}
           lineFocusId={lineFocusId}

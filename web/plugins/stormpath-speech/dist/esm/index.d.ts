@@ -13,6 +13,8 @@ export interface StormpathSpeechPlugin {
   speak(options: SpeakOptions): Promise<SpeakResult>;
   stop(): Promise<void>;
   isSpeaking(): Promise<{ speaking: boolean }>;
+  /** One spoken remark. On iPhone this uses on-device recognition. */
+  listen(): Promise<{ text: string }>;
 }
 
 export declare const StormpathSpeech: StormpathSpeechPlugin;

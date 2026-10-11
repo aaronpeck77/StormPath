@@ -156,6 +156,17 @@ jobs:
           EOF
           chmod 600 "$HOME/.netrc"
 
+      - name: Require Stormy client token
+        if: env.BUILD_TRACK == 'testflight'
+        env:
+          VITE_STORMY_CLIENT_TOKEN: ${{ secrets.VITE_STORMY_CLIENT_TOKEN }}
+        run: |
+          if [ -z "${VITE_STORMY_CLIENT_TOKEN}" ]; then
+            echo "::error::GitHub secret VITE_STORMY_CLIENT_TOKEN is missing."
+            echo "It must match Netlify function env STORMY_CLIENT_TOKEN."
+            exit 1
+          fi
+
       - name: Build web app (TestFlight mode — Plus, support URLs, NWS UA from .env.testflight)
         if: env.BUILD_TRACK == 'testflight'
         run: npm run build:testflight
@@ -169,6 +180,7 @@ jobs:
           VITE_WEATHERKIT_ENABLED: ${{ secrets.VITE_WEATHERKIT_ENABLED }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
           VITE_OPS_USAGE_INGEST_TOKEN: ${{ secrets.VITE_OPS_USAGE_INGEST_TOKEN }}
+          VITE_STORMY_CLIENT_TOKEN: ${{ secrets.VITE_STORMY_CLIENT_TOKEN }}
           VITE_IOS_BUILD_NUMBER: ${{ github.run_number }}
 
       - name: Require RevenueCat key (App Store track)
