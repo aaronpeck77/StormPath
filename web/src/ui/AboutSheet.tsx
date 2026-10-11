@@ -21,6 +21,7 @@ import { PUCK_COLORS, puckColorById, type PuckColorId } from "./puckColor";
 import { StormPathSourcesAttribution } from "./StormPathSourcesAttribution";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import type { RadarDisplayMode } from "../state/settingsStore";
+import { STORMY_VOICE_HINT } from "../stormy/stormyVoiceHint";
 import type { GuidanceLanguagePref } from "../utils/guidanceLanguage";
 import type { HomePuckFollowMode } from "../map/homePuckFollow";
 
@@ -696,6 +697,10 @@ export function AboutSheet({
                   (raise the side buttons while a prompt plays).
                 </span>
               </label>
+
+              <p className="about-sheet__p about-sheet__settings-card">
+                <strong>Stormy's voice.</strong> {STORMY_VOICE_HINT}
+              </p>
 
             </div>
           </section>

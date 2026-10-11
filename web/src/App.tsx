@@ -41,6 +41,7 @@ import {
 } from "./nav/returnTripLeg";
 import type { LngLat } from "./nav/types";
 import type { StormyActResult, StormyReply } from "./stormy/stormyFence";
+import { spokenPlace } from "./stormy/spokenPlace";
 import { stormyFactsFromImpacts, stormyRoadRefs } from "./stormy/stormySituation";
 import { pickSuggestedActive, scoreTrip } from "./scoring/scoreRoutes";
 import { useAppForeground } from "./hooks/useAppForeground";
@@ -2464,18 +2465,19 @@ export default function App() {
       if (reply.clarify === "choice" && reply.place.trim()) {
         const chosen = await acceptSpokenChoice(reply.place, reply.stop);
         if (chosen) {
+          const said = spokenPlace(chosen, forecastPlaceShort ?? "");
           const eta = useTripPlanStore.getState().plan.routes[0]?.baseEtaMinutes;
           const minutes = eta != null && Number.isFinite(eta) ? ` About ${Math.round(eta)} minutes.` : "";
           return reply.stop
-            ? `Stop added at ${chosen}. You're still on the way.${minutes}`
-            : `That's ${chosen}. Say go when you want to leave.${minutes}`;
+            ? `Stop added at ${said}. You're still on the way.${minutes}`
+            : `That's ${said}. Say go when you want to leave.${minutes}`;
         }
       }
       if (reply.action === "go_to" && reply.place.trim()) {
         const found = await resolveSpokenPlace(reply.place, reply.stop);
-        if (found.kind === "ask") return { say: found.say, clarify: "choice" };
+        if (found.kind === "ask") return found.say;
         if (found.kind === "miss") return "I couldn't find that.";
-        const name = found.name;
+        const name = spokenPlace(found.name, forecastPlaceShort ?? "");
         const eta = useTripPlanStore.getState().plan.routes[0]?.baseEtaMinutes;
         const minutes =
           eta != null && Number.isFinite(eta) ? ` About ${Math.round(eta)} minutes.` : "";
@@ -2518,7 +2520,7 @@ export default function App() {
         return reply.say || "Centered on you.";
       }
     },
-    [resolveSpokenPlace, acceptSpokenChoice, handleGo, handlePreviewRouteSelect, handleStopAndClear, setShowRadar]
+    [resolveSpokenPlace, acceptSpokenChoice, handleGo, handlePreviewRouteSelect, handleStopAndClear, setShowRadar, forecastPlaceShort]
   );
 
   const handleTollContinue = useCallback(() => {
@@ -3159,6 +3161,7 @@ export default function App() {
           stormyTraffic={stormyBrief.traffic}
           stormyRoads={stormyBrief.roads}
           stormyForecast={stormyBrief.forecast}
+          stormyHere={forecastPlaceShort ?? ""}
           metersToManeuver={metersToBannerManeuver}
           onStormyAct={runStormyAct}
           driveDistanceRemainingLabel={driveDistanceRemainingLabel}

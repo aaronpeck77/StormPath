@@ -1,4 +1,5 @@
 import { STORMY_MAX_SAY_CHARS, type StormyPacket, type StormyReply } from "./stormyFence";
+import { spokenPlace } from "./spokenPlace";
 
 export const STORMY_MAX_WEATHER = 4;
 export const STORMY_MAX_TRAFFIC = 4;
@@ -100,13 +101,13 @@ function answerTripDetail(lower: string, packet: StormyPacket): StormyReply | nu
     if (!packet.eta && !packet.milesLeft) return say("I don't have a time for this trip yet.", "explain_ahead");
     const time = packet.eta ? `About ${packet.eta} left` : "I don't have a time";
     const far = packet.milesLeft ? `, ${packet.milesLeft}` : "";
-    const dest = packet.destination ? `. Still going to ${packet.destination}` : "";
+    const dest = packet.destination ? `. Still going to ${spokenPlace(packet.destination, packet.here)}` : "";
     return say(`${time}${far}${dest}.`, "explain_ahead");
   }
   if (/\b(?:where are we going|where we going|what's the destination|whats the destination|where to)\b/.test(lower)) {
     if (!packet.destination) return say("No destination yet. Tell me where you want to go.", "explain_ahead");
-    const stop = packet.stops[0] ? ` We'll stop at ${packet.stops[0]} on the way.` : "";
-    return say(`We're going to ${packet.destination}.${stop}`, "explain_ahead");
+    const stop = packet.stops[0] ? ` We'll stop at ${spokenPlace(packet.stops[0], packet.here)} on the way.` : "";
+    return say(`We're going to ${spokenPlace(packet.destination, packet.here)}.${stop}`, "explain_ahead");
   }
   if (
     /\b(?:tell me about|how's|hows|how is|what's ahead|whats ahead|what do i need to know|what should i know)\b/.test(
@@ -121,11 +122,11 @@ function answerTripDetail(lower: string, packet: StormyPacket): StormyReply | nu
 
 function tripBrief(packet: StormyPacket): string {
   const parts: string[] = [];
-  if (packet.destination) parts.push(`We're going to ${packet.destination}.`);
+  if (packet.destination) parts.push(`We're going to ${spokenPlace(packet.destination, packet.here)}.`);
   if (packet.eta || packet.milesLeft) {
     parts.push([packet.eta ? `About ${packet.eta} left` : "", packet.milesLeft].filter(Boolean).join(", ") + ".");
   }
-  if (packet.stops[0]) parts.push(`There's a stop at ${packet.stops[0]}.`);
+  if (packet.stops[0]) parts.push(`There's a stop at ${spokenPlace(packet.stops[0], packet.here)}.`);
   if (packet.weather[0]) parts.push(packet.weather[0].endsWith(".") ? packet.weather[0] : `${packet.weather[0]}.`);
   else if (packet.forecast) parts.push(`Right here it's ${packet.forecast.replace(/[.]+$/g, "")}.`);
   if (packet.traffic[0]) parts.push(packet.traffic[0].endsWith(".") ? packet.traffic[0] : `${packet.traffic[0]}.`);

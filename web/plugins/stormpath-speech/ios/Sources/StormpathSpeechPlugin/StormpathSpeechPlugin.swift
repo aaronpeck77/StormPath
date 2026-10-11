@@ -20,20 +20,41 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private let synthesizer = AVSpeechSynthesizer()
 
-    /// Premium or enhanced English voice when the phone has one. Compact is the fallback.
+    /// Premium, then enhanced. Novelty voices stay out. Compact is only the fallback.
     private func stormyVoice() -> AVSpeechSynthesisVoice? {
-        let voices = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
+        let preferred = [
+            "com.apple.voice.premium.en-US.Ava",
+            "com.apple.voice.premium.en-US.Zoe",
+            "com.apple.ttsbundle.siri_female_en-US_premium",
+            "com.apple.voice.premium.en-US.Allison",
+            "com.apple.voice.enhanced.en-US.Ava",
+            "com.apple.voice.enhanced.en-US.Zoe",
+            "com.apple.voice.enhanced.en-US.Samantha",
+            "com.apple.voice.enhanced.en-US.Allison",
+        ]
+        for identifier in preferred {
+            if let voice = AVSpeechSynthesisVoice(identifier: identifier) {
+                return voice
+            }
+        }
+        let skip = ["eloquence", "bahh", "bells", "boing", "bubbles", "cellos", "deranged", "good news", "bad news", "jester", "organ", "trinoids", "whisper", "zarvox", "superstar", "wobble"]
+        let voices = AVSpeechSynthesisVoice.speechVoices().filter { voice in
+            guard voice.language.hasPrefix("en") else { return false }
+            let id = (voice.identifier + " " + voice.name).lowercased()
+            return !skip.contains { id.contains($0) }
+        }
         func score(_ voice: AVSpeechSynthesisVoice) -> Int {
             let quality: Int
             switch voice.quality {
             case .premium: quality = 300
             case .enhanced: quality = 200
-            default: quality = 100
+            default: quality = 0
             }
             let id = (voice.identifier + " " + voice.name).lowercased()
-            let named = (id.contains("ava") || id.contains("zoe") || id.contains("samantha") || id.contains("allison")) ? 20 : 0
+            let named = (id.contains("ava") || id.contains("zoe") || id.contains("samantha") || id.contains("allison") || id.contains("siri")) ? 20 : 0
             let us = voice.language == "en-US" ? 10 : 0
-            return quality + named + us
+            let premiumId = (id.contains("premium") ? 40 : 0) + (id.contains("enhanced") ? 20 : 0)
+            return quality + named + us + premiumId
         }
         return voices.max { score($0) < score($1) } ?? AVSpeechSynthesisVoice(language: "en-US")
     }
@@ -63,11 +84,15 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate, min(AVSpeechUtteranceMaximumSpeechRate, rate))
-        utterance.volume = 1.0
-        if let voice = stormyVoice() {
+        let voice = stormyVoice()
+        if let voice {
             utterance.voice = voice
         }
+        let natural = voice?.quality == .premium || voice?.quality == .enhanced
+        let paced = natural ? min(rate, Float(0.48)) : min(rate, Float(0.42))
+        utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate, min(AVSpeechUtteranceMaximumSpeechRate, paced))
+        utterance.pitchMultiplier = natural ? 1.0 : 1.03
+        utterance.volume = 1.0
         synthesizer.speak(utterance)
         call.resolve(["spoke": true])
     }

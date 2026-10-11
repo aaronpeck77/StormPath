@@ -60,6 +60,8 @@ export type StormyPacket = {
   milesLeft: string;
   /** Stops already on the route. */
   stops: string[];
+  /** City and state where the driver is, such as "Decatur, Illinois". Empty when unknown. */
+  here: string;
 };
 
 export type StormyReply = {
@@ -139,6 +141,7 @@ export function acceptStormyPacket(raw: unknown): StormyFenceResult {
     eta: clip(body.eta, 40),
     milesLeft: clip(body.milesLeft, 40),
     stops: clipLines(body.stops, 3),
+    here: clip(body.here, 80),
   };
 
   if (JSON.stringify(packet).length > STORMY_MAX_PACKET_CHARS) {

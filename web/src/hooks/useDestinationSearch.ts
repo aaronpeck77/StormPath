@@ -29,6 +29,10 @@ import { useUiStore } from "../state/uiStore";
 import { formatDistanceShort } from "../utils/formatDistance";
 import { roadUsesMiles } from "../utils/displayUnits";
 import { isNarrowPhoneViewport } from "../ui/mapFitLogic";
+import { speakStormpathLine } from "../services/stormpathSpeech";
+import { getCachedReverseGeocode } from "../services/reverseGeocodeCache";
+import { shortenPlaceNameForForecast } from "../utils/forecastDisplay";
+import { spokenPlace } from "../stormy/spokenPlace";
 import type { SearchSuggestion } from "../ui/SearchBar";
 
 export interface UseDestinationSearchDeps {
@@ -128,6 +132,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
   const placeOptionsLockRef = useRef(false);
   const placeOptionsQueryRef = useRef("");
   const spokenStopRef = useRef(false);
+  const announceStormyPickRef = useRef(false);
 
   const applyTripPlacePick = useCallback(
     async (lngLat: LngLat, label: string, mode: "destination" | "via") => {
@@ -288,6 +293,18 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     [savedPlaces, handleSavedPlaceNavigate]
   );
 
+  const announceStormyPick = (placeName: string, asStop: boolean) => {
+    if (!announceStormyPickRef.current) return;
+    announceStormyPickRef.current = false;
+    const fix = userLngLatRef.current;
+    const cached = fix ? getCachedReverseGeocode(fix[0], fix[1]) : undefined;
+    const here = cached?.placeName ? shortenPlaceNameForForecast(cached.placeName) : "";
+    const said = spokenPlace(placeName, here);
+    void speakStormpathLine(
+      asStop ? `Stop added at ${said}. You're still on the way.` : `That's ${said}. Say go when you want to leave.`
+    );
+  };
+
   const handlePickSuggestion = useCallback(
     async (hit: SearchSuggestion) => {
       placeOptionsLockRef.current = false;
@@ -350,12 +367,14 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
         await computeRoutes(dest, destLabel.trim() || "Destination", {
           preserveNavigation: navigationStarted,
         });
+        announceStormyPick(placeName, true);
         return;
       }
       const pickMode =
         addingViaStop && dest ? "via" : "destination";
       if (pickMode === "destination") setDestinationLabel(placeName);
       await applyTripPlacePick(lngLat, placeName, pickMode);
+      announceStormyPick(placeName, false);
     },
     [
       userLngLat,
@@ -426,6 +445,8 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     (query: string, options: SpokenOption[], asStop: boolean) => {
       placeOptionsLockRef.current = true;
       placeOptionsQueryRef.current = query;
+      announceStormyPickRef.current = true;
+      searchAutocompleteSeqRef.current += 1;
       spokenStopRef.current = asStop;
       stormyChoiceRef.current = options;
       const rows: SearchSuggestion[] = options.map((option) => ({

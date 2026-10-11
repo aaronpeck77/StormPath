@@ -24,6 +24,7 @@ const packet: StormyPacket = {
   eta: "42 minutes",
   milesLeft: "30 mi",
   stops: [],
+  here: "Decatur, Illinois",
 };
 
 describe("stormyFactsFromImpacts", () => {

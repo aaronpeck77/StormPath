@@ -56,11 +56,7 @@ export function offerPlaceChoices(hits: NearbyHit[]): NearbyChoice {
   const first = hits[0]!;
   if (hits.length === 1) return { kind: "pick", id: first.id };
   const shown = hits.slice(0, 3);
-  const labels = shown.map(choiceLabel);
-  const say =
-    shown.length === 2
-      ? `I found two. ${labels[0]}, or ${labels[1]}?`
-      : `I found three. ${labels[0]}, ${labels[1]}, or ${labels[2] ?? "one more"}?`;
+  const say = "They're on the map. Tap one.";
   return { kind: "ask", say, ids: shown.map((hit) => hit.id) };
 }
 

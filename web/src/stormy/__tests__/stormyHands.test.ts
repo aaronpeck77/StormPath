@@ -20,6 +20,7 @@ const packet: StormyPacket = {
   eta: "",
   milesLeft: "",
   stops: [],
+  here: "",
 };
 
 describe("interpretStormyRequest", () => {
@@ -77,8 +78,23 @@ describe("interpretStormyRequest", () => {
     expect(interpretStormyRequest("Stop the route", { ...packet, driving: true })?.action).toBe("end_trip");
   });
 
+  it("tells him where to get a more natural voice", () => {
+    const reply = interpretStormyRequest("Can you use a more natural voice?", packet);
+    expect(reply?.action).toBe("none");
+    expect(reply?.say).toContain("Ava or Zoe");
+    expect(reply?.say).toContain("It's free");
+  });
+
   it("reads the local forecast", () => {
     expect(interpretStormyRequest("What's my local forecast?", packet)?.say).toContain("72°F");
+  });
+
+  it("keeps the brand when adding a gas stop", () => {
+    expect(interpretStormyRequest("Add a Casey gas station", { ...packet, destination: "Decatur" })).toMatchObject({
+      action: "go_to",
+      stop: true,
+      place: "Casey gas station",
+    });
   });
 
   it("adds coffee as a stop once a trip is going", () => {

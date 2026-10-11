@@ -1,5 +1,6 @@
 import type { StormyPacket, StormyReply } from "./stormyFence";
 import { answerStormySituation } from "./stormySituation";
+import { asksAboutStormyVoice, STORMY_VOICE_HINT } from "./stormyVoiceHint";
 
 const EMPTY = { needsYes: false, place: "", routeId: "", drive: false, stop: false, clarify: "" } as const;
 
@@ -31,6 +32,9 @@ export function interpretStormyRequest(question: string, packet: StormyPacket): 
   }
   if (/^(?:please )?(?:recenter|center(?: the)? map|center on me)$/.test(lower)) {
     return reply("Centered on you.", "recenter");
+  }
+  if (asksAboutStormyVoice(lower)) {
+    return reply(STORMY_VOICE_HINT, "none");
   }
   if (/\bdestination\b/.test(lower) && /\b(?:set|pick|choose|change)\b/.test(lower) && !placeFrom(q)) {
     return reply("Where do you want to go?", "none", { clarify: "place" });
@@ -96,10 +100,12 @@ function errandPlace(question: string, lower: string): string | null {
   if (!/\b(?:coffee|cafe|starbucks|dunkin|eat|food|hungry|lunch|dinner|breakfast|restaurant|gas|fuel)\b/.test(lower)) {
     return null;
   }
-  const named = question.match(/\b(?:stop at|add a stop (?:at|for)|stop for|grab|get some|get a|get)\s+(.+)$/i);
-  if (named?.[1]) {
-    const place = cleanPlace(named[1]).place;
-    if (place && !/^(?:me|us|some|a|the)$/i.test(place)) return place;
+  const specific = question.match(/\b(?:stop at|add a stop (?:at|for)|stop for|grab|get some|get a|get)\s+(.+)$/i);
+  const added = question.match(/\b(?:add|find|search for)\s+(?:me\s+)?(?:a|an|the\s+)?(.+)$/i);
+  const named = specific?.[1] ?? added?.[1];
+  if (named) {
+    const place = cleanPlace(named).place;
+    if (place && !/^(?:me|us|some|a|the|place|somewhere|something)(?:\s+to\s+eat)?$/i.test(place)) return place;
   }
   if (/\b(?:coffee|cafe|starbucks|dunkin)\b/.test(lower)) return "coffee";
   if (/\b(?:gas|fuel)\b/.test(lower)) return "gas station";

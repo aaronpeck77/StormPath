@@ -718,6 +718,7 @@ function DriveMapInner({
   const onHomeMapUserPanRef = useRef(onHomeMapUserPan);
   onHomeMapUserPanRef.current = onHomeMapUserPan;
   const userExploringRef = useRef(false);
+  const pickExploreHoldRef = useRef(false);
   /** While a Dr/Mp/Rt fly is in the air, follow-cam must not fight it. */
   const viewFlyUntilMsRef = useRef(0);
   const viewDroneRafRef = useRef(0);
@@ -5174,9 +5175,12 @@ function DriveMapInner({
       if (existing.has(m.id)) continue;
       const el = document.createElement("button");
       el.type = "button";
-      el.className = "map-search-pick-dot";
+      el.className = "map-search-pick-hit";
       el.title = m.label;
       el.setAttribute("aria-label", `Search result: ${m.label}`);
+      const dot = document.createElement("span");
+      dot.className = "map-search-pick-dot";
+      el.appendChild(dot);
       const mid = m.id;
       el.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -5193,7 +5197,8 @@ function DriveMapInner({
       const z = map.getZoom();
       const s = Math.max(0.15, Math.min(1, (z - 2.5) / 12.5));
       for (const { el } of existing.values()) {
-        el.style.transform = `scale(${s})`;
+        const dot = el.querySelector(".map-search-pick-dot");
+        if (dot instanceof HTMLElement) dot.style.transform = `scale(${s})`;
       }
     };
 
@@ -5203,6 +5208,16 @@ function DriveMapInner({
       map.off("zoom", applyScale);
     };
   }, [mapReady, searchPickMarkers, onSearchPickMarkerClick]);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    if ((searchPickMarkers?.length ?? 0) >= 2) return;
+    if (!pickExploreHoldRef.current) return;
+    pickExploreHoldRef.current = false;
+    userExploringRef.current = false;
+    if (navigationStarted && viewMode === "drive") driveCamResyncRef.current = true;
+    setMapResumeTick((n) => n + 1);
+  }, [mapReady, searchPickMarkers, navigationStarted, viewMode]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -5218,6 +5233,12 @@ function DriveMapInner({
     const pad = isNarrowPhoneViewport()
       ? { top: 200, bottom: 200, left: 20, right: 88 }
       : { top: 160, bottom: 160, left: 28, right: 28 };
+    userExploringRef.current = true;
+    pickExploreHoldRef.current = true;
+    if (exploreTimerRef.current) {
+      window.clearTimeout(exploreTimerRef.current);
+      exploreTimerRef.current = null;
+    }
     safeFitBounds(map, b, { padding: pad, maxZoom: 14, duration: 480, essential: true });
     /* Intentionally not depending on userLngLat — GPS ticks would re-fit; ref has latest puck. */
   }, [mapReady, searchPickMarkers]);

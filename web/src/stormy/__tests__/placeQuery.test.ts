@@ -60,8 +60,8 @@ describe("offerPlaceChoices", () => {
     expect(choice.kind).toBe("ask");
     if (choice.kind !== "ask") return;
     expect(choice.ids[0]).toBe("close");
-    expect(choice.say).toMatch(/\?$/);
-    expect(choice.say).toContain("Eldorado");
+    expect(choice.say.toLowerCase()).not.toContain("eldorado");
+    expect(choice.say.toLowerCase()).toContain("map");
   });
 });
 
