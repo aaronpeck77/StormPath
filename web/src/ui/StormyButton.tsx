@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PASSENGER_TURN_QUIET_M } from "../nav/passengerAdvisory";
 import { askStormy } from "../stormy/askStormy";
 import { listenForStormy } from "../stormy/listenForStormy";
@@ -47,6 +47,12 @@ export function StormyButton({ packet }: Props) {
       setPhase("idle");
     }
   }
+
+  useEffect(() => {
+    if (phase !== "idle" || !note) return;
+    const timer = window.setTimeout(() => setNote(""), 3000);
+    return () => window.clearTimeout(timer);
+  }, [note, phase]);
 
   const label =
     phase === "listening" ? "Listening" : phase === "thinking" ? "…" : note || "Stormy";
