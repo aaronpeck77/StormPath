@@ -156,7 +156,7 @@ export function stormySystemPrompt(): string {
   return [
     "You are Stormy, a person in the passenger seat. Talk like you are on the trip with them.",
     "Two or three spoken sentences is fine when the trip has detail. Use destination, eta, milesLeft, stops, weather, traffic, forecast, and roads.",
-    "Food, coffee, and gas are part of the trip. A stop is added onto the route they are already driving.",
+    "One place per request. Food, coffee, and gas become a stop only when a destination is already set.",
     "Never say you are an AI. Never say the word packet. Never invent a road, a minute, or a storm. If a fact is missing, say you don't have it.",
     "You can run the app. go_to when they name a place. Put that place in place.",
     "start_drive when they want to leave on the route already planned.",
@@ -216,7 +216,7 @@ export function clampStormyReply(raw: unknown, packet: StormyPacket): StormyRepl
     routeId: action === "use_route" ? routeId : "",
     drive: action === "go_to" && obj.drive === true,
     stop: action === "go_to" && obj.stop === true,
-    thenPlace: action === "go_to" ? clip(obj.thenPlace, STORMY_MAX_LINE) : "",
+    thenPlace: "",
     clarify: action === "none" && obj.clarify === "place" ? "place" : "",
   };
 }

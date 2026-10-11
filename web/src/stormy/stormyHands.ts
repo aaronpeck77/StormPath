@@ -1,5 +1,6 @@
 import type { StormyPacket, StormyReply } from "./stormyFence";
 import { answerStormySituation } from "./stormySituation";
+import { asksWhatStormyCanDo, STORMY_ONE_PLACE } from "./stormyCommands";
 import { asksAboutStormyVoice, STORMY_VOICE_HINT } from "./stormyVoiceHint";
 
 const EMPTY = { needsYes: false, place: "", routeId: "", drive: false, stop: false, thenPlace: "", clarify: "" } as const;
@@ -36,23 +37,21 @@ export function interpretStormyRequest(question: string, packet: StormyPacket): 
   if (asksAboutStormyVoice(lower)) {
     return reply(STORMY_VOICE_HINT, "none");
   }
+  if (asksWhatStormyCanDo(lower)) {
+    return reply("The commands are on the Info page. One place at a time.", "none");
+  }
   if (/\bdestination\b/.test(lower) && /\b(?:set|pick|choose|change)\b/.test(lower) && !placeFrom(q)) {
     return reply("Where do you want to go?", "none", { clarify: "place" });
   }
 
-  const two = twoPlaces(q);
-  if (two) {
-    return reply(`First ${two.stop}, then ${two.dest}.`, "go_to", {
-      place: two.stop,
-      thenPlace: two.dest,
-      stop: true,
-      drive: false,
-    });
+  if (namesTwoPlaces(q)) {
+    return reply(STORMY_ONE_PLACE, "none");
   }
 
   const errand = errandPlace(q, lower);
   if (errand) return goErrand(errand, packet);
   if (/\badd a stop\b/.test(lower)) {
+    if (!onATrip(packet)) return reply(STORMY_ONE_PLACE, "none");
     return reply("What should I add as a stop?", "none", { clarify: "place", stop: true });
   }
 
@@ -89,17 +88,15 @@ export function interpretStormyRequest(question: string, packet: StormyPacket): 
   return answerStormySituation(q, packet);
 }
 
-/** "Gas station then Walmart" is a stop plus a final destination. The app allows one stop. */
-function twoPlaces(question: string): { stop: string; dest: string } | null {
+/** Two places in one sentence. "Then hit go" is still one place. */
+function namesTwoPlaces(question: string): boolean {
   const match = question.match(
     /\b(?:take me|drive me|get me|navigate|head|go|i (?:want|wanna|need|would like|'d like) to go)\s+to\s+(.+?)\s+(?:and\s+)?then\s+(?:(?:go|head)\s+)?(?:to\s+)?(.+)$/i
   );
-  if (!match?.[1] || !match[2]) return null;
-  const stop = tidyPlace(match[1]);
+  if (!match?.[1] || !match[2]) return false;
   const dest = tidyPlace(match[2]);
-  if (!stop || !dest) return null;
-  if (/^(?:me|us)$/i.test(stop) || /^(?:me|us)$/i.test(dest)) return null;
-  return { stop, dest };
+  if (!dest || /^(?:go|hit go|press go)$/i.test(dest)) return false;
+  return true;
 }
 
 function tidyPlace(raw: string): string {

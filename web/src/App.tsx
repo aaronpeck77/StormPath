@@ -655,7 +655,6 @@ export default function App() {
     handleSearchPickFromMap,
     handleSearch,
     resolveSpokenPlace,
-    noteStopAfterDestination,
     acceptSpokenChoice,
     searchPickMarkersForMap,
     handleSearchFieldBeginEditing,
@@ -2475,21 +2474,6 @@ export default function App() {
         }
       }
       if (reply.action === "go_to" && reply.place.trim()) {
-        if (reply.thenPlace.trim()) {
-          noteStopAfterDestination(reply.place);
-          const dest = await resolveSpokenPlace(reply.thenPlace, false);
-          if (dest.kind === "ask") return dest.say;
-          noteStopAfterDestination(null);
-          if (dest.kind === "miss") return "I couldn't find that.";
-          const stop = await resolveSpokenPlace(reply.place, true);
-          const here = forecastPlaceShort ?? "";
-          const destSaid = spokenPlace(dest.name, here);
-          if (stop.kind === "ask") return stop.say;
-          if (stop.kind === "miss") {
-            return `That's ${destSaid}. I couldn't find the stop. Say go when you want to leave.`;
-          }
-          return `Stop at ${spokenPlace(stop.name, here)}, then ${destSaid}. Say go when you want to leave.`;
-        }
         const found = await resolveSpokenPlace(reply.place, reply.stop);
         if (found.kind === "ask") return found.say;
         if (found.kind === "miss") return "I couldn't find that.";
@@ -2536,7 +2520,7 @@ export default function App() {
         return reply.say || "Centered on you.";
       }
     },
-    [resolveSpokenPlace, noteStopAfterDestination, acceptSpokenChoice, handleGo, handlePreviewRouteSelect, handleStopAndClear, setShowRadar, forecastPlaceShort]
+    [resolveSpokenPlace, acceptSpokenChoice, handleGo, handlePreviewRouteSelect, handleStopAndClear, setShowRadar, forecastPlaceShort]
   );
 
   const handleTollContinue = useCallback(() => {

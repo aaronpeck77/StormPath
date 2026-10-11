@@ -133,15 +133,6 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
   const placeOptionsQueryRef = useRef("");
   const spokenStopRef = useRef(false);
   const announceStormyPickRef = useRef(false);
-  /** Stop to search after the final destination from a "gas then Walmart" request is chosen. */
-  const pendingStopQueryRef = useRef<string | null>(null);
-  const resolveSpokenPlaceRef = useRef<
-    | ((
-        raw: string,
-        asStop?: boolean
-      ) => Promise<{ kind: "go"; name: string } | { kind: "ask"; say: string } | { kind: "miss" }>)
-    | null
-  >(null);
 
   const applyTripPlacePick = useCallback(
     async (lngLat: LngLat, label: string, mode: "destination" | "via") => {
@@ -366,8 +357,6 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       stormyChoiceRef.current = [];
       const asStop = spokenStopRef.current;
       spokenStopRef.current = false;
-      const pendingStop = asStop ? null : pendingStopQueryRef.current;
-      if (pendingStop) pendingStopQueryRef.current = null;
       const dest = useTripPlanStore.getState().destLngLat;
       if (asStop && dest) {
         const destLabel = useTripPlanStore.getState().destinationLabel;
@@ -385,24 +374,6 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
         addingViaStop && dest ? "via" : "destination";
       if (pickMode === "destination") setDestinationLabel(placeName);
       await applyTripPlacePick(lngLat, placeName, pickMode);
-      if (pendingStop && pickMode === "destination") {
-        announceStormyPickRef.current = false;
-        const found = await resolveSpokenPlaceRef.current?.(pendingStop, true);
-        const fix = userLngLatRef.current;
-        const cached = fix ? getCachedReverseGeocode(fix[0], fix[1]) : undefined;
-        const here = cached?.placeName ? shortenPlaceNameForForecast(cached.placeName) : "";
-        const destSaid = spokenPlace(placeName, here);
-        if (!found || found.kind === "miss") {
-          void speakStormpathLine(`That's ${destSaid}. I couldn't find the stop. Say go when you want to leave.`);
-        } else if (found.kind === "ask") {
-          void speakStormpathLine("They're on the map. Tap one.");
-        } else {
-          void speakStormpathLine(
-            `Stop at ${spokenPlace(found.name, here)}, then ${destSaid}. Say go when you want to leave.`
-          );
-        }
-        return;
-      }
       announceStormyPick(placeName, false);
     },
     [
@@ -603,12 +574,6 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     },
     [commitSpokenPlace, mapboxToken, presentPlaceOptions, resetSearchBoxSessionToken, retrieveSpokenHit, userLngLat]
   );
-  resolveSpokenPlaceRef.current = resolveSpokenPlace;
-
-  const noteStopAfterDestination = useCallback((query: string | null) => {
-    const next = query?.trim() ?? "";
-    pendingStopQueryRef.current = next || null;
-  }, []);
 
   const acceptSpokenChoice = useCallback(
     async (utterance: string, asStop = false): Promise<string | null> => {
@@ -942,7 +907,6 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     handleSearchPickFromMap,
     handleSearch,
     resolveSpokenPlace,
-    noteStopAfterDestination,
     acceptSpokenChoice,
     searchPickMarkersForMap,
     handleSearchFieldBeginEditing,

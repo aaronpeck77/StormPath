@@ -117,18 +117,21 @@ describe("interpretStormyRequest", () => {
     expect(reply?.action).toBe("explain_ahead");
   });
 
-  it("hears a stop and then a destination", () => {
-    expect(
-      interpretStormyRequest(
-        "I want to go to the nearest gas station then to the Walmart in the city closest to me Mount Zion",
-        packet
-      )
-    ).toMatchObject({
+  it("takes one place when he names a stop and a destination together", () => {
+    const reply = interpretStormyRequest(
+      "I want to go to the nearest gas station then to the Walmart in the city closest to me Mount Zion",
+      packet
+    );
+    expect(reply?.action).toBe("none");
+    expect(reply?.say).toContain("one place at a time");
+    expect(reply?.place).toBe("");
+  });
+
+  it("still leaves when he says go after one place", () => {
+    expect(interpretStormyRequest("Take me to Walmart then hit go", packet)).toMatchObject({
       action: "go_to",
-      place: "nearest gas station",
-      thenPlace: "Walmart Mount Zion",
-      stop: true,
-      drive: false,
+      place: "Walmart",
+      drive: true,
     });
   });
 

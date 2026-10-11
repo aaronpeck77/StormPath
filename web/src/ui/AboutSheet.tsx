@@ -21,6 +21,7 @@ import { PUCK_COLORS, puckColorById, type PuckColorId } from "./puckColor";
 import { StormPathSourcesAttribution } from "./StormPathSourcesAttribution";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import type { RadarDisplayMode } from "../state/settingsStore";
+import { STORMY_COMMANDS } from "../stormy/stormyCommands";
 import { STORMY_VOICE_HINT } from "../stormy/stormyVoiceHint";
 import type { GuidanceLanguagePref } from "../utils/guidanceLanguage";
 import type { HomePuckFollowMode } from "../map/homePuckFollow";
@@ -697,6 +698,18 @@ export function AboutSheet({
                   (raise the side buttons while a prompt plays).
                 </span>
               </label>
+
+              <div className="about-sheet__p about-sheet__settings-card">
+                <strong>What you can say to Stormy.</strong>
+                <p className="about-sheet__p about-sheet__p--tight">
+                  One place at a time. Set the destination and say go. Tap her again to add a stop.
+                </p>
+                <ul className="about-sheet__bullets">
+                  {STORMY_COMMANDS.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
 
               <p className="about-sheet__p about-sheet__settings-card">
                 <strong>Stormy's voice.</strong> {STORMY_VOICE_HINT}
