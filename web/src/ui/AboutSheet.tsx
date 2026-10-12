@@ -21,6 +21,7 @@ import { PUCK_COLORS, puckColorById, type PuckColorId } from "./puckColor";
 import { StormPathSourcesAttribution } from "./StormPathSourcesAttribution";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import type { RadarDisplayMode } from "../state/settingsStore";
+import { STORMY_AVAILABLE } from "../stormy/stormyAvailability";
 import { STORMY_COMMANDS } from "../stormy/stormyCommands";
 import { STORMY_VOICE_HINT } from "../stormy/stormyVoiceHint";
 import type { GuidanceLanguagePref } from "../utils/guidanceLanguage";
@@ -220,7 +221,7 @@ export function AboutSheet({
                 StormPath
               </h2>
               <p className="about-sheet__tagline">
-                Multi-route driving with live conditions on your route. Stormy is included with Plus.
+                Multi-route driving with live conditions on your route.
               </p>
             </div>
             <button type="button" className="about-sheet__close" onClick={onClose} aria-label="Close info">
@@ -320,8 +321,8 @@ export function AboutSheet({
           <section className="about-sheet__panel about-sheet__panel--subscription">
             <h3 className="about-sheet__h3">Subscription</h3>
             <p className="about-sheet__p">
-              <strong>{PLUS_SUBSCRIPTION_TITLE}</strong> is an optional auto-renewing subscription. It includes
-              Stormy at the same price.
+              <strong>{PLUS_SUBSCRIPTION_TITLE}</strong> is an optional auto-renewing subscription. Stormy is
+              being worked on and coming soon.
             </p>
             <p className="about-sheet__p about-sheet__iap-price">{PLUS_SUBSCRIPTION_FALLBACK_PRICE_LINE}</p>
             <div className="about-sheet__upgrade-actions">
@@ -423,8 +424,8 @@ export function AboutSheet({
               <summary>What Plus adds</summary>
               <ul className="about-sheet__bullets" aria-label="Plus features">
                 <li>
-                  <strong>Stormy</strong> — the Stormy button sets one place, starts or stops the route, and reads the
-                  trip. Included with Plus.
+                  <strong>Stormy</strong> — coming soon. She will set one place, start or stop the route, and read
+                  the trip.
                 </li>
                 <li>
                   <strong>NWS</strong> — full storm map, every active warning, route overlap, and hazard details (Plus
@@ -707,21 +708,39 @@ export function AboutSheet({
                 </span>
               </label>
 
-              <label className="about-sheet__setting about-sheet__settings-card">
+              <label
+                className={`about-sheet__setting about-sheet__settings-card${STORMY_AVAILABLE ? "" : " disabled"}`}
+              >
                 <input
                   type="checkbox"
-                  checked={settings.stormyEnabled}
-                  onChange={(e) => onSettings({ ...settings, stormyEnabled: e.target.checked })}
+                  checked={STORMY_AVAILABLE && settings.stormyEnabled}
+                  disabled={!STORMY_AVAILABLE}
+                  onChange={(e) => {
+                    if (!STORMY_AVAILABLE) return;
+                    onSettings({ ...settings, stormyEnabled: e.target.checked });
+                  }}
                 />
                 <span>
-                  <strong>Stormy</strong> — show her button on the map. Turn this off to hide her and put
-                  the other buttons back.
+                  <strong>Stormy</strong>
+                  {STORMY_AVAILABLE ? (
+                    <>
+                      {" "}
+                      — show her button on the map. Turn this off to hide her and put the other buttons back.
+                    </>
+                  ) : (
+                    <>
+                      {" "}
+                      — her button on the map. <em>Being worked on. Coming soon.</em>
+                    </>
+                  )}
                 </span>
               </label>
 
-              {settings.stormyEnabled ? (
+              {!STORMY_AVAILABLE || settings.stormyEnabled ? (
                 <>
-                  <div className="about-sheet__p about-sheet__settings-card">
+                  <div
+                    className={`about-sheet__p about-sheet__settings-card${STORMY_AVAILABLE ? "" : " about-sheet__soon"}`}
+                  >
                     <strong>What you can say to Stormy.</strong>
                     <p className="about-sheet__p about-sheet__p--tight">
                       Say “Take me to” and the place you want. That blank is your destination, and Stormy
@@ -734,7 +753,9 @@ export function AboutSheet({
                     </ul>
                   </div>
 
-                  <p className="about-sheet__p about-sheet__settings-card">
+                  <p
+                    className={`about-sheet__p about-sheet__settings-card${STORMY_AVAILABLE ? "" : " about-sheet__soon"}`}
+                  >
                     <strong>Stormy&apos;s voice.</strong> {STORMY_VOICE_HINT}
                   </p>
                 </>
@@ -993,8 +1014,14 @@ export function AboutSheet({
               <strong>Data:</strong> Map, routing, and traffic use <strong>Mapbox</strong> when configured; live radar
               uses <strong>Tomorrow.io</strong> in the US and <strong>RainViewer</strong> elsewhere; US warning shapes use <strong>NWS</strong> (api.weather.gov);
               corridor and local forecasts use <strong> Weather</strong> (Apple WeatherKit) when enabled for this build,
-              with optional Tomorrow.io / OpenWeather fallbacks when those keys are present. Stormy sends the words you
-              say and a short trip summary to <strong>Claude</strong> (Anthropic). The microphone stays on the phone.
+              with optional Tomorrow.io / OpenWeather fallbacks when those keys are present.
+              {STORMY_AVAILABLE ? (
+                <>
+                  {" "}
+                  Stormy sends the words you say and a short trip summary to <strong>Claude</strong> (Anthropic). The
+                  microphone stays on the phone.
+                </>
+              ) : null}
             </p>
             <StormPathSourcesAttribution
               theme="dark"

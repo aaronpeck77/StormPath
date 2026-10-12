@@ -47,7 +47,7 @@ export const FIRST_LAUNCH_COACHMARK_STEPS: readonly CoachmarkStep[] = [
     preferredAnchor: "above",
     title: "Settings, map key, and help",
     body:
-      "The i opens settings, Stormy's commands, the map color legend, your saved places and routes, the activity trail toggle, and other help info.",
+      "The i opens settings, the map color legend, your saved places and routes, the activity trail toggle, and other help info.",
   },
   {
     id: "view-cycle",
