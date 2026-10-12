@@ -132,14 +132,14 @@ function partnerLines(env: WebEnv): AdvisoryPromoLine[] {
 
 function plusUpsellLine(env: WebEnv, variant: "full" | "nav-radar"): AdvisoryPromoLine {
   const full = {
-    text: "StormPath Plus — Stormy, full NWS, traffic, and route weather",
+    text: "StormPath Plus — full NWS, traffic, and route weather",
     detail:
-      "Unlock Stormy, live traffic, the full NWS hazard map, minute-by-minute precip, and weather along your route.",
+      "Unlock live traffic, the full NWS hazard map, minute-by-minute precip, and weather along your route.",
   };
   const navRadar = {
     text: "Upgrade to StormPath Plus",
     detail:
-      "Stormy, live traffic, full NWS map, route weather, and hazard tools — tap to subscribe in StormPath.",
+      "Live traffic, full NWS map, route weather, and hazard tools — tap to subscribe in StormPath.",
   };
   const copy = variant === "full" ? full : navRadar;
   const base: AdvisoryPromoLine = {

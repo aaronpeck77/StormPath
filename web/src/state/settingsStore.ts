@@ -16,6 +16,7 @@ import {
   readDataSaverSetting,
 } from "../utils/dataSaver";
 import type { GuidanceLanguagePref } from "../utils/guidanceLanguage";
+import { stormyMapButtonOn } from "../stormy/stormyAvailability";
 
 /**
  * Persistent user-settings store (Zustand).
@@ -185,7 +186,7 @@ function readPersistedSettings(): Pick<
     dataSaverEnabled: readDataSaverSetting(),
     dataSaverHintDismissed: readDataSaverHintDismissed(),
     voiceGuidanceEnabled: readBoolFlag(LS_VOICE, false),
-    stormyEnabled: readBoolFlag(LS_STORMY, true),
+    stormyEnabled: stormyMapButtonOn(readBoolFlag(LS_STORMY, false)),
     gpsHighRefreshEnabled: readBoolFlag(LS_GPS_HIGH_REFRESH, false),
     mapMatchingEnabled: readBoolFlag(LS_MAP_MATCHING, false),
     landscapeSideHand: safeStorage.get(LS_LANDSCAPE_SIDE_HAND) === "left" ? "left" : "right",
@@ -244,8 +245,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     set({ voiceGuidanceEnabled: on });
   },
   setStormyEnabled: (on) => {
-    writeBoolFlag(LS_STORMY, on);
-    set({ stormyEnabled: on });
+    const next = stormyMapButtonOn(on);
+    writeBoolFlag(LS_STORMY, next);
+    set({ stormyEnabled: next });
   },
   setGpsHighRefreshEnabled: (on) => {
     writeBoolFlag(LS_GPS_HIGH_REFRESH, on);
@@ -282,7 +284,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     writeBoolFlag(LS_AUTO_REROUTE, next.autoRerouteEnabled);
     writeBoolFlag(LS_DATA_SAVER, next.dataSaverEnabled);
     writeBoolFlag(LS_VOICE, next.voiceGuidanceEnabled);
-    writeBoolFlag(LS_STORMY, next.stormyEnabled);
+    writeBoolFlag(LS_STORMY, stormyMapButtonOn(next.stormyEnabled));
     writeBoolFlag(LS_GPS_HIGH_REFRESH, next.gpsHighRefreshEnabled);
     writeBoolFlag(LS_MAP_MATCHING, next.mapMatchingEnabled);
     safeStorage.set(LS_LANDSCAPE_SIDE_HAND, next.landscapeSideHand);
@@ -297,7 +299,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       autoRerouteEnabled: next.autoRerouteEnabled,
       dataSaverEnabled: next.dataSaverEnabled,
       voiceGuidanceEnabled: next.voiceGuidanceEnabled,
-      stormyEnabled: next.stormyEnabled,
+      stormyEnabled: stormyMapButtonOn(next.stormyEnabled),
       gpsHighRefreshEnabled: next.gpsHighRefreshEnabled,
       mapMatchingEnabled: next.mapMatchingEnabled,
       landscapeSideHand: next.landscapeSideHand,

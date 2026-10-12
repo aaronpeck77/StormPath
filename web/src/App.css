@@ -2243,6 +2243,11 @@ html:has(.drive-map--native-shell) #root {
   opacity: 0.55;
 }
 
+.about-sheet__soon {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 .about-sheet__home-framing {
   margin: 12px 0 0;
   padding: 0;

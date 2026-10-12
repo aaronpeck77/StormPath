@@ -12,6 +12,7 @@ import { SearchBar, type SearchSuggestion } from "./SearchBar";
 import { RouteStopsBar } from "./RouteStopsBar";
 import { BottomToolbar } from "./BottomToolbar";
 import { isNarrowPhoneViewport } from "./mapFitLogic";
+import { stormyMapButtonOn } from "../stormy/stormyAvailability";
 import { StormyButton, stormyTurnImminent } from "./StormyButton";
 import { useSettingsStore } from "../state/settingsStore";
 import { useTripPlanStore } from "../state/tripPlanStore";
@@ -275,7 +276,8 @@ export function AppBottomChrome({
   onStormyAct,
 }: Props) {
   const planRoutes = useTripPlanStore((s) => s.plan.routes);
-  const stormyOn = useSettingsStore((s) => s.stormyEnabled);
+  const stormySaved = useSettingsStore((s) => s.stormyEnabled);
+  const stormyOn = stormyMapButtonOn(stormySaved);
   const stormyPacket: StormyPacket = {
     aheadLine: (stormyAheadLine || destinationLabel || "").trim(),
     hazards: stormyHazardLine ? [stormyHazardLine] : [],
