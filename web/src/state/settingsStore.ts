@@ -40,6 +40,7 @@ import type { GuidanceLanguagePref } from "../utils/guidanceLanguage";
 const LS_WEATHER_HINTS = "stormpath-setting-weather-hints-enabled";
 const LS_AUTO_REROUTE = "stormpath-setting-auto-reroute-enabled";
 const LS_VOICE = "stormpath-setting-voice-guided";
+const LS_STORMY = "stormpath-setting-stormy-button";
 const LS_GPS_HIGH_REFRESH = "stormpath-setting-gps-high-refresh";
 const LS_MAP_MATCHING = "stormpath-setting-map-matching-enabled";
 const LS_LANDSCAPE_SIDE_HAND = "stormpath-setting-landscape-side-hand";
@@ -67,6 +68,8 @@ export interface AppSettings {
   dataSaverEnabled: boolean;
   autoRerouteEnabled: boolean;
   voiceGuidanceEnabled: boolean;
+  /** Map button. Off hides Stormy and restores the pre-Stormy dock. */
+  stormyEnabled: boolean;
   gpsHighRefreshEnabled: boolean;
   /** While navigating, snap GPS to the road network via Mapbox Map Matching (Plus). */
   mapMatchingEnabled: boolean;
@@ -118,6 +121,7 @@ export interface SettingsState {
   /** True after the user dismisses the inline data-saver hint banner. */
   dataSaverHintDismissed: boolean;
   voiceGuidanceEnabled: boolean;
+  stormyEnabled: boolean;
   gpsHighRefreshEnabled: boolean;
   mapMatchingEnabled: boolean;
   /** Landscape / side view only; portrait ignores. */
@@ -135,6 +139,7 @@ export interface SettingsState {
   /** Persist + flag the inline hint as dismissed (no-arg form: it can't be re-opened from UI). */
   dismissDataSaverHint: () => void;
   setVoiceGuidanceEnabled: (on: boolean) => void;
+  setStormyEnabled: (on: boolean) => void;
   setGpsHighRefreshEnabled: (on: boolean) => void;
   setMapMatchingEnabled: (on: boolean) => void;
   setLandscapeSideHand: (hand: LandscapeSideHand) => void;
@@ -163,6 +168,7 @@ function readPersistedSettings(): Pick<
   | "dataSaverEnabled"
   | "dataSaverHintDismissed"
   | "voiceGuidanceEnabled"
+  | "stormyEnabled"
   | "gpsHighRefreshEnabled"
   | "mapMatchingEnabled"
   | "landscapeSideHand"
@@ -179,6 +185,7 @@ function readPersistedSettings(): Pick<
     dataSaverEnabled: readDataSaverSetting(),
     dataSaverHintDismissed: readDataSaverHintDismissed(),
     voiceGuidanceEnabled: readBoolFlag(LS_VOICE, false),
+    stormyEnabled: readBoolFlag(LS_STORMY, true),
     gpsHighRefreshEnabled: readBoolFlag(LS_GPS_HIGH_REFRESH, false),
     mapMatchingEnabled: readBoolFlag(LS_MAP_MATCHING, false),
     landscapeSideHand: safeStorage.get(LS_LANDSCAPE_SIDE_HAND) === "left" ? "left" : "right",
@@ -236,6 +243,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     writeBoolFlag(LS_VOICE, on);
     set({ voiceGuidanceEnabled: on });
   },
+  setStormyEnabled: (on) => {
+    writeBoolFlag(LS_STORMY, on);
+    set({ stormyEnabled: on });
+  },
   setGpsHighRefreshEnabled: (on) => {
     writeBoolFlag(LS_GPS_HIGH_REFRESH, on);
     set({ gpsHighRefreshEnabled: on });
@@ -271,6 +282,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     writeBoolFlag(LS_AUTO_REROUTE, next.autoRerouteEnabled);
     writeBoolFlag(LS_DATA_SAVER, next.dataSaverEnabled);
     writeBoolFlag(LS_VOICE, next.voiceGuidanceEnabled);
+    writeBoolFlag(LS_STORMY, next.stormyEnabled);
     writeBoolFlag(LS_GPS_HIGH_REFRESH, next.gpsHighRefreshEnabled);
     writeBoolFlag(LS_MAP_MATCHING, next.mapMatchingEnabled);
     safeStorage.set(LS_LANDSCAPE_SIDE_HAND, next.landscapeSideHand);
@@ -285,6 +297,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       autoRerouteEnabled: next.autoRerouteEnabled,
       dataSaverEnabled: next.dataSaverEnabled,
       voiceGuidanceEnabled: next.voiceGuidanceEnabled,
+      stormyEnabled: next.stormyEnabled,
       gpsHighRefreshEnabled: next.gpsHighRefreshEnabled,
       mapMatchingEnabled: next.mapMatchingEnabled,
       landscapeSideHand: next.landscapeSideHand,

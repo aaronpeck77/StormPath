@@ -209,6 +209,8 @@ Full steps: `docs/CLOUDFLARE_TILES.md` (RainViewer section). Same pattern as Tom
 
 **Bill (Oct 11, 2026) — included in Plus:** No extra charge for now. Plus stays $4.99 a month. Small increases later, when she has earned them. Her cost is cents on top of the Mapbox bill. The button stays available in this TestFlight so the week of driving can try her and the navigation changes together.
 
+**Bill (Oct 11, 2026) — optional:** Info has a Stormy switch. It starts on. Off hides her button and puts the compass, Info, miles, route, and My location back where they were before she was added.
+
 **Marketing (save for later):**
 
 > Google’s voice is free because it is part of Google. Clara Sky is free because the driver brings their own Claude key and pays Anthropic. Yours is the one where the whole trip, including her, is a single StormPath subscription.

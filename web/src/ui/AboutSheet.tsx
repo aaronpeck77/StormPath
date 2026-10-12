@@ -70,6 +70,7 @@ type Props = {
     dataSaverEnabled: boolean;
     autoRerouteEnabled: boolean;
     voiceGuidanceEnabled: boolean;
+    stormyEnabled: boolean;
     gpsHighRefreshEnabled: boolean;
     mapMatchingEnabled: boolean;
     /** Landscape / side view only — portrait layout ignores this */
@@ -706,21 +707,37 @@ export function AboutSheet({
                 </span>
               </label>
 
-              <div className="about-sheet__p about-sheet__settings-card">
-                <strong>What you can say to Stormy.</strong>
-                <p className="about-sheet__p about-sheet__p--tight">
-                  One place at a time. Set the destination and say go. Tap her again to add a stop.
-                </p>
-                <ul className="about-sheet__bullets">
-                  {STORMY_COMMANDS.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-              </div>
+              <label className="about-sheet__setting about-sheet__settings-card">
+                <input
+                  type="checkbox"
+                  checked={settings.stormyEnabled}
+                  onChange={(e) => onSettings({ ...settings, stormyEnabled: e.target.checked })}
+                />
+                <span>
+                  <strong>Stormy</strong> — show her button on the map. Turn this off to hide her and put
+                  the other buttons back.
+                </span>
+              </label>
 
-              <p className="about-sheet__p about-sheet__settings-card">
-                <strong>Stormy's voice.</strong> {STORMY_VOICE_HINT}
-              </p>
+              {settings.stormyEnabled ? (
+                <>
+                  <div className="about-sheet__p about-sheet__settings-card">
+                    <strong>What you can say to Stormy.</strong>
+                    <p className="about-sheet__p about-sheet__p--tight">
+                      One place at a time. Set the destination and say go. Tap her again to add a stop.
+                    </p>
+                    <ul className="about-sheet__bullets">
+                      {STORMY_COMMANDS.map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <p className="about-sheet__p about-sheet__settings-card">
+                    <strong>Stormy&apos;s voice.</strong> {STORMY_VOICE_HINT}
+                  </p>
+                </>
+              ) : null}
 
             </div>
           </section>
