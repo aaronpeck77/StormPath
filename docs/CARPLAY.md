@@ -2,6 +2,29 @@
 
 Driving-first CarPlay is **Phase 10** — entitlement + native templates, not a SaaS bill.
 
+## Goal (set Oct 10, 2026)
+
+StormPath is on the App Store. The car screen is allowed only after Apple grants the **Navigation** entitlement. There is no download count or revenue number to hit. Apple reads the request and decides if the app is a real turn-by-turn navigator.
+
+**Bill’s step, Account Holder only:**
+
+1. Open [developer.apple.com/carplay](https://developer.apple.com/carplay/).
+2. Request **Navigation** for bundle id `com.aaronpeck.stormpath`.
+3. Agree to the CarPlay Entitlement Addendum.
+4. Wait for Apple’s email. The key they add is `com.apple.developer.carplay-maps`.
+
+Apple’s June 2026 guide says a navigation app must:
+
+- Give turn-by-turn directions with the next maneuver
+- Use the base view only for the map
+- Offer a way to pan
+- Speak prompts that share the car’s audio, and stay quiet when there is nothing to say
+- Stop guidance immediately if the car’s own navigation takes over
+
+The stub scene is already in `web/ios/App/App/CarPlay/`. It stays unwired until that email. Turning the key on before Apple assigns it breaks signing, and publishing it early puts the icon on every customer’s car screen.
+
+Stormy does not get a second entitlement. The voice-based conversational category is for apps that are only a voice. She talks inside this navigation app.
+
 ## Cost
 
 - No monthly CarPlay fee.

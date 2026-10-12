@@ -193,6 +193,40 @@ Full steps: `docs/CLOUDFLARE_TILES.md` (RainViewer section). Same pattern as Tom
 
 ---
 
+## Stormy — trip copilot (building the fence; not in the store UI yet)
+
+**Bill (Oct 10, 2026):** A passenger named Stormy, wrapped around weather, hazards, and StormPath controls. She can explain and offer options. She does not change the route until he says yes, and she does not talk over a turn. Dinner, mail, and general chat stay outside.
+
+**Attach:** Anthropic **Claude Haiku** (small model) behind one StormPath server key. Drivers do not get their own AI accounts. Plus is the natural place to cover the bill.
+
+**Ears and mouth stay on the phone.** Apple speech recognition in; existing `stormpathSpeech` out (already refuses to interrupt a turn). Do not stream the mic. Each request is a small packet of facts the app already computed, plus a hard list of actions. If it is not in the packet, she says she doesn’t know.
+
+**Local alternate:** Apple’s on-device Foundation Model if trip facts must stay on the phone and the API bill must be zero. Weaker copilot. Needs a small native bridge. iPhone 15 Pro, 15 Pro Max, or 16 and later only. Do not build either path until Bill asks.
+
+**Tradeoff Bill asked (Oct 10, 2026):** On the phone, she still answers in a dead zone and the trip packet never leaves the device. Haiku is sharper at “avoid that” and at saying the real options in one sentence, and she goes quiet when the radio is gone. A short Haiku question is well under a cent against Plus at $4.99. Ears and mouth stay on the phone either way.
+
+**Bill (Oct 10, 2026) — price, no meter:** Keep her as sharp and person-like as possible. A road-trip buddy is welcome inside the trip (weather, hazards, the route, this drive). Open “ask anything” stays out. No daily cap and no slow free fallback. **Plus $5/month. Plus with Stormy $10/month.** Haiku 5.5 is ~$0.10 / $0.50 per million tokens under 100k. Short spoken replies plus a short memory keep a heavy month in the $1–4 range. After Apple’s cut the extra $5 still covers that. The only guard is technical: answers stay speakable, and old chat is not resent in full. A huge request gets refused so a bug cannot run the bill. Comps that day: Google/Waze Gemini free; WeatherNavigator’s Skye (Claude, same job) listed free; Drive Weather Pro $5.99/mo or $19.99/yr; CARROT Ultra $9.99/mo or $39.99/yr.
+
+**Bill (Oct 11, 2026) — included in Plus:** No extra charge for now. Plus stays $4.99 a month. Small increases later, when she has earned them. Her cost is cents on top of the Mapbox bill. The button stays available in this TestFlight so the week of driving can try her and the navigation changes together.
+
+**Bill (Oct 11, 2026) — optional:** Info has a Stormy switch. It starts on. Off hides her button and puts the compass, Info, miles, route, and My location back where they were before she was added.
+
+**Marketing (save for later):**
+
+> Google’s voice is free because it is part of Google. Clara Sky is free because the driver brings their own Claude key and pays Anthropic. Yours is the one where the whole trip, including her, is a single StormPath subscription.
+
+**Build started (Oct 10, 2026):** Fence and Netlify function only (`web/src/stormy/`, `web/netlify/functions/stormy.ts`). Not on a button. Not deployed. Key `ANTHROPIC_API_KEY` stays on the server. She does not change a route; `offer_alternate` only asks.
+
+**CarPlay goal:** Navigation entitlement `com.apple.developer.carplay-maps`. Bill requests it. See `docs/CARPLAY.md`. Do not turn the key on in the store build until Apple’s email.
+
+**Voice options (Oct 10, 2026):** Stormy on/off, separate from turn prompts. Language uses the About choice already there (phone language or English). Her voice is one of the Apple voices already on the phone, a short list. Volume is the phone’s volume. “Quiet” hushes her for the trip. No speed slider and no personality pack. Today `StormpathSpeech` is locked to one en-US voice.
+
+**How you call her (Oct 11, 2026):** One Stormy button on the map at every stage — home, planning, and drive. Tap, talk, she answers. She stays quiet while a turn is being spoken. No “Hey Stormy” wake word in this setup. That would leave the microphone open for the whole trip. The button is on the bottom chrome next to the i. The function accepts a trip question only when the app sends the same `STORMY_CLIENT_TOKEN` that TestFlight bakes in as `VITE_STORMY_CLIENT_TOKEN`.
+
+**She works the app (Oct 11, 2026):** A person in the passenger seat for this trip. She uses the best English voice already on the phone. Settings, and Stormy if he asks, point him to the free Ava or Zoe download. She can talk through the destination, the time left, the weather, and the traffic. On an active route, coffee, food, or gas becomes a stop on that route. A new place puts the closest matches on the map and in a list, framed tight the way a route is framed, and she does not read them off. One place per tap. Set the destination and say go, then tap her again to add a stop. The Info page lists the commands. She starts the drive only after he picks and says go. When she says an address, she leaves off the home city, the home state, and the ZIP. She can ask one short question, then she acts. Nearest means the closest business to the driver. Mail and jokes stay outside. Moving the route around a backup or a wreck is later.
+
+---
+
 ## How agents should treat Brain
 
 - Read this file when Bill mentions Brain, post-launch ideas, or Dark Sky direction

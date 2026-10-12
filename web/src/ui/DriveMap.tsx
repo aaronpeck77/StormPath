@@ -135,6 +135,7 @@ import {
   safeEaseTo,
   safeExtendBounds,
   safeFitBounds,
+  safeCameraForBounds,
   safeFlyTo,
   safePanToCenter,
   safeJumpTo,
@@ -147,7 +148,6 @@ import {
 } from "./mapCameraSafe";
 import {
   hazardOverviewFitPadding,
-  isNarrowPhoneViewport,
   mapStyleReadyForCamera,
   offRouteAlternatesFitKey,
   planningRoutesFitKey,
@@ -718,6 +718,7 @@ function DriveMapInner({
   const onHomeMapUserPanRef = useRef(onHomeMapUserPan);
   onHomeMapUserPanRef.current = onHomeMapUserPan;
   const userExploringRef = useRef(false);
+  const pickExploreHoldRef = useRef(false);
   /** While a Dr/Mp/Rt fly is in the air, follow-cam must not fight it. */
   const viewFlyUntilMsRef = useRef(0);
   const viewDroneRafRef = useRef(0);
@@ -4328,6 +4329,7 @@ function DriveMapInner({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
+    if (pickExploreHoldRef.current) return;
     if (
       !shouldHoldDestPlaceFrame({
         destLngLat,
@@ -4350,6 +4352,7 @@ function DriveMapInner({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
+    if (pickExploreHoldRef.current) return;
     if (viewMode !== "route" && viewMode !== "topdown") return;
 
     /* Dest chosen, routes not ready — dest-place hold owns the camera until the plan paints. */
@@ -4437,6 +4440,7 @@ function DriveMapInner({
     }
 
     const executePlanningFit = (): boolean => {
+      if (pickExploreHoldRef.current) return true;
       if (
         viewDroneActiveRef.current ||
         performance.now() < viewFlyUntilMsRef.current ||
@@ -4558,6 +4562,7 @@ function DriveMapInner({
 
     /** Map (Mp): top-down on the user’s position — full route line stays drawn; camera does not fit the whole trip. */
     const doTopdownLocalFit = () => {
+      if (pickExploreHoldRef.current) return;
       if (viewDroneActiveRef.current) return;
       if (userExploringRef.current) return;
       if (!mapStyleReadyForCamera(map)) return;
@@ -4725,6 +4730,7 @@ function DriveMapInner({
    */
   useEffect(() => {
     if (!mapReady) return;
+    if (pickExploreHoldRef.current) return;
     userExploringRef.current = false;
     if (exploreTimerRef.current) {
       clearTimeout(exploreTimerRef.current);
@@ -5174,9 +5180,12 @@ function DriveMapInner({
       if (existing.has(m.id)) continue;
       const el = document.createElement("button");
       el.type = "button";
-      el.className = "map-search-pick-dot";
+      el.className = "map-search-pick-hit";
       el.title = m.label;
       el.setAttribute("aria-label", `Search result: ${m.label}`);
+      const dot = document.createElement("span");
+      dot.className = "map-search-pick-dot";
+      el.appendChild(dot);
       const mid = m.id;
       el.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -5193,7 +5202,8 @@ function DriveMapInner({
       const z = map.getZoom();
       const s = Math.max(0.15, Math.min(1, (z - 2.5) / 12.5));
       for (const { el } of existing.values()) {
-        el.style.transform = `scale(${s})`;
+        const dot = el.querySelector(".map-search-pick-dot");
+        if (dot instanceof HTMLElement) dot.style.transform = `scale(${s})`;
       }
     };
 
@@ -5205,6 +5215,16 @@ function DriveMapInner({
   }, [mapReady, searchPickMarkers, onSearchPickMarkerClick]);
 
   useEffect(() => {
+    if (!mapReady) return;
+    if ((searchPickMarkers?.length ?? 0) >= 2) return;
+    if (!pickExploreHoldRef.current) return;
+    pickExploreHoldRef.current = false;
+    userExploringRef.current = false;
+    if (navigationStarted && viewMode === "drive") driveCamResyncRef.current = true;
+    setMapResumeTick((n) => n + 1);
+  }, [mapReady, searchPickMarkers, navigationStarted, viewMode]);
+
+  useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
     const markers = searchPickMarkers;
@@ -5212,15 +5232,41 @@ function DriveMapInner({
 
     const b = new mapboxgl.LngLatBounds();
     for (const m of markers) safeExtendBounds(b, m.lngLat as [number, number]);
+    const sw = readMapLngLat(b.getSouthWest());
+    const ne = readMapLngLat(b.getNorthEast());
+    const spanM = sw && ne ? haversineMeters(sw, ne) : 0;
     const u = userLngLatRef.current;
-    if (u) safeExtendBounds(b, u);
+    if (u && sw && ne) {
+      const center: [number, number] = [(sw[0] + ne[0]) / 2, (sw[1] + ne[1]) / 2];
+      const fromUser = haversineMeters(u, center);
+      if (fromUser <= Math.max(spanM * 0.6, 1200)) safeExtendBounds(b, u);
+    }
 
-    const pad = isNarrowPhoneViewport()
-      ? { top: 200, bottom: 200, left: 20, right: 88 }
-      : { top: 160, bottom: 160, left: 28, right: 28 };
-    safeFitBounds(map, b, { padding: pad, maxZoom: 14, duration: 480, essential: true });
+    const pad = routeFitPadding(stormBarVisible, stormBarExpanded, routes, lineFocusId, progressRailVisible);
+    const maxZoom =
+      !Number.isFinite(spanM) || spanM < 500
+        ? 17.6
+        : spanM < 2000
+          ? 16.8
+          : spanM < 8000
+            ? 15.6
+            : spanM < 25000
+              ? 14.4
+              : 13.2;
+    userExploringRef.current = true;
+    pickExploreHoldRef.current = true;
+    if (exploreTimerRef.current) {
+      window.clearTimeout(exploreTimerRef.current);
+      exploreTimerRef.current = null;
+    }
+    const cam = safeCameraForBounds(map, b, { padding: pad, maxZoom, bearing: 0, pitch: 0 });
+    if (cam?.center && cam.zoom != null && Number.isFinite(cam.zoom)) {
+      safeJumpTo(map, { center: cam.center, zoom: cam.zoom, bearing: 0, pitch: 0, padding: pad });
+    } else {
+      safeFitBounds(map, b, { padding: pad, maxZoom, duration: 0, bearing: 0, pitch: 0, essential: true });
+    }
     /* Intentionally not depending on userLngLat — GPS ticks would re-fit; ref has latest puck. */
-  }, [mapReady, searchPickMarkers]);
+  }, [mapReady, searchPickMarkers, stormBarVisible, stormBarExpanded, routes, lineFocusId, progressRailVisible]);
 
   if (!token) {
     return (

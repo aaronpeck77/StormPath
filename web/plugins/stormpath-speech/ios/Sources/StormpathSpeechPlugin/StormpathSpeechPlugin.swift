@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import Speech
 import Capacitor
 
 /**
@@ -14,9 +15,55 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "speak", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isSpeaking", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "listen", returnType: CAPPluginReturnPromise),
     ]
 
     private let synthesizer = AVSpeechSynthesizer()
+
+    /// Premium, then enhanced. Novelty voices stay out. Compact is only the fallback.
+    private func stormyVoice() -> AVSpeechSynthesisVoice? {
+        let preferred = [
+            "com.apple.voice.premium.en-US.Ava",
+            "com.apple.voice.premium.en-US.Zoe",
+            "com.apple.ttsbundle.siri_female_en-US_premium",
+            "com.apple.voice.premium.en-US.Allison",
+            "com.apple.voice.enhanced.en-US.Ava",
+            "com.apple.voice.enhanced.en-US.Zoe",
+            "com.apple.voice.enhanced.en-US.Samantha",
+            "com.apple.voice.enhanced.en-US.Allison",
+        ]
+        for identifier in preferred {
+            if let voice = AVSpeechSynthesisVoice(identifier: identifier) {
+                return voice
+            }
+        }
+        let skip = ["eloquence", "bahh", "bells", "boing", "bubbles", "cellos", "deranged", "good news", "bad news", "jester", "organ", "trinoids", "whisper", "zarvox", "superstar", "wobble"]
+        let voices = AVSpeechSynthesisVoice.speechVoices().filter { voice in
+            guard voice.language.hasPrefix("en") else { return false }
+            let id = (voice.identifier + " " + voice.name).lowercased()
+            return !skip.contains(where: { id.contains($0) })
+        }
+        func score(_ voice: AVSpeechSynthesisVoice) -> Int {
+            let quality: Int
+            if #available(iOS 16.0, *) {
+                switch voice.quality {
+                case .premium: quality = 300
+                case .enhanced: quality = 200
+                default: quality = 0
+                }
+            } else if voice.quality == .enhanced {
+                quality = 200
+            } else {
+                quality = 0
+            }
+            let id = (voice.identifier + " " + voice.name).lowercased()
+            let named = (id.contains("ava") || id.contains("zoe") || id.contains("samantha") || id.contains("allison") || id.contains("siri")) ? 20 : 0
+            let us = voice.language == "en-US" ? 10 : 0
+            let premiumId = (id.contains("premium") ? 40 : 0) + (id.contains("enhanced") ? 20 : 0)
+            return quality + named + us + premiumId
+        }
+        return voices.max { score($0) < score($1) } ?? AVSpeechSynthesisVoice(language: "en-US")
+    }
 
     @objc func speak(_ call: CAPPluginCall) {
         guard let text = call.getString("text")?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -43,11 +90,23 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate, min(AVSpeechUtteranceMaximumSpeechRate, rate))
-        utterance.volume = 1.0
-        if let voice = AVSpeechSynthesisVoice(language: "en-US") {
+        let voice = stormyVoice()
+        let natural: Bool
+        if let voice {
             utterance.voice = voice
+            let id = voice.identifier.lowercased()
+            if #available(iOS 16.0, *) {
+                natural = voice.quality == .premium || voice.quality == .enhanced || id.contains("premium") || id.contains("enhanced")
+            } else {
+                natural = voice.quality == .enhanced || id.contains("premium") || id.contains("enhanced")
+            }
+        } else {
+            natural = false
         }
+        let paced = natural ? min(rate, Float(0.48)) : min(rate, Float(0.42))
+        utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate, min(AVSpeechUtteranceMaximumSpeechRate, paced))
+        utterance.pitchMultiplier = natural ? 1.0 : 1.03
+        utterance.volume = 1.0
         synthesizer.speak(utterance)
         call.resolve(["spoke": true])
     }
@@ -61,5 +120,115 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func isSpeaking(_ call: CAPPluginCall) {
         call.resolve(["speaking": synthesizer.isSpeaking])
+    }
+
+    /// One remark, recognized on the phone. The microphone is not streamed.
+    /// Resolve the call before stopping the engine. Stopping on the main thread
+    /// deadlocks the audio tap and leaves the button on Listening.
+    @objc func listen(_ call: CAPPluginCall) {
+        switch SFSpeechRecognizer.authorizationStatus() {
+        case .authorized:
+            ensureMicThenListen(call)
+        case .denied, .restricted:
+            call.reject("speech recognition denied")
+        case .notDetermined:
+            SFSpeechRecognizer.requestAuthorization { status in
+                DispatchQueue.main.async {
+                    guard status == .authorized else {
+                        call.reject("speech recognition denied")
+                        return
+                    }
+                    self.ensureMicThenListen(call)
+                }
+            }
+        @unknown default:
+            call.reject("speech recognition unavailable")
+        }
+    }
+
+    private func ensureMicThenListen(_ call: CAPPluginCall) {
+        switch AVAudioSession.sharedInstance().recordPermission {
+        case .granted:
+            startOnDeviceListen(call)
+        case .denied:
+            call.reject("microphone denied")
+        case .undetermined:
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                DispatchQueue.main.async {
+                    guard granted else {
+                        call.reject("microphone denied")
+                        return
+                    }
+                    self.startOnDeviceListen(call)
+                }
+            }
+        @unknown default:
+            call.reject("microphone unavailable")
+        }
+    }
+
+    private func startOnDeviceListen(_ call: CAPPluginCall) {
+        guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US")),
+              recognizer.isAvailable else {
+            call.reject("speech recognition unavailable")
+            return
+        }
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
+        request.shouldReportPartialResults = true
+
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker])
+            try session.setActive(true)
+        } catch {
+            call.reject("microphone unavailable")
+            return
+        }
+
+        let engine = AVAudioEngine()
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0 else {
+            call.reject("microphone unavailable")
+            return
+        }
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            request.append(buffer)
+        }
+        engine.prepare()
+        do {
+            try engine.start()
+        } catch {
+            input.removeTap(onBus: 0)
+            call.reject("microphone unavailable")
+            return
+        }
+
+        let teardown = DispatchQueue(label: "stormpath.speech.listen")
+        var finished = false
+        var latest = ""
+        func finish(_ text: String) {
+            if finished { return }
+            finished = true
+            call.resolve(["text": text])
+            teardown.async {
+                input.removeTap(onBus: 0)
+                engine.stop()
+                request.endAudio()
+            }
+        }
+
+        recognizer.recognitionTask(with: request) { result, _ in
+            let text = result?.bestTranscription.formattedString ?? ""
+            let isFinal = result?.isFinal == true
+            DispatchQueue.main.async {
+                if !text.isEmpty { latest = text }
+                if isFinal && !latest.isEmpty { finish(latest) }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 7) {
+            finish(latest)
+        }
     }
 }

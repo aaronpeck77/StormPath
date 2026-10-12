@@ -34,6 +34,28 @@ const StormpathSpeech = registerPlugin("StormpathSpeech", {
           return { speaking: false };
         }
       },
+      async listen() {
+        const w = window;
+        const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
+        if (!Ctor) return { text: "" };
+        return await new Promise((resolve) => {
+          const recognition = new Ctor();
+          let text = "";
+          recognition.lang = "en-US";
+          recognition.interimResults = false;
+          recognition.continuous = false;
+          recognition.onresult = (event) => {
+            text = event.results?.[0]?.[0]?.transcript || "";
+          };
+          recognition.onerror = () => resolve({ text: "" });
+          recognition.onend = () => resolve({ text: String(text).trim() });
+          try {
+            recognition.start();
+          } catch {
+            resolve({ text: "" });
+          }
+        });
+      },
     }),
 });
 

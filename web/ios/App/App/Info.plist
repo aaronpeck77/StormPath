@@ -35,6 +35,10 @@
 		<key>LocationAccuracyAuthorizationDescription</key>
 		<string>Precise location is required for turn-by-turn navigation so StormPath can keep you on the correct road.</string>
 	</dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>StormPath uses the microphone when you tap Stormy, so she can hear one question about this trip.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>StormPath turns that question into text on your phone. The recording is not sent anywhere.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>StormPath uses motion activity to tell driving from walking so it can learn your frequent routes more accurately and avoid false trips.</string>
 	<key>UIBackgroundModes</key>

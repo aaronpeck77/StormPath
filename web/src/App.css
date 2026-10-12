@@ -1139,7 +1139,7 @@ html:has(.drive-map--native-shell) #root {
 .nav-bottom-dock__about-row {
   display: flex;
   flex-direction: row;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--nav-chrome-gap, 5px);
   width: 100%;
@@ -1203,6 +1203,74 @@ html:has(.drive-map--native-shell) #root {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.stormy-call-btn {
+  position: relative;
+  z-index: 6;
+  pointer-events: auto;
+  touch-action: manipulation;
+  flex-shrink: 0;
+  min-width: 4.5rem;
+  box-sizing: border-box;
+  height: var(--nav-chrome-about, 32px);
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(18, 20, 24, 0.38);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.stormy-call-btn--busy,
+.stormy-call-btn:disabled {
+  opacity: 0.72;
+}
+
+.nav-bottom-dock__info-stormy-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.nav-bottom-dock__info-stormy-col > .map-about-btn,
+.nav-bottom-dock__info-stormy-col > .drive-compass {
+  width: var(--nav-chrome-about, 32px);
+  min-width: var(--nav-chrome-about, 32px);
+  max-width: var(--nav-chrome-about, 32px);
+  flex: 0 0 auto;
+}
+
+.nav-bottom-dock__stormy-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.nav-bottom-dock__stormy-row > .stormy-call-btn {
+  width: auto;
+  flex: 0 0 auto;
+  margin-right: 0;
+}
+
+.nav-bottom-dock__stormy-row > .nav-bottom-dock__route-toggle-slot--inline,
+.nav-bottom-dock__stormy-row > .nav-recenter-puck-btn--inline,
+.nav-bottom-dock__stormy-row > .nav-radar-frame-time-dock {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .map-about-btn:hover,
@@ -2175,6 +2243,11 @@ html:has(.drive-map--native-shell) #root {
   opacity: 0.55;
 }
 
+.about-sheet__soon {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 .about-sheet__home-framing {
   margin: 12px 0 0;
   padding: 0;
@@ -2852,7 +2925,7 @@ html:has(.drive-map--native-shell) #root {
   > .nav-bottom-dock__about-row:has(.nav-bottom-dock__route-toggle-slot--inline),
 .nav-bottom-dock__plan-stack
   > .nav-bottom-dock__about-row:has(.nav-recenter-puck-btn--inline) {
-  padding-right: calc(56px - max(8px, env(safe-area-inset-right, 0px)) + 4px);
+  padding-right: 0;
 }
 
 /* Doubled-class selectors below: a single `.--inline` ancestor would tie at specificity 0,2,0
@@ -3087,11 +3160,14 @@ html:has(.drive-map--native-shell) #root {
 }
 
 .nav-dest-compact-btn {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 1;
   padding: 5px 9px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(10, 11, 13, 0.55);
-  color: #8ab4f8;
+  border: none;
+  background: #1a73e8;
+  color: #fff;
   font-size: 0.72rem;
   font-weight: 700;
   cursor: pointer;
@@ -3260,6 +3336,50 @@ html:has(.drive-map--native-shell) #root {
   line-height: 1.3;
   cursor: pointer;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.stormy-place-choices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  max-width: var(--sp-tablet-chrome-w, min(600px, calc(100vw - 16px)));
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(18, 20, 24, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.stormy-place-choices button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: #e8eaed;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stormy-place-choices li:last-child button {
+  border-bottom: none;
+}
+
+.stormy-place-choices__name {
+  font-size: 0.84rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.stormy-place-choices__detail {
+  font-size: 0.7rem;
+  line-height: 1.25;
+  color: rgba(226, 232, 240, 0.78);
 }
 
 .nav-search-suggestion:last-child {
@@ -14356,6 +14476,15 @@ html.route-info-open .route-progress-callout-panel--expanded {
 }
 
 /* Multi-result search: pick a place on the map */
+.map-search-pick-hit {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  line-height: 0;
+  cursor: pointer;
+}
+
 .map-search-pick-dot {
   width: 16px;
   height: 16px;
@@ -17218,6 +17347,11 @@ html.route-info-open .route-progress-callout-panel--expanded {
     flex-shrink: 0;
   }
 
+  .app-shell.nav-fullmap .nav-bottom-dock__about-row > .stormy-call-btn {
+    order: 3;
+    margin-right: 0;
+  }
+
   .app-shell.nav-fullmap .nav-bottom-dock__about-row > .nav-radar-frame-time-dock {
     order: 1;
     margin-right: auto;
@@ -17230,6 +17364,11 @@ html.route-info-open .route-progress-callout-panel--expanded {
 
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row > .map-about-btn {
     order: 1;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row > .stormy-call-btn {
+    order: 2;
+    margin-right: 0;
   }
 
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row > .nav-radar-frame-time-dock {

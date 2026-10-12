@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { LngLat } from "../nav/types";
 import type { TripStop } from "../nav/routeWaypoints";
 import { shouldShowManualOffRouteUi, shouldShowTrafficBypassUi } from "../nav/constants";
@@ -11,6 +12,75 @@ import { SearchBar, type SearchSuggestion } from "./SearchBar";
 import { RouteStopsBar } from "./RouteStopsBar";
 import { BottomToolbar } from "./BottomToolbar";
 import { isNarrowPhoneViewport } from "./mapFitLogic";
+import { stormyMapButtonOn } from "../stormy/stormyAvailability";
+import { StormyButton, stormyTurnImminent } from "./StormyButton";
+import { useSettingsStore } from "../state/settingsStore";
+import { useTripPlanStore } from "../state/tripPlanStore";
+import type { StormyActResult, StormyPacket, StormyReply } from "../stormy/stormyFence";
+
+function MapInfoButton({ onOpenAbout }: { onOpenAbout: () => void }) {
+  return (
+    <button
+      type="button"
+      className="map-about-btn"
+      aria-label="About StormPath"
+      title="About / Settings"
+      onClick={onOpenAbout}
+    >
+      i
+    </button>
+  );
+}
+
+/** Stormy on: compass and Info stay left, and her row holds the other chips. Off: the pre-Stormy row. */
+function DockAboutRow({
+  stormyOn,
+  onOpenAbout,
+  compass,
+  stormy,
+  children,
+}: {
+  stormyOn: boolean;
+  onOpenAbout: () => void;
+  compass?: ReactNode;
+  stormy?: ReactNode;
+  children?: ReactNode;
+}) {
+  const info = <MapInfoButton onOpenAbout={onOpenAbout} />;
+  if (!stormyOn) {
+    if (compass) {
+      return (
+        <div className="nav-bottom-dock__about-row">
+          <div className="nav-bottom-dock__drive-about-cluster">
+            <div className="nav-bottom-dock__compass-i-col">
+              {compass}
+              {info}
+            </div>
+            {children}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="nav-bottom-dock__about-row">
+        {info}
+        {children}
+      </div>
+    );
+  }
+  return (
+    <div className="nav-bottom-dock__about-row">
+      <div className="nav-bottom-dock__info-stormy-col">
+        {compass}
+        {info}
+        <div className="nav-bottom-dock__stormy-row">
+          {stormy}
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 type Props = {
   /* Traffic-bypass compare panel */
@@ -106,6 +176,15 @@ type Props = {
   showTrafficBypassCta: boolean;
   bypassBusy: boolean;
   onTrafficBypassFromHere: () => void;
+  stormyAheadLine: string | null;
+  stormyHazardLine: string | null;
+  stormyWeather?: string[];
+  stormyTraffic?: string[];
+  stormyRoads?: string[];
+  stormyForecast?: string;
+  stormyHere?: string;
+  metersToManeuver: number | null;
+  onStormyAct?: (reply: StormyReply) => Promise<StormyActResult>;
 };
 
 /** Bottom dock chrome — route-compare panel, recording banner, the about/search/toolbar dock, and BottomToolbar. */
@@ -186,7 +265,41 @@ export function AppBottomChrome({
   showTrafficBypassCta,
   bypassBusy,
   onTrafficBypassFromHere,
+  stormyAheadLine,
+  stormyHazardLine,
+  stormyWeather = [],
+  stormyTraffic = [],
+  stormyRoads = [],
+  stormyForecast = "",
+  stormyHere = "",
+  metersToManeuver,
+  onStormyAct,
 }: Props) {
+  const planRoutes = useTripPlanStore((s) => s.plan.routes);
+  const stormySaved = useSettingsStore((s) => s.stormyEnabled);
+  const stormyOn = stormyMapButtonOn(stormySaved);
+  const stormyPacket: StormyPacket = {
+    aheadLine: (stormyAheadLine || destinationLabel || "").trim(),
+    hazards: stormyHazardLine ? [stormyHazardLine] : [],
+    routes: planRoutes.slice(0, 3).map((route) => ({
+      id: route.id,
+      label: route.label,
+      summary: `${Math.round(route.baseEtaMinutes)} min`,
+    })),
+    driving: navigationStarted,
+    turnImminent: stormyTurnImminent(navigationStarted, metersToManeuver),
+    question: "",
+    weather: stormyWeather,
+    traffic: stormyTraffic,
+    roads: stormyRoads,
+    forecast: stormyForecast,
+    destination: destinationLabel.trim(),
+    eta: driveEtaMinutes != null && Number.isFinite(driveEtaMinutes) ? `${Math.round(driveEtaMinutes)} minutes` : "",
+    milesLeft: (driveDistanceRemainingLabel ?? "").trim(),
+    stops: viaStops.map((stop) => stop.label).filter(Boolean).slice(0, 3),
+    here: stormyHere.trim(),
+  };
+  const placeChoices = stormyOn && suggestions.length >= 2 ? suggestions.slice(0, 8) : [];
   return (
     <div className="nav-bottom-stack">
       <RouteCompareBottomPanel
@@ -205,39 +318,36 @@ export function AppBottomChrome({
       ) : null}
       {!trafficBypassCompareActive ? (
       <div className="nav-bottom-chrome-wrap">
+        {placeChoices.length >= 2 ? (
+          <ul className="stormy-place-choices" aria-label="Places to choose">
+            {placeChoices.map((hit) => (
+              <li key={hit.id}>
+                <button type="button" onClick={() => onPickSuggestion(hit)}>
+                  <span className="stormy-place-choices__name">{hit.placeName}</span>
+                  {hit.secondary ? <span className="stormy-place-choices__detail">{hit.secondary}</span> : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <div className="nav-bottom-dock">
           {navigationStarted && viewMode === "drive" ? (
-            <div className="nav-bottom-dock__about-row">
-              <div className="nav-bottom-dock__drive-about-cluster">
-                <div className="nav-bottom-dock__compass-i-col">
-                  <DriveCompass bearingDeg={driveMapBearingDeg} />
-                  <button
-                    type="button"
-                    className="map-about-btn"
-                    aria-label="About StormPath"
-                    title="About / Settings"
-                    onClick={onOpenAbout}
-                  >
-                    i
-                  </button>
-                </div>
-                {driveDistanceRemainingLabel ? (
-                  <NavMilesLeftBox label={driveDistanceRemainingLabel} />
-                ) : null}
-                {/* Drive locks one corridor — A/B cycle stays on Rt / Mp only. */}
-              </div>
-            </div>
+            <DockAboutRow
+              stormyOn={stormyOn}
+              onOpenAbout={onOpenAbout}
+              compass={<DriveCompass bearingDeg={driveMapBearingDeg} />}
+              stormy={<StormyButton packet={stormyPacket} onAct={onStormyAct} />}
+            >
+              {driveDistanceRemainingLabel ? (
+                <NavMilesLeftBox label={driveDistanceRemainingLabel} />
+              ) : null}
+            </DockAboutRow>
           ) : navigationStarted && viewMode === "topdown" ? (
-            <div className="nav-bottom-dock__about-row">
-              <button
-                type="button"
-                className="map-about-btn"
-                aria-label="About StormPath"
-                title="About / Settings"
-                onClick={onOpenAbout}
-              >
-                i
-              </button>
+            <DockAboutRow
+              stormyOn={stormyOn}
+              onOpenAbout={onOpenAbout}
+              stormy={<StormyButton packet={stormyPacket} onAct={onStormyAct} />}
+            >
               {driveDistanceRemainingLabel ? (
                 <NavMilesLeftBox label={driveDistanceRemainingLabel} />
               ) : null}
@@ -261,20 +371,15 @@ export function AppBottomChrome({
                   {radarFrameTimeLabel}
                 </div>
               ) : null}
-            </div>
+            </DockAboutRow>
           ) : (
             <div className="nav-bottom-dock__plan-stack">
               {/* About row: 'i' on the left; route-info cycle chip or My location in the inline slot. */}
-              <div className="nav-bottom-dock__about-row">
-                <button
-                  type="button"
-                  className="map-about-btn"
-                  aria-label="About StormPath"
-                  title="About / Settings"
-                  onClick={onOpenAbout}
-                >
-                  i
-                </button>
+              <DockAboutRow
+                stormyOn={stormyOn}
+                onOpenAbout={onOpenAbout}
+                stormy={<StormyButton packet={stormyPacket} onAct={onStormyAct} />}
+              >
                 {navigationStarted && driveDistanceRemainingLabel ? (
                   <NavMilesLeftBox label={driveDistanceRemainingLabel} />
                 ) : null}
@@ -310,7 +415,7 @@ export function AppBottomChrome({
                     </div>
                   ) : null
                 ) : null}
-              </div>
+              </DockAboutRow>
               <div className="nav-bottom-dock__search-myloc-row">
                 <div className="nav-bottom-dock__search-col">
                   <div className="nav-search-dock">
@@ -350,7 +455,7 @@ export function AppBottomChrome({
                           onPickSuggestion={onPickSuggestion}
                           suggestionsLoading={suggestLoading}
                           showSuggestionsWhenEmpty={isNarrowPhoneViewport()}
-                          enableSuggestions={enableSuggestions}
+                          enableSuggestions={enableSuggestions && placeChoices.length < 2}
                         />
                         {!navigationStarted ? (
                           <RouteStopsBar

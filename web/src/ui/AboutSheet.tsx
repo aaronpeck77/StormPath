@@ -21,6 +21,9 @@ import { PUCK_COLORS, puckColorById, type PuckColorId } from "./puckColor";
 import { StormPathSourcesAttribution } from "./StormPathSourcesAttribution";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import type { RadarDisplayMode } from "../state/settingsStore";
+import { STORMY_AVAILABLE } from "../stormy/stormyAvailability";
+import { STORMY_COMMANDS } from "../stormy/stormyCommands";
+import { STORMY_VOICE_HINT } from "../stormy/stormyVoiceHint";
 import type { GuidanceLanguagePref } from "../utils/guidanceLanguage";
 import type { HomePuckFollowMode } from "../map/homePuckFollow";
 
@@ -68,6 +71,7 @@ type Props = {
     dataSaverEnabled: boolean;
     autoRerouteEnabled: boolean;
     voiceGuidanceEnabled: boolean;
+    stormyEnabled: boolean;
     gpsHighRefreshEnabled: boolean;
     mapMatchingEnabled: boolean;
     /** Landscape / side view only — portrait layout ignores this */
@@ -216,7 +220,9 @@ export function AboutSheet({
               <h2 id="about-sheet-title" className="about-sheet__title">
                 StormPath
               </h2>
-              <p className="about-sheet__tagline">Multi-route driving with live conditions on your route.</p>
+              <p className="about-sheet__tagline">
+                Multi-route driving with live conditions on your route.
+              </p>
             </div>
             <button type="button" className="about-sheet__close" onClick={onClose} aria-label="Close info">
               Close
@@ -315,7 +321,8 @@ export function AboutSheet({
           <section className="about-sheet__panel about-sheet__panel--subscription">
             <h3 className="about-sheet__h3">Subscription</h3>
             <p className="about-sheet__p">
-              <strong>{PLUS_SUBSCRIPTION_TITLE}</strong> is an optional auto-renewing subscription.
+              <strong>{PLUS_SUBSCRIPTION_TITLE}</strong> is an optional auto-renewing subscription. Stormy is
+              being worked on and coming soon.
             </p>
             <p className="about-sheet__p about-sheet__iap-price">{PLUS_SUBSCRIPTION_FALLBACK_PRICE_LINE}</p>
             <div className="about-sheet__upgrade-actions">
@@ -416,6 +423,10 @@ export function AboutSheet({
             <details className="about-sheet__panel about-sheet__panel--subscription about-sheet__details">
               <summary>What Plus adds</summary>
               <ul className="about-sheet__bullets" aria-label="Plus features">
+                <li>
+                  <strong>Stormy</strong> — coming soon. She will set one place, start or stop the route, and read
+                  the trip.
+                </li>
                 <li>
                   <strong>NWS</strong> — full storm map, every active warning, route overlap, and hazard details (Plus
                   only; Basic is navigation, radar, and limited saved places/routes)
@@ -697,6 +708,59 @@ export function AboutSheet({
                 </span>
               </label>
 
+              <label
+                className={`about-sheet__setting about-sheet__settings-card${STORMY_AVAILABLE ? "" : " disabled"}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={STORMY_AVAILABLE && settings.stormyEnabled}
+                  disabled={!STORMY_AVAILABLE}
+                  onChange={(e) => {
+                    if (!STORMY_AVAILABLE) return;
+                    onSettings({ ...settings, stormyEnabled: e.target.checked });
+                  }}
+                />
+                <span>
+                  <strong>Stormy</strong>
+                  {STORMY_AVAILABLE ? (
+                    <>
+                      {" "}
+                      — show her button on the map. Turn this off to hide her and put the other buttons back.
+                    </>
+                  ) : (
+                    <>
+                      {" "}
+                      — her button on the map. <em>Being worked on. Coming soon.</em>
+                    </>
+                  )}
+                </span>
+              </label>
+
+              {!STORMY_AVAILABLE || settings.stormyEnabled ? (
+                <>
+                  <div
+                    className={`about-sheet__p about-sheet__settings-card${STORMY_AVAILABLE ? "" : " about-sheet__soon"}`}
+                  >
+                    <strong>What you can say to Stormy.</strong>
+                    <p className="about-sheet__p about-sheet__p--tight">
+                      Say “Take me to” and the place you want. That blank is your destination, and Stormy
+                      sets a pin. One place at a time, then say go. Tap her again to add a stop.
+                    </p>
+                    <ul className="about-sheet__bullets">
+                      {STORMY_COMMANDS.map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <p
+                    className={`about-sheet__p about-sheet__settings-card${STORMY_AVAILABLE ? "" : " about-sheet__soon"}`}
+                  >
+                    <strong>Stormy&apos;s voice.</strong> {STORMY_VOICE_HINT}
+                  </p>
+                </>
+              ) : null}
+
             </div>
           </section>
 
@@ -921,7 +985,7 @@ export function AboutSheet({
                 or Wi‑Fi. Offline mode keeps your last route; live layers pause until you reconnect.
               </li>
               <li>
-                <strong>Provider delay or outage</strong> — Mapbox, NWS, RainViewer, OpenWeather, or Tomorrow.io can be
+                <strong>Provider delay or outage</strong> — Mapbox, NWS, RainViewer, OpenWeather, Tomorrow.io, or Claude can be
                 slow, rate-limited, or down. We show a short note in the advisory bar when we know which feed failed.
               </li>
               <li>
@@ -951,6 +1015,13 @@ export function AboutSheet({
               uses <strong>Tomorrow.io</strong> in the US and <strong>RainViewer</strong> elsewhere; US warning shapes use <strong>NWS</strong> (api.weather.gov);
               corridor and local forecasts use <strong> Weather</strong> (Apple WeatherKit) when enabled for this build,
               with optional Tomorrow.io / OpenWeather fallbacks when those keys are present.
+              {STORMY_AVAILABLE ? (
+                <>
+                  {" "}
+                  Stormy sends the words you say and a short trip summary to <strong>Claude</strong> (Anthropic). The
+                  microphone stays on the phone.
+                </>
+              ) : null}
             </p>
             <StormPathSourcesAttribution
               theme="dark"
