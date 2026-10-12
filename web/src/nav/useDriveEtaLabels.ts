@@ -102,7 +102,8 @@ export function useDriveEtaLabels(deps: UseDriveEtaLabelsDeps): UseDriveEtaLabel
     etaEaseRef.current,
     rawDriveEtaMinutes,
     distanceLeftM,
-    Date.now()
+    Date.now(),
+    lineFocusId
   );
 
   useEffect(() => {

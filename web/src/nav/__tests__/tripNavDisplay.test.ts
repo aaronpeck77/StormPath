@@ -139,15 +139,36 @@ describe("tripNavDisplay", () => {
     const state = emptyEtaEaseState();
     expect(easeRemainingEtaMinutes(state, 20, 20_000, 0)).toBe(20);
     expect(easeRemainingEtaMinutes(state, 35, 20_000, 1_000)).toBe(22);
-    expect(easeRemainingEtaMinutes(state, 35, 19_000, 10_000)).toBe(22);
-    expect(easeRemainingEtaMinutes(state, 35, 19_000, 50_000)).toBe(24);
+    expect(easeRemainingEtaMinutes(state, 35, 19_000, 10_000)).toBe(21);
+    expect(easeRemainingEtaMinutes(state, 35, 19_000, 50_000)).toBe(23);
     expect(easeRemainingEtaMinutes(state, 18, 16_000, 60_000)).toBe(18);
   });
 
-  it("accepts a higher time at once when the road ahead got longer", () => {
+  it("does not swing twenty minutes when the same road gets a new answer", () => {
+    const state = emptyEtaEaseState();
+    expect(easeRemainingEtaMinutes(state, 50, 40_000, 0, "a")).toBe(50);
+    expect(easeRemainingEtaMinutes(state, 30, 39_500, 5_000, "a")).toBe(47);
+    expect(easeRemainingEtaMinutes(state, 70, 39_500, 6_000, "a")).toBe(47);
+    expect(easeRemainingEtaMinutes(state, 30, 39_000, 60_000, "a")).toBe(44);
+  });
+
+  it("shows the other route's time when the driver picks it", () => {
+    const state = emptyEtaEaseState();
+    expect(easeRemainingEtaMinutes(state, 50, 40_000, 0, "a")).toBe(50);
+    expect(easeRemainingEtaMinutes(state, 30, 39_500, 5_000, "a")).toBe(47);
+    expect(easeRemainingEtaMinutes(state, 55, 50_000, 6_000, "b")).toBe(55);
+  });
+
+  it("keeps the last time when one poll comes back empty", () => {
+    const state = emptyEtaEaseState();
+    expect(easeRemainingEtaMinutes(state, 40, 30_000, 0, "a")).toBe(40);
+    expect(easeRemainingEtaMinutes(state, null, 30_000, 1_000, "a")).toBe(40);
+  });
+
+  it("steps a longer line instead of jumping the clock", () => {
     const state = emptyEtaEaseState();
     expect(easeRemainingEtaMinutes(state, 20, 12_000, 0)).toBe(20);
-    expect(easeRemainingEtaMinutes(state, 40, 20_000, 1_000)).toBe(40);
+    expect(easeRemainingEtaMinutes(state, 40, 20_000, 1_000)).toBe(22);
   });
 
   it("returns null remaining distance when not navigating", () => {

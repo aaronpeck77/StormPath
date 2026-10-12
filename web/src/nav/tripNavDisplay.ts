@@ -67,7 +67,7 @@ export function computeRemainingDistanceMeters(
  * Remaining drive minutes.
  * Live Mapbox minutes win when they describe the road still ahead.
  * A live answer whose free-flow time is a much longer or much shorter road is dropped.
- * The toolbar then steps a higher number up, so one poll cannot jump the clock.
+ * The toolbar then steps a different number two minutes at a time, so one poll cannot swing the clock.
  * Otherwise the planned trip ETA is scaled by miles left on this line divided by the
  * planned trip — not by how full the current (often short) corridor is.
  * A live answer that is still the whole-trip clock, after the corridor has shrunk,
@@ -190,12 +190,13 @@ function liveSliceMatchesRoadLeft(typicalMin: number | null, scaledMin: number):
   return true;
 }
 
-/** One upward step. Stays under the 3-minute jump the drive dump calls a lie. */
+/** One step toward a new answer. Stays under the 3-minute jump the drive dump calls a lie. */
 export const ETA_UP_STEP_MIN = 2;
-/** How long a higher answer has to persist before the clock takes another step toward it. */
+/** How long a different answer has to persist before the clock takes another step toward it. */
 export const ETA_UP_STEP_MS = 45_000;
-/** Remaining road grew by about this much: a new line, so the new time is allowed at once. */
-export const ETA_REROUTE_GROW_M = 3_200;
+/** Miles-left change still treated as the same road. Outside this, the clock still only steps. */
+const ETA_SAME_ROAD_MIN = 0.75;
+const ETA_SAME_ROAD_MAX = 1.25;
 
 export type EtaEaseState = {
   shown: number | null;
@@ -203,68 +204,87 @@ export type EtaEaseState = {
   distanceM: number | null;
   raisedAtMs: number | null;
   key: string;
+  routeKey: string;
 };
 
 export function emptyEtaEaseState(): EtaEaseState {
-  return { shown: null, target: null, distanceM: null, raisedAtMs: null, key: "" };
+  return { shown: null, target: null, distanceM: null, raisedAtMs: null, key: "", routeKey: "" };
 }
 
 /**
- * The clock may count down as the car moves. A higher live answer steps up,
- * and only again after it is still high. A longer road ahead is a new line and shows at once.
+ * Minutes the clock should already show after the car moved, before any new traffic answer.
+ * A small change in miles left counts down at the same pace. A wild length change does not.
+ */
+function progressBaseline(
+  prev: number | null,
+  prevDist: number | null,
+  distanceM: number | null
+): number | null {
+  if (prev == null) return null;
+  if (
+    prevDist == null ||
+    distanceM == null ||
+    !Number.isFinite(prevDist) ||
+    !Number.isFinite(distanceM) ||
+    prevDist < 400
+  ) {
+    return prev;
+  }
+  const ratio = distanceM / prevDist;
+  if (ratio < ETA_SAME_ROAD_MIN || ratio > ETA_SAME_ROAD_MAX) return prev;
+  return Math.max(1, Math.round(prev * ratio));
+}
+
+/**
+ * The arrival clock and the time left share this number.
+ * It counts down as the miles drop. A new live answer, higher or lower, moves it
+ * two minutes at a time. Picking another route shows that route's time at once.
+ * A missing answer keeps the last time so one empty poll cannot reset the clock.
  */
 export function easeRemainingEtaMinutes(
   state: EtaEaseState,
   targetMin: number | null,
   distanceM: number | null,
-  nowMs: number
+  nowMs: number,
+  routeKey = ""
 ): number | null {
   if (targetMin == null || !Number.isFinite(targetMin) || targetMin <= 0) {
-    state.shown = null;
-    state.target = null;
-    state.distanceM = null;
-    state.raisedAtMs = null;
-    state.key = "";
-    return null;
+    return state.shown;
   }
   const target = Math.round(targetMin);
-  const distBucket =
-    distanceM == null || !Number.isFinite(distanceM) ? "" : String(Math.round(distanceM / 500));
+  const dist = distanceM != null && Number.isFinite(distanceM) ? distanceM : null;
+  const distBucket = dist == null ? "" : String(Math.round(dist / 500));
   const timeBucket = Number.isFinite(nowMs) ? Math.floor(nowMs / ETA_UP_STEP_MS) : 0;
-  const key = `${target}|${distBucket}|${timeBucket}`;
+  const key = `${target}|${distBucket}|${timeBucket}|${routeKey}`;
   if (state.key === key) return state.shown;
 
   const prev = state.shown;
-  const prevDist = state.distanceM;
+  const anchor = progressBaseline(prev, state.distanceM, dist);
+  const newRoute = routeKey !== "" && state.routeKey !== "" && routeKey !== state.routeKey;
   let shown = target;
-  if (prev != null) {
-    const roadGrew =
-      distanceM != null &&
-      prevDist != null &&
-      Number.isFinite(distanceM) &&
-      Number.isFinite(prevDist) &&
-      distanceM > prevDist + ETA_REROUTE_GROW_M;
-    if (roadGrew || target <= prev) {
-      shown = target;
-    } else if (
-      state.raisedAtMs == null ||
-      nowMs - state.raisedAtMs >= ETA_UP_STEP_MS
-    ) {
-      shown = Math.min(target, prev + ETA_UP_STEP_MIN);
+  let catchingUp = false;
+  if (prev == null || anchor == null || newRoute) {
+    shown = target;
+  } else {
+    const delta = target - anchor;
+    const due = state.raisedAtMs == null || nowMs - state.raisedAtMs >= ETA_UP_STEP_MS;
+    if (Math.abs(delta) <= ETA_UP_STEP_MIN) {
+      shown = Math.max(1, target);
+    } else if (due) {
+      shown = Math.max(1, anchor + Math.sign(delta) * ETA_UP_STEP_MIN);
+      catchingUp = true;
     } else {
-      shown = prev;
+      shown = Math.max(1, anchor);
     }
   }
 
   state.shown = shown;
   state.target = target;
-  state.distanceM = distanceM != null && Number.isFinite(distanceM) ? distanceM : null;
+  state.distanceM = dist;
+  state.routeKey = routeKey;
   state.key = key;
-  if (prev != null && shown > prev) state.raisedAtMs = nowMs;
-  else if (shown <= (prev ?? shown)) {
-    /* A countdown clears the wait so the next real delay can take its first step. */
-    if (target <= shown) state.raisedAtMs = null;
-  }
+  if (catchingUp) state.raisedAtMs = nowMs;
+  else if (Math.abs(target - shown) <= ETA_UP_STEP_MIN) state.raisedAtMs = null;
   return shown;
 }
 
