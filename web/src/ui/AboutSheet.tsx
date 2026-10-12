@@ -724,7 +724,8 @@ export function AboutSheet({
                   <div className="about-sheet__p about-sheet__settings-card">
                     <strong>What you can say to Stormy.</strong>
                     <p className="about-sheet__p about-sheet__p--tight">
-                      One place at a time. Set the destination and say go. Tap her again to add a stop.
+                      Say “Take me to” and the place you want. That blank is your destination, and Stormy
+                      sets a pin. One place at a time, then say go. Tap her again to add a stop.
                     </p>
                     <ul className="about-sheet__bullets">
                       {STORMY_COMMANDS.map((line) => (

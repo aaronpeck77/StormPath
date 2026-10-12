@@ -4,7 +4,7 @@ export const STORMY_ONE_PLACE =
   "I can take one place at a time. Set the destination, then tap me again for the stop.";
 
 export const STORMY_COMMANDS = [
-  "Take me to Walmart.",
+  "Take me to …",
   "Go.",
   "Add a gas stop.",
   "Stop the route.",

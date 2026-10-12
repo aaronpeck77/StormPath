@@ -736,10 +736,9 @@ function collectRouteIncidentsWithAlong(
   const seen = new Set<string>();
   for (let li = 0; li < legs.length; li++) {
     for (const inc of legs[li]!.incidents ?? []) {
-      const desc =
-        inc.long_description?.trim() ||
-        inc.description?.trim() ||
-        "";
+      const shortDesc = inc.description?.trim() || "";
+      const longDesc = inc.long_description?.trim() || "";
+      const desc = shortDesc || longDesc;
       if (!desc || seen.has(desc)) continue;
       seen.add(desc);
 
@@ -748,7 +747,8 @@ function collectRouteIncidentsWithAlong(
       const structured: MapboxRouteIncident = {
         type: typeLbl || "incident",
         impact: typeof inc.impact === "string" ? inc.impact : undefined,
-        description: desc,
+        description: shortDesc || longDesc,
+        longDescription: longDesc && longDesc !== shortDesc ? longDesc : undefined,
         alongMeters: alongForIncident(geometry, li, legStarts, inc),
         affectedRoadNames: roads?.length ? roads : undefined,
         numLanesBlocked:

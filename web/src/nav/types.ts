@@ -32,7 +32,10 @@ export type MapboxRouteIncident = {
   type: string;
   /** Mapbox impact: unknown | minor | moderate | major | severe */
   impact?: string;
+  /** Short cause. This is what the advisory says the warning is for. */
   description: string;
+  /** Longer Mapbox write-up, when it adds detail past `description`. */
+  longDescription?: string;
   alongMeters?: number;
   affectedRoadNames?: string[];
   numLanesBlocked?: number;

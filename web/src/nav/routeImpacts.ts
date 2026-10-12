@@ -536,17 +536,13 @@ function buildMapboxIncidentImpacts(opts: {
           : "";
     const roads = inc.affectedRoadNames?.filter(Boolean).join(", ");
     const roadLocation = roads ? `on ${roads}` : "";
-    const impactLbl =
-      inc.impact && inc.impact !== "unknown" ? `${inc.impact} impact` : "";
-    const headline = [incidentTypeHeadline(inc.type, blocks), impactLbl]
-      .filter(Boolean)
-      .join(" · ") || "Road incident ahead";
+    const headline = incidentDriverHeadline(inc, blocks);
 
     let action: RouteImpactAction = "slow";
     if (severity === "avoid" || blocks) action = "rerouteRecommended";
     else if (severity === "serious") action = "rerouteAvailable";
 
-    const effectBody = laneNote || displayText(inc.description);
+    const effectBody = laneNote || displayText(inc.longDescription || inc.description);
     const roadEffect = [roadLocation, effectBody].filter(Boolean).join(" · ");
 
     out.push({
@@ -564,7 +560,7 @@ function buildMapboxIncidentImpacts(opts: {
       driverHeadline: headline,
       driverAction: action,
       roadEffect,
-      detail: [inc.description, laneNote].filter(Boolean).join(" · "),
+      detail: [inc.longDescription || inc.description, laneNote].filter(Boolean).join(" · "),
       numericSeverity: impactSeverityToNumeric(severity),
     });
   }
@@ -572,13 +568,70 @@ function buildMapboxIncidentImpacts(opts: {
 }
 
 function incidentTypeHeadline(type: string, blocks: boolean): string {
-  const t = type.toLowerCase();
+  const t = type.toLowerCase().replace(/[\s-]+/g, "_");
   if (t.includes("closure") || t === "road_closure") return blocks ? "Closure ahead" : "Road closure";
   if (t.includes("accident")) return blocks ? "Crash blocking road" : "Accident ahead";
   if (t.includes("construction")) return blocks ? "Construction blocking lane" : "Construction zone";
   if (t.includes("congestion")) return "Congestion ahead";
   if (t.includes("disabled")) return "Disabled vehicle ahead";
+  if (/(^|_)lane(_|$)|lane_restriction/.test(t)) return blocks ? "Lane blocked" : "Lane restriction";
+  if (t.includes("weather")) return "Weather hazard ahead";
+  if (t.includes("hazard")) return "Road hazard ahead";
+  if (t.includes("planned") || t.includes("event")) return "Planned event ahead";
+  if (t.includes("transit")) return "Transit stop ahead";
   return "Incident ahead";
+}
+
+function firstSentence(text: string): string {
+  const sentence = text.split(/(?<=[.!?])\s+/)[0] ?? text;
+  return sentence.replace(/[.]+$/, "").trim();
+}
+
+/** "Major incident" names the severity, not the cause. */
+function isVagueIncident(text: string): boolean {
+  const t = text.toLowerCase().replace(/[.]+$/, "").trim();
+  return /^(there is |there's )?(an |a )?(major |minor |moderate |severe |critical |unknown )?(road )?incidents?( ahead)?$/.test(
+    t
+  );
+}
+
+function causePhrase(description: string, kind: string): string {
+  const text = firstSentence(displayText(description));
+  if (!text || isVagueIncident(text)) return "";
+  const kindCore = kind
+    .toLowerCase()
+    .replace(/\s+ahead$/, "")
+    .replace(/\s+zone$/, "")
+    .replace(/^crash blocking road$/, "crash")
+    .replace(/^construction blocking lane$/, "construction")
+    .replace(/^disabled vehicle$/, "disabled vehicle")
+    .replace(/^lane blocked$/, "lane")
+    .replace(/^lane restriction$/, "lane restriction");
+  const bare = text.replace(/^(there is |there's )?(an |a )?(road )?/i, "").trim();
+  if (bare.toLowerCase() === kindCore || text.toLowerCase() === kind.toLowerCase()) return "";
+  return text;
+}
+
+/** Advisory title: the kind of incident, then the Mapbox cause when it adds one. */
+export function incidentDriverHeadline(
+  inc: Pick<MapboxRouteIncident, "type" | "description" | "affectedRoadNames">,
+  blocks: boolean
+): string {
+  const kind = incidentTypeHeadline(inc.type, blocks);
+  const cause = causePhrase(inc.description, kind);
+  const roads = inc.affectedRoadNames?.filter(Boolean).join(", ") ?? "";
+  const roadBit =
+    roads && !`${kind} ${cause}`.toLowerCase().includes(roads.toLowerCase()) ? ` on ${roads}` : "";
+  if (kind === "Incident ahead") return cause ? `${cause}${roadBit}` : "Incident ahead";
+  if (cause) return `${kind} — ${cause}${roadBit}`;
+  return roadBit ? `${kind}${roadBit}` : kind;
+}
+
+function namedNotice(summary: string, fallback: string): string {
+  const text = firstSentence(displayText(summary));
+  if (!text || isVagueIncident(text)) return fallback;
+  if (text.toLowerCase() === fallback.toLowerCase()) return fallback;
+  return text;
 }
 
 /* ─── Route notices / hazards / construction / closures (legacy string notices) ─────────── */
@@ -608,7 +661,7 @@ function classifyHazard(h: SliceHazard): {
       severity: "avoid",
       confidence: "high",
       action: "rerouteRecommended",
-      headline: "Closure ahead",
+      headline: namedNotice(h.summary, "Closure ahead"),
       effect: "Road closed — reroute to keep moving.",
     };
   }
@@ -618,7 +671,7 @@ function classifyHazard(h: SliceHazard): {
       severity: blocks ? "serious" : "caution",
       confidence: "high",
       action: blocks ? "rerouteRecommended" : "slow",
-      headline: blocks ? "Crash blocking road" : "Incident ahead",
+      headline: namedNotice(h.summary, blocks ? "Crash blocking road" : "Incident ahead"),
       effect: blocks
         ? "Lanes blocked — alternate route may save time."
         : "Slowdown ahead — stay alert.",
@@ -630,7 +683,7 @@ function classifyHazard(h: SliceHazard): {
       severity: blocks ? "serious" : "caution",
       confidence: "high",
       action: blocks ? "rerouteAvailable" : "slow",
-      headline: blocks ? "Construction blocking lane" : "Construction zone",
+      headline: namedNotice(h.summary, blocks ? "Construction blocking lane" : "Construction zone"),
       effect: "Work zone — slow down and watch for crews.",
     };
   }
