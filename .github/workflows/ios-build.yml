@@ -399,24 +399,15 @@ jobs:
             2>&1 | tee /tmp/export.log
 
       # ── 11. Upload to TestFlight ──────────────────────────────────────────────
-      # The App Store Connect API backend marked build 495 complete and Apple
-      # never listed it. iTMSTransporter's exit code is the delivery result.
-      # The confirm step then polls until that build number is listed.
-      # Normalize the .p8 secret first — GitHub often stores base64/DER; Node crypto needs PEM.
+      # Build 495: the API uploader said complete, and Apple never listed it.
+      # Build 496: Xcode 26's iTMSTransporter is a stub and exits immediately.
+      # --use-old-altool is the uploader that waits until Apple accepts the package.
+      # The confirm step then requires that build number to be listed.
       - name: Prepare App Store Connect API key
-        id: asc_key
         env:
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
           APP_STORE_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/write-appstore-connect-key.py
-          KEY_FILE="$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_KEY_ID}.p8"
-          {
-            echo 'pem<<EOF'
-            cat "$KEY_FILE"
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
+        run: python3 .github/scripts/write-appstore-connect-key.py
 
       - name: Log IPA build metadata
         run: |
@@ -438,33 +429,30 @@ jobs:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: python3 .github/scripts/verify-appstore-connect-api.py
 
-      - name: Find iTMSTransporter
-        id: transporter
+      - name: Upload to TestFlight
+        env:
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
           set -euo pipefail
-          if path=$(xcrun --find iTMSTransporter 2>/dev/null); then
-            :
-          elif [ -x /usr/local/itms/bin/iTMSTransporter ]; then
-            path=/usr/local/itms/bin/iTMSTransporter
-          else
-            echo "::error::iTMSTransporter was not found on the runner."
+          python3 .github/scripts/write-appstore-connect-key.py
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$RUNNER_TEMP/export/App.ipa" \
+            --apiKey "$APP_STORE_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID" \
+            --use-old-altool \
+            --verbose \
+            2>&1 | tee /tmp/altool-upload.log
+          if grep -Eiq 'Validation failed|ERROR: \[altool|This bundle is invalid' /tmp/altool-upload.log; then
+            echo "::error::altool reported a validation error."
             exit 1
           fi
-          echo "path=$path" >> "$GITHUB_OUTPUT"
-          echo "Using $path"
-
-      - name: Upload to TestFlight (Transporter)
-        uses: apple-actions/upload-testflight-build@v4
-        with:
-          app-path: ${{ runner.temp }}/export/App.ipa
-          app-type: ios
-          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          api-key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          api-private-key: ${{ steps.asc_key.outputs.pem }}
-          backend: transporter
-          transporter-executable-path: ${{ steps.transporter.outputs.path }}
-          uses-non-exempt-encryption: "false"
-          wait-for-processing: "false"
+          if ! grep -Eiq 'No errors uploading|Successfully uploaded package|UPLOAD SUCCEEDED' /tmp/altool-upload.log; then
+            echo "::error::altool finished without confirming the upload."
+            exit 1
+          fi
 
       - name: Confirm Apple listed the build
         env:
