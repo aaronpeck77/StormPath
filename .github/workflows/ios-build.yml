@@ -399,8 +399,9 @@ jobs:
             2>&1 | tee /tmp/export.log
 
       # ── 11. Upload to TestFlight ──────────────────────────────────────────────
-      # Xcode 26 xcrun altool is unreliable (false success or hard failure). Use the
-      # App Store Connect API backend instead of altool/iTMSTransporter.
+      # The App Store Connect API backend marked build 495 complete and Apple
+      # never listed it. iTMSTransporter's exit code is the delivery result.
+      # The confirm step then polls until that build number is listed.
       # Normalize the .p8 secret first — GitHub often stores base64/DER; Node crypto needs PEM.
       - name: Prepare App Store Connect API key
         id: asc_key
@@ -421,12 +422,13 @@ jobs:
         run: |
           set -euo pipefail
           IPA="$RUNNER_TEMP/export/App.ipa"
-          PLIST=$(unzip -p "$IPA" 'Payload/*.app/Info.plist')
+          # Info.plist inside the IPA is binary. plutil cannot read that from a pipe.
+          unzip -p "$IPA" 'Payload/*.app/Info.plist' > "$RUNNER_TEMP/App-Info.plist"
           echo "Expected TestFlight build number: ${{ github.run_number }}"
           echo "Build track: ${{ env.BUILD_TRACK }}"
-          echo "IPA CFBundleVersion: $(echo "$PLIST" | plutil -extract CFBundleVersion raw -)"
-          echo "IPA CFBundleShortVersionString: $(echo "$PLIST" | plutil -extract CFBundleShortVersionString raw -)"
-          echo "IPA CFBundleIdentifier: $(echo "$PLIST" | plutil -extract CFBundleIdentifier raw -)"
+          echo "IPA CFBundleVersion: $(plutil -extract CFBundleVersion raw "$RUNNER_TEMP/App-Info.plist")"
+          echo "IPA CFBundleShortVersionString: $(plutil -extract CFBundleShortVersionString raw "$RUNNER_TEMP/App-Info.plist")"
+          echo "IPA CFBundleIdentifier: $(plutil -extract CFBundleIdentifier raw "$RUNNER_TEMP/App-Info.plist")"
 
       - name: Verify App Store Connect API access
         continue-on-error: true
@@ -436,23 +438,22 @@ jobs:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: python3 .github/scripts/verify-appstore-connect-api.py
 
-      # Primary: App Store Connect API. Fallback: Transporter (skips app lookup — helps when API returns 403).
-      - name: Upload to TestFlight (App Store Connect API)
-        id: asc_upload
-        continue-on-error: true
-        uses: apple-actions/upload-testflight-build@v4
-        with:
-          app-path: ${{ runner.temp }}/export/App.ipa
-          app-type: ios
-          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          api-key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          api-private-key: ${{ steps.asc_key.outputs.pem }}
-          backend: appstore-api
-          uses-non-exempt-encryption: "false"
-          wait-for-processing: "false"
+      - name: Find iTMSTransporter
+        id: transporter
+        run: |
+          set -euo pipefail
+          if path=$(xcrun --find iTMSTransporter 2>/dev/null); then
+            :
+          elif [ -x /usr/local/itms/bin/iTMSTransporter ]; then
+            path=/usr/local/itms/bin/iTMSTransporter
+          else
+            echo "::error::iTMSTransporter was not found on the runner."
+            exit 1
+          fi
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+          echo "Using $path"
 
-      - name: Upload to TestFlight (Transporter fallback)
-        if: steps.asc_upload.outcome == 'failure'
+      - name: Upload to TestFlight (Transporter)
         uses: apple-actions/upload-testflight-build@v4
         with:
           app-path: ${{ runner.temp }}/export/App.ipa
@@ -461,8 +462,21 @@ jobs:
           api-key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           api-private-key: ${{ steps.asc_key.outputs.pem }}
           backend: transporter
+          transporter-executable-path: ${{ steps.transporter.outputs.path }}
           uses-non-exempt-encryption: "false"
           wait-for-processing: "false"
+
+      - name: Confirm Apple listed the build
+        env:
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          BUNDLE_ID: com.aaronpeck.stormpath
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/write-appstore-connect-key.py
+          node .github/scripts/wait-for-testflight-build.mjs
 
       # ── 12. Save IPA as a build artifact (optional — handy for debugging) ────
       - name: Upload IPA artifact
