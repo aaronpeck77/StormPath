@@ -89,8 +89,12 @@ export default defineConfig(({ command, mode }) => ({
     /* Pure-logic tests only — no DOM. Add `environment: "jsdom"` later if React component tests land. */
     environment: "node",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
-    /* Live NWS fetches are flaky in CI — run them locally via `npm run test:integration`. */
-    exclude: process.env.CI ? ["src/**/*.integration.test.ts"] : [],
+    /* Live NWS fetches are flaky in CI — run them locally via `npm run test:integration`.
+     * The IAP promo test re-renders two 1024 PNGs. On the macOS TestFlight runner
+     * that blows the 5s limit while the rest of the suite is running. */
+    exclude: process.env.CI
+      ? ["src/**/*.integration.test.ts", "src/ui/__tests__/iapPromoImages.test.ts"]
+      : [],
     /* Faster CI; we rarely care about wall-clock test count for ~50 tests. */
     reporters: process.env.CI ? "default" : ["default"],
     /* Keep tests deterministic — no global setup/teardown surprises. */
