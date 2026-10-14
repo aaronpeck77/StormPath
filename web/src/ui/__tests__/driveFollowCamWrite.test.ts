@@ -4,12 +4,40 @@ import {
   driveFollowCamAllowsSetCenterHotLoop,
   nativeFollowCamAllowsSameFrameHardFallback,
   pickDriveFollowCamWrite,
+  shouldAllowDriveCamWrite,
   shouldRepairFollowCamStall,
+  DRIVE_CAM_WRITE_MIN_INTERVAL_MS,
   FOLLOW_CAM_HOLD_CLEAR_MS,
   type FollowCamWriter,
 } from "../driveFollowCamWrite";
 
 describe("drive follow-cam writes", () => {
+  it("lets the first camera write through, then waits a short beat", () => {
+    expect(
+      shouldAllowDriveCamWrite({ nowMs: 1_000, lastWriteMs: null, force: false })
+    ).toBe(true);
+    expect(
+      shouldAllowDriveCamWrite({
+        nowMs: 1_000 + DRIVE_CAM_WRITE_MIN_INTERVAL_MS - 1,
+        lastWriteMs: 1_000,
+        force: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldAllowDriveCamWrite({
+        nowMs: 1_000 + DRIVE_CAM_WRITE_MIN_INTERVAL_MS,
+        lastWriteMs: 1_000,
+        force: false,
+      })
+    ).toBe(true);
+  });
+
+  it("still writes at once when follow-cam must resync", () => {
+    expect(
+      shouldAllowDriveCamWrite({ nowMs: 1_010, lastWriteMs: 1_000, force: true })
+    ).toBe(true);
+  });
+
   it("never uses setCenter on the 60fps Drive loop (yard-line offset fight)", () => {
     expect(driveFollowCamAllowsSetCenterHotLoop()).toBe(false);
   });

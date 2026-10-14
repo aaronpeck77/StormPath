@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildNavResourceBudget, type NavResourceBudgetInput } from "../navResourceBudget";
+import {
+  buildNavResourceBudget,
+  IDLE_MAP_SLEEP_MS,
+  shouldPauseHiddenMapWork,
+  shouldSleepIdleMap,
+  type NavResourceBudgetInput,
+} from "../navResourceBudget";
 import { LONG_TRIP_ROUTE_M } from "../../utils/dataSaver";
 
 const base: NavResourceBudgetInput = {
@@ -179,6 +185,35 @@ describe("navResourceBudget", () => {
       progressCalloutsOpen: false,
     });
     expect(budget.radarRouteSamplingEnabled).toBe(false);
+  });
+
+  it("sleeps the idle map only after it has been hidden with no trip", () => {
+    expect(
+      shouldSleepIdleMap({
+        appForeground: false,
+        navigationStarted: false,
+        hiddenForMs: IDLE_MAP_SLEEP_MS,
+      })
+    ).toBe(true);
+    expect(
+      shouldSleepIdleMap({
+        appForeground: false,
+        navigationStarted: true,
+        hiddenForMs: IDLE_MAP_SLEEP_MS,
+      })
+    ).toBe(false);
+    expect(
+      shouldSleepIdleMap({
+        appForeground: false,
+        navigationStarted: false,
+        hiddenForMs: 1_000,
+      })
+    ).toBe(false);
+  });
+
+  it("pauses hidden map work as soon as the WebView is off screen", () => {
+    expect(shouldPauseHiddenMapWork(false)).toBe(true);
+    expect(shouldPauseHiddenMapWork(true)).toBe(false);
   });
 
   it("turns off map radar overlay when backgrounded", () => {

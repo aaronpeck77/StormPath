@@ -13,6 +13,25 @@ export const FOLLOW_CAM_STALL_FRAMES_BEFORE_REPAIR = 8;
  */
 export const FOLLOW_CAM_HOLD_CLEAR_MS = 3_000;
 
+/**
+ * Small cap on Mapbox follow-cam writes. The puck still glides every frame.
+ * 40 ms is ~25 writes/s instead of ~60 — enough to cool the GPU without a visible hitch
+ * at highway speed (~1 m between writes).
+ */
+export const DRIVE_CAM_WRITE_MIN_INTERVAL_MS = 40;
+
+export function shouldAllowDriveCamWrite(input: {
+  nowMs: number;
+  lastWriteMs: number | null;
+  force: boolean;
+  minIntervalMs?: number;
+}): boolean {
+  if (input.force) return true;
+  if (input.lastWriteMs == null) return true;
+  const min = input.minIntervalMs ?? DRIVE_CAM_WRITE_MIN_INTERVAL_MS;
+  return input.nowMs - input.lastWriteMs >= min;
+}
+
 export type DriveFollowCamWrite = "skip" | "jump_with_offset";
 
 /**

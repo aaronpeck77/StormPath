@@ -56,6 +56,24 @@ export function computeRadarMapOverlayOn(
   return showRadar && !driveNavMode && appForeground;
 }
 
+/** Off-screen with no Go: stop Mapbox after this long so a parked phone is not painting tiles. */
+export const IDLE_MAP_SLEEP_MS = 45_000;
+
+export function shouldSleepIdleMap(input: {
+  appForeground: boolean;
+  navigationStarted: boolean;
+  hiddenForMs: number;
+  sleepAfterMs?: number;
+}): boolean {
+  if (input.appForeground || input.navigationStarted) return false;
+  return input.hiddenForMs >= (input.sleepAfterMs ?? IDLE_MAP_SLEEP_MS);
+}
+
+/** Hidden WebView should not keep the 60 fps follow loop or radar paint running. */
+export function shouldPauseHiddenMapWork(appForeground: boolean): boolean {
+  return !appForeground;
+}
+
 /**
  * Tiered fetch gates while navigating — Drive keeps NWS + traffic + replan;
  * Route/Map keep radar overlay. Corridor forecast + radar polyline sampling stay

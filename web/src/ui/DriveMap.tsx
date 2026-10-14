@@ -229,8 +229,10 @@ import {
 import {
   advanceFollowCamWriter,
   nativeFollowCamAllowsSameFrameHardFallback,
+  shouldAllowDriveCamWrite,
   type FollowCamWriter,
 } from "./driveFollowCamWrite";
+import { IDLE_MAP_SLEEP_MS, shouldPauseHiddenMapWork, shouldSleepIdleMap } from "../nav/navResourceBudget";
 import { computePuckTargetBeforeRouteSnap } from "./driveMapPuckTarget";
 import { liftTrafficThenRoutesThenHits } from "./mapLayerStack";
 import {
@@ -1383,6 +1385,73 @@ function DriveMapInner({
     };
   }, [token]);
 
+  /**
+   * Off-screen + no Go: stop Mapbox after 45s so a parked phone is not painting.
+   * A live trip only pauses the follow loop (above); tiles stay for the resume snap.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    let sleepTimer: number | null = null;
+    let sleeping = false;
+
+    const clearSleepTimer = () => {
+      if (sleepTimer != null) {
+        window.clearTimeout(sleepTimer);
+        sleepTimer = null;
+      }
+    };
+
+    const wake = () => {
+      clearSleepTimer();
+      if (!sleeping) return;
+      sleeping = false;
+      try {
+        map.triggerRepaint();
+        map.resize();
+      } catch {
+        /* map disposed */
+      }
+      driveCamResyncRef.current = true;
+    };
+
+    const arm = () => {
+      const visible = document.visibilityState === "visible";
+      const navOn = navigationStartedRef.current;
+      if (visible || navOn) {
+        wake();
+        return;
+      }
+      clearSleepTimer();
+      const hiddenAt = Date.now();
+      sleepTimer = window.setTimeout(() => {
+        const hiddenForMs = Date.now() - hiddenAt;
+        if (
+          !shouldSleepIdleMap({
+            appForeground: document.visibilityState === "visible",
+            navigationStarted: navigationStartedRef.current,
+            hiddenForMs,
+          })
+        ) {
+          return;
+        }
+        sleeping = true;
+        try {
+          map.stop();
+        } catch {
+          /* map disposed */
+        }
+      }, IDLE_MAP_SLEEP_MS);
+    };
+
+    arm();
+    document.addEventListener("visibilitychange", arm);
+    return () => {
+      clearSleepTimer();
+      document.removeEventListener("visibilitychange", arm);
+    };
+  }, [mapReady, navigationStarted]);
+
   useEffect(() => {
     if (!showOpeningCover) return;
     if (!userLngLat) return;
@@ -2070,6 +2139,7 @@ function DriveMapInner({
     const NOOP_LNGLAT_DELTA = 0.000005; /* ~0.55 m at the equator; smaller north of 45° */
     const CAM_NOOP_LNGLAT_DELTA = 0.000001; /* ~0.11 m — follow camera can move more often than the puck marker */
     let lastBearingApplied = NaN;
+    let lastCamWriteMs: number | null = null;
     let driveCamFrame = 0;
     let followWriter: FollowCamWriter = followCamWriterRef.current;
     let followHoldFalseSinceMs: number | null = followWriter === "hard" ? null : Date.now();
@@ -2167,6 +2237,10 @@ function DriveMapInner({
 
     const loop = () => {
       if (puckMarkerRef.current !== marker) return;
+      if (shouldPauseHiddenMapWork(typeof document === "undefined" || document.visibilityState === "visible")) {
+        raf = 0;
+        return;
+      }
       const nowForPose = performance.now();
       const pose = readPuckPose(nowForPose);
       const t = pose.lngLat;
@@ -2509,6 +2583,12 @@ function DriveMapInner({
             });
             let applied = false;
             if (cmd.kind === "write") {
+            const camWriteDue = shouldAllowDriveCamWrite({
+              nowMs: now,
+              lastWriteMs: lastCamWriteMs,
+              force: driveCamResyncRef.current,
+            });
+            if (camWriteDue) {
               if (cmd.writer === "hard") {
                 applied = hardWrite();
               } else {
@@ -2547,7 +2627,9 @@ function DriveMapInner({
                 camFreezeLatched = false;
               }
             }
+            }
             if (applied) {
+              lastCamWriteMs = now;
               lastDroneOffsetRef.current = easeCached.offset;
               bumpDriveDiag("camApplied");
               nativeCamAppliedRef.current = {
@@ -2649,7 +2731,14 @@ function DriveMapInner({
           const forceCamSync = driveCamResyncRef.current || forcePeriodicResync;
           const applyLayoutOrEntry = pitchOff || forceCamSync || easeLayoutChanged || zoomOff;
           if (camMoved || bearingMoved || applyLayoutOrEntry) {
-            if (pos) {
+            if (
+              pos &&
+              shouldAllowDriveCamWrite({
+                nowMs: now,
+                lastWriteMs: lastCamWriteMs,
+                force: forceCamSync || easeLayoutChanged || pitchOff || zoomOff,
+              })
+            ) {
               /* Yard-line pan vs hard setCenter are two road framings. Switching
                * them when tiles flap looks like the puck leaping forward/back.
                * Hard only while tiles are held (+ clear delay). Failed pan skips. */
@@ -2715,6 +2804,7 @@ function DriveMapInner({
                   offset,
                 });
                 if (hardOk) {
+                  lastCamWriteMs = now;
                   lastBearingApplied = camBearing;
                   driveCamBearingSmoothedRef.current = camBearing;
                   driveCamResyncRef.current = false;
@@ -2724,6 +2814,7 @@ function DriveMapInner({
               } else {
                 const ok = safePanToCenter(map, panOpts);
                 if (ok) {
+                  lastCamWriteMs = now;
                   lastBearingApplied = camBearing;
                   driveCamBearingSmoothedRef.current = camBearing;
                   if (forceCamSync) driveCamResyncRef.current = false;
@@ -2755,8 +2846,16 @@ function DriveMapInner({
             !!camCenter &&
             (Math.abs(camCenter[0] - pos[0]) > CAM_NOOP_LNGLAT_DELTA ||
               Math.abs(camCenter[1] - pos[1]) > CAM_NOOP_LNGLAT_DELTA);
-          if (pos && camMoved) {
-            safePanToCenter(map, {
+          if (
+            pos &&
+            camMoved &&
+            shouldAllowDriveCamWrite({
+              nowMs: now,
+              lastWriteMs: lastCamWriteMs,
+              force: false,
+            })
+          ) {
+            const mpOk = safePanToCenter(map, {
               center: pos as [number, number],
               pitch: 0,
               bearing: 0,
@@ -2764,6 +2863,7 @@ function DriveMapInner({
               duration: 0,
               essential: true,
             });
+            if (mpOk) lastCamWriteMs = now;
             lastDroneOffsetRef.current = TOPDOWN_PUCK_OFFSET_PX;
           }
         }
@@ -2776,7 +2876,18 @@ function DriveMapInner({
       }
     };
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      if (puckMarkerRef.current !== marker) return;
+      driveCamResyncRef.current = true;
+      if (!raf) raf = requestAnimationFrame(loop);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelAnimationFrame(raf);
+      raf = 0;
+      document.removeEventListener("visibilitychange", onVis);
+    };
     /* Boolean(userLngLat): when nav starts before GPS / restore, first RAF run can bail (no marker).
      * After the puck effect creates the marker, we must re-arm RAF without listing coords (avoids GPS jitter resets). */
   }, [navigationStarted, mapReady, Boolean(userLngLat)]);
