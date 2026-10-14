@@ -23,6 +23,7 @@
     "build:ios:testflight": "npm run build:testflight && npm run sync:ios-version && npx cap sync ios",
     "render:app-icon": "node scripts/render-app-icon.mjs",
     "render:app-icon:rainbow": "node scripts/render-app-icon.mjs rainbow",
+    "render:iap-promo": "node scripts/render-iap-promo.mjs",
     "validate:app-icon": "node scripts/validate-app-icon.mjs",
     "assert:ios-flavor": "node scripts/assert-ios-build-flavor.mjs"
   },

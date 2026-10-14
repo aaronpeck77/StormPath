@@ -12,6 +12,7 @@ import { SearchBar, type SearchSuggestion } from "./SearchBar";
 import { RouteStopsBar } from "./RouteStopsBar";
 import { BottomToolbar } from "./BottomToolbar";
 import { isNarrowPhoneViewport } from "./mapFitLogic";
+import { showTripRefreshButton } from "../nav/tripRefresh";
 import { stormyMapButtonOn } from "../stormy/stormyAvailability";
 import { StormyButton, stormyTurnImminent } from "./StormyButton";
 import { useSettingsStore } from "../state/settingsStore";
@@ -38,12 +39,14 @@ function DockAboutRow({
   onOpenAbout,
   compass,
   stormy,
+  refresh,
   children,
 }: {
   stormyOn: boolean;
   onOpenAbout: () => void;
   compass?: ReactNode;
   stormy?: ReactNode;
+  refresh?: ReactNode;
   children?: ReactNode;
 }) {
   const info = <MapInfoButton onOpenAbout={onOpenAbout} />;
@@ -53,6 +56,7 @@ function DockAboutRow({
         <div className="nav-bottom-dock__about-row">
           <div className="nav-bottom-dock__drive-about-cluster">
             <div className="nav-bottom-dock__compass-i-col">
+              {refresh}
               {compass}
               {info}
             </div>
@@ -71,6 +75,7 @@ function DockAboutRow({
   return (
     <div className="nav-bottom-dock__about-row">
       <div className="nav-bottom-dock__info-stormy-col">
+        {refresh}
         {compass}
         {info}
         <div className="nav-bottom-dock__stormy-row">
@@ -102,6 +107,8 @@ type Props = {
 
   /* Drive / topdown about-row */
   driveMapBearingDeg: number | null;
+  /** Drive only. Restarts stuck guidance and live data without ending the trip. */
+  onRefreshTrip?: () => void;
   onOpenAbout: () => void;
   driveDistanceRemainingLabel: string | null;
 
@@ -201,6 +208,7 @@ export function AppBottomChrome({
   navigationStarted,
   viewMode,
   driveMapBearingDeg,
+  onRefreshTrip,
   onOpenAbout,
   driveDistanceRemainingLabel,
   routePickItems,
@@ -335,6 +343,19 @@ export function AppBottomChrome({
             <DockAboutRow
               stormyOn={stormyOn}
               onOpenAbout={onOpenAbout}
+              refresh={
+                showTripRefreshButton(navigationStarted, viewMode) && onRefreshTrip ? (
+                  <button
+                    type="button"
+                    className="trip-refresh-btn"
+                    aria-label="Refresh the trip"
+                    title="Refresh the trip without leaving it"
+                    onClick={onRefreshTrip}
+                  >
+                    ↻
+                  </button>
+                ) : null
+              }
               compass={<DriveCompass bearingDeg={driveMapBearingDeg} />}
               stormy={<StormyButton packet={stormyPacket} onAct={onStormyAct} />}
             >

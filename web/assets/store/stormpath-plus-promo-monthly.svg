@@ -1,0 +1,95 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- StormPath Plus monthly promo: same icon family (single cloud mass), fall scene.
+       Not the app icon: amber sky, no lightning, falling leaves instead of rain. -->
+  <defs>
+    <linearGradient id="cloud-main" x1="512" y1="220" x2="512" y2="460" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#8A6A52"/>
+      <stop offset="35%" stop-color="#6A4E3A"/>
+      <stop offset="72%" stop-color="#463428"/>
+      <stop offset="100%" stop-color="#2A1E18"/>
+    </linearGradient>
+    <radialGradient id="cloud-highlight" cx="460" cy="280" r="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#C4A07A" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#6A4E3A" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="cloud-shadow" x="-18%" y="-18%" width="136%" height="136%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#3A1E0A" flood-opacity="0.28"/>
+    </filter>
+    <filter id="leaf-shadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2" flood-color="#4A2208" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#E39A3C"/>
+
+  <g filter="url(#cloud-shadow)">
+    <path
+      d="M 160 400
+         C 150 318 228 248 330 236
+         C 378 196 468 184 544 208
+         C 612 182 712 188 776 232
+         C 852 220 910 278 904 342
+         C 948 368 940 418 888 442
+         C 906 472 872 502 812 512
+         H 212
+         C 152 502 126 468 148 432
+         C 118 408 128 418 160 400 Z"
+      fill="url(#cloud-main)"
+    />
+    <path
+      d="M 160 400
+         C 150 318 228 248 330 236
+         C 378 196 468 184 544 208
+         C 612 182 712 188 776 232
+         C 852 220 910 278 904 342
+         C 948 368 940 418 888 442
+         C 906 472 872 502 812 512
+         H 212
+         C 152 502 126 468 148 432
+         C 118 408 128 418 160 400 Z"
+      fill="url(#cloud-highlight)"
+    />
+    <path
+      d="M 204 468 Q 512 492 820 468 L 820 498 Q 512 522 204 498 Z"
+      fill="#2A1810"
+      opacity="0.5"
+    />
+  </g>
+
+  <!-- Falling leaves (same rain angle as the icon, but foliage — no bolt) -->
+  <g filter="url(#leaf-shadow)">
+    <g transform="translate(250 560) rotate(-18)">
+      <path d="M 0 -22 C 14 -18 22 -4 12 14 C 6 8 2 20 0 28 C -2 20 -6 8 -12 14 C -22 -4 -14 -18 0 -22 Z" fill="#C2410C"/>
+    </g>
+    <g transform="translate(340 600) rotate(12)">
+      <path d="M 0 -24 C 15 -20 24 -4 13 16 C 6 9 2 22 0 30 C -2 22 -6 9 -13 16 C -24 -4 -15 -20 0 -24 Z" fill="#EA580C"/>
+    </g>
+    <g transform="translate(430 548) rotate(-8)">
+      <path d="M 0 -20 C 13 -16 20 -3 11 13 C 5 7 2 18 0 26 C -2 18 -5 7 -11 13 C -20 -3 -13 -16 0 -20 Z" fill="#CA8A04"/>
+    </g>
+    <g transform="translate(520 620) rotate(22)">
+      <path d="M 0 -26 C 16 -21 26 -4 14 17 C 7 10 2 24 0 32 C -2 24 -7 10 -14 17 C -26 -4 -16 -21 0 -26 Z" fill="#DC2626"/>
+    </g>
+    <g transform="translate(610 556) rotate(-14)">
+      <path d="M 0 -22 C 14 -18 22 -4 12 14 C 6 8 2 20 0 28 C -2 20 -6 8 -12 14 C -22 -4 -14 -18 0 -22 Z" fill="#F59E0B"/>
+    </g>
+    <g transform="translate(700 608) rotate(8)">
+      <path d="M 0 -24 C 15 -20 24 -4 13 16 C 6 9 2 22 0 30 C -2 22 -6 9 -13 16 C -24 -4 -15 -20 0 -24 Z" fill="#B45309"/>
+    </g>
+    <g transform="translate(790 564) rotate(-24)">
+      <path d="M 0 -20 C 13 -16 20 -3 11 13 C 5 7 2 18 0 26 C -2 18 -5 7 -11 13 C -20 -3 -13 -16 0 -20 Z" fill="#E11D48"/>
+    </g>
+    <g transform="translate(300 700) rotate(16)">
+      <path d="M 0 -18 C 12 -14 18 -3 10 12 C 5 6 2 16 0 22 C -2 16 -5 6 -10 12 C -18 -3 -12 -14 0 -18 Z" fill="#F97316"/>
+    </g>
+    <g transform="translate(470 690) rotate(-20)">
+      <path d="M 0 -20 C 13 -16 20 -3 11 13 C 5 7 2 18 0 26 C -2 18 -5 7 -11 13 C -20 -3 -13 -16 0 -20 Z" fill="#D97706"/>
+    </g>
+    <g transform="translate(640 720) rotate(10)">
+      <path d="M 0 -18 C 12 -14 18 -3 10 12 C 5 6 2 16 0 22 C -2 16 -5 6 -10 12 C -18 -3 -12 -14 0 -18 Z" fill="#9A3412"/>
+    </g>
+    <g transform="translate(760 690) rotate(-6)">
+      <path d="M 0 -16 C 11 -13 16 -2 9 11 C 4 6 2 14 0 20 C -2 14 -4 6 -9 11 C -16 -2 -11 -13 0 -16 Z" fill="#FBBF24"/>
+    </g>
+  </g>
+</svg>

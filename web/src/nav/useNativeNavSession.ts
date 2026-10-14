@@ -437,6 +437,10 @@ export function useNativeNavSession(opts: {
     };
   }, [stopNative]);
 
+  /**
+   * One-press refresh. Restarts Core without ending the trip.
+   * The restarting flag keeps the effect above from starting a second session.
+   */
   const restartNative = useCallback(async () => {
     if (!isNativeMapboxNavPlatform()) return false;
     nativeRestartingRef.current = true;
