@@ -270,6 +270,16 @@ export function useNativeNavSession(opts: {
     };
   }, [stopNative]);
 
+  /**
+   * One-press refresh. Stops Core so the effect above starts it again.
+   * Listeners come off before stop, so the cancelled event cannot end the trip.
+   * Destination and Go stay as they were.
+   */
+  const restartNative = useCallback(() => {
+    if (!navigationStarted) return;
+    void stopNative();
+  }, [navigationStarted, stopNative]);
+
   return {
     nativeNavActive,
     position,
@@ -278,5 +288,6 @@ export function useNativeNavSession(opts: {
     /** Live Mapbox Core turn list — same route as the blue line / voice. */
     turnSteps,
     stopNative,
+    restartNative,
   };
 }

@@ -28,6 +28,7 @@ import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
 import { resolveNavigationRouteIds } from "./nav/navigationRouteFocus";
 import { resolveNavigatingRouteSelect } from "./nav/navigatingRouteSelect";
 import { planAfterSoftRestartLock } from "./nav/softRestartPlan";
+import { runTripRefresh } from "./nav/tripRefresh";
 import {
   loadReturnTripLeg,
   shortenReturnTripLabel,
@@ -924,6 +925,7 @@ export default function App() {
     position: nativeNavPosition,
     guidance: nativeNavGuidance,
     turnSteps: nativeTurnSteps,
+    restartNative,
   } = useNativeNavSession({
     accessToken: env.mapboxToken,
     navigationStarted,
@@ -1614,6 +1616,24 @@ export default function App() {
   /** Hard-snaps the follow-cam (clears the bearing smoother). Shared by the automatic
    *  watchdog below and Jeff's manual "fix camera" tap for when the watchdog misses one. */
   const resyncDriveCamera = useCallback(() => setFollowCamResyncKey((k) => k + 1), []);
+
+  /** Wake a frozen turn banner, camera, and live data without leaving the trip. */
+  const refreshTripInPlace = useCallback(() => {
+    runTripRefresh({
+      resetAlong: () => setAlongHoldResetKey((k) => k + 1),
+      resyncCamera: resyncDriveCamera,
+      refreshTraffic: bumpTrafficRefresh,
+      refreshForecast: bumpRouteForecastRefresh,
+      restartGuidance: restartNative,
+    });
+    setTapHint("Refreshing the trip.");
+    window.setTimeout(() => setTapHint(null), 2500);
+  }, [
+    bumpRouteForecastRefresh,
+    bumpTrafficRefresh,
+    resyncDriveCamera,
+    restartNative,
+  ]);
 
   /** Background watchdog + self-heal: drive follow-cam bearing vs ground-truth course-over-ground.
    *  Uses the raw live GPS ref (same stream the follow-cam RAF loop itself reads), not the
@@ -2743,6 +2763,7 @@ export default function App() {
           navigationStarted={navigationStarted}
           viewMode={viewMode}
           driveMapBearingDeg={driveMapBearingDeg}
+          onRefreshTrip={refreshTripInPlace}
           onOpenAbout={() => setAboutOpen(true)}
           driveDistanceRemainingLabel={driveDistanceRemainingLabel}
           routePickItems={routePickItems}

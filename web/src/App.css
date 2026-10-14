@@ -1242,6 +1242,25 @@
   max-width: 100%;
 }
 
+.trip-refresh-btn {
+  flex-shrink: 0;
+  width: var(--nav-chrome-about, 32px);
+  height: var(--nav-chrome-about, 32px);
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(18, 20, 24, 0.55);
+  color: #e2e8f0;
+  font-size: 1.05rem;
+  line-height: 1;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+}
+
+.trip-refresh-btn:active {
+  background: rgba(30, 41, 59, 0.85);
+}
+
 .drive-compass {
   flex-shrink: 0;
   width: var(--nav-chrome-about, 32px);

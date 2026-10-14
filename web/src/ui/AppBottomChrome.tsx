@@ -11,6 +11,7 @@ import { SearchBar, type SearchSuggestion } from "./SearchBar";
 import { RouteStopsBar } from "./RouteStopsBar";
 import { BottomToolbar } from "./BottomToolbar";
 import { isNarrowPhoneViewport } from "./mapFitLogic";
+import { showTripRefreshButton } from "../nav/tripRefresh";
 
 type Props = {
   /* Traffic-bypass compare panel */
@@ -32,6 +33,8 @@ type Props = {
 
   /* Drive / topdown about-row */
   driveMapBearingDeg: number | null;
+  /** Drive only. Restarts stuck guidance and live data without ending the trip. */
+  onRefreshTrip?: () => void;
   onOpenAbout: () => void;
   driveDistanceRemainingLabel: string | null;
 
@@ -118,6 +121,7 @@ export function AppBottomChrome({
   navigationStarted,
   viewMode,
   driveMapBearingDeg,
+  onRefreshTrip,
   onOpenAbout,
   driveDistanceRemainingLabel,
   routePickItems,
@@ -202,6 +206,17 @@ export function AppBottomChrome({
             <div className="nav-bottom-dock__about-row">
               <div className="nav-bottom-dock__drive-about-cluster">
                 <div className="nav-bottom-dock__compass-i-col">
+                  {showTripRefreshButton(navigationStarted, viewMode) && onRefreshTrip ? (
+                    <button
+                      type="button"
+                      className="trip-refresh-btn"
+                      aria-label="Refresh the trip"
+                      title="Refresh the trip without leaving it"
+                      onClick={onRefreshTrip}
+                    >
+                      ↻
+                    </button>
+                  ) : null}
                   <DriveCompass bearingDeg={driveMapBearingDeg} />
                   <button
                     type="button"
