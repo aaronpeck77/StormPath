@@ -17,5 +17,8 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["vite/client", "react", "react-dom"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  // This test imports node:fs. That loads Node timer types into the whole
+  // program and makes window.setTimeout fail the app check. Vitest still runs it.
+  "exclude": ["src/ui/__tests__/iapPromoImages.test.ts"]
 }
