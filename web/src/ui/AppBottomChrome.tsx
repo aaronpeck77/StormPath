@@ -171,6 +171,7 @@ type Props = {
   handleReturnToPreviousDestination: () => void;
   showSavedPlacesButton: boolean;
   driveEtaMinutes: number | null;
+  destLngLat?: LngLat | null;
   onToggleRadar: () => void;
   settingRadarEnabled: boolean;
   driveModeUi: boolean;
@@ -261,6 +262,7 @@ export function AppBottomChrome({
   handleReturnToPreviousDestination,
   showSavedPlacesButton,
   driveEtaMinutes,
+  destLngLat = null,
   onToggleRadar,
   settingRadarEnabled,
   driveModeUi,
@@ -520,6 +522,7 @@ export function AppBottomChrome({
           showViewCycleButton
           viewCycleDisabled={!navigationStarted}
           driveEtaMinutes={driveEtaMinutes}
+          destLngLat={destLngLat}
           showRadar={radarMapOverlayOn}
           onToggleRadar={onToggleRadar}
           radarEnabled={settingRadarEnabled}

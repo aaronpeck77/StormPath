@@ -1,6 +1,11 @@
 import { FALLBACK_LNGLAT } from "./constants";
 import type { LngLat } from "./types";
-import { isExtremeTripRoute, isLongTripRoute, isUltraLongTripRoute } from "../utils/dataSaver";
+import {
+  isExtremeTripRoute,
+  isLongTripRoute,
+  isUltraLongTripRoute,
+  LONG_TRIP_ROUTE_M,
+} from "../utils/dataSaver";
 
 const EARTH_M = 6_371_000;
 
@@ -509,8 +514,8 @@ const HIGHLIGHT_GEOMETRY_VERTEX_BUDGET = 8000;
 
 /** Drive map line: short tail behind puck, local window ahead on long trips. */
 export const DRIVE_LINE_BEHIND_M = 1500;
-/** On 200+ mi trips, only draw this far ahead — keeps vertex budget on local roads. */
-export const DRIVE_LINE_AHEAD_M = 120_000;
+/** On 100+ mi trips, only draw this far ahead — same live window Core follows. */
+export const DRIVE_LINE_AHEAD_M = LONG_TRIP_ROUTE_M;
 const DRIVE_LINE_MAX_VERTICES = 24_000;
 const DRIVE_LINE_MAX_VERTICES_LONG = 14_000;
 const DRIVE_LINE_MAX_VERTICES_ULTRA = 10_000;

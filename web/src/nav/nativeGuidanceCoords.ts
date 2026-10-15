@@ -1,16 +1,14 @@
+import { sliceCorridorToLiveWindow } from "./liveTripWindow";
 import {
   closestAlongRouteMeters,
   pointAtAlongMeters,
   polylineLengthMeters,
-  slicePolylineBetweenAlong,
 } from "./routeGeometry";
 import type { TripStop } from "./routeWaypoints";
 import type { LngLat } from "./types";
 
 /** Mapbox Directions / Navigation waypoint cap (origin + vias + dest + silent shapes). */
 export const NATIVE_GUIDANCE_MAX_COORDS = 16;
-/** Start slightly behind the puck so Core does not think we skipped the first via. */
-const CORRIDOR_ORIGIN_PAD_M = 40;
 /** First/last silent shape — keeps Core on neighborhood streets instead of a yard chord. */
 const SHAPE_NEAR_M = 2_800;
 /** Sparse mid-corridor shapes on long trips (not a dense 25-point sample). */
@@ -27,12 +25,8 @@ export type NativeGuidanceCoord = {
 };
 
 function remainingCorridorFromUser(corridor: LngLat[], userLngLat: LngLat | null): LngLat[] {
-  if (!userLngLat || corridor.length < 2) return corridor;
-  const total = polylineLengthMeters(corridor);
-  if (total < 80) return corridor;
-  const along = closestAlongRouteMeters(userLngLat, corridor).alongMeters;
-  const startM = Math.max(0, Math.min(total - 50, along - CORRIDOR_ORIGIN_PAD_M));
-  const remaining = slicePolylineBetweenAlong(corridor, startM, total);
+  if (corridor.length < 2) return corridor;
+  const remaining = sliceCorridorToLiveWindow(corridor, userLngLat);
   return remaining.length >= 2 ? remaining : corridor;
 }
 

@@ -25,7 +25,6 @@ vi.mock("@capacitor-community/admob", () => ({
 
 import { Capacitor } from "@capacitor/core";
 import {
-  getBasicBannerCustomerHint,
   getBasicBannerDebugLine,
   readBannerHeightPx,
   recordBasicBannerUiSlot,
@@ -45,20 +44,17 @@ describe("getBasicBannerDebugLine", () => {
     vi.mocked(Capacitor.isNativePlatform).mockReturnValue(false);
     recordBasicBannerUiSlot("empty");
     expect(getBasicBannerDebugLine()).toMatch(/^ads: web \(no AdMob,/);
-    expect(getBasicBannerCustomerHint()).toBeNull();
   });
 
   it("reports empty live fill on native Basic", () => {
     vi.mocked(Capacitor.isNativePlatform).mockReturnValue(true);
     recordBasicBannerUiSlot("empty");
     expect(getBasicBannerDebugLine()).toMatch(/^ads: empty \(test creatives,/);
-    expect(getBasicBannerCustomerHint()).toMatch(/None loaded this session/);
   });
 
-  it("hides the customer hint while a banner is showing", () => {
+  it("reports showing while a banner is filled", () => {
     vi.mocked(Capacitor.isNativePlatform).mockReturnValue(true);
     recordBasicBannerUiSlot("filled");
     expect(getBasicBannerDebugLine()).toBe("ads: showing (test creatives)");
-    expect(getBasicBannerCustomerHint()).toBeNull();
   });
 });

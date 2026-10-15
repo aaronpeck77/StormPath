@@ -7,6 +7,12 @@ import {
   type NativeNavRouteChangedEvent,
 } from "@stormpath/mapbox-navigation";
 import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
+import {
+  computeLiveTripWindow,
+  isPlanDestinationArrival,
+  shouldHandoffLiveTripWindow,
+  type LiveTripWindow,
+} from "./liveTripWindow";
 import { buildNativeGuidanceCoordinates } from "./nativeGuidanceCoords";
 import {
   nativeRouteChangedShouldForce,
@@ -161,6 +167,8 @@ export function useNativeNavSession(opts: {
   const coordsRef = useRef(coords);
   coordsRef.current = coords;
   const prepareKeyRef = useRef("");
+  const liveWindowRef = useRef<LiveTripWindow | null>(null);
+  const windowStartAlongRef = useRef(0);
 
   const removeListeners = useCallback(async () => {
     const list = listenersRef.current;
@@ -181,6 +189,8 @@ export function useNativeNavSession(opts: {
       /* ignore */
     }
     prepareKeyRef.current = "";
+    liveWindowRef.current = null;
+    windowStartAlongRef.current = 0;
     corridorAdoptedRef.current = false;
     firstRouteChangedRef.current = true;
     poseHoldRef.current.reset();
@@ -206,6 +216,12 @@ export function useNativeNavSession(opts: {
     if (!accessToken) return false;
     const coordinates = buildCoordinateList(coordsRef.current);
     if (!coordinates) return false;
+    const liveWindow = computeLiveTripWindow(
+      coordsRef.current.lockedCorridor,
+      coordsRef.current.userLngLat
+    );
+    liveWindowRef.current = liveWindow;
+    windowStartAlongRef.current = liveWindow?.startAlongM ?? 0;
 
     try {
       const avail = await StormpathMapboxNavigation.isAvailable();
@@ -241,10 +257,12 @@ export function useNativeNavSession(opts: {
             abandoned: nativeAbandonedRef.current,
             lastProgressAtMs: Date.now(),
           };
+          const alongOnPlan =
+            (windowStartAlongRef.current || 0) + (Number.isFinite(e.alongM) ? e.alongM : 0);
           const held = poseHoldRef.current.accept({
             lng: e.lng,
             lat: e.lat,
-            alongM: e.alongM,
+            alongM: alongOnPlan,
             headingDeg: e.headingDeg ?? null,
             speedMps: e.speedMps ?? null,
           });
@@ -287,6 +305,23 @@ export function useNativeNavSession(opts: {
             currentRoadName: roadName,
             currentRoadRef: roadRef,
           });
+          const liveW = liveWindowRef.current;
+          if (
+            liveW &&
+            !nativeRestartingRef.current &&
+            !nativeStoppingRef.current &&
+            shouldHandoffLiveTripWindow(liveW, alongOnPlan)
+          ) {
+            nativeRestartingRef.current = true;
+            void stopNative()
+              .then(() => {
+                startedForNavRef.current = true;
+                return startNative();
+              })
+              .finally(() => {
+                nativeRestartingRef.current = false;
+              });
+          }
         }),
         StormpathMapboxNavigation.addListener("routeChanged", (e: NativeNavRouteChangedEvent) => {
           const geom = (e.geometry ?? [])
@@ -323,6 +358,21 @@ export function useNativeNavSession(opts: {
           if (steps.length) setTurnSteps(steps);
         }),
         StormpathMapboxNavigation.addListener("arrived", () => {
+          const c = coordsRef.current;
+          const w = computeLiveTripWindow(c.lockedCorridor, c.userLngLat);
+          if (!isPlanDestinationArrival(c.destLngLat, c.userLngLat, w)) {
+            if (nativeRestartingRef.current) return;
+            nativeRestartingRef.current = true;
+            void stopNative()
+              .then(() => {
+                startedForNavRef.current = true;
+                return startNative();
+              })
+              .finally(() => {
+                nativeRestartingRef.current = false;
+              });
+            return;
+          }
           void stopNative().then(() => onSessionEndedRef.current?.("arrived"));
         }),
         StormpathMapboxNavigation.addListener("cancelled", () => {

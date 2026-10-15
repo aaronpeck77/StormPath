@@ -83,13 +83,6 @@ export function getBasicBannerDebugLine(): string {
   return `ads: hidden (${mode})`;
 }
 
-/** Short About note when Basic asked Google for a banner and got nothing. */
-export function getBasicBannerCustomerHint(): string | null {
-  if (!isAdMobSupported()) return null;
-  if (bannerUiSlot !== "empty") return null;
-  return "Bottom Google ads are on for Basic. None loaded this session — common on TestFlight before the app is listed on the App Store.";
-}
-
 function resolveAdMobTestModeForDebug(): boolean {
   return (
     import.meta.env.DEV ||

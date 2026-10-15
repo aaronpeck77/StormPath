@@ -1,4 +1,5 @@
 import type { MapViewMode } from "./DriveMap";
+import type { LngLat } from "../nav/types";
 import { useEffect, useMemo, useState } from "react";
 import {
   shouldShowManualOffRouteUi,
@@ -54,6 +55,8 @@ type Props = {
   viewCycleDisabled?: boolean;
   /** Active leg ETA while driving (minutes, fused score) */
   driveEtaMinutes: number | null;
+  /** Destination pin — arrival clock is dest-local, including weekday/zone on long trips. */
+  destLngLat?: LngLat | null;
   showRadar: boolean;
   onToggleRadar: () => void;
   /** When false, hide the Rad button entirely (not just inactive). */
@@ -93,6 +96,7 @@ export function BottomToolbar({
   showViewCycleButton = true,
   viewCycleDisabled = false,
   driveEtaMinutes,
+  destLngLat = null,
   showRadar,
   onToggleRadar,
   showRadarButton = true,
@@ -356,13 +360,13 @@ export function BottomToolbar({
           arrivalAtMs != null ? (
             <div
               className="nav-bottom-toolbar__drive-meta"
-              aria-label={`ETA ${formatArrivalClockCompact(arrivalAtMs)}, ${formatEtaDuration(driveEtaMinutes)} remaining`}
+              aria-label={`ETA ${formatArrivalClockCompact(arrivalAtMs, { destLngLat, nowMs: etaTickMs })}, ${formatEtaDuration(driveEtaMinutes)} remaining`}
             >
               <div className="nav-bottom-toolbar__drive-eta-compact">
                 <span className="nav-bottom-toolbar__drive-eta-line nav-bottom-toolbar__drive-eta-line--arrival">
                   <span className="nav-bottom-toolbar__drive-eta-prefix">ETA </span>
                   <span className="nav-bottom-toolbar__drive-eta-clock">
-                    {formatArrivalClockCompact(arrivalAtMs)}
+                    {formatArrivalClockCompact(arrivalAtMs, { destLngLat, nowMs: etaTickMs })}
                   </span>
                 </span>
                 <span className="nav-bottom-toolbar__drive-eta-line nav-bottom-toolbar__drive-eta-line--remaining">

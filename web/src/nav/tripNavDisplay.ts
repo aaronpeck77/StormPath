@@ -119,7 +119,17 @@ export function computeRemainingDriveEtaMinutes(input: {
     if (scaled != null && liveDurationIsWholeTrip(live, full, scaled, routeLengthM, alongM, planLengthM)) {
       return scaled;
     }
-    if (scaled != null && !liveSliceMatchesRoadLeft(typicalRemainingMinutes, scaled)) {
+    if (scaled != null && typicalRemainingMinutes != null && Number.isFinite(typicalRemainingMinutes)) {
+      if (typicalIsLongerRoadThanLeft(typicalRemainingMinutes, scaled)) {
+        return scaled;
+      }
+      if (typicalIsShorterWindow(typicalRemainingMinutes, scaled)) {
+        return Math.max(1, Math.round(live + Math.max(0, scaled - typicalRemainingMinutes)));
+      }
+    } else if (
+      scaled != null &&
+      liveLooksLikeWindowOnly(live, scaled, routeLengthM, alongM, planLengthM)
+    ) {
       return scaled;
     }
     return live;
@@ -178,16 +188,34 @@ function liveDurationIsWholeTrip(
   return liveMin >= fullMin - 12 && liveMin > scaledMin + 15;
 }
 
-/**
- * Free-flow time for the fetched path should be the road the miles say is left.
- * A sampled detour, or the whole trip fetched from a point behind the car, is much longer.
- * A snap too far ahead is much shorter. Real congestion keeps a normal free-flow and a higher live time.
- */
-function liveSliceMatchesRoadLeft(typicalMin: number | null, scaledMin: number): boolean {
-  if (typicalMin == null || !Number.isFinite(typicalMin) || typicalMin <= 0) return true;
-  if (typicalMin > scaledMin * 1.75 && typicalMin > scaledMin + 12) return false;
-  if (typicalMin < scaledMin * 0.45 && scaledMin - typicalMin > 12) return false;
-  return true;
+/** Free-flow time is a much longer road than the miles left (detour or whole-trip fetch). */
+function typicalIsLongerRoadThanLeft(typicalMin: number, scaledMin: number): boolean {
+  return typicalMin > scaledMin * 1.75 && typicalMin > scaledMin + 12;
+}
+
+/** Free-flow time is only the live window, not time-to-dest. */
+function typicalIsShorterWindow(typicalMin: number, scaledMin: number): boolean {
+  return typicalMin < scaledMin * 0.45 && scaledMin - typicalMin > 12;
+}
+
+/** Live minutes look like the 100-mile window while scaled is still the destination. */
+function liveLooksLikeWindowOnly(
+  liveMin: number,
+  scaledMin: number,
+  routeLengthM: number,
+  alongM: number,
+  planLengthM: number | null
+): boolean {
+  const planM =
+    planLengthM != null && Number.isFinite(planLengthM) && planLengthM > 1
+      ? Math.max(planLengthM, routeLengthM)
+      : routeLengthM;
+  if (planM <= 1) return false;
+  const along = Number.isFinite(alongM) ? Math.max(0, alongM) : 0;
+  const rem = Math.max(0, routeLengthM - along);
+  const remFrac = rem / planM;
+  if (planM <= routeLengthM * 1.15 && remFrac > 0.7) return false;
+  return liveMin < scaledMin * 0.55 && scaledMin - liveMin > 20;
 }
 
 /** One step toward a new answer. Stays under the 3-minute jump the drive dump calls a lie. */

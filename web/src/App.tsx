@@ -3260,6 +3260,7 @@ export default function App() {
           handleReturnToPreviousDestination={handleReturnToPreviousDestination}
           showSavedPlacesButton={mapPlanningUi && (!navigationStarted || !routeActive)}
           driveEtaMinutes={driveEtaMinutes}
+          destLngLat={destLngLat}
           onToggleRadar={() => setShowRadar((v) => !v)}
           settingRadarEnabled={settingRadarEnabled}
           driveModeUi={driveModeUi}

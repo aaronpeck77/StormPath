@@ -64,6 +64,9 @@ describe("buildNativeGuidanceCoordinates", () => {
     expect(coords!.length).toBeLessThanOrEqual(16);
     expect(coords!.filter((c) => c.separatesLegs === false).length).toBeGreaterThan(0);
     expect(coords!.length).toBeLessThan(long.length / 8);
+    const planDest = long[long.length - 1]!;
+    const coreDest = coords![coords!.length - 1]!;
+    expect(Math.abs(coreDest.lng - planDest[0])).toBeGreaterThan(0.5);
   });
 
   it("marks real vias as stop legs", () => {

@@ -1,7 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
-import { getBasicBannerCustomerHint, getBasicBannerDebugLine } from "../ads/adMobClient";
+import { getBasicBannerDebugLine } from "../ads/adMobClient";
 import { driveDiagSnapshot, formatDriveDiagLines } from "../nav/driveDiagnostics";
 import { getPlusEntitlementDebugSnapshot } from "../billing/revenueCat";
 import { useRevenueCat } from "../billing/useRevenueCat";
@@ -203,7 +203,6 @@ export function AboutSheet({
   ];
   const diagnosticsText = diagnosticsLines.join("\n");
   const supportEmail = env.supportEmail.trim();
-  const adHint = Capacitor.isNativePlatform() && !plus ? getBasicBannerCustomerHint() : null;
 
   return (
     <>
@@ -259,7 +258,6 @@ export function AboutSheet({
               </span>
             ) : null}
           </div>
-          {adHint ? <p className="about-sheet__p about-sheet__ad-hint">{adHint}</p> : null}
         </header>
 
         {onPayTierOverride ? (

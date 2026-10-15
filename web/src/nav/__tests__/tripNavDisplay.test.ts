@@ -119,6 +119,22 @@ describe("tripNavDisplay", () => {
     ).toBe(23);
   });
 
+  it("adds live window delay onto the remaining poster minutes", () => {
+    const planM = 300 * 1609.34;
+    expect(
+      computeRemainingDriveEtaMinutes({
+        navigationStarted: true,
+        fullEtaMinutes: 2_040,
+        routeLengthM: planM,
+        alongM: 0,
+        hasRouteGeometry: true,
+        planLengthM: planM,
+        liveRemainingEtaMinutes: 140,
+        typicalRemainingMinutes: 120,
+      })
+    ).toBe(2_060);
+  });
+
   it("keeps a live delay when the free-flow time still matches the miles left", () => {
     const planM = 80 * 1609.34;
     expect(
