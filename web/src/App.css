@@ -13843,6 +13843,8 @@ html.route-info-open .route-progress-callout-panel--expanded {
 .nav-bottom-toolbar--drive .nav-bottom-toolbar__right,
 .nav-bottom-toolbar--mapnav .nav-bottom-toolbar__right {
   width: 100%;
+  min-width: 0;
+  overflow: hidden;
   padding-left: 10px;
   border-left: 1px solid rgba(255, 255, 255, 0.14);
 }
@@ -13852,6 +13854,8 @@ html.route-info-open .route-progress-callout-panel--expanded {
   align-items: center;
   justify-content: center;
   min-width: 0;
+  flex-shrink: 0;
+  z-index: 1;
 }
 
 .nav-bottom-toolbar__right {
@@ -13885,6 +13889,9 @@ html.route-info-open .route-progress-callout-panel--expanded {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: #f1f5f9;
 }
 
@@ -14231,7 +14238,42 @@ html.route-info-open .route-progress-callout-panel--expanded {
 }
 
 .nav-mode-sq--radar {
-  background: linear-gradient(145deg, #06b6d4, #0e7490);
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1;
+  background: linear-gradient(145deg, #334155, #1e293b);
+  border-color: rgba(148, 163, 184, 0.4);
+  color: #cbd5e1;
+}
+
+.nav-mode-sq--radar__name {
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.nav-mode-sq--radar__state {
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.nav-mode-sq--radar.is-off {
+  background: linear-gradient(145deg, #334155, #1e293b);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: #94a3b8;
+}
+
+.nav-mode-sq--radar.is-on {
+  background: linear-gradient(145deg, #22d3ee, #0891b2);
+  border-color: #67e8f9;
+  color: #042f2e;
+  box-shadow: 0 0 0 1px rgba(103, 232, 249, 0.75), 0 0 12px rgba(34, 211, 238, 0.4);
+}
+
+.nav-mode-sq--radar.is-on .nav-mode-sq--radar__state {
+  color: #ecfeff;
 }
 
 .nav-mode-sq--go {
@@ -16629,7 +16671,7 @@ html.route-info-open .route-progress-callout-panel--expanded {
     margin-left: 0;
     padding-left: 10px;
     border-left: 1px solid rgba(255, 255, 255, 0.14);
-    overflow: visible;
+    overflow: hidden;
     justify-content: flex-end;
   }
 

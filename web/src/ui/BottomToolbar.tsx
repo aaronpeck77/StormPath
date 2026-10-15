@@ -7,6 +7,7 @@ import {
 } from "../nav/constants";
 import {
   formatArrivalClockCompact,
+  formatArrivalClockParts,
   formatEtaDuration,
   formatEtaDurationToolbar,
 } from "./formatEta";
@@ -132,6 +133,13 @@ export function BottomToolbar({
     if (m <= 0) return null;
     return etaTickMs + Math.round(m) * 60_000;
   }, [etaTickMs, driveEtaMinutes]);
+  const arrivalClockParts = useMemo(
+    () =>
+      arrivalAtMs != null
+        ? formatArrivalClockParts(arrivalAtMs, { destLngLat, nowMs: etaTickMs })
+        : null,
+    [arrivalAtMs, destLngLat, etaTickMs]
+  );
 
   const driveNavUi = navigationStarted && viewMode === "drive";
   const mapNavUi = navigationStarted && viewMode === "topdown";
@@ -284,14 +292,19 @@ export function BottomToolbar({
                 type="button"
                 title={
                   radarEnabled
-                    ? "Animated precipitation radar (US: Tomorrow.io, elsewhere: RainViewer)"
+                    ? showRadar
+                      ? "Radar on — tap to hide precipitation"
+                      : "Radar off — tap to show precipitation"
                     : "Radar disabled in Settings"
                 }
-                className={`nav-mode-sq nav-mode-sq--radar${showRadar ? " active" : ""}`}
+                className={`nav-mode-sq nav-mode-sq--radar${showRadar ? " is-on" : " is-off"}`}
+                aria-pressed={showRadar}
+                aria-label={showRadar ? "Radar on" : "Radar off"}
                 onClick={radarEnabled ? onToggleRadar : undefined}
                 disabled={!radarEnabled}
               >
-                Rad
+                <span className="nav-mode-sq--radar__name">Rad</span>
+                <span className="nav-mode-sq--radar__state">{showRadar ? "On" : "Off"}</span>
               </button>
             )}
             {routeUi && showGo && (
@@ -357,7 +370,8 @@ export function BottomToolbar({
           {navigationStarted &&
           driveEtaMinutes != null &&
           driveEtaMinutes > 0 &&
-          arrivalAtMs != null ? (
+          arrivalAtMs != null &&
+          arrivalClockParts ? (
             <div
               className="nav-bottom-toolbar__drive-meta"
               aria-label={`ETA ${formatArrivalClockCompact(arrivalAtMs, { destLngLat, nowMs: etaTickMs })}, ${formatEtaDuration(driveEtaMinutes)} remaining`}
@@ -365,11 +379,10 @@ export function BottomToolbar({
               <div className="nav-bottom-toolbar__drive-eta-compact">
                 <span className="nav-bottom-toolbar__drive-eta-line nav-bottom-toolbar__drive-eta-line--arrival">
                   <span className="nav-bottom-toolbar__drive-eta-prefix">ETA </span>
-                  <span className="nav-bottom-toolbar__drive-eta-clock">
-                    {formatArrivalClockCompact(arrivalAtMs, { destLngLat, nowMs: etaTickMs })}
-                  </span>
+                  <span className="nav-bottom-toolbar__drive-eta-clock">{arrivalClockParts.clock}</span>
                 </span>
                 <span className="nav-bottom-toolbar__drive-eta-line nav-bottom-toolbar__drive-eta-line--remaining">
+                  {arrivalClockParts.weekday ? `${arrivalClockParts.weekday} · ` : ""}
                   {formatEtaDurationToolbar(driveEtaMinutes)}
                 </span>
               </div>

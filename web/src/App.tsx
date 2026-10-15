@@ -23,6 +23,11 @@ import {
 import { useDestinationSearch } from "./hooks/useDestinationSearch";
 import { useNavigationPosition } from "./hooks/useNavigationPosition";
 import { useNativeNavSession } from "./nav/useNativeNavSession";
+import {
+  continueAlongInstruction,
+  driverBannerStepIndex,
+  isArriveGuidanceInstruction,
+} from "./nav/windowArriveGuidance";
 import { shouldUseNativeDriveMapShell } from "./nav/nativeDriveMapShell";
 import { allowsMapDestinationPick } from "./nav/viewModeContract";
 import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
@@ -1003,6 +1008,7 @@ export default function App() {
     followCamera: nativeFollowCamera,
     guidance: nativeNavGuidance,
     turnSteps: nativeTurnSteps,
+    coreWindowIsFinal,
     restartNative,
     stopNative,
     coreRerouteHealthRef,
@@ -1567,9 +1573,18 @@ export default function App() {
   const bannerTurnSteps =
     guidanceLive && nativeNavActive && nativeTurnSteps.length > 0 ? nativeTurnSteps : turnSteps;
 
+  const hideWindowArrive = nativeNavActive && !coreWindowIsFinal;
+
   const bannerTurnIndex = useMemo(() => {
     if (!guidanceLive || !nativeNavActive || !nativeNavGuidance || bannerTurnSteps.length === 0) {
       return diyBannerTurnIndex;
+    }
+    if (hideWindowArrive) {
+      return driverBannerStepIndex(
+        bannerTurnSteps,
+        nativeNavGuidance.stepIndex,
+        diyBannerTurnIndex
+      );
     }
     // Traveling current step; upcoming maneuver is typically the next step in Mapbox's list.
     const next = nativeNavGuidance.stepIndex + 1;
@@ -1579,8 +1594,9 @@ export default function App() {
     nativeNavActive,
     guidanceLive,
     nativeNavGuidance,
-    bannerTurnSteps.length,
+    bannerTurnSteps,
     diyBannerTurnIndex,
+    hideWindowArrive,
   ]);
 
   const metersToBannerManeuver =
@@ -1588,15 +1604,19 @@ export default function App() {
       ? nativeNavGuidance.stepRemainingM
       : diyMetersToBannerManeuver;
 
-  const bannerInstructionOverride =
-    guidanceLive && nativeNavActive && nativeNavGuidance?.instruction
-      ? nativeNavGuidance.instruction
-      : null;
-
   const bannerTravelingStepIndex =
     guidanceLive && nativeNavActive
       ? (nativeNavGuidance?.stepIndex ?? 0)
       : diyTravelingTurnIndex;
+
+  const nativeInstruction =
+    guidanceLive && nativeNavActive && nativeNavGuidance?.instruction
+      ? nativeNavGuidance.instruction
+      : null;
+  const bannerInstructionOverride =
+    hideWindowArrive && isArriveGuidanceInstruction(nativeInstruction)
+      ? continueAlongInstruction(nativeNavGuidance?.currentRoadName)
+      : nativeInstruction;
 
   const bannerCurrentRoadName =
     guidanceLive && nativeNavActive

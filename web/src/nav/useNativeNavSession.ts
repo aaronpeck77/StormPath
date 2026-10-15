@@ -134,6 +134,7 @@ export function useNativeNavSession(opts: {
   guidanceLanguageRef.current = guidanceLanguage;
 
   const [nativeNavActive, setNativeNavActive] = useState(false);
+  const [coreWindowIsFinal, setCoreWindowIsFinal] = useState(true);
   const [position, setPosition] = useState<NavigationPositionState | null>(null);
   const [followCamera, setFollowCamera] = useState<NativeDriveFollowCamera | null>(null);
   const [guidance, setGuidance] = useState<NativeNavGuidance | null>(null);
@@ -191,6 +192,7 @@ export function useNativeNavSession(opts: {
     prepareKeyRef.current = "";
     liveWindowRef.current = null;
     windowStartAlongRef.current = 0;
+    setCoreWindowIsFinal(true);
     corridorAdoptedRef.current = false;
     firstRouteChangedRef.current = true;
     poseHoldRef.current.reset();
@@ -222,6 +224,7 @@ export function useNativeNavSession(opts: {
     );
     liveWindowRef.current = liveWindow;
     windowStartAlongRef.current = liveWindow?.startAlongM ?? 0;
+    setCoreWindowIsFinal(liveWindow?.isFinal ?? true);
 
     try {
       const avail = await StormpathMapboxNavigation.isAvailable();
@@ -514,6 +517,8 @@ export function useNativeNavSession(opts: {
     guidance,
     /** Live Mapbox Core turn list — same route as the blue line / voice. */
     turnSteps,
+    /** False while Core is only running the next ~100 mi of a longer plan. */
+    coreWindowIsFinal,
     stopNative,
     restartNative,
   };

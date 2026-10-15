@@ -11,6 +11,12 @@ export type ArrivalClockOpts = {
   nowMs?: number;
 };
 
+export type ArrivalClockParts = {
+  clock: string;
+  weekday: string | null;
+  zone: string | null;
+};
+
 function formatPart(parts: Intl.DateTimeFormatPart[], type: string): string {
   return parts.find((p) => p.type === type)?.value ?? "";
 }
@@ -79,11 +85,8 @@ export function formatEtaDurationToolbar(totalMinutes: number): string {
   return `${h}h ${m}m`;
 }
 
-/**
- * Compact 12h clock for tight UI: `5:14p`, `Fri 4:15p PDT`.
- * Duration math is elapsed minutes; this only labels the UTC instant in dest-local time.
- */
-export function formatArrivalClockCompact(atMs: number, opts?: ArrivalClockOpts): string {
+/** Dest-local clock plus optional weekday/zone. Toolbar uses the parts on separate lines. */
+export function formatArrivalClockParts(atMs: number, opts?: ArrivalClockOpts): ArrivalClockParts {
   const dest = opts?.destLngLat;
   const nowMs = opts?.nowMs ?? Date.now();
   const destTz =
@@ -100,17 +103,18 @@ export function formatArrivalClockCompact(atMs: number, opts?: ArrivalClockOpts)
   const minute = (formatPart(clockParts, "minute") || "00").padStart(2, "0");
   const dayPeriod = formatPart(clockParts, "dayPeriod");
   const ap = /p/i.test(dayPeriod) ? "p" : "a";
-  let out = `${hour}:${minute}${ap}`;
-  if (!destTz) return out;
+  const clock = `${hour}:${minute}${ap}`;
+  if (!destTz) return { clock, weekday: null, zone: null };
 
-  if (calendarDayKey(atMs, destTz) !== calendarDayKey(nowMs, destTz)) {
-    const weekday = new Intl.DateTimeFormat("en-US", {
-      timeZone: destTz,
-      weekday: "short",
-    }).format(new Date(atMs));
-    out = `${weekday} ${out}`;
-  }
+  const weekday =
+    calendarDayKey(atMs, destTz) !== calendarDayKey(nowMs, destTz)
+      ? new Intl.DateTimeFormat("en-US", {
+          timeZone: destTz,
+          weekday: "short",
+        }).format(new Date(atMs))
+      : null;
   const phoneTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  let zone: string | null = null;
   if (destTz !== phoneTz) {
     const tzName = formatPart(
       new Intl.DateTimeFormat("en-US", {
@@ -120,7 +124,13 @@ export function formatArrivalClockCompact(atMs: number, opts?: ArrivalClockOpts)
       }).formatToParts(new Date(atMs)),
       "timeZoneName"
     );
-    if (tzName && !/GMT|UTC/i.test(tzName)) out = `${out} ${tzName}`;
+    if (tzName && !/GMT|UTC/i.test(tzName)) zone = tzName;
   }
-  return out;
+  return { clock, weekday, zone };
+}
+
+/** Compact one-line clock: `5:14p`, `Fri 4:15p PDT`. */
+export function formatArrivalClockCompact(atMs: number, opts?: ArrivalClockOpts): string {
+  const { clock, weekday, zone } = formatArrivalClockParts(atMs, opts);
+  return [weekday, clock, zone].filter(Boolean).join(" ");
 }

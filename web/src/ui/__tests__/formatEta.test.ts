@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatArrivalClockCompact } from "../formatEta";
+import { formatArrivalClockCompact, formatArrivalClockParts } from "../formatEta";
 
 const SEATTLE: [number, number] = [-122.33, 47.61];
 const CHICAGO: [number, number] = [-87.63, 41.88];
@@ -17,6 +17,9 @@ describe("formatArrivalClockCompact", () => {
     expect(label).toMatch(/Fri/i);
     expect(label).toMatch(/5:32a/);
     expect(label).toMatch(/PDT|PST/);
+    const parts = formatArrivalClockParts(atMs, { destLngLat: SEATTLE, nowMs });
+    expect(parts.clock).toMatch(/5:32a/);
+    expect(parts.weekday).toMatch(/Fri/i);
   });
 
   it("does not add a weekday for a same-day arrival in dest time", () => {

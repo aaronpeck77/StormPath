@@ -101,7 +101,15 @@ export function buildNativeGuidanceCoordinates(input: {
       if (!sameCoord(mark.coord, out[out.length - 1]!)) out.push(mark.coord);
     }
     if (!sameCoord(out[out.length - 1]!, destC)) out.push(destC);
-    if (out.length >= 2) return out.slice(0, max);
+    if (out.length < 2) {
+      /* fall through to origin → dest */
+    } else if (out.length <= max) {
+      return out;
+    } else {
+      const kept = out.slice(0, max - 1);
+      if (!sameCoord(kept[kept.length - 1]!, destC)) kept.push(destC);
+      return kept;
+    }
   }
 
   if (!input.userLngLat || !input.destLngLat) return null;
