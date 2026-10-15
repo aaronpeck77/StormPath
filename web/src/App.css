@@ -1832,6 +1832,37 @@ html:has(.drive-map--native-shell) #root {
   opacity: 0.85;
 }
 
+.about-sheet__settings-card.about-sheet__details > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.about-sheet__settings-card.about-sheet__details > summary::after {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid #cbd5e1;
+  border-bottom: 2px solid #cbd5e1;
+  transform: rotate(45deg);
+  margin-top: -0.2rem;
+  flex-shrink: 0;
+}
+
+.about-sheet__settings-card.about-sheet__details[open] > summary {
+  margin-bottom: 10px;
+}
+
+.about-sheet__settings-card.about-sheet__details[open] > summary::after {
+  transform: rotate(-135deg);
+  margin-top: 0.12rem;
+}
+
 .about-sheet__settings-card.about-sheet__home-framing {
   margin: 0;
 }

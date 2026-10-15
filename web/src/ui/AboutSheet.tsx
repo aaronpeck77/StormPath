@@ -706,58 +706,244 @@ export function AboutSheet({
                 </span>
               </label>
 
-              <label
-                className={`about-sheet__setting about-sheet__settings-card${STORMY_AVAILABLE ? "" : " disabled"}`}
-              >
-                <input
-                  type="checkbox"
-                  checked={STORMY_AVAILABLE && settings.stormyEnabled}
-                  disabled={!STORMY_AVAILABLE}
-                  onChange={(e) => {
-                    if (!STORMY_AVAILABLE) return;
-                    onSettings({ ...settings, stormyEnabled: e.target.checked });
-                  }}
-                />
-                <span>
-                  <strong>Stormy</strong>
-                  {STORMY_AVAILABLE ? (
-                    <>
-                      {" "}
-                      — show her button on the map. Turn this off to hide her and put the other buttons back.
-                    </>
-                  ) : (
-                    <>
-                      {" "}
-                      — her button on the map. <em>Being worked on. Coming soon.</em>
-                    </>
-                  )}
-                </span>
-              </label>
-
-              {!STORMY_AVAILABLE || settings.stormyEnabled ? (
-                <>
-                  <div
-                    className={`about-sheet__p about-sheet__settings-card${STORMY_AVAILABLE ? "" : " about-sheet__soon"}`}
-                  >
-                    <strong>What you can say to Stormy.</strong>
-                    <p className="about-sheet__p about-sheet__p--tight">
-                      Say “Take me to” and the place you want. That blank is your destination, and Stormy
-                      sets a pin. One place at a time, then say go. Tap her again to add a stop.
-                    </p>
-                    <ul className="about-sheet__bullets">
-                      {STORMY_COMMANDS.map((line) => (
-                        <li key={line}>{line}</li>
-                      ))}
-                    </ul>
+              {plus && activityTrail ? (
+                <details className="about-sheet__details about-sheet__settings-card">
+                  <summary>Activity trail</summary>
+                  <div className="about-sheet__settings">
+                    <label className="about-sheet__setting about-sheet__settings-card">
+                      <input
+                        type="checkbox"
+                        checked={activityTrail.learnEnabled}
+                        onChange={(e) => activityTrail.onLearnEnabledChange(e.target.checked)}
+                      />
+                      <span>
+                        <strong>Learn where I drive</strong> — save sparse GPS dots on this device so the map and search can
+                        favor your area. Turn off any time; existing dots stay until you erase them.
+                      </span>
+                    </label>
+                    <label className="about-sheet__setting about-sheet__settings-card">
+                      <input
+                        type="checkbox"
+                        checked={activityTrail.showOnMap}
+                        onChange={(e) => activityTrail.onShowOnMapChange(e.target.checked)}
+                      />
+                      <span>
+                        <strong>Show activity dots on map</strong> — cyan trail of where you’ve been (zoom in to see density)
+                      </span>
+                    </label>
+                    <label
+                      className={`about-sheet__setting about-sheet__settings-card${activityTrail.homePreloadAvailable ? "" : " disabled"}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={activityTrail.homePreloadEnabled}
+                        disabled={!activityTrail.homePreloadAvailable}
+                        onChange={(e) => activityTrail.onHomePreloadEnabledChange(e.target.checked)}
+                      />
+                      <span>
+                        <strong>Preload my usual area (Wi‑Fi only)</strong> — after enough trail dots, quietly
+                        cache map tiles around where you usually drive so the map fills in faster on weak signal.
+                        {activityTrail.homePreloadSizeLabel ? (
+                          <> Estimated cache: {activityTrail.homePreloadSizeLabel}.</>
+                        ) : (
+                          <> Need more dots first.</>
+                        )}
+                      </span>
+                    </label>
+                    <fieldset className="about-sheet__settings-card about-sheet__home-framing">
+                      <legend className="about-sheet__home-framing-legend">Home map view (no active trip)</legend>
+                      <p className="about-sheet__p about-sheet__p--tight">
+                        When you open StormPath or finish a trip, the map centers like{" "}
+                        <strong>My location</strong> or frames your <strong>usual driving area</strong> when enough trail dots
+                        exist.
+                      </p>
+                      <label className="about-sheet__home-framing-option">
+                        <input
+                          type="radio"
+                          name="home-map-framing"
+                          checked={activityTrail.homeMapFraming === "auto"}
+                          onChange={() => activityTrail.onHomeMapFramingChange("auto")}
+                        />
+                        <span>
+                          <strong>Auto</strong> — usual area when the trail has enough dots ({activityTrail.homeAreaAvailable ? "available now" : "not enough yet"}), otherwise My location
+                        </span>
+                      </label>
+                      <label className="about-sheet__home-framing-option">
+                        <input
+                          type="radio"
+                          name="home-map-framing"
+                          checked={activityTrail.homeMapFraming === "my_location"}
+                          onChange={() => activityTrail.onHomeMapFramingChange("my_location")}
+                        />
+                        <span>
+                          <strong>My location</strong> — street-level on your GPS (same as the My location button)
+                        </span>
+                      </label>
+                      <label className={`about-sheet__home-framing-option${activityTrail.homeAreaAvailable ? "" : " disabled"}`}>
+                        <input
+                          type="radio"
+                          name="home-map-framing"
+                          checked={activityTrail.homeMapFraming === "activity_area"}
+                          disabled={!activityTrail.homeAreaAvailable}
+                          onChange={() => activityTrail.onHomeMapFramingChange("activity_area")}
+                        />
+                        <span>
+                          <strong>My usual area</strong> — zoom to where your trail shows you usually drive
+                          {!activityTrail.homeAreaAvailable ? " (need more dots)" : null}
+                        </span>
+                      </label>
+                    </fieldset>
+                    <div className="about-sheet__settings-card">
+                      <p className="about-sheet__p">
+                        With this on, StormPath saves sparse GPS dots (about every minute while you move) to learn where
+                        you usually drive. That helps <strong>frame the map</strong> around your area,{" "}
+                        <strong>rank search suggestions</strong> nearer places you know,{" "}
+                        <strong>prefer familiar alternates</strong> when A/B/C routes are built, offer{" "}
+                        <strong>Your route</strong> when you repeatedly leave the main path at the same exit, and show the cyan
+                        overlay below. Trip detection for “frequent routes” uses a separate path.
+                      </p>
+                      <details className="about-sheet__details about-sheet__details--inline">
+                        <summary>How it works</summary>
+                        <p className="about-sheet__p">
+                          Dots accrue only with the app open; older points drop when storage is full (~22k). Frequent-route rows
+                          in Saved still need similar drives at least twice.
+                        </p>
+                      </details>
+                      <dl className="about-sheet__meta">
+                        <div className="about-sheet__meta-row">
+                          <dt>Dots saved</dt>
+                          <dd>{activityTrail.count.toLocaleString()}</dd>
+                        </div>
+                        {activityTrail.spanDays != null && (
+                          <div className="about-sheet__meta-row">
+                            <dt>Span</dt>
+                            <dd>~{activityTrail.spanDays.toFixed(0)} days</dd>
+                          </div>
+                        )}
+                        <div className="about-sheet__meta-row">
+                          <dt>Range</dt>
+                          <dd>
+                            {activityTrail.oldestLabel} → {activityTrail.newestLabel}
+                          </dd>
+                        </div>
+                      </dl>
+                    </div>
+                    <div className="about-sheet__trail-clear">
+                      {activityTrailClearStep === "idle" ? (
+                        <button
+                          type="button"
+                          className="about-sheet__trail-clear-btn"
+                          onClick={() => {
+                            setActivityTrailClearAck(false);
+                            setActivityTrailClearStep("confirm");
+                          }}
+                        >
+                          Erase activity trail…
+                        </button>
+                      ) : (
+                        <div className="about-sheet__trail-clear-panel" role="alertdialog" aria-labelledby="trail-clear-title">
+                          <p id="trail-clear-title" className="about-sheet__trail-clear-title">
+                            Erase all activity trail data?
+                          </p>
+                          <p className="about-sheet__trail-clear-text">
+                            This permanently deletes every saved GPS dot on this device. You will lose home map framing,
+                            search ranking for your area, familiar route suggestions, and Wi‑Fi map preload for your usual
+                            territory. StormPath will behave like a fresh install until new dots accumulate.
+                          </p>
+                          <label className="about-sheet__trail-clear-ack">
+                            <input
+                              type="checkbox"
+                              checked={activityTrailClearAck}
+                              onChange={(e) => setActivityTrailClearAck(e.target.checked)}
+                            />
+                            <span>I understand this cannot be undone</span>
+                          </label>
+                          <div className="about-sheet__trail-clear-row">
+                            <button
+                              type="button"
+                              className="about-sheet__trail-clear-cancel"
+                              onClick={() => {
+                                setActivityTrailClearStep("idle");
+                                setActivityTrailClearAck(false);
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="about-sheet__trail-clear-confirm-btn"
+                              disabled={!activityTrailClearAck}
+                              onClick={() => {
+                                activityTrail.onClear();
+                                setActivityTrailClearStep("idle");
+                                setActivityTrailClearAck(false);
+                              }}
+                            >
+                              Erase trail data
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-
-                  <p
-                    className={`about-sheet__p about-sheet__settings-card${STORMY_AVAILABLE ? "" : " about-sheet__soon"}`}
-                  >
-                    <strong>Stormy&apos;s voice.</strong> {STORMY_VOICE_HINT}
-                  </p>
-                </>
+                </details>
               ) : null}
+
+              <details className="about-sheet__details about-sheet__settings-card">
+                <summary>Stormy</summary>
+                <label
+                  className={`about-sheet__setting about-sheet__settings-card${STORMY_AVAILABLE ? "" : " disabled"}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={STORMY_AVAILABLE && settings.stormyEnabled}
+                    disabled={!STORMY_AVAILABLE}
+                    onChange={(e) => {
+                      if (!STORMY_AVAILABLE) return;
+                      onSettings({ ...settings, stormyEnabled: e.target.checked });
+                    }}
+                  />
+                  <span>
+                    <strong>Stormy</strong>
+                    {STORMY_AVAILABLE ? (
+                      <>
+                        {" "}
+                        — show her button on the map. Turn this off to hide her and put the other buttons back.
+                      </>
+                    ) : (
+                      <>
+                        {" "}
+                        — her button on the map. <em>Being worked on. Coming soon.</em>
+                      </>
+                    )}
+                  </span>
+                </label>
+
+                {!STORMY_AVAILABLE || settings.stormyEnabled ? (
+                  <>
+                    <div
+                      className={`about-sheet__p about-sheet__settings-card${STORMY_AVAILABLE ? "" : " about-sheet__soon"}`}
+                    >
+                      <strong>What you can say to Stormy.</strong>
+                      <p className="about-sheet__p about-sheet__p--tight">
+                        Say “Take me to” and the place you want. That blank is your destination, and Stormy
+                        sets a pin. One place at a time, then say go. Tap her again to add a stop.
+                      </p>
+                      <ul className="about-sheet__bullets">
+                        {STORMY_COMMANDS.map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <p
+                      className={`about-sheet__p about-sheet__settings-card${STORMY_AVAILABLE ? "" : " about-sheet__soon"}`}
+                    >
+                      <strong>Stormy&apos;s voice.</strong> {STORMY_VOICE_HINT}
+                    </p>
+                  </>
+                ) : null}
+              </details>
 
             </div>
           </section>
@@ -784,188 +970,6 @@ export function AboutSheet({
             </section>
           )}
 
-          {plus && activityTrail && (
-            <section className="about-sheet__panel about-sheet__panel--activity">
-              <h3 className="about-sheet__h3">Activity trail</h3>
-              <div className="about-sheet__settings">
-              <label className="about-sheet__setting about-sheet__settings-card">
-                <input
-                  type="checkbox"
-                  checked={activityTrail.learnEnabled}
-                  onChange={(e) => activityTrail.onLearnEnabledChange(e.target.checked)}
-                />
-                <span>
-                  <strong>Learn where I drive</strong> — save sparse GPS dots on this device so the map and search can
-                  favor your area. Turn off any time; existing dots stay until you erase them.
-                </span>
-              </label>
-              <label className="about-sheet__setting about-sheet__settings-card">
-                <input
-                  type="checkbox"
-                  checked={activityTrail.showOnMap}
-                  onChange={(e) => activityTrail.onShowOnMapChange(e.target.checked)}
-                />
-                <span>
-                  <strong>Show activity dots on map</strong> — cyan trail of where you’ve been (zoom in to see density)
-                </span>
-              </label>
-              <label
-                className={`about-sheet__setting about-sheet__settings-card${activityTrail.homePreloadAvailable ? "" : " disabled"}`}
-              >
-                <input
-                  type="checkbox"
-                  checked={activityTrail.homePreloadEnabled}
-                  disabled={!activityTrail.homePreloadAvailable}
-                  onChange={(e) => activityTrail.onHomePreloadEnabledChange(e.target.checked)}
-                />
-                <span>
-                  <strong>Preload my usual area (Wi‑Fi only)</strong> — after enough trail dots, quietly
-                  cache map tiles around where you usually drive so the map fills in faster on weak signal.
-                  {activityTrail.homePreloadSizeLabel ? (
-                    <> Estimated cache: {activityTrail.homePreloadSizeLabel}.</>
-                  ) : (
-                    <> Need more dots first.</>
-                  )}
-                </span>
-              </label>
-              <fieldset className="about-sheet__settings-card about-sheet__home-framing">
-                <legend className="about-sheet__home-framing-legend">Home map view (no active trip)</legend>
-                <p className="about-sheet__p about-sheet__p--tight">
-                  When you open StormPath or finish a trip, the map centers like{" "}
-                  <strong>My location</strong> or frames your <strong>usual driving area</strong> when enough trail dots
-                  exist.
-                </p>
-                <label className="about-sheet__home-framing-option">
-                  <input
-                    type="radio"
-                    name="home-map-framing"
-                    checked={activityTrail.homeMapFraming === "auto"}
-                    onChange={() => activityTrail.onHomeMapFramingChange("auto")}
-                  />
-                  <span>
-                    <strong>Auto</strong> — usual area when the trail has enough dots ({activityTrail.homeAreaAvailable ? "available now" : "not enough yet"}), otherwise My location
-                  </span>
-                </label>
-                <label className="about-sheet__home-framing-option">
-                  <input
-                    type="radio"
-                    name="home-map-framing"
-                    checked={activityTrail.homeMapFraming === "my_location"}
-                    onChange={() => activityTrail.onHomeMapFramingChange("my_location")}
-                  />
-                  <span>
-                    <strong>My location</strong> — street-level on your GPS (same as the My location button)
-                  </span>
-                </label>
-                <label className={`about-sheet__home-framing-option${activityTrail.homeAreaAvailable ? "" : " disabled"}`}>
-                  <input
-                    type="radio"
-                    name="home-map-framing"
-                    checked={activityTrail.homeMapFraming === "activity_area"}
-                    disabled={!activityTrail.homeAreaAvailable}
-                    onChange={() => activityTrail.onHomeMapFramingChange("activity_area")}
-                  />
-                  <span>
-                    <strong>My usual area</strong> — zoom to where your trail shows you usually drive
-                    {!activityTrail.homeAreaAvailable ? " (need more dots)" : null}
-                  </span>
-                </label>
-              </fieldset>
-              <div className="about-sheet__settings-card">
-              <p className="about-sheet__p">
-                With this on, StormPath saves sparse GPS dots (about every minute while you move) to learn where
-                you usually drive. That helps <strong>frame the map</strong> around your area,{" "}
-                <strong>rank search suggestions</strong> nearer places you know,{" "}
-                <strong>prefer familiar alternates</strong> when A/B/C routes are built, offer{" "}
-                <strong>Your route</strong> when you repeatedly leave the main path at the same exit, and show the cyan
-                overlay below. Trip detection for “frequent routes” uses a separate path.
-              </p>
-              <details className="about-sheet__details about-sheet__details--inline">
-                <summary>How it works</summary>
-                <p className="about-sheet__p">
-                  Dots accrue only with the app open; older points drop when storage is full (~22k). Frequent-route rows
-                  in Saved still need similar drives at least twice.
-                </p>
-              </details>
-              <dl className="about-sheet__meta">
-                <div className="about-sheet__meta-row">
-                  <dt>Dots saved</dt>
-                  <dd>{activityTrail.count.toLocaleString()}</dd>
-                </div>
-                {activityTrail.spanDays != null && (
-                  <div className="about-sheet__meta-row">
-                    <dt>Span</dt>
-                    <dd>~{activityTrail.spanDays.toFixed(0)} days</dd>
-                  </div>
-                )}
-                <div className="about-sheet__meta-row">
-                  <dt>Range</dt>
-                  <dd>
-                    {activityTrail.oldestLabel} → {activityTrail.newestLabel}
-                  </dd>
-                </div>
-              </dl>
-              </div>
-              </div>
-              <div className="about-sheet__trail-clear">
-                {activityTrailClearStep === "idle" ? (
-                  <button
-                    type="button"
-                    className="about-sheet__trail-clear-btn"
-                    onClick={() => {
-                      setActivityTrailClearAck(false);
-                      setActivityTrailClearStep("confirm");
-                    }}
-                  >
-                    Erase activity trail…
-                  </button>
-                ) : (
-                  <div className="about-sheet__trail-clear-panel" role="alertdialog" aria-labelledby="trail-clear-title">
-                    <p id="trail-clear-title" className="about-sheet__trail-clear-title">
-                      Erase all activity trail data?
-                    </p>
-                    <p className="about-sheet__trail-clear-text">
-                      This permanently deletes every saved GPS dot on this device. You will lose home map framing,
-                      search ranking for your area, familiar route suggestions, and Wi‑Fi map preload for your usual
-                      territory. StormPath will behave like a fresh install until new dots accumulate.
-                    </p>
-                    <label className="about-sheet__trail-clear-ack">
-                      <input
-                        type="checkbox"
-                        checked={activityTrailClearAck}
-                        onChange={(e) => setActivityTrailClearAck(e.target.checked)}
-                      />
-                      <span>I understand this cannot be undone</span>
-                    </label>
-                    <div className="about-sheet__trail-clear-row">
-                      <button
-                        type="button"
-                        className="about-sheet__trail-clear-cancel"
-                        onClick={() => {
-                          setActivityTrailClearStep("idle");
-                          setActivityTrailClearAck(false);
-                        }}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        className="about-sheet__trail-clear-confirm-btn"
-                        disabled={!activityTrailClearAck}
-                        onClick={() => {
-                          activityTrail.onClear();
-                          setActivityTrailClearStep("idle");
-                          setActivityTrailClearAck(false);
-                        }}
-                      >
-                        Erase trail data
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
 
           <details className="about-sheet__panel about-sheet__details">
             <summary>When data looks wrong</summary>

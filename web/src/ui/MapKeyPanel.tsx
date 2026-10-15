@@ -300,8 +300,8 @@ const GROUPS: LegendGroup[] = [
 export function MapKeyPanel() {
   const puckFill = puckColorById(useSettingsStore((s) => s.puckColor)).fill;
   return (
-    <section className="about-sheet__panel about-sheet__panel--map-key">
-      <h3 className="about-sheet__h3">Map key</h3>
+    <details className="about-sheet__panel about-sheet__panel--map-key about-sheet__details">
+      <summary>Map key</summary>
       <p className="about-sheet__p">
         What the colors and chrome on the map mean. Swatches are pulled from the live app constants
         — they should match what you see on screen.
@@ -327,6 +327,6 @@ export function MapKeyPanel() {
           </ul>
         </details>
       ))}
-    </section>
+    </details>
   );
 }
