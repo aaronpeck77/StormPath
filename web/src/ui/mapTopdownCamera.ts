@@ -10,6 +10,11 @@ export const TOPDOWN_PUCK_OFFSET_PX: [number, number] = [0, 0];
 export const TOPDOWN_NAV_STREET_ZOOM = 12.8;
 /** Minimum zoom enforced in topdown nav mode; below this the view snaps back to TOPDOWN_NAV_STREET_ZOOM. */
 export const TOPDOWN_NAV_MIN_ZOOM = 11.8;
+/**
+ * Dr → Mp while navigating. Drive sits near 15.3–16.6. Pull back this far so Mp
+ * shows a little more street than the 3D frame, and stop well short of Route overview.
+ */
+export const TOPDOWN_FROM_DRIVE_ZOOM_OUT = 1.5;
 
 /** Route (Rt): start with regional / state context; user zooms or taps My location for street level. */
 export const ROUTE_VIEW_REGIONAL_ZOOM = 6.95;
@@ -66,4 +71,30 @@ export function coerceTopdownNavStreetZoom(
   }
   topdownZoomRef.current = mapZoom;
   return mapZoom;
+}
+
+/**
+ * Zoom to use the moment Mp is entered while navigating.
+ * A wide Rt frame snaps to the street default. A Drive frame pulls back a couple steps.
+ * A second call in the same enter (drone + fit) returns the same zoom.
+ */
+export function topdownZoomOnEnter(
+  mapZoom: number,
+  topdownZoomRef: MutableRefObject<number>
+): number {
+  if (!Number.isFinite(mapZoom) || mapZoom < TOPDOWN_NAV_MIN_ZOOM) {
+    topdownZoomRef.current = TOPDOWN_NAV_STREET_ZOOM;
+    return TOPDOWN_NAV_STREET_ZOOM;
+  }
+  if (mapZoom <= TOPDOWN_NAV_STREET_ZOOM + 0.45) {
+    topdownZoomRef.current = mapZoom;
+    return mapZoom;
+  }
+  const pulled = Math.max(
+    TOPDOWN_NAV_STREET_ZOOM,
+    mapZoom - TOPDOWN_FROM_DRIVE_ZOOM_OUT
+  );
+  if (Math.abs(topdownZoomRef.current - pulled) < 0.08) return topdownZoomRef.current;
+  topdownZoomRef.current = pulled;
+  return pulled;
 }

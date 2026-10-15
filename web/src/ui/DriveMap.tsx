@@ -244,10 +244,7 @@ import {
   sceneLightForPhase,
   buildingColorForPhase,
 } from "./mapBasemapStyle";
-import {
-  navigationRouteOverviewSnapKey,
-  navigationTopdownZoomForViewChange,
-} from "./navigationCamera";
+import { navigationRouteOverviewSnapKey } from "./navigationCamera";
 import {
   PLANNING_FIT_RETRY_MS,
   PLANNING_ROUTE_FIT_SETTLE_MS,
@@ -264,6 +261,7 @@ import {
   ROUTE_VIEW_PLANNING_STREET_ZOOM,
   resolveTopdownLocalZoom,
   coerceTopdownNavStreetZoom,
+  topdownZoomOnEnter,
   regionalPlanningZoom,
 } from "./mapTopdownCamera";
 import { selectablePoiAtPoint } from "./mapPoiPick";
@@ -1030,8 +1028,14 @@ function DriveMapInner({
     }
     if (next === "topdown") {
       if (!puck) return null;
+      let mapZoom = topdownZoomRef.current;
+      try {
+        mapZoom = map.getZoom();
+      } catch {
+        /* map torn down */
+      }
       const zoom = navigationStarted
-        ? coerceTopdownNavStreetZoom(map, topdownZoomRef)
+        ? topdownZoomOnEnter(mapZoom, topdownZoomRef)
         : resolveTopdownLocalZoom(topdownZoomRef, false);
       return {
         lng: puck[0],
@@ -4687,9 +4691,15 @@ function DriveMapInner({
         topdownZoomRef,
         enteredTopdownNav,
       });
+      let mapZoom = topdownZoomRef.current;
+      try {
+        mapZoom = map.getZoom();
+      } catch {
+        /* map torn down */
+      }
       const zoom = navigationStarted
         ? needsStreetZoomReset
-          ? navigationTopdownZoomForViewChange(map, topdownZoomRef, true, true)
+          ? topdownZoomOnEnter(mapZoom, topdownZoomRef)
           : coerceTopdownNavStreetZoom(map, topdownZoomRef)
         : resolveTopdownLocalZoom(topdownZoomRef, false);
       prevTopdownRef.current = false;
