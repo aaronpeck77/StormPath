@@ -402,6 +402,9 @@ jobs:
       # The App Store Connect API backend marked build 495 complete and Apple
       # never listed it. iTMSTransporter's exit code is the delivery result.
       # The confirm step then polls until that build number is listed.
+      # Xcode 26+ ships a stub (`xcrun iTMSTransporter`) that only says
+      # "install Transporter from the Mac App Store." GitHub runners do not
+      # have that app. Install Apple's standalone CLI instead.
       # Normalize the .p8 secret first — GitHub often stores base64/DER; Node crypto needs PEM.
       - name: Prepare App Store Connect API key
         id: asc_key
@@ -438,20 +441,30 @@ jobs:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: python3 .github/scripts/verify-appstore-connect-api.py
 
-      - name: Find iTMSTransporter
+      - name: Install standalone iTMSTransporter
         id: transporter
         run: |
           set -euo pipefail
-          if path=$(xcrun --find iTMSTransporter 2>/dev/null); then
-            :
-          elif [ -x /usr/local/itms/bin/iTMSTransporter ]; then
-            path=/usr/local/itms/bin/iTMSTransporter
+          DEST=/usr/local/itms/bin/iTMSTransporter
+          if [ -x "$DEST" ]; then
+            echo "Standalone Transporter already installed at $DEST"
           else
-            echo "::error::iTMSTransporter was not found on the runner."
+            url="https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/ra/resources/download/public/Transporter__OSX/bin/"
+            echo "Downloading standalone Transporter"
+            curl -fL --retry 3 --retry-delay 5 "$url" -o /tmp/itmstransporter.pkg
+            sudo installer -pkg /tmp/itmstransporter.pkg -target /
+          fi
+          if [ ! -x "$DEST" ]; then
+            echo "::error::Standalone iTMSTransporter did not install at $DEST"
             exit 1
           fi
-          echo "path=$path" >> "$GITHUB_OUTPUT"
-          echo "Using $path"
+          help_out="$("$DEST" -help 2>&1 || true)"
+          if echo "$help_out" | grep -q "iTMSTransporter is now part of Transporter"; then
+            echo "::error::$DEST is still the Xcode stub, not the standalone Transporter."
+            exit 1
+          fi
+          echo "path=$DEST" >> "$GITHUB_OUTPUT"
+          echo "Using $DEST"
 
       - name: Upload to TestFlight (Transporter)
         uses: apple-actions/upload-testflight-build@v4
