@@ -34,7 +34,7 @@ import { resolveNavigationRouteIds } from "./nav/navigationRouteFocus";
 import { resolveNavigatingRouteSelect } from "./nav/navigatingRouteSelect";
 import { planAfterSoftRestartLock } from "./nav/softRestartPlan";
 import { isReverseDepartGeometry } from "./nav/detourRejoin";
-import { runTripRefresh } from "./nav/tripRefresh";
+import { runTripRefresh, shouldRunTripRefresh } from "./nav/tripRefresh";
 import {
   loadReturnTripLeg,
   shortenReturnTripLabel,
@@ -360,6 +360,7 @@ export default function App() {
   const setAboutOpen = useUiStore((s) => s.setAboutOpen);
   /** Bumps DriveMap to hard-snap follow-cam after sheets / background. */
   const [followCamResyncKey, setFollowCamResyncKey] = useState(0);
+  const lastTripRefreshAtMsRef = useRef(0);
   /* Contextual one-shot coachmarks — the {@link Coachmarks} component watches for its
    * tracked targets to become visible and pops a single "Tip" card next to each the first
    * time the user encounters it. Persistence + queue logic live entirely in that component;
@@ -1888,9 +1889,13 @@ export default function App() {
 
   /** Wake a frozen turn banner, camera, and live data without leaving the trip. */
   const refreshTripInPlace = useCallback(() => {
+    const now = Date.now();
+    if (!shouldRunTripRefresh(lastTripRefreshAtMsRef.current || null, now)) return;
+    lastTripRefreshAtMsRef.current = now;
     runTripRefresh({
       resetAlong: () => setAlongHoldResetKey((k) => k + 1),
       resyncCamera: resyncDriveCamera,
+      bumpMapFit: () => setFitTrigger((n) => n + 1),
       refreshTraffic: bumpTrafficRefresh,
       refreshForecast: bumpRouteForecastRefresh,
       restartGuidance: restartNative,
