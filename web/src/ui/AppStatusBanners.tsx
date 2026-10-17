@@ -13,9 +13,6 @@ type Props = {
   locationFixSource: string | null | undefined;
   locationError: string | null;
   routeError: string | null;
-  tapHint: string | null;
-  /** Dest is set and Mapbox is still building A/B — keep a visible "thinking" toast. */
-  planningRoute?: boolean;
   safetyAck: boolean;
   onSafetyAck: () => void;
   onReportIssue: (() => void) | null;
@@ -48,8 +45,6 @@ export function AppStatusBanners(props: Props) {
     locationFixSource,
     locationError,
     routeError,
-    tapHint,
-    planningRoute = false,
     safetyAck,
     onSafetyAck,
     onReportIssue,
@@ -142,16 +137,6 @@ export function AppStatusBanners(props: Props) {
           ) : null}
         </div>
       )}
-
-      {tapHint ? (
-        <div className="nav-toast-stack nav-toast-stack--dock" role="status" aria-live="polite">
-          <div className="nav-toast nav-toast-warn">{tapHint}</div>
-        </div>
-      ) : planningRoute ? (
-        <div className="nav-toast-stack nav-toast-stack--dock" role="status" aria-live="polite">
-          <div className="nav-toast nav-toast-info">Planning your route…</div>
-        </div>
-      ) : null}
 
       {!safetyAck && (
         <div className="nav-safety-banner" role="dialog" aria-label="Safety notice">

@@ -1154,7 +1154,7 @@ export default function App() {
     rerouteInFlightRef: altRoutesRefreshInFlightRef,
   });
 
-  const { holdLastGoodMap, linkTooWeak } = useFieldSupervisor({
+  const { holdLastGoodMap, linkTooWeak, lowDataAdvisory } = useFieldSupervisor({
     routing,
     suggestLoading,
     bypassBusy,
@@ -2944,7 +2944,7 @@ export default function App() {
       advisoryPlusDetailOn,
       advisoryPromoLines,
       isOnline,
-      dataLow: holdLastGoodMap || linkTooWeak,
+      dataLow: lowDataAdvisory || linkTooWeak,
       advisoryNowcastLine,
       currentNowcast,
       forecastAreaLabel,
@@ -3017,6 +3017,13 @@ export default function App() {
               stormAdvisoryBarProps={stormAdvisoryBarProps}
               isPlus={isPlus}
               activityBusyLabel={activityBusyLabel}
+              dockNote={
+                tapHint
+                  ? { text: tapHint, tone: "warn" }
+                  : routing && !navigationStarted && destLngLat
+                    ? { text: "Planning your route…", tone: "info" }
+                    : null
+              }
               radarMapOverlayOn={radarMapOverlayOn}
               radarFrameClockLabel={radarFrameClockLabel}
               hazardApproachAlertsActive={hazardApproachAlertsActive}
@@ -3153,8 +3160,6 @@ export default function App() {
           locationFixSource={locationFixSource}
           locationError={locationError}
           routeError={routeError}
-          tapHint={tapHint}
-          planningRoute={routing && !navigationStarted && Boolean(destLngLat)}
           safetyAck={safetyAck}
           onSafetyAck={() => setSafetyAck(true)}
           onReportIssue={

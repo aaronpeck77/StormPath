@@ -27,6 +27,8 @@ type Props = {
   stormAdvisoryBarProps: StormAdvisoryBarProps;
   isPlus: boolean;
   activityBusyLabel: string | null;
+  /** Short status chip (refresh, route saved). Sits under the advisory bar. */
+  dockNote: { text: string; tone: "warn" | "info" } | null;
   radarMapOverlayOn: boolean;
   radarFrameClockLabel: string | null;
   hazardApproachAlertsActive: boolean;
@@ -60,6 +62,7 @@ export function AppTopNavCluster({
   stormAdvisoryBarProps,
   isPlus,
   activityBusyLabel,
+  dockNote,
   radarMapOverlayOn,
   radarFrameClockLabel,
   hazardApproachAlertsActive,
@@ -100,6 +103,11 @@ export function AppTopNavCluster({
           ) : isPlus ? (
             <div className="nav-top-activity-pill-wrap nav-top-activity-pill-wrap--solo">
               <ActivityStatusPill busyLabel={activityBusyLabel} />
+            </div>
+          ) : null}
+          {dockNote ? (
+            <div className="nav-toast-stack nav-toast-stack--under-advisory" role="status" aria-live="polite">
+              <div className={`nav-toast nav-toast-${dockNote.tone}`}>{dockNote.text}</div>
             </div>
           ) : null}
           {radarMapOverlayOn && radarFrameClockLabel ? (

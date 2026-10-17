@@ -12,9 +12,10 @@ export const TOPDOWN_NAV_STREET_ZOOM = 12.8;
 export const TOPDOWN_NAV_MIN_ZOOM = 11.8;
 /**
  * Dr → Mp while navigating. Drive sits near 15.3–16.6. Pull back this far so Mp
- * shows a little more street than the 3D frame, and stop well short of Route overview.
+ * shows more of the road than the 3D frame. Floor is the Mp street zoom (12.8),
+ * still well short of Route overview.
  */
-export const TOPDOWN_FROM_DRIVE_ZOOM_OUT = 1.5;
+export const TOPDOWN_FROM_DRIVE_ZOOM_OUT = 3.5;
 
 /** Route (Rt): start with regional / state context; user zooms or taps My location for street level. */
 export const ROUTE_VIEW_REGIONAL_ZOOM = 6.95;

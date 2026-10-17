@@ -11,6 +11,41 @@
 export const HOLD_CLEAR_HYSTERESIS_MS = 4_500;
 
 /**
+ * How many fresh Mapbox probe misses, while the phone still says it is connected,
+ * before the advisory says data is low. One slow fetch is a country blip.
+ */
+export const LOW_DATA_ADVISORY_PROBE_FAILS = 2;
+
+/**
+ * The "data is low" sentence follows the live link. Map-hold hysteresis can
+ * keep tiles steady for a few seconds after recovery; the sentence must not.
+ * A probe that started earlier must not turn the sentence back on.
+ */
+export function nextLowDataAdvisory(input: {
+  showing: boolean;
+  offline: boolean;
+  nativeDown: boolean;
+  probeFresh: boolean;
+  probeOk: boolean | null;
+  consecutiveProbeFails: number;
+}): { showing: boolean; consecutiveProbeFails: number } {
+  if (input.offline || input.nativeDown) {
+    return { showing: true, consecutiveProbeFails: input.consecutiveProbeFails };
+  }
+  if (!input.probeFresh || input.probeOk == null) {
+    return { showing: input.showing, consecutiveProbeFails: input.consecutiveProbeFails };
+  }
+  if (input.probeOk) {
+    return { showing: false, consecutiveProbeFails: 0 };
+  }
+  const consecutiveProbeFails = input.consecutiveProbeFails + 1;
+  return {
+    showing: consecutiveProbeFails >= LOW_DATA_ADVISORY_PROBE_FAILS,
+    consecutiveProbeFails,
+  };
+}
+
+/**
  * After pan "succeeds" but the puck is still this far from the yard-line anchor,
  * treat Mapbox `easeTo` as stalled (common under weak tiles) and hard-jump.
  */

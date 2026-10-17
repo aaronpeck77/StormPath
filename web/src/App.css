@@ -2606,9 +2606,17 @@ html:has(.drive-map--native-shell) #root {
   padding-top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
 }
 
-.nav-toast-stack--dock {
-  bottom: calc(var(--nav-bottom-reserved, 72px) + 10px);
-  padding-bottom: 0;
+.nav-toast-stack--under-advisory {
+  position: relative;
+  top: auto;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  z-index: 6;
+  width: 100%;
+  margin-top: 4px;
+  align-items: center;
+  justify-content: center;
 }
 
 .nav-toast {
@@ -16207,8 +16215,8 @@ html.route-info-open .route-progress-callout-panel--expanded {
     max-width: calc(100% - 16px);
   }
 
-  .nav-toast-stack--dock {
-    bottom: calc(var(--nav-bottom-reserved, 72px) + 6px);
+  .nav-toast-stack--under-advisory {
+    margin-top: 2px;
   }
 
   .nav-top-cluster {
