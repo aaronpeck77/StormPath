@@ -39,6 +39,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     /// Retain voice controller so spoken instructions keep working without UIKit nav UI.
     private var voiceController: RouteVoiceController?
     private var voiceEnabled = false
+    /// Go prepares the audio route, then waits a second before the first prompt.
+    private var voiceArmTask: Task<Void, Never>?
     /// Last-good puck — reject Core leaps before JS / DriveMap see them.
     private var poseHold = DrivePoseHold()
     private var followCam = DriveFollowCam()
@@ -387,37 +389,30 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     @MainActor
     private func applyVoiceEnabled(_ enabled: Bool) {
         voiceEnabled = enabled
-        guard let provider = navigationProvider else {
+        guard navigationProvider != nil else {
+            voiceArmTask?.cancel()
+            voiceArmTask = nil
             voiceController = nil
             return
         }
         if enabled {
-            activateSpeechAudioSession()
-            // Accessing routeVoiceController starts Mapbox spoken instructions.
-            let vc = provider.routeVoiceController
-            vc.speechSynthesizer.muted = false
-            voiceController = vc
+            // Mapbox's own voice controller ducks the session when the first
+            // prompt is ready. We only wait a second so Go is not instant.
+            voiceArmTask?.cancel()
+            voiceArmTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled, self.voiceEnabled, let provider = self.navigationProvider else { return }
+                let vc = provider.routeVoiceController
+                vc.speechSynthesizer.muted = false
+                self.voiceController = vc
+            }
         } else {
+            voiceArmTask?.cancel()
+            voiceArmTask = nil
             if let synth = voiceController?.speechSynthesizer {
                 synth.muted = true
             }
             voiceController = nil
-        }
-    }
-
-    private func activateSpeechAudioSession() {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(
-                .playback,
-                mode: .spokenAudio,
-                options: [.duckOthers]
-            )
-            try session.setActive(true, options: [])
-        } catch {
-            // Fall back — prompts may still play at system volume.
-            try? session.setCategory(.playback, options: [.duckOthers])
-            try? session.setActive(true)
         }
     }
 
@@ -647,6 +642,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         voiceController = nil
         voiceEnabled = false
+        voiceArmTask?.cancel()
+        voiceArmTask = nil
 
         nativeMap?.detach(webView: webView)
         nativeMap = nil
@@ -694,6 +691,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         voiceController = nil
         voiceEnabled = false
+        voiceArmTask?.cancel()
+        voiceArmTask = nil
 
         nativeMap?.detach(webView: webView)
         nativeMap = nil

@@ -35,12 +35,15 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         let rate = Float(call.getDouble("rate") ?? 0.5)
 
         let session = AVAudioSession.sharedInstance()
-        // voicePrompt is the CarPlay prompt channel. Without CarPlay it can stay on the
-        // phone speaker while Bluetooth headphones and the car play everything else.
-        // spokenAudio follows the current media route.
-        if !(session.category == .playback && session.mode == .spokenAudio) {
+        // Copied from Mapbox Navigation's audio helper: playback, voice prompt,
+        // duck others, mix. spokenAudio is the podcast fade they stopped using.
+        if !(session.category == .playback && session.mode == .voicePrompt) {
             do {
-                try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+                try session.setCategory(
+                    .playback,
+                    mode: .voicePrompt,
+                    options: [.duckOthers, .mixWithOthers]
+                )
                 try session.setActive(true, options: [])
             } catch {
                 /* Still try to speak if session setup fails. */
@@ -192,7 +195,11 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
                 engine.stop()
                 request.endAudio()
                 let session = AVAudioSession.sharedInstance()
-                try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+                try? session.setCategory(
+                    .playback,
+                    mode: .voicePrompt,
+                    options: [.duckOthers, .mixWithOthers]
+                )
                 try? session.setActive(true, options: [])
             }
         }

@@ -88,6 +88,7 @@ export function StormyButton({ packet, onAct }: Props) {
     const playReady = armStormyReadyChime();
     setPhase("hello");
     try {
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
       const spoke = await speakStormpathLine("Hello.");
       if (spoke) await waitUntilStormyQuiet();
       setPhase("listening");
