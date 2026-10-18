@@ -34,12 +34,16 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         let interrupt = call.getBool("interrupt") ?? false
         let rate = Float(call.getDouble("rate") ?? 0.5)
 
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
-            try session.setActive(true, options: [])
-        } catch {
-            /* Still try to speak if session setup fails. */
+        let session = AVAudioSession.sharedInstance()
+        // Resetting the session while the route voice is already talking ducks her,
+        // then the volume jumps. Leave an active voice-prompt session alone.
+        if !(session.category == .playback && session.mode == .voicePrompt) {
+            do {
+                try session.setCategory(.playback, mode: .voicePrompt, options: [])
+                try session.setActive(true, options: [])
+            } catch {
+                /* Still try to speak if session setup fails. */
+            }
         }
 
         if interrupt && synthesizer.isSpeaking {

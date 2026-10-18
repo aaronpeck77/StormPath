@@ -2129,6 +2129,7 @@ export default function App() {
     nextHazardAtEtaLine,
     driveRouteAheadLine,
     nowcastLine: advisoryNowcastLine,
+    metersToManeuver: metersToBannerManeuver,
   });
   useCarSessionPublish({
     navigationStarted,

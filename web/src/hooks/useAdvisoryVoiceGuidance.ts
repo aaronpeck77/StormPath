@@ -1,6 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DriveAheadLine } from "../nav/driveRouteAhead";
-import { pickAdvisoryVoiceLine, shouldSpeakAdvisoryLine } from "../nav/advisoryVoice";
+import {
+  ADVISORY_AFTER_GO_MS,
+  advisoryVoiceBlocked,
+  pickAdvisoryVoiceLine,
+  shouldSpeakAdvisoryLine,
+} from "../nav/advisoryVoice";
+import { PASSENGER_TURN_QUIET_M } from "../nav/passengerAdvisory";
 import { isStormpathSpeechBusy, speakStormpathLine } from "../services/stormpathSpeech";
 
 /** Min gap between advisory utterances so we don't talk over Mapbox turns. */
@@ -12,6 +18,8 @@ type Params = {
   nextHazardAtEtaLine: string | null;
   driveRouteAheadLine: DriveAheadLine | null;
   nowcastLine: string | null;
+  /** Meters to the next maneuver. A close turn keeps the hazard line quiet. */
+  metersToManeuver?: number | null;
 };
 
 /**
@@ -21,9 +29,15 @@ type Params = {
 export function useAdvisoryVoiceGuidance(p: Params): void {
   const lastLineRef = useRef<string | null>(null);
   const lastAtRef = useRef<number | null>(null);
+  const navStartedAtRef = useRef<number | null>(null);
+  const [holdTick, setHoldTick] = useState(0);
 
   useEffect(() => {
-    if (!p.enabled || !p.navigationStarted) return;
+    if (!p.enabled || !p.navigationStarted) {
+      navStartedAtRef.current = null;
+      return;
+    }
+    if (navStartedAtRef.current == null) navStartedAtRef.current = Date.now();
 
     const line = pickAdvisoryVoiceLine({
       nextHazardAtEtaLine: p.nextHazardAtEtaLine,
@@ -31,6 +45,22 @@ export function useAdvisoryVoiceGuidance(p: Params): void {
       nowcastLine: p.nowcastLine,
     });
     const now = Date.now();
+    if (
+      advisoryVoiceBlocked({
+        navigationStartedAtMs: navStartedAtRef.current,
+        nowMs: now,
+        metersToManeuver: p.metersToManeuver,
+        turnQuietM: PASSENGER_TURN_QUIET_M,
+      })
+    ) {
+      const started = navStartedAtRef.current;
+      const wait = started == null ? 0 : ADVISORY_AFTER_GO_MS - (now - started);
+      if (wait > 0) {
+        const timer = window.setTimeout(() => setHoldTick((n) => n + 1), wait + 40);
+        return () => window.clearTimeout(timer);
+      }
+      return;
+    }
     if (
       !shouldSpeakAdvisoryLine({
         line,
@@ -63,5 +93,7 @@ export function useAdvisoryVoiceGuidance(p: Params): void {
     p.nextHazardAtEtaLine,
     p.driveRouteAheadLine,
     p.nowcastLine,
+    p.metersToManeuver,
+    holdTick,
   ]);
 }
