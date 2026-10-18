@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { PASSENGER_TURN_QUIET_M } from "../nav/passengerAdvisory";
-import { askStormy } from "../stormy/askStormy";
 import { listenForStormy } from "../stormy/listenForStormy";
 import type { StormyActResult, StormyPacket, StormyReply } from "../stormy/stormyFence";
-import { interpretStormyRequest } from "../stormy/stormyHands";
+import { interpretStormyRequest, phoneStormyFallback } from "../stormy/stormyHands";
 import { isStormpathSpeechBusy, speakStormpathLine } from "../services/stormpathSpeech";
 
 type Props = {
@@ -103,7 +102,7 @@ export function StormyButton({ packet, onAct }: Props) {
         const reply: StormyReply =
           clarify === "place" || clarify === "choice"
             ? answeredPlace(question, clarify, drive, stop)
-            : (interpretStormyRequest(question, packet) ?? (await askStormy({ ...packet, question })));
+            : (interpretStormyRequest(question, packet) ?? phoneStormyFallback());
         if (reply.clarify === "place" && clarify !== "place") {
           drive = reply.drive;
           stop = reply.stop;

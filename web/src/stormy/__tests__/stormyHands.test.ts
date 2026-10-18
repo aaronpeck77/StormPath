@@ -81,8 +81,9 @@ describe("interpretStormyRequest", () => {
   it("tells him where to get a more natural voice", () => {
     const reply = interpretStormyRequest("Can you use a more natural voice?", packet);
     expect(reply?.action).toBe("none");
-    expect(reply?.say).toContain("Ava or Zoe");
-    expect(reply?.say).toContain("It's free");
+    expect(reply?.say).toContain("Settings");
+    expect(reply?.say).toContain("Voices");
+    expect(reply?.say).toContain("free");
   });
 
   it("reads the local forecast", () => {
@@ -135,7 +136,7 @@ describe("interpretStormyRequest", () => {
     });
   });
 
-  it("leaves a worry for the model", () => {
+  it("leaves an open question for the phone's own reply", () => {
     expect(interpretStormyRequest("Should I be worried?", packet)).toBeNull();
   });
 });

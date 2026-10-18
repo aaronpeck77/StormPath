@@ -20,49 +20,9 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private let synthesizer = AVSpeechSynthesizer()
 
-    /// Premium, then enhanced. Novelty voices stay out. Compact is only the fallback.
+    /// The English voice the driver picked in iPhone Settings. StormPath does not choose one for them.
     private func stormyVoice() -> AVSpeechSynthesisVoice? {
-        let preferred = [
-            "com.apple.voice.premium.en-US.Ava",
-            "com.apple.voice.premium.en-US.Zoe",
-            "com.apple.ttsbundle.siri_female_en-US_premium",
-            "com.apple.voice.premium.en-US.Allison",
-            "com.apple.voice.enhanced.en-US.Ava",
-            "com.apple.voice.enhanced.en-US.Zoe",
-            "com.apple.voice.enhanced.en-US.Samantha",
-            "com.apple.voice.enhanced.en-US.Allison",
-        ]
-        for identifier in preferred {
-            if let voice = AVSpeechSynthesisVoice(identifier: identifier) {
-                return voice
-            }
-        }
-        let skip = ["eloquence", "bahh", "bells", "boing", "bubbles", "cellos", "deranged", "good news", "bad news", "jester", "organ", "trinoids", "whisper", "zarvox", "superstar", "wobble"]
-        let voices = AVSpeechSynthesisVoice.speechVoices().filter { voice in
-            guard voice.language.hasPrefix("en") else { return false }
-            let id = (voice.identifier + " " + voice.name).lowercased()
-            return !skip.contains(where: { id.contains($0) })
-        }
-        func score(_ voice: AVSpeechSynthesisVoice) -> Int {
-            let quality: Int
-            if #available(iOS 16.0, *) {
-                switch voice.quality {
-                case .premium: quality = 300
-                case .enhanced: quality = 200
-                default: quality = 0
-                }
-            } else if voice.quality == .enhanced {
-                quality = 200
-            } else {
-                quality = 0
-            }
-            let id = (voice.identifier + " " + voice.name).lowercased()
-            let named = (id.contains("ava") || id.contains("zoe") || id.contains("samantha") || id.contains("allison") || id.contains("siri")) ? 20 : 0
-            let us = voice.language == "en-US" ? 10 : 0
-            let premiumId = (id.contains("premium") ? 40 : 0) + (id.contains("enhanced") ? 20 : 0)
-            return quality + named + us + premiumId
-        }
-        return voices.max { score($0) < score($1) } ?? AVSpeechSynthesisVoice(language: "en-US")
+        AVSpeechSynthesisVoice(language: "en-US")
     }
 
     @objc func speak(_ call: CAPPluginCall) {
@@ -174,8 +134,14 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         let request = SFSpeechAudioBufferRecognitionRequest()
-        request.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
+        // Keyboard dictation (the search mic) uses Apple's dictation service.
+        // Forcing the small on-device model is what missed place names on iPhone 12 and 15.
+        request.requiresOnDeviceRecognition = false
         request.shouldReportPartialResults = true
+        request.taskHint = .dictation
+        if #available(iOS 16.0, *) {
+            request.addsPunctuation = true
+        }
 
         let session = AVAudioSession.sharedInstance()
         do {
@@ -219,16 +185,33 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
 
+        let started = Date()
+        var lastHeard = started
         recognizer.recognitionTask(with: request) { result, _ in
             let text = result?.bestTranscription.formattedString ?? ""
             let isFinal = result?.isFinal == true
             DispatchQueue.main.async {
-                if !text.isEmpty { latest = text }
+                if !text.isEmpty && text != latest {
+                    latest = text
+                    lastHeard = Date()
+                }
                 if isFinal && !latest.isEmpty { finish(latest) }
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 7) {
-            finish(latest)
+        func waitForPause() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                if finished { return }
+                if !latest.isEmpty && Date().timeIntervalSince(lastHeard) > 1.15 {
+                    finish(latest)
+                    return
+                }
+                if Date().timeIntervalSince(started) > 11 {
+                    finish(latest)
+                    return
+                }
+                waitForPause()
+            }
         }
+        waitForPause()
     }
 }

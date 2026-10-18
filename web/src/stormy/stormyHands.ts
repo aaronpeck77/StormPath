@@ -88,6 +88,14 @@ export function interpretStormyRequest(question: string, packet: StormyPacket): 
   return answerStormySituation(q, packet);
 }
 
+/** Spoken when the phone heard the words and none of its own commands match. No network. */
+export function phoneStormyFallback(): StormyReply {
+  return reply(
+    "I can take you to a place, start the drive, add a stop, or read the weather and traffic. The commands are on the Info page.",
+    "none"
+  );
+}
+
 /** Two places in one sentence. "Then hit go" is still one place. */
 function namesTwoPlaces(question: string): boolean {
   const match = question.match(

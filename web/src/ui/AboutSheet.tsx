@@ -908,7 +908,8 @@ export function AboutSheet({
                     {STORMY_AVAILABLE ? (
                       <>
                         {" "}
-                        — show her button on the map. Turn this off to hide her and put the other buttons back.
+                        — command version on this phone. She is not an AI. She follows the list below. Turn this off
+                        to hide her button and put the other buttons back.
                       </>
                     ) : (
                       <>
@@ -924,10 +925,10 @@ export function AboutSheet({
                     <div
                       className={`about-sheet__p about-sheet__settings-card${STORMY_AVAILABLE ? "" : " about-sheet__soon"}`}
                     >
-                      <strong>What you can say to Stormy.</strong>
+                      <strong>Commands that work.</strong>
                       <p className="about-sheet__p about-sheet__p--tight">
-                        Say “Take me to” and the place you want. That blank is your destination, and Stormy
-                        sets a pin. One place at a time, then say go. Tap her again to add a stop.
+                        Say them this way. “Take me to” plus a place sets the destination. Then say “Go.” One
+                        place at a time. Tap her again to add a stop. Anything else, she will point you back here.
                       </p>
                       <ul className="about-sheet__bullets">
                         {STORMY_COMMANDS.map((line) => (
@@ -939,7 +940,8 @@ export function AboutSheet({
                     <p
                       className={`about-sheet__p about-sheet__settings-card${STORMY_AVAILABLE ? "" : " about-sheet__soon"}`}
                     >
-                      <strong>Stormy&apos;s voice.</strong> {STORMY_VOICE_HINT}
+                      <strong>Stormy&apos;s voice.</strong> Change it in the iPhone Settings app, not in StormPath.{" "}
+                      {STORMY_VOICE_HINT}
                     </p>
                   </>
                 ) : null}
@@ -987,7 +989,7 @@ export function AboutSheet({
                 or Wi‑Fi. Offline mode keeps your last route; live layers pause until you reconnect.
               </li>
               <li>
-                <strong>Provider delay or outage</strong> — Mapbox, NWS, RainViewer, OpenWeather, Tomorrow.io, or Claude can be
+                <strong>Provider delay or outage</strong> — Mapbox, NWS, RainViewer, OpenWeather, or Tomorrow.io can be
                 slow, rate-limited, or down. We show a short note in the advisory bar when we know which feed failed.
               </li>
               <li>
@@ -1020,8 +1022,9 @@ export function AboutSheet({
               {STORMY_AVAILABLE ? (
                 <>
                   {" "}
-                  Stormy sends the words you say and a short trip summary to <strong>Claude</strong> (Anthropic). The
-                  microphone stays on the phone.
+                  Stormy hears you with Apple dictation, the same kind the search keyboard uses, so a destination can
+                  leave the phone for that recognition. She decides what to do on the phone. She does not send the
+                  trip to a chat service.
                 </>
               ) : null}
             </p>

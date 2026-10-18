@@ -1,5 +1,4 @@
 import { getWebEnv } from "../config/env";
-import { STORMY_AVAILABLE } from "../stormy/stormyAvailability";
 import { AppleWeatherAttribution } from "./AppleWeatherAttribution";
 
 type SourceLink = {
@@ -16,9 +15,6 @@ function buildSourceLinks(): SourceLink[] {
     { id: "rainviewer", label: "RainViewer", href: "https://www.rainviewer.com/" },
     { id: "nws", label: "NWS", href: "https://www.weather.gov/" },
   ];
-  if (STORMY_AVAILABLE) {
-    links.push({ id: "claude", label: "Claude", href: "https://www.anthropic.com/" });
-  }
   if (env.tomorrowIoApiKey) {
     links.push({ id: "tomorrow", label: "Tomorrow.io", href: "https://www.tomorrow.io/" });
   }
