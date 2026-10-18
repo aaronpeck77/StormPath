@@ -35,11 +35,12 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         let rate = Float(call.getDouble("rate") ?? 0.5)
 
         let session = AVAudioSession.sharedInstance()
-        // Resetting the session while the route voice is already talking ducks her,
-        // then the volume jumps. Leave an active voice-prompt session alone.
-        if !(session.category == .playback && session.mode == .voicePrompt) {
+        // voicePrompt is the CarPlay prompt channel. Without CarPlay it can stay on the
+        // phone speaker while Bluetooth headphones and the car play everything else.
+        // spokenAudio follows the current media route.
+        if !(session.category == .playback && session.mode == .spokenAudio) {
             do {
-                try session.setCategory(.playback, mode: .voicePrompt, options: [])
+                try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
                 try session.setActive(true, options: [])
             } catch {
                 /* Still try to speak if session setup fails. */
@@ -149,7 +150,11 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker])
+            try session.setCategory(
+                .playAndRecord,
+                mode: .measurement,
+                options: [.duckOthers, .allowBluetoothA2DP]
+            )
             try session.setActive(true)
         } catch {
             call.reject("microphone unavailable")
@@ -186,6 +191,9 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
                 input.removeTap(onBus: 0)
                 engine.stop()
                 request.endAudio()
+                let session = AVAudioSession.sharedInstance()
+                try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+                try? session.setActive(true, options: [])
             }
         }
 

@@ -410,7 +410,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         do {
             try session.setCategory(
                 .playback,
-                mode: .voicePrompt,
+                mode: .spokenAudio,
                 options: [.duckOthers]
             )
             try session.setActive(true, options: [])
