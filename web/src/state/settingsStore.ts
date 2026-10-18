@@ -186,7 +186,7 @@ function readPersistedSettings(): Pick<
     dataSaverEnabled: readDataSaverSetting(),
     dataSaverHintDismissed: readDataSaverHintDismissed(),
     voiceGuidanceEnabled: readBoolFlag(LS_VOICE, false),
-    stormyEnabled: stormyMapButtonOn(readBoolFlag(LS_STORMY, false)),
+    stormyEnabled: stormyMapButtonOn(readBoolFlag(LS_STORMY, true)),
     gpsHighRefreshEnabled: readBoolFlag(LS_GPS_HIGH_REFRESH, false),
     mapMatchingEnabled: readBoolFlag(LS_MAP_MATCHING, false),
     landscapeSideHand: safeStorage.get(LS_LANDSCAPE_SIDE_HAND) === "left" ? "left" : "right",

@@ -189,7 +189,7 @@ export function AboutSheet({
     `Binary: ${flavor}${flavor === "testflight" ? " (forced Plus)" : flavor === "appstore" ? " (Basic until IAP)" : ""}`,
     `Crash reporting: ${isCrashReportingEnabled() ? "on (automatic for serious errors)" : "off"}`,
     `Online: ${typeof navigator === "undefined" ? "unknown" : navigator.onLine ? "yes" : "no"}`,
-    `Voice: ${settings.voiceGuidanceEnabled ? "on" : "off"}, Data saver: ${
+    `Stormy: ${settings.stormyEnabled ? "on" : "off"}, Data saver: ${
       settings.dataSaverEnabled ? "on" : "off"
     }`,
     `Landscape UI: ${settings.landscapeSideHand === "left" ? "left hand" : "right hand"}`,
@@ -319,8 +319,7 @@ export function AboutSheet({
           <section className="about-sheet__panel about-sheet__panel--subscription">
             <h3 className="about-sheet__h3">Subscription</h3>
             <p className="about-sheet__p">
-              <strong>{PLUS_SUBSCRIPTION_TITLE}</strong> is an optional auto-renewing subscription. Stormy is
-              being worked on and coming soon.
+              <strong>{PLUS_SUBSCRIPTION_TITLE}</strong> is an optional auto-renewing subscription.
             </p>
             <p className="about-sheet__p about-sheet__iap-price">{PLUS_SUBSCRIPTION_FALLBACK_PRICE_LINE}</p>
             <div className="about-sheet__upgrade-actions">
@@ -422,8 +421,8 @@ export function AboutSheet({
               <summary>What Plus adds</summary>
               <ul className="about-sheet__bullets" aria-label="Plus features">
                 <li>
-                  <strong>Stormy</strong> — coming soon. She will set one place, start or stop the route, and read
-                  the trip.
+                  <strong>Stormy</strong> — command list on the map. She sets one place, starts or stops the route,
+                  and reads the trip. She is not an AI.
                 </li>
                 <li>
                   <strong>NWS</strong> — full storm map, every active warning, route overlap, and hazard details (Plus
@@ -691,21 +690,6 @@ export function AboutSheet({
                 </span>
               </label>
 
-              <label className="about-sheet__setting about-sheet__settings-card">
-                <input
-                  type="checkbox"
-                  checked={settings.voiceGuidanceEnabled}
-                  onChange={(e) => onSettings({ ...settings, voiceGuidanceEnabled: e.target.checked })}
-                />
-                <span>
-                  <strong>Voice prompts</strong> — speak the next maneuver while <strong>Go</strong> is on,
-                  plus short hazard / route-ahead / conditions lines when they change. Prompts stop if you
-                  leave the app or lock the phone. On iPhone, turns use Mapbox guidance; advisories use
-                  StormPath speech and will not interrupt a turn. Volume follows the phone’s media volume
-                  (raise the side buttons while a prompt plays).
-                </span>
-              </label>
-
               {plus && activityTrail ? (
                 <details className="about-sheet__details about-sheet__settings-card">
                   <summary>Activity trail</summary>
@@ -908,8 +892,8 @@ export function AboutSheet({
                     {STORMY_AVAILABLE ? (
                       <>
                         {" "}
-                        — command version on this phone. She is not an AI. She follows the list below. Turn this off
-                        to hide her button and put the other buttons back.
+                        — her button on the map, and the next turn while Go is on. She is not an AI. She
+                        follows the list below. Turn this off to hide her and silence the prompts.
                       </>
                     ) : (
                       <>

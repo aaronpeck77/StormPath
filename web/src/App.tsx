@@ -412,7 +412,7 @@ export default function App() {
   const navigationMatchGeometryRef = useRef<LngLat[] | undefined>(undefined);
   const dataSaverMode = isDataSaverMode(settingDataSaverEnabled);
 
-  const settingVoiceGuidanceEnabled = useSettingsStore((s) => s.voiceGuidanceEnabled);
+  const settingStormyEnabled = useSettingsStore((s) => s.stormyEnabled);
   const settingGuidanceLanguage = useSettingsStore((s) => s.guidanceLanguage);
   const guidanceLanguageCode = resolveGuidanceLanguage(settingGuidanceLanguage);
   useEffect(() => {
@@ -1028,7 +1028,7 @@ export default function App() {
       headingDeg: driveLastTravelBearingDegRef.current,
     },
     onRouteGeometry: onNativeRouteGeometry,
-    voiceGuidanceEnabled: settingVoiceGuidanceEnabled,
+    voiceGuidanceEnabled: settingStormyEnabled,
     guidanceLanguage: guidanceLanguageCode,
     /* No hard motorway ban. A reroute may use an interstate when that is the
      * sensible way on. The fastest/alternate choice is applied from here. */
@@ -1096,7 +1096,7 @@ export default function App() {
     isOnline,
     isPlus,
     effectiveAutoRerouteEnabled: settingAutoRerouteEnabled,
-    settingVoiceGuidanceEnabled,
+    settingVoiceGuidanceEnabled: settingStormyEnabled,
     settingStormEnabled,
     stormAlertsForRouting,
     lockedNavigationRouteIdRef,
@@ -1549,7 +1549,7 @@ export default function App() {
   } = useNavigationGuidance({
     navigationStarted,
     /** Native Core owns spoken instructions on iOS; keep Web Speech for DIY/web. */
-    settingVoiceGuidanceEnabled: settingVoiceGuidanceEnabled && !nativeNavActive,
+    settingVoiceGuidanceEnabled: settingStormyEnabled && !nativeNavActive,
     guidanceRouteId,
     guidanceRouteLengthM,
     turnSteps,
@@ -2124,7 +2124,7 @@ export default function App() {
 
 
   useAdvisoryVoiceGuidance({
-    enabled: settingVoiceGuidanceEnabled,
+    enabled: settingStormyEnabled,
     navigationStarted,
     nextHazardAtEtaLine,
     driveRouteAheadLine,
