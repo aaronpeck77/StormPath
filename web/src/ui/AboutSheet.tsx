@@ -16,6 +16,7 @@ import { isCrashReportingEnabled } from "../monitoring/sentry";
 import { stormpathVersionChipLabel, stormpathVersionLabel } from "../appVersion";
 import { stormpathBuildFlavor, stormpathFlavorChipLabel } from "../config/buildFlavor";
 import { safeStorage } from "../storage/safeStorage";
+import { GrokDockCard } from "./GrokDockCard";
 import { MapKeyPanel } from "./MapKeyPanel";
 import { PUCK_COLORS, puckColorById, type PuckColorId } from "./puckColor";
 import { StormPathSourcesAttribution } from "./StormPathSourcesAttribution";
@@ -933,6 +934,8 @@ export function AboutSheet({
 
             </div>
           </section>
+
+          <GrokDockCard />
 
           <MapKeyPanel />
 

@@ -34,6 +34,7 @@ import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
 import { useNearbyPoiTip } from "./hooks/useNearbyPoiTip";
 import { useAdvisoryVoiceGuidance } from "./hooks/useAdvisoryVoiceGuidance";
 import { useCarSessionPublish } from "./hooks/useCarSessionPublish";
+import { useGrokDock } from "./grok/useGrokDock";
 import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
 import { resolveNavigationRouteIds } from "./nav/navigationRouteFocus";
 import { resolveNavigatingRouteSelect } from "./nav/navigatingRouteSelect";
@@ -639,6 +640,13 @@ export default function App() {
     setRouteError,
     setTapHint,
     setTollAvoidFailureNote,
+  });
+
+  useGrokDock({
+    userLngLat,
+    navigationStarted,
+    computeRoutes,
+    setTapHint,
   });
 
   const {
