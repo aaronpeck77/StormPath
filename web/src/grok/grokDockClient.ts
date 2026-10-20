@@ -105,11 +105,32 @@ export function subscribeDockMessages(listener: MessageListener): () => void {
   return () => listeners.delete(listener);
 }
 
+export type AssistantSendResult =
+  | { ok: true; say: string; id: string }
+  | { ok: false; error: string };
+
+/** Read the assistant's JSON. A 200 with no `say` is an older server; the dock still has the line. */
+export function assistantSendFromResponse(statusOk: boolean, body: unknown): AssistantSendResult {
+  if (!statusOk) {
+    const error =
+      body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string"
+        ? (body as { error: string }).error.trim()
+        : "";
+    return { ok: false, error: error || "The assistant did not accept that." };
+  }
+  const data = body && typeof body === "object" ? (body as { say?: unknown; id?: unknown }) : {};
+  return {
+    ok: true,
+    say: typeof data.say === "string" ? data.say.replace(/\s+/g, " ").trim() : "",
+    id: typeof data.id === "string" ? data.id : "",
+  };
+}
+
 export async function sendToAssistant(
   code: string,
   text: string,
   location?: { lat: number; lng: number }
-): Promise<string | null> {
+): Promise<AssistantSendResult> {
   const res = await fetch("https://stormpath2.netlify.app/.netlify/functions/grok-assistant", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -119,11 +140,11 @@ export async function sendToAssistant(
       ...(location ? { location } : {}),
     }),
   });
-  if (res.ok) return null;
+  let body: unknown = null;
   try {
-    const data = (await res.json()) as { error?: string };
-    return data.error || "The assistant did not accept that.";
+    body = await res.json();
   } catch {
-    return "The assistant did not accept that.";
+    body = null;
   }
+  return assistantSendFromResponse(res.ok, body);
 }

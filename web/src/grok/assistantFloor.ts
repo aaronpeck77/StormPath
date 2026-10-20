@@ -60,6 +60,17 @@ export function isAppVoiceHeld(): boolean {
   return Date.now() < heldUntil;
 }
 
+/** True while the map button owns the turn. The dock must not speak over that. */
+let sessionOpen = false;
+
+export function setAssistantSessionOpen(open: boolean): void {
+  sessionOpen = open;
+}
+
+export function isAssistantSessionOpen(): boolean {
+  return sessionOpen;
+}
+
 export function subscribeAppVoiceHold(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);

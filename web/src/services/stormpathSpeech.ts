@@ -46,6 +46,23 @@ export async function waitUntilTurnFloor(turnImminent: () => boolean, maxMs = 12
   }
 }
 
+/**
+ * speak() resolves when audio starts. Stay quiet until it finishes, and stop
+ * if the driver hangs up, so the next listen does not open over the sentence.
+ */
+export async function waitUntilSpeechDone(stillGoing: () => boolean = () => true, maxMs = 60_000): Promise<void> {
+  const start = Date.now();
+  await new Promise((resolve) => window.setTimeout(resolve, 160));
+  while (Date.now() - start < maxMs) {
+    if (!stillGoing()) {
+      await stopStormpathSpeech();
+      return;
+    }
+    if (!(await isStormpathSpeechBusy())) return;
+    await new Promise((resolve) => window.setTimeout(resolve, 200));
+  }
+}
+
 export async function isStormpathSpeechBusy(): Promise<boolean> {
   try {
     const r = await StormpathSpeech.isSpeaking();
