@@ -825,6 +825,8 @@ export async function collectMapboxRouteVariants(
     skipStormLegRefinement?: boolean;
     /** Off-route rejoin shuffle — odd passes prefer motorway-excluded alternates for different B/C. */
     rejoinShufflePass?: number;
+    /** Dead-mainline points for a jam hop. One route, same destination. Does not ban every freeway. */
+    excludePoints?: LngLat[];
   }
 ): Promise<NavRoute[]> {
   const signal = opts?.signal;
@@ -875,6 +877,7 @@ export async function collectMapboxRouteVariants(
         alternatives: forwardFirst,
         excludeMotorway: Boolean(opts.preferBackroads),
         excludeToll,
+        excludePoints: opts.excludePoints,
         includeDetails,
         simplifiedOverview,
         bearingDeg: bearing,
@@ -1221,6 +1224,7 @@ export async function buildTripFromMapbox(
     stormAlerts?: NormalizedWeatherAlert[];
     radarAvoidanceEnabled?: boolean;
     excludeToll?: boolean;
+    excludePoints?: LngLat[];
     trailRoutePersonalization?: boolean;
     singleRouteFromPosition?: boolean;
     skipStormLegRefinement?: boolean;

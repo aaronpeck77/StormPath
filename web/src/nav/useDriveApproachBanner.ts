@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { pickDriveApproachBanner } from "./driveHazardApproachPreview";
-import { earlyApproachMaxMetersForSpeed } from "./surgicalBypassWindow";
+import { earlyApproachMaxMetersForSpeed } from "./driveApproachLead";
 import { TRAFFIC_BYPASS_ENABLED } from "./constants";
 import { polylineLengthMeters, pointAtAlongMeters } from "./routeGeometry";
 import type { RouteImpact } from "./routeImpacts";

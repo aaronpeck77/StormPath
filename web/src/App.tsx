@@ -35,6 +35,8 @@ import { useNearbyPoiTip } from "./hooks/useNearbyPoiTip";
 import { useAdvisoryVoiceGuidance } from "./hooks/useAdvisoryVoiceGuidance";
 import { useCarSessionPublish } from "./hooks/useCarSessionPublish";
 import { useGrokDock } from "./grok/useGrokDock";
+import { useJamHop } from "./nav/useJamHop";
+import { JamHopBanner } from "./ui/JamHopBanner";
 import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
 import { resolveNavigationRouteIds } from "./nav/navigationRouteFocus";
 import { resolveNavigatingRouteSelect } from "./nav/navigatingRouteSelect";
@@ -2359,6 +2361,18 @@ export default function App() {
     stopNativeGuidance: stopNative,
   });
   grokDriveRef.current.start = handleGo;
+  const jamHop = useJamHop({
+    navigationStarted,
+    line: navigationGuidanceGeometry,
+    userAlongMeters: userAlongGuidanceM,
+    speedMps,
+    congestion: trafficOverlay?.[guidanceRouteId]?.congestionNumeric ?? null,
+    steps: guidanceRoute?.turnSteps ?? [],
+    destLngLat,
+    destinationLabel,
+    computeRoutes,
+    onGo: handleGo,
+  });
   grokDriveRef.current.stop = () => {
     if (navigationStartedRef.current) handleStopAndClear();
   };
@@ -3065,6 +3079,14 @@ export default function App() {
               openDemoTrafficBypassCompareMock={openDemoTrafficBypassCompareMock}
               handleTrafficBypassFromHere={handleTrafficBypassFromHere}
             />
+            ) : null}
+            {jamHop.offer ? (
+              <JamHopBanner
+                offer={jamHop.offer}
+                busy={jamHop.busy}
+                onTake={jamHop.take}
+                onDismiss={jamHop.dismiss}
+              />
             ) : null}
             {showProgressRail && (
               <AppProgressRail

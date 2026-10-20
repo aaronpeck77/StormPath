@@ -79,7 +79,7 @@ export interface UseComputeRoutesDeps {
 export type ComputeRoutesFn = (
   end: [number, number],
   label: string,
-  opts?: { preserveNavigation?: boolean; excludeToll?: boolean }
+  opts?: { preserveNavigation?: boolean; excludeToll?: boolean; jamExcludePoints?: LngLat[] }
 ) => Promise<ComputeRoutesResult>;
 
 export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
@@ -116,7 +116,7 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
     async (
       end: [number, number],
       label: string,
-      opts?: { preserveNavigation?: boolean; excludeToll?: boolean }
+      opts?: { preserveNavigation?: boolean; excludeToll?: boolean; jamExcludePoints?: LngLat[] }
     ): Promise<ComputeRoutesResult> => {
       if (!userLngLat) return computeRoutesFailed("Location is not available yet.");
       const epochAtStart = routeGraphEpochRef.current;
@@ -162,12 +162,14 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
             {
               signal: mainFetch.signal,
               via: viaCoords.length > 0 ? viaCoords : undefined,
-              maxRoutes: isPlus ? 2 : 1,
+              maxRoutes: opts?.jamExcludePoints?.length ? 1 : (isPlus ? 2 : 1),
               allowLocalTripThirdRoute: false,
               preferThreeRoutes: false,
               stormAlerts: stormAlertsForRouting,
               radarAvoidanceEnabled: isPlus && stormEnabled,
               excludeToll: Boolean(opts?.excludeToll),
+              excludePoints: opts?.jamExcludePoints,
+              singleRouteFromPosition: Boolean(opts?.jamExcludePoints?.length),
               trailRoutePersonalization: isPlus && learnWhereIDrive,
               skipStormLegRefinement: true,
             }
