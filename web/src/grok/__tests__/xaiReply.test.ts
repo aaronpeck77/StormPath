@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   assistantUsesWeb,
   functionCallsFromXai,
+  latestRemark,
   replyTextFromXai,
+  spokenReply,
   xaiFollowUpBody,
   xaiRequestBody,
   xaiResponseId,
@@ -26,15 +28,20 @@ describe("xai reply", () => {
   });
 
   it("answers a measured trip without searching the web", () => {
-    const text = "The driver said: how's the weather. StormPath measured: Destination: Orlando.";
+    const text =
+      "The driver said: how's the weather. StormPath measured: The driver is near Lincoln. Destination: Orlando. Weather warnings: Thunderstorm warning.";
     const body = xaiRequestBody(text);
     expect(assistantUsesWeb(text)).toBe(false);
     expect(body.instructions).toContain("Do not search the web");
     expect(body.tools.some((tool) => tool.type === "web_search")).toBe(false);
-    expect(body.tools.some((tool) => tool.type === "function" && tool.name === "read_trip")).toBe(true);
+    expect(body.tools.some((tool) => tool.type === "function" && tool.name === "read_trip")).toBe(false);
+    expect(body.max_output_tokens).toBe(80);
+    expect(body.input[0]?.content).not.toContain("Lincoln");
+    expect(body.input[0]?.content).not.toContain("Orlando");
+    expect(body.input[0]?.content).toContain("Thunderstorm");
     const follow = xaiFollowUpBody("resp_1", [{ callId: "call_1", output: "measured" }], false);
     expect(follow.tools.some((tool) => tool.type === "web_search")).toBe(false);
-    expect(follow.max_output_tokens).toBe(400);
+    expect(follow.max_output_tokens).toBe(80);
   });
 
   it("reads a stop request and sends the tool result back", () => {
@@ -53,6 +60,26 @@ describe("xai reply", () => {
     expect(follow.previous_response_id).toBe("resp_1");
     expect(follow.input[0]?.call_id).toBe("call_1");
     expect(follow.input[0]?.output).toBe("measured");
+  });
+
+  it("answers the last remark instead of an old monologue about Lincoln", () => {
+    const old =
+      "You are still near Lincoln and the route to Orlando has heavy rain for the next two hours. I can keep going through the forecast if you want.";
+    const text = `The driver said: ${old} Tell me a joke about dogs. StormPath measured: The driver is near Lincoln. Destination: Orlando.`;
+    const body = xaiRequestBody(text);
+    expect(latestRemark("Tell me a joke about dogs")).toBe("Tell me a joke about dogs");
+    expect(body.input[0]?.content).toContain("joke about dogs");
+    expect(body.input[0]?.content).not.toContain("Lincoln");
+    expect(body.input[0]?.content).not.toContain("Orlando");
+    expect(body.max_output_tokens).toBe(160);
+  });
+
+  it("keeps a trip answer to a sentence or two", () => {
+    const long =
+      "You are near Lincoln. The route still runs to Orlando and will take about fifteen hours. Rain is possible later. Traffic is light. I can also talk about the stops.";
+    expect(spokenReply(long, true)).toBe("You are near Lincoln. The route still runs to Orlando and will take about fifteen hours.");
+    expect(spokenReply("Clear for the next hour.", true)).toBe("Clear for the next hour.");
+    expect(spokenReply("", false)).toBe("");
   });
 
   it("reads the spoken line and ignores empty output", () => {

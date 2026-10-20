@@ -7,6 +7,7 @@ import {
   LOCATION_NEEDED,
   planRoute,
   prepareAssistantForward,
+  messagesToSpeak,
   rememberDriverMessage,
   saveAssistantReply,
   speakablePlan,
@@ -180,5 +181,13 @@ describe("grok dock facts", () => {
     expect(body.say).toBe(saved?.text);
     expect(body.id).toBe(saved?.id);
     expect(assistantOkBody(null, "I heard you. Say that again.").say).toBe("I heard you. Say that again.");
+  });
+
+  it("gives the phone only the latest recent line, not the trip from hours ago", () => {
+    const now = Date.parse("2026-10-20T16:00:00Z");
+    const old = { id: "old", text: "You are near Lincoln. The route is still on.", at: "2026-10-20T12:00:00Z" };
+    const recent = { id: "new", text: "Why did the dog sit in the driver's seat?", at: "2026-10-20T15:59:30Z" };
+    expect(messagesToSpeak([old, recent], now)).toEqual([recent]);
+    expect(messagesToSpeak([old], now)).toEqual([]);
   });
 });
