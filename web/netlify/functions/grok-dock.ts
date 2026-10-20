@@ -38,6 +38,16 @@ function mapboxToken(): string {
   return (process.env.MAPBOX_SECRET_TOKEN || process.env.VITE_MAPBOX_TOKEN || process.env.MAPBOX_TOKEN || "").trim();
 }
 
+export function makeDockTrip(token: string) {
+  return {
+    geocode: (query: string, near: DockOrigin | null) => geocode(query, near, token),
+    measure: async (origin: DockOrigin, destination: LngLat, stop: LngLat | null) => {
+      if (!token) throw new Error("StormPath routing is not configured on the server.");
+      return measure(origin, destination, stop, token);
+    },
+  };
+}
+
 async function blobStore(event: unknown): Promise<DockStore> {
   await connectBlobsIfLambda(event);
   return {
@@ -173,14 +183,7 @@ export const handler = async (event: NetlifyEvent) => {
     return reply({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "bad json" }) });
   }
   if (typeof parsed.method === "string") {
-    const token = mapboxToken();
-    const result = await handleDockRpc(parsed, store, {
-      geocode: (query, near) => geocode(query, near, token),
-      measure: async (origin, destination, stop) => {
-        if (!token) throw new Error("StormPath routing is not configured on the server.");
-        return measure(origin, destination, stop, token);
-      },
-    });
+    const result = await handleDockRpc(parsed, store, makeDockTrip(mapboxToken()));
     if (!result) return { statusCode: 202, headers: CORS, body: "" };
     return reply(result);
   }

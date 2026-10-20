@@ -8,6 +8,7 @@ import { stormyTurnImminent } from "../ui/StormyButton";
 import { spokenLanguageTag } from "../utils/guidanceLanguage";
 import { useSettingsStore } from "../state/settingsStore";
 import { voiceSpeaks } from "../voice/voiceLevel";
+import { assistantPlanApply } from "./grokPlanApply";
 import {
   postDockOrigin,
   publishDockMessages,
@@ -86,21 +87,36 @@ export function useGrokDock(opts: {
         }
       }
       const plan = state.plan;
-      if (!navigationStarted && plan && plan.id !== readAppliedPlanId()) {
+      const control = state.control;
+      const planAction = assistantPlanApply({
+        navigationStarted: navRef.current,
+        planId: plan?.id ?? null,
+        appliedPlanId: readAppliedPlanId(),
+      });
+      const controlFresh = Boolean(control && control.id !== readAppliedControlId());
+      if (control && controlFresh) rememberAppliedControlId(control.id);
+      if (plan && planAction !== "skip") {
         rememberAppliedPlanId(plan.id);
         if (plan.stop && plan.stopLabel) setViaStops([{ lngLat: plan.stop, label: plan.stopLabel }]);
         else setViaStops([]);
-        await computeRoutes(plan.destination, plan.destinationLabel);
-        if (state.control?.action !== "start") {
-          setTapHint("Your assistant set this route. Hit Go when you are ready to leave.");
+        const measured = await computeRoutes(plan.destination, plan.destinationLabel);
+        let hint: string | null = null;
+        if (!measured.ok) {
+          if (measured.reason) hint = measured.reason;
+        } else if (planAction === "replan-and-resume") {
+          startRef.current();
+          hint = plan.stop ? "Stop added. Measured again from here." : "Measured again from here.";
+        } else if (control?.action !== "start") {
+          hint = "Your assistant set this route. Hit Go when you are ready to leave.";
+        }
+        if (hint) {
+          setTapHint(hint);
           window.setTimeout(() => setTapHint(null), 8000);
         }
       }
-      const control = state.control;
-      if (control && control.id !== readAppliedControlId()) {
-        rememberAppliedControlId(control.id);
-        if (control.action === "stop" && navigationStarted) stopRef.current();
-        else if (control.action === "start" && !navigationStarted) startRef.current();
+      if (control && controlFresh && planAction !== "replan-and-resume") {
+        if (control.action === "stop" && navRef.current) stopRef.current();
+        else if (control.action === "start" && !navRef.current) startRef.current();
       }
     };
 

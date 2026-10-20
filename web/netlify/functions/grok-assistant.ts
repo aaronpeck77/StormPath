@@ -3,8 +3,22 @@
  * The reply is saved on the dock so the phone can show it and speak it.
  */
 import { connectBlobsIfLambda } from "./_blobsLambda.ts";
-import { prepareAssistantForward, saveAssistantReply, type DockSession, type DockStore } from "../../src/grok/grokDock.ts";
-import { replyTextFromXai, xaiRequestBody } from "../../src/grok/xaiReply.ts";
+import { makeDockTrip } from "./grok-dock.ts";
+import {
+  dockRpcPlainText,
+  handleDockRpc,
+  prepareAssistantForward,
+  saveAssistantReply,
+  type DockSession,
+  type DockStore,
+} from "../../src/grok/grokDock.ts";
+import {
+  functionCallsFromXai,
+  replyTextFromXai,
+  xaiFollowUpBody,
+  xaiRequestBody,
+  xaiResponseId,
+} from "../../src/grok/xaiReply.ts";
 
 type NetlifyEvent = {
   httpMethod?: string;
@@ -55,6 +69,27 @@ function json(statusCode: number, body: unknown) {
   };
 }
 
+function mapboxToken(): string {
+  return (process.env.MAPBOX_SECRET_TOKEN || process.env.VITE_MAPBOX_TOKEN || process.env.MAPBOX_TOKEN || "").trim();
+}
+
+async function postXai(key: string, body: unknown): Promise<unknown> {
+  const res = await fetch("https://api.x.ai/v1/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const raw = await res.text();
+    console.error("[grok-assistant] xAI status", res.status, raw.slice(0, 300));
+    throw new Error("xai");
+  }
+  return res.json();
+}
+
 export const handler = async (event: NetlifyEvent) => {
   if ((event.httpMethod ?? "POST").toUpperCase() === "OPTIONS") {
     return { statusCode: 204, headers: CORS, body: "" };
@@ -78,19 +113,45 @@ export const handler = async (event: NetlifyEvent) => {
     return json(503, { ok: false, error: "The assistant is not configured yet." });
   }
   try {
-    const res = await fetch("https://api.x.ai/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify(xaiRequestBody(ready.payload.text)),
-    });
-    if (!res.ok) {
-      console.error("[grok-assistant] xAI status", res.status);
-      return json(502, { ok: false, error: "The assistant did not accept that." });
+    let data = await postXai(key, xaiRequestBody(ready.payload.text));
+    const trip = makeDockTrip(mapboxToken());
+    let usedTool = false;
+    for (let round = 0; round < 2; round++) {
+      const calls = functionCallsFromXai(data);
+      const previousId = xaiResponseId(data);
+      if (!calls.length || !previousId) break;
+      usedTool = true;
+      const outputs: { callId: string; output: string }[] = [];
+      for (const call of calls) {
+        const rpc = await handleDockRpc(
+          {
+            method: "tools/call",
+            id: call.callId,
+            params: {
+              name: call.name,
+              arguments: { ...call.arguments, dock_code: ready.payload.dock_code },
+            },
+          },
+          store,
+          trip
+        );
+        outputs.push({ callId: call.callId, output: dockRpcPlainText(rpc) || "Done." });
+      }
+      try {
+        data = await postXai(key, xaiFollowUpBody(previousId, outputs));
+      } catch (e) {
+        console.error("[grok-assistant] tool follow-up failed", e instanceof Error ? e.message : "error");
+        await saveAssistantReply(
+          store,
+          ready.payload.dock_code,
+          "I sent that to StormPath. It is measuring the trip again from where you are."
+        );
+        return json(200, { ok: true });
+      }
     }
-    const reply = replyTextFromXai(await res.json());
+    const reply =
+      replyTextFromXai(data) ||
+      (usedTool ? "I sent that to StormPath. It is measuring the trip again from where you are." : "");
     if (!reply) {
       console.error("[grok-assistant] xAI returned no spoken line");
       return json(502, { ok: false, error: "The assistant did not accept that." });

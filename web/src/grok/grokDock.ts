@@ -167,7 +167,8 @@ const TOOLS = [
   },
   {
     name: "add_stop",
-    description: "Add one stop to the trip StormPath already measured, then measure it again.",
+    description:
+      "Add one stop to the trip StormPath already measured and keep the current destination. The phone measures again from where it is. If the drive is already going, it continues after that measurement. Do not call stop_drive or start_drive for this.",
     inputSchema: {
       type: "object",
       properties: {
@@ -261,6 +262,25 @@ export async function saveAssistantReply(store: DockStore, code: string, text: s
   if (!session) return;
   rememberDriverMessage(session, text);
   await store.put(session);
+}
+
+/** Spoken text from a dock tool result, for the assistant to read back. */
+export function dockRpcPlainText(result: DockHttpResult | null): string {
+  if (!result) return "";
+  try {
+    const parsed = JSON.parse(result.body) as {
+      error?: { message?: string };
+      result?: { content?: { text?: string }[] };
+    };
+    if (parsed.error?.message) return parsed.error.message;
+    return (parsed.result?.content ?? [])
+      .map((row) => row.text ?? "")
+      .filter(Boolean)
+      .join(" ")
+      .slice(0, 2000);
+  } catch {
+    return "";
+  }
 }
 
 export function rememberDriverMessage(session: DockSession, text: string): DockMessage {
