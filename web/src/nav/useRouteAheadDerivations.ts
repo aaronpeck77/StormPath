@@ -40,6 +40,8 @@ import {
 } from "./constants";
 import { radarDisplayIntensity } from "./radarReflectivityScale";
 import { postedSpeedForDisplay } from "./postedSpeedSanity";
+import { formatHorizonHazardLine, mergeHorizonHazardLine, type HorizonHazard } from "./horizonAhead";
+import { roadUsesMiles } from "../utils/displayUnits";
 import type { MapViewMode } from "../ui/driveMapTypes";
 import {
   filterAlertsAffectingRoute,
@@ -110,6 +112,10 @@ export type UseRouteAheadDerivationsDeps = {
   stormMapGeoJson: GeoJSON.FeatureCollection | null;
   /** Live GPS speed (m/s) — cruise median hints posted-limit sanity. */
   speedMps: number | null;
+  /** Road-graph posted limit from the phone's electronic horizon, when it has one. */
+  horizonMph?: number | null;
+  /** Incidents the horizon sees ahead of the puck. */
+  horizonHazards?: HorizonHazard[];
 };
 
 export type UseRouteAheadDerivationsResult = {
@@ -148,6 +154,8 @@ export type UseRouteAheadDerivationsResult = {
   postedMph: number | null;
   /** Lim came from the road-class average, not Mapbox — show it as a guess. */
   postedMphIsClassEstimate: boolean;
+  /** Lim came from the electronic horizon. Show the number without an estimate mark. */
+  postedMphFromHorizon: boolean;
   progressStripAlerts: RouteAlert[];
   /** Exit signs plus city centers used to phrase alerts. */
   routePlaceAnchors: RoutePlaceAnchor[];
@@ -193,6 +201,8 @@ export function useRouteAheadDerivations(
     temporaryGuidanceRouteId = null,
     offRouteHoldPreviewActive = false,
     stormMapGeoJson,
+    horizonMph = null,
+    horizonHazards = [],
   } = deps;
 
   const routePlaceAnchors = useRoutePlaceAnchors(
@@ -482,14 +492,22 @@ export function useRouteAheadDerivations(
     ]
   );
 
-  const nextHazardAtEtaLine = useMemo(
-    () =>
-      mergeStormCorridorAdvisoryLine(
-        stormCorridorIntersect,
-        routeImpactsForUi.length ? nextHazardAffectingYouLine(routeImpactsForUi) : null
-      ),
-    [stormCorridorIntersect, routeImpactsForUi]
-  );
+  const nextHazardAtEtaLine = useMemo(() => {
+    const base = mergeStormCorridorAdvisoryLine(
+      stormCorridorIntersect,
+      routeImpactsForUi.length ? nextHazardAffectingYouLine(routeImpactsForUi) : null
+    );
+    const nearest = navigationStarted ? horizonHazards[0] : undefined;
+    if (!nearest) return base;
+    const line = formatHorizonHazardLine(nearest, roadUsesMiles(effectiveUserLngLat));
+    return mergeHorizonHazardLine(base, line, nearest.kind);
+  }, [
+    stormCorridorIntersect,
+    routeImpactsForUi,
+    navigationStarted,
+    horizonHazards,
+    effectiveUserLngLat,
+  ]);
 
   const corridorTimingLines = useMemo(() => {
     const hasActiveRoute = Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
@@ -705,10 +723,12 @@ export function useRouteAheadDerivations(
       ? postedSpeedForDisplay({
           route: guidanceRoute,
           alongMeters: userAlongGuidanceM,
+          horizonMph,
         })
       : null;
   const postedMph = postedSpeed?.mph ?? null;
   const postedMphIsClassEstimate = postedSpeed?.classEstimate ?? false;
+  const postedMphFromHorizon = postedSpeed?.fromHorizon ?? false;
 
   const progressStripAlerts = useMemo(() => augmentAlertsForProgressStrip(routeAlerts), [routeAlerts]);
 
@@ -744,6 +764,7 @@ export function useRouteAheadDerivations(
     progressRailRoute,
     postedMph,
     postedMphIsClassEstimate,
+    postedMphFromHorizon,
     progressStripAlerts,
     routePlaceAnchors,
   };

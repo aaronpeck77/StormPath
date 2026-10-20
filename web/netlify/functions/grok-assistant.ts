@@ -1,8 +1,10 @@
 /**
- * The phone asks this. The webhook address and secret stay in Netlify env.
+ * The phone asks this. The xAI key stays in Netlify as XAI_API_KEY.
+ * The reply is saved on the dock so the phone can show it and speak it.
  */
 import { connectBlobsIfLambda } from "./_blobsLambda.ts";
-import { prepareAssistantForward, type DockSession, type DockStore } from "../../src/grok/grokDock.ts";
+import { prepareAssistantForward, saveAssistantReply, type DockSession, type DockStore } from "../../src/grok/grokDock.ts";
+import { replyTextFromXai, xaiRequestBody } from "../../src/grok/xaiReply.ts";
 
 type NetlifyEvent = {
   httpMethod?: string;
@@ -70,24 +72,32 @@ export const handler = async (event: NetlifyEvent) => {
   const ready = await prepareAssistantForward(store, parsed);
   if (!ready.ok) return json(ready.status, { ok: false, error: ready.error });
 
-  const url = process.env.GROK_WEBHOOK_URL?.trim();
-  const auth = process.env.GROK_WEBHOOK_AUTH?.trim();
-  if (!url || !auth) {
-    console.error("[grok-assistant] GROK_WEBHOOK_URL or GROK_WEBHOOK_AUTH is missing");
+  const key = process.env.XAI_API_KEY?.trim();
+  if (!key) {
+    console.error("[grok-assistant] XAI_API_KEY is missing");
     return json(503, { ok: false, error: "The assistant is not configured yet." });
   }
   try {
-    const res = await fetch(url, {
+    const res = await fetch("https://api.x.ai/v1/responses", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: auth },
-      body: JSON.stringify(ready.payload),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify(xaiRequestBody(ready.payload.text)),
     });
     if (!res.ok) {
-      console.error("[grok-assistant] webhook status", res.status);
+      console.error("[grok-assistant] xAI status", res.status);
       return json(502, { ok: false, error: "The assistant did not accept that." });
     }
+    const reply = replyTextFromXai(await res.json());
+    if (!reply) {
+      console.error("[grok-assistant] xAI returned no spoken line");
+      return json(502, { ok: false, error: "The assistant did not accept that." });
+    }
+    await saveAssistantReply(store, ready.payload.dock_code, reply);
   } catch (e) {
-    console.error("[grok-assistant] webhook failed", e instanceof Error ? e.message : "error");
+    console.error("[grok-assistant] xAI failed", e instanceof Error ? e.message : "error");
     return json(502, { ok: false, error: "The assistant did not accept that." });
   }
   return json(200, { ok: true });

@@ -256,6 +256,13 @@ export function takeRateSlot(session: DockSession, now = Date.now()): boolean {
   return true;
 }
 
+export async function saveAssistantReply(store: DockStore, code: string, text: string): Promise<void> {
+  const session = await store.get(code);
+  if (!session) return;
+  rememberDriverMessage(session, text);
+  await store.put(session);
+}
+
 export function rememberDriverMessage(session: DockSession, text: string): DockMessage {
   const message: DockMessage = {
     id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,

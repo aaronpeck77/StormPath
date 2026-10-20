@@ -41,6 +41,8 @@ type Props = {
   useMiles?: boolean;
   /** Lim is a road-class average, not map data — never drives the over-speed warning. */
   postedMphIsClassEstimate?: boolean;
+  /** Lim came from the road ahead. Show the number without an estimate mark. */
+  postedMphFromHorizon?: boolean;
   onStop: () => void;
   hasTrip: boolean;
   /** Planning with no destination: quick return along the reversed last Go route. */
@@ -87,6 +89,7 @@ export function BottomToolbar({
   postedMph,
   useMiles = true,
   postedMphIsClassEstimate = false,
+  postedMphFromHorizon = false,
   onStop,
   hasTrip,
   showReturnTripButton = false,
@@ -238,17 +241,21 @@ export function BottomToolbar({
               <div className="nav-bottom-stat">
                 <span className="nav-bottom-stat-k">Lim</span>
                 <span
-                  className={`nav-bottom-stat-v${postedMphIsClassEstimate ? " nav-bottom-stat-v--limit-guess" : ""}`}
+                  className={`nav-bottom-stat-v${postedMphIsClassEstimate && !postedMphFromHorizon ? " nav-bottom-stat-v--limit-guess" : ""}`}
                   title={
                     postedMph == null
                       ? "No reliable map limit here — obey posted road signs"
-                      : postedMphIsClassEstimate
-                        ? "No map limit here — typical limit for this class of road. Obey posted road signs."
-                        : "Map estimate only — always obey posted road signs. Not for enforcement."
+                      : postedMphFromHorizon
+                        ? "Limit from the road ahead. Obey the posted sign."
+                        : postedMphIsClassEstimate
+                          ? "No map limit here — typical limit for this class of road. Obey posted road signs."
+                          : "Map estimate only — always obey posted road signs. Not for enforcement."
                   }
                 >
                   {postedMph != null ? displaySpeed(postedMph, useMiles) : "—"}
-                  {postedMph != null ? <small>{postedMphIsClassEstimate ? " ~est" : " est"}</small> : null}
+                  {postedMph != null && !postedMphFromHorizon ? (
+                    <small>{postedMphIsClassEstimate ? " ~est" : " est"}</small>
+                  ) : null}
                 </span>
               </div>
             </div>

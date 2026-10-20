@@ -30,6 +30,11 @@ import {
   parseNativeDriveFollowCamera,
   type NativeDriveFollowCamera,
 } from "./nativeDriveFollowCam";
+import {
+  horizonHazardsFromProgress,
+  horizonLimitMph,
+  type HorizonHazard,
+} from "./horizonAhead";
 export type NativeNavSessionCoords = {
   userLngLat: LngLat | null;
   viaStops: TripStop[];
@@ -139,6 +144,9 @@ export function useNativeNavSession(opts: {
   const [followCamera, setFollowCamera] = useState<NativeDriveFollowCamera | null>(null);
   const [guidance, setGuidance] = useState<NativeNavGuidance | null>(null);
   const [turnSteps, setTurnSteps] = useState<RouteTurnStep[]>([]);
+  const [horizonLimit, setHorizonLimit] = useState<number | null>(null);
+  const [horizonHazards, setHorizonHazards] = useState<HorizonHazard[]>([]);
+  const [horizonReady, setHorizonReady] = useState(false);
   const startedForNavRef = useRef(false);
   const nativeRestartingRef = useRef(false);
   /** Stop already in flight — do not tear Core down a second time from the nav-ended effect. */
@@ -208,6 +216,9 @@ export function useNativeNavSession(opts: {
     setFollowCamera(null);
     setGuidance(null);
     setTurnSteps([]);
+    setHorizonReady(false);
+    setHorizonLimit(null);
+    setHorizonHazards([]);
     nativeStoppingRef.current = false;
   }, [removeListeners]);
 
@@ -242,6 +253,9 @@ export function useNativeNavSession(opts: {
         lastRouteChangedAtMs: null,
       };
       setFollowCamera(null);
+      setHorizonReady(false);
+      setHorizonLimit(null);
+      setHorizonHazards([]);
 
       const handles = await Promise.all([
         StormpathMapboxNavigation.addListener("progress", (e: NativeNavProgressEvent) => {
@@ -308,6 +322,13 @@ export function useNativeNavSession(opts: {
             currentRoadName: roadName,
             currentRoadRef: roadRef,
           });
+          if (e.horizonReady) {
+            const mph = horizonLimitMph(e.horizonLimitMph);
+            const hazards = horizonHazardsFromProgress(e.horizonHazards);
+            setHorizonReady(true);
+            setHorizonLimit((prev) => (prev === mph ? prev : mph));
+            setHorizonHazards((prev) => (sameHorizonHazards(prev, hazards) ? prev : hazards));
+          }
           const liveW = liveWindowRef.current;
           if (
             liveW &&
@@ -521,5 +542,18 @@ export function useNativeNavSession(opts: {
     coreWindowIsFinal,
     stopNative,
     restartNative,
+    /** Road-graph limit once the horizon has reported. Null means it had no sign. */
+    horizonMph: horizonReady ? horizonLimit : null,
+    horizonHazards: horizonReady ? horizonHazards : [],
   };
+}
+
+function sameHorizonHazards(a: HorizonHazard[], b: HorizonHazard[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]!.kind !== b[i]!.kind || a[i]!.text !== b[i]!.text || a[i]!.distanceM !== b[i]!.distanceM) {
+      return false;
+    }
+  }
+  return true;
 }

@@ -53,6 +53,9 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     private var preparedRouteKey = ""
     /// Bumped on every tearDown so an in-flight prepare cannot install a stale provider after Go.
     private var coreEpoch = 0
+    /// Last electronic-horizon sample. Progress copies it so the Lim readout and advisory stay in sync.
+    private var horizonSnapshot = HorizonSnapshot(limitMph: nil, hazards: [])
+    private var horizonReady = false
 
     @objc func isAvailable(_ call: CAPPluginCall) {
         call.resolve(["available": true])
@@ -250,6 +253,15 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         // Off-route recovery is Core's job. Do not auto-swap a locked B for a faster highway.
         coreConfig.routingConfig.rerouteConfig.detectsReroute = true
         coreConfig.routingConfig.fasterRouteDetectionConfig = nil
+        // Posted limit and incident road objects along the route. Enhanced ADAS data stays off.
+        // Live incidents need a Mapbox graph id this app does not have, so that feed stays off.
+        coreConfig.electronicHorizonConfig = ElectronicHorizonConfig(
+            length: HorizonAhead.horizonLengthM,
+            expansionLevel: 0,
+            branchLength: 50,
+            minTimeDeltaBetweenUpdates: 2,
+            enableEnhancedDataAlongEH: false
+        )
         return coreConfig
     }
 
@@ -462,6 +474,35 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                 ])
             }
             .store(in: &cancellables)
+
+        let horizon = mapboxNavigation.electronicHorizon()
+        horizon.stopUpdatingEHorizon()
+        horizon.eHorizonEvents
+            .compactMap { $0.event as? EHorizonStatus.Events.PositionUpdated }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] event in
+                Task { @MainActor in
+                    self?.applyHorizon(event)
+                }
+            }
+            .store(in: &cancellables)
+        horizon.startUpdatingEHorizon()
+    }
+
+    @MainActor
+    private func applyHorizon(_ event: EHorizonStatus.Events.PositionUpdated) {
+        guard sessionActive,
+              let graph = navigationProvider?.mapboxNavigation.electronicHorizon().roadMatching.roadGraph
+        else { return }
+        horizonSnapshot = HorizonAhead.snapshot(event: event, graph: graph)
+        horizonReady = true
+    }
+
+    @MainActor
+    private func resetHorizon() {
+        navigationProvider?.mapboxNavigation.electronicHorizon().stopUpdatingEHorizon()
+        horizonSnapshot = HorizonSnapshot(limitMph: nil, hazards: [])
+        horizonReady = false
     }
 
     @MainActor
@@ -536,6 +577,11 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         if let showing = nativeMap?.isShowing {
             payload["nativeMapShowing"] = showing
         }
+        payload["horizonReady"] = horizonReady
+        if let mph = horizonSnapshot.limitMph {
+            payload["horizonLimitMph"] = mph
+        }
+        payload["horizonHazards"] = horizonSnapshot.hazards
         notifyListeners("progress", data: payload)
 
         if !didEmitArrival, remainingM >= 0, remainingM < 30, alongM > 50 {
@@ -635,6 +681,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         let wasActive = sessionActive
         sessionActive = false
         coreEpoch += 1
+        resetHorizon()
         cancellables.removeAll()
         if let synth = voiceController?.speechSynthesizer {
             synth.muted = true
@@ -685,6 +732,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         let wasActive = sessionActive
         sessionActive = false
         coreEpoch += 1
+        resetHorizon()
         cancellables.removeAll()
         if let synth = voiceController?.speechSynthesizer {
             synth.muted = true

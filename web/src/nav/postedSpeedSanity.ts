@@ -148,17 +148,25 @@ export type PostedSpeedDisplay = {
   mph: number | null;
   /** True when the number came from the road-class table, not Mapbox data. */
   classEstimate: boolean;
+  /** True when the number came from the electronic-horizon edge, not Directions. */
+  fromHorizon?: boolean;
 };
 
 /**
- * Limit for the Lim / Limit readout: Mapbox's value when it exists, otherwise the
- * road-class average. The caller must show `classEstimate` differently and must not
- * drive an over-speed warning off it.
+ * Limit for the Lim / Limit readout. A horizon edge limit wins when the phone
+ * has one. Otherwise Mapbox's Directions value, then the road-class average.
+ * The caller must show `classEstimate` differently and must not drive an
+ * over-speed warning off it.
  */
 export function postedSpeedForDisplay(opts: {
   route: NavRoute | undefined;
   alongMeters: number;
+  horizonMph?: number | null;
 }): PostedSpeedDisplay {
+  const horizon = opts.horizonMph;
+  if (horizon != null && Number.isFinite(horizon) && horizon >= 10 && horizon <= 95) {
+    return { mph: Math.round(horizon), classEstimate: false, fromHorizon: true };
+  }
   const mapboxMph = displayedPostedSpeedMph(opts);
   if (mapboxMph != null) return { mph: mapboxMph, classEstimate: false };
 

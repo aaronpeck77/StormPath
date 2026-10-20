@@ -48,6 +48,16 @@ export type NativeNavProgressEvent = {
   camZoom?: number;
   /** True when native Drive map is visible through the WebView. */
   nativeMapShowing?: boolean;
+  /** True after the electronic horizon has reported at least once this trip. */
+  horizonReady?: boolean;
+  /** Posted limit from the road-graph edge, miles per hour. Absent when unknown. */
+  horizonLimitMph?: number | null;
+  /** Incidents on the road ahead that the last route call may not have labeled. */
+  horizonHazards?: Array<{
+    kind: string;
+    text: string;
+    distanceM: number;
+  }>;
 };
 
 /** Live turn banner fields from Mapbox Navigation Core (iOS). */

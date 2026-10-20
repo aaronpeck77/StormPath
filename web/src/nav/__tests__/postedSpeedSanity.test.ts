@@ -137,6 +137,27 @@ describe("postedSpeedForDisplay", () => {
     });
   });
 
+  it("prefers a horizon limit over the class guess", () => {
+    const interstate = route([
+      { instruction: "Continue on I-72 East", distanceM: 5000, roadRef: "I 72" },
+    ]);
+    expect(postedSpeedForDisplay({ route: interstate, alongMeters: 100, horizonMph: 65 })).toEqual({
+      mph: 65,
+      classEstimate: false,
+      fromHorizon: true,
+    });
+  });
+
+  it("ignores a horizon value that is not a real limit", () => {
+    const interstate = route([
+      { instruction: "Continue on I-72 East", distanceM: 5000, roadRef: "I 72" },
+    ]);
+    expect(postedSpeedForDisplay({ route: interstate, alongMeters: 100, horizonMph: null })).toEqual({
+      mph: 70,
+      classEstimate: true,
+    });
+  });
+
   it("stays blank when the road class is unknown", () => {
     expect(postedSpeedForDisplay({ route: undefined, alongMeters: 100 })).toEqual({
       mph: null,

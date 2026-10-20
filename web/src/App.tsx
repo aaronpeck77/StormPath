@@ -1026,6 +1026,8 @@ export default function App() {
     restartNative,
     stopNative,
     coreRerouteHealthRef,
+    horizonMph,
+    horizonHazards,
   } = useNativeNavSession({
     accessToken: env.mapboxToken,
     navigationStarted,
@@ -2000,6 +2002,7 @@ export default function App() {
     progressRailRoute,
     postedMph,
     postedMphIsClassEstimate,
+    postedMphFromHorizon,
     progressStripAlerts,
     routePlaceAnchors,
   } = useRouteAheadDerivations({
@@ -2041,6 +2044,8 @@ export default function App() {
     offRouteHoldPreviewActive,
     stormMapGeoJson,
     speedMps,
+    horizonMph,
+    horizonHazards,
   });
 
   const stormyBrief = useMemo(() => {
@@ -3296,6 +3301,7 @@ export default function App() {
           postedMphIsClassEstimate={
             postedMphIsClassEstimate && allowUsSpeedLimitGuess(effectiveUserLngLat)
           }
+          postedMphFromHorizon={postedMphFromHorizon}
           useMiles={roadUsesMiles(effectiveUserLngLat)}
           handleStopAndClear={handleStopAndClear}
           hasTrip={Boolean(plan.routes.length > 0 || destLngLat)}
