@@ -10,15 +10,19 @@ import {
 
 describe("xai reply", () => {
   it("lets Grok use the web and answer normally", () => {
-    const body = xaiRequestBody("The driver said: how's the road?");
+    const body = xaiRequestBody(
+      "The driver said: tell me a joke about dogs. StormPath measured: Destination: Orlando. Weather warnings: Special Weather Statement."
+    );
     expect(body.model).toBe("grok-4.7");
     expect(body).not.toHaveProperty("search_parameters");
-    expect(body.instructions).toContain("use the web");
-    expect(body.instructions).toContain("add_stop");
-    expect(assistantUsesWeb("The driver said: how's the road?")).toBe(true);
+    expect(body.instructions.toLowerCase()).toContain("use the web");
+    expect(body.instructions).toContain("Grok app");
+    expect(body.instructions).not.toContain("Answer from the StormPath measurements");
+    expect(assistantUsesWeb(body.input[0]?.content ?? "")).toBe(true);
     expect(body.tools.some((tool) => tool.type === "web_search")).toBe(true);
-    expect(body.tools.some((tool) => tool.type === "function" && tool.name === "add_stop")).toBe(true);
-    expect(body.input[0]?.content).toContain("how's the road");
+    expect(body.input[0]?.content).toContain("joke about dogs");
+    expect(body.input[0]?.content).not.toContain("Orlando");
+    expect(body.input[0]?.content).not.toContain("Special Weather");
   });
 
   it("answers a measured trip without searching the web", () => {

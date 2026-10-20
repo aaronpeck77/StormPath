@@ -18,11 +18,19 @@ export function isTripAction(action: StormyAction): boolean {
 }
 
 const TRIP_TALK =
-  /\b(weather|storm|rain|snow|radar|traffic|wreck|jam|eta|how long|how far|route|destination|ahead|hazard|road|miles|minute|where am i|where are we|conditions|forecast|turn|exit|highway|interstate|drive)\b/i;
+  /\b(weather|forecast|rain|raining|snow|snowing|storm|radar|temperature|wind|icy|fog|traffic|wreck|jam|backup|closure|hazard|eta|how long|how much longer|how far|miles left|time left|when do we (?:get|arrive)|where are we going|where we going|what(?:'s| is) ahead|how(?:'s| is) the (?:road|drive|trip)|destination|which route|the route|our route|reroute|add a stop|take me|drive me|navigate|directions to|start the drive|stop the (?:trip|route))\b/i;
 
-/** A question about this trip. Anything else is free talk. */
+/** They asked about this trip or the weather. Anything else is ordinary conversation. */
 export function isTripTalk(question: string): boolean {
   return TRIP_TALK.test(question.replace(/\s+/g, " ").trim());
+}
+
+/** The words the driver spoke, without the measured trip pasted on the end. */
+export function driverSaid(raw: string): string {
+  const text = raw.replace(/\s+/g, " ").trim();
+  const marked = text.match(/the driver said:\s*(.*?)(?:\.\s*(?:stormpath measured:|this is free talk\b)|$)/i);
+  const said = (marked?.[1] ?? text).replace(/[.]+$/g, "").trim();
+  return said || text;
 }
 
 /**
