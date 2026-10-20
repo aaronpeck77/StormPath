@@ -42,8 +42,8 @@ describe("voice levels", () => {
     expect(stormyButtonFor("basic", false)).toBe(true);
     expect(stormyButtonFor("basic", true)).toBe(false);
     expect(stormyButtonFor("enhanced", true)).toBe(false);
-    expect(speechVoiceFlags("enhanced", true)).toEqual({ forAssistant: true });
-    expect(speechVoiceFlags("enhanced", false)).toEqual({});
+    expect(speechVoiceFlags("enhanced", true)).toEqual({ preferEnhanced: true, forAssistant: true });
+    expect(speechVoiceFlags("enhanced", false)).toEqual({ preferEnhanced: true });
     expect(speechVoiceFlags("basic", true)).toEqual({});
     expect(speechVoiceFlags("off", true)).toEqual({});
     expect(assistantButtonLabel("  Steve  ")).toBe("Steve");

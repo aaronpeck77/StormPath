@@ -4,7 +4,7 @@ export type SpeakOptions = {
   rate?: number;
   /** BCP-47 tag. Omitted calls keep the English voice Stormy already uses. */
   language?: string;
-  /** Prefer a downloaded enhanced voice such as Ava, when the phone has one. */
+  /** Use an installed Enhanced or Premium voice. A Siri voice cannot be used. */
   preferEnhanced?: boolean;
   /** The assistant's reply. Use a downloaded male voice, not Stormy's voice. */
   forAssistant?: boolean;

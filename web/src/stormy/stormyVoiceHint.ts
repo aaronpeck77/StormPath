@@ -1,6 +1,6 @@
 /** Same directions in Settings and when a driver asks Stormy about her voice. */
 export const STORMY_VOICE_HINT =
-  "Downloaded voice does not turn your assistant off. He uses a male English voice you download. Open the iPhone Settings app, tap Accessibility, then Read & Speak, then Voices, then English, and download the male voice you want. The download is free. On an older phone that list is under Spoken Content. Stormy stays on the phone's usual voice. He uses the new voice the next time he speaks.";
+  "Downloaded voice does not turn your assistant off. Siri voices in that menu stay inside Siri, so StormPath cannot speak them. Open the iPhone Settings app, tap Accessibility, then Read and Speak, then Voices, then English. Download a male voice labeled Enhanced or Premium, such as Alex, Nathan, or Evan. The download is free. On an older phone that list is under Spoken Content. He uses it the next time he speaks.";
 
 export function asksAboutStormyVoice(lower: string): boolean {
   if (/\b(?:ava|zoe)\b/.test(lower) && /\b(?:voice|sound|download|speak|talk)\b/.test(lower)) return true;

@@ -20,43 +20,50 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private let synthesizer = AVSpeechSynthesizer()
 
-    /// The English voice the driver picked in iPhone Settings. StormPath does not choose one for them.
+    /// The built-in computer voice. Used only for Basic voice.
     private func stormyVoice() -> AVSpeechSynthesisVoice? {
         AVSpeechSynthesisVoice(language: "en-US")
     }
 
-    /// A downloaded enhanced or premium voice, Ava first. Used for Stormy, not the assistant.
-    private func enhancedVoice() -> AVSpeechSynthesisVoice? {
-        let english = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
-        let ava = english.filter { $0.name.localizedCaseInsensitiveContains("Ava") }
-        if #available(iOS 16.0, *) {
-            if let premium = ava.first(where: { $0.quality == .premium }) { return premium }
-            if let premium = english.first(where: { $0.quality == .premium }) { return premium }
-        }
-        if let better = ava.first(where: { $0.quality == .enhanced }) { return better }
-        return english.first(where: { $0.quality == .enhanced })
+    /// Siri voices show up in the phone's voice menu and cannot be spoken by other apps.
+    private func isSiriVoice(_ voice: AVSpeechSynthesisVoice) -> Bool {
+        let id = voice.identifier.lowercased()
+        return id.contains("siri") || id.contains("ttsbundle")
     }
 
+    private func isCompactVoice(_ voice: AVSpeechSynthesisVoice) -> Bool {
+        let id = voice.identifier.lowercased()
+        return id.contains("compact")
+    }
+
+    /// An installed Enhanced, Premium, or Eloquence voice. The compact computer voice is not one of these.
     private func isDownloaded(_ voice: AVSpeechSynthesisVoice) -> Bool {
+        if isCompactVoice(voice) || isSiriVoice(voice) { return false }
+        let id = voice.identifier.lowercased()
+        if id.contains("premium") || id.contains("enhanced") || id.contains("eloquence") { return true }
         if #available(iOS 16.0, *) {
             return voice.quality == .premium || voice.quality == .enhanced
         }
         return voice.quality == .enhanced
     }
 
-    /// The male voice the driver downloaded. Ava is Stormy, so she is never used here.
-    private func assistantVoice() -> AVSpeechSynthesisVoice? {
-        let downloaded = AVSpeechSynthesisVoice.speechVoices().filter {
-            $0.language.hasPrefix("en") && isDownloaded($0) && $0.gender == .male
+    /// A downloaded voice for this language. A male voice wins when one is installed.
+    private func pickedVoice(language: String?) -> AVSpeechSynthesisVoice? {
+        let wanted = (language?.isEmpty == false ? language! : "en-US").lowercased()
+        let prefix = String(wanted.prefix(2))
+        let voices = AVSpeechSynthesisVoice.speechVoices().filter {
+            $0.language.lowercased().hasPrefix(prefix) && isDownloaded($0)
         }
-        if let chosen = AVSpeechSynthesisVoice(language: "en-US"),
-           downloaded.contains(where: { $0.identifier == chosen.identifier }) {
-            return chosen
+        func score(_ voice: AVSpeechSynthesisVoice) -> Int {
+            let id = voice.identifier.lowercased()
+            var value = voice.gender == .male ? 20 : 0
+            if voice.language.lowercased() == wanted { value += 5 }
+            if id.contains("premium") { value += 4 }
+            if #available(iOS 16.0, *), voice.quality == .premium { value += 4 }
+            if voice.quality == .enhanced || id.contains("enhanced") || id.contains("eloquence") { value += 2 }
+            return value
         }
-        if #available(iOS 16.0, *) {
-            if let premium = downloaded.first(where: { $0.quality == .premium }) { return premium }
-        }
-        return downloaded.first(where: { $0.quality == .enhanced }) ?? downloaded.first
+        return voices.max { score($0) < score($1) }
     }
 
     @objc func speak(_ call: CAPPluginCall) {
@@ -93,21 +100,23 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let utterance = AVSpeechUtterance(string: text)
         let asked = call.getString("language")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let forAssistant = call.getBool("forAssistant") ?? false
-        let enhanced = call.getBool("preferEnhanced") ?? false ? enhancedVoice() : nil
-        let assistant = forAssistant ? assistantVoice() : nil
-        let voice = assistant ?? enhanced ?? (asked?.isEmpty == false ? AVSpeechSynthesisVoice(language: asked!) : nil) ?? stormyVoice()
+        let useDownload = (call.getBool("forAssistant") ?? false) || (call.getBool("preferEnhanced") ?? false)
+        // Leaving the voice unset lets Spoken Content apply. Assigning the language voice
+        // forces the compact computer voice and hides a downloaded Enhanced or Premium voice.
+        let voice: AVSpeechSynthesisVoice? = useDownload
+            ? pickedVoice(language: asked)
+            : ((asked?.isEmpty == false ? AVSpeechSynthesisVoice(language: asked!) : nil) ?? stormyVoice())
         let natural: Bool
         if let voice {
             utterance.voice = voice
             let id = voice.identifier.lowercased()
             if #available(iOS 16.0, *) {
-                natural = voice.quality == .premium || voice.quality == .enhanced || id.contains("premium") || id.contains("enhanced")
+                natural = voice.quality == .premium || voice.quality == .enhanced || id.contains("premium") || id.contains("enhanced") || id.contains("eloquence")
             } else {
-                natural = voice.quality == .enhanced || id.contains("premium") || id.contains("enhanced")
+                natural = voice.quality == .enhanced || id.contains("premium") || id.contains("enhanced") || id.contains("eloquence")
             }
         } else {
-            natural = false
+            natural = useDownload
         }
         let paced = natural ? min(rate, Float(0.48)) : min(rate, Float(0.42))
         utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate, min(AVSpeechUtteranceMaximumSpeechRate, paced))

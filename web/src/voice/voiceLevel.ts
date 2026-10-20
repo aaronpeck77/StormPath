@@ -32,16 +32,16 @@ export function voiceSpeaks(level: VoiceLevel): boolean {
 }
 
 /**
- * Downloaded voice does not turn the assistant off. It only asks the phone
- * to speak his replies with a male voice the driver downloaded. Stormy stays
- * on the phone's usual voice, so the two do not sound the same.
+ * Downloaded voice does not turn the assistant off. It asks the phone to
+ * speak with an installed Enhanced or Premium voice, male when one is there.
+ * A Siri voice from the phone menu cannot be used.
  */
 export function speechVoiceFlags(
   level: VoiceLevel,
   forAssistant: boolean
-): { forAssistant?: boolean } {
-  if (level === "enhanced" && forAssistant) return { forAssistant: true };
-  return {};
+): { preferEnhanced?: boolean; forAssistant?: boolean } {
+  if (level !== "enhanced") return {};
+  return forAssistant ? { preferEnhanced: true, forAssistant: true } : { preferEnhanced: true };
 }
 
 export function stormyButtonFor(level: VoiceLevel, assistantEnabled: boolean): boolean {
