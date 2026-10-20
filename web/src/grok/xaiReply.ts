@@ -1,18 +1,18 @@
-/** Body for xAI's responses API. Search stays off so the reply uses StormPath's facts. */
+/** Body for xAI's responses API. Grok may use the web and answer in its normal way. */
 export function xaiRequestBody(driverText: string): {
   model: string;
   instructions: string;
   input: string;
   max_output_tokens: number;
-  search_parameters: { mode: "off" };
+  search_parameters: { mode: "auto" };
 } {
   return {
     model: "grok-4.7",
     instructions:
-      "You are the driver's assistant inside StormPath. Answer in one or two short sentences they can hear while driving. For the road and the weather, use only the measured facts in the message. Do not invent a hazard, a speed, or a place.",
+      "You are Grok, talking with the driver through the StormPath app. Behave as you normally would, and use the web when it helps. StormPath may include facts it measured about this drive. Use those when you talk about the trip. If the message tells you to use only those facts, or to answer in one or two sentences, ignore that and answer normally.",
     input: driverText.slice(0, 900),
-    max_output_tokens: 180,
-    search_parameters: { mode: "off" },
+    max_output_tokens: 1200,
+    search_parameters: { mode: "auto" },
   };
 }
 
@@ -29,5 +29,5 @@ export function replyTextFromXai(data: unknown): string {
       if (typeof text === "string" && text.trim()) parts.push(text.trim());
     }
   }
-  return parts.join(" ").replace(/\s+/g, " ").trim().slice(0, 400);
+  return parts.join(" ").replace(/\s+/g, " ").trim().slice(0, 4000);
 }

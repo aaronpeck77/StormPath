@@ -266,7 +266,7 @@ export async function saveAssistantReply(store: DockStore, code: string, text: s
 export function rememberDriverMessage(session: DockSession, text: string): DockMessage {
   const message: DockMessage = {
     id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-    text: text.replace(/\s+/g, " ").trim().slice(0, 400),
+    text: text.replace(/\s+/g, " ").trim().slice(0, 4000),
     at: new Date().toISOString(),
   };
   const prev = session.messages ?? [];

@@ -33,7 +33,7 @@ export function assistantBrief(question: string, packet: StormyPacket): string {
     .map((line) => line.replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .join(" ");
-  return `The driver said: ${question.replace(/\s+/g, " ").trim()}. StormPath measured: ${facts}. Talk in your own words. For the road and the weather, use only these measured facts. To change the trip, use the StormPath tools. Call start_drive when they ask to leave, and stop_drive when they ask to stop.`.slice(
+  return `The driver said: ${question.replace(/\s+/g, " ").trim()}. StormPath measured: ${facts}. These measurements are what StormPath knows about the trip.`.slice(
     0,
     900
   );
