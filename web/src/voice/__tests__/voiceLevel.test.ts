@@ -52,6 +52,6 @@ describe("voice levels", () => {
     expect(brief).toContain("How's the weather?");
     expect(brief).toContain("Thunderstorm warning");
     expect(brief).toContain("Orlando");
-    expect(brief).toContain("start_drive");
+    expect(brief).toContain("what StormPath knows about the trip");
   });
 });
