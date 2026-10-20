@@ -728,16 +728,21 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     setSuggestions([]);
   }, []);
 
-  /** × on the search bar — collapse to compact destination and clear stuck suggestion lists. */
+  /** × on the search bar — wipe the query and the list so the field is blank. */
   const handleSearchDismiss = useCallback(() => {
-    handleSearchCancelSuggestions();
-    setAllowAutocomplete(false);
-    if (planRoutesLength > 0) {
-      setSearchExpanded(false);
+    if (searchBlurClearTimerRef.current) {
+      window.clearTimeout(searchBlurClearTimerRef.current);
+      searchBlurClearTimerRef.current = null;
     }
+    searchAutocompleteSeqRef.current += 1;
+    handleSearchCancelSuggestions();
+    setAddingViaStop(false);
+    setSearchText("");
+    setAllowAutocomplete(false);
+    setSearchExpanded(true);
     const el = document.activeElement;
     if (el instanceof HTMLElement) el.blur();
-  }, [handleSearchCancelSuggestions, planRoutesLength]);
+  }, [handleSearchCancelSuggestions]);
 
   const handleCompactDestOpen = useCallback(() => {
     if (searchBlurClearTimerRef.current) {
