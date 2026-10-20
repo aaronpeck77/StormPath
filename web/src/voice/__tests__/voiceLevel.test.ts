@@ -5,6 +5,7 @@ import type { StormyPacket } from "../../stormy/stormyFence";
 import {
   assistantButtonLabel,
   assistantEnabledFromLegacy,
+  speechVoiceFlags,
   stormyButtonFor,
   voiceLevelFromLegacy,
   voiceSpeaks,
@@ -40,6 +41,11 @@ describe("voice levels", () => {
     expect(voiceSpeaks("basic")).toBe(true);
     expect(stormyButtonFor("basic", false)).toBe(true);
     expect(stormyButtonFor("basic", true)).toBe(false);
+    expect(stormyButtonFor("enhanced", true)).toBe(false);
+    expect(speechVoiceFlags("enhanced", true)).toEqual({ forAssistant: true });
+    expect(speechVoiceFlags("enhanced", false)).toEqual({});
+    expect(speechVoiceFlags("basic", true)).toEqual({});
+    expect(speechVoiceFlags("off", true)).toEqual({});
     expect(assistantButtonLabel("  Steve  ")).toBe("Steve");
     expect(assistantButtonLabel("")).toBe("Grok");
   });

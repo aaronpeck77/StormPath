@@ -1,22 +1,23 @@
 import { Capacitor } from "@capacitor/core";
 import { StormpathSpeech } from "@stormpath/speech";
 import { useSettingsStore } from "../state/settingsStore";
+import { speechVoiceFlags } from "../voice/voiceLevel";
 
 /** Speak a short advisory / alert line. Never cancels Mapbox turn voice (interrupt defaults false). */
 export async function speakStormpathLine(
   text: string,
-  opts?: { enabled?: boolean; interrupt?: boolean; language?: string }
+  opts?: { enabled?: boolean; interrupt?: boolean; language?: string; forAssistant?: boolean }
 ): Promise<boolean> {
   if (opts?.enabled === false) return false;
   const line = text.replace(/\s+/g, " ").trim();
   if (!line) return false;
   try {
-    const enhanced = useSettingsStore.getState().voiceLevel === "enhanced";
+    const flags = speechVoiceFlags(useSettingsStore.getState().voiceLevel, opts?.forAssistant === true);
     const r = await StormpathSpeech.speak({
       text: line,
       interrupt: opts?.interrupt ?? false,
       ...(opts?.language ? { language: opts.language } : {}),
-      ...(enhanced ? { preferEnhanced: true } : {}),
+      ...flags,
     });
     return Boolean(r?.spoke);
   } catch {

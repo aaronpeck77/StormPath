@@ -25,7 +25,7 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         AVSpeechSynthesisVoice(language: "en-US")
     }
 
-    /// A downloaded enhanced or premium voice, Ava first, when Voice is set to the downloaded voice.
+    /// A downloaded enhanced or premium voice, Ava first. Used for Stormy, not the assistant.
     private func enhancedVoice() -> AVSpeechSynthesisVoice? {
         let english = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
         let ava = english.filter { $0.name.localizedCaseInsensitiveContains("Ava") }
@@ -35,6 +35,28 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         if let better = ava.first(where: { $0.quality == .enhanced }) { return better }
         return english.first(where: { $0.quality == .enhanced })
+    }
+
+    private func isDownloaded(_ voice: AVSpeechSynthesisVoice) -> Bool {
+        if #available(iOS 16.0, *) {
+            return voice.quality == .premium || voice.quality == .enhanced
+        }
+        return voice.quality == .enhanced
+    }
+
+    /// The male voice the driver downloaded. Ava is Stormy, so she is never used here.
+    private func assistantVoice() -> AVSpeechSynthesisVoice? {
+        let downloaded = AVSpeechSynthesisVoice.speechVoices().filter {
+            $0.language.hasPrefix("en") && isDownloaded($0) && $0.gender == .male
+        }
+        if let chosen = AVSpeechSynthesisVoice(language: "en-US"),
+           downloaded.contains(where: { $0.identifier == chosen.identifier }) {
+            return chosen
+        }
+        if #available(iOS 16.0, *) {
+            if let premium = downloaded.first(where: { $0.quality == .premium }) { return premium }
+        }
+        return downloaded.first(where: { $0.quality == .enhanced }) ?? downloaded.first
     }
 
     @objc func speak(_ call: CAPPluginCall) {
@@ -71,8 +93,10 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let utterance = AVSpeechUtterance(string: text)
         let asked = call.getString("language")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let forAssistant = call.getBool("forAssistant") ?? false
         let enhanced = call.getBool("preferEnhanced") ?? false ? enhancedVoice() : nil
-        let voice = enhanced ?? (asked?.isEmpty == false ? AVSpeechSynthesisVoice(language: asked!) : nil) ?? stormyVoice()
+        let assistant = forAssistant ? assistantVoice() : nil
+        let voice = assistant ?? enhanced ?? (asked?.isEmpty == false ? AVSpeechSynthesisVoice(language: asked!) : nil) ?? stormyVoice()
         let natural: Bool
         if let voice {
             utterance.voice = voice

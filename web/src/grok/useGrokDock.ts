@@ -88,7 +88,7 @@ export function useGrokDock(opts: {
               () => voiceSpeaks(voiceRef.current) && stormyTurnImminent(navRef.current, turnMetersRef.current)
             );
             if (cancelled) return;
-            const spoke = await speakStormpathLine(message.text, { interrupt: true, language });
+            const spoke = await speakStormpathLine(message.text, { interrupt: true, language, forAssistant: true });
             if (!spoke) break;
             rememberHeardMessageId(message.id);
           }

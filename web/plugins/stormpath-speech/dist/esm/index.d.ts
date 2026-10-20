@@ -6,6 +6,8 @@ export type SpeakOptions = {
   language?: string;
   /** Prefer a downloaded enhanced voice such as Ava, when the phone has one. */
   preferEnhanced?: boolean;
+  /** The assistant's reply. Use a downloaded male voice, not Stormy's voice. */
+  forAssistant?: boolean;
 };
 
 export type SpeakResult = {
