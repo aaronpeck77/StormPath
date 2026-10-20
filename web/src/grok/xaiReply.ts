@@ -1,3 +1,14 @@
+const FREE_INSTRUCTIONS =
+  "You are Grok, talking with the driver through the StormPath app. Behave as you normally would, and use the web when it helps. When the message says it is free talk, answer normally and do not bring up the route, the weather, the traffic, or the drive. When the driver wants a stop added, call add_stop with the place and keep the current destination. If the drive is already going, do not call start_drive or stop_drive for that stop; the phone measures again and continues. Call plan_route for a new destination. Call start_drive only when they ask to leave and the drive has not started. Call stop_drive only when they ask to end the trip. After a tool runs, tell them what happened in a normal sentence.";
+
+const TRIP_INSTRUCTIONS =
+  "You are Grok, talking with the driver through the StormPath app. The message includes what StormPath measured. Answer from those facts in one or two sentences. Do not search the web. Do not invent a storm or a time. Do not call a tool unless the driver asked to change the destination, add a stop, start the drive, or end the trip. When they want a stop, call add_stop and keep the current destination. If the drive is already going, do not call start_drive or stop_drive for that stop. Call plan_route for a new destination. Call start_drive only when they ask to leave and the drive has not started. Call stop_drive only when they ask to end the trip. After a tool runs, tell them what happened in a normal sentence.";
+
+/** Trip briefs already include the measurements. Searching the web blows the phone's wait. */
+export function assistantUsesWeb(driverText: string): boolean {
+  return !/stormpath measured:/i.test(driverText);
+}
+
 /** Body for xAI's responses API. Grok may use the web, answer normally, and change the trip. */
 export function xaiRequestBody(driverText: string): {
   model: string;
@@ -6,20 +17,21 @@ export function xaiRequestBody(driverText: string): {
   max_output_tokens: number;
   tools: ReturnType<typeof assistantToolDefs>;
 } {
+  const includeWeb = assistantUsesWeb(driverText);
   return {
     model: "grok-4.7",
-    instructions:
-      "You are Grok, talking with the driver through the StormPath app. Behave as you normally would, and use the web when it helps. When the message says it is free talk, answer normally and do not bring up the route, the weather, the traffic, or the drive. When the message includes what StormPath measured, use those facts for the trip and do not invent a storm or a time. When the driver wants a stop added, call add_stop with the place and keep the current destination. If the drive is already going, do not call start_drive or stop_drive for that stop; the phone measures again and continues. Call plan_route for a new destination. Call start_drive only when they ask to leave and the drive has not started. Call stop_drive only when they ask to end the trip. After a tool runs, tell them what happened in a normal sentence.",
+    instructions: includeWeb ? FREE_INSTRUCTIONS : TRIP_INSTRUCTIONS,
     input: [{ role: "user", content: driverText.slice(0, 900) }],
     max_output_tokens: 1200,
-    tools: assistantToolDefs(),
+    tools: assistantToolDefs(includeWeb),
   };
 }
 
 /** Tools the map-button conversation can run. The phone code is added on the server. */
-export function assistantToolDefs() {
+export function assistantToolDefs(includeWeb = true) {
+  const web = includeWeb ? [{ type: "web_search" as const }] : [];
   return [
-    { type: "web_search" as const },
+    ...web,
     {
       type: "function" as const,
       name: "add_stop",
@@ -95,7 +107,8 @@ export function xaiResponseId(data: unknown): string {
 
 export function xaiFollowUpBody(
   previousResponseId: string,
-  outputs: { callId: string; output: string }[]
+  outputs: { callId: string; output: string }[],
+  includeWeb = true
 ): {
   model: string;
   previous_response_id: string;
@@ -111,8 +124,8 @@ export function xaiFollowUpBody(
       call_id: row.callId,
       output: row.output.slice(0, 2000),
     })),
-    tools: assistantToolDefs(),
-    max_output_tokens: 1200,
+    tools: assistantToolDefs(includeWeb),
+    max_output_tokens: 400,
   };
 }
 

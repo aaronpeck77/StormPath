@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { functionCallsFromXai, replyTextFromXai, xaiFollowUpBody, xaiRequestBody, xaiResponseId } from "../xaiReply";
+import {
+  assistantUsesWeb,
+  functionCallsFromXai,
+  replyTextFromXai,
+  xaiFollowUpBody,
+  xaiRequestBody,
+  xaiResponseId,
+} from "../xaiReply";
 
 describe("xai reply", () => {
   it("lets Grok use the web and answer normally", () => {
@@ -8,9 +15,22 @@ describe("xai reply", () => {
     expect(body).not.toHaveProperty("search_parameters");
     expect(body.instructions).toContain("use the web");
     expect(body.instructions).toContain("add_stop");
+    expect(assistantUsesWeb("The driver said: how's the road?")).toBe(true);
     expect(body.tools.some((tool) => tool.type === "web_search")).toBe(true);
     expect(body.tools.some((tool) => tool.type === "function" && tool.name === "add_stop")).toBe(true);
     expect(body.input[0]?.content).toContain("how's the road");
+  });
+
+  it("answers a measured trip without searching the web", () => {
+    const text = "The driver said: how's the weather. StormPath measured: Destination: Orlando.";
+    const body = xaiRequestBody(text);
+    expect(assistantUsesWeb(text)).toBe(false);
+    expect(body.instructions).toContain("Do not search the web");
+    expect(body.tools.some((tool) => tool.type === "web_search")).toBe(false);
+    expect(body.tools.some((tool) => tool.type === "function" && tool.name === "read_trip")).toBe(true);
+    const follow = xaiFollowUpBody("resp_1", [{ callId: "call_1", output: "measured" }], false);
+    expect(follow.tools.some((tool) => tool.type === "web_search")).toBe(false);
+    expect(follow.max_output_tokens).toBe(400);
   });
 
   it("reads a stop request and sends the tool result back", () => {

@@ -25,6 +25,16 @@ export function isTripTalk(question: string): boolean {
   return TRIP_TALK.test(question.replace(/\s+/g, " ").trim());
 }
 
+/**
+ * The on-phone script speaks only when no assistant is connected.
+ * A failed send must not be filled in by that script.
+ */
+export function fallbackSpeech(dockCode: string, localSay: string): string | null {
+  if (dockCode.trim()) return null;
+  const line = localSay.replace(/\s+/g, " ").trim();
+  return line || null;
+}
+
 /** Facts StormPath already measured, so the assistant does not invent the road or the storm. */
 export function assistantBrief(question: string, packet: StormyPacket): string {
   const said = question.replace(/\s+/g, " ").trim();

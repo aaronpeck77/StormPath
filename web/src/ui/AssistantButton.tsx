@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { holdAppVoice, noteAssistantTalk, releaseAppVoice } from "../grok/assistantFloor";
-import { assistantBrief, isTripAction, isTripTalk } from "../grok/assistantTurn";
+import { assistantBrief, fallbackSpeech, isTripAction, isTripTalk } from "../grok/assistantTurn";
 import { readDockCode, sendToAssistant } from "../grok/grokDockClient";
 import { listenForStormy } from "../stormy/listenForStormy";
 import { interpretStormyRequest } from "../stormy/stormyHands";
@@ -117,7 +117,8 @@ export function AssistantButton({ name, packet, onAct }: Props) {
     }
     const code = readDockCode();
     if (!code) {
-      if (reply?.say) await speak(reply.say);
+      const line = fallbackSpeech("", reply?.say ?? "");
+      if (line) await speak(line);
       else setNote("Connect your assistant in Info.");
       return true;
     }
@@ -130,7 +131,8 @@ export function AssistantButton({ name, packet, onAct }: Props) {
     else releaseAppVoice();
     if (runId.current !== id) return false;
     if (error) {
-      if (reply?.say) await speak(reply.say);
+      const line = fallbackSpeech(code, reply?.say ?? "");
+      if (line) await speak(line);
       else setNote(error);
     }
     return true;
