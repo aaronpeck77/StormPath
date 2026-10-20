@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assistantOkBody,
   dockCodeOk,
   handleDockRpc,
   handlePhoneClaim,
@@ -7,6 +8,7 @@ import {
   planRoute,
   prepareAssistantForward,
   rememberDriverMessage,
+  saveAssistantReply,
   speakablePlan,
   takeRateSlot,
   trafficNoteFromDurations,
@@ -165,5 +167,18 @@ describe("grok dock facts", () => {
     );
     expect(stopped?.body).toContain("stop the route");
     expect((await store.get("K7MQ2P"))?.control?.action).toBe("stop");
+  });
+
+  it("returns the spoken line so the phone can say it before the next listen", async () => {
+    const store = memoryStore();
+    await handlePhoneClaim(store, "K7MQ2P");
+    const saved = await saveAssistantReply(store, "K7MQ2P", "Why did the dog sit in the driver's seat?");
+    expect(saved?.text).toBe("Why did the dog sit in the driver's seat?");
+    expect(saved?.id).toBeTruthy();
+    const body = assistantOkBody(saved, "I heard you. Say that again.");
+    expect(body.ok).toBe(true);
+    expect(body.say).toBe(saved?.text);
+    expect(body.id).toBe(saved?.id);
+    expect(assistantOkBody(null, "I heard you. Say that again.").say).toBe("I heard you. Say that again.");
   });
 });

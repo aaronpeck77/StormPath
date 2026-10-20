@@ -257,11 +257,25 @@ export function takeRateSlot(session: DockSession, now = Date.now()): boolean {
   return true;
 }
 
-export async function saveAssistantReply(store: DockStore, code: string, text: string): Promise<void> {
+export async function saveAssistantReply(
+  store: DockStore,
+  code: string,
+  text: string
+): Promise<DockMessage | null> {
   const session = await store.get(code);
-  if (!session) return;
-  rememberDriverMessage(session, text);
+  if (!session) return null;
+  const message = rememberDriverMessage(session, text);
   await store.put(session);
+  return message;
+}
+
+/** The phone speaks `say` in this turn. Older builds ignore the extra fields. */
+export function assistantOkBody(
+  message: DockMessage | null,
+  fallback: string
+): { ok: true; say: string; id: string } {
+  const say = (message?.text || fallback).replace(/\s+/g, " ").trim();
+  return { ok: true, say, id: message?.id ?? "" };
 }
 
 /** Spoken text from a dock tool result, for the assistant to read back. */

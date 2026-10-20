@@ -8,7 +8,7 @@ import { stormyTurnImminent } from "../ui/StormyButton";
 import { spokenLanguageTag } from "../utils/guidanceLanguage";
 import { useSettingsStore } from "../state/settingsStore";
 import { voiceSpeaks } from "../voice/voiceLevel";
-import { holdForSpokenReply } from "./assistantFloor";
+import { holdForSpokenReply, isAssistantSessionOpen } from "./assistantFloor";
 import { assistantPlanApply } from "./grokPlanApply";
 import {
   postDockOrigin,
@@ -79,15 +79,16 @@ export function useGrokDock(opts: {
         const heard = readHeardMessageId();
         const heardAt = state.messages.findIndex((row) => row.id === heard);
         const unheard = state.messages.filter((_, index) => (heard ? index > heardAt : true));
-        if (unheard.length > 0) {
+        // The map button speaks its own reply. A poll here would talk over the open mic.
+        if (unheard.length > 0 && !isAssistantSessionOpen()) {
           const language = spokenLanguageTag(guidanceLanguage);
           for (const message of unheard) {
-            if (cancelled) return;
+            if (cancelled || isAssistantSessionOpen()) break;
             holdForSpokenReply(message.text);
             await waitUntilTurnFloor(
               () => voiceSpeaks(voiceRef.current) && stormyTurnImminent(navRef.current, turnMetersRef.current)
             );
-            if (cancelled) return;
+            if (cancelled || isAssistantSessionOpen()) break;
             const spoke = await speakStormpathLine(message.text, { interrupt: true, language, forAssistant: true });
             if (!spoke) break;
             rememberHeardMessageId(message.id);
@@ -131,7 +132,7 @@ export function useGrokDock(opts: {
     };
 
     void tick();
-    const timer = window.setInterval(() => void tick(), 8_000);
+    const timer = window.setInterval(() => void tick(), 3_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);

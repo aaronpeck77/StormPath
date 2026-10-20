@@ -59,8 +59,8 @@ export function GrokDockCard() {
       });
     }
     try {
-      const error = await sendToAssistant(code, said, location);
-      if (error) setNote(error);
+      const sent = await sendToAssistant(code, said, location);
+      if (!sent.ok) setNote(sent.error);
       else {
         setText("");
         setNote("Sent to your assistant.");

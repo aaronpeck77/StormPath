@@ -7,6 +7,7 @@ import { makeDockTrip } from "./grok-dock.ts";
 import {
   dockRpcPlainText,
   handleDockRpc,
+  assistantOkBody,
   prepareAssistantForward,
   saveAssistantReply,
   type DockSession,
@@ -160,25 +161,26 @@ export const handler = async (event: NetlifyEvent) => {
         data = await postXai(key, xaiFollowUpBody(previousId, outputs, includeWeb), remaining());
       } catch (e) {
         console.error("[grok-assistant] tool follow-up failed", e instanceof Error ? e.message : "error");
-        await saveAssistantReply(store, ready.payload.dock_code, sentLine);
-        return json(200, { ok: true });
+        const saved = await saveAssistantReply(store, ready.payload.dock_code, sentLine);
+        return json(200, assistantOkBody(saved, sentLine));
       }
     }
     const reply = replyTextFromXai(data) || (usedTool ? sentLine : "");
     if (!reply) {
       console.error("[grok-assistant] xAI returned no spoken line");
-      await saveAssistantReply(store, ready.payload.dock_code, HEARD_AGAIN);
-      return json(200, { ok: true });
+      const saved = await saveAssistantReply(store, ready.payload.dock_code, HEARD_AGAIN);
+      return json(200, assistantOkBody(saved, HEARD_AGAIN));
     }
-    await saveAssistantReply(store, ready.payload.dock_code, reply);
+    const saved = await saveAssistantReply(store, ready.payload.dock_code, reply);
+    return json(200, assistantOkBody(saved, reply));
   } catch (e) {
     const detail = e instanceof Error ? e.message : "error";
     console.error("[grok-assistant] xAI failed", detail, isTimeout(e) ? "timeout" : "");
     if (detail === "bad-key") {
       return json(502, { ok: false, error: "Grok refused the key saved on stormpath2." });
     }
-    await saveAssistantReply(store, ready.payload.dock_code, usedTool ? sentLine : HEARD_AGAIN);
-    return json(200, { ok: true });
+    const line = usedTool ? sentLine : HEARD_AGAIN;
+    const saved = await saveAssistantReply(store, ready.payload.dock_code, line);
+    return json(200, assistantOkBody(saved, line));
   }
-  return json(200, { ok: true });
 };
