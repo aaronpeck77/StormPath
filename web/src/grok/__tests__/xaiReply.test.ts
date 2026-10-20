@@ -5,11 +5,12 @@ describe("xai reply", () => {
   it("lets Grok use the web and answer normally", () => {
     const body = xaiRequestBody("The driver said: how's the road?");
     expect(body.model).toBe("grok-4.7");
-    expect(body.search_parameters.mode).toBe("auto");
+    expect(body).not.toHaveProperty("search_parameters");
     expect(body.instructions).toContain("use the web");
     expect(body.instructions).toContain("add_stop");
-    expect(body.tools.some((tool) => tool.name === "add_stop")).toBe(true);
-    expect(body.input).toContain("how's the road");
+    expect(body.tools.some((tool) => tool.type === "web_search")).toBe(true);
+    expect(body.tools.some((tool) => tool.type === "function" && tool.name === "add_stop")).toBe(true);
+    expect(body.input[0]?.content).toContain("how's the road");
   });
 
   it("reads a stop request and sends the tool result back", () => {
