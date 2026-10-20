@@ -54,7 +54,7 @@ async function blobStore(event: unknown): Promise<DockStore> {
     async get(code) {
       try {
         const { getStore } = await import("@netlify/blobs");
-        const store = getStore({ name: "stormpath-grok-dock", consistency: "strong" });
+        const store = getStore("stormpath-grok-dock");
         const data = await store.get(code, { type: "json" });
         if (data && typeof data === "object" && (data as DockSession).code) return data as DockSession;
       } catch (e) {
@@ -66,7 +66,7 @@ async function blobStore(event: unknown): Promise<DockStore> {
       memory.set(session.code, session);
       try {
         const { getStore } = await import("@netlify/blobs");
-        const store = getStore({ name: "stormpath-grok-dock", consistency: "strong" });
+        const store = getStore("stormpath-grok-dock");
         await store.setJSON(session.code, session);
       } catch (e) {
         console.error("[grok-dock] blob write failed", e);

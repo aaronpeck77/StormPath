@@ -40,7 +40,7 @@ async function blobStore(event: unknown): Promise<DockStore> {
     async get(code) {
       try {
         const { getStore } = await import("@netlify/blobs");
-        const store = getStore({ name: "stormpath-grok-dock", consistency: "strong" });
+        const store = getStore("stormpath-grok-dock");
         const data = await store.get(code, { type: "json" });
         if (data && typeof data === "object" && (data as DockSession).code) return data as DockSession;
       } catch (e) {
@@ -52,7 +52,7 @@ async function blobStore(event: unknown): Promise<DockStore> {
       memory.set(session.code, session);
       try {
         const { getStore } = await import("@netlify/blobs");
-        const store = getStore({ name: "stormpath-grok-dock", consistency: "strong" });
+        const store = getStore("stormpath-grok-dock");
         await store.setJSON(session.code, session);
       } catch (e) {
         console.error("[grok-assistant] blob write failed", e);
@@ -85,7 +85,8 @@ async function postXai(key: string, body: unknown): Promise<unknown> {
   if (!res.ok) {
     const raw = await res.text();
     console.error("[grok-assistant] xAI status", res.status, raw.slice(0, 300));
-    throw new Error("xai");
+    const badKey = res.status === 400 && /api key/i.test(raw);
+    throw new Error(badKey ? "bad-key" : "xai");
   }
   return res.json();
 }
@@ -104,7 +105,11 @@ export const handler = async (event: NetlifyEvent) => {
     return json(400, { ok: false, error: "That message was not readable." });
   }
   const store = await blobStore(event);
-  const ready = await prepareAssistantForward(store, parsed);
+  let ready = await prepareAssistantForward(store, parsed);
+  for (let attempt = 0; !ready.ok && ready.status === 404 && attempt < 4; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    ready = await prepareAssistantForward(store, parsed);
+  }
   if (!ready.ok) return json(ready.status, { ok: false, error: ready.error });
 
   const key = process.env.XAI_API_KEY?.trim();
@@ -158,7 +163,11 @@ export const handler = async (event: NetlifyEvent) => {
     }
     await saveAssistantReply(store, ready.payload.dock_code, reply);
   } catch (e) {
-    console.error("[grok-assistant] xAI failed", e instanceof Error ? e.message : "error");
+    const detail = e instanceof Error ? e.message : "error";
+    console.error("[grok-assistant] xAI failed", detail);
+    if (detail === "bad-key") {
+      return json(502, { ok: false, error: "Grok refused the key saved on stormpath2." });
+    }
     return json(502, { ok: false, error: "The assistant did not accept that." });
   }
   return json(200, { ok: true });
