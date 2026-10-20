@@ -413,7 +413,8 @@ export default function App() {
   const navigationMatchGeometryRef = useRef<LngLat[] | undefined>(undefined);
   const dataSaverMode = isDataSaverMode(settingDataSaverEnabled);
 
-  const settingStormyEnabled = useSettingsStore((s) => s.stormyEnabled);
+  const settingVoiceLevel = useSettingsStore((s) => s.voiceLevel);
+  const settingVoiceOn = settingVoiceLevel !== "off";
   const settingGuidanceLanguage = useSettingsStore((s) => s.guidanceLanguage);
   const guidanceLanguageCode = resolveGuidanceLanguage(settingGuidanceLanguage);
   useEffect(() => {
@@ -642,11 +643,16 @@ export default function App() {
     setTollAvoidFailureNote,
   });
 
+  const grokDriveRef = useRef({ start: () => {}, stop: () => {} });
+  const turnMetersRef = useRef<number | null>(null);
   useGrokDock({
     userLngLat,
     navigationStarted,
+    turnMetersRef,
     computeRoutes,
     setTapHint,
+    onStartDrive: () => grokDriveRef.current.start(),
+    onStopDrive: () => grokDriveRef.current.stop(),
   });
 
   const {
@@ -1036,7 +1042,7 @@ export default function App() {
       headingDeg: driveLastTravelBearingDegRef.current,
     },
     onRouteGeometry: onNativeRouteGeometry,
-    voiceGuidanceEnabled: settingStormyEnabled,
+    voiceGuidanceEnabled: settingVoiceOn,
     guidanceLanguage: guidanceLanguageCode,
     /* No hard motorway ban. A reroute may use an interstate when that is the
      * sensible way on. The fastest/alternate choice is applied from here. */
@@ -1104,7 +1110,7 @@ export default function App() {
     isOnline,
     isPlus,
     effectiveAutoRerouteEnabled: settingAutoRerouteEnabled,
-    settingVoiceGuidanceEnabled: settingStormyEnabled,
+    settingVoiceGuidanceEnabled: settingVoiceOn,
     settingStormEnabled,
     stormAlertsForRouting,
     lockedNavigationRouteIdRef,
@@ -1557,7 +1563,7 @@ export default function App() {
   } = useNavigationGuidance({
     navigationStarted,
     /** Native Core owns spoken instructions on iOS; keep Web Speech for DIY/web. */
-    settingVoiceGuidanceEnabled: settingStormyEnabled && !nativeNavActive,
+    settingVoiceGuidanceEnabled: settingVoiceOn && !nativeNavActive,
     guidanceRouteId,
     guidanceRouteLengthM,
     turnSteps,
@@ -1611,6 +1617,7 @@ export default function App() {
     guidanceLive && nativeNavActive && nativeNavGuidance?.stepRemainingM != null
       ? nativeNavGuidance.stepRemainingM
       : diyMetersToBannerManeuver;
+  turnMetersRef.current = metersToBannerManeuver;
 
   const bannerTravelingStepIndex =
     guidanceLive && nativeNavActive
@@ -2132,7 +2139,7 @@ export default function App() {
 
 
   useAdvisoryVoiceGuidance({
-    enabled: settingStormyEnabled,
+    enabled: false,
     navigationStarted,
     nextHazardAtEtaLine,
     driveRouteAheadLine,
@@ -2346,6 +2353,10 @@ export default function App() {
     preferredAreaRouteMapRef,
     stopNativeGuidance: stopNative,
   });
+  grokDriveRef.current.start = handleGo;
+  grokDriveRef.current.stop = () => {
+    if (navigationStartedRef.current) handleStopAndClear();
+  };
 
   const clearRouteRef = useRef(clearRoute);
   clearRouteRef.current = clearRoute;
@@ -2572,8 +2583,12 @@ export default function App() {
         setRecenterPlanningPuckTick((n) => n + 1);
         return reply.say || "Centered on you.";
       }
+      if (reply.action === "refresh") {
+        refreshTripInPlace();
+        return reply.say || "Refreshing.";
+      }
     },
-    [resolveSpokenPlace, acceptSpokenChoice, handleGo, handlePreviewRouteSelect, handleStopAndClear, setShowRadar, forecastPlaceShort]
+    [resolveSpokenPlace, acceptSpokenChoice, handleGo, handlePreviewRouteSelect, handleStopAndClear, setShowRadar, forecastPlaceShort, refreshTripInPlace]
   );
 
   const handleTollContinue = useCallback(() => {

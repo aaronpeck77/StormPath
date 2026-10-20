@@ -76,6 +76,8 @@ describe("interpretStormyRequest", () => {
   it("hits go and stops a route", () => {
     expect(interpretStormyRequest("Hit go for me", packet)?.action).toBe("start_drive");
     expect(interpretStormyRequest("Stop the route", { ...packet, driving: true })?.action).toBe("end_trip");
+    expect(interpretStormyRequest("Refresh", { ...packet, driving: true })?.action).toBe("refresh");
+    expect(interpretStormyRequest("Refresh", packet)?.say).toBe("There's no trip to refresh.");
   });
 
   it("tells him where to get a more natural voice", () => {
@@ -86,8 +88,10 @@ describe("interpretStormyRequest", () => {
     expect(reply?.say).toContain("free");
   });
 
-  it("reads the local forecast", () => {
-    expect(interpretStormyRequest("What's my local forecast?", packet)?.say).toContain("72°F");
+  it("leaves the forecast to the assistant", () => {
+    const reply = interpretStormyRequest("What's my local forecast?", packet);
+    expect(reply?.say).toContain("assistant");
+    expect(reply?.say).not.toContain("72°F");
   });
 
   it("keeps the brand when adding a gas stop", () => {
@@ -106,16 +110,16 @@ describe("interpretStormyRequest", () => {
     });
   });
 
-  it("talks through the trip instead of handing it off", () => {
+  it("leaves the trip report to the assistant", () => {
     const reply = interpretStormyRequest("How's the trip?", {
       ...packet,
       destination: "Decatur",
       eta: "42 minutes",
       weather: ["Rain for the next 20 miles."],
     });
-    expect(reply?.say).toContain("Decatur");
-    expect(reply?.say).toContain("42 minutes");
-    expect(reply?.action).toBe("explain_ahead");
+    expect(reply?.say).toContain("assistant");
+    expect(reply?.say).not.toContain("Rain");
+    expect(reply?.action).toBe("none");
   });
 
   it("takes one place when he names a stop and a destination together", () => {

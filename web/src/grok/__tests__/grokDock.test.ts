@@ -3,8 +3,12 @@ import {
   dockCodeOk,
   handleDockRpc,
   handlePhoneClaim,
+  LOCATION_NEEDED,
   planRoute,
+  prepareAssistantForward,
+  rememberDriverMessage,
   speakablePlan,
+  takeRateSlot,
   trafficNoteFromDurations,
   weatherNoteFromEvents,
   type DockSession,
@@ -79,5 +83,87 @@ describe("grok dock facts", () => {
       trip
     );
     expect(missed?.body).toContain("not connected");
+  });
+
+  it("asks for the phone location instead of a vague road error", async () => {
+    const store = memoryStore();
+    await handlePhoneClaim(store, "K7MQ2P");
+    const session = (await store.get("K7MQ2P"))!;
+    await expect(planRoute(store, trip, session, "Disney World", null)).rejects.toThrow(LOCATION_NEEDED);
+  });
+
+  it("keeps the last 20 replies and slows a noisy code", async () => {
+    const store = memoryStore();
+    await handlePhoneClaim(store, "K7MQ2P");
+    const session = (await store.get("K7MQ2P"))!;
+    for (let i = 0; i < 25; i++) rememberDriverMessage(session, `line ${i}`);
+    expect(session.messages).toHaveLength(20);
+    expect(session.messages?.[0]?.text).toBe("line 5");
+    const now = Date.now();
+    for (let i = 0; i < 20; i++) expect(takeRateSlot(session, now)).toBe(true);
+    expect(takeRateSlot(session, now)).toBe(false);
+    const sent = await prepareAssistantForward(store, { dock_code: "K7MQ2P", text: "Plan Disney" });
+    expect(sent.ok).toBe(false);
+    if (!sent.ok) expect(sent.error).toContain("Wait a minute");
+  });
+
+  it("stores a short reply for the phone to speak", async () => {
+    const store = memoryStore();
+    await handlePhoneClaim(store, "K7MQ2P");
+    const said = await handleDockRpc(
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: { name: "say_to_driver", arguments: { dock_code: "K7MQ2P", message: "Hit Go when you are ready." } },
+      },
+      store,
+      trip
+    );
+    expect(said?.body).toContain("Hit Go when you are ready.");
+    expect((await store.get("K7MQ2P"))?.messages?.[0]?.text).toBe("Hit Go when you are ready.");
+  });
+
+  it("queues a start only after a destination, and a stop when asked", async () => {
+    const store = memoryStore();
+    await handlePhoneClaim(store, "K7MQ2P");
+    const early = await handleDockRpc(
+      {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "tools/call",
+        params: { name: "start_drive", arguments: { dock_code: "K7MQ2P" } },
+      },
+      store,
+      trip
+    );
+    expect(early?.body).toContain("Set a destination");
+    const session = (await store.get("K7MQ2P"))!;
+    session.origin = { lng: -84.3, lat: 33.7, at: "2026-10-18T00:00:00Z" };
+    await planRoute(store, trip, session, "Orlando", null);
+    const started = await handleDockRpc(
+      {
+        jsonrpc: "2.0",
+        id: 5,
+        method: "tools/call",
+        params: { name: "start_drive", arguments: { dock_code: "K7MQ2P" } },
+      },
+      store,
+      trip
+    );
+    expect(started?.body).toContain("start the drive");
+    expect((await store.get("K7MQ2P"))?.control?.action).toBe("start");
+    const stopped = await handleDockRpc(
+      {
+        jsonrpc: "2.0",
+        id: 6,
+        method: "tools/call",
+        params: { name: "stop_drive", arguments: { dock_code: "K7MQ2P" } },
+      },
+      store,
+      trip
+    );
+    expect(stopped?.body).toContain("stop the route");
+    expect((await store.get("K7MQ2P"))?.control?.action).toBe("stop");
   });
 });

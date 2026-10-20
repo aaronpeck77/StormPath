@@ -2,6 +2,10 @@ export type SpeakOptions = {
   text: string;
   interrupt?: boolean;
   rate?: number;
+  /** BCP-47 tag. Omitted calls keep the English voice Stormy already uses. */
+  language?: string;
+  /** Prefer a downloaded enhanced voice such as Ava, when the phone has one. */
+  preferEnhanced?: boolean;
 };
 
 export type SpeakResult = {

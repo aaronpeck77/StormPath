@@ -1,6 +1,7 @@
 /**
  * Grok dock. The phone shows a short code. Grok calls this server with that code.
- * StormPath measures the trip. Grok may only say those facts. The driver still hits Go.
+ * StormPath measures the trip. Grok may only say those facts.
+ * start_drive and stop_drive run only when the driver asked.
  */
 
 export const GROK_DOCK_URL = "https://stormpath2.netlify.app/.netlify/functions/grok-dock";
@@ -26,10 +27,26 @@ export type DockPlan = {
   summary: string;
 };
 
+export type DockMessage = {
+  id: string;
+  text: string;
+  at: string;
+};
+
+export type DockControl = {
+  id: string;
+  action: "start" | "stop";
+};
+
 export type DockSession = {
   code: string;
   origin: DockOrigin | null;
   plan: DockPlan | null;
+  messages?: DockMessage[];
+  /** One start or stop the phone has not run yet. */
+  control?: DockControl | null;
+  /** Recent tool and talk times, used only to slow a noisy code. */
+  rateHits?: number[];
 };
 
 export type DockStore = {
@@ -99,7 +116,7 @@ export function speakablePlan(plan: DockPlan): string {
     `About ${formatTripLength(plan.minutes)}, ${plan.miles} miles.`,
     plan.trafficNote,
     plan.weatherNote + stop,
-    "The route is on the phone. Ask the driver to hit Go before they leave.",
+    "The route is on the phone. If the driver asked you to leave, call start_drive. Otherwise ask them to hit Go before they leave. Call stop_drive when they ask to stop.",
     "Do not add a storm, a game, a place, or a time that is not written here.",
   ].join(" ");
 }
@@ -137,7 +154,7 @@ const TOOLS = [
   {
     name: "plan_route",
     description:
-      "Ask StormPath to measure a driving route for this phone and place it on the map. The driver still hits Go. Use only the facts in the result.",
+      "Ask StormPath to measure a driving route for this phone and place it on the map. Use only the facts in the result. Call start_drive only when the driver asked to leave.",
     inputSchema: {
       type: "object",
       properties: {
@@ -169,6 +186,36 @@ const TOOLS = [
       required: ["dock_code"],
     },
   },
+  {
+    name: "start_drive",
+    description: "Start the measured route. Call this only when the driver asked to leave.",
+    inputSchema: {
+      type: "object",
+      properties: { dock_code: { type: "string" } },
+      required: ["dock_code"],
+    },
+  },
+  {
+    name: "stop_drive",
+    description: "Stop the route. Call this only when the driver asked to stop.",
+    inputSchema: {
+      type: "object",
+      properties: { dock_code: { type: "string" } },
+      required: ["dock_code"],
+    },
+  },
+  {
+    name: "say_to_driver",
+    description: "Show a short reply in StormPath and have the phone speak it. Keep it to a sentence or two.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        dock_code: { type: "string" },
+        message: { type: "string", description: "What the driver should hear. Short." },
+      },
+      required: ["dock_code", "message"],
+    },
+  },
 ];
 
 async function requireSession(store: DockStore, rawCode: unknown): Promise<DockSession | DockHttpResult> {
@@ -187,6 +234,39 @@ function asError(value: DockSession | DockHttpResult): value is DockHttpResult {
   return "status" in value;
 }
 
+const RATE_WINDOW_MS = 60_000;
+const RATE_LIMIT = 20;
+
+export function originReady(origin: DockOrigin | null | undefined): origin is DockOrigin {
+  if (!origin) return false;
+  return Number.isFinite(origin.lng) && Number.isFinite(origin.lat) && Math.abs(origin.lat) <= 90 && Math.abs(origin.lng) <= 180;
+}
+
+export const LOCATION_NEEDED = "StormPath does not have this phone's location yet. Open the app and allow location.";
+
+/** True when this code is still under the per-minute cap. Caller must save the session. */
+export function takeRateSlot(session: DockSession, now = Date.now()): boolean {
+  const hits = (session.rateHits ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (hits.length >= RATE_LIMIT) {
+    session.rateHits = hits;
+    return false;
+  }
+  hits.push(now);
+  session.rateHits = hits;
+  return true;
+}
+
+export function rememberDriverMessage(session: DockSession, text: string): DockMessage {
+  const message: DockMessage = {
+    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    text: text.replace(/\s+/g, " ").trim().slice(0, 400),
+    at: new Date().toISOString(),
+  };
+  const prev = session.messages ?? [];
+  session.messages = [...prev, message].slice(-20);
+  return message;
+}
+
 export async function planRoute(
   store: DockStore,
   trip: DockTripService,
@@ -194,8 +274,8 @@ export async function planRoute(
   destinationQuery: string,
   stopQuery: string | null
 ): Promise<DockPlan> {
-  if (!session.origin) {
-    throw new Error("StormPath does not have this phone's location yet. Open the app and allow location.");
+  if (!originReady(session.origin)) {
+    throw new Error(LOCATION_NEEDED);
   }
   const destination = await trip.geocode(destinationQuery, session.origin);
   if (!destination) throw new Error(`StormPath could not find ${destinationQuery}.`);
@@ -244,6 +324,11 @@ export async function handleDockRpc(
   const args = message.params?.arguments ?? {};
   const found = await requireSession(store, args.dock_code);
   if (asError(found)) return { ...found, body: rewriteRpcId(found.body, message.id) };
+  if (!takeRateSlot(found)) {
+    await store.put(found);
+    return rpcError(message.id, "StormPath is getting too many requests for this code. Wait a minute.");
+  }
+  await store.put(found);
 
   try {
     if (name === "read_trip") {
@@ -258,6 +343,26 @@ export async function handleDockRpc(
       const stop = typeof args.stop === "string" ? args.stop : null;
       const plan = await planRoute(store, trip, found, destination, stop);
       return rpcResult(message.id, { content: [{ type: "text", text: plan.summary }] });
+    }
+    if (name === "start_drive") {
+      if (!found.plan) return rpcError(message.id, "Set a destination before starting the drive.");
+      found.control = { id: `${Date.now().toString(36)}-start`, action: "start" };
+      await store.put(found);
+      return rpcResult(message.id, { content: [{ type: "text", text: "StormPath will start the drive." }] });
+    }
+    if (name === "stop_drive") {
+      found.control = { id: `${Date.now().toString(36)}-stop`, action: "stop" };
+      await store.put(found);
+      return rpcResult(message.id, { content: [{ type: "text", text: "StormPath will stop the route." }] });
+    }
+    if (name === "say_to_driver") {
+      const text = String(args.message ?? "").trim();
+      if (!text) return rpcError(message.id, "Say what the driver should hear.");
+      const saved = rememberDriverMessage(found, text);
+      await store.put(found);
+      return rpcResult(message.id, {
+        content: [{ type: "text", text: `StormPath will show and speak: ${saved.text}` }],
+      });
     }
     if (name === "add_stop") {
       if (!found.plan) return rpcError(message.id, "Plan a destination before adding a stop.");
@@ -314,6 +419,49 @@ export async function handlePhoneOrigin(
   return { status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) };
 }
 
+export type AssistantForward = {
+  dock_code: string;
+  text: string;
+  location?: { lat: number; lng: number };
+  sent_at: string;
+};
+
+/** Check the code and build the body the server will post. Does not know the webhook. */
+export async function prepareAssistantForward(
+  store: DockStore,
+  raw: { dock_code?: unknown; text?: unknown; location?: { lat?: unknown; lng?: unknown } | null }
+): Promise<{ ok: true; payload: AssistantForward } | { ok: false; status: number; error: string }> {
+  const code = normalizeDockCode(String(raw.dock_code ?? ""));
+  if (!dockCodeOk(code)) return { ok: false, status: 400, error: "That code is not valid." };
+  const session = await store.get(code);
+  if (!session) return { ok: false, status: 404, error: "That code is not connected. Open Info and connect again." };
+  const text = String(raw.text ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return { ok: false, status: 400, error: "Say something first." };
+  if (text.length > 900) return { ok: false, status: 400, error: "That is too long. Keep it to a sentence or two." };
+  if (!takeRateSlot(session)) {
+    await store.put(session);
+    return { ok: false, status: 429, error: "Wait a minute before sending more." };
+  }
+  await store.put(session);
+  const loc = raw.location;
+  const lat = Number(loc?.lat);
+  const lng = Number(loc?.lng);
+  const location = Number.isFinite(lat) && Number.isFinite(lng)
+    ? { lat, lng }
+    : originReady(session.origin)
+      ? { lat: session.origin.lat, lng: session.origin.lng }
+      : undefined;
+  return {
+    ok: true,
+    payload: {
+      dock_code: code,
+      text: text.slice(0, 900),
+      ...(location ? { location } : {}),
+      sent_at: new Date().toISOString(),
+    },
+  };
+}
+
 export async function handlePhoneRead(store: DockStore, rawCode: unknown): Promise<DockHttpResult> {
   const code = normalizeDockCode(String(rawCode ?? ""));
   const session = await store.get(code);
@@ -323,6 +471,11 @@ export async function handlePhoneRead(store: DockStore, rawCode: unknown): Promi
   return {
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ ok: true, plan: session.plan }),
+    body: JSON.stringify({
+      ok: true,
+      plan: session.plan,
+      messages: session.messages ?? [],
+      control: session.control ?? null,
+    }),
   };
 }

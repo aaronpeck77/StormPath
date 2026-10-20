@@ -1,4 +1,12 @@
-import { GROK_DOCK_APPLIED_KEY, GROK_DOCK_CODE_KEY, GROK_DOCK_URL, newDockCode, type DockPlan } from "./grokDock";
+import {
+  GROK_DOCK_APPLIED_KEY,
+  GROK_DOCK_CODE_KEY,
+  GROK_DOCK_URL,
+  newDockCode,
+  type DockControl,
+  type DockMessage,
+  type DockPlan,
+} from "./grokDock";
 import { safeStorage } from "../storage/safeStorage";
 
 export function readDockCode(): string {
@@ -12,6 +20,7 @@ export function rememberDockCode(code: string): void {
 export function forgetDockCode(): void {
   safeStorage.remove(GROK_DOCK_CODE_KEY);
   safeStorage.remove(GROK_DOCK_APPLIED_KEY);
+  safeStorage.remove("stormpath-grok-dock-control");
 }
 
 export function readAppliedPlanId(): string {
@@ -47,9 +56,74 @@ export async function postDockOrigin(code: string, lng: number, lat: number): Pr
   });
 }
 
-export async function readDockPlan(code: string): Promise<DockPlan | null> {
+export async function readDockState(
+  code: string
+): Promise<{ plan: DockPlan | null; messages: DockMessage[]; control: DockControl | null }> {
   const res = await fetch(`${GROK_DOCK_URL}?code=${encodeURIComponent(code)}`);
-  if (!res.ok) return null;
-  const data = (await res.json()) as { plan?: DockPlan | null };
-  return data.plan ?? null;
+  if (!res.ok) return { plan: null, messages: [], control: null };
+  const data = (await res.json()) as {
+    plan?: DockPlan | null;
+    messages?: DockMessage[];
+    control?: DockControl | null;
+  };
+  const control =
+    data.control && (data.control.action === "start" || data.control.action === "stop") && data.control.id
+      ? data.control
+      : null;
+  return { plan: data.plan ?? null, messages: data.messages ?? [], control };
+}
+
+const CONTROL_KEY = "stormpath-grok-dock-control";
+
+export function readAppliedControlId(): string {
+  return safeStorage.get(CONTROL_KEY) ?? "";
+}
+
+export function rememberAppliedControlId(id: string): void {
+  safeStorage.set(CONTROL_KEY, id);
+}
+
+const HEARD_KEY = "stormpath-grok-dock-heard";
+
+export function readHeardMessageId(): string {
+  return safeStorage.get(HEARD_KEY) ?? "";
+}
+
+export function rememberHeardMessageId(id: string): void {
+  safeStorage.set(HEARD_KEY, id);
+}
+
+type MessageListener = (messages: DockMessage[]) => void;
+const listeners = new Set<MessageListener>();
+
+export function publishDockMessages(messages: DockMessage[]): void {
+  for (const listener of listeners) listener(messages);
+}
+
+export function subscribeDockMessages(listener: MessageListener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export async function sendToAssistant(
+  code: string,
+  text: string,
+  location?: { lat: number; lng: number }
+): Promise<string | null> {
+  const res = await fetch("https://stormpath2.netlify.app/.netlify/functions/grok-assistant", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      dock_code: code,
+      text,
+      ...(location ? { location } : {}),
+    }),
+  });
+  if (res.ok) return null;
+  try {
+    const data = (await res.json()) as { error?: string };
+    return data.error || "The assistant did not accept that.";
+  } catch {
+    return "The assistant did not accept that.";
+  }
 }

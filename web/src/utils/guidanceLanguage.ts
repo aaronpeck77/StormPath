@@ -23,6 +23,18 @@ export function resolveGuidanceLanguage(
   return MAPBOX_LANGUAGE.has(base) ? base : "en";
 }
 
+/** Voice tag for a spoken reply. English stays en-US. System uses the phone language. */
+export function spokenLanguageTag(
+  pref: GuidanceLanguagePref,
+  navigatorLanguage?: string | null
+): string {
+  if (pref === "en") return "en-US";
+  const raw =
+    navigatorLanguage ??
+    (typeof navigator !== "undefined" ? navigator.language : "en-US");
+  return raw || "en-US";
+}
+
 /** WeatherKit path segment. English stays the US tag the forecasts already use. */
 export function weatherKitLanguageTag(code: string): string {
   if (!code || code === "en") return "en-US";

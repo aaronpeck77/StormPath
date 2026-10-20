@@ -13,7 +13,8 @@ import { RouteStopsBar } from "./RouteStopsBar";
 import { BottomToolbar } from "./BottomToolbar";
 import { isNarrowPhoneViewport } from "./mapFitLogic";
 import { showTripRefreshButton } from "../nav/tripRefresh";
-import { stormyMapButtonOn } from "../stormy/stormyAvailability";
+import { assistantButtonLabel, stormyButtonFor } from "../voice/voiceLevel";
+import { AssistantButton } from "./AssistantButton";
 import { StormyButton, stormyTurnImminent } from "./StormyButton";
 import { useSettingsStore } from "../state/settingsStore";
 import { useTripPlanStore } from "../state/tripPlanStore";
@@ -286,8 +287,12 @@ export function AppBottomChrome({
   onStormyAct,
 }: Props) {
   const planRoutes = useTripPlanStore((s) => s.plan.routes);
-  const stormySaved = useSettingsStore((s) => s.stormyEnabled);
-  const stormyOn = stormyMapButtonOn(stormySaved);
+  const voiceLevel = useSettingsStore((s) => s.voiceLevel);
+  const assistantEnabled = useSettingsStore((s) => s.assistantEnabled);
+  const assistantName = useSettingsStore((s) => s.assistantName);
+  const assistantOn = assistantEnabled;
+  const stormyOn = stormyButtonFor(voiceLevel, assistantEnabled);
+  const talkOn = stormyOn || assistantOn;
   const stormyPacket: StormyPacket = {
     aheadLine: (stormyAheadLine || destinationLabel || "").trim(),
     hazards: stormyHazardLine ? [stormyHazardLine] : [],
@@ -309,7 +314,12 @@ export function AppBottomChrome({
     stops: viaStops.map((stop) => stop.label).filter(Boolean).slice(0, 3),
     here: stormyHere.trim(),
   };
-  const placeChoices = stormyOn && suggestions.length >= 2 ? suggestions.slice(0, 8) : [];
+  const talkButton = stormyOn ? (
+    <StormyButton packet={stormyPacket} onAct={onStormyAct} />
+  ) : assistantOn ? (
+    <AssistantButton name={assistantButtonLabel(assistantName)} packet={stormyPacket} onAct={onStormyAct} />
+  ) : null;
+  const placeChoices = talkOn && suggestions.length >= 2 ? suggestions.slice(0, 8) : [];
   return (
     <div className="nav-bottom-stack">
       <RouteCompareBottomPanel
@@ -343,7 +353,7 @@ export function AppBottomChrome({
         <div className="nav-bottom-dock">
           {navigationStarted && viewMode === "drive" ? (
             <DockAboutRow
-              stormyOn={stormyOn}
+              stormyOn={talkOn}
               onOpenAbout={onOpenAbout}
               refresh={
                 showTripRefreshButton(navigationStarted, viewMode) && onRefreshTrip ? (
@@ -359,7 +369,7 @@ export function AppBottomChrome({
                 ) : null
               }
               compass={<DriveCompass bearingDeg={driveMapBearingDeg} />}
-              stormy={<StormyButton packet={stormyPacket} onAct={onStormyAct} />}
+              stormy={talkButton}
             >
               {driveDistanceRemainingLabel ? (
                 <NavMilesLeftBox label={driveDistanceRemainingLabel} />
@@ -367,9 +377,9 @@ export function AppBottomChrome({
             </DockAboutRow>
           ) : navigationStarted && viewMode === "topdown" ? (
             <DockAboutRow
-              stormyOn={stormyOn}
+              stormyOn={talkOn}
               onOpenAbout={onOpenAbout}
-              stormy={<StormyButton packet={stormyPacket} onAct={onStormyAct} />}
+              stormy={talkButton}
             >
               {driveDistanceRemainingLabel ? (
                 <NavMilesLeftBox label={driveDistanceRemainingLabel} />
@@ -399,9 +409,9 @@ export function AppBottomChrome({
             <div className="nav-bottom-dock__plan-stack">
               {/* About row: 'i' on the left; route-info cycle chip or My location in the inline slot. */}
               <DockAboutRow
-                stormyOn={stormyOn}
+                stormyOn={talkOn}
                 onOpenAbout={onOpenAbout}
-                stormy={<StormyButton packet={stormyPacket} onAct={onStormyAct} />}
+                stormy={talkButton}
               >
                 {navigationStarted && driveDistanceRemainingLabel ? (
                   <NavMilesLeftBox label={driveDistanceRemainingLabel} />

@@ -6,14 +6,8 @@ export const STORMY_ONE_PLACE =
 export const STORMY_COMMANDS = [
   "Take me to …",
   "Go.",
-  "Add a gas stop.",
   "Stop the route.",
-  "Take route B.",
-  "How's the trip?",
-  "What's my local forecast?",
-  "Radar on.",
-  "Radar off.",
-  "Center the map.",
+  "Refresh.",
   "Be quiet.",
 ] as const;
 

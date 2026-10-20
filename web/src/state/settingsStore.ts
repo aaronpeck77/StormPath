@@ -16,7 +16,7 @@ import {
   readDataSaverSetting,
 } from "../utils/dataSaver";
 import type { GuidanceLanguagePref } from "../utils/guidanceLanguage";
-import { stormyMapButtonOn } from "../stormy/stormyAvailability";
+import { assistantEnabledFromLegacy, isVoiceLevel, voiceLevelFromLegacy, type VoiceLevel } from "../voice/voiceLevel";
 
 /**
  * Persistent user-settings store (Zustand).
@@ -41,7 +41,9 @@ import { stormyMapButtonOn } from "../stormy/stormyAvailability";
 const LS_WEATHER_HINTS = "stormpath-setting-weather-hints-enabled";
 const LS_AUTO_REROUTE = "stormpath-setting-auto-reroute-enabled";
 const LS_VOICE = "stormpath-setting-voice-guided";
-const LS_STORMY = "stormpath-setting-stormy-button";
+const LS_VOICE_LEVEL = "stormpath-setting-voice-level";
+const LS_ASSISTANT = "stormpath-setting-assistant-enabled";
+const LS_ASSISTANT_NAME = "stormpath-setting-assistant-name";
 const LS_GPS_HIGH_REFRESH = "stormpath-setting-gps-high-refresh";
 const LS_MAP_MATCHING = "stormpath-setting-map-matching-enabled";
 const LS_LANDSCAPE_SIDE_HAND = "stormpath-setting-landscape-side-hand";
@@ -69,8 +71,12 @@ export interface AppSettings {
   dataSaverEnabled: boolean;
   autoRerouteEnabled: boolean;
   voiceGuidanceEnabled: boolean;
-  /** Map button. Off hides Stormy and restores the pre-Stormy dock. */
-  stormyEnabled: boolean;
+  /** No voice, the phone's basic voice, or a downloaded Apple voice. */
+  voiceLevel: VoiceLevel;
+  /** Grok or ChatGPT on the map. Can be on with any voice choice. */
+  assistantEnabled: boolean;
+  /** What the driver calls the docked assistant. Shown on the map button. */
+  assistantName: string;
   gpsHighRefreshEnabled: boolean;
   /** While navigating, snap GPS to the road network via Mapbox Map Matching (Plus). */
   mapMatchingEnabled: boolean;
@@ -122,7 +128,9 @@ export interface SettingsState {
   /** True after the user dismisses the inline data-saver hint banner. */
   dataSaverHintDismissed: boolean;
   voiceGuidanceEnabled: boolean;
-  stormyEnabled: boolean;
+  voiceLevel: VoiceLevel;
+  assistantEnabled: boolean;
+  assistantName: string;
   gpsHighRefreshEnabled: boolean;
   mapMatchingEnabled: boolean;
   /** Landscape / side view only; portrait ignores. */
@@ -140,7 +148,9 @@ export interface SettingsState {
   /** Persist + flag the inline hint as dismissed (no-arg form: it can't be re-opened from UI). */
   dismissDataSaverHint: () => void;
   setVoiceGuidanceEnabled: (on: boolean) => void;
-  setStormyEnabled: (on: boolean) => void;
+  setVoiceLevel: (level: VoiceLevel) => void;
+  setAssistantEnabled: (on: boolean) => void;
+  setAssistantName: (name: string) => void;
   setGpsHighRefreshEnabled: (on: boolean) => void;
   setMapMatchingEnabled: (on: boolean) => void;
   setLandscapeSideHand: (hand: LandscapeSideHand) => void;
@@ -169,7 +179,9 @@ function readPersistedSettings(): Pick<
   | "dataSaverEnabled"
   | "dataSaverHintDismissed"
   | "voiceGuidanceEnabled"
-  | "stormyEnabled"
+  | "voiceLevel"
+  | "assistantEnabled"
+  | "assistantName"
   | "gpsHighRefreshEnabled"
   | "mapMatchingEnabled"
   | "landscapeSideHand"
@@ -186,7 +198,9 @@ function readPersistedSettings(): Pick<
     dataSaverEnabled: readDataSaverSetting(),
     dataSaverHintDismissed: readDataSaverHintDismissed(),
     voiceGuidanceEnabled: readBoolFlag(LS_VOICE, false),
-    stormyEnabled: stormyMapButtonOn(readBoolFlag(LS_STORMY, true)),
+    voiceLevel: voiceLevelFromLegacy(safeStorage.get(LS_VOICE_LEVEL)),
+    assistantEnabled: assistantEnabledFromLegacy(safeStorage.get(LS_VOICE_LEVEL), safeStorage.get(LS_ASSISTANT)),
+    assistantName: (safeStorage.get(LS_ASSISTANT_NAME) ?? "").replace(/\s+/g, " ").trim().slice(0, 16),
     gpsHighRefreshEnabled: readBoolFlag(LS_GPS_HIGH_REFRESH, false),
     mapMatchingEnabled: readBoolFlag(LS_MAP_MATCHING, false),
     landscapeSideHand: safeStorage.get(LS_LANDSCAPE_SIDE_HAND) === "left" ? "left" : "right",
@@ -244,10 +258,19 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     writeBoolFlag(LS_VOICE, on);
     set({ voiceGuidanceEnabled: on });
   },
-  setStormyEnabled: (on) => {
-    const next = stormyMapButtonOn(on);
-    writeBoolFlag(LS_STORMY, next);
-    set({ stormyEnabled: next });
+  setVoiceLevel: (level) => {
+    const next = isVoiceLevel(level) ? level : "off";
+    safeStorage.set(LS_VOICE_LEVEL, next);
+    set({ voiceLevel: next });
+  },
+  setAssistantEnabled: (on) => {
+    writeBoolFlag(LS_ASSISTANT, on);
+    set({ assistantEnabled: on });
+  },
+  setAssistantName: (name) => {
+    const next = name.replace(/\s+/g, " ").trim().slice(0, 16);
+    safeStorage.set(LS_ASSISTANT_NAME, next);
+    set({ assistantName: next });
   },
   setGpsHighRefreshEnabled: (on) => {
     writeBoolFlag(LS_GPS_HIGH_REFRESH, on);
@@ -284,7 +307,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     writeBoolFlag(LS_AUTO_REROUTE, next.autoRerouteEnabled);
     writeBoolFlag(LS_DATA_SAVER, next.dataSaverEnabled);
     writeBoolFlag(LS_VOICE, next.voiceGuidanceEnabled);
-    writeBoolFlag(LS_STORMY, stormyMapButtonOn(next.stormyEnabled));
+    safeStorage.set(LS_VOICE_LEVEL, isVoiceLevel(next.voiceLevel) ? next.voiceLevel : "off");
+    writeBoolFlag(LS_ASSISTANT, next.assistantEnabled);
+    safeStorage.set(LS_ASSISTANT_NAME, next.assistantName.replace(/\s+/g, " ").trim().slice(0, 16));
     writeBoolFlag(LS_GPS_HIGH_REFRESH, next.gpsHighRefreshEnabled);
     writeBoolFlag(LS_MAP_MATCHING, next.mapMatchingEnabled);
     safeStorage.set(LS_LANDSCAPE_SIDE_HAND, next.landscapeSideHand);
@@ -299,7 +324,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       autoRerouteEnabled: next.autoRerouteEnabled,
       dataSaverEnabled: next.dataSaverEnabled,
       voiceGuidanceEnabled: next.voiceGuidanceEnabled,
-      stormyEnabled: stormyMapButtonOn(next.stormyEnabled),
+      voiceLevel: isVoiceLevel(next.voiceLevel) ? next.voiceLevel : "off",
+      assistantEnabled: next.assistantEnabled,
+      assistantName: next.assistantName.replace(/\s+/g, " ").trim().slice(0, 16),
       gpsHighRefreshEnabled: next.gpsHighRefreshEnabled,
       mapMatchingEnabled: next.mapMatchingEnabled,
       landscapeSideHand: next.landscapeSideHand,

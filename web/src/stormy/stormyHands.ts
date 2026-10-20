@@ -25,6 +25,10 @@ export function interpretStormyRequest(question: string, packet: StormyPacket): 
     if (!packet.driving && packet.routes.length === 0) return reply("There's no trip to stop.", "none");
     return reply("Trip's done.", "end_trip");
   }
+  if (/^(?:please )?(?:hit |press |tap )?refresh(?: the trip)?$/.test(lower)) {
+    if (!packet.driving) return reply("There's no trip to refresh.", "none");
+    return reply("Refreshing.", "refresh");
+  }
   if (/^(?:please )?(?:turn )?radar on$/.test(lower) || lower === "show radar") {
     return reply("Radar's on.", "radar_on");
   }
@@ -85,13 +89,17 @@ export function interpretStormyRequest(question: string, packet: StormyPacket): 
     return reply(`Taking ${next.label}.`, "use_route", { routeId: next.id });
   }
 
+  if (asksWeatherOrRoad(lower)) {
+    return reply("Ask your assistant about the weather and the road.", "none");
+  }
+
   return answerStormySituation(q, packet);
 }
 
 /** Spoken when the phone heard the words and none of its own commands match. No network. */
 export function phoneStormyFallback(): StormyReply {
   return reply(
-    "I can take you to a place, start the drive, add a stop, or read the weather and traffic. The commands are on the Info page.",
+    "I can take you to a place, start the drive, or stop the route. The commands are on the Info page.",
     "none"
   );
 }
@@ -147,6 +155,12 @@ function errandPlace(question: string, lower: string): string | null {
   if (/\b(?:gas|fuel)\b/.test(lower)) return "gas station";
   if (/\b(?:eat|food|hungry|lunch|dinner|breakfast|restaurant)\b/.test(lower)) return "restaurant";
   return null;
+}
+
+function asksWeatherOrRoad(lower: string): boolean {
+  return /\b(?:weather|forecast|hazard|hazards|traffic|wreck|closure|how's the trip|hows the trip|how is the trip)\b/.test(
+    lower
+  );
 }
 
 function isStop(lower: string): boolean {

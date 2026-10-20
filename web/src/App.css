@@ -1205,6 +1205,22 @@ html:has(.drive-map--native-shell) #root {
   justify-content: center;
 }
 
+.about-sheet__voice-levels {
+  border: 0;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.about-sheet__assistant-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .stormy-call-btn {
   position: relative;
   z-index: 6;

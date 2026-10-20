@@ -25,6 +25,18 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         AVSpeechSynthesisVoice(language: "en-US")
     }
 
+    /// A downloaded enhanced or premium voice, Ava first, when Voice is set to the downloaded voice.
+    private func enhancedVoice() -> AVSpeechSynthesisVoice? {
+        let english = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
+        let ava = english.filter { $0.name.localizedCaseInsensitiveContains("Ava") }
+        if #available(iOS 16.0, *) {
+            if let premium = ava.first(where: { $0.quality == .premium }) { return premium }
+            if let premium = english.first(where: { $0.quality == .premium }) { return premium }
+        }
+        if let better = ava.first(where: { $0.quality == .enhanced }) { return better }
+        return english.first(where: { $0.quality == .enhanced })
+    }
+
     @objc func speak(_ call: CAPPluginCall) {
         guard let text = call.getString("text")?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else {
@@ -58,7 +70,9 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         let utterance = AVSpeechUtterance(string: text)
-        let voice = stormyVoice()
+        let asked = call.getString("language")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let enhanced = call.getBool("preferEnhanced") ?? false ? enhancedVoice() : nil
+        let voice = enhanced ?? (asked?.isEmpty == false ? AVSpeechSynthesisVoice(language: asked!) : nil) ?? stormyVoice()
         let natural: Bool
         if let voice {
             utterance.voice = voice

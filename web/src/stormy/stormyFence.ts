@@ -17,6 +17,7 @@ export const STORMY_ACTIONS = [
   "radar_off",
   "end_trip",
   "recenter",
+  "refresh",
 ] as const;
 
 export type StormyAction = (typeof STORMY_ACTIONS)[number];

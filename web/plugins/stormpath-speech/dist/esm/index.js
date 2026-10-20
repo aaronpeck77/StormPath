@@ -14,6 +14,7 @@ const StormpathSpeech = registerPlugin("StormpathSpeech", {
           else if (window.speechSynthesis.speaking) return { spoke: false, reason: "busy" };
           const u = new SpeechSynthesisUtterance(text);
           u.rate = typeof opts?.rate === "number" ? opts.rate : 1;
+          if (opts?.language) u.lang = String(opts.language);
           window.speechSynthesis.speak(u);
           return { spoke: true };
         } catch {

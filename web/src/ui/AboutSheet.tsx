@@ -25,6 +25,7 @@ import type { RadarDisplayMode } from "../state/settingsStore";
 import { STORMY_AVAILABLE } from "../stormy/stormyAvailability";
 import { STORMY_COMMANDS } from "../stormy/stormyCommands";
 import { STORMY_VOICE_HINT } from "../stormy/stormyVoiceHint";
+import type { VoiceLevel } from "../voice/voiceLevel";
 import type { GuidanceLanguagePref } from "../utils/guidanceLanguage";
 import type { HomePuckFollowMode } from "../map/homePuckFollow";
 
@@ -72,7 +73,9 @@ type Props = {
     dataSaverEnabled: boolean;
     autoRerouteEnabled: boolean;
     voiceGuidanceEnabled: boolean;
-    stormyEnabled: boolean;
+    voiceLevel: VoiceLevel;
+    assistantEnabled: boolean;
+    assistantName: string;
     gpsHighRefreshEnabled: boolean;
     mapMatchingEnabled: boolean;
     /** Landscape / side view only — portrait layout ignores this */
@@ -190,7 +193,7 @@ export function AboutSheet({
     `Binary: ${flavor}${flavor === "testflight" ? " (forced Plus)" : flavor === "appstore" ? " (Basic until IAP)" : ""}`,
     `Crash reporting: ${isCrashReportingEnabled() ? "on (automatic for serious errors)" : "off"}`,
     `Online: ${typeof navigator === "undefined" ? "unknown" : navigator.onLine ? "yes" : "no"}`,
-    `Stormy: ${settings.stormyEnabled ? "on" : "off"}, Data saver: ${
+    `Voice: ${settings.voiceLevel}, Assistant: ${settings.assistantEnabled ? "on" : "off"}, Data saver: ${
       settings.dataSaverEnabled ? "on" : "off"
     }`,
     `Landscape UI: ${settings.landscapeSideHand === "left" ? "left hand" : "right hand"}`,
@@ -317,8 +320,8 @@ export function AboutSheet({
         ) : null}
 
         <div className="about-sheet__sections">
-          <section className="about-sheet__panel about-sheet__panel--subscription">
-            <h3 className="about-sheet__h3">Subscription</h3>
+          <details className="about-sheet__panel about-sheet__panel--subscription about-sheet__details">
+            <summary>Subscription</summary>
             <p className="about-sheet__p">
               <strong>{PLUS_SUBSCRIPTION_TITLE}</strong> is an optional auto-renewing subscription.
             </p>
@@ -415,7 +418,7 @@ export function AboutSheet({
                 {iap.message}
               </p>
             )}
-          </section>
+          </details>
 
           {!plus && (
             <details className="about-sheet__panel about-sheet__panel--subscription about-sheet__details">
@@ -449,8 +452,113 @@ export function AboutSheet({
             </details>
           )}
 
-          <section className="about-sheet__panel about-sheet__panel--settings">
-            <h3 className="about-sheet__h3">Settings</h3>
+          <details className="about-sheet__panel about-sheet__details">
+            <summary>Voice</summary>
+            <fieldset className="about-sheet__voice-levels">
+              <legend className="about-sheet__p about-sheet__p--tight">Pick one. The assistant can be on with any of these.</legend>
+              {(
+                [
+                  ["off", "No voice", "Buttons only. Nothing speaks the turns."],
+                  ["basic", "Basic voice", "The computer voice already on the phone. Next turn, and Stormy's short lines."],
+                  ["enhanced", "Downloaded voice", "Same job as basic, with Ava or another free Apple voice you download."],
+                ] as const
+              ).map(([id, title, detail]) => (
+                <label key={id} className="about-sheet__setting about-sheet__settings-card">
+                  <input
+                    type="radio"
+                    name="stormpath-voice-level"
+                    checked={settings.voiceLevel === id}
+                    onChange={() => onSettings({ ...settings, voiceLevel: id })}
+                  />
+                  <span>
+                    <strong>{title}</strong> — {detail}
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+
+            <label className="about-sheet__setting about-sheet__settings-card">
+              <span>
+                <strong>Spoken language</strong>
+                <select
+                  value={settings.guidanceLanguage}
+                  onChange={(e) =>
+                    onSettings({
+                      ...settings,
+                      guidanceLanguage: (e.target.value === "en" ? "en" : "system") as GuidanceLanguagePref,
+                    })
+                  }
+                  style={{ display: "block", marginTop: 8, maxWidth: "100%" }}
+                >
+                  <option value="system">Phone language</option>
+                  <option value="en">English</option>
+                </select>
+                Turn-by-turn, place search, and weather phrases follow this. The buttons stay in English.
+                Choose English here if the phone is in another language and you want the voice in English.
+                The change applies the next time you plan a route.
+              </span>
+            </label>
+
+            {settings.voiceLevel === "enhanced" ? (
+              <p className="about-sheet__p about-sheet__settings-card">
+                <strong>Download a voice.</strong> {STORMY_VOICE_HINT} Pick Ava, or any other voice in that list.
+                Stormy uses it the next time you tap her.
+              </p>
+            ) : null}
+
+            <div className="about-sheet__p about-sheet__settings-card">
+              <strong>Commands that work.</strong>
+              <p className="about-sheet__p about-sheet__p--tight">
+                Basic voice and Downloaded voice need these words. She speaks the next turn. She does not read the
+                weather or the road. One place at a time. Say “Take me to” and the place, then “Go.”
+              </p>
+              <ul className="about-sheet__bullets">
+                {STORMY_COMMANDS.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          </details>
+
+          <details className="about-sheet__panel about-sheet__details">
+            <summary>Your assistant</summary>
+            <label className="about-sheet__setting about-sheet__settings-card">
+              <input
+                type="checkbox"
+                checked={settings.assistantEnabled}
+                onChange={(e) => onSettings({ ...settings, assistantEnabled: e.target.checked })}
+              />
+              <span>
+                <strong>Grok or ChatGPT</strong> — their button on the map. They can run the trip and talk about the
+                weather and the road. This stays on with No voice, Basic voice, or Downloaded voice.
+              </span>
+            </label>
+            {settings.assistantEnabled ? (
+              <p className="about-sheet__p about-sheet__settings-card">
+                <strong>On the map.</strong> One press asks for one thing, a destination, Go, stop, or a question,
+                then the mic closes. Double tap or press and hold to keep talking while the map stays up. It closes
+                when you go quiet. Type their name below. When a voice is on, Stormy still speaks the turns, and this
+                button waits until that line finishes. The car screen, when CarPlay is on, stays the map and the turn
+                prompts. This button stays on the phone.
+              </p>
+            ) : null}
+            <GrokDockCard />
+            <div className="about-sheet__p about-sheet__settings-card">
+              <strong>Commands that work.</strong>
+              <p className="about-sheet__p about-sheet__p--tight">
+                Say it in your own words. One press is one request. Hold or double tap to keep talking.
+              </p>
+              <ul className="about-sheet__bullets">
+                <li>Set a destination.</li>
+                <li>Start the drive, or stop the route.</li>
+                <li>Ask about the weather or the road ahead.</li>
+                <li>Ask a general question.</li>
+              </ul>
+            </div>
+          </details>
+
+          <details className="about-sheet__panel about-sheet__panel--settings about-sheet__details">
+            <summary>Settings</summary>
             <div className="about-sheet__settings">
               {/* 1. Radar + display options */}
               <div
@@ -669,28 +777,6 @@ export function AboutSheet({
                 </label>
               ) : null}
 
-              <label className="about-sheet__setting about-sheet__settings-card">
-                <span>
-                  <strong>Spoken language</strong>
-                  <select
-                    value={settings.guidanceLanguage}
-                    onChange={(e) =>
-                      onSettings({
-                        ...settings,
-                        guidanceLanguage: (e.target.value === "en" ? "en" : "system") as GuidanceLanguagePref,
-                      })
-                    }
-                    style={{ display: "block", marginTop: 8, maxWidth: "100%" }}
-                  >
-                    <option value="system">Phone language</option>
-                    <option value="en">English</option>
-                  </select>
-                  Turn-by-turn, place search, and weather phrases follow this. The buttons stay in
-                  English. Choose English here if the phone is in another language and you want the
-                  voice in English. The change applies the next time you plan a route.
-                </span>
-              </label>
-
               {plus && activityTrail ? (
                 <details className="about-sheet__details about-sheet__settings-card">
                   <summary>Activity trail</summary>
@@ -874,91 +960,95 @@ export function AboutSheet({
                 </details>
               ) : null}
 
-              <details className="about-sheet__details about-sheet__settings-card">
-                <summary>Stormy</summary>
-                <label
-                  className={`about-sheet__setting about-sheet__settings-card${STORMY_AVAILABLE ? "" : " disabled"}`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={STORMY_AVAILABLE && settings.stormyEnabled}
-                    disabled={!STORMY_AVAILABLE}
-                    onChange={(e) => {
-                      if (!STORMY_AVAILABLE) return;
-                      onSettings({ ...settings, stormyEnabled: e.target.checked });
-                    }}
-                  />
-                  <span>
-                    <strong>Stormy</strong>
-                    {STORMY_AVAILABLE ? (
-                      <>
-                        {" "}
-                        — her button on the map, and the next turn while Go is on. She is not an AI. She
-                        follows the list below. Turn this off to hide her and silence the prompts.
-                      </>
-                    ) : (
-                      <>
-                        {" "}
-                        — her button on the map. <em>Being worked on. Coming soon.</em>
-                      </>
-                    )}
-                  </span>
-                </label>
+            </div>
+          </details>
 
-                {!STORMY_AVAILABLE || settings.stormyEnabled ? (
+          <details className="about-sheet__panel about-sheet__details">
+            <summary>Map key, tips, and privacy</summary>
+            <MapKeyPanel />
+            {onReplayCoachmarks && (
+              <section className="about-sheet__panel about-sheet__panel--help">
+                <p className="about-sheet__muted-line">
+                  Forgot what a button does? Re-arm the in-app tips and they'll explain each
+                  piece of UI again the first time you see it (advisory bar, view-cycle
+                  button, route progress bar, and the i info button).
+                </p>
+                <div className="about-sheet__help-actions">
+                  <button
+                    type="button"
+                    className="about-sheet__btn about-sheet__btn--ghost"
+                    onClick={onReplayCoachmarks}
+                  >
+                    Show tips again
+                  </button>
+                </div>
+              </section>
+            )}
+            <details className="about-sheet__panel about-sheet__panel--privacy about-sheet__details">
+              <summary>Privacy, safety &amp; data</summary>
+              <p className="about-sheet__p">
+                <strong>Data:</strong> Map, routing, and traffic use <strong>Mapbox</strong> when configured; live radar
+                uses <strong>Tomorrow.io</strong> in the US and <strong>RainViewer</strong> elsewhere; US warning shapes use <strong>NWS</strong> (api.weather.gov);
+                corridor and local forecasts use <strong> Weather</strong> (Apple WeatherKit) when enabled for this build,
+                with optional Tomorrow.io / OpenWeather fallbacks when those keys are present.
+                {STORMY_AVAILABLE ? (
                   <>
-                    <div
-                      className={`about-sheet__p about-sheet__settings-card${STORMY_AVAILABLE ? "" : " about-sheet__soon"}`}
-                    >
-                      <strong>Commands that work.</strong>
-                      <p className="about-sheet__p about-sheet__p--tight">
-                        Say them this way. “Take me to” plus a place sets the destination. Then say “Go.” One
-                        place at a time. Tap her again to add a stop. Anything else, she will point you back here.
-                      </p>
-                      <ul className="about-sheet__bullets">
-                        {STORMY_COMMANDS.map((line) => (
-                          <li key={line}>{line}</li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <p
-                      className={`about-sheet__p about-sheet__settings-card${STORMY_AVAILABLE ? "" : " about-sheet__soon"}`}
-                    >
-                      <strong>Stormy&apos;s voice.</strong> Change it in the iPhone Settings app, not in StormPath.{" "}
-                      {STORMY_VOICE_HINT}
-                    </p>
+                    {" "}
+                    Stormy hears you with Apple dictation, the same kind the search keyboard uses, so a destination can
+                    leave the phone for that recognition. She decides what to do on the phone. She does not send the
+                    trip to a chat service.
                   </>
                 ) : null}
-              </details>
-
-            </div>
-          </section>
-
-          <GrokDockCard />
-
-          <MapKeyPanel />
-
-          {onReplayCoachmarks && (
-            <section className="about-sheet__panel about-sheet__panel--help">
-              <h3 className="about-sheet__h3">Help</h3>
-              <p className="about-sheet__muted-line">
-                Forgot what a button does? Re-arm the in-app tips and they'll explain each
-                piece of UI again the first time you see it (advisory bar, view-cycle
-                button, route progress bar, and the i info button).
               </p>
-              <div className="about-sheet__help-actions">
-                <button
-                  type="button"
-                  className="about-sheet__btn about-sheet__btn--ghost"
-                  onClick={onReplayCoachmarks}
+              <StormPathSourcesAttribution
+                theme="dark"
+                includeAppleWeather={env.weatherKitEnabled}
+                className="about-sheet__apple-weather"
+              />
+              <p className="about-sheet__p">
+                <strong>Forecasts in the app:</strong> tap the side progress bar for <strong>Route info</strong>{" "}
+                (corridor temp/rain, route radar strip, wind gusts, NWS + traffic bands, and hazard cards). Expand the
+                storm advisory bar for local weather at your GPS. Map <strong>Rad</strong> is live precipitation radar at the
+                current time; colored NWS shapes follow the <strong>NWS weather alerts</strong> setting in About.
+              </p>
+              <p className="about-sheet__p">
+                <strong>Privacy:</strong> Location is for position, routing, and conditions. The map can keep
+                your GPS while the screen is locked; spoken turn prompts only play while StormPath is on
+                screen. Plus frequent-route data stays on this device unless you sync later.
+              </p>
+              <p className="about-sheet__p">
+                <strong>Safety:</strong> Follow posted signs and warnings. StormPath may be incomplete — don’t use the app
+                while driving; use a passenger or pull over.
+              </p>
+              <p className="about-sheet__p">
+                <a
+                  href={env.privacyPolicyUrl || "/privacy.html"}
+                  target="_blank"
+                  rel="noreferrer"
                 >
-                  Show tips again
-                </button>
-              </div>
-            </section>
-          )}
-
+                  Privacy Policy
+                </a>
+                {" · "}
+                <a
+                  href={env.termsUrl || "/terms.html"}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Terms of Use (EULA)
+                </a>
+                {" · "}
+                {env.supportUrl ? (
+                  <a href={env.supportUrl} target="_blank" rel="noreferrer">
+                    Support
+                  </a>
+                ) : env.supportEmail ? (
+                  <a href={`mailto:${env.supportEmail}`}>Email support</a>
+                ) : (
+                  <>Support not set</>
+                )}
+              </p>
+            </details>
+          </details>
 
           <details className="about-sheet__panel about-sheet__details">
             <summary>When data looks wrong</summary>
@@ -999,73 +1089,8 @@ export function AboutSheet({
             </p>
           </details>
 
-          <details className="about-sheet__panel about-sheet__panel--privacy about-sheet__details">
-            <summary>Privacy, safety &amp; data</summary>
-            <p className="about-sheet__p">
-              <strong>Data:</strong> Map, routing, and traffic use <strong>Mapbox</strong> when configured; live radar
-              uses <strong>Tomorrow.io</strong> in the US and <strong>RainViewer</strong> elsewhere; US warning shapes use <strong>NWS</strong> (api.weather.gov);
-              corridor and local forecasts use <strong> Weather</strong> (Apple WeatherKit) when enabled for this build,
-              with optional Tomorrow.io / OpenWeather fallbacks when those keys are present.
-              {STORMY_AVAILABLE ? (
-                <>
-                  {" "}
-                  Stormy hears you with Apple dictation, the same kind the search keyboard uses, so a destination can
-                  leave the phone for that recognition. She decides what to do on the phone. She does not send the
-                  trip to a chat service.
-                </>
-              ) : null}
-            </p>
-            <StormPathSourcesAttribution
-              theme="dark"
-              includeAppleWeather={env.weatherKitEnabled}
-              className="about-sheet__apple-weather"
-            />
-            <p className="about-sheet__p">
-              <strong>Forecasts in the app:</strong> tap the side progress bar for <strong>Route info</strong>{" "}
-              (corridor temp/rain, route radar strip, wind gusts, NWS + traffic bands, and hazard cards). Expand the
-              storm advisory bar for local weather at your GPS. Map <strong>Rad</strong> is live precipitation radar at the
-              current time; colored NWS shapes follow the <strong>NWS weather alerts</strong> setting in About.
-            </p>
-            <p className="about-sheet__p">
-              <strong>Privacy:</strong> Location is for position, routing, and conditions. The map can keep
-              your GPS while the screen is locked; spoken turn prompts only play while StormPath is on
-              screen. Plus frequent-route data stays on this device unless you sync later.
-            </p>
-            <p className="about-sheet__p">
-              <strong>Safety:</strong> Follow posted signs and warnings. StormPath may be incomplete — don’t use the app
-              while driving; use a passenger or pull over.
-            </p>
-            <p className="about-sheet__p">
-              <a
-                href={env.privacyPolicyUrl || "/privacy.html"}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Privacy Policy
-              </a>
-              {" · "}
-              <a
-                href={env.termsUrl || "/terms.html"}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Terms of Use (EULA)
-              </a>
-              {" · "}
-              {env.supportUrl ? (
-                <a href={env.supportUrl} target="_blank" rel="noreferrer">
-                  Support
-                </a>
-              ) : env.supportEmail ? (
-                <a href={`mailto:${env.supportEmail}`}>Email support</a>
-              ) : (
-                <>Support not set</>
-              )}
-            </p>
-          </details>
-
-          <section className="about-sheet__panel about-sheet__panel--support">
-            <h3 className="about-sheet__h3">Support diagnostics</h3>
+          <details className="about-sheet__panel about-sheet__panel--support about-sheet__details">
+            <summary>Support diagnostics</summary>
             <p className="about-sheet__p">
               Send bug reports, suggestions, feature requests, or general feedback. Include diagnostics (no personal
               info — version, toggles, and which data providers are configured) so we can tell an app bug from a network
@@ -1130,7 +1155,7 @@ export function AboutSheet({
                 <>Support email not configured for this build.</>
               )}
             </p>
-          </section>
+          </details>
         </div>
 
         <div className="about-sheet__actions">
