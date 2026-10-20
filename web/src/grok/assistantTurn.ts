@@ -17,8 +17,23 @@ export function isTripAction(action: StormyAction): boolean {
   return HANDS.has(action);
 }
 
+const TRIP_TALK =
+  /\b(weather|storm|rain|snow|radar|traffic|wreck|jam|eta|how long|how far|route|destination|ahead|hazard|road|miles|minute|where am i|where are we|conditions|forecast|turn|exit|highway|interstate|drive)\b/i;
+
+/** A question about this trip. Anything else is free talk. */
+export function isTripTalk(question: string): boolean {
+  return TRIP_TALK.test(question.replace(/\s+/g, " ").trim());
+}
+
 /** Facts StormPath already measured, so the assistant does not invent the road or the storm. */
 export function assistantBrief(question: string, packet: StormyPacket): string {
+  const said = question.replace(/\s+/g, " ").trim();
+  if (!isTripTalk(said)) {
+    return `The driver said: ${said}. This is free talk. Answer as you normally would. Do not mention the route, the weather, the traffic, or the drive unless they asked.`.slice(
+      0,
+      900
+    );
+  }
   const facts = [
     packet.driving ? "The drive is already going." : "The drive has not started.",
     packet.destination ? `Destination: ${packet.destination}.` : "No destination yet.",
@@ -33,7 +48,7 @@ export function assistantBrief(question: string, packet: StormyPacket): string {
     .map((line) => line.replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .join(" ");
-  return `The driver said: ${question.replace(/\s+/g, " ").trim()}. StormPath measured: ${facts}. These measurements are what StormPath knows about the trip.`.slice(
+  return `The driver said: ${said}. StormPath measured: ${facts}. These measurements are what StormPath knows about the trip.`.slice(
     0,
     900
   );

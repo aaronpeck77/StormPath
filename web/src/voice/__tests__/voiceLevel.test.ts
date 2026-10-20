@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { assistantBrief, isTripAction } from "../../grok/assistantTurn";
+import { assistantBrief, isTripAction, isTripTalk } from "../../grok/assistantTurn";
+import { voiceHoldMs } from "../../grok/assistantFloor";
 import type { StormyPacket } from "../../stormy/stormyFence";
 import {
   assistantButtonLabel,
@@ -53,5 +54,12 @@ describe("voice levels", () => {
     expect(brief).toContain("Thunderstorm warning");
     expect(brief).toContain("Orlando");
     expect(brief).toContain("what StormPath knows about the trip");
+    const free = assistantBrief("Tell me a joke about dogs", packet);
+    expect(isTripTalk("Tell me a joke about dogs")).toBe(false);
+    expect(isTripTalk("How's the weather?")).toBe(true);
+    expect(free).toContain("free talk");
+    expect(free).not.toContain("Orlando");
+    expect(free).not.toContain("Thunderstorm");
+    expect(voiceHoldMs("free", 10)).toBeGreaterThan(voiceHoldMs("trip", 10));
   });
 });

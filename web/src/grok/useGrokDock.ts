@@ -8,6 +8,7 @@ import { stormyTurnImminent } from "../ui/StormyButton";
 import { spokenLanguageTag } from "../utils/guidanceLanguage";
 import { useSettingsStore } from "../state/settingsStore";
 import { voiceSpeaks } from "../voice/voiceLevel";
+import { holdForSpokenReply } from "./assistantFloor";
 import { assistantPlanApply } from "./grokPlanApply";
 import {
   postDockOrigin,
@@ -79,6 +80,7 @@ export function useGrokDock(opts: {
         for (const message of unheard) {
           if (cancelled) return;
           rememberHeardMessageId(message.id);
+          holdForSpokenReply(message.text);
           await waitUntilTurnFloor(
             () => voiceSpeaks(voiceRef.current) && stormyTurnImminent(navRef.current, turnMetersRef.current)
           );
