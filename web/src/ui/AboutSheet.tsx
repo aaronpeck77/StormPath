@@ -460,7 +460,7 @@ export function AboutSheet({
                 [
                   ["off", "No voice", "Buttons only. Nothing speaks the turns."],
                   ["basic", "Basic voice", "The computer voice already on the phone. Next turn, and Stormy's short lines."],
-                  ["enhanced", "Downloaded voice", "Same job as basic, with Ava or another free Apple voice you download."],
+                  ["enhanced", "Downloaded voice", "Uses a male Enhanced or Premium voice, such as Alex or Nathan. A Siri voice cannot be used. This does not turn the assistant off."],
                 ] as const
               ).map(([id, title, detail]) => (
                 <label key={id} className="about-sheet__setting about-sheet__settings-card">
@@ -501,8 +501,7 @@ export function AboutSheet({
 
             {settings.voiceLevel === "enhanced" ? (
               <p className="about-sheet__p about-sheet__settings-card">
-                <strong>Download a voice.</strong> {STORMY_VOICE_HINT} Pick Ava, or any other voice in that list.
-                Stormy uses it the next time you tap her.
+                <strong>Download a voice.</strong> {STORMY_VOICE_HINT}
               </p>
             ) : null}
 

@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { getWebEnv } from "./config/env";
 import { useFusedSituation } from "./hooks/useFusedSituation";
@@ -34,6 +35,7 @@ import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
 import { useNearbyPoiTip } from "./hooks/useNearbyPoiTip";
 import { useAdvisoryVoiceGuidance } from "./hooks/useAdvisoryVoiceGuidance";
 import { useCarSessionPublish } from "./hooks/useCarSessionPublish";
+import { isAppVoiceHeld, subscribeAppVoiceHold } from "./grok/assistantFloor";
 import { useGrokDock } from "./grok/useGrokDock";
 import { useJamHop } from "./nav/useJamHop";
 import { JamHopBanner } from "./ui/JamHopBanner";
@@ -417,6 +419,7 @@ export default function App() {
 
   const settingVoiceLevel = useSettingsStore((s) => s.voiceLevel);
   const settingVoiceOn = settingVoiceLevel !== "off";
+  const appVoiceHeld = useSyncExternalStore(subscribeAppVoiceHold, isAppVoiceHeld, () => false);
   const settingGuidanceLanguage = useSettingsStore((s) => s.guidanceLanguage);
   const guidanceLanguageCode = resolveGuidanceLanguage(settingGuidanceLanguage);
   useEffect(() => {
@@ -1046,7 +1049,7 @@ export default function App() {
       headingDeg: driveLastTravelBearingDegRef.current,
     },
     onRouteGeometry: onNativeRouteGeometry,
-    voiceGuidanceEnabled: settingVoiceOn,
+    voiceGuidanceEnabled: settingVoiceOn && !appVoiceHeld,
     guidanceLanguage: guidanceLanguageCode,
     /* No hard motorway ban. A reroute may use an interstate when that is the
      * sensible way on. The fastest/alternate choice is applied from here. */
@@ -1567,7 +1570,7 @@ export default function App() {
   } = useNavigationGuidance({
     navigationStarted,
     /** Native Core owns spoken instructions on iOS; keep Web Speech for DIY/web. */
-    settingVoiceGuidanceEnabled: settingVoiceOn && !nativeNavActive,
+    settingVoiceGuidanceEnabled: settingVoiceOn && !nativeNavActive && !appVoiceHeld,
     guidanceRouteId,
     guidanceRouteLengthM,
     turnSteps,

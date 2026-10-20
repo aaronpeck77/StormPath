@@ -13,6 +13,7 @@ import {
   type DockStore,
 } from "../../src/grok/grokDock.ts";
 import {
+  assistantUsesWeb,
   functionCallsFromXai,
   replyTextFromXai,
   xaiFollowUpBody,
@@ -73,7 +74,15 @@ function mapboxToken(): string {
   return (process.env.MAPBOX_SECRET_TOKEN || process.env.VITE_MAPBOX_TOKEN || process.env.MAPBOX_TOKEN || "").trim();
 }
 
-async function postXai(key: string, body: unknown): Promise<unknown> {
+/** Stay under the platform's ~30s inactivity cutoff so the phone gets JSON, not a timeout page. */
+const XAI_BUDGET_MS = 18_000;
+const HEARD_AGAIN = "I heard you. Say that again.";
+
+function isTimeout(error: unknown): boolean {
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+}
+
+async function postXai(key: string, body: unknown, timeoutMs: number): Promise<unknown> {
   const res = await fetch("https://api.x.ai/v1/responses", {
     method: "POST",
     headers: {
@@ -81,11 +90,13 @@ async function postXai(key: string, body: unknown): Promise<unknown> {
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
     const raw = await res.text();
     console.error("[grok-assistant] xAI status", res.status, raw.slice(0, 300));
-    throw new Error("xai");
+    const badKey = res.status === 400 && /api key/i.test(raw);
+    throw new Error(badKey ? "bad-key" : "xai");
   }
   return res.json();
 }
@@ -104,7 +115,11 @@ export const handler = async (event: NetlifyEvent) => {
     return json(400, { ok: false, error: "That message was not readable." });
   }
   const store = await blobStore(event);
-  const ready = await prepareAssistantForward(store, parsed);
+  let ready = await prepareAssistantForward(store, parsed);
+  for (let attempt = 0; !ready.ok && ready.status === 404 && attempt < 4; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    ready = await prepareAssistantForward(store, parsed);
+  }
   if (!ready.ok) return json(ready.status, { ok: false, error: ready.error });
 
   const key = process.env.XAI_API_KEY?.trim();
@@ -112,10 +127,14 @@ export const handler = async (event: NetlifyEvent) => {
     console.error("[grok-assistant] XAI_API_KEY is missing");
     return json(503, { ok: false, error: "The assistant is not configured yet." });
   }
+  const started = Date.now();
+  const remaining = () => Math.max(1_000, XAI_BUDGET_MS - (Date.now() - started));
+  const includeWeb = assistantUsesWeb(ready.payload.text);
+  const sentLine = "I sent that to StormPath. It is measuring the trip again from where you are.";
+  let usedTool = false;
   try {
-    let data = await postXai(key, xaiRequestBody(ready.payload.text));
+    let data = await postXai(key, xaiRequestBody(ready.payload.text), remaining());
     const trip = makeDockTrip(mapboxToken());
-    let usedTool = false;
     for (let round = 0; round < 2; round++) {
       const calls = functionCallsFromXai(data);
       const previousId = xaiResponseId(data);
@@ -138,28 +157,28 @@ export const handler = async (event: NetlifyEvent) => {
         outputs.push({ callId: call.callId, output: dockRpcPlainText(rpc) || "Done." });
       }
       try {
-        data = await postXai(key, xaiFollowUpBody(previousId, outputs));
+        data = await postXai(key, xaiFollowUpBody(previousId, outputs, includeWeb), remaining());
       } catch (e) {
         console.error("[grok-assistant] tool follow-up failed", e instanceof Error ? e.message : "error");
-        await saveAssistantReply(
-          store,
-          ready.payload.dock_code,
-          "I sent that to StormPath. It is measuring the trip again from where you are."
-        );
+        await saveAssistantReply(store, ready.payload.dock_code, sentLine);
         return json(200, { ok: true });
       }
     }
-    const reply =
-      replyTextFromXai(data) ||
-      (usedTool ? "I sent that to StormPath. It is measuring the trip again from where you are." : "");
+    const reply = replyTextFromXai(data) || (usedTool ? sentLine : "");
     if (!reply) {
       console.error("[grok-assistant] xAI returned no spoken line");
-      return json(502, { ok: false, error: "The assistant did not accept that." });
+      await saveAssistantReply(store, ready.payload.dock_code, HEARD_AGAIN);
+      return json(200, { ok: true });
     }
     await saveAssistantReply(store, ready.payload.dock_code, reply);
   } catch (e) {
-    console.error("[grok-assistant] xAI failed", e instanceof Error ? e.message : "error");
-    return json(502, { ok: false, error: "The assistant did not accept that." });
+    const detail = e instanceof Error ? e.message : "error";
+    console.error("[grok-assistant] xAI failed", detail, isTimeout(e) ? "timeout" : "");
+    if (detail === "bad-key") {
+      return json(502, { ok: false, error: "Grok refused the key saved on stormpath2." });
+    }
+    await saveAssistantReply(store, ready.payload.dock_code, usedTool ? sentLine : HEARD_AGAIN);
+    return json(200, { ok: true });
   }
   return json(200, { ok: true });
 };

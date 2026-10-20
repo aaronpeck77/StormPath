@@ -8,6 +8,7 @@ import { stormyTurnImminent } from "../ui/StormyButton";
 import { spokenLanguageTag } from "../utils/guidanceLanguage";
 import { useSettingsStore } from "../state/settingsStore";
 import { voiceSpeaks } from "../voice/voiceLevel";
+import { holdForSpokenReply } from "./assistantFloor";
 import { assistantPlanApply } from "./grokPlanApply";
 import {
   postDockOrigin,
@@ -54,69 +55,78 @@ export function useGrokDock(opts: {
     const code = readDockCode();
     if (!assistantEnabled || !code) return;
     let cancelled = false;
+    let running = false;
 
     const tick = async () => {
-      if (cancelled) return;
-      if (userLngLat) {
-        try {
-          await postDockOrigin(code, userLngLat[0], userLngLat[1]);
-        } catch {
-          /* The next poll tries again. */
-        }
-      }
-      let state: { plan: DockPlan | null; messages: DockMessage[]; control: DockControl | null };
+      if (cancelled || running) return;
+      running = true;
       try {
-        state = await readDockState(code);
-      } catch {
-        return;
-      }
-      publishDockMessages(state.messages);
-      const heard = readHeardMessageId();
-      const heardAt = state.messages.findIndex((row) => row.id === heard);
-      const unheard = state.messages.filter((_, index) => (heard ? index > heardAt : true));
-      if (unheard.length > 0) {
-        const language = spokenLanguageTag(guidanceLanguage);
-        for (const message of unheard) {
-          if (cancelled) return;
-          rememberHeardMessageId(message.id);
-          await waitUntilTurnFloor(
-            () => voiceSpeaks(voiceRef.current) && stormyTurnImminent(navRef.current, turnMetersRef.current)
-          );
-          if (cancelled) return;
-          await speakStormpathLine(message.text, { interrupt: false, language });
+        if (cancelled) return;
+        if (userLngLat) {
+          try {
+            await postDockOrigin(code, userLngLat[0], userLngLat[1]);
+          } catch {
+            /* The next poll tries again. */
+          }
         }
-      }
-      const plan = state.plan;
-      const control = state.control;
-      const planAction = assistantPlanApply({
-        navigationStarted: navRef.current,
-        planId: plan?.id ?? null,
-        appliedPlanId: readAppliedPlanId(),
-      });
-      const controlFresh = Boolean(control && control.id !== readAppliedControlId());
-      if (control && controlFresh) rememberAppliedControlId(control.id);
-      if (plan && planAction !== "skip") {
-        rememberAppliedPlanId(plan.id);
-        if (plan.stop && plan.stopLabel) setViaStops([{ lngLat: plan.stop, label: plan.stopLabel }]);
-        else setViaStops([]);
-        const measured = await computeRoutes(plan.destination, plan.destinationLabel);
-        let hint: string | null = null;
-        if (!measured.ok) {
-          if (measured.reason) hint = measured.reason;
-        } else if (planAction === "replan-and-resume") {
-          startRef.current();
-          hint = plan.stop ? "Stop added. Measured again from here." : "Measured again from here.";
-        } else if (control?.action !== "start") {
-          hint = "Your assistant set this route. Hit Go when you are ready to leave.";
+        let state: { plan: DockPlan | null; messages: DockMessage[]; control: DockControl | null };
+        try {
+          state = await readDockState(code);
+        } catch {
+          return;
         }
-        if (hint) {
-          setTapHint(hint);
-          window.setTimeout(() => setTapHint(null), 8000);
+        publishDockMessages(state.messages);
+        const heard = readHeardMessageId();
+        const heardAt = state.messages.findIndex((row) => row.id === heard);
+        const unheard = state.messages.filter((_, index) => (heard ? index > heardAt : true));
+        if (unheard.length > 0) {
+          const language = spokenLanguageTag(guidanceLanguage);
+          for (const message of unheard) {
+            if (cancelled) return;
+            holdForSpokenReply(message.text);
+            await waitUntilTurnFloor(
+              () => voiceSpeaks(voiceRef.current) && stormyTurnImminent(navRef.current, turnMetersRef.current)
+            );
+            if (cancelled) return;
+            const spoke = await speakStormpathLine(message.text, { interrupt: true, language, forAssistant: true });
+            if (!spoke) break;
+            rememberHeardMessageId(message.id);
+          }
         }
-      }
-      if (control && controlFresh && planAction !== "replan-and-resume") {
-        if (control.action === "stop" && navRef.current) stopRef.current();
-        else if (control.action === "start" && !navRef.current) startRef.current();
+        const plan = state.plan;
+        const control = state.control;
+        const planAction = assistantPlanApply({
+          navigationStarted: navRef.current,
+          planId: plan?.id ?? null,
+          appliedPlanId: readAppliedPlanId(),
+        });
+        const controlFresh = Boolean(control && control.id !== readAppliedControlId());
+        if (control && controlFresh) rememberAppliedControlId(control.id);
+        if (plan && planAction !== "skip") {
+          rememberAppliedPlanId(plan.id);
+          if (plan.stop && plan.stopLabel) setViaStops([{ lngLat: plan.stop, label: plan.stopLabel }]);
+          else setViaStops([]);
+          const measured = await computeRoutes(plan.destination, plan.destinationLabel);
+          let hint: string | null = null;
+          if (!measured.ok) {
+            if (measured.reason) hint = measured.reason;
+          } else if (planAction === "replan-and-resume") {
+            startRef.current();
+            hint = plan.stop ? "Stop added. Measured again from here." : "Measured again from here.";
+          } else if (control?.action !== "start") {
+            hint = "Your assistant set this route. Hit Go when you are ready to leave.";
+          }
+          if (hint) {
+            setTapHint(hint);
+            window.setTimeout(() => setTapHint(null), 8000);
+          }
+        }
+        if (control && controlFresh && planAction !== "replan-and-resume") {
+          if (control.action === "stop" && navRef.current) stopRef.current();
+          else if (control.action === "start" && !navRef.current) startRef.current();
+        }
+      } finally {
+        running = false;
       }
     };
 

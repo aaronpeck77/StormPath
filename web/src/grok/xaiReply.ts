@@ -1,26 +1,49 @@
+import { driverSaid, isTripTalk } from "./assistantTurn";
+
+const FREE_INSTRUCTIONS =
+  "You are Grok, the same assistant as in the Grok app, keeping a driver company so they stay awake and focused. Talk as you normally would. Use the web when it helps. This is ordinary conversation. Do not mention StormPath, the route, the trip, the weather, the forecast, or the traffic unless they asked. A few spoken sentences is enough. When they want a stop added, call add_stop with the place and keep the current destination. If the drive is already going, do not call start_drive or stop_drive for that stop. Call plan_route for a new destination. Call start_drive only when they ask to leave and the drive has not started. Call stop_drive only when they ask to end the trip. After a tool runs, tell them what happened in a normal sentence.";
+
+const TRIP_INSTRUCTIONS =
+  "You are Grok, talking with the driver through the StormPath app. They asked about the trip or the weather. Answer from the StormPath measurements in one or two sentences. Do not search the web. Do not invent a storm or a time. Do not call a tool unless they asked to change the destination, add a stop, start the drive, or end the trip. When they want a stop, call add_stop and keep the current destination. If the drive is already going, do not call start_drive or stop_drive for that stop. Call plan_route for a new destination. Call start_drive only when they ask to leave and the drive has not started. Call stop_drive only when they ask to end the trip. After a tool runs, tell them what happened in a normal sentence.";
+
+/** Weather and route questions stay on the measurements. Ordinary talk can use the web. */
+export function assistantUsesWeb(driverText: string): boolean {
+  return !isTripTalk(driverSaid(driverText));
+}
+
+/** Drop the forecast unless they asked about the trip or the weather. */
+export function spokenPrompt(raw: string): string {
+  const said = driverSaid(raw);
+  if (isTripTalk(said)) return raw.replace(/\s+/g, " ").trim().slice(0, 900);
+  return `The driver said: ${said}. This is free talk. Answer as you normally would. Do not mention the route, the weather, the forecast, the traffic, or the drive unless they asked.`.slice(
+    0,
+    900
+  );
+}
+
 /** Body for xAI's responses API. Grok may use the web, answer normally, and change the trip. */
 export function xaiRequestBody(driverText: string): {
   model: string;
   instructions: string;
-  input: string;
+  input: { role: "user"; content: string }[];
   max_output_tokens: number;
-  search_parameters: { mode: "auto" };
   tools: ReturnType<typeof assistantToolDefs>;
 } {
+  const includeWeb = assistantUsesWeb(driverText);
   return {
     model: "grok-4.7",
-    instructions:
-      "You are Grok, talking with the driver through the StormPath app. Behave as you normally would, and use the web when it helps. StormPath may include facts it measured about this drive. Use those when you talk about the trip. If the message tells you to use only those facts, or to answer in one or two sentences, ignore that and answer normally. When the driver wants a stop added, call add_stop with the place and keep the current destination. If the drive is already going, do not call start_drive or stop_drive for that stop; the phone measures again and continues. Call plan_route for a new destination. Call start_drive only when they ask to leave and the drive has not started. Call stop_drive only when they ask to end the trip. After a tool runs, tell them what happened in a normal sentence.",
-    input: driverText.slice(0, 900),
+    instructions: includeWeb ? FREE_INSTRUCTIONS : TRIP_INSTRUCTIONS,
+    input: [{ role: "user", content: spokenPrompt(driverText) }],
     max_output_tokens: 1200,
-    search_parameters: { mode: "auto" },
-    tools: assistantToolDefs(),
+    tools: assistantToolDefs(includeWeb),
   };
 }
 
 /** Tools the map-button conversation can run. The phone code is added on the server. */
-export function assistantToolDefs() {
+export function assistantToolDefs(includeWeb = true) {
+  const web = includeWeb ? [{ type: "web_search" as const }] : [];
   return [
+    ...web,
     {
       type: "function" as const,
       name: "add_stop",
@@ -96,7 +119,8 @@ export function xaiResponseId(data: unknown): string {
 
 export function xaiFollowUpBody(
   previousResponseId: string,
-  outputs: { callId: string; output: string }[]
+  outputs: { callId: string; output: string }[],
+  includeWeb = true
 ): {
   model: string;
   previous_response_id: string;
@@ -112,8 +136,8 @@ export function xaiFollowUpBody(
       call_id: row.callId,
       output: row.output.slice(0, 2000),
     })),
-    tools: assistantToolDefs(),
-    max_output_tokens: 1200,
+    tools: assistantToolDefs(includeWeb),
+    max_output_tokens: 400,
   };
 }
 
@@ -133,6 +157,8 @@ function argumentsRecord(value: unknown): Record<string, unknown> {
 
 /** Pull the spoken line out of a responses payload. Empty when the model said nothing. */
 export function replyTextFromXai(data: unknown): string {
+  const top = (data as { output_text?: unknown } | null)?.output_text;
+  if (typeof top === "string" && top.trim()) return top.replace(/\s+/g, " ").trim().slice(0, 4000);
   const output = (data as { output?: unknown } | null)?.output;
   if (!Array.isArray(output)) return "";
   const parts: string[] = [];

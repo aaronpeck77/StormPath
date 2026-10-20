@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { assistantBrief, isTripAction } from "../grok/assistantTurn";
+import { holdAppVoice, noteAssistantTalk, releaseAppVoice } from "../grok/assistantFloor";
+import { assistantBrief, fallbackSpeech, isTripAction, isTripTalk } from "../grok/assistantTurn";
 import { readDockCode, sendToAssistant } from "../grok/grokDockClient";
 import { listenForStormy } from "../stormy/listenForStormy";
 import { interpretStormyRequest } from "../stormy/stormyHands";
@@ -68,6 +69,7 @@ export function AssistantButton({ name, packet, onAct }: Props) {
   const clickTimer = useRef<number | null>(null);
   const held = useRef(false);
   const clicks = useRef(0);
+  const holdReply = useRef(false);
 
   useEffect(() => {
     if (phase !== "idle" || !note) return;
@@ -115,15 +117,22 @@ export function AssistantButton({ name, packet, onAct }: Props) {
     }
     const code = readDockCode();
     if (!code) {
-      if (reply?.say) await speak(reply.say);
+      const line = fallbackSpeech("", reply?.say ?? "");
+      if (line) await speak(line);
       else setNote("Connect your assistant in Info.");
       return true;
     }
+    const tripTalk = isTripTalk(question);
+    noteAssistantTalk(tripTalk ? "trip" : "free");
+    holdAppVoice(tripTalk ? 20_000 : 45_000);
     setPhase("thinking");
     const error = await sendToAssistant(code, assistantBrief(question, packet));
+    if (!error) holdReply.current = true;
+    else releaseAppVoice();
     if (runId.current !== id) return false;
     if (error) {
-      if (reply?.say) await speak(reply.say);
+      const line = fallbackSpeech(code, reply?.say ?? "");
+      if (line) await speak(line);
       else setNote(error);
     }
     return true;
@@ -140,6 +149,7 @@ export function AssistantButton({ name, packet, onAct }: Props) {
     runId.current = id;
     setNote("");
     setOpenMic(conversation);
+    holdAppVoice(conversation ? 90_000 : 45_000);
     const playReady = armReadyChime();
     setPhase("listening");
     try {
@@ -166,6 +176,8 @@ export function AssistantButton({ name, packet, onAct }: Props) {
       if (runId.current === id) {
         setOpenMic(false);
         setPhase("idle");
+        if (!holdReply.current) releaseAppVoice();
+        holdReply.current = false;
       }
     }
   }
