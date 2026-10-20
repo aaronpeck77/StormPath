@@ -17,6 +17,7 @@ import {
   assistantUsesWeb,
   functionCallsFromXai,
   replyTextFromXai,
+  spokenReply,
   xaiFollowUpBody,
   xaiRequestBody,
   xaiResponseId,
@@ -165,7 +166,7 @@ export const handler = async (event: NetlifyEvent) => {
         return json(200, assistantOkBody(saved, sentLine));
       }
     }
-    const reply = replyTextFromXai(data) || (usedTool ? sentLine : "");
+    const reply = spokenReply(replyTextFromXai(data), !includeWeb) || (usedTool ? sentLine : "");
     if (!reply) {
       console.error("[grok-assistant] xAI returned no spoken line");
       const saved = await saveAssistantReply(store, ready.payload.dock_code, HEARD_AGAIN);

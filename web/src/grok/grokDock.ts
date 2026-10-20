@@ -503,6 +503,17 @@ export async function prepareAssistantForward(
   };
 }
 
+/** The phone speaks whatever this returns. Hours-old lines are not part of the conversation. */
+export const RECENT_REPLY_MS = 90_000;
+
+export function messagesToSpeak(messages: DockMessage[] | undefined, now = Date.now()): DockMessage[] {
+  const fresh = (messages ?? []).filter((row) => {
+    const at = Date.parse(row.at);
+    return Number.isFinite(at) && now - at >= 0 && now - at <= RECENT_REPLY_MS;
+  });
+  return fresh.slice(-1);
+}
+
 export async function handlePhoneRead(store: DockStore, rawCode: unknown): Promise<DockHttpResult> {
   const code = normalizeDockCode(String(rawCode ?? ""));
   const session = await store.get(code);
@@ -515,7 +526,7 @@ export async function handlePhoneRead(store: DockStore, rawCode: unknown): Promi
     body: JSON.stringify({
       ok: true,
       plan: session.plan,
-      messages: session.messages ?? [],
+      messages: messagesToSpeak(session.messages),
       control: session.control ?? null,
     }),
   };

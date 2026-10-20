@@ -1,24 +1,81 @@
 import { driverSaid, isTripTalk } from "./assistantTurn";
 
 const FREE_INSTRUCTIONS =
-  "You are Grok, the same assistant as in the Grok app, keeping a driver company so they stay awake and focused. Talk as you normally would. Use the web when it helps. This is ordinary conversation. Do not mention StormPath, the route, the trip, the weather, the forecast, or the traffic unless they asked. A few spoken sentences is enough. When they want a stop added, call add_stop with the place and keep the current destination. If the drive is already going, do not call start_drive or stop_drive for that stop. Call plan_route for a new destination. Call start_drive only when they ask to leave and the drive has not started. Call stop_drive only when they ask to end the trip. After a tool runs, tell them what happened in a normal sentence.";
+  "You are Grok, sitting with the driver and talking the way you do in the Grok app. This turn is only what they just said. You do not know their city or their route. Earlier trips are over. Do not mention a place, a route, the weather, or StormPath unless they just asked. Speak one or two short sentences, then stop so they can answer. Use the web when it helps. Call a tool only if they asked to change the destination, add a stop, start driving, or end the trip.";
 
 const TRIP_INSTRUCTIONS =
-  "You are Grok, talking with the driver through the StormPath app. They asked about the trip or the weather. Answer from the StormPath measurements in one or two sentences. Do not search the web. Do not invent a storm or a time. Do not call a tool unless they asked to change the destination, add a stop, start the drive, or end the trip. When they want a stop, call add_stop and keep the current destination. If the drive is already going, do not call start_drive or stop_drive for that stop. Call plan_route for a new destination. Call start_drive only when they ask to leave and the drive has not started. Call stop_drive only when they ask to end the trip. After a tool runs, tell them what happened in a normal sentence.";
+  "You are Grok. They asked one thing about the trip or the weather. Speak one short sentence. A second sentence only if they asked two things. Do not recap the destination, name a city, or retell the drive. Do not mention an earlier trip. Do not search the web. Do not invent a storm or a time. Call a tool only if they asked to change the destination, add a stop, start driving, or end the trip.";
+
+const TRIP_TOKENS = 80;
+const FREE_TOKENS = 160;
+
+/** The last thing they said. A long transcript is usually the previous reply picked up by the mic. */
+export function latestRemark(said: string): string {
+  const text = said.replace(/\s+/g, " ").trim();
+  if (text.length <= 140) return text;
+  const parts = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [text];
+  let last = (parts[parts.length - 1] ?? text).trim();
+  if (last.length > 140) last = last.slice(-140).replace(/^\S*\s/, "").trim();
+  return last || text.slice(-140);
+}
 
 /** Weather and route questions stay on the measurements. Ordinary talk can use the web. */
 export function assistantUsesWeb(driverText: string): boolean {
-  return !isTripTalk(driverSaid(driverText));
+  return !isTripTalk(latestRemark(driverSaid(driverText)));
+}
+
+function askedWhere(said: string): boolean {
+  return /\bwhere am i|where are we(?! going)|what (?:town|city)\b/i.test(said);
+}
+
+function askedRoute(said: string): boolean {
+  return /\b(destination|where are we going|where we going|the route|our route|which route|eta|how long|how much longer|how far|miles left|time left|when do we)\b/i.test(
+    said
+  );
+}
+
+/** Keep the measurement that answers this question. Drop the city and the old route recap. */
+export function tripFactsForQuestion(raw: string, said: string): string {
+  const measured = raw.match(/stormpath measured:\s*(.*)$/i)?.[1] ?? "";
+  let facts = measured.replace(/\s+/g, " ").trim();
+  if (!askedWhere(said)) facts = facts.replace(/The driver is near [^.]+\.?\s*/gi, "");
+  if (!askedRoute(said)) {
+    facts = facts.replace(/Destination:[^.]+\.?\s*/gi, "");
+    facts = facts.replace(/Time left:[^.]+\.?\s*/gi, "");
+    facts = facts.replace(/Distance left:[^.]+\.?\s*/gi, "");
+    facts = facts.replace(/The drive (?:is already going|has not started)\.?\s*/gi, "");
+  }
+  facts = facts.replace(/\s+/g, " ").trim();
+  return facts
+    ? `StormPath measured just now: ${facts} Answer only what they just asked, in one short sentence.`
+    : "Answer in one short sentence. Do not name a city or recap a route.";
 }
 
 /** Drop the forecast unless they asked about the trip or the weather. */
 export function spokenPrompt(raw: string): string {
-  const said = driverSaid(raw);
-  if (isTripTalk(said)) return raw.replace(/\s+/g, " ").trim().slice(0, 900);
-  return `The driver said: ${said}. This is free talk. Answer as you normally would. Do not mention the route, the weather, the forecast, the traffic, or the drive unless they asked.`.slice(
+  const said = latestRemark(driverSaid(raw));
+  if (isTripTalk(said)) {
+    return `The driver said: ${said}. ${tripFactsForQuestion(raw, said)}`.replace(/\s+/g, " ").trim().slice(0, 700);
+  }
+  return `The driver said: ${said}. This is a new turn. You do not know where they are. Do not bring up an earlier drive.`.slice(
     0,
-    900
+    500
   );
+}
+
+/** One or two spoken sentences. Trip answers stay shorter than ordinary talk. */
+export function spokenReply(text: string, tripTalk: boolean): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+  const sentences = clean.match(/[^.!?]+[.!?]+/g);
+  const maxSentences = tripTalk ? 2 : 3;
+  const maxWords = tripTalk ? 32 : 55;
+  const clipped = (sentences && sentences.length > 0 ? sentences.slice(0, maxSentences).join(" ") : clean)
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = clipped.split(/\s+/);
+  if (words.length <= maxWords) return clipped;
+  return `${words.slice(0, maxWords).join(" ").replace(/[,:;]+$/, "")}.`;
 }
 
 /** Body for xAI's responses API. Grok may use the web, answer normally, and change the trip. */
@@ -34,7 +91,7 @@ export function xaiRequestBody(driverText: string): {
     model: "grok-4.7",
     instructions: includeWeb ? FREE_INSTRUCTIONS : TRIP_INSTRUCTIONS,
     input: [{ role: "user", content: spokenPrompt(driverText) }],
-    max_output_tokens: 1200,
+    max_output_tokens: includeWeb ? FREE_TOKENS : TRIP_TOKENS,
     tools: assistantToolDefs(includeWeb),
   };
 }
@@ -69,12 +126,6 @@ export function assistantToolDefs(includeWeb = true) {
         },
         required: ["destination"],
       },
-    },
-    {
-      type: "function" as const,
-      name: "read_trip",
-      description: "Read the trip StormPath last measured for this phone.",
-      parameters: { type: "object", properties: {}, required: [] as string[] },
     },
     {
       type: "function" as const,
@@ -137,7 +188,7 @@ export function xaiFollowUpBody(
       output: row.output.slice(0, 2000),
     })),
     tools: assistantToolDefs(includeWeb),
-    max_output_tokens: 400,
+    max_output_tokens: includeWeb ? FREE_TOKENS : TRIP_TOKENS,
   };
 }
 
