@@ -16,7 +16,6 @@ import { isCrashReportingEnabled } from "../monitoring/sentry";
 import { stormpathVersionChipLabel, stormpathVersionLabel } from "../appVersion";
 import { stormpathBuildFlavor, stormpathFlavorChipLabel } from "../config/buildFlavor";
 import { safeStorage } from "../storage/safeStorage";
-import { GrokDockCard } from "./GrokDockCard";
 import { MapKeyPanel } from "./MapKeyPanel";
 import { PUCK_COLORS, puckColorById, type PuckColorId } from "./puckColor";
 import { StormPathSourcesAttribution } from "./StormPathSourcesAttribution";
@@ -193,7 +192,7 @@ export function AboutSheet({
     `Binary: ${flavor}${flavor === "testflight" ? " (forced Plus)" : flavor === "appstore" ? " (Basic until IAP)" : ""}`,
     `Crash reporting: ${isCrashReportingEnabled() ? "on (automatic for serious errors)" : "off"}`,
     `Online: ${typeof navigator === "undefined" ? "unknown" : navigator.onLine ? "yes" : "no"}`,
-    `Voice: ${settings.voiceLevel}, Assistant: ${settings.assistantEnabled ? "on" : "off"}, Data saver: ${
+    `Voice: ${settings.voiceLevel}, Data saver: ${
       settings.dataSaverEnabled ? "on" : "off"
     }`,
     `Landscape UI: ${settings.landscapeSideHand === "left" ? "left hand" : "right hand"}`,
@@ -455,12 +454,12 @@ export function AboutSheet({
           <details className="about-sheet__panel about-sheet__details">
             <summary>Voice</summary>
             <fieldset className="about-sheet__voice-levels">
-              <legend className="about-sheet__p about-sheet__p--tight">Pick one. The assistant can be on with any of these.</legend>
+              <legend className="about-sheet__p about-sheet__p--tight">Pick one.</legend>
               {(
                 [
                   ["off", "No voice", "Buttons only. Nothing speaks the turns."],
                   ["basic", "Basic voice", "The computer voice already on the phone. Next turn, and Stormy's short lines."],
-                  ["enhanced", "Downloaded voice", "Uses a male Enhanced or Premium voice, such as Alex or Nathan. A Siri voice cannot be used. This does not turn the assistant off."],
+                  ["enhanced", "Downloaded voice", "Uses a male Enhanced or Premium voice, such as Alex or Nathan. A Siri voice cannot be used."],
                 ] as const
               ).map(([id, title, detail]) => (
                 <label key={id} className="about-sheet__setting about-sheet__settings-card">
@@ -515,43 +514,6 @@ export function AboutSheet({
                 {STORMY_COMMANDS.map((line) => (
                   <li key={line}>{line}</li>
                 ))}
-              </ul>
-            </div>
-          </details>
-
-          <details className="about-sheet__panel about-sheet__details">
-            <summary>Your assistant</summary>
-            <label className="about-sheet__setting about-sheet__settings-card">
-              <input
-                type="checkbox"
-                checked={settings.assistantEnabled}
-                onChange={(e) => onSettings({ ...settings, assistantEnabled: e.target.checked })}
-              />
-              <span>
-                <strong>Grok or ChatGPT</strong> — their button on the map. They can run the trip and talk about the
-                weather and the road. This stays on with No voice, Basic voice, or Downloaded voice.
-              </span>
-            </label>
-            {settings.assistantEnabled ? (
-              <p className="about-sheet__p about-sheet__settings-card">
-                <strong>On the map.</strong> One press asks for one thing, a destination, Go, stop, or a question,
-                then the mic closes. Double tap or press and hold to keep talking while the map stays up. It closes
-                when you go quiet. Type their name below. When a voice is on, Stormy still speaks the turns, and this
-                button waits until that line finishes. The car screen, when CarPlay is on, stays the map and the turn
-                prompts. This button stays on the phone.
-              </p>
-            ) : null}
-            <GrokDockCard />
-            <div className="about-sheet__p about-sheet__settings-card">
-              <strong>Commands that work.</strong>
-              <p className="about-sheet__p about-sheet__p--tight">
-                Say it in your own words. One press is one request. Hold or double tap to keep talking.
-              </p>
-              <ul className="about-sheet__bullets">
-                <li>Set a destination.</li>
-                <li>Start the drive, or stop the route.</li>
-                <li>Ask about the weather or the road ahead.</li>
-                <li>Ask a general question.</li>
               </ul>
             </div>
           </details>

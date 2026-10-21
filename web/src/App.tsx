@@ -36,7 +36,6 @@ import { useNearbyPoiTip } from "./hooks/useNearbyPoiTip";
 import { useAdvisoryVoiceGuidance } from "./hooks/useAdvisoryVoiceGuidance";
 import { useCarSessionPublish } from "./hooks/useCarSessionPublish";
 import { isAppVoiceHeld, subscribeAppVoiceHold } from "./grok/assistantFloor";
-import { useGrokDock } from "./grok/useGrokDock";
 import { useJamHop } from "./nav/useJamHop";
 import { JamHopBanner } from "./ui/JamHopBanner";
 import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
@@ -646,18 +645,6 @@ export default function App() {
     setRouteError,
     setTapHint,
     setTollAvoidFailureNote,
-  });
-
-  const grokDriveRef = useRef({ start: () => {}, stop: () => {} });
-  const turnMetersRef = useRef<number | null>(null);
-  useGrokDock({
-    userLngLat,
-    navigationStarted,
-    turnMetersRef,
-    computeRoutes,
-    setTapHint,
-    onStartDrive: () => grokDriveRef.current.start(),
-    onStopDrive: () => grokDriveRef.current.stop(),
   });
 
   const {
@@ -1624,7 +1611,6 @@ export default function App() {
     guidanceLive && nativeNavActive && nativeNavGuidance?.stepRemainingM != null
       ? nativeNavGuidance.stepRemainingM
       : diyMetersToBannerManeuver;
-  turnMetersRef.current = metersToBannerManeuver;
 
   const bannerTravelingStepIndex =
     guidanceLive && nativeNavActive
@@ -2363,7 +2349,6 @@ export default function App() {
     preferredAreaRouteMapRef,
     stopNativeGuidance: stopNative,
   });
-  grokDriveRef.current.start = handleGo;
   const jamHop = useJamHop({
     navigationStarted,
     line: navigationGuidanceGeometry,
@@ -2376,9 +2361,6 @@ export default function App() {
     computeRoutes,
     onGo: handleGo,
   });
-  grokDriveRef.current.stop = () => {
-    if (navigationStartedRef.current) handleStopAndClear();
-  };
 
   const clearRouteRef = useRef(clearRoute);
   clearRouteRef.current = clearRoute;

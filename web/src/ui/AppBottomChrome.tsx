@@ -13,8 +13,7 @@ import { RouteStopsBar } from "./RouteStopsBar";
 import { BottomToolbar } from "./BottomToolbar";
 import { isNarrowPhoneViewport } from "./mapFitLogic";
 import { showTripRefreshButton } from "../nav/tripRefresh";
-import { assistantButtonLabel, stormyButtonFor } from "../voice/voiceLevel";
-import { AssistantButton } from "./AssistantButton";
+import { stormyButtonFor } from "../voice/voiceLevel";
 import { StormyButton, stormyTurnImminent } from "./StormyButton";
 import { useSettingsStore } from "../state/settingsStore";
 import { useTripPlanStore } from "../state/tripPlanStore";
@@ -290,11 +289,8 @@ export function AppBottomChrome({
 }: Props) {
   const planRoutes = useTripPlanStore((s) => s.plan.routes);
   const voiceLevel = useSettingsStore((s) => s.voiceLevel);
-  const assistantEnabled = useSettingsStore((s) => s.assistantEnabled);
-  const assistantName = useSettingsStore((s) => s.assistantName);
-  const assistantOn = assistantEnabled;
-  const stormyOn = stormyButtonFor(voiceLevel, assistantEnabled);
-  const talkOn = stormyOn || assistantOn;
+  const stormyOn = stormyButtonFor(voiceLevel);
+  const talkOn = stormyOn;
   const stormyPacket: StormyPacket = {
     aheadLine: (stormyAheadLine || destinationLabel || "").trim(),
     hazards: stormyHazardLine ? [stormyHazardLine] : [],
@@ -316,11 +312,7 @@ export function AppBottomChrome({
     stops: viaStops.map((stop) => stop.label).filter(Boolean).slice(0, 3),
     here: stormyHere.trim(),
   };
-  const talkButton = stormyOn ? (
-    <StormyButton packet={stormyPacket} onAct={onStormyAct} />
-  ) : assistantOn ? (
-    <AssistantButton name={assistantButtonLabel(assistantName)} packet={stormyPacket} onAct={onStormyAct} />
-  ) : null;
+  const talkButton = stormyOn ? <StormyButton packet={stormyPacket} onAct={onStormyAct} /> : null;
   const placeChoices = talkOn && suggestions.length >= 2 ? suggestions.slice(0, 8) : [];
   return (
     <div className="nav-bottom-stack">

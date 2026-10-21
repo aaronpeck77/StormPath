@@ -30,18 +30,18 @@ const packet = {
 } as StormyPacket;
 
 describe("voice levels", () => {
-  it("starts on no voice and keeps the assistant as its own switch", () => {
+  it("starts on no voice and leaves the assistant dock off", () => {
     expect(voiceLevelFromLegacy("assistant")).toBe("off");
     expect(voiceLevelFromLegacy(null)).toBe("off");
     expect(voiceLevelFromLegacy("basic")).toBe("basic");
-    expect(assistantEnabledFromLegacy("assistant", null)).toBe(true);
+    expect(assistantEnabledFromLegacy("assistant", null)).toBe(false);
     expect(assistantEnabledFromLegacy("basic", null)).toBe(false);
-    expect(assistantEnabledFromLegacy("off", "1")).toBe(true);
+    expect(assistantEnabledFromLegacy("off", "1")).toBe(false);
     expect(voiceSpeaks("off")).toBe(false);
     expect(voiceSpeaks("basic")).toBe(true);
-    expect(stormyButtonFor("basic", false)).toBe(true);
-    expect(stormyButtonFor("basic", true)).toBe(false);
-    expect(stormyButtonFor("enhanced", true)).toBe(false);
+    expect(stormyButtonFor("off")).toBe(false);
+    expect(stormyButtonFor("basic")).toBe(true);
+    expect(stormyButtonFor("enhanced")).toBe(true);
     expect(speechVoiceFlags("enhanced", true)).toEqual({ preferEnhanced: true, forAssistant: true });
     expect(speechVoiceFlags("enhanced", false)).toEqual({ preferEnhanced: true });
     expect(speechVoiceFlags("basic", true)).toEqual({});

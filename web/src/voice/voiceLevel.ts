@@ -17,14 +17,12 @@ export function voiceLevelFromLegacy(saved: string | null | undefined): VoiceLev
   return "off";
 }
 
-/** The old assistant radio turns the switch on until the driver saves the new switch. */
+/** The Grok and ChatGPT dock is shelved. A saved switch stays off. */
 export function assistantEnabledFromLegacy(
-  savedVoice: string | null | undefined,
-  savedFlag: string | null | undefined
+  _savedVoice: string | null | undefined,
+  _savedFlag: string | null | undefined
 ): boolean {
-  if (savedFlag === "1" || savedFlag === "true") return true;
-  if (savedFlag === "0" || savedFlag === "false") return false;
-  return savedVoice === "assistant";
+  return false;
 }
 
 export function voiceSpeaks(level: VoiceLevel): boolean {
@@ -44,8 +42,9 @@ export function speechVoiceFlags(
   return forAssistant ? { preferEnhanced: true, forAssistant: true } : { preferEnhanced: true };
 }
 
-export function stormyButtonFor(level: VoiceLevel, assistantEnabled: boolean): boolean {
-  return !assistantEnabled && (level === "basic" || level === "enhanced");
+/** Stormy's button is on for Basic and Downloaded voice. No voice leaves the map quiet. */
+export function stormyButtonFor(level: VoiceLevel, _assistantEnabled?: boolean): boolean {
+  return level === "basic" || level === "enhanced";
 }
 
 /** The name on the map button. Grok does not hand its custom name over, so the driver types it. */
