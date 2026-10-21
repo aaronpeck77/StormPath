@@ -1,6 +1,6 @@
 /** Same directions in Settings and when a driver asks Stormy about her voice. */
 export const STORMY_VOICE_HINT =
-  "Siri voices in that menu stay inside Siri, so StormPath cannot speak them. Open the iPhone Settings app, tap Accessibility, then Read and Speak, then Voices, then English. Download a male voice labeled Enhanced or Premium, such as Alex, Nathan, or Evan. The download is free. On an older phone that list is under Spoken Content. He uses it the next time he speaks.";
+  "Siri voices in that menu stay inside Siri, so StormPath cannot speak them. Open the iPhone Settings app, tap Accessibility, then Read and Speak, then Voices, then English. Download the Enhanced or Premium voice you want and select it. The download is free. On an older phone that list is under Spoken Content. StormPath speaks that voice the next time it talks.";
 
 export function asksAboutStormyVoice(lower: string): boolean {
   if (/\b(?:ava|zoe)\b/.test(lower) && /\b(?:voice|sound|download|speak|talk)\b/.test(lower)) return true;

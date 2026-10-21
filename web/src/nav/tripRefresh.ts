@@ -1,6 +1,5 @@
 /** What a one-press trip refresh wakes. The destination and Go stay put. */
 export type TripRefreshHandlers = {
-  resetAlong: () => void;
   resyncCamera: () => void;
   bumpMapFit: () => void;
   refreshTraffic: () => void;
@@ -13,10 +12,10 @@ export const TRIP_REFRESH_COOLDOWN_MS = 4_000;
 
 /**
  * Same recovery as leaving the app and coming back, without dropping the trip.
- * Guidance restarts last so the turn banner is cleared and then filled again.
+ * Does not rewind the car to the start of the route. That jumped the turn
+ * banner backward, then the live place snapped it forward again.
  */
 export function runTripRefresh(handlers: TripRefreshHandlers): void {
-  handlers.resetAlong();
   handlers.resyncCamera();
   handlers.bumpMapFit();
   handlers.refreshTraffic();

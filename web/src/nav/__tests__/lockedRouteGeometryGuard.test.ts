@@ -136,6 +136,24 @@ describe("shouldForceAdoptOffRouteNativeGeometry", () => {
     ).toBe(false);
   });
 
+  it("is true when the new line starts back at the missed turn and still reaches the car", () => {
+    const lat = 36.14;
+    const lng = -86.74;
+    const back = 300 / (111320 * Math.cos((lat * Math.PI) / 180));
+    const user: LngLat = [lng, lat];
+    expect(
+      shouldForceAdoptOffRouteNativeGeometry({
+        candidate: [
+          [lng - back, lat],
+          user,
+          [lng + back, lat],
+        ],
+        locked,
+        userLngLat: user,
+      })
+    ).toBe(true);
+  });
+
   it("is true when the driver left the lock and Core starts near GPS", () => {
     const user: LngLat = [-86.74, 36.14];
     expect(

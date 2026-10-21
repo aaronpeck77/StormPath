@@ -130,6 +130,13 @@ export interface StormpathMapboxNavigationPlugin {
     }>;
   }): Promise<{ ok: boolean; count: number }>;
   stop(): Promise<void>;
+  /**
+   * Quit the iOS process after this many milliseconds if it is still in the
+   * background. A drive must not call this.
+   */
+  armIdleExit(options: { afterMs: number }): Promise<void>;
+  /** Forget a pending idle quit. Call when the app is on screen or a drive starts. */
+  cancelIdleExit(): Promise<void>;
   addListener(
     eventName: "progress",
     listenerFunc: (event: NativeNavProgressEvent) => void

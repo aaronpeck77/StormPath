@@ -74,6 +74,9 @@ export function routeGeometryAgreesWithLocked(
  */
 export const OFF_ROUTE_NATIVE_USER_LATERAL_M = 42;
 export const OFF_ROUTE_NATIVE_START_NEAR_USER_M = 150;
+/** Core often starts the new line at the missed turn, a block or two behind the car. */
+export const OFF_ROUTE_NATIVE_LOOKBACK_M = 500;
+export const OFF_ROUTE_NATIVE_ON_LINE_M = 80;
 /** How far along a replacement line we read before deciding it is a missed turn. */
 export const LATE_REROUTE_LOOK_M = 36;
 /** A replacement that leaves this far from the way the car is pointing is already too late. */
@@ -112,7 +115,21 @@ export function shouldForceAdoptOffRouteNativeGeometry(input: {
   if (!userLngLat || !locked || locked.length < 2 || candidate.length < 2) return false;
   const userToLocked = closestPointOnPolyline(userLngLat, locked).lateralMetersApprox;
   if (userToLocked < OFF_ROUTE_NATIVE_USER_LATERAL_M) return false;
-  return haversineMeters(candidate[0]!, userLngLat) < OFF_ROUTE_NATIVE_START_NEAR_USER_M;
+  return candidateReachesUser(candidate, userLngLat);
+}
+
+/** True when the new line starts at the car, or reaches the car within the lookback. */
+function candidateReachesUser(candidate: LngLat[], user: LngLat): boolean {
+  if (haversineMeters(candidate[0]!, user) < OFF_ROUTE_NATIVE_START_NEAR_USER_M) return true;
+  const total = polylineLengthMeters(candidate);
+  const look = Math.min(total, OFF_ROUTE_NATIVE_LOOKBACK_M);
+  const step = 40;
+  for (let d = step; d <= look; d += step) {
+    if (haversineMeters(pointAtAlongMeters(candidate, d), user) <= OFF_ROUTE_NATIVE_ON_LINE_M) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

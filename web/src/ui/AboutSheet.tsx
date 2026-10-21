@@ -459,7 +459,7 @@ export function AboutSheet({
                 [
                   ["off", "No voice", "Buttons only. Nothing speaks the turns."],
                   ["basic", "Basic voice", "The computer voice already on the phone. Next turn, and Stormy's short lines."],
-                  ["enhanced", "Downloaded voice", "Uses a male Enhanced or Premium voice, such as Alex or Nathan. A Siri voice cannot be used."],
+                  ["enhanced", "Downloaded voice", "Speaks with the voice you select on the iPhone. A Siri voice cannot be used."],
                 ] as const
               ).map(([id, title, detail]) => (
                 <label key={id} className="about-sheet__setting about-sheet__settings-card">

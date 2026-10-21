@@ -6,7 +6,7 @@ export type SpeakOptions = {
   language?: string;
   /** Use an installed Enhanced or Premium voice. A Siri voice cannot be used. */
   preferEnhanced?: boolean;
-  /** The assistant's reply. Use a downloaded male voice, not Stormy's voice. */
+  /** Speak with the voice the driver selected, not the built-in computer voice. */
   forAssistant?: boolean;
 };
 

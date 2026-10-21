@@ -54,10 +54,24 @@ enum HorizonAhead {
         return nil
     }
 
-    /// The SDK stores the graph limit in km/h. Unlimited is infinity — leave that blank.
+    /// Unlimited is infinity — leave that blank. A normal sign is 10–95 mph.
     private static func mph(from meta: RoadGraph.Edge.Metadata?) -> Double? {
         guard let limit = meta?.speedLimit else { return nil }
-        let mph = limit.converted(to: UnitSpeed.milesPerHour).value
+        if let ok = postedMph(limit.converted(to: UnitSpeed.milesPerHour).value) {
+            return ok
+        }
+        // The graph number is kilometers per hour. One path labels that number as
+        // meters per second, so a 55 sign converts to about 200 mph and gets dropped.
+        // Read the raw number as km/h only in that case. A real meters-per-second
+        // value for a sign we already accept never gets here.
+        guard limit.unit == UnitSpeed.metersPerSecond, limit.value >= 55, limit.value <= 160 else {
+            return nil
+        }
+        let asKmh = Measurement(value: limit.value, unit: UnitSpeed.kilometersPerHour)
+        return postedMph(asKmh.converted(to: UnitSpeed.milesPerHour).value)
+    }
+
+    private static func postedMph(_ mph: Double) -> Double? {
         guard mph.isFinite, mph >= 10, mph <= 95 else { return nil }
         return mph.rounded()
     }

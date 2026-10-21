@@ -30,9 +30,8 @@ export function voiceSpeaks(level: VoiceLevel): boolean {
 }
 
 /**
- * Downloaded voice does not turn the assistant off. It asks the phone to
- * speak with an installed Enhanced or Premium voice, male when one is there.
- * A Siri voice from the phone menu cannot be used.
+ * Downloaded voice asks the phone to speak with the Enhanced or Premium voice
+ * the driver selected. It does not pick a gender. A Siri voice cannot be used.
  */
 export function speechVoiceFlags(
   level: VoiceLevel,

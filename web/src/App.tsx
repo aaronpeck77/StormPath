@@ -55,6 +55,7 @@ import { spokenPlace } from "./stormy/spokenPlace";
 import { stormyFactsFromImpacts, stormyRoadRefs } from "./stormy/stormySituation";
 import { pickSuggestedActive, scoreTrip } from "./scoring/scoreRoutes";
 import { useAppForeground } from "./hooks/useAppForeground";
+import { useIdleAppExit } from "./nav/idleAppExit";
 import { useTollPreview } from "./nav/useTollPreview";
 import {
   getNwsPollIntervalMs,
@@ -266,6 +267,8 @@ export default function App() {
       : navActiveForGps
         ? 200
         : GPS_STATE_THROTTLE_MS_NORMAL;
+  const appForeground = useAppForeground();
+  useIdleAppExit(navActiveForGps, appForeground);
   const {
     lngLat: userLngLat,
     heading,
@@ -275,7 +278,7 @@ export default function App() {
     liveLngLatRef,
     liveHeadingRef,
     liveSpeedMpsRef,
-  } = useUserLocation(true, {
+  } = useUserLocation(appForeground || navActiveForGps, {
     highRefresh: settingGpsHighRefreshEnabled,
     stateUpdateThrottleMs: gpsStateThrottleMs,
   });
@@ -412,7 +415,6 @@ export default function App() {
   const settingDataSaverEnabled = useSettingsStore((s) => s.dataSaverEnabled);
   const dataSaverHintDismissed = useSettingsStore((s) => s.dataSaverHintDismissed);
   const dismissDataSaverHintAction = useSettingsStore((s) => s.dismissDataSaverHint);
-  const appForeground = useAppForeground();
   const navigationMatchGeometryRef = useRef<LngLat[] | undefined>(undefined);
   const dataSaverMode = isDataSaverMode(settingDataSaverEnabled);
 
@@ -1921,7 +1923,6 @@ export default function App() {
     if (!shouldRunTripRefresh(lastTripRefreshAtMsRef.current || null, now)) return;
     lastTripRefreshAtMsRef.current = now;
     runTripRefresh({
-      resetAlong: () => setAlongHoldResetKey((k) => k + 1),
       resyncCamera: resyncDriveCamera,
       bumpMapFit: () => setFitTrigger((n) => n + 1),
       refreshTraffic: bumpTrafficRefresh,

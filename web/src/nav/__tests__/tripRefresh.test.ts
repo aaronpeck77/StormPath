@@ -10,14 +10,13 @@ describe("runTripRefresh", () => {
   it("wakes the stuck pieces and restarts guidance last", () => {
     const order: string[] = [];
     runTripRefresh({
-      resetAlong: () => order.push("along"),
       resyncCamera: () => order.push("camera"),
       bumpMapFit: () => order.push("fit"),
       refreshTraffic: () => order.push("traffic"),
       refreshForecast: () => order.push("forecast"),
       restartGuidance: () => order.push("guidance"),
     });
-    expect(order).toEqual(["along", "camera", "fit", "traffic", "forecast", "guidance"]);
+    expect(order).toEqual(["camera", "fit", "traffic", "forecast", "guidance"]);
   });
 
   it("ignores a second tap while Core is still coming back", () => {

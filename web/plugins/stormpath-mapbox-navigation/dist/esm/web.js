@@ -35,4 +35,8 @@ export class StormpathMapboxNavigationWeb extends WebPlugin {
   }
 
   async stop() {}
+
+  async armIdleExit() {}
+
+  async cancelIdleExit() {}
 }

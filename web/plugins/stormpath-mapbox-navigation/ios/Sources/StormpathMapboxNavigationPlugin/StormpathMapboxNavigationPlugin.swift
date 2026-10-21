@@ -26,6 +26,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setNativeMapVisible", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setRoadControls", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "armIdleExit", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancelIdleExit", returnType: CAPPluginReturnPromise),
     ]
 
     private var navigationProvider: MapboxNavigationProvider?
@@ -41,6 +43,10 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     private var voiceEnabled = false
     /// Go prepares the audio route, then waits a second before the first prompt.
     private var voiceArmTask: Task<Void, Never>?
+    /// Hard-close after the phone has been off screen with no trip. A suspended
+    /// WebView comes back crooked; a new launch does not.
+    private var idleExitWork: DispatchWorkItem?
+    private var idleExitObserver: NSObjectProtocol?
     /// Last-good puck — reject Core leaps before JS / DriveMap see them.
     private var poseHold = DrivePoseHold()
     private var followCam = DriveFollowCam()
@@ -794,5 +800,49 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         _ = visible
         puckOverlay?.removeFromSuperview()
         puckOverlay = nil
+    }
+
+    public override func load() {
+        idleExitObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.cancelIdleExitWork()
+        }
+    }
+
+    /// Quit only while the process is actually in the background. Opening the
+    /// app cancels this. A drive must not arm it.
+    @objc func armIdleExit(_ call: CAPPluginCall) {
+        let afterMs = call.getDouble("afterMs") ?? 20_000
+        let delay = max(1, afterMs / 1000)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else {
+                call.resolve()
+                return
+            }
+            self.cancelIdleExitWork()
+            let work = DispatchWorkItem { [weak self] in
+                self?.idleExitWork = nil
+                guard UIApplication.shared.applicationState == .background else { return }
+                exit(0)
+            }
+            self.idleExitWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+            call.resolve()
+        }
+    }
+
+    @objc func cancelIdleExit(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            self?.cancelIdleExitWork()
+            call.resolve()
+        }
+    }
+
+    private func cancelIdleExitWork() {
+        idleExitWork?.cancel()
+        idleExitWork = nil
     }
 }
