@@ -98,10 +98,15 @@ export function usePendingRouteRetry(deps: {
       stopped = true;
       if (delayTimer != null) window.clearTimeout(delayTimer);
       if (intervalTimer != null) window.clearInterval(intervalTimer);
-      if (hintTimerRef.current != null) {
-        window.clearTimeout(hintTimerRef.current);
-        hintTimerRef.current = null;
-      }
     };
   }, [retryActive]);
+
+  /* Success clears pending → retryActive flips false; the "Route ready" hint timer
+   * must outlive that, so it is only cancelled on unmount. */
+  useEffect(
+    () => () => {
+      if (hintTimerRef.current != null) window.clearTimeout(hintTimerRef.current);
+    },
+    []
+  );
 }
