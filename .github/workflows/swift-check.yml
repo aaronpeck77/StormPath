@@ -1,0 +1,34 @@
+name: Swift plugin check
+
+# Fast compile check for the Capacitor Swift plugins. Catches API drift in
+# ~3 min instead of discovering it at the end of the 17-min TestFlight
+# archive. Runs when plugin iOS code changes on PRs, and on demand.
+
+on:
+  pull_request:
+    paths:
+      - "web/plugins/**/ios/**"
+      - "web/plugins/**/Package.swift"
+  push:
+    branches: [master]
+    paths:
+      - "web/plugins/**/ios/**"
+      - "web/plugins/**/Package.swift"
+  workflow_dispatch:
+
+jobs:
+  swift-check:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile stormpath-mapbox-navigation
+        working-directory: web/plugins/stormpath-mapbox-navigation
+        run: |
+          xcodebuild \
+            -scheme StormpathMapboxNavigationPlugin \
+            -destination 'generic/platform=iOS' \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            build
