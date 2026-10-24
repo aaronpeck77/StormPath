@@ -1,6 +1,8 @@
 # StormPath Brain (Forge)
 
-**What this is:** A living notebook on Forge for Bill + Cursor agents. It holds ideas, research, and connections so we can improve StormPath over time.
+**What this is:** A living notebook on Forge for Bill + AI coding agents. It holds ideas, research, and connections so we can improve StormPath over time.
+
+**Oct 24, 2026 update (Bill):** The working agent is now **Devin** (Devin Desktop), not Cursor. Same rules apply — read this file, append short thinking notes to `docs/BRAIN_THINKING.md`, build Brain ideas only when Bill asks.
 
 **What this is not:** Not a feature inside the app. Not a runtime service. Nothing here is “plugged into” TestFlight or the App Store unless Bill later asks to *build* a specific idea into product code.
 
@@ -12,14 +14,16 @@
 - Active ship / bugfix work stays in chat and code — Brain is for *later* and *thinking*
 - **Keep thinking** the way people do: while other work is open, jot connections in `docs/BRAIN_THINKING.md`. Do not wait for Bill to say “work on Brain.” Do not install P2/P3 from those notes.
 
-**Current product focus:** Store app stays on **`master`** (4.20.8, leave it alone — wait until it actually appears on the store before any new App Store submit). **Brain Priority 1 is open** on branch **`native/drive`** — Core owns Drive after Go. **Priority 2** (revisit later): Download this trip for offline. **Priority 3** (revisit later, keep — this one sells): interstate / freeway jam bypass. See `docs/NATIVE_TRACK.md`.
+**Current product focus (Oct 24, 2026):** **`master` is the single live track.** `native/drive` was merged into `master` on Oct 24, 2026 at Bill’s request so the latest native work + Devin’s perf utilities could go to TestFlight together. The old dual-track rule below no longer applies — the native experiment succeeded and graduated. TestFlight builds trigger on push to `master` (and manual workflow_dispatch). **Priority 2** (revisit later): Download this trip for offline. **Priority 3** (revisit later, keep — this one sells): interstate / freeway jam bypass. See `docs/NATIVE_TRACK.md` for history.
 
-### Dual track (do not mix)
+### Former dual track (resolved Oct 24, 2026)
 
-| Track | Branch | Rule |
-|-------|--------|------|
-| Live App Store / gold-restore web Drive | `master` | Do not merge native experiments here. Do not “fix” store nav from `native/drive`. |
-| Native Drive (P1) | `native/drive` | Daily work. TestFlight only when Bill asks. Never App Store until he promotes. |
+| Track | Branch | What happened |
+|-------|--------|---------------|
+| Live App Store / gold-restore web Drive | `master` | Now carries everything — master is the live line. |
+| Native Drive (P1) | `native/drive` | Soak succeeded → merged into `master` Oct 24, 2026. Branch kept on remote for history; daily work is on `master` or short-lived feature branches (e.g. `devin/…`). |
+
+*Why the rule existed (archive):* When `native/drive` started, Bill didn’t know if the native nav experiment would beat the web Drive, so master was protected from it. The experiment won — native following is now the product.
 
 ### Stability gate (store path — leave alone for now)
 
@@ -32,11 +36,15 @@ Store binary accepted ~Sep 11, 2026 (4.20.8). Soak testers. Do not bump / resubm
 
 ---
 
-## Priority 1 — Native-feel navigation (OPEN on `native/drive`)
+## Priority 1 — Native-feel navigation (GRADUATED Oct 24, 2026)
+
+**Resolved:** The native Drive soak succeeded. `native/drive` was merged into `master` Oct 24, 2026 and is what TestFlight ships now. Daily Drive work happens on `master` or short-lived feature branches.
+
+*Original notes (archive):*
 
 **Bill’s call (Sep 11, 2026):** Store version is good enough to leave alone. What’s missing is **following** — puck on screen, cam that does not freeze or fly to Canada — vs Apple / Google / Waze. Thicken the **native shell**; keep web for weather, Route info, About.
 
-**Do not:** throw away the Capacitor/web app. Do not rewrite About/weather in SwiftUI. Do not merge this into `master` or ship store from this branch until Bill says the soak is better than gold.
+**Do not:** throw away the Capacitor/web app. Do not rewrite About/weather in SwiftUI. ~~Do not merge this into `master` or ship store from this branch until Bill says the soak is better than gold.~~ *(resolved — merged Oct 24)*
 
 ### Build order
 
@@ -233,6 +241,6 @@ Full steps: `docs/CLOUDFLARE_TILES.md` (RainViewer section). Same pattern as Tom
 - Read and append `docs/BRAIN_THINKING.md` when current work sheds light on a parked priority
 - Add new sections below as ideas appear; connect them when related
 - **Never** treat Brain content as something to auto-ship into the IPA / App Store
-- **Priority 1** is native-feel Drive on `native/drive` (opened / TestFlight soak). **Priority 2** is offline trip download — revisit later, do not build until Bill asks. **Priority 3** is interstate / freeway jam bypass — **keep**, revisit later, do not build until Bill asks. Dark Sky is archive-only — do not pull it forward
-- Do not merge `native/drive` into `master` or run the App Store workflow from it unless Bill asks
+- **Branch map (Oct 24, 2026):** `master` is the live track — native Drive P1 graduated and is merged. `native/drive` remains on the remote for history. New work goes on short-lived feature branches → PR → `master`. TestFlight fires on every push to `master`; App Store workflow only when Bill explicitly asks.
+- **Priority 2** is offline trip download — revisit later, do not build until Bill asks. **Priority 3** is interstate / freeway jam bypass — **keep**, revisit later, do not build until Bill asks. Dark Sky is archive-only — do not pull it forward.
 - Implement other Brain ideas only when Bill explicitly asks
