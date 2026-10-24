@@ -54,7 +54,8 @@ final class TripOfflinePack {
     /// so no separate nav descriptor is needed here.
     private func tilesetDescriptors(accessToken: String) -> [TilesetDescriptor] {
         #if canImport(MapboxMaps)
-        return [OfflineManager(for: .init(accessToken: accessToken)).createTilesetDescriptor()]
+        let opts = TilesetDescriptorOptions(styleURI: .streets, zoomRange: 0...16, tilesets: nil)
+        return [OfflineManager().createTilesetDescriptor(for: opts)]
         #else
         return []
         #endif
@@ -99,13 +100,13 @@ final class TripOfflinePack {
         let load = tileStore.loadTileRegion(
             forId: packId,
             loadOptions: options,
-            onProgress: { p in
+            progress: { p in
                 progress(Progress(packId: packId,
                                   completedCount: p.completedResourceCount,
                                   completedSize: p.completedResourceSize,
                                   requiredResourceCount: p.requiredResourceCount))
             },
-            onFinished: { [weak self] result in
+            completion: { [weak self] result in
                 self?.activeLoads.removeValue(forKey: packId)
                 switch result {
                 case .success: completion(.success(packId))
@@ -143,10 +144,10 @@ final class TripOfflinePack {
             forId: PackKind.trip.rawValue,
             loadOptions: options,
             estimateOptions: TileRegionEstimateOptions(),
-            onProgress: { _ in },
-            onFinished: { result in
+            progress: { _ in },
+            completion: { result in
                 switch result {
-                case .success(let est): completion(.success(est.estimatedStorageSize))
+                case .success(let est): completion(.success(est.storageSize))
                 case .failure(let e): completion(.failure(e))
                 }
             }
@@ -193,13 +194,13 @@ final class TripOfflinePack {
         let load = tileStore.loadTileRegion(
             forId: packId,
             loadOptions: options,
-            onProgress: { p in
+            progress: { p in
                 progress(Progress(packId: packId,
                                   completedCount: p.completedResourceCount,
                                   completedSize: p.completedResourceSize,
                                   requiredResourceCount: p.requiredResourceCount))
             },
-            onFinished: { [weak self] result in
+            completion: { [weak self] result in
                 self?.activeLoads.removeValue(forKey: packId)
                 switch result {
                 case .success: completion(.success(packId))
@@ -218,12 +219,8 @@ final class TripOfflinePack {
 
     func remove(packId: String, completion: @escaping (Result<Void, Error>) -> Void) {
         cancel(packId: packId)
-        tileStore.removeTileRegion(forId: packId) { result in
-            switch result {
-            case .success: completion(.success(()))
-            case .failure(let e): completion(.failure(e))
-            }
-        }
+        tileStore.removeTileRegion(forId: packId)
+        completion(.success(()))
     }
 
     /// Current on-disk state for the About sheet / diagnostics.

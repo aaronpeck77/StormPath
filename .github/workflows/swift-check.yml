@@ -27,12 +27,10 @@ jobs:
         working-directory: web/plugins/stormpath-mapbox-navigation
         run: |
           # SPM lists dependency schemes too — pick ours by name, not schemes[0].
-          SCHEME=$(xcodebuild -list -json 2>/dev/null | python3 -c "
-import json,sys
-schemes = json.load(sys.stdin)['workspace']['schemes']
-match = [s for s in schemes if 'StormpathMapboxNavigation' in s]
-print(match[0] if match else schemes[0])
-")
+          xcodebuild -list -json 2>/dev/null > /tmp/schemes.json || true
+          SCHEME=$(python3 -c "import json; s=json.load(open('/tmp/schemes.json'))['workspace']['schemes']; m=[x for x in s if 'stormpath' in x.lower()]; print(m[0] if m else '')")
+          echo "Available: $(python3 -c "import json; print(json.load(open('/tmp/schemes.json'))['workspace']['schemes'])")"
+          if [ -z "$SCHEME" ]; then echo "::error::No Stormpath scheme found"; exit 1; fi
           echo "Building scheme: $SCHEME"
           xcodebuild \
             -scheme "$SCHEME" \
