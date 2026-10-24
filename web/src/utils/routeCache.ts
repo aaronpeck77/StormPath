@@ -5,10 +5,16 @@
  * Reuses cached routes when preferences haven't changed.
  */
 
-import type { TripPlan } from "../nav/types";
+import type { LngLat, TripPlan } from "../nav/types";
+
+export interface CachedRoutePayload {
+  plan: TripPlan;
+  /** The snapped route endpoint (may differ from the raw picked coord). */
+  routeDestination: LngLat;
+}
 
 interface CachedRoute {
-  plan: TripPlan;
+  payload: CachedRoutePayload;
   timestamp: number;
   routeHash: string;
 }
@@ -49,9 +55,9 @@ export function hashRouteRequest(
  * Get a cached route if available and fresh.
  *
  * @param routeHash - Route hash from hashRouteRequest
- * @returns Cached trip plan or null
+ * @returns Cached route payload or null
  */
-export function getCachedRoute(routeHash: string): TripPlan | null {
+export function getCachedRoute(routeHash: string): CachedRoutePayload | null {
   const cached = routeCache.get(routeHash);
   if (!cached) return null;
 
@@ -61,18 +67,18 @@ export function getCachedRoute(routeHash: string): TripPlan | null {
     return null;
   }
 
-  return cached.plan;
+  return cached.payload;
 }
 
 /**
  * Cache a route.
  *
  * @param routeHash - Route hash from hashRouteRequest
- * @param plan - Trip plan to cache
+ * @param payload - Plan + snapped destination to cache
  */
-export function cacheRoute(routeHash: string, plan: TripPlan): void {
+export function cacheRoute(routeHash: string, payload: CachedRoutePayload): void {
   routeCache.set(routeHash, {
-    plan,
+    payload,
     timestamp: Date.now(),
     routeHash,
   });

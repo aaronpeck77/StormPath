@@ -6,6 +6,7 @@ import { useRouteCompareStore } from "../state/routeCompareStore";
 import { useTripPlanStore } from "../state/tripPlanStore";
 import { useUiStore } from "../state/uiStore";
 import { isAbortError, routeFetchUserMessage } from "../utils/fetchResilient";
+import { cacheRoute, getCachedRoute, hashRouteRequest } from "../utils/routeCache";
 import { buildMockTripBetween } from "./emptyTrip";
 import {
   computeRoutesFailed,
@@ -150,7 +151,31 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
       try {
         let p: TripPlan;
         let destForMap: [number, number] = end;
-        if (mapboxToken) {
+
+        /* Route cache: skip the Mapbox call for a repeat request within the TTL.
+         * Only cache "clean" plans — storm alerts, toll exclusion, jam detours,
+         * and mid-trip preserveNavigation all change the right answer. */
+        const eligibleForCache =
+          Boolean(mapboxToken) &&
+          !opts?.preserveNavigation &&
+          !opts?.excludeToll &&
+          !opts?.jamExcludePoints?.length &&
+          !(stormAlertsForRouting && stormAlertsForRouting.length > 0);
+        const routeHash = eligibleForCache
+          ? hashRouteRequest(userLngLat, end, {
+              via: viaCoords,
+              isPlus,
+              stormEnabled: isPlus && stormEnabled,
+              trail: isPlus && learnWhereIDrive,
+              dest: tripDestLabel,
+            })
+          : null;
+        const cached = routeHash ? getCachedRoute(routeHash) : null;
+
+        if (cached) {
+          p = cached.plan;
+          destForMap = cached.routeDestination;
+        } else if (mapboxToken) {
           const built = await buildTripFromMapbox(
             mapboxToken,
             userLngLat,
@@ -176,6 +201,9 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
           );
           p = built.plan;
           destForMap = built.routeDestination;
+          if (routeHash) {
+            cacheRoute(routeHash, { plan: built.plan, routeDestination: built.routeDestination });
+          }
           if (built.snapNotice) {
             setTapHint(built.snapNotice);
             window.setTimeout(() => setTapHint(null), 8500);
