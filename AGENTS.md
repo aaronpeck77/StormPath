@@ -50,6 +50,8 @@ Driving-first multi-route navigation / "route command center" with Mapbox map, t
 
 ## Rules of engagement
 
+- **Batch pushes (Oct 24, 2026):** Do NOT `git push` until Bill says so. Stack multiple completed changes into local commits; he chooses when to push — saves daily GitHub Actions/minute limits. Still commit locally per completed unit of work so progress is never lost.
+- **Netlify is credit-conserved (Oct 24, 2026):** Do NOT trigger Netlify deploys unless there is a real need (function change, `public/` page update, or Bill asks). The `netlify-ignore.sh` gate already skips most builds — respect it; do not work around it.
 - Do not deploy to Netlify / TestFlight / App Store unless Bill asks.
 - Do not commit `.env` files or Apple certificates/keys.
 - Netlify should not rebuild on every GitHub push: `web/scripts/netlify-ignore.sh` skips Drive/UI-only and branch deploys. Only functions / `public/` / Netlify config should spend build minutes (see `docs/NETLIFY_HOSTING.md`).
