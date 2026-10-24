@@ -57,6 +57,20 @@ Driving-first multi-route navigation / "route command center" with Mapbox map, t
 - If he also has SiteBible open, treat them as separate products/folders.
 - Keep thinking about parked Brain items (`docs/BRAIN.md`, `docs/BRAIN_THINKING.md`) while doing other work. Jot connections. Do not build P2/P3 until he asks.
 
+## Standing task: shrink App.tsx incrementally (Oct 24, 2026)
+
+**Any time** a task touches a subsystem that lives inside `web/src/App.tsx` (~3,000 lines of hook orchestration), the agent is expected — *without Bill asking* — to check whether that subsystem's cluster of hooks/state/callbacks can be extracted into its own hook or component (`hooks/use*.ts`, `nav/`, `ui/`). Bill will not remember to ask; do it as part of the fix.
+
+- Extract **one** cluster per task, keep behavior identical, verify `tsc --noEmit` + `npm test` + `npm run build` still pass.
+- Already extracted (do not re-extract): settings → `state/settingsStore.ts`, trip plan → `state/tripPlanStore.ts`, route compute → `nav/useComputeRoutes.ts`, status banners → `ui/AppStatusBanners.tsx`, map stage → `ui/AppMapStage.tsx`, bottom/top chrome, about/hazard sheets.
+- Prefer extraction opportunities in code being changed anyway — never refactor untouched subsystems just for the split.
+
+## Conventions learned (Devin, Oct 24 2026)
+
+- `master` is the single live track; `native/drive` graduated/merged. TestFlight fires on every push to `master` — put `[skip ci]` in docs-only commits to save macOS runner minutes.
+- Keep requests cheap: `dedupeRequest` is wired into Mapbox Directions + OpenWeather; `routeCache` is wired into `useComputeRoutes` (clean plans only). Reuse these utils for new network paths.
+- Do not re-add speculative utilities unless a real consumer exists (syncQueue, optimisticUpdates, memoryManager, useOfflineState were removed — safeStorage/useAppOnline already cover it).
+
 ## After web runs
 
-Ask Bill what he wants next. If he is on the native track, stay on `native/drive` (pose hold → follow-cam → puck). Store/`master` only when he asks.
+Ask Bill what he wants next. Work happens on short-lived feature branches → PR → `master`. TestFlight fires on every push to `master` (or manual workflow_dispatch). App Store only when Bill explicitly asks.
