@@ -68,9 +68,28 @@ Cue phrases: *“open Brain P1”* (already open), *“TestFlight this native br
 
 ---
 
-## Priority 2 — Download this trip for offline (REVISIT later)
+## Priority 2 — Download this trip for offline (OPEN Oct 24, 2026)
 
-**Bill’s call (Sep 12, 2026):** Good feature. Do **not** build it in the current native Drive soak. Park it here as the next Brain priority after P1 following is solid on a phone.
+**Bill’s call (Oct 24, 2026):** OPEN — build it. Real-world failures Oct 24: could not plan or see puck starting a trip in a park dead zone; WiFi→cell handoff in driveway caused goofy map (43 camera write fails). User mental model: GPS keeps working, last map+route should keep working too. Correct — GPS is satellite, not cellular.
+
+**The spec (agreed Oct 24):**
+
+| Layer | What | Size |
+|-------|------|------|
+| Route skeleton | Polyline, turn list, ETA, distance — the WHOLE trip even 3-day | Tiny (~KB), always kept |
+| Tile corridor | Map + nav tiles, **lead window ~100-200mi ahead** — NOT the whole corridor on long trips | Bounded, slides forward as data returns |
+| Overview tiles | Low-zoom tiles covering the whole route so zoom-out shows it | A handful of tiles, cheap |
+| Home region | ~50mi around home, always-on, auto-refresh on WiFi ~weekly | User-toggled in About, shows MB estimate |
+
+**Dead-zone cold start (the park scenario):** boot must restore cached map region + saved trip (`tripCache.ts`/`useActiveTripCache`) + puck FIRST, before network. Show "Offline — saved trip ready" + "Return home" (`returnTripLeg.ts` already exists — reverse saved geometry, zero API calls). Nav-tile packs let Core compute NEW routes offline inside cached regions.
+
+**Idle shutdown is compatible:** TileStore + IndexedDB trip cache are both on-disk — survive hard kill, phone off, restart. Battery fix (exit when backgrounded + no active route) does not break this model; locked route keeps app alive.
+
+**Stops are refresh points:** gas/food/hotel = natural moments data returns; sliding window refreshes then, not continuously.
+
+**What it is not:** "Download the US." Not full StormPath-offline — weather/radar/NWS/live traffic still need network. Planning a brand-new route still needs either data OR nav tiles covering both endpoints.
+
+**Phone safety:** bounded working set — don't decode/hold far-ahead geometry; bounded tiles = bounded memory = cool phone.
 
 **What it is:** After a route is planned (on Wi‑Fi), a StormPath control: **Download this trip**. Native `TileStore` saves a **corridor tube** around the locked A/B (plus a bit around start/end) — map tiles + navigation tiles — so Core can follow and reroute with no cell. When the trip ends, offer **Remove downloaded trip**.
 
