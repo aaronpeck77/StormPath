@@ -51,6 +51,7 @@ Driving-first multi-route navigation / "route command center" with Mapbox map, t
 ## Rules of engagement
 
 - **Batch pushes (Oct 24, 2026):** Do NOT `git push` until Bill says so. Stack multiple completed changes into local commits; he chooses when to push — saves daily GitHub Actions/minute limits. Still commit locally per completed unit of work so progress is never lost.
+- **Drive-test gate (Oct 24, 2026):** After a TestFlight build with real behavior changes, STOP adding feature edits until Bill has done a simple test and a real drive test and reported back. Too many stacked edits without driving makes failures impossible to pin down. Fix only what his test reports; park new ideas in Brain until then.
 - **Netlify is credit-conserved (Oct 24, 2026):** Do NOT trigger Netlify deploys unless there is a real need (function change, `public/` page update, or Bill asks). The `netlify-ignore.sh` gate already skips most builds — respect it; do not work around it.
 - Do not deploy to Netlify / TestFlight / App Store unless Bill asks.
 - Do not commit `.env` files or Apple certificates/keys.
