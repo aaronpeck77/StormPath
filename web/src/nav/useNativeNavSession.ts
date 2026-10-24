@@ -23,6 +23,8 @@ import type { LngLat, RouteTurnStep } from "./types";
 import type { TripStop } from "./routeWaypoints";
 import type { NavigationPositionState } from "../hooks/useNavigationPosition";
 import { bumpDriveDiag, noteDriveDiagRouteLock, resetDriveDiag } from "./driveDiagnostics";
+import { downloadTripCorridor } from "./offlineTripPacks";
+import { useTripPlanStore } from "../state/tripPlanStore";
 import { createNativeDrivePoseHold } from "./nativeDrivePoseHold";
 import type { CoreRerouteHealth } from "./rerouteOwner";
 import {
@@ -428,6 +430,13 @@ export function useNativeNavSession(opts: {
       }
       recordMapboxUsage("navTrips");
       setNativeNavActive(true);
+      /* Brain P2: kick the corridor pack download at Go so the dead-zone
+       * stretch ahead already has map + nav tiles on disk. Fire-and-forget —
+       * navigation starts now, the pack fills in behind it. */
+      const lockedRoute = useTripPlanStore.getState().plan.routes[0];
+      if (accessToken && lockedRoute?.geometry?.length) {
+        void downloadTripCorridor(accessToken, lockedRoute.geometry).catch(() => undefined);
+      }
       return true;
     } catch (err) {
       console.warn("[nativeNav] start failed", err);
