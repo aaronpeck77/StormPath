@@ -3,6 +3,7 @@ import CoreLocation
 import Capacitor
 import MapboxCommon
 import MapboxNavigationCore
+import Turf
 #if canImport(MapboxMaps)
 import MapboxMaps
 #endif
@@ -21,8 +22,9 @@ import MapboxMaps
  *   startTripPack, tripPackProgress, estimateTripPack, cancelTripPack,
  *   removeTripPack, setHomeRegion, homeRegionStatus.
  *
- * NOTE: Nav SDK 3.x APIs — verified against plugin's existing imports at
- * build time in CI. The pack ids are stable so a re-Go replaces, not stacks.
+ * Nav tiles for offline routing come from Core's PredictiveCacheConfig along
+ * the corridor (already wired in makeCoreConfig) — this pack's job is the
+ * map tiles + region retention, which is what the dead-zone park trip lacked.
  */
 final class TripOfflinePack {
 
@@ -41,26 +43,21 @@ final class TripOfflinePack {
         }
     }
 
-    private let tileStore = TileStore.shared
-    private var activeLoads: [String: TileRegionCancelable] = [:]
-    private var progressHandlers: [String: (Progress) -> Void] = [:]
+    /// Same TileStore Core uses (shared default instance, on disk).
+    private var tileStore: TileStore { TileStore.__shared() }
+    private var activeLoads: [String: Cancelable] = [:]
 
     // MARK: - Descriptors
 
-    /// Navigation tiles descriptor (offline routing/rerouting inside the pack).
-    /// Map tiles come from OfflineManager when the Maps SDK is linked; the nav
-    /// descriptor alone still gives Core offline routing which is the P2 core.
-    private func tilesetDescriptors(accessToken: String) -> [TilesetDescriptor] {
-        var out: [TilesetDescriptor] = []
-        // Navigation graph tiles — offline routing inside the region.
-        if let nav = TilesetDescriptorFactory.getSpecificVersion(version: "latest") {
-            out.append(nav)
-        }
+    /// Map tileset descriptor from the Maps SDK offline manager. The nav graph
+    /// along the corridor is already warmed by Core's PredictiveCacheConfig,
+    /// so no separate nav descriptor is needed here.
+    private func tilesetDescriptors() -> [TilesetDescriptor] {
         #if canImport(MapboxMaps)
-        let offlineManager = OfflineManager(resourceOptions: .init(accessToken: accessToken))
-        out.append(offlineManager.createTilesetDescriptor())
+        return [OfflineManager().createTilesetDescriptor()]
+        #else
+        return []
         #endif
-        return out
     }
 
     // MARK: - Trip corridor pack
@@ -68,7 +65,6 @@ final class TripOfflinePack {
     /// Download a corridor pack around a route polyline.
     /// - Parameters:
     ///   - coords: route geometry [lng,lat]
-    ///   - accessToken: Mapbox token for the tileset descriptors
     ///   - progress: fraction updates for the UI
     ///   - completion: packId or error
     func startTripPack(coords: [[Double]],
@@ -89,12 +85,12 @@ final class TripOfflinePack {
         let geometry = Geometry.lineString(LineString(points))
         let options = TileRegionLoadOptions(
             geometry: geometry,
-            descriptors: tilesetDescriptors(accessToken: accessToken),
+            descriptors: tilesetDescriptors(),
             metadata: ["kind": PackKind.trip.rawValue, "created": Date().timeIntervalSince1970],
             acceptExpired: true,
             networkRestriction: .none
         )
-        let load = tileStore.loadTileRegion(
+        let load = tileStore.__loadTileRegion(
             forId: packId,
             loadOptions: options,
             progress: { p in
@@ -103,14 +99,15 @@ final class TripOfflinePack {
                                   completedSize: p.completedResourceSize,
                                   requiredResourceCount: p.requiredResourceCount))
             },
-            completion: { [weak self] result in
+            completion: { [weak self] (result: Result<TileRegion, TileRegionError>) in
                 self?.activeLoads.removeValue(forKey: packId)
-                self?.progressHandlers.removeValue(forKey: packId)
-                completion(result.map { _ in packId })
+                switch result {
+                case .success: completion(.success(packId))
+                case .failure(let e): completion(.failure(e))
+                }
             }
         )
         activeLoads[packId] = load
-        progressHandlers[packId] = progress
     }
 
     /// Estimate pack size before downloading so the UI can say "~84 MB".
@@ -127,22 +124,22 @@ final class TripOfflinePack {
             return
         }
         let geometry = Geometry.lineString(LineString(points))
-        tileStore.estimateTileRegion(
+        let options = TileRegionLoadOptions(
+            geometry: geometry,
+            descriptors: tilesetDescriptors(),
+            metadata: nil,
+            acceptExpired: true,
+            networkRestriction: .none
+        )
+        tileStore.__estimateTileRegion(
             forId: PackKind.trip.rawValue,
-            loadOptions: TileRegionLoadOptions(
-                geometry: geometry,
-                descriptors: tilesetDescriptors(accessToken: accessToken),
-                metadata: nil,
-                acceptExpired: true,
-                networkRestriction: .none
-            ),
-            estimateOptions: TileRegionEstimateOptions(
-                errorMargin: 0.1,
-                timeEstimationTimeout: 5_000,
-                extraOptions: nil
-            ),
-            completion: { result in
-                completion(result.map { $0.estimatedStorageSize })
+            loadOptions: options,
+            estimateOptions: nil,
+            completion: { (result: Result<TileRegionEstimateResult, TileRegionError>) in
+                switch result {
+                case .success(let est): completion(.success(est.estimatedStorageSize))
+                case .failure(let e): completion(.failure(e))
+                }
             }
         )
     }
@@ -177,12 +174,12 @@ final class TripOfflinePack {
         let geometry = Geometry.polygon(Polygon([ring]))
         let options = TileRegionLoadOptions(
             geometry: geometry,
-            descriptors: tilesetDescriptors(accessToken: accessToken),
+            descriptors: tilesetDescriptors(),
             metadata: ["kind": PackKind.home.rawValue, "created": Date().timeIntervalSince1970],
             acceptExpired: true,
             networkRestriction: .none
         )
-        let load = tileStore.loadTileRegion(
+        let load = tileStore.__loadTileRegion(
             forId: packId,
             loadOptions: options,
             progress: { p in
@@ -191,10 +188,12 @@ final class TripOfflinePack {
                                   completedSize: p.completedResourceSize,
                                   requiredResourceCount: p.requiredResourceCount))
             },
-            completion: { [weak self] result in
+            completion: { [weak self] (result: Result<TileRegion, TileRegionError>) in
                 self?.activeLoads.removeValue(forKey: packId)
-                self?.progressHandlers.removeValue(forKey: packId)
-                completion(result.map { _ in packId })
+                switch result {
+                case .success: completion(.success(packId))
+                case .failure(let e): completion(.failure(e))
+                }
             }
         )
         activeLoads[packId] = load
@@ -208,14 +207,17 @@ final class TripOfflinePack {
 
     func remove(packId: String, completion: @escaping (Result<Void, Error>) -> Void) {
         cancel(packId: packId)
-        tileStore.removeTileRegion(forId: packId) { result in
-            completion(result.map { _ in () })
+        tileStore.__removeTileRegion(forId: packId) { (result: Result<TileRegion, TileRegionError>) in
+            switch result {
+            case .success: completion(.success(()))
+            case .failure(let e): completion(.failure(e))
+            }
         }
     }
 
     /// Current on-disk state for the About sheet / diagnostics.
     func status(packId: String, completion: @escaping ([String: Any]) -> Void) {
-        tileStore.tileRegion(forId: packId) { result in
+        tileStore.__tileRegion(forId: packId) { (result: Result<TileRegion, TileRegionError>) in
             switch result {
             case .success(let region):
                 completion([
@@ -223,8 +225,7 @@ final class TripOfflinePack {
                     "exists": true,
                     "completedResourceCount": region.completedResourceCount,
                     "completedResourceSize": region.completedResourceSize,
-                    "requiredResourceCount": region.requiredResourceCount,
-                    "expires": (try? region.expires?.timeIntervalSince1970) ?? 0
+                    "requiredResourceCount": region.requiredResourceCount
                 ])
             case .failure:
                 completion(["packId": packId, "exists": false])

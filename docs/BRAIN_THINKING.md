@@ -235,3 +235,7 @@ Show the cached corridor as an outlined bubble on the RT-view route that moves i
 ### 2026-10-24 - P2 build start: plugin structure found, TileStore gap confirmed
 
 Plugin: `web/plugins/stormpath-mapbox-navigation/ios/Sources/StormpathMapboxNavigationPlugin/` — DriveNativeMap, DriveFollowCam, DrivePoseHold, DrivePuckOverlay, HorizonAhead, StormpathMapboxNavigationPlugin.swift. Existing: `PredictiveCacheManager` + `PredictiveCacheConfig` already wired (in-drive warm). MISSING: any TileStore/offline pack API — no `TileStore`, no `OfflineRegion`, no corridor pack call. Build target: add `TripOfflinePack` manager (TileStore corridor + home region) alongside PredictiveCacheManager, expose to web via Capacitor bridge methods (startCorridorPack/estimatePackSize/cancelPack/removePack/homeRegionSet).
+
+### 2026-10-24 - Bill idea: next-hazard countdown ticker (Dr/Mp) + route-line hazard tinting
+
+One glanceable line in Drive view: "next thing + distance" ("Storm cell · 8 mi") — third surface of the same fused route-ahead pipeline that feeds progress rail (spatial) + advisory bar (scrolling). Hazards ON the route line = tint existing polyline segments by severity, matching rail colors — one mental model, many views. Cautions: must yield to active turn guidance (same eyeline = crash risk); tint the existing polyline, no new overlay layers. Natural fit beside the sliding-window bubble idea.
