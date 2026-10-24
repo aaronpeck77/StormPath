@@ -143,7 +143,7 @@ final class TripOfflinePack {
         tileStore.estimateTileRegion(
             forId: PackKind.trip.rawValue,
             loadOptions: options,
-            estimateOptions: TileRegionEstimateOptions(preciseEstimationTimeout: 5, timeout: 0),
+            estimateOptions: TileRegionEstimateOptions(errorMargin: 0.05, preciseEstimationTimeout: 5, timeout: 0, extraOptions: nil),
             progress: { _ in },
             completion: { result in
                 switch result {
