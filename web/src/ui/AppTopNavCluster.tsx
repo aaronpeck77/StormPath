@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { LngLat, RouteTurnStep } from "../nav/types";
 import type { PersonalForkOffer } from "../personalForks";
 import { TopGuidanceBar } from "./TopGuidanceBar";
@@ -33,6 +33,8 @@ type Props = {
   radarFrameClockLabel: string | null;
   hazardApproachAlertsActive: boolean;
   driveApproachBannerPick: DriveApproachBannerPick;
+  /** Jam-hop strip — rendered inside the cluster so it gets sizing + pointer events. */
+  jamHopSlot?: ReactNode;
   showTrafficBypassCta: boolean;
   bypassBusy: boolean;
   setDemoApproachBannerOn: Dispatch<SetStateAction<boolean>>;
@@ -67,6 +69,7 @@ export function AppTopNavCluster({
   radarFrameClockLabel,
   hazardApproachAlertsActive,
   driveApproachBannerPick,
+  jamHopSlot = null,
   showTrafficBypassCta,
   bypassBusy,
   setDemoApproachBannerOn,
@@ -130,6 +133,7 @@ export function AppTopNavCluster({
             openDemoTrafficBypassCompareMock={openDemoTrafficBypassCompareMock}
             handleTrafficBypassFromHere={handleTrafficBypassFromHere}
           />
+          {jamHopSlot}
         </div>
       </div>
     </div>

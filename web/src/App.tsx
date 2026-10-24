@@ -3072,6 +3072,16 @@ export default function App() {
               radarFrameClockLabel={radarFrameClockLabel}
               hazardApproachAlertsActive={hazardApproachAlertsActive}
               driveApproachBannerPick={driveApproachBannerPick}
+              jamHopSlot={
+                jamHop.offer ? (
+                  <JamHopBanner
+                    offer={jamHop.offer}
+                    busy={jamHop.busy}
+                    onTake={jamHop.take}
+                    onDismiss={jamHop.dismiss}
+                  />
+                ) : null
+              }
               showTrafficBypassCta={showTrafficBypassCta}
               bypassBusy={bypassBusy}
               setDemoApproachBannerOn={setDemoApproachBannerOn}
@@ -3080,14 +3090,6 @@ export default function App() {
               openDemoTrafficBypassCompareMock={openDemoTrafficBypassCompareMock}
               handleTrafficBypassFromHere={handleTrafficBypassFromHere}
             />
-            ) : null}
-            {jamHop.offer ? (
-              <JamHopBanner
-                offer={jamHop.offer}
-                busy={jamHop.busy}
-                onTake={jamHop.take}
-                onDismiss={jamHop.dismiss}
-              />
             ) : null}
             {showProgressRail && (
               <AppProgressRail

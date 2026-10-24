@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { METERS_PER_MILE } from "../constants";
-import { exitsAlongSteps, jamHopOffer, jamStretchAhead } from "../jamDrive";
+import { exitsAlongSteps, jamHopDismissKey, jamHopOffer, jamStretchAhead } from "../jamDrive";
 import { destinationPointMeters } from "../routeGeometry";
 import type { LngLat } from "../types";
 
@@ -65,5 +65,59 @@ describe("jam stretch and exits", () => {
     expect(offer?.fromQueue).toBe(true);
     expect(offer?.canTakeNow).toBe(false);
     expect((offer?.leaveByMeters ?? 0) / MI).toBeCloseTo(9, 0);
+  });
+
+  it("does not offer a hop for a backup starting 20 mi ahead", () => {
+    const offer = jamHopOffer({
+      line: lineNorth(30),
+      userAlongMeters: 0,
+      speedMps: 27,
+      congestion: samples(30, 20, 26),
+      steps: [{ distanceM: 30 * MI, maneuverType: "continue" }],
+    });
+    expect(offer).toBeNull();
+  });
+
+  it("offers a backup 3 mi ahead with the distance in the title", () => {
+    const offer = jamHopOffer({
+      line: lineNorth(30),
+      userAlongMeters: 0,
+      speedMps: 27,
+      congestion: samples(30, 3, 9),
+      steps: [{ distanceM: 30 * MI, maneuverType: "continue" }],
+    });
+    expect(offer?.ok).toBe(true);
+    expect(offer?.fromQueue).toBe(false);
+    expect(offer?.title).toContain("3.0 mi");
+    expect(offer?.tailMeters ?? 0).toBeGreaterThan(0);
+    expect(offer?.clearMeters ?? 0).toBeGreaterThan(offer?.tailMeters ?? 0);
+  });
+
+  it("still offers in-queue hops regardless of the lookahead gate", () => {
+    const offer = jamHopOffer({
+      line: lineNorth(30),
+      userAlongMeters: 4 * MI,
+      speedMps: 4,
+      congestion: samples(30, 3, 9),
+      steps: [
+        { distanceM: 5 * MI, maneuverType: "continue" },
+        { distanceM: MI, maneuverType: "off ramp", exitNumber: "18" },
+      ],
+    });
+    expect(offer?.ok).toBe(true);
+    expect(offer?.fromQueue).toBe(true);
+  });
+
+  it("dismiss key ignores speed-driven leaveBy jitter", () => {
+    const base = {
+      line: lineNorth(30),
+      userAlongMeters: 0,
+      congestion: samples(30, 3, 9),
+      steps: [{ distanceM: 30 * MI, maneuverType: "continue" }],
+    };
+    const fast = jamHopOffer({ ...base, speedMps: 30 });
+    const slow = jamHopOffer({ ...base, speedMps: 12 });
+    expect(fast?.leaveByMeters).not.toBe(slow?.leaveByMeters);
+    expect(jamHopDismissKey(fast!)).toBe(jamHopDismissKey(slow!));
   });
 });

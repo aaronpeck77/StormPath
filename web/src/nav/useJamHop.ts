@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ComputeRoutesFn } from "./useComputeRoutes";
-import { jamHopOffer, type JamHopOffer } from "./jamDrive";
+import { jamHopDismissKey, jamHopOffer, type JamHopOffer } from "./jamDrive";
 import type { LngLat, RouteTurnStep } from "./types";
 
 export function useJamHop(opts: {
@@ -28,7 +28,7 @@ export function useJamHop(opts: {
     });
   }, [opts.navigationStarted, opts.line, opts.userAlongMeters, opts.speedMps, opts.congestion, opts.steps]);
 
-  const key = offer ? `${Math.round(offer.leaveByMeters)}:${Math.round(offer.rejoinMeters)}` : null;
+  const key = offer ? jamHopDismissKey(offer) : null;
   const visible = offer && key !== dismissedKey ? offer : null;
 
   return {
@@ -47,7 +47,11 @@ export function useJamHop(opts: {
         .then((result) => {
           if (result.ok) opts.onGo();
         })
-        .finally(() => setBusy(false));
+        .finally(() => {
+          setBusy(false);
+          /* Success or failure, the offer is spent — don't re-show the same stretch. */
+          setDismissedKey(jamHopDismissKey(current));
+        });
     },
   };
 }
