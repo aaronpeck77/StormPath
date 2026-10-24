@@ -3,6 +3,7 @@ import { resolveHourFeelsLikeF } from "../forecast/localForecastVisual";
 import { formatEtaDuration } from "../ui/formatEta";
 import type { PointHourlyForecast, PointHourlyInterval } from "./tomorrowIo";
 import { enqueueOpenWeatherGet } from "./openWeatherPacing";
+import { dedupeRequest } from "../utils/requestDeduplication";
 
 export { isOpenWeatherRateLimited } from "./openWeatherPacing";
 
@@ -18,7 +19,12 @@ export async function fetchCurrentWeatherHeadline(
   url.searchParams.set("appid", apiKey);
   url.searchParams.set("units", "imperial");
 
-  const res = await enqueueOpenWeatherGet(url.toString());
+  /* Dedupe identical concurrent calls — advisory bar, nowcast, and corridor
+   * sampling can all ask for the same point at once; share one queue slot. */
+  const res = await dedupeRequest(
+    `ow${url.pathname}:${lat.toFixed(3)},${lon.toFixed(3)}`,
+    () => enqueueOpenWeatherGet(url.toString())
+  );
   if (!res.ok) {
     const t = await res.text();
     throw new Error(`OpenWeather ${res.status}: ${t.slice(0, 160)}`);
@@ -83,7 +89,12 @@ export async function fetchCurrentNowcast(
   url.searchParams.set("appid", apiKey);
   url.searchParams.set("units", "imperial");
 
-  const res = await enqueueOpenWeatherGet(url.toString());
+  /* Dedupe identical concurrent calls — advisory bar, nowcast, and corridor
+   * sampling can all ask for the same point at once; share one queue slot. */
+  const res = await dedupeRequest(
+    `ow${url.pathname}:${lat.toFixed(3)},${lon.toFixed(3)}`,
+    () => enqueueOpenWeatherGet(url.toString())
+  );
   if (!res.ok) {
     const t = await res.text();
     throw new Error(`OpenWeather nowcast ${res.status}: ${t.slice(0, 160)}`);
@@ -212,7 +223,12 @@ export async function fetchOpenWeatherPointHourly24h(
   url.searchParams.set("units", "imperial");
   url.searchParams.set("cnt", "8");
 
-  const res = await enqueueOpenWeatherGet(url.toString());
+  /* Dedupe identical concurrent calls — advisory bar, nowcast, and corridor
+   * sampling can all ask for the same point at once; share one queue slot. */
+  const res = await dedupeRequest(
+    `ow${url.pathname}:${lat.toFixed(3)},${lon.toFixed(3)}`,
+    () => enqueueOpenWeatherGet(url.toString())
+  );
   if (!res.ok) {
     const t = await res.text();
     throw new Error(`OpenWeather hourly ${res.status}: ${t.slice(0, 160)}`);
@@ -272,7 +288,12 @@ export async function fetchForecastWindowHeadline(
   url.searchParams.set("units", "imperial");
   url.searchParams.set("cnt", "8");
 
-  const res = await enqueueOpenWeatherGet(url.toString());
+  /* Dedupe identical concurrent calls — advisory bar, nowcast, and corridor
+   * sampling can all ask for the same point at once; share one queue slot. */
+  const res = await dedupeRequest(
+    `ow${url.pathname}:${lat.toFixed(3)},${lon.toFixed(3)}`,
+    () => enqueueOpenWeatherGet(url.toString())
+  );
   if (!res.ok) {
     const t = await res.text();
     throw new Error(`OpenWeather forecast ${res.status}: ${t.slice(0, 160)}`);
@@ -356,7 +377,12 @@ export async function weatherForecastAlongRoute(
       url.searchParams.set("units", "imperial");
       url.searchParams.set("cnt", String(Math.min(40, Math.max(8, Math.ceil(totalEtaMinutes / 180) + 2))));
 
-      const res = await enqueueOpenWeatherGet(url.toString());
+      /* Dedupe identical concurrent calls — corridor sampling can hit the
+   * same point twice along a route; share one queue slot. */
+      const res = await dedupeRequest(
+        `ow${url.pathname}:${lat.toFixed(3)},${lng.toFixed(3)}`,
+        () => enqueueOpenWeatherGet(url.toString())
+      );
       if (!res.ok) throw new Error(`${res.status}`);
       const data = (await res.json()) as {
         list?: {
