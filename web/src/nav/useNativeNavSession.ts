@@ -23,7 +23,7 @@ import type { LngLat, RouteTurnStep } from "./types";
 import type { TripStop } from "./routeWaypoints";
 import type { NavigationPositionState } from "../hooks/useNavigationPosition";
 import { bumpDriveDiag, noteDriveDiagRouteLock, resetDriveDiag } from "./driveDiagnostics";
-import { downloadTripCorridor } from "./offlineTripPacks";
+import { downloadTripCorridor, removeTripCorridor } from "./offlineTripPacks";
 import { useTripPlanStore } from "../state/tripPlanStore";
 import { createNativeDrivePoseHold } from "./nativeDrivePoseHold";
 import type { CoreRerouteHealth } from "./rerouteOwner";
@@ -199,6 +199,9 @@ export function useNativeNavSession(opts: {
     } catch {
       /* ignore */
     }
+    /* Brain P2: trip ended — release the corridor pack so storage doesn't
+     * pile up. Home region stays; it covers dead-zone starts near home. */
+    void removeTripCorridor();
     prepareKeyRef.current = "";
     liveWindowRef.current = null;
     windowStartAlongRef.current = 0;

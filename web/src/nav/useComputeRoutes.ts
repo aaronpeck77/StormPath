@@ -7,6 +7,8 @@ import { useTripPlanStore } from "../state/tripPlanStore";
 import { useUiStore } from "../state/uiStore";
 import { isAbortError, routeFetchUserMessage } from "../utils/fetchResilient";
 import { cacheRoute, getCachedRoute, hashRouteRequest } from "../utils/routeCache";
+import { loadReturnTripLeg } from "./returnTripLeg";
+import { polylineLengthMeters } from "./routeGeometry";
 import { buildMockTripBetween } from "./emptyTrip";
 import {
   computeRoutesFailed,
@@ -251,6 +253,40 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
       } catch (e) {
         if (isAbortError(e)) return computeRoutesFailed("");
         const raw = routeFetchUserMessage(e) ?? (e instanceof Error ? e.message : String(e));
+
+        /* Brain P2 offline fallback: planning failed with no data, but the
+         * inbound leg is saved — reverse it for a "Return home" plan when the
+         * requested destination matches the saved return target (~500m). */
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          const leg = loadReturnTripLeg();
+          if (leg?.geometry && leg.geometry.length >= 2) {
+            const distToReturnTarget = polylineLengthMeters([end, leg.returnToLngLat]);
+            if (distToReturnTarget <= 500) {
+              const reversed = [...leg.geometry].reverse();
+              const lengthM = polylineLengthMeters(reversed);
+              const returnPlan: TripPlan = {
+                originLabel: leg.outboundDestLabel,
+                destinationLabel: leg.returnToLabel,
+                routes: [{
+                  id: "return-trip-offline",
+                  role: "fastest",
+                  label: `Return to ${leg.returnToLabel}`,
+                  geometry: reversed,
+                  baseEtaMinutes: Math.max(1, Math.round(lengthM / 1609.344 / 40 * 60)),
+                }],
+              };
+              setPlan(returnPlan);
+              setRouteSlotOrder(["return-trip-offline"]);
+              setPreviewLegIndex(0);
+              setDestLngLat(leg.returnToLngLat);
+              setViewMode("route");
+              setSearchExpanded(false);
+              setRouteError("Offline — route from your saved drive. Live traffic resumes when signal returns.");
+              return computeRoutesSucceeded();
+            }
+          }
+        }
+
         if (opts?.excludeToll) {
           return computeRoutesFailed(tollAvoidFailureExplanation(raw));
         }
