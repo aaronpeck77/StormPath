@@ -26,8 +26,11 @@ jobs:
       - name: Compile stormpath-mapbox-navigation
         working-directory: web/plugins/stormpath-mapbox-navigation
         run: |
+          # SPM auto-generates the scheme from the package name, not the target.
+          SCHEME=$(xcodebuild -list -json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['workspace']['schemes'][0])")
+          echo "Building scheme: $SCHEME"
           xcodebuild \
-            -scheme StormpathMapboxNavigationPlugin \
+            -scheme "$SCHEME" \
             -destination 'generic/platform=iOS' \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO \
