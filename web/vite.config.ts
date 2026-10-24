@@ -121,6 +121,12 @@ export default defineConfig(({ command, mode }) => ({
       ? [{ find: /^mapbox-gl$/, replacement: "mapbox-gl/dist/mapbox-gl-csp" }]
       : [],
   },
+  worker: {
+    /* The offline-tiles worker wrapper (src/map/mapboxOfflineWorker.ts) pulls in the
+     * stock mapbox-gl-csp worker via `importScripts`, which only exists in classic
+     * workers — emit iife, not an ES module. */
+    format: "iife",
+  },
   build: {
     rollupOptions: {
       output: {

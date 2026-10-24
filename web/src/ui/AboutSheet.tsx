@@ -4,6 +4,7 @@ import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
 import { getBasicBannerDebugLine } from "../ads/adMobClient";
 import { driveDiagSnapshot, formatDriveDiagLines } from "../nav/driveDiagnostics";
 import { getDedupeStats } from "../utils/requestDeduplication";
+import { approxBytes, countTiles, getOfflineTileStats } from "../map/offlineTileCache";
 import { getRouteCacheHitStats, getRouteCacheStats } from "../utils/routeCache";
 import { getPlusEntitlementDebugSnapshot } from "../billing/revenueCat";
 import { useRevenueCat } from "../billing/useRevenueCat";
@@ -122,6 +123,7 @@ export function AboutSheet({
   const env = useMemo(() => getWebEnv(), []);
   const [supportNote, setSupportNote] = useState("");
   const [iapDebugLine, setIapDebugLine] = useState("");
+  const [offlineTileLine, setOfflineTileLine] = useState("Offline tiles: …");
   /* Phase 7 — native IAP through RevenueCat. `iap.ready` is true only when configure
    * resolved successfully (native + non-empty `VITE_REVENUECAT_API_KEY_IOS`); when false,
    * the panel below falls back to the existing `env.upgradeUrl` link. */
@@ -165,6 +167,15 @@ export function AboutSheet({
     void getPlusEntitlementDebugSnapshot().then((line) => {
       if (!cancelled) setIapDebugLine(line);
     });
+    /* IDB count/bytes are async — the line renders "…" until the sums land. */
+    setOfflineTileLine("Offline tiles: …");
+    void Promise.all([countTiles(), approxBytes()]).then(([count, bytes]) => {
+      if (cancelled) return;
+      const mb = (bytes / (1024 * 1024)).toFixed(1);
+      setOfflineTileLine(
+        `Offline tiles: ${count} saved (~${mb} MB) · ${getOfflineTileStats().servedOffline} served offline`
+      );
+    });
     return () => {
       cancelled = true;
     };
@@ -206,6 +217,7 @@ export function AboutSheet({
     getBasicBannerDebugLine(),
     `API dedupe: ${getDedupeStats().hits} shared / ${getDedupeStats().misses} unique`,
     `Route cache: ${getRouteCacheHitStats().hits} hits / ${getRouteCacheHitStats().misses} misses (${getRouteCacheStats().count} stored)`,
+    offlineTileLine,
     `Service worker: ${typeof navigator !== "undefined" && "serviceWorker" in navigator ? "registered" : "n/a"}`,
     ...driveDiagLines,
   ];
