@@ -137,6 +137,46 @@ export interface StormpathMapboxNavigationPlugin {
   armIdleExit(options: { afterMs: number }): Promise<void>;
   /** Forget a pending idle quit. Call when the app is on screen or a drive starts. */
   cancelIdleExit(): Promise<void>;
+  /**
+   * Brain P2 — download a TileStore corridor pack (map + nav tiles) along the
+   * locked route polyline so the trip keeps rendering and can reroute offline.
+   * Coordinates are [lng,lat] pairs. Resolves with the stable pack id.
+   */
+  startTripPack(options: {
+    accessToken: string;
+    coordinates: [number, number][];
+  }): Promise<{ packId: string }>;
+  /** Estimate corridor pack size in bytes before downloading (~\"84 MB\" UI). */
+  estimateTripPack(options: {
+    accessToken: string;
+    coordinates: [number, number][];
+  }): Promise<{ estimatedBytes: number }>;
+  /** Cancel an in-flight corridor download. Pack stays on disk as-is. */
+  cancelTripPack(): Promise<void>;
+  /** Delete the corridor pack from TileStore (trip ended / user removed). */
+  removeTripPack(): Promise<void>;
+  /** On-disk state for the corridor pack — About sheet + diagnostics. */
+  tripPackStatus(): Promise<{
+    packId: string;
+    exists: boolean;
+    completedResourceCount?: number;
+    completedResourceSize?: number;
+    requiredResourceCount?: number;
+  }>;
+  /** Download/refresh a bounded home-region pack around [lng,lat] (~40km default). */
+  setHomeRegion(options: {
+    accessToken: string;
+    center: [number, number];
+    radiusMeters?: number;
+  }): Promise<{ packId: string }>;
+  /** On-disk state for the home-region pack. */
+  homeRegionStatus(): Promise<{
+    packId: string;
+    exists: boolean;
+    completedResourceCount?: number;
+    completedResourceSize?: number;
+    requiredResourceCount?: number;
+  }>;
   addListener(
     eventName: "progress",
     listenerFunc: (event: NativeNavProgressEvent) => void
