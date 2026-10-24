@@ -130,10 +130,16 @@ export default defineConfig(({ command, mode }) => ({
          * the heavy map module only downloads when the route view first mounts. */
         manualChunks: (id) => {
           if (id.includes("node_modules/mapbox-gl/")) return "mapbox-gl";
+          if (id.includes("node_modules/@revenuecat/")) return "revenuecat";
+          if (id.includes("node_modules/@capacitor/")) return "capacitor";
+          if (id.includes("src/ui/")) return "ui";
+          if (id.includes("src/nav/")) return "nav";
+          if (id.includes("src/map/")) return "map";
           return undefined;
         },
       },
     },
+    chunkSizeWarningLimit: 1000,
   },
   server: {
     /* Lets you open the dev URL from your phone on the same Wi‑Fi (e.g. http://192.168.x.x:5173).
