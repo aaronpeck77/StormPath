@@ -19,7 +19,7 @@ import MapboxMaps
  *
  * Both packs live in MapboxCommon.TileStore — on disk, survive kills/reboots.
  * Web calls these through the StormpathMapboxNavigation plugin methods:
- *   startTripPack, tripPackProgress, estimateTripPack, cancelTripPack,
+ *   startTripPack, tripPackStatus, estimateTripPack, cancelTripPack,
  *   removeTripPack, setHomeRegion, homeRegionStatus.
  *
  * Nav tiles for offline routing come from Core's PredictiveCacheConfig along
@@ -43,8 +43,8 @@ final class TripOfflinePack {
         }
     }
 
-    /// Same TileStore Core uses (shared default instance, on disk).
-    private var tileStore: TileStore { TileStore.__shared() }
+    /// Same TileStore the rest of the SDK uses (Maps SDK shared default, on disk).
+    private var tileStore: TileStore { TileStore.default }
     private var activeLoads: [String: Cancelable] = [:]
 
     // MARK: - Descriptors
@@ -52,12 +52,16 @@ final class TripOfflinePack {
     /// Map tileset descriptor from the Maps SDK offline manager. The nav graph
     /// along the corridor is already warmed by Core's PredictiveCacheConfig,
     /// so no separate nav descriptor is needed here.
-    private func tilesetDescriptors() -> [TilesetDescriptor] {
+    private func tilesetDescriptors(accessToken: String) -> [TilesetDescriptor] {
         #if canImport(MapboxMaps)
-        return [OfflineManager().createTilesetDescriptor()]
+        return [OfflineManager(for: .init(accessToken: accessToken)).createTilesetDescriptor()]
         #else
         return []
         #endif
+    }
+
+    private func packError(_ code: Int, _ msg: String) -> NSError {
+        NSError(domain: "TripOfflinePack", code: code, userInfo: [NSLocalizedDescriptionKey: msg])
     }
 
     // MARK: - Trip corridor pack
@@ -78,28 +82,30 @@ final class TripOfflinePack {
             return LocationCoordinate2D(latitude: c[1], longitude: c[0])
         }
         guard points.count >= 2 else {
-            completion(.failure(NSError(domain: "TripOfflinePack", code: 1,
-                                        userInfo: [NSLocalizedDescriptionKey: "need at least 2 coords"])))
+            completion(.failure(packError(1, "need at least 2 coords")))
             return
         }
         let geometry = Geometry.lineString(LineString(points))
-        let options = TileRegionLoadOptions(
+        guard let options = TileRegionLoadOptions(
             geometry: geometry,
-            descriptors: tilesetDescriptors(),
+            descriptors: tilesetDescriptors(accessToken: accessToken),
             metadata: ["kind": PackKind.trip.rawValue, "created": Date().timeIntervalSince1970],
             acceptExpired: true,
             networkRestriction: .none
-        )
-        let load = tileStore.__loadTileRegion(
+        ) else {
+            completion(.failure(packError(2, "could not build tile region options")))
+            return
+        }
+        let load = tileStore.loadTileRegion(
             forId: packId,
             loadOptions: options,
-            progress: { p in
+            onProgress: { p in
                 progress(Progress(packId: packId,
                                   completedCount: p.completedResourceCount,
                                   completedSize: p.completedResourceSize,
                                   requiredResourceCount: p.requiredResourceCount))
             },
-            completion: { [weak self] (result: Result<TileRegion, TileRegionError>) in
+            onFinished: { [weak self] result in
                 self?.activeLoads.removeValue(forKey: packId)
                 switch result {
                 case .success: completion(.success(packId))
@@ -119,23 +125,26 @@ final class TripOfflinePack {
             return LocationCoordinate2D(latitude: c[1], longitude: c[0])
         }
         guard points.count >= 2 else {
-            completion(.failure(NSError(domain: "TripOfflinePack", code: 1,
-                                        userInfo: [NSLocalizedDescriptionKey: "need at least 2 coords"])))
+            completion(.failure(packError(1, "need at least 2 coords")))
             return
         }
         let geometry = Geometry.lineString(LineString(points))
-        let options = TileRegionLoadOptions(
+        guard let options = TileRegionLoadOptions(
             geometry: geometry,
-            descriptors: tilesetDescriptors(),
+            descriptors: tilesetDescriptors(accessToken: accessToken),
             metadata: nil,
             acceptExpired: true,
             networkRestriction: .none
-        )
-        tileStore.__estimateTileRegion(
+        ) else {
+            completion(.failure(packError(2, "could not build tile region options")))
+            return
+        }
+        tileStore.estimateTileRegion(
             forId: PackKind.trip.rawValue,
             loadOptions: options,
-            estimateOptions: nil,
-            completion: { (result: Result<TileRegionEstimateResult, TileRegionError>) in
+            estimateOptions: TileRegionEstimateOptions(),
+            onProgress: { _ in },
+            onFinished: { result in
                 switch result {
                 case .success(let est): completion(.success(est.estimatedStorageSize))
                 case .failure(let e): completion(.failure(e))
@@ -155,8 +164,7 @@ final class TripOfflinePack {
         let packId = PackKind.home.rawValue
         cancel(packId: packId)
         guard center.count >= 2 else {
-            completion(.failure(NSError(domain: "TripOfflinePack", code: 1,
-                                        userInfo: [NSLocalizedDescriptionKey: "need home center"])))
+            completion(.failure(packError(1, "need home center")))
             return
         }
         let c = LocationCoordinate2D(latitude: center[1], longitude: center[0])
@@ -172,23 +180,26 @@ final class TripOfflinePack {
         }
         ring.append(ring[0])
         let geometry = Geometry.polygon(Polygon([ring]))
-        let options = TileRegionLoadOptions(
+        guard let options = TileRegionLoadOptions(
             geometry: geometry,
-            descriptors: tilesetDescriptors(),
+            descriptors: tilesetDescriptors(accessToken: accessToken),
             metadata: ["kind": PackKind.home.rawValue, "created": Date().timeIntervalSince1970],
             acceptExpired: true,
             networkRestriction: .none
-        )
-        let load = tileStore.__loadTileRegion(
+        ) else {
+            completion(.failure(packError(2, "could not build tile region options")))
+            return
+        }
+        let load = tileStore.loadTileRegion(
             forId: packId,
             loadOptions: options,
-            progress: { p in
+            onProgress: { p in
                 progress(Progress(packId: packId,
                                   completedCount: p.completedResourceCount,
                                   completedSize: p.completedResourceSize,
                                   requiredResourceCount: p.requiredResourceCount))
             },
-            completion: { [weak self] (result: Result<TileRegion, TileRegionError>) in
+            onFinished: { [weak self] result in
                 self?.activeLoads.removeValue(forKey: packId)
                 switch result {
                 case .success: completion(.success(packId))
@@ -207,7 +218,7 @@ final class TripOfflinePack {
 
     func remove(packId: String, completion: @escaping (Result<Void, Error>) -> Void) {
         cancel(packId: packId)
-        tileStore.__removeTileRegion(forId: packId) { (result: Result<TileRegion, TileRegionError>) in
+        tileStore.removeTileRegion(forId: packId) { result in
             switch result {
             case .success: completion(.success(()))
             case .failure(let e): completion(.failure(e))
@@ -217,7 +228,7 @@ final class TripOfflinePack {
 
     /// Current on-disk state for the About sheet / diagnostics.
     func status(packId: String, completion: @escaping ([String: Any]) -> Void) {
-        tileStore.__tileRegion(forId: packId) { (result: Result<TileRegion, TileRegionError>) in
+        tileStore.tileRegion(forId: packId) { result in
             switch result {
             case .success(let region):
                 completion([
