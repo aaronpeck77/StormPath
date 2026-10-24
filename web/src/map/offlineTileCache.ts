@@ -419,21 +419,18 @@ export function wrapFetchWithOfflineTiles(
           }
           if (cached) {
             noteServed();
-            /* The slow network may still land — keep filling the cache. */
-            void networkPromise
-              .then((res) => storeResponseBody(key, res))
-              .catch(() => undefined);
+            /* A late network response is harvested by the settled branch below. */
             resolve(cachedRecordToResponse(cached));
             return;
           }
-          /* No disk copy — the network is the only hope; keep waiting on it. */
+          /* No disk copy — the network is the only hope; keep waiting on it.
+           * (The settled branch below already stores the body.) */
           networkPromise.then(
             (res) => {
               if (signal?.aborted) {
                 reject(abortError());
                 return;
               }
-              storeResponseBody(key, res);
               resolve(res);
             },
             (e) => reject(e)
