@@ -254,6 +254,15 @@ export async function getTile(key: string): Promise<TileRecord | null> {
         resolve(null);
       }
     });
+    if (record && Date.now() - record.storedAt > OFFLINE_TILE_MAX_AGE_MS) {
+      /* Mapbox ToS 3.2: never serve a device-cached resource older than 30 days. */
+      try {
+        db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).delete(key);
+      } catch {
+        /* swallow */
+      }
+      return null;
+    }
     if (record) {
       /* Fire-and-forget LRU touch — never block the tile on a bookkeeping write. */
       void (async () => {
