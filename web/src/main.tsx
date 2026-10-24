@@ -164,4 +164,11 @@ hydrateSafeStorage().finally(() => {
       /* ignore */
     }
   }, EB_RELOAD_LOOP_MS + 1_000);
+
+  /* Register service worker for offline support (web only, not iOS) */
+  if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('Service worker registration failed:', err);
+    });
+  }
 });
