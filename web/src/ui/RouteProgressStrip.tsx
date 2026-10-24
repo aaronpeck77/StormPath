@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   type RouteAlert,
   corridorHighlightHex,
@@ -7,9 +7,16 @@ import {
 } from "../nav/routeAlerts";
 import { layoutStripAlerts } from "../nav/stripAlertLayout";
 import { RADAR_HEAVY_THRESHOLD } from "../nav/constants";
+import { driveRailProgressFraction } from "../nav/driveRailProgress";
 import { closestAlongRouteMeters, polylineLengthMeters } from "../nav/routeGeometry";
 import { turnStepAlongBounds } from "../nav/turnStepAlong";
 import type { LngLat, RouteTurnStep } from "../nav/types";
+import {
+  radarRailSliceGradientCss,
+  radarSliceAtLoopT,
+  RADAR_RAIL_LOOP_MS,
+  type RadarSliceSample,
+} from "../nav/radarRailSlice";
 
 export type StormProgressBand = { startM: number; endM: number; lineHex: string; severity?: string };
 
@@ -29,6 +36,13 @@ type Props = {
   layout?: "fullBleed" | "side";
   /** NWS polygon overlap along the route — same spans as colored lines on the map. */
   stormBands?: StormProgressBand[];
+  /**
+   * Live mosaic samples along the corridor. Painted as a thin slice in map radar
+   * colors (green/yellow/red) where a cell actually crosses the line.
+   */
+  radarSliceSamples?: RadarSliceSample[];
+  /** Mosaic frames (past → now). When 2+, the rail plays the storm moving. */
+  radarSliceLoopFrames?: RadarSliceSample[][];
   /** Tap colored corridor span → open details for that strip alert (same payload as the map corridor). */
   onCorridorBandClick?: (alert: RouteAlert) => void;
   /** Tap storm-colored span → NWS details for warnings overlapping that segment. */
@@ -69,6 +83,8 @@ export function RouteProgressStrip({
   turnSteps,
   layout = "fullBleed",
   stormBands = [],
+  radarSliceSamples,
+  radarSliceLoopFrames,
   onCorridorBandClick,
   onStormBandClick,
   driveEndsEmphasis = false,
@@ -85,12 +101,16 @@ export function RouteProgressStrip({
     geometry?.length && userLngLat ? closestAlongRouteMeters(userLngLat, geometry).alongMeters : 0;
   const userAlong =
     userAlongMeters != null && Number.isFinite(userAlongMeters) ? userAlongMeters : internalAlong;
-  const remainingM = totalM > 0 ? Math.max(0, totalM - userAlong) : 0;
-  const polylineProgress = totalM > 0 ? Math.min(1, Math.max(0, userAlong / totalM)) : 0;
-  const denom = tripOdometerM + remainingM;
-  const tripProgress =
-    tripRelativeProgress && denom > 1 ? Math.min(1, Math.max(0, tripOdometerM / denom)) : polylineProgress;
-  const progress = tripProgress;
+  /**
+   * Same fraction Route Info uses for its YOU line. Odometer keeps the puck moving
+   * when along-meters snap back; a real along that is farther still wins.
+   */
+  const progress = driveRailProgressFraction({
+    totalM,
+    userAlongM: userAlong,
+    tripOdometerM,
+    tripRelative: tripRelativeProgress,
+  });
 
   const laidOut = useMemo(() => {
     if (!geometry?.length || totalM <= 0) return [];
@@ -160,6 +180,32 @@ export function RouteProgressStrip({
     });
   }, [stormBands, totalM]);
 
+  const [radarLoopT, setRadarLoopT] = useState(0);
+  const playRadarLoop = (radarSliceLoopFrames?.length ?? 0) >= 2;
+
+  useEffect(() => {
+    if (!playRadarLoop) return;
+    let raf = 0;
+    let lastPaint = 0;
+    const tick = (now: number) => {
+      if (now - lastPaint >= 80) {
+        lastPaint = now;
+        setRadarLoopT(((now / RADAR_RAIL_LOOP_MS) % 1 + 1) % 1);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playRadarLoop]);
+
+  const radarSliceCss = useMemo(() => {
+    if (totalM <= 0) return null;
+    const moving = playRadarLoop
+      ? radarSliceAtLoopT(radarSliceLoopFrames, radarLoopT)
+      : radarSliceSamples;
+    return radarRailSliceGradientCss(moving);
+  }, [playRadarLoop, radarSliceLoopFrames, radarLoopT, radarSliceSamples, totalM]);
+
   /* Side rail: keep chroma close to the map line; edge strip stays slightly muted for contrast on map */
   const trackBg =
     layout === "side"
@@ -206,6 +252,13 @@ export function RouteProgressStrip({
           />
         ) : null}
         <div className="route-progress-strip__track" style={{ backgroundColor: trackBg }}>
+          {radarSliceCss ? (
+            <div
+              className="route-progress-strip__radar-slice"
+              style={{ backgroundImage: radarSliceCss }}
+              aria-hidden
+            />
+          ) : null}
           <div className="route-progress-strip__end-cap route-progress-strip__end-cap--start" aria-hidden />
           <div className="route-progress-strip__end-cap route-progress-strip__end-cap--end" aria-hidden />
           <div

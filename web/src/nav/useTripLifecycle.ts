@@ -6,6 +6,8 @@ import {
   type ReturnTripLeg,
 } from "./returnTripLeg";
 import { resolveGoLockRouteId, shouldPromoteChosenToSlotAOnGo } from "./goLockRoute";
+import { isFullSlotPermutation } from "./routeSlotOrder";
+import { stopGuidanceThenClearTrip } from "./tripStop";
 import { slotOrderAfterSelect } from "./routeSlotOrder";
 import type { LngLat, NavRoute } from "./types";
 import { completedTripFromGeometry } from "../frequentRoutes/tripDetector";
@@ -64,7 +66,6 @@ export type UseTripLifecycleDeps = {
   setAllowAutocomplete: (v: boolean) => void;
   searchPickQueryRef: MutableRefObject<string | null>;
 
-  setFitTrigger: Dispatch<SetStateAction<number>>;
   setGuidanceGeometryEpoch: Dispatch<SetStateAction<number>>;
   setRecenterPlanningPuckTick: Dispatch<SetStateAction<number>>;
   setReturnTripLeg: (leg: ReturnTripLeg | null) => void;
@@ -89,6 +90,8 @@ export type UseTripLifecycleDeps = {
   tollAcceptedRouteIdsRef: MutableRefObject<Set<string>>;
   pendingGoAfterTollRef: MutableRefObject<boolean>;
   preferredAreaRouteMapRef: MutableRefObject<PreferredAreaRouteMap>;
+  /** iOS Core session — stop this before wiping the web trip so Stop does not crash. */
+  stopNativeGuidance?: () => Promise<void>;
 };
 
 export type TripLifecycleActions = {
@@ -133,7 +136,6 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     setSuggestions,
     setAllowAutocomplete,
     searchPickQueryRef,
-    setFitTrigger,
     setGuidanceGeometryEpoch,
     setRecenterPlanningPuckTick,
     setReturnTripLeg,
@@ -157,6 +159,7 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     tollAcceptedRouteIdsRef,
     pendingGoAfterTollRef,
     preferredAreaRouteMapRef,
+    stopNativeGuidance,
   } = deps;
 
   const plan = useTripPlanStore((s) => s.plan);
@@ -199,6 +202,7 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     }
     onPersonalForkRef.current = false;
     lockedNavigationRouteIdRef.current = null;
+    navigationGuidanceGeometryRef.current = null;
     resetOffRouteNavigation();
     routeGraphEpochRef.current += 1;
     routeMainFetchAbortRef.current?.abort();
@@ -247,6 +251,7 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     navGoGeometryRef,
     onPersonalForkRef,
     lockedNavigationRouteIdRef,
+    navigationGuidanceGeometryRef,
     routeGraphEpochRef,
     routeMainFetchAbortRef,
     altRoutesFetchAbortRef,
@@ -289,12 +294,19 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
   ]);
 
   const proceedGo = useCallback(() => {
+    const live = useTripPlanStore.getState();
+    const liveIds = live.plan.routes.map((route) => route.id);
+    const liveOrdered = isFullSlotPermutation(live.routeSlotOrder, liveIds) ? live.routeSlotOrder : liveIds;
     const chosen = resolveGoLockRouteId({
-      orderedRouteIds,
-      previewLegIndex,
-      primaryRouteId,
+      orderedRouteIds: liveOrdered.length ? liveOrdered : orderedRouteIds,
+      previewLegIndex: liveOrdered.length ? live.previewLegIndex : previewLegIndex,
+      primaryRouteId: liveIds[0] ?? primaryRouteId,
     });
     if (!chosen) return;
+    const liveRoutes = live.plan.routes;
+    const liveDest = live.destLngLat;
+    const liveDestLabel = live.destinationLabel;
+    const liveOrigin = live.plan.originLabel;
     /* Keep A/B/C letters. Promoting B to slot A on Go made the chip flip to A. */
     if (shouldPromoteChosenToSlotAOnGo()) {
       setRouteSlotOrder((prev) => slotOrderAfterSelect(prev.length ? prev : planRouteIds, chosen));
@@ -302,14 +314,13 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     }
     setNavigationStarted(true);
     setViewMode("drive");
-    setFitTrigger((n) => n + 1);
     setTollRoutePrompt(null);
     setTollAvoidFailureNote(null);
     // Force a fresh route weather fetch the moment the user starts driving.
     // Bypasses the per-location cache so stale data can't mask a developing storm.
     bumpRouteForecastRefresh();
 
-    const pickedForNav = plan.routes.find((r) => r.id === chosen);
+    const pickedForNav = liveRoutes.find((r) => r.id === chosen);
     lockedNavigationRouteIdRef.current = chosen;
     navGoStartedAtRef.current = Date.now();
     navGoGeometryRef.current = pickedForNav?.geometry?.length
@@ -323,8 +334,8 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
       );
     } else if (isPersonalForkRouteId(chosen)) {
       const mainAlt =
-        plan.routes.find((r) => r.id === "r-a") ??
-        plan.routes.find((r) => !isPersonalForkRouteId(r.id));
+        liveRoutes.find((r) => r.id === "r-a") ??
+        liveRoutes.find((r) => !isPersonalForkRouteId(r.id));
       navPlannedMainGeometryRef.current = mainAlt?.geometry?.length
         ? mainAlt.geometry.map(([a, b]) => [a, b] as LngLat)
         : navGoGeometryRef.current;
@@ -334,19 +345,19 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     }
     setGuidanceGeometryEpoch((n) => n + 1);
 
-    if (userLngLat && destLngLat) {
+    if (userLngLat && liveDest) {
       const picked = pickedForNav;
       if (picked?.geometry && picked.geometry.length >= 2) {
         const [lng, lat] = userLngLat;
-        const originLabel = isGenericOriginLabel(plan.originLabel)
+        const originLabel = isGenericOriginLabel(liveOrigin)
           ? formatCoordsAreaLabel(lat, lng)
-          : plan.originLabel.trim();
+          : liveOrigin.trim();
         setReturnTripLeg(
           persistReturnTripLegOnGo({
             returnToLngLat: userLngLat,
             returnToLabel: originLabel,
-            outboundDestLngLat: destLngLat,
-            outboundDestLabel: destinationLabel.trim() || "Destination",
+            outboundDestLngLat: liveDest,
+            outboundDestLabel: liveDestLabel.trim() || "Destination",
             geometry: picked.geometry.map(([a, b]) => [a, b] as LngLat),
           })
         );
@@ -354,12 +365,12 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     }
 
     // Learn the preferred A/B/C “role” for this destination area.
-    if (payFrequentRoutes && destLngLat && destinationLabel.trim()) {
-      const key = areaKeyFromLngLat(destLngLat);
-      const picked = plan.routes.find((r) => r.id === chosen);
+    if (payFrequentRoutes && liveDest && liveDestLabel.trim()) {
+      const key = areaKeyFromLngLat(liveDest);
+      const picked = liveRoutes.find((r) => r.id === chosen);
       if (picked) {
         const now = Date.now();
-        const areaLabel = areaLabelFromDestinationLabel(destinationLabel);
+        const areaLabel = areaLabelFromDestinationLabel(liveDestLabel);
         const map = preferredAreaRouteMapRef.current;
         const prev = map[key];
         map[key] = {
@@ -388,7 +399,6 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     setPreviewLegIndex,
     setNavigationStarted,
     setViewMode,
-    setFitTrigger,
     setTollRoutePrompt,
     setTollAvoidFailureNote,
     lockedNavigationRouteIdRef,
@@ -403,13 +413,16 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
   ]);
 
   const handleGo = useCallback(() => {
+    const live = useTripPlanStore.getState();
+    const liveIds = live.plan.routes.map((route) => route.id);
+    const liveOrdered = isFullSlotPermutation(live.routeSlotOrder, liveIds) ? live.routeSlotOrder : liveIds;
     const chosen = resolveGoLockRouteId({
-      orderedRouteIds,
-      previewLegIndex,
-      primaryRouteId,
+      orderedRouteIds: liveOrdered.length ? liveOrdered : orderedRouteIds,
+      previewLegIndex: liveOrdered.length ? live.previewLegIndex : previewLegIndex,
+      primaryRouteId: liveIds[0] ?? primaryRouteId,
     });
     if (!chosen) return;
-    const route = plan.routes.find((r) => r.id === chosen);
+    const route = live.plan.routes.find((r) => r.id === chosen);
     if (
       shouldPromptTollBeforeGo({
         route,
@@ -436,9 +449,10 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
   ]);
 
   const handleStopAndClear = useCallback(() => {
-    clearRoute();
-    setFitTrigger((n) => n + 1);
-  }, [clearRoute, setFitTrigger]);
+    void stopGuidanceThenClearTrip(stopNativeGuidance, clearRoute, () => {
+      setNavigationStarted(false);
+    });
+  }, [clearRoute, setNavigationStarted, stopNativeGuidance]);
 
   return { clearRoute, proceedGo, handleGo, handleStopAndClear };
 }

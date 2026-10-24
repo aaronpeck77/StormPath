@@ -4,34 +4,46 @@ import type { MapViewMode } from "./driveMapTypes";
 
 /**
  * Active route — sky blue (reads over green/yellow radar better than mid blue).
- * White casing in mapRouteLayers keeps it separated from radar wash.
+ * Thin black casing in mapRouteLayers keeps the line readable on streets and radar.
+ * Rollback (pre Sep 16 field test): active #38bdf8, suggested #bae6fd — both washed
+ * out in daylight, so each moved one step darker.
  */
-export const ROUTE_ACTIVE_COLOR = "#38bdf8";
+export const ROUTE_ACTIVE_COLOR = "#0ea5e9";
 /**
- * Alternate / suggested on the map — light cyan so B is visible on streets
- * and still reads over green radar (dark blue disappeared into the overlay).
+ * Alternate / suggested on the map — mid blue. Rt / Mp use the same sky blue as
+ * Drive for the leg you're taking, so the unused leg has to sit clearly lighter
+ * while still being visible against pavement.
  */
 export const ROUTE_SUGGESTED_COLOR = "#7dd3fc";
 
-/** Halo under the colored core so routes stay readable on radar. */
-export const ROUTE_LINE_CASING_COLOR = "#0f172a";
-export const ROUTE_LINE_CASING_WIDTH_EXTRA = 2.5;
-export const ROUTE_LINE_CASING_OPACITY = 0.92;
+/**
+ * Black outline around the colored core.
+ * +4 (2 px/side) was in the code twice and still vanished on the phone: Mapbox
+ * anti-aliases the blue over the peek, and Drive pitch 68 foreshortens the stripe.
+ * Street extra 8 ≈ 4 px/side in the style, which reads as ~2 px after pitch/AA.
+ * Overview stays thinner so Rt does not grow a fat black tube.
+ */
+export const ROUTE_LINE_CASING_COLOR = "#000000";
+/** Street-level extra (Drive / Map). Half of this is each side. */
+export const ROUTE_LINE_CASING_WIDTH_EXTRA = 8;
+export const ROUTE_LINE_CASING_OPACITY = 1;
+/** Overview extra — enough to see, not a halo. */
+const ROUTE_LINE_CASING_WIDTH_EXTRA_OVERVIEW = 3;
 
 export const ROUTE_ACTIVE_LINE_WIDTH = 8;
 export const ROUTE_SUGGESTED_LINE_WIDTH = 6;
 
 /**
- * Street-level width so the blue line sits on the pavement in Dr / Mp
- * without covering the whole lane. Zoom 14 stays at the historic 8px.
+ * Street-level width — closer to pavement width so shields stay readable.
+ * ~half the prior street curve (was 8→18 at zoom 14–19).
  */
 const DRIVE_LINE_WIDTH_STOPS: [number, number][] = [
-  [8, 2.5],
-  [12, 5],
-  [14, 8],
-  [16, 10],
-  [17.5, 14],
-  [19, 18],
+  [8, 1.8],
+  [12, 3.2],
+  [14, 4.5],
+  [16, 5.5],
+  [17.5, 7],
+  [19, 9],
 ];
 
 /**
@@ -39,12 +51,12 @@ const DRIVE_LINE_WIDTH_STOPS: [number, number][] = [
  * Nudge those stops up a little for readability; street zoom stays Drive.
  */
 const ROUTE_VIEW_LINE_WIDTH_STOPS: [number, number][] = [
-  [8, 3.5],
-  [12, 6.5],
-  [14, 10],
-  [16, 10],
-  [17.5, 14],
-  [19, 18],
+  [8, 2.5],
+  [12, 4.5],
+  [14, 6],
+  [16, 6],
+  [17.5, 7],
+  [19, 9],
 ];
 
 /** Main Rt map only — Drive, Map, and the corner PiP keep the slim line. */
@@ -69,11 +81,27 @@ export function routeLineWidthByZoom(
   return expr;
 }
 
+export function routeCasingExtraByZoom(): ExpressionSpecification {
+  return [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    10,
+    ROUTE_LINE_CASING_WIDTH_EXTRA_OVERVIEW,
+    14,
+    5,
+    16,
+    ROUTE_LINE_CASING_WIDTH_EXTRA,
+    18,
+    ROUTE_LINE_CASING_WIDTH_EXTRA,
+  ];
+}
+
 export function routeCasingWidthByZoom(
   baseWidth: number,
   viewMode: MapViewMode = "drive"
 ): ExpressionSpecification {
-  return ["+", routeLineWidthByZoom(baseWidth, viewMode), ROUTE_LINE_CASING_WIDTH_EXTRA];
+  return ["+", routeLineWidthByZoom(baseWidth, viewMode), routeCasingExtraByZoom()];
 }
 
 export function routeHitWidthByZoom(
@@ -95,7 +123,7 @@ export const ROLE_COLOR: Record<RouteRole, string> = {
 };
 
 /** A / B / C picker — active sky, then the same cyan used for the alternate map line. */
-export const ROUTE_PICK_SLOT_HEX = [ROUTE_ACTIVE_COLOR, ROUTE_SUGGESTED_COLOR, "#bae6fd"] as const;
+export const ROUTE_PICK_SLOT_HEX = [ROUTE_ACTIVE_COLOR, ROUTE_SUGGESTED_COLOR, "#e0f2fe"] as const;
 
 export function routePickSlotHex(slotIndex: number): string {
   return ROUTE_PICK_SLOT_HEX[

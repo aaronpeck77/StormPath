@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   bannerShouldReserveBottomSpace,
+  basicAdChromeLiftPx,
   slotStateAfterShowAttempt,
 } from "../useBasicAdMobBanner";
+import { buildAppShellStyle } from "../../ui/appShellChrome";
 
 describe("bannerShouldReserveBottomSpace", () => {
   const shown = {
@@ -31,7 +33,7 @@ describe("bannerShouldReserveBottomSpace", () => {
     expect(bannerShouldReserveBottomSpace({ ...shown, native: false })).toBe(false);
   });
 
-  it("reserves while navigating only when the advisory panel is expanded", () => {
+  it("stays off for the whole trip, including when Status is open", () => {
     expect(
       bannerShouldReserveBottomSpace({
         ...shown,
@@ -45,7 +47,31 @@ describe("bannerShouldReserveBottomSpace", () => {
         navigationStarted: true,
         stormBarExpanded: true,
       })
+    ).toBe(false);
+  });
+
+  it("keeps the buttons up while a measured banner is still on screen", () => {
+    expect(
+      bannerShouldReserveBottomSpace({ ...shown, slotState: "empty", bannerHeightPx: 50 })
     ).toBe(true);
+    expect(
+      bannerShouldReserveBottomSpace({
+        ...shown,
+        slotState: "empty",
+        navigationStarted: true,
+        bannerHeightPx: 90,
+      })
+    ).toBe(false);
+    expect(basicAdChromeLiftPx({ reservesBottomSpace: true, bannerHeightPx: 90 })).toBe(90);
+    expect(basicAdChromeLiftPx({ reservesBottomSpace: true, bannerHeightPx: 0 })).toBe(50);
+    expect(basicAdChromeLiftPx({ reservesBottomSpace: false, bannerHeightPx: 90 })).toBe(0);
+  });
+
+  it("writes the live banner height onto the shell", () => {
+    const up = buildAppShellStyle(90) as Record<string, string> | undefined;
+    expect(up?.["--basic-ad-banner-reserve"]).toBe("90px");
+    const down = buildAppShellStyle(0) as Record<string, string> | undefined;
+    expect(down?.["--basic-ad-banner-reserve"]).toBeUndefined();
   });
 
   it("pads local browser dev so layout matches the phone", () => {

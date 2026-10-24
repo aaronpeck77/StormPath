@@ -93,6 +93,14 @@ describe("ultra-long route geometry", () => {
     expect(sliceLen).toBeGreaterThan(DRIVE_LINE_AHEAD_M * 0.5);
   });
 
+  it("uses a local window when along is missing instead of the full continent line", () => {
+    const totalM = EXTREME_TRIP_ROUTE_M + 50_000;
+    const geometry = routeWithLengthM(totalM, 8_000);
+    const slice = routeLineGeometryForDriveDisplay(geometry, null);
+    expect(polylineLengthMeters(slice)).toBeLessThan(DRIVE_LINE_AHEAD_M + DRIVE_LINE_BEHIND_M + 8_000);
+    expect(slice[0]).toEqual(geometry[0]);
+  });
+
   it("draws full remaining leg on short trips", () => {
     const geometry: LngLat[] = [
       [-87.62, 41.88],

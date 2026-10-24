@@ -6,6 +6,10 @@ export class StormpathMapboxNavigationWeb extends WebPlugin {
     return { available: false };
   }
 
+  async prepareActiveGuidance() {
+    return { ok: false, message: "Native Mapbox Navigation Core is iOS-only." };
+  }
+
   async startActiveGuidance() {
     return { ok: false, message: "Native Mapbox Navigation Core is iOS-only." };
   }
@@ -14,5 +18,25 @@ export class StormpathMapboxNavigationWeb extends WebPlugin {
     return { ok: true, enabled: Boolean(options?.enabled) };
   }
 
+  async setDrivePuckVisible(options) {
+    return { ok: true, visible: Boolean(options?.visible) };
+  }
+
+  async setNativeMapVisible(options) {
+    return {
+      ok: true,
+      visible: Boolean(options?.visible),
+      revealed: false,
+    };
+  }
+
+  async setRoadControls(options) {
+    return { ok: true, count: options?.points?.length ?? 0 };
+  }
+
   async stop() {}
+
+  async armIdleExit() {}
+
+  async cancelIdleExit() {}
 }

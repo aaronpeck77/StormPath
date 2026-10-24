@@ -56,6 +56,24 @@ export function computeRadarMapOverlayOn(
   return showRadar && !driveNavMode && appForeground;
 }
 
+/** Off-screen with no Go: stop Mapbox after this long so a parked phone is not painting tiles. */
+export const IDLE_MAP_SLEEP_MS = 45_000;
+
+export function shouldSleepIdleMap(input: {
+  appForeground: boolean;
+  navigationStarted: boolean;
+  hiddenForMs: number;
+  sleepAfterMs?: number;
+}): boolean {
+  if (input.appForeground || input.navigationStarted) return false;
+  return input.hiddenForMs >= (input.sleepAfterMs ?? IDLE_MAP_SLEEP_MS);
+}
+
+/** Hidden WebView should not keep the 60 fps follow loop or radar paint running. */
+export function shouldPauseHiddenMapWork(appForeground: boolean): boolean {
+  return !appForeground;
+}
+
 /**
  * Tiered fetch gates while navigating — Drive keeps NWS + traffic + replan;
  * Route/Map keep radar overlay. Corridor forecast + radar polyline sampling stay
@@ -80,9 +98,30 @@ export function buildNavResourceBudget(input: NavResourceBudgetInput): NavResour
    * so reopening Route Info shows the full trip with YOU already mid-axis.
    */
   const driveCorridorLive = driveNavMode && input.appForeground;
+  /**
+   * Pre-Go trip browse — Rt/Mp are planning surfaces; Dr before Go is too
+   * (common while reviewing a planned leg). Without this, Rad-off + Dr blanked
+   * along-route radar samples even with Route Info open.
+   */
+  const preGoTripBrowse =
+    !input.navigationStarted &&
+    input.hasPlannedRoute &&
+    (planningSurfaceActive || input.viewMode === "drive");
+
+  /**
+   * Rail pre-warm — the progress rail stays hidden until Go, so nothing can ask for
+   * its samples by opening Route Info while planning. Start filling as soon as a
+   * destination is set so the graphs are populated by the time Go is pressed.
+   */
+  const preGoRailWarm = preGoTripBrowse && !input.dataSaverMode;
 
   const radarSampleRequested =
     radarMapOverlayOn ||
+    preGoRailWarm ||
+    (preGoTripBrowse &&
+      (input.settingStormEnabled ||
+        input.settingWeatherHintsEnabled ||
+        routeInfoOpen)) ||
     (planningSurfaceActive &&
       !driveNavMode &&
       (input.settingStormEnabled ||
@@ -148,7 +187,7 @@ export function buildNavResourceBudget(input: NavResourceBudgetInput): NavResour
           : input.stormBarExpanded ||
             input.navigationStarted ||
             routeInfoOpen ||
-            (input.hasPlannedRoute && !longTrip))));
+            input.hasPlannedRoute)));
 
   return {
     driveNavMode,

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { LngLat } from "../nav/types";
 import type { TripStop } from "../nav/routeWaypoints";
 import { shouldShowManualOffRouteUi, shouldShowTrafficBypassUi } from "../nav/constants";
@@ -11,6 +12,80 @@ import { SearchBar, type SearchSuggestion } from "./SearchBar";
 import { RouteStopsBar } from "./RouteStopsBar";
 import { BottomToolbar } from "./BottomToolbar";
 import { isNarrowPhoneViewport } from "./mapFitLogic";
+import { showTripRefreshButton } from "../nav/tripRefresh";
+import { stormyButtonFor } from "../voice/voiceLevel";
+import { StormyButton, stormyTurnImminent } from "./StormyButton";
+import { useSettingsStore } from "../state/settingsStore";
+import { useTripPlanStore } from "../state/tripPlanStore";
+import type { StormyActResult, StormyPacket, StormyReply } from "../stormy/stormyFence";
+
+function MapInfoButton({ onOpenAbout }: { onOpenAbout: () => void }) {
+  return (
+    <button
+      type="button"
+      className="map-about-btn"
+      aria-label="About StormPath"
+      title="About / Settings"
+      onClick={onOpenAbout}
+    >
+      i
+    </button>
+  );
+}
+
+/** Stormy on: compass and Info stay left, and her row holds the other chips. Off: the pre-Stormy row. */
+function DockAboutRow({
+  stormyOn,
+  onOpenAbout,
+  compass,
+  stormy,
+  refresh,
+  children,
+}: {
+  stormyOn: boolean;
+  onOpenAbout: () => void;
+  compass?: ReactNode;
+  stormy?: ReactNode;
+  refresh?: ReactNode;
+  children?: ReactNode;
+}) {
+  const info = <MapInfoButton onOpenAbout={onOpenAbout} />;
+  if (!stormyOn) {
+    if (compass) {
+      return (
+        <div className="nav-bottom-dock__about-row">
+          <div className="nav-bottom-dock__drive-about-cluster">
+            <div className="nav-bottom-dock__compass-i-col">
+              {refresh}
+              {compass}
+              {info}
+            </div>
+            {children}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="nav-bottom-dock__about-row">
+        {info}
+        {children}
+      </div>
+    );
+  }
+  return (
+    <div className="nav-bottom-dock__about-row">
+      <div className="nav-bottom-dock__info-stormy-col">
+        {refresh}
+        {compass}
+        {info}
+        <div className="nav-bottom-dock__stormy-row">
+          {stormy}
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 type Props = {
   /* Traffic-bypass compare panel */
@@ -32,6 +107,8 @@ type Props = {
 
   /* Drive / topdown about-row */
   driveMapBearingDeg: number | null;
+  /** Drive only. Restarts stuck guidance and live data without ending the trip. */
+  onRefreshTrip?: () => void;
   onOpenAbout: () => void;
   driveDistanceRemainingLabel: string | null;
 
@@ -69,11 +146,13 @@ type Props = {
 
   /* Via-stop bar */
   viaStops: TripStop[];
+  activeViaIndex: number;
   addingViaStop: boolean;
   canAddStop: boolean;
   onStartAddStop: () => void;
   onCancelAddStop: () => void;
   handleRemoveViaStop: (index: number) => void;
+  handleSkipViaStop: (index: number) => void;
 
   /* Bottom toolbar */
   handleViewModeChange: (m: MapViewMode) => void;
@@ -82,6 +161,9 @@ type Props = {
   showGo: boolean;
   speedMph: number | null;
   postedMph: number | null;
+  postedMphIsClassEstimate: boolean;
+  postedMphFromHorizon?: boolean;
+  useMiles?: boolean;
   handleStopAndClear: () => void;
   hasTrip: boolean;
   showReturnTripButton: boolean;
@@ -90,6 +172,7 @@ type Props = {
   handleReturnToPreviousDestination: () => void;
   showSavedPlacesButton: boolean;
   driveEtaMinutes: number | null;
+  destLngLat?: LngLat | null;
   onToggleRadar: () => void;
   settingRadarEnabled: boolean;
   driveModeUi: boolean;
@@ -102,6 +185,15 @@ type Props = {
   showTrafficBypassCta: boolean;
   bypassBusy: boolean;
   onTrafficBypassFromHere: () => void;
+  stormyAheadLine: string | null;
+  stormyHazardLine: string | null;
+  stormyWeather?: string[];
+  stormyTraffic?: string[];
+  stormyRoads?: string[];
+  stormyForecast?: string;
+  stormyHere?: string;
+  metersToManeuver: number | null;
+  onStormyAct?: (reply: StormyReply) => Promise<StormyActResult>;
 };
 
 /** Bottom dock chrome — route-compare panel, recording banner, the about/search/toolbar dock, and BottomToolbar. */
@@ -118,6 +210,7 @@ export function AppBottomChrome({
   navigationStarted,
   viewMode,
   driveMapBearingDeg,
+  onRefreshTrip,
   onOpenAbout,
   driveDistanceRemainingLabel,
   routePickItems,
@@ -147,17 +240,22 @@ export function AppBottomChrome({
   suggestLoading,
   enableSuggestions,
   viaStops,
+  activeViaIndex,
   addingViaStop,
   canAddStop,
   onStartAddStop,
   onCancelAddStop,
   handleRemoveViaStop,
+  handleSkipViaStop,
   handleViewModeChange,
   onOpenSaved,
   handleGo,
   showGo,
   speedMph,
   postedMph,
+  postedMphIsClassEstimate,
+  postedMphFromHorizon = false,
+  useMiles = true,
   handleStopAndClear,
   hasTrip,
   showReturnTripButton,
@@ -166,6 +264,7 @@ export function AppBottomChrome({
   handleReturnToPreviousDestination,
   showSavedPlacesButton,
   driveEtaMinutes,
+  destLngLat = null,
   onToggleRadar,
   settingRadarEnabled,
   driveModeUi,
@@ -178,7 +277,43 @@ export function AppBottomChrome({
   showTrafficBypassCta,
   bypassBusy,
   onTrafficBypassFromHere,
+  stormyAheadLine,
+  stormyHazardLine,
+  stormyWeather = [],
+  stormyTraffic = [],
+  stormyRoads = [],
+  stormyForecast = "",
+  stormyHere = "",
+  metersToManeuver,
+  onStormyAct,
 }: Props) {
+  const planRoutes = useTripPlanStore((s) => s.plan.routes);
+  const voiceLevel = useSettingsStore((s) => s.voiceLevel);
+  const stormyOn = stormyButtonFor(voiceLevel);
+  const talkOn = stormyOn;
+  const stormyPacket: StormyPacket = {
+    aheadLine: (stormyAheadLine || destinationLabel || "").trim(),
+    hazards: stormyHazardLine ? [stormyHazardLine] : [],
+    routes: planRoutes.slice(0, 3).map((route) => ({
+      id: route.id,
+      label: route.label,
+      summary: `${Math.round(route.baseEtaMinutes)} min`,
+    })),
+    driving: navigationStarted,
+    turnImminent: stormyTurnImminent(navigationStarted, metersToManeuver),
+    question: "",
+    weather: stormyWeather,
+    traffic: stormyTraffic,
+    roads: stormyRoads,
+    forecast: stormyForecast,
+    destination: destinationLabel.trim(),
+    eta: driveEtaMinutes != null && Number.isFinite(driveEtaMinutes) ? `${Math.round(driveEtaMinutes)} minutes` : "",
+    milesLeft: (driveDistanceRemainingLabel ?? "").trim(),
+    stops: viaStops.map((stop) => stop.label).filter(Boolean).slice(0, 3),
+    here: stormyHere.trim(),
+  };
+  const talkButton = stormyOn ? <StormyButton packet={stormyPacket} onAct={onStormyAct} /> : null;
+  const placeChoices = talkOn && suggestions.length >= 2 ? suggestions.slice(0, 8) : [];
   return (
     <div className="nav-bottom-stack">
       <RouteCompareBottomPanel
@@ -197,38 +332,49 @@ export function AppBottomChrome({
       ) : null}
       {!trafficBypassCompareActive ? (
       <div className="nav-bottom-chrome-wrap">
+        {placeChoices.length >= 2 ? (
+          <ul className="stormy-place-choices" aria-label="Places to choose">
+            {placeChoices.map((hit) => (
+              <li key={hit.id}>
+                <button type="button" onClick={() => onPickSuggestion(hit)}>
+                  <span className="stormy-place-choices__name">{hit.placeName}</span>
+                  {hit.secondary ? <span className="stormy-place-choices__detail">{hit.secondary}</span> : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <div className="nav-bottom-dock">
           {navigationStarted && viewMode === "drive" ? (
-            <div className="nav-bottom-dock__about-row">
-              <div className="nav-bottom-dock__drive-about-cluster">
-                <div className="nav-bottom-dock__compass-i-col">
-                  <DriveCompass bearingDeg={driveMapBearingDeg} />
+            <DockAboutRow
+              stormyOn={talkOn}
+              onOpenAbout={onOpenAbout}
+              refresh={
+                showTripRefreshButton(navigationStarted, viewMode) && onRefreshTrip ? (
                   <button
                     type="button"
-                    className="map-about-btn"
-                    aria-label="About StormPath"
-                    title="About / Settings"
-                    onClick={onOpenAbout}
+                    className="trip-refresh-btn"
+                    aria-label="Refresh the trip"
+                    title="Refresh the trip without leaving it"
+                    onClick={onRefreshTrip}
                   >
-                    i
+                    ↻
                   </button>
-                </div>
-                {driveDistanceRemainingLabel ? (
-                  <NavMilesLeftBox label={driveDistanceRemainingLabel} />
-                ) : null}
-              </div>
-            </div>
+                ) : null
+              }
+              compass={<DriveCompass bearingDeg={driveMapBearingDeg} />}
+              stormy={talkButton}
+            >
+              {driveDistanceRemainingLabel ? (
+                <NavMilesLeftBox label={driveDistanceRemainingLabel} />
+              ) : null}
+            </DockAboutRow>
           ) : navigationStarted && viewMode === "topdown" ? (
-            <div className="nav-bottom-dock__about-row">
-              <button
-                type="button"
-                className="map-about-btn"
-                aria-label="About StormPath"
-                title="About / Settings"
-                onClick={onOpenAbout}
-              >
-                i
-              </button>
+            <DockAboutRow
+              stormyOn={talkOn}
+              onOpenAbout={onOpenAbout}
+              stormy={talkButton}
+            >
               {driveDistanceRemainingLabel ? (
                 <NavMilesLeftBox label={driveDistanceRemainingLabel} />
               ) : null}
@@ -252,20 +398,15 @@ export function AppBottomChrome({
                   {radarFrameTimeLabel}
                 </div>
               ) : null}
-            </div>
+            </DockAboutRow>
           ) : (
             <div className="nav-bottom-dock__plan-stack">
               {/* About row: 'i' on the left; route-info cycle chip or My location in the inline slot. */}
-              <div className="nav-bottom-dock__about-row">
-                <button
-                  type="button"
-                  className="map-about-btn"
-                  aria-label="About StormPath"
-                  title="About / Settings"
-                  onClick={onOpenAbout}
-                >
-                  i
-                </button>
+              <DockAboutRow
+                stormyOn={talkOn}
+                onOpenAbout={onOpenAbout}
+                stormy={talkButton}
+              >
                 {navigationStarted && driveDistanceRemainingLabel ? (
                   <NavMilesLeftBox label={driveDistanceRemainingLabel} />
                 ) : null}
@@ -301,20 +442,31 @@ export function AppBottomChrome({
                     </div>
                   ) : null
                 ) : null}
-              </div>
+              </DockAboutRow>
               <div className="nav-bottom-dock__search-myloc-row">
                 <div className="nav-bottom-dock__search-col">
                   <div className="nav-search-dock">
                     {showCompactDest ? (
-                      <button
-                        type="button"
-                        className="nav-dest-compact nav-dest-compact--tap"
-                        onClick={handleCompactDestOpen}
-                      >
-                        <span className="nav-dest-compact-label" title={destinationLabel}>
-                          {destinationLabel || "Destination"}
-                        </span>
-                      </button>
+                      <div className="nav-dest-compact">
+                        <button
+                          type="button"
+                          className="nav-dest-compact--tap"
+                          onClick={handleCompactDestOpen}
+                        >
+                          <span className="nav-dest-compact-label" title={destinationLabel}>
+                            {destinationLabel || "Destination"}
+                          </span>
+                        </button>
+                        {navigationStarted && activeViaIndex < viaStops.length ? (
+                          <button
+                            type="button"
+                            className="nav-dest-compact-btn"
+                            onClick={() => handleSkipViaStop(activeViaIndex)}
+                          >
+                            Skip stop
+                          </button>
+                        ) : null}
+                      </div>
                     ) : (
                       <>
                         <SearchBar
@@ -330,7 +482,7 @@ export function AppBottomChrome({
                           onPickSuggestion={onPickSuggestion}
                           suggestionsLoading={suggestLoading}
                           showSuggestionsWhenEmpty={isNarrowPhoneViewport()}
-                          enableSuggestions={enableSuggestions}
+                          enableSuggestions={enableSuggestions && placeChoices.length < 2}
                         />
                         {!navigationStarted ? (
                           <RouteStopsBar
@@ -362,6 +514,9 @@ export function AppBottomChrome({
           showGo={showGo}
           speedMph={speedMph}
           postedMph={postedMph}
+          postedMphIsClassEstimate={postedMphIsClassEstimate}
+          postedMphFromHorizon={postedMphFromHorizon}
+          useMiles={useMiles}
           onStop={handleStopAndClear}
           hasTrip={hasTrip}
           showReturnTripButton={showReturnTripButton}
@@ -372,6 +527,7 @@ export function AppBottomChrome({
           showViewCycleButton
           viewCycleDisabled={!navigationStarted}
           driveEtaMinutes={driveEtaMinutes}
+          destLngLat={destLngLat}
           showRadar={radarMapOverlayOn}
           onToggleRadar={onToggleRadar}
           radarEnabled={settingRadarEnabled}

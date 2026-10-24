@@ -28,6 +28,7 @@ import {
 } from "../forecast/localForecastVisual";
 import { enrichDailyWithHourlyApparent } from "../forecast/localForecastDaily";
 import { StormPathSourcesAttribution } from "./StormPathSourcesAttribution";
+import { fahrenheitToCelsius, mphToKmh, roadUsesMiles, weatherUsesFahrenheit } from "../utils/displayUnits";
 import {
   formatDailyDayLabel,
   formatForecastUpdatedAt,
@@ -119,6 +120,8 @@ export function AdvisoryLocalForecast({
   const isBasic = variant === "basic";
   const forecastLat = forecastLngLat?.[1] ?? null;
   const forecastLng = forecastLngLat?.[0] ?? null;
+  const weatherCelsius = forecastLngLat ? !weatherUsesFahrenheit(forecastLngLat) : false;
+  const roadMiles = roadUsesMiles(forecastLngLat);
   const showAppleWeatherAttr = usesAppleWeather({
     weatherKitPrimary,
     hourly: hourlyForecast,
@@ -201,8 +204,8 @@ export function AdvisoryLocalForecast({
   const nextHourHeatLine = useMemo(() => {
     const peak = nextHourPeakFeels({ nowcast, hours });
     if (!heatIndexNotable(peak)) return null;
-    return formatHeatIndexLine(peak);
-  }, [nowcast, hours]);
+    return formatHeatIndexLine(peak, weatherCelsius);
+  }, [nowcast, hours, weatherCelsius]);
 
   const resolvedNowFeels = useMemo(() => {
     if (!nowcast) return null;
@@ -220,8 +223,8 @@ export function AdvisoryLocalForecast({
       maxFeels = Math.max(maxFeels, resolveIntervalFeelsLikeF(h));
     }
     if (!Number.isFinite(maxFeels) || !heatIndexNotable(maxFeels)) return null;
-    return formatHeatIndexLine(maxFeels);
-  }, [hourSamples]);
+    return formatHeatIndexLine(maxFeels, weatherCelsius);
+  }, [hourSamples, weatherCelsius]);
 
   const dayColdLine = useMemo(() => {
     let minFeels = Infinity;
@@ -238,8 +241,8 @@ export function AdvisoryLocalForecast({
     if (!Number.isFinite(minFeels) || !windChillNotable(minFeels, coldestAir, coldestWind)) {
       return null;
     }
-    return formatWindChillLine(minFeels);
-  }, [hourSamples]);
+    return formatWindChillLine(minFeels, weatherCelsius);
+  }, [hourSamples, weatherCelsius]);
 
   const nextHourColdLine = useMemo(() => {
     const upcoming = upcomingHourlySlots(hours, 2);
@@ -270,8 +273,8 @@ export function AdvisoryLocalForecast({
       h1?.windGustMph ?? h1?.windMph ?? 0
     );
     if (!windChillNotable(minFeels, coldestAir, coldestWind)) return null;
-    return formatWindChillLine(minFeels);
-  }, [nowcast, hours]);
+    return formatWindChillLine(minFeels, weatherCelsius);
+  }, [nowcast, hours, weatherCelsius]);
 
   const weekHeatLine = useMemo(() => {
     let peak = -Infinity;
@@ -279,8 +282,8 @@ export function AdvisoryLocalForecast({
       if (d.maxFeelsLikeF != null) peak = Math.max(peak, d.maxFeelsLikeF);
     }
     if (!Number.isFinite(peak) || !heatIndexNotable(peak)) return null;
-    return formatHeatIndexLine(peak);
-  }, [days]);
+    return formatHeatIndexLine(peak, weatherCelsius);
+  }, [days, weatherCelsius]);
 
   const weekColdLine = useMemo(() => {
     let low = Infinity;
@@ -292,13 +295,13 @@ export function AdvisoryLocalForecast({
       }
     }
     if (!Number.isFinite(low) || !isWindChillDisplay(low, lowAir)) return null;
-    return formatWindChillLine(low);
-  }, [days]);
+    return formatWindChillLine(low, weatherCelsius);
+  }, [days, weatherCelsius]);
 
   const nowHeatLine = useMemo(() => {
     if (resolvedNowFeels == null || !heatIndexNotable(resolvedNowFeels)) return null;
-    return formatHeatIndexLine(resolvedNowFeels);
-  }, [resolvedNowFeels]);
+    return formatHeatIndexLine(resolvedNowFeels, weatherCelsius);
+  }, [resolvedNowFeels, weatherCelsius]);
 
   const nowColdLine = useMemo(() => {
     if (resolvedNowFeels == null || !nowcast) return null;
@@ -306,8 +309,8 @@ export function AdvisoryLocalForecast({
     if (!windChillNotable(resolvedNowFeels, nowcast.tempF, nowcast.windGustMph ?? nowcast.windMph)) {
       return null;
     }
-    return formatWindChillLine(resolvedNowFeels);
-  }, [resolvedNowFeels, nowcast]);
+    return formatWindChillLine(resolvedNowFeels, weatherCelsius);
+  }, [resolvedNowFeels, nowcast, weatherCelsius]);
 
   const displayLocationAlerts = useMemo(() => {
     let alerts = dedupeNwsAlertsForDisplay(locationAlerts);
@@ -589,14 +592,22 @@ export function AdvisoryLocalForecast({
                         background: feelsLikeCellColor(feels),
                         borderBottomColor: precip.active ? precipColor : "transparent",
                       }}
-                      title={`${timeLabel}: feels like ${feels}°${
-                        air !== feels ? `, air ${air}°` : ""
+                      title={`${timeLabel}: feels like ${
+                        weatherCelsius ? fahrenheitToCelsius(feels) : feels
+                      }°${
+                        air !== feels ? `, air ${weatherCelsius ? fahrenheitToCelsius(air) : air}°` : ""
                       }${precipLabel ? `, ${precipLabel}` : ", dry"}${
-                        gust >= 18 ? `, gusts to ${Math.round(gust)} mph` : ""
+                        gust >= 18
+                          ? `, gusts to ${roadMiles ? Math.round(gust) : mphToKmh(gust)} ${
+                              roadMiles ? "mph" : "km/h"
+                            }`
+                          : ""
                       }`}
                     >
                       <span className="adv-dash__hour-time">{timeLabel}</span>
-                      <span className="adv-dash__hour-temp">{feels}°</span>
+                      <span className="adv-dash__hour-temp">
+                        {weatherCelsius ? fahrenheitToCelsius(feels) : feels}°
+                      </span>
                       {air !== feels ? (
                         <span className="adv-dash__hour-air">Air {air}°</span>
                       ) : null}

@@ -1,0 +1,20 @@
+---
+description: Keep chewing on parked Brain priorities during other StormPath work. Notes only — never auto-build P2/P3.
+alwaysApply: true
+---
+
+# Brain keeps thinking
+
+Bill wants Brain ideas chewed on the way people think: in the background, while other work is open, not only when he says “build that.”
+
+## Do
+
+- If this turn’s work touches Drive following, Core’s line, tiles/offline, live traffic, or a locked interstate corridor, append a **short dated note** to `docs/BRAIN_THINKING.md` under P1, P2, or P3.
+- Keep shipping only what Bill asked for this turn.
+
+## Do not
+
+- Implement Brain P2 (offline trip download) or P3 (interstate jam bypass) from a thinking note.
+- Flip `TRAFFIC_BYPASS_ENABLED`, add bypass UI, or “just wire the old surgical hop.”
+- Commit or push thinking notes unless he asks.
+- Start a nightly loop, `/loop`, or Cursor Automation to “keep thinking.” That burns monthly credits. Only if Bill asks.

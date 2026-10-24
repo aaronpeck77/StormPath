@@ -24,11 +24,19 @@ import {
   stormStripBandsToLineFeatures,
   type StormProgressStripBand,
 } from "../weatherAlerts/geometryOverlap";
-import { safeCameraForBounds, safeEaseTo, safeExtendBounds, safeFitBounds, readMapLngLat } from "./mapCameraSafe";
+import {
+  safeCameraForBounds,
+  safeEaseTo,
+  safeExtendBounds,
+  safeFitBounds,
+  safeJumpTo,
+  readMapLngLat,
+} from "./mapCameraSafe";
 import {
   firstBasemapSymbolLayerId,
   moveLayerBelowBasemapLabels,
 } from "./mapBasemapLayerAnchor";
+import { clampPlanningFitZoom, minPlanningRouteZoomFloor } from "./mapFitLogic";
 import {
   ROUTE_SUGGESTED_LINE_WIDTH,
   routeCasingWidthByZoom,
@@ -329,7 +337,7 @@ function routeCoordinatesForMap(route: NavRoute, opts?: ApplyRoutesLayerOptions)
     userAlongMeters: along ?? null,
   });
   if (kind === "driveAhead") {
-    return routeLineGeometryForDriveDisplay(geometry, along);
+    return routeLineGeometryForDriveDisplay(geometry, along ?? 0);
   }
   if (viewMode === "route" || viewMode === "topdown" || isOverviewPip) {
     return geometryForRouteOverviewDisplay(geometry);
@@ -397,6 +405,15 @@ export function routeIdFromRouteHitLayerId(layerId: string): string | null {
   return layerId.slice(prefix.length, -suffix.length);
 }
 
+/** Drive always shows the locked corridor only — A/B stay on Rt / Mp for compare. */
+export function hideAlternateRoutesOnDrive(
+  viewMode: MapViewMode,
+  _routeCount: number,
+  isOverviewPip = false
+): boolean {
+  return viewMode === "drive" && !isOverviewPip;
+}
+
 /** Route legs that currently have map layers (matches {@link applyRoutesToMap} visibility). */
 export function visibleRouteIdsForHitLayers(
   routes: NavRoute[],
@@ -404,8 +421,8 @@ export function visibleRouteIdsForHitLayers(
   viewMode: MapViewMode,
   isOverviewPip = false
 ): string[] {
-  /* Drive (Dr) view: always the active leg only — Rt / Mp show A/B/C for picking. */
-  const hideAltsOnMainDrive = viewMode === "drive" && !isOverviewPip;
+  /* Drive (Dr) view: single corridor only. Plus A/B stay on the map for picking. */
+  const hideAltsOnMainDrive = hideAlternateRoutesOnDrive(viewMode, routes.length, isOverviewPip);
   const ids = hideAltsOnMainDrive
     ? routes
         .filter((r) => r.id === lineFocusId || r.id === "r-your-route")
@@ -490,7 +507,7 @@ export function applyRoutesToMap(
   const isOverviewPip = opts?.isOverviewPip ?? false;
   const routeComparePicker = Boolean(opts?.routeComparePicker && viewMode === "topdown");
 
-  const hideAltsOnMainDrive = viewMode === "drive" && !isOverviewPip;
+  const hideAltsOnMainDrive = hideAlternateRoutesOnDrive(viewMode, routes.length, isOverviewPip);
   const routesToDraw = hideAltsOnMainDrive
     ? routes.filter(
         (r) =>
@@ -503,6 +520,11 @@ export function applyRoutesToMap(
   if (routes.length === 0) {
     removeStaleRoutes(map, new Set(), prevIds, layerPrefix);
     removeAllTripRouteLegLayers(map, layerPrefix);
+    try {
+      map.triggerRepaint();
+    } catch {
+      /* map mid-teardown */
+    }
     return new Set();
   }
 
@@ -578,6 +600,8 @@ export function applyRoutesToMap(
             "line-color": ROUTE_LINE_CASING_COLOR,
             "line-width": casingWidth,
             "line-opacity": ROUTE_LINE_CASING_OPACITY,
+            /* Default blur swallows a 2 px peek under the blue core. */
+            "line-blur": 0,
           },
           layout: { "line-cap": "round", "line-join": "round" },
         },
@@ -592,6 +616,7 @@ export function applyRoutesToMap(
             "line-color": lineColor,
             "line-width": lineWidthByZoom,
             "line-opacity": lineOpacity,
+            "line-blur": 0,
           },
           layout: { "line-cap": "round", "line-join": "round" },
         },
@@ -623,6 +648,7 @@ export function applyRoutesToMap(
               "line-color": ROUTE_LINE_CASING_COLOR,
               "line-width": casingWidth,
               "line-opacity": ROUTE_LINE_CASING_OPACITY,
+              "line-blur": 0,
             },
             layout: { "line-cap": "round", "line-join": "round" },
           },
@@ -632,10 +658,12 @@ export function applyRoutesToMap(
         map.setPaintProperty(casingId, "line-color", ROUTE_LINE_CASING_COLOR);
         map.setPaintProperty(casingId, "line-width", casingWidth);
         map.setPaintProperty(casingId, "line-opacity", ROUTE_LINE_CASING_OPACITY);
+        map.setPaintProperty(casingId, "line-blur", 0);
       }
       map.setPaintProperty(lineId, "line-color", lineColor);
       map.setPaintProperty(lineId, "line-width", lineWidthByZoom);
       map.setPaintProperty(lineId, "line-opacity", lineOpacity);
+      map.setPaintProperty(lineId, "line-blur", 0);
       if (map.getLayer(hitLineId)) {
         map.setPaintProperty(hitLineId, "line-width", hitWidth);
       }
@@ -710,6 +738,13 @@ export type FitMapToTripOptions = {
   zoomBias?: number;
   /** Planning overview: always frame the full polyline, not just user→destination endpoints. */
   forceFullPolyline?: boolean;
+  /**
+   * Navigating Rt: drop the already-driven tail so puck + dest stay on the
+   * padded edges and zoom tightens as the remaining trip shortens.
+   */
+  remainingFromUser?: boolean;
+  /** Camera move length. 0 = one snap (no mid-ease hops). */
+  durationMs?: number;
 };
 
 export type TripFitBoundsMode = {
@@ -756,6 +791,22 @@ export function preferEndpointAnchoredTripFit(
   return true;
 }
 
+/** Remaining path from the puck forward — omits the driven tail so Rt can zoom in. */
+function sliceRemainingForOverviewFit(geometry: LngLat[], user: LngLat): LngLat[] {
+  if (geometry.length < 2) return geometry;
+  let bestI = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < geometry.length; i++) {
+    const [lng, lat] = geometry[i]!;
+    const d = (lng - user[0]) ** 2 + (lat - user[1]) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      bestI = i;
+    }
+  }
+  return [user, ...geometry.slice(bestI + 1)];
+}
+
 function extendEndpointPairBounds(b: mapboxgl.LngLatBounds, user: LngLat, dest: LngLat): void {
   safeExtendBounds(b, user);
   safeExtendBounds(b, dest);
@@ -772,13 +823,18 @@ export function buildTripFitBounds(
   dest: LngLat | null,
   routes: NavRoute[],
   onlyRouteId?: string | null,
-  forceFullPolyline = false
+  forceFullPolyline = false,
+  remainingFromUser = false
 ): TripFitBoundsMode | null {
   const geometry = primaryRouteGeometry(routes, onlyRouteId);
+  const remainingGeom =
+    remainingFromUser && user && geometry?.length
+      ? sliceRemainingForOverviewFit(geometry, user)
+      : geometry;
   const directM = directTripMeters(user, dest);
   const endpointsOnly = forceFullPolyline
     ? false
-    : preferEndpointAnchoredTripFit(user, dest, geometry);
+    : preferEndpointAnchoredTripFit(user, dest, remainingGeom);
   const b = new mapboxgl.LngLatBounds();
 
   if (endpointsOnly && user && dest) {
@@ -786,7 +842,9 @@ export function buildTripFitBounds(
   } else {
     if (user) safeExtendBounds(b, user);
     if (dest) safeExtendBounds(b, dest);
-    if (onlyRouteId) {
+    if (remainingFromUser) {
+      if (remainingGeom?.length) extendBoundsWithPolyline(b, remainingGeom);
+    } else if (onlyRouteId) {
       const one = routes.find((r) => r.id === onlyRouteId);
       if (one?.geometry?.length) extendBoundsWithPolyline(b, one.geometry);
       else for (const r of routes) extendBoundsWithPolyline(b, r.geometry);
@@ -841,24 +899,85 @@ function applyTripCameraFit(
     bearing: 0,
     pitch: 0,
   });
+  const spanForFloor = Number.isFinite(spanM) && spanM > 0 ? spanM : fit.directM;
   if (!cam?.center || cam.zoom == null || !Number.isFinite(cam.zoom)) {
     return safeFitBounds(map, fit.bounds, {
       padding,
       maxZoom,
+      minZoom: minPlanningRouteZoomFloor(spanForFloor),
       duration: durationMs,
       bearing: 0,
       pitch: 0,
       essential: true,
     });
   }
+  const zoom = clampPlanningFitZoom(cam.zoom, spanForFloor);
+  /* Planning uses duration 0 — easeTo no-ops while long-trip tiles load, so the
+   * overview never lands and the map stays on the dest-hold street crop. */
+  if (durationMs <= 0) {
+    return safeJumpTo(map, {
+      center: cam.center,
+      zoom,
+      bearing: 0,
+      pitch: 0,
+      padding,
+    });
+  }
   return safeEaseTo(map, {
     center: cam.center,
-    zoom: cam.zoom,
+    zoom,
     bearing: 0,
     pitch: 0,
     duration: durationMs,
     essential: true,
   });
+}
+
+/** Compute the Rt overview camera without applying it — for the Dr/Mp/Rt drone lerp. */
+export function previewTripOverviewCamera(
+  map: mapboxgl.Map,
+  routes: NavRoute[],
+  user: LngLat | null,
+  dest: LngLat | null,
+  padding: mapboxgl.PaddingOptions,
+  maxZoomCeiling = 18,
+  opts?: Pick<
+    FitMapToTripOptions,
+    "onlyRouteId" | "forceFullPolyline" | "remainingFromUser" | "zoomBias"
+  >
+): { lng: number; lat: number; zoom: number } | null {
+  const fit = buildTripFitBounds(
+    user,
+    dest,
+    routes,
+    opts?.onlyRouteId,
+    opts?.forceFullPolyline,
+    opts?.remainingFromUser
+  );
+  if (!fit) return null;
+  const spanM = boundsDiagonalMeters(fit.bounds);
+  const maxZoom = computeTripFitMaxZoom(
+    spanM,
+    fit.directM,
+    fit.endpointsOnly,
+    maxZoomCeiling,
+    opts?.zoomBias ?? 0
+  );
+  const cam = safeCameraForBounds(map, fit.bounds, {
+    padding,
+    maxZoom,
+    bearing: 0,
+    pitch: 0,
+  });
+  const spanForFloor = Number.isFinite(spanM) && spanM > 0 ? spanM : fit.directM;
+  if (!cam?.center || cam.zoom == null || !Number.isFinite(cam.zoom)) return null;
+  const ll = readMapLngLat(cam.center);
+  if (!ll) return null;
+  return {
+    lng: ll[0],
+    lat: ll[1],
+    zoom: clampPlanningFitZoom(cam.zoom, spanForFloor),
+  };
 }
 
 export function fitMapToTrip(
@@ -870,7 +989,14 @@ export function fitMapToTrip(
   maxZoomCeiling = 18,
   opts?: FitMapToTripOptions
 ): boolean {
-  const fit = buildTripFitBounds(user, dest, routes, opts?.onlyRouteId, opts?.forceFullPolyline);
+  const fit = buildTripFitBounds(
+    user,
+    dest,
+    routes,
+    opts?.onlyRouteId,
+    opts?.forceFullPolyline,
+    opts?.remainingFromUser
+  );
   if (!fit) {
     opts?.onAfterFit?.();
     return false;
@@ -878,12 +1004,41 @@ export function fitMapToTrip(
 
   const finish = () => opts?.onAfterFit?.();
   map.once("moveend", finish);
-  const ok = applyTripCameraFit(map, fit, padding, maxZoomCeiling, opts?.zoomBias ?? 0, 360);
+  const ok = applyTripCameraFit(
+    map,
+    fit,
+    padding,
+    maxZoomCeiling,
+    opts?.zoomBias ?? 0,
+    opts?.durationMs ?? 360
+  );
   if (!ok) {
     map.off("moveend", finish);
     opts?.onAfterFit?.();
   }
   return ok;
+}
+
+/** Last-ditch planning frame: puck + dest only, so a line is on screen even if the full polyline fit missed. */
+export function fitMapToTripEndpoints(
+  map: mapboxgl.Map,
+  user: [number, number] | null,
+  dest: [number, number] | null,
+  padding: mapboxgl.PaddingOptions,
+  maxZoomCeiling = 18
+): boolean {
+  if (!user || !dest) return false;
+  const b = new mapboxgl.LngLatBounds();
+  extendEndpointPairBounds(b, user, dest);
+  if (b.isEmpty()) return false;
+  return applyTripCameraFit(
+    map,
+    { bounds: b, directM: haversineMeters(user, dest), endpointsOnly: true },
+    padding,
+    maxZoomCeiling,
+    0,
+    0
+  );
 }
 
 const ROUTE_COMPARE_DEFAULT_AHEAD_M = 28_000;

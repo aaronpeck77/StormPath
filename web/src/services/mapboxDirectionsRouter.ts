@@ -2,9 +2,14 @@ import {
   DRIVE_FORWARD_BEARING_TOLERANCE_DEG,
   pickBestForwardRoute,
 } from "../nav/forwardRoutePick";
+import {
+  ALTERNATE_MAX_DISTANCE_FACTOR,
+  ALTERNATE_MAX_DURATION_FACTOR,
+} from "../nav/routePreference";
 import type { LngLat, MapboxRouteIncident, NavRoute, PostedSpeedSample, RouteTurnStep, TripPlan } from "../nav/types";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { detectRouteTollsFromLegs } from "../nav/detectRouteTolls";
+import { collectRoadControls } from "../nav/roadControls";
 import {
   closestAlongRouteMeters,
   cumulativeLengthToVertex,
@@ -22,7 +27,11 @@ import {
 } from "../nav/postedSpeed";
 import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
 import { isUltraLongTripRoute } from "../utils/dataSaver";
-import { parseExitNumberFromStep, shortenTurnInstruction } from "../nav/turnInstructionShort";
+import {
+  parseExitNumberFromStep,
+  placeNameFromDestinations,
+  shortenTurnInstruction,
+} from "../nav/turnInstructionShort";
 import {
   loadActivitySamples,
   type ActivitySample,
@@ -90,6 +99,12 @@ type DirectionsResponse = {
           geometry_index?: number;
           classes?: string[];
           toll_collection?: { name?: string; type?: string };
+          /** [lng, lat] of the intersection itself. */
+          location?: MbCoord;
+          traffic_signal?: boolean;
+          stop_sign?: boolean;
+          yield_sign?: boolean;
+          railway_crossing?: boolean;
         }[];
       }[];
       incidents?: MbIncident[];
@@ -185,10 +200,7 @@ function applyDirectionsQueryParams(
 ): void {
   if (opts.alternatives) url.searchParams.set("alternatives", "true");
   url.searchParams.set("geometries", "geojson");
-  url.searchParams.set(
-    "overview",
-    opts.simplifiedOverview || opts.includeDetails === false ? "simplified" : "full"
-  );
+  url.searchParams.set("overview", opts.simplifiedOverview ? "simplified" : "full");
   url.searchParams.set("steps", opts.includeDetails === false ? "false" : "true");
   if (opts.includeDetails !== false) {
     url.searchParams.set("annotations", "closure,maxspeed");
@@ -226,6 +238,7 @@ function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteT
       const destinations = typeof step.destinations === "string" ? step.destinations : undefined;
       const exitNumber =
         parseExitNumberFromStep(rawInstr, exits, mv?.exit) ?? undefined;
+      const towardPlace = placeNameFromDestinations(destinations) ?? undefined;
       const instr = shortenTurnInstruction(rawInstr, name, ref, {
         exits,
         maneuverExit: mv?.exit,
@@ -238,6 +251,7 @@ function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteT
         maneuverType: typeof mv?.type === "string" ? mv.type : undefined,
         maneuverModifier: typeof mv?.modifier === "string" ? mv.modifier : undefined,
         exitNumber,
+        towardPlace,
         roadName: name?.trim() || undefined,
         roadRef: ref?.trim() || undefined,
       });
@@ -466,6 +480,7 @@ function routeFromDirectionsApi(
     hasTolls: tollInfo.hasTolls || undefined,
     tollLabels: tollInfo.tollLabels.length ? tollInfo.tollLabels : undefined,
     postedSpeedSamples,
+    roadControls: collectRoadControls(legs),
   };
 }
 
@@ -721,10 +736,9 @@ function collectRouteIncidentsWithAlong(
   const seen = new Set<string>();
   for (let li = 0; li < legs.length; li++) {
     for (const inc of legs[li]!.incidents ?? []) {
-      const desc =
-        inc.long_description?.trim() ||
-        inc.description?.trim() ||
-        "";
+      const shortDesc = inc.description?.trim() || "";
+      const longDesc = inc.long_description?.trim() || "";
+      const desc = shortDesc || longDesc;
       if (!desc || seen.has(desc)) continue;
       seen.add(desc);
 
@@ -733,7 +747,8 @@ function collectRouteIncidentsWithAlong(
       const structured: MapboxRouteIncident = {
         type: typeLbl || "incident",
         impact: typeof inc.impact === "string" ? inc.impact : undefined,
-        description: desc,
+        description: shortDesc || longDesc,
+        longDescription: longDesc && longDesc !== shortDesc ? longDesc : undefined,
         alongMeters: alongForIncident(geometry, li, legStarts, inc),
         affectedRoadNames: roads?.length ? roads : undefined,
         numLanesBlocked:
@@ -810,6 +825,8 @@ export async function collectMapboxRouteVariants(
     skipStormLegRefinement?: boolean;
     /** Off-route rejoin shuffle — odd passes prefer motorway-excluded alternates for different B/C. */
     rejoinShufflePass?: number;
+    /** Dead-mainline points for a jam hop. One route, same destination. Does not ban every freeway. */
+    excludePoints?: LngLat[];
   }
 ): Promise<NavRoute[]> {
   const signal = opts?.signal;
@@ -817,7 +834,6 @@ export async function collectMapboxRouteVariants(
   const hasVia = via.length > 0;
   const allowLocalTripThirdRoute = Boolean(opts?.allowLocalTripThirdRoute);
   const preferThreeRoutes = Boolean(opts?.preferThreeRoutes);
-  const includeDetails = opts?.includeDetails !== false;
   const excludeToll = Boolean(opts?.excludeToll);
   const trailSamples: ActivitySample[] | null = opts?.trailRoutePersonalization
     ? loadActivitySamples()
@@ -826,6 +842,8 @@ export async function collectMapboxRouteVariants(
 
   const estTripM = estimateRoadDistanceM(start, end, hasVia ? via : undefined);
   const ultraLongTrip = isUltraLongTripRoute(estTripM);
+  /** Skip step/annotation payloads on 300+ mi trips — they dominate plan time. */
+  const includeDetails = opts?.includeDetails !== false && !ultraLongTrip;
   /**
    * Quota-aware caps: Basic = 1 Directions call, Plus = A/B (2 calls).
    * Legacy preferThreeRoutes still maps to 3 when maxRoutes is omitted.
@@ -859,6 +877,7 @@ export async function collectMapboxRouteVariants(
         alternatives: forwardFirst,
         excludeMotorway: Boolean(opts.preferBackroads),
         excludeToll,
+        excludePoints: opts.excludePoints,
         includeDetails,
         simplifiedOverview,
         bearingDeg: bearing,
@@ -964,43 +983,35 @@ export async function collectMapboxRouteVariants(
       );
     };
 
-    const softNoMw = noMwSorted.filter(isPreferredAlternate);
+    const withinProgress = (r: MbRoute): boolean => {
+      const dur = r.duration ?? Infinity;
+      const dist = r.distance ?? Infinity;
+      const aDur = aRaw.duration ?? 0;
+      const aDist = aRaw.distance ?? 0;
+      if (!(aDur > 0) || !(aDist > 0)) return false;
+      return dur <= aDur * ALTERNATE_MAX_DURATION_FACTOR && dist <= aDist * ALTERNATE_MAX_DISTANCE_FACTOR;
+    };
+    const progressAlternate = (r: MbRoute): boolean =>
+      isPreferredAlternate(r) && withinProgress(r);
+
+    const noMwFit = noMwSorted.filter(progressAlternate);
+    const primaryFit = primarySorted.slice(1).filter(progressAlternate);
+    const pool = [...primaryFit, ...noMwFit];
     let bRaw: MbRoute | undefined =
       (trailSamples
-        ? pickMbRouteByTrail(softNoMw, trailSamples, [navA.geometry])
-        : undefined) ?? softNoMw[0];
+        ? pickMbRouteByTrail(pool, trailSamples, [navA.geometry])
+        : undefined) ?? undefined;
 
-    if (!bRaw) {
-      bRaw = primarySorted.slice(1).find(isPreferredAlternate);
-    }
-
-    /**
-     * Always surface a second option when Mapbox (or no-interstate) returned one.
-     * Soft filters above are preferred; last resort keeps any non-identical shape so
-     * the cycle control is not stuck on Main-only.
-     */
-    if (!bRaw) {
-      bRaw =
-        primarySorted.slice(1).find((r) => {
-          const line = mbRouteLightLine(r);
-          return Boolean(line) && !sameRouteShapeLine(line!, navA.geometry);
-        }) ??
-        noMwSorted.find((r) => {
-          const line = mbRouteLightLine(r);
-          return Boolean(line) && !sameRouteShapeLine(line!, navA.geometry);
-        }) ??
-        primarySorted[1] ??
-        noMwSorted[0];
+    /* Closest in time to Main. A no-interstate line wins only when it is
+     * nearly as quick — a long wander around the highway is thrown away. */
+    if (!bRaw && pool.length) {
+      const bestDur = Math.min(...pool.map((r) => r.duration ?? Infinity));
+      const close = pool.filter((r) => (r.duration ?? Infinity) <= bestDur * 1.08);
+      bRaw = close.find((r) => noMwSorted.includes(r)) ?? close[0] ?? pool[0];
     }
 
     if (bRaw) {
-      const fromNoMw = noMwSorted.includes(bRaw);
-      const navB = routeFromDirectionsApi(
-        bRaw,
-        "r-b",
-        fromNoMw ? "hazardSmart" : "balanced",
-        fromNoMw ? "No interstate" : "Alternate"
-      );
+      const navB = routeFromDirectionsApi(bRaw, "r-b", "balanced", "Alternate");
       if (navB) {
         /* Overlapping corridors are fine; identical clones must not occupy slot B
          * or the later point-exclude fetch never runs. */
@@ -1134,7 +1145,7 @@ export async function collectMapboxRouteVariants(
   return out.slice(0, Math.min(targetPrimaryCount, out.length));
 }
 
-const MAX_FORCED_ALT_DURATION_FACTOR = 1.5;
+const MAX_FORCED_ALT_DURATION_FACTOR = ALTERNATE_MAX_DURATION_FACTOR;
 
 async function fetchForcedDistinctAlternate(
   accessToken: string,
@@ -1173,6 +1184,9 @@ async function fetchForcedDistinctAlternate(
       if (!navB) continue;
       if (sameRouteShapeLine(navA.geometry, navB.geometry)) continue;
       if (navB.baseEtaMinutes > maxDurMin) continue;
+      const mainDist = polylineLengthMeters(navA.geometry);
+      const altDist = polylineLengthMeters(navB.geometry);
+      if (mainDist > 0 && altDist > mainDist * ALTERNATE_MAX_DISTANCE_FACTOR) continue;
       return navB;
     }
   } catch {
@@ -1210,6 +1224,7 @@ export async function buildTripFromMapbox(
     stormAlerts?: NormalizedWeatherAlert[];
     radarAvoidanceEnabled?: boolean;
     excludeToll?: boolean;
+    excludePoints?: LngLat[];
     trailRoutePersonalization?: boolean;
     singleRouteFromPosition?: boolean;
     skipStormLegRefinement?: boolean;

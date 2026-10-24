@@ -205,7 +205,12 @@ function dropCellCache(cell: string): void {
   }
 }
 
-/** Coarse country for `weatherAlerts` — same boxes as the alerts adapter. */
+let weatherKitLanguage = "en-US";
+
+/** About → Spoken language. Condition phrases come back in this tag. */
+export function setWeatherKitLanguage(tag: string): void {
+  weatherKitLanguage = tag && tag.trim() ? tag.trim() : "en-US";
+}
 export function weatherKitCountryCode(lat: number, lng: number): string {
   if (lat >= 24 && lat <= 72 && lng >= -180 && lng <= -65) return "US";
   if (lat >= 42 && lat <= 84 && lng >= -141 && lng <= -52) return "CA";
@@ -229,7 +234,7 @@ export async function fetchWeatherKitAtPoint(
   const country =
     opts?.country ??
     (fetchSets.includes("weatherAlerts") ? weatherKitCountryCode(lat, lng) : undefined);
-  const requestKey = `${cell}|${fetchSets.join(",")}|${country ?? ""}`;
+  const requestKey = `${cell}|${fetchSets.join(",")}|${country ?? ""}|${weatherKitLanguage}`;
 
   if (!opts?.bypassCache) {
     const hit = readFreshCache(cell, dataSets);
@@ -249,7 +254,7 @@ export async function fetchWeatherKitAtPoint(
     const ds = fetchSets.join(",");
     // weatherAlerts requires a country query param per Apple's WeatherKit REST API spec.
     const countryParam = country ? `&country=${encodeURIComponent(country)}` : "";
-    const url = `${BASE_URL}/en-US/${lat.toFixed(4)}/${lng.toFixed(4)}?dataSets=${encodeURIComponent(ds)}${countryParam}`;
+    const url = `${BASE_URL}/${encodeURIComponent(weatherKitLanguage)}/${lat.toFixed(4)}/${lng.toFixed(4)}?dataSets=${encodeURIComponent(ds)}${countryParam}`;
     const authHeaders = {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",

@@ -60,11 +60,24 @@ function baseInput(
 }
 
 describe("buildStormAdvisoryBarProps", () => {
+  it("Plus passes corridor timing ticker lines", () => {
+    const lines = [
+      {
+        badge: "Timing" as const,
+        text: "Storm on the map now — forecast clear by your ETA (~2h).",
+        tone: "info" as const,
+      },
+    ];
+    const props = buildStormAdvisoryBarProps(baseInput({ corridorTimingLines: lines }));
+    expect(props.corridorTimingLines).toEqual(lines);
+  });
+
   it("Plus keeps corridor alerts and hazard ETA line", () => {
     const props = buildStormAdvisoryBarProps(baseInput());
     expect(props.ownsPlus).toBe(true);
     expect(props.advisoryTier).toBe("plus");
     expect(props.nextHazardAtEtaLine).toBe("Hail in 22 min");
+    expect(props.corridorTimingLines).toEqual([]);
     expect(props.nowcastLine).toBe("72°F");
     expect(props.sessionOn).toBe(true);
     expect(props.roadDetailEnabled).toBe(true);
@@ -78,6 +91,7 @@ describe("buildStormAdvisoryBarProps", () => {
     expect(props.corridorAlerts).toEqual([]);
     expect(props.overlappingAlerts).toEqual([]);
     expect(props.nextHazardAtEtaLine).toBeNull();
+    expect(props.corridorTimingLines).toEqual([]);
     expect(props.nowcastLine).toBe("72°F");
     expect(props.currentNowcast).toBeNull();
     expect(props.forecastAreaLabel).toBe("Springfield, IL");

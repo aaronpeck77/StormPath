@@ -29,7 +29,7 @@ import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 export { isWeatherKitTokenBlocked } from "./weatherKitAuth";
 
 /** Start / mid-thirds / end — enough for the corridor strip without 6× Apple calls. */
-export const WEATHERKIT_ROUTE_MAX_LOCATIONS = 4;
+export const WEATHERKIT_ROUTE_MAX_LOCATIONS = 6;
 
 /** Map WeatherKit condition codes to Tomorrow.io-style codes for shared severity logic. */
 export function weatherKitConditionToCode(condition: string): number {
@@ -481,9 +481,13 @@ export async function fetchWeatherKitRouteForecastForGeometry(
   geometry: LngLat[],
   speedMps: number,
   signal?: AbortSignal,
-  opts?: { bypassCache?: boolean }
+  opts?: { bypassCache?: boolean; planEtaMinutes?: number | null }
 ): Promise<RouteForecast> {
-  const waypoints = buildTimelinesWaypointsForGeometry(geometry, speedMps);
+  const waypoints = buildTimelinesWaypointsForGeometry(
+    geometry,
+    speedMps,
+    opts?.planEtaMinutes
+  );
   if (!waypoints?.length) return { fetchedAt: Date.now(), intervals: [] };
   return fetchWeatherKitRouteForecast(waypoints, signal, opts);
 }

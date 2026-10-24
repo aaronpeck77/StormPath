@@ -25,14 +25,14 @@ describe("weatherKitConditionToCode", () => {
 });
 
 describe("WeatherKit corridor sampling", () => {
-  it("caps Apple corridor fetches at four points", () => {
-    expect(WEATHERKIT_ROUTE_MAX_LOCATIONS).toBe(4);
+  it("caps Apple corridor fetches at six points", () => {
+    expect(WEATHERKIT_ROUTE_MAX_LOCATIONS).toBe(6);
     const wps = Array.from({ length: 12 }, (_, i) => ({
       lat: 40 + i * 0.2,
       lng: -75 - i * 0.2,
       etaMinutes: i * 10,
     }));
-    expect(pickRouteForecastFetchLocations(wps, WEATHERKIT_ROUTE_MAX_LOCATIONS)).toHaveLength(4);
+    expect(pickRouteForecastFetchLocations(wps, WEATHERKIT_ROUTE_MAX_LOCATIONS)).toHaveLength(6);
   });
 });
 

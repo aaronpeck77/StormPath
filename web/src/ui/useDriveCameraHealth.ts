@@ -14,11 +14,11 @@ import {
 import { reportAppHealthRepair } from "../monitoring/appHealthSignals";
 import { resolveJeffSupervisorRecovery } from "../monitoring/jeffSupervisor";
 import { reportJeffSighting, noteForJeffDomain } from "./jeffTheBot";
-
-/** Puck drift needs a snappier poll — on a frozen map the puck climbs the route fast. */
-const POLL_MS = 1_500;
-/** Minimum spacing between automatic camera resyncs — avoid fighting a real GPS-noise blip. */
-const REPAIR_COOLDOWN_MS = 15_000;
+import {
+  DRIVE_CAMERA_HEALTH_POLL_MS,
+  jeffRepairCooldownMs,
+} from "./driveCameraRules";
+import { noteDriveDiagJeffResync } from "../nav/driveDiagnostics";
 
 export type UseDriveCameraHealthDeps = {
   navigationStarted: boolean;
@@ -34,16 +34,18 @@ export type UseDriveCameraHealthDeps = {
   puckAnchorDriftPxRef?: MutableRefObject<number | null>;
   /** Bump the follow-cam resync key — re-centers the map on the puck and snaps bearing. */
   onResyncCamera: () => void;
-  /** Supervisor dead-zone hold — still resync camera; only traffic fetches stay held. */
+  /** Supervisor dead-zone hold — Jeff stands down; DriveMap snaps once when this clears. */
   holdLastGoodMap?: boolean;
+  /** App-online. False is enough to hold Jeff even if the supervisor latch is late. */
+  isOnline?: boolean;
 };
 
 /**
  * Background watchdog + self-heal for drive follow-cam: while GO is active in drive view,
  * periodically checks (1) applied camera bearing vs course-over-ground and (2) puck screen
  * position vs the fixed yard-line anchor. Either failure forces the same follow-cam resync
- * and lights up Jeff so the fix isn't invisible. Jeff reports to the supervisor:
- * dead-zone hold still resyncs the camera (tiles stay; GPS follow must not freeze).
+ * and lights up Jeff so the fix isn't invisible. Dead-zone hold freezes the
+ * last picture — Jeff must not yank (434: 331 resyncs in 8 min).
  */
 export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
   const {
@@ -57,6 +59,7 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
     puckAnchorDriftPxRef,
     onResyncCamera,
     holdLastGoodMap = false,
+    isOnline = true,
   } = deps;
 
   const prevFixRef = useRef<{ lng: number; lat: number } | null>(null);
@@ -124,6 +127,7 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
       const jeffDomain = puckReady ? "drive_puck" : "drive_camera";
       const recovery = resolveJeffSupervisorRecovery({
         holdLastGoodMap,
+        isOnline,
         domain: jeffDomain,
       });
       if (recovery === "hold_last_good_map") {
@@ -133,7 +137,11 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
       }
 
       const now = Date.now();
-      if (now - lastRepairAtRef.current < REPAIR_COOLDOWN_MS) return;
+      const cool = jeffRepairCooldownMs({
+        puckReady,
+        puckSevere: puckReady && puckAudit.severe,
+      });
+      if (now - lastRepairAtRef.current < cool) return;
       lastRepairAtRef.current = now;
       headingBadStreakRef.current = 0;
       puckBadStreakRef.current = 0;
@@ -141,7 +149,10 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
       /* Prefer the more specific puck note when that's what fired; otherwise camera. */
       if (puckReady) {
         const actions = repairActionsForDrivePuckIssues(puckAudit.issues);
-        if (recovery === "resync_camera" && actions.includes("resync_camera")) onResyncCamera();
+        if (recovery === "resync_camera" && actions.includes("resync_camera")) {
+          onResyncCamera();
+          noteDriveDiagJeffResync();
+        }
         reportAppHealthRepair("drive_puck", puckAudit.issues, actions);
         reportJeffSighting("drive_puck", noteForJeffDomain("drive_puck"));
         if (import.meta.env.DEV) {
@@ -151,7 +162,10 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
       }
 
       const actions = repairActionsForDriveCameraIssues(headingAudit.issues);
-      if (recovery === "resync_camera" && actions.includes("resync_camera")) onResyncCamera();
+      if (recovery === "resync_camera" && actions.includes("resync_camera")) {
+        onResyncCamera();
+        noteDriveDiagJeffResync();
+      }
       reportAppHealthRepair("drive_camera", headingAudit.issues, actions);
       reportJeffSighting("drive_camera", noteForJeffDomain("drive_camera"));
       if (import.meta.env.DEV) {
@@ -160,7 +174,7 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
     };
 
     tick();
-    const id = window.setInterval(tick, POLL_MS);
+    const id = window.setInterval(tick, DRIVE_CAMERA_HEALTH_POLL_MS);
     return () => window.clearInterval(id);
   }, [
     navigationStarted,
@@ -173,5 +187,6 @@ export function useDriveCameraHealth(deps: UseDriveCameraHealthDeps): void {
     puckAnchorDriftPxRef,
     onResyncCamera,
     holdLastGoodMap,
+    isOnline,
   ]);
 }

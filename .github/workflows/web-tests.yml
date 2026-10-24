@@ -3,9 +3,9 @@ name: Web tests
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, native/drive]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, native/drive]
   workflow_dispatch:
 
 jobs:

@@ -1,6 +1,5 @@
 import {
   filterForwardRejoinRoutes,
-  isReverseRejoinRoute,
   orderRejoinRoutesBestFirst,
   pickLocalRejoinAlongM,
   type PickRejoinAlongOpts,
@@ -9,7 +8,6 @@ import { rejoinOverlaySlotIds } from "./mergePlanRoutes";
 import { pointAtAlongMeters, polylineLengthMeters } from "./routeGeometry";
 import type { LngLat, NavRoute, TripPlan } from "./types";
 import { collectMapboxRouteVariants } from "../services/mapboxDirectionsRouter";
-import { fetchMapboxSurgicalBypass } from "../services/mapboxRouteAlternatives";
 
 export { pickLocalRejoinAlongM } from "./detourRejoin";
 
@@ -98,26 +96,6 @@ export async function fetchLocalRejoinRoutes(opts: {
         pool.find((r) => r.id !== pool[0]?.id && r.geometry.length >= 2) ?? pool[1];
       if (second) {
         out.push({ ...second, id: altIds[1]!, label: "Rejoin C" });
-      } else {
-        const rejoinM2 = pickLocalRejoinAlongM(userAlongM, totalM, shuffle + 1, pickOpts);
-        const rejoinPt2 = pointAtAlongMeters(lockedGeometry, rejoinM2);
-        const surgical = await fetchMapboxSurgicalBypass(accessToken, userLngLat, rejoinPt2, {
-          bearingDeg:
-            bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
-        });
-        if (surgical?.geometry.length) {
-          const surgicalRoute: NavRoute = {
-            id: altIds[1]!,
-            role: "balanced",
-            label: "Rejoin C",
-            geometry: surgical.geometry,
-            baseEtaMinutes: Math.max(1, Math.round(surgical.durationMinutes)),
-            turnSteps: surgical.turnSteps,
-          };
-          if (!isReverseRejoinRoute(surgicalRoute, userLngLat, bearingDeg)) {
-            out.push(surgicalRoute);
-          }
-        }
       }
     }
 

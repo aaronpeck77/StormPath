@@ -1,6 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { computeDriveRouteBearing } from "../computeDriveRouteBearing";
+import {
+  computeDriveRouteBearing,
+  driveAlignLookAheadMeters,
+  driveRouteLookAheadMeters,
+  liveDriveAlignBearing,
+  type LiveAlignBearingState,
+} from "../computeDriveRouteBearing";
+import { buildCumulativeDistances, pointAtAlongMeters } from "../routeGeometry";
 import type { LngLat } from "../types";
+
+/** 180 m north, then 180 m east. A sharp city corner. */
+function northThenEast(): LngLat[] {
+  const lat0 = 38.63;
+  const lng0 = -90.2;
+  const north = 180 / 111320;
+  const east = 180 / (111320 * Math.cos((lat0 * Math.PI) / 180));
+  return [
+    [lng0, lat0],
+    [lng0, lat0 + north],
+    [lng0 + east, lat0 + north],
+  ];
+}
+
+function signedDelta(from: number, to: number): number {
+  return ((((to - from) % 360) + 540) % 360) - 180;
+}
 
 const geom: LngLat[] = [
   [-90.2, 38.6],
@@ -35,6 +59,41 @@ describe("computeDriveRouteBearing", () => {
     ).toBeNull();
   });
 
+  it("does not stretch look-ahead a block before the turn", () => {
+    const far = driveRouteLookAheadMeters(14, 160);
+    const near = driveRouteLookAheadMeters(14, 50);
+    expect(near).toBeGreaterThan(far);
+    expect(far).toBeLessThan(110);
+    expect(near).toBeGreaterThan(90);
+  });
+
+  it("computes a bearing far and near a maneuver", () => {
+    const far = computeDriveRouteBearing({
+      driveOffRouteForwardFraming: false,
+      driveModeUi: true,
+      effectiveUserLngLat: [-90.2, 38.6],
+      geometry: geom,
+      speedMps: 14,
+      navigationStarted: true,
+      userAlongGuidanceM: 0,
+      metersToManeuver: 120,
+    });
+    const near = computeDriveRouteBearing({
+      driveOffRouteForwardFraming: false,
+      driveModeUi: true,
+      effectiveUserLngLat: [-90.2, 38.6],
+      geometry: geom,
+      speedMps: 14,
+      navigationStarted: true,
+      userAlongGuidanceM: 0,
+      metersToManeuver: 20,
+    });
+    expect(far).not.toBeNull();
+    expect(near).not.toBeNull();
+    expect(Number.isFinite(far)).toBe(true);
+    expect(Number.isFinite(near)).toBe(true);
+  });
+
   it("returns a finite bearing when on corridor in drive mode", () => {
     const b = computeDriveRouteBearing({
       driveOffRouteForwardFraming: false,
@@ -47,5 +106,130 @@ describe("computeDriveRouteBearing", () => {
     });
     expect(b).not.toBeNull();
     expect(Number.isFinite(b)).toBe(true);
+  });
+});
+
+describe("liveDriveAlignBearing", () => {
+  it("keeps a steady look-ahead so the heading does not step when a turn gets close", () => {
+    const slow = driveAlignLookAheadMeters(8);
+    const fast = driveAlignLookAheadMeters(20);
+    expect(fast).toBeGreaterThan(slow);
+    expect(fast - slow).toBeLessThan(30);
+    expect(driveAlignLookAheadMeters(8)).toBe(driveAlignLookAheadMeters(8));
+  });
+
+  it("reads only about two seconds of road so a slow corner can finish straight", () => {
+    for (const speed of [4, 6, 8, 11]) {
+      const look = driveAlignLookAheadMeters(speed);
+      expect(look / speed).toBeLessThanOrEqual(2.05);
+      expect(look / speed).toBeGreaterThan(1.2);
+    }
+  });
+
+  it("faces the next street by the corner and does not swing back", () => {
+    const geom = northThenEast();
+    const cum = buildCumulativeDistances(geom);
+    const cornerM = cum[1]!;
+    const state: LiveAlignBearingState = { geomKey: "", cum: null, alongM: null };
+    let prev: number | null = null;
+    for (let along = 0; along <= cornerM + 30; along += 5) {
+      const puck = pointAtAlongMeters(geom, along, cum);
+      const b = liveDriveAlignBearing({
+        state,
+        geometry: geom,
+        puck,
+        speedMps: 10,
+        seedAlongM: 0,
+        offRoute: false,
+      });
+      expect(b).not.toBeNull();
+      if (prev != null && b != null) {
+        expect(signedDelta(prev, b)).toBeGreaterThanOrEqual(-1);
+      }
+      prev = b;
+      if (along + 1e-6 >= cornerM) {
+        expect(b!).toBeGreaterThan(80);
+        expect(b!).toBeLessThan(100);
+      }
+    }
+  });
+
+  it("stays on the approach road until the corner is inside the look-ahead", () => {
+    const geom = northThenEast();
+    const cum = buildCumulativeDistances(geom);
+    const cornerM = cum[1]!;
+    const state: LiveAlignBearingState = { geomKey: "", cum: null, alongM: null };
+    const look = driveAlignLookAheadMeters(10);
+    const puck = pointAtAlongMeters(geom, Math.max(0, cornerM - look - 25), cum);
+    const b = liveDriveAlignBearing({
+      state,
+      geometry: geom,
+      puck,
+      speedMps: 10,
+      seedAlongM: 0,
+      offRoute: false,
+    });
+    expect(b).not.toBeNull();
+    expect(b!).toBeLessThan(8);
+  });
+
+  it("ignores a one-frame reversal and follows it once it holds", () => {
+    const lat0 = 38.63;
+    const lng0 = -90.2;
+    const north = 40 / 111320;
+    const geom: LngLat[] = [
+      [lng0, lat0],
+      [lng0, lat0 + north],
+      [lng0, lat0],
+    ];
+    const cum = buildCumulativeDistances(geom);
+    const state: LiveAlignBearingState = { geomKey: "", cum: null, alongM: null };
+    const approach = liveDriveAlignBearing({
+      state,
+      geometry: geom,
+      puck: pointAtAlongMeters(geom, 8, cum),
+      speedMps: 6,
+      seedAlongM: 0,
+      offRoute: false,
+    });
+    expect(approach).not.toBeNull();
+    expect(approach!).toBeLessThan(8);
+    const corner = pointAtAlongMeters(geom, cum[1]!, cum);
+    const first = liveDriveAlignBearing({
+      state,
+      geometry: geom,
+      puck: corner,
+      speedMps: 6,
+      seedAlongM: cum[1]!,
+      offRoute: false,
+    });
+    expect(Math.abs(signedDelta(approach!, first!))).toBeLessThan(8);
+    let held: number | null = first;
+    for (let i = 0; i < 2; i++) {
+      held = liveDriveAlignBearing({
+        state,
+        geometry: geom,
+        puck: corner,
+        speedMps: 6,
+        seedAlongM: cum[1]!,
+        offRoute: false,
+      });
+    }
+    expect(held!).toBeGreaterThan(170);
+  });
+
+  it("does not follow the route while the car is off it", () => {
+    const geom = northThenEast();
+    const state: LiveAlignBearingState = { geomKey: "", cum: null, alongM: null };
+    expect(
+      liveDriveAlignBearing({
+        state,
+        geometry: geom,
+        puck: geom[0]!,
+        speedMps: 10,
+        seedAlongM: 0,
+        offRoute: true,
+      })
+    ).toBeNull();
   });
 });

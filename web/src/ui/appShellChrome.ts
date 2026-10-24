@@ -11,6 +11,7 @@ export type AppShellClassNameFlags = {
   landscapeHandLeft: boolean;
   radarFrameTimeVisible: boolean;
   basicAdBannerReservesSpace: boolean;
+  nativeDriveMap: boolean;
 };
 
 /** Root `.app-shell` class list — one flag per UI mode/overlay that changes shell layout. */
@@ -25,6 +26,7 @@ export function buildAppShellClassName(flags: AppShellClassNameFlags): string {
     landscapeHandLeft,
     radarFrameTimeVisible,
     basicAdBannerReservesSpace,
+    nativeDriveMap,
   } = flags;
   return [
     "app-shell",
@@ -37,10 +39,21 @@ export function buildAppShellClassName(flags: AppShellClassNameFlags): string {
     landscapeHandLeft ? "app-shell--landscape-hand-left" : "",
     radarFrameTimeVisible ? "nav-radar-frame-time-visible" : "",
     basicAdBannerReservesSpace ? "app-shell--basic-ad-banner" : "",
+    nativeDriveMap ? "app-shell--native-drive-map" : "",
     import.meta.env.DEV ? "app-shell--dev-pointer" : "",
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+/** Shell style: dev cursor, plus the live AdMob height so bottom controls clear the banner. */
+export function buildAppShellStyle(adBannerLiftPx: number): CSSProperties | undefined {
+  const dev = buildDevPointerStyle();
+  if (!(adBannerLiftPx > 0)) return dev;
+  const lift = {
+    ["--basic-ad-banner-reserve" as string]: `${Math.round(adBannerLiftPx)}px`,
+  } as CSSProperties;
+  return dev ? { ...dev, ...lift } : lift;
 }
 
 /** Dev-only cursor override so custom pointer glyphs don't leak into production builds. */

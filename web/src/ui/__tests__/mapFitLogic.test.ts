@@ -3,8 +3,12 @@ import type { NavRoute } from "../../nav/types";
 import {
   maxRouteOverviewZoomDuringNav,
   minPlanningRouteZoomFloor,
+  clampPlanningFitZoom,
+  padChromeWithEdgeStrip,
   planningRoutesFitKey,
+  ROUTE_EDGE_STRIP_PX,
   routeFitZoomBias,
+  routeOverviewProgressBucket,
   routeViewAxis,
 } from "../mapFitLogic";
 import { smoothDriveBearingDeg } from "../mapDriveCamera";
@@ -43,6 +47,11 @@ describe("mapFitLogic", () => {
     expect(minPlanningRouteZoomFloor(120_000)).toBeLessThan(7);
   });
 
+  it("will not let a local dest fit land at Canada-scale zoom", () => {
+    expect(clampPlanningFitZoom(6.95, 8_000)).toBeGreaterThan(10);
+    expect(clampPlanningFitZoom(14.2, 8_000)).toBe(14.2);
+  });
+
   it("caps Rt overview zoom during long nav trips", () => {
     expect(maxRouteOverviewZoomDuringNav(LONG_TRIP_ROUTE_M)).toBeLessThan(10);
     expect(maxRouteOverviewZoomDuringNav(ULTRA_LONG_TRIP_ROUTE_M)).toBeLessThan(7.5);
@@ -65,6 +74,29 @@ describe("mapFitLogic", () => {
     expect(all).toContain("r-a");
     expect(all).toContain("r-b");
     expect(all).not.toBe(onlyA);
+  });
+
+  it("does not change the planning fit key when only dest snaps", () => {
+    const a = route("r-a", [
+      [-86.78, 36.16],
+      [-86.66, 36.24],
+    ]);
+    const destA: [number, number] = [-86.66, 36.24];
+    const destB: [number, number] = [-86.661, 36.241];
+    expect(planningRoutesFitKey([a], null, destA)).toBe(planningRoutesFitKey([a], null, destB));
+  });
+
+  it("tightens Rt progress buckets as remaining distance shrinks", () => {
+    expect(routeOverviewProgressBucket(80_000)).not.toBe(routeOverviewProgressBucket(20_000));
+    expect(routeOverviewProgressBucket(20_000)).not.toBe(routeOverviewProgressBucket(3_000));
+    expect(routeOverviewProgressBucket(200)).toBe("arrive");
+  });
+
+  it("adds only a thin strip outside chrome so puck and dest sit on the rim", () => {
+    const padded = padChromeWithEdgeStrip({ top: 60, bottom: 80, left: 10, right: 50 });
+    expect(padded.top).toBe(60 + ROUTE_EDGE_STRIP_PX);
+    expect(padded.bottom).toBe(80 + ROUTE_EDGE_STRIP_PX);
+    expect(ROUTE_EDGE_STRIP_PX).toBeLessThanOrEqual(16);
   });
 });
 

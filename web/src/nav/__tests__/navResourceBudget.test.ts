@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildNavResourceBudget, type NavResourceBudgetInput } from "../navResourceBudget";
+import {
+  buildNavResourceBudget,
+  IDLE_MAP_SLEEP_MS,
+  shouldPauseHiddenMapWork,
+  shouldSleepIdleMap,
+  type NavResourceBudgetInput,
+} from "../navResourceBudget";
 import { LONG_TRIP_ROUTE_M } from "../../utils/dataSaver";
 
 const base: NavResourceBudgetInput = {
@@ -123,6 +129,91 @@ describe("navResourceBudget", () => {
       settingStormEnabled: true,
     });
     expect(budget.radarRouteSamplingEnabled).toBe(true);
+  });
+
+  it("keeps corridor wind/rain forecast on a long planned route before Go", () => {
+    const budget = buildNavResourceBudget({
+      ...base,
+      navigationStarted: false,
+      viewMode: "route",
+      routeLengthM: LONG_TRIP_ROUTE_M + 1,
+      progressCalloutsOpen: false,
+      stormBarExpanded: false,
+    });
+    expect(budget.tioRouteFetchEnabled).toBe(true);
+    expect(budget.radarRouteSamplingEnabled).toBe(true);
+  });
+
+  it("samples radar while browsing a planned trip in Drive before Go (Rad off)", () => {
+    const budget = buildNavResourceBudget({
+      ...base,
+      navigationStarted: false,
+      viewMode: "drive",
+      showRadar: false,
+      progressCalloutsOpen: true,
+      stormBarExpanded: false,
+    });
+    expect(budget.driveNavMode).toBe(false);
+    expect(budget.radarMapOverlayOn).toBe(false);
+    expect(budget.radarRouteSamplingEnabled).toBe(true);
+    expect(budget.tioRouteFetchEnabled).toBe(true);
+  });
+
+  it("warms rail data once a destination is set, even with storm and hints off", () => {
+    const budget = buildNavResourceBudget({
+      ...base,
+      navigationStarted: false,
+      viewMode: "route",
+      showRadar: false,
+      settingStormEnabled: false,
+      settingWeatherHintsEnabled: false,
+      progressCalloutsOpen: false,
+    });
+    expect(budget.radarRouteSamplingEnabled).toBe(true);
+    expect(budget.tioRouteFetchEnabled).toBe(true);
+  });
+
+  it("leaves the pre-Go rail warm-up off in data saver", () => {
+    const budget = buildNavResourceBudget({
+      ...base,
+      navigationStarted: false,
+      viewMode: "route",
+      showRadar: false,
+      dataSaverMode: true,
+      settingStormEnabled: false,
+      settingWeatherHintsEnabled: false,
+      progressCalloutsOpen: false,
+    });
+    expect(budget.radarRouteSamplingEnabled).toBe(false);
+  });
+
+  it("sleeps the idle map only after it has been hidden with no trip", () => {
+    expect(
+      shouldSleepIdleMap({
+        appForeground: false,
+        navigationStarted: false,
+        hiddenForMs: IDLE_MAP_SLEEP_MS,
+      })
+    ).toBe(true);
+    expect(
+      shouldSleepIdleMap({
+        appForeground: false,
+        navigationStarted: true,
+        hiddenForMs: IDLE_MAP_SLEEP_MS,
+      })
+    ).toBe(false);
+    expect(
+      shouldSleepIdleMap({
+        appForeground: false,
+        navigationStarted: false,
+        hiddenForMs: 1_000,
+      })
+    ).toBe(false);
+  });
+
+  it("pauses hidden map work as soon as the WebView is off screen", () => {
+    expect(shouldPauseHiddenMapWork(false)).toBe(true);
+    expect(shouldPauseHiddenMapWork(true)).toBe(false);
   });
 
   it("turns off map radar overlay when backgrounded", () => {

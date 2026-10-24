@@ -738,7 +738,6 @@ function needsPreciseWeatherBand(
 ): boolean {
   const aheadM = opts.detailAheadM ?? 0;
   const behindM = opts.detailBehindM ?? 0;
-  const planningAheadM = opts.planningDetailAheadM ?? 0;
   if (opts.navigationActive) {
     return bandIntersectsDetailWindow(
       coarse.startM,
@@ -748,7 +747,10 @@ function needsPreciseWeatherBand(
       behindM
     );
   }
-  return coarse.startM <= planningAheadM;
+  /* Planning: precise geometry for the whole corridor — drivers preview the full trip. */
+  void opts.planningDetailAheadM;
+  void coarse;
+  return true;
 }
 
 /**

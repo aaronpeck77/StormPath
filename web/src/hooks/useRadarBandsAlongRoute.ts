@@ -9,18 +9,23 @@ import {
 } from "../services/radarPolylineIntensity";
 import { fetchMapTileRgba, isRainViewerRateLimited } from "../services/rainViewerTileFetch";
 import {
+  animationCellsForPack,
   nearestRadarFrameByTimeMs,
   radarMapProviderForCenter,
   radarTileUrlForFrame,
   resolveRadarMapPack,
   type RadarMapFrame,
+  type RadarMapPack,
 } from "../services/radarMapPack";
 import { buildCumulativeDistances, pointAtAlongMeters, polylineLengthMeters } from "../nav/routeGeometry";
+import { pickEvenSpacedItems, RADAR_RAIL_LOOP_FRAME_CAP } from "../nav/radarRailSlice";
 
 export type RadarSample = { t: number; intensity: number };
 
 export type RadarBandsAlongRouteState = {
   samples: RadarSample[];
+  /** Mosaic frames along the corridor (past → now) for the moving rail. */
+  loopFrames: RadarSample[][];
   updatedAt: number | null;
   /** Set when RainViewer rate-limits — prior samples are kept. */
   refreshBlocked: string | null;
@@ -28,12 +33,82 @@ export type RadarBandsAlongRouteState = {
   bumpRadarResample: () => void;
 };
 
+type SamplePt = { t: number; lngLat: LngLat; frame: RadarMapFrame };
+
+async function sampleRadarIntensities(
+  pack: RadarMapPack,
+  pts: SamplePt[],
+  tomorrowIoApiKey: string | null | undefined,
+  cancelled: () => boolean
+): Promise<RadarSample[]> {
+  type SampleRef = { t: number; px: number; py: number };
+  const groups = new Map<string, { frame: RadarMapFrame; tileKey: string; samples: SampleRef[] }>();
+  const Z = RADAR_MOSAIC_SAMPLE_ZOOM;
+
+  for (const p of pts) {
+    const [lng, lat] = p.lngLat;
+    const { x, y, px, py } = tileXY(lng, lat, Z);
+    const tileKey = `${Z}/${x}/${y}`;
+    const groupId = `${p.frame.path}|${tileKey}`;
+    const existing = groups.get(groupId);
+    if (existing) {
+      existing.samples.push({ t: p.t, px, py });
+    } else {
+      groups.set(groupId, {
+        frame: p.frame,
+        tileKey,
+        samples: [{ t: p.t, px, py }],
+      });
+    }
+  }
+
+  const intensityFromRgba =
+    pack.provider === "tomorrow_io" ? echoIntensityFromPrecipTile : echoIntensityFromRgba;
+  const tileProvider = pack.provider === "tomorrow_io" ? "tomorrow_io" : "rainviewer";
+
+  const intensityByT = new Map<number, number>();
+  for (const { frame, tileKey, samples } of groups.values()) {
+    if (cancelled()) return [];
+    const template = radarTileUrlForFrame(pack, frame, tomorrowIoApiKey, "sample");
+    if (!template) {
+      for (const it of samples) {
+        if (!intensityByT.has(it.t)) intensityByT.set(it.t, 0);
+      }
+      continue;
+    }
+    const [zStr, xStr, yStr] = tileKey.split("/");
+    const url = template
+      .replace("{z}", zStr!)
+      .replace("{x}", xStr!)
+      .replace("{y}", yStr!);
+    const rgba = await fetchMapTileRgba(url, tileProvider);
+    for (const it of samples) {
+      if (!rgba) {
+        if (!intensityByT.has(it.t)) intensityByT.set(it.t, 0);
+        continue;
+      }
+      const idx = (it.py * 256 + it.px) * 4;
+      const intensity = intensityFromRgba(
+        rgba[idx] ?? 0,
+        rgba[idx + 1] ?? 0,
+        rgba[idx + 2] ?? 0,
+        rgba[idx + 3] ?? 0
+      );
+      intensityByT.set(it.t, Math.max(intensityByT.get(it.t) ?? 0, intensity));
+    }
+  }
+
+  return [...intensityByT.entries()]
+    .map(([t, intensity]) => ({ t, intensity }))
+    .sort((a, b) => a.t - b.t);
+}
+
 /**
  * Sample the radar mosaic along a route polyline and convert it into coarse "cell intensity"
  * values per sample. Uses the same fractions as route scoring ({@link RADAR_ROUTE_SAMPLE_FRACTIONS}).
  *
  * Map overlay provider split: US → Tomorrow.io when keyed, elsewhere RainViewer. This hook uses the
- * same split for short trips. On longer trips (ETA &gt; 5 min) it always uses RainViewer **nowcast**
+ * same split for short trips. On any planned trip with an ETA it uses RainViewer **nowcast**
  * frames so each sample can reflect where echoes are modeled when you arrive — even on US routes.
  */
 export function useRadarBandsAlongRoute(
@@ -46,10 +121,12 @@ export function useRadarBandsAlongRoute(
 ): RadarBandsAlongRouteState {
   const [state, setState] = useState<{
     samples: RadarSample[];
+    loopFrames: RadarSample[][];
     updatedAt: number | null;
     refreshBlocked: string | null;
   }>({
     samples: [],
+    loopFrames: [],
     updatedAt: null,
     refreshBlocked: null,
   });
@@ -72,7 +149,7 @@ export function useRadarBandsAlongRoute(
   samplesRef.current = state.samples;
 
   // Bucket ETA to 5-min intervals so minor GPS drift doesn't re-trigger the effect.
-  const etaKey = planEtaMinutes != null && planEtaMinutes > 5 ? Math.round(planEtaMinutes / 5) : 0;
+  const etaKey = planEtaMinutes != null && planEtaMinutes > 0 ? Math.round(planEtaMinutes / 5) : 0;
 
   const bumpRadarResample = useCallback(() => {
     setRefreshTick((n) => n + 1);
@@ -84,7 +161,7 @@ export function useRadarBandsAlongRoute(
       console.log(`[radarRoute] enabled=${enabled} geomPts=${geometry?.length ?? 0} eta=${planEtaMinutes ?? "none"}`);
     }
     if (!geometry || geometry.length < 2 || !routeCenter || !geomKey) {
-      setState({ samples: [], updatedAt: null, refreshBlocked: null });
+      setState({ samples: [], loopFrames: [], updatedAt: null, refreshBlocked: null });
       setRefreshing(false);
       return;
     }
@@ -96,7 +173,7 @@ export function useRadarBandsAlongRoute(
     let cancelled = false;
 
     const run = async () => {
-      const useEta = planEtaMinutes != null && planEtaMinutes > 5;
+      const useEta = planEtaMinutes != null && planEtaMinutes > 0;
       const mapProvider = radarMapProviderForCenter(routeCenter, tomorrowIoApiKey);
       const stripUsesRainViewer = useEta || mapProvider === "rainviewer";
       if (stripUsesRainViewer && isRainViewerRateLimited()) {
@@ -125,14 +202,30 @@ export function useRadarBandsAlongRoute(
       const now = Date.now();
       const totalM = polylineLengthMeters(geometry);
       const cumDist = buildCumulativeDistances(geometry);
+      const newestFrameMs = Math.max(...pack.frames.map((f) => f.time * 1000));
+      const nowFrame = nearestRadarFrameByTimeMs(pack.frames, now);
 
-      const pts = RADAR_ROUTE_SAMPLE_FRACTIONS.map((t) => {
-        const targetMs = useEta ? now + t * (planEtaMinutes ?? 0) * 60_000 : now;
-        return {
-          t,
-          lngLat: pointAtAlongMeters(geometry, totalM * t, cumDist),
-          frame: nearestRadarFrameByTimeMs(pack.frames, targetMs),
-        };
+      /**
+       * ETA sampling uses RainViewer nowcast (~1–2h). Beyond that horizon the last
+       * frame was wrongly treated as “arrival weather” and often painted the route
+       * clear while a live cell still sat on the polyline. Dual-sample now + ETA
+       * and keep the stronger echo so Route Info radar strata match the map.
+       */
+      const pts = RADAR_ROUTE_SAMPLE_FRACTIONS.flatMap((t) => {
+        const lngLat = pointAtAlongMeters(geometry, totalM * t, cumDist);
+        if (!useEta) {
+          return [{ t, lngLat, frame: nowFrame }];
+        }
+        const targetMs = now + t * (planEtaMinutes ?? 0) * 60_000;
+        const etaFrame = nearestRadarFrameByTimeMs(pack.frames, targetMs);
+        const beyondHorizon = targetMs > newestFrameMs + 2 * 60_000;
+        if (beyondHorizon || etaFrame.path === nowFrame.path) {
+          return [{ t, lngLat, frame: beyondHorizon ? nowFrame : etaFrame }];
+        }
+        return [
+          { t, lngLat, frame: etaFrame },
+          { t, lngLat, frame: nowFrame },
+        ];
       });
       if (import.meta.env.DEV) {
         const oldest = Math.min(...pack.frames.map((f) => f.time));
@@ -143,69 +236,34 @@ export function useRadarBandsAlongRoute(
         );
       }
 
-      type SampleRef = { t: number; px: number; py: number };
-      const groups = new Map<string, { frame: RadarMapFrame; tileKey: string; samples: SampleRef[] }>();
-      const Z = RADAR_MOSAIC_SAMPLE_ZOOM;
+      const cancelledFn = () => cancelled;
+      const out = await sampleRadarIntensities(pack, pts, tomorrowIoApiKey, cancelledFn);
+      if (cancelled) return;
+      if (lastKeyRef.current !== geomKey) return;
 
-      for (const p of pts) {
-        const [lng, lat] = p.lngLat as LngLat;
-        const { x, y, px, py } = tileXY(lng, lat, Z);
-        const tileKey = `${Z}/${x}/${y}`;
-        const groupId = `${p.frame.path}|${tileKey}`;
-        const existing = groups.get(groupId);
-        if (existing) {
-          existing.samples.push({ t: p.t, px, py });
-        } else {
-          groups.set(groupId, {
-            frame: p.frame,
-            tileKey,
-            samples: [{ t: p.t, px, py }],
-          });
-        }
-      }
-
-      const intensityFromRgba =
-        pack.provider === "tomorrow_io" ? echoIntensityFromPrecipTile : echoIntensityFromRgba;
-      const tileProvider = pack.provider === "tomorrow_io" ? "tomorrow_io" : "rainviewer";
-
-      const out: RadarSample[] = [];
-      for (const { frame, tileKey, samples } of groups.values()) {
+      const loopCells = pickEvenSpacedItems(animationCellsForPack(pack), RADAR_RAIL_LOOP_FRAME_CAP);
+      const loopFrames: RadarSample[][] = [];
+      for (const cell of loopCells) {
         if (cancelled) return;
-        const template = radarTileUrlForFrame(pack, frame, tomorrowIoApiKey, "sample");
-        if (!template) {
-          for (const it of samples) out.push({ t: it.t, intensity: 0 });
-          continue;
-        }
-        const [zStr, xStr, yStr] = tileKey.split("/");
-        const url = template
-          .replace("{z}", zStr!)
-          .replace("{x}", xStr!)
-          .replace("{y}", yStr!);
-        const rgba = await fetchMapTileRgba(url, tileProvider);
-        for (const it of samples) {
-          if (!rgba) {
-            out.push({ t: it.t, intensity: 0 });
-            continue;
-          }
-          const idx = (it.py * 256 + it.px) * 4;
-          const intensity = intensityFromRgba(
-            rgba[idx] ?? 0,
-            rgba[idx + 1] ?? 0,
-            rgba[idx + 2] ?? 0,
-            rgba[idx + 3] ?? 0
-          );
-          out.push({ t: it.t, intensity });
-        }
+        const loopPts: SamplePt[] = RADAR_ROUTE_SAMPLE_FRACTIONS.map((t) => ({
+          t,
+          lngLat: pointAtAlongMeters(geometry, totalM * t, cumDist),
+          frame: cell,
+        }));
+        loopFrames.push(await sampleRadarIntensities(pack, loopPts, tomorrowIoApiKey, cancelledFn));
       }
 
       if (cancelled) return;
       if (lastKeyRef.current !== geomKey) return;
       if (import.meta.env.DEV) {
         const maxI = out.length ? Math.max(...out.map((s) => s.intensity)) : 0;
-        console.log(`[radarRoute] samples=${out.length} maxIntensity=${maxI.toFixed(3)}`);
+        console.log(
+          `[radarRoute] samples=${out.length} maxIntensity=${maxI.toFixed(3)} loopFrames=${loopFrames.length}`
+        );
       }
       setState({
-        samples: out.sort((a, b) => a.t - b.t),
+        samples: out,
+        loopFrames,
         updatedAt: Date.now(),
         refreshBlocked: null,
       });
@@ -224,6 +282,7 @@ export function useRadarBandsAlongRoute(
 
   return {
     samples: state.samples,
+    loopFrames: state.loopFrames,
     updatedAt: state.updatedAt,
     refreshBlocked: state.refreshBlocked,
     refreshing,

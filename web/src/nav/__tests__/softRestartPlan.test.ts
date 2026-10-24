@@ -142,12 +142,101 @@ describe("assignOffRouteReplanSlots", () => {
         [-86.76, 36.165],
         [-86.6, 36.2],
       ],
-      baseEtaMinutes: 24,
+      baseEtaMinutes: 22,
     };
     const slots = assignOffRouteReplanSlots([reverse, forward, alt], user, 20);
     expect(slots[0]?.id).toBe("r-a");
     expect(slots[0]?.label).toBe("Main");
     expect(slots.some((r) => r.id === "r-b")).toBe(true);
     expect(slots[0]?.geometry[1]?.[1]).toBeGreaterThan(36.16);
+  });
+
+  it("refuses to install a reverse highway loop when that is the only option", () => {
+    const user: [number, number] = [-86.78, 36.16];
+    const loopNorthThenSouth: NavRoute = {
+      id: "r-x",
+      role: "fastest",
+      label: "Main",
+      geometry: [
+        user,
+        [-86.78, 36.22],
+        [-86.7, 36.22],
+        [-86.7, 36.1],
+      ],
+      baseEtaMinutes: 40,
+    };
+    expect(assignOffRouteReplanSlots([loopNorthThenSouth], user, 180)).toEqual([]);
+  });
+
+  it("refuses a forward line that comes back to a point it already passed", () => {
+    const lat0 = 40;
+    const lng0 = -89;
+    const at = (northM: number, eastM: number): [number, number] => [
+      lng0 + eastM / (111_320 * Math.cos((lat0 * Math.PI) / 180)),
+      lat0 + northM / 111_320,
+    ];
+    const user = at(0, 0);
+    const townLoop: NavRoute = {
+      id: "r-x",
+      role: "hazardSmart",
+      label: "No interstate",
+      geometry: [at(0, 0), at(0, 700), at(700, 700), at(700, 0), at(0, 0), at(0, -500)],
+      baseEtaMinutes: 30,
+    };
+    const ahead: NavRoute = {
+      id: "r-y",
+      role: "fastest",
+      label: "Ahead",
+      geometry: [user, at(0, 800), at(2_000, 800)],
+      baseEtaMinutes: 18,
+    };
+    expect(assignOffRouteReplanSlots([townLoop], user, 90)).toEqual([]);
+    const slots = assignOffRouteReplanSlots([townLoop, ahead], user, 90);
+    expect(slots).toHaveLength(1);
+    expect(slots[0]?.id).toBe("r-a");
+    expect(slots[0]?.geometry[1]?.[1]).toBeCloseTo(at(0, 800)[1], 4);
+  });
+
+  it("follows the alternate from here when that is the choice and it still makes progress", () => {
+    const user: [number, number] = [-86.78, 36.16];
+    const main: NavRoute = {
+      id: "r-y",
+      role: "fastest",
+      label: "Ahead",
+      geometry: [user, [-86.77, 36.17], [-86.6, 36.2]],
+      baseEtaMinutes: 20,
+    };
+    const alt: NavRoute = {
+      id: "r-z",
+      role: "balanced",
+      label: "Alternate",
+      geometry: [user, [-86.76, 36.165], [-86.6, 36.2]],
+      baseEtaMinutes: 22,
+    };
+    const slots = assignOffRouteReplanSlots([main, alt], user, 20, "alternate");
+    expect(slots[0]?.label).toBe("Alternate");
+    expect(slots[1]?.label).toBe("Main");
+  });
+
+  it("keeps Basic on the one forward line", () => {
+    const user: [number, number] = [-86.78, 36.16];
+    const main: NavRoute = {
+      id: "r-y",
+      role: "fastest",
+      label: "Ahead",
+      geometry: [user, [-86.77, 36.17], [-86.6, 36.2]],
+      baseEtaMinutes: 20,
+    };
+    const alt: NavRoute = {
+      id: "r-z",
+      role: "balanced",
+      label: "Alternate",
+      geometry: [user, [-86.76, 36.165], [-86.6, 36.2]],
+      baseEtaMinutes: 22,
+    };
+    const slots = assignOffRouteReplanSlots([main, alt], user, 20, "fastest", 1);
+    expect(slots).toHaveLength(1);
+    expect(slots[0]?.id).toBe("r-a");
+    expect(slots[0]?.label).toBe("Main");
   });
 });

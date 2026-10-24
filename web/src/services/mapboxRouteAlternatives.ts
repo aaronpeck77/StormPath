@@ -1,4 +1,5 @@
-import type { LngLat, RouteTurnStep } from "../nav/types";
+import type { LngLat, RoadControlPoint, RouteTurnStep } from "../nav/types";
+import { collectRoadControls } from "../nav/roadControls";
 import { shortenTurnInstruction } from "../nav/turnInstructionShort";
 import { fetchWithTimeout, MAPBOX_DIRECTIONS_TIMEOUT_MS } from "../utils/fetchResilient";
 import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
@@ -18,6 +19,13 @@ type DirectionsResponse = {
         name?: string;
         ref?: string;
         distance?: number;
+        intersections?: {
+          location?: number[];
+          traffic_signal?: boolean;
+          stop_sign?: boolean;
+          yield_sign?: boolean;
+          railway_crossing?: boolean;
+        }[];
       }[];
     }[];
   }[];
@@ -28,6 +36,7 @@ export type MapboxTrafficAltRoute = {
   distanceMeters: number;
   geometry: LngLat[];
   turnSteps: RouteTurnStep[];
+  roadControls?: RoadControlPoint[];
 };
 
 function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteTurnStep[] {
@@ -121,72 +130,6 @@ export async function fetchMapboxTrafficAlternatives(
 }
 
 /**
- * Surgical bypass: exit→rejoin via side roads only (exclude=motorway).
- * Forces Mapbox onto surface streets so the driver gets off the highway, bypasses the jam,
- * and gets back on after the holdup.
- */
-export async function fetchMapboxSurgicalBypass(
-  accessToken: string,
-  exitPoint: LngLat,
-  rejoinPoint: LngLat,
-  opts?: { bearingDeg?: number | null }
-): Promise<MapboxTrafficAltRoute | null> {
-  const o = `${exitPoint[0].toFixed(5)},${exitPoint[1].toFixed(5)}`;
-  const d = `${rejoinPoint[0].toFixed(5)},${rejoinPoint[1].toFixed(5)}`;
-  const url = new URL(
-    `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${o};${d}`
-  );
-  url.searchParams.set("access_token", accessToken);
-  url.searchParams.set("alternatives", "false");
-  url.searchParams.set("geometries", "geojson");
-  url.searchParams.set("overview", "full");
-  url.searchParams.set("steps", "true");
-  url.searchParams.set("exclude", "motorway");
-  const bearing =
-    opts?.bearingDeg != null && Number.isFinite(opts.bearingDeg)
-      ? ((opts.bearingDeg % 360) + 360) % 360
-      : null;
-  if (bearing != null) {
-    url.searchParams.set("bearings", `${Math.round(bearing)},45;`);
-  }
-
-  let res: Response;
-  try {
-    res = await fetchWithTimeout({
-      input: url.toString(),
-      init: { method: "GET" },
-      timeoutMs: MAPBOX_DIRECTIONS_TIMEOUT_MS,
-    });
-  } catch {
-    return null;
-  }
-  const data = (await res.json()) as DirectionsResponse;
-
-  if (!res.ok) {
-    console.warn("[surgical] Mapbox Directions", res.status, data.message ?? data.code ?? "");
-    return null;
-  }
-  if (data.code && data.code !== "Ok") {
-    console.warn("[surgical] Mapbox Directions", data.code, data.message ?? "");
-    return null;
-  }
-
-  const r = data.routes?.[0];
-  const coords = r?.geometry?.coordinates;
-  if (!coords?.length || r?.geometry?.type !== "LineString") return null;
-  const geometry = coords.map(([lng, lat]) => [lng, lat] as LngLat);
-  const durSec = r.duration;
-  if (durSec == null || !Number.isFinite(durSec)) return null;
-  recordMapboxUsage("directions");
-  return {
-    durationMinutes: durSec / 60,
-    distanceMeters: typeof r.distance === "number" ? r.distance : 0,
-    geometry,
-    turnSteps: parseSteps(r),
-  };
-}
-
-/**
  * Single best traffic-aware route (current → destination). Same road network as the map traffic layer;
  * use when the stored polyline no longer matches drivable roads (closures, etc.).
  */
@@ -239,5 +182,7 @@ export async function fetchMapboxDrivingTrafficRoute(
     distanceMeters: typeof r.distance === "number" ? r.distance : 0,
     geometry,
     turnSteps: parseSteps(r),
+    /* Snapped line carries its own signal / stop nodes — recompute, never inherit. */
+    roadControls: collectRoadControls(r.legs),
   };
 }

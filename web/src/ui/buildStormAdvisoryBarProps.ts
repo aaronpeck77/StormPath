@@ -14,6 +14,10 @@ import type {
   StormRoadDetailRow,
   StormStripBand,
 } from "./StormAdvisoryBar";
+import type { CorridorTimingExplainLine } from "../nav/corridorTimingExplain";
+import { buildPassengerAdvisoryLine } from "../nav/passengerAdvisory";
+import type { RoutePlaceAnchor } from "../nav/routePlaceReference";
+import type { RouteTurnStep } from "../nav/types";
 
 /**
  * StormAdvisoryBar prop assembly — Phase 3b.
@@ -42,6 +46,8 @@ export type BuildStormAdvisoryBarPropsInput = {
   hasGuidanceRoute: boolean;
   advisoryRoadDetailRows: StormRoadDetailRow[];
   advisoryRouteImpacts: RouteImpact[] | null;
+  /** Weather impacts before the Plus-only UI filter, so Basic can still hear a close warning. */
+  passengerRouteImpacts?: RouteImpact[] | null;
   advisoryStormStripBands: StormStripBand[] | null;
   routeAheadTimeline: TimelineItem[] | null;
   routeTotalMeters: number;
@@ -57,9 +63,11 @@ export type BuildStormAdvisoryBarPropsInput = {
   driveModeUi: boolean;
   driveRouteAheadLine: DriveAheadLine | null;
   nextHazardAtEtaLine: string | null;
+  corridorTimingLines?: CorridorTimingExplainLine[];
   advisoryPlusDetailOn: boolean;
   advisoryPromoLines: AdvisoryPromoLine[];
   isOnline: boolean;
+  dataLow?: boolean;
   navigationStarted: boolean;
   advisoryNowcastLine: string | null;
   currentNowcast: CurrentNowcast | null;
@@ -77,6 +85,9 @@ export type BuildStormAdvisoryBarPropsInput = {
   onOpenDataSaverSettings: () => void;
   onDismissDataSaverHint: () => void;
   nearbyPoiTipLine?: string | null;
+  routePlaceAnchors?: RoutePlaceAnchor[] | null;
+  turnSteps?: RouteTurnStep[] | null;
+  metersToManeuver?: number | null;
 };
 
 export function buildStormAdvisoryBarProps(
@@ -99,6 +110,7 @@ export function buildStormAdvisoryBarProps(
     hasGuidanceRoute,
     advisoryRoadDetailRows,
     advisoryRouteImpacts,
+    passengerRouteImpacts = null,
     advisoryStormStripBands,
     routeAheadTimeline,
     routeTotalMeters,
@@ -114,9 +126,11 @@ export function buildStormAdvisoryBarProps(
     driveModeUi,
     driveRouteAheadLine,
     nextHazardAtEtaLine,
+    corridorTimingLines = [],
     advisoryPlusDetailOn,
     advisoryPromoLines,
     isOnline,
+    dataLow = false,
     navigationStarted,
     advisoryNowcastLine,
     currentNowcast,
@@ -134,7 +148,25 @@ export function buildStormAdvisoryBarProps(
     onOpenDataSaverSettings,
     onDismissDataSaverHint,
     nearbyPoiTipLine = null,
+    routePlaceAnchors = null,
+    turnSteps = null,
+    metersToManeuver = null,
   } = input;
+
+  const passengerLine = buildPassengerAdvisoryLine({
+    hasRoute: hasGuidanceRoute,
+    navigationStarted,
+    metersToManeuver,
+    nowMs: Date.now(),
+    impacts: passengerRouteImpacts ?? advisoryRouteImpacts,
+    placeAnchors: routePlaceAnchors,
+    turnSteps,
+    userAlongM: userAlongMeters,
+    totalM: routeTotalMeters,
+    planEtaMinutes,
+    driveEtaMinutes,
+    minutePrecip: tioMinutePrecip,
+  });
 
   const plusNwsLoading =
     isPlus && stormLoading && stormCorridorAlertsLength === 0 && !stormMapHasFeatures;
@@ -168,14 +200,17 @@ export function buildStormAdvisoryBarProps(
     onRefreshWeather,
     driveRouteAheadLine: driveModeUi ? driveRouteAheadLine : null,
     nextHazardAtEtaLine: isPlus ? nextHazardAtEtaLine : null,
+    corridorTimingLines: isPlus ? corridorTimingLines : [],
     advisoryTier: advisoryPlusDetailOn ? "plus" : "basic",
     ownsPlus: isPlus,
     promoLines: advisoryPromoLines,
     isOnline,
+    dataLow,
     basicNavAdvisoryMode: !isPlus,
     navigationStarted,
     /* Basic + Plus: current conditions / nowcast for banner + compact panel. */
     nowcastLine: advisoryNowcastLine,
+    passengerLine,
     nearbyPoiTipLine,
     currentNowcast,
     forecastAreaLabel,

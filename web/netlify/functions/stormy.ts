@@ -1,6 +1,7 @@
 /**
  * Stormy brain. The Anthropic key stays in Netlify env as ANTHROPIC_API_KEY.
  * The app sends Authorization: Bearer STORMY_CLIENT_TOKEN. Without that match, this refuses.
+ * Facts are the route's weather, traffic, and highway shields. She does not invent them.
  */
 import {
   acceptStormyPacket,

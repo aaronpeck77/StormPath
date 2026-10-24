@@ -72,9 +72,9 @@ describe("collectMapboxRouteVariants", () => {
     vi.mocked(fetchWithTimeout).mockReset();
   });
 
-  it("keeps a no-interstate B when primary Mapbox returns only Main", async () => {
+  it("keeps a close alternate when primary Mapbox returns only Main", async () => {
     const main = mbRoute(lineCoords(0), 3600, 120_000);
-    const noMw = mbRoute(lineCoords(-0.35), 4200, 135_000);
+    const noMw = mbRoute(lineCoords(-0.35), 4000, 132_000);
 
     vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
       const url = String(input);
@@ -91,7 +91,7 @@ describe("collectMapboxRouteVariants", () => {
 
     expect(routes.length).toBeGreaterThanOrEqual(2);
     expect(routes[0]!.label).toBe("Main");
-    expect(routes[1]!.label).toBe("No interstate");
+    expect(routes[1]!.label).toBe("Alternate");
   });
 
   it("keeps Mapbox primary alternate even when corridors mostly overlap", async () => {
@@ -117,7 +117,7 @@ describe("collectMapboxRouteVariants", () => {
 
   it("forces a Plus B by excluding a mid-corridor point when no-interstate matches Main", async () => {
     const main = mbRoute(lineCoords(0), 3600, 120_000);
-    const alt = mbRoute(lineCoords(-0.35), 4200, 135_000);
+    const alt = mbRoute(lineCoords(-0.35), 4000, 132_000);
     let pointExcludeCalls = 0;
 
     vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
@@ -146,7 +146,7 @@ describe("collectMapboxRouteVariants", () => {
 
   it("encodes Mapbox point() excludes with %20, not +", async () => {
     const main = mbRoute(lineCoords(0), 3600, 120_000);
-    const alt = mbRoute(lineCoords(-0.35), 4200, 135_000);
+    const alt = mbRoute(lineCoords(-0.35), 4000, 132_000);
     const pointUrls: string[] = [];
 
     vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
@@ -170,7 +170,7 @@ describe("collectMapboxRouteVariants", () => {
   it("drops an identical primary alternate so a point-exclude B can run", async () => {
     const main = mbRoute(lineCoords(0), 3600, 120_000);
     const clone = mbRoute(lineCoords(0), 3610, 120_400);
-    const alt = mbRoute(lineCoords(-0.35), 4200, 135_000);
+    const alt = mbRoute(lineCoords(-0.35), 4000, 132_000);
     let pointExcludeCalls = 0;
 
     vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
@@ -194,7 +194,7 @@ describe("collectMapboxRouteVariants", () => {
 
   it("does not fetch a point-exclude B when Plus already has two distinct routes", async () => {
     const main = mbRoute(lineCoords(0), 3600, 120_000);
-    const noMw = mbRoute(lineCoords(-0.35), 4200, 135_000);
+    const noMw = mbRoute(lineCoords(-0.35), 4000, 132_000);
     let pointExcludeCalls = 0;
 
     vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
@@ -212,13 +212,34 @@ describe("collectMapboxRouteVariants", () => {
     const routes = await collectMapboxRouteVariants("tok", start, end, { maxRoutes: 2 });
 
     expect(routes).toHaveLength(2);
-    expect(routes[1]!.label).toBe("No interstate");
+    expect(routes[1]!.label).toBe("Alternate");
     expect(pointExcludeCalls).toBe(0);
+  });
+
+  it("drops an alternate that wanders well past the fastest", async () => {
+    const main = mbRoute(lineCoords(0), 3600, 120_000);
+    const wander = mbRoute(lineCoords(-0.35), 5400, 170_000);
+
+    vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
+      const url = decodeURIComponent(String(input));
+      if (url.includes("exclude=motorway") || url.includes("point(")) {
+        return okResponse([wander]);
+      }
+      return okResponse([main]);
+    });
+
+    const routes = await collectMapboxRouteVariants("tok", start, end, {
+      maxRoutes: 2,
+      includeDetails: true,
+    });
+
+    expect(routes).toHaveLength(1);
+    expect(routes[0]!.label).toBe("Main");
   });
 
   it("Basic maxRoutes=1 uses a single Directions call and returns Main only", async () => {
     const main = mbRoute(lineCoords(0), 3600, 120_000);
-    const noMw = mbRoute(lineCoords(-0.35), 4200, 135_000);
+    const noMw = mbRoute(lineCoords(-0.35), 4000, 132_000);
     let calls = 0;
 
     vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {

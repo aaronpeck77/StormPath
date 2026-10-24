@@ -802,6 +802,24 @@ export async function fetchRouteForecast(
   return { fetchedAt: Date.now(), intervals };
 }
 
+/**
+ * True when corridor interval ETAs roughly match the trip plan duration.
+ * Speed-only samples (parked planning) used to stamp 10h ETAs on a 6h Mapbox
+ * trip — cache must not keep serving those mis-timed hours.
+ */
+export function routeForecastEtasAlignWithPlan(
+  forecast: RouteForecast,
+  planEtaMinutes: number | null | undefined
+): boolean {
+  if (planEtaMinutes == null || !Number.isFinite(planEtaMinutes) || planEtaMinutes <= 0) {
+    return true;
+  }
+  if (!forecast.intervals.length) return false;
+  const maxEta = Math.max(...forecast.intervals.map((i) => i.etaMinutes));
+  if (!(maxEta > 0) || !Number.isFinite(maxEta)) return false;
+  return Math.abs(maxEta - planEtaMinutes) / planEtaMinutes <= 0.25;
+}
+
 /** Sample spacing aligned with {@link useTomorrowRouteForecast} — avoid drifting constants. */
 export const TIO_ROUTE_SAMPLE_INTERVAL_M = 12_000;
 export const TIO_ROUTE_MIN_SAMPLES = 4;
@@ -810,10 +828,15 @@ export const TIO_ROUTE_MAX_SAMPLES = 12;
 /**
  * Sample points along the polyline with ETA offsets for Timelines hourly forecasts.
  * Shared by navigation hooks and fused route scoring overlays.
+ *
+ * Prefer {@link planEtaMinutes} (Mapbox trip duration) when available so corridor
+ * hours match "weather when you'll be there." Speed-only ETAs drift badly while
+ * planning (parked → fallback ~34 mph) and can miss afternoon storms on 6–7h legs.
  */
 export function buildTimelinesWaypointsForGeometry(
   geometry: LngLat[],
-  speedMps: number
+  speedMps: number,
+  planEtaMinutes?: number | null
 ): { lat: number; lng: number; etaMinutes: number }[] | null {
   if (geometry.length < 2) return null;
   const totalM = polylineLengthMeters(geometry);
@@ -824,12 +847,19 @@ export function buildTimelinesWaypointsForGeometry(
     Math.min(TIO_ROUTE_MAX_SAMPLES, Math.floor(totalM / TIO_ROUTE_SAMPLE_INTERVAL_M))
   );
 
-  const spd = speedMps > 0 ? speedMps : 15;
+  const usePlanEta =
+    planEtaMinutes != null && Number.isFinite(planEtaMinutes) && planEtaMinutes > 0;
+  /* Highway-ish fallback when parked / no plan ETA — old 15 m/s (~34 mph) stretched long trips. */
+  const spd = speedMps > 1 ? speedMps : 29;
+
   const pts: { lat: number; lng: number; etaMinutes: number }[] = [];
   for (let i = 0; i < count; i++) {
     const distM = count > 1 ? (totalM * i) / (count - 1) : 0;
     const pt = pointAtAlongMeters(geometry, distM);
-    pts.push({ lat: pt[1]!, lng: pt[0]!, etaMinutes: distM / spd / 60 });
+    const etaMinutes = usePlanEta
+      ? planEtaMinutes! * (distM / totalM)
+      : distM / spd / 60;
+    pts.push({ lat: pt[1]!, lng: pt[0]!, etaMinutes });
   }
   return pts.length ? pts : null;
 }

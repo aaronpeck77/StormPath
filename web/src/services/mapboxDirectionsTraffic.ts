@@ -41,6 +41,11 @@ export type MapboxTrafficLeg = {
   nearStopFraction: number | null;
   /** First segment at/above heavy congestion along the sampled path (0..1), if any. */
   firstHeavyCongestionFraction: number | null;
+  /**
+   * Live congestion_numeric samples, one per segment, spread evenly along the route.
+   * 80 and above is the slow stretch the jam hop reads.
+   */
+  congestionNumeric?: (number | null)[];
 };
 
 type DirectionsRoute = {
@@ -226,6 +231,7 @@ async function fetchDirectionsOnce(
     constructionSummary,
     nearStopFraction: detectNearStopFraction(route),
     firstHeavyCongestionFraction: detectFirstHeavyCongestionFraction(route),
+    congestionNumeric: route.legs?.flatMap((leg) => leg.annotation?.congestion_numeric ?? []) ?? [],
   };
 }
 

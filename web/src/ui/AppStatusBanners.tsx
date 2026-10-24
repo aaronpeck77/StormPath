@@ -1,4 +1,9 @@
-import { clearDevLocationOverride } from "../hooks/useUserLocation";
+import { useEffect, useState } from "react";
+import {
+  clearDevLocationOverride,
+  isTransientGpsLocationError,
+  TRANSIENT_GPS_BANNER_MS,
+} from "../hooks/useUserLocation";
 import { safeStorage } from "../storage/safeStorage";
 
 type Props = {
@@ -8,11 +13,12 @@ type Props = {
   locationFixSource: string | null | undefined;
   locationError: string | null;
   routeError: string | null;
-  tapHint: string | null;
   safetyAck: boolean;
   onSafetyAck: () => void;
   onReportIssue: (() => void) | null;
   isOnline: boolean;
+  /** Live guidance paused, or just came back, while the phone still says online. */
+  routeSignalNote?: null | "weak" | "back";
   navigationStarted: boolean;
   hasPlanRoutes: boolean;
   hasDest: boolean;
@@ -39,11 +45,11 @@ export function AppStatusBanners(props: Props) {
     locationFixSource,
     locationError,
     routeError,
-    tapHint,
     safetyAck,
     onSafetyAck,
     onReportIssue,
     isOnline,
+    routeSignalNote = null,
     navigationStarted,
     hasPlanRoutes,
     hasDest,
@@ -60,6 +66,22 @@ export function AppStatusBanners(props: Props) {
     onToggleDemoCloseHazard,
     onOpenDemoCompare,
   } = props;
+
+  const [hideTransientGps, setHideTransientGps] = useState(false);
+  useEffect(() => {
+    if (!isTransientGpsLocationError(locationError)) {
+      setHideTransientGps(false);
+      return;
+    }
+    setHideTransientGps(false);
+    const t = window.setTimeout(() => setHideTransientGps(true), TRANSIENT_GPS_BANNER_MS);
+    return () => window.clearTimeout(t);
+  }, [locationError]);
+
+  const shownLocationError =
+    locationError && !(hideTransientGps && isTransientGpsLocationError(locationError))
+      ? locationError
+      : null;
 
   return (
     <>
@@ -101,11 +123,11 @@ export function AppStatusBanners(props: Props) {
         </div>
       )}
 
-      {(locationError || routeError) && (
+      {(shownLocationError || routeError) && (
         <div className="nav-toast-stack nav-toast-stack--top" aria-live="assertive">
-          {locationError ? (
+          {shownLocationError ? (
             <div className="nav-toast nav-toast-err" role="alert">
-              {locationError}
+              {shownLocationError}
             </div>
           ) : null}
           {routeError ? (
@@ -115,12 +137,6 @@ export function AppStatusBanners(props: Props) {
           ) : null}
         </div>
       )}
-
-      {tapHint ? (
-        <div className="nav-toast-stack nav-toast-stack--dock" role="status" aria-live="polite">
-          <div className="nav-toast nav-toast-warn">{tapHint}</div>
-        </div>
-      ) : null}
 
       {!safetyAck && (
         <div className="nav-safety-banner" role="dialog" aria-label="Safety notice">
@@ -149,6 +165,26 @@ export function AppStatusBanners(props: Props) {
               OK
             </button>
           </div>
+        </div>
+      )}
+
+      {isOnline && navigationStarted && routeSignalNote === "weak" && (
+        <div
+          className={`nav-offline-banner${driveModeUi ? " nav-offline-banner--drive" : ""}`}
+          role="status"
+          aria-live="polite"
+        >
+          Weak signal. Directions and the miles to the next turn may pause. They catch up when the signal improves.
+        </div>
+      )}
+
+      {isOnline && navigationStarted && routeSignalNote === "back" && (
+        <div
+          className={`nav-offline-banner${driveModeUi ? " nav-offline-banner--drive" : ""}`}
+          role="status"
+          aria-live="polite"
+        >
+          Signal is back. Directions are updating.
         </div>
       )}
 

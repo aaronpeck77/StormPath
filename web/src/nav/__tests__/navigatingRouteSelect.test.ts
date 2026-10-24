@@ -13,7 +13,7 @@ describe("resolveNavigatingRouteSelect", () => {
     ).toEqual({ type: "preview" });
   });
 
-  it("previews on-route compare without adopting (Drive stays on lock)", () => {
+  it("adopts a different leg on Rt even while still on the locked corridor", () => {
     expect(
       resolveNavigatingRouteSelect({
         navigationStarted: true,
@@ -21,7 +21,7 @@ describe("resolveNavigatingRouteSelect", () => {
         lockedRouteId: "r-a",
         offRouteChoiceActive: false,
       })
-    ).toEqual({ type: "preview" });
+    ).toEqual({ type: "adopt", id: "r-b" });
   });
 
   it("adopts a different leg while off-route so Drive follows the Rt/Mp pick", () => {

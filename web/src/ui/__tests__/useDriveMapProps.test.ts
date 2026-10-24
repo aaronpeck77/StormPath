@@ -133,6 +133,17 @@ describe("buildDriveMapProps", () => {
     expect(props.rejoinOverlayActive).toBe(true);
   });
 
+  it("forwards native Drive map shell", () => {
+    const props = buildDriveMapProps(baseInput({ nativeDriveMapActive: true }), vi.fn());
+    expect(props.nativeDriveMapActive).toBe(true);
+  });
+
+  it("forwards a native follow-cam sample", () => {
+    const cam = { lng: -90.2, lat: 38.63, bearing: 12, pitch: 64, zoom: 16.35 };
+    const props = buildDriveMapProps(baseInput({ nativeFollowCamera: cam }), vi.fn());
+    expect(props.nativeFollowCamera).toEqual(cam);
+  });
+
   it("forwards the home-pan callback unchanged", () => {
     const onHomeMapUserPan = vi.fn();
     const props = buildDriveMapProps(baseInput(), onHomeMapUserPan);

@@ -29,8 +29,8 @@ export const TRAFFIC_PROMPT_REROUTE_MINUTES = 10;
 export const TRAFFIC_STRIP_SOFT_MINUTES = 8;
 
 /**
- * Traffic / hazard bypass — A/B/C compare from GPS, then explicit confirm to switch the locked route.
- * Off while core navigation (off-route auto-reroute) is hardened.
+ * Retired. The A/B compare and the motorway ban fought Core and never left the jam cleanly.
+ * The live hop is the stretch plan in jamDrive.ts. This flag stays false.
  */
 export const TRAFFIC_BYPASS_ENABLED = false;
 

@@ -142,7 +142,7 @@ describe("inferPrecipPctFromConditions", () => {
   });
 });
 
-describe("effectiveRoutePrecipDisplayPct", () => {
+  describe("effectiveRoutePrecipDisplayPct", () => {
   it("suppresses low model POP without intensity or rain wording", () => {
     expect(effectiveRoutePrecipDisplayPct(22, 0, "Partly cloudy")).toBe(0);
     expect(effectiveRoutePrecipDisplayPct(35, 0, "Mostly clear")).toBe(0);
@@ -151,6 +151,11 @@ describe("effectiveRoutePrecipDisplayPct", () => {
   it("shows rain when intensity or explicit wording supports it", () => {
     expect(effectiveRoutePrecipDisplayPct(55, 2, "Light rain")).toBe(55);
     expect(effectiveRoutePrecipDisplayPct(48, 0, "Light rain")).toBe(48);
+  });
+
+  it("keeps elevated POP visible even when conditions stay cloudy", () => {
+    expect(effectiveRoutePrecipDisplayPct(60, 0, "Cloudy")).toBeGreaterThan(0);
+    expect(effectiveRoutePrecipDisplayPct(45, 0, "Mostly cloudy")).toBeGreaterThan(0);
   });
 });
 

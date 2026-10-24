@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import Capacitor
 import Combine
 import CoreLocation
@@ -18,18 +19,49 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "StormpathMapboxNavigation"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "prepareActiveGuidance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startActiveGuidance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setVoiceGuidance", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setDrivePuckVisible", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setNativeMapVisible", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setRoadControls", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "armIdleExit", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancelIdleExit", returnType: CAPPluginReturnPromise),
     ]
 
     private var navigationProvider: MapboxNavigationProvider?
     private var cancellables = Set<AnyCancellable>()
     private var sessionActive = false
+    /// Prevents overlapping prepare / Go / Stop tears (two providers = hard crash).
+    private var tearDownInFlight = false
+    /// Serialize prepare / start / stop so a route fetch cannot overlap a new provider.
+    private var coreMutexBusy = false
     private var didEmitArrival = false
     /// Retain voice controller so spoken instructions keep working without UIKit nav UI.
     private var voiceController: RouteVoiceController?
     private var voiceEnabled = false
+    /// Go prepares the audio route, then waits a second before the first prompt.
+    private var voiceArmTask: Task<Void, Never>?
+    /// Hard-close after the phone has been off screen with no trip. A suspended
+    /// WebView comes back crooked; a new launch does not.
+    private var idleExitWork: DispatchWorkItem?
+    private var idleExitObserver: NSObjectProtocol?
+    /// Last-good puck — reject Core leaps before JS / DriveMap see them.
+    private var poseHold = DrivePoseHold()
+    private var followCam = DriveFollowCam()
+    private var puckOverlay: DrivePuckOverlay?
+    /// Nil at init — create on the main actor. Do not `= DriveNativeMap()` here.
+    private var nativeMap: DriveNativeMap?
+    private var pendingNativeMapVisible = false
+    private var lastNavRoutes: NavigationRoutes?
+    /// Fingerprint of the last prepared / started corridor so Go can skip a second plan.
+    private var preparedRouteKey = ""
+    /// Bumped on every tearDown so an in-flight prepare cannot install a stale provider after Go.
+    private var coreEpoch = 0
+    /// Last electronic-horizon sample. Progress copies it so the Lim readout and advisory stay in sync.
+    private var horizonSnapshot = HorizonSnapshot(limitMph: nil, hazards: [])
+    private var horizonReady = false
 
     @objc func isAvailable(_ call: CAPPluginCall) {
         call.resolve(["available": true])
@@ -45,30 +77,43 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        var coordinates: [CLLocationCoordinate2D] = []
-        coordinates.reserveCapacity(rawCoords.count)
-        for obj in rawCoords {
-            let lngNum = obj["lng"] as? Double ?? (obj["lng"] as? NSNumber)?.doubleValue
-            let latNum = obj["lat"] as? Double ?? (obj["lat"] as? NSNumber)?.doubleValue
-            guard let lng = lngNum, let lat = latNum else {
-                call.reject("coordinates entries need numeric lng/lat")
-                return
-            }
-            coordinates.append(CLLocationCoordinate2D(latitude: lat, longitude: lng))
-        }
-
         let simulate = call.getBool("simulate") ?? false
         let voice = call.getBool("voiceEnabled") ?? false
         let preferBackroads = call.getBool("preferBackroads") ?? false
+        let language = call.getString("language") ?? "en"
 
         Task { @MainActor [weak self] in
             guard let self else { return }
             await self.startGuidanceOnMainActor(
                 accessToken: accessToken,
-                coordinates: coordinates,
+                waypoints: self.parseWaypoints(from: rawCoords),
                 simulate: simulate,
                 voiceEnabled: voice,
                 preferBackroads: preferBackroads,
+                language: language,
+                call: call
+            )
+        }
+    }
+
+    @objc func prepareActiveGuidance(_ call: CAPPluginCall) {
+        guard let accessToken = call.getString("accessToken"), !accessToken.isEmpty else {
+            call.reject("accessToken required")
+            return
+        }
+        guard let rawCoords = call.getArray("coordinates", JSObject.self), rawCoords.count >= 2 else {
+            call.reject("coordinates must include at least origin and destination")
+            return
+        }
+        let preferBackroads = call.getBool("preferBackroads") ?? false
+        let language = call.getString("language") ?? "en"
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.prepareGuidanceOnMainActor(
+                accessToken: accessToken,
+                waypoints: self.parseWaypoints(from: rawCoords),
+                preferBackroads: preferBackroads,
+                language: language,
                 call: call
             )
         }
@@ -82,111 +127,310 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    @objc func setNativeMapVisible(_ call: CAPPluginCall) {
+        let visible = call.getBool("visible") ?? false
+        let styleUrl = call.getString("styleUrl")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let revealed = self.applyNativeMapVisible(visible, styleUrl: styleUrl)
+            call.resolve(["ok": true, "visible": visible, "revealed": revealed])
+        }
+    }
+
+    @objc func setRoadControls(_ call: CAPPluginCall) {
+        let raw = call.getArray("points", JSObject.self) ?? []
+        var points: [DriveRoadControl] = []
+        points.reserveCapacity(raw.count)
+        for entry in raw {
+            guard
+                let lng = entry["lng"] as? Double,
+                let lat = entry["lat"] as? Double,
+                let kindRaw = entry["kind"] as? String,
+                let kind = DriveRoadControl.Kind(rawValue: kindRaw)
+            else { continue }
+            points.append(DriveRoadControl(lng: lng, lat: lat, kind: kind))
+        }
+        Task { @MainActor [weak self] in
+            self?.nativeMap?.setRoadControls(points)
+            call.resolve(["ok": true, "count": points.count])
+        }
+    }
+
+    @objc func setDrivePuckVisible(_ call: CAPPluginCall) {
+        let visible = call.getBool("visible") ?? false
+        Task { @MainActor [weak self] in
+            self?.applyDrivePuckVisible(visible)
+            call.resolve(["ok": true, "visible": visible])
+        }
+    }
+
     @objc func stop(_ call: CAPPluginCall) {
         Task { @MainActor [weak self] in
-            self?.tearDownSession(emitCancelled: true)
+            guard let self else {
+                call.resolve()
+                return
+            }
+            /* Soft-idle only — nilling the provider on Stop hard-crashed the IPA
+             * even after a drain sleep. Mapbox examples keep the provider alive. */
+            await self.withCoreMutex {
+                await self.softStopGuidance()
+            }
             call.resolve()
+        }
+    }
+
+    /** One Core mutation at a time — overlapping prepare + Go left two providers alive. */
+    @MainActor
+    private func withCoreMutex(_ body: () async -> Void) async {
+        while coreMutexBusy {
+            try? await Task.sleep(nanoseconds: 25_000_000)
+        }
+        coreMutexBusy = true
+        defer { coreMutexBusy = false }
+        await body()
+    }
+
+    private struct IncomingWaypoint {
+        var coordinate: CLLocationCoordinate2D
+        var separatesLegs: Bool
+        var headingDeg: Double?
+    }
+
+    private func parseWaypoints(from rawCoords: [JSObject]) -> [IncomingWaypoint] {
+        var out: [IncomingWaypoint] = []
+        out.reserveCapacity(rawCoords.count)
+        for (index, obj) in rawCoords.enumerated() {
+            let lngNum = obj["lng"] as? Double ?? (obj["lng"] as? NSNumber)?.doubleValue
+            let latNum = obj["lat"] as? Double ?? (obj["lat"] as? NSNumber)?.doubleValue
+            guard let lng = lngNum, let lat = latNum else { continue }
+            let separates: Bool
+            if let flag = obj["separatesLegs"] as? Bool {
+                separates = flag
+            } else if let flag = (obj["separatesLegs"] as? NSNumber)?.boolValue {
+                separates = flag
+            } else {
+                separates = index > 0 && index < rawCoords.count - 1 ? false : true
+            }
+            let heading = obj["headingDeg"] as? Double ?? (obj["headingDeg"] as? NSNumber)?.doubleValue
+            out.append(IncomingWaypoint(
+                coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng),
+                separatesLegs: separates,
+                headingDeg: heading
+            ))
+        }
+        return out
+    }
+
+    private func makeWaypoints(_ incoming: [IncomingWaypoint]) -> [Waypoint] {
+        incoming.enumerated().map { index, item in
+            var waypoint = Waypoint(coordinate: item.coordinate)
+            if index > 0 && index < incoming.count - 1 {
+                waypoint.separatesLegs = item.separatesLegs
+                waypoint.coordinateAccuracy = item.separatesLegs ? 25 : 80
+            }
+            if index == 0, let heading = item.headingDeg, heading >= 0 {
+                waypoint.heading = heading
+                waypoint.headingAccuracy = 90
+            }
+            return waypoint
+        }
+    }
+
+    private func routeKey(waypoints: [IncomingWaypoint], preferBackroads: Bool, language: String) -> String {
+        guard let first = waypoints.first, let last = waypoints.last else { return "" }
+        return "\(first.coordinate.latitude),\(first.coordinate.longitude)|\(last.coordinate.latitude),\(last.coordinate.longitude)|\(waypoints.count)|\(preferBackroads)|\(language)"
+    }
+
+    private func applyInstructionLanguage(_ options: NavigationRouteOptions, language: String) {
+        let code = language.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !code.isEmpty {
+            options.locale = Locale(identifier: code)
+        }
+    }
+
+    @MainActor
+    private func makeCoreConfig(accessToken: String, simulate: Bool) -> CoreConfig {
+        var coreConfig = CoreConfig(
+            credentials: .init(accessToken: accessToken),
+            locationSource: simulate ? .simulation(initialLocation: nil) : .live
+        )
+        // Tiles + routing graph along the trip so tunnels / dead zones keep following.
+        coreConfig.predictiveCacheConfig = PredictiveCacheConfig()
+        // Off-route recovery is Core's job. Do not auto-swap a locked B for a faster highway.
+        coreConfig.routingConfig.rerouteConfig.detectsReroute = true
+        coreConfig.routingConfig.fasterRouteDetectionConfig = nil
+        // Posted limit and incident road objects along the route. Enhanced ADAS data stays off.
+        // Live incidents need a Mapbox graph id this app does not have, so that feed stays off.
+        coreConfig.electronicHorizonConfig = ElectronicHorizonConfig(
+            length: HorizonAhead.horizonLengthM,
+            expansionLevel: 0,
+            branchLength: 50,
+            minTimeDeltaBetweenUpdates: 2,
+            enableEnhancedDataAlongEH: false
+        )
+        return coreConfig
+    }
+
+    @MainActor
+    private func prepareGuidanceOnMainActor(
+        accessToken: String,
+        waypoints incoming: [IncomingWaypoint],
+        preferBackroads: Bool,
+        language: String,
+        call: CAPPluginCall
+    ) async {
+        guard incoming.count >= 2 else {
+            call.reject("coordinates must include at least origin and destination")
+            return
+        }
+        await withCoreMutex {
+            if sessionActive {
+                call.resolve(["ok": true, "prepared": true, "skipped": true])
+                return
+            }
+            let key = routeKey(waypoints: incoming, preferBackroads: preferBackroads, language: language)
+            if lastNavRoutes != nil, navigationProvider != nil, preparedRouteKey == key {
+                call.resolve(["ok": true, "prepared": true, "cached": true])
+                return
+            }
+
+            await tearDownSession(emitCancelled: false)
+            let epoch = coreEpoch
+            let provider = MapboxNavigationProvider(coreConfig: makeCoreConfig(accessToken: accessToken, simulate: false))
+            navigationProvider = provider
+            let options = NavigationRouteOptions(waypoints: makeWaypoints(incoming))
+            applyInstructionLanguage(options, language: language)
+            if preferBackroads {
+                options.roadClassesToAvoid = .motorway
+            }
+            do {
+                let navigationRoutes = try await provider.mapboxNavigation
+                    .routingProvider()
+                    .calculateRoutes(options: options)
+                    .value
+                guard epoch == coreEpoch, navigationProvider === provider else {
+                    call.resolve(["ok": true, "prepared": false, "superseded": true])
+                    return
+                }
+                lastNavRoutes = navigationRoutes
+                preparedRouteKey = key
+                call.resolve(["ok": true, "prepared": true])
+            } catch {
+                guard epoch == coreEpoch else {
+                    call.resolve(["ok": true, "prepared": false, "superseded": true])
+                    return
+                }
+                await tearDownSession(emitCancelled: false)
+                call.reject("Route request failed: \(error.localizedDescription)")
+            }
         }
     }
 
     @MainActor
     private func startGuidanceOnMainActor(
         accessToken: String,
-        coordinates: [CLLocationCoordinate2D],
+        waypoints incoming: [IncomingWaypoint],
         simulate: Bool,
         voiceEnabled: Bool,
         preferBackroads: Bool,
+        language: String,
         call: CAPPluginCall
     ) async {
-        tearDownSession(emitCancelled: false)
+        guard incoming.count >= 2 else {
+            call.reject("coordinates must include at least origin and destination")
+            return
+        }
+        await withCoreMutex {
+            let key = routeKey(waypoints: incoming, preferBackroads: preferBackroads, language: language)
+            let canReusePrepared = !sessionActive
+                && lastNavRoutes != nil
+                && navigationProvider != nil
+                && preparedRouteKey == key
+                && !simulate
 
-        var coreConfig = CoreConfig(
-            credentials: .init(accessToken: accessToken),
-            locationSource: simulate ? .simulation(initialLocation: nil) : .live
-        )
-        // StormPath owns off-route recovery. Core "faster route" / auto-reroute
-        // silently swapped a Go-locked B onto highway A and thrashed the puck.
-        coreConfig.routingConfig.rerouteConfig.detectsReroute = false
-        coreConfig.routingConfig.fasterRouteDetectionConfig = nil
-        let provider = MapboxNavigationProvider(coreConfig: coreConfig)
-        navigationProvider = provider
-        didEmitArrival = false
-        applyVoiceEnabled(voiceEnabled)
-
-        let mapboxNavigation = provider.mapboxNavigation
-        // Intermediate points shape the corridor without becoming stop legs — otherwise
-        // Core only gets origin→dest and recalculates highway-fastest over a Go alternate.
-        let waypoints: [Waypoint] = coordinates.enumerated().map { index, coordinate in
-            var waypoint = Waypoint(coordinate: coordinate)
-            if index > 0 && index < coordinates.count - 1 {
-                waypoint.separatesLegs = false
-                // Keep Core on the sampled B corridor instead of cutting to the highway.
-                waypoint.coordinateAccuracy = 40
+            if !canReusePrepared {
+                await tearDownSession(emitCancelled: false)
+                navigationProvider = MapboxNavigationProvider(
+                    coreConfig: makeCoreConfig(accessToken: accessToken, simulate: simulate)
+                )
             }
-            return waypoint
-        }
-        let options = NavigationRouteOptions(waypoints: waypoints)
-        // Honor StormPath preferred / no-interstate Go locks — otherwise Core
-        // recalculates bare origin→dest as highway-fastest and yanks the blue line.
-        if preferBackroads {
-            options.roadClassesToAvoid = .motorway
-        }
 
-        do {
-            let navigationRoutes = try await mapboxNavigation
-                .routingProvider()
-                .calculateRoutes(options: options)
-                .value
+            guard let provider = navigationProvider else {
+                call.reject("Navigation provider missing")
+                return
+            }
+            didEmitArrival = false
+            applyVoiceEnabled(voiceEnabled)
 
-            bindObservers(mapboxNavigation: mapboxNavigation)
-            mapboxNavigation.tripSession().startActiveGuidance(
-                with: navigationRoutes,
-                startLegIndex: 0
-            )
-            sessionActive = true
-            emitRouteGeometry(from: navigationRoutes)
-            call.resolve(["ok": true])
-        } catch {
-            tearDownSession(emitCancelled: false)
-            call.reject("Route request failed: \(error.localizedDescription)")
+            let mapboxNavigation = provider.mapboxNavigation
+            do {
+                let navigationRoutes: NavigationRoutes
+                if canReusePrepared, let prepared = lastNavRoutes {
+                    navigationRoutes = prepared
+                } else {
+                    let options = NavigationRouteOptions(waypoints: makeWaypoints(incoming))
+                    applyInstructionLanguage(options, language: language)
+                    if preferBackroads {
+                        options.roadClassesToAvoid = .motorway
+                    }
+                    navigationRoutes = try await mapboxNavigation
+                        .routingProvider()
+                        .calculateRoutes(options: options)
+                        .value
+                }
+
+                guard navigationProvider === provider else {
+                    call.reject("Navigation session was replaced")
+                    return
+                }
+
+                bindObservers(mapboxNavigation: mapboxNavigation)
+                mapboxNavigation.tripSession().startActiveGuidance(
+                    with: navigationRoutes,
+                    startLegIndex: 0
+                )
+                sessionActive = true
+                lastNavRoutes = navigationRoutes
+                preparedRouteKey = key
+                emitRouteGeometry(from: navigationRoutes)
+                if pendingNativeMapVisible {
+                    applyNativeMapVisible(true)
+                }
+                call.resolve(["ok": true, "reused": canReusePrepared])
+            } catch {
+                await tearDownSession(emitCancelled: false)
+                call.reject("Route request failed: \(error.localizedDescription)")
+            }
         }
     }
 
     @MainActor
     private func applyVoiceEnabled(_ enabled: Bool) {
         voiceEnabled = enabled
-        guard let provider = navigationProvider else {
+        guard navigationProvider != nil else {
+            voiceArmTask?.cancel()
+            voiceArmTask = nil
             voiceController = nil
             return
         }
         if enabled {
-            activateSpeechAudioSession()
-            // Accessing routeVoiceController starts Mapbox spoken instructions.
-            let vc = provider.routeVoiceController
-            vc.speechSynthesizer.muted = false
-            voiceController = vc
+            // Mapbox's own voice controller ducks the session when the first
+            // prompt is ready. We only wait a second so Go is not instant.
+            voiceArmTask?.cancel()
+            voiceArmTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled, self.voiceEnabled, let provider = self.navigationProvider else { return }
+                let vc = provider.routeVoiceController
+                vc.speechSynthesizer.muted = false
+                self.voiceController = vc
+            }
         } else {
+            voiceArmTask?.cancel()
+            voiceArmTask = nil
             if let synth = voiceController?.speechSynthesizer {
                 synth.muted = true
-                synth.stopSpeaking()
             }
             voiceController = nil
-        }
-    }
-
-    private func activateSpeechAudioSession() {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(
-                .playback,
-                mode: .voicePrompt,
-                options: [.duckOthers]
-            )
-            try session.setActive(true, options: [])
-        } catch {
-            // Fall back — prompts may still play at system volume.
-            try? session.setCategory(.playback, options: [.duckOthers])
-            try? session.setActive(true)
         }
     }
 
@@ -236,19 +480,57 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                 ])
             }
             .store(in: &cancellables)
+
+        let horizon = mapboxNavigation.electronicHorizon()
+        horizon.stopUpdatingEHorizon()
+        horizon.eHorizonEvents
+            .compactMap { $0.event as? EHorizonStatus.Events.PositionUpdated }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] event in
+                Task { @MainActor in
+                    self?.applyHorizon(event)
+                }
+            }
+            .store(in: &cancellables)
+        horizon.startUpdatingEHorizon()
+    }
+
+    @MainActor
+    private func applyHorizon(_ event: EHorizonStatus.Events.PositionUpdated) {
+        guard sessionActive,
+              let graph = navigationProvider?.mapboxNavigation.electronicHorizon().roadMatching.roadGraph
+        else { return }
+        horizonSnapshot = HorizonAhead.snapshot(event: event, graph: graph)
+        horizonReady = true
+    }
+
+    @MainActor
+    private func resetHorizon() {
+        navigationProvider?.mapboxNavigation.electronicHorizon().stopUpdatingEHorizon()
+        horizonSnapshot = HorizonSnapshot(limitMph: nil, hazards: [])
+        horizonReady = false
     }
 
     @MainActor
     private func emitProgress(state: RouteProgressState?) {
         guard sessionActive, let state else { return }
         let progress = state.routeProgress
-        let matching = navigationProvider?.mapboxNavigation.navigation().currentLocationMatching
-        guard let coord = matching?.enhancedLocation.coordinate else {
+        guard let matching = navigationProvider?.mapboxNavigation.navigation().currentLocationMatching else {
             // No matched fix yet — skip puck update but keep session alive.
             return
         }
-
-        let alongM = progress.distanceTraveled
+        let loc = matching.enhancedLocation
+        let coord = loc.coordinate
+        let headingDeg: Double? = loc.course >= 0 ? loc.course : nil
+        let speedMps: Double? = loc.speed >= 0 ? loc.speed : nil
+        let accepted = poseHold.accept(DrivePoseSample(
+            coordinate: coord,
+            alongM: progress.distanceTraveled,
+            headingDeg: headingDeg,
+            speedMps: speedMps
+        ))
+        let pose = accepted.sample
+        let alongM = pose.alongM
         let remainingM = progress.distanceRemaining
         let legProgress = progress.currentLegProgress
         let stepIndex = globalStepIndex(progress: progress)
@@ -264,7 +546,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         let roadName = currentStep.names?.joined(separator: " / ") ?? ""
         let roadRef = currentStep.codes?.joined(separator: " / ") ?? ""
 
-        notifyListeners("progress", data: [
+        var payload: [String: Any] = [
             "alongM": alongM,
             "remainingM": remainingM,
             "onRoute": true,
@@ -273,14 +555,50 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             "instruction": instruction,
             "currentRoadName": roadName,
             "currentRoadRef": roadRef,
-            "lng": coord.longitude,
-            "lat": coord.latitude,
-        ])
+            "lng": pose.coordinate.longitude,
+            "lat": pose.coordinate.latitude,
+            "poseHeld": accepted.held,
+        ]
+        if let heading = pose.headingDeg {
+            payload["headingDeg"] = heading
+        }
+        if let speed = pose.speedMps {
+            payload["speedMps"] = speed
+        }
+        let cam = followCam.next(
+            lng: pose.coordinate.longitude,
+            lat: pose.coordinate.latitude,
+            headingDeg: pose.headingDeg,
+            speedMps: pose.speedMps,
+            stepRemainingM: stepRemainingM
+        )
+        payload["camLng"] = cam.lng
+        payload["camLat"] = cam.lat
+        payload["camBearing"] = cam.bearing
+        payload["camPitch"] = cam.pitch
+        payload["camZoom"] = cam.zoom
+        if pendingNativeMapVisible || nativeMap != nil {
+            nativeMap?.applyFollowCamera(cam)
+        }
+        if let showing = nativeMap?.isShowing {
+            payload["nativeMapShowing"] = showing
+        }
+        payload["horizonReady"] = horizonReady
+        if let mph = horizonSnapshot.limitMph {
+            payload["horizonLimitMph"] = mph
+        }
+        payload["horizonHazards"] = horizonSnapshot.hazards
+        notifyListeners("progress", data: payload)
 
         if !didEmitArrival, remainingM >= 0, remainingM < 30, alongM > 50 {
             didEmitArrival = true
             notifyListeners("arrived", data: ["reason": "arrived"])
-            tearDownSession(emitCancelled: false)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.withCoreMutex {
+                    await self.softStopGuidance()
+                }
+            }
         }
     }
 
@@ -328,34 +646,203 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @MainActor
     private func emitRouteGeometry(from routes: NavigationRoutes) {
+        guard sessionActive else { return }
         // NavigationRoute wraps Directions.Route; shape holds the polyline.
         let coords = routes.mainRoute.route.shape?.coordinates ?? []
         guard !coords.isEmpty else { return }
         let geometry: [[String: Double]] = coords.map { c in
             ["lng": c.longitude, "lat": c.latitude]
         }
+        lastNavRoutes = routes
+        nativeMap?.show(routes: routes)
         notifyListeners("routeChanged", data: [
             "geometry": geometry,
             "turnSteps": turnStepsPayload(from: routes),
         ])
     }
 
+    /**
+     * User Stop / arrival: idle Core, drop observers, **keep** `MapboxNavigationProvider`.
+     * Releasing the provider on Stop (even after a drain) hard-crashed the IPA.
+     * Next prepare / Go calls `tearDownSession` under the mutex and replaces it.
+     * Callers must hold `withCoreMutex`.
+     */
     @MainActor
-    private func tearDownSession(emitCancelled: Bool) {
+    private func softStopGuidance() async {
+        while tearDownInFlight {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        if navigationProvider == nil && !sessionActive {
+            poseHold.reset()
+            followCam.reset()
+            lastNavRoutes = nil
+            preparedRouteKey = ""
+            pendingNativeMapVisible = false
+            return
+        }
+
+        tearDownInFlight = true
+        defer { tearDownInFlight = false }
+
+        let wasActive = sessionActive
+        sessionActive = false
+        coreEpoch += 1
+        resetHorizon()
         cancellables.removeAll()
         if let synth = voiceController?.speechSynthesizer {
             synth.muted = true
-            synth.stopSpeaking()
+            /* Skip stopSpeaking — it raced Core's own speech teardown on Stop. */
         }
-        if sessionActive {
-            navigationProvider?.mapboxNavigation.tripSession().setToIdle()
-            if emitCancelled {
+        voiceController = nil
+        voiceEnabled = false
+        voiceArmTask?.cancel()
+        voiceArmTask = nil
+
+        nativeMap?.detach(webView: webView)
+        nativeMap = nil
+        applyDrivePuckVisible(false)
+
+        /* Do not call setToIdle on Stop — that path still hard-crashed the IPA.
+         * Provider stays alive (muted, no observers). Next prepare/Go tearDown idles + releases. */
+        _ = wasActive
+
+        poseHold.reset()
+        followCam.reset()
+        lastNavRoutes = nil
+        preparedRouteKey = ""
+        pendingNativeMapVisible = false
+        /* Keep navigationProvider until prepare / Go tearDown replaces it. */
+    }
+
+    /**
+     * Full Core release before installing a replacement provider (prepare / Go).
+     * Callers must hold `withCoreMutex`. Never overlap two providers.
+     */
+    @MainActor
+    private func tearDownSession(emitCancelled: Bool) async {
+        while tearDownInFlight {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        if navigationProvider == nil && !sessionActive {
+            poseHold.reset()
+            followCam.reset()
+            lastNavRoutes = nil
+            preparedRouteKey = ""
+            pendingNativeMapVisible = false
+            return
+        }
+
+        tearDownInFlight = true
+        defer { tearDownInFlight = false }
+
+        let wasActive = sessionActive
+        sessionActive = false
+        coreEpoch += 1
+        resetHorizon()
+        cancellables.removeAll()
+        if let synth = voiceController?.speechSynthesizer {
+            synth.muted = true
+        }
+        voiceController = nil
+        voiceEnabled = false
+        voiceArmTask?.cancel()
+        voiceArmTask = nil
+
+        nativeMap?.detach(webView: webView)
+        nativeMap = nil
+        applyDrivePuckVisible(false)
+
+        let provider = navigationProvider
+        /* Always idle before release — soft-stop may have left guidance running. */
+        if provider != nil {
+            provider?.mapboxNavigation.tripSession().setToIdle()
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            if emitCancelled && wasActive {
                 notifyListeners("cancelled", data: ["reason": "cancelled"])
             }
         }
-        sessionActive = false
-        voiceEnabled = false
-        voiceController = nil
         navigationProvider = nil
+
+        poseHold.reset()
+        followCam.reset()
+        lastNavRoutes = nil
+        preparedRouteKey = ""
+        pendingNativeMapVisible = false
+    }
+
+    @MainActor
+    private func applyNativeMapVisible(_ visible: Bool, styleUrl: String? = nil) -> Bool {
+        pendingNativeMapVisible = visible
+        guard visible else {
+            nativeMap?.setVisible(false, webView: webView)
+            return false
+        }
+        guard let provider = navigationProvider, let host = webView?.superview, let wv = webView else {
+            return false
+        }
+        let map = nativeMap ?? DriveNativeMap()
+        nativeMap = map
+        map.attach(
+            host: host,
+            webView: wv,
+            navigation: provider.mapboxNavigation,
+            predictiveCacheManager: provider.predictiveCacheManager,
+            routes: lastNavRoutes,
+            styleUrl: styleUrl
+        )
+        return map.setVisible(true, webView: wv)
+    }
+
+    @MainActor
+    private func applyDrivePuckVisible(_ visible: Bool) {
+        // Native chevron sits on the UIKit host above the WebView, so it covers
+        // About / weather / Route info. Parked — Drive uses the web puck.
+        _ = visible
+        puckOverlay?.removeFromSuperview()
+        puckOverlay = nil
+    }
+
+    public override func load() {
+        idleExitObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.cancelIdleExitWork()
+        }
+    }
+
+    /// Quit only while the process is actually in the background. Opening the
+    /// app cancels this. A drive must not arm it.
+    @objc func armIdleExit(_ call: CAPPluginCall) {
+        let afterMs = call.getDouble("afterMs") ?? 20_000
+        let delay = max(1, afterMs / 1000)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else {
+                call.resolve()
+                return
+            }
+            self.cancelIdleExitWork()
+            let work = DispatchWorkItem { [weak self] in
+                self?.idleExitWork = nil
+                guard UIApplication.shared.applicationState == .background else { return }
+                exit(0)
+            }
+            self.idleExitWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+            call.resolve()
+        }
+    }
+
+    @objc func cancelIdleExit(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            self?.cancelIdleExitWork()
+            call.resolve()
+        }
+    }
+
+    private func cancelIdleExitWork() {
+        idleExitWork?.cancel()
+        idleExitWork = nil
     }
 }

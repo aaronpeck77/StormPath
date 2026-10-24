@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { getWebEnv } from "./config/env";
 import { useFusedSituation } from "./hooks/useFusedSituation";
@@ -23,22 +24,38 @@ import {
 import { useDestinationSearch } from "./hooks/useDestinationSearch";
 import { useNavigationPosition } from "./hooks/useNavigationPosition";
 import { useNativeNavSession } from "./nav/useNativeNavSession";
+import {
+  continueAlongInstruction,
+  driverBannerStepIndex,
+  isArriveGuidanceInstruction,
+} from "./nav/windowArriveGuidance";
+import { shouldUseNativeDriveMapShell } from "./nav/nativeDriveMapShell";
+import { allowsMapDestinationPick } from "./nav/viewModeContract";
 import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
 import { useNearbyPoiTip } from "./hooks/useNearbyPoiTip";
 import { useAdvisoryVoiceGuidance } from "./hooks/useAdvisoryVoiceGuidance";
 import { useCarSessionPublish } from "./hooks/useCarSessionPublish";
+import { isAppVoiceHeld, subscribeAppVoiceHold } from "./grok/assistantFloor";
+import { useJamHop } from "./nav/useJamHop";
+import { JamHopBanner } from "./ui/JamHopBanner";
 import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
 import { resolveNavigationRouteIds } from "./nav/navigationRouteFocus";
 import { resolveNavigatingRouteSelect } from "./nav/navigatingRouteSelect";
 import { planAfterSoftRestartLock } from "./nav/softRestartPlan";
+import { isReverseDepartGeometry } from "./nav/detourRejoin";
+import { runTripRefresh, shouldRunTripRefresh } from "./nav/tripRefresh";
 import {
   loadReturnTripLeg,
   shortenReturnTripLabel,
   type ReturnTripLeg,
 } from "./nav/returnTripLeg";
 import type { LngLat } from "./nav/types";
+import type { StormyActResult, StormyReply } from "./stormy/stormyFence";
+import { spokenPlace } from "./stormy/spokenPlace";
+import { stormyFactsFromImpacts, stormyRoadRefs } from "./stormy/stormySituation";
 import { pickSuggestedActive, scoreTrip } from "./scoring/scoreRoutes";
 import { useAppForeground } from "./hooks/useAppForeground";
+import { useIdleAppExit } from "./nav/idleAppExit";
 import { useTollPreview } from "./nav/useTollPreview";
 import {
   getNwsPollIntervalMs,
@@ -55,7 +72,7 @@ import {
   pointAtAlongMeters,
   polylineLengthMeters,
 } from "./nav/routeGeometry";
-import { stablePlanRoutesKey } from "./nav/tripNavDisplay";
+import { fartherAlongMeters, stablePlanRoutesKey } from "./nav/tripNavDisplay";
 import { useTripNavDisplayHealth } from "./nav/useTripNavDisplayHealth";
 import { useTripSurfaceRecovery } from "./nav/useTripSurfaceRecovery";
 import { useLiveTrafficHealth } from "./nav/useLiveTrafficHealth";
@@ -70,10 +87,23 @@ import { useRefreshAlternateRoutes } from "./nav/useRefreshAlternateRoutes";
 import { useProgressRailChrome } from "./nav/useProgressRailChrome";
 import { useRoutePickItems } from "./nav/buildRoutePickItems";
 import { useDriveEtaLabels } from "./nav/useDriveEtaLabels";
+import {
+  noteDriveDiagDoubledBack,
+  noteDriveDiagRouteLock,
+  noteDriveDiagYou,
+  setDriveDiagLiveLengthM,
+  setDriveDiagRouteLengthM,
+} from "./nav/driveDiagnostics";
+import { routeDoublesBack } from "./nav/routeDoublesBack";
+import {
+  routingPreferenceForLockedRoute,
+  type RoutingPreference,
+} from "./nav/routePreference";
 import { useSeriousHazardAutoFly } from "./nav/useSeriousHazardAutoFly";
 import { isDriveOffRouteForwardFraming, lockedRouteShouldAvoidMotorway } from "./nav/driveAlwaysAhead";
 import {
   nativeGeometryApplyPolicy,
+  rerouteAsksForTurnAlreadyMissed,
   shouldAdoptNativeRouteGeometry,
   shouldReplaceGoPolylineOnNativeAdopt,
 } from "./nav/lockedRouteGeometryGuard";
@@ -87,7 +117,7 @@ import type { MapViewMode } from "./ui/driveMapTypes";
 import { stormpathVersionLabel } from "./appVersion";
 import { applyLayerStartupMigrations } from "./layerStartupPrefs";
 import { AppMapStage } from "./ui/AppMapStage";
-import { buildAppShellClassName, buildDevPointerStyle } from "./ui/appShellChrome";
+import { buildAppShellClassName, buildAppShellStyle } from "./ui/appShellChrome";
 
 const SavedDestinationsDrawer = lazy(() =>
   import("./ui/SavedDestinationsDrawer").then((m) => ({ default: m.SavedDestinationsDrawer }))
@@ -97,6 +127,7 @@ import { AppBottomChrome } from "./ui/AppBottomChrome";
 import { AppAboutSheetHost } from "./ui/AppAboutSheetHost";
 import {
   currentNavTarget,
+  remainingViaStops,
 } from "./nav/routeWaypoints";
 import {
   isFullSlotPermutation,
@@ -160,7 +191,12 @@ import { useArrivalDetection } from "./nav/useArrivalDetection";
 import { useMapboxTrafficLineSnap } from "./nav/useMapboxTrafficLineSnap";
 import { mapMatchingBuildAllowed } from "./services/mapboxMapMatching";
 import { useNavigationGuidance } from "./nav/useNavigationGuidance";
+import { applyPuckColor } from "./ui/puckColor";
 import { useSettingsStore } from "./state/settingsStore";
+import { allowUsSpeedLimitGuess, roadUsesMiles } from "./utils/displayUnits";
+import { resolveGuidanceLanguage, weatherKitLanguageTag } from "./utils/guidanceLanguage";
+import { setMapboxSearchLanguage } from "./services/mapboxSearchBox";
+import { setWeatherKitLanguage } from "./services/weatherKitClient";
 import { useRouteCompareActions } from "./state/useRouteCompareActions";
 import { useTripPlanStore } from "./state/tripPlanStore";
 import { useUiStore } from "./state/uiStore";
@@ -205,6 +241,10 @@ export default function App() {
   const settingMapMatchingEnabled = useSettingsStore((s) => s.mapMatchingEnabled);
   /** Landscape / side view only — CSS mirrors chrome when "left"; portrait ignores */
   const settingLandscapeSideHand = useSettingsStore((s) => s.landscapeSideHand);
+  const settingPuckColor = useSettingsStore((s) => s.puckColor);
+  useEffect(() => {
+    applyPuckColor(settingPuckColor);
+  }, [settingPuckColor]);
   /* Phase 4e3: the About sheet is the only consumer of the individual `setSettingX` setters.
    * `applySettings` writes through all 8 fields in one batched store update and runs each
    * persistence side once. Per-toggle handlers elsewhere (toolbar Radar overlay, etc.) operate
@@ -227,6 +267,8 @@ export default function App() {
       : navActiveForGps
         ? 200
         : GPS_STATE_THROTTLE_MS_NORMAL;
+  const appForeground = useAppForeground();
+  useIdleAppExit(navActiveForGps, appForeground);
   const {
     lngLat: userLngLat,
     heading,
@@ -236,7 +278,7 @@ export default function App() {
     liveLngLatRef,
     liveHeadingRef,
     liveSpeedMpsRef,
-  } = useUserLocation(true, {
+  } = useUserLocation(appForeground || navActiveForGps, {
     highRefresh: settingGpsHighRefreshEnabled,
     stateUpdateThrottleMs: gpsStateThrottleMs,
   });
@@ -272,6 +314,8 @@ export default function App() {
   const [alongHoldResetKey, setAlongHoldResetKey] = useState(0);
   /** Route id locked at Go — guidance follows this until the driver explicitly switches legs. */
   const lockedNavigationRouteIdRef = useRef<string | null>(null);
+  const routingPreferenceRef = useRef<RoutingPreference>("fastest");
+  const navPreferenceArmedRef = useRef(false);
   /** Suppress off-route rejoin while on a learned "Your route" fork. */
   const onPersonalForkRef = useRef(false);
 
@@ -328,6 +372,7 @@ export default function App() {
   const setAboutOpen = useUiStore((s) => s.setAboutOpen);
   /** Bumps DriveMap to hard-snap follow-cam after sheets / background. */
   const [followCamResyncKey, setFollowCamResyncKey] = useState(0);
+  const lastTripRefreshAtMsRef = useRef(0);
   /* Contextual one-shot coachmarks — the {@link Coachmarks} component watches for its
    * tracked targets to become visible and pops a single "Tip" card next to each the first
    * time the user encounters it. Persistence + queue logic live entirely in that component;
@@ -349,13 +394,13 @@ export default function App() {
 
   const sheetsWereOpenRef = useRef(false);
   useEffect(() => {
-    const open = aboutOpen || progressCalloutsOpen;
-    /* navActiveForGps === navigationStarted from tripPlanStore (declared later in this component). */
-    if (sheetsWereOpenRef.current && !open && navActiveForGps) {
+    /* About is a full sheet that can change the map box. Route info is a fixed
+     * overlay — resyncing on close was the blur/route-hop when returning to the map. */
+    if (sheetsWereOpenRef.current && !aboutOpen && navActiveForGps) {
       window.setTimeout(() => setFollowCamResyncKey((k) => k + 1), 80);
     }
-    sheetsWereOpenRef.current = open;
-  }, [aboutOpen, progressCalloutsOpen, navActiveForGps]);
+    sheetsWereOpenRef.current = aboutOpen;
+  }, [aboutOpen, navActiveForGps]);
 
   /* Settings (persisted) — toggles that actually reduce background API calls.
    * Sourced from `useSettingsStore` (Phase 4a). Individual `setSettingX` selectors were
@@ -370,11 +415,18 @@ export default function App() {
   const settingDataSaverEnabled = useSettingsStore((s) => s.dataSaverEnabled);
   const dataSaverHintDismissed = useSettingsStore((s) => s.dataSaverHintDismissed);
   const dismissDataSaverHintAction = useSettingsStore((s) => s.dismissDataSaverHint);
-  const appForeground = useAppForeground();
   const navigationMatchGeometryRef = useRef<LngLat[] | undefined>(undefined);
   const dataSaverMode = isDataSaverMode(settingDataSaverEnabled);
 
-  const settingVoiceGuidanceEnabled = useSettingsStore((s) => s.voiceGuidanceEnabled);
+  const settingVoiceLevel = useSettingsStore((s) => s.voiceLevel);
+  const settingVoiceOn = settingVoiceLevel !== "off";
+  const appVoiceHeld = useSyncExternalStore(subscribeAppVoiceHold, isAppVoiceHeld, () => false);
+  const settingGuidanceLanguage = useSettingsStore((s) => s.guidanceLanguage);
+  const guidanceLanguageCode = resolveGuidanceLanguage(settingGuidanceLanguage);
+  useEffect(() => {
+    setMapboxSearchLanguage(guidanceLanguageCode);
+    setWeatherKitLanguage(weatherKitLanguageTag(guidanceLanguageCode));
+  }, [guidanceLanguageCode]);
   /* Storm/advisory state lives in `useWeatherStore` (Phase 4d). Local names + setter
    * signatures preserved so the ~40 read/setter sites in this file are unchanged. The store
    * action for `setStormBarExpanded` writes through to `safeStorage` so persistence and React
@@ -439,7 +491,7 @@ export default function App() {
   const routingRef = useRef(routing);
   routingRef.current = routing;
 
-  /** B/C leg refresh — must not flip global `routing` (advisory shows "Building routes…"). */
+  /** B/C leg refresh — must not flip global `routing` (advisory shows "Planning your route…"). */
   const altRoutesRefreshInFlightRef = useRef(false);
   const [tapHint, setTapHint] = useState<string | null>(null);
   const [returnTripLeg, setReturnTripLeg] = useState<ReturnTripLeg | null>(() => loadReturnTripLeg());
@@ -475,7 +527,6 @@ export default function App() {
   const handleViewModeChange = useCallback(
     (next: MapViewMode) => {
       setViewMode(next);
-      if (next === "route") setFitTrigger((n) => n + 1);
     },
     [setViewMode]
   );
@@ -596,7 +647,6 @@ export default function App() {
     setRouteError,
     setTapHint,
     setTollAvoidFailureNote,
-    setFitTrigger,
   });
 
   const {
@@ -619,6 +669,8 @@ export default function App() {
     handlePickSuggestion,
     handleSearchPickFromMap,
     handleSearch,
+    resolveSpokenPlace,
+    acceptSpokenChoice,
     searchPickMarkersForMap,
     handleSearchFieldBeginEditing,
     handleSearchFieldEndEditing,
@@ -638,7 +690,6 @@ export default function App() {
     activityTrailTick,
     savedPlaces,
     setSavedDrawerOpen,
-    setFitTrigger,
     setTapHint,
     setRouting,
     setRouteError,
@@ -758,7 +809,6 @@ export default function App() {
     const targetCount = isPlus ? 2 : 1;
     if (prev < targetCount && next >= targetCount) {
       setViewMode("route");
-      setFitTrigger((n) => n + 1);
     }
   }, [plan.routes.length, isPlus, navigationStarted]);
 
@@ -784,7 +834,7 @@ export default function App() {
   }, [navigationStarted, viewMode, plan.routes.length]);
 
   const prevDestLngLatRef = useRef<LngLat | null>(null);
-  /** Every new destination → Rt view + map refit (endpoint pair before routes load, full trip after). */
+  /** New destination → Rt view. Camera waits for route lines, then one overview fit. */
   useEffect(() => {
     if (navigationStarted) return;
     if (!destLngLat) {
@@ -800,19 +850,17 @@ export default function App() {
     prevDestLngLatRef.current = destLngLat;
     setViewMode("route");
     setSearchExpanded(false);
-    setFitTrigger((n) => n + 1);
   }, [destLngLat, navigationStarted, setViewMode, setSearchExpanded]);
 
   /**
    * Replanning can replace A/B/C while keeping the same slot ids (`r-a|r-b|r-c`) and the same route
-   * count — nothing else re-fires then. Force Rt + refit whenever the route graph changes.
+   * count. Stay on Rt — DriveMap frames once from the new route graph, not a second fitTrigger hop.
    */
   useEffect(() => {
     if (navigationStarted) return;
     if (!plan.routes.length) return;
     setViewMode("route");
     setSearchExpanded(false);
-    setFitTrigger((n) => n + 1);
   }, [planRoutesKey, navigationStarted]);
 
   const orderedRouteIds = useMemo(() => {
@@ -867,11 +915,30 @@ export default function App() {
   );
 
   const nativePreferBackroads = useMemo(() => {
-    const lockedId =
-      lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
+    const previewId = orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? null;
+    const lockedId = navigationStarted
+      ? (lockedNavigationRouteIdRef.current ?? previewId)
+      : previewId;
     const locked = lockedId ? plan.routes.find((r) => r.id === lockedId) : undefined;
     return lockedRouteShouldAvoidMotorway(locked, plan.routes);
-  }, [plan.routes, orderedRouteIds, navigationStarted]);
+  }, [plan.routes, orderedRouteIds, navigationStarted, previewLegIndex]);
+
+  useEffect(() => {
+    noteDriveDiagRouteLock(nativePreferBackroads, navigationStarted);
+  }, [nativePreferBackroads, navigationStarted]);
+
+  useEffect(() => {
+    if (!navigationStarted) {
+      navPreferenceArmedRef.current = false;
+      routingPreferenceRef.current = "fastest";
+      return;
+    }
+    if (navPreferenceArmedRef.current) return;
+    navPreferenceArmedRef.current = true;
+    const id = lockedNavigationRouteIdRef.current;
+    const route = id ? plan.routes.find((r) => r.id === id) : undefined;
+    routingPreferenceRef.current = routingPreferenceForLockedRoute(route);
+  }, [navigationStarted, plan.routes]);
 
   /**
    * iOS Capacitor: Mapbox Navigation Core feeds puck/alongM; DIY snap/off-route pause.
@@ -884,7 +951,37 @@ export default function App() {
   const onNativeRouteGeometry = useCallback(
     (geometry: LngLat[], opts?: { force?: boolean }): boolean => {
       if (geometry.length < 2) return false;
+      const user = userLngLatRef.current;
+      if (
+        user &&
+        isReverseDepartGeometry(geometry, user, driveLastTravelBearingDegRef.current)
+      ) {
+        if (import.meta.env.DEV) {
+          console.info("[nav] ignored Core reroute — reverse depart toward dest");
+        }
+        return false;
+      }
+      if (routeDoublesBack(geometry)) {
+        if (import.meta.env.DEV) {
+          console.info("[nav] ignored Core reroute — line returns to a point already passed");
+        }
+        return false;
+      }
       const force = Boolean(opts?.force);
+      if (
+        force &&
+        user &&
+        rerouteAsksForTurnAlreadyMissed({
+          geometry,
+          userLngLat: user,
+          travelHeadingDeg: driveLastTravelBearingDegRef.current,
+        })
+      ) {
+        if (import.meta.env.DEV) {
+          console.info("[nav] ignored Core reroute — turn is already too late");
+        }
+        return false;
+      }
       const adopted = adoptLockedRouteGeometry(geometry, { force });
       if (!adopted) return false;
       const lockedId =
@@ -916,22 +1013,59 @@ export default function App() {
   const {
     nativeNavActive,
     position: nativeNavPosition,
+    followCamera: nativeFollowCamera,
     guidance: nativeNavGuidance,
     turnSteps: nativeTurnSteps,
+    coreWindowIsFinal,
     restartNative,
+    stopNative,
+    coreRerouteHealthRef,
+    horizonMph,
+    horizonHazards,
   } = useNativeNavSession({
     accessToken: env.mapboxToken,
     navigationStarted,
     coords: {
       userLngLat,
-      viaStops,
+      viaStops: remainingViaStops(viaStops, activeViaIndex),
       destLngLat,
-      lockedCorridor: navGoGeometryRef.current,
+      lockedCorridor:
+        navGoGeometryRef.current ??
+        plan.routes.find(
+          (r) => r.id === (orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0])
+        )?.geometry ??
+        null,
+      headingDeg: driveLastTravelBearingDegRef.current,
     },
     onRouteGeometry: onNativeRouteGeometry,
-    voiceGuidanceEnabled: settingVoiceGuidanceEnabled,
-    preferBackroads: nativePreferBackroads,
+    voiceGuidanceEnabled: settingVoiceOn && !appVoiceHeld,
+    guidanceLanguage: guidanceLanguageCode,
+    /* No hard motorway ban. A reroute may use an interstate when that is the
+     * sensible way on. The fastest/alternate choice is applied from here. */
+    preferBackroads: false,
   });
+
+  const handleSkipViaStop = useCallback(
+    async (index: number) => {
+      await handleRemoveViaStop(index);
+      const nextPlan = useTripPlanStore.getState().plan;
+      const lockedId = lockedNavigationRouteIdRef.current;
+      const route =
+        (lockedId ? nextPlan.routes.find((r) => r.id === lockedId) : undefined) ??
+        nextPlan.routes[0];
+      if (route && route.geometry.length >= 2) {
+        adoptLockedRouteGeometry(
+          route.geometry.map(([a, b]) => [a, b] as LngLat),
+          { force: true }
+        );
+      }
+      /* Let the new line land in the Core coords, then start guidance from here. */
+      window.setTimeout(() => {
+        void restartNative();
+      }, 0);
+    },
+    [handleRemoveViaStop, adoptLockedRouteGeometry, restartNative]
+  );
 
   const navPosition = useNavigationPosition({
     rawLngLat: userLngLat,
@@ -972,10 +1106,11 @@ export default function App() {
     isOnline,
     isPlus,
     effectiveAutoRerouteEnabled: settingAutoRerouteEnabled,
-    settingVoiceGuidanceEnabled,
+    settingVoiceGuidanceEnabled: settingVoiceOn,
     settingStormEnabled,
     stormAlertsForRouting,
     lockedNavigationRouteIdRef,
+    routingPreferenceRef,
     routeGraphEpochRef,
     altRoutesFetchAbortRef,
     altRoutesRefreshInFlightRef,
@@ -999,6 +1134,7 @@ export default function App() {
     setPreviewLegIndex,
     adoptLockedRouteGeometry,
     restartNativeNav: restartNative,
+    coreRerouteHealthRef,
     viewModeRef,
     onPersonalForkRef,
   });
@@ -1028,7 +1164,7 @@ export default function App() {
     rerouteInFlightRef: altRoutesRefreshInFlightRef,
   });
 
-  const { holdLastGoodMap } = useFieldSupervisor({
+  const { holdLastGoodMap, linkTooWeak, lowDataAdvisory } = useFieldSupervisor({
     routing,
     suggestLoading,
     bypassBusy,
@@ -1360,6 +1496,61 @@ export default function App() {
     return g && g.length >= 2 ? polylineLengthMeters(g) : 0;
   }, [navigationGuidanceGeometry, guidanceRoute?.geometry]);
 
+  useEffect(() => {
+    if (!navigationStarted) return;
+    if (maxPlanRouteLengthM > 0) setDriveDiagRouteLengthM(maxPlanRouteLengthM);
+    if (guidanceRouteLengthM > 0) setDriveDiagLiveLengthM(guidanceRouteLengthM);
+  }, [navigationStarted, maxPlanRouteLengthM, guidanceRouteLengthM]);
+
+  useEffect(() => {
+    if (!navigationStarted || !navigationGuidanceGeometry || navigationGuidanceGeometry.length < 4) {
+      return;
+    }
+    const g = navigationGuidanceGeometry;
+    const a = g[0]!;
+    const b = g[g.length - 1]!;
+    const sig = `${g.length}:${a[0].toFixed(3)}:${b[1].toFixed(3)}:${Math.round(guidanceRouteLengthM)}`;
+    const timer = window.setTimeout(() => {
+      if (routeDoublesBack(g)) noteDriveDiagDoubledBack(sig);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [navigationStarted, navigationGuidanceGeometry, guidanceRouteLengthM]);
+
+  const [routeSignalNote, setRouteSignalNote] = useState<null | "weak" | "back">(null);
+  useEffect(() => {
+    if (!navigationStarted || !nativeNavActive || !isOnline) {
+      setRouteSignalNote(null);
+      return;
+    }
+    let weak = false;
+    let backTimer = 0;
+    const id = window.setInterval(() => {
+      const last = coreRerouteHealthRef.current.lastProgressAtMs;
+      const moving = (speedMpsRef.current ?? 0) > 1.5;
+      const age = last == null ? null : Date.now() - last;
+      const stale = age != null && age > 12_000 && moving;
+      if (stale && !weak) {
+        weak = true;
+        setRouteSignalNote("weak");
+        return;
+      }
+      if (!stale && weak && age != null && age < 4_000) {
+        weak = false;
+        setRouteSignalNote("back");
+        window.clearTimeout(backTimer);
+        backTimer = window.setTimeout(() => {
+          setRouteSignalNote((cur) => (cur === "back" ? null : cur));
+        }, 6_000);
+      }
+    }, 2_000);
+    return () => {
+      window.clearInterval(id);
+      window.clearTimeout(backTimer);
+    };
+  }, [navigationStarted, nativeNavActive, isOnline]);
+
+  const guidanceLive = routeSignalNote !== "weak";
+
   const {
     userAlongGuidanceM,
     activeTurnIndex: diyTravelingTurnIndex,
@@ -1368,16 +1559,17 @@ export default function App() {
   } = useNavigationGuidance({
     navigationStarted,
     /** Native Core owns spoken instructions on iOS; keep Web Speech for DIY/web. */
-    settingVoiceGuidanceEnabled: settingVoiceGuidanceEnabled && !nativeNavActive,
+    settingVoiceGuidanceEnabled: settingVoiceOn && !nativeNavActive && !appVoiceHeld,
     guidanceRouteId,
     guidanceRouteLengthM,
     turnSteps,
     effectiveUserLngLat: navigationPositionLngLat,
     routeGeometry: navigationGuidanceGeometry,
     alongHoldResetKey,
-    navigationAlongM: navigationStarted ? effectiveNavPosition.alongM : undefined,
+    navigationAlongM:
+      navigationStarted && guidanceLive ? effectiveNavPosition.alongM : undefined,
     frozenAlongM:
-      driveModeUi
+      !guidanceLive || driveModeUi
         ? undefined
         : offRouteLatched &&
             !autoRejoinGuidanceRouteId &&
@@ -1389,11 +1581,20 @@ export default function App() {
 
   /** iOS Core: banner uses Mapbox steps + progress so voice, line, and strip stay one route. */
   const bannerTurnSteps =
-    nativeNavActive && nativeTurnSteps.length > 0 ? nativeTurnSteps : turnSteps;
+    guidanceLive && nativeNavActive && nativeTurnSteps.length > 0 ? nativeTurnSteps : turnSteps;
+
+  const hideWindowArrive = nativeNavActive && !coreWindowIsFinal;
 
   const bannerTurnIndex = useMemo(() => {
-    if (!nativeNavActive || !nativeNavGuidance || bannerTurnSteps.length === 0) {
+    if (!guidanceLive || !nativeNavActive || !nativeNavGuidance || bannerTurnSteps.length === 0) {
       return diyBannerTurnIndex;
+    }
+    if (hideWindowArrive) {
+      return driverBannerStepIndex(
+        bannerTurnSteps,
+        nativeNavGuidance.stepIndex,
+        diyBannerTurnIndex
+      );
     }
     // Traveling current step; upcoming maneuver is typically the next step in Mapbox's list.
     const next = nativeNavGuidance.stepIndex + 1;
@@ -1401,37 +1602,45 @@ export default function App() {
     return Math.max(0, Math.min(nativeNavGuidance.stepIndex, bannerTurnSteps.length - 1));
   }, [
     nativeNavActive,
+    guidanceLive,
     nativeNavGuidance,
-    bannerTurnSteps.length,
+    bannerTurnSteps,
     diyBannerTurnIndex,
+    hideWindowArrive,
   ]);
 
   const metersToBannerManeuver =
-    nativeNavActive && nativeNavGuidance?.stepRemainingM != null
+    guidanceLive && nativeNavActive && nativeNavGuidance?.stepRemainingM != null
       ? nativeNavGuidance.stepRemainingM
       : diyMetersToBannerManeuver;
 
-  const bannerInstructionOverride =
-    nativeNavActive && nativeNavGuidance?.instruction
+  const bannerTravelingStepIndex =
+    guidanceLive && nativeNavActive
+      ? (nativeNavGuidance?.stepIndex ?? 0)
+      : diyTravelingTurnIndex;
+
+  const nativeInstruction =
+    guidanceLive && nativeNavActive && nativeNavGuidance?.instruction
       ? nativeNavGuidance.instruction
       : null;
+  const bannerInstructionOverride =
+    hideWindowArrive && isArriveGuidanceInstruction(nativeInstruction)
+      ? continueAlongInstruction(nativeNavGuidance?.currentRoadName)
+      : nativeInstruction;
 
-  const bannerTravelingStepIndex = nativeNavActive
-    ? (nativeNavGuidance?.stepIndex ?? 0)
-    : diyTravelingTurnIndex;
+  const bannerCurrentRoadName =
+    guidanceLive && nativeNavActive
+      ? (nativeNavGuidance?.currentRoadName ?? null)
+      : (bannerTurnSteps[diyTravelingTurnIndex]?.roadName ?? null);
 
-  const bannerCurrentRoadName = nativeNavActive
-    ? (nativeNavGuidance?.currentRoadName ?? null)
-    : (bannerTurnSteps[diyTravelingTurnIndex]?.roadName ?? null);
-
-  const bannerCurrentRoadRef = nativeNavActive
-    ? (nativeNavGuidance?.currentRoadRef ?? null)
-    : (bannerTurnSteps[diyTravelingTurnIndex]?.roadRef ?? null);
+  const bannerCurrentRoadRef =
+    guidanceLive && nativeNavActive
+      ? (nativeNavGuidance?.currentRoadRef ?? null)
+      : (bannerTurnSteps[diyTravelingTurnIndex]?.roadRef ?? null);
 
   guidanceRouteGeomRef.current = navigationGuidanceGeometry ?? guidanceRoute?.geometry ?? null;
   guidanceRouteLengthMRef.current = guidanceRouteLengthM;
   navRouteLengthMRef.current = guidanceRouteLengthM;
-  userAlongGuidanceMRef.current = userAlongGuidanceM;
 
   const guidanceIsPersonalFork =
     isPersonalForkRouteId(lockedNavigationRouteId) ||
@@ -1490,14 +1699,34 @@ export default function App() {
   const advisoryUserAlongM = useMemo(() => {
     const g = guidanceRoute?.geometry;
     if (!g?.length) return 0;
+    const projected = effectiveUserLngLat
+      ? closestAlongRouteMeters(effectiveUserLngLat, g).alongMeters
+      : 0;
+    /* Core alongM resets when the corridor is replaced, which pinned Route Info's
+     * YOU line on the far left late in the trip. GPS on this same line is the
+     * progress they can see. */
     if (navigationStarted && Number.isFinite(userAlongGuidanceM) && userAlongGuidanceM >= 0) {
-      return userAlongGuidanceM;
+      return fartherAlongMeters(userAlongGuidanceM, projected);
     }
-    if (effectiveUserLngLat) {
-      return closestAlongRouteMeters(effectiveUserLngLat, g).alongMeters;
-    }
-    return 0;
+    return projected;
   }, [guidanceRoute?.geometry, navigationStarted, userAlongGuidanceM, effectiveUserLngLat]);
+
+  useEffect(() => {
+    if (!navigationStarted || guidanceRouteLengthM <= 1) return;
+    const g = guidanceRoute?.geometry;
+    const gpsAlongM =
+      g && g.length >= 2 && effectiveUserLngLat
+        ? closestAlongRouteMeters(effectiveUserLngLat, g).alongMeters
+        : 0;
+    const planM = g && g.length >= 2 ? polylineLengthMeters(g) : guidanceRouteLengthM;
+    noteDriveDiagYou(userAlongGuidanceM, gpsAlongM, planM);
+  }, [
+    navigationStarted,
+    guidanceRouteLengthM,
+    guidanceRoute?.geometry,
+    userAlongGuidanceM,
+    effectiveUserLngLat,
+  ]);
 
   /** Throttle heavy advisory recompute (timeline, impacts) — turn banner keeps precise along-m. */
   const heavyAdvisoryAlongM = useMemo(
@@ -1542,6 +1771,7 @@ export default function App() {
         speedMps,
         navigationStarted,
         userAlongGuidanceM,
+        metersToManeuver: metersToBannerManeuver,
       }),
     [
       driveOffRouteForwardFraming,
@@ -1552,8 +1782,32 @@ export default function App() {
       speedMps,
       navigationStarted,
       userAlongGuidanceM,
+      metersToBannerManeuver,
     ]
   );
+
+  /**
+   * Core distance-traveled can sit at the start of the line while the puck is
+   * already near the end. Miles, the clock, and the traffic slice use the
+   * farther of the two, same as the progress rail.
+   */
+  const clockAlongM = useMemo(() => {
+    if (!navigationStarted) return userAlongGuidanceM;
+    const g = navigationGuidanceGeometry ?? guidanceRoute?.geometry;
+    if (!g || g.length < 2) return userAlongGuidanceM;
+    const gps = effectiveUserLngLat
+      ? closestAlongRouteMeters(effectiveUserLngLat, g).alongMeters
+      : 0;
+    return fartherAlongMeters(userAlongGuidanceM, gps, guidanceRouteLengthM);
+  }, [
+    navigationStarted,
+    navigationGuidanceGeometry,
+    guidanceRoute?.geometry,
+    effectiveUserLngLat,
+    userAlongGuidanceM,
+    guidanceRouteLengthM,
+  ]);
+  userAlongGuidanceMRef.current = clockAlongM;
 
   const { driveEtaMinutes, driveDistanceRemainingLabel } = useDriveEtaLabels({
     navigationStarted,
@@ -1561,7 +1815,9 @@ export default function App() {
     lineFocusId,
     guidanceRoute,
     guidanceRouteLengthM,
-    userAlongGuidanceM,
+    planLengthM: maxPlanRouteLengthM,
+    userAlongGuidanceM: clockAlongM,
+    tripOdometerM,
     trafficOverlay,
     effectiveUserLngLat,
   });
@@ -1588,6 +1844,7 @@ export default function App() {
     showRoadNoticesOnRoute,
     navResourceBudget,
     radarMosaicSamples,
+    radarSliceLoopFrames,
     radarMosaicUpdatedAt,
     radarRefreshBlocked,
     tioMinutePrecip,
@@ -1660,6 +1917,27 @@ export default function App() {
    *  watchdog below and Jeff's manual "fix camera" tap for when the watchdog misses one. */
   const resyncDriveCamera = useCallback(() => setFollowCamResyncKey((k) => k + 1), []);
 
+  /** Wake a frozen turn banner, camera, and live data without leaving the trip. */
+  const refreshTripInPlace = useCallback(() => {
+    const now = Date.now();
+    if (!shouldRunTripRefresh(lastTripRefreshAtMsRef.current || null, now)) return;
+    lastTripRefreshAtMsRef.current = now;
+    runTripRefresh({
+      resyncCamera: resyncDriveCamera,
+      bumpMapFit: () => setFitTrigger((n) => n + 1),
+      refreshTraffic: bumpTrafficRefresh,
+      refreshForecast: bumpRouteForecastRefresh,
+      restartGuidance: restartNative,
+    });
+    setTapHint("Refreshing the trip.");
+    window.setTimeout(() => setTapHint(null), 2500);
+  }, [
+    bumpRouteForecastRefresh,
+    bumpTrafficRefresh,
+    resyncDriveCamera,
+    restartNative,
+  ]);
+
   /** Background watchdog + self-heal: drive follow-cam bearing vs ground-truth course-over-ground.
    *  Uses the raw live GPS ref (same stream the follow-cam RAF loop itself reads), not the
    *  map-matched/held nav position — a stale corridor snap could otherwise agree with a wrong
@@ -1675,6 +1953,7 @@ export default function App() {
     puckAnchorDriftPxRef: drivePuckAnchorDriftPxRef,
     onResyncCamera: resyncDriveCamera,
     holdLastGoodMap,
+    isOnline,
   });
 
   /** Background watchdog + self-heal: live Mapbox traffic / construction / closure pipeline. */
@@ -1699,6 +1978,7 @@ export default function App() {
     localForecastNwsAlerts,
     stormMapGeoJsonForMap,
     routeImpactsForUi,
+    routeImpacts,
     advisoryRouteImpacts,
     advisoryStormStripBands,
     routeAheadTimeline,
@@ -1709,10 +1989,14 @@ export default function App() {
     trafficBypassContext,
     showTrafficBypassCta,
     nextHazardAtEtaLine,
+    corridorTimingLines,
     driveMapRoutes,
     progressRailRoute,
     postedMph,
+    postedMphIsClassEstimate,
+    postedMphFromHorizon,
     progressStripAlerts,
+    routePlaceAnchors,
   } = useRouteAheadDerivations({
     nwsMapOverlapRouteGeom,
     stormCorridorAlerts,
@@ -1752,7 +2036,19 @@ export default function App() {
     offRouteHoldPreviewActive,
     stormMapGeoJson,
     speedMps,
+    horizonMph,
+    horizonHazards,
   });
+
+  const stormyBrief = useMemo(() => {
+    const focus = plan.routes.find((r) => r.id === lineFocusId) ?? plan.routes[0];
+    const facts = stormyFactsFromImpacts(routeImpactsForUi, roadUsesMiles(effectiveUserLngLat));
+    return {
+      ...facts,
+      roads: stormyRoadRefs(focus?.turnSteps),
+      forecast: (advisoryNowcastLine ?? "").replace(/\s+/g, " ").trim(),
+    };
+  }, [plan.routes, lineFocusId, routeImpactsForUi, effectiveUserLngLat, advisoryNowcastLine]);
 
   const nearbyPoiTipLine = useNearbyPoiTip({
     enabled: Boolean(env.mapboxToken),
@@ -1814,6 +2110,7 @@ export default function App() {
     guidanceIsPersonalFork,
     lockedNavigationRouteId,
     guidanceRoute,
+    routePlaceAnchors,
     progressStripAlerts,
     routeAheadTimeline,
     advisoryRouteImpacts,
@@ -1839,11 +2136,12 @@ export default function App() {
 
 
   useAdvisoryVoiceGuidance({
-    enabled: settingVoiceGuidanceEnabled,
+    enabled: false,
     navigationStarted,
     nextHazardAtEtaLine,
     driveRouteAheadLine,
     nowcastLine: advisoryNowcastLine,
+    metersToManeuver: metersToBannerManeuver,
   });
   useCarSessionPublish({
     navigationStarted,
@@ -1857,6 +2155,7 @@ export default function App() {
       navigationStarted,
       advisoryUserAlongM,
       userAlongGuidanceM,
+      tripOdometerM,
       guidanceRouteLengthM,
       guidanceRoute,
       orderedRouteIds,
@@ -1948,9 +2247,10 @@ export default function App() {
     setMapFocus,
   });
 
-  /** Rt + Mp: explore / plan on the map; Dr is follow-cam — keep tap-to-dest and ★ off there. */
+  /** Rt + Mp: explore / plan on the map; Dr is follow-cam after Go. */
   const mapPlanningUi = viewMode === "route" || viewMode === "topdown";
-  const allowDestinationPick = mapPlanningUi;
+  /** Planning taps must work even if view is briefly still Drive before the kick-out to Rt. */
+  const allowDestinationPick = allowsMapDestinationPick(navigationStarted);
   const routeActive = plan.routes.length > 0;
   const showCompactDest = routeActive && !searchExpanded;
   const showReturnTripButton =
@@ -2025,7 +2325,6 @@ export default function App() {
     setSuggestions,
     setAllowAutocomplete,
     searchPickQueryRef,
-    setFitTrigger,
     setGuidanceGeometryEpoch,
     setRecenterPlanningPuckTick,
     setReturnTripLeg,
@@ -2049,6 +2348,19 @@ export default function App() {
     tollAcceptedRouteIdsRef,
     pendingGoAfterTollRef,
     preferredAreaRouteMapRef,
+    stopNativeGuidance: stopNative,
+  });
+  const jamHop = useJamHop({
+    navigationStarted,
+    line: navigationGuidanceGeometry,
+    userAlongMeters: userAlongGuidanceM,
+    speedMps,
+    congestion: trafficOverlay?.[guidanceRouteId]?.congestionNumeric ?? null,
+    steps: guidanceRoute?.turnSteps ?? [],
+    destLngLat,
+    destinationLabel,
+    computeRoutes,
+    onGo: handleGo,
   });
 
   const clearRouteRef = useRef(clearRoute);
@@ -2082,6 +2394,9 @@ export default function App() {
       setPreviewLegIndex(0);
       if (navigationStartedRef.current) {
         lockedNavigationRouteIdRef.current = id;
+        routingPreferenceRef.current = routingPreferenceForLockedRoute(
+          plan.routes.find((r) => r.id === id)
+        );
         onPersonalForkRef.current = isPersonalForkRouteId(id);
       }
       clearDetourGuidance();
@@ -2173,6 +2488,11 @@ export default function App() {
         setFitTrigger((n) => n + 1);
         setTapHint("Following this route.");
         window.setTimeout(() => setTapHint(null), 4000);
+        /* Lock ref is already B. Restart after paint so Core gets B's corridor
+         * and the no-interstate flag, not the A session it started on. */
+        window.setTimeout(() => {
+          void restartNative();
+        }, 0);
         return;
       }
 
@@ -2205,7 +2525,75 @@ export default function App() {
       adoptLockedRouteGeometry,
       resetOffRouteNavigation,
       clearDetourGuidance,
+      restartNative,
     ]
+  );
+
+  const runStormyAct = useCallback(
+    async (reply: StormyReply): Promise<StormyActResult> => {
+      if (reply.clarify === "choice" && reply.place.trim()) {
+        const chosen = await acceptSpokenChoice(reply.place, reply.stop);
+        if (chosen) {
+          const said = spokenPlace(chosen, forecastPlaceShort ?? "");
+          const eta = useTripPlanStore.getState().plan.routes[0]?.baseEtaMinutes;
+          const minutes = eta != null && Number.isFinite(eta) ? ` About ${Math.round(eta)} minutes.` : "";
+          return reply.stop
+            ? `Stop added at ${said}. You're still on the way.${minutes}`
+            : `That's ${said}. Say go when you want to leave.${minutes}`;
+        }
+      }
+      if (reply.action === "go_to" && reply.place.trim()) {
+        const found = await resolveSpokenPlace(reply.place, reply.stop);
+        if (found.kind === "ask") return found.say;
+        if (found.kind === "miss") return "I couldn't find that.";
+        const name = spokenPlace(found.name, forecastPlaceShort ?? "");
+        const eta = useTripPlanStore.getState().plan.routes[0]?.baseEtaMinutes;
+        const minutes =
+          eta != null && Number.isFinite(eta) ? ` About ${Math.round(eta)} minutes.` : "";
+        if (reply.stop) return `Stop added at ${name}. You're still on the way.${minutes}`;
+        return `That's ${name}. Say go when you want to leave.${minutes}`;
+      }
+      if (reply.action === "start_drive") {
+        const routes = useTripPlanStore.getState().plan.routes;
+        if (!routes.length) return { say: "Where do you want to go?", clarify: "place" };
+        handleGo();
+        const eta = routes[0]?.baseEtaMinutes;
+        return eta != null && Number.isFinite(eta)
+          ? `Let's go. About ${Math.round(eta)} minutes.`
+          : reply.say || "Let's go.";
+      }
+      if (reply.action === "use_route") {
+        const route = useTripPlanStore.getState().plan.routes.find((r) => r.id === reply.routeId);
+        if (!route) return "I don't have that route.";
+        handlePreviewRouteSelect(route.id);
+        const eta = route.baseEtaMinutes;
+        return eta != null && Number.isFinite(eta)
+          ? `Taking ${route.label}. About ${Math.round(eta)} minutes.`
+          : reply.say || `Taking ${route.label}.`;
+      }
+      if (reply.action === "radar_on") {
+        setShowRadar(true);
+        return reply.say || "Radar's on.";
+      }
+      if (reply.action === "radar_off") {
+        setShowRadar(false);
+        return reply.say || "Radar's off.";
+      }
+      if (reply.action === "end_trip") {
+        handleStopAndClear();
+        return reply.say || "Trip's done.";
+      }
+      if (reply.action === "recenter") {
+        setHomePuckFollow("follow");
+        setRecenterPlanningPuckTick((n) => n + 1);
+        return reply.say || "Centered on you.";
+      }
+      if (reply.action === "refresh") {
+        refreshTripInPlace();
+        return reply.say || "Refreshing.";
+      }
+    },
+    [resolveSpokenPlace, acceptSpokenChoice, handleGo, handlePreviewRouteSelect, handleStopAndClear, setShowRadar, forecastPlaceShort, refreshTripInPlace]
   );
 
   const handleTollContinue = useCallback(() => {
@@ -2488,7 +2876,9 @@ export default function App() {
       liveHeadingRef,
       fitTrigger,
       heading,
+      routeBuildBusy: routing,
       driveRouteBearingDeg,
+      metersToBannerManeuver,
       driveOffRouteForwardFraming,
       followingTemporaryGuidance: Boolean(autoRejoinGuidanceRouteId),
       speedMps,
@@ -2537,6 +2927,12 @@ export default function App() {
       lastTravelBearingDegOutRef: driveLastTravelBearingDegRef,
       puckAnchorDriftPxOutRef: drivePuckAnchorDriftPxRef,
       holdLastGoodMap,
+      nativeFollowCamera: nativeNavActive ? nativeFollowCamera : null,
+      nativeDriveMapActive: shouldUseNativeDriveMapShell({
+        nativeNavActive,
+        navigationStarted,
+        viewMode,
+      }),
     },
     stormAdvisoryBar: {
       isPlus,
@@ -2558,6 +2954,7 @@ export default function App() {
       hasGuidanceRoute: Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2),
       advisoryRoadDetailRows,
       advisoryRouteImpacts,
+      passengerRouteImpacts: routeImpacts,
       advisoryStormStripBands,
       routeAheadTimeline,
       routeTotalMeters: guidanceRouteLengthM,
@@ -2572,9 +2969,11 @@ export default function App() {
       driveModeUi,
       driveRouteAheadLine,
       nextHazardAtEtaLine,
+      corridorTimingLines,
       advisoryPlusDetailOn,
       advisoryPromoLines,
       isOnline,
+      dataLow: lowDataAdvisory || linkTooWeak,
       advisoryNowcastLine,
       currentNowcast,
       forecastAreaLabel,
@@ -2586,6 +2985,9 @@ export default function App() {
       localForecastPanelLoading,
       weatherKitPrimary: env.weatherKitEnabled,
       forecastLngLat: userLngLat,
+      routePlaceAnchors,
+      turnSteps: guidanceRoute?.turnSteps ?? null,
+      metersToManeuver: metersToBannerManeuver,
       onOpenAbout: () => setAboutOpen(true),
       basicStatusPanelPromos,
       showDataSaverHint,
@@ -2605,8 +3007,13 @@ export default function App() {
         landscapeHandLeft: settingLandscapeSideHand === "left",
         radarFrameTimeVisible: radarMapOverlayOn && radarFrameUtcSec != null,
         basicAdBannerReservesSpace: basicAdBanner.reservesBottomSpace,
+        nativeDriveMap: shouldUseNativeDriveMapShell({
+          nativeNavActive,
+          navigationStarted,
+          viewMode,
+        }),
       })}
-      style={buildDevPointerStyle()}
+      style={buildAppShellStyle(basicAdBanner.bannerLiftPx)}
     >
       {import.meta.env.DEV ? (
         <div
@@ -2630,7 +3037,6 @@ export default function App() {
               bannerCurrentRoadName={bannerCurrentRoadName}
               bannerCurrentRoadRef={bannerCurrentRoadRef}
               bannerTravelingStepIndex={bannerTravelingStepIndex}
-              viewMode={viewMode}
               personalForkShowChip={personalForkNav.showChip}
               personalForkShowCommittedChip={personalForkNav.showCommittedChip}
               personalForkOffer={personalForkNav.offer}
@@ -2640,6 +3046,13 @@ export default function App() {
               stormAdvisoryBarProps={stormAdvisoryBarProps}
               isPlus={isPlus}
               activityBusyLabel={activityBusyLabel}
+              dockNote={
+                tapHint
+                  ? { text: tapHint, tone: "warn" }
+                  : routing && !navigationStarted && destLngLat
+                    ? { text: "Planning your route…", tone: "info" }
+                    : null
+              }
               radarMapOverlayOn={radarMapOverlayOn}
               radarFrameClockLabel={radarFrameClockLabel}
               hazardApproachAlertsActive={hazardApproachAlertsActive}
@@ -2652,6 +3065,14 @@ export default function App() {
               openDemoTrafficBypassCompareMock={openDemoTrafficBypassCompareMock}
               handleTrafficBypassFromHere={handleTrafficBypassFromHere}
             />
+            ) : null}
+            {jamHop.offer ? (
+              <JamHopBanner
+                offer={jamHop.offer}
+                busy={jamHop.busy}
+                onTake={jamHop.take}
+                onDismiss={jamHop.dismiss}
+              />
             ) : null}
             {showProgressRail && (
               <AppProgressRail
@@ -2677,6 +3098,7 @@ export default function App() {
                 outlookSteps={activeProgressCalloutPanel.outlookTimeline}
                 outlookSamples={activeProgressCalloutPanel.outlookSamples}
                 radarMosaicSamples={radarMosaicSamples}
+                radarSliceLoopFrames={radarSliceLoopFrames}
                 radarRefreshBlocked={radarRefreshBlocked}
                 radarMosaicUpdatedAt={radarMosaicUpdatedAt}
                 windPoints={activeProgressCalloutPanel.windPoints}
@@ -2692,13 +3114,16 @@ export default function App() {
                 progressCalloutUserAlongT={progressCalloutUserAlongT}
                 stripTint={activeProgressCalloutPanel.stripTint}
                 progressCalloutDetailScrollRef={progressCalloutDetailScrollRef}
-                progressRailRouteGeometry={progressRailRoute!.geometry}
+                progressRailRouteGeometry={progressRailRoute?.geometry ?? []}
                 effectiveUserLngLat={effectiveUserLngLat}
-                userAlongGuidanceM={userAlongGuidanceM}
                 progressStripAlerts={progressStripAlerts}
                 radarIntensity={guidanceSlice?.radarIntensity ?? 0}
                 progressStripRouteColor={progressStripRouteColor}
-                progressRailRouteTurnSteps={progressRailRoute!.turnSteps}
+                progressRailRouteTurnSteps={
+                  progressRailRoute?.turnSteps && progressRailRoute.turnSteps.length >= 2
+                    ? progressRailRoute.turnSteps
+                    : undefined
+                }
                 turnSteps={turnSteps}
                 routeAheadProgressBands={routeAheadProgressBands}
                 driveModeUi={driveModeUi}
@@ -2772,13 +3197,13 @@ export default function App() {
           locationFixSource={locationFixSource}
           locationError={locationError}
           routeError={routeError}
-          tapHint={tapHint}
           safetyAck={safetyAck}
           onSafetyAck={() => setSafetyAck(true)}
           onReportIssue={
             env.supportEmail || env.supportUrl ? handleQuickReportIssue : null
           }
           isOnline={isOnline}
+          routeSignalNote={routeSignalNote}
           navigationStarted={navigationStarted}
           hasPlanRoutes={plan.routes.length > 0}
           hasDest={Boolean(destLngLat)}
@@ -2815,7 +3240,17 @@ export default function App() {
           navigationStarted={navigationStarted}
           viewMode={viewMode}
           driveMapBearingDeg={driveMapBearingDeg}
+          onRefreshTrip={refreshTripInPlace}
           onOpenAbout={() => setAboutOpen(true)}
+          stormyAheadLine={driveRouteAheadLine?.text ?? null}
+          stormyHazardLine={nextHazardAtEtaLine}
+          stormyWeather={stormyBrief.weather}
+          stormyTraffic={stormyBrief.traffic}
+          stormyRoads={stormyBrief.roads}
+          stormyForecast={stormyBrief.forecast}
+          stormyHere={forecastPlaceShort ?? ""}
+          metersToManeuver={metersToBannerManeuver}
+          onStormyAct={runStormyAct}
           driveDistanceRemainingLabel={driveDistanceRemainingLabel}
           routePickItems={routePickItems}
           lineFocusId={lineFocusId}
@@ -2852,17 +3287,30 @@ export default function App() {
           suggestLoading={suggestLoading}
           enableSuggestions={allowAutocomplete && (!routeActive || searchExpanded)}
           viaStops={viaStops}
+          activeViaIndex={activeViaIndex}
           addingViaStop={addingViaStop}
           canAddStop={Boolean(destLngLat)}
           onStartAddStop={() => setAddingViaStop(true)}
           onCancelAddStop={() => setAddingViaStop(false)}
           handleRemoveViaStop={handleRemoveViaStop}
+          handleSkipViaStop={(index) => {
+            void handleSkipViaStop(index);
+          }}
           handleViewModeChange={handleViewModeChange}
           onOpenSaved={() => setSavedDrawerOpen(true)}
           handleGo={handleGo}
           showGo={Boolean(plan.routes.length > 0 && primaryRouteId && !navigationStarted)}
           speedMph={speedMph}
-          postedMph={postedMph}
+          postedMph={
+            postedMph != null && postedMphIsClassEstimate && !allowUsSpeedLimitGuess(effectiveUserLngLat)
+              ? null
+              : postedMph
+          }
+          postedMphIsClassEstimate={
+            postedMphIsClassEstimate && allowUsSpeedLimitGuess(effectiveUserLngLat)
+          }
+          postedMphFromHorizon={postedMphFromHorizon}
+          useMiles={roadUsesMiles(effectiveUserLngLat)}
           handleStopAndClear={handleStopAndClear}
           hasTrip={Boolean(plan.routes.length > 0 || destLngLat)}
           showReturnTripButton={showReturnTripButton}
@@ -2875,6 +3323,7 @@ export default function App() {
           handleReturnToPreviousDestination={handleReturnToPreviousDestination}
           showSavedPlacesButton={mapPlanningUi && (!navigationStarted || !routeActive)}
           driveEtaMinutes={driveEtaMinutes}
+          destLngLat={destLngLat}
           onToggleRadar={() => setShowRadar((v) => !v)}
           settingRadarEnabled={settingRadarEnabled}
           driveModeUi={driveModeUi}

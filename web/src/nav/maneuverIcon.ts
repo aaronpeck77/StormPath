@@ -72,6 +72,7 @@ function iconFromModifier(m: string): string | null {
  * street name ("Main St") with no turn verb — callers should prefer structured type/modifier.
  */
 export function inferManeuverIconFromInstruction(instr: string): string {
+  if (typeof instr !== "string" || !instr.trim()) return "↑";
   const s = instr.toLowerCase();
   if (/\bu-?turn|uturn|make a u-turn/i.test(instr)) return "↻";
   if (/roundabout|rotary|traffic circle/i.test(s)) return "⟳";
@@ -150,8 +151,13 @@ export function resolvePrimaryManeuverIcon(input: {
   );
   if (structured) return structured;
   if (input.step.type != null) return orsManeuverIcon(input.step.type);
-  const text =
-    input.instructionOverride?.replace(/\s+/g, " ").trim() ||
-    input.step.instruction.replace(/\s+/g, " ").trim();
-  return inferManeuverIconFromInstruction(text);
+  const override =
+    typeof input.instructionOverride === "string"
+      ? input.instructionOverride.replace(/\s+/g, " ").trim()
+      : "";
+  const stepInstr =
+    typeof input.step.instruction === "string"
+      ? input.step.instruction.replace(/\s+/g, " ").trim()
+      : "";
+  return inferManeuverIconFromInstruction(override || stepInstr);
 }

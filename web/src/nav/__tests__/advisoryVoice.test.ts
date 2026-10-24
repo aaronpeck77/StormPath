@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickAdvisoryVoiceLine, shouldSpeakAdvisoryLine } from "../advisoryVoice";
+import { advisoryVoiceBlocked, pickAdvisoryVoiceLine, shouldSpeakAdvisoryLine } from "../advisoryVoice";
 
 describe("pickAdvisoryVoiceLine", () => {
   it("prefers hazard over ahead and nowcast", () => {
@@ -10,6 +10,35 @@ describe("pickAdvisoryVoiceLine", () => {
         nowcastLine: "72°F",
       })
     ).toBe("Hail in 12 min");
+  });
+});
+
+describe("advisoryVoiceBlocked", () => {
+  it("holds the hazard line through the opening maneuver and a close turn", () => {
+    expect(
+      advisoryVoiceBlocked({
+        navigationStartedAtMs: 0,
+        nowMs: 3_000,
+        metersToManeuver: 800,
+        turnQuietM: 250,
+      })
+    ).toBe(true);
+    expect(
+      advisoryVoiceBlocked({
+        navigationStartedAtMs: 0,
+        nowMs: 20_000,
+        metersToManeuver: 40,
+        turnQuietM: 250,
+      })
+    ).toBe(true);
+    expect(
+      advisoryVoiceBlocked({
+        navigationStartedAtMs: 0,
+        nowMs: 20_000,
+        metersToManeuver: 900,
+        turnQuietM: 250,
+      })
+    ).toBe(false);
   });
 });
 

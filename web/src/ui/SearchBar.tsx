@@ -107,9 +107,7 @@ export function SearchBar({
             title="Close"
             onPointerDown={(e) => {
               e.preventDefault();
-            }}
-            onClick={(e) => {
-              e.preventDefault();
+              e.stopPropagation();
               onDismiss();
             }}
           >

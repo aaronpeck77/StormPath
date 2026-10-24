@@ -1,4 +1,4 @@
-import { useMemo, type MutableRefObject } from "react";
+import { useCallback, useMemo, type MutableRefObject } from "react";
 import { routeForecastHasSignificantWeather, type RouteForecast } from "../services/tomorrowIo";
 import { buildWindImpacts } from "./tomorrowIoImpacts";
 import {
@@ -22,7 +22,14 @@ import {
   type TimelineItem,
 } from "./routeAheadSync";
 import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
-import type { StormRouteOutlookBand } from "./routeForecastTimeline";
+import {
+  buildRouteOutlookFromTomorrowForecast,
+  type StormRouteOutlookBand,
+} from "./routeForecastTimeline";
+import {
+  buildCorridorTimingExplainLines,
+  type CorridorTimingExplainLine,
+} from "./corridorTimingExplain";
 import { computeTrafficBypassOffer, type TrafficBypassOffer } from "./trafficBypassOffer";
 import {
   TRAFFIC_BYPASS_ENABLED,
@@ -32,7 +39,9 @@ import {
   WEATHER_PLANNING_DETAIL_AHEAD_M,
 } from "./constants";
 import { radarDisplayIntensity } from "./radarReflectivityScale";
-import { displayedPostedSpeedMph } from "./postedSpeedSanity";
+import { postedSpeedForDisplay } from "./postedSpeedSanity";
+import { formatHorizonHazardLine, mergeHorizonHazardLine, type HorizonHazard } from "./horizonAhead";
+import { roadUsesMiles } from "../utils/displayUnits";
 import type { MapViewMode } from "../ui/driveMapTypes";
 import {
   filterAlertsAffectingRoute,
@@ -58,6 +67,9 @@ import type { LngLat, NavRoute } from "./types";
 import type { RouteSituationSlice } from "../situation/types";
 import type { TrafficOverlay } from "../situation/fusedSnapshot";
 import type { ScoredRoute } from "../scoring/scoreRoutes";
+import { useRoutePlaceAnchors } from "./useRoutePlaceAnchors";
+import { placeReferencePhrase, type RoutePlaceAnchor } from "./routePlaceReference";
+import { pointAtAlongMeters } from "./routeGeometry";
 
 export type UseRouteAheadDerivationsDeps = {
   nwsMapOverlapRouteGeom: LngLat[] | undefined;
@@ -100,6 +112,10 @@ export type UseRouteAheadDerivationsDeps = {
   stormMapGeoJson: GeoJSON.FeatureCollection | null;
   /** Live GPS speed (m/s) — cruise median hints posted-limit sanity. */
   speedMps: number | null;
+  /** Road-graph posted limit from the phone's electronic horizon, when it has one. */
+  horizonMph?: number | null;
+  /** Incidents the horizon sees ahead of the puck. */
+  horizonHazards?: HorizonHazard[];
 };
 
 export type UseRouteAheadDerivationsResult = {
@@ -129,12 +145,20 @@ export type UseRouteAheadDerivationsResult = {
   showTrafficBypassCta: boolean;
   /** Nearest hazard likely to matter at your ETA — advisory preview line. */
   nextHazardAtEtaLine: string | null;
+  /** Now-map vs ETA corridor contradiction lines for advisory ticker. */
+  corridorTimingLines: CorridorTimingExplainLine[];
   /** Experimental radar-intersect along route (null when feature off). */
   stormCorridorIntersect: StormCorridorIntersectResult | null;
   driveMapRoutes: NavRoute[];
   progressRailRoute: NavRoute | undefined;
   postedMph: number | null;
+  /** Lim came from the road-class average, not Mapbox — show it as a guess. */
+  postedMphIsClassEstimate: boolean;
+  /** Lim came from the electronic horizon. Show the number without an estimate mark. */
+  postedMphFromHorizon: boolean;
   progressStripAlerts: RouteAlert[];
+  /** Exit signs plus city centers used to phrase alerts. */
+  routePlaceAnchors: RoutePlaceAnchor[];
 };
 
 export function useRouteAheadDerivations(
@@ -177,7 +201,23 @@ export function useRouteAheadDerivations(
     temporaryGuidanceRouteId = null,
     offRouteHoldPreviewActive = false,
     stormMapGeoJson,
+    horizonMph = null,
+    horizonHazards = [],
   } = deps;
+
+  const routePlaceAnchors = useRoutePlaceAnchors(
+    guidanceRoute?.turnSteps,
+    guidanceRoute?.geometry,
+    mapboxToken
+  );
+  const placePhraseAt = useCallback(
+    (alongM: number) => {
+      const g = guidanceRoute?.geometry;
+      if (!g || g.length < 2 || routePlaceAnchors.length === 0) return null;
+      return placeReferencePhrase(pointAtAlongMeters(g, alongM), routePlaceAnchors, "full");
+    },
+    [guidanceRoute?.geometry, routePlaceAnchors]
+  );
 
   /** NWS polygons + route bands: corridor alerts that touch or sit ahead of the active leg (~28 mi buffer). */
   const alertsOnActiveRouteGeom = useMemo(() => {
@@ -452,14 +492,60 @@ export function useRouteAheadDerivations(
     ]
   );
 
-  const nextHazardAtEtaLine = useMemo(
-    () =>
-      mergeStormCorridorAdvisoryLine(
-        stormCorridorIntersect,
-        routeImpactsForUi.length ? nextHazardAffectingYouLine(routeImpactsForUi) : null
-      ),
-    [stormCorridorIntersect, routeImpactsForUi]
-  );
+  const nextHazardAtEtaLine = useMemo(() => {
+    const base = mergeStormCorridorAdvisoryLine(
+      stormCorridorIntersect,
+      routeImpactsForUi.length ? nextHazardAffectingYouLine(routeImpactsForUi) : null
+    );
+    const nearest = navigationStarted ? horizonHazards[0] : undefined;
+    if (!nearest) return base;
+    const line = formatHorizonHazardLine(nearest, roadUsesMiles(effectiveUserLngLat));
+    return mergeHorizonHazardLine(base, line, nearest.kind);
+  }, [
+    stormCorridorIntersect,
+    routeImpactsForUi,
+    navigationStarted,
+    horizonHazards,
+    effectiveUserLngLat,
+  ]);
+
+  const corridorTimingLines = useMemo(() => {
+    const hasActiveRoute = Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2);
+    if (!hasActiveRoute || guidanceRouteLengthM <= 0) return [];
+    const userAlongT = Math.max(
+      0,
+      Math.min(1, (navigationStarted ? heavyAdvisoryAlongM : 0) / guidanceRouteLengthM)
+    );
+    const planEta = guidanceRoute?.baseEtaMinutes ?? null;
+    const remainingEtaMinutes =
+      driveEtaMinutes != null && Number.isFinite(driveEtaMinutes)
+        ? driveEtaMinutes
+        : planEta != null && Number.isFinite(planEta)
+          ? planEta * Math.max(0, 1 - userAlongT)
+          : null;
+    const outlookSteps =
+      tioRouteForecast && planEta != null && planEta > 0
+        ? buildRouteOutlookFromTomorrowForecast(tioRouteForecast, planEta)
+        : [];
+    return buildCorridorTimingExplainLines({
+      hasActiveRoute,
+      userAlongT,
+      remainingEtaMinutes,
+      radarSamples: radarMosaicSamples,
+      outlookSteps,
+      routeImpacts: routeImpactsForUi,
+    });
+  }, [
+    guidanceRoute?.geometry,
+    guidanceRoute?.baseEtaMinutes,
+    guidanceRouteLengthM,
+    navigationStarted,
+    heavyAdvisoryAlongM,
+    driveEtaMinutes,
+    tioRouteForecast,
+    radarMosaicSamples,
+    routeImpactsForUi,
+  ]);
 
   /** Advisory timeline storm bands — same spans as progress strip / map route highlights. */
   const advisoryStormStripBands = useMemo(
@@ -502,6 +588,7 @@ export function useRouteAheadDerivations(
           detail: nwsGlanceSummary(matched) ?? null,
         };
       },
+      placePhraseAt,
     });
   }, [
     guidanceRouteLengthM,
@@ -511,26 +598,32 @@ export function useRouteAheadDerivations(
     advisoryStormStripBands,
     advisoryRouteImpacts,
     nwsAlertsForGuidanceAdvisory,
+    placePhraseAt,
   ]);
 
   /**
-   * Progress rail + map halo: corridor NWS (incl. SWS / advisories) + radar mosaic where echo crosses.
+   * Map halo: corridor NWS + padded radar mosaic.
+   * The rail paints radar as a color slice from the same samples — do not also
+   * put indigo mosaic bands on the strip or they cover the map colors.
    */
+  const routeAheadNwsBands = useMemo(
+    () => timelineToProgressStripBands(routeAheadTimeline),
+    [routeAheadTimeline]
+  );
   const routeAheadWeatherBands = useMemo(() => {
-    const nwsBands = timelineToProgressStripBands(routeAheadTimeline);
     const radarBands =
       showWeatherImpactsOnRoute && guidanceRouteLengthM > 0
         ? radarMosaicToProgressStripBands(guidanceRouteLengthM, radarMosaicSamples)
         : [];
-    return mergeProgressStripWeatherBands([...nwsBands, ...radarBands]);
+    return mergeProgressStripWeatherBands([...routeAheadNwsBands, ...radarBands]);
   }, [
-    routeAheadTimeline,
+    routeAheadNwsBands,
     showWeatherImpactsOnRoute,
     guidanceRouteLengthM,
     radarMosaicSamples,
   ]);
 
-  const routeAheadProgressBands = routeAheadWeatherBands;
+  const routeAheadProgressBands = routeAheadNwsBands;
 
   /** NWS / radar timeline bands → route outlook graph when forecast APIs are empty. */
   const stormOutlookBands = useMemo((): StormRouteOutlookBand[] => {
@@ -625,13 +718,17 @@ export function useRouteAheadDerivations(
   ]);
   const progressRailRoute = guidanceRoute ?? driveMapRoutes[0] ?? planRoutes[0];
 
-  const postedMph =
+  const postedSpeed =
     navigationStarted && guidanceRoute
-      ? displayedPostedSpeedMph({
+      ? postedSpeedForDisplay({
           route: guidanceRoute,
           alongMeters: userAlongGuidanceM,
+          horizonMph,
         })
       : null;
+  const postedMph = postedSpeed?.mph ?? null;
+  const postedMphIsClassEstimate = postedSpeed?.classEstimate ?? false;
+  const postedMphFromHorizon = postedSpeed?.fromHorizon ?? false;
 
   const progressStripAlerts = useMemo(() => augmentAlertsForProgressStrip(routeAlerts), [routeAlerts]);
 
@@ -661,10 +758,14 @@ export function useRouteAheadDerivations(
     trafficBypassContext,
     showTrafficBypassCta,
     nextHazardAtEtaLine,
+    corridorTimingLines,
     stormCorridorIntersect,
     driveMapRoutes,
     progressRailRoute,
     postedMph,
+    postedMphIsClassEstimate,
+    postedMphFromHorizon,
     progressStripAlerts,
+    routePlaceAnchors,
   };
 }

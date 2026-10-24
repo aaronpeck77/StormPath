@@ -3,10 +3,44 @@ import {
   allowAutomaticFollowCamResync,
   allowBasemapStyleReload,
   allowFollowCamJumpToFallback,
+  nextLowDataAdvisory,
+  shouldApplyMapHoldOnNativeRadioDown,
   shouldClearHeldMapMatch,
   shouldClearLastGoodMapHold,
   shouldHoldLastGoodMap,
 } from "../mapLowSignalResilience";
+
+describe("shouldApplyMapHoldOnNativeRadioDown", () => {
+  it("holds the map during GO as soon as native radio is down", () => {
+    expect(
+      shouldApplyMapHoldOnNativeRadioDown({
+        nativeConnected: false,
+        navigationStarted: true,
+        alreadyHolding: false,
+      })
+    ).toBe(true);
+  });
+
+  it("does not hold while planning just because native is down", () => {
+    expect(
+      shouldApplyMapHoldOnNativeRadioDown({
+        nativeConnected: false,
+        navigationStarted: false,
+        alreadyHolding: false,
+      })
+    ).toBe(false);
+  });
+
+  it("keeps an existing hold if native is still down", () => {
+    expect(
+      shouldApplyMapHoldOnNativeRadioDown({
+        nativeConnected: false,
+        navigationStarted: false,
+        alreadyHolding: true,
+      })
+    ).toBe(true);
+  });
+});
 
 describe("shouldHoldLastGoodMap", () => {
   it("holds immediately when the browser says offline", () => {
@@ -41,6 +75,48 @@ describe("shouldHoldLastGoodMap", () => {
   it("does not hold on a healthy link", () => {
     expect(shouldHoldLastGoodMap({ navigatorOnLine: true, reachable: true })).toBe(false);
     expect(shouldHoldLastGoodMap({ navigatorOnLine: true, reachable: null })).toBe(false);
+  });
+});
+
+describe("nextLowDataAdvisory", () => {
+  const base = {
+    showing: false,
+    offline: false,
+    nativeDown: false,
+    probeFresh: true,
+    probeOk: false as boolean | null,
+    consecutiveProbeFails: 0,
+  };
+
+  it("says so immediately when the radio is down", () => {
+    expect(nextLowDataAdvisory({ ...base, nativeDown: true }).showing).toBe(true);
+    expect(nextLowDataAdvisory({ ...base, offline: true }).showing).toBe(true);
+  });
+
+  it("waits for a second miss while the phone still says it is connected", () => {
+    const first = nextLowDataAdvisory(base);
+    expect(first.showing).toBe(false);
+    expect(first.consecutiveProbeFails).toBe(1);
+    const second = nextLowDataAdvisory({ ...base, consecutiveProbeFails: first.consecutiveProbeFails });
+    expect(second.showing).toBe(true);
+  });
+
+  it("drops the sentence on the first fresh success and ignores a stale miss", () => {
+    const cleared = nextLowDataAdvisory({
+      ...base,
+      showing: true,
+      probeOk: true,
+      consecutiveProbeFails: 2,
+    });
+    expect(cleared).toEqual({ showing: false, consecutiveProbeFails: 0 });
+    const stale = nextLowDataAdvisory({
+      ...base,
+      showing: false,
+      probeFresh: false,
+      probeOk: false,
+      consecutiveProbeFails: 0,
+    });
+    expect(stale).toEqual({ showing: false, consecutiveProbeFails: 0 });
   });
 });
 

@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import Speech
 import Capacitor
 
 /**
@@ -14,9 +15,15 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "speak", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isSpeaking", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "listen", returnType: CAPPluginReturnPromise),
     ]
 
     private let synthesizer = AVSpeechSynthesizer()
+
+    /// The built-in computer voice. Used only for Basic voice.
+    private func stormyVoice() -> AVSpeechSynthesisVoice? {
+        AVSpeechSynthesisVoice(language: "en-US")
+    }
 
     @objc func speak(_ call: CAPPluginCall) {
         guard let text = call.getString("text")?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -27,12 +34,20 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         let interrupt = call.getBool("interrupt") ?? false
         let rate = Float(call.getDouble("rate") ?? 0.5)
 
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
-            try session.setActive(true, options: [])
-        } catch {
-            /* Still try to speak if session setup fails. */
+        let session = AVAudioSession.sharedInstance()
+        // Copied from Mapbox Navigation's audio helper: playback, voice prompt,
+        // duck others, mix. spokenAudio is the podcast fade they stopped using.
+        if !(session.category == .playback && session.mode == .voicePrompt) {
+            do {
+                try session.setCategory(
+                    .playback,
+                    mode: .voicePrompt,
+                    options: [.duckOthers, .mixWithOthers]
+                )
+                try session.setActive(true, options: [])
+            } catch {
+                /* Still try to speak if session setup fails. */
+            }
         }
 
         if interrupt && synthesizer.isSpeaking {
@@ -43,11 +58,30 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate, min(AVSpeechUtteranceMaximumSpeechRate, rate))
-        utterance.volume = 1.0
-        if let voice = AVSpeechSynthesisVoice(language: "en-US") {
+        let asked = call.getString("language")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let useDownload = (call.getBool("forAssistant") ?? false) || (call.getBool("preferEnhanced") ?? false)
+        // Downloaded voice leaves the voice unset so the iPhone speaks the Enhanced or
+        // Premium voice the driver selected. Assigning one here used to lock it to male.
+        // Basic voice still uses the built-in computer voice.
+        let voice: AVSpeechSynthesisVoice? = useDownload
+            ? nil
+            : ((asked?.isEmpty == false ? AVSpeechSynthesisVoice(language: asked!) : nil) ?? stormyVoice())
+        let natural: Bool
+        if let voice {
             utterance.voice = voice
+            let id = voice.identifier.lowercased()
+            if #available(iOS 16.0, *) {
+                natural = voice.quality == .premium || voice.quality == .enhanced || id.contains("premium") || id.contains("enhanced") || id.contains("eloquence")
+            } else {
+                natural = voice.quality == .enhanced || id.contains("premium") || id.contains("enhanced") || id.contains("eloquence")
+            }
+        } else {
+            natural = useDownload
         }
+        let paced = natural ? min(rate, Float(0.48)) : min(rate, Float(0.42))
+        utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate, min(AVSpeechUtteranceMaximumSpeechRate, paced))
+        utterance.pitchMultiplier = natural ? 1.0 : 1.03
+        utterance.volume = 1.0
         synthesizer.speak(utterance)
         call.resolve(["spoke": true])
     }
@@ -61,5 +95,149 @@ public class StormpathSpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func isSpeaking(_ call: CAPPluginCall) {
         call.resolve(["speaking": synthesizer.isSpeaking])
+    }
+
+    /// One remark, recognized on the phone. The microphone is not streamed.
+    /// Resolve the call before stopping the engine. Stopping on the main thread
+    /// deadlocks the audio tap and leaves the button on Listening.
+    @objc func listen(_ call: CAPPluginCall) {
+        switch SFSpeechRecognizer.authorizationStatus() {
+        case .authorized:
+            ensureMicThenListen(call)
+        case .denied, .restricted:
+            call.reject("speech recognition denied")
+        case .notDetermined:
+            SFSpeechRecognizer.requestAuthorization { status in
+                DispatchQueue.main.async {
+                    guard status == .authorized else {
+                        call.reject("speech recognition denied")
+                        return
+                    }
+                    self.ensureMicThenListen(call)
+                }
+            }
+        @unknown default:
+            call.reject("speech recognition unavailable")
+        }
+    }
+
+    private func ensureMicThenListen(_ call: CAPPluginCall) {
+        switch AVAudioSession.sharedInstance().recordPermission {
+        case .granted:
+            startOnDeviceListen(call)
+        case .denied:
+            call.reject("microphone denied")
+        case .undetermined:
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                DispatchQueue.main.async {
+                    guard granted else {
+                        call.reject("microphone denied")
+                        return
+                    }
+                    self.startOnDeviceListen(call)
+                }
+            }
+        @unknown default:
+            call.reject("microphone unavailable")
+        }
+    }
+
+    private func startOnDeviceListen(_ call: CAPPluginCall) {
+        guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US")),
+              recognizer.isAvailable else {
+            call.reject("speech recognition unavailable")
+            return
+        }
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        // Keyboard dictation (the search mic) uses Apple's dictation service.
+        // Forcing the small on-device model is what missed place names on iPhone 12 and 15.
+        request.requiresOnDeviceRecognition = false
+        request.shouldReportPartialResults = true
+        request.taskHint = .dictation
+        if #available(iOS 16.0, *) {
+            request.addsPunctuation = true
+        }
+
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(
+                .playAndRecord,
+                mode: .measurement,
+                options: [.duckOthers, .allowBluetoothA2DP]
+            )
+            try session.setActive(true)
+        } catch {
+            call.reject("microphone unavailable")
+            return
+        }
+
+        let engine = AVAudioEngine()
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0 else {
+            call.reject("microphone unavailable")
+            return
+        }
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            request.append(buffer)
+        }
+        engine.prepare()
+        do {
+            try engine.start()
+        } catch {
+            input.removeTap(onBus: 0)
+            call.reject("microphone unavailable")
+            return
+        }
+
+        let teardown = DispatchQueue(label: "stormpath.speech.listen")
+        var finished = false
+        var latest = ""
+        func finish(_ text: String) {
+            if finished { return }
+            finished = true
+            call.resolve(["text": text])
+            teardown.async {
+                input.removeTap(onBus: 0)
+                engine.stop()
+                request.endAudio()
+                let session = AVAudioSession.sharedInstance()
+                try? session.setCategory(
+                    .playback,
+                    mode: .voicePrompt,
+                    options: [.duckOthers, .mixWithOthers]
+                )
+                try? session.setActive(true, options: [])
+            }
+        }
+
+        let started = Date()
+        var lastHeard = started
+        recognizer.recognitionTask(with: request) { result, _ in
+            let text = result?.bestTranscription.formattedString ?? ""
+            let isFinal = result?.isFinal == true
+            DispatchQueue.main.async {
+                if !text.isEmpty && text != latest {
+                    latest = text
+                    lastHeard = Date()
+                }
+                if isFinal && !latest.isEmpty { finish(latest) }
+            }
+        }
+        func waitForPause() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                if finished { return }
+                if !latest.isEmpty && Date().timeIntervalSince(lastHeard) > 1.15 {
+                    finish(latest)
+                    return
+                }
+                if Date().timeIntervalSince(started) > 11 {
+                    finish(latest)
+                    return
+                }
+                waitForPause()
+            }
+        }
+        waitForPause()
     }
 }

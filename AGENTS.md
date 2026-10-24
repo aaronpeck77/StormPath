@@ -40,7 +40,8 @@ Driving-first multi-route navigation / "route command center" with Mapbox map, t
 - `docs/GITHUB_TESTFLIGHT_ONLY.md` — TestFlight without Mac
 - `web/docs/IOS_APP_STORE.md` — Capacitor / App Store path under `web/ios/`
 - `docs/GOLD_STANDARD.md` — **sealed known-good tip** (`gold/current` + dated `gold/…` tags). Do not move gold unless Bill asks to seal/promote.
-- `docs/BRAIN.md` — **Forge idea notebook** (retain ideas, make connections). Not an in-app feature. Implement a Brain idea only when Bill asks; big Dark Sky–style nowcast waits until App Store v1 is stable unless he pulls it forward.
+- `docs/BRAIN.md` — **Forge idea notebook**. **Priority 1 (open on `native/drive`):** native-feel Drive (cam/puck/reliability vs Apple/Google/Waze). Dark Sky glance is **shelved**. See `docs/NATIVE_TRACK.md`.
+- Dual track: **`master`** = live App Store / leave it alone. **`native/drive`** = native shell work. Do not merge native into master or ship store from it unless Bill asks.
 
 ## Context Bill shared (business / legal — do not ignore)
 
@@ -51,9 +52,11 @@ Driving-first multi-route navigation / "route command center" with Mapbox map, t
 
 - Do not deploy to Netlify / TestFlight / App Store unless Bill asks.
 - Do not commit `.env` files or Apple certificates/keys.
+- Netlify should not rebuild on every GitHub push: `web/scripts/netlify-ignore.sh` skips Drive/UI-only and branch deploys. Only functions / `public/` / Netlify config should spend build minutes (see `docs/NETLIFY_HOSTING.md`).
 - Prefer fixing what Bill hits in testing over large refactors.
 - If he also has SiteBible open, treat them as separate products/folders.
+- Keep thinking about parked Brain items (`docs/BRAIN.md`, `docs/BRAIN_THINKING.md`) while doing other work. Jot connections. Do not build P2/P3 until he asks.
 
 ## After web runs
 
-Ask Bill what he wants next: map/route bugs, beta tester issues, mobile build, or Netlify. Wait for his direction.
+Ask Bill what he wants next. If he is on the native track, stay on `native/drive` (pose hold → follow-cam → puck). Store/`master` only when he asks.

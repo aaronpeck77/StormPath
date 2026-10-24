@@ -8,12 +8,15 @@ import {
   writeTrafficSettingOn,
 } from "../layerStartupPrefs";
 import { safeStorage } from "../storage/safeStorage";
+import { puckColorById, type PuckColorId } from "../ui/puckColor";
 import {
   dismissDataSaverHint as persistDismissDataSaverHint,
   LS_DATA_SAVER,
   readDataSaverHintDismissed,
   readDataSaverSetting,
 } from "../utils/dataSaver";
+import type { GuidanceLanguagePref } from "../utils/guidanceLanguage";
+import { assistantEnabledFromLegacy, isVoiceLevel, voiceLevelFromLegacy, type VoiceLevel } from "../voice/voiceLevel";
 
 /**
  * Persistent user-settings store (Zustand).
@@ -38,9 +41,14 @@ import {
 const LS_WEATHER_HINTS = "stormpath-setting-weather-hints-enabled";
 const LS_AUTO_REROUTE = "stormpath-setting-auto-reroute-enabled";
 const LS_VOICE = "stormpath-setting-voice-guided";
+const LS_VOICE_LEVEL = "stormpath-setting-voice-level";
+const LS_ASSISTANT = "stormpath-setting-assistant-enabled";
+const LS_ASSISTANT_NAME = "stormpath-setting-assistant-name";
 const LS_GPS_HIGH_REFRESH = "stormpath-setting-gps-high-refresh";
 const LS_MAP_MATCHING = "stormpath-setting-map-matching-enabled";
 const LS_LANDSCAPE_SIDE_HAND = "stormpath-setting-landscape-side-hand";
+const LS_PUCK_COLOR = "stormpath-setting-puck-color";
+const LS_GUIDANCE_LANGUAGE = "stormpath-setting-guidance-language";
 const LS_RADAR_DISPLAY_MODE = "stormpath-setting-radar-display-mode";
 
 export type LandscapeSideHand = "right" | "left";
@@ -63,10 +71,20 @@ export interface AppSettings {
   dataSaverEnabled: boolean;
   autoRerouteEnabled: boolean;
   voiceGuidanceEnabled: boolean;
+  /** No voice, the phone's basic voice, or a downloaded Apple voice. */
+  voiceLevel: VoiceLevel;
+  /** Grok or ChatGPT on the map. Can be on with any voice choice. */
+  assistantEnabled: boolean;
+  /** What the driver calls the docked assistant. Shown on the map button. */
+  assistantName: string;
   gpsHighRefreshEnabled: boolean;
   /** While navigating, snap GPS to the road network via Mapbox Map Matching (Plus). */
   mapMatchingEnabled: boolean;
   landscapeSideHand: LandscapeSideHand;
+  /** Map puck. Blue is the default; the others stand off the blue route line. */
+  puckColor: PuckColorId;
+  /** Turn-by-turn, search, and weather phrases. The rest of the app stays English. */
+  guidanceLanguage: GuidanceLanguagePref;
 }
 
 function readBoolFlag(key: string, defaultValue: boolean): boolean {
@@ -88,6 +106,10 @@ function readRadarDisplayMode(): RadarDisplayMode {
   return "motion";
 }
 
+function readGuidanceLanguage(): GuidanceLanguagePref {
+  return safeStorage.get(LS_GUIDANCE_LANGUAGE) === "en" ? "en" : "system";
+}
+
 function writeRadarDisplayMode(mode: RadarDisplayMode): void {
   safeStorage.set(LS_RADAR_DISPLAY_MODE, mode);
 }
@@ -106,10 +128,15 @@ export interface SettingsState {
   /** True after the user dismisses the inline data-saver hint banner. */
   dataSaverHintDismissed: boolean;
   voiceGuidanceEnabled: boolean;
+  voiceLevel: VoiceLevel;
+  assistantEnabled: boolean;
+  assistantName: string;
   gpsHighRefreshEnabled: boolean;
   mapMatchingEnabled: boolean;
   /** Landscape / side view only; portrait ignores. */
   landscapeSideHand: LandscapeSideHand;
+  puckColor: PuckColorId;
+  guidanceLanguage: GuidanceLanguagePref;
 
   setStormEnabled: (on: boolean) => void;
   setTrafficEnabled: (on: boolean) => void;
@@ -121,9 +148,14 @@ export interface SettingsState {
   /** Persist + flag the inline hint as dismissed (no-arg form: it can't be re-opened from UI). */
   dismissDataSaverHint: () => void;
   setVoiceGuidanceEnabled: (on: boolean) => void;
+  setVoiceLevel: (level: VoiceLevel) => void;
+  setAssistantEnabled: (on: boolean) => void;
+  setAssistantName: (name: string) => void;
   setGpsHighRefreshEnabled: (on: boolean) => void;
   setMapMatchingEnabled: (on: boolean) => void;
   setLandscapeSideHand: (hand: LandscapeSideHand) => void;
+  setPuckColor: (color: PuckColorId) => void;
+  setGuidanceLanguage: (pref: GuidanceLanguagePref) => void;
   /**
    * Bulk-apply all 8 persisted toggles from the About sheet in a single store update.
    *
@@ -136,20 +168,59 @@ export interface SettingsState {
   applySettings: (next: AppSettings) => void;
 }
 
+function readPersistedSettings(): Pick<
+  SettingsState,
+  | "stormEnabled"
+  | "trafficEnabled"
+  | "radarEnabled"
+  | "radarDisplayMode"
+  | "weatherHintsEnabled"
+  | "autoRerouteEnabled"
+  | "dataSaverEnabled"
+  | "dataSaverHintDismissed"
+  | "voiceGuidanceEnabled"
+  | "voiceLevel"
+  | "assistantEnabled"
+  | "assistantName"
+  | "gpsHighRefreshEnabled"
+  | "mapMatchingEnabled"
+  | "landscapeSideHand"
+  | "puckColor"
+  | "guidanceLanguage"
+> {
+  return {
+    stormEnabled: readStormSettingOn(),
+    trafficEnabled: readTrafficSettingOn(),
+    radarEnabled: readRadarSettingOn(),
+    radarDisplayMode: readRadarDisplayMode(),
+    weatherHintsEnabled: readBoolFlag(LS_WEATHER_HINTS, true),
+    autoRerouteEnabled: readBoolFlag(LS_AUTO_REROUTE, true),
+    dataSaverEnabled: readDataSaverSetting(),
+    dataSaverHintDismissed: readDataSaverHintDismissed(),
+    voiceGuidanceEnabled: readBoolFlag(LS_VOICE, false),
+    voiceLevel: voiceLevelFromLegacy(safeStorage.get(LS_VOICE_LEVEL)),
+    assistantEnabled: assistantEnabledFromLegacy(safeStorage.get(LS_VOICE_LEVEL), safeStorage.get(LS_ASSISTANT)),
+    assistantName: (safeStorage.get(LS_ASSISTANT_NAME) ?? "").replace(/\s+/g, " ").trim().slice(0, 16),
+    gpsHighRefreshEnabled: readBoolFlag(LS_GPS_HIGH_REFRESH, false),
+    mapMatchingEnabled: readBoolFlag(LS_MAP_MATCHING, false),
+    landscapeSideHand: safeStorage.get(LS_LANDSCAPE_SIDE_HAND) === "left" ? "left" : "right",
+    puckColor: puckColorById(safeStorage.get(LS_PUCK_COLOR)).id,
+    guidanceLanguage: readGuidanceLanguage(),
+  };
+}
+
+/**
+ * The store is created when this module is first imported, which is before
+ * `hydrateSafeStorage()` fills the cache on iOS. Without this, a cold start
+ * keeps the defaults (blue puck) even though Preferences has the saved color.
+ * Call once after hydration, before the first React render.
+ */
+export function reloadPersistedSettings(): void {
+  useSettingsStore.setState(readPersistedSettings());
+}
+
 export const useSettingsStore = create<SettingsState>((set) => ({
-  stormEnabled: readStormSettingOn(),
-  trafficEnabled: readTrafficSettingOn(),
-  radarEnabled: readRadarSettingOn(),
-  radarDisplayMode: readRadarDisplayMode(),
-  weatherHintsEnabled: readBoolFlag(LS_WEATHER_HINTS, true),
-  autoRerouteEnabled: readBoolFlag(LS_AUTO_REROUTE, true),
-  dataSaverEnabled: readDataSaverSetting(),
-  dataSaverHintDismissed: readDataSaverHintDismissed(),
-  voiceGuidanceEnabled: readBoolFlag(LS_VOICE, false),
-  gpsHighRefreshEnabled: readBoolFlag(LS_GPS_HIGH_REFRESH, false),
-  /* Default off — DIY route-snap + iOS native nav cover guidance; Matching is a paid Plus burn. */
-  mapMatchingEnabled: readBoolFlag(LS_MAP_MATCHING, false),
-  landscapeSideHand: safeStorage.get(LS_LANDSCAPE_SIDE_HAND) === "left" ? "left" : "right",
+  ...readPersistedSettings(),
 
   setStormEnabled: (on) => {
     writeStormSettingOn(on);
@@ -187,6 +258,20 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     writeBoolFlag(LS_VOICE, on);
     set({ voiceGuidanceEnabled: on });
   },
+  setVoiceLevel: (level) => {
+    const next = isVoiceLevel(level) ? level : "off";
+    safeStorage.set(LS_VOICE_LEVEL, next);
+    set({ voiceLevel: next });
+  },
+  setAssistantEnabled: (on) => {
+    writeBoolFlag(LS_ASSISTANT, on);
+    set({ assistantEnabled: on });
+  },
+  setAssistantName: (name) => {
+    const next = name.replace(/\s+/g, " ").trim().slice(0, 16);
+    safeStorage.set(LS_ASSISTANT_NAME, next);
+    set({ assistantName: next });
+  },
   setGpsHighRefreshEnabled: (on) => {
     writeBoolFlag(LS_GPS_HIGH_REFRESH, on);
     set({ gpsHighRefreshEnabled: on });
@@ -198,6 +283,16 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setLandscapeSideHand: (hand) => {
     safeStorage.set(LS_LANDSCAPE_SIDE_HAND, hand);
     set({ landscapeSideHand: hand });
+  },
+  setPuckColor: (color) => {
+    const id = puckColorById(color).id;
+    safeStorage.set(LS_PUCK_COLOR, id);
+    set({ puckColor: id });
+  },
+  setGuidanceLanguage: (pref) => {
+    const next = pref === "en" ? "en" : "system";
+    safeStorage.set(LS_GUIDANCE_LANGUAGE, next);
+    set({ guidanceLanguage: next });
   },
   applySettings: (next) => {
     /* Persist each field through its existing helper so the storage shape stays identical to
@@ -212,9 +307,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     writeBoolFlag(LS_AUTO_REROUTE, next.autoRerouteEnabled);
     writeBoolFlag(LS_DATA_SAVER, next.dataSaverEnabled);
     writeBoolFlag(LS_VOICE, next.voiceGuidanceEnabled);
+    safeStorage.set(LS_VOICE_LEVEL, isVoiceLevel(next.voiceLevel) ? next.voiceLevel : "off");
+    writeBoolFlag(LS_ASSISTANT, next.assistantEnabled);
+    safeStorage.set(LS_ASSISTANT_NAME, next.assistantName.replace(/\s+/g, " ").trim().slice(0, 16));
     writeBoolFlag(LS_GPS_HIGH_REFRESH, next.gpsHighRefreshEnabled);
     writeBoolFlag(LS_MAP_MATCHING, next.mapMatchingEnabled);
     safeStorage.set(LS_LANDSCAPE_SIDE_HAND, next.landscapeSideHand);
+    safeStorage.set(LS_PUCK_COLOR, puckColorById(next.puckColor).id);
+    safeStorage.set(LS_GUIDANCE_LANGUAGE, next.guidanceLanguage === "en" ? "en" : "system");
     set({
       stormEnabled: next.stormEnabled,
       trafficEnabled: next.trafficEnabled,
@@ -224,9 +324,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       autoRerouteEnabled: next.autoRerouteEnabled,
       dataSaverEnabled: next.dataSaverEnabled,
       voiceGuidanceEnabled: next.voiceGuidanceEnabled,
+      voiceLevel: isVoiceLevel(next.voiceLevel) ? next.voiceLevel : "off",
+      assistantEnabled: next.assistantEnabled,
+      assistantName: next.assistantName.replace(/\s+/g, " ").trim().slice(0, 16),
       gpsHighRefreshEnabled: next.gpsHighRefreshEnabled,
       mapMatchingEnabled: next.mapMatchingEnabled,
       landscapeSideHand: next.landscapeSideHand,
+      puckColor: puckColorById(next.puckColor).id,
+      guidanceLanguage: next.guidanceLanguage === "en" ? "en" : "system",
     });
   },
 }));

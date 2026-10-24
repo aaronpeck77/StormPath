@@ -20,6 +20,25 @@ export function pickAdvisoryVoiceLine(input: {
   return null;
 }
 
+export const ADVISORY_AFTER_GO_MS = 12_000;
+
+/** Hazard speech waits out the opening maneuver, and stays quiet while a turn is close. */
+export function advisoryVoiceBlocked(input: {
+  navigationStartedAtMs: number | null;
+  nowMs: number;
+  metersToManeuver: number | null | undefined;
+  turnQuietM: number;
+}): boolean {
+  if (input.navigationStartedAtMs == null) return true;
+  if (input.nowMs - input.navigationStartedAtMs < ADVISORY_AFTER_GO_MS) return true;
+  return (
+    input.metersToManeuver != null &&
+    Number.isFinite(input.metersToManeuver) &&
+    input.metersToManeuver >= 0 &&
+    input.metersToManeuver < input.turnQuietM
+  );
+}
+
 export function shouldSpeakAdvisoryLine(input: {
   line: string | null;
   lastSpokenLine: string | null;

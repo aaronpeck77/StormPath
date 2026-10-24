@@ -3,6 +3,9 @@ import {
   DRIVE_AHEAD_CONFIRM_TICKS,
   DRIVE_AHEAD_OFF_ROUTE_ENTER_M,
   DRIVE_AHEAD_OFF_ROUTE_EXIT_M,
+  DRIVE_REANCHOR_LATERAL_M,
+  driveReroutePace,
+  driveTurnedOffRoute,
   isDriveOffRouteForwardFraming,
   lockedRoutePrefersBackroads,
   lockedRouteShouldAvoidMotorway,
@@ -70,6 +73,54 @@ describe("drive always-ahead thresholds", () => {
     expect(DRIVE_AHEAD_CONFIRM_TICKS).toBeGreaterThanOrEqual(2);
   });
 
+  it("treats a moving turn off the line as a new forward plan", () => {
+    expect(
+      driveTurnedOffRoute({
+        headingDeg: 90,
+        routeBearingDeg: 0,
+        speedMps: 8,
+        lateralM: 20,
+      })
+    ).toBe(true);
+    expect(
+      driveTurnedOffRoute({
+        headingDeg: 20,
+        routeBearingDeg: 0,
+        speedMps: 25,
+        lateralM: 40,
+      })
+    ).toBe(false);
+    expect(
+      driveTurnedOffRoute({
+        headingDeg: 180,
+        routeBearingDeg: 0,
+        speedMps: 1,
+        lateralM: 30,
+      })
+    ).toBe(false);
+    expect(
+      driveTurnedOffRoute({
+        headingDeg: null,
+        routeBearingDeg: 0,
+        speedMps: 8,
+        lateralM: 30,
+      })
+    ).toBe(false);
+  });
+
+  it("draws a city leave before the next block and keeps the highway wait", () => {
+    const city = driveReroutePace("city_streets");
+    const highway = driveReroutePace("highway");
+    expect(city.confirmTicks).toBe(2);
+    expect(city.reanchorLateralM).toBeGreaterThan(DRIVE_AHEAD_OFF_ROUTE_ENTER_M);
+    expect(city.reanchorLateralM).toBeLessThan(70);
+    expect(city.coreGraceMs).toBeLessThanOrEqual(1_500);
+    expect(city.throttleMs).toBeLessThan(4_000);
+    expect(highway.reanchorLateralM).toBe(DRIVE_REANCHOR_LATERAL_M);
+    expect(highway.confirmTicks).toBe(DRIVE_AHEAD_CONFIRM_TICKS);
+    expect(highway.coreGraceMs).toBeGreaterThan(city.coreGraceMs);
+  });
+
   it("keeps no-interstate and balanced alternates off motorways on replan", () => {
     expect(lockedRoutePrefersBackroads("hazardSmart")).toBe(true);
     expect(lockedRoutePrefersBackroads("balanced")).toBe(true);
@@ -87,5 +138,17 @@ describe("drive always-ahead thresholds", () => {
         ]
       )
     ).toBe(true);
+  });
+
+  it("keeps a Main lock on motorways after a detour makes that leg slower", () => {
+    expect(
+      lockedRouteShouldAvoidMotorway(
+        { id: "r-a", role: "fastest", baseEtaMinutes: 55 },
+        [
+          { id: "r-a", baseEtaMinutes: 55 },
+          { id: "r-b", baseEtaMinutes: 40 },
+        ]
+      )
+    ).toBe(false);
   });
 });

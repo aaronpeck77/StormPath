@@ -2,6 +2,8 @@
 
 Use this when moving from **TestFlight beta** to **public App Store**. Does not replace beta workflow in [`GITHUB_TESTFLIGHT_ONLY.md`](GITHUB_TESTFLIGHT_ONLY.md).
 
+**Closed train:** **4.21.3** (build 491) is approved. Apple rejects any new binary still labeled 4.21.3 (ITMS-90186 / ITMS-90062), including TestFlight — that is why build 495 bounced. Next upload is **4.21.4**. Leave store/`master` 4.21.3 alone.
+
 ## Build flavor
 
 | Track | Command / trigger | Plus tier | How you tell |
@@ -25,6 +27,36 @@ On device: `i` → header chips must read **App Store** and **Basic** (until Sub
 - [ ] **Export compliance** — `ITSAppUsesNonExemptEncryption` is `false` in `Info.plist` (standard HTTPS only)
 - [ ] Support URL + privacy policy URLs live — **https://stormpath2.netlify.app** ([`NETLIFY_HOSTING.md`](NETLIFY_HOSTING.md))
 - [ ] Test **Basic** build on device (`npm run build` + archive or separate CI job)
+
+## App Review — Guideline 2.3.2 (IAP promotional image)
+
+Apple rejected **4.20.6 (332)** because the **In-App Purchase promotional image was the app icon**. No new IPA is required.
+
+Images live in `web/assets/store/`:
+
+| File | Use on |
+|------|--------|
+| `stormpath-plus-promo-monthly.png` | Plus **monthly** subscription (and its win-back offer, if any) |
+| `stormpath-plus-promo-yearly.png` | Plus **yearly** subscription (and its win-back offer, if any) |
+
+They are 1024×1024 RGB PNGs, flattened, no rounded corners. Same StormPath cloud style as the app icon, but **not** the icon: monthly is a **fall** scene (amber sky, leaves, no lightning), yearly is a **winter** scene (icy sky, snow, no lightning).
+
+### Where to upload (App Store Connect)
+
+Do this on a computer if you can — the phone UI is cramped.
+
+1. Open **[App Store Connect](https://appstoreconnect.apple.com)** → **My Apps** → **StormPath**.
+2. Left sidebar: **Monetization** → **Subscriptions**.
+3. Open the **StormPath Plus** subscription group.
+4. Open **monthly** Plus.
+5. Scroll to **Image** (sometimes labeled promotional / App Store image).
+6. Remove the old picture if it is the app icon. **Choose File** → upload `stormpath-plus-promo-monthly.png`.
+7. **Save**.
+8. Back to the group → open **yearly** Plus → same steps with `stormpath-plus-promo-yearly.png` → **Save**.
+9. If you see a **win-back offer**, open it and give it the matching monthly or yearly image (not the app icon).
+10. Go to the **iOS App** version **4.20.6** → **Resolution Center** / **App Review**. Reply that you replaced the IAP promotional images with unique Plus map artwork (not the app icon), monthly and yearly are different, then **Submit for Review** / **Reply to App Review**.
+
+Do **not** rebuild or re-upload the IPA for this. Do **not** submit a TestFlight Plus build to the store.
 
 ## App Review — Guideline 3.1.2(c) + 2.1(b) (subscriptions)
 

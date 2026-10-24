@@ -1,7 +1,10 @@
+import { mapboxVectorTileUrl, type VectorTilesetGroup } from "./mapStyleTileSources";
 import type { CorridorBounds } from "./routeCorridorPreload";
 
 /** Zooms that matter for Drive follow without downloading a state atlas. */
 const DEFAULT_ZOOMS = [10, 11, 12, 13] as const;
+/** Guess used only when the live style is unreadable. */
+const FALLBACK_TILESET_GROUPS: readonly VectorTilesetGroup[] = ["mapbox.mapbox-streets-v8"];
 /** Hard cap per warm pass — keeps Mapbox + radio load bounded in weak signal. */
 const DEFAULT_MAX_TILES = 96;
 
@@ -35,6 +38,16 @@ export async function prefetchMapTilesForBounds(
     maxTiles?: number;
     /** Skip terrain DEM tiles (lite / data saver). */
     includeTerrain?: boolean;
+    /**
+     * Vector tileset groups the live style requests
+     * ({@link readMapVectorTilesetGroups}). Without these we warm a URL the
+     * renderer never asks for, which is a warm that never gets used.
+     */
+    tilesetGroups?: readonly VectorTilesetGroup[];
+    /** Match GL JS's final request URL (sku / proxy rewrite). */
+    transformUrl?: (url: string) => string;
+    /** Pace between batches — Drive-zoom warms should stay gentler than planning warms. */
+    pacingMs?: number;
   }
 ): Promise<PrefetchTilesResult> {
   const token = accessToken.trim();
@@ -58,6 +71,12 @@ export async function prefetchMapTilesForBounds(
   const includeTerrain = opts?.includeTerrain !== false;
   const shouldAbort = opts?.shouldAbort ?? (() => false);
 
+  const groups =
+    opts?.tilesetGroups && opts.tilesetGroups.length > 0
+      ? opts.tilesetGroups
+      : FALLBACK_TILESET_GROUPS;
+  const transformUrl = opts?.transformUrl ?? ((u: string) => u);
+
   const urls: string[] = [];
   for (const z of zooms) {
     if (shouldAbort()) return "aborted";
@@ -67,12 +86,14 @@ export async function prefetchMapTilesForBounds(
     const y1 = clampTile(latToTileY(south, z), z);
     for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) {
       for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) {
-        urls.push(
-          `https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/${z}/${x}/${y}.vector.pbf?access_token=${encodeURIComponent(token)}`
-        );
+        for (const group of groups) {
+          urls.push(transformUrl(mapboxVectorTileUrl({ group, z, x, y, token })));
+        }
         if (includeTerrain) {
           urls.push(
-            `https://api.mapbox.com/v4/mapbox.mapbox-terrain-dem-v1/${z}/${x}/${y}.webp?access_token=${encodeURIComponent(token)}`
+            transformUrl(
+              `https://api.mapbox.com/v4/mapbox.mapbox-terrain-dem-v1/${z}/${x}/${y}.webp?access_token=${encodeURIComponent(token)}`
+            )
           );
         }
         if (urls.length >= maxTiles) break;
@@ -101,7 +122,7 @@ export async function prefetchMapTilesForBounds(
     }
     /* Pace so we don't saturate a dying LTE link. */
     if (fetched % 6 === 0) {
-      await new Promise((r) => window.setTimeout(r, 40));
+      await new Promise((r) => window.setTimeout(r, opts?.pacingMs ?? 40));
     }
   }
 

@@ -19,6 +19,8 @@ export interface RouteTurnStep {
   maneuverModifier?: string;
   /** Freeway / ramp exit number when Mapbox supplies it (optional). */
   exitNumber?: string;
+  /** Town or city on the exit sign (`destinations`), not a road shield. */
+  towardPlace?: string;
   /** Road / street name along this step (Mapbox `name` / step names). */
   roadName?: string;
   /** Route shield ref when known (e.g. I 72, US 36). */
@@ -30,7 +32,10 @@ export type MapboxRouteIncident = {
   type: string;
   /** Mapbox impact: unknown | minor | moderate | major | severe */
   impact?: string;
+  /** Short cause. This is what the advisory says the warning is for. */
   description: string;
+  /** Longer Mapbox write-up, when it adds detail past `description`. */
+  longDescription?: string;
   alongMeters?: number;
   affectedRoadNames?: string[];
   numLanesBlocked?: number;
@@ -59,7 +64,18 @@ export interface NavRoute {
   tollLabels?: string[];
   /** Posted speed limits from Mapbox Directions maxspeed annotation (follow road signs when in doubt). */
   postedSpeedSamples?: PostedSpeedSample[];
+  /** Signals / stop / yield / rail crossings on this leg (Mapbox intersection flags). */
+  roadControls?: RoadControlPoint[];
 }
+
+/** What kind of control sits at an intersection on the route. */
+export type RoadControlKind = "traffic_signal" | "stop_sign" | "yield_sign" | "railway_crossing";
+
+/** One controlled intersection along the route, from Mapbox Directions `intersections`. */
+export type RoadControlPoint = {
+  lngLat: LngLat;
+  kind: RoadControlKind;
+};
 
 export interface TripPlan {
   originLabel: string;

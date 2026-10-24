@@ -7,6 +7,12 @@ import {
   type NativeNavRouteChangedEvent,
 } from "@stormpath/mapbox-navigation";
 import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
+import {
+  computeLiveTripWindow,
+  isPlanDestinationArrival,
+  shouldHandoffLiveTripWindow,
+  type LiveTripWindow,
+} from "./liveTripWindow";
 import { buildNativeGuidanceCoordinates } from "./nativeGuidanceCoords";
 import {
   nativeRouteChangedShouldForce,
@@ -16,13 +22,27 @@ import {
 import type { LngLat, RouteTurnStep } from "./types";
 import type { TripStop } from "./routeWaypoints";
 import type { NavigationPositionState } from "../hooks/useNavigationPosition";
-
+import { bumpDriveDiag, noteDriveDiagRouteLock, resetDriveDiag } from "./driveDiagnostics";
+import { createNativeDrivePoseHold } from "./nativeDrivePoseHold";
+import type { CoreRerouteHealth } from "./rerouteOwner";
+import {
+  createNativeDriveFollowCam,
+  parseNativeDriveFollowCamera,
+  type NativeDriveFollowCamera,
+} from "./nativeDriveFollowCam";
+import {
+  horizonHazardsFromProgress,
+  horizonLimitMph,
+  type HorizonHazard,
+} from "./horizonAhead";
 export type NativeNavSessionCoords = {
   userLngLat: LngLat | null;
   viaStops: TripStop[];
   destLngLat: LngLat | null;
-  /** Go-locked corridor — seed Core so it does not yank to highway-fastest. */
+  /** Planned / Go-locked corridor — seed Core so it does not yank to highway-fastest. */
   lockedCorridor?: LngLat[] | null;
+  /** Travel heading at the origin so Core departs on the street you're on. */
+  headingDeg?: number | null;
 };
 
 export type { NativeNavGuidance };
@@ -59,8 +79,16 @@ function parseNativeTurnSteps(
   return out;
 }
 
-function buildCoordinateList(c: NativeNavSessionCoords): { lng: number; lat: number }[] | null {
+function buildCoordinateList(c: NativeNavSessionCoords) {
   return buildNativeGuidanceCoordinates(c);
+}
+
+function prepareRouteKey(c: NativeNavSessionCoords, preferBackroads: boolean, language: string): string {
+  const dest = c.destLngLat;
+  const corridor = c.lockedCorridor;
+  if (!dest || !corridor || corridor.length < 2) return "";
+  const last = corridor[corridor.length - 1]!;
+  return `${dest[0].toFixed(4)},${dest[1].toFixed(4)}|${last[0].toFixed(4)},${last[1].toFixed(4)}|${corridor.length}|${preferBackroads ? "b" : "a"}|${language}`;
 }
 
 export function isNativeMapboxNavPlatform(): boolean {
@@ -89,6 +117,8 @@ export function useNativeNavSession(opts: {
   voiceGuidanceEnabled?: boolean;
   /** Prefer no-interstate when the Go-locked leg is a preferred / slower alternate. */
   preferBackroads?: boolean;
+  /** Mapbox turn language. "en" or the phone language. */
+  guidanceLanguage?: string;
 }) {
   const {
     accessToken,
@@ -99,23 +129,45 @@ export function useNativeNavSession(opts: {
     simulate,
     voiceGuidanceEnabled = false,
     preferBackroads = false,
+    guidanceLanguage = "en",
   } = opts;
   const voiceGuidanceEnabledRef = useRef(voiceGuidanceEnabled);
   voiceGuidanceEnabledRef.current = voiceGuidanceEnabled;
   const preferBackroadsRef = useRef(preferBackroads);
   preferBackroadsRef.current = preferBackroads;
+  const guidanceLanguageRef = useRef(guidanceLanguage);
+  guidanceLanguageRef.current = guidanceLanguage;
 
   const [nativeNavActive, setNativeNavActive] = useState(false);
+  const [coreWindowIsFinal, setCoreWindowIsFinal] = useState(true);
   const [position, setPosition] = useState<NavigationPositionState | null>(null);
+  const [followCamera, setFollowCamera] = useState<NativeDriveFollowCamera | null>(null);
   const [guidance, setGuidance] = useState<NativeNavGuidance | null>(null);
   const [turnSteps, setTurnSteps] = useState<RouteTurnStep[]>([]);
+  const [horizonLimit, setHorizonLimit] = useState<number | null>(null);
+  const [horizonHazards, setHorizonHazards] = useState<HorizonHazard[]>([]);
+  const [horizonReady, setHorizonReady] = useState(false);
   const startedForNavRef = useRef(false);
   const nativeRestartingRef = useRef(false);
+  /** Stop already in flight — do not tear Core down a second time from the nav-ended effect. */
+  const nativeStoppingRef = useRef(false);
   /** Core calculated a different corridor — DIY owns this trip; do not restart Core. */
   const nativeAbandonedRef = useRef(false);
+  /**
+   * Live view of whether Core can still own a reroute. The DIY off-route poll reads
+   * this instead of planning in parallel (see {@link resolveRerouteOwner}).
+   */
+  const coreRerouteHealthRef = useRef<CoreRerouteHealth>({
+    active: false,
+    abandoned: false,
+    lastProgressAtMs: null,
+    lastRouteChangedAtMs: null,
+  });
   const corridorAdoptedRef = useRef(false);
   /** First Core `routeChanged` this session — later ones are mid-trip reroutes. */
   const firstRouteChangedRef = useRef(true);
+  const poseHoldRef = useRef(createNativeDrivePoseHold());
+  const followCamRef = useRef(createNativeDriveFollowCam());
   const listenersRef = useRef<{ remove: () => Promise<void> }[]>([]);
   const onRouteGeometryRef = useRef(onRouteGeometry);
   onRouteGeometryRef.current = onRouteGeometry;
@@ -123,6 +175,9 @@ export function useNativeNavSession(opts: {
   onSessionEndedRef.current = onSessionEnded;
   const coordsRef = useRef(coords);
   coordsRef.current = coords;
+  const prepareKeyRef = useRef("");
+  const liveWindowRef = useRef<LiveTripWindow | null>(null);
+  const windowStartAlongRef = useRef(0);
 
   const removeListeners = useCallback(async () => {
     const list = listenersRef.current;
@@ -131,6 +186,9 @@ export function useNativeNavSession(opts: {
   }, []);
 
   const stopNative = useCallback(async () => {
+    if (nativeStoppingRef.current) return;
+    nativeStoppingRef.current = true;
+    startedForNavRef.current = false;
     await removeListeners();
     try {
       if (isNativeMapboxNavPlatform()) {
@@ -139,20 +197,45 @@ export function useNativeNavSession(opts: {
     } catch {
       /* ignore */
     }
-    startedForNavRef.current = false;
+    prepareKeyRef.current = "";
+    liveWindowRef.current = null;
+    windowStartAlongRef.current = 0;
+    setCoreWindowIsFinal(true);
     corridorAdoptedRef.current = false;
     firstRouteChangedRef.current = true;
+    poseHoldRef.current.reset();
+    followCamRef.current.reset();
+    coreRerouteHealthRef.current = {
+      active: false,
+      abandoned: false,
+      lastProgressAtMs: null,
+      lastRouteChangedAtMs: null,
+    };
     setNativeNavActive(false);
     setPosition(null);
+    setFollowCamera(null);
     setGuidance(null);
     setTurnSteps([]);
+    setHorizonReady(false);
+    setHorizonLimit(null);
+    setHorizonHazards([]);
+    nativeStoppingRef.current = false;
   }, [removeListeners]);
+
+  const prevNavStartedRef = useRef<boolean | null>(null);
 
   const startNative = useCallback(async () => {
     if (!isNativeMapboxNavPlatform()) return false;
     if (!accessToken) return false;
     const coordinates = buildCoordinateList(coordsRef.current);
     if (!coordinates) return false;
+    const liveWindow = computeLiveTripWindow(
+      coordsRef.current.lockedCorridor,
+      coordsRef.current.userLngLat
+    );
+    liveWindowRef.current = liveWindow;
+    windowStartAlongRef.current = liveWindow?.startAlongM ?? 0;
+    setCoreWindowIsFinal(liveWindow?.isFinal ?? true);
 
     try {
       const avail = await StormpathMapboxNavigation.isAvailable();
@@ -161,6 +244,18 @@ export function useNativeNavSession(opts: {
       await removeListeners();
       corridorAdoptedRef.current = false;
       firstRouteChangedRef.current = true;
+      poseHoldRef.current.reset();
+      followCamRef.current.reset();
+      coreRerouteHealthRef.current = {
+        active: false,
+        abandoned: false,
+        lastProgressAtMs: null,
+        lastRouteChangedAtMs: null,
+      };
+      setFollowCamera(null);
+      setHorizonReady(false);
+      setHorizonLimit(null);
+      setHorizonHazards([]);
 
       const handles = await Promise.all([
         StormpathMapboxNavigation.addListener("progress", (e: NativeNavProgressEvent) => {
@@ -172,12 +267,38 @@ export function useNativeNavSession(opts: {
           ) {
             return;
           }
-          setPosition({
-            positionLngLat: [e.lng, e.lat],
-            alongM: e.alongM,
-            onRoute: e.onRoute,
-            source: "route_snap",
+          bumpDriveDiag("coreSamples");
+          coreRerouteHealthRef.current = {
+            ...coreRerouteHealthRef.current,
+            active: true,
+            abandoned: nativeAbandonedRef.current,
+            lastProgressAtMs: Date.now(),
+          };
+          const alongOnPlan =
+            (windowStartAlongRef.current || 0) + (Number.isFinite(e.alongM) ? e.alongM : 0);
+          const held = poseHoldRef.current.accept({
+            lng: e.lng,
+            lat: e.lat,
+            alongM: alongOnPlan,
+            headingDeg: e.headingDeg ?? null,
+            speedMps: e.speedMps ?? null,
           });
+          setPosition({
+            positionLngLat: [held.pose.lng, held.pose.lat],
+            alongM: held.pose.alongM,
+            onRoute: e.onRoute,
+            source: held.held || e.poseHeld ? "held" : "route_snap",
+          });
+          const nativeCam = parseNativeDriveFollowCamera(e);
+          setFollowCamera(
+            nativeCam ??
+              followCamRef.current.next({
+                lng: held.pose.lng,
+                lat: held.pose.lat,
+                headingDeg: held.pose.headingDeg,
+                speedMps: held.pose.speedMps,
+              })
+          );
           const instr =
             typeof e.instruction === "string" && e.instruction.trim()
               ? e.instruction.trim()
@@ -201,6 +322,30 @@ export function useNativeNavSession(opts: {
             currentRoadName: roadName,
             currentRoadRef: roadRef,
           });
+          if (e.horizonReady) {
+            const mph = horizonLimitMph(e.horizonLimitMph);
+            const hazards = horizonHazardsFromProgress(e.horizonHazards);
+            setHorizonReady(true);
+            setHorizonLimit((prev) => (prev === mph ? prev : mph));
+            setHorizonHazards((prev) => (sameHorizonHazards(prev, hazards) ? prev : hazards));
+          }
+          const liveW = liveWindowRef.current;
+          if (
+            liveW &&
+            !nativeRestartingRef.current &&
+            !nativeStoppingRef.current &&
+            shouldHandoffLiveTripWindow(liveW, alongOnPlan)
+          ) {
+            nativeRestartingRef.current = true;
+            void stopNative()
+              .then(() => {
+                startedForNavRef.current = true;
+                return startNative();
+              })
+              .finally(() => {
+                nativeRestartingRef.current = false;
+              });
+          }
         }),
         StormpathMapboxNavigation.addListener("routeChanged", (e: NativeNavRouteChangedEvent) => {
           const geom = (e.geometry ?? [])
@@ -224,11 +369,34 @@ export function useNativeNavSession(opts: {
             return;
           }
           corridorAdoptedRef.current = true;
+          /* Core delivered a corridor. On a mid-trip emit that *is* the reroute, so
+           * the DIY poll must not also call Directions for this off-route episode. */
+          if (!isFirst) {
+            coreRerouteHealthRef.current = {
+              ...coreRerouteHealthRef.current,
+              lastRouteChangedAtMs: Date.now(),
+            };
+          }
           setNativeNavActive(true);
           const steps = parseNativeTurnSteps(e.turnSteps);
           if (steps.length) setTurnSteps(steps);
         }),
         StormpathMapboxNavigation.addListener("arrived", () => {
+          const c = coordsRef.current;
+          const w = computeLiveTripWindow(c.lockedCorridor, c.userLngLat);
+          if (!isPlanDestinationArrival(c.destLngLat, c.userLngLat, w)) {
+            if (nativeRestartingRef.current) return;
+            nativeRestartingRef.current = true;
+            void stopNative()
+              .then(() => {
+                startedForNavRef.current = true;
+                return startNative();
+              })
+              .finally(() => {
+                nativeRestartingRef.current = false;
+              });
+            return;
+          }
           void stopNative().then(() => onSessionEndedRef.current?.("arrived"));
         }),
         StormpathMapboxNavigation.addListener("cancelled", () => {
@@ -252,6 +420,7 @@ export function useNativeNavSession(opts: {
         simulate: Boolean(simulate),
         voiceEnabled: voiceGuidanceEnabledRef.current,
         preferBackroads: preferBackroadsRef.current,
+        language: guidanceLanguageRef.current,
       });
       if (!result.ok) {
         await removeListeners();
@@ -268,18 +437,53 @@ export function useNativeNavSession(opts: {
     }
   }, [accessToken, removeListeners, simulate, stopNative]);
 
+  const pendingPrepareKey = prepareRouteKey(coords, preferBackroads, guidanceLanguage);
+
+  /** While Rt is on screen, Core plans the locked corridor so Go does not wait a second minute. */
+  useEffect(() => {
+    if (!isNativeMapboxNavPlatform()) return;
+    if (navigationStarted || !accessToken) return;
+    if (!pendingPrepareKey || prepareKeyRef.current === pendingPrepareKey) return;
+    const coordinates = buildCoordinateList(coordsRef.current);
+    if (!coordinates || coordinates.length < 2) return;
+    const timer = window.setTimeout(() => {
+      prepareKeyRef.current = pendingPrepareKey;
+      void StormpathMapboxNavigation.prepareActiveGuidance({
+        accessToken,
+        coordinates,
+        preferBackroads: preferBackroadsRef.current,
+        language: guidanceLanguageRef.current,
+      }).catch(() => {
+        prepareKeyRef.current = "";
+      });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [accessToken, navigationStarted, pendingPrepareKey]);
+
   /** Start Core when Go flips navigationStarted; stop when trip ends. */
   useEffect(() => {
     if (!isNativeMapboxNavPlatform()) return;
+
+    const prevNav = prevNavStartedRef.current;
+    prevNavStartedRef.current = navigationStarted;
 
     if (!navigationStarted) {
       nativeAbandonedRef.current = false;
       corridorAdoptedRef.current = false;
       firstRouteChangedRef.current = true;
-      if (startedForNavRef.current || nativeNavActive) {
+      if (!nativeStoppingRef.current && (startedForNavRef.current || nativeNavActive)) {
         void stopNative();
       }
       return;
+    }
+
+    /* Genuine Go (false → true). Core reconnect / WebView remount must keep the trip counters
+     * or About reads "0.6 s, all zeros" after a long drive. */
+    if (prevNav === false) {
+      resetDriveDiag();
+      /* The App effect notes the lock first, then this reset wipes it. Write it
+       * again or About never shows fastest vs no-interstate. */
+      noteDriveDiagRouteLock(preferBackroadsRef.current, true);
     }
 
     if (nativeRestartingRef.current) return;
@@ -307,6 +511,10 @@ export function useNativeNavSession(opts: {
     };
   }, [stopNative]);
 
+  /**
+   * One-press refresh. Restarts Core without ending the trip.
+   * The restarting flag keeps the effect above from starting a second session.
+   */
   const restartNative = useCallback(async () => {
     if (!isNativeMapboxNavPlatform()) return false;
     nativeRestartingRef.current = true;
@@ -323,11 +531,29 @@ export function useNativeNavSession(opts: {
   return {
     nativeNavActive,
     position,
+    followCamera,
+    /** Read by the DIY off-route poll to stay out of Core's way. */
+    coreRerouteHealthRef,
     /** Live Mapbox Core banner fields (instruction + distance). */
     guidance,
     /** Live Mapbox Core turn list — same route as the blue line / voice. */
     turnSteps,
+    /** False while Core is only running the next ~100 mi of a longer plan. */
+    coreWindowIsFinal,
     stopNative,
     restartNative,
+    /** Road-graph limit once the horizon has reported. Null means it had no sign. */
+    horizonMph: horizonReady ? horizonLimit : null,
+    horizonHazards: horizonReady ? horizonHazards : [],
   };
+}
+
+function sameHorizonHazards(a: HorizonHazard[], b: HorizonHazard[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]!.kind !== b[i]!.kind || a[i]!.text !== b[i]!.text || a[i]!.distanceM !== b[i]!.distanceM) {
+      return false;
+    }
+  }
+  return true;
 }

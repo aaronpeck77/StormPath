@@ -10,6 +10,8 @@ import {
   type RoadNetworkClass,
 } from "./drivingRejoinContext";
 import { remainingViaStops } from "./routeWaypoints";
+import type { RoutingPreference } from "./routePreference";
+import { lockedRouteKind, offRouteReplanCopy } from "./routeSummary";
 import { collectMapboxRouteVariants } from "../services/mapboxDirectionsRouter";
 import { speakNavigationAlert } from "./navigationVoiceAlert";
 import {
@@ -20,7 +22,10 @@ import {
   DRIVE_AHEAD_NAV_START_GRACE_MAX_LATERAL_M,
   DRIVE_AHEAD_NAV_START_GRACE_MS,
   DRIVE_AHEAD_OFF_ROUTE_ENTER_M,
-  DRIVE_AHEAD_REROUTE_THROTTLE_MS,
+  DRIVE_TURN_OFF_CONFIRM_TICKS,
+  DRIVE_TURN_OFF_THROTTLE_MS,
+  driveReroutePace,
+  driveTurnedOffRoute,
   isDriveAlwaysAheadView,
 } from "./driveAlwaysAhead";
 import { mayMutateLockedRouteGeometry } from "./navigationContract";
@@ -45,6 +50,7 @@ import {
   metersToCurrentStepEnd,
   turnStepAlongBounds,
 } from "./turnStepAlong";
+import { bumpDriveDiag, noteDriveDiagOffRoute } from "./driveDiagnostics";
 import {
   createOffRoutePollSession,
   resetOffRoutePollSession,
@@ -52,6 +58,11 @@ import {
   type OffRoutePollSession,
 } from "./offRoutePollLogic";
 import { offRouteEnterThresholdM } from "./offRouteRecoveryPolicy";
+import {
+  diyMayPlanReroute,
+  resolveRerouteOwner,
+  type CoreRerouteHealth,
+} from "./rerouteOwner";
 import {
   bearingAlongRouteAhead,
   initialBearingDegrees,
@@ -90,6 +101,8 @@ export interface UseOffRouteNavigationDeps {
   settingStormEnabled: boolean;
   stormAlertsForRouting: NormalizedWeatherAlert[] | undefined;
   lockedNavigationRouteIdRef: MutableRefObject<string | null>;
+  /** Fastest vs alternate. Set when the driver picks a leg. Replans do not change it. */
+  routingPreferenceRef: MutableRefObject<RoutingPreference>;
   routeGraphEpochRef: MutableRefObject<number>;
   altRoutesFetchAbortRef: MutableRefObject<AbortController | null>;
   altRoutesRefreshInFlightRef: MutableRefObject<boolean>;
@@ -115,6 +128,12 @@ export interface UseOffRouteNavigationDeps {
   adoptLockedRouteGeometry: (geometry: LngLat[], opts?: { force?: boolean }) => void;
   /** iOS: restart Mapbox Core on the new GPS→dest corridor. No-op on web. */
   restartNativeNav?: () => Promise<boolean | void>;
+  /**
+   * Live Core reroute health. While Core owns the reroute, this hook still detects
+   * and reports off-route but does not plan — no duplicate Directions call and no
+   * Core stop/start mid-drive.
+   */
+  coreRerouteHealthRef?: MutableRefObject<CoreRerouteHealth>;
   viewModeRef: MutableRefObject<MapViewMode>;
   /**
    * When true, driver is following a learned personal fork — suppress main-corridor
@@ -150,6 +169,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     settingStormEnabled,
     stormAlertsForRouting,
     lockedNavigationRouteIdRef,
+    routingPreferenceRef,
     routeGraphEpochRef,
     altRoutesFetchAbortRef,
     altRoutesRefreshInFlightRef,
@@ -172,6 +192,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setPreviewLegIndex,
     adoptLockedRouteGeometry,
     restartNativeNav,
+    coreRerouteHealthRef,
     viewModeRef,
     onPersonalForkRef,
   } = deps;
@@ -204,7 +225,15 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   const lastOffRouteSampleRef = useRef<{ t: number; lateralM: number; alongM: number } | null>(
     null
   );
+  /** Heading vs the line ahead, so a real turn does not wait on the old corridor. */
+  const driveDepartPoseRef = useRef<{
+    headingDeg: number | null;
+    routeBearingDeg: number | null;
+    speedMps: number;
+  }>({ headingDeg: null, routeBearingDeg: null, speedMps: 0 });
   const drivingRejoinRoadClassRef = useRef<RoadNetworkClass>("unknown");
+  /** Instant street class — not the highway latch — so a city turn does not wait like a freeway. */
+  const instantRoadClassRef = useRef<RoadNetworkClass>("unknown");
   const drivingRejoinSurfaceAtRef = useRef<number | null>(null);
   const drivingRejoinModeRef = useRef<DrivingRejoinMode>("manual");
   const guidanceRouteLengthMRef = useRef(guidanceRouteLengthM);
@@ -212,6 +241,8 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   const guidanceCumDistRef = useRef<Float64Array | null>(null);
   const guidanceGeomSigRef = useRef("");
   const lastAutoRerouteAttemptRef = useRef(0);
+  /** Start of the current off-route episode — Core's grace window is measured from here. */
+  const offRouteSinceMsRef = useRef<number | null>(null);
 
   useEffect(() => {
     const g = guidanceRoute?.geometry;
@@ -251,6 +282,9 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     pollSessionRef.current = session;
     offRouteRejoinAlongMRef.current = session.offRouteRejoinAlongM;
     if (offRouteLatchedRef.current !== session.offRouteLatched) {
+      if (session.offRouteLatched) bumpDriveDiag("offRoute");
+      noteDriveDiagOffRoute(session.offRouteLatched);
+      offRouteSinceMsRef.current = session.offRouteLatched ? Date.now() : null;
       offRouteLatchedRef.current = session.offRouteLatched;
       setOffRouteLatched(session.offRouteLatched);
     }
@@ -306,7 +340,9 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     lastHoldPreviewFetchRef.current = 0;
     holdPreviewFetchInFlightRef.current = false;
     lastOffRouteSampleRef.current = null;
+    offRouteSinceMsRef.current = null;
     drivingRejoinRoadClassRef.current = "unknown";
+    instantRoadClassRef.current = "unknown";
     drivingRejoinSurfaceAtRef.current = null;
     drivingRejoinModeRef.current = "manual";
   }, []);
@@ -364,9 +400,10 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       const remainingVias = remainingViaStops(viaStops, activeViaIndex);
       const viaCoords = remainingVias.map((s) => s.lngLat);
       const bearingDeg = headingRef.current;
+      const routeCap = isPlus ? 2 : 1;
       const fresh = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
         via: viaCoords.length > 0 ? viaCoords : undefined,
-        maxRoutes: 2,
+        maxRoutes: routeCap,
         forwardFirst: true,
         bearingDeg:
           bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
@@ -374,12 +411,18 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         stormAlerts: stormAlertsForRouting,
         radarAvoidanceEnabled: isPlus && settingStormEnabled,
       });
-      const nextRoutes = assignOffRouteReplanSlots(fresh, userLngLat, bearingDeg);
+      const nextRoutes = assignOffRouteReplanSlots(
+        fresh,
+        userLngLat,
+        bearingDeg,
+        routingPreferenceRef.current,
+        routeCap
+      );
       const primary = nextRoutes[0];
       if (!primary?.geometry?.length || epochAtStart !== routeGraphEpochRef.current) return false;
 
       lockedNavigationRouteIdRef.current = primary.id;
-      setPlan((prev) => planAfterOffRouteReplan(prev, nextRoutes));
+      setPlan((prev) => planAfterOffRouteReplan(prev, nextRoutes, routeCap));
       setRouteSlotOrder(() => offRouteReplanSlotIds(nextRoutes));
       setPreviewLegIndex(0);
       adoptLockedRouteGeometry(primary.geometry.map(([a, b]) => [a, b] as LngLat), {
@@ -391,10 +434,14 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       if (restartNativeNav) {
         void restartNativeNav();
       }
-      const voiceLine = opts?.silent ? "Updating your route." : "New route from here.";
-      speakNavigationAlert(voiceLine, settingVoiceGuidanceEnabled);
-      if (!opts?.silent) {
-        setTapHint(nextRoutes.length > 1 ? "New route from here — B is on Map / Route." : "New route from here.");
+      const copy = offRouteReplanCopy({
+        kind: lockedRouteKind(primary),
+        silent: Boolean(opts?.silent),
+        hasAlternate: nextRoutes.length > 1,
+      });
+      speakNavigationAlert(copy.voice, settingVoiceGuidanceEnabled);
+      if (copy.hint) {
+        setTapHint(copy.hint);
         window.setTimeout(() => setTapHint(null), 5000);
       }
       return true;
@@ -425,7 +472,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     isPlus,
     settingStormEnabled,
     headingRef,
-    lockedNavigationRouteIdRef,
+    routingPreferenceRef,
     routeGraphEpochRef,
     altRoutesFetchAbortRef,
     altRoutesRefreshInFlightRef,
@@ -443,6 +490,8 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setTapHint,
     setFitTrigger,
     settingVoiceGuidanceEnabled,
+    guidanceRoute,
+    planRef,
   ]);
 
   /** @deprecated Overlay rejoin removed — same as soft restart (new Go lock from GPS). */
@@ -470,8 +519,24 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   const executeAutoRecovery = useCallback(
     async (_action: "rejoin" | "replan") => {
       const driveAhead = isDriveAlwaysAheadView(viewModeRef.current);
-      const throttleMs = driveAhead ? DRIVE_AHEAD_REROUTE_THROTTLE_MS : OFF_ROUTE_REROUTE_THROTTLE_MS;
+      const pace = driveReroutePace(driveAhead ? instantRoadClassRef.current : "highway");
       const now = Date.now();
+      const lateralM = lastOffRouteSampleRef.current?.lateralM ?? 0;
+      const pose = driveDepartPoseRef.current;
+      /* A turn off the line is not a freeway slip. Draw forward now. */
+      const turnedOff =
+        driveAhead &&
+        driveTurnedOffRoute({
+          headingDeg: pose.headingDeg,
+          routeBearingDeg: pose.routeBearingDeg,
+          speedMps: pose.speedMps,
+          lateralM,
+        });
+      const throttleMs = turnedOff
+        ? DRIVE_TURN_OFF_THROTTLE_MS
+        : driveAhead
+          ? pace.throttleMs
+          : OFF_ROUTE_REROUTE_THROTTLE_MS;
       if (
         routingRef.current ||
         altRoutesRefreshInFlightRef.current ||
@@ -479,6 +544,23 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       ) {
         return;
       }
+
+      /* Core reroutes on its own and hands back geometry through `routeChanged`.
+       * On a freeway, wait so we do not fire a second Directions call and restart
+       * Core. On a city street that wait is longer than the next block, so plan
+       * from here once the turn is real. A heading that has left the line does
+       * not wait for either. */
+      if (!turnedOff) {
+        const owner = resolveRerouteOwner({
+          health: coreRerouteHealthRef?.current,
+          offRouteSinceMs: offRouteSinceMsRef.current,
+          nowMs: now,
+          graceMs: driveAhead ? pace.coreGraceMs : undefined,
+        });
+        /* Far off the drawn line: do not wait for Core to drag the old corridor back. */
+        if (lateralM < pace.reanchorLateralM && !diyMayPlanReroute(owner)) return;
+      }
+
       lastAutoRerouteAttemptRef.current = now;
 
       pollSessionRef.current = {
@@ -495,6 +577,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       markRecoveryFailed,
       routingRef,
       altRoutesRefreshInFlightRef,
+      coreRerouteHealthRef,
       viewModeRef,
     ]
   );
@@ -580,11 +663,12 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
             ? guidanceRouteLengthMRef.current
             : polylineLengthMeters(pollGeom);
 
-      const alongForPoll = measureOffRouteLateral(
+      const pollLeave = measureOffRouteLateral(
         pos,
         pollGeom,
         userAlongGuidanceMRef.current
-      ).alongM;
+      );
+      const alongForPoll = pollLeave.alongM;
 
       if (lockedRoute?.geometry?.length) {
         const sampleAlong = measureOffRouteLateral(pos, lockedGeom, alongForPoll);
@@ -593,6 +677,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           userAlongM: sampleAlong.alongM,
           destLngLat: destLngLatRef.current,
         }).roadClass;
+        instantRoadClassRef.current = instantRoad;
         const prevRoad = drivingRejoinRoadClassRef.current;
         if (
           shouldLatchHighwayAfterSurface(
@@ -627,6 +712,17 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       }
       const enterThresholdM = offRouteEnterThresholdM(metersToStepEnd);
       const driveAhead = isDriveAlwaysAheadView(viewModeRef.current);
+      driveDepartPoseRef.current = {
+        headingDeg: headingRef.current,
+        routeBearingDeg: routeBearing,
+        speedMps: speedMpsRef.current ?? 0,
+      };
+      const turnedOff = driveTurnedOffRoute({
+        headingDeg: headingRef.current,
+        routeBearingDeg: routeBearing,
+        speedMps: speedMpsRef.current ?? 0,
+        lateralM: pollLeave.lateralM,
+      });
 
       const rejoinCtx = lockedRoute?.geometry?.length
         ? resolveDrivingRejoinContext({
@@ -667,6 +763,11 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         drivingRejoinMode: rejoinCtx?.mode ?? drivingRejoinModeRef.current,
         rejoinFailCount: offRouteRerouteFailStreakRef.current,
         driveAlwaysAhead: driveAhead,
+        confirmTicks: driveAhead
+          ? turnedOff
+            ? DRIVE_TURN_OFF_CONFIRM_TICKS
+            : driveReroutePace(instantRoadClassRef.current).confirmTicks
+          : undefined,
         navStartGraceMs: driveAhead ? DRIVE_AHEAD_NAV_START_GRACE_MS : undefined,
         navStartGraceAlongM: driveAhead ? DRIVE_AHEAD_NAV_START_GRACE_ALONG_M : undefined,
         navStartGraceMaxLateralM: driveAhead ? DRIVE_AHEAD_NAV_START_GRACE_MAX_LATERAL_M : undefined,

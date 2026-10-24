@@ -28,6 +28,7 @@ import {
   tomorrowForecastToWxSamples,
 } from "./routeForecastTimeline";
 import { layoutStripAlerts } from "./stripAlertLayout";
+import { driveRailProgressFraction } from "./driveRailProgress";
 import { polylineLengthMeters } from "./routeGeometry";
 import {
   auditRouteAheadSync,
@@ -68,6 +69,8 @@ export type UseProgressCalloutPanelDeps = {
   navigationStarted: boolean;
   advisoryUserAlongM: number;
   userAlongGuidanceM: number;
+  /** Same odometer the side rail uses, so Route Info's YOU line matches that puck. */
+  tripOdometerM: number;
   guidanceRouteLengthM: number;
   guidanceRoute: NavRoute | undefined;
   orderedRouteIds: string[];
@@ -118,6 +121,7 @@ export function useProgressCalloutPanel(
     navigationStarted,
     advisoryUserAlongM,
     userAlongGuidanceM,
+    tripOdometerM,
     guidanceRouteLengthM,
     guidanceRoute,
     orderedRouteIds,
@@ -152,11 +156,38 @@ export function useProgressCalloutPanel(
     bumpTrafficRefresh,
   } = deps;
 
-  const progressPanelAlongM = navigationStarted ? advisoryUserAlongM : userAlongGuidanceM;
-  const skipHeavyProgressPanel =
-    isUltraLongTripRoute(guidanceRouteLengthM) && !navigationStarted;
-  const ultraLongActiveNav =
-    navigationStarted && isUltraLongTripRoute(guidanceRouteLengthM);
+  /**
+   * While driving, YOU and the side rail share one place on the planned line:
+   * farther of Core's along, GPS on that same line, and the trip odometer.
+   * Core alone sits at the start after a corridor replace, which left both
+   * pucks early in the trip.
+   */
+  const progressPanelAlongM = useMemo(() => {
+    if (!navigationStarted) return userAlongGuidanceM;
+    const g = guidanceRoute?.geometry;
+    const totalM = g && g.length >= 2 ? polylineLengthMeters(g) : 0;
+    if (totalM <= 1) return advisoryUserAlongM;
+    return (
+      driveRailProgressFraction({
+        totalM,
+        userAlongM: Math.max(userAlongGuidanceM, advisoryUserAlongM),
+        tripOdometerM,
+        tripRelative: true,
+      }) * totalM
+    );
+  }, [
+    navigationStarted,
+    userAlongGuidanceM,
+    advisoryUserAlongM,
+    guidanceRoute?.geometry,
+    tripOdometerM,
+  ]);
+  /**
+   * Ultra-long legs (~300+ mi) use the lean outlook path (forecast + radar + route-ahead
+   * segments) instead of the full chunk callout list — but never blank the weather graphs
+   * while planning. Blanking made Route Info look “storm-blind” on long trip previews.
+   */
+  const ultraLongLeanOutlook = isUltraLongTripRoute(guidanceRouteLengthM);
 
   const progressCalloutPanel = useMemo((): ProgressCalloutPanel => {
     const g = guidanceRoute?.geometry;
@@ -176,20 +207,6 @@ export function useProgressCalloutPanel(
     const windPoints = windFromForecast.windPoints;
     const gustLinePoints = windFromForecast.gustLinePoints;
     const gustSpikePoints = windFromForecast.gustSpikePoints;
-
-    if (skipHeavyProgressPanel) {
-      return {
-        routeWide: [],
-        outlookTimeline: [],
-        outlookSamples: [],
-        segments: [],
-        userAlongT: 0,
-        stripTint,
-        windPoints,
-        gustLinePoints,
-        gustSpikePoints,
-      };
-    }
 
     if (!g?.length) {
       return {
@@ -219,7 +236,7 @@ export function useProgressCalloutPanel(
       };
     }
     const userAlongT =
-      totalM > 0 ? Math.min(1, Math.max(0, userAlongGuidanceM / totalM)) : 0;
+      totalM > 0 ? Math.min(1, Math.max(0, progressPanelAlongM / totalM)) : 0;
 
     const planEta = guidanceRoute?.baseEtaMinutes ?? null;
     const outlookGraphSamples =
@@ -248,7 +265,7 @@ export function useProgressCalloutPanel(
           })
         : [];
 
-    if (ultraLongActiveNav) {
+    if (ultraLongLeanOutlook) {
       const routeAheadSegments = buildRouteAheadCalloutSegments({
         items: routeAheadTimeline,
         totalMeters: totalM,
@@ -291,7 +308,10 @@ export function useProgressCalloutPanel(
             : [];
 
       let outlookTimeline = resyncRouteOutlookSteps(
-        mergeRouteOutlookSteps(syncedOutlook, tioOutlook, stormOutlook),
+        applyRadarOutlookBoost(
+          mergeRouteOutlookSteps(syncedOutlook, tioOutlook, stormOutlook),
+          radarMosaicSamples
+        ),
         {
           samples: outlookGraphSamples,
           totalMeters: totalM,
@@ -498,8 +518,7 @@ export function useProgressCalloutPanel(
     radarMosaicSamples,
     liveTrafficNarrative,
     driveEtaMinutes,
-    skipHeavyProgressPanel,
-    ultraLongActiveNav,
+    ultraLongLeanOutlook,
     stormOutlookBands,
     advisoryNowcastLine,
     currentNowcast?.tempF,

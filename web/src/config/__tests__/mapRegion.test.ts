@@ -5,6 +5,8 @@ import {
   mapMinZoomForSession,
   padMapBounds,
 } from "../mapRegion";
+import { DEST_PLACE_MIN_ZOOM } from "../../ui/destPlaceCamera";
+import { ROUTE_VIEW_REGIONAL_ZOOM } from "../../ui/mapTopdownCamera";
 
 describe("mapRegion", () => {
   it("scopes a US fix to North America", () => {
@@ -33,6 +35,17 @@ describe("mapRegion", () => {
     ).toBe(2);
     expect(mapMinZoomForSession({ navigationStarted: true, hasContinent: true })).toBe(3);
     expect(mapMinZoomForSession({ navigationStarted: false, hasContinent: true })).toBe(3);
+  });
+
+  it("will not let dest-pick pinch out to Canada / globe zoom", () => {
+    const floor = mapMinZoomForSession({
+      navigationStarted: false,
+      hasContinent: true,
+      pinPlacing: true,
+    });
+    expect(floor).toBe(DEST_PLACE_MIN_ZOOM);
+    expect(floor).toBeGreaterThan(ROUTE_VIEW_REGIONAL_ZOOM);
+    expect(floor).toBeGreaterThan(6);
   });
 
   it("pads bounds within world limits", () => {

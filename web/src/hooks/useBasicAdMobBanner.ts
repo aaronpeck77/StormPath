@@ -3,19 +3,22 @@ import { getWebEnv } from "../config/env";
 import { getPayTier } from "../billing/payFeatures";
 import {
   ADMOB_TEST_BANNER_UNIT_ID,
+  getBasicBannerHeightPx,
   isAdMobSupported,
   recordBasicBannerUiSlot,
   showBasicBanner,
+  subscribeBasicBannerHeight,
   subscribeBasicBannerLoad,
   teardownBasicBanner,
 } from "../ads/adMobClient";
+import { isTripBootSettled, subscribeTripBootSettled } from "../nav/useActiveTripCache";
 
 type Args = {
   /** Basic tier only — Plus never shows AdMob. */
   enabled: boolean;
-  /** Hide while actively navigating (Drive / Go), unless advisory is expanded. */
+  /** Hide for the whole trip. Ads return on the home screen, before Go. */
   navigationStarted: boolean;
-  /** When Basic expands the advisory panel, keep ads visible even while navigating. */
+  /** Kept for callers. Opening Status during a trip does not bring ads back. */
   stormBarExpanded?: boolean;
 };
 
@@ -30,7 +33,14 @@ function resolveAdMobTestMode(): boolean {
   );
 }
 
-/** Lift chrome only while a banner is loading or on screen — not for a failed/no-fill gap. */
+/** Standard 320×50 banner, used until AdMob reports a real height. */
+export const BASIC_AD_BANNER_FALLBACK_PX = 50;
+
+/**
+ * Lift chrome while a banner is on screen or still loading.
+ * A measured height wins even if the slot timed out, so the buttons stay above the ad.
+ * A failed/no-fill gap (height 0) does not leave a hole.
+ */
 export function bannerShouldReserveBottomSpace(opts: {
   isBasicTier: boolean;
   enabled: boolean;
@@ -38,15 +48,30 @@ export function bannerShouldReserveBottomSpace(opts: {
   stormBarExpanded?: boolean;
   native: boolean;
   slotState: BasicAdBannerSlotState;
+  /** Last SizeChanged height. 0 when the banner is gone. */
+  bannerHeightPx?: number;
   /** Local `npm run dev` in a browser — no native AdMob, still pad so layout matches device. */
   devWebPlaceholder: boolean;
 }): boolean {
+  /* An active trip never keeps the banner, even if AdMob still reports a height. */
+  if (opts.navigationStarted) return false;
+  const height =
+    opts.bannerHeightPx != null && Number.isFinite(opts.bannerHeightPx) ? opts.bannerHeightPx : 0;
+  if (height > 0) return true;
   if (!opts.isBasicTier || !opts.enabled) return false;
-  /* While navigating, only lift chrome if the advisory page is open (in-panel monetization). */
-  if (opts.navigationStarted && !opts.stormBarExpanded) return false;
   if (opts.devWebPlaceholder) return true;
   if (!opts.native) return false;
   return opts.slotState === "loading" || opts.slotState === "filled";
+}
+
+/** Pixels the bottom controls move up. 0 puts them back on the bottom edge. */
+export function basicAdChromeLiftPx(opts: {
+  reservesBottomSpace: boolean;
+  bannerHeightPx: number;
+}): number {
+  if (!opts.reservesBottomSpace) return 0;
+  if (opts.bannerHeightPx > 0) return Math.round(opts.bannerHeightPx);
+  return BASIC_AD_BANNER_FALLBACK_PX;
 }
 
 /**
@@ -62,7 +87,7 @@ export function slotStateAfterShowAttempt(args: {
   return null;
 }
 
-/** Third-party AdMob for Basic — idle chrome, and again when the advisory panel is open while navigating. */
+/** Third-party AdMob for Basic on the home screen. Hidden for the whole trip. */
 export function useBasicAdMobBanner({
   enabled,
   navigationStarted,
@@ -72,10 +97,14 @@ export function useBasicAdMobBanner({
   testMode: boolean;
   /** Lift bottom chrome while Basic idle — device shows native AdMob when filled. */
   reservesBottomSpace: boolean;
+  /** How far the bottom controls move up, in CSS pixels. 0 when the ad is gone. */
+  bannerLiftPx: number;
 } {
   const env = getWebEnv();
   const showRef = useRef(false);
   const [slotState, setSlotState] = useState<BasicAdBannerSlotState>("hidden");
+  const [bannerHeightPx, setBannerHeightPx] = useState(0);
+  const [tripBootSettled, setTripBootSettled] = useState(isTripBootSettled);
   const testMode = resolveAdMobTestMode();
   const isBasicTier = getPayTier() !== "plus";
 
@@ -83,14 +112,27 @@ export function useBasicAdMobBanner({
     recordBasicBannerUiSlot(slotState);
   }, [slotState]);
 
+  useEffect(() => subscribeBasicBannerHeight(setBannerHeightPx), []);
+
+  useEffect(() => subscribeTripBootSettled(() => setTripBootSettled(true)), []);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (!navigationStarted) return;
+      void teardownBasicBanner();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [navigationStarted]);
+
   useEffect(() => {
     if (!isAdMobSupported()) {
       setSlotState("hidden");
       return undefined;
     }
 
-    const shouldShow =
-      enabled && isBasicTier && (!navigationStarted || stormBarExpanded);
+    const shouldShow = enabled && isBasicTier && tripBootSettled && !navigationStarted;
     const adUnitId = env.admobBannerUnitId || ADMOB_TEST_BANNER_UNIT_ID;
 
     if (!shouldShow) {
@@ -114,7 +156,11 @@ export function useBasicAdMobBanner({
 
     timeoutId = window.setTimeout(() => {
       if (cancelled) return;
-      setSlotState((prev) => (prev === "loading" ? "empty" : prev));
+      setSlotState((prev) => {
+        if (prev !== "loading") return prev;
+        /* The creative is already on screen — keep the buttons up. */
+        return getBasicBannerHeightPx() > 0 ? "filled" : "empty";
+      });
     }, LOAD_TIMEOUT_MS);
 
     void showBasicBanner({
@@ -141,6 +187,7 @@ export function useBasicAdMobBanner({
   }, [
     enabled,
     isBasicTier,
+    tripBootSettled,
     navigationStarted,
     stormBarExpanded,
     env.admobBannerUnitId,
@@ -160,8 +207,10 @@ export function useBasicAdMobBanner({
     stormBarExpanded,
     native: isAdMobSupported(),
     slotState,
+    bannerHeightPx,
     devWebPlaceholder: Boolean(import.meta.env.DEV && !isAdMobSupported()),
   });
+  const bannerLiftPx = basicAdChromeLiftPx({ reservesBottomSpace, bannerHeightPx });
 
-  return { slotState, testMode, reservesBottomSpace };
+  return { slotState, testMode, reservesBottomSpace, bannerLiftPx };
 }

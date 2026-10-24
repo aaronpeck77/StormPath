@@ -35,8 +35,10 @@ export type UseDriveMapPropsInput = {
   viaStops: TripStop[];
   fitTrigger: number;
   viewMode: MapViewMode;
+  routeBuildBusy?: boolean;
   heading: number | null;
   driveRouteBearingDeg: number | null;
+  metersToBannerManeuver?: number | null;
   driveOffRouteForwardFraming: boolean;
   followingTemporaryGuidance: boolean;
   speedMps: number | null;
@@ -93,6 +95,8 @@ export type UseDriveMapPropsInput = {
   lastTravelBearingDegOutRef?: MutableRefObject<number | null>;
   puckAnchorDriftPxOutRef?: MutableRefObject<number | null>;
   holdLastGoodMap?: boolean;
+  nativeFollowCamera?: DriveMapProps["nativeFollowCamera"];
+  nativeDriveMapActive?: boolean;
 };
 
 export function buildDriveMapProps(
@@ -112,8 +116,10 @@ export function buildDriveMapProps(
     viaStops,
     fitTrigger,
     viewMode,
+    routeBuildBusy = false,
     heading,
     driveRouteBearingDeg,
+    metersToBannerManeuver = null,
     driveOffRouteForwardFraming,
     followingTemporaryGuidance,
     speedMps,
@@ -167,6 +173,8 @@ export function buildDriveMapProps(
     lastTravelBearingDegOutRef,
     puckAnchorDriftPxOutRef,
     holdLastGoodMap = false,
+    nativeFollowCamera = null,
+    nativeDriveMapActive = false,
   } = input;
 
   return {
@@ -182,8 +190,10 @@ export function buildDriveMapProps(
     fitTrigger,
     viewMode,
     navigationStarted,
+    routeBuildBusy,
     heading,
     driveRouteBearingDeg,
+    metersToBannerManeuver,
     driveOffRouteForwardFraming,
     followingTemporaryGuidance,
     speedMps,
@@ -234,8 +244,7 @@ export function buildDriveMapProps(
     trafficBypassCompareKind: trafficBypassCompare?.compareKind,
     rejoinCompareLockedRouteId: lockedNavigationRouteId,
     activityTrailGeoJson,
-    sessionRouteLengthM:
-      guidanceRouteLengthM > 0 ? guidanceRouteLengthM : maxPlanRouteLengthM,
+    sessionRouteLengthM: Math.max(guidanceRouteLengthM, maxPlanRouteLengthM),
     activityTrailPlanningBounds,
     idleHomeMapFraming,
     homePuckFollow,
@@ -252,6 +261,8 @@ export function buildDriveMapProps(
     puckAnchorDriftPxOutRef,
     isOnline,
     holdLastGoodMap,
+    nativeFollowCamera,
+    nativeDriveMapActive,
   };
 }
 

@@ -55,6 +55,13 @@ export function getWebEnv() {
     tomorrowIoTileProxyUrl:
       (import.meta.env.VITE_TOMORROW_IO_TILE_PROXY_URL as string | undefined)?.trim() ||
       DEFAULT_TOMORROW_IO_TILE_PROXY_URL,
+    /**
+     * RainViewer radar tile proxy (animated overlay + nowcast). Prefer Cloudflare Worker at scale.
+     * Defaults to Netlify `rainviewer-tile` when unset — see docs/CLOUDFLARE_TILES.md
+     */
+    rainViewerTileProxyUrl:
+      (import.meta.env.VITE_RAINVIEWER_TILE_PROXY_URL as string | undefined)?.trim() ||
+      "https://stormpath2.netlify.app/.netlify/functions/rainviewer-tile",
     /** Apple WeatherKit via Netlify JWT token function — scales for App Store users. */
     weatherKitEnabled:
       String(import.meta.env.VITE_WEATHERKIT_ENABLED ?? "").toLowerCase() === "true",

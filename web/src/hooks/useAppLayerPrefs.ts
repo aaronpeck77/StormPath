@@ -22,14 +22,23 @@ export type UseAppLayerPrefsDeps = {
 export function useAppLayerPrefs(deps: UseAppLayerPrefsDeps) {
   const { navigationStarted, settingTrafficEnabled, settingRadarEnabled, setTrafficOverlay } = deps;
 
-  /** Keep the screen on while navigating on device; allow sleep when done. */
+  /** Keep the screen on while navigating in the foreground; allow sleep when done or off-screen. */
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
-    if (navigationStarted) {
-      void KeepAwake.keepAwake();
-    } else {
+    const apply = () => {
+      const visible = typeof document === "undefined" || document.visibilityState === "visible";
+      if (navigationStarted && visible) {
+        void KeepAwake.keepAwake();
+      } else {
+        void KeepAwake.allowSleep();
+      }
+    };
+    apply();
+    document.addEventListener("visibilitychange", apply);
+    return () => {
+      document.removeEventListener("visibilitychange", apply);
       void KeepAwake.allowSleep();
-    }
+    };
   }, [navigationStarted]);
 
   /** Map overlay (toolbar Rad). Default ON — weather-first app design. */

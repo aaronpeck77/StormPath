@@ -227,15 +227,15 @@ export function heatIndexNotable(feelsF: number): boolean {
   return feelsF >= 95;
 }
 
-export function formatHeatIndexLine(feelsF: number): string {
-  const rounded = Math.round(feelsF);
-  const stress = heatStressLabel(rounded);
+export function formatHeatIndexLine(feelsF: number, celsius = false): string {
+  const rounded = celsius ? Math.round(((feelsF - 32) * 5) / 9) : Math.round(feelsF);
+  const stress = heatStressLabel(Math.round(feelsF));
   return stress ? `Heat index up to ${rounded}° · ${stress}` : `Feels like ${rounded}°`;
 }
 
-export function formatWindChillLine(feelsF: number): string {
-  const rounded = Math.round(feelsF);
-  const stress = windChillStressLabel(rounded);
+export function formatWindChillLine(feelsF: number, celsius = false): string {
+  const rounded = celsius ? Math.round(((feelsF - 32) * 5) / 9) : Math.round(feelsF);
+  const stress = windChillStressLabel(Math.round(feelsF));
   return stress ? `Wind chill to ${rounded}° · ${stress}` : `Feels like ${rounded}°`;
 }
 

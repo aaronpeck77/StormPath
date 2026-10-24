@@ -1,6 +1,34 @@
 /**
  * Trip durations — always shown as hours + minutes (e.g. `0 hr 45 min`, `1 hr 12 min`).
+ * Arrival clock labels use destination-local time when a dest is passed.
  */
+
+import { approximateUsTimeZone } from "../forecast/solarDayNight";
+import type { LngLat } from "../nav/types";
+
+export type ArrivalClockOpts = {
+  destLngLat?: LngLat | null;
+  nowMs?: number;
+};
+
+export type ArrivalClockParts = {
+  clock: string;
+  weekday: string | null;
+  zone: string | null;
+};
+
+function formatPart(parts: Intl.DateTimeFormatPart[], type: string): string {
+  return parts.find((p) => p.type === type)?.value ?? "";
+}
+
+function calendarDayKey(ms: number, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(ms));
+}
 
 /** Whole minutes as `0 hr 45 min` / `1 hr 0 min` (both parts always shown). */
 export function formatDurationMinutes(totalMinutes: number): string {
@@ -57,13 +85,52 @@ export function formatEtaDurationToolbar(totalMinutes: number): string {
   return `${h}h ${m}m`;
 }
 
-/** Compact 12h clock for tight UI: `5:14p`, `12:03a` (local). */
-export function formatArrivalClockCompact(atMs: number): string {
-  const d = new Date(atMs);
-  let h = d.getHours();
-  const min = d.getMinutes();
-  const ap = h >= 12 ? "p" : "a";
-  h = h % 12;
-  if (h === 0) h = 12;
-  return `${h}:${min.toString().padStart(2, "0")}${ap}`;
+/** Dest-local clock plus optional weekday/zone. Toolbar uses the parts on separate lines. */
+export function formatArrivalClockParts(atMs: number, opts?: ArrivalClockOpts): ArrivalClockParts {
+  const dest = opts?.destLngLat;
+  const nowMs = opts?.nowMs ?? Date.now();
+  const destTz =
+    dest && dest.length >= 2 && Number.isFinite(dest[0]) && Number.isFinite(dest[1])
+      ? approximateUsTimeZone(dest[1], dest[0])
+      : undefined;
+  const clockParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: destTz,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(new Date(atMs));
+  const hour = formatPart(clockParts, "hour") || "12";
+  const minute = (formatPart(clockParts, "minute") || "00").padStart(2, "0");
+  const dayPeriod = formatPart(clockParts, "dayPeriod");
+  const ap = /p/i.test(dayPeriod) ? "p" : "a";
+  const clock = `${hour}:${minute}${ap}`;
+  if (!destTz) return { clock, weekday: null, zone: null };
+
+  const weekday =
+    calendarDayKey(atMs, destTz) !== calendarDayKey(nowMs, destTz)
+      ? new Intl.DateTimeFormat("en-US", {
+          timeZone: destTz,
+          weekday: "short",
+        }).format(new Date(atMs))
+      : null;
+  const phoneTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  let zone: string | null = null;
+  if (destTz !== phoneTz) {
+    const tzName = formatPart(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: destTz,
+        hour: "numeric",
+        timeZoneName: "short",
+      }).formatToParts(new Date(atMs)),
+      "timeZoneName"
+    );
+    if (tzName && !/GMT|UTC/i.test(tzName)) zone = tzName;
+  }
+  return { clock, weekday, zone };
+}
+
+/** Compact one-line clock: `5:14p`, `Fri 4:15p PDT`. */
+export function formatArrivalClockCompact(atMs: number, opts?: ArrivalClockOpts): string {
+  const { clock, weekday, zone } = formatArrivalClockParts(atMs, opts);
+  return [weekday, clock, zone].filter(Boolean).join(" ");
 }

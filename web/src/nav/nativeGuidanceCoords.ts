@@ -1,77 +1,62 @@
-import { samplePolylineForMapbox } from "../services/mapboxDirectionsTraffic";
+import { sliceCorridorToLiveWindow } from "./liveTripWindow";
 import {
   closestAlongRouteMeters,
-  closestPointOnPolyline,
+  pointAtAlongMeters,
   polylineLengthMeters,
-  slicePolylineBetweenAlong,
 } from "./routeGeometry";
 import type { TripStop } from "./routeWaypoints";
 import type { LngLat } from "./types";
 
-/** Mapbox Directions / Navigation waypoint cap (origin + vias + dest). */
-export const NATIVE_GUIDANCE_MAX_COORDS = 25;
-/** Start slightly behind the puck so Core does not think we skipped the first via. */
-const CORRIDOR_ORIGIN_PAD_M = 40;
-/** Insert a via at the farthest bulge from origin→dest so Core cannot skip a B-shaped detour. */
-const DISTINCTIVE_VIA_MIN_LATERAL_M = 400;
+/** Mapbox Directions / Navigation waypoint cap (origin + vias + dest + silent shapes). */
+export const NATIVE_GUIDANCE_MAX_COORDS = 16;
+/** First/last silent shape — keeps Core on neighborhood streets instead of a yard chord. */
+const SHAPE_NEAR_M = 2_800;
+/** Sparse mid-corridor shapes on long trips (not a dense 25-point sample). */
+const SHAPE_STEP_M = 90_000;
+const SHAPE_MAX_SILENT = 12;
 
-export type NativeGuidanceCoord = { lng: number; lat: number };
+export type NativeGuidanceCoord = {
+  lng: number;
+  lat: number;
+  /** True = real stop (new leg). False = silent corridor shape. */
+  separatesLegs?: boolean;
+  /** Departing bearing for the origin waypoint (degrees). */
+  headingDeg?: number;
+};
 
 function remainingCorridorFromUser(corridor: LngLat[], userLngLat: LngLat | null): LngLat[] {
-  if (!userLngLat || corridor.length < 2) return corridor;
-  const total = polylineLengthMeters(corridor);
-  if (total < 80) return corridor;
-  const along = closestAlongRouteMeters(userLngLat, corridor).alongMeters;
-  const startM = Math.max(0, Math.min(total - 50, along - CORRIDOR_ORIGIN_PAD_M));
-  const remaining = slicePolylineBetweenAlong(corridor, startM, total);
+  if (corridor.length < 2) return corridor;
+  const remaining = sliceCorridorToLiveWindow(corridor, userLngLat);
   return remaining.length >= 2 ? remaining : corridor;
 }
 
-/** Vertex farthest from the OD chord — the shape that makes B different from A. */
-export function distinctiveCorridorVertex(geometry: LngLat[]): LngLat | null {
-  if (geometry.length < 3) return null;
-  const chord = [geometry[0]!, geometry[geometry.length - 1]!];
-  let best: LngLat | null = null;
-  let bestD = 0;
-  for (let i = 1; i < geometry.length - 1; i++) {
-    const p = geometry[i]!;
-    const d = closestPointOnPolyline(p, chord).lateralMetersApprox;
-    if (d > bestD) {
-      bestD = d;
-      best = p;
-    }
-  }
-  return bestD >= DISTINCTIVE_VIA_MIN_LATERAL_M ? best : null;
+function toCoord(p: LngLat): NativeGuidanceCoord {
+  return { lng: p[0], lat: p[1] };
 }
 
-function insertLngLatInAlongOrder(sampled: LngLat[], extra: LngLat): LngLat[] {
-  if (sampled.some((p) => p[0] === extra[0] && p[1] === extra[1])) return sampled;
-  const extraAlong = closestAlongRouteMeters(extra, sampled).alongMeters;
-  const out: LngLat[] = [];
-  let inserted = false;
-  let cum = 0;
-  for (let i = 0; i < sampled.length; i++) {
-    if (!inserted && extraAlong <= cum + 1) {
-      out.push(extra);
-      inserted = true;
-    }
-    out.push(sampled[i]!);
-    if (i < sampled.length - 1) {
-      const a = sampled[i]!;
-      const b = sampled[i + 1]!;
-      const dlng = a[0] - b[0];
-      const dlat = a[1] - b[1];
-      cum += Math.hypot(dlng, dlat) * 111_320;
-    }
+function sameCoord(a: NativeGuidanceCoord, b: NativeGuidanceCoord): boolean {
+  return Math.abs(a.lng - b.lng) < 1e-6 && Math.abs(a.lat - b.lat) < 1e-6;
+}
+
+function collectShapingAlong(remaining: LngLat[], maxSilent: number): LngLat[] {
+  const total = polylineLengthMeters(remaining);
+  if (total < SHAPE_NEAR_M * 2.2 || maxSilent < 1) return [];
+  const targets: number[] = [Math.min(SHAPE_NEAR_M, total * 0.08)];
+  let m = SHAPE_NEAR_M + SHAPE_STEP_M;
+  while (m < total - SHAPE_NEAR_M && targets.length < maxSilent - 1) {
+    targets.push(m);
+    m += SHAPE_STEP_M;
   }
-  if (!inserted) out.splice(Math.max(1, out.length - 1), 0, extra);
-  return out;
+  const last = total - SHAPE_NEAR_M;
+  if (last > targets[targets.length - 1]! + 1_000) {
+    targets.push(last);
+  }
+  return targets.map((t) => pointAtAlongMeters(remaining, t));
 }
 
 /**
- * Build Core start coordinates that follow the Go-locked corridor when available.
- * Bare origin→dest lets Mapbox recalculate highway-fastest and yank a chosen alternate.
- * Seed from the remaining corridor near GPS so Core does not start miles behind the puck.
+ * Core waypoints: origin, sparse on-road shapes, real vias, dest.
+ * Dense 25-point samples looped off-road; bare origin→dest cut yards on long trips.
  */
 export function buildNativeGuidanceCoordinates(input: {
   userLngLat: LngLat | null;
@@ -80,39 +65,61 @@ export function buildNativeGuidanceCoordinates(input: {
   /** Go-locked polyline — preferred seed for Core. */
   lockedCorridor?: LngLat[] | null;
   maxCoords?: number;
+  headingDeg?: number | null;
 }): NativeGuidanceCoord[] | null {
   const max = input.maxCoords ?? NATIVE_GUIDANCE_MAX_COORDS;
+  const heading =
+    input.headingDeg != null && Number.isFinite(input.headingDeg) ? input.headingDeg : undefined;
   const corridor = input.lockedCorridor;
+
   if (corridor && corridor.length >= 2) {
     const remaining = remainingCorridorFromUser(corridor, input.userLngLat);
-    const budget = Math.min(max, NATIVE_GUIDANCE_MAX_COORDS);
-    let sampled = samplePolylineForMapbox(remaining, budget);
-    const bulge = distinctiveCorridorVertex(remaining);
-    if (bulge && sampled.length < budget) {
-      sampled = insertLngLatInAlongOrder(sampled, bulge).slice(0, budget);
-    } else if (bulge && sampled.length >= 3) {
-      sampled = insertLngLatInAlongOrder(sampled.slice(0, -1), bulge).slice(0, budget - 1);
-      sampled.push(remaining[remaining.length - 1]!);
+    const dest = remaining[remaining.length - 1]!;
+    const origin: LngLat = input.userLngLat ?? remaining[0]!;
+    const originC: NativeGuidanceCoord = { ...toCoord(origin), headingDeg: heading };
+    const destC = toCoord(dest);
+    const marks: { along: number; coord: NativeGuidanceCoord }[] = [];
+
+    for (const p of collectShapingAlong(remaining, Math.min(SHAPE_MAX_SILENT, max - 2))) {
+      marks.push({
+        along: closestAlongRouteMeters(p, remaining).alongMeters,
+        coord: { ...toCoord(p), separatesLegs: false },
+      });
     }
-    if (sampled.length >= 2) {
-      if (input.userLngLat) {
-        sampled = [
-          [input.userLngLat[0], input.userLngLat[1]],
-          ...sampled.slice(1),
-        ];
-      }
-      return sampled.map(([lng, lat]) => ({ lng, lat }));
+    for (const stop of input.viaStops) {
+      const v = stop?.lngLat;
+      if (!v || v.length < 2) continue;
+      marks.push({
+        along: closestAlongRouteMeters(v, remaining).alongMeters,
+        coord: { ...toCoord(v), separatesLegs: true },
+      });
+    }
+    marks.sort((a, b) => a.along - b.along);
+
+    const out: NativeGuidanceCoord[] = [originC];
+    for (const mark of marks) {
+      if (!sameCoord(mark.coord, out[out.length - 1]!)) out.push(mark.coord);
+    }
+    if (!sameCoord(out[out.length - 1]!, destC)) out.push(destC);
+    if (out.length < 2) {
+      /* fall through to origin → dest */
+    } else if (out.length <= max) {
+      return out;
+    } else {
+      const kept = out.slice(0, max - 1);
+      if (!sameCoord(kept[kept.length - 1]!, destC)) kept.push(destC);
+      return kept;
     }
   }
 
   if (!input.userLngLat || !input.destLngLat) return null;
   const out: NativeGuidanceCoord[] = [
-    { lng: input.userLngLat[0], lat: input.userLngLat[1] },
+    { lng: input.userLngLat[0], lat: input.userLngLat[1], headingDeg: heading },
   ];
   for (const stop of input.viaStops) {
     const v = stop?.lngLat;
     if (!v || v.length < 2) continue;
-    out.push({ lng: v[0], lat: v[1] });
+    out.push({ lng: v[0], lat: v[1], separatesLegs: true });
   }
   out.push({ lng: input.destLngLat[0], lat: input.destLngLat[1] });
   return out.length >= 2 ? out : null;

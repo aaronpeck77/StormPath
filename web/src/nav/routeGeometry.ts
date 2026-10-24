@@ -1,6 +1,11 @@
 import { FALLBACK_LNGLAT } from "./constants";
 import type { LngLat } from "./types";
-import { isExtremeTripRoute, isLongTripRoute, isUltraLongTripRoute } from "../utils/dataSaver";
+import {
+  isExtremeTripRoute,
+  isLongTripRoute,
+  isUltraLongTripRoute,
+  LONG_TRIP_ROUTE_M,
+} from "../utils/dataSaver";
 
 const EARTH_M = 6_371_000;
 
@@ -430,6 +435,42 @@ export const ROUTE_GEOMETRY_STORAGE_VERTICES_ULTRA = 10_000;
 export const ROUTE_GEOMETRY_STORAGE_VERTICES_EXTREME = 16_000;
 /** Planning map overview line — sparse is fine at continent zoom. */
 export const MAP_PLANNING_OVERVIEW_VERTICES = 1_200;
+/** Keep full road vertices this far from each end so IL neighborhoods stay on streets. */
+export const LONG_ROUTE_END_DETAIL_M = 16_000;
+
+/**
+ * Continent-scale polyline without chord-cutting the first/last miles.
+ * Middle is subsampled; ends keep stored vertices.
+ */
+export function geometryWithDenseEnds(
+  geometry: LngLat[],
+  midCap: number,
+  endDetailM = LONG_ROUTE_END_DETAIL_M,
+  totalCap?: number
+): LngLat[] {
+  if (geometry.length < 4) return geometry;
+  const total = polylineLengthMeters(geometry);
+  if (total < endDetailM * 2.5) return geometry;
+  const head = slicePolylineBetweenAlong(geometry, 0, endDetailM);
+  const tail = slicePolylineBetweenAlong(geometry, total - endDetailM, total);
+  let mid = slicePolylineBetweenAlong(geometry, endDetailM, total - endDetailM);
+  const allowedMid =
+    totalCap != null
+      ? Math.max(2, Math.min(midCap, totalCap - head.length - tail.length))
+      : midCap;
+  if (mid.length > allowedMid) mid = subsamplePolylineAlongDistance(mid, allowedMid);
+  const out: LngLat[] = [];
+  const pushUnique = (p: LngLat) => {
+    const last = out[out.length - 1];
+    if (!last || Math.abs(last[0] - p[0]) > 1e-7 || Math.abs(last[1] - p[1]) > 1e-7) {
+      out.push(p);
+    }
+  };
+  for (const p of head) pushUnique(p);
+  for (const p of mid) pushUnique(p);
+  for (const p of tail) pushUnique(p);
+  return out.length >= 2 ? out : geometry;
+}
 
 export function normalizeStoredRouteGeometry(geometry: LngLat[]): LngLat[] {
   if (geometry.length < 2) return geometry;
@@ -439,7 +480,7 @@ export function normalizeStoredRouteGeometry(geometry: LngLat[]): LngLat[] {
   else if (isUltraLongTripRoute(totalM)) cap = ROUTE_GEOMETRY_STORAGE_VERTICES_ULTRA;
   else if (isLongTripRoute(totalM)) cap = ROUTE_GEOMETRY_STORAGE_VERTICES_LONG;
   if (cap == null || geometry.length <= cap) return geometry;
-  return subsamplePolylineAlongDistance(geometry, cap);
+  return geometryWithDenseEnds(geometry, cap, LONG_ROUTE_END_DETAIL_M, cap);
 }
 
 /** Rt view + corner PiP — display tier only; guidance math uses full stored geometry. */
@@ -455,7 +496,7 @@ export function geometryForRouteOverviewDisplay(geometry: LngLat[]): LngLat[] {
   if (isExtremeTripRoute(totalM)) cap = ROUTE_OVERVIEW_DISPLAY_VERTICES_EXTREME;
   else if (isUltraLongTripRoute(totalM)) cap = ROUTE_OVERVIEW_DISPLAY_VERTICES_ULTRA;
   if (geometry.length <= cap) return geometry;
-  return subsamplePolylineAlongDistance(geometry, cap);
+  return geometryWithDenseEnds(geometry, cap);
 }
 
 /** Sparse continent-scale line for planning chrome that never zooms to street level. */
@@ -465,7 +506,7 @@ export function geometryForPlanningMapDisplay(geometry: LngLat[]): LngLat[] {
   if (!isUltraLongTripRoute(totalM)) return geometry;
   const cap = isExtremeTripRoute(totalM) ? 800 : MAP_PLANNING_OVERVIEW_VERTICES;
   if (geometry.length <= cap) return geometry;
-  return subsamplePolylineAlongDistance(geometry, cap);
+  return geometryWithDenseEnds(geometry, cap);
 }
 
 /** Weather/hazard halo segments — dense enough to follow roads on long legs. */
@@ -473,8 +514,8 @@ const HIGHLIGHT_GEOMETRY_VERTEX_BUDGET = 8000;
 
 /** Drive map line: short tail behind puck, local window ahead on long trips. */
 export const DRIVE_LINE_BEHIND_M = 1500;
-/** On 200+ mi trips, only draw this far ahead — keeps vertex budget on local roads. */
-export const DRIVE_LINE_AHEAD_M = 120_000;
+/** On 100+ mi trips, only draw this far ahead — same live window Core follows. */
+export const DRIVE_LINE_AHEAD_M = LONG_TRIP_ROUTE_M;
 const DRIVE_LINE_MAX_VERTICES = 24_000;
 const DRIVE_LINE_MAX_VERTICES_LONG = 14_000;
 const DRIVE_LINE_MAX_VERTICES_ULTRA = 10_000;
@@ -523,12 +564,13 @@ export function routeLineGeometryForDriveDisplay(
   userAlongM: number | null | undefined
 ): LngLat[] {
   if (geometry.length < 2) return geometry;
-  if (userAlongM == null || !Number.isFinite(userAlongM) || userAlongM < 0) return geometry;
+  const along =
+    userAlongM == null || !Number.isFinite(userAlongM) || userAlongM < 0 ? 0 : userAlongM;
 
   const total = polylineLengthMeters(geometry);
-  const startM = Math.max(0, userAlongM - DRIVE_LINE_BEHIND_M);
+  const startM = Math.max(0, along - DRIVE_LINE_BEHIND_M);
   const endM = isLongTripRoute(total)
-    ? Math.min(total, Math.max(startM + 500, userAlongM + DRIVE_LINE_AHEAD_M))
+    ? Math.min(total, Math.max(startM + 500, along + DRIVE_LINE_AHEAD_M))
     : total;
   if (endM - startM < 2) return geometry;
 

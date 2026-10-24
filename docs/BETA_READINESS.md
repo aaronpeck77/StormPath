@@ -12,8 +12,8 @@ One checklist for **you** before sending invites. Testers use [`TESTER_NOTES.md`
 
 | Area | Ready? | Notes |
 |------|--------|--------|
-| Core navigation (search → A/B/C → Go → drive) | Yes | Smoke on device each build |
-| Route compare (map + Go) | Yes | Three end-to-end variants from current position |
+| Core navigation (search → A/B → Go → drive) | Yes | Smoke on device each build. A is fastest; B is no-interstate. |
+| Route compare (map + Go) | Yes | Two legs from the current position |
 | Search bar dismiss (×) | Yes | Collapses to destination chip when trip loaded |
 | Support + diagnostics email | Yes | `stormpath@yahoo.com` in `.env.testflight` |
 | Privacy / terms / support pages | Yes | Bundled; URLs in testflight env |
@@ -22,7 +22,7 @@ One checklist for **you** before sending invites. Testers use [`TESTER_NOTES.md`
 | Demo tools in TF/production | Hidden | `?demo=bypass` only when `import.meta.env.DEV` |
 | IAP / App Store billing | No | OK for closed beta; document in tester notes |
 | Crash reporting (Sentry) | Code ready | Add GitHub secret `VITE_SENTRY_DSN` — see [`SENTRY_SETUP.md`](SENTRY_SETUP.md) |
-| Automated tests | No | Manual smoke only |
+| Automated tests | Yes | `npm test` in `web/` — still smoke the IPA on a phone |
 | Android closed test | Optional | iOS-first is fine |
 
 ---
@@ -78,7 +78,7 @@ Run every item on the **TestFlight IPA** (not only `npm run dev`). Full list: [`
 **Add for this release:**
 
 - [ ] Open address bar → tap **×** → collapses to destination chip (not stuck open).
-- [ ] With a trip running: hazard or advisory → **Compare routes on map** → three **different** lines → tap A/B/C (line highlights) → **Go** → returns to drive on chosen route.
+- [ ] With a trip running: hazard or advisory → **Compare routes on map** → two different lines → tap A or B (line highlights) → **Go** → returns to drive on chosen route.
 
 If anything fails, fix and rebuild — do not invite on a broken build.
 

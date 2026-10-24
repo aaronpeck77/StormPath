@@ -41,9 +41,14 @@ export function AppAboutSheetHost({
   const dataSaverEnabled = useSettingsStore((s) => s.dataSaverEnabled);
   const autoRerouteEnabled = useSettingsStore((s) => s.autoRerouteEnabled);
   const voiceGuidanceEnabled = useSettingsStore((s) => s.voiceGuidanceEnabled);
+  const voiceLevel = useSettingsStore((s) => s.voiceLevel);
+  const assistantEnabled = useSettingsStore((s) => s.assistantEnabled);
+  const assistantName = useSettingsStore((s) => s.assistantName);
   const gpsHighRefreshEnabled = useSettingsStore((s) => s.gpsHighRefreshEnabled);
   const mapMatchingEnabled = useSettingsStore((s) => s.mapMatchingEnabled);
   const landscapeSideHand = useSettingsStore((s) => s.landscapeSideHand);
+  const puckColor = useSettingsStore((s) => s.puckColor);
+  const guidanceLanguage = useSettingsStore((s) => s.guidanceLanguage);
 
   const settings = useMemo(
     () => ({
@@ -55,9 +60,14 @@ export function AppAboutSheetHost({
       dataSaverEnabled,
       autoRerouteEnabled,
       voiceGuidanceEnabled,
+      voiceLevel,
+      assistantEnabled,
+      assistantName,
       gpsHighRefreshEnabled,
       mapMatchingEnabled,
       landscapeSideHand,
+      puckColor,
+      guidanceLanguage,
     }),
     [
       radarEnabled,
@@ -68,9 +78,14 @@ export function AppAboutSheetHost({
       dataSaverEnabled,
       autoRerouteEnabled,
       voiceGuidanceEnabled,
+      voiceLevel,
+      assistantEnabled,
+      assistantName,
       gpsHighRefreshEnabled,
       mapMatchingEnabled,
       landscapeSideHand,
+      puckColor,
+      guidanceLanguage,
     ]
   );
 

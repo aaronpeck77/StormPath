@@ -1,5 +1,8 @@
 import { isReverseRejoinRoute } from "./detourRejoin";
 import { pickBestForwardRoute } from "./forwardRoutePick";
+import { polylineLengthMeters } from "./routeGeometry";
+import { routeDoublesBack } from "./routeDoublesBack";
+import { routeFitsAlternateCap, type RoutingPreference } from "./routePreference";
 import type { LngLat, NavRoute, TripPlan } from "./types";
 
 export type SoftRestartLegPatch = {
@@ -12,6 +15,7 @@ export type SoftRestartLegPatch = {
   hasTolls?: NavRoute["hasTolls"];
   tollLabels?: NavRoute["tollLabels"];
   postedSpeedSamples?: NavRoute["postedSpeedSamples"];
+  roadControls?: NavRoute["roadControls"];
   role?: NavRoute["role"];
   label?: string;
 };
@@ -20,8 +24,13 @@ export type SoftRestartLegPatch = {
  * Missed turn / off-route: forget the old corridor and install a fresh
  * GPS→dest plan. Drive follows A; Map / Route show A + B when present.
  */
-export function planAfterOffRouteReplan(plan: TripPlan, routes: NavRoute[]): TripPlan {
-  const next = routes.filter((r) => r.geometry.length >= 2).slice(0, 2);
+export function planAfterOffRouteReplan(
+  plan: TripPlan,
+  routes: NavRoute[],
+  maxRoutes = 2
+): TripPlan {
+  const cap = maxRoutes < 2 ? 1 : 2;
+  const next = routes.filter((r) => r.geometry.length >= 2).slice(0, cap);
   if (!next.length) return plan;
   return { ...plan, routes: next };
 }
@@ -30,32 +39,52 @@ export function offRouteReplanSlotIds(routes: NavRoute[]): string[] {
   return routes.filter((r) => r.geometry.length >= 2).slice(0, 2).map((r) => r.id);
 }
 
-/** Pick forward A (and B when Mapbox gave a distinct alternate). */
+function asMain(route: NavRoute): NavRoute {
+  return { ...route, id: "r-a", role: "fastest", label: "Main" };
+}
+
+function asAlternate(route: NavRoute, id: "r-a" | "r-b"): NavRoute {
+  return { ...route, id, role: "balanced", label: "Alternate" };
+}
+
+function alternateFits(candidate: NavRoute, main: NavRoute): boolean {
+  return routeFitsAlternateCap({
+    etaMinutes: candidate.baseEtaMinutes,
+    distanceM: polylineLengthMeters(candidate.geometry),
+    mainEtaMinutes: main.baseEtaMinutes,
+    mainDistanceM: polylineLengthMeters(main.geometry),
+  });
+}
+
+/**
+ * Pick a forward line from here. Fastest locks Main. Alternate locks the
+ * different line when it is still within the progress cap, and keeps Main
+ * available. A line that turns back or returns to a point already passed
+ * is dropped — that is how the remaining time grew as he got closer.
+ */
 export function assignOffRouteReplanSlots(
   fresh: NavRoute[],
   userLngLat: LngLat,
-  headingDeg: number | null
+  headingDeg: number | null,
+  preference: RoutingPreference = "fastest",
+  /** Basic stays on one line. Plus may keep Main and a forward alternate. */
+  maxRoutes = 2
 ): NavRoute[] {
   const usable = fresh.filter((r) => r.geometry.length >= 2);
-  const forward = usable.filter((r) => !isReverseRejoinRoute(r, userLngLat, headingDeg));
-  const pool = forward.length > 0 ? forward : usable;
-  const primary = pickBestForwardRoute(pool, userLngLat, headingDeg) ?? pool[0];
+  const forward = usable.filter(
+    (r) => !isReverseRejoinRoute(r, userLngLat, headingDeg) && !routeDoublesBack(r.geometry)
+  );
+  if (forward.length === 0) return [];
+  const primary = pickBestForwardRoute(forward, userLngLat, headingDeg) ?? forward[0];
   if (!primary) return [];
-  const a: NavRoute = {
-    ...primary,
-    id: "r-a",
-    role: "fastest",
-    label: "Main",
-  };
-  const alt = pool.find((r) => r !== primary);
-  if (!alt) return [a];
-  const b: NavRoute = {
-    ...alt,
-    id: "r-b",
-    role: alt.role === "hazardSmart" ? "hazardSmart" : "balanced",
-    label: alt.role === "hazardSmart" ? "No interstate" : "Alternate",
-  };
-  return [a, b];
+  const main = asMain(primary);
+  if (maxRoutes < 2) return [main];
+  const altSrc = forward.find((r) => r !== primary && alternateFits(r, primary));
+  const alt = altSrc ? asAlternate(altSrc, "r-b") : null;
+  if (preference === "alternate" && altSrc) {
+    return [asAlternate(altSrc, "r-a"), { ...main, id: "r-b" }];
+  }
+  return alt ? [main, alt] : [main];
 }
 
 /**
@@ -85,6 +114,7 @@ export function planAfterSoftRestartLock(
     hasTolls: patch.hasTolls ?? prev?.hasTolls,
     tollLabels: patch.tollLabels ?? prev?.tollLabels,
     postedSpeedSamples: patch.postedSpeedSamples ?? prev?.postedSpeedSamples,
+    roadControls: patch.roadControls ?? prev?.roadControls,
   };
   return { ...plan, routes: [next] };
 }

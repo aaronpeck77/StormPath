@@ -1,7 +1,11 @@
 import { useMemo } from "react";
 import type { TripPlan } from "./types";
 import type { ScoredRoute } from "../scoring/scoreRoutes";
-import { formatRouteDistanceMi, routeConsiderationSummary } from "./routeSummary";
+import {
+  formatRouteDistanceMi,
+  routeConsiderationSummary,
+  routePickDisplayLabel,
+} from "./routeSummary";
 import { routePickSlotHex } from "../ui/mapRouteStyle";
 import type { RoutePickItem } from "../ui/RoutePickBar";
 
@@ -32,6 +36,16 @@ export function useRoutePickItems(deps: UseRoutePickItemsDeps): UseRoutePickItem
   }, [plan.routes.length, scored, suggestedRouteId, lineFocusId]);
 
   const routePickItems: RoutePickItem[] = useMemo(() => {
+    let fastestEta: number | null = null;
+    for (const routeId of orderedRouteIds) {
+      const route = plan.routes.find((r) => r.id === routeId);
+      if (!route) continue;
+      const s = scored.find((x) => x.route.id === routeId);
+      const eta = s
+        ? Math.round(s.effectiveEtaMinutes)
+        : Math.max(1, Math.round(route.baseEtaMinutes));
+      if (fastestEta == null || eta < fastestEta) fastestEta = eta;
+    }
     return orderedRouteIds
       .map((routeId, slot) => {
         const route = plan.routes.find((r) => r.id === routeId);
@@ -41,7 +55,7 @@ export function useRoutePickItems(deps: UseRoutePickItemsDeps): UseRoutePickItem
           ? Math.round(s.effectiveEtaMinutes)
           : Math.max(1, Math.round(route.baseEtaMinutes));
         const letter = String.fromCharCode(65 + Math.min(slot, 25));
-        const routeLabel = route.label.trim() || `Route ${letter}`;
+        const routeLabel = routePickDisplayLabel(route, eta, fastestEta);
         const item: RoutePickItem = {
           id: route.id,
           letter,

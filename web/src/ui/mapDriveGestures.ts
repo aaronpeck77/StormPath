@@ -26,3 +26,16 @@ export function setDriveMapUserGestures(map: MapboxMap, enabled: boolean): void 
     }
   }
 }
+
+/**
+ * Double-tap zoom swallows the dest tap on iPhone (first tap waits, second zooms).
+ * Pinch still zooms. Call while planning dest pick is on.
+ */
+export function setDoubleClickZoomEnabled(map: MapboxMap, enabled: boolean): void {
+  try {
+    if (enabled) map.doubleClickZoom.enable();
+    else map.doubleClickZoom.disable();
+  } catch {
+    /* map/style teardown */
+  }
+}

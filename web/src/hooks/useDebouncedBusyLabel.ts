@@ -33,7 +33,7 @@ export function resolveActivityBusyRaw(input: ActivityBusyInputs): string | null
     input.stormCorridorAlertCount === 0 &&
     input.stormMapFeatureCount === 0;
 
-  if (input.routing) return "Building routes…";
+  if (input.routing) return "Planning your route…";
   if (input.bypassBusy) return "Checking alternates…";
   if (input.suggestLoading) return "Searching…";
   if (trafficBusy) return "Loading traffic…";
@@ -66,7 +66,8 @@ export function useDebouncedBusyLabel(input: ActivityBusyInputs): string | null 
       const id = window.setTimeout(() => setActivityBusyLabel(null), 300);
       return () => window.clearTimeout(id);
     }
-    const id = window.setTimeout(() => setActivityBusyLabel(activityBusyRaw), 700);
+    const delay = activityBusyRaw === "Planning your route…" ? 0 : 700;
+    const id = window.setTimeout(() => setActivityBusyLabel(activityBusyRaw), delay);
     return () => window.clearTimeout(id);
   }, [activityBusyRaw]);
 

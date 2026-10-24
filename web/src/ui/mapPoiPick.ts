@@ -35,11 +35,16 @@ function featureLabel(feature: MapboxGeoJSONFeature): string {
 }
 
 export function selectablePoiAtPoint(map: MapboxMap, point: PointLike): SelectableMapPoi | null {
-  const layers = selectablePoiLayerIds(map);
-  if (layers.length === 0) return null;
-  const feature = map.queryRenderedFeatures(point, { layers })[0];
-  if (!feature) return null;
-  const lngLat = featurePointLngLat(feature);
-  if (!lngLat) return null;
-  return { lngLat, label: featureLabel(feature) };
+  try {
+    const layers = selectablePoiLayerIds(map);
+    if (layers.length === 0) return null;
+    const feature = map.queryRenderedFeatures(point, { layers })[0];
+    if (!feature) return null;
+    const lngLat = featurePointLngLat(feature);
+    if (!lngLat) return null;
+    return { lngLat, label: featureLabel(feature) };
+  } catch {
+    /* 3D buildings / style races throw here on iOS — dest tap must still use e.lngLat. */
+    return null;
+  }
 }

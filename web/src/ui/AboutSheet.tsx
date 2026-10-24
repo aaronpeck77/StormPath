@@ -1,7 +1,8 @@
 import { Capacitor } from "@capacitor/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
-import { getBasicBannerCustomerHint, getBasicBannerDebugLine } from "../ads/adMobClient";
+import { getBasicBannerDebugLine } from "../ads/adMobClient";
+import { driveDiagSnapshot, formatDriveDiagLines } from "../nav/driveDiagnostics";
 import { getPlusEntitlementDebugSnapshot } from "../billing/revenueCat";
 import { useRevenueCat } from "../billing/useRevenueCat";
 import {
@@ -16,9 +17,15 @@ import { stormpathVersionChipLabel, stormpathVersionLabel } from "../appVersion"
 import { stormpathBuildFlavor, stormpathFlavorChipLabel } from "../config/buildFlavor";
 import { safeStorage } from "../storage/safeStorage";
 import { MapKeyPanel } from "./MapKeyPanel";
+import { PUCK_COLORS, puckColorById, type PuckColorId } from "./puckColor";
 import { StormPathSourcesAttribution } from "./StormPathSourcesAttribution";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import type { RadarDisplayMode } from "../state/settingsStore";
+import { STORMY_AVAILABLE } from "../stormy/stormyAvailability";
+import { STORMY_COMMANDS } from "../stormy/stormyCommands";
+import { STORMY_VOICE_HINT } from "../stormy/stormyVoiceHint";
+import type { VoiceLevel } from "../voice/voiceLevel";
+import type { GuidanceLanguagePref } from "../utils/guidanceLanguage";
 import type { HomePuckFollowMode } from "../map/homePuckFollow";
 
 type ActivityTrailPanel = {
@@ -65,10 +72,15 @@ type Props = {
     dataSaverEnabled: boolean;
     autoRerouteEnabled: boolean;
     voiceGuidanceEnabled: boolean;
+    voiceLevel: VoiceLevel;
+    assistantEnabled: boolean;
+    assistantName: string;
     gpsHighRefreshEnabled: boolean;
     mapMatchingEnabled: boolean;
     /** Landscape / side view only — portrait layout ignores this */
     landscapeSideHand: "right" | "left";
+    puckColor: PuckColorId;
+    guidanceLanguage: GuidanceLanguagePref;
   };
   onSettings: (next: Props["settings"]) => void;
   /** Replays the first-launch coachmark walk-through. Resets the suppression flag and asks
@@ -158,10 +170,12 @@ export function AboutSheet({
 
   const [activityTrailClearStep, setActivityTrailClearStep] = useState<"idle" | "confirm">("idle");
   const [activityTrailClearAck, setActivityTrailClearAck] = useState(false);
+  const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   useEffect(() => {
     if (!open) {
       setActivityTrailClearStep("idle");
       setActivityTrailClearAck(false);
+      setDiagnosticsCopied(false);
     }
   }, [open]);
 
@@ -170,25 +184,28 @@ export function AboutSheet({
   const versionLabel = stormpathVersionLabel({ dev });
   const flavor = stormpathBuildFlavor();
   const flavorChip = stormpathFlavorChipLabel();
+  /* Empty until a trip has run — normal installs see the same panel as always. */
+  const driveDiagLines = formatDriveDiagLines(driveDiagSnapshot());
   const diagnosticsLines = [
     `StormPath ${versionLabel}`,
     `Plan: ${tierLabel}`,
     `Binary: ${flavor}${flavor === "testflight" ? " (forced Plus)" : flavor === "appstore" ? " (Basic until IAP)" : ""}`,
     `Crash reporting: ${isCrashReportingEnabled() ? "on (automatic for serious errors)" : "off"}`,
     `Online: ${typeof navigator === "undefined" ? "unknown" : navigator.onLine ? "yes" : "no"}`,
-    `Voice: ${settings.voiceGuidanceEnabled ? "on" : "off"}, Data saver: ${
+    `Voice: ${settings.voiceLevel}, Data saver: ${
       settings.dataSaverEnabled ? "on" : "off"
     }`,
     `Landscape UI: ${settings.landscapeSideHand === "left" ? "left hand" : "right hand"}`,
+    `Puck color: ${puckColorById(settings.puckColor).label.toLowerCase()}`,
     `Providers: mapbox=${env.mapboxToken ? "on" : "off"}, openweather=${
       env.openWeatherApiKey ? "on" : "off"
     }, tomorrowIo=${env.tomorrowIoApiKey ? "on" : "off"}`,
     iapDebugLine || "iap: loading…",
     getBasicBannerDebugLine(),
+    ...driveDiagLines,
   ];
   const diagnosticsText = diagnosticsLines.join("\n");
   const supportEmail = env.supportEmail.trim();
-  const adHint = Capacitor.isNativePlatform() && !plus ? getBasicBannerCustomerHint() : null;
 
   return (
     <>
@@ -205,7 +222,9 @@ export function AboutSheet({
               <h2 id="about-sheet-title" className="about-sheet__title">
                 StormPath
               </h2>
-              <p className="about-sheet__tagline">Multi-route driving with live conditions on your route.</p>
+              <p className="about-sheet__tagline">
+                Multi-route driving with live conditions on your route.
+              </p>
             </div>
             <button type="button" className="about-sheet__close" onClick={onClose} aria-label="Close info">
               Close
@@ -242,7 +261,6 @@ export function AboutSheet({
               </span>
             ) : null}
           </div>
-          {adHint ? <p className="about-sheet__p about-sheet__ad-hint">{adHint}</p> : null}
         </header>
 
         {onPayTierOverride ? (
@@ -301,8 +319,8 @@ export function AboutSheet({
         ) : null}
 
         <div className="about-sheet__sections">
-          <section className="about-sheet__panel about-sheet__panel--subscription">
-            <h3 className="about-sheet__h3">Subscription</h3>
+          <details className="about-sheet__panel about-sheet__panel--subscription about-sheet__details">
+            <summary>Subscription</summary>
             <p className="about-sheet__p">
               <strong>{PLUS_SUBSCRIPTION_TITLE}</strong> is an optional auto-renewing subscription.
             </p>
@@ -399,12 +417,16 @@ export function AboutSheet({
                 {iap.message}
               </p>
             )}
-          </section>
+          </details>
 
           {!plus && (
             <details className="about-sheet__panel about-sheet__panel--subscription about-sheet__details">
               <summary>What Plus adds</summary>
               <ul className="about-sheet__bullets" aria-label="Plus features">
+                <li>
+                  <strong>Stormy</strong> — command list on the map. She sets one place, starts or stops the route,
+                  and reads the trip. She is not an AI.
+                </li>
                 <li>
                   <strong>NWS</strong> — full storm map, every active warning, route overlap, and hazard details (Plus
                   only; Basic is navigation, radar, and limited saved places/routes)
@@ -429,8 +451,75 @@ export function AboutSheet({
             </details>
           )}
 
-          <section className="about-sheet__panel about-sheet__panel--settings">
-            <h3 className="about-sheet__h3">Settings</h3>
+          <details className="about-sheet__panel about-sheet__details">
+            <summary>Voice</summary>
+            <fieldset className="about-sheet__voice-levels">
+              <legend className="about-sheet__p about-sheet__p--tight">Pick one.</legend>
+              {(
+                [
+                  ["off", "No voice", "Buttons only. Nothing speaks the turns."],
+                  ["basic", "Basic voice", "The computer voice already on the phone. Next turn, and Stormy's short lines."],
+                  ["enhanced", "Downloaded voice", "Speaks with the voice you select on the iPhone. A Siri voice cannot be used."],
+                ] as const
+              ).map(([id, title, detail]) => (
+                <label key={id} className="about-sheet__setting about-sheet__settings-card">
+                  <input
+                    type="radio"
+                    name="stormpath-voice-level"
+                    checked={settings.voiceLevel === id}
+                    onChange={() => onSettings({ ...settings, voiceLevel: id })}
+                  />
+                  <span>
+                    <strong>{title}</strong> — {detail}
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+
+            <label className="about-sheet__setting about-sheet__settings-card">
+              <span>
+                <strong>Spoken language</strong>
+                <select
+                  value={settings.guidanceLanguage}
+                  onChange={(e) =>
+                    onSettings({
+                      ...settings,
+                      guidanceLanguage: (e.target.value === "en" ? "en" : "system") as GuidanceLanguagePref,
+                    })
+                  }
+                  style={{ display: "block", marginTop: 8, maxWidth: "100%" }}
+                >
+                  <option value="system">Phone language</option>
+                  <option value="en">English</option>
+                </select>
+                Turn-by-turn, place search, and weather phrases follow this. The buttons stay in English.
+                Choose English here if the phone is in another language and you want the voice in English.
+                The change applies the next time you plan a route.
+              </span>
+            </label>
+
+            {settings.voiceLevel === "enhanced" ? (
+              <p className="about-sheet__p about-sheet__settings-card">
+                <strong>Download a voice.</strong> {STORMY_VOICE_HINT}
+              </p>
+            ) : null}
+
+            <div className="about-sheet__p about-sheet__settings-card">
+              <strong>Commands that work.</strong>
+              <p className="about-sheet__p about-sheet__p--tight">
+                Basic voice and Downloaded voice need these words. She speaks the next turn. She does not read the
+                weather or the road. One place at a time. Say “Take me to” and the place, then “Go.”
+              </p>
+              <ul className="about-sheet__bullets">
+                {STORMY_COMMANDS.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          </details>
+
+          <details className="about-sheet__panel about-sheet__panel--settings about-sheet__details">
+            <summary>Settings</summary>
             <div className="about-sheet__settings">
               {/* 1. Radar + display options */}
               <div
@@ -543,6 +632,33 @@ export function AboutSheet({
                 </p>
               </div>
 
+              <div className="about-sheet__settings-card about-sheet__tier-preview" role="group" aria-label="Puck color">
+                <p className="about-sheet__tier-preview-label">Puck color</p>
+                <div className="about-sheet__puck-colors">
+                  {PUCK_COLORS.map((color) => {
+                    const active = settings.puckColor === color.id;
+                    return (
+                      <button
+                        key={color.id}
+                        type="button"
+                        className={`about-sheet__puck-color${active ? " about-sheet__puck-color--active" : ""}`}
+                        aria-pressed={active}
+                        onClick={() => onSettings({ ...settings, puckColor: color.id })}
+                      >
+                        <span
+                          className="about-sheet__puck-swatch"
+                          style={{ background: color.fill, borderColor: color.stroke }}
+                        />
+                        {color.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="about-sheet__tier-preview-hint">
+                  The route line stays blue. Orange, gold, or white is easier to pick out on it.
+                </p>
+              </div>
+
               {/* 4. Checkbox toggles */}
               <label className={`about-sheet__setting about-sheet__settings-card${plus ? "" : " disabled"}`}>
                 <input
@@ -622,228 +738,278 @@ export function AboutSheet({
                 </label>
               ) : null}
 
-              <label className="about-sheet__setting about-sheet__settings-card">
-                <input
-                  type="checkbox"
-                  checked={settings.voiceGuidanceEnabled}
-                  onChange={(e) => onSettings({ ...settings, voiceGuidanceEnabled: e.target.checked })}
-                />
-                <span>
-                  <strong>Voice prompts</strong> — speak the next maneuver while <strong>Go</strong> is on,
-                  plus short hazard / route-ahead / conditions lines when they change. Prompts stop if you
-                  leave the app or lock the phone. On iPhone, turns use Mapbox guidance; advisories use
-                  StormPath speech and will not interrupt a turn. Volume follows the phone’s media volume
-                  (raise the side buttons while a prompt plays).
-                </span>
-              </label>
-
-            </div>
-          </section>
-
-          <MapKeyPanel />
-
-          {onReplayCoachmarks && (
-            <section className="about-sheet__panel about-sheet__panel--help">
-              <h3 className="about-sheet__h3">Help</h3>
-              <p className="about-sheet__muted-line">
-                Forgot what a button does? Re-arm the in-app tips and they'll explain each
-                piece of UI again the first time you see it (advisory bar, view-cycle
-                button, route progress bar, and the i info button).
-              </p>
-              <div className="about-sheet__help-actions">
-                <button
-                  type="button"
-                  className="about-sheet__btn about-sheet__btn--ghost"
-                  onClick={onReplayCoachmarks}
-                >
-                  Show tips again
-                </button>
-              </div>
-            </section>
-          )}
-
-          {plus && activityTrail && (
-            <section className="about-sheet__panel about-sheet__panel--activity">
-              <h3 className="about-sheet__h3">Activity trail</h3>
-              <div className="about-sheet__settings">
-              <label className="about-sheet__setting about-sheet__settings-card">
-                <input
-                  type="checkbox"
-                  checked={activityTrail.learnEnabled}
-                  onChange={(e) => activityTrail.onLearnEnabledChange(e.target.checked)}
-                />
-                <span>
-                  <strong>Learn where I drive</strong> — save sparse GPS dots on this device so the map and search can
-                  favor your area. Turn off any time; existing dots stay until you erase them.
-                </span>
-              </label>
-              <label className="about-sheet__setting about-sheet__settings-card">
-                <input
-                  type="checkbox"
-                  checked={activityTrail.showOnMap}
-                  onChange={(e) => activityTrail.onShowOnMapChange(e.target.checked)}
-                />
-                <span>
-                  <strong>Show activity dots on map</strong> — cyan trail of where you’ve been (zoom in to see density)
-                </span>
-              </label>
-              <label
-                className={`about-sheet__setting about-sheet__settings-card${activityTrail.homePreloadAvailable ? "" : " disabled"}`}
-              >
-                <input
-                  type="checkbox"
-                  checked={activityTrail.homePreloadEnabled}
-                  disabled={!activityTrail.homePreloadAvailable}
-                  onChange={(e) => activityTrail.onHomePreloadEnabledChange(e.target.checked)}
-                />
-                <span>
-                  <strong>Preload my usual area (Wi‑Fi only)</strong> — after enough trail dots, quietly
-                  cache map tiles around where you usually drive so the map fills in faster on weak signal.
-                  {activityTrail.homePreloadSizeLabel ? (
-                    <> Estimated cache: {activityTrail.homePreloadSizeLabel}.</>
-                  ) : (
-                    <> Need more dots first.</>
-                  )}
-                </span>
-              </label>
-              <fieldset className="about-sheet__settings-card about-sheet__home-framing">
-                <legend className="about-sheet__home-framing-legend">Home map view (no active trip)</legend>
-                <p className="about-sheet__p about-sheet__p--tight">
-                  When you open StormPath or finish a trip, the map centers like{" "}
-                  <strong>My location</strong> or frames your <strong>usual driving area</strong> when enough trail dots
-                  exist.
-                </p>
-                <label className="about-sheet__home-framing-option">
-                  <input
-                    type="radio"
-                    name="home-map-framing"
-                    checked={activityTrail.homeMapFraming === "auto"}
-                    onChange={() => activityTrail.onHomeMapFramingChange("auto")}
-                  />
-                  <span>
-                    <strong>Auto</strong> — usual area when the trail has enough dots ({activityTrail.homeAreaAvailable ? "available now" : "not enough yet"}), otherwise My location
-                  </span>
-                </label>
-                <label className="about-sheet__home-framing-option">
-                  <input
-                    type="radio"
-                    name="home-map-framing"
-                    checked={activityTrail.homeMapFraming === "my_location"}
-                    onChange={() => activityTrail.onHomeMapFramingChange("my_location")}
-                  />
-                  <span>
-                    <strong>My location</strong> — street-level on your GPS (same as the My location button)
-                  </span>
-                </label>
-                <label className={`about-sheet__home-framing-option${activityTrail.homeAreaAvailable ? "" : " disabled"}`}>
-                  <input
-                    type="radio"
-                    name="home-map-framing"
-                    checked={activityTrail.homeMapFraming === "activity_area"}
-                    disabled={!activityTrail.homeAreaAvailable}
-                    onChange={() => activityTrail.onHomeMapFramingChange("activity_area")}
-                  />
-                  <span>
-                    <strong>My usual area</strong> — zoom to where your trail shows you usually drive
-                    {!activityTrail.homeAreaAvailable ? " (need more dots)" : null}
-                  </span>
-                </label>
-              </fieldset>
-              <div className="about-sheet__settings-card">
-              <p className="about-sheet__p">
-                With this on, StormPath saves sparse GPS dots (about every minute while you move) to learn where
-                you usually drive. That helps <strong>frame the map</strong> around your area,{" "}
-                <strong>rank search suggestions</strong> nearer places you know,{" "}
-                <strong>prefer familiar alternates</strong> when A/B/C routes are built, offer{" "}
-                <strong>Your route</strong> when you repeatedly leave the main path at the same exit, and show the cyan
-                overlay below. Trip detection for “frequent routes” uses a separate path.
-              </p>
-              <details className="about-sheet__details about-sheet__details--inline">
-                <summary>How it works</summary>
-                <p className="about-sheet__p">
-                  Dots accrue only with the app open; older points drop when storage is full (~22k). Frequent-route rows
-                  in Saved still need similar drives at least twice.
-                </p>
-              </details>
-              <dl className="about-sheet__meta">
-                <div className="about-sheet__meta-row">
-                  <dt>Dots saved</dt>
-                  <dd>{activityTrail.count.toLocaleString()}</dd>
-                </div>
-                {activityTrail.spanDays != null && (
-                  <div className="about-sheet__meta-row">
-                    <dt>Span</dt>
-                    <dd>~{activityTrail.spanDays.toFixed(0)} days</dd>
-                  </div>
-                )}
-                <div className="about-sheet__meta-row">
-                  <dt>Range</dt>
-                  <dd>
-                    {activityTrail.oldestLabel} → {activityTrail.newestLabel}
-                  </dd>
-                </div>
-              </dl>
-              </div>
-              </div>
-              <div className="about-sheet__trail-clear">
-                {activityTrailClearStep === "idle" ? (
-                  <button
-                    type="button"
-                    className="about-sheet__trail-clear-btn"
-                    onClick={() => {
-                      setActivityTrailClearAck(false);
-                      setActivityTrailClearStep("confirm");
-                    }}
-                  >
-                    Erase activity trail…
-                  </button>
-                ) : (
-                  <div className="about-sheet__trail-clear-panel" role="alertdialog" aria-labelledby="trail-clear-title">
-                    <p id="trail-clear-title" className="about-sheet__trail-clear-title">
-                      Erase all activity trail data?
-                    </p>
-                    <p className="about-sheet__trail-clear-text">
-                      This permanently deletes every saved GPS dot on this device. You will lose home map framing,
-                      search ranking for your area, familiar route suggestions, and Wi‑Fi map preload for your usual
-                      territory. StormPath will behave like a fresh install until new dots accumulate.
-                    </p>
-                    <label className="about-sheet__trail-clear-ack">
+              {plus && activityTrail ? (
+                <details className="about-sheet__details about-sheet__settings-card">
+                  <summary>Activity trail</summary>
+                  <div className="about-sheet__settings">
+                    <label className="about-sheet__setting about-sheet__settings-card">
                       <input
                         type="checkbox"
-                        checked={activityTrailClearAck}
-                        onChange={(e) => setActivityTrailClearAck(e.target.checked)}
+                        checked={activityTrail.learnEnabled}
+                        onChange={(e) => activityTrail.onLearnEnabledChange(e.target.checked)}
                       />
-                      <span>I understand this cannot be undone</span>
+                      <span>
+                        <strong>Learn where I drive</strong> — save sparse GPS dots on this device so the map and search can
+                        favor your area. Turn off any time; existing dots stay until you erase them.
+                      </span>
                     </label>
-                    <div className="about-sheet__trail-clear-row">
-                      <button
-                        type="button"
-                        className="about-sheet__trail-clear-cancel"
-                        onClick={() => {
-                          setActivityTrailClearStep("idle");
-                          setActivityTrailClearAck(false);
-                        }}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        className="about-sheet__trail-clear-confirm-btn"
-                        disabled={!activityTrailClearAck}
-                        onClick={() => {
-                          activityTrail.onClear();
-                          setActivityTrailClearStep("idle");
-                          setActivityTrailClearAck(false);
-                        }}
-                      >
-                        Erase trail data
-                      </button>
+                    <label className="about-sheet__setting about-sheet__settings-card">
+                      <input
+                        type="checkbox"
+                        checked={activityTrail.showOnMap}
+                        onChange={(e) => activityTrail.onShowOnMapChange(e.target.checked)}
+                      />
+                      <span>
+                        <strong>Show activity dots on map</strong> — cyan trail of where you’ve been (zoom in to see density)
+                      </span>
+                    </label>
+                    <label
+                      className={`about-sheet__setting about-sheet__settings-card${activityTrail.homePreloadAvailable ? "" : " disabled"}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={activityTrail.homePreloadEnabled}
+                        disabled={!activityTrail.homePreloadAvailable}
+                        onChange={(e) => activityTrail.onHomePreloadEnabledChange(e.target.checked)}
+                      />
+                      <span>
+                        <strong>Preload my usual area (Wi‑Fi only)</strong> — after enough trail dots, quietly
+                        cache map tiles around where you usually drive so the map fills in faster on weak signal.
+                        {activityTrail.homePreloadSizeLabel ? (
+                          <> Estimated cache: {activityTrail.homePreloadSizeLabel}.</>
+                        ) : (
+                          <> Need more dots first.</>
+                        )}
+                      </span>
+                    </label>
+                    <fieldset className="about-sheet__settings-card about-sheet__home-framing">
+                      <legend className="about-sheet__home-framing-legend">Home map view (no active trip)</legend>
+                      <p className="about-sheet__p about-sheet__p--tight">
+                        When you open StormPath or finish a trip, the map centers like{" "}
+                        <strong>My location</strong> or frames your <strong>usual driving area</strong> when enough trail dots
+                        exist.
+                      </p>
+                      <label className="about-sheet__home-framing-option">
+                        <input
+                          type="radio"
+                          name="home-map-framing"
+                          checked={activityTrail.homeMapFraming === "auto"}
+                          onChange={() => activityTrail.onHomeMapFramingChange("auto")}
+                        />
+                        <span>
+                          <strong>Auto</strong> — usual area when the trail has enough dots ({activityTrail.homeAreaAvailable ? "available now" : "not enough yet"}), otherwise My location
+                        </span>
+                      </label>
+                      <label className="about-sheet__home-framing-option">
+                        <input
+                          type="radio"
+                          name="home-map-framing"
+                          checked={activityTrail.homeMapFraming === "my_location"}
+                          onChange={() => activityTrail.onHomeMapFramingChange("my_location")}
+                        />
+                        <span>
+                          <strong>My location</strong> — street-level on your GPS (same as the My location button)
+                        </span>
+                      </label>
+                      <label className={`about-sheet__home-framing-option${activityTrail.homeAreaAvailable ? "" : " disabled"}`}>
+                        <input
+                          type="radio"
+                          name="home-map-framing"
+                          checked={activityTrail.homeMapFraming === "activity_area"}
+                          disabled={!activityTrail.homeAreaAvailable}
+                          onChange={() => activityTrail.onHomeMapFramingChange("activity_area")}
+                        />
+                        <span>
+                          <strong>My usual area</strong> — zoom to where your trail shows you usually drive
+                          {!activityTrail.homeAreaAvailable ? " (need more dots)" : null}
+                        </span>
+                      </label>
+                    </fieldset>
+                    <div className="about-sheet__settings-card">
+                      <p className="about-sheet__p">
+                        With this on, StormPath saves sparse GPS dots (about every minute while you move) to learn where
+                        you usually drive. That helps <strong>frame the map</strong> around your area,{" "}
+                        <strong>rank search suggestions</strong> nearer places you know,{" "}
+                        <strong>prefer familiar alternates</strong> when A/B/C routes are built, offer{" "}
+                        <strong>Your route</strong> when you repeatedly leave the main path at the same exit, and show the cyan
+                        overlay below. Trip detection for “frequent routes” uses a separate path.
+                      </p>
+                      <details className="about-sheet__details about-sheet__details--inline">
+                        <summary>How it works</summary>
+                        <p className="about-sheet__p">
+                          Dots accrue only with the app open; older points drop when storage is full (~22k). Frequent-route rows
+                          in Saved still need similar drives at least twice.
+                        </p>
+                      </details>
+                      <dl className="about-sheet__meta">
+                        <div className="about-sheet__meta-row">
+                          <dt>Dots saved</dt>
+                          <dd>{activityTrail.count.toLocaleString()}</dd>
+                        </div>
+                        {activityTrail.spanDays != null && (
+                          <div className="about-sheet__meta-row">
+                            <dt>Span</dt>
+                            <dd>~{activityTrail.spanDays.toFixed(0)} days</dd>
+                          </div>
+                        )}
+                        <div className="about-sheet__meta-row">
+                          <dt>Range</dt>
+                          <dd>
+                            {activityTrail.oldestLabel} → {activityTrail.newestLabel}
+                          </dd>
+                        </div>
+                      </dl>
+                    </div>
+                    <div className="about-sheet__trail-clear">
+                      {activityTrailClearStep === "idle" ? (
+                        <button
+                          type="button"
+                          className="about-sheet__trail-clear-btn"
+                          onClick={() => {
+                            setActivityTrailClearAck(false);
+                            setActivityTrailClearStep("confirm");
+                          }}
+                        >
+                          Erase activity trail…
+                        </button>
+                      ) : (
+                        <div className="about-sheet__trail-clear-panel" role="alertdialog" aria-labelledby="trail-clear-title">
+                          <p id="trail-clear-title" className="about-sheet__trail-clear-title">
+                            Erase all activity trail data?
+                          </p>
+                          <p className="about-sheet__trail-clear-text">
+                            This permanently deletes every saved GPS dot on this device. You will lose home map framing,
+                            search ranking for your area, familiar route suggestions, and Wi‑Fi map preload for your usual
+                            territory. StormPath will behave like a fresh install until new dots accumulate.
+                          </p>
+                          <label className="about-sheet__trail-clear-ack">
+                            <input
+                              type="checkbox"
+                              checked={activityTrailClearAck}
+                              onChange={(e) => setActivityTrailClearAck(e.target.checked)}
+                            />
+                            <span>I understand this cannot be undone</span>
+                          </label>
+                          <div className="about-sheet__trail-clear-row">
+                            <button
+                              type="button"
+                              className="about-sheet__trail-clear-cancel"
+                              onClick={() => {
+                                setActivityTrailClearStep("idle");
+                                setActivityTrailClearAck(false);
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="about-sheet__trail-clear-confirm-btn"
+                              disabled={!activityTrailClearAck}
+                              onClick={() => {
+                                activityTrail.onClear();
+                                setActivityTrailClearStep("idle");
+                                setActivityTrailClearAck(false);
+                              }}
+                            >
+                              Erase trail data
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
+                </details>
+              ) : null}
+
+            </div>
+          </details>
+
+          <details className="about-sheet__panel about-sheet__details">
+            <summary>Map key, tips, and privacy</summary>
+            <MapKeyPanel />
+            {onReplayCoachmarks && (
+              <section className="about-sheet__panel about-sheet__panel--help">
+                <p className="about-sheet__muted-line">
+                  Forgot what a button does? Re-arm the in-app tips and they'll explain each
+                  piece of UI again the first time you see it (advisory bar, view-cycle
+                  button, route progress bar, and the i info button).
+                </p>
+                <div className="about-sheet__help-actions">
+                  <button
+                    type="button"
+                    className="about-sheet__btn about-sheet__btn--ghost"
+                    onClick={onReplayCoachmarks}
+                  >
+                    Show tips again
+                  </button>
+                </div>
+              </section>
+            )}
+            <details className="about-sheet__panel about-sheet__panel--privacy about-sheet__details">
+              <summary>Privacy, safety &amp; data</summary>
+              <p className="about-sheet__p">
+                <strong>Data:</strong> Map, routing, and traffic use <strong>Mapbox</strong> when configured; live radar
+                uses <strong>Tomorrow.io</strong> in the US and <strong>RainViewer</strong> elsewhere; US warning shapes use <strong>NWS</strong> (api.weather.gov);
+                corridor and local forecasts use <strong> Weather</strong> (Apple WeatherKit) when enabled for this build,
+                with optional Tomorrow.io / OpenWeather fallbacks when those keys are present.
+                {STORMY_AVAILABLE ? (
+                  <>
+                    {" "}
+                    Stormy hears you with Apple dictation, the same kind the search keyboard uses, so a destination can
+                    leave the phone for that recognition. She decides what to do on the phone. She does not send the
+                    trip to a chat service.
+                  </>
+                ) : null}
+              </p>
+              <StormPathSourcesAttribution
+                theme="dark"
+                includeAppleWeather={env.weatherKitEnabled}
+                className="about-sheet__apple-weather"
+              />
+              <p className="about-sheet__p">
+                <strong>Forecasts in the app:</strong> tap the side progress bar for <strong>Route info</strong>{" "}
+                (corridor temp/rain, route radar strip, wind gusts, NWS + traffic bands, and hazard cards). Expand the
+                storm advisory bar for local weather at your GPS. Map <strong>Rad</strong> is live precipitation radar at the
+                current time; colored NWS shapes follow the <strong>NWS weather alerts</strong> setting in About.
+              </p>
+              <p className="about-sheet__p">
+                <strong>Privacy:</strong> Location is for position, routing, and conditions. The map can keep
+                your GPS while the screen is locked; spoken turn prompts only play while StormPath is on
+                screen. Plus frequent-route data stays on this device unless you sync later.
+              </p>
+              <p className="about-sheet__p">
+                <strong>Safety:</strong> Follow posted signs and warnings. StormPath may be incomplete — don’t use the app
+                while driving; use a passenger or pull over.
+              </p>
+              <p className="about-sheet__p">
+                <a
+                  href={env.privacyPolicyUrl || "/privacy.html"}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Privacy Policy
+                </a>
+                {" · "}
+                <a
+                  href={env.termsUrl || "/terms.html"}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Terms of Use (EULA)
+                </a>
+                {" · "}
+                {env.supportUrl ? (
+                  <a href={env.supportUrl} target="_blank" rel="noreferrer">
+                    Support
+                  </a>
+                ) : env.supportEmail ? (
+                  <a href={`mailto:${env.supportEmail}`}>Email support</a>
+                ) : (
+                  <>Support not set</>
                 )}
-              </div>
-            </section>
-          )}
+              </p>
+            </details>
+          </details>
 
           <details className="about-sheet__panel about-sheet__details">
             <summary>When data looks wrong</summary>
@@ -884,65 +1050,8 @@ export function AboutSheet({
             </p>
           </details>
 
-          <details className="about-sheet__panel about-sheet__panel--privacy about-sheet__details">
-            <summary>Privacy, safety &amp; data</summary>
-            <p className="about-sheet__p">
-              <strong>Data:</strong> Map, routing, and traffic use <strong>Mapbox</strong> when configured; live radar
-              uses <strong>Tomorrow.io</strong> in the US and <strong>RainViewer</strong> elsewhere; US warning shapes use <strong>NWS</strong> (api.weather.gov);
-              corridor and local forecasts use <strong> Weather</strong> (Apple WeatherKit) when enabled for this build,
-              with optional Tomorrow.io / OpenWeather fallbacks when those keys are present.
-            </p>
-            <StormPathSourcesAttribution
-              theme="dark"
-              includeAppleWeather={env.weatherKitEnabled}
-              className="about-sheet__apple-weather"
-            />
-            <p className="about-sheet__p">
-              <strong>Forecasts in the app:</strong> tap the side progress bar for <strong>Route info</strong>{" "}
-              (corridor temp/rain, route radar strip, wind gusts, NWS + traffic bands, and hazard cards). Expand the
-              storm advisory bar for local weather at your GPS. Map <strong>Rad</strong> is live precipitation radar at the
-              current time; colored NWS shapes follow the <strong>NWS weather alerts</strong> setting in About.
-            </p>
-            <p className="about-sheet__p">
-              <strong>Privacy:</strong> Location is for position, routing, and conditions. The map can keep
-              your GPS while the screen is locked; spoken turn prompts only play while StormPath is on
-              screen. Plus frequent-route data stays on this device unless you sync later.
-            </p>
-            <p className="about-sheet__p">
-              <strong>Safety:</strong> Follow posted signs and warnings. StormPath may be incomplete — don’t use the app
-              while driving; use a passenger or pull over.
-            </p>
-            <p className="about-sheet__p">
-              <a
-                href={env.privacyPolicyUrl || "/privacy.html"}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Privacy Policy
-              </a>
-              {" · "}
-              <a
-                href={env.termsUrl || "/terms.html"}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Terms of Use (EULA)
-              </a>
-              {" · "}
-              {env.supportUrl ? (
-                <a href={env.supportUrl} target="_blank" rel="noreferrer">
-                  Support
-                </a>
-              ) : env.supportEmail ? (
-                <a href={`mailto:${env.supportEmail}`}>Email support</a>
-              ) : (
-                <>Support not set</>
-              )}
-            </p>
-          </details>
-
-          <section className="about-sheet__panel about-sheet__panel--support">
-            <h3 className="about-sheet__h3">Support diagnostics</h3>
+          <details className="about-sheet__panel about-sheet__panel--support about-sheet__details">
+            <summary>Support diagnostics</summary>
             <p className="about-sheet__p">
               Send bug reports, suggestions, feature requests, or general feedback. Include diagnostics (no personal
               info — version, toggles, and which data providers are configured) so we can tell an app bug from a network
@@ -967,9 +1076,10 @@ export function AboutSheet({
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(diagnosticsText);
+                    setDiagnosticsCopied(true);
                   } catch {
-                    // Fallback: prompt lets users copy manually.
                     window.prompt("Copy diagnostics", diagnosticsText);
+                    setDiagnosticsCopied(false);
                   }
                 }}
               >
@@ -992,6 +1102,11 @@ export function AboutSheet({
                 Email feedback with diagnostics
               </button>
             </div>
+            {diagnosticsCopied ? (
+              <p className="about-sheet__p" role="status">
+                Diagnostics copied.
+              </p>
+            ) : null}
             <p className="about-sheet__p">
               {supportEmail ? (
                 <>
@@ -1001,7 +1116,7 @@ export function AboutSheet({
                 <>Support email not configured for this build.</>
               )}
             </p>
-          </section>
+          </details>
         </div>
 
         <div className="about-sheet__actions">

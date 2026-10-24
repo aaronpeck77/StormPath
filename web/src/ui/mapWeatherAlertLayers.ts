@@ -8,6 +8,7 @@ import type {
 } from "mapbox-gl";
 
 import { nwsMapKindHex, nwsMapKindFromEvent, type NwsMapKind } from "../weatherAlerts/nwsMapKind";
+import { nwsAlertShowsOnMap } from "../weatherAlerts/nwsMapPolygon";
 
 const SRC = "weather-alerts-nws";
 const FILL = "weather-alerts-nws-fill";
@@ -22,10 +23,10 @@ const MOTION_LABEL_LAYER = "weather-alerts-motion-labels-text";
 export const WEATHER_ALERTS_NWS_FILL_LAYER_ID = FILL;
 
 /**
- * Rt / Mp (and planning): hide county-scale NWS fills once zoomed in past regional view.
- * Layer is visible below this zoom; at zoom ≥ this value it is hidden (Mapbox `maxzoom`).
+ * Rt / Mp keep warning outlines at Map view zoom (≈12–14) and pinch-in.
+ * Drive hides the collection entirely — this cap is not the Dr gate.
  */
-export const NWS_POLYGON_MAP_MAX_ZOOM = 10.75;
+export const NWS_POLYGON_MAP_MAX_ZOOM = 22;
 
 /**
  * Severity-tiered rendering — Tornado Warnings / Extreme alerts punch through at full
@@ -34,8 +35,7 @@ export const NWS_POLYGON_MAP_MAX_ZOOM = 10.75;
  *
  * Extreme  → Tornado Warning, Extreme Wind Warning, etc.     full opacity + thick line + subtle fill
  * Severe   → Severe Thunderstorm Warning, Flash Flood Warning full opacity, normal line
- * Moderate → Flash Flood Watch, Winter Storm Watch, etc.      25% — clearly secondary
- * Minor    → Wind Advisory, Frost Advisory, etc.              10% — barely visible
+ * Moderate / Minor stay in the advisory list — watches and advisories do not draw.
  */
 const NWS_LINE_OPACITY_EXPR: unknown = [
   "match",
@@ -301,25 +301,15 @@ function buildMotionArrowCollection(
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
- * Only render map polygons for convective alerts and Severe/Extreme warnings.
- * Minor advisories stay in the advisory list but are too area-heavy for the map.
- *
- * Hydro (flood) events are deliberately more restrictive: county-scale Flood Warnings
- * cover enormous areas and obscure the map. Only Flash Flood Warning/Emergency at
- * Severe+ earns a polygon — mirrors the same rule used on the progress strip.
- * Regular Flood Warning / Watch / Advisory remain in the advisory list only.
+ * Warning / Emergency polygons only. Watches and advisories stay in the list.
+ * Hydro is Flash Flood Warning / Emergency at Severe+ — county Flood Warning boxes stay off.
  */
 function isMapRenderableAlert(props: Record<string, unknown>): boolean {
-  const kind = typeof props.kind === "string" ? props.kind : "other";
-  const severity = typeof props.severity === "string" ? props.severity : "";
-  const event = typeof props.event === "string" ? props.event : "";
-
-  if (kind === "hydro") {
-    // Flash Flood Warning or Flash Flood Emergency at Severe+ only.
-    return /flash\s+flood/i.test(event) && (severity === "Extreme" || severity === "Severe");
-  }
-
-  return kind === "convective" || severity === "Extreme" || severity === "Severe";
+  return nwsAlertShowsOnMap({
+    event: typeof props.event === "string" ? props.event : "",
+    severity: typeof props.severity === "string" ? props.severity : "",
+    kind: typeof props.kind === "string" ? props.kind : undefined,
+  });
 }
 
 const EMPTY_ALERT_FC: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -341,8 +331,7 @@ export function applyWeatherAlertLayers(
   // (which caused repeated GL_INVALID_OPERATION errors).
   const effective = collection ?? EMPTY_ALERT_FC;
 
-  // Only render convective + Extreme alerts as map polygons — the rest are
-  // available in the advisory list but too area-heavy to show on the map.
+  // Warning / Emergency only — watches stay in the advisory list.
   const mapRenderable: GeoJSON.FeatureCollection = {
     type: "FeatureCollection",
     features: effective.features.filter((f) =>

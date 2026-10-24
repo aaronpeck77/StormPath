@@ -1,0 +1,290 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import {
+  bumpDriveDiag,
+  driveDiagSnapshot,
+  formatDriveDiagLines,
+  hydrateDriveDiagFromJson,
+  noteViewDroneEnd,
+  noteViewDroneSkip,
+  noteViewDroneStart,
+  noteDriveDiagCamFailStreak,
+  noteDriveDiagCamFreeze,
+  noteDriveDiagCamLean,
+  noteDriveDiagDoubledBack,
+  noteDriveDiagEta,
+  noteDriveDiagJeffResync,
+  noteDriveDiagOffRoute,
+  noteDriveDiagRadioHold,
+  noteDriveDiagRouteLock,
+  noteDriveDiagYou,
+  noteViewDroneTap,
+  persistDriveDiagNow,
+  resetDriveDiag,
+  setDriveDiagCamWriter,
+  setDriveDiagLiveLengthM,
+  setDriveDiagRoadControls,
+  setDriveDiagRouteLengthM,
+} from "../driveDiagnostics";
+
+describe("driveDiagnostics", () => {
+  beforeEach(() => {
+    try {
+      sessionStorage.removeItem("stormpath.driveDiag.v1");
+    } catch {
+      /* node */
+    }
+    resetDriveDiag(1_000);
+  });
+
+  it("stays quiet in About until a trip has started", () => {
+    const cold = { ...driveDiagSnapshot(), startedAtMs: null, coreSamples: 0 };
+    expect(formatDriveDiagLines(cold, 2_000)).toEqual([]);
+  });
+
+  it("counts what the Drive loop reports", () => {
+    bumpDriveDiag("coreSamples", 60);
+    bumpDriveDiag("camApplied", 55);
+    bumpDriveDiag("camParkedHold", 5);
+    setDriveDiagRoadControls(37);
+    const snap = driveDiagSnapshot();
+    expect(snap.coreSamples).toBe(60);
+    expect(snap.camApplied).toBe(55);
+    expect(snap.camParkedHold).toBe(5);
+    expect(snap.roadControls).toBe(37);
+  });
+
+  it("reports Core's sample rate so a slow feed is visible", () => {
+    bumpDriveDiag("coreSamples", 60);
+    /* 60 samples over one minute of trip → 1.00/s */
+    const lines = formatDriveDiagLines(driveDiagSnapshot(), 61_000);
+    expect(lines[0]).toContain("1.0 min");
+    expect(lines[0]).toContain("60 samples");
+    expect(lines[0]).toContain("1.00/s");
+  });
+
+  it("separates parked holds and failed writes from real camera writes", () => {
+    bumpDriveDiag("camApplied", 12);
+    bumpDriveDiag("camParkedHold", 9);
+    bumpDriveDiag("camWriteFailed", 1);
+    const lines = formatDriveDiagLines(driveDiagSnapshot(), 61_000);
+    expect(lines[1]).toBe("Camera: 12 applied, 9 parked holds, 1 write fails, 0 reclaims");
+  });
+
+  /* The 42s field trip reported 2519 applies against ~42 samples — a per-frame bump. */
+  it("keeps camera writes in the same order as Core samples", () => {
+    bumpDriveDiag("coreSamples", 42);
+    bumpDriveDiag("camApplied", 40);
+    const snap = driveDiagSnapshot();
+    expect(snap.camApplied).toBeLessThanOrEqual(snap.coreSamples * 3);
+  });
+
+  it("shows tile warm and low-signal holds together", () => {
+    bumpDriveDiag("lowSignalHolds", 3);
+    bumpDriveDiag("tileWarmDone", 4);
+    bumpDriveDiag("tileWarmFailed", 1);
+    const lines = formatDriveDiagLines(driveDiagSnapshot(), 61_000);
+    expect(lines[3]).toBe("Signal: 3 map holds, tiles 4 warm / 1 failed");
+  });
+
+  it("shows a sub-minute trip in seconds so a 0.6s dump is obvious", () => {
+    const lines = formatDriveDiagLines(driveDiagSnapshot(), 1_600);
+    expect(lines[0]).toContain("0.6 s");
+  });
+
+  it("survives an in-memory wipe the way a Core reconnect used to", () => {
+    bumpDriveDiag("coreSamples", 40);
+    bumpDriveDiag("camApplied", 38);
+    persistDriveDiagNow();
+    const raw = JSON.stringify(driveDiagSnapshot());
+    resetDriveDiag(9_000);
+    expect(driveDiagSnapshot().coreSamples).toBe(0);
+    hydrateDriveDiagFromJson(raw);
+    const snap = driveDiagSnapshot();
+    expect(snap.coreSamples).toBe(40);
+    expect(snap.camApplied).toBe(38);
+    expect(snap.startedAtMs).toBe(1_000);
+  });
+
+  it("clears counters on the next Go", () => {
+    bumpDriveDiag("coreSamples", 10);
+    resetDriveDiag(5_000);
+    const snap = driveDiagSnapshot();
+    expect(snap.coreSamples).toBe(0);
+    expect(snap.startedAtMs).toBe(5_000);
+  });
+
+  it("ignores a junk road-control count", () => {
+    setDriveDiagRoadControls(Number.NaN);
+    expect(driveDiagSnapshot().roadControls).toBe(0);
+    setDriveDiagRoadControls(-4);
+    expect(driveDiagSnapshot().roadControls).toBe(0);
+  });
+
+  it("records a parked Dr/Mp/Rt session so About has a trail without Core samples", () => {
+    resetDriveDiag(1_000);
+    const parked = { ...driveDiagSnapshot(), startedAtMs: null, coreSamples: 0 };
+    expect(formatDriveDiagLines(parked, 2_000)).toEqual([]);
+
+    noteViewDroneSkip("first");
+    expect(driveDiagSnapshot().startedAtMs).toBe(1_000);
+    expect(formatDriveDiagLines({ ...driveDiagSnapshot(), startedAtMs: null, coreSamples: 0 }, 2_000)).toEqual(
+      []
+    );
+
+    noteViewDroneTap("drive", "topdown");
+    noteViewDroneStart();
+    noteViewDroneEnd("done", 0, 1402);
+    noteViewDroneTap("topdown", "route");
+    noteViewDroneStart();
+    noteViewDroneEnd("done", 12, 1390);
+    noteViewDroneTap("route", "drive");
+    noteViewDroneSkip("no_from");
+
+    const snap = driveDiagSnapshot();
+    expect(snap.viewTaps).toBe(3);
+    expect(snap.droneStarts).toBe(2);
+    expect(snap.droneDone).toBe(2);
+    expect(snap.droneLast).toBe("Rt>Dr");
+    expect(snap.droneTrail).toContain("Dr>Mp ok 1402ms");
+    expect(snap.droneTrail).toContain("Mp>Rt fail12 1390ms");
+    expect(snap.droneTrail).toContain("Rt>Dr noFrom");
+
+    const lines = formatDriveDiagLines(snap, 8_000);
+    expect(lines[6]).toContain("3 taps");
+    expect(lines[6]).toContain("2 start / 2 done");
+    expect(lines[8]).toContain("last Rt>Dr");
+    expect(lines[9]).toContain("Dr>Mp ok 1402ms");
+  });
+
+  it("counts a retarget on its own and keeps the shot label that left the pad", () => {
+    noteViewDroneTap("route", "drive");
+    noteViewDroneStart();
+    noteViewDroneTap("drive", "topdown");
+    noteViewDroneEnd("retarget");
+    const snap = driveDiagSnapshot();
+    expect(snap.droneAbort).toBe(0);
+    expect(snap.droneRetarget).toBe(1);
+    expect(snap.droneTrail).toContain("Rt>Dr retarget");
+    expect(snap.droneTrail).not.toContain("??");
+    const lines = formatDriveDiagLines(snap, 8_000);
+    expect(lines[6]).toContain("0 abort / 1 retarget");
+  });
+
+  it("keeps the in-flight label when Go resets the counters", () => {
+    noteViewDroneTap("route", "topdown");
+    noteViewDroneStart();
+    resetDriveDiag(5_000);
+    noteViewDroneEnd("done", 0, 2202);
+    expect(driveDiagSnapshot().droneTrail).toContain("Rt>Mp ok 2202ms");
+    expect(driveDiagSnapshot().droneTrail).not.toContain("??");
+  });
+
+  it("records a pre-shot wait so a 5s Dr>Mp hitch is visible", () => {
+    noteViewDroneTap("drive", "topdown");
+    noteViewDroneStart();
+    noteViewDroneEnd("done", 0, 1401, 3720);
+    expect(driveDiagSnapshot().droneTrail).toContain("Dr>Mp ok 1401ms wait3720");
+  });
+
+  it("reports radio holds, trip size, and cam health without coordinates", () => {
+    setDriveDiagRouteLengthM(90_000);
+    noteDriveDiagRadioHold(true, 1_000);
+    noteDriveDiagRadioHold(false, 13_000);
+    noteDriveDiagCamFreeze();
+    noteDriveDiagCamFailStreak(12);
+    noteDriveDiagJeffResync();
+    const lines = formatDriveDiagLines(driveDiagSnapshot(), 20_000);
+    expect(lines[0]).toContain("50-100mi");
+    setDriveDiagRouteLengthM(8_000);
+    expect(formatDriveDiagLines(driveDiagSnapshot(), 20_000)[0]).toContain("50-100mi");
+    expect(lines[2]).toContain("freeze 1");
+    expect(lines[2]).toContain("max fail streak 12");
+    expect(lines[2]).toContain("Jeff 1");
+    expect(lines[4]).toBe("Radio: 1 holds (12s, longest 12s)");
+    expect(lines.join("\n")).not.toMatch(/-?\d+\.\d{3},/);
+  });
+
+  it("keeps view-drone counters across a Core reconnect hydrate", () => {
+    noteViewDroneTap("route", "drive");
+    noteViewDroneStart();
+    persistDriveDiagNow();
+    const raw = JSON.stringify(driveDiagSnapshot());
+    resetDriveDiag(9_000);
+    hydrateDriveDiagFromJson(raw);
+    expect(driveDiagSnapshot().viewTaps).toBe(1);
+    expect(driveDiagSnapshot().droneStarts).toBe(1);
+    expect(driveDiagSnapshot().droneLast).toBe("Rt>Dr");
+  });
+
+  it("keeps the planned bucket and still shows a shorter live corridor", () => {
+    setDriveDiagRouteLengthM(90_000);
+    setDriveDiagLiveLengthM(8_000);
+    const line = formatDriveDiagLines(driveDiagSnapshot(), 20_000)[0]!;
+    expect(line).toContain("plan 50-100mi");
+    expect(line).toContain("live <20mi");
+  });
+
+  it("counts a corner lean once, and a drop back to Core once", () => {
+    noteDriveDiagCamLean(22, false);
+    noteDriveDiagCamLean(30, false);
+    noteDriveDiagCamLean(2, false);
+    noteDriveDiagCamLean(0, true);
+    noteDriveDiagCamLean(0, true);
+    const snap = driveDiagSnapshot();
+    expect(snap.leanApplies).toBe(1);
+    expect(snap.leanMaxDeg).toBe(30);
+    expect(snap.leanDrops).toBe(1);
+    expect(formatDriveDiagLines(snap, 8_000).join("\n")).toContain("Lean: 1 applies, max 30°, 1 drops");
+  });
+
+  it("remembers when GPS is far ahead of Core on the YOU line", () => {
+    noteDriveDiagYou(100, 8_000, 10_000);
+    noteDriveDiagYou(9_500, 9_800, 10_000);
+    const lines = formatDriveDiagLines(driveDiagSnapshot(), 8_000);
+    expect(lines.join("\n")).toContain("YOU: gps 3/4, core start");
+  });
+
+  it("records the camera on the longest radio hold", () => {
+    setDriveDiagCamWriter("pan");
+    noteDriveDiagRadioHold(true, 1_000);
+    noteDriveDiagCamFreeze();
+    bumpDriveDiag("camReclaim");
+    noteDriveDiagRadioHold(false, 121_000);
+    noteDriveDiagRadioHold(true, 130_000);
+    noteDriveDiagRadioHold(false, 140_000);
+    const radio = formatDriveDiagLines(driveDiagSnapshot(), 150_000)[4]!;
+    expect(radio).toContain("longest 120s");
+    expect(radio).toContain("pan freeze 1 reclaim 1 Jeff 0");
+  });
+
+  it("records an ETA jump near the end and which clock it came from", () => {
+    noteDriveDiagEta(4, 400, "line");
+    noteDriveDiagEta(28, 400, "live");
+    noteDriveDiagEta(30, 300, "live");
+    const eta = formatDriveDiagLines(driveDiagSnapshot(), 8_000).join("\n");
+    expect(eta).toContain("ETA: jump 24min at <1mi (live)");
+  });
+
+  it("keeps the route rule when Go clears the trip counters first", () => {
+    noteDriveDiagRouteLock(false, true);
+    resetDriveDiag(5_000);
+    noteDriveDiagRouteLock(true, true);
+    const route = formatDriveDiagLines(driveDiagSnapshot(), 20_000)[5]!;
+    expect(route).toContain("lock backroads");
+    expect(route).not.toContain("switched");
+  });
+
+  it("counts one doubled-back line and one lock change after Go", () => {
+    noteDriveDiagRouteLock(false, true);
+    noteDriveDiagRouteLock(true, true);
+    noteDriveDiagRouteLock(true, true);
+    noteDriveDiagDoubledBack("line-a");
+    noteDriveDiagDoubledBack("line-a");
+    noteDriveDiagOffRoute(true, 1_000);
+    noteDriveDiagOffRoute(false, 7_000);
+    const route = formatDriveDiagLines(driveDiagSnapshot(), 20_000)[5]!;
+    expect(route).toContain("lock backroads, switched 1");
+    expect(route).toContain("doubled back 1");
+    expect(route).toContain("off-route (6s, longest 6s)");
+  });
+});

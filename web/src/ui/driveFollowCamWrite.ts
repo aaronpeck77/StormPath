@@ -13,6 +13,25 @@ export const FOLLOW_CAM_STALL_FRAMES_BEFORE_REPAIR = 8;
  */
 export const FOLLOW_CAM_HOLD_CLEAR_MS = 3_000;
 
+/**
+ * Small cap on Mapbox follow-cam writes. The puck still glides every frame.
+ * 40 ms is ~25 writes/s instead of ~60 — enough to cool the GPU without a visible hitch
+ * at highway speed (~1 m between writes).
+ */
+export const DRIVE_CAM_WRITE_MIN_INTERVAL_MS = 40;
+
+export function shouldAllowDriveCamWrite(input: {
+  nowMs: number;
+  lastWriteMs: number | null;
+  force: boolean;
+  minIntervalMs?: number;
+}): boolean {
+  if (input.force) return true;
+  if (input.lastWriteMs == null) return true;
+  const min = input.minIntervalMs ?? DRIVE_CAM_WRITE_MIN_INTERVAL_MS;
+  return input.nowMs - input.lastWriteMs >= min;
+}
+
 export type DriveFollowCamWrite = "skip" | "jump_with_offset";
 
 /**
@@ -28,8 +47,19 @@ export function advanceFollowCamWriter(input: {
   holdFalseSinceMs: number | null;
   nowMs: number;
   holdClearMs?: number;
+  /**
+   * Last time a yard-line pan returned false. The radio saying "up" is not proof
+   * that tiles are back: 438 flipped to `pan` 3 s after the hold cleared, then ate
+   * 137 failed pans and 24 freezes because `isStyleLoaded()` was still false.
+   * Treat a recent failure as its own hold.
+   */
+  lastPanFailAtMs?: number | null;
 }): { writer: FollowCamWriter; holdFalseSinceMs: number | null } {
-  if (input.holdTiles) {
+  const panFailedRecently =
+    input.lastPanFailAtMs != null &&
+    Number.isFinite(input.lastPanFailAtMs) &&
+    input.nowMs - input.lastPanFailAtMs < (input.holdClearMs ?? FOLLOW_CAM_HOLD_CLEAR_MS);
+  if (input.holdTiles || panFailedRecently) {
     return { writer: "hard", holdFalseSinceMs: null };
   }
   const since = input.holdFalseSinceMs ?? input.nowMs;
@@ -73,5 +103,13 @@ export function shouldRepairFollowCamStall(input: {
 
 /** Hard setCenter/setBearing must not be used on the 60fps Drive loop. */
 export function driveFollowCamAllowsSetCenterHotLoop(): boolean {
+  return false;
+}
+
+/**
+ * Core-to-web Drive: a failed yard-line pan must not hard-write a second
+ * framing this frame. That pan↔setCenter fight is the two-image flicker.
+ */
+export function nativeFollowCamAllowsSameFrameHardFallback(): boolean {
   return false;
 }

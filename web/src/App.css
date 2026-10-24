@@ -568,6 +568,10 @@
 :root {
   --sp-safe-top: env(safe-area-inset-top, 0px);
   --sp-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --puck-highlight: #6bb8ff;
+  --puck-fill: #1a73e8;
+  --puck-edge: #0a3d91;
+  --puck-stroke: #fff;
 }
 
 .app-shell {
@@ -576,6 +580,32 @@
   font-family: system-ui, "Segoe UI", Roboto, sans-serif;
   background: #0a0b0d;
   color: #e8eaed;
+}
+
+/* Native NavigationMapView shows through only after the hole punches (canvas opacity 0).
+ * Gating on .drive-map--native-shell avoids clearing the shell while the customer web map
+ * is still opaque — that race peeked the old map under native. */
+.app-shell--native-drive-map:has(.drive-map--native-shell),
+.app-shell--native-drive-map:has(.drive-map--native-shell) .map-stage.map-bleed,
+.app-shell--native-drive-map:has(.drive-map--native-shell) .map-canvas {
+  background: transparent !important;
+}
+
+html:has(.drive-map--native-shell),
+html:has(.drive-map--native-shell) body,
+html:has(.drive-map--native-shell) #root {
+  background: transparent !important;
+}
+
+.drive-map--native-shell {
+  /* Keep DOM markers (StormPath puck) visible over native tiles; only hide the web GL canvas. */
+  pointer-events: none;
+  background: transparent;
+}
+
+.drive-map--native-shell .mapboxgl-canvas-container,
+.drive-map--native-shell .mapboxgl-canvas {
+  opacity: 0 !important;
 }
 
 /* Dark Mapbox basemap (7p?6a local): thin light rims ? must beat .app-shell.nav-fullmap chrome vars */
@@ -1054,7 +1084,8 @@
 }
 
 .app-shell.nav-fullmap.app-shell--basic-ad-banner .nav-bottom-stack {
-  padding-bottom: calc(var(--nav-bottom-reserved) + var(--basic-ad-banner-reserve, 50px));
+  /* Shift the whole dock. Phone CSS resets padding-bottom and would leave the buttons under the ad. */
+  bottom: var(--basic-ad-banner-reserve, 50px);
 }
 
 .app-shell.nav-fullmap.app-shell--basic-ad-banner .nav-route-progress-rail {
@@ -1108,7 +1139,7 @@
 .nav-bottom-dock__about-row {
   display: flex;
   flex-direction: row;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--nav-chrome-gap, 5px);
   width: 100%;
@@ -1174,6 +1205,90 @@
   justify-content: center;
 }
 
+.about-sheet__voice-levels {
+  border: 0;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.about-sheet__assistant-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.stormy-call-btn {
+  position: relative;
+  z-index: 6;
+  pointer-events: auto;
+  touch-action: manipulation;
+  flex-shrink: 0;
+  min-width: 4.5rem;
+  box-sizing: border-box;
+  height: var(--nav-chrome-about, 32px);
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(18, 20, 24, 0.38);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.stormy-call-btn--busy,
+.stormy-call-btn:disabled {
+  opacity: 0.72;
+}
+
+.nav-bottom-dock__info-stormy-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.nav-bottom-dock__info-stormy-col > .map-about-btn,
+.nav-bottom-dock__info-stormy-col > .drive-compass {
+  width: var(--nav-chrome-about, 32px);
+  min-width: var(--nav-chrome-about, 32px);
+  max-width: var(--nav-chrome-about, 32px);
+  flex: 0 0 auto;
+}
+
+.nav-bottom-dock__stormy-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.nav-bottom-dock__stormy-row > .stormy-call-btn {
+  width: auto;
+  flex: 0 0 auto;
+  margin-right: 0;
+}
+
+.nav-bottom-dock__stormy-row > .nav-bottom-dock__route-toggle-slot--inline,
+.nav-bottom-dock__stormy-row > .nav-recenter-puck-btn--inline,
+.nav-bottom-dock__stormy-row > .nav-radar-frame-time-dock {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .map-about-btn:hover,
 .map-about-btn:focus-visible {
   color: rgba(255, 255, 255, 0.95);
@@ -1186,6 +1301,7 @@
 .nav-bottom-dock__drive-about-cluster {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 6px;
   min-width: 0;
@@ -1240,6 +1356,25 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
+}
+
+.trip-refresh-btn {
+  flex-shrink: 0;
+  width: var(--nav-chrome-about, 32px);
+  height: var(--nav-chrome-about, 32px);
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(18, 20, 24, 0.55);
+  color: #e2e8f0;
+  font-size: 1.05rem;
+  line-height: 1;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+}
+
+.trip-refresh-btn:active {
+  background: rgba(30, 41, 59, 0.85);
 }
 
 .drive-compass {
@@ -1380,13 +1515,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-}
-
-.about-sheet__ad-hint {
-  margin: 8px 0 0;
-  font-size: 0.72rem;
-  line-height: 1.35;
-  color: #9aa0a6;
 }
 
 .about-sheet__title {
@@ -1589,6 +1717,40 @@
   color: #64748b;
 }
 
+.about-sheet__puck-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.about-sheet__puck-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 17, 21, 0.85);
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.about-sheet__puck-color--active {
+  border-color: rgba(99, 102, 241, 0.55);
+  background: rgba(99, 102, 241, 0.22);
+  color: #e8eaed;
+}
+
+.about-sheet__puck-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
 /* Whole sheet is the only scroll container ? no nested scrollers */
 .about-sheet__sections {
   display: flex;
@@ -1684,6 +1846,37 @@
 
 .about-sheet__settings-card--muted {
   opacity: 0.85;
+}
+
+.about-sheet__settings-card.about-sheet__details > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.about-sheet__settings-card.about-sheet__details > summary::after {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid #cbd5e1;
+  border-bottom: 2px solid #cbd5e1;
+  transform: rotate(45deg);
+  margin-top: -0.2rem;
+  flex-shrink: 0;
+}
+
+.about-sheet__settings-card.about-sheet__details[open] > summary {
+  margin-bottom: 10px;
+}
+
+.about-sheet__settings-card.about-sheet__details[open] > summary::after {
+  transform: rotate(-135deg);
+  margin-top: 0.12rem;
 }
 
 .about-sheet__settings-card.about-sheet__home-framing {
@@ -2109,6 +2302,11 @@
   opacity: 0.55;
 }
 
+.about-sheet__soon {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 .about-sheet__home-framing {
   margin: 12px 0 0;
   padding: 0;
@@ -2178,6 +2376,25 @@
   padding: 8px 10px;
   resize: vertical;
   min-height: 72px;
+}
+
+.about-sheet__drive-diag {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.45);
+  color: #cbd5e1;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.about-sheet__drive-diag strong {
+  color: #e2e8f0;
 }
 
 .about-sheet__actions {
@@ -2309,10 +2526,29 @@
   transform: scale(0.97);
 }
 
+.drive-map-frame {
+  position: absolute;
+  inset: 0;
+}
+
 .drive-map {
   width: 100%;
   height: 100%;
   touch-action: none;
+}
+
+.drive-map-opening {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a0b0d;
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  pointer-events: none;
 }
 
 /* Mapbox logo + �: default corners, bottom safe inset (same on web and phone ? sits in strip under floating chrome) */
@@ -2386,9 +2622,17 @@
   padding-top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
 }
 
-.nav-toast-stack--dock {
-  bottom: calc(var(--nav-bottom-reserved, 72px) + 10px);
-  padding-bottom: 0;
+.nav-toast-stack--under-advisory {
+  position: relative;
+  top: auto;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  z-index: 6;
+  width: 100%;
+  margin-top: 4px;
+  align-items: center;
+  justify-content: center;
 }
 
 .nav-toast {
@@ -2408,6 +2652,12 @@
   background: #fef3c7;
   border: 1px solid #fcd34d;
   color: #78350f;
+}
+
+.nav-toast-info {
+  background: #e0f2fe;
+  border: 1px solid #7dd3fc;
+  color: #0c4a6e;
 }
 
 .nav-toast-err {
@@ -2742,7 +2992,7 @@
   > .nav-bottom-dock__about-row:has(.nav-bottom-dock__route-toggle-slot--inline),
 .nav-bottom-dock__plan-stack
   > .nav-bottom-dock__about-row:has(.nav-recenter-puck-btn--inline) {
-  padding-right: calc(56px - max(8px, env(safe-area-inset-right, 0px)) + 4px);
+  padding-right: 0;
 }
 
 /* Doubled-class selectors below: a single `.--inline` ancestor would tie at specificity 0,2,0
@@ -2927,6 +3177,12 @@
   gap: 2px;
 }
 
+.nav-dest-compact > .nav-dest-compact--tap {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
 .nav-dest-compact--tap {
   display: block;
   width: 100%;
@@ -2971,11 +3227,14 @@
 }
 
 .nav-dest-compact-btn {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 1;
   padding: 5px 9px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(10, 11, 13, 0.55);
-  color: #8ab4f8;
+  border: none;
+  background: #1a73e8;
+  color: #fff;
   font-size: 0.72rem;
   font-weight: 700;
   cursor: pointer;
@@ -3144,6 +3403,50 @@
   line-height: 1.3;
   cursor: pointer;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.stormy-place-choices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  max-width: var(--sp-tablet-chrome-w, min(600px, calc(100vw - 16px)));
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(18, 20, 24, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.stormy-place-choices button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: #e8eaed;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stormy-place-choices li:last-child button {
+  border-bottom: none;
+}
+
+.stormy-place-choices__name {
+  font-size: 0.84rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.stormy-place-choices__detail {
+  font-size: 0.7rem;
+  line-height: 1.25;
+  color: rgba(226, 232, 240, 0.78);
 }
 
 .nav-search-suggestion:last-child {
@@ -3336,22 +3639,37 @@
 
 /* Map markers (GPS puck + destination) */
 .map-user-puck {
-  width: 22px;
-  height: 22px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: radial-gradient(circle at 32% 28%, #5eb3ff 0%, #1a73e8 42%, #0d47a1 100%);
-  border: 3px solid #fff;
+  background: radial-gradient(
+    circle at 32% 28%,
+    var(--puck-highlight) 0%,
+    var(--puck-fill) 42%,
+    var(--puck-edge) 100%
+  );
+  border: 2px solid var(--puck-stroke);
   box-shadow:
     0 1px 2px rgba(255, 255, 255, 0.35) inset,
-    0 2px 6px rgba(0, 0, 0, 0.35);
+    0 2px 5px rgba(0, 0, 0, 0.35);
 }
 
 .map-user-puck--driving {
-  background: radial-gradient(circle at 32% 26%, #6bb8ff 0%, #1a73e8 38%, #0a3d91 100%);
+  background: radial-gradient(
+    circle at 32% 26%,
+    var(--puck-highlight) 0%,
+    var(--puck-fill) 38%,
+    var(--puck-edge) 100%
+  );
   box-shadow:
     0 1px 2px rgba(255, 255, 255, 0.45) inset,
     0 3px 8px rgba(0, 0, 0, 0.4),
     0 1px 0 rgba(0, 0, 0, 0.15);
+}
+
+.map-user-puck--native-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .map-dest-marker {
@@ -4788,7 +5106,22 @@
   width: 100%;
   flex: 1 1 0;
   min-height: 0;
-  overflow: hidden;
+  /* One vertical scroll for graph + alert cards; graph keeps its own horizontal pan. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+}
+
+.rpgl::-webkit-scrollbar {
+  width: 5px;
+}
+
+.rpgl::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.4);
 }
 
 .rpgl__help {
@@ -4824,13 +5157,10 @@
   margin-bottom: 0;
 }
 
-/* Top: weather + hazards axis — horizontal scroll only (no vertical freefloat) */
+/* Graph block — natural height; scrolls up with the page. Horizontal pan only inside. */
 .rpgl__axis-pane {
   flex: 0 0 auto;
   width: 100%;
-  /* Tall enough for Temp/Rain/Radar/Wind/NWS/Road + ticks; lock Y so only X pans */
-  --rpgl-axis-max-h: min(52vh, 296px);
-  max-height: var(--rpgl-axis-max-h);
   border-bottom: 2px solid rgba(255, 255, 255, 0.22);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
   background: rgba(255, 255, 255, 0.03);
@@ -4839,7 +5169,6 @@
 
 .rpgl__axis-scroll {
   width: 100%;
-  max-height: var(--rpgl-axis-max-h);
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
@@ -4852,25 +5181,18 @@
   scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
 }
 
-/* Bottom: alert cards — vertical scroll only */
+/* Alert cards — same page scroll as the graph (not a nested vertical scroller). */
 .rpgl__detail-scroll {
-  flex: 1 1 0;
-  min-height: 0;
+  flex: 0 0 auto;
   width: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior-y: contain;
-  overscroll-behavior-x: none;
-  touch-action: pan-y;
+  overflow: visible;
   padding: 8px 0 4px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
 }
 
-/* Only the detail pane — fill panel when axis is hidden */
+/* Only the detail pane when axis is hidden — still one page scroll on .rpgl */
 .rpgl__detail-scroll--solo {
-  flex: 1 1 0;
+  flex: 0 0 auto;
+  overflow: visible;
 }
 
 .rpgl__detail-scroll > * {
@@ -4879,15 +5201,6 @@
 
 .rpgl__detail-scroll > * + * {
   margin-top: 10px;
-}
-
-.rpgl__detail-scroll::-webkit-scrollbar {
-  width: 5px;
-}
-
-.rpgl__detail-scroll::-webkit-scrollbar-thumb {
-  border-radius: 4px;
-  background: rgba(148, 163, 184, 0.4);
 }
 
 .rpgl__axis-scroll::-webkit-scrollbar {
@@ -5288,7 +5601,6 @@
     0 0 0 1px rgba(255, 255, 255, 0.55),
     0 0 14px color-mix(in srgb, var(--rpgl-driver-color, #94a3b8) 85%, transparent);
   opacity: 1;
-  transition: left 0.4s ease-out;
 }
 
 .rpgl__sync-outlook {
@@ -6044,26 +6356,27 @@
  * Expanded advisory / route info must paint over bottom search, toolbar, My location, and Mapbox
  * logo/attribution. The overlay stack (z 5) is otherwise below .nav-bottom-stack (z 6).
  */
-.map-stage.map-bleed:has(.storm-advisory-bar--expanded, .route-progress-callout-panel--expanded)
-  .nav-drive-overlay-stack {
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded) .nav-drive-overlay-stack,
+html.route-info-open .map-stage.map-bleed .nav-drive-overlay-stack {
   z-index: 25;
 }
 
-.map-stage.map-bleed:has(.storm-advisory-bar--expanded, .route-progress-callout-panel--expanded)
-  .nav-bottom-stack {
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded) .nav-bottom-stack,
+html.route-info-open .map-stage.map-bleed .nav-bottom-stack {
   z-index: 4;
 }
 
-.map-stage.map-bleed:has(.storm-advisory-bar--expanded, .route-progress-callout-panel--expanded)
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded)
   .mapboxgl-ctrl-bottom-left,
-.map-stage.map-bleed:has(.storm-advisory-bar--expanded, .route-progress-callout-panel--expanded)
-  .mapboxgl-ctrl-bottom-right {
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded)
+  .mapboxgl-ctrl-bottom-right,
+html.route-info-open .map-stage.map-bleed .mapboxgl-ctrl-bottom-left,
+html.route-info-open .map-stage.map-bleed .mapboxgl-ctrl-bottom-right {
   z-index: 3;
 }
 
 .map-stage.map-bleed:has(.storm-advisory-bar--expanded) .storm-advisory-bar--expanded,
-.map-stage.map-bleed:has(.route-progress-callout-panel--expanded)
-  .route-progress-callout-panel--expanded {
+html.route-info-open .route-progress-callout-panel--expanded {
   bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important;
   z-index: 26;
   padding-bottom: max(14px, calc(12px + env(safe-area-inset-bottom, 0px)));
@@ -7897,25 +8210,23 @@
   line-height: 1.2;
   padding: 2px 4px;
   border-radius: 4px;
-  border: 1px solid rgba(96, 165, 250, 0.45);
-  background: rgba(30, 58, 138, 0.28);
-  color: #dbeafe;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(15, 23, 42, 0.35);
+  color: #fff;
   white-space: normal;
 }
 
 .adv-dash__hour-wind-tag {
-  border-color: rgba(251, 191, 36, 0.45);
-  background: rgba(120, 53, 15, 0.28);
-  color: #fde68a;
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(15, 23, 42, 0.35);
+  color: #fff;
 }
 
-.adv-dash__hour-card .adv-dash__hour-temp {
-  color: rgba(15, 23, 42, 0.92);
-  text-shadow: 0 0 8px rgba(255, 255, 255, 0.35);
-}
-
-.adv-dash__hour-card .adv-dash__hour-time {
-  color: rgba(15, 23, 42, 0.72);
+.adv-dash__hour-card .adv-dash__hour-temp,
+.adv-dash__hour-card .adv-dash__hour-time,
+.adv-dash__hour-card .adv-dash__hour-air {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
 }
 
 .adv-dash__hour-card .adv-dash__hour-heat {
@@ -11066,6 +11377,16 @@
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.28);
 }
 
+/* Thin slice of the map mosaic — same green/yellow/red, only where echo crosses. */
+.route-progress-strip__radar-slice {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.92;
+}
+
 /* Minimal start (green) / destination (red) cues on the strip only */
 .route-progress-strip__end-cap {
   position: absolute;
@@ -13438,8 +13759,8 @@
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: #3b82f6;
-  border: 2px solid #fff;
+  background: var(--puck-fill);
+  border: 2px solid var(--puck-stroke);
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
 }
 
@@ -13577,6 +13898,8 @@
 .nav-bottom-toolbar--drive .nav-bottom-toolbar__right,
 .nav-bottom-toolbar--mapnav .nav-bottom-toolbar__right {
   width: 100%;
+  min-width: 0;
+  overflow: hidden;
   padding-left: 10px;
   border-left: 1px solid rgba(255, 255, 255, 0.14);
 }
@@ -13586,6 +13909,8 @@
   align-items: center;
   justify-content: center;
   min-width: 0;
+  flex-shrink: 0;
+  z-index: 1;
 }
 
 .nav-bottom-toolbar__right {
@@ -13619,6 +13944,9 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: #f1f5f9;
 }
 
@@ -13965,7 +14293,42 @@
 }
 
 .nav-mode-sq--radar {
-  background: linear-gradient(145deg, #06b6d4, #0e7490);
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1;
+  background: linear-gradient(145deg, #334155, #1e293b);
+  border-color: rgba(148, 163, 184, 0.4);
+  color: #cbd5e1;
+}
+
+.nav-mode-sq--radar__name {
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.nav-mode-sq--radar__state {
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.nav-mode-sq--radar.is-off {
+  background: linear-gradient(145deg, #334155, #1e293b);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: #94a3b8;
+}
+
+.nav-mode-sq--radar.is-on {
+  background: linear-gradient(145deg, #22d3ee, #0891b2);
+  border-color: #67e8f9;
+  color: #042f2e;
+  box-shadow: 0 0 0 1px rgba(103, 232, 249, 0.75), 0 0 12px rgba(34, 211, 238, 0.4);
+}
+
+.nav-mode-sq--radar.is-on .nav-mode-sq--radar__state {
+  color: #ecfeff;
 }
 
 .nav-mode-sq--go {
@@ -14112,6 +14475,12 @@
   color: #9aa0a6;
 }
 
+/* Road-class average, not map data — dimmer so it never reads like a posted sign. */
+.nav-bottom-stat-v--limit-guess {
+  color: #9aa0a6;
+  font-weight: 700;
+}
+
 /* Heuristic vs estimated limit ? subtle red + soft pulse (honors reduced motion) */
 .nav-bottom-stat-v--speed-over {
   color: #f87171;
@@ -14216,6 +14585,15 @@
 }
 
 /* Multi-result search: pick a place on the map */
+.map-search-pick-hit {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  line-height: 0;
+  cursor: pointer;
+}
+
 .map-search-pick-dot {
   width: 16px;
   height: 16px;
@@ -15761,6 +16139,10 @@
     padding-bottom: var(--nav-bottom-reserved);
   }
 
+  .app-shell.nav-fullmap.app-shell--basic-ad-banner .nav-bottom-stack {
+    bottom: var(--basic-ad-banner-reserve, 50px);
+  }
+
   .map-stage.map-bleed .mapboxgl-ctrl-bottom-left,
   .map-stage.map-bleed .mapboxgl-ctrl-bottom-right {
     filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
@@ -15849,8 +16231,8 @@
     max-width: calc(100% - 16px);
   }
 
-  .nav-toast-stack--dock {
-    bottom: calc(var(--nav-bottom-reserved, 72px) + 6px);
+  .nav-toast-stack--under-advisory {
+    margin-top: 2px;
   }
 
   .nav-top-cluster {
@@ -16344,7 +16726,7 @@
     margin-left: 0;
     padding-left: 10px;
     border-left: 1px solid rgba(255, 255, 255, 0.14);
-    overflow: visible;
+    overflow: hidden;
     justify-content: flex-end;
   }
 
@@ -17074,6 +17456,11 @@
     flex-shrink: 0;
   }
 
+  .app-shell.nav-fullmap .nav-bottom-dock__about-row > .stormy-call-btn {
+    order: 3;
+    margin-right: 0;
+  }
+
   .app-shell.nav-fullmap .nav-bottom-dock__about-row > .nav-radar-frame-time-dock {
     order: 1;
     margin-right: auto;
@@ -17086,6 +17473,11 @@
 
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row > .map-about-btn {
     order: 1;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row > .stormy-call-btn {
+    order: 2;
+    margin-right: 0;
   }
 
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row > .nav-radar-frame-time-dock {

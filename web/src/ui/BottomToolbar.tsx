@@ -1,4 +1,5 @@
 import type { MapViewMode } from "./DriveMap";
+import type { LngLat } from "../nav/types";
 import { useEffect, useMemo, useState } from "react";
 import {
   shouldShowManualOffRouteUi,
@@ -6,9 +7,11 @@ import {
 } from "../nav/constants";
 import {
   formatArrivalClockCompact,
+  formatArrivalClockParts,
   formatEtaDuration,
   formatEtaDurationToolbar,
 } from "./formatEta";
+import { displaySpeed, speedUnitLabel } from "../utils/displayUnits";
 import { ROUTE_ACTIVE_COLOR } from "./mapRouteStyle";
 const VIEW_CYCLE: { mode: MapViewMode; label: string; line: string }[] = [
   { mode: "route", label: "Rt", line: ROUTE_ACTIVE_COLOR },
@@ -34,6 +37,12 @@ type Props = {
   showGo: boolean;
   speedMph: number | null;
   postedMph: number | null;
+  /** False outside the US and the UK: show km/h. The mph values above stay in miles for the over-speed check. */
+  useMiles?: boolean;
+  /** Lim is a road-class average, not map data — never drives the over-speed warning. */
+  postedMphIsClassEstimate?: boolean;
+  /** Lim came from the road ahead. Show the number without an estimate mark. */
+  postedMphFromHorizon?: boolean;
   onStop: () => void;
   hasTrip: boolean;
   /** Planning with no destination: quick return along the reversed last Go route. */
@@ -49,6 +58,8 @@ type Props = {
   viewCycleDisabled?: boolean;
   /** Active leg ETA while driving (minutes, fused score) */
   driveEtaMinutes: number | null;
+  /** Destination pin — arrival clock is dest-local, including weekday/zone on long trips. */
+  destLngLat?: LngLat | null;
   showRadar: boolean;
   onToggleRadar: () => void;
   /** When false, hide the Rad button entirely (not just inactive). */
@@ -76,6 +87,9 @@ export function BottomToolbar({
   showGo,
   speedMph,
   postedMph,
+  useMiles = true,
+  postedMphIsClassEstimate = false,
+  postedMphFromHorizon = false,
   onStop,
   hasTrip,
   showReturnTripButton = false,
@@ -86,6 +100,7 @@ export function BottomToolbar({
   showViewCycleButton = true,
   viewCycleDisabled = false,
   driveEtaMinutes,
+  destLngLat = null,
   showRadar,
   onToggleRadar,
   showRadarButton = true,
@@ -121,6 +136,13 @@ export function BottomToolbar({
     if (m <= 0) return null;
     return etaTickMs + Math.round(m) * 60_000;
   }, [etaTickMs, driveEtaMinutes]);
+  const arrivalClockParts = useMemo(
+    () =>
+      arrivalAtMs != null
+        ? formatArrivalClockParts(arrivalAtMs, { destLngLat, nowMs: etaTickMs })
+        : null,
+    [arrivalAtMs, destLngLat, etaTickMs]
+  );
 
   const driveNavUi = navigationStarted && viewMode === "drive";
   const mapNavUi = navigationStarted && viewMode === "topdown";
@@ -142,6 +164,7 @@ export function BottomToolbar({
     speedMph != null &&
     postedMph != null &&
     postedMph > 0 &&
+    !postedMphIsClassEstimate &&
     speedMph > postedMph + SPEED_OVER_BUFFER_MPH;
 
   return (
@@ -211,22 +234,28 @@ export function BottomToolbar({
                   className={`nav-bottom-stat-v${speedOverPosted ? " nav-bottom-stat-v--speed-over" : ""}`}
                   title={speedOverPosted ? "Over posted speed limit — follow road signs" : undefined}
                 >
-                  {speedMph != null ? Math.round(speedMph) : "—"}
-                  <small> mph</small>
+                  {speedMph != null ? displaySpeed(speedMph, useMiles) : "—"}
+                  <small> {speedUnitLabel(useMiles)}</small>
                 </span>
               </div>
               <div className="nav-bottom-stat">
                 <span className="nav-bottom-stat-k">Lim</span>
                 <span
-                  className="nav-bottom-stat-v"
+                  className={`nav-bottom-stat-v${postedMphIsClassEstimate && !postedMphFromHorizon ? " nav-bottom-stat-v--limit-guess" : ""}`}
                   title={
-                    postedMph != null
-                      ? "Map estimate only — always obey posted road signs. Not for enforcement."
-                      : "No reliable map limit here — obey posted road signs"
+                    postedMph == null
+                      ? "No reliable map limit here — obey posted road signs"
+                      : postedMphFromHorizon
+                        ? "Limit from the road ahead. Obey the posted sign."
+                        : postedMphIsClassEstimate
+                          ? "No map limit here — typical limit for this class of road. Obey posted road signs."
+                          : "Map estimate only — always obey posted road signs. Not for enforcement."
                   }
                 >
-                  {postedMph != null ? postedMph : "—"}
-                  {postedMph != null ? <small> est</small> : null}
+                  {postedMph != null ? displaySpeed(postedMph, useMiles) : "—"}
+                  {postedMph != null && !postedMphFromHorizon ? (
+                    <small>{postedMphIsClassEstimate ? " ~est" : " est"}</small>
+                  ) : null}
                 </span>
               </div>
             </div>
@@ -270,14 +299,19 @@ export function BottomToolbar({
                 type="button"
                 title={
                   radarEnabled
-                    ? "Animated precipitation radar (US: Tomorrow.io, elsewhere: RainViewer)"
+                    ? showRadar
+                      ? "Radar on — tap to hide precipitation"
+                      : "Radar off — tap to show precipitation"
                     : "Radar disabled in Settings"
                 }
-                className={`nav-mode-sq nav-mode-sq--radar${showRadar ? " active" : ""}`}
+                className={`nav-mode-sq nav-mode-sq--radar${showRadar ? " is-on" : " is-off"}`}
+                aria-pressed={showRadar}
+                aria-label={showRadar ? "Radar on" : "Radar off"}
                 onClick={radarEnabled ? onToggleRadar : undefined}
                 disabled={!radarEnabled}
               >
-                Rad
+                <span className="nav-mode-sq--radar__name">Rad</span>
+                <span className="nav-mode-sq--radar__state">{showRadar ? "On" : "Off"}</span>
               </button>
             )}
             {routeUi && showGo && (
@@ -343,19 +377,19 @@ export function BottomToolbar({
           {navigationStarted &&
           driveEtaMinutes != null &&
           driveEtaMinutes > 0 &&
-          arrivalAtMs != null ? (
+          arrivalAtMs != null &&
+          arrivalClockParts ? (
             <div
               className="nav-bottom-toolbar__drive-meta"
-              aria-label={`ETA ${formatArrivalClockCompact(arrivalAtMs)}, ${formatEtaDuration(driveEtaMinutes)} remaining`}
+              aria-label={`ETA ${formatArrivalClockCompact(arrivalAtMs, { destLngLat, nowMs: etaTickMs })}, ${formatEtaDuration(driveEtaMinutes)} remaining`}
             >
               <div className="nav-bottom-toolbar__drive-eta-compact">
                 <span className="nav-bottom-toolbar__drive-eta-line nav-bottom-toolbar__drive-eta-line--arrival">
                   <span className="nav-bottom-toolbar__drive-eta-prefix">ETA </span>
-                  <span className="nav-bottom-toolbar__drive-eta-clock">
-                    {formatArrivalClockCompact(arrivalAtMs)}
-                  </span>
+                  <span className="nav-bottom-toolbar__drive-eta-clock">{arrivalClockParts.clock}</span>
                 </span>
                 <span className="nav-bottom-toolbar__drive-eta-line nav-bottom-toolbar__drive-eta-line--remaining">
+                  {arrivalClockParts.weekday ? `${arrivalClockParts.weekday} · ` : ""}
                   {formatEtaDurationToolbar(driveEtaMinutes)}
                 </span>
               </div>

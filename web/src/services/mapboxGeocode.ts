@@ -1,7 +1,8 @@
 import type { LngLat } from "../nav/types";
+import { haversineMeters } from "../nav/routeGeometry";
 import { fetchWithTimeout, MAPBOX_GEOCODE_TIMEOUT_MS } from "../utils/fetchResilient";
 import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
-import { getCachedReverseGeocode, setCachedReverseGeocode } from "./reverseGeocodeCache";
+import { getCachedReverseGeocode, reverseGeocodeCellKey, setCachedReverseGeocode } from "./reverseGeocodeCache";
 
 export type GeocodeHit = { lngLat: LngLat; placeName: string };
 
@@ -290,4 +291,76 @@ export async function mapboxReverseGeocode(
   };
   setCachedReverseGeocode(lng, lat, hit);
   return hit;
+}
+
+/** City / town center. Coarser than the address cache so one lookup covers a stretch of road. */
+const PLACE_CELL_DEG = 0.15;
+const placeCenterCache = new Map<string, { name: string; lngLat: LngLat } | null>();
+
+export async function mapboxReversePlace(
+  lng: number,
+  lat: number,
+  accessToken: string
+): Promise<{ name: string; lngLat: LngLat } | null> {
+  if (!accessToken) return null;
+  const key = reverseGeocodeCellKey(lng, lat, PLACE_CELL_DEG);
+  if (placeCenterCache.has(key)) return placeCenterCache.get(key) ?? null;
+
+  const url = new URL(
+    `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${lng},${lat}`)}.json`
+  );
+  url.searchParams.set("access_token", accessToken);
+  url.searchParams.set("types", "place,locality");
+  url.searchParams.set("limit", "1");
+
+  let res: Response;
+  try {
+    res = await fetchWithTimeout({
+      input: url.toString(),
+      init: { method: "GET" },
+      timeoutMs: MAPBOX_GEOCODE_TIMEOUT_MS,
+    });
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+  recordMapboxUsage("geocoding");
+  const data = (await res.json()) as {
+    features?: { center?: [number, number]; place_name?: string }[];
+  };
+  const f = data.features?.[0];
+  const name = f?.place_name?.split(",")[0]?.trim();
+  const center = f?.center;
+  if (!name || !center || name.length < 3) {
+    placeCenterCache.set(key, null);
+    return null;
+  }
+  const hit = { name, lngLat: [center[0], center[1]] as LngLat };
+  placeCenterCache.set(key, hit);
+  return hit;
+}
+
+/**
+ * One nearby place for the drive banner. Geocoding is per request (100k free).
+ * Search Box /suggest is per session (500 free) and bills even when nobody picks a row,
+ * so a one-shot tip must not use it.
+ */
+export async function mapboxNearbyPoi(
+  query: string,
+  accessToken: string,
+  proximity: LngLat
+): Promise<{ name: string; distanceMeters: number } | null> {
+  const features = await fetchForwardFeatures(query, accessToken, {
+    types: "poi",
+    limit: 1,
+    proximity,
+  });
+  const feature = features[0];
+  if (!feature?.center) return null;
+  const name = (feature.place_name ?? "").split(",")[0]?.trim();
+  if (!name) return null;
+  return {
+    name,
+    distanceMeters: haversineMeters(proximity, feature.center),
+  };
 }

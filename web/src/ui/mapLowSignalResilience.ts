@@ -3,12 +3,47 @@
  *
  * The phone supervisor sets {@link shouldHoldLastGoodMap} when the radio is
  * down or a reachability probe fails. While that hold is on, keep last-good
- * **tiles** and road snap — do **not** reload the basemap or refresh traffic.
- * GPS follow-cam must keep tracking the puck on those tiles (pan / jumpTo).
+ * **tiles** and road snap — do **not** reload the basemap, refresh traffic,
+ * or yank the camera. Jeff stands down; one snap when the hold clears.
  */
 
 /** Keep hold this long after the link looks healthy again — brief cell flaps. */
 export const HOLD_CLEAR_HYSTERESIS_MS = 4_500;
+
+/**
+ * How many fresh Mapbox probe misses, while the phone still says it is connected,
+ * before the advisory says data is low. One slow fetch is a country blip.
+ */
+export const LOW_DATA_ADVISORY_PROBE_FAILS = 2;
+
+/**
+ * The "data is low" sentence follows the live link. Map-hold hysteresis can
+ * keep tiles steady for a few seconds after recovery; the sentence must not.
+ * A probe that started earlier must not turn the sentence back on.
+ */
+export function nextLowDataAdvisory(input: {
+  showing: boolean;
+  offline: boolean;
+  nativeDown: boolean;
+  probeFresh: boolean;
+  probeOk: boolean | null;
+  consecutiveProbeFails: number;
+}): { showing: boolean; consecutiveProbeFails: number } {
+  if (input.offline || input.nativeDown) {
+    return { showing: true, consecutiveProbeFails: input.consecutiveProbeFails };
+  }
+  if (!input.probeFresh || input.probeOk == null) {
+    return { showing: input.showing, consecutiveProbeFails: input.consecutiveProbeFails };
+  }
+  if (input.probeOk) {
+    return { showing: false, consecutiveProbeFails: 0 };
+  }
+  const consecutiveProbeFails = input.consecutiveProbeFails + 1;
+  return {
+    showing: consecutiveProbeFails >= LOW_DATA_ADVISORY_PROBE_FAILS,
+    consecutiveProbeFails,
+  };
+}
 
 /**
  * After pan "succeeds" but the puck is still this far from the yard-line anchor,
@@ -18,6 +53,27 @@ export const FOLLOW_CAM_STALL_DRIFT_PX = 110;
 
 /** Consecutive stalled frames before jumpTo (avoids a one-frame flash). */
 export const FOLLOW_CAM_STALL_FRAMES_BEFORE_JUMP = 3;
+
+/**
+ * App-online stays true for a 2.5s Wi‑Fi→cell grace so GO does not freeze.
+ * The map must hold as soon as native radio is down — that grace is what
+ * walked the camera onto missing tiles (432: 718 write fails, flashes).
+ */
+export function shouldApplyMapHoldOnNativeRadioDown(input: {
+  nativeConnected: boolean | null;
+  navigationStarted: boolean;
+  alreadyHolding: boolean;
+}): boolean {
+  return input.nativeConnected === false && (input.navigationStarted || input.alreadyHolding);
+}
+
+/*
+ * There is no longer a "freeze the camera on weak tiles" threshold. 438 showed that
+ * holding the picture while the puck keeps driving is worse than showing bare
+ * background: the puck simply leaves the screen. A failed pan now degrades the
+ * follow write to the direct transform path — see `driveCameraQueue.ts`. The hold
+ * below is still about tiles, style reload, and traffic, never the camera.
+ */
 
 export function shouldHoldLastGoodMap(input: {
   navigatorOnLine: boolean;

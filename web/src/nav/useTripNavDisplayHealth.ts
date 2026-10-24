@@ -89,6 +89,12 @@ export function useTripNavDisplayHealth(deps: UseTripNavDisplayHealthDeps): void
         Number.isFinite(trafficLeg.mapboxDurationMinutes)
           ? trafficLeg.mapboxDurationMinutes
           : null;
+      const typicalRemaining =
+        liveRemaining != null &&
+        trafficLeg?.typicalDurationMinutes != null &&
+        Number.isFinite(trafficLeg.typicalDurationMinutes)
+          ? trafficLeg.typicalDurationMinutes
+          : null;
       const remainingEtaMinutes = computeRemainingDriveEtaMinutes({
         navigationStarted: true,
         fullEtaMinutes: fullEta,
@@ -96,6 +102,7 @@ export function useTripNavDisplayHealth(deps: UseTripNavDisplayHealthDeps): void
         alongM,
         hasRouteGeometry: Boolean(guidanceRouteGeomRef.current?.length),
         liveRemainingEtaMinutes: liveRemaining,
+        typicalRemainingMinutes: typicalRemaining,
       });
 
       const audit = auditTripNavDisplay({

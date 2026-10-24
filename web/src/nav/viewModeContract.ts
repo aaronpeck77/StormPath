@@ -102,8 +102,8 @@ export function routeLineGeometryKind(
   if (opts?.isOverviewPip) return "overview";
   if (!navigationStarted) return "overview";
   if (viewMode !== "drive") return "overview";
-  const along = opts?.userAlongMeters;
-  if (along == null || !Number.isFinite(along)) return "overview";
+  /* Missing along used to fall back to continent overview — IL→CA then
+   * drew 800-point chords through yards until the first GPS snap. */
   return "driveAhead";
 }
 
@@ -197,4 +197,12 @@ export function showsRadarMotionOverlay(
 ): boolean {
   if (navigationStarted) return true;
   return viewMode !== "drive";
+}
+
+/**
+ * Tap-to-dest on the StormPath map. Drive follow-cam owns the camera only after Go.
+ * Planning taps must work even if the view is briefly still Dr before the kick-out to Rt.
+ */
+export function allowsMapDestinationPick(navigationStarted: boolean): boolean {
+  return !navigationStarted;
 }

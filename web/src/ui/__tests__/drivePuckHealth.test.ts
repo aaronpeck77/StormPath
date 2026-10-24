@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   auditDrivePuckPlacement,
+  DRIVE_PUCK_ANCHOR_SEVERE_DRIFT_PX,
   expectedDrivePuckScreenAnchorPx,
+  readDrivePuckAnchorDrift,
   repairActionsForDrivePuckIssues,
 } from "../drivePuckHealth";
 
@@ -52,5 +54,54 @@ describe("auditDrivePuckPlacement", () => {
   it("skips when drift is unknown (exploring / not in drive follow)", () => {
     const audit = auditDrivePuckPlacement({ driftPx: null, speedMps: 15 });
     expect(audit.ok).toBe(true);
+  });
+});
+
+describe("readDrivePuckAnchorDrift", () => {
+  const padding = { top: 200, bottom: 160, left: 40, right: 40 };
+  const offset = [0, 80] as const;
+
+  it("reports yard-line hypot and stays on-canvas near the anchor", () => {
+    const sight = readDrivePuckAnchorDrift({
+      project: () => ({ x: 200, y: 500 }),
+      puck: [-77, 39],
+      mapWidth: 400,
+      mapHeight: 800,
+      padding,
+      offset,
+      exploring: false,
+    });
+    expect(sight.offCanvas).toBe(false);
+    expect(sight.driftPx).toBe(0);
+    expect(sight.reportPx).toBe(0);
+  });
+
+  it("flags a puck that projected off the canvas", () => {
+    const sight = readDrivePuckAnchorDrift({
+      project: () => ({ x: -40, y: 200 }),
+      puck: [-77, 39],
+      mapWidth: 400,
+      mapHeight: 800,
+      padding,
+      offset,
+      exploring: false,
+    });
+    expect(sight.offCanvas).toBe(true);
+    expect(sight.reportPx).toBeGreaterThanOrEqual(DRIVE_PUCK_ANCHOR_SEVERE_DRIFT_PX);
+  });
+
+  it("stays quiet while the driver is exploring", () => {
+    const sight = readDrivePuckAnchorDrift({
+      project: () => ({ x: -40, y: 200 }),
+      puck: [-77, 39],
+      mapWidth: 400,
+      mapHeight: 800,
+      padding,
+      offset,
+      exploring: true,
+    });
+    expect(sight.driftPx).toBeNull();
+    expect(sight.offCanvas).toBe(false);
+    expect(sight.reportPx).toBeNull();
   });
 });

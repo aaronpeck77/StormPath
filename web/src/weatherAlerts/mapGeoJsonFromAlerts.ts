@@ -1,11 +1,12 @@
 import { nwsMapKindFromEvent } from "./nwsMapKind";
+import { nwsAlertShowsOnMap } from "./nwsMapPolygon";
 import type { NormalizedWeatherAlert } from "./types";
 
 /** Build map layers directly from normalized alerts (fallback when corridor GeoJSON ids drift). */
 export function mapGeoJsonFromAlerts(alerts: NormalizedWeatherAlert[]): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = [];
   for (const a of alerts) {
-    if (!a.geometry) continue;
+    if (!a.geometry || !nwsAlertShowsOnMap(a)) continue;
     features.push({
       type: "Feature",
       id: a.id,

@@ -52,7 +52,7 @@ describe("windForecastCalib", () => {
 
   it("scales the wind chart to everyday breezes instead of a forced 30 mph floor", () => {
     expect(routeWindGraphScaleMph([10, 12, 14])).toBe(20);
-    expect(routeWindGraphScaleMph([8, 9])).toBe(15);
+    expect(routeWindGraphScaleMph([8, 9])).toBe(12);
     expect(routeWindGraphScaleMph([42, 48])).toBe(60);
   });
 

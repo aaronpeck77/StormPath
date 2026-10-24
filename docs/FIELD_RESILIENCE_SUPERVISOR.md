@@ -18,10 +18,14 @@ Jeff is **not** a second bot. Camera, puck, and live-traffic polls stay in `useD
 
 | Signal | Healthy link | Dead zone (`holdLastGoodMap`) |
 |--------|----------------|-------------------------------|
-| Drive heading / puck | Resync follow-cam | **Still** resync (hard `setCenter` / jump) — never gate on `isStyleLoaded()` while tiles fail |
+| Drive heading / puck | Emit a **Resync intent** | **Stand down.** One resync intent when the hold clears |
 | Live traffic stale | `bumpTrafficRefresh` | Hold last traffic — no doomed fetch |
 
-A manual Jeff tap still resyncs on purpose. Badge + sightings stay. Control Room flush is still off.
+**The hold is about tiles, style reload and traffic — never the camera** (Sep 20 2026, build 438). Holding the *camera* meant 125 s of no writes in a 240 s drive and the puck drove off a frozen map. The follow-cam keeps running through a hold on the direct-transform writer (`safeHardFollowCamera`, which needs no tiles); missing tiles render as background, the way every other nav app does it. A failed `easeTo` pan also degrades to that writer and latches there until pans stop failing.
+
+**Jeff never calls Mapbox** (Sep 19 2026). He publishes a Resync intent and the DriveMap rAF loop performs the single write, at the 30-yard line, with the latched writer — see `resolveDriveCameraCommand` in `web/src/ui/driveCameraQueue.ts`. Build 435 is what the old behavior looked like: 515 bare `setCenter`s, a `map.resize` per tick, `Camera: 0 applied`, puck parked at the 50. The dead-zone stand-down came first (435/436); the queue is what makes it structural instead of another latch.
+
+A manual Jeff tap still requests a resync on purpose. Badge + sightings stay. Control Room flush is still off.
 
 Other self-heals (route-ahead, ETA, trip surface, route lines) are unchanged and are **not** Jeff.
 
@@ -46,7 +50,7 @@ Wired on the phone (`SUPERVISOR_PHONE_WATCH_IDS`): `map_low_signal`, `false_onli
 | id | What we watch | Stuck after | Recovery | Report |
 |----|----------------|-------------|----------|--------|
 | `map_low_signal` | Native radio down (not a stuck WKWebView `navigator.onLine`) | 2.5s handoff grace, then hold | Hold last-good map / camera / road snap | If repeated |
-| `jeff_drive_camera` / `jeff_drive_puck` / `jeff_live_traffic` | Jeff polls | see hooks | Resync / refresh, or hold if dead zone | If repeated |
+| `jeff_drive_camera` / `jeff_drive_puck` / `jeff_live_traffic` | Jeff polls | see hooks | Resync **intent** / refresh, or stand down in a dead zone | If repeated |
 | `routing_hang` | `routing` — Directions via `useComputeRoutes` (55s timeout) | 20s | Abort controller + `setRouting(false)`; keep last plan | Always |
 | `search_hang` | `suggestLoading` — `useDestinationSearch` | 12s | Clear loading + suggestions; do not apply stale results | Always |
 | `bypass_hang` | `bypassBusy` — traffic bypass / compare | 20s | Abort + clear busy; keep prior compare | Always |

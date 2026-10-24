@@ -8,13 +8,14 @@ import {
 } from "react";
 import { type AdvisoryPromoLine, type BasicStatusPanelPromos } from "../config/basicAds";
 import { BasicAdStrip } from "./BasicAdStrip";
-import { BasicStatusAdSlot } from "./BasicStatusAdSlot";
 import { limitExpandedPromoLines, mixAdvisoryPreviewItems } from "./advisoryPreviewMix";
 import { sortWeatherAlertsBySeverity, type NormalizedWeatherAlert } from "../weatherAlerts";
 import { nwsAlertIsBasicEmergency } from "../weatherAlerts/basicEmergencyFilter";
 import { nwsAlertIsStripProminent } from "../weatherAlerts/geometryOverlap";
 import { nwsGlanceSummary } from "../weatherAlerts/nwsDriveSummary";
 import type { DriveAheadLine, DriveAheadRadarTier } from "../nav/driveRouteAhead";
+import type { CorridorTimingExplainLine } from "../nav/corridorTimingExplain";
+import type { PassengerAdvisoryLine } from "../nav/passengerAdvisory";
 import {
   formatDriveAheadBrief,
   formatMinutesAsHoursMinutes,
@@ -25,6 +26,7 @@ import {
   isAlertExpired,
   promoteAtPositionAlertToTop,
 } from "../nav/routeAlertTiming";
+import { placePhraseMatchingSpan } from "../nav/routePlaceReference";
 import { TRAFFIC_BYPASS_ENABLED, TRAFFIC_DELAY_ALERT_MINUTES } from "../nav/constants";
 import type { RouteImpact, RouteImpactSeverity } from "../nav/routeImpacts";
 import {
@@ -103,6 +105,7 @@ function defaultPreviewTone(badge: string | null, raw: string): AdvisoryPreviewT
   if (b === "traffic") return "warn";
   if (b === "local" || b === "now") return conditionsLinePreviewTone(raw);
   if (b === "load" || b === "plan" || b === "work") return "info";
+  if (b === "timing" || b === "wx") return "info";
   if (b === "app" || b === "drive" || b === "nav" || b === "info") return "info";
   if (/no hazard|no urgent|no life-safety/.test(r)) return "clear";
   return "info";
@@ -203,6 +206,8 @@ export type StormAdvisoryBarProps = SharedProps & {
   driveRouteAheadLine?: DriveAheadLine | null;
   /** Nearest hazard likely to matter at your ETA along the route. */
   nextHazardAtEtaLine?: string | null;
+  /** Now-map vs ETA corridor timing explain lines (collapsed ticker only). */
+  corridorTimingLines?: CorridorTimingExplainLine[];
   /** Plus: full NWS + road tools. Basic: life-safety NWS, connectivity, and promo rotation. */
   advisoryTier?: "plus" | "basic";
   /** Subscription/entitlement state for copy (distinct from current advisoryTier rendering mode). */
@@ -210,6 +215,8 @@ export type StormAdvisoryBarProps = SharedProps & {
   promoLines?: AdvisoryPromoLine[];
   /** Browser / PWA online flag — surfaced for Basic. */
   isOnline?: boolean;
+  /** Radio is up but the map host is not answering, or the drive is holding last-good tiles. */
+  dataLow?: boolean;
   /**
    * Basic (nav + radar only): keep the advisory strip for status and tips, but omit NWS/weather panels
    * and preview rotation that references forecasts, NWS loads, or hazard lists.
@@ -224,6 +231,8 @@ export type StormAdvisoryBarProps = SharedProps & {
    * drivers see a quick read of conditions at a glance.
    */
   nowcastLine?: string | null;
+  /** One departure or pull-off suggestion. Local forecast and the opened panels stay as they are. */
+  passengerLine?: PassengerAdvisoryLine | null;
   /** Sparse Mapbox POI tip while navigating (low priority in the rotator). */
   nearbyPoiTipLine?: string | null;
   /** OpenWeather snapshot at the user's position (expanded local forecast card). */
@@ -315,13 +324,16 @@ export function StormAdvisoryBar({
   onRefreshWeather = null,
   driveRouteAheadLine = null,
   nextHazardAtEtaLine = null,
+  corridorTimingLines = [],
   advisoryTier = "plus",
   ownsPlus = false,
   promoLines = [],
   isOnline = true,
+  dataLow = false,
   basicNavAdvisoryMode = false,
   navigationStarted,
   nowcastLine = null,
+  passengerLine = null,
   nearbyPoiTipLine = null,
   currentNowcast = null,
   forecastAreaLabel = null,
@@ -448,6 +460,8 @@ export function StormAdvisoryBar({
           expiresIso: band.expiresIso,
           onsetIso: band.onsetIso ?? a.onset,
           crossesRoute: band.crossesRoute,
+          placePhrase: placePhraseMatchingSpan(routeAheadTimeline, band.startMeters, band.endMeters),
+          placeLabel: a.event,
         });
         if (!timing.promoteToTop) continue;
         if (!nwsAlertIsStripProminent(a)) continue;
@@ -465,6 +479,7 @@ export function StormAdvisoryBar({
     userAlongMeters,
     planEtaMinutes,
     driveEtaMinutes,
+    routeAheadTimeline,
   ]);
 
   /** Non–life-safety alerts at your position or on the route — shown below the hazard graph. */
@@ -493,6 +508,8 @@ export function StormAdvisoryBar({
           expiresIso: band.expiresIso,
           onsetIso: band.onsetIso ?? a.onset,
           crossesRoute: band.crossesRoute,
+          placePhrase: placePhraseMatchingSpan(routeAheadTimeline, band.startMeters, band.endMeters),
+          placeLabel: a.event,
         });
         timingLine = timing.timingLine;
       }
@@ -510,6 +527,7 @@ export function StormAdvisoryBar({
     userAlongMeters,
     planEtaMinutes,
     driveEtaMinutes,
+    routeAheadTimeline,
   ]);
 
   /** NWS alert ids on the route hazard list — skip duplicate chip rows below. */
@@ -652,11 +670,13 @@ export function StormAdvisoryBar({
       const trip: AdvisoryPreviewItem[] = [];
       const promo: AdvisoryPreviewItem[] = [];
 
-      if (!isOnline) {
+      if (!isOnline || dataLow) {
         trip.push(
           previewItem({
-            badge: "Offline",
-            raw: bannerMsg("Offline — reconnect for map and radar."),
+            badge: "Data",
+            raw: bannerMsg(
+              "Data is low. Find better cell coverage or Wi-Fi for accurate performance."
+            ),
             tone: "warn",
           })
         );
@@ -700,6 +720,15 @@ export function StormAdvisoryBar({
           })
         );
       }
+      if (passengerLine) {
+        trip.push(
+          previewItem({
+            badge: passengerLine.badge,
+            raw: bannerMsg(passengerLine.text),
+            tone: "warn",
+          })
+        );
+      }
 
       let mixed = mixAdvisoryPreviewItems(trip, promo);
       if (mixed.length === 0) {
@@ -711,11 +740,13 @@ export function StormAdvisoryBar({
     const trip: AdvisoryPreviewItem[] = [];
     const promo: AdvisoryPreviewItem[] = [];
 
-    if (!isOnline) {
+    if (!isOnline || dataLow) {
       trip.push(
         previewItem({
-          badge: "Offline",
-          raw: bannerMsg("Offline — reconnect for map and advisories."),
+          badge: "Data",
+          raw: bannerMsg(
+            "Data is low. Find better cell coverage or Wi-Fi for accurate performance."
+          ),
           tone: "warn",
         })
       );
@@ -760,6 +791,17 @@ export function StormAdvisoryBar({
         })
       );
     }
+    for (const timingLine of corridorTimingLines) {
+      const raw = timingLine.text?.trim();
+      if (!raw) continue;
+      trip.push(
+        previewItem({
+          badge: timingLine.badge,
+          raw: bannerMsg(raw),
+          tone: timingLine.tone,
+        })
+      );
+    }
     if (nextHazardAtEtaLine?.trim()) {
       trip.push(
         previewItem({
@@ -795,6 +837,7 @@ export function StormAdvisoryBar({
     const hasRouteContext =
       Boolean(activeTicker) ||
       Boolean(nextHazardAtEtaLine?.trim()) ||
+      corridorTimingLines.some((l) => l.text?.trim()) ||
       trafficDelayMinutes >= 8 ||
       Boolean(showDriveAheadPreview);
     if (hasGuidanceRoute && !hasRouteContext) {
@@ -829,6 +872,15 @@ export function StormAdvisoryBar({
         })
       );
     }
+    if (passengerLine) {
+      trip.push(
+        previewItem({
+          badge: passengerLine.badge,
+          raw: bannerMsg(passengerLine.text),
+          tone: "warn",
+        })
+      );
+    }
 
     let mixed = mixAdvisoryPreviewItems(trip, promo);
     if (mixed.length === 0) {
@@ -838,6 +890,7 @@ export function StormAdvisoryBar({
   }, [
     basicNavAdvisoryMode,
     isOnline,
+    dataLow,
     showErrorState,
     error,
     loading,
@@ -852,9 +905,11 @@ export function StormAdvisoryBar({
     trafficDelayMinutes,
     driveRouteAheadLine,
     nextHazardAtEtaLine,
+    corridorTimingLines,
     promoLines,
     defaultPreviewText,
     nowcastLine,
+    passengerLine,
     nearbyPoiTipLine,
     localForecastBanner,
     localForecastNwsAlerts,
@@ -1262,9 +1317,8 @@ export function StormAdvisoryBar({
         {basicNavAdvisoryMode && basicStatusPanelPromos ? (
           <div
             className="storm-advisory-bar__basic-promos"
-            aria-label="Advertisement and StormPath Plus"
+            aria-label="StormPath Plus"
           >
-            <BasicStatusAdSlot line={basicStatusPanelPromos.partnerSlot} expanded />
             <BasicAdStrip
               lines={[basicStatusPanelPromos.plusUpsell]}
               expanded

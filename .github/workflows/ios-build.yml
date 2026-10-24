@@ -16,7 +16,8 @@
 #   VITE_MAPBOX_TOKEN                   Mapbox public token (map + search + directions)
 #   MAPBOX_DOWNLOADS_TOKEN              Mapbox *secret* token with Downloads:Read (SPM pulls Navigation SDK)
 #   VITE_TOMORROW_IO_API_KEY            Tomorrow.io (legacy — omit when WeatherKit enabled)
-#   VITE_TOMORROW_IO_TILE_PROXY_URL     Cloudflare tile worker base (see docs/CLOUDFLARE_TILES.md)
+#   VITE_TOMORROW_IO_TILE_PROXY_URL     Cloudflare Tomorrow.io tile worker base (see docs/CLOUDFLARE_TILES.md)
+#   VITE_RAINVIEWER_TILE_PROXY_URL      Cloudflare RainViewer tile worker base (optional; Netlify default)
 #   VITE_OPENWEATHER_API_KEY            OpenWeather (legacy — omit when WeatherKit enabled)
 #   VITE_WEATHERKIT_ENABLED             Set to `true` after Netlify token function is live (see docs/WEATHERKIT_SETUP.md)
 #   VITE_SENTRY_DSN                     Sentry DSN for crash reports (optional; see docs/SENTRY_SETUP.md)
@@ -88,6 +89,7 @@ jobs:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
           VITE_TOMORROW_IO_TILE_PROXY_URL: ${{ secrets.VITE_TOMORROW_IO_TILE_PROXY_URL }}
+          VITE_RAINVIEWER_TILE_PROXY_URL: ${{ secrets.VITE_RAINVIEWER_TILE_PROXY_URL }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
           VITE_WEATHERKIT_ENABLED: ${{ secrets.VITE_WEATHERKIT_ENABLED }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
@@ -105,6 +107,33 @@ jobs:
           IOS_BUILD_NUMBER: ${{ github.run_number }}
           # Also writes MBXAccessToken into Info.plist for Navigation SDK.
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
+
+      # 4.20.8 is the approved store train (ITMS-90186 / ITMS-90062). Apple rejects
+      # any new binary that still says 4.20.8 — including TestFlight. Fail here
+      # instead of archiving for 40 minutes and emailing Bill.
+      - name: Refuse closed App Store marketing train
+        working-directory: web
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          ver = str(json.load(open("package.json"))["version"])
+          def parts(v: str):
+              xs = []
+              for p in v.split("."):
+                  try:
+                      xs.append(int(p))
+                  except ValueError:
+                      xs.append(0)
+              return tuple((xs + [0, 0, 0])[:3])
+          if parts(ver) <= (4, 20, 8):
+              print(
+                  f"::error::Marketing version {ver} is closed. "
+                  "Last approved store train is 4.20.8 (ITMS-90186 / ITMS-90062). "
+                  "Bump web/package.json above 4.20.8 before uploading."
+              )
+              sys.exit(1)
+          print(f"Marketing version {ver} is open for new builds.")
+          PY
 
       # Mapbox Navigation Core is fetched via SPM from api.mapbox.com — needs a secret
       # token with Downloads:Read on the CI Mac (same as a local ~/.netrc). You do NOT
@@ -127,6 +156,17 @@ jobs:
           EOF
           chmod 600 "$HOME/.netrc"
 
+      - name: Require Stormy client token
+        if: env.BUILD_TRACK == 'testflight'
+        env:
+          VITE_STORMY_CLIENT_TOKEN: ${{ secrets.VITE_STORMY_CLIENT_TOKEN }}
+        run: |
+          if [ -z "${VITE_STORMY_CLIENT_TOKEN}" ]; then
+            echo "::error::GitHub secret VITE_STORMY_CLIENT_TOKEN is missing."
+            echo "It must match Netlify function env STORMY_CLIENT_TOKEN."
+            exit 1
+          fi
+
       - name: Build web app (TestFlight mode — Plus, support URLs, NWS UA from .env.testflight)
         if: env.BUILD_TRACK == 'testflight'
         run: npm run build:testflight
@@ -135,10 +175,12 @@ jobs:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
           VITE_TOMORROW_IO_TILE_PROXY_URL: ${{ secrets.VITE_TOMORROW_IO_TILE_PROXY_URL }}
+          VITE_RAINVIEWER_TILE_PROXY_URL: ${{ secrets.VITE_RAINVIEWER_TILE_PROXY_URL }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
           VITE_WEATHERKIT_ENABLED: ${{ secrets.VITE_WEATHERKIT_ENABLED }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
           VITE_OPS_USAGE_INGEST_TOKEN: ${{ secrets.VITE_OPS_USAGE_INGEST_TOKEN }}
+          VITE_STORMY_CLIENT_TOKEN: ${{ secrets.VITE_STORMY_CLIENT_TOKEN }}
           VITE_IOS_BUILD_NUMBER: ${{ github.run_number }}
 
       - name: Require RevenueCat key (App Store track)
@@ -186,6 +228,7 @@ jobs:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
           VITE_TOMORROW_IO_TILE_PROXY_URL: ${{ secrets.VITE_TOMORROW_IO_TILE_PROXY_URL }}
+          VITE_RAINVIEWER_TILE_PROXY_URL: ${{ secrets.VITE_RAINVIEWER_TILE_PROXY_URL }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
           VITE_WEATHERKIT_ENABLED: ${{ secrets.VITE_WEATHERKIT_ENABLED }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
@@ -301,9 +344,8 @@ jobs:
       # rejects as "does not support provisioning profiles".
       - name: Build archive
         run: |
+          set +e
           set -o pipefail
-          # Last command must be this pipeline — its exit status becomes the step status (do not add a
-          # separate `exit ${PIPESTATUS[0]}` line; `bash -e` / shell quirks can interfere).
           xcodebuild archive \
             -project web/ios/App/App.xcodeproj \
             -scheme App \
@@ -312,6 +354,16 @@ jobs:
             -destination "generic/platform=iOS" \
             CODE_SIGNING_REQUIRED=YES \
             2>&1 | tee /tmp/xcodebuild.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            echo "::group::Compiler errors"
+            grep -E "error:|fatal error:" /tmp/xcodebuild.log | head -80 || true
+            echo "::endgroup::"
+            grep -E "error:|fatal error:" /tmp/xcodebuild.log | head -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit "$status"
+          fi
 
       # ── 10. Export the IPA ────────────────────────────────────────────────────
       - name: Export IPA
@@ -347,8 +399,12 @@ jobs:
             2>&1 | tee /tmp/export.log
 
       # ── 11. Upload to TestFlight ──────────────────────────────────────────────
-      # Xcode 26 xcrun altool is unreliable (false success or hard failure). Use the
-      # App Store Connect API backend instead of altool/iTMSTransporter.
+      # The App Store Connect API backend marked build 495 complete and Apple
+      # never listed it. iTMSTransporter's exit code is the delivery result.
+      # The confirm step then polls until that build number is listed.
+      # Xcode 26+ ships a stub (`xcrun iTMSTransporter`) that only says
+      # "install Transporter from the Mac App Store." GitHub runners do not
+      # have that app. Install Apple's standalone CLI instead.
       # Normalize the .p8 secret first — GitHub often stores base64/DER; Node crypto needs PEM.
       - name: Prepare App Store Connect API key
         id: asc_key
@@ -369,12 +425,13 @@ jobs:
         run: |
           set -euo pipefail
           IPA="$RUNNER_TEMP/export/App.ipa"
-          PLIST=$(unzip -p "$IPA" 'Payload/*.app/Info.plist')
+          # Info.plist inside the IPA is binary. plutil cannot read that from a pipe.
+          unzip -p "$IPA" 'Payload/*.app/Info.plist' > "$RUNNER_TEMP/App-Info.plist"
           echo "Expected TestFlight build number: ${{ github.run_number }}"
           echo "Build track: ${{ env.BUILD_TRACK }}"
-          echo "IPA CFBundleVersion: $(echo "$PLIST" | plutil -extract CFBundleVersion raw -)"
-          echo "IPA CFBundleShortVersionString: $(echo "$PLIST" | plutil -extract CFBundleShortVersionString raw -)"
-          echo "IPA CFBundleIdentifier: $(echo "$PLIST" | plutil -extract CFBundleIdentifier raw -)"
+          echo "IPA CFBundleVersion: $(plutil -extract CFBundleVersion raw "$RUNNER_TEMP/App-Info.plist")"
+          echo "IPA CFBundleShortVersionString: $(plutil -extract CFBundleShortVersionString raw "$RUNNER_TEMP/App-Info.plist")"
+          echo "IPA CFBundleIdentifier: $(plutil -extract CFBundleIdentifier raw "$RUNNER_TEMP/App-Info.plist")"
 
       - name: Verify App Store Connect API access
         continue-on-error: true
@@ -384,23 +441,32 @@ jobs:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: python3 .github/scripts/verify-appstore-connect-api.py
 
-      # Primary: App Store Connect API. Fallback: Transporter (skips app lookup — helps when API returns 403).
-      - name: Upload to TestFlight (App Store Connect API)
-        id: asc_upload
-        continue-on-error: true
-        uses: apple-actions/upload-testflight-build@v4
-        with:
-          app-path: ${{ runner.temp }}/export/App.ipa
-          app-type: ios
-          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          api-key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          api-private-key: ${{ steps.asc_key.outputs.pem }}
-          backend: appstore-api
-          uses-non-exempt-encryption: "false"
-          wait-for-processing: "false"
+      - name: Install standalone iTMSTransporter
+        id: transporter
+        run: |
+          set -euo pipefail
+          DEST=/usr/local/itms/bin/iTMSTransporter
+          if [ -x "$DEST" ]; then
+            echo "Standalone Transporter already installed at $DEST"
+          else
+            url="https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/ra/resources/download/public/Transporter__OSX/bin/"
+            echo "Downloading standalone Transporter"
+            curl -fL --retry 3 --retry-delay 5 "$url" -o /tmp/itmstransporter.pkg
+            sudo installer -pkg /tmp/itmstransporter.pkg -target /
+          fi
+          if [ ! -x "$DEST" ]; then
+            echo "::error::Standalone iTMSTransporter did not install at $DEST"
+            exit 1
+          fi
+          help_out="$("$DEST" -help 2>&1 || true)"
+          if echo "$help_out" | grep -q "iTMSTransporter is now part of Transporter"; then
+            echo "::error::$DEST is still the Xcode stub, not the standalone Transporter."
+            exit 1
+          fi
+          echo "path=$DEST" >> "$GITHUB_OUTPUT"
+          echo "Using $DEST"
 
-      - name: Upload to TestFlight (Transporter fallback)
-        if: steps.asc_upload.outcome == 'failure'
+      - name: Upload to TestFlight (Transporter)
         uses: apple-actions/upload-testflight-build@v4
         with:
           app-path: ${{ runner.temp }}/export/App.ipa
@@ -409,8 +475,21 @@ jobs:
           api-key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           api-private-key: ${{ steps.asc_key.outputs.pem }}
           backend: transporter
+          transporter-executable-path: ${{ steps.transporter.outputs.path }}
           uses-non-exempt-encryption: "false"
           wait-for-processing: "false"
+
+      - name: Confirm Apple listed the build
+        env:
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          BUNDLE_ID: com.aaronpeck.stormpath
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/write-appstore-connect-key.py
+          node .github/scripts/wait-for-testflight-build.mjs
 
       # ── 12. Save IPA as a build artifact (optional — handy for debugging) ────
       - name: Upload IPA artifact

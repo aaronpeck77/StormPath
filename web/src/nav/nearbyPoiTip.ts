@@ -1,8 +1,5 @@
 import type { LngLat } from "./types";
-import {
-  mapboxSearchBoxSuggest,
-  mintSearchBoxSessionToken,
-} from "../services/mapboxSearchBox";
+import { mapboxNearbyPoi } from "../services/mapboxGeocode";
 import { haversineMeters } from "./routeGeometry";
 
 /** Sparse drive-time POI tips — one short line, rare cadence. */
@@ -67,8 +64,8 @@ export function pickNearbyPoiCategory(seed: number): (typeof NEARBY_POI_CATEGORI
 }
 
 /**
- * One Search Box suggest for a rotating category near the puck.
- * Returns null on failure / empty — caller keeps last tip.
+ * One nearby place for the banner. Uses Geocoding, not a Search Box session:
+ * a session bills after two quiet minutes even when the driver never picks a row.
  */
 export async function fetchNearbyPoiTip(opts: {
   mapboxToken: string;
@@ -78,15 +75,8 @@ export async function fetchNearbyPoiTip(opts: {
   const token = opts.mapboxToken.trim();
   if (!token) return null;
   const cat = pickNearbyPoiCategory(opts.seed ?? Date.now());
-  const session = mintSearchBoxSessionToken();
-  const suggestions = await mapboxSearchBoxSuggest(cat.query, token, session, {
-    proximity: opts.userLngLat,
-    limit: 3,
-    types: "poi",
-    poiCategory: cat.category,
-  });
-  const hit = suggestions[0];
-  if (!hit?.name) return null;
+  const hit = await mapboxNearbyPoi(cat.query, token, opts.userLngLat);
+  if (!hit) return null;
   return {
     text: formatNearbyPoiTipLine(hit.name, hit.distanceMeters),
     fetchedAtMs: Date.now(),

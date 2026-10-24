@@ -1,14 +1,15 @@
 import mapboxgl from "../mapboxCapacitorWorker";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { MutableRefObject } from "react";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { HomeMapFraming } from "../map/homeMapFraming";
 import {
+  IDLE_HOME_LOCATE_POLL_MS,
   IDLE_HOME_TRAIL_BOUNDS_WAIT_MS,
   resolveIdleHomeCameraAction,
   resolveIdleHomeFraming,
 } from "../map/homeMapFraming";
-import type { HomePuckFollowMode } from "../map/homePuckFollow";
+import { isIdleHomeScreen, type HomePuckFollowMode } from "../map/homePuckFollow";
 import { FALLBACK_LNGLAT } from "../nav/constants";
 import type { TripStop } from "../nav/routeWaypoints";
 import {
@@ -17,7 +18,20 @@ import {
 } from "../map/homePreloadRegion";
 import { isWifiConnection } from "../map/mapPreloadNetwork";
 import { warmMapTilesForBounds } from "../map/mapRegionCacheWarm";
+import { neighborhoodBounds, readLastMapOpen, writeLastMapOpen } from "../map/lastMapOpen";
 import { prefetchMapTilesForBounds } from "../map/prefetchMapTilesForBounds";
+import {
+  readMapVectorTilesetGroups,
+  styleMatchedTileUrl,
+} from "../map/mapStyleTileSources";
+import {
+  DRIVE_WARM_MAX_TILES,
+  DRIVE_WARM_ZOOMS,
+  driveZoomWindowBounds,
+  nextDriveZoomWindowStartM,
+  shouldRunDriveZoomWarm,
+  shouldWarmNextDriveZoomWindow,
+} from "../map/driveZoomTileWarm";
 import {
   corridorWindowBounds,
   nextCorridorWindowStartM,
@@ -66,6 +80,9 @@ import {
   fitMapToOffRouteRejoinChoices,
   fitMapToRouteCompareLocal,
   fitMapToTrip,
+  fitMapToTripEndpoints,
+  hideAlternateRoutesOnDrive,
+  previewTripOverviewCamera,
   routeIdFromRouteHitLayerId,
   visibleRouteIdsForHitLayers,
 } from "./mapRouteLayers";
@@ -77,6 +94,29 @@ import {
   applyRadarMotionLayers,
   removeRadarMotionLayers,
 } from "./mapRadarMotionLayer";
+import { applyRoadControlLayers } from "./mapRoadControlLayers";
+import { displayedRoadControls } from "../nav/roadControls";
+import {
+  bumpDriveDiag,
+  noteDriveDiagCamFailStreak,
+  noteDriveDiagCamFreeze,
+  noteViewDroneEnd,
+  noteViewDroneSkip,
+  noteViewDroneStart,
+  noteViewDroneTap,
+  noteDriveDiagCamLean,
+  noteViewDroneWriteFail,
+  setDriveDiagCamWriter,
+  setDriveDiagPoseSource,
+  setDriveDiagRoadControls,
+} from "../nav/driveDiagnostics";
+import {
+  drivePoseCountsAsSnapped,
+  pickDrivePoseSource,
+  corePuckRouteHoldMeters,
+  shouldSnapPuckToRoute,
+  type DrivePoseSource,
+} from "../nav/drivePoseSource";
 import {
   boundsFromGeometry,
   computeRadarStormMotions,
@@ -95,10 +135,10 @@ import {
   safeEaseTo,
   safeExtendBounds,
   safeFitBounds,
+  safeCameraForBounds,
   safeFlyTo,
   safePanToCenter,
   safeJumpTo,
-  safeHardFollowCamera,
   isMapReadyForFollowCam,
   flattenMapCamera,
   safeSetMapLngLat,
@@ -108,26 +148,49 @@ import {
 } from "./mapCameraSafe";
 import {
   hazardOverviewFitPadding,
-  isNarrowPhoneViewport,
   mapStyleReadyForCamera,
-  minPlanningRouteZoomFloor,
-  maxRouteOverviewZoomDuringNav,
   offRouteAlternatesFitKey,
   planningRoutesFitKey,
   routeFitMaxZoomCeiling,
   routeFitPadding,
-  routeFitZoomBias,
-  ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM,
+  routeOverviewProgressBucket,
 } from "./mapFitLogic";
 import {
   DRIVE_FOLLOW_PITCH_DEG,
   driveCameraEaseOptions,
   resolveDriveFollowCameraBearingDeg,
   resolveTravelBearingDeg,
-  smoothDriveBearingDeg,
 } from "./mapDriveCamera";
-import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
+import {
+  liveDriveAlignBearing,
+  type LiveAlignBearingState,
+} from "../nav/computeDriveRouteBearing";
+import { headingDeltaDegrees } from "../nav/forwardRoutePick";
+import { readDrivePuckAnchorDrift } from "./drivePuckHealth";
+import {
+  alignDriveBearingDeg,
+  createDriveBearingAlignState,
+  shouldReclaimDrivePuckThisFrame,
+} from "./driveCameraRules";
+import {
+  anticipateNativeCamStartMeters,
+  resolveTurnCameraBearing,
+  type TurnCamHold,
+  NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG,
+  NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS,
+  shouldHoldParkedFollowCam,
+  shouldUseNativeFollowCam,
+  nativeFollowCamNeedsWebWrite,
+} from "../nav/nativeDriveFollowCam";
+import { writeHardFollowToYardLine } from "./driveFollowCamAnchor";
+import {
+  NATIVE_DRIVE_MAP_ENABLED,
+  NATIVE_DRIVE_PUCK_OVERLAY_ENABLED,
+} from "../nav/nativeDriveMapShell";
+import { isNativeMapboxNavPlatform } from "../nav/useNativeNavSession";
+import { StormpathMapboxNavigation } from "@stormpath/mapbox-navigation";
 import { allowBasemapStyleReload } from "./mapLowSignalResilience";
+import { resolveDriveCameraCommand } from "./driveCameraQueue";
 import {
   DRIVE_FOLLOW_ZOOM_DEFAULT,
   DRIVE_FOLLOW_ZOOM_MIN,
@@ -137,9 +200,39 @@ import {
   repairStoredDriveFollowZoom,
 } from "./driveFollowZoomGuard";
 import {
+  destPlaceHoldCamera,
+  destPlaceHoldZoom,
+  destPlaceNeedsStreetRestore,
+  exploreIdleMsForPinPlacing,
+  isPlanningPinPlacing,
+  shouldHoldDestPlaceFrame,
+} from "./destPlaceCamera";
+import {
+  DRIVE_CAMERA_ZOOM_TC_S,
+  DRIVE_SNAP_ALONG_TC_S,
+  drivePuckBlendTcS,
+  smoothDriveZoom,
+} from "./driveFollowSmooth";
+import {
+  applyContinuousDroneFrame,
+  mapDroneDurationMs,
+  mapViewFlySkipReason,
+  readMapDronePose,
+  type MapDronePose,
+} from "./mapViewFly";
+import {
+  destTapStartFromTouchCount,
+  isDestFingerTap,
+  shouldAcceptDestTap,
+  type DestTapPoint,
+} from "./mapDestTap";
+import {
   advanceFollowCamWriter,
+  nativeFollowCamAllowsSameFrameHardFallback,
+  shouldAllowDriveCamWrite,
   type FollowCamWriter,
 } from "./driveFollowCamWrite";
+import { IDLE_MAP_SLEEP_MS, shouldPauseHiddenMapWork, shouldSleepIdleMap } from "../nav/navResourceBudget";
 import { computePuckTargetBeforeRouteSnap } from "./driveMapPuckTarget";
 import { liftTrafficThenRoutesThenHits } from "./mapLayerStack";
 import {
@@ -151,14 +244,15 @@ import {
   sceneLightForPhase,
   buildingColorForPhase,
 } from "./mapBasemapStyle";
+import { navigationRouteOverviewSnapKey } from "./navigationCamera";
 import {
-  navigationRouteOverviewSnapKey,
-  navigationTopdownZoomForViewChange,
-} from "./navigationCamera";
-import {
+  PLANNING_FIT_RETRY_MS,
+  PLANNING_ROUTE_FIT_SETTLE_MS,
   resolveViewEnterDecision,
-  topdownFitNeedsStreetZoomReset,
+  routeOverviewFitIsAppForced,
+  shouldDebouncePlanningOverviewFit,
   shouldRetryInterruptedRouteOverviewEnter,
+  topdownFitNeedsStreetZoomReset,
 } from "./useMapCameraController";
 import {
   TOPDOWN_PUCK_OFFSET_PX,
@@ -167,10 +261,11 @@ import {
   ROUTE_VIEW_PLANNING_STREET_ZOOM,
   resolveTopdownLocalZoom,
   coerceTopdownNavStreetZoom,
+  topdownZoomOnEnter,
   regionalPlanningZoom,
 } from "./mapTopdownCamera";
 import { selectablePoiAtPoint } from "./mapPoiPick";
-import { mapEventFromUser, setDriveMapUserGestures } from "./mapDriveGestures";
+import { mapEventFromUser, setDriveMapUserGestures, setDoubleClickZoomEnabled } from "./mapDriveGestures";
 import {
   makePuckEl,
   makeDestEl,
@@ -226,9 +321,13 @@ export type Props = {
   fitTrigger: number;
   viewMode: MapViewMode;
   navigationStarted: boolean;
+  /** True while Mapbox is building A/B — hold the camera until the final plan lands. */
+  routeBuildBusy?: boolean;
   heading: number | null;
   /** When set (drive + active leg), camera bearing follows the polyline ahead instead of GPS heading. */
   driveRouteBearingDeg?: number | null;
+  /** Distance to the next banner turn — gates camera lean so we do not swing a block early. */
+  metersToBannerManeuver?: number | null;
   /** Off route in drive: camera + puck follow forward travel, not the old polyline behind the driver. */
   driveOffRouteForwardFraming?: boolean;
   /** True while an auto-rejoin/detour leg (not the original locked route) drives guidance —
@@ -345,14 +444,19 @@ export type Props = {
   isOnline?: boolean;
   /** Supervisor dead-zone hold — keep last tiles/camera; no mid-drive style reload. */
   holdLastGoodMap?: boolean;
+  /**
+   * Native Drive follow-cam (iOS Navigation Core). When set in Drive after Go,
+   * DriveMap applies this sample and does not write its own follow-cam.
+   */
+  nativeFollowCamera?: import("../nav/nativeDriveFollowCam").NativeDriveFollowCamera | null;
+  /** iOS NavigationMapView is the visible Drive map — hide the WebView GL canvas. */
+  nativeDriveMapActive?: boolean;
 };
 
 /** Alias for App / prop-assembly hooks — same shape as {@link Props}. */
 export type DriveMapProps = Props;
 
 /** Drive mode: return to follow-cam after the user pans/zooms the map (600 ms while navigating). */
-/** ~1/e time constant (seconds) for drive camera bearing toward travel/route (rAF loop). */
-const DRIVE_CAMERA_BEARING_TC_S = 0.7;
 /** After Jeff / auto resync: ignore rejoin-route tangents this long so the camera stays on travel. */
 const DRIVE_CAM_PREFER_TRAVEL_AFTER_RESYNC_MS = 12_000;
 /** Delay before Wi‑Fi tile warm so idle-home camera can finish first. */
@@ -365,6 +469,46 @@ const HOME_PRELOAD_START_DELAY_MS = 4_500;
 const DRIVE_PUCK_MARKER_OFFSET_PX: [number, number] = [0, 0];
 
 const ZERO_MAP_PADDING: mapboxgl.PaddingOptions = { top: 0, bottom: 0, left: 0, right: 0 };
+
+function writePlanningWaitCamera(
+  map: mapboxgl.Map,
+  dest: [number, number] | null | undefined,
+  user: [number, number] | null | undefined
+): boolean {
+  if (!isValidLngLatPair(dest)) return false;
+  let zNow = NaN;
+  let mapCenter: [number, number] | null = null;
+  try {
+    zNow = map.getZoom();
+    const c = map.getCenter();
+    if (isValidLngLat(c.lng, c.lat)) mapCenter = [c.lng, c.lat];
+  } catch {
+    return false;
+  }
+  const cam = destPlaceHoldCamera({
+    mapCenter,
+    userLngLat: user,
+    destLngLat: dest,
+    mapZoom: zNow,
+  });
+  if (
+    mapCenter &&
+    !destPlaceNeedsStreetRestore(zNow) &&
+    Math.abs(cam.center[0] - mapCenter[0]) < 1e-5 &&
+    Math.abs(cam.center[1] - mapCenter[1]) < 1e-5 &&
+    Math.abs(cam.zoom - zNow) < 0.08
+  ) {
+    flattenMapCamera(map);
+    return true;
+  }
+  return safeJumpTo(map, {
+    center: cam.center,
+    zoom: cam.zoom,
+    pitch: 0,
+    bearing: 0,
+    padding: ZERO_MAP_PADDING,
+  });
+}
 
 const SAVED_PLACE_DOT_MIN_ZOOM = 7;
 const SAVED_PLACE_DOT_FULL_ZOOM = 12.5;
@@ -395,8 +539,10 @@ function DriveMapInner({
   fitTrigger,
   viewMode,
   navigationStarted,
+  routeBuildBusy = false,
   heading,
   driveRouteBearingDeg = null,
+  metersToBannerManeuver = null,
   driveOffRouteForwardFraming = false,
   followingTemporaryGuidance = false,
   speedMps = null,
@@ -452,9 +598,14 @@ function DriveMapInner({
   holdLastGoodMap = false,
   lastTravelBearingDegOutRef,
   puckAnchorDriftPxOutRef,
+  nativeFollowCamera = null,
+  nativeDriveMapActive = false,
 }: Props) {
   const ultraLongRoute = isUltraLongTripRoute(sessionRouteLengthM);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [showOpeningCover, setShowOpeningCover] = useState(
+    () => readLastMapOpen() == null && userLngLat == null
+  );
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const puckMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const destMarkerRef = useRef<mapboxgl.Marker | null>(null);
@@ -497,6 +648,8 @@ function DriveMapInner({
     userAlongMeters != null && Number.isFinite(userAlongMeters) && userAlongMeters >= 0
       ? userAlongMeters
       : null;
+  const destLngLatRef = useRef(destLngLat);
+  destLngLatRef.current = destLngLat;
   /** Throttle map hazard-halo clip refreshes — full corridor reslice was blocking UI on long routes. */
   const lastHighlightClipAlongRef = useRef<number | null>(null);
   const [highlightClipTick, setHighlightClipTick] = useState(0);
@@ -516,6 +669,43 @@ function DriveMapInner({
   viewModeRef.current = viewMode;
   const navigationStartedRef = useRef(navigationStarted);
   navigationStartedRef.current = navigationStarted;
+  const nativeFollowCameraRef = useRef(nativeFollowCamera);
+  nativeFollowCameraRef.current = nativeFollowCamera;
+  /** When Core last reported. A new object arrives on every progress event, parked or not. */
+  const coreSampleAtMsRef = useRef<number | null>(null);
+  const nativeDriveMapActiveRef = useRef(nativeDriveMapActive);
+  nativeDriveMapActiveRef.current = nativeDriveMapActive;
+  useEffect(() => {
+    coreSampleAtMsRef.current = nativeFollowCamera ? performance.now() : null;
+  }, [nativeFollowCamera]);
+  const [nativeMapHoleReady, setNativeMapHoleReady] = useState(false);
+  /** Only punch the web map once native NavigationMapView is actually showing. */
+  const [nativeMapShowing, setNativeMapShowing] = useState(false);
+  /** After native shell has shown once this trip, Mp→Dr may snap web while native re-reveals. */
+  const hadNativeShellThisTripRef = useRef(false);
+  const punchNativeHole = Boolean(nativeDriveMapActive && nativeMapShowing);
+  const punchNativeHoleRef = useRef(punchNativeHole);
+  punchNativeHoleRef.current = punchNativeHole;
+  useEffect(() => {
+    if (!navigationStarted) hadNativeShellThisTripRef.current = false;
+  }, [navigationStarted]);
+  useEffect(() => {
+    if (nativeMapShowing) hadNativeShellThisTripRef.current = true;
+  }, [nativeMapShowing]);
+  /**
+   * First Go on native shell: freeze the web (customer) map camera until native
+   * punches through. Snapping web to street follow-cam during that wait fights
+   * the native reveal and looks like jumping between two maps.
+   */
+  const holdFirstNativeGoRef = useRef(false);
+  holdFirstNativeGoRef.current = Boolean(
+    NATIVE_DRIVE_MAP_ENABLED &&
+      isNativeMapboxNavPlatform() &&
+      navigationStarted &&
+      viewMode === "drive" &&
+      !punchNativeHole &&
+      !hadNativeShellThisTripRef.current
+  );
   const holdLastGoodMapRef = useRef(holdLastGoodMap);
   holdLastGoodMapRef.current = holdLastGoodMap;
   const isOnlineRef = useRef(isOnline);
@@ -528,19 +718,48 @@ function DriveMapInner({
   const onHomeMapUserPanRef = useRef(onHomeMapUserPan);
   onHomeMapUserPanRef.current = onHomeMapUserPan;
   const userExploringRef = useRef(false);
+  const pickExploreHoldRef = useRef(false);
+  /** While a Dr/Mp/Rt fly is in the air, follow-cam must not fight it. */
+  const viewFlyUntilMsRef = useRef(0);
+  const viewDroneRafRef = useRef(0);
+  const viewDroneActiveRef = useRef(false);
+  const viewDroneGenRef = useRef(0);
+  const lastDroneOffsetRef = useRef<[number, number]>([0, 0]);
+  /** Drone already framed Drive — enter-Dr hard snap must not cut the landing. */
+  const droneLandedDriveRef = useRef(false);
+  /** Skip fitMapToTrip after an Rt drone so idle/style cannot jump to a second overview. */
+  const droneLandedRouteUntilMsRef = useRef(0);
+  const parkedHoldCountedRef = useRef(false);
   /** One-shot: force drive follow-cam easeTo even when the puck barely moved (explore end, layout, resume). */
   const driveCamResyncRef = useRef(false);
+  /** Last native cam sample actually written — anchor for the parked wobble hold. */
+  const nativeCamAppliedRef = useRef<{
+    lng: number;
+    lat: number;
+    bearing: number;
+    pitch: number;
+    zoom: number;
+  } | null>(null);
+  /** Edge-detect for the low-signal map hold so diagnostics count holds, not frames. */
+  const lowSignalHeldRef = useRef(false);
   /** Sliding corridor window start (m) for ahead tile prefetch while navigating. */
   const corridorWarmStartMRef = useRef(0);
   const corridorPrefetchInFlightRef = useRef(false);
+  /** Separate, much shorter sliding window for the zoom Drive actually renders. */
+  const driveZoomWarmStartMRef = useRef<number | null>(null);
+  const driveZoomWarmInFlightRef = useRef(false);
   const exploreTimerRef = useRef<number | null>(null);
+  const destTapStartRef = useRef<DestTapPoint | null>(null);
+  const lastDestTapMsRef = useRef(0);
   const lastForcedPlanningFitTriggerRef = useRef<number | null>(null);
-  const prevPlanningRouteCountRef = useRef(0);
   const planningFitRafRef = useRef<number | null>(null);
   const planningFitRetryTimerRef = useRef<number | null>(null);
-  const planningFitVerifyTimerRef = useRef<number | null>(null);
   const activeDriveCamera = navigationStarted && viewMode === "drive";
-  const idleHomeScreen = routes.length === 0 && !navigationStarted;
+  const idleHomeScreen = isIdleHomeScreen({
+    routesLength: routes.length,
+    navigationStarted,
+    destLngLat,
+  });
   const topdownFollowKey = userLngLat
     ? `${Math.round(userLngLat[0] * 2500)}|${Math.round(userLngLat[1] * 2500)}`
     : null;
@@ -549,10 +768,13 @@ function DriveMapInner({
       ? `${Math.round(userLngLat[0] * 2500)}|${Math.round(userLngLat[1] * 2500)}`
       : null;
 
-  useEffect(() => {
-    if (routes.length === 0) prevPlanningRouteCountRef.current = 0;
-  }, [routes.length]);
   const driveCamBearingSmoothedRef = useRef<number | null>(null);
+  /** Steady turn sweep, same pace as a view change. Kept across frames. */
+  const driveBearingAlignRef = useRef(createDriveBearingAlignState());
+  /** Halfway view held through a turn, including a stop at the light. */
+  const driveTurnCamHoldRef = useRef<TurnCamHold | null>(null);
+  /** Core zoom steps ~1 Hz with speed — blend so the frame breathes instead of ticking. */
+  const driveCamZoomSmoothedRef = useRef<number | null>(null);
   /** Last course-over-ground while GO is active — hold heading-up across off-route GPS gaps. */
   const driveLastTravelBearingRef = useRef<number | null>(null);
   /** After Jeff/manual resync: ignore route tangents until this timestamp (ms). */
@@ -567,6 +789,13 @@ function DriveMapInner({
    */
   const pendingRouteOverviewEnterRef = useRef(false);
   const prevPlanningViewModeRef = useRef(viewMode);
+  /** Keep enter-decision prev accurate when Dr is active (route/topdown effect skips Dr). */
+  useEffect(() => {
+    if (viewMode === "drive") {
+      prevPlanningViewModeRef.current = "drive";
+    }
+  }, [viewMode]);
+  const prevViewFlyModeRef = useRef<MapViewMode | null>(null);
   /** Reuse stable padding/offset for drive follow — fresh objects every frame can confuse Mapbox camera updates. */
   const driveCamEaseOptsCacheRef = useRef<{
     key: string;
@@ -592,6 +821,8 @@ function DriveMapInner({
   headingRef.current = heading;
   const driveRouteBearingDegRef = useRef(driveRouteBearingDeg);
   driveRouteBearingDegRef.current = driveRouteBearingDeg;
+  const metersToBannerManeuverRef = useRef(metersToBannerManeuver);
+  metersToBannerManeuverRef.current = metersToBannerManeuver;
   const driveOffRouteForwardFramingRef = useRef(driveOffRouteForwardFraming);
   driveOffRouteForwardFramingRef.current = driveOffRouteForwardFraming;
   const followingTemporaryGuidanceRef = useRef(followingTemporaryGuidance);
@@ -609,6 +840,15 @@ function DriveMapInner({
     () => planningRoutesFitKey(routes, navigationStarted ? lineFocusId : null, destLngLat),
     [routes, lineFocusId, destLngLat, navigationStarted]
   );
+  const routeOverviewProgressKey = useMemo(() => {
+    if (!navigationStarted || viewMode !== "route") return "plan";
+    const along =
+      userAlongMeters != null && Number.isFinite(userAlongMeters) && userAlongMeters > 0
+        ? userAlongMeters
+        : 0;
+    const remaining = Math.max(0, sessionRouteLengthM - along);
+    return routeOverviewProgressBucket(remaining);
+  }, [navigationStarted, viewMode, userAlongMeters, sessionRouteLengthM]);
 
   const token = getWebEnv().mapboxToken;
   const mapSessionBounds = useMemo(
@@ -622,6 +862,314 @@ function DriveMapInner({
   const [mapReady, setMapReady] = useState(false);
   const [mapResumeTick, setMapResumeTick] = useState(0);
 
+  const stopViewDrone = (end: "abort" | "silent" = "abort") => {
+    const wasLive = viewDroneActiveRef.current;
+    if (viewDroneRafRef.current) {
+      cancelAnimationFrame(viewDroneRafRef.current);
+      viewDroneRafRef.current = 0;
+    }
+    viewDroneActiveRef.current = false;
+    if (end === "abort" && wasLive) noteViewDroneEnd("abort");
+  };
+
+  const settleFollowCamAfterDrone = (pose: MapDronePose) => {
+    lastDroneOffsetRef.current = pose.offset;
+    if (viewModeRef.current === "route") {
+      droneLandedRouteUntilMsRef.current = performance.now() + 2000;
+    }
+    if (viewModeRef.current !== "drive") return;
+    driveCamResyncRef.current = false;
+    nativeCamAppliedRef.current = {
+      lng: pose.lng,
+      lat: pose.lat,
+      bearing: pose.bearing,
+      pitch: pose.pitch,
+      zoom: pose.zoom,
+    };
+    driveCamBearingSmoothedRef.current = pose.bearing;
+    driveCamZoomSmoothedRef.current = pose.zoom;
+    droneLandedDriveRef.current = true;
+  };
+
+  const startViewDrone = (
+    to: MapDronePose,
+    puck: { lng: number; lat: number } | null
+  ): boolean => {
+    const map = mapRef.current;
+    if (!map) return false;
+    const from = readMapDronePose(map, lastDroneOffsetRef.current);
+    if (!from) return false;
+    if (viewDroneRafRef.current) {
+      cancelAnimationFrame(viewDroneRafRef.current);
+      viewDroneRafRef.current = 0;
+      noteViewDroneEnd("retarget");
+    }
+    /* Keep the flag true across restart — a false gap lets fit/snap steal the shot. */
+    viewDroneActiveRef.current = true;
+    droneLandedDriveRef.current = false;
+    stopMapCamera(map);
+    userExploringRef.current = false;
+    if (exploreTimerRef.current) {
+      window.clearTimeout(exploreTimerRef.current);
+      exploreTimerRef.current = null;
+    }
+    const durationMs = mapDroneDurationMs(from, to);
+    /* Hold follow-cam until the first tick starts the real clock — iOS rAF
+     * timestamps can sit still while Mapbox flattens Drive pitch, which made
+     * Dr→Mp report ~5s on 431. */
+    viewFlyUntilMsRef.current = performance.now() + durationMs + 400;
+    lastDroneOffsetRef.current = from.offset;
+    const scheduledAt = performance.now();
+    viewDroneGenRef.current += 1;
+    const gen = viewDroneGenRef.current;
+    let t0 = 0;
+    let waitMs = 0;
+    let shotWriteFails = 0;
+    let ended = false;
+    noteViewDroneStart();
+    const tick = () => {
+      if (ended || gen !== viewDroneGenRef.current || !viewDroneActiveRef.current) return;
+      const m = mapRef.current;
+      if (!m) {
+        ended = true;
+        stopViewDrone();
+        return;
+      }
+      const now = performance.now();
+      if (t0 === 0) {
+        t0 = now;
+        waitMs = now - scheduledAt;
+        viewFlyUntilMsRef.current = t0 + durationMs + 80;
+      }
+      const u = Math.min(1, (now - t0) / durationMs);
+      const { pose, ok } = applyContinuousDroneFrame(m, from, to, u, puck);
+      if (!ok) {
+        shotWriteFails += 1;
+        noteViewDroneWriteFail();
+      }
+      lastDroneOffsetRef.current = pose.offset;
+      if (u < 1) {
+        viewDroneRafRef.current = requestAnimationFrame(tick);
+      } else {
+        ended = true;
+        viewDroneRafRef.current = 0;
+        viewDroneActiveRef.current = false;
+        viewFlyUntilMsRef.current = performance.now() + 48;
+        settleFollowCamAfterDrone(pose);
+        noteViewDroneEnd("done", shotWriteFails, now - t0, waitMs);
+        if (viewModeRef.current === "drive") {
+          try {
+            m.setMinZoom(DRIVE_FOLLOW_ZOOM_MIN);
+          } catch {
+            /* map disposed */
+          }
+        }
+      }
+    };
+    viewDroneRafRef.current = requestAnimationFrame(tick);
+    return true;
+  };
+
+  const droneTargetForView = (map: mapboxgl.Map, next: typeof viewMode): MapDronePose | null => {
+    const puck =
+      (puckMarkerRef.current ? readMapLngLat(puckMarkerRef.current.getLngLat()) : null) ??
+      userLngLatRef.current;
+    if (next === "drive") {
+      if (!puck) return null;
+      const ease = driveCameraEaseOptions(
+        stormBarVisibleRef.current,
+        stormBarExpandedRef.current,
+        progressRailVisibleRef.current
+      );
+      const nativeCam = nativeFollowCameraRef.current;
+      const useNative = Boolean(
+        nativeCam &&
+          shouldUseNativeFollowCam({
+            camera: nativeCam,
+            navigationStarted: navigationStartedRef.current,
+            viewMode: "drive",
+            userExploring: userExploringRef.current,
+          })
+      );
+      const brg = useNative && nativeCam
+        ? nativeCam.bearing
+        : resolveDriveFollowCameraBearingDeg({
+            offRouteForward: driveOffRouteForwardFramingRef.current,
+            routeBearingDeg: driveRouteBearingDegRef.current,
+            headingDeg: liveGpsHeadingRefStable?.current ?? headingRef.current,
+            prevFix: null,
+            curFix: null,
+            mapBearing: map.getBearing(),
+            lastTravelBearingDeg:
+              driveLastTravelBearingRef.current ?? driveCamBearingSmoothedRef.current,
+            speedMps: speedMpsRef.current,
+            followingTemporaryGuidance: followingTemporaryGuidanceRef.current,
+            preferTravel: performance.now() < driveCamPreferTravelUntilMsRef.current,
+          });
+      const zoom = useNative && nativeCam
+        ? nativeCam.zoom
+        : repairStoredDriveFollowZoom(driveNavZoomRef);
+      const pitch = useNative && nativeCam ? nativeCam.pitch : DRIVE_FOLLOW_PITCH_DEG;
+      const guarded = guardDriveFollowCamera({ center: puck, zoom, puck });
+      return {
+        lng: guarded.center[0],
+        lat: guarded.center[1],
+        zoom: guarded.zoom,
+        pitch,
+        bearing: ((brg % 360) + 360) % 360,
+        padding: {
+          top: Number(ease.padding.top) || 0,
+          bottom: Number(ease.padding.bottom) || 0,
+          left: Number(ease.padding.left) || 0,
+          right: Number(ease.padding.right) || 0,
+        },
+        offset: ease.offset,
+      };
+    }
+    if (next === "topdown") {
+      if (!puck) return null;
+      let mapZoom = topdownZoomRef.current;
+      try {
+        mapZoom = map.getZoom();
+      } catch {
+        /* map torn down */
+      }
+      const zoom = navigationStarted
+        ? topdownZoomOnEnter(mapZoom, topdownZoomRef)
+        : resolveTopdownLocalZoom(topdownZoomRef, false);
+      return {
+        lng: puck[0],
+        lat: puck[1],
+        zoom,
+        pitch: 0,
+        bearing: 0,
+        padding: { top: 0, bottom: 0, left: 0, right: 0 },
+        offset: TOPDOWN_PUCK_OFFSET_PX,
+      };
+    }
+    const navigatingRt = Boolean(navigationStartedRef.current);
+    const padding = routeFitPadding(
+      stormBarVisible,
+      stormBarExpanded,
+      routes,
+      lineFocusId,
+      progressRailVisible
+    );
+    const cam = previewTripOverviewCamera(
+      map,
+      routes,
+      puck,
+      destLngLatRef.current,
+      padding,
+      routeFitMaxZoomCeiling(routes, lineFocusId),
+      {
+        onlyRouteId: navigatingRt ? lineFocusId : undefined,
+        forceFullPolyline: !navigatingRt,
+        remainingFromUser: navigatingRt,
+        zoomBias: 0,
+      }
+    );
+    if (!cam) {
+      const ll = puck ?? readMapLngLat(map.getCenter());
+      if (!ll) return null;
+      return {
+        lng: ll[0],
+        lat: ll[1],
+        zoom: 10,
+        pitch: 0,
+        bearing: 0,
+        padding: {
+          top: Number(padding.top) || 0,
+          bottom: Number(padding.bottom) || 0,
+          left: Number(padding.left) || 0,
+          right: Number(padding.right) || 0,
+        },
+        offset: [0, 0],
+      };
+    }
+    return {
+      lng: cam.lng,
+      lat: cam.lat,
+      zoom: cam.zoom,
+      pitch: 0,
+      bearing: 0,
+      padding: {
+        top: Number(padding.top) || 0,
+        bottom: Number(padding.bottom) || 0,
+        left: Number(padding.left) || 0,
+        right: Number(padding.right) || 0,
+      },
+      offset: [0, 0],
+    };
+  };
+
+  useEffect(() => () => stopViewDrone(), []);
+
+  useEffect(() => {
+    const prev = prevViewFlyModeRef.current;
+    prevViewFlyModeRef.current = viewMode;
+    const flyInput = {
+      prevViewMode: prev,
+      nextViewMode: viewMode,
+      destPlaceHold: shouldHoldDestPlaceFrame({
+        destLngLat,
+        routesLength: routes.length,
+        navigationStarted,
+      }),
+      offRouteCompare: navigationStarted && offRouteRejoinCompareActive,
+      routeCompare: trafficBypassCompareActive,
+    };
+    if (!mapReady || !mapRef.current) {
+      if (prev != null && prev !== viewMode) {
+        noteViewDroneTap(prev, viewMode);
+        noteViewDroneSkip("not_ready");
+      }
+      return;
+    }
+    const skip = mapViewFlySkipReason(flyInput);
+    if (skip === "same") return;
+    if (skip === "first") {
+      noteViewDroneSkip("first");
+      return;
+    }
+    if (prev != null && prev !== viewMode) noteViewDroneTap(prev, viewMode);
+    if (skip) {
+      noteViewDroneSkip(skip);
+      return;
+    }
+    const to = droneTargetForView(mapRef.current, viewMode);
+    if (!to) {
+      noteViewDroneSkip("no_to");
+      return;
+    }
+    const puckLl =
+      (puckMarkerRef.current ? readMapLngLat(puckMarkerRef.current.getLngLat()) : null) ??
+      userLngLatRef.current;
+    const puck =
+      puckLl && Number.isFinite(puckLl[0]) && Number.isFinite(puckLl[1])
+        ? { lng: puckLl[0], lat: puckLl[1] }
+        : null;
+    if (startViewDrone(to, puck)) {
+      if (viewMode === "route") pendingRouteOverviewEnterRef.current = false;
+      return;
+    }
+    noteViewDroneSkip("no_from");
+    /* Do not freeze follow-cam for 1.3s when the drone failed to start — that
+     * is the hung / "nothing happened" tap. */
+  }, [
+    viewMode,
+    mapReady,
+    destLngLat,
+    routes.length,
+    navigationStarted,
+    offRouteRejoinCompareActive,
+    trafficBypassCompareActive,
+    stormBarVisible,
+    stormBarExpanded,
+    progressRailVisible,
+    lineFocusId,
+  ]);
+
   /** After pan/zoom ends, refresh halo clip once follow resumes. */
   useEffect(() => {
     if (!navigationStarted || viewMode !== "drive" || mapResumeTick === 0) return;
@@ -629,8 +1177,6 @@ function DriveMapInner({
     setHighlightClipTick((n) => n + 1);
   }, [mapResumeTick, navigationStarted, viewMode]);
 
-  /** Bumps when bottom/top chrome resizes so route fit padding tracks live UI dead zones. */
-  const [chromeLayoutTick, setChromeLayoutTick] = useState(0);
   const [nightBasemapPreset] = useState<NightBasemapPreset>(parseNightBasemapPreset);
   const [mapPhase, setMapPhase] = useState(() => currentMapPhase(userLngLat));
   const activeStyleRef = useRef(currentMapStyle(mapPhase, nightBasemapPreset));
@@ -658,15 +1204,21 @@ function DriveMapInner({
         userExploringRef.current = false;
         exploreTimerRef.current = null;
         setMapResumeTick((n) => n + 1);
-      }, 800);
+      }, exploreIdleMsForPinPlacing(true, 800));
       return;
     }
-    const idleMs =
+    const pinPlacing = isPlanningPinPlacing({
+      routesLength: routesLengthRef.current,
+      navigationStarted: navigationStartedRef.current,
+    });
+    const idleMs = exploreIdleMsForPinPlacing(
+      pinPlacing,
       routesLengthRef.current === 0
         ? 400
         : navigationStartedRef.current && viewModeRef.current === "drive"
           ? 600
-          : EXPLORE_IDLE_MS;
+          : EXPLORE_IDLE_MS
+    );
     exploreTimerRef.current = window.setTimeout(() => {
       userExploringRef.current = false;
       exploreTimerRef.current = null;
@@ -677,32 +1229,6 @@ function DriveMapInner({
     }, idleMs);
   };
 
-  useLayoutEffect(() => {
-    const bottomStack = document.querySelector<HTMLElement>(".nav-bottom-stack");
-    const topCluster = document.querySelector<HTMLElement>(".nav-top-cluster");
-    if (!bottomStack && !topCluster) return;
-
-    let raf = 0;
-    const bump = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => setChromeLayoutTick((n) => n + 1));
-    };
-
-    const ro = new ResizeObserver(bump);
-    if (bottomStack) ro.observe(bottomStack);
-    if (topCluster) ro.observe(topCluster);
-    window.addEventListener("resize", bump);
-    window.addEventListener("orientationchange", bump);
-    bump();
-
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      window.removeEventListener("resize", bump);
-      window.removeEventListener("orientationchange", bump);
-    };
-  }, []);
-
   useEffect(() => {
     if (!containerRef.current || !token || mapRef.current) return;
 
@@ -712,14 +1238,22 @@ function DriveMapInner({
     /* Wrap construction in try/catch so any runtime error in mapboxgl.Map is logged
      * rather than left as a silent React effect failure. */
     let map: mapboxgl.Map;
+    const live = userLngLatRef.current;
+    const remembered = live ? null : readLastMapOpen();
     try {
-      const startCenter = userLngLatRef.current ?? FALLBACK_LNGLAT;
-      const startZoom = userLngLatRef.current ? ROUTE_VIEW_PLANNING_STREET_ZOOM : 4;
+      const startCenter = live ?? (remembered ? ([remembered.lng, remembered.lat] as [number, number]) : FALLBACK_LNGLAT);
+      /* No saved place yet: stay covered. Zoom stays at street level so the globe never flashes. */
+      const startZoom = live
+        ? ROUTE_VIEW_PLANNING_STREET_ZOOM
+        : remembered
+          ? remembered.zoom
+          : ROUTE_VIEW_PLANNING_STREET_ZOOM;
       map = new mapboxgl.Map({
         container: containerRef.current,
         style: activeStyleRef.current,
         center: startCenter,
         zoom: startZoom,
+        bearing: remembered?.bearing ?? 0,
         attributionControl: false,
         dragRotate: true,
         touchPitch: true,
@@ -727,7 +1261,8 @@ function DriveMapInner({
         dragPan: true,
         touchZoomRotate: true,
         boxZoom: true,
-        doubleClickZoom: true,
+        /* Single tap places dest. Double-tap zoom was eating the pin on iPhone. */
+        doubleClickZoom: false,
         /* Keep more corridor tiles in RAM so Wi‑Fi→cell can paint from cache longer. */
         maxTileCacheSize: 500,
       });
@@ -745,11 +1280,16 @@ function DriveMapInner({
         navigationStarted: navigationStartedRef.current,
         hasContinent: mapHasContinent,
         ultraLongRoute: isUltraLongTripRoute(sessionRouteLengthMRef.current),
+        pinPlacing: shouldHoldDestPlaceFrame({
+          destLngLat: destLngLatRef.current,
+          routesLength: routesLengthRef.current,
+          navigationStarted: navigationStartedRef.current,
+        }),
       })
     );
 
-    /* Force Mercator projection. mapbox-gl 3.x defaults to globe at zoom < 6 (our
-     * initial zoom is 4), and globe projection on Capacitor's WebKit/WebGL2 context
+    /* Force Mercator projection. mapbox-gl 3.x defaults to globe at zoom < 6, and globe
+     * projection on Capacitor's WebKit/WebGL2 context
      * never completes a frame — the map renders only the atmosphere ring with no
      * continents drawn. Mercator is also how every classic nav app (Apple Maps,
      * Google Maps mobile, Waze) renders; globe was a desktop showpiece, not a fit
@@ -765,6 +1305,38 @@ function DriveMapInner({
     map.on("error", (e: { error?: unknown }) => {
       console.warn("[map] mapbox-gl error", e?.error ?? e);
     });
+
+    let lastOpenWriteMs = 0;
+    const rememberOpenFrame = (force: boolean) => {
+      try {
+        if (!isMapUsable(map)) return;
+        const c = map.getCenter();
+        const zoom = map.getZoom();
+        const now = Date.now();
+        if (!force && now - lastOpenWriteMs < 4_000) return;
+        lastOpenWriteMs = now;
+        writeLastMapOpen({ lng: c.lng, lat: c.lat, zoom, bearing: map.getBearing() });
+      } catch {
+        /* map disposed */
+      }
+    };
+    const onMoveEndRemember = () => rememberOpenFrame(false);
+    const onHideRemember = () => {
+      if (document.visibilityState === "hidden") rememberOpenFrame(true);
+    };
+    const onPageHideRemember = () => rememberOpenFrame(true);
+    map.on("moveend", onMoveEndRemember);
+    document.addEventListener("visibilitychange", onHideRemember);
+    window.addEventListener("pagehide", onPageHideRemember);
+
+    if (remembered && token) {
+      void prefetchMapTilesForBounds(neighborhoodBounds(remembered.lng, remembered.lat), token, {
+        zooms: [14, 15],
+        maxTiles: 18,
+        includeTerrain: false,
+        pacingMs: 20,
+      });
+    }
 
     const installTrafficLayers = () => {
       try {
@@ -800,6 +1372,9 @@ function DriveMapInner({
     } else map.once("load", onLoad);
 
     return () => {
+      map.off("moveend", onMoveEndRemember);
+      document.removeEventListener("visibilitychange", onHideRemember);
+      window.removeEventListener("pagehide", onPageHideRemember);
       map.off("style.load", installTrafficLayers);
       map.off("load", onLoad);
       puckMarkerRef.current?.remove();
@@ -813,6 +1388,109 @@ function DriveMapInner({
       if (exploreTimerRef.current) clearTimeout(exploreTimerRef.current);
     };
   }, [token]);
+
+  /**
+   * Off-screen + no Go: stop Mapbox after 45s so a parked phone is not painting.
+   * A live trip only pauses the follow loop (above); tiles stay for the resume snap.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    let sleepTimer: number | null = null;
+    let sleeping = false;
+
+    const clearSleepTimer = () => {
+      if (sleepTimer != null) {
+        window.clearTimeout(sleepTimer);
+        sleepTimer = null;
+      }
+    };
+
+    const wake = () => {
+      clearSleepTimer();
+      if (!sleeping) return;
+      sleeping = false;
+      try {
+        map.triggerRepaint();
+        map.resize();
+      } catch {
+        /* map disposed */
+      }
+      driveCamResyncRef.current = true;
+    };
+
+    const arm = () => {
+      const visible = document.visibilityState === "visible";
+      const navOn = navigationStartedRef.current;
+      if (visible || navOn) {
+        wake();
+        return;
+      }
+      clearSleepTimer();
+      const hiddenAt = Date.now();
+      sleepTimer = window.setTimeout(() => {
+        const hiddenForMs = Date.now() - hiddenAt;
+        if (
+          !shouldSleepIdleMap({
+            appForeground: document.visibilityState === "visible",
+            navigationStarted: navigationStartedRef.current,
+            hiddenForMs,
+          })
+        ) {
+          return;
+        }
+        sleeping = true;
+        try {
+          map.stop();
+        } catch {
+          /* map disposed */
+        }
+      }, IDLE_MAP_SLEEP_MS);
+    };
+
+    arm();
+    document.addEventListener("visibilitychange", arm);
+    return () => {
+      clearSleepTimer();
+      document.removeEventListener("visibilitychange", arm);
+    };
+  }, [mapReady, navigationStarted]);
+
+  useEffect(() => {
+    if (!showOpeningCover) return;
+    if (!userLngLat) return;
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const reveal = () => {
+      try {
+        if (!isMapUsable(map)) return false;
+        const z = map.getZoom();
+        const c = map.getCenter();
+        const stillFactory =
+          z < 10 &&
+          Math.abs(c.lng - FALLBACK_LNGLAT[0]) < 0.02 &&
+          Math.abs(c.lat - FALLBACK_LNGLAT[1]) < 0.02;
+        return !stillFactory && z >= 10;
+      } catch {
+        return false;
+      }
+    };
+    if (reveal()) {
+      setShowOpeningCover(false);
+      return;
+    }
+    const id = window.setInterval(() => {
+      if (reveal()) {
+        window.clearInterval(id);
+        setShowOpeningCover(false);
+      }
+    }, 200);
+    const giveUp = window.setTimeout(() => setShowOpeningCover(false), 12_000);
+    return () => {
+      window.clearInterval(id);
+      window.clearTimeout(giveUp);
+    };
+  }, [showOpeningCover, userLngLat, mapReady]);
 
   useEffect(() => {
     safeStorage.set(NIGHT_MAP_STYLE_LS_KEY, nightBasemapPreset);
@@ -953,17 +1631,18 @@ function DriveMapInner({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    if (map.getSource("mapbox-dem")) return;
 
-    map.addSource("mapbox-dem", {
-      type: "raster-dem",
-      url: "mapbox://mapbox.mapbox-terrain-dem-v1",
-      tileSize: 512,
-      maxzoom: 14,
-    });
-    /* While GO is active, skip DEM automatically — no mid-drive setting. Restores after End. */
-    if (!navigationStarted) {
-      map.setTerrain({ source: "mapbox-dem", exaggeration: 1.5 });
+    if (!map.getSource("mapbox-dem")) {
+      map.addSource("mapbox-dem", {
+        type: "raster-dem",
+        url: "mapbox://mapbox.mapbox-terrain-dem-v1",
+        tileSize: 512,
+        maxzoom: 14,
+      });
+      /* While GO is active, skip DEM automatically — no mid-drive setting. Restores after End. */
+      if (!navigationStarted) {
+        map.setTerrain({ source: "mapbox-dem", exaggeration: 1.5 });
+      }
     }
 
     if (!map.getLayer("3d-buildings")) {
@@ -982,14 +1661,16 @@ function DriveMapInner({
           "source-layer": "building",
           filter: ["==", "extrude", "true"],
           type: "fill-extrusion",
-          minzoom: 14,
+          minzoom: 13,
+          /* Taps on extrusions query this layer and throw on iOS — dest pin never drops. */
+          interactive: false,
           paint: {
             "fill-extrusion-color": buildingColorForPhase(mapPhase),
             "fill-extrusion-height": ["get", "height"],
             "fill-extrusion-base": ["get", "min_height"],
-            "fill-extrusion-opacity": 0.6,
+            "fill-extrusion-opacity": 0.78,
           },
-        },
+        } as unknown as mapboxgl.LayerSpecification,
         labelLayerId
       );
     }
@@ -1018,6 +1699,7 @@ function DriveMapInner({
     if (!map.getLayer("3d-buildings")) return;
     try {
       map.setPaintProperty("3d-buildings", "fill-extrusion-color", buildingColorForPhase(mapPhase));
+      map.setPaintProperty("3d-buildings", "fill-extrusion-opacity", 0.78);
     } catch { /* layer not ready */ }
   }, [mapReady, mapPhase]);
 
@@ -1035,6 +1717,7 @@ function DriveMapInner({
     if (!map || !mapReady) return;
     const lockDriveNav = navigationStarted && viewMode === "drive";
     setDriveMapUserGestures(map, !lockDriveNav);
+    setDoubleClickZoomEnabled(map, !lockDriveNav && !allowDestinationPick);
     if (lockDriveNav) {
       userExploringRef.current = false;
       if (exploreTimerRef.current) {
@@ -1042,7 +1725,7 @@ function DriveMapInner({
         exploreTimerRef.current = null;
       }
     }
-  }, [mapReady, navigationStarted, viewMode]);
+  }, [mapReady, navigationStarted, viewMode, allowDestinationPick]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1113,16 +1796,30 @@ function DriveMapInner({
     if (!map || !mapReady) return;
     try {
       map.setMaxBounds(mapSessionBounds);
+      /* Drive's 12.5 floor must not clamp an Rt/Mp overview (~z8) the instant Dr is
+       * tapped — Mapbox raises zoom immediately, which is a cut in front of the drone. */
+      const droneOwnsCamera =
+        viewDroneActiveRef.current || performance.now() < viewFlyUntilMsRef.current;
       map.setMinZoom(
-        navigationStarted && viewMode === "drive"
+        navigationStarted && viewMode === "drive" && !droneOwnsCamera
           ? DRIVE_FOLLOW_ZOOM_MIN
           : mapMinZoomForSession({
               navigationStarted,
               hasContinent: mapHasContinent,
               ultraLongRoute,
+              /**
+               * Floor only while a dropped pin has no plan yet. Keying it on "no routes"
+               * locked the whole map at ~11.2 — you could not pinch out past a small city
+               * to look at weather, which is most of what the map is for before a trip.
+               */
+              pinPlacing: shouldHoldDestPlaceFrame({
+                destLngLat,
+                routesLength: routes.length,
+                navigationStarted,
+              }),
             })
       );
-      if (navigationStarted && viewMode === "drive") {
+      if (navigationStarted && viewMode === "drive" && !droneOwnsCamera) {
         try {
           if (map.getZoom() < DRIVE_FOLLOW_ZOOM_MIN) {
             map.setZoom(repairStoredDriveFollowZoom(driveNavZoomRef));
@@ -1134,7 +1831,16 @@ function DriveMapInner({
     } catch {
       /* map disposed */
     }
-  }, [mapReady, mapSessionBounds, navigationStarted, viewMode, mapHasContinent, ultraLongRoute]);
+  }, [
+    mapReady,
+    mapSessionBounds,
+    navigationStarted,
+    viewMode,
+    mapHasContinent,
+    ultraLongRoute,
+    routes.length,
+    destLngLat,
+  ]);
 
   /** Mobile: URL bar / rotation / safe-area change the map container — Mapbox must resize or the canvas stays wrong and the puck can disappear. */
   useEffect(() => {
@@ -1242,10 +1948,10 @@ function DriveMapInner({
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
-    const click = (e: mapboxgl.MapMouseEvent) => {
-      /* Consume taps on the route corridor so they don’t move the destination pin; hazard details are via Hazards + progress strip. */
-      if (routes.length > 0) {
-        const hideAltsOnMainDrive = viewMode === "drive";
+    const tapHitsRoute = (point: mapboxgl.PointLike): boolean => {
+      if (routes.length === 0) return false;
+      try {
+        const hideAltsOnMainDrive = hideAlternateRoutesOnDrive(viewMode, routes.length);
         const hitLayerIds = routes
           .filter(
             (r) =>
@@ -1253,28 +1959,57 @@ function DriveMapInner({
           )
           .map((r) => `route-${r.id}-line-hit`)
           .filter((lid) => map.getLayer(lid));
-        if (hitLayerIds.length > 0) {
-          const feats = map.queryRenderedFeatures(e.point, { layers: hitLayerIds });
-          const lid = feats[0]?.layer?.id;
-          if (lid && routeIdFromRouteHitLayerId(lid)) {
-            return;
-          }
-        }
+        if (hitLayerIds.length === 0) return false;
+        const feats = map.queryRenderedFeatures(point, { layers: hitLayerIds });
+        const lid = feats[0]?.layer?.id;
+        return Boolean(lid && routeIdFromRouteHitLayerId(lid));
+      } catch {
+        return false;
       }
-
-      if (!allowDestinationPick) return;
-      const poi = selectablePoiAtPoint(map, e.point);
-      if (poi) {
-        onClickRef.current(poi.lngLat[0], poi.lngLat[1]);
-        return;
-      }
-      const clickLngLat = readMapLngLat(e.lngLat);
-      if (!clickLngLat) return;
-      onClickRef.current(clickLngLat[0], clickLngLat[1]);
     };
+
+    const placeDestAtEvent = (point: mapboxgl.PointLike, lngLat: unknown) => {
+      if (!allowDestinationPick) return;
+      if (tapHitsRoute(point)) return;
+      let poi = null;
+      try {
+        poi = selectablePoiAtPoint(map, point);
+      } catch {
+        poi = null;
+      }
+      const dest = poi?.lngLat ?? readMapLngLat(lngLat);
+      if (!dest) return;
+      const now = performance.now();
+      if (!shouldAcceptDestTap(lastDestTapMsRef.current, now)) return;
+      lastDestTapMsRef.current = now;
+      onClickRef.current(dest[0], dest[1]);
+    };
+
+    const click = (e: mapboxgl.MapMouseEvent) => {
+      placeDestAtEvent(e.point, e.lngLat);
+    };
+
+    const touchstart = (e: mapboxgl.MapTouchEvent) => {
+      const touches = e.originalEvent?.touches?.length ?? 0;
+      destTapStartRef.current = destTapStartFromTouchCount(touches, e.point, performance.now());
+    };
+
+    const touchend = (e: mapboxgl.MapTouchEvent) => {
+      const remaining = e.originalEvent?.touches?.length ?? 0;
+      const end = { x: e.point.x, y: e.point.y, t: performance.now() };
+      const start = destTapStartRef.current;
+      destTapStartRef.current = null;
+      if (!isDestFingerTap(start, end, remaining)) return;
+      placeDestAtEvent(e.point, e.lngLat);
+    };
+
     map.on("click", click);
+    map.on("touchstart", touchstart);
+    map.on("touchend", touchend);
     return () => {
       map.off("click", click);
+      map.off("touchstart", touchstart);
+      map.off("touchend", touchend);
     };
   }, [mapReady, allowDestinationPick, routes, lineFocusId, navigationStarted, viewMode]);
 
@@ -1293,7 +2028,12 @@ function DriveMapInner({
         clearHover();
         return;
       }
-      const poi = selectablePoiAtPoint(map, e.point);
+      let poi = null;
+      try {
+        poi = selectablePoiAtPoint(map, e.point);
+      } catch {
+        poi = null;
+      }
       if (!poi) {
         clearHover();
         return;
@@ -1403,13 +2143,95 @@ function DriveMapInner({
     const NOOP_LNGLAT_DELTA = 0.000005; /* ~0.55 m at the equator; smaller north of 45° */
     const CAM_NOOP_LNGLAT_DELTA = 0.000001; /* ~0.11 m — follow camera can move more often than the puck marker */
     let lastBearingApplied = NaN;
+    let lastCamWriteMs: number | null = null;
     let driveCamFrame = 0;
     let followWriter: FollowCamWriter = followCamWriterRef.current;
     let followHoldFalseSinceMs: number | null = followWriter === "hard" ? null : Date.now();
+    let followWriteFailStreak = 0;
+    /** Last failed yard-line pan — keeps the writer hard while tiles are still down. */
+    let followPanFailAtMs: number | null = null;
+    let camFreezeLatched = false;
+    let puckReclaimLatched = false;
+    /** Road heading sampled from the gliding puck, not from the 1 Hz React bearing. */
+    const alignBearingState: LiveAlignBearingState = { geomKey: "", cum: null, alongM: null };
     const DRIVE_CAM_FORCE_RESYNC_FRAMES = 75;
 
-    const readPuckFollowLngLat = (): LngLat | null =>
+    const reportPuckSight = (
+      map: mapboxgl.Map,
+      puck: [number, number] | null,
+      padding: mapboxgl.PaddingOptions,
+      offset: readonly [number, number]
+    ) => {
+      const pad =
+        typeof padding === "number"
+          ? { top: padding, bottom: padding, left: padding, right: padding }
+          : {
+              top: Number(padding.top) || 0,
+              bottom: Number(padding.bottom) || 0,
+              left: Number(padding.left) || 0,
+              right: Number(padding.right) || 0,
+            };
+      let sight;
+      try {
+        const canvas = map.getCanvas();
+        sight = readDrivePuckAnchorDrift({
+          project: (ll) => map.project(ll),
+          puck,
+          mapWidth: canvas.clientWidth,
+          mapHeight: canvas.clientHeight,
+          padding: pad,
+          offset,
+          exploring: userExploringRef.current,
+        });
+      } catch {
+        sight = { driftPx: null as number | null, offCanvas: false, reportPx: null as number | null };
+      }
+      const driftOut = puckAnchorDriftPxOutRefStable.current;
+      if (driftOut) driftOut.current = sight.reportPx;
+      return sight;
+    };
+
+    const maybeReclaimPuck = (
+      sight: { driftPx: number | null; offCanvas: boolean },
+      speedMps: number | null
+    ) => {
+      if (
+        !shouldReclaimDrivePuckThisFrame({
+          exploring: userExploringRef.current,
+          offCanvas: sight.offCanvas,
+          driftPx: sight.driftPx,
+          speedMps,
+        })
+      ) {
+        puckReclaimLatched = false;
+        return;
+      }
+      if (!puckReclaimLatched) {
+        bumpDriveDiag("camReclaim");
+        puckReclaimLatched = true;
+      }
+      driveCamResyncRef.current = true;
+    };
+
+    const readGpsLngLat = (): LngLat | null =>
       liveGpsLngLatRefStable?.current ?? userLngLatRef.current;
+
+    /**
+     * Core's enhanced location is already map-matched and pose-held, so while it is
+     * fresh it *is* the puck. Raw GPS + the JS snap is the fallback path for
+     * web-only Go and for a Core that stopped reporting.
+     */
+    const readPuckPose = (nowMs: number): { source: DrivePoseSource; lngLat: LngLat | null } => {
+      const cam = nativeFollowCameraRef.current;
+      const source = pickDrivePoseSource({
+        coreFollowActive: Boolean(cam) && navigationStartedRef.current,
+        corePose: cam,
+        coreSampleAtMs: coreSampleAtMsRef.current,
+        nowMs,
+      });
+      if (source === "core" && cam) return { source, lngLat: [cam.lng, cam.lat] };
+      return { source: "gps", lngLat: readGpsLngLat() };
+    };
 
     const readPuckFollowSpeedMps = (): number | null =>
       liveGpsSpeedMpsRefStable?.current ?? speedMpsRef.current;
@@ -1419,14 +2241,21 @@ function DriveMapInner({
 
     const loop = () => {
       if (puckMarkerRef.current !== marker) return;
-      const t = readPuckFollowLngLat();
+      if (shouldPauseHiddenMapWork(typeof document === "undefined" || document.visibilityState === "visible")) {
+        raf = 0;
+        return;
+      }
+      const nowForPose = performance.now();
+      const pose = readPuckPose(nowForPose);
+      const t = pose.lngLat;
+      setDriveDiagPoseSource(pose.source);
       if (t) {
         try {
-        const now = performance.now();
+        const now = nowForPose;
         const dt = Math.min(0.12, (now - lastTs) / 1000);
         lastTs = now;
 
-        // Detect a new GPS sample arriving.
+        // Detect a new pose sample arriving (Core ~1 Hz, or a GPS fix).
         if (t[0] !== lastSeenLng || t[1] !== lastSeenLat) {
           prevFix = curFix;
           curFix = { lng: t[0], lat: t[1], t: now };
@@ -1449,8 +2278,14 @@ function DriveMapInner({
           headingDeg: followHdg,
         });
 
-        // Snap to the route polyline when close enough (hysteresis reduces threshold flicker).
-        const geom = puckSnapGeomRef.current;
+        // GPS uses the wide snap. Core is already matched, but a straight guess between
+        // samples walks off a curve and the next sample yanks the puck back. Hold Core
+        // on the drawn line when it is only a lane or two off.
+        const freeSnap = shouldSnapPuckToRoute(pose.source);
+        const holdCore = pose.source === "core";
+        const geom = freeSnap || holdCore ? puckSnapGeomRef.current : null;
+        const snapInM = freeSnap ? SNAP_IN_M : corePuckRouteHoldMeters(false);
+        const snapOutM = freeSnap ? SNAP_OUT_M : corePuckRouteHoldMeters(true);
         if (geom && geom.length >= 2) {
           const g0 = geom[0]!;
           const geomKey = `${geom.length}:${g0[0].toFixed(5)},${g0[1].toFixed(5)}`;
@@ -1484,11 +2319,11 @@ function DriveMapInner({
             targetLat = pt[1]!;
           };
           if (snapLatched) {
-            if (latM <= SNAP_OUT_M) {
+            if (latM <= snapOutM) {
               const rawAlong = snap.alongMeters;
               if (snappedAlongSmooth == null) snappedAlongSmooth = rawAlong;
               else {
-                const alphaAlong = 1 - Math.exp(-dt / 0.32);
+                const alphaAlong = 1 - Math.exp(-dt / DRIVE_SNAP_ALONG_TC_S);
                 snappedAlongSmooth += (rawAlong - snappedAlongSmooth) * alphaAlong;
               }
               applyAlongSmooth(snappedAlongSmooth);
@@ -1496,7 +2331,7 @@ function DriveMapInner({
               snapLatched = false;
               snappedAlongSmooth = null;
             }
-          } else if (latM < SNAP_IN_M) {
+          } else if (latM < snapInM) {
             snapLatched = true;
             snappedAlongSmooth = snap.alongMeters;
             applyAlongSmooth(snappedAlongSmooth);
@@ -1515,7 +2350,8 @@ function DriveMapInner({
          *
          * iOS Core Location frequently reports `speed = -1` (unknown) at low speeds, which arrives
          * here as `null`. We fall back to apparent speed measured directly from consecutive fixes
-         * so stationary mode still triggers when the device-reported speed is missing. */
+         * so stationary mode still triggers when the device-reported speed is missing.
+         * Tunables live in driveFollowSmooth.ts (rollback values documented there). */
         const reportedSp = followSp;
         const effSp =
           reportedSp != null && reportedSp >= 0
@@ -1525,12 +2361,14 @@ function DriveMapInner({
               : null;
         const isStationary = effSp != null && effSp < 0.7;
         const isCrawling = effSp != null && effSp >= 0.7 && effSp < 2.0;
-        /* TC = how long it takes the puck to converge to the target. Longer = more damping.
-         *   stationary  → 2.4s   (heavy damping — pin the puck through GPS wobble while parked)
-         *   crawling    → 0.32s  (light damping in stop-and-go traffic)
-         *   snapped     → 0.145s (existing tuning)
-         *   free / fast → 0.095s (existing tuning) */
-        const blendTc = isStationary ? 2.4 : isCrawling ? 0.32 : snapLatched ? 0.145 : 0.095;
+        const blendTc = drivePuckBlendTcS({
+          stationary: isStationary,
+          crawling: isCrawling,
+          snapped: drivePoseCountsAsSnapped({
+            source: pose.source,
+            diySnapLatched: snapLatched,
+          }),
+        });
         const blend = 1 - Math.exp(-dt / blendTc);
         const cur = readMapLngLat(marker.getLngLat());
         if (!cur) {
@@ -1558,8 +2396,260 @@ function DriveMapInner({
           isMapReadyForFollowCam(map) &&
           viewModeRef.current === "drive" &&
           navigationStartedRef.current &&
-          userLngLatRef.current
+          userLngLatRef.current &&
+          !punchNativeHoleRef.current &&
+          !holdFirstNativeGoRef.current &&
+          now >= viewFlyUntilMsRef.current &&
+          !viewDroneActiveRef.current
         ) {
+          const nativeCam = nativeFollowCameraRef.current;
+          const liveAhead = liveDriveAlignBearing({
+            state: alignBearingState,
+            geometry: puckSnapGeomRef.current,
+            puck: [nextLng, nextLat],
+            speedMps: effSp,
+            seedAlongM: userAlongMetersRef.current,
+            offRoute: driveOffRouteForwardFramingRef.current,
+          });
+          const aheadBearing = liveAhead ?? driveRouteBearingDegRef.current;
+          if (
+            nativeCam &&
+            shouldUseNativeFollowCam({
+              camera: nativeCam,
+              navigationStarted: true,
+              viewMode: "drive",
+              userExploring: userExploringRef.current,
+            })
+          ) {
+            /* Follow the *smoothed* puck, not Core's ~1 Hz sample. The marker glides at
+             * 60 fps while a raw sample steps once a second — that mismatch is the puck
+             * sliding forward then snapping back to the yard line. One motion source. */
+            const camCenter: [number, number] = [nextLng, nextLat];
+            const camZoom = smoothDriveZoom(
+              driveCamZoomSmoothedRef.current,
+              nativeCam.zoom,
+              1 - Math.exp(-dt / DRIVE_CAMERA_ZOOM_TC_S)
+            );
+            const guarded = guardDriveFollowCamera({
+              center: camCenter,
+              zoom: camZoom,
+              puck: camCenter,
+            });
+            /* Face the road under the puck and sweep onto it. Core's 1 Hz heading was the 6 s crooked line. */
+            const coreBearing = nativeCam.bearing;
+            const toTurn = metersToBannerManeuverRef.current;
+            const turned = resolveTurnCameraBearing({
+              coreBearingDeg: coreBearing,
+              routeAheadBearingDeg: aheadBearing,
+              speedMps: effSp,
+              metersToManeuver: toTurn,
+              hold: driveTurnCamHoldRef.current,
+            });
+            driveTurnCamHoldRef.current = turned.hold;
+            const targetBearing = turned.bearingDeg;
+            const leanDeg = Math.abs(headingDeltaDegrees(coreBearing, targetBearing));
+            const speedOk =
+              effSp != null &&
+              Number.isFinite(effSp) &&
+              effSp >= NATIVE_CAM_ANTICIPATE_MIN_SPEED_MPS;
+            const inWindow =
+              speedOk &&
+              toTurn != null &&
+              Number.isFinite(toTurn) &&
+              toTurn <= anticipateNativeCamStartMeters(effSp);
+            const rawAhead =
+              aheadBearing != null && Number.isFinite(aheadBearing)
+                ? Math.abs(headingDeltaDegrees(coreBearing, aheadBearing))
+                : 0;
+            noteDriveDiagCamLean(
+              leanDeg,
+              inWindow && rawAhead > NATIVE_CAM_ANTICIPATE_MAX_DELTA_DEG && leanDeg < 1
+            );
+            const motionBrg = resolveTravelBearingDeg({
+              headingDeg: readPuckFollowHeading(),
+              prevFix,
+              curFix,
+              speedMps: effSp,
+            });
+            if (motionBrg != null) {
+              driveLastTravelBearingRef.current = motionBrg;
+              const out = lastTravelBearingDegOutRefStable.current;
+              if (out) out.current = motionBrg;
+            }
+            const camBearing = alignDriveBearingDeg(
+              driveCamBearingSmoothedRef.current,
+              targetBearing,
+              dt,
+              driveBearingAlignRef.current
+            );
+            const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
+            const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;
+            const easeKey = `${stormBarVisibleRef.current}|${stormBarExpandedRef.current}|${progressRailVisibleRef.current}|${wx}x${wy}`;
+            let easeCached = driveCamEaseOptsCacheRef.current;
+            if (!easeCached || easeCached.key !== easeKey) {
+              const o = driveCameraEaseOptions(
+                stormBarVisibleRef.current,
+                stormBarExpandedRef.current,
+                progressRailVisibleRef.current
+              );
+              easeCached = { key: easeKey, padding: o.padding, offset: o.offset };
+              driveCamEaseOptsCacheRef.current = easeCached;
+            }
+            maybeReclaimPuck(
+              reportPuckSight(map, camCenter, easeCached.padding, easeCached.offset),
+              effSp
+            );
+            /* Stopped at a light, Core keeps reporting wobble. Writing it straight to the
+             * camera is the twitch — the puck's own damping never sees this path. */
+            const parkedHold =
+              !driveCamResyncRef.current &&
+              shouldHoldParkedFollowCam({
+                stationary: isStationary,
+                held: nativeCamAppliedRef.current,
+                next: { lng: camCenter[0], lat: camCenter[1], bearing: camBearing },
+              });
+            /* `moved` is the marker's own sub-half-meter gate, so the camera writes on
+             * exactly the frames the puck actually glided — smooth while rolling, still
+             * when parked. Bearing and zoom can move on their own. */
+            const needsWrite =
+              moved ||
+              nativeFollowCamNeedsWebWrite({
+                next: {
+                  lng: camCenter[0],
+                  lat: camCenter[1],
+                  bearing: camBearing,
+                  pitch: nativeCam.pitch,
+                  zoom: camZoom,
+                },
+                lastApplied: nativeCamAppliedRef.current,
+                resync: driveCamResyncRef.current,
+              });
+            /* Count events, not frames: this loop runs at 60 fps against a ~1 Hz
+             * sample, so bumping per frame reported 60x reality in About. */
+            if (parkedHold && needsWrite) {
+              if (!parkedHoldCountedRef.current) {
+                parkedHoldCountedRef.current = true;
+                bumpDriveDiag("camParkedHold");
+              }
+            } else if (!parkedHold) {
+              parkedHoldCountedRef.current = false;
+            }
+            const radioHold = holdLastGoodMapRef.current || !isOnlineRef.current;
+            if (driveCamResyncRef.current) followWriteFailStreak = 0;
+            if (radioHold !== lowSignalHeldRef.current) {
+              const wasHold = lowSignalHeldRef.current;
+              lowSignalHeldRef.current = radioHold;
+              if (radioHold) bumpDriveDiag("lowSignalHolds");
+              if (wasHold && !radioHold) driveCamResyncRef.current = true;
+            }
+            const latched = advanceFollowCamWriter({
+              holdTiles: radioHold,
+              writer: followWriter,
+              holdFalseSinceMs: followHoldFalseSinceMs,
+              nowMs: Date.now(),
+              lastPanFailAtMs: followPanFailAtMs,
+            });
+            followWriter = latched.writer;
+            followHoldFalseSinceMs = latched.holdFalseSinceMs;
+            followCamWriterRef.current = followWriter;
+            setDriveDiagCamWriter(followWriter);
+            /* setCenter has no Mapbox `offset`, so a plain hard write centers the puck —
+             * that is the climb toward the top of the screen on a dead cell. Shift the
+             * center by the same pixel delta the yard-line offset would have applied. */
+            const hardWrite = () =>
+              writeHardFollowToYardLine(map, {
+                center: guarded.center,
+                zoom: guarded.zoom,
+                pitch: nativeCam.pitch,
+                bearing: camBearing,
+                padding: easeCached.padding as unknown as {
+                  top: number;
+                  bottom: number;
+                  left: number;
+                  right: number;
+                },
+                offset: easeCached.offset,
+              });
+            /* One decision, one write. Everything that used to call Mapbox on its own
+             * (Jeff, reclaim, hold clear) now arrives here as an intent. A held radio
+             * degrades the writer to the direct transform — it never stops the camera,
+             * which is what let the puck leave a frozen map for 125 s in 438. */
+            const cmd = resolveDriveCameraCommand({
+              droneActive: false /* the outer gate already yielded to the drone */,
+              flyWindowOpen: false,
+              radioHold,
+              writeFailStreak: followWriteFailStreak,
+              resyncRequested: driveCamResyncRef.current,
+              exploring: userExploringRef.current,
+              parkedHold,
+              poseChanged: needsWrite,
+              writer: followWriter,
+            });
+            let applied = false;
+            if (cmd.kind === "write") {
+            const camWriteDue = shouldAllowDriveCamWrite({
+              nowMs: now,
+              lastWriteMs: lastCamWriteMs,
+              force: driveCamResyncRef.current,
+            });
+            if (camWriteDue) {
+              if (cmd.writer === "hard") {
+                applied = hardWrite();
+              } else {
+                applied = safePanToCenter(map, {
+                  center: guarded.center,
+                  zoom: guarded.zoom,
+                  pitch: nativeCam.pitch,
+                  bearing: camBearing,
+                  padding: easeCached.padding,
+                  offset: easeCached.offset,
+                  duration: 0,
+                  essential: true,
+                });
+                if (!applied) {
+                  /* Remember *when* the pan failed so the writer stays hard for the
+                   * whole bad stretch instead of flipping back 3 s after the radio
+                   * claims to be up while tiles are still missing. */
+                  followPanFailAtMs = Date.now();
+                }
+                if (!applied && nativeFollowCamAllowsSameFrameHardFallback()) {
+                  applied = hardWrite();
+                }
+              }
+              if (!applied) {
+                followWriteFailStreak += 1;
+                noteDriveDiagCamFailStreak(followWriteFailStreak);
+                bumpDriveDiag("camWriteFailed");
+                /* A hard write failing is the only real freeze left: the transform
+                 * path needs no tiles, so this means the map itself is gone. */
+                if (cmd.writer === "hard" && !camFreezeLatched) {
+                  camFreezeLatched = true;
+                  noteDriveDiagCamFreeze();
+                }
+              } else {
+                followWriteFailStreak = 0;
+                camFreezeLatched = false;
+              }
+            }
+            }
+            if (applied) {
+              lastCamWriteMs = now;
+              lastDroneOffsetRef.current = easeCached.offset;
+              bumpDriveDiag("camApplied");
+              nativeCamAppliedRef.current = {
+                lng: camCenter[0],
+                lat: camCenter[1],
+                bearing: camBearing,
+                pitch: nativeCam.pitch,
+                zoom: camZoom,
+              };
+              lastBearingApplied = camBearing;
+              driveCamBearingSmoothedRef.current = camBearing;
+              driveCamZoomSmoothedRef.current = camZoom;
+              driveCamResyncRef.current = false;
+              onDriveCameraBearingDegRef.current?.(camBearing);
+            }
+          } else {
           driveCamFrame += 1;
           const forcePeriodicResync = driveCamFrame % DRIVE_CAM_FORCE_RESYNC_FRAMES === 0;
           const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
@@ -1595,7 +2685,7 @@ function DriveMapInner({
           const preferTravel = performance.now() < driveCamPreferTravelUntilMsRef.current;
           const rawBrg = resolveDriveFollowCameraBearingDeg({
             offRouteForward: driveOffRouteForwardFramingRef.current,
-            routeBearingDeg: driveRouteBearingDegRef.current,
+            routeBearingDeg: aheadBearing,
             headingDeg: readPuckFollowHeading(),
             prevFix,
             curFix,
@@ -1605,50 +2695,22 @@ function DriveMapInner({
             followingTemporaryGuidance: followingTemporaryGuidanceRef.current,
             preferTravel,
           });
-          const alphaBrg = 1 - Math.exp(-dt / DRIVE_CAMERA_BEARING_TC_S);
-          driveCamBearingSmoothedRef.current = smoothDriveBearingDeg(
+          /* Ease from the last bearing the map actually showed. Advancing the
+           * ref when the write is skipped dumps the missed frames as a jump. */
+          const camBearing = alignDriveBearingDeg(
             driveCamBearingSmoothedRef.current,
             rawBrg,
-            alphaBrg
+            dt,
+            driveBearingAlignRef.current
           );
           const pos = readMapLngLat(marker.getLngLat());
-          /* Jeff puck watchdog: how far the on-screen puck is from the fixed yard-line
-           * anchor. Null while the driver is freely exploring so a manual pan isn't "fixed". */
-          {
-            const driftOut = puckAnchorDriftPxOutRefStable.current;
-            if (driftOut) {
-              if (userExploringRef.current || !pos) {
-                driftOut.current = null;
-              } else {
-                try {
-                  const screen = map.project(pos);
-                  const canvas = map.getCanvas();
-                  const anchor = expectedDrivePuckScreenAnchorPx({
-                    mapWidth: canvas.clientWidth,
-                    mapHeight: canvas.clientHeight,
-                    padding: {
-                      top: Number(padding.top) || 0,
-                      bottom: Number(padding.bottom) || 0,
-                      left: Number(padding.left) || 0,
-                      right: Number(padding.right) || 0,
-                    },
-                    offset,
-                  });
-                  const dx = screen.x - anchor.x;
-                  const dy = screen.y - anchor.y;
-                  driftOut.current = Math.hypot(dx, dy);
-                } catch {
-                  driftOut.current = null;
-                }
-              }
-            }
-          }
+          maybeReclaimPuck(reportPuckSight(map, pos, padding, offset), effSp);
           /* Mirror the marker's no-op guard for the camera. Without this, easeTo runs every
            * frame even when target ≈ current, and Mapbox repaints — even sub-pixel deltas in
            * float math show up as a visible vibration. */
           const camCenter = readMapLngLat(map.getCenter());
           const bearingDelta = Number.isFinite(lastBearingApplied)
-            ? Math.abs(driveCamBearingSmoothedRef.current - lastBearingApplied)
+            ? Math.abs(headingDeltaDegrees(lastBearingApplied, camBearing))
             : Infinity;
           const camNoop =
             effSp != null && effSp >= 1.5 ? CAM_NOOP_LNGLAT_DELTA : NOOP_LNGLAT_DELTA;
@@ -1673,20 +2735,46 @@ function DriveMapInner({
           const forceCamSync = driveCamResyncRef.current || forcePeriodicResync;
           const applyLayoutOrEntry = pitchOff || forceCamSync || easeLayoutChanged || zoomOff;
           if (camMoved || bearingMoved || applyLayoutOrEntry) {
-            if (pos) {
+            if (
+              pos &&
+              shouldAllowDriveCamWrite({
+                nowMs: now,
+                lastWriteMs: lastCamWriteMs,
+                force: forceCamSync || easeLayoutChanged || pitchOff || zoomOff,
+              })
+            ) {
               /* Yard-line pan vs hard setCenter are two road framings. Switching
                * them when tiles flap looks like the puck leaping forward/back.
                * Hard only while tiles are held (+ clear delay). Failed pan skips. */
               const holdTiles = holdLastGoodMapRef.current || !isOnlineRef.current;
+              if (driveCamResyncRef.current) followWriteFailStreak = 0;
               const latched = advanceFollowCamWriter({
                 holdTiles,
                 writer: followWriter,
                 holdFalseSinceMs: followHoldFalseSinceMs,
                 nowMs: Date.now(),
+                lastPanFailAtMs: followPanFailAtMs,
               });
               followWriter = latched.writer;
               followHoldFalseSinceMs = latched.holdFalseSinceMs;
               followCamWriterRef.current = followWriter;
+
+              /* Same queue as the Core path — web-only GO must not grow its own rules. */
+              const webCmd = resolveDriveCameraCommand({
+                droneActive: false,
+                flyWindowOpen: false,
+                radioHold: holdTiles,
+                writeFailStreak: followWriteFailStreak,
+                resyncRequested: forceCamSync,
+                exploring: false /* gated upstream */,
+                parkedHold: false,
+                poseChanged: true /* this block only runs when the pose moved */,
+                writer: followWriter,
+              });
+              if (webCmd.kind !== "write") {
+                raf = requestAnimationFrame(loop);
+                return;
+              }
 
               const guarded = guardDriveFollowCamera({
                 center: pos as [number, number],
@@ -1698,39 +2786,60 @@ function DriveMapInner({
                 ...(applyLayoutOrEntry
                   ? { zoom: guarded.zoom, pitch: DRIVE_FOLLOW_PITCH_DEG }
                   : {}),
-                bearing: driveCamBearingSmoothedRef.current,
+                bearing: camBearing,
                 padding,
                 offset,
                 duration: 0,
                 essential: true as const,
               };
 
-              if (followWriter === "hard") {
-                const hardOk = safeHardFollowCamera(map, {
+              if (webCmd.writer === "hard") {
+                const hardOk = writeHardFollowToYardLine(map, {
                   center: guarded.center,
                   zoom: guarded.zoom,
                   pitch: DRIVE_FOLLOW_PITCH_DEG,
-                  bearing: driveCamBearingSmoothedRef.current,
+                  bearing: camBearing,
+                  padding: padding as unknown as {
+                    top: number;
+                    bottom: number;
+                    left: number;
+                    right: number;
+                  },
+                  offset,
                 });
                 if (hardOk) {
-                  lastBearingApplied = driveCamBearingSmoothedRef.current;
+                  lastCamWriteMs = now;
+                  lastBearingApplied = camBearing;
+                  driveCamBearingSmoothedRef.current = camBearing;
                   driveCamResyncRef.current = false;
+                  lastDroneOffsetRef.current = offset;
+                  followWriteFailStreak = 0;
                 }
               } else {
                 const ok = safePanToCenter(map, panOpts);
                 if (ok) {
-                  lastBearingApplied = driveCamBearingSmoothedRef.current;
+                  lastCamWriteMs = now;
+                  lastBearingApplied = camBearing;
+                  driveCamBearingSmoothedRef.current = camBearing;
                   if (forceCamSync) driveCamResyncRef.current = false;
+                  lastDroneOffsetRef.current = offset;
+                  followWriteFailStreak = 0;
+                } else {
+                  followPanFailAtMs = Date.now();
+                  followWriteFailStreak += 1;
                 }
               }
             }
+          }
           }
         } else if (
           map &&
           isMapReadyForFollowCam(map) &&
           viewModeRef.current === "topdown" &&
           navigationStartedRef.current &&
-          !userExploringRef.current
+          !userExploringRef.current &&
+          now >= viewFlyUntilMsRef.current &&
+          !viewDroneActiveRef.current
         ) {
           /* Mp: pan every frame with the smoothed puck so the map doesn't sit still
            * for ~40 m then jump (quantized GPS follow key). Keep pitch/bearing flat. */
@@ -1741,8 +2850,16 @@ function DriveMapInner({
             !!camCenter &&
             (Math.abs(camCenter[0] - pos[0]) > CAM_NOOP_LNGLAT_DELTA ||
               Math.abs(camCenter[1] - pos[1]) > CAM_NOOP_LNGLAT_DELTA);
-          if (pos && camMoved) {
-            safePanToCenter(map, {
+          if (
+            pos &&
+            camMoved &&
+            shouldAllowDriveCamWrite({
+              nowMs: now,
+              lastWriteMs: lastCamWriteMs,
+              force: false,
+            })
+          ) {
+            const mpOk = safePanToCenter(map, {
               center: pos as [number, number],
               pitch: 0,
               bearing: 0,
@@ -1750,6 +2867,8 @@ function DriveMapInner({
               duration: 0,
               essential: true,
             });
+            if (mpOk) lastCamWriteMs = now;
+            lastDroneOffsetRef.current = TOPDOWN_PUCK_OFFSET_PX;
           }
         }
         } catch (err) {
@@ -1761,7 +2880,18 @@ function DriveMapInner({
       }
     };
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      if (puckMarkerRef.current !== marker) return;
+      driveCamResyncRef.current = true;
+      if (!raf) raf = requestAnimationFrame(loop);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelAnimationFrame(raf);
+      raf = 0;
+      document.removeEventListener("visibilitychange", onVis);
+    };
     /* Boolean(userLngLat): when nav starts before GPS / restore, first RAF run can bail (no marker).
      * After the puck effect creates the marker, we must re-arm RAF without listing coords (avoids GPS jitter resets). */
   }, [navigationStarted, mapReady, Boolean(userLngLat)]);
@@ -1773,6 +2903,9 @@ function DriveMapInner({
     const el = marker.getElement();
     const isDriveView = navigationStarted && viewMode === "drive";
     el.classList.toggle("map-user-puck--driving", navigationStarted);
+    /* Native 3D puck owns Drive; hide the flat web dot while the shell is punched. */
+    const hideWebPuck = Boolean(punchNativeHole && navigationStarted && viewMode === "drive");
+    el.classList.toggle("map-user-puck--native-hidden", hideWebPuck);
     try {
       marker.setOffset(isDriveView ? DRIVE_PUCK_MARKER_OFFSET_PX : [0, 0]);
       marker.setPitchAlignment(navigationStarted ? "viewport" : "map");
@@ -1780,7 +2913,165 @@ function DriveMapInner({
     } catch {
       /* older mapbox */
     }
-  }, [navigationStarted, viewMode, mapReady]);
+  }, [navigationStarted, viewMode, mapReady, Boolean(nativeFollowCamera), punchNativeHole]);
+
+  const nativeDrivePuckOn = Boolean(
+    NATIVE_DRIVE_PUCK_OVERLAY_ENABLED &&
+      nativeFollowCamera &&
+      navigationStarted &&
+      viewMode === "drive" &&
+      !nativeDriveMapActive
+  );
+  useEffect(() => {
+    if (!isNativeMapboxNavPlatform()) return;
+    void StormpathMapboxNavigation.setDrivePuckVisible({ visible: nativeDrivePuckOn }).catch(() => undefined);
+  }, [nativeDrivePuckOn]);
+
+  useEffect(() => {
+    if (!isNativeMapboxNavPlatform()) return;
+    let cancelled = false;
+    const styleUrl = activeStyleRef.current;
+    if (nativeDriveMapActive) {
+      /* First Go this trip: hold punch until native frames. Mp→Dr: keep hole if already punched. */
+      if (!hadNativeShellThisTripRef.current) {
+        setNativeMapShowing(false);
+      }
+      void StormpathMapboxNavigation.setNativeMapVisible({ visible: true, styleUrl })
+        .then((r) => {
+          if (cancelled) return;
+          setNativeMapHoleReady(true);
+          if (r && typeof r === "object" && "revealed" in r && (r as { revealed?: boolean }).revealed) {
+            setNativeMapShowing(true);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setNativeMapHoleReady(false);
+            setNativeMapShowing(false);
+          }
+        });
+    } else {
+      setNativeMapHoleReady(false);
+      setNativeMapShowing(false);
+      void StormpathMapboxNavigation.setNativeMapVisible({ visible: false }).catch(() => undefined);
+      /* Web map was opacity-0 under the native shell — resize so Mp/Rt fits work. */
+      const map = mapRef.current;
+      if (map) {
+        try {
+          map.resize();
+        } catch {
+          /* style race */
+        }
+        requestAnimationFrame(() => {
+          try {
+            map.resize();
+          } catch {
+            /* style race */
+          }
+          setMapResumeTick((n) => n + 1);
+        });
+      }
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [nativeDriveMapActive]);
+
+  /** Same signals / stops the web map draws, pushed to the native Drive map. */
+  const nativeRoadControls = useMemo(
+    () =>
+      nativeDriveMapActive
+        ? displayedRoadControls(routes.find((r) => r.id === lineFocusId)?.roadControls)
+        : [],
+    [nativeDriveMapActive, routes, lineFocusId]
+  );
+  useEffect(() => {
+    if (!isNativeMapboxNavPlatform()) return;
+    void StormpathMapboxNavigation.setRoadControls({
+      points: nativeRoadControls.map((p) => ({ lng: p.lngLat[0], lat: p.lngLat[1], kind: p.kind })),
+    }).catch(() => undefined);
+  }, [nativeRoadControls]);
+
+  /** Progress can reveal the native map after the first follow-cam tick (first Go). */
+  useEffect(() => {
+    if (!nativeDriveMapActive || nativeMapShowing || !nativeFollowCamera || !nativeMapHoleReady) return;
+    let cancelled = false;
+    void StormpathMapboxNavigation.setNativeMapVisible({
+      visible: true,
+      styleUrl: activeStyleRef.current,
+    })
+      .then((r) => {
+        if (cancelled) return;
+        if (r && typeof r === "object" && "revealed" in r && (r as { revealed?: boolean }).revealed) {
+          setNativeMapShowing(true);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [nativeDriveMapActive, nativeMapShowing, nativeFollowCamera, nativeMapHoleReady]);
+
+  /**
+   * Entering Dr from Mp/Rt (after native already punched once this trip): snap web
+   * follow-cam. First Go holds the planning frame until native reveals — no mid-wait
+   * street zoom on the customer web map.
+   */
+  useEffect(() => {
+    if (!mapReady || !navigationStarted || viewMode !== "drive") return;
+    if (punchNativeHole) return;
+    if (viewDroneActiveRef.current || performance.now() < viewFlyUntilMsRef.current) {
+      driveCamResyncRef.current = true;
+      return;
+    }
+    if (droneLandedDriveRef.current) {
+      droneLandedDriveRef.current = false;
+      driveCamResyncRef.current = false;
+      return;
+    }
+    if (holdFirstNativeGoRef.current) {
+      const map = mapRef.current;
+      if (map) stopMapCamera(map);
+      return;
+    }
+    const map = mapRef.current;
+    const u = userLngLatRef.current;
+    if (!map || !u) return;
+    userExploringRef.current = false;
+    if (exploreTimerRef.current) {
+      clearTimeout(exploreTimerRef.current);
+      exploreTimerRef.current = null;
+    }
+    driveCamResyncRef.current = true;
+    const cam = nativeFollowCameraRef.current;
+    const center: [number, number] = cam ? [cam.lng, cam.lat] : u;
+    const zoom = cam?.zoom ?? driveNavZoomRef.current ?? DRIVE_FOLLOW_ZOOM_DEFAULT;
+    const pitch = cam?.pitch ?? DRIVE_FOLLOW_PITCH_DEG;
+    const bearing =
+      cam?.bearing ??
+      driveCamBearingSmoothedRef.current ??
+      driveLastTravelBearingRef.current ??
+      map.getBearing();
+    stopMapCamera(map);
+    const o = driveCameraEaseOptions(
+      stormBarVisibleRef.current,
+      stormBarExpandedRef.current,
+      progressRailVisibleRef.current
+    );
+    writeHardFollowToYardLine(map, {
+      center,
+      zoom,
+      pitch,
+      bearing,
+      padding: o.padding as unknown as {
+        top: number;
+        bottom: number;
+        left: number;
+        right: number;
+      },
+      offset: o.offset,
+    });
+  }, [mapReady, navigationStarted, viewMode, punchNativeHole, nativeDriveMapActive, nativeMapShowing]);
 
   /** After route compare or end of navigation, re-run topdown init and flatten pitch. */
   useEffect(() => {
@@ -1845,24 +3136,13 @@ function DriveMapInner({
     if (userExploringRef.current) return;
     const pitched = map.getPitch() > 0.5 || Math.abs(map.getBearing()) > 0.5;
     if (!pitched) return;
+    /* Rt / Mp fits already include pitch 0. A second flatten here fights the frame. */
+    if (viewMode === "route" || viewMode === "topdown") return;
     /* Do not yank a street-level zoom back to regional (~Canada) — that made dest/home markers
      * fly across the screen. Only flatten pitch/bearing; keep the user's zoom/center. */
     stopMapCamera(map);
     flattenMapCamera(map);
-    try {
-      safeEaseTo(map, { pitch: 0, bearing: 0, duration: 280, essential: true });
-    } catch {
-      /* map disposed */
-    }
-  }, [
-    activeDriveCamera,
-    mapReady,
-    viewMode,
-    navigationStarted,
-    routes.length,
-    fitTrigger,
-    recenterPlanningPuckTick,
-  ]);
+  }, [activeDriveCamera, mapReady, viewMode, navigationStarted]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1948,7 +3228,7 @@ function DriveMapInner({
 
     /** When there are no routes, always try to strip trip line layers; retry if style is mid-transition. */
     const clearTripRouteLayers = () => {
-      if (cancelled || !map.isStyleLoaded()) return;
+      if (cancelled) return;
       routeIdsRef.current = applyRoutesToMap(
         map,
         [],
@@ -2167,6 +3447,34 @@ function DriveMapInner({
     else map.once("load", sync);
   }, [mapReady, weatherAlertGeoJson, routes, lineFocusId, navigationStarted, viewMode]);
 
+  /** Signals / stop / yield / rail crossings on the corridor (Mapbox intersection flags). */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    /* Count what actually draws, so About matches the map. */
+    const controls = displayedRoadControls(routes.find((r) => r.id === lineFocusId)?.roadControls);
+    setDriveDiagRoadControls(controls.length);
+    const sync = () => {
+      try {
+        applyRoadControlLayers(map, controls);
+      } catch {
+        /* style race — next route or style change re-applies */
+      }
+    };
+    if (map.isStyleLoaded()) sync();
+    else map.once("load", sync);
+    /**
+     * A style swap (day→night, basemap change) drops the source, the icon images, and
+     * the layer. Route deps have not changed, so nothing would put them back until the
+     * next reroute — re-apply on styledata instead.
+     */
+    map.on("styledata", sync);
+    return () => {
+      map.off("load", sync);
+      map.off("styledata", sync);
+    };
+  }, [mapReady, routes, lineFocusId]);
+
   /** Storm-motion arrows — still radar mode only; uses RainViewer past frames. */
   useEffect(() => {
     const map = mapRef.current;
@@ -2203,7 +3511,9 @@ function DriveMapInner({
         const routeBox = corridor?.length ? boundsFromGeometry(corridor) : null;
         const sampleBox = routeBox ? intersectBounds(viewBox, routeBox) ?? routeBox : viewBox;
 
-        const pack = await fetchRainViewerRadarFrames({ includeNowcast: false });
+        const pack = await fetchRainViewerRadarFrames({
+          includeNowcast: Boolean(corridor?.length),
+        });
         if (cancelled || mapRef.current !== map) return;
         if (!pack?.frames || pack.frames.length < 2) {
           removeRadarMotionLayers(map);
@@ -2654,13 +3964,13 @@ function DriveMapInner({
   const idleHomeActivityAreaLatchedRef = useRef(false);
   const idleHomeTrailWaitDeadlineRef = useRef(0);
   useEffect(() => {
-    if (routes.length > 0 || navigationStarted || viewMode === "drive") {
+    if (routes.length > 0 || navigationStarted || viewMode === "drive" || destLngLat) {
       idleHomeAppliedRef.current = false;
       idleHomeHoldingLocateRef.current = false;
       idleHomeActivityAreaLatchedRef.current = false;
       idleHomeTrailWaitDeadlineRef.current = 0;
     }
-  }, [viewMode, routes.length, navigationStarted]);
+  }, [viewMode, routes.length, navigationStarted, destLngLat]);
 
   useEffect(() => {
     idleHomeAppliedRef.current = false;
@@ -2670,7 +3980,7 @@ function DriveMapInner({
   }, [idleHomeMapFraming]);
 
   useEffect(() => {
-    if (homePuckFollow !== "follow" || routes.length > 0 || navigationStarted) return;
+    if (homePuckFollow !== "follow" || routes.length > 0 || navigationStarted || destLngLat) return;
     userExploringRef.current = false;
     idleHomeAppliedRef.current = false;
     idleHomeHoldingLocateRef.current = false;
@@ -2679,7 +3989,7 @@ function DriveMapInner({
       exploreTimerRef.current = null;
     }
     setMapResumeTick((n) => n + 1);
-  }, [homePuckFollow, routes.length, navigationStarted]);
+  }, [homePuckFollow, routes.length, navigationStarted, destLngLat]);
 
   useEffect(() => {
     const hasBounds = activityTrailPlanningBounds != null;
@@ -2697,7 +4007,7 @@ function DriveMapInner({
     const map = mapRef.current;
     if (!map || !mapReady) return;
     if (viewMode !== "route" && viewMode !== "topdown") return;
-    if (routes.length > 0 || navigationStarted) return;
+    if (routes.length > 0 || navigationStarted || destLngLat) return;
 
     if (idleHomeTrailWaitDeadlineRef.current === 0) {
       idleHomeTrailWaitDeadlineRef.current = performance.now() + IDLE_HOME_TRAIL_BOUNDS_WAIT_MS;
@@ -2788,17 +4098,21 @@ function DriveMapInner({
 
     if (tryApplyIdleHome()) return;
 
+    let pollId = 0;
     const onReady = () => {
-      tryApplyIdleHome();
+      if (tryApplyIdleHome() && pollId) {
+        window.clearInterval(pollId);
+        pollId = 0;
+      }
     };
     map.on("load", onReady);
     map.on("style.load", onReady);
-    const timers = [250, 800, 2000, 4500].map((ms) => window.setTimeout(onReady, ms));
+    pollId = window.setInterval(onReady, IDLE_HOME_LOCATE_POLL_MS);
 
     return () => {
       map.off("load", onReady);
       map.off("style.load", onReady);
-      for (const id of timers) window.clearTimeout(id);
+      if (pollId) window.clearInterval(pollId);
     };
   }, [
     mapReady,
@@ -2809,6 +4123,7 @@ function DriveMapInner({
     activityTrailPlanningBounds,
     idleHomeMapFraming,
     homePuckFollow,
+    destLngLat,
   ]);
 
   const homePreloadBoundsKey = homePreloadBounds
@@ -2863,8 +4178,9 @@ function DriveMapInner({
   ]);
 
   /**
-   * Before Go: warm Mapbox's own tile cache for the first corridor window (Wi‑Fi),
-   * plus HTTP-prefetch the overlapping next window. Camera is restored after warm.
+   * Before Go: HTTP-prefetch tiles for the first corridor window + next overlap.
+   * Do NOT warm via fitBounds on the live map — that was the “jump to first leg
+   * then back to full route” flash when setting a dest or tapping A/B.
    */
   useEffect(() => {
     if (!mapReady || navigationStarted || routes.length === 0) return;
@@ -2881,28 +4197,22 @@ function DriveMapInner({
     let cancelled = false;
     const timer = window.setTimeout(() => {
       void (async () => {
-        const onWifi = await isWifiConnection();
         if (cancelled || navigationStartedRef.current) return;
-        const map = mapRef.current;
-        /* Fill GL tile cache on Wi‑Fi so Drive keeps painting after the handoff. */
-        if (onWifi && map && isMapUsable(map)) {
-          await warmMapTilesForBounds(map, first, () =>
-            cancelled || navigationStartedRef.current || userExploringRef.current
-          );
-        } else {
-          await prefetchMapTilesForBounds(first, token, {
-            shouldAbort: () => cancelled || navigationStartedRef.current,
-            includeTerrain: false,
-          });
-        }
+        /* Warm the style's own composite URL, or the cache entry never gets read. */
+        const styleMap = mapRef.current;
+        const groups = styleMap ? readMapVectorTilesetGroups(styleMap) : [];
+        const warmOpts = {
+          includeTerrain: false,
+          tilesetGroups: groups,
+          transformUrl: styleMap ? (u: string) => styleMatchedTileUrl(styleMap, u) : undefined,
+          shouldAbort: () => cancelled || navigationStartedRef.current,
+        };
+        await prefetchMapTilesForBounds(first, token, warmOpts);
         if (cancelled || navigationStartedRef.current) return;
         const nextStart = nextCorridorWindowStartM(0);
         const next = corridorWindowBounds(geom, nextStart);
         if (!next) return;
-        await prefetchMapTilesForBounds(next, token, {
-          shouldAbort: () => cancelled || navigationStartedRef.current,
-          includeTerrain: false,
-        });
+        await prefetchMapTilesForBounds(next, token, warmOpts);
         if (!cancelled) corridorWarmStartMRef.current = 0;
       })();
     }, 900);
@@ -2941,14 +4251,20 @@ function DriveMapInner({
 
     let cancelled = false;
     corridorPrefetchInFlightRef.current = true;
+    const corridorMap = mapRef.current;
     void (async () => {
       try {
         const result = await prefetchMapTilesForBounds(next, token, {
           shouldAbort: () => cancelled || !navigationStartedRef.current || !isOnline,
           includeTerrain: false,
+          tilesetGroups: corridorMap ? readMapVectorTilesetGroups(corridorMap) : [],
+          transformUrl: corridorMap ? (u) => styleMatchedTileUrl(corridorMap, u) : undefined,
         });
         if (!cancelled && result === "done") {
+          bumpDriveDiag("tileWarmDone");
           corridorWarmStartMRef.current = nextStart;
+        } else if (!cancelled && result === "failed") {
+          bumpDriveDiag("tileWarmFailed");
         }
       } finally {
         corridorPrefetchInFlightRef.current = false;
@@ -2969,52 +4285,103 @@ function DriveMapInner({
     isOnline,
   ]);
 
+  /**
+   * Drive-zoom warm: the next ~8 mi at z15–16, using the tileset groups the live
+   * style requests. The regional z10–13 warm is the wrong picture for a camera
+   * sitting at z16.6 — that mismatch is why the park dead zone still went blank
+   * with "tiles warm" in the dump.
+   */
+  useEffect(() => {
+    if (!mapReady || !navigationStarted) return;
+    if (
+      !shouldRunDriveZoomWarm({
+        navigationStarted,
+        isOnline,
+        holdLastGoodMap,
+        inFlight: driveZoomWarmInFlightRef.current,
+      })
+    ) {
+      return;
+    }
+    const geom =
+      (puckSnapGeometry && puckSnapGeometry.length >= 2 ? puckSnapGeometry : null) ??
+      (corridorRouteGeometry && corridorRouteGeometry.length >= 2
+        ? corridorRouteGeometry
+        : null) ??
+      routes.find((r) => r.id === lineFocusId)?.geometry ??
+      routes[0]?.geometry ??
+      null;
+    if (!geom || geom.length < 2) return;
+    const along = userAlongMeters ?? 0;
+    if (!Number.isFinite(along) || along < 0) return;
+
+    /* First pass starts at the driver. After that, slide with overlap. */
+    const started = driveZoomWarmStartMRef.current;
+    const nextStart =
+      started == null
+        ? Math.max(0, along)
+        : shouldWarmNextDriveZoomWindow(along, started)
+          ? nextDriveZoomWindowStartM(started)
+          : null;
+    if (nextStart == null) return;
+
+    const bounds = driveZoomWindowBounds(geom, nextStart);
+    if (!bounds) return;
+    const token = getWebEnv().mapboxToken;
+    if (!token) return;
+    const map = mapRef.current;
+    const groups = map ? readMapVectorTilesetGroups(map) : [];
+
+    let cancelled = false;
+    driveZoomWarmInFlightRef.current = true;
+    void (async () => {
+      try {
+        const result = await prefetchMapTilesForBounds(bounds, token, {
+          zooms: DRIVE_WARM_ZOOMS,
+          maxTiles: DRIVE_WARM_MAX_TILES,
+          includeTerrain: false,
+          tilesetGroups: groups,
+          transformUrl: map ? (u) => styleMatchedTileUrl(map, u) : undefined,
+          pacingMs: 90,
+          /* Drop the moment the radio holds — failed fetches help nobody. */
+          shouldAbort: () =>
+            cancelled ||
+            !navigationStartedRef.current ||
+            !isOnlineRef.current ||
+            holdLastGoodMapRef.current,
+        });
+        if (cancelled) return;
+        if (result === "done") {
+          bumpDriveDiag("tileWarmDone");
+          driveZoomWarmStartMRef.current = nextStart;
+        } else if (result === "failed") {
+          bumpDriveDiag("tileWarmFailed");
+        }
+      } finally {
+        driveZoomWarmInFlightRef.current = false;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    mapReady,
+    navigationStarted,
+    userAlongMeters,
+    lineFocusId,
+    routesPlanningFitKey,
+    puckSnapGeometry,
+    corridorRouteGeometry,
+    isOnline,
+    holdLastGoodMap,
+  ]);
+
   useEffect(() => {
     if (navigationStarted) return;
     corridorWarmStartMRef.current = 0;
+    driveZoomWarmStartMRef.current = null;
   }, [navigationStarted, routesPlanningFitKey]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || viewMode !== "route" && viewMode !== "topdown") return;
-    if (routes.length > 0 || navigationStarted) return;
-    if (userExploringRef.current) return;
-    const u = userLngLatRef.current;
-    if (!u || !destLngLat) return;
-    if (viewMode === "topdown") {
-      prevTopdownRef.current = false;
-      safeFlyTo(map, {
-        center: u,
-        zoom: resolveTopdownLocalZoom(topdownZoomRef, false),
-        pitch: 0,
-        bearing: 0,
-        padding: ZERO_MAP_PADDING,
-        offset: TOPDOWN_PUCK_OFFSET_PX,
-        duration: 480,
-        essential: true,
-      });
-      return;
-    }
-    fitMapToTrip(
-      map,
-      [],
-      u,
-      destLngLat,
-      routeFitPadding(stormBarVisible, stormBarExpanded, [], null, progressRailVisible),
-      ROUTE_VIEW_ROUTE_FIT_MAX_ZOOM,
-      {}
-    );
-  }, [
-    mapReady,
-    viewMode,
-    routes.length,
-    navigationStarted,
-    destLngLat,
-    fitTrigger,
-    stormBarVisible,
-    stormBarExpanded,
-    progressRailVisible,
-  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -3059,6 +4426,7 @@ function DriveMapInner({
   useEffect(() => {
     if (viewMode !== "drive" || !navigationStarted) {
       driveCamBearingSmoothedRef.current = null;
+      driveCamZoomSmoothedRef.current = null;
       driveLastTravelBearingRef.current = null;
       driveCamPreferTravelUntilMsRef.current = 0;
       const out = lastTravelBearingDegOutRefStable.current;
@@ -3068,11 +4436,47 @@ function DriveMapInner({
     }
   }, [viewMode, navigationStarted]);
 
+  /**
+   * Dest tap on the StormPath map: cancel in-flight home-follow / regional flies,
+   * hold street zoom at the current center so the pin stays where the user tapped.
+   * Canada-scale zoom (~6.9 Rt regional) snaps back to street. Overview waits for routes.
+   */
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
+    if (pickExploreHoldRef.current) return;
+    if (
+      !shouldHoldDestPlaceFrame({
+        destLngLat,
+        routesLength: routes.length,
+        navigationStarted,
+      })
+    ) {
+      return;
+    }
+    userExploringRef.current = false;
+    if (exploreTimerRef.current) {
+      clearTimeout(exploreTimerRef.current);
+      exploreTimerRef.current = null;
+    }
+    pendingRouteOverviewEnterRef.current = true;
+    stopMapCamera(map);
+    writePlanningWaitCamera(map, destLngLat, userLngLatRef.current);
+  }, [mapReady, destLngLat, routes.length, navigationStarted]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (pickExploreHoldRef.current) return;
     if (viewMode !== "route" && viewMode !== "topdown") return;
-    if (routes.length === 0) return;
+
+    /* Dest chosen, routes not ready — dest-place hold owns the camera until the plan paints. */
+    if (routes.length === 0) {
+      if (!navigationStarted && destLngLat) {
+        pendingRouteOverviewEnterRef.current = true;
+      }
+      return;
+    }
 
     /* View-enter decisions come from useMapCameraController → viewModeContract so the
      * Rt/Mp/Dr transition rules live in one place (see nav/viewModeContract.ts). */
@@ -3096,7 +4500,7 @@ function DriveMapInner({
       enteredRouteView = decision.enteredRouteView;
       enteredTopdownNav = decision.enteredTopdownNav;
       if (decision.bustRouteOverviewSnapKey) navRouteSnapKeyRef.current = "";
-      if (decision.enteredRouteView && navigationStarted) {
+      if (decision.enteredRouteView) {
         pendingRouteOverviewEnterRef.current = true;
       }
       if (decision.bustTopdownSnapKey) topdownSnapKeyRef.current = "";
@@ -3119,21 +4523,28 @@ function DriveMapInner({
         window.clearTimeout(planningFitRetryTimerRef.current);
         planningFitRetryTimerRef.current = null;
       }
-      if (planningFitVerifyTimerRef.current != null) {
-        window.clearTimeout(planningFitVerifyTimerRef.current);
-        planningFitVerifyTimerRef.current = null;
-      }
     };
 
-    const prevCount = prevPlanningRouteCountRef.current;
-    prevPlanningRouteCountRef.current = routes.length;
-    const routesJustLoaded = prevCount === 0 && routes.length > 0;
+    /* Wait for A/B to finish — intermediate setPlan paints were the zoom-in-then-out hop. */
+    if (!navigationStarted && routeBuildBusy) {
+      pendingRouteOverviewEnterRef.current = true;
+      clearPlanningFitTimers();
+      stopMapCamera(map);
+      writePlanningWaitCamera(map, destLngLatRef.current, userLngLatRef.current);
+      return () => {
+        cancelled = true;
+        clearPlanningFitTimers();
+      };
+    }
 
-    /* Only App-driven events (fitTrigger / first routes / entering Rt) may override a live pan/zoom.
-     * Previously planning always set forcePlanningFit=true, so overview fit ignored exploring and
-     * fought the user — camera zoomed back out and markers looked like they were flying. */
-    let appForcedFit = enteredRouteView;
-    if (fitTrigger !== lastForcedPlanningFitTriggerRef.current || routesJustLoaded) {
+    /* Only App-driven events (fitTrigger / entering Rt) may override a live pan/zoom.
+     * A same-tick toolbar resize remounts this effect and can set the explore latch
+     * via movestart — pending Rt enter must still win or Rt stays at Mp zoom. */
+    let appForcedFit = routeOverviewFitIsAppForced(
+      enteredRouteView,
+      pendingRouteOverviewEnterRef.current
+    );
+    if (fitTrigger !== lastForcedPlanningFitTriggerRef.current) {
       lastForcedPlanningFitTriggerRef.current = fitTrigger;
       appForcedFit = true;
       userExploringRef.current = false;
@@ -3143,47 +4554,49 @@ function DriveMapInner({
       }
     }
 
-    const flatten = () => {
-      safeEaseTo(map, { pitch: 0, bearing: 0, duration: 240, essential: true });
-    };
-
-    let pendingFlatten: (() => void) | null = null;
-
     const executePlanningFit = (): boolean => {
-      if (userExploringRef.current && !appForcedFit) return false;
-      if (!mapStyleReadyForCamera(map)) return false;
-      const u = userLngLatRef.current;
-      if (pendingFlatten) {
-        map.off("moveend", pendingFlatten);
-        pendingFlatten = null;
+      if (pickExploreHoldRef.current) return true;
+      if (
+        viewDroneActiveRef.current ||
+        performance.now() < viewFlyUntilMsRef.current ||
+        performance.now() < droneLandedRouteUntilMsRef.current
+      ) {
+        if (viewModeRef.current === "route") pendingRouteOverviewEnterRef.current = false;
+        return true;
       }
-      /* Pre-Go: always frame the full active polyline. Navigating Rt: same — remaining
-       * corridor overview, not Mp street zoom. Endpoint-only fits look like Mp on short legs. */
-      const planningOverview =
-        !navigationStartedRef.current || viewModeRef.current === "route";
+      if (viewModeRef.current === "drive") return false;
+      if (routes.length === 0) return false;
+      if (userExploringRef.current && !appForcedFit) return false;
+      /* Planning jumpTo does not need isStyleLoaded — waiting here left long trips
+       * stuck on the dest-hold street crop after Mapbox already had a line. */
+      if (navigationStartedRef.current && !mapStyleReadyForCamera(map)) return false;
+      const u = userLngLatRef.current;
+      /* Rt: puck + dest sit in a thin edge strip. Navigating Rt drops the
+       * driven tail so the frame zooms in as the remaining trip shortens. */
+      const navigatingRt = Boolean(
+        navigationStartedRef.current && viewModeRef.current === "route"
+      );
+      const easeNavRt =
+        navigatingRt &&
+        !pendingRouteOverviewEnterRef.current &&
+        !enteredRouteView;
       const fitted = fitMapToTrip(
         map,
         routes,
         u,
-        destLngLat,
+        destLngLatRef.current,
         {
           ...routeFitPadding(stormBarVisible, stormBarExpanded, routes, lineFocusId, progressRailVisible),
         },
         routeFitMaxZoomCeiling(routes, lineFocusId),
         {
-          onAfterFit: () => {
-            /* Guard: if this effect was cleaned up (nav started, view changed) before the
-             * fitBounds moveend fired, skip the flatten so stale listeners don't fight
-             * the drive-follow camera.  Without this, every verifyPlanningZoom retry
-             * leaves a map.once("moveend") that triggers flatten(pitch:0) after the
-             * drive camera's easeTo fires, creating an oscillation that can last 1–3 s. */
-            if (cancelled) return;
-            flatten();
-          },
-          /* Pre-Go: frame every planned leg so B is on-screen. After Go, stay on the active path. */
+          onAfterFit: undefined,
           onlyRouteId: navigationStartedRef.current ? lineFocusId : undefined,
-          zoomBias: routeFitZoomBias(routes, lineFocusId),
-          forceFullPolyline: planningOverview,
+          zoomBias: 0,
+          /* Pre-Go: full corridor so we never street-zoom the dest then pull back. */
+          forceFullPolyline: !navigatingRt,
+          remainingFromUser: navigatingRt,
+          durationMs: easeNavRt ? 480 : 0,
         }
       );
       if (fitted && viewModeRef.current === "route") {
@@ -3192,74 +4605,64 @@ function DriveMapInner({
       return fitted;
     };
 
-    const verifyPlanningZoom = (attempt: number) => {
-      if (cancelled || routes.length === 0) return;
-      if (userExploringRef.current) return;
-      const vm = viewModeRef.current;
-      if (navigationStartedRef.current && vm !== "route") return;
-      if (viewModeRef.current !== "route" && viewModeRef.current !== "topdown") return;
-      let zoom = 0;
-      try {
-        zoom = map.getZoom();
-      } catch {
-        return;
-      }
-      const routeLen = sessionRouteLengthMRef.current;
-      const routeOverviewNav = navigationStartedRef.current && vm === "route";
-      if (routeOverviewNav) {
-        const maxOverviewZoom = maxRouteOverviewZoomDuringNav(routeLen);
-        if (zoom <= maxOverviewZoom + 0.15) return;
-      } else {
-        if (isUltraLongTripRoute(routeLen)) return;
-        const minPlanningZoom = minPlanningRouteZoomFloor(routeLen);
-        if (zoom >= minPlanningZoom) return;
-      }
-      if (attempt >= 5) return;
-      if (!executePlanningFit()) {
-        planningFitRetryTimerRef.current = window.setTimeout(
-          () => verifyPlanningZoom(attempt + 1),
-          220 + attempt * 180
-        );
-        return;
-      }
-      planningFitVerifyTimerRef.current = window.setTimeout(
-        () => verifyPlanningZoom(attempt + 1),
-        480 + attempt * 120
+    let planningFitAttempt = 0;
+    const landPlanningFitOrEndpoint = () => {
+      if (executePlanningFit()) return;
+      if (navigationStartedRef.current || viewModeRef.current !== "route") return;
+      const pad = routeFitPadding(
+        stormBarVisible,
+        stormBarExpanded,
+        routes,
+        lineFocusId,
+        progressRailVisible
       );
+      const maxZ = routeFitMaxZoomCeiling(routes, lineFocusId);
+      if (fitMapToTripEndpoints(map, userLngLatRef.current, destLngLatRef.current, pad, maxZ)) {
+        pendingRouteOverviewEnterRef.current = false;
+        return;
+      }
+      const proof = destLngLatRef.current ?? userLngLatRef.current;
+      if (!proof) return;
+      if (
+        safeJumpTo(map, {
+          center: proof,
+          zoom: destPlaceHoldZoom(ROUTE_VIEW_PLANNING_STREET_ZOOM),
+          pitch: 0,
+          bearing: 0,
+          padding: ZERO_MAP_PADDING,
+        })
+      ) {
+        pendingRouteOverviewEnterRef.current = false;
+      }
     };
 
     const retryWhenReady = () => {
       if (cancelled) return;
-      if (!executePlanningFit()) verifyPlanningZoom(1);
-      else {
-        planningFitVerifyTimerRef.current = window.setTimeout(() => verifyPlanningZoom(0), 520);
+      map.off("idle", retryWhenReady);
+      map.off("style.load", retryWhenReady);
+      if (executePlanningFit()) return;
+      if (planningFitAttempt >= PLANNING_FIT_RETRY_MS.length) {
+        landPlanningFitOrEndpoint();
+        return;
       }
+      const wait = PLANNING_FIT_RETRY_MS[planningFitAttempt]!;
+      planningFitAttempt += 1;
+      map.once("idle", retryWhenReady);
+      map.once("style.load", retryWhenReady);
+      planningFitRetryTimerRef.current = window.setTimeout(retryWhenReady, wait);
     };
 
     const schedulePlanningRouteFit = () => {
-      if (executePlanningFit()) {
-        const verifyAfterFit =
-          !navigationStartedRef.current || viewModeRef.current === "route";
-        if (verifyAfterFit) {
-          planningFitVerifyTimerRef.current = window.setTimeout(() => verifyPlanningZoom(0), 520);
-        }
-        return;
-      }
+      if (executePlanningFit()) return;
       clearPlanningFitTimers();
+      planningFitAttempt = 0;
       planningFitRafRef.current = requestAnimationFrame(() => {
         planningFitRafRef.current = null;
         if (cancelled) return;
-        if (!executePlanningFit()) {
-          map.once("idle", retryWhenReady);
-          map.once("style.load", retryWhenReady);
-          planningFitRetryTimerRef.current = window.setTimeout(retryWhenReady, 160);
-        } else {
-          const verifyAfterFit =
-            !navigationStartedRef.current || viewModeRef.current === "route";
-          if (verifyAfterFit) {
-            planningFitVerifyTimerRef.current = window.setTimeout(() => verifyPlanningZoom(0), 520);
-          }
-        }
+        if (executePlanningFit()) return;
+        map.once("idle", retryWhenReady);
+        map.once("style.load", retryWhenReady);
+        retryWhenReady();
       });
     };
 
@@ -3274,6 +4677,8 @@ function DriveMapInner({
 
     /** Map (Mp): top-down on the user’s position — full route line stays drawn; camera does not fit the whole trip. */
     const doTopdownLocalFit = () => {
+      if (pickExploreHoldRef.current) return;
+      if (viewDroneActiveRef.current) return;
       if (userExploringRef.current) return;
       if (!mapStyleReadyForCamera(map)) return;
       const u = userLngLatRef.current;
@@ -3286,30 +4691,25 @@ function DriveMapInner({
         topdownZoomRef,
         enteredTopdownNav,
       });
+      let mapZoom = topdownZoomRef.current;
+      try {
+        mapZoom = map.getZoom();
+      } catch {
+        /* map torn down */
+      }
       const zoom = navigationStarted
         ? needsStreetZoomReset
-          ? navigationTopdownZoomForViewChange(map, topdownZoomRef, true, true)
+          ? topdownZoomOnEnter(mapZoom, topdownZoomRef)
           : coerceTopdownNavStreetZoom(map, topdownZoomRef)
         : resolveTopdownLocalZoom(topdownZoomRef, false);
-      if (pendingFlatten) {
-        map.off("moveend", pendingFlatten);
-        pendingFlatten = null;
-      }
-      pendingFlatten = () => {
-        pendingFlatten = null;
-        flatten();
-      };
-      map.once("moveend", pendingFlatten);
       prevTopdownRef.current = false;
-      safeFlyTo(map, {
+      /* jumpTo — flyTo is a second zoom-out-then-in if the drone already ran. */
+      safeJumpTo(map, {
         center: u,
         zoom,
         pitch: 0,
         bearing: 0,
         padding: ZERO_MAP_PADDING,
-        offset: TOPDOWN_PUCK_OFFSET_PX,
-        duration: navigationStarted ? 340 : 480,
-        essential: true,
       });
     };
 
@@ -3325,15 +4725,6 @@ function DriveMapInner({
       if (!mapStyleReadyForCamera(map)) return;
       const u = userLngLatRef.current;
       if (!u) return;
-      if (pendingFlatten) {
-        map.off("moveend", pendingFlatten);
-        pendingFlatten = null;
-      }
-      pendingFlatten = () => {
-        pendingFlatten = null;
-        flatten();
-      };
-      map.once("moveend", pendingFlatten);
       prevTopdownRef.current = true;
       fitMapToOffRouteRejoinChoices(
         map,
@@ -3351,15 +4742,6 @@ function DriveMapInner({
       if (!mapStyleReadyForCamera(map)) return;
       const u = userLngLatRef.current;
       if (!u) return;
-      if (pendingFlatten) {
-        map.off("moveend", pendingFlatten);
-        pendingFlatten = null;
-      }
-      pendingFlatten = () => {
-        pendingFlatten = null;
-        flatten();
-      };
-      map.once("moveend", pendingFlatten);
       prevTopdownRef.current = true;
       fitMapToRouteCompareLocal(
         map,
@@ -3400,13 +4782,13 @@ function DriveMapInner({
         else doTopdownLocalFit();
       }
     } else if (viewMode === "route") {
-      const routeOverviewSnapKey = navigationRouteOverviewSnapKey(
+      const routeOverviewSnapKey = `${navigationRouteOverviewSnapKey(
         viewMode,
         fitTrigger,
         mapResumeTick,
         lineFocusId,
         routesPlanningFitKey
-      );
+      )}|${routeOverviewProgressKey}`;
       if (
         enteredRouteView ||
         shouldRetryInterruptedRouteOverviewEnter(
@@ -3417,7 +4799,17 @@ function DriveMapInner({
         navRouteSnapKeyRef.current !== routeOverviewSnapKey
       ) {
         navRouteSnapKeyRef.current = routeOverviewSnapKey;
-        forceRouteOverviewFit();
+        if (viewDroneActiveRef.current) {
+          pendingRouteOverviewEnterRef.current = false;
+        } else if (shouldDebouncePlanningOverviewFit(navigationStarted)) {
+          clearPlanningFitTimers();
+          planningFitRetryTimerRef.current = window.setTimeout(() => {
+            planningFitRetryTimerRef.current = null;
+            if (!cancelled) forceRouteOverviewFit();
+          }, PLANNING_ROUTE_FIT_SETTLE_MS);
+        } else {
+          forceRouteOverviewFit();
+        }
       }
     } else {
       topdownSnapKeyRef.current = "";
@@ -3428,24 +4820,20 @@ function DriveMapInner({
       clearPlanningFitTimers();
       map.off("idle", retryWhenReady);
       map.off("style.load", retryWhenReady);
-      if (pendingFlatten) {
-        map.off("moveend", pendingFlatten);
-        pendingFlatten = null;
-      }
     };
   }, [
     mapReady,
     fitTrigger,
     viewMode,
     routesPlanningFitKey,
-    destLngLat,
+    routeOverviewProgressKey,
     navigationStarted,
+    routeBuildBusy,
     mapResumeTick,
     stormBarVisible,
     stormBarExpanded,
     lineFocusId,
     progressRailVisible,
-    chromeLayoutTick,
     offRouteRejoinCompareActive,
     trafficBypassCompareActive,
     trafficBypassCompareHazardLngLat,
@@ -3463,32 +4851,48 @@ function DriveMapInner({
    */
   useEffect(() => {
     if (!mapReady) return;
-    if (viewMode === "topdown" && navigationStarted) {
-      if (topdownZoomRef.current < TOPDOWN_NAV_MIN_ZOOM) {
-        topdownZoomRef.current = TOPDOWN_NAV_STREET_ZOOM;
-      }
-      prevTopdownRef.current = false;
-    }
+    if (pickExploreHoldRef.current) return;
     userExploringRef.current = false;
     if (exploreTimerRef.current) {
       clearTimeout(exploreTimerRef.current);
       exploreTimerRef.current = null;
     }
+    if (
+      viewDroneActiveRef.current ||
+      performance.now() < viewFlyUntilMsRef.current
+    ) {
+      if (viewMode === "drive" && navigationStarted) {
+        driveCamResyncRef.current = true;
+      }
+      return;
+    }
+    if (viewMode === "topdown" && navigationStarted) {
+      if (topdownZoomRef.current < TOPDOWN_NAV_MIN_ZOOM) {
+        topdownZoomRef.current = TOPDOWN_NAV_STREET_ZOOM;
+      }
+      prevTopdownRef.current = false;
+      topdownSnapKeyRef.current = "";
+    }
+    if (viewMode === "route" && navigationStarted) {
+      pendingRouteOverviewEnterRef.current = true;
+      navRouteSnapKeyRef.current = "";
+    }
     if (viewMode === "drive" && navigationStarted) {
       driveCamResyncRef.current = true;
     }
-    const map = mapRef.current;
-    const raf0 = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
+    if (navigationStarted && (viewMode === "route" || viewMode === "topdown")) {
+      const map = mapRef.current;
+      if (map) {
         try {
-          map?.resize();
+          map.resize();
         } catch {
-          /* map disposed */
+          /* style race */
         }
-        setMapResumeTick((n) => n + 1);
-      });
-    });
-    return () => cancelAnimationFrame(raf0);
+      }
+      setMapResumeTick((n) => n + 1);
+    }
+    /* Do not resize here on Dr — a post-snap resize after the one-shot Rt/Mp/Dr camera
+     * is what made the map blur/vibrate for about a second on view switch. */
   }, [mapReady, viewMode, navigationStarted, topdownZoomRef]);
 
   const canCameraFollow = Boolean(
@@ -3499,7 +4903,7 @@ function DriveMapInner({
         (viewMode === "topdown" && !(idleHomeScreen && homePuckFollow === "explore")))
   );
 
-  /** On Go: clear "user exploring" so the drive camera is not stuck; nudge follow + size after nav chrome. */
+  /** On Go: clear explore latch. First native Go freezes the web camera (no street thrash). */
   const wasNavRef = useRef(false);
   useEffect(() => {
     const map = mapRef.current;
@@ -3507,42 +4911,57 @@ function DriveMapInner({
     if (navigationStarted && !wasNavRef.current) {
       userExploringRef.current = false;
       driveNavZoomRef.current = DRIVE_FOLLOW_ZOOM_DEFAULT;
-      driveCamResyncRef.current = true;
       if (exploreTimerRef.current) {
         clearTimeout(exploreTimerRef.current);
         exploreTimerRef.current = null;
       }
-      setMapResumeTick((n) => n + 1);
-      if (map) {
-        requestAnimationFrame(() => {
-          try {
-            map.resize();
-          } catch {
-            /* map disposed */
-          }
-        });
+      const holdNativeFirstGo = Boolean(
+        NATIVE_DRIVE_MAP_ENABLED &&
+          isNativeMapboxNavPlatform() &&
+          viewMode === "drive" &&
+          !hadNativeShellThisTripRef.current
+      );
+      if (holdNativeFirstGo) {
+        if (map) stopMapCamera(map);
+      } else {
+        driveCamResyncRef.current = true;
+        setMapResumeTick((n) => n + 1);
+        if (map) {
+          requestAnimationFrame(() => {
+            try {
+              map.resize();
+            } catch {
+              /* map disposed */
+            }
+          });
+        }
       }
     }
     wasNavRef.current = navigationStarted;
-  }, [mapReady, navigationStarted]);
+  }, [mapReady, navigationStarted, viewMode]);
 
   /**
-   * Rt / T / Dr: switching back to drive after top-down (or a layout shift) can leave the canvas
-   * sized to a stale box — the puck and follow camera sit wrong until a resize. Double-rAF + bump
-   * so {@link canCameraFollow} run re-runs after the real layout.
-   *
-   * Also fires timed direct snaps as a belt-and-suspenders failsafe: if the RAF loop can't snap
-   * the camera on its own (e.g. puck marker not yet created, GPS momentarily null, or a stale
-   * moveend listener fights back), these timeouts guarantee the camera reaches drive pitch within
-   * ~500 ms of entering drive mode.
+   * One Drive snap after chrome settles. Skip on first native Go while the web
+   * (customer) map is held frozen until native punches — otherwise web street
+   * follow-cam and native reveal fight and jump between two images.
    */
   useEffect(() => {
     if (viewMode !== "drive" || !navigationStarted || !mapReady) return;
+    if (holdFirstNativeGoRef.current) {
+      const map = mapRef.current;
+      if (map) stopMapCamera(map);
+      return;
+    }
     const map = mapRef.current;
     if (!map) return;
+    if (viewDroneActiveRef.current) return;
+    if (performance.now() < viewFlyUntilMsRef.current) return;
     driveCamResyncRef.current = true;
 
     const snapDriveCam = () => {
+      if (holdFirstNativeGoRef.current) return;
+      if (viewDroneActiveRef.current) return;
+      if (performance.now() < viewFlyUntilMsRef.current) return;
       if (!isMapReadyForFollowCam(map)) return;
       if (viewModeRef.current !== "drive" || !navigationStartedRef.current) return;
       userExploringRef.current = false;
@@ -3563,39 +4982,14 @@ function DriveMapInner({
         followingTemporaryGuidance: followingTemporaryGuidanceRef.current,
         preferTravel: performance.now() < driveCamPreferTravelUntilMsRef.current,
       });
-      const wx = typeof window !== "undefined" ? Math.round(window.innerWidth / 24) : 0;
-      const wy = typeof window !== "undefined" ? Math.round(window.innerHeight / 24) : 0;
-      const easeKey = `${stormBarVisibleRef.current}|${stormBarExpandedRef.current}|${progressRailVisibleRef.current}|${wx}x${wy}`;
-      let easeCached = driveCamEaseOptsCacheRef.current;
-      if (!easeCached || easeCached.key !== easeKey) {
-        const o = driveCameraEaseOptions(
-          stormBarVisibleRef.current,
-          stormBarExpandedRef.current,
-          progressRailVisibleRef.current
-        );
-        easeCached = { key: easeKey, padding: o.padding, offset: o.offset };
-        driveCamEaseOptsCacheRef.current = easeCached;
-      }
-      const guarded = guardDriveFollowCamera({
-        center: pos,
-        zoom: repairStoredDriveFollowZoom(driveNavZoomRef),
-        puck: pos,
-      });
-      safeEaseTo(map, {
-        center: guarded.center,
-        zoom: guarded.zoom,
-        pitch: DRIVE_FOLLOW_PITCH_DEG,
-        bearing: brg,
-        padding: easeCached?.padding,
-        offset: easeCached?.offset,
-        duration: 0,
-        essential: true,
-      });
+      /* Seed the bearing and let the follow loop place the frame. This snap used to
+       * `safeEaseTo` here, which needs isStyleLoaded() — on a weak radio it no-oped
+       * and counted against the fail streak while the loop framed the same pose. */
+      driveCamBearingSmoothedRef.current = brg;
+      setMapResumeTick((n) => n + 1);
     };
 
     const t1 = window.setTimeout(snapDriveCam, 80);
-    const t2 = window.setTimeout(snapDriveCam, 260);
-    const t3 = window.setTimeout(snapDriveCam, 600);
 
     const raf0 = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -3604,16 +4998,13 @@ function DriveMapInner({
         } catch {
           /* map disposed */
         }
-        setMapResumeTick((n) => n + 1);
       });
     });
     return () => {
       cancelAnimationFrame(raf0);
       window.clearTimeout(t1);
-      window.clearTimeout(t2);
-      window.clearTimeout(t3);
     };
-  }, [viewMode, navigationStarted, mapReady]);
+  }, [viewMode, navigationStarted, mapReady, punchNativeHole]);
 
   /** Foreground / style reload / sheet close — hard-snap follow-cam (clear bearing smoother). */
   useEffect(() => {
@@ -3622,8 +5013,12 @@ function DriveMapInner({
     if (!map) return;
 
     const nudgeFollowCam = (hard = false) => {
+      if (viewDroneActiveRef.current || performance.now() < viewFlyUntilMsRef.current) return;
       userExploringRef.current = false;
-      if (hard) driveCamBearingSmoothedRef.current = null;
+      if (hard) {
+        driveCamBearingSmoothedRef.current = null;
+        driveCamZoomSmoothedRef.current = null;
+      }
       driveCamResyncRef.current = true;
       setMapResumeTick((n) => n + 1);
       try {
@@ -3651,6 +5046,7 @@ function DriveMapInner({
   useEffect(() => {
     if (!mapReady || !navigationStarted || viewMode !== "drive") return;
     if (followCamResyncKey <= 0) return;
+    if (viewDroneActiveRef.current || performance.now() < viewFlyUntilMsRef.current) return;
     // Keep lastTravel — clearing it was causing Jeff's "straightened" tap to re-apply the
     // already-sideways map/rejoin bearing on the very next frame (see preferTravel).
     driveCamPreferTravelUntilMsRef.current =
@@ -3658,63 +5054,12 @@ function DriveMapInner({
     const travelTarget =
       driveLastTravelBearingRef.current ?? driveCamBearingSmoothedRef.current;
     driveCamBearingSmoothedRef.current = travelTarget;
+    /* Jeff is a sensor, not a writer. He publishes the Resync intent and the rAF
+     * loop performs the single write on the next frame, at the yard line, using
+     * the latched writer. 435 is what happens when this effect calls Mapbox
+     * itself: 515 bare setCenters, a resize per tick, puck stuck at midfield. */
     driveCamResyncRef.current = true;
     setMapResumeTick((n) => n + 1);
-    const map = mapRef.current;
-    if (map) {
-      try {
-        map.resize();
-      } catch {
-        /* map disposed */
-      }
-      if (isMapUsable(map) && travelTarget != null) {
-        const pos =
-          userLngLatRef.current ??
-          (puckMarkerRef.current ? readMapLngLat(puckMarkerRef.current.getLngLat()) : null);
-        if (pos) {
-          const o = driveCameraEaseOptions(
-            stormBarVisibleRef.current,
-            stormBarExpandedRef.current,
-            progressRailVisibleRef.current
-          );
-          /* Same single writer as the RAF loop — do not chain pan → hard → jump. */
-          const useHard =
-            followCamWriterRef.current === "hard" ||
-            holdLastGoodMapRef.current ||
-            !isOnlineRef.current;
-          const guarded = guardDriveFollowCamera({
-            center: pos,
-            zoom: repairStoredDriveFollowZoom(driveNavZoomRef),
-            puck: pos,
-          });
-          if (useHard) {
-            if (
-              safeHardFollowCamera(map, {
-                center: guarded.center,
-                zoom: guarded.zoom,
-                pitch: DRIVE_FOLLOW_PITCH_DEG,
-                bearing: travelTarget,
-              })
-            ) {
-              driveCamResyncRef.current = false;
-            }
-          } else if (
-            safePanToCenter(map, {
-              center: guarded.center,
-              zoom: guarded.zoom,
-              pitch: DRIVE_FOLLOW_PITCH_DEG,
-              bearing: travelTarget,
-              padding: o.padding,
-              offset: o.offset,
-              duration: 0,
-              essential: true,
-            })
-          ) {
-            driveCamResyncRef.current = false;
-          }
-        }
-      }
-    }
   }, [followCamResyncKey, mapReady, navigationStarted, viewMode]);
 
   /** Report map bearing while driving so the dock compass can keep N aligned with true north. */
@@ -3789,13 +5134,21 @@ function DriveMapInner({
     }
 
     const followPuck = () => {
-      if (userExploringRef.current) return;
       const u = userLngLatRef.current;
       if (!u) return;
+      let countryZoom = false;
+      try {
+        countryZoom = map.getZoom() < 6;
+      } catch {
+        countryZoom = false;
+      }
+      /* A load flicker can look like a pan. Do not leave the opening country view because of it. */
+      if (userExploringRef.current && !countryZoom) return;
 
       if (followRouteHome) {
         safePanToCenter(map, {
           center: u,
+          ...(countryZoom ? { zoom: ROUTE_VIEW_PLANNING_STREET_ZOOM } : {}),
           pitch: 0,
           bearing: 0,
         });
@@ -3948,9 +5301,12 @@ function DriveMapInner({
       if (existing.has(m.id)) continue;
       const el = document.createElement("button");
       el.type = "button";
-      el.className = "map-search-pick-dot";
+      el.className = "map-search-pick-hit";
       el.title = m.label;
       el.setAttribute("aria-label", `Search result: ${m.label}`);
+      const dot = document.createElement("span");
+      dot.className = "map-search-pick-dot";
+      el.appendChild(dot);
       const mid = m.id;
       el.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -3967,7 +5323,8 @@ function DriveMapInner({
       const z = map.getZoom();
       const s = Math.max(0.15, Math.min(1, (z - 2.5) / 12.5));
       for (const { el } of existing.values()) {
-        el.style.transform = `scale(${s})`;
+        const dot = el.querySelector(".map-search-pick-dot");
+        if (dot instanceof HTMLElement) dot.style.transform = `scale(${s})`;
       }
     };
 
@@ -3979,6 +5336,16 @@ function DriveMapInner({
   }, [mapReady, searchPickMarkers, onSearchPickMarkerClick]);
 
   useEffect(() => {
+    if (!mapReady) return;
+    if ((searchPickMarkers?.length ?? 0) >= 2) return;
+    if (!pickExploreHoldRef.current) return;
+    pickExploreHoldRef.current = false;
+    userExploringRef.current = false;
+    if (navigationStarted && viewMode === "drive") driveCamResyncRef.current = true;
+    setMapResumeTick((n) => n + 1);
+  }, [mapReady, searchPickMarkers, navigationStarted, viewMode]);
+
+  useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
     const markers = searchPickMarkers;
@@ -3986,15 +5353,41 @@ function DriveMapInner({
 
     const b = new mapboxgl.LngLatBounds();
     for (const m of markers) safeExtendBounds(b, m.lngLat as [number, number]);
+    const sw = readMapLngLat(b.getSouthWest());
+    const ne = readMapLngLat(b.getNorthEast());
+    const spanM = sw && ne ? haversineMeters(sw, ne) : 0;
     const u = userLngLatRef.current;
-    if (u) safeExtendBounds(b, u);
+    if (u && sw && ne) {
+      const center: [number, number] = [(sw[0] + ne[0]) / 2, (sw[1] + ne[1]) / 2];
+      const fromUser = haversineMeters(u, center);
+      if (fromUser <= Math.max(spanM * 0.6, 1200)) safeExtendBounds(b, u);
+    }
 
-    const pad = isNarrowPhoneViewport()
-      ? { top: 200, bottom: 200, left: 20, right: 88 }
-      : { top: 160, bottom: 160, left: 28, right: 28 };
-    safeFitBounds(map, b, { padding: pad, maxZoom: 14, duration: 480, essential: true });
+    const pad = routeFitPadding(stormBarVisible, stormBarExpanded, routes, lineFocusId, progressRailVisible);
+    const maxZoom =
+      !Number.isFinite(spanM) || spanM < 500
+        ? 17.6
+        : spanM < 2000
+          ? 16.8
+          : spanM < 8000
+            ? 15.6
+            : spanM < 25000
+              ? 14.4
+              : 13.2;
+    userExploringRef.current = true;
+    pickExploreHoldRef.current = true;
+    if (exploreTimerRef.current) {
+      window.clearTimeout(exploreTimerRef.current);
+      exploreTimerRef.current = null;
+    }
+    const cam = safeCameraForBounds(map, b, { padding: pad, maxZoom, bearing: 0, pitch: 0 });
+    if (cam?.center && cam.zoom != null && Number.isFinite(cam.zoom)) {
+      safeJumpTo(map, { center: cam.center, zoom: cam.zoom, bearing: 0, pitch: 0, padding: pad });
+    } else {
+      safeFitBounds(map, b, { padding: pad, maxZoom, duration: 0, bearing: 0, pitch: 0, essential: true });
+    }
     /* Intentionally not depending on userLngLat — GPS ticks would re-fit; ref has latest puck. */
-  }, [mapReady, searchPickMarkers]);
+  }, [mapReady, searchPickMarkers, stormBarVisible, stormBarExpanded, routes, lineFocusId, progressRailVisible]);
 
   if (!token) {
     return (
@@ -4006,7 +5399,19 @@ function DriveMapInner({
     );
   }
 
-  return <div ref={containerRef} className="drive-map" />;
+  return (
+    <div className="drive-map-frame">
+      <div
+        ref={containerRef}
+        className={punchNativeHole ? "drive-map drive-map--native-shell" : "drive-map"}
+      />
+      {showOpeningCover ? (
+        <div className="drive-map-opening" role="status">
+          Finding you
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export const DriveMap = memo(DriveMapInner, driveMapPropsAreEqual);

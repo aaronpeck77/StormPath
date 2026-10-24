@@ -38,8 +38,10 @@ export function useProgressRailChrome(deps: UseProgressRailChromeDeps) {
   /** Basic: status strip (forecast + offers). Plus: full storm advisory when enabled. */
   const showStormAdvisoryChrome = isPlus ? advisoryLifeSafetyOn : true;
 
+  /** Trip progress is a driving surface — planning keeps the map clear until Go. */
   const showProgressRail =
     isPlus &&
+    navigationStarted &&
     !trafficBypassCompare &&
     Boolean(progressRailRoute?.geometry && progressRailRoute.geometry.length >= 2);
 

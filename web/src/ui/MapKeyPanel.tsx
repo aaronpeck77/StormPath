@@ -1,6 +1,8 @@
 import { ROUTE_PICK_SLOT_HEX } from "./mapRouteStyle";
 import { corridorHighlightHex } from "../nav/routeAlerts";
 import { nwsMapKindHex } from "../weatherAlerts/nwsMapKind";
+import { puckColorById } from "./puckColor";
+import { useSettingsStore } from "../state/settingsStore";
 
 /**
  * What every color / banner / pin on the map means while driving. Lives inside the About sheet
@@ -77,7 +79,7 @@ function Swatch({ color, kind, dashed }: { color: string; kind: SwatchKind; dash
 const ROUTE_LINE_GROUP: LegendGroup = {
   title: "Route lines",
   intro:
-    "Sky blue is the route you're following. Light gray is the other option — both use a dark outline so they stay visible over radar.",
+    "Sky blue is the route you're following. Lighter blue is the other option — both use a dark outline so they stay visible over radar.",
   rows: [
     {
       label: "Active route",
@@ -87,9 +89,9 @@ const ROUTE_LINE_GROUP: LegendGroup = {
     },
     {
       label: "Suggested / alternate",
-      color: ROUTE_PICK_SLOT_HEX[2],
+      color: ROUTE_PICK_SLOT_HEX[1],
       kind: "line",
-      blurb: "Other options in planning, or a return path while you're off your chosen route — light gray with a dark outline.",
+      blurb: "Other options in planning, or a return path while you're off your chosen route — lighter blue with a dark outline.",
     },
   ],
 };
@@ -168,13 +170,13 @@ const TRAFFIC_GROUP: LegendGroup = {
 const WEATHER_POLY_GROUP: LegendGroup = {
   title: "Weather polygons (NWS map shapes)",
   intro:
-    "Storm shapes from the National Weather Service — outline only so radar and the basemap stay readable. Color tells you what kind of alert.",
+    "Warning outlines from the National Weather Service on Rt and Mp — not watches, and never in Drive. Color tells you what kind of warning.",
   rows: [
     {
       label: "Severe storm / tornado",
       color: nwsMapKindHex("convective"),
       kind: "polygon",
-      blurb: "Tornado, severe thunderstorm, hurricane, tropical, storm surge.",
+      blurb: "Tornado Warning, Severe Thunderstorm Warning, hurricane / tropical warning. Watches stay in the advisory list.",
     },
     {
       label: "Flash flood",
@@ -186,37 +188,37 @@ const WEATHER_POLY_GROUP: LegendGroup = {
       label: "Winter weather",
       color: nwsMapKindHex("winter"),
       kind: "polygon",
-      blurb: "Ice, snow, blizzard, wind chill, freeze.",
+      blurb: "Winter Storm / Ice Storm / Blizzard Warning. Watches and advisories stay in the list.",
     },
     {
       label: "High wind",
       color: nwsMapKindHex("wind"),
       kind: "polygon",
-      blurb: "Wind advisory or warning, blowing dust.",
+      blurb: "High Wind or Extreme Wind Warning. Wind advisories stay in the list.",
     },
     {
       label: "Fire weather",
       color: nwsMapKindHex("fire"),
       kind: "polygon",
-      blurb: "Red flag warning, fire weather watch.",
+      blurb: "Red Flag Warning only — fire weather watches stay in the list.",
     },
     {
       label: "Heat",
       color: nwsMapKindHex("heat"),
       kind: "polygon",
-      blurb: "Excessive heat advisory or warning.",
+      blurb: "Excessive Heat Warning. Advisories stay in the list.",
     },
     {
       label: "Marine",
       color: nwsMapKindHex("marine"),
       kind: "polygon",
-      blurb: "Small craft, gale, high surf, beach hazards.",
+      blurb: "Gale or Storm Warning. Small-craft advisories stay in the list.",
     },
     {
       label: "Visibility",
       color: nwsMapKindHex("vis"),
       kind: "polygon",
-      blurb: "Dense fog, freezing fog, smoke.",
+      blurb: "Dense Fog Warning when NWS rates it Severe. Advisories stay in the list.",
     },
   ],
 };
@@ -228,7 +230,7 @@ const PUCK_PIN_GROUP: LegendGroup = {
       label: "You / current GPS position",
       color: "#1a73e8",
       kind: "pin",
-      blurb: "Blue puck. Brighter and outlined while driving so it pops on either basemap.",
+      blurb: "Your position. Change the color in Info if it blends into the blue route line.",
     },
     {
       label: "Hazard pin",
@@ -296,9 +298,10 @@ const GROUPS: LegendGroup[] = [
 ];
 
 export function MapKeyPanel() {
+  const puckFill = puckColorById(useSettingsStore((s) => s.puckColor)).fill;
   return (
-    <section className="about-sheet__panel about-sheet__panel--map-key">
-      <h3 className="about-sheet__h3">Map key</h3>
+    <details className="about-sheet__panel about-sheet__panel--map-key about-sheet__details">
+      <summary>Map key</summary>
       <p className="about-sheet__p">
         What the colors and chrome on the map mean. Swatches are pulled from the live app constants
         — they should match what you see on screen.
@@ -310,7 +313,11 @@ export function MapKeyPanel() {
           <ul className="map-key__rows">
             {group.rows.map((row) => (
               <li key={row.label} className="map-key__row">
-                <Swatch color={row.color} kind={row.kind} dashed={row.dashed} />
+                <Swatch
+                  color={row.label.startsWith("You") ? puckFill : row.color}
+                  kind={row.kind}
+                  dashed={row.dashed}
+                />
                 <div className="map-key__row-text">
                   <span className="map-key__row-label">{row.label}</span>
                   <span className="map-key__row-blurb">{row.blurb}</span>
@@ -320,6 +327,6 @@ export function MapKeyPanel() {
           </ul>
         </details>
       ))}
-    </section>
+    </details>
   );
 }

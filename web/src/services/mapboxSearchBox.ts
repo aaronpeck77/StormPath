@@ -2,6 +2,14 @@ import type { LngLat } from "../nav/types";
 import { fetchWithTimeout, MAPBOX_GEOCODE_TIMEOUT_MS } from "../utils/fetchResilient";
 import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
 
+let searchLanguage = "en";
+
+/** About → Spoken language. Place names come back in this language. */
+export function setMapboxSearchLanguage(code: string): void {
+  const next = (code || "en").split("-")[0]?.toLowerCase() || "en";
+  searchLanguage = next;
+}
+
 /**
  * Mapbox Search Box API client — purpose-built for business / POI autocomplete with much deeper
  * local coverage than Geocoding v5. Two-step flow:
@@ -137,7 +145,7 @@ export async function mapboxSearchBoxSuggest(
   url.searchParams.set("q", q);
   url.searchParams.set("access_token", accessToken);
   url.searchParams.set("session_token", sessionToken);
-  url.searchParams.set("language", "en");
+  url.searchParams.set("language", searchLanguage);
   url.searchParams.set("limit", String(Math.min(10, Math.max(1, opts?.limit ?? 8))));
   url.searchParams.set("types", opts?.types ?? DEFAULT_TYPES);
   if (opts?.proximity) {

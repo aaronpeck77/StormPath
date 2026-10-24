@@ -35,7 +35,11 @@ chmod 600 ~/.netrc
 - `isAvailable()` → `{ available: boolean }` (true only on native iOS with plugin)
 - `startActiveGuidance({ accessToken, coordinates: [{lng,lat}], simulate? })`
 - `stop()`
-- Events: `progress`, `routeChanged`, `arrived`, `cancelled`, `error`
+- Events: `progress` (`lng`/`lat`/`alongM`, plus `headingDeg`/`speedMps`/`poseHeld` when Core has a fix), `routeChanged`, `arrived`, `cancelled`, `error`
+- Native last-good pose (`DrivePoseHold.swift`) rejects Canada-scale puck leaps before JS sees them. JS mirrors the same rules in `web/src/nav/nativeDrivePoseHold.ts`.
+- Native follow-cam (`DriveFollowCam.swift`) owns center / bearing / pitch / zoom after Go. DriveMap applies the sample and does not write its own follow-cam.
+- Native heading-up puck overlay (`DrivePuckOverlay.swift`) sits on the 30-yard line. `setDrivePuckVisible` shows/hides it.
+- Native Drive map (`DriveNativeMap.swift` / `NavigationMapView`) sits under the WebView after Go. `setNativeMapVisible` shows/hides it. Mp/Rt stay on the web map.
 
 ## Cost
 

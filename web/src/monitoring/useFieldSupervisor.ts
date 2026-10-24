@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import { STORMPATH_APP_VERSION, stormpathIosBuildNumber } from "../appVersion";
 import { stormpathBuildFlavor } from "../config/buildFlavor";
 import { reportFieldSupervisorEvent } from "./appHealthSignals";
@@ -15,7 +16,12 @@ import {
 import { NETWORK_RECONNECT_POLL_MS } from "./networkConnectivity";
 import { buildFieldReport, supervisorWatch } from "./supervisorWatchList";
 import type { SupervisorBusyFlag, SupervisorWatchId } from "./supervisorWatchList";
-import { shouldClearLastGoodMapHold } from "../ui/mapLowSignalResilience";
+import { noteDriveDiagRadioHold } from "../nav/driveDiagnostics";
+import {
+  nextLowDataAdvisory,
+  shouldApplyMapHoldOnNativeRadioDown,
+  shouldClearLastGoodMapHold,
+} from "../ui/mapLowSignalResilience";
 
 export type UseFieldSupervisorDeps = {
   routing: boolean;
@@ -43,6 +49,10 @@ export type FieldSupervisorState = {
   /** Last-good tiles / camera / road snap — skip Jeff jump and basemap reload. */
   holdLastGoodMap: boolean;
   reachable: boolean | null;
+  /** Before Go, the map host did not answer. Advisory can warn. Camera stays free. */
+  linkTooWeak: boolean;
+  /** Driver-facing "data is low". Clears on the first fresh healthy check. */
+  lowDataAdvisory: boolean;
 };
 
 type BusySnapshot = Partial<Record<SupervisorBusyFlag, boolean>>;
@@ -81,6 +91,9 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
 
   const [reachable, setReachable] = useState<boolean | null>(null);
   const [holdLastGoodMap, setHoldLastGoodMap] = useState(false);
+  /** Map host did not answer before a trip. Camera is not frozen. The bar can say so. */
+  const [linkTooWeak, setLinkTooWeak] = useState(false);
+  const [lowDataAdvisory, setLowDataAdvisory] = useState(false);
 
   const screenRef = useRef(screen);
   screenRef.current = screen;
@@ -88,6 +101,13 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
   reachableRef.current = reachable;
   const holdRef = useRef(holdLastGoodMap);
   holdRef.current = holdLastGoodMap;
+  const linkTooWeakRef = useRef(linkTooWeak);
+  linkTooWeakRef.current = linkTooWeak;
+  const lowDataRef = useRef(lowDataAdvisory);
+  lowDataRef.current = lowDataAdvisory;
+  const probeFailsRef = useRef(0);
+  /** Older in-flight probes must not turn the bar back on after a newer check. */
+  const tickGenRef = useRef(0);
   const lastHoldClearedAtRef = useRef<number | null>(null);
   const lastMapReportAtRef = useRef<number | null>(null);
   /** When the link first looked healthy again while still holding last-good. */
@@ -140,6 +160,7 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
     holdHealthySinceMsRef.current = null;
     setReachable(false);
     setHoldLastGoodMap(true);
+    noteDriveDiagRadioHold(true);
     if (wasHold) return;
     const now = Date.now();
     const isRepeat =
@@ -152,11 +173,19 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
     emit(watchId, true, startedAtMs, { routing: false, suggestLoading: false });
   };
 
+  const syncLowData = (next: { showing: boolean; consecutiveProbeFails: number }) => {
+    probeFailsRef.current = next.consecutiveProbeFails;
+    if (lowDataRef.current === next.showing) return;
+    lowDataRef.current = next.showing;
+    setLowDataAdvisory(next.showing);
+  };
+
   const clearHold = () => {
     if (holdRef.current) lastHoldClearedAtRef.current = Date.now();
     holdHealthySinceMsRef.current = null;
     setReachable(true);
     setHoldLastGoodMap(false);
+    noteDriveDiagRadioHold(false);
   };
 
   const maybeClearHoldAfterHealthy = () => {
@@ -179,22 +208,74 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
+      const gen = ++tickGenRef.current;
       if (!isOnline) {
+        syncLowData(
+          nextLowDataAdvisory({
+            showing: lowDataRef.current,
+            offline: true,
+            nativeDown: false,
+            probeFresh: false,
+            probeOk: null,
+            consecutiveProbeFails: probeFailsRef.current,
+          })
+        );
         applyHold("map_low_signal", Date.now());
         return;
       }
       const startedAt = Date.now();
       const native = await readNativeNetworkConnected();
-      if (cancelled) return;
-      /* Native false while isOnline is still true = Wi‑Fi→cell grace. Do not hold yet. */
+      if (cancelled || gen !== tickGenRef.current) return;
+      /* isOnline can stay true during the 2.5s Wi‑Fi→cell grace. Hold the map
+       * immediately so follow-cam does not write into a dead radio. */
+      if (
+        shouldApplyMapHoldOnNativeRadioDown({
+          nativeConnected: native,
+          navigationStarted,
+          alreadyHolding: holdRef.current,
+        })
+      ) {
+        syncLowData(
+          nextLowDataAdvisory({
+            showing: lowDataRef.current,
+            offline: false,
+            nativeDown: true,
+            probeFresh: false,
+            probeOk: null,
+            consecutiveProbeFails: probeFailsRef.current,
+          })
+        );
+        applyHold("map_low_signal", Date.now());
+        return;
+      }
       if (native === false) return;
       const ok = await probeMapReachability({ navigatorOnLine: true });
-      if (cancelled) return;
+      if (cancelled || gen !== tickGenRef.current) return;
+      syncLowData(
+        nextLowDataAdvisory({
+          showing: lowDataRef.current,
+          offline: false,
+          nativeDown: false,
+          probeFresh: true,
+          probeOk: ok,
+          consecutiveProbeFails: probeFailsRef.current,
+        })
+      );
       if (ok) {
+        if (linkTooWeakRef.current) {
+          linkTooWeakRef.current = false;
+          setLinkTooWeak(false);
+        }
         maybeClearHoldAfterHealthy();
         return;
       }
       holdHealthySinceMsRef.current = null;
+      if (Capacitor.isNativePlatform() && !navigationStarted) {
+        if (!linkTooWeakRef.current) {
+          linkTooWeakRef.current = true;
+          setLinkTooWeak(true);
+        }
+      }
       /* Probe fails on a locked-down desktop too — only hold while GO (or already holding). */
       if (navigationStarted || holdRef.current) {
         applyHold("false_online", startedAt);
@@ -203,7 +284,7 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
 
     void tick();
     const id = window.setInterval(() => {
-      if (!isOnline || navigationStarted || holdRef.current) void tick();
+      if (!isOnline || navigationStarted || holdRef.current || linkTooWeakRef.current) void tick();
     }, NETWORK_RECONNECT_POLL_MS);
     return () => {
       cancelled = true;
@@ -269,7 +350,7 @@ export function useFieldSupervisor(deps: UseFieldSupervisorDeps): FieldSuperviso
     busy: () => ({ routing: false }),
   });
 
-  return { holdLastGoodMap, reachable };
+  return { holdLastGoodMap, reachable, linkTooWeak, lowDataAdvisory };
 }
 
 function useStuckWatch(opts: {

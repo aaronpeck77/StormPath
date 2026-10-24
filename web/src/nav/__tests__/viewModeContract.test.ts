@@ -10,6 +10,7 @@ import {
   showsAlternateLegs,
   showsRadarMotionOverlay,
   showsRouteConditionHighlights,
+  allowsMapDestinationPick,
   viewModePhase,
 } from "../viewModeContract";
 
@@ -79,11 +80,11 @@ describe("viewModeContract — route line geometry", () => {
     expect(routeLineGeometryKind("route", false)).toBe("overview");
   });
 
-  it("Dr falls back to overview when the along offset is missing", () => {
+  it("Dr keeps the local ahead slice when the along offset is missing", () => {
     expect(routeLineGeometryKind("drive", true, { userAlongMeters: null })).toBe(
-      "overview"
+      "driveAhead"
     );
-    expect(routeLineGeometryKind("drive", true)).toBe("overview");
+    expect(routeLineGeometryKind("drive", true)).toBe("driveAhead");
   });
 
   it("planning uses overview in every view", () => {
@@ -157,5 +158,10 @@ describe("viewModeContract — overlays", () => {
     expect(showsRadarMotionOverlay("drive", false)).toBe(false);
     expect(showsRadarMotionOverlay("route", false)).toBe(true);
     expect(showsRadarMotionOverlay("topdown", false)).toBe(true);
+  });
+
+  it("lets dest taps land before Go in every view, including Drive", () => {
+    expect(allowsMapDestinationPick(false)).toBe(true);
+    expect(allowsMapDestinationPick(true)).toBe(false);
   });
 });

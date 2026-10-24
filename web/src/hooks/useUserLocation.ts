@@ -99,6 +99,16 @@ export const GPS_STATE_THROTTLE_MS_ULTRA_LONG = 750;
 
 const DEFAULT_THROTTLE_MS = GPS_STATE_THROTTLE_MS_NORMAL;
 
+/** Weak / timeout GPS toasts — not a denied permission. Auto-hide after a few seconds. */
+export const TRANSIENT_GPS_BANNER_MS = 6_000;
+
+export function isTransientGpsLocationError(msg: string | null | undefined): boolean {
+  if (!msg) return false;
+  return /GPS signal weak|Still waiting for GPS|Location unavailable|Location timed out|Still no GPS/i.test(
+    msg
+  );
+}
+
 /**
  * Dev-only: approximate lat/lng from the client’s public IP (HTTPS JSON, no API key).
  * Used only when the page is **not** a secure context (e.g. `http://192.168.x.x:5173`) — browsers
@@ -163,6 +173,29 @@ async function startNativeWatch(
       );
     }
   }, 45_000);
+
+  void Geolocation.getCurrentPosition({
+    enableHighAccuracy: false,
+    maximumAge: 300_000,
+    timeout: 4_000,
+  })
+    .then((pos) => {
+      if (cancelled || hasFix || !pos) return;
+      hasFix = true;
+      if (neverAcquiredTimer) {
+        clearTimeout(neverAcquiredTimer);
+        neverAcquiredTimer = null;
+      }
+      onFix(
+        pos.coords.longitude,
+        pos.coords.latitude,
+        pos.coords.heading != null && !Number.isNaN(pos.coords.heading) ? pos.coords.heading : null,
+        pos.coords.speed != null && pos.coords.speed >= 0 ? pos.coords.speed : null
+      );
+    })
+    .catch(() => {
+      /* Watch still supplies a fresh fix. */
+    });
 
   const id = await Geolocation.watchPosition(
     { enableHighAccuracy: true, timeout: 20_000, maximumAge: highRefresh ? 0 : 2_000 },
@@ -252,6 +285,21 @@ export function useUserLocation(
   const [fixSource, setFixSource] = useState<LocationFixSource>(null);
   const [accuracyM, setAccuracyM] = useState<number | null>(null);
 
+  const transientClearTimerRef = useRef(0);
+  const setLocationError = (msg: string | null) => {
+    if (transientClearTimerRef.current) {
+      window.clearTimeout(transientClearTimerRef.current);
+      transientClearTimerRef.current = 0;
+    }
+    setError(msg);
+    if (isTransientGpsLocationError(msg)) {
+      transientClearTimerRef.current = window.setTimeout(() => {
+        transientClearTimerRef.current = 0;
+        setError((prev) => (isTransientGpsLocationError(prev) ? null : prev));
+      }, TRANSIENT_GPS_BANNER_MS);
+    }
+  };
+
   const lastFlushRef = useRef(0);
   const pendingRef = useRef<GeolocationPosition | null>(null);
   const pendingNativeRef = useRef<{
@@ -279,7 +327,7 @@ export function useUserLocation(
 
       const flushNative = (lng: number, lat: number, hdg: number | null, spd: number | null) => {
         lastFlushRef.current = Date.now();
-        setError(null);
+        setLocationError(null);
         setFixSource("native");
         setAccuracyM(null);
         setLngLat([lng, lat]);
@@ -291,6 +339,7 @@ export function useUserLocation(
         highRefresh,
         (lng, lat, hdg, spd) => {
           if (cancelled) return;
+          setLocationError(null);
           publishLiveFix(lng, lat, hdg, spd);
           const elapsed = Date.now() - lastFlushRef.current;
           if (lastFlushRef.current === 0 || elapsed >= throttleMs) {
@@ -307,7 +356,7 @@ export function useUserLocation(
           }
         },
         (msg) => {
-          if (!cancelled) setError(msg);
+          if (!cancelled) setLocationError(msg);
         }
       ).then((stop) => {
         if (cancelled) {
@@ -320,6 +369,10 @@ export function useUserLocation(
       return () => {
         cancelled = true;
         if (nativeTimer) window.clearTimeout(nativeTimer);
+        if (transientClearTimerRef.current) {
+          window.clearTimeout(transientClearTimerRef.current);
+          transientClearTimerRef.current = 0;
+        }
         cleanup?.();
       };
     }
@@ -412,7 +465,7 @@ export function useUserLocation(
     const flush = (pos: GeolocationPosition) => {
       lastFlushRef.current = Date.now();
       pendingRef.current = null;
-      setError(null);
+      setLocationError(null);
       setFixSource("browser");
       const acc = pos.coords.accuracy;
       setAccuracyM(Number.isFinite(acc) && acc > 0 ? acc : null);
@@ -506,7 +559,7 @@ export function useUserLocation(
           e.code === e.POSITION_UNAVAILABLE
             ? "Location unavailable — try stepping outside or turning off Low Power Mode."
             : "Location timed out — try again with a clearer sky view or Wi‑Fi on.";
-        setError(msg);
+        setLocationError(msg);
       }
       if (watchId) {
         try { navigator.geolocation.clearWatch(watchId); } catch { /* ignore */ }
@@ -531,11 +584,19 @@ export function useUserLocation(
 
     const failsafe = window.setTimeout(() => {
       if (cancelled || fixReceived) return;
-      setError(
-        (prev) =>
-          prev ??
-          "Still no GPS fix — confirm Location is allowed for this browser (not just system settings), use https://, and try outdoors."
-      );
+      setError((prev) => {
+        if (prev) return prev;
+        const next =
+          "Still no GPS fix — confirm Location is allowed for this browser (not just system settings), use https://, and try outdoors.";
+        if (transientClearTimerRef.current) {
+          window.clearTimeout(transientClearTimerRef.current);
+        }
+        transientClearTimerRef.current = window.setTimeout(() => {
+          transientClearTimerRef.current = 0;
+          setError((cur) => (isTransientGpsLocationError(cur) ? null : cur));
+        }, TRANSIENT_GPS_BANNER_MS);
+        return next;
+      });
     }, 95_000);
 
     return () => {

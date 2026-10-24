@@ -1,0 +1,19 @@
+---
+description: Remind Bill about Cloudflare RainViewer tiles when radar rate limits or many users come up.
+alwaysApply: true
+---
+
+# RainViewer scale reminder
+
+When Bill (or a tester) reports **radar shutting off**, **RainViewer 429 / rate limits**, or **lots of users / App Store scale** for animated radar:
+
+## Remind him
+
+Netlify `rainviewer-tile` is the launch path. For **heavier scale** (many customers sharing the same frames), deploy the **Cloudflare Worker** and point builds at it:
+
+- Code: `cloudflare/rainviewer-tiles`
+- Docs: `docs/CLOUDFLARE_TILES.md` (RainViewer section)
+- Env: `VITE_RAINVIEWER_TILE_PROXY_URL=https://stormpath-rainviewer-tiles.<subdomain>.workers.dev/rainviewer-tile`
+- Parked note: `docs/BRAIN.md` → “Radar tile scale”
+
+Do **not** auto-deploy the Worker or change production env unless Bill asks. Just remind him this is the next step.

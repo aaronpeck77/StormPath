@@ -85,10 +85,20 @@ function includeImpactForDriveAheadSpatial(i: RouteImpact): boolean {
   return i.driverAction === "rerouteRecommended";
 }
 
-function fmtImpactHeadline(i: RouteImpact, distanceM: number, planEtaMinutes: number | null | undefined, totalM: number): string {
+function fmtImpactHeadline(
+  i: RouteImpact,
+  distanceM: number,
+  planEtaMinutes: number | null | undefined,
+  totalM: number,
+  placePhrase: string | null
+): string {
   const head = i.driverHeadline;
   const eta = etaAheadLabel(distanceM, totalM, planEtaMinutes);
   const dist = fmtMi(distanceM);
+  if (placePhrase) {
+    const withPlace = `${head} · ${dist} · ${placePhrase}`;
+    if (withPlace.length <= 72) return withPlace;
+  }
   if (eta) return `${head} · ${dist} (${eta})`;
   return `${head} · ${dist} ahead`;
 }
@@ -102,8 +112,10 @@ export function buildDriveRouteAheadFromImpacts(opts: {
   totalMeters: number;
   userAlongM: number;
   planEtaMinutes: number | null | undefined;
+  /** Short landmark, already one clause. Omitted when it would crowd the line. */
+  placePhraseAt?: (alongM: number) => string | null;
 }): DriveAheadLine | null {
-  const { impacts, totalMeters, userAlongM, planEtaMinutes } = opts;
+  const { impacts, totalMeters, userAlongM, planEtaMinutes, placePhraseAt } = opts;
   if (totalMeters <= 1 || !Number.isFinite(userAlongM)) return null;
 
   /** Impact whose band currently covers the driver. */
@@ -137,7 +149,13 @@ export function buildDriveRouteAheadFromImpacts(opts: {
   cands.sort((a, b) => (a.distM !== b.distM ? a.distM - b.distM : b.pri - a.pri));
   const top = cands[0]!;
   return {
-    text: fmtImpactHeadline(top.impact, top.distM, planEtaMinutes, totalMeters),
+    text: fmtImpactHeadline(
+      top.impact,
+      top.distM,
+      planEtaMinutes,
+      totalMeters,
+      placePhraseAt?.(top.impact.startMeters) ?? null
+    ),
     kind: impactKind(top.impact.category),
     radarTier: impactRadarTier(top.impact),
   };

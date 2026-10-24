@@ -26,6 +26,7 @@ type Props = {
   outlookSteps: RouteOutlookStep[];
   outlookSamples: WxSample[] | undefined;
   radarMosaicSamples: { t: number; intensity: number }[];
+  radarSliceLoopFrames?: { t: number; intensity: number }[][];
   radarRefreshBlocked: string | null;
   radarMosaicUpdatedAt: number | null;
   windPoints: { t: number; mph: number }[];
@@ -42,7 +43,6 @@ type Props = {
 
   progressRailRouteGeometry: LngLat[];
   effectiveUserLngLat: LngLat | null;
-  userAlongGuidanceM: number;
   progressStripAlerts: RouteAlert[];
   radarIntensity: number;
   progressStripRouteColor: string;
@@ -69,6 +69,7 @@ export function AppProgressRail({
   outlookSteps,
   outlookSamples,
   radarMosaicSamples,
+  radarSliceLoopFrames,
   radarRefreshBlocked,
   radarMosaicUpdatedAt,
   windPoints,
@@ -84,7 +85,6 @@ export function AppProgressRail({
   progressCalloutDetailScrollRef,
   progressRailRouteGeometry,
   effectiveUserLngLat,
-  userAlongGuidanceM,
   progressStripAlerts,
   radarIntensity,
   progressStripRouteColor,
@@ -137,12 +137,18 @@ export function AppProgressRail({
           layout="side"
           geometry={progressRailRouteGeometry}
           userLngLat={effectiveUserLngLat}
-          userAlongMeters={userAlongGuidanceM}
+          userAlongMeters={progressPanelAlongM}
           alerts={progressStripAlerts}
           radarIntensity={radarIntensity}
           routeLineColor={progressStripRouteColor}
-          turnSteps={progressRailRouteTurnSteps ?? turnSteps}
+          turnSteps={
+            progressRailRouteTurnSteps && progressRailRouteTurnSteps.length >= 2
+              ? progressRailRouteTurnSteps
+              : turnSteps
+          }
           stormBands={routeAheadProgressBands}
+          radarSliceSamples={radarMosaicSamples}
+          radarSliceLoopFrames={radarSliceLoopFrames}
           driveEndsEmphasis={driveModeUi}
           tripOdometerM={tripOdometerM}
           tripRelativeProgress={navigationStarted}

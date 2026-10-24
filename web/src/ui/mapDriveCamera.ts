@@ -8,6 +8,7 @@ import {
   routeProgressRailRightClearancePx,
   stormBarTopExtraPx,
 } from "./mapFitLogic";
+import { DRIVE_CAMERA_BEARING_MAX_STEP_DEG } from "./driveFollowSmooth";
 
 /** Drive follow-cam puck placement — football-field metaphor (% up from bottom toward midfield). */
 const DRIVE_PUCK_YARD_LINE = 30;
@@ -15,11 +16,14 @@ const DRIVE_PUCK_YARD_LINE = 30;
 /**
  * Mapbox pitch for Dr follow-cam (0 = top-down, ~85 = near horizon).
  * Slightly tipped so more of the route ahead stays in frame without going full windshield.
+ *
+ * ROLLBACK SETTINGS (Sep 15 framing, restore all three together — the Swift copies
+ * in DriveFollowCam.swift must match or Core's sample overrides the web value):
+ *   pitch 64, DRIVE_FOLLOW_ZOOM_DEFAULT 16.35, HIGHWAY_ZOOM 15.1
+ * Sep 16: tipped up and zoomed in so less map hides behind the advisory bar and the
+ * turn banner, and more road shows ahead.
  */
-export const DRIVE_FOLLOW_PITCH_DEG = 64;
-
-/** Max camera bearing change per frame (deg) — kills wild spins when route tangent jumps near forks / turns. */
-const DRIVE_CAMERA_BEARING_MAX_STEP_DEG = 9;
+export const DRIVE_FOLLOW_PITCH_DEG = 68;
 
 /**
  * If route look-ahead disagrees with travel direction by more than this, keep the camera
@@ -115,7 +119,12 @@ export function driveCameraEaseOptions(
   };
 }
 
-export function smoothDriveBearingDeg(prev: number | null, raw: number, alpha: number): number {
+export function smoothDriveBearingDeg(
+  prev: number | null,
+  raw: number,
+  alpha: number,
+  maxStepDeg: number = DRIVE_CAMERA_BEARING_MAX_STEP_DEG
+): number {
   if (prev == null || !Number.isFinite(prev)) return raw;
   if (!Number.isFinite(raw)) return prev;
   let d = raw - prev;
@@ -123,11 +132,32 @@ export function smoothDriveBearingDeg(prev: number | null, raw: number, alpha: n
   while (d < -180) d += 360;
   if (d > 179) d = 179;
   if (d < -179) d = -179;
+  const cap =
+    Number.isFinite(maxStepDeg) && maxStepDeg > 0 ? maxStepDeg : DRIVE_CAMERA_BEARING_MAX_STEP_DEG;
   let step = d * alpha;
-  if (step > DRIVE_CAMERA_BEARING_MAX_STEP_DEG) step = DRIVE_CAMERA_BEARING_MAX_STEP_DEG;
-  if (step < -DRIVE_CAMERA_BEARING_MAX_STEP_DEG) step = -DRIVE_CAMERA_BEARING_MAX_STEP_DEG;
+  if (step > cap) step = cap;
+  if (step < -cap) step = -cap;
   const next = prev + step;
   return ((next % 360) + 360) % 360;
+}
+
+/** Move a heading toward another at a limited rate. Core's course arrives in steps; this is the sweep. */
+export function easeHeadingDeg(
+  prev: number | null,
+  next: number,
+  maxDegPerSec: number,
+  dtS: number
+): number {
+  if (!Number.isFinite(next)) return prev != null && Number.isFinite(prev) ? prev : next;
+  if (prev == null || !Number.isFinite(prev)) return ((next % 360) + 360) % 360;
+  let d = next - prev;
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  const dt = Number.isFinite(dtS) && dtS > 0 ? Math.min(0.12, dtS) : 0.016;
+  const cap = Math.max(1, maxDegPerSec) * dt;
+  if (d > cap) d = cap;
+  if (d < -cap) d = -cap;
+  return ((prev + d) % 360 + 360) % 360;
 }
 
 type DriveFix = { lng: number; lat: number };
