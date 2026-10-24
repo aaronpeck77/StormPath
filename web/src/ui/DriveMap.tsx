@@ -20,6 +20,7 @@ import { isWifiConnection } from "../map/mapPreloadNetwork";
 import { warmMapTilesForBounds } from "../map/mapRegionCacheWarm";
 import { neighborhoodBounds, readLastMapOpen, writeLastMapOpen } from "../map/lastMapOpen";
 import { prefetchMapTilesForBounds } from "../map/prefetchMapTilesForBounds";
+import { offlineMaxZoom } from "../map/offlineZoomClamp";
 import {
   readMapVectorTilesetGroups,
   styleMatchedTileUrl,
@@ -1627,6 +1628,23 @@ function DriveMapInner({
     map.once("style.load", onStyle);
     return () => { map.off("style.load", onStyle); };
   }, [mapPhase, nightBasemapPreset, navigationStarted, holdLastGoodMap, isOnline]);
+
+  /* Offline tile cache only stores z≤13 — clamp max zoom while offline / radio-held
+   * so the camera can never drift into z14+ where nothing exists on disk. */
+  const normalMaxZoomRef = useRef<number | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    try {
+      if (!isMapUsable(map)) return;
+      if (normalMaxZoomRef.current == null) normalMaxZoomRef.current = map.getMaxZoom();
+      map.setMaxZoom(
+        offlineMaxZoom({ isOnline, holdLastGoodMap, normalMaxZoom: normalMaxZoomRef.current })
+      );
+    } catch {
+      /* map mid-teardown — next run of the effect retries */
+    }
+  }, [mapReady, isOnline, holdLastGoodMap]);
 
   useEffect(() => {
     const map = mapRef.current;

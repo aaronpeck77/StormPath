@@ -11,6 +11,17 @@ import { isAbortError } from "../utils/fetchResilient";
  * are mirrored into IndexedDB on success and served from there when the network is
  * down or unreasonably slow.
  *
+ * **Budget — 500 pieces total.** Deliberately matches mapbox-gl's default in-memory
+ * tile cache count (see Mapbox ToS 3.2 discussion in AGENTS / Brain): roughly what
+ * the SDK itself would hold anyway, split into three buckets so a route corridor
+ * can't evict the home area. Tiles above z13 are never stored — Drive runs its own
+ * z15–16 warm for live use, and the offline zoom clamp (offlineZoomClamp.ts) keeps
+ * the camera where the saved z≤13 tiles actually paint.
+ *
+ *   - essentials   40   style JSON, sprites, glyphs, tilejson — the map can't boot without them
+ *   - home tiles  300   z≤13 tiles intersecting the saved home bounds
+ *   - corridor    160   every other z≤13 tile (route corridor warm, drive zoom-out pans)
+ *
  * **Shared context:** everything here is safe in both the window main thread and a
  * classic Web Worker — no DOM-only APIs, `indexedDB` / `fetch` / `Response` /
  * `BroadcastChannel` are reached through globals. The worker entry point is
@@ -20,16 +31,23 @@ import { isAbortError } from "../utils/fetchResilient";
  * original fetch behavior.
  */
 
-export const OFFLINE_TILE_MAX_ENTRIES = 6000;
-/** Mapbox ToS 3.2 caps offline device caching at 30 days per resource. */
+export const OFFLINE_MAX_STORED_ZOOM = 13;
+export const OFFLINE_ESSENTIALS_MAX = 40;
+export const OFFLINE_HOME_TILES_MAX = 300;
+export const OFFLINE_CORRIDOR_TILES_MAX = 160;
+/** Anything older than 30 days is dead weight — regions change, styles rev. */
 export const OFFLINE_TILE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 export const OFFLINE_FALLBACK_TIMEOUT_MS = 6_000;
 
 const DB_NAME = "stormpath-offline-tiles";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = "tiles";
-const PUTS_BETWEEN_EVICT = 250;
+const META_STORE = "meta";
+const HOME_BOUNDS_META_KEY = "homeBounds";
+const PUTS_BETWEEN_EVICT = 50;
 const CHANNEL_NAME = "stormpath-offline-tiles";
+
+export type LatLngBoundsLike = [[number, number], [number, number]];
 
 /** True for Mapbox map resources worth keeping offline; false for live/API data. */
 export function isOfflineCacheableMapboxUrl(url: string): boolean {
@@ -80,6 +98,41 @@ export function offlineCacheKey(url: string): string {
   }
 }
 
+/**
+ * Parse a `/v4/<tileset[,tileset…]>/<z>/<x>/<y>[@2x].<ext>` tile URL.
+ * Returns null for every other cacheable resource (style, sprite, glyph, tilejson).
+ */
+export function parseTileZxy(url: string): { z: number; x: number; y: number } | null {
+  try {
+    const path = new URL(url).pathname;
+    const m = /^\/v4\/[^/]+\/(\d+)\/(\d+)\/(\d+)(?:@2x)?(?:\.[a-z0-9]+)+$/i.exec(path);
+    if (!m) return null;
+    return { z: Number(m[1]), x: Number(m[2]), y: Number(m[3]) };
+  } catch {
+    return null;
+  }
+}
+
+function tileLatForY(y: number, z: number): number {
+  const n = Math.PI - (2 * Math.PI * y) / 2 ** z;
+  return (Math.atan(Math.sinh(n)) * 180) / Math.PI;
+}
+
+/** Slippy-tile bbox vs `[[west,south],[east,north]]` bounds intersection. */
+export function tileIntersectsBounds(
+  z: number,
+  x: number,
+  y: number,
+  bounds: LatLngBoundsLike
+): boolean {
+  const west = (x / 2 ** z) * 360 - 180;
+  const east = ((x + 1) / 2 ** z) * 360 - 180;
+  const north = tileLatForY(y, z);
+  const south = tileLatForY(y + 1, z);
+  const [[bw, bs], [be, bn]] = bounds;
+  return west <= be && east >= bw && south <= bn && north >= bs;
+}
+
 /* ------------------------------------------------------------------ IndexedDB */
 
 export interface TileRecord {
@@ -88,7 +141,18 @@ export interface TileRecord {
   contentType: string;
   storedAt: number;
   lastUsed: number;
+  kind: "essential" | "tile";
+  z?: number;
+  x?: number;
+  y?: number;
 }
+
+/** Just the fields eviction / diagnostics need. */
+export type TileMeta = Pick<TileRecord, "key" | "kind" | "lastUsed" | "storedAt"> & {
+  z?: number;
+  x?: number;
+  y?: number;
+};
 
 /** Injectable seam for tests — the default impl below talks to IndexedDB. */
 export interface OfflineTileStore {
@@ -107,12 +171,23 @@ function openDb(): Promise<IDBDatabase | null> {
         return;
       }
       const req = indexedDB.open(DB_NAME, DB_VERSION);
-      req.onupgradeneeded = () => {
+      req.onupgradeneeded = (ev) => {
         try {
           const db = req.result;
           if (!db.objectStoreNames.contains(STORE_NAME)) {
             const store = db.createObjectStore(STORE_NAME, { keyPath: "key" });
             store.createIndex("lastUsed", "lastUsed", { unique: false });
+          } else if ((ev.oldVersion ?? 0) < 2) {
+            /* v1 → v2: record shape changed (kind/zxy) and the budget shrank —
+             * drop the old 6000-cap data rather than migrating it. */
+            try {
+              req.transaction?.objectStore(STORE_NAME).clear();
+            } catch {
+              /* swallow */
+            }
+          }
+          if (!db.objectStoreNames.contains(META_STORE)) {
+            db.createObjectStore(META_STORE, { keyPath: "key" });
           }
         } catch {
           /* swallow */
@@ -132,11 +207,22 @@ export async function putTile(key: string, body: ArrayBuffer, contentType: strin
   try {
     const db = await openDb();
     if (!db) return;
+    const zxy = parseTileZxy(key);
+    if (zxy && zxy.z > OFFLINE_MAX_STORED_ZOOM) return;
     const now = Date.now();
+    const record: TileRecord = {
+      key,
+      body,
+      contentType,
+      storedAt: now,
+      lastUsed: now,
+      kind: zxy ? "tile" : "essential",
+      ...(zxy ? { z: zxy.z, x: zxy.x, y: zxy.y } : {}),
+    };
     await new Promise<void>((resolve) => {
       try {
         const tx = db.transaction(STORE_NAME, "readwrite");
-        tx.objectStore(STORE_NAME).put({ key, body, contentType, storedAt: now, lastUsed: now } satisfies TileRecord);
+        tx.objectStore(STORE_NAME).put(record);
         tx.oncomplete = () => resolve();
         tx.onerror = () => resolve();
         tx.onabort = () => resolve();
@@ -168,15 +254,6 @@ export async function getTile(key: string): Promise<TileRecord | null> {
         resolve(null);
       }
     });
-    if (record && Date.now() - record.storedAt > OFFLINE_TILE_MAX_AGE_MS) {
-      /* Mapbox ToS 3.2: offline device cache is limited to 30 days. */
-      try {
-        db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).delete(key);
-      } catch {
-        /* swallow */
-      }
-      return null;
-    }
     if (record) {
       /* Fire-and-forget LRU touch — never block the tile on a bookkeeping write. */
       void (async () => {
@@ -194,25 +271,193 @@ export async function getTile(key: string): Promise<TileRecord | null> {
   }
 }
 
-export async function countTiles(): Promise<number> {
+/** Read every record's metadata (bodies ride along — fine at a 500-entry budget). */
+async function readAllTileMeta(): Promise<TileMeta[]> {
   try {
     const db = await openDb();
-    if (!db) return 0;
-    return await new Promise<number>((resolve) => {
+    if (!db) return [];
+    return await new Promise<TileMeta[]>((resolve) => {
+      const out: TileMeta[] = [];
       try {
-        const req = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).count();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => resolve(0);
+        const req = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).openCursor();
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (!cursor) {
+            resolve(out);
+            return;
+          }
+          const r = cursor.value as TileRecord;
+          out.push({
+            key: r.key,
+            kind: r.kind ?? (parseTileZxy(r.key) ? "tile" : "essential"),
+            lastUsed: r.lastUsed ?? 0,
+            storedAt: r.storedAt ?? 0,
+            ...(r.z != null ? { z: r.z, x: r.x, y: r.y } : {}),
+          });
+          cursor.continue();
+        };
+        req.onerror = () => resolve(out);
       } catch {
-        resolve(0);
+        resolve(out);
       }
     });
   } catch {
-    return 0;
+    return [];
   }
 }
 
-/** Sum of stored tile bytes — cursor walk, only called from the About sheet. */
+async function getMetaValue<T>(key: string): Promise<T | null> {
+  try {
+    const db = await openDb();
+    if (!db || !db.objectStoreNames.contains(META_STORE)) return null;
+    return await new Promise<T | null>((resolve) => {
+      try {
+        const req = db.transaction(META_STORE, "readonly").objectStore(META_STORE).get(key);
+        req.onsuccess = () => resolve((req.result as { key: string; value?: T } | undefined)?.value ?? null);
+        req.onerror = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function setMetaValue(key: string, value: unknown): Promise<void> {
+  try {
+    const db = await openDb();
+    if (!db || !db.objectStoreNames.contains(META_STORE)) return;
+    await new Promise<void>((resolve) => {
+      try {
+        const tx = db.transaction(META_STORE, "readwrite");
+        tx.objectStore(META_STORE).put({ key, value });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  } catch {
+    /* swallow */
+  }
+}
+
+/** Main thread writes the home region so worker-side eviction can bucket tiles. */
+export async function setOfflineHomeBounds(bounds: LatLngBoundsLike | null): Promise<void> {
+  await setMetaValue(HOME_BOUNDS_META_KEY, bounds);
+}
+
+export async function getOfflineHomeBounds(): Promise<LatLngBoundsLike | null> {
+  const v = await getMetaValue<LatLngBoundsLike | null>(HOME_BOUNDS_META_KEY);
+  if (
+    Array.isArray(v) &&
+    v.length === 2 &&
+    v.every((pt) => Array.isArray(pt) && pt.length === 2 && pt.every((n) => typeof n === "number"))
+  ) {
+    return v;
+  }
+  return null;
+}
+
+/**
+ * Bucket + LRU eviction policy (pure). Returns the keys to delete:
+ *  - anything older than OFFLINE_TILE_MAX_AGE_MS
+ *  - per bucket (essentials / home / corridor), the least-recently-used beyond its max
+ * A tile counts as "home" only when it intersects the saved home bounds; corridor
+ * overflow never evicts home tiles.
+ */
+export function selectEvictions(
+  records: Array<{ key: string; kind: "essential" | "tile"; z?: number; x?: number; y?: number; lastUsed: number; storedAt: number }>,
+  homeBounds: LatLngBoundsLike | null,
+  now: number = Date.now()
+): string[] {
+  const evict = new Set<string>();
+  const essentials: typeof records = [];
+  const home: typeof records = [];
+  const corridor: typeof records = [];
+
+  for (const r of records) {
+    if (now - r.storedAt > OFFLINE_TILE_MAX_AGE_MS) {
+      evict.add(r.key);
+      continue;
+    }
+    if (r.kind !== "tile" || r.z == null || r.x == null || r.y == null) {
+      essentials.push(r);
+    } else if (homeBounds && tileIntersectsBounds(r.z, r.x, r.y, homeBounds)) {
+      home.push(r);
+    } else {
+      corridor.push(r);
+    }
+  }
+
+  const trim = (bucket: typeof records, max: number) => {
+    if (bucket.length <= max) return;
+    bucket
+      .slice()
+      .sort((a, b) => a.lastUsed - b.lastUsed)
+      .slice(0, bucket.length - max)
+      .forEach((r) => evict.add(r.key));
+  };
+  trim(essentials, OFFLINE_ESSENTIALS_MAX);
+  trim(home, OFFLINE_HOME_TILES_MAX);
+  trim(corridor, OFFLINE_CORRIDOR_TILES_MAX);
+  return [...evict];
+}
+
+let putsSinceEvict = 0;
+let evictRunning = false;
+
+/** Apply {@link selectEvictions} against the live DB. Safe to call any time. */
+export async function evictIfNeeded(): Promise<void> {
+  if (evictRunning) return;
+  evictRunning = true;
+  try {
+    const db = await openDb();
+    if (!db) return;
+    const [records, homeBounds] = await Promise.all([readAllTileMeta(), getOfflineHomeBounds()]);
+    const doomed = selectEvictions(records, homeBounds);
+    if (!doomed.length) return;
+    await new Promise<void>((resolve) => {
+      try {
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        const store = tx.objectStore(STORE_NAME);
+        for (const key of doomed) store.delete(key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  } catch {
+    /* swallow */
+  } finally {
+    evictRunning = false;
+  }
+}
+
+/** Bucket sizes for the About diagnostics line. */
+export async function getOfflineTileBucketCounts(): Promise<{
+  home: number;
+  corridor: number;
+  essentials: number;
+}> {
+  try {
+    const [records, homeBounds] = await Promise.all([readAllTileMeta(), getOfflineHomeBounds()]);
+    let home = 0;
+    let corridor = 0;
+    let essentials = 0;
+    for (const r of records) {
+      if (r.kind !== "tile" || r.z == null || r.x == null || r.y == null) essentials += 1;
+      else if (homeBounds && tileIntersectsBounds(r.z, r.x, r.y, homeBounds)) home += 1;
+      else corridor += 1;
+    }
+    return { home, corridor, essentials };
+  } catch {
+    return { home: 0, corridor: 0, essentials: 0 };
+  }
+}
+
 export async function approxBytes(): Promise<number> {
   try {
     const db = await openDb();
@@ -227,8 +472,7 @@ export async function approxBytes(): Promise<number> {
             resolve(total);
             return;
           }
-          const value = cursor.value as TileRecord | undefined;
-          total += value?.body?.byteLength ?? 0;
+          total += (cursor.value as TileRecord | undefined)?.body?.byteLength ?? 0;
           cursor.continue();
         };
         req.onerror = () => resolve(total);
@@ -238,48 +482,6 @@ export async function approxBytes(): Promise<number> {
     });
   } catch {
     return 0;
-  }
-}
-
-let putsSinceEvict = 0;
-let evictRunning = false;
-
-/** Trim to 90% of {@link OFFLINE_TILE_MAX_ENTRIES}, oldest `lastUsed` first. */
-export async function evictIfNeeded(): Promise<void> {
-  if (evictRunning) return;
-  evictRunning = true;
-  try {
-    const db = await openDb();
-    if (!db) return;
-    const count = await countTiles();
-    const excess = count - OFFLINE_TILE_MAX_ENTRIES;
-    if (excess <= 0) return;
-    const target = count - Math.floor(OFFLINE_TILE_MAX_ENTRIES * 0.9);
-    await new Promise<void>((resolve) => {
-      let deleted = 0;
-      try {
-        const tx = db.transaction(STORE_NAME, "readwrite");
-        const req = tx.objectStore(STORE_NAME).index("lastUsed").openCursor();
-        req.onsuccess = () => {
-          const cursor = req.result;
-          if (!cursor || deleted >= target) {
-            resolve();
-            return;
-          }
-          cursor.delete();
-          deleted += 1;
-          cursor.continue();
-        };
-        req.onerror = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
-  } catch {
-    /* swallow */
-  } finally {
-    evictRunning = false;
   }
 }
 
@@ -364,7 +566,9 @@ function requestSignal(input: RequestInfo | URL, init?: RequestInit): AbortSigna
 
 /**
  * Wrap a `fetch` so Mapbox map resources survive dead zones. All other requests
- * pass straight through untouched.
+ * pass straight through untouched. Tiles above {@link OFFLINE_MAX_STORED_ZOOM}
+ * are also passed through — never stored, never looked up (the offline zoom
+ * clamp keeps the camera at z≤13 anyway, so nothing requests them while offline).
  *
  * Behavior for a cacheable GET:
  *  - `navigator.onLine === false` → serve the IDB copy immediately if present,
@@ -396,6 +600,10 @@ export function wrapFetchWithOfflineTiles(
   return function offlineTilesFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const { url, method } = requestUrlAndMethod(input, init);
     if (method !== "GET" || !isOfflineCacheableMapboxUrl(url)) {
+      return origFetch(input, init);
+    }
+    const zxy = parseTileZxy(url);
+    if (zxy && zxy.z > OFFLINE_MAX_STORED_ZOOM) {
       return origFetch(input, init);
     }
     const key = offlineCacheKey(url);
@@ -430,18 +638,21 @@ export function wrapFetchWithOfflineTiles(
           }
           if (cached) {
             noteServed();
-            /* A late network response is harvested by the settled branch below. */
+            /* The slow network may still land — keep filling the cache. */
+            void networkPromise
+              .then((res) => storeResponseBody(key, res))
+              .catch(() => undefined);
             resolve(cachedRecordToResponse(cached));
             return;
           }
-          /* No disk copy — the network is the only hope; keep waiting on it.
-           * (The settled branch below already stores the body.) */
+          /* No disk copy — the network is the only hope; keep waiting on it. */
           networkPromise.then(
             (res) => {
               if (signal?.aborted) {
                 reject(abortError());
                 return;
               }
+              storeResponseBody(key, res);
               resolve(res);
             },
             (e) => reject(e)

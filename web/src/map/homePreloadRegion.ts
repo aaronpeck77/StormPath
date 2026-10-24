@@ -100,13 +100,20 @@ export function getHomePreloadBounds(
     Math.max(MIN_PRELOAD_RADIUS_M, p85 * 1.12)
   );
 
-  const cosLat = Math.max(0.25, Math.cos((c[1] * Math.PI) / 180));
+  return boundsAroundLngLat(c, radiusM);
+}
+
+/** Square-ish bounds of `radiusM` around a point — the cosLat padding used above. */
+export function boundsAroundLngLat(
+  center: LngLat,
+  radiusM: number
+): [[number, number], [number, number]] {
+  const cosLat = Math.max(0.25, Math.cos((center[1] * Math.PI) / 180));
   const padLat = radiusM / 111_000;
   const padLng = radiusM / (111_000 * cosLat);
-
   return [
-    [c[0] - padLng, c[1] - padLat],
-    [c[0] + padLng, c[1] + padLat],
+    [center[0] - padLng, center[1] - padLat],
+    [center[0] + padLng, center[1] + padLat],
   ];
 }
 

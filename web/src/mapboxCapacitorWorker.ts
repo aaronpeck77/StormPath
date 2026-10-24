@@ -7,7 +7,7 @@
 import mapboxgl from "mapbox-gl";
 import mapboxWorkerUrl from "mapbox-gl/dist/mapbox-gl-csp-worker.js?url";
 import offlineWorkerUrl from "./map/mapboxOfflineWorker?worker&url";
-import { wrapFetchWithOfflineTiles } from "./map/offlineTileCache";
+import { evictIfNeeded, wrapFetchWithOfflineTiles } from "./map/offlineTileCache";
 import { recordMapboxUsage } from "./monitoring/mapboxUsageMeter";
 
 if (import.meta.env.PROD) {
@@ -26,6 +26,8 @@ if (typeof window !== "undefined" && !(window.fetch as { __stormpathOfflineTiles
   };
   wrapped.__stormpathOfflineTiles = true;
   window.fetch = wrapped;
+  /* Trim any oversized/pre-budget store once at startup — fire-and-forget. */
+  void evictIfNeeded();
 }
 
 /**

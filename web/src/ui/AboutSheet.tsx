@@ -4,7 +4,7 @@ import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
 import { getBasicBannerDebugLine } from "../ads/adMobClient";
 import { driveDiagSnapshot, formatDriveDiagLines } from "../nav/driveDiagnostics";
 import { getDedupeStats } from "../utils/requestDeduplication";
-import { approxBytes, countTiles, getOfflineTileStats } from "../map/offlineTileCache";
+import { getOfflineTileBucketCounts, getOfflineTileStats } from "../map/offlineTileCache";
 import { getRouteCacheHitStats, getRouteCacheStats } from "../utils/routeCache";
 import { getPlusEntitlementDebugSnapshot } from "../billing/revenueCat";
 import { useRevenueCat } from "../billing/useRevenueCat";
@@ -167,13 +167,12 @@ export function AboutSheet({
     void getPlusEntitlementDebugSnapshot().then((line) => {
       if (!cancelled) setIapDebugLine(line);
     });
-    /* IDB count/bytes are async — the line renders "…" until the sums land. */
-    setOfflineTileLine("Offline tiles: …");
-    void Promise.all([countTiles(), approxBytes()]).then(([count, bytes]) => {
+    /* IDB bucket counts are async — the line renders "…" until they land. */
+    setOfflineTileLine("Offline map: …");
+    void getOfflineTileBucketCounts().then((b) => {
       if (cancelled) return;
-      const mb = (bytes / (1024 * 1024)).toFixed(1);
       setOfflineTileLine(
-        `Offline tiles: ${count} saved (~${mb} MB) · ${getOfflineTileStats().servedOffline} served offline`
+        `Offline map: home ${b.home}/300 · route ${b.corridor}/160 · ${getOfflineTileStats().servedOffline} served offline`
       );
     });
     return () => {

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   ACTIVITY_MIN_SAMPLES_PLANNING_MAP,
   activitySamplesToGeoJson,
@@ -9,8 +9,13 @@ import {
   buildActivityTrailAboutPanel,
   type ActivityTrailAboutPanel,
 } from "../frequentRoutes/buildActivityTrailAboutPanel";
-import { getHomePreloadBounds } from "../map/homePreloadRegion";
+import { boundsAroundLngLat, getHomePreloadBounds } from "../map/homePreloadRegion";
+import { setOfflineHomeBounds } from "../map/offlineTileCache";
+import { loadSavedPlaces } from "../nav/savedPlaces";
 import type { HomeMapFraming } from "../map/homeMapFraming";
+
+/** Basic users have no activity trail — a saved place named "home" is their home area. */
+const SAVED_HOME_FALLBACK_RADIUS_M = 12_000;
 
 export interface UseActivityTrailMapDeps {
   isPlus: boolean;
@@ -65,9 +70,24 @@ export function useActivityTrailMap(deps: UseActivityTrailMapDeps): UseActivityT
   }, [isPlus, learnEnabled, activityTrailTick]);
 
   const homePreloadBounds = useMemo(() => {
-    if (!isPlus || !learnEnabled || !homePreloadEnabled) return null;
-    return getHomePreloadBounds();
+    if (!homePreloadEnabled) return null;
+    const trailBounds = isPlus && learnEnabled ? getHomePreloadBounds() : null;
+    if (trailBounds) return trailBounds;
+    /* No trail (Basic, or not enough dots): a saved place named "home" is the
+     * home area — 12 km box, sized between MIN/MAX_PRELOAD_RADIUS_M. */
+    const home = loadSavedPlaces().find((p) => p.name.trim().toLowerCase() === "home");
+    if (home) return boundsAroundLngLat(home.lngLat, SAVED_HOME_FALLBACK_RADIUS_M);
+    return null;
   }, [isPlus, learnEnabled, homePreloadEnabled, activityTrailTick]);
+
+  /* The offline tile cache buckets home vs corridor tiles against these bounds —
+   * keep IDB's meta copy in sync (worker-side eviction reads it independently). */
+  const homePreloadBoundsKey = homePreloadBounds
+    ? `${homePreloadBounds[0][0]},${homePreloadBounds[0][1]}|${homePreloadBounds[1][0]},${homePreloadBounds[1][1]}`
+    : "";
+  useEffect(() => {
+    void setOfflineHomeBounds(homePreloadBounds);
+  }, [homePreloadBoundsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activityTrailAboutPanel = useMemo(
     () =>
