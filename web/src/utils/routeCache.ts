@@ -21,6 +21,13 @@ interface CachedRoute {
 
 const routeCache = new Map<string, CachedRoute>();
 
+let cacheHits = 0;
+let cacheMisses = 0;
+
+export function getRouteCacheHitStats(): { hits: number; misses: number } {
+  return { hits: cacheHits, misses: cacheMisses };
+}
+
 /**
  * Default TTL for cached routes (1 hour).
  * After this time, a new route will be calculated.
@@ -59,14 +66,19 @@ export function hashRouteRequest(
  */
 export function getCachedRoute(routeHash: string): CachedRoutePayload | null {
   const cached = routeCache.get(routeHash);
-  if (!cached) return null;
+  if (!cached) {
+    cacheMisses += 1;
+    return null;
+  }
 
   const age = Date.now() - cached.timestamp;
   if (age > ROUTE_CACHE_TTL_MS) {
     routeCache.delete(routeHash);
+    cacheMisses += 1;
     return null;
   }
 
+  cacheHits += 1;
   return cached.payload;
 }
 

@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
 import { getBasicBannerDebugLine } from "../ads/adMobClient";
 import { driveDiagSnapshot, formatDriveDiagLines } from "../nav/driveDiagnostics";
+import { getDedupeStats } from "../utils/requestDeduplication";
+import { getRouteCacheHitStats, getRouteCacheStats } from "../utils/routeCache";
 import { getPlusEntitlementDebugSnapshot } from "../billing/revenueCat";
 import { useRevenueCat } from "../billing/useRevenueCat";
 import {
@@ -202,6 +204,9 @@ export function AboutSheet({
     }, tomorrowIo=${env.tomorrowIoApiKey ? "on" : "off"}`,
     iapDebugLine || "iap: loading…",
     getBasicBannerDebugLine(),
+    `API dedupe: ${getDedupeStats().hits} shared / ${getDedupeStats().misses} unique`,
+    `Route cache: ${getRouteCacheHitStats().hits} hits / ${getRouteCacheHitStats().misses} misses (${getRouteCacheStats().count} stored)`,
+    `Service worker: ${typeof navigator !== "undefined" && "serviceWorker" in navigator ? "registered" : "n/a"}`,
     ...driveDiagLines,
   ];
   const diagnosticsText = diagnosticsLines.join("\n");

@@ -18,6 +18,14 @@ type PendingRequest = {
 
 const pendingRequests = new Map<string, PendingRequest>();
 
+/** Diagnostics: how many requests were shared (deduped) vs made fresh. */
+let dedupeHits = 0;
+let dedupeMisses = 0;
+
+export function getDedupeStats(): { hits: number; misses: number } {
+  return { hits: dedupeHits, misses: dedupeMisses };
+}
+
 /**
  * Default TTL for pending requests (5 minutes).
  * After this time, a new request will be issued even if one is still pending.
@@ -55,11 +63,13 @@ export async function dedupeRequest<T>(
   if (existing) {
     // If it's still within TTL, return the existing promise
     if (now - existing.timestamp < ttlMs) {
+      dedupeHits += 1;
       return existing.promise as Promise<T>;
     }
     // Otherwise, clean up the stale entry
     pendingRequests.delete(key);
   }
+  dedupeMisses += 1;
 
   // Create new request
   const promise = requestFn();
