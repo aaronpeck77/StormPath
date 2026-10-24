@@ -231,3 +231,7 @@ Bill's park trip (build 535): arrived, ended trip, killed app, reopened in dead 
 ### 2026-10-24 - Bill's idea: sliding-window boundary in RT view
 
 Show the cached corridor as an outlined bubble on the RT-view route that moves in real time — user sees exactly what works offline. Feasible: corridor polygon (position → ~200mi ahead) as a Mapbox fill/line layer. Style subtle (dotted boundary/light shade), RT view or offline only. Polish item after the window exists — not P2 core.
+
+### 2026-10-24 - P2 build start: plugin structure found, TileStore gap confirmed
+
+Plugin: `web/plugins/stormpath-mapbox-navigation/ios/Sources/StormpathMapboxNavigationPlugin/` — DriveNativeMap, DriveFollowCam, DrivePoseHold, DrivePuckOverlay, HorizonAhead, StormpathMapboxNavigationPlugin.swift. Existing: `PredictiveCacheManager` + `PredictiveCacheConfig` already wired (in-drive warm). MISSING: any TileStore/offline pack API — no `TileStore`, no `OfflineRegion`, no corridor pack call. Build target: add `TripOfflinePack` manager (TileStore corridor + home region) alongside PredictiveCacheManager, expose to web via Capacitor bridge methods (startCorridorPack/estimatePackSize/cancelPack/removePack/homeRegionSet).
