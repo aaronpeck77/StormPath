@@ -65,12 +65,11 @@ export async function dedupeRequest<T>(
   const promise = requestFn();
   pendingRequests.set(key, { promise, timestamp: now });
 
-  // Clean up after request completes (success or failure)
+  // Clean up as soon as the request settles — only truly in-flight requests
+  // are shared. Callers arriving after completion issue a fresh request
+  // (also prevents stale results leaking across sequential calls/tests).
   promise.finally(() => {
-    // Small delay to allow concurrent callers to also resolve
-    setTimeout(() => {
-      pendingRequests.delete(key);
-    }, 100);
+    pendingRequests.delete(key);
   });
 
   return promise;

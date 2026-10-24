@@ -48,7 +48,7 @@ import {
   isRetryableHttpStatus,
   MAPBOX_DIRECTIONS_TIMEOUT_MS,
 } from "../utils/fetchResilient";
-// import { dedupeRequest } from "../utils/requestDeduplication";
+import { dedupeRequest } from "../utils/requestDeduplication";
 
 type MbCoord = [number, number];
 
@@ -500,38 +500,49 @@ async function fetchMapboxDirections(
   url.searchParams.set("access_token", accessToken);
   applyDirectionsQueryParams(url, opts, 2);
 
-  let lastHttp: { res: Response; data: DirectionsResponse } | null = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    try {
-      const res = await fetchWithTimeout({
-        input: url.toString(),
-        init: { method: "GET" },
-        timeoutMs: MAPBOX_DIRECTIONS_TIMEOUT_MS,
-        externalSignal: signal,
-      });
-      const data = (await res.json()) as DirectionsResponse;
-      if (!res.ok || (data.code && data.code !== "Ok")) {
-        lastHttp = { res, data };
-        if (attempt === 0 && isRetryableHttpStatus(res.status)) {
-          await new Promise<void>((r) => setTimeout(r, 550));
-          continue;
+  /* Dedupe identical in-flight requests: key on URL minus the access token so
+   * concurrent callers (traffic refresh, alternate-route poll, bypass compare)
+   * share one network call instead of billing Mapbox per caller. */
+  const dedupeKey = url.toString().replace(/([?&])access_token=[^&]+/, "$1access_token=");
+
+  return dedupeRequest(
+    `directions:${dedupeKey}`,
+    async () => {
+      let lastHttp: { res: Response; data: DirectionsResponse } | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        try {
+          const res = await fetchWithTimeout({
+            input: url.toString(),
+            init: { method: "GET" },
+            timeoutMs: MAPBOX_DIRECTIONS_TIMEOUT_MS,
+            externalSignal: signal,
+          });
+          const data = (await res.json()) as DirectionsResponse;
+          if (!res.ok || (data.code && data.code !== "Ok")) {
+            lastHttp = { res, data };
+            if (attempt === 0 && isRetryableHttpStatus(res.status)) {
+              await new Promise<void>((r) => setTimeout(r, 550));
+              continue;
+            }
+            throw mapboxDirectionsErrorFromResponse(res, data);
+          }
+          recordMapboxUsage("directions");
+          return data;
+        } catch (e) {
+          if (isAbortError(e) || isFetchTimeoutError(e)) throw e;
+          if (attempt === 0 && isRetryableFetchError(e)) {
+            await new Promise<void>((r) => setTimeout(r, 550));
+            continue;
+          }
+          throw e;
         }
-        throw mapboxDirectionsErrorFromResponse(res, data);
       }
-      recordMapboxUsage("directions");
-      return data;
-    } catch (e) {
-      if (isAbortError(e) || isFetchTimeoutError(e)) throw e;
-      if (attempt === 0 && isRetryableFetchError(e)) {
-        await new Promise<void>((r) => setTimeout(r, 550));
-        continue;
-      }
-      throw e;
-    }
-  }
-  if (lastHttp) throw mapboxDirectionsErrorFromResponse(lastHttp.res, lastHttp.data);
-  throw new Error("Mapbox Directions: request failed");
+      if (lastHttp) throw mapboxDirectionsErrorFromResponse(lastHttp.res, lastHttp.data);
+      throw new Error("Mapbox Directions: request failed");
+    },
+    MAPBOX_DIRECTIONS_TIMEOUT_MS + 5_000
+  );
 }
 
 /** Multi-stop Directions request (`start;via;…;end`). Single route — used for storm waypoint legs. */
@@ -549,38 +560,46 @@ async function fetchMapboxDirectionsThrough(
   url.searchParams.set("access_token", accessToken);
   applyDirectionsQueryParams(url, opts, coords.length);
 
-  let lastHttp: { res: Response; data: DirectionsResponse } | null = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    try {
-      const res = await fetchWithTimeout({
-        input: url.toString(),
-        init: { method: "GET" },
-        timeoutMs: MAPBOX_DIRECTIONS_TIMEOUT_MS,
-        externalSignal: signal,
-      });
-      const data = (await res.json()) as DirectionsResponse;
-      if (!res.ok || (data.code && data.code !== "Ok")) {
-        lastHttp = { res, data };
-        if (attempt === 0 && isRetryableHttpStatus(res.status)) {
-          await new Promise<void>((r) => setTimeout(r, 550));
-          continue;
+  const dedupeKey = url.toString().replace(/([?&])access_token=[^&]+/, "$1access_token=");
+
+  return dedupeRequest(
+    `directions:${dedupeKey}`,
+    async () => {
+      let lastHttp: { res: Response; data: DirectionsResponse } | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        try {
+          const res = await fetchWithTimeout({
+            input: url.toString(),
+            init: { method: "GET" },
+            timeoutMs: MAPBOX_DIRECTIONS_TIMEOUT_MS,
+            externalSignal: signal,
+          });
+          const data = (await res.json()) as DirectionsResponse;
+          if (!res.ok || (data.code && data.code !== "Ok")) {
+            lastHttp = { res, data };
+            if (attempt === 0 && isRetryableHttpStatus(res.status)) {
+              await new Promise<void>((r) => setTimeout(r, 550));
+              continue;
+            }
+            throw mapboxDirectionsErrorFromResponse(res, data);
+          }
+          recordMapboxUsage("directions");
+          return data;
+        } catch (e) {
+          if (isAbortError(e) || isFetchTimeoutError(e)) throw e;
+          if (attempt === 0 && isRetryableFetchError(e)) {
+            await new Promise<void>((r) => setTimeout(r, 550));
+            continue;
+          }
+          throw e;
         }
-        throw mapboxDirectionsErrorFromResponse(res, data);
       }
-      recordMapboxUsage("directions");
-      return data;
-    } catch (e) {
-      if (isAbortError(e) || isFetchTimeoutError(e)) throw e;
-      if (attempt === 0 && isRetryableFetchError(e)) {
-        await new Promise<void>((r) => setTimeout(r, 550));
-        continue;
-      }
-      throw e;
-    }
-  }
-  if (lastHttp) throw mapboxDirectionsErrorFromResponse(lastHttp.res, lastHttp.data);
-  throw new Error("Mapbox Directions: request failed");
+      if (lastHttp) throw mapboxDirectionsErrorFromResponse(lastHttp.res, lastHttp.data);
+      throw new Error("Mapbox Directions: request failed");
+    },
+    MAPBOX_DIRECTIONS_TIMEOUT_MS + 5_000
+  );
 }
 
 function sortRoutesByDurationAsc(
