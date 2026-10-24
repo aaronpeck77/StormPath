@@ -5,6 +5,7 @@ import {
   TRANSIENT_GPS_BANNER_MS,
 } from "../hooks/useUserLocation";
 import { safeStorage } from "../storage/safeStorage";
+import type { PendingRequest } from "../state/pendingRouteStore";
 
 type Props = {
   hasMapboxToken: boolean;
@@ -17,6 +18,9 @@ type Props = {
   onSafetyAck: () => void;
   onReportIssue: (() => void) | null;
   isOnline: boolean;
+  /** Queued route/search waiting for a data connection; suppresses the generic offline banner. */
+  pendingRoute: PendingRequest | null;
+  onCancelPendingRoute: () => void;
   /** Live guidance paused, or just came back, while the phone still says online. */
   routeSignalNote?: null | "weak" | "back";
   navigationStarted: boolean;
@@ -49,6 +53,8 @@ export function AppStatusBanners(props: Props) {
     onSafetyAck,
     onReportIssue,
     isOnline,
+    pendingRoute,
+    onCancelPendingRoute,
     routeSignalNote = null,
     navigationStarted,
     hasPlanRoutes,
@@ -188,7 +194,28 @@ export function AppStatusBanners(props: Props) {
         </div>
       )}
 
-      {!isOnline && (navigationStarted || hasPlanRoutes || hasDest) && (
+      {pendingRoute && (
+        <div
+          className={`nav-offline-banner${driveModeUi ? " nav-offline-banner--drive" : ""}`}
+          role="status"
+          aria-live="polite"
+        >
+          {pendingRoute.kind === "route" ? (
+            <>
+              <strong>Route pending</strong> · will appear when data returns
+            </>
+          ) : (
+            <>
+              <strong>Search pending</strong> · “{pendingRoute.query}” will load when data returns
+            </>
+          )}{" "}
+          <button type="button" className="nav-toast-inline-btn" onClick={onCancelPendingRoute}>
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {!isOnline && !pendingRoute && (navigationStarted || hasPlanRoutes || hasDest) && (
         <div
           className={`nav-offline-banner${driveModeUi ? " nav-offline-banner--drive" : ""}`}
           role="status"

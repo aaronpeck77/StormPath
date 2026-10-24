@@ -25,7 +25,9 @@ import {
   mintSearchBoxSessionToken,
 } from "../services/mapboxSearchBox";
 import { useTripPlanStore } from "../state/tripPlanStore";
+import { usePendingRouteStore } from "../state/pendingRouteStore";
 import { useUiStore } from "../state/uiStore";
+import { isNoConnectionError } from "../utils/fetchResilient";
 import { formatDistanceShort } from "../utils/formatDistance";
 import { roadUsesMiles } from "../utils/displayUnits";
 import { isNarrowPhoneViewport } from "../ui/mapFitLogic";
@@ -41,6 +43,8 @@ export interface UseDestinationSearchDeps {
   locationError: string | null;
   mapboxToken: string;
   computeRoutes: ComputeRoutesFn;
+  /** Connectivity flag — dead-zone searches queue a pending request instead of erroring. */
+  isOnline: boolean;
   navigationStarted: boolean;
   planRoutesLength: number;
   rankSearchSuggestionsWithTrail: (items: SearchSuggestion[]) => SearchSuggestion[];
@@ -71,6 +75,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     locationError,
     mapboxToken,
     computeRoutes,
+    isOnline,
     navigationStarted,
     planRoutesLength,
     rankSearchSuggestionsWithTrail,
@@ -614,6 +619,16 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
         if (spoken.kind === "ask") return acceptSpokenChoice("the closest");
         setRouteError("No results for that search.");
         return null;
+      } catch (e) {
+        if (isNoConnectionError(e, isOnline)) {
+          usePendingRouteStore.getState().setPending({
+            kind: "search",
+            query: q,
+            createdAt: Date.now(),
+          });
+          return null;
+        }
+        throw e;
       } finally {
         setRouting(false);
       }
@@ -636,8 +651,17 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       hits.sort(
         (a, b) => haversineMeters(userLngLat, a.lngLat) - haversineMeters(userLngLat, b.lngLat)
       );
-    } catch {
-      setRouteError("Search failed. Check the signal and try again.");
+    } catch (e) {
+      if (isNoConnectionError(e, isOnline)) {
+        /* Dead zone: queue the query — usePendingRouteRetry replays it when data returns. */
+        usePendingRouteStore.getState().setPending({
+          kind: "search",
+          query: q,
+          createdAt: Date.now(),
+        });
+      } else {
+        setRouteError("Search failed. Check the signal and try again.");
+      }
       return null;
     } finally {
       setRouting(false);
@@ -664,7 +688,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     setTapHint(`${hits.length} matches — tap an orange pin or a result below.`);
     window.setTimeout(() => setTapHint(null), 10_000);
     return null;
-  }, [searchText, userLngLat, mapboxToken, computeRoutes, locationError, recordRecentSearch, addingViaStop, applyTripPlacePick, resolveSpokenPlace, acceptSpokenChoice]);
+  }, [searchText, userLngLat, mapboxToken, computeRoutes, isOnline, locationError, recordRecentSearch, addingViaStop, applyTripPlacePick, resolveSpokenPlace, acceptSpokenChoice]);
 
   const searchPickMarkersForMap = useMemo((): { id: string; lngLat: LngLat; label: string }[] | null => {
     if (!searchPickHits || searchPickHits.length < 2) return null;

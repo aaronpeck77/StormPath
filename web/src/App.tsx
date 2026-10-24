@@ -183,6 +183,8 @@ import {
   useRouteCompareStore,
 } from "./state/routeCompareStore";
 import { useComputeRoutes } from "./nav/useComputeRoutes";
+import { usePendingRouteRetry } from "./nav/usePendingRouteRetry";
+import { usePendingRouteStore } from "./state/pendingRouteStore";
 import { useTripLifecycle } from "./nav/useTripLifecycle";
 import { useOffRouteNavigation } from "./nav/useOffRouteNavigation";
 import { useStormCorridorPolling } from "./nav/useStormCorridorPolling";
@@ -498,6 +500,7 @@ export default function App() {
   const [fitTrigger, setFitTrigger] = useState(0);
   const [recenterPlanningPuckTick, setRecenterPlanningPuckTick] = useState(0);
   const navigationStarted = useTripPlanStore((s) => s.navigationStarted);
+  const pendingRoute = usePendingRouteStore((s) => s.pending);
   const setNavigationStarted = useTripPlanStore((s) => s.setNavigationStarted);
   const navigationStartedRef = useRef(navigationStarted);
   navigationStartedRef.current = navigationStarted;
@@ -633,6 +636,7 @@ export default function App() {
     userLngLat,
     mapboxToken: env.mapboxToken,
     isPlus,
+    isOnline,
     stormAlertsForRouting,
     stormEnabled: settingStormEnabled,
     payFrequentRoutes,
@@ -684,6 +688,7 @@ export default function App() {
     locationError,
     mapboxToken: env.mapboxToken,
     computeRoutes,
+    isOnline,
     navigationStarted,
     planRoutesLength: plan.routes.length,
     rankSearchSuggestionsWithTrail,
@@ -693,6 +698,16 @@ export default function App() {
     setTapHint,
     setRouting,
     setRouteError,
+  });
+
+  /* Replays a dead-zone queued route/search once data returns; lands in the normal
+   * route preview and waits for Go — never auto-starts navigation. */
+  usePendingRouteRetry({
+    isOnline,
+    navigationStarted,
+    computeRoutes,
+    runSearch: (q: string) => handleSearch(q),
+    setTapHint,
   });
 
   useEffect(() => {
@@ -3203,6 +3218,8 @@ export default function App() {
             env.supportEmail || env.supportUrl ? handleQuickReportIssue : null
           }
           isOnline={isOnline}
+          pendingRoute={pendingRoute}
+          onCancelPendingRoute={() => usePendingRouteStore.getState().clearPending()}
           routeSignalNote={routeSignalNote}
           navigationStarted={navigationStarted}
           hasPlanRoutes={plan.routes.length > 0}

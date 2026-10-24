@@ -95,6 +95,17 @@ export function isRetryableFetchError(e: unknown): boolean {
   return false;
 }
 
+/**
+ * True when a failure means "no usable data connection" rather than a bad request:
+ * the device reports offline, the fetch never reached the server (TypeError), or it
+ * timed out. Abort errors are excluded — a superseded request is not a connectivity
+ * signal.
+ */
+export function isNoConnectionError(e: unknown, isOnline: boolean): boolean {
+  if (isAbortError(e)) return false;
+  return !isOnline || isRetryableFetchError(e) || isFetchTimeoutError(e);
+}
+
 export function isRetryableHttpStatus(status: number): boolean {
   return status === 502 || status === 503 || status === 504;
 }
