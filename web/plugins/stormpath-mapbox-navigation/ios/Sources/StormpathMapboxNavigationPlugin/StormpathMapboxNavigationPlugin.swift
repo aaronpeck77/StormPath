@@ -28,6 +28,13 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "armIdleExit", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelIdleExit", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startTripPack", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "estimateTripPack", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancelTripPack", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "removeTripPack", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "tripPackStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setHomeRegion", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "homeRegionStatus", returnType: CAPPluginReturnPromise),
     ]
 
     private var navigationProvider: MapboxNavigationProvider?
@@ -62,6 +69,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     /// Last electronic-horizon sample. Progress copies it so the Lim readout and advisory stay in sync.
     private var horizonSnapshot = HorizonSnapshot(limitMph: nil, hazards: [])
     private var horizonReady = false
+    /// Brain P2 — TileStore corridor + home-region packs (offline trip download).
+    private let offlinePack = TripOfflinePack()
 
     @objc func isAvailable(_ call: CAPPluginCall) {
         call.resolve(["available": true])
@@ -832,6 +841,96 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
             call.resolve()
         }
+    }
+
+    // MARK: - Brain P2 offline packs
+
+    @objc func startTripPack(_ call: CAPPluginCall) {
+        guard let accessToken = call.getString("accessToken"), !accessToken.isEmpty else {
+            call.reject("accessToken required"); return
+        }
+        guard let rawCoords = call.getArray("coordinates", JSObject.self), rawCoords.count >= 2 else {
+            call.reject("coordinates must include at least origin and destination"); return
+        }
+        let coords: [[Double]] = rawCoords.compactMap { obj in
+            if let a = obj as? [Double], a.count >= 2 { return a }
+            if let a = obj as? [NSNumber], a.count >= 2 { return [a[0].doubleValue, a[1].doubleValue] }
+            return nil
+        }
+        guard coords.count >= 2 else {
+            call.reject("coordinates could not be parsed"); return
+        }
+        offlinePack.startTripPack(coords: coords, accessToken: accessToken, progress: { _ in
+            // Progress events ride a notifyListeners channel in a later pass.
+        }, completion: { result in
+            switch result {
+            case .success(let packId): call.resolve(["packId": packId])
+            case .failure(let e): call.reject("trip pack failed: \(e.localizedDescription)")
+            }
+        })
+    }
+
+    @objc func estimateTripPack(_ call: CAPPluginCall) {
+        guard let accessToken = call.getString("accessToken"), !accessToken.isEmpty else {
+            call.reject("accessToken required"); return
+        }
+        guard let rawCoords = call.getArray("coordinates", JSObject.self), rawCoords.count >= 2 else {
+            call.reject("coordinates required"); return
+        }
+        let coords: [[Double]] = rawCoords.compactMap { obj in
+            if let a = obj as? [NSNumber], a.count >= 2 { return [a[0].doubleValue, a[1].doubleValue] }
+            return nil
+        }
+        offlinePack.estimateTripPack(coords: coords, accessToken: accessToken) { result in
+            switch result {
+            case .success(let bytes): call.resolve(["estimatedBytes": bytes])
+            case .failure(let e): call.reject("estimate failed: \(e.localizedDescription)")
+            }
+        }
+    }
+
+    @objc func cancelTripPack(_ call: CAPPluginCall) {
+        self.offlinePack.cancel(packId: TripOfflinePack.PackKind.trip.rawValue)
+        call.resolve()
+    }
+
+    @objc func removeTripPack(_ call: CAPPluginCall) {
+        self.offlinePack.remove(packId: TripOfflinePack.PackKind.trip.rawValue) { result in
+            switch result {
+            case .success: call.resolve()
+            case .failure(let e): call.reject("remove failed: \(e.localizedDescription)")
+            }
+        }
+    }
+
+    @objc func tripPackStatus(_ call: CAPPluginCall) {
+        self.offlinePack.status(packId: TripOfflinePack.PackKind.trip.rawValue) { call.resolve($0) }
+    }
+
+    @objc func setHomeRegion(_ call: CAPPluginCall) {
+        guard let accessToken = call.getString("accessToken"), !accessToken.isEmpty else {
+            call.reject("accessToken required"); return
+        }
+        guard let center = call.getArray("center", NSNumber.self) as? [NSNumber], center.count >= 2 else {
+            call.reject("center required [lng,lat]"); return
+        }
+        let radiusM = call.getDouble("radiusMeters") ?? 40_000
+        self.offlinePack.setHomeRegion(
+            center: [center[0].doubleValue, center[1].doubleValue],
+            radiusMeters: radiusM,
+            accessToken: accessToken,
+            progress: { _ in },
+            completion: { result in
+                switch result {
+                case .success(let packId): call.resolve(["packId": packId])
+                case .failure(let e): call.reject("home region failed: \(e.localizedDescription)")
+                }
+            }
+        )
+    }
+
+    @objc func homeRegionStatus(_ call: CAPPluginCall) {
+        self.offlinePack.status(packId: TripOfflinePack.PackKind.home.rawValue) { call.resolve($0) }
     }
 
     @objc func cancelIdleExit(_ call: CAPPluginCall) {
