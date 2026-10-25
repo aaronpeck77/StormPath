@@ -35,6 +35,7 @@ type Props = {
   driveApproachBannerPick: DriveApproachBannerPick;
   /** Jam-hop strip — rendered inside the cluster so it gets sizing + pointer events. */
   jamHopSlot?: ReactNode;
+  hazardTickerSlot?: ReactNode;
   showTrafficBypassCta: boolean;
   bypassBusy: boolean;
   setDemoApproachBannerOn: Dispatch<SetStateAction<boolean>>;
@@ -70,6 +71,7 @@ export function AppTopNavCluster({
   hazardApproachAlertsActive,
   driveApproachBannerPick,
   jamHopSlot = null,
+  hazardTickerSlot = null,
   showTrafficBypassCta,
   bypassBusy,
   setDemoApproachBannerOn,
@@ -93,6 +95,7 @@ export function AppTopNavCluster({
             travelingStepIndex={bannerTravelingStepIndex}
             glanceable={navigationStarted}
           />
+          {hazardTickerSlot}
           {(personalForkShowChip || personalForkShowCommittedChip) && personalForkOffer ? (
             <YourRouteChip
               offer={personalForkOffer}

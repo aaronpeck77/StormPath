@@ -148,6 +148,7 @@ import { usePayTierSession } from "./hooks/usePayTierSession";
 import { AppHazardSheetsHost } from "./ui/AppHazardSheetsHost";
 import { AppProgressRail } from "./ui/AppProgressRail";
 import { AppTopNavCluster } from "./ui/AppTopNavCluster";
+import { DriveHazardTicker } from "./ui/DriveHazardTicker";
 import { Coachmarks } from "./ui/Coachmarks";
 import { resetAllCoachmarks } from "./ui/coachmarks/firstLaunchSteps";
 import { pointAlongPolyline } from "./ui/geometryAlong";
@@ -3072,6 +3073,19 @@ export default function App() {
               radarFrameClockLabel={radarFrameClockLabel}
               hazardApproachAlertsActive={hazardApproachAlertsActive}
               driveApproachBannerPick={driveApproachBannerPick}
+              hazardTickerSlot={
+                <DriveHazardTicker
+                  items={routeAheadTimeline}
+                  isPlus={isPlus}
+                  isOnline={isOnline}
+                  navigationStarted={navigationStarted}
+                  viewMode={viewMode}
+                  userAlongMeters={userAlongGuidanceM}
+                  offRoute={offRouteLatched}
+                  metersToManeuver={metersToBannerManeuver}
+                  miles={roadUsesMiles(effectiveUserLngLat)}
+                />
+              }
               jamHopSlot={
                 jamHop.offer ? (
                   <JamHopBanner
