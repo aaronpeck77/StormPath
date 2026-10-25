@@ -72,6 +72,36 @@ describe("collectMapboxRouteVariants", () => {
     vi.mocked(fetchWithTimeout).mockReset();
   });
 
+  it("requests turn guidance on cross-country trips while omitting heavy annotations", async () => {
+    const farEnd: LngLat = [-115.14, 36.17];
+    const coords: LngLat[] = [start, farEnd];
+    vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
+      const url = new URL(String(input));
+      const route = mbRoute(coords, 80_000, 2_336_000);
+      if (url.searchParams.get("steps") !== "true") route.legs = [];
+      return okResponse([route]);
+    });
+
+    const routes = await collectMapboxRouteVariants("tok", start, farEnd, { maxRoutes: 1 });
+
+    expect(routes[0]!.turnSteps?.[0]!.instruction).not.toBe("Follow line to destination");
+    expect(routes[0]!.turnSteps).toHaveLength(2);
+    const url = new URL(String(vi.mocked(fetchWithTimeout).mock.calls[0]![0].input));
+    expect(url.searchParams.get("steps")).toBe("true");
+    expect(url.searchParams.has("annotations")).toBe(false);
+    expect(fetchWithTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps missing guidance empty rather than inventing a final maneuver", async () => {
+    const route = mbRoute(lineCoords(), 3600, 120_000);
+    route.legs = [];
+    vi.mocked(fetchWithTimeout).mockResolvedValue(okResponse([route]));
+
+    const routes = await collectMapboxRouteVariants("tok", start, end, { maxRoutes: 1 });
+
+    expect(routes[0]!.turnSteps).toEqual([]);
+  });
+
   it("keeps a close alternate when primary Mapbox returns only Main", async () => {
     const main = mbRoute(lineCoords(0), 3600, 120_000);
     const noMw = mbRoute(lineCoords(-0.35), 4000, 132_000);

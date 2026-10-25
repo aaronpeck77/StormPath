@@ -202,7 +202,7 @@ function applyDirectionsQueryParams(
   if (opts.alternatives) url.searchParams.set("alternatives", "true");
   url.searchParams.set("geometries", "geojson");
   url.searchParams.set("overview", opts.simplifiedOverview ? "simplified" : "full");
-  url.searchParams.set("steps", opts.includeDetails === false ? "false" : "true");
+  url.searchParams.set("steps", "true");
   if (opts.includeDetails !== false) {
     url.searchParams.set("annotations", "closure,maxspeed");
   }
@@ -257,9 +257,6 @@ function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteT
         roadRef: ref?.trim() || undefined,
       });
     }
-  }
-  if (out.length === 0) {
-    out.push({ instruction: "Follow line to destination" });
   }
   return out;
 }

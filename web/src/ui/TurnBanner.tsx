@@ -296,7 +296,9 @@ export function TurnBanner({
           </>
         ) : (
           <>
-            <p className="turn-banner-next-instr turn-banner-next-instr--dest">Arriving</p>
+            <p className="turn-banner-next-instr turn-banner-next-instr--dest">
+              {cur.maneuverType === "arrive" || cur.type === 10 ? "Arriving" : "Continue on route"}
+            </p>
           </>
         )}
       </div>
