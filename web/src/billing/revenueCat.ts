@@ -2,6 +2,7 @@ import { Capacitor } from "@capacitor/core";
 import {
   type CustomerInfo,
   LOG_LEVEL,
+  INTRO_ELIGIBILITY_STATUS,
   PURCHASES_ERROR_CODE,
   Purchases,
   type PurchasesOffering,
@@ -175,6 +176,21 @@ export async function initRevenueCat(opts: InitRevenueCatOptions): Promise<boole
 /** True if running on native + `configure()` succeeded. UI uses this to gate native purchase buttons. */
 export function isRevenueCatReady(): boolean {
   return configured;
+}
+
+export async function getTrialEligibility(packages: PurchasesPackage[]): Promise<Record<string, boolean>> {
+  const productIdentifiers = packages
+    .filter((pkg) => pkg.packageType === "MONTHLY" && pkg.product.introPrice?.price === 0)
+    .map((pkg) => pkg.product.identifier);
+  if (!configured || Capacitor.getPlatform() !== "ios" || !productIdentifiers.length) return {};
+  try {
+    const result = await Purchases.checkTrialOrIntroductoryPriceEligibility({ productIdentifiers });
+    return Object.fromEntries(productIdentifiers.map((id) => [
+      id, result[id]?.status === INTRO_ELIGIBILITY_STATUS.INTRO_ELIGIBILITY_STATUS_ELIGIBLE,
+    ]));
+  } catch {
+    return {};
+  }
 }
 
 /** Await in-flight `initRevenueCat` — App mount sync should run after configure, not before. */

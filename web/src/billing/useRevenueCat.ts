@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PurchasesPackage } from "@revenuecat/purchases-capacitor";
 import {
   getPlusOffering,
+  getTrialEligibility,
   isRevenueCatReady,
   listPlusPackages,
   NATIVE_PAY_TIER_CHANGED_EVENT,
@@ -40,6 +41,7 @@ export interface UseRevenueCatResult {
   defaultPackage: PurchasesPackage | null;
   /** Every Plus plan on the current offering (monthly / yearly). */
   plusPackages: PurchasesPackage[];
+  trialEligibility: Record<string, boolean>;
   /** Any IAP network action in flight — disables both buttons. */
   busy: boolean;
   /** Subscribe sheet open / purchase in progress. */
@@ -64,6 +66,7 @@ export function useRevenueCat(): UseRevenueCatResult {
   const [ready, setReady] = useState<boolean>(() => isRevenueCatReady());
   const [defaultPackage, setDefaultPackage] = useState<PurchasesPackage | null>(null);
   const [plusPackages, setPlusPackages] = useState<PurchasesPackage[]>([]);
+  const [trialEligibility, setTrialEligibility] = useState<Record<string, boolean>>({});
   const [busyAction, setBusyAction] = useState<IapBusyAction | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageKind, setMessageKind] = useState<"success" | "error" | null>(null);
@@ -96,9 +99,11 @@ export function useRevenueCat(): UseRevenueCatResult {
       const offering = await getPlusOffering();
       const pkgs = listPlusPackages(offering);
       const pkg = pickDefaultPlusPackage(offering);
+      const eligibility = await getTrialEligibility(pkgs);
       if (!cancelled) {
         setPlusPackages(pkgs);
         setDefaultPackage(pkg);
+        setTrialEligibility(eligibility);
       }
     })();
     return () => {
@@ -189,6 +194,7 @@ export function useRevenueCat(): UseRevenueCatResult {
       ready,
       defaultPackage,
       plusPackages,
+      trialEligibility,
       busy,
       purchasing,
       restoring,
@@ -199,6 +205,6 @@ export function useRevenueCat(): UseRevenueCatResult {
       syncEntitlement,
       clearMessage,
     }),
-    [ready, defaultPackage, plusPackages, busy, purchasing, restoring, message, messageKind, purchase, restore, syncEntitlement, clearMessage]
+    [ready, defaultPackage, plusPackages, trialEligibility, busy, purchasing, restoring, message, messageKind, purchase, restore, syncEntitlement, clearMessage]
   );
 }

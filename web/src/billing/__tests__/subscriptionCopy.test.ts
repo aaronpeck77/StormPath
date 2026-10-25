@@ -31,6 +31,46 @@ describe("formatPlusSubscribeButton", () => {
   });
 });
 
+describe("monthly free-trial copy", () => {
+  const monthly = {
+    packageType: "MONTHLY",
+    product: {
+      priceString: "€5.99",
+      introPrice: { price: 0, periodUnit: "MONTH", periodNumberOfUnits: 1, cycles: 1 },
+    },
+  };
+
+  it("shows the verified free month and localized renewal price", () => {
+    expect(formatPlusSubscribeButton(monthly, true)).toBe(
+      "Start Plus free for 1 month — then €5.99/month"
+    );
+  });
+
+  it("does not advertise a trial for unknown or ineligible customers", () => {
+    expect(formatPlusSubscribeButton(monthly)).not.toContain("free");
+    expect(formatPlusSubscribeButton(monthly, false)).not.toContain("free");
+  });
+
+  it("does not promise a trial on yearly plans or without a matching store offer", () => {
+    expect(formatPlusSubscribeButton({ ...monthly, packageType: "ANNUAL" }, true)).not.toContain("free");
+    expect(formatPlusSubscribeButton({ packageType: "MONTHLY", product: { priceString: "$4.99" } }, true)).not.toContain("free");
+    for (const introPrice of [
+      { ...monthly.product.introPrice, price: 1 },
+      { ...monthly.product.introPrice, periodNumberOfUnits: 3 },
+      { ...monthly.product.introPrice, periodUnit: "WEEK" },
+      { ...monthly.product.introPrice, cycles: 2 },
+    ]) {
+      expect(formatPlusSubscribeButton({ ...monthly, product: { ...monthly.product, introPrice } }, true)).not.toContain("free");
+    }
+  });
+
+  it("discloses trial conversion and continued Basic access", () => {
+    expect(PLUS_AUTO_RENEW_DISCLOSURE).toContain("after any applicable free trial ends");
+    expect(PLUS_AUTO_RENEW_DISCLOSURE).toContain("automatically converts");
+    expect(PLUS_AUTO_RENEW_DISCLOSURE).toContain("Basic remains available");
+  });
+});
+
 describe("Guideline 3.1.2(c) purchase-flow copy", () => {
   it("includes title, length, price, and auto-renew terms", () => {
     expect(PLUS_SUBSCRIPTION_TITLE).toBe("StormPath Plus");

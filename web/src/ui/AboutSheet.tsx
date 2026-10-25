@@ -340,7 +340,9 @@ export function AboutSheet({
             <p className="about-sheet__p">
               <strong>{PLUS_SUBSCRIPTION_TITLE}</strong> is an optional auto-renewing subscription.
             </p>
-            <p className="about-sheet__p about-sheet__iap-price">{PLUS_SUBSCRIPTION_FALLBACK_PRICE_LINE}</p>
+            {subscribePackages.length === 0 && (
+              <p className="about-sheet__p about-sheet__iap-price">{PLUS_SUBSCRIPTION_FALLBACK_PRICE_LINE}</p>
+            )}
             <div className="about-sheet__upgrade-actions">
               {!plus && (
                 <>
@@ -356,7 +358,7 @@ export function AboutSheet({
                         >
                           {iap.purchasing
                             ? "Working…"
-                            : formatPlusSubscribeButton(pkg)}
+                            : formatPlusSubscribeButton(pkg, iap.trialEligibility[pkg.product.identifier] === true)}
                         </button>
                       ))
                     ) : (
