@@ -3,6 +3,7 @@ import { lockedRouteShouldAvoidMotorway } from "../driveAlwaysAhead";
 import {
   nativeGeometryApplyPolicy,
   nativeRouteChangedShouldForce,
+  rejectedCoreRouteChangedOutcome,
   rerouteAsksForTurnAlreadyMissed,
   routeGeometryAgreesWithLocked,
   shouldAdoptNativeRouteGeometry,
@@ -292,5 +293,18 @@ describe("shouldFeedNativeProgressToUi", () => {
     expect(
       shouldFeedNativeProgressToUi({ abandoned: false, corridorAdopted: true })
     ).toBe(true);
+  });
+});
+
+describe("rejectedCoreRouteChangedOutcome", () => {
+  it("keeps Core alive when the session-start emit is rejected", () => {
+    /* Core may still own a later off-route reroute — do not strand it. */
+    expect(rejectedCoreRouteChangedOutcome(true)).toBe("keep");
+  });
+
+  it("abandons the trip to DIY on a rejected mid-trip reroute", () => {
+    /* Core is navigating a corridor we refused to draw; DIY must be allowed to
+     * plan instead of riding stale steps on the old lock. */
+    expect(rejectedCoreRouteChangedOutcome(false)).toBe("abandon");
   });
 });

@@ -181,6 +181,16 @@ export function shouldReplaceGoPolylineOnNativeAdopt(
 }
 
 /**
+ * A Core `routeChanged` we refused to adopt. Session-start "fastest" rejection keeps
+ * Core alive (it can still own a later off-route reroute). Mid-trip rejection means
+ * Core is navigating a corridor we will not draw — its stepIndex/instruction diverge
+ * from our step list and locked line — so the trip is abandoned to DIY ownership.
+ */
+export function rejectedCoreRouteChangedOutcome(isFirstRouteChanged: boolean): "keep" | "abandon" {
+  return isFirstRouteChanged ? "keep" : "abandon";
+}
+
+/**
  * True when Core progress may drive the puck / alongM.
  * Rejected session-start geometry must not feed UI — Core's fastest line vs the
  * Go lock is what made the puck leap forward and back.

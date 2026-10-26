@@ -16,6 +16,7 @@ import {
 import { buildNativeGuidanceCoordinates } from "./nativeGuidanceCoords";
 import {
   nativeRouteChangedShouldForce,
+  rejectedCoreRouteChangedOutcome,
   shouldFeedNativeProgressToUi,
   shouldForceAdoptOffRouteNativeGeometry,
 } from "./lockedRouteGeometryGuard";
@@ -371,7 +372,24 @@ export function useNativeNavSession(opts: {
           });
           const adopted = onRouteGeometryRef.current(geom, { force }) !== false;
           if (!adopted) {
-            /* Session-start fastest steal — keep Core alive so off-route can still reroute. */
+            /* Session-start fastest steal — keep Core alive so off-route can still reroute.
+             * Mid-trip rejection is different: Core is now navigating a corridor we
+             * refused to draw, so its stepIndex/instruction no longer match our step
+             * list or locked line. Hand the trip to DIY (abandoned → owner=diy and
+             * progress stops feeding the puck) instead of riding the stale corridor. */
+            if (rejectedCoreRouteChangedOutcome(isFirst) === "abandon") {
+              nativeAbandonedRef.current = true;
+              coreRerouteHealthRef.current = {
+                ...coreRerouteHealthRef.current,
+                abandoned: true,
+              };
+              /* Core still runs underneath for voice/reroute, but its corridor is not
+               * ours — hand the puck, banner, and steps back to DIY state. */
+              setNativeNavActive(false);
+              setPosition(null);
+              setGuidance(null);
+              setTurnSteps([]);
+            }
             return;
           }
           corridorAdoptedRef.current = true;
