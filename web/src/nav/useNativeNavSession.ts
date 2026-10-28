@@ -249,6 +249,7 @@ export function useNativeNavSession(opts: {
       if (!avail.available) return false;
 
       await removeListeners();
+      nativeAbandonedRef.current = false;
       corridorAdoptedRef.current = false;
       firstRouteChangedRef.current = true;
       poseHoldRef.current.reset();
@@ -387,12 +388,20 @@ export function useNativeNavSession(opts: {
                * ours — hand the puck, banner, and steps back to DIY state. */
               setNativeNavActive(false);
               setPosition(null);
+              setFollowCamera(null);
               setGuidance(null);
               setTurnSteps([]);
+              void StormpathMapboxNavigation.setVoiceGuidance({ enabled: false }).catch(() => undefined);
             }
             return;
           }
+          nativeAbandonedRef.current = false;
+          coreRerouteHealthRef.current = {
+            ...coreRerouteHealthRef.current,
+            abandoned: false,
+          };
           corridorAdoptedRef.current = true;
+          setGuidance(null);
           /* Core delivered a corridor. On a mid-trip emit that *is* the reroute, so
            * the DIY poll must not also call Directions for this off-route episode. */
           if (!isFirst) {
@@ -403,7 +412,7 @@ export function useNativeNavSession(opts: {
           }
           setNativeNavActive(true);
           const steps = parseNativeTurnSteps(e.turnSteps);
-          if (steps.length) setTurnSteps(steps);
+          setTurnSteps(steps);
         }),
         StormpathMapboxNavigation.addListener("arrived", () => {
           const c = coordsRef.current;

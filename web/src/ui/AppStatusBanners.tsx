@@ -6,6 +6,7 @@ import {
 } from "../hooks/useUserLocation";
 import { safeStorage } from "../storage/safeStorage";
 import type { PendingRequest } from "../state/pendingRouteStore";
+import { LandscapeDockContent } from "./LandscapeNavigationDock";
 
 type Props = {
   hasMapboxToken: boolean;
@@ -91,6 +92,7 @@ export function AppStatusBanners(props: Props) {
 
   return (
     <>
+    <LandscapeDockContent active={navigationStarted}>
       {!hasMapboxToken && (
         <div className="nav-toast-stack nav-toast-stack--top" aria-live="polite">
           <div className="nav-toast nav-toast-warn" role="status">
@@ -144,6 +146,7 @@ export function AppStatusBanners(props: Props) {
         </div>
       )}
 
+    </LandscapeDockContent>
       {!safetyAck && (
         <div className="nav-safety-banner" role="dialog" aria-label="Safety notice">
           <div className="nav-safety-banner__text">
@@ -174,6 +177,7 @@ export function AppStatusBanners(props: Props) {
         </div>
       )}
 
+    <LandscapeDockContent active={navigationStarted}>
       {isOnline && navigationStarted && routeSignalNote === "weak" && (
         <div
           className={`nav-offline-banner${driveModeUi ? " nav-offline-banner--drive" : ""}`}
@@ -231,6 +235,7 @@ export function AppStatusBanners(props: Props) {
         </div>
       )}
 
+    </LandscapeDockContent>
       {demoBypassTrafficJamPlus && driveModeUi && navigationStarted && (
         <div className="nav-demo-bypass-banner" role="region" aria-label="Plus traffic bypass demo tools">
           <div className="nav-demo-bypass-banner__top">

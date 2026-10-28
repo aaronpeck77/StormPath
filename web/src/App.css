@@ -4260,6 +4260,94 @@ html:has(.drive-map--native-shell) #root {
   pointer-events: auto;
 }
 
+.landscape-navigation-dock {
+  display: none;
+}
+
+@media (orientation: landscape) {
+  .app-shell.nav-fullmap .landscape-navigation-dock {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "messages controls" "messages miles";
+    align-items: end;
+    gap: 5px 8px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0 max(6px, env(safe-area-inset-right)) 0 max(6px, env(safe-area-inset-left));
+    pointer-events: none;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .landscape-navigation-dock {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "controls messages" "miles messages";
+  }
+
+  .landscape-navigation-dock__controls {
+    grid-area: controls;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-self: center;
+    gap: 4px;
+    pointer-events: auto;
+  }
+
+  .landscape-navigation-dock__miles {
+    grid-area: miles;
+    pointer-events: auto;
+  }
+
+  .landscape-navigation-dock__messages {
+    grid-area: messages;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+    max-height: min(36vh, 160px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    pointer-events: auto;
+  }
+
+  .app-shell.nav-fullmap .landscape-navigation-dock__messages .nav-toast-stack,
+  .app-shell.nav-fullmap .landscape-navigation-dock__messages .nav-offline-banner {
+    position: static;
+    inset: auto;
+    transform: none;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    box-sizing: border-box;
+    font-size: 14px;
+    pointer-events: auto;
+  }
+
+  .app-shell.nav-fullmap .landscape-navigation-dock__messages .nav-toast-stack {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .landscape-navigation-dock__messages .nav-toast {
+    max-width: none;
+    font-size: 14px;
+    overflow-wrap: anywhere;
+  }
+
+  .landscape-navigation-dock__messages .drive-hazard-ticker {
+    flex-shrink: 0;
+    padding: 6px 8px;
+    font-size: 14px;
+  }
+
+  .app-shell.nav-fullmap .nav-bottom-stack:has(.landscape-navigation-dock) .nav-bottom-dock__about-row .nav-miles-left-box,
+  .app-shell.nav-fullmap .nav-bottom-stack:has(.landscape-navigation-dock) .nav-bottom-dock__about-row .nav-bottom-dock__compass-i-col,
+  .app-shell.nav-fullmap .nav-bottom-stack:has(.landscape-navigation-dock) .nav-bottom-dock__about-row .map-about-btn,
+  .app-shell.nav-fullmap .nav-bottom-stack:has(.landscape-navigation-dock) .nav-bottom-dock__about-row .trip-refresh-btn,
+  .app-shell.nav-fullmap .nav-bottom-stack:has(.landscape-navigation-dock) .nav-bottom-dock__about-row .drive-compass {
+    display: none;
+  }
+}
+
 .drive-hazard-ticker {
   display: flex;
   align-items: center;

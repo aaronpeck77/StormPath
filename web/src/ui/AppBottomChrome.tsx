@@ -7,6 +7,7 @@ import { RouteCompareBottomPanel } from "./RouteCompareBottomPanel";
 import { RecordingRouteBanner } from "./RecordingRouteBanner";
 import { DriveCompass } from "./DriveCompass";
 import { NavMilesLeftBox } from "./NavMilesLeftBox";
+import { LandscapeNavigationDock } from "./LandscapeNavigationDock";
 import { RoutePickControl, type RoutePickItem } from "./RoutePickBar";
 import { SearchBar, type SearchSuggestion } from "./SearchBar";
 import { RouteStopsBar } from "./RouteStopsBar";
@@ -329,6 +330,10 @@ export function AppBottomChrome({
           onStopSave={handleStopRecordingSave}
           onDiscard={handleDiscardRecordingPath}
         />
+      ) : null}
+      {navigationStarted ? (
+        <LandscapeNavigationDock miles={driveDistanceRemainingLabel} bearing={driveMapBearingDeg}
+          onRefresh={onRefreshTrip} onInfo={onOpenAbout} />
       ) : null}
       {!trafficBypassCompareActive ? (
       <div className="nav-bottom-chrome-wrap">

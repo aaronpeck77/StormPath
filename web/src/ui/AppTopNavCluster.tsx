@@ -5,6 +5,7 @@ import { TopGuidanceBar } from "./TopGuidanceBar";
 import { YourRouteChip } from "./YourRouteChip";
 import { StormAdvisoryBar, type StormAdvisoryBarProps } from "./StormAdvisoryBar";
 import { ActivityStatusPill } from "./ActivityStatusPill";
+import { LandscapeDockContent } from "./LandscapeNavigationDock";
 import { AppDriveApproachBanner, type DriveApproachBannerPick } from "./AppDriveApproachBanner";
 
 type Props = {
@@ -112,9 +113,11 @@ export function AppTopNavCluster({
             </div>
           ) : null}
           {dockNote ? (
-            <div className="nav-toast-stack nav-toast-stack--under-advisory" role="status" aria-live="polite">
-              <div className={`nav-toast nav-toast-${dockNote.tone}`}>{dockNote.text}</div>
-            </div>
+            <LandscapeDockContent active={navigationStarted}>
+              <div className="nav-toast-stack nav-toast-stack--under-advisory" role="status" aria-live="polite">
+                <div className={`nav-toast nav-toast-${dockNote.tone}`}>{dockNote.text}</div>
+              </div>
+            </LandscapeDockContent>
           ) : null}
           {radarMapOverlayOn && radarFrameClockLabel ? (
             <div
