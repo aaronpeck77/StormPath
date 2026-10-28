@@ -5247,6 +5247,107 @@ html:has(.drive-map--native-shell) #root {
   background: rgba(148, 163, 184, 0.4);
 }
 
+.rpgl__card-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rpgl__band[aria-pressed] {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  cursor: pointer;
+  appearance: none;
+}
+
+.rpgl__band:disabled {
+  pointer-events: none;
+}
+
+.rpgl__band[aria-pressed="true"],
+.rpgl__band:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  z-index: 3;
+}
+
+.rpgl__card--selected {
+  outline: 2px solid #7dd3fc;
+  outline-offset: -2px;
+  background: rgba(14, 116, 144, 0.2);
+}
+
+.rpgl__hazard-choices {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+
+.rpgl__hazard-choices button {
+  padding: 8px;
+  border: 1px solid rgba(125, 211, 252, 0.4);
+  border-radius: 6px;
+  background: #0f172a;
+  color: #f1f5f9;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (orientation: landscape) {
+  .route-progress-callout-panel--expanded .rpgl {
+    overflow-x: hidden;
+    overflow-y: auto;
+    touch-action: pan-y;
+    min-height: 0;
+  }
+
+  .route-progress-callout-panel--expanded .rpgl__axis-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    touch-action: pan-x pan-y;
+    overscroll-behavior-y: auto;
+  }
+
+  .route-progress-callout-panel--expanded .rpgl__detail-scroll {
+    touch-action: pan-y;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .app-shell.nav-fullmap .nav-top-cluster .top-guidance-bar--turn-only {
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    height: auto;
+    overflow: hidden;
+  }
+
+  .app-shell.nav-fullmap .nav-top-cluster .top-guidance-bar--turn-only .turn-banner {
+    flex: 0 0 auto;
+    min-height: min-content;
+    align-content: start;
+  }
+
+  .app-shell.nav-fullmap .nav-top-cluster .turn-banner-col--next {
+    min-height: 0;
+    box-sizing: border-box;
+    justify-content: flex-start;
+  }
+
+  .app-shell.nav-fullmap .nav-top-cluster .turn-banner-text,
+  .app-shell.nav-fullmap .nav-top-cluster .turn-banner-next-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
 .rpgl__help {
   flex: 0 0 auto;
   margin: 0 6px 6px;

@@ -1,4 +1,5 @@
-﻿import { useEffect, useMemo, useRef, type CSSProperties, type RefObject } from "react";
+﻿import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { hazardIdsAtPosition, scrollHazardBand, scrollHazardCard } from "./routeHazardLink";
 import type { RouteChunkCalloutItem } from "../nav/routeProgressChunkList";
 import type { WxSample } from "../nav/routeChunkWeather";
 import type { RouteOutlookStep } from "../nav/routeForecastTimeline";
@@ -112,7 +113,15 @@ const HAZARD_RAIL_META: Record<
 
 const HAZARD_RAIL_ORDER: TimelineItem["track"][] = ["nws", "road"]; // radar → strata, wind → graph
 
-function HazardRailRow({ track, bands }: { track: TimelineItem["track"]; bands: HazardBandVisual[] }) {
+function HazardRailRow({ track, bands, selectedId, linkableIds, onSelect, bandRef, cardId }: {
+  track: TimelineItem["track"];
+  bands: HazardBandVisual[];
+  selectedId: string | null;
+  linkableIds: Set<string>;
+  onSelect: (ids: string[]) => void;
+  bandRef: (id: string, element: HTMLButtonElement | null) => void;
+  cardId: (id: string) => string;
+}) {
   const meta = HAZARD_RAIL_META[track];
   const emptyHint =
     track === "nws" ? "No NWS on route"
@@ -127,8 +136,10 @@ function HazardRailRow({ track, bands }: { track: TimelineItem["track"]; bands: 
         className={`rpgl__layer-plot rpgl__hazard-rail ${meta.railClass}${bands.length ? "" : " rpgl__hazard-rail--empty"}`}
       >
         {bands.map((band) => (
-          <span
+          <button
             key={band.id}
+            type="button"
+            ref={(element) => bandRef(band.id, element)}
             className={`rpgl__band ${meta.bandClass} rpgl__band--${band.severity}${band.nearby ? " rpgl__band--nearby" : ""}${band.muted ? " rpgl__band--muted" : ""}`}
             style={{
               left: `${band.left}%`,
@@ -136,6 +147,15 @@ function HazardRailRow({ track, bands }: { track: TimelineItem["track"]; bands: 
               backgroundColor: band.color,
             }}
             title={band.label}
+            aria-label={`Show details: ${band.label}`}
+            aria-controls={linkableIds.has(band.id) ? cardId(band.id) : undefined}
+            aria-pressed={selectedId === band.id}
+            disabled={!linkableIds.has(band.id)}
+            onClick={(event) => {
+              const rect = event.currentTarget.parentElement!.getBoundingClientRect();
+              const percent = event.detail && rect.width > 0 ? (event.clientX - rect.left) / rect.width * 100 : NaN;
+              onSelect(hazardIdsAtPosition(bands.filter((item) => linkableIds.has(item.id)), percent, band.id));
+            }}
           />
         ))}
         {!bands.length ? (
@@ -146,17 +166,19 @@ function HazardRailRow({ track, bands }: { track: TimelineItem["track"]; bands: 
   );
 }
 
-function GlanceCard({
-  card,
-  scrollRef,
-}: {
+function GlanceCard({ card, scrollRef, selected, onSelect, id }: {
   card: RouteAheadGlanceCard;
-  scrollRef?: RefObject<HTMLDivElement | null>;
+  scrollRef: (element: HTMLDivElement | null) => void;
+  selected: boolean;
+  onSelect?: () => void;
+  id: string;
 }) {
   return (
     <div
       ref={scrollRef}
-      className={`rpgl__card${card.inside ? " rpgl__card--current" : ""}`}
+      id={id}
+      onClick={onSelect}
+      className={`rpgl__card${card.inside ? " rpgl__card--current" : ""}${selected ? " rpgl__card--selected" : ""}`}
       role="listitem"
       title={card.tooltip}
       aria-current={card.inside ? "true" : undefined}
@@ -165,7 +187,13 @@ function GlanceCard({
       <div className="rpgl__card-body">
         <div className="rpgl__card-head">
           <span className={`rpgl__track rpgl__track--${card.track}`}>{TRACK_BADGE[card.track]}</span>
-          <span className={`rpgl__label rpgl__label--${card.severity}`}>{card.label}</span>
+          {onSelect ? (
+            <button type="button" className={`rpgl__label rpgl__card-link rpgl__label--${card.severity}`}
+              aria-label={`Show on graph: ${card.label}`} aria-pressed={selected}
+              onClick={(event) => { event.stopPropagation(); onSelect(); }}>
+              {card.label}
+            </button>
+          ) : <span className={`rpgl__label rpgl__label--${card.severity}`}>{card.label}</span>}
         </div>
         <p
           className={`rpgl__ahead${card.inside ? " rpgl__ahead--now" : ""}`}
@@ -297,17 +325,39 @@ export function RouteProgressGlancePanel({
     [outlookSteps]
   );
 
-  const visibleCards = glanceCards.slice(0, MAX_GLANCE_CARDS);
-  const overflow = glanceCards.length - visibleCards.length;
-  const activeScrollCardId = useMemo(() => {
-    const inside = visibleCards.filter((c) => c.inside);
-    return inside[0]?.id ?? null;
-  }, [visibleCards, userAlongMeters]);
-  const activeCardScrollRef = useRef<HTMLDivElement | null>(null);
+  const visibleCards = glanceCards;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [choiceIds, setChoiceIds] = useState<string[]>([]);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const axisRef = useRef<HTMLDivElement | null>(null);
+  const chooserRef = useRef<HTMLDivElement | null>(null);
+  const cardRefs = useRef(new Map<string, HTMLDivElement>());
+  const bandRefs = useRef(new Map<string, HTMLButtonElement>());
+  const prefix = useId();
+  const cardId = (id: string) => `${prefix}-hazard-${encodeURIComponent(id)}`;
+  const linkableIds = useMemo(() => new Set(glanceCards.map((card) => card.id)), [glanceCards]);
+  const activeScrollCardId = visibleCards.find((card) => card.inside)?.id ?? null;
+  const selectCard = (id: string) => {
+    setSelectedId(id);
+    setChoiceIds([]);
+    const panel = panelRef.current;
+    const card = cardRefs.current.get(id);
+    if (panel && card) scrollHazardCard(panel, card);
+  };
   useEffect(() => {
-    if (!activeScrollCardId) return;
-    activeCardScrollRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [activeScrollCardId]);
+    if (!activeScrollCardId || selectedId) return;
+    const panel = panelRef.current;
+    const card = cardRefs.current.get(activeScrollCardId);
+    if (panel && card) scrollHazardCard(panel, card);
+  }, [activeScrollCardId, selectedId]);
+  useEffect(() => {
+    if (selectedId && !linkableIds.has(selectedId)) setSelectedId(null);
+  }, [selectedId, linkableIds]);
+  useEffect(() => {
+    if (choiceIds.length > 1 && panelRef.current && chooserRef.current) {
+      scrollHazardCard(panelRef.current, chooserRef.current);
+    }
+  }, [choiceIds]);
   const driverLeftPct = routePlotLeftPct(userAlongT);
   const showAxis = outlookSteps.length > 0 || bandVisuals.length > 0 || totalMeters > 0;
 
@@ -326,11 +376,11 @@ export function RouteProgressGlancePanel({
     routeWide.length > 0 || visibleCards.length > 0 || fallbackSegments.length > 0;
 
   return (
-    <div className="rpgl" ref={detailScrollRef}>
+    <div className="rpgl" ref={(element) => { panelRef.current = element; if (detailScrollRef) detailScrollRef.current = element; }}>
       <RouteInfoLegend />
       {showAxis ? (
         <div className="rpgl__axis-pane">
-          <div className="rpgl__axis-scroll" aria-label="Route outlook and hazards along your trip">
+          <div ref={axisRef} className="rpgl__axis-scroll" aria-label="Route outlook and hazards along your trip">
             <div className="rpgl__axis-inner" style={{ minWidth: axisMinWidth }}>
               <div className="rpgl__sync-stack">
                 <div className="rpgl__sync-head">
@@ -383,7 +433,10 @@ export function RouteProgressGlancePanel({
 
                     <div className="rpgl__hazard-block">
                       {HAZARD_RAIL_ORDER.map((track) => (
-                        <HazardRailRow key={track} track={track} bands={bandsByTrack[track]} />
+                        <HazardRailRow key={track} track={track} bands={bandsByTrack[track]}
+                          selectedId={selectedId} linkableIds={linkableIds} cardId={cardId}
+                          bandRef={(id, element) => { if (element) bandRefs.current.set(id, element); else bandRefs.current.delete(id); }}
+                          onSelect={(ids) => { if (ids.length === 1) selectCard(ids[0]!); else setChoiceIds(ids); }} />
                       ))}
                     </div>
 
@@ -428,6 +481,17 @@ export function RouteProgressGlancePanel({
         </div>
       ) : null}
 
+      {choiceIds.length > 1 ? (
+        <div ref={chooserRef} className="rpgl__hazard-choices" role="group" aria-label="Overlapping hazards — choose details">
+          <span>Hazards at this spot:</span>
+          {visibleCards.filter((card) => choiceIds.includes(card.id)).map((card) => (
+            <button type="button" key={card.id} onClick={() => selectCard(card.id)}>
+              {TRACK_BADGE[card.track]} · {card.label} · {card.aheadLabel}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {hasDetail ? (
         <div
           className={`rpgl__detail-scroll${showAxis ? "" : " rpgl__detail-scroll--solo"}`}
@@ -451,14 +515,20 @@ export function RouteProgressGlancePanel({
                 <GlanceCard
                   key={card.id}
                   card={card}
-                  scrollRef={card.id === activeScrollCardId ? activeCardScrollRef : undefined}
+                  id={cardId(card.id)} selected={selectedId === card.id}
+                  scrollRef={(element) => { if (element) cardRefs.current.set(card.id, element); else cardRefs.current.delete(card.id); }}
+                  onSelect={HAZARD_RAIL_ORDER.includes(card.track) ? () => {
+                    setSelectedId(card.id);
+                    setChoiceIds([]);
+                    const axis = axisRef.current;
+                    const band = bandRefs.current.get(card.id);
+                    if (axis && band) {
+                      scrollHazardBand(axis, band);
+                      panelRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                    }
+                  } : undefined}
                 />
               ))}
-              {overflow > 0 ? (
-                <p className="rpgl__overflow" aria-hidden>
-                  +{overflow} more alerts ahead
-                </p>
-              ) : null}
             </div>
           ) : fallbackSegments.length > 0 ? (
             <div className="rpgl__cards" role="list" aria-label="Along route">

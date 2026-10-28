@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { LandscapeDockContent, LandscapeNavigationDock } from "../LandscapeNavigationDock";
 
 const render = () => renderToStaticMarkup(createElement(LandscapeNavigationDock, {
@@ -23,6 +23,18 @@ describe("landscape navigation dock", () => {
         active, children: createElement("span", null, "Hazard ahead"),
       }))).toBe("<span>Hazard ahead</span>");
     }
+  });
+
+  it("never paints a landscape GPS message over turns while the status bar mounts", () => {
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: true }) });
+    try {
+      expect(renderToStaticMarkup(createElement(LandscapeDockContent, {
+        active: true, children: createElement("span", null, "GPS signal weak"),
+      }))).toBe("");
+      expect(renderToStaticMarkup(createElement(LandscapeDockContent, {
+        active: false, children: createElement("span", null, "Planning message"),
+      }))).toContain("Planning message");
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it("mirrors the control edge without altering the bottom toolbar or top guidance", async () => {
