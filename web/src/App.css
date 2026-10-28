@@ -5326,7 +5326,21 @@ html:has(.drive-map--native-shell) #root {
     box-sizing: border-box;
     flex: 0 0 auto;
     height: auto;
-    overflow: hidden;
+    min-height: min-content;
+    overflow: visible;
+  }
+
+  .app-shell.nav-fullmap .nav-top-cluster .top-guidance-bar--turn-only .turn-banner-street,
+  .app-shell.nav-fullmap .nav-top-cluster .top-guidance-bar--turn-only .turn-banner-next-instr {
+    font-size: clamp(0.875rem, 3.4vh, 1rem);
+    line-height: 1.2;
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+    max-height: none;
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
   }
 
   .app-shell.nav-fullmap .nav-top-cluster .top-guidance-bar--turn-only .turn-banner {

@@ -37,6 +37,21 @@ describe("landscape navigation dock", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it("lets complete landscape turn instructions wrap instead of clipping them", async () => {
+    const fsModule = "node:fs";
+    const { readFileSync } = await import(fsModule);
+    const css: string = readFileSync(new URL("../../App.css", import.meta.url), "utf8");
+    const start = css.indexOf("  .app-shell.nav-fullmap .nav-top-cluster .top-guidance-bar--turn-only {");
+    const sizing = css.slice(start, css.indexOf("\n.rpgl__help {", start));
+    expect(sizing).toContain("min-height: min-content");
+    expect(sizing).toContain(".turn-banner-street");
+    expect(sizing).toContain(".turn-banner-next-instr");
+    expect(sizing).toContain("font-size: clamp(0.875rem, 3.4vh, 1rem)");
+    expect(sizing).toContain("line-clamp: unset");
+    expect(sizing).toContain("white-space: normal");
+    expect(sizing).not.toContain("overflow: hidden");
+  });
+
   it("mirrors the control edge without altering the bottom toolbar or top guidance", async () => {
     const fsModule = "node:fs";
     const { readFileSync } = await import(fsModule);
