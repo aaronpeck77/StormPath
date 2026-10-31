@@ -7,7 +7,7 @@ export const PLUS_SUBSCRIPTION_TITLE = "StormPath Plus";
 
 /** Shown when StoreKit packages have not loaded yet so reviewers still see length + price. */
 export const PLUS_SUBSCRIPTION_FALLBACK_PRICE_LINE =
-  "Length: 1 month or 1 year. Typical U.S. prices are $4.99 per month or $39.99 per year. The App Store shows the price for your country at checkout.";
+  "Length: 1 month or 1 year. Typical U.S. prices are $4.99 per month or $49.99 per year. The yearly plan includes two months. The App Store shows the price for your country at checkout.";
 
 export const PLUS_AUTO_RENEW_DISCLOSURE =
   "StormPath Plus is an optional auto-renewing subscription. Payment is charged to your Apple ID at confirmation of purchase, or after any applicable free trial ends. If you accept a free trial, it automatically converts to the displayed paid subscription unless canceled at least 24 hours before the trial ends. Basic remains available after your Plus access expires. The subscription renews automatically unless you turn off auto-renew at least 24 hours before the end of the current period. Your account is charged for renewal within 24 hours prior to the end of the current period, at the then-current price. Manage or cancel anytime in Settings → Apple ID → Subscriptions, or from Manage subscription below.";
@@ -64,6 +64,9 @@ export function formatPlusSubscribeButton(pkg: SubscriptionOfferLike, eligible =
     return `Start Plus free for 1 month — then ${price}/month`;
   }
   const period = subscriptionPeriodLabel(pkg);
+  if (price && period && pkg.packageType === "ANNUAL") {
+    return `${PLUS_SUBSCRIPTION_TITLE} — ${period} — ${price} — 2 months included`;
+  }
   if (price && period) return `${PLUS_SUBSCRIPTION_TITLE} — ${period} — ${price}`;
   if (price) return `${PLUS_SUBSCRIPTION_TITLE} — ${price}`;
   if (period) return `${PLUS_SUBSCRIPTION_TITLE} — ${period}`;

@@ -25,9 +25,9 @@ describe("formatPlusSubscribeButton", () => {
     expect(
       formatPlusSubscribeButton({
         packageType: "ANNUAL",
-        product: { priceString: "$39.99" },
+        product: { priceString: "$49.99" },
       })
-    ).toBe("StormPath Plus — 1 year — $39.99");
+    ).toBe("StormPath Plus — 1 year — $49.99 — 2 months included");
   });
 });
 
@@ -77,7 +77,8 @@ describe("Guideline 3.1.2(c) purchase-flow copy", () => {
     expect(PLUS_SUBSCRIPTION_FALLBACK_PRICE_LINE).toMatch(/1 month/);
     expect(PLUS_SUBSCRIPTION_FALLBACK_PRICE_LINE).toMatch(/1 year/);
     expect(PLUS_SUBSCRIPTION_FALLBACK_PRICE_LINE).toMatch(/\$4\.99/);
-    expect(PLUS_SUBSCRIPTION_FALLBACK_PRICE_LINE).toMatch(/\$39\.99/);
+    expect(PLUS_SUBSCRIPTION_FALLBACK_PRICE_LINE).toMatch(/\$49\.99/);
+    expect(PLUS_SUBSCRIPTION_FALLBACK_PRICE_LINE).toMatch(/includes two months/);
     expect(PLUS_AUTO_RENEW_DISCLOSURE).toMatch(/auto-renew/i);
     expect(PLUS_AUTO_RENEW_DISCLOSURE).toMatch(/24 hours/);
     expect(PLUS_AUTO_RENEW_DISCLOSURE).toMatch(/Apple ID/);

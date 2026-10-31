@@ -225,7 +225,7 @@ These four steps cannot be done from this codebase — they need your admin acce
 
 - [ ] **App Store Connect** → My Apps → StormPath → Features → In-App Purchases → create a Subscription Group (e.g. "StormPath Plus") and one or more auto-renewable subscription products inside it. Suggested:
   - `stormpath.plus.monthly` — Monthly tier 4 ($4.99/mo) or wherever your pricing lands.
-  - `stormpath.plus.yearly` — Yearly tier 38 ($39.99/yr) for a ~33% annual discount.
+  - `stormpath.plus.yearly` — Yearly price is Apple’s nearest point to 10 × monthly. At $4.99 a month that is $49.99 a year, set in App Store Connect to start 2026-11-02. Two months are included.
   - Add localized display name + description in English first; Apple's reviewer reads these.
   - Configure the **introductory offer** (free trial recommended — 7 days is industry standard for nav apps) and any promo offers.
 - [ ] **RevenueCat dashboard** (app.revenuecat.com) → Sign up → create a Project for the iOS bundle id `com.stormpath.app` (or whatever your `PRODUCT_BUNDLE_IDENTIFIER` is) → import the App Store products → attach them to an Entitlement named exactly `plus` (lower-case — must match `STORMPATH_PLUS_ENTITLEMENT_ID` in `src/billing/revenueCat.ts`) → create an Offering, add the product packages, mark it **current**. *(See the 2026-07-24 note at the top of this doc — you may already have this account from SiteBible setup; just add a new project, don't re-sign-up.)*
