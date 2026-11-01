@@ -1,10 +1,54 @@
-import type { LngLat } from "./types";
+import type { LngLat, NavRoute } from "./types";
+import type { TimelineItem } from "./routeAheadSync";
+import { speedLimitRoadKindAt } from "./postedSpeedSanity";
+import { postedSpeedMphAt } from "./postedSpeed";
 import type { TripStop } from "./routeWaypoints";
 
 /** Two pulls per trip. A third would need another pass. */
 export const HAZARD_BYPASS_MAX_PULLS = 2;
 
 const BEND_LABELS = ["Hazard bend", "Hazard bend 2"] as const;
+
+export function bendAvailability(input: {
+  route: NavRoute | undefined;
+  alongMeters: number;
+  items: readonly TimelineItem[];
+  navigationStarted: boolean;
+  isOnline: boolean;
+  metersToManeuver: number | null;
+}, nowMs = Date.now()) {
+  const hidden = { manual: false, hazardId: null as string | null };
+  const { route, alongMeters: along } = input;
+  if (!input.navigationStarted || !route || !Number.isFinite(along) || along < 0) return hidden;
+  const spans: { start: number; end: number }[] = [];
+  let end = 0;
+  for (const step of route.turnSteps ?? []) {
+    const start = end;
+    end += Number.isFinite(step.distanceM) ? Math.max(0, step.distanceM!) : 0;
+    const kind = speedLimitRoadKindAt({ ...route, turnSteps: [{ ...step, instruction: "" }] }, 0);
+    const speed = postedSpeedMphAt(route, start + (end - start) / 2);
+    const openRoad = kind === "interstate" ||
+      ((kind === "us_state" || kind === "county_arterial") && speed != null && speed >= 50);
+    if (!openRoad || end === start) continue;
+    const last = spans[spans.length - 1];
+    if (last?.end === start) last.end = end;
+    else spans.push({ start, end });
+  }
+  const approach = spans.find((span) => along >= span.start && along < span.end && span.end - span.start >= 5 * 1609.34);
+  if (!approach) return hidden;
+  if (!input.isOnline || input.metersToManeuver == null || !Number.isFinite(input.metersToManeuver) || input.metersToManeuver <= 1609.34) {
+    return { manual: true, hazardId: null };
+  }
+  const hazard = input.items.filter((item) =>
+    item.crossesRoute === true && !item.stripMuted && !item.coarsePreview && !item.etaStale &&
+    !item.developingLater && (item.severity === "serious" || item.severity === "avoid") &&
+    Number.isFinite(item.startMeters) && Number.isFinite(item.endMeters) &&
+    item.startMeters - along > 1609.34 && item.endMeters >= item.startMeters &&
+    item.startMeters < approach.end &&
+    (!item.expiresIso || Date.parse(item.expiresIso) > nowMs)
+  ).sort((a, b) => a.startMeters - b.startMeters)[0];
+  return { manual: true, hazardId: hazard?.id ?? null };
+}
 
 export function isHazardBendLabel(label: string): boolean {
   return label === BEND_LABELS[0] || label === BEND_LABELS[1];

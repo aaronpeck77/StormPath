@@ -4364,6 +4364,37 @@ html:has(.drive-map--native-shell) #root {
   pointer-events: none;
 }
 
+.drive-hazard-ticker:has(.drive-hazard-ticker__actions) {
+  flex-wrap: wrap;
+}
+
+.drive-hazard-ticker__actions {
+  display: flex;
+  flex: 1 0 100%;
+  gap: 8px;
+}
+
+.nav-bend-options {
+  padding: 10px;
+}
+
+.nav-bend-options summary {
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.nav-bend-options button,
+.drive-hazard-ticker__actions button {
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  border-radius: 8px;
+  background: #1e293b;
+  color: #f8fafc;
+  font: inherit;
+  pointer-events: auto;
+}
+
 .drive-hazard-ticker__dot {
   flex: 0 0 8px;
   height: 8px;

@@ -12,6 +12,8 @@ import { RouteProgressGlancePanel } from "./RouteProgressGlancePanel";
 import { RouteProgressStrip } from "./RouteProgressStrip";
 
 type Props = {
+  onBend?: () => void;
+  bendOnline?: boolean;
   progressCalloutsOpen: boolean;
   onProgressCalloutsOpenChange: (open: boolean) => void;
   progressCalloutCount: number;
@@ -56,6 +58,8 @@ type Props = {
 
 /** Vertical side rail: expandable route-info panel + progress strip. */
 export function AppProgressRail({
+  onBend,
+  bendOnline = true,
   progressCalloutsOpen,
   onProgressCalloutsOpenChange,
   progressCalloutCount,
@@ -97,19 +101,27 @@ export function AppProgressRail({
 }: Props) {
   return (
     <div
-      className={`nav-route-progress-rail${progressCalloutsOpen && progressCalloutCount > 0 ? " nav-route-progress-rail--callouts-open" : ""}`}
+      className={`nav-route-progress-rail${progressCalloutsOpen && (progressCalloutCount > 0 || Boolean(onBend)) ? " nav-route-progress-rail--callouts-open" : ""}`}
     >
       <div className="nav-route-progress-rail__inner">
         <RouteProgressCalloutRail
           open={progressCalloutsOpen}
           onOpenChange={onProgressCalloutsOpenChange}
-          hasContent={progressCalloutCount > 0}
+          hasContent={(progressCalloutCount > 0 || Boolean(onBend))}
           showRefresh={showRefresh}
           refreshBusy={routeInfoWeatherRefreshing}
           refreshNote={routeInfoRefreshNote}
           refreshNoteTone={routeInfoRefreshNoteTone}
           onRefresh={onRefreshRouteInfoWeather}
         >
+          {onBend ? (
+            <details className="nav-bend-options">
+              <summary>Route options</summary>
+              <p>Pull the route around a blockage when stopped or with a passenger. A bend does not guarantee hazard avoidance.</p>
+              <button type="button" onClick={onBend} disabled={!bendOnline}>Bend route</button>
+              {!bendOnline ? <p>Bend needs a connection. Your current route stays active.</p> : null}
+            </details>
+          ) : null}
           <RouteProgressGlancePanel
             timeline={routeAheadTimeline}
             routeWide={routeWide}
@@ -153,7 +165,7 @@ export function AppProgressRail({
           tripOdometerM={tripOdometerM}
           tripRelativeProgress={navigationStarted}
           routeInfoOpen={progressCalloutsOpen}
-          onRouteInfoOpenChange={progressCalloutCount > 0 ? onProgressCalloutsOpenChange : undefined}
+          onRouteInfoOpenChange={(progressCalloutCount > 0 || Boolean(onBend)) ? onProgressCalloutsOpenChange : undefined}
         />
       </div>
     </div>

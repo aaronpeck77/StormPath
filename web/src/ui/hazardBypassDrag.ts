@@ -5,12 +5,6 @@ const MIN_PULL_PX = 18;
 /** Extra grab room so a finger can catch a zoomed-out trip line. */
 const HIT_PAD_PX = 22;
 
-type MapPointEvent = {
-  point: { x: number; y: number };
-  lngLat: { lng: number; lat: number };
-  originalEvent?: Event;
-};
-
 function hitRouteLine(map: mapboxgl.Map, point: { x: number; y: number }): boolean {
   const layers =
     map
@@ -45,17 +39,28 @@ export function attachHazardRouteDrag(
   map: mapboxgl.Map,
   onPull: (grab: LngLat, release: LngLat) => void
 ): () => void {
-  let dragging = false;
+  const container = map.getCanvasContainer();
+  let pointerId: number | null = null;
+  let suppressClick = false;
   let grab: LngLat | null = null;
   let grabPx: { x: number; y: number } | null = null;
   let lastPx: { x: number; y: number } | null = null;
   let last: LngLat | null = null;
   let marker: mapboxgl.Marker | null = null;
 
+  const block = (event: Event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+  const pointAt = (event: PointerEvent) => {
+    const rect = container.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
   const endDrag = (commit: boolean) => {
-    if (!dragging) return;
-    dragging = false;
-    map.dragPan.enable();
+    if (pointerId == null) return;
+    const id = pointerId;
+    pointerId = null;
+    if (container.hasPointerCapture(id)) container.releasePointerCapture(id);
     marker?.remove();
     marker = null;
     const moved =
@@ -67,45 +72,64 @@ export function attachHazardRouteDrag(
     last = null;
   };
 
-  const onDown = (event: MapPointEvent) => {
-    const touches = (event.originalEvent as TouchEvent | undefined)?.touches?.length ?? 0;
-    if (touches > 1) {
+  const onDown = (event: PointerEvent) => {
+    if (pointerId != null) {
       endDrag(false);
       return;
     }
-    if (!hitRouteLine(map, event.point)) return;
-    dragging = true;
-    grab = toLngLat(event.lngLat);
-    grabPx = { x: event.point.x, y: event.point.y };
-    lastPx = grabPx;
+    suppressClick = false;
+    if (event.button !== 0) return;
+    const point = pointAt(event);
+    if (!hitRouteLine(map, point)) return;
+    block(event);
+    pointerId = event.pointerId;
+    suppressClick = true;
+    container.setPointerCapture(pointerId);
+    grab = toLngLat(map.unproject([point.x, point.y]));
+    grabPx = point;
+    lastPx = point;
     last = grab;
-    map.dragPan.disable();
     marker = new mapboxgl.Marker({ color: "#f59e0b" }).setLngLat(grab).addTo(map);
   };
 
-  const onMove = (event: MapPointEvent) => {
-    if (!dragging) return;
-    last = toLngLat(event.lngLat);
-    lastPx = { x: event.point.x, y: event.point.y };
+  const onMove = (event: PointerEvent) => {
+    if (pointerId !== event.pointerId) return;
+    block(event);
+    lastPx = pointAt(event);
+    last = toLngLat(map.unproject([lastPx.x, lastPx.y]));
     marker?.setLngLat(last);
   };
-
-  const onUp = () => endDrag(true);
-
-  map.on("mousedown", onDown as (ev: mapboxgl.MapMouseEvent) => void);
-  map.on("touchstart", onDown as (ev: mapboxgl.MapTouchEvent) => void);
-  map.on("mousemove", onMove as (ev: mapboxgl.MapMouseEvent) => void);
-  map.on("touchmove", onMove as (ev: mapboxgl.MapTouchEvent) => void);
-  map.on("mouseup", onUp);
-  map.on("touchend", onUp);
+  const onUp = (event: PointerEvent) => {
+    if (pointerId !== event.pointerId) return;
+    onMove(event);
+    endDrag(true);
+  };
+  const onCancel = () => endDrag(false);
+  const onLegacyGesture = (event: Event) => {
+    if (pointerId != null || suppressClick) block(event);
+  };
+  const onClick = (event: Event) => {
+    if (suppressClick) block(event);
+    suppressClick = false;
+  };
+  const options = { capture: true, passive: false };
+  container.addEventListener("pointerdown", onDown, options);
+  container.addEventListener("pointermove", onMove, options);
+  container.addEventListener("pointerup", onUp, options);
+  container.addEventListener("pointercancel", onCancel, options);
+  container.addEventListener("lostpointercapture", onCancel, options);
+  container.addEventListener("click", onClick, options);
+  const legacyEvents = ["touchstart", "touchmove", "touchend", "mousedown", "mousemove", "mouseup"];
+  for (const name of legacyEvents) container.addEventListener(name, onLegacyGesture, options);
 
   return () => {
     endDrag(false);
-    map.off("mousedown", onDown as (ev: mapboxgl.MapMouseEvent) => void);
-    map.off("touchstart", onDown as (ev: mapboxgl.MapTouchEvent) => void);
-    map.off("mousemove", onMove as (ev: mapboxgl.MapMouseEvent) => void);
-    map.off("touchmove", onMove as (ev: mapboxgl.MapTouchEvent) => void);
-    map.off("mouseup", onUp);
-    map.off("touchend", onUp);
+    container.removeEventListener("pointerdown", onDown, options);
+    container.removeEventListener("pointermove", onMove, options);
+    container.removeEventListener("pointerup", onUp, options);
+    container.removeEventListener("pointercancel", onCancel, options);
+    container.removeEventListener("lostpointercapture", onCancel, options);
+    container.removeEventListener("click", onClick, options);
+    for (const name of legacyEvents) container.removeEventListener(name, onLegacyGesture, options);
   };
 }

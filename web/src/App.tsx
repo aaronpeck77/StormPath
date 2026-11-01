@@ -657,14 +657,6 @@ export default function App() {
     setTollAvoidFailureNote,
   });
 
-  const hazardBypass = useHazardBypass({
-    computeRoutes,
-    setFitTrigger,
-    setTapHint,
-    getRouteLine: () => guidanceRouteGeomRef.current ?? [],
-  });
-  hazardBypassViewRef.current = hazardBypass.noteViewChange;
-
   const {
     searchText,
     setSearchText,
@@ -2162,6 +2154,19 @@ export default function App() {
   });
 
 
+  const hazardBypass = useHazardBypass({
+    computeRoutes,
+    setFitTrigger,
+    setTapHint,
+    getRouteLine: () => guidanceRouteGeomRef.current ?? [],
+    route: guidanceRoute,
+    alongMeters: userAlongGuidanceM,
+    items: routeAheadTimeline,
+    isOnline,
+    metersToManeuver: metersToBannerManeuver,
+  });
+  hazardBypassViewRef.current = hazardBypass.noteViewChange;
+
   useAdvisoryVoiceGuidance({
     enabled: false,
     navigationStarted,
@@ -3097,6 +3102,9 @@ export default function App() {
                   offRoute={offRouteLatched}
                   metersToManeuver={metersToBannerManeuver}
                   miles={roadUsesMiles(effectiveUserLngLat)}
+                  bendHazardId={hazardBypass.hazardId}
+                  onBend={hazardBypass.enter}
+                  onDismissBend={hazardBypass.dismissHazard}
                 />
               }
               jamHopSlot={
@@ -3120,6 +3128,11 @@ export default function App() {
             ) : null}
             {showProgressRail && (
               <AppProgressRail
+                onBend={hazardBypass.manualAvailable ? () => {
+                  setProgressCalloutsOpen(false);
+                  hazardBypass.enter();
+                } : undefined}
+                bendOnline={isOnline}
                 progressCalloutsOpen={progressCalloutsOpen}
                 onProgressCalloutsOpenChange={setProgressCalloutsOpen}
                 progressCalloutCount={progressCalloutCount}
@@ -3386,7 +3399,6 @@ export default function App() {
           hazardBypassBusy={hazardBypass.busy}
           hazardBypassCanUndo={hazardBypass.canUndo}
           hazardBypassAtLimit={hazardBypass.atLimit}
-          onHazardBypassEnter={navigationStarted ? hazardBypass.enter : undefined}
           onHazardBypassUndo={() => {
             void hazardBypass.undo();
           }}

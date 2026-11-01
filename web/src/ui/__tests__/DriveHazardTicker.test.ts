@@ -27,6 +27,18 @@ describe("DriveHazardTicker", () => {
     expect(html).not.toContain("aria-live");
   });
 
+  it("offers Bend only for the matching eligible shared hazard", () => {
+    const promoted = renderToStaticMarkup(createElement(DriveHazardTicker, {
+      ...props, bendHazardId: items[0]!.id, onBend: () => {}, onDismissBend: () => {},
+    }));
+    expect(promoted).toContain("Bend route");
+    expect(promoted).toContain("Dismiss Bend suggestion");
+    expect(renderToStaticMarkup(createElement(DriveHazardTicker, {
+      ...props, bendHazardId: "other", onBend: () => {},
+    }))).not.toContain("Bend route");
+    expect(render()).not.toContain("Bend route");
+  });
+
   it("renders nothing for Basic, other views, offline, nearby turns or an empty timeline", () => {
     for (const patch of [
       { isPlus: false }, { viewMode: "route" as const }, { isOnline: false },

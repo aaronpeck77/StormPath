@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTripPlanStore } from "../state/tripPlanStore";
 import type { MapViewMode } from "../ui/driveMapTypes";
 import type { ComputeRoutesResult } from "./tollAvoidanceCopy";
-import type { LngLat } from "./types";
+import type { LngLat, NavRoute } from "./types";
+import type { TimelineItem } from "./routeAheadSync";
 import {
   HAZARD_BYPASS_MAX_PULLS,
+  bendAvailability,
   activeIndexAfterPullRemoved,
   activeIndexWithoutBends,
   baselineWithoutBends,
@@ -30,6 +32,11 @@ export function useHazardBypass(opts: {
   setFitTrigger: (next: number | ((n: number) => number)) => void;
   setTapHint: (hint: string | null) => void;
   getRouteLine: () => LngLat[];
+  route: NavRoute | undefined;
+  alongMeters: number;
+  items: readonly TimelineItem[];
+  isOnline: boolean;
+  metersToManeuver: number | null;
 }) {
   const [active, setActive] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -48,8 +55,17 @@ export function useHazardBypass(opts: {
   };
 
   const navigationStarted = useTripPlanStore((s) => s.navigationStarted);
+  const availability = bendAvailability({ ...opts, navigationStarted });
+  const [dismissedHazards, setDismissedHazards] = useState<string[]>([]);
+  const hazardKey = opts.items.find((item) => item.id === availability.hazardId);
+  const promotionKey = hazardKey ? `${hazardKey.id}:${hazardKey.severity}` : null;
+  const hazardId = promotionKey && !dismissedHazards.includes(promotionKey) ? availability.hazardId : null;
+  const dismissHazard = () => {
+    if (promotionKey) setDismissedHazards((ids) => [...ids, promotionKey]);
+  };
   useEffect(() => {
-    if (navigationStarted || !activeRef.current) return;
+    if (navigationStarted) return;
+    setDismissedHazards([]);
     activeRef.current = false;
     setActive(false);
     pullStackRef.current = [];
@@ -57,6 +73,10 @@ export function useHazardBypass(opts: {
   }, [navigationStarted]);
 
   const remeasure = useCallback(async (apply: () => void, failHint: string): Promise<boolean> => {
+    if (!optsRef.current.isOnline) {
+      optsRef.current.setTapHint("Bend needs a connection. Your current route is unchanged.");
+      return false;
+    }
     const dest = useTripPlanStore.getState().destLngLat;
     const label = useTripPlanStore.getState().destinationLabel.trim() || "Destination";
     if (!dest) return false;
@@ -93,6 +113,11 @@ export function useHazardBypass(opts: {
   const enter = useCallback(() => {
     const state = useTripPlanStore.getState();
     if (!state.navigationStarted || !state.destLngLat || busyRef.current) return;
+    if (!bendAvailability({ ...optsRef.current, navigationStarted: state.navigationStarted }).manual) return;
+    if (!optsRef.current.isOnline) {
+      optsRef.current.setTapHint("Bend needs a connection. Your current route is unchanged.");
+      return;
+    }
     baselineViasRef.current = baselineWithoutBends(state.viaStops);
     baselineIndexRef.current = activeIndexWithoutBends(state.viaStops, state.activeViaIndex);
     pullStackRef.current = state.viaStops.filter((stop) => isHazardBendLabel(stop.label)).map((stop) => stop.label);
@@ -184,6 +209,9 @@ export function useHazardBypass(opts: {
   }, [remeasure]);
 
   return {
+    manualAvailable: availability.manual,
+    hazardId,
+    dismissHazard,
     active,
     busy,
     pullCount,
