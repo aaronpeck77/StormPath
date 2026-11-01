@@ -2,8 +2,8 @@ import Foundation
 import Capacitor
 
 /**
- * Mirrors the active trip into UserDefaults for a future CarPlay map template.
- * Keys are shared with `web/ios/App/App/CarPlay/CarPlayTripSnapshot.swift`.
+ * Mirrors the active trip into UserDefaults.
+ * CarPlay (`StormPathCarPlay.swift` in the nav plugin) reads `stormpath.car.destination` for the trip name.
  */
 @objc(StormpathCarSessionPlugin)
 public class StormpathCarSessionPlugin: CAPPlugin, CAPBridgedPlugin {

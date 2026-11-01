@@ -400,6 +400,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                 )
                 sessionActive = true
                 lastNavRoutes = navigationRoutes
+                StormPathCarPlay.shared.guidanceStarted(routes: navigationRoutes)
                 preparedRouteKey = key
                 emitRouteGeometry(from: navigationRoutes)
                 if pendingNativeMapVisible {
@@ -597,6 +598,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             payload["horizonLimitMph"] = mph
         }
         payload["horizonHazards"] = horizonSnapshot.hazards
+        StormPathCarPlay.shared.progressChanged(progress, location: loc)
         notifyListeners("progress", data: payload)
 
         if !didEmitArrival, remainingM >= 0, remainingM < 30, alongM > 50 {
@@ -664,6 +666,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         lastNavRoutes = routes
         nativeMap?.show(routes: routes)
+        StormPathCarPlay.shared.routesChanged(routes)
         notifyListeners("routeChanged", data: [
             "geometry": geometry,
             "turnSteps": turnStepsPayload(from: routes),
@@ -695,6 +698,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let wasActive = sessionActive
         sessionActive = false
+        StormPathCarPlay.shared.guidanceEnded(arrived: didEmitArrival)
         coreEpoch += 1
         resetHorizon()
         cancellables.removeAll()
@@ -746,6 +750,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let wasActive = sessionActive
         sessionActive = false
+        StormPathCarPlay.shared.guidanceEnded(arrived: didEmitArrival)
         coreEpoch += 1
         resetHorizon()
         cancellables.removeAll()
@@ -812,12 +817,29 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     public override func load() {
+        Task { @MainActor [weak self] in
+            StormPathCarPlay.shared.onCarCancelledNavigation = { [weak self] in
+                self?.stopForCarNavigation()
+            }
+        }
         idleExitObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.cancelIdleExitWork()
+        }
+    }
+
+    /// The car's own navigation took over. Stop ours and tell JS the trip ended.
+    @MainActor
+    private func stopForCarNavigation() {
+        Task { @MainActor [weak self] in
+            guard let self, self.sessionActive else { return }
+            await self.withCoreMutex {
+                await self.softStopGuidance()
+            }
+            self.notifyListeners("cancelled", data: ["reason": "carplay"])
         }
     }
 
@@ -835,6 +857,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             let work = DispatchWorkItem { [weak self] in
                 self?.idleExitWork = nil
                 guard UIApplication.shared.applicationState == .background else { return }
+                guard !MainActor.assumeIsolated({ StormPathCarPlay.shared.isConnected }) else { return }
                 exit(0)
             }
             self.idleExitWork = work

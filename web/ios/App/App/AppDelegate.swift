@@ -47,3 +47,31 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
 }
+
+/// Phone scene. Info.plist also declares the CarPlay scene, so the phone app runs on scenes.
+/// UIKit makes a second AppDelegate for this role; hand its window to the shared one so
+/// plugins that read the app delegate window still find it.
+extension AppDelegate: UIWindowSceneDelegate {
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        guard scene is UIWindowScene else { return }
+        if let shared = UIApplication.shared.delegate as? AppDelegate, shared !== self {
+            shared.window = window
+        }
+        if let url = connectionOptions.urlContexts.first?.url {
+            _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, open: url, options: [:])
+        }
+        if let activity = connectionOptions.userActivities.first {
+            _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, continue: activity, restorationHandler: { _ in })
+        }
+    }
+
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        for context in URLContexts {
+            _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, open: context.url, options: [:])
+        }
+    }
+
+    func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+        _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, continue: userActivity, restorationHandler: { _ in })
+    }
+}
