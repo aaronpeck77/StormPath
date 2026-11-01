@@ -186,6 +186,13 @@ type Props = {
   showTrafficBypassCta: boolean;
   bypassBusy: boolean;
   onTrafficBypassFromHere: () => void;
+  hazardBypassActive?: boolean;
+  hazardBypassBusy?: boolean;
+  hazardBypassCanUndo?: boolean;
+  hazardBypassAtLimit?: boolean;
+  onHazardBypassEnter?: () => void;
+  onHazardBypassUndo?: () => void;
+  onHazardBypassCancel?: () => void;
   stormyAheadLine: string | null;
   stormyHazardLine: string | null;
   stormyWeather?: string[];
@@ -278,6 +285,13 @@ export function AppBottomChrome({
   showTrafficBypassCta,
   bypassBusy,
   onTrafficBypassFromHere,
+  hazardBypassActive = false,
+  hazardBypassBusy = false,
+  hazardBypassCanUndo = false,
+  hazardBypassAtLimit = false,
+  onHazardBypassEnter,
+  onHazardBypassUndo,
+  onHazardBypassCancel,
   stormyAheadLine,
   stormyHazardLine,
   stormyWeather = [],
@@ -546,6 +560,13 @@ export function AppBottomChrome({
           showTrafficBypass={shouldShowTrafficBypassUi() && showTrafficBypassCta}
           bypassBusy={bypassBusy}
           onTrafficBypass={shouldShowTrafficBypassUi() ? onTrafficBypassFromHere : undefined}
+          hazardBypassActive={hazardBypassActive}
+          hazardBypassBusy={hazardBypassBusy}
+          hazardBypassCanUndo={hazardBypassCanUndo}
+          hazardBypassAtLimit={hazardBypassAtLimit}
+          onHazardBypassEnter={onHazardBypassEnter}
+          onHazardBypassUndo={onHazardBypassUndo}
+          onHazardBypassCancel={onHazardBypassCancel}
         />
       </div>
       ) : null}

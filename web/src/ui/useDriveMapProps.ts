@@ -33,6 +33,8 @@ export type UseDriveMapPropsInput = {
   liveHeadingRef: MutableRefObject<number | null>;
   destLngLat: [number, number] | null;
   viaStops: TripStop[];
+  hazardBypassActive?: boolean;
+  onHazardBypassPull?: (grab: LngLat, release: LngLat) => void;
   fitTrigger: number;
   viewMode: MapViewMode;
   routeBuildBusy?: boolean;
@@ -114,6 +116,8 @@ export function buildDriveMapProps(
     liveHeadingRef,
     destLngLat,
     viaStops,
+    hazardBypassActive = false,
+    onHazardBypassPull,
     fitTrigger,
     viewMode,
     routeBuildBusy = false,
@@ -187,6 +191,8 @@ export function buildDriveMapProps(
     liveGpsHeadingRef: navigationStarted ? liveHeadingRef : undefined,
     destLngLat,
     viaStops,
+    hazardBypassActive,
+    onHazardBypassPull,
     fitTrigger,
     viewMode,
     navigationStarted,

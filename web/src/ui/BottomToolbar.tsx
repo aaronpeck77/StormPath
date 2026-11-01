@@ -76,6 +76,14 @@ type Props = {
   showTrafficBypass?: boolean;
   bypassBusy?: boolean;
   onTrafficBypass?: () => void;
+  /** Pull the live route around a hazard. Drive opens it. Undo and Cancel live on the overview. */
+  hazardBypassActive?: boolean;
+  hazardBypassBusy?: boolean;
+  hazardBypassCanUndo?: boolean;
+  hazardBypassAtLimit?: boolean;
+  onHazardBypassEnter?: () => void;
+  onHazardBypassUndo?: () => void;
+  onHazardBypassCancel?: () => void;
 };
 
 export function BottomToolbar({
@@ -114,6 +122,13 @@ export function BottomToolbar({
   showTrafficBypass = false,
   bypassBusy = false,
   onTrafficBypass,
+  hazardBypassActive = false,
+  hazardBypassBusy = false,
+  hazardBypassCanUndo = false,
+  hazardBypassAtLimit = false,
+  onHazardBypassEnter,
+  onHazardBypassUndo,
+  onHazardBypassCancel,
 }: Props) {
   const viewEntry = VIEW_CYCLE.find((v) => v.mode === viewMode) ?? VIEW_CYCLE[0]!;
   const cycleViewMode = () => {
@@ -176,6 +191,35 @@ export function BottomToolbar({
       }${routeUi ? " nav-bottom-toolbar--route" : ""}`}
       aria-label="Map and trip controls"
     >
+      {hazardBypassActive ? (
+        <div className="nav-hazard-bypass" role="status">
+          <span className="nav-hazard-bypass__text">
+            {hazardBypassBusy
+              ? "Following the roads…"
+              : hazardBypassAtLimit
+                ? "Two bends. Undo one, or tap the view button to drive this line."
+                : "Pull the line, then let go. The view button drives this line."}
+          </span>
+          <div className="nav-hazard-bypass__actions">
+            <button
+              type="button"
+              className="nav-bottom-off-route__btn"
+              disabled={hazardBypassBusy || !hazardBypassCanUndo}
+              onClick={onHazardBypassUndo}
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              className="nav-bottom-off-route__btn nav-bottom-off-route__btn--primary"
+              disabled={hazardBypassBusy}
+              onClick={onHazardBypassCancel}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
       {shouldShowManualOffRouteUi() && showOffRouteBanner && (
         <div className="nav-bottom-off-route" role="status">
           <span className="nav-bottom-off-route__text">
@@ -270,7 +314,9 @@ export function BottomToolbar({
                 title={
                   viewCycleDisabled
                     ? "Tap Go to start — then you can switch between Route, Drive, and Map view."
-                    : `${viewEntry.label}: ${viewEntry.mode === "route" ? "Route overview" : viewEntry.mode === "drive" ? "Drive / navigation" : "Map top-down"}. Tap for next view.`
+                    : hazardBypassActive && viewMode === "route"
+                      ? "Drive the line on screen."
+                      : `${viewEntry.label}: ${viewEntry.mode === "route" ? "Route overview" : viewEntry.mode === "drive" ? "Drive / navigation" : "Map top-down"}. Tap for next view.`
                 }
                 className="nav-mode-cycle"
                 disabled={viewCycleDisabled}
@@ -293,6 +339,17 @@ export function BottomToolbar({
                 <span className="nav-mode-cycle__hint">view</span>
               </button>
             )}
+            {driveNavUi && onHazardBypassEnter ? (
+              <button
+                type="button"
+                className="nav-mode-sq nav-mode-sq--bend"
+                title="Pull the route around a hazard"
+                disabled={hazardBypassBusy}
+                onClick={onHazardBypassEnter}
+              >
+                <span className="nav-mode-sq--radar__name">Bend</span>
+              </button>
+            ) : null}
             {/* Rad: route + map (topdown) while navigating; hidden in drive to save bar space */}
             {!driveNavUi && showRadarButton && (
               <button

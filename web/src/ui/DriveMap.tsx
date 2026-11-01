@@ -277,6 +277,7 @@ import {
 import { useMapGeoJsonOverlays } from "./useMapGeoJsonOverlays";
 import { useStormNwsHoverPopup } from "./useStormNwsHoverPopup";
 import { driveMapPropsAreEqual } from "./driveMapPropsAreEqual";
+import { attachHazardRouteDrag } from "./hazardBypassDrag";
 import {
   animateRainViewerDualCrossfade,
   ensureRainViewerRadarDual,
@@ -319,6 +320,9 @@ export type Props = {
   destLngLat: [number, number] | null;
   /** Numbered markers for intermediate stops (before final destination). */
   viaStops?: TripStop[];
+  /** Route overview pull: finger down on the line, let go to commit a bend. */
+  hazardBypassActive?: boolean;
+  onHazardBypassPull?: (grab: [number, number], release: [number, number]) => void;
   fitTrigger: number;
   viewMode: MapViewMode;
   navigationStarted: boolean;
@@ -537,6 +541,8 @@ function DriveMapInner({
   liveGpsHeadingRef,
   destLngLat,
   viaStops = [],
+  hazardBypassActive = false,
+  onHazardBypassPull,
   fitTrigger,
   viewMode,
   navigationStarted,
@@ -1389,6 +1395,18 @@ function DriveMapInner({
       if (exploreTimerRef.current) clearTimeout(exploreTimerRef.current);
     };
   }, [token]);
+
+  const onHazardBypassPullRef = useRef(onHazardBypassPull);
+  onHazardBypassPullRef.current = onHazardBypassPull;
+
+  useEffect(() => {
+    if (!mapReady || !hazardBypassActive) return;
+    const map = mapRef.current;
+    if (!map) return;
+    return attachHazardRouteDrag(map, (grab, release) => {
+      onHazardBypassPullRef.current?.(grab, release);
+    });
+  }, [mapReady, hazardBypassActive]);
 
   /**
    * Off-screen + no Go: stop Mapbox after 45s so a parked phone is not painting.

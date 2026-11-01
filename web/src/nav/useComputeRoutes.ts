@@ -121,7 +121,13 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
     async (
       end: [number, number],
       label: string,
-      opts?: { preserveNavigation?: boolean; excludeToll?: boolean; jamExcludePoints?: LngLat[] }
+      opts?: {
+        preserveNavigation?: boolean;
+        excludeToll?: boolean;
+        jamExcludePoints?: LngLat[];
+        /** One road through the waypoints. Used when the driver pulled the line. */
+        singleRoute?: boolean;
+      }
     ): Promise<ComputeRoutesResult> => {
       if (!userLngLat) return computeRoutesFailed("Location is not available yet.");
       const epochAtStart = routeGraphEpochRef.current;
@@ -191,7 +197,7 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
             {
               signal: mainFetch.signal,
               via: viaCoords.length > 0 ? viaCoords : undefined,
-              maxRoutes: opts?.jamExcludePoints?.length ? 1 : (isPlus ? 2 : 1),
+              maxRoutes: opts?.singleRoute || opts?.jamExcludePoints?.length ? 1 : (isPlus ? 2 : 1),
               allowLocalTripThirdRoute: false,
               preferThreeRoutes: false,
               stormAlerts: stormAlertsForRouting,
@@ -215,7 +221,7 @@ export function useComputeRoutes(deps: UseComputeRoutesDeps): ComputeRoutesFn {
         } else {
           p = buildMockTripBetween(userLngLat, end, label);
         }
-        const maxRoutes = isPlus ? 2 : 1;
+        const maxRoutes = opts?.singleRoute ? 1 : isPlus ? 2 : 1;
         p = p.routes.length > maxRoutes ? { ...p, routes: p.routes.slice(0, maxRoutes) } : p;
         if (epochAtStart !== routeGraphEpochRef.current) {
           return computeRoutesFailed("Route request was superseded.");

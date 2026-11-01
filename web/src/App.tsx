@@ -184,6 +184,7 @@ import {
   useRouteCompareStore,
 } from "./state/routeCompareStore";
 import { useComputeRoutes } from "./nav/useComputeRoutes";
+import { useHazardBypass } from "./nav/useHazardBypass";
 import { usePendingRouteRetry } from "./nav/usePendingRouteRetry";
 import { usePendingRouteStore } from "./state/pendingRouteStore";
 import { useTripLifecycle } from "./nav/useTripLifecycle";
@@ -528,8 +529,10 @@ export default function App() {
   const setViewMode = useTripPlanStore((s) => s.setViewMode);
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
+  const hazardBypassViewRef = useRef<(next: MapViewMode) => void>(() => {});
   const handleViewModeChange = useCallback(
     (next: MapViewMode) => {
+      hazardBypassViewRef.current(next);
       setViewMode(next);
     },
     [setViewMode]
@@ -653,6 +656,14 @@ export default function App() {
     setTapHint,
     setTollAvoidFailureNote,
   });
+
+  const hazardBypass = useHazardBypass({
+    computeRoutes,
+    setFitTrigger,
+    setTapHint,
+    getRouteLine: () => guidanceRouteGeomRef.current ?? [],
+  });
+  hazardBypassViewRef.current = hazardBypass.noteViewChange;
 
   const {
     searchText,
@@ -2949,6 +2960,8 @@ export default function App() {
         navigationStarted,
         viewMode,
       }),
+      hazardBypassActive: hazardBypass.active,
+      onHazardBypassPull: hazardBypass.pull,
     },
     stormAdvisoryBar: {
       isPlus,
@@ -3369,6 +3382,17 @@ export default function App() {
           showTrafficBypassCta={showTrafficBypassCta}
           bypassBusy={bypassBusy}
           onTrafficBypassFromHere={() => void handleTrafficBypassFromHere()}
+          hazardBypassActive={hazardBypass.active}
+          hazardBypassBusy={hazardBypass.busy}
+          hazardBypassCanUndo={hazardBypass.canUndo}
+          hazardBypassAtLimit={hazardBypass.atLimit}
+          onHazardBypassEnter={navigationStarted ? hazardBypass.enter : undefined}
+          onHazardBypassUndo={() => {
+            void hazardBypass.undo();
+          }}
+          onHazardBypassCancel={() => {
+            void hazardBypass.cancel();
+          }}
         />
       </AppMapStage>
 

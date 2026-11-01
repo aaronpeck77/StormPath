@@ -14391,6 +14391,37 @@ html.route-info-open .route-progress-callout-panel--expanded {
   cursor: default;
 }
 
+.nav-hazard-bypass {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(120, 80, 10, 0.55);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  color: #fef3c7;
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.nav-hazard-bypass__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-hazard-bypass__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.nav-mode-sq--bend {
+  border-color: rgba(251, 191, 36, 0.75);
+  background: rgba(180, 120, 20, 0.38);
+  color: #fef3c7;
+}
+
 .nav-bottom-stats-row--lead {
   flex-shrink: 0;
   margin-right: 0;
