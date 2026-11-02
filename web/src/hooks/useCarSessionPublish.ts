@@ -1,7 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { pickAdvisoryVoiceLine } from "../nav/advisoryVoice";
 import type { DriveAheadLine } from "../nav/driveRouteAhead";
-import { publishCarSession } from "../services/carSessionPublish";
+import { buildCarConditions, publishCarSession, type CarConditionsInput } from "../services/carSessionPublish";
+import { getWebEnv } from "../config/env";
+import { Capacitor } from "@capacitor/core";
 
 type Params = {
   navigationStarted: boolean;
@@ -11,6 +13,8 @@ type Params = {
   nowcastLine: string | null;
   /** Optional turn banner line for CarPlay stub. */
   maneuverLine?: string | null;
+  conditions: CarConditionsInput;
+  puckColor: string;
 };
 
 /** Keep UserDefaults trip snapshot fresh for CarPlay scaffolding. */
@@ -21,17 +25,24 @@ export function useCarSessionPublish(p: Params): void {
     nowcastLine: p.nowcastLine,
   });
 
+  const latest = useRef({ p, advisory });
+  useEffect(() => { latest.current = { p, advisory }; });
   useEffect(() => {
-    void publishCarSession({
-      navigating: p.navigationStarted,
-      destinationLabel: p.destinationLabel,
-      advisoryLine: advisory,
-      maneuverLine: p.maneuverLine ?? null,
-    });
-  }, [
-    p.navigationStarted,
-    p.destinationLabel,
-    advisory,
-    p.maneuverLine,
-  ]);
+    if (!Capacitor.isNativePlatform()) return;
+    const publish = () => {
+      const { p: snapshot, advisory: line } = latest.current;
+      void publishCarSession({
+        navigating: snapshot.navigationStarted,
+        destinationLabel: snapshot.destinationLabel,
+        advisoryLine: line,
+        maneuverLine: snapshot.maneuverLine ?? null,
+        conditions: buildCarConditions(snapshot.conditions),
+        radarTileBase: getWebEnv().rainViewerTileProxyUrl,
+        puckColor: snapshot.puckColor,
+      });
+    };
+    publish();
+    const timer = window.setInterval(publish, 15_000);
+    return () => window.clearInterval(timer);
+  }, [p.navigationStarted]);
 }

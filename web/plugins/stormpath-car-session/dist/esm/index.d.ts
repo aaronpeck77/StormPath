@@ -3,6 +3,9 @@ export type CarSessionPublish = {
   destinationLabel?: string;
   advisoryLine?: string;
   maneuverLine?: string;
+  conditionsJson?: string;
+  radarTileBase?: string;
+  puckColor?: string;
 };
 
 export interface StormpathCarSessionPlugin {

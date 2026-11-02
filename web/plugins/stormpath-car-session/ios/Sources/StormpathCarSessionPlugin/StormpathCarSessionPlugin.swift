@@ -26,12 +26,16 @@ public class StormpathCarSessionPlugin: CAPPlugin, CAPBridgedPlugin {
         Self.defaults.set(destination, forKey: Self.prefix + "destination")
         Self.defaults.set(advisory, forKey: Self.prefix + "advisory")
         Self.defaults.set(maneuver, forKey: Self.prefix + "maneuver")
+        for key in ["conditionsJson", "radarTileBase", "puckColor"] {
+            Self.defaults.set(call.getString(key) ?? "", forKey: Self.prefix + key)
+        }
         Self.defaults.set(Date().timeIntervalSince1970, forKey: Self.prefix + "updatedAt")
+        NotificationCenter.default.post(name: Notification.Name("stormpath.car.updated"), object: nil)
         call.resolve(["ok": true])
     }
 
     @objc func clear(_ call: CAPPluginCall) {
-        for key in ["navigating", "destination", "advisory", "maneuver", "updatedAt"] {
+        for key in ["navigating", "destination", "advisory", "maneuver", "updatedAt", "conditionsJson", "radarTileBase", "puckColor"] {
             Self.defaults.removeObject(forKey: Self.prefix + key)
         }
         call.resolve()

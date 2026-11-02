@@ -29,6 +29,13 @@ public final class StormPathCarPlay {
     private var routes: NavigationRoutes?
     private var guiding = false
     private var defaultMapButtons: [CPMapButton] = []
+    private var overview = false
+    private var snapshotSubscription: AnyCancellable?
+    private var snapshotTimer: Timer?
+    private var conditionsTemplate: CPListTemplate?
+    private var radarButton: CPBarButton?
+    private var followingStepIndex: Int?
+    private var followingLegIndex: Int?
 
     private let locationSubject = CurrentValueSubject<CLLocation?, Never>(nil)
     private let progressSubject = CurrentValueSubject<RouteProgress?, Never>(nil)
@@ -56,19 +63,32 @@ public final class StormPathCarPlay {
         map.showsAlternatives = false
         map.routeColor = UIColor(red: 0.22, green: 0.74, blue: 0.97, alpha: 1)
         map.routeCasingColor = UIColor(white: 0.05, alpha: 0.85)
-        map.puckType = .puck2D(.makeDefault(showBearing: true))
         map.puckBearing = .course
         let controller = CarMapViewController(navigationMapView: map)
+        map.delegate = controller
+        controller.applyPuck()
         controller.onStyleChange = { [weak self] in self?.loadStyle() }
+        controller.radar.onStatus = { [weak self] status in self?.radarButton?.title = status }
         mapController = controller
         window.rootViewController = controller
 
         let template = CPMapTemplate()
         template.mapDelegate = templateForwarder
+        template.guidanceBackgroundColor = UIColor(red: 0.06, green: 0.20, blue: 0.29, alpha: 1)
+        template.automaticallyHidesNavigationBar = false
+        template.hidesButtonsWithNavigationBar = false
         defaultMapButtons = makeMapButtons(for: template)
         template.mapButtons = defaultMapButtons
         mapTemplate = template
+        configureNavigationBar()
         interfaceController.setRootTemplate(template, animated: false, completion: nil)
+        snapshotSubscription = NotificationCenter.default.publisher(for: Notification.Name("stormpath.car.updated"))
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.snapshotUpdated() }
+            }
+        snapshotTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.snapshotUpdated() }
+        }
 
         loadStyle()
         if guiding {
@@ -77,10 +97,17 @@ public final class StormPathCarPlay {
         } else {
             idleLocation.startUpdatingLocation()
         }
-        map.navigationCamera.update(cameraState: .following)
+        map.navigationCamera.update(cameraState: overview && guiding ? .overview : .following)
+        controller.radar.setEnabled(overview && guiding)
     }
 
     func disconnect() {
+        snapshotSubscription = nil
+        snapshotTimer?.invalidate()
+        snapshotTimer = nil
+        conditionsTemplate = nil
+        radarButton = nil
+        mapController?.radar.setEnabled(false)
         idleLocation.stopUpdatingLocation()
         navigationSession = nil
         trip = nil
@@ -102,7 +129,8 @@ public final class StormPathCarPlay {
         idleLocation.stopUpdatingLocation()
         showRoutes()
         startTripIfNeeded()
-        mapController?.navigationMapView.navigationCamera.update(cameraState: .following)
+        mapController?.navigationMapView.navigationCamera.update(cameraState: overview ? .overview : .following)
+        mapController?.radar.setEnabled(overview)
     }
 
     func routesChanged(_ routes: NavigationRoutes) {
@@ -123,6 +151,9 @@ public final class StormPathCarPlay {
     func guidanceEnded(arrived: Bool) {
         guard guiding else { return }
         guiding = false
+        overview = false
+        mapController?.radar.setEnabled(false)
+        configureNavigationBar()
         routes = nil
         progressSubject.send(nil)
         if let navigationSession {
@@ -184,14 +215,130 @@ public final class StormPathCarPlay {
 
     func panningDismissed() {
         mapTemplate?.mapButtons = defaultMapButtons
-        mapController?.navigationMapView.navigationCamera.update(cameraState: .following)
+        mapController?.navigationMapView.navigationCamera.update(cameraState: overview && guiding ? .overview : .following)
     }
 
     // MARK: Private
 
+    private func configureNavigationBar() {
+        guard let mapTemplate else { return }
+        mapTemplate.leadingNavigationBarButtons = [
+            CPBarButton(title: overview ? "Drive" : "RT") { [weak self] _ in
+                guard let self else { return }
+                overview.toggle()
+                mapController?.navigationMapView.navigationCamera.update(cameraState: overview && guiding ? .overview : .following)
+                mapController?.radar.setEnabled(overview)
+                configureNavigationBar()
+            },
+            CPBarButton(title: "Conditions") { [weak self] _ in self?.showConditions() },
+        ]
+        let button = CPBarButton(title: mapController?.radar.status ?? "Radar off") { [weak self] _ in
+            guard let self, let radar = mapController?.radar else { return }
+            radar.setEnabled(!radar.enabled)
+        }
+        radarButton = button
+        mapTemplate.trailingNavigationBarButtons = [button]
+    }
+
+    private func snapshotUpdated() {
+        mapController?.applyPuck()
+        if let conditionsTemplate {
+            conditionsTemplate.updateSections(conditionMenuSections())
+        }
+    }
+
+    private func showConditionDetail(title: String, detail: String) {
+        let parts = detail.components(separatedBy: " · ")
+        let grouped = Array(parts.prefix(4)) + (parts.count > 4 ? [parts.dropFirst(4).joined(separator: " · ")] : [])
+        let details = grouped.enumerated().map {
+            CPInformationItem(title: $0.offset == 0 ? "Details" : "", detail: $0.element)
+        }
+        let template = CPInformationTemplate(title: title, layout: .leading, items: details, actions: [])
+        interfaceController?.pushTemplate(template, animated: true, completion: nil)
+    }
+
+    private func conditionMenuSections() -> [CPListSection] {
+        let defaults = UserDefaults.standard
+        let updated = defaults.double(forKey: "stormpath.car.updatedAt")
+        let age = Date().timeIntervalSince1970 - updated
+        let stamp = updated > 0 ? Date(timeIntervalSince1970: updated).formatted(date: .omitted, time: .shortened) : "unavailable"
+        let state = age > 300 ? "Phone snapshot \(stamp) — may be stale. Not a clear-road indication." : "Phone snapshot \(stamp) — radar is current-map weather, forecast is arrival-time weather."
+        let status = CPListItem(text: "StormPath conditions", detailText: state)
+        status.isEnabled = false
+        let rows = CarConditionSection.read().enumerated().map { index, section in
+            let row = CPListItem(text: section.title, detailText: "\(section.items.count) items · tap for details")
+            row.handler = { [weak self] _, completion in
+                self?.showConditionSection(index: index, page: 0, replace: false)
+                completion()
+            }
+            return row
+        }
+        let advisoryText = defaults.string(forKey: "stormpath.car.advisory") ?? ""
+        let advisory = CPListItem(text: "Route advisory", detailText: advisoryText.isEmpty ? "No advisory in the phone snapshot." : advisoryText)
+        advisory.handler = { [weak self] _, completion in
+            self?.showConditionDetail(title: "Route advisory", detail: "\(state) · \(advisoryText.isEmpty ? "No advisory available" : advisoryText)")
+            completion()
+        }
+        return [CPListSection(items: [status, advisory] + rows)]
+    }
+
+    private func showConditions() {
+        guard let interfaceController else { return }
+        let template = CPListTemplate(title: "Weather & road alerts", sections: conditionMenuSections())
+        conditionsTemplate = template
+        interfaceController.pushTemplate(template, animated: true, completion: nil)
+    }
+
+    private func showConditionSection(index: Int, page: Int, replace: Bool) {
+        guard let interfaceController else { return }
+        let sections = CarConditionSection.read()
+        guard sections.indices.contains(index) else { return }
+        let section = sections[index]
+        let now = Date().timeIntervalSince1970
+        let available = section.items.filter { ($0.expiresAt ?? .greatestFiniteMagnitude) > now }
+        let size = max(1, min(10, CPListTemplate.maximumItemCount - 1))
+        let start = min(page * size, available.count)
+        var rows = available.dropFirst(start).prefix(size).map { item in
+            let row = CPListItem(text: item.title, detailText: item.detail)
+            row.handler = { [weak self] _, completion in
+                self?.showConditionDetail(title: item.title, detail: item.detail)
+                completion()
+            }
+            return row
+        }
+        if rows.isEmpty {
+            let row = CPListItem(text: "No current items in snapshot", detailText: "Data may be missing or expired. Not proof of clear conditions.")
+            row.isEnabled = false
+            rows.append(row)
+        }
+        if start + size < available.count {
+            let more = CPListItem(text: "More", detailText: "\(available.count - start - size) remaining")
+            more.handler = { [weak self] _, completion in
+                self?.showConditionSection(index: index, page: page + 1, replace: true)
+                completion()
+            }
+            rows.append(more)
+        }
+        let updated = UserDefaults.standard.double(forKey: "stormpath.car.updatedAt")
+        let stamp = updated > 0 ? Date(timeIntervalSince1970: updated).formatted(date: .omitted, time: .shortened) : "unavailable"
+        let stale = Date().timeIntervalSince1970 - updated > 300 ? " · stale" : ""
+        let template = CPListTemplate(title: "\(section.title) · \(stamp)\(stale)", sections: [CPListSection(items: rows)])
+        if replace {
+            interfaceController.popTemplate(animated: false) { [weak self] _, error in
+                guard error == nil else { return }
+                self?.interfaceController?.pushTemplate(template, animated: true, completion: nil)
+            }
+        } else {
+            interfaceController.pushTemplate(template, animated: true, completion: nil)
+        }
+    }
+
     private func makeMapButtons(for template: CPMapTemplate) -> [CPMapButton] {
         let recenter = CPMapButton { [weak self] _ in
-            self?.mapController?.navigationMapView.navigationCamera.update(cameraState: .following)
+            guard let self else { return }
+            overview = false
+            mapController?.navigationMapView.navigationCamera.update(cameraState: .following)
+            configureNavigationBar()
         }
         recenter.image = Self.symbol("location.fill")
 
@@ -229,7 +376,10 @@ public final class StormPathCarPlay {
         let uri = StyleURI(rawValue: raw) ?? .streets
         map.mapView.mapboxMap.loadStyle(uri) { [weak self] _ in
             Task { @MainActor in
-                self?.showRoutes()
+                guard let self else { return }
+                controller.positionRouteBelowLabels()
+                showRoutes()
+                controller.radar.styleLoaded()
             }
         }
     }
@@ -266,8 +416,11 @@ public final class StormPathCarPlay {
     private func updateManeuver(_ progress: RouteProgress) {
         guard let navigationSession else { return }
         let stepProgress = progress.currentLegProgress.currentStepProgress
-        if let banner = stepProgress.currentVisualInstruction, banner != currentBanner {
+        if let banner = stepProgress.currentVisualInstruction,
+           banner != currentBanner || followingStepIndex != progress.currentLegProgress.stepIndex || followingLegIndex != progress.legIndex {
             currentBanner = banner
+            followingStepIndex = progress.currentLegProgress.stepIndex
+            followingLegIndex = progress.legIndex
             let maneuver = CPManeuver()
             maneuver.initialTravelEstimates = CPTravelEstimates(
                 distanceRemaining: Self.carDistance(stepProgress.distanceRemaining),
@@ -282,7 +435,22 @@ public final class StormPathCarPlay {
                 side: banner.drivingSide,
                 visualInstruction: banner.primaryInstruction
             )
-            navigationSession.upcomingManeuvers = [maneuver]
+            var maneuvers = [maneuver]
+            if let nextStep = progress.currentLegProgress.upcomingStep,
+               let following = nextStep.instructionsDisplayedAlongStep?.last {
+                let next = CPManeuver()
+                next.instructionVariants = [following.primaryInstruction.text ?? nextStep.instructions]
+                next.symbolSet = following.primaryInstruction.maneuverImageSet(
+                    side: following.drivingSide,
+                    visualInstruction: following.primaryInstruction
+                )
+                next.initialTravelEstimates = CPTravelEstimates(
+                    distanceRemaining: Self.carDistance(nextStep.distance),
+                    timeRemaining: nextStep.expectedTravelTime
+                )
+                maneuvers.append(next)
+            }
+            navigationSession.upcomingManeuvers = maneuvers
             currentManeuver = maneuver
         }
         if let currentManeuver {
@@ -324,9 +492,85 @@ public final class StormPathCarPlay {
     }
 }
 
-final class CarMapViewController: UIViewController {
+final class CarMapViewController: UIViewController, NavigationMapViewDelegate {
     let navigationMapView: NavigationMapView
     var onStyleChange: (() -> Void)?
+    lazy var radar = CarRadarOverlay(map: navigationMapView)
+    private var puckColor = ""
+
+    func positionRouteBelowLabels() {
+        guard let map = navigationMapView.mapView.mapboxMap else { return }
+        if map.layerExists(withId: "road-label") {
+            navigationMapView.customRouteLineLayerPosition = .below("road-label")
+        }
+    }
+
+    func navigationMapView(_ navigationMapView: NavigationMapView, routeLineLayerWithIdentifier identifier: String, sourceIdentifier: String) -> LineLayer? {
+        routeLayer(identifier: identifier, source: sourceIdentifier, casing: false)
+    }
+
+    func navigationMapView(_ navigationMapView: NavigationMapView, routeCasingLineLayerWithIdentifier identifier: String, sourceIdentifier: String) -> LineLayer? {
+        routeLayer(identifier: identifier, source: sourceIdentifier, casing: true)
+    }
+
+    private func routeLayer(identifier: String, source: String, casing: Bool) -> LineLayer {
+        var layer = LineLayer(id: identifier, source: source)
+        layer.lineColor = .constant(StyleColor(casing ? navigationMapView.routeCasingColor : navigationMapView.routeColor))
+        layer.lineCap = .constant(.round)
+        layer.lineJoin = .constant(.round)
+        layer.lineWidth = .expression(Exp(.interpolate) {
+            Exp(.linear)
+            Exp(.zoom)
+            4.0; casing ? 4.0 : 2.0
+            10.0; casing ? 6.0 : 4.0
+            16.0; casing ? 8.0 : 6.0
+            20.0; casing ? 12.0 : 10.0
+        })
+        return layer
+    }
+
+    func applyPuck() {
+        let choice = UserDefaults.standard.string(forKey: "stormpath.car.puckColor") ?? "blue"
+        guard puckColor != choice else { return }
+        puckColor = choice
+        let color: UIColor
+        switch choice {
+        case "orange": color = UIColor(red: 0.98, green: 0.45, blue: 0.09, alpha: 1)
+        case "gold": color = UIColor(red: 0.92, green: 0.70, blue: 0.03, alpha: 1)
+        case "white": color = UIColor(white: 0.9, alpha: 1)
+        default: color = UIColor(red: 0.10, green: 0.45, blue: 0.91, alpha: 1)
+        }
+        let dome = UIGraphicsImageRenderer(size: CGSize(width: 36, height: 36)).image { context in
+            let ctx = context.cgContext
+            ctx.setShadow(offset: CGSize(width: 0, height: 2), blur: 3, color: UIColor.black.withAlphaComponent(0.6).cgColor)
+            ctx.setFillColor(UIColor.white.cgColor)
+            ctx.fillEllipse(in: CGRect(x: 2, y: 2, width: 32, height: 32))
+            ctx.setShadow(offset: .zero, blur: 0, color: nil)
+            ctx.saveGState()
+            ctx.addEllipse(in: CGRect(x: 5, y: 5, width: 26, height: 26))
+            ctx.clip()
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [UIColor.white.cgColor, color.cgColor, color.withAlphaComponent(0.9).cgColor] as CFArray, locations: [0, 0.45, 1]) {
+                ctx.drawRadialGradient(gradient, startCenter: CGPoint(x: 12, y: 10), startRadius: 0, endCenter: CGPoint(x: 18, y: 18), endRadius: 22, options: [.drawsAfterEndLocation])
+            }
+            ctx.restoreGState()
+        }
+        let nose = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 52)).image { context in
+            let path = UIBezierPath()
+            path.move(to: CGPoint(x: 16, y: 1))
+            path.addLine(to: CGPoint(x: 30, y: 28))
+            path.addLine(to: CGPoint(x: 2, y: 28))
+            path.close()
+            color.setFill()
+            path.fill()
+            UIColor.white.setStroke()
+            path.lineWidth = 2
+            path.stroke()
+        }
+        var config = Puck2DConfiguration(topImage: dome, bearingImage: nose, scale: .constant(1.1))
+        config.pulsing = .none
+        navigationMapView.puckType = .puck2D(config)
+        navigationMapView.mapView.location.options.puckBearingEnabled = true
+    }
 
     init(navigationMapView: NavigationMapView) {
         self.navigationMapView = navigationMapView
@@ -378,6 +622,227 @@ public final class StormPathCarPlaySceneDelegate: UIResponder, CPTemplateApplica
         MainActor.assumeIsolated {
             StormPathCarPlay.shared.disconnect()
         }
+    }
+}
+
+private struct CarConditionSection: Decodable {
+    struct Item: Decodable {
+        let title: String
+        let detail: String
+        let expiresAt: Double?
+    }
+    let title: String
+    let items: [Item]
+
+    static func read() -> [CarConditionSection] {
+        guard let raw = UserDefaults.standard.string(forKey: "stormpath.car.conditionsJson"),
+              let data = raw.data(using: .utf8), data.count <= 512_000,
+              let sections = try? JSONDecoder().decode([CarConditionSection].self, from: data) else { return [] }
+        return sections
+    }
+}
+
+@MainActor
+final class CarRadarOverlay {
+    private struct Manifest: Decodable {
+        struct Radar: Decodable {
+            let past: [Frame]?
+        }
+        let radar: Radar?
+    }
+    private struct Frame: Decodable, Equatable {
+        let time: Double
+        let path: String
+    }
+    private weak var map: NavigationMapView?
+    private var frames: [Frame] = []
+    private var installed: [String] = []
+    private var frameIndex = 0
+    private var timer: Timer?
+    private var request: Task<Void, Never>?
+    private var requestGeneration = 0
+    private var errorSubscription: AnyCancelable?
+    private var loadSubscription: AnyCancelable?
+    private var loadedSources: Set<String> = []
+    private var failed = false
+    private var lastFetch: TimeInterval = 0
+    private var tileBase = ""
+    private(set) var enabled = false
+    private(set) var status = "Radar off"
+    var onStatus: ((String) -> Void)?
+
+    init(map: NavigationMapView) {
+        self.map = map
+        errorSubscription = map.mapView.mapboxMap.onMapLoadingError.observe { [weak self] event in
+            guard let source = event.sourceId, source.hasPrefix("stormpath-car-radar-") else { return }
+            Task { @MainActor in
+                guard let self, enabled, installed.contains(source) else { return }
+                failed = true
+                removeLayers()
+                setStatus("Radar unavailable")
+            }
+        }
+        loadSubscription = map.mapView.mapboxMap.onSourceDataLoaded.observe { [weak self] event in
+            guard event.sourceId.hasPrefix("stormpath-car-radar-"), let loaded = event.loaded else { return }
+            let source = event.sourceId
+            Task { @MainActor in
+                guard let self, enabled, installed.contains(source) else { return }
+                if loaded { loadedSources.insert(source) } else { loadedSources.remove(source) }
+                displayFrame()
+            }
+        }
+    }
+
+    func setEnabled(_ value: Bool) {
+        guard enabled != value else { return }
+        enabled = value
+        failed = false
+        requestGeneration += 1
+        timer?.invalidate()
+        timer = nil
+        if value {
+            setStatus("Radar loading")
+            refresh()
+            timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.tick() }
+            }
+        } else {
+            request?.cancel()
+            request = nil
+            removeLayers()
+            setStatus("Radar off")
+        }
+    }
+
+    func styleLoaded() {
+        installed = []
+        loadedSources = []
+        if enabled { installFrames() }
+    }
+
+    private func setStatus(_ value: String) {
+        guard status != value else { return }
+        status = value
+        onStatus?(value)
+    }
+
+    private func tick() {
+        guard enabled else { return }
+        if Date().timeIntervalSince1970 - lastFetch >= 300 { refresh() }
+        guard !installed.isEmpty else { return }
+        if let newest = frames.last, Date().timeIntervalSince1970 - newest.time > 1800 {
+            removeLayers()
+            setStatus("Radar stale")
+            return
+        }
+        frameIndex = (frameIndex + 1) % installed.count
+        displayFrame()
+    }
+
+    private func refresh() {
+        guard request == nil, enabled else { return }
+        guard let base = UserDefaults.standard.string(forKey: "stormpath.car.radarTileBase"),
+              let url = URL(string: base), url.scheme == "https", url.host != nil,
+              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
+            setStatus("Radar unavailable")
+            return
+        }
+        tileBase = base.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        lastFetch = Date().timeIntervalSince1970
+        let generation = requestGeneration
+        request = Task { [weak self] in
+            guard let self else { return }
+            defer { if requestGeneration == generation { request = nil } }
+            do {
+                var manifestRequest = URLRequest(url: URL(string: "https://api.rainviewer.com/public/weather-maps.json")!)
+                manifestRequest.timeoutInterval = 12
+                let (data, response) = try await URLSession.shared.data(for: manifestRequest)
+                guard !Task.isCancelled, enabled, requestGeneration == generation else { return }
+                guard (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 256_000 else {
+                    failed = true
+                    removeLayers()
+                    setStatus("Radar unavailable")
+                    return
+                }
+                failed = false
+                let manifest = try JSONDecoder().decode(Manifest.self, from: data)
+                let now = Date().timeIntervalSince1970
+                let recent = (manifest.radar?.past ?? []).filter {
+                    $0.time <= now + 60 && $0.time >= now - 1800 &&
+                    $0.path.range(of: "^/v2/radar/[0-9]+$", options: .regularExpression) != nil
+                }.sorted { $0.time < $1.time }
+                let selected = Array(recent.suffix(4))
+                guard !selected.isEmpty else {
+                    removeLayers()
+                    frames = []
+                    setStatus("Radar unavailable")
+                    return
+                }
+                if frames != selected || installed.isEmpty {
+                    removeLayers()
+                    frames = selected
+                    installFrames()
+                }
+            } catch {
+                guard !Task.isCancelled, requestGeneration == generation else { return }
+                failed = true
+                removeLayers()
+                setStatus("Radar unavailable")
+            }
+        }
+    }
+
+    private func installFrames() {
+        guard enabled, !failed, let style = map?.mapView.mapboxMap, style.isStyleLoaded else { return }
+        removeLayers()
+        do {
+            let anchor = style.allLayerIdentifiers.first { $0.type == .line && $0.id.localizedCaseInsensitiveContains("route") }?.id
+                ?? style.allLayerIdentifiers.first { $0.type == .symbol }?.id
+            for (index, frame) in frames.enumerated() {
+                let id = "stormpath-car-radar-\(index)-\(Int(frame.time))"
+                var source = RasterSource(id: id)
+                source.tiles = ["\(tileBase)\(frame.path)/256/{z}/{x}/{y}/4/0_1.png"]
+                source.tileSize = 256
+                source.minzoom = 0
+                source.maxzoom = 7
+                source.attribution = "Radar © RainViewer"
+                try style.addSource(source)
+                installed.append(id)
+                var layer = RasterLayer(id: id, source: id)
+                layer.rasterOpacity = .constant(0.001)
+                layer.rasterFadeDuration = .constant(0)
+                try style.addLayer(layer, layerPosition: anchor.map { .below($0) })
+            }
+            frameIndex = max(0, installed.count - 1)
+            displayFrame()
+        } catch {
+            removeLayers()
+            setStatus("Radar unavailable")
+        }
+    }
+
+    private func displayFrame() {
+        guard let style = map?.mapView.mapboxMap, frames.indices.contains(frameIndex), installed.indices.contains(frameIndex) else { return }
+        guard loadedSources.contains(installed[frameIndex]) else { setStatus("Radar loading"); return }
+        do {
+            for (index, id) in installed.enumerated() {
+                try style.setLayerProperty(for: id, property: "raster-opacity", value: index == frameIndex ? 0.65 : 0.001)
+            }
+            let time = Date(timeIntervalSince1970: frames[frameIndex].time).formatted(date: .omitted, time: .shortened)
+            setStatus("Radar \(time)")
+        } catch {
+            setStatus("Radar unavailable")
+        }
+    }
+
+    private func removeLayers() {
+        loadedSources = []
+        guard let style = map?.mapView.mapboxMap else { installed = []; return }
+        for id in installed.reversed() {
+            if style.layerExists(withId: id) { try? style.removeLayer(withId: id) }
+            if style.sourceExists(withId: id) { try? style.removeSource(withId: id) }
+        }
+        installed = []
     }
 }
 

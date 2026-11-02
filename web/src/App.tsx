@@ -2175,13 +2175,6 @@ export default function App() {
     nowcastLine: advisoryNowcastLine,
     metersToManeuver: metersToBannerManeuver,
   });
-  useCarSessionPublish({
-    navigationStarted,
-    destinationLabel,
-    nextHazardAtEtaLine,
-    driveRouteAheadLine,
-    nowcastLine: advisoryNowcastLine,
-  });
   const { progressPanelAlongM, activeProgressCalloutPanel, progressCalloutUserAlongT, progressCalloutCount } =
     useProgressCalloutPanel({
       navigationStarted,
@@ -2221,6 +2214,26 @@ export default function App() {
       advisoryWeatherSyncEnabled: navResourceBudget.advisoryWeatherSyncEnabled,
       bumpTrafficRefresh,
     });
+
+  useCarSessionPublish({
+    navigationStarted,
+    destinationLabel,
+    nextHazardAtEtaLine,
+    driveRouteAheadLine,
+    nowcastLine: advisoryNowcastLine,
+    puckColor: settingPuckColor,
+    conditions: {
+      items: navigationStarted ? routeAheadTimeline : [],
+      userAlongMeters: userAlongGuidanceM,
+      totalMeters: guidanceRouteLengthM,
+      driveEtaMinutes,
+      outlook: navigationStarted ? activeProgressCalloutPanel.outlookTimeline : [],
+      localForecast: localHourlyForecast,
+      nowcast: currentNowcast,
+      online: isOnline,
+      isPlus,
+    },
+  });
 
   const onStormBarExpandedChange = useCallback(
     (expanded: boolean) => {
