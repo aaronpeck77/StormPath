@@ -378,7 +378,7 @@ public final class StormPathCarPlay {
             Task { @MainActor in
                 guard let self else { return }
                 controller.positionRouteBelowLabels()
-                showRoutes()
+                self.showRoutes()
                 controller.radar.styleLoaded()
             }
         }
@@ -676,19 +676,19 @@ final class CarRadarOverlay {
         errorSubscription = map.mapView.mapboxMap.onMapLoadingError.observe { [weak self] event in
             guard let source = event.sourceId, source.hasPrefix("stormpath-car-radar-") else { return }
             Task { @MainActor in
-                guard let self, enabled, installed.contains(source) else { return }
-                failed = true
-                removeLayers()
-                setStatus("Radar unavailable")
+                guard let self, self.enabled, self.installed.contains(source) else { return }
+                self.failed = true
+                self.removeLayers()
+                self.setStatus("Radar unavailable")
             }
         }
         loadSubscription = map.mapView.mapboxMap.onSourceDataLoaded.observe { [weak self] event in
             guard event.sourceId.hasPrefix("stormpath-car-radar-"), let loaded = event.loaded else { return }
             let source = event.sourceId
             Task { @MainActor in
-                guard let self, enabled, installed.contains(source) else { return }
-                if loaded { loadedSources.insert(source) } else { loadedSources.remove(source) }
-                displayFrame()
+                guard let self, self.enabled, self.installed.contains(source) else { return }
+                if loaded { self.loadedSources.insert(source) } else { self.loadedSources.remove(source) }
+                self.displayFrame()
             }
         }
     }
