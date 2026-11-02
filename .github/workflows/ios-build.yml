@@ -53,7 +53,7 @@ concurrency:
 
 jobs:
   build-ios:
-    runs-on: macos-latest
+    runs-on: macos-26-intel
     timeout-minutes: 60
     # Docs-only / meta commits can skip the 9-minute macOS run by including
     # "[skip ci]" in the commit message. Manual workflow_dispatch always runs.
