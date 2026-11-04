@@ -6,6 +6,8 @@ export type CarSessionPublish = {
   conditionsJson?: string;
   radarTileBase?: string;
   puckColor?: string;
+  /** Posted limit in mph from Mapbox data only; 0 = no sourced value. */
+  speedLimitMph?: number;
 };
 
 export interface StormpathCarSessionPlugin {

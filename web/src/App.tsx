@@ -2223,6 +2223,7 @@ export default function App() {
     driveRouteAheadLine,
     nowcastLine: advisoryNowcastLine,
     puckColor: settingPuckColor,
+    speedLimitMph: postedMphIsClassEstimate ? null : postedMph,
     conditions: {
       items: navigationStarted ? routeAheadTimeline : [],
       userAlongMeters: userAlongGuidanceM,

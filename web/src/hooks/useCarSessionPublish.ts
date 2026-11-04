@@ -15,6 +15,8 @@ type Params = {
   maneuverLine?: string | null;
   conditions: CarConditionsInput;
   puckColor: string;
+  /** Sourced posted limit (horizon / Mapbox maxspeed) or null. Never an estimate. */
+  speedLimitMph: number | null;
 };
 
 /** Keep UserDefaults trip snapshot fresh for CarPlay scaffolding. */
@@ -39,6 +41,7 @@ export function useCarSessionPublish(p: Params): void {
         conditions: buildCarConditions(snapshot.conditions),
         radarTileBase: getWebEnv().rainViewerTileProxyUrl,
         puckColor: snapshot.puckColor,
+        speedLimitMph: snapshot.speedLimitMph,
       });
     };
     publish();

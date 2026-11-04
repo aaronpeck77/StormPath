@@ -81,6 +81,12 @@ export async function publishCarSession(payload: {
   conditions?: CarConditionSection[];
   radarTileBase?: string;
   puckColor?: string;
+  /**
+   * Posted limit in mph from Mapbox data only (electronic horizon or Directions
+   * maxspeed). Null / omitted when there is no sourced value — the road-class
+   * estimate is deliberately never sent to the car screen.
+   */
+  speedLimitMph?: number | null;
 }): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   try {
@@ -92,6 +98,7 @@ export async function publishCarSession(payload: {
       conditionsJson: JSON.stringify(payload.conditions ?? []),
       radarTileBase: payload.radarTileBase ?? "",
       puckColor: payload.puckColor ?? "blue",
+      speedLimitMph: payload.navigating ? Math.round(payload.speedLimitMph ?? 0) : 0,
     });
   } catch {
     /* CarPlay bridge optional until entitlement + scene are live */
