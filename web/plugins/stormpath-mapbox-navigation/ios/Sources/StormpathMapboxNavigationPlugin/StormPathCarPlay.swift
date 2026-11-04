@@ -251,6 +251,7 @@ public final class StormPathCarPlay {
 
     private func snapshotUpdated() {
         mapController?.applyPuck()
+        mapController?.setSpeedLimit(UserDefaults.standard.integer(forKey: "stormpath.car.speedLimitMph"))
         maybeShowHazardAlert()
         if let conditionsTemplate {
             conditionsTemplate.updateSections(conditionMenuSections())
@@ -278,7 +279,7 @@ public final class StormPathCarPlay {
             secondaryAction: nil,
             duration: 8
         )
-        mapTemplate.present(alert, animated: true, completion: nil)
+        mapTemplate.present(alert, animated: true)
     }
 
     private func showConditionDetail(title: String, detail: String) {
@@ -531,6 +532,13 @@ final class CarMapViewController: UIViewController, NavigationMapViewDelegate {
     var onStyleChange: (() -> Void)?
     lazy var radar = CarRadarOverlay(map: navigationMapView)
     private var puckColor = ""
+    private let speedLimitSign = SpeedLimitSignView()
+
+    /// Sourced posted limit only — the phone sends 0 when Mapbox has none, and
+    /// the road-class estimate is never published. No estimate ever reaches the sign.
+    func setSpeedLimit(_ mph: Int) {
+        speedLimitSign.mph = mph > 0 ? mph : nil
+    }
 
     func positionRouteBelowLabels() {
         guard let map = navigationMapView.mapView.mapboxMap else { return }
@@ -624,6 +632,12 @@ final class CarMapViewController: UIViewController, NavigationMapViewDelegate {
         navigationMapView.frame = view.bounds
         navigationMapView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(navigationMapView)
+        speedLimitSign.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(speedLimitSign)
+        NSLayoutConstraint.activate([
+            speedLimitSign.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            speedLimitSign.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+        ])
     }
 
     override func viewSafeAreaInsetsDidChange() {
@@ -660,6 +674,60 @@ public final class StormPathCarPlaySceneDelegate: UIResponder, CPTemplateApplica
         MainActor.assumeIsolated {
             StormPathCarPlay.shared.disconnect()
         }
+    }
+}
+
+/// US-style speed limit placard. Hidden until the phone publishes a sourced
+/// (non-estimated) limit — a blank sign beats a wrong one.
+final class SpeedLimitSignView: UIView {
+    private let titleLabel = UILabel()
+    private let numberLabel = UILabel()
+
+    var mph: Int? {
+        didSet {
+            numberLabel.text = mph.map(String.init)
+            isHidden = mph == nil
+        }
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .white
+        layer.cornerRadius = 6
+        layer.borderWidth = 2
+        layer.borderColor = UIColor.black.cgColor
+        layer.masksToBounds = false
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.35
+        layer.shadowOffset = CGSize(width: 0, height: 1)
+        layer.shadowRadius = 2
+
+        titleLabel.text = "SPEED\nLIMIT"
+        titleLabel.numberOfLines = 2
+        titleLabel.textAlignment = .center
+        titleLabel.textColor = .black
+        titleLabel.font = .systemFont(ofSize: 6.5, weight: .bold)
+        numberLabel.textAlignment = .center
+        numberLabel.textColor = .black
+        numberLabel.font = .systemFont(ofSize: 20, weight: .bold)
+
+        let stack = UIStackView(arrangedSubviews: [titleLabel, numberLabel])
+        stack.axis = .vertical
+        stack.spacing = 0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 3),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -3),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            widthAnchor.constraint(equalToConstant: 46),
+        ])
+        isHidden = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used")
     }
 }
 
