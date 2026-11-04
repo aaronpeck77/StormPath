@@ -279,7 +279,7 @@ public final class StormPathCarPlay {
             secondaryAction: nil,
             duration: 8
         )
-        mapTemplate.present(alert, animated: true)
+        mapTemplate.present(navigationAlert: alert, animated: true)
     }
 
     private func showConditionDetail(title: String, detail: String) {
