@@ -34,6 +34,7 @@ public final class StormPathCarPlay {
     private var snapshotTimer: Timer?
     private var conditionsTemplate: CPListTemplate?
     private var radarButton: CPBarButton?
+    private var lastHazardAlertKey = ""
     private var followingStepIndex: Int?
     private var followingLegIndex: Int?
 
@@ -63,6 +64,7 @@ public final class StormPathCarPlay {
         map.showsAlternatives = false
         map.routeColor = UIColor(red: 0.22, green: 0.74, blue: 0.97, alpha: 1)
         map.routeCasingColor = UIColor(white: 0.05, alpha: 0.85)
+        map.waypointColor = .systemRed
         map.puckBearing = .course
         let controller = CarMapViewController(navigationMapView: map)
         map.delegate = controller
@@ -74,9 +76,9 @@ public final class StormPathCarPlay {
 
         let template = CPMapTemplate()
         template.mapDelegate = templateForwarder
-        template.guidanceBackgroundColor = UIColor(red: 0.06, green: 0.20, blue: 0.29, alpha: 1)
-        template.automaticallyHidesNavigationBar = false
-        template.hidesButtonsWithNavigationBar = false
+        template.guidanceBackgroundColor = .black
+        template.automaticallyHidesNavigationBar = true
+        template.hidesButtonsWithNavigationBar = true
         defaultMapButtons = makeMapButtons(for: template)
         template.mapButtons = defaultMapButtons
         mapTemplate = template
@@ -152,6 +154,7 @@ public final class StormPathCarPlay {
         guard guiding else { return }
         guiding = false
         overview = false
+        lastHazardAlertKey = ""
         mapController?.radar.setEnabled(false)
         configureNavigationBar()
         routes = nil
@@ -227,11 +230,17 @@ public final class StormPathCarPlay {
                 guard let self else { return }
                 overview.toggle()
                 mapController?.navigationMapView.navigationCamera.update(cameraState: overview && guiding ? .overview : .following)
-                mapController?.radar.setEnabled(overview)
+                mapController?.radar.setEnabled(overview && guiding)
                 configureNavigationBar()
             },
             CPBarButton(title: "Conditions") { [weak self] _ in self?.showConditions() },
         ]
+        // Radar belongs to the route (RT) view only — in Drive it is noise.
+        guard overview else {
+            radarButton = nil
+            mapTemplate.trailingNavigationBarButtons = []
+            return
+        }
         let button = CPBarButton(title: mapController?.radar.status ?? "Radar off") { [weak self] _ in
             guard let self, let radar = mapController?.radar else { return }
             radar.setEnabled(!radar.enabled)
@@ -242,9 +251,34 @@ public final class StormPathCarPlay {
 
     private func snapshotUpdated() {
         mapController?.applyPuck()
+        maybeShowHazardAlert()
         if let conditionsTemplate {
             conditionsTemplate.updateSections(conditionMenuSections())
         }
+    }
+
+    /// CarPlay can't draw the phone's hazard strip — surface it as a pop-up that
+    /// points the driver at the phone. Fires once per distinct hazard set.
+    private func maybeShowHazardAlert() {
+        guard guiding, navigationSession != nil, let mapTemplate else { return }
+        guard let hazards = CarConditionSection.read().first(where: { $0.title == "Route hazards" }) else { return }
+        let now = Date().timeIntervalSince1970
+        let items = hazards.items.filter {
+            ($0.expiresAt ?? .greatestFiniteMagnitude) > now && !$0.title.hasPrefix("No hazards")
+        }
+        guard !items.isEmpty else { return }
+        let key = items.prefix(3).map(\.title).joined(separator: "|")
+        guard key != lastHazardAlertKey else { return }
+        lastHazardAlertKey = key
+        let alert = CPNavigationAlert(
+            titleVariants: ["Hazards on your route"],
+            subtitleVariants: ["\(items.count) flagged ahead — check your phone for details"],
+            image: Self.symbol("exclamationmark.triangle.fill"),
+            primaryAction: CPAlertAction(title: "OK", style: .default, handler: { _ in }),
+            secondaryAction: nil,
+            duration: 8
+        )
+        mapTemplate.present(alert, animated: true, completion: nil)
     }
 
     private func showConditionDetail(title: String, detail: String) {
@@ -540,33 +574,37 @@ final class CarMapViewController: UIViewController, NavigationMapViewDelegate {
         case "white": color = UIColor(white: 0.9, alpha: 1)
         default: color = UIColor(red: 0.10, green: 0.45, blue: 0.91, alpha: 1)
         }
-        let dome = UIGraphicsImageRenderer(size: CGSize(width: 36, height: 36)).image { context in
+        // Stock-size puck, still 3D: phone-color dome with a small top-left sheen.
+        // The sheen stays tight — last time it covered half the dome and read as
+        // a white/flat disc, hiding the chosen color.
+        let dome = UIGraphicsImageRenderer(size: CGSize(width: 22, height: 22)).image { context in
             let ctx = context.cgContext
-            ctx.setShadow(offset: CGSize(width: 0, height: 2), blur: 3, color: UIColor.black.withAlphaComponent(0.6).cgColor)
+            ctx.setShadow(offset: CGSize(width: 0, height: 1), blur: 2, color: UIColor.black.withAlphaComponent(0.5).cgColor)
             ctx.setFillColor(UIColor.white.cgColor)
-            ctx.fillEllipse(in: CGRect(x: 2, y: 2, width: 32, height: 32))
+            ctx.fillEllipse(in: CGRect(x: 1, y: 1, width: 20, height: 20))
             ctx.setShadow(offset: .zero, blur: 0, color: nil)
             ctx.saveGState()
-            ctx.addEllipse(in: CGRect(x: 5, y: 5, width: 26, height: 26))
+            ctx.addEllipse(in: CGRect(x: 3.5, y: 3.5, width: 15, height: 15))
             ctx.clip()
-            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [UIColor.white.cgColor, color.cgColor, color.withAlphaComponent(0.9).cgColor] as CFArray, locations: [0, 0.45, 1]) {
-                ctx.drawRadialGradient(gradient, startCenter: CGPoint(x: 12, y: 10), startRadius: 0, endCenter: CGPoint(x: 18, y: 18), endRadius: 22, options: [.drawsAfterEndLocation])
+            let highlight = UIColor.white.withAlphaComponent(0.85)
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [highlight.cgColor, color.cgColor, color.withAlphaComponent(0.85).cgColor] as CFArray, locations: [0, 0.3, 1]) {
+                ctx.drawRadialGradient(gradient, startCenter: CGPoint(x: 8, y: 7), startRadius: 0, endCenter: CGPoint(x: 11, y: 11), endRadius: 13, options: [.drawsAfterEndLocation])
             }
             ctx.restoreGState()
         }
-        let nose = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 52)).image { context in
+        let nose = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 32)).image { context in
             let path = UIBezierPath()
-            path.move(to: CGPoint(x: 16, y: 1))
-            path.addLine(to: CGPoint(x: 30, y: 28))
-            path.addLine(to: CGPoint(x: 2, y: 28))
+            path.move(to: CGPoint(x: 10, y: 1))
+            path.addLine(to: CGPoint(x: 18, y: 18))
+            path.addLine(to: CGPoint(x: 2, y: 18))
             path.close()
             color.setFill()
             path.fill()
             UIColor.white.setStroke()
-            path.lineWidth = 2
+            path.lineWidth = 1.5
             path.stroke()
         }
-        var config = Puck2DConfiguration(topImage: dome, bearingImage: nose, scale: .constant(1.1))
+        var config = Puck2DConfiguration(topImage: dome, bearingImage: nose, scale: .constant(1.0))
         config.pulsing = .none
         navigationMapView.puckType = .puck2D(config)
         navigationMapView.mapView.location.options.puckBearingEnabled = true
@@ -664,7 +702,6 @@ final class CarRadarOverlay {
     private var errorSubscription: AnyCancelable?
     private var loadSubscription: AnyCancelable?
     private var loadedSources: Set<String> = []
-    private var failed = false
     private var lastFetch: TimeInterval = 0
     private var tileBase = ""
     private(set) var enabled = false
@@ -677,7 +714,8 @@ final class CarRadarOverlay {
             guard let source = event.sourceId, source.hasPrefix("stormpath-car-radar-") else { return }
             Task { @MainActor in
                 guard let self, self.enabled, self.installed.contains(source) else { return }
-                self.failed = true
+                // Don't latch "unavailable" — drop the frames and let the next
+                // refresh (≤5 min) reinstall instead of staying dead until retoggled.
                 self.removeLayers()
                 self.setStatus("Radar unavailable")
             }
@@ -696,7 +734,6 @@ final class CarRadarOverlay {
     func setEnabled(_ value: Bool) {
         guard enabled != value else { return }
         enabled = value
-        failed = false
         requestGeneration += 1
         timer?.invalidate()
         timer = nil
@@ -742,9 +779,11 @@ final class CarRadarOverlay {
     private func refresh() {
         guard request == nil, enabled else { return }
         guard let base = UserDefaults.standard.string(forKey: "stormpath.car.radarTileBase"),
+              !base.isEmpty,
               let url = URL(string: base), url.scheme == "https", url.host != nil,
               url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
-            setStatus("Radar unavailable")
+            // Nothing published by the phone yet — recover on the next tick.
+            setStatus("Radar needs phone")
             return
         }
         tileBase = base.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -759,12 +798,9 @@ final class CarRadarOverlay {
                 let (data, response) = try await URLSession.shared.data(for: manifestRequest)
                 guard !Task.isCancelled, enabled, requestGeneration == generation else { return }
                 guard (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 256_000 else {
-                    failed = true
-                    removeLayers()
                     setStatus("Radar unavailable")
                     return
                 }
-                failed = false
                 let manifest = try JSONDecoder().decode(Manifest.self, from: data)
                 let now = Date().timeIntervalSince1970
                 let recent = (manifest.radar?.past ?? []).filter {
@@ -785,15 +821,14 @@ final class CarRadarOverlay {
                 }
             } catch {
                 guard !Task.isCancelled, requestGeneration == generation else { return }
-                failed = true
-                removeLayers()
-                setStatus("Radar unavailable")
+                // Keep the last good frames animating through a transient failure.
+                if frames.isEmpty { setStatus("Radar unavailable") }
             }
         }
     }
 
     private func installFrames() {
-        guard enabled, !failed, let style = map?.mapView.mapboxMap, style.isStyleLoaded else { return }
+        guard enabled, let style = map?.mapView.mapboxMap, style.isStyleLoaded else { return }
         removeLayers()
         do {
             let anchor = style.allLayerIdentifiers.first { $0.type == .line && $0.id.localizedCaseInsensitiveContains("route") }?.id

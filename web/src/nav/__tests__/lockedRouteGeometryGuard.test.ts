@@ -250,6 +250,26 @@ describe("nativeRouteChangedShouldForce", () => {
       })
     ).toBe(true);
   });
+
+  it("does not force a mid-trip emit when the driver locked an alternate", () => {
+    expect(
+      nativeRouteChangedShouldForce({
+        isFirstRouteChanged: false,
+        driverAlreadyOffLockedCorridor: true,
+        driverPrefersAlternate: true,
+      })
+    ).toBe(false);
+  });
+
+  it("still forces the first emit for an alternate driver already off the lock", () => {
+    expect(
+      nativeRouteChangedShouldForce({
+        isFirstRouteChanged: true,
+        driverAlreadyOffLockedCorridor: true,
+        driverPrefersAlternate: true,
+      })
+    ).toBe(true);
+  });
 });
 
 describe("nativeGeometryApplyPolicy", () => {

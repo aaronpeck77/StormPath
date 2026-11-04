@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { Capacitor } from "@capacitor/core";
 import {
   StormpathMapboxNavigation,
@@ -29,6 +29,7 @@ import { useTripPlanStore } from "../state/tripPlanStore";
 import { createNativeDrivePoseHold } from "./nativeDrivePoseHold";
 import { NATIVE_DRIVE_MAP_ENABLED } from "./nativeDriveMapShell";
 import type { CoreRerouteHealth } from "./rerouteOwner";
+import type { RoutingPreference } from "./routePreference";
 import {
   createNativeDriveFollowCam,
   parseNativeDriveFollowCamera,
@@ -111,7 +112,8 @@ export function useNativeNavSession(opts: {
   /**
    * When SDK starts or reroutes, adopt geometry into the locked guidance corridor.
    * First emit: keep Go-locked B unless already off-route.
-   * Later emits (Apple 4.20.7): Core's reroute IS the new lock — always force.
+   * Later emits (Apple 4.20.7): Core's reroute IS the new lock — force-adopted,
+   * except when `routingPreferenceRef` says the driver locked an alternate.
    */
   onRouteGeometry: (geometry: LngLat[], opts?: { force?: boolean }) => boolean | void;
   /** Optional: arrive / hard error — App may End trip. */
@@ -123,6 +125,13 @@ export function useNativeNavSession(opts: {
   preferBackroads?: boolean;
   /** Mapbox turn language. "en" or the phone language. */
   guidanceLanguage?: string;
+  /**
+   * Driver's locked routing preference. When "alternate", a mid-trip Core
+   * reroute is not force-adopted — Core's reroute is always its fastest line,
+   * which would silently undo the alternate the driver chose. Rejection hands
+   * the episode to DIY, which replans honoring this preference.
+   */
+  routingPreferenceRef?: MutableRefObject<RoutingPreference>;
 }) {
   const {
     accessToken,
@@ -134,6 +143,7 @@ export function useNativeNavSession(opts: {
     voiceGuidanceEnabled = false,
     preferBackroads = false,
     guidanceLanguage = "en",
+    routingPreferenceRef,
   } = opts;
   const voiceGuidanceEnabledRef = useRef(voiceGuidanceEnabled);
   voiceGuidanceEnabledRef.current = voiceGuidanceEnabled;
@@ -370,6 +380,7 @@ export function useNativeNavSession(opts: {
               locked: coordsRef.current.lockedCorridor,
               userLngLat: coordsRef.current.userLngLat,
             }),
+            driverPrefersAlternate: routingPreferenceRef?.current === "alternate",
           });
           const adopted = onRouteGeometryRef.current(geom, { force }) !== false;
           if (!adopted) {

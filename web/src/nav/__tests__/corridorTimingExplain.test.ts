@@ -110,7 +110,7 @@ describe("buildCorridorTimingExplainLines", () => {
       ],
     });
     expect(lines).toHaveLength(1);
-    expect(lines[0]!.text).toMatch(/Clear on the map now/);
+    expect(lines[0]!.text).toMatch(/Radar clear for now/);
     expect(lines[0]!.text).toMatch(/thunderstorms likely near Mid/);
     expect(lines[0]!.tone).toBe("warn");
   });

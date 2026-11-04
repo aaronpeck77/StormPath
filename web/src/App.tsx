@@ -1062,6 +1062,7 @@ export default function App() {
     /* No hard motorway ban. A reroute may use an interstate when that is the
      * sensible way on. The fastest/alternate choice is applied from here. */
     preferBackroads: false,
+    routingPreferenceRef,
   });
 
   const handleSkipViaStop = useCallback(

@@ -139,8 +139,8 @@ export function buildCorridorTimingExplainLines(input: {
     lines.push({
       badge: "Timing",
       text: stormyConditions(worst.conditions)
-        ? `Clear on the map now — thunderstorms likely near ${where}${when}.`
-        : `Clear on the map now — rain likely near ${where}${when}.`,
+        ? `Radar clear for now — thunderstorms likely near ${where}${when}.`
+        : `Radar clear for now — rain likely near ${where}${when}.`,
       tone: "warn",
     });
   }

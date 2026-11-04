@@ -140,8 +140,15 @@ function candidateReachesUser(candidate: LngLat[], user: LngLat): boolean {
 export function nativeRouteChangedShouldForce(input: {
   isFirstRouteChanged: boolean;
   driverAlreadyOffLockedCorridor: boolean;
+  /**
+   * Driver locked an alternate. A mid-trip Core reroute answers with Core's
+   * *fastest* line — force-adopting it silently dumps the driver back on the
+   * main path they declined. Instead let the agreement check reject it so DIY
+   * owns the episode and replans with the alternate preference intact.
+   */
+  driverPrefersAlternate?: boolean;
 }): boolean {
-  void input.isFirstRouteChanged;
+  if (input.driverPrefersAlternate && !input.isFirstRouteChanged) return false;
   return input.driverAlreadyOffLockedCorridor;
 }
 
