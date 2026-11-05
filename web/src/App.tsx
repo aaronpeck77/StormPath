@@ -35,6 +35,9 @@ import { useOpenWeatherNowcast } from "./hooks/useOpenWeatherNowcast";
 import { useNearbyPoiTip } from "./hooks/useNearbyPoiTip";
 import { useAdvisoryVoiceGuidance } from "./hooks/useAdvisoryVoiceGuidance";
 import { useCarSessionPublish } from "./hooks/useCarSessionPublish";
+import { useCarPlayActive } from "./hooks/useCarPlayActive";
+import { CarPlayCompanionView } from "./ui/CarPlayCompanionView";
+import { pickAdvisoryVoiceLine } from "./nav/advisoryVoice";
 import { isAppVoiceHeld, subscribeAppVoiceHold } from "./grok/assistantFloor";
 import { useJamHop } from "./nav/useJamHop";
 import { JamHopBanner } from "./ui/JamHopBanner";
@@ -2243,6 +2246,21 @@ export default function App() {
     },
   });
 
+  /* While CarPlay is attached and a trip is navigating, the phone becomes the
+   * detail view (hazards/forecast/progress) instead of a second map that can
+   * disagree with the car screen. Toggling Map peeks at the map for the drive. */
+  const carPlayActive = useCarPlayActive();
+  const [carPlayMapPeek, setCarPlayMapPeek] = useState(false);
+  useEffect(() => {
+    if (!(carPlayActive && navigationStarted)) setCarPlayMapPeek(false);
+  }, [carPlayActive, navigationStarted]);
+  const showCarPlayCompanion = carPlayActive && navigationStarted && !carPlayMapPeek;
+  const carPlayAdvisoryLine = pickAdvisoryVoiceLine({
+    nextHazardAtEtaLine,
+    driveRouteAheadLine,
+    nowcastLine: advisoryNowcastLine,
+  });
+
   const onStormBarExpandedChange = useCallback(
     (expanded: boolean) => {
       setStormBarExpanded(expanded);
@@ -3079,6 +3097,30 @@ export default function App() {
           Dev
         </div>
       ) : null}
+      {showCarPlayCompanion ? (
+        <CarPlayCompanionView
+          destinationLabel={destinationLabel}
+          etaMinutes={driveEtaMinutes ?? null}
+          advisoryLine={carPlayAdvisoryLine}
+          speedLimitMph={
+            displayedPostedSpeedMph({ route: offRouteGuidanceRoute, alongMeters: userAlongGuidanceM }) ??
+            (postedMphIsClassEstimate ? null : postedMph)
+          }
+          conditions={{
+            items: routeAheadTimeline,
+            userAlongMeters: userAlongGuidanceM,
+            totalMeters: guidanceRouteLengthM,
+            driveEtaMinutes,
+            outlook: activeProgressCalloutPanel.outlookTimeline,
+            localForecast: localHourlyForecast,
+            nowcast: currentNowcast,
+            online: isOnline,
+            isPlus,
+          }}
+          useMiles={roadUsesMiles(effectiveUserLngLat)}
+          onShowMap={() => setCarPlayMapPeek(true)}
+        />
+      ) : (
       <AppMapStage driveMapProps={driveMapProps}>
         <div className="nav-drive-overlay-stack">
             {!trafficBypassCompare ? (
@@ -3428,6 +3470,16 @@ export default function App() {
           }}
         />
       </AppMapStage>
+      )}
+      {carPlayActive && navigationStarted && carPlayMapPeek ? (
+        <button
+          type="button"
+          className="cp-companion__return"
+          onClick={() => setCarPlayMapPeek(false)}
+        >
+          Weather &amp; hazards
+        </button>
+      ) : null}
 
       <AppAboutSheetHost
         payTierProbeKey={payTierProbeKey}

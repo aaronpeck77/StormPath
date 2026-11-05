@@ -7,6 +7,9 @@ const StormpathCarSession = registerPlugin("StormpathCarSession", {
         return { ok: true };
       },
       async clear() {},
+      async carPlayConnected() {
+        return { connected: false };
+      },
     }),
 });
 

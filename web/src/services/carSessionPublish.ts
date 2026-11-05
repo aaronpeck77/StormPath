@@ -74,6 +74,17 @@ export function buildCarConditions(p: CarConditionsInput): CarConditionSection[]
   ];
 }
 
+/** True while the car screen is attached (CarPlay scene alive). Web/false on failure. */
+export async function carPlayConnected(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const result = await StormpathCarSession.carPlayConnected();
+    return result.connected === true;
+  } catch {
+    return false;
+  }
+}
+
 /** Push trip/advisory snapshot for a future CarPlay scene (no-op on web). */
 export async function publishCarSession(payload: {
   navigating: boolean;

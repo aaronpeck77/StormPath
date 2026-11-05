@@ -13,6 +13,8 @@ export type CarSessionPublish = {
 export interface StormpathCarSessionPlugin {
   publish(payload: CarSessionPublish): Promise<{ ok: boolean }>;
   clear(): Promise<void>;
+  /** True while a CarPlay template scene is attached to this app. */
+  carPlayConnected(): Promise<{ connected: boolean }>;
 }
 
 export declare const StormpathCarSession: StormpathCarSessionPlugin;
