@@ -7,13 +7,14 @@ import {
 import type { TripStop } from "./routeWaypoints";
 import type { LngLat } from "./types";
 
-/** Mapbox Directions / Navigation waypoint cap (origin + vias + dest + silent shapes). */
-export const NATIVE_GUIDANCE_MAX_COORDS = 16;
+/** Mapbox Directions coordinate cap is 25 — stay under it with origin+dest headroom. */
+export const NATIVE_GUIDANCE_MAX_COORDS = 24;
 /** First/last silent shape — keeps Core on neighborhood streets instead of a yard chord. */
 const SHAPE_NEAR_M = 2_800;
-/** Sparse mid-corridor shapes on long trips (not a dense 25-point sample). */
-const SHAPE_STEP_M = 90_000;
-const SHAPE_MAX_SILENT = 12;
+/** Preferred corridor shape spacing (~2.5 mi). Lengthens on very long trips so the
+ * silent-point budget spreads evenly instead of leaving the tail unpinned. */
+const SHAPE_STEP_M = 4_000;
+const SHAPE_MAX_SILENT = 21;
 
 export type NativeGuidanceCoord = {
   lng: number;
@@ -41,11 +42,16 @@ function sameCoord(a: NativeGuidanceCoord, b: NativeGuidanceCoord): boolean {
 function collectShapingAlong(remaining: LngLat[], maxSilent: number): LngLat[] {
   const total = polylineLengthMeters(remaining);
   if (total < SHAPE_NEAR_M * 2.2 || maxSilent < 1) return [];
+  /* Spread the silent budget across the whole corridor — a fixed 90 km step
+   * left long trips with one or two shapes and Core free-routed the middle,
+   * which is how CarPlay showed the fastest line instead of the locked one. */
+  const span = total - SHAPE_NEAR_M * 2;
+  const stepM = Math.max(SHAPE_STEP_M, span / Math.max(1, maxSilent - 1));
   const targets: number[] = [Math.min(SHAPE_NEAR_M, total * 0.08)];
-  let m = SHAPE_NEAR_M + SHAPE_STEP_M;
+  let m = targets[0]! + stepM;
   while (m < total - SHAPE_NEAR_M && targets.length < maxSilent - 1) {
     targets.push(m);
-    m += SHAPE_STEP_M;
+    m += stepM;
   }
   const last = total - SHAPE_NEAR_M;
   if (last > targets[targets.length - 1]! + 1_000) {

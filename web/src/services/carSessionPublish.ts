@@ -26,7 +26,9 @@ export type CarConditionsInput = {
 export function buildCarConditions(p: CarConditionsInput): CarConditionSection[] {
   const status = p.online ? "Phone snapshot" : "Offline — saved phone snapshot";
   const hazards = p.items
-    .filter((item) => item.endMeters >= p.userAlongMeters && !isAlertExpired(item.expiresIso))
+    /* "Nearby — not crossing" entries are context, not route hazards — the
+     * car popup must not fire for them. */
+    .filter((item) => item.crossesRoute !== false && item.endMeters >= p.userAlongMeters && !isAlertExpired(item.expiresIso))
     .sort((a, b) => a.startMeters - b.startMeters)
     .map((item) => {
       const timing = formatRouteAlertTiming({

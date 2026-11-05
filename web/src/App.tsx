@@ -177,6 +177,7 @@ import { useActivityTrailMap } from "./hooks/useActivityTrailMap";
 import { BYPASS_HEAVY_DELAY_MINUTES } from "./nav/constants";
 import { useActiveTripCache } from "./nav/useActiveTripCache";
 import { computeDriveRouteBearing } from "./nav/computeDriveRouteBearing";
+import { displayedPostedSpeedMph } from "./nav/postedSpeedSanity";
 import { useForecastPlaceLabel } from "./hooks/useForecastPlaceLabel";
 import { useBasemapNight } from "./hooks/useBasemapNight";
 import {
@@ -2223,7 +2224,12 @@ export default function App() {
     driveRouteAheadLine,
     nowcastLine: advisoryNowcastLine,
     puckColor: settingPuckColor,
-    speedLimitMph: postedMphIsClassEstimate ? null : postedMph,
+    /* CarPlay sign prefers the route-step Directions maxspeed — it moves with
+     * the road. Horizon limit is only a fallback, and the class estimate never
+     * reaches the car (postedSpeedForDisplay classEstimate gate). */
+    speedLimitMph:
+      displayedPostedSpeedMph({ route: offRouteGuidanceRoute, alongMeters: userAlongGuidanceM }) ??
+      (postedMphIsClassEstimate ? null : postedMph),
     conditions: {
       items: navigationStarted ? routeAheadTimeline : [],
       userAlongMeters: userAlongGuidanceM,

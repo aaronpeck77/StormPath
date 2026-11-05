@@ -24,16 +24,16 @@ beforeEach(() => {
 });
 
 describe("CarPlay conditions snapshot", () => {
-  it("keeps road and weather hazards from the shared timeline with relevance", () => {
+  it("keeps only route-crossing hazards so the car popup matches the phone", () => {
     const sections = buildCarConditions({ ...base, items: [hazard, {
       ...hazard, id: "nws-1", track: "nws", label: "Flood warning", crossesRoute: false,
       etaStale: true,
     }] });
     const rows = sections.find((s) => s.title === "Route hazards")!.items;
-    expect(rows).toHaveLength(2);
+    /* "Nearby — not crossing" items are context, not route hazards: the car
+     * popup must not fire for them (build 562 false-positive report). */
+    expect(rows).toHaveLength(1);
     expect(rows[0]!.detail).toContain("Right lane closed");
-    expect(rows[1]!.detail).toContain("Nearby");
-    expect(rows[1]!.detail).toContain("Likely over before you reach it");
   });
 
   it("drops passed and expired hazards without claiming the road is clear", () => {

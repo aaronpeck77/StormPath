@@ -76,7 +76,10 @@ public final class StormPathCarPlay {
 
         let template = CPMapTemplate()
         template.mapDelegate = templateForwarder
-        template.guidanceBackgroundColor = .black
+        // Near-black navy, not pure black: CarPlay rejects guidanceBackgroundColor
+        // values that fail its contrast check and silently falls back to the
+        // default white card (what Bill saw as "white box, black lettering").
+        template.guidanceBackgroundColor = UIColor(red: 0.03, green: 0.10, blue: 0.15, alpha: 1)
         template.automaticallyHidesNavigationBar = true
         template.hidesButtonsWithNavigationBar = true
         defaultMapButtons = makeMapButtons(for: template)
@@ -405,7 +408,9 @@ public final class StormPathCarPlay {
     private func loadStyle() {
         guard let controller = mapController else { return }
         let dark = (window?.traitCollection.userInterfaceStyle ?? controller.traitCollection.userInterfaceStyle) == .dark
-        let raw = dark ? "mapbox://styles/mapbox/dark-v11" : "mapbox://styles/mapbox/streets-v12"
+        // navigation-night has lit road casing for after-dark driving; dark-v11
+        // left the streets unreadable in CarPlay's night mode.
+        let raw = dark ? "mapbox://styles/mapbox/navigation-night-v1" : "mapbox://styles/mapbox/streets-v12"
         let map = controller.navigationMapView
         if map.mapView.mapboxMap.styleURI?.rawValue == raw { return }
         let uri = StyleURI(rawValue: raw) ?? .streets
@@ -600,11 +605,11 @@ final class CarMapViewController: UIViewController, NavigationMapViewDelegate {
             }
             ctx.restoreGState()
         }
-        let nose = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 32)).image { context in
+        let nose = UIGraphicsImageRenderer(size: CGSize(width: 18, height: 26)).image { context in
             let path = UIBezierPath()
-            path.move(to: CGPoint(x: 10, y: 1))
-            path.addLine(to: CGPoint(x: 18, y: 18))
-            path.addLine(to: CGPoint(x: 2, y: 18))
+            path.move(to: CGPoint(x: 9, y: 1))
+            path.addLine(to: CGPoint(x: 16, y: 16))
+            path.addLine(to: CGPoint(x: 2, y: 16))
             path.close()
             color.setFill()
             path.fill()
