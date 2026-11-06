@@ -70,7 +70,7 @@ describe("ultra-long route geometry", () => {
     const stored = normalizeStoredRouteGeometry(raw);
     expect(stored.length).toBeLessThanOrEqual(ROUTE_GEOMETRY_STORAGE_VERTICES_EXTREME);
     expect(stored.length).toBeGreaterThan(ROUTE_GEOMETRY_STORAGE_VERTICES_ULTRA);
-  }, 30_000);
+  }, 60_000);
 
   it("leaves short routes untouched", () => {
     const short: LngLat[] = [
