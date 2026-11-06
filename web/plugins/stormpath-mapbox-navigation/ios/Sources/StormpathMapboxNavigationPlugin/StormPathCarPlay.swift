@@ -40,6 +40,10 @@ public final class StormPathCarPlay {
     private var lastHazardAlertAt: TimeInterval = 0
     private var followingStepIndex: Int?
     private var followingLegIndex: Int?
+    /// Content signature of what the maneuver card currently shows. Rebuilding
+    /// `upcomingManeuvers` slides a fresh panel in even when the visible copy is
+    /// identical, so we only reassign when this changes.
+    private var followingManeuverSignature = ""
 
     private let locationSubject = CurrentValueSubject<CLLocation?, Never>(nil)
     private let progressSubject = CurrentValueSubject<RouteProgress?, Never>(nil)
@@ -83,6 +87,10 @@ public final class StormPathCarPlay {
         // values that fail its contrast check and silently falls back to the
         // default white card (what Bill saw as "white box, black lettering").
         template.guidanceBackgroundColor = UIColor(red: 0.03, green: 0.10, blue: 0.15, alpha: 1)
+        /* The ETA / distance-left card defaults to a light style on some
+         * CarPlay screens, which reads as a white panel with black text next
+         * to the dark maneuver card. Pin it dark to match guidance. */
+        template.tripEstimateStyle = .dark
         template.automaticallyHidesNavigationBar = true
         template.hidesButtonsWithNavigationBar = true
         defaultMapButtons = makeMapButtons(for: template)
@@ -121,6 +129,7 @@ public final class StormPathCarPlay {
         trip = nil
         currentManeuver = nil
         currentBanner = nil
+        followingManeuverSignature = ""
         window?.rootViewController = nil
         mapController = nil
         mapTemplate = nil
@@ -145,6 +154,7 @@ public final class StormPathCarPlay {
         guard guiding else { return }
         self.routes = routes
         currentBanner = nil
+        followingManeuverSignature = ""
         showRoutes()
         startTripIfNeeded()
     }
@@ -178,6 +188,7 @@ public final class StormPathCarPlay {
         trip = nil
         currentManeuver = nil
         currentBanner = nil
+        followingManeuverSignature = ""
         mapController?.navigationMapView.removeRoutes()
         if isConnected {
             idleLocation.startUpdatingLocation()
@@ -296,6 +307,14 @@ public final class StormPathCarPlay {
             duration: 8
         )
         mapTemplate.present(navigationAlert: alert, animated: true)
+        /* Hand the announced set to the phone so the companion page can
+         * highlight exactly which hazards the alert was about. The phone
+         * consumes (reads + clears) this key — it is not part of the
+         * conditions snapshot. */
+        let pending: [String: Any] = ["titles": titles, "at": nowTs]
+        if let data = try? JSONSerialization.data(withJSONObject: pending) {
+            UserDefaults.standard.set(data, forKey: "stormpath.car.pendingHazardAlert")
+        }
     }
 
     private func showConditionDetail(title: String, detail: String) {
@@ -469,42 +488,60 @@ public final class StormPathCarPlay {
     private func updateManeuver(_ progress: RouteProgress) {
         guard let navigationSession else { return }
         let stepProgress = progress.currentLegProgress.currentStepProgress
-        if let banner = stepProgress.currentVisualInstruction,
-           banner != currentBanner || followingStepIndex != progress.currentLegProgress.stepIndex || followingLegIndex != progress.legIndex {
-            currentBanner = banner
-            followingStepIndex = progress.currentLegProgress.stepIndex
-            followingLegIndex = progress.legIndex
-            let maneuver = CPManeuver()
-            maneuver.initialTravelEstimates = CPTravelEstimates(
-                distanceRemaining: Self.carDistance(stepProgress.distanceRemaining),
-                timeRemaining: stepProgress.durationRemaining
-            )
-            var text = banner.primaryInstruction.text ?? progress.currentLegProgress.currentStep.instructions
-            if let secondary = banner.secondaryInstruction?.text, !secondary.isEmpty {
-                text += "\n\(secondary)"
-            }
-            maneuver.instructionVariants = [text]
-            maneuver.symbolSet = banner.primaryInstruction.maneuverImageSet(
-                side: banner.drivingSide,
-                visualInstruction: banner.primaryInstruction
-            )
-            var maneuvers = [maneuver]
-            if let nextStep = progress.currentLegProgress.upcomingStep,
-               let following = nextStep.instructionsDisplayedAlongStep?.last {
-                let next = CPManeuver()
-                next.instructionVariants = [following.primaryInstruction.text ?? nextStep.instructions]
-                next.symbolSet = following.primaryInstruction.maneuverImageSet(
-                    side: following.drivingSide,
-                    visualInstruction: following.primaryInstruction
+        if let banner = stepProgress.currentVisualInstruction {
+            /* VisualInstruction equality churns on fields the driver never
+             * sees (component ordering, per-tick banner variants), which made
+             * CarPlay slide a "new" panel with identical text. Gate the
+             * reassignment on the content we actually display instead. */
+            let nextStep = progress.currentLegProgress.upcomingStep
+            let nextBanner = nextStep?.instructionsDisplayedAlongStep?.last
+            let signature = [
+                "\(progress.legIndex)",
+                "\(progress.currentLegProgress.stepIndex)",
+                banner.primaryInstruction.text ?? "",
+                banner.secondaryInstruction?.text ?? "",
+                "\(banner.primaryInstruction.maneuverType)|\(banner.primaryInstruction.modifier)",
+                "\(banner.drivingSide)",
+                nextBanner?.primaryInstruction.text ?? nextStep?.instructions ?? "",
+                "\(nextBanner?.primaryInstruction.maneuverType)|\(nextBanner?.primaryInstruction.modifier)",
+            ].joined(separator: "\u{1F}")
+            if signature != followingManeuverSignature {
+                followingManeuverSignature = signature
+                currentBanner = banner
+                followingStepIndex = progress.currentLegProgress.stepIndex
+                followingLegIndex = progress.legIndex
+                let maneuver = CPManeuver()
+                maneuver.initialTravelEstimates = CPTravelEstimates(
+                    distanceRemaining: Self.carDistance(stepProgress.distanceRemaining),
+                    timeRemaining: stepProgress.durationRemaining
                 )
-                next.initialTravelEstimates = CPTravelEstimates(
-                    distanceRemaining: Self.carDistance(nextStep.distance),
-                    timeRemaining: nextStep.expectedTravelTime
+                var text = banner.primaryInstruction.text ?? progress.currentLegProgress.currentStep.instructions
+                if let secondary = banner.secondaryInstruction?.text, !secondary.isEmpty {
+                    text += "\n\(secondary)"
+                }
+                maneuver.instructionVariants = [text]
+                maneuver.symbolSet = banner.primaryInstruction.maneuverImageSet(
+                    side: banner.drivingSide,
+                    visualInstruction: banner.primaryInstruction
                 )
-                maneuvers.append(next)
+                var maneuvers = [maneuver]
+                if let upcoming = nextStep,
+                   let following = upcoming.instructionsDisplayedAlongStep?.last {
+                    let next = CPManeuver()
+                    next.instructionVariants = [following.primaryInstruction.text ?? upcoming.instructions]
+                    next.symbolSet = following.primaryInstruction.maneuverImageSet(
+                        side: following.drivingSide,
+                        visualInstruction: following.primaryInstruction
+                    )
+                    next.initialTravelEstimates = CPTravelEstimates(
+                        distanceRemaining: Self.carDistance(upcoming.distance),
+                        timeRemaining: upcoming.expectedTravelTime
+                    )
+                    maneuvers.append(next)
+                }
+                navigationSession.upcomingManeuvers = maneuvers
+                currentManeuver = maneuver
             }
-            navigationSession.upcomingManeuvers = maneuvers
-            currentManeuver = maneuver
         }
         if let currentManeuver {
             navigationSession.updateEstimates(

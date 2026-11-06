@@ -10,6 +10,9 @@ const StormpathCarSession = registerPlugin("StormpathCarSession", {
       async carPlayConnected() {
         return { connected: false };
       },
+      async carPlayHazardAlert() {
+        return { titles: [], at: 0 };
+      },
     }),
 });
 

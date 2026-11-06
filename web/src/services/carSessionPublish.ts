@@ -85,6 +85,23 @@ export async function carPlayConnected(): Promise<boolean> {
   }
 }
 
+/**
+ * Read-and-clear the hazard titles the CarPlay scene just announced. Returns
+ * the announced "SEVERITY · label" strings so the phone can highlight the
+ * same hazards; empty when nothing is pending or on web.
+ */
+export async function consumeCarPlayHazardAlert(): Promise<string[]> {
+  if (!Capacitor.isNativePlatform()) return [];
+  try {
+    const result = await StormpathCarSession.carPlayHazardAlert();
+    return Array.isArray(result.titles)
+      ? result.titles.filter((t): t is string => typeof t === "string" && t.length > 0)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Push trip/advisory snapshot for a future CarPlay scene (no-op on web). */
 export async function publishCarSession(payload: {
   navigating: boolean;

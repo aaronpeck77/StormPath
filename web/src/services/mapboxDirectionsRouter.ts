@@ -18,6 +18,7 @@ import {
   pointAtAlongMeters,
   polylineLengthMeters,
   routeCorridorOverlapFraction,
+  routeIsBriefDivergenceOnly,
   routesEffectivelySame,
   subsamplePolylineVertexBudget,
 } from "../nav/routeGeometry";
@@ -990,6 +991,9 @@ export async function collectMapboxRouteVariants(
     const isPreferredAlternate = (r: MbRoute): boolean => {
       const line = mbRouteLightLine(r);
       if (!line) return false;
+      /* "Same road except exit here, rejoin one exit later" wobble — adds
+       * time/distance without a meaningfully different corridor (Bill, 566). */
+      if (routeIsBriefDivergenceOnly(navA.geometry, line)) return false;
       return !routesTooSimilarForAlternate(
         navA.geometry,
         line,
@@ -1100,6 +1104,7 @@ export async function collectMapboxRouteVariants(
       const c = r.geometry?.coordinates;
       if (!c?.length) return false;
       const gLight = coordsToLightLine(c, GEOM_COMPARE_MAX_VERTICES);
+      if (routeIsBriefDivergenceOnly(navA.geometry, gLight)) return false;
       return !usedForDistinct.some((ug) => routesEffectivelySame(ug, gLight));
     };
 
@@ -1200,6 +1205,7 @@ async function fetchForcedDistinctAlternate(
       const navB = routeFromDirectionsApi(raw, "r-b", "balanced", "Alternate");
       if (!navB) continue;
       if (sameRouteShapeLine(navA.geometry, navB.geometry)) continue;
+      if (routeIsBriefDivergenceOnly(navA.geometry, navB.geometry)) continue;
       if (navB.baseEtaMinutes > maxDurMin) continue;
       const mainDist = polylineLengthMeters(navA.geometry);
       const altDist = polylineLengthMeters(navB.geometry);

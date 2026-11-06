@@ -36,6 +36,7 @@ import { useNearbyPoiTip } from "./hooks/useNearbyPoiTip";
 import { useAdvisoryVoiceGuidance } from "./hooks/useAdvisoryVoiceGuidance";
 import { useCarSessionPublish } from "./hooks/useCarSessionPublish";
 import { useCarPlayActive } from "./hooks/useCarPlayActive";
+import { useCarPlayHazardAlerts } from "./hooks/useCarPlayHazardAlerts";
 import { CarPlayCompanionView } from "./ui/CarPlayCompanionView";
 import { pickAdvisoryVoiceLine } from "./nav/advisoryVoice";
 import { SPEED_LIMIT_DISPLAY_ENABLED } from "./nav/postedSpeed";
@@ -2260,6 +2261,7 @@ export default function App() {
    * detail view (hazards/forecast/progress) instead of a second map that can
    * disagree with the car screen. Toggling Map peeks at the map for the drive. */
   const carPlayActive = useCarPlayActive();
+  const carPlayHazardTitles = useCarPlayHazardAlerts(carPlayActive, navigationStarted);
   const [carPlayMapPeek, setCarPlayMapPeek] = useState(false);
   useEffect(() => {
     if (!(carPlayActive && navigationStarted)) setCarPlayMapPeek(false);
@@ -3164,6 +3166,8 @@ export default function App() {
             stripTint: activeProgressCalloutPanel.stripTint,
             detailScrollRef: progressCalloutDetailScrollRef,
           }}
+          advisory={stormAdvisoryBarProps}
+          carAlertedHazardTitles={carPlayHazardTitles}
           useMiles={roadUsesMiles(effectiveUserLngLat)}
           onShowMap={() => setCarPlayMapPeek(true)}
         />

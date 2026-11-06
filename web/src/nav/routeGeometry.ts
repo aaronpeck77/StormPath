@@ -718,3 +718,57 @@ export function routesEffectivelySame(
   if (a.length < 2 || b.length < 2) return false;
   return routeCorridorOverlapFraction(a, b) >= minOverlap;
 }
+
+/** Samples on `candidate` farther than this from `reference` count as a different path. */
+export const ROUTE_DIVERGENCE_CORRIDOR_M = 800;
+/**
+ * Along-`reference` span (m) between where `candidate` leaves the corridor
+ * and rejoins it. An exit-here/rejoin-one-exit-later wobble spans only an
+ * exit or two; a real alternate commits to a different corridor for far longer.
+ */
+export const ROUTE_WOGGLE_MAX_SPAN_M = 6_000;
+/** Total different-path distance still small enough to be a pointless hop. */
+export const ROUTE_WOGGLE_MAX_DIVERGED_M = 8_000;
+/** …or this fraction of the candidate's own length, whichever is smaller. */
+export const ROUTE_WOGGLE_MAX_DIVERGED_FRAC = 0.2;
+
+/**
+ * True when `candidate` is essentially `reference` plus short exit/rejoin
+ * hops — e.g. leaving an interstate at one exit and merging back at the
+ * next. Directions APIs occasionally return these as "alternates"; they add
+ * time and distance without offering a meaningfully different corridor, so
+ * route builders drop them from the alternate pool.
+ */
+export function routeIsBriefDivergenceOnly(
+  reference: LngLat[],
+  candidate: LngLat[]
+): boolean {
+  if (reference.length < 2 || candidate.length < 2) return false;
+  const totalM = polylineLengthMeters(candidate);
+  if (totalM < 4_000) return false;
+  const refLite =
+    reference.length > 1_500
+      ? subsamplePolylineVertexBudget(reference, 1_500)
+      : reference;
+  const candCum = buildCumulativeDistances(candidate);
+  const step = Math.max(300, totalM / 160);
+  let divergedM = 0;
+  let minAlong = Infinity;
+  let maxAlong = -Infinity;
+  for (let d = step / 2; d < totalM; d += step) {
+    const pt = pointAtAlongMeters(candidate, d, candCum);
+    const { alongMeters, lateralMetersApprox } = closestAlongRouteMeters(pt, refLite);
+    if (lateralMetersApprox > ROUTE_DIVERGENCE_CORRIDOR_M) {
+      divergedM += step;
+      if (alongMeters < minAlong) minAlong = alongMeters;
+      if (alongMeters > maxAlong) maxAlong = alongMeters;
+    }
+  }
+  if (divergedM <= 0) return false;
+  const spanM = maxAlong - minAlong;
+  return (
+    spanM <= ROUTE_WOGGLE_MAX_SPAN_M &&
+    divergedM <=
+      Math.min(ROUTE_WOGGLE_MAX_DIVERGED_M, totalM * ROUTE_WOGGLE_MAX_DIVERGED_FRAC)
+  );
+}

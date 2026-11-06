@@ -28,3 +28,8 @@ export function limitExpandedPromoLines<T>(lines: T[], hasTripOrWeatherContent: 
   if (!hasTripOrWeatherContent) return lines;
   return lines.slice(0, maxWhenBusy);
 }
+
+/** Upgrade-teaser copy that should never rotate through the advisory bar. */
+export function isAdvisoryPromoNoise(line: { id: string }): boolean {
+  return line.id === "sp-weather-upgrades-soon";
+}

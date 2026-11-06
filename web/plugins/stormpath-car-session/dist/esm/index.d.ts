@@ -15,6 +15,12 @@ export interface StormpathCarSessionPlugin {
   clear(): Promise<void>;
   /** True while a CarPlay template scene is attached to this app. */
   carPlayConnected(): Promise<{ connected: boolean }>;
+  /**
+   * Read-and-clear the hazard titles the CarPlay scene just announced
+   * ("SEVERITY · label" strings from the phone's route-hazard snapshot).
+   * Empty when nothing is pending — safe to poll.
+   */
+  carPlayHazardAlert(): Promise<{ titles: string[]; at: number }>;
 }
 
 export declare const StormpathCarSession: StormpathCarSessionPlugin;

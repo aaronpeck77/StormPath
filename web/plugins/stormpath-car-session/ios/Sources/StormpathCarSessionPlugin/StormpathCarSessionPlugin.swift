@@ -15,6 +15,7 @@ public class StormpathCarSessionPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "publish", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "carPlayConnected", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "carPlayHazardAlert", returnType: CAPPluginReturnPromise),
     ]
 
     private static let defaults = UserDefaults.standard
@@ -45,8 +46,25 @@ public class StormpathCarSessionPlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve(["connected": connected])
     }
 
+    /* The CarPlay scene drops the hazard titles it just announced into
+     * UserDefaults so the phone companion can highlight the same hazards.
+     * Read-and-clear: each alert is delivered to the phone exactly once. */
+    @objc func carPlayHazardAlert(_ call: CAPPluginCall) {
+        guard let data = Self.defaults.data(forKey: Self.prefix + "pendingHazardAlert"),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let titles = obj["titles"] as? [String] else {
+            call.resolve(["titles": [String](), "at": 0])
+            return
+        }
+        Self.defaults.removeObject(forKey: Self.prefix + "pendingHazardAlert")
+        /* A pending alert that survived an app kill is stale — hazards move. */
+        let at = (obj["at"] as? Double) ?? 0
+        let fresh = at > 0 && Date().timeIntervalSince1970 - at < 30 * 60
+        call.resolve(["titles": fresh ? titles : [String](), "at": at])
+    }
+
     @objc func clear(_ call: CAPPluginCall) {
-        for key in ["navigating", "destination", "advisory", "maneuver", "updatedAt", "conditionsJson", "radarTileBase", "puckColor", "speedLimitMph"] {
+        for key in ["navigating", "destination", "advisory", "maneuver", "updatedAt", "conditionsJson", "radarTileBase", "puckColor", "speedLimitMph", "pendingHazardAlert"] {
             Self.defaults.removeObject(forKey: Self.prefix + key)
         }
         call.resolve()
