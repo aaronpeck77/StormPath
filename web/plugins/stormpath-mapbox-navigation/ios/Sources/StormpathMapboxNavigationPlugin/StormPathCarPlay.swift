@@ -495,15 +495,17 @@ public final class StormPathCarPlay {
              * reassignment on the content we actually display instead. */
             let nextStep = progress.currentLegProgress.upcomingStep
             let nextBanner = nextStep?.instructionsDisplayedAlongStep?.last
+            let legKey = "\(progress.legIndex)"
+            let stepKey = "\(progress.currentLegProgress.stepIndex)"
+            let primaryKey = banner.primaryInstruction.text ?? ""
+            let secondaryKey = banner.secondaryInstruction?.text ?? ""
+            let maneuverKey = "\(banner.primaryInstruction.maneuverType)|\(banner.primaryInstruction.modifier)"
+            let sideKey = "\(banner.drivingSide)"
+            let nextTextKey = nextBanner?.primaryInstruction.text ?? nextStep?.instructions ?? ""
+            let nextManeuverKey = "\(nextBanner?.primaryInstruction.maneuverType)|\(nextBanner?.primaryInstruction.modifier)"
             let signature = [
-                "\(progress.legIndex)",
-                "\(progress.currentLegProgress.stepIndex)",
-                banner.primaryInstruction.text ?? "",
-                banner.secondaryInstruction?.text ?? "",
-                "\(banner.primaryInstruction.maneuverType)|\(banner.primaryInstruction.modifier)",
-                "\(banner.drivingSide)",
-                nextBanner?.primaryInstruction.text ?? nextStep?.instructions ?? "",
-                "\(nextBanner?.primaryInstruction.maneuverType)|\(nextBanner?.primaryInstruction.modifier)",
+                legKey, stepKey, primaryKey, secondaryKey,
+                maneuverKey, sideKey, nextTextKey, nextManeuverKey,
             ].joined(separator: "\u{1F}")
             if signature != followingManeuverSignature {
                 followingManeuverSignature = signature
