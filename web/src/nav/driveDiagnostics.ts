@@ -90,6 +90,8 @@ export type DriveDiagSnapshot = {
   /** fastest | backroads, and how many times it changed after Go. */
   lockRule: string;
   lockSwitches: number;
+  /** Locked route pick — preference + chip label (e.g. "alternate·B"). */
+  lockPick: string;
   offRouteSec: number;
   offRouteLongestSec: number;
   offRouteOpenAtMs: number | null;
@@ -169,6 +171,7 @@ function emptySnapshot(): DriveDiagSnapshot {
     radioLongestWriter: "",
     lockRule: "",
     lockSwitches: 0,
+    lockPick: "",
     offRouteSec: 0,
     offRouteLongestSec: 0,
     offRouteOpenAtMs: null,
@@ -257,6 +260,7 @@ function applyParsed(parsed: Partial<DriveDiagSnapshot>): void {
       typeof parsed.radioLongestWriter === "string" ? parsed.radioLongestWriter.slice(0, 8) : "",
     lockRule: typeof parsed.lockRule === "string" ? parsed.lockRule.slice(0, 12) : "",
     lockSwitches: asCount(parsed.lockSwitches),
+    lockPick: typeof parsed.lockPick === "string" ? parsed.lockPick.slice(0, 24) : "",
     offRouteSec: asCount(parsed.offRouteSec),
     offRouteLongestSec: asCount(parsed.offRouteLongestSec),
     offRouteOpenAtMs:
@@ -622,6 +626,14 @@ export function noteDriveDiagRouteLock(backroads: boolean, navigating: boolean):
   persistDriveDiagSoon();
 }
 
+/** Which route chip + preference was locked at Go — dumps couldn't show this (564). */
+export function noteDriveDiagRoutePick(pick: string): void {
+  const next = pick.trim().slice(0, 24);
+  if (!next || state.lockPick === next) return;
+  state.lockPick = next;
+  persistDriveDiagSoon();
+}
+
 export function noteDriveDiagOffRoute(active: boolean, nowMs: number = Date.now()): void {
   if (active) {
     if (state.offRouteOpenAtMs != null) return;
@@ -742,6 +754,7 @@ export function formatDriveDiagLines(
   const lock = snap.lockRule
     ? `, lock ${snap.lockRule}${snap.lockSwitches ? `, switched ${snap.lockSwitches}` : ""}`
     : "";
+  const pick = snap.lockPick ? `, pick ${snap.lockPick}` : "";
   const doubled = snap.doubledBack ? `, doubled back ${snap.doubledBack}` : "";
   const holdCam =
     holdLongest > 0 && (holdWriter || holdFreeze || holdReclaim || holdJeff)
@@ -764,7 +777,7 @@ export function formatDriveDiagLines(
     }`,
     `Signal: ${snap.lowSignalHolds} map holds, tiles ${snap.tileWarmDone} warm / ${snap.tileWarmFailed} failed`,
     `Radio: ${snap.radioHolds} holds (${holdSec}s, longest ${holdLongest}s${holdCam})`,
-    `Route: ${snap.roadControls} road controls, ${snap.offRoute} off-route${offSpan}${lock}${doubled}`,
+    `Route: ${snap.roadControls} road controls, ${snap.offRoute} off-route${offSpan}${lock}${pick}${doubled}`,
     `Views: ${snap.viewTaps} taps, drone ${snap.droneStarts} start / ${snap.droneDone} done / ${snap.droneAbort} abort / ${snap.droneRetarget} retarget`,
     `Skip: first ${snap.droneSkipFirst}, same ${snap.droneSkipSame}, hold ${snap.droneSkipHold}, cmp ${snap.droneSkipCompare}, wait ${snap.droneSkipNotReady}, no-to ${snap.droneFailNoTo}, no-from ${snap.droneFailNoFrom}`,
     `Drone writes: ${snap.droneWriteFail} fails${

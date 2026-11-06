@@ -111,9 +111,11 @@ export function useNativeNavSession(opts: {
   coords: NativeNavSessionCoords;
   /**
    * When SDK starts or reroutes, adopt geometry into the locked guidance corridor.
-   * First emit: keep Go-locked B unless already off-route.
-   * Later emits (Apple 4.20.7): Core's reroute IS the new lock — force-adopted,
-   * except when `routingPreferenceRef` says the driver locked an alternate.
+   * First emit: keep Go-locked route unless already off-route.
+   * Mid-trip emits are NEVER force-adopted (hard lock, Bill 564): agreeing
+   * geometry refines silently; disagreement is rejected so DIY owns the
+   * episode — rejoin the locked corridor or surface choices — instead of the
+   * car screen silently drawing Core's own pick.
    */
   onRouteGeometry: (geometry: LngLat[], opts?: { force?: boolean }) => boolean | void;
   /** Optional: arrive / hard error — App may End trip. */
@@ -372,7 +374,9 @@ export function useNativeNavSession(opts: {
           if (geom.length < 2) return;
           const isFirst = firstRouteChangedRef.current;
           firstRouteChangedRef.current = false;
-          /* 4.20.7 submitted IPA: always force. Keep B only on the first emit. */
+          /* Hard lock: only the session-start emit may force (already off the
+           * lock). Every mid-trip emit goes through the agreement check — a
+           * divergent Core pick is rejected, never drawn. */
           const force = nativeRouteChangedShouldForce({
             isFirstRouteChanged: isFirst,
             driverAlreadyOffLockedCorridor: shouldForceAdoptOffRouteNativeGeometry({

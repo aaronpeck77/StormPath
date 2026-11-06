@@ -224,13 +224,23 @@ describe("nativeRouteChangedShouldForce", () => {
     ).toBe(false);
   });
 
-  it("forces a later Core emit only when the driver left the lock", () => {
+  it("never forces a mid-trip emit, even when the driver left the lock (hard lock)", () => {
+    /* Build 564: force-adopting Core's mid-trip reroute silently replaced the
+     * locked route — the "app changed my route behind my back" failure. Disagreeing
+     * geometry is rejected so DIY can rejoin or offer choices instead. */
     expect(
       nativeRouteChangedShouldForce({
         isFirstRouteChanged: false,
         driverAlreadyOffLockedCorridor: true,
       })
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      nativeRouteChangedShouldForce({
+        isFirstRouteChanged: false,
+        driverAlreadyOffLockedCorridor: true,
+        driverPrefersAlternate: true,
+      })
+    ).toBe(false);
   });
 
   it("does not steal Go-locked B on the first session emit", () => {
@@ -251,22 +261,22 @@ describe("nativeRouteChangedShouldForce", () => {
     ).toBe(true);
   });
 
-  it("does not force a mid-trip emit when the driver locked an alternate", () => {
-    expect(
-      nativeRouteChangedShouldForce({
-        isFirstRouteChanged: false,
-        driverAlreadyOffLockedCorridor: true,
-        driverPrefersAlternate: true,
-      })
-    ).toBe(false);
-  });
-
   it("still forces the first emit for an alternate driver already off the lock", () => {
     expect(
       nativeRouteChangedShouldForce({
         isFirstRouteChanged: true,
         driverAlreadyOffLockedCorridor: true,
         driverPrefersAlternate: true,
+      })
+    ).toBe(true);
+  });
+
+  it("still forces the first emit for a fastest driver already off the lock", () => {
+    expect(
+      nativeRouteChangedShouldForce({
+        isFirstRouteChanged: true,
+        driverAlreadyOffLockedCorridor: true,
+        driverPrefersAlternate: false,
       })
     ).toBe(true);
   });

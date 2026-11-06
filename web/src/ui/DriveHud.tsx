@@ -1,5 +1,6 @@
 import type { FusedSituationSnapshot } from "../situation/types";
 import { formatEtaDuration } from "./formatEta";
+import { SPEED_LIMIT_DISPLAY_ENABLED } from "../nav/postedSpeed";
 
 type Props = {
   speedMph: number | null;
@@ -41,6 +42,7 @@ export function DriveHud({
             <small> mph</small>
           </span>
         </div>
+        {SPEED_LIMIT_DISPLAY_ENABLED ? (
         <div className="drive-hud-cell">
           <span className="drive-hud-k">Limit</span>
           <span
@@ -59,6 +61,7 @@ export function DriveHud({
             </small>
           </span>
         </div>
+        ) : null}
         <div className="drive-hud-cell">
           <span className="drive-hud-k">ETA</span>
           <span className="drive-hud-v">{formatEtaDuration(etaMinutes)}</span>

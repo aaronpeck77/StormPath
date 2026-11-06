@@ -1,5 +1,14 @@
 import type { NavRoute, PostedSpeedSample } from "./types";
 
+/**
+ * Master switch for every posted-limit display (phone Lim stat, Drive HUD,
+ * CarPlay sign, companion chip). Build 564 drive test: Mapbox maxspeed / horizon
+ * values lag zone changes by minutes and can't be trusted — Bill's call is to
+ * show nothing until a reliably accurate source exists. Flip to true to
+ * re-enable all surfaces at once.
+ */
+export const SPEED_LIMIT_DISPLAY_ENABLED = false;
+
 /** Mapbox Directions `maxspeed` annotation entry → mph, or null when unknown / unlimited. */
 export function mapboxMaxSpeedToMph(entry: unknown): number | null {
   if (entry == null) return null;

@@ -12,6 +12,7 @@ import {
   formatEtaDurationToolbar,
 } from "./formatEta";
 import { displaySpeed, speedUnitLabel } from "../utils/displayUnits";
+import { SPEED_LIMIT_DISPLAY_ENABLED } from "../nav/postedSpeed";
 import { ROUTE_ACTIVE_COLOR } from "./mapRouteStyle";
 const VIEW_CYCLE: { mode: MapViewMode; label: string; line: string }[] = [
   { mode: "route", label: "Rt", line: ROUTE_ACTIVE_COLOR },
@@ -282,6 +283,7 @@ export function BottomToolbar({
                   <small> {speedUnitLabel(useMiles)}</small>
                 </span>
               </div>
+              {SPEED_LIMIT_DISPLAY_ENABLED ? (
               <div className="nav-bottom-stat">
                 <span className="nav-bottom-stat-k">Lim</span>
                 <span
@@ -302,6 +304,7 @@ export function BottomToolbar({
                   ) : null}
                 </span>
               </div>
+              ) : null}
             </div>
           )}
         </div>

@@ -35,6 +35,9 @@ public final class StormPathCarPlay {
     private var conditionsTemplate: CPListTemplate?
     private var radarButton: CPBarButton?
     private var lastHazardAlertKey = ""
+    /// Titles already alerted this trip — a hazard speaks once, then lives on the phone.
+    private var alertedHazardTitles = Set<String>()
+    private var lastHazardAlertAt: TimeInterval = 0
     private var followingStepIndex: Int?
     private var followingLegIndex: Int?
 
@@ -158,6 +161,8 @@ public final class StormPathCarPlay {
         guiding = false
         overview = false
         lastHazardAlertKey = ""
+        alertedHazardTitles.removeAll()
+        lastHazardAlertAt = 0
         mapController?.radar.setEnabled(false)
         configureNavigationBar()
         routes = nil
@@ -271,9 +276,17 @@ public final class StormPathCarPlay {
             ($0.expiresAt ?? .greatestFiniteMagnitude) > now && !$0.title.hasPrefix("No hazards")
         }
         guard !items.isEmpty else { return }
-        let key = items.prefix(3).map(\.title).joined(separator: "|")
-        guard key != lastHazardAlertKey else { return }
-        lastHazardAlertKey = key
+        /* Bill (564): the popup fired repeatedly for the same hazards. Alert at
+         * most once per distinct hazard title per trip, with a 20-minute gap so
+         * a genuinely new hazard can still speak but snapshots can't nag. */
+        let titles = items.map(\.title)
+        let hasUnseen = titles.contains { !alertedHazardTitles.contains($0) }
+        guard hasUnseen else { return }
+        let nowTs = Date().timeIntervalSince1970
+        guard lastHazardAlertAt == 0 || nowTs - lastHazardAlertAt > 20 * 60 else { return }
+        alertedHazardTitles.formUnion(titles)
+        lastHazardAlertKey = titles.prefix(3).joined(separator: "|")
+        lastHazardAlertAt = nowTs
         let alert = CPNavigationAlert(
             titleVariants: ["Hazards on your route"],
             subtitleVariants: ["\(items.count) flagged ahead — check your phone for details"],
@@ -547,8 +560,12 @@ final class CarMapViewController: UIViewController, NavigationMapViewDelegate {
 
     func positionRouteBelowLabels() {
         guard let map = navigationMapView.mapView.mapboxMap else { return }
-        if map.layerExists(withId: "road-label") {
-            navigationMapView.customRouteLineLayerPosition = .below("road-label")
+        /* Route must sit under POI icons/shields AND road labels — Bill (564)
+         * reported the line covering road signs. Prefer the lowest symbol layer
+         * we can identify; fall back to road-label, then leave SDK default. */
+        for anchor in ["poi-level", "road-label"] where map.layerExists(withId: anchor) {
+            navigationMapView.customRouteLineLayerPosition = .below(anchor)
+            return
         }
     }
 
@@ -565,13 +582,15 @@ final class CarMapViewController: UIViewController, NavigationMapViewDelegate {
         layer.lineColor = .constant(StyleColor(casing ? navigationMapView.routeCasingColor : navigationMapView.routeColor))
         layer.lineCap = .constant(.round)
         layer.lineJoin = .constant(.round)
+        /* Slimmer than SDK default — the thick casing covered road signs/POIs
+         * on the car display (Bill, 564). */
         layer.lineWidth = .expression(Exp(.interpolate) {
             Exp(.linear)
             Exp(.zoom)
-            4.0; casing ? 4.0 : 2.0
-            10.0; casing ? 6.0 : 4.0
-            16.0; casing ? 8.0 : 6.0
-            20.0; casing ? 12.0 : 10.0
+            4.0; casing ? 3.0 : 1.5
+            10.0; casing ? 4.5 : 3.0
+            16.0; casing ? 6.0 : 4.5
+            20.0; casing ? 8.0 : 6.0
         })
         return layer
     }

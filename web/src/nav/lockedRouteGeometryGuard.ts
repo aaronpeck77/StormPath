@@ -133,22 +133,24 @@ function candidateReachesUser(candidate: LngLat[], user: LngLat): boolean {
 }
 
 /**
- * Force-adopt only when the driver has left the Go lock.
- * Treating every later Core emit as force (4.20.7 restore) reset along,
- * collapsed A/B/C, and made the puck / zoom leap on session-start refine.
+ * Hard lock (Bill, build 564): a mid-trip Core `routeChanged` is NEVER
+ * force-adopted. Core's reroute is always its own pick — adopting it silently
+ * replaces the route the driver locked at Go, which is exactly the "app changed
+ * my route behind my back" failure Bill reported. Agreeing geometry still
+ * adopts without force; disagreement is rejected so DIY owns the episode and
+ * can rejoin the locked corridor or surface choices instead of flipping the
+ * line. Only the session-start emit may force when already off the lock.
  */
 export function nativeRouteChangedShouldForce(input: {
   isFirstRouteChanged: boolean;
   driverAlreadyOffLockedCorridor: boolean;
   /**
-   * Driver locked an alternate. A mid-trip Core reroute answers with Core's
-   * *fastest* line — force-adopting it silently dumps the driver back on the
-   * main path they declined. Instead let the agreement check reject it so DIY
-   * owns the episode and replans with the alternate preference intact.
+   * @deprecated Subsumed by hard lock — every mid-trip emit is treated the
+   * same now (never force). Kept so callers/tests don't churn.
    */
   driverPrefersAlternate?: boolean;
 }): boolean {
-  if (input.driverPrefersAlternate && !input.isFirstRouteChanged) return false;
+  if (!input.isFirstRouteChanged) return false;
   return input.driverAlreadyOffLockedCorridor;
 }
 

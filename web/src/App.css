@@ -18531,7 +18531,8 @@ html.route-info-open .route-progress-callout-panel--expanded {
 .cp-companion__return {
   position: fixed;
   left: 50%;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+  /* Sits above the bottom dock buttons — at bottom:18px it covered them (564). */
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 170px);
   transform: translateX(-50%);
   z-index: 60;
   font-size: 13px;
@@ -18543,4 +18544,29 @@ html.route-info-open .route-progress-callout-panel--expanded {
   border-radius: 999px;
   cursor: pointer;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+
+/* Companion v2 — real progress rail + weather graph embedded in the page */
+.cp-companion__rail {
+  margin: 0 -14px 12px;
+  padding: 10px 14px;
+  background: rgba(15, 23, 42, 0.45);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cp-companion__rail .route-progress-strip--edge {
+  min-height: 64px;
+}
+
+.cp-companion__graph {
+  margin-bottom: 12px;
+}
+
+.cp-companion__graph .route-progress-glance,
+.cp-companion__graph section,
+.cp-companion__graph > div {
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
 }

@@ -38,6 +38,8 @@ import { useCarSessionPublish } from "./hooks/useCarSessionPublish";
 import { useCarPlayActive } from "./hooks/useCarPlayActive";
 import { CarPlayCompanionView } from "./ui/CarPlayCompanionView";
 import { pickAdvisoryVoiceLine } from "./nav/advisoryVoice";
+import { SPEED_LIMIT_DISPLAY_ENABLED } from "./nav/postedSpeed";
+import { formatRadarSampleAge } from "./hooks/useRadarBandsAlongRoute";
 import { isAppVoiceHeld, subscribeAppVoiceHold } from "./grok/assistantFloor";
 import { useJamHop } from "./nav/useJamHop";
 import { JamHopBanner } from "./ui/JamHopBanner";
@@ -93,6 +95,7 @@ import { useDriveEtaLabels } from "./nav/useDriveEtaLabels";
 import {
   noteDriveDiagDoubledBack,
   noteDriveDiagRouteLock,
+  noteDriveDiagRoutePick,
   noteDriveDiagYou,
   setDriveDiagLiveLengthM,
   setDriveDiagRouteLengthM,
@@ -948,7 +951,13 @@ export default function App() {
 
   useEffect(() => {
     noteDriveDiagRouteLock(nativePreferBackroads, navigationStarted);
-  }, [nativePreferBackroads, navigationStarted]);
+    if (navigationStarted) {
+      const lockedId = lockedNavigationRouteIdRef.current;
+      const route = lockedId ? plan.routes.find((r) => r.id === lockedId) : undefined;
+      const pref = route ? routingPreferenceForLockedRoute(route) : routingPreferenceRef.current;
+      noteDriveDiagRoutePick(`${pref}${route?.label ? `·${route.label}` : ""}`);
+    }
+  }, [nativePreferBackroads, navigationStarted, plan.routes]);
 
   useEffect(() => {
     if (!navigationStarted) {
@@ -2230,9 +2239,10 @@ export default function App() {
     /* CarPlay sign prefers the route-step Directions maxspeed — it moves with
      * the road. Horizon limit is only a fallback, and the class estimate never
      * reaches the car (postedSpeedForDisplay classEstimate gate). */
-    speedLimitMph:
-      displayedPostedSpeedMph({ route: offRouteGuidanceRoute, alongMeters: userAlongGuidanceM }) ??
-      (postedMphIsClassEstimate ? null : postedMph),
+    speedLimitMph: SPEED_LIMIT_DISPLAY_ENABLED
+      ? displayedPostedSpeedMph({ route: offRouteGuidanceRoute, alongMeters: userAlongGuidanceM }) ??
+        (postedMphIsClassEstimate ? null : postedMph)
+      : null,
     conditions: {
       items: navigationStarted ? routeAheadTimeline : [],
       userAlongMeters: userAlongGuidanceM,
@@ -3103,8 +3113,10 @@ export default function App() {
           etaMinutes={driveEtaMinutes ?? null}
           advisoryLine={carPlayAdvisoryLine}
           speedLimitMph={
-            displayedPostedSpeedMph({ route: offRouteGuidanceRoute, alongMeters: userAlongGuidanceM }) ??
-            (postedMphIsClassEstimate ? null : postedMph)
+            SPEED_LIMIT_DISPLAY_ENABLED
+              ? displayedPostedSpeedMph({ route: offRouteGuidanceRoute, alongMeters: userAlongGuidanceM }) ??
+                (postedMphIsClassEstimate ? null : postedMph)
+              : null
           }
           conditions={{
             items: routeAheadTimeline,
@@ -3116,6 +3128,41 @@ export default function App() {
             nowcast: currentNowcast,
             online: isOnline,
             isPlus,
+          }}
+          rail={{
+            stripGeometry: progressRailRoute?.geometry ?? [],
+            userLngLat: effectiveUserLngLat,
+            stripAlerts: progressStripAlerts,
+            radarIntensity: guidanceSlice?.radarIntensity ?? 0,
+            stripRouteColor: progressStripRouteColor,
+            stripTurnSteps:
+              progressRailRoute?.turnSteps && progressRailRoute.turnSteps.length >= 2
+                ? progressRailRoute.turnSteps
+                : undefined,
+            fallbackTurnSteps: turnSteps,
+            stormBands: routeAheadProgressBands,
+            radarSliceSamples: radarMosaicSamples,
+            radarSliceLoopFrames,
+            tripOdometerM,
+            timeline: routeAheadTimeline,
+            routeWide: activeProgressCalloutPanel.routeWide,
+            outlookSteps: activeProgressCalloutPanel.outlookTimeline,
+            outlookSamples: activeProgressCalloutPanel.outlookSamples,
+            radarMosaicSamples,
+            radarStatusNote:
+              radarRefreshBlocked ??
+              (radarMosaicSamples.length > 0 ? formatRadarSampleAge(radarMosaicUpdatedAt) : null),
+            windPoints: activeProgressCalloutPanel.windPoints,
+            gustLinePoints: activeProgressCalloutPanel.gustLinePoints,
+            gustSpikePoints: activeProgressCalloutPanel.gustSpikePoints,
+            fallbackSegments: activeProgressCalloutPanel.segments.filter(
+              (s) => !s.key.startsWith("route-ahead-")
+            ),
+            planEtaMinutes: guidanceRoute?.baseEtaMinutes ?? null,
+            progressAlongM: progressPanelAlongM,
+            userAlongT: progressCalloutUserAlongT,
+            stripTint: activeProgressCalloutPanel.stripTint,
+            detailScrollRef: progressCalloutDetailScrollRef,
           }}
           useMiles={roadUsesMiles(effectiveUserLngLat)}
           onShowMap={() => setCarPlayMapPeek(true)}
