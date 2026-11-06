@@ -499,10 +499,10 @@ public final class StormPathCarPlay {
             let stepKey = "\(progress.currentLegProgress.stepIndex)"
             let primaryKey = banner.primaryInstruction.text ?? ""
             let secondaryKey = banner.secondaryInstruction?.text ?? ""
-            let maneuverKey = "\(banner.primaryInstruction.maneuverType)|\(banner.primaryInstruction.modifier)"
+            let maneuverKey = "\(banner.primaryInstruction.maneuverType)|\(banner.primaryInstruction.maneuverDirection)"
             let sideKey = "\(banner.drivingSide)"
             let nextTextKey = nextBanner?.primaryInstruction.text ?? nextStep?.instructions ?? ""
-            let nextManeuverKey = "\(nextBanner?.primaryInstruction.maneuverType)|\(nextBanner?.primaryInstruction.modifier)"
+            let nextManeuverKey = "\(nextBanner?.primaryInstruction.maneuverType)|\(nextBanner?.primaryInstruction.maneuverDirection)"
             let signature = [
                 legKey, stepKey, primaryKey, secondaryKey,
                 maneuverKey, sideKey, nextTextKey, nextManeuverKey,
