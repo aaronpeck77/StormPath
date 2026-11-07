@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { LandscapeDockContent, LandscapeNavigationDock } from "../LandscapeNavigationDock";
+import { readAppCss } from "../../styles/appCss";
 
 const render = () => renderToStaticMarkup(createElement(LandscapeNavigationDock, {
   miles: "42 mi", bearing: 90, onRefresh: () => undefined, onInfo: () => undefined,
@@ -38,9 +39,7 @@ describe("landscape navigation dock", () => {
   });
 
   it("lets complete landscape turn instructions wrap instead of clipping them", async () => {
-    const fsModule = "node:fs";
-    const { readFileSync } = await import(fsModule);
-    const css: string = readFileSync(new URL("../../App.css", import.meta.url), "utf8");
+    const css = await readAppCss();
     const start = css.indexOf("  .app-shell.nav-fullmap .nav-top-cluster .top-guidance-bar--turn-only {");
     const sizing = css.slice(start, css.indexOf("\n.rpgl__help {", start));
     expect(sizing).toContain("min-height: min-content");
@@ -53,9 +52,7 @@ describe("landscape navigation dock", () => {
   });
 
   it("mirrors the control edge without altering the bottom toolbar or top guidance", async () => {
-    const fsModule = "node:fs";
-    const { readFileSync } = await import(fsModule);
-    const css: string = readFileSync(new URL("../../App.css", import.meta.url), "utf8");
+    const css = await readAppCss();
     const dock = css.slice(css.indexOf(".landscape-navigation-dock {"), css.indexOf("\n.drive-hazard-ticker {"));
     expect(dock).toContain('grid-template-areas: "messages controls" "messages miles"');
     expect(dock).toContain('grid-template-areas: "controls messages" "miles messages"');

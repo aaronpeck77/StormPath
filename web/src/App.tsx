@@ -56,13 +56,11 @@ import {
   type ReturnTripLeg,
 } from "./nav/returnTripLeg";
 import type { LngLat } from "./nav/types";
-import type { StormyActResult, StormyReply } from "./stormy/stormyFence";
-import { spokenPlace } from "./stormy/spokenPlace";
 import { stormyFactsFromImpacts, stormyRoadRefs } from "./stormy/stormySituation";
 import { pickSuggestedActive, scoreTrip } from "./scoring/scoreRoutes";
 import { useAppForeground } from "./hooks/useAppForeground";
 import { useIdleAppExit } from "./nav/idleAppExit";
-import { useTollPreview } from "./nav/useTollPreview";
+import { useTollAvoidFlow } from "./nav/useTollAvoidFlow";
 import {
   getNwsPollIntervalMs,
   isDataSaverMode,
@@ -135,7 +133,8 @@ import { AppAboutSheetHost } from "./ui/AppAboutSheetHost";
 import { ToolsSheet } from "./ui/ToolsSheet";
 import { TripBriefingSheet } from "./ui/TripBriefingSheet";
 import { useTripBriefing } from "./forecast/useTripBriefing";
-import { shareEtaCard, type EtaShareData } from "./ui/etaShareCard";
+import { useStormyAct } from "./stormy/useStormyAct";
+import type { EtaShareData } from "./ui/etaShareCard";
 import {
   currentNavTarget,
   remainingViaStops,
@@ -600,8 +599,6 @@ export default function App() {
   const drivePuckAnchorDriftPxRef = useRef<number | null>(null);
   const routeHazardSheet = useUiStore((s) => s.routeHazardSheet);
   const setRouteHazardSheet = useUiStore((s) => s.setRouteHazardSheet);
-  const tollRoutePrompt = useRouteCompareStore((s) => s.tollRoutePrompt);
-  const setTollRoutePrompt = useRouteCompareStore((s) => s.setTollRoutePrompt);
   const [tollAvoidBusy, setTollAvoidBusy] = useState(false);
   const [tollAvoidFailureNote, setTollAvoidFailureNote] = useState<string | null>(null);
   const tollAcceptedRouteIdsRef = useRef<Set<string>>(new Set());
@@ -2665,145 +2662,49 @@ export default function App() {
     ]
   );
 
-  const runStormyAct = useCallback(
-    async (reply: StormyReply): Promise<StormyActResult> => {
-      if (reply.clarify === "choice" && reply.place.trim()) {
-        const chosen = await acceptSpokenChoice(reply.place, reply.stop);
-        if (chosen) {
-          const said = spokenPlace(chosen, forecastPlaceShort ?? "");
-          const eta = useTripPlanStore.getState().plan.routes[0]?.baseEtaMinutes;
-          const minutes = eta != null && Number.isFinite(eta) ? ` About ${Math.round(eta)} minutes.` : "";
-          return reply.stop
-            ? `Stop added at ${said}. You're still on the way.${minutes}`
-            : `That's ${said}. Say go when you want to leave.${minutes}`;
-        }
-      }
-      if (reply.action === "go_to" && reply.place.trim()) {
-        const found = await resolveSpokenPlace(reply.place, reply.stop);
-        if (found.kind === "ask") return found.say;
-        if (found.kind === "miss") return "I couldn't find that.";
-        const name = spokenPlace(found.name, forecastPlaceShort ?? "");
-        const eta = useTripPlanStore.getState().plan.routes[0]?.baseEtaMinutes;
-        const minutes =
-          eta != null && Number.isFinite(eta) ? ` About ${Math.round(eta)} minutes.` : "";
-        if (reply.stop) return `Stop added at ${name}. You're still on the way.${minutes}`;
-        return `That's ${name}. Say go when you want to leave.${minutes}`;
-      }
-      if (reply.action === "start_drive") {
-        const routes = useTripPlanStore.getState().plan.routes;
-        if (!routes.length) return { say: "Where do you want to go?", clarify: "place" };
-        handleGo();
-        const eta = routes[0]?.baseEtaMinutes;
-        return eta != null && Number.isFinite(eta)
-          ? `Let's go. About ${Math.round(eta)} minutes.`
-          : reply.say || "Let's go.";
-      }
-      if (reply.action === "use_route") {
-        const route = useTripPlanStore.getState().plan.routes.find((r) => r.id === reply.routeId);
-        if (!route) return "I don't have that route.";
-        handlePreviewRouteSelect(route.id);
-        const eta = route.baseEtaMinutes;
-        return eta != null && Number.isFinite(eta)
-          ? `Taking ${route.label}. About ${Math.round(eta)} minutes.`
-          : reply.say || `Taking ${route.label}.`;
-      }
-      if (reply.action === "radar_on") {
-        setShowRadar(true);
-        return reply.say || "Radar's on.";
-      }
-      if (reply.action === "radar_off") {
-        setShowRadar(false);
-        return reply.say || "Radar's off.";
-      }
-      if (reply.action === "end_trip") {
-        handleStopAndClear();
-        return reply.say || "Trip's done.";
-      }
-      if (reply.action === "recenter") {
-        setHomePuckFollow("follow");
-        setRecenterPlanningPuckTick((n) => n + 1);
-        return reply.say || "Centered on you.";
-      }
-      if (reply.action === "refresh") {
-        refreshTripInPlace();
-        return reply.say || "Refreshing.";
-      }
-      if (reply.action === "share_eta") {
-        if (!etaShareData) return "There's no trip to share yet.";
-        try {
-          await shareEtaCard(etaShareData);
-          return reply.say || "Shared.";
-        } catch {
-          return "Couldn't open sharing.";
-        }
-      }
+  /* Stormy's action dispatch lives in `stormy/useStormyAct.ts` — voice replies
+   * become place picks, Go, route selects, radar toggles, and ETA shares. */
+  const runStormyAct = useStormyAct({
+    acceptSpokenChoice,
+    resolveSpokenPlace,
+    handleGo,
+    handlePreviewRouteSelect,
+    handleStopAndClear,
+    setShowRadar,
+    onRecenter: () => {
+      setHomePuckFollow("follow");
+      setRecenterPlanningPuckTick((n) => n + 1);
     },
-    [resolveSpokenPlace, acceptSpokenChoice, handleGo, handlePreviewRouteSelect, handleStopAndClear, setShowRadar, forecastPlaceShort, refreshTripInPlace, etaShareData]
-  );
-
-  const handleTollContinue = useCallback(() => {
-    if (tollRoutePrompt) {
-      tollAcceptedRouteIdsRef.current.add(tollRoutePrompt.routeId);
-    }
-    setTollAvoidFailureNote(null);
-    setTollRoutePrompt(null);
-    if (pendingGoAfterTollRef.current) {
-      pendingGoAfterTollRef.current = false;
-      proceedGo();
-      return;
-    }
-    /* Sheet blocks chrome layout — refit Rt once the user accepts tolls (planning). */
-    setViewMode("route");
-    setFitTrigger((n) => n + 1);
-  }, [tollRoutePrompt, proceedGo, setViewMode]);
-
-  /* Toll preview kickoff lives in `useTollPreview` (Phase 4e4). The hook subscribes to
-   * `routeCompareStore` + `tripPlanStore` internally; we just forward the App-owned bits
-   * (busy / failure-note setters, env, location, the route-compare activation helper). */
-  const handleTollPreview = useTollPreview({
-    userLngLat,
-    mapboxToken: env.mapboxToken,
-    isPlus,
-    stormAlertsForRouting,
-    stormEnabled: settingStormEnabled,
-    pendingGoAfterTollRef,
-    setTollAvoidBusy,
-    setTollAvoidFailureNote,
-    activateRouteCompare,
+    forecastPlaceShort,
+    refreshTripInPlace,
+    etaShareData,
   });
 
-  useEffect(() => {
-    if (!tollBypassEnabled) {
-      setTollRoutePrompt(null);
-      setTollAvoidFailureNote(null);
-      pendingGoAfterTollRef.current = false;
-      return;
-    }
-    if (navigationStarted || routing || plan.routes.length === 0 || trafficBypassCompare) return;
-    const routeId =
-      orderedRouteIds[previewLegIndex] ?? orderedRouteIds[0] ?? plan.routes[0]?.id;
-    if (!routeId) return;
-    const route = plan.routes.find((r) => r.id === routeId);
-    if (!route?.hasTolls) {
-      setTollRoutePrompt(null);
-      return;
-    }
-    if (tollAcceptedRouteIdsRef.current.has(routeId)) {
-      setTollRoutePrompt(null);
-      return;
-    }
-    if (pendingGoAfterTollRef.current) return;
-    setTollRoutePrompt({ routeId, labels: route.tollLabels ?? [] });
-  }, [
-    tollBypassEnabled,
-    navigationStarted,
-    routing,
-    plan.routes,
-    orderedRouteIds,
-    previewLegIndex,
-    trafficBypassCompare,
-    setTollRoutePrompt,
-  ]);
+  /* Toll-prompt lifecycle lives in `nav/useTollAvoidFlow.ts` — the route-compute
+   * prompt effect, the continue handler, and the toll-free preview kickoff. */
+  const { setTollRoutePrompt, handleTollContinue, handleTollPreview } =
+    useTollAvoidFlow({
+      tollBypassEnabled,
+      navigationStarted,
+      routing,
+      planRoutes: plan.routes,
+      orderedRouteIds,
+      previewLegIndex,
+      compareActive: Boolean(trafficBypassCompare),
+      proceedGo,
+      setViewMode,
+      setFitTrigger,
+      setTollAvoidBusy,
+      setTollAvoidFailureNote,
+      tollAcceptedRouteIdsRef,
+      pendingGoAfterTollRef,
+      userLngLat,
+      mapboxToken: env.mapboxToken,
+      isPlus,
+      stormAlertsForRouting,
+      stormEnabled: settingStormEnabled,
+      activateRouteCompare,
+    });
 
   /** Close hazard sheet + advisory panel, then run (helps WKWebView apply view/focus changes). */
   const runAfterHazardSheetAction = useCallback(
