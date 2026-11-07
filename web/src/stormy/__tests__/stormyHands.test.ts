@@ -80,6 +80,22 @@ describe("interpretStormyRequest", () => {
     expect(interpretStormyRequest("Refresh", packet)?.say).toBe("There's no trip to refresh.");
   });
 
+  it("shares the ETA on request while a trip is live", () => {
+    expect(interpretStormyRequest("Share my ETA", { ...packet, driving: true })).toMatchObject({
+      action: "share_eta",
+    });
+    expect(interpretStormyRequest("send my eta to sarah", { ...packet, driving: true })?.action).toBe(
+      "share_eta"
+    );
+  });
+
+  it("does not offer ETA sharing with no trip", () => {
+    const empty = { ...packet, routes: [], destination: "", driving: false };
+    const reply = interpretStormyRequest("Share my ETA", empty);
+    expect(reply?.action).toBe("none");
+    expect(reply?.say).toContain("no trip");
+  });
+
   it("tells him where to get a more natural voice", () => {
     const reply = interpretStormyRequest("Can you use a more natural voice?", packet);
     expect(reply?.action).toBe("none");

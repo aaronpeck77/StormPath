@@ -133,6 +133,7 @@ import type { SearchSuggestion } from "./ui/SearchBar";
 import { AppBottomChrome } from "./ui/AppBottomChrome";
 import { AppAboutSheetHost } from "./ui/AppAboutSheetHost";
 import { ToolsSheet } from "./ui/ToolsSheet";
+import { shareEtaCard, type EtaShareData } from "./ui/etaShareCard";
 import {
   currentNavTarget,
   remainingViaStops,
@@ -1861,6 +1862,26 @@ export default function App() {
     effectiveUserLngLat,
   });
 
+  /** Shared by the Tools sheet and Stormy's "share my ETA" — null when no trip is live. */
+  const etaShareData = useMemo<EtaShareData | null>(
+    () =>
+      navigationStarted && driveDistanceRemainingM != null && driveDistanceRemainingM > 0
+        ? {
+            destinationLabel: destinationLabel || null,
+            etaMinutes: driveEtaMinutes ?? null,
+            distanceRemainingM: driveDistanceRemainingM,
+            useMiles: roadUsesMiles(effectiveUserLngLat),
+          }
+        : null,
+    [
+      navigationStarted,
+      driveDistanceRemainingM,
+      driveEtaMinutes,
+      destinationLabel,
+      effectiveUserLngLat,
+    ]
+  );
+
   useTripNavDisplayHealth({
     navigationStarted,
     appForeground,
@@ -2681,8 +2702,17 @@ export default function App() {
         refreshTripInPlace();
         return reply.say || "Refreshing.";
       }
+      if (reply.action === "share_eta") {
+        if (!etaShareData) return "There's no trip to share yet.";
+        try {
+          await shareEtaCard(etaShareData);
+          return reply.say || "Shared.";
+        } catch {
+          return "Couldn't open sharing.";
+        }
+      }
     },
-    [resolveSpokenPlace, acceptSpokenChoice, handleGo, handlePreviewRouteSelect, handleStopAndClear, setShowRadar, forecastPlaceShort, refreshTripInPlace]
+    [resolveSpokenPlace, acceptSpokenChoice, handleGo, handlePreviewRouteSelect, handleStopAndClear, setShowRadar, forecastPlaceShort, refreshTripInPlace, etaShareData]
   );
 
   const handleTollContinue = useCallback(() => {
@@ -3557,16 +3587,7 @@ export default function App() {
       <ToolsSheet
         open={toolsOpen}
         onClose={() => setToolsOpen(false)}
-        etaShare={
-          navigationStarted && driveDistanceRemainingM != null && driveDistanceRemainingM > 0
-            ? {
-                destinationLabel: destinationLabel || null,
-                etaMinutes: driveEtaMinutes ?? null,
-                distanceRemainingM: driveDistanceRemainingM,
-                useMiles: roadUsesMiles(effectiveUserLngLat),
-              }
-            : null
-        }
+        etaShare={etaShareData}
         useMiles={roadUsesMiles(effectiveUserLngLat)}
       />
 

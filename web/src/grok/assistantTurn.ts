@@ -10,6 +10,7 @@ const HANDS = new Set<StormyAction>([
   "end_trip",
   "recenter",
   "refresh",
+  "share_eta",
 ]);
 
 /** Look up a place, Go, and stop run on the phone. Open talk goes to the assistant. */

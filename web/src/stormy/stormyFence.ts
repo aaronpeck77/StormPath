@@ -18,6 +18,7 @@ export const STORMY_ACTIONS = [
   "end_trip",
   "recenter",
   "refresh",
+  "share_eta",
 ] as const;
 
 export type StormyAction = (typeof STORMY_ACTIONS)[number];

@@ -38,6 +38,10 @@ export function interpretStormyRequest(question: string, packet: StormyPacket): 
   if (/^(?:please )?(?:recenter|center(?: the)? map|center on me)$/.test(lower)) {
     return reply("Centered on you.", "recenter");
   }
+  if (/\b(?:share|send)\b.{0,20}\beta\b|\beta\b.{0,20}\b(?:share|send)\b/.test(lower)) {
+    if (!onATrip(packet)) return reply("There's no trip to share yet.", "none");
+    return reply("Here's your ETA.", "share_eta");
+  }
   if (asksAboutStormyVoice(lower)) {
     return reply(STORMY_VOICE_HINT, "none");
   }

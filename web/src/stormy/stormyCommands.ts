@@ -8,6 +8,7 @@ export const STORMY_COMMANDS = [
   "Go.",
   "Stop the route.",
   "Refresh.",
+  "Share my ETA.",
   "Be quiet.",
 ] as const;
 
