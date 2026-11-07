@@ -1,0 +1,216 @@
+/* Plus: ?demo=bypass ? replay / simulated delay banner (above bottom toolbar z-index 6) */
+.nav-demo-bypass-banner {
+  position: absolute;
+  left: max(8px, env(safe-area-inset-left));
+  right: max(8px, env(safe-area-inset-right));
+  bottom: calc(var(--nav-bottom-reserved, 72px) + 120px);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(30, 27, 75, 0.94);
+  border: 1px solid rgba(165, 180, 252, 0.35);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+}
+
+.nav-demo-bypass-banner__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.nav-demo-bypass-banner__short {
+  flex: 1 1 120px;
+  min-width: 0;
+  font-size: 0.62rem;
+  line-height: 1.25;
+  font-weight: 750;
+  color: #e0e7ff;
+}
+
+.nav-demo-bypass-banner__details {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.nav-demo-bypass-banner__summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.6rem;
+  font-weight: 800;
+  color: rgba(199, 210, 254, 0.95);
+  user-select: none;
+}
+
+.nav-demo-bypass-banner__summary::-webkit-details-marker {
+  display: none;
+}
+
+.nav-demo-bypass-banner__summary::after {
+  content: " ?";
+  font-size: 0.55rem;
+  opacity: 0.85;
+}
+
+.nav-demo-bypass-banner__details[open] .nav-demo-bypass-banner__summary::after {
+  content: " ?";
+}
+
+.nav-demo-bypass-banner__text {
+  margin-top: 6px;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  font-weight: 650;
+  color: #e0e7ff;
+}
+
+.nav-demo-bypass-banner__text code {
+  font-size: 0.62rem;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.nav-demo-bypass-banner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.nav-demo-bypass-banner__btn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.12);
+  color: #f8fafc;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* Traffic bypass compare ? map flags (ETA + savings vs A) */
+.map-bypass-compare-flag {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 5.5rem;
+  max-width: 7.5rem;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(15, 18, 26, 0.94);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  font: inherit;
+  text-align: left;
+  color: #f1f5f9;
+}
+
+.map-bypass-compare-flag:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.85);
+  outline-offset: 2px;
+}
+
+.map-bypass-compare-flag__slot {
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.map-bypass-compare-flag__eta {
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.map-bypass-compare-flag__save {
+  font-size: 0.58rem;
+  font-weight: 650;
+  color: #cbd5e1;
+  line-height: 1.2;
+}
+
+.map-bypass-compare-flag--a .map-bypass-compare-flag__slot {
+  color: #93c5fd;
+}
+.map-bypass-compare-flag--b .map-bypass-compare-flag__slot {
+  color: #86efac;
+}
+.map-bypass-compare-flag--c .map-bypass-compare-flag__slot {
+  color: #fde047;
+}
+
+.map-bypass-compare-flag--selected {
+  border-color: rgba(248, 250, 252, 0.88);
+  box-shadow: 0 0 0 2px rgba(248, 250, 252, 0.4), 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+
+/* Hazard pin shown only while the bypass-compare panel is open ? pulsing red dot at the impact. */
+.map-bypass-hazard-pin {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.map-bypass-hazard-pin__dot {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #dc2626;
+  color: #fff8f8;
+  font-weight: 900;
+  font-size: 0.78rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fef2f2;
+  box-shadow: 0 4px 14px rgba(127, 29, 29, 0.55);
+  z-index: 2;
+}
+
+.map-bypass-hazard-pin__pulse {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(220, 38, 38, 0.55);
+  z-index: 1;
+  animation: map-bypass-hazard-pin-pulse 1.6s ease-out infinite;
+}
+
+@keyframes map-bypass-hazard-pin-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  90%,
+  100% {
+    transform: scale(2.7);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-bypass-hazard-pin__pulse {
+    animation: none;
+    transform: scale(1.5);
+    opacity: 0.35;
+  }
+}
+

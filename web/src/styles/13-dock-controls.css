@@ -1,0 +1,1045 @@
+/* NWS + Road + activity + Hazards ? one row; shared control height */
+.hazard-controls-strip {
+  --hazard-strip-row-h: 30px;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--nav-chrome-gap, 5px);
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2px 0 4px;
+  min-height: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.hazard-controls-strip__nws,
+.hazard-controls-strip__road {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  flex-shrink: 0;
+  min-height: var(--hazard-strip-row-h);
+  font-size: 0.68rem;
+  cursor: pointer;
+  font-weight: 800;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+/* NWS ? weather / advisory maps (sky & water): cool blue */
+.hazard-controls-strip__nws > span {
+  color: #e0f2fe;
+  background: linear-gradient(180deg, rgba(30, 64, 175, 0.92), rgba(29, 78, 216, 0.88));
+  border: 1px solid rgba(96, 165, 250, 0.5);
+  border-radius: 6px;
+  padding: 0 8px;
+  min-height: calc(var(--hazard-strip-row-h) - 2px);
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.15) inset, 0 1px 3px rgba(0, 0, 0, 0.22);
+}
+
+/* Road ? surface / corridor (asphalt slate), distinct from NWS blue */
+.hazard-controls-strip__road > span {
+  color: #f4f4f5;
+  background: linear-gradient(180deg, rgba(63, 63, 70, 0.95), rgba(82, 82, 91, 0.92));
+  border: 1px solid rgba(161, 161, 170, 0.45);
+  border-radius: 6px;
+  padding: 0 8px;
+  min-height: calc(var(--hazard-strip-row-h) - 2px);
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.hazard-controls-strip__nws input {
+  accent-color: #38bdf8;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.hazard-controls-strip__road input {
+  accent-color: #a1a1aa;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.hazard-controls-strip__badge {
+  flex-shrink: 0;
+  min-width: 1.15em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(220, 38, 38, 0.45);
+  border: 1px solid rgba(254, 202, 202, 0.65);
+  color: #fff;
+  font-size: 0.56rem;
+  font-weight: 800;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.hazard-controls-strip__hazards {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  appearance: none;
+  box-sizing: border-box;
+  min-height: var(--hazard-strip-row-h);
+  height: var(--hazard-strip-row-h);
+  padding: 0 12px;
+  border-radius: 6px;
+  /* Match state-route shield (e.g. SR-121): amber fill + burnt-orange rim */
+  border: 1px solid #b45309;
+  background: linear-gradient(180deg, #fcd34d 0%, #fbbf24 38%, #f59e0b 100%);
+  color: #0f172a;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.55) inset,
+    0 1px 3px rgba(120, 53, 15, 0.35);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.hazard-controls-strip__hazards-text {
+  flex-shrink: 0;
+  line-height: 1.1;
+}
+
+/* Drive: count sits inside Hazards (no lone badge on the left) */
+.hazard-controls-strip__badge--in-btn {
+  margin: 0;
+  min-width: 1.15em;
+  padding: 1px 5px;
+  font-size: 0.58rem;
+  line-height: 1.25;
+}
+
+.hazard-controls-strip__hazards--err {
+  border-color: rgba(185, 28, 28, 0.85);
+  background: linear-gradient(180deg, #fca5a5 0%, #f87171 45%, #dc2626 100%);
+  color: #1c1917;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.35) inset, 0 1px 3px rgba(127, 29, 29, 0.4);
+}
+
+.nav-top-route-rail__main > .hazard-controls-strip {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 8;
+}
+
+/* Route comparison (right rail): stacked cards */
+.top-guidance-bar__route-info {
+  min-width: 0;
+  width: 100%;
+}
+
+.top-guidance-route-info--rail .top-guidance-route-info-scroll {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: min(32vh, 220px);
+  gap: 6px;
+  padding-bottom: 0;
+}
+
+.top-guidance-route-info--rail .top-guidance-route-info-seg {
+  max-width: 100%;
+}
+
+.top-guidance-route-info--rail .top-guidance-route-info-line {
+  flex-direction: column;
+  align-items: flex-start;
+  white-space: normal;
+  overflow: visible;
+  gap: 3px;
+}
+
+.top-guidance-route-info--rail .top-guidance-route-info-meta {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+}
+
+.top-guidance-route-info-scroll {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.top-guidance-route-info-seg {
+  --route-line: #64748b;
+  flex-shrink: 0;
+  padding: 4px 8px 4px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid var(--route-line);
+  background: rgba(255, 255, 255, 0.04);
+  max-width: min(280px, 85vw);
+}
+
+.top-guidance-route-info-line {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  line-height: 1.2;
+}
+
+.top-guidance-route-info-seg--active {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(147, 197, 253, 0.35);
+}
+
+.top-guidance-route-info-seg--notable:not(.top-guidance-route-info-seg--active) {
+  border-right-color: rgba(250, 204, 21, 0.28);
+  border-top-color: rgba(250, 204, 21, 0.2);
+  border-bottom-color: rgba(250, 204, 21, 0.2);
+}
+
+.top-guidance-route-info-name {
+  font-size: 0.62rem;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #bdc1c6;
+  flex-shrink: 0;
+}
+
+.top-guidance-route-info-meta {
+  font-size: 0.62rem;
+  color: #9aa0a6;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.top-guidance-route-info-traffic {
+  color: #9aa0a6;
+}
+
+.top-guidance-route-info-traffic--live {
+  color: #a7f3d0;
+}
+
+/* PiP just under compact turn + hazards row; same full width as route (no PiP padding-right on cluster) */
+.map-stage.map-bleed:has(.nav-top-cluster) {
+  --pip-top: calc(max(8px, env(safe-area-inset-top)) + 168px);
+}
+
+.top-guidance-hazard {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 5px 7px;
+  border-radius: 10px;
+  background: rgba(127, 29, 29, 0.35);
+  border: 1px solid rgba(252, 165, 165, 0.35);
+  font-size: 0.68rem;
+  line-height: 1.3;
+  color: #fecaca;
+}
+
+.top-guidance-hazard-icon {
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+.top-guidance-hazard-text {
+  min-width: 0;
+}
+
+.turn-banner {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+}
+
+.turn-banner--split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.turn-banner-col--primary,
+.turn-banner-next-main {
+  animation: turnBannerSlideIn 220ms ease-out both;
+}
+
+@keyframes turnBannerSlideIn {
+  from {
+    transform: translateX(10px);
+    opacity: 0.72;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.turn-banner--split > .turn-banner-col--primary:only-child {
+  grid-column: 1 / -1;
+}
+
+.turn-banner-col {
+  min-width: 0;
+}
+
+.turn-banner-col--primary {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.turn-banner-col--next {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid rgba(255, 255, 255, 0.32);
+  min-height: 100%;
+  justify-content: center;
+}
+
+.turn-banner-next-main {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.turn-banner-next-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.turn-banner-icon--next {
+  font-size: 1.95rem;
+  line-height: 1;
+  color: #93c5fd;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.turn-banner-next-instr {
+  margin: 0;
+  font-size: 1.0rem;
+  font-weight: 750;
+  color: #cbd5e1;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.turn-banner-next-instr--dest {
+  color: #86efac;
+  font-weight: 750;
+}
+
+.turn-banner-next-label {
+  margin: 0 0 1px;
+  font-size: 0.62rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  line-height: 1.1;
+}
+
+.turn-banner-next-meta-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.turn-banner-next-meta {
+  font-size: 0.6rem;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.turn-banner-next-peek {
+  margin: 0;
+  font-size: 0.55rem;
+  color: #64748b;
+  line-height: 1.2;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-banner-next-peek-text {
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.turn-banner-primary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.turn-banner-icon {
+  font-size: 2.05rem;
+  line-height: 1;
+  color: #8ab4f8;
+}
+
+/* Direction symbols (unicode arrows): fake a bolder stroke ? most fonts don?t ship a heavy weight. */
+.turn-banner-icon,
+.turn-banner-icon--next {
+  font-weight: 900;
+  text-shadow:
+    -0.04em 0 0 currentColor,
+    0.04em 0 0 currentColor,
+    0 -0.04em 0 currentColor,
+    0 0.04em 0 currentColor,
+    0 0.06em 0.14em rgba(0, 0, 0, 0.42);
+  -webkit-text-stroke: 0.045em rgba(15, 23, 42, 0.4);
+  paint-order: stroke fill;
+}
+
+.turn-banner-icon--sm {
+  font-size: 1.1rem;
+  opacity: 0.85;
+}
+
+.turn-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.turn-banner-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.turn-banner-exit {
+  font-size: 0.72rem;
+  color: #fde68a;
+  font-weight: 780;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.turn-banner-street {
+  font-size: 1.05rem;
+  font-weight: 750;
+  color: #e8eaed;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+/* Compact road refs ? interstate-style badge + US / state route (larger for glanceability) */
+.turn-banner-street .road-shield,
+.turn-banner-next-instr .road-shield,
+.turn-banner-next-peek-text .road-shield {
+  display: inline-block;
+  vertical-align: -0.15em;
+  margin: 0 4px 2px;
+  padding: 4px 10px 5px;
+  border-radius: 7px;
+  font-size: 1.05em;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  line-height: 1.12;
+  white-space: nowrap;
+}
+
+.top-guidance-bar--glanceable .turn-banner-street .road-shield,
+.top-guidance-bar--glanceable .turn-banner-next-instr .road-shield {
+  font-size: 1.04em;
+  padding: 4px 10px 5px;
+}
+
+.nav-top-cluster .top-guidance-bar--glanceable .turn-banner-street .road-shield,
+.nav-top-cluster .top-guidance-bar--glanceable .turn-banner-next-instr .road-shield {
+  font-size: 1.04em;
+  padding: 4px 10px 5px;
+}
+
+.nav-top-cluster .turn-banner-street .road-shield,
+.nav-top-cluster .turn-banner-next-instr .road-shield {
+  font-size: 1.08em;
+  padding: 4px 10px 5px;
+}
+
+.road-shield--interstate {
+  color: #fff;
+  background: linear-gradient(to bottom, #b91c1c 0%, #b91c1c 40%, #1e3a8a 40%, #1e3a8a 100%);
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.road-shield--us {
+  color: #fff;
+  background: #000;
+  border: 1px solid #fff;
+}
+
+.road-shield--sr {
+  color: #0f172a;
+  background: #fbbf24;
+  border: 1px solid #b45309;
+}
+
+.turn-banner-dist {
+  font-size: 0.72rem;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.turn-banner-continue {
+  display: block;
+  font-size: 0.68rem;
+  color: #7ecbff;
+  font-weight: 600;
+  margin-top: 1px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.turn-banner-secondary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.turn-banner-after {
+  font-size: 0.78rem;
+  color: #9aa0a6;
+  line-height: 1.25;
+}
+
+.turn-banner-after strong {
+  color: #e8eaed;
+  font-weight: 650;
+}
+
+/* Route overview PiP ? map lines + puck only */
+.route-overview-pip-wrap {
+  position: absolute;
+  top: var(--pip-top, calc(max(8px, env(safe-area-inset-top)) + 120px));
+  right: max(4px, env(safe-area-inset-right));
+  width: 204px;
+  height: 204px;
+  z-index: 5;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 26px rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  pointer-events: auto;
+}
+
+.route-overview-pip-map-shell {
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.route-overview-pip-inner {
+  width: 100%;
+  height: 100%;
+}
+
+/* Live position on route-overview PiP (same puck idea as main map, smaller) */
+.pip-user-puck {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--puck-fill);
+  border: 2px solid var(--puck-stroke);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+}
+
+.route-overview-pip-wrap .pip-map-close {
+  top: 6px;
+  right: 6px;
+}
+
+.route-pip-reopen {
+  position: absolute;
+  top: var(--pip-top, calc(max(8px, env(safe-area-inset-top)) + 120px));
+  right: max(4px, env(safe-area-inset-right));
+  z-index: 5;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(18, 20, 24, 0.94);
+  color: #e8eaed;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* Left column: radar UTC clock above address / search */
+.nav-bottom-dock__search-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+
+/* Radar frame clock: left side of dock row — clear of the progress rail on the right */
+.nav-radar-frame-time-dock {
+  flex: 0 0 auto;
+  min-width: 0;
+  margin-right: auto;
+  font-size: 0.58rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: rgba(226, 232, 240, 0.94);
+  text-align: left;
+  padding: 2px 10px 2px 4px;
+  line-height: 1.2;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Bottom toolbar: Spd/Lim | Rt/Dr/Mp/Rad/(?)/Stop ? Rad hidden while navigating in drive */
+.nav-bottom-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  width: 100%;
+  background: var(--nav-chrome-panel-bg);
+  border: var(--nav-chrome-panel-border);
+  border-radius: var(--nav-chrome-radius, 8px);
+  box-shadow: var(--nav-chrome-panel-shadow);
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.nav-bottom-toolbar--drive {
+  justify-content: flex-start;
+}
+
+.nav-bottom-toolbar__main {
+  display: grid;
+  /* Balance columns so the center controls land visually centered (not pulled right by ETA block). */
+  grid-template-columns: 1.15fr auto 0.85fr;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Route view: with ? hidden after route set, re-center the button cluster in the panel. */
+.nav-bottom-toolbar--route .nav-bottom-toolbar__main {
+  grid-template-columns: 1fr auto 1fr;
+}
+
+.nav-bottom-toolbar__left {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.nav-bottom-toolbar__left .nav-bottom-stats-row--lead {
+  border-right: none;
+  padding-right: 0;
+}
+
+.nav-bottom-stat--remaining .nav-bottom-stat-v {
+  color: #93c5fd;
+}
+
+/* Spd/Lim: now that the left column has room, make numbers more legible without overflowing. */
+.nav-bottom-toolbar__left .nav-bottom-stat-v {
+  font-size: 1.08rem;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+}
+
+.nav-bottom-toolbar__left .nav-bottom-stat-v small {
+  font-size: 0.62rem;
+}
+
+/* Drive + map-nav: distribute left/right content to fill their columns (keeps center buttons centered). */
+.nav-bottom-toolbar--drive .nav-bottom-toolbar__left,
+.nav-bottom-toolbar--mapnav .nav-bottom-toolbar__left {
+  width: 100%;
+}
+
+.nav-bottom-toolbar--drive .nav-bottom-stats-row--lead,
+.nav-bottom-toolbar--mapnav .nav-bottom-stats-row--lead {
+  width: auto;
+  justify-content: flex-start;
+  padding-right: 10px;
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.nav-bottom-toolbar--drive .nav-bottom-toolbar__right,
+.nav-bottom-toolbar--mapnav .nav-bottom-toolbar__right {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.nav-bottom-toolbar__center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.nav-bottom-toolbar__right {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.nav-bottom-toolbar__drive-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Stacked: ETA + arrival clock (top), time remaining (bottom) ? same weight/size. */
+.nav-bottom-toolbar__drive-eta-compact {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.nav-bottom-toolbar__drive-eta-line {
+  font-size: 0.98rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #f1f5f9;
+}
+
+.nav-bottom-toolbar__drive-eta-line--arrival {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0;
+}
+
+.nav-bottom-toolbar__drive-eta-prefix {
+  font-weight: 800;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+/* Electric blue ? arrival clock only */
+.nav-bottom-toolbar__drive-eta-clock {
+  font-weight: 800;
+  color: #38c8ff;
+  text-shadow: 0 0 12px rgba(56, 200, 255, 0.35);
+}
+
+.nav-bottom-toolbar__drive-eta-line--remaining {
+  color: #f1f5f9;
+}
+
+/* New grid toolbar: neutralize legacy right-block styles below. */
+.nav-bottom-toolbar__main > .nav-bottom-toolbar__right {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
+  flex-shrink: 1;
+}
+
+/* Drive-like nav: keep center button cluster truly centered. */
+.nav-bottom-toolbar--drive .nav-bottom-toolbar__main,
+.nav-bottom-toolbar--mapnav .nav-bottom-toolbar__main {
+  grid-template-columns: 1fr auto 1fr;
+}
+
+.nav-bottom-toolbar--drive .nav-bottom-toolbar__drive-meta,
+.nav-bottom-toolbar--mapnav .nav-bottom-toolbar__drive-meta {
+  flex: 1;
+  justify-content: flex-end;
+}
+
+/* Drive nav: no Rad button ? use freed width for slightly larger live stats (map nav shows Rad next to Mp) */
+.nav-bottom-toolbar--drive .nav-bottom-stats-row--lead,
+.nav-bottom-toolbar--mapnav .nav-bottom-stats-row--lead {
+  gap: 8px;
+  padding-right: 6px;
+}
+
+.nav-bottom-toolbar--drive .nav-bottom-stat-k,
+.nav-bottom-toolbar--mapnav .nav-bottom-stat-k {
+  font-size: 0.62rem;
+}
+
+.nav-bottom-toolbar--drive .nav-bottom-stat-v,
+.nav-bottom-toolbar--mapnav .nav-bottom-stat-v {
+  font-size: 0.98rem;
+}
+
+.nav-bottom-toolbar--drive .nav-bottom-stat-v--speed-over,
+.nav-bottom-toolbar--mapnav .nav-bottom-stat-v--speed-over {
+  color: #f87171;
+}
+
+.nav-bottom-toolbar--drive .nav-bottom-stat-v small,
+.nav-bottom-toolbar--mapnav .nav-bottom-stat-v small {
+  font-size: 0.58rem;
+}
+
+.nav-bottom-toolbar--drive .nav-bottom-toolbar__right-k,
+.nav-bottom-toolbar--mapnav .nav-bottom-toolbar__right-k {
+  font-size: 0.64rem;
+}
+
+.nav-bottom-toolbar--drive .nav-bottom-toolbar__right-v,
+.nav-bottom-toolbar--mapnav .nav-bottom-toolbar__right-v {
+  font-size: 0.8rem;
+}
+
+.nav-bottom-toolbar--drive .nav-bottom-toolbar__drive-eta-line,
+.nav-bottom-toolbar--mapnav .nav-bottom-toolbar__drive-eta-line {
+  font-size: 1.05rem;
+}
+
+.nav-bottom-toolbar__right {
+  margin-left: auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding-left: 6px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
+}
+
+.nav-bottom-toolbar__right-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  line-height: 1.15;
+}
+
+.nav-bottom-toolbar__right-k {
+  font-size: 0.6rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(185, 195, 208, 0.95);
+}
+
+.nav-bottom-toolbar__right-v {
+  font-size: 0.7rem;
+  font-weight: 850;
+  color: #e8eaed;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+/* Desktop: keep the whole bottom toolbar content centered as a cluster.
+   Phone already wraps/shrinks naturally. */
+@media (min-width: 760px) {
+  .nav-bottom-toolbar {
+    justify-content: center;
+  }
+
+  /* Don?t force ETA/Arrive to the far right on wide screens. */
+  .nav-bottom-toolbar__right {
+    margin-left: 0;
+  }
+}
+
+.nav-bottom-off-route {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(120, 30, 30, 0.35);
+  border: 1px solid rgba(255, 140, 120, 0.35);
+}
+
+.nav-bottom-off-route__text {
+  font-size: 0.68rem;
+  font-weight: 650;
+  color: #fce8e6;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.nav-bottom-off-route__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.nav-bottom-off-route__btn {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 200, 180, 0.45);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nav-bottom-off-route__btn--primary {
+  border-color: rgba(147, 197, 253, 0.65);
+  background: rgba(30, 64, 175, 0.72);
+  color: #eff6ff;
+}
+
+.nav-bottom-bypass-chip {
+  flex-shrink: 0;
+}
+
+.nav-bottom-bypass-chip__btn {
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(138, 180, 248, 0.45);
+  background: rgba(102, 157, 246, 0.22);
+  color: #e8eaed;
+  font-size: 0.65rem;
+  font-weight: 750;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nav-bottom-bypass-chip__btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.nav-hazard-bypass {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(120, 80, 10, 0.55);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  color: #fef3c7;
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.nav-hazard-bypass__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-hazard-bypass__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.nav-mode-sq--bend {
+  border-color: rgba(251, 191, 36, 0.75);
+  background: rgba(180, 120, 20, 0.38);
+  color: #fef3c7;
+}
+
+.nav-bottom-stats-row--lead {
+  flex-shrink: 0;
+  margin-right: 0;
+  padding-right: 5px;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  gap: 5px;
+}
+

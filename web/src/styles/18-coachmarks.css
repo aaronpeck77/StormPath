@@ -1,0 +1,699 @@
+/*
+ * Tablet / wide portrait — keep phone-width chrome centered (iPad upright).
+ * Map stays full bleed; bottom dock, top guidance, and progress rail share one centered column.
+ */
+@media (min-width: 521px) and (orientation: portrait) {
+  .app-shell.nav-fullmap .nav-drive-overlay-stack {
+    grid-template-columns: 1fr minmax(0, var(--sp-tablet-chrome-w)) 1fr;
+  }
+
+  .app-shell.nav-fullmap .nav-drive-overlay-stack > .nav-top-cluster {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    max-width: var(--sp-tablet-chrome-w);
+    justify-self: center;
+    box-sizing: border-box;
+  }
+
+  .app-shell.nav-fullmap .nav-route-progress-rail {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+    padding-right: max(10px, calc(6px + env(safe-area-inset-right, 0px)));
+  }
+
+  .app-shell.nav-fullmap .nav-bottom-chrome-wrap {
+    max-width: var(--sp-tablet-chrome-w);
+  }
+
+  .app-shell.nav-fullmap .nav-bottom-stack > .route-recording-banner,
+  .app-shell.nav-fullmap .nav-bottom-stack > .traffic-bypass-compare {
+    width: 100%;
+    max-width: var(--sp-tablet-chrome-w);
+  }
+
+  .app-shell.nav-fullmap .map-stage.map-bleed .mapboxgl-ctrl-bottom-right {
+    right: calc(
+      (100vw - var(--sp-tablet-chrome-w)) / 2 + 64px + max(6px, env(safe-area-inset-right, 0px)) + 8px
+    ) !important;
+  }
+
+  .app-shell.nav-fullmap .route-pip-reopen {
+    right: calc((100vw - var(--sp-tablet-chrome-w)) / 2 + max(4px, env(safe-area-inset-right, 0px)));
+  }
+
+  .about-sheet,
+  .cfs-sheet {
+    left: 50%;
+    right: auto;
+    width: min(var(--sp-tablet-chrome-w), calc(100vw - 20px));
+    transform: translateX(-50%);
+  }
+
+  .name-sheet {
+    left: 50%;
+    right: auto;
+    width: min(var(--sp-tablet-chrome-w), calc(100vw - 24px));
+    transform: translateX(-50%);
+  }
+
+  .saved-drawer:not(.saved-drawer--full) {
+    left: 50%;
+    right: auto;
+    width: min(var(--sp-tablet-chrome-w), 100vw);
+    transform: translateX(-50%);
+  }
+}
+
+/*
+ * Landscape / side view ? portrait unchanged.
+ * Sideways ?T?: vertical progress on the far edge; turn + NWS + roads share one short top band (like portrait, denser);
+ * map + routes fill the T stem + body. Bottom dock aligns to that map gutter only (not a wide empty margin).
+ * Default = right hand (rail left). Settings ? Left hand mirrors edge + gutters.
+ */
+@media (orientation: landscape) {
+  .app-shell.nav-fullmap {
+    --progress-callout-top-reserve: 12px;
+  }
+
+  /* Gutter from physical edge to where the map / bottom chrome should start (matches progress rail column width). */
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) {
+    /* Narrow band for vertical strip + safe inset (map + bottom chrome use wider ?T? body). */
+    --sp-landscape-map-inset-start: max(
+      64px,
+      calc(48px + max(8px, calc(6px + env(safe-area-inset-left, 0px))))
+    );
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left {
+    --sp-landscape-map-inset-end: max(
+      64px,
+      calc(48px + max(8px, calc(6px + env(safe-area-inset-right, 0px))))
+    );
+  }
+
+  /* Bottom ?i? row: flush to trailing edge of chrome so it stays clear of the map T / progress gutter. */
+  .app-shell.nav-fullmap .nav-bottom-dock__about-row {
+    justify-content: flex-end;
+  }
+
+  .app-shell.nav-fullmap .nav-bottom-dock__about-row > .map-about-btn {
+    order: 2;
+    flex-shrink: 0;
+  }
+
+  .app-shell.nav-fullmap .nav-bottom-dock__about-row > .stormy-call-btn {
+    order: 3;
+    margin-right: 0;
+  }
+
+  .app-shell.nav-fullmap .nav-bottom-dock__about-row > .nav-radar-frame-time-dock {
+    order: 1;
+    margin-right: auto;
+  }
+
+  /* Left-handed: bottom chrome hugs physical left ? put ?i? on outer edge (away from map / progress rail). */
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row {
+    justify-content: flex-start;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row > .map-about-btn {
+    order: 1;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row > .stormy-call-btn {
+    order: 2;
+    margin-right: 0;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row > .nav-radar-frame-time-dock {
+    order: 2;
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  /*
+   * Progress rail foot: use measured/CSS foot inset (landscape side rail usually clears the map-column dock).
+   */
+  .app-shell.nav-fullmap .nav-route-progress-rail {
+    padding-bottom: var(--nav-progress-rail-foot-inset, var(--nav-dock-above-safe-current, 8px));
+  }
+
+  /* Strip length: same 100cqh as portrait ? inner is sized by stretched rail column. */
+
+  /* ?? Right-handed (default): full-height rail left; top chrome only row 1 of map column (T top) ?? */
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-drive-overlay-stack {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-drive-overlay-stack > .nav-top-cluster {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+    justify-self: end;
+    min-height: 0;
+    width: min(560px, 50vw);
+    max-width: calc(100% - 4px);
+    box-sizing: border-box;
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-route-progress-rail {
+    grid-column: 1;
+    grid-row: 1 / -1;
+    align-self: stretch;
+    justify-self: start;
+    padding-right: 0;
+    padding-left: max(0px, env(safe-area-inset-left, 0px));
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-route-progress-rail__inner {
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    align-items: flex-end;
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-route-progress-rail .route-progress-strip--side {
+    transform: translateX(-12px) rotate(-90deg);
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .map-stage.map-bleed > .nav-bottom-stack {
+    left: max(50%, var(--sp-landscape-map-inset-start));
+    right: 0;
+    align-items: flex-end;
+    padding-left: max(4px, env(safe-area-inset-left));
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-bottom-chrome-wrap {
+    align-self: flex-end;
+  }
+
+  /* Portrait-like top stack, shorter in landscape: tighter turn + hazard + NWS band */
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-top-cluster {
+    gap: 3px;
+    padding: max(2px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) 3px max(4px, env(safe-area-inset-left));
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-top-route-rail__main {
+    gap: 4px;
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left)
+    .nav-top-route-rail__main:has(.storm-advisory-bar--expanded) {
+    gap: max(12px, 1.4vh);
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-top-cluster .top-guidance-bar {
+    padding: 5px 8px 6px;
+    gap: 5px;
+    border-radius: 11px;
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-top-cluster .hazard-controls-strip {
+    --hazard-strip-row-h: 28px;
+    padding: 2px 0 4px;
+    gap: 6px;
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-top-cluster .storm-advisory-bar-wrap {
+    margin-top: 2px;
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-top-cluster .storm-advisory-bar {
+    margin-top: 2px;
+    padding: 5px 8px;
+    font-size: 0.5rem;
+    line-height: 1.32;
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-top-cluster .storm-advisory-bar__collapse-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 0.5rem;
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .map-stage.map-bleed .mapboxgl-ctrl-bottom-left {
+    left: calc(var(--sp-landscape-map-inset-start) + 6px) !important;
+    right: auto !important;
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .map-stage.map-bleed .mapboxgl-ctrl-bottom-right {
+    right: max(6px, env(safe-area-inset-right)) !important;
+    left: auto !important;
+  }
+
+  /* ?? Left-handed: mirror T (rail full height on right; top band row 1 col 1; map inset from end) ?? */
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-drive-overlay-stack {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-drive-overlay-stack > .nav-top-cluster {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: start;
+    justify-self: start;
+    min-height: 0;
+    width: min(560px, 50vw);
+    max-width: calc(100% - 4px);
+    box-sizing: border-box;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-route-progress-rail {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    align-self: stretch;
+    justify-self: end;
+    padding-left: 0;
+    padding-right: max(0px, env(safe-area-inset-right, 0px));
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-route-progress-rail__inner {
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    align-items: flex-end;
+  }
+
+  /* Mirror right-handed left-edge rule: without this nudge the rotated strip sits flush past the bezel. */
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-route-progress-rail .route-progress-strip--side {
+    transform: translateX(-12px) rotate(-90deg);
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .map-stage.map-bleed > .nav-bottom-stack {
+    left: 0;
+    right: max(50%, var(--sp-landscape-map-inset-end));
+    align-items: flex-start;
+    padding-right: max(4px, env(safe-area-inset-right));
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-chrome-wrap {
+    align-self: flex-start;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-top-cluster {
+    gap: 3px;
+    padding: max(2px, env(safe-area-inset-top)) max(4px, env(safe-area-inset-left)) 3px max(6px, env(safe-area-inset-right));
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-top-route-rail__main {
+    gap: 4px;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left
+    .nav-top-route-rail__main:has(.storm-advisory-bar--expanded) {
+    gap: max(12px, 1.4vh);
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-top-cluster .top-guidance-bar {
+    padding: 5px 8px 6px;
+    gap: 5px;
+    border-radius: 11px;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-top-cluster .hazard-controls-strip {
+    --hazard-strip-row-h: 28px;
+    padding: 2px 0 4px;
+    gap: 6px;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-top-cluster .storm-advisory-bar-wrap {
+    margin-top: 2px;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-top-cluster .storm-advisory-bar {
+    margin-top: 2px;
+    padding: 5px 8px;
+    font-size: 0.5rem;
+    line-height: 1.32;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-top-cluster .storm-advisory-bar__collapse-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 0.5rem;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .map-stage.map-bleed .mapboxgl-ctrl-bottom-left {
+    left: max(6px, env(safe-area-inset-left)) !important;
+    right: auto !important;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .map-stage.map-bleed .mapboxgl-ctrl-bottom-right {
+    right: calc(var(--sp-landscape-map-inset-end) + 8px) !important;
+    left: auto !important;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-toolbar__main {
+    direction: rtl;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-toolbar__main > * {
+    direction: ltr;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .stormpath-build-stamp {
+    right: max(6px, env(safe-area-inset-right));
+    left: auto;
+  }
+
+  /*
+   * Expanded advisory + route info: half-screen overlay in landscape so the map + progress
+   * rail stay visible on the opposite side. Right-handed → right half; left-handed → left half.
+   */
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .storm-advisory-bar--expanded,
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .route-progress-callout-panel--expanded {
+    top: max(0px, env(safe-area-inset-top, 0px)) !important;
+    bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important;
+    left: max(50%, var(--sp-landscape-map-inset-start)) !important;
+    right: max(0px, env(safe-area-inset-right, 0px)) !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 14px 0 0 14px;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .storm-advisory-bar--expanded,
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .route-progress-callout-panel--expanded {
+    top: max(0px, env(safe-area-inset-top, 0px)) !important;
+    bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important;
+    left: max(0px, env(safe-area-inset-left, 0px)) !important;
+    right: max(50%, var(--sp-landscape-map-inset-end)) !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 0 14px 14px 0;
+  }
+}
+
+/* ????????????????????????????????????????????????????????????????????????????
+ * First-launch coachmarks — contextual tips for advisory, info, views, and progress bar.
+ * Layered above everything else (z-index 9000+) so the cards float above the
+ * map, advisory bar, progress rail, and bottom dock. The card position is set
+ * inline by the React component (top/left in viewport pixels).
+ * ???????????????????????????????????????????????????????????????????????????? */
+.coachmarks {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  /* No layout-blocking layer here ? the dim is created by the highlight's own outer
+   * box-shadow (the "spotlight" trick), which means the target element itself is the only
+   * crisp, undimmed pixel on screen and stays fully tappable while the tour is up. */
+  pointer-events: none;
+}
+
+/* Fallback dim ONLY used when a step has no resolvable target (e.g. progress rail before
+ * a route is set). No blur ? the user explicitly wanted to be able to see the underlying
+ * UI clearly. */
+.coachmarks__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  animation: coachmarks-backdrop-in 200ms ease-out;
+}
+
+@keyframes coachmarks-backdrop-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Highlight / spotlight around the target UI element. The 9999px outer box-shadow dims
+ * everything OUTSIDE this rect; the inner area stays unobscured so the user can clearly see
+ * (and even tap) the actual button being explained. The bright cyan ring + soft glow draws
+ * the eye to it. Animations only modulate the ring colors, not the dim amount, so the
+ * underlying UI never flickers. */
+.coachmarks__highlight {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 9999px rgba(0, 0, 0, 0.62),
+    0 0 0 3px rgba(125, 211, 252, 1),
+    0 0 26px 8px rgba(56, 189, 248, 0.85);
+  transition: top 180ms ease, left 180ms ease, width 180ms ease, height 180ms ease;
+  animation: coachmarks-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes coachmarks-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 9999px rgba(0, 0, 0, 0.62),
+      0 0 0 3px rgba(125, 211, 252, 1),
+      0 0 26px 8px rgba(56, 189, 248, 0.85);
+  }
+  50% {
+    box-shadow:
+      0 0 0 9999px rgba(0, 0, 0, 0.62),
+      0 0 0 4px rgba(186, 230, 253, 1),
+      0 0 38px 14px rgba(125, 211, 252, 1);
+  }
+}
+
+/* Outer wrapper handles the absolute positioning + the optional translateY(-100%) used to
+ * anchor "above"-side cards by their bottom edge. Keeping the transform on the wrapper
+ * prevents the card's own entry animation (which animates `transform`) from clobbering the
+ * anchor offset. */
+.coachmarks__card-wrap {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.coachmarks__card-wrap--anchor-bottom {
+  transform: translateY(-100%);
+}
+
+/* The coachmark card ? dark glass to match the rest of the chrome, with a small triangle
+ * arrow pointing at the target on the appropriate side. */
+.coachmarks__card {
+  position: relative;
+  pointer-events: auto;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 14px;
+  padding: 14px 16px 12px;
+  color: #e2e8f0;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-family: inherit;
+  animation: coachmarks-card-in 240ms cubic-bezier(0.2, 0.8, 0.4, 1) both;
+}
+
+@keyframes coachmarks-card-in {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Triangle arrow. Built with a borders-only block so it inherits the card's tint without
+ * needing a separate color variable. Hidden when the card falls back to centered (no
+ * known target side). */
+.coachmarks__card::before {
+  content: "";
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 8px solid transparent;
+  pointer-events: none;
+}
+
+.coachmarks__card--side-above::before {
+  bottom: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-top-color: rgba(15, 23, 42, 0.96);
+}
+
+.coachmarks__card--side-below::before {
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-bottom-color: rgba(15, 23, 42, 0.96);
+}
+
+.coachmarks__card--side-left::before {
+  right: -16px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-left-color: rgba(15, 23, 42, 0.96);
+}
+
+.coachmarks__card--side-right::before {
+  left: -16px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-right-color: rgba(15, 23, 42, 0.96);
+}
+
+/* Tiny "Tip" eyebrow label ? sets expectation that this is a one-time, dismissable hint
+ * rather than a modal blocker. */
+.coachmarks__tip-label {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.18);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  color: #7dd3fc;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.coachmarks__title {
+  margin: 0 0 6px;
+  font-size: 0.96rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #f1f5f9;
+}
+
+.coachmarks__body {
+  margin: 0 0 12px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #cbd5e1;
+}
+
+.coachmarks__actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Single-button (Got it only) variant ? right-aligned so the tap target sits near the
+ * thumb on portrait phones. */
+.coachmarks__actions--single {
+  justify-content: flex-end;
+}
+
+.coachmarks__btn {
+  border-radius: 8px;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 90ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.coachmarks__btn:active {
+  transform: scale(0.97);
+}
+
+.coachmarks__btn--secondary {
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+.coachmarks__btn--secondary:hover {
+  color: #cbd5e1;
+}
+
+.coachmarks__btn--primary {
+  padding: 8px 14px;
+  border: 1px solid rgba(56, 189, 248, 0.6);
+  background: linear-gradient(118deg, #0ea5e9 0%, #0284c7 100%);
+  color: #f8fafc;
+  font-size: 0.86rem;
+  letter-spacing: 0.02em;
+  box-shadow: 0 2px 10px rgba(8, 145, 178, 0.4);
+}
+
+.coachmarks__btn--primary:hover {
+  background: linear-gradient(118deg, #38bdf8 0%, #0ea5e9 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coachmarks__backdrop,
+  .coachmarks__highlight,
+  .coachmarks__card {
+    animation: none;
+  }
+}
+
+/* Jeff — the little corner mascot for the background health watchdogs.
+   Sits just above the bottom dock/toolbar stack (not in the crowded logo/compass/i-button
+   strip at the very bottom-left, which is occupied in both planning and drive view). */
+.jeff-badge {
+  position: fixed;
+  /* Lines up with the bottom dock's own left inset (compass/i column) instead of sitting
+   * slightly further right than it. */
+  left: max(8px, env(safe-area-inset-left, 0px));
+  bottom: calc(
+    var(--nav-dock-above-safe-current, var(--nav-dock-above-safe, 152px)) +
+      env(safe-area-inset-bottom, 0px) + 18px
+  );
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  /* Idle: faded + desaturated so Jeff stays discoverable without competing with the map.
+   * Full color returns briefly after a fix (--active) — no popup text. */
+  opacity: 0.55;
+  filter: saturate(0.45) brightness(0.92);
+  transform: scale(0.86);
+  transition:
+    opacity 220ms ease-out,
+    transform 220ms ease-out,
+    filter 220ms ease-out;
+}
+
+.jeff-badge--active {
+  opacity: 1;
+  filter: none;
+  transform: scale(1);
+}
+
+.jeff-badge__avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.06);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  animation: none;
+}
+
+.jeff-badge--active .jeff-badge__avatar {
+  animation: jeff-badge-bounce 900ms ease-in-out 2;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.35), 0 2px 8px rgba(0, 0, 0, 0.22);
+}
+
+@keyframes jeff-badge-bounce {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  30% {
+    transform: translateY(-4px) rotate(-6deg);
+  }
+  60% {
+    transform: translateY(0) rotate(4deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jeff-badge,
+  .jeff-badge__avatar {
+    transition: none;
+    animation: none;
+  }
+}

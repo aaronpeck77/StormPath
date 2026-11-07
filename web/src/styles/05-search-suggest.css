@@ -1,0 +1,719 @@
+/* Route / top-down: fixed footprint so distance/strategy line never grows the dock row (G). */
+.nav-bottom-dock__route-toggle-slot {
+  flex: 0 0 6.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 6.9rem;
+  min-width: 6.9rem;
+  max-width: 6.9rem;
+  height: var(--nav-chrome-control, 44px);
+  min-height: var(--nav-chrome-control, 44px);
+  max-height: var(--nav-chrome-control, 44px);
+}
+
+/* Override the fixed 6.9 rem footprint when the cycle button lives in the dedicated actions row.
+ * Doubled-class selector boosts specificity above the phone-width media query rule lower in the
+ * file that pins the standard slot to 6.75 rem (otherwise that rule would win on phones). */
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--actions {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  justify-content: stretch;
+}
+
+.nav-bottom-dock__route-toggle-slot--actions .nav-route-cycle-btn {
+  width: 100%;
+  padding: 4px 10px;
+}
+
+.nav-bottom-dock__route-toggle-slot--actions .nav-route-cycle-btn__label {
+  font-size: 0.88rem;
+  line-height: 1.15;
+}
+
+.nav-bottom-dock__route-toggle-slot--actions .nav-route-cycle-btn__eta {
+  font-size: 0.74rem;
+  line-height: 1.15;
+}
+
+.nav-bottom-dock__route-toggle-slot--actions .nav-route-cycle-btn__detail {
+  font-size: 0.66rem;
+  line-height: 1.2;
+  margin-top: 1px;
+}
+
+/* Inline placement on the about-row: the slot fills the strip to the right of the 'i' info
+ * button, clamped on the right by the about-row's right reservation (see rule below) so the
+ * button never slides under the vertical progress rail column on the right edge of the map.
+ * Height matches `.map-about-btn` (34 px) so the row reads as a single horizontal control
+ * strip with both controls flush at the top and bottom. */
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: var(--nav-chrome-about, 32px);
+  min-height: var(--nav-chrome-about, 32px);
+  max-height: var(--nav-chrome-about, 32px);
+  justify-content: stretch;
+}
+
+/* Reserve the rightmost ~56 px of the about-row so the inline action slot doesn't sit under
+ * the vertical progress rail column. The rail's outer column is 56 px wide and aligns with
+ * the physical right edge; the bottom-stack already contributes max(8 px, safe-area-inset-right)
+ * of right padding, so we only need to make up the remainder plus a small visual gap. Scoped
+ * to the about-row so the search row and toolbar (which sit below the rail's foot inset) keep
+ * their full-width reach. Matches both inline variants: route-cycle (route loaded) and
+ * recenter-puck/My location (planning view). */
+.nav-bottom-dock__plan-stack
+  > .nav-bottom-dock__about-row:has(.nav-bottom-dock__route-toggle-slot--inline),
+.nav-bottom-dock__plan-stack
+  > .nav-bottom-dock__about-row:has(.nav-recenter-puck-btn--inline) {
+  padding-right: 0;
+}
+
+/* Doubled-class selectors below: a single `.--inline` ancestor would tie at specificity 0,2,0
+ * with the phone-width media query rules near the bottom of the file (which come later in
+ * source order and would therefore win the cascade on phones, reverting the inline placement
+ * back to the narrow stacked footprint). Doubling the slot class lifts these to 0,3,0 so the
+ * inline variant wins everywhere, including TestFlight. */
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-pick-multi {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-toggle {
+  width: 100%;
+  flex: 1;
+  min-width: 0;
+  height: var(--nav-chrome-about, 32px);
+  min-height: var(--nav-chrome-about, 32px);
+  max-height: var(--nav-chrome-about, 32px);
+  border-radius: 8px;
+}
+
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-toggle__seg {
+  flex: 1;
+  min-width: 0;
+  min-height: 100%;
+  padding: 0 6px;
+  font-size: 0.72rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-cycle-btn {
+  width: 100%;
+  /* Base .nav-route-cycle-btn caps width at 5.5 rem for the small stacked variants ? explicitly
+   * unlock here so the inline button stretches across the about-row strip. */
+  min-width: 0;
+  max-width: none;
+  height: var(--nav-chrome-about, 32px);
+  min-height: var(--nav-chrome-about, 32px);
+  max-height: var(--nav-chrome-about, 32px);
+  /* Two-row grid inside the about-row button so all three pieces render in full instead of being
+   * ellipsized:
+   *   row 1: [road label]  [letter � ETA]   ? left + right of the top line
+   *   row 2: [distance � strategy ????????] ? full-width bottom line
+   * Letting the columns size to their content (auto) means no ellipsis, no info loss; the
+   * about-row already reserves enough horizontal space for the typical strings (~22 chars top,
+   * ~16 chars bottom). */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  justify-content: stretch;
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 0;
+  padding: 2px 8px;
+  text-align: left;
+  overflow: hidden;
+  /* Match .map-about-btn corner radius for visual symmetry across the row. */
+  border-radius: 8px;
+}
+
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-cycle-btn__label {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.15;
+  /* Allow the road label to be the full string ? no ellipsis. If extreme labels overflow they
+   * will simply shrink the .nav-route-cycle-btn__eta chunk via auto-track sizing. */
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-cycle-btn__eta {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1.15;
+  white-space: nowrap;
+  /* No left border in the grid layout ? the column gap supplies enough visual separation
+   * without a divider that would otherwise float between the two grid rows. */
+  padding-left: 0;
+  border-left: none;
+  /* Justify-self: end so "A � ~25 min" hugs the right edge of the top row. */
+  justify-self: end;
+}
+
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-cycle-btn__detail {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.15;
+  margin-top: 0;
+  white-space: nowrap;
+  /* Detail can be the longest piece (e.g. "12 mi � weather-aware"); allow normal flow with no
+   * ellipsis. The about-row's right inset reserves enough space for the common strings. */
+  overflow: visible;
+  text-overflow: clip;
+  opacity: 0.94;
+  padding-left: 0;
+  border-left: none;
+}
+
+.nav-bottom-dock__route-toggle-slot .nav-route-cycle-btn {
+  width: 100%;
+  min-width: 0;
+  height: var(--nav-chrome-control, 44px);
+  min-height: var(--nav-chrome-control, 44px);
+  max-height: var(--nav-chrome-control, 44px);
+  max-width: 100%;
+  padding: 1px 5px;
+  border-radius: var(--nav-chrome-radius, 8px);
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  /* Color comes from inline styles (per-route tint + light text) */
+  box-sizing: border-box;
+  overflow: hidden;
+  gap: 0;
+}
+
+.nav-bottom-dock__route-toggle-slot .nav-route-cycle-btn__label {
+  font-size: 0.62rem;
+  color: inherit;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.05;
+}
+
+.nav-bottom-dock__route-toggle-slot .nav-route-cycle-btn__eta {
+  font-size: 0.54rem;
+  color: inherit;
+  opacity: 0.92;
+  font-weight: 800;
+  line-height: 1.05;
+}
+
+.nav-bottom-dock__route-toggle-slot .nav-route-cycle-btn__detail {
+  color: inherit;
+  opacity: 0.82;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  -webkit-box-orient: unset;
+  font-size: 0.42rem;
+  font-weight: 650;
+  line-height: 1.05;
+}
+
+.nav-route-cycle-btn__detail {
+  font-size: 0.48rem;
+  font-weight: 650;
+  line-height: 1.2;
+  color: rgba(232, 234, 237, 0.82);
+  max-width: 100%;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 1px;
+}
+
+.nav-route-cycle-btn--with-detail {
+  gap: 2px;
+}
+
+.nav-dest-compact > .nav-dest-compact--tap {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+.nav-dest-compact--tap {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 2px 0;
+  font: inherit;
+  color: inherit;
+}
+
+.nav-dest-compact--tap:focus-visible {
+  outline: 2px solid #8ab4f8;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.nav-dest-compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.nav-dest-compact-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8rem;
+  font-weight: 650;
+  color: #e8eaed;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-dest-compact-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.nav-dest-compact-btn {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 1;
+  padding: 5px 9px;
+  border-radius: 8px;
+  border: none;
+  background: #1a73e8;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.nav-hint {
+  margin: var(--rail-panel-gap, 7px) 0 0;
+  font-size: 0.74rem;
+  color: #9aa0a6;
+  line-height: 1.35;
+}
+
+.nav-routing-badge {
+  font-size: 0.78rem;
+  color: #8ab4f8;
+  font-weight: 600;
+  margin-bottom: 4px;
+  text-align: center;
+}
+
+.nav-footer-routes {
+  margin-bottom: 0;
+}
+
+.nav-route-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 4px 0 2px;
+  border-top: 1px solid #e8eaed;
+  margin-top: 6px;
+}
+
+.nav-text-btn {
+  border: none;
+  background: none;
+  color: #8ab4f8;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.nav-text-btn:hover {
+  text-decoration: underline;
+}
+
+.nav-status-mini {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: #5f6368;
+}
+
+.nav-search-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.nav-search-icon {
+  color: #9aa0a6;
+  font-size: 0.95rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.nav-search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 0.88rem;
+  color: #e8eaed;
+  min-width: 0;
+  background: transparent;
+  padding: 2px 0;
+}
+
+.nav-search-input::placeholder {
+  color: #80868b;
+}
+
+.nav-search-dismiss {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0 -4px 0 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #9aa0a6;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.nav-search-dismiss:hover,
+.nav-search-dismiss:focus-visible {
+  color: #e8eaed;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.nav-search-dismiss:focus-visible {
+  outline: 2px solid #8ab4f8;
+  outline-offset: 1px;
+}
+
+.nav-search-wrap {
+  position: relative;
+  overflow: visible;
+}
+
+.nav-search-dock:has(.nav-search-wrap--list-open) {
+  z-index: 8;
+}
+
+.nav-search-dock,
+.nav-bottom-dock__search-col,
+.nav-bottom-dock__search-myloc-row,
+.nav-bottom-dock__plan-stack {
+  overflow: visible;
+}
+
+/* List sits above the typing field and is the only thing that scrolls.
+ * The field stays in the dock — it is not inside this overflow box. */
+.nav-search-suggestions {
+  list-style: none;
+  position: absolute;
+  left: -8px;
+  right: -8px;
+  bottom: 100%;
+  z-index: 4;
+  margin: 0;
+  padding: 0;
+  max-height: var(--nav-search-suggest-max, 224px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  border: var(--nav-chrome-panel-border);
+  border-bottom: none;
+  border-radius: var(--nav-chrome-radius, 7px) var(--nav-chrome-radius, 7px) 0 0;
+  background: var(--nav-chrome-panel-bg);
+  box-shadow: var(--nav-chrome-panel-shadow);
+}
+
+.nav-search-suggestions:not(:empty) {
+  padding-bottom: 2px;
+}
+
+.nav-search-suggestion {
+  display: block;
+  width: 100%;
+  text-align: left;
+  /* Wider horizontal padding now that we extend edge-to-edge ? keeps tap targets generous on phones. */
+  padding: 11px 14px;
+  border: none;
+  background: transparent;
+  color: #e8eaed;
+  font-size: 0.82rem;
+  line-height: 1.3;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.stormy-place-choices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  max-width: var(--sp-tablet-chrome-w, min(600px, calc(100vw - 16px)));
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(18, 20, 24, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.stormy-place-choices button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: #e8eaed;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stormy-place-choices li:last-child button {
+  border-bottom: none;
+}
+
+.stormy-place-choices__name {
+  font-size: 0.84rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.stormy-place-choices__detail {
+  font-size: 0.7rem;
+  line-height: 1.25;
+  color: rgba(226, 232, 240, 0.78);
+}
+
+.nav-search-suggestion:last-child {
+  border-bottom: none;
+}
+
+.nav-search-suggestion:hover,
+.nav-search-suggestion:focus-visible {
+  background: rgba(138, 180, 248, 0.12);
+  outline: none;
+}
+
+.nav-search-suggestion.muted {
+  cursor: default;
+  color: #9aa0a6;
+  font-size: 0.78rem;
+}
+
+/* Two-line suggestion: business / place name on top, full street address (number–zip) below
+ * in a quieter tone so users can pick the right local store from duplicate names. */
+.nav-search-suggestion__primary {
+  display: block;
+  font-weight: 600;
+  color: #e8eaed;
+}
+
+.nav-search-suggestion__secondary {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: #9aa0a6;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* POI rows: name + address below — no leading glyph (emoji pin broke as "??" in CSS). */
+
+.nav-footer-card {
+  max-width: 560px;
+  margin: 0 auto;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16), 0 4px 16px rgba(0, 0, 0, 0.1);
+  padding: 10px 12px 8px;
+  max-height: 42vh;
+  overflow-y: auto;
+}
+
+.nav-suggest {
+  font-size: 0.88rem;
+  line-height: 1.35;
+  color: #174ea6;
+  background: #e8f0fe;
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.route-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 0 8px;
+}
+
+.route-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border: 1px solid #dadce0;
+  background: #fff;
+  color: #202124;
+  padding: 8px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  min-width: 6.5rem;
+  flex: 1 1 30%;
+}
+
+.route-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.route-chip.active {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.25);
+  background: #e8f0fe;
+}
+
+.route-chip.notable:not(.active) {
+  border-color: #fbcfe8;
+}
+
+.route-chip-label {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.route-chip-eta {
+  font-size: 0.78rem;
+  color: #5f6368;
+}
+
+.trip-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0 6px;
+}
+
+.trip-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  flex: 1 1 auto;
+  min-width: 5.5rem;
+}
+
+.trip-btn-primary {
+  background: #1a73e8;
+  color: #fff;
+}
+
+.trip-btn:not(.trip-btn-primary):not(.secondary):not(.danger) {
+  background: #1a73e8;
+  color: #fff;
+}
+
+.trip-btn.secondary {
+  background: #f1f3f4;
+  color: #202124;
+  border: 1px solid #dadce0;
+}
+
+.trip-btn.danger {
+  background: #fce8e6;
+  color: #c5221f;
+  border: 1px solid #f5c6c4;
+}
+
+/* Fuse / details ? light */
+.fuse-panel-compact {
+  padding: 4px 0 0;
+}
+
+.fuse-toggle {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px dashed #dadce0;
+  background: #f8f9fa;
+  color: #5f6368;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.fuse-toggle:hover {
+  color: #202124;
+  border-color: #bdc1c6;
+}
+
+.fuse-summary {
+  margin: 6px 0 4px;
+  line-height: 1.35;
+  font-size: 0.82rem;
+  color: #202124;
+}
+
+.fuse-details {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: #5f6368;
+  font-size: 0.78rem;
+}
+
+.fuse-details li {
+  margin-bottom: 4px;
+}
+
+.fuse-forecast {
+  color: #174ea6;
+}
+

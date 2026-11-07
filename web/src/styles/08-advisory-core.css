@@ -1,0 +1,1736 @@
+/* Glance panel: labeled Temp / Rain tracks */
+.rpgl__sync-outlook .rotl--synced {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0;
+}
+
+.rpgl__sync-outlook .rotl--synced .rotl__header,
+.rpgl__sync-outlook .rotl--synced .rotl__subtitle,
+.rpgl__sync-outlook .rotl--synced .rotl__legend {
+  display: none;
+}
+
+.rpgl__sync-outlook .rotl--synced .rotl__chart--sync-track {
+  display: block;
+  width: 100%;
+  height: 34px;
+}
+
+.rpgl__sync-outlook .rpgl__layer-plot {
+  min-height: 34px;
+}
+
+.rpgl .rotl--synced .rotl__axis-label-html {
+  font-size: 8px;
+}
+
+.rpgl .rotl--synced .rotl__line--temp {
+  stroke-width: 2.4;
+}
+
+.rpgl .rotl--synced .rotl__line--precip {
+  stroke: #38bdf8;
+  stroke-width: 2.2;
+}
+
+.rpgl .rotl--synced .rotl__precip-fill {
+  fill: rgba(56, 189, 248, 0.22);
+}
+
+.rpgl__radar-strata {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rpgl__radar-status {
+  margin: 0;
+  padding: 0 2px 2px calc(var(--rpgl-track-label-w, 3.15rem) + 6px);
+  font-size: 0.68rem;
+  line-height: 1.25;
+  color: #64748b;
+  opacity: 0.95;
+}
+
+.app-shell--basemap-night .rpgl__radar-status {
+  color: #94a3b8;
+}
+
+.rpgl__radar-strata .rrws--layered {
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rpgl__radar-strata .rrws__svg {
+  display: block;
+  width: 100%;
+  height: 32px;
+}
+
+.rpgl__radar-strata .rpgl__layer-plot {
+  min-height: 32px;
+}
+
+.rpgl__radar-strata .rrws__axis-label {
+  right: 2px;
+  font-size: 8px;
+}
+
+.rpgl__hazard-block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* Hazard rails reuse .rpgl__layer; keep rail height compact */
+.rpgl__hazard-rail {
+  position: relative;
+  width: 100%;
+  height: 14px;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.rpgl__hazard-rail--nws {
+  background: rgba(239, 68, 68, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.22);
+}
+
+.rpgl__hazard-rail--road {
+  background: rgba(234, 88, 12, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(234, 88, 12, 0.24);
+}
+
+.rpgl__hazard-rail--radar {
+  background: rgba(14, 165, 233, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.24);
+}
+
+.rpgl__hazard-rail--forecast {
+  background: rgba(124, 58, 237, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.22);
+}
+
+.rpgl__hazard-sublabel--nws {
+  color: #fca5a5;
+}
+
+.rpgl__hazard-sublabel--radar {
+  color: #7dd3fc;
+}
+
+.rpgl__hazard-sublabel--forecast {
+  color: #c4b5fd;
+}
+
+.rpgl__hazard-sublabel--road {
+  color: #fdba74;
+}
+
+.rpgl__hazard-sublabel--wind {
+  color: #fbbf24;
+}
+
+/** @deprecated Combined weather row — use track-specific rows. */
+.rpgl__hazard-sublabel--weather {
+  color: #c4b5fd;
+}
+
+.rpgl__hazard-rail--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rpgl__hazard-empty {
+  font-size: 0.5rem;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  color: rgba(148, 163, 184, 0.55);
+  white-space: nowrap;
+}
+
+.rpgl__sync-x-ticks {
+  position: relative;
+  height: 20px;
+  margin-top: 2px;
+  margin-left: calc(var(--rpgl-track-label-w, 3.15rem) + 6px);
+  z-index: 2;
+}
+
+.rpgl__x-tick {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 28px;
+  max-width: 52px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.rpgl__x-label {
+  font-size: 0.58rem;
+  font-weight: 800;
+  color: #f8fafc;
+  line-height: 1.1;
+}
+
+.rpgl__x-eta {
+  font-size: 0.5rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: #cbd5e1;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+.rpgl__rail-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rpgl__rail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.54rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.rpgl__rail-title {
+  flex: 1;
+  text-align: center;
+  font-size: 0.52rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.75);
+}
+
+.rpgl__rail {
+  position: relative;
+  height: 14px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.rpgl__band {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 4px;
+  opacity: 1;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.rpgl__band--nws {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 0 6px rgba(239, 68, 68, 0.28);
+}
+
+.rpgl__band--radar {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 0 6px rgba(14, 165, 233, 0.32);
+}
+
+.rpgl__band--forecast {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 0 6px rgba(124, 58, 237, 0.28);
+}
+
+.rpgl__band--weather {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 0 6px rgba(124, 58, 237, 0.28);
+}
+
+.rpgl__band--road {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 0 6px rgba(234, 88, 12, 0.3);
+}
+
+.rpgl__band--nearby {
+  opacity: 0.55;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 3px,
+    rgba(255, 255, 255, 0.22) 3px,
+    rgba(255, 255, 255, 0.22) 6px
+  );
+}
+
+/* Muted hydro / advisory — visible on Route Info graph, not painted on the progress strip */
+.rpgl__band--muted {
+  opacity: 0.72;
+  filter: saturate(0.75);
+}
+
+.rpgl__you {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 0 6px rgba(59, 130, 246, 0.55);
+  z-index: 2;
+}
+
+.rpgl__route-wide {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rpgl__route-pill {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.rpgl__route-pill-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.rpgl__route-pill-title {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #e2e8f0;
+}
+
+.rpgl__route-pill-summary {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8rem;
+  font-weight: 750;
+  color: #ffffff;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.rpgl__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.rpgl__card {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  padding: 8px 10px 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  min-height: 40px;
+  border-radius: 6px;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.rpgl__card--current {
+  background: rgba(56, 189, 248, 0.16);
+  border-bottom-color: rgba(125, 211, 252, 0.4);
+  box-shadow:
+    inset 0 0 0 1px rgba(125, 211, 252, 0.5),
+    0 0 12px rgba(56, 189, 248, 0.2);
+}
+
+.rpgl__card--current .rpgl__card-accent {
+  width: 5px;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.rpgl__card--current .rpgl__label {
+  color: #f0f9ff;
+}
+
+.rpgl__card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 8px;
+}
+
+.rpgl__card-head {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rpgl__ahead {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+  color: #7dd3fc;
+}
+
+.rpgl__ahead--now {
+  color: #fde68a;
+}
+
+.rpgl__detail {
+  margin: 0;
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #ffffff;
+  word-break: break-word;
+}
+
+.rpgl__card:last-child {
+  border-bottom: none;
+}
+
+.rpgl__card-accent {
+  align-self: stretch;
+  width: 4px;
+  border-radius: 0 3px 3px 0;
+  min-height: 28px;
+}
+
+.rpgl__track {
+  flex-shrink: 0;
+  font-size: 0.58rem;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  padding: 2px 5px;
+  border-radius: 4px;
+  line-height: 1.2;
+}
+
+.rpgl__track--nws {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.22);
+}
+
+.rpgl__track--radar {
+  color: #bfdbfe;
+  background: rgba(14, 165, 233, 0.2);
+}
+
+.rpgl__track--forecast {
+  color: #bae6fd;
+  background: rgba(56, 189, 248, 0.18);
+}
+
+.rpgl__track--road {
+  color: #fde68a;
+  background: rgba(234, 179, 8, 0.18);
+}
+
+.rpgl__label {
+  flex: 1;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.35;
+  color: #ffffff;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.rpgl__label--avoid,
+.rpgl__label--serious {
+  color: #fff;
+}
+
+.rpgl__chips {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.rpgl__chip {
+  font-size: 0.64rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 6px;
+  border-radius: 999px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.rpgl__chip--dist {
+  color: #e0f2fe;
+  font-weight: 800;
+  background: rgba(56, 189, 248, 0.28);
+  border: 1px solid rgba(125, 211, 252, 0.35);
+}
+
+.rpgl__chip--eta {
+  color: #dbeafe;
+  background: rgba(59, 130, 246, 0.32);
+}
+
+.rpgl__chip--rel-active {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.28);
+}
+
+.rpgl__chip--rel-ending {
+  color: #fde68a;
+  background: rgba(234, 179, 8, 0.22);
+}
+
+.rpgl__chip--rel-clear {
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.18);
+}
+
+.rpgl__overflow {
+  margin: 0;
+  padding: 6px 10px 8px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  color: #cbd5e1;
+  text-align: center;
+}
+
+.rpgl__outlook {
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.rpgl__outlook--top {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+  margin-bottom: 0;
+  padding-bottom: 4px;
+  border-bottom: none;
+}
+
+.rpgl__outlook .rotl {
+  margin: 0;
+}
+
+.rpgl__outlook .rotl--synced {
+  background: transparent;
+  padding: 0 4px 0.2rem;
+}
+
+.rpgl__card--fallback .rpgl__card-body {
+  gap: 3px;
+}
+
+.rpgl__card--fallback {
+  padding-left: 0;
+}
+
+/* Don?t clamp side-rail strip to rail width (56px) ? that collapsed the rotated bar to a nub */
+.nav-route-progress-rail__inner > .route-progress-strip:not(.route-progress-strip--side) {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.nav-route-progress-rail__inner > .route-progress-strip--side {
+  flex: 0 0 auto;
+  align-self: flex-end;
+}
+
+/* US NWS ? vertical left tab when collapsed; expanded bar spans full width under turn strip. */
+.storm-advisory-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.storm-advisory-bar-wrap--collapsed {
+  align-items: flex-start;
+}
+
+/* Hidden on desktop; shown only under @media (max-width: 520px) when collapsed */
+.storm-advisory-bar__phone-compact {
+  display: none;
+}
+
+.storm-advisory-bar__collapse-icon--narrow {
+  display: none;
+}
+
+.storm-advisory-bar__collapse-icon--wide {
+  display: inline;
+}
+
+/* Sideways ?Storm? tab on the left edge */
+.storm-advisory-bar__peek--side {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 44px;
+  min-height: 80px;
+  padding: 8px 6px;
+  /* Match the bar?s pill feel ? don?t hug the screen edge. */
+  margin-left: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(15, 23, 42, 0.94);
+  color: #fde68a;
+  font-size: 0.48rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  line-height: 1.15;
+}
+
+.storm-advisory-bar__peek--side:hover {
+  background: rgba(30, 41, 59, 0.98);
+  border-color: rgba(252, 211, 77, 0.45);
+}
+
+.storm-advisory-bar__peek--side .storm-advisory-bar__peek-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  color: #fcd34d;
+  font-size: 0.5rem;
+}
+
+.storm-advisory-bar__peek--side .storm-advisory-bar__peek-badge {
+  min-width: 1.25em;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.35);
+  border: 1px solid rgba(252, 165, 165, 0.45);
+  color: #fecaca;
+  font-size: 0.4rem;
+  font-weight: 800;
+  text-align: center;
+  writing-mode: horizontal-tb;
+  transform: none;
+}
+
+.storm-advisory-bar__peek--side .storm-advisory-bar__peek-chevron {
+  font-size: 0.45rem;
+  opacity: 0.9;
+  line-height: 1;
+}
+
+.storm-advisory-bar {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin-top: 2px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(251, 191, 36, 0.22);
+  font-size: 0.56rem;
+  line-height: 1.45;
+  color: #f1f5f9;
+}
+
+/* Expanded panel (tap advisory): larger type, fewer nested ?cards?, driver-first scanning */
+/* Anchor wrap: keeps the preview row in flow at its natural cluster position. The expanded
+ * panel renders as a sibling positioned absolutely so it floats over the progress rail
+ * (and the rest of the map) instead of pushing the cluster's row 2 down ? which previously
+ * compressed the right-edge progress bar. */
+.storm-advisory-bar-anchor {
+  position: relative;
+  width: 100%;
+  z-index: 12;
+}
+
+.storm-advisory-bar--expanded {
+  font-size: clamp(1rem, 3.7vw, 1.15rem);
+  line-height: 1.45;
+  padding: 18px 14px 14px;
+  /* Use position: fixed with viewport-relative coords. Top / left / right are set as CSS variables
+   * by a JS layout effect that measures the preview button's bounding rect ? this guarantees the
+   * three edges align perfectly with the collapsed preview behind it. The bottom is anchored to
+   * a fixed distance above the viewport bottom (clears the i-button + safe-area-inset-bottom), so
+   * the panel reaches as far down as it can without the cluster's top offset confusing the math. */
+  position: fixed !important;
+  top: var(--storm-advisory-anchor-top, calc(env(safe-area-inset-top, 0px) + 56px)) !important;
+  /* Use the JS-measured anchor when available, but fall back to *generous* insets so the panel
+   * always sits clearly inside the viewport even before measurement runs. The max(14px, ...)
+   * clamps any too-small JS measurement to a safe 14px floor. */
+  left: max(14px, var(--storm-advisory-anchor-left, max(14px, env(safe-area-inset-left, 0px)))) !important;
+  right: max(14px, var(--storm-advisory-anchor-right, max(14px, env(safe-area-inset-right, 0px)))) !important;
+  bottom: var(--storm-advisory-bottom-inset, 60px) !important;
+  /* CRITICAL: the base .storm-advisory-bar rule sets width: 100% (for the preview button). When
+   * inherited here, position: fixed + left + right + width: 100% over-constrains the box and the
+   * browser drops the `right` value in LTR, making the panel span viewport_width past `left`
+   * (i.e. it visibly runs off the right edge). Force width back to auto so left + right
+   * determine the panel's size. Same fix for max-width which is also 100% on the base. */
+  width: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  min-height: 0;
+  z-index: 14;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  touch-action: pan-y;
+  /* Pure-downward drop shadow ? negative spread + matching blur means the shadow never extends
+   * horizontally past the panel's actual edges (was reading as "panel spilling off-screen right"). */
+  box-shadow: 0 4px 10px -8px rgba(0, 0, 0, 0.6);
+}
+
+/*
+ * Expanded advisory / route info must paint over bottom search, toolbar, My location, and Mapbox
+ * logo/attribution. The overlay stack (z 5) is otherwise below .nav-bottom-stack (z 6).
+ */
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded) .nav-drive-overlay-stack,
+html.route-info-open .map-stage.map-bleed .nav-drive-overlay-stack {
+  z-index: 25;
+}
+
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded) .nav-bottom-stack,
+html.route-info-open .map-stage.map-bleed .nav-bottom-stack {
+  z-index: 4;
+}
+
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded)
+  .mapboxgl-ctrl-bottom-left,
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded)
+  .mapboxgl-ctrl-bottom-right,
+html.route-info-open .map-stage.map-bleed .mapboxgl-ctrl-bottom-left,
+html.route-info-open .map-stage.map-bleed .mapboxgl-ctrl-bottom-right {
+  z-index: 3;
+}
+
+.map-stage.map-bleed:has(.storm-advisory-bar--expanded) .storm-advisory-bar--expanded,
+html.route-info-open .route-progress-callout-panel--expanded {
+  bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important;
+  z-index: 26;
+  padding-bottom: max(14px, calc(12px + env(safe-area-inset-bottom, 0px)));
+  pointer-events: auto;
+}
+
+/* When the advisory bar is expanded, lift the cluster above the right-side progress rail so the
+ * fixed-position panel + its tap targets stack on top of the rail's ? toggle (which sits at
+ * z-index 8 inside its own stacking context, currently at z 6 of the overlay-stack grid). */
+.nav-top-cluster:has(.storm-advisory-bar--expanded) {
+  z-index: 16;
+  /* Allow vertical pan inside the expanded advisory scroll body (manipulation blocks it). */
+  touch-action: pan-y;
+}
+
+/* Visual cue when the preview button is the close-tap target while expanded. */
+.storm-advisory-bar--preview-active {
+  opacity: 0.9;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__sections-scroll {
+  flex: 1 1 0%;
+  min-height: 0;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 4px;
+  margin-top: 8px;
+}
+
+/* Flex children must not shrink — otherwise overflow:hidden cards clip instead of scrolling. */
+.storm-advisory-bar--expanded .storm-advisory-bar__sections-scroll > * {
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.storm-advisory-bar--expanded .storm-advisory-bar__stale-row,
+.storm-advisory-bar--expanded .storm-advisory-bar__basic-strip,
+.storm-advisory-bar--expanded .storm-advisory-bar__basic-tier-desc {
+  flex-shrink: 0;
+}
+
+/* Stage A: per-section card. Mirrors the iOS-grouped feel from the About sheet. */
+.storm-advisory-bar__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 12px 10px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.36);
+}
+
+.storm-advisory-bar__section--now {
+  background: rgba(69, 10, 10, 0.55);
+  border-color: rgba(248, 113, 113, 0.7);
+}
+
+.storm-advisory-bar__section--weather {
+  background: rgba(15, 23, 42, 0.62);
+  border-color: rgba(96, 165, 250, 0.5);
+}
+
+.storm-advisory-bar__section--roads {
+  background: rgba(15, 23, 42, 0.62);
+  border-color: rgba(251, 191, 36, 0.5);
+}
+
+.storm-advisory-bar__section--suggestion {
+  background: rgba(15, 23, 42, 0.62);
+  border-color: rgba(74, 222, 128, 0.5);
+}
+
+.storm-advisory-bar__section-title {
+  margin: 0;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #cbd5e1;
+}
+
+.storm-advisory-bar__section--now .storm-advisory-bar__section-title {
+  color: #fecaca;
+}
+
+.storm-advisory-bar__section-source {
+  margin: 4px 0 0;
+  font-size: 0.66rem;
+  color: #64748b;
+  font-style: italic;
+}
+
+.storm-advisory-bar__section-status,
+.storm-advisory-bar__section-hint {
+  margin: 0;
+}
+
+/* NWS status note ? single source of truth for "why is the NWS area empty?". Sits at the top of
+ * the Weather section when there are no NWS rows to show. Pill-style "NWS � ?" prefix is part of
+ * the text itself; no panel border or left accent stripe (banned per project rules). */
+.storm-advisory-bar__nws-status {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+/* Warn variant ? used for offline / error states so the "couldn't fetch" cases catch the eye
+ * without escalating to a hard red. Uniform border tint; no edge stripe. */
+.storm-advisory-bar__nws-status.storm-advisory-bar__nws-status--warn {
+  background: rgba(120, 53, 15, 0.32);
+  border-color: rgba(245, 158, 11, 0.55);
+  color: #fde68a;
+}
+
+/* Now section ? life-safety NWS cards */
+.storm-advisory-bar__now-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── NWS alert chips — compact one-line row replacing the old full cards ── */
+.nws-chips {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.nws-chips--secondary {
+  margin-top: 0;
+}
+
+.nws-chips--urgent {
+  margin-bottom: 6px;
+}
+
+.nws-chip {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.72);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.3;
+  color: #e2e8f0;
+}
+
+.nws-chip--avoid {
+  background: rgba(69, 10, 10, 0.35);
+  border: 2px solid rgba(239, 68, 68, 0.75);
+  color: #fecaca;
+}
+
+.nws-chip--serious {
+  background: rgba(67, 20, 7, 0.32);
+  border: 2px solid rgba(249, 115, 22, 0.7);
+  color: #fed7aa;
+}
+
+.nws-chip--caution {
+  background: rgba(66, 32, 6, 0.28);
+  border: 2px solid rgba(234, 179, 8, 0.7);
+  color: #fef3c7;
+}
+
+.nws-chip--info {
+  background: rgba(30, 58, 138, 0.28);
+  border: 2px solid rgba(96, 165, 250, 0.7);
+  color: #dbeafe;
+}
+
+.nws-chip:active {
+  filter: brightness(1.15);
+}
+
+.nws-chip__dot {
+  width: 9px;
+  height: 9px;
+  margin-top: 2px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #94a3b8;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.85);
+}
+
+.nws-chip--avoid .nws-chip__dot {
+  background: #ef4444;
+}
+
+.nws-chip--serious .nws-chip__dot {
+  background: #f97316;
+}
+
+.nws-chip--caution .nws-chip__dot {
+  background: #eab308;
+}
+
+.nws-chip--info .nws-chip__dot {
+  background: #60a5fa;
+}
+
+.nws-chip__text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+}
+
+.nws-chip__label {
+  min-width: 0;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.nws-chip--urgent .nws-chip__timing {
+  font-size: 0.7rem;
+  font-weight: 500;
+  opacity: 0.88;
+  line-height: 1.25;
+}
+
+.nws-chip__here {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  flex-shrink: 0;
+}
+
+.storm-advisory-bar__route-alerts {
+  margin: 0 0 10px;
+}
+
+.storm-advisory-bar__route-alerts-h {
+  margin: 0 0 4px;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.storm-advisory-bar__route-alerts-lead {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.nws-route-alerts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nws-route-alert {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.72);
+  color: inherit;
+  cursor: pointer;
+}
+
+.nws-route-alert--avoid {
+  border-color: rgba(239, 68, 68, 0.75);
+  background: rgba(69, 10, 10, 0.28);
+}
+
+.nws-route-alert--serious {
+  border-color: rgba(249, 115, 22, 0.7);
+  background: rgba(67, 20, 7, 0.22);
+}
+
+.nws-route-alert--caution {
+  border-color: rgba(234, 179, 8, 0.7);
+  background: rgba(66, 32, 6, 0.2);
+}
+
+.nws-route-alert--info {
+  border-color: rgba(96, 165, 250, 0.7);
+  background: rgba(30, 58, 138, 0.22);
+}
+
+.nws-route-alert__title {
+  font-size: 0.88rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.nws-route-alert__timing {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.nws-route-alert__detail {
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+/* Impact rows ? flat list inside a section. No per-row card / no accent stripe.
+ * Severity is signalled by a small colored dot before the headline and an inline
+ * severity pill on the right. Rows are separated by hairlines. */
+.storm-advisory-bar__impact-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.storm-advisory-bar__impact-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.storm-advisory-bar__impact-row:first-child {
+  border-top: none;
+  padding-top: 4px;
+}
+
+.storm-advisory-bar__impact-row--tappable {
+  cursor: pointer;
+}
+
+.storm-advisory-bar__impact-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.storm-advisory-bar__impact-headline {
+  flex: 1 1 auto;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+/* Severity dot ? drawn via ::before instead of a panel border. */
+.storm-advisory-bar__impact-headline::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: middle;
+  background: rgba(148, 163, 184, 0.6);
+}
+
+.storm-advisory-bar__impact-row--sev-info .storm-advisory-bar__impact-headline::before {
+  background: #60a5fa;
+}
+.storm-advisory-bar__impact-row--sev-caution .storm-advisory-bar__impact-headline::before {
+  background: #fbbf24;
+}
+.storm-advisory-bar__impact-row--sev-serious .storm-advisory-bar__impact-headline::before {
+  background: #f97316;
+}
+.storm-advisory-bar__impact-row--sev-avoid .storm-advisory-bar__impact-headline::before {
+  background: #dc2626;
+}
+
+.storm-advisory-bar__impact-source {
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.storm-advisory-bar__impact-meta {
+  font-size: 0.74rem;
+  color: #94a3b8;
+  padding-left: 17px; /* aligns under headline text past the dot */
+}
+
+.storm-advisory-bar__impact-detail {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #cbd5e1;
+  padding-left: 17px;
+}
+
+/* Suggestion section row ? flat (no card, no accent stripe). */
+.storm-advisory-bar__suggestion-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 4px 0;
+}
+
+.storm-advisory-bar__suggestion-label {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #86efac;
+}
+
+.storm-advisory-bar__suggestion-text {
+  flex: 1 1 auto;
+  font-size: 0.84rem;
+  color: #f1f5f9;
+}
+
+.storm-advisory-bar__suggestion-row-dismiss {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.storm-advisory-bar__suggestion-row-dismiss:hover,
+.storm-advisory-bar__suggestion-row-dismiss:focus-visible {
+  color: #e2e8f0;
+}
+
+.storm-advisory-bar__suggestion-row--data-saver .storm-advisory-bar__suggestion-label {
+  color: #7dd3fc;
+}
+
+/* ????? Storm strip (Stage C) ????? */
+.route-storm-strip {
+  margin: 4px 0 8px;
+}
+
+.route-storm-strip__btn {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(20, 6, 6, 0.65);
+  border: 1px solid rgba(252, 165, 165, 0.45);
+  color: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.route-storm-strip--sev-serious .route-storm-strip__btn {
+  border-color: rgba(249, 115, 22, 0.7);
+  background: rgba(120, 53, 15, 0.55);
+}
+.route-storm-strip--sev-avoid .route-storm-strip__btn {
+  border-color: rgba(220, 38, 38, 1);
+  background: rgba(127, 29, 29, 0.65);
+}
+
+.route-storm-strip--passed .route-storm-strip__btn {
+  opacity: 0.55;
+}
+
+.route-storm-strip__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-size: 0.84rem;
+}
+
+.route-storm-strip__icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.route-storm-strip__rail {
+  position: relative;
+  width: 100%;
+  height: 32px;
+  margin: 4px 0 6px;
+}
+
+.route-storm-strip__track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 6px;
+  transform: translateY(-50%);
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 3px;
+}
+
+.route-storm-strip__band {
+  position: absolute;
+  top: 50%;
+  height: 12px;
+  transform: translateY(-50%);
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(220, 38, 38, 0.85), rgba(249, 115, 22, 0.85));
+  box-shadow: 0 0 6px rgba(220, 38, 38, 0.45);
+}
+
+.route-storm-strip--sev-serious .route-storm-strip__band {
+  background: linear-gradient(90deg, rgba(249, 115, 22, 0.85), rgba(251, 191, 36, 0.85));
+  box-shadow: 0 0 4px rgba(249, 115, 22, 0.4);
+}
+
+.route-storm-strip__you {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45);
+  transform: translate(-50%, -50%);
+  transition: left 800ms ease-out;
+}
+
+.route-storm-strip__endmarks {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.route-storm-strip__endmark {
+  position: absolute;
+  bottom: -2px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(203, 213, 225, 0.85);
+}
+
+.route-storm-strip__endmark--start {
+  left: 0;
+}
+
+.route-storm-strip__endmark--end {
+  right: 0;
+}
+
+.route-storm-strip__caption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.route-storm-strip__caption-primary {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.route-storm-strip__caption-secondary {
+  font-size: 0.66rem;
+  color: rgba(255, 255, 255, 0.65);
+  font-style: italic;
+}
+
+/* ??? RouteAlertGroupPanel ?????????????????????????????????????????????????? */
+
+.route-alert-group {
+  margin: 4px 0 8px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(20, 6, 6, 0.65);
+  border: 1px solid rgba(252, 165, 165, 0.4);
+  color: #fff;
+}
+
+.route-alert-group--sev-serious {
+  border-color: rgba(249, 115, 22, 0.65);
+  background: rgba(120, 53, 15, 0.55);
+}
+
+.route-alert-group--sev-avoid {
+  border-color: rgba(220, 38, 38, 0.9);
+  background: rgba(127, 29, 29, 0.65);
+}
+
+.route-alert-group--sev-caution {
+  border-color: rgba(234, 179, 8, 0.55);
+  background: rgba(66, 32, 6, 0.55);
+}
+
+.route-alert-group--sev-info {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.route-alert-group__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.route-alert-group__header-label {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.route-alert-group__header-source {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.route-alert-group__divider {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 10px 0;
+}
+
+.route-alert-group__item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  cursor: default;
+}
+
+.route-alert-group__item[role="button"] {
+  cursor: pointer;
+}
+
+.route-alert-group__item--passed {
+  opacity: 0.5;
+}
+
+.route-alert-group__item-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.route-alert-group__item-icon {
+  font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.route-alert-group__item-event {
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.route-alert-group__item-sev {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  opacity: 0.9;
+}
+
+.route-alert-group__item-detail {
+  margin: 0;
+  font-size: 0.76rem;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.4;
+}
+
+/* Mini progress rail ? thinner than the full RouteStormStrip rail */
+.route-alert-group__item-rail {
+  position: relative;
+  width: 100%;
+  height: 28px;
+  margin: 3px 0 4px;
+}
+
+.route-alert-group__rail-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 5px;
+  transform: translateY(-50%);
+  background: rgba(148, 163, 184, 0.22);
+  border-radius: 3px;
+}
+
+.route-alert-group__rail-band {
+  position: absolute;
+  top: 50%;
+  height: 10px;
+  transform: translateY(-50%);
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(220, 38, 38, 0.85), rgba(249, 115, 22, 0.85));
+  box-shadow: 0 0 5px rgba(220, 38, 38, 0.4);
+}
+
+.route-alert-group__rail-band--serious {
+  background: linear-gradient(90deg, rgba(249, 115, 22, 0.85), rgba(251, 191, 36, 0.85));
+  box-shadow: 0 0 4px rgba(249, 115, 22, 0.4);
+}
+
+.route-alert-group__rail-band--caution {
+  background: linear-gradient(90deg, rgba(234, 179, 8, 0.85), rgba(253, 224, 71, 0.85));
+  box-shadow: 0 0 4px rgba(234, 179, 8, 0.35);
+}
+
+.route-alert-group__rail-band--info {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.8), rgba(96, 165, 250, 0.8));
+  box-shadow: 0 0 4px rgba(59, 130, 246, 0.35);
+}
+
+.route-alert-group__rail-you {
+  position: absolute;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4);
+  transform: translate(-50%, -50%);
+  transition: left 800ms ease-out;
+}
+
+.route-alert-group__rail-endmarks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.route-alert-group__rail-endmark {
+  position: absolute;
+  bottom: -1px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(203, 213, 225, 0.75);
+}
+
+.route-alert-group__rail-endmark--start { left: 0; }
+.route-alert-group__rail-endmark--end { right: 0; }
+
+.route-alert-group__item-timing {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.route-alert-group__item-expires {
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.route-alert-group__footer {
+  margin: 10px 0 0;
+  font-size: 0.64rem;
+  color: rgba(255, 255, 255, 0.42);
+  font-style: italic;
+}
+
+/* ??? RouteImpactGroupPanel ?????????????????????????????????????????????????? */
+
+.route-impact-group {
+  margin: 4px 0 8px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  color: #fff;
+}
+
+/* Radar ? blue-tinted */
+.route-impact-group--radar {
+  background: rgba(10, 20, 40, 0.65);
+  border: 1px solid rgba(96, 165, 250, 0.4);
+}
+/* Roads ? neutral slate */
+.route-impact-group--road {
+  background: rgba(15, 20, 30, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+/* Severity overrides for card border */
+.route-impact-group--sev-avoid { border-color: rgba(220, 38, 38, 0.85); }
+.route-impact-group--sev-serious { border-color: rgba(249, 115, 22, 0.65); }
+.route-impact-group--sev-caution { border-color: rgba(234, 179, 8, 0.5); }
+
+.route-impact-group__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9px;
+  gap: 8px;
+}
+
+.route-impact-group__header-label {
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.route-impact-group__header-count {
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.65);
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+
+.route-impact-group__divider {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  margin: 9px 0;
+}
+
+.route-impact-group__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.route-impact-group__item--tappable {
+  cursor: pointer;
+}
+
+.route-impact-group__item--passed {
+  opacity: 0.48;
+}
+
+.route-impact-group__item-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.route-impact-group__item-icon {
+  font-size: 0.9rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.route-impact-group__item-headline {
+  font-size: 0.83rem;
+  font-weight: 700;
+}
+
+.route-impact-group__item-detail {
+  margin: 0;
+  font-size: 0.73rem;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.4;
+}
+
+/* Mini progress rail ? same approach as route-alert-group */
+.route-impact-group__rail {
+  position: relative;
+  width: 100%;
+  height: 26px;
+  margin: 3px 0 3px;
+}
+
+.route-impact-group__rail-track {
+  position: absolute;
+  left: 0; right: 0; top: 50%;
+  height: 5px;
+  transform: translateY(-50%);
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 3px;
+}
+
+.route-impact-group__rail-band {
+  position: absolute;
+  top: 50%;
+  height: 9px;
+  transform: translateY(-50%);
+  border-radius: 3px;
+}
+
+.route-impact-group__rail-band--avoid {
+  background: linear-gradient(90deg, rgba(220, 38, 38, 0.9), rgba(185, 28, 28, 0.9));
+  box-shadow: 0 0 5px rgba(220, 38, 38, 0.45);
+}
+.route-impact-group__rail-band--serious {
+  background: linear-gradient(90deg, rgba(249, 115, 22, 0.85), rgba(234, 88, 12, 0.85));
+  box-shadow: 0 0 4px rgba(249, 115, 22, 0.4);
+}
+.route-impact-group__rail-band--caution {
+  background: linear-gradient(90deg, rgba(234, 179, 8, 0.85), rgba(202, 138, 4, 0.85));
+  box-shadow: 0 0 4px rgba(234, 179, 8, 0.35);
+}
+.route-impact-group__rail-band--info {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.8), rgba(37, 99, 235, 0.8));
+  box-shadow: 0 0 4px rgba(59, 130, 246, 0.35);
+}
+
+.route-impact-group__rail-you {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.4);
+  transform: translate(-50%, -50%);
+  transition: left 800ms ease-out;
+}
+
+.route-impact-group__rail-endmarks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.route-impact-group__rail-endmark {
+  position: absolute;
+  bottom: -1px;
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(203, 213, 225, 0.65);
+}
+.route-impact-group__rail-endmark--start { left: 0; }
+.route-impact-group__rail-endmark--end { right: 0; }
+
+.route-impact-group__item-timing {
+  font-size: 0.73rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.route-impact-group__footer {
+  margin: 8px 0 0;
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.38);
+  font-style: italic;
+}
+

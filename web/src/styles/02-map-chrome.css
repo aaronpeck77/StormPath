@@ -1,0 +1,999 @@
+/* ??? Phone-first dark chrome (map + search + right rail) ??? */
+
+:root {
+  --sp-safe-top: env(safe-area-inset-top, 0px);
+  --sp-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --puck-highlight: #6bb8ff;
+  --puck-fill: #1a73e8;
+  --puck-edge: #0a3d91;
+  --puck-stroke: #fff;
+}
+
+.app-shell {
+  min-height: 100vh;
+  margin: 0;
+  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+  background: #0a0b0d;
+  color: #e8eaed;
+}
+
+/* Native NavigationMapView shows through only after the hole punches (canvas opacity 0).
+ * Gating on .drive-map--native-shell avoids clearing the shell while the customer web map
+ * is still opaque — that race peeked the old map under native. */
+.app-shell--native-drive-map:has(.drive-map--native-shell),
+.app-shell--native-drive-map:has(.drive-map--native-shell) .map-stage.map-bleed,
+.app-shell--native-drive-map:has(.drive-map--native-shell) .map-canvas {
+  background: transparent !important;
+}
+
+html:has(.drive-map--native-shell),
+html:has(.drive-map--native-shell) body,
+html:has(.drive-map--native-shell) #root {
+  background: transparent !important;
+}
+
+.drive-map--native-shell {
+  /* Keep DOM markers (StormPath puck) visible over native tiles; only hide the web GL canvas. */
+  pointer-events: none;
+  background: transparent;
+}
+
+.drive-map--native-shell .mapboxgl-canvas-container,
+.drive-map--native-shell .mapboxgl-canvas {
+  opacity: 0 !important;
+}
+
+/* Dark Mapbox basemap (7p?6a local): thin light rims ? must beat .app-shell.nav-fullmap chrome vars */
+.app-shell--basemap-night .map-about-btn {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.app-shell--basemap-night .top-guidance-bar,
+.app-shell--basemap-night .nav-top-cluster .top-guidance-bar {
+  border-color: rgba(255, 255, 255, 0.44);
+}
+
+.app-shell--basemap-night .drive-compass__dial {
+  border-color: rgba(255, 255, 255, 0.44);
+}
+
+.app-shell--basemap-night .nav-search-suggestions {
+  border-color: rgba(255, 255, 255, 0.44);
+}
+
+/* Dev-only: dark dot cursor with white ring (readable on the dark map UI). */
+@media (pointer: fine) {
+  .app-shell.app-shell--dev-pointer {
+    cursor: var(--sp-dev-cursor-default, default);
+  }
+
+  .app-shell.app-shell--dev-pointer .mapboxgl-canvas,
+  .app-shell.app-shell--dev-pointer .mapboxgl-canvas-container {
+    cursor: var(--sp-dev-cursor-default, default) !important;
+  }
+
+  .app-shell.app-shell--dev-pointer button:not(:disabled),
+  .app-shell.app-shell--dev-pointer a[href],
+  .app-shell.app-shell--dev-pointer [role="button"]:not(:disabled),
+  .app-shell.app-shell--dev-pointer label:has(input[type="checkbox"]),
+  .app-shell.app-shell--dev-pointer label:has(input[type="radio"]),
+  .app-shell.app-shell--dev-pointer summary,
+  .app-shell.app-shell--dev-pointer .saved-place-dot,
+  .app-shell.app-shell--dev-pointer .map-search-pick-dot {
+    cursor: var(--sp-dev-cursor-pointer, pointer) !important;
+  }
+
+  .app-shell.app-shell--dev-pointer input:not(:disabled),
+  .app-shell.app-shell--dev-pointer textarea:not(:disabled),
+  .app-shell.app-shell--dev-pointer select:not(:disabled) {
+    cursor: text !important;
+  }
+}
+
+/* Dev-only ? semver from package.json (bump version to verify fresh bundle) */
+.stormpath-build-stamp {
+  position: fixed;
+  right: max(6px, env(safe-area-inset-right));
+  bottom: max(6px, env(safe-area-inset-bottom));
+  z-index: 60;
+  max-width: min(200px, 42vw);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  color: rgba(232, 234, 237, 0.72);
+  background: rgba(10, 11, 13, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  pointer-events: auto;
+  user-select: text;
+  cursor: default;
+  -webkit-user-select: text;
+}
+
+/* Standalone busy pill when storm/hazard row is hidden ? one centered row under the turn strip */
+.nav-top-activity-pill-wrap--solo {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 0;
+  padding: 4px 0 4px;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+/* Activity chip ? same visual family as NWS / Road (rounded rect, inset highlight) */
+.hazard-controls-strip > .app-activity-pill {
+  flex: 1 1 0;
+  align-self: center;
+  min-width: 4.5rem;
+  max-width: min(220px, 40vw);
+  min-height: var(--hazard-strip-row-h, 34px);
+  height: var(--hazard-strip-row-h, 34px);
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+
+/* Drive ahead strip ? radar-style tiers; fused with Hazards in .hazard-controls-strip--drive-unified */
+.hazard-controls-strip > .drive-route-info-strip {
+  flex: 1 1 0;
+  align-self: stretch;
+  min-width: 0;
+  min-height: var(--hazard-strip-row-h, 34px);
+  height: var(--hazard-strip-row-h, 34px);
+  padding: 0 10px 0 8px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  border: 1px solid rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  appearance: none;
+  text-align: left;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset, 0 1px 3px rgba(0, 0, 0, 0.28);
+}
+
+.hazard-controls-strip > .drive-route-info-strip:active {
+  filter: brightness(1.07);
+}
+
+.drive-route-info-strip__icon {
+  flex-shrink: 0;
+  opacity: 0.9;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.drive-route-info-strip__primary {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: visible;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.25;
+}
+
+.drive-route-info-strip__dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #38bdf8;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+  animation: app-activity-pill-pulse 1.1s ease-in-out infinite;
+}
+
+/* Reflectivity-style: red (extreme) ? orange ? yellow ? green (rain) ? blue (ice) ? clear */
+.hazard-controls-strip > .drive-route-info-strip--radar-clear {
+  background: linear-gradient(180deg, rgba(55, 65, 75, 0.96), rgba(38, 45, 55, 0.94));
+  border-color: rgba(100, 116, 139, 0.55);
+  color: #cbd5e1;
+  font-weight: 750;
+}
+
+.hazard-controls-strip > .drive-route-info-strip--radar-clear .drive-route-info-strip__primary {
+  font-size: 0.62rem;
+}
+
+.hazard-controls-strip > .drive-route-info-strip--radar-blue {
+  /* Ice / winter mix */
+  background: linear-gradient(180deg, #1d4ed8 0%, #1e3a8a 55%, #172554 100%);
+  border-color: rgba(147, 197, 253, 0.55);
+  color: #eff6ff;
+}
+
+.hazard-controls-strip > .drive-route-info-strip--radar-green {
+  /* Rain / light?moderate */
+  background: linear-gradient(180deg, #15803d 0%, #166534 50%, #14532d 100%);
+  border-color: rgba(134, 239, 172, 0.45);
+  color: #f0fdf4;
+}
+
+.hazard-controls-strip > .drive-route-info-strip--radar-yellow {
+  background: linear-gradient(180deg, #eab308 0%, #ca8a04 48%, #a16207 100%);
+  border-color: rgba(253, 224, 71, 0.65);
+  color: #1c1917;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.hazard-controls-strip > .drive-route-info-strip--radar-orange {
+  background: linear-gradient(180deg, #ea580c 0%, #c2410c 50%, #9a3412 100%);
+  border-color: rgba(254, 215, 170, 0.55);
+  color: #fff7ed;
+}
+
+.hazard-controls-strip > .drive-route-info-strip--radar-red {
+  background: linear-gradient(180deg, #dc2626 0%, #b91c1c 45%, #991b1b 100%);
+  border-color: rgba(254, 202, 202, 0.6);
+  color: #fff1f2;
+}
+
+.hazard-controls-strip > .drive-route-info-strip--radar-orange .drive-route-info-strip__primary,
+.hazard-controls-strip > .drive-route-info-strip--radar-red .drive-route-info-strip__primary {
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+
+.hazard-controls-strip > .drive-route-info-strip--radar-yellow .drive-route-info-strip__primary {
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.hazard-controls-strip > .drive-route-info-strip--radar-green .drive-route-info-strip__primary {
+  font-size: 0.68rem;
+}
+
+.hazard-controls-strip > .drive-route-info-strip--radar-blue .drive-route-info-strip__primary {
+  font-size: 0.68rem;
+}
+
+.hazard-controls-strip > .drive-route-info-strip--busy {
+  border-color: rgba(150, 150, 160, 0.42);
+  background: linear-gradient(180deg, rgba(55, 55, 63, 0.96), rgba(45, 45, 52, 0.94));
+  color: #e4e4e7;
+}
+
+.hazard-controls-strip > .drive-route-info-strip--busy .drive-route-info-strip__primary {
+  font-size: 0.64rem;
+}
+
+.app-shell--basemap-night .hazard-controls-strip > .drive-route-info-strip--radar-clear {
+  color: #b8c5d4;
+}
+
+/* Drive: one fused row ? ahead strip (left) + Hazards (right), shared height */
+.hazard-controls-strip--drive-unified {
+  gap: 0;
+  align-items: stretch;
+}
+
+.hazard-controls-strip--drive-unified > .drive-route-info-strip {
+  border-radius: 8px 0 0 8px;
+  border-right: none;
+  max-width: none;
+}
+
+.hazard-controls-strip--drive-unified > .hazard-controls-strip__hazards {
+  margin-left: 0;
+  border-radius: 0 8px 8px 0;
+  border-left: 1px solid rgba(180, 83, 9, 0.65);
+}
+
+.hazard-controls-strip--drive-unified > .hazard-controls-strip__hazards:first-child {
+  border-radius: 8px;
+  border-left: 1px solid #b45309;
+}
+
+.nav-top-activity-pill-wrap--solo .app-activity-pill {
+  flex: 0 1 auto;
+  max-width: min(280px, 92vw);
+}
+
+.app-activity-pill {
+  position: relative;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #e4e4e7;
+  background: linear-gradient(180deg, rgba(55, 55, 63, 0.96), rgba(45, 45, 52, 0.94));
+  border: 1px solid rgba(150, 150, 160, 0.42);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 1px 3px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  user-select: none;
+}
+
+.app-activity-pill__label-clip {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  height: 1.2em;
+  line-height: 1.2;
+  display: flex;
+  align-items: center;
+}
+
+.app-activity-pill__label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-activity-pill__label--enter {
+  animation: app-activity-label-enter 0.38s cubic-bezier(0.2, 0.85, 0.25, 1);
+}
+
+.app-activity-pill__label--idle {
+  color: #a1a1aa;
+  font-weight: 750;
+}
+
+@keyframes app-activity-label-enter {
+  from {
+    transform: translateY(0.75em);
+    opacity: 0.2;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-activity-pill__label--enter {
+    animation: none;
+  }
+}
+
+.app-activity-pill__dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.45);
+  animation: app-activity-pill-pulse 1.1s ease-in-out infinite;
+}
+
+.app-activity-pill__dot--idle {
+  background: #71717a;
+  opacity: 0.85;
+  animation: none;
+  box-shadow: none;
+}
+
+@keyframes app-activity-pill-pulse {
+  0%,
+  100% {
+    opacity: 0.65;
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.35);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 0 4px rgba(56, 189, 248, 0);
+  }
+}
+
+.app-shell--basemap-night .app-activity-pill {
+  background: linear-gradient(180deg, rgba(42, 42, 48, 0.98), rgba(32, 32, 38, 0.96));
+  border-color: rgba(120, 120, 132, 0.38);
+  color: #d4d4d8;
+}
+
+.app-shell--basemap-night .app-activity-pill__label--idle {
+  color: #8b8b93;
+}
+
+/* NWS polygon hover (desktop): quick glance, then fades ? .storm-hover-popup on Mapbox Popup */
+.mapboxgl-popup.storm-hover-popup {
+  transition: opacity 0.48s ease;
+}
+
+.mapboxgl-popup.storm-hover-popup.storm-hover-popup--fading {
+  opacity: 0;
+}
+
+.mapboxgl-popup.storm-hover-popup .mapboxgl-popup-content {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(18, 22, 28, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  color: #e8eaed;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.mapboxgl-popup.storm-hover-popup .mapboxgl-popup-tip {
+  border-top-color: rgba(18, 22, 28, 0.96);
+}
+
+.storm-hover-popup-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 280px;
+}
+
+.storm-hover-popup-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.storm-hover-popup-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #f1f5f9;
+}
+
+.storm-hover-popup-meta {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.storm-hover-popup-hl {
+  font-size: 0.78rem;
+  color: rgba(203, 213, 225, 0.92);
+  line-height: 1.3;
+}
+
+.storm-hover-popup-more {
+  font-size: 0.72rem;
+  color: rgba(148, 163, 184, 0.9);
+  font-style: italic;
+}
+
+.app-shell.nav-fullmap {
+  min-height: 100vh;
+  height: 100vh;
+  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  --rail-panel-gap: 5px;
+  /* Progress-callout panel starts below the top guidance/advisory cluster. */
+  --progress-callout-top-reserve: 100px;
+  --progress-callout-toggle-width: 22px;
+  /* Height reserved above map bottom for the bottom chrome stack (dock + toolbar). */
+  --nav-dock-above-safe: 152px;
+  /* Drive view uses a shorter bottom stack; let the progress rail extend lower. */
+  --nav-dock-above-safe-current: var(--nav-dock-above-safe);
+  /*
+   * Progress rail foot: inset from viewport bottom so the strip ends just above the bottom chrome.
+   * Planning (route / map): clears address + search row. Drive: shorter stack (no address bar) ? longer rail.
+   */
+  /* Fallback until useProgressRailFootInset measures .nav-bottom-stack; match dock reserve. */
+  --nav-progress-rail-foot-inset: var(--nav-dock-above-safe-current, 152px);
+  /* Shorter unrotated strip width = shorter vertical bar; legacy trim used in map fit padding */
+  --nav-progress-strip-bottom-trim: 68px;
+  /* Room under the command bar for Mapbox logo (controls sit in this strip only). */
+  --attribution-strip-h: 18px;
+  /* Padding under .nav-bottom-stack — keeps toolbar/search above the logo. */
+  --nav-bottom-reserved: calc(4px + env(safe-area-inset-bottom, 0px) + var(--attribution-strip-h, 18px));
+  /* Route PiP: snug under top cluster (overridden when .nav-top-cluster present) */
+  --pip-top: calc(max(8px, env(safe-area-inset-top)) + 80px + var(--rail-panel-gap));
+  /* Bottom chrome: square-aligned panels + toolbar */
+  --nav-chrome-radius: 7px;
+  --nav-chrome-control: 40px;
+  --nav-chrome-about: 32px;
+  --nav-chrome-gap: 5px;
+  --nav-top-gap: 3px;
+  --nav-bottom-stack-gap: 4px;
+  --nav-chrome-panel-bg: rgba(18, 20, 24, 0.96);
+  --nav-chrome-panel-border: 1px solid rgba(255, 255, 255, 0.1);
+  --nav-chrome-panel-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+  /* Phone-width chrome column — centered on tablet portrait (see media query below). */
+  --sp-tablet-chrome-w: min(600px, calc(100vw - 16px));
+  --basic-admob-banner-h: 50px;
+}
+
+/* Basic: native AdMob sits flush on the screen bottom; lift web chrome above it. */
+.app-shell.nav-fullmap.app-shell--basic-ad-banner {
+  --basic-ad-banner-reserve: var(--basic-admob-banner-h, 50px);
+}
+
+.app-shell.nav-fullmap.app-shell--basic-ad-banner .nav-bottom-stack {
+  /* Shift the whole dock. Phone CSS resets padding-bottom and would leave the buttons under the ad. */
+  bottom: var(--basic-ad-banner-reserve, 50px);
+}
+
+.app-shell.nav-fullmap.app-shell--basic-ad-banner .nav-route-progress-rail {
+  padding-bottom: var(--nav-progress-rail-foot-inset, var(--nav-dock-above-safe-current, 152px));
+}
+
+.app-shell.nav-fullmap.app-shell--basic-ad-banner .map-stage.map-bleed .mapboxgl-ctrl-bottom-left,
+.app-shell.nav-fullmap.app-shell--basic-ad-banner .map-stage.map-bleed .mapboxgl-ctrl-bottom-right {
+  transform: translateY(calc(-1 * var(--basic-ad-banner-reserve, 50px)));
+}
+
+/* Stronger dock / toolbar / My location rims when basemap is night (overrides --nav-chrome on .nav-fullmap above) */
+.app-shell.nav-fullmap.app-shell--basemap-night {
+  --nav-chrome-panel-border: 1px solid rgba(255, 255, 255, 0.44);
+}
+
+.app-shell.nav-fullmap.nav-drive-ui {
+  --nav-dock-above-safe-current: 122px;
+}
+
+/* Map (Mp) while navigating: compact bottom chrome like drive — not the Rt planning search stack. */
+.app-shell.nav-fullmap.nav-mapnav-ui {
+  --nav-dock-above-safe-current: 122px;
+}
+
+/* Radar mosaic clock in the about row — needs more clearance above the address pill + progress rail foot */
+.app-shell.nav-fullmap.nav-radar-frame-time-visible:not(.nav-drive-ui):not(.nav-mapnav-ui) {
+  --nav-dock-above-safe-current: 156px;
+}
+
+/* About ? own row above address; left-aligned with search + route below */
+.nav-bottom-dock__plan-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--nav-chrome-gap, 5px);
+  width: 100%;
+  pointer-events: auto;
+}
+
+.nav-bottom-dock__plan-stack > .nav-bottom-dock__about-row {
+  pointer-events: auto;
+}
+
+.nav-search-dock,
+.nav-bottom-dock__search-myloc-row .nav-recenter-puck-btn--dock,
+.nav-bottom-dock__route-toggle-slot {
+  pointer-events: auto;
+}
+
+.nav-bottom-dock__about-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--nav-chrome-gap, 5px);
+  width: 100%;
+  min-width: 0;
+}
+
+/* Address + My location + route: one row ? equal control height; flex-start so open suggestions don?t vertically center the side buttons */
+.nav-bottom-dock__search-myloc-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--nav-chrome-gap, 5px);
+  width: 100%;
+  min-width: 0;
+  pointer-events: auto;
+}
+
+/* Action row beneath the search: hosts the My-location and / or Route-cycle button on its own
+ * line so the search bar can use the full dock width. Equal-flex children give each button room
+ * to render label + ETA + detail at a readable size instead of squeezed-into-110px text. */
+.nav-bottom-dock__actions-row {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: stretch;
+  gap: var(--nav-chrome-gap, 5px);
+  width: 100%;
+  min-width: 0;
+  margin-top: 4px;
+  pointer-events: auto;
+}
+
+.nav-bottom-dock__actions-row > * {
+  pointer-events: auto;
+}
+
+/* Smaller, glassy ? planning row defaults left; landscape full map tucks ?i? to the trailing edge. */
+.map-about-btn {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: var(--nav-chrome-about, 32px);
+  height: var(--nav-chrome-about, 32px);
+  min-width: var(--nav-chrome-about, 32px);
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(18, 20, 24, 0.38);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.66rem;
+  font-weight: 900;
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.about-sheet__voice-levels {
+  border: 0;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.about-sheet__assistant-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.stormy-call-btn {
+  position: relative;
+  z-index: 6;
+  pointer-events: auto;
+  touch-action: manipulation;
+  flex-shrink: 0;
+  min-width: 4.5rem;
+  box-sizing: border-box;
+  height: var(--nav-chrome-about, 32px);
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(18, 20, 24, 0.38);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.stormy-call-btn--busy,
+.stormy-call-btn:disabled {
+  opacity: 0.72;
+}
+
+.nav-bottom-dock__info-stormy-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.nav-bottom-dock__info-stormy-col > .map-about-btn,
+.nav-bottom-dock__info-stormy-col > .drive-compass {
+  width: var(--nav-chrome-about, 32px);
+  min-width: var(--nav-chrome-about, 32px);
+  max-width: var(--nav-chrome-about, 32px);
+  flex: 0 0 auto;
+}
+
+.nav-bottom-dock__stormy-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.nav-bottom-dock__stormy-row > .stormy-call-btn {
+  width: auto;
+  flex: 0 0 auto;
+  margin-right: 0;
+}
+
+.nav-bottom-dock__stormy-row > .nav-bottom-dock__route-toggle-slot--inline,
+.nav-bottom-dock__stormy-row > .nav-recenter-puck-btn--inline,
+.nav-bottom-dock__stormy-row > .nav-radar-frame-time-dock {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.map-about-btn:hover,
+.map-about-btn:focus-visible {
+  color: rgba(255, 255, 255, 0.95);
+  border-color: rgba(255, 255, 255, 0.26);
+  background: rgba(28, 30, 36, 0.72);
+  outline: none;
+}
+
+/* Drive: compass above i; miles-left chip inline to the right of the info button. */
+.nav-bottom-dock__drive-about-cluster {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nav-bottom-dock__compass-i-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.nav-miles-left-box {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  box-sizing: border-box;
+  height: var(--nav-chrome-about, 32px);
+  min-height: var(--nav-chrome-about, 32px);
+  max-height: var(--nav-chrome-about, 32px);
+  padding: 2px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(147, 197, 253, 0.45);
+  background: rgba(30, 58, 138, 0.42);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  flex-shrink: 0;
+  max-width: min(8.5rem, 40vw);
+  min-width: 0;
+}
+
+.nav-miles-left-box__k {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(191, 219, 254, 0.88);
+  line-height: 1.1;
+}
+
+.nav-miles-left-box__v {
+  font-size: 0.82rem;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  color: #e0f2fe;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.trip-refresh-btn {
+  flex-shrink: 0;
+  width: var(--nav-chrome-about, 32px);
+  height: var(--nav-chrome-about, 32px);
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(18, 20, 24, 0.55);
+  color: #e2e8f0;
+  font-size: 1.05rem;
+  line-height: 1;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+}
+
+.trip-refresh-btn:active {
+  background: rgba(30, 41, 59, 0.85);
+}
+
+.drive-compass {
+  flex-shrink: 0;
+  width: var(--nav-chrome-about, 32px);
+  height: var(--nav-chrome-about, 32px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  user-select: none;
+}
+
+.drive-compass__dial {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(18, 20, 24, 0.38);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  box-sizing: border-box;
+  transform-origin: 50% 50%;
+}
+
+.drive-compass__needle {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  margin-left: -4px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 11px solid rgba(248, 113, 113, 0.95);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4));
+}
+
+/* Search + route + toolbar share width and stack cleanly */
+.nav-bottom-chrome-wrap {
+  position: relative;
+  align-self: center;
+  width: 100%;
+  max-width: var(--sp-tablet-chrome-w, min(600px, calc(100vw - 16px)));
+  display: flex;
+  flex-direction: column;
+  gap: var(--nav-chrome-gap, 5px);
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.about-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 47;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.about-sheet {
+  position: fixed;
+  left: max(10px, env(safe-area-inset-left, 0px));
+  right: max(10px, env(safe-area-inset-right, 0px));
+  top: max(10px, env(safe-area-inset-top, 0px));
+  bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  z-index: 48;
+  /* Single-scroll sheet: outer .about-sheet scrolls; sticky header stays pinned */
+  max-height: min(92dvh, 720px);
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  border-radius: 16px;
+  background: rgba(18, 20, 24, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Compact sticky header ? title + version/plan chips, replaces the two old top panels */
+.about-sheet__header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(180deg, rgba(28, 32, 40, 0.98), rgba(20, 24, 30, 0.98));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.about-sheet__header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
+.about-sheet__close {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.35);
+  color: #e8eaed;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.about-sheet__close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.about-sheet__header-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.about-sheet__header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.about-sheet__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #e8eaed;
+}
+
+.about-sheet__tagline {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: #9aa0a6;
+}
+
+.about-sheet__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.32);
+  color: #cbd5e1;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.about-sheet__chip--tier {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.about-sheet__chip--plus {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(37, 99, 235, 0.22);
+  color: #dbeafe;
+}
+
+.about-sheet__chip--basic {
+  border-color: rgba(148, 163, 184, 0.45);
+  background: rgba(51, 65, 85, 0.45);
+  color: #e2e8f0;
+}
+

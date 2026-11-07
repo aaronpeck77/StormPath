@@ -1,0 +1,565 @@
+/* --- RouteHazardTimeline (.rhtz) ------------------------------------------- */
+/*
+ * No legend text ? the graph IS the information. Band width = how long
+ * you'll spend inside the hazard zone. Scrolls horizontally on narrow screens.
+ *
+ *  NWS   ??[------FLOOD------]??????[---SPEC WX---]??
+ *  Radar ???????[--------RAIN--------]???????????????
+ *  Road  ?[TFC]?????????????????????????????????????
+ *        ?YOU   15mi   30mi   45mi   60mi       DEST
+ */
+
+.rhtz {
+  margin: 4px 0 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(8, 12, 24, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  color: #fff;
+}
+
+.rhtz--legend-only {
+  margin-bottom: 4px;
+}
+
+.rhtz--legend-only .rhtz__header {
+  margin-bottom: 4px;
+}
+
+.rhtz--legend-only .rhtz__legend {
+  margin-top: 0;
+}
+
+.rhtz__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.rhtz__header-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.rhtz__header-dest {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+/* Horizontal scroll container */
+.rhtz__scroll-wrap {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+
+.rhtz__scroll-wrap::-webkit-scrollbar {
+  height: 3px;
+}
+.rhtz__scroll-wrap::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.18);
+  border-radius: 2px;
+}
+
+/* Inner graph ? min-width keeps bands readable */
+.rhtz__graph-inner {
+  position: relative;
+  min-width: 520px;
+  padding-bottom: 2px;
+}
+
+/* YOU vertical line spans all track rows */
+.rhtz__you-line {
+  position: absolute;
+  top: 0;
+  bottom: 28px;
+  width: 2px;
+  background: #3b82f6;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.7);
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 4;
+  transform: translateX(-50%);
+}
+
+/* ── Radar strip (strata between climate graph and NWS/Road bars) ──────────── */
+.rrs {
+  margin: 0 0 4px;
+  padding: 0 2px;
+}
+
+.rrs__label-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.rrs__label {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  color: rgba(56, 189, 248, 0.85);
+  text-transform: uppercase;
+}
+
+.rrs__empty {
+  font-size: 0.58rem;
+  color: rgba(148, 163, 184, 0.55);
+  font-style: italic;
+}
+
+.rrs__chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 40px;
+}
+
+.rrs__svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.rrs__baseline {
+  stroke: rgba(148, 163, 184, 0.15);
+  stroke-width: 1;
+}
+
+.rrs__you-flag {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 0.44rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* ─── RouteRadarWindStrip ─── */
+.rrws {
+  margin: 0 0 4px;
+  padding: 0 2px;
+}
+
+.rrws__label-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 3px;
+  /* indent past the RADAR side label, right-align against chart right pad */
+  padding-left: 34px;
+  padding-right: 36px;
+  justify-content: flex-end;
+}
+
+.rrws__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.rrws__swatch {
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.rrws__swatch--radar {
+  width: 14px;
+  height: 7px;
+  border-radius: 2px;
+  background: rgba(56, 189, 248, 0.55);
+  border: 1px solid rgba(56, 189, 248, 0.7);
+}
+
+.rrws__swatch--wind {
+  width: 18px;
+  height: 2px;
+  /* dashed amber line */
+  background: repeating-linear-gradient(
+    to right,
+    #f59e0b 0px,
+    #f59e0b 5px,
+    transparent 5px,
+    transparent 8px
+  );
+}
+
+.rrws__label {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.rrws__label--radar {
+  color: rgba(56, 189, 248, 0.9);
+}
+
+.rrws__label--wind {
+  color: rgba(245, 158, 11, 0.9);
+}
+
+.rrws__empty {
+  font-size: 0.58rem;
+  color: rgba(148, 163, 184, 0.55);
+  font-style: italic;
+}
+
+.rrws__chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 60px;
+}
+
+.rrws__svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.rrws__baseline {
+  stroke: rgba(148, 163, 184, 0.15);
+  stroke-width: 1;
+}
+
+.rrws__axis-label {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: rgba(245, 158, 11, 0.75);
+  line-height: 1;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* "Radar" label sits in the 34px left-pad area, vertically centred */
+.rrws__radar-side-label {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  text-align: center;
+  font-size: 0.52rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(56, 189, 248, 0.85);
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Track row */
+.rhtz__row {
+  display: flex;
+  align-items: stretch;
+  height: 40px;
+  margin-bottom: 4px;
+}
+
+.rhtz__row-label {
+  width: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.48);
+  user-select: none;
+}
+
+.rhtz__row-rail {
+  flex: 1;
+  position: relative;
+}
+
+.rhtz__rail-bg {
+  position: absolute;
+  inset: 0;
+  background: rgba(148, 163, 184, 0.09);
+  border-radius: 4px;
+}
+
+/* Hazard band ? WIDTH = distance you will spend in the hazard zone */
+.rhtz__band {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 4px;
+  border: 1px solid rgba(15, 23, 42, 0.45);
+  opacity: 0.9;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  cursor: default;
+  transition: filter 150ms, opacity 150ms;
+}
+
+.rhtz__band--avoid {
+  border-color: rgba(127, 29, 29, 0.85);
+}
+
+.rhtz__band--serious {
+  border-color: rgba(154, 52, 18, 0.85);
+}
+
+.rhtz__band--caution {
+  border-color: rgba(161, 98, 7, 0.85);
+}
+
+.rhtz__band--info {
+  border-color: rgba(37, 99, 235, 0.85);
+}
+
+.rhtz__band[role="button"] { cursor: pointer; }
+.rhtz__band[role="button"]:hover,
+.rhtz__band[role="button"]:focus-visible {
+  filter: brightness(1.18);
+  opacity: 1;
+}
+
+.rhtz__band--passed {
+  opacity: 0.22 !important;
+  filter: grayscale(0.8);
+}
+
+.rhtz__band--nearby {
+  background: transparent !important;
+  border: 2px dashed;
+  opacity: 0.55;
+}
+
+/** Distant ahead weather — timeline marker until you enter the detail window. */
+.rhtz__band--preview {
+  opacity: 0.48;
+  border: 1px dashed rgba(255, 255, 255, 0.35);
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 6px,
+    rgba(255, 255, 255, 0.08) 6px,
+    rgba(255, 255, 255, 0.08) 10px
+  ) !important;
+}
+
+/* Inline label ? only shown when band is wide enough */
+.rhtz__band-label {
+  padding: 0 5px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  user-select: none;
+  color: rgba(0,0,0,0.7);
+}
+.rhtz__band--avoid   .rhtz__band-label,
+.rhtz__band--serious .rhtz__band-label { color: rgba(255,255,255,0.9); }
+
+/* Distance axis */
+.rhtz__axis {
+  display: flex;
+  height: 24px;
+  margin-top: 2px;
+}
+
+.rhtz__axis-spacer {
+  flex-shrink: 0;
+  display: block;
+}
+
+.rhtz__axis-ticks {
+  flex: 1;
+  position: relative;
+}
+
+.rhtz__axis-tick {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 0.66rem;
+  color: rgba(255,255,255,0.32);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.rhtz__axis-you {
+  position: absolute;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #60a5fa;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.rhtz__axis-dest {
+  position: absolute;
+  right: 0;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: rgba(255,255,255,0.38);
+}
+
+.rhtz__reroute {
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+/* Compact hazard list under the graph — bordered rows, no duplicate detail panels. */
+.rhtz__legend {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rhtz__legend-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.rhtz__legend-item--avoid {
+  border-color: rgba(239, 68, 68, 0.75);
+  background: rgba(69, 10, 10, 0.28);
+}
+
+.rhtz__legend-item--serious {
+  border-color: rgba(249, 115, 22, 0.7);
+  background: rgba(67, 20, 7, 0.22);
+}
+
+.rhtz__legend-item--caution {
+  border-color: rgba(234, 179, 8, 0.7);
+  background: rgba(66, 32, 6, 0.2);
+}
+
+.rhtz__legend-item--info {
+  border-color: rgba(96, 165, 250, 0.7);
+  background: rgba(30, 58, 138, 0.22);
+}
+
+.rhtz__legend-item--tappable {
+  cursor: pointer;
+}
+
+.rhtz__legend-item--tappable:hover,
+.rhtz__legend-item--tappable:focus-visible {
+  filter: brightness(1.08);
+  outline: none;
+}
+
+.rhtz__legend-dot {
+  width: 11px;
+  height: 11px;
+  margin-top: 3px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #94a3b8;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.9);
+}
+
+.rhtz__legend-item--avoid .rhtz__legend-dot {
+  background: #ef4444;
+}
+
+.rhtz__legend-item--serious .rhtz__legend-dot {
+  background: #f97316;
+}
+
+.rhtz__legend-item--caution .rhtz__legend-dot {
+  background: #eab308;
+}
+
+.rhtz__legend-item--info .rhtz__legend-dot {
+  background: #60a5fa;
+}
+
+.rhtz__legend-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.rhtz__legend-track {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.rhtz__legend-label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #f8fafc;
+}
+
+.rhtz__legend-ahead {
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+  color: #7dd3fc;
+  margin-top: 2px;
+}
+
+.rhtz__legend-ahead--now {
+  color: #fde68a;
+}
+
+.rhtz__legend-detail {
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: rgba(226, 232, 240, 0.88);
+}
+
+.rhtz__legend-timing {
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: rgba(203, 213, 225, 0.72);
+}
+
+.nws-chip__detail {
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: rgba(226, 232, 240, 0.82);
+}
+
+.nws-chip__source {
+  font-size: 0.68rem;
+  font-weight: 400;
+  opacity: 0.55;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+

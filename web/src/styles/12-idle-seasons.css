@@ -1,0 +1,702 @@
+/* Idle / branding strip: tighter vertical padding so the panel stays short */
+.top-guidance-bar:has(.turn-strip-idle) {
+  padding: 3px 7px 6px;
+  gap: 3px;
+  overflow: visible;
+}
+
+.nav-top-cluster .top-guidance-bar:has(.turn-strip-idle) {
+  padding: 3px 7px 6px;
+}
+
+.top-guidance-bar--turn-only {
+  min-width: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.top-guidance-bar--turn-only .turn-banner {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Do not override grid ? plain flex here stacked primary+next vertically and wasted the right half */
+.top-guidance-bar--turn-only .turn-banner.turn-banner--split {
+  display: grid;
+  align-content: center;
+}
+
+/* Drive (Dr): glanceable row — readable type without oversized chrome */
+.top-guidance-bar--glanceable {
+  --turn-drive-pad-y: 10px;
+  --turn-drive-pad-x: 10px;
+  --turn-drive-street: clamp(0.96rem, 3.35vw, 1.2rem);
+  --turn-drive-meta: clamp(0.76rem, 2.5vw, 0.9rem);
+  --turn-drive-icon: clamp(1.62rem, 5.2vw, 2.05rem);
+  --turn-drive-icon-next: clamp(1.42rem, 4.6vw, 1.82rem);
+  --turn-drive-then: clamp(0.66rem, 2.1vw, 0.78rem);
+  --turn-drive-next-meta: clamp(0.7rem, 2.2vw, 0.82rem);
+  --turn-drive-gap-col: 8px;
+  --turn-drive-gap-grid: 6px 10px;
+  padding: var(--turn-drive-pad-y) var(--turn-drive-pad-x);
+  min-height: 0;
+}
+
+.top-guidance-bar--glanceable .turn-banner--split {
+  gap: var(--turn-drive-gap-grid);
+  align-items: start;
+}
+
+.top-guidance-bar--glanceable .turn-banner-icon {
+  font-size: var(--turn-drive-icon);
+  line-height: 1;
+  min-width: 1.05em;
+  text-align: center;
+  align-self: start;
+  margin-top: 0.06em;
+}
+
+.top-guidance-bar--glanceable .turn-banner-street {
+  font-size: var(--turn-drive-street);
+  font-weight: 780;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+.top-guidance-bar--glanceable .turn-banner-dist,
+.top-guidance-bar--glanceable .turn-banner-exit {
+  font-size: var(--turn-drive-meta);
+  font-weight: 720;
+  color: #ffffff;
+  opacity: 1;
+}
+
+.top-guidance-bar--glanceable .turn-banner-icon--next {
+  font-size: var(--turn-drive-icon-next);
+  align-self: start;
+  margin-top: 0.04em;
+}
+
+.top-guidance-bar--glanceable .turn-banner-next-instr {
+  font-size: var(--turn-drive-street);
+  font-weight: 780;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+.top-guidance-bar--glanceable .turn-banner-next-label {
+  font-size: var(--turn-drive-then);
+  font-weight: 750;
+  letter-spacing: 0.06em;
+}
+
+.top-guidance-bar--glanceable .turn-banner-next-meta {
+  font-size: var(--turn-drive-next-meta);
+  font-weight: 720;
+}
+
+.top-guidance-bar--glanceable .turn-banner-col--primary {
+  align-items: flex-start;
+  gap: var(--turn-drive-gap-col);
+}
+
+.top-guidance-bar--glanceable .turn-banner-text {
+  gap: 3px;
+}
+
+@media (min-width: 390px) {
+  .top-guidance-bar--glanceable {
+    --turn-drive-street: clamp(1rem, 3.5vw, 1.26rem);
+    --turn-drive-meta: clamp(0.78rem, 2.6vw, 0.92rem);
+    --turn-drive-icon: clamp(1.7rem, 5.4vw, 2.12rem);
+    --turn-drive-icon-next: clamp(1.48rem, 4.8vw, 1.88rem);
+  }
+}
+
+/* Drive: slim strip under advisory ? single row, translucent so turn / advisory state stays readable. */
+.drive-hazard-approach.drive-hazard-approach--strip {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 3px 6px 3px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  font-size: clamp(0.62rem, 2.2vw, 0.74rem);
+  line-height: 1.2;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+}
+
+/* Severity is conveyed via a dot before the title (see ::before below) ? never a colored
+ * left-stripe on the panel. See .cursor/rules/no-left-accent-panels.mdc. */
+.drive-hazard-approach__title::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 7px;
+  vertical-align: middle;
+  background: rgba(148, 163, 184, 0.6);
+}
+
+.drive-hazard-approach--sev-info .drive-hazard-approach__title::before {
+  background: #60a5fa;
+}
+.drive-hazard-approach--sev-caution .drive-hazard-approach__title::before {
+  background: #fbbf24;
+}
+.drive-hazard-approach--sev-serious .drive-hazard-approach__title::before {
+  background: #f97316;
+}
+.drive-hazard-approach--sev-avoid .drive-hazard-approach__title::before {
+  background: #dc2626;
+}
+
+.drive-hazard-approach__copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  line-height: 1.05;
+}
+
+.drive-hazard-approach--strip .drive-hazard-approach__title {
+  margin: 0;
+  font-weight: 800;
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.25;
+}
+
+.drive-hazard-approach--strip .drive-hazard-approach__title--early {
+  font-weight: 750;
+}
+
+.drive-hazard-approach__hint {
+  margin: 0;
+  font-size: 0.52rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(226, 232, 240, 0.78);
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.25;
+}
+
+.drive-hazard-approach__strip-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+}
+
+.drive-hazard-approach__chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(30, 41, 59, 0.55);
+  color: #f1f5f9;
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 750;
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.drive-hazard-approach__chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.drive-hazard-approach__chip--bypass {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: rgba(12, 74, 110, 0.42);
+  padding: 4px 7px;
+}
+
+.drive-hazard-approach__chip--icon {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-size: 0.95rem;
+  font-weight: 400;
+  border-color: rgba(148, 163, 184, 0.32);
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.drive-hazard-approach__glyph {
+  display: inline-block;
+  font-weight: 800;
+  font-size: 0.75rem;
+}
+
+.drive-hazard-approach--strip.drive-hazard-approach--sev-info {
+  border-color: rgba(59, 130, 246, 0.42);
+}
+
+.drive-hazard-approach--strip.drive-hazard-approach--sev-caution {
+  border-color: rgba(234, 179, 8, 0.45);
+}
+
+.drive-hazard-approach--strip.drive-hazard-approach--sev-serious {
+  border-color: rgba(249, 115, 22, 0.5);
+}
+
+.drive-hazard-approach--strip.drive-hazard-approach--sev-avoid {
+  border-color: rgba(239, 68, 68, 0.55);
+  background: rgba(40, 12, 12, 0.42);
+}
+
+.nav-top-cluster .drive-hazard-approach.drive-hazard-approach--strip {
+  font-size: 0.6rem;
+  padding: 2px 5px 2px 6px;
+}
+
+.nav-top-cluster .drive-hazard-approach__chip {
+  font-size: 0.58rem;
+  padding: 3px 5px;
+}
+
+.nav-top-cluster .drive-hazard-approach__chip--icon {
+  width: 24px;
+  height: 24px;
+  font-size: 0.85rem;
+}
+
+.turn-strip-idle {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  width: 100%;
+}
+
+/* Idle hero ? art left; wordmark centered in the strip (1fr | auto | 1fr grid) */
+.turn-strip-idle__hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: clamp(8px, 2vw, 16px);
+  width: 100%;
+  min-width: 0;
+  min-height: clamp(2.35rem, 6.8vw, 3.35rem);
+  padding-bottom: 2px;
+  overflow: visible;
+}
+
+.turn-strip-idle__hero::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(59, 130, 246, 0.35) 22%,
+    rgba(96, 165, 250, 0.55) 50%,
+    rgba(59, 130, 246, 0.35) 78%,
+    transparent 100%
+  );
+  opacity: 0.85;
+}
+
+.turn-strip-idle__art {
+  grid-column: 1;
+  justify-self: start;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: clamp(148px, 48vw, 300px);
+  max-width: min(68%, 100%);
+  align-self: center;
+  overflow: visible;
+  /* Nudge storm art toward center/wordmark */
+  margin-left: 0.4rem;
+}
+
+/* Scale up SVG inside a short panel (transform does not affect layout height) */
+.turn-strip-idle__art-scale {
+  transform: scale(1.16) translateX(8px);
+  transform-origin: left center;
+}
+
+.turn-strip-idle__art .storm-idle-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: clamp(3.1rem, 8.5vw, 4.25rem);
+}
+
+.turn-strip-idle__titles {
+  grid-column: 2;
+  justify-self: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  text-align: center;
+}
+
+.turn-strip-idle__wordmark {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.07em;
+  min-width: 0;
+  width: 100%;
+  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  font-weight: 850;
+  font-size: clamp(1.45rem, 5vw, 2.15rem);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+}
+
+/* Wordmark: cool sky / ice ? same family as NWS (blue) + path accent (cyan) by default.
+ * Seasonal variants below override the gradient stops so the wordmark colors track the
+ * currently-rendered illustration (rain in spring/summer/fall, snow in winter). */
+.turn-strip-idle__storm {
+  color: #e2e8f0;
+  background-image: linear-gradient(118deg, #f8fafc 0%, #cbd5e1 45%, #94a3b8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.turn-strip-idle__path {
+  color: #7dd3fc;
+  background-image: linear-gradient(118deg, #bae6fd 0%, #38bdf8 55%, #0ea5e9 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* ?? Spring: fresh greens + soft sky-blue ?? */
+.turn-strip-idle--season-spring .turn-strip-idle__storm {
+  background-image: linear-gradient(118deg, #f0fdf4 0%, #bbf7d0 50%, #86efac 100%);
+}
+.turn-strip-idle--season-spring .turn-strip-idle__path {
+  background-image: linear-gradient(118deg, #a7f3d0 0%, #4ade80 50%, #22c55e 100%);
+}
+
+/* ?? Summer: warm sun + bright sky ?? */
+.turn-strip-idle--season-summer .turn-strip-idle__storm {
+  background-image: linear-gradient(118deg, #fefce8 0%, #fde68a 50%, #fbbf24 100%);
+}
+.turn-strip-idle--season-summer .turn-strip-idle__path {
+  background-image: linear-gradient(118deg, #bae6fd 0%, #38bdf8 55%, #0284c7 100%);
+}
+
+/* ?? Fall: amber / copper / russet ?? */
+.turn-strip-idle--season-fall .turn-strip-idle__storm {
+  background-image: linear-gradient(118deg, #fef3c7 0%, #fcd34d 50%, #d97706 100%);
+}
+.turn-strip-idle--season-fall .turn-strip-idle__path {
+  background-image: linear-gradient(118deg, #fdba74 0%, #ea580c 55%, #b91c1c 100%);
+}
+
+/* ?? Winter: silver + ice-blue ?? */
+.turn-strip-idle--season-winter .turn-strip-idle__storm {
+  background-image: linear-gradient(118deg, #ffffff 0%, #e2e8f0 50%, #94a3b8 100%);
+}
+.turn-strip-idle--season-winter .turn-strip-idle__path {
+  background-image: linear-gradient(118deg, #e0f2fe 0%, #7dd3fc 55%, #0ea5e9 100%);
+}
+
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .turn-strip-idle__storm,
+  .turn-strip-idle__path {
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+}
+
+/* Bundled idle storm SVG ? lightning flash, rain shimmer sweep (no cloud bob) */
+.storm-idle-art {
+  display: block;
+  overflow: visible;
+}
+
+.storm-idle-art__bolt-halo {
+  transform-origin: 148px 66px;
+  animation: storm-idle-bolt-halo 4.8s ease-in-out infinite;
+}
+
+.storm-idle-art__bolt {
+  filter:
+    drop-shadow(0 0 10px rgba(253, 224, 71, 0.95)) drop-shadow(0 0 22px rgba(56, 189, 248, 0.55))
+    drop-shadow(0 0 3px rgba(255, 255, 255, 0.95)) drop-shadow(0 3px 5px rgba(0, 0, 0, 0.4));
+  animation: storm-idle-bolt 4.8s ease-in-out infinite;
+}
+
+/* Intro: bright band sweeps across the bolt once shortly after idle strip appears */
+.storm-idle-art__bolt-gleam-wrap {
+  pointer-events: none;
+}
+
+.storm-idle-art__bolt-gleam-rect {
+  mix-blend-mode: overlay;
+  opacity: 0;
+  animation: storm-idle-intro-bolt-gleam 0.58s cubic-bezier(0.25, 0.9, 0.35, 1) 1.05s forwards;
+}
+
+.storm-idle-art__rain-shimmer-wrap {
+  mix-blend-mode: screen;
+  pointer-events: none;
+  animation: storm-idle-rain-shimmer 2.65s linear infinite;
+  will-change: transform;
+}
+
+/* Falling rain ? looped translate so drops read as motion (staggered per line) */
+.storm-idle-art__rain--back line {
+  animation: storm-idle-rain-fall 1.05s linear infinite;
+}
+
+.storm-idle-art__rain--front line {
+  animation: storm-idle-rain-fall 0.72s linear infinite;
+}
+
+.storm-idle-art__rain--back line:nth-child(odd) {
+  animation-duration: 1.15s;
+}
+
+.storm-idle-art__rain--front line:nth-child(odd) {
+  animation-duration: 0.82s;
+}
+
+.storm-idle-art__rain--back line:nth-child(3n) {
+  animation-delay: -0.35s;
+}
+
+.storm-idle-art__rain--back line:nth-child(3n + 1) {
+  animation-delay: -0.65s;
+}
+
+.storm-idle-art__rain--front line:nth-child(3n) {
+  animation-delay: -0.22s;
+}
+
+.storm-idle-art__rain--front line:nth-child(3n + 1) {
+  animation-delay: -0.48s;
+}
+
+.storm-idle-art__rain--front line:nth-child(5n) {
+  animation-delay: -0.62s;
+}
+
+@keyframes storm-idle-rain-fall {
+  0% {
+    transform: translate(3px, -16px);
+    opacity: 0.25;
+  }
+  12% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-2px, 26px);
+    opacity: 0.4;
+  }
+}
+
+@keyframes storm-idle-bolt-halo {
+  0%,
+  86%,
+  100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  90% {
+    opacity: 0.95;
+    transform: scale(1.08);
+  }
+  93% {
+    opacity: 0.5;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes storm-idle-bolt {
+  0%,
+  86%,
+  100% {
+    opacity: 1;
+    filter:
+      drop-shadow(0 0 10px rgba(253, 224, 71, 0.95)) drop-shadow(0 0 22px rgba(56, 189, 248, 0.55))
+      drop-shadow(0 0 3px rgba(255, 255, 255, 0.95)) drop-shadow(0 3px 5px rgba(0, 0, 0, 0.4));
+  }
+  90% {
+    opacity: 1;
+    filter:
+      drop-shadow(0 0 18px rgba(254, 249, 195, 1)) drop-shadow(0 0 32px rgba(34, 211, 238, 0.85))
+      drop-shadow(0 0 8px rgba(255, 255, 255, 1)) drop-shadow(0 3px 5px rgba(0, 0, 0, 0.35));
+  }
+  93% {
+    opacity: 1;
+    filter:
+      drop-shadow(0 0 10px rgba(253, 224, 71, 0.95)) drop-shadow(0 0 22px rgba(56, 189, 248, 0.55))
+      drop-shadow(0 0 3px rgba(255, 255, 255, 0.95)) drop-shadow(0 3px 5px rgba(0, 0, 0, 0.4));
+  }
+}
+
+@keyframes storm-idle-rain-shimmer {
+  0% {
+    transform: translateX(-80px);
+  }
+  100% {
+    transform: translateX(380px);
+  }
+}
+
+@keyframes storm-idle-intro-bolt-gleam {
+  0% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  4% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(340px);
+    opacity: 0;
+  }
+}
+
+/* ?? Snow (winter only) ??
+ * Two parallax layers fall slower than rain with a subtle horizontal drift, so the cloud
+ * reads as a calm snowfall rather than a thunderstorm. Per-flake delay offsets are taken
+ * from the same nth-child wells the rain uses so the layout reads as natural variation. */
+.storm-idle-art__snow--back circle {
+  animation: storm-idle-snow-fall 6.5s ease-in-out infinite;
+}
+
+.storm-idle-art__snow--front circle {
+  animation: storm-idle-snow-fall 4.6s ease-in-out infinite;
+}
+
+.storm-idle-art__snow--back circle:nth-child(odd) {
+  animation-duration: 7.2s;
+}
+
+.storm-idle-art__snow--front circle:nth-child(odd) {
+  animation-duration: 5.1s;
+}
+
+.storm-idle-art__snow--back circle:nth-child(3n) {
+  animation-delay: -1.8s;
+}
+
+.storm-idle-art__snow--back circle:nth-child(3n + 1) {
+  animation-delay: -3.5s;
+}
+
+.storm-idle-art__snow--front circle:nth-child(3n) {
+  animation-delay: -1.2s;
+}
+
+.storm-idle-art__snow--front circle:nth-child(3n + 1) {
+  animation-delay: -2.7s;
+}
+
+.storm-idle-art__snow--front circle:nth-child(5n) {
+  animation-delay: -3.3s;
+}
+
+@keyframes storm-idle-snow-fall {
+  0% {
+    transform: translate(0px, -14px);
+    opacity: 0.2;
+  }
+  10% {
+    opacity: 1;
+  }
+  35% {
+    transform: translate(3px, 8px);
+  }
+  60% {
+    transform: translate(-2px, 18px);
+  }
+  100% {
+    transform: translate(2px, 32px);
+    opacity: 0.4;
+  }
+}
+
+/* ?? Per-season cloud hue tweaks ??
+ * Subtle warm/cool filter so the same cloud shape reads as the right time of year. The
+ * filter applies to the cloud group only, leaving rain / snow / bolt color logic alone. */
+.storm-idle-art--season-spring .storm-idle-art__cloud {
+  filter: hue-rotate(-8deg) saturate(0.92) brightness(1.04);
+}
+.storm-idle-art--season-summer .storm-idle-art__cloud {
+  filter: brightness(1.08) saturate(0.85);
+}
+.storm-idle-art--season-fall .storm-idle-art__cloud {
+  filter: hue-rotate(18deg) saturate(0.95) brightness(0.96);
+}
+.storm-idle-art--season-winter .storm-idle-art__cloud {
+  filter: hue-rotate(-6deg) saturate(0.55) brightness(1.06);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .storm-idle-art,
+  .storm-idle-art__bolt,
+  .storm-idle-art__bolt-halo,
+  .storm-idle-art__rain-shimmer-wrap,
+  .storm-idle-art__rain--back line,
+  .storm-idle-art__rain--front line,
+  .storm-idle-art__snow--back circle,
+  .storm-idle-art__snow--front circle {
+    animation: none;
+  }
+
+  .storm-idle-art__bolt-gleam-rect {
+    animation: none;
+    opacity: 0;
+  }
+
+  .storm-idle-art__bolt-halo {
+    opacity: 0.45;
+    transform: none;
+  }
+
+  .storm-idle-art__rain--back line,
+  .storm-idle-art__rain--front line,
+  .storm-idle-art__snow--back circle,
+  .storm-idle-art__snow--front circle {
+    opacity: 1;
+    transform: none;
+  }
+}
+

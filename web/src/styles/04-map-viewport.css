@@ -1,0 +1,492 @@
+/* Map fills the viewport */
+.map-stage.map-bleed {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  height: 100vh;
+  min-height: 100vh;
+  height: 100dvh;
+  min-height: 100dvh;
+  /* Shows under inset map-canvas on phones where bottom chrome doesn?t cover tiles */
+  background: #0a0b0d;
+}
+
+.map-stage.map-bleed .map-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/* Small radar clock under the advisory strip — left edge, clear of the progress rail */
+.map-radar-frame-time-cluster {
+  align-self: flex-start;
+  margin-top: 1px;
+  padding: 0 4px;
+  pointer-events: none;
+  font-size: 0.58rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  text-align: left;
+  color: rgba(226, 232, 240, 0.94);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+}
+
+/* Route planning ? My location in dock beside address (right edge = bottom panel) */
+.nav-recenter-puck-btn {
+  box-sizing: border-box;
+  min-height: var(--nav-chrome-control, 44px);
+  height: var(--nav-chrome-control, 44px);
+  max-height: var(--nav-chrome-control, 44px);
+  padding: 0 12px;
+  border-radius: var(--nav-chrome-radius, 8px);
+  border: var(--nav-chrome-panel-border);
+  background: var(--nav-chrome-panel-bg);
+  color: #e2e8f0;
+  font-size: 0.52rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  box-shadow: var(--nav-chrome-panel-shadow);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nav-recenter-puck-btn--dock {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: min(11rem, 42vw);
+  white-space: nowrap;
+}
+
+/* In the new full-width actions row, give My location plenty of room and bump the label so it
+ * isn't ~8 px high anymore. Flex grows it to fill its share of the row when alone, or split with
+ * the route-cycle button when both are present. */
+.nav-recenter-puck-btn--actions {
+  flex: 1 1 0;
+  max-width: none;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 0 16px;
+}
+
+/* Inline placement on the about-row ? mirrors the inline route-cycle slot so "My location"
+ * (shown while planning, no route yet) and the route-cycle button (shown once a route is
+ * loaded) are visually interchangeable: same height as the round 'i' info button on the left,
+ * same horizontal stretch into the strip, same right gutter clear of the progress rail. */
+.nav-recenter-puck-btn.nav-recenter-puck-btn--inline {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: none;
+  height: var(--nav-chrome-about, 32px);
+  min-height: var(--nav-chrome-about, 32px);
+  max-height: var(--nav-chrome-about, 32px);
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.nav-recenter-puck-btn:active {
+  transform: scale(0.97);
+}
+
+.drive-map-frame {
+  position: absolute;
+  inset: 0;
+}
+
+.drive-map {
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.drive-map-opening {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a0b0d;
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+/* Mapbox logo + �: default corners, bottom safe inset (same on web and phone ? sits in strip under floating chrome) */
+.map-stage.map-bleed .mapboxgl-ctrl-bottom-left {
+  margin-bottom: 0 !important;
+  /* Sit in the reserved strip under the command bar (same intent as --nav-bottom-reserved). */
+  bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - 4px)) !important;
+  left: max(6px, env(safe-area-inset-left)) !important;
+  right: auto !important;
+  top: auto !important;
+  transform: none !important;
+  transform-origin: unset !important;
+  /* Above .nav-bottom-stack (6) so logo/� stay visible in the strip under the command bar */
+  z-index: 8;
+}
+
+.map-stage.map-bleed .mapboxgl-ctrl-bottom-right {
+  margin-bottom: 0 !important;
+  bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - 4px)) !important;
+  left: auto !important;
+  /* Keep Mapbox attribution ?i? clear of the vertical progress rail on the right. */
+  right: calc(64px + max(6px, env(safe-area-inset-right)) + 8px) !important;
+  top: auto !important;
+  transform: none !important;
+  transform-origin: unset !important;
+  z-index: 8;
+}
+
+.map-stage.map-bleed .mapboxgl-ctrl-bottom-left:empty {
+  display: none !important;
+}
+
+.map-missing-token {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+  color: #9aa0a6;
+  font-size: 0.95rem;
+  height: 100%;
+  background: #121418;
+}
+
+.map-missing-token code {
+  font-size: 0.85rem;
+  color: #e8eaed;
+}
+
+/* Toasts — stacked below notch (top) or above bottom chrome (dock hints). */
+.nav-toast-stack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+  pointer-events: none;
+}
+
+.nav-toast-stack > * {
+  pointer-events: auto;
+}
+
+.nav-toast-stack--top {
+  top: 0;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
+}
+
+.nav-toast-stack--under-advisory {
+  position: relative;
+  top: auto;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  z-index: 6;
+  width: 100%;
+  margin-top: 4px;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-toast {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
+  max-width: min(520px, calc(100% - 24px));
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.nav-toast-warn {
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  color: #78350f;
+}
+
+.nav-toast-info {
+  background: #e0f2fe;
+  border: 1px solid #7dd3fc;
+  color: #0c4a6e;
+}
+
+.nav-toast-err {
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  color: #7f1d1d;
+}
+
+.nav-toast code {
+  font-size: 0.75rem;
+}
+
+.nav-toast-inline-btn {
+  margin-left: 0.35rem;
+  padding: 0.15rem 0.5rem;
+  font: inherit;
+  font-size: 0.85em;
+  font-weight: 600;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.nav-offline-banner {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  max-width: min(520px, calc(100% - 24px));
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  background: rgba(18, 20, 24, 0.9);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  color: #e8eaed;
+  font-size: 0.72rem;
+  font-weight: 750;
+  box-shadow: 0 4px 22px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+/* Above turn / hazard stack so offline is visible in drive */
+.nav-offline-banner--drive {
+  z-index: 7;
+  font-size: 0.68rem;
+  padding: 0.42rem 0.65rem;
+}
+
+.nav-safety-banner {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  max-width: min(560px, calc(100% - 24px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0.6rem 0.75rem;
+  border-radius: 12px;
+  background: rgba(18, 20, 24, 0.95);
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  color: #f8fafc;
+  font-size: 0.72rem;
+  font-weight: 750;
+  box-shadow: 0 6px 28px rgba(0, 0, 0, 0.45);
+}
+
+.nav-safety-banner__text {
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.nav-safety-banner__btn {
+  flex-shrink: 0;
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.nav-safety-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-safety-banner__btn--ghost {
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
+}
+
+/* Bottom: search (left) stacked above full-width toolbar ? never overlap */
+.nav-bottom-stack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--nav-bottom-stack-gap, 4px);
+  padding: 0 max(8px, env(safe-area-inset-right)) var(--nav-bottom-reserved) max(8px, env(safe-area-inset-left));
+  /* Block map destination picks in the bottom chrome band (gaps between rows included). */
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.nav-bottom-stack > * {
+  pointer-events: auto;
+}
+
+.nav-bottom-chrome-wrap .nav-bottom-toolbar {
+  pointer-events: auto;
+}
+
+/* GPS path recording (banner above toolbar) */
+.route-recording-banner {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  width: 100%;
+  max-width: min(560px, calc(100vw - 16px));
+  margin: 0 auto;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(127, 29, 29, 0.92);
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+}
+
+.route-recording-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fecaca;
+  flex-shrink: 0;
+  animation: route-rec-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes route-rec-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.85);
+  }
+}
+
+.route-recording-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+  font-weight: 750;
+  color: #fef2f2;
+}
+
+.route-recording-meta {
+  font-weight: 600;
+  color: #fecaca;
+}
+
+.route-recording-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.route-recording-btn {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.2);
+  color: #fef2f2;
+  font-size: 0.65rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.route-recording-btn--primary {
+  background: rgba(254, 226, 226, 0.95);
+  color: #7f1d1d;
+  border-color: transparent;
+}
+
+.nav-bottom-dock {
+  position: relative;
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  pointer-events: auto;
+}
+
+.nav-bottom-dock > .nav-bottom-dock__about-row {
+  pointer-events: auto;
+}
+
+.nav-bottom-dock > .nav-bottom-dock__plan-stack {
+  pointer-events: auto;
+}
+
+.nav-search-dock {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--nav-chrome-control, 40px);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  background: var(--nav-chrome-panel-bg);
+  border: var(--nav-chrome-panel-border);
+  border-radius: var(--nav-chrome-radius, 7px);
+  box-shadow: var(--nav-chrome-panel-shadow);
+  padding: 0 8px;
+  max-width: 100%;
+  margin: 0;
+  width: auto;
+}
+
+/* Address / search input row matches chrome control height; suggestions still stack below. */
+.nav-search-dock > .nav-search-wrap {
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.nav-search-dock .nav-search-form {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  min-height: var(--nav-chrome-control, 44px);
+  height: var(--nav-chrome-control, 44px);
+  box-sizing: border-box;
+}
+
+.nav-search-dock > .nav-dest-compact {
+  min-height: var(--nav-chrome-control, 44px);
+  height: var(--nav-chrome-control, 44px);
+  box-sizing: border-box;
+  align-items: center;
+}
+

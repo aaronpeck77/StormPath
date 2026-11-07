@@ -1,0 +1,865 @@
+/*
+ * iOS-style grouped: each section is a soft-gray rounded container with comfortable padding,
+ * preceded by a small uppercase eyebrow title that floats above the container (no per-section
+ * stripes / colors / gradients ? quiet and consistent).
+ */
+.about-sheet__panel {
+  position: relative;
+  margin: 24px 0 0;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.085);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 4px 14px rgba(0, 0, 0, 0.28);
+  box-sizing: border-box;
+}
+
+.about-sheet__sections .about-sheet__panel:first-child {
+  margin-top: 18px;
+}
+
+.about-sheet__sections .about-sheet__panel:last-child {
+  margin-bottom: 0;
+}
+
+/* Section title sits above the container as an uppercase eyebrow. */
+.about-sheet__panel > .about-sheet__h3 {
+  position: absolute;
+  top: -8px;
+  left: 6px;
+  transform: translateY(-100%);
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #cbd5e1;
+  pointer-events: none;
+  background: transparent;
+}
+
+/* `<details>` panels: same eyebrow effect on the summary, but it must remain interactive. */
+.about-sheet__panel.about-sheet__details > summary {
+  cursor: pointer;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #cbd5e1;
+}
+
+.about-sheet__panel.about-sheet__details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.about-sheet__panel.about-sheet__details[open] > summary {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Inset card (handedness selector inside Settings) ? darker than its parent so it reads as nested. */
+.about-sheet__panel--settings-inset {
+  margin: 14px 0 0;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.32);
+  box-shadow: none;
+}
+
+.about-sheet__meta {
+  margin: 0;
+  /* padding/border: use .about-sheet__panel on the same element */
+}
+
+.about-sheet__meta-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 0.8rem;
+}
+
+.about-sheet__meta-row + .about-sheet__meta-row {
+  margin-top: 6px;
+}
+
+.about-sheet__meta-row dt {
+  margin: 0;
+  font-weight: 650;
+  color: #80868b;
+}
+
+.about-sheet__meta-row dd {
+  margin: 0;
+  font-weight: 700;
+  color: #cbd5e1;
+  text-align: right;
+}
+
+.about-sheet__tier-preview {
+  margin: 0 0 8px;
+}
+
+.about-sheet__tier-preview.about-sheet__settings-card {
+  margin: 0;
+}
+
+/* "Test pay tier" devtools panel sitting between the header and the scrolling sections */
+.about-sheet__panel--devtools {
+  margin: 18px 0 14px;
+}
+
+.about-sheet__tier-preview-label {
+  margin: 0 0 8px;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.about-sheet__tier-preview-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.about-sheet__tier-preview-btn {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 17, 21, 0.85);
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.about-sheet__tier-preview-btn--active {
+  border-color: rgba(99, 102, 241, 0.55);
+  background: rgba(99, 102, 241, 0.22);
+  color: #e8eaed;
+}
+
+.about-sheet__tier-preview-hint {
+  margin: 6px 0 0;
+  font-size: 0.68rem;
+  line-height: 1.32;
+  color: #64748b;
+}
+
+.about-sheet__puck-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.about-sheet__puck-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 17, 21, 0.85);
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.about-sheet__puck-color--active {
+  border-color: rgba(99, 102, 241, 0.55);
+  background: rgba(99, 102, 241, 0.22);
+  color: #e8eaed;
+}
+
+.about-sheet__puck-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* Whole sheet is the only scroll container ? no nested scrollers */
+.about-sheet__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+@media (orientation: landscape) {
+  .about-sheet {
+    max-height: calc(
+      100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 20px
+    );
+  }
+}
+
+.about-sheet__details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.about-sheet__details .about-sheet__p + .about-sheet__p {
+  margin-top: 8px;
+}
+
+/* Nested details inside another panel (e.g. Activity trail) */
+.about-sheet__details--inline {
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.about-sheet__details--inline > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  user-select: none;
+}
+
+/* Default eyebrow style for h3 outside panels (kept as fallback). Inside .about-sheet__panel, the
+ * floating absolute-positioned rule above wins via specificity. */
+.about-sheet__h3 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.about-sheet__p {
+  margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: #b8bcc4;
+}
+
+.about-sheet__bullets {
+  margin: 8px 0 10px;
+  padding-left: 1.2em;
+  color: #e8eaed;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.about-sheet__bullets li {
+  margin: 4px 0;
+}
+
+.about-sheet__bullets strong {
+  color: #fff;
+}
+
+.about-sheet__settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+
+/* Bordered card for each Settings row/group so items don't blend together. */
+.about-sheet__settings-card {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(0, 0, 0, 0.24);
+  box-sizing: border-box;
+}
+
+.about-sheet__settings-card--muted {
+  opacity: 0.85;
+}
+
+.about-sheet__settings-card.about-sheet__details > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.about-sheet__settings-card.about-sheet__details > summary::after {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid #cbd5e1;
+  border-bottom: 2px solid #cbd5e1;
+  transform: rotate(45deg);
+  margin-top: -0.2rem;
+  flex-shrink: 0;
+}
+
+.about-sheet__settings-card.about-sheet__details[open] > summary {
+  margin-bottom: 10px;
+}
+
+.about-sheet__settings-card.about-sheet__details[open] > summary::after {
+  transform: rotate(-135deg);
+  margin-top: 0.12rem;
+}
+
+.about-sheet__settings-card.about-sheet__home-framing {
+  margin: 0;
+}
+
+.about-sheet__settings-card.about-sheet__tier-preview {
+  /* Side-view group uses the same card chrome as other settings rows. */
+  padding: 10px 12px;
+}
+
+.about-sheet__home-framing--nested {
+  margin: 10px 0 0;
+  padding: 10px 0 0;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.about-sheet__upgrade-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 8px 0 0;
+}
+
+.about-sheet__upgrade-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #60a5fa, #2563eb);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 800;
+  font-size: 0.78rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.about-sheet__upgrade-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.22);
+  color: #cbd5e1;
+  text-decoration: none;
+  font-weight: 750;
+  font-size: 0.78rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.about-sheet__upgrade-link:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.about-sheet__btn {
+  cursor: pointer;
+}
+
+/* Help section ? short copy + a single ghost button to replay the first-launch coachmarks. */
+.about-sheet__muted-line {
+  margin: 0 0 10px;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.about-sheet__help-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.about-sheet__btn--ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(30, 41, 59, 0.55);
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.about-sheet__btn--ghost:hover {
+  background: rgba(30, 41, 59, 0.78);
+  border-color: rgba(148, 163, 184, 0.55);
+}
+
+.about-sheet__btn--ghost:active {
+  transform: scale(0.98);
+}
+
+.about-sheet__upgrade-muted {
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+/* Phase 7 — purchase / restore success banner. Lives below the Subscription action row. */
+.about-sheet__upgrade-success {
+  margin: 8px 0 0;
+  color: #6ee7b7;
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.about-sheet__iap-price,
+.about-sheet__iap-legal {
+  margin: 8px 0 0;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.about-sheet__iap-legal-links {
+  margin: 10px 0 0;
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.about-sheet__iap-legal-links a {
+  color: #7dd3fc;
+  text-decoration: underline;
+}
+
+/* Activity trail ? small clear control (kept narrow + right-aligned to avoid accidental hits) */
+.about-sheet__trail-clear {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.about-sheet__trail-clear:has(.about-sheet__trail-clear-panel) {
+  justify-content: stretch;
+}
+
+.about-sheet__trail-clear-panel {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(127, 29, 29, 0.22);
+}
+
+.about-sheet__trail-clear-title {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #fecaca;
+}
+
+.about-sheet__trail-clear-text {
+  margin: 0 0 10px;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  font-weight: 500;
+  color: #fecaca;
+}
+
+.about-sheet__trail-clear-ack {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 12px;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  font-weight: 650;
+  color: #fee2e2;
+  cursor: pointer;
+}
+
+.about-sheet__trail-clear-ack input {
+  margin-top: 2px;
+  accent-color: #f87171;
+}
+
+.about-sheet__trail-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  background: rgba(30, 41, 59, 0.7);
+  color: #cbd5e1;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.about-sheet__trail-clear-btn:hover {
+  border-color: rgba(148, 163, 184, 0.55);
+  background: linear-gradient(180deg, rgba(71, 85, 105, 0.98), rgba(51, 65, 85, 0.99));
+}
+
+.about-sheet__trail-clear-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.about-sheet__trail-clear-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.about-sheet__trail-clear-cancel {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.75);
+  color: #e2e8f0;
+  font-size: 0.76rem;
+  font-weight: 750;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.about-sheet__trail-clear-cancel:hover {
+  border-color: rgba(226, 232, 240, 0.45);
+}
+
+.about-sheet__trail-clear-confirm-btn {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  background: linear-gradient(180deg, rgba(185, 28, 28, 0.95), rgba(127, 29, 29, 0.98));
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.about-sheet__trail-clear-confirm-btn:hover {
+  border-color: rgba(252, 165, 165, 0.65);
+}
+
+.about-sheet__trail-clear-confirm-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.about-sheet__trail-clear-confirm-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ????? Map key (legend) ? color/chrome cheat sheet inside About sheet ????? */
+.about-sheet__panel--map-key .map-key__group {
+  margin-top: 10px;
+}
+
+.map-key__intro {
+  margin-top: 6px;
+  margin-bottom: 8px;
+  color: #cbd5e1;
+}
+
+.map-key__rows {
+  list-style: none;
+  margin: 4px 0 2px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.map-key__row {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  align-items: start;
+  gap: 10px;
+  padding: 6px 4px;
+}
+
+.map-key__row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.map-key__row-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  line-height: 1.2;
+}
+
+.map-key__row-blurb {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  line-height: 1.35;
+}
+
+/* Swatches */
+.map-key__swatch {
+  display: inline-block;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.map-key__swatch--line {
+  width: 26px;
+  height: 6px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.map-key__swatch--dashed {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      currentColor 0,
+      currentColor 5px,
+      transparent 5px,
+      transparent 9px
+    ) !important;
+  /* The currentColor trick relies on the inline `background` color falling through; force via color. */
+}
+
+.map-key__swatch--dashed[style*="background"] {
+  /* Re-style: keep the inline color but apply the dashed pattern using it. */
+  background-image: repeating-linear-gradient(
+    90deg,
+    currentColor 0,
+    currentColor 5px,
+    transparent 5px,
+    transparent 9px
+  );
+}
+
+.map-key__swatch--casing {
+  position: relative;
+  width: 26px;
+  height: 12px;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.map-key__swatch-casing-bg {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+}
+
+.map-key__swatch-casing-fg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 4px;
+  background: #1a73e8;
+  border-radius: 2px;
+}
+
+.map-key__swatch--polygon {
+  width: 26px;
+  height: 14px;
+  border-radius: 3px;
+  border-width: 1.5px;
+  border-style: solid;
+}
+
+.map-key__swatch--pin {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  margin-left: 6px;
+}
+
+.map-key__swatch--block {
+  width: 26px;
+  height: 14px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.about-sheet__setting {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #e8eaed;
+}
+
+.about-sheet__setting input {
+  margin-top: 2px;
+  accent-color: #60a5fa;
+}
+
+.about-sheet__setting em {
+  color: #94a3b8;
+  font-style: normal;
+  font-weight: 750;
+}
+
+.about-sheet__setting.disabled {
+  opacity: 0.55;
+}
+
+.about-sheet__soon {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.about-sheet__home-framing {
+  margin: 12px 0 0;
+  padding: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.about-sheet__home-framing.about-sheet__settings-card {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.about-sheet__home-framing.disabled {
+  opacity: 0.55;
+}
+
+.about-sheet__home-framing-legend {
+  font-size: 0.78rem;
+  font-weight: 750;
+  color: #e8eaed;
+  padding: 0;
+}
+
+.about-sheet__p--tight {
+  margin-top: 0;
+  margin-bottom: 4px;
+}
+
+.about-sheet__home-framing-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #e8eaed;
+}
+
+.about-sheet__home-framing-option input {
+  margin-top: 2px;
+  accent-color: #60a5fa;
+}
+
+.about-sheet__home-framing-option.disabled {
+  opacity: 0.55;
+}
+
+.about-sheet__setting--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.about-sheet__support-note {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.45);
+  color: #e2e8f0;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  padding: 8px 10px;
+  resize: vertical;
+  min-height: 72px;
+}
+
+.about-sheet__drive-diag {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.45);
+  color: #cbd5e1;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.about-sheet__drive-diag strong {
+  color: #e2e8f0;
+}
+
+.about-sheet__actions {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.app-shell.nav-paused .map-canvas {
+  opacity: 0.92;
+}
+
+.app-shell.nav-ended {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  min-height: 100vh;
+  background: #f1f3f4;
+  color: #202124;
+}
+
+.ended-msg {
+  font-size: 1.05rem;
+  max-width: 22rem;
+  text-align: center;
+}
+
