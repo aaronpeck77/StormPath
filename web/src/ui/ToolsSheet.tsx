@@ -1,6 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { formatDistanceShort } from "../utils/formatDistance";
-import { formatMinutesAsHoursMinutes } from "./formatEta";
+import { formatDurationMinutes, formatMinutesAsHoursMinutes } from "./formatEta";
+import {
+  clearTripLog,
+  listTripLog,
+  tripLogToCsv,
+  tripLogTotals,
+  type TripLogEntry,
+} from "../tripLog/tripLog";
 
 export type EtaShareData = {
   destinationLabel: string | null;
@@ -14,6 +21,8 @@ type Props = {
   onClose: () => void;
   /** Null when no active trip — the share tool row is disabled with a hint. */
   etaShare: EtaShareData | null;
+  /** Miles vs km for trip-log distances + CSV export. */
+  useMiles?: boolean;
 };
 
 const CARD_W = 1080;
@@ -154,12 +163,38 @@ async function shareEtaCard(d: EtaShareData): Promise<boolean> {
   return true;
 }
 
+async function shareCsv(csv: string, useMiles: boolean): Promise<void> {
+  const unit = useMiles ? "mi" : "km";
+  const file = new File([csv], `stormpath-trips-${unit}.csv`, { type: "text/csv" });
+  const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+  if (nav.canShare?.({ files: [file] })) {
+    await nav.share({ files: [file], title: "StormPath trip log" });
+    return;
+  }
+  if (nav.share) {
+    await nav.share({ text: csv, title: "StormPath trip log" });
+    return;
+  }
+  await navigator.clipboard.writeText(csv);
+}
+
 /**
  * StormPath Tools — the extras drawer. Drive HUD stays clean; everything
  * beyond core navigation lives here one tap away (About → Tools).
  */
-export function ToolsSheet({ open, onClose, etaShare }: Props) {
+export function ToolsSheet({ open, onClose, etaShare, useMiles = true }: Props) {
   const [busy, setBusy] = useState(false);
+  const [entries, setEntries] = useState<TripLogEntry[]>([]);
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setEntries(listTripLog());
+      setConfirmClear(false);
+    }
+  }, [open]);
+
+  const totals = tripLogTotals(entries);
 
   if (!open) return null;
 
@@ -173,6 +208,28 @@ export function ToolsSheet({ open, onClose, etaShare }: Props) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const onExportCsv = async () => {
+    if (busy || entries.length === 0) return;
+    setBusy(true);
+    try {
+      await shareCsv(tripLogToCsv(entries, useMiles), useMiles);
+    } catch {
+      /* cancelled */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onClearLog = () => {
+    if (!confirmClear) {
+      setConfirmClear(true);
+      return;
+    }
+    clearTripLog();
+    setEntries([]);
+    setConfirmClear(false);
   };
 
   return (
@@ -217,6 +274,59 @@ export function ToolsSheet({ open, onClose, etaShare }: Props) {
               {busy ? "…" : "›"}
             </div>
           </button>
+
+          <div className="about-sheet__panel tools-triplog">
+            <div className="tools-triplog__head">
+              <div>
+                <div className="tools-row__title">Trip log</div>
+                <div className="tools-row__sub">
+                  {entries.length === 0
+                    ? "Completed drives are recorded automatically."
+                    : `${totals.count} ${totals.count === 1 ? "trip" : "trips"} · ${formatDistanceShort(totals.distanceM, useMiles) || "0"} total`}
+                </div>
+              </div>
+            </div>
+            {entries.length > 0 ? (
+              <>
+                <ul className="tools-triplog__list">
+                  {entries.slice(0, 6).map((e) => (
+                    <li key={e.id} className="tools-triplog__row">
+                      <div className="tools-triplog__main">
+                        <span className="tools-triplog__dest">
+                          {e.destinationLabel || "Destination"}
+                        </span>
+                        <span className="tools-triplog__meta">
+                          {new Date(e.startedAt).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                          })}{" "}
+                          · {formatDistanceShort(e.distanceM, useMiles) || "—"} ·{" "}
+                          {formatDurationMinutes((e.endedAt - e.startedAt) / 60_000)}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <div className="tools-triplog__actions">
+                  <button
+                    type="button"
+                    className="tools-triplog__btn"
+                    onClick={() => void onExportCsv()}
+                    disabled={busy}
+                  >
+                    Export CSV
+                  </button>
+                  <button
+                    type="button"
+                    className={`tools-triplog__btn${confirmClear ? " tools-triplog__btn--danger" : ""}`}
+                    onClick={onClearLog}
+                  >
+                    {confirmClear ? "Tap again to clear" : "Clear log"}
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </div>
         </div>
       </div>
     </>

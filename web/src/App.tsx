@@ -1527,6 +1527,8 @@ export default function App() {
     navigationStarted,
     speedMps
   );
+  const tripOdometerMRef = useRef(0);
+  tripOdometerMRef.current = tripOdometerM;
 
   const guidanceRouteLengthM = useMemo(() => {
     const g = navigationGuidanceGeometry ?? guidanceRoute?.geometry;
@@ -2435,6 +2437,7 @@ export default function App() {
     pendingGoAfterTollRef,
     preferredAreaRouteMapRef,
     stopNativeGuidance: stopNative,
+    tripOdometerMRef,
   });
   const jamHop = useJamHop({
     navigationStarted,
@@ -3564,6 +3567,7 @@ export default function App() {
               }
             : null
         }
+        useMiles={roadUsesMiles(effectiveUserLngLat)}
       />
 
       <Coachmarks replayKey={coachmarksReplayKey} />

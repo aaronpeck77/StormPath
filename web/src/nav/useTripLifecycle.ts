@@ -20,6 +20,7 @@ import {
 } from "../preferredAreaRoutes";
 import { isPersonalForkRouteId } from "../personalForks";
 import { clearActiveTripCache } from "../tripCache";
+import { recordTripLogEntry } from "../tripLog/tripLog";
 import { formatCoordsAreaLabel } from "../utils/forecastDisplay";
 import {
   setTollCompareContext,
@@ -92,6 +93,8 @@ export type UseTripLifecycleDeps = {
   preferredAreaRouteMapRef: MutableRefObject<PreferredAreaRouteMap>;
   /** iOS Core session — stop this before wiping the web trip so Stop does not crash. */
   stopNativeGuidance?: () => Promise<void>;
+  /** Live GPS odometer for the active trip — mileage log prefers actual driven meters. */
+  tripOdometerMRef?: MutableRefObject<number>;
 };
 
 export type TripLifecycleActions = {
@@ -160,6 +163,7 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     pendingGoAfterTollRef,
     preferredAreaRouteMapRef,
     stopNativeGuidance,
+    tripOdometerMRef,
   } = deps;
 
   const plan = useTripPlanStore((s) => s.plan);
@@ -185,6 +189,26 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
   const setTrafficBypassCompare = useRouteCompareStore((s) => s.setTrafficBypassCompare);
 
   const clearRoute = useCallback(() => {
+    /* Mileage log — record every ended guided trip regardless of tier/settings.
+     * Runs before the plan/destination stores are wiped below. */
+    if (navigationStartedRef.current) {
+      const started = navGoStartedAtRef.current;
+      const geom = navGoGeometryRef.current;
+      if (started && geom && geom.length >= 2) {
+        const planned = completedTripFromGeometry(geom, started);
+        if (planned) {
+          const odometerM = tripOdometerMRef?.current ?? 0;
+          recordTripLogEntry({
+            startedAt: planned.startedAt,
+            endedAt: planned.endedAt,
+            originLabel: plan.originLabel?.trim() || "Trip start",
+            destinationLabel: destinationLabel?.trim() || "Destination",
+            distanceM: odometerM > 0 ? odometerM : planned.distanceM,
+            plannedDistanceM: planned.distanceM,
+          });
+        }
+      }
+    }
     if (navigationStartedRef.current && payFrequentRoutes && learnEnabled) {
       const started = navGoStartedAtRef.current;
       const planned = navPlannedMainGeometryRef.current;
@@ -249,6 +273,9 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     navGoStartedAtRef,
     navPlannedMainGeometryRef,
     navGoGeometryRef,
+    tripOdometerMRef,
+    plan,
+    destinationLabel,
     onPersonalForkRef,
     lockedNavigationRouteIdRef,
     navigationGuidanceGeometryRef,

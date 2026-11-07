@@ -18719,3 +18719,78 @@ html.route-info-open .route-progress-callout-panel--expanded {
   font-size: 0.8rem;
   color: #7dd3fc;
 }
+
+/* Trip log section inside the Tools sheet */
+.tools-triplog__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tools-triplog__list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tools-triplog__row {
+  padding: 7px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.tools-triplog__row:first-child {
+  border-top: none;
+}
+
+.tools-triplog__main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.tools-triplog__dest {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tools-triplog__meta {
+  font-size: 0.7rem;
+  color: #94a3b8;
+}
+
+.tools-triplog__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.tools-triplog__btn {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  background: rgba(56, 189, 248, 0.12);
+  color: #bae6fd;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tools-triplog__btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.tools-triplog__btn--danger {
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.1);
+  color: #fca5a5;
+}
