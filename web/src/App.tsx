@@ -46,7 +46,7 @@ import { useJamHop } from "./nav/useJamHop";
 import { JamHopBanner } from "./ui/JamHopBanner";
 import { useTrafficOverlayFetch } from "./hooks/useTrafficOverlayFetch";
 import { resolveNavigationRouteIds } from "./nav/navigationRouteFocus";
-import { resolveNavigatingRouteSelect } from "./nav/navigatingRouteSelect";
+import { useRouteSelectionFlow } from "./nav/useRouteSelectionFlow";
 import { planAfterSoftRestartLock } from "./nav/softRestartPlan";
 import { isReverseDepartGeometry } from "./nav/detourRejoin";
 import { runTripRefresh, shouldRunTripRefresh } from "./nav/tripRefresh";
@@ -142,7 +142,6 @@ import {
 import {
   isFullSlotPermutation,
   reconcileSlotOrderWithPlan,
-  slotOrderAfterSelect,
 } from "./nav/routeSlotOrder";
 import { useDebouncedBusyLabel } from "./hooks/useDebouncedBusyLabel";
 import { buildAdvisoryRoadDetailRows } from "./ui/buildAdvisoryRoadDetailRows";
@@ -166,7 +165,7 @@ import type { NormalizedWeatherAlert } from "./weatherAlerts/types";
 import { useBasicAdMobBanner } from "./hooks/useBasicAdMobBanner";
 import { useFrequentRouteLearning } from "./hooks/useFrequentRouteLearning";
 import { usePersonalForkNav } from "./hooks/usePersonalForkNav";
-import { isPersonalForkRouteId, PERSONAL_FORK_ROUTE_ID } from "./personalForks";
+import { isPersonalForkRouteId } from "./personalForks";
 import { useAppMapChromeProps } from "./ui/useAppMapChromeProps";
 import {
   readHomeMapFraming,
@@ -2520,147 +2519,38 @@ export default function App() {
   });
 
   /** Make this leg the primary (slot A / blue); used after Go, hazard “use this route”, and bypass. */
-  const handlePromoteRouteToPrimary = useCallback(
-    (id: string) => {
-      if (!plan.routes.some((r) => r.id === id)) return;
-      setRouteSlotOrder((prev) => slotOrderAfterSelect(prev.length ? prev : planRouteIds, id));
-      setPreviewLegIndex(0);
-      if (navigationStartedRef.current) {
-        lockedNavigationRouteIdRef.current = id;
-        routingPreferenceRef.current = routingPreferenceForLockedRoute(
-          plan.routes.find((r) => r.id === id)
-        );
-        onPersonalForkRef.current = isPersonalForkRouteId(id);
-      }
-      clearDetourGuidance();
-    },
-    [plan.routes, planRouteIds, clearDetourGuidance]
-  );
-
-  const commitPersonalFork = useCallback(
-    (forkId?: string) => {
-      const offer = personalForkNav.offer;
-      if (!offer) return;
-      if (forkId && offer.fork.id !== forkId) return;
-      const main =
-        navPlannedMainGeometryRef.current ??
-        personalForkMainGeometry ??
-        guidanceRoute?.geometry ??
-        null;
-      if (!main || main.length < 2) return;
-
-      const your = personalForkNav.buildCommitRoute(offer.fork, main, userAlongGuidanceM);
-      setPlan((prev) => {
-        const without = prev.routes.filter((r) => !isPersonalForkRouteId(r.id));
-        return { ...prev, routes: [...without, your] };
-      });
-      setRouteSlotOrder((prev) => {
-        const cleaned = prev.filter((id) => !isPersonalForkRouteId(id));
-        return slotOrderAfterSelect(cleaned.length ? cleaned : [your.id], your.id);
-      });
-      setPreviewLegIndex(0);
-      lockedNavigationRouteIdRef.current = PERSONAL_FORK_ROUTE_ID;
-      onPersonalForkRef.current = true;
-      adoptLockedRouteGeometry(your.geometry, { force: true });
-      personalForkNav.markCommitted(offer.fork.id);
-      personalForkNav.noteAutoCommitAttempted(offer.fork.id);
-      resetOffRouteNavigation();
-      clearDetourGuidance();
-      setViewMode("drive");
-      setTapHint("Your route");
-      window.setTimeout(() => setTapHint(null), 4000);
-    },
-    [
-      personalForkNav,
-      personalForkMainGeometry,
-      guidanceRoute?.geometry,
-      userAlongGuidanceM,
-      adoptLockedRouteGeometry,
-      resetOffRouteNavigation,
-      clearDetourGuidance,
-      setViewMode,
-      setTapHint,
-      setPlan,
-      setRouteSlotOrder,
-    ]
-  );
-
-  useEffect(() => {
-    if (!personalForkNav.shouldAutoCommit || !personalForkNav.offer) return;
-    personalForkNav.noteAutoCommitAttempted(personalForkNav.offer.fork.id);
-    commitPersonalFork(personalForkNav.offer.fork.id);
-  }, [personalForkNav.shouldAutoCommit, personalForkNav.offer, commitPersonalFork]);
-
-  /**
-   * Route / map view while navigating: picking a leg adopts it for Drive too.
-   * Preview-only left Drive on the old lock (often behind the puck) with no line.
-   */
-  const handlePreviewRouteSelect = useCallback(
-    (id: string) => {
-      const picked = plan.routes.find((r) => r.id === id);
-      if (!picked) return;
-
-      const action = resolveNavigatingRouteSelect({
-        navigationStarted,
-        selectedId: id,
-        lockedRouteId: lockedNavigationRouteIdRef.current,
-        temporaryGuidanceRouteId: autoRejoinGuidanceRouteId,
-        offRouteChoiceActive:
-          offRouteLatched || offRouteHoldPreviewActive || Boolean(autoRejoinGuidanceRouteId),
-      });
-
-      if (action.type === "adopt") {
-        handlePromoteRouteToPrimary(id);
-        if (picked.geometry?.length >= 2) {
-          adoptLockedRouteGeometry(
-            picked.geometry.map(([a, b]) => [a, b] as LngLat),
-            { force: true }
-          );
-        }
-        resetOffRouteNavigation();
-        setFitTrigger((n) => n + 1);
-        setTapHint("Following this route.");
-        window.setTimeout(() => setTapHint(null), 4000);
-        /* Lock ref is already B. Restart after paint so Core gets B's corridor
-         * and the no-interstate flag, not the A session it started on. */
-        window.setTimeout(() => {
-          void restartNative();
-        }, 0);
-        return;
-      }
-
-      if (action.type === "return_to_lock") {
-        clearDetourGuidance();
-        resetOffRouteNavigation();
-        const i = orderedRouteIds.indexOf(action.lockedId);
-        if (i >= 0) setPreviewLegIndex(i);
-        setFitTrigger((n) => n + 1);
-        setTapHint("Back on your original route.");
-        window.setTimeout(() => setTapHint(null), 4000);
-        return;
-      }
-
-      const i = orderedRouteIds.indexOf(id);
-      if (i >= 0) setPreviewLegIndex(i);
-      if (!navigationStarted || viewMode === "route" || viewMode === "topdown") {
-        setFitTrigger((n) => n + 1);
-      }
-    },
-    [
-      plan.routes,
+  /* Route promote / personal-fork / preview-select flow lives in
+   * `nav/useRouteSelectionFlow.ts`. */
+  const { handlePromoteRouteToPrimary, handlePreviewRouteSelect, commitPersonalFork } =
+    useRouteSelectionFlow({
+      plan,
+      planRouteIds,
       orderedRouteIds,
       navigationStarted,
       viewMode,
+      navigationStartedRef,
+      lockedNavigationRouteIdRef,
+      routingPreferenceRef,
+      onPersonalForkRef,
+      navPlannedMainGeometryRef,
+      personalForkNav,
+      personalForkMainGeometry,
+      guidanceGeometry: guidanceRoute?.geometry,
+      userAlongGuidanceM,
       autoRejoinGuidanceRouteId,
       offRouteLatched,
       offRouteHoldPreviewActive,
-      handlePromoteRouteToPrimary,
+      setPlan,
+      setRouteSlotOrder,
+      setPreviewLegIndex,
+      setViewMode,
+      setTapHint,
+      setFitTrigger,
       adoptLockedRouteGeometry,
       resetOffRouteNavigation,
       clearDetourGuidance,
       restartNative,
-    ]
-  );
+    });
 
   /* Stormy's action dispatch lives in `stormy/useStormyAct.ts` — voice replies
    * become place picks, Go, route selects, radar toggles, and ETA shares. */
