@@ -133,6 +133,8 @@ import type { SearchSuggestion } from "./ui/SearchBar";
 import { AppBottomChrome } from "./ui/AppBottomChrome";
 import { AppAboutSheetHost } from "./ui/AppAboutSheetHost";
 import { ToolsSheet } from "./ui/ToolsSheet";
+import { TripBriefingSheet } from "./ui/TripBriefingSheet";
+import { useTripBriefing } from "./forecast/useTripBriefing";
 import { shareEtaCard, type EtaShareData } from "./ui/etaShareCard";
 import {
   currentNavTarget,
@@ -2100,6 +2102,30 @@ export default function App() {
     horizonHazards,
   });
 
+  /* Pre-trip briefing — departure timing + hazards/weather/why for the focused
+   * planning leg. Sheet fetches its own hourly scan on open; pill lives in the
+   * planning dock beside the route picker. */
+  const briefingLetterFor = useCallback(
+    (id: string) => routePickItems.find((i) => i.id === id)?.letter ?? "?",
+    [routePickItems]
+  );
+  const tripBriefing = useTripBriefing({
+    isPlus,
+    route: guidanceRoute ?? null,
+    scored,
+    slice: guidanceSlice,
+    impacts: routeImpacts,
+    forecast: tioRouteForecast,
+    forecastProvider: env.weatherKitEnabled ? "weatherKit" : "tomorrowIo",
+    suggestedRouteId,
+    speedMps: speedMps ?? 0,
+    weatherKitEnabled: env.weatherKitEnabled,
+    tomorrowIoApiKey: env.tomorrowIoApiKey,
+    useMiles: roadUsesMiles(effectiveUserLngLat),
+    destinationLabel,
+    letterFor: briefingLetterFor,
+  });
+
   const stormyBrief = useMemo(() => {
     const focus = plan.routes.find((r) => r.id === lineFocusId) ?? plan.routes[0];
     const facts = stormyFactsFromImpacts(routeImpactsForUi, roadUsesMiles(effectiveUserLngLat));
@@ -3467,6 +3493,19 @@ export default function App() {
           previewLegIndex={previewLegIndex}
           handlePreviewRouteSelect={handlePreviewRouteSelect}
           routeDockDetail={routeDockDetail}
+          tripBriefingPill={
+            !navigationStarted && plan.routes.length > 0 ? (
+              <button
+                type="button"
+                className={`briefing-pill${tripBriefing.pulse ? " briefing-pill--pulse" : ""}`}
+                onClick={tripBriefing.openBriefing}
+                aria-label="Trip briefing — when to leave and what to expect on this route"
+                title="Trip briefing"
+              >
+                Briefing
+              </button>
+            ) : null
+          }
           radarMapOverlayOn={radarMapOverlayOn}
           radarFrameTimeLabel={radarFrameTimeLabel}
           planRoutesLength={plan.routes.length}
@@ -3590,6 +3629,18 @@ export default function App() {
         etaShare={etaShareData}
         useMiles={roadUsesMiles(effectiveUserLngLat)}
       />
+
+      {tripBriefing.open ? (
+        <TripBriefingSheet
+          briefing={isPlus ? tripBriefing.briefing : null}
+          locked={!isPlus}
+          onSeePlus={() => {
+            tripBriefing.closeBriefing();
+            setAboutOpen(true);
+          }}
+          onClose={tripBriefing.closeBriefing}
+        />
+      ) : null}
 
       <Coachmarks replayKey={coachmarksReplayKey} />
     </div>

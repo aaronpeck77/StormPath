@@ -122,6 +122,8 @@ type Props = {
   previewLegIndex: number | null;
   handlePreviewRouteSelect: (id: string) => void;
   routeDockDetail: string | undefined;
+  /** Pre-trip briefing pill — planning surface only, rendered beside the route picker. */
+  tripBriefingPill?: ReactNode;
   radarMapOverlayOn: boolean;
   radarFrameTimeLabel: string | null;
 
@@ -230,6 +232,7 @@ export function AppBottomChrome({
   previewLegIndex,
   handlePreviewRouteSelect,
   routeDockDetail,
+  tripBriefingPill,
   radarMapOverlayOn,
   radarFrameTimeLabel,
   planRoutesLength,
@@ -466,6 +469,7 @@ export function AppBottomChrome({
                     </div>
                   ) : null
                 ) : null}
+                {!navigationStarted ? tripBriefingPill : null}
               </DockAboutRow>
               <div className="nav-bottom-dock__search-myloc-row">
                 <div className="nav-bottom-dock__search-col">

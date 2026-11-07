@@ -18788,3 +18788,328 @@ html.route-info-open .route-progress-callout-panel--expanded {
   background: rgba(248, 113, 113, 0.1);
   color: #fca5a5;
 }
+
+/* ── Trip briefing — planning-dock pill + pre-trip sheet ─────────────────── */
+
+/* Small orange pill in the planning about-row. Pulses until first open so it
+ * is the first thing the eye catches; stays compact and out of the drive HUD. */
+.briefing-pill {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(249, 115, 22, 0.65);
+  background: linear-gradient(180deg, #fb923c, #f97316);
+  color: #1c0a02;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 0 0 rgba(249, 115, 22, 0.45);
+}
+
+.briefing-pill:hover {
+  filter: brightness(1.08);
+}
+
+.briefing-pill--pulse {
+  animation: briefing-pill-pulse 1.7s ease-in-out infinite;
+}
+
+@keyframes briefing-pill-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(249, 115, 22, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .briefing-pill--pulse {
+    animation: none;
+    box-shadow: 0 0 10px rgba(249, 115, 22, 0.55);
+  }
+}
+
+.briefing-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 47;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.briefing-sheet {
+  position: fixed;
+  left: max(10px, env(safe-area-inset-left, 0px));
+  right: max(10px, env(safe-area-inset-right, 0px));
+  bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  top: max(10%, env(safe-area-inset-top, 0px));
+  z-index: 48;
+  max-height: min(88dvh, 720px);
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  border-radius: 16px 16px 12px 12px;
+  background: rgba(18, 20, 24, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.briefing-sheet__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(180deg, rgba(28, 32, 40, 0.98), rgba(20, 24, 30, 0.98));
+}
+
+.briefing-sheet__eyebrow {
+  margin: 0 0 2px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fb923c;
+}
+
+.briefing-sheet__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #e8eaed;
+}
+
+.briefing-sheet__meta {
+  margin: 4px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: #9aa0a6;
+}
+
+.briefing-sheet__close {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.35);
+  color: #e8eaed;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.briefing-sheet__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 2px 4px;
+}
+
+.briefing-panel {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.briefing-panel__h {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.briefing-muted {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.briefing-line {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.briefing-line--muted {
+  margin-top: 6px;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.78rem;
+}
+
+/* Leave card — tinted panel per recommendation, severity via dot not accent bar */
+.briefing-leave {
+  border-color: rgba(251, 146, 60, 0.3);
+  background: rgba(249, 115, 22, 0.08);
+}
+
+.briefing-leave--wait {
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.briefing-leave--go {
+  border-color: rgba(52, 211, 153, 0.4);
+  background: rgba(52, 211, 153, 0.08);
+}
+
+.briefing-leave--rough {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.09);
+}
+
+.briefing-leave__headline {
+  margin: 0 0 4px;
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: #e8eaed;
+}
+
+.briefing-leave__headline--muted {
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 600;
+}
+
+.briefing-leave__detail {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.briefing-leave__arrive {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #fb923c;
+}
+
+.briefing-leave__coverage {
+  margin: 6px 0 0;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.briefing-hazards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.briefing-hazard {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.briefing-hazard__dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  border-radius: 999px;
+}
+
+.briefing-hazard__dot--serious {
+  background: #f87171;
+  box-shadow: 0 0 6px rgba(248, 113, 113, 0.7);
+}
+
+.briefing-hazard__dot--caution {
+  background: #fbbf24;
+}
+
+.briefing-hazard__dot--info {
+  background: #38bdf8;
+}
+
+.briefing-hazard__main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.briefing-hazard__headline {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.briefing-hazard__sub {
+  margin: 2px 0 0;
+  font-size: 0.76rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.briefing-hazard__when {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #fb923c;
+}
+
+.briefing-weather {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.briefing-weather__line {
+  font-size: 0.83rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.briefing-footnote {
+  margin: 4px 2px 8px;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* Plus gate inside the briefing sheet */
+.briefing-gate-list {
+  margin: 0 0 12px;
+  padding: 0 0 0 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.briefing-gate__btn {
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(180deg, #fb923c, #f97316);
+  color: #1c0a02;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.briefing-gate__btn:hover {
+  filter: brightness(1.08);
+}

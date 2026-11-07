@@ -25,6 +25,10 @@ import { calibratedWindGustMph } from "../nav/windForecastCalib";
 import { fetchWeatherKitAtPoint, type WeatherKitAlert } from "./weatherKitClient";
 import { isWeatherKitTokenBlocked } from "./weatherKitAuth";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
+import type {
+  DepartureScanHour,
+  DepartureScanLocation,
+} from "./departureScanTypes";
 
 export { isWeatherKitTokenBlocked } from "./weatherKitAuth";
 
@@ -490,6 +494,55 @@ export async function fetchWeatherKitRouteForecastForGeometry(
   );
   if (!waypoints?.length) return { fetchedAt: Date.now(), intervals: [] };
   return fetchWeatherKitRouteForecast(waypoints, signal, opts);
+}
+
+/**
+ * Departure-time scan: same per-location `forecastHourly` pulls as
+ * {@link fetchWeatherKitRouteForecast} but keeps every hour (absolute
+ * `forecastStart`) so departure shifts can be scored across the window.
+ */
+export async function fetchWeatherKitDepartureScan(
+  waypoints: { lat: number; lng: number; etaMinutes: number }[],
+  signal?: AbortSignal,
+  opts?: { bypassCache?: boolean }
+): Promise<DepartureScanLocation[]> {
+  if (!waypoints.length) return [];
+
+  const fetchLocations = pickRouteForecastFetchLocations(
+    waypoints,
+    WEATHERKIT_ROUTE_MAX_LOCATIONS
+  );
+  const fetchedAt = Date.now();
+
+  const locations = await Promise.all(
+    fetchLocations.map(async (loc) => {
+      const key = routeForecastLocationKey(loc.lat, loc.lng);
+      try {
+        const raw = await fetchWeatherKitAtPoint(loc.lat, loc.lng, ["forecastHourly"], signal, opts);
+        const hours: DepartureScanHour[] = (raw.forecastHourly?.hours ?? [])
+          .map((h) => {
+            const offsetMin = (new Date(h.forecastStart).getTime() - fetchedAt) / 60_000;
+            const windSpeedMph = kphToMph(h.windSpeed);
+            const rawGustMph = h.windGust != null ? kphToMph(h.windGust) : windSpeedMph;
+            return {
+              offsetMin,
+              weatherCode: weatherKitConditionToCode(h.conditionCode),
+              precipIntensityMmh: h.precipitationIntensity,
+              precipProbability: h.precipitationChance,
+              windGustMph: calibratedWindGustMph(windSpeedMph, rawGustMph),
+              wetRoadMm: estimateWetRoadMm(h.precipitationIntensity, h.precipitationAmount),
+            } satisfies DepartureScanHour;
+          })
+          .filter((h) => Number.isFinite(h.offsetMin))
+          .sort((a, b) => a.offsetMin - b.offsetMin);
+        return { key, lat: loc.lat, lng: loc.lng, hours };
+      } catch {
+        return { key, lat: loc.lat, lng: loc.lng, hours: [] as DepartureScanHour[] };
+      }
+    })
+  );
+
+  return locations.filter((l) => l.hours.length > 0);
 }
 
 /** Capitalize first letter of each word for display. */

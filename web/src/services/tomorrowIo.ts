@@ -17,6 +17,12 @@ import { pointAtAlongMeters, polylineLengthMeters, subsamplePolylineVertexBudget
 import type { LngLat } from "../nav/types";
 import { resolveHourFeelsLikeF } from "../forecast/localForecastVisual";
 import { enqueueTomorrowIoPost, noteTomorrowIoRateLimit } from "./tomorrowIoClient";
+import {
+  DEPARTURE_SCAN_MAX_END_HOURS,
+  DEPARTURE_SCAN_MAX_SHIFT_MIN,
+  type DepartureScanHour,
+  type DepartureScanLocation,
+} from "./departureScanTypes";
 
 const BASE_URL = "https://api.tomorrow.io/v4/timelines";
 const TIMEOUT_MS = 10_000;
@@ -800,6 +806,103 @@ export async function fetchRouteForecast(
   });
 
   return { fetchedAt: Date.now(), intervals };
+}
+
+// ── Departure scan (raw hourly per location) ─────────────────────────────────
+
+function hourlyByOffsetToScanHours(hourly: HourlyByOffset[]): DepartureScanHour[] {
+  return hourly
+    .map((h) => {
+      const v = h.values;
+      const windMs = v.windSpeed ?? 0;
+      const gustMs = v.windGust ?? 0;
+      const windSpeedMph = windMs * 2.23694;
+      const rawGustMph = gustMs > 0 ? gustMs * 2.23694 : windSpeedMph;
+      return {
+        offsetMin: h.offsetMin,
+        weatherCode: v.weatherCode ?? 1000,
+        precipIntensityMmh: v.precipitationIntensity ?? 0,
+        precipProbability: (v.precipitationProbability ?? 0) / 100,
+        windGustMph: calibratedWindGustMph(windSpeedMph, rawGustMph),
+        wetRoadMm: v.wetRoadIndex ?? 0,
+      } satisfies DepartureScanHour;
+    })
+    .sort((a, b) => a.offsetMin - b.offsetMin);
+}
+
+/**
+ * Departure-time scan: same corridor fetch as {@link fetchRouteForecast} but keeps the
+ * raw hourly series per location (or one route-averaged polyline series) so callers can
+ * score "what if we left later" across the whole forecast window.
+ */
+export async function fetchRouteDepartureScan(
+  apiKey: string,
+  waypoints: { lat: number; lng: number; etaMinutes: number }[],
+  signal?: AbortSignal,
+  opts?: { bypassCache?: boolean; geometry?: LngLat[] }
+): Promise<DepartureScanLocation[]> {
+  if (!waypoints.length) return [];
+
+  const maxTravelMin = Math.max(...waypoints.map((w) => w.etaMinutes));
+  const endHours = Math.min(
+    DEPARTURE_SCAN_MAX_END_HOURS,
+    Math.ceil((maxTravelMin + DEPARTURE_SCAN_MAX_SHIFT_MIN) / 60) + 1
+  );
+
+  if (
+    opts?.geometry &&
+    opts.geometry.length >= 2 &&
+    polylineLengthMeters(opts.geometry) <= TIO_POLYLINE_MAX_M
+  ) {
+    const hourly = await fetchPolylineHourlyTimeline(
+      apiKey,
+      opts.geometry,
+      endHours,
+      signal,
+      opts.bypassCache ?? false
+    );
+    if (!hourly.length) return [];
+    const mid = opts.geometry[Math.floor(opts.geometry.length / 2)]!;
+    return [
+      {
+        key: "route",
+        lat: mid[1]!,
+        lng: mid[0]!,
+        hours: hourlyByOffsetToScanHours(hourly),
+      },
+    ];
+  }
+
+  const fetchLocations = pickRouteForecastFetchLocations(waypoints);
+  const seenKeys = new Set<string>();
+  const uniqueLocations: { lat: number; lng: number }[] = [];
+  for (const loc of fetchLocations) {
+    const key = routeForecastLocationKey(loc.lat, loc.lng);
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    uniqueLocations.push(loc);
+  }
+
+  const byKey = new Map<string, DepartureScanHour[]>();
+  await Promise.all(
+    uniqueLocations.map(async (loc) => {
+      const key = routeForecastLocationKey(loc.lat, loc.lng);
+      const hourly = await fetchHourlyTimelineAtLocation(
+        apiKey,
+        loc.lat,
+        loc.lng,
+        endHours,
+        signal,
+        opts?.bypassCache ?? false
+      );
+      byKey.set(key, hourlyByOffsetToScanHours(hourly));
+    })
+  );
+
+  return uniqueLocations.map((loc) => {
+    const key = routeForecastLocationKey(loc.lat, loc.lng);
+    return { key, lat: loc.lat, lng: loc.lng, hours: byKey.get(key) ?? [] };
+  });
 }
 
 /**

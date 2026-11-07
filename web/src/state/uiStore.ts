@@ -64,6 +64,9 @@ export interface UiState {
   aboutOpen: boolean;
   toolsOpen: boolean;
   corridorForecastOpen: boolean;
+  tripBriefingOpen: boolean;
+  /** True once the driver has opened the pre-trip briefing — stops the dock pill pulse. */
+  tripBriefingSeen: boolean;
   pendingSave: PendingSave;
   searchExpanded: boolean;
   searchEditing: boolean;
@@ -77,6 +80,8 @@ export interface UiState {
   setAboutOpen: (next: Updater<boolean>) => void;
   setToolsOpen: (next: Updater<boolean>) => void;
   setCorridorForecastOpen: (next: Updater<boolean>) => void;
+  setTripBriefingOpen: (next: Updater<boolean>) => void;
+  markTripBriefingSeen: () => void;
   setPendingSave: (next: Updater<PendingSave>) => void;
   setSearchExpanded: (next: Updater<boolean>) => void;
   setSearchEditing: (next: Updater<boolean>) => void;
@@ -100,6 +105,8 @@ export const useUiStore = create<UiState>((set) => ({
   aboutOpen: false,
   toolsOpen: false,
   corridorForecastOpen: false,
+  tripBriefingOpen: false,
+  tripBriefingSeen: false,
   pendingSave: null,
   /** Initial state opens the search bar so first-launch users see the input field. */
   searchExpanded: true,
@@ -117,6 +124,9 @@ export const useUiStore = create<UiState>((set) => ({
   setToolsOpen: (next) => set((s) => ({ toolsOpen: applyUpdater(s.toolsOpen, next) })),
   setCorridorForecastOpen: (next) =>
     set((s) => ({ corridorForecastOpen: applyUpdater(s.corridorForecastOpen, next) })),
+  setTripBriefingOpen: (next) =>
+    set((s) => ({ tripBriefingOpen: applyUpdater(s.tripBriefingOpen, next) })),
+  markTripBriefingSeen: () => set({ tripBriefingSeen: true }),
   setPendingSave: (next) => set((s) => ({ pendingSave: applyUpdater(s.pendingSave, next) })),
   setSearchExpanded: (next) =>
     set((s) => ({ searchExpanded: applyUpdater(s.searchExpanded, next) })),
@@ -137,6 +147,7 @@ export const useUiStore = create<UiState>((set) => ({
       aboutOpen: false,
       toolsOpen: false,
       corridorForecastOpen: false,
+      tripBriefingOpen: false,
       pendingSave: null,
       searchExpanded: false,
       searchEditing: false,
