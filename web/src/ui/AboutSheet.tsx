@@ -91,6 +91,8 @@ type Props = {
   onReplayCoachmarks?: () => void;
   /** When false, auto-reroute / bypass settings are hidden (feature not shippable yet). */
   liveRerouteEnabled?: boolean;
+  /** Opens the StormPath Tools sheet (extras: share ETA, mileage log, …). */
+  onOpenTools?: () => void;
 };
 
 /**
@@ -108,6 +110,7 @@ export function AboutSheet({
   onSettings,
   onReplayCoachmarks,
   liveRerouteEnabled = true,
+  onOpenTools,
 }: Props) {
   const dev = import.meta.env.DEV;
   const tier = useMemo(() => getPayTier(), [open, payTierProbeKey]);
@@ -335,6 +338,17 @@ export function AboutSheet({
         ) : null}
 
         <div className="about-sheet__sections">
+          {onOpenTools ? (
+            <button type="button" className="about-sheet__panel tools-entry" onClick={onOpenTools}>
+              <div className="tools-entry__body">
+                <div className="tools-entry__title">StormPath Tools</div>
+                <div className="tools-entry__sub">Share ETA, trip utilities, and extras.</div>
+              </div>
+              <div className="tools-entry__chev" aria-hidden>
+                ›
+              </div>
+            </button>
+          ) : null}
           <details className="about-sheet__panel about-sheet__panel--subscription about-sheet__details">
             <summary>Subscription</summary>
             <p className="about-sheet__p">

@@ -3,10 +3,10 @@ import type { TripPlan } from "./types";
 import type { ScoredRoute } from "../scoring/scoreRoutes";
 import {
   formatRouteDistanceMi,
-  routeConsiderationSummary,
   routePickDisplayLabel,
 } from "./routeSummary";
 import { routePickSlotHex } from "../ui/mapRouteStyle";
+import { routeWhySummary } from "./routeWhy";
 import type { RoutePickItem } from "../ui/RoutePickBar";
 
 export interface UseRoutePickItemsDeps {
@@ -64,6 +64,7 @@ export function useRoutePickItems(deps: UseRoutePickItemsDeps): UseRoutePickItem
           suggested: routeId === suggestedRouteId,
           softPath: route.role === "hazardSmart",
           color: routePickSlotHex(slot),
+          why: routeWhySummary(s, scored, route),
         };
         if (route.hasTolls) item.hasTolls = true;
         return item;
@@ -75,10 +76,11 @@ export function useRoutePickItems(deps: UseRoutePickItemsDeps): UseRoutePickItem
     const r = plan.routes.find((x) => x.id === lineFocusId) ?? plan.routes[0];
     if (!r?.geometry?.length) return undefined;
     const dist = formatRouteDistanceMi(r.geometry);
-    const blurb = routeConsiderationSummary(r);
+    const s = scored.find((x) => x.route.id === r.id);
+    const blurb = routeWhySummary(s, scored, r);
     const tollNote = r.hasTolls ? "Tolls" : "";
     return [dist, blurb, tollNote].filter(Boolean).join(" · ");
-  }, [plan.routes, lineFocusId]);
+  }, [plan.routes, lineFocusId, scored]);
 
   return { alternateBypassRouteId, routePickItems, routeDockDetail };
 }

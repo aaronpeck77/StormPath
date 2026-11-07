@@ -32,6 +32,7 @@ export function AppAboutSheetHost({
 }: Props) {
   const aboutOpen = useUiStore((s) => s.aboutOpen);
   const setAboutOpen = useUiStore((s) => s.setAboutOpen);
+  const setToolsOpen = useUiStore((s) => s.setToolsOpen);
   const applySettings = useSettingsStore((s) => s.applySettings);
   const radarEnabled = useSettingsStore((s) => s.radarEnabled);
   const radarDisplayMode = useSettingsStore((s) => s.radarDisplayMode);
@@ -109,6 +110,10 @@ export function AppAboutSheetHost({
         }}
         onReplayCoachmarks={onReplayCoachmarks}
         liveRerouteEnabled={shouldShowManualOffRouteUi()}
+        onOpenTools={() => {
+          setAboutOpen(false);
+          setToolsOpen(true);
+        }}
       />
     </Suspense>
   );

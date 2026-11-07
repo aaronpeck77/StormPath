@@ -19,6 +19,10 @@ export interface ScoredRoute {
   fuseSummary: string;
   /** Whether preset + thresholds say this is worth surfacing prominently */
   notable: boolean;
+  /** Corridor precip weight from the fused slice (0 clear – 1 heavy), when present */
+  radarIntensity?: number;
+  /** Fused road-hazard count from the slice (feed reserved — usually 0 today) */
+  roadHazardCount?: number;
 }
 
 /**
@@ -97,6 +101,8 @@ export function scoreTrip(
       stressScore: stress,
       fuseSummary,
       notable,
+      radarIntensity: slice?.radarIntensity,
+      roadHazardCount: slice?.hazards.length ?? 0,
     };
   });
 }

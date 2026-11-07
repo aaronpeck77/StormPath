@@ -29,6 +29,8 @@ export interface UseDriveEtaLabelsDeps {
 export interface UseDriveEtaLabelsResult {
   driveEtaMinutes: number | null;
   driveDistanceRemainingLabel: string | null;
+  /** Meters left on the guided route — null when no trip is underway. */
+  driveDistanceRemainingM: number | null;
 }
 
 /** Live remaining-leg ETA + distance labels shown on the drive HUD. */
@@ -139,5 +141,10 @@ export function useDriveEtaLabels(deps: UseDriveEtaLabelsDeps): UseDriveEtaLabel
     return formatDistanceShort(rem, useMilesForLngLat(effectiveUserLngLat));
   }, [navigationStarted, guidanceRouteLengthM, userAlongGuidanceM, effectiveUserLngLat]);
 
-  return { driveEtaMinutes, driveDistanceRemainingLabel };
+  return {
+    driveEtaMinutes,
+    driveDistanceRemainingLabel,
+    /** Meters left on the guided route — null when no trip is underway. */
+    driveDistanceRemainingM: navigationStarted ? distanceLeftM : null,
+  };
 }

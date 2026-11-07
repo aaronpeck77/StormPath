@@ -132,6 +132,7 @@ const SavedDestinationsDrawer = lazy(() =>
 import type { SearchSuggestion } from "./ui/SearchBar";
 import { AppBottomChrome } from "./ui/AppBottomChrome";
 import { AppAboutSheetHost } from "./ui/AppAboutSheetHost";
+import { ToolsSheet } from "./ui/ToolsSheet";
 import {
   currentNavTarget,
   remainingViaStops,
@@ -382,6 +383,8 @@ export default function App() {
   const setPendingSave = useUiStore((s) => s.setPendingSave);
   const aboutOpen = useUiStore((s) => s.aboutOpen);
   const setAboutOpen = useUiStore((s) => s.setAboutOpen);
+  const toolsOpen = useUiStore((s) => s.toolsOpen);
+  const setToolsOpen = useUiStore((s) => s.setToolsOpen);
   /** Bumps DriveMap to hard-snap follow-cam after sheets / background. */
   const [followCamResyncKey, setFollowCamResyncKey] = useState(0);
   const lastTripRefreshAtMsRef = useRef(0);
@@ -1843,7 +1846,7 @@ export default function App() {
   ]);
   userAlongGuidanceMRef.current = clockAlongM;
 
-  const { driveEtaMinutes, driveDistanceRemainingLabel } = useDriveEtaLabels({
+  const { driveEtaMinutes, driveDistanceRemainingLabel, driveDistanceRemainingM } = useDriveEtaLabels({
     navigationStarted,
     scored,
     lineFocusId,
@@ -3440,6 +3443,17 @@ export default function App() {
             setRecenterPlanningPuckTick((n) => n + 1);
           }}
           showCompactDest={showCompactDest}
+          carPlayMapReturn={
+            carPlayActive && navigationStarted && carPlayMapPeek ? (
+              <button
+                type="button"
+                className="cp-companion__return"
+                onClick={() => setCarPlayMapPeek(false)}
+              >
+                Weather &amp; hazards
+              </button>
+            ) : null
+          }
           handleCompactDestOpen={handleCompactDestOpen}
           destinationLabel={destinationLabel}
           searchText={searchText}
@@ -3522,16 +3536,6 @@ export default function App() {
         />
       </AppMapStage>
       )}
-      {carPlayActive && navigationStarted && carPlayMapPeek ? (
-        <button
-          type="button"
-          className="cp-companion__return"
-          onClick={() => setCarPlayMapPeek(false)}
-        >
-          Weather &amp; hazards
-        </button>
-      ) : null}
-
       <AppAboutSheetHost
         payTierProbeKey={payTierProbeKey}
         reprobePayTier={reprobePayTier}
@@ -3545,6 +3549,21 @@ export default function App() {
         tierLabel={tierLabel}
         onReplayCoachmarks={handleReplayCoachmarks}
         setTapHint={setTapHint}
+      />
+
+      <ToolsSheet
+        open={toolsOpen}
+        onClose={() => setToolsOpen(false)}
+        etaShare={
+          navigationStarted && driveDistanceRemainingM != null && driveDistanceRemainingM > 0
+            ? {
+                destinationLabel: destinationLabel || null,
+                etaMinutes: driveEtaMinutes ?? null,
+                distanceRemainingM: driveDistanceRemainingM,
+                useMiles: roadUsesMiles(effectiveUserLngLat),
+              }
+            : null
+        }
       />
 
       <Coachmarks replayKey={coachmarksReplayKey} />

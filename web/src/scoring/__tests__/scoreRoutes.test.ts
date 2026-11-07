@@ -44,6 +44,8 @@ function fakeScored(partial: Partial<ScoredRoute>): ScoredRoute {
     stressScore: partial.stressScore ?? 0,
     fuseSummary: partial.fuseSummary ?? "",
     notable: partial.notable ?? false,
+    radarIntensity: partial.radarIntensity,
+    roadHazardCount: partial.roadHazardCount,
   };
 }
 

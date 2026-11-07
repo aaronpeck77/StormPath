@@ -3168,6 +3168,7 @@ html:has(.drive-map--native-shell) #root {
   max-width: 100%;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   margin-top: 1px;
@@ -13788,6 +13789,7 @@ html.route-info-open .route-progress-callout-panel--expanded {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
 }
 
@@ -13903,6 +13905,7 @@ html.route-info-open .route-progress-callout-panel--expanded {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
 }
 
@@ -17345,6 +17348,7 @@ html.route-info-open .route-progress-callout-panel--expanded {
   line-height: 1.2;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -17431,6 +17435,7 @@ html.route-info-open .route-progress-callout-panel--expanded {
 
   .traffic-bypass-compare__card-desc {
     -webkit-line-clamp: 3;
+    line-clamp: 3;
     font-size: 0.52rem;
   }
 }
@@ -18528,22 +18533,26 @@ html.route-info-open .route-progress-callout-panel--expanded {
   margin-top: 2px;
 }
 
+/* CarPlay map-peek return chip — lives in the drive about-row, right of the
+ * miles-left box (was a fixed overlay that covered the puck, 566 follow-up). */
 .cp-companion__return {
-  position: fixed;
-  left: 50%;
-  /* Sits above the bottom dock buttons — at bottom:18px it covered them (564). */
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 170px);
-  transform: translateX(-50%);
-  z-index: 60;
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  height: var(--nav-chrome-about, 32px);
+  padding: 0 12px;
+  font-size: 11.5px;
   font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
   color: #e5edf7;
   background: rgba(15, 23, 42, 0.85);
   border: 1px solid rgba(56, 189, 248, 0.4);
-  padding: 10px 18px;
   border-radius: 999px;
   cursor: pointer;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
 /* Companion v2 — real progress rail + weather graph embedded in the page */
@@ -18647,4 +18656,66 @@ html.route-info-open .route-progress-callout-panel--expanded {
   overflow: visible;
   padding: 0;
   gap: 14px;
+}
+
+/* StormPath Tools — entry row inside About + tool rows inside the Tools sheet */
+.tools-entry,
+.tools-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.55);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tools-entry:hover,
+.tools-row:hover:not(:disabled) {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(15, 23, 42, 0.75);
+}
+
+.tools-entry__body,
+.tools-row__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.tools-entry__title,
+.tools-row__title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.tools-entry__sub,
+.tools-row__sub {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin-top: 2px;
+  line-height: 1.35;
+}
+
+.tools-entry__chev,
+.tools-row__chev {
+  flex-shrink: 0;
+  font-size: 1.15rem;
+  color: #64748b;
+}
+
+.tools-row:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.tools-note {
+  margin: 8px 4px 0;
+  font-size: 0.8rem;
+  color: #7dd3fc;
 }

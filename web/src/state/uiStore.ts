@@ -62,6 +62,7 @@ export interface UiState {
   routeHazardSheet: RouteHazardSheetState;
   savedDrawerOpen: boolean;
   aboutOpen: boolean;
+  toolsOpen: boolean;
   corridorForecastOpen: boolean;
   pendingSave: PendingSave;
   searchExpanded: boolean;
@@ -74,6 +75,7 @@ export interface UiState {
   setRouteHazardSheet: (next: Updater<RouteHazardSheetState>) => void;
   setSavedDrawerOpen: (next: Updater<boolean>) => void;
   setAboutOpen: (next: Updater<boolean>) => void;
+  setToolsOpen: (next: Updater<boolean>) => void;
   setCorridorForecastOpen: (next: Updater<boolean>) => void;
   setPendingSave: (next: Updater<PendingSave>) => void;
   setSearchExpanded: (next: Updater<boolean>) => void;
@@ -96,6 +98,7 @@ export const useUiStore = create<UiState>((set) => ({
   routeHazardSheet: null,
   savedDrawerOpen: false,
   aboutOpen: false,
+  toolsOpen: false,
   corridorForecastOpen: false,
   pendingSave: null,
   /** Initial state opens the search bar so first-launch users see the input field. */
@@ -111,6 +114,7 @@ export const useUiStore = create<UiState>((set) => ({
   setSavedDrawerOpen: (next) =>
     set((s) => ({ savedDrawerOpen: applyUpdater(s.savedDrawerOpen, next) })),
   setAboutOpen: (next) => set((s) => ({ aboutOpen: applyUpdater(s.aboutOpen, next) })),
+  setToolsOpen: (next) => set((s) => ({ toolsOpen: applyUpdater(s.toolsOpen, next) })),
   setCorridorForecastOpen: (next) =>
     set((s) => ({ corridorForecastOpen: applyUpdater(s.corridorForecastOpen, next) })),
   setPendingSave: (next) => set((s) => ({ pendingSave: applyUpdater(s.pendingSave, next) })),
@@ -131,6 +135,7 @@ export const useUiStore = create<UiState>((set) => ({
       routeHazardSheet: null,
       savedDrawerOpen: false,
       aboutOpen: false,
+      toolsOpen: false,
       corridorForecastOpen: false,
       pendingSave: null,
       searchExpanded: false,

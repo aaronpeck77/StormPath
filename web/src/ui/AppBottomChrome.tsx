@@ -112,6 +112,8 @@ type Props = {
   onRefreshTrip?: () => void;
   onOpenAbout: () => void;
   driveDistanceRemainingLabel: string | null;
+  /** CarPlay map-peek: "Weather & hazards" return chip, rendered right of the miles-left box. */
+  carPlayMapReturn?: ReactNode;
 
   /* Route-cycle chip + radar dock chip */
   routePickItems: RoutePickItem[];
@@ -221,6 +223,7 @@ export function AppBottomChrome({
   onRefreshTrip,
   onOpenAbout,
   driveDistanceRemainingLabel,
+  carPlayMapReturn,
   routePickItems,
   lineFocusId,
   planRouteIds,
@@ -387,6 +390,7 @@ export function AppBottomChrome({
               {driveDistanceRemainingLabel ? (
                 <NavMilesLeftBox label={driveDistanceRemainingLabel} />
               ) : null}
+              {carPlayMapReturn}
             </DockAboutRow>
           ) : navigationStarted && viewMode === "topdown" ? (
             <DockAboutRow
@@ -397,6 +401,7 @@ export function AppBottomChrome({
               {driveDistanceRemainingLabel ? (
                 <NavMilesLeftBox label={driveDistanceRemainingLabel} />
               ) : null}
+              {carPlayMapReturn}
               {routePickItems.length >= 1 ? (
                 <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
                   <RoutePickControl

@@ -13,6 +13,8 @@ export type RoutePickItem = {
   color: string;
   /** Mapbox detected toll segments on this leg. */
   hasTolls?: boolean;
+  /** One-line reason this leg exists vs the fastest ("Lighter traffic", "Clearer skies"). */
+  why?: string;
 };
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -60,10 +62,10 @@ export function RouteTripleToggle({
             }}
             title={
               it.suggested
-                ? `${it.routeLabel} (slot ${it.letter}): ~${formatEtaDuration(it.etaMinutes)} — suggested for conditions`
+                ? `${it.routeLabel} (slot ${it.letter}): ~${formatEtaDuration(it.etaMinutes)} — suggested for conditions${it.why ? ` · ${it.why}` : ""}`
                 : it.softPath
-                  ? `${it.routeLabel} (slot ${it.letter}): ~${formatEtaDuration(it.etaMinutes)} — no interstate`
-                  : `${it.routeLabel} (slot ${it.letter}): ~${formatEtaDuration(it.etaMinutes)}`
+                  ? `${it.routeLabel} (slot ${it.letter}): ~${formatEtaDuration(it.etaMinutes)} — no interstate${it.why ? ` · ${it.why}` : ""}`
+                  : `${it.routeLabel} (slot ${it.letter}): ~${formatEtaDuration(it.etaMinutes)}${it.why ? ` — ${it.why}` : ""}`
             }
             onClick={() => onSelect(it.id)}
           >
@@ -163,7 +165,7 @@ export function RouteCycleButton({
   const title = items
     .map(
       (it) =>
-        `${it.routeLabel} (${it.letter}) ~${formatEtaDuration(it.etaMinutes)}${it.suggested ? " (suggested)" : ""}${it.hasTolls ? " · tolls" : ""}`
+        `${it.routeLabel} (${it.letter}) ~${formatEtaDuration(it.etaMinutes)}${it.suggested ? " (suggested)" : ""}${it.hasTolls ? " · tolls" : ""}${it.why ? ` — ${it.why}` : ""}`
     )
     .join(" · ");
   const hint =
