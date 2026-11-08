@@ -1026,10 +1026,10 @@
  * to the grip edge (right for right-hand, left for left-hand). Scoped to the
  * drive view (.nav-drive-ui) so topdown/route keep their inline chips; the
  * cluster/col classes only render in that branch anyway. */
-@media (orientation: portrait) and (max-width: 560px) {
-  .app-shell.nav-fullmap.nav-drive-ui {
-    /* The bar sat higher than it needed to — sink it ~12px into the safe strip. */
-    --nav-bottom-reserved: max(0px, calc(env(safe-area-inset-bottom, 0px) - 12px));
+@media (orientation: portrait) and (max-width: 900px) {
+  .app-shell.nav-fullmap {
+    /* The bar sat higher than it needed to — sink it toward the bottom edge. */
+    --nav-bottom-reserved: max(0px, calc(env(safe-area-inset-bottom, 0px) - 16px));
   }
 
   .app-shell.nav-fullmap.nav-drive-ui .nav-bottom-dock__about-row
