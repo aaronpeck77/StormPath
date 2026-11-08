@@ -4,11 +4,13 @@
  * Section 1 (portrait): widen the centered chrome column and scale type/hit targets
  * up so the phone-sized UI reads as a tablet app instead of a stretched phone.
  *
- * Section 2 (landscape, large tablets): turn the bottom chrome into a persistent
- * side "command panel" — map + top guidance stay on the map side, search/dock/
- * toolbar live in a full-height panel on the driving-hand edge, progress rail
- * stays on the outer edge. Mirrors for the left-hand setting.
- * Phone landscape is excluded by the min-height gate (phone landscape is < ~500px tall).
+ * Section 2 (landscape, large tablets AND phones): turn the bottom chrome into
+ * a persistent side "command panel" — map + top guidance stay on the map side,
+ * search/dock/toolbar live in a full-height panel on the driving-hand edge,
+ * progress rail stays on the outer edge. Mirrors for the left-hand setting.
+ * Phones join via the max-height branch (phone landscape is < ~500px tall);
+ * phone-specific compaction lives in the block at the end of this file. The
+ * PiP stays tablet-only — LandscapeInfoPip keeps its own JS gate.
  */
 
 /* Panel widgets only exist inside the iPad landscape command panel (Section 2). */
@@ -91,7 +93,8 @@
 }
 
 /* ── iPad landscape: side command panel ────────────────────────────────────── */
-@media (orientation: landscape) and (min-width: 800px) and (min-height: 600px) {
+@media (orientation: landscape) and (min-width: 800px) and (min-height: 600px),
+       (orientation: landscape) and (max-height: 500px) {
   html {
     font-size: 112%;
   }
@@ -706,5 +709,59 @@
   .app-shell.nav-fullmap .nav-bottom-toolbar__drive-eta-zone {
     font-weight: 700;
     color: rgba(56, 200, 255, 0.85);
+  }
+
+  /* ── Planning stage: stack popping buttons, pin setup to panel bottom ──── */
+  /* Route-select + Briefing (+ My location) share the about-row; the cycle
+   * button's label/ETA spans are overflow:visible, so a squeezed row paints
+   * words over numbers. Wrap lets each control take its own line. */
+  .app-shell.nav-fullmap .nav-bottom-dock__plan-stack > .nav-bottom-dock__about-row,
+  .app-shell.nav-fullmap .nav-bottom-dock__plan-stack .nav-bottom-dock__stormy-row {
+    flex-wrap: wrap;
+  }
+
+  /* Planning has no PiP/TBT/hazard widgets, so the chrome-wrap was the stack's
+   * only child and floated at the panel top. Auto top margin pins it bottom. */
+  .app-shell.nav-fullmap .map-stage.map-bleed > .nav-bottom-stack:has(.nav-bottom-dock__plan-stack)
+    > .nav-bottom-chrome-wrap {
+    margin-top: auto;
+  }
+}
+
+/* ── Phone landscape: same command panel, compacted ──────────────────────── */
+/* The panel MQ above now covers short-landscape phones. Undo the tablet-only
+ * sizing and tune for a ~390px-tall screen. */
+@media (orientation: landscape) and (max-height: 500px) {
+  html {
+    font-size: 100%;
+  }
+
+  .app-shell.nav-fullmap {
+    /* ~40% of the width for the panel; the rest stays map. */
+    --sp-ipad-panel-w: clamp(290px, 40vw, 400px);
+  }
+
+  /* Bill wants the progress strip to run the phone's full height in landscape.
+   * Span both overlay-grid rows; the top cluster stays in the map column so
+   * nothing overlaps. Foot inset/strip length come from the JS hook. */
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-route-progress-rail,
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-route-progress-rail {
+    grid-row: 1 / -1;
+  }
+
+  /* Miles-left at the outer edge beside the controls — right of Info on
+   * right-hand (controls cell first, miles last), left of it on left-hand
+   * (iPad order already puts miles on the left edge). */
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .landscape-navigation-dock {
+    grid-template-areas:
+      "messages messages"
+      "controls miles";
+  }
+
+  /* Left-hand: controls sit in the flexible column — start-align them so the
+   * button cluster hugs miles-left at the panel's left edge instead of
+   * drifting toward the map. */
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .landscape-navigation-dock__controls {
+    justify-content: flex-start;
   }
 }

@@ -1020,47 +1020,6 @@
   }
 }
 
-/* ── iPhone landscape: dock buttons as a 2×2 at the grip edge ──────────── */
-/* The controls column stacked four buttons tall, which pushed the progress
- * rail's foot inset up and left the toolbar floating ~40px off the bottom.
- * Now: controls become a 2×2 grid on the bottom row of the dock — just above
- * the toolbar, outer edge flush with the chrome's outer edge (right for
- * right-hand, left for left-hand). max-height:500px keeps iPads out — they
- * use the command panel instead. */
-@media (orientation: landscape) and (max-height: 500px) {
-  .app-shell.nav-fullmap {
-    /* Drop the extra 4px+18px attribution reserve — bar sits nearer the edge. */
-    --nav-bottom-reserved: calc(env(safe-area-inset-bottom, 0px) + 6px);
-  }
-
-  .app-shell.nav-fullmap .landscape-navigation-dock {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "messages miles"
-      "messages controls";
-    align-items: end;
-    /* Match .nav-bottom-chrome-wrap's 8px so the 2×2 outer edge lines up
-     * with the toolbar's outer edge. */
-    padding-right: max(8px, env(safe-area-inset-right));
-    padding-left: max(8px, env(safe-area-inset-left));
-  }
-
-  .app-shell.nav-fullmap.app-shell--landscape-hand-left .landscape-navigation-dock {
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-areas:
-      "miles messages"
-      "controls messages";
-  }
-
-  .landscape-navigation-dock__controls {
-    display: grid;
-    grid-template-columns: auto auto;
-    gap: 4px;
-    justify-self: end;
-  }
-
-  .app-shell.nav-fullmap.app-shell--landscape-hand-left .landscape-navigation-dock__controls {
-    justify-self: start;
-  }
-}
+/* Phone landscape now uses the same side command panel as iPad — see the
+ * widened panel MQ + phone compaction block at the end of 21-tablet.css. */
 

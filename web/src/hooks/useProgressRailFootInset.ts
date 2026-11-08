@@ -29,11 +29,32 @@ export function useProgressRailFootInset(active: boolean): void {
     }
 
     let raf = 0;
+    /* Phone landscape runs the strip the full screen height (Bill's ask) —
+     * skip chrome anchoring entirely; CSS spans the rail across both grid rows. */
+    const phoneLandscapeMq =
+      typeof window !== "undefined"
+        ? window.matchMedia("(orientation: landscape) and (max-height: 500px)")
+        : null;
 
     const update = () => {
       const rail = document.querySelector<HTMLElement>(".nav-route-progress-rail");
       const inner = document.querySelector<HTMLElement>(".nav-route-progress-rail__inner");
       if (!rail || !inner) return;
+
+      if (phoneLandscapeMq?.matches) {
+        const safeBottom = Number.parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue("env(safe-area-inset-bottom)") ||
+            "0"
+        );
+        shell.style.setProperty(
+          SHELL_FOOT_VAR,
+          `${Math.max(MIN_FOOT_INSET_PX, Math.ceil(safeBottom + 4))}px`
+        );
+        /* No strip-length override → .route-progress-strip--side falls back to
+         * 100cqh = the rail inner's full height. */
+        shell.style.removeProperty(SHELL_STRIP_VAR);
+        return;
+      }
 
       /* Bottom anchor = top of the bottom chrome band. Take the highest valid
        * top across the chrome wrap and landscape dock so the strip clears the

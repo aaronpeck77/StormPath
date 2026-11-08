@@ -8,8 +8,16 @@ export const TABLET_LANDSCAPE_MQ =
   "(orientation: landscape) and (min-width: 800px) and (min-height: 600px)";
 
 /**
- * Portal children into a slot inside the iPad landscape command panel.
- * Falls back to rendering in place on phones/tablet portrait, and whenever the
+ * Any command-panel landscape: iPad landscape OR phone landscape (short
+ * viewports — the widened panel MQ in 21-tablet.css). Used for portals into
+ * panel slots (TBT); the PiP keeps TABLET_LANDSCAPE_MQ so phones never mount it.
+ */
+export const PANEL_LANDSCAPE_MQ =
+  "(orientation: landscape) and (min-width: 800px) and (min-height: 600px), (orientation: landscape) and (max-height: 500px)";
+
+/**
+ * Portal children into a slot inside the side command panel.
+ * Falls back to rendering in place on portrait/narrow views, and whenever the
  * slot is absent (e.g. traffic-bypass compare hides panel widgets).
  */
 export function TabletLandscapePanelPortal({
@@ -23,10 +31,10 @@ export function TabletLandscapePanelPortal({
 }) {
   const [target, setTarget] = useState<HTMLElement | null>(null);
   const [on, setOn] = useState(
-    () => typeof window !== "undefined" && window.matchMedia(TABLET_LANDSCAPE_MQ).matches
+    () => typeof window !== "undefined" && window.matchMedia(PANEL_LANDSCAPE_MQ).matches
   );
   useLayoutEffect(() => {
-    const query = window.matchMedia(TABLET_LANDSCAPE_MQ);
+    const query = window.matchMedia(PANEL_LANDSCAPE_MQ);
     const update = () => {
       const matches = query.matches;
       setOn(matches);
