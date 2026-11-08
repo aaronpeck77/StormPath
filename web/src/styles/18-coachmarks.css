@@ -142,7 +142,9 @@
 
   /* Strip length: same 100cqh as portrait ? inner is sized by stretched rail column. */
 
-  /* ?? Right-handed (default): full-height rail left; top chrome only row 1 of map column (T top) ?? */
+  /* ?? Right-handed (default): rail down the left edge starting below the
+   * top band (row 2 only — row 1 is the top chrome); top chrome only row 1
+   * of map column (T top) ?? */
   .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-drive-overlay-stack {
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
@@ -161,7 +163,8 @@
 
   .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-route-progress-rail {
     grid-column: 1;
-    grid-row: 1 / -1;
+    /* Row 2 only: row 1 is the top chrome band — the strip must start below it. */
+    grid-row: 2;
     align-self: stretch;
     justify-self: start;
     padding-right: 0;
@@ -244,7 +247,7 @@
     left: auto !important;
   }
 
-  /* ?? Left-handed: mirror T (rail full height on right; top band row 1 col 1; map inset from end) ?? */
+  /* ?? Left-handed: mirror T (rail on right below the top band; top band row 1 col 1; map inset from end) ?? */
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-drive-overlay-stack {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: auto minmax(0, 1fr);
@@ -263,7 +266,8 @@
 
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-route-progress-rail {
     grid-column: 2;
-    grid-row: 1 / -1;
+    /* Row 2 only: row 1 is the top chrome band — the strip must start below it. */
+    grid-row: 2;
     align-self: stretch;
     justify-self: end;
     padding-left: 0;

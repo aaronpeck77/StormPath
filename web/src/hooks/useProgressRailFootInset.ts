@@ -4,10 +4,20 @@ const SHELL_FOOT_VAR = "--nav-progress-rail-foot-inset";
 const SHELL_STRIP_VAR = "--nav-progress-rail-strip-length";
 const GAP_ABOVE_CHROME_PX = 12;
 const MIN_FOOT_INSET_PX = 12;
+/* Keep at least this much rail column visible even if chrome measures tall. */
+const MIN_RAIL_HEIGHT_PX = 120;
+/* Anchors must live in the bottom half of the screen — a full-height side
+ * panel (.nav-bottom-stack on iPad landscape) reports top≈0 and would erase
+ * the rail if trusted. */
+const ANCHOR_MIN_TOP_RATIO = 0.35;
 
 /**
  * Size the vertical progress rail from the top of the bottom chrome (address row, route select,
  * toolbar) so the strip start/end stays above that band — not a fixed px guess.
+ *
+ * The anchor is measured directly, not gated on horizontal overlap: on iPad
+ * portrait/landscape the rail sits on the opposite edge from the centered or
+ * panel chrome, so an overlap test left the strip running to the screen edge.
  */
 export function useProgressRailFootInset(active: boolean): void {
   useLayoutEffect(() => {
@@ -23,28 +33,40 @@ export function useProgressRailFootInset(active: boolean): void {
     const update = () => {
       const rail = document.querySelector<HTMLElement>(".nav-route-progress-rail");
       const inner = document.querySelector<HTMLElement>(".nav-route-progress-rail__inner");
-      const anchorEl =
-        document.querySelector<HTMLElement>(".nav-bottom-chrome-wrap") ??
-        document.querySelector<HTMLElement>(".nav-bottom-stack");
-      if (!rail || !inner || !anchorEl) return;
+      if (!rail || !inner) return;
 
-      const railRect = rail.getBoundingClientRect();
-      const anchorRect = anchorEl.getBoundingClientRect();
-      if (anchorRect.height < 1) return;
+      /* Bottom anchor = top of the bottom chrome band. Take the highest valid
+       * top across the stack, chrome wrap, and landscape dock so the strip
+       * clears the whole cluster (dock row included), wherever it sits. */
+      const vh = window.innerHeight;
+      let anchorTop: number | null = null;
+      for (const sel of [
+        ".nav-bottom-stack",
+        ".nav-bottom-chrome-wrap",
+        ".landscape-navigation-dock",
+      ]) {
+        const el = document.querySelector<HTMLElement>(sel);
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.height < 1 || rect.top <= vh * ANCHOR_MIN_TOP_RATIO) continue;
+        anchorTop = anchorTop == null ? rect.top : Math.min(anchorTop, rect.top);
+      }
 
-      const overlapW =
-        Math.min(railRect.right, anchorRect.right) - Math.max(railRect.left, anchorRect.left);
-
-      if (overlapW > 20) {
-        const anchorTop = anchorRect.top;
-        const footInset = Math.ceil(window.innerHeight - anchorTop + GAP_ABOVE_CHROME_PX);
-        shell.style.setProperty(
-          SHELL_FOOT_VAR,
-          `${Math.max(MIN_FOOT_INSET_PX, footInset)}px`
+      if (anchorTop != null) {
+        const footInset = Math.min(
+          Math.ceil(vh - anchorTop + GAP_ABOVE_CHROME_PX),
+          Math.max(MIN_FOOT_INSET_PX, vh - MIN_RAIL_HEIGHT_PX)
         );
+        shell.style.setProperty(SHELL_FOOT_VAR, `${footInset}px`);
 
-        const innerTop = inner.getBoundingClientRect().top;
-        const stripLen = Math.max(48, Math.floor(anchorTop - innerTop - GAP_ABOVE_CHROME_PX));
+        const innerRect = inner.getBoundingClientRect();
+        const stripLen = Math.max(
+          48,
+          Math.min(
+            Math.floor(anchorTop - innerRect.top - GAP_ABOVE_CHROME_PX),
+            Math.floor(innerRect.height)
+          )
+        );
         shell.style.setProperty(SHELL_STRIP_VAR, `${stripLen}px`);
         return;
       }
