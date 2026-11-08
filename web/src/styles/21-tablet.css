@@ -98,7 +98,7 @@
 
   .app-shell.nav-fullmap {
     /* Panel width: roomy enough for the dock/toolbar, never eats the map. */
-    --sp-ipad-panel-w: clamp(340px, 33vw, 430px);
+    --sp-ipad-panel-w: clamp(360px, 35vw, 460px);
     --nav-chrome-control: 52px;
     --nav-chrome-about: 46px;
     --nav-chrome-radius: 10px;
@@ -355,6 +355,13 @@
     max-height: none;
   }
 
+  /* The graph's horizontal pan strip declares touch-action: pan-x, which
+   * swallows vertical gestures before they can reach .rpgl's page scroll —
+   * allow both axes; overflow-y:hidden keeps the strip itself horizontal. */
+  .landscape-info-pip__wx .rpgl__axis-scroll {
+    touch-action: pan-x pan-y;
+  }
+
   /* ── Panel order: TBT on top, hazard countdown under it, then a flexible
    * gap, then PiP → nav dock → bottom chrome pinned to the panel bottom.
    * The gap is the room the hazard TBT grows into. ── */
@@ -601,6 +608,17 @@
 
   .landscape-navigation-dock__messages {
     max-height: 18vh;
+  }
+
+  /* Left-hand panel: same miles-left + controls row — the panel sits on the
+   * screen's left, miles stays on the panel's left edge, controls toward the
+   * map. Equal specificity to the phone-landscape hand-left grid in
+   * 06-map-markers-hud.css; this later file wins. */
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .landscape-navigation-dock {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "messages messages"
+      "miles controls";
   }
 
   /* MP/RT: ⓘ lives in the about row under the controls (with route select) —
