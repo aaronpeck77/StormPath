@@ -74,10 +74,13 @@ function drawEtaCard(d: EtaShareData): HTMLCanvasElement {
   const dest = (d.destinationLabel || "Destination").toUpperCase();
   wrapText(ctx, dest, 72, 410, CARD_W - 144, 84);
 
-  /* Stats panel */
-  const panelY = 700;
+  /* Stats panel — vertical list: ARRIVING over DISTANCE LEFT. The old
+   * side-by-side columns let a long ETA ("1 hr 45 min" at 110px) paint over
+   * the distance read-out. */
+  const panelY = 685;
+  const panelH = 465;
   ctx.fillStyle = PANEL;
-  roundRect(ctx, 72, panelY, CARD_W - 144, 420, 36);
+  roundRect(ctx, 72, panelY, CARD_W - 144, panelH, 36);
   ctx.fill();
 
   const dist = formatDistanceShort(d.distanceRemainingM, d.useMiles);
@@ -97,23 +100,30 @@ function drawEtaCard(d: EtaShareData): HTMLCanvasElement {
 
   ctx.fillStyle = MUTED;
   ctx.font = "500 32px -apple-system, 'Segoe UI', sans-serif";
-  ctx.fillText("ARRIVING", 120, panelY + 90);
+  ctx.fillText("ARRIVING", 120, panelY + 75);
   ctx.fillStyle = INK;
   ctx.font = "700 110px -apple-system, 'Segoe UI', sans-serif";
-  ctx.fillText(eta, 120, panelY + 210);
-
-  ctx.fillStyle = MUTED;
-  ctx.font = "500 32px -apple-system, 'Segoe UI', sans-serif";
-  ctx.fillText("DISTANCE LEFT", 640, panelY + 90);
-  ctx.fillStyle = INK;
-  ctx.font = "700 80px -apple-system, 'Segoe UI', sans-serif";
-  ctx.fillText(dist || "—", 640, panelY + 190);
+  ctx.fillText(eta, 120, panelY + 195);
 
   if (arrive) {
     ctx.fillStyle = MUTED;
     ctx.font = "500 30px -apple-system, 'Segoe UI', sans-serif";
-    ctx.fillText(`Around ${arrive}`, 120, panelY + 330);
+    ctx.fillText(`Around ${arrive}`, 120, panelY + 260);
   }
+
+  ctx.strokeStyle = "rgba(255,255,255,0.14)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(120, panelY + 310);
+  ctx.lineTo(CARD_W - 120, panelY + 310);
+  ctx.stroke();
+
+  ctx.fillStyle = MUTED;
+  ctx.font = "500 32px -apple-system, 'Segoe UI', sans-serif";
+  ctx.fillText("DISTANCE LEFT", 120, panelY + 365);
+  ctx.fillStyle = INK;
+  ctx.font = "700 80px -apple-system, 'Segoe UI', sans-serif";
+  ctx.fillText(dist || "—", 120, panelY + 445);
 
   /* Footer */
   ctx.fillStyle = "#5b7a89";
