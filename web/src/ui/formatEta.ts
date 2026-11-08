@@ -9,6 +9,8 @@ import type { LngLat } from "../nav/types";
 export type ArrivalClockOpts = {
   destLngLat?: LngLat | null;
   nowMs?: number;
+  /** "short" = "Fri" (phone toolbar); "long" = "Friday" (roomy iPad panel). */
+  weekdayFormat?: "short" | "long";
 };
 
 export type ArrivalClockParts = {
@@ -110,7 +112,7 @@ export function formatArrivalClockParts(atMs: number, opts?: ArrivalClockOpts): 
     calendarDayKey(atMs, destTz) !== calendarDayKey(nowMs, destTz)
       ? new Intl.DateTimeFormat("en-US", {
           timeZone: destTz,
-          weekday: "short",
+          weekday: opts?.weekdayFormat === "long" ? "long" : "short",
         }).format(new Date(atMs))
       : null;
   const phoneTz = Intl.DateTimeFormat().resolvedOptions().timeZone;

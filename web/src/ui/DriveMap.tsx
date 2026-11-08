@@ -264,6 +264,7 @@ import {
   coerceTopdownNavStreetZoom,
   topdownZoomOnEnter,
   regionalPlanningZoom,
+  resolveTopdownPanelPadding,
 } from "./mapTopdownCamera";
 import { selectablePoiAtPoint } from "./mapPoiPick";
 import { mapEventFromUser, setDriveMapUserGestures, setDoubleClickZoomEnabled } from "./mapDriveGestures";
@@ -1055,7 +1056,7 @@ function DriveMapInner({
         zoom,
         pitch: 0,
         bearing: 0,
-        padding: { top: 0, bottom: 0, left: 0, right: 0 },
+        padding: resolveTopdownPanelPadding(),
         offset: TOPDOWN_PUCK_OFFSET_PX,
       };
     }
@@ -2904,6 +2905,7 @@ function DriveMapInner({
               center: pos as [number, number],
               pitch: 0,
               bearing: 0,
+              padding: resolveTopdownPanelPadding(),
               offset: TOPDOWN_PUCK_OFFSET_PX,
               duration: 0,
               essential: true,
@@ -3148,7 +3150,7 @@ function DriveMapInner({
         zoom: topdownZoomRef.current,
         pitch: 0,
         bearing: 0,
-        padding: ZERO_MAP_PADDING,
+        padding: resolveTopdownPanelPadding(),
         offset: TOPDOWN_PUCK_OFFSET_PX,
         duration: 480,
         essential: true,
@@ -4129,7 +4131,7 @@ function DriveMapInner({
             zoom: ROUTE_VIEW_PLANNING_STREET_ZOOM,
             pitch: 0,
             bearing: 0,
-            padding: ZERO_MAP_PADDING,
+            padding: resolveTopdownPanelPadding(),
           });
           if (jumped) idleHomeHoldingLocateRef.current = true;
         }
@@ -4164,7 +4166,7 @@ function DriveMapInner({
           zoom: ROUTE_VIEW_PLANNING_STREET_ZOOM,
           pitch: 0,
           bearing: 0,
-          padding: ZERO_MAP_PADDING,
+          padding: resolveTopdownPanelPadding(),
           offset: TOPDOWN_PUCK_OFFSET_PX,
           duration: stillOnCountryFallback ? 900 : 520,
           essential: true,
@@ -4482,7 +4484,7 @@ function DriveMapInner({
         zoom,
         pitch: 0,
         bearing: 0,
-        padding: ZERO_MAP_PADDING,
+        padding: resolveTopdownPanelPadding(),
         offset: TOPDOWN_PUCK_OFFSET_PX,
         duration: 480,
         essential: true,
@@ -4781,13 +4783,15 @@ function DriveMapInner({
           : coerceTopdownNavStreetZoom(map, topdownZoomRef)
         : resolveTopdownLocalZoom(topdownZoomRef, false);
       prevTopdownRef.current = false;
-      /* jumpTo — flyTo is a second zoom-out-then-in if the drone already ran. */
+      /* jumpTo — flyTo is a second zoom-out-then-in if the drone already ran.
+       * jumpTo ignores `offset`, so the iPad side panel is reserved as
+       * padding instead — the puck lands centered in the map area. */
       safeJumpTo(map, {
         center: u,
         zoom,
         pitch: 0,
         bearing: 0,
-        padding: ZERO_MAP_PADDING,
+        padding: resolveTopdownPanelPadding(),
       });
     };
 
@@ -5244,6 +5248,7 @@ function DriveMapInner({
           zoom,
           pitch: 0,
           bearing: 0,
+          padding: resolveTopdownPanelPadding(),
           offset: TOPDOWN_PUCK_OFFSET_PX,
         });
       } else {
@@ -5260,6 +5265,7 @@ function DriveMapInner({
           mapZoom < TOPDOWN_NAV_MIN_ZOOM - 0.08
             ? { zoom }
             : {}),
+          padding: resolveTopdownPanelPadding(),
           offset: TOPDOWN_PUCK_OFFSET_PX,
         });
       }

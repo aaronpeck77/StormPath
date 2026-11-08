@@ -14,6 +14,7 @@ import {
 import { displaySpeed, speedUnitLabel } from "../utils/displayUnits";
 import { SPEED_LIMIT_DISPLAY_ENABLED } from "../nav/postedSpeed";
 import { ROUTE_ACTIVE_COLOR } from "./mapRouteStyle";
+import { TABLET_LANDSCAPE_MQ } from "./LandscapeNavigationDock";
 const VIEW_CYCLE: { mode: MapViewMode; label: string; line: string }[] = [
   { mode: "route", label: "Rt", line: ROUTE_ACTIVE_COLOR },
   { mode: "drive", label: "Dr", line: "#22c55e" },
@@ -147,6 +148,19 @@ export function BottomToolbar({
     return () => window.clearInterval(id);
   }, [navigationStarted, driveEtaMinutes]);
 
+  /* iPad landscape panel has room for the unabbreviated ETA read-out —
+   * full weekday, full "hr/min" duration, and the zone when it differs. */
+  const [tabletLandscape, setTabletLandscape] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(TABLET_LANDSCAPE_MQ).matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(TABLET_LANDSCAPE_MQ);
+    const apply = () => setTabletLandscape(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
   const arrivalAtMs = useMemo(() => {
     const m = driveEtaMinutes ?? 0;
     if (m <= 0) return null;
@@ -155,9 +169,13 @@ export function BottomToolbar({
   const arrivalClockParts = useMemo(
     () =>
       arrivalAtMs != null
-        ? formatArrivalClockParts(arrivalAtMs, { destLngLat, nowMs: etaTickMs })
+        ? formatArrivalClockParts(arrivalAtMs, {
+            destLngLat,
+            nowMs: etaTickMs,
+            weekdayFormat: tabletLandscape ? "long" : "short",
+          })
         : null,
-    [arrivalAtMs, destLngLat, etaTickMs]
+    [arrivalAtMs, destLngLat, etaTickMs, tabletLandscape]
   );
 
   const driveNavUi = navigationStarted && viewMode === "drive";
@@ -447,10 +465,15 @@ export function BottomToolbar({
                 <span className="nav-bottom-toolbar__drive-eta-line nav-bottom-toolbar__drive-eta-line--arrival">
                   <span className="nav-bottom-toolbar__drive-eta-prefix">ETA </span>
                   <span className="nav-bottom-toolbar__drive-eta-clock">{arrivalClockParts.clock}</span>
+                  {tabletLandscape && arrivalClockParts.zone ? (
+                    <span className="nav-bottom-toolbar__drive-eta-zone"> {arrivalClockParts.zone}</span>
+                  ) : null}
                 </span>
                 <span className="nav-bottom-toolbar__drive-eta-line nav-bottom-toolbar__drive-eta-line--remaining">
                   {arrivalClockParts.weekday ? `${arrivalClockParts.weekday} · ` : ""}
-                  {formatEtaDurationToolbar(driveEtaMinutes)}
+                  {tabletLandscape
+                    ? formatEtaDuration(driveEtaMinutes)
+                    : formatEtaDurationToolbar(driveEtaMinutes)}
                 </span>
               </div>
             </div>

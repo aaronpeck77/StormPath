@@ -1,8 +1,50 @@
 import type { Map as MapboxMap } from "mapbox-gl";
 import type { MutableRefObject } from "react";
+import { navSidePanelInset } from "./mapFitLogic";
 
 /** Top-down map view: keep the puck at the visual center; map pans to follow GPS. */
 export const TOPDOWN_PUCK_OFFSET_PX: [number, number] = [0, 0];
+
+export type TopdownPanelPadding = {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+};
+
+const TOPDOWN_PANEL_PAD_ZERO: TopdownPanelPadding = { top: 0, bottom: 0, left: 0, right: 0 };
+
+let topdownPanelPaddingCache: { key: string; value: TopdownPanelPadding } | null = null;
+
+/**
+ * iPad landscape command panel: the visible map area is the screen minus the
+ * side panel strip, so Mp's "puck centered" means centered in that strip —
+ * not the raw viewport. Reserve the panel's width as camera *padding* (the
+ * same trick Dr's `chromePadFor` uses): jumpTo/easeTo/flyTo all honor
+ * padding, while `offset` is ignored by jumpTo.
+ *
+ * The panel width is pure CSS (`clamp` on vw) pinned to one side, so the
+ * expensive getBoundingClientRect inside navSidePanelInset only runs when
+ * the cheap key — viewport size, hand, fullmap shell — actually changes.
+ * That keeps the per-frame RAF follow cheap.
+ */
+export function resolveTopdownPanelPadding(): TopdownPanelPadding {
+  if (typeof document === "undefined" || typeof window === "undefined") {
+    return TOPDOWN_PANEL_PAD_ZERO;
+  }
+  const handLeft = Boolean(document.querySelector(".app-shell--landscape-hand-left"));
+  const fullmap = Boolean(document.querySelector(".app-shell.nav-fullmap"));
+  const key = `${window.innerWidth}x${window.innerHeight}|${handLeft ? "L" : "R"}|${fullmap ? "n" : "-"}`;
+  if (topdownPanelPaddingCache?.key === key) return topdownPanelPaddingCache.value;
+  const panel = navSidePanelInset();
+  const value: TopdownPanelPadding = !panel
+    ? TOPDOWN_PANEL_PAD_ZERO
+    : panel.side === "right"
+      ? { top: 0, bottom: 0, left: 0, right: panel.px }
+      : { top: 0, bottom: 0, left: panel.px, right: 0 };
+  topdownPanelPaddingCache = { key, value };
+  return value;
+}
 /**
  * Map (Mp) while navigating — wide enough for several blocks / upcoming turns
  * without matching Dr’s street-level 3D zoom. Tighter than Rt (whole-route overview).
