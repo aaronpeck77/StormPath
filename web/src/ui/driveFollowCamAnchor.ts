@@ -128,6 +128,38 @@ export function yardLineCorrectionIsSane(
 }
 
 /**
+ * Accept a solved yard-line center, or clamp an overshoot to the sanity radius.
+ *
+ * Drive sits at pitch 68, where a screen point near the horizon unprojects
+ * kilometres out. The yard line is a few hundred metres of ground at this zoom, so
+ * anything past the sanity radius is a projection artifact. But discarding the
+ * whole correction leaves the puck dead-center (midfield) — the exact "puck in
+ * the middle" report — so an overshoot is pulled back to the radius instead: the
+ * puck lands a little short of the yard line, never at midfield. Returns null
+ * when there is no usable correction at all.
+ */
+export function resolveYardLineCameraCenter(
+  puck: [number, number],
+  solved: [number, number] | null
+): [number, number] | null {
+  if (!solved) return null;
+  if (!Number.isFinite(solved[0]) || !Number.isFinite(solved[1])) return null;
+  /* Off-world latitude means the unproject landed in never-never land — there is
+   * no direction to clamp toward, so reject rather than nudge 1.5 km sideways. */
+  if (Math.abs(solved[1]) > 85) return null;
+  if (yardLineCorrectionIsSane(puck, solved)) return solved;
+  const moved = haversineMeters(puck, solved);
+  if (!Number.isFinite(moved) || moved <= YARD_LINE_CORRECTION_MAX_M) return null;
+  const t = YARD_LINE_CORRECTION_MAX_M / moved;
+  const clamped: [number, number] = [
+    puck[0] + (solved[0] - puck[0]) * t,
+    puck[1] + (solved[1] - puck[1]) * t,
+  ];
+  if (!Number.isFinite(clamped[0]) || !Number.isFinite(clamped[1])) return null;
+  return clamped;
+}
+
+/**
  * Hard follow that keeps the Drive 30-yard line. Both the rAF loop and Jeff's
  * resync intent land here.
  *
@@ -175,24 +207,8 @@ export function writeHardFollowToYardLine(
     anchor,
   });
   if (!next) return true;
-  let target = next;
-  /* Drive sits at pitch 68, where a screen point near the horizon unprojects
-   * kilometres out. The yard line is a few hundred metres of ground at this zoom, so
-   * anything past the sanity radius is a projection artifact. But discarding the
-   * whole correction leaves the puck dead-center (midfield) — the exact "puck in
-   * the middle" report — so clamp the overshoot to the sanity radius instead:
-   * the puck lands a little short of the yard line, never at midfield. */
-  if (!yardLineCorrectionIsSane(opts.center, next)) {
-    const moved = haversineMeters(opts.center, next);
-    if (!Number.isFinite(moved) || moved <= YARD_LINE_CORRECTION_MAX_M) return true;
-    const t = YARD_LINE_CORRECTION_MAX_M / moved;
-    const clamped: [number, number] = [
-      opts.center[0] + (next[0] - opts.center[0]) * t,
-      opts.center[1] + (next[1] - opts.center[1]) * t,
-    ];
-    if (!Number.isFinite(clamped[0]) || !Number.isFinite(clamped[1])) return true;
-    target = clamped;
-  }
+  const target = resolveYardLineCameraCenter(opts.center, next);
+  if (!target) return true;
   safeHardFollowCamera(map, {
     center: target,
     zoom: opts.zoom,

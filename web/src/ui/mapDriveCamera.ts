@@ -76,7 +76,13 @@ export function driveCameraEaseOptions(
     const railPad = Math.max(72, rightNeed + 14);
     const topPad = Math.max(52, 44 + Math.round(stormTop * 0.45));
     const bottomPad = Math.max(36, 48);
-    const yOff = drivePuckFollowOffsetY(vh, Math.round(vh * 0.22), { min: 72, max: 140 });
+    /* Tablet landscape: pin the yard-line anchor to the ~70% viewport fraction
+     * phone landscape lands on. The shared formula's 140px cap was tuned for
+     * ~390px-tall phones — on an 834px iPad it leaves the puck visibly higher
+     * than the phone's 30-yard position. */
+    const yOff = panel
+      ? Math.round(vh * 0.7) - Math.round(topPad + (vh - topPad - bottomPad) / 2)
+      : drivePuckFollowOffsetY(vh, Math.round(vh * 0.22), { min: 72, max: 140 });
     if (handLeft) {
       return {
         padding: {

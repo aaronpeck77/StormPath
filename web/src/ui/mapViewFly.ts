@@ -2,6 +2,11 @@ import type { Map } from "mapbox-gl";
 import type { MapViewMode } from "./driveMapTypes";
 import type { LngLat } from "../nav/types";
 import { isMapReadyForFollowCam, readMapLngLat } from "./mapCameraSafe";
+import {
+  centerPuttingPuckAtScreenPoint,
+  resolveYardLineCameraCenter,
+} from "./driveFollowCamAnchor";
+import { expectedDrivePuckScreenAnchorPx } from "./drivePuckHealth";
 
 /**
  * Dr / Mp / Rt is one drone shot. Never a cut.
@@ -213,12 +218,55 @@ export function readMapDronePose(map: Map, offset: [number, number]): MapDronePo
 }
 
 /**
+ * `jumpTo` has no `offset` — Mapbox only honors it on easeTo/flyTo. The Drive
+ * yard-line shift therefore has to be solved in ground space here, or every
+ * drone (GO → Dr, Dr↔Mp↔Rt) lands with the puck at midfield until the first
+ * follow-cam write. Only Drive poses carry a non-zero offset; Mp/Rt are no-ops.
+ */
+function applyDroneScreenOffset(map: Map, pose: MapDronePose): void {
+  const [ox, oy] = pose.offset;
+  if (!ox && !oy) return;
+  try {
+    const el = map.getContainer();
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    if (!(w > 0) || !(h > 0)) return;
+    const anchor = expectedDrivePuckScreenAnchorPx({
+      mapWidth: w,
+      mapHeight: h,
+      padding: pose.padding,
+      offset: pose.offset,
+    });
+    const center: [number, number] = [pose.lng, pose.lat];
+    const solved = centerPuttingPuckAtScreenPoint({
+      unproject: (pt) => map.unproject(pt),
+      center,
+      puck: center,
+      anchor,
+    });
+    const target = resolveYardLineCameraCenter(center, solved);
+    if (!target) return;
+    map.jumpTo({
+      center: target,
+      zoom: pose.zoom,
+      pitch: pose.pitch,
+      bearing: pose.bearing,
+      padding: pose.padding,
+    });
+  } catch {
+    /* projection unavailable mid-style-swap — the centered pose still stands */
+  }
+}
+
+/**
  * Instant transform write. Must not use easeTo or isStyleLoaded(): mid-zoom
  * tile loads make style "unloaded", easeTo no-ops, and the shot hangs.
  * Must not map.stop() each frame — that is the hitch.
  */
 export function writeDronePose(map: Map, pose: MapDronePose): boolean {
   if (!isMapReadyForFollowCam(map)) return false;
+  let wrote = false;
+  let paddingApplied = false;
   try {
     map.jumpTo({
       center: [pose.lng, pose.lat],
@@ -227,18 +275,25 @@ export function writeDronePose(map: Map, pose: MapDronePose): boolean {
       bearing: pose.bearing,
       padding: pose.padding,
     });
-    return true;
+    wrote = true;
+    paddingApplied = true;
   } catch {
     try {
       map.setCenter([pose.lng, pose.lat]);
       map.setZoom(pose.zoom);
       map.setPitch(pose.pitch);
       map.setBearing(pose.bearing);
-      return true;
+      wrote = true;
     } catch {
-      return false;
+      wrote = false;
     }
   }
+  /* The offset solve assumes the pose's padding is live on the transform — the
+   * setCenter fallback never applied it, so skip rather than solve against a
+   * frame that isn't there. */
+  if (!wrote) return false;
+  if (paddingApplied) applyDroneScreenOffset(map, pose);
+  return true;
 }
 
 export function applyMapDronePose(map: Map, pose: MapDronePose): boolean {

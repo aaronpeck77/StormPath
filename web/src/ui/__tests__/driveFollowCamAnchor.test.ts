@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   centerPuttingPuckAtScreenPoint,
   driveYardLineAnchorPx,
+  resolveYardLineCameraCenter,
   yardLineCorrectionIsSane,
   YARD_LINE_CORRECTION_MAX_M,
 } from "../driveFollowCamAnchor";
+import { haversineMeters } from "../../nav/routeGeometry";
 
 /**
  * A pitched pinhole camera, because the whole point of this module is that a pitched
@@ -195,5 +197,38 @@ describe("yardLineCorrectionIsSane", () => {
   it("leaves room for the real shift at Drive zoom", () => {
     const requiredM = CENTER_ALONG_M - alongMetersAtScreenY(VIEW_H * 0.7);
     expect(YARD_LINE_CORRECTION_MAX_M).toBeGreaterThan(requiredM * 2);
+  });
+});
+
+describe("resolveYardLineCameraCenter", () => {
+  const puck: [number, number] = [-88.95, 39.84];
+
+  it("passes a sane solve through untouched", () => {
+    const solved: [number, number] = [-88.95, 39.8425];
+    expect(resolveYardLineCameraCenter(puck, solved)).toEqual(solved);
+  });
+
+  it("returns null when there is no solve", () => {
+    expect(resolveYardLineCameraCenter(puck, null)).toBeNull();
+  });
+
+  it("clamps an overshoot to the sanity radius instead of dropping to midfield", () => {
+    /* ~80 km east — a near-horizon unproject blow-up, but directionally valid. */
+    const solved: [number, number] = [-88.0, 39.9];
+    const out = resolveYardLineCameraCenter(puck, solved);
+    expect(out).not.toBeNull();
+    const moved = haversineMeters(puck, out!);
+    expect(moved).toBeLessThanOrEqual(YARD_LINE_CORRECTION_MAX_M + 1);
+    expect(moved).toBeGreaterThan(YARD_LINE_CORRECTION_MAX_M * 0.9);
+    /* Same direction as the solve — between puck and the blow-up point. */
+    expect(out![0]).toBeGreaterThan(puck[0]);
+    expect(out![0]).toBeLessThan(solved[0]);
+  });
+
+  it("rejects garbage solves rather than clamping them into place", () => {
+    expect(resolveYardLineCameraCenter(puck, [Number.NaN, 39.84])).toBeNull();
+    /* Latitude off the Mercator world — haversine still returns a huge finite
+     * distance, so the clamp would land ~1500 m toward a bogus bearing. */
+    expect(resolveYardLineCameraCenter(puck, [-88.95, 89.9])).toBeNull();
   });
 });
