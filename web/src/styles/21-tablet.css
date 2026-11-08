@@ -27,12 +27,6 @@
   display: none;
 }
 
-/* Miles-left row that sits directly above the PiP inside the iPad command
- * panel. Hidden everywhere except large-tablet landscape (Section 2). */
-.ipad-panel-miles {
-  display: none;
-}
-
 @media (min-width: 521px) and (min-height: 600px) {
   .nav-tools-btn {
     display: inline-flex;
@@ -261,7 +255,9 @@
     flex: 0 1 auto;
     min-height: 0;
     flex-direction: column;
-    margin: 2px 2px 0;
+    /* Auto top margin absorbs spare panel height, pinning the PiP + nav dock +
+     * bottom chrome group to the panel bottom; the gap above is hazard-TBT room. */
+    margin: auto 2px 0;
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.09);
     border-radius: 12px;
@@ -336,16 +332,23 @@
     font-size: 10px;
   }
 
-  /* Wx tab: the full route-info weather graph (NWS/radar/wind/forecast/road + YOU). */
+  /* Wx tab: the full route-info weather graph (NWS/radar/wind/forecast/road + YOU).
+   * The pane is height-locked, so .rpgl must flex inside it and scroll itself —
+   * a height:100% child makes __wx's own overflow dead and nothing scrolls. */
   .landscape-info-pip__wx {
     height: 100%;
-    overflow-y: auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     overscroll-behavior: contain;
     font-size: 10px;
   }
 
   .landscape-info-pip__wx .rpgl {
-    height: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
   }
 
   .landscape-info-pip__wx .rpgl__detail-scroll {
@@ -353,22 +356,8 @@
   }
 
   /* ── Panel order: TBT on top, hazard countdown under it, then a flexible
-   * gap, then miles-left → PiP → dock controls → bottom chrome pinned to the
-   * panel bottom. The gap is the room the hazard TBT grows into. ── */
-  .ipad-panel-miles {
-    display: flex;
-    /* Auto top margin absorbs all spare panel height, pinning this row and
-     * every sibling below it (PiP, dock, chrome) to the bottom edge. */
-    margin-top: auto;
-    align-self: flex-start;
-    /* Passive label — let map gestures pass through the empty strip. */
-    pointer-events: none;
-  }
-
-  /* Miles-left moved above the PiP — hide the dock's copy so it doesn't double. */
-  .app-shell.nav-fullmap .landscape-navigation-dock__miles {
-    display: none;
-  }
+   * gap, then PiP → nav dock → bottom chrome pinned to the panel bottom.
+   * The gap is the room the hazard TBT grows into. ── */
 
   /* ── Right-hand (default): command panel on the right, rail stays left ── */
   .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .map-stage.map-bleed > .nav-bottom-stack {
@@ -392,8 +381,8 @@
     pointer-events: none;
   }
 
-  /* Top group (TBT slot → hazard card) stays put; `.ipad-panel-miles`'s
-   * margin-top:auto pushes the PiP/buttons/chrome group to the bottom. */
+  /* Top group (TBT slot → hazard card) stays put; the PiP's margin-top:auto
+   * pushes the PiP/dock/chrome group to the panel bottom. */
 
   /* ── Left-hand: mirrored panel on the left, rail stays right ── */
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .map-stage.map-bleed > .nav-bottom-stack {
@@ -563,19 +552,35 @@
     align-content: start;
   }
 
-  /* ── Nav dock: single column — toasts, miles, then the button row sitting
-   * just above the bottom chrome (Info · Tools · compass · refresh in Dr). ── */
+  /* ── Nav dock: toasts on top, then miles-left on the left sharing a row
+   * with the controls (Info · Tools · compass · refresh in Dr). ── */
   .app-shell.nav-fullmap .landscape-navigation-dock {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "messages messages"
+      "miles controls";
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 8px;
     padding: 0;
     pointer-events: none;
   }
 
+  .landscape-navigation-dock__messages {
+    grid-area: messages;
+  }
+
+  .landscape-navigation-dock__miles {
+    grid-area: miles;
+    justify-self: start;
+    min-width: 0;
+  }
+
   .landscape-navigation-dock__controls {
+    grid-area: controls;
     flex-direction: row;
-    justify-content: center;
+    justify-content: flex-end;
     align-self: stretch;
     gap: 12px;
   }
@@ -661,25 +666,21 @@
     min-height: 40px;
   }
 
-  /* ── ETA read-out: full-width row under the toolbar main grid ────────── */
-  /* While navigating, __right holds only the ETA meta — display:contents
-   * lifts it into __main's grid so it can span the panel width instead of
-   * fighting the 1fr column and ellipsizing. Row 1 keeps its 1fr/auto/1fr
-   * balance, so the mode buttons stay centered. */
-  .app-shell.nav-fullmap .nav-bottom-toolbar--drive .nav-bottom-toolbar__main > .nav-bottom-toolbar__right,
-  .app-shell.nav-fullmap .nav-bottom-toolbar--mapnav .nav-bottom-toolbar__main > .nav-bottom-toolbar__right {
-    display: contents;
+  /* ── ETA + view buttons + Stop share one toolbar row on the panel ────── */
+  /* Reclaim width so the unabridged ETA fits beside the controls on the
+   * narrow panel: drop the cycle button's "view" hint and tighten type. */
+  .app-shell.nav-fullmap .nav-mode-cycle__hint {
+    display: none;
   }
 
-  .app-shell.nav-fullmap .nav-bottom-toolbar--drive .nav-bottom-toolbar__drive-meta,
-  .app-shell.nav-fullmap .nav-bottom-toolbar--mapnav .nav-bottom-toolbar__drive-meta {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    justify-self: end;
+  .app-shell.nav-fullmap .nav-bottom-toolbar--drive .nav-bottom-stat-v,
+  .app-shell.nav-fullmap .nav-bottom-toolbar--mapnav .nav-bottom-stat-v {
+    font-size: 0.9rem;
   }
 
   /* Unabridged date/duration must never ellipsize on the roomy panel. */
   .app-shell.nav-fullmap .nav-bottom-toolbar__drive-eta-line {
+    font-size: 0.95rem;
     overflow: visible;
     text-overflow: clip;
   }

@@ -165,7 +165,7 @@ import { AppTopNavCluster } from "./ui/AppTopNavCluster";
 import { DriveHazardTicker } from "./ui/DriveHazardTicker";
 import { LandscapeHazardPanel } from "./ui/LandscapeHazardPanel";
 import { LandscapeInfoPip } from "./ui/LandscapeInfoPip";
-import { NavMilesLeftBox } from "./ui/NavMilesLeftBox";
+
 import { Coachmarks } from "./ui/Coachmarks";
 import { resetAllCoachmarks } from "./ui/coachmarks/firstLaunchSteps";
 import { pointAlongPolyline } from "./ui/geometryAlong";
@@ -3345,13 +3345,6 @@ export default function App() {
                   onBend={hazardBypass.enter}
                   onDismissBend={hazardBypass.dismissHazard}
                 />
-                {/* Miles-left pins to the panel's left edge directly above the PiP
-                 * (iPad landscape only — hidden elsewhere via CSS). */}
-                <div className="ipad-panel-miles">
-                  {driveDistanceRemainingLabel ? (
-                    <NavMilesLeftBox label={driveDistanceRemainingLabel} />
-                  ) : null}
-                </div>
                 <LandscapeInfoPip
                   accessToken={env.mapboxToken}
                   userLngLat={effectiveUserLngLat}

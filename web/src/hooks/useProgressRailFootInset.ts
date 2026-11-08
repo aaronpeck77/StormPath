@@ -36,12 +36,13 @@ export function useProgressRailFootInset(active: boolean): void {
       if (!rail || !inner) return;
 
       /* Bottom anchor = top of the bottom chrome band. Take the highest valid
-       * top across the stack, chrome wrap, and landscape dock so the strip
-       * clears the whole cluster (dock row included), wherever it sits. */
+       * top across the chrome wrap and landscape dock so the strip clears the
+       * whole cluster (dock row included), wherever it sits. Do NOT anchor on
+       * .nav-bottom-stack: transient widgets (hazard panel, PiP, banners) sit
+       * above the chrome inside it and would shrink the rail on phones. */
       const vh = window.innerHeight;
       let anchorTop: number | null = null;
       for (const sel of [
-        ".nav-bottom-stack",
         ".nav-bottom-chrome-wrap",
         ".landscape-navigation-dock",
       ]) {

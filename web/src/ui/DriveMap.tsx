@@ -2184,6 +2184,9 @@ function DriveMapInner({
      * setLngLat, and at 60 fps even noise far below 1 m can manifest as visible vibration. */
     const NOOP_LNGLAT_DELTA = 0.000005; /* ~0.55 m at the equator; smaller north of 45° */
     const CAM_NOOP_LNGLAT_DELTA = 0.000001; /* ~0.11 m — follow camera can move more often than the puck marker */
+    /* Mp follow: minimum puck-to-anchor screen drift (px) before a camera write.
+     * Below this the puck is glued to the anchor; above it the map must pan. */
+    const MP_FOLLOW_MIN_DRIFT_PX = 2;
     let lastBearingApplied = NaN;
     let lastCamWriteMs: number | null = null;
     let driveCamFrame = 0;
@@ -2886,15 +2889,31 @@ function DriveMapInner({
           /* Mp: pan every frame with the smoothed puck so the map doesn't sit still
            * for ~40 m then jump (quantized GPS follow key). Keep pitch/bearing flat. */
           const pos = readMapLngLat(marker.getLngLat());
-          const camCenter = readMapLngLat(map.getCenter());
-          const camMoved =
-            !!pos &&
-            !!camCenter &&
-            (Math.abs(camCenter[0] - pos[0]) > CAM_NOOP_LNGLAT_DELTA ||
-              Math.abs(camCenter[1] - pos[1]) > CAM_NOOP_LNGLAT_DELTA);
+          const panelPad = resolveTopdownPanelPadding();
+          /* Gate on puck-to-anchor pixel drift, not center-vs-pos degrees: with
+           * asymmetric panel padding the degree residual can hover at the noop
+           * threshold, flicker camMoved, and fire easeTo every tick — the puck
+           * visibly vibrates. ~2 px is below perception but above project noise. */
+          let mpDriftPx: number | null = null;
+          if (pos) {
+            try {
+              const canvas = map.getCanvas();
+              mpDriftPx = readDrivePuckAnchorDrift({
+                project: (ll) => map.project(ll),
+                puck: pos,
+                mapWidth: canvas.clientWidth,
+                mapHeight: canvas.clientHeight,
+                padding: panelPad,
+                offset: TOPDOWN_PUCK_OFFSET_PX,
+                exploring: userExploringRef.current,
+              }).driftPx;
+            } catch {
+              mpDriftPx = null;
+            }
+          }
           if (
             pos &&
-            camMoved &&
+            (mpDriftPx == null || mpDriftPx > MP_FOLLOW_MIN_DRIFT_PX) &&
             shouldAllowDriveCamWrite({
               nowMs: now,
               lastWriteMs: lastCamWriteMs,
@@ -2905,7 +2924,7 @@ function DriveMapInner({
               center: pos as [number, number],
               pitch: 0,
               bearing: 0,
-              padding: resolveTopdownPanelPadding(),
+              padding: panelPad,
               offset: TOPDOWN_PUCK_OFFSET_PX,
               duration: 0,
               essential: true,

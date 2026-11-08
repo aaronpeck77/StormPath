@@ -1020,3 +1020,62 @@
   }
 }
 
+/* ── iPhone portrait: about-row quad block + lower button bar ──────────── */
+/* The vertical stack (refresh / compass / info / tools / miles) ate too much
+ * height. Flatten it into a 2×2 — ⓘ over miles-left | compass over ↻ — packed
+ * to the grip edge (right for right-hand, left for left-hand). Scoped to drive
+ * view via :has(.drive-compass) so topdown/route keep their inline chips. */
+@media (orientation: portrait) and (max-width: 560px) {
+  .app-shell.nav-fullmap {
+    /* The bar sat higher than it needed to — sink it ~8px into the safe strip. */
+    --nav-bottom-reserved: max(0px, calc(env(safe-area-inset-bottom, 0px) - 8px));
+  }
+
+  .nav-bottom-dock__about-row:has(.drive-compass)
+    > .nav-bottom-dock__drive-about-cluster,
+  .nav-bottom-dock__about-row:has(.drive-compass)
+    > .nav-bottom-dock__info-stormy-col {
+    display: grid;
+    grid-template-columns: auto auto;
+    column-gap: 6px;
+    row-gap: 4px;
+    width: 100%;
+    justify-content: end;
+  }
+
+  .app-shell--landscape-hand-left
+    .nav-bottom-dock__about-row:has(.drive-compass)
+    > .nav-bottom-dock__drive-about-cluster,
+  .app-shell--landscape-hand-left
+    .nav-bottom-dock__about-row:has(.drive-compass)
+    > .nav-bottom-dock__info-stormy-col {
+    justify-content: start;
+  }
+
+  /* Flatten the column wrappers so the leaf buttons become grid items. */
+  .nav-bottom-dock__about-row:has(.drive-compass) .nav-bottom-dock__compass-i-col,
+  .nav-bottom-dock__about-row:has(.drive-compass) .nav-bottom-dock__stormy-row {
+    display: contents;
+  }
+
+  .nav-bottom-dock__about-row .map-about-btn {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .nav-bottom-dock__about-row .nav-miles-left-box {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .nav-bottom-dock__about-row .drive-compass {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .nav-bottom-dock__about-row .trip-refresh-btn {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}
+
