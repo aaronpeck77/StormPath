@@ -48,19 +48,33 @@ function measuredMapChromeInsets(progressRailVisible: boolean): MapChromeInsets 
   let top = 0;
   const right = progressRailVisible ? routeProgressRailRightClearancePx() : 0;
 
-  const bottomStack = document.querySelector<HTMLElement>(".nav-bottom-stack");
-  if (bottomStack) {
-    const rect = bottomStack.getBoundingClientRect();
-    if (rect.height > 4 && rect.top < vh) {
-      bottom = Math.round(vh - rect.top + MAP_CHROME_FIT_GAP_PX);
-    }
-  }
-
   const topCluster = document.querySelector<HTMLElement>(".nav-top-cluster");
   if (topCluster) {
     const rect = topCluster.getBoundingClientRect();
     if (rect.height > 4 && rect.bottom > 0) {
       top = Math.round(rect.bottom + MAP_CHROME_FIT_GAP_PX);
+    }
+  }
+
+  /* Side command panel: chrome lives in a vertical column, so reserve its width on
+   * that side and only a slim strip at the map's bottom edge (attribution/logo). */
+  const panel = navSidePanelInset();
+  if (panel) {
+    const panelPad = panel.px + MAP_CHROME_FIT_GAP_PX;
+    const railPad = progressRailVisible ? routeProgressRailRightClearancePx() : 10;
+    return {
+      top: Math.min(Math.max(0, top), Math.round(vh * 0.35)),
+      bottom: 28,
+      left: panel.side === "left" ? panelPad : Math.max(MAIN_MAP_ROUTE_PADDING.left, railPad),
+      right: panel.side === "right" ? panelPad : Math.max(18, railPad),
+    };
+  }
+
+  const bottomStack = document.querySelector<HTMLElement>(".nav-bottom-stack");
+  if (bottomStack) {
+    const rect = bottomStack.getBoundingClientRect();
+    if (rect.height > 4 && rect.top < vh) {
+      bottom = Math.round(vh - rect.top + MAP_CHROME_FIT_GAP_PX);
     }
   }
 
@@ -91,6 +105,28 @@ export function isLandscapeViewport(): boolean {
 export function isLandscapeHandLeft(): boolean {
   if (typeof document === "undefined") return false;
   return Boolean(document.querySelector(".app-shell--landscape-hand-left"));
+}
+
+/**
+ * iPad landscape command panel (styles/21-tablet.css): `.nav-bottom-stack` stops being
+ * a full-width bottom band and becomes a narrow side column. Detect it by width so
+ * route-fit padding reserves the panel's side instead of a phantom bottom band.
+ */
+export function navSidePanelInset(): { side: "left" | "right"; px: number } | null {
+  if (typeof document === "undefined" || typeof window === "undefined") return null;
+  const stack = document.querySelector<HTMLElement>(".nav-bottom-stack");
+  if (!stack) return null;
+  const rect = stack.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  if (rect.width <= 0 || rect.width >= vw * 0.6) return null;
+  /* Phone landscape also narrows the bottom chrome to a ~half-width band — only
+   * treat it as a side panel when it is a full-height column like the iPad one. */
+  if (rect.height < vh * 0.6 || rect.top > vh * 0.25) return null;
+  const mid = vw / 2;
+  if (rect.left >= mid) return { side: "right", px: Math.round(vw - rect.left) };
+  if (rect.right <= mid) return { side: "left", px: Math.round(rect.right) };
+  return null;
 }
 
 export function routeViewAxis(routes: NavRoute[], primaryRouteId?: string | null): RouteViewAxis {

@@ -5,6 +5,7 @@ import {
   isLandscapeHandLeft,
   isLandscapeViewport,
   isNarrowPhoneViewport,
+  navSidePanelInset,
   routeProgressRailRightClearancePx,
   stormBarTopExtraPx,
 } from "./mapFitLogic";
@@ -67,7 +68,11 @@ export function driveCameraEaseOptions(
     const handLeft = isLandscapeHandLeft();
     const vw = typeof window !== "undefined" ? window.innerWidth : 900;
     const vh = typeof window !== "undefined" ? window.innerHeight : 400;
-    const rightChrome = Math.max(200, Math.round(vw * 0.5) + 8);
+    /* iPad command panel: reserve the panel's real width on its side; otherwise keep
+     * the legacy half-viewport chrome reserve used by phone landscape. */
+    const panel = navSidePanelInset();
+    const chromePadFor = (side: "left" | "right") =>
+      panel && panel.side === side ? panel.px + 24 : Math.max(200, Math.round(vw * 0.5) + 8);
     const railPad = Math.max(72, rightNeed + 14);
     const topPad = Math.max(52, 44 + Math.round(stormTop * 0.45));
     const bottomPad = Math.max(36, 48);
@@ -77,7 +82,7 @@ export function driveCameraEaseOptions(
         padding: {
           top: topPad,
           bottom: bottomPad,
-          left: rightChrome,
+          left: chromePadFor("left"),
           right: railPad,
         },
         offset: [progressRailVisible ? -10 : -2, yOff],
@@ -88,7 +93,7 @@ export function driveCameraEaseOptions(
         top: topPad,
         bottom: bottomPad,
         left: railPad,
-        right: rightChrome,
+        right: chromePadFor("right"),
       },
       offset: [progressRailVisible ? 10 : 2, yOff],
     };

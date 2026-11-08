@@ -1,0 +1,231 @@
+/*
+ * Tablet pass — iPad-scale chrome.
+ *
+ * Section 1 (portrait): widen the centered chrome column and scale type/hit targets
+ * up so the phone-sized UI reads as a tablet app instead of a stretched phone.
+ *
+ * Section 2 (landscape, large tablets): turn the bottom chrome into a persistent
+ * side "command panel" — map + top guidance stay on the map side, search/dock/
+ * toolbar live in a full-height panel on the driving-hand edge, progress rail
+ * stays on the outer edge. Mirrors for the left-hand setting.
+ * Phone landscape is excluded by the min-height gate (phone landscape is < ~500px tall).
+ */
+
+/* ── Tablet portrait: scale the centered phone column up to tablet size ────── */
+@media (min-width: 521px) and (orientation: portrait) {
+  /* rem-based type scales ~12.5%; px chrome vars are bumped below to match. */
+  html {
+    font-size: 112.5%;
+  }
+
+  .app-shell.nav-fullmap {
+    --sp-tablet-chrome-w: min(720px, calc(100vw - 32px));
+    --nav-chrome-control: 48px;
+    --nav-chrome-about: 40px;
+    --nav-chrome-radius: 10px;
+    --nav-chrome-gap: 8px;
+    --nav-bottom-stack-gap: 8px;
+    --nav-top-gap: 6px;
+  }
+
+  /* Roomier sheets/drawers now that the chrome column is wider. */
+  .about-sheet {
+    max-height: min(90dvh, 840px);
+  }
+
+  .saved-drawer:not(.saved-drawer--full) {
+    height: min(84vh, 780px);
+    max-height: min(84vh, 780px);
+  }
+}
+
+/* ── iPad landscape: side command panel ────────────────────────────────────── */
+@media (orientation: landscape) and (min-width: 800px) and (min-height: 600px) {
+  html {
+    font-size: 109%;
+  }
+
+  .app-shell.nav-fullmap {
+    /* Panel width: roomy enough for the dock/toolbar, never eats the map. */
+    --sp-ipad-panel-w: clamp(340px, 33vw, 430px);
+    --nav-chrome-control: 46px;
+    --nav-chrome-about: 40px;
+    --nav-chrome-radius: 10px;
+    --nav-chrome-gap: 8px;
+    --nav-bottom-stack-gap: 10px;
+  }
+
+  /* Overlay grid gains a third column that reserves the panel's strip so the
+   * top cluster centers inside the map area instead of spanning under the panel. */
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-drive-overlay-stack {
+    grid-template-columns: auto minmax(0, 1fr) var(--sp-ipad-panel-w);
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left)
+    .nav-drive-overlay-stack
+    > .nav-top-cluster {
+    grid-column: 2;
+    justify-self: center;
+    width: min(680px, 100%);
+    max-width: calc(100% - 8px);
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-drive-overlay-stack {
+    grid-template-columns: var(--sp-ipad-panel-w) minmax(0, 1fr) auto;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left
+    .nav-drive-overlay-stack
+    > .nav-top-cluster {
+    grid-column: 2;
+    justify-self: center;
+    width: min(680px, 100%);
+    max-width: calc(100% - 8px);
+  }
+
+  /* Left-hand: rail moves to column 3 (outer right edge). */
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-route-progress-rail {
+    grid-column: 3;
+  }
+
+  /* ── Right-hand (default): command panel on the right, rail stays left ── */
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .map-stage.map-bleed > .nav-bottom-stack {
+    left: auto;
+    right: 0;
+    top: max(0px, env(safe-area-inset-top));
+    bottom: 0;
+    width: var(--sp-ipad-panel-w);
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: var(--nav-bottom-stack-gap);
+    padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+      max(10px, env(safe-area-inset-bottom)) 10px;
+    background: linear-gradient(180deg, rgba(11, 14, 19, 0.6), rgba(11, 14, 19, 0.4));
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: -18px 0 36px -18px rgba(0, 0, 0, 0.55);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* Empty panel area lets map gestures through; children opt back in below. */
+    pointer-events: none;
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left)
+    .map-stage.map-bleed
+    > .nav-bottom-stack
+    > .nav-bottom-chrome-wrap {
+    margin-top: auto;
+  }
+
+  /* ── Left-hand: mirrored panel on the left, rail stays right ── */
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .map-stage.map-bleed > .nav-bottom-stack {
+    left: 0;
+    right: auto;
+    top: max(0px, env(safe-area-inset-top));
+    bottom: 0;
+    width: var(--sp-ipad-panel-w);
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: var(--nav-bottom-stack-gap);
+    padding: max(10px, env(safe-area-inset-left)) 10px max(10px, env(safe-area-inset-bottom))
+      max(10px, env(safe-area-inset-right));
+    background: linear-gradient(180deg, rgba(11, 14, 19, 0.6), rgba(11, 14, 19, 0.4));
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 18px 0 36px -18px rgba(0, 0, 0, 0.55);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    pointer-events: none;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left
+    .map-stage.map-bleed
+    > .nav-bottom-stack
+    > .nav-bottom-chrome-wrap {
+    margin-top: auto;
+  }
+
+  /* Mapbox "i" attribution + legal strip must clear the panel, not hide under it. */
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .map-stage.map-bleed .mapboxgl-ctrl-bottom-right {
+    right: calc(var(--sp-ipad-panel-w) + 10px) !important;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .map-stage.map-bleed .mapboxgl-ctrl-bottom-left {
+    left: calc(var(--sp-ipad-panel-w) + 10px) !important;
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .map-legal-attr-strip {
+    left: calc(var(--sp-landscape-map-inset-start, 64px) + 10px);
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .map-legal-attr-strip {
+    left: calc(var(--sp-ipad-panel-w) + 10px);
+  }
+
+  /* Top-of-screen transient banners/toasts center over the map area, not the panel. */
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-toast-stack--top {
+    left: var(--sp-landscape-map-inset-start, 64px);
+    right: var(--sp-ipad-panel-w);
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-toast-stack--top {
+    left: var(--sp-ipad-panel-w);
+    right: var(--sp-landscape-map-inset-end, 64px);
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-safety-banner,
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-offline-banner {
+    left: calc(
+      50% + (var(--sp-landscape-map-inset-start, 64px) - var(--sp-ipad-panel-w)) / 2
+    );
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-safety-banner,
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-offline-banner {
+    left: calc(
+      50% + (var(--sp-ipad-panel-w) - var(--sp-landscape-map-inset-end, 64px)) / 2
+    );
+  }
+
+  /* Expanded advisory / route-info panels float inside the map area so the
+   * command panel stays visible and usable. */
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .storm-advisory-bar--expanded,
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .route-progress-callout-panel--expanded {
+    left: calc(var(--sp-landscape-map-inset-start, 64px) + 10px) !important;
+    right: calc(var(--sp-ipad-panel-w) + 10px) !important;
+    border-radius: 14px;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .storm-advisory-bar--expanded,
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .route-progress-callout-panel--expanded {
+    left: calc(var(--sp-ipad-panel-w) + 10px) !important;
+    right: calc(var(--sp-landscape-map-inset-end, 64px) + 10px) !important;
+    border-radius: 14px;
+  }
+
+  /* Dev build stamp + route PiP reopen sit on the map side, clear of the panel. */
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .stormpath-build-stamp {
+    right: calc(var(--sp-ipad-panel-w) + 6px);
+  }
+
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .route-pip-reopen,
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .route-overview-pip-wrap {
+    right: calc(var(--sp-ipad-panel-w) + 10px);
+  }
+
+  /* Left-hand: Jeff floats over the map side, not the panel. */
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .jeff-badge {
+    left: calc(var(--sp-ipad-panel-w) + 8px);
+  }
+
+  /* Basic-tier AdMob banner still lifts the panel (and its controls) off the screen bottom. */
+  .app-shell.nav-fullmap.app-shell--basic-ad-banner:not(.app-shell--landscape-hand-left)
+    .map-stage.map-bleed
+    > .nav-bottom-stack {
+    bottom: var(--basic-ad-banner-reserve, 50px);
+  }
+
+  .app-shell.nav-fullmap.app-shell--basic-ad-banner.app-shell--landscape-hand-left
+    .map-stage.map-bleed
+    > .nav-bottom-stack {
+    bottom: var(--basic-ad-banner-reserve, 50px);
+  }
+}
