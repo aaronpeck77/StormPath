@@ -11,6 +11,42 @@
  * Phone landscape is excluded by the min-height gate (phone landscape is < ~500px tall).
  */
 
+/* Panel widgets only exist inside the iPad landscape command panel (Section 2). */
+.landscape-hazard-panel {
+  display: none;
+}
+
+/* Direct "Tools" entry beside the ⓘ button — tablets only; phones keep ⓘ → StormPath Tools. */
+.nav-tools-btn {
+  display: none;
+}
+
+@media (min-width: 521px) and (min-height: 600px) {
+  .nav-tools-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    height: var(--nav-chrome-about, 32px);
+    min-width: 58px;
+    padding: 0 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(18, 20, 24, 0.38);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
+  }
+}
+
 /* ── Tablet portrait: scale the centered phone column up to tablet size ────── */
 @media (min-width: 521px) and (orientation: portrait) {
   /* rem-based type scales ~12.5%; px chrome vars are bumped below to match. */
@@ -37,19 +73,28 @@
     height: min(84vh, 780px);
     max-height: min(84vh, 780px);
   }
+
+  /* Progress rail: pin to the physical right edge (column 3) instead of the
+   * centered chrome column's right edge, with padding tuned so the strip sits
+   * ~32px off the bezel — same target as the landscape rail below. */
+  .app-shell.nav-fullmap .nav-drive-overlay-stack .nav-route-progress-rail {
+    grid-column: 3;
+    justify-self: end;
+    padding-right: 40px;
+  }
 }
 
 /* ── iPad landscape: side command panel ────────────────────────────────────── */
 @media (orientation: landscape) and (min-width: 800px) and (min-height: 600px) {
   html {
-    font-size: 109%;
+    font-size: 112%;
   }
 
   .app-shell.nav-fullmap {
     /* Panel width: roomy enough for the dock/toolbar, never eats the map. */
     --sp-ipad-panel-w: clamp(340px, 33vw, 430px);
-    --nav-chrome-control: 46px;
-    --nav-chrome-about: 40px;
+    --nav-chrome-control: 52px;
+    --nav-chrome-about: 46px;
     --nav-chrome-radius: 10px;
     --nav-chrome-gap: 8px;
     --nav-bottom-stack-gap: 10px;
@@ -86,6 +131,233 @@
   /* Left-hand: rail moves to column 3 (outer right edge). */
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-route-progress-rail {
     grid-column: 3;
+  }
+
+  /* Progress rail strip ~32px off the bezel on both hands (was ~4px left-hand,
+   * ~44px right-hand). The strip anchors to the rail inner's right edge, so
+   * padding-right pulls it inward; left rail needs less than the right rail. */
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-route-progress-rail {
+    padding-right: 12px;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-route-progress-rail {
+    padding-right: 28px;
+  }
+
+  /* ── Panel middle: hazard countdown card ────────────────────────────────── */
+  .landscape-hazard-panel {
+    display: block;
+    flex: 0 0 auto;
+    margin: 2px 2px 0;
+    padding: 10px 12px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.72);
+    color: #f1f5f9;
+    pointer-events: auto;
+  }
+
+  .landscape-hazard-panel__title {
+    margin: 0 0 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #94a3b8;
+  }
+
+  .landscape-hazard-panel__list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .landscape-hazard-panel__row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    font-size: 14px;
+    line-height: 1.3;
+  }
+
+  .landscape-hazard-panel__row--next .landscape-hazard-panel__label {
+    font-weight: 650;
+  }
+
+  .landscape-hazard-panel__row:not(.landscape-hazard-panel__row--next) {
+    font-size: 13px;
+    opacity: 0.72;
+  }
+
+  .landscape-hazard-panel__dot {
+    flex: 0 0 8px;
+    align-self: center;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  .landscape-hazard-panel__label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .landscape-hazard-panel__meta {
+    flex-shrink: 0;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    color: #cbd5e1;
+    white-space: nowrap;
+  }
+
+  .landscape-hazard-panel__actions {
+    display: flex;
+    flex: 1 0 100%;
+    gap: 8px;
+    margin-top: 2px;
+  }
+
+  .landscape-hazard-panel__actions button {
+    min-height: 40px;
+    padding: 6px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    border-radius: 8px;
+    background: #1e293b;
+    color: #f8fafc;
+    font: inherit;
+    font-size: 13px;
+    pointer-events: auto;
+  }
+
+  /* The dock's single-line ticker is superseded by the countdown card here. */
+  .app-shell.nav-fullmap .landscape-navigation-dock__messages .drive-hazard-ticker {
+    display: none;
+  }
+
+  /* ── Panel middle: PiP switcher (RT map / advisory / weather) ──────────── */
+  .landscape-info-pip {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    margin: 2px 2px 0;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.72);
+    color: #f1f5f9;
+    pointer-events: auto;
+  }
+
+  .landscape-info-pip__tabs {
+    display: flex;
+    gap: 4px;
+    padding: 6px 8px 0;
+  }
+
+  .landscape-info-pip__tab {
+    flex: 1 1 0;
+    min-height: 30px;
+    padding: 4px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #cbd5e1;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    pointer-events: auto;
+  }
+
+  .landscape-info-pip__tab--active {
+    border-color: rgba(56, 189, 248, 0.55);
+    background: rgba(56, 189, 248, 0.18);
+    color: #e0f2fe;
+  }
+
+  .landscape-info-pip__stage {
+    height: 190px;
+    margin-top: 6px;
+  }
+
+  .landscape-info-pip__advisory {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+  }
+
+  .landscape-info-pip__advisory-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .landscape-info-pip__advisory-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #94a3b8;
+  }
+
+  .landscape-info-pip__dot {
+    flex: 0 0 8px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  .landscape-info-pip__dot--high {
+    background: #f87171;
+  }
+
+  .landscape-info-pip__dot--watch {
+    background: #fbbf24;
+  }
+
+  .landscape-info-pip__dot--clear {
+    background: #34d399;
+  }
+
+  .landscape-info-pip__advisory-text {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.35;
+    color: #e2e8f0;
+  }
+
+  .landscape-info-pip__advisory-text--clear {
+    color: #94a3b8;
+  }
+
+  .landscape-info-pip__open {
+    align-self: flex-start;
+    min-height: 36px;
+    margin-top: auto;
+    padding: 6px 14px;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #f8fafc;
+    font-size: 13px;
+    font-weight: 600;
+    pointer-events: auto;
+  }
+
+  .landscape-info-pip__wx {
+    height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    font-size: 12px;
   }
 
   /* ── Right-hand (default): command panel on the right, rail stays left ── */

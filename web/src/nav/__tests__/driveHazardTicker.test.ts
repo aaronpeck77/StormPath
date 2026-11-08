@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { selectDriveHazardTicker, type DriveHazardTickerInput } from "../driveHazardTicker";
+import {
+  selectDriveHazardQueue,
+  selectDriveHazardTicker,
+  type DriveHazardTickerInput,
+} from "../driveHazardTicker";
 import type { TimelineItem } from "../routeAheadSync";
 
 const hazard: TimelineItem = {
@@ -54,5 +58,41 @@ describe("Drive hazard countdown", () => {
 
   it("does not round an approaching hazard to zero miles", () => {
     expect(selectDriveHazardTicker({ ...input, userAlongMeters: hazard.startMeters - 20 })?.distanceLabel).toBe("<0.1 mi");
+  });
+});
+
+describe("Drive hazard queue (iPad landscape panel)", () => {
+  const queueInput = {
+    ...input,
+    totalMeters: 80467,
+    planEtaMinutes: 90,
+    driveEtaMinutes: 80,
+  };
+
+  it("returns up to two hazards, nearest first", () => {
+    const farther: TimelineItem = {
+      ...hazard, id: "far", label: "Flood Advisory",
+      startMeters: 40000, endMeters: 45000,
+    };
+    const rows = selectDriveHazardQueue({ ...queueInput, items: [farther, hazard] });
+    expect(rows.map((r) => r.id)).toEqual(["storm", "far"]);
+    expect(rows[0].distanceLabel).toBe("8.0 mi");
+    expect(rows[1].distanceLabel).toBe("23 mi");
+  });
+
+  it("includes an ETA estimate when trip timing is available", () => {
+    const rows = selectDriveHazardQueue(queueInput);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].etaLabel).toBeTruthy();
+  });
+
+  it("omits ETA when timing inputs are missing", () => {
+    const rows = selectDriveHazardQueue(input);
+    expect(rows[0].etaLabel).toBeNull();
+  });
+
+  it("respects the same eligibility gates as the ticker", () => {
+    expect(selectDriveHazardQueue({ ...queueInput, isPlus: false })).toEqual([]);
+    expect(selectDriveHazardQueue({ ...queueInput, viewMode: "route" })).toEqual([]);
   });
 });

@@ -22,17 +22,29 @@ export function LandscapeDockContent({ active, children }: { active: boolean; ch
   return target ? createPortal(children, target) : null;
 }
 
-export function LandscapeNavigationDock({ miles, bearing, onRefresh, onInfo }: {
+export function LandscapeNavigationDock({ miles, bearing, onRefresh, onInfo, onTools }: {
   miles: string | null;
   bearing: number | null;
   onRefresh?: () => void;
   onInfo: () => void;
+  onTools?: () => void;
 }) {
   return (
     <div className="landscape-navigation-dock">
       <div className="landscape-navigation-dock__controls">
         {onRefresh ? <button type="button" className="trip-refresh-btn" aria-label="Refresh the trip" onClick={onRefresh}>↻</button> : null}
         <DriveCompass bearingDeg={bearing} />
+        {onTools ? (
+          <button
+            type="button"
+            className="nav-tools-btn"
+            aria-label="StormPath Tools"
+            title="StormPath Tools — trip log, ETA share, and more"
+            onClick={onTools}
+          >
+            Tools
+          </button>
+        ) : null}
         <button type="button" className="map-about-btn" aria-label="About StormPath" onClick={onInfo}>i</button>
       </div>
       <div className="landscape-navigation-dock__miles">

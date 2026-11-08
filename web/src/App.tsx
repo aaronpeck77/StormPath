@@ -158,6 +158,8 @@ import { AppHazardSheetsHost } from "./ui/AppHazardSheetsHost";
 import { AppProgressRail } from "./ui/AppProgressRail";
 import { AppTopNavCluster } from "./ui/AppTopNavCluster";
 import { DriveHazardTicker } from "./ui/DriveHazardTicker";
+import { LandscapeHazardPanel } from "./ui/LandscapeHazardPanel";
+import { LandscapeInfoPip } from "./ui/LandscapeInfoPip";
 import { Coachmarks } from "./ui/Coachmarks";
 import { resetAllCoachmarks } from "./ui/coachmarks/firstLaunchSteps";
 import { pointAlongPolyline } from "./ui/geometryAlong";
@@ -3268,6 +3270,48 @@ export default function App() {
           driveMapBearingDeg={driveMapBearingDeg}
           onRefreshTrip={refreshTripInPlace}
           onOpenAbout={() => setAboutOpen(true)}
+          onOpenTools={() => setToolsOpen(true)}
+          panelWidgets={
+            navigationStarted ? (
+              <>
+                <LandscapeHazardPanel
+                  items={routeAheadTimeline}
+                  isPlus={isPlus}
+                  isOnline={isOnline}
+                  navigationStarted={navigationStarted}
+                  viewMode={viewMode}
+                  userAlongMeters={userAlongGuidanceM}
+                  offRoute={offRouteLatched}
+                  metersToManeuver={metersToBannerManeuver}
+                  miles={roadUsesMiles(effectiveUserLngLat)}
+                  totalMeters={guidanceRouteLengthM}
+                  planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
+                  driveEtaMinutes={driveEtaMinutes}
+                  bendHazardId={hazardBypass.hazardId}
+                  onBend={hazardBypass.enter}
+                  onDismissBend={hazardBypass.dismissHazard}
+                />
+                <LandscapeInfoPip
+                  accessToken={env.mapboxToken}
+                  userLngLat={effectiveUserLngLat}
+                  routes={plan.routes}
+                  destLngLat={destLngLat}
+                  lineFocusId={lineFocusId}
+                  suggestedRouteId={suggestedRouteId}
+                  orderedRouteIds={orderedRouteIds}
+                  navigationStarted={navigationStarted}
+                  advisoryAlerts={stormAdvisoryBarProps.overlappingAlerts}
+                  locationAlerts={stormAdvisoryBarProps.nwsAtLocationAlerts}
+                  onOpenAdvisory={() => setStormBarExpanded(true)}
+                  timeline={routeAheadTimeline}
+                  totalMeters={guidanceRouteLengthM}
+                  userAlongMeters={userAlongGuidanceM}
+                  planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
+                  driveEtaMinutes={driveEtaMinutes}
+                />
+              </>
+            ) : null
+          }
           stormyAheadLine={driveRouteAheadLine?.text ?? null}
           stormyHazardLine={nextHazardAtEtaLine}
           stormyWeather={stormyBrief.weather}

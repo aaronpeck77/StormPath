@@ -41,6 +41,7 @@ function DockAboutRow({
   compass,
   stormy,
   refresh,
+  tools,
   children,
 }: {
   stormyOn: boolean;
@@ -48,6 +49,7 @@ function DockAboutRow({
   compass?: ReactNode;
   stormy?: ReactNode;
   refresh?: ReactNode;
+  tools?: ReactNode;
   children?: ReactNode;
 }) {
   const info = <MapInfoButton onOpenAbout={onOpenAbout} />;
@@ -60,6 +62,7 @@ function DockAboutRow({
               {refresh}
               {compass}
               {info}
+              {tools}
             </div>
             {children}
           </div>
@@ -69,6 +72,7 @@ function DockAboutRow({
     return (
       <div className="nav-bottom-dock__about-row">
         {info}
+        {tools}
         {children}
       </div>
     );
@@ -79,6 +83,7 @@ function DockAboutRow({
         {refresh}
         {compass}
         {info}
+        {tools}
         <div className="nav-bottom-dock__stormy-row">
           {stormy}
           {children}
@@ -111,9 +116,13 @@ type Props = {
   /** Drive only. Restarts stuck guidance and live data without ending the trip. */
   onRefreshTrip?: () => void;
   onOpenAbout: () => void;
+  /** Tablet-only direct entry to the StormPath Tools sheet (hidden on phones via CSS). */
+  onOpenTools?: () => void;
   driveDistanceRemainingLabel: string | null;
   /** CarPlay map-peek: "Weather & hazards" return chip, rendered right of the miles-left box. */
   carPlayMapReturn?: ReactNode;
+  /** iPad landscape command-panel widgets (hazard countdown, PiP) between nav dock and bottom chrome. */
+  panelWidgets?: ReactNode;
 
   /* Route-cycle chip + radar dock chip */
   routePickItems: RoutePickItem[];
@@ -224,8 +233,10 @@ export function AppBottomChrome({
   driveMapBearingDeg,
   onRefreshTrip,
   onOpenAbout,
+  onOpenTools,
   driveDistanceRemainingLabel,
   carPlayMapReturn,
+  panelWidgets,
   routePickItems,
   lineFocusId,
   planRouteIds,
@@ -335,6 +346,17 @@ export function AppBottomChrome({
   };
   const talkButton = stormyOn ? <StormyButton packet={stormyPacket} onAct={onStormyAct} /> : null;
   const placeChoices = talkOn && suggestions.length >= 2 ? suggestions.slice(0, 8) : [];
+  const toolsButton = onOpenTools ? (
+    <button
+      type="button"
+      className="nav-tools-btn"
+      aria-label="StormPath Tools"
+      title="StormPath Tools — trip log, ETA share, and more"
+      onClick={onOpenTools}
+    >
+      Tools
+    </button>
+  ) : null;
   return (
     <div className="nav-bottom-stack">
       <RouteCompareBottomPanel
@@ -353,8 +375,9 @@ export function AppBottomChrome({
       ) : null}
       {navigationStarted ? (
         <LandscapeNavigationDock miles={driveDistanceRemainingLabel} bearing={driveMapBearingDeg}
-          onRefresh={onRefreshTrip} onInfo={onOpenAbout} />
+          onRefresh={onRefreshTrip} onInfo={onOpenAbout} onTools={onOpenTools} />
       ) : null}
+      {!trafficBypassCompareActive ? panelWidgets : null}
       {!trafficBypassCompareActive ? (
       <div className="nav-bottom-chrome-wrap">
         {placeChoices.length >= 2 ? (
@@ -374,6 +397,7 @@ export function AppBottomChrome({
             <DockAboutRow
               stormyOn={talkOn}
               onOpenAbout={onOpenAbout}
+              tools={toolsButton}
               refresh={
                 showTripRefreshButton(navigationStarted, viewMode) && onRefreshTrip ? (
                   <button
@@ -399,6 +423,7 @@ export function AppBottomChrome({
             <DockAboutRow
               stormyOn={talkOn}
               onOpenAbout={onOpenAbout}
+              tools={toolsButton}
               stormy={talkButton}
             >
               {driveDistanceRemainingLabel ? (
@@ -432,6 +457,7 @@ export function AppBottomChrome({
               <DockAboutRow
                 stormyOn={talkOn}
                 onOpenAbout={onOpenAbout}
+                tools={toolsButton}
                 stormy={talkButton}
               >
                 {navigationStarted && driveDistanceRemainingLabel ? (
