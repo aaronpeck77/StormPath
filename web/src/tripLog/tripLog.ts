@@ -12,6 +12,8 @@ export type TripLogEntry = {
   endedAt: number;
   originLabel: string;
   destinationLabel: string;
+  /** Via-stop labels captured at Go — the intermediate points of a multi-stop run. */
+  stops?: string[];
   /** Best distance estimate — GPS odometer when available, else planned route length. */
   distanceM: number;
   /** Planned route length at Go time, kept for reference. */
@@ -48,27 +50,45 @@ export function tripLogTotals(entries: TripLogEntry[]): { count: number; distanc
   return { count: entries.length, distanceM };
 }
 
+/** "Origin → Stop 1 → Stop 2 → Destination" — the full chain for display. */
+export function tripLogRouteChain(e: TripLogEntry): string {
+  const origin = e.originLabel?.trim();
+  const parts = [
+    ...(origin && origin !== "Trip start" ? [origin] : []),
+    ...(e.stops ?? []).map((s) => s.trim()).filter(Boolean),
+    e.destinationLabel?.trim() || "Destination",
+  ];
+  return parts.join(" → ");
+}
+
 function csvField(v: string): string {
   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
 }
 
-/** Spreadsheet-friendly CSV: Date, From, To, Distance, Minutes. */
+/** Spreadsheet-friendly CSV: Date, From, To, Stops, Distance, Minutes + totals row. */
 export function tripLogToCsv(entries: TripLogEntry[], useMiles: boolean): string {
   const distHeader = useMiles ? "Miles" : "Km";
-  const lines = [`Date,From,To,${distHeader},Minutes`];
+  const lines = [`Date,From,To,Stops,${distHeader},Minutes`];
+  let totalDistanceM = 0;
+  let totalMinutes = 0;
   for (const e of entries) {
     const date = new Date(e.startedAt).toLocaleDateString();
     const miles = useMiles ? e.distanceM / 1609.344 : e.distanceM / 1000;
     const minutes = Math.max(0, Math.round((e.endedAt - e.startedAt) / 60_000));
+    if (Number.isFinite(e.distanceM) && e.distanceM > 0) totalDistanceM += e.distanceM;
+    totalMinutes += minutes;
     lines.push(
       [
         csvField(date),
         csvField(e.originLabel || ""),
         csvField(e.destinationLabel || ""),
+        csvField((e.stops ?? []).join(" → ")),
         miles.toFixed(1),
         String(minutes),
       ].join(",")
     );
   }
+  const totalDist = useMiles ? totalDistanceM / 1609.344 : totalDistanceM / 1000;
+  lines.push(["Total", "", "", "", totalDist.toFixed(1), String(totalMinutes)].join(","));
   return lines.join("\n");
 }

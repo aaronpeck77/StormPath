@@ -198,11 +198,18 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
         const planned = completedTripFromGeometry(geom, started);
         if (planned) {
           const odometerM = tripOdometerMRef?.current ?? 0;
+          /* Via stops captured now — the store is wiped below. A multi-stop
+           * run (one customer, several drops) logs as one chained entry. */
+          const stops = useTripPlanStore
+            .getState()
+            .viaStops.map((s) => s.label?.trim() ?? "")
+            .filter(Boolean);
           recordTripLogEntry({
             startedAt: planned.startedAt,
             endedAt: planned.endedAt,
             originLabel: plan.originLabel?.trim() || "Trip start",
             destinationLabel: destinationLabel?.trim() || "Destination",
+            stops: stops.length ? stops : undefined,
             distanceM: odometerM > 0 ? odometerM : planned.distanceM,
             plannedDistanceM: planned.distanceM,
           });

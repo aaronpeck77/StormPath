@@ -5,6 +5,7 @@ import { shareEtaCard, type EtaShareData } from "./etaShareCard";
 import {
   clearTripLog,
   listTripLog,
+  tripLogRouteChain,
   tripLogToCsv,
   tripLogTotals,
   type TripLogEntry,
@@ -148,8 +149,8 @@ export function ToolsSheet({ open, onClose, etaShare, useMiles = true }: Props) 
                   {entries.slice(0, 6).map((e) => (
                     <li key={e.id} className="tools-triplog__row">
                       <div className="tools-triplog__main">
-                        <span className="tools-triplog__dest">
-                          {e.destinationLabel || "Destination"}
+                        <span className="tools-triplog__dest" title={tripLogRouteChain(e)}>
+                          {tripLogRouteChain(e)}
                         </span>
                         <span className="tools-triplog__meta">
                           {new Date(e.startedAt).toLocaleDateString(undefined, {
