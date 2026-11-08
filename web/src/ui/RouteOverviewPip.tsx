@@ -10,8 +10,14 @@ import {
   ensureMapboxTrafficConditionLayers,
   setMapboxTrafficLayersVisible,
 } from "./mapTrafficLayers";
-
-const MAP_STYLE = "mapbox://styles/mapbox/streets-v12";
+import {
+  currentMapPhase,
+  currentMapStyle,
+  MAP_STYLE_DAY,
+  parseNightBasemapPreset,
+  type NightBasemapPreset,
+} from "./mapBasemapStyle";
+import { applyNightBasemapReadability } from "./mapNightBasemapReadability";
 
 const PIP_PAD = { top: 10, bottom: 10, left: 10, right: 10 };
 
@@ -54,13 +60,36 @@ export function RouteOverviewPip({
   const userRef = useRef(userLngLat);
   userRef.current = userLngLat;
   const [ready, setReady] = useState(false);
+  /* Same day/night resolution as the main map — the PiP used to stay on
+   * streets-v12 forever, so it glared day-white next to a dark Drive map. */
+  const [nightPreset] = useState<NightBasemapPreset>(parseNightBasemapPreset);
+  const [mapPhase, setMapPhase] = useState(() => currentMapPhase(userLngLat));
+  const [styleEpoch, setStyleEpoch] = useState(0);
+  const appliedStyleRef = useRef<string | null>(null);
+  const styleRef = useRef(MAP_STYLE_DAY);
+  styleRef.current = currentMapStyle(mapPhase, nightPreset);
+  const pipStyle = styleRef.current;
+  const pipNight = mapPhase === "night" && nightPreset !== "streets";
+
+  useEffect(() => {
+    const tick = () => setMapPhase(currentMapPhase(userRef.current));
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    setMapPhase(currentMapPhase(userLngLat));
+  }, [userLngLat?.[0], userLngLat?.[1]]);
 
   useEffect(() => {
     if (!wrapRef.current || mapRef.current) return;
     mapboxgl.accessToken = accessToken;
+    const initialStyle = styleRef.current;
+    appliedStyleRef.current = initialStyle;
     const map = new mapboxgl.Map({
       container: wrapRef.current,
-      style: MAP_STYLE,
+      style: initialStyle,
       center: userLngLat ?? [-98.5, 39.8],
       zoom: 12,
       pitch: 0,
@@ -91,6 +120,25 @@ export function RouteOverviewPip({
     };
   }, [accessToken]);
 
+  /* Dawn/dusk flips the basemap under the live map — swap styles and re-run the
+   * layer passes once the new style reports loaded (setStyle wipes sources). */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (appliedStyleRef.current === pipStyle) return;
+    const bump = () => setStyleEpoch((n) => n + 1);
+    map.once("style.load", bump);
+    try {
+      map.setStyle(pipStyle);
+      appliedStyleRef.current = pipStyle;
+    } catch {
+      map.off("style.load", bump);
+    }
+    return () => {
+      map.off("style.load", bump);
+    };
+  }, [pipStyle, ready]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
@@ -100,7 +148,14 @@ export function RouteOverviewPip({
     } catch {
       /* PiP uses minimal style; layers may fail on some builds */
     }
-  }, [ready, trafficConditionsOnMap]);
+    if (pipNight) {
+      try {
+        applyNightBasemapReadability(map);
+      } catch {
+        /* style race */
+      }
+    }
+  }, [ready, styleEpoch, trafficConditionsOnMap, pipNight]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -126,7 +181,7 @@ export function RouteOverviewPip({
       "pip-route",
       lineFocusId
     );
-  }, [ready, routes, lineFocusId, suggestedRouteId, orderedRouteIds, navigationStarted]);
+  }, [ready, styleEpoch, routes, lineFocusId, suggestedRouteId, orderedRouteIds, navigationStarted]);
 
   useEffect(() => {
     const map = mapRef.current;

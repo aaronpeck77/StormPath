@@ -297,6 +297,13 @@
     margin-top: 6px;
   }
 
+  /* White keyline around the RT map — separates it from the card and keeps the
+   * night basemap readable against the panel. */
+  .landscape-info-pip .route-overview-pip-map-shell {
+    box-sizing: border-box;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+  }
+
   /* Adv tab: the advisory "Hazards on your route" feed, scaled for the pane. */
   .landscape-info-pip__feed {
     height: 100%;
