@@ -33,11 +33,6 @@ import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 const STORM_BAR_EXPANDED_KEY = "stormpath-storm-advisory-bar-expanded";
 const LEGACY_STORM_BAR_EXPANDED_KEY = "stormpath-storm-drawer-expanded";
 
-/** Same threshold App.tsx uses for the search bar — duplicated here to avoid pulling App into the store. */
-function isNarrowPhoneViewport(): boolean {
-  return typeof window !== "undefined" && window.matchMedia("(max-width: 520px)").matches;
-}
-
 function readStormBarExpanded(): boolean {
   const v = safeStorage.get(STORM_BAR_EXPANDED_KEY);
   if (v === "0") return false;
@@ -47,7 +42,7 @@ function readStormBarExpanded(): boolean {
   const legacy = safeStorage.get(LEGACY_STORM_BAR_EXPANDED_KEY);
   if (legacy === "0") return false;
   if (legacy === "1") return true;
-  return !isNarrowPhoneViewport();
+  return false;
 }
 
 type Updater<T> = T | ((prev: T) => T);
