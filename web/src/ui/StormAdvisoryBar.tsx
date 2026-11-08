@@ -169,6 +169,8 @@ export type StormAdvisoryBarProps = SharedProps & {
   barExpanded: boolean;
   onBarExpandedChange: (expanded: boolean) => void;
   onNwsAlertClick?: (alert: NormalizedWeatherAlert) => void;
+  /** TimelineItem.id of the hazard the drive countdown calls "next" — highlighted in the feed. */
+  highlightedHazardId?: string | null;
   /** Optional hazard status severity: drives the collapsed preview border color. */
   peekSeverity?: "none" | "info" | "warn" | "severe" | null;
   /** Short "doing something" label (NWS loading, traffic fetching…). Surfaced in preview. */

@@ -1,19 +1,22 @@
 import { useEffect, useState } from "react";
 import type { NavRoute } from "../nav/types";
 import type { TimelineItem } from "./RouteHazardTimeline";
-import { RouteHazardTimeline } from "./RouteHazardTimeline";
 import { RouteOverviewPip } from "./RouteOverviewPip";
-import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
-
-const TABLET_LANDSCAPE_MQ =
-  "(orientation: landscape) and (min-width: 800px) and (min-height: 600px)";
+import { RouteProgressGlancePanel } from "./RouteProgressGlancePanel";
+import { AdvisoryRouteHazardsPanel } from "./AdvisoryRouteHazardsPanel";
+import { useAdvisoryExpandedModel } from "./advisoryExpandedModel";
+import type { StormAdvisoryBarProps } from "./StormAdvisoryBar";
+import type { RouteChunkCalloutItem } from "../nav/routeProgressChunkList";
+import type { WxSample } from "../nav/routeChunkWeather";
+import type { RouteOutlookStep } from "../nav/routeForecastTimeline";
+import { TABLET_LANDSCAPE_MQ } from "./LandscapeNavigationDock";
 
 type PipTab = "rt" | "advisory" | "wx";
 
 const TABS: { id: PipTab; label: string; title: string }[] = [
   { id: "rt", label: "RT", title: "Route overview map" },
-  { id: "advisory", label: "Adv", title: "Advisory summary" },
-  { id: "wx", label: "Wx", title: "Weather and hazard timeline" },
+  { id: "advisory", label: "Adv", title: "Warnings and hazard alerts on your route" },
+  { id: "wx", label: "Wx", title: "Full weather graph — NWS, radar, wind, forecast, road" },
 ];
 
 type Props = {
@@ -25,30 +28,71 @@ type Props = {
   suggestedRouteId: string | null;
   orderedRouteIds: string[];
   navigationStarted: boolean;
-  /** Advisory pane: route corridor alerts (stormAdvisoryBarProps.overlappingAlerts). */
-  advisoryAlerts: NormalizedWeatherAlert[];
-  /** Advisory pane: alerts at the current position. */
-  locationAlerts?: NormalizedWeatherAlert[];
+  /** Full advisory prop bag — Adv tab runs the same expanded model as the advisory page. */
+  advisoryProps: StormAdvisoryBarProps;
   onOpenAdvisory: () => void;
-  /** Wx pane: route hazard timeline (same data as the progress rail / advisory). */
+  /** Wx tab: route hazard timeline (same data as the progress rail / route-info graph). */
   timeline: TimelineItem[];
-  totalMeters: number;
-  userAlongMeters: number;
   planEtaMinutes: number | null;
   driveEtaMinutes: number | null;
+  /** TimelineItem.id of the countdown "next" hazard — highlighted in the Wx graph. */
+  nextHazardId?: string | null;
+  /* Wx tab: same inputs RouteProgressGlancePanel gets on the route-info page. */
+  glanceRouteWide: RouteChunkCalloutItem[];
+  glanceOutlookSteps: RouteOutlookStep[];
+  glanceOutlookSamples?: WxSample[];
+  glanceRadarSamples?: { t: number; intensity: number }[];
+  glanceRadarStatusNote?: string | null;
+  glanceWindPoints?: { t: number; mph: number }[];
+  glanceGustLinePoints?: { t: number; mph: number }[];
+  glanceGustSpikePoints?: { t: number; mph: number }[];
+  glanceFallbackSegments: RouteChunkCalloutItem[];
+  glanceTotalMeters: number;
+  glanceUserAlongMeters: number;
+  glanceUserAlongT: number;
+  glanceStripTint: string;
 };
 
-function advisoryTone(alerts: NormalizedWeatherAlert[]): "high" | "watch" | "clear" {
-  const top = alerts[0];
-  if (!top) return "clear";
-  const u = `${top.urgency ?? ""} ${top.severity ?? ""}`.toLowerCase();
-  if (/extreme|severe/.test(u)) return "high";
-  return "watch";
+/**
+ * Adv tab — the same "Hazards on your route" feed that sits under the forecast
+ * on the expanded advisory page. Runs the shared expanded model lazily (only
+ * while this tab is mounted) so the PiP stays cheap on RT/Wx.
+ */
+function LandscapeAdvisoryFeed({ advisoryProps }: { advisoryProps: StormAdvisoryBarProps }) {
+  const model = useAdvisoryExpandedModel(advisoryProps);
+  const p = advisoryProps;
+  return (
+    <div className="landscape-info-pip__feed">
+      <AdvisoryRouteHazardsPanel
+        navigationStarted={p.navigationStarted}
+        hasGuidanceRoute={p.hasGuidanceRoute}
+        barExpanded
+        sessionOn={p.sessionOn}
+        roadDetailEnabled={p.roadDetailEnabled}
+        urgentTopAlerts={model.urgentTopAlerts}
+        alongRouteDetailRows={p.roadDetailRows}
+        hasRouteHazardDetail={model.hasRouteHazardDetail}
+        advisoryRouteTimeline={model.advisoryRouteTimeline}
+        routeTotalMeters={p.routeTotalMeters ?? 0}
+        userAlongMeters={p.userAlongMeters ?? 0}
+        planEtaMinutes={p.planEtaMinutes ?? null}
+        driveEtaMinutes={p.driveEtaMinutes ?? null}
+        showRerouteCta={model.showRerouteCta}
+        onTrafficReroute={p.onTrafficReroute}
+        trafficRerouteBusy={p.trafficRerouteBusy}
+        nwsStatusMessage={model.nwsStatusMessage}
+        developingNwsAlerts={model.developingNwsAlerts}
+        panelNwsAlertsExtra={model.panelNwsAlertsExtra}
+        onNwsAlertClick={p.onNwsAlertClick}
+        highlightedHazardId={p.highlightedHazardId}
+      />
+    </div>
+  );
 }
 
 /**
  * iPad landscape command-panel PiP: switchable card — RT route-overview map,
- * compact advisory summary, or the weather/hazard timeline graph. Only mounts
+ * the advisory hazards feed, or the full route-info weather graph. Only mounts
  * on large-tablet landscape so phones never pay for the second GL context.
  */
 export function LandscapeInfoPip(props: Props) {
@@ -66,9 +110,6 @@ export function LandscapeInfoPip(props: Props) {
   }, []);
 
   if (!tabletLandscape) return null;
-
-  const topAlert = props.advisoryAlerts[0] ?? props.locationAlerts?.[0] ?? null;
-  const tone = advisoryTone([...props.advisoryAlerts, ...(props.locationAlerts ?? [])]);
 
   return (
     <section className="landscape-info-pip" aria-label="Route info picture-in-picture">
@@ -102,42 +143,28 @@ export function LandscapeInfoPip(props: Props) {
           />
         ) : null}
 
-        {tab === "advisory" ? (
-          <div className="landscape-info-pip__advisory">
-            <div className="landscape-info-pip__advisory-head">
-              <span
-                className={`landscape-info-pip__dot landscape-info-pip__dot--${tone}`}
-                aria-hidden="true"
-              />
-              <span className="landscape-info-pip__advisory-title">Advisory</span>
-            </div>
-            {topAlert ? (
-              <p className="landscape-info-pip__advisory-text" title={topAlert.headline}>
-                {topAlert.event || topAlert.headline}
-                {props.advisoryAlerts.length + (props.locationAlerts?.length ?? 0) > 1
-                  ? ` · +${props.advisoryAlerts.length + (props.locationAlerts?.length ?? 0) - 1} more`
-                  : ""}
-              </p>
-            ) : (
-              <p className="landscape-info-pip__advisory-text landscape-info-pip__advisory-text--clear">
-                All clear on this route
-              </p>
-            )}
-            <button type="button" className="landscape-info-pip__open" onClick={props.onOpenAdvisory}>
-              Open advisory
-            </button>
-          </div>
-        ) : null}
+        {tab === "advisory" ? <LandscapeAdvisoryFeed advisoryProps={props.advisoryProps} /> : null}
 
         {tab === "wx" ? (
           <div className="landscape-info-pip__wx">
-            <RouteHazardTimeline
-              variant="full"
-              items={props.timeline.filter((item) => !item.stripMuted)}
-              totalMeters={props.totalMeters}
-              userAlongMeters={props.userAlongMeters}
+            <RouteProgressGlancePanel
+              timeline={props.timeline}
+              routeWide={props.glanceRouteWide}
+              outlookSteps={props.glanceOutlookSteps}
+              outlookSamples={props.glanceOutlookSamples}
+              radarSamples={props.glanceRadarSamples}
+              radarStatusNote={props.glanceRadarStatusNote}
+              windPoints={props.glanceWindPoints}
+              gustLinePoints={props.glanceGustLinePoints}
+              gustSpikePoints={props.glanceGustSpikePoints}
+              fallbackSegments={props.glanceFallbackSegments}
+              totalMeters={props.glanceTotalMeters}
+              userAlongMeters={props.glanceUserAlongMeters}
               planEtaMinutes={props.planEtaMinutes}
               driveEtaMinutes={props.driveEtaMinutes}
+              userAlongT={props.glanceUserAlongT}
+              stripTint={props.glanceStripTint}
+              nextHazardId={props.nextHazardId}
             />
           </div>
         ) : null}

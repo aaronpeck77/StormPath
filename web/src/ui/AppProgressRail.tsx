@@ -54,6 +54,8 @@ type Props = {
   driveModeUi: boolean;
   tripOdometerM: number;
   navigationStarted: boolean;
+  /** TimelineItem.id of the drive-countdown "next" hazard — highlighted in the glance graph. */
+  nextHazardId?: string | null;
 };
 
 /** Vertical side rail: expandable route-info panel + progress strip. */
@@ -98,6 +100,7 @@ export function AppProgressRail({
   driveModeUi,
   tripOdometerM,
   navigationStarted,
+  nextHazardId = null,
 }: Props) {
   return (
     <div
@@ -143,6 +146,7 @@ export function AppProgressRail({
             userAlongT={progressCalloutUserAlongT}
             stripTint={stripTint}
             detailScrollRef={progressCalloutDetailScrollRef}
+            nextHazardId={nextHazardId}
           />
         </RouteProgressCalloutRail>
         <RouteProgressStrip

@@ -1613,3 +1613,54 @@
   white-space: nowrap;
 }
 
+
+/* Countdown "next" hazard beacon — pulsing marker on the route line. */
+.map-next-hazard-beacon {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.map-next-hazard-beacon__dot {
+  position: relative;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+  z-index: 2;
+}
+
+.map-next-hazard-beacon__pulse {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  opacity: 0.5;
+  z-index: 1;
+  animation: map-next-hazard-beacon-pulse 1.8s ease-out infinite;
+}
+
+@keyframes map-next-hazard-beacon-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  90%,
+  100% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-next-hazard-beacon__pulse {
+    animation: none;
+    transform: scale(1.6);
+    opacity: 0.35;
+  }
+}

@@ -373,11 +373,11 @@ export function AppBottomChrome({
           onDiscard={handleDiscardRecordingPath}
         />
       ) : null}
+      {!trafficBypassCompareActive ? panelWidgets : null}
       {navigationStarted ? (
         <LandscapeNavigationDock miles={driveDistanceRemainingLabel} bearing={driveMapBearingDeg}
           onRefresh={onRefreshTrip} onInfo={onOpenAbout} onTools={onOpenTools} />
       ) : null}
-      {!trafficBypassCompareActive ? panelWidgets : null}
       {!trafficBypassCompareActive ? (
       <div className="nav-bottom-chrome-wrap">
         {placeChoices.length >= 2 ? (

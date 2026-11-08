@@ -1734,3 +1734,30 @@ html.route-info-open .route-progress-callout-panel--expanded {
   font-style: italic;
 }
 
+
+/* ── "Next hazard" highlight — the item the drive countdown calls next.
+ * Shared pulse used by the advisory feed, route-info graph, and legend rows. ── */
+@keyframes sp-hazard-next-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px rgba(125, 211, 252, 0.9), 0 0 10px rgba(56, 189, 248, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(125, 211, 252, 0.45), 0 0 16px rgba(56, 189, 248, 0.6);
+  }
+}
+
+.rpgl__band--next {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 0 0 1.5px rgba(125, 211, 252, 0.9),
+    0 0 10px rgba(56, 189, 248, 0.55);
+  animation: sp-hazard-next-pulse 1.8s ease-in-out infinite;
+  z-index: 2;
+}
+
+.rpgl__card--next {
+  border-bottom-color: rgba(125, 211, 252, 0.55);
+  background: rgba(56, 189, 248, 0.12);
+  animation: sp-hazard-next-pulse 1.8s ease-in-out infinite;
+}

@@ -44,6 +44,8 @@ type Props = {
   stripTint: string;
   /** Parent scrolls this region vertically (alert list only). */
   detailScrollRef?: RefObject<HTMLDivElement | null>;
+  /** TimelineItem.id of the drive-countdown "next" hazard — band/card get a highlight. */
+  nextHazardId?: string | null;
 };
 
 const TRACK_BADGE: Record<TimelineItem["track"], string> = {
@@ -113,10 +115,11 @@ const HAZARD_RAIL_META: Record<
 
 const HAZARD_RAIL_ORDER: TimelineItem["track"][] = ["nws", "road"]; // radar → strata, wind → graph
 
-function HazardRailRow({ track, bands, selectedId, linkableIds, onSelect, bandRef, cardId }: {
+function HazardRailRow({ track, bands, selectedId, nextId, linkableIds, onSelect, bandRef, cardId }: {
   track: TimelineItem["track"];
   bands: HazardBandVisual[];
   selectedId: string | null;
+  nextId?: string | null;
   linkableIds: Set<string>;
   onSelect: (ids: string[]) => void;
   bandRef: (id: string, element: HTMLButtonElement | null) => void;
@@ -140,7 +143,7 @@ function HazardRailRow({ track, bands, selectedId, linkableIds, onSelect, bandRe
             key={band.id}
             type="button"
             ref={(element) => bandRef(band.id, element)}
-            className={`rpgl__band ${meta.bandClass} rpgl__band--${band.severity}${band.nearby ? " rpgl__band--nearby" : ""}${band.muted ? " rpgl__band--muted" : ""}`}
+            className={`rpgl__band ${meta.bandClass} rpgl__band--${band.severity}${band.id === nextId ? " rpgl__band--next" : ""}${band.nearby ? " rpgl__band--nearby" : ""}${band.muted ? " rpgl__band--muted" : ""}`}
             style={{
               left: `${band.left}%`,
               width: `${band.width}%`,
@@ -166,10 +169,11 @@ function HazardRailRow({ track, bands, selectedId, linkableIds, onSelect, bandRe
   );
 }
 
-function GlanceCard({ card, scrollRef, selected, onSelect, id }: {
+function GlanceCard({ card, scrollRef, selected, isNext = false, onSelect, id }: {
   card: RouteAheadGlanceCard;
   scrollRef: (element: HTMLDivElement | null) => void;
   selected: boolean;
+  isNext?: boolean;
   onSelect?: () => void;
   id: string;
 }) {
@@ -178,7 +182,7 @@ function GlanceCard({ card, scrollRef, selected, onSelect, id }: {
       ref={scrollRef}
       id={id}
       onClick={onSelect}
-      className={`rpgl__card${card.inside ? " rpgl__card--current" : ""}${selected ? " rpgl__card--selected" : ""}`}
+      className={`rpgl__card${card.inside ? " rpgl__card--current" : ""}${selected ? " rpgl__card--selected" : ""}${isNext ? " rpgl__card--next" : ""}`}
       role="listitem"
       title={card.tooltip}
       aria-current={card.inside ? "true" : undefined}
@@ -271,6 +275,7 @@ export function RouteProgressGlancePanel({
   userAlongT,
   stripTint,
   detailScrollRef,
+  nextHazardId = null,
 }: Props) {
   const glanceCards = useMemo(
     () =>
@@ -434,7 +439,7 @@ export function RouteProgressGlancePanel({
                     <div className="rpgl__hazard-block">
                       {HAZARD_RAIL_ORDER.map((track) => (
                         <HazardRailRow key={track} track={track} bands={bandsByTrack[track]}
-                          selectedId={selectedId} linkableIds={linkableIds} cardId={cardId}
+                          selectedId={selectedId} nextId={nextHazardId} linkableIds={linkableIds} cardId={cardId}
                           bandRef={(id, element) => { if (element) bandRefs.current.set(id, element); else bandRefs.current.delete(id); }}
                           onSelect={(ids) => { if (ids.length === 1) selectCard(ids[0]!); else setChoiceIds(ids); }} />
                       ))}
@@ -515,7 +520,7 @@ export function RouteProgressGlancePanel({
                 <GlanceCard
                   key={card.id}
                   card={card}
-                  id={cardId(card.id)} selected={selectedId === card.id}
+                  id={cardId(card.id)} selected={selectedId === card.id} isNext={card.id === nextHazardId}
                   scrollRef={(element) => { if (element) cardRefs.current.set(card.id, element); else cardRefs.current.delete(card.id); }}
                   onSelect={HAZARD_RAIL_ORDER.includes(card.track) ? () => {
                     setSelectedId(card.id);

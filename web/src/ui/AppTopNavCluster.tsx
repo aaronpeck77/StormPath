@@ -5,7 +5,7 @@ import { TopGuidanceBar } from "./TopGuidanceBar";
 import { YourRouteChip } from "./YourRouteChip";
 import { StormAdvisoryBar, type StormAdvisoryBarProps } from "./StormAdvisoryBar";
 import { ActivityStatusPill } from "./ActivityStatusPill";
-import { LandscapeDockContent } from "./LandscapeNavigationDock";
+import { LandscapeDockContent, TabletLandscapePanelPortal } from "./LandscapeNavigationDock";
 import { AppDriveApproachBanner, type DriveApproachBannerPick } from "./AppDriveApproachBanner";
 
 type Props = {
@@ -85,17 +85,19 @@ export function AppTopNavCluster({
     <div className="nav-top-cluster">
       <div className="nav-top-route-rail">
         <div className="nav-top-route-rail__main">
-          <TopGuidanceBar
-            hasRoute={navigationStarted && hasPlanRoutes}
-            turnSteps={turnSteps}
-            activeTurnIndex={bannerTurnIndex}
-            metersToManeuverEnd={metersToBannerManeuver}
-            instructionOverride={bannerInstructionOverride}
-            currentRoadName={bannerCurrentRoadName}
-            currentRoadRef={bannerCurrentRoadRef}
-            travelingStepIndex={bannerTravelingStepIndex}
-            glanceable={navigationStarted}
-          />
+          <TabletLandscapePanelPortal slotId="ipad-panel-tbt-slot" active={navigationStarted}>
+            <TopGuidanceBar
+              hasRoute={navigationStarted && hasPlanRoutes}
+              turnSteps={turnSteps}
+              activeTurnIndex={bannerTurnIndex}
+              metersToManeuverEnd={metersToBannerManeuver}
+              instructionOverride={bannerInstructionOverride}
+              currentRoadName={bannerCurrentRoadName}
+              currentRoadRef={bannerCurrentRoadRef}
+              travelingStepIndex={bannerTravelingStepIndex}
+              glanceable={navigationStarted}
+            />
+          </TabletLandscapePanelPortal>
           {hazardTickerSlot}
           {(personalForkShowChip || personalForkShowCommittedChip) && personalForkOffer ? (
             <YourRouteChip

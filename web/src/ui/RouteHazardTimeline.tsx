@@ -58,6 +58,8 @@ export type RouteHazardTimelineProps = {
   showRerouteCta?: boolean;
   onReroute?: () => void;
   rerouteBusy?: boolean;
+  /** TimelineItem.id of the drive-countdown "next" hazard — row gets a highlight. */
+  highlightedItemId?: string | null;
 };
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
@@ -153,15 +155,17 @@ function LegendEntryRow({
   item,
   vis,
   showTrackLabel,
+  isNext = false,
 }: {
   item: TimelineItem;
   vis: ItemVisual;
   showTrackLabel: boolean;
+  isNext?: boolean;
 }) {
   return (
     <li key={item.id}>
       <div
-        className={`rhtz__legend-item rhtz__legend-item--${item.severity}${item.onClick ? " rhtz__legend-item--tappable" : ""}`}
+        className={`rhtz__legend-item rhtz__legend-item--${item.severity}${isNext ? " rhtz__legend-item--next" : ""}${item.onClick ? " rhtz__legend-item--tappable" : ""}`}
         role={item.onClick ? "button" : undefined}
         tabIndex={item.onClick ? 0 : undefined}
         onClick={item.onClick}
@@ -204,12 +208,14 @@ function RouteHazardLegend({
   showTrackLabel = true,
   groupByTrack = false,
   compactFeed = false,
+  highlightedItemId = null,
 }: {
   items: TimelineItem[];
   itemVisuals: ItemVisual[];
   showTrackLabel?: boolean;
   groupByTrack?: boolean;
   compactFeed?: boolean;
+  highlightedItemId?: string | null;
 }) {
   const legendEntries = useMemo(
     () =>
@@ -236,7 +242,7 @@ function RouteHazardLegend({
           return (
             <div
               key={item.id}
-              className={`adv-dash__feed-row adv-dash__feed-row--${item.severity}${item.onClick ? " adv-dash__feed-row--tap" : ""}`}
+              className={`adv-dash__feed-row adv-dash__feed-row--${item.severity}${item.id === highlightedItemId ? " adv-dash__feed-row--next" : ""}${item.onClick ? " adv-dash__feed-row--tap" : ""}`}
               role={item.onClick ? "button" : undefined}
               tabIndex={item.onClick ? 0 : undefined}
               onClick={item.onClick}
@@ -283,7 +289,7 @@ function RouteHazardLegend({
           <p className="rhtz__legend-group-title">{title}</p>
           <ul className="rhtz__legend" aria-label={ariaLabel}>
             {entries.map(({ item, vis }) => (
-              <LegendEntryRow key={item.id} item={item} vis={vis} showTrackLabel={showTrackLabel} />
+              <LegendEntryRow key={item.id} item={item} vis={vis} showTrackLabel={showTrackLabel} isNext={item.id === highlightedItemId} />
             ))}
           </ul>
         </div>
@@ -304,7 +310,7 @@ function RouteHazardLegend({
   return (
     <ul className="rhtz__legend" aria-label="Hazards along your route in encounter order">
       {legendEntries.map(({ item, vis }) => (
-        <LegendEntryRow key={item.id} item={item} vis={vis} showTrackLabel={showTrackLabel} />
+        <LegendEntryRow key={item.id} item={item} vis={vis} showTrackLabel={showTrackLabel} isNext={item.id === highlightedItemId} />
       ))}
     </ul>
   );
@@ -348,6 +354,7 @@ export function RouteHazardTimeline({
   showRerouteCta = false,
   onReroute,
   rerouteBusy = false,
+  highlightedItemId = null,
 }: RouteHazardTimelineProps) {
   const youPct = pct(userAlongMeters, totalMeters);
   const itemVisuals = useTimelineItemVisuals(
@@ -373,6 +380,7 @@ export function RouteHazardTimeline({
             itemVisuals={itemVisuals}
             showTrackLabel={false}
             compactFeed
+            highlightedItemId={highlightedItemId}
           />
           <RouteHazardReroute
             showRerouteCta={showRerouteCta}
@@ -395,6 +403,7 @@ export function RouteHazardTimeline({
           itemVisuals={itemVisuals}
           showTrackLabel={false}
           groupByTrack={groupLegendByTrack}
+          highlightedItemId={highlightedItemId}
         />
         <RouteHazardReroute
           showRerouteCta={showRerouteCta}
@@ -492,7 +501,7 @@ export function RouteHazardTimeline({
         </div>
       </div>
 
-      <RouteHazardLegend items={items} itemVisuals={itemVisuals} />
+      <RouteHazardLegend items={items} itemVisuals={itemVisuals} highlightedItemId={highlightedItemId} />
       <RouteHazardReroute
         showRerouteCta={showRerouteCta}
         onReroute={onReroute}

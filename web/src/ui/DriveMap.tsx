@@ -273,6 +273,7 @@ import {
   makeViaStopEl,
   makePoiHoverEl,
   makeBypassHazardEl,
+  makeNextHazardBeaconEl,
 } from "./mapMarkerDom";
 import { useMapGeoJsonOverlays } from "./useMapGeoJsonOverlays";
 import { useStormNwsHoverPopup } from "./useStormNwsHoverPopup";
@@ -407,6 +408,8 @@ export type Props = {
    * Hazard the user is being asked to plan around — drives the on-map pin and compare camera fit.
    */
   trafficBypassCompareHazardLngLat?: LngLat | null;
+  /** Countdown "next" hazard beacon — pulsing marker synced with the drive hazard panel. */
+  nextHazardBeacon?: { lngLat: LngLat; label: string; color: string } | null;
   /** M along the primary leg for the compare hazard — tightens local fit ahead of the jam. */
   trafficBypassCompareHazardAlongMeters?: number | null;
   /** Toll preview frames the diverged toll corridor instead of the full trip. */
@@ -584,6 +587,7 @@ function DriveMapInner({
   onStormBrowseBoundsChange,
   trafficBypassCompareActive = false,
   trafficBypassCompareHazardLngLat = null,
+  nextHazardBeacon = null,
   trafficBypassCompareHazardAlongMeters = null,
   trafficBypassCompareKind,
   rejoinCompareLockedRouteId = null,
@@ -619,6 +623,7 @@ function DriveMapInner({
   const viaMarkerMapRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
   const poiHoverMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const bypassHazardMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const nextHazardBeaconMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const savedMarkerMapRef = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLButtonElement }>>(new Map());
   const onSavedClickRef = useRef(onSavedPlaceClick);
   onSavedClickRef.current = onSavedPlaceClick;
@@ -3254,6 +3259,43 @@ function DriveMapInner({
       bypassHazardMarkerRef.current = null;
     };
   }, [mapReady, trafficBypassCompareHazardLngLat]);
+
+  /* Countdown "next" hazard beacon — pulsing marker at the hazard's along-route
+   * position so the route line visually syncs with the drive countdown panel. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    if (!nextHazardBeacon) {
+      nextHazardBeaconMarkerRef.current?.remove();
+      nextHazardBeaconMarkerRef.current = null;
+      return;
+    }
+
+    if (!nextHazardBeaconMarkerRef.current) {
+      nextHazardBeaconMarkerRef.current = new mapboxgl.Marker({
+        element: makeNextHazardBeaconEl(nextHazardBeacon.color),
+        anchor: "center",
+      })
+        .setLngLat(nextHazardBeacon.lngLat)
+        .addTo(map);
+    } else {
+      nextHazardBeaconMarkerRef.current.setLngLat(nextHazardBeacon.lngLat);
+      const dot = nextHazardBeaconMarkerRef.current.getElement().querySelector<HTMLElement>(
+        ".map-next-hazard-beacon__dot"
+      );
+      const pulse = nextHazardBeaconMarkerRef.current.getElement().querySelector<HTMLElement>(
+        ".map-next-hazard-beacon__pulse"
+      );
+      if (dot) dot.style.background = nextHazardBeacon.color;
+      if (pulse) pulse.style.background = nextHazardBeacon.color;
+    }
+
+    return () => {
+      nextHazardBeaconMarkerRef.current?.remove();
+      nextHazardBeaconMarkerRef.current = null;
+    };
+  }, [mapReady, nextHazardBeacon]);
 
   useEffect(() => {
     const map = mapRef.current;

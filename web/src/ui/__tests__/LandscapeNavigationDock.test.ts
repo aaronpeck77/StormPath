@@ -4,18 +4,35 @@ import { describe, expect, it, vi } from "vitest";
 import { LandscapeDockContent, LandscapeNavigationDock } from "../LandscapeNavigationDock";
 import { readAppCss } from "../../styles/appCss";
 
-const render = () => renderToStaticMarkup(createElement(LandscapeNavigationDock, {
-  miles: "42 mi", bearing: 90, onRefresh: () => undefined, onInfo: () => undefined,
-}));
+const render = () =>
+  renderToStaticMarkup(createElement(LandscapeNavigationDock, {
+    miles: "42 mi", bearing: 90,
+    onRefresh: () => undefined, onInfo: () => undefined, onTools: () => undefined,
+  }));
 
 describe("landscape navigation dock", () => {
-  it("stacks refresh, compass and info above a separate miles cell", () => {
+  it("puts miles and messages above the drive button row", () => {
     const html = render();
+    // DOM order: messages → miles → controls, so buttons sit just over bottom chrome.
+    // Phone landscape keeps this order (vertical stack); the iPad panel re-orders via CSS.
+    expect(html.indexOf("42 mi remaining")).toBeLessThan(html.indexOf("Refresh the trip"));
     expect(html.indexOf("Refresh the trip")).toBeLessThan(html.indexOf("North indicator"));
-    expect(html.indexOf("North indicator")).toBeLessThan(html.indexOf("About StormPath"));
-    expect(html.indexOf("About StormPath")).toBeLessThan(html.indexOf("42 mi remaining"));
+    expect(html.indexOf("North indicator")).toBeLessThan(html.indexOf("StormPath Tools"));
+    expect(html.indexOf("StormPath Tools")).toBeLessThan(html.indexOf("About StormPath"));
     expect(html).toContain('id="landscape-navigation-messages"');
     expect(html).not.toContain("nav-bottom-toolbar");
+  });
+
+  it("keeps ⓘ in the dock for every view — the iPad panel hides/re-orders via CSS", async () => {
+    const html = render();
+    expect(html).toContain("About StormPath");
+    expect(html).toContain("StormPath Tools");
+    expect(html).toContain("North indicator");
+    expect(html).toContain("Refresh the trip");
+    const css = await readAppCss();
+    // MP/RT hides the dock ⓘ so the about row can carry it beside route select.
+    expect(css).toContain(".landscape-navigation-dock__controls > .map-about-btn { order: 1; }");
+    expect(css).toContain(".nav-bottom-dock__about-row\n    .nav-tools-btn");
   });
 
   it("preserves original content before mounting and outside active navigation", () => {

@@ -1,4 +1,5 @@
 import type { TimelineItem } from "./routeAheadSync";
+import { timelineItemShowsOnRouteGraph } from "./routeAheadSync";
 import { timelineItemBandColor } from "./timelineBandColors";
 import { formatRouteAlertTiming, fmtMin } from "./routeAlertTiming";
 import type { MapViewMode } from "../ui/driveMapTypes";
@@ -17,16 +18,24 @@ export type DriveHazardTickerInput = {
 
 const SEVERITY = { info: 0, caution: 1, serious: 2, avoid: 3 };
 
-function collectHazardCandidates(input: DriveHazardTickerInput, nowMs: number): TimelineItem[] {
+function collectHazardCandidates(
+  input: DriveHazardTickerInput,
+  nowMs: number,
+  opts?: { pageGraph?: boolean; anyNavView?: boolean }
+): TimelineItem[] {
   const { userAlongMeters: along, metersToManeuver: turnM } = input;
-  if (!input.isPlus || !input.isOnline || !input.navigationStarted || input.offRoute || input.viewMode !== "drive" ||
+  if (!input.isPlus || !input.isOnline || !input.navigationStarted || input.offRoute ||
+    (input.viewMode !== "drive" && !opts?.anyNavView) ||
     !Number.isFinite(along) || along < 0 || turnM == null || !Number.isFinite(turnM) || turnM <= 1609.34) return [];
 
   const candidates = input.items.filter((item) => {
-    if (item.crossesRoute === false || item.stripMuted || item.coarsePreview || item.etaStale ||
-      item.severity === "info" || !item.label.trim() || !Number.isFinite(item.startMeters) ||
+    if (item.crossesRoute === false || item.coarsePreview || !item.label.trim() || !Number.isFinite(item.startMeters) ||
       !Number.isFinite(item.endMeters) || item.startMeters < 0 || item.endMeters < item.startMeters ||
       item.endMeters <= along) return false;
+    if (opts?.pageGraph) {
+      // Countdown set = whatever the route-info graph / advisory hazards feed shows.
+      if (!timelineItemShowsOnRouteGraph(item)) return false;
+    } else if (item.stripMuted || item.etaStale || item.severity === "info") return false;
     if (item.expiresIso) {
       const expiry = Date.parse(item.expiresIso);
       if (!Number.isFinite(expiry) || expiry <= nowMs) return false;
@@ -69,6 +78,21 @@ export type DriveHazardQueueInput = DriveHazardTickerInput & {
   driveEtaMinutes?: number | null;
 };
 
+/**
+ * Next hazard the countdown will report — same candidate set as the queue.
+ * Used to highlight the matching row on the route-info / advisory pages and
+ * to drop a synced beacon on the route line.
+ */
+export function selectNextDriveHazardItem(
+  input: DriveHazardQueueInput,
+  opts?: { nowMs?: number; anyNavView?: boolean }
+): TimelineItem | null {
+  return collectHazardCandidates(input, opts?.nowMs ?? Date.now(), {
+    pageGraph: true,
+    anyNavView: opts?.anyNavView,
+  })[0] ?? null;
+}
+
 export type DriveHazardQueueRow = {
   id: string;
   label: string;
@@ -82,7 +106,7 @@ export function selectDriveHazardQueue(
   nowMs = Date.now()
 ): DriveHazardQueueRow[] {
   const along = input.userAlongMeters;
-  return collectHazardCandidates(input, nowMs).slice(0, 2).map((item) => {
+  return collectHazardCandidates(input, nowMs, { pageGraph: true }).slice(0, 2).map((item) => {
     const timing = formatRouteAlertTiming({
       startMeters: item.startMeters,
       endMeters: item.endMeters,

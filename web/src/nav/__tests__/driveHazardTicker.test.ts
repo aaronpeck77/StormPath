@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   selectDriveHazardQueue,
+  selectNextDriveHazardItem,
   selectDriveHazardTicker,
   type DriveHazardTickerInput,
 } from "../driveHazardTicker";
@@ -94,5 +95,34 @@ describe("Drive hazard queue (iPad landscape panel)", () => {
   it("respects the same eligibility gates as the ticker", () => {
     expect(selectDriveHazardQueue({ ...queueInput, isPlus: false })).toEqual([]);
     expect(selectDriveHazardQueue({ ...queueInput, viewMode: "route" })).toEqual([]);
+  });
+
+  it("counts down the same set the route-info graph shows", () => {
+    // Strip-muted NWS still paints on the graph's NWS rail → countdown includes it.
+    const mutedNws = { ...hazard, id: "muted-nws", stripMuted: true };
+    expect(selectDriveHazardQueue({ ...queueInput, items: [mutedNws] })[0]?.id).toBe("muted-nws");
+    // Non-NWS tracks keep the graph's serious|avoid bar.
+    const cautionRoad = {
+      ...hazard, id: "road-caution", track: "road" as const, severity: "caution" as const,
+    };
+    expect(selectDriveHazardQueue({ ...queueInput, items: [cautionRoad] })).toEqual([]);
+    const seriousRoad = { ...cautionRoad, id: "road-serious", severity: "serious" as const };
+    expect(selectDriveHazardQueue({ ...queueInput, items: [seriousRoad] })[0]?.id).toBe("road-serious");
+  });
+
+  it("selectNextDriveHazardItem returns the countdown's next TimelineItem", () => {
+    const item = selectNextDriveHazardItem({ ...queueInput, items: [hazard] });
+    expect(item?.id).toBe("storm");
+    expect(item?.startMeters).toBe(hazard.startMeters);
+    expect(selectNextDriveHazardItem({ ...queueInput, items: [] })).toBeNull();
+  });
+
+  it("anyNavView keeps the next-hazard highlight alive outside drive view", () => {
+    const mp = { ...queueInput, viewMode: "topdown" as const, items: [hazard] };
+    // Countdown queue stays drive-only…
+    expect(selectDriveHazardQueue(mp)).toEqual([]);
+    expect(selectNextDriveHazardItem(mp)).toBeNull();
+    // …but the shared "next" used for page highlights + the route beacon does not.
+    expect(selectNextDriveHazardItem(mp, { anyNavView: true })?.id).toBe("storm");
   });
 });

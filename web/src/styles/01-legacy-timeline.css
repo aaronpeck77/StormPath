@@ -563,3 +563,9 @@
   line-height: 1.2;
 }
 
+
+/* Countdown "next hazard" — same pulse treatment as the advisory feed rows. */
+.rhtz__legend-item--next {
+  border-color: rgba(125, 211, 252, 0.95);
+  animation: sp-hazard-next-pulse 1.8s ease-in-out infinite;
+}

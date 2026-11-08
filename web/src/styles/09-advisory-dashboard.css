@@ -1268,3 +1268,9 @@
   background: transparent;
 }
 
+
+/* Countdown "next hazard" — pulsing outline synced with the drive panel + map beacon. */
+.adv-dash__feed-row--next {
+  border-color: rgba(125, 211, 252, 0.95);
+  animation: sp-hazard-next-pulse 1.8s ease-in-out infinite;
+}

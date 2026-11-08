@@ -76,6 +76,11 @@ import {
   pointAtAlongMeters,
   polylineLengthMeters,
 } from "./nav/routeGeometry";
+import {
+  selectNextDriveHazardItem,
+  type DriveHazardQueueInput,
+} from "./nav/driveHazardTicker";
+import { timelineItemBandColor } from "./nav/timelineBandColors";
 import { fartherAlongMeters, stablePlanRoutesKey } from "./nav/tripNavDisplay";
 import { useTripNavDisplayHealth } from "./nav/useTripNavDisplayHealth";
 import { useTripSurfaceRecovery } from "./nav/useTripSurfaceRecovery";
@@ -2935,6 +2940,63 @@ export default function App() {
     },
   });
 
+  /* Next-hazard sync: one queue feeds the iPad countdown card, the
+   * route-info / advisory highlight, and the map route-line beacon. */
+  const hazardQueueInput = useMemo<DriveHazardQueueInput>(
+    () => ({
+      items: routeAheadTimeline,
+      isPlus,
+      isOnline,
+      navigationStarted,
+      viewMode,
+      userAlongMeters: userAlongGuidanceM,
+      metersToManeuver: metersToBannerManeuver,
+      miles: roadUsesMiles(effectiveUserLngLat),
+      offRoute: offRouteLatched,
+      totalMeters: guidanceRouteLengthM,
+      planEtaMinutes: guidanceRoute?.baseEtaMinutes ?? null,
+      driveEtaMinutes: driveEtaMinutes ?? null,
+    }),
+    [
+      routeAheadTimeline,
+      isPlus,
+      isOnline,
+      navigationStarted,
+      viewMode,
+      userAlongGuidanceM,
+      metersToBannerManeuver,
+      effectiveUserLngLat,
+      offRouteLatched,
+      guidanceRouteLengthM,
+      guidanceRoute?.baseEtaMinutes,
+      driveEtaMinutes,
+    ]
+  );
+  /* Highlight/beacon track the same "next" hazard in every nav view — the
+   * countdown card itself stays drive-view only via selectDriveHazardQueue. */
+  const nextDriveHazard = useMemo(
+    () => selectNextDriveHazardItem(hazardQueueInput, { anyNavView: true }),
+    [hazardQueueInput]
+  );
+  const nextHazardId = nextDriveHazard?.id ?? null;
+  const nextHazardBeacon = useMemo(() => {
+    const geom = guidanceRoute?.geometry;
+    if (!nextDriveHazard || !geom || geom.length < 2) return null;
+    return {
+      lngLat: pointAtAlongMeters(geom, nextDriveHazard.startMeters),
+      label: nextDriveHazard.label,
+      color: timelineItemBandColor(nextDriveHazard),
+    };
+  }, [nextDriveHazard, guidanceRoute?.geometry]);
+  const stormAdvisoryBarPropsWithNext = useMemo(
+    () => ({ ...stormAdvisoryBarProps, highlightedHazardId: nextHazardId }),
+    [stormAdvisoryBarProps, nextHazardId]
+  );
+  const driveMapPropsWithBeacon = useMemo(
+    () => ({ ...driveMapProps, nextHazardBeacon }),
+    [driveMapProps, nextHazardBeacon]
+  );
+
   return (
     <div
       className={buildAppShellClassName({
@@ -3021,13 +3083,13 @@ export default function App() {
             stripTint: activeProgressCalloutPanel.stripTint,
             detailScrollRef: progressCalloutDetailScrollRef,
           }}
-          advisory={stormAdvisoryBarProps}
+          advisory={stormAdvisoryBarPropsWithNext}
           carAlertedHazardTitles={carPlayHazardTitles}
           useMiles={roadUsesMiles(effectiveUserLngLat)}
           onShowMap={() => setCarPlayMapPeek(true)}
         />
       ) : (
-      <AppMapStage driveMapProps={driveMapProps}>
+      <AppMapStage driveMapProps={driveMapPropsWithBeacon}>
         <div className="nav-drive-overlay-stack">
             {!trafficBypassCompare ? (
             <AppTopNavCluster
@@ -3046,7 +3108,7 @@ export default function App() {
               onTakePersonalFork={() => commitPersonalFork()}
               onDismissPersonalFork={() => personalForkNav.dismissForTrip()}
               showStormAdvisoryChrome={showStormAdvisoryChrome}
-              stormAdvisoryBarProps={stormAdvisoryBarProps}
+              stormAdvisoryBarProps={stormAdvisoryBarPropsWithNext}
               isPlus={isPlus}
               activityBusyLabel={activityBusyLabel}
               dockNote={
@@ -3155,6 +3217,7 @@ export default function App() {
                 driveModeUi={driveModeUi}
                 tripOdometerM={tripOdometerM}
                 navigationStarted={navigationStarted}
+                nextHazardId={nextHazardId}
               />
             )}
           </div>
@@ -3274,19 +3337,9 @@ export default function App() {
           panelWidgets={
             navigationStarted ? (
               <>
+                <div id="ipad-panel-tbt-slot" className="ipad-panel-tbt-slot" />
                 <LandscapeHazardPanel
-                  items={routeAheadTimeline}
-                  isPlus={isPlus}
-                  isOnline={isOnline}
-                  navigationStarted={navigationStarted}
-                  viewMode={viewMode}
-                  userAlongMeters={userAlongGuidanceM}
-                  offRoute={offRouteLatched}
-                  metersToManeuver={metersToBannerManeuver}
-                  miles={roadUsesMiles(effectiveUserLngLat)}
-                  totalMeters={guidanceRouteLengthM}
-                  planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
-                  driveEtaMinutes={driveEtaMinutes}
+                  {...hazardQueueInput}
                   bendHazardId={hazardBypass.hazardId}
                   onBend={hazardBypass.enter}
                   onDismissBend={hazardBypass.dismissHazard}
@@ -3300,14 +3353,30 @@ export default function App() {
                   suggestedRouteId={suggestedRouteId}
                   orderedRouteIds={orderedRouteIds}
                   navigationStarted={navigationStarted}
-                  advisoryAlerts={stormAdvisoryBarProps.overlappingAlerts}
-                  locationAlerts={stormAdvisoryBarProps.nwsAtLocationAlerts}
+                  advisoryProps={stormAdvisoryBarPropsWithNext}
                   onOpenAdvisory={() => setStormBarExpanded(true)}
-                  timeline={routeAheadTimeline}
-                  totalMeters={guidanceRouteLengthM}
-                  userAlongMeters={userAlongGuidanceM}
                   planEtaMinutes={guidanceRoute?.baseEtaMinutes ?? null}
                   driveEtaMinutes={driveEtaMinutes}
+                  nextHazardId={nextHazardId}
+                  timeline={routeAheadTimeline}
+                  glanceRouteWide={activeProgressCalloutPanel.routeWide}
+                  glanceOutlookSteps={activeProgressCalloutPanel.outlookTimeline}
+                  glanceOutlookSamples={activeProgressCalloutPanel.outlookSamples}
+                  glanceRadarSamples={radarMosaicSamples}
+                  glanceRadarStatusNote={
+                    radarRefreshBlocked ??
+                    (radarMosaicSamples.length > 0 ? formatRadarSampleAge(radarMosaicUpdatedAt) : null)
+                  }
+                  glanceWindPoints={activeProgressCalloutPanel.windPoints}
+                  glanceGustLinePoints={activeProgressCalloutPanel.gustLinePoints}
+                  glanceGustSpikePoints={activeProgressCalloutPanel.gustSpikePoints}
+                  glanceFallbackSegments={activeProgressCalloutPanel.segments.filter(
+                    (s) => !s.key.startsWith("route-ahead-")
+                  )}
+                  glanceTotalMeters={guidanceRouteLengthM}
+                  glanceUserAlongMeters={progressPanelAlongM}
+                  glanceUserAlongT={progressCalloutUserAlongT}
+                  glanceStripTint={activeProgressCalloutPanel.stripTint}
                 />
               </>
             ) : null

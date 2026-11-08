@@ -50,6 +50,7 @@ export function AdvisoryExpandedSections({
     dataSaverHint = null,
     basicStatusPanelPromos = null,
     onOpenSubscription,
+    highlightedHazardId = null,
   } = p;
 
   return (
@@ -155,6 +156,7 @@ export function AdvisoryExpandedSections({
             developingNwsAlerts={model.developingNwsAlerts}
             panelNwsAlertsExtra={model.panelNwsAlertsExtra}
             onNwsAlertClick={onNwsAlertClick}
+            highlightedHazardId={highlightedHazardId}
           />
 
           <div className="storm-advisory-bar__dashboard">

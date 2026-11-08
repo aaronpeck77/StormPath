@@ -38,6 +38,7 @@ function FeedRow({
   detailNode,
   timing,
   sevClass,
+  isNext = false,
   onClick,
 }: {
   tag: string;
@@ -47,6 +48,8 @@ function FeedRow({
   detailNode?: ReactNode;
   timing?: string | null;
   sevClass: string;
+  /** Countdown "next hazard" — pulsing outline so it syncs with the drive panel. */
+  isNext?: boolean;
   onClick?: () => void;
 }) {
   const body = (
@@ -64,11 +67,12 @@ function FeedRow({
     </>
   );
 
+  const rowClass = `adv-dash__feed-row adv-dash__feed-row--${sevClass}${isNext ? " adv-dash__feed-row--next" : ""}`;
   if (onClick) {
     return (
       <button
         type="button"
-        className={`adv-dash__feed-row adv-dash__feed-row--${sevClass} adv-dash__feed-row--tap`}
+        className={`${rowClass} adv-dash__feed-row--tap`}
         onClick={onClick}
       >
         {body}
@@ -76,7 +80,7 @@ function FeedRow({
     );
   }
 
-  return <div className={`adv-dash__feed-row adv-dash__feed-row--${sevClass}`}>{body}</div>;
+  return <div className={rowClass}>{body}</div>;
 }
 
 function nwsSevClass(a: NormalizedWeatherAlert): string {
@@ -91,7 +95,8 @@ function nwsFeedRow(
   timingLine: string,
   tag: string,
   tagTone: "nws" | "urgent",
-  onClick: ((alert: NormalizedWeatherAlert) => void) | undefined
+  onClick: ((alert: NormalizedWeatherAlert) => void) | undefined,
+  isNext = false
 ): ReactNode {
   return (
     <FeedRow
@@ -102,6 +107,7 @@ function nwsFeedRow(
       detail={nwsChipDetailText(a)}
       timing={timingLine}
       sevClass={nwsSevClass(a)}
+      isNext={isNext}
       onClick={onClick ? () => onClick(a) : undefined}
     />
   );
@@ -128,6 +134,8 @@ export type AdvisoryRouteHazardsPanelProps = {
   developingNwsAlerts: { alert: NormalizedWeatherAlert; timingLine: string }[];
   panelNwsAlertsExtra: { alert: NormalizedWeatherAlert; timingLine: string }[];
   onNwsAlertClick?: (alert: NormalizedWeatherAlert) => void;
+  /** TimelineItem.id of the countdown "next" hazard — matching feed rows get a highlight. */
+  highlightedHazardId?: string | null;
 };
 
 export function AdvisoryRouteHazardsPanel({
@@ -151,11 +159,17 @@ export function AdvisoryRouteHazardsPanel({
   developingNwsAlerts,
   panelNwsAlertsExtra,
   onNwsAlertClick,
+  highlightedHazardId = null,
 }: AdvisoryRouteHazardsPanelProps) {
   const activeTimeline = useMemo(
     () => advisoryRouteTimeline.filter((item) => !item.stripMuted && item.endMeters > userAlongMeters),
     [advisoryRouteTimeline, userAlongMeters]
   );
+
+  /* NWS timeline ids are "nws-alert-<alertId>" — strip the prefix to match feed rows. */
+  const nextNwsAlertId = highlightedHazardId?.startsWith("nws-alert-")
+    ? highlightedHazardId.slice("nws-alert-".length)
+    : highlightedHazardId;
 
   const nwsTimelineCount = activeTimeline.filter((i) => i.track === "nws" || i.track === "wind").length;
   const roadTimelineCount = activeTimeline.filter((i) => i.track === "road").length;
@@ -267,7 +281,7 @@ export function AdvisoryRouteHazardsPanel({
 
       <div className="adv-dash__feed">
         {urgentTopAlerts.map(({ alert, timingLine }) =>
-          nwsFeedRow(alert, timingLine, "Now", "urgent", onNwsAlertClick)
+          nwsFeedRow(alert, timingLine, "Now", "urgent", onNwsAlertClick, alert.id === nextNwsAlertId)
         )}
 
         {hasRoadRows
@@ -298,15 +312,16 @@ export function AdvisoryRouteHazardsPanel({
             rerouteBusy={trafficRerouteBusy}
             groupLegendByTrack
             compactFeed
+            highlightedItemId={highlightedHazardId}
           />
         ) : null}
 
         {developingNwsAlerts.map(({ alert, timingLine }) =>
-          nwsFeedRow(alert, timingLine, "Later", "nws", onNwsAlertClick)
+          nwsFeedRow(alert, timingLine, "Later", "nws", onNwsAlertClick, alert.id === nextNwsAlertId)
         )}
 
         {panelNwsAlertsExtra.map(({ alert, timingLine }) =>
-          nwsFeedRow(alert, timingLine, "NWS", "nws", onNwsAlertClick)
+          nwsFeedRow(alert, timingLine, "NWS", "nws", onNwsAlertClick, alert.id === nextNwsAlertId)
         )}
 
         {showRerouteStandalone ? (

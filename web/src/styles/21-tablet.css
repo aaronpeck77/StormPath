@@ -16,6 +16,12 @@
   display: none;
 }
 
+/* TBT portal slot — empty everywhere except large-tablet landscape, where the
+ * portaled turn-by-turn bar lands at the top of the command panel. */
+.ipad-panel-tbt-slot {
+  display: none;
+}
+
 /* Direct "Tools" entry beside the ⓘ button — tablets only; phones keep ⓘ → StormPath Tools. */
 .nav-tools-btn {
   display: none;
@@ -244,7 +250,10 @@
   /* ── Panel middle: PiP switcher (RT map / advisory / weather) ──────────── */
   .landscape-info-pip {
     display: flex;
-    flex: 0 0 auto;
+    /* Shrinks before the panel scrolls — Rt's extra route-select row would
+     * otherwise push the toolbar below the fold. */
+    flex: 0 1 auto;
+    min-height: 0;
     flex-direction: column;
     margin: 2px 2px 0;
     overflow: hidden;
@@ -282,82 +291,52 @@
   }
 
   .landscape-info-pip__stage {
-    height: 190px;
+    flex: 0 1 auto;
+    height: 252px;
+    min-height: 120px;
     margin-top: 6px;
   }
 
-  .landscape-info-pip__advisory {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+  /* Adv tab: the advisory "Hazards on your route" feed, scaled for the pane. */
+  .landscape-info-pip__feed {
     height: 100%;
-    box-sizing: border-box;
-    padding: 10px 12px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    font-size: 11px;
   }
 
-  .landscape-info-pip__advisory-head {
-    display: flex;
-    align-items: center;
+  .landscape-info-pip__feed .adv-dash {
+    padding: 8px 10px;
+  }
+
+  .landscape-info-pip__feed .adv-dash__feed-row {
+    padding: 7px 8px;
     gap: 7px;
   }
 
-  .landscape-info-pip__advisory-title {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #94a3b8;
+  .landscape-info-pip__feed .adv-dash__feed-title {
+    font-size: 11.5px;
   }
 
-  .landscape-info-pip__dot {
-    flex: 0 0 8px;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
+  .landscape-info-pip__feed .adv-dash__feed-detail,
+  .landscape-info-pip__feed .adv-dash__feed-timing {
+    font-size: 10px;
   }
 
-  .landscape-info-pip__dot--high {
-    background: #f87171;
-  }
-
-  .landscape-info-pip__dot--watch {
-    background: #fbbf24;
-  }
-
-  .landscape-info-pip__dot--clear {
-    background: #34d399;
-  }
-
-  .landscape-info-pip__advisory-text {
-    margin: 0;
-    font-size: 13.5px;
-    line-height: 1.35;
-    color: #e2e8f0;
-  }
-
-  .landscape-info-pip__advisory-text--clear {
-    color: #94a3b8;
-  }
-
-  .landscape-info-pip__open {
-    align-self: flex-start;
-    min-height: 36px;
-    margin-top: auto;
-    padding: 6px 14px;
-    border: 1px solid rgba(148, 163, 184, 0.45);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.06);
-    color: #f8fafc;
-    font-size: 13px;
-    font-weight: 600;
-    pointer-events: auto;
-  }
-
+  /* Wx tab: the full route-info weather graph (NWS/radar/wind/forecast/road + YOU). */
   .landscape-info-pip__wx {
     height: 100%;
     overflow-y: auto;
     overscroll-behavior: contain;
-    font-size: 12px;
+    font-size: 10px;
+  }
+
+  .landscape-info-pip__wx .rpgl {
+    height: 100%;
+  }
+
+  .landscape-info-pip__wx .rpgl__detail-scroll {
+    max-height: none;
   }
 
   /* ── Right-hand (default): command panel on the right, rail stays left ── */
@@ -381,12 +360,9 @@
     pointer-events: none;
   }
 
-  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left)
-    .map-stage.map-bleed
-    > .nav-bottom-stack
-    > .nav-bottom-chrome-wrap {
-    margin-top: auto;
-  }
+  /* No auto-margin pinning: TBT → hazards → PiP → buttons → chrome stay one
+   * contiguous stack from the panel top; spare height collects below the
+   * toolbar instead of splitting the button row away from the chrome. */
 
   /* ── Left-hand: mirrored panel on the left, rail stays right ── */
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .map-stage.map-bleed > .nav-bottom-stack {
@@ -406,13 +382,6 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     pointer-events: none;
-  }
-
-  .app-shell.nav-fullmap.app-shell--landscape-hand-left
-    .map-stage.map-bleed
-    > .nav-bottom-stack
-    > .nav-bottom-chrome-wrap {
-    margin-top: auto;
   }
 
   /* Mapbox "i" attribution + legal strip must clear the panel, not hide under it. */
@@ -499,5 +468,158 @@
     .map-stage.map-bleed
     > .nav-bottom-stack {
     bottom: var(--basic-ad-banner-reserve, 50px);
+  }
+
+  /* ── TBT portaled to the top of the command panel ─────────────────────── */
+  .ipad-panel-tbt-slot:not(:empty) {
+    display: block;
+    pointer-events: auto;
+  }
+
+  .ipad-panel-tbt-slot .top-guidance-bar {
+    background: rgba(18, 20, 24, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Bigger read-out than the phone vw-clamped drive type — the panel is ~1/3
+   * of the viewport, so vw units would shrink it; use fixed rem targets. */
+  .ipad-panel-tbt-slot .top-guidance-bar--glanceable {
+    --turn-drive-pad-y: 12px;
+    --turn-drive-pad-x: 14px;
+    --turn-drive-street: 1.34rem;
+    --turn-drive-meta: 1.02rem;
+    --turn-drive-icon: 2.4rem;
+    --turn-drive-icon-next: 2.1rem;
+    --turn-drive-then: 0.88rem;
+    --turn-drive-next-meta: 0.95rem;
+  }
+
+  .ipad-panel-tbt-slot .turn-banner-street {
+    font-size: 1.22rem;
+  }
+
+  .ipad-panel-tbt-slot .turn-banner-next-instr {
+    font-size: 1.12rem;
+  }
+
+  /* The portaled bar leaves .nav-top-cluster, so mirror its "instructions wrap
+   * fully" rules here — otherwise turn text clamps back to two lines. */
+  .ipad-panel-tbt-slot .top-guidance-bar--turn-only {
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    height: auto;
+    min-height: min-content;
+    overflow: visible;
+  }
+
+  .ipad-panel-tbt-slot .top-guidance-bar--turn-only .turn-banner-street,
+  .ipad-panel-tbt-slot .top-guidance-bar--turn-only .turn-banner-next-instr {
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+    max-height: none;
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
+  }
+
+  .ipad-panel-tbt-slot .top-guidance-bar--turn-only .turn-banner {
+    flex: 0 0 auto;
+    min-height: min-content;
+    align-content: start;
+  }
+
+  /* ── Nav dock: single column — toasts, miles, then the button row sitting
+   * just above the bottom chrome (Info · Tools · compass · refresh in Dr). ── */
+  .app-shell.nav-fullmap .landscape-navigation-dock {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0;
+    pointer-events: none;
+  }
+
+  .landscape-navigation-dock__controls {
+    flex-direction: row;
+    justify-content: center;
+    align-self: stretch;
+    gap: 12px;
+  }
+
+  /* Panel row order (left→right): ⓘ · Tools · compass · ↻. DOM order stays
+   * phone-landscape's vertical stack; only the iPad panel re-orders. */
+  .landscape-navigation-dock__controls > .map-about-btn { order: 1; }
+  .landscape-navigation-dock__controls > .nav-tools-btn { order: 2; }
+  .landscape-navigation-dock__controls > .drive-compass { order: 3; }
+  .landscape-navigation-dock__controls > .trip-refresh-btn { order: 4; }
+
+  /* MP/RT: ⓘ moves to the about row (with route select) — hide the dock copy. */
+  .app-shell.nav-fullmap:not(.nav-drive-ui)
+    .landscape-navigation-dock__controls
+    > .map-about-btn {
+    display: none;
+  }
+
+  .landscape-navigation-dock__messages {
+    max-height: 18vh;
+  }
+
+  /* MP/RT: ⓘ lives in the about row under the controls (with route select) —
+   * un-hide it there; Dr keeps ⓘ inside the dock controls instead. */
+  .app-shell.nav-fullmap:not(.nav-drive-ui)
+    .nav-bottom-stack:has(.landscape-navigation-dock)
+    .nav-bottom-dock__about-row
+    .map-about-btn {
+    display: inline-flex;
+  }
+
+  /* MP/RT panel about-row: ⓘ on the left, route select fills the space to its
+   * right. Phone-landscape parks ⓘ on the trailing edge — override for panel. */
+  .app-shell.nav-fullmap .nav-bottom-stack:has(.landscape-navigation-dock)
+    .nav-bottom-dock__about-row {
+    justify-content: flex-start;
+  }
+
+  .app-shell.nav-fullmap .nav-bottom-stack:has(.landscape-navigation-dock)
+    .nav-bottom-dock__about-row
+    .map-about-btn {
+    order: 0;
+  }
+
+  /* Tools already sits in the dock controls row above the chrome — hide the
+   * about-row copy so it doesn't render twice. */
+  .app-shell.nav-fullmap .nav-bottom-stack:has(.landscape-navigation-dock)
+    .nav-bottom-dock__about-row
+    .nav-tools-btn {
+    display: none;
+  }
+
+  /* ── Bigger advisory bar + route-select read-out over the map area ────── */
+  .app-shell.nav-fullmap .nav-top-cluster .storm-advisory-bar {
+    font-size: 0.68rem;
+    line-height: 1.4;
+    padding: 7px 10px;
+  }
+
+  .app-shell.nav-fullmap .nav-top-cluster .storm-advisory-bar__collapse-btn {
+    width: 42px;
+    height: 42px;
+    font-size: 0.62rem;
+  }
+
+  .app-shell.nav-fullmap .nav-route-cycle-btn__label {
+    font-size: 0.95rem;
+  }
+
+  .app-shell.nav-fullmap .nav-route-cycle-btn__eta,
+  .app-shell.nav-fullmap .nav-route-cycle-btn__detail {
+    font-size: 0.78rem;
+  }
+
+  .app-shell.nav-fullmap .nav-route-toggle__seg {
+    font-size: 0.85rem;
+    min-height: 40px;
   }
 }
