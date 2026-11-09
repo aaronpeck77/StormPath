@@ -437,6 +437,13 @@ export type Props = {
   /** Multi-result destination search: temporary pins until the user picks one. */
   searchPickMarkers?: { id: string; lngLat: LngLat; label: string }[] | null;
   onSearchPickMarkerClick?: (id: string) => void;
+  /** State DOT/WZDx work-zone & closure dots along the route corridor (Plus). */
+  dotEventMarkers?: {
+    id: string;
+    lngLat: LngLat;
+    label: string;
+    kind?: "construction" | "closure" | "incident" | "other";
+  }[] | null;
   /** Right-side route progress rail visibility affects camera/right padding. */
   progressRailVisible?: boolean;
   /** Off-route Mp: fit B/C rejoin paths in view instead of street-level puck follow. */
@@ -602,6 +609,7 @@ function DriveMapInner({
   homePreloadBounds = null,
   searchPickMarkers = null,
   onSearchPickMarkerClick,
+  dotEventMarkers = null,
   progressRailVisible = true,
   offRouteRejoinCompareActive = false,
   rejoinOverlayActive = false,
@@ -629,6 +637,7 @@ function DriveMapInner({
   const onSavedClickRef = useRef(onSavedPlaceClick);
   onSavedClickRef.current = onSavedPlaceClick;
   const searchPickMarkerMapRef = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLButtonElement }>>(new Map());
+  const dotEventMarkerMapRef = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLElement }>>(new Map());
   const onSearchPickMarkerClickRef = useRef(onSearchPickMarkerClick);
   onSearchPickMarkerClickRef.current = onSearchPickMarkerClick;
   const routeIdsRef = useRef<Set<string>>(new Set());
@@ -5437,6 +5446,40 @@ function DriveMapInner({
       map.off("zoom", applyScale);
     };
   }, [mapReady, searchPickMarkers, onSearchPickMarkerClick]);
+
+  /* State DOT/WZDx work-zone & closure dots — non-interactive, corridor-matched upstream. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    const existing = dotEventMarkerMapRef.current;
+    const markers = dotEventMarkers;
+
+    if (!markers?.length) {
+      for (const { marker } of existing.values()) marker.remove();
+      existing.clear();
+      return;
+    }
+
+    const wantedIds = new Set(markers.map((m) => m.id));
+    for (const [id, { marker }] of existing) {
+      if (!wantedIds.has(id)) {
+        marker.remove();
+        existing.delete(id);
+      }
+    }
+
+    for (const m of markers) {
+      if (existing.has(m.id)) continue;
+      const el = document.createElement("div");
+      el.className = `map-dot-event map-dot-event--${m.kind ?? "other"}`;
+      el.title = m.label;
+      const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
+        .setLngLat(m.lngLat)
+        .addTo(map);
+      existing.set(m.id, { marker, el });
+    }
+  }, [mapReady, dotEventMarkers]);
 
   useEffect(() => {
     if (!mapReady) return;

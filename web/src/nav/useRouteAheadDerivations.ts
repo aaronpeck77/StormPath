@@ -68,6 +68,9 @@ import type { RouteSituationSlice } from "../situation/types";
 import type { TrafficOverlay } from "../situation/fusedSnapshot";
 import type { ScoredRoute } from "../scoring/scoreRoutes";
 import { useRoutePlaceAnchors } from "./useRoutePlaceAnchors";
+import { useDotRoadEvents } from "./useDotRoadEvents";
+import { buildDotImpacts } from "./dotImpacts";
+import type { DotRoadEvent } from "../services/dotRoadEvents";
 import { placeReferencePhrase, type RoutePlaceAnchor } from "./routePlaceReference";
 import { pointAtAlongMeters } from "./routeGeometry";
 
@@ -159,6 +162,15 @@ export type UseRouteAheadDerivationsResult = {
   progressStripAlerts: RouteAlert[];
   /** Exit signs plus city centers used to phrase alerts. */
   routePlaceAnchors: RoutePlaceAnchor[];
+  /** Corridor-matched state DOT/WZDx events for map markers (Plus only). */
+  dotRoadEvents: DotRoadEvent[];
+  /** DOT impacts → non-interactive map dots (same corridor-matched set). */
+  dotEventMarkers: {
+    id: string;
+    lngLat: LngLat;
+    label: string;
+    kind: "construction" | "closure" | "incident" | "other";
+  }[];
 };
 
 export function useRouteAheadDerivations(
@@ -210,6 +222,12 @@ export function useRouteAheadDerivations(
     guidanceRoute?.geometry,
     mapboxToken
   );
+
+  /** State DOT/WZDx corridor feed — Plus only, rides the unified impact pipeline. */
+  const dotFeed = useDotRoadEvents({
+    enabled: isPlus && !!guidanceRoute?.geometry?.length,
+    geometry: guidanceRoute?.geometry,
+  });
   const placePhraseAt = useCallback(
     (alongM: number) => {
       const g = guidanceRoute?.geometry;
@@ -422,6 +440,17 @@ export function useRouteAheadDerivations(
       }
     }
 
+    if (dotFeed?.events.length) {
+      list.push(
+        ...buildDotImpacts(
+          dotFeed.events,
+          geometry,
+          navActive && totalM > 0 ? heavyAdvisoryAlongM : 0,
+          totalM
+        )
+      );
+    }
+
     list.sort(compareRouteImpactPriority);
     return applyArrivalVerdictsToImpacts({
       impacts: list,
@@ -447,6 +476,7 @@ export function useRouteAheadDerivations(
     guidanceRouteLengthM,
     effectiveUserLngLatRef,
     driveEtaMinutes,
+    dotFeed?.events,
   ]);
 
   /** Filter impacts by the same UI toggles that gated the legacy alert list. */
@@ -732,6 +762,22 @@ export function useRouteAheadDerivations(
 
   const progressStripAlerts = useMemo(() => augmentAlertsForProgressStrip(routeAlerts), [routeAlerts]);
 
+  const dotEventMarkers = useMemo(
+    () =>
+      routeImpactsForUi
+        .filter((i) => i.source === "dot511")
+        .map((i) => ({
+          id: i.id,
+          lngLat: i.lngLat,
+          label: i.driverHeadline,
+          kind:
+            i.category === "closure" || i.category === "incident" || i.category === "construction"
+              ? i.category
+              : ("other" as const),
+        })),
+    [routeImpactsForUi]
+  );
+
   return {
     alertsOnActiveRouteGeom,
     nwsAlertsAffectingActiveRoute,
@@ -767,5 +813,7 @@ export function useRouteAheadDerivations(
     postedMphFromHorizon,
     progressStripAlerts,
     routePlaceAnchors,
+    dotRoadEvents: dotFeed?.events ?? [],
+    dotEventMarkers,
   };
 }

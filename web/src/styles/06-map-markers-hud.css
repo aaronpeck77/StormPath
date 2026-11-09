@@ -1664,3 +1664,29 @@
     opacity: 0.35;
   }
 }
+
+/* State DOT/WZDx work-zone & closure dots — corridor-matched, non-interactive. */
+.map-dot-event {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.map-dot-event--construction {
+  background: #f5a524;
+}
+
+.map-dot-event--closure {
+  background: #e5484d;
+}
+
+.map-dot-event--incident {
+  background: #f76b15;
+}
+
+.map-dot-event--other {
+  background: #8b8d98;
+}

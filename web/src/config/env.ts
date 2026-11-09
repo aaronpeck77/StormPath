@@ -62,6 +62,8 @@ export function getWebEnv() {
     rainViewerTileProxyUrl:
       (import.meta.env.VITE_RAINVIEWER_TILE_PROXY_URL as string | undefined)?.trim() ||
       "https://stormpath2.netlify.app/.netlify/functions/rainviewer-tile",
+    /** State DOT/WZDx normalized feed (Cloudflare Worker `stormpath-dot-feeds`). Empty = feature off. */
+    dotFeedUrl: (import.meta.env.VITE_DOT_FEED_URL as string | undefined)?.trim() ?? "",
     /** Apple WeatherKit via Netlify JWT token function — scales for App Store users. */
     weatherKitEnabled:
       String(import.meta.env.VITE_WEATHERKIT_ENABLED ?? "").toLowerCase() === "true",

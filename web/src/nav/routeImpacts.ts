@@ -51,6 +51,7 @@ export type RouteImpactSource =
   | "tomorrowIo"
   | "wind"
   | "windGust"
+  | "dot511"
   | "fused";
 
 export type RouteImpactAction =

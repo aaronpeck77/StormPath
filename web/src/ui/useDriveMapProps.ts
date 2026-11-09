@@ -91,6 +91,13 @@ export type UseDriveMapPropsInput = {
   homePreloadBounds: [[number, number], [number, number]] | null;
   searchPickMarkers: { id: string; lngLat: LngLat; label: string }[] | null;
   onSearchPickMarkerClick: ((id: string) => void) | undefined;
+  /** State DOT/WZDx work-zone & closure markers along the route corridor (Plus). */
+  dotEventMarkers?: {
+    id: string;
+    lngLat: LngLat;
+    label: string;
+    kind?: "construction" | "closure" | "incident" | "other";
+  }[] | null;
   progressRailVisible: boolean;
   offRouteRejoinCompareActive: boolean;
   followCamResyncKey?: number;
@@ -171,6 +178,7 @@ export function buildDriveMapProps(
     homePreloadBounds,
     searchPickMarkers,
     onSearchPickMarkerClick,
+    dotEventMarkers = null,
     progressRailVisible,
     offRouteRejoinCompareActive,
     followCamResyncKey = 0,
@@ -259,6 +267,7 @@ export function buildDriveMapProps(
     homePreloadBounds,
     searchPickMarkers,
     onSearchPickMarkerClick: searchPickMarkers ? onSearchPickMarkerClick : undefined,
+    dotEventMarkers,
     progressRailVisible,
     offRouteRejoinCompareActive,
     rejoinOverlayActive: offRouteRejoinCompareActive,

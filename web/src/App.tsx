@@ -2063,6 +2063,7 @@ export default function App() {
     postedMphFromHorizon,
     progressStripAlerts,
     routePlaceAnchors,
+    dotEventMarkers,
   } = useRouteAheadDerivations({
     nwsMapOverlapRouteGeom,
     stormCorridorAlerts,
@@ -2865,6 +2866,7 @@ export default function App() {
       homePreloadBounds,
       searchPickMarkers: searchPickMarkersForMap,
       onSearchPickMarkerClick: handleSearchPickFromMap,
+      dotEventMarkers,
       progressRailVisible: showProgressRail,
       offRouteRejoinCompareActive: offRouteHoldPreviewActive || detourAutoActive,
       followCamResyncKey,
