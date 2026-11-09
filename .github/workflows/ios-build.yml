@@ -18,6 +18,7 @@
 #   VITE_TOMORROW_IO_API_KEY            Tomorrow.io (legacy — omit when WeatherKit enabled)
 #   VITE_TOMORROW_IO_TILE_PROXY_URL     Cloudflare Tomorrow.io tile worker base (see docs/CLOUDFLARE_TILES.md)
 #   VITE_RAINVIEWER_TILE_PROXY_URL      Cloudflare RainViewer tile worker base (optional; Netlify default)
+#   VITE_DOT_FEED_URL                  Cloudflare DOT/WZDx feed worker base (cloudflare/dot-feeds; optional)
 #   VITE_OPENWEATHER_API_KEY            OpenWeather (legacy — omit when WeatherKit enabled)
 #   VITE_WEATHERKIT_ENABLED             Set to `true` after Netlify token function is live (see docs/WEATHERKIT_SETUP.md)
 #   VITE_SENTRY_DSN                     Sentry DSN for crash reports (optional; see docs/SENTRY_SETUP.md)
@@ -93,6 +94,7 @@ jobs:
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
           VITE_TOMORROW_IO_TILE_PROXY_URL: ${{ secrets.VITE_TOMORROW_IO_TILE_PROXY_URL }}
           VITE_RAINVIEWER_TILE_PROXY_URL: ${{ secrets.VITE_RAINVIEWER_TILE_PROXY_URL }}
+          VITE_DOT_FEED_URL: ${{ secrets.VITE_DOT_FEED_URL }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
           VITE_WEATHERKIT_ENABLED: ${{ secrets.VITE_WEATHERKIT_ENABLED }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
@@ -179,6 +181,7 @@ jobs:
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
           VITE_TOMORROW_IO_TILE_PROXY_URL: ${{ secrets.VITE_TOMORROW_IO_TILE_PROXY_URL }}
           VITE_RAINVIEWER_TILE_PROXY_URL: ${{ secrets.VITE_RAINVIEWER_TILE_PROXY_URL }}
+          VITE_DOT_FEED_URL: ${{ secrets.VITE_DOT_FEED_URL }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
           VITE_WEATHERKIT_ENABLED: ${{ secrets.VITE_WEATHERKIT_ENABLED }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
@@ -233,6 +236,7 @@ jobs:
           VITE_TOMORROW_IO_API_KEY: ${{ secrets.VITE_TOMORROW_IO_API_KEY }}
           VITE_TOMORROW_IO_TILE_PROXY_URL: ${{ secrets.VITE_TOMORROW_IO_TILE_PROXY_URL }}
           VITE_RAINVIEWER_TILE_PROXY_URL: ${{ secrets.VITE_RAINVIEWER_TILE_PROXY_URL }}
+          VITE_DOT_FEED_URL: ${{ secrets.VITE_DOT_FEED_URL }}
           VITE_OPENWEATHER_API_KEY: ${{ secrets.VITE_OPENWEATHER_API_KEY }}
           VITE_WEATHERKIT_ENABLED: ${{ secrets.VITE_WEATHERKIT_ENABLED }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
