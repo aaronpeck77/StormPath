@@ -22,6 +22,14 @@ describe("formatArrivalClockCompact", () => {
     expect(parts.weekday).toMatch(/Fri/i);
   });
 
+  it("adds a weekday for cross-day arrivals even without dest coords", () => {
+    const nowMs = Date.parse("2026-10-15T02:32:00Z");
+    const atMs = Date.parse("2026-10-16T12:32:00Z");
+    const label = formatArrivalClockCompact(atMs, { nowMs });
+    expect(label).toMatch(/Fri/i);
+    expect(label).toMatch(/\d{1,2}:\d{2}[ap]/);
+  });
+
   it("does not add a weekday for a same-day arrival in dest time", () => {
     const nowMs = Date.parse("2026-10-14T18:00:00Z");
     const atMs = Date.parse("2026-10-14T20:00:00Z");

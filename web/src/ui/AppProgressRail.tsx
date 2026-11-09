@@ -56,6 +56,8 @@ type Props = {
   navigationStarted: boolean;
   /** TimelineItem.id of the drive-countdown "next" hazard — highlighted in the glance graph. */
   nextHazardId?: string | null;
+  /** Hazard card/band tapped — parent flies the map (and PiP when present). */
+  onHazardSelect?: (id: string) => void;
 };
 
 /** Vertical side rail: expandable route-info panel + progress strip. */
@@ -101,6 +103,7 @@ export function AppProgressRail({
   tripOdometerM,
   navigationStarted,
   nextHazardId = null,
+  onHazardSelect,
 }: Props) {
   return (
     <div
@@ -147,6 +150,7 @@ export function AppProgressRail({
             stripTint={stripTint}
             detailScrollRef={progressCalloutDetailScrollRef}
             nextHazardId={nextHazardId}
+            onHazardSelect={onHazardSelect}
           />
         </RouteProgressCalloutRail>
         <RouteProgressStrip

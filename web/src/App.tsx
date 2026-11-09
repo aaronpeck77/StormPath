@@ -2811,13 +2811,20 @@ export default function App() {
 
   /* Phase 3a/3b + peel: DriveMap + StormAdvisoryBar prop bags assembled together so App JSX
    * stays a thin spread. */
-  /* Hazard picked in the PiP Wx graph / advisory — RT tab flies to it. */
+  /* Hazard picked in the PiP Wx graph / advisory / route-info rail — PiP
+   * flies to it on iPad; on phone (no PiP) the main map flies instead. */
   const [pipFocusHazard, setPipFocusHazard] = useState<{ lngLat: LngLat; label?: string } | null>(null);
   const handlePipHazardSelect = useCallback(
     (id: string) => {
       const imp =
         routeImpactsForUi.find((i) => i.id === id) ?? routeImpacts.find((i) => i.id === id);
-      if (imp) setPipFocusHazard({ lngLat: imp.lngLat, label: imp.driverHeadline });
+      if (!imp) return;
+      setPipFocusHazard({ lngLat: imp.lngLat, label: imp.driverHeadline });
+      setMapFocus({
+        kind: "hazardOverview",
+        hazardLng: imp.lngLat[0]!,
+        hazardLat: imp.lngLat[1]!,
+      });
     },
     [routeImpactsForUi, routeImpacts]
   );
@@ -3235,6 +3242,7 @@ export default function App() {
                 tripOdometerM={tripOdometerM}
                 navigationStarted={navigationStarted}
                 nextHazardId={nextHazardId}
+                onHazardSelect={handlePipHazardSelect}
               />
             )}
           </div>

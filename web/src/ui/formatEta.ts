@@ -106,15 +106,17 @@ export function formatArrivalClockParts(atMs: number, opts?: ArrivalClockOpts): 
   const dayPeriod = formatPart(clockParts, "dayPeriod");
   const ap = /p/i.test(dayPeriod) ? "p" : "a";
   const clock = `${hour}:${minute}${ap}`;
-  if (!destTz) return { clock, weekday: null, zone: null };
-
+  /* Day disambiguation works without dest coords too — fall back to the
+   * device's timezone so "9:15p" on a multi-day trip reads "Fri 9:15p". */
+  const dayTz = destTz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const weekday =
-    calendarDayKey(atMs, destTz) !== calendarDayKey(nowMs, destTz)
+    calendarDayKey(atMs, dayTz) !== calendarDayKey(nowMs, dayTz)
       ? new Intl.DateTimeFormat("en-US", {
-          timeZone: destTz,
+          timeZone: dayTz,
           weekday: opts?.weekdayFormat === "long" ? "long" : "short",
         }).format(new Date(atMs))
       : null;
+  if (!destTz) return { clock, weekday, zone: null };
   const phoneTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   let zone: string | null = null;
   if (destTz !== phoneTz) {

@@ -2,8 +2,8 @@ import type { CSSProperties } from "react";
 import type { ScoredRoute } from "../scoring/scoreRoutes";
 import {
   etaArrivalTimestamp,
+  formatArrivalClockCompact,
   formatDelayVersusBaseline,
-  formatEtaClock,
   formatEtaDuration,
 } from "./formatEta";
 import { routeHex } from "./mapRouteStyle";
@@ -66,7 +66,7 @@ export function TopGuidanceRouteInfo({
                 <span className="top-guidance-route-info-name">{s.route.label}</span>
                 <span className="top-guidance-route-info-meta">
                   {formatEtaDuration(s.effectiveEtaMinutes)} ·{" "}
-                  {formatEtaClock(etaArrivalTimestamp(s.effectiveEtaMinutes))} ·{" "}
+                  {formatArrivalClockCompact(etaArrivalTimestamp(s.effectiveEtaMinutes))} ·{" "}
                   <span
                     className={
                       t.live ? "top-guidance-route-info-traffic--live" : "top-guidance-route-info-traffic"

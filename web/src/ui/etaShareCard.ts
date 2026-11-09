@@ -90,13 +90,21 @@ function drawEtaCard(d: EtaShareData): HTMLCanvasElement {
         ? formatMinutesAsHoursMinutes(Math.round(d.etaMinutes))
         : `${Math.max(0, Math.round(d.etaMinutes))} min`
       : "—";
-  const arrive =
+  const arriveDate =
     d.etaMinutes != null && Number.isFinite(d.etaMinutes)
-      ? new Date(Date.now() + d.etaMinutes * 60_000).toLocaleTimeString(undefined, {
-          hour: "numeric",
-          minute: "2-digit",
-        })
+      ? new Date(Date.now() + d.etaMinutes * 60_000)
       : null;
+  /* Cross-day arrivals get a weekday prefix — "Around Fri 9:15 PM". */
+  const arriveDayPrefix =
+    arriveDate && arriveDate.toDateString() !== new Date().toDateString()
+      ? `${arriveDate.toLocaleDateString(undefined, { weekday: "short" })} `
+      : "";
+  const arrive = arriveDate
+    ? arriveDate.toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : null;
 
   ctx.fillStyle = MUTED;
   ctx.font = "500 32px -apple-system, 'Segoe UI', sans-serif";
@@ -108,7 +116,7 @@ function drawEtaCard(d: EtaShareData): HTMLCanvasElement {
   if (arrive) {
     ctx.fillStyle = MUTED;
     ctx.font = "500 30px -apple-system, 'Segoe UI', sans-serif";
-    ctx.fillText(`Around ${arrive}`, 120, panelY + 260);
+    ctx.fillText(`Around ${arriveDayPrefix}${arrive}`, 120, panelY + 260);
   }
 
   ctx.strokeStyle = "rgba(255,255,255,0.14)";
