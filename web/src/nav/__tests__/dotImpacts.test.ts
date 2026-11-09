@@ -34,12 +34,12 @@ function makeEvent(over: Partial<DotRoadEvent> = {}): DotRoadEvent {
 
 describe("buildDotImpacts", () => {
   it("returns empty without events or a usable route", () => {
-    expect(buildDotImpacts([], ROUTE, 0, 10_000)).toEqual([]);
-    expect(buildDotImpacts([makeEvent()], [], 0, 10_000)).toEqual([]);
+    expect(buildDotImpacts([], ROUTE, 0)).toEqual([]);
+    expect(buildDotImpacts([makeEvent()], [], 0)).toEqual([]);
   });
 
   it("places an on-route work zone as a construction impact", () => {
-    const out = buildDotImpacts([makeEvent()], ROUTE, 0, 10_000);
+    const out = buildDotImpacts([makeEvent()], ROUTE, 0);
     expect(out).toHaveLength(1);
     const i = out[0]!;
     expect(i.source).toBe("dot511");
@@ -55,12 +55,12 @@ describe("buildDotImpacts", () => {
       point: [-93.65, 41.63],
       geometry: { type: "Point", coordinates: [-93.65, 41.63] },
     });
-    expect(buildDotImpacts([far], ROUTE, 0, 10_000)).toEqual([]);
+    expect(buildDotImpacts([far], ROUTE, 0)).toEqual([]);
   });
 
   it("all-lanes-closed maps to avoid + reroute", () => {
     const closed = makeEvent({ kind: "closure", vehicleImpact: "all-lanes-closed" });
-    const out = buildDotImpacts([closed], ROUTE, 0, 10_000);
+    const out = buildDotImpacts([closed], ROUTE, 0);
     expect(out[0]!.severity).toBe("avoid");
     expect(out[0]!.driverAction).toBe("rerouteRecommended");
     expect(out[0]!.category).toBe("closure");
@@ -68,14 +68,14 @@ describe("buildDotImpacts", () => {
 
   it("truck size/weight limits bump severity to serious", () => {
     const limited = makeEvent({ restrictionsText: "Weight limit 80,000 lb" });
-    const out = buildDotImpacts([limited], ROUTE, 0, 10_000);
+    const out = buildDotImpacts([limited], ROUTE, 0);
     expect(out[0]!.severity).toBe("serious");
     expect(out[0]!.detail).toContain("Weight limit");
   });
 
   it("scheduled events are flagged in the headline", () => {
     const future = makeEvent({ status: "scheduled" });
-    const out = buildDotImpacts([future], ROUTE, 0, 10_000);
+    const out = buildDotImpacts([future], ROUTE, 0);
     expect(out[0]!.driverHeadline).toContain("scheduled");
   });
 });

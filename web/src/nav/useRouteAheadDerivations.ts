@@ -69,7 +69,7 @@ import type { TrafficOverlay } from "../situation/fusedSnapshot";
 import type { ScoredRoute } from "../scoring/scoreRoutes";
 import { useRoutePlaceAnchors } from "./useRoutePlaceAnchors";
 import { useDotRoadEvents } from "./useDotRoadEvents";
-import { buildDotImpacts } from "./dotImpacts";
+import { matchDotEventsToRoute, dotMatchesToImpacts } from "./dotImpacts";
 import type { DotRoadEvent } from "../services/dotRoadEvents";
 import { placeReferencePhrase, type RoutePlaceAnchor } from "./routePlaceReference";
 import { pointAtAlongMeters } from "./routeGeometry";
@@ -228,6 +228,19 @@ export function useRouteAheadDerivations(
     enabled: isPlus && !!guidanceRoute?.geometry?.length,
     geometry: guidanceRoute?.geometry,
   });
+
+  /**
+   * Event↔route matching is position-independent — run once per (feed, route),
+   * NOT per GPS tick. On long routes with thousands of corridor events, doing
+   * closest-point math inside the per-tick impacts memo froze the UI thread.
+   */
+  const dotMatches = useMemo(
+    () =>
+      dotFeed?.events.length && guidanceRoute?.geometry?.length
+        ? matchDotEventsToRoute(dotFeed.events, guidanceRoute.geometry)
+        : [],
+    [dotFeed?.events, guidanceRoute?.geometry]
+  );
   const placePhraseAt = useCallback(
     (alongM: number) => {
       const g = guidanceRoute?.geometry;
@@ -440,14 +453,9 @@ export function useRouteAheadDerivations(
       }
     }
 
-    if (dotFeed?.events.length) {
+    if (dotMatches.length) {
       list.push(
-        ...buildDotImpacts(
-          dotFeed.events,
-          geometry,
-          navActive && totalM > 0 ? heavyAdvisoryAlongM : 0,
-          totalM
-        )
+        ...dotMatchesToImpacts(dotMatches, navActive && totalM > 0 ? heavyAdvisoryAlongM : 0)
       );
     }
 
@@ -476,7 +484,7 @@ export function useRouteAheadDerivations(
     guidanceRouteLengthM,
     effectiveUserLngLatRef,
     driveEtaMinutes,
-    dotFeed?.events,
+    dotMatches,
   ]);
 
   /** Filter impacts by the same UI toggles that gated the legacy alert list. */
