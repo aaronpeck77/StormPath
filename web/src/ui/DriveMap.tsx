@@ -3724,19 +3724,23 @@ function DriveMapInner({
       const focusGeom = resolveFocusGeom();
       const hasRoute = Boolean(focusGeom?.length);
 
-      if (!hasRoute || viewMode === "drive") {
+      if (!hasRoute) {
         clearRouteConditionHighlights(map);
         return;
       }
 
       if (userExploringRef.current) return;
 
+      /* Drive: weather polygons + point halos stay off; serious/avoid road
+       * spans (lane closures, work zones) still paint, clipped behind the puck
+       * so no halo trails back toward the start. */
+      const driving = viewMode === "drive";
       const changed = applyRouteConditionHighlights(map, {
-        alerts: alongRouteAlerts,
+        alerts: driving ? [] : alongRouteAlerts,
         routeGeometry: focusGeom,
-        stormGeoJson: weatherAlertGeoJson,
+        stormGeoJson: driving ? undefined : weatherAlertGeoJson,
         stormAlongRouteBands,
-        clipBehindAlongM: null,
+        clipBehindAlongM: driving ? userAlongMetersRef.current : null,
       });
       if (changed) {
         liftTrafficThenRoutesThenHits(

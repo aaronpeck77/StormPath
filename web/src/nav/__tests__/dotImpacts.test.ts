@@ -82,6 +82,37 @@ describe("buildDotImpacts", () => {
     const out = buildDotImpacts([future], ROUTE, 0);
     expect(out[0]!.driverHeadline).toContain("scheduled");
   });
+
+  it("shoulder-only closure stays caution when lane detail clears travel lanes", () => {
+    const shoulder = makeEvent({
+      lanesClosed: 1,
+      travelLanesClosed: 0,
+      laneSummary: "shoulder closed",
+      vehicleImpact: "some-lanes-closed",
+    });
+    const out = buildDotImpacts([shoulder], ROUTE, 0);
+    expect(out[0]!.severity).toBe("caution");
+    expect(out[0]!.detail).toContain("shoulder closed");
+  });
+
+  it("closed travel lane bumps to serious and shows the lane summary", () => {
+    const lane = makeEvent({
+      lanesClosed: 1,
+      travelLanesClosed: 1,
+      laneSummary: "1 lane closed",
+      vehicleImpact: "some-lanes-closed",
+    });
+    const out = buildDotImpacts([lane], ROUTE, 0);
+    expect(out[0]!.severity).toBe("serious");
+    expect(out[0]!.driverAction).toBe("rerouteAvailable");
+    expect(out[0]!.detail).toContain("1 lane closed");
+  });
+
+  it("includes the work type label in detail when the feed publishes it", () => {
+    const wt = makeEvent({ workType: "Surface work" });
+    const out = buildDotImpacts([wt], ROUTE, 0);
+    expect(out[0]!.detail).toContain("Surface work");
+  });
 });
 
 /** Event parked at a longitude on the test route (lat 41.6). */
@@ -122,6 +153,25 @@ describe("DOT event clustering", () => {
     const out = buildDotImpacts(segs, ROUTE, 0);
     expect(out).toHaveLength(1);
     expect(out[0]!.endMeters).toBeGreaterThan(out[0]!.startMeters);
+  });
+
+  it("merged clusters keep the worst lane detail", () => {
+    const shoulderOnly = eventAt(-93.66, {
+      lanesClosed: 1,
+      travelLanesClosed: 0,
+      laneSummary: "shoulder closed",
+      vehicleImpact: "some-lanes-closed",
+    });
+    const laneClosed = eventAt(-93.655, {
+      lanesClosed: 2,
+      travelLanesClosed: 1,
+      laneSummary: "1 lane closed",
+      vehicleImpact: "some-lanes-closed",
+    });
+    const out = buildDotImpacts([shoulderOnly, laneClosed], ROUTE, 0);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.severity).toBe("serious");
+    expect(out[0]!.detail).toContain("1 lane closed");
   });
 });
 

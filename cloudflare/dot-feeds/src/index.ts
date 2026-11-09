@@ -52,6 +52,13 @@ type DotEvent = {
   description: string;
   restrictionsText: string | null;
   lanesClosed: number;
+  /** Travel lanes (not shoulder/emergency) reported closed — null when the feed
+   *  publishes no per-lane status, so the app can fall back to vehicle_impact. */
+  travelLanesClosed: number | null;
+  /** Short lane-status summary, e.g. "2 lanes closed; shoulder closed". */
+  laneSummary: string | null;
+  /** First work type from types_of_work, prettified ("Surface work"). */
+  workType: string | null;
   vehicleImpact: string | null;
   startIso: string | null;
   endIso: string | null;
@@ -196,10 +203,53 @@ function normalizeFeature(
   const description = rawDesc.split(/Full schedule below/i)[0]!.trim().slice(0, MAX_DESCRIPTION_CHARS);
 
   const lanes = asArray<Record<string, unknown>>(props.lanes ?? core.lanes);
-  const lanesClosed = lanes.filter((l) => {
+  let lanesClosed = 0;
+  let travelLanesClosed = 0;
+  let shoulderLanesClosed = 0;
+  let restrictedLanes = 0;
+  for (const l of lanes) {
     const st = str(l.status).toLowerCase();
-    return st && st !== "open" && st !== "unknown";
-  }).length;
+    if (!st || st === "open" || st === "unknown") continue;
+    lanesClosed += 1;
+    const type = str(l.type).toLowerCase();
+    const isShoulder = type.includes("shoulder");
+    const isEmergency = type.includes("emergency");
+    if (st.includes("clos")) {
+      if (isShoulder) shoulderLanesClosed += 1;
+      else if (!isEmergency) travelLanesClosed += 1;
+    } else {
+      restrictedLanes += 1;
+    }
+  }
+  const laneParts: string[] = [];
+  if (travelLanesClosed > 0)
+    laneParts.push(
+      travelLanesClosed >= 3
+        ? "multiple lanes closed"
+        : `${travelLanesClosed} lane${travelLanesClosed > 1 ? "s" : ""} closed`
+    );
+  if (shoulderLanesClosed > 0)
+    laneParts.push(
+      shoulderLanesClosed > 1 ? "shoulders closed" : "shoulder closed"
+    );
+  if (restrictedLanes > 0)
+    laneParts.push(
+      restrictedLanes >= 3
+        ? "multiple lanes restricted"
+        : `${restrictedLanes} lane${restrictedLanes > 1 ? "s" : ""} restricted`
+    );
+  const laneSummary = laneParts.length ? laneParts.join("; ") : null;
+
+  const workTypes = [
+    ...new Set(
+      asArray<Record<string, unknown>>(props.types_of_work ?? core.types_of_work)
+        .map((w) => str(w.type_name).replace(/[-_]+/g, " ").trim())
+        .filter(Boolean)
+    ),
+  ].slice(0, 2);
+  const workType = workTypes.length
+    ? workTypes.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(", ")
+    : null;
 
   const restrictions = asArray<Record<string, unknown>>(props.restrictions ?? core.restrictions)
     .map(fmtRestriction)
@@ -223,6 +273,9 @@ function normalizeFeature(
     description,
     restrictionsText: restrictions.length ? restrictions.join("; ") : null,
     lanesClosed,
+    travelLanesClosed: lanes.length > 0 ? travelLanesClosed : null,
+    laneSummary,
+    workType,
     vehicleImpact: str(props.vehicle_impact ?? core.vehicle_impact) || null,
     startIso,
     endIso,

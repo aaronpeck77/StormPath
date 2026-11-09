@@ -19,6 +19,12 @@ export type DotRoadEvent = {
   description: string;
   restrictionsText: string | null;
   lanesClosed: number;
+  /** Travel lanes (not shoulder/emergency) reported closed — absent on older workers. */
+  travelLanesClosed?: number | null;
+  /** Short lane-status summary from the feed ("2 lanes closed; shoulder closed"). */
+  laneSummary?: string | null;
+  /** Work type label ("Surface work") when the feed publishes types_of_work. */
+  workType?: string | null;
   vehicleImpact: string | null;
   startIso: string | null;
   endIso: string | null;

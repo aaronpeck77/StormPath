@@ -200,8 +200,10 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
     plan.routes.some((r) => r.geometry && r.geometry.length >= 2);
   const mapAlongRouteAlertsForDrive =
     activeTripMapOverlays && viewMode !== "drive" ? deferredMapAlongRouteAlerts : [];
-  const mapStormAlongRouteBandsForDrive =
-    activeTripMapOverlays && viewMode !== "drive" ? deferredRouteAheadMapBands : [];
+  /* Drive gets road-only serious/avoid bands (see routeAheadMapBands); Rt/Mp get the full set. */
+  const mapStormAlongRouteBandsForDrive = activeTripMapOverlays
+    ? deferredRouteAheadMapBands
+    : [];
   const driveRouteAheadLine = useMemo<DriveAheadLine | null>(() => {
     if (!driveModeUi) return null;
     const g = guidanceRoute?.geometry;

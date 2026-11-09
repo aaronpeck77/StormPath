@@ -84,7 +84,13 @@ function geomToLngLats(geom: GeoJSON.Geometry | null, cap = MAX_EVENT_SAMPLE_POI
 function severityFor(ev: DotRoadEvent): RouteImpactSeverity {
   const impact = (ev.vehicleImpact ?? "").toLowerCase();
   const closedAll = impact.includes("all-lanes-closed");
-  const closedSome = impact.includes("some-lanes-closed") || ev.lanesClosed > 0;
+  /* Per-lane detail beats the coarse count: a closed shoulder is not a lane
+   * closure for a car. Falls back to legacy counting when the feed (or an
+   * older worker snapshot) doesn't publish travelLanesClosed. */
+  const closedSome =
+    ev.travelLanesClosed != null
+      ? ev.travelLanesClosed > 0
+      : impact.includes("some-lanes-closed") || ev.lanesClosed > 0;
   /* Truck-relevant size/weight limits deserve a bump — a car can squeeze, a truck can't. */
   const sizeLimit = /length|width|weight|load/i.test(ev.restrictionsText ?? "");
   if (ev.kind === "closure" || closedAll) return "avoid";
@@ -92,7 +98,7 @@ function severityFor(ev: DotRoadEvent): RouteImpactSeverity {
   return ev.kind === "construction" ? "caution" : "info";
 }
 
-const SEVERITY_NUMERIC: Record<RouteImpactSeverity, number> = {
+export const DOT_SEVERITY_NUMERIC: Record<RouteImpactSeverity, number> = {
   info: 10,
   caution: 35,
   serious: 65,
@@ -139,12 +145,17 @@ function actionFor(sev: RouteImpactSeverity, kind?: DotRoadEvent["kind"]): Route
 function detailFor(ev: DotRoadEvent): string {
   const dirNote = ev.direction ? ` · ${ev.direction.replace(/-/g, " ")}` : "";
   const sizeNote = ev.restrictionsText ? ` ${ev.restrictionsText}.` : "";
-  const laneNote =
-    ev.lanesClosed > 0 ? ` ${ev.lanesClosed} lane${ev.lanesClosed > 1 ? "s" : ""} affected.` : "";
+  const laneNote = ev.laneSummary
+    ? ` ${ev.laneSummary}.`
+    : ev.lanesClosed > 0
+      ? ` ${ev.lanesClosed} lane${ev.lanesClosed > 1 ? "s" : ""} affected.`
+      : "";
+  const workNote = ev.workType ? ` ${ev.workType}.` : "";
   return (
     `${ev.publisher}${dirNote}: ${ev.description || ev.title}.` +
     sizeNote +
     laneNote +
+    workNote +
     fmtWindow(ev)
   );
 }
@@ -204,7 +215,7 @@ export function matchDotEventsToRoute(
       driverHeadline: `${HEADLINE_PREFIX[ev.kind]}${ev.status === "scheduled" ? " (scheduled)" : ""}`,
       roadEffect: ROAD_EFFECT[ev.kind],
       detail: detailFor(ev),
-      numericSeverity: SEVERITY_NUMERIC[sev],
+      numericSeverity: DOT_SEVERITY_NUMERIC[sev],
       hazardOnsetIso: ev.startIso,
       hazardExpiresIso: ev.endIso,
       event: ev,
@@ -306,6 +317,14 @@ function mergeDotEvents(events: DotRoadEvent[]): DotRoadEvent {
   const cx = points.reduce((a, p) => a + p[0], 0) / points.length;
   const cy = points.reduce((a, p) => a + p[1], 0) / points.length;
 
+  const travelClosedVals = events
+    .map((e) => e.travelLanesClosed)
+    .filter((v): v is number => v != null);
+  const laneSummaries = [
+    ...new Set(events.map((e) => e.laneSummary).filter((s): s is string => Boolean(s))),
+  ].slice(0, 2);
+  const workType = events.map((e) => e.workType).find((w): w is string => Boolean(w)) ?? null;
+
   return {
     ...first,
     id: first.id,
@@ -316,6 +335,13 @@ function mergeDotEvents(events: DotRoadEvent[]): DotRoadEvent {
     description: descriptions[0] ?? first.description,
     restrictionsText: restrictions.length ? restrictions.join("; ") : null,
     lanesClosed: Math.max(...events.map((ev) => ev.lanesClosed)),
+    travelLanesClosed: travelClosedVals.length
+      ? Math.max(...travelClosedVals)
+      : first.travelLanesClosed,
+    laneSummary: laneSummaries.length
+      ? laneSummaries.join("; ")
+      : (first.laneSummary ?? null),
+    workType: workType ?? first.workType ?? null,
     vehicleImpact: worstVehicleImpact(events.map((ev) => ev.vehicleImpact)),
     startIso: starts[0] ?? first.startIso,
     endIso: ends[ends.length - 1] ?? first.endIso,
@@ -345,7 +371,7 @@ function matchFromEvent(
     driverHeadline: `${HEADLINE_PREFIX[ev.kind]}${ev.status === "scheduled" ? " (scheduled)" : ""}`,
     roadEffect: ROAD_EFFECT[ev.kind],
     detail: detailFor(ev),
-    numericSeverity: SEVERITY_NUMERIC[sev],
+    numericSeverity: DOT_SEVERITY_NUMERIC[sev],
     hazardOnsetIso: ev.startIso,
     hazardExpiresIso: ev.endIso,
     event: ev,

@@ -70,6 +70,7 @@ import type { ScoredRoute } from "../scoring/scoreRoutes";
 import { useRoutePlaceAnchors } from "./useRoutePlaceAnchors";
 import { useDotRoadEvents } from "./useDotRoadEvents";
 import { matchDotEventsToRoute, dotMatchesToImpacts, reconcileDotMapboxImpacts } from "./dotImpacts";
+import { applyDotTrafficBackup } from "./dotTrafficBackup";
 import type { DotRoadEvent } from "../services/dotRoadEvents";
 import { placeReferencePhrase, type RoutePlaceAnchor } from "./routePlaceReference";
 import { pointAtAlongMeters } from "./routeGeometry";
@@ -425,6 +426,9 @@ export function useRouteAheadDerivations(
     if (!geometry?.length) return [];
     const totalM = guidanceRouteLengthM;
     const navActive = navigationStarted;
+    const trafficLegForRoute = navActive
+      ? ((lineFocusId ? trafficOverlay?.[lineFocusId] : null) ?? null)
+      : null;
     const list = buildRouteImpacts({
       geometry,
       userLngLat: effectiveUserLngLatRef.current,
@@ -433,7 +437,7 @@ export function useRouteAheadDerivations(
       totalMeters: guidanceRouteLengthM,
       slice: navActive ? guidanceSlice : undefined,
       trafficForRoute: navActive ? scored.find((s) => s.route.id === lineFocusId) : undefined,
-      trafficLeg: navActive ? ((lineFocusId ? trafficOverlay?.[lineFocusId] : null) ?? null) : null,
+      trafficLeg: trafficLegForRoute,
       corridorWeatherDetail,
       nwsBands: routeStormStripBands.map((b) => ({
         startM: b.startMeters,
@@ -463,6 +467,10 @@ export function useRouteAheadDerivations(
         list.length = 0;
         list.push(...reconciled);
       }
+      /* Live per-segment congestion → "backed up ~X mi" on the work zone, and a
+       * severe backup promotes it to a bypass candidate. Nav-only: the traffic
+       * overlay is empty at plan time. */
+      applyDotTrafficBackup(list, trafficLegForRoute, userAlongGuidanceM, totalM);
     }
 
     list.sort(compareRouteImpactPriority);
@@ -491,6 +499,7 @@ export function useRouteAheadDerivations(
     effectiveUserLngLatRef,
     driveEtaMinutes,
     dotMatches,
+    userAlongGuidanceM,
   ]);
 
   /** Filter impacts by the same UI toggles that gated the legacy alert list. */
@@ -682,12 +691,17 @@ export function useRouteAheadDerivations(
 
   /**
    * Map halo bands — same as the progress rail in Rt/Mp.
-   * Drive keeps a clean blue line (no hazard casings on the polyline).
+   * Drive keeps weather off the line but still paints serious/avoid road spans
+   * (lane closures, work zones) so the affected stretch reads orange ahead.
    */
   const routeAheadMapBands = useMemo(() => {
-    if (viewMode === "drive") return [];
-    return routeAheadWeatherBands;
-  }, [routeAheadWeatherBands, viewMode]);
+    if (viewMode !== "drive") return routeAheadWeatherBands;
+    return mergeProgressStripWeatherBands(
+      timelineToProgressStripBands(
+        routeAheadTimeline.filter((item) => item.track === "road")
+      )
+    );
+  }, [routeAheadWeatherBands, routeAheadTimeline, viewMode]);
 
   /**
    * Project unified impacts back to the legacy `RouteAlert` shape so existing surfaces (progress strip,
