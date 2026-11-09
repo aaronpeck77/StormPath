@@ -11,7 +11,12 @@
 import type { LngLat } from "./types";
 import type { DotRoadEvent } from "../services/dotRoadEvents";
 import type { RouteImpact, RouteImpactSeverity } from "./routeImpacts";
-import { closestPointOnPolyline, subsamplePolylineVertexBudget } from "./routeGeometry";
+import {
+  closestPointOnPolyline,
+  haversineMeters,
+  pointAtAlongMeters,
+  subsamplePolylineVertexBudget,
+} from "./routeGeometry";
 
 /** How close an event must sit to the route centerline to count as "on route". */
 const CORRIDOR_HALF_WIDTH_M = 260;
@@ -24,6 +29,13 @@ const MATCH_ROUTE_VERTICES = 1_200;
 const MAX_EVENT_SAMPLE_POINTS = 8;
 /** Hard cap on corridor matches — bounds every downstream memo. */
 const MAX_MATCHES = 800;
+/** Merge matches this close on the route (direction splits, feed dupes, zone segments). */
+const CLUSTER_GAP_M = 2_500;
+/** Never let a cluster grow past this along-route span. */
+const CLUSTER_MAX_SPAN_M = 12_000;
+/** Cross-source (Mapbox incident vs DOT) merge window. */
+export const DOT_MAPBOX_MERGE_ALONG_M = 2_500;
+export const DOT_MAPBOX_MERGE_GEO_M = 4_000;
 
 export type DotEventMatch = {
   id: string;
@@ -40,6 +52,8 @@ export type DotEventMatch = {
   numericSeverity: number;
   hazardOnsetIso: string | null;
   hazardExpiresIso: string | null;
+  /** Back-reference for cluster merging. */
+  event: DotRoadEvent;
 };
 
 function geomToLngLats(geom: GeoJSON.Geometry | null, cap = MAX_EVENT_SAMPLE_POINTS): LngLat[] {
@@ -125,11 +139,15 @@ function actionFor(sev: RouteImpactSeverity): RouteImpact["driverAction"] {
 }
 
 function detailFor(ev: DotRoadEvent): string {
+  const dirNote = ev.direction ? ` · ${ev.direction.replace(/-/g, " ")}` : "";
   const sizeNote = ev.restrictionsText ? ` ${ev.restrictionsText}.` : "";
   const laneNote =
     ev.lanesClosed > 0 ? ` ${ev.lanesClosed} lane${ev.lanesClosed > 1 ? "s" : ""} affected.` : "";
   return (
-    `${ev.publisher}: ${ev.description || ev.title}.` + sizeNote + laneNote + fmtWindow(ev)
+    `${ev.publisher}${dirNote}: ${ev.description || ev.title}.` +
+    sizeNote +
+    laneNote +
+    fmtWindow(ev)
   );
 }
 
@@ -191,18 +209,195 @@ export function matchDotEventsToRoute(
       numericSeverity: SEVERITY_NUMERIC[sev],
       hazardOnsetIso: ev.startIso,
       hazardExpiresIso: ev.endIso,
+      event: ev,
     });
   }
 
-  if (matches.length > MAX_MATCHES) {
-    /* Evenly thin across the route rather than dropping whole regions. */
-    matches.sort((a, b) => a.alongMeters - b.alongMeters);
-    const stride = matches.length / MAX_MATCHES;
-    const thinned: DotEventMatch[] = [];
-    for (let i = 0; i < MAX_MATCHES; i++) thinned.push(matches[Math.floor(i * stride)]!);
-    return thinned;
+  const clustered = clusterDotMatches(matches, matchGeom);
+  if (clustered.length <= MAX_MATCHES) return clustered;
+  /* Evenly thin across the route rather than dropping whole regions. */
+  const sorted = [...clustered].sort((a, b) => a.alongMeters - b.alongMeters);
+  const stride = sorted.length / MAX_MATCHES;
+  const thinned: DotEventMatch[] = [];
+  for (let i = 0; i < MAX_MATCHES; i++) thinned.push(sorted[Math.floor(i * stride)]!);
+  return thinned;
+}
+
+/* ── Cluster merging ────────────────────────────────────────────────────────
+ * WZDx splits one physical work zone into per-direction features, multiple
+ * state/county feeds overlap, and long zones arrive as segments — all become
+ * separate timeline rows ("332 mi … 334 mi … 335 mi"). Merge matches that sit
+ * on the same road reach: same category, compatible road key, near each other
+ * along the route, bounded total span.
+ */
+
+/** "I-80" / "I 80" / "I80" / "Interstate 80" → "I-80"; falls back to cleaned name. */
+function roadKeyOf(name: string): string {
+  const n = name.toUpperCase();
+  const ref = n.match(
+    /\b(?:I|US|SR|CR|STATE\s+ROAD|STATE\s+ROUTE|COUNTY\s+ROAD|FM|RM|RT|HIGHWAY|HWY)\s*[- ]?\s*(\d+[A-Z]?)\b/
+  );
+  if (ref) {
+    const prefix = /\bI\b/.test(n.slice(0, ref.index)) ? "I" : ref[0].match(/^[A-Z]+/)![0];
+    return `${prefix}-${ref[1]}`;
   }
-  return matches;
+  return n.replace(/\s+/g, " ").trim();
+}
+
+function roadKeysCompatible(a: string, b: string): boolean {
+  if (!a || !b) return true; /* unnamed roads merge on proximity alone */
+  return a === b;
+}
+
+const KIND_RANK: Record<DotRoadEvent["kind"], number> = {
+  other: 0,
+  construction: 1,
+  incident: 2,
+  closure: 3,
+};
+
+function worstVehicleImpact(values: (string | null)[]): string | null {
+  const rank = (v: string | null) => {
+    const s = (v ?? "").toLowerCase();
+    if (s.includes("all-lanes-closed")) return 3;
+    if (s.includes("some-lanes-closed")) return 2;
+    if (s.includes("reduced")) return 1;
+    return 0;
+  };
+  let best: string | null = null;
+  let bestRank = -1;
+  for (const v of values) {
+    const r = rank(v);
+    if (r > bestRank) {
+      bestRank = r;
+      best = v;
+    }
+  }
+  return bestRank > 0 ? best : values.find((v) => v) ?? null;
+}
+
+/** Merge several feed events into one synthetic event for detail/severity. */
+function mergeDotEvents(events: DotRoadEvent[]): DotRoadEvent {
+  const sorted = [...events].sort((a, b) => KIND_RANK[b.kind] - KIND_RANK[a.kind]);
+  const first = sorted[0]!;
+  const publishers = [...new Set(events.map((e) => e.publisher).filter(Boolean))];
+  const directions = [...new Set(events.map((e) => e.direction).filter((d): d is string => Boolean(d)))];
+  const restrictions = [
+    ...new Set(
+      events
+        .flatMap((e) => (e.restrictionsText ?? "").split(";").map((s) => s.trim()).filter(Boolean))
+    ),
+  ];
+  const descriptions = events
+    .map((e) => e.description)
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  const starts = events.map((e) => e.startIso).filter((s): s is string => Boolean(s)).sort();
+  const ends = events.map((e) => e.endIso).filter((s): s is string => Boolean(s)).sort();
+
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  const points: [number, number][] = [];
+  for (const ev of events) {
+    const [bw, bs, be, bn] = ev.bbox;
+    if (bw < w) w = bw;
+    if (bs < s) s = bs;
+    if (be > e) e = be;
+    if (bn > n) n = bn;
+    points.push(ev.point);
+  }
+  const cx = points.reduce((a, p) => a + p[0], 0) / points.length;
+  const cy = points.reduce((a, p) => a + p[1], 0) / points.length;
+
+  return {
+    ...first,
+    id: first.id,
+    publisher: publishers.join(" + ") || first.publisher,
+    kind: first.kind,
+    status: events.some((ev) => ev.status === "active") ? "active" : "scheduled",
+    direction: directions.length ? directions.join(" / ") : first.direction,
+    description: descriptions[0] ?? first.description,
+    restrictionsText: restrictions.length ? restrictions.join("; ") : null,
+    lanesClosed: Math.max(...events.map((ev) => ev.lanesClosed)),
+    vehicleImpact: worstVehicleImpact(events.map((ev) => ev.vehicleImpact)),
+    startIso: starts[0] ?? first.startIso,
+    endIso: ends[ends.length - 1] ?? first.endIso,
+    point: [cx, cy],
+    bbox: [w, s, e, n],
+    geometry: null,
+  };
+}
+
+function matchFromEvent(
+  ev: DotRoadEvent,
+  alongM: number,
+  lngLat: LngLat,
+  spanStart: number,
+  spanEnd: number
+): DotEventMatch {
+  const sev = severityFor(ev);
+  return {
+    id: `dot:${ev.id}`,
+    lngLat,
+    alongMeters: alongM,
+    startMeters: spanStart,
+    endMeters: spanEnd,
+    category: categoryFor(ev),
+    severity: sev,
+    driverAction: actionFor(sev),
+    driverHeadline: `${HEADLINE_PREFIX[ev.kind]}${ev.status === "scheduled" ? " (scheduled)" : ""}`,
+    roadEffect: ROAD_EFFECT[ev.kind],
+    detail: detailFor(ev),
+    numericSeverity: SEVERITY_NUMERIC[sev],
+    hazardOnsetIso: ev.startIso,
+    hazardExpiresIso: ev.endIso,
+    event: ev,
+  };
+}
+
+/** Merge adjacent compatible matches into single corridor entries. */
+export function clusterDotMatches(matches: DotEventMatch[], routeGeom: LngLat[]): DotEventMatch[] {
+  if (matches.length <= 1) return matches;
+  const sorted = [...matches].sort((a, b) => a.startMeters - b.startMeters);
+  const out: DotEventMatch[] = [];
+  let cluster: DotEventMatch[] = [sorted[0]!];
+
+  const flush = () => {
+    if (cluster.length === 1) {
+      out.push(cluster[0]!);
+    } else {
+      const merged = mergeDotEvents(cluster.map((m) => m.event));
+      const spanStart = Math.min(...cluster.map((m) => m.startMeters));
+      const spanEnd = Math.max(...cluster.map((m) => m.endMeters));
+      const mid = (spanStart + spanEnd) / 2;
+      out.push(
+        matchFromEvent(merged, mid, pointAtAlongMeters(routeGeom, mid), spanStart, spanEnd)
+      );
+    }
+    cluster = [];
+  };
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = cluster[cluster.length - 1]!;
+    const cur = sorted[i]!;
+    const prevKey = roadKeyOf(prev.event.roadName || prev.event.title);
+    const curKey = roadKeyOf(cur.event.roadName || cur.event.title);
+    const gap = cur.startMeters - prev.endMeters;
+    const span = Math.max(prev.endMeters, cur.endMeters) - Math.min(cluster[0]!.startMeters, cur.startMeters);
+    const sameKind = prev.event.kind === cur.event.kind || prev.category === cur.category;
+    if (
+      sameKind &&
+      roadKeysCompatible(prevKey, curKey) &&
+      gap <= CLUSTER_GAP_M &&
+      span <= CLUSTER_MAX_SPAN_M
+    ) {
+      cluster.push(cur);
+    } else {
+      flush();
+      cluster = [cur];
+    }
+  }
+  flush();
+  return out;
 }
 
 /** Position-dependent fields only — cheap enough to run per GPS tick. */
@@ -237,4 +432,47 @@ export function buildDotImpacts(
   userAlongM: number
 ): RouteImpact[] {
   return dotMatchesToImpacts(matchDotEventsToRoute(events, routeGeometry), userAlongM);
+}
+
+/* ── Cross-source dedup: Mapbox incident vs official DOT event ──────────────
+ * The same work zone arrives twice: once as a Mapbox Directions incident
+ * (red band, vague "Construction zone") and once as a WZDx event (orange,
+ * rich detail). When they sit on the same spot, keep the DOT row and fold
+ * the Mapbox text into its detail — one message instead of two warnings.
+ */
+
+function categoriesMergeable(a: RouteImpact["category"], b: RouteImpact["category"]): boolean {
+  if (a === b) return true;
+  const pair = new Set([a, b]);
+  return pair.has("construction") && pair.has("closure");
+}
+
+function firstSentence(text: string): string {
+  return (text.split(/(?<=[.!?])\s+/)[0] ?? text).replace(/[.]+$/, "").trim();
+}
+
+/**
+ * Remove Mapbox-incident impacts that duplicate a DOT impact on the route.
+ * Mutates the surviving DOT impact's detail; returns the filtered list.
+ */
+export function reconcileDotMapboxImpacts(impacts: RouteImpact[]): RouteImpact[] {
+  const dots = impacts.filter((i) => i.source === "dot511");
+  if (!dots.length) return impacts;
+  const drop = new Set<string>();
+  for (const imp of impacts) {
+    if (imp.source !== "mapboxIncident") continue;
+    const twin = dots.find(
+      (d) =>
+        categoriesMergeable(d.category, imp.category) &&
+        Math.abs(d.alongMeters - imp.alongMeters) <= DOT_MAPBOX_MERGE_ALONG_M &&
+        haversineMeters(d.lngLat, imp.lngLat) <= DOT_MAPBOX_MERGE_GEO_M
+    );
+    if (!twin) continue;
+    const extra = firstSentence(imp.detail || imp.driverHeadline);
+    if (extra && !twin.detail.toLowerCase().includes(extra.toLowerCase().slice(0, 24))) {
+      twin.detail = `${twin.detail} Also reported: ${extra}.`;
+    }
+    drop.add(imp.id);
+  }
+  return drop.size ? impacts.filter((i) => !drop.has(i.id)) : impacts;
 }

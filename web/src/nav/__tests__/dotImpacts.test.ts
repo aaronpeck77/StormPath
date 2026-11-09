@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildDotImpacts } from "../dotImpacts";
+import {
+  buildDotImpacts,
+  matchDotEventsToRoute,
+  reconcileDotMapboxImpacts,
+} from "../dotImpacts";
 import type { DotRoadEvent } from "../../services/dotRoadEvents";
+import type { RouteImpact } from "../routeImpacts";
 import type { LngLat } from "../types";
 
 /** Straight east-west route ~10 km long near Des Moines. */
@@ -77,5 +82,87 @@ describe("buildDotImpacts", () => {
     const future = makeEvent({ status: "scheduled" });
     const out = buildDotImpacts([future], ROUTE, 0);
     expect(out[0]!.driverHeadline).toContain("scheduled");
+  });
+});
+
+/** Event parked at a longitude on the test route (lat 41.6). */
+function eventAt(lng: number, over: Partial<DotRoadEvent> = {}): DotRoadEvent {
+  return makeEvent({
+    point: [lng, 41.6],
+    geometry: { type: "Point", coordinates: [lng, 41.6] },
+    ...over,
+  });
+}
+
+describe("DOT event clustering", () => {
+  it("merges direction splits of the same work zone into one entry", () => {
+    const eb = eventAt(-93.66, { direction: "eastbound" });
+    const wb = eventAt(-93.655, { direction: "westbound" });
+    const out = buildDotImpacts([eb, wb], ROUTE, 0);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.detail).toContain("eastbound / westbound");
+  });
+
+  it("keeps distant events on the same road separate", () => {
+    const a = eventAt(-93.69);
+    const b = eventAt(-93.61); /* ~6.7 km apart — beyond cluster gap */
+    const out = buildDotImpacts([a, b], ROUTE, 0);
+    expect(out).toHaveLength(2);
+  });
+
+  it("does not merge different roads at the same spot", () => {
+    const a = eventAt(-93.65, { roadName: "I-80", title: "I-80" });
+    const b = eventAt(-93.65, { roadName: "I-35", title: "I-35" });
+    const out = buildDotImpacts([a, b], ROUTE, 0);
+    expect(out).toHaveLength(2);
+  });
+
+  it("chains segmented zones on the same road into one span", () => {
+    /* Three segments ~700 m apart — one long work zone reported in pieces. */
+    const segs = [-93.68, -93.672, -93.664].map((lng) => eventAt(lng));
+    const out = buildDotImpacts(segs, ROUTE, 0);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.endMeters).toBeGreaterThan(out[0]!.startMeters);
+  });
+});
+
+describe("reconcileDotMapboxImpacts", () => {
+  function dotImpact(lng: number): RouteImpact {
+    return buildDotImpacts([eventAt(lng)], ROUTE, 0)[0]!;
+  }
+  function mapboxIncidentAt(lng: number, over: Partial<RouteImpact> = {}): RouteImpact {
+    const base = dotImpact(lng);
+    return {
+      ...base,
+      id: "mapbox-incident-0-construction",
+      source: "mapboxIncident",
+      category: "construction",
+      detail: "Construction zone with lane reductions",
+      driverHeadline: "Construction zone",
+      ...over,
+    };
+  }
+
+  it("drops a Mapbox incident duplicating a DOT event and folds its text", () => {
+    const dot = dotImpact(-93.65);
+    const mb = mapboxIncidentAt(-93.648);
+    const out = reconcileDotMapboxImpacts([dot, mb]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.source).toBe("dot511");
+    expect(out[0]!.detail).toContain("Also reported: Construction zone");
+  });
+
+  it("keeps Mapbox incidents far from any DOT event", () => {
+    const dot = dotImpact(-93.69);
+    const mb = mapboxIncidentAt(-93.61);
+    const out = reconcileDotMapboxImpacts([dot, mb]);
+    expect(out).toHaveLength(2);
+  });
+
+  it("does not merge a crash into a work zone", () => {
+    const dot = dotImpact(-93.65);
+    const crash = mapboxIncidentAt(-93.65, { category: "incident", id: "mb-crash" });
+    const out = reconcileDotMapboxImpacts([dot, crash]);
+    expect(out).toHaveLength(2);
   });
 });

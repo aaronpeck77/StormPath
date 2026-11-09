@@ -69,7 +69,7 @@ import type { TrafficOverlay } from "../situation/fusedSnapshot";
 import type { ScoredRoute } from "../scoring/scoreRoutes";
 import { useRoutePlaceAnchors } from "./useRoutePlaceAnchors";
 import { useDotRoadEvents } from "./useDotRoadEvents";
-import { matchDotEventsToRoute, dotMatchesToImpacts } from "./dotImpacts";
+import { matchDotEventsToRoute, dotMatchesToImpacts, reconcileDotMapboxImpacts } from "./dotImpacts";
 import type { DotRoadEvent } from "../services/dotRoadEvents";
 import { placeReferencePhrase, type RoutePlaceAnchor } from "./routePlaceReference";
 import { pointAtAlongMeters } from "./routeGeometry";
@@ -457,6 +457,12 @@ export function useRouteAheadDerivations(
       list.push(
         ...dotMatchesToImpacts(dotMatches, navActive && totalM > 0 ? heavyAdvisoryAlongM : 0)
       );
+      /* Same zone reported by Mapbox + DOT → keep the official DOT row only. */
+      const reconciled = reconcileDotMapboxImpacts(list);
+      if (reconciled.length !== list.length) {
+        list.length = 0;
+        list.push(...reconciled);
+      }
     }
 
     list.sort(compareRouteImpactPriority);
