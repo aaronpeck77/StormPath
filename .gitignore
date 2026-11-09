@@ -21,3 +21,6 @@ web/ios/.xcode.env.local
 *.log
 .DS_Store
 Thumbs.db
+
+# Wrangler local cache/state
+**/.wrangler/

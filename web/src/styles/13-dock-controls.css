@@ -594,6 +594,7 @@
 }
 
 .route-overview-pip-map-shell {
+  position: relative;
   width: 100%;
   height: 100%;
   border-radius: 14px;
@@ -603,6 +604,56 @@
 .route-overview-pip-inner {
   width: 100%;
   height: 100%;
+}
+
+/* Interactive PiP: zoom controls + hazard focus marker */
+.route-overview-pip-controls {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 3;
+}
+
+.route-overview-pip-hazard-label {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(11, 14, 19, 0.82);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.route-overview-pip-ctrl {
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: rgba(11, 14, 19, 0.82);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.route-overview-pip-ctrl:active {
+  background: rgba(40, 52, 72, 0.95);
+}
+
+.pip-hazard-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #f97316;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.55), 0 1px 6px rgba(0, 0, 0, 0.5);
 }
 
 /* Live position on route-overview PiP (same puck idea as main map, smaller) */

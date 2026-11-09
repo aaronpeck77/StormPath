@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { NavRoute } from "../nav/types";
+import type { LngLat, NavRoute } from "../nav/types";
 import type { TimelineItem } from "./RouteHazardTimeline";
 import { RouteOverviewPip } from "./RouteOverviewPip";
 import { RouteProgressGlancePanel } from "./RouteProgressGlancePanel";
@@ -51,6 +51,12 @@ type Props = {
   glanceUserAlongMeters: number;
   glanceUserAlongT: number;
   glanceStripTint: string;
+  /** Hazard picked in Wx/advisory — RT tab flies the PiP to it. */
+  focusHazard?: { lngLat: LngLat; label?: string } | null;
+  /** Alternate/bypass line shown on the RT map (e.g. backroad hop). */
+  alternateGeometry?: LngLat[] | null;
+  /** Hazard row/card tapped — parent resolves id → lngLat for the PiP. */
+  onHazardSelect?: (id: string) => void;
 };
 
 /**
@@ -140,6 +146,8 @@ export function LandscapeInfoPip(props: Props) {
             suggestedRouteId={props.suggestedRouteId}
             orderedRouteIds={props.orderedRouteIds}
             navigationStarted={props.navigationStarted}
+            focusHazard={props.focusHazard}
+            alternateGeometry={props.alternateGeometry}
           />
         ) : null}
 
@@ -165,6 +173,7 @@ export function LandscapeInfoPip(props: Props) {
               userAlongT={props.glanceUserAlongT}
               stripTint={props.glanceStripTint}
               nextHazardId={props.nextHazardId}
+              onHazardSelect={props.onHazardSelect}
             />
           </div>
         ) : null}

@@ -381,8 +381,10 @@
     gap: var(--nav-bottom-stack-gap);
     padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
       max(10px, env(safe-area-inset-bottom)) 10px;
-    /* Solid panel — the map must not show through the command column. */
-    background: rgb(11, 14, 19);
+    /* Frosted glass — map shows through blurred; fallback stays translucent. */
+    background: rgba(11, 14, 19, 0.62);
+    backdrop-filter: blur(18px) saturate(1.15);
+    -webkit-backdrop-filter: blur(18px) saturate(1.15);
     border-left: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: -18px 0 36px -18px rgba(0, 0, 0, 0.55);
     overflow-y: auto;
@@ -406,8 +408,10 @@
     gap: var(--nav-bottom-stack-gap);
     padding: max(10px, env(safe-area-inset-left)) 10px max(10px, env(safe-area-inset-bottom))
       max(10px, env(safe-area-inset-right));
-    /* Solid panel — the map must not show through the command column. */
-    background: rgb(11, 14, 19);
+    /* Frosted glass — map shows through blurred; fallback stays translucent. */
+    background: rgba(11, 14, 19, 0.62);
+    backdrop-filter: blur(18px) saturate(1.15);
+    -webkit-backdrop-filter: blur(18px) saturate(1.15);
     border-right: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 18px 0 36px -18px rgba(0, 0, 0, 0.55);
     overflow-y: auto;
@@ -725,6 +729,63 @@
   .app-shell.nav-fullmap .map-stage.map-bleed > .nav-bottom-stack:has(.nav-bottom-dock__plan-stack)
     > .nav-bottom-chrome-wrap {
     margin-top: auto;
+  }
+
+  /* ── Collapsible hazard/PiP sections — tab sits on the panel's outer edge ── */
+  .app-shell.nav-fullmap .panel-collapse {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .app-shell.nav-fullmap .panel-collapse--closed {
+    min-height: 46px;
+  }
+
+  .app-shell.nav-fullmap .panel-collapse__tab {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    right: -9px;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 46px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-right: none;
+    border-radius: 10px 0 0 10px;
+    background: rgba(16, 22, 32, 0.9);
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.95rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .app-shell.nav-fullmap .panel-collapse--closed .panel-collapse__tab {
+    top: 0;
+    transform: none;
+    height: 30px;
+  }
+
+  /* Left-hand panel: tab mirrors to the left/outside edge. */
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .panel-collapse__tab {
+    right: auto;
+    left: -9px;
+    border-right: 1px solid rgba(255, 255, 255, 0.16);
+    border-left: none;
+    border-radius: 0 10px 10px 0;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .panel-collapse__chev {
+    transform: scaleX(-1);
+  }
+
+  .app-shell.nav-fullmap .panel-collapse__tab:active {
+    background: rgba(30, 40, 56, 0.95);
   }
 }
 

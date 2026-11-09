@@ -165,6 +165,7 @@ import { AppTopNavCluster } from "./ui/AppTopNavCluster";
 import { DriveHazardTicker } from "./ui/DriveHazardTicker";
 import { LandscapeHazardPanel } from "./ui/LandscapeHazardPanel";
 import { LandscapeInfoPip } from "./ui/LandscapeInfoPip";
+import { CollapsiblePanelSection } from "./ui/CollapsiblePanelSection";
 
 import { Coachmarks } from "./ui/Coachmarks";
 import { resetAllCoachmarks } from "./ui/coachmarks/firstLaunchSteps";
@@ -2810,6 +2811,19 @@ export default function App() {
 
   /* Phase 3a/3b + peel: DriveMap + StormAdvisoryBar prop bags assembled together so App JSX
    * stays a thin spread. */
+  /* Hazard picked in the PiP Wx graph / advisory — RT tab flies to it. */
+  const [pipFocusHazard, setPipFocusHazard] = useState<{ lngLat: LngLat; label?: string } | null>(null);
+  const handlePipHazardSelect = useCallback(
+    (id: string) => {
+      const imp =
+        routeImpactsForUi.find((i) => i.id === id) ?? routeImpacts.find((i) => i.id === id);
+      if (imp) setPipFocusHazard({ lngLat: imp.lngLat, label: imp.driverHeadline });
+    },
+    [routeImpactsForUi, routeImpacts]
+  );
+  /* Bypass compare candidate geometry → PiP alternate line (wired in Phase 3). */
+  const pipAlternateGeometry: LngLat[] | null = null;
+
   const { driveMapProps, stormAdvisoryBarProps } = useAppMapChromeProps({
     driveMap: {
       routes: driveMapRoutesForMap,
@@ -3341,14 +3355,20 @@ export default function App() {
             navigationStarted ? (
               <>
                 <div id="ipad-panel-tbt-slot" className="ipad-panel-tbt-slot" />
-                <LandscapeHazardPanel
-                  {...hazardQueueInput}
-                  bendHazardId={hazardBypass.hazardId}
-                  onBend={hazardBypass.enter}
-                  onDismissBend={hazardBypass.dismissHazard}
-                />
+                <CollapsiblePanelSection id="hazard" label="hazard alerts">
+                  <LandscapeHazardPanel
+                    {...hazardQueueInput}
+                    bendHazardId={hazardBypass.hazardId}
+                    onBend={hazardBypass.enter}
+                    onDismissBend={hazardBypass.dismissHazard}
+                  />
+                </CollapsiblePanelSection>
+                <CollapsiblePanelSection id="pip" label="route info panel">
                 <LandscapeInfoPip
                   accessToken={env.mapboxToken}
+                  focusHazard={pipFocusHazard}
+                  alternateGeometry={pipAlternateGeometry}
+                  onHazardSelect={handlePipHazardSelect}
                   userLngLat={effectiveUserLngLat}
                   routes={plan.routes}
                   destLngLat={destLngLat}
@@ -3381,6 +3401,7 @@ export default function App() {
                   glanceUserAlongT={progressCalloutUserAlongT}
                   glanceStripTint={activeProgressCalloutPanel.stripTint}
                 />
+                </CollapsiblePanelSection>
               </>
             ) : null
           }

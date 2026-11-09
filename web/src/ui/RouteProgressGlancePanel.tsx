@@ -46,6 +46,8 @@ type Props = {
   detailScrollRef?: RefObject<HTMLDivElement | null>;
   /** TimelineItem.id of the drive-countdown "next" hazard — band/card get a highlight. */
   nextHazardId?: string | null;
+  /** Hazard card/band tapped — lets the parent fly a PiP or map to it. */
+  onHazardSelect?: (id: string) => void;
 };
 
 const TRACK_BADGE: Record<TimelineItem["track"], string> = {
@@ -276,6 +278,7 @@ export function RouteProgressGlancePanel({
   stripTint,
   detailScrollRef,
   nextHazardId = null,
+  onHazardSelect,
 }: Props) {
   const glanceCards = useMemo(
     () =>
@@ -345,6 +348,7 @@ export function RouteProgressGlancePanel({
   const selectCard = (id: string) => {
     setSelectedId(id);
     setChoiceIds([]);
+    onHazardSelect?.(id);
     const panel = panelRef.current;
     const card = cardRefs.current.get(id);
     if (panel && card) scrollHazardCard(panel, card);

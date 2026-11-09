@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   buildDotImpacts,
-  matchDotEventsToRoute,
   reconcileDotMapboxImpacts,
 } from "../dotImpacts";
 import type { DotRoadEvent } from "../../services/dotRoadEvents";

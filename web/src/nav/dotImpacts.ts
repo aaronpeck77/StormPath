@@ -128,14 +128,12 @@ function categoryFor(ev: DotRoadEvent): RouteImpact["category"] {
   return ev.kind === "closure" ? "closure" : ev.kind === "incident" ? "incident" : "construction";
 }
 
-function actionFor(sev: RouteImpactSeverity): RouteImpact["driverAction"] {
-  return sev === "avoid"
-    ? "rerouteRecommended"
-    : sev === "serious"
-      ? "prepare"
-      : sev === "caution"
-        ? "slow"
-        : "watch";
+function actionFor(sev: RouteImpactSeverity, kind?: DotRoadEvent["kind"]): RouteImpact["driverAction"] {
+  if (sev === "avoid") return "rerouteRecommended";
+  /* Serious road events (lane closures, size limits, closures) get a bypass
+   * offer — pickTrafficBypassAnchorImpact needs rerouteAvailable+. */
+  if (sev === "serious") return kind === "closure" ? "rerouteRecommended" : "rerouteAvailable";
+  return sev === "caution" ? "slow" : "watch";
 }
 
 function detailFor(ev: DotRoadEvent): string {
@@ -202,7 +200,7 @@ export function matchDotEventsToRoute(
       endMeters: banded ? maxAlong : bestAlong,
       category: categoryFor(ev),
       severity: sev,
-      driverAction: actionFor(sev),
+      driverAction: actionFor(sev, ev.kind),
       driverHeadline: `${HEADLINE_PREFIX[ev.kind]}${ev.status === "scheduled" ? " (scheduled)" : ""}`,
       roadEffect: ROAD_EFFECT[ev.kind],
       detail: detailFor(ev),
@@ -343,7 +341,7 @@ function matchFromEvent(
     endMeters: spanEnd,
     category: categoryFor(ev),
     severity: sev,
-    driverAction: actionFor(sev),
+    driverAction: actionFor(sev, ev.kind),
     driverHeadline: `${HEADLINE_PREFIX[ev.kind]}${ev.status === "scheduled" ? " (scheduled)" : ""}`,
     roadEffect: ROAD_EFFECT[ev.kind],
     detail: detailFor(ev),

@@ -2,7 +2,7 @@ import mapboxgl from "../mapboxCapacitorWorker";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useEffect, useRef, useState } from "react";
 import { NORTH_AMERICA_BOUNDS } from "../config/mapRegion";
-import type { NavRoute } from "../nav/types";
+import type { LngLat, NavRoute } from "../nav/types";
 import { applyRoutesToMap, fitMapToRemainingRoutes, fitMapToTrip } from "./mapRouteLayers";
 import { bringRouteVisualLinesAboveTraffic } from "./mapRouteLayers";
 import {
@@ -39,6 +39,10 @@ type Props = {
   navigationStarted: boolean;
   /** Colored road traffic on the PiP map; default off. */
   trafficConditionsOnMap?: boolean;
+  /** Hazard picked in the timeline/advisory — PiP eases to it and marks it. */
+  focusHazard?: { lngLat: LngLat; label?: string } | null;
+  /** Alternate/bypass geometry drawn as a contrasting line (e.g. backroad hop). */
+  alternateGeometry?: LngLat[] | null;
 };
 
 /** Small route overview: all route lines + puck — no route picker UI. */
@@ -52,11 +56,16 @@ export function RouteOverviewPip({
   orderedRouteIds,
   navigationStarted,
   trafficConditionsOnMap = false,
+  focusHazard = null,
+  alternateGeometry = null,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const routeIdsRef = useRef<Set<string>>(new Set());
   const puckRef = useRef<mapboxgl.Marker | null>(null);
+  const hazardMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  /** User grabbed the PiP or a hazard has focus — stop the 2 s route re-fit. */
+  const viewLockedRef = useRef(false);
   const userRef = useRef(userLngLat);
   userRef.current = userLngLat;
   const [ready, setReady] = useState(false);
@@ -94,17 +103,25 @@ export function RouteOverviewPip({
       zoom: 12,
       pitch: 0,
       bearing: 0,
-      interactive: false,
       attributionControl: false,
       maxBounds: NORTH_AMERICA_BOUNDS,
     });
-    map.scrollZoom.disable();
-    map.boxZoom.disable();
+    /* Interactive: pan + pinch/wheel zoom inside the PiP box. Rotate stays
+     * off — north-up keeps the overview readable. */
     map.dragRotate.disable();
-    map.dragPan.disable();
     map.keyboard.disable();
-    map.doubleClickZoom.disable();
-    map.touchZoomRotate.disable();
+    map.boxZoom.disable();
+    map.on("dragstart", () => {
+      viewLockedRef.current = true;
+    });
+    /* zoomstart also fires for programmatic easeTo — lock on raw input instead. */
+    const container = wrapRef.current;
+    const lockView = () => {
+      viewLockedRef.current = true;
+    };
+    container?.addEventListener("wheel", lockView, { passive: true });
+    container?.addEventListener("dblclick", lockView);
+    container?.addEventListener("touchstart", lockView, { passive: true });
     mapRef.current = map;
     const onLoad = () => setReady(true);
     if (map.isStyleLoaded()) setReady(true);
@@ -208,6 +225,9 @@ export function RouteOverviewPip({
     };
 
     const fitRemaining = () => {
+      /* User is exploring the PiP or a hazard has focus — don't yank the
+       * camera back to the route. */
+      if (viewLockedRef.current) return;
       const u = userRef.current;
       if (u && destLngLat) {
         fitMapToRemainingRoutes(map, routes, u, destLngLat, { ...PIP_PAD }, 15.5);
@@ -224,11 +244,126 @@ export function RouteOverviewPip({
       clearInterval(intervalId);
       map.off("idle", flatten);
     };
-  }, [ready, routes, destLngLat]);
+  }, [ready, routes, destLngLat, focusHazard]);
+
+  /* Hazard picked in the timeline/advisory — fly the PiP to it and mark it. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (!focusHazard) {
+      hazardMarkerRef.current?.remove();
+      hazardMarkerRef.current = null;
+      return;
+    }
+    viewLockedRef.current = true;
+    map.easeTo({ center: focusHazard.lngLat, zoom: 13.5, duration: 550, essential: true });
+    if (!hazardMarkerRef.current) {
+      const el = document.createElement("div");
+      el.className = "pip-hazard-dot";
+      el.title = focusHazard.label ?? "Hazard";
+      hazardMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: "center" })
+        .setLngLat(focusHazard.lngLat)
+        .addTo(map);
+    } else {
+      hazardMarkerRef.current.setLngLat(focusHazard.lngLat);
+      hazardMarkerRef.current.getElement().title = focusHazard.label ?? "Hazard";
+    }
+  }, [ready, focusHazard]);
+
+  /* Alternate/bypass line (e.g. backroad hop around a closure). */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const sourceId = "pip-alternate";
+    const layerId = "pip-alternate-line";
+    const coords = alternateGeometry?.length ? alternateGeometry : null;
+    try {
+      const existing = map.getSource(sourceId) as mapboxgl.GeoJSONSource | undefined;
+      if (!coords) {
+        if (existing) existing.setData({ type: "FeatureCollection", features: [] });
+        if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", "none");
+        return;
+      }
+      const data: GeoJSON.FeatureCollection = {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {},
+            geometry: { type: "LineString", coordinates: coords },
+          },
+        ],
+      };
+      if (existing) {
+        existing.setData(data);
+      } else {
+        map.addSource(sourceId, { type: "geojson", data });
+        map.addLayer({
+          id: layerId,
+          type: "line",
+          source: sourceId,
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": "#34d399",
+            "line-width": 4,
+            "line-opacity": 0.9,
+            "line-dasharray": [1.2, 1.2],
+          },
+        });
+      }
+      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", "visible");
+    } catch {
+      /* style race — alternate line is best-effort */
+    }
+  }, [ready, styleEpoch, alternateGeometry]);
+
+  const resetView = () => {
+    viewLockedRef.current = false;
+    const map = mapRef.current;
+    if (!map) return;
+    const u = userRef.current;
+    if (u && destLngLat) {
+      fitMapToRemainingRoutes(map, routes, u, destLngLat, { ...PIP_PAD }, 15.5);
+    } else {
+      fitMapToTrip(map, routes, userRef.current, destLngLat, { ...PIP_PAD }, 13.2);
+    }
+  };
 
   return (
     <div className="route-overview-pip-map-shell">
-      <div ref={wrapRef} className="route-overview-pip-inner" aria-hidden />
+      <div ref={wrapRef} className="route-overview-pip-inner" />
+      <div className="route-overview-pip-controls">
+        {focusHazard?.label ? (
+          <span className="route-overview-pip-hazard-label">{focusHazard.label}</span>
+        ) : null}
+        <button
+          type="button"
+          className="route-overview-pip-ctrl"
+          aria-label="Zoom in"
+          title="Zoom in"
+          onClick={() => mapRef.current?.zoomIn()}
+        >
+          +
+        </button>
+        <button
+          type="button"
+          className="route-overview-pip-ctrl"
+          aria-label="Zoom out"
+          title="Zoom out"
+          onClick={() => mapRef.current?.zoomOut()}
+        >
+          −
+        </button>
+        <button
+          type="button"
+          className="route-overview-pip-ctrl"
+          aria-label="Reset route view"
+          title="Reset route view"
+          onClick={resetView}
+        >
+          ⌖
+        </button>
+      </div>
     </div>
   );
 }
