@@ -1,4 +1,4 @@
-import type { TripStop } from "../nav/routeWaypoints";
+import { MAX_VIA_STOPS, type TripStop } from "../nav/routeWaypoints";
 
 type Props = {
   viaStops: TripStop[];
@@ -9,7 +9,7 @@ type Props = {
   onRemoveStop: (index: number) => void;
 };
 
-/** Optional single stop before the final destination. */
+/** Optional intermediate stops before the final destination. */
 export function RouteStopsBar({
   viaStops,
   addingStop,
@@ -18,33 +18,34 @@ export function RouteStopsBar({
   onCancelAddStop,
   onRemoveStop,
 }: Props) {
-  if (!canAddStop && viaStops.length === 0) return null;
-
-  const stop = viaStops[0];
+  const canAdd = canAddStop && viaStops.length < MAX_VIA_STOPS;
+  if (!canAdd && viaStops.length === 0) return null;
 
   return (
-    <div className="route-stops-bar" role="group" aria-label="Optional stop">
-      {stop ? (
+    <div className="route-stops-bar" role="group" aria-label="Optional stops">
+      {viaStops.length > 0 ? (
         <ul className="route-stops-bar__list">
-          <li className="route-stops-bar__item">
-            <span className="route-stops-bar__badge" aria-hidden>
-              Stop
-            </span>
-            <span className="route-stops-bar__label" title={stop.label}>
-              {stop.label}
-            </span>
-            <button
-              type="button"
-              className="route-stops-bar__remove"
-              aria-label={`Remove stop: ${stop.label}`}
-              onClick={() => onRemoveStop(0)}
-            >
-              ×
-            </button>
-          </li>
+          {viaStops.map((stop, i) => (
+            <li className="route-stops-bar__item" key={`${i}-${stop.label}`}>
+              <span className="route-stops-bar__badge" aria-hidden>
+                Stop {i + 1}
+              </span>
+              <span className="route-stops-bar__label" title={stop.label}>
+                {stop.label}
+              </span>
+              <button
+                type="button"
+                className="route-stops-bar__remove"
+                aria-label={`Remove stop: ${stop.label}`}
+                onClick={() => onRemoveStop(i)}
+              >
+                ×
+              </button>
+            </li>
+          ))}
         </ul>
       ) : null}
-      {canAddStop && !stop ? (
+      {canAdd ? (
         <div className="route-stops-bar__actions">
           {addingStop ? (
             <>

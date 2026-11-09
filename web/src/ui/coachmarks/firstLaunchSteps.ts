@@ -63,7 +63,7 @@ export const FIRST_LAUNCH_COACHMARK_STEPS: readonly CoachmarkStep[] = [
     preferredAnchor: "above",
     title: "Add a stop",
     body:
-      "After you pick a destination, tap here to add one stop on the way. Search or tap the map to place it — routes refresh with your stop before the final destination.",
+      "After you pick a destination, tap here to add stops on the way — up to four. Search or tap the map to place each one; routes refresh with your stops before the final destination.",
   },
   {
     id: "progress-rail-v2",

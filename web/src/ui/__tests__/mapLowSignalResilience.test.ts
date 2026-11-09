@@ -164,16 +164,19 @@ describe("shouldClearLastGoodMapHold", () => {
 });
 
 describe("allowBasemapStyleReload", () => {
-  it("blocks day/night setStyle during GO or a dead-zone hold", () => {
+  it("allows day/night setStyle while navigating, but not during a dead-zone hold", () => {
     expect(allowBasemapStyleReload({ navigationStarted: true, holdLastGoodMap: false })).toBe(
-      false
+      true
     );
     expect(allowBasemapStyleReload({ navigationStarted: false, holdLastGoodMap: true })).toBe(
       false
     );
+    expect(allowBasemapStyleReload({ navigationStarted: true, holdLastGoodMap: true })).toBe(
+      false
+    );
   });
 
-  it("allows a style swap only while planning and reachable", () => {
+  it("allows a style swap while planning and reachable", () => {
     expect(allowBasemapStyleReload({ navigationStarted: false, holdLastGoodMap: false })).toBe(
       true
     );

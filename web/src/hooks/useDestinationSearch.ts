@@ -153,6 +153,8 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
         const prev = useTripPlanStore.getState().viaStops;
         if (prev.length >= MAX_VIA_STOPS) {
           setAddingViaStop(false);
+          setTapHint(`Stop limit reached (${MAX_VIA_STOPS}) — remove a stop to add another.`);
+          window.setTimeout(() => setTapHint(null), 5000);
           return;
         }
         setViaStops([...prev, { lngLat, label }]);
@@ -365,8 +367,15 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       const dest = useTripPlanStore.getState().destLngLat;
       if (asStop && dest) {
         const destLabel = useTripPlanStore.getState().destinationLabel;
-        setViaStops([{ lngLat, label: placeName }]);
-        setActiveViaIndex(0);
+        const prev = useTripPlanStore.getState().viaStops;
+        if (prev.length >= MAX_VIA_STOPS) {
+          setTapHint(`Stop limit reached (${MAX_VIA_STOPS}) — remove a stop to add another.`);
+          window.setTimeout(() => setTapHint(null), 5000);
+          announceStormyPick(placeName, true);
+          return;
+        }
+        setViaStops([...prev, { lngLat, label: placeName }]);
+        if (!navigationStarted) setActiveViaIndex(0);
         setAddingViaStop(false);
         setSearchExpanded(false);
         await computeRoutes(dest, destLabel.trim() || "Destination", {
@@ -394,6 +403,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       navigationStarted,
       setActiveViaIndex,
       setSearchExpanded,
+      setTapHint,
       setViaStops,
     ]
   );
@@ -420,8 +430,14 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       const dest = useTripPlanStore.getState().destLngLat;
       const destLabel = useTripPlanStore.getState().destinationLabel;
       if (asStop && dest) {
-        setViaStops([{ lngLat, label: placeName }]);
-        setActiveViaIndex(0);
+        const prev = useTripPlanStore.getState().viaStops;
+        if (prev.length >= MAX_VIA_STOPS) {
+          setTapHint(`Stop limit reached (${MAX_VIA_STOPS}) — remove a stop to add another.`);
+          window.setTimeout(() => setTapHint(null), 5000);
+          return placeName;
+        }
+        setViaStops([...prev, { lngLat, label: placeName }]);
+        if (!navigationStarted) setActiveViaIndex(0);
         setAddingViaStop(false);
         await computeRoutes(dest, destLabel.trim() || "Destination", {
           preserveNavigation: navigationStarted,
@@ -433,7 +449,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       await applyTripPlacePick(lngLat, placeName, pickMode);
       return placeName;
     },
-    [addingViaStop, applyTripPlacePick, computeRoutes, navigationStarted, recordRecentSearch, setActiveViaIndex, setViaStops]
+    [addingViaStop, applyTripPlacePick, computeRoutes, navigationStarted, recordRecentSearch, setActiveViaIndex, setTapHint, setViaStops]
   );
 
   const retrieveSpokenHit = useCallback(

@@ -116,12 +116,19 @@ export function shouldClearLastGoodMapHold(input: {
   return { clear: true, healthySinceMs: null };
 }
 
-/** Day/night `setStyle` wipes cached tiles and blocks follow-cam until the new style downloads. */
+/**
+ * Day/night `setStyle` swaps the basemap mid-trip too — Bill wants the night
+ * flip while a route is active. Day/night styles share Mapbox's vector tiles,
+ * so the reload is fast and route/traffic/radar layers re-apply on style.load.
+ * Still blocked while holding last-good (dead zone / offline) — there the new
+ * style's tiles cannot download and the map would blank.
+ */
 export function allowBasemapStyleReload(input: {
   navigationStarted: boolean;
   holdLastGoodMap: boolean;
 }): boolean {
-  return !input.navigationStarted && !input.holdLastGoodMap;
+  void input.navigationStarted;
+  return !input.holdLastGoodMap;
 }
 
 /**

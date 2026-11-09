@@ -6,7 +6,11 @@ export type TripStop = {
   label: string;
 };
 
-export const MAX_VIA_STOPS = 1;
+/** Optional intermediate stops before the final destination. The nav pipeline
+ * (activeViaIndex, remainingViaStops, arrival advance) is array-based end to
+ * end; Mapbox Directions accepts far more than this. 4 covers pickup → drop →
+ * rest/fuel → final without turning one trip into a delivery manifest. */
+export const MAX_VIA_STOPS = 4;
 
 /** Ordered coords for Mapbox Directions: origin → vias → final. */
 export function buildDirectionsCoords(
@@ -35,7 +39,7 @@ export function remainingViaStops(viaStops: TripStop[], activeViaIndex: number):
 
 export function formatTripDestinationLabel(viaStops: TripStop[], finalLabel: string): string {
   const fin = finalLabel.trim() || "Destination";
-  const stop = viaStops[0]?.label.trim();
-  if (!stop) return fin;
-  return `${stop} → ${fin}`;
+  const stops = viaStops.map((s) => s.label.trim()).filter(Boolean);
+  if (stops.length === 0) return fin;
+  return `${stops.join(" → ")} → ${fin}`;
 }
