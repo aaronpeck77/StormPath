@@ -18,6 +18,12 @@ const SNAPSHOT_MAX_AGE_MS = 4 * 60_000;
 const WINDOW_PAST_MS = 12 * 3_600_000;
 const WINDOW_FUTURE_MS = 7 * 24 * 3_600_000;
 const FEED_TIMEOUT_MS = 12_000;
+/** Workers cap at 128 MB — parsed feeds are multi-MB each, so process in batches. */
+const FEED_BATCH = 4;
+const MAX_FEED_BYTES = 15 * 1024 * 1024;
+/** Cap retained geometry — some feeds attach full road centerlines per event. */
+const SIMPLIFIED_GEOM_POINTS = 50;
+const MAX_FEATURES_PER_FEED = 4_000;
 const MAX_DESCRIPTION_CHARS = 400;
 
 const CORS: Record<string, string> = {
@@ -112,20 +118,43 @@ function fmtRestriction(r: Record<string, unknown>): string | null {
   return `${label} ${amount}`;
 }
 
-function geometryPoints(geom: unknown): [number, number][] {
+/**
+ * Sample up to ~200 points from a GeoJSON geometry for bbox/centroid math.
+ * Some states attach full road centerlines (100k+ coords) to one work zone —
+ * walking every vertex blows the Worker CPU budget. Stride-sampling bounds it.
+ */
+function sampledPoints(geom: unknown, maxPoints = 200): [number, number][] {
   const g = asRecord(geom);
   const coords = g.coordinates;
   const out: [number, number][] = [];
+  const pushPoint = (c: unknown) => {
+    if (Array.isArray(c) && typeof c[0] === "number" && typeof c[1] === "number")
+      out.push([c[0], c[1]]);
+  };
   const walk = (c: unknown, depth: number) => {
-    if (depth > 4 || !Array.isArray(c)) return;
+    if (!Array.isArray(c) || depth > 4) return;
     if (typeof c[0] === "number") {
-      if (typeof c[0] === "number" && typeof c[1] === "number") out.push([c[0], c[1]]);
+      pushPoint(c);
+      return;
+    }
+    /* LineString/MultiPoint leaf: stride so huge centerlines stay bounded. */
+    if (typeof c[0]?.[0] === "number") {
+      const stride = Math.max(1, Math.floor(c.length / maxPoints));
+      for (let i = 0; i < c.length && out.length < maxPoints; i += stride) pushPoint(c[i]);
       return;
     }
     for (const sub of c) walk(sub, depth + 1);
   };
   walk(coords, 0);
   return out;
+}
+
+/** Downsampled LineString/Point the app uses for corridor matching. */
+function simplifiedGeometry(geom: unknown): GeoJSON.Geometry | null {
+  const pts = sampledPoints(geom, SIMPLIFIED_GEOM_POINTS);
+  if (!pts.length) return null;
+  if (pts.length === 1) return { type: "Point", coordinates: pts[0]! };
+  return { type: "LineString", coordinates: pts };
 }
 
 function normalizeFeature(
@@ -145,7 +174,7 @@ function normalizeFeature(
   if (Number.isFinite(endMs) && endMs < nowMs - WINDOW_PAST_MS) return null;
   if (Number.isFinite(startMs) && startMs > nowMs + WINDOW_FUTURE_MS) return null;
 
-  const points = geometryPoints(feature.geometry);
+  const points = sampledPoints(feature.geometry);
   if (points.length === 0) return null;
 
   let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
@@ -199,7 +228,7 @@ function normalizeFeature(
     endIso,
     point,
     bbox: [w, s, e, n],
-    geometry: feature.geometry ?? null,
+    geometry: simplifiedGeometry(feature.geometry),
   };
 }
 
@@ -209,7 +238,30 @@ async function fetchJson(url: string, timeoutMs = FEED_TIMEOUT_MS): Promise<unkn
     headers: { "User-Agent": "StormPath-DOT-Feeds/1.0 (+https://stormpath.app)" },
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  const len = Number(res.headers.get("content-length") ?? 0);
+  if (len > MAX_FEED_BYTES) throw new Error(`feed too large (${len} bytes)`);
+  /* Chunked responses can lie about size — cap the actual bytes read. */
+  if (!res.body) return res.json();
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_FEED_BYTES) {
+      await reader.cancel();
+      throw new Error(`feed too large (> ${MAX_FEED_BYTES} bytes)`);
+    }
+    chunks.push(value);
+  }
+  const buf = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) {
+    buf.set(c, off);
+    off += c.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(buf));
 }
 
 async function buildSnapshot(): Promise<Snapshot> {
@@ -221,19 +273,32 @@ async function buildSnapshot(): Promise<Snapshot> {
   });
 
   const events: DotEvent[] = [];
-  const results = await Promise.allSettled(
-    rows.map(async (row) => {
-      const url = feedUrlOf(row);
-      if (!url) return;
-      const feed = (await fetchJson(url)) as Record<string, unknown>;
-      const features = asArray<Record<string, unknown>>(feed.features);
-      for (const f of features) {
-        const ev = normalizeFeature(f, row, nowMs);
-        if (ev) events.push(ev);
-      }
-    })
-  );
-  const failed = results.filter((r) => r.status === "rejected").length;
+  let failed = 0;
+  /* Sequential batches — holding ~30 parsed GeoJSON feeds at once exceeds
+   * the 128 MB isolate limit. Batches of 4 keep peak memory ~40 MB. */
+  for (let i = 0; i < rows.length; i += FEED_BATCH) {
+    const batch = rows.slice(i, i + FEED_BATCH);
+    await Promise.all(
+      batch.map(async (row) => {
+        const url = feedUrlOf(row);
+        if (!url) return;
+        try {
+          const feed = (await fetchJson(url)) as Record<string, unknown>;
+          const features = asArray<Record<string, unknown>>(feed.features).slice(
+            0,
+            MAX_FEATURES_PER_FEED
+          );
+          for (const f of features) {
+            const ev = normalizeFeature(f, row, nowMs);
+            if (ev) events.push(ev);
+          }
+        } catch (err) {
+          failed += 1;
+          console.warn(`[dot-feeds] feed failed: ${row.feedname ?? url}`, err);
+        }
+      })
+    );
+  }
   if (failed > 0) console.warn(`[dot-feeds] ${failed}/${rows.length} feeds failed`);
 
   events.sort((a, b) => a.id.localeCompare(b.id));
