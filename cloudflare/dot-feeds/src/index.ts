@@ -7,7 +7,11 @@
  *
  * The merged snapshot lives in the edge Cache API (~4 min) so all users share
  * one upstream poll per PoP — no KV, no cron, self-healing on cold cache.
- * Feeds that need API keys are skipped in v1 (registry `needapikey` rows).
+ *
+ * Keyed feeds (registry `needapikey` rows — IL, TX, OH, PA, VA, NC, MI, CA,
+ * MA, CO, NPS, OR) are supported via per-feed Worker secrets named below.
+ * Until a secret is set the feed is skipped, same as before. Set keys with
+ * `wrangler secret put <SECRET_NAME>` — never commit them.
  */
 
 const REGISTRY_URL =
@@ -38,6 +42,36 @@ type RegistryRow = {
   feedname?: string;
   needapikey?: string | boolean;
   url?: { url?: string } | string;
+};
+
+/** Worker env — secrets arrive as string bindings. */
+type FeedEnv = Record<string, string | undefined>;
+
+/**
+ * Keyed feeds from the WZDx registry. `param` feeds take the key as a query
+ * param (name varies per agency); `header` feeds send it as an HTTP header.
+ * Header schemes for mdot/massdot/ncdot/ordot are best-guess — verify each
+ * against live data once its key arrives.
+ */
+const KEYED_FEEDS: Record<
+  string,
+  { secret: string; param?: string; header?: string; prefix?: string }
+> = {
+  idot_cwz: { secret: "IDOT_CWZ_API_KEY", param: "api_key" },
+  iltollway: { secret: "ILTOLLWAY_API_KEY", param: "api_key" },
+  txdot_v4_2: { secret: "TXDOT_API_KEY", param: "key" },
+  ohio: { secret: "OHGO_API_KEY", param: "api-key" },
+  ptc: { secret: "PENNSTURNPIKE_API_KEY", param: "api_key" },
+  vdot: { secret: "VDOT_API_KEY", param: "token" },
+  mtc: { secret: "MTC_511_API_KEY", param: "api_key" },
+  nps: { secret: "NPS_API_KEY", param: "api_key" },
+  cdot: { secret: "CDOT_API_KEY", param: "apiKey" },
+  cdot_cwz: { secret: "CDOT_CWZ_API_KEY", param: "apiKey" },
+  /* No key in the registry URL — header auth. Schemes to verify per feed. */
+  mdot_4: { secret: "MDOT_API_KEY", header: "X-App-Token" }, /* Socrata app token */
+  massdot__cwz: { secret: "MASSDOT_CWZ_API_KEY", header: "Authorization", prefix: "Bearer " },
+  ncdot: { secret: "NCDOT_API_KEY", header: "Authorization", prefix: "Bearer " },
+  ordot: { secret: "ODOT_API_KEY", header: "Ocp-Apim-Subscription-Key" }, /* Azure APIM */
 };
 
 type DotEvent = {
@@ -77,6 +111,27 @@ function feedUrlOf(row: RegistryRow): string | null {
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+}
+
+/** camelCase → snake_case. snake_case keys pass through unchanged. */
+function snakeKey(k: string): string {
+  return k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+}
+
+/**
+ * CWZ 1.0 feeds (IDOT, MassDOT, CO) serialize properties camelCase
+ * (`coreDetails`, `roadNames`, `eventType`…) while WZDx v4 uses snake_case.
+ * Recursively snake_case object keys so both feed shapes hit the same
+ * extraction paths. Keys only — values, ids, and coordinates are untouched.
+ */
+function snakeKeysDeep(v: unknown, depth = 0): unknown {
+  if (depth > 6 || v === null || typeof v !== "object") return v;
+  if (Array.isArray(v)) return v.map((x) => snakeKeysDeep(x, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    out[snakeKey(k)] = snakeKeysDeep(val, depth + 1);
+  }
+  return out;
 }
 
 function asArray<T = unknown>(v: unknown): T[] {
@@ -169,19 +224,27 @@ function normalizeFeature(
   row: RegistryRow,
   nowMs: number
 ): DotEvent | null {
-  const props = asRecord(feature.properties);
+  /* WZDx wraps fields in `properties`; some CWZ feeds put them on the
+   * feature itself. Take whichever is populated, then normalize key casing. */
+  const wrapped = asRecord(snakeKeysDeep(feature.properties));
+  const props =
+    Object.keys(wrapped).length > 0 ? wrapped : asRecord(snakeKeysDeep(feature));
   const core = coreOf(props);
-  const id = str(feature.id) || str(props.id) || `evt-${Math.random().toString(36).slice(2, 10)}`;
+  const geometry = feature.geometry ?? props.geometry;
+  const id =
+    str(feature.id) ||
+    str(props.id) ||
+    `evt-${Math.random().toString(36).slice(2, 10)}`;
 
-  const startIso = str(props.start_date) || null;
-  const endIso = str(props.end_date) || null;
+  const startIso = str(props.start_date) || str(core.start_date) || null;
+  const endIso = str(props.end_date) || str(core.end_date) || null;
   const startMs = startIso ? Date.parse(startIso) : NaN;
   const endMs = endIso ? Date.parse(endIso) : NaN;
   /* Drop finished work and anything beyond the planning window. */
   if (Number.isFinite(endMs) && endMs < nowMs - WINDOW_PAST_MS) return null;
   if (Number.isFinite(startMs) && startMs > nowMs + WINDOW_FUTURE_MS) return null;
 
-  const points = sampledPoints(feature.geometry);
+  const points = sampledPoints(geometry);
   if (points.length === 0) return null;
 
   let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
@@ -281,14 +344,18 @@ function normalizeFeature(
     endIso,
     point,
     bbox: [w, s, e, n],
-    geometry: simplifiedGeometry(feature.geometry),
+    geometry: simplifiedGeometry(geometry),
   };
 }
 
-async function fetchJson(url: string, timeoutMs = FEED_TIMEOUT_MS): Promise<unknown> {
+async function fetchJson(
+  url: string,
+  timeoutMs = FEED_TIMEOUT_MS,
+  headers?: Record<string, string>
+): Promise<unknown> {
   const res = await fetch(url, {
     signal: AbortSignal.timeout(timeoutMs),
-    headers: { "User-Agent": "StormPath-DOT-Feeds/1.0 (+https://stormpath.app)" },
+    headers: { "User-Agent": "StormPath-DOT-Feeds/1.0 (+https://stormpath.app)", ...headers },
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const len = Number(res.headers.get("content-length") ?? 0);
@@ -317,48 +384,89 @@ async function fetchJson(url: string, timeoutMs = FEED_TIMEOUT_MS): Promise<unkn
   return JSON.parse(new TextDecoder().decode(buf));
 }
 
-async function buildSnapshot(): Promise<Snapshot> {
+function isKeyed(row: RegistryRow): boolean {
+  return row.needapikey === true || String(row.needapikey).toLowerCase() === "true";
+}
+
+/**
+ * Resolve a registry row to a fetchable URL + optional auth headers.
+ * Returns null when the feed can't be fetched (keyed with no secret, or a
+ * keyed feed we have no auth config for).
+ */
+function authFor(
+  row: RegistryRow,
+  env: FeedEnv
+): { url: string; headers?: Record<string, string> } | null {
+  const url = feedUrlOf(row);
+  if (!url) return null;
+  if (!isKeyed(row)) return { url };
+  const cfg = KEYED_FEEDS[row.feedname ?? ""];
+  if (!cfg) return null;
+  const key = env[cfg.secret];
+  if (!key) return null;
+  let finalUrl = url;
+  if (cfg.param) {
+    const u = new URL(url);
+    u.searchParams.set(cfg.param, key);
+    finalUrl = u.toString();
+  }
+  const headers = cfg.header
+    ? { [cfg.header]: `${cfg.prefix ?? ""}${key}` }
+    : undefined;
+  return { url: finalUrl, headers };
+}
+
+async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
   const nowMs = Date.now();
   const registry = (await fetchJson(REGISTRY_URL, 15_000)) as RegistryRow[];
-  const rows = registry.filter((r) => {
-    const keyed = r.needapikey === true || String(r.needapikey).toLowerCase() === "true";
-    return !keyed && feedUrlOf(r);
-  });
+  const rows = registry.filter((r) => feedUrlOf(r));
 
   const events: DotEvent[] = [];
   let failed = 0;
+  let skippedKeyed = 0;
   /* Sequential batches — holding ~30 parsed GeoJSON feeds at once exceeds
    * the 128 MB isolate limit. Batches of 4 keep peak memory ~40 MB. */
   for (let i = 0; i < rows.length; i += FEED_BATCH) {
     const batch = rows.slice(i, i + FEED_BATCH);
     await Promise.all(
       batch.map(async (row) => {
-        const url = feedUrlOf(row);
-        if (!url) return;
+        const auth = authFor(row, env);
+        if (!auth) {
+          if (isKeyed(row)) skippedKeyed += 1;
+          return;
+        }
         try {
-          const feed = (await fetchJson(url)) as Record<string, unknown>;
-          const features = asArray<Record<string, unknown>>(feed.features).slice(
-            0,
-            MAX_FEATURES_PER_FEED
-          );
+          const feed = (await fetchJson(auth.url, FEED_TIMEOUT_MS, auth.headers)) as Record<
+            string,
+            unknown
+          >;
+          /* FeatureCollection (`features`) is the WZDx shape; some CWZ feeds
+           * expose a bare `road_events` array instead. */
+          const fc = asArray<Record<string, unknown>>(feed.features);
+          const list = fc.length
+            ? fc
+            : asArray<Record<string, unknown>>(feed.road_events);
+          const features = list.slice(0, MAX_FEATURES_PER_FEED);
           for (const f of features) {
             const ev = normalizeFeature(f, row, nowMs);
             if (ev) events.push(ev);
           }
         } catch (err) {
           failed += 1;
-          console.warn(`[dot-feeds] feed failed: ${row.feedname ?? url}`, err);
+          console.warn(`[dot-feeds] feed failed: ${row.feedname ?? auth.url}`, err);
         }
       })
     );
   }
+  if (skippedKeyed > 0)
+    console.warn(`[dot-feeds] ${skippedKeyed} keyed feeds skipped (no secret configured)`);
   if (failed > 0) console.warn(`[dot-feeds] ${failed}/${rows.length} feeds failed`);
 
   events.sort((a, b) => a.id.localeCompare(b.id));
   return { fetchedAt: nowMs, events };
 }
 
-async function snapshot(cachesApi: Cache): Promise<Snapshot | null> {
+async function snapshot(cachesApi: Cache, env: FeedEnv): Promise<Snapshot | null> {
   const hit = await cachesApi.match(SNAPSHOT_CACHE_URL);
   let snap: Snapshot | null = null;
   if (hit) {
@@ -371,7 +479,7 @@ async function snapshot(cachesApi: Cache): Promise<Snapshot | null> {
   const fresh = snap && Date.now() - snap.fetchedAt < SNAPSHOT_MAX_AGE_MS;
   if (fresh) return snap;
   try {
-    const next = await buildSnapshot();
+    const next = await buildSnapshot(env);
     await cachesApi.put(
       SNAPSHOT_CACHE_URL,
       new Response(JSON.stringify(next), {
@@ -390,14 +498,15 @@ function bboxIntersects(a: number[], b: number[]): boolean {
 }
 
 export default {
-  async fetch(request: Request, _env: unknown, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: unknown, ctx: ExecutionContext): Promise<Response> {
+    const bindings = (env ?? {}) as FeedEnv;
     const url = new URL(request.url);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     if (request.method !== "GET")
       return new Response("Method not allowed", { status: 405, headers: CORS });
 
     if (url.pathname === "/" || url.pathname === "/health") {
-      const snap = await snapshot(caches.default);
+      const snap = await snapshot(caches.default, bindings);
       return Response.json(
         {
           ok: true,
@@ -410,7 +519,7 @@ export default {
 
     if (url.pathname === "/events") {
       const parts = (url.searchParams.get("bbox") ?? "").split(",").map(Number);
-      const snap = await snapshot(caches.default);
+      const snap = await snapshot(caches.default, bindings);
       if (!snap) return Response.json({ error: "no snapshot" }, { status: 503, headers: CORS });
       let events = snap.events;
       if (parts.length === 4 && parts.every(Number.isFinite)) {
@@ -426,7 +535,7 @@ export default {
 
     /* Warm the snapshot in the background so the first /events isn't slow. */
     if (url.pathname === "/refresh") {
-      ctx.waitUntil(snapshot(caches.default));
+      ctx.waitUntil(snapshot(caches.default, bindings));
       return new Response("refreshing", { status: 202, headers: CORS });
     }
 
