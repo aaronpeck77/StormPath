@@ -176,6 +176,10 @@ export function timelineItemShowsOnProgressStrip(item: TimelineItem): boolean {
     return true;
   }
   if (item.stripMuted) return false;
+  if (item.track === "road") {
+    // Road/construction zones (including caution/cone zones) paint their length on the strip/map.
+    return item.severity === "caution" || item.severity === "serious" || item.severity === "avoid";
+  }
   return item.severity === "serious" || item.severity === "avoid";
 }
 

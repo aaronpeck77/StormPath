@@ -74,6 +74,7 @@ import { applyDotTrafficBackup } from "./dotTrafficBackup";
 import type { DotRoadEvent } from "../services/dotRoadEvents";
 import { placeReferencePhrase, type RoutePlaceAnchor } from "./routePlaceReference";
 import { pointAtAlongMeters } from "./routeGeometry";
+import { useUiStore } from "../state/uiStore";
 
 export type UseRouteAheadDerivationsDeps = {
   nwsMapOverlapRouteGeom: LngLat[] | undefined;
@@ -172,6 +173,8 @@ export type UseRouteAheadDerivationsResult = {
     label: string;
     kind: "construction" | "closure" | "incident" | "other";
   }[];
+  dotRouteAlerts: RouteAlert[];
+  onDotMarkerTap: (id: string) => void;
 };
 
 export function useRouteAheadDerivations(
@@ -229,6 +232,8 @@ export function useRouteAheadDerivations(
     enabled: isPlus && !!guidanceRoute?.geometry?.length,
     geometry: guidanceRoute?.geometry,
   });
+  const activeDotId = useUiStore((s) => s.activeDotMarkerId);
+  const setActiveDotId = useUiStore((s) => s.setActiveDotMarkerId);
 
   /**
    * Event↔route matching is position-independent — run once per (feed, route),
@@ -726,6 +731,15 @@ export function useRouteAheadDerivations(
     [routeImpactsForUi]
   );
 
+  const dotRouteAlerts = useMemo(() => {
+    const m = routeImpactsForUi.find((i) => i.source === "dot511" && i.id === activeDotId);
+    return m ? [routeImpactToRouteAlert(m)] : [];
+  }, [routeImpactsForUi, activeDotId]);
+
+  const onDotMarkerTap = useCallback((id: string) => {
+    setActiveDotId(id);
+  }, [setActiveDotId]);
+
   const trafficBypassContext = useMemo(
     () => computeTrafficBypassOffer(routeImpactsForUi, trafficDelayMinutesForBypass),
     [routeImpactsForUi, trafficDelayMinutesForBypass]
@@ -843,5 +857,7 @@ export function useRouteAheadDerivations(
     routePlaceAnchors,
     dotRoadEvents: dotFeed?.events ?? [],
     dotEventMarkers,
+    dotRouteAlerts,
+    onDotMarkerTap,
   };
 }

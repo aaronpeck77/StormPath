@@ -74,6 +74,8 @@ export interface UiState {
   progressCalloutsOpen: boolean;
   demoApproachBannerOn: boolean;
   demoCloseHazardOn: boolean;
+  /** Tapped DOT/WZDx map marker — opens its hazard detail sheet. */
+  activeDotMarkerId: string | null;
 
   setRouteHazardSheet: (next: Updater<RouteHazardSheetState>) => void;
   setSavedDrawerOpen: (next: Updater<boolean>) => void;
@@ -89,6 +91,7 @@ export interface UiState {
   setProgressCalloutsOpen: (next: Updater<boolean>) => void;
   setDemoApproachBannerOn: (next: Updater<boolean>) => void;
   setDemoCloseHazardOn: (next: Updater<boolean>) => void;
+  setActiveDotMarkerId: (next: Updater<string | null>) => void;
 
   /**
    * Reset every overlay to its closed/empty state in a single batched store update.
@@ -115,6 +118,7 @@ export const useUiStore = create<UiState>((set) => ({
   progressCalloutsOpen: false,
   demoApproachBannerOn: false,
   demoCloseHazardOn: false,
+  activeDotMarkerId: null,
 
   setRouteHazardSheet: (next) =>
     set((s) => ({ routeHazardSheet: applyUpdater(s.routeHazardSheet, next) })),
@@ -139,6 +143,8 @@ export const useUiStore = create<UiState>((set) => ({
     set((s) => ({ demoApproachBannerOn: applyUpdater(s.demoApproachBannerOn, next) })),
   setDemoCloseHazardOn: (next) =>
     set((s) => ({ demoCloseHazardOn: applyUpdater(s.demoCloseHazardOn, next) })),
+  setActiveDotMarkerId: (next) =>
+    set((s) => ({ activeDotMarkerId: applyUpdater(s.activeDotMarkerId, next) })),
 
   dismissAllOverlays: () =>
     set({

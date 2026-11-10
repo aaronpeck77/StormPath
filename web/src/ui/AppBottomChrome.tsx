@@ -111,6 +111,10 @@ type Props = {
   navigationStarted: boolean;
   viewMode: MapViewMode;
 
+  /* Mid-route destination change */
+  onChangeDestination?: () => void;
+  isChangingDestination?: boolean;
+
   /* Drive / topdown about-row */
   driveMapBearingDeg: number | null;
   /** Drive only. Restarts stuck guidance and live data without ending the trip. */
@@ -230,6 +234,8 @@ export function AppBottomChrome({
   handleDiscardRecordingPath,
   navigationStarted,
   viewMode,
+  onChangeDestination,
+  isChangingDestination = false,
   driveMapBearingDeg,
   onRefreshTrip,
   onOpenAbout,
@@ -419,7 +425,7 @@ export function AppBottomChrome({
               ) : null}
               {carPlayMapReturn}
             </DockAboutRow>
-          ) : navigationStarted && viewMode === "topdown" ? (
+          ) : navigationStarted && (viewMode === "topdown" || viewMode === "route") ? (
             <DockAboutRow
               stormyOn={talkOn}
               onOpenAbout={onOpenAbout}
@@ -506,9 +512,10 @@ export function AppBottomChrome({
                           type="button"
                           className="nav-dest-compact--tap"
                           onClick={handleCompactDestOpen}
+                          title="Tap to search or change destination"
                         >
                           <span className="nav-dest-compact-label" title={destinationLabel}>
-                            {destinationLabel || "Destination"}
+                            {isChangingDestination ? "Search destination or stop…" : (destinationLabel || "Destination")}
                           </span>
                         </button>
                         {navigationStarted && activeViaIndex < viaStops.length ? (
@@ -518,6 +525,16 @@ export function AppBottomChrome({
                             onClick={() => handleSkipViaStop(activeViaIndex)}
                           >
                             Skip stop
+                          </button>
+                        ) : null}
+                        {onChangeDestination && !isChangingDestination ? (
+                          <button
+                            type="button"
+                            className="nav-dest-compact-btn"
+                            onClick={onChangeDestination}
+                            title="Change destination or add a stop"
+                          >
+                            Change
                           </button>
                         ) : null}
                       </div>

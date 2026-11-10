@@ -62,16 +62,24 @@ export function useProgressRailFootInset(active: boolean): void {
        * .nav-bottom-stack: transient widgets (hazard panel, PiP, banners) sit
        * above the chrome inside it and would shrink the rail on phones. */
       const vh = window.innerHeight;
+      /* On iPad landscape, the side command panel sits on the right/left while the
+       * progress rail runs full screen height on the opposite edge. Anchoring to
+       * the bottom of the side panel would cut the rail in half. Check for iPad landscape. */
+      const isIpadLandscape =
+        window.matchMedia("(orientation: landscape) and (min-width: 800px) and (min-height: 600px)").matches;
+
       let anchorTop: number | null = null;
-      for (const sel of [
-        ".nav-bottom-chrome-wrap",
-        ".landscape-navigation-dock",
-      ]) {
-        const el = document.querySelector<HTMLElement>(sel);
-        if (!el) continue;
-        const rect = el.getBoundingClientRect();
-        if (rect.height < 1 || rect.top <= vh * ANCHOR_MIN_TOP_RATIO) continue;
-        anchorTop = anchorTop == null ? rect.top : Math.min(anchorTop, rect.top);
+      if (!isIpadLandscape) {
+        for (const sel of [
+          ".nav-bottom-chrome-wrap",
+          ".landscape-navigation-dock",
+        ]) {
+          const el = document.querySelector<HTMLElement>(sel);
+          if (!el) continue;
+          const rect = el.getBoundingClientRect();
+          if (rect.height < 1 || rect.top <= vh * ANCHOR_MIN_TOP_RATIO) continue;
+          anchorTop = anchorTop == null ? rect.top : Math.min(anchorTop, rect.top);
+        }
       }
 
       if (anchorTop != null) {

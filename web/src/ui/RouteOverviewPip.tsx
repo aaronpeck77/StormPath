@@ -18,6 +18,7 @@ import {
   type NightBasemapPreset,
 } from "./mapBasemapStyle";
 import { applyNightBasemapReadability } from "./mapNightBasemapReadability";
+import { makeDestEl } from "./mapMarkerDom";
 
 const PIP_PAD = { top: 10, bottom: 10, left: 10, right: 10 };
 
@@ -63,6 +64,7 @@ export function RouteOverviewPip({
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const routeIdsRef = useRef<Set<string>>(new Set());
   const puckRef = useRef<mapboxgl.Marker | null>(null);
+  const destMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const hazardMarkerRef = useRef<mapboxgl.Marker | null>(null);
   /** User grabbed the PiP or a hazard has focus — stop the 2 s route re-fit. */
   const viewLockedRef = useRef(false);
@@ -215,6 +217,25 @@ export function RouteOverviewPip({
       puckRef.current.setLngLat(userLngLat);
     }
   }, [ready, userLngLat]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+
+    if (!destLngLat) {
+      destMarkerRef.current?.remove();
+      destMarkerRef.current = null;
+      return;
+    }
+
+    if (!destMarkerRef.current) {
+      destMarkerRef.current = new mapboxgl.Marker({ element: makeDestEl(), anchor: "center" })
+        .setLngLat(destLngLat)
+        .addTo(map);
+    } else {
+      destMarkerRef.current.setLngLat(destLngLat);
+    }
+  }, [ready, destLngLat]);
 
   useEffect(() => {
     const map = mapRef.current;

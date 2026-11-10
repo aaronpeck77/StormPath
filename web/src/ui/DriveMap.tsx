@@ -444,6 +444,7 @@ export type Props = {
     label: string;
     kind?: "construction" | "closure" | "incident" | "other";
   }[] | null;
+  onDotEventMarkerClick?: (id: string) => void;
   /** Right-side route progress rail visibility affects camera/right padding. */
   progressRailVisible?: boolean;
   /** Off-route Mp: fit B/C rejoin paths in view instead of street-level puck follow. */
@@ -610,6 +611,7 @@ function DriveMapInner({
   searchPickMarkers = null,
   onSearchPickMarkerClick,
   dotEventMarkers = null,
+  onDotEventMarkerClick,
   progressRailVisible = true,
   offRouteRejoinCompareActive = false,
   rejoinOverlayActive = false,
@@ -5478,12 +5480,20 @@ function DriveMapInner({
       const el = document.createElement("div");
       el.className = `map-dot-event map-dot-event--${m.kind ?? "other"}`;
       el.title = m.label;
+      el.setAttribute("role", "button");
+      el.setAttribute("aria-label", m.label);
+      el.style.cursor = "pointer";
+      const markerId = m.id;
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onDotEventMarkerClick?.(markerId);
+      });
       const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
         .setLngLat(m.lngLat)
         .addTo(map);
       existing.set(m.id, { marker, el });
     }
-  }, [mapReady, dotEventMarkers]);
+  }, [mapReady, dotEventMarkers, onDotEventMarkerClick]);
 
   useEffect(() => {
     if (!mapReady) return;

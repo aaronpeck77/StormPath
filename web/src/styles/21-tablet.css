@@ -153,6 +153,15 @@
     padding-right: 28px;
   }
 
+  /* iPad landscape full-height progress rail: do not anchor to the side panel's bottom,
+   * but run the full height of the screen's vertical column alongside the panel. */
+  .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .nav-drive-overlay-stack .nav-route-progress-rail,
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-drive-overlay-stack .nav-route-progress-rail {
+    grid-row: 1 / -1;
+    align-self: stretch;
+    height: 100%;
+  }
+
   /* ── Panel middle: hazard countdown card ────────────────────────────────── */
   .landscape-hazard-panel {
     display: block;
@@ -161,9 +170,12 @@
     padding: 10px 12px 8px;
     border: 1px solid rgba(255, 255, 255, 0.09);
     border-radius: 12px;
-    background: rgba(15, 23, 42, 0.92);
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(16px) saturate(1.2);
+    -webkit-backdrop-filter: blur(16px) saturate(1.2);
     color: #f1f5f9;
     pointer-events: auto;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   }
 
   .landscape-hazard-panel__title {
@@ -253,20 +265,19 @@
   /* ── Panel middle: PiP switcher (RT map / advisory / weather) ──────────── */
   .landscape-info-pip {
     display: flex;
-    /* Shrinks before the panel scrolls — Rt's extra route-select row would
-     * otherwise push the toolbar below the fold. */
     flex: 0 1 auto;
     min-height: 0;
     flex-direction: column;
-    /* Auto top margin absorbs spare panel height, pinning the PiP + nav dock +
-     * bottom chrome group to the panel bottom; the gap above is hazard-TBT room. */
-    margin: auto 2px 0;
+    margin: 0 2px;
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.09);
     border-radius: 12px;
-    background: rgba(15, 23, 42, 0.92);
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(16px) saturate(1.2);
+    -webkit-backdrop-filter: blur(16px) saturate(1.2);
     color: #f1f5f9;
     pointer-events: auto;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   }
 
   .landscape-info-pip__tabs {
@@ -381,16 +392,13 @@
     gap: var(--nav-bottom-stack-gap);
     padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
       max(10px, env(safe-area-inset-bottom)) 10px;
-    /* Frosted glass — map shows through blurred; fallback stays translucent. */
-    background: rgba(11, 14, 19, 0.62);
-    backdrop-filter: blur(18px) saturate(1.15);
-    -webkit-backdrop-filter: blur(18px) saturate(1.15);
     border-left: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: -18px 0 36px -18px rgba(0, 0, 0, 0.55);
     overflow-y: auto;
     overscroll-behavior: contain;
     /* Empty panel area lets map gestures through; children opt back in below. */
     pointer-events: none;
+    background: transparent;
   }
 
   /* Top group (TBT slot → hazard card) stays put; the PiP's margin-top:auto
@@ -408,15 +416,12 @@
     gap: var(--nav-bottom-stack-gap);
     padding: max(10px, env(safe-area-inset-left)) 10px max(10px, env(safe-area-inset-bottom))
       max(10px, env(safe-area-inset-right));
-    /* Frosted glass — map shows through blurred; fallback stays translucent. */
-    background: rgba(11, 14, 19, 0.62);
-    backdrop-filter: blur(18px) saturate(1.15);
-    -webkit-backdrop-filter: blur(18px) saturate(1.15);
     border-right: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 18px 0 36px -18px rgba(0, 0, 0, 0.55);
     overflow-y: auto;
     overscroll-behavior: contain;
     pointer-events: none;
+    background: transparent;
   }
 
   /* Mapbox "i" attribution + legal strip must clear the panel, not hide under it. */
@@ -509,6 +514,14 @@
   .ipad-panel-tbt-slot:not(:empty) {
     display: block;
     pointer-events: auto;
+    margin: 2px 2px 0;
+    padding: 8px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(16px) saturate(1.2);
+    -webkit-backdrop-filter: blur(16px) saturate(1.2);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   }
 
   .ipad-panel-tbt-slot .top-guidance-bar {
@@ -786,6 +799,17 @@
 
   .app-shell.nav-fullmap .panel-collapse__tab:active {
     background: rgba(30, 40, 56, 0.95);
+  }
+}
+
+/* Strictly prevent collapse tabs from rendering or styling on phones or non-tablet layouts */
+@media not all and (orientation: landscape) and (min-width: 800px) and (min-height: 600px),
+       (orientation: landscape) and (max-height: 500px) {
+  .panel-collapse__tab {
+    display: none !important;
+  }
+  .panel-collapse--closed {
+    min-height: 0 !important;
   }
 }
 

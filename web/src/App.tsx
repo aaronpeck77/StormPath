@@ -104,7 +104,7 @@ import {
   setDriveDiagLiveLengthM,
   setDriveDiagRouteLengthM,
 } from "./nav/driveDiagnostics";
-import { routeDoublesBack } from "./nav/routeDoublesBack";
+import { routeDoublesBack, routeInitialHeadAwayLoop } from "./nav/routeDoublesBack";
 import {
   routingPreferenceForLockedRoute,
   type RoutingPreference,
@@ -1008,6 +1008,13 @@ export default function App() {
       if (routeDoublesBack(geometry)) {
         if (import.meta.env.DEV) {
           console.info("[nav] ignored Core reroute — line returns to a point already passed");
+        }
+        return false;
+      }
+      const userPos = userLngLatRef.current;
+      if (routeInitialHeadAwayLoop(geometry, userPos)) {
+        if (import.meta.env.DEV) {
+          console.info("[nav] ignored Core reroute — initial loop away from destination when ahead");
         }
         return false;
       }
@@ -2065,6 +2072,8 @@ export default function App() {
     progressStripAlerts,
     routePlaceAnchors,
     dotEventMarkers,
+    dotRouteAlerts,
+    onDotMarkerTap,
   } = useRouteAheadDerivations({
     nwsMapOverlapRouteGeom,
     stormCorridorAlerts,
@@ -2618,6 +2627,18 @@ export default function App() {
     [onStormBarExpandedChange]
   );
 
+  const activeDotMarkerId = useUiStore((s) => s.activeDotMarkerId);
+  useEffect(() => {
+    if (dotRouteAlerts.length > 0 && !routeHazardSheet && activeDotMarkerId) {
+      const routeId = guidanceRoute?.id ?? "";
+      setRouteHazardSheet({ routeId, alerts: dotRouteAlerts });
+      const marker = dotEventMarkers?.find((m) => m.id === activeDotMarkerId);
+      if (marker) {
+        setMapFocus({ kind: "hazardOverview", hazardLng: marker.lngLat[0], hazardLat: marker.lngLat[1] });
+      }
+    }
+  }, [dotRouteAlerts, routeHazardSheet, guidanceRoute?.id, activeDotMarkerId, dotEventMarkers, setRouteHazardSheet, setMapFocus]);
+
   const {
     handleTrafficBypassCompareSelect,
     handleTrafficBypassCompareCancel,
@@ -2888,6 +2909,7 @@ export default function App() {
       searchPickMarkers: searchPickMarkersForMap,
       onSearchPickMarkerClick: handleSearchPickFromMap,
       dotEventMarkers,
+      onDotEventMarkerClick: onDotMarkerTap,
       progressRailVisible: showProgressRail,
       offRouteRejoinCompareActive: offRouteHoldPreviewActive || detourAutoActive,
       followCamResyncKey,
@@ -3103,6 +3125,7 @@ export default function App() {
             ),
             planEtaMinutes: guidanceRoute?.baseEtaMinutes ?? null,
             progressAlongM: progressPanelAlongM,
+            railTotalMeters: progressRailRoute ? polylineLengthMeters(progressRailRoute.geometry) : guidanceRouteLengthM,
             userAlongT: progressCalloutUserAlongT,
             stripTint: activeProgressCalloutPanel.stripTint,
             detailScrollRef: progressCalloutDetailScrollRef,
@@ -3463,6 +3486,11 @@ export default function App() {
             ) : null
           }
           handleCompactDestOpen={handleCompactDestOpen}
+          onChangeDestination={() => {
+            handleCompactDestOpen();
+            setSearchExpanded(true);
+          }}
+          isChangingDestination={searchExpanded && navigationStarted}
           destinationLabel={destinationLabel}
           searchText={searchText}
           onSearchTextChange={(v) => {

@@ -171,7 +171,9 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       setDestinationLabel(label);
       setViewMode("route");
       setSearchExpanded(false);
-      await computeRoutes(lngLat, label);
+      await computeRoutes(lngLat, label, {
+        preserveNavigation: navigationStarted,
+      });
     },
     [
       computeRoutes,
@@ -204,11 +206,32 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
 
   const handleMapClick = useCallback(
     async (lng: number, lat: number) => {
+      const end: [number, number] = [lng, lat];
+      const pinLabel = `Pin · ${lat.toFixed(3)}°, ${lng.toFixed(3)}°`;
+
       if (navigationStarted && planRoutesLength > 0) {
-        setTapHint("Stop navigation first to pick a new destination on the map.");
-        window.setTimeout(() => setTapHint(null), 5000);
+        /* While actively navigating, tapping the map retargets destination (or adds via stop if addingViaStop). */
+        if (addingViaStop) {
+          const finalDest = useTripPlanStore.getState().destLngLat;
+          if (!finalDest) return;
+          const prev = useTripPlanStore.getState().viaStops;
+          if (prev.length >= MAX_VIA_STOPS) {
+            setTapHint(`Stop limit reached (${MAX_VIA_STOPS}) — remove a stop to add another.`);
+            window.setTimeout(() => setTapHint(null), 5000);
+            return;
+          }
+          setViaStops([...prev, { lngLat: end, label: pinLabel }]);
+          setAddingViaStop(false);
+          await computeRoutes(finalDest, useTripPlanStore.getState().destinationLabel.trim() || "Destination", {
+            preserveNavigation: navigationStarted,
+          });
+          return;
+        }
+        setDestinationLabel(pinLabel);
+        await applyTripPlacePick(end, pinLabel, "destination");
         return;
       }
+
       if (!userLngLat) {
         setTapHint(
           locationError ??
@@ -220,8 +243,6 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       setAllowAutocomplete(false);
       setSuggestions([]);
       setSuggestLoading(false);
-      const end: [number, number] = [lng, lat];
-      const pinLabel = `Pin · ${lat.toFixed(3)}°, ${lng.toFixed(3)}°`;
       const pickMode =
         addingViaStop && useTripPlanStore.getState().destLngLat ? "via" : "destination";
       setSearchText(pinLabel);

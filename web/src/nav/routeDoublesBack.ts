@@ -1,7 +1,10 @@
 import {
   buildCumulativeDistances,
+  closestAlongRouteMeters,
   haversineMeters,
   pointAtAlongMeters,
+  polylineLengthMeters,
+  slicePolylineBetweenAlong,
 } from "./routeGeometry";
 import type { LngLat } from "./types";
 
@@ -48,6 +51,45 @@ export function routeDoublesBack(geometry: LngLat[]): boolean {
       if (away < MIN_AWAY_M) continue;
       if (away > MAX_AWAY_M) break;
       if (haversineMeters(samples[i]!, samples[j]!) <= NEAR_M) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * True when the route begins by heading away from the destination for a long distance,
+ * then turns 180° and circles back near the user's current position or start.
+ * Defends against reroute / refresh from instructing the driver to turn off the path
+ * and loop around when the destination is directly ahead.
+ */
+export function routeInitialHeadAwayLoop(geometry: LngLat[], userLngLat?: LngLat | null): boolean {
+  if (geometry.length < 3 || !userLngLat) return false;
+  const total = polylineLengthMeters(geometry);
+  if (total < 600) return false;
+
+  const userAlong = closestAlongRouteMeters(userLngLat, geometry).alongMeters;
+  // Check up to 1500m ahead of the user's position along the route.
+  const lookAheadM = Math.min(total, userAlong + 1500);
+  if (lookAheadM < 400) return false;
+
+  // Sample points along the first ~1500m ahead
+  const headSlice = slicePolylineBetweenAlong(geometry, userAlong, lookAheadM);
+  if (headSlice.length < 2) return false;
+
+  // Calculate distance from user to headSlice end vs user to headSlice start
+  const dStart = haversineMeters(userLngLat, headSlice[0]!);
+  const dEnd = haversineMeters(userLngLat, headSlice[headSlice.length - 1]!);
+
+  // If the route goes out 800m+ and then comes back within 200m of where it started
+  // while the user is only ~100-200m away, it is a loop/reverse departure.
+  const headLen = polylineLengthMeters(headSlice);
+  if (headLen > 600 && dStart < 250 && dEnd < dStart + 100) {
+    // Check if it returns to within 150m of any point in the first 400m of headSlice
+    for (let d = 0; d <= Math.min(400, headLen); d += 100) {
+      const p = pointAtAlongMeters(headSlice, d);
+      if (haversineMeters(p, headSlice[headSlice.length - 1]!) <= 150) {
+        return true;
+      }
     }
   }
   return false;

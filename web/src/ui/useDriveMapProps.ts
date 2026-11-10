@@ -98,6 +98,7 @@ export type UseDriveMapPropsInput = {
     label: string;
     kind?: "construction" | "closure" | "incident" | "other";
   }[] | null;
+  onDotEventMarkerClick?: ((id: string) => void) | undefined;
   progressRailVisible: boolean;
   offRouteRejoinCompareActive: boolean;
   followCamResyncKey?: number;
@@ -179,6 +180,7 @@ export function buildDriveMapProps(
     searchPickMarkers,
     onSearchPickMarkerClick,
     dotEventMarkers = null,
+    onDotEventMarkerClick,
     progressRailVisible,
     offRouteRejoinCompareActive,
     followCamResyncKey = 0,
@@ -268,6 +270,7 @@ export function buildDriveMapProps(
     searchPickMarkers,
     onSearchPickMarkerClick: searchPickMarkers ? onSearchPickMarkerClick : undefined,
     dotEventMarkers,
+    onDotEventMarkerClick,
     progressRailVisible,
     offRouteRejoinCompareActive,
     rejoinOverlayActive: offRouteRejoinCompareActive,

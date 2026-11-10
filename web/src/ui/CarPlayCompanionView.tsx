@@ -46,6 +46,7 @@ export type CarPlayCompanionRail = {
   fallbackSegments: RouteChunkCalloutItem[];
   planEtaMinutes: number | null;
   progressAlongM: number;
+  railTotalMeters?: number;
   userAlongT: number;
   stripTint: string;
   detailScrollRef?: RefObject<HTMLDivElement | null>;
@@ -94,16 +95,18 @@ function hazardLabelFromTitle(title: string): string {
  * content the map view shows, so the two never disagree.
  */
 export function CarPlayCompanionView(p: Props) {
+  const r = p.rail;
   const total = Math.max(0, p.conditions.totalMeters);
+  const railTotal = Math.max(0, r.railTotalMeters ?? total);
   const along = Math.min(Math.max(0, p.conditions.userAlongMeters), total);
-  const pct = total > 0 ? along / total : 0;
+  const railAlong = Math.min(Math.max(0, r.progressAlongM), railTotal);
+  const pct = railTotal > 0 ? railAlong / railTotal : (total > 0 ? along / total : 0);
   const remainingM = Math.max(0, total - along);
   const dist = formatDistanceShort(remainingM, p.useMiles);
   const arrive =
     p.etaMinutes != null && Number.isFinite(p.etaMinutes)
       ? new Date(Date.now() + p.etaMinutes * 60_000)
       : null;
-  const r = p.rail;
 
   /* Advisory model + sections — identical derivation to the map view's
    * expanded advisory panel. barExpanded=true so the route hazard feed
@@ -175,38 +178,6 @@ export function CarPlayCompanionView(p: Props) {
         </div>
       </section>
 
-      {carAlerted.length > 0 ? (
-        <section className="cp-companion__caralert" aria-label="Hazards announced on CarPlay">
-          <div className="cp-companion__caralert-head">
-            <span className="cp-companion__caralert-pill">CarPlay alert</span>
-            <span className="cp-companion__caralert-sub">
-              The car screen flagged these — details below
-            </span>
-          </div>
-          <ul className="cp-companion__caralert-list">
-            {carAlerted.map((h) => {
-              const dot = severityDot(h.title);
-              return (
-                <li key={h.title} className="cp-companion__caralert-item">
-                  <span
-                    className="cp-companion__dot"
-                    style={dot ? { background: dot } : undefined}
-                    aria-hidden
-                  />
-                  <div className="cp-companion__itembody">
-                    <div className="cp-companion__itemtitle">{h.label}</div>
-                    <div className="cp-companion__itemdetail">
-                      {h.item?.detailLine ?? h.title}
-                      {h.timing?.timingLine ? ` · ${h.timing.timingLine}` : ""}
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ) : null}
-
       {/* The real progress rail, turned sideways for the page: route line,
        * turn ticks, storm bands, and the radar slice crossing the path. */}
       <div className="cp-companion__rail">
@@ -256,6 +227,38 @@ export function CarPlayCompanionView(p: Props) {
           detailScrollRef={r.detailScrollRef}
         />
       </div>
+
+      {carAlerted.length > 0 ? (
+        <section className="cp-companion__caralert" aria-label="Hazards announced on CarPlay">
+          <div className="cp-companion__caralert-head">
+            <span className="cp-companion__caralert-pill">CarPlay alert</span>
+            <span className="cp-companion__caralert-sub">
+              The car screen flagged these — details below
+            </span>
+          </div>
+          <ul className="cp-companion__caralert-list">
+            {carAlerted.map((h) => {
+              const dot = severityDot(h.title);
+              return (
+                <li key={h.title} className="cp-companion__caralert-item">
+                  <span
+                    className="cp-companion__dot"
+                    style={dot ? { background: dot } : undefined}
+                    aria-hidden
+                  />
+                  <div className="cp-companion__itembody">
+                    <div className="cp-companion__itemtitle">{h.label}</div>
+                    <div className="cp-companion__itemdetail">
+                      {h.item?.detailLine ?? h.title}
+                      {h.timing?.timingLine ? ` · ${h.timing.timingLine}` : ""}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
 
       {/* The same advisory content the map view shows: local forecast
        * (Now / 24-hour / 7-day) and route weather + road hazards. */}
