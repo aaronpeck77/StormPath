@@ -157,6 +157,12 @@ function eventKind(eventType: string): DotEvent["kind"] {
   return "other";
 }
 
+/** IDOT CWZ publishes interstate codes like "I080"; display as "I-80". */
+function prettifyRoadName(name: string): string {
+  const m = name.match(/^I-?(\d+)$/i);
+  return m ? `I-${m[1]}` : name;
+}
+
 function fmtRestriction(r: Record<string, unknown>): string | null {
   const type = str(r.type).toLowerCase();
   const value = Number(r.value);
@@ -260,8 +266,11 @@ function normalizeFeature(
   const point: [number, number] = [sx / points.length, sy / points.length];
 
   const roadNames = asArray<string>(core.road_names).map(str).filter(Boolean);
-  const roadName = roadNames[0] ?? "";
-  const direction = str(core.direction) || null;
+  const roadName = prettifyRoadName(roadNames[0] ?? "");
+  /* IDOT CWZ uses "unknown" for direction on most events — treat as absent. */
+  const dirStr = str(core.direction);
+  const direction =
+    dirStr && dirStr.toLowerCase() !== "unknown" ? dirStr : null;
   const rawDesc = str(core.description);
   const description = rawDesc.split(/Full schedule below/i)[0]!.trim().slice(0, MAX_DESCRIPTION_CHARS);
 
