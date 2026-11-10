@@ -160,7 +160,7 @@ function eventKind(eventType: string): DotEvent["kind"] {
 /** IDOT CWZ publishes interstate codes like "I080"; display as "I-80". */
 function prettifyRoadName(name: string): string {
   const m = name.match(/^I-?(\d+)$/i);
-  return m ? `I-${m[1]}` : name;
+  return m ? `I-${parseInt(m[1]!, 10)}` : name;
 }
 
 function fmtRestriction(r: Record<string, unknown>): string | null {
