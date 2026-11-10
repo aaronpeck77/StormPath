@@ -5,6 +5,8 @@ type Props = {
   id: string;
   /** Screen-reader label for the collapse tab. */
   label: string;
+  /** Extra class on the wrapper (e.g. pin-to-bottom in the iPad panel). */
+  className?: string;
   children: ReactNode;
 };
 
@@ -20,10 +22,10 @@ function readOpen(id: string): boolean {
 
 /**
  * iPad landscape command-panel section that collapses to a tab on the panel's
- * outer edge so the map can use the freed space. TBT slot and bottom dock are
- * never wrapped — they stay put.
+ * outer edge so the map can use the freed space. The bottom dock/chrome are
+ * never wrapped — they stay pinned and can't collapse.
  */
-export function CollapsiblePanelSection({ id, label, children }: Props) {
+export function CollapsiblePanelSection({ id, label, className, children }: Props) {
   const [open, setOpen] = useState(() => readOpen(id));
 
   const toggle = () => {
@@ -39,8 +41,12 @@ export function CollapsiblePanelSection({ id, label, children }: Props) {
   };
 
   return (
-    <div className={`panel-collapse${open ? "" : " panel-collapse--closed"}`}>
-      {open ? children : null}
+    <div className={`panel-collapse${open ? "" : " panel-collapse--closed"}${className ? ` ${className}` : ""}`}>
+      {/* Children stay mounted — the TBT slot is a portal target and must exist
+       * even while collapsed. Hiding is CSS-only inside the tablet-landscape MQ,
+       * so a persisted "closed" state can never hide content on phones (where the
+       * tab itself is hidden). */}
+      <div className="panel-collapse__body">{children}</div>
       <button
         type="button"
         className="panel-collapse__tab"

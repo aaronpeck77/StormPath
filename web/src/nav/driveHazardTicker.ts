@@ -18,15 +18,32 @@ export type DriveHazardTickerInput = {
 
 const SEVERITY = { info: 0, caution: 1, serious: 2, avoid: 3 };
 
+/** Feed-level gates shared by the ticker and the iPad hazard panel — false means
+ * the queue is empty because data can't flow (offline, off-route, no fix, next
+ * turn too close), not because the route is clear. */
+export function driveHazardFeedActive(input: DriveHazardTickerInput): boolean {
+  const { userAlongMeters: along, metersToManeuver: turnM } = input;
+  return Boolean(
+    input.isPlus &&
+      input.isOnline &&
+      input.navigationStarted &&
+      !input.offRoute &&
+      Number.isFinite(along) &&
+      along >= 0 &&
+      turnM != null &&
+      Number.isFinite(turnM) &&
+      turnM > 1609.34
+  );
+}
+
 function collectHazardCandidates(
   input: DriveHazardTickerInput,
   nowMs: number,
   opts?: { pageGraph?: boolean; anyNavView?: boolean }
 ): TimelineItem[] {
-  const { userAlongMeters: along, metersToManeuver: turnM } = input;
-  if (!input.isPlus || !input.isOnline || !input.navigationStarted || input.offRoute ||
-    (input.viewMode !== "drive" && !opts?.anyNavView) ||
-    !Number.isFinite(along) || along < 0 || turnM == null || !Number.isFinite(turnM) || turnM <= 1609.34) return [];
+  const { userAlongMeters: along } = input;
+  if (!driveHazardFeedActive(input) ||
+    (input.viewMode !== "drive" && !opts?.anyNavView)) return [];
 
   const candidates = input.items.filter((item) => {
     if (item.crossesRoute === false || item.coarsePreview || !item.label.trim() || !Number.isFinite(item.startMeters) ||
@@ -103,10 +120,11 @@ export type DriveHazardQueueRow = {
 
 export function selectDriveHazardQueue(
   input: DriveHazardQueueInput,
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  opts?: { anyNavView?: boolean }
 ): DriveHazardQueueRow[] {
   const along = input.userAlongMeters;
-  return collectHazardCandidates(input, nowMs, { pageGraph: true }).slice(0, 2).map((item) => {
+  return collectHazardCandidates(input, nowMs, { pageGraph: true, anyNavView: opts?.anyNavView }).slice(0, 2).map((item) => {
     const timing = formatRouteAlertTiming({
       startMeters: item.startMeters,
       endMeters: item.endMeters,

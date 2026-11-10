@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { SavedPlace } from "../nav/savedPlaces";
+import { EMPTY_TRIP } from "../nav/emptyTrip";
 import { MAX_VIA_STOPS } from "../nav/routeWaypoints";
 import type { ComputeRoutesFn } from "../nav/useComputeRoutes";
 import type { LngLat } from "../nav/types";
@@ -167,6 +168,19 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       setViaStops([]);
       setActiveViaIndex(0);
       setAddingViaStop(false);
+      setSearchPickHits(null);
+      searchPickQueryRef.current = null;
+      if (!navigationStarted) {
+        /* Planning-mode destination swap: release the old trip outright so no
+         * stale route/slot/hazard state can hold it — the new plan draws fresh. */
+        const plan = useTripPlanStore.getState();
+        plan.setPlan(EMPTY_TRIP);
+        plan.setRouteSlotOrder([]);
+        plan.setPreviewLegIndex(0);
+        const ui = useUiStore.getState();
+        ui.setRouteHazardSheet(null);
+        ui.setMapFocus(null);
+      }
       setDestLngLat(lngLat);
       setDestinationLabel(label);
       setViewMode("route");

@@ -119,10 +119,12 @@ describe("Drive hazard queue (iPad landscape panel)", () => {
 
   it("anyNavView keeps the next-hazard highlight alive outside drive view", () => {
     const mp = { ...queueInput, viewMode: "topdown" as const, items: [hazard] };
-    // Countdown queue stays drive-only…
+    // Countdown queue stays drive-only by default…
     expect(selectDriveHazardQueue(mp)).toEqual([]);
     expect(selectNextDriveHazardItem(mp)).toBeNull();
-    // …but the shared "next" used for page highlights + the route beacon does not.
+    // …but the iPad panel opts into every nav view, and the shared "next" used
+    // for page highlights + the route beacon does not.
+    expect(selectDriveHazardQueue(mp, Date.now(), { anyNavView: true })[0]?.id).toBe("storm");
     expect(selectNextDriveHazardItem(mp, { anyNavView: true })?.id).toBe("storm");
   });
 });

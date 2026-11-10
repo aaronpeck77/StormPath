@@ -3385,7 +3385,9 @@ export default function App() {
           panelWidgets={
             navigationStarted ? (
               <>
-                <div id="ipad-panel-tbt-slot" className="ipad-panel-tbt-slot" />
+                <CollapsiblePanelSection id="tbt" label="turn-by-turn">
+                  <div id="ipad-panel-tbt-slot" className="ipad-panel-tbt-slot" />
+                </CollapsiblePanelSection>
                 <CollapsiblePanelSection id="hazard" label="hazard alerts">
                   <LandscapeHazardPanel
                     {...hazardQueueInput}
@@ -3394,7 +3396,7 @@ export default function App() {
                     onDismissBend={hazardBypass.dismissHazard}
                   />
                 </CollapsiblePanelSection>
-                <CollapsiblePanelSection id="pip" label="route info panel">
+                <CollapsiblePanelSection id="pip" label="route info panel" className="panel-collapse--pin-bottom">
                 <LandscapeInfoPip
                   accessToken={env.mapboxToken}
                   focusHazard={pipFocusHazard}

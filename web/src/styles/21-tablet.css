@@ -106,7 +106,7 @@
     --nav-chrome-about: 46px;
     --nav-chrome-radius: 10px;
     --nav-chrome-gap: 8px;
-    --nav-bottom-stack-gap: 10px;
+    --nav-bottom-stack-gap: 8px;
   }
 
   /* Overlay grid gains a third column that reserves the panel's strip so the
@@ -184,6 +184,13 @@
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+    color: #94a3b8;
+  }
+
+  .landscape-hazard-panel__empty {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.3;
     color: #94a3b8;
   }
 
@@ -377,8 +384,10 @@
   }
 
   /* ── Panel order: TBT on top, hazard countdown under it, then a flexible
-   * gap, then PiP → nav dock → bottom chrome pinned to the panel bottom.
-   * The gap is the room the hazard TBT grows into. ── */
+   * open-map gap, then the PiP → nav dock → bottom chrome group pinned to the
+   * panel bottom (margin-top:auto on the PiP section). The gap is the room the
+   * hazard TBT grows into and where the map shows through when sections
+   * collapse — nothing refills it. ── */
 
   /* ── Right-hand (default): command panel on the right, rail stays left ── */
   .app-shell.nav-fullmap:not(.app-shell--landscape-hand-left) .map-stage.map-bleed > .nav-bottom-stack {
@@ -744,7 +753,7 @@
     margin-top: auto;
   }
 
-  /* ── Collapsible hazard/PiP sections — tab sits on the panel's outer edge ── */
+  /* ── Collapsible TBT/hazard/PiP sections — tab sits on the panel's outer edge ── */
   .app-shell.nav-fullmap .panel-collapse {
     position: relative;
     display: flex;
@@ -752,8 +761,27 @@
     min-height: 0;
   }
 
+  .app-shell.nav-fullmap .panel-collapse__body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* Collapsed = card gone, only the edge tab remains. The stub keeps enough
+   * height for the tab so stacked collapsed sections don't overlap. */
   .app-shell.nav-fullmap .panel-collapse--closed {
-    min-height: 46px;
+    min-height: 34px;
+  }
+
+  .app-shell.nav-fullmap .panel-collapse--closed .panel-collapse__body {
+    display: none;
+  }
+
+  /* Pin the PiP section (and everything after it: nav dock + bottom chrome)
+   * to the panel bottom; the auto margin absorbs spare height as open map. */
+  .app-shell.nav-fullmap .panel-collapse--pin-bottom {
+    margin-top: auto;
   }
 
   .app-shell.nav-fullmap .panel-collapse__tab {
