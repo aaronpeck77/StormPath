@@ -15,6 +15,18 @@ Feed buckets:
   adapter written into the worker. See "Custom-adapter candidates" below.
 - **BLOCKED** — license or technical wall; do not build without a decision.
 
+> **Actionable signup sprint:** `docs/DOT_SIGNUPS.md` — nightly checklist for
+> the Dec-4 credit deadline, incl. the Travel-IQ road-conditions family
+> (winter ice/snow layer — a second data class beyond WZDx work zones) and
+> keyless condition feeds needing zero signups (IL winter ArcGIS verified,
+> IA/MO/MD/FL per the commutescout all-state audit).
+
+Road *conditions* (ice, snow-covered, drifting — plow/RWIS reports) are a
+separate data class from WZDx work zones. Coverage so far: NWS winter
+warnings (nationwide, already painted) + IL winter ArcGIS feed (verified
+keyless, adapter pending). Per-state condition feeds exist for roughly
+half the states — see DOT_SIGNUPS.md Travel-IQ + keyless sections.
+
 ---
 
 ## ✅ LIVE (27 feeds producing events)
