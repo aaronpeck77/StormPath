@@ -892,14 +892,24 @@ function impactToCorridorKind(i: RouteImpact): RouteAlertCorridorKind {
   }
 }
 
-export function routeImpactToRouteAlert(i: RouteImpact): RouteAlert {
+export function routeImpactToRouteAlert(
+  i: RouteImpact,
+  opts?: { longDetail?: boolean }
+): RouteAlert {
   const promptRerouteAhead =
     i.driverAction === "rerouteAvailable" || i.driverAction === "rerouteRecommended";
+  /* DOT/WZDx `detail` is a feed dump (publisher, dates, lane lists) — fine in
+   * the tapped sheet (`longDetail`), wrong on glanceable rows. Lists get the
+   * short roadEffect clause instead (Bill, 585). */
+  const detail =
+    i.source === "dot511" && !opts?.longDetail
+      ? i.roadEffect || i.detail
+      : i.detail || i.roadEffect;
   return {
     id: i.id,
     severity: i.numericSeverity,
     title: i.driverHeadline,
-    detail: i.detail || i.roadEffect,
+    detail,
     lngLat: i.lngLat,
     zoom: i.category === "traffic" ? 12.4 : i.category === "weather" ? 11.5 : 12.6,
     alongMeters: i.alongMeters,

@@ -2884,7 +2884,7 @@ export default function App() {
       });
       setRouteHazardSheet({
         routeId: guidanceRoute?.id ?? "",
-        alerts: [routeImpactToRouteAlert(imp)],
+        alerts: [routeImpactToRouteAlert(imp, { longDetail: true })],
       });
     },
     [routeImpactsForUi, routeImpacts, guidanceRoute?.id, setMapFocus, setRouteHazardSheet]

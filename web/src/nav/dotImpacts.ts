@@ -119,6 +119,19 @@ const ROAD_EFFECT: Record<DotRoadEvent["kind"], string> = {
   other: "Road condition reported ahead",
 };
 
+/**
+ * Glanceable row text — effect clause plus the work type when the feed
+ * publishes one ("Intersection improvements", "New pavement"). This is the
+ * ONLY DOT text list surfaces show; the long publisher/date/lane blob stays
+ * in `detail` for the tapped hazard sheet (Bill, 585: rows must be
+ * absolutely short — what it is when I get there, not feed metadata).
+ */
+function roadEffectFor(ev: DotRoadEvent): string {
+  const base = ROAD_EFFECT[ev.kind];
+  const wt = (ev.workType ?? "").trim();
+  return wt ? `${base} · ${wt}` : base;
+}
+
 function fmtWindow(ev: DotRoadEvent): string {
   if (!ev.startIso && !ev.endIso) return "";
   const fmt = (iso: string | null) =>
@@ -224,7 +237,7 @@ export function matchDotEventsToRoute(
       severity: sev,
       driverAction: actionFor(sev, ev.kind),
       driverHeadline: `${HEADLINE_PREFIX[ev.kind]}${ev.status === "scheduled" ? " (scheduled)" : ""}`,
-      roadEffect: ROAD_EFFECT[ev.kind],
+      roadEffect: roadEffectFor(ev),
       detail: detailFor(ev),
       numericSeverity: DOT_SEVERITY_NUMERIC[sev],
       hazardOnsetIso: ev.startIso,
@@ -386,7 +399,7 @@ function matchFromEvent(
     severity: sev,
     driverAction: actionFor(sev, ev.kind),
     driverHeadline: `${HEADLINE_PREFIX[ev.kind]}${ev.status === "scheduled" ? " (scheduled)" : ""}`,
-    roadEffect: ROAD_EFFECT[ev.kind],
+    roadEffect: roadEffectFor(ev),
     detail: detailFor(ev),
     numericSeverity: DOT_SEVERITY_NUMERIC[sev],
     hazardOnsetIso: ev.startIso,

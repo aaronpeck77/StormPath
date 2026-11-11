@@ -734,13 +734,14 @@ export function useRouteAheadDerivations(
             i.source !== "windGust" &&
             i.source !== "radar"
         )
-        .map(routeImpactToRouteAlert),
+        .map((i) => routeImpactToRouteAlert(i)),
     [routeImpactsForUi]
   );
 
   const dotRouteAlerts = useMemo(() => {
     const m = routeImpactsForUi.find((i) => i.source === "dot511" && i.id === activeDotId);
-    return m ? [routeImpactToRouteAlert(m)] : [];
+    /* Sheet surface — keep the full DOT detail (publisher/dates/lanes). */
+    return m ? [routeImpactToRouteAlert(m, { longDetail: true })] : [];
   }, [routeImpactsForUi, activeDotId]);
 
   const onDotMarkerTap = useCallback((id: string) => {

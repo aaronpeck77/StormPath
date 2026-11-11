@@ -516,6 +516,10 @@ export function RouteHazardTimeline({
 function impactDetailLine(imp: RouteImpact): string | null {
   const effect = (imp.roadEffect || "").trim();
   const detail = (imp.detail || "").trim();
+  /* DOT/WZDx rows stay glanceable: roadEffect (+ work type) only. The full
+   * publisher/date/lane blob lives in `detail` for the tapped hazard sheet —
+   * a driver can't read a feed dump at 65 mph (Bill, 585). */
+  if (imp.source === "dot511") return effect || detail || null;
   if (!effect && !detail) return null;
   if (!effect) return detail;
   if (!detail || detail === effect) return effect;
