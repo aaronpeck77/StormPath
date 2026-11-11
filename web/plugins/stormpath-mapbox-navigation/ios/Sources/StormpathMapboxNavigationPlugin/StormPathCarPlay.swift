@@ -190,6 +190,7 @@ public final class StormPathCarPlay {
         currentBanner = nil
         followingManeuverSignature = ""
         mapController?.navigationMapView.removeRoutes()
+        mapController?.removeHazardSpans()
         if isConnected {
             idleLocation.startUpdatingLocation()
         }
@@ -271,6 +272,9 @@ public final class StormPathCarPlay {
     private func snapshotUpdated() {
         mapController?.applyPuck()
         mapController?.setSpeedLimit(UserDefaults.standard.integer(forKey: "stormpath.car.speedLimitMph"))
+        if guiding, let routes {
+            mapController?.installHazardSpans(coords: routes.mainRoute.route.shape?.coordinates ?? [])
+        }
         maybeShowHazardAlert()
         if let conditionsTemplate {
             conditionsTemplate.updateSections(conditionMenuSections())
@@ -459,6 +463,7 @@ public final class StormPathCarPlay {
     private func showRoutes() {
         guard let routes, let map = mapController?.navigationMapView else { return }
         map.show(routes, routeAnnotationKinds: [])
+        mapController?.installHazardSpans(coords: routes.mainRoute.route.shape?.coordinates ?? [])
     }
 
     private var destinationLabel: String {
@@ -632,6 +637,145 @@ final class CarMapViewController: UIViewController, NavigationMapViewDelegate {
             20.0; casing ? 8.0 : 6.0
         })
         return layer
+    }
+
+    // MARK: Hazard spans
+
+    private var hazardSpanIds: [String] = []
+    private var hazardSpanSignature = ""
+
+    /**
+     * Paint the phone's route-meter hazard spans ([{s,e,c}] published to
+     * `stormpath.car.hazardSpansJson`) as colored bands along the CarPlay
+     * route — the car screen gets the same orange work-zone stretch the
+     * phone shows (Bill, 584: construction painted on phone+iPad, invisible
+     * on CarPlay). Each span becomes a GeoJSON LineString sliced out of the
+     * route shape by cumulative distance, drawn wider than the SDK route
+     * line and tucked beneath it so the colored edges read as a band around
+     * the blue line instead of hiding it.
+     */
+    func installHazardSpans(coords: [CLLocationCoordinate2D]) {
+        guard let style = navigationMapView.mapView.mapboxMap, style.isStyleLoaded else { return }
+        let json = UserDefaults.standard.string(forKey: "stormpath.car.hazardSpansJson") ?? "[]"
+        let signature = "\(json.hashValue)|\(coords.count)|\(coords.first?.latitude ?? 0)|\(coords.last?.longitude ?? 0)"
+        guard signature != hazardSpanSignature else { return }
+        hazardSpanSignature = signature
+        removeHazardSpans()
+        guard let data = json.data(using: .utf8),
+              let spans = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+              coords.count > 1 else { return }
+
+        var cum = [Double](repeating: 0, count: coords.count)
+        for i in 1..<coords.count {
+            cum[i] = cum[i - 1] + hazardSpanDistanceM(coords[i - 1], coords[i])
+        }
+        let total = cum.last ?? 0
+        guard total > 0 else { return }
+
+        let anchor = style.allLayerIdentifiers.first { $0.type == .line && $0.id.localizedCaseInsensitiveContains("route") }?.id
+            ?? style.allLayerIdentifiers.first { $0.type == .symbol }?.id
+
+        for (index, span) in spans.prefix(24).enumerated() {
+            guard let s = (span["s"] as? NSNumber)?.doubleValue,
+                  let e = (span["e"] as? NSNumber)?.doubleValue,
+                  let hex = span["c"] as? String,
+                  let color = hazardSpanUIColor(hex: hex) else { continue }
+            let line = hazardSpanSlice(coords: coords, cum: cum, from: max(0, s), to: min(total, e))
+            guard line.count >= 2, let geojson = hazardSpanFeatureJSON(line) else { continue }
+            let sid = "stormpath-car-hazard-\(index)"
+            var source = GeoJSONSource(id: sid)
+            source.data = .string(geojson)
+            do { try style.addSource(source) } catch { continue }
+            var layer = LineLayer(id: sid, source: sid)
+            layer.lineColor = .constant(StyleColor(color))
+            layer.lineOpacity = .constant(0.9)
+            layer.lineCap = .constant(.round)
+            layer.lineJoin = .constant(.round)
+            layer.lineWidth = .expression(Exp(.interpolate) {
+                Exp(.linear)
+                Exp(.zoom)
+                4.0; 6.0
+                10.0; 8.0
+                16.0; 11.0
+                20.0; 14.0
+            })
+            do {
+                try style.addLayer(layer, layerPosition: anchor.map { .below($0) })
+                hazardSpanIds.append(sid)
+            } catch {
+                try? style.removeSource(withId: sid)
+            }
+        }
+    }
+
+    func removeHazardSpans() {
+        hazardSpanSignature = ""
+        guard let style = navigationMapView.mapView.mapboxMap else { hazardSpanIds = []; return }
+        for id in hazardSpanIds.reversed() {
+            if style.layerExists(withId: id) { try? style.removeLayer(withId: id) }
+            if style.sourceExists(withId: id) { try? style.removeSource(withId: id) }
+        }
+        hazardSpanIds = []
+    }
+
+    private func hazardSpanDistanceM(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
+        let r = 6_371_000.0
+        let dLat = (b.latitude - a.latitude) * .pi / 180
+        let dLon = (b.longitude - a.longitude) * .pi / 180
+        let la = a.latitude * .pi / 180, lb = b.latitude * .pi / 180
+        let h = sin(dLat / 2) * sin(dLat / 2) + cos(la) * cos(lb) * sin(dLon / 2) * sin(dLon / 2)
+        return 2 * r * asin(min(1, sqrt(h)))
+    }
+
+    private func hazardSpanInterp(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, _ t: Double) -> CLLocationCoordinate2D {
+        CLLocationCoordinate2D(
+            latitude: a.latitude + (b.latitude - a.latitude) * t,
+            longitude: a.longitude + (b.longitude - a.longitude) * t
+        )
+    }
+
+    /// Clip the route shape to [from,to] route-meters, interpolating the exact
+    /// span endpoints so short work zones still paint a visible segment.
+    private func hazardSpanSlice(coords: [CLLocationCoordinate2D], cum: [Double], from: Double, to: Double) -> [CLLocationCoordinate2D] {
+        guard from < to, coords.count > 1 else { return [] }
+        var out: [CLLocationCoordinate2D] = []
+        for i in 1..<coords.count {
+            let a0 = cum[i - 1], a1 = cum[i]
+            let lo = max(a0, from), hi = min(a1, to)
+            guard hi > lo else { continue }
+            let span = a1 - a0
+            let p0 = hazardSpanInterp(coords[i - 1], coords[i], span > 0 ? (lo - a0) / span : 0)
+            let p1 = hazardSpanInterp(coords[i - 1], coords[i], span > 0 ? (hi - a0) / span : 1)
+            if out.isEmpty || hazardSpanDistanceM(out.last!, p0) > 1 { out.append(p0) }
+            if hazardSpanDistanceM(p0, p1) > 1 || out.count == 1 { out.append(p1) }
+        }
+        return out
+    }
+
+    private func hazardSpanFeatureJSON(_ coords: [CLLocationCoordinate2D]) -> String? {
+        let feature: [String: Any] = [
+            "type": "Feature",
+            "geometry": [
+                "type": "LineString",
+                "coordinates": coords.map { [$0.longitude, $0.latitude] },
+            ],
+            "properties": [String: Any](),
+        ]
+        let collection: [String: Any] = ["type": "FeatureCollection", "features": [feature]]
+        guard let data = try? JSONSerialization.data(withJSONObject: collection) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private func hazardSpanUIColor(hex: String) -> UIColor? {
+        var s = hex.trimmingCharacters(in: .whitespaces)
+        if s.hasPrefix("#") { s.removeFirst() }
+        guard s.count == 6, let v = UInt32(s, radix: 16) else { return nil }
+        return UIColor(
+            red: CGFloat((v >> 16) & 0xff) / 255,
+            green: CGFloat((v >> 8) & 0xff) / 255,
+            blue: CGFloat(v & 0xff) / 255,
+            alpha: 1
+        )
     }
 
     func applyPuck() {

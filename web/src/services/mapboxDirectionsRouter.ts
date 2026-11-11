@@ -923,6 +923,9 @@ export async function collectMapboxRouteVariants(
   /** Leg C should stay a reasonable drive — not a long scenic detour. */
   const MAX_C_ROUTE_DURATION_FACTOR = 1.3;
   const MAX_C_ROUTE_DISTANCE_FACTOR = 1.35;
+  /** Slot B must commit to a different corridor — beyond this much shared
+   * path it is Main with a jog, not an alternate. */
+  const ALTERNATE_MAX_CORRIDOR_OVERLAP = 0.88;
 
   type MbRoutes = NonNullable<DirectionsResponse["routes"]>;
   const abortSignalAny = (
@@ -943,7 +946,15 @@ export async function collectMapboxRouteVariants(
       start,
       end,
       hasVia ? via : undefined,
-      { alternatives: true, excludeMotorway: true, includeDetails, simplifiedOverview },
+      {
+        alternatives: true,
+        excludeMotorway: true,
+        includeDetails,
+        simplifiedOverview,
+        /* "Another way" refresh — points on the current alternate's corridor
+         * so Mapbox must find a genuinely different path, not the same jog. */
+        excludePoints: opts?.excludePoints,
+      },
       secSig
     ).catch(() => ({ routes: [] as MbRoutes }));
   }
@@ -994,6 +1005,11 @@ export async function collectMapboxRouteVariants(
       /* "Same road except exit here, rejoin one exit later" wobble — adds
        * time/distance without a meaningfully different corridor (Bill, 566). */
       if (routeIsBriefDivergenceOnly(navA.geometry, line)) return false;
+      /* Corridor ceiling: a "little jog" that shares ~9/10 of Main's path is
+       * not an alternate — it's the same drive with extra steps (Bill, 584).
+       * Time/distance deltas alone used to wave these through. */
+      if (routeCorridorOverlapFraction(line, navA.geometry) > ALTERNATE_MAX_CORRIDOR_OVERLAP)
+        return false;
       return !routesTooSimilarForAlternate(
         navA.geometry,
         line,

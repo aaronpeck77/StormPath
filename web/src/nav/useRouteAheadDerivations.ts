@@ -696,15 +696,22 @@ export function useRouteAheadDerivations(
 
   /**
    * Map halo bands — same as the progress rail in Rt/Mp.
-   * Drive keeps weather off the line but still paints serious/avoid road spans
-   * (lane closures, work zones) so the affected stretch reads orange ahead.
+   * Drive keeps most weather off the line but still paints serious/avoid road
+   * spans (lane closures, work zones) plus serious winter-weather warnings,
+   * so ice/snow reads as a road hazard the same way construction does.
    */
+  const WINTER_WARNING_RX = /winter|ice|blizzard|snow|sleet|freez/i;
   const routeAheadMapBands = useMemo(() => {
     if (viewMode !== "drive") return routeAheadWeatherBands;
+    const drivePaintItems = routeAheadTimeline.filter(
+      (item) =>
+        item.track === "road" ||
+        (item.track === "nws" &&
+          WINTER_WARNING_RX.test(item.label) &&
+          (item.severity === "serious" || item.severity === "avoid"))
+    );
     return mergeProgressStripWeatherBands(
-      timelineToProgressStripBands(
-        routeAheadTimeline.filter((item) => item.track === "road")
-      )
+      timelineToProgressStripBands(drivePaintItems)
     );
   }, [routeAheadWeatherBands, routeAheadTimeline, viewMode]);
 

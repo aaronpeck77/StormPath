@@ -725,6 +725,20 @@
   pointer-events: none;
 }
 
+/* Tappable variant — the countdown itself becomes a button that flies to
+ * the hazard and opens its detail sheet. */
+button.drive-hazard-ticker--tap {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+button.drive-hazard-ticker--tap:active {
+  filter: brightness(1.15);
+}
+
 .drive-hazard-ticker:has(.drive-hazard-ticker__actions) {
   flex-wrap: wrap;
 }
@@ -1665,14 +1679,16 @@
   }
 }
 
-/* State DOT/WZDx work-zone & closure dots — corridor-matched, non-interactive. */
+/* State DOT/WZDx work-zone & closure markers — corridor-matched. Small
+ * warning triangles (Bill, 584): reads as "hazard" at a glance without
+ * becoming map clutter; tappable for the detail sheet. */
 .map-dot-event {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.92);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
-  pointer-events: none;
+  width: 15px;
+  height: 15px;
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .map-dot-event--construction {

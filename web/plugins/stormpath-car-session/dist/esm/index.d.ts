@@ -4,6 +4,8 @@ export type CarSessionPublish = {
   advisoryLine?: string;
   maneuverLine?: string;
   conditionsJson?: string;
+  /** JSON [{s,e,c}] — route-meter hazard spans + hex color for CarPlay line paint. */
+  hazardSpansJson?: string;
   radarTileBase?: string;
   puckColor?: string;
   /** Posted limit in mph from Mapbox data only; 0 = no sourced value. */

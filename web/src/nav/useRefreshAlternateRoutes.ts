@@ -4,7 +4,8 @@ import { mergePlanPreservingPrimary } from "./mergePlanRoutes";
 import { buildMockTripBetween } from "./emptyTrip";
 import { collectMapboxRouteVariants } from "../services/mapboxDirectionsRouter";
 import { filterForwardRejoinRoutes } from "./detourRejoin";
-import type { LngLat, TripPlan } from "./types";
+import { pointAtAlongMeters, polylineLengthMeters } from "./routeGeometry";
+import type { LngLat, NavRoute, TripPlan } from "./types";
 import type { MapViewMode } from "../ui/driveMapTypes";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import type { RefreshAlternateRoutesFn } from "./useNavAlternateRouteRefresh";
@@ -29,6 +30,8 @@ export type UseRefreshAlternateRoutesDeps = {
   routeGraphEpochRef: MutableRefObject<number>;
   altRoutesRefreshInFlightRef: MutableRefObject<boolean>;
   altRoutesFetchAbortRef: MutableRefObject<AbortController | null>;
+  /** Live plan routes — read for "another way" corridor excludes. */
+  planRoutesRef: MutableRefObject<NavRoute[]>;
   setPlan: (updater: (prev: TripPlan) => TripPlan) => void;
 };
 
@@ -55,11 +58,12 @@ export function useRefreshAlternateRoutes(
     routeGraphEpochRef,
     altRoutesRefreshInFlightRef,
     altRoutesFetchAbortRef,
+    planRoutesRef,
     setPlan,
   } = deps;
 
   return useCallback(
-    async (opts?: { allowDuringDrive?: boolean }) => {
+    async (opts?: { allowDuringDrive?: boolean; anotherWay?: boolean }) => {
       if (!navigationStarted) return;
       if (!opts?.allowDuringDrive && viewMode !== "route") return;
       if (!userLngLat || !destLngLat) return;
@@ -75,6 +79,21 @@ export function useRefreshAlternateRoutes(
       const altFetch = new AbortController();
       altRoutesFetchAbortRef.current = altFetch;
       altRoutesRefreshInFlightRef.current = true;
+      /* "Another way" — midpoints of the current alternates become Mapbox
+       * exclude points, so the next B must use a corridor we haven't shown. */
+      const anotherWay = opts?.anotherWay === true;
+      let excludePoints: LngLat[] | undefined;
+      if (anotherWay) {
+        excludePoints = planRoutesRef.current
+          .filter((r) => r.id !== primaryId && r.geometry?.length >= 2)
+          .slice(0, 2)
+          .map((r) => {
+            const total = polylineLengthMeters(r.geometry);
+            return pointAtAlongMeters(r.geometry, total / 2);
+          })
+          .filter((p): p is LngLat => Boolean(p));
+        if (!excludePoints.length) excludePoints = undefined;
+      }
       try {
         if (mapboxToken) {
           const fresh = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
@@ -83,6 +102,7 @@ export function useRefreshAlternateRoutes(
             allowLocalTripThirdRoute: false,
             preferThreeRoutes: false,
             forwardFirst: true,
+            excludePoints,
             bearingDeg:
               headingDeg != null && Number.isFinite(headingDeg) ? headingDeg : undefined,
             stormAlerts: stormAlertsForRouting,
@@ -130,6 +150,7 @@ export function useRefreshAlternateRoutes(
       routeGraphEpochRef,
       altRoutesRefreshInFlightRef,
       altRoutesFetchAbortRef,
+      planRoutesRef,
       setPlan,
     ]
   );

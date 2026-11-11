@@ -68,6 +68,14 @@ export const DRIVE_ALIGN_LOOKAHEAD_MAX_M = 24;
 export const DRIVE_ALIGN_LOOKAHEAD_SECONDS = 2;
 /** One-frame reversal. A real turn changes the chord gradually. */
 export const DRIVE_ALIGN_SPIKE_DEG = 100;
+/**
+ * Instant-accept ceiling. Road heading under the car cannot jump ~45° in a
+ * single 60 fps frame — the lookahead chord rotates a few degrees per frame
+ * through a real bend. A bigger single-frame jump is a snap artifact (closest-
+ * point hopping branches, source flicker) and must hold for confirmation
+ * frames like a spike does (Bill, 584: route line flicked ~45° then eased back).
+ */
+export const DRIVE_ALIGN_JUMP_DEG = 30;
 /** Frames a reversed heading must hold before it is real, not a snap. */
 export const DRIVE_ALIGN_SPIKE_HOLD_FRAMES = 3;
 
@@ -178,7 +186,7 @@ function acceptAlignBearing(state: LiveAlignBearingState, next: number): number 
     state.pendingHits = 0;
     return next;
   }
-  if (Math.abs(signedHeadingDelta(prev, next)) <= DRIVE_ALIGN_SPIKE_DEG) {
+  if (Math.abs(signedHeadingDelta(prev, next)) <= DRIVE_ALIGN_JUMP_DEG) {
     state.bearingDeg = next;
     state.pendingBearingDeg = null;
     state.pendingHits = 0;

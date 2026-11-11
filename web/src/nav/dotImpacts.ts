@@ -151,12 +151,23 @@ function detailFor(ev: DotRoadEvent): string {
       ? ` ${ev.lanesClosed} lane${ev.lanesClosed > 1 ? "s" : ""} affected.`
       : "";
   const workNote = ev.workType ? ` ${ev.workType}.` : "";
+  /* "Reported <date>" — the feed's own last-updated stamp. A months-old
+   * report or not-yet-started window reads honestly instead of looking live. */
+  const reportedMs = ev.updatedIso ? Date.parse(ev.updatedIso) : NaN;
+  const reportedNote = Number.isFinite(reportedMs)
+    ? ` Reported ${new Date(reportedMs).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })}.`
+    : "";
   return (
     `${ev.publisher}${dirNote}: ${ev.description || ev.title}.` +
     sizeNote +
     laneNote +
     workNote +
-    fmtWindow(ev)
+    fmtWindow(ev) +
+    reportedNote
   );
 }
 
@@ -345,6 +356,12 @@ function mergeDotEvents(events: DotRoadEvent[]): DotRoadEvent {
     vehicleImpact: worstVehicleImpact(events.map((ev) => ev.vehicleImpact)),
     startIso: starts[0] ?? first.startIso,
     endIso: ends[ends.length - 1] ?? first.endIso,
+    updatedIso:
+      events
+        .map((e) => e.updatedIso)
+        .filter((s): s is string => Boolean(s))
+        .sort()
+        .at(-1) ?? first.updatedIso ?? null,
     point: [cx, cy],
     bbox: [w, s, e, n],
     geometry: null,

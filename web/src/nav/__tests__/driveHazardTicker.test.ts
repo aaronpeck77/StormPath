@@ -8,8 +8,9 @@ import {
 import type { TimelineItem } from "../routeAheadSync";
 
 const hazard: TimelineItem = {
+  /* ~4 mi ahead of userAlongMeters — inside the phone ticker's ~5 mi gate. */
   id: "storm", track: "nws", label: "Severe Thunderstorm Warning", severity: "serious",
-  startMeters: 16093.4, endMeters: 20000, crossesRoute: true,
+  startMeters: 9665, endMeters: 20000, crossesRoute: true,
 };
 const input: DriveHazardTickerInput = {
   items: [hazard], isPlus: true, isOnline: true, navigationStarted: true,
@@ -18,8 +19,19 @@ const input: DriveHazardTickerInput = {
 
 describe("Drive hazard countdown", () => {
   it("counts down along the route rather than straight-line distance", () => {
-    expect(selectDriveHazardTicker(input)?.distanceLabel).toBe("8.0 mi");
-    expect(selectDriveHazardTicker({ ...input, userAlongMeters: 6437.36 })?.distanceLabel).toBe("6.0 mi");
+    expect(selectDriveHazardTicker(input)?.distanceLabel).toBe("4.0 mi");
+    expect(selectDriveHazardTicker({ ...input, userAlongMeters: 6437.36 })?.distanceLabel).toBe("2.0 mi");
+  });
+
+  it("hides hazards beyond ~5 mi on the phone ticker", () => {
+    const beyond = {
+      ...hazard, startMeters: 3218.68 + 6 * 1609.34, endMeters: 20000,
+    };
+    expect(selectDriveHazardTicker({ ...input, items: [beyond] })).toBeNull();
+    /* The iPad queue/panel stays uncapped — same hazard still counts down there. */
+    expect(
+      selectDriveHazardQueue({ ...input, totalMeters: 30000, items: [beyond] })[0]?.id
+    ).toBe(hazard.id);
   });
 
   it.each([
@@ -37,7 +49,7 @@ describe("Drive hazard countdown", () => {
   });
 
   it("chooses the closest hazard and severity breaks ties", () => {
-    const road: TimelineItem = { ...hazard, id: "road", track: "road", label: "Road closure", startMeters: 10000, endMeters: 11000 };
+    const road: TimelineItem = { ...hazard, id: "road", track: "road", label: "Road closure", startMeters: 5000, endMeters: 6000 };
     expect(selectDriveHazardTicker({ ...input, items: [hazard, road] })?.id).toBe("road");
     expect(selectDriveHazardTicker({ ...input, items: [road, { ...road, id: "urgent", severity: "avoid" }] })?.id).toBe("urgent");
   });
@@ -53,7 +65,7 @@ describe("Drive hazard countdown", () => {
 
   it("uses kilometers where appropriate and qualifies developing hazards", () => {
     const result = selectDriveHazardTicker({ ...input, miles: false, items: [{ ...hazard, developingLater: true }] });
-    expect(result?.distanceLabel).toBe("13 km");
+    expect(result?.distanceLabel).toBe("6.4 km");
     expect(result?.label).toBe("Possible: Severe Thunderstorm Warning");
   });
 
@@ -77,7 +89,7 @@ describe("Drive hazard queue (iPad landscape panel)", () => {
     };
     const rows = selectDriveHazardQueue({ ...queueInput, items: [farther, hazard] });
     expect(rows.map((r) => r.id)).toEqual(["storm", "far"]);
-    expect(rows[0].distanceLabel).toBe("8.0 mi");
+    expect(rows[0].distanceLabel).toBe("4.0 mi");
     expect(rows[1].distanceLabel).toBe("23 mi");
   });
 
@@ -101,11 +113,14 @@ describe("Drive hazard queue (iPad landscape panel)", () => {
     // Strip-muted NWS still paints on the graph's NWS rail → countdown includes it.
     const mutedNws = { ...hazard, id: "muted-nws", stripMuted: true };
     expect(selectDriveHazardQueue({ ...queueInput, items: [mutedNws] })[0]?.id).toBe("muted-nws");
-    // Non-NWS tracks keep the graph's serious|avoid bar.
+    // Road hazards show caution+ on the graph — same rule as the drive line,
+    // so a painted work zone can never leave every list saying "all clear".
     const cautionRoad = {
       ...hazard, id: "road-caution", track: "road" as const, severity: "caution" as const,
     };
-    expect(selectDriveHazardQueue({ ...queueInput, items: [cautionRoad] })).toEqual([]);
+    expect(selectDriveHazardQueue({ ...queueInput, items: [cautionRoad] })[0]?.id).toBe("road-caution");
+    const infoRoad = { ...cautionRoad, id: "road-info", severity: "info" as const };
+    expect(selectDriveHazardQueue({ ...queueInput, items: [infoRoad] })).toEqual([]);
     const seriousRoad = { ...cautionRoad, id: "road-serious", severity: "serious" as const };
     expect(selectDriveHazardQueue({ ...queueInput, items: [seriousRoad] })[0]?.id).toBe("road-serious");
   });

@@ -81,6 +81,8 @@ import {
   type DriveHazardQueueInput,
 } from "./nav/driveHazardTicker";
 import { timelineItemBandColor } from "./nav/timelineBandColors";
+import { routeImpactToRouteAlert } from "./nav/routeImpacts";
+import { useAlternateRelease } from "./nav/useAlternateRelease";
 import { fartherAlongMeters, stablePlanRoutesKey } from "./nav/tripNavDisplay";
 import { useTripNavDisplayHealth } from "./nav/useTripNavDisplayHealth";
 import { useTripSurfaceRecovery } from "./nav/useTripSurfaceRecovery";
@@ -607,6 +609,7 @@ export default function App() {
   const drivePuckAnchorDriftPxRef = useRef<number | null>(null);
   const routeHazardSheet = useUiStore((s) => s.routeHazardSheet);
   const setRouteHazardSheet = useUiStore((s) => s.setRouteHazardSheet);
+  const setActiveDotMarkerId = useUiStore((s) => s.setActiveDotMarkerId);
   const [tollAvoidBusy, setTollAvoidBusy] = useState(false);
   const [tollAvoidFailureNote, setTollAvoidFailureNote] = useState<string | null>(null);
   const tollAcceptedRouteIdsRef = useRef<Set<string>>(new Set());
@@ -1316,7 +1319,23 @@ export default function App() {
     routeGraphEpochRef,
     altRoutesRefreshInFlightRef,
     altRoutesFetchAbortRef,
+    planRoutesRef,
     setPlan,
+  });
+
+  /* Passed-turn release: once GPS is beyond where an unselected alternate
+   * leaves the locked corridor, drop it and fetch a fresh option (Bill, 584). */
+  const handleAlternatesReleased = useCallback(() => {
+    void refreshAlternateRoutesOnly({ allowDuringDrive: true });
+  }, [refreshAlternateRoutesOnly]);
+  useAlternateRelease({
+    navigationStarted,
+    offRouteLatched,
+    userLngLat,
+    plan,
+    lockedRouteId: lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null,
+    setPlan,
+    onAlternatesReleased: handleAlternatesReleased,
   });
 
   useEffect(() => {
@@ -2619,6 +2638,7 @@ export default function App() {
   const runAfterHazardSheetAction = useCallback(
     (action: () => void) => {
       setRouteHazardSheet(null);
+      setActiveDotMarkerId(null);
       onStormBarExpandedChange(false);
       window.requestAnimationFrame(() => {
         window.setTimeout(action, 0);
@@ -2848,6 +2868,26 @@ export default function App() {
       });
     },
     [routeImpactsForUi, routeImpacts]
+  );
+  /* Countdown ticker tap — same map focus as the PiP pick, plus the hazard
+   * sheet so the driver sees WHAT the hazard is without digging. */
+  const handleHazardTickerPress = useCallback(
+    (id: string) => {
+      const imp =
+        routeImpactsForUi.find((i) => i.id === id) ?? routeImpacts.find((i) => i.id === id);
+      if (!imp) return;
+      setPipFocusHazard({ lngLat: imp.lngLat, label: imp.driverHeadline });
+      setMapFocus({
+        kind: "hazardOverview",
+        hazardLng: imp.lngLat[0]!,
+        hazardLat: imp.lngLat[1]!,
+      });
+      setRouteHazardSheet({
+        routeId: guidanceRoute?.id ?? "",
+        alerts: [routeImpactToRouteAlert(imp)],
+      });
+    },
+    [routeImpactsForUi, routeImpacts, guidanceRoute?.id, setMapFocus, setRouteHazardSheet]
   );
   /* Bypass compare candidate geometry → PiP alternate line (wired in Phase 3). */
   const pipAlternateGeometry: LngLat[] | null = null;
@@ -3133,7 +3173,12 @@ export default function App() {
           advisory={stormAdvisoryBarPropsWithNext}
           carAlertedHazardTitles={carPlayHazardTitles}
           useMiles={roadUsesMiles(effectiveUserLngLat)}
-          onShowMap={() => setCarPlayMapPeek(true)}
+          onShowMap={() => {
+            setCarPlayMapPeek(true);
+            /* Phone map-peek during a drive = the iPad PiP route view:
+             * land on the route line, not wherever the last view was. */
+            if (navigationStarted) setViewMode("route");
+          }}
         />
       ) : (
       <AppMapStage driveMapProps={driveMapPropsWithBeacon}>
@@ -3183,6 +3228,7 @@ export default function App() {
                   bendHazardId={hazardBypass.hazardId}
                   onBend={hazardBypass.enter}
                   onDismissBend={hazardBypass.dismissHazard}
+                  onPressHazard={handleHazardTickerPress}
                 />
               }
               jamHopSlot={
@@ -3274,7 +3320,12 @@ export default function App() {
           routeHazardSheet={routeHazardSheet}
           hazardSheetAlternateAvailable={hazardSheetAlternateAvailable}
           bypassBusy={bypassBusy}
-          onCloseRouteHazardSheet={() => setRouteHazardSheet(null)}
+          onCloseRouteHazardSheet={() => {
+            setRouteHazardSheet(null);
+            /* The DOT-dot sheet re-opens while activeDotMarkerId stays set —
+             * clearing it is what actually lets the sheet close. */
+            setActiveDotMarkerId(null);
+          }}
           handleHazardSheetTryAlternate={handleHazardSheetTryAlternate}
           tollAvoidFailureNote={tollAvoidFailureNote}
           tollAvoidBusy={tollAvoidBusy}
@@ -3394,6 +3445,7 @@ export default function App() {
                     bendHazardId={hazardBypass.hazardId}
                     onBend={hazardBypass.enter}
                     onDismissBend={hazardBypass.dismissHazard}
+                    onPressHazard={handleHazardTickerPress}
                   />
                 </CollapsiblePanelSection>
                 <CollapsiblePanelSection id="pip" label="route info panel" className="panel-collapse--pin-bottom">
@@ -3454,6 +3506,9 @@ export default function App() {
           previewLegIndex={previewLegIndex}
           handlePreviewRouteSelect={handlePreviewRouteSelect}
           routeDockDetail={routeDockDetail}
+          onAnotherWay={() => {
+            void refreshAlternateRoutesOnly({ allowDuringDrive: true, anotherWay: true });
+          }}
           tripBriefingPill={
             !navigationStarted && plan.routes.length > 0 ? (
               <button

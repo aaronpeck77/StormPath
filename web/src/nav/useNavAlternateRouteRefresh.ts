@@ -3,7 +3,12 @@ import type { LngLat } from "../nav/types";
 import type { MapViewMode } from "../ui/driveMapTypes";
 import { getNavAltRefreshMs } from "../utils/dataSaver";
 
-export type RefreshAlternateRoutesFn = (opts?: { allowDuringDrive?: boolean }) => Promise<void>;
+export type RefreshAlternateRoutesFn = (opts?: {
+  allowDuringDrive?: boolean;
+  /** Driver asked for a different option — exclude the current alternate's
+   * corridor so Mapbox must find another way, not the same jog. */
+  anotherWay?: boolean;
+}) => Promise<void>;
 
 export type UseNavAlternateRouteRefreshDeps = {
   appForeground: boolean;

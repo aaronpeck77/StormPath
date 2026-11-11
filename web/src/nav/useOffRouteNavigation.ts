@@ -36,7 +36,6 @@ import {
 } from "./softRestartPlan";
 import {
   OFF_ROUTE_POLL_MS,
-  OFF_ROUTE_REROUTE_THROTTLE_MS,
   measureOffRouteLateral,
   shouldOfferOffRouteRejoin,
 } from "./offRouteDetect";
@@ -518,25 +517,26 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
 
   const executeAutoRecovery = useCallback(
     async (_action: "rejoin" | "replan") => {
-      const driveAhead = isDriveAlwaysAheadView(viewModeRef.current);
-      const pace = driveReroutePace(driveAhead ? instantRoadClassRef.current : "highway");
+      /* Reroute pace follows the road you're on, not which map view is up —
+       * Rt/Mp/Map get the same quick recovery Drive does. Previously only
+       * Drive used the drive pace, so off-route in Rt/Mp sat route-less
+       * until a view switch (Bill, 584). */
+      const pace = driveReroutePace(instantRoadClassRef.current);
       const now = Date.now();
       const lateralM = lastOffRouteSampleRef.current?.lateralM ?? 0;
       const pose = driveDepartPoseRef.current;
-      /* A turn off the line is not a freeway slip. Draw forward now. */
-      const turnedOff =
-        driveAhead &&
-        driveTurnedOffRoute({
-          headingDeg: pose.headingDeg,
-          routeBearingDeg: pose.routeBearingDeg,
-          speedMps: pose.speedMps,
-          lateralM,
-        });
+      /* A turn off the line is not a freeway slip. Draw forward now. The
+       * pose refs update every poll tick in every view, so this works in
+       * Rt/Mp too — no need to gate on the visible view. */
+      const turnedOff = driveTurnedOffRoute({
+        headingDeg: pose.headingDeg,
+        routeBearingDeg: pose.routeBearingDeg,
+        speedMps: pose.speedMps,
+        lateralM,
+      });
       const throttleMs = turnedOff
         ? DRIVE_TURN_OFF_THROTTLE_MS
-        : driveAhead
-          ? pace.throttleMs
-          : OFF_ROUTE_REROUTE_THROTTLE_MS;
+        : pace.throttleMs;
       if (
         routingRef.current ||
         altRoutesRefreshInFlightRef.current ||
@@ -555,7 +555,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           health: coreRerouteHealthRef?.current,
           offRouteSinceMs: offRouteSinceMsRef.current,
           nowMs: now,
-          graceMs: driveAhead ? pace.coreGraceMs : undefined,
+          graceMs: pace.coreGraceMs,
         });
         /* Far off the drawn line: do not wait for Core to drag the old corridor back. */
         if (lateralM < pace.reanchorLateralM && !diyMayPlanReroute(owner)) return;

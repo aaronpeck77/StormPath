@@ -184,6 +184,7 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
   const setSearchExpanded = useUiStore((s) => s.setSearchExpanded);
   const setMapFocus = useUiStore((s) => s.setMapFocus);
   const setRouteHazardSheet = useUiStore((s) => s.setRouteHazardSheet);
+  const setActiveDotMarkerId = useUiStore((s) => s.setActiveDotMarkerId);
 
   const setTollRoutePrompt = useRouteCompareStore((s) => s.setTollRoutePrompt);
   const setTrafficBypassCompare = useRouteCompareStore((s) => s.setTrafficBypassCompare);
@@ -261,6 +262,7 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     setViewMode("topdown");
     setRecenterPlanningPuckTick((n) => n + 1);
     setRouteHazardSheet(null);
+    setActiveDotMarkerId(null);
     setTollRoutePrompt(null);
     setTollAvoidFailureNote(null);
     tollAcceptedRouteIdsRef.current.clear();
@@ -317,6 +319,7 @@ export function useTripLifecycle(deps: UseTripLifecycleDeps): TripLifecycleActio
     setViewMode,
     setRecenterPlanningPuckTick,
     setRouteHazardSheet,
+    setActiveDotMarkerId,
     setTollRoutePrompt,
     setTollAvoidFailureNote,
     setMapFocus,

@@ -107,6 +107,39 @@
   justify-content: center;
 }
 
+/* "Another way" ↻ sits beside the route cycle chip — widen the fixed slot
+ * only when it's actually rendered so the picker keeps its footprint. */
+.nav-bottom-dock__route-toggle-slot:has(.nav-another-way-btn) {
+  flex-basis: 8.4rem;
+  width: 8.4rem;
+  min-width: 8.4rem;
+  max-width: 8.4rem;
+}
+
+.nav-another-way-btn {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 26px;
+  height: 26px;
+  margin-left: 4px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.55);
+  color: #cbd5e1;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.nav-another-way-btn:active {
+  filter: brightness(1.25);
+}
+
+.nav-another-way-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline .nav-route-cycle-btn {
   width: 100%;
   /* Base .nav-route-cycle-btn caps width at 5.5 rem for the small stacked variants ? explicitly

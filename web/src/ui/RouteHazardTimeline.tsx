@@ -533,18 +533,31 @@ export function mergeOverlappingTimelineItems(
   if (items.length <= 1 || totalMeters <= 0) return items;
   const sorted = [...items].sort((a, b) => a.startMeters - b.startMeters);
   const gapM = totalMeters * 0.06;
+  /* Road hazards describe one connected corridor condition (Bill, 584: mile
+   * 84/85/86 reports are the same incident) — merge spans that overlap or sit
+   * within ~2 mi even when the DOT/Mapbox labels differ, keeping the worst
+   * severity and folding the other labels into the detail line. */
+  const roadGapM = Math.min(gapM, 3218);
+  const sevRank: Record<string, number> = { info: 0, caution: 1, serious: 2, avoid: 3 };
   const out: TimelineItem[] = [];
   for (const item of sorted) {
     const prev = out[out.length - 1];
-    if (
-      prev &&
-      prev.track === item.track &&
-      prev.label.trim().toLowerCase() === item.label.trim().toLowerCase() &&
-      item.startMeters <= prev.endMeters + gapM
-    ) {
-      prev.endMeters = Math.max(prev.endMeters, item.endMeters);
-      if (!prev.detailLine && item.detailLine) prev.detailLine = item.detailLine;
-      continue;
+    if (prev && prev.track === item.track) {
+      const sameLabel = prev.label.trim().toLowerCase() === item.label.trim().toLowerCase();
+      const gap = item.track === "road" ? roadGapM : gapM;
+      const mergeable = item.track === "road" ? true : sameLabel;
+      if (mergeable && item.startMeters <= prev.endMeters + gap) {
+        if (!sameLabel) {
+          const folded = [item.label, item.detailLine].filter(Boolean).join(" — ");
+          prev.detailLine = prev.detailLine ? `${folded} · ${prev.detailLine}` : folded;
+        }
+        prev.endMeters = Math.max(prev.endMeters, item.endMeters);
+        if ((sevRank[item.severity] ?? 0) > (sevRank[prev.severity] ?? 0)) {
+          prev.severity = item.severity;
+        }
+        if (!prev.detailLine && item.detailLine) prev.detailLine = item.detailLine;
+        continue;
+      }
     }
     out.push({ ...item });
   }

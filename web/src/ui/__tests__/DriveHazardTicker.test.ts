@@ -7,7 +7,7 @@ import { buildRouteAheadTimeline } from "../../nav/routeAheadSync";
 
 const items = buildRouteAheadTimeline({
   routeTotalMeters: 50000, userAlongMeters: 0, planEtaMinutes: 40,
-  stormStripBands: [{ id: "warning", event: "Tornado Warning", severity: "avoid", startMeters: 16093.4,
+  stormStripBands: [{ id: "warning", event: "Tornado Warning", severity: "avoid", startMeters: 9665,
     endMeters: 20000, expiresIso: null, alertId: "warning", crossesRoute: true }],
   routeImpacts: [],
 });
@@ -23,7 +23,7 @@ describe("DriveHazardTicker", () => {
     const html = render();
     expect(html).toContain("Next route hazard");
     expect(html).toContain("Tornado Warning");
-    expect(html).toContain("8.0 mi");
+    expect(html).toContain("4.0 mi");
     expect(html).not.toContain("aria-live");
   });
 

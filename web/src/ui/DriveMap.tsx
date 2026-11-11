@@ -2210,6 +2210,11 @@ function DriveMapInner({
     let puckReclaimLatched = false;
     /** Road heading sampled from the gliding puck, not from the 1 Hz React bearing. */
     const alignBearingState: LiveAlignBearingState = { geomKey: "", cum: null, alongM: null };
+    /* Last good live heading + when — bridges single-frame nulls (snap fail,
+     * lookahead degenerate) so the camera target doesn't flip between the
+     * live bearing and the React fallback ~45° apart (Bill, 584). */
+    let lastLiveAheadDeg: number | null = null;
+    let lastLiveAheadAtMs = 0;
     const DRIVE_CAM_FORCE_RESYNC_FRAMES = 75;
 
     const reportPuckSight = (
@@ -2467,7 +2472,16 @@ function DriveMapInner({
             seedAlongM: userAlongMetersRef.current,
             offRoute: driveOffRouteForwardFramingRef.current,
           });
-          const aheadBearing = liveAhead ?? driveRouteBearingDegRef.current;
+          if (liveAhead != null) {
+            lastLiveAheadDeg = liveAhead;
+            lastLiveAheadAtMs = now;
+          }
+          const aheadBearing =
+            liveAhead ??
+            (lastLiveAheadDeg != null && now - lastLiveAheadAtMs < 800
+              ? lastLiveAheadDeg
+              : null) ??
+            driveRouteBearingDegRef.current;
           if (
             nativeCam &&
             shouldUseNativeFollowCam({

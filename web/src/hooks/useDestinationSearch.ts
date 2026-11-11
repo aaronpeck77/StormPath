@@ -179,6 +179,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
         plan.setPreviewLegIndex(0);
         const ui = useUiStore.getState();
         ui.setRouteHazardSheet(null);
+        ui.setActiveDotMarkerId(null);
         ui.setMapFocus(null);
       }
       setDestLngLat(lngLat);

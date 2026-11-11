@@ -149,6 +149,7 @@ export const useUiStore = create<UiState>((set) => ({
   dismissAllOverlays: () =>
     set({
       routeHazardSheet: null,
+      activeDotMarkerId: null,
       savedDrawerOpen: false,
       aboutOpen: false,
       toolsOpen: false,

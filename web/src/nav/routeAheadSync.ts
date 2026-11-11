@@ -187,6 +187,17 @@ export function timelineItemShowsOnProgressStrip(item: TimelineItem): boolean {
 export function timelineItemShowsOnRouteGraph(item: TimelineItem): boolean {
   if (item.track === "nws") return true;
   if (item.stripMuted) return false;
+  if (item.track === "road") {
+    /* Road/construction zones show caution+ here — same rule as the progress
+     * strip, so anything painted on the route also has a list/graph entry.
+     * etaStale stays hidden: "likely over before you arrive" is not a hazard. */
+    if (item.etaStale) return false;
+    return (
+      item.severity === "caution" ||
+      item.severity === "serious" ||
+      item.severity === "avoid"
+    );
+  }
   return timelineItemShowsOnRouteLine(item);
 }
 

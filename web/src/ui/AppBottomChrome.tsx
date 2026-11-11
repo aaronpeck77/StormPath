@@ -135,6 +135,9 @@ type Props = {
   previewLegIndex: number | null;
   handlePreviewRouteSelect: (id: string) => void;
   routeDockDetail: string | undefined;
+  /** "Another way" — re-plan the alternates around a different corridor. */
+  onAnotherWay?: () => void;
+  anotherWayBusy?: boolean;
   /** Pre-trip briefing pill — planning surface only, rendered beside the route picker. */
   tripBriefingPill?: ReactNode;
   radarMapOverlayOn: boolean;
@@ -249,6 +252,8 @@ export function AppBottomChrome({
   previewLegIndex,
   handlePreviewRouteSelect,
   routeDockDetail,
+  onAnotherWay,
+  anotherWayBusy = false,
   tripBriefingPill,
   radarMapOverlayOn,
   radarFrameTimeLabel,
@@ -363,6 +368,79 @@ export function AppBottomChrome({
       Tools
     </button>
   ) : null;
+
+  /* Destination / add-stop row — rendered under the about-row both while
+   * planning AND while navigating in Rt/Mp, so there is always an entry
+   * point to change destination or add a stop mid-route (Bill, 584). */
+  const destSearchRow = (
+    <div className="nav-bottom-dock__search-myloc-row">
+      <div className="nav-bottom-dock__search-col">
+        <div className="nav-search-dock">
+          {showCompactDest ? (
+            <div className="nav-dest-compact">
+              <button
+                type="button"
+                className="nav-dest-compact--tap"
+                onClick={handleCompactDestOpen}
+                title="Tap to search or change destination"
+              >
+                <span className="nav-dest-compact-label" title={destinationLabel}>
+                  {isChangingDestination ? "Search destination or stop…" : (destinationLabel || "Destination")}
+                </span>
+              </button>
+              {navigationStarted && activeViaIndex < viaStops.length ? (
+                <button
+                  type="button"
+                  className="nav-dest-compact-btn"
+                  onClick={() => handleSkipViaStop(activeViaIndex)}
+                >
+                  Skip stop
+                </button>
+              ) : null}
+              {onChangeDestination && !isChangingDestination ? (
+                <button
+                  type="button"
+                  className="nav-dest-compact-btn"
+                  onClick={onChangeDestination}
+                  title="Change destination or add a stop"
+                >
+                  Change
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <SearchBar
+                value={searchText}
+                onChange={onSearchTextChange}
+                onBeginEditing={handleSearchFieldBeginEditing}
+                onEndEditing={handleSearchFieldEndEditing}
+                onCancelSuggestions={handleSearchCancelSuggestions}
+                onDismiss={handleSearchDismiss}
+                onSearch={onSearchSubmit}
+                placeholder={searchPlaceholder}
+                suggestions={suggestions}
+                onPickSuggestion={onPickSuggestion}
+                suggestionsLoading={suggestLoading}
+                showSuggestionsWhenEmpty={isNarrowPhoneViewport()}
+                enableSuggestions={enableSuggestions && placeChoices.length < 2}
+              />
+              {!navigationStarted ? (
+                <RouteStopsBar
+                  viaStops={viaStops}
+                  addingStop={addingViaStop}
+                  canAddStop={canAddStop}
+                  onStartAddStop={onStartAddStop}
+                  onCancelAddStop={onCancelAddStop}
+                  onRemoveStop={handleRemoveViaStop}
+                />
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
   return (
     <div className="nav-bottom-stack">
       <RouteCompareBottomPanel
@@ -426,6 +504,13 @@ export function AppBottomChrome({
               {carPlayMapReturn}
             </DockAboutRow>
           ) : navigationStarted && (viewMode === "topdown" || viewMode === "route") ? (
+            <>
+            {/* CarPlay map-peek return gets its own row above the picker —
+             * inline it stole ~110px and jummed the route-select label
+             * (Bill, 584). */}
+            {carPlayMapReturn ? (
+              <div className="nav-cp-return-row">{carPlayMapReturn}</div>
+            ) : null}
             <DockAboutRow
               stormyOn={talkOn}
               onOpenAbout={onOpenAbout}
@@ -435,7 +520,6 @@ export function AppBottomChrome({
               {driveDistanceRemainingLabel ? (
                 <NavMilesLeftBox label={driveDistanceRemainingLabel} />
               ) : null}
-              {carPlayMapReturn}
               {routePickItems.length >= 1 ? (
                 <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
                   <RoutePickControl
@@ -446,6 +530,18 @@ export function AppBottomChrome({
                     onSelect={handlePreviewRouteSelect}
                     detail={routeDockDetail}
                   />
+                  {onAnotherWay && routePickItems.length >= 2 ? (
+                    <button
+                      type="button"
+                      className="nav-another-way-btn"
+                      aria-label="Try a different alternate route"
+                      title="Don't like this option? Find another way"
+                      disabled={anotherWayBusy}
+                      onClick={onAnotherWay}
+                    >
+                      ↻
+                    </button>
+                  ) : null}
                 </div>
               ) : radarMapOverlayOn && radarFrameTimeLabel ? (
                 <div
@@ -457,6 +553,8 @@ export function AppBottomChrome({
                 </div>
               ) : null}
             </DockAboutRow>
+            {destSearchRow}
+            </>
           ) : (
             <div className="nav-bottom-dock__plan-stack">
               {/* About row: 'i' on the left; route-info cycle chip or My location in the inline slot. */}
@@ -480,6 +578,18 @@ export function AppBottomChrome({
                         onSelect={handlePreviewRouteSelect}
                         detail={routeDockDetail}
                       />
+                      {onAnotherWay && routePickItems.length >= 2 ? (
+                        <button
+                          type="button"
+                          className="nav-another-way-btn"
+                          aria-label="Try a different alternate route"
+                          title="Don't like this option? Find another way"
+                          disabled={anotherWayBusy}
+                          onClick={onAnotherWay}
+                        >
+                          ↻
+                        </button>
+                      ) : null}
                     </div>
                   ) : planRoutesLength === 0 && userLngLat ? (
                     <button
@@ -503,73 +613,7 @@ export function AppBottomChrome({
                 ) : null}
                 {!navigationStarted ? tripBriefingPill : null}
               </DockAboutRow>
-              <div className="nav-bottom-dock__search-myloc-row">
-                <div className="nav-bottom-dock__search-col">
-                  <div className="nav-search-dock">
-                    {showCompactDest ? (
-                      <div className="nav-dest-compact">
-                        <button
-                          type="button"
-                          className="nav-dest-compact--tap"
-                          onClick={handleCompactDestOpen}
-                          title="Tap to search or change destination"
-                        >
-                          <span className="nav-dest-compact-label" title={destinationLabel}>
-                            {isChangingDestination ? "Search destination or stop…" : (destinationLabel || "Destination")}
-                          </span>
-                        </button>
-                        {navigationStarted && activeViaIndex < viaStops.length ? (
-                          <button
-                            type="button"
-                            className="nav-dest-compact-btn"
-                            onClick={() => handleSkipViaStop(activeViaIndex)}
-                          >
-                            Skip stop
-                          </button>
-                        ) : null}
-                        {onChangeDestination && !isChangingDestination ? (
-                          <button
-                            type="button"
-                            className="nav-dest-compact-btn"
-                            onClick={onChangeDestination}
-                            title="Change destination or add a stop"
-                          >
-                            Change
-                          </button>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <>
-                        <SearchBar
-                          value={searchText}
-                          onChange={onSearchTextChange}
-                          onBeginEditing={handleSearchFieldBeginEditing}
-                          onEndEditing={handleSearchFieldEndEditing}
-                          onCancelSuggestions={handleSearchCancelSuggestions}
-                          onDismiss={handleSearchDismiss}
-                          onSearch={onSearchSubmit}
-                          placeholder={searchPlaceholder}
-                          suggestions={suggestions}
-                          onPickSuggestion={onPickSuggestion}
-                          suggestionsLoading={suggestLoading}
-                          showSuggestionsWhenEmpty={isNarrowPhoneViewport()}
-                          enableSuggestions={enableSuggestions && placeChoices.length < 2}
-                        />
-                        {!navigationStarted ? (
-                          <RouteStopsBar
-                            viaStops={viaStops}
-                            addingStop={addingViaStop}
-                            canAddStop={canAddStop}
-                            onStartAddStop={onStartAddStop}
-                            onCancelAddStop={onCancelAddStop}
-                            onRemoveStop={handleRemoveViaStop}
-                          />
-                        ) : null}
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
+              {destSearchRow}
               {/* Action row removed — both "My location" (planning) and the route-cycle
                * button (route loaded) now live inline on the about-row above the search. */}
             </div>

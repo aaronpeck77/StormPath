@@ -109,6 +109,8 @@ export async function publishCarSession(payload: {
   advisoryLine?: string | null;
   maneuverLine?: string | null;
   conditions?: CarConditionSection[];
+  /** JSON [{s,e,c}] — route-meter hazard spans + hex color for CarPlay line paint. */
+  hazardSpansJson?: string;
   radarTileBase?: string;
   puckColor?: string;
   /**
@@ -126,6 +128,7 @@ export async function publishCarSession(payload: {
       advisoryLine: payload.navigating ? payload.advisoryLine?.trim() || "" : "",
       maneuverLine: payload.navigating ? payload.maneuverLine?.trim() || "" : "",
       conditionsJson: JSON.stringify(payload.conditions ?? []),
+      hazardSpansJson: payload.hazardSpansJson ?? "[]",
       radarTileBase: payload.radarTileBase ?? "",
       puckColor: payload.puckColor ?? "blue",
       speedLimitMph: payload.navigating ? Math.round(payload.speedLimitMph ?? 0) : 0,

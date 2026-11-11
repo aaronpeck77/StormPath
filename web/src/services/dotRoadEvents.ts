@@ -28,6 +28,8 @@ export type DotRoadEvent = {
   vehicleImpact: string | null;
   startIso: string | null;
   endIso: string | null;
+  /** Feed's last-updated stamp — drives the "Reported <date>" detail line. */
+  updatedIso?: string | null;
   /** Representative centroid [lng, lat]. */
   point: [number, number];
   /** [west, south, east, north] */

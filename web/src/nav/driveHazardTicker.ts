@@ -36,10 +36,14 @@ export function driveHazardFeedActive(input: DriveHazardTickerInput): boolean {
   );
 }
 
+/** Phone countdown ticker only reports hazards inside ~5 mi — farther out is
+ * noise on a glanceable strip. The iPad queue/panel stays uncapped. */
+export const DRIVE_TICKER_MAX_AHEAD_M = 5 * 1609.34;
+
 function collectHazardCandidates(
   input: DriveHazardTickerInput,
   nowMs: number,
-  opts?: { pageGraph?: boolean; anyNavView?: boolean }
+  opts?: { pageGraph?: boolean; anyNavView?: boolean; maxAheadMeters?: number }
 ): TimelineItem[] {
   const { userAlongMeters: along } = input;
   if (!driveHazardFeedActive(input) ||
@@ -49,6 +53,8 @@ function collectHazardCandidates(
     if (item.crossesRoute === false || item.coarsePreview || !item.label.trim() || !Number.isFinite(item.startMeters) ||
       !Number.isFinite(item.endMeters) || item.startMeters < 0 || item.endMeters < item.startMeters ||
       item.endMeters <= along) return false;
+    if (opts?.maxAheadMeters != null && item.startMeters - along > opts.maxAheadMeters)
+      return false;
     if (opts?.pageGraph) {
       // Countdown set = whatever the route-info graph / advisory hazards feed shows.
       if (!timelineItemShowsOnRouteGraph(item)) return false;
@@ -78,7 +84,9 @@ function hazardLabel(item: TimelineItem): string {
 }
 
 export function selectDriveHazardTicker(input: DriveHazardTickerInput, nowMs = Date.now()) {
-  const item = collectHazardCandidates(input, nowMs)[0];
+  const item = collectHazardCandidates(input, nowMs, {
+    maxAheadMeters: DRIVE_TICKER_MAX_AHEAD_M,
+  })[0];
   if (!item) return null;
   return {
     id: item.id,
@@ -124,7 +132,8 @@ export function selectDriveHazardQueue(
   opts?: { anyNavView?: boolean }
 ): DriveHazardQueueRow[] {
   const along = input.userAlongMeters;
-  return collectHazardCandidates(input, nowMs, { pageGraph: true, anyNavView: opts?.anyNavView }).slice(0, 2).map((item) => {
+  /* iPad panel shows ~3 rows — enough to scan the corridor without a scroll. */
+  return collectHazardCandidates(input, nowMs, { pageGraph: true, anyNavView: opts?.anyNavView }).slice(0, 3).map((item) => {
     const timing = formatRouteAlertTiming({
       startMeters: item.startMeters,
       endMeters: item.endMeters,

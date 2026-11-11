@@ -96,6 +96,9 @@ type DotEvent = {
   vehicleImpact: string | null;
   startIso: string | null;
   endIso: string | null;
+  /** Feed's own last-updated stamp — lets the app say "Reported <date>" so a
+   * stale or not-yet-started report reads honestly instead of looking live. */
+  updatedIso: string | null;
   point: [number, number];
   bbox: [number, number, number, number];
   geometry: unknown;
@@ -244,6 +247,22 @@ function normalizeFeature(
 
   const startIso = str(props.start_date) || str(core.start_date) || null;
   const endIso = str(props.end_date) || str(core.end_date) || null;
+  /* Feeds disagree on the stamp name: Iowa/Wisconsin publish `update_date`,
+   * WZDx-ish feeds use `last_updated(_date)`, CWZ camelCases to the same
+   * snake keys after normalization. `creation_date` is the last resort —
+   * it is when the event was first reported, still honest "Reported" data. */
+  const updatedIso =
+    str(props.update_date) ||
+    str(core.update_date) ||
+    str(props.last_updated) ||
+    str(core.last_updated) ||
+    str(props.last_updated_date) ||
+    str(core.last_updated_date) ||
+    str(props.updated) ||
+    str(core.updated) ||
+    str(props.creation_date) ||
+    str(core.creation_date) ||
+    null;
   const startMs = startIso ? Date.parse(startIso) : NaN;
   const endMs = endIso ? Date.parse(endIso) : NaN;
   /* Drop finished work and anything beyond the planning window. */
@@ -351,6 +370,7 @@ function normalizeFeature(
     vehicleImpact: str(props.vehicle_impact ?? core.vehicle_impact) || null,
     startIso,
     endIso,
+    updatedIso,
     point,
     bbox: [w, s, e, n],
     geometry: simplifiedGeometry(geometry),

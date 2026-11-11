@@ -198,6 +198,15 @@
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
+/* Route/top-down + CarPlay peek: the return chip gets its own row above the
+ * about-row so it can't squeeze the route-select control (Bill, 584). */
+.nav-cp-return-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 4px 4px;
+  pointer-events: auto;
+}
+
 /* Companion v2 — real progress rail + weather graph embedded in the page */
 .cp-companion__rail {
   margin: 0 -14px 12px;

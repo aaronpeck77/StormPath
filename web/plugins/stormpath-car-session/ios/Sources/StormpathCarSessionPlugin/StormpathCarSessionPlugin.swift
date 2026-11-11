@@ -30,7 +30,7 @@ public class StormpathCarSessionPlugin: CAPPlugin, CAPBridgedPlugin {
         Self.defaults.set(destination, forKey: Self.prefix + "destination")
         Self.defaults.set(advisory, forKey: Self.prefix + "advisory")
         Self.defaults.set(maneuver, forKey: Self.prefix + "maneuver")
-        for key in ["conditionsJson", "radarTileBase", "puckColor"] {
+        for key in ["conditionsJson", "hazardSpansJson", "radarTileBase", "puckColor"] {
             Self.defaults.set(call.getString(key) ?? "", forKey: Self.prefix + key)
         }
         Self.defaults.set(call.getInt("speedLimitMph") ?? 0, forKey: Self.prefix + "speedLimitMph")
@@ -64,7 +64,7 @@ public class StormpathCarSessionPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func clear(_ call: CAPPluginCall) {
-        for key in ["navigating", "destination", "advisory", "maneuver", "updatedAt", "conditionsJson", "radarTileBase", "puckColor", "speedLimitMph", "pendingHazardAlert"] {
+        for key in ["navigating", "destination", "advisory", "maneuver", "updatedAt", "conditionsJson", "hazardSpansJson", "radarTileBase", "puckColor", "speedLimitMph", "pendingHazardAlert"] {
             Self.defaults.removeObject(forKey: Self.prefix + key)
         }
         call.resolve()
