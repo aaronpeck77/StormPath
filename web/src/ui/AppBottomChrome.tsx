@@ -611,8 +611,12 @@ export function AppBottomChrome({
                     </div>
                   ) : null
                 ) : null}
-                {!navigationStarted ? tripBriefingPill : null}
               </DockAboutRow>
+              {/* Briefing gets its own row — inline it overlapped the route
+               * picker's "another way" ↻ when both rendered (Bill, 585). */}
+              {!navigationStarted && tripBriefingPill ? (
+                <div className="nav-briefing-row">{tripBriefingPill}</div>
+              ) : null}
               {destSearchRow}
               {/* Action row removed — both "My location" (planning) and the route-cycle
                * button (route loaded) now live inline on the about-row above the search. */}

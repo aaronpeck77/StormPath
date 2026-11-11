@@ -133,6 +133,15 @@
 
 /* Small orange pill in the planning about-row. Pulses until first open so it
  * is the first thing the eye catches; stays compact and out of the drive HUD. */
+/* Planning dock: the pill gets its own row under the about-row so it can't
+ * collide with the route picker's "another way" button (Bill, 585). */
+.nav-briefing-row {
+  display: flex;
+  justify-content: flex-start;
+  padding: 0 4px;
+  pointer-events: auto;
+}
+
 .briefing-pill {
   flex: 0 0 auto;
   padding: 5px 12px;
