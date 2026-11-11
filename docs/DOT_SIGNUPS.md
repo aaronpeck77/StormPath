@@ -29,8 +29,8 @@ turns the feed on. Registry URLs for reference:
 |---|-------|------|-------------|--------------|
 | ~~4~~ | ~~**NPS (national)**~~ | developer.nps.gov/api/v1/roadevents | `NPS_API_KEY` | ✅ **DONE 2026-11-10** — live, park road events verified (Grand Teton) |
 | 5 | **Michigan** | mdotridedata.state.mi.us (Socrata) | `MDOT_API_KEY` | Socrata portal — instant token |
-| 6 | **Oregon** | api.odot.state.or.us (Azure APIM) | `ODOT_API_KEY` | APIM subscription on their dev portal |
-| 7 | **Virginia** | 511-atis-ttrip smarterroads | `VDOT_API_KEY` | smarterroads.vdot.virginia.gov — register + subscribe |
+| 6 | **Virginia** | 511-atis-ttrip smarterroads | `VDOT_API_KEY` | smarterroads.vdot.virginia.gov — register + subscribe |
+| — | **Oregon** | TripCheck API / WZDx v4 | `ODOT_API_KEY` | ⏸️ **PAUSED** — portal route to subscription key is unclear; revisit later |
 | 8 | **California** | api.511.org | `MTC_511_API_KEY` | 511 CA developer program |
 | 9 | **North Carolina** | drivenc.gov/api/wzdx | `NCDOT_API_KEY` | DriveNC API registration |
 | 10 | **Colorado ×2** | data.cotrip.org (wzdx + cwz) | `CDOT_API_KEY`, `CDOT_CWZ_API_KEY` | manage-api.cotrip.org — self-serve; **one Cotrip key may serve both** |
@@ -78,7 +78,7 @@ CT pending license check.
 ## Suggested nightly order
 
 - **Night 1 (tonight):** Castle Rock forms (MN/KS/NE/IN) + NPS + Michigan — slow ones first
-- **Nights 2–5:** Oregon, Virginia, California, NC, Colorado, MA, PA Turnpike, IL Tollway (one per night is plenty)
+- **Nights 2–5:** Virginia, California, NC, Colorado, MA, PA Turnpike, IL Tollway (one per night is plenty); Oregon paused
 - **Nights 6–10:** Travel-IQ states in route-priority order (GA → UT → NY → WI → LA → ID → AK → AZ)
 - **Parallel (me):** IL winter adapter → IA → MO → MD condition feeds
 - **Dec 1–3 buffer:** stragglers + verification sweep
