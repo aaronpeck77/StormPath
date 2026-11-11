@@ -95,11 +95,15 @@ function severityFor(ev: DotRoadEvent): RouteImpactSeverity {
   const sizeLimit = /length|width|weight|load/i.test(ev.restrictionsText ?? "");
   if (ev.kind === "closure" || closedAll) return "avoid";
   if (closedSome || sizeLimit) return "serious";
-  /* DOT condition reports (IL winter road conditions) — vehicleImpact carries
-   * the condition slug ("completely-covered", "ice", "partially-covered").
-   * Ice/full coverage is serious; partial coverage is caution. */
-  if (ev.kind === "condition")
+  /* DOT condition reports (IL/IA winter road conditions) — vehicleImpact carries
+   * the condition slug ("completely-covered", "ice", "partially-covered",
+   * "travel-not-advised", "impassable"). Impassable is avoid; ice/full
+   * coverage and no-travel advisories are serious; partial coverage is caution. */
+  if (ev.kind === "condition") {
+    if (/impassable/.test(impact)) return "avoid";
+    if (/not-advised/.test(impact)) return "serious";
     return /ice|completely|full|packed|snow-?pack/i.test(impact) ? "serious" : "caution";
+  }
   return ev.kind === "construction" ? "caution" : "info";
 }
 

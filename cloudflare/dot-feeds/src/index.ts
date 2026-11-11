@@ -503,14 +503,15 @@ function ilWinterRoadName(code: string): string {
   return Number.isFinite(n) && n > 0 && String(n).length <= 3 ? `IL-${n}` : code;
 }
 
-function normalizeIllinoisWinter(feature: Record<string, unknown>): DotEvent | null {
-  const props = asRecord(feature.properties);
-  const condition = str(props.Condition);
-  if (!condition || condition.toLowerCase() === "clear") return null;
-  const geometry = feature.geometry;
+/** Centroid + bbox + downsampled geometry for one feature — shared by the
+ *  custom condition normalizers (IL, IA). */
+function eventGeo(geometry: unknown): {
+  point: [number, number];
+  bbox: [number, number, number, number];
+  geometry: GeoJSON.Geometry | null;
+} | null {
   const points = sampledPoints(geometry);
   if (!points.length) return null;
-
   let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
   let sx = 0, sy = 0;
   for (const [lng, lat] of points) {
@@ -521,6 +522,19 @@ function normalizeIllinoisWinter(feature: Record<string, unknown>): DotEvent | n
     sx += lng;
     sy += lat;
   }
+  return {
+    point: [sx / points.length, sy / points.length],
+    bbox: [w, s, e, n],
+    geometry: simplifiedGeometry(geometry),
+  };
+}
+
+function normalizeIllinoisWinter(feature: Record<string, unknown>): DotEvent | null {
+  const props = asRecord(feature.properties);
+  const condition = str(props.Condition);
+  if (!condition || condition.toLowerCase() === "clear") return null;
+  const geo = eventGeo(feature.geometry);
+  if (!geo) return null;
 
   const roadName = ilWinterRoadName(str(props.STR_STATEC));
   const county = str(props.COUNTY_NAM);
@@ -553,9 +567,73 @@ function normalizeIllinoisWinter(feature: Record<string, unknown>): DotEvent | n
     startIso: null,
     endIso: null,
     updatedIso: null,
-    point: [sx / points.length, sy / points.length],
-    bbox: [w, s, e, n],
-    geometry: simplifiedGeometry(geometry),
+    point: geo.point,
+    bbox: geo.bbox,
+    geometry: geo.geometry,
+  };
+}
+
+/** Iowa DOT winter road conditions — plow-reported segments on Iowa DOT's
+ *  public ArcGIS org (iowadot.gov documents the services as keyless).
+ *  ROAD_CONDITION values per the layer's own renderer: Seasonal (baseline),
+ *  Partially Covered, Completely Covered, Travel Not Advised, Impassable.
+ *  The server-side where keeps the payload to non-baseline segments only;
+ *  the normalizer re-checks defensively. */
+const IA_WINTER_URL =
+  "https://services.arcgis.com/8lRhdTsQyJpO52F1/ArcGIS/rest/services/" +
+  "511_IA_Road_Conditions_View/FeatureServer/0/query" +
+  "?where=ROAD_CONDITION%3C%3E%27Seasonal%27" +
+  "&outFields=OBJECTID%2CSEGMENT_ID%2CROUTE_NAME%2CLONG_NAME%2CROAD_CONDITION%2CCARS_MSG_UPDATE_DATE" +
+  "&f=geojson&outSR=4326&resultRecordCount=2000";
+
+function normalizeIowaWinter(feature: Record<string, unknown>): DotEvent | null {
+  const props = asRecord(feature.properties);
+  const condition = str(props.ROAD_CONDITION);
+  if (!condition || condition.toLowerCase() === "seasonal") return null;
+  const geo = eventGeo(feature.geometry);
+  if (!geo) return null;
+
+  const roadName = prettifyRoadName(str(props.ROUTE_NAME));
+  const conditionLabel = condition.replace(/\s+/g, " ").trim();
+  /* LONG_NAME reads "I-235, between Exit 122 … and Exit 4 …" — strip the
+   * leading route tag so the detail doesn't repeat roadName. */
+  const longName = str(props.LONG_NAME);
+  const loc =
+    roadName && longName.toLowerCase().startsWith(`${roadName.toLowerCase()},`)
+      ? longName.slice(roadName.length + 1).trim()
+      : longName;
+  /* CARS_MSG_UPDATE_DATE is epoch ms — the feed's honest "Reported" stamp. */
+  const updatedMs = Number(props.CARS_MSG_UPDATE_DATE);
+  const updatedIso =
+    Number.isFinite(updatedMs) && updatedMs > 0
+      ? new Date(updatedMs).toISOString()
+      : null;
+  const sid = props.OBJECTID ?? props.SEGMENT_ID ?? feature.id;
+
+  return {
+    id: `iawinter:${sid != null ? String(sid) : Math.random().toString(36).slice(2, 10)}`,
+    state: "iowa",
+    publisher: "Iowa DOT",
+    kind: "condition",
+    status: "active",
+    title: roadName,
+    roadName,
+    direction: null,
+    description:
+      `${conditionLabel} — Iowa DOT winter report` +
+      (loc ? ` · ${loc.slice(0, 200)}` : ""),
+    restrictionsText: null,
+    lanesClosed: 0,
+    travelLanesClosed: null,
+    laneSummary: null,
+    workType: conditionLabel,
+    vehicleImpact: conditionLabel.toLowerCase().replace(/\s+/g, "-"),
+    startIso: null,
+    endIso: null,
+    updatedIso,
+    point: geo.point,
+    bbox: geo.bbox,
+    geometry: geo.geometry,
   };
 }
 
@@ -566,6 +644,13 @@ const CUSTOM_FEEDS: CustomFeed[] = [
     publisher: "Illinois DOT",
     url: IL_WINTER_URL,
     normalize: normalizeIllinoisWinter,
+  },
+  {
+    name: "iawinter",
+    state: "iowa",
+    publisher: "Iowa DOT",
+    url: IA_WINTER_URL,
+    normalize: normalizeIowaWinter,
   },
 ];
 

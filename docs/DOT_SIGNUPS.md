@@ -69,7 +69,7 @@ Verified or audit-confirmed keyless feeds — these need my time, not yours:
 | State | Source | Status |
 |-------|--------|--------|
 | **Illinois** | IDOT winter road conditions ArcGIS | ✅ verified live — 410 segments, plow-reported |
-| **Iowa** | 511 ArcGIS REST (CC0/CC-BY) | audit-confirmed keyless, "cleanest license in the country" |
+| **Iowa** | 511 ArcGIS REST winter conditions | ✅ adapter LIVE 2026-11-11 — keyless, iowadot.gov-documented; non-Seasonal only (all Seasonal at deploy) |
 | **Missouri** | Keyless JSON feeds | audit-confirmed, undocumented but open |
 | **Maryland** | CHART keyless JSON | audit-confirmed; confirm commercial terms |
 | **Florida** | FDOT DIVAS keyless | 4,900 cameras + events already documented |
@@ -85,7 +85,7 @@ CT pending license check.
 - **Night 1 (tonight):** Castle Rock forms (MN/KS/NE/IN) + NPS + Michigan — slow ones first
 - **Nights 2–5:** Virginia, California, NC, Colorado, MA, PA Turnpike, IL Tollway (one per night is plenty); Oregon paused
 - **Nights 6–10:** Travel-IQ states in route-priority order (GA → UT → NY → WI → LA → ID → AK → AZ)
-- **Parallel (me):** IL winter adapter → IA → MO → MD condition feeds
+- **Parallel (me):** ~~IL winter adapter~~ → ~~IA~~ → MO → MD condition feeds
 - **Dec 1–3 buffer:** stragglers + verification sweep
 
 Source audits: `docs/DOT_FEED_COVERAGE.md` (WZDx tiers) +

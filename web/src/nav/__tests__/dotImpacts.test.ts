@@ -138,6 +138,28 @@ describe("buildDotImpacts", () => {
     expect(out[0]!.driverAction).toBe("slow");
     expect(out[0]!.roadEffect).toContain("Winter road condition");
   });
+
+  it("Iowa travel-not-advised condition is serious with a bypass offer", () => {
+    const tna = makeEvent({
+      kind: "condition",
+      vehicleImpact: "travel-not-advised",
+      workType: "Travel Not Advised",
+    });
+    const out = buildDotImpacts([tna], ROUTE, 0);
+    expect(out[0]!.severity).toBe("serious");
+    expect(out[0]!.driverAction).toBe("rerouteAvailable");
+  });
+
+  it("impassable winter condition is avoid", () => {
+    const imp = makeEvent({
+      kind: "condition",
+      vehicleImpact: "impassable",
+      workType: "Impassable",
+    });
+    const out = buildDotImpacts([imp], ROUTE, 0);
+    expect(out[0]!.severity).toBe("avoid");
+    expect(out[0]!.driverAction).toBe("rerouteRecommended");
+  });
 });
 
 /** Event parked at a longitude on the test route (lat 41.6). */
