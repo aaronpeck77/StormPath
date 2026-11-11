@@ -5,7 +5,7 @@
  */
 import { getWebEnv } from "../config/env";
 
-export type DotEventKind = "construction" | "closure" | "incident" | "other";
+export type DotEventKind = "construction" | "closure" | "incident" | "condition" | "other";
 
 export type DotRoadEvent = {
   id: string;

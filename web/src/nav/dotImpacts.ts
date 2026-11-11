@@ -95,6 +95,11 @@ function severityFor(ev: DotRoadEvent): RouteImpactSeverity {
   const sizeLimit = /length|width|weight|load/i.test(ev.restrictionsText ?? "");
   if (ev.kind === "closure" || closedAll) return "avoid";
   if (closedSome || sizeLimit) return "serious";
+  /* DOT condition reports (IL winter road conditions) — vehicleImpact carries
+   * the condition slug ("completely-covered", "ice", "partially-covered").
+   * Ice/full coverage is serious; partial coverage is caution. */
+  if (ev.kind === "condition")
+    return /ice|completely|full|packed|snow-?pack/i.test(impact) ? "serious" : "caution";
   return ev.kind === "construction" ? "caution" : "info";
 }
 
@@ -109,6 +114,7 @@ const HEADLINE_PREFIX: Record<DotRoadEvent["kind"], string> = {
   construction: "Work zone",
   closure: "Closure",
   incident: "Incident",
+  condition: "Winter condition",
   other: "Road event",
 };
 
@@ -116,6 +122,7 @@ const ROAD_EFFECT: Record<DotRoadEvent["kind"], string> = {
   construction: "Lane closures or work zone ahead — expect delays",
   closure: "Road closed ahead — check for a detour",
   incident: "Incident reported ahead — traffic may be slow",
+  condition: "Winter road condition ahead — drive for conditions",
   other: "Road condition reported ahead",
 };
 
@@ -144,6 +151,9 @@ function fmtWindow(ev: DotRoadEvent): string {
 }
 
 function categoryFor(ev: DotRoadEvent): RouteImpact["category"] {
+  /* DOT condition reports (winter ice/snow coverage) share the "winter"
+   * category NWS winter warnings already use — same driver meaning. */
+  if (ev.kind === "condition") return "winter";
   return ev.kind === "closure" ? "closure" : ev.kind === "incident" ? "incident" : "construction";
 }
 
@@ -284,6 +294,7 @@ function roadKeysCompatible(a: string, b: string): boolean {
 
 const KIND_RANK: Record<DotRoadEvent["kind"], number> = {
   other: 0,
+  condition: 1,
   construction: 1,
   incident: 2,
   closure: 3,

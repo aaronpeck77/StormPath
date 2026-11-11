@@ -23,9 +23,11 @@ Feed buckets:
 
 Road *conditions* (ice, snow-covered, drifting — plow/RWIS reports) are a
 separate data class from WZDx work zones. Coverage so far: NWS winter
-warnings (nationwide, already painted) + IL winter ArcGIS feed (verified
-keyless, adapter pending). Per-state condition feeds exist for roughly
-half the states — see DOT_SIGNUPS.md Travel-IQ + keyless sections.
+warnings (nationwide, already painted) + **IL winter ArcGIS feed — adapter
+LIVE 2026-11-11** (`kind: "condition"` → winter category; only non-Clear
+plow-crew segments emit, so it lights up during storms). Per-state
+condition feeds exist for roughly half the states — see DOT_SIGNUPS.md
+Travel-IQ + keyless sections.
 
 ---
 
@@ -33,7 +35,7 @@ half the states — see DOT_SIGNUPS.md Travel-IQ + keyless sections.
 
 | State | Feed(s) | Coverage note |
 |---|---|---|
-| Illinois | `idot_cwz` | CWZ work zones — the good feed. Regular IL 511 feed not registered; Tollway still dark (KEYED). |
+| Illinois | `idot_cwz` + **IL winter conditions** | CWZ work zones + plow-crew road conditions (ice/snow coverage, non-Clear only). Tollway still dark (KEYED). |
 | Iowa | `idot` | Statewide open feed. |
 | Ohio | `ohio` | OHGO — keyed, live. |
 | Texas | `austin` + `txdot_v4_2` | **Statewide live** — DriveTexas key landed 2026-11-10 (~1,800 events). Austin city feed also flows. Road codes decoded (`IH0030`→`I-30`, `BU0059G`→`Business US-59 G`). |

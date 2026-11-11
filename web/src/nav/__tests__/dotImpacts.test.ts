@@ -113,6 +113,31 @@ describe("buildDotImpacts", () => {
     const out = buildDotImpacts([wt], ROUTE, 0);
     expect(out[0]!.detail).toContain("Surface work");
   });
+
+  it("winter condition reports map to the winter category", () => {
+    const icy = makeEvent({
+      kind: "condition",
+      vehicleImpact: "ice",
+      workType: "Ice",
+      publisher: "Illinois DOT",
+    });
+    const out = buildDotImpacts([icy], ROUTE, 0);
+    expect(out[0]!.category).toBe("winter");
+    expect(out[0]!.severity).toBe("serious");
+    expect(out[0]!.driverHeadline).toContain("Winter condition");
+  });
+
+  it("partially covered winter condition stays caution", () => {
+    const partial = makeEvent({
+      kind: "condition",
+      vehicleImpact: "partially-covered",
+      workType: "Partially covered",
+    });
+    const out = buildDotImpacts([partial], ROUTE, 0);
+    expect(out[0]!.severity).toBe("caution");
+    expect(out[0]!.driverAction).toBe("slow");
+    expect(out[0]!.roadEffect).toContain("Winter road condition");
+  });
 });
 
 /** Event parked at a longitude on the test route (lat 41.6). */

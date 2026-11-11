@@ -78,7 +78,7 @@ type DotEvent = {
   id: string;
   state: string;
   publisher: string;
-  kind: "construction" | "closure" | "incident" | "other";
+  kind: "construction" | "closure" | "incident" | "condition" | "other";
   status: "active" | "scheduled";
   title: string;
   roadName: string;
@@ -474,6 +474,101 @@ function stateNamesOf(raw: string | undefined): string[] {
     .filter((s) => s.length > 1 && s !== "n/a" && s !== "us" && s !== "nps");
 }
 
+/* ── Custom feeds (not in the WZDx registry) ────────────────────────────────
+ * State condition feeds the registry doesn't carry. Same DotEvent schema and
+ * snapshot; each gets its own normalizer. Add new states here as adapters land.
+ */
+
+type CustomFeed = {
+  name: string;
+  state: string;
+  publisher: string;
+  url: string;
+  normalize: (feature: Record<string, unknown>) => DotEvent | null;
+};
+
+/** Illinois DOT winter road conditions — plow-crew reported segments.
+ *  Keyless ArcGIS FeatureServer; f=geojson + outSR=4326 gives WGS84 LineStrings.
+ *  Only non-Clear segments become events — "Clear" is the default state and
+ *  emitting ~400 clear segments would paint the whole state as a hazard. */
+const IL_WINTER_URL =
+  "https://services7.arcgis.com/mdhzdIvz6eXVRvAt/ArcGIS/rest/services/" +
+  "IL_DOT_Winter_Road_Conditions___3411962229211774331/FeatureServer/0/query" +
+  "?where=1%3D1&outFields=FID%2CWrcMntSect%2CCOUNTY_NAM%2CSTR_STATEC%2CCondition" +
+  "&f=geojson&outSR=4326&resultRecordCount=2000";
+
+/** STR_STATEC is a zero-padded route number ("016" → IL-16). */
+function ilWinterRoadName(code: string): string {
+  const n = parseInt(code, 10);
+  return Number.isFinite(n) && n > 0 && String(n).length <= 3 ? `IL-${n}` : code;
+}
+
+function normalizeIllinoisWinter(feature: Record<string, unknown>): DotEvent | null {
+  const props = asRecord(feature.properties);
+  const condition = str(props.Condition);
+  if (!condition || condition.toLowerCase() === "clear") return null;
+  const geometry = feature.geometry;
+  const points = sampledPoints(geometry);
+  if (!points.length) return null;
+
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  let sx = 0, sy = 0;
+  for (const [lng, lat] of points) {
+    if (lng < w) w = lng;
+    if (lat < s) s = lat;
+    if (lng > e) e = lng;
+    if (lat > n) n = lat;
+    sx += lng;
+    sy += lat;
+  }
+
+  const roadName = ilWinterRoadName(str(props.STR_STATEC));
+  const county = str(props.COUNTY_NAM);
+  const section = str(props.WrcMntSect).replace(/\s*\((I+)\)\s*$/, "").trim();
+  const conditionLabel = condition.replace(/\s+/g, " ").trim();
+  /* vehicleImpact carries a condition slug the app maps to severity —
+   * ice/full coverage is serious, partial coverage is caution. */
+  const impactSlug = conditionLabel.toLowerCase().replace(/\s+/g, "-");
+
+  /* f=geojson returns FID as a number — String() it for a stable id. */
+  const fid = props.FID ?? feature.id;
+  return {
+    id: `ilwinter:${fid != null ? String(fid) : Math.random().toString(36).slice(2, 10)}`,
+    state: "illinois",
+    publisher: "Illinois DOT",
+    kind: "condition",
+    status: "active",
+    title: roadName,
+    roadName,
+    direction: null,
+    description:
+      `${conditionLabel} — ${county ? `${county} County` : "Illinois"}` +
+      (section ? ` · IDOT winter maintenance: ${section}` : ""),
+    restrictionsText: null,
+    lanesClosed: 0,
+    travelLanesClosed: null,
+    laneSummary: null,
+    workType: conditionLabel,
+    vehicleImpact: impactSlug,
+    startIso: null,
+    endIso: null,
+    updatedIso: null,
+    point: [sx / points.length, sy / points.length],
+    bbox: [w, s, e, n],
+    geometry: simplifiedGeometry(geometry),
+  };
+}
+
+const CUSTOM_FEEDS: CustomFeed[] = [
+  {
+    name: "ilwinter",
+    state: "illinois",
+    publisher: "Illinois DOT",
+    url: IL_WINTER_URL,
+    normalize: normalizeIllinoisWinter,
+  },
+];
+
 async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
   const nowMs = Date.now();
   const registry = (await fetchJson(REGISTRY_URL, 15_000)) as RegistryRow[];
@@ -522,7 +617,28 @@ async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
   }
   if (skippedKeyed > 0)
     console.warn(`[dot-feeds] ${skippedKeyed} keyed feeds skipped (no secret configured)`);
-  if (failed > 0) console.warn(`[dot-feeds] ${failed}/${rows.length} feeds failed`);
+
+  /* Non-registry feeds (state condition layers etc.) — fetched after the
+   * registry batches so a failure here can't take down WZDx coverage. */
+  for (const feed of CUSTOM_FEEDS) {
+    try {
+      const data = (await fetchJson(feed.url, FEED_TIMEOUT_MS)) as Record<string, unknown>;
+      for (const s of stateNamesOf(feed.state)) coveredStates.add(s);
+      const features = asArray<Record<string, unknown>>(data.features).slice(
+        0,
+        MAX_FEATURES_PER_FEED
+      );
+      for (const f of features) {
+        const ev = feed.normalize(f);
+        if (ev) events.push(ev);
+      }
+    } catch (err) {
+      failed += 1;
+      console.warn(`[dot-feeds] custom feed failed: ${feed.name}`, err);
+    }
+  }
+
+  if (failed > 0) console.warn(`[dot-feeds] ${failed} feeds failed`);
 
   events.sort((a, b) => a.id.localeCompare(b.id));
   return { fetchedAt: nowMs, events, states: [...coveredStates].sort() };
