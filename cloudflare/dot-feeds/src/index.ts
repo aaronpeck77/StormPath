@@ -104,7 +104,7 @@ type DotEvent = {
   geometry: unknown;
 };
 
-type Snapshot = { fetchedAt: number; events: DotEvent[] };
+type Snapshot = { fetchedAt: number; events: DotEvent[]; states?: string[] };
 
 function feedUrlOf(row: RegistryRow): string | null {
   const u = row.url;
@@ -445,12 +445,21 @@ function authFor(
   return { url: finalUrl, headers };
 }
 
+/** Registry state labels → comparable lowercase names; regional feeds split on ",". */
+function stateNamesOf(raw: string | undefined): string[] {
+  return String(raw ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 1 && s !== "n/a" && s !== "us" && s !== "nps");
+}
+
 async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
   const nowMs = Date.now();
   const registry = (await fetchJson(REGISTRY_URL, 15_000)) as RegistryRow[];
   const rows = registry.filter((r) => feedUrlOf(r));
 
   const events: DotEvent[] = [];
+  const coveredStates = new Set<string>();
   let failed = 0;
   let skippedKeyed = 0;
   /* Sequential batches — holding ~30 parsed GeoJSON feeds at once exceeds
@@ -469,6 +478,9 @@ async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
             string,
             unknown
           >;
+          /* Feed fetched — the state counts as covered even with zero events
+           * right now (coverage ≠ active work zones). */
+          for (const s of stateNamesOf(row.state)) coveredStates.add(s);
           /* FeatureCollection (`features`) is the WZDx shape; some CWZ feeds
            * expose a bare `road_events` array instead. */
           const fc = asArray<Record<string, unknown>>(feed.features);
@@ -492,7 +504,7 @@ async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
   if (failed > 0) console.warn(`[dot-feeds] ${failed}/${rows.length} feeds failed`);
 
   events.sort((a, b) => a.id.localeCompare(b.id));
-  return { fetchedAt: nowMs, events };
+  return { fetchedAt: nowMs, events, states: [...coveredStates].sort() };
 }
 
 async function snapshot(cachesApi: Cache, env: FeedEnv): Promise<Snapshot | null> {
@@ -559,6 +571,20 @@ export default {
       return Response.json(
         { fetchedAt: snap.fetchedAt, count: events.length, events },
         { headers: { ...CORS, "Cache-Control": "public, max-age=60" } }
+      );
+    }
+
+    /* States/jurisdictions with a live feed — lets the app say honestly when
+     * a driver is somewhere we have no DOT data instead of implying "all clear". */
+    if (url.pathname === "/coverage") {
+      const snap = await snapshot(caches.default, bindings);
+      if (!snap) return Response.json({ error: "no snapshot" }, { status: 503, headers: CORS });
+      const states =
+        snap.states ??
+        [...new Set(snap.events.map((e) => e.state.trim().toLowerCase()))].sort();
+      return Response.json(
+        { fetchedAt: snap.fetchedAt, states },
+        { headers: { ...CORS, "Cache-Control": "public, max-age=300" } }
       );
     }
 

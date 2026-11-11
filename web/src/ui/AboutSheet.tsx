@@ -20,6 +20,7 @@ import { stormpathVersionChipLabel, stormpathVersionLabel } from "../appVersion"
 import { stormpathBuildFlavor, stormpathFlavorChipLabel } from "../config/buildFlavor";
 import { safeStorage } from "../storage/safeStorage";
 import { MapKeyPanel } from "./MapKeyPanel";
+import { DotCoveragePanel } from "./DotCoveragePanel";
 import { PUCK_COLORS, puckColorById, type PuckColorId } from "./puckColor";
 import { StormPathSourcesAttribution } from "./StormPathSourcesAttribution";
 import type { HomeMapFraming } from "../map/homeMapFraming";
@@ -482,6 +483,8 @@ export function AboutSheet({
               <p className="about-sheet__p">Plus toggles live in Settings below.</p>
             </details>
           )}
+
+          <DotCoveragePanel />
 
           <details className="about-sheet__panel about-sheet__details">
             <summary>Voice</summary>
