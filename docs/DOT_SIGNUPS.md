@@ -29,7 +29,7 @@ turns the feed on. Registry URLs for reference:
 |---|-------|------|-------------|--------------|
 | ~~4~~ | ~~**NPS (national)**~~ | developer.nps.gov/api/v1/roadevents | `NPS_API_KEY` | ✅ **DONE 2026-11-10** — live, park road events verified (Grand Teton) |
 | 5 | **Michigan** | mdotridedata.state.mi.us (Socrata) | `MDOT_API_KEY` | Socrata portal — instant token |
-| 6 | **Virginia** | 511-atis-ttrip smarterroads | `VDOT_API_KEY` | smarterroads.vdot.virginia.gov — register + subscribe |
+| 6 | **Virginia** | 511-atis-ttrip smarterroads | `VDOT_API_KEY` | ⏸️ **BLOCKED on worker capacity** — token verified live (real WZDx data), but feed is ~10.6 MB / ~5k features and 1102s the Free-plan worker. Secret removed 2026-11-11 to restore service. Revisit: paid plan or per-feed sharding |
 | — | **Oregon** | TripCheck API / WZDx v4 | `ODOT_API_KEY` | ⏸️ **PAUSED** — portal route to subscription key is unclear; revisit later |
 | 8 | **California** | api.511.org | `MTC_511_API_KEY` | 511 CA developer program |
 | 9 | **North Carolina** | drivenc.gov/api/wzdx | `NCDOT_API_KEY` | DriveNC API registration |
