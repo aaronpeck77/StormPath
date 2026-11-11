@@ -7,6 +7,11 @@ time; I wire each key into the worker in ~2 min once pasted.**
 Pace: ~20 signups total → **1–2 per night finishes with a week of slack.**
 Start the slow-approval ones TONIGHT — they take days, not minutes.
 
+**Policy (Bill, 2026-11-11): only integrate what is free AND works on the
+current Free-plan worker.** Parked/blocked items stay parked — no paid-plan
+upsell, no re-architecture for a single feed, unless Bill asks. A feed that
+can't flow through the free worker is treated the same as no feed.
+
 When a key arrives: paste it here (or into chat) with the state name —
 I'll `wrangler secret put` + `/refresh` + verify live events.
 
