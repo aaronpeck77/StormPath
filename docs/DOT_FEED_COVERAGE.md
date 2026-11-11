@@ -76,7 +76,7 @@ Set with `wrangler secret put <NAME>` then hit `/refresh`.
 | 8 | Virginia | `vdot` | `VDOT_API_KEY` | `?token=` | 511-atis (Iteris). |
 | 9 | California | `mtc` | `MTC_511_API_KEY` | `?api_key=` | api.511.org WZDx — despite feedname "mtc", state = California. |
 | 10 | Pennsylvania | `ptc` | `PENNSTURNPIKE_API_KEY` | `?api_key=` | PA Turnpike only — toll roads. PA's regular DOT feed isn't in the registry. |
-| — | National (NPS) | `nps` | `NPS_API_KEY` | `?api_key=` | National park road work zones — national, not a state. |
+| ~~—~~ | ~~National (NPS)~~ | `nps` | `NPS_API_KEY` | `?api_key=` | ✅ **LIVE 2026-11-10** — park road events verified. |
 
 ## 🛠 CUSTOM — non-WZDx, needs a per-state adapter
 

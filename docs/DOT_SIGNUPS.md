@@ -27,7 +27,7 @@ turns the feed on. Registry URLs for reference:
 
 | # | State | Feed | Secret name | Registration |
 |---|-------|------|-------------|--------------|
-| 4 | **NPS (national)** | developer.nps.gov/api/v1/roadevents | `NPS_API_KEY` | developer.nps.gov — free signup, one key covers all park roads |
+| ~~4~~ | ~~**NPS (national)**~~ | developer.nps.gov/api/v1/roadevents | `NPS_API_KEY` | ✅ **DONE 2026-11-10** — live, park road events verified (Grand Teton) |
 | 5 | **Michigan** | mdotridedata.state.mi.us (Socrata) | `MDOT_API_KEY` | Socrata portal — instant token |
 | 6 | **Oregon** | api.odot.state.or.us (Azure APIM) | `ODOT_API_KEY` | APIM subscription on their dev portal |
 | 7 | **Virginia** | 511-atis-ttrip smarterroads | `VDOT_API_KEY` | smarterroads.vdot.virginia.gov — register + subscribe |
