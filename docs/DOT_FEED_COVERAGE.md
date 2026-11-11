@@ -36,7 +36,7 @@ half the states — see DOT_SIGNUPS.md Travel-IQ + keyless sections.
 | Illinois | `idot_cwz` | CWZ work zones — the good feed. Regular IL 511 feed not registered; Tollway still dark (KEYED). |
 | Iowa | `idot` | Statewide open feed. |
 | Ohio | `ohio` | OHGO — keyed, live. |
-| Texas | `austin` | **Austin city feed only** — not statewide. `txdot_v4_2` (DriveTexas) is KEYED, awaiting Bill's approved key. |
+| Texas | `austin` + `txdot_v4_2` | **Statewide live** — DriveTexas key landed 2026-11-10 (~1,800 events). Austin city feed also flows. Road codes decoded (`IH0030`→`I-30`, `BU0059G`→`Business US-59 G`). |
 | Arizona | `mcdot` | Maricopa County — Phoenix metro only, not statewide. |
 | Missouri | `modot` + `stcharlesco_v4` | Statewide + St. Charles County local feed. |
 | Wisconsin | `wisdot` | Statewide. |
@@ -66,7 +66,7 @@ Set with `wrangler secret put <NAME>` then hit `/refresh`.
 
 | Order | State | Feed name | Secret | Auth | Notes |
 |---|---|---|---|---|---|
-| 1 | Texas (statewide) | `txdot_v4_2` | `TXDOT_API_KEY` | `?key=` | Bill applied — awaiting approval email. Replaces Austin-only coverage. |
+| ~~1~~ | ~~Texas (statewide)~~ | `txdot_v4_2` | `TXDOT_API_KEY` | `?key=` | ✅ **LIVE 2026-11-10** — ~1,842 events verified, codes decoded. |
 | 2 | Illinois Tollway | `iltollway` | `ILTOLLWAY_API_KEY` | `?api_key=` | Toll roads only — IDOT CWZ doesn't cover them. Free registration at Timms/Tollway developer portal. |
 | 3 | Colorado | `cdot` + `cdot_cwz` | `CDOT_API_KEY`, `CDOT_CWZ_API_KEY` | `?apiKey=` | Two feeds — Cotrip WZDx + CO CWZ. |
 | 4 | Michigan | `mdot_4` | `MDOT_API_KEY` | header `X-App-Token` | Socrata app token — instant at data.mi.gov. |

@@ -37,7 +37,7 @@ turns the feed on. Registry URLs for reference:
 | 11 | **Massachusetts** | api.massdot-swzm.com | `MASSDOT_CWZ_API_KEY` | MassDOT SWZ feed signup |
 | 12 | **Pennsylvania** | atms.paturnpike.com | `PENNSTURNPIKE_API_KEY` | Turnpike API key request (toll roads) |
 | 13 | **Illinois Tollway** | tims2go.tollway.state.il.us | `ILTOLLWAY_API_KEY` | Tollway traveler-info API program |
-| — | Texas | api.drivetexas.org | `TXDOT_API_KEY` | ✅ **Already applied — waiting on email** |
+| ~~—~~ | ~~Texas~~ | api.drivetexas.org | `TXDOT_API_KEY` | ✅ **DONE 2026-11-10** — live statewide, ~1,800 events |
 
 ## 🧊 Travel-IQ family — road CONDITIONS (winter ice/snow layer)
 

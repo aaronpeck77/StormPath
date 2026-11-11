@@ -73,6 +73,5 @@ export function coveredUsStates(covered: Set<string>): string[] {
 
 /** Partial-coverage footnotes — the feed exists but isn't statewide. */
 export const DOT_COVERAGE_CAVEATS: readonly string[] = [
-  "Texas coverage is currently Austin-area only (statewide feed pending).",
   "Arizona coverage is Phoenix-metro (Maricopa County) only.",
 ];

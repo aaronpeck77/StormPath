@@ -162,8 +162,29 @@ function eventKind(eventType: string): DotEvent["kind"] {
 
 /** IDOT CWZ publishes interstate codes like "I080"; display as "I-80". */
 function prettifyRoadName(name: string): string {
-  const m = name.match(/^I-?(\d+)$/i);
-  return m ? `I-${parseInt(m[1]!, 10)}` : name;
+  const interstate = name.match(/^I-?(\d+)$/i);
+  if (interstate) return `I-${parseInt(interstate[1]!, 10)}`;
+  /* TxDOT WZDx publishes internal location codes (IH0030, US0059, FM1957,
+   * BI0020E…). Decode the known prefixes so hazard rows read "I-30" not
+   * "IH0030". Trailing letters are variant/direction marks — kept. */
+  const tx = name.match(/^(IH|US|SH|SL|SS|FM|RM|BI|BU)(\d+)([A-Z])?$/i);
+  if (tx) {
+    const kind = tx[1]!.toUpperCase();
+    const num = parseInt(tx[2]!, 10);
+    const suffix = tx[3] ? ` ${tx[3]}` : "";
+    switch (kind) {
+      case "IH": return `I-${num}${suffix}`;
+      case "US": return `US-${num}${suffix}`;
+      case "SH": return `SH ${num}${suffix}`;
+      case "SL": return `Loop ${num}${suffix}`;
+      case "SS": return `Spur ${num}${suffix}`;
+      case "FM": return `FM ${num}${suffix}`;
+      case "RM": return `RM ${num}${suffix}`;
+      case "BI": return `Business I-${num}${suffix}`;
+      case "BU": return `Business US-${num}${suffix}`;
+    }
+  }
+  return name;
 }
 
 function fmtRestriction(r: Record<string, unknown>): string | null {
