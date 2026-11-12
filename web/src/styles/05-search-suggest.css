@@ -125,12 +125,23 @@
 }
 
 /* "Another way" ↻ sits beside the route cycle chip — widen the fixed slot
- * only when it's actually rendered so the picker keeps its footprint. */
-.nav-bottom-dock__route-toggle-slot:has(.nav-another-way-btn) {
+ * only when it's actually rendered so the picker keeps its footprint.
+ * The --inline variant lives on the about-row and must keep flexing to fill
+ * the strip; a fixed width here is what pushed the ↻ off the row's edge. */
+.nav-bottom-dock__route-toggle-slot:not(.nav-bottom-dock__route-toggle-slot--inline):has(.nav-another-way-btn) {
   flex-basis: 8.4rem;
   width: 8.4rem;
   min-width: 8.4rem;
   max-width: 8.4rem;
+}
+
+/* Inline slot + ↻: the picker flexes so the round button stays inside the
+ * row instead of overflowing past the slot's right edge (Bill, 587). */
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline:has(.nav-another-way-btn)
+  .nav-route-cycle-btn {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
 }
 
 .nav-another-way-btn {

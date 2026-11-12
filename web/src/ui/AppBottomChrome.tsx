@@ -483,32 +483,16 @@ export function AppBottomChrome({
               onOpenAbout={onOpenAbout}
               tools={toolsButton}
               refresh={
-                showTripRefreshButton(navigationStarted, viewMode) || onAnotherWay ? (
-                  <>
-                    {onAnotherWay ? (
-                      <button
-                        type="button"
-                        className="trip-refresh-btn"
-                        aria-label="Find another route option"
-                        title="Find another route option ahead"
-                        disabled={anotherWayBusy}
-                        onClick={onAnotherWay}
-                      >
-                        ⤳
-                      </button>
-                    ) : null}
-                    {showTripRefreshButton(navigationStarted, viewMode) && onRefreshTrip ? (
-                      <button
-                        type="button"
-                        className="trip-refresh-btn"
-                        aria-label="Refresh the trip"
-                        title="Refresh the trip without leaving it"
-                        onClick={onRefreshTrip}
-                      >
-                        ↻
-                      </button>
-                    ) : null}
-                  </>
+                showTripRefreshButton(navigationStarted, viewMode) && onRefreshTrip ? (
+                  <button
+                    type="button"
+                    className="trip-refresh-btn"
+                    aria-label="Refresh the trip"
+                    title="Refresh the trip without leaving it"
+                    onClick={onRefreshTrip}
+                  >
+                    ↻
+                  </button>
                 ) : null
               }
               compass={<DriveCompass bearingDeg={driveMapBearingDeg} />}
