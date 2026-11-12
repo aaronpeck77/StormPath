@@ -3,7 +3,6 @@ import {
   pickBestForwardRoute,
 } from "../nav/forwardRoutePick";
 import {
-  ALTERNATE_MAX_DISTANCE_FACTOR,
   ALTERNATE_MAX_DURATION_FACTOR,
 } from "../nav/routePreference";
 import type { LngLat, MapboxRouteIncident, NavRoute, PostedSpeedSample, RouteTurnStep, TripPlan } from "../nav/types";
@@ -15,7 +14,6 @@ import {
   cumulativeLengthToVertex,
   estimateRoadDistanceM,
   normalizeStoredRouteGeometry,
-  pointAtAlongMeters,
   polylineLengthMeters,
   routeCorridorOverlapFraction,
   routeIsBriefDivergenceOnly,
@@ -37,10 +35,7 @@ import {
   loadActivitySamples,
   type ActivitySample,
 } from "../frequentRoutes/activitySamples";
-import {
-  routeTrailOverlapScore,
-  TRAIL_ROUTE_MIN_OVERLAP,
-} from "../frequentRoutes/trailRouteOverlap";
+import { routeTrailOverlapScore } from "../frequentRoutes/trailRouteOverlap";
 import {
   fetchWithTimeout,
   isAbortError,
@@ -265,6 +260,9 @@ function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteT
 /** O(200) per side — corridor overlap / same-shape checks only (not map display). */
 const GEOM_COMPARE_MAX_VERTICES = 200;
 
+/** "Straightest" should not add a string of unnecessary miles to Main. */
+const STRAIGHTEST_MAX_DISTANCE_FACTOR = 1.05;
+
 /** Slot B must commit to a different corridor — beyond this much shared
  * path it is Main with a jog, not an alternate. */
 const ALTERNATE_MAX_CORRIDOR_OVERLAP = 0.88;
@@ -349,34 +347,6 @@ function mbRouteLightLine(r: MbRoute): LngLat[] | null {
   const c = r.geometry?.coordinates;
   if (!c?.length) return null;
   return coordsToLightLine(c, GEOM_COMPARE_MAX_VERTICES);
-}
-
-/** Point partway along Main so Mapbox must leave that road if another corridor exists. */
-function midCorridorExcludePoint(geometry: LngLat[]): LngLat | null {
-  const totalM = polylineLengthMeters(geometry);
-  if (totalM < 2_400) return null;
-  const along = Math.max(800, Math.min(totalM * 0.42, totalM - 800));
-  return pointAtAlongMeters(geometry, along);
-}
-
-function pickMbRouteByTrail(
-  candidates: MbRoute[],
-  samples: ActivitySample[],
-  excludeLines: LngLat[][] = []
-): MbRoute | undefined {
-  let best: MbRoute | undefined;
-  let bestScore = -1;
-  for (const r of candidates) {
-    const line = mbRouteLightLine(r);
-    if (!line || line.length < 2) continue;
-    if (excludeLines.some((ex) => sameRouteShapeLine(ex, line))) continue;
-    const score = routeTrailOverlapScore(line, samples);
-    if (score > bestScore) {
-      bestScore = score;
-      best = r;
-    }
-  }
-  return bestScore >= TRAIL_ROUTE_MIN_OVERLAP ? best : undefined;
 }
 
 function appendLineCoords(out: LngLat[], coords: MbCoord[]): void {
@@ -1027,7 +997,10 @@ export async function collectMapboxRouteVariants(
       const aDur = aRaw.duration ?? 0;
       const aDist = aRaw.distance ?? 0;
       if (!(aDur > 0) || !(aDist > 0)) return false;
-      return dur <= aDur * ALTERNATE_MAX_DURATION_FACTOR && dist <= aDist * ALTERNATE_MAX_DISTANCE_FACTOR;
+      return (
+        dur <= aDur * ALTERNATE_MAX_DURATION_FACTOR &&
+        dist <= aDist * STRAIGHTEST_MAX_DISTANCE_FACTOR
+      );
     };
     const progressAlternate = (r: MbRoute): boolean =>
       isPreferredAlternate(r) && withinProgress(r);
@@ -1035,24 +1008,19 @@ export async function collectMapboxRouteVariants(
     const noMwFit = noMwSorted.filter(progressAlternate);
     const primaryFit = primarySorted.slice(1).filter(progressAlternate);
     const pool = [...primaryFit, ...noMwFit];
-    let bRaw: MbRoute | undefined =
-      (trailSamples
-        ? pickMbRouteByTrail(pool, trailSamples, [navA.geometry])
-        : undefined) ?? undefined;
-
-    /* Closest in time to Main. A no-interstate line wins only when it is
-     * nearly as quick — a long wander around the highway is thrown away. */
-    if (!bRaw && pool.length) {
-      const bestDur = Math.min(...pool.map((r) => r.duration ?? Infinity));
-      const close = pool.filter((r) => (r.duration ?? Infinity) <= bestDur * 1.08);
-      bRaw = close.find((r) => noMwSorted.includes(r)) ?? close[0] ?? pool[0];
-    }
+    /* A is the traffic-fastest route. B is the shortest genuinely distinct
+     * candidate that remains close in time — no no-motorway or learned-trail
+     * preference should turn "Straightest" into a long scenic detour. */
+    const bRaw = [...pool].sort(
+      (a, b) =>
+        (a.distance ?? Infinity) - (b.distance ?? Infinity) ||
+        (a.duration ?? Infinity) - (b.duration ?? Infinity)
+    )[0];
 
     if (bRaw) {
-      const navB = routeFromDirectionsApi(bRaw, "r-b", "balanced", "Alternate");
+      const navB = routeFromDirectionsApi(bRaw, "r-b", "balanced", "Straightest");
       if (navB) {
-        /* Overlapping corridors are fine; identical clones must not occupy slot B
-         * or the later point-exclude fetch never runs. */
+        /* Overlapping corridors are fine, but identical clones do not earn B. */
         if (!sameRouteShapeLine(navA.geometry, navB.geometry)) {
           out.push(navB);
         }
@@ -1170,74 +1138,7 @@ export async function collectMapboxRouteVariants(
   }
 
   const out = mergePools(noMwSorted);
-  if (wantMultiRoute && out.length < 2 && out[0]) {
-    const forced = await fetchForcedDistinctAlternate(
-      accessToken,
-      start,
-      end,
-      hasVia ? via : undefined,
-      out[0],
-      { includeDetails, simplifiedOverview, excludeToll, signal }
-    );
-    if (forced) out.push(forced);
-  }
   return out.slice(0, Math.min(targetPrimaryCount, out.length));
-}
-
-const MAX_FORCED_ALT_DURATION_FACTOR = ALTERNATE_MAX_DURATION_FACTOR;
-
-async function fetchForcedDistinctAlternate(
-  accessToken: string,
-  start: LngLat,
-  end: LngLat,
-  via: LngLat[] | undefined,
-  navA: NavRoute,
-  opts: {
-    includeDetails: boolean;
-    simplifiedOverview: boolean;
-    excludeToll: boolean;
-    signal?: AbortSignal;
-  }
-): Promise<NavRoute | null> {
-  const excludePoint = midCorridorExcludePoint(navA.geometry);
-  if (!excludePoint) return null;
-  try {
-    const data = await fetchDirectionsPrimary(
-      accessToken,
-      start,
-      end,
-      via,
-      {
-        alternatives: true,
-        excludeToll: opts.excludeToll,
-        excludePoints: [excludePoint],
-        includeDetails: opts.includeDetails,
-        simplifiedOverview: opts.simplifiedOverview,
-      },
-      opts.signal
-    );
-    const sorted = sortRoutesByDurationAsc(data.routes ?? []);
-    const maxDurMin = navA.baseEtaMinutes * MAX_FORCED_ALT_DURATION_FACTOR;
-    for (const raw of sorted) {
-      const navB = routeFromDirectionsApi(raw, "r-b", "balanced", "Alternate");
-      if (!navB) continue;
-      if (sameRouteShapeLine(navA.geometry, navB.geometry)) continue;
-      if (routeIsBriefDivergenceOnly(navA.geometry, navB.geometry)) continue;
-      /* Same corridor ceiling as mergePools — the point-exclude fetch asks
-       * Mapbox to leave one spot on Main, and the cheapest answer is often
-       * Main plus a block jog around it. That is not an alternate (Bill, 587). */
-      if (routeCorridorOverlapFraction(navB.geometry, navA.geometry) > ALTERNATE_MAX_CORRIDOR_OVERLAP)
-        continue;
-      if (navB.baseEtaMinutes > maxDurMin) continue;
-      const mainDist = polylineLengthMeters(navA.geometry);
-      const altDist = polylineLengthMeters(navB.geometry);
-      if (mainDist > 0 && altDist > mainDist * ALTERNATE_MAX_DISTANCE_FACTOR) continue;
-      return navB;
-    }
-  } catch {
-    /* keep Main-only */
-  }
-  return null;
 }
 
 export type BuildTripFromMapboxResult = {

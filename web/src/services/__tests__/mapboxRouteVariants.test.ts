@@ -104,7 +104,7 @@ describe("collectMapboxRouteVariants", () => {
 
   it("keeps a close alternate when primary Mapbox returns only Main", async () => {
     const main = mbRoute(lineCoords(0), 3600, 120_000);
-    const noMw = mbRoute(lineCoords(-0.35), 4000, 132_000);
+    const noMw = mbRoute(lineCoords(-0.35), 4000, 124_000);
 
     vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
       const url = String(input);
@@ -121,7 +121,7 @@ describe("collectMapboxRouteVariants", () => {
 
     expect(routes.length).toBeGreaterThanOrEqual(2);
     expect(routes[0]!.label).toBe("Main");
-    expect(routes[1]!.label).toBe("Alternate");
+    expect(routes[1]!.label).toBe("Straightest");
   });
 
   it("keeps Mapbox primary alternate even when corridors mostly overlap", async () => {
@@ -145,16 +145,14 @@ describe("collectMapboxRouteVariants", () => {
     expect(routes.some((r) => r.id === "r-b")).toBe(true);
   });
 
-  it("forces a Plus B by excluding a mid-corridor point when no-interstate matches Main", async () => {
+  it("keeps Main only when no distinct route is available without forcing a point detour", async () => {
     const main = mbRoute(lineCoords(0), 3600, 120_000);
-    const alt = mbRoute(lineCoords(-0.35), 4000, 132_000);
     let pointExcludeCalls = 0;
 
     vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
       const url = decodeURIComponent(String(input));
       if (url.includes("point(")) {
         pointExcludeCalls += 1;
-        return okResponse([alt]);
       }
       if (url.includes("exclude=motorway")) {
         return okResponse([main]);
@@ -167,19 +165,15 @@ describe("collectMapboxRouteVariants", () => {
       includeDetails: true,
     });
 
-    expect(pointExcludeCalls).toBeGreaterThanOrEqual(1);
-    expect(routes.length).toBeGreaterThanOrEqual(2);
+    expect(pointExcludeCalls).toBe(0);
+    expect(routes).toHaveLength(1);
     expect(routes[0]!.label).toBe("Main");
-    expect(routes[1]!.id).toBe("r-b");
-    expect(routes[1]!.label).toBe("Alternate");
   });
 
-  it("rejects a point-exclude B that is Main plus a block jog", async () => {
+  it("rejects a natural alternate that is Main plus a block jog", async () => {
     const main = mbRoute(lineCoords(0), 3600, 120_000);
-    /* Mapbox's cheapest answer to "leave Main's mid-corridor point" is often
-     * Main with a short lateral hop and rejoin — ~3 km off corridor on a
-     * ~48 km route. Under the 800 m wobble threshold and inside the duration
-     * factors, so only the corridor-overlap ceiling can catch it (Bill, 587). */
+    /* A short lateral hop and rejoin can survive time/distance checks and the
+     * 800 m wobble test. Corridor overlap should keep it out of the B slot. */
     const jog: [number, number][] = [];
     const N = 100;
     for (let i = 0; i <= N; i++) {
@@ -195,10 +189,9 @@ describe("collectMapboxRouteVariants", () => {
       const url = decodeURIComponent(String(input));
       if (url.includes("point(")) {
         pointExcludeCalls += 1;
-        return okResponse([jogRoute]);
       }
       if (url.includes("exclude=motorway")) {
-        return okResponse([main]);
+        return okResponse([jogRoute]);
       }
       return okResponse([main]);
     });
@@ -208,14 +201,14 @@ describe("collectMapboxRouteVariants", () => {
       includeDetails: true,
     });
 
-    expect(pointExcludeCalls).toBeGreaterThanOrEqual(1);
+    expect(pointExcludeCalls).toBe(0);
     expect(routes).toHaveLength(1);
     expect(routes[0]!.label).toBe("Main");
   });
 
   it("encodes Mapbox point() excludes with %20, not +", async () => {
     const main = mbRoute(lineCoords(0), 3600, 120_000);
-    const alt = mbRoute(lineCoords(-0.35), 4000, 132_000);
+    const alt = mbRoute(lineCoords(-0.35), 4000, 124_000);
     const pointUrls: string[] = [];
 
     vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
@@ -227,7 +220,10 @@ describe("collectMapboxRouteVariants", () => {
       return okResponse([main]);
     });
 
-    await collectMapboxRouteVariants("tok", start, end, { maxRoutes: 2 });
+    await collectMapboxRouteVariants("tok", start, end, {
+      maxRoutes: 2,
+      excludePoints: [[-89.9, 39.2]],
+    });
 
     expect(pointUrls.length).toBeGreaterThanOrEqual(1);
     const raw = pointUrls[0]!;
@@ -236,17 +232,15 @@ describe("collectMapboxRouteVariants", () => {
     expect(raw.includes("%20") || decodeURIComponent(raw).includes("point(")).toBe(true);
   });
 
-  it("drops an identical primary alternate so a point-exclude B can run", async () => {
+  it("drops identical variants instead of manufacturing a forced alternate", async () => {
     const main = mbRoute(lineCoords(0), 3600, 120_000);
     const clone = mbRoute(lineCoords(0), 3610, 120_400);
-    const alt = mbRoute(lineCoords(-0.35), 4000, 132_000);
     let pointExcludeCalls = 0;
 
     vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
       const url = decodeURIComponent(String(input));
       if (url.includes("point(")) {
         pointExcludeCalls += 1;
-        return okResponse([alt]);
       }
       if (url.includes("exclude=motorway")) {
         return okResponse([main]);
@@ -256,14 +250,14 @@ describe("collectMapboxRouteVariants", () => {
 
     const routes = await collectMapboxRouteVariants("tok", start, end, { maxRoutes: 2 });
 
-    expect(pointExcludeCalls).toBeGreaterThanOrEqual(1);
-    expect(routes).toHaveLength(2);
-    expect(routes[1]!.label).toBe("Alternate");
+    expect(pointExcludeCalls).toBe(0);
+    expect(routes).toHaveLength(1);
+    expect(routes[0]!.label).toBe("Main");
   });
 
-  it("does not fetch a point-exclude B when Plus already has two distinct routes", async () => {
+  it("does not request a forced point-exclude route when a natural alternate exists", async () => {
     const main = mbRoute(lineCoords(0), 3600, 120_000);
-    const noMw = mbRoute(lineCoords(-0.35), 4000, 132_000);
+    const noMw = mbRoute(lineCoords(-0.35), 4000, 124_000);
     let pointExcludeCalls = 0;
 
     vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
@@ -281,8 +275,50 @@ describe("collectMapboxRouteVariants", () => {
     const routes = await collectMapboxRouteVariants("tok", start, end, { maxRoutes: 2 });
 
     expect(routes).toHaveLength(2);
-    expect(routes[1]!.label).toBe("Alternate");
+    expect(routes[1]!.label).toBe("Straightest");
     expect(pointExcludeCalls).toBe(0);
+  });
+
+  it("chooses the shortest sensible distinct route, not the slightly faster long detour", async () => {
+    const main = mbRoute(lineCoords(0), 3600, 120_000);
+    const longer = mbRoute(lineCoords(-0.35), 3700, 125_500);
+    const shorter = mbRoute(lineCoords(-0.30), 4000, 123_000);
+
+    vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
+      const url = String(input);
+      if (url.includes("exclude=motorway")) {
+        return okResponse([longer, shorter]);
+      }
+      return okResponse([main]);
+    });
+
+    const routes = await collectMapboxRouteVariants("tok", start, end, {
+      maxRoutes: 2,
+    });
+
+    expect(routes).toHaveLength(2);
+    expect(routes[1]!.label).toBe("Straightest");
+    expect(routes[1]!.baseEtaMinutes).toBeCloseTo(4000 / 60);
+  });
+
+  it("rejects a distinct alternative that adds more than five percent distance", async () => {
+    const main = mbRoute(lineCoords(0), 3600, 120_000);
+    const longDetour = mbRoute(lineCoords(-0.35), 3900, 127_000);
+
+    vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
+      const url = String(input);
+      if (url.includes("exclude=motorway")) {
+        return okResponse([longDetour]);
+      }
+      return okResponse([main]);
+    });
+
+    const routes = await collectMapboxRouteVariants("tok", start, end, {
+      maxRoutes: 2,
+    });
+
+    expect(routes).toHaveLength(1);
+    expect(routes[0]!.label).toBe("Main");
   });
 
   it("drops an alternate that wanders well past the fastest", async () => {
@@ -291,7 +327,7 @@ describe("collectMapboxRouteVariants", () => {
 
     vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
       const url = decodeURIComponent(String(input));
-      if (url.includes("exclude=motorway") || url.includes("point(")) {
+      if (url.includes("exclude=motorway")) {
         return okResponse([wander]);
       }
       return okResponse([main]);

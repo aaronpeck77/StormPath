@@ -86,6 +86,7 @@ export function routeWhySummary(
 
   /* Character fallbacks — why this leg exists even with no fused edge. */
   if (route.role === "hazardSmart") return "Stays off interstate";
+  if (route.label.toLowerCase().includes("straightest")) return "Shortest distinct route";
   if (route.role === "balanced") return "Backroads";
   const L = route.label.toLowerCase();
   if (L.includes("scenic") || L.includes("country")) return "Scenic backroads";

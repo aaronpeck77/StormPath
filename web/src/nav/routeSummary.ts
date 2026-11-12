@@ -23,6 +23,7 @@ export function routeConsiderationSummary(route: NavRoute): string {
   if (L.includes("no interstate") || L.includes("no highway") || /\bhighway\b/.test(L)) {
     return "No interstate";
   }
+  if (L.includes("straightest")) return "Straightest";
   if (L.includes("alternate")) return "Alternate";
   if (L.includes("main")) return "Main · fastest";
   if (L.includes("shortest")) return "Shorter distance";

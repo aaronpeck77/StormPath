@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { lockedRouteKind, offRouteReplanCopy } from "../routeSummary";
+import { lockedRouteKind, offRouteReplanCopy, routePickDisplayLabel } from "../routeSummary";
+import type { NavRoute } from "../types";
+
+function route(partial: Partial<NavRoute>): NavRoute {
+  return {
+    id: "r-b",
+    role: "balanced",
+    label: "Route",
+    geometry: [
+      [-86.5, 39.1],
+      [-86.4, 39.2],
+    ],
+    baseEtaMinutes: 30,
+    ...partial,
+  };
+}
 
 describe("lockedRouteKind", () => {
   it("reads role first", () => {
@@ -12,6 +27,14 @@ describe("lockedRouteKind", () => {
     expect(lockedRouteKind({ label: "No interstate" })).toBe("no_interstate");
     expect(lockedRouteKind({ label: "Main · fastest" })).toBe("fastest");
     expect(lockedRouteKind({ label: "Country drive" })).toBe("backroads");
+  });
+});
+
+describe("routePickDisplayLabel", () => {
+  it("calls Route B Straightest instead of implying a no-highway or scenic rule", () => {
+    expect(routePickDisplayLabel(route({ label: "Straightest" }), 34, 30)).toBe(
+      "Straightest · +4 min"
+    );
   });
 });
 
