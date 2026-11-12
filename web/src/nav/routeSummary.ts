@@ -23,6 +23,7 @@ export function routeConsiderationSummary(route: NavRoute): string {
   if (L.includes("no interstate") || L.includes("no highway") || /\bhighway\b/.test(L)) {
     return "No interstate";
   }
+  if (L.includes("your route")) return "Your route";
   if (L.includes("straightest")) return "Straightest";
   if (L.includes("alternate")) return "Alternate";
   if (L.includes("main")) return "Main · fastest";
@@ -64,6 +65,7 @@ export function lockedRouteKind(route: {
 } | null | undefined): LockedRouteKind {
   if (!route) return "unknown";
   const L = (route.label ?? "").toLowerCase();
+  if (L.includes("your route")) return "alternate";
   if (L.includes("alternate")) return "alternate";
   if (route.role === "hazardSmart") return "no_interstate";
   if (route.role === "balanced") return "backroads";

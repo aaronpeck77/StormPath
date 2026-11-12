@@ -7,6 +7,7 @@ const STORAGE_KEY = "stormpath-frequent-route-clusters";
 
 const MATCH_START_END_M = 320;
 const MAX_CLUSTERS = 14;
+const MAX_RECENT_STARTS = 12;
 
 function newClusterId(): string {
   return `fr-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -46,6 +47,7 @@ export function mergeTripIntoClusters(
       geometry: trip.geometry,
       centerStart: start,
       centerEnd: end,
+      recentStarts: [trip.startedAt],
     };
     return trimClusters([...clusters, next]);
   }
@@ -65,6 +67,7 @@ export function mergeTripIntoClusters(
     geometry: useGeom,
     centerStart: start,
     centerEnd: end,
+    recentStarts: [...(prev.recentStarts ?? []), trip.startedAt].slice(-MAX_RECENT_STARTS),
     startLabel: forward ? prev.startLabel : reverse ? prev.endLabel : undefined,
     endLabel: forward ? prev.endLabel : reverse ? prev.startLabel : undefined,
   };
@@ -110,6 +113,9 @@ export function loadFrequentRouteClusters(): FrequentRouteCluster[] {
       if (!Array.isArray(cs) || !Array.isArray(ce)) continue;
       if (!Number.isFinite(cs[0]) || !Number.isFinite(cs[1])) continue;
       if (!Number.isFinite(ce[0]) || !Number.isFinite(ce[1])) continue;
+      const recentStarts = Array.isArray(o.recentStarts)
+        ? o.recentStarts.filter((t): t is number => typeof t === "number" && Number.isFinite(t)).slice(-12)
+        : undefined;
       out.push({
         id,
         count,
@@ -117,6 +123,7 @@ export function loadFrequentRouteClusters(): FrequentRouteCluster[] {
         geometry,
         centerStart: [cs[0]!, cs[1]!],
         centerEnd: [ce[0]!, ce[1]!],
+        recentStarts: recentStarts && recentStarts.length ? recentStarts : undefined,
         startLabel: typeof o.startLabel === "string" && o.startLabel.trim() ? o.startLabel.trim() : undefined,
         endLabel: typeof o.endLabel === "string" && o.endLabel.trim() ? o.endLabel.trim() : undefined,
       });

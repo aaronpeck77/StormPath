@@ -203,6 +203,7 @@ export function useFrequentRouteLearning(opts: {
   }, [clusters, learnEnabled, opts.payUnlocked]);
 
   return {
+    clusters,
     suggestedClusters,
     learnEnabled,
     setLearnEnabled: setLearnEnabledPersist,

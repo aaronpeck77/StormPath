@@ -193,6 +193,10 @@ import {
   ACTIVITY_SAMPLES_UPDATED_EVENT,
   rankSearchSuggestionsByTrailCentroid,
 } from "./frequentRoutes/activitySamples";
+import {
+  learnedMatchToNavRoute,
+  matchLearnedPlanRoute,
+} from "./frequentRoutes/planRouteOffer";
 import { useActivityTrailMap } from "./hooks/useActivityTrailMap";
 import { BYPASS_HEAVY_DELAY_MINUTES } from "./nav/constants";
 import { useActiveTripCache } from "./nav/useActiveTripCache";
@@ -316,6 +320,7 @@ export default function App() {
   headingRef.current = heading;
 
   const {
+    clusters: learnedCorridorClusters,
     learnEnabled,
     setLearnEnabled,
     dismissCluster,
@@ -1772,7 +1777,19 @@ export default function App() {
       .map((r) => r.id)
       .join(",")}`;
     if (lastInjectedPlanKeyRef.current === key) return;
-    const next = injectYourRouteIntoPlan(plan, destLngLat);
+    /* A learned corridor (commute etc.) is the driver's actual habitual path —
+       it wins over a mid-route fork when both match this plan. */
+    const primaryGeometry =
+      plan.routes.find((r) => r.id === "r-a")?.geometry ?? plan.routes[0]?.geometry ?? null;
+    const learned = matchLearnedPlanRoute({
+      clusters: learnedCorridorClusters,
+      userLngLat,
+      destLngLat,
+      primaryGeometry,
+    });
+    const next = learned
+      ? { ...plan, routes: [...plan.routes, learnedMatchToNavRoute(learned)] }
+      : injectYourRouteIntoPlan(plan, destLngLat);
     if (next.routes.length > plan.routes.length) {
       lastInjectedPlanKeyRef.current = key;
       setPlan(next);
@@ -1784,6 +1801,8 @@ export default function App() {
     destLngLat,
     plan,
     injectYourRouteIntoPlan,
+    learnedCorridorClusters,
+    userLngLat,
   ]);
 
   /** Advisory timeline / NWS distance — snap to GPS on the route when planning, not only after Go. */
