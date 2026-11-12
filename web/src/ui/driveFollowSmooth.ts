@@ -25,6 +25,15 @@ export const DRIVE_PUCK_BLEND_STATIONARY_TC_S = 2.4;
 /** Along-meters latch while snapped — longer = less along-route jitter. */
 export const DRIVE_SNAP_ALONG_TC_S = 0.45;
 
+/**
+ * Marker→target gap that means "teleport", not "glide". The exponential blend
+ * is sized for ~1 Hz GPS cadence; steady-state lag is speed × ~0.2 s (tens of
+ * meters max) and a route-snap latch can legitimately jump the target ~100 m
+ * onto the corridor. Past ~150 m the gap came from a pause (app backgrounded)
+ * or a fix warp — snap the marker instead of letting it visibly catch up.
+ */
+export const PUCK_TELEPORT_SNAP_M = 150;
+
 /** Camera bearing toward travel / anticipated route — cruise (straight) only.
  *  Corners use driveBearingCatchUp in driveCameraRules.ts so the map
  *  rights itself instead of dragging the old heading through the turn. */

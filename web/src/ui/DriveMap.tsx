@@ -211,6 +211,7 @@ import {
 import {
   DRIVE_CAMERA_ZOOM_TC_S,
   DRIVE_SNAP_ALONG_TC_S,
+  PUCK_TELEPORT_SNAP_M,
   drivePuckBlendTcS,
   smoothDriveZoom,
 } from "./driveFollowSmooth";
@@ -2430,20 +2431,33 @@ function DriveMapInner({
             diySnapLatched: snapLatched,
           }),
         });
-        const blend = 1 - Math.exp(-dt / blendTc);
         const cur = readMapLngLat(marker.getLngLat());
         if (!cur) {
           raf = requestAnimationFrame(loop);
           return;
         }
-        const nextLng = cur[0] + (targetLng - cur[0]) * blend;
-        const nextLat = cur[1] + (targetLat - cur[1]) * blend;
-        /* Skip the write when the change is sub-half-meter — keeps Mapbox from repainting the
-         * marker (and the follow camera) at 60 fps for sub-pixel deltas. This is the difference
-         * between "occasionally settling toward a new fix" and "vibrating in place". */
-        const moved =
-          Math.abs(nextLng - cur[0]) > NOOP_LNGLAT_DELTA ||
-          Math.abs(nextLat - cur[1]) > NOOP_LNGLAT_DELTA;
+        /* Teleport guard: the blend is sized for ~1 Hz GPS cadence, so a gap this
+         * large means the loop was paused (app backgrounded) or a fix warped.
+         * Gliding it would show the puck "catching up" for seconds — snap. */
+        const gapM = haversineMeters(cur, [targetLng, targetLat]);
+        let nextLng: number;
+        let nextLat: number;
+        let moved: boolean;
+        if (gapM > PUCK_TELEPORT_SNAP_M) {
+          nextLng = targetLng;
+          nextLat = targetLat;
+          moved = true;
+        } else {
+          const blend = 1 - Math.exp(-dt / blendTc);
+          nextLng = cur[0] + (targetLng - cur[0]) * blend;
+          nextLat = cur[1] + (targetLat - cur[1]) * blend;
+          /* Skip the write when the change is sub-half-meter — keeps Mapbox from repainting the
+           * marker (and the follow camera) at 60 fps for sub-pixel deltas. This is the difference
+           * between "occasionally settling toward a new fix" and "vibrating in place". */
+          moved =
+            Math.abs(nextLng - cur[0]) > NOOP_LNGLAT_DELTA ||
+            Math.abs(nextLat - cur[1]) > NOOP_LNGLAT_DELTA;
+        }
         if (moved && isValidLngLat(nextLng, nextLat)) {
           safeSetMapLngLat(marker, [nextLng, nextLat]);
         }
@@ -2971,6 +2985,21 @@ function DriveMapInner({
       if (document.visibilityState !== "visible") return;
       if (puckMarkerRef.current !== marker) return;
       driveCamResyncRef.current = true;
+      /* Resume: put the puck where the last pose already is instead of letting
+       * the blend "catch up" across the backgrounded gap, and drop the stale
+       * fix window so the first new sample doesn't interpolate across minutes. */
+      const pose = readPuckPose(performance.now());
+      if (pose.lngLat && isValidLngLat(pose.lngLat[0], pose.lngLat[1])) {
+        safeSetMapLngLat(marker, pose.lngLat);
+        const nowMs = performance.now();
+        curFix = { lng: pose.lngLat[0], lat: pose.lngLat[1], t: nowMs };
+        prevFix = null;
+        lastSeenLng = pose.lngLat[0];
+        lastSeenLat = pose.lngLat[1];
+        fixSamples.length = 0;
+        snapLatched = false;
+        snappedAlongSmooth = null;
+      }
       if (!raf) raf = requestAnimationFrame(loop);
     };
     document.addEventListener("visibilitychange", onVis);
@@ -3349,6 +3378,15 @@ function DriveMapInner({
 
     let cancelled = false;
     let pendingStyleRetry = false;
+    let pendingStylePoll: number | null = null;
+
+    const disarmStyleRetry = () => {
+      pendingStyleRetry = false;
+      if (pendingStylePoll != null) {
+        window.clearInterval(pendingStylePoll);
+        pendingStylePoll = null;
+      }
+    };
 
     /** When there are no routes, always try to strip trip line layers; retry if style is mid-transition. */
     const clearTripRouteLayers = () => {
@@ -3398,15 +3436,22 @@ function DriveMapInner({
         if (!pendingStyleRetry) {
           pendingStyleRetry = true;
           const retry = () => {
-            pendingStyleRetry = false;
+            map.off("style.load", retry);
+            map.off("idle", retry);
+            disarmStyleRetry();
             sync();
           };
           map.once("style.load", retry);
           map.once("idle", retry);
+          /* "idle" starves while driving — the camera keeps pulling new tiles —
+           * and style.load only fires on style swaps. Without a poll the deferred
+           * sync waited for a view flip to re-run the effect (drive-587: picked
+           * route / reroute line stayed stale until Dr→Mp→Rt). */
+          pendingStylePoll = window.setInterval(retry, 900);
         }
         return false;
       }
-      pendingStyleRetry = false;
+      disarmStyleRetry();
 
       routeIdsRef.current = applyRoutesToMap(
         map,
@@ -3440,6 +3485,7 @@ function DriveMapInner({
     map.on("style.load", sync);
     return () => {
       cancelled = true;
+      disarmStyleRetry();
       syncTripRoutesRef.current = () => false;
       map.off("style.load", sync);
     };
