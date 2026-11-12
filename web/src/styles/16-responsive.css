@@ -499,6 +499,37 @@
     row-gap: 4px;
   }
 
+  /* In active Route view there are no speed stats in the left column. Remove
+   * that empty third so the view/radar/stop controls start at the left edge,
+   * while ETA stays anchored on the right. */
+  .nav-bottom-toolbar--route-active-phone .nav-bottom-toolbar__main {
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 6px;
+  }
+
+  .nav-bottom-toolbar--route-active-phone .nav-bottom-toolbar__left {
+    display: none;
+  }
+
+  .nav-bottom-toolbar--route-active-phone .nav-bottom-toolbar__center {
+    justify-self: start;
+    justify-content: flex-start;
+    min-width: 0;
+  }
+
+  .nav-bottom-toolbar--route-active-phone .nav-bottom-toolbar__modes {
+    gap: 3px;
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .nav-bottom-toolbar--route-active-phone .nav-bottom-toolbar__right {
+    justify-self: end;
+    min-width: 0;
+    width: auto;
+    padding-left: 6px;
+  }
+
   .nav-mode-sq {
     width: var(--nav-chrome-control, 40px);
     height: var(--nav-chrome-control, 40px);
@@ -572,6 +603,22 @@
     align-items: center;
     column-gap: 0;
     row-gap: 6px;
+  }
+
+  /* Map view can have no left-side stat content on compact phone builds.
+   * Use content-sized left/center tracks so controls don't sit in a phantom
+   * third-column gap; when stats are present they keep their natural width. */
+  .nav-bottom-toolbar--mapnav-phone .nav-bottom-toolbar__main {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    column-gap: 6px;
+  }
+
+  .nav-bottom-toolbar--mapnav-phone .nav-bottom-toolbar__center {
+    justify-self: start;
+  }
+
+  .nav-bottom-toolbar--mapnav-phone .nav-bottom-toolbar__right {
+    justify-self: end;
   }
 
   .nav-bottom-toolbar--drive-phone .nav-bottom-off-route,
@@ -1022,4 +1069,3 @@
 
 /* Phone landscape now uses the same side command panel as iPad — see the
  * widened panel MQ + phone compaction block at the end of 21-tablet.css. */
-

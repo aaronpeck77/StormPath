@@ -585,7 +585,16 @@ export function AppBottomChrome({
                 ) : null}
                 {viewMode === "route" || viewMode === "topdown" ? (
                   routePickItems.length >= 1 ? (
-                    <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
+                    <div
+                      className={`nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline${
+                        !navigationStarted && tripBriefingPill
+                          ? " nav-bottom-dock__route-toggle-slot--with-briefing"
+                          : ""
+                      }`}
+                    >
+                      {!navigationStarted && tripBriefingPill ? (
+                        <div className="nav-briefing-row">{tripBriefingPill}</div>
+                      ) : null}
                       <RoutePickControl
                         items={routePickItems}
                         selectedId={lineFocusId}
@@ -628,9 +637,10 @@ export function AppBottomChrome({
                   ) : null
                 ) : null}
               </DockAboutRow>
-              {/* Briefing gets its own row — inline it overlapped the route
-               * picker's "another way" ↻ when both rendered (Bill, 585). */}
-              {!navigationStarted && tripBriefingPill ? (
+              {/* Keep Briefing on its own row only when this view has no route picker. */}
+              {!navigationStarted &&
+              tripBriefingPill &&
+              !((viewMode === "route" || viewMode === "topdown") && routePickItems.length >= 1) ? (
                 <div className="nav-briefing-row">{tripBriefingPill}</div>
               ) : null}
               {destSearchRow}

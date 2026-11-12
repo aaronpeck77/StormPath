@@ -207,7 +207,11 @@ export function BottomToolbar({
         driveNavUi && drivePhoneLayout ? " nav-bottom-toolbar--drive-phone" : ""
       }${mapNavUi ? " nav-bottom-toolbar--mapnav" : ""}${
         mapNavUi && drivePhoneLayout ? " nav-bottom-toolbar--mapnav-phone" : ""
-      }${routeUi ? " nav-bottom-toolbar--route" : ""}`}
+      }${routeUi ? " nav-bottom-toolbar--route" : ""}${
+        routeUi && navigationStarted && drivePhoneLayout
+          ? " nav-bottom-toolbar--route-active-phone"
+          : ""
+      }`}
       aria-label="Map and trip controls"
     >
       {hazardBypassActive ? (

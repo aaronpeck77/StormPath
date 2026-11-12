@@ -60,6 +60,23 @@
   justify-content: stretch;
 }
 
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline.nav-bottom-dock__route-toggle-slot--with-briefing {
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.nav-bottom-dock__route-toggle-slot--with-briefing .nav-briefing-row {
+  flex: 0 0 auto;
+  padding: 0;
+}
+
+.nav-bottom-dock__route-toggle-slot.nav-bottom-dock__route-toggle-slot--inline.nav-bottom-dock__route-toggle-slot--with-briefing
+  .nav-route-cycle-btn {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+}
+
 /* Reserve the rightmost ~56 px of the about-row so the inline action slot doesn't sit under
  * the vertical progress rail column. The rail's outer column is 56 px wide and aligns with
  * the physical right edge; the bottom-stack already contributes max(8 px, safe-area-inset-right)
@@ -749,4 +766,3 @@
 .fuse-forecast {
   color: #174ea6;
 }
-
