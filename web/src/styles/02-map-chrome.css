@@ -1008,6 +1008,14 @@ html:has(.drive-map--native-shell) #root {
   color: #9aa0a6;
 }
 
+.about-sheet__tagline--entity {
+  margin-top: 2px;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
 .about-sheet__chip {
   display: inline-flex;
   align-items: center;

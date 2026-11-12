@@ -254,6 +254,18 @@ Full steps: `docs/CLOUDFLARE_TILES.md` (RainViewer section). Same pattern as Tom
 
 ---
 
+## Company / entities (Bill, Oct 2026)
+
+- **PeckTech LLC** — legally registered LLC, has D-U-N-S and EIN. Apple Developer Program account is **Organization** type, so the App Store seller name is PeckTech LLC, not Bill's personal name.
+- Products under PeckTech LLC: **StormPath** (live on the App Store), **SiteBible** (sitebible.com, in development but usable).
+- Bill also owns **stormpath.us**.
+- Contact emails: `pecktech1@yahoo.com` = PeckTech business/legal, `sitebible@yahoo.com` = SiteBible, `stormpath@yahoo.com` = StormPath product support.
+- Store-facing identity work (Oct 2026): legal pages (`web/public/privacy.html`, `terms.html`, `support.html`) now name PeckTech LLC; About sheet shows "A PeckTech LLC product". Legal contact = pecktech1@yahoo.com; product support stays stormpath@yahoo.com.
+- Bundle ID stays `com.aaronpeck.stormpath` — it is immutable without creating a new App Store app, and it is not shown on the public store page. Do not change it casually.
+- GitHub account `aaronpeck77` is private repo hosting only — not store-facing.
+
+---
+
 ## How agents should treat Brain
 
 - Read this file when Bill mentions Brain, post-launch ideas, or Dark Sky direction

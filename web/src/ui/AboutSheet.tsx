@@ -245,6 +245,7 @@ export function AboutSheet({
               <p className="about-sheet__tagline">
                 Multi-route driving with live conditions on your route.
               </p>
+              <p className="about-sheet__tagline about-sheet__tagline--entity">A PeckTech LLC product</p>
             </div>
             <button type="button" className="about-sheet__close" onClick={onClose} aria-label="Close info">
               Close
