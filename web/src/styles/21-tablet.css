@@ -29,6 +29,18 @@
   display: none;
 }
 
+/* Drive-view address bar — iPad only (portrait + landscape rules below).
+ * Phone DR intentionally has no address bar (Bill, 588). */
+.nav-dest-search--ipad-only {
+  display: none;
+}
+
+/* iPad-landscape dock extras (miles + stop/destination shortcuts) — hidden
+ * everywhere except the large-tablet landscape MQ at the bottom of this file. */
+.landscape-navigation-dock__panel-extras {
+  display: none;
+}
+
 @media (min-width: 521px) and (min-height: 600px) {
   .nav-tools-btn {
     display: inline-flex;
@@ -70,6 +82,12 @@
     --nav-chrome-gap: 8px;
     --nav-bottom-stack-gap: 8px;
     --nav-top-gap: 6px;
+  }
+
+  /* iPad portrait copies the iPhone chrome — except Drive gains the address
+   * bar above the bottom buttons (there is room; Bill, 588). */
+  .nav-dest-search--ipad-only {
+    display: block;
   }
 
   /* Roomier sheets/drawers now that the chrome column is wider. */
@@ -163,12 +181,17 @@
   }
 
   /* ── Panel middle: hazard countdown card ────────────────────────────────── */
+  /* Visible keyline (Bill, 588) + shrinkable: when the bottom chrome grows
+   * (e.g. the Drive address bar) the card compresses and its list scrolls
+   * instead of pushing the dock off the panel. */
   .landscape-hazard-panel {
-    display: block;
-    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    flex: 0 1 auto;
+    min-height: 0;
     margin: 2px 2px 0;
     padding: 10px 12px 8px;
-    border: 1px solid rgba(255, 255, 255, 0.09);
+    border: 1px solid rgba(148, 163, 184, 0.42);
     border-radius: 12px;
     background: rgba(15, 23, 42, 0.85);
     backdrop-filter: blur(16px) saturate(1.2);
@@ -198,6 +221,10 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -273,7 +300,7 @@
 
   .landscape-hazard-panel__actions {
     display: flex;
-    flex: 1 0 100%;
+    flex: 0 0 auto;
     gap: 8px;
     margin-top: 2px;
   }
@@ -853,6 +880,101 @@
 
   .app-shell.nav-fullmap .panel-collapse__tab:active {
     background: rgba(30, 40, 56, 0.95);
+  }
+}
+
+/* ── iPad landscape nav dock: single command row (Bill, 588) ──────────────── */
+/* Large-tablet landscape ONLY — phone landscape keeps the stacked dock and
+ * grid miles cell from the combined MQ above. Row reads left→right:
+ * ⓘ · miles · +Stop · Change … Tools · compass · ↻ — identical in Dr/Mp/Rt. */
+@media (orientation: landscape) and (min-width: 800px) and (min-height: 600px) {
+  .app-shell.nav-fullmap .landscape-navigation-dock {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "messages"
+      "controls";
+  }
+
+  /* Miles-left moved inside the controls row via panel extras. */
+  .app-shell.nav-fullmap .landscape-navigation-dock__miles {
+    display: none;
+  }
+
+  .landscape-navigation-dock__controls {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .landscape-navigation-dock__panel-extras {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .landscape-navigation-dock__panel-extras .nav-dock-above-info-btn {
+    height: var(--nav-chrome-about, 46px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 10px;
+    font-size: 0.7rem;
+  }
+
+  .landscape-navigation-dock__panel-extras .nav-miles-left-box {
+    max-width: 6.5rem;
+  }
+
+  /* Row order: ⓘ · miles · +Stop · Change pack left; Tools' auto margin opens
+   * the gap so Tools · compass · ↻ stay pinned at the right edge. */
+  .landscape-navigation-dock__controls > .map-about-btn {
+    order: 1;
+  }
+  .landscape-navigation-dock__controls > .landscape-navigation-dock__panel-extras {
+    order: 2;
+  }
+  .landscape-navigation-dock__controls > .nav-tools-btn {
+    order: 3;
+    margin-left: auto;
+  }
+  .landscape-navigation-dock__controls > .drive-compass {
+    order: 4;
+  }
+  .landscape-navigation-dock__controls > .trip-refresh-btn {
+    order: 5;
+  }
+
+  /* MP/RT: ⓘ joins the dock row like Dr — the about-row copy is gone there. */
+  .app-shell.nav-fullmap:not(.nav-drive-ui)
+    .landscape-navigation-dock__controls
+    > .map-about-btn {
+    display: inline-flex;
+  }
+
+  /* Planning top row: ⓘ far left, Tools (+Stormy) far right. */
+  .nav-bottom-dock__about-row--panel-plan,
+  .nav-bottom-dock__about-row--panel-mp {
+    align-items: center;
+  }
+
+  .nav-bottom-dock__panel-plan-tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Briefing/route-select line: full panel width on its own row above the
+   * address bar — height follows content instead of the about-row strip. */
+  .nav-bottom-dock__plan-stack > .nav-bottom-dock__route-toggle-slot--inline {
+    width: 100%;
+    height: auto;
+    min-height: var(--nav-chrome-about, 46px);
+    max-height: none;
+  }
+
+  /* iPad Drive address bar (portrait rule lives in Section 1). */
+  .nav-dest-search--ipad-only {
+    display: block;
   }
 }
 

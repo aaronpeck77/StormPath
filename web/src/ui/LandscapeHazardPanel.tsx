@@ -40,7 +40,7 @@ export function LandscapeHazardPanel(props: Props) {
   if (!tabletLandscape) return null;
 
   const rows = selectDriveHazardQueue(input, Date.now(), { anyNavView: true });
-  const feedActive = driveHazardFeedActive(input);
+  const feedActive = driveHazardFeedActive(input, { anyNavView: true });
   return (
     <section className="landscape-hazard-panel" aria-label="Hazards ahead on route">
       <header className="landscape-hazard-panel__title">Hazards ahead</header>

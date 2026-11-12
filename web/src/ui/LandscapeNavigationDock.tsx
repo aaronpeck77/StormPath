@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { DriveCompass } from "./DriveCompass";
 import { NavMilesLeftBox } from "./NavMilesLeftBox";
@@ -14,6 +14,21 @@ export const TABLET_LANDSCAPE_MQ =
  */
 export const PANEL_LANDSCAPE_MQ =
   "(orientation: landscape) and (min-width: 800px) and (min-height: 600px), (orientation: landscape) and (max-height: 500px)";
+
+/** JS mirror of TABLET_LANDSCAPE_MQ — iPad landscape only, never phone landscape. */
+export function useTabletLandscape(): boolean {
+  const [on, setOn] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(TABLET_LANDSCAPE_MQ).matches
+  );
+  useEffect(() => {
+    const query = window.matchMedia(TABLET_LANDSCAPE_MQ);
+    const update = () => setOn(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return on;
+}
 
 /**
  * Portal children into a slot inside the side command panel.
@@ -72,12 +87,15 @@ export function LandscapeDockContent({ active, children }: { active: boolean; ch
   return target ? createPortal(children, target) : null;
 }
 
-export function LandscapeNavigationDock({ miles, bearing, onRefresh, onInfo, onTools }: {
+export function LandscapeNavigationDock({ miles, bearing, onRefresh, onInfo, onTools, panelExtras }: {
   miles: string | null;
   bearing: number | null;
   onRefresh?: () => void;
   onInfo: () => void;
   onTools?: () => void;
+  /** iPad-landscape-only extras (miles-left + stop/destination shortcuts) —
+   * CSS-hidden everywhere else, so phones keep the classic dock. */
+  panelExtras?: ReactNode;
 }) {
   return (
     <div className="landscape-navigation-dock">
@@ -105,6 +123,7 @@ export function LandscapeNavigationDock({ miles, bearing, onRefresh, onInfo, onT
           </button>
         ) : null}
         <button type="button" className="map-about-btn" aria-label="About StormPath" onClick={onInfo}>i</button>
+        {panelExtras}
       </div>
     </div>
   );

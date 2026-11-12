@@ -19,10 +19,18 @@ export type DriveHazardTickerInput = {
 const SEVERITY = { info: 0, caution: 1, serious: 2, avoid: 3 };
 
 /** Feed-level gates shared by the ticker and the iPad hazard panel — false means
- * the queue is empty because data can't flow (offline, off-route, no fix, next
- * turn too close), not because the route is clear. */
-export function driveHazardFeedActive(input: DriveHazardTickerInput): boolean {
+ * the queue is empty because data can't flow (offline, off-route, no fix), not
+ * because the route is clear. The phone ticker additionally requires the next
+ * turn to be >1 mi out; the iPad panel (anyNavView) drops that gate so every
+ * hazard ahead on the route counts down, even through city blocks (Bill, 588). */
+export function driveHazardFeedActive(
+  input: DriveHazardTickerInput,
+  opts?: { anyNavView?: boolean }
+): boolean {
   const { userAlongMeters: along, metersToManeuver: turnM } = input;
+  const turnGateOk = opts?.anyNavView
+    ? true
+    : turnM != null && Number.isFinite(turnM) && turnM > 1609.34;
   return Boolean(
     input.isPlus &&
       input.isOnline &&
@@ -30,9 +38,7 @@ export function driveHazardFeedActive(input: DriveHazardTickerInput): boolean {
       !input.offRoute &&
       Number.isFinite(along) &&
       along >= 0 &&
-      turnM != null &&
-      Number.isFinite(turnM) &&
-      turnM > 1609.34
+      turnGateOk
   );
 }
 
@@ -46,7 +52,7 @@ function collectHazardCandidates(
   opts?: { pageGraph?: boolean; anyNavView?: boolean; maxAheadMeters?: number }
 ): TimelineItem[] {
   const { userAlongMeters: along } = input;
-  if (!driveHazardFeedActive(input) ||
+  if (!driveHazardFeedActive(input, opts) ||
     (input.viewMode !== "drive" && !opts?.anyNavView)) return [];
 
   const candidates = input.items.filter((item) => {

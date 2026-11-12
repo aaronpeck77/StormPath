@@ -7,7 +7,7 @@ import { RouteCompareBottomPanel } from "./RouteCompareBottomPanel";
 import { RecordingRouteBanner } from "./RecordingRouteBanner";
 import { DriveCompass } from "./DriveCompass";
 import { NavMilesLeftBox } from "./NavMilesLeftBox";
-import { LandscapeNavigationDock } from "./LandscapeNavigationDock";
+import { LandscapeNavigationDock, useTabletLandscape } from "./LandscapeNavigationDock";
 import { RoutePickControl, type RoutePickItem } from "./RoutePickBar";
 import { SearchBar, type SearchSuggestion } from "./SearchBar";
 import { RouteStopsBar } from "./RouteStopsBar";
@@ -343,6 +343,7 @@ export function AppBottomChrome({
 }: Props) {
   const planRoutes = useTripPlanStore((s) => s.plan.routes);
   const voiceLevel = useSettingsStore((s) => s.voiceLevel);
+  const tabletLandscape = useTabletLandscape();
   const stormyOn = stormyButtonFor(voiceLevel);
   const talkOn = stormyOn;
   const stormyPacket: StormyPacket = {
@@ -462,6 +463,143 @@ export function AppBottomChrome({
       </div>
     </div>
   );
+
+  /* iPad-landscape dock extras: miles-left + the mid-route shortcuts ride
+   * inside the LandscapeNavigationDock controls row. The wrapper is
+   * CSS-hidden everywhere except large-tablet landscape, so phone docks are
+   * untouched. Order there: ⓘ · miles · +Stop · Change | Tools · compass · ↻. */
+  const dockPanelExtras = (
+    <div className="landscape-navigation-dock__panel-extras">
+      {driveDistanceRemainingLabel ? (
+        <NavMilesLeftBox label={driveDistanceRemainingLabel} />
+      ) : null}
+      <button
+        type="button"
+        className="nav-dock-above-info-btn"
+        disabled={viaStops.length >= MAX_VIA_STOPS}
+        title={
+          viaStops.length >= MAX_VIA_STOPS
+            ? `Stop limit reached (${MAX_VIA_STOPS})`
+            : "Add a stop on the way"
+        }
+        onClick={() => {
+          onStartAddStop();
+          if (showCompactDest) handleCompactDestOpen();
+        }}
+      >
+        {addingViaStop ? "Cancel stop" : "+ Stop"}
+      </button>
+      <button
+        type="button"
+        className="nav-dock-above-info-btn"
+        disabled={!onChangeDestination}
+        title="Change destination — clears stops and replans from here"
+        onClick={onChangeDestination}
+      >
+        Change
+      </button>
+    </div>
+  );
+
+  /* MP/RT route-select strip (picker + try-another-way, or the radar clock
+   * fallback). Shared by the phone about-row and the iPad panel row. */
+  const mpRouteSlot = routePickItems.length >= 1 ? (
+    <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
+      <RoutePickControl
+        items={routePickItems}
+        selectedId={lineFocusId}
+        cycleOrderIds={planRouteIds}
+        activeSlotIndex={previewLegIndex}
+        onSelect={handlePreviewRouteSelect}
+        detail={routeDockDetail}
+      />
+      {onAnotherWay ? (
+        <button
+          type="button"
+          className="nav-another-way-btn"
+          aria-label="Try another route option"
+          title="Try another route option"
+          disabled={anotherWayBusy}
+          onClick={onAnotherWay}
+        >
+          ⇄
+        </button>
+      ) : null}
+    </div>
+  ) : radarMapOverlayOn && radarFrameTimeLabel ? (
+    <div
+      className="nav-radar-frame-time-dock"
+      aria-live="polite"
+      title="Radar mosaic time (your local time)"
+    >
+      {radarFrameTimeLabel}
+    </div>
+  ) : null;
+
+  /* Planning route-select strip — briefing pill + picker on one line, or the
+   * My-location / radar fallbacks. iPad landscape moves it out of the
+   * about-row onto its own line above the address bar (Bill, 588). */
+  const planShowsPicker =
+    (viewMode === "route" || viewMode === "topdown") && routePickItems.length >= 1;
+  const planSlotContent =
+    viewMode === "route" || viewMode === "topdown" ? (
+      planShowsPicker ? (
+        <div
+          className={`nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline${
+            !navigationStarted && tripBriefingPill
+              ? " nav-bottom-dock__route-toggle-slot--with-briefing"
+              : ""
+          }`}
+        >
+          {!navigationStarted && tripBriefingPill ? (
+            <div className="nav-briefing-row">{tripBriefingPill}</div>
+          ) : null}
+          <RoutePickControl
+            items={routePickItems}
+            selectedId={lineFocusId}
+            cycleOrderIds={planRouteIds}
+            activeSlotIndex={previewLegIndex}
+            onSelect={handlePreviewRouteSelect}
+            detail={routeDockDetail}
+          />
+          {onAnotherWay && navigationStarted && routePickItems.length >= 1 ? (
+            <button
+              type="button"
+              className="nav-another-way-btn"
+              aria-label="Try another route option"
+              title="Try another route option"
+              disabled={anotherWayBusy}
+              onClick={onAnotherWay}
+            >
+              ⇄
+            </button>
+          ) : null}
+        </div>
+      ) : planRoutesLength === 0 && userLngLat ? (
+        <button
+          type="button"
+          className="nav-recenter-puck-btn nav-recenter-puck-btn--dock nav-recenter-puck-btn--inline"
+          title="Center map on your location"
+          aria-label="Center map on your location"
+          onClick={onRecenterPlanningPuck}
+        >
+          My location
+        </button>
+      ) : radarMapOverlayOn && radarFrameTimeLabel ? (
+        <div
+          className="nav-radar-frame-time-dock"
+          aria-live="polite"
+          title="Radar mosaic time (your local time)"
+        >
+          {radarFrameTimeLabel}
+        </div>
+      ) : null
+    ) : null;
+  const planBriefingRow =
+    !navigationStarted && tripBriefingPill && !planShowsPicker ? (
+      <div className="nav-briefing-row">{tripBriefingPill}</div>
+    ) : null;
+
   return (
     <div className="nav-bottom-stack">
       <RouteCompareBottomPanel
@@ -481,7 +619,12 @@ export function AppBottomChrome({
       {!trafficBypassCompareActive ? panelWidgets : null}
       {navigationStarted ? (
         <LandscapeNavigationDock miles={driveDistanceRemainingLabel} bearing={driveMapBearingDeg}
-          onRefresh={onRefreshTrip} onInfo={onOpenAbout} onTools={onOpenTools} />
+          onRefresh={
+            showTripRefreshButton(navigationStarted, viewMode) && onRefreshTrip
+              ? onRefreshTrip
+              : undefined
+          }
+          onInfo={onOpenAbout} onTools={onOpenTools} panelExtras={dockPanelExtras} />
       ) : null}
       {!trafficBypassCompareActive ? (
       <div className="nav-bottom-chrome-wrap">
@@ -499,6 +642,7 @@ export function AppBottomChrome({
         ) : null}
         <div className="nav-bottom-dock">
           {navigationStarted && viewMode === "drive" ? (
+            <>
             <DockAboutRow
               stormyOn={talkOn}
               onOpenAbout={onOpenAbout}
@@ -524,6 +668,9 @@ export function AppBottomChrome({
               ) : null}
               {carPlayMapReturn}
             </DockAboutRow>
+            {/* iPad gets the address bar in Drive too — phone DR stays bar-free. */}
+            <div className="nav-dest-search--ipad-only">{destSearchRow}</div>
+            </>
           ) : navigationStarted && (viewMode === "topdown" || viewMode === "route") ? (
             <>
             {/* CarPlay map-peek return gets its own row above the picker —
@@ -532,6 +679,14 @@ export function AppBottomChrome({
             {carPlayMapReturn ? (
               <div className="nav-cp-return-row">{carPlayMapReturn}</div>
             ) : null}
+            {tabletLandscape ? (
+              /* iPad panel: ⓘ/miles/+Stop/Change live in the dock row above —
+               * this row keeps Stormy + the route select only, matching DR. */
+              <div className="nav-bottom-dock__about-row nav-bottom-dock__about-row--panel-mp">
+                {talkButton}
+                {mpRouteSlot}
+              </div>
+            ) : (
             <DockAboutRow
               stormyOn={talkOn}
               onOpenAbout={onOpenAbout}
@@ -570,114 +725,44 @@ export function AppBottomChrome({
               {driveDistanceRemainingLabel ? (
                 <NavMilesLeftBox label={driveDistanceRemainingLabel} />
               ) : null}
-              {routePickItems.length >= 1 ? (
-                <div className="nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline">
-                  <RoutePickControl
-                    items={routePickItems}
-                    selectedId={lineFocusId}
-                    cycleOrderIds={planRouteIds}
-                    activeSlotIndex={previewLegIndex}
-                    onSelect={handlePreviewRouteSelect}
-                    detail={routeDockDetail}
-                  />
-                  {onAnotherWay && routePickItems.length >= 1 ? (
-                    <button
-                      type="button"
-                      className="nav-another-way-btn"
-                      aria-label="Find another route option"
-                      title="Find another route option"
-                      disabled={anotherWayBusy}
-                      onClick={onAnotherWay}
-                    >
-                      ↻
-                    </button>
-                  ) : null}
-                </div>
-              ) : radarMapOverlayOn && radarFrameTimeLabel ? (
-                <div
-                  className="nav-radar-frame-time-dock"
-                  aria-live="polite"
-                  title="Radar mosaic time (your local time)"
-                >
-                  {radarFrameTimeLabel}
-                </div>
-              ) : null}
+              {mpRouteSlot}
             </DockAboutRow>
+            )}
             {destSearchRow}
             </>
           ) : (
             <div className="nav-bottom-dock__plan-stack">
-              {/* About row: 'i' on the left; route-info cycle chip or My location in the inline slot. */}
-              <DockAboutRow
-                stormyOn={talkOn}
-                onOpenAbout={onOpenAbout}
-                tools={toolsButton}
-                stormy={talkButton}
-              >
-                {navigationStarted && driveDistanceRemainingLabel ? (
-                  <NavMilesLeftBox label={driveDistanceRemainingLabel} />
-                ) : null}
-                {viewMode === "route" || viewMode === "topdown" ? (
-                  routePickItems.length >= 1 ? (
-                    <div
-                      className={`nav-bottom-dock__route-toggle-slot nav-bottom-dock__route-toggle-slot--inline${
-                        !navigationStarted && tripBriefingPill
-                          ? " nav-bottom-dock__route-toggle-slot--with-briefing"
-                          : ""
-                      }`}
-                    >
-                      {!navigationStarted && tripBriefingPill ? (
-                        <div className="nav-briefing-row">{tripBriefingPill}</div>
-                      ) : null}
-                      <RoutePickControl
-                        items={routePickItems}
-                        selectedId={lineFocusId}
-                        cycleOrderIds={planRouteIds}
-                        activeSlotIndex={previewLegIndex}
-                        onSelect={handlePreviewRouteSelect}
-                        detail={routeDockDetail}
-                      />
-                      {onAnotherWay && navigationStarted && routePickItems.length >= 1 ? (
-                        <button
-                          type="button"
-                          className="nav-another-way-btn"
-                          aria-label="Find another route option"
-                          title="Find another route option"
-                          disabled={anotherWayBusy}
-                          onClick={onAnotherWay}
-                        >
-                          ↻
-                        </button>
-                      ) : null}
+              {tabletLandscape ? (
+                /* iPad panel planning: ⓘ far left, Tools far right on the top
+                 * row; the Briefing/route-select line drops to its own row
+                 * directly above the address bar (Bill, 588). */
+                <>
+                  <div className="nav-bottom-dock__about-row nav-bottom-dock__about-row--panel-plan">
+                    <MapInfoButton onOpenAbout={onOpenAbout} />
+                    <div className="nav-bottom-dock__panel-plan-tools">
+                      {talkButton}
+                      {toolsButton}
                     </div>
-                  ) : planRoutesLength === 0 && userLngLat ? (
-                    <button
-                      type="button"
-                      className="nav-recenter-puck-btn nav-recenter-puck-btn--dock nav-recenter-puck-btn--inline"
-                      title="Center map on your location"
-                      aria-label="Center map on your location"
-                      onClick={onRecenterPlanningPuck}
-                    >
-                      My location
-                    </button>
-                  ) : radarMapOverlayOn && radarFrameTimeLabel ? (
-                    <div
-                      className="nav-radar-frame-time-dock"
-                      aria-live="polite"
-                      title="Radar mosaic time (your local time)"
-                    >
-                      {radarFrameTimeLabel}
-                    </div>
-                  ) : null
-                ) : null}
-              </DockAboutRow>
-              {/* Keep Briefing on its own row only when this view has no route picker. */}
-              {!navigationStarted &&
-              tripBriefingPill &&
-              !((viewMode === "route" || viewMode === "topdown") && routePickItems.length >= 1) ? (
-                <div className="nav-briefing-row">{tripBriefingPill}</div>
-              ) : null}
-              {destSearchRow}
+                  </div>
+                  {planSlotContent}
+                  {planBriefingRow}
+                  {destSearchRow}
+                </>
+              ) : (
+                <>
+                  {/* About row: 'i' on the left; route-info cycle chip or My location in the inline slot. */}
+                  <DockAboutRow
+                    stormyOn={talkOn}
+                    onOpenAbout={onOpenAbout}
+                    tools={toolsButton}
+                    stormy={talkButton}
+                  >
+                    {planSlotContent}
+                  </DockAboutRow>
+                  {planBriefingRow}
+                  {destSearchRow}
+                </>
+              )}
               {/* Action row removed — both "My location" (planning) and the route-cycle
                * button (route loaded) now live inline on the about-row above the search. */}
             </div>

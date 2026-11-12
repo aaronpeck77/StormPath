@@ -142,4 +142,15 @@ describe("Drive hazard queue (iPad landscape panel)", () => {
     expect(selectDriveHazardQueue(mp, Date.now(), { anyNavView: true })[0]?.id).toBe("storm");
     expect(selectNextDriveHazardItem(mp, { anyNavView: true })?.id).toBe("storm");
   });
+
+  it("anyNavView drops the next-turn gate — city-block hazards still count down", () => {
+    /* The phone ticker stays quiet inside ~1 mi of a turn; the iPad panel
+     * shows every hazard ahead on the route (Bill, 588). */
+    const nearTurn = { ...queueInput, metersToManeuver: 500, items: [hazard] };
+    expect(selectDriveHazardTicker(nearTurn)).toBeNull();
+    expect(selectDriveHazardQueue(nearTurn, Date.now(), { anyNavView: true })[0]?.id).toBe("storm");
+    expect(selectNextDriveHazardItem(nearTurn, { anyNavView: true })?.id).toBe("storm");
+    const noTurn = { ...queueInput, metersToManeuver: null, items: [hazard] };
+    expect(selectDriveHazardQueue(noTurn, Date.now(), { anyNavView: true })[0]?.id).toBe("storm");
+  });
 });
