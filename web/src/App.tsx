@@ -1321,6 +1321,10 @@ export default function App() {
     altRoutesFetchAbortRef,
     planRoutesRef,
     setPlan,
+    onNoAlternates: useCallback(() => {
+      setTapHint("No other route from here right now.");
+      window.setTimeout(() => setTapHint(null), 4000);
+    }, []),
   });
 
   /* Passed-turn release: once GPS is beyond where an unselected alternate

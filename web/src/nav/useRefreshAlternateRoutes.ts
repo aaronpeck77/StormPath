@@ -33,6 +33,10 @@ export type UseRefreshAlternateRoutesDeps = {
   /** Live plan routes — read for "another way" corridor excludes. */
   planRoutesRef: MutableRefObject<NavRoute[]>;
   setPlan: (updater: (prev: TripPlan) => TripPlan) => void;
+  /** Manual refresh found no usable alternate — let the driver know instead
+   *  of silently keeping the old B (drive-587: "if no route B makes sense,
+   *  tell us"). Only fires for deliberate asks, not the silent interval. */
+  onNoAlternates?: () => void;
 };
 
 /** Route view while navigating: refresh B/C from current GPS; keep primary (slot A) geometry unchanged. */
@@ -53,13 +57,13 @@ export function useRefreshAlternateRoutes(
     learnEnabled,
     headingDeg,
     orderedRouteIds,
-    planRoutesLength,
     lockedNavigationRouteIdRef,
     routeGraphEpochRef,
     altRoutesRefreshInFlightRef,
     altRoutesFetchAbortRef,
     planRoutesRef,
     setPlan,
+    onNoAlternates,
   } = deps;
 
   return useCallback(
@@ -72,7 +76,11 @@ export function useRefreshAlternateRoutes(
         lockedNavigationRouteIdRef.current,
         orderedRouteIds
       );
-      if (!primaryId || planRoutesLength < 2) return;
+      /* No minimum route count — a single-route plan must be able to gain its
+       * first B, and a passed-turn release that dropped the last alternate
+       * must be able to fetch a replacement (drive-587: refresh refused to
+       * run at length 1, so route B could never come back). */
+      if (!primaryId) return;
       const epochAtStart = routeGraphEpochRef.current;
       if (altRoutesRefreshInFlightRef.current) return;
       altRoutesFetchAbortRef.current?.abort();
@@ -111,7 +119,10 @@ export function useRefreshAlternateRoutes(
           });
           /* Never offer U-turn / reverse stubs the driver already left behind. */
           const forward = filterForwardRejoinRoutes(fresh, userLngLat, headingDeg);
-          if (forward.length === 0) return;
+          if (forward.length === 0) {
+            if (opts?.anotherWay || opts?.allowDuringDrive) onNoAlternates?.();
+            return;
+          }
           if (epochAtStart !== routeGraphEpochRef.current) return;
           setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, forward));
         } else {
@@ -121,7 +132,10 @@ export function useRefreshAlternateRoutes(
             destinationLabel.trim() || "Destination"
           );
           const forward = filterForwardRejoinRoutes(mock.routes, userLngLat, headingDeg);
-          if (forward.length === 0) return;
+          if (forward.length === 0) {
+            if (opts?.anotherWay || opts?.allowDuringDrive) onNoAlternates?.();
+            return;
+          }
           if (epochAtStart !== routeGraphEpochRef.current) return;
           setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, forward));
         }
@@ -137,7 +151,6 @@ export function useRefreshAlternateRoutes(
       userLngLat,
       destLngLat,
       orderedRouteIds,
-      planRoutesLength,
       mapboxToken,
       isOnline,
       destinationLabel,
@@ -152,6 +165,7 @@ export function useRefreshAlternateRoutes(
       altRoutesFetchAbortRef,
       planRoutesRef,
       setPlan,
+      onNoAlternates,
     ]
   );
 }

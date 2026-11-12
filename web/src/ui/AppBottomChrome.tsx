@@ -483,16 +483,32 @@ export function AppBottomChrome({
               onOpenAbout={onOpenAbout}
               tools={toolsButton}
               refresh={
-                showTripRefreshButton(navigationStarted, viewMode) && onRefreshTrip ? (
-                  <button
-                    type="button"
-                    className="trip-refresh-btn"
-                    aria-label="Refresh the trip"
-                    title="Refresh the trip without leaving it"
-                    onClick={onRefreshTrip}
-                  >
-                    ↻
-                  </button>
+                showTripRefreshButton(navigationStarted, viewMode) || onAnotherWay ? (
+                  <>
+                    {onAnotherWay ? (
+                      <button
+                        type="button"
+                        className="trip-refresh-btn"
+                        aria-label="Find another route option"
+                        title="Find another route option ahead"
+                        disabled={anotherWayBusy}
+                        onClick={onAnotherWay}
+                      >
+                        ⤳
+                      </button>
+                    ) : null}
+                    {showTripRefreshButton(navigationStarted, viewMode) && onRefreshTrip ? (
+                      <button
+                        type="button"
+                        className="trip-refresh-btn"
+                        aria-label="Refresh the trip"
+                        title="Refresh the trip without leaving it"
+                        onClick={onRefreshTrip}
+                      >
+                        ↻
+                      </button>
+                    ) : null}
+                  </>
                 ) : null
               }
               compass={<DriveCompass bearingDeg={driveMapBearingDeg} />}
@@ -530,12 +546,12 @@ export function AppBottomChrome({
                     onSelect={handlePreviewRouteSelect}
                     detail={routeDockDetail}
                   />
-                  {onAnotherWay && routePickItems.length >= 2 ? (
+                  {onAnotherWay && routePickItems.length >= 1 ? (
                     <button
                       type="button"
                       className="nav-another-way-btn"
-                      aria-label="Try a different alternate route"
-                      title="Don't like this option? Find another way"
+                      aria-label="Find another route option"
+                      title="Find another route option"
                       disabled={anotherWayBusy}
                       onClick={onAnotherWay}
                     >
@@ -578,12 +594,12 @@ export function AppBottomChrome({
                         onSelect={handlePreviewRouteSelect}
                         detail={routeDockDetail}
                       />
-                      {onAnotherWay && routePickItems.length >= 2 ? (
+                      {onAnotherWay && navigationStarted && routePickItems.length >= 1 ? (
                         <button
                           type="button"
                           className="nav-another-way-btn"
-                          aria-label="Try a different alternate route"
-                          title="Don't like this option? Find another way"
+                          aria-label="Find another route option"
+                          title="Find another route option"
                           disabled={anotherWayBusy}
                           onClick={onAnotherWay}
                         >
