@@ -174,6 +174,45 @@ describe("collectMapboxRouteVariants", () => {
     expect(routes[1]!.label).toBe("Alternate");
   });
 
+  it("rejects a point-exclude B that is Main plus a block jog", async () => {
+    const main = mbRoute(lineCoords(0), 3600, 120_000);
+    /* Mapbox's cheapest answer to "leave Main's mid-corridor point" is often
+     * Main with a short lateral hop and rejoin — ~3 km off corridor on a
+     * ~48 km route. Under the 800 m wobble threshold and inside the duration
+     * factors, so only the corridor-overlap ceiling can catch it (Bill, 587). */
+    const jog: [number, number][] = [];
+    const N = 100;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      const lng = start[0] + (end[0] - start[0]) * t;
+      const lat = start[1] + (end[1] - start[1]) * t;
+      jog.push([lng + (i >= 46 && i <= 53 ? 0.002 : 0), lat]);
+    }
+    const jogRoute = mbRoute(jog, 3700, 121_000);
+    let pointExcludeCalls = 0;
+
+    vi.mocked(fetchWithTimeout).mockImplementation(async ({ input }) => {
+      const url = decodeURIComponent(String(input));
+      if (url.includes("point(")) {
+        pointExcludeCalls += 1;
+        return okResponse([jogRoute]);
+      }
+      if (url.includes("exclude=motorway")) {
+        return okResponse([main]);
+      }
+      return okResponse([main]);
+    });
+
+    const routes = await collectMapboxRouteVariants("tok", start, end, {
+      maxRoutes: 2,
+      includeDetails: true,
+    });
+
+    expect(pointExcludeCalls).toBeGreaterThanOrEqual(1);
+    expect(routes).toHaveLength(1);
+    expect(routes[0]!.label).toBe("Main");
+  });
+
   it("encodes Mapbox point() excludes with %20, not +", async () => {
     const main = mbRoute(lineCoords(0), 3600, 120_000);
     const alt = mbRoute(lineCoords(-0.35), 4000, 132_000);

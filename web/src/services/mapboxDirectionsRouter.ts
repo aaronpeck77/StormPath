@@ -265,6 +265,10 @@ function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteT
 /** O(200) per side — corridor overlap / same-shape checks only (not map display). */
 const GEOM_COMPARE_MAX_VERTICES = 200;
 
+/** Slot B must commit to a different corridor — beyond this much shared
+ * path it is Main with a jog, not an alternate. */
+const ALTERNATE_MAX_CORRIDOR_OVERLAP = 0.88;
+
 /**
  * True when two Mapbox options are too alike to offer as A/B.
  * Prefer keeping Mapbox alternates: shared highway legs are OK if ETA or distance
@@ -923,9 +927,6 @@ export async function collectMapboxRouteVariants(
   /** Leg C should stay a reasonable drive — not a long scenic detour. */
   const MAX_C_ROUTE_DURATION_FACTOR = 1.3;
   const MAX_C_ROUTE_DISTANCE_FACTOR = 1.35;
-  /** Slot B must commit to a different corridor — beyond this much shared
-   * path it is Main with a jog, not an alternate. */
-  const ALTERNATE_MAX_CORRIDOR_OVERLAP = 0.88;
 
   type MbRoutes = NonNullable<DirectionsResponse["routes"]>;
   const abortSignalAny = (
@@ -1222,6 +1223,11 @@ async function fetchForcedDistinctAlternate(
       if (!navB) continue;
       if (sameRouteShapeLine(navA.geometry, navB.geometry)) continue;
       if (routeIsBriefDivergenceOnly(navA.geometry, navB.geometry)) continue;
+      /* Same corridor ceiling as mergePools — the point-exclude fetch asks
+       * Mapbox to leave one spot on Main, and the cheapest answer is often
+       * Main plus a block jog around it. That is not an alternate (Bill, 587). */
+      if (routeCorridorOverlapFraction(navB.geometry, navA.geometry) > ALTERNATE_MAX_CORRIDOR_OVERLAP)
+        continue;
       if (navB.baseEtaMinutes > maxDurMin) continue;
       const mainDist = polylineLengthMeters(navA.geometry);
       const altDist = polylineLengthMeters(navB.geometry);
