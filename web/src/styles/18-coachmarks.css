@@ -103,6 +103,13 @@
     flex-shrink: 0;
   }
 
+  /* MP/RT wraps info + its stacked stop/change shortcuts in one cluster —
+   * it takes the same slot the bare info button used to occupy. */
+  .app-shell.nav-fullmap .nav-bottom-dock__about-row > .nav-bottom-dock__info-actions-col {
+    order: 2;
+    flex-shrink: 0;
+  }
+
   .app-shell.nav-fullmap .nav-bottom-dock__about-row > .stormy-call-btn {
     order: 3;
     margin-right: 0;
@@ -119,6 +126,10 @@
   }
 
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row > .map-about-btn {
+    order: 1;
+  }
+
+  .app-shell.nav-fullmap.app-shell--landscape-hand-left .nav-bottom-dock__about-row > .nav-bottom-dock__info-actions-col {
     order: 1;
   }
 

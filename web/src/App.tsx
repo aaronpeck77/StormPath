@@ -538,6 +538,12 @@ export default function App() {
   destLngLatRef.current = destLngLat;
   const viaStopsRef = useRef(viaStops);
   viaStopsRef.current = viaStops;
+  /** Late-bound mid-trip replan commit — useDestinationSearch fires it after a
+   * successful stop/destination replan; assigned once native guidance exists. */
+  const navReplanCommitRef = useRef<(() => void) | null>(null);
+  const fireNavReplanCommit = useCallback(() => {
+    navReplanCommitRef.current?.();
+  }, []);
   const activeViaIndexRef = useRef(activeViaIndex);
   activeViaIndexRef.current = activeViaIndex;
   const destinationLabelRef = useRef(destinationLabel);
@@ -724,6 +730,7 @@ export default function App() {
     setTapHint,
     setRouting,
     setRouteError,
+    onNavReplanCommit: fireNavReplanCommit,
   });
 
   /* Replays a dead-zone queued route/search once data returns; lands in the normal
@@ -1100,26 +1107,33 @@ export default function App() {
     routingPreferenceRef,
   });
 
+  /** After a mid-trip stop/destination replan lands: adopt the fresh locked
+   * geometry, then restart Core so guidance/voice follow the new corridor. */
+  const commitNavReplan = useCallback(() => {
+    const nextPlan = useTripPlanStore.getState().plan;
+    const lockedId = lockedNavigationRouteIdRef.current;
+    const route =
+      (lockedId ? nextPlan.routes.find((r) => r.id === lockedId) : undefined) ??
+      nextPlan.routes[0];
+    if (route && route.geometry.length >= 2) {
+      adoptLockedRouteGeometry(
+        route.geometry.map(([a, b]) => [a, b] as LngLat),
+        { force: true }
+      );
+    }
+    /* Let the new line land in the Core coords, then start guidance from here. */
+    window.setTimeout(() => {
+      void restartNative();
+    }, 0);
+  }, [adoptLockedRouteGeometry, restartNative]);
+  navReplanCommitRef.current = commitNavReplan;
+
   const handleSkipViaStop = useCallback(
     async (index: number) => {
+      /* handleRemoveViaStop replans and fires commitNavReplan on success. */
       await handleRemoveViaStop(index);
-      const nextPlan = useTripPlanStore.getState().plan;
-      const lockedId = lockedNavigationRouteIdRef.current;
-      const route =
-        (lockedId ? nextPlan.routes.find((r) => r.id === lockedId) : undefined) ??
-        nextPlan.routes[0];
-      if (route && route.geometry.length >= 2) {
-        adoptLockedRouteGeometry(
-          route.geometry.map(([a, b]) => [a, b] as LngLat),
-          { force: true }
-        );
-      }
-      /* Let the new line land in the Core coords, then start guidance from here. */
-      window.setTimeout(() => {
-        void restartNative();
-      }, 0);
     },
-    [handleRemoveViaStop, adoptLockedRouteGeometry, restartNative]
+    [handleRemoveViaStop]
   );
 
   const navPosition = useNavigationPosition({
@@ -3548,6 +3562,9 @@ export default function App() {
           }
           handleCompactDestOpen={handleCompactDestOpen}
           onChangeDestination={() => {
+            /* Destination picks clear via-stops; make sure an armed add-stop
+             * mode can't hijack the pick into a via instead. */
+            setAddingViaStop(false);
             handleCompactDestOpen();
             setSearchExpanded(true);
           }}

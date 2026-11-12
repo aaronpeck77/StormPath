@@ -7,6 +7,8 @@ type Props = {
   onStartAddStop: () => void;
   onCancelAddStop: () => void;
   onRemoveStop: (index: number) => void;
+  /** False when the add-stop affordance lives elsewhere (nav dock buttons). */
+  showAddButton?: boolean;
 };
 
 /** Optional intermediate stops before the final destination. */
@@ -17,6 +19,7 @@ export function RouteStopsBar({
   onStartAddStop,
   onCancelAddStop,
   onRemoveStop,
+  showAddButton = true,
 }: Props) {
   const canAdd = canAddStop && viaStops.length < MAX_VIA_STOPS;
   if (!canAdd && viaStops.length === 0) return null;
@@ -45,7 +48,7 @@ export function RouteStopsBar({
           ))}
         </ul>
       ) : null}
-      {canAdd ? (
+      {canAdd && (addingStop || showAddButton) ? (
         <div className="route-stops-bar__actions">
           {addingStop ? (
             <>

@@ -750,6 +750,47 @@ html:has(.drive-map--native-shell) #root {
   flex-shrink: 0;
 }
 
+/* MP/RT mid-route: "+ Stop" / "Change" stack directly above the info button. */
+.nav-bottom-dock__info-actions-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.nav-dock-above-info-btn {
+  box-sizing: border-box;
+  padding: 4px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(18, 20, 24, 0.38);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.nav-dock-above-info-btn:hover,
+.nav-dock-above-info-btn:focus-visible {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(28, 30, 36, 0.6);
+  outline: none;
+}
+
+.nav-dock-above-info-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .nav-miles-left-box {
   display: inline-flex;
   flex-direction: column;

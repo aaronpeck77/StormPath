@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { LngLat } from "../nav/types";
-import type { TripStop } from "../nav/routeWaypoints";
+import { MAX_VIA_STOPS, type TripStop } from "../nav/routeWaypoints";
 import { shouldShowManualOffRouteUi, shouldShowTrafficBypassUi } from "../nav/constants";
 import type { MapViewMode } from "./driveMapTypes";
 import { RouteCompareBottomPanel } from "./RouteCompareBottomPanel";
@@ -42,6 +42,7 @@ function DockAboutRow({
   stormy,
   refresh,
   tools,
+  leadingActions,
   children,
 }: {
   stormyOn: boolean;
@@ -50,9 +51,19 @@ function DockAboutRow({
   stormy?: ReactNode;
   refresh?: ReactNode;
   tools?: ReactNode;
+  /** Small stacked shortcuts rendered directly above the info button. */
+  leadingActions?: ReactNode;
   children?: ReactNode;
 }) {
-  const info = <MapInfoButton onOpenAbout={onOpenAbout} />;
+  const infoButton = <MapInfoButton onOpenAbout={onOpenAbout} />;
+  const info = leadingActions ? (
+    <div className="nav-bottom-dock__info-actions-col">
+      {leadingActions}
+      {infoButton}
+    </div>
+  ) : (
+    infoButton
+  );
   if (!stormyOn) {
     if (compass) {
       return (
@@ -385,7 +396,11 @@ export function AppBottomChrome({
                 title="Tap to search or change destination"
               >
                 <span className="nav-dest-compact-label" title={destinationLabel}>
-                  {isChangingDestination ? "Search destination or stop…" : (destinationLabel || "Destination")}
+                  {addingViaStop
+                    ? "Tap map or search for a stop"
+                    : isChangingDestination
+                      ? "Search destination or stop…"
+                      : destinationLabel || "Destination"}
                 </span>
               </button>
               {navigationStarted && activeViaIndex < viaStops.length ? (
@@ -397,16 +412,8 @@ export function AppBottomChrome({
                   Skip stop
                 </button>
               ) : null}
-              {onChangeDestination && !isChangingDestination ? (
-                <button
-                  type="button"
-                  className="nav-dest-compact-btn"
-                  onClick={onChangeDestination}
-                  title="Change destination or add a stop"
-                >
-                  Change
-                </button>
-              ) : null}
+              {/* Change destination lives above the info button while navigating
+               * (and is unnecessary pre-Go — tapping the chip opens search). */}
             </div>
           ) : (
             <>
@@ -437,6 +444,20 @@ export function AppBottomChrome({
               ) : null}
             </>
           )}
+          {/* Compact chip hides the stops list — keep stops addable/removable
+           * mid-route without reopening search. Add-stop itself lives above
+           * the info button, so the bar only lists + removes here. */}
+          {showCompactDest && (viaStops.length > 0 || addingViaStop) ? (
+            <RouteStopsBar
+              viaStops={viaStops}
+              addingStop={addingViaStop}
+              canAddStop={canAddStop}
+              onStartAddStop={onStartAddStop}
+              onCancelAddStop={onCancelAddStop}
+              onRemoveStop={handleRemoveViaStop}
+              showAddButton={!navigationStarted}
+            />
+          ) : null}
         </div>
       </div>
     </div>
@@ -516,6 +537,35 @@ export function AppBottomChrome({
               onOpenAbout={onOpenAbout}
               tools={toolsButton}
               stormy={talkButton}
+              leadingActions={
+                <>
+                  <button
+                    type="button"
+                    className="nav-dock-above-info-btn"
+                    disabled={viaStops.length >= MAX_VIA_STOPS}
+                    title={
+                      viaStops.length >= MAX_VIA_STOPS
+                        ? `Stop limit reached (${MAX_VIA_STOPS})`
+                        : "Add a stop on the way"
+                    }
+                    onClick={() => {
+                      onStartAddStop();
+                      if (showCompactDest) handleCompactDestOpen();
+                    }}
+                  >
+                    {addingViaStop ? "Cancel stop" : "+ Stop"}
+                  </button>
+                  <button
+                    type="button"
+                    className="nav-dock-above-info-btn"
+                    disabled={!onChangeDestination}
+                    title="Change destination — clears stops and replans from here"
+                    onClick={onChangeDestination}
+                  >
+                    Change
+                  </button>
+                </>
+              }
             >
               {driveDistanceRemainingLabel ? (
                 <NavMilesLeftBox label={driveDistanceRemainingLabel} />

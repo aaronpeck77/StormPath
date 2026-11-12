@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import type { SavedPlace } from "../nav/savedPlaces";
 import { EMPTY_TRIP } from "../nav/emptyTrip";
 import { MAX_VIA_STOPS } from "../nav/routeWaypoints";
+import { activeIndexAfterPullRemoved } from "../nav/hazardBypass";
 import type { ComputeRoutesFn } from "../nav/useComputeRoutes";
 import type { LngLat } from "../nav/types";
 import { loadRecentSearchSuggestions, recordRecentSearch } from "../recentSearches";
@@ -55,6 +56,9 @@ export interface UseDestinationSearchDeps {
   setTapHint: (msg: string | null) => void;
   setRouting: (busy: boolean) => void;
   setRouteError: (msg: string | null) => void;
+  /** Fires after a mid-trip replan (stop add/remove, destination swap) commits
+   *  so App can adopt the new corridor and restart native guidance. */
+  onNavReplanCommit?: () => void;
 }
 
 type SpokenOption = NearbyHit & { lngLat: LngLat; placeName: string };
@@ -86,6 +90,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     setTapHint,
     setRouting,
     setRouteError,
+    onNavReplanCommit,
   } = deps;
 
   const destLngLat = useTripPlanStore((s) => s.destLngLat);
@@ -140,6 +145,19 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
   const spokenStopRef = useRef(false);
   const announceStormyPickRef = useRef(false);
 
+  /** Every pick path funnels through here: mid-trip it preserves navigation
+   *  and, once the fresh plan lands, commits it into live guidance. */
+  const replanTrip = useCallback(
+    async (end: [number, number], label: string) => {
+      const res = await computeRoutes(end, label, {
+        preserveNavigation: navigationStarted,
+      });
+      if (navigationStarted && res.ok) onNavReplanCommit?.();
+      return res;
+    },
+    [computeRoutes, navigationStarted, onNavReplanCommit]
+  );
+
   const applyTripPlacePick = useCallback(
     async (lngLat: LngLat, label: string, mode: "destination" | "via") => {
       if (mode === "via") {
@@ -160,9 +178,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
         }
         setViaStops([...prev, { lngLat, label }]);
         setAddingViaStop(false);
-        await computeRoutes(finalDest, finalLabel.trim() || "Destination", {
-          preserveNavigation: navigationStarted,
-        });
+        await replanTrip(finalDest, finalLabel.trim() || "Destination");
         return;
       }
       setViaStops([]);
@@ -186,12 +202,10 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       setDestinationLabel(label);
       setViewMode("route");
       setSearchExpanded(false);
-      await computeRoutes(lngLat, label, {
-        preserveNavigation: navigationStarted,
-      });
+      await replanTrip(lngLat, label);
     },
     [
-      computeRoutes,
+      replanTrip,
       navigationStarted,
       setActiveViaIndex,
       setDestLngLat,
@@ -209,14 +223,16 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       const finalLabel = useTripPlanStore.getState().destinationLabel;
       const next = useTripPlanStore.getState().viaStops.filter((_, i) => i !== index);
       setViaStops(next);
-      setActiveViaIndex((i) => Math.min(i, Math.max(0, next.length)));
+      /* Removing a stop ahead of the active one shifts every later index down —
+       * keep the pointer on the same upcoming stop instead of skipping one. */
+      setActiveViaIndex((i) =>
+        Math.min(activeIndexAfterPullRemoved(i, index), Math.max(0, next.length))
+      );
       if (finalDest) {
-        await computeRoutes(finalDest, finalLabel.trim() || "Destination", {
-          preserveNavigation: navigationStarted,
-        });
+        await replanTrip(finalDest, finalLabel.trim() || "Destination");
       }
     },
-    [computeRoutes, navigationStarted, setActiveViaIndex, setViaStops]
+    [replanTrip, setActiveViaIndex, setViaStops]
   );
 
   const handleMapClick = useCallback(
@@ -237,9 +253,10 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
           }
           setViaStops([...prev, { lngLat: end, label: pinLabel }]);
           setAddingViaStop(false);
-          await computeRoutes(finalDest, useTripPlanStore.getState().destinationLabel.trim() || "Destination", {
-            preserveNavigation: navigationStarted,
-          });
+          await replanTrip(
+            finalDest,
+            useTripPlanStore.getState().destinationLabel.trim() || "Destination"
+          );
           return;
         }
         setDestinationLabel(pinLabel);
@@ -293,7 +310,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
         recordRecentSearch(pinLabel, end);
       }
     },
-    [userLngLat, applyTripPlacePick, mapboxToken, locationError, recordRecentSearch, navigationStarted, planRoutesLength, addingViaStop, setViaStops]
+    [userLngLat, applyTripPlacePick, replanTrip, mapboxToken, locationError, recordRecentSearch, navigationStarted, planRoutesLength, addingViaStop, setViaStops]
   );
 
   const handleSavedPlaceNavigate = useCallback(
@@ -414,9 +431,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
         if (!navigationStarted) setActiveViaIndex(0);
         setAddingViaStop(false);
         setSearchExpanded(false);
-        await computeRoutes(dest, destLabel.trim() || "Destination", {
-          preserveNavigation: navigationStarted,
-        });
+        await replanTrip(dest, destLabel.trim() || "Destination");
         announceStormyPick(placeName, true);
         return;
       }
@@ -435,7 +450,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       ensureSearchBoxSessionToken,
       resetSearchBoxSessionToken,
       addingViaStop,
-      computeRoutes,
+      replanTrip,
       navigationStarted,
       setActiveViaIndex,
       setSearchExpanded,
@@ -475,9 +490,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
         setViaStops([...prev, { lngLat, label: placeName }]);
         if (!navigationStarted) setActiveViaIndex(0);
         setAddingViaStop(false);
-        await computeRoutes(dest, destLabel.trim() || "Destination", {
-          preserveNavigation: navigationStarted,
-        });
+        await replanTrip(dest, destLabel.trim() || "Destination");
         return placeName;
       }
       const pickMode = addingViaStop && dest ? "via" : "destination";
@@ -485,7 +498,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
       await applyTripPlacePick(lngLat, placeName, pickMode);
       return placeName;
     },
-    [addingViaStop, applyTripPlacePick, computeRoutes, navigationStarted, recordRecentSearch, setActiveViaIndex, setTapHint, setViaStops]
+    [addingViaStop, applyTripPlacePick, replanTrip, navigationStarted, recordRecentSearch, setActiveViaIndex, setTapHint, setViaStops]
   );
 
   const retrieveSpokenHit = useCallback(
