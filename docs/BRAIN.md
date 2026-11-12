@@ -263,8 +263,15 @@ Full steps: `docs/CLOUDFLARE_TILES.md` (RainViewer section). Same pattern as Tom
 - Store-facing identity work (Oct 2026): legal pages (`web/public/privacy.html`, `terms.html`, `support.html`) now name PeckTech LLC; About sheet shows "A PeckTech LLC product". Legal contact = pecktech1@yahoo.com; product support stays stormpath@yahoo.com.
 - Bundle ID stays `com.aaronpeck.stormpath` — it is immutable without creating a new App Store app, and it is not shown on the public store page. Do not change it casually.
 - GitHub account `aaronpeck77` is private repo hosting only — not store-facing.
+- **Check next time:** confirm the live App Store page Seller field reads PeckTech LLC (org account should already do this). Bill set the App Store Connect Copyright to PeckTech LLC himself (Oct 2026). Also confirm `stormpath2.netlify.app/privacy.html` / `terms.html` / `support.html` show PeckTech LLC — `public/` changes can be skipped by `netlify-ignore.sh`; if they did not deploy, publish `web/public` manually.
 
 ---
+
+## "Your Route" — breadcrumbs as a route option (idea, Oct 2026)
+
+Bill's proposal: when a requested route comes close to a corridor the driver uses a lot (commute, regular trips), offer a third route option — "Your Route." Maybe the only time a third option ever appears. And when enough breadcrumbs accumulate on a corridor, the app suggests "You drive this route a lot — save it as a Favorite?" then offers it or lets him pick it.
+
+Feasibility notes (thinking only, no code): the corridor-overlap machinery built for Route B admission can be reused to detect "close." Generating the option does NOT need Mapbox to cooperate — refetch Directions with via points snapped along the learned trace (vias used only to generate, stripped from the result so they are not stops), giving fresh geometry/steps/ETA that still respects closures. The open parked question — whether `trailRoutePersonalization` actually influences which alternates Mapbox returns — is sidestepped entirely by this approach. See `docs/BRAIN_THINKING.md` for the dated analysis.
 
 ## How agents should treat Brain
 
