@@ -415,7 +415,7 @@ export function AppBottomChrome({
                   {addingViaStop
                     ? "Tap map or search for a stop"
                     : isChangingDestination
-                      ? "Search destination or stop…"
+                      ? "Tap map or search for a destination"
                       : destinationLabel || "Destination"}
                 </span>
               </button>

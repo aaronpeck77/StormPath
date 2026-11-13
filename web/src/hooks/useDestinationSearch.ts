@@ -105,6 +105,9 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
   const setSearchEditing = useUiStore((s) => s.setSearchEditing);
 
   const [addingViaStop, setAddingViaStop] = useState(false);
+  /** Mid-route "Change" arms this so the next map tap retargets the destination
+   *  instead of staying locked. Mutually exclusive with addingViaStop. */
+  const [pickingDestination, setPickingDestination] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [allowAutocomplete, setAllowAutocomplete] = useState(true);
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
@@ -178,12 +181,14 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
         }
         setViaStops([...prev, { lngLat, label }]);
         setAddingViaStop(false);
+        setPickingDestination(false);
         await replanTrip(finalDest, finalLabel.trim() || "Destination");
         return;
       }
       setViaStops([]);
       setActiveViaIndex(0);
       setAddingViaStop(false);
+      setPickingDestination(false);
       setSearchPickHits(null);
       searchPickQueryRef.current = null;
       if (!navigationStarted) {
@@ -826,6 +831,7 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     searchAutocompleteSeqRef.current += 1;
     handleSearchCancelSuggestions();
     setAddingViaStop(false);
+    setPickingDestination(false);
     setSearchText("");
     setAllowAutocomplete(false);
     setSearchExpanded(true);
@@ -992,6 +998,8 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
     searchPickQueryRef,
     addingViaStop,
     setAddingViaStop,
+    pickingDestination,
+    setPickingDestination,
     destLngLat,
     handleRemoveViaStop,
     handleMapClick,

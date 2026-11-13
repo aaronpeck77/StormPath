@@ -703,6 +703,8 @@ export default function App() {
     searchPickQueryRef,
     addingViaStop,
     setAddingViaStop,
+    pickingDestination,
+    setPickingDestination,
     handleRemoveViaStop,
     handleMapClick,
     handleSavedPlaceNavigate,
@@ -2460,7 +2462,7 @@ export default function App() {
    * sanctioned way to drop a pin stop without retargeting the destination by accident. */
   const allowDestinationPick =
     allowsMapDestinationPick(navigationStarted) ||
-    (navigationStarted && addingViaStop && mapPlanningUi);
+    (navigationStarted && (addingViaStop || pickingDestination) && mapPlanningUi);
   const routeActive = plan.routes.length > 0;
   const showCompactDest = routeActive && !searchExpanded;
   const showReturnTripButton =
@@ -3586,12 +3588,18 @@ export default function App() {
           handleCompactDestOpen={handleCompactDestOpen}
           onChangeDestination={() => {
             /* Destination picks clear via-stops; make sure an armed add-stop
-             * mode can't hijack the pick into a via instead. */
+             * mode can't hijack the pick into a via instead. Tapping Change
+             * again disarms the map-pick without closing search. */
             setAddingViaStop(false);
+            if (pickingDestination) {
+              setPickingDestination(false);
+              return;
+            }
+            setPickingDestination(true);
             handleCompactDestOpen();
             setSearchExpanded(true);
           }}
-          isChangingDestination={searchExpanded && navigationStarted}
+          isChangingDestination={pickingDestination}
           destinationLabel={destinationLabel}
           searchText={searchText}
           onSearchTextChange={(v) => {
@@ -3604,7 +3612,11 @@ export default function App() {
           handleSearchDismiss={handleSearchDismiss}
           onSearchSubmit={() => void handleSearch()}
           searchPlaceholder={
-            addingViaStop && destLngLat ? "Search your stop" : "Search address or place"
+            addingViaStop && destLngLat
+              ? "Search your stop"
+              : pickingDestination
+                ? "Search destination"
+                : "Search address or place"
           }
           suggestions={suggestions}
           onPickSuggestion={(h) => void handlePickSuggestion(h)}
@@ -3614,7 +3626,11 @@ export default function App() {
           activeViaIndex={activeViaIndex}
           addingViaStop={addingViaStop}
           canAddStop={Boolean(destLngLat)}
-          onStartAddStop={() => setAddingViaStop(true)}
+          onStartAddStop={() => {
+            /* +Stop and Change are mutually exclusive pick modes. */
+            setPickingDestination(false);
+            setAddingViaStop(true);
+          }}
           onCancelAddStop={() => setAddingViaStop(false)}
           handleRemoveViaStop={handleRemoveViaStop}
           handleSkipViaStop={(index) => {
