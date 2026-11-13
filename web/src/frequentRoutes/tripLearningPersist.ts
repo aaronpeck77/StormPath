@@ -16,6 +16,7 @@ type Persisted = {
   lastAppendAt: number;
   lastAppended: LngLat | null;
   slowSince: number | null;
+  slowStartLen?: number;
   savedAt: number;
 };
 
@@ -43,6 +44,7 @@ export function saveTripLearningMachine(state: TripLearningMachineState, now = D
     lastAppendAt: state.lastAppendAt,
     lastAppended: state.lastAppended,
     slowSince: state.slowSince,
+    slowStartLen: state.slowStartLen,
     savedAt: now,
   };
   safeStorage.set(LS_KEY, JSON.stringify(payload));
@@ -79,6 +81,7 @@ export function loadTripLearningMachine(now = Date.now()): TripLearningMachineSt
       lastAppendAt: typeof p.lastAppendAt === "number" ? p.lastAppendAt : now,
       lastAppended: isLngLat(p.lastAppended) ? p.lastAppended : points[points.length - 1]!,
       slowSince: typeof p.slowSince === "number" ? p.slowSince : null,
+      slowStartLen: typeof p.slowStartLen === "number" ? p.slowStartLen : undefined,
     };
   } catch {
     clearTripLearningMachinePersist();

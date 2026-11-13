@@ -12,9 +12,22 @@ export type TripLearningMachineState = {
   lastAppendAt: number;
   lastAppended: LngLat | null;
   slowSince: number | null;
+  /** Point count when the current slow period began — trailing wander appended
+   *  during the final dwell gets trimmed off the learned path at trip finish. */
+  slowStartLen?: number;
 };
 
-const SAMPLE_MS = 16_000;
+/**
+ * Distance-primary sampling: append roughly every TARGET_SPACING_M of travel.
+ * The old 16 s time gate thinned to ~460 m between points at highway speed —
+ * too coarse for road-faithful "Your route" geometry. MIN_SAMPLE_GAP_MS only
+ * prevents same-tick bursts; the 4 s learning tick is the real cadence.
+ */
+const TARGET_SPACING_M = 100;
+const MIN_SAMPLE_GAP_MS = 3_000;
+/** Past ~250 km of travel, spacing relaxes ×3 so ultra-long drives can't grow
+ * the persisted point list without bound (finish still caps at MAX_POINTS). */
+const RAW_POINT_SOFT_CAP = 2_500;
 const MIN_APPEND_M = 28;
 const START_SPEED_MPS = 1.2;
 /** When Core Motion says automotive/cycling, allow a slightly lower GPS speed to start. */
@@ -25,7 +38,7 @@ const END_DWELL_MS = 45_000;
 const END_DWELL_MS_NOT_DRIVING = 20_000;
 const MIN_TRIP_LEN_M = 300;
 const MIN_TRIP_DURATION_MS = 75_000;
-const MAX_POINTS = 160;
+const MAX_POINTS = 400;
 
 export function createInitialTripState(now: number): TripLearningMachineState {
   return {
@@ -116,19 +129,24 @@ export function processTripSample(
   }
 
   let slowSince = s.slowSince;
+  let slowStartLen = s.slowStartLen;
   if (slow) {
+    if (slowSince == null) slowStartLen = s.points.length;
     slowSince = slowSince ?? now;
   } else {
     slowSince = null;
+    slowStartLen = undefined;
   }
 
   let points = s.points;
   let lastAppendAt = s.lastAppendAt;
   let lastAppended = s.lastAppended;
 
+  const spacingM =
+    points.length >= RAW_POINT_SOFT_CAP ? TARGET_SPACING_M * 3 : TARGET_SPACING_M;
   const shouldAppend =
-    now - lastAppendAt >= SAMPLE_MS &&
-    (lastAppended == null || haversineMeters(lastAppended, lngLat) >= MIN_APPEND_M);
+    now - lastAppendAt >= MIN_SAMPLE_GAP_MS &&
+    (lastAppended == null || haversineMeters(lastAppended, lngLat) >= spacingM);
   if (shouldAppend) {
     points = [...points, lngLat];
     lastAppendAt = now;
@@ -142,11 +160,17 @@ export function processTripSample(
     lastAppendAt,
     lastAppended,
     slowSince,
+    slowStartLen,
   };
 
   const dwellMs = isNotDriving(activityHint) ? END_DWELL_MS_NOT_DRIVING : END_DWELL_MS;
   if (slowSince != null && now - slowSince >= dwellMs) {
-    const trip = finishTrip(mid, now);
+    /* Trim the tail: drop points appended after the final slow-down began so
+     * parking-lot creep / GPS wander never becomes the end of "Your route". */
+    const trimLen = slowStartLen != null && slowStartLen >= 2 ? slowStartLen : null;
+    const finishState =
+      trimLen != null ? { ...mid, points: mid.points.slice(0, trimLen) } : mid;
+    const trip = finishTrip(finishState, now);
     return {
       state: createInitialTripState(now),
       trip,
@@ -174,6 +198,8 @@ export function forceFinishActiveTrip(
   ) {
     points = [...points, lngLat];
   }
+  const trimLen = s.slowStartLen != null && s.slowStartLen >= 2 ? s.slowStartLen : null;
+  if (trimLen != null) points = points.slice(0, trimLen);
   const trip = finishTrip({ ...s, points }, now);
   return { state: createInitialTripState(now), trip };
 }
