@@ -2455,8 +2455,12 @@ export default function App() {
 
   /** Rt + Mp: explore / plan on the map; Dr is follow-cam after Go. */
   const mapPlanningUi = viewMode === "route" || viewMode === "topdown";
-  /** Planning taps must work even if view is briefly still Drive before the kick-out to Rt. */
-  const allowDestinationPick = allowsMapDestinationPick(navigationStarted);
+  /** Planning taps must work even if view is briefly still Drive before the kick-out to Rt.
+   * Mid-route, map taps stay locked UNLESS the driver armed +Stop — that's the only
+   * sanctioned way to drop a pin stop without retargeting the destination by accident. */
+  const allowDestinationPick =
+    allowsMapDestinationPick(navigationStarted) ||
+    (navigationStarted && addingViaStop && mapPlanningUi);
   const routeActive = plan.routes.length > 0;
   const showCompactDest = routeActive && !searchExpanded;
   const showReturnTripButton =

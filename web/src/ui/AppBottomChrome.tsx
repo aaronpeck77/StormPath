@@ -479,25 +479,28 @@ export function AppBottomChrome({
     </div>
   );
 
-  /* iPad-landscape dock extras: miles-left + the mid-route shortcuts ride
-   * inside the LandscapeNavigationDock controls row. The wrapper is
-   * CSS-hidden everywhere except large-tablet landscape, so phone docks are
-   * untouched. Order there: ⓘ · miles · +Stop · Change | Tools · compass · ↻. */
-  const dockPanelExtras = (
-    <div className="landscape-navigation-dock__panel-extras">
-      {driveDistanceRemainingLabel ? (
-        <NavMilesLeftBox label={driveDistanceRemainingLabel} />
-      ) : null}
+  /* +Stop/Change pair shared by the phone MP/RT about-row and the iPad
+   * landscape dock extras (mutually exclusive via CSS/branch, so one node is
+   * safe). "Cancel stop" must actually disarm — while armed the button calls
+   * onCancelAddStop instead of re-arming (phone field test). */
+  const stopChangeButtons = (
+    <>
       <button
         type="button"
         className="nav-dock-above-info-btn"
-        disabled={viaStops.length >= MAX_VIA_STOPS}
+        disabled={!addingViaStop && viaStops.length >= MAX_VIA_STOPS}
         title={
-          viaStops.length >= MAX_VIA_STOPS
-            ? `Stop limit reached (${MAX_VIA_STOPS})`
-            : "Add a stop on the way"
+          addingViaStop
+            ? "Cancel adding a stop"
+            : viaStops.length >= MAX_VIA_STOPS
+              ? `Stop limit reached (${MAX_VIA_STOPS})`
+              : "Add a stop on the way"
         }
         onClick={() => {
+          if (addingViaStop) {
+            onCancelAddStop();
+            return;
+          }
           onStartAddStop();
           if (showCompactDest) handleCompactDestOpen();
         }}
@@ -513,6 +516,19 @@ export function AppBottomChrome({
       >
         Change
       </button>
+    </>
+  );
+
+  /* iPad-landscape dock extras: miles-left + the mid-route shortcuts ride
+   * inside the LandscapeNavigationDock controls row. The wrapper is
+   * CSS-hidden everywhere except large-tablet landscape, so phone docks are
+   * untouched. Order there: ⓘ · miles · +Stop · Change | Tools · compass · ↻. */
+  const dockPanelExtras = (
+    <div className="landscape-navigation-dock__panel-extras">
+      {driveDistanceRemainingLabel ? (
+        <NavMilesLeftBox label={driveDistanceRemainingLabel} />
+      ) : null}
+      {stopChangeButtons}
     </div>
   );
 
@@ -714,35 +730,7 @@ export function AppBottomChrome({
                   <NavMilesLeftBox label={driveDistanceRemainingLabel} />
                 ) : null
               }
-              leadingActions={
-                <>
-                  <button
-                    type="button"
-                    className="nav-dock-above-info-btn"
-                    disabled={viaStops.length >= MAX_VIA_STOPS}
-                    title={
-                      viaStops.length >= MAX_VIA_STOPS
-                        ? `Stop limit reached (${MAX_VIA_STOPS})`
-                        : "Add a stop on the way"
-                    }
-                    onClick={() => {
-                      onStartAddStop();
-                      if (showCompactDest) handleCompactDestOpen();
-                    }}
-                  >
-                    {addingViaStop ? "Cancel stop" : "+ Stop"}
-                  </button>
-                  <button
-                    type="button"
-                    className="nav-dock-above-info-btn"
-                    disabled={!onChangeDestination}
-                    title="Change destination — clears stops and replans from here"
-                    onClick={onChangeDestination}
-                  >
-                    Change
-                  </button>
-                </>
-              }
+              leadingActions={stopChangeButtons}
             >
               {mpRouteSlot}
             </DockAboutRow>
