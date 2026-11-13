@@ -1,6 +1,7 @@
 import { haversineMeters } from "../nav/routeGeometry";
 import type { LngLat } from "../nav/types";
 import { safeStorage } from "../storage/safeStorage";
+import { MAX_CLUSTER_TRACES, pickConsensusTrace } from "./corridorConsensus";
 import type { CompletedLearnedTrip, FrequentRouteCluster } from "./types";
 
 const STORAGE_KEY = "stormpath-frequent-route-clusters";
@@ -45,6 +46,7 @@ export function mergeTripIntoClusters(
       count: 1,
       lastSeen: trip.endedAt,
       geometry: trip.geometry,
+      geometries: [trip.geometry],
       centerStart: start,
       centerEnd: end,
       recentStarts: [trip.startedAt],
@@ -53,7 +55,12 @@ export function mergeTripIntoClusters(
   }
 
   const prev = clusters[idx]!;
-  const useGeom = trip.geometry.length > prev.geometry.length ? trip.geometry : prev.geometry;
+  /* Keep the last few raw traces; the offered geometry is their medoid, so one
+   * unusual drive can't become "Your route" just by having more points. */
+  const traces = [...(prev.geometries ?? [prev.geometry]), trip.geometry].slice(
+    -MAX_CLUSTER_TRACES
+  );
+  const consensus = pickConsensusTrace(traces, prev.geometry) ?? prev.geometry;
   const forward =
     haversineMeters(start, prev.centerStart) <= MATCH_START_END_M &&
     haversineMeters(end, prev.centerEnd) <= MATCH_START_END_M;
@@ -64,7 +71,8 @@ export function mergeTripIntoClusters(
     ...prev,
     count: prev.count + 1,
     lastSeen: trip.endedAt,
-    geometry: useGeom,
+    geometry: consensus,
+    geometries: traces,
     centerStart: start,
     centerEnd: end,
     recentStarts: [...(prev.recentStarts ?? []), trip.startedAt].slice(-MAX_RECENT_STARTS),
@@ -88,6 +96,24 @@ function trimClusters(list: FrequentRouteCluster[]): FrequentRouteCluster[] {
   return sorted;
 }
 
+function isLngLat(v: unknown): v is LngLat {
+  return (
+    Array.isArray(v) &&
+    v.length >= 2 &&
+    Number.isFinite(v[0]) &&
+    Number.isFinite(v[1])
+  );
+}
+
+function toLngLatArray(v: unknown): LngLat[] {
+  if (!Array.isArray(v)) return [];
+  const out: LngLat[] = [];
+  for (const p of v) {
+    if (isLngLat(p)) out.push([p[0], p[1]]);
+  }
+  return out;
+}
+
 export function loadFrequentRouteClusters(): FrequentRouteCluster[] {
   const data = safeStorage.getJson<unknown>(STORAGE_KEY, []);
   if (!Array.isArray(data)) return [];
@@ -99,20 +125,17 @@ export function loadFrequentRouteClusters(): FrequentRouteCluster[] {
       const id = typeof o.id === "string" ? o.id : "";
       const count = typeof o.count === "number" ? o.count : 0;
       const lastSeen = typeof o.lastSeen === "number" ? o.lastSeen : 0;
-      const g = o.geometry;
-      if (!id || count < 1 || !Array.isArray(g) || g.length < 2) continue;
-      const geometry: LngLat[] = [];
-      for (const p of g) {
-        if (Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1])) {
-          geometry.push([p[0]!, p[1]!]);
-        }
-      }
-      if (geometry.length < 2) continue;
+      const geometry = toLngLatArray(o.geometry);
+      if (!id || count < 1 || geometry.length < 2) continue;
       const cs = o.centerStart;
       const ce = o.centerEnd;
-      if (!Array.isArray(cs) || !Array.isArray(ce)) continue;
-      if (!Number.isFinite(cs[0]) || !Number.isFinite(cs[1])) continue;
-      if (!Number.isFinite(ce[0]) || !Number.isFinite(ce[1])) continue;
+      if (!isLngLat(cs) || !isLngLat(ce)) continue;
+      const geometries = Array.isArray(o.geometries)
+        ? o.geometries
+            .map((g) => toLngLatArray(g))
+            .filter((g) => g.length >= 2)
+            .slice(-MAX_CLUSTER_TRACES)
+        : [];
       const recentStarts = Array.isArray(o.recentStarts)
         ? o.recentStarts.filter((t): t is number => typeof t === "number" && Number.isFinite(t)).slice(-12)
         : undefined;
@@ -121,8 +144,9 @@ export function loadFrequentRouteClusters(): FrequentRouteCluster[] {
         count,
         lastSeen,
         geometry,
-        centerStart: [cs[0]!, cs[1]!],
-        centerEnd: [ce[0]!, ce[1]!],
+        geometries: geometries.length ? geometries : undefined,
+        centerStart: [cs[0], cs[1]],
+        centerEnd: [ce[0], ce[1]],
         recentStarts: recentStarts && recentStarts.length ? recentStarts : undefined,
         startLabel: typeof o.startLabel === "string" && o.startLabel.trim() ? o.startLabel.trim() : undefined,
         endLabel: typeof o.endLabel === "string" && o.endLabel.trim() ? o.endLabel.trim() : undefined,

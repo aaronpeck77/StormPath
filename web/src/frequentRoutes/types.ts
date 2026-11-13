@@ -13,7 +13,10 @@ export type FrequentRouteCluster = {
   id: string;
   count: number;
   lastSeen: number;
+  /** Consensus trace — medoid of {@link geometries}; what offers/saves consume. */
   geometry: LngLat[];
+  /** Recent raw trip traces (either direction), newest last — medoid source. */
+  geometries?: LngLat[][];
   centerStart: LngLat;
   centerEnd: LngLat;
   /** Start times (ms) of merged trips, newest last — powers the plan-time "usual time" trigger. */
