@@ -760,6 +760,18 @@ html:has(.drive-map--native-shell) #root {
   min-width: 0;
 }
 
+/* Miles-left rides the same baseline as the info button, just to its right. */
+.nav-bottom-dock__info-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nav-bottom-dock__info-row > .nav-miles-left-box {
+  flex: 0 1 auto;
+}
+
 .nav-dock-above-info-btn {
   box-sizing: border-box;
   padding: 4px 9px;

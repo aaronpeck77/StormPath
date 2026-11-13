@@ -43,6 +43,7 @@ function DockAboutRow({
   refresh,
   tools,
   leadingActions,
+  infoAside,
   children,
 }: {
   stormyOn: boolean;
@@ -53,13 +54,18 @@ function DockAboutRow({
   tools?: ReactNode;
   /** Small stacked shortcuts rendered directly above the info button. */
   leadingActions?: ReactNode;
+  /** Compact read-out rendered immediately to the right of the info button. */
+  infoAside?: ReactNode;
   children?: ReactNode;
 }) {
   const infoButton = <MapInfoButton onOpenAbout={onOpenAbout} />;
-  const info = leadingActions ? (
+  const info = leadingActions || infoAside ? (
     <div className="nav-bottom-dock__info-actions-col">
       {leadingActions}
-      {infoButton}
+      <div className="nav-bottom-dock__info-row">
+        {infoButton}
+        {infoAside}
+      </div>
     </div>
   ) : (
     infoButton
@@ -692,6 +698,11 @@ export function AppBottomChrome({
               onOpenAbout={onOpenAbout}
               tools={toolsButton}
               stormy={talkButton}
+              infoAside={
+                driveDistanceRemainingLabel ? (
+                  <NavMilesLeftBox label={driveDistanceRemainingLabel} />
+                ) : null
+              }
               leadingActions={
                 <>
                   <button
@@ -722,9 +733,6 @@ export function AppBottomChrome({
                 </>
               }
             >
-              {driveDistanceRemainingLabel ? (
-                <NavMilesLeftBox label={driveDistanceRemainingLabel} />
-              ) : null}
               {mpRouteSlot}
             </DockAboutRow>
             )}
