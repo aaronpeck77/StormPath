@@ -635,7 +635,9 @@
     width: 100%;
     box-sizing: border-box;
     padding: 0 max(6px, env(safe-area-inset-right)) 0 max(6px, env(safe-area-inset-left));
-    pointer-events: none;
+    /* The dock is a control surface — keep gaps between messages/controls/miles
+     * from falling through to map taps. */
+    pointer-events: auto;
   }
 
   .app-shell.nav-fullmap.app-shell--landscape-hand-left .landscape-navigation-dock {

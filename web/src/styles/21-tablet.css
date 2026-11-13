@@ -653,7 +653,9 @@
     column-gap: 10px;
     row-gap: 8px;
     padding: 0;
-    pointer-events: none;
+    /* Same rule as phone landscape: the dock rectangle is a control surface,
+     * so grid gaps must not fall through to map taps. */
+    pointer-events: auto;
   }
 
   .landscape-navigation-dock__messages {
