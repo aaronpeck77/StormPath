@@ -781,7 +781,7 @@ html:has(.drive-map--native-shell) #root {
   box-sizing: border-box;
   padding: 4px 9px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.42);
   background: rgba(18, 20, 24, 0.38);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
