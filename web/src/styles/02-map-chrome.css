@@ -581,6 +581,11 @@ html:has(.drive-map--native-shell) #root {
   min-width: 0;
 }
 
+/* MP/RT: drop the route-select strip onto the same baseline as miles-left + info. */
+.nav-bottom-dock__about-row--mp {
+  align-items: flex-end;
+}
+
 /* Address + My location + route: one row ? equal control height; flex-start so open suggestions don?t vertically center the side buttons */
 .nav-bottom-dock__search-myloc-row {
   display: flex;

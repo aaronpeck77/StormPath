@@ -44,6 +44,8 @@ function DockAboutRow({
   tools,
   leadingActions,
   infoAside,
+  aboutRowClassName,
+  toolsAfterChildren = false,
   children,
 }: {
   stormyOn: boolean;
@@ -56,9 +58,16 @@ function DockAboutRow({
   leadingActions?: ReactNode;
   /** Compact read-out rendered immediately to the right of the info button. */
   infoAside?: ReactNode;
+  /** Extra class for the about-row (MP/RT bottom alignment). */
+  aboutRowClassName?: string;
+  /** Render the inline route slot before Tools so it sits beside miles-left. */
+  toolsAfterChildren?: boolean;
   children?: ReactNode;
 }) {
   const infoButton = <MapInfoButton onOpenAbout={onOpenAbout} />;
+  const aboutRowClass = `nav-bottom-dock__about-row${
+    aboutRowClassName ? ` ${aboutRowClassName}` : ""
+  }`;
   const info = leadingActions || infoAside ? (
     <div className="nav-bottom-dock__info-actions-col">
       {leadingActions}
@@ -73,7 +82,7 @@ function DockAboutRow({
   if (!stormyOn) {
     if (compass) {
       return (
-        <div className="nav-bottom-dock__about-row">
+        <div className={aboutRowClass}>
           <div className="nav-bottom-dock__drive-about-cluster">
             <div className="nav-bottom-dock__compass-i-col">
               {refresh}
@@ -87,15 +96,15 @@ function DockAboutRow({
       );
     }
     return (
-      <div className="nav-bottom-dock__about-row">
+      <div className={aboutRowClass}>
         {info}
-        {tools}
-        {children}
+        {toolsAfterChildren ? children : tools}
+        {toolsAfterChildren ? tools : children}
       </div>
     );
   }
   return (
-    <div className="nav-bottom-dock__about-row">
+    <div className={aboutRowClass}>
       <div className="nav-bottom-dock__info-stormy-col">
         {refresh}
         {compass}
@@ -698,6 +707,8 @@ export function AppBottomChrome({
               onOpenAbout={onOpenAbout}
               tools={toolsButton}
               stormy={talkButton}
+              aboutRowClassName="nav-bottom-dock__about-row--mp"
+              toolsAfterChildren
               infoAside={
                 driveDistanceRemainingLabel ? (
                   <NavMilesLeftBox label={driveDistanceRemainingLabel} />
