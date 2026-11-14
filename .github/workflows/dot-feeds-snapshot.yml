@@ -1,0 +1,45 @@
+name: DOT feeds snapshot
+
+# The dot-feeds Worker's free-plan CPU limit (10 ms) can't parse ~35 upstream
+# feeds inline, so this Action runs the same buildSnapshot() in Node and
+# POSTs the result to the Worker's /ingest endpoint. The Worker then only
+# ever reads the edge cache — near-zero CPU per request.
+#
+# Required repo secrets:
+#   DOT_FEED_INGEST_URL      https://stormpath-dot-feeds.<sub>.workers.dev
+#   DOT_FEED_INGEST_SECRET   matches the Worker's INGEST_SECRET (wrangler secret)
+#   TXDOT_API_KEY, OHGO_API_KEY, CDOT_API_KEY, CDOT_CWZ_API_KEY,
+#   IDOT_CWZ_API_KEY, NPS_API_KEY   (same values as the Worker secrets —
+#   without them those keyed feeds are skipped, same as an unset wrangler secret)
+
+on:
+  schedule:
+    - cron: "*/12 * * * *"
+  workflow_dispatch:
+
+jobs:
+  push-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Bundle worker source for Node
+        run: npx -y esbuild cloudflare/dot-feeds/src/index.ts --bundle --format=esm --platform=node --outfile=cloudflare/dot-feeds/.build/index.mjs
+
+      - name: Build and push snapshot
+        working-directory: cloudflare/dot-feeds
+        env:
+          DOT_FEED_INGEST_URL: ${{ secrets.DOT_FEED_INGEST_URL }}
+          DOT_FEED_INGEST_SECRET: ${{ secrets.DOT_FEED_INGEST_SECRET }}
+          TXDOT_API_KEY: ${{ secrets.TXDOT_API_KEY }}
+          OHGO_API_KEY: ${{ secrets.OHGO_API_KEY }}
+          CDOT_API_KEY: ${{ secrets.CDOT_API_KEY }}
+          CDOT_CWZ_API_KEY: ${{ secrets.CDOT_CWZ_API_KEY }}
+          IDOT_CWZ_API_KEY: ${{ secrets.IDOT_CWZ_API_KEY }}
+          NPS_API_KEY: ${{ secrets.NPS_API_KEY }}
+        run: node scripts/push-snapshot.mjs

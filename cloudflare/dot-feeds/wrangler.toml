@@ -9,3 +9,8 @@ compatibility_date = "2024-06-01"
 
 [observability]
 enabled = true
+
+
+[[kv_namespaces]]
+binding = "SNAPSHOTS"
+id = "bde839cd624d42f39dd8fab96dd05d3e"

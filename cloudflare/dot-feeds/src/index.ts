@@ -5,19 +5,21 @@
  * fetches every open (no-key) state GeoJSON feed, normalizes to one compact
  * schema, and serves /events?bbox=w,s,e,n filtered to the caller's corridor.
  *
- * The merged snapshot lives in the edge Cache API (~4 min) so all users share
- * one upstream poll per PoP — no KV, no cron, self-healing on cold cache.
+ * The merged snapshot is built OFF-worker: a GitHub Action runs the same
+ * buildSnapshot() in Node (no CPU cap) on a schedule and POSTs the result to
+ * /ingest, which stores it in the edge Cache API. Requests only ever read
+ * the cache — the free plan's 10 ms CPU limit cannot parse ~35 feeds inline.
  *
  * Keyed feeds (registry `needapikey` rows — IL, TX, OH, PA, VA, NC, MI, CA,
- * MA, CO, NPS, OR) are supported via per-feed Worker secrets named below.
- * Until a secret is set the feed is skipped, same as before. Set keys with
- * `wrangler secret put <SECRET_NAME>` — never commit them.
+ * MA, CO, NPS, OR) are supported via per-feed secrets named below. The Action
+ * needs the same names as GitHub secrets; until a secret exists the feed is
+ * skipped, same as before. Never commit keys.
  */
 
 const REGISTRY_URL =
   "https://data.transportation.gov/resource/69qe-yiui.json?$where=active=true&$limit=300";
 const SNAPSHOT_CACHE_URL = "https://stormpath-dot-feeds.internal/snapshot";
-const SNAPSHOT_MAX_AGE_MS = 4 * 60_000;
+const SNAPSHOT_KV_KEY = "snapshot";
 /** Keep events that ended recently or start within a week — route planning lookahead. */
 const WINDOW_PAST_MS = 12 * 3_600_000;
 const WINDOW_FUTURE_MS = 7 * 24 * 3_600_000;
@@ -32,7 +34,7 @@ const MAX_DESCRIPTION_CHARS = 400;
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
@@ -44,8 +46,12 @@ type RegistryRow = {
   url?: { url?: string } | string;
 };
 
-/** Worker env — secrets arrive as string bindings. */
-type FeedEnv = Record<string, string | undefined>;
+/** Worker env — secrets arrive as string bindings; SNAPSHOTS is the KV namespace. */
+type SnapshotStore = {
+  get(key: string, type: "json"): Promise<unknown>;
+  put(key: string, value: string): Promise<void>;
+};
+type FeedEnv = Record<string, string | undefined> & { SNAPSHOTS?: SnapshotStore };
 
 /**
  * Keyed feeds from the WZDx registry. `param` feeds take the key as a query
@@ -804,7 +810,7 @@ const CUSTOM_FEEDS: CustomFeed[] = [
   },
 ];
 
-async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
+export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
   const nowMs = Date.now();
   const registry = (await fetchJson(REGISTRY_URL, 15_000)) as RegistryRow[];
   const rows = registry.filter((r) => feedUrlOf(r));
@@ -878,30 +884,40 @@ async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
 }
 
 async function snapshot(cachesApi: Cache, env: FeedEnv): Promise<Snapshot | null> {
+  /* L1: per-PoP edge cache (cheap, keeps KV reads down). */
   const hit = await cachesApi.match(SNAPSHOT_CACHE_URL);
-  let snap: Snapshot | null = null;
   if (hit) {
     try {
-      snap = (await hit.json()) as Snapshot;
+      return (await hit.json()) as Snapshot;
     } catch {
-      snap = null;
+      /* fall through to KV */
     }
   }
-  const fresh = snap && Date.now() - snap.fetchedAt < SNAPSHOT_MAX_AGE_MS;
-  if (fresh) return snap;
-  try {
-    const next = await buildSnapshot(env);
-    await cachesApi.put(
+  /* L2: KV is globally replicated — the Action's /ingest lands here once and
+   * every PoP sees it. Repopulate L1 so follow-up reads stay off KV. */
+  const stored = await env.SNAPSHOTS?.get(SNAPSHOT_KV_KEY, "json").catch(() => null);
+  if (!stored || typeof stored !== "object") return null;
+  const snap = stored as Snapshot;
+  await cachesApi
+    .put(
       SNAPSHOT_CACHE_URL,
-      new Response(JSON.stringify(next), {
+      new Response(JSON.stringify(snap), {
         headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=240" },
       })
-    );
-    return next;
-  } catch (err) {
-    console.error("[dot-feeds] snapshot rebuild failed", err);
-    return snap; /* serve stale rather than nothing */
-  }
+    )
+    .catch(() => {});
+  return snap;
+}
+
+/** /ingest payload check — the Action sends exactly what buildSnapshot made. */
+function isSnapshot(v: unknown): v is Snapshot {
+  const s = v as Snapshot | null;
+  return (
+    !!s &&
+    typeof s.fetchedAt === "number" &&
+    Date.now() - s.fetchedAt < 60 * 60_000 &&
+    Array.isArray(s.events)
+  );
 }
 
 function bboxIntersects(a: number[], b: number[]): boolean {
@@ -913,6 +929,38 @@ export default {
     const bindings = (env ?? {}) as FeedEnv;
     const url = new URL(request.url);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+
+    /* The GitHub Action posts a freshly built snapshot here. Bearer secret
+     * keeps it write-only for us; reads stay GET. */
+    if (url.pathname === "/ingest") {
+      if (request.method !== "POST")
+        return new Response("Method not allowed", { status: 405, headers: CORS });
+      const auth = request.headers.get("Authorization") ?? "";
+      if (!bindings.INGEST_SECRET || auth !== `Bearer ${bindings.INGEST_SECRET}`)
+        return new Response("unauthorized", { status: 401, headers: CORS });
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return new Response("bad json", { status: 400, headers: CORS });
+      }
+      if (!isSnapshot(body))
+        return new Response("bad snapshot", { status: 400, headers: CORS });
+      /* KV is the global store every PoP reads; the local cache entry just
+       * warms this colo so the next read skips the KV hop. */
+      await bindings.SNAPSHOTS?.put(SNAPSHOT_KV_KEY, JSON.stringify(body));
+      await caches.default.put(
+        SNAPSHOT_CACHE_URL,
+        new Response(JSON.stringify(body), {
+          headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=240" },
+        })
+      );
+      return Response.json(
+        { ok: true, events: body.events.length, fetchedAt: body.fetchedAt },
+        { headers: CORS }
+      );
+    }
+
     if (request.method !== "GET")
       return new Response("Method not allowed", { status: 405, headers: CORS });
 
@@ -956,12 +1004,6 @@ export default {
         { fetchedAt: snap.fetchedAt, states },
         { headers: { ...CORS, "Cache-Control": "public, max-age=300" } }
       );
-    }
-
-    /* Warm the snapshot in the background so the first /events isn't slow. */
-    if (url.pathname === "/refresh") {
-      ctx.waitUntil(snapshot(caches.default, bindings));
-      return new Response("refreshing", { status: 202, headers: CORS });
     }
 
     return new Response("not found", { status: 404, headers: CORS });
