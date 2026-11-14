@@ -271,7 +271,6 @@ export function RouteRadarWindStrip({
             </svg>
             {windNowMph != null ? (
               <span className="rpgl__readout rpgl__readout--wind">
-                <small>at YOU</small>
                 {Math.round(windNowMph)} mph
               </span>
             ) : null}

@@ -198,16 +198,16 @@ function row(cls, labelText, labelCls, readout){
   const r = document.createElement('div');
   r.className = 'layer ' + cls;
   r.innerHTML = `<span class="layer-label ${labelCls}">${labelText}</span>` +
-    (readout ? `<span class="readout ${readout.cls}"><small>${readout.small}</small><b id="${readout.id}">–</b></span>` : '');
+    (readout ? `<span class="readout ${readout.cls}${readout.snow?' snow':''}">${readout.small?`<small>${readout.small}</small>`:''}<b id="${readout.id}">–</b></span>` : '');
   body.insertBefore(r, youLine);
   return r;
 }
 
-const tempRow  = row('layer--temp','Temp','layer-label--temp',{cls:'readout--temp',small:'at YOU',id:'tempVal'});
+const tempRow  = row('layer--temp','Temp','layer-label--temp',{cls:'readout--temp',id:'tempVal'});
 { const s = svgFor({h:40}); tempRow.appendChild(s);
   polyline(s, temp, '#fb923c', 1.8, 20, 50); }
 
-const precipRow = row('layer--precip','Precip','layer-label--precip',{cls:'readout--precip',small:'at YOU',id:'precipVal',html:true});
+const precipRow = row('layer--precip','Precip','layer-label--precip',{cls:'readout--precip',id:'precipVal'});
 { const s = svgFor({h:40}); precipRow.appendChild(s); s.setAttribute('viewBox','0 0 100 40');
   const yAt = v => 37 - (v/100)*34;
   /* pale fill under the whole precip area */
@@ -241,7 +241,7 @@ const radarRow = row('layer--radar','Radar','layer-label--radar',null);
     s.appendChild(r);
   }); }
 
-const windRow = row('layer--wind','Wind','layer-label--wind',{cls:'readout--wind',small:'at YOU',id:'windVal'});
+const windRow = row('layer--wind','Wind','layer-label--wind',{cls:'readout--wind',id:'windVal'});
 { const s = svgFor({h:40}); windRow.appendChild(s);
   polyline(s, wind, '#fbbf24', 1.6, 0, 35);
   // gust ticks

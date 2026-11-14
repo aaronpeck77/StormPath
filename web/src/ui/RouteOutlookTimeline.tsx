@@ -306,7 +306,6 @@ export function RouteOutlookTimeline({
             </svg>
             {tempNowF != null ? (
               <span className="rpgl__readout rpgl__readout--temp">
-                <small>at YOU</small>
                 {Math.round(tempNowF)}°
               </span>
             ) : null}
@@ -356,7 +355,6 @@ export function RouteOutlookTimeline({
                   precipType === "snow" ? " rpgl__readout--snow" : ""
                 }`}
               >
-                <small>at YOU</small>
                 <PrecipTypeIcon type={precipType} />
                 {precipType}
               </span>
