@@ -9,8 +9,10 @@ name: DOT feeds snapshot
 #   DOT_FEED_INGEST_URL      https://stormpath-dot-feeds.<sub>.workers.dev
 #   DOT_FEED_INGEST_SECRET   matches the Worker's INGEST_SECRET (wrangler secret)
 #   TXDOT_API_KEY, OHGO_API_KEY, CDOT_API_KEY, CDOT_CWZ_API_KEY,
-#   IDOT_CWZ_API_KEY, NPS_API_KEY   (same values as the Worker secrets —
-#   without them those keyed feeds are skipped, same as an unset wrangler secret)
+#   IDOT_CWZ_API_KEY, NPS_API_KEY, VDOT_API_KEY   (same values as the Worker
+#   secrets — without them those keyed feeds are skipped. The remaining
+#   KEYED_FEEDS secrets in src/index.ts are mapped below too, so adding a
+#   repo secret later needs no workflow edit.)
 
 on:
   schedule:
@@ -42,4 +44,12 @@ jobs:
           CDOT_CWZ_API_KEY: ${{ secrets.CDOT_CWZ_API_KEY }}
           IDOT_CWZ_API_KEY: ${{ secrets.IDOT_CWZ_API_KEY }}
           NPS_API_KEY: ${{ secrets.NPS_API_KEY }}
+          VDOT_API_KEY: ${{ secrets.VDOT_API_KEY }}
+          ILTOLLWAY_API_KEY: ${{ secrets.ILTOLLWAY_API_KEY }}
+          PENNSTURNPIKE_API_KEY: ${{ secrets.PENNSTURNPIKE_API_KEY }}
+          MTC_511_API_KEY: ${{ secrets.MTC_511_API_KEY }}
+          MDOT_API_KEY: ${{ secrets.MDOT_API_KEY }}
+          MASSDOT_CWZ_API_KEY: ${{ secrets.MASSDOT_CWZ_API_KEY }}
+          NCDOT_API_KEY: ${{ secrets.NCDOT_API_KEY }}
+          ODOT_API_KEY: ${{ secrets.ODOT_API_KEY }}
         run: node scripts/push-snapshot.mjs
