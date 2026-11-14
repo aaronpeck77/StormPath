@@ -16,6 +16,9 @@ import { dirname, join } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = join(HERE, "..", "src", "ui", "usStateMap.ts");
+/* Same path data as plain JSON for the public Control Room page (ops/ops.js
+ * is not bundled — it can't import the TS module). */
+const OUT_OPS_JSON = join(HERE, "..", "public", "ops", "us-states.json");
 const SRC =
   process.argv[2] ??
   "https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json";
@@ -186,5 +189,10 @@ export const US_STATE_CENTROIDS: Record<string, [number, number]> = ${JSON.strin
 `;
 
 writeFileSync(OUT, ts);
+writeFileSync(
+  OUT_OPS_JSON,
+  JSON.stringify({ viewBox: `0 0 ${fmt(viewW)} ${fmt(viewH)}`, paths, centroids })
+);
 console.log(`wrote ${OUT}`);
+console.log(`wrote ${OUT_OPS_JSON}`);
 console.log(`states: ${Object.keys(paths).length}, viewBox 0 0 ${fmt(viewW)} ${fmt(viewH)}`);

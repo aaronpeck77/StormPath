@@ -1,6 +1,6 @@
 // GENERATED FILE — do not edit by hand.
 // Regenerate: node scripts/gen-us-state-map.mjs
-// Source: C:/Users/ACCESS/Documents/TestDrive/StormPath/us-states-raw.json
+// Source: https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json
 // Projection: spherical Albers conic (phi1=29.5, phi2=45.5, lambda0=-96),
 // CONUS bounds-fit; Alaska/Hawaii scaled into lower-left insets.
 

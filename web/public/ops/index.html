@@ -353,6 +353,50 @@
       #healthRow {
         gap: 8px;
       }
+      .dotcov-map {
+        display: block;
+        width: 100%;
+        max-width: 720px;
+        height: auto;
+        margin: 4px auto 0;
+      }
+      .dotcov-state {
+        fill: rgba(148, 163, 184, 0.16);
+        stroke: rgba(255, 255, 255, 0.14);
+        stroke-width: 1.4;
+        vector-effect: non-scaling-stroke;
+      }
+      .dotcov-state--live {
+        fill: #2f9e6b;
+        stroke: rgba(255, 255, 255, 0.25);
+      }
+      .dotcov-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+      .dotcov-swatch {
+        display: inline-block;
+        width: 11px;
+        height: 11px;
+        border-radius: 3px;
+        margin-right: 6px;
+        vertical-align: -1px;
+      }
+      .dotcov-swatch--live {
+        background: #2f9e6b;
+      }
+      .dotcov-swatch--off {
+        background: rgba(148, 163, 184, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .dotfeed-fail {
+        font-size: 0.8rem;
+        color: var(--bad);
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      }
     </style>
   </head>
   <body>
@@ -398,6 +442,26 @@
           <h2 style="margin: 0">Health</h2>
           <div class="row" id="healthRow"></div>
           <p class="faint" id="generatedAt" style="margin: 0"></p>
+        </div>
+
+        <div class="panel stack" id="dotFeedsPanel">
+          <div class="row" style="justify-content: space-between; align-items: baseline">
+            <h2 style="margin: 0">DOT road-data feeds</h2>
+            <span class="faint" id="dotFeedsMeta"></span>
+          </div>
+          <div class="grid" id="dotFeedsStats"></div>
+          <div id="dotFeedsFailed"></div>
+          <svg
+            id="dotCovMap"
+            class="dotcov-map"
+            viewBox="0 0 1091 674"
+            role="img"
+            aria-label="US states with live DOT road-event feeds"
+          ></svg>
+          <div class="dotcov-legend">
+            <span><i class="dotcov-swatch dotcov-swatch--live"></i>Live DOT feed</span>
+            <span><i class="dotcov-swatch dotcov-swatch--off"></i>No feed yet</span>
+          </div>
         </div>
 
         <div class="panel stack">

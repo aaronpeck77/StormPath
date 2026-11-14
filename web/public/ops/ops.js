@@ -353,6 +353,139 @@ const SECRET_KEY = "stormpath.ops.secret";
         return `<div class="stat"><div class="v">${v}</div><div class="l">${l}</div></div>`;
       }
 
+      const DOT_FEED_DEFAULT =
+        "https://stormpath-dot-feeds.psvkzbbmnt.workers.dev";
+
+      function fmtAge(sec) {
+        if (sec == null) return "—";
+        if (sec < 90) return `${Math.round(sec)}s ago`;
+        if (sec < 5400) return `${Math.round(sec / 60)}m ago`;
+        return `${(sec / 3600).toFixed(1)}h ago`;
+      }
+
+      async function fetchJson(url) {
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      }
+
+      /** DOT feeds worker is a public endpoint — reachable even in local-only
+       * mode, so the panel works with or without the Control Room secret. */
+      async function renderDotFeeds(dot) {
+        const base = (dot?.url || DOT_FEED_DEFAULT).replace(/\/+$/, "");
+        const statsEl = document.getElementById("dotFeedsStats");
+        const failEl = document.getElementById("dotFeedsFailed");
+        const metaEl = document.getElementById("dotFeedsMeta");
+        const mapEl = document.getElementById("dotCovMap");
+        if (!statsEl || !mapEl) return;
+
+        let health = dot;
+        if (!health || health.events == null) {
+          try {
+            const h = await fetchJson(`${base}/health`);
+            health = {
+              url: base,
+              ok: h.ok !== false,
+              events: h.events ?? null,
+              states: h.states ?? null,
+              ageSec: h.ageSec ?? null,
+              feedsTotal: h.feedsTotal ?? null,
+              feedsOk: h.feedsOk ?? null,
+              feedsSkipped: h.feedsSkipped ?? null,
+              feedsFailed: Array.isArray(h.feedsFailed) ? h.feedsFailed : [],
+            };
+          } catch (e) {
+            health = {
+              url: base,
+              ok: false,
+              events: null,
+              states: null,
+              ageSec: null,
+              feedsTotal: null,
+              feedsOk: null,
+              feedsSkipped: null,
+              feedsFailed: [],
+              error: e instanceof Error ? e.message : "unreachable",
+            };
+          }
+        }
+
+        const stale =
+          health.ageSec != null && health.ageSec > 1_200;
+        const thin =
+          health.events != null && health.events < 8_000;
+        const down = !health.ok || health.error || stale || thin;
+
+        statsEl.innerHTML = [
+          stat(
+            health.events != null ? health.events.toLocaleString() : "—",
+            "road events"
+          ),
+          stat(health.states ?? "—", "states covered"),
+          stat(fmtAge(health.ageSec), "snapshot age"),
+          stat(
+            health.feedsTotal != null
+              ? `${health.feedsOk ?? "?"}/${health.feedsTotal}`
+              : "—",
+            "feeds ok"
+          ),
+          stat(health.feedsSkipped ?? "—", "keyed skipped"),
+        ].join("");
+
+        metaEl.textContent = health.error
+          ? `worker unreachable: ${health.error}`
+          : stale
+            ? "snapshot is STALE — ingest may be broken"
+            : thin
+              ? "event count collapsed — mass feed failure?"
+              : "";
+        metaEl.style.color = down ? "var(--bad)" : "";
+
+        const failed = health.feedsFailed || [];
+        failEl.innerHTML = failed.length
+          ? `<div class="dotfeed-fail">${failed
+              .map((f) => {
+                const name = String(f.name).replace(/</g, "&lt;");
+                const err = String(f.error).replace(/</g, "&lt;");
+                const streak = f.streak ?? 1;
+                /* streak >= 2 = failed consecutive snapshots = sustained;
+                 * streak 1 is shown dimmer so hiccups don't look like outages */
+                return streak >= 2
+                  ? `${name}: ${err} — DOWN ×${streak}`
+                  : `<span style="opacity:.55">${name}: ${err}</span>`;
+              })
+              .join("<br/>")}</div>`
+          : health.error
+            ? `<div class="dotfeed-fail">${String(health.error).replace(/</g, "&lt;")}</div>`
+            : "";
+
+        // Coverage map — same path data the app uses, from public/ops JSON.
+        try {
+          const [mapData, cov] = await Promise.all([
+            fetchJson("us-states.json").catch(() =>
+              fetchJson("/ops/us-states.json")
+            ),
+            fetchJson(`${base}/coverage`),
+          ]);
+          const live = new Set(
+            (cov.states || []).map((s) => String(s).toLowerCase())
+          );
+          mapEl.setAttribute("viewBox", mapData.viewBox || "0 0 1091 674");
+          mapEl.innerHTML = Object.entries(mapData.paths || {})
+            .map(([code, d]) => {
+              const isLive = live.has(code);
+              const name =
+                mapData.names?.[code] ||
+                code.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+              return `<path class="dotcov-state${isLive ? " dotcov-state--live" : ""}" d="${d}" data-code="${code}"><title>${name}${isLive ? " — live DOT feed" : " — no feed"}</title></path>`;
+            })
+            .join("");
+        } catch {
+          mapEl.innerHTML =
+            '<text x="20" y="30" fill="#94a3b8" font-size="14">coverage map unavailable</text>';
+        }
+      }
+
       async function localHealth() {
         const origin = location.origin;
         const checks = [
@@ -474,6 +607,8 @@ const SECRET_KEY = "stormpath.ops.secret";
             : summaryError
               ? `Live summary unavailable (${summaryError}). Showing local health + this device's Mapbox counts.`
               : "Local mode — health from this origin; income needs Netlify secrets.";
+
+        renderDotFeeds(summary?.dotFeeds || null);
 
         const incomeGrid = document.getElementById("incomeGrid");
         const incomeNote = document.getElementById("incomeNote");

@@ -110,7 +110,27 @@ type DotEvent = {
   geometry: unknown;
 };
 
-type Snapshot = { fetchedAt: number; events: DotEvent[]; states?: string[] };
+/** Per-feed outcome for the current snapshot — powers /health and the ops
+ * page's "which source is down" view. `skipped` = keyed feed with no secret
+ * (awaiting signup), not a failure. */
+export type FeedStatus = {
+  name: string;
+  source: "registry" | "custom";
+  state: "ok" | "failed" | "skipped";
+  events: number;
+  error?: string;
+  /** Consecutive snapshots this feed has failed, merged across /ingest
+   * pushes. 1 = this run only (likely transient); >=2 = sustained outage
+   * worth alerting on. */
+  failStreak?: number;
+};
+
+type Snapshot = {
+  fetchedAt: number;
+  events: DotEvent[];
+  states?: string[];
+  feeds?: FeedStatus[];
+};
 
 function feedUrlOf(row: RegistryRow): string | null {
   const u = row.url;
@@ -817,6 +837,7 @@ export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
 
   const events: DotEvent[] = [];
   const coveredStates = new Set<string>();
+  const feedStatus: FeedStatus[] = [];
   let failed = 0;
   let skippedKeyed = 0;
   /* Sequential batches — holding ~30 parsed GeoJSON feeds at once exceeds
@@ -825,11 +846,20 @@ export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
     const batch = rows.slice(i, i + FEED_BATCH);
     await Promise.all(
       batch.map(async (row) => {
+        const feedName = row.feedname ?? "registry";
         const auth = authFor(row, env);
         if (!auth) {
           if (isKeyed(row)) skippedKeyed += 1;
+          feedStatus.push({
+            name: feedName,
+            source: "registry",
+            state: "skipped",
+            events: 0,
+            error: "keyed feed, no secret configured",
+          });
           return;
         }
+        const before = events.length;
         try {
           const feed = (await fetchJson(auth.url, FEED_TIMEOUT_MS, auth.headers)) as Record<
             string,
@@ -849,9 +879,17 @@ export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
             const ev = normalizeFeature(f, row, nowMs);
             if (ev) events.push(ev);
           }
+          feedStatus.push({
+            name: feedName,
+            source: "registry",
+            state: "ok",
+            events: events.length - before,
+          });
         } catch (err) {
           failed += 1;
-          console.warn(`[dot-feeds] feed failed: ${row.feedname ?? auth.url}`, err);
+          const error = err instanceof Error ? err.message : String(err);
+          console.warn(`[dot-feeds] feed failed: ${feedName}`, err);
+          feedStatus.push({ name: feedName, source: "registry", state: "failed", events: 0, error });
         }
       })
     );
@@ -862,6 +900,7 @@ export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
   /* Non-registry feeds (state condition layers etc.) — fetched after the
    * registry batches so a failure here can't take down WZDx coverage. */
   for (const feed of CUSTOM_FEEDS) {
+    const before = events.length;
     try {
       const data = (await fetchJson(feed.url, FEED_TIMEOUT_MS)) as Record<string, unknown>;
       for (const s of stateNamesOf(feed.state)) coveredStates.add(s);
@@ -871,16 +910,29 @@ export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
         const ev = feed.normalize(f);
         if (ev) events.push(ev);
       }
+      feedStatus.push({
+        name: feed.name,
+        source: "custom",
+        state: "ok",
+        events: events.length - before,
+      });
     } catch (err) {
       failed += 1;
+      const error = err instanceof Error ? err.message : String(err);
       console.warn(`[dot-feeds] custom feed failed: ${feed.name}`, err);
+      feedStatus.push({ name: feed.name, source: "custom", state: "failed", events: 0, error });
     }
   }
 
   if (failed > 0) console.warn(`[dot-feeds] ${failed} feeds failed`);
 
   events.sort((a, b) => a.id.localeCompare(b.id));
-  return { fetchedAt: nowMs, events, states: [...coveredStates].sort() };
+  return {
+    fetchedAt: nowMs,
+    events,
+    states: [...coveredStates].sort(),
+    feeds: feedStatus,
+  };
 }
 
 async function snapshot(cachesApi: Cache, env: FeedEnv): Promise<Snapshot | null> {
@@ -946,6 +998,22 @@ export default {
       }
       if (!isSnapshot(body))
         return new Response("bad snapshot", { status: 400, headers: CORS });
+      /* Carry per-feed failure streaks forward from the previous snapshot:
+       * a feed that failed last push AND this push is "sustained down";
+       * a one-off timeout stays streak 1 and doesn't page anyone. */
+      if (Array.isArray(body.feeds)) {
+        const prev = (await bindings.SNAPSHOTS?.get(SNAPSHOT_KV_KEY, "json").catch(
+          () => null
+        )) as Snapshot | null;
+        if (prev?.feeds?.length) {
+          const prevByName = new Map(prev.feeds.map((f) => [f.name, f]));
+          for (const f of body.feeds) {
+            if (f.state !== "failed") continue;
+            const p = prevByName.get(f.name);
+            f.failStreak = (p?.state === "failed" ? (p.failStreak ?? 1) : 0) + 1;
+          }
+        }
+      }
       /* KV is the global store every PoP reads; the local cache entry just
        * warms this colo so the next read skips the KV hop. */
       await bindings.SNAPSHOTS?.put(SNAPSHOT_KV_KEY, JSON.stringify(body));
@@ -966,11 +1034,25 @@ export default {
 
     if (url.pathname === "/" || url.pathname === "/health") {
       const snap = await snapshot(caches.default, bindings);
+      const feeds = snap?.feeds ?? [];
       return Response.json(
         {
           ok: true,
           events: snap?.events.length ?? 0,
           ageSec: snap ? Math.round((Date.now() - snap.fetchedAt) / 1000) : null,
+          states: snap?.states?.length ?? null,
+          feedsTotal: feeds.length || null,
+          feedsOk: feeds.filter((f) => f.state === "ok").length || null,
+          feedsSkipped: feeds.filter((f) => f.state === "skipped").length || null,
+          /* Name + error only — enough for the ops page and the Action's
+           * health gate without shipping the whole feed list. */
+          feedsFailed: feeds
+            .filter((f) => f.state === "failed")
+            .map((f) => ({
+              name: f.name,
+              error: f.error ?? "failed",
+              streak: f.failStreak ?? 1,
+            })),
         },
         { headers: CORS }
       );

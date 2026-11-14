@@ -70,6 +70,76 @@ function authorized(event: NetlifyEvent): boolean {
   return Boolean(q && q === secret);
 }
 
+const DEFAULT_DOT_FEED_URL = "https://stormpath-dot-feeds.psvkzbbmnt.workers.dev";
+
+type DotFeedsHealth = {
+  url: string;
+  ok: boolean;
+  events: number | null;
+  states: number | null;
+  ageSec: number | null;
+  feedsTotal: number | null;
+  feedsOk: number | null;
+  feedsSkipped: number | null;
+  feedsFailed: { name: string; error: string; streak?: number }[];
+  error?: string;
+};
+
+/** DOT feeds worker /health — the pill goes red on a stale/thin snapshot,
+ * not just on HTTP failure (the endpoint returns 200 with ok:true always). */
+async function dotFeedsHealth(): Promise<{ probe: Probe; health: DotFeedsHealth }> {
+  const base = (
+    process.env.DOT_FEED_URL?.trim() ||
+    process.env.VITE_DOT_FEED_URL?.trim() ||
+    DEFAULT_DOT_FEED_URL
+  ).replace(/\/+$/, "");
+  const t0 = Date.now();
+  const fail = (detail: string): { probe: Probe; health: DotFeedsHealth } => ({
+    probe: { id: "dotfeeds", label: "DOT feeds worker", ok: false, ms: Date.now() - t0, detail },
+    health: {
+      url: base, ok: false, events: null, states: null, ageSec: null,
+      feedsTotal: null, feedsOk: null, feedsSkipped: null, feedsFailed: [], error: detail,
+    },
+  });
+  try {
+    const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(12_000) });
+    const ms = Date.now() - t0;
+    if (!res.ok) return fail(`HTTP ${res.status}`);
+    const h = (await res.json()) as Record<string, unknown>;
+    const events = typeof h.events === "number" ? h.events : null;
+    const states = typeof h.states === "number" ? h.states : null;
+    const ageSec = typeof h.ageSec === "number" ? h.ageSec : null;
+    const feedsFailed = Array.isArray(h.feedsFailed)
+      ? (h.feedsFailed as { name?: unknown; error?: unknown; streak?: unknown }[])
+          .map((f) => ({
+            name: String(f.name ?? "?"),
+            error: String(f.error ?? "failed"),
+            streak: typeof f.streak === "number" ? f.streak : 1,
+          }))
+      : [];
+    /* GitHub's */12 cron drifts to ~hourly+ in practice, so "stale" means
+     * several missed pushes, not one late run. */
+    const stale = ageSec != null && ageSec > 10_800;
+    const thin = events != null && events < 8_000;
+    const ok = !stale && !thin;
+    const detail =
+      `${(events ?? 0).toLocaleString()} events · ${states ?? "?"} states` +
+      (feedsFailed.length ? ` · ${feedsFailed.length} feed failure${feedsFailed.length > 1 ? "s" : ""}` : "");
+    return {
+      probe: { id: "dotfeeds", label: "DOT feeds worker", ok, status: res.status, ms, detail },
+      health: {
+        url: base, ok, events, states, ageSec,
+        feedsTotal: typeof h.feedsTotal === "number" ? h.feedsTotal : null,
+        feedsOk: typeof h.feedsOk === "number" ? h.feedsOk : null,
+        feedsSkipped: typeof h.feedsSkipped === "number" ? h.feedsSkipped : null,
+        feedsFailed,
+      },
+    };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "fetch failed");
+  }
+}
+
 async function probe(
   id: string,
   label: string,
@@ -546,7 +616,7 @@ export const handler = async (event: NetlifyEvent) => {
     `${siteUrl}/.netlify/functions/rainviewer-tile`
   ).replace(/\/$/, "");
 
-  const [web, weatherkit, nws, rainviewer, tileWorker, rainviewerTiles, income, deploy, sentry, ios, netlify] =
+  const [web, weatherkit, nws, rainviewer, tileWorker, rainviewerTiles, dotFeedsResult, income, deploy, sentry, ios, netlify] =
     await Promise.all([
       probe("web", "Netlify site", `${siteUrl}/`),
       probe(
@@ -578,6 +648,7 @@ export const handler = async (event: NetlifyEvent) => {
             "RainViewer tile fn",
             `${siteUrl}/.netlify/functions/rainviewer-tile`
           ),
+      dotFeedsHealth(),
       revenueCatMetrics(),
       netlifyDeploy(),
       sentryOpenIssues(),
@@ -591,7 +662,8 @@ export const handler = async (event: NetlifyEvent) => {
     body: JSON.stringify({
       generatedAt: new Date().toISOString(),
       siteUrl,
-      health: [web, weatherkit, nws, rainviewer, tileWorker, rainviewerTiles],
+      health: [web, weatherkit, nws, rainviewer, tileWorker, rainviewerTiles, dotFeedsResult.probe],
+      dotFeeds: dotFeedsResult.health,
       income,
       deploy,
       sentry,

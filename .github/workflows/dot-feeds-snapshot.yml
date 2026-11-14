@@ -53,3 +53,11 @@ jobs:
           NCDOT_API_KEY: ${{ secrets.NCDOT_API_KEY }}
           ODOT_API_KEY: ${{ secrets.ODOT_API_KEY }}
         run: node scripts/push-snapshot.mjs
+
+      # Failing this step emails the repo owner — that email is the alert
+      # when a data source dies and drivers silently lose coverage.
+      - name: Health gate
+        working-directory: cloudflare/dot-feeds
+        env:
+          DOT_FEED_INGEST_URL: ${{ secrets.DOT_FEED_INGEST_URL }}
+        run: node scripts/check-health.mjs
