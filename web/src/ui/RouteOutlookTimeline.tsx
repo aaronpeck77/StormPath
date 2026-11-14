@@ -171,25 +171,14 @@ function classedPrecipPaths(
   return { rain: rain.join(" "), snow: snow.join(" ") };
 }
 
-/** Tiny raindrop / snowflake glyph for the Precip row label — reflects the
- * precipitation type at the driver marker (≤32°F corridor temp = snow). */
+/** Raindrop / snowflake glyph for the Precip readout — reflects the
+ * precipitation type at the driver marker (≤32°F corridor temp = snow).
+ * Emoji renders crisply at chip size and reads instantly while driving. */
 function PrecipTypeIcon({ type }: { type: "rain" | "snow" }) {
-  return type === "snow" ? (
-    <svg className="rpgl__precip-icon" viewBox="0 0 10 10" aria-hidden>
-      <path
-        d="M5 0.8v8.4M1.6 3.1l6.8 3.8M8.4 3.1L1.6 6.9"
-        stroke="currentColor"
-        strokeWidth="1.1"
-        strokeLinecap="round"
-      />
-    </svg>
-  ) : (
-    <svg className="rpgl__precip-icon" viewBox="0 0 10 10" aria-hidden>
-      <path
-        d="M5 1.4c1.9 2.3 3.1 3.7 3.1 5.3a3.1 3.1 0 0 1-6.2 0c0-1.6 1.2-3 3.1-5.3z"
-        fill="currentColor"
-      />
-    </svg>
+  return (
+    <span className={`rpgl__precip-icon rpgl__precip-icon--${type}`} aria-hidden>
+      {type === "snow" ? "❄" : "💧"}
+    </span>
   );
 }
 

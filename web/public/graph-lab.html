@@ -59,7 +59,7 @@
   }
   .layer-label--temp  { color: #fdba74; }
   .layer-label--precip{ color: #7dd3fc; }
-  .precip-icon { width: 12px; height: 12px; vertical-align: -1px; margin-left: 3px; }
+  .precip-icon { font-size: 13px; line-height: 1; }
   .layer-label--radar { color: #38bdf8; }
   .layer-label--wind  { color: #fbbf24; }
   .layer-label--nws   { color: #f87171; }
@@ -270,8 +270,8 @@ const tempVal = document.getElementById('tempVal');
 const windVal = document.getElementById('windVal');
 const precipVal = document.getElementById('precipVal');
 const precipReadout = precipVal.parentElement;
-const ICON_SNOW = '<svg class="precip-icon" viewBox="0 0 10 10"><path d="M5 .8v8.4M1.6 3.1l6.8 3.8M8.4 3.1L1.6 6.9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg>';
-const ICON_RAIN = '<svg class="precip-icon" viewBox="0 0 10 10"><path d="M5 1.4c1.9 2.3 3.1 3.7 3.1 5.3a3.1 3.1 0 0 1-6.2 0c0-1.6 1.2-3 3.1-5.3z" fill="currentColor"/></svg>';
+const ICON_SNOW = '❄';
+const ICON_RAIN = '💧';
 let t = 0.08, dir = 1;
 function sample(arr, x){ const f = x*(arr.length-1); const i=Math.floor(f), fr=f-i;
   return arr[Math.min(arr.length-1,i)]*(1-fr)+arr[Math.min(arr.length-1,i+1)]*fr; }

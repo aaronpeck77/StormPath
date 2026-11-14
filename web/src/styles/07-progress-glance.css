@@ -424,9 +424,8 @@
 .rpgl__readout--snow { color: #e0f2fe; }
 
 .rpgl__precip-icon {
-  width: 12px;
-  height: 12px;
-  flex: 0 0 auto;
+  font-size: 13px;
+  line-height: 1;
 }
 
 /* Snow segments of the Precip line — pale against rain blue. */
