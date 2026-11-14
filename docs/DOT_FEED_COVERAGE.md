@@ -41,10 +41,11 @@ Travel-IQ + keyless sections.
 |---|---|---|
 | Illinois | `idot_cwz` + **IL winter conditions** | CWZ work zones + plow-crew road conditions (ice/snow coverage, non-Clear only). Tollway still dark (KEYED). |
 | Iowa | `idot` + **IA winter conditions** | Statewide open WZDx + plow-crew road conditions (non-Seasonal only). |
+| Missouri | `modot` + `stcharlesco_v4` + **MO winter conditions** | Statewide + St. Charles County + MoDOT winter road-condition segments (non-Clear only; anonymous geometry, no road names). Winter Weather Closed Line layer (named routes) queued. |
+| Maryland | `mdot` + **MD winter conditions** | Statewide WZDx + CHART winter/ice/snow incident & closure reports (keyless JSON export). |
 | Ohio | `ohio` | OHGO — keyed, live. |
 | Texas | `austin` + `txdot_v4_2` | **Statewide live** — DriveTexas key landed 2026-11-10 (~1,800 events). Austin city feed also flows. Road codes decoded (`IH0030`→`I-30`, `BU0059G`→`Business US-59 G`). |
 | Arizona | `mcdot` | Maricopa County — Phoenix metro only, not statewide. |
-| Missouri | `modot` + `stcharlesco_v4` | Statewide + St. Charles County local feed. |
 | Wisconsin | `wisdot` | Statewide. |
 | Indiana | `indot` | Statewide. |
 | Kansas | `kansas` | Statewide. |
@@ -52,7 +53,6 @@ Travel-IQ + keyless sections.
 | Minnesota | `mndot` | Statewide. |
 | Mississippi | `msdot` | Statewide. |
 | Louisiana | `ladotd` | Statewide (thin — 7 events right now). |
-| Maryland | `mdot` | Statewide. |
 | New Jersey | `njdot` | Statewide. |
 | Oklahoma | `odot` | Statewide. |
 | Washington | `wsdot` | Statewide. |

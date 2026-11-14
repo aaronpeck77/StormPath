@@ -485,6 +485,8 @@ type CustomFeed = {
   publisher: string;
   url: string;
   normalize: (feature: Record<string, unknown>) => DotEvent | null;
+  /** Non-GeoJSON payloads (e.g. CHART's `{data:[...]}`) — defaults to `features`. */
+  pick?: (data: Record<string, unknown>) => Record<string, unknown>[];
 };
 
 /** Illinois DOT winter road conditions — plow-crew reported segments.
@@ -637,6 +639,131 @@ function normalizeIowaWinter(feature: Record<string, unknown>): DotEvent | null 
   };
 }
 
+/** Missouri DOT winter road conditions — MoDOT TravelerInformation ArcGIS
+ *  MapServer layer 26 ("Winter Road Conditions"). Keyless; plow-reported
+ *  polylines. ROAD_COND_CODE legend: CLEAR / MOSTLY CLEAR / PARTLY COVERED /
+ *  COVERED — the where clause keeps only non-clear segments; the normalizer
+ *  re-checks defensively. No road-name field exists — segments are anonymous
+ *  geometry, same as MoDOT's own traveler map renders them. */
+const MO_WINTER_URL =
+  "https://mapping.modot.org/arcgis/rest/services/TravelerInformation/" +
+  "TravelerInformationMod/MapServer/26/query" +
+  "?where=UPPER%28ROAD_COND_CODE%29%20NOT%20IN%20%28%27CLEAR%27%2C%27MOSTLY%20CLEAR%27%29" +
+  "&outFields=ROAD_COND_CODE%2CLEVEL_NO%2CDATA_ID%2COBJECT_ID" +
+  "&f=geojson&outSR=4326&resultRecordCount=2000";
+
+function normalizeMissouriWinter(feature: Record<string, unknown>): DotEvent | null {
+  const props = asRecord(feature.properties);
+  const condition = str(props.ROAD_COND_CODE);
+  /* "MOSTLY CLEAR" still contains "clear" — both near-baseline codes drop. */
+  if (!condition || condition.toLowerCase().includes("clear")) return null;
+  const geo = eventGeo(feature.geometry);
+  if (!geo) return null;
+
+  const conditionLabel = condition.replace(/\s+/g, " ").trim();
+  /* MoDOT's bare "COVERED" means fully snow/ice covered — emit the slug the
+   * app's severity map reads as serious ("completely-covered"). */
+  const lc = conditionLabel.toLowerCase();
+  const impactSlug =
+    lc === "covered" || lc.includes("completely covered")
+      ? "completely-covered"
+      : lc.includes("part")
+        ? "partially-covered"
+        : conditionLabel.toLowerCase().replace(/\s+/g, "-");
+  const sid = props.OBJECT_ID ?? props.DATA_ID ?? feature.id;
+
+  return {
+    id: `mowinter:${sid != null ? String(sid) : Math.random().toString(36).slice(2, 10)}`,
+    state: "missouri",
+    publisher: "Missouri DOT",
+    kind: "condition",
+    status: "active",
+    title: "Winter road condition",
+    roadName: "",
+    direction: null,
+    description: `${conditionLabel} — Missouri DOT winter road conditions`,
+    restrictionsText: null,
+    lanesClosed: 0,
+    travelLanesClosed: null,
+    laneSummary: null,
+    workType: conditionLabel,
+    vehicleImpact: impactSlug,
+    startIso: null,
+    endIso: null,
+    updatedIso: null,
+    point: geo.point,
+    bbox: geo.bbox,
+    geometry: geo.geometry,
+  };
+}
+
+/** Maryland CHART — keyless JSONP-turned-JSON export service. Winter-relevant
+ *  events carry incidentTypes like "Weather Closure Winter Precipitation";
+ *  the feed also carries ordinary incidents/closures, but MD's WZDx `mdot`
+ *  feed already covers those — we keep only winter/ice/snow so the two
+ *  sources don't double-paint the same crash. Both the incidents and the
+ *  active-closures endpoints are wired; whichever carries a winter event
+ *  gets through. */
+const MD_CHART_INCIDENTS_URL =
+  "https://chartexp1.sha.maryland.gov/CHARTExportClientService/getEventMapDataJSON.do";
+const MD_CHART_CLOSURES_URL =
+  "https://chartexp1.sha.maryland.gov/CHARTExportClientService/getActiveClosureMapDataJSON.do";
+
+function pickChartData(data: Record<string, unknown>): Record<string, unknown>[] {
+  return asArray<Record<string, unknown>>(data.data);
+}
+
+function normalizeMdChartWinter(event: Record<string, unknown>): DotEvent | null {
+  const incidentType = str(event.incidentType);
+  /* Winter scope only — "Weather Closure High Water" etc. are real hazards
+   * but not winter conditions; they stay out of the winter category. */
+  if (!/winter|ice|snow/i.test(incidentType)) return null;
+  if (event.closed === true || event.trafficAlert === true) return null;
+  const lat = Number(event.lat);
+  const lon = Number(event.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+
+  const county = str(event.county);
+  const direction = str(event.direction) || null;
+  const desc = str(event.description);
+  /* description reads "Winter Closure @ I-95 @ EXIT 42 …" — keep the feed's
+   * own wording; it already names the road and landmark. */
+  const label = incidentType.replace(/\s+/g, " ").trim() || "Winter condition";
+  const updatedMs = Number(event.lastCachedDataUpdateTime ?? event.createTime);
+  const updatedIso =
+    Number.isFinite(updatedMs) && updatedMs > 0 ? new Date(updatedMs).toISOString() : null;
+  /* Point events: degenerate bbox still intersects the corridor query box. */
+  const point: [number, number] = [lon, lat];
+  const id = str(event.id) || `${lat},${lon}`;
+
+  return {
+    id: `mdchart:${id}`,
+    state: "maryland",
+    publisher: "Maryland DOT CHART",
+    kind: "condition",
+    status: "active",
+    title: "Winter road condition",
+    roadName: "",
+    direction,
+    description:
+      `${label} — ${county ? `${county} County` : "Maryland"}` +
+      (desc && !desc.toLowerCase().startsWith(label.toLowerCase()) ? ` · ${desc.slice(0, 160)}` : ""),
+    restrictionsText: null,
+    lanesClosed: 0,
+    travelLanesClosed: null,
+    laneSummary: null,
+    workType: label,
+    vehicleImpact: label.toLowerCase().replace(/\s+/g, "-"),
+    startIso: null,
+    endIso: null,
+    updatedIso,
+    point,
+    bbox: [lon, lat, lon, lat],
+    geometry: { type: "Point", coordinates: [lon, lat] },
+  };
+}
+
 const CUSTOM_FEEDS: CustomFeed[] = [
   {
     name: "ilwinter",
@@ -651,6 +778,29 @@ const CUSTOM_FEEDS: CustomFeed[] = [
     publisher: "Iowa DOT",
     url: IA_WINTER_URL,
     normalize: normalizeIowaWinter,
+  },
+  {
+    name: "mowinter",
+    state: "missouri",
+    publisher: "Missouri DOT",
+    url: MO_WINTER_URL,
+    normalize: normalizeMissouriWinter,
+  },
+  {
+    name: "mdchart-events",
+    state: "maryland",
+    publisher: "Maryland DOT CHART",
+    url: MD_CHART_INCIDENTS_URL,
+    normalize: normalizeMdChartWinter,
+    pick: pickChartData,
+  },
+  {
+    name: "mdchart-closures",
+    state: "maryland",
+    publisher: "Maryland DOT CHART",
+    url: MD_CHART_CLOSURES_URL,
+    normalize: normalizeMdChartWinter,
+    pick: pickChartData,
   },
 ];
 
@@ -709,10 +859,8 @@ async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
     try {
       const data = (await fetchJson(feed.url, FEED_TIMEOUT_MS)) as Record<string, unknown>;
       for (const s of stateNamesOf(feed.state)) coveredStates.add(s);
-      const features = asArray<Record<string, unknown>>(data.features).slice(
-        0,
-        MAX_FEATURES_PER_FEED
-      );
+      const raw = feed.pick ? feed.pick(data) : asArray<Record<string, unknown>>(data.features);
+      const features = raw.slice(0, MAX_FEATURES_PER_FEED);
       for (const f of features) {
         const ev = feed.normalize(f);
         if (ev) events.push(ev);

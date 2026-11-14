@@ -70,8 +70,8 @@ Verified or audit-confirmed keyless feeds — these need my time, not yours:
 |-------|--------|--------|
 | **Illinois** | IDOT winter road conditions ArcGIS | ✅ verified live — 410 segments, plow-reported |
 | **Iowa** | 511 ArcGIS REST winter conditions | ✅ adapter LIVE 2026-11-11 — keyless, iowadot.gov-documented; non-Seasonal only (all Seasonal at deploy) |
-| **Missouri** | Keyless JSON feeds | audit-confirmed, undocumented but open |
-| **Maryland** | CHART keyless JSON | audit-confirmed; confirm commercial terms |
+| **Missouri** | ~~Keyless JSON feeds~~ | ✅ **adapter LIVE 2026-11-14** — MoDOT TravelerInformation ArcGIS layer 26 "Winter Road Conditions" (keyless, non-CLEAR only). Bonus found: layer 17 "Winter Weather Closed Line" has named routes — adapter queued for winter-code validation |
+| **Maryland** | ~~CHART keyless JSON~~ | ✅ **adapter LIVE 2026-11-14** — CHARTExportClientService incidents + closures endpoints (keyless); winter/ice/snow incidentTypes only. Commercial terms still worth a sanity check |
 | **Florida** | FDOT DIVAS keyless | 4,900 cameras + events already documented |
 
 ## ⛔ Blocked — do NOT spend time
