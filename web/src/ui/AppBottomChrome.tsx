@@ -46,6 +46,7 @@ function DockAboutRow({
   infoAside,
   aboutRowClassName,
   toolsAfterChildren = false,
+  routeRowAbove,
   children,
 }: {
   stormyOn: boolean;
@@ -62,6 +63,9 @@ function DockAboutRow({
   aboutRowClassName?: string;
   /** Render the inline route slot before Tools so it sits beside miles-left. */
   toolsAfterChildren?: boolean;
+  /** Slim row rendered directly above the stormy/route-select line (CarPlay
+   * map-peek return chip) — only used by the stormyOn layout. */
+  routeRowAbove?: ReactNode;
   children?: ReactNode;
 }) {
   const infoButton = <MapInfoButton onOpenAbout={onOpenAbout} />;
@@ -110,6 +114,7 @@ function DockAboutRow({
         {compass}
         {info}
         {tools}
+        {routeRowAbove ? <div className="nav-cp-return-row">{routeRowAbove}</div> : null}
         <div className="nav-bottom-dock__stormy-row">
           {stormy}
           {children}
@@ -704,10 +709,10 @@ export function AppBottomChrome({
             </>
           ) : navigationStarted && (viewMode === "topdown" || viewMode === "route") ? (
             <>
-            {/* CarPlay map-peek return gets its own row above the picker —
-             * inline it stole ~110px and jummed the route-select label
-             * (Bill, 584). */}
-            {carPlayMapReturn ? (
+            {/* CarPlay map-peek return sits directly above the route-select
+             * line via routeRowAbove; the standalone row is only the fallback
+             * for the no-Stormy layout where that slot isn't rendered. */}
+            {carPlayMapReturn && (!talkOn || tabletLandscape) ? (
               <div className="nav-cp-return-row">{carPlayMapReturn}</div>
             ) : null}
             {tabletLandscape ? (
@@ -731,6 +736,7 @@ export function AppBottomChrome({
                 ) : null
               }
               leadingActions={stopChangeButtons}
+              routeRowAbove={carPlayMapReturn}
             >
               {mpRouteSlot}
             </DockAboutRow>
