@@ -704,3 +704,23 @@
   color: #94a3b8;
 }
 
+
+/* Horizontal twin of the side rail inside route-info surfaces (callout panel,
+ * iPad Wx tab). The --edge layout is viewport-bleed (100vw + centering for the
+ * under-guidance banner), so pin it to the wrapper's width here. */
+.route-progress-callout-panel__strip,
+.landscape-info-pip__strip {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 2px 10px 10px;
+}
+
+.route-progress-callout-panel__strip .route-progress-strip--edge,
+.landscape-info-pip__strip .route-progress-strip--edge {
+  width: 100%;
+  max-width: 100%;
+  left: auto;
+  transform: none;
+  margin-top: 0;
+  min-height: 64px;
+}

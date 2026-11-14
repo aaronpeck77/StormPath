@@ -128,6 +128,30 @@ export function AppProgressRail({
               {!bendOnline ? <p>Bend needs a connection. Your current route stays active.</p> : null}
             </details>
           ) : null}
+          {/* Horizontal twin of the side rail — same strip, flat, so the
+           * route-info page shows turns/storms/radar with the weather graph. */}
+          <div className="route-progress-callout-panel__strip">
+            <RouteProgressStrip
+              layout="fullBleed"
+              geometry={progressRailRouteGeometry}
+              userLngLat={effectiveUserLngLat}
+              userAlongMeters={progressPanelAlongM}
+              alerts={progressStripAlerts}
+              radarIntensity={radarIntensity}
+              routeLineColor={progressStripRouteColor}
+              turnSteps={
+                progressRailRouteTurnSteps && progressRailRouteTurnSteps.length >= 2
+                  ? progressRailRouteTurnSteps
+                  : turnSteps
+              }
+              stormBands={routeAheadProgressBands}
+              radarSliceSamples={radarMosaicSamples}
+              radarSliceLoopFrames={radarSliceLoopFrames}
+              driveEndsEmphasis={driveModeUi}
+              tripOdometerM={tripOdometerM}
+              tripRelativeProgress={navigationStarted}
+            />
+          </div>
           <RouteProgressGlancePanel
             timeline={routeAheadTimeline}
             routeWide={routeWide}

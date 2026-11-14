@@ -3537,6 +3537,24 @@ export default function App() {
                   glanceUserAlongMeters={progressPanelAlongM}
                   glanceUserAlongT={progressCalloutUserAlongT}
                   glanceStripTint={activeProgressCalloutPanel.stripTint}
+                  progressStrip={{
+                    geometry: progressRailRoute?.geometry ?? [],
+                    userLngLat: effectiveUserLngLat,
+                    userAlongMeters: progressPanelAlongM,
+                    alerts: progressStripAlerts,
+                    radarIntensity: guidanceSlice?.radarIntensity ?? 0,
+                    routeLineColor: progressStripRouteColor,
+                    turnSteps:
+                      progressRailRoute?.turnSteps && progressRailRoute.turnSteps.length >= 2
+                        ? progressRailRoute.turnSteps
+                        : turnSteps,
+                    stormBands: routeAheadProgressBands,
+                    radarSliceSamples: radarMosaicSamples,
+                    radarSliceLoopFrames,
+                    driveEndsEmphasis: driveModeUi,
+                    tripOdometerM,
+                    tripRelativeProgress: navigationStarted,
+                  }}
                 />
                 </CollapsiblePanelSection>
               </>

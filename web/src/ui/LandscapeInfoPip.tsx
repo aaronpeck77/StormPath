@@ -10,6 +10,10 @@ import type { RouteChunkCalloutItem } from "../nav/routeProgressChunkList";
 import type { WxSample } from "../nav/routeChunkWeather";
 import type { RouteOutlookStep } from "../nav/routeForecastTimeline";
 import { TABLET_LANDSCAPE_MQ } from "./LandscapeNavigationDock";
+import { RouteProgressStrip, type StormProgressBand } from "./RouteProgressStrip";
+import type { RouteAlert } from "../nav/routeAlerts";
+import type { RouteTurnStep } from "../nav/types";
+import type { RadarSliceSample } from "../nav/radarRailSlice";
 
 type PipTab = "rt" | "advisory" | "wx";
 
@@ -57,6 +61,23 @@ type Props = {
   alternateGeometry?: LngLat[] | null;
   /** Hazard row/card tapped — parent resolves id → lngLat for the PiP. */
   onHazardSelect?: (id: string) => void;
+  /** Horizontal progress strip shown above the Wx graph — same inputs the
+   * side rail strip gets, flattened for the panel. */
+  progressStrip?: {
+    geometry: LngLat[];
+    userLngLat: LngLat | null;
+    userAlongMeters: number | null;
+    alerts: RouteAlert[];
+    radarIntensity: number;
+    routeLineColor: string;
+    turnSteps?: RouteTurnStep[];
+    stormBands: StormProgressBand[];
+    radarSliceSamples?: RadarSliceSample[];
+    radarSliceLoopFrames?: RadarSliceSample[][];
+    driveEndsEmphasis?: boolean;
+    tripOdometerM?: number;
+    tripRelativeProgress?: boolean;
+  } | null;
 };
 
 /**
@@ -155,6 +176,11 @@ export function LandscapeInfoPip(props: Props) {
 
         {tab === "wx" ? (
           <div className="landscape-info-pip__wx">
+            {props.progressStrip ? (
+              <div className="landscape-info-pip__strip">
+                <RouteProgressStrip layout="fullBleed" {...props.progressStrip} />
+              </div>
+            ) : null}
             <RouteProgressGlancePanel
               timeline={props.timeline}
               routeWide={props.glanceRouteWide}
