@@ -684,6 +684,23 @@ const SECRET_KEY = "stormpath.ops.secret";
               `<a href="${summary.ios.htmlUrl}" target="_blank" rel="noreferrer">iOS build ${summary.ios.headSha || ""}</a>`;
           }
         }
+
+        const sentryTopEl = document.getElementById("sentryTop");
+        if (sentryTopEl) {
+          const top = summary?.sentry?.top;
+          sentryTopEl.innerHTML =
+            top && top.length
+              ? `<div class="dotfeed-fail" style="color:var(--muted)">${top
+                  .map((i) => {
+                    const title = String(i.title).replace(/</g, "&lt;");
+                    const culprit = i.culprit
+                      ? ` <span class="faint">— ${String(i.culprit).replace(/</g, "&lt;")}</span>`
+                      : "";
+                    return `${title} <span class="faint">×${i.count}</span>${culprit}`;
+                  })
+                  .join("<br/>")}</div>`
+              : "";
+        }
       }
 
       function unlock(secret) {

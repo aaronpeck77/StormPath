@@ -117,7 +117,7 @@ async function dotFeedsHealth(): Promise<{ probe: Probe; health: DotFeedsHealth 
             streak: typeof f.streak === "number" ? f.streak : 1,
           }))
       : [];
-    /* GitHub's */12 cron drifts to ~hourly+ in practice, so "stale" means
+    /* The 12-minute cron drifts to ~hourly+ in practice, so "stale" means
      * several missed pushes, not one late run. */
     const stale = ageSec != null && ageSec > 10_800;
     const thin = events != null && events < 8_000;
@@ -498,6 +498,7 @@ async function netlifyDeploy(): Promise<{
 async function sentryOpenIssues(): Promise<{
   configured: boolean;
   count?: number;
+  top?: { title: string; culprit: string | null; count: number; lastSeen: string | null }[];
   error?: string;
 }> {
   const token = process.env.SENTRY_AUTH_TOKEN?.trim();
@@ -510,7 +511,7 @@ async function sentryOpenIssues(): Promise<{
     );
     url.searchParams.set("query", "is:unresolved");
     url.searchParams.set("statsPeriod", "14d");
-    url.searchParams.set("limit", "1");
+    url.searchParams.set("limit", "8");
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(12_000),
@@ -518,9 +519,24 @@ async function sentryOpenIssues(): Promise<{
     if (!res.ok) {
       return { configured: true, error: `Sentry HTTP ${res.status}` };
     }
+    const body = (await res.json()) as {
+      title?: string;
+      culprit?: string | null;
+      count?: string;
+      lastSeen?: string | null;
+    }[];
     const hits = res.headers.get("X-Hits") ?? res.headers.get("x-hits");
-    const count = hits ? Number(hits) : ((await res.json()) as unknown[]).length;
-    return { configured: true, count: Number.isFinite(count) ? count : undefined };
+    const count = hits ? Number(hits) : body.length;
+    return {
+      configured: true,
+      count: Number.isFinite(count) ? count : undefined,
+      top: body.slice(0, 8).map((i) => ({
+        title: i.title ?? "issue",
+        culprit: i.culprit ?? null,
+        count: Number(i.count ?? 0) || 0,
+        lastSeen: i.lastSeen ?? null,
+      })),
+    };
   } catch (e) {
     return {
       configured: true,
