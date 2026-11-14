@@ -15,7 +15,6 @@ import { RouteInfoLegend } from "./RouteInfoLegend";
 import { RouteOutlookTimeline } from "./RouteOutlookTimeline";
 import { RouteRadarWindStrip } from "./RouteRadarWindStrip";
 import {
-  computeRouteAxisMinWidth,
   routePlotLeftPct,
   routePlotWidthPct,
 } from "./routeAxisLayout";
@@ -370,16 +369,8 @@ export function RouteProgressGlancePanel({
   const driverLeftPct = routePlotLeftPct(userAlongT);
   const showAxis = outlookSteps.length > 0 || bandVisuals.length > 0 || totalMeters > 0;
 
-  const axisMinWidth = useMemo(
-    () =>
-      computeRouteAxisMinWidth({
-        totalMeters,
-        planEtaMinutes,
-        outlookStepCount: outlookSteps.length,
-        bandCount: bandVisuals.length,
-      }),
-    [totalMeters, planEtaMinutes, outlookSteps.length, bandVisuals.length]
-  );
+  /* Whole-route axis (Bill, Option B): no horizontal pan — the graph always
+   * spans start→finish on the same 0–1 scale as the progress rail. */
 
   const hasDetail =
     routeWide.length > 0 || visibleCards.length > 0 || fallbackSegments.length > 0;
@@ -390,7 +381,7 @@ export function RouteProgressGlancePanel({
       {showAxis ? (
         <div className="rpgl__axis-pane">
           <div ref={axisRef} className="rpgl__axis-scroll" aria-label="Route outlook and hazards along your trip">
-            <div className="rpgl__axis-inner" style={{ minWidth: axisMinWidth }}>
+            <div className="rpgl__axis-inner">
               <div className="rpgl__sync-stack">
                 <div className="rpgl__sync-head">
                   <span className="rpgl__sync-head-gutter" aria-hidden />
@@ -431,6 +422,7 @@ export function RouteProgressGlancePanel({
                           windPoints={windPoints}
                           gustLinePoints={gustLinePoints}
                           gustSpikePoints={gustSpikePoints}
+                          userAlongT={userAlongT}
                         />
                         {radarStatusNote ? (
                           <p className="rpgl__radar-status" role="status">

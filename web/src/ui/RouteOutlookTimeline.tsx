@@ -25,7 +25,7 @@ const H = 108;
 /** Compact per-track height in the Route info synced stack. */
 const H_SYNC = 38;
 const PAD = { top: 10, right: 34, bottom: 22, left: 34 };
-const PAD_SYNC = { top: 5, right: 30, bottom: 5, left: 34 };
+const PAD_SYNC = { top: 5, right: 6, bottom: 5, left: 6 };
 
 function xPx(fraction: number, padL = PAD.left, padR = PAD.right): number {
   const innerW = W - padL - padR;
@@ -104,6 +104,95 @@ function linePath(
   return parts.join(" ");
 }
 
+type OutlookPoint = {
+  fraction: number;
+  tempF: number | null;
+  precipPct: number | null;
+};
+
+/** Interpolated series value at driver fraction t (clamped 0–1). */
+function seriesValueAt(
+  series: OutlookPoint[],
+  t: number,
+  key: "tempF" | "precipPct"
+): number | null {
+  if (!series.length) return null;
+  const c = Math.max(0, Math.min(1, t));
+  let prev = series[0]!;
+  if (c <= prev.fraction) return prev[key];
+  for (const p of series) {
+    if (p.fraction >= c) {
+      const a = prev[key], b = p[key];
+      if (a == null || b == null) return a ?? b;
+      const span = p.fraction - prev.fraction;
+      const u = span > 0 ? (c - prev.fraction) / span : 0;
+      return a + (b - a) * u;
+    }
+    prev = p;
+  }
+  return prev[key];
+}
+
+/** Below this corridor temp, precipitation reads as snow, not rain. */
+const SNOW_TEMP_F = 32;
+/** Precip chance (%) at the driver marker needed before the type icon shows. */
+const PRECIP_ICON_MIN_PCT = 15;
+
+/**
+ * Precip line split into rain vs snow runs: each segment is classified by the
+ * mean temperature of its endpoints (null temp → rain). Returns two path
+ * strings so the SVG can stroke rain blue and snow pale without gaps.
+ */
+function classedPrecipPaths(
+  series: OutlookPoint[],
+  yFn: (v: number) => number,
+  padL: number,
+  padR: number
+): { rain: string; snow: string } {
+  const rain: string[] = [];
+  const snow: string[] = [];
+  let prev: { x: number; y: number; snow: boolean } | null = null;
+  for (const p of series) {
+    if (p.precipPct == null || !Number.isFinite(p.precipPct)) {
+      prev = null;
+      continue;
+    }
+    const pt = {
+      x: xPx(p.fraction, padL, padR),
+      y: yFn(p.precipPct),
+      snow: p.tempF != null && p.tempF <= SNOW_TEMP_F,
+    };
+    if (prev) {
+      const bucket = pt.snow ? snow : rain;
+      bucket.push(`M${prev.x.toFixed(1)},${prev.y.toFixed(1)} L${pt.x.toFixed(1)},${pt.y.toFixed(1)}`);
+    }
+    prev = pt;
+  }
+  return { rain: rain.join(" "), snow: snow.join(" ") };
+}
+
+/** Tiny raindrop / snowflake glyph for the Precip row label — reflects the
+ * precipitation type at the driver marker (≤32°F corridor temp = snow). */
+function PrecipTypeIcon({ type }: { type: "rain" | "snow" }) {
+  return type === "snow" ? (
+    <svg className="rpgl__precip-icon" viewBox="0 0 10 10" aria-hidden>
+      <path
+        d="M5 0.8v8.4M1.6 3.1l6.8 3.8M8.4 3.1L1.6 6.9"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+      />
+    </svg>
+  ) : (
+    <svg className="rpgl__precip-icon" viewBox="0 0 10 10" aria-hidden>
+      <path
+        d="M5 1.4c1.9 2.3 3.1 3.7 3.1 5.3a3.1 3.1 0 0 1-6.2 0c0-1.6 1.2-3 3.1-5.3z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 export function RouteOutlookTimeline({
   steps,
   samples,
@@ -155,12 +244,24 @@ export function RouteOutlookTimeline({
       pad.left,
       pad.right
     );
-    const syncTempTicks = [
-      scale.tempMax,
-      Math.round((scale.tempMax + scale.tempMin) / 2),
-      scale.tempMin,
-    ];
-    const syncPrecipTicks = [scale.precipMax, Math.round(scale.precipMax / 2), 0];
+    /* Live readouts at the driver marker + precip type (rain vs snow by the
+     * same ≤32°F corridor temp that colors the precip line). */
+    const tempNowF = seriesValueAt(series, userAlongT, "tempF");
+    const precipNowPct = seriesValueAt(series, userAlongT, "precipPct");
+    const precipNowSnow =
+      tempNowF != null && tempNowF <= SNOW_TEMP_F;
+    const precipType: "rain" | "snow" | null =
+      precipNowPct != null && precipNowPct >= PRECIP_ICON_MIN_PCT
+        ? precipNowSnow
+          ? "snow"
+          : "rain"
+        : null;
+    const classedPrecip = classedPrecipPaths(
+      series,
+      (v) => yPrecip(v, scale.precipMax, h, pad.top, pad.bottom),
+      pad.left,
+      pad.right
+    );
 
     return (
       <div className="rotl rotl--line rotl--synced" role="img" aria-label={aria}>
@@ -203,27 +304,20 @@ export function RouteOutlookTimeline({
                 />
               ) : null}
             </svg>
-            <div className="rotl__chart-overlay" aria-hidden>
-              {syncTempTicks.map((t, i) => (
-                <span
-                  key={`stl-${i}`}
-                  className="rotl__axis-label-html rotl__axis-label-html--right"
-                  style={{
-                    top: `${yPlotPct(
-                      yTemp(t, scale.tempMin, scale.tempMax, h, pad.top, pad.bottom),
-                      h
-                    )}%`,
-                  }}
-                >
-                  {t}°
-                </span>
-              ))}
-            </div>
+            {tempNowF != null ? (
+              <span className="rpgl__readout rpgl__readout--temp">
+                <small>at YOU</small>
+                {Math.round(tempNowF)}°
+              </span>
+            ) : null}
           </div>
         </div>
 
         <div className="rpgl__layer rpgl__layer--rain">
-          <span className="rpgl__layer-label rpgl__layer-label--rain">Rain</span>
+          <span className="rpgl__layer-label rpgl__layer-label--rain">
+            Precip
+            {precipType ? <PrecipTypeIcon type={precipType} /> : null}
+          </span>
           <div className="rpgl__layer-plot">
             <svg
               className="rotl__chart rotl__chart--sync-track"
@@ -244,30 +338,21 @@ export function RouteOutlookTimeline({
                   className="rotl__precip-fill"
                 />
               ) : null}
-              {syncPrecipPath ? (
+              {classedPrecip.rain ? (
                 <path
-                  d={syncPrecipPath}
+                  d={classedPrecip.rain}
                   className="rotl__line rotl__line--precip"
                   vectorEffect="non-scaling-stroke"
                 />
               ) : null}
+              {classedPrecip.snow ? (
+                <path
+                  d={classedPrecip.snow}
+                  className="rotl__line rotl__line--precip rotl__line--precip-snow"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : null}
             </svg>
-            <div className="rotl__chart-overlay" aria-hidden>
-              {syncPrecipTicks.map((p, i) => (
-                <span
-                  key={`spl-${i}`}
-                  className="rotl__axis-label-html rotl__axis-label-html--right"
-                  style={{
-                    top: `${yPlotPct(
-                      yPrecip(p, scale.precipMax, h, pad.top, pad.bottom),
-                      h
-                    )}%`,
-                  }}
-                >
-                  {p}%
-                </span>
-              ))}
-            </div>
           </div>
         </div>
       </div>

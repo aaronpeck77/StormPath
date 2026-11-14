@@ -87,9 +87,9 @@
   }
 
   .route-progress-callout-panel--expanded .rpgl__axis-scroll {
-    overflow-x: auto;
+    overflow-x: hidden;
     overflow-y: hidden;
-    touch-action: pan-x pan-y;
+    touch-action: pan-y;
     overscroll-behavior-y: auto;
   }
 
@@ -184,12 +184,13 @@
 
 .rpgl__axis-scroll {
   width: 100%;
-  overflow-x: auto;
+  /* Whole-route axis: no horizontal pan — same 0–1 scale as the progress rail. */
+  overflow-x: hidden;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
   overscroll-behavior-y: none;
-  touch-action: pan-x;
+  touch-action: pan-y;
   margin: 0;
   padding: 1px 2px 2px;
   scrollbar-width: thin;
@@ -241,8 +242,10 @@
   flex-direction: column;
   gap: 0;
   width: 100%;
-  --rpgl-plot-inset: 8.5%;
-  --rpgl-track-label-w: 3.15rem;
+  /* No side gutters (Bill, Option B): row labels float on the plot and the
+   * lines run edge-to-edge on the same scale as the progress rail. */
+  --rpgl-plot-inset: 2%;
+  --rpgl-track-label-w: 0px;
 }
 
 .rpgl__sync-head {
@@ -292,8 +295,10 @@
   padding-left: 2px;
 }
 
-/* Shared labeled track rows: Temp / Rain / Radar / Wind / NWS / Road */
+/* Shared labeled track rows: Temp / Precip / Radar / Wind / NWS / Road.
+ * The label column collapses to 0 — labels overlay the plot top-left. */
 .rpgl__layer {
+  position: relative;
   display: grid;
   grid-template-columns: var(--rpgl-track-label-w, 3.15rem) minmax(0, 1fr);
   align-items: center;
@@ -342,15 +347,25 @@
 }
 
 .rpgl__layer-label {
+  /* Floats on the plot it names — dark chip keeps it readable over the line. */
+  position: absolute;
+  top: 3px;
+  left: 6px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   margin: 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(2, 6, 23, 0.72);
   font-size: 0.56rem;
   font-weight: 850;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  line-height: 1.1;
+  line-height: 1.3;
   white-space: nowrap;
-  text-align: right;
-  padding-right: 2px;
+  pointer-events: none;
 }
 
 .rpgl__layer-label--temp {
@@ -373,6 +388,49 @@
   position: relative;
   width: 100%;
   min-width: 0;
+}
+
+/* Live value at the YOU marker — the only numbers on the graph now. */
+.rpgl__readout {
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(2, 6, 23, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  font-size: 0.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.rpgl__readout small {
+  font-size: 0.5rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.rpgl__readout--temp { color: #fdba74; }
+.rpgl__readout--wind { color: #fbbf24; }
+
+.rpgl__precip-icon {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+}
+
+/* Snow segments of the Precip line — pale against rain blue. */
+.rotl__line--precip-snow {
+  stroke: #e0f2fe;
+  stroke-dasharray: none;
 }
 
 .rpgl__sync-body {

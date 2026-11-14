@@ -24,8 +24,8 @@ type WindPoint = { t: number; mph: number };
 
 const W = 400;
 const H = 36;
-const PAD_L = 34;
-const PAD_R = 34;
+const PAD_L = 6;
+const PAD_R = 6;
 const PAD_V = 4;
 
 const INNER_W = W - PAD_L - PAD_R;
@@ -72,6 +72,8 @@ type Props = {
   gustLinePoints?: WindPoint[];
   /** Brief extreme gust spikes — tick marks. */
   gustSpikePoints?: WindPoint[];
+  /** Driver position 0–1 along route — drives the live wind readout. */
+  userAlongT?: number;
 };
 
 export function RouteRadarWindStrip({
@@ -79,6 +81,7 @@ export function RouteRadarWindStrip({
   windPoints = [],
   gustLinePoints = [],
   gustSpikePoints = [],
+  userAlongT = 0,
 }: Props) {
   const radarPts = useMemo(() => {
     const displays = radarSamples.map((s) => ({
@@ -128,12 +131,22 @@ export function RouteRadarWindStrip({
   const hasWind = windPts.length >= 2;
   const isEmpty = !hasRadarTrace && !hasWind;
 
-  const windTicks = hasWind
-    ? [windMax, Math.round(windMax / 2), 0].map((mph) => ({
-        mph,
-        topPct: (yPx(mph / windMax) / H) * 100,
-      }))
-    : [];
+  /* Live wind readout at the driver marker — interpolated along the route. */
+  const windNowMph = useMemo(() => {
+    if (!hasWind) return null;
+    const t = Math.max(0, Math.min(1, userAlongT));
+    const pts = windPts;
+    if (t <= pts[0]!.t) return pts[0]!.mph;
+    for (let i = 1; i < pts.length; i++) {
+      if (pts[i]!.t >= t) {
+        const a = pts[i - 1]!, b = pts[i]!;
+        const span = b.t - a.t;
+        const u = span > 0 ? (t - a.t) / span : 0;
+        return a.mph + (b.mph - a.mph) * u;
+      }
+    }
+    return pts[pts.length - 1]!.mph;
+  }, [hasWind, windPts, userAlongT]);
 
   return (
     <div className="rrws rrws--layered" aria-label="Radar precipitation and wind along route">
@@ -256,15 +269,12 @@ export function RouteRadarWindStrip({
                 );
               })}
             </svg>
-            {windTicks.map(({ mph, topPct }) => (
-              <span
-                key={`wa${mph}`}
-                className="rrws__axis-label"
-                style={{ top: `${topPct.toFixed(1)}%` }}
-              >
-                {mph}
+            {windNowMph != null ? (
+              <span className="rpgl__readout rpgl__readout--wind">
+                <small>at YOU</small>
+                {Math.round(windNowMph)} mph
               </span>
-            ))}
+            ) : null}
           </div>
         </div>
       ) : null}
