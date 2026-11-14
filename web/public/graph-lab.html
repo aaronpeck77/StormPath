@@ -59,7 +59,7 @@
   }
   .layer-label--temp  { color: #fdba74; }
   .layer-label--precip{ color: #7dd3fc; }
-  .precip-icon { width: 9px; height: 9px; vertical-align: -1px; margin-left: 3px; }
+  .precip-icon { width: 12px; height: 12px; vertical-align: -1px; margin-left: 3px; }
   .layer-label--radar { color: #38bdf8; }
   .layer-label--wind  { color: #fbbf24; }
   .layer-label--nws   { color: #f87171; }
@@ -285,7 +285,7 @@ function tick(){
   const pNow = sample(precip,t);
   if (pNow > 15) {
     const isSnow = tNow <= 32;
-    precipVal.innerHTML = (isSnow ? ICON_SNOW : ICON_RAIN) + (isSnow ? ' snow' : ' rain');
+    precipVal.innerHTML = isSnow ? ICON_SNOW : ICON_RAIN;
     precipReadout.classList.toggle('snow', isSnow);
   } else {
     precipVal.textContent = '—';

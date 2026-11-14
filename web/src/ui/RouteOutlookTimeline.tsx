@@ -354,9 +354,9 @@ export function RouteOutlookTimeline({
                 className={`rpgl__readout rpgl__readout--precip${
                   precipType === "snow" ? " rpgl__readout--snow" : ""
                 }`}
+                title={precipType === "snow" ? "Snow where you are" : "Rain where you are"}
               >
                 <PrecipTypeIcon type={precipType} />
-                {precipType}
               </span>
             ) : null}
           </div>
