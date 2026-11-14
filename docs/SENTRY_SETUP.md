@@ -20,6 +20,24 @@ Native iOS crashes outside the WebView are **not** covered unless you add `@sent
 
 If the secret is **missing**, the app still works; crash reporting is simply off.
 
+## Sourcemaps (readable stack traces)
+
+Production builds emit **hidden sourcemaps** and the iOS workflow uploads them
+to Sentry with injected debug IDs before `cap sync`. Without this, every frame
+in a crash report is minified (`e.layout.get`).
+
+One-time setup:
+
+1. Sentry → **Settings → Auth Tokens** → create a token with scope
+   `project:releases` (or `org:read` + `project:read`/`project:write`).
+2. GitHub repo → **Settings → Secrets and variables → Actions**:
+   - `SENTRY_AUTH_TOKEN` — the token above (required to enable upload)
+   - `SENTRY_ORG` — optional, defaults to `stormpath`
+   - `SENTRY_PROJECT` — optional, defaults to `stormpath-ios`; set this if the
+     project slug differs (check the project URL in Sentry)
+3. Next iOS build uploads automatically. The step is warn-only — a bad slug
+   logs a warning but never blocks TestFlight.
+
 ## Verify
 
 1. Install a TestFlight build that was built **after** the secret was added.

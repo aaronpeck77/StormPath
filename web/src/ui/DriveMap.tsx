@@ -2115,7 +2115,7 @@ function DriveMapInner({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || !userLngLat) return;
+    if (!map || !mapReady || !isValidLngLatPair(userLngLat)) return;
 
     /* While navigating, the RAF loop owns puck motion — skip so GPS ticks do not re-run flyTo logic (dev gets many re-renders). */
     if (navigationStarted && puckMarkerRef.current) {
@@ -3264,7 +3264,7 @@ function DriveMapInner({
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
-    if (!destLngLat) {
+    if (!isValidLngLatPair(destLngLat)) {
       destMarkerRef.current?.remove();
       destMarkerRef.current = null;
       return;
@@ -3292,6 +3292,11 @@ function DriveMapInner({
     }
 
     viaStops.forEach((stop, i) => {
+      if (!isValidLngLatPair(stop.lngLat)) {
+        viaMarkerMapRef.current.get(i)?.remove();
+        viaMarkerMapRef.current.delete(i);
+        return;
+      }
       let marker = viaMarkerMapRef.current.get(i);
       if (!marker) {
         marker = new mapboxgl.Marker({ element: makeViaStopEl(), anchor: "center" })
@@ -3312,7 +3317,7 @@ function DriveMapInner({
     if (!map || !mapReady) return;
 
     const lngLat = trafficBypassCompareHazardLngLat;
-    if (!lngLat) {
+    if (!isValidLngLatPair(lngLat)) {
       bypassHazardMarkerRef.current?.remove();
       bypassHazardMarkerRef.current = null;
       return;
@@ -3341,7 +3346,7 @@ function DriveMapInner({
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
-    if (!nextHazardBeacon) {
+    if (!nextHazardBeacon || !isValidLngLatPair(nextHazardBeacon.lngLat)) {
       nextHazardBeaconMarkerRef.current?.remove();
       nextHazardBeaconMarkerRef.current = null;
       return;
@@ -5421,7 +5426,7 @@ function DriveMapInner({
     }
 
     for (const p of savedPlaces) {
-      if (existing.has(p.id)) continue;
+      if (existing.has(p.id) || !isValidLngLatPair(p.lngLat)) continue;
       const el = document.createElement("button");
       el.type = "button";
       el.className = "saved-place-dot";
@@ -5476,7 +5481,7 @@ function DriveMapInner({
     }
 
     for (const m of markers) {
-      if (existing.has(m.id)) continue;
+      if (existing.has(m.id) || !isValidLngLatPair(m.lngLat)) continue;
       const el = document.createElement("button");
       el.type = "button";
       el.className = "map-search-pick-hit";
@@ -5536,7 +5541,7 @@ function DriveMapInner({
     }
 
     for (const m of markers) {
-      if (existing.has(m.id)) continue;
+      if (existing.has(m.id) || !isValidLngLatPair(m.lngLat)) continue;
       const el = document.createElement("div");
       el.className = `map-dot-event map-dot-event--${m.kind ?? "other"}`;
       el.title = m.label;

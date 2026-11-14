@@ -291,6 +291,9 @@ export function useNativeNavSession(opts: {
 
       const handles = await Promise.all([
         StormpathMapboxNavigation.addListener("progress", (e: NativeNavProgressEvent) => {
+          /* Native can emit a malformed/empty payload — bail before touching
+           * e.lng rather than crashing the whole progress pipeline. */
+          if (!e || !Number.isFinite(e.lng) || !Number.isFinite(e.lat)) return;
           if (
             !shouldFeedNativeProgressToUi({
               abandoned: nativeAbandonedRef.current,
@@ -380,6 +383,7 @@ export function useNativeNavSession(opts: {
           }
         }),
         StormpathMapboxNavigation.addListener("routeChanged", (e: NativeNavRouteChangedEvent) => {
+          if (!e) return;
           const geom = (e.geometry ?? [])
             .filter((p) => Number.isFinite(p.lng) && Number.isFinite(p.lat))
             .map((p) => [p.lng, p.lat] as LngLat);
@@ -469,7 +473,7 @@ export function useNativeNavSession(opts: {
           onSessionEndedRef.current?.("cancelled");
         }),
         StormpathMapboxNavigation.addListener("error", (e) => {
-          onSessionEndedRef.current?.("error", e.message);
+          onSessionEndedRef.current?.("error", e?.message ?? "native guidance error");
         }),
       ]);
       listenersRef.current = handles;

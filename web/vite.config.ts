@@ -128,6 +128,10 @@ export default defineConfig(({ command, mode }) => ({
     format: "iife",
   },
   build: {
+    /* Hidden sourcemaps: emitted for the CI Sentry upload step (debug IDs make
+     * stack traces readable) but no sourceMappingURL comment, so they aren't
+     * fetched by browsers or exposed on the public site. */
+    sourcemap: "hidden",
     rollupOptions: {
       output: {
         /* Vite 8 ships Rolldown (Rust-based Rollup successor) by default, which only accepts

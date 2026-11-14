@@ -244,7 +244,31 @@ jobs:
           VITE_OPS_USAGE_INGEST_TOKEN: ${{ secrets.VITE_OPS_USAGE_INGEST_TOKEN }}
           VITE_IOS_BUILD_NUMBER: ${{ github.run_number }}
 
-      # ── 5. Sync web assets into the Xcode project ────────────────────────────
+      # ── 5. Upload sourcemaps to Sentry (debug IDs → readable stack traces) ──
+      # Must run BEFORE `cap sync ios`: sentry-cli injects debug IDs into the
+      # dist JS in place, and cap sync copies those files into the app bundle.
+      - name: Upload sourcemaps to Sentry
+        run: |
+          if [ -z "${SENTRY_AUTH_TOKEN:-}" ]; then
+            echo "SENTRY_AUTH_TOKEN not set — skipping sourcemap upload."
+            echo "Crash reports will stay minified. See docs/SENTRY_SETUP.md."
+            exit 0
+          fi
+          REL="stormpath@$(node -p 'require(\"./package.json\").version')+${{ github.run_number }}"
+          # Warn-only: a bad org/project slug or expired token must not block
+          # a TestFlight build — minified crash reports are the fallback.
+          npx -y @sentry/cli@2.58.6 sourcemaps upload \
+            --org "${SENTRY_ORG:-stormpath}" \
+            --project "${SENTRY_PROJECT:-stormpath-ios}" \
+            --release "$REL" \
+            dist || echo "::warning::Sentry sourcemap upload failed — crash reports stay minified for this build"
+        working-directory: web
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+
+      # ── 6. Sync web assets into the Xcode project ────────────────────────────
       - name: Capacitor sync
         run: npx cap sync ios
         working-directory: web

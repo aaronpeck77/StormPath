@@ -18,6 +18,7 @@ import {
   type NightBasemapPreset,
 } from "./mapBasemapStyle";
 import { applyNightBasemapReadability } from "./mapNightBasemapReadability";
+import { isValidLngLatPair } from "./mapCameraSafe";
 import { makeDestEl } from "./mapMarkerDom";
 
 const PIP_PAD = { top: 10, bottom: 10, left: 10, right: 10 };
@@ -204,7 +205,7 @@ export function RouteOverviewPip({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready || !userLngLat) {
+    if (!map || !ready || !isValidLngLatPair(userLngLat)) {
       puckRef.current?.remove();
       puckRef.current = null;
       return;
@@ -222,7 +223,7 @@ export function RouteOverviewPip({
     const map = mapRef.current;
     if (!map || !ready) return;
 
-    if (!destLngLat) {
+    if (!isValidLngLatPair(destLngLat)) {
       destMarkerRef.current?.remove();
       destMarkerRef.current = null;
       return;
@@ -271,7 +272,7 @@ export function RouteOverviewPip({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    if (!focusHazard) {
+    if (!focusHazard || !isValidLngLatPair(focusHazard.lngLat)) {
       hazardMarkerRef.current?.remove();
       hazardMarkerRef.current = null;
       return;
