@@ -75,3 +75,13 @@ export function coveredUsStates(covered: Set<string>): string[] {
 export const DOT_COVERAGE_CAVEATS: readonly string[] = [
   "Arizona coverage is Phoenix-metro (Maricopa County) only.",
 ];
+
+/** States with live plow-report winter road-condition feeds — a layer on top
+ * of ordinary work-zone/incident coverage. IL/IA/MO keyless ArcGIS + MD CHART
+ * winter events. Keep in sync with CUSTOM_FEEDS in cloudflare/dot-feeds. */
+export const WINTER_CONDITION_STATES: readonly string[] = [
+  "illinois",
+  "iowa",
+  "missouri",
+  "maryland",
+];

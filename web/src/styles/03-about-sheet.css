@@ -863,3 +863,69 @@
   text-align: center;
 }
 
+
+/* DOT coverage map (DotCoveragePanel) — generated SVG, no tiles. */
+.dotcov__map {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 10px 0 6px;
+}
+
+.dotcov__state {
+  fill: rgba(148, 163, 184, 0.2);
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.dotcov__state--live {
+  fill: #2f9e6b;
+  stroke: rgba(255, 255, 255, 0.28);
+}
+
+.dotcov__state:hover {
+  fill: #35996f;
+}
+
+.dotcov__state--live:hover {
+  fill: #3fae7c;
+}
+
+.dotcov__winter {
+  font-size: 46px;
+  fill: #bae6fd;
+  paint-order: stroke;
+  stroke: #0a0b0d;
+  stroke-width: 7px;
+  pointer-events: none;
+}
+
+.dotcov__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  color: #cbd5e1;
+}
+
+.dotcov__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dotcov__swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: rgba(148, 163, 184, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: inline-block;
+}
+
+.dotcov__swatch--live {
+  background: #2f9e6b;
+  border-color: rgba(255, 255, 255, 0.35);
+}
