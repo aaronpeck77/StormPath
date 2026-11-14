@@ -134,6 +134,12 @@ export function useNativeNavSession(opts: {
    * the episode to DIY, which replans honoring this preference.
    */
   routingPreferenceRef?: MutableRefObject<RoutingPreference>;
+  /**
+   * Identity of the driver's intended target — final destination + full via
+   * list (NOT remaining vias, so arriving at a stop doesn't retrigger). When
+   * it changes mid-trip, Core restarts on the new target.
+   */
+  navTargetKey?: string;
 }) {
   const {
     accessToken,
@@ -146,6 +152,7 @@ export function useNativeNavSession(opts: {
     preferBackroads = false,
     guidanceLanguage = "en",
     routingPreferenceRef,
+    navTargetKey,
   } = opts;
   const voiceGuidanceEnabledRef = useRef(voiceGuidanceEnabled);
   voiceGuidanceEnabledRef.current = voiceGuidanceEnabled;
@@ -191,6 +198,10 @@ export function useNativeNavSession(opts: {
   onSessionEndedRef.current = onSessionEnded;
   const coordsRef = useRef(coords);
   coordsRef.current = coords;
+  const navTargetKeyRef = useRef(navTargetKey ?? "");
+  navTargetKeyRef.current = navTargetKey ?? "";
+  /** Target signature the running Core session was started with. */
+  const activeNavTargetKeyRef = useRef("");
   const prepareKeyRef = useRef("");
   const liveWindowRef = useRef<LiveTripWindow | null>(null);
   const windowStartAlongRef = useRef(0);
@@ -219,6 +230,7 @@ export function useNativeNavSession(opts: {
     prepareKeyRef.current = "";
     liveWindowRef.current = null;
     windowStartAlongRef.current = 0;
+    activeNavTargetKeyRef.current = "";
     setCoreWindowIsFinal(true);
     corridorAdoptedRef.current = false;
     firstRouteChangedRef.current = true;
@@ -475,6 +487,7 @@ export function useNativeNavSession(opts: {
         return false;
       }
       recordMapboxUsage("navTrips");
+      activeNavTargetKeyRef.current = navTargetKeyRef.current;
       setNativeNavActive(true);
       /* Brain P2: kick the corridor pack download at Go so the dead-zone
        * stretch ahead already has map + nav tiles on disk. Fire-and-forget —
@@ -574,6 +587,7 @@ export function useNativeNavSession(opts: {
    */
   const restartNative = useCallback(async () => {
     if (!isNativeMapboxNavPlatform()) return false;
+    if (nativeRestartingRef.current) return false;
     nativeRestartingRef.current = true;
     nativeAbandonedRef.current = false;
     try {
@@ -584,6 +598,21 @@ export function useNativeNavSession(opts: {
       nativeRestartingRef.current = false;
     }
   }, [startNative, stopNative]);
+
+  /**
+   * Mid-trip destination/stop edit: the running Core session still targets the
+   * OLD place — restart it on the new one. Runs post-render so coordsRef
+   * already holds the fresh plan; the old setTimeout(0) commit could restart
+   * onto stale coords and leave CarPlay routing to the previous destination.
+   */
+  useEffect(() => {
+    if (!isNativeMapboxNavPlatform()) return;
+    const key = navTargetKey ?? "";
+    if (!key || key === activeNavTargetKeyRef.current) return;
+    if (!navigationStarted || nativeRestartingRef.current) return;
+    if (!startedForNavRef.current && !nativeNavActive) return;
+    void restartNative();
+  }, [navigationStarted, nativeNavActive, navTargetKey, restartNative]);
 
   return {
     nativeNavActive,

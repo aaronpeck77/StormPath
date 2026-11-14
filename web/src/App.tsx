@@ -559,6 +559,16 @@ export default function App() {
   );
   const navTargetRef = useRef(navTargetLngLat);
   navTargetRef.current = navTargetLngLat;
+  /* Identity of the driver's intended target — final destination + FULL via
+   * list (not remaining, so arriving at a stop doesn't retrigger). A mid-trip
+   * edit restarts Core on the new target inside useNativeNavSession. */
+  const navTargetKey = useMemo(() => {
+    if (!destLngLat) return "";
+    const vias = viaStops
+      .map((s) => `${s.lngLat[0].toFixed(5)},${s.lngLat[1].toFixed(5)}`)
+      .join(";");
+    return `${destLngLat[0].toFixed(5)},${destLngLat[1].toFixed(5)}|${vias}`;
+  }, [destLngLat, viaStops]);
   const viewMode = useTripPlanStore((s) => s.viewMode);
   const setViewMode = useTripPlanStore((s) => s.setViewMode);
   const viewModeRef = useRef(viewMode);
@@ -1105,6 +1115,7 @@ export default function App() {
         null,
       headingDeg: driveLastTravelBearingDegRef.current,
     },
+    navTargetKey,
     onRouteGeometry: onNativeRouteGeometry,
     voiceGuidanceEnabled: settingVoiceOn && !appVoiceHeld,
     guidanceLanguage: guidanceLanguageCode,
@@ -1115,7 +1126,9 @@ export default function App() {
   });
 
   /** After a mid-trip stop/destination replan lands: adopt the fresh locked
-   * geometry, then restart Core so guidance/voice follow the new corridor. */
+   * geometry. Core restart is handled by useNativeNavSession's navTargetKey
+   * effect — it fires post-render with fresh coords, where a setTimeout here
+   * could restart onto the OLD destination (CarPlay then routed to it). */
   const commitNavReplan = useCallback(() => {
     const nextPlan = useTripPlanStore.getState().plan;
     const lockedId = lockedNavigationRouteIdRef.current;
@@ -1128,11 +1141,7 @@ export default function App() {
         { force: true }
       );
     }
-    /* Let the new line land in the Core coords, then start guidance from here. */
-    window.setTimeout(() => {
-      void restartNative();
-    }, 0);
-  }, [adoptLockedRouteGeometry, restartNative]);
+  }, [adoptLockedRouteGeometry]);
   navReplanCommitRef.current = commitNavReplan;
 
   const handleSkipViaStop = useCallback(
