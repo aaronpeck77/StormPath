@@ -1,7 +1,9 @@
 # StormPath DOT/WZDx road-event feed — deploy: npm run deploy (from this folder)
 # Serves normalized work-zone/closure events for the app's Plus road-notices pipeline.
-# Snapshot is edge-cached ~4 min; /events?bbox= filters server-side so the app
-# only pulls events near the route corridor. Docs: docs/CLOUDFLARE_TILES.md style.
+# Snapshot is built by the dot-feeds-snapshot GitHub Action (free-plan CPU is
+# 10 ms — too small to parse feeds inline) and pushed to /ingest -> KV.
+# /events?bbox= filters server-side so the app only pulls events near the
+# route corridor.
 
 name = "stormpath-dot-feeds"
 main = "src/index.ts"
