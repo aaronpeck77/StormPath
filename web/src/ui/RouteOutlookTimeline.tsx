@@ -314,10 +314,7 @@ export function RouteOutlookTimeline({
         </div>
 
         <div className="rpgl__layer rpgl__layer--rain">
-          <span className="rpgl__layer-label rpgl__layer-label--rain">
-            Precip
-            {precipType ? <PrecipTypeIcon type={precipType} /> : null}
-          </span>
+          <span className="rpgl__layer-label rpgl__layer-label--rain">Precip</span>
           <div className="rpgl__layer-plot">
             <svg
               className="rotl__chart rotl__chart--sync-track"
@@ -353,6 +350,17 @@ export function RouteOutlookTimeline({
                 />
               ) : null}
             </svg>
+            {precipType ? (
+              <span
+                className={`rpgl__readout rpgl__readout--precip${
+                  precipType === "snow" ? " rpgl__readout--snow" : ""
+                }`}
+              >
+                <small>at YOU</small>
+                <PrecipTypeIcon type={precipType} />
+                {precipType}
+              </span>
+            ) : null}
           </div>
         </div>
       </div>

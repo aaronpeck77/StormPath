@@ -76,6 +76,8 @@
   .readout small { font-weight: 600; color: #94a3b8; font-size: 8px; margin-right: 3px; }
   .readout--temp { color: #fdba74; }
   .readout--wind { color: #fbbf24; }
+  .readout--precip { color: #7dd3fc; }
+  .readout--precip.snow { color: #e0f2fe; }
 
   .layer--temp  { background: rgba(251,146,60,.07);  box-shadow: inset 0 0 0 1px rgba(251,146,60,.2); }
   .layer--precip{ background: rgba(56,189,248,.07);  box-shadow: inset 0 0 0 1px rgba(56,189,248,.22); }
@@ -205,7 +207,7 @@ const tempRow  = row('layer--temp','Temp','layer-label--temp',{cls:'readout--tem
 { const s = svgFor({h:40}); tempRow.appendChild(s);
   polyline(s, temp, '#fb923c', 1.8, 20, 50); }
 
-const precipRow = row('layer--precip','Precip','layer-label--precip',null);
+const precipRow = row('layer--precip','Precip','layer-label--precip',{cls:'readout--precip',small:'at YOU',id:'precipVal',html:true});
 { const s = svgFor({h:40}); precipRow.appendChild(s); s.setAttribute('viewBox','0 0 100 40');
   const yAt = v => 37 - (v/100)*34;
   /* pale fill under the whole precip area */
@@ -225,10 +227,6 @@ const precipRow = row('layer--precip','Precip','layer-label--precip',null);
     l.setAttribute('vector-effect','non-scaling-stroke');
     s.appendChild(l);
   }
-  /* type icon slot in the label — flips with the YOU marker */
-  const pIcon = document.createElement('span'); pIcon.id='pIcon';
-  precipRow.querySelector('.layer-label--precip').appendChild(pIcon);
-  window.__pIcon = pIcon;
 }
 
 const radarRow = row('layer--radar','Radar','layer-label--radar',null);
@@ -270,6 +268,8 @@ const roadRow = row('layer--road','Road','layer-label--road',null);
 /* ---- animate YOU marker + readouts ---- */
 const tempVal = document.getElementById('tempVal');
 const windVal = document.getElementById('windVal');
+const precipVal = document.getElementById('precipVal');
+const precipReadout = precipVal.parentElement;
 const ICON_SNOW = '<svg class="precip-icon" viewBox="0 0 10 10"><path d="M5 .8v8.4M1.6 3.1l6.8 3.8M8.4 3.1L1.6 6.9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg>';
 const ICON_RAIN = '<svg class="precip-icon" viewBox="0 0 10 10"><path d="M5 1.4c1.9 2.3 3.1 3.7 3.1 5.3a3.1 3.1 0 0 1-6.2 0c0-1.6 1.2-3 3.1-5.3z" fill="currentColor"/></svg>';
 let t = 0.08, dir = 1;
@@ -283,7 +283,14 @@ function tick(){
   tempVal.textContent = Math.round(tNow)+'°';
   windVal.textContent = Math.round(sample(wind,t))+' mph';
   const pNow = sample(precip,t);
-  window.__pIcon.innerHTML = pNow > 15 ? (tNow <= 32 ? ICON_SNOW : ICON_RAIN) : '';
+  if (pNow > 15) {
+    const isSnow = tNow <= 32;
+    precipVal.innerHTML = (isSnow ? ICON_SNOW : ICON_RAIN) + (isSnow ? ' snow' : ' rain');
+    precipReadout.classList.toggle('snow', isSnow);
+  } else {
+    precipVal.textContent = '—';
+    precipReadout.classList.remove('snow');
+  }
   requestAnimationFrame(tick);
 }
 tick();

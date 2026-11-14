@@ -420,6 +420,8 @@
 
 .rpgl__readout--temp { color: #fdba74; }
 .rpgl__readout--wind { color: #fbbf24; }
+.rpgl__readout--precip { color: #7dd3fc; }
+.rpgl__readout--snow { color: #e0f2fe; }
 
 .rpgl__precip-icon {
   width: 9px;
