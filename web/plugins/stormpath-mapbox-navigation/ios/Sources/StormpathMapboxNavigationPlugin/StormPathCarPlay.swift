@@ -291,10 +291,17 @@ public final class StormPathCarPlay {
             ($0.expiresAt ?? .greatestFiniteMagnitude) > now && !$0.title.hasPrefix("No hazards")
         }
         guard !items.isEmpty else { return }
+        /* Bill (592): info/caution hazards already paint the route line — the
+         * popup is only worth interrupting for serious/avoid. It must also NAME
+         * the hazard: "N flagged — check your phone" told the driver nothing. */
+        let serious = items.filter {
+            $0.title.hasPrefix("SERIOUS") || $0.title.hasPrefix("AVOID")
+        }
+        guard !serious.isEmpty else { return }
         /* Bill (564): the popup fired repeatedly for the same hazards. Alert at
-         * most once per distinct hazard title per trip, with a 20-minute gap so
+         * most once per distinct serious hazard per trip, with a 20-minute gap so
          * a genuinely new hazard can still speak but snapshots can't nag. */
-        let titles = items.map(\.title)
+        let titles = serious.map(\.title)
         let hasUnseen = titles.contains { !alertedHazardTitles.contains($0) }
         guard hasUnseen else { return }
         let nowTs = Date().timeIntervalSince1970
@@ -302,9 +309,16 @@ public final class StormPathCarPlay {
         alertedHazardTitles.formUnion(titles)
         lastHazardAlertKey = titles.prefix(3).joined(separator: "|")
         lastHazardAlertAt = nowTs
+        func hazardName(_ title: String) -> String {
+            let parts = title.components(separatedBy: "·")
+            return parts.count > 1 ? parts.dropFirst().joined(separator: "·").trimmingCharacters(in: .whitespaces) : title
+        }
+        let shown = serious.prefix(2).map { hazardName($0.title) }
+        let extra = serious.count > shown.count ? " +\(serious.count - shown.count) more" : ""
+        let nameLine = shown.joined(separator: " · ") + extra
         let alert = CPNavigationAlert(
-            titleVariants: ["Hazards on your route"],
-            subtitleVariants: ["\(items.count) flagged ahead — check your phone for details"],
+            titleVariants: ["Hazard ahead"],
+            subtitleVariants: ["\(nameLine) on your route"],
             image: Self.symbol("exclamationmark.triangle.fill"),
             primaryAction: CPAlertAction(title: "OK", style: .default, handler: { _ in }),
             secondaryAction: nil,
@@ -471,13 +485,20 @@ public final class StormPathCarPlay {
         return saved.isEmpty ? "Destination" : saved
     }
 
+    /// Multi-line "name / street / city·state·zip" for the destination card —
+    /// falls back to the flat label when the web side didn't send parts.
+    private var destinationDisplayName: String {
+        let saved = UserDefaults.standard.string(forKey: "stormpath.car.destinationAddress") ?? ""
+        return saved.isEmpty ? destinationLabel : saved
+    }
+
     private func startTripIfNeeded() {
         guard guiding, navigationSession == nil, let mapTemplate, let routes else { return }
         let coords = routes.mainRoute.route.shape?.coordinates ?? []
         guard let first = coords.first, let last = coords.last else { return }
         let origin = MKMapItem(placemark: MKPlacemark(coordinate: first))
         let destination = MKMapItem(placemark: MKPlacemark(coordinate: last))
-        destination.name = destinationLabel
+        destination.name = destinationDisplayName
         let choice = CPRouteChoice(
             summaryVariants: [destinationLabel],
             additionalInformationVariants: [],
@@ -500,8 +521,10 @@ public final class StormPathCarPlay {
              * reassignment on the content we actually display instead. */
             let nextStep = progress.currentLegProgress.upcomingStep
             let nextBanner = nextStep?.instructionsDisplayedAlongStep?.last
-            let legKey = "\(progress.legIndex)"
-            let stepKey = "\(progress.currentLegProgress.stepIndex)"
+            /* Signature = displayed content only. leg/step indexes were in the
+             * key, so every step boundary re-created the panel even when the
+             * instruction text and icon were identical — the constant flicker
+             * Bill saw. Estimates still refresh every tick below. */
             let primaryKey = banner.primaryInstruction.text ?? ""
             let secondaryKey = banner.secondaryInstruction?.text ?? ""
             let maneuverKey = "\(banner.primaryInstruction.maneuverType)|\(banner.primaryInstruction.maneuverDirection)"
@@ -509,7 +532,7 @@ public final class StormPathCarPlay {
             let nextTextKey = nextBanner?.primaryInstruction.text ?? nextStep?.instructions ?? ""
             let nextManeuverKey = "\(nextBanner?.primaryInstruction.maneuverType)|\(nextBanner?.primaryInstruction.maneuverDirection)"
             let signature = [
-                legKey, stepKey, primaryKey, secondaryKey,
+                primaryKey, secondaryKey,
                 maneuverKey, sideKey, nextTextKey, nextManeuverKey,
             ].joined(separator: "\u{1F}")
             if signature != followingManeuverSignature {

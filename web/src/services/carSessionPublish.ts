@@ -102,10 +102,38 @@ export async function consumeCarPlayHazardAlert(): Promise<string[]> {
   }
 }
 
+/**
+ * CarPlay destination card: split a Mapbox-style place name
+ * ("Best Buy, 123 Main St, Springfield, IL 62701, United States") into
+ * display lines — name / street / city·state·zip — so the card reads like an
+ * address instead of one truncated line. Returns "" when there isn't enough
+ * structure to bother.
+ */
+export function formatCarDestinationAddress(label: string | null | undefined): string {
+  const parts = (label ?? "")
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length < 3) return "";
+  const name = parts[0]!;
+  const streetIdx = parts.findIndex((p, i) => i > 0 && /^\d/.test(p));
+  const street = streetIdx > 0 ? parts[streetIdx]! : null;
+  const tail = parts.slice(streetIdx > 0 ? streetIdx + 1 : 1);
+  /* Drop a trailing country segment — CarPlay cards don't need it. */
+  const locale = tail.length > 1 ? tail.slice(0, -1) : tail;
+  const cityLine = locale.join(", ");
+  const lines = [name];
+  if (street) lines.push(street);
+  if (cityLine) lines.push(cityLine);
+  return lines.length >= 3 ? lines.join("\n") : "";
+}
+
 /** Push trip/advisory snapshot for a future CarPlay scene (no-op on web). */
 export async function publishCarSession(payload: {
   navigating: boolean;
   destinationLabel?: string | null;
+  /** Multi-line "name\nstreet\ncity, ST zip" for the CarPlay destination card. */
+  destinationAddress?: string | null;
   advisoryLine?: string | null;
   maneuverLine?: string | null;
   conditions?: CarConditionSection[];
@@ -125,6 +153,7 @@ export async function publishCarSession(payload: {
     await StormpathCarSession.publish({
       navigating: payload.navigating,
       destinationLabel: payload.navigating ? payload.destinationLabel?.trim() || "" : "",
+      destinationAddress: payload.navigating ? payload.destinationAddress?.trim() || "" : "",
       advisoryLine: payload.navigating ? payload.advisoryLine?.trim() || "" : "",
       maneuverLine: payload.navigating ? payload.maneuverLine?.trim() || "" : "",
       conditionsJson: JSON.stringify(payload.conditions ?? []),

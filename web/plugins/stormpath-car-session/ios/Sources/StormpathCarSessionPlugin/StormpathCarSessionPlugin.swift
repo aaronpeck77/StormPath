@@ -24,10 +24,12 @@ public class StormpathCarSessionPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func publish(_ call: CAPPluginCall) {
         let navigating = call.getBool("navigating") ?? false
         let destination = call.getString("destinationLabel") ?? ""
+        let destinationAddress = call.getString("destinationAddress") ?? ""
         let advisory = call.getString("advisoryLine") ?? ""
         let maneuver = call.getString("maneuverLine") ?? ""
         Self.defaults.set(navigating, forKey: Self.prefix + "navigating")
         Self.defaults.set(destination, forKey: Self.prefix + "destination")
+        Self.defaults.set(destinationAddress, forKey: Self.prefix + "destinationAddress")
         Self.defaults.set(advisory, forKey: Self.prefix + "advisory")
         Self.defaults.set(maneuver, forKey: Self.prefix + "maneuver")
         for key in ["conditionsJson", "hazardSpansJson", "radarTileBase", "puckColor"] {
@@ -64,7 +66,7 @@ public class StormpathCarSessionPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func clear(_ call: CAPPluginCall) {
-        for key in ["navigating", "destination", "advisory", "maneuver", "updatedAt", "conditionsJson", "hazardSpansJson", "radarTileBase", "puckColor", "speedLimitMph", "pendingHazardAlert"] {
+        for key in ["navigating", "destination", "destinationAddress", "advisory", "maneuver", "updatedAt", "conditionsJson", "hazardSpansJson", "radarTileBase", "puckColor", "speedLimitMph", "pendingHazardAlert"] {
             Self.defaults.removeObject(forKey: Self.prefix + key)
         }
         call.resolve()

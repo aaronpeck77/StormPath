@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { pickAdvisoryVoiceLine } from "../nav/advisoryVoice";
 import type { DriveAheadLine } from "../nav/driveRouteAhead";
-import { buildCarConditions, publishCarSession, type CarConditionsInput } from "../services/carSessionPublish";
+import { buildCarConditions, formatCarDestinationAddress, publishCarSession, type CarConditionsInput } from "../services/carSessionPublish";
 import { timelineItemBandColor } from "../nav/timelineBandColors";
 import { timelineItemShowsOnRouteGraph } from "../nav/routeAheadSync";
 import { getWebEnv } from "../config/env";
@@ -66,6 +66,7 @@ export function useCarSessionPublish(p: Params): void {
       void publishCarSession({
         navigating: snapshot.navigationStarted,
         destinationLabel: snapshot.destinationLabel,
+        destinationAddress: formatCarDestinationAddress(snapshot.destinationLabel),
         advisoryLine: line,
         maneuverLine: snapshot.maneuverLine ?? null,
         conditions: buildCarConditions(snapshot.conditions),

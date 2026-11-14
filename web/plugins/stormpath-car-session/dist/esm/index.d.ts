@@ -1,6 +1,8 @@
 export type CarSessionPublish = {
   navigating: boolean;
   destinationLabel?: string;
+  /** Multi-line "name\nstreet\ncity, ST zip" for the CarPlay destination card. */
+  destinationAddress?: string;
   advisoryLine?: string;
   maneuverLine?: string;
   conditionsJson?: string;
