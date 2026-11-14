@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StormPath — Graph layout mock (Option B)</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px;
+    background: #0b1120;
+    color: #e2e8f0;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  h1 { font-size: 15px; font-weight: 700; margin: 0 0 4px; }
+  .sub { font-size: 11px; color: #94a3b8; margin-bottom: 14px; }
+  .phone {
+    max-width: 430px; margin: 0 auto;
+    background: #020617;
+    border: 1px solid rgba(148,163,184,.25);
+    border-radius: 18px; padding: 12px;
+  }
+  /* ---- panel ---- */
+  .rpgl { display: flex; flex-direction: column; }
+  .help {
+    font-size: 10px; color: #64748b; padding: 4px 2px 8px;
+  }
+  .axis-pane { border-radius: 10px; overflow: hidden;
+    background: rgba(15,23,42,.55); }
+  .sync-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px 2px; font-size: 9px; letter-spacing: .08em;
+    text-transform: uppercase; color: #64748b; font-weight: 700;
+  }
+  .sync-head .you { color: #4ade80; }
+  .sync-head .dest { margin-left: auto; color: #f472b6; }
+  .sync-head .mid { color: #94a3b8; }
+  .body { position: relative; padding: 0 4px 4px; }
+
+  /* ---- rows: NO left gutter — label floats ON the plot ---- */
+  .layer {
+    position: relative;
+    height: 46px;
+    border-radius: 7px;
+    margin-top: 3px;
+    background: rgba(15,23,42,.28);
+    box-shadow: inset 0 0 0 1px rgba(148,163,184,.12);
+    overflow: hidden;
+  }
+  .layer svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .layer-label {
+    position: absolute; top: 3px; left: 7px; z-index: 3;
+    font-size: 8.5px; font-weight: 850; letter-spacing: .07em;
+    text-transform: uppercase; line-height: 1;
+    padding: 2px 5px; border-radius: 4px;
+    background: rgba(2,6,23,.72);           /* legibility over the line */
+    text-shadow: 0 1px 2px rgba(0,0,0,.6);
+  }
+  .layer-label--temp  { color: #fdba74; }
+  .layer-label--precip{ color: #7dd3fc; }
+  .precip-icon { width: 9px; height: 9px; vertical-align: -1px; margin-left: 3px; }
+  .layer-label--radar { color: #38bdf8; }
+  .layer-label--wind  { color: #fbbf24; }
+  .layer-label--nws   { color: #f87171; }
+  .layer-label--road  { color: #fb923c; }
+
+  /* live readout — replaces old min/max edge numbers */
+  .readout {
+    position: absolute; top: 3px; right: 7px; z-index: 3;
+    font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums;
+    padding: 2px 6px; border-radius: 4px;
+    background: rgba(2,6,23,.78); color: #e2e8f0;
+    border: 1px solid rgba(148,163,184,.25);
+  }
+  .readout small { font-weight: 600; color: #94a3b8; font-size: 8px; margin-right: 3px; }
+  .readout--temp { color: #fdba74; }
+  .readout--wind { color: #fbbf24; }
+
+  .layer--temp  { background: rgba(251,146,60,.07);  box-shadow: inset 0 0 0 1px rgba(251,146,60,.2); }
+  .layer--precip{ background: rgba(56,189,248,.07);  box-shadow: inset 0 0 0 1px rgba(56,189,248,.22); }
+  .layer--radar { background: rgba(14,165,233,.07);  box-shadow: inset 0 0 0 1px rgba(14,165,233,.2); }
+  .layer--wind  { background: rgba(245,158,11,.07);  box-shadow: inset 0 0 0 1px rgba(245,158,11,.22); }
+  .layer--nws   { background: rgba(239,68,68,.07);   box-shadow: inset 0 0 0 1px rgba(239,68,68,.2); }
+  .layer--road  { background: rgba(234,88,12,.07);   box-shadow: inset 0 0 0 1px rgba(234,88,12,.2); }
+
+  /* YOU line spanning all rows */
+  .you-line {
+    position: absolute; top: 0; bottom: 0; left: 0;
+    width: 2px; background: #4ade80; z-index: 4;
+    box-shadow: 0 0 6px rgba(74,222,128,.8);
+    transform: translateX(-1px);
+  }
+  .you-tag {
+    position: absolute; top: -2px; left: 1px; transform: translateX(-50%);
+    font-size: 8px; font-weight: 800; color: #052e16;
+    background: #4ade80; border-radius: 3px; padding: 1px 4px; z-index: 5;
+  }
+
+  /* x ticks */
+  .xticks { display: flex; justify-content: space-between;
+    padding: 5px 8px 2px; font-size: 9px; color: #64748b; }
+  .xticks b { color: #94a3b8; font-weight: 700; }
+
+  .legend-note { font-size: 10px; color: #64748b; margin-top: 10px; line-height: 1.5; }
+  .legend-note code { color: #7dd3fc; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <h1>Route info — proposed layout</h1>
+  <div class="sub">Whole route, no side gutters · labels on the lines · live temp/wind readout</div>
+
+  <div class="rpgl">
+    <div class="help">▸ What this panel shows</div>
+
+    <div class="axis-pane">
+      <div class="sync-head">
+        <span class="you">YOU</span><span class="mid">along your route</span><span class="dest">DEST</span>
+      </div>
+      <div class="body" id="body">
+        <!-- rows injected by JS -->
+        <div class="you-line" id="youLine"><span class="you-tag">YOU</span></div>
+      </div>
+      <div class="xticks">
+        <span><b>Now</b></span><span>+1h</span><span>+2h</span><span>+3h</span><span><b>Arrive</b></span>
+      </div>
+    </div>
+  </div>
+
+  <p class="legend-note">
+    Mock only — sample data. The green <b>YOU</b> line keeps moving so you can watch the
+    <code>TEMP</code>/<code>WIND</code> readouts and the <code>PRECIP</code> type icon
+    (raindrop vs snowflake) update. Precip line is <b>blue = rain</b>, <b>pale = snow</b>
+    where corridor temp ≤ 32°F — watch it cross the cold snap mid-route.
+  </p>
+</div>
+
+<script>
+/* ---------- sample route data (t = 0..1 along route) ---------- */
+const N = 60;
+/* Cold snap mid-route (i/N ~0.55–0.8 dips under 32°F) so precip flips rain→snow. */
+const temp  = Array.from({length:N},(_,i)=>{
+  const x = i/N;
+  const cold = x>0.5 && x<0.85 ? -14*Math.sin((x-0.5)/0.35*Math.PI) : 0;
+  return 36 + 8*Math.sin(x*Math.PI*1.6) - 4*x + cold + (i%7===0?2:0);
+});
+const precip= Array.from({length:N},(_,i)=>{
+  const x = i/N;
+  return Math.max(0,
+    60*Math.exp(-Math.pow((x-0.62)/0.10,2)) +      // main storm in the cold snap → snow
+    25*Math.exp(-Math.pow((x-0.3)/0.05,2)) +       // earlier cell, warm → rain
+    15*Math.exp(-Math.pow((x-0.92)/0.05,2)));      // late cell → rain
+});
+const wind  = Array.from({length:N},(_,i)=> 10 + 8*Math.sin(i/N*Math.PI*2.2) + (i>25&&i<32?12:0));
+const radar = Array.from({length:N},(_,i)=>{
+  const storm = Math.exp(-Math.pow((i/N-0.62)/0.07,2));
+  const cell  = Math.exp(-Math.pow((i/N-0.3)/0.04,2))*0.6;
+  return Math.min(1, storm + cell*0.5);
+});
+
+const W = 100, H = {chart:40, band:14};
+const body = document.getElementById('body');
+const youLine = document.getElementById('youLine');
+
+function pts(arr, h, base){ // map 0..1 x, value->y within h
+  return arr.map((v,i)=>`${(i/(arr.length-1)*W).toFixed(2)},${(base - (v/100)*h*0.8 - h*0.1).toFixed(2)}`).join(' ');
+}
+function norm(arr, lo, hi){ return arr.map(v=>(v-lo)/(hi-lo)); }
+
+function svgFor(kind){
+  const s = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  s.setAttribute('viewBox',`0 0 ${W} ${kind.h}`);
+  s.setAttribute('preserveAspectRatio','none');
+  return s;
+}
+function polyline(svg, arr, color, w, lo, hi, fill){
+  const n = norm(arr, lo, hi);
+  const h = +svg.getAttribute('viewBox').split(' ')[3];
+  const d = n.map((v,i)=>`${i===0?'M':'L'}${(i/(n.length-1)*W).toFixed(2)},${(h - v*(h-6) - 3).toFixed(2)}`).join(' ');
+  if (fill){
+    const f = document.createElementNS('http://www.w3.org/2000/svg','path');
+    f.setAttribute('d', d + ` L${W},${h} L0,${h} Z`);
+    f.setAttribute('fill', fill); f.setAttribute('opacity','.35');
+    svg.appendChild(f);
+  }
+  const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+  p.setAttribute('d', d); p.setAttribute('fill','none');
+  p.setAttribute('stroke', color); p.setAttribute('stroke-width', w);
+  p.setAttribute('vector-effect','non-scaling-stroke');
+  svg.appendChild(p);
+}
+
+/* ---- build rows ---- */
+function row(cls, labelText, labelCls, readout){
+  const r = document.createElement('div');
+  r.className = 'layer ' + cls;
+  r.innerHTML = `<span class="layer-label ${labelCls}">${labelText}</span>` +
+    (readout ? `<span class="readout ${readout.cls}"><small>${readout.small}</small><b id="${readout.id}">–</b></span>` : '');
+  body.insertBefore(r, youLine);
+  return r;
+}
+
+const tempRow  = row('layer--temp','Temp','layer-label--temp',{cls:'readout--temp',small:'at YOU',id:'tempVal'});
+{ const s = svgFor({h:40}); tempRow.appendChild(s);
+  polyline(s, temp, '#fb923c', 1.8, 20, 50); }
+
+const precipRow = row('layer--precip','Precip','layer-label--precip',null);
+{ const s = svgFor({h:40}); precipRow.appendChild(s); s.setAttribute('viewBox','0 0 100 40');
+  const yAt = v => 37 - (v/100)*34;
+  /* pale fill under the whole precip area */
+  const d = precip.map((v,i)=>`${i===0?'M':'L'}${(i/(N-1)*100).toFixed(2)},${yAt(v).toFixed(2)}`).join(' ');
+  const f = document.createElementNS('http://www.w3.org/2000/svg','path');
+  f.setAttribute('d', d + ' L100,40 L0,40 Z'); f.setAttribute('fill','rgba(186,230,253,.25)');
+  s.appendChild(f);
+  /* line colored per segment: ≤32°F avg = snow (pale), else rain (blue) */
+  for (let i=1;i<precip.length;i++){
+    const snow = (temp[i-1]+temp[i])/2 <= 32;
+    const l=document.createElementNS('http://www.w3.org/2000/svg','line');
+    l.setAttribute('x1',(i-1)/(N-1)*100); l.setAttribute('x2',i/(N-1)*100);
+    l.setAttribute('y1',yAt(precip[i-1])); l.setAttribute('y2',yAt(precip[i]));
+    l.setAttribute('stroke', snow?'#e0f2fe':'#38bdf8');
+    l.setAttribute('stroke-width','2.4');
+    l.setAttribute('stroke-linecap','round');
+    l.setAttribute('vector-effect','non-scaling-stroke');
+    s.appendChild(l);
+  }
+  /* type icon slot in the label — flips with the YOU marker */
+  const pIcon = document.createElement('span'); pIcon.id='pIcon';
+  precipRow.querySelector('.layer-label--precip').appendChild(pIcon);
+  window.__pIcon = pIcon;
+}
+
+const radarRow = row('layer--radar','Radar','layer-label--radar',null);
+{ const s = svgFor({h:14}); radarRow.appendChild(s); s.setAttribute('viewBox','0 0 100 14');
+  radar.forEach((v,i)=>{
+    const r = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    const x = i/(radar.length-1)*100, w = 100/radar.length+0.4;
+    r.setAttribute('x',x); r.setAttribute('y',14-v*14);
+    r.setAttribute('width',w); r.setAttribute('height',v*14);
+    r.setAttribute('fill', v>0.66?'#0284c7':v>0.4?'#38bdf8':v>0.18?'#7dd3fc':'#e0f2fe');
+    r.setAttribute('opacity', v>0.05?'.9':'.15');
+    s.appendChild(r);
+  }); }
+
+const windRow = row('layer--wind','Wind','layer-label--wind',{cls:'readout--wind',small:'at YOU',id:'windVal'});
+{ const s = svgFor({h:40}); windRow.appendChild(s);
+  polyline(s, wind, '#fbbf24', 1.6, 0, 35);
+  // gust ticks
+  wind.forEach((v,i)=>{ if (v>17){ const l=document.createElementNS('http://www.w3.org/2000/svg','line');
+    const x=i/(wind.length-1)*100, y=40-((v-0)/(35-0))*(40-6)-3;
+    l.setAttribute('x1',x);l.setAttribute('x2',x);l.setAttribute('y1',y-4);l.setAttribute('y2',y+4);
+    l.setAttribute('stroke','#fb923c');l.setAttribute('stroke-width','1');l.setAttribute('vector-effect','non-scaling-stroke');
+    s.appendChild(l);} }); }
+
+const nwsRow = row('layer--nws','NWS','layer-label--nws',null);
+{ const s = svgFor({h:14}); nwsRow.appendChild(s); s.setAttribute('viewBox','0 0 100 14');
+  [[22,34,'rgba(239,68,68,.5)'],[58,66,'rgba(239,68,68,.35)']].forEach(([a,b,c])=>{
+    const r=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    r.setAttribute('x',a);r.setAttribute('width',b-a);r.setAttribute('y',2);r.setAttribute('height',10);
+    r.setAttribute('fill',c);r.setAttribute('rx',2);s.appendChild(r);}); }
+
+const roadRow = row('layer--road','Road','layer-label--road',null);
+{ const s = svgFor({h:14}); roadRow.appendChild(s); s.setAttribute('viewBox','0 0 100 14');
+  [[70,78,'rgba(234,88,12,.5)'],[82,88,'rgba(234,88,12,.35)']].forEach(([a,b,c])=>{
+    const r=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    r.setAttribute('x',a);r.setAttribute('width',b-a);r.setAttribute('y',2);r.setAttribute('height',10);
+    r.setAttribute('fill',c);r.setAttribute('rx',2);s.appendChild(r);}); }
+
+/* ---- animate YOU marker + readouts ---- */
+const tempVal = document.getElementById('tempVal');
+const windVal = document.getElementById('windVal');
+const ICON_SNOW = '<svg class="precip-icon" viewBox="0 0 10 10"><path d="M5 .8v8.4M1.6 3.1l6.8 3.8M8.4 3.1L1.6 6.9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg>';
+const ICON_RAIN = '<svg class="precip-icon" viewBox="0 0 10 10"><path d="M5 1.4c1.9 2.3 3.1 3.7 3.1 5.3a3.1 3.1 0 0 1-6.2 0c0-1.6 1.2-3 3.1-5.3z" fill="currentColor"/></svg>';
+let t = 0.08, dir = 1;
+function sample(arr, x){ const f = x*(arr.length-1); const i=Math.floor(f), fr=f-i;
+  return arr[Math.min(arr.length-1,i)]*(1-fr)+arr[Math.min(arr.length-1,i+1)]*fr; }
+function tick(){
+  t += dir*0.0009; if (t>0.94||t<0.06) dir*=-1;
+  youLine.style.left = (t*100)+'%';
+  youLine.querySelector('.you-tag').style.left = '0';
+  const tNow = sample(temp,t);
+  tempVal.textContent = Math.round(tNow)+'°';
+  windVal.textContent = Math.round(sample(wind,t))+' mph';
+  const pNow = sample(precip,t);
+  window.__pIcon.innerHTML = pNow > 15 ? (tNow <= 32 ? ICON_SNOW : ICON_RAIN) : '';
+  requestAnimationFrame(tick);
+}
+tick();
+</script>
+</body>
+</html>
