@@ -76,6 +76,14 @@
   color: #94a3b8;
 }
 
+/* Forecast at the destination at arrival — distinct from local "right now". */
+.cp-companion__arrivewx {
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: #a5f3fc;
+}
+
 .cp-companion__advisory {
   margin: 10px 0 0;
   font-size: 14px;

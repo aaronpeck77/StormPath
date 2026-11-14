@@ -108,6 +108,14 @@ export function CarPlayCompanionView(p: Props) {
       ? new Date(Date.now() + p.etaMinutes * 60_000)
       : null;
 
+  /* Arrival forecast — the corridor outlook's last step is destination-at-ETA,
+   * distinct from the local "right now" forecast below. */
+  const arrivalStep = useMemo(() => {
+    const steps = p.conditions.outlook ?? [];
+    if (!steps.length) return null;
+    return [...steps].sort((a, b) => b.fraction - a.fraction)[0] ?? null;
+  }, [p.conditions.outlook]);
+
   /* Advisory model + sections — identical derivation to the map view's
    * expanded advisory panel. barExpanded=true so the route hazard feed
    * shows while navigating, same as the open panel. */
@@ -167,6 +175,22 @@ export function CarPlayCompanionView(p: Props) {
             </span>
           ) : null}
         </div>
+        {arrivalStep &&
+        (arrivalStep.tempF != null || arrivalStep.conditions) ? (
+          <div
+            className="cp-companion__arrivewx"
+            title="Forecast at your destination when you arrive"
+          >
+            {arrivalStep.icon ? `${arrivalStep.icon} ` : ""}
+            {arrivalStep.conditions}
+            {arrivalStep.tempF != null
+              ? ` · ${Math.round(arrivalStep.tempF)}°`
+              : ""}
+            {arrivalStep.precipPct != null && arrivalStep.precipPct >= 20
+              ? ` · ${Math.round(arrivalStep.precipPct)}% precip`
+              : ""}
+          </div>
+        ) : null}
         {p.advisoryLine ? <p className="cp-companion__advisory">{p.advisoryLine}</p> : null}
         <div className="cp-companion__meta">
           {SPEED_LIMIT_DISPLAY_ENABLED && p.speedLimitMph != null && p.speedLimitMph > 0 ? (

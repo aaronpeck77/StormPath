@@ -368,6 +368,13 @@ export function RouteProgressGlancePanel({
   }, [choiceIds]);
   const driverLeftPct = routePlotLeftPct(userAlongT);
   const showAxis = outlookSteps.length > 0 || bandVisuals.length > 0 || totalMeters > 0;
+  /* Arrival forecast at the destination end of the route — the outlook's
+   * last step is sampled at ETA, so its temp IS "when you get there". */
+  const arrivalTempF = useMemo(() => {
+    if (!outlookSteps.length) return null;
+    const last = [...outlookSteps].sort((a, b) => b.fraction - a.fraction)[0];
+    return last?.tempF ?? null;
+  }, [outlookSteps]);
 
   /* Whole-route axis (Bill, Option B): no horizontal pan — the graph always
    * spans start→finish on the same 0–1 scale as the progress rail. */
@@ -388,7 +395,10 @@ export function RouteProgressGlancePanel({
                   <div className="rpgl__sync-head-plot">
                     <span className="rpgl__sync-head-you">YOU</span>
                     <span className="rpgl__sync-head-title">Along your route</span>
-                    <span className="rpgl__sync-head-dest">DEST</span>
+                    <span className="rpgl__sync-head-dest">
+                      DEST
+                      {arrivalTempF != null ? ` · ${Math.round(arrivalTempF)}°` : ""}
+                    </span>
                   </div>
                 </div>
 
