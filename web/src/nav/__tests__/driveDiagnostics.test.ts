@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { safeStorage, __resetSafeStorageForTests } from "../../storage/safeStorage";
 import {
+  __resetDriveDiagForTests,
+  archiveCurrentDriveDump,
   bumpDriveDiag,
+  clearDriveDumps,
   driveDiagSnapshot,
   formatDriveDiagLines,
   hydrateDriveDiagFromJson,
+  listDriveDumps,
   noteViewDroneEnd,
   noteViewDroneSkip,
   noteViewDroneStart,
@@ -286,5 +291,96 @@ describe("driveDiagnostics", () => {
     expect(route).toContain("lock backroads, switched 1");
     expect(route).toContain("doubled back 1");
     expect(route).toContain("off-route (6s, longest 6s)");
+  });
+});
+
+describe("drive dump archive", () => {
+  beforeEach(() => {
+    __resetDriveDiagForTests();
+    try {
+      sessionStorage.removeItem("stormpath.driveDiag.v1");
+    } catch {
+      /* node */
+    }
+    /* resetDriveDiag banks the previous test's leftovers into the archive —
+     * wipe that write so each test starts with an empty dump list. */
+    resetDriveDiag(Date.now());
+    __resetSafeStorageForTests();
+  });
+
+  it("banks the ending trip when the next Go resets counters", () => {
+    bumpDriveDiag("coreSamples", 60);
+    bumpDriveDiag("camApplied", 55);
+    const t1 = Date.now();
+    resetDriveDiag(t1);
+    const dumps = listDriveDumps(t1);
+    expect(dumps).toHaveLength(1);
+    expect(dumps[0]!.text).toContain("Core 60 samples");
+    expect(dumps[0]!.summary).toContain("Drive:");
+    /* The live counters still describe the new (empty) trip. */
+    expect(driveDiagSnapshot().coreSamples).toBe(0);
+  });
+
+  it("upserts the same trip instead of duplicating on repeated saves", () => {
+    bumpDriveDiag("coreSamples", 30);
+    const t0 = Date.now();
+    archiveCurrentDriveDump(t0);
+    bumpDriveDiag("coreSamples", 10);
+    archiveCurrentDriveDump(t0 + 30_000);
+    const dumps = listDriveDumps(t0 + 30_000);
+    expect(dumps).toHaveLength(1);
+    expect(dumps[0]!.text).toContain("Core 40 samples");
+    expect(dumps[0]!.savedAtMs).toBe(t0 + 30_000);
+  });
+
+  it("keeps each trip separate across multiple Go resets", () => {
+    const base = Date.now();
+    bumpDriveDiag("coreSamples", 20);
+    resetDriveDiag(base + 60_000);
+    bumpDriveDiag("coreSamples", 45);
+    resetDriveDiag(base + 120_000);
+    const dumps = listDriveDumps(base + 120_000);
+    expect(dumps).toHaveLength(2);
+    expect(dumps[0]!.text).toContain("Core 45 samples");
+    expect(dumps[1]!.text).toContain("Core 20 samples");
+  });
+
+  it("does not archive a trip with no drive signal", () => {
+    archiveCurrentDriveDump(Date.now());
+    resetDriveDiag(Date.now() + 1);
+    expect(listDriveDumps()).toEqual([]);
+  });
+
+  it("prunes entries older than 48 hours on read", () => {
+    const now = Date.now();
+    safeStorage.setJson("stormpath.driveDumps.v1", [
+      {
+        tripId: 1,
+        savedAtMs: now - 49 * 60 * 60 * 1000,
+        startedAtMs: now - 50 * 60 * 60 * 1000,
+        ageLabel: "",
+        summary: "old",
+        text: "old dump",
+      },
+      {
+        tripId: 2,
+        savedAtMs: now - 60_000,
+        startedAtMs: now - 3_600_000,
+        ageLabel: "",
+        summary: "recent",
+        text: "recent dump",
+      },
+    ]);
+    const dumps = listDriveDumps(now);
+    expect(dumps).toHaveLength(1);
+    expect(dumps[0]!.text).toBe("recent dump");
+  });
+
+  it("clearDriveDumps empties the archive", () => {
+    bumpDriveDiag("coreSamples", 30);
+    archiveCurrentDriveDump(Date.now());
+    expect(listDriveDumps()).toHaveLength(1);
+    clearDriveDumps();
+    expect(listDriveDumps()).toEqual([]);
   });
 });

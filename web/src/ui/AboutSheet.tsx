@@ -2,7 +2,13 @@ import { Capacitor } from "@capacitor/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getPayTier, PAY_TIER_OVERRIDE_LS_KEY } from "../billing/payFeatures";
 import { getBasicBannerDebugLine } from "../ads/adMobClient";
-import { driveDiagSnapshot, formatDriveDiagLines } from "../nav/driveDiagnostics";
+import {
+  clearDriveDumps,
+  driveDiagSnapshot,
+  formatDriveDiagLines,
+  listDriveDumps,
+  type DriveDumpEntry,
+} from "../nav/driveDiagnostics";
 import { getDedupeStats } from "../utils/requestDeduplication";
 import { getOfflineTileBucketCounts, getOfflineTileStats } from "../map/offlineTileCache";
 import { getRouteCacheHitStats, getRouteCacheStats } from "../utils/routeCache";
@@ -96,6 +102,24 @@ type Props = {
   onOpenTools?: () => void;
 };
 
+function dumpDateLabel(ms: number): string {
+  try {
+    return new Date(ms).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
+function dumpEntryText(d: DriveDumpEntry, versionLabel: string): string {
+  const when = dumpDateLabel(d.savedAtMs);
+  return `StormPath ${versionLabel} — drive dump ${when}${d.ageLabel ? ` (${d.ageLabel})` : ""}\n${d.text}`;
+}
+
 /**
  * Map “About” — version, subscription tier, credits, and placeholders for store submission (privacy/terms/support).
  */
@@ -187,11 +211,16 @@ export function AboutSheet({
   const [activityTrailClearStep, setActivityTrailClearStep] = useState<"idle" | "confirm">("idle");
   const [activityTrailClearAck, setActivityTrailClearAck] = useState(false);
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
+  const [driveDumps, setDriveDumps] = useState<DriveDumpEntry[]>([]);
+  const [dumpCopiedId, setDumpCopiedId] = useState<number | null>(null);
   useEffect(() => {
     if (!open) {
       setActivityTrailClearStep("idle");
       setActivityTrailClearAck(false);
       setDiagnosticsCopied(false);
+      setDumpCopiedId(null);
+    } else {
+      setDriveDumps(listDriveDumps());
     }
   }, [open]);
 
@@ -1152,6 +1181,75 @@ export function AboutSheet({
                 <>Support email not configured for this build.</>
               )}
             </p>
+          </details>
+
+          <details className="about-sheet__panel about-sheet__details">
+            <summary>Saved drive dumps{driveDumps.length ? ` (${driveDumps.length})` : ""}</summary>
+            <p className="about-sheet__p">
+              Each drive's diagnostics save automatically and survive app restarts — kept for about 48
+              hours. Copy a dump and paste it to support when something feels off on the road.
+            </p>
+            {driveDumps.length === 0 ? (
+              <p className="about-sheet__p about-sheet__p--tight">
+                No dumps yet — they appear after your first drive.
+              </p>
+            ) : (
+              <ul className="about-sheet__dump-list">
+                {driveDumps.map((d) => (
+                  <li key={d.tripId} className="about-sheet__dump-row">
+                    <div className="about-sheet__dump-meta">
+                      <strong>{dumpDateLabel(d.savedAtMs)}</strong>
+                      {d.ageLabel ? <span className="about-sheet__dump-age">{d.ageLabel}</span> : null}
+                    </div>
+                    <p className="about-sheet__dump-summary">{d.summary}</p>
+                    <button
+                      type="button"
+                      className="about-sheet__upgrade-link about-sheet__btn about-sheet__dump-copy"
+                      onClick={async () => {
+                        const text = dumpEntryText(d, versionLabel);
+                        try {
+                          await navigator.clipboard.writeText(text);
+                          setDumpCopiedId(d.tripId);
+                        } catch {
+                          window.prompt("Copy drive dump", text);
+                        }
+                      }}
+                    >
+                      {dumpCopiedId === d.tripId ? "Copied" : "Copy"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {driveDumps.length > 0 ? (
+              <div className="about-sheet__upgrade-actions">
+                <button
+                  type="button"
+                  className="about-sheet__upgrade-link about-sheet__btn"
+                  onClick={async () => {
+                    const text = driveDumps.map((d) => dumpEntryText(d, versionLabel)).join("\n\n---\n\n");
+                    try {
+                      await navigator.clipboard.writeText(text);
+                      setDumpCopiedId(-1);
+                    } catch {
+                      window.prompt("Copy drive dumps", text);
+                    }
+                  }}
+                >
+                  {dumpCopiedId === -1 ? "Copied all" : "Copy all dumps"}
+                </button>
+                <button
+                  type="button"
+                  className="about-sheet__upgrade-link about-sheet__btn"
+                  onClick={() => {
+                    clearDriveDumps();
+                    setDriveDumps([]);
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+            ) : null}
           </details>
         </div>
 

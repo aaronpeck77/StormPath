@@ -13,6 +13,8 @@
  * so the copied block stays as personal-data-free as the rest of that panel.
  */
 
+import { safeStorage } from "../storage/safeStorage";
+
 export type DriveDiagKey =
   | "coreSamples"
   | "camApplied"
@@ -115,6 +117,124 @@ export type ViewDroneSkip =
 export type ViewDroneEnd = "done" | "abort" | "retarget";
 
 const STORAGE_KEY = "stormpath.driveDiag.v1";
+
+/* ---- Saved drive dumps --------------------------------------------------
+ * The live snapshot above persists to sessionStorage, which dies with the
+ * WebView — a day's drives used to vanish on app restart. These archives go
+ * to safeStorage (Capacitor Preferences on native) so Bill can pull each
+ * night's dumps from About → Saved drive dumps. Counters only, same as the
+ * live dump: no coordinates, no route identity. */
+export type DriveDumpEntry = {
+  /** startedAtMs of the trip — also the dedup key across upserts. */
+  tripId: number;
+  savedAtMs: number;
+  startedAtMs: number | null;
+  /** Drive age at last save, e.g. "33.1 min" — for the list row. */
+  ageLabel: string;
+  /** First formatted line ("Drive: ...") — the list row's summary. */
+  summary: string;
+  /** The formatted drive lines, ready to paste. */
+  text: string;
+};
+
+const DUMPS_KEY = "stormpath.driveDumps.v1";
+const DUMPS_MAX_ENTRIES = 40;
+const DUMPS_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+let lastDumpArchiveMs = 0;
+
+function pruneDriveDumps(entries: DriveDumpEntry[], nowMs: number): DriveDumpEntry[] {
+  return entries
+    .filter((e) => Number.isFinite(e.savedAtMs) && nowMs - e.savedAtMs <= DUMPS_MAX_AGE_MS)
+    .sort((a, b) => b.savedAtMs - a.savedAtMs)
+    .slice(0, DUMPS_MAX_ENTRIES);
+}
+
+/** Newest-first archive entries. Reads safeStorage (sync cache on native). */
+export function listDriveDumps(nowMs: number = Date.now()): DriveDumpEntry[] {
+  const raw = safeStorage.getJson<unknown>(DUMPS_KEY, []);
+  if (!Array.isArray(raw)) return [];
+  const entries = raw.filter(
+    (e): e is DriveDumpEntry =>
+      !!e &&
+      typeof e === "object" &&
+      typeof (e as DriveDumpEntry).tripId === "number" &&
+      typeof (e as DriveDumpEntry).text === "string"
+  );
+  return pruneDriveDumps(entries, nowMs);
+}
+
+function writeDriveDumps(entries: DriveDumpEntry[], nowMs: number): void {
+  safeStorage.setJson(DUMPS_KEY, pruneDriveDumps(entries, nowMs));
+}
+
+export function clearDriveDumps(): void {
+  safeStorage.remove(DUMPS_KEY);
+}
+
+/** Real drives always have Core samples or camera writes; the 10-minute
+ *  escape hatch keeps a "Core died the whole trip" bug report archivable —
+ *  but only when some nav-behavior counter moved, so idle view-tapping
+ *  doesn't fill the archive with non-drives. */
+function dumpWorthArchiving(snap: DriveDiagSnapshot, nowMs: number): boolean {
+  if (snap.startedAtMs == null) return false;
+  if (snap.coreSamples >= 10 || snap.camApplied >= 5) return true;
+  const navSignal =
+    snap.coreSamples > 0 ||
+    snap.camApplied > 0 ||
+    snap.camWriteFailed > 0 ||
+    snap.lowSignalHolds > 0 ||
+    snap.radioHolds > 0 ||
+    snap.offRoute > 0 ||
+    snap.leanApplies > 0;
+  return navSignal && nowMs - snap.startedAtMs >= 10 * 60_000;
+}
+
+/**
+ * Archive the current trip's formatted dump. Upserts by tripId so the 60s
+ * background refresh and the hide/reset triggers never duplicate a trip.
+ */
+export function archiveCurrentDriveDump(nowMs: number = Date.now()): void {
+  const snap = driveDiagSnapshot();
+  if (!dumpWorthArchiving(snap, nowMs) || snap.startedAtMs == null) return;
+  const lines = formatDriveDiagLines(snap, nowMs);
+  if (!lines.length) return;
+  const entry: DriveDumpEntry = {
+    tripId: snap.startedAtMs,
+    savedAtMs: nowMs,
+    startedAtMs: snap.startedAtMs,
+    ageLabel: formatDriveAge(snap.startedAtMs, nowMs) ?? "",
+    summary: lines[0] ?? "",
+    text: lines.join("\n"),
+  };
+  const rest = listDriveDumps(nowMs).filter((e) => e.tripId !== entry.tripId);
+  writeDriveDumps([entry, ...rest], nowMs);
+}
+
+/** Called from the debounced persist path — at most one archive write/min. */
+function maybeArchiveDriveDump(): void {
+  const now = Date.now();
+  if (now - lastDumpArchiveMs < 60_000) return;
+  lastDumpArchiveMs = now;
+  archiveCurrentDriveDump(now);
+}
+
+/** Test-only: cancel a pending debounced persist so it can't fire mid-assertion. */
+export function __resetDriveDiagForTests(): void {
+  if (persistTimer != null) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  lastDumpArchiveMs = 0;
+}
+
+/* WebView hide / app background — the last chance before sessionStorage dies. */
+if (typeof window !== "undefined") {
+  const archiveOnHide = () => archiveCurrentDriveDump();
+  window.addEventListener("pagehide", archiveOnHide);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") archiveOnHide();
+  });
+}
 
 function emptySnapshot(): DriveDiagSnapshot {
   return {
@@ -291,6 +411,7 @@ function persistDriveDiagSoon(): void {
   persistTimer = setTimeout(() => {
     persistTimer = null;
     persistDriveDiagNow();
+    maybeArchiveDriveDump();
   }, 800);
 }
 
@@ -333,6 +454,9 @@ export function resetDriveDiag(nowMs: number = Date.now()): void {
     clearTimeout(persistTimer);
     persistTimer = null;
   }
+  /* Bank the trip that's ending into the durable archive before wiping —
+   * this is the boundary that used to lose the whole day's dumps. */
+  archiveCurrentDriveDump(nowMs);
   state = emptySnapshot();
   state.startedAtMs = nowMs;
   leanApplyOpen = false;
