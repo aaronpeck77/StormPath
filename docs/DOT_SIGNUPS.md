@@ -33,7 +33,7 @@ turns the feed on. Registry URLs for reference:
 | # | State | Feed | Secret name | Registration |
 |---|-------|------|-------------|--------------|
 | ~~4~~ | ~~**NPS (national)**~~ | developer.nps.gov/api/v1/roadevents | `NPS_API_KEY` | ✅ **DONE 2026-11-10** — live, park road events verified (Grand Teton) |
-| 5 | **Michigan** | mdotridedata.state.mi.us (Socrata) | `MDOT_API_KEY` | Socrata portal — instant token |
+| 5 | **Michigan** | mdotridedata.state.mi.us (MDOT RIDE) | `MDOT_API_KEY` | MiLogin for Business acct → Discover Online Services → "MDOT RIDE" → API key. ~10 min, not instant. Info: https://www.michigan.gov/mdot/travel/safety/efforts/its/its-data |
 | ~~6~~ | ~~**Virginia**~~ | 511-atis-ttrip smarterroads | `VDOT_API_KEY` | ✅ **DONE 2026-11-14** — live via snapshot Action. The old worker-CPU blocker is gone: feeds now parse in the GitHub Action, not the 10 ms Worker. ~3.1k events verified. |
 | — | **Oregon** | TripCheck API / WZDx v4 | `ODOT_API_KEY` | ⏸️ **PAUSED** — portal route to subscription key is unclear; revisit later |
 | 8 | **California** | api.511.org | `MTC_511_API_KEY` | 511 CA developer program |

@@ -84,7 +84,7 @@ Set with `wrangler secret put <NAME>` then hit `/refresh`.
 | ~~1~~ | ~~Texas (statewide)~~ | `txdot_v4_2` | `TXDOT_API_KEY` | `?key=` | ✅ **LIVE 2026-11-10** — ~1,842 events verified, codes decoded. |
 | 2 | Illinois Tollway | `iltollway` | `ILTOLLWAY_API_KEY` | `?api_key=` | Toll roads only — IDOT CWZ doesn't cover them. Free registration at Timms/Tollway developer portal. |
 | ~~3~~ | ~~Colorado~~ | `cdot` + `cdot_cwz` | `CDOT_API_KEY`, `CDOT_CWZ_API_KEY` | `?apiKey=` | ✅ **LIVE 2026-11-14** — one Cotrip key serves both feeds; ~313 CO events verified. |
-| 4 | Michigan | `mdot_4` | `MDOT_API_KEY` | header `X-App-Token` | Socrata app token — instant at data.mi.gov. |
+| 4 | Michigan | `mdot_4` | `MDOT_API_KEY` | header `api_key` | **Not instant** — MiLogin for Business account → Discover Online Services → "MDOT RIDE". Info: michigan.gov/mdot ITS-data page. Verified endpoint wants `api_key` header (not Socrata token). |
 | 5 | Massachusetts | `massdot__cwz` | `MASSDOT_CWZ_API_KEY` | header `Authorization: Bearer` | CWZ work zones. |
 | 6 | North Carolina | `ncdot` | `NCDOT_API_KEY` | header `Authorization: Bearer` | DriveNC WZDx. |
 | 7 | Oregon | `ordot` | `ODOT_API_KEY` | header `Ocp-Apim-Subscription-Key` | Azure APIM key. |
