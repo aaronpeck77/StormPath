@@ -33,7 +33,9 @@ Travel Not Advised, and Impassable segments emit; carries the CARS
 condition feeds exist for roughly half the states — see DOT_SIGNUPS.md
 Travel-IQ + keyless sections. **UT forecast driving conditions live
 2026-11-15** (`utconditions` — IBI DrivingConditions, keyless; see IBI
-family note).
+family note) **+ NE Compass RWIS live 2026-11-15** (`necompass-rwis` —
+keyless C2C XML road-surface sensors for ME/NH/VT; Wet/Ice/Snow stations
+emit with pavement temps).
 
 ---
 
@@ -64,10 +66,11 @@ family note).
 | Oklahoma | `odot` | Statewide. |
 | Washington | `wsdot` | Statewide. |
 | Hawaii | `hidot` | Statewide. |
+| **Tennessee** | `tn-smartway-points` + `tn-smartway-lines` | **NEW 2026-11-15** — TDOT Smartway ArcGIS FeatureServer (keyless, not in WZDx registry): ~47 live events after window filtering — incidents, closures, construction w/ lane-impact prose decoded. Road names parsed from description text ("Interstate 40…" → I-40). |
 | Delaware | `dedot` | Statewide (thin — 3 events). |
 | North Dakota | `nddot` | Statewide. |
 | South Dakota | `sddot` | Statewide. |
-| New Hampshire + Vermont + Maine | `necdot` | One regional New England feed covers all three. |
+| New Hampshire + Vermont + Maine | `necdot` + `necompass-rwis` | One regional New England WZDx feed covers all three **+ NE Compass RWIS road-surface sensors** (keyless C2C XML — essData; non-Dry/non-Unknown stations emit as `kind:"condition"` with pavement temps). |
 | Florida | `fdot` + `ibi-fl` | Partial WZDx **+ FL 511 incidents/closures** (IBI, keyless — Construction skipped as mirrored). |
 | Canada (QC) | `quebec` | Provincial feed — bonus coverage, not a state. |
 

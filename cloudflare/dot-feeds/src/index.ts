@@ -1287,6 +1287,212 @@ async function fetchUtDrivingConditions(): Promise<DotEvent[]> {
   return events;
 }
 
+/* ── Tennessee Smartway (TDOT ArcGIS, keyless) ──────────────────────────────
+ * Not in the WZDx registry at all — this FeatureServer is the only TN feed.
+ * WZDx-shaped schema under CD_* names; two layers split by geometry
+ * (0 = point events ~35, 1 = line events ~218 live 2026-11-15). Fields:
+ * EVENT_TYPE/ EVENT_SUBTYPE, CD_DIRECTION, VEHICLE_IMPACT prose
+ * ("Lane Closures", "Westbound All Lanes Blocked"), epoch-ms dates,
+ * HAS_CLOSURE, COUNTY_NAME; road name lives inside DESCRIPTION
+ * ("Interstate 40 Westbound in Cocke - …"). */
+const TN_SMARTWAY_BASE =
+  "https://tspatial.tdot.tn.gov/arcgis/rest/services/Smartway/Smartway_Events/FeatureServer";
+const TN_SMARTWAY_URL = (layer: number) =>
+  `${TN_SMARTWAY_BASE}/${layer}/query?where=1%3D1&outFields=*&f=geojson&outSR=4326&resultRecordCount=2000`;
+
+function tnDateMs(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+  const ms = Date.parse(str(v));
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** "Interstate 40 Westbound in Cocke - …" / "State Route 22 both directions…"
+ *  → "I-40" / "SR-22". CD_ROAD_NAMES is always null on this feed — the
+ *  road reference only exists at the start of DESCRIPTION. */
+function tnRoadName(desc: string): string {
+  const m = desc.match(
+    /^(Interstate|State Route|U\.?S\.?\s*(?:Highway|Route)|SR|US|I)-?\s*(\d+[A-Z]?)/i
+  );
+  if (!m) return "";
+  const kind = m[1]!.toLowerCase();
+  const num = m[2]!;
+  if (kind.startsWith("interstate") || kind === "i") return `I-${num}`;
+  if (kind.startsWith("state") || kind === "sr") return `SR-${num}`;
+  return `US-${num}`;
+}
+
+function tnDirection(raw: string): string | null {
+  if (!raw || /both/i.test(raw)) return null;
+  return raw.replace(/\s*bound\s*$/i, "bound");
+}
+
+/** VEHICLE_IMPACT prose → the app's slug vocabulary. Direction prefixes
+ *  ("Westbound All Lanes Blocked") are stripped before matching. */
+function tnImpact(raw: string, hasClosure: boolean): string | null {
+  const t = raw.toLowerCase().replace(/^(north|south|east|west)?\s*-?bound\s+/, "");
+  if (/all lanes|all traffic|road closed|closed to all/.test(t) && /block|clos|closed/.test(t))
+    return "all-lanes-closed";
+  if (/^closed\b|\bclosed\b/.test(t) && !/lane|shoulder/.test(t)) return "all-lanes-closed";
+  if (/lane|shoulder|closure|blocked/.test(t)) return "some-lanes-closed";
+  if (hasClosure) return "all-lanes-closed";
+  return null;
+}
+
+function tnKind(eventType: string, subtype: string): DotEvent["kind"] {
+  const s = `${eventType} ${subtype}`.toLowerCase();
+  if (/incident|crash|hazard|diversion|weather|flood/.test(s)) return "incident";
+  if (/clos/.test(s)) return "closure";
+  /* "Operations" = TDOT work ops — resurfacing, bridge repair, etc. */
+  return "construction";
+}
+
+function normalizeTnSmartway(
+  feature: Record<string, unknown>,
+  layerTag: string
+): DotEvent | null {
+  /* Raw SCREAMING_SNAKE props — snakeKeysDeep mangles ALL-CAPS keys
+   * ("CD_EVENT_TYPE" → "_c_d__e_v_e_n_t__t_y_p_e"), so read them direct. */
+  const props = asRecord(feature.properties);
+  const geo = eventGeo(feature.geometry);
+  if (!geo) return null;
+
+  const startMs = tnDateMs(props.START_DATE);
+  const endMs = tnDateMs(props.END_DATE);
+  const nowMs = Date.now();
+  if (endMs != null && endMs < nowMs - WINDOW_PAST_MS) return null;
+  if (startMs != null && startMs > nowMs + WINDOW_FUTURE_MS) return null;
+
+  const desc = str(props.DESCRIPTION).slice(0, MAX_DESCRIPTION_CHARS);
+  const eventType = str(props.EVENT_TYPE);
+  const subtype = str(props.EVENT_SUBTYPE);
+  const hc = props.HAS_CLOSURE;
+  const hasClosure = hc === 1 || hc === "1" || hc === true;
+  const impact = tnImpact(str(props.VEHICLE_IMPACT), hasClosure);
+  const roadName = prettifyRoadName(tnRoadName(desc));
+  const direction = tnDirection(str(props.CD_DIRECTION));
+  const kind = tnKind(eventType, subtype);
+  const id = str(feature.id) || str(props.ID) || `${Math.random().toString(36).slice(2, 10)}`;
+  const revisedMs = tnDateMs(props.REVISED_DATE);
+
+  return {
+    id: `tn${layerTag}:${id}`,
+    state: "tennessee",
+    publisher: "Tennessee DOT Smartway",
+    kind,
+    status: startMs != null && startMs > nowMs ? "scheduled" : "active",
+    title:
+      [roadName, direction].filter(Boolean).join(" · ") ||
+      (kind === "construction" ? "Road work" : "Road event"),
+    roadName,
+    direction,
+    description: desc,
+    restrictionsText: null,
+    lanesClosed: 0,
+    travelLanesClosed: null,
+    laneSummary: null,
+    workType: [eventType, subtype].filter(Boolean).join(" · ") || null,
+    vehicleImpact: impact,
+    startIso: startMs != null ? new Date(startMs).toISOString() : null,
+    endIso: endMs != null ? new Date(endMs).toISOString() : null,
+    updatedIso: revisedMs != null ? new Date(revisedMs).toISOString() : null,
+    point: geo.point,
+    bbox: geo.bbox,
+    geometry: geo.geometry,
+  };
+}
+
+/* ── NE Compass C2C essData (ME/NH/VT RWIS, keyless XML) ─────────────────────
+ * nec-por.ne-compass.com serves three-state RWIS sensor stations as C2C XML,
+ * zero auth (the audit's /DeveloperPortal/ path 404s — API lives at root).
+ * Each <ess> is a road-weather station: roadSurfaceCond (Dry/Wet/Ice/Snow…),
+ * pavementTemp/airTemp °F, precip, timestamp, equipLoc>roadway+direction,
+ * lat/lon in microdegrees. Dry/Unknown are baseline — skipped like the
+ * plow-report feeds so clear roads don't paint as hazards. */
+const NE_COMPASS_ESS_URL =
+  "https://nec-por.ne-compass.com/NEC.XmlDataPortal/api/c2c" +
+  "?networks=Vermont,Maine,NewHampshire&dataTypes=essData";
+
+function xmlTag(block: string, tag: string): string {
+  const m = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`));
+  return m ? m[1]!.replace(/<!\[CDATA\[|\]\]>/g, "").trim() : "";
+}
+
+const NE_DIRECTION: Record<string, string> = {
+  north: "NB", south: "SB", east: "EB", west: "WB",
+  nb: "NB", sb: "SB", eb: "EB", wb: "WB",
+};
+
+function normalizeNeEss(block: string): DotEvent | null {
+  const open = /<ess\b[^>]*>/.exec(block)?.[0] ?? "";
+  const essId = /\sid="([^"]+)"/.exec(open)?.[1] ?? "";
+  const netId = /netId="([^"]+)"/.exec(open)?.[1] ?? "";
+  const state = netId.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  if (!state || !essId) return null;
+
+  const cond = xmlTag(block, "roadSurfaceCond");
+  /* Baseline/no-reading stations stay out — only reported conditions emit. */
+  if (!cond || /^(dry|unknown|no data)$/i.test(cond)) return null;
+
+  const lat = Number(xmlTag(block, "lat")) / 1e6;
+  const lon = Number(xmlTag(block, "lon")) / 1e6;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+
+  const name = xmlTag(block, "name");
+  const roadway = prettifyRoadName(xmlTag(block, "roadway"));
+  const dirRaw = xmlTag(block, "direction").toLowerCase();
+  const direction = NE_DIRECTION[dirRaw] ?? null;
+  const paveF = Number(xmlTag(block, "pavementTemp"));
+  const airF = Number(xmlTag(block, "airTemp"));
+  const tsIso = xmlTag(block, "timestamp") || null;
+  const conditionLabel = cond.replace(/\s+/g, " ").trim();
+  const point: [number, number] = [lon, lat];
+
+  return {
+    id: `necompass:${netId}:${essId}`,
+    state,
+    publisher: "NE Compass RWIS",
+    kind: "condition",
+    status: "active",
+    title: roadway || "Road weather station",
+    roadName: roadway,
+    direction,
+    description:
+      `${conditionLabel} — ${name || "RWIS station"}` +
+      (Number.isFinite(paveF) ? ` · pavement ${Math.round(paveF)}°F` : "") +
+      (!Number.isFinite(paveF) && Number.isFinite(airF) ? ` · air ${Math.round(airF)}°F` : ""),
+    restrictionsText: null,
+    lanesClosed: 0,
+    travelLanesClosed: null,
+    laneSummary: null,
+    workType: conditionLabel,
+    vehicleImpact: conditionLabel.toLowerCase().replace(/\s+/g, "-"),
+    startIso: null,
+    endIso: null,
+    updatedIso: tsIso && Number.isFinite(Date.parse(tsIso)) ? new Date(tsIso).toISOString() : null,
+    point,
+    bbox: [lon, lat, lon, lat],
+    geometry: { type: "Point", coordinates: point },
+  };
+}
+
+/** essData XML → condition events for non-baseline road surfaces. */
+async function fetchNeCompassConditions(): Promise<DotEvent[]> {
+  const res = await fetch(NE_COMPASS_ESS_URL, {
+    signal: AbortSignal.timeout(FEED_TIMEOUT_MS * 2),
+    headers: { "User-Agent": "StormPath-DOT-Feeds/1.0 (+https://stormpath.app)" },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  if (text.length > MAX_FEED_BYTES) throw new Error("ess feed too large");
+  const events: DotEvent[] = [];
+  for (const m of text.matchAll(/<ess\b[^>]*(?:\/>|>[\s\S]*?<\/ess>)/g)) {
+    const ev = normalizeNeEss(m[0]);
+    if (ev) events.push(ev);
+  }
+  return events;
+}
+
 const CUSTOM_FEEDS: CustomFeed[] = [
   {
     name: "ilwinter",
@@ -1324,6 +1530,23 @@ const CUSTOM_FEEDS: CustomFeed[] = [
     url: MD_CHART_CLOSURES_URL,
     normalize: normalizeMdChartWinter,
     pick: pickChartData,
+  },
+  /* Tennessee — TDOT Smartway ArcGIS FeatureServer, keyless, WZDx-shaped
+   * but not in the registry. Layer 0 = point events, layer 1 = line
+   * events; OBJECTIDs are per-layer so the tag keeps ids unique. */
+  {
+    name: "tn-smartway-points",
+    state: "tennessee",
+    publisher: "Tennessee DOT Smartway",
+    url: TN_SMARTWAY_URL(0),
+    normalize: (f) => normalizeTnSmartway(f, "p"),
+  },
+  {
+    name: "tn-smartway-lines",
+    state: "tennessee",
+    publisher: "Tennessee DOT Smartway",
+    url: TN_SMARTWAY_URL(1),
+    normalize: (f) => normalizeTnSmartway(f, "l"),
   },
 ];
 
@@ -1470,6 +1693,35 @@ export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
       console.warn(`[dot-feeds] utah driving conditions failed`, err);
       feedStatus.push({
         name: "utconditions",
+        source: "custom",
+        state: "failed",
+        events: 0,
+        error,
+      });
+    }
+  }
+
+  /* NE Compass RWIS — one XML feed covers ME/NH/VT road-surface sensors.
+   * A successful fetch means all three networks reported (even when every
+   * station reads Dry — that's honest "clear", not missing data). */
+  {
+    const before = events.length;
+    try {
+      const neEvents = await fetchNeCompassConditions();
+      for (const s of ["maine", "new hampshire", "vermont"]) coveredStates.add(s);
+      events.push(...neEvents);
+      feedStatus.push({
+        name: "necompass-rwis",
+        source: "custom",
+        state: "ok",
+        events: events.length - before,
+      });
+    } catch (err) {
+      failed += 1;
+      const error = err instanceof Error ? err.message : String(err);
+      console.warn(`[dot-feeds] NE Compass RWIS failed`, err);
+      feedStatus.push({
+        name: "necompass-rwis",
         source: "custom",
         state: "failed",
         events: 0,

@@ -76,12 +76,17 @@ export const DOT_COVERAGE_CAVEATS: readonly string[] = [
   "Arizona coverage is Phoenix-metro (Maricopa County) only.",
 ];
 
-/** States with live plow-report winter road-condition feeds — a layer on top
- * of ordinary work-zone/incident coverage. IL/IA/MO keyless ArcGIS + MD CHART
- * winter events. Keep in sync with CUSTOM_FEEDS in cloudflare/dot-feeds. */
+/** States with live road-condition feeds beyond work zones — plow reports
+ * (IL/IA/MO ArcGIS, MD CHART), UT's 3-hour forecast driving conditions, and
+ * NE Compass RWIS road-surface sensors (ME/NH/VT). Keep in sync with
+ * CUSTOM_FEEDS + the dedicated condition feeds in cloudflare/dot-feeds. */
 export const WINTER_CONDITION_STATES: readonly string[] = [
   "illinois",
   "iowa",
   "missouri",
   "maryland",
+  "utah",
+  "maine",
+  "new hampshire",
+  "vermont",
 ];
