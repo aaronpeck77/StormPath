@@ -414,4 +414,49 @@ describe("collectMapboxRouteVariants", () => {
       useSettingsStore.setState(vehicleBackup);
     }
   });
+
+  it("surfaces Mapbox vehicle-limit violations as route notices", async () => {
+    const route = mbRoute(lineCoords(0), 3600, 120_000);
+    (route.legs[0] as Record<string, unknown>).notifications = [
+      {
+        type: "violation",
+        subtype: "maxWeight",
+        geometry_index_start: 10,
+        details: {
+          actual_value: "8.5",
+          requested_value: "13.6",
+          unit: "metric tons",
+          message:
+            "The weight of the vehicle (13.6 metric tons) is more than the permissible weight of travel on the road (8.5 metric tons).",
+        },
+      },
+      {
+        type: "violation",
+        subtype: "maxHeight",
+        geometry_index_start: 12,
+        details: {
+          actual_value: "4.0",
+          requested_value: "4.3",
+          unit: "meters",
+          message: "Height exceeded.",
+        },
+      },
+      /* Non-violation and unknown-subtype notifications must be ignored. */
+      { type: "alert", subtype: "maxWeight" },
+      { type: "violation", subtype: "somethingElse" },
+    ];
+    vi.mocked(fetchWithTimeout).mockResolvedValue(okResponse([route]));
+
+    const routes = await collectMapboxRouteVariants("tok", start, end, { maxRoutes: 1 });
+
+    const notices = routes[0]!.vehicleLimitNotices;
+    expect(notices).toHaveLength(2);
+    expect(notices![0]!.kind).toBe("weight");
+    /* 8.5 t → 18,700 lb; 13.6 t → 30,000 lb */
+    expect(notices![0]!.text).toBe("Weight limit 18,700 lb — your vehicle is 30,000 lb");
+    expect(notices![1]!.kind).toBe("height");
+    /* 4.0 m → 13.1 ft; 4.3 m → 14.1 ft */
+    expect(notices![1]!.text).toBe("Height limit 13.1 ft — your vehicle is 14.1 ft");
+    expect(typeof notices![0]!.alongMeters).toBe("number");
+  });
 });

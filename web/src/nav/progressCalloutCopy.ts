@@ -22,6 +22,8 @@ function hazardKindShortTitle(kind: HazardKind): string {
       return "Incident ahead";
     case "lowVisibility":
       return "Low visibility";
+    case "vehicleLimit":
+      return "Vehicle limit";
   }
 }
 

@@ -1,5 +1,5 @@
 import type { TripPlan } from "../nav/types";
-import type { FusedSituationSnapshot, RouteSituationSlice } from "./types";
+import type { FusedSituationSnapshot, HazardKind, RouteSituationSlice } from "./types";
 import type { CongestionLevel, MapboxTrafficLeg } from "../services/mapboxDirectionsTraffic";
 
 export type WeatherOverlay = Record<
@@ -38,7 +38,9 @@ export function buildFusedSnapshot(
     const forecastHeadline = ow?.headline?.trim() ?? "";
 
     const alongList = r.routeNoticeAlongMeters;
-    const hazards = (r.routeNotices ?? []).map((summary, i) => {
+    const hazards: { kind: HazardKind; summary: string; alongMeters?: number }[] = (
+      r.routeNotices ?? []
+    ).map((summary, i) => {
       const lc = summary.toLowerCase();
       const kind: "closure" | "incident" | "restriction" =
         /\b(closure|closed)\b/.test(lc)
@@ -51,6 +53,15 @@ export function buildFusedSnapshot(
         typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? raw : undefined;
       return alongMeters != null ? { kind, summary, alongMeters } : { kind, summary };
     });
+    /* Vehicle-limit violations ride their own kind so they classify as serious,
+     * not a generic road notice. */
+    for (const v of r.vehicleLimitNotices ?? []) {
+      hazards.push(
+        typeof v.alongMeters === "number" && Number.isFinite(v.alongMeters)
+          ? { kind: "vehicleLimit", summary: v.text, alongMeters: v.alongMeters }
+          : { kind: "vehicleLimit", summary: v.text }
+      );
+    }
 
     return {
       routeId: r.id,

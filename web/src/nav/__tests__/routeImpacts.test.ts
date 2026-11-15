@@ -339,6 +339,36 @@ describe("buildRouteImpacts traffic gating", () => {
     });
     expect(impacts.some((i) => i.source === "radar")).toBe(false);
   });
+
+  it("surfaces vehicle-limit violations as serious route impacts", () => {
+    const slice: RouteSituationSlice = {
+      ...liveSlice(0),
+      trafficDelayMinutes: 0,
+      hazards: [
+        {
+          kind: "vehicleLimit",
+          summary: "Weight limit 18,700 lb — your vehicle is 30,000 lb",
+          alongMeters: 40_000,
+        },
+      ],
+    };
+    const impacts = buildRouteImpacts({
+      geometry: routeGeom,
+      userLngLat: routeGeom[0]!,
+      userAlongM: 0,
+      planEtaMinutes: 176,
+      slice,
+      trafficForRoute: undefined,
+      trafficLeg: null,
+      nwsBands: [],
+      nwsAlerts: [],
+    });
+    const v = impacts.find((i) => i.detail.includes("Weight limit"));
+    expect(v).toBeTruthy();
+    expect(v!.severity).toBe("serious");
+    expect(v!.driverAction).toBe("rerouteAvailable");
+    expect(v!.driverHeadline).toContain("Weight limit");
+  });
 });
 
 describe("radarMosaicToProgressStripBands", () => {

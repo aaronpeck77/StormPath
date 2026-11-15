@@ -1,6 +1,6 @@
 import type { RouteRole } from "../nav/types";
 
-export type HazardKind = "closure" | "incident" | "lowVisibility" | "restriction";
+export type HazardKind = "closure" | "incident" | "lowVisibility" | "restriction" | "vehicleLimit";
 
 /** One normalized slice of the fused feed for a single route option */
 export interface RouteSituationSlice {

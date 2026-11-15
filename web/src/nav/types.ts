@@ -42,6 +42,24 @@ export type MapboxRouteIncident = {
   lanesBlocked?: string[];
 };
 
+/**
+ * Mapbox Directions `notifications[]` violation — the computed route crosses a
+ * posted height/width/weight limit that the user's vehicle profile exceeds.
+ * Mapbox tries to avoid these roads; a notice means no fully-compliant route
+ * was found (or the restriction data is incomplete).
+ */
+export type VehicleLimitNotice = {
+  kind: "height" | "width" | "weight";
+  /** Driver-facing line, e.g. "Weight limit 18,700 lb — your vehicle is 30,000 lb". */
+  text: string;
+  /** Posted road limit in display units (ft or lb). */
+  limitLabel: string;
+  /** Vehicle dimension in display units. */
+  vehicleLabel: string;
+  /** Meters from route start when Mapbox supplied a leg geometry index. */
+  alongMeters?: number;
+};
+
 export interface NavRoute {
   id: string;
   role: RouteRole;
@@ -58,6 +76,8 @@ export interface NavRoute {
   routeNoticeAlongMeters?: (number | undefined)[];
   /** Structured Mapbox incidents — preferred for severity / lane-block copy. */
   mapboxIncidents?: MapboxRouteIncident[];
+  /** Posted-limit violations for the user's vehicle profile (RV/truck mode). */
+  vehicleLimitNotices?: VehicleLimitNotice[];
   /** Mapbox flagged toll roads or collection points along this leg. */
   hasTolls?: boolean;
   /** Distinct toll road refs/names or booth labels (when known). */

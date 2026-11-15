@@ -5,7 +5,7 @@ import {
 import {
   ALTERNATE_MAX_DURATION_FACTOR,
 } from "../nav/routePreference";
-import type { LngLat, MapboxRouteIncident, NavRoute, PostedSpeedSample, RouteTurnStep, TripPlan } from "../nav/types";
+import type { LngLat, MapboxRouteIncident, NavRoute, PostedSpeedSample, RouteTurnStep, TripPlan, VehicleLimitNotice } from "../nav/types";
 import type { NormalizedWeatherAlert } from "../weatherAlerts/types";
 import { detectRouteTollsFromLegs } from "../nav/detectRouteTolls";
 import { collectRoadControls } from "../nav/roadControls";
@@ -67,6 +67,22 @@ type MbIncident = {
   east?: number;
 };
 
+/** Mapbox route-leg `notifications[]` — vehicle-limit violations when max_height/width/weight are sent. */
+type MbNotification = {
+  type?: string;
+  subtype?: string;
+  geometry_index?: number;
+  geometry_index_start?: number;
+  geometry_index_end?: number;
+  reason?: string;
+  details?: {
+    actual_value?: string;
+    requested_value?: string;
+    unit?: string;
+    message?: string;
+  };
+};
+
 type DirectionsResponse = {
   code?: string;
   message?: string;
@@ -114,6 +130,7 @@ type DirectionsResponse = {
        * Response field is `closures`, NOT a boolean array under `annotation.closure`.
        */
       closures?: { geometry_index_start?: number; geometry_index_end?: number }[];
+      notifications?: MbNotification[];
     }[];
   }[];
 };
@@ -440,6 +457,7 @@ function routeFromDirectionsApi(
 
   const { texts: notices, alongMeters: noticeAlong, incidents: mapboxIncidents } =
     collectRouteIncidentsWithAlong(r, geometry);
+  const vehicleLimitNotices = collectVehicleLimitNotices(r, geometry, legStarts);
   const tollInfo = detectRouteTollsFromLegs(r.legs);
 
   return {
@@ -452,6 +470,7 @@ function routeFromDirectionsApi(
     routeNotices: notices.length ? notices : undefined,
     routeNoticeAlongMeters: notices.length ? noticeAlong : undefined,
     mapboxIncidents: mapboxIncidents.length ? mapboxIncidents : undefined,
+    vehicleLimitNotices: vehicleLimitNotices.length ? vehicleLimitNotices : undefined,
     hasTolls: tollInfo.hasTolls || undefined,
     tollLabels: tollInfo.tollLabels.length ? tollInfo.tollLabels : undefined,
     postedSpeedSamples,
@@ -754,6 +773,107 @@ function collectRouteIncidentsWithAlong(
   }
 
   return { incidents, texts, alongMeters };
+}
+
+/* ─── Vehicle-limit violations (max_height / max_width / max_weight) ─── */
+
+const M_TO_FT = 3.280839895;
+const T_TO_LB = 2204.62262185;
+
+function vehicleLimitKind(subtype: string | undefined): VehicleLimitNotice["kind"] | null {
+  switch (subtype) {
+    case "maxHeight":
+      return "height";
+    case "maxWidth":
+      return "width";
+    case "maxWeight":
+      return "weight";
+    default:
+      return null;
+  }
+}
+
+function fmtFt(meters: number): string {
+  return `${(meters * M_TO_FT).toFixed(1)} ft`;
+}
+
+function fmtLb(tonnes: number): string {
+  const lb = Math.round((tonnes * T_TO_LB) / 100) * 100;
+  return `${lb.toLocaleString("en-US")} lb`;
+}
+
+function vehicleLimitLabels(
+  kind: VehicleLimitNotice["kind"],
+  n: MbNotification
+): { limitLabel: string; vehicleLabel: string } | null {
+  const actual = Number(n.details?.actual_value);
+  const requested = Number(n.details?.requested_value);
+  if (!Number.isFinite(actual) || !Number.isFinite(requested)) return null;
+  if (kind === "weight") {
+    /* Weight notifications report metric tons; dimensions report meters. */
+    return { limitLabel: fmtLb(actual), vehicleLabel: fmtLb(requested) };
+  }
+  return { limitLabel: fmtFt(actual), vehicleLabel: fmtFt(requested) };
+}
+
+function vehicleLimitText(
+  kind: VehicleLimitNotice["kind"],
+  labels: { limitLabel: string; vehicleLabel: string }
+): string {
+  const dim = kind === "height" ? "Height" : kind === "width" ? "Width" : "Weight";
+  return `${dim} limit ${labels.limitLabel} — your vehicle is ${labels.vehicleLabel}`;
+}
+
+function alongForNotification(
+  geometry: LngLat[],
+  legIndex: number,
+  legStarts: number[] | null,
+  gis: number | undefined
+): number | undefined {
+  if (typeof gis !== "number" || !geometry.length) return undefined;
+  const base = legStarts?.[legIndex];
+  if (base == null) return undefined;
+  const vi = Math.max(0, Math.min(geometry.length - 1, base + gis));
+  return cumulativeLengthToVertex(geometry, vi);
+}
+
+/**
+ * Mapbox `notifications[]` on each leg — `type:"violation"` with subtype
+ * maxHeight/maxWidth/maxWeight means the returned route still crosses a road
+ * whose posted limit is below the vehicle profile we sent. Static violations
+ * persist for the whole leg; other notification types are ignored here.
+ */
+function collectVehicleLimitNotices(
+  route: NonNullable<DirectionsResponse["routes"]>[0],
+  geometry: LngLat[],
+  legStarts: number[] | null
+): VehicleLimitNotice[] {
+  const out: VehicleLimitNotice[] = [];
+  const seen = new Set<string>();
+  const legs = route.legs ?? [];
+  for (let li = 0; li < legs.length; li++) {
+    for (const n of legs[li]!.notifications ?? []) {
+      if (n.type !== "violation") continue;
+      const kind = vehicleLimitKind(n.subtype);
+      if (!kind) continue;
+      const labels = vehicleLimitLabels(kind, n);
+      const text = labels
+        ? vehicleLimitText(kind, labels)
+        : (n.details?.message?.trim() || `${kind} limit exceeded on this route`);
+      const dedupeKey = `${kind}:${text}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      out.push({
+        kind,
+        text,
+        limitLabel: labels?.limitLabel ?? "",
+        vehicleLabel: labels?.vehicleLabel ?? "",
+        alongMeters: alongForNotification(geometry, li, legStarts, n.geometry_index_start),
+      });
+      if (out.length >= 6) return out;
+    }
+  }
+  return out;
 }
 
 /**

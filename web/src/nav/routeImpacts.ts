@@ -637,7 +637,7 @@ function namedNotice(summary: string, fallback: string): string {
 
 /* ─── Route notices / hazards / construction / closures (legacy string notices) ─────────── */
 
-type SliceHazard = { kind: "closure" | "incident" | "lowVisibility" | "restriction"; summary: string; alongMeters?: number };
+type SliceHazard = { kind: "closure" | "incident" | "lowVisibility" | "restriction" | "vehicleLimit"; summary: string; alongMeters?: number };
 
 function hazardLikelyBlocksPath(summary: string): boolean {
   return /\b(blocked|impassable|all lanes? (closed|blocked)|road closed|closure|closed ahead|detour)\b/i.test(
@@ -686,6 +686,18 @@ function classifyHazard(h: SliceHazard): {
       action: blocks ? "rerouteAvailable" : "slow",
       headline: namedNotice(h.summary, blocks ? "Construction blocking lane" : "Construction zone"),
       effect: "Work zone — slow down and watch for crews.",
+    };
+  }
+  if (h.kind === "vehicleLimit") {
+    /* Posted limit below the vehicle's rating — Mapbox couldn't fully avoid it.
+     * Serious, not avoid: the road isn't closed, the rig may still physically pass. */
+    return {
+      category: "other",
+      severity: "serious",
+      confidence: "high",
+      action: "rerouteAvailable",
+      headline: namedNotice(h.summary, "Vehicle limit ahead"),
+      effect: "Exceeds a posted limit — verify it's legal for your vehicle before driving.",
     };
   }
   if (h.kind === "lowVisibility") {
