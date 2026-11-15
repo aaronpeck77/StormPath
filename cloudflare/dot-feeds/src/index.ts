@@ -61,7 +61,7 @@ type FeedEnv = Record<string, string | undefined> & { SNAPSHOTS?: SnapshotStore 
  */
 const KEYED_FEEDS: Record<
   string,
-  { secret: string; param?: string; header?: string; prefix?: string }
+  { secret: string; param?: string; header?: string; prefix?: string; url?: string }
 > = {
   idot_cwz: { secret: "IDOT_CWZ_API_KEY", param: "api_key" },
   iltollway: { secret: "ILTOLLWAY_API_KEY", param: "api_key" },
@@ -74,7 +74,13 @@ const KEYED_FEEDS: Record<
   cdot: { secret: "CDOT_API_KEY", param: "apiKey" },
   cdot_cwz: { secret: "CDOT_CWZ_API_KEY", param: "apiKey" },
   /* No key in the registry URL — header auth. Schemes to verify per feed. */
-  mdot_4: { secret: "MDOT_API_KEY", header: "api_key" }, /* verified 2026-11-14: endpoint 401s asking for api_key header */
+  /* url override: registry caps at limit=200 but MI carries ~350 active
+   * work zones — without this we'd silently drop ~40% of the state. */
+  mdot_4: {
+    secret: "MDOT_API_KEY",
+    header: "api_key",
+    url: "https://mdotridedata.state.mi.us/api/v1/organization/michigan_department_of_transportation/dataset/work_zone_information/query?limit=1000&_format=json",
+  },
   massdot__cwz: { secret: "MASSDOT_CWZ_API_KEY", header: "Authorization", prefix: "Bearer " },
   ncdot: { secret: "NCDOT_API_KEY", param: "key" }, /* drivenc.gov docs: query-string 'key' param */
   ordot: { secret: "ODOT_API_KEY", header: "Ocp-Apim-Subscription-Key" }, /* Azure APIM */
@@ -473,10 +479,10 @@ function authFor(
   row: RegistryRow,
   env: FeedEnv
 ): { url: string; headers?: Record<string, string> } | null {
-  const url = feedUrlOf(row);
+  const cfg = KEYED_FEEDS[row.feedname ?? ""];
+  const url = cfg?.url ?? feedUrlOf(row);
   if (!url) return null;
   if (!isKeyed(row)) return { url };
-  const cfg = KEYED_FEEDS[row.feedname ?? ""];
   if (!cfg) return null;
   const key = env[cfg.secret];
   if (!key) return null;
@@ -1581,10 +1587,20 @@ export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
         }
         const before = events.length;
         try {
-          const feed = (await fetchJson(auth.url, FEED_TIMEOUT_MS, auth.headers)) as Record<
-            string,
-            unknown
-          >;
+          const rawFeed = (await fetchJson(auth.url, FEED_TIMEOUT_MS, auth.headers)) as unknown;
+          /* MDOT RIDE wraps its feed in a single-element array
+           * ([{features:[...], road_event_feed_info}]) — unwrap to the
+           * object that actually carries `features`. */
+          const feed = (
+            Array.isArray(rawFeed)
+              ? (rawFeed.find(
+                  (el) =>
+                    el != null &&
+                    typeof el === "object" &&
+                    ("features" in el || "road_events" in el)
+                ) ?? rawFeed[0])
+              : rawFeed
+          ) as Record<string, unknown>;
           /* Feed fetched — the state counts as covered even with zero events
            * right now (coverage ≠ active work zones). */
           for (const s of stateNamesOf(row.state)) coveredStates.add(s);
