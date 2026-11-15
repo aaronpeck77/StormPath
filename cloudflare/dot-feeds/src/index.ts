@@ -1502,6 +1502,471 @@ async function fetchNeCompassConditions(): Promise<DotEvent[]> {
   return events;
 }
 
+/* ── Oregon DOT TripCheck (keyed ODOT_API_KEY, Azure APIM header) ────────────
+ * Two feeds behind one subscription:
+ *  - Rw/Reports: crew-reported road/weather stretches — Oregon's chain-law
+ *    conditions (A carry-chains … D chains required), icy/packed pavement,
+ *    snow, fog. Only non-baseline reports emit.
+ *  - v2/rwis: automated RWIS stations (inventory + status). Emitted only when
+ *    pavement/air is at or below freezing — dry stations stay silent.
+ * Temps in Rw/Reports are decimal °C; v2/rwis uses NTCIP tenths of °C. */
+const ODOT_RW_REPORTS_URL = "https://api.odot.state.or.us/tripcheck/Rw/Reports";
+const ODOT_RWIS_STATUS_URL = "https://api.odot.state.or.us/tripcheck/v2/rwis/status";
+const ODOT_RWIS_INVENTORY_URL = "https://api.odot.state.or.us/tripcheck/v2/rwis/inventory";
+
+const ODOT_WEATHER: Record<number, string> = {
+  4: "Ground fog", 6: "Rain", 7: "Snow flurries", 8: "Heavy snow",
+  91: "Freezing rain", 92: "High winds", 93: "Whiteout",
+};
+const ODOT_ROAD: Record<number, string> = {
+  2: "spots of ice", 3: "black ice", 4: "standing water",
+  5: "snow pack breaking up", 6: "packed snow",
+};
+const ODOT_DRIVING_RESTRICTION: Record<string, string> = {
+  A: "Carry chains or traction tires",
+  B: "Chains required on vehicles towing or over 10,000 GVW",
+  B1: "Chains required on vehicles towing or single drive axle over 10,000 GVW",
+  C: "Chains required on vehicles towing or over 10,000 GVW; traction tires allowed under 10,000",
+  D: "Chains required. Traction tires alone are not sufficient",
+};
+
+function odotRoad(routeId: unknown): string {
+  let s = String(routeId ?? "").toUpperCase().replace(/\s+/g, "");
+  /* ODOT writes state highways as "HWY372" — that's OR-372 to a driver. */
+  s = s.replace(/^HWY-?/, "OR-");
+  const m = /^([A-Z]+)-?(\d+[A-Z]*)$/.exec(s);
+  return m ? `${m[1]}-${m[2]}` : s;
+}
+
+function odotTimeMs(v: unknown): number | null {
+  const s = typeof v === "string" ? v.trim() : "";
+  if (!s) return null;
+  const ms = Date.parse(s);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function normalizeOdotRwReport(raw: unknown, nowMs: number): DotEvent | null {
+  const r = raw as Record<string, unknown>;
+  const loc = (r.location ?? {}) as Record<string, unknown>;
+  const start = (loc["start-location"] ?? {}) as Record<string, unknown>;
+  const end = (loc["end-location"] ?? {}) as Record<string, unknown>;
+  const lat = Number(start["start-lat"]);
+  const lon = Number(start["start-long"]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180)
+    return null;
+  const expiryMs = odotTimeMs(r["expiry-time"]);
+  if (expiryMs != null && expiryMs < nowMs) return null;
+
+  const restriction = String(
+    ((r["driving-restriction"] ?? {}) as Record<string, unknown>)["restriction-id"] ?? ""
+  ).toUpperCase();
+  const restricted = restriction !== "" && restriction !== "0";
+  const roadId = Number(((r["road-conditions"] ?? {}) as Record<string, unknown>)["road-cond-id"]);
+  const wxId = Number(((r["weather-conditions"] ?? {}) as Record<string, unknown>)["weather-id"]);
+  const chainsRequired = /^[BCD]$/.test(restriction);
+  const icy = [2, 3, 5, 6].includes(roadId);
+  const snowing = wxId === 7 || wxId === 8 || wxId >= 9;
+  const fog = wxId === 4;
+  const standingWater = roadId === 4;
+  /* Baseline "A" (carry chains or traction tires) is the standing mountain
+   * notice — only emit it when pavement/weather says something worse. */
+  if (!restricted && !icy && !snowing && !fog && !standingWater) return null;
+  if (restriction === "A" && !icy && !snowing && !fog && !standingWater) return null;
+
+  const airC = Number(r["air-temperature"]);
+  const road = odotRoad(loc["route-id"]);
+  const name = String(loc["location-name"] ?? "")
+    .replace(/\b\w+/g, (w) => (/^(NB|SB|EB|WB|US|OR|I|HWY)$/.test(w) ? w : w[0]! + w.slice(1).toLowerCase()))
+    .trim();
+  const dirRaw = String(loc.direction ?? "").toUpperCase().trim();
+  const direction = /^(N|S|E|W|NB|SB|EB|WB)$/.test(dirRaw) ? dirRaw : null;
+  const point: [number, number] = [lon, lat];
+  const endLat = Number(end["end-lat"]);
+  const endLon = Number(end["end-long"]);
+  const hasEnd = Number.isFinite(endLat) && Number.isFinite(endLon) && Math.abs(endLat) <= 90 && Math.abs(endLon) <= 180;
+  const geom = hasEnd
+    ? { type: "LineString", coordinates: [point, [endLon, endLat]] }
+    : { type: "Point", coordinates: point };
+  const conditionLabel = chainsRequired
+    ? `Chains required (condition ${restriction})`
+    : restriction === "A"
+      ? "Carry chains or traction tires"
+      : ODOT_ROAD[roadId] ?? ODOT_WEATHER[wxId] ?? "Road condition";
+  const vehicleImpact = chainsRequired
+    ? "travel-not-advised"
+    : roadId === 3 || roadId === 6 || snowing || wxId >= 9
+      ? "packed-snow"
+      : icy || fog || standingWater
+        ? "partially-covered"
+        : "partially-covered";
+
+  return {
+    id: `odot-rw:${r["station-id"] ?? `${lon},${lat}`}`,
+    state: "oregon",
+    publisher: "Oregon DOT TripCheck",
+    kind: "condition",
+    status: "active",
+    title: [road || name, name && road ? name : ""].filter(Boolean).join(" · ") || "Oregon road report",
+    roadName: road,
+    direction,
+    description:
+      `${conditionLabel}${Number.isFinite(airC) ? ` · air ${Math.round(airC * 9 / 5 + 32)}°F` : ""}` +
+      (Number.isFinite(Number(r["adjacent-snow-depth"])) && Number(r["adjacent-snow-depth"]) > 0
+        ? ` · snow depth ${r["adjacent-snow-depth"]}`
+        : ""),
+    restrictionsText: ODOT_DRIVING_RESTRICTION[restriction] ?? null,
+    lanesClosed: 0,
+    travelLanesClosed: null,
+    laneSummary: null,
+    workType: conditionLabel,
+    vehicleImpact,
+    startIso: null,
+    endIso: expiryMs ? new Date(expiryMs).toISOString() : null,
+    updatedIso: typeof r["entry-time"] === "string" ? new Date(String(r["entry-time"])).toISOString() : null,
+    point,
+    bbox: hasEnd ? [Math.min(lon, endLon), Math.min(lat, endLat), Math.max(lon, endLon), Math.max(lat, endLat)] : [lon, lat, lon, lat],
+    geometry: geom,
+  };
+}
+
+async function fetchOdotRwReports(env: FeedEnv, nowMs: number): Promise<DotEvent[]> {
+  const key = env.ODOT_API_KEY;
+  if (!key) return [];
+  const res = await fetchJson(ODOT_RW_REPORTS_URL, FEED_TIMEOUT_MS, {
+    "Ocp-Apim-Subscription-Key": key,
+  });
+  const rows = (res as Record<string, unknown>)["road-weather-reports"];
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .slice(0, 500)
+    .map((r) => normalizeOdotRwReport(r, nowMs))
+    .filter((e): e is DotEvent => e != null);
+}
+
+async function fetchOdotRwis(env: FeedEnv, nowMs: number): Promise<DotEvent[]> {
+  const key = env.ODOT_API_KEY;
+  if (!key) return [];
+  const headers = { "Ocp-Apim-Subscription-Key": key };
+  const [statusRes, invRes] = await Promise.all([
+    fetchJson(ODOT_RWIS_STATUS_URL, FEED_TIMEOUT_MS, headers),
+    fetchJson(ODOT_RWIS_INVENTORY_URL, FEED_TIMEOUT_MS, headers).catch(() => null),
+  ]);
+  /* station-id → name/route/coords for readable titles. */
+  const meta = new Map<string, { name: string; road: string; lat: number; lon: number }>();
+  const invRows = (invRes as Record<string, unknown> | null)?.["ess-site-list"];
+  if (Array.isArray(invRows)) {
+    for (const s of invRows.slice(0, 500)) {
+      const st = s as Record<string, unknown>;
+      const id = String(st["station-id"] ?? "");
+      const lat = Number(st.latitude);
+      const lon = Number(st.longitude);
+      if (id && Number.isFinite(lat) && Number.isFinite(lon)) {
+        meta.set(id, {
+          name: String(st["station-name"] ?? ""),
+          road: odotRoad(st["route-id"]),
+          lat,
+          lon,
+        });
+      }
+    }
+  }
+  const stations = (statusRes as Record<string, unknown>).WeatherStations;
+  if (!Array.isArray(stations)) return [];
+  const out: DotEvent[] = [];
+  for (const s of stations.slice(0, 500)) {
+    const st = s as Record<string, unknown>;
+    const id = String(st["station-id"] ?? "");
+    const rw = (st.RoadWeather ?? {}) as Record<string, unknown>;
+    const sc = (st.SurfaceCondition ?? {}) as Record<string, unknown>;
+    const temps = sc["surface-temperatures"];
+    const surfC = Array.isArray(temps) && temps.length
+      ? Number((temps[0] as Record<string, unknown>)["surface-temperature"]) / 10
+      : NaN;
+    const airC = Number(rw["air-temperature"]) / 10;
+    const freezing = (Number.isFinite(surfC) && surfC <= 0.5) || (!Number.isFinite(surfC) && Number.isFinite(airC) && airC <= 0);
+    if (!freezing) continue;
+    const info = meta.get(id);
+    const point: [number, number] = info ? [info.lon, info.lat] : [NaN, NaN];
+    if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue;
+    const road = info?.road ?? "";
+    const name = (info?.name ?? "").replace(/\s+/g, " ").trim();
+    const label = Number.isFinite(surfC) ? `pavement ${Math.round(surfC * 9 / 5 + 32)}°F` : `air ${Math.round(airC * 9 / 5 + 32)}°F`;
+    out.push({
+      id: `odot-rwis:${id}`,
+      state: "oregon",
+      publisher: "Oregon DOT TripCheck RWIS",
+      kind: "condition",
+      status: "active",
+      title: [road, name].filter(Boolean).join(" · ") || "Oregon road weather station",
+      roadName: road,
+      direction: null,
+      description: `At or below freezing — ${label}.`,
+      restrictionsText: null,
+      lanesClosed: 0,
+      travelLanesClosed: null,
+      laneSummary: null,
+      workType: "Freezing road surface",
+      vehicleImpact: "ice",
+      startIso: null,
+      endIso: null,
+      updatedIso: typeof rw["last-update-time"] === "string" ? new Date(String(rw["last-update-time"])).toISOString() : null,
+      point,
+      bbox: [point[0], point[1], point[0], point[1]],
+      geometry: { type: "Point", coordinates: point },
+    });
+  }
+  return out;
+}
+
+/* ── Caltrans CWWP2 (keyless) ───────────────────────────────────────────────
+ * 12 district LCS files (lane closures, ~5 min cadence) + 9 CC files
+ * (chain controls, ~1 min) + 8 RWIS files (road weather stations).
+ * LCS is filtered to mainline/conventional closures active now or starting
+ * within 24 h — the files carry 7 days of planned work (~9.5k rows total)
+ * that would flood the snapshot; near-term is what a driver needs. */
+const CALTRANS_DISTRICTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+const CALTRANS_CC_DISTRICTS = [1, 2, 3, 6, 7, 8, 9, 10, 11];
+const CALTRANS_RWIS_DISTRICTS = [1, 2, 3, 6, 8, 9, 10];
+const caltransUrl = (feed: string, d: number) =>
+  `https://cwwp2.dot.ca.gov/data/d${d}/${feed}/${feed}StatusD${String(d).padStart(2, "0")}.json`;
+
+const CALTRANS_THROUGH_FACILITY = /^(mainline|conventional hwy)$/i;
+const CALTRANS_CC_STATUS = /^(R-?[0-3]( MODIFIED)?|ESC|TH|TS|TTA|TTS|TTSD|VM|HT|MIN|MAX|W|RC|ROAD CLOSED)$/i;
+
+function caltransRecords(json: unknown, feed: string): Record<string, unknown>[] {
+  const data = (json as Record<string, unknown>)?.data;
+  if (!Array.isArray(data)) return [];
+  return data
+    .map((d) => {
+      const row = (d as Record<string, unknown>)?.[feed];
+      return row && typeof row === "object" ? (row as Record<string, unknown>) : null;
+    })
+    .filter((r): r is Record<string, unknown> => r != null);
+}
+
+function caltransEpochMs(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 1e9 ? n * 1000 : null;
+}
+
+function caltransValid(lat: number, lon: number): boolean {
+  return lat > 32 && lat < 42.5 && lon > -125 && lon < -114;
+}
+
+function normalizeCaltransLcs(raw: Record<string, unknown>, nowMs: number): DotEvent | null {
+  const loc = (raw.location ?? {}) as Record<string, unknown>;
+  const begin = (loc.begin ?? {}) as Record<string, unknown>;
+  const end = (loc.end ?? {}) as Record<string, unknown>;
+  const c = (raw.closure ?? {}) as Record<string, unknown>;
+  if (!CALTRANS_THROUGH_FACILITY.test(String(c.facility ?? ""))) return null;
+  if (String((c.code1022 as Record<string, unknown>)?.isCode1022 ?? "") === "true") return null;
+  if (String((c.code1098 as Record<string, unknown>)?.isCode1098 ?? "") === "true") return null;
+
+  const ts = (c.closureTimestamp ?? {}) as Record<string, unknown>;
+  const startMs = caltransEpochMs(ts.closureStartEpoch);
+  const endMs = String(ts.isClosureEndIndefinite ?? "") === "true" ? null : caltransEpochMs(ts.closureEndEpoch);
+  if (endMs != null && endMs < nowMs) return null;
+  /* Keep: live now, or starting within 24 h. Planned work beyond that waits
+   * for a later snapshot — keeps ~590 events instead of ~9.5k rows. */
+  if (startMs == null && endMs == null) return null;
+  if (startMs != null && startMs > nowMs + 24 * 3_600_000) return null;
+  const onNow = (startMs == null || startMs <= nowMs) && (endMs == null || endMs >= nowMs);
+  const upcoming = !onNow && startMs != null && startMs <= nowMs + 24 * 3_600_000;
+  if (!onNow && !upcoming) return null;
+
+  const lat = Number(begin.beginLatitude);
+  const lon = Number(begin.beginLongitude);
+  if (!caltransValid(lat, lon)) return null;
+  const endLat = Number(end.endLatitude);
+  const endLon = Number(end.endLongitude);
+  const hasEnd = caltransValid(endLat, endLon);
+  const road = prettifyRoadName(String(begin.beginRoute ?? ""));
+  const dirRaw = String(loc.travelFlowDirection ?? "");
+  const direction = /north/i.test(dirRaw) ? "NB" : /south/i.test(dirRaw) ? "SB" : /east/i.test(dirRaw) ? "EB" : /west/i.test(dirRaw) ? "WB" : null;
+  const type = String(c.typeOfClosure ?? "");
+  const full = /^full$/i.test(type);
+  const lanesRaw = String(c.lanesClosed ?? "");
+  const tokens = lanesRaw.split(",").map((t) => t.trim()).filter(Boolean);
+  if (tokens.length > 0 && tokens.every((t) => /shoulder/i.test(t))) return null;
+  const total = Number(c.totalExistingLanes);
+  const closedCount = /^all$/i.test(lanesRaw) ? (Number.isFinite(total) ? total : 1) : tokens.filter((t) => /^\d+$/.test(t)).length;
+  const work = String(c.typeOfWork ?? "").trim();
+  const from = String(begin.beginLocationName ?? "");
+  const near = String(begin.beginNearbyPlace ?? "");
+  const point: [number, number] = [lon, lat];
+  const geom = hasEnd
+    ? { type: "LineString", coordinates: [point, [endLon, endLat]] }
+    : { type: "Point", coordinates: point };
+  const delay = Number(c.estimatedDelay);
+  const vehicleImpact = full ? "all-lanes-closed" : closedCount > 0 ? "some-lanes-closed" : null;
+  const laneSummary =
+    /^all$/i.test(lanesRaw) ? "all lanes" : closedCount > 0 ? `${closedCount} lane${closedCount > 1 ? "s" : ""} closed` : lanesRaw || null;
+
+  return {
+    id: `caltrans-lcs:${String(raw.index ?? `${lon},${lat}`)}`,
+    state: "california",
+    publisher: "Caltrans",
+    kind: full ? "closure" : "construction",
+    status: onNow ? "active" : "scheduled",
+    title: [road, direction, full ? "Road closed" : "Lane closure"].filter(Boolean).join(" · ") ||
+      [road, "Lane closure"].filter(Boolean).join(" · "),
+    roadName: road,
+    direction,
+    description:
+      `${laneSummary ? laneSummary[0]!.toUpperCase() + laneSummary.slice(1) : "Lane closure"}` +
+      `${work ? ` for ${work.toLowerCase()}` : ""}` +
+      `${from ? ` at ${from}` : near ? ` near ${near}` : ""}` +
+      `${Number.isFinite(delay) && delay > 0 ? ` · est. delay ${Math.round(delay)} min` : ""}`,
+    restrictionsText: null,
+    lanesClosed: closedCount,
+    travelLanesClosed: closedCount,
+    laneSummary,
+    workType: work || (full ? "Road closure" : "Lane closure"),
+    vehicleImpact,
+    startIso: startMs ? new Date(startMs).toISOString() : null,
+    endIso: endMs ? new Date(endMs).toISOString() : null,
+    updatedIso: caltransEpochMs((raw.recordTimestamp as Record<string, unknown>)?.recordEpoch)
+      ? new Date(caltransEpochMs((raw.recordTimestamp as Record<string, unknown>)?.recordEpoch)!).toISOString()
+      : null,
+    point,
+    bbox: hasEnd ? [Math.min(lon, endLon), Math.min(lat, endLat), Math.max(lon, endLon), Math.max(lat, endLat)] : [lon, lat, lon, lat],
+    geometry: geom,
+  };
+}
+
+function normalizeCaltransCc(raw: Record<string, unknown>): DotEvent | null {
+  const loc = (raw.location ?? {}) as Record<string, unknown>;
+  const sd = (raw.statusData ?? {}) as Record<string, unknown>;
+  const status = String(sd.status ?? "").toUpperCase();
+  if (!CALTRANS_CC_STATUS.test(status)) return null;
+  if (/^R-?0$/i.test(status)) return null;
+  if (String(raw.inService ?? "") === "false") return null;
+  const lat = Number(loc.latitude);
+  const lon = Number(loc.longitude);
+  if (!caltransValid(lat, lon)) return null;
+  const road = prettifyRoadName(String(loc.route ?? ""));
+  const point: [number, number] = [lon, lat];
+  const closed = status === "RC" || status === "ROAD CLOSED";
+  const chains = /^(R-?[123]|ESC|TH|TS|TTA|TTS|TTSD)$/.test(status);
+  const warning = status === "W";
+  const name = String(loc.locationName ?? loc.nearbyPlace ?? "road weather station");
+  const ts = (sd.statusTimestamp ?? {}) as Record<string, unknown>;
+  const updatedIso = ts.statusDate && ts.statusTime
+    ? new Date(`${ts.statusDate}T${ts.statusTime}-08:00`).toISOString()
+    : null;
+  return {
+    id: `caltrans-cc:${String(raw.index ?? `${lon},${lat}`)}`,
+    state: "california",
+    publisher: "Caltrans",
+    kind: closed ? "closure" : "condition",
+    status: "active",
+    title: [road, closed ? "Road closed" : chains ? `Chain controls ${status}` : warning ? "Chain advisory" : `Chain control ${status}`].filter(Boolean).join(" · ") || name,
+    roadName: road,
+    direction: null,
+    description: `${String(sd.statusDescription ?? "")}${road ? ` · ${road}` : ""}`.trim() || `Chain control point: ${name}`,
+    restrictionsText: String(sd.statusDescription ?? "") || null,
+    lanesClosed: 0,
+    travelLanesClosed: null,
+    laneSummary: null,
+    workType: closed ? "Road closure" : "Chain control",
+    vehicleImpact: closed ? "all-lanes-closed" : chains ? "ice" : "partially-covered",
+    startIso: null,
+    endIso: null,
+    updatedIso,
+    point,
+    bbox: [lon, lat, lon, lat],
+    geometry: { type: "Point", coordinates: point },
+  };
+}
+
+function normalizeCaltransRwis(raw: Record<string, unknown>, nowMs: number): DotEvent | null {
+  const r = raw as Record<string, unknown>;
+  const loc = (r.location ?? {}) as Record<string, unknown>;
+  const lat = Number(loc.latitude);
+  const lon = Number(loc.longitude);
+  if (!caltransValid(lat, lon)) return null;
+  if (String(r.inService ?? "") === "false") return null;
+  const rts = (r.recordTimestamp ?? {}) as Record<string, unknown>;
+  const updatedMs = caltransEpochMs(rts.recordEpoch);
+  if (updatedMs != null && nowMs - updatedMs > 3 * 3_600_000) return null;
+  const data = (r.rwisData ?? {}) as Record<string, unknown>;
+  const tenth = (v: unknown, max: number): number | null => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > -1000 && n < max ? n / 10 : null;
+  };
+  const temps = (data.temperatureData as Record<string, unknown>)?.essTemperatureSensorTable;
+  const first = Array.isArray(temps) ? (temps[0] as Record<string, unknown>) : null;
+  const airC = first ? tenth((first.essTemperatureSensorEntry as Record<string, unknown>)?.essAirTemperature, 1001) : null;
+  const pav = (data.pavementSensorData as Record<string, unknown>)?.essPavementSensorTable;
+  const pfirst = Array.isArray(pav) ? (pav[0] as Record<string, unknown>) : null;
+  const surfC = pfirst ? tenth((pfirst.essPavementSensorEntry as Record<string, unknown>)?.essSurfaceTemperature, 1001) : null;
+  const freezing = (surfC != null && surfC <= 0.5) || (surfC == null && airC != null && airC <= 0);
+  if (!freezing) return null;
+  const road = prettifyRoadName(String(loc.route ?? ""));
+  const name = String(loc.locationName ?? loc.nearbyPlace ?? "road weather station").replace(/\s*:\s*/g, " ");
+  const point: [number, number] = [lon, lat];
+  const label = surfC != null ? `pavement ${Math.round(surfC * 9 / 5 + 32)}°F` : `air ${Math.round((airC ?? 0) * 9 / 5 + 32)}°F`;
+  return {
+    id: `caltrans-rwis:${String(loc.district ?? "")}-${String(r.index ?? `${lon},${lat}`)}`,
+    state: "california",
+    publisher: "Caltrans",
+    kind: "condition",
+    status: "active",
+    title: [road, name].filter(Boolean).join(" · ") || "California road weather station",
+    roadName: road,
+    direction: null,
+    description: `At or below freezing — ${label}.`,
+    restrictionsText: null,
+    lanesClosed: 0,
+    travelLanesClosed: null,
+    laneSummary: null,
+    workType: "Freezing road surface",
+    vehicleImpact: "ice",
+    startIso: null,
+    endIso: null,
+    updatedIso: updatedMs ? new Date(updatedMs).toISOString() : null,
+    point,
+    bbox: [lon, lat, lon, lat],
+    geometry: { type: "Point", coordinates: point },
+  };
+}
+
+async function fetchCaltransFeeds(
+  nowMs: number,
+  record: (name: string, state: "ok" | "failed", count: number, error?: string) => void
+): Promise<DotEvent[]> {
+  const events: DotEvent[] = [];
+  /* Districts fetch in small batches — the Node snapshot runner has no CPU
+   * cap but 12×~1 MB JSON files shouldn't all sit in memory at once. */
+  const jobs: { name: string; url: string; feed: string; normalize: (r: Record<string, unknown>) => DotEvent | null }[] = [];
+  for (const d of CALTRANS_DISTRICTS)
+    jobs.push({ name: `caltrans-lcs-d${d}`, url: caltransUrl("lcs", d), feed: "lcs", normalize: (r) => normalizeCaltransLcs(r, nowMs) });
+  for (const d of CALTRANS_CC_DISTRICTS)
+    jobs.push({ name: `caltrans-cc-d${d}`, url: caltransUrl("cc", d), feed: "cc", normalize: normalizeCaltransCc });
+  for (const d of CALTRANS_RWIS_DISTRICTS)
+    jobs.push({ name: `caltrans-rwis-d${d}`, url: caltransUrl("rwis", d), feed: "rwis", normalize: (r) => normalizeCaltransRwis(r, nowMs) });
+  for (let i = 0; i < jobs.length; i += 4) {
+    await Promise.all(
+      jobs.slice(i, i + 4).map(async (job) => {
+        const before = events.length;
+        try {
+          const json = await fetchJson(job.url, FEED_TIMEOUT_MS * 2);
+          for (const rec of caltransRecords(json, job.feed)) {
+            const ev = job.normalize(rec);
+            if (ev) events.push(ev);
+          }
+          record(job.name, "ok", events.length - before);
+        } catch (err) {
+          const error = err instanceof Error ? err.message : String(err);
+          console.warn(`[dot-feeds] caltrans feed failed: ${job.name}`, err);
+          record(job.name, "failed", 0, error);
+        }
+      })
+    );
+  }
+  return events;
+}
+
 const CUSTOM_FEEDS: CustomFeed[] = [
   {
     name: "ilwinter",
@@ -1746,6 +2211,74 @@ export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
         events: 0,
         error,
       });
+    }
+  }
+
+  /* Oregon DOT TripCheck — crew road/weather reports + RWIS stations, both
+   * behind ODOT_API_KEY. Reports and sensors get separate statuses so a
+   * sensor outage doesn't mask crew reports (and vice versa). */
+  {
+    const before = events.length;
+    try {
+      const odReports = await fetchOdotRwReports(env, nowMs);
+      for (const s of stateNamesOf("oregon")) coveredStates.add(s);
+      events.push(...odReports);
+      feedStatus.push({
+        name: "odot-rw-reports",
+        source: "custom",
+        state: "ok",
+        events: events.length - before,
+      });
+    } catch (err) {
+      failed += 1;
+      const error = err instanceof Error ? err.message : String(err);
+      console.warn(`[dot-feeds] ODOT road-weather reports failed`, err);
+      feedStatus.push({ name: "odot-rw-reports", source: "custom", state: "failed", events: 0, error });
+    }
+  }
+  {
+    const before = events.length;
+    try {
+      const odRwis = await fetchOdotRwis(env, nowMs);
+      for (const s of stateNamesOf("oregon")) coveredStates.add(s);
+      events.push(...odRwis);
+      feedStatus.push({
+        name: "odot-rwis",
+        source: "custom",
+        state: "ok",
+        events: events.length - before,
+      });
+    } catch (err) {
+      failed += 1;
+      const error = err instanceof Error ? err.message : String(err);
+      console.warn(`[dot-feeds] ODOT RWIS failed`, err);
+      feedStatus.push({ name: "odot-rwis", source: "custom", state: "failed", events: 0, error });
+    }
+  }
+
+  /* Caltrans CWWP2 — statewide construction/lane closures (LCS), chain
+   * controls (CC), and freezing RWIS stations. Keyless; each district feed
+   * reports its own status so one bad district can't take down the rest. */
+  {
+    const before = events.length;
+    try {
+      const caEvents = await fetchCaltransFeeds(nowMs, (name, state, count, error) => {
+        if (state === "failed") failed += 1;
+        feedStatus.push({ name, source: "custom", state, events: count, error });
+      });
+      for (const s of stateNamesOf("california")) coveredStates.add(s);
+      events.push(...caEvents);
+      feedStatus.push({
+        name: "caltrans-summary",
+        source: "custom",
+        state: "ok",
+        events: events.length - before,
+      });
+    } catch (err) {
+      failed += 1;
+      const error = err instanceof Error ? err.message : String(err);
+      console.warn(`[dot-feeds] Caltrans feeds failed`, err);
+      feedStatus.push({ name: "caltrans-summary", source: "custom", state: "failed", events: 0, error });
     }
   }
 

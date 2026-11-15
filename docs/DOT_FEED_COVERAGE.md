@@ -66,6 +66,8 @@ emit with pavement temps).
 | Oklahoma | `odot` | Statewide. |
 | Washington | `wsdot` | Statewide. |
 | Hawaii | `hidot` | Statewide. |
+| **California** | `caltrans-lcs-d1..12` + `caltrans-cc-d1,2,3,6..11` + `caltrans-rwis-d1,2,3,6,8,9,10` | **NEW 2026-11-15** — Caltrans CWWP2 (keyless): ~590 active/next-24h lane closures + chain controls (R-1…ESC/TH/TS) + freezing RWIS stations statewide. LCS filtered to active/24h to stay under KV limits. `mtc` 511 WZDx key still pending — adds nothing we don't already have. |
+| **Oregon** | `ordot` + **OR winter conditions** | ODOT WZDx work zones (~146) **+ TripCheck road-weather reports** (`Rw/Reports` — chain-law restrictions A–D, icy/packed pavement, snow/fog; non-baseline only) **+ 229-station RWIS** (`v2/rwis` — only ≤freezing pavement/air emits). Same `ODOT_API_KEY`. |
 | **Tennessee** | `tn-smartway-points` + `tn-smartway-lines` | **NEW 2026-11-15** — TDOT Smartway ArcGIS FeatureServer (keyless, not in WZDx registry): ~47 live events after window filtering — incidents, closures, construction w/ lane-impact prose decoded. Road names parsed from description text ("Interstate 40…" → I-40). |
 | Delaware | `dedot` | Statewide (thin — 3 events). |
 | North Dakota | `nddot` | Statewide. |
@@ -87,9 +89,9 @@ Set with `wrangler secret put <NAME>` then hit `/refresh`.
 | 4 | Michigan | `mdot_4` | `MDOT_API_KEY` | header `api_key` | **Not instant** — MiLogin for Business account → Discover Online Services → "MDOT RIDE". Info: michigan.gov/mdot ITS-data page. Verified endpoint wants `api_key` header (not Socrata token). |
 | ~~5~~ | ~~Massachusetts~~ | `massdot__cwz` | `MASSDOT_CWZ_API_KEY` | header `Authorization: Bearer` | ✅ **LIVE 2026-11-15** — ~1,700 CWZ work zones. |
 | ~~6~~ | ~~North Carolina~~ | `ncdot` | `NCDOT_API_KEY` | `?key=` query param | ✅ **LIVE 2026-11-15** — ~1,050 DriveNC work zones. |
-| ~~7~~ | ~~Oregon~~ | `ordot` | `ODOT_API_KEY` | header `Ocp-Apim-Subscription-Key` | ✅ **LIVE 2026-11-15** — ~146 ODOT WZDx work zones; same TripCheck key also unlocks `tripcheck/v2/rwis/status` for future winter conditions. |
+| ~~7~~ | ~~Oregon~~ | `ordot` | `ODOT_API_KEY` | header `Ocp-Apim-Subscription-Key` | ✅ **LIVE 2026-11-15** — ~146 ODOT WZDx work zones + TripCheck winter conditions (see LIVE table). |
 | ~~8~~ | ~~Virginia~~ | `vdot` | `VDOT_API_KEY` | `?token=` | ✅ **LIVE 2026-11-14** — ~3.1k events. The 10.6 MB feed that used to 1102 the Worker now parses fine in the snapshot Action (Node, no CPU cap). |
-| 9 | California | `mtc` | `MTC_511_API_KEY` | `?api_key=` | api.511.org WZDx — despite feedname "mtc", state = California. |
+| 9 | California | `mtc` | `MTC_511_API_KEY` | `?api_key=` | api.511.org WZDx — despite feedname "mtc", state = California. **Low value now** — keyless Caltrans CWWP2 (LCS/CC/RWIS) already covers CA statewide; the 511 key would only add MTC Bay-Area incidents. |
 | 10 | Pennsylvania | `ptc` | `PENNSTURNPIKE_API_KEY` | `?api_key=` | PA Turnpike only — toll roads. PA's regular DOT feed isn't in the registry. |
 | ~~—~~ | ~~National (NPS)~~ | `nps` | `NPS_API_KEY` | `?api_key=` | ✅ **LIVE 2026-11-10** — park road events verified. |
 | ~~—~~ | ~~Ohio~~ | `ohio` | `OHGO_API_KEY` | `?api-key=` | ✅ **LIVE** — key set 2026-11-14; OHGO registration portal. |

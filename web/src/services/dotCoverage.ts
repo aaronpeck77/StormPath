@@ -77,16 +77,20 @@ export const DOT_COVERAGE_CAVEATS: readonly string[] = [
 ];
 
 /** States with live road-condition feeds beyond work zones — plow reports
- * (IL/IA/MO ArcGIS, MD CHART), UT's 3-hour forecast driving conditions, and
- * NE Compass RWIS road-surface sensors (ME/NH/VT). Keep in sync with
- * CUSTOM_FEEDS + the dedicated condition feeds in cloudflare/dot-feeds. */
+ * (IL/IA/MO ArcGIS, MD CHART), UT's 3-hour forecast driving conditions,
+ * NE Compass RWIS road-surface sensors (ME/NH/VT), ODOT TripCheck
+ * crew reports + RWIS stations, and Caltrans chain controls + RWIS.
+ * Keep in sync with CUSTOM_FEEDS + the dedicated condition feeds in
+ * cloudflare/dot-feeds. */
 export const WINTER_CONDITION_STATES: readonly string[] = [
+  "california",
   "illinois",
   "iowa",
-  "missouri",
-  "maryland",
-  "utah",
   "maine",
+  "maryland",
+  "missouri",
   "new hampshire",
+  "oregon",
+  "utah",
   "vermont",
 ];
