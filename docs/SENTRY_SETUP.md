@@ -33,8 +33,8 @@ One-time setup:
 2. GitHub repo → **Settings → Secrets and variables → Actions**:
    - `SENTRY_AUTH_TOKEN` — the token above (required to enable upload)
    - `SENTRY_ORG` — optional, defaults to `stormpath`
-   - `SENTRY_PROJECT` — optional, defaults to `stormpath-ios`; set this if the
-     project slug differs (check the project URL in Sentry)
+   - `SENTRY_PROJECT` — optional, defaults to `apple-ios` (the real project
+     slug); only set this if the project is ever recreated under a new slug
 3. Next iOS build uploads automatically. The step is warn-only — a bad slug
    logs a warning but never blocks TestFlight.
 

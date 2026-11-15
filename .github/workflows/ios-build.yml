@@ -259,7 +259,7 @@ jobs:
           # a TestFlight build — minified crash reports are the fallback.
           npx -y @sentry/cli@2.58.6 sourcemaps upload \
             --org "${SENTRY_ORG:-stormpath}" \
-            --project "${SENTRY_PROJECT:-stormpath-ios}" \
+            --project "${SENTRY_PROJECT:-apple-ios}" \
             --release "$REL" \
             dist || echo "::warning::Sentry sourcemap upload failed — crash reports stay minified for this build"
         working-directory: web
