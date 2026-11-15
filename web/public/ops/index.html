@@ -397,6 +397,33 @@
         color: var(--bad);
         font-family: ui-monospace, "SF Mono", Menlo, monospace;
       }
+      .dotfeed-chip {
+        padding: 5px 10px;
+        font-size: 0.78rem;
+      }
+      .dotfeed-chip.is-active {
+        background: var(--accent);
+        color: var(--ink);
+        border-color: var(--accent);
+      }
+      #dotFeedsTable td {
+        font-size: 0.8rem;
+        vertical-align: top;
+      }
+      #dotFeedsTable .fd-name {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 0.78rem;
+      }
+      #dotFeedsTable .fd-err {
+        color: var(--bad);
+        font-size: 0.75rem;
+        max-width: 340px;
+        word-break: break-word;
+      }
+      #dotFeedsTable .fd-skip {
+        color: var(--warn);
+        font-size: 0.75rem;
+      }
     </style>
   </head>
   <body>
@@ -454,6 +481,35 @@
           </div>
           <div class="grid" id="dotFeedsStats"></div>
           <div id="dotFeedsFailed"></div>
+          <div class="row" style="gap: 8px; flex-wrap: wrap">
+            <input
+              id="dotFeedsSearch"
+              type="search"
+              placeholder="Filter feeds…"
+              style="max-width: 220px; padding: 6px 10px; font-size: 0.85rem"
+            />
+            <div class="row" id="dotFeedsFilters" style="gap: 6px">
+              <button type="button" class="ghost dotfeed-chip is-active" data-f="all">All</button>
+              <button type="button" class="ghost dotfeed-chip" data-f="issues">Issues</button>
+              <button type="button" class="ghost dotfeed-chip" data-f="ok">OK</button>
+              <button type="button" class="ghost dotfeed-chip" data-f="skipped">Skipped</button>
+            </div>
+            <span class="faint" id="dotFeedsUpdated" style="margin-left: auto"></span>
+          </div>
+          <div class="table-wrap" style="max-height: 340px; overflow-y: auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Feed</th>
+                  <th>Source</th>
+                  <th>Events</th>
+                  <th>Detail</th>
+                </tr>
+              </thead>
+              <tbody id="dotFeedsTable"></tbody>
+            </table>
+          </div>
           <svg
             id="dotCovMap"
             class="dotcov-map"
@@ -464,6 +520,7 @@
           <div class="dotcov-legend">
             <span><i class="dotcov-swatch dotcov-swatch--live"></i>Live DOT feed</span>
             <span><i class="dotcov-swatch dotcov-swatch--off"></i>No feed yet</span>
+            <span class="faint">auto-refreshes every 2 min</span>
           </div>
         </div>
 

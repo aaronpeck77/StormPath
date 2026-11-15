@@ -375,20 +375,91 @@ const SECRET_KEY = "stormpath.ops.secret";
 
       /** DOT feeds worker is a public endpoint — reachable even in local-only
        * mode, so the panel works with or without the Control Room secret. */
+      let dotFeedsCache = { feeds: null, fetchedAt: null };
+      let dotFeedFilter = "all";
+      let dotFeedQuery = "";
+
+      function esc(s) {
+        return String(s ?? "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      }
+
+      function feedRowHtml(f) {
+        const state = f.state || "unknown";
+        const cls = state === "ok" ? "ok" : state === "failed" ? "bad" : "warn";
+        const label = state === "ok" ? "ok" : state === "failed" ? "DOWN" : "skip";
+        const streak = f.streak ? ` ×${f.streak}` : "";
+        let detail = "";
+        if (state === "failed") {
+          detail = `<span class="fd-err">${esc(f.error || "failed")}${streak}</span>`;
+        } else if (state === "skipped") {
+          detail = `<span class="fd-skip">${esc(f.error || "no key")}</span>`;
+        } else {
+          detail = `<span class="faint">${f.source === "custom" ? "custom" : "registry"}</span>`;
+        }
+        return `<tr>
+          <td><span class="dot ${cls}"></span> ${label}</td>
+          <td class="fd-name">${esc(f.name)}</td>
+          <td class="faint">${esc(f.source || "")}</td>
+          <td>${f.events ? f.events.toLocaleString() : "—"}</td>
+          <td>${detail}</td>
+        </tr>`;
+      }
+
+      function renderFeedTable() {
+        const tbody = document.getElementById("dotFeedsTable");
+        if (!tbody) return;
+        const feeds = dotFeedsCache.feeds || [];
+        const q = dotFeedQuery.trim().toLowerCase();
+        const rows = feeds.filter((f) => {
+          if (dotFeedFilter === "issues" && f.state !== "failed") return false;
+          if (dotFeedFilter === "ok" && f.state !== "ok") return false;
+          if (dotFeedFilter === "skipped" && f.state !== "skipped") return false;
+          if (q && !String(f.name).toLowerCase().includes(q)) return false;
+          return true;
+        });
+        /* Issues first, then skipped, then ok — biggest event counts on top
+         * inside each group so the table reads like a priority list. */
+        const rank = { failed: 0, skipped: 1, ok: 2 };
+        rows.sort(
+          (a, b) =>
+            (rank[a.state] ?? 3) - (rank[b.state] ?? 3) ||
+            (b.events || 0) - (a.events || 0)
+        );
+        tbody.innerHTML = rows.length
+          ? rows.map(feedRowHtml).join("")
+          : `<tr><td colspan="5" class="faint">No feeds match.</td></tr>`;
+      }
+
       async function renderDotFeeds(dot) {
         const base = (dot?.url || DOT_FEED_DEFAULT).replace(/\/+$/, "");
         const statsEl = document.getElementById("dotFeedsStats");
         const failEl = document.getElementById("dotFeedsFailed");
         const metaEl = document.getElementById("dotFeedsMeta");
         const mapEl = document.getElementById("dotCovMap");
+        const updatedEl = document.getElementById("dotFeedsUpdated");
         if (!statsEl || !mapEl) return;
 
-        let health = dot;
-        if (!health || health.events == null) {
+        let feedsPayload = null;
+        try {
+          feedsPayload = await fetchJson(`${base}/feeds`);
+          dotFeedsCache = {
+            feeds: feedsPayload.feeds || [],
+            fetchedAt: feedsPayload.fetchedAt,
+          };
+          /* /feeds returns the state-name list; /health returns a count.
+           * Normalize to a count for the stats strip. */
+          if (Array.isArray(feedsPayload.states))
+            feedsPayload.states = feedsPayload.states.length;
+          /* /feeds has no `ok` flag — presence of the feeds array means the
+           * worker answered; only an explicit error payload means down. */
+          if (feedsPayload.ok == null)
+            feedsPayload.ok = Array.isArray(feedsPayload.feeds);
+        } catch {
+          /* /feeds missing on an older worker — fall back to /health counts. */
           try {
             const h = await fetchJson(`${base}/health`);
-            health = {
-              url: base,
+            dotFeedsCache = { feeds: null, fetchedAt: h.fetchedAt ?? null };
+            feedsPayload = {
               ok: h.ok !== false,
               events: h.events ?? null,
               states: h.states ?? null,
@@ -399,8 +470,7 @@ const SECRET_KEY = "stormpath.ops.secret";
               feedsFailed: Array.isArray(h.feedsFailed) ? h.feedsFailed : [],
             };
           } catch (e) {
-            health = {
-              url: base,
+            feedsPayload = {
               ok: false,
               events: null,
               states: null,
@@ -413,11 +483,30 @@ const SECRET_KEY = "stormpath.ops.secret";
             };
           }
         }
+        const health = feedsPayload || {};
+        const feedsList = dotFeedsCache.feeds || [];
+        const feedCount =
+          health.feedsTotal ?? (feedsList.length || null);
+        const okCount =
+          health.feedsOk ??
+          (feedsList.length
+            ? feedsList.filter((f) => f.state === "ok").length
+            : null);
+        const skipCount =
+          health.feedsSkipped ??
+          (feedsList.length
+            ? feedsList.filter((f) => f.state === "skipped").length
+            : null);
+        const failedList = feedsList.length
+          ? feedsList.filter((f) => f.state === "failed")
+          : (health.feedsFailed || []).map((f) => ({
+              name: f.name,
+              error: f.error,
+              streak: f.streak ?? 1,
+            }));
 
-        const stale =
-          health.ageSec != null && health.ageSec > 1_200;
-        const thin =
-          health.events != null && health.events < 8_000;
+        const stale = health.ageSec != null && health.ageSec > 1_200;
+        const thin = health.events != null && health.events < 8_000;
         const down = !health.ok || health.error || stale || thin;
 
         statsEl.innerHTML = [
@@ -428,12 +517,10 @@ const SECRET_KEY = "stormpath.ops.secret";
           stat(health.states ?? "—", "states covered"),
           stat(fmtAge(health.ageSec), "snapshot age"),
           stat(
-            health.feedsTotal != null
-              ? `${health.feedsOk ?? "?"}/${health.feedsTotal}`
-              : "—",
+            feedCount != null ? `${okCount ?? "?"}/${feedCount}` : "—",
             "feeds ok"
           ),
-          stat(health.feedsSkipped ?? "—", "keyed skipped"),
+          stat(skipCount ?? "—", "keyed skipped"),
         ].join("");
 
         metaEl.textContent = health.error
@@ -445,13 +532,20 @@ const SECRET_KEY = "stormpath.ops.secret";
               : "";
         metaEl.style.color = down ? "var(--bad)" : "";
 
-        const failed = health.feedsFailed || [];
-        failEl.innerHTML = failed.length
-          ? `<div class="dotfeed-fail">${failed
+        if (updatedEl) {
+          const ts = dotFeedsCache.fetchedAt || health.fetchedAt;
+          updatedEl.textContent = ts
+            ? `snapshot built ${new Date(ts).toLocaleTimeString()}`
+            : "";
+        }
+        renderFeedTable();
+
+        failEl.innerHTML = failedList.length
+          ? `<div class="dotfeed-fail">${failedList
               .map((f) => {
-                const name = String(f.name).replace(/</g, "&lt;");
-                const err = String(f.error).replace(/</g, "&lt;");
-                const streak = f.streak ?? 1;
+                const name = esc(f.name);
+                const err = esc(f.error || "failed");
+                const streak = f.streak ?? f.failStreak ?? 1;
                 /* streak >= 2 = failed consecutive snapshots = sustained;
                  * streak 1 is shown dimmer so hiccups don't look like outages */
                 return streak >= 2
@@ -460,7 +554,7 @@ const SECRET_KEY = "stormpath.ops.secret";
               })
               .join("<br/>")}</div>`
           : health.error
-            ? `<div class="dotfeed-fail">${String(health.error).replace(/</g, "&lt;")}</div>`
+            ? `<div class="dotfeed-fail">${esc(health.error)}</div>`
             : "";
 
         // Coverage map — same path data the app uses, from public/ops JSON.
@@ -484,8 +578,9 @@ const SECRET_KEY = "stormpath.ops.secret";
               return `<path class="dotcov-state${isLive ? " dotcov-state--live" : ""}" d="${d}" data-code="${code}"><title>${name}${isLive ? " — live DOT feed" : " — no feed"}</title></path>`;
             })
             .join("");
+          if (!mapEl.innerHTML) throw new Error("state map data was empty");
         } catch (e) {
-          const msg = String(e?.message || e || "fetch failed").replace(/</g, "&lt;");
+          const msg = esc(e?.message || e || "fetch failed");
           mapEl.innerHTML =
             `<text x="20" y="30" fill="#94a3b8" font-size="14">coverage map unavailable — ${msg}</text>`;
         }
@@ -613,7 +708,14 @@ const SECRET_KEY = "stormpath.ops.secret";
               ? `Live summary unavailable (${summaryError}). Showing local health + this device's Mapbox counts.`
               : "Local mode — health from this origin; income needs Netlify secrets.";
 
-        renderDotFeeds(summary?.dotFeeds || null);
+        try {
+          await renderDotFeeds(summary?.dotFeeds || null);
+        } catch (e) {
+          /* A DOT-panel failure must never blank the rest of the board. */
+          const el = document.getElementById("dotFeedsMeta");
+          if (el)
+            el.textContent = `panel error: ${e instanceof Error ? e.message : e}`;
+        }
 
         const incomeGrid = document.getElementById("incomeGrid");
         const incomeNote = document.getElementById("incomeNote");
@@ -741,6 +843,22 @@ const SECRET_KEY = "stormpath.ops.secret";
         return renderApp(currentSecret);
       }
 
+      /* Feed table filters — chips + free-text search, re-render locally
+       * from the cached /feeds payload (no refetch). */
+      document.getElementById("dotFeedsSearch")?.addEventListener("input", (e) => {
+        dotFeedQuery = e.target.value || "";
+        renderFeedTable();
+      });
+      document.getElementById("dotFeedsFilters")?.addEventListener("click", (e) => {
+        const btn = e.target.closest(".dotfeed-chip");
+        if (!btn) return;
+        dotFeedFilter = btn.dataset.f || "all";
+        document
+          .querySelectorAll(".dotfeed-chip")
+          .forEach((c) => c.classList.toggle("is-active", c === btn));
+        renderFeedTable();
+      });
+
       document
         .getElementById("unlockBtn")
         .addEventListener("click", async () => {
@@ -789,6 +907,10 @@ const SECRET_KEY = "stormpath.ops.secret";
       });
       refreshBtn.addEventListener("click", () => {
         void refreshApp();
+      });
+      /* Coming back to the tab shouldn't wait up to 2 min for fresh data. */
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) void refreshApp();
       });
 
       function opsUsagePostEndpoints() {

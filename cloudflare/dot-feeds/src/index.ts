@@ -2416,6 +2416,31 @@ export default {
       );
     }
 
+    /* Full per-feed status for the ops page — /health stays trimmed for the
+     * Action's gate; this is the "which API is up" detail view. */
+    if (url.pathname === "/feeds") {
+      const snap = await snapshot(caches.default, bindings);
+      if (!snap) return Response.json({ error: "no snapshot" }, { status: 503, headers: CORS });
+      const feeds = snap.feeds ?? [];
+      return Response.json(
+        {
+          fetchedAt: snap.fetchedAt,
+          ageSec: Math.round((Date.now() - snap.fetchedAt) / 1000),
+          events: snap.events.length,
+          states: snap.states ?? null,
+          feeds: feeds.map((f) => ({
+            name: f.name,
+            source: f.source,
+            state: f.state,
+            events: f.events,
+            error: f.error ?? null,
+            streak: f.failStreak ?? null,
+          })),
+        },
+        { headers: { ...CORS, "Cache-Control": "public, max-age=60" } }
+      );
+    }
+
     if (url.pathname === "/events") {
       const parts = (url.searchParams.get("bbox") ?? "").split(",").map(Number);
       const snap = await snapshot(caches.default, bindings);
