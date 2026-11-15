@@ -85,9 +85,9 @@ Set with `wrangler secret put <NAME>` then hit `/refresh`.
 | 2 | Illinois Tollway | `iltollway` | `ILTOLLWAY_API_KEY` | `?api_key=` | Toll roads only — IDOT CWZ doesn't cover them. Free registration at Timms/Tollway developer portal. |
 | ~~3~~ | ~~Colorado~~ | `cdot` + `cdot_cwz` | `CDOT_API_KEY`, `CDOT_CWZ_API_KEY` | `?apiKey=` | ✅ **LIVE 2026-11-14** — one Cotrip key serves both feeds; ~313 CO events verified. |
 | 4 | Michigan | `mdot_4` | `MDOT_API_KEY` | header `api_key` | **Not instant** — MiLogin for Business account → Discover Online Services → "MDOT RIDE". Info: michigan.gov/mdot ITS-data page. Verified endpoint wants `api_key` header (not Socrata token). |
-| 5 | Massachusetts | `massdot__cwz` | `MASSDOT_CWZ_API_KEY` | header `Authorization: Bearer` | CWZ work zones. |
-| 6 | North Carolina | `ncdot` | `NCDOT_API_KEY` | `?key=` query param | DriveNC: account → Developer API key on /developers/doc. Verified param name. |
-| 7 | Oregon | `ordot` | `ODOT_API_KEY` | header `Ocp-Apim-Subscription-Key` | Azure APIM — verified subscription-key auth shape; signup at apiportal.odot.state.or.us. |
+| ~~5~~ | ~~Massachusetts~~ | `massdot__cwz` | `MASSDOT_CWZ_API_KEY` | header `Authorization: Bearer` | ✅ **LIVE 2026-11-15** — ~1,700 CWZ work zones. |
+| ~~6~~ | ~~North Carolina~~ | `ncdot` | `NCDOT_API_KEY` | `?key=` query param | ✅ **LIVE 2026-11-15** — ~1,050 DriveNC work zones. |
+| ~~7~~ | ~~Oregon~~ | `ordot` | `ODOT_API_KEY` | header `Ocp-Apim-Subscription-Key` | ✅ **LIVE 2026-11-15** — ~146 ODOT WZDx work zones; same TripCheck key also unlocks `tripcheck/v2/rwis/status` for future winter conditions. |
 | ~~8~~ | ~~Virginia~~ | `vdot` | `VDOT_API_KEY` | `?token=` | ✅ **LIVE 2026-11-14** — ~3.1k events. The 10.6 MB feed that used to 1102 the Worker now parses fine in the snapshot Action (Node, no CPU cap). |
 | 9 | California | `mtc` | `MTC_511_API_KEY` | `?api_key=` | api.511.org WZDx — despite feedname "mtc", state = California. |
 | 10 | Pennsylvania | `ptc` | `PENNSTURNPIKE_API_KEY` | `?api_key=` | PA Turnpike only — toll roads. PA's regular DOT feed isn't in the registry. |
