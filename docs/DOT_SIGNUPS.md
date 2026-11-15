@@ -35,14 +35,17 @@ turns the feed on. Registry URLs for reference:
 | ~~4~~ | ~~**NPS (national)**~~ | developer.nps.gov/api/v1/roadevents | `NPS_API_KEY` | ✅ **DONE 2026-11-10** — live, park road events verified (Grand Teton) |
 | 5 | **Michigan** | mdotridedata.state.mi.us (MDOT RIDE) | `MDOT_API_KEY` | MiLogin for Business acct → Discover Online Services → "MDOT RIDE" → API key. ~10 min, not instant. Info: https://www.michigan.gov/mdot/travel/safety/efforts/its/its-data |
 | ~~6~~ | ~~**Virginia**~~ | 511-atis-ttrip smarterroads | `VDOT_API_KEY` | ✅ **DONE 2026-11-14** — live via snapshot Action. The old worker-CPU blocker is gone: feeds now parse in the GitHub Action, not the 10 ms Worker. ~3.1k events verified. |
-| — | **Oregon** | TripCheck API / WZDx v4 | `ODOT_API_KEY` | ⏸️ **PAUSED** — portal route to subscription key is unclear; revisit later |
+| — | **Oregon** | api.odot.state.or.us (Azure APIM) | `ODOT_API_KEY` | ⏸️ **PAUSED** — signup at apiportal.odot.state.or.us; APIM `Ocp-Apim-Subscription-Key` header verified as the auth shape |
 | 8 | **California** | api.511.org | `MTC_511_API_KEY` | 511 CA developer program |
-| 9 | **North Carolina** | drivenc.gov/api/wzdx | `NCDOT_API_KEY` | DriveNC API registration |
+| 9 | **North Carolina** | drivenc.gov/api/wzdx | `NCDOT_API_KEY` | **Two-step:** create drivenc.gov account → request Developer API key on /developers/doc page. Auth = `?key=` query param (verified). ~10 min |
 | 10 | **Colorado ×2** | data.cotrip.org (wzdx + cwz) | `CDOT_API_KEY`, `CDOT_CWZ_API_KEY` | manage-api.cotrip.org — self-serve; **one Cotrip key may serve both** |
 | 11 | **Massachusetts** | api.massdot-swzm.com | `MASSDOT_CWZ_API_KEY` | MassDOT SWZ feed signup |
 | 12 | **Pennsylvania** | atms.paturnpike.com | `PENNSTURNPIKE_API_KEY` | Turnpike API key request (toll roads) |
 | 13 | **Illinois Tollway** | tims2go.tollway.state.il.us | `ILTOLLWAY_API_KEY` | Tollway traveler-info API program |
 | ~~—~~ | ~~Texas~~ | api.drivetexas.org | `TXDOT_API_KEY` | ✅ **DONE 2026-11-10** — live statewide, ~1,800 events |
+| ~~—~~ | ~~Ohio~~ | publicapi.ohgo.com | `OHGO_API_KEY` | ✅ **DONE** — key set 2026-11-14, `?api-key=` verified |
+| ~~—~~ | ~~Illinois CWZ~~ | wzad-idot.illinois.gov | `IDOT_CWZ_API_KEY` | ✅ **DONE** — key set 2026-11-14; redirects to transportal.cee.wisc.edu, `?api_key=` verified |
+| 14 | **Illinois Tollway** | tims2go.tollway.state.il.us | `ILTOLLWAY_API_KEY` | Tollway traveler-info API program — toll roads only (IDOT CWZ covers the rest) |
 
 ## 🧊 Travel-IQ family — road CONDITIONS (winter ice/snow layer)
 

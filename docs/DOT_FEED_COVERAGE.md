@@ -86,12 +86,14 @@ Set with `wrangler secret put <NAME>` then hit `/refresh`.
 | ~~3~~ | ~~Colorado~~ | `cdot` + `cdot_cwz` | `CDOT_API_KEY`, `CDOT_CWZ_API_KEY` | `?apiKey=` | ✅ **LIVE 2026-11-14** — one Cotrip key serves both feeds; ~313 CO events verified. |
 | 4 | Michigan | `mdot_4` | `MDOT_API_KEY` | header `api_key` | **Not instant** — MiLogin for Business account → Discover Online Services → "MDOT RIDE". Info: michigan.gov/mdot ITS-data page. Verified endpoint wants `api_key` header (not Socrata token). |
 | 5 | Massachusetts | `massdot__cwz` | `MASSDOT_CWZ_API_KEY` | header `Authorization: Bearer` | CWZ work zones. |
-| 6 | North Carolina | `ncdot` | `NCDOT_API_KEY` | header `Authorization: Bearer` | DriveNC WZDx. |
-| 7 | Oregon | `ordot` | `ODOT_API_KEY` | header `Ocp-Apim-Subscription-Key` | Azure APIM key. |
+| 6 | North Carolina | `ncdot` | `NCDOT_API_KEY` | `?key=` query param | DriveNC: account → Developer API key on /developers/doc. Verified param name. |
+| 7 | Oregon | `ordot` | `ODOT_API_KEY` | header `Ocp-Apim-Subscription-Key` | Azure APIM — verified subscription-key auth shape; signup at apiportal.odot.state.or.us. |
 | ~~8~~ | ~~Virginia~~ | `vdot` | `VDOT_API_KEY` | `?token=` | ✅ **LIVE 2026-11-14** — ~3.1k events. The 10.6 MB feed that used to 1102 the Worker now parses fine in the snapshot Action (Node, no CPU cap). |
 | 9 | California | `mtc` | `MTC_511_API_KEY` | `?api_key=` | api.511.org WZDx — despite feedname "mtc", state = California. |
 | 10 | Pennsylvania | `ptc` | `PENNSTURNPIKE_API_KEY` | `?api_key=` | PA Turnpike only — toll roads. PA's regular DOT feed isn't in the registry. |
 | ~~—~~ | ~~National (NPS)~~ | `nps` | `NPS_API_KEY` | `?api_key=` | ✅ **LIVE 2026-11-10** — park road events verified. |
+| ~~—~~ | ~~Ohio~~ | `ohio` | `OHGO_API_KEY` | `?api-key=` | ✅ **LIVE** — key set 2026-11-14; OHGO registration portal. |
+| ~~—~~ | ~~Illinois CWZ~~ | `idot_cwz` | `IDOT_CWZ_API_KEY` | `?api_key=` | ✅ **LIVE** — key set 2026-11-14; self-serve at wzad-idot.illinois.gov/cwz/api-key/ (307→transportal.cee.wisc.edu). Statewide IDOT work zones. |
 
 ### IBI/CARS 511 platform family (added 2026-11-15)
 

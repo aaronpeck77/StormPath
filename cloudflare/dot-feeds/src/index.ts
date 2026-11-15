@@ -76,7 +76,7 @@ const KEYED_FEEDS: Record<
   /* No key in the registry URL — header auth. Schemes to verify per feed. */
   mdot_4: { secret: "MDOT_API_KEY", header: "api_key" }, /* verified 2026-11-14: endpoint 401s asking for api_key header */
   massdot__cwz: { secret: "MASSDOT_CWZ_API_KEY", header: "Authorization", prefix: "Bearer " },
-  ncdot: { secret: "NCDOT_API_KEY", header: "Authorization", prefix: "Bearer " },
+  ncdot: { secret: "NCDOT_API_KEY", param: "key" }, /* drivenc.gov docs: query-string 'key' param */
   ordot: { secret: "ODOT_API_KEY", header: "Ocp-Apim-Subscription-Key" }, /* Azure APIM */
 };
 
