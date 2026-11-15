@@ -57,6 +57,8 @@ const LS_LANDSCAPE_SIDE_HAND = "stormpath-setting-landscape-side-hand";
 const LS_PUCK_COLOR = "stormpath-setting-puck-color";
 const LS_GUIDANCE_LANGUAGE = "stormpath-setting-guidance-language";
 const LS_RADAR_DISPLAY_MODE = "stormpath-setting-radar-display-mode";
+const LS_DOT_EVENTS = "stormpath-setting-dot-events-enabled";
+const LS_WINTER_CONDITIONS = "stormpath-setting-winter-conditions-enabled";
 
 export type LandscapeSideHand = "right" | "left";
 
@@ -97,6 +99,10 @@ export interface AppSettings {
   vehicleHeightFt: number;
   vehicleWidthFt: number;
   vehicleWeightLb: number;
+  /** State DOT work-zone/closure/incident events on the route (Plus). */
+  dotEventsEnabled: boolean;
+  /** Winter road-condition reports (ice/snow/treated) on the route (Plus). */
+  winterConditionsEnabled: boolean;
 }
 
 function readBoolFlag(key: string, defaultValue: boolean): boolean {
@@ -153,6 +159,8 @@ export interface SettingsState {
   vehicleHeightFt: number;
   vehicleWidthFt: number;
   vehicleWeightLb: number;
+  dotEventsEnabled: boolean;
+  winterConditionsEnabled: boolean;
 
   setStormEnabled: (on: boolean) => void;
   setTrafficEnabled: (on: boolean) => void;
@@ -174,6 +182,8 @@ export interface SettingsState {
   setGuidanceLanguage: (pref: GuidanceLanguagePref) => void;
   /** Vehicle size profile — persisted as one JSON blob, mirrored into the 4 flat fields. */
   setVehicleProfile: (profile: VehicleProfile) => void;
+  setDotEventsEnabled: (on: boolean) => void;
+  setWinterConditionsEnabled: (on: boolean) => void;
   /**
    * Bulk-apply all 8 persisted toggles from the About sheet in a single store update.
    *
@@ -209,6 +219,8 @@ function readPersistedSettings(): Pick<
   | "vehicleHeightFt"
   | "vehicleWidthFt"
   | "vehicleWeightLb"
+  | "dotEventsEnabled"
+  | "winterConditionsEnabled"
 > {
   return {
     stormEnabled: readStormSettingOn(),
@@ -237,6 +249,8 @@ function readPersistedSettings(): Pick<
         vehicleWeightLb: v.weightLb,
       };
     })(),
+    dotEventsEnabled: readBoolFlag(LS_DOT_EVENTS, true),
+    winterConditionsEnabled: readBoolFlag(LS_WINTER_CONDITIONS, true),
   };
 }
 
@@ -335,6 +349,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       vehicleWeightLb: v.weightLb,
     });
   },
+  setDotEventsEnabled: (on) => {
+    writeBoolFlag(LS_DOT_EVENTS, on);
+    set({ dotEventsEnabled: on });
+  },
+  setWinterConditionsEnabled: (on) => {
+    writeBoolFlag(LS_WINTER_CONDITIONS, on);
+    set({ winterConditionsEnabled: on });
+  },
   applySettings: (next) => {
     /* Persist each field through its existing helper so the storage shape stays identical to
      * the individual setters (legacy fallback keys in `layerStartupPrefs`, `safeStorage` for
@@ -363,6 +385,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       weightLb: next.vehicleWeightLb,
     });
     writeVehicleProfile(vehicle);
+    writeBoolFlag(LS_DOT_EVENTS, next.dotEventsEnabled);
+    writeBoolFlag(LS_WINTER_CONDITIONS, next.winterConditionsEnabled);
     set({
       stormEnabled: next.stormEnabled,
       trafficEnabled: next.trafficEnabled,
@@ -384,6 +408,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       vehicleHeightFt: vehicle.heightFt,
       vehicleWidthFt: vehicle.widthFt,
       vehicleWeightLb: vehicle.weightLb,
+      dotEventsEnabled: next.dotEventsEnabled,
+      winterConditionsEnabled: next.winterConditionsEnabled,
     });
   },
 }));

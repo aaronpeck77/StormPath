@@ -75,6 +75,7 @@ import type { DotRoadEvent } from "../services/dotRoadEvents";
 import { placeReferencePhrase, type RoutePlaceAnchor } from "./routePlaceReference";
 import { pointAtAlongMeters } from "./routeGeometry";
 import { useUiStore } from "../state/uiStore";
+import { useSettingsStore } from "../state/settingsStore";
 
 export type UseRouteAheadDerivationsDeps = {
   nwsMapOverlapRouteGeom: LngLat[] | undefined;
@@ -226,6 +227,11 @@ export function useRouteAheadDerivations(
     guidanceRoute?.geometry,
     mapboxToken
   );
+
+  /* DOT layer toggles are display-only — fetch/match/impact pipeline always
+   * runs so diagnostics, reroute logic, and unmuting stay honest. */
+  const dotEventsEnabled = useSettingsStore((s) => s.dotEventsEnabled);
+  const winterConditionsEnabled = useSettingsStore((s) => s.winterConditionsEnabled);
 
   /** State DOT/WZDx corridor feed — Plus only, rides the unified impact pipeline. */
   const dotFeed = useDotRoadEvents({
@@ -512,6 +518,14 @@ export function useRouteAheadDerivations(
     if (!isPlus) return [];
     return routeImpacts.filter((i) => {
       if (i.source === "tomorrowIo") return true;
+      /* DOT layers: mute hides alerts/markers/timeline but the impact still
+       * exists in routeImpacts for briefing, diagnostics, and reroute logic. */
+      if (i.source === "dot511") {
+        if (i.category === "winter") {
+          return winterConditionsEnabled && showWeatherImpactsOnRoute;
+        }
+        return dotEventsEnabled && showRoadNoticesOnRoute;
+      }
       if (i.category === "traffic") return showTrafficCorridorOnRoute;
       if (i.category === "closure" || i.category === "incident" || i.category === "construction") {
         return showRoadNoticesOnRoute;
@@ -519,7 +533,15 @@ export function useRouteAheadDerivations(
       // Weather impacts (NWS / radar) — gated by storm session detail or live corridor wx.
       return showWeatherImpactsOnRoute;
     });
-  }, [isPlus, routeImpacts, showTrafficCorridorOnRoute, showRoadNoticesOnRoute, showWeatherImpactsOnRoute]);
+  }, [
+    isPlus,
+    routeImpacts,
+    showTrafficCorridorOnRoute,
+    showRoadNoticesOnRoute,
+    showWeatherImpactsOnRoute,
+    dotEventsEnabled,
+    winterConditionsEnabled,
+  ]);
 
   /** Advisory panel: impacts ordered like the progress rail (nearest first). Carries the full
    *  RouteImpact fields the bar needs to split rows by source/category and to slot severe NWS

@@ -54,6 +54,8 @@ export function AppAboutSheetHost({
   const vehicleHeightFt = useSettingsStore((s) => s.vehicleHeightFt);
   const vehicleWidthFt = useSettingsStore((s) => s.vehicleWidthFt);
   const vehicleWeightLb = useSettingsStore((s) => s.vehicleWeightLb);
+  const dotEventsEnabled = useSettingsStore((s) => s.dotEventsEnabled);
+  const winterConditionsEnabled = useSettingsStore((s) => s.winterConditionsEnabled);
 
   const settings = useMemo(
     () => ({
@@ -77,6 +79,8 @@ export function AppAboutSheetHost({
       vehicleHeightFt,
       vehicleWidthFt,
       vehicleWeightLb,
+      dotEventsEnabled,
+      winterConditionsEnabled,
     }),
     [
       radarEnabled,
@@ -99,6 +103,8 @@ export function AppAboutSheetHost({
       vehicleHeightFt,
       vehicleWidthFt,
       vehicleWeightLb,
+      dotEventsEnabled,
+      winterConditionsEnabled,
     ]
   );
 

@@ -96,6 +96,8 @@ type Props = {
     vehicleHeightFt: number;
     vehicleWidthFt: number;
     vehicleWeightLb: number;
+    dotEventsEnabled: boolean;
+    winterConditionsEnabled: boolean;
   };
   onSettings: (next: Props["settings"]) => void;
   /** Replays the first-launch coachmark walk-through. Resets the suppression flag and asks
@@ -537,6 +539,31 @@ export function AboutSheet({
           )}
 
           <DotCoveragePanel />
+
+          {/* DOT data layers — Plus; both default on */}
+          <div className="about-sheet__settings-card">
+            <label className="about-sheet__setting">
+              <input
+                type="checkbox"
+                checked={settings.dotEventsEnabled}
+                onChange={(e) => onSettings({ ...settings, dotEventsEnabled: e.target.checked })}
+              />
+              <span>
+                <strong>Road construction &amp; incidents</strong> — state DOT work zones,
+                closures, and incidents on your route
+              </span>
+            </label>
+            <label className="about-sheet__setting">
+              <input
+                type="checkbox"
+                checked={settings.winterConditionsEnabled}
+                onChange={(e) => onSettings({ ...settings, winterConditionsEnabled: e.target.checked })}
+              />
+              <span>
+                <strong>Winter road conditions</strong> — ice, snow, and treated-road reports
+              </span>
+            </label>
+          </div>
 
           <details className="about-sheet__panel about-sheet__details">
             <summary>Voice</summary>

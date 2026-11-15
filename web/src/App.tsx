@@ -3037,7 +3037,7 @@ export default function App() {
       hasGuidanceRoute: Boolean(guidanceRoute?.geometry && guidanceRoute.geometry.length >= 2),
       advisoryRoadDetailRows,
       advisoryRouteImpacts,
-      passengerRouteImpacts: routeImpacts,
+      passengerRouteImpacts: routeImpactsForUi,
       advisoryStormStripBands,
       routeAheadTimeline,
       routeTotalMeters: guidanceRouteLengthM,
