@@ -172,6 +172,184 @@ async function probe(
   }
 }
 
+async function probeJson(
+  id: string,
+  label: string,
+  url: string,
+  init: RequestInit | undefined,
+  summarize?: (body: unknown) => string | undefined
+): Promise<Probe> {
+  const t0 = Date.now();
+  try {
+    const res = await fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(12_000),
+    });
+    const ms = Date.now() - t0;
+    let detail = res.ok ? undefined : `HTTP ${res.status}`;
+    if (res.ok && summarize) {
+      try {
+        detail = summarize(await res.json()) ?? detail;
+      } catch {
+        /* body wasn't JSON — status alone is still a valid probe result */
+      }
+    }
+    return { id, label, ok: res.ok, status: res.status, ms, detail };
+  } catch (e) {
+    return {
+      id,
+      label,
+      ok: false,
+      ms: Date.now() - t0,
+      detail: e instanceof Error ? e.message : "fetch failed",
+    };
+  }
+}
+
+/** Mapbox token — same env the Vite build uses, plus common alternates. */
+function mapboxToken(): string {
+  return (
+    process.env.MAPBOX_TOKEN?.trim() ||
+    process.env.VITE_MAPBOX_TOKEN?.trim() ||
+    process.env.MAPBOX_ACCESS_TOKEN?.trim() ||
+    ""
+  );
+}
+
+/** One cheap Directions call — proves token validity AND API health. Costs
+ * one Directions request per Control Room refresh (manual, low frequency). */
+async function mapboxDirectionsProbe(): Promise<Probe> {
+  const token = mapboxToken();
+  if (!token)
+    return {
+      id: "mb_dir",
+      label: "Mapbox Directions",
+      ok: false,
+      ms: 0,
+      detail: "MAPBOX_TOKEN not set on Netlify",
+    };
+  return probeJson(
+    "mb_dir",
+    "Mapbox Directions",
+    `https://api.mapbox.com/directions/v5/mapbox/driving/-74.0,40.7;-73.9,40.8?overview=false&access_token=${encodeURIComponent(token)}`,
+    undefined,
+    (body) => {
+      const code = (body as { code?: string })?.code;
+      return code ? `route ${code}` : undefined;
+    }
+  );
+}
+
+/** Geocoding powers search — a 1-result place lookup is the cheapest real call. */
+async function mapboxGeocodeProbe(): Promise<Probe> {
+  const token = mapboxToken();
+  if (!token)
+    return {
+      id: "mb_geo",
+      label: "Mapbox Geocoding",
+      ok: false,
+      ms: 0,
+      detail: "MAPBOX_TOKEN not set on Netlify",
+    };
+  return probeJson(
+    "mb_geo",
+    "Mapbox Geocoding",
+    `https://api.mapbox.com/geocoding/v5/mapbox.places/-74.0,40.7.json?limit=1&access_token=${encodeURIComponent(token)}`,
+    undefined,
+    (body) => {
+      const feats = (body as { features?: unknown[] })?.features;
+      return Array.isArray(feats) ? `${feats.length} result` : undefined;
+    }
+  );
+}
+
+/** OpenWeather — app fallback weather source. Key comes from the same env
+ * the Vite build bakes in. */
+async function openWeatherProbe(): Promise<Probe> {
+  const key =
+    process.env.OPENWEATHER_API_KEY?.trim() ||
+    process.env.VITE_OPENWEATHER_API_KEY?.trim() ||
+    "";
+  if (!key)
+    return {
+      id: "openweather",
+      label: "OpenWeather",
+      ok: false,
+      ms: 0,
+      detail: "OPENWEATHER_API_KEY not set on Netlify",
+    };
+  return probeJson(
+    "openweather",
+    "OpenWeather",
+    `https://api.openweathermap.org/data/2.5/weather?lat=40.7&lon=-74.0&units=imperial&appid=${encodeURIComponent(key)}`,
+    undefined,
+    (body) => {
+      const w = body as { weather?: { main?: string }[]; cod?: number };
+      return w.weather?.[0]?.main ? `${w.weather[0].main} · cod ${w.cod}` : undefined;
+    }
+  );
+}
+
+/** Tomorrow.io realtime weather — used for corridor forecasts. One call per
+ * manual refresh is negligible against their quota. */
+async function tomorrowProbe(): Promise<Probe> {
+  const key =
+    process.env.TOMORROW_IO_API_KEY?.trim() ||
+    process.env.VITE_TOMORROW_IO_API_KEY?.trim() ||
+    "";
+  if (!key)
+    return {
+      id: "tomorrow",
+      label: "Tomorrow.io",
+      ok: false,
+      ms: 0,
+      detail: "TOMORROW_IO_API_KEY not set on Netlify",
+    };
+  return probeJson(
+    "tomorrow",
+    "Tomorrow.io",
+    `https://api.tomorrow.io/v4/weather/realtime?location=40.7,-74&apikey=${encodeURIComponent(key)}`,
+    { headers: { accept: "application/json" } },
+    (body) => {
+      const d = (body as { data?: { values?: { temperature?: number } } })?.data?.values;
+      return typeof d?.temperature === "number"
+        ? `${Math.round(d.temperature)}° at probe point`
+        : undefined;
+    }
+  );
+}
+
+/** A Netlify function is "alive" if it answers at all — 400/401/405 all mean
+ * the bundle deployed and is executing; only 5xx/timeout/network means broken. */
+async function functionProbe(name: string, label: string): Promise<Probe> {
+  const t0 = Date.now();
+  const siteUrl = (
+    process.env.SITE_URL?.trim() || "https://stormpath2.netlify.app"
+  ).replace(/\/$/, "");
+  try {
+    const res = await fetch(`${siteUrl}/.netlify/functions/${name}`, {
+      signal: AbortSignal.timeout(12_000),
+    });
+    const ms = Date.now() - t0;
+    return {
+      id: `fn_${name}`,
+      label,
+      ok: res.status < 500,
+      status: res.status,
+      ms,
+      detail: res.status < 500 ? `HTTP ${res.status}` : `HTTP ${res.status}`,
+    };
+  } catch (e) {
+    return {
+      id: `fn_${name}`,
+      label,
+      ok: false,
+      ms: Date.now() - t0,
+      detail: e instanceof Error ? e.message : "fetch failed",
+    };
+  }
+}
+
 async function revenueCatMetrics(): Promise<{
   configured: boolean;
   metrics: Metric[];
@@ -545,7 +723,9 @@ async function sentryOpenIssues(): Promise<{
   }
 }
 
-async function iosBuild(): Promise<{
+async function workflowRun(
+  workflowFile: string
+): Promise<{
   conclusion?: string | null;
   status?: string;
   createdAt?: string;
@@ -555,7 +735,7 @@ async function iosBuild(): Promise<{
 }> {
   try {
     const res = await fetch(
-      "https://api.github.com/repos/aaronpeck77/StormPath/actions/workflows/ios-build.yml/runs?per_page=1",
+      `https://api.github.com/repos/aaronpeck77/StormPath/actions/workflows/${workflowFile}/runs?per_page=1`,
       {
         headers: {
           Accept: "application/vnd.github+json",
@@ -575,7 +755,7 @@ async function iosBuild(): Promise<{
       }>;
     };
     const run = body.workflow_runs?.[0];
-    if (!run) return { error: "No iOS runs" };
+    if (!run) return { error: "No runs" };
     return {
       conclusion: run.conclusion,
       status: run.status,
@@ -587,6 +767,9 @@ async function iosBuild(): Promise<{
     return { error: e instanceof Error ? e.message : "GitHub failed" };
   }
 }
+
+const iosBuild = () => workflowRun("ios-build.yml");
+const dotSnapshot = () => workflowRun("dot-feeds-snapshot.yml");
 
 export const handler = async (event: NetlifyEvent) => {
   if (event.httpMethod === "OPTIONS") {
@@ -632,7 +815,8 @@ export const handler = async (event: NetlifyEvent) => {
     `${siteUrl}/.netlify/functions/rainviewer-tile`
   ).replace(/\/$/, "");
 
-  const [web, weatherkit, nws, rainviewer, tileWorker, rainviewerTiles, dotFeedsResult, income, deploy, sentry, ios, netlify] =
+  const [web, weatherkit, nws, rainviewer, tileWorker, rainviewerTiles, dotFeedsResult, income, deploy, sentry, ios, netlify, dotSnap,
+    mbDir, mbGeo, openweather, tomorrow, fnStormy, fnGrok, fnTomorrowTile] =
     await Promise.all([
       probe("web", "Netlify site", `${siteUrl}/`),
       probe(
@@ -640,13 +824,30 @@ export const handler = async (event: NetlifyEvent) => {
         "WeatherKit token fn",
         `${siteUrl}/.netlify/functions/weatherkit-token`
       ),
-      probe("nws", "NWS alerts API", "https://api.weather.gov/alerts/active?status=actual", {
-        headers: { "User-Agent": "StormPathOps/1.0 (ops-hub)", Accept: "application/geo+json" },
-      }),
-      probe(
+      probeJson(
+        "nws",
+        "NWS alerts API",
+        "https://api.weather.gov/alerts/active?status=actual",
+        {
+          headers: { "User-Agent": "StormPathOps/1.0 (ops-hub)", Accept: "application/geo+json" },
+        },
+        (body) => {
+          const n = (body as { features?: unknown[] })?.features?.length;
+          return typeof n === "number" ? `${n.toLocaleString()} active alerts` : undefined;
+        }
+      ),
+      probeJson(
         "rainviewer",
         "RainViewer maps JSON",
-        "https://api.rainviewer.com/public/weather-maps.json"
+        "https://api.rainviewer.com/public/weather-maps.json",
+        undefined,
+        (body) => {
+          const frames = (body as { radar?: { past?: { time?: number }[] } })?.radar?.past;
+          const latest = frames?.length ? frames[frames.length - 1]?.time : null;
+          if (typeof latest !== "number") return undefined;
+          const ageMin = Math.round((Date.now() / 1000 - latest) / 60);
+          return `latest frame ${ageMin}m old · ${frames!.length} past`;
+        }
       ),
       tileProxy
         ? probe("tiles", "Tomorrow tile worker", `${tileProxy}/health`)
@@ -670,6 +871,14 @@ export const handler = async (event: NetlifyEvent) => {
       sentryOpenIssues(),
       iosBuild(),
       netlifyUsage(),
+      dotSnapshot(),
+      mapboxDirectionsProbe(),
+      mapboxGeocodeProbe(),
+      openWeatherProbe(),
+      tomorrowProbe(),
+      functionProbe("stormy", "Stormy fn"),
+      functionProbe("grok-assistant", "Grok assistant fn"),
+      functionProbe("tomorrow-io-tile", "Tomorrow tile fn"),
     ]);
 
   return {
@@ -678,12 +887,17 @@ export const handler = async (event: NetlifyEvent) => {
     body: JSON.stringify({
       generatedAt: new Date().toISOString(),
       siteUrl,
-      health: [web, weatherkit, nws, rainviewer, tileWorker, rainviewerTiles, dotFeedsResult.probe],
+      health: [
+        web, weatherkit, nws, rainviewer, tileWorker, rainviewerTiles,
+        dotFeedsResult.probe, mbDir, mbGeo, openweather, tomorrow,
+        fnStormy, fnGrok, fnTomorrowTile,
+      ],
       dotFeeds: dotFeedsResult.health,
       income,
       deploy,
       sentry,
       ios,
+      dotSnapshot: dotSnap,
       netlifyUsage: netlify,
       mapboxUsage: await buildMapboxUsageSummary(),
       mapboxNote:

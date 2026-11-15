@@ -693,13 +693,21 @@ const SECRET_KEY = "stormpath.ops.secret";
           : await localHealth();
 
         document.getElementById("healthRow").innerHTML = health
-          .map((h) =>
-            pill(
-              h.ok,
-              `${h.label}${h.ms != null ? ` ${h.ms}ms` : ""}`,
-              h.detail || (h.status != null ? `HTTP ${h.status}` : "")
-            )
-          )
+          .map((h) => {
+            const ok =
+              h.ok === true ? true : h.ok === false ? false : h.status < 500;
+            const cls = ok === true ? "ok" : ok === false ? "bad" : "warn";
+            const title = h.detail
+              ? ` title="${String(h.detail).replace(/"/g, "&quot;")}"`
+              : "";
+            const ms = h.ms != null ? ` ${h.ms}ms` : "";
+            /* detail (alert counts, radar frame age, temps) shows inline so
+             * a glance tells you not just "up" but "how healthy". */
+            const det = h.detail
+              ? `<div class="faint" style="font-size:.72rem;margin-top:2px;max-width:180px">${String(h.detail).replace(/</g, "&lt;")}</div>`
+              : "";
+            return `<span class="pill" style="flex-direction:column;align-items:flex-start;gap:2px;padding:7px 11px"${title}><span style="display:inline-flex;align-items:center;gap:6px"><span class="dot ${cls}"></span>${h.label}${ms}</span>${det}</span>`;
+          })
           .join("");
 
         document.getElementById("generatedAt").textContent = summary
@@ -766,6 +774,22 @@ const SECRET_KEY = "stormpath.ops.secret";
           );
         } else {
           ship.push(stat("—", "iOS build"));
+        }
+        if (summary?.dotSnapshot) {
+          const ds = summary.dotSnapshot;
+          const label = ds.error
+            ? "err"
+            : ds.conclusion || ds.status || "—";
+          ship.push(
+            stat(
+              label,
+              ds.htmlUrl
+                ? `<a href="${ds.htmlUrl}" target="_blank" rel="noreferrer">DOT snapshot Action</a>`
+                : "DOT snapshot Action"
+            )
+          );
+        } else {
+          ship.push(stat("—", "DOT snapshot Action"));
         }
         if (summary?.sentry?.configured) {
           ship.push(
