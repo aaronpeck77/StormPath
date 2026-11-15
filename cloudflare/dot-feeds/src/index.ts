@@ -27,8 +27,11 @@ const FEED_TIMEOUT_MS = 12_000;
 /** Workers cap at 128 MB — parsed feeds are multi-MB each, so process in batches. */
 const FEED_BATCH = 4;
 const MAX_FEED_BYTES = 15 * 1024 * 1024;
-/** Cap retained geometry — some feeds attach full road centerlines per event. */
-const SIMPLIFIED_GEOM_POINTS = 50;
+/** Cap retained geometry — some feeds attach full road centerlines per event.
+ *  The app only ever samples 8 vertices per event (MAX_EVENT_SAMPLE_POINTS),
+ *  so 20 is already generous; 50 was ~6× the usable detail and pushed the
+ *  snapshot past the KV 25 MiB value limit once NC/MA volume landed. */
+const SIMPLIFIED_GEOM_POINTS = 20;
 const MAX_FEATURES_PER_FEED = 4_000;
 const MAX_DESCRIPTION_CHARS = 400;
 
