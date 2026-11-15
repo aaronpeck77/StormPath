@@ -45,6 +45,7 @@ import {
   MAPBOX_DIRECTIONS_TIMEOUT_MS,
 } from "../utils/fetchResilient";
 import { dedupeRequest } from "../utils/requestDeduplication";
+import { applyVehicleRoutingParams } from "./mapboxVehicleParams";
 
 type MbCoord = [number, number];
 
@@ -216,6 +217,7 @@ function applyDirectionsQueryParams(
     /* Append last so later searchParams.set cannot re-encode the lon/lat space as `+`. */
     url.search += `${url.search ? "&" : "?"}exclude=${encodeURIComponent(exclude)}`;
   }
+  applyVehicleRoutingParams(url);
 }
 
 function parseSteps(route: NonNullable<DirectionsResponse["routes"]>[0]): RouteTurnStep[] {

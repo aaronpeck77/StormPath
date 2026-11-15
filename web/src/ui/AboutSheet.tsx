@@ -37,6 +37,7 @@ import { STORMY_VOICE_HINT } from "../stormy/stormyVoiceHint";
 import type { VoiceLevel } from "../voice/voiceLevel";
 import type { GuidanceLanguagePref } from "../utils/guidanceLanguage";
 import type { HomePuckFollowMode } from "../map/homePuckFollow";
+import { RV_VEHICLE_DIMS, TRUCK_VEHICLE_DIMS, type VehicleMode } from "../nav/vehicleProfile";
 
 type ActivityTrailPanel = {
   count: number;
@@ -91,6 +92,10 @@ type Props = {
     landscapeSideHand: "right" | "left";
     puckColor: PuckColorId;
     guidanceLanguage: GuidanceLanguagePref;
+    vehicleMode: VehicleMode;
+    vehicleHeightFt: number;
+    vehicleWidthFt: number;
+    vehicleWeightLb: number;
   };
   onSettings: (next: Props["settings"]) => void;
   /** Replays the first-launch coachmark walk-through. Resets the suppression flag and asks
@@ -242,6 +247,11 @@ export function AboutSheet({
     }`,
     `Landscape UI: ${settings.landscapeSideHand === "left" ? "left hand" : "right hand"}`,
     `Puck color: ${puckColorById(settings.puckColor).label.toLowerCase()}`,
+    `Vehicle: ${
+      settings.vehicleMode === "large"
+        ? `large ${settings.vehicleHeightFt}ft x ${settings.vehicleWidthFt}ft x ${settings.vehicleWeightLb}lb`
+        : "car"
+    }`,
     `Providers: mapbox=${env.mapboxToken ? "on" : "off"}, openweather=${
       env.openWeatherApiKey ? "on" : "off"
     }, tomorrowIo=${env.tomorrowIoApiKey ? "on" : "off"}`,
@@ -255,6 +265,18 @@ export function AboutSheet({
   ];
   const diagnosticsText = diagnosticsLines.join("\n");
   const supportEmail = env.supportEmail.trim();
+
+  /* Vehicle dims commit on blur — typing "13.5" must not snap to a clamp mid-entry. */
+  const commitVehicleDim = (
+    field: "vehicleHeightFt" | "vehicleWidthFt" | "vehicleWeightLb",
+    raw: string,
+    fallback: number,
+    el: HTMLInputElement
+  ) => {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) onSettings({ ...settings, [field]: n });
+    else el.value = String(fallback);
+  };
 
   return (
     <>
@@ -722,6 +744,133 @@ export function AboutSheet({
                 <p className="about-sheet__tier-preview-hint">
                   The route line stays blue. Orange, gold, or white is easier to pick out on it.
                 </p>
+              </div>
+
+              {/* Vehicle size — RV/truck routing around posted height/width/weight limits */}
+              <div
+                className="about-sheet__settings-card about-sheet__tier-preview"
+                role="group"
+                aria-label="Vehicle size"
+              >
+                <p className="about-sheet__tier-preview-label">Vehicle size</p>
+                <div className="about-sheet__tier-preview-btns">
+                  <button
+                    type="button"
+                    className={`about-sheet__tier-preview-btn${settings.vehicleMode === "car" ? " about-sheet__tier-preview-btn--active" : ""}`}
+                    onClick={() => onSettings({ ...settings, vehicleMode: "car" })}
+                  >
+                    Car
+                  </button>
+                  <button
+                    type="button"
+                    className={`about-sheet__tier-preview-btn${settings.vehicleMode === "large" ? " about-sheet__tier-preview-btn--active" : ""}`}
+                    onClick={() => onSettings({ ...settings, vehicleMode: "large" })}
+                  >
+                    RV or truck
+                  </button>
+                </div>
+                {settings.vehicleMode === "large" ? (
+                  <>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 12,
+                        flexWrap: "wrap",
+                        marginTop: 10,
+                        alignItems: "flex-end",
+                      }}
+                    >
+                      <label className="about-sheet__p about-sheet__p--tight">
+                        Height (ft)
+                        <input
+                          key={`veh-h-${settings.vehicleHeightFt}`}
+                          type="number"
+                          inputMode="decimal"
+                          min={4}
+                          max={20}
+                          step={0.5}
+                          defaultValue={settings.vehicleHeightFt}
+                          onBlur={(e) =>
+                            commitVehicleDim("vehicleHeightFt", e.target.value, settings.vehicleHeightFt, e.target)
+                          }
+                          style={{ display: "block", marginTop: 4, width: "6em" }}
+                        />
+                      </label>
+                      <label className="about-sheet__p about-sheet__p--tight">
+                        Width (ft)
+                        <input
+                          key={`veh-w-${settings.vehicleWidthFt}`}
+                          type="number"
+                          inputMode="decimal"
+                          min={4}
+                          max={12}
+                          step={0.5}
+                          defaultValue={settings.vehicleWidthFt}
+                          onBlur={(e) =>
+                            commitVehicleDim("vehicleWidthFt", e.target.value, settings.vehicleWidthFt, e.target)
+                          }
+                          style={{ display: "block", marginTop: 4, width: "6em" }}
+                        />
+                      </label>
+                      <label className="about-sheet__p about-sheet__p--tight">
+                        Weight (lb)
+                        <input
+                          key={`veh-lb-${settings.vehicleWeightLb}`}
+                          type="number"
+                          inputMode="numeric"
+                          min={500}
+                          max={150000}
+                          step={500}
+                          defaultValue={settings.vehicleWeightLb}
+                          onBlur={(e) =>
+                            commitVehicleDim("vehicleWeightLb", e.target.value, settings.vehicleWeightLb, e.target)
+                          }
+                          style={{ display: "block", marginTop: 4, width: "7em" }}
+                        />
+                      </label>
+                    </div>
+                    <div className="about-sheet__tier-preview-btns" style={{ marginTop: 8 }}>
+                      <button
+                        type="button"
+                        className="about-sheet__tier-preview-btn"
+                        onClick={() =>
+                          onSettings({
+                            ...settings,
+                            vehicleHeightFt: RV_VEHICLE_DIMS.heightFt,
+                            vehicleWidthFt: RV_VEHICLE_DIMS.widthFt,
+                            vehicleWeightLb: RV_VEHICLE_DIMS.weightLb,
+                          })
+                        }
+                      >
+                        RV defaults
+                      </button>
+                      <button
+                        type="button"
+                        className="about-sheet__tier-preview-btn"
+                        onClick={() =>
+                          onSettings({
+                            ...settings,
+                            vehicleHeightFt: TRUCK_VEHICLE_DIMS.heightFt,
+                            vehicleWidthFt: TRUCK_VEHICLE_DIMS.widthFt,
+                            vehicleWeightLb: TRUCK_VEHICLE_DIMS.weightLb,
+                          })
+                        }
+                      >
+                        Truck defaults
+                      </button>
+                    </div>
+                    <p className="about-sheet__tier-preview-hint">
+                      Routes avoid roads with posted height, width, or weight limits where the map data
+                      covers them — coverage varies by region. Hazmat, axle-weight, and trailer-length
+                      rules are not covered. Applies the next time you plan a route.
+                    </p>
+                  </>
+                ) : (
+                  <p className="about-sheet__tier-preview-hint">
+                    Driving an RV, bus, or truck? Choose &quot;RV or truck&quot; so routes avoid roads
+                    with posted size and weight limits.
+                  </p>
+                )}
               </div>
 
               {/* 4. Checkbox toggles */}

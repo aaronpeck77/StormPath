@@ -10,6 +10,7 @@ vi.mock("../../utils/fetchResilient", async (importOriginal) => {
 
 import { fetchWithTimeout } from "../../utils/fetchResilient";
 import { collectMapboxRouteVariants } from "../mapboxDirectionsRouter";
+import { useSettingsStore } from "../../state/settingsStore";
 import type { LngLat } from "../../nav/types";
 
 const start: LngLat = [-90.2, 38.63];
@@ -363,5 +364,54 @@ describe("collectMapboxRouteVariants", () => {
     expect(routes).toHaveLength(1);
     expect(routes[0]!.label).toBe("Main");
     expect(calls).toBe(1);
+  });
+
+  it("adds Mapbox vehicle-limit params when the profile is a large vehicle", async () => {
+    const vehicleBackup = {
+      vehicleMode: useSettingsStore.getState().vehicleMode,
+      vehicleHeightFt: useSettingsStore.getState().vehicleHeightFt,
+      vehicleWidthFt: useSettingsStore.getState().vehicleWidthFt,
+      vehicleWeightLb: useSettingsStore.getState().vehicleWeightLb,
+    };
+    useSettingsStore.setState({
+      vehicleMode: "large",
+      vehicleHeightFt: 13.5,
+      vehicleWidthFt: 8.5,
+      vehicleWeightLb: 30000,
+    });
+    try {
+      vi.mocked(fetchWithTimeout).mockResolvedValue(okResponse([mbRoute(lineCoords(0), 3600, 120_000)]));
+
+      await collectMapboxRouteVariants("tok", start, end, { maxRoutes: 1 });
+
+      const url = new URL(String(vi.mocked(fetchWithTimeout).mock.calls[0]![0].input));
+      expect(url.searchParams.get("max_height")).toBe("4.115");
+      expect(url.searchParams.get("max_width")).toBe("2.591");
+      expect(url.searchParams.get("max_weight")).toBe("13.608");
+    } finally {
+      useSettingsStore.setState(vehicleBackup);
+    }
+  });
+
+  it("sends no vehicle params for the default car profile", async () => {
+    const vehicleBackup = {
+      vehicleMode: useSettingsStore.getState().vehicleMode,
+      vehicleHeightFt: useSettingsStore.getState().vehicleHeightFt,
+      vehicleWidthFt: useSettingsStore.getState().vehicleWidthFt,
+      vehicleWeightLb: useSettingsStore.getState().vehicleWeightLb,
+    };
+    useSettingsStore.setState({ ...vehicleBackup, vehicleMode: "car" });
+    try {
+      vi.mocked(fetchWithTimeout).mockResolvedValue(okResponse([mbRoute(lineCoords(0), 3600, 120_000)]));
+
+      await collectMapboxRouteVariants("tok", start, end, { maxRoutes: 1 });
+
+      const url = new URL(String(vi.mocked(fetchWithTimeout).mock.calls[0]![0].input));
+      expect(url.searchParams.has("max_height")).toBe(false);
+      expect(url.searchParams.has("max_width")).toBe(false);
+      expect(url.searchParams.has("max_weight")).toBe(false);
+    } finally {
+      useSettingsStore.setState(vehicleBackup);
+    }
   });
 });

@@ -1,6 +1,7 @@
 import type { LngLat } from "../nav/types";
 import { fetchWithTimeout, MAPBOX_TRAFFIC_TIMEOUT_MS } from "../utils/fetchResilient";
 import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
+import { applyVehicleRoutingParams } from "./mapboxVehicleParams";
 
 /** Mapbox Directions API limit for coordinates in one request. */
 const MAPBOX_MAX_COORDS = 25;
@@ -170,6 +171,7 @@ async function fetchDirectionsOnce(
    * construction / closure / congestion detection while duration still updates. */
   url.searchParams.set("overview", "full");
   url.searchParams.set("annotations", "congestion_numeric,closure");
+  applyVehicleRoutingParams(url);
 
   const res = await fetchWithTimeout({
     input: url.toString(),

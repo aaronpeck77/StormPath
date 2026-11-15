@@ -3,6 +3,7 @@ import { collectRoadControls } from "../nav/roadControls";
 import { shortenTurnInstruction } from "../nav/turnInstructionShort";
 import { fetchWithTimeout, MAPBOX_DIRECTIONS_TIMEOUT_MS } from "../utils/fetchResilient";
 import { recordMapboxUsage } from "../monitoring/mapboxUsageMeter";
+import { applyVehicleRoutingParams } from "./mapboxVehicleParams";
 
 type MbCoord = [number, number];
 
@@ -87,6 +88,7 @@ export async function fetchMapboxTrafficAlternatives(
   url.searchParams.set("geometries", "geojson");
   url.searchParams.set("overview", "full");
   url.searchParams.set("steps", "true");
+  applyVehicleRoutingParams(url);
 
   let res: Response;
   try {
@@ -148,6 +150,7 @@ export async function fetchMapboxDrivingTrafficRoute(
   url.searchParams.set("geometries", "geojson");
   url.searchParams.set("overview", "full");
   url.searchParams.set("steps", "true");
+  applyVehicleRoutingParams(url);
 
   let res: Response;
   try {

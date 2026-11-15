@@ -8,6 +8,13 @@ import {
   writeTrafficSettingOn,
 } from "../layerStartupPrefs";
 import { safeStorage } from "../storage/safeStorage";
+import {
+  normalizeVehicleProfile,
+  readVehicleProfile,
+  writeVehicleProfile,
+  type VehicleMode,
+  type VehicleProfile,
+} from "../nav/vehicleProfile";
 import { puckColorById, type PuckColorId } from "../ui/puckColor";
 import {
   dismissDataSaverHint as persistDismissDataSaverHint,
@@ -85,6 +92,11 @@ export interface AppSettings {
   puckColor: PuckColorId;
   /** Turn-by-turn, search, and weather phrases. The rest of the app stays English. */
   guidanceLanguage: GuidanceLanguagePref;
+  /** "car" sends no vehicle-limit params; "large" routes around posted height/width/weight limits. */
+  vehicleMode: VehicleMode;
+  vehicleHeightFt: number;
+  vehicleWidthFt: number;
+  vehicleWeightLb: number;
 }
 
 function readBoolFlag(key: string, defaultValue: boolean): boolean {
@@ -137,6 +149,10 @@ export interface SettingsState {
   landscapeSideHand: LandscapeSideHand;
   puckColor: PuckColorId;
   guidanceLanguage: GuidanceLanguagePref;
+  vehicleMode: VehicleMode;
+  vehicleHeightFt: number;
+  vehicleWidthFt: number;
+  vehicleWeightLb: number;
 
   setStormEnabled: (on: boolean) => void;
   setTrafficEnabled: (on: boolean) => void;
@@ -156,6 +172,8 @@ export interface SettingsState {
   setLandscapeSideHand: (hand: LandscapeSideHand) => void;
   setPuckColor: (color: PuckColorId) => void;
   setGuidanceLanguage: (pref: GuidanceLanguagePref) => void;
+  /** Vehicle size profile — persisted as one JSON blob, mirrored into the 4 flat fields. */
+  setVehicleProfile: (profile: VehicleProfile) => void;
   /**
    * Bulk-apply all 8 persisted toggles from the About sheet in a single store update.
    *
@@ -187,6 +205,10 @@ function readPersistedSettings(): Pick<
   | "landscapeSideHand"
   | "puckColor"
   | "guidanceLanguage"
+  | "vehicleMode"
+  | "vehicleHeightFt"
+  | "vehicleWidthFt"
+  | "vehicleWeightLb"
 > {
   return {
     stormEnabled: readStormSettingOn(),
@@ -206,6 +228,15 @@ function readPersistedSettings(): Pick<
     landscapeSideHand: safeStorage.get(LS_LANDSCAPE_SIDE_HAND) === "left" ? "left" : "right",
     puckColor: puckColorById(safeStorage.get(LS_PUCK_COLOR)).id,
     guidanceLanguage: readGuidanceLanguage(),
+    ...(() => {
+      const v = readVehicleProfile();
+      return {
+        vehicleMode: v.mode,
+        vehicleHeightFt: v.heightFt,
+        vehicleWidthFt: v.widthFt,
+        vehicleWeightLb: v.weightLb,
+      };
+    })(),
   };
 }
 
@@ -294,6 +325,16 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     safeStorage.set(LS_GUIDANCE_LANGUAGE, next);
     set({ guidanceLanguage: next });
   },
+  setVehicleProfile: (profile) => {
+    const v = normalizeVehicleProfile(profile);
+    writeVehicleProfile(v);
+    set({
+      vehicleMode: v.mode,
+      vehicleHeightFt: v.heightFt,
+      vehicleWidthFt: v.widthFt,
+      vehicleWeightLb: v.weightLb,
+    });
+  },
   applySettings: (next) => {
     /* Persist each field through its existing helper so the storage shape stays identical to
      * the individual setters (legacy fallback keys in `layerStartupPrefs`, `safeStorage` for
@@ -315,6 +356,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     safeStorage.set(LS_LANDSCAPE_SIDE_HAND, next.landscapeSideHand);
     safeStorage.set(LS_PUCK_COLOR, puckColorById(next.puckColor).id);
     safeStorage.set(LS_GUIDANCE_LANGUAGE, next.guidanceLanguage === "en" ? "en" : "system");
+    const vehicle = normalizeVehicleProfile({
+      mode: next.vehicleMode,
+      heightFt: next.vehicleHeightFt,
+      widthFt: next.vehicleWidthFt,
+      weightLb: next.vehicleWeightLb,
+    });
+    writeVehicleProfile(vehicle);
     set({
       stormEnabled: next.stormEnabled,
       trafficEnabled: next.trafficEnabled,
@@ -332,6 +380,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       landscapeSideHand: next.landscapeSideHand,
       puckColor: puckColorById(next.puckColor).id,
       guidanceLanguage: next.guidanceLanguage === "en" ? "en" : "system",
+      vehicleMode: vehicle.mode,
+      vehicleHeightFt: vehicle.heightFt,
+      vehicleWidthFt: vehicle.widthFt,
+      vehicleWeightLb: vehicle.weightLb,
     });
   },
 }));

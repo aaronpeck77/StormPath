@@ -50,6 +50,10 @@ export function AppAboutSheetHost({
   const landscapeSideHand = useSettingsStore((s) => s.landscapeSideHand);
   const puckColor = useSettingsStore((s) => s.puckColor);
   const guidanceLanguage = useSettingsStore((s) => s.guidanceLanguage);
+  const vehicleMode = useSettingsStore((s) => s.vehicleMode);
+  const vehicleHeightFt = useSettingsStore((s) => s.vehicleHeightFt);
+  const vehicleWidthFt = useSettingsStore((s) => s.vehicleWidthFt);
+  const vehicleWeightLb = useSettingsStore((s) => s.vehicleWeightLb);
 
   const settings = useMemo(
     () => ({
@@ -69,6 +73,10 @@ export function AppAboutSheetHost({
       landscapeSideHand,
       puckColor,
       guidanceLanguage,
+      vehicleMode,
+      vehicleHeightFt,
+      vehicleWidthFt,
+      vehicleWeightLb,
     }),
     [
       radarEnabled,
@@ -87,6 +95,10 @@ export function AppAboutSheetHost({
       landscapeSideHand,
       puckColor,
       guidanceLanguage,
+      vehicleMode,
+      vehicleHeightFt,
+      vehicleWidthFt,
+      vehicleWeightLb,
     ]
   );
 
