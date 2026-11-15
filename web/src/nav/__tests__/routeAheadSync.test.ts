@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildRouteAheadCalloutSegments, buildRouteAheadGlanceCards, timelineItemShowsOnRouteGraph, timelineItemShowsOnRouteLine, timelineToProgressStripBands } from "../routeAheadSync";
-import type { TimelineItem } from "../../ui/RouteHazardTimeline";
+import { mergeOverlappingTimelineItems, type TimelineItem } from "../../ui/RouteHazardTimeline";
 
 const baseItem = (overrides: Partial<TimelineItem>): TimelineItem => ({
   id: "a1",
@@ -111,6 +111,28 @@ describe("buildRouteAheadGlanceCards", () => {
     });
     expect(cards.map((c) => c.label)).toContain("Flood Advisory");
     expect(cards.map((c) => c.label)).toContain("Flash Flood Warning");
+  });
+
+  it("merges clustered road zones into one short card without concatenating descriptions or Still on", () => {
+    const raw: TimelineItem[] = [
+      baseItem({ id: "r1", track: "road", severity: "caution", label: "Work zone", detailLine: null, startMeters: 100_000, endMeters: 101_000 }),
+      baseItem({ id: "r2", track: "road", severity: "serious", label: "I-44 WB · 1 lane closed", detailLine: null, startMeters: 101_500, endMeters: 103_000 }),
+      baseItem({ id: "r3", track: "road", severity: "caution", label: "I-44 WB · Work zone", detailLine: null, startMeters: 103_500, endMeters: 104_500 }),
+    ];
+    const merged = mergeOverlappingTimelineItems(raw, 500_000);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]!.label).toBe("I-44 WB · 1 lane closed");
+    expect(merged[0]!.detailLine).toBeNull();
+
+    const cards = buildRouteAheadGlanceCards({
+      items: merged,
+      totalMeters: 500_000,
+      userAlongMeters: 0,
+      planEtaMinutes: 300,
+    });
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.relevance).toBeNull();
+    expect(cards[0]!.detailLine).toBeNull();
   });
 });
 

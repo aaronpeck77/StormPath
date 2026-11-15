@@ -513,13 +513,46 @@ export function RouteHazardTimeline({
 
 /* ── Helper: build TimelineItems from advisory data ─────────────────────── */
 
+const GENERIC_ROAD_EFFECTS = new Set([
+  "lane closures or work zone ahead — expect delays",
+  "road closed ahead — check for a detour",
+  "incident reported ahead — traffic may be slow",
+  "winter road condition ahead — drive for conditions",
+  "road condition reported ahead",
+  "work zone — slow down and watch for crews.",
+  "road closed — reroute to keep moving.",
+  "lanes blocked — alternate route may save time.",
+  "slowdown ahead — stay alert.",
+  "caution ahead — adjust speed and lane.",
+]);
+
+function cleanRoadEffect(raw: string): string {
+  const trimmed = raw
+    .replace(/^winter road condition ahead\s*[—–-]\s*drive for conditions\s*·\s*/i, "")
+    .trim();
+  if (!trimmed) return "";
+  if (GENERIC_ROAD_EFFECTS.has(trimmed.toLowerCase())) return "";
+  return trimmed;
+}
+
 function impactDetailLine(imp: RouteImpact): string | null {
   const effect = (imp.roadEffect || "").trim();
   const detail = (imp.detail || "").trim();
-  /* DOT/WZDx rows stay glanceable: roadEffect (+ work type) only. The full
-   * publisher/date/lane blob lives in `detail` for the tapped hazard sheet —
-   * a driver can't read a feed dump at 65 mph (Bill, 585). */
-  if (imp.source === "dot511") return effect || detail || null;
+  /* Road rows stay strictly 1–2 lines: only surface concrete extras (backup,
+   * size/weight limit, lane count, surface condition). Never fall back to the
+   * long publisher/exit/date `detail` blob — that's for the tapped sheet only. */
+  if (imp.source === "dot511" || imp.source === "mapboxIncident") {
+    const cleaned = cleanRoadEffect(effect);
+    return cleaned || null;
+  }
+  if (
+    imp.category === "construction" ||
+    imp.category === "closure" ||
+    imp.category === "incident"
+  ) {
+    const cleaned = cleanRoadEffect(effect);
+    return cleaned || null;
+  }
   if (!effect && !detail) return null;
   if (!effect) return detail;
   if (!detail || detail === effect) return effect;
@@ -529,7 +562,27 @@ function impactDetailLine(imp: RouteImpact): string | null {
   return `${effect} · ${detail}`;
 }
 
-/** Collapse adjacent/overlapping items with the same track + label (e.g. repeated “Light rain on route”). */
+function roadLabelSpecificity(label: string): number {
+  const l = label.trim();
+  let score = 0;
+  if (/\b(?:I|US|SR|MO|IL|IA|IN|OH|MI|WI|MN|KS|NE|OK|TX|TN|KY|PA|NC|VA|GA|FL|CA|CO|NY|MA)-\d+/i.test(l) || /\bon\s+\S+/i.test(l)) {
+    score += 2;
+  }
+  if (/closed|blocked|limit|crash|winter/i.test(l)) score += 1;
+  return score;
+}
+
+function pickBetterRoadDetail(a?: string | null, b?: string | null): string | null {
+  const x = (a ?? "").trim();
+  const y = (b ?? "").trim();
+  if (!x) return y || null;
+  if (!y) return x;
+  const rank = (s: string) =>
+    /backed up/i.test(s) ? 3 : /limit/i.test(s) ? 2 : /blocked|closed|ice|snow/i.test(s) ? 1 : 0;
+  return rank(y) > rank(x) ? y : x;
+}
+
+/** Collapse adjacent/overlapping items on the same corridor stretch without concatenating blobs. */
 export function mergeOverlappingTimelineItems(
   items: TimelineItem[],
   totalMeters: number
@@ -537,10 +590,9 @@ export function mergeOverlappingTimelineItems(
   if (items.length <= 1 || totalMeters <= 0) return items;
   const sorted = [...items].sort((a, b) => a.startMeters - b.startMeters);
   const gapM = totalMeters * 0.06;
-  /* Road hazards describe one connected corridor condition (Bill, 584: mile
-   * 84/85/86 reports are the same incident) — merge spans that overlap or sit
-   * within ~2 mi even when the DOT/Mapbox labels differ, keeping the worst
-   * severity and folding the other labels into the detail line. */
+  /* Road hazards describe one connected corridor condition — merge spans that
+   * overlap or sit within ~2 mi, keeping the single most informative headline
+   * and one short fact instead of gluing every duplicate label end-to-end. */
   const roadGapM = Math.min(gapM, 3218);
   const sevRank: Record<string, number> = { info: 0, caution: 1, serious: 2, avoid: 3 };
   const out: TimelineItem[] = [];
@@ -551,15 +603,22 @@ export function mergeOverlappingTimelineItems(
       const gap = item.track === "road" ? roadGapM : gapM;
       const mergeable = item.track === "road" ? true : sameLabel;
       if (mergeable && item.startMeters <= prev.endMeters + gap) {
-        if (!sameLabel) {
-          const folded = [item.label, item.detailLine].filter(Boolean).join(" — ");
-          prev.detailLine = prev.detailLine ? `${folded} · ${prev.detailLine}` : folded;
-        }
-        prev.endMeters = Math.max(prev.endMeters, item.endMeters);
-        if ((sevRank[item.severity] ?? 0) > (sevRank[prev.severity] ?? 0)) {
+        const curRank = sevRank[item.severity] ?? 0;
+        const prevRank = sevRank[prev.severity] ?? 0;
+        if (
+          curRank > prevRank ||
+          (curRank === prevRank &&
+            item.track === "road" &&
+            roadLabelSpecificity(item.label) > roadLabelSpecificity(prev.label))
+        ) {
+          prev.label = item.label;
           prev.severity = item.severity;
         }
-        if (!prev.detailLine && item.detailLine) prev.detailLine = item.detailLine;
+        prev.endMeters = Math.max(prev.endMeters, item.endMeters);
+        prev.detailLine =
+          item.track === "road"
+            ? pickBetterRoadDetail(prev.detailLine, item.detailLine)
+            : prev.detailLine || item.detailLine || null;
         continue;
       }
     }

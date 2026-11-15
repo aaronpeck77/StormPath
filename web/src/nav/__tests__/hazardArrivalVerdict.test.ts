@@ -85,7 +85,7 @@ describe("hazardArrivalVerdict", () => {
     expect(verdict.softenDriverAction).toBe(true);
   });
 
-  it("prepends verdict line to driver headline", () => {
+  it("keeps driverHeadline clean while storing timing on arrivalVerdictLine", () => {
     const out = applyArrivalVerdictsToImpacts({
       impacts: [
         fakeImpact({
@@ -98,8 +98,8 @@ describe("hazardArrivalVerdict", () => {
       totalMeters: 100_000,
       planEtaMinutes: 60,
     });
-    expect(out[0]!.driverHeadline).toMatch(/Expect this when you arrive/);
-    expect(out[0]!.driverHeadline).toContain("Construction zone");
+    expect(out[0]!.driverHeadline).toBe("Construction zone");
+    expect(out[0]!.arrivalVerdictLine).toMatch(/Expect this when you arrive/);
   });
 
   it("picks nearest impact that affects driver at arrival", () => {

@@ -61,6 +61,7 @@ export type BuildRouteAheadTimelineOpts = {
 };
 
 function impactSectionBucket(i: RouteImpact): "weather" | "road" {
+  if (i.source === "dot511") return "road";
   switch (i.category) {
     case "weather":
     case "winter":
@@ -359,6 +360,13 @@ export function filterAlertsForDriveMap(
   });
 }
 
+function capGlanceLine(text: string, maxChars: number): string {
+  const clean = squeezeForSummary(text).trim();
+  if (clean.length <= maxChars) return clean;
+  const cut = clean.slice(0, maxChars - 1).replace(/\s+\S*$/, "").trim();
+  return `${cut || clean.slice(0, maxChars - 1)}…`;
+}
+
 /** Compact one-line cards for the progress-bar glance panel (driving-safe). */
 export function buildRouteAheadGlanceCards(opts: {
   items: TimelineItem[];
@@ -405,20 +413,26 @@ export function buildRouteAheadGlanceCards(opts: {
       aheadLabel = `${fmtMi(timing.aheadMeters)} ahead`;
     }
 
+    const rawRel = relevanceKind(timing.relevanceNote);
+    /* Road work zones carry multi-month end dates — "Still on" is noise there;
+     * keep relevance for NWS alerts and road closures that actually end soon. */
+    const relevance = item.track === "road" && rawRel === "active" ? null : rawRel;
+    const sameAsLabel = detail && item.label.toLowerCase().includes(detail.toLowerCase());
+
     cards.push({
       id: item.id,
       track: item.track,
-      label: item.label,
+      label: capGlanceLine(item.label, 58),
       severity: item.severity,
       color: timelineItemBandColor(item),
       startMeters: item.startMeters,
       aheadLabel,
       etaLabel,
-      relevance: relevanceKind(timing.relevanceNote),
+      relevance,
       inside: timing.inside,
       alongPct,
       tooltip,
-      detailLine: detail ? squeezeForSummary(detail, 56) : null,
+      detailLine: detail && !sameAsLabel ? capGlanceLine(detail, 68) : null,
     });
   }
 

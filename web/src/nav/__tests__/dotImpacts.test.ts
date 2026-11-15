@@ -105,6 +105,7 @@ describe("buildDotImpacts", () => {
     const out = buildDotImpacts([lane], ROUTE, 0);
     expect(out[0]!.severity).toBe("serious");
     expect(out[0]!.driverAction).toBe("rerouteAvailable");
+    expect(out[0]!.driverHeadline).toBe("I-80 EB · 1 lane closed");
     expect(out[0]!.detail).toContain("1 lane closed");
   });
 

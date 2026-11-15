@@ -130,17 +130,61 @@ const ROAD_EFFECT: Record<DotRoadEvent["kind"], string> = {
   other: "Road condition reported ahead",
 };
 
+function shortDirection(dir: string | null | undefined): string {
+  const d = (dir ?? "").trim().toLowerCase();
+  if (!d || d.includes("/") || d.includes("both")) return "";
+  if (d === "n" || d === "nb" || d.startsWith("north")) return "NB";
+  if (d === "s" || d === "sb" || d.startsWith("south")) return "SB";
+  if (d === "e" || d === "eb" || d.startsWith("east")) return "EB";
+  if (d === "w" || d === "wb" || d.startsWith("west")) return "WB";
+  return "";
+}
+
+function shortRoadPrefix(ev: DotRoadEvent): string {
+  const raw = (ev.roadName ?? "").replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+  const shield = raw.match(/\b(?:I|US|SR|MO|IL|IA|IN|OH|MI|WI|MN|KS|NE|OK|TX|TN|KY|PA|NC|VA|GA|FL|CA|CO|NY|MA)\s*[- ]\s*\d+[A-Z]?\b/i);
+  const road = shield ? shield[0].replace(/\s+/g, "-").toUpperCase() : raw.length <= 22 ? raw : "";
+  if (!road) return "";
+  const dir = shortDirection(ev.direction);
+  if (!dir || new RegExp(`\\b${dir}\\b`, "i").test(road)) return road;
+  return `${road} ${dir}`;
+}
+
+function headlineFor(ev: DotRoadEvent): string {
+  const impact = (ev.vehicleImpact ?? "").toLowerCase();
+  const closedAll = ev.kind === "closure" || impact.includes("all-lanes-closed");
+  const travelClosed =
+    ev.travelLanesClosed != null
+      ? ev.travelLanesClosed
+      : impact.includes("some-lanes-closed")
+        ? ev.lanesClosed
+        : 0;
+
+  let what = HEADLINE_PREFIX[ev.kind];
+  if (closedAll) {
+    what = "Road closed";
+  } else if (ev.kind !== "condition" && travelClosed > 0) {
+    what = travelClosed === 1 ? "1 lane closed" : `${travelClosed} lanes closed`;
+  }
+
+  const road = shortRoadPrefix(ev);
+  const core = road ? `${road} · ${what}` : what;
+  return `${core}${ev.status === "scheduled" ? " (scheduled)" : ""}`;
+}
+
 /**
- * Glanceable row text — effect clause plus the work type when the feed
- * publishes one ("Intersection improvements", "New pavement"). This is the
- * ONLY DOT text list surfaces show; the long publisher/date/lane blob stays
- * in `detail` for the tapped hazard sheet (Bill, 585: rows must be
- * absolutely short — what it is when I get there, not feed metadata).
+ * Glanceable row text — concrete restriction/condition when present, else short
+ * default effect for non-timeline callers. Full publisher/date/lane metadata
+ * stays in `detail` for the tapped hazard sheet.
  */
 function roadEffectFor(ev: DotRoadEvent): string {
+  const restriction = (ev.restrictionsText ?? "").trim();
+  if (restriction && ev.kind !== "condition") return restriction;
   const base = ROAD_EFFECT[ev.kind];
   const wt = (ev.workType ?? "").trim();
-  return wt ? `${base} · ${wt}` : base;
+  if (ev.kind === "condition" && wt) return `${base} · ${wt}`;
+  return base;
 }
 
 function fmtWindow(ev: DotRoadEvent): string {
@@ -239,25 +283,16 @@ export function matchDotEventsToRoute(
     }
     if (bestLat > CORRIDOR_HALF_WIDTH_M || bestAlong < 0) continue;
 
-    const sev = severityFor(ev);
     const banded = minAlong !== Infinity && maxAlong > minAlong;
-    matches.push({
-      id: `dot:${ev.id}`,
-      lngLat: bestLngLat,
-      alongMeters: bestAlong,
-      startMeters: banded ? minAlong : bestAlong,
-      endMeters: banded ? maxAlong : bestAlong,
-      category: categoryFor(ev),
-      severity: sev,
-      driverAction: actionFor(sev, ev.kind),
-      driverHeadline: `${HEADLINE_PREFIX[ev.kind]}${ev.status === "scheduled" ? " (scheduled)" : ""}`,
-      roadEffect: roadEffectFor(ev),
-      detail: detailFor(ev),
-      numericSeverity: DOT_SEVERITY_NUMERIC[sev],
-      hazardOnsetIso: ev.startIso,
-      hazardExpiresIso: ev.endIso,
-      event: ev,
-    });
+    matches.push(
+      matchFromEvent(
+        ev,
+        bestAlong,
+        bestLngLat,
+        banded ? minAlong : bestAlong,
+        banded ? maxAlong : bestAlong
+      )
+    );
   }
 
   const clustered = clusterDotMatches(matches, matchGeom);
@@ -413,7 +448,7 @@ function matchFromEvent(
     category: categoryFor(ev),
     severity: sev,
     driverAction: actionFor(sev, ev.kind),
-    driverHeadline: `${HEADLINE_PREFIX[ev.kind]}${ev.status === "scheduled" ? " (scheduled)" : ""}`,
+    driverHeadline: headlineFor(ev),
     roadEffect: roadEffectFor(ev),
     detail: detailFor(ev),
     numericSeverity: DOT_SEVERITY_NUMERIC[sev],

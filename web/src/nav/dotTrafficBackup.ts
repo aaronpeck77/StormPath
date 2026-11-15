@@ -116,7 +116,7 @@ export function applyDotTrafficBackup(
       imp.detail = `${imp.detail} ${note}`.trim();
     }
     if (b.level === "severe") {
-      imp.roadEffect = `${imp.roadEffect} Backed up ~${fmtBackupMi(b.backedUpMeters)} mi — a bypass may save real time.`.trim();
+      imp.roadEffect = `Backed up ~${fmtBackupMi(b.backedUpMeters)} mi`;
       if (imp.severity === "info" || imp.severity === "caution") {
         imp.severity = "serious";
         imp.numericSeverity = DOT_SEVERITY_NUMERIC.serious;
@@ -125,7 +125,7 @@ export function applyDotTrafficBackup(
         imp.driverAction = "rerouteAvailable";
       }
     } else if (b.level === "heavy") {
-      imp.roadEffect = `${imp.roadEffect} Traffic backed up ~${fmtBackupMi(b.backedUpMeters)} mi.`.trim();
+      imp.roadEffect = `Backed up ~${fmtBackupMi(b.backedUpMeters)} mi`;
     }
   }
 }

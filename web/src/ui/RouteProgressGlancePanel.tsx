@@ -188,9 +188,9 @@ function GlanceCard({ card, scrollRef, selected, isNext = false, onSelect, id }:
       title={card.tooltip}
       aria-current={card.inside ? "true" : undefined}
     >
-      <span className="rpgl__card-accent" style={{ backgroundColor: card.color }} aria-hidden />
       <div className="rpgl__card-body">
         <div className="rpgl__card-head">
+          <span className="rpgl__dot" style={{ backgroundColor: card.color }} aria-hidden />
           <span className={`rpgl__track rpgl__track--${card.track}`}>{TRACK_BADGE[card.track]}</span>
           {onSelect ? (
             <button type="button" className={`rpgl__label rpgl__card-link rpgl__label--${card.severity}`}
@@ -200,21 +200,21 @@ function GlanceCard({ card, scrollRef, selected, isNext = false, onSelect, id }:
             </button>
           ) : <span className={`rpgl__label rpgl__label--${card.severity}`}>{card.label}</span>}
         </div>
-        <p
-          className={`rpgl__ahead${card.inside ? " rpgl__ahead--now" : ""}`}
-          aria-label={`Distance along route: ${card.aheadLabel}`}
-        >
-          {card.aheadLabel}
-        </p>
-        {card.detailLine ? <p className="rpgl__detail">{card.detailLine}</p> : null}
-        <div className="rpgl__chips" aria-hidden>
-          {card.etaLabel ? <span className="rpgl__chip rpgl__chip--eta">{card.etaLabel}</span> : null}
+        <div className="rpgl__meta">
+          <span
+            className={`rpgl__ahead${card.inside ? " rpgl__ahead--now" : ""}`}
+            aria-label={`Distance along route: ${card.aheadLabel}`}
+          >
+            {card.aheadLabel}
+          </span>
+          {card.etaLabel ? <span className="rpgl__eta" aria-hidden>· {card.etaLabel}</span> : null}
           {card.relevance ? (
-            <span className={`rpgl__chip rpgl__chip--rel rpgl__chip--rel-${card.relevance}`}>
+            <span className={`rpgl__chip rpgl__chip--rel rpgl__chip--rel-${card.relevance}`} aria-hidden>
               {RELEVANCE_LABEL[card.relevance]}
             </span>
           ) : null}
         </div>
+        {card.detailLine ? <p className="rpgl__detail">{card.detailLine}</p> : null}
       </div>
     </div>
   );
@@ -246,9 +246,11 @@ function FallbackCard({
       title={item.tooltip}
       aria-current={inside ? "true" : undefined}
     >
-      <span className="rpgl__card-accent" style={{ backgroundColor: item.color }} aria-hidden />
       <div className="rpgl__card-body">
-        <span className="rpgl__label">{shortTitle}</span>
+        <div className="rpgl__card-head">
+          <span className="rpgl__dot" style={{ backgroundColor: item.color }} aria-hidden />
+          <span className="rpgl__label">{shortTitle}</span>
+        </div>
         {item.summary ? <p className="rpgl__detail">{item.summary}</p> : null}
         <div className="rpgl__chips" aria-hidden>
           <span className="rpgl__chip rpgl__chip--dist">{item.alongPct}%</span>

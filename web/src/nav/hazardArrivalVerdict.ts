@@ -1,5 +1,6 @@
 import {
   formatRouteAlertTiming,
+  fmtMi,
   fmtMin,
   ROUTE_ALERT_RELEVANCE_DEVELOPING,
   ROUTE_ALERT_RELEVANCE_ENDING_AROUND,
@@ -370,7 +371,6 @@ export function applyArrivalVerdictsToImpacts(opts: ApplyArrivalVerdictsOpts): R
       arrivalVerdictLine: verdict.line,
       suppressFromDriveMap: verdict.suppressFromDriveMap,
       suppressFromProgressStrip: verdict.suppressFromProgressStrip,
-      driverHeadline: headlineWithArrivalVerdict(impact.driverHeadline, verdict.line),
       driverAction,
     };
   });
@@ -410,9 +410,11 @@ export function pickNextHazardAffectingYou(impacts: RouteImpact[]): NextHazardAf
   }
 
   if (!best) return null;
+  const ahead = best.distanceAheadMeters ?? 0;
+  const distNote = ahead > 0 ? ` · ${fmtMi(ahead)} ahead` : "";
   return {
     impact: best,
-    headline: best.driverHeadline,
+    headline: `${best.driverHeadline}${distNote}`,
   };
 }
 

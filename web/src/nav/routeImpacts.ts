@@ -535,16 +535,16 @@ function buildMapboxIncidentImpacts(opts: {
         : inc.lanesBlocked?.length
           ? `${inc.lanesBlocked.join(", ")} blocked`
           : "";
-    const roads = inc.affectedRoadNames?.filter(Boolean).join(", ");
-    const roadLocation = roads ? `on ${roads}` : "";
+    const roads = inc.affectedRoadNames?.filter(Boolean).slice(0, 2).join(", ");
     const headline = incidentDriverHeadline(inc, blocks);
 
     let action: RouteImpactAction = "slow";
     if (severity === "avoid" || blocks) action = "rerouteRecommended";
     else if (severity === "serious") action = "rerouteAvailable";
 
-    const effectBody = laneNote || displayText(inc.longDescription || inc.description);
-    const roadEffect = [roadLocation, effectBody].filter(Boolean).join(" · ");
+    /* Keep list/glance copy to a concrete lane count only — the verbose exit-to-exit
+     * TMC description stays in `detail` for the tap-to-open sheet. */
+    const roadEffect = laneNote || (roads && !headline.toLowerCase().includes(roads.toLowerCase()) ? `on ${roads}` : "");
 
     out.push({
       id: `mapbox-incident-${i}-${inc.type}`,
@@ -597,8 +597,11 @@ function isVagueIncident(text: string): boolean {
 }
 
 function causePhrase(description: string, kind: string): string {
-  const text = firstSentence(displayText(description));
+  const firstClause = displayText(description).split(/\s+—\s+/)[0] ?? "";
+  const text = firstSentence(firstClause);
   if (!text || isVagueIncident(text)) return "";
+  /* Drop verbose TMC exit-range sentences from headlines — full text lives in detail. */
+  if (text.length > 52 || /\bbetween\s+exits?\b/i.test(text)) return "";
   const kindCore = kind
     .toLowerCase()
     .replace(/\s+ahead$/, "")
