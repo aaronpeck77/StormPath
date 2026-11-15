@@ -35,7 +35,7 @@ Travel-IQ + keyless sections.
 
 ---
 
-## ✅ LIVE (27 feeds producing events)
+## ✅ LIVE (30 states/jurisdictions, ~40 feed sources)
 
 | State | Feed(s) | Coverage note |
 |---|---|---|
@@ -45,8 +45,13 @@ Travel-IQ + keyless sections.
 | Maryland | `mdot` + **MD winter conditions** | Statewide WZDx + CHART winter/ice/snow incident & closure reports (keyless JSON export). |
 | Ohio | `ohio` | OHGO — keyed, live. |
 | Texas | `austin` + `txdot_v4_2` | **Statewide live** — DriveTexas key landed 2026-11-10 (~1,800 events). Austin city feed also flows. Road codes decoded (`IH0030`→`I-30`, `BU0059G`→`Business US-59 G`). |
-| Arizona | `mcdot` | Maricopa County — Phoenix metro only, not statewide. |
-| Wisconsin | `wisdot` | Statewide. |
+| **Utah** | `ibi-ut` | **NEW 2026-11-15** — UDOT 511 (IBI platform, keyless): ~88 events — construction, incidents, closures w/ lane + detour text. First UT coverage. |
+| **Wisconsin** | `wisdot` + `ibi-wi` | Statewide WZDx construction **+ IBI closures/incidents** — the 511 Closures list carries ~100 real full-closure events (ramp/mainline/local-road w/ detours) that WZDx doesn't publish. IBI Construction skipped (same work zones mirrored). |
+| **Alaska** | `ibi-ak` | **NEW 2026-11-15** — 511.alaska.gov (IBI, keyless): ~141 events — construction, incidents, closures. First AK coverage. |
+| **Georgia** | `ibi-ga` | **NEW 2026-11-15** — 511ga (IBI, keyless): ~99 events — construction, incidents, closures. Completes I-75/I-85 south corridor. No key needed after all. |
+| Arizona | `mcdot` + `ibi-az` | Maricopa County WZDx (Phoenix metro) **+ ADOT 511 statewide** (IBI, keyless): ~178 events — construction, incidents, closures. Metro work zones may appear twice (different publishers, same state) — rural AZ is net-new. |
+| **Idaho** | `iddot` + `ibi-id` | Statewide WZDx construction + IBI incidents (thin — 1 event; ID has no Closures endpoint). IBI Construction skipped (mirrored). |
+| **Nevada** | `ibi-nv` | **NEW 2026-11-15** — 511.nv.gov (IBI, keyless): ~83 events — construction, incidents, closures. First NV coverage. |
 | Indiana | `indot` | Statewide. |
 | Kansas | `kansas` | Statewide. |
 | Kentucky | `kytc` | Statewide. |
@@ -56,13 +61,12 @@ Travel-IQ + keyless sections.
 | New Jersey | `njdot` | Statewide. |
 | Oklahoma | `odot` | Statewide. |
 | Washington | `wsdot` | Statewide. |
-| Idaho | `iddot` | Statewide. |
 | Hawaii | `hidot` | Statewide. |
 | Delaware | `dedot` | Statewide (thin — 3 events). |
 | North Dakota | `nddot` | Statewide. |
 | South Dakota | `sddot` | Statewide. |
 | New Hampshire + Vermont + Maine | `necdot` | One regional New England feed covers all three. |
-| Florida | `fdot` | Partial — see "Dead/empty" for the second FL feed. |
+| Florida | `fdot` + `ibi-fl` | Partial WZDx **+ FL 511 incidents/closures** (IBI, keyless — Construction skipped as mirrored). |
 | Canada (QC) | `quebec` | Provincial feed — bonus coverage, not a state. |
 
 ## 🔑 KEYED — plumbing ready, just needs the secret
@@ -84,6 +88,26 @@ Set with `wrangler secret put <NAME>` then hit `/refresh`.
 | 10 | Pennsylvania | `ptc` | `PENNSTURNPIKE_API_KEY` | `?api_key=` | PA Turnpike only — toll roads. PA's regular DOT feed isn't in the registry. |
 | ~~—~~ | ~~National (NPS)~~ | `nps` | `NPS_API_KEY` | `?api_key=` | ✅ **LIVE 2026-11-10** — park road events verified. |
 
+### IBI/CARS 511 platform family (added 2026-11-15)
+
+`prod-*.ibi511.com` hosts share one platform — public DataTables list feeds
+(`/List/GetData/{Construction,Incidents,Closures}`) + bulk point geometry
+(`/map/mapIcons/{layerName}`), **no API key**. One adapter in
+`cloudflare/dot-feeds/src/index.ts` (`IBI_HOSTS`) covers every deployment;
+adding a state = one config line after verifying its endpoints live.
+
+Live hosts: UT, WI, AK, GA, AZ, ID, NV, FL. Gotchas found while probing:
+`prod-ne` is the *Northeast* region (NH/VT/ME — already covered by
+`necdot` WZDx, skipped), LA's hostname doesn't resolve, NY 503s (different
+platform — 511ny.org needs its own survey), CT's feed is empty and
+license-restricted. Hosts without a collection 500 on that endpoint —
+treated as "collection missing," not an outage. WI/ID/FL skip the
+Construction collection because their existing feeds already carry the
+same work zones; their IBI Closures lists still add real full-closure
+events WZDx lacks. Geometry is point-only (map icons) —
+`/map/data/{layer}/{id}` has encoded polylines if line geometry is ever
+wanted.
+
 ## 🛠 CUSTOM — non-WZDx, needs a per-state adapter
 
 These states publish road-event data but not in WZDx format. Each needs a
@@ -92,10 +116,10 @@ catalog: the "TARDIS 511" community project maps every state's feed type.
 
 | Order | State | Feed type | Effort | Notes |
 |---|---|---|---|---|
-| 1 | **Georgia** | 511GA developer REST API — clean JSON, free instant key | Small | `511ga.org/api/v2/get/event?key=&format=json` — roadwork/closures/incidents w/ lat-lng, lanes, severity, dates. Best effort-to-value on the list; completes I-75/I-85 south corridor. |
-| 2 | **Utah** | UDOT on IBI 511 platform (`prod-ut.ibi511.com`) | Medium | Unofficial JSON endpoints (List/GetData) — scrapable, other projects already do it. Could generalize to other IBI states later. |
+| ~~1~~ | ~~**Georgia**~~ | ~~511GA developer REST API~~ | — | ✅ **LIVE 2026-11-15 via `ibi-ga`** — the IBI adapter covered GA keyless before the 511GA key was ever needed. |
+| ~~2~~ | ~~**Utah**~~ | ~~UDOT on IBI 511 platform~~ | — | ✅ **LIVE 2026-11-15 via `ibi-ut`** — the IBI adapter generalized exactly as predicted; 6 more IBI states came along (WI/AK/GA/AZ/ID/NV). |
 | 3 | Indiana/Iowa/etc. deep-dives | Castle Rock / CARS XML | Medium | Already have WZDx for these states — only if we want incident data beyond work zones. |
-| 4 | Remaining TARDIS states (AL, NV, RI, WV, WY, etc.) | Mixed: Google-fed, ArcGIS, XML | Medium–Large each | Needs a per-state survey pass — formats vary wildly, several have "free key, no license" gray-area terms. |
+| 4 | Remaining TARDIS states (AL, RI, WV, WY, etc.) | Mixed: Google-fed, ArcGIS, XML | Medium–Large each | Needs a per-state survey pass — formats vary wildly, several have "free key, no license" gray-area terms. NV came online via IBI 2026-11-15. |
 
 ## ⛔ BLOCKED / PROBABLY NOT
 
@@ -103,9 +127,9 @@ catalog: the "TARDIS 511" community project maps every state's feed type.
 |---|---|
 | Connecticut | CTroads license **forbids commercial use**. CARS events are public-domain — partial coverage possible via that feed only; verify before building. |
 | Arkansas | Data license **bans advertising** with it — conflicts with the ad-supported Basic tier. Would need Plus-only gating or a license conversation. |
-| Alaska | Barely digital — WMS / non-geospatial XML. Highest effort, lowest value (few roads, few users). |
-| New York | `nysdot` registry feed returns a JS app shell, not data — endpoint moved or never was a feed. Needs investigation; NY has a real 511 system so data exists somewhere. |
-| States with no feed at all | AL, AK, AR, GA*, NV, RI, UT*, WV, WY, CT — *GA/UT have non-WZDx feeds (CUSTOM tier). The rest need the per-state survey to confirm what exists. |
+| ~~Alaska~~ | ✅ **LIVE 2026-11-15 via `ibi-ak`** — the IBI 511 platform had a proper JSON API after all; the "barely digital" assessment was wrong. |
+| New York | `nysdot` registry feed returns a JS app shell, not data — endpoint moved or never was a feed. Needs investigation; NY has a real 511 system so data exists somewhere. `prod-ny.ibi511.com` 503s — NY's 511 (511ny.org) is a different platform, needs its own survey. |
+| States with no feed at all | AL, AR, CT, RI, WV, WY — GA/AK/NV/UT came online via the IBI adapter 2026-11-15. The rest need the per-state survey to confirm what exists. |
 
 ## Dead / empty registered feeds (open, produce zero)
 

@@ -790,6 +790,270 @@ function normalizeMdChartWinter(event: Record<string, unknown>): DotEvent | null
   };
 }
 
+/* ── IBI/CARS 511 hosts ────────────────────────────────────────────────────
+ * prod-*.ibi511.com deployments share one platform: a public DataTables list
+ * feed (/List/GetData/{collection}) plus bulk point geometry
+ * (/map/mapIcons/{layerName}) — no API key. Verified keyless 2026-11: UT, WI,
+ * AK, GA, AZ, ID, NV, FL. Gotchas found while probing: prod-ne is the
+ * *Northeast* region (NH/VT/ME — already covered by necdot WZDx, skipped),
+ * LA's hostname doesn't resolve, NY 503s, CT's feed is empty and
+ * license-restricted. */
+const IBI_HOSTS: {
+  host: string;
+  state: string;
+  publisher: string;
+  tag: string;
+  /** Collections to skip — WI/ID already have rich WZDx construction feeds
+   *  (wisdot/iddot); their IBI Construction lists are the same work zones
+   *  mirrored, so we keep only the incidents/closures WZDx lacks. */
+  skip?: string[];
+}[] = [
+  { host: "prod-ut.ibi511.com", state: "utah", publisher: "Utah DOT 511", tag: "ut" },
+  { host: "prod-wi.ibi511.com", state: "wisconsin", publisher: "Wisconsin DOT 511", tag: "wi", skip: ["Construction"] },
+  { host: "prod-ak.ibi511.com", state: "alaska", publisher: "Alaska DOT 511", tag: "ak" },
+  { host: "prod-ga.ibi511.com", state: "georgia", publisher: "Georgia DOT 511", tag: "ga" },
+  { host: "prod-az.ibi511.com", state: "arizona", publisher: "Arizona DOT 511", tag: "az" },
+  { host: "prod-id.ibi511.com", state: "idaho", publisher: "Idaho DOT 511", tag: "id", skip: ["Construction"] },
+  { host: "prod-nv.ibi511.com", state: "nevada", publisher: "Nevada DOT 511", tag: "nv" },
+  /* FL's fdot WZDx feed is partial — IBI adds incidents + closures; its
+   * Construction list mirrors the same work zones, so it's skipped. */
+  { host: "prod-fl.ibi511.com", state: "florida", publisher: "Florida DOT 511", tag: "fl", skip: ["Construction"] },
+];
+const IBI_COLLECTIONS = ["Construction", "Incidents", "Closures"] as const;
+const IBI_PAGE = 1000;
+const IBI_MAX_PAGES = 10;
+
+/** Paged DataTables list feed. Empty body = empty collection (not an error);
+ * non-JSON body = host shell/ outage (NY's 503) → throw so it shows as failed. */
+async function fetchIbiList(
+  host: string,
+  collection: string
+): Promise<Record<string, unknown>[]> {
+  const base = host.startsWith("http") ? host : `https://${host}`;
+  const out: Record<string, unknown>[] = [];
+  for (let page = 0; page < IBI_MAX_PAGES; page++) {
+    const body = new URLSearchParams({
+      start: String(page * IBI_PAGE),
+      length: String(IBI_PAGE),
+    });
+    const res = await fetch(`${base}/List/GetData/${collection}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Requested-With": "XMLHttpRequest",
+        "User-Agent": "StormPath-DOT-Feeds/1.0 (+https://stormpath.app)",
+      },
+      body,
+      signal: AbortSignal.timeout(FEED_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    if (text.length > 8_000_000) throw new Error("list feed too large");
+    if (!text.trim()) return out;
+    const trimmed = text.trimStart();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("["))
+      throw new Error("non-JSON response (host shell?)");
+    const j = JSON.parse(text) as {
+      data?: unknown;
+      recordsFiltered?: number;
+      recordsTotal?: number;
+    };
+    const data = asArray<Record<string, unknown>>(j.data);
+    out.push(...data);
+    const total = Number(j.recordsFiltered ?? j.recordsTotal ?? data.length);
+    if (data.length < IBI_PAGE || out.length >= total) break;
+  }
+  return out;
+}
+
+/** Bulk point geometry: {item2:[{itemId, location:[lat,lng]}]} keyed by record id. */
+async function fetchIbiIcons(
+  host: string,
+  layer: string
+): Promise<Map<string, [number, number]>> {
+  const map = new Map<string, [number, number]>();
+  const base = host.startsWith("http") ? host : `https://${host}`;
+  const j = (await fetchJson(`${base}/map/mapIcons/${layer}`, FEED_TIMEOUT_MS)) as {
+    item2?: { itemId?: unknown; location?: unknown }[];
+  };
+  for (const it of asArray(j.item2)) {
+    const loc = it.location;
+    if (!Array.isArray(loc) || loc.length < 2) continue;
+    const lat = Number(loc[0]);
+    const lng = Number(loc[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
+    map.set(String(it.itemId), [lng, lat]);
+  }
+  return map;
+}
+
+/** "3/17/25, 12:00 AM" → epoch ms (2-digit years are 20xx). */
+function parseIbiDate(raw: string): number | null {
+  const m = raw.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})[,\s]+(\d{1,2}):(\d{2})(?::\d{2})?\s*([AP]M)?/i);
+  if (!m) return null;
+  let year = Number(m[3]);
+  if (year < 100) year += 2000;
+  let hour = Number(m[4]) % 24;
+  const ap = m[6]?.toUpperCase();
+  if (ap === "PM" && hour < 12) hour += 12;
+  if (ap === "AM" && hour === 12) hour = 0;
+  const ms = Date.UTC(year, Number(m[1]) - 1, Number(m[2]), hour, Number(m[5]));
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function stripIbiHtml(s: string): string {
+  return s
+    .replace(/<br\s*\/?>/gi, " · ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const IBI_DIRECTION: Record<string, string> = {
+  northbound: "NB", southbound: "SB", eastbound: "EB", westbound: "WB",
+  nb: "NB", sb: "SB", eb: "EB", wb: "WB",
+};
+
+/** laneDescription → {vehicleImpact slug, lanesClosed}. "All lanes closed."
+ * is the avoid signal; a bare count is serious via some-lanes-closed. */
+function ibiLaneImpact(lane: string, isFullClosure: boolean): {
+  impact: string | null;
+  lanesClosed: number;
+} {
+  const t = lane.toLowerCase();
+  if (/all lanes|both directions|full closure/.test(t) || (isFullClosure && /closed/.test(t)))
+    return { impact: "all-lanes-closed", lanesClosed: 0 };
+  const n = lane.match(/(\d+)\s*lane/i);
+  if (n) return { impact: "some-lanes-closed", lanesClosed: Number(n[1]) };
+  if (isFullClosure) return { impact: "all-lanes-closed", lanesClosed: 0 };
+  if (/closed|restriction/.test(t)) return { impact: "some-lanes-closed", lanesClosed: 0 };
+  return { impact: null, lanesClosed: 0 };
+}
+
+const IBI_KIND: Record<string, DotEvent["kind"]> = {
+  Construction: "construction",
+  Incidents: "incident",
+  Closures: "closure",
+};
+
+function normalizeIbiRecord(
+  rec: Record<string, unknown>,
+  coord: [number, number],
+  cfg: { state: string; publisher: string; tag: string; collection?: string }
+): DotEvent | null {
+  /* layerName is finer-grained than the collection ("ConstructionClosures",
+   * "IncidentClosures") — resolve kind from it, falling back to the list
+   * endpoint the record came from. A full closure is always kind=closure so
+   * it gets avoid severity; partial closure-layers stay construction/other
+   * so a single closed lane doesn't false-alarm as a road closure. */
+  const layer = str(rec.layerName) || str(rec.type) || cfg.collection || "";
+  const kind: DotEvent["kind"] =
+    rec.isFullClosure === true
+      ? "closure"
+      : /incident/i.test(layer)
+        ? "incident"
+        : /construction/i.test(layer)
+          ? "construction"
+          : /closure/i.test(layer)
+            ? "other"
+            : (IBI_KIND[cfg.collection ?? ""] ?? "other");
+  const roadName = prettifyRoadName(str(rec.roadwayName)).replace(
+    /^(US|SR|SH|FM|CR|IH) (\d+[A-Z]?)$/i,
+    "$1-$2"
+  );
+  const dirRaw = str(rec.direction);
+  const direction = IBI_DIRECTION[dirRaw.toLowerCase()] ?? null;
+  const desc = stripIbiHtml(str(rec.description));
+  const laneDesc = stripIbiHtml(str(rec.laneDescription));
+  const { impact, lanesClosed } = ibiLaneImpact(laneDesc, rec.isFullClosure === true);
+  const startMs = parseIbiDate(str(rec.startDate));
+  const endMs = parseIbiDate(str(rec.endDate));
+  const updMs = parseIbiDate(str(rec.lastUpdated));
+  const point: [number, number] = coord;
+  const id = str(rec.id);
+
+  return {
+    id: `ibi-${cfg.tag}:${layer || cfg.collection || "event"}:${id || `${point[0]},${point[1]}`}`,
+    state: cfg.state,
+    publisher: cfg.publisher,
+    kind,
+    status: startMs != null && startMs > Date.now() ? "scheduled" : "active",
+    title: roadName || (kind === "construction" ? "Road work" : "Road event"),
+    roadName,
+    direction,
+    description:
+      desc.slice(0, 500) +
+      (laneDesc && !desc.toLowerCase().includes(laneDesc.toLowerCase())
+        ? ` · ${laneDesc.slice(0, 120)}`
+        : ""),
+    restrictionsText: null,
+    lanesClosed,
+    travelLanesClosed: lanesClosed > 0 ? lanesClosed : null,
+    laneSummary: laneDesc || null,
+    workType: str(rec.eventSubType) || null,
+    vehicleImpact: impact,
+    startIso: startMs != null ? new Date(startMs).toISOString() : null,
+    endIso: endMs != null ? new Date(endMs).toISOString() : null,
+    updatedIso: updMs != null ? new Date(updMs).toISOString() : null,
+    point,
+    bbox: [point[0], point[1], point[0], point[1]],
+    geometry: { type: "Point", coordinates: point },
+  };
+}
+
+/** One IBI host → all mappable Construction/Incidents/Closures events.
+ *  Hosts without a given collection 500 on that endpoint (UT/GA/ID have no
+ *  Closures list) — that's a missing collection, not a host outage, so a
+ *  collection-level HTTP failure is skipped. Only when EVERY collection
+ *  fails do we call the host down. */
+async function fetchIbiHostEvents(cfg: {
+  host: string;
+  state: string;
+  publisher: string;
+  tag: string;
+  skip?: string[];
+}): Promise<DotEvent[]> {
+  const events: DotEvent[] = [];
+  let firstError: unknown = null;
+  let okCollections = 0;
+  for (const collection of IBI_COLLECTIONS) {
+    if (cfg.skip?.includes(collection)) continue;
+    let records: Record<string, unknown>[];
+    try {
+      records = await fetchIbiList(cfg.host, collection);
+      okCollections += 1;
+    } catch (err) {
+      firstError ??= err;
+      console.warn(`[dot-feeds] ibi ${cfg.tag}/${collection} skipped:`, err);
+      continue;
+    }
+    if (!records.length) continue;
+    /* Geometry is keyed by layerName, which can differ from the collection
+     * name (WI's "Closures" list carries layerName "ConstructionClosures"). */
+    const layerNames = [...new Set(records.map((r) => str(r.layerName)).filter(Boolean))];
+    const iconMaps = new Map<string, Map<string, [number, number]>>();
+    for (const layer of layerNames) {
+      try {
+        iconMaps.set(layer, await fetchIbiIcons(cfg.host, layer));
+      } catch {
+        /* icon layer missing on this host — records just won't paint */
+      }
+    }
+    for (const rec of records) {
+      const layer = str(rec.layerName);
+      const coord = iconMaps.get(layer)?.get(String(rec.id));
+      if (!coord) continue;
+      const ev = normalizeIbiRecord(rec, coord, { ...cfg, collection });
+      if (ev) events.push(ev);
+    }
+  }
+  if (okCollections === 0 && firstError) throw firstError;
+  return events;
+}
+
 const CUSTOM_FEEDS: CustomFeed[] = [
   {
     name: "ilwinter",
@@ -921,6 +1185,35 @@ export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
       const error = err instanceof Error ? err.message : String(err);
       console.warn(`[dot-feeds] custom feed failed: ${feed.name}`, err);
       feedStatus.push({ name: feed.name, source: "custom", state: "failed", events: 0, error });
+    }
+  }
+
+  /* IBI/CARS 511 hosts — one adapter covers every prod-*.ibi511.com
+   * deployment (list feed + bulk mapIcons, no key). A host failure is
+   * isolated per state like the custom feeds above. */
+  for (const host of IBI_HOSTS) {
+    const before = events.length;
+    try {
+      const hostEvents = await fetchIbiHostEvents(host);
+      for (const s of stateNamesOf(host.state)) coveredStates.add(s);
+      events.push(...hostEvents);
+      feedStatus.push({
+        name: `ibi-${host.tag}`,
+        source: "custom",
+        state: "ok",
+        events: events.length - before,
+      });
+    } catch (err) {
+      failed += 1;
+      const error = err instanceof Error ? err.message : String(err);
+      console.warn(`[dot-feeds] IBI host failed: ${host.host}`, err);
+      feedStatus.push({
+        name: `ibi-${host.tag}`,
+        source: "custom",
+        state: "failed",
+        events: 0,
+        error,
+      });
     }
   }
 
