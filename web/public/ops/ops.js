@@ -14,6 +14,10 @@ const SECRET_KEY = "stormpath.ops.secret";
       const app = document.getElementById("app");
       const secretInput = document.getElementById("secretInput");
       const lockBtn = document.getElementById("lockBtn");
+      const refreshBtn = document.getElementById("refreshBtn");
+      let currentSecret = "";
+      let refreshTimer = null;
+      let refreshing = false;
 
       function todayUTC() {
         return new Date().toISOString().slice(0, 10);
@@ -480,9 +484,10 @@ const SECRET_KEY = "stormpath.ops.secret";
               return `<path class="dotcov-state${isLive ? " dotcov-state--live" : ""}" d="${d}" data-code="${code}"><title>${name}${isLive ? " — live DOT feed" : " — no feed"}</title></path>`;
             })
             .join("");
-        } catch {
+        } catch (e) {
+          const msg = String(e?.message || e || "fetch failed").replace(/</g, "&lt;");
           mapEl.innerHTML =
-            '<text x="20" y="30" fill="#94a3b8" font-size="14">coverage map unavailable</text>';
+            `<text x="20" y="30" fill="#94a3b8" font-size="14">coverage map unavailable — ${msg}</text>`;
         }
       }
 
@@ -703,10 +708,37 @@ const SECRET_KEY = "stormpath.ops.secret";
         }
       }
 
+      /* Auto-refresh: re-render every 2 min while the tab is visible. The
+       * DOT snapshot itself rebuilds every 12 min, so faster polling would
+       * just re-read the same data. */
+      async function refreshApp() {
+        if (refreshing || document.hidden || !app.classList.contains("show"))
+          return;
+        refreshing = true;
+        try {
+          await renderApp(currentSecret);
+        } finally {
+          refreshing = false;
+        }
+      }
+
+      function startAutoRefresh() {
+        stopAutoRefresh();
+        refreshTimer = setInterval(refreshApp, 120_000);
+      }
+
+      function stopAutoRefresh() {
+        if (refreshTimer != null) clearInterval(refreshTimer);
+        refreshTimer = null;
+      }
+
       function unlock(secret) {
         if (secret) sessionStorage.setItem(SECRET_KEY, secret);
         else sessionStorage.removeItem(SECRET_KEY);
-        return renderApp(secret || "");
+        currentSecret = secret || "";
+        refreshBtn.hidden = false;
+        startAutoRefresh();
+        return renderApp(currentSecret);
       }
 
       document
@@ -748,9 +780,15 @@ const SECRET_KEY = "stormpath.ops.secret";
       });
       lockBtn.addEventListener("click", () => {
         sessionStorage.removeItem(SECRET_KEY);
+        currentSecret = "";
+        stopAutoRefresh();
+        refreshBtn.hidden = true;
         app.classList.remove("show");
         gate.classList.remove("hidden");
         lockBtn.hidden = true;
+      });
+      refreshBtn.addEventListener("click", () => {
+        void refreshApp();
       });
 
       function opsUsagePostEndpoints() {
