@@ -1054,6 +1054,239 @@ async function fetchIbiHostEvents(cfg: {
   return events;
 }
 
+/* ── Utah DOT 511 driving conditions ────────────────────────────────────────
+ * prod-ut's DrivingConditions list: named route segments × eight 3-hour
+ * forecast windows (0–3h … 21–24h) with Condition (Green/Yellow/Red) +
+ * ConditionReason (Dry/Wet/Patchy ice/…). Keyless. Only prod-ut deploys
+ * this collection — every other IBI host 500s on it (probed 2026-11-15).
+ * Green windows are baseline and skipped entirely (no geometry fetch);
+ * contiguous non-Green runs become kind:"condition" events carrying the
+ * segment's real LINESTRING geometry from /map/data/DrivingConditions/{id}
+ * (WKT, EPSG:4326, lng-lat order). This is the forecast counterpart to the
+ * plow-report condition feeds — "patchy ice on SR-190 in the next 6h". */
+const UT_DC_HOST = "prod-ut.ibi511.com";
+const UT_DC_COLLECTION = "DrivingConditions";
+
+interface UtDcWindow {
+  startH: number;
+  endH: number;
+  condition: string;
+  reason: string;
+}
+
+function utDcWindows(rec: Record<string, unknown>): UtDcWindow[] {
+  const out: UtDcWindow[] = [];
+  for (const key of Object.keys(rec)) {
+    const km = /^timeframe_(\d+)-(\d+)$/.exec(key);
+    if (!km) continue;
+    try {
+      const t = JSON.parse(str(rec[key])) as {
+        Condition?: unknown;
+        ConditionReason?: unknown;
+      };
+      out.push({
+        startH: Number(km[1]),
+        endH: Number(km[2]),
+        condition: str(t.Condition),
+        reason: str(t.ConditionReason),
+      });
+    } catch {
+      /* malformed timeframe JSON — skip that window */
+    }
+  }
+  return out.sort((a, b) => a.startH - b.startH);
+}
+
+/** WKT → GeoJSON. Handles the shapes IBI emits: POINT, LINESTRING,
+ *  MULTIPOINT, MULTILINESTRING, POLYGON, MULTIPOLYGON (lng-lat order,
+ *  optional Z ordinate ignored). */
+function wktToGeoJson(wkt: string): GeoJSON.Geometry | null {
+  const m = /^\s*(POINT|LINESTRING|POLYGON|MULTIPOINT|MULTILINESTRING|MULTIPOLYGON)\s+(.+)$/is.exec(
+    wkt.trim()
+  );
+  if (!m) return null;
+  const kind = m[1].toUpperCase();
+  const body = m[2].trim();
+  const pairs = (s: string): [number, number][] =>
+    s
+      .split(",")
+      .map((p) => {
+        const n = p.trim().split(/\s+/).slice(0, 2).map(Number);
+        return n.length === 2 && Number.isFinite(n[0]) && Number.isFinite(n[1])
+          ? ([n[0], n[1]] as [number, number])
+          : null;
+      })
+      .filter((c): c is [number, number] => c != null);
+  const splitTop = (s: string): string[] => {
+    const out: string[] = [];
+    let depth = 0;
+    let cur = "";
+    for (const ch of s) {
+      if (ch === "(") depth++;
+      else if (ch === ")") depth--;
+      if (ch === "," && depth === 0) {
+        out.push(cur);
+        cur = "";
+      } else cur += ch;
+    }
+    if (cur.trim()) out.push(cur);
+    return out;
+  };
+  const strip = (s: string) => s.replace(/^\(+|\)+$/g, "").trim();
+  switch (kind) {
+    case "POINT": {
+      const c = pairs(strip(body))[0];
+      return c ? { type: "Point", coordinates: c } : null;
+    }
+    case "LINESTRING": {
+      const c = pairs(strip(body));
+      return c.length >= 2 ? { type: "LineString", coordinates: c } : null;
+    }
+    case "MULTIPOINT": {
+      const c = splitTop(strip(body))
+        .map((p) => pairs(strip(p))[0])
+        .filter((p): p is [number, number] => p != null);
+      return c.length ? { type: "MultiPoint", coordinates: c } : null;
+    }
+    case "MULTILINESTRING": {
+      const lines = splitTop(strip(body))
+        .map((l) => pairs(strip(l)))
+        .filter((l) => l.length >= 2);
+      return lines.length ? { type: "MultiLineString", coordinates: lines } : null;
+    }
+    case "POLYGON": {
+      const rings = splitTop(strip(body))
+        .map((r) => pairs(strip(r)))
+        .filter((r) => r.length >= 4);
+      return rings.length ? { type: "Polygon", coordinates: rings } : null;
+    }
+    case "MULTIPOLYGON": {
+      const polys = splitTop(strip(body))
+        .map((p) =>
+          splitTop(strip(p))
+            .map((r) => pairs(strip(r)))
+            .filter((r) => r.length >= 4)
+        )
+        .filter((p) => p.length > 0);
+      return polys.length ? { type: "MultiPolygon", coordinates: polys } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+interface UtDcShape {
+  geometry: GeoJSON.Geometry | null;
+  /** Issuance time (UTC ms) — the anchor the timeframe windows count from. */
+  baseMs: number | null;
+  updatedIso: string | null;
+}
+
+async function fetchUtDcShape(id: string): Promise<UtDcShape | null> {
+  const base = `https://${UT_DC_HOST}`;
+  const j = (await fetchJson(`${base}/map/data/${UT_DC_COLLECTION}/${id}`, FEED_TIMEOUT_MS)) as {
+    lastUpdated?: unknown;
+    shape?: unknown;
+  };
+  const geography = asRecord(asRecord(j.shape).geography);
+  const wkt = str(geography.wellKnownText);
+  const geometry = wkt ? wktToGeoJson(wkt) : null;
+  if (!geometry) return null;
+  const updMs = Date.parse(str(j.lastUpdated));
+  return {
+    geometry,
+    baseMs: Number.isFinite(updMs) ? updMs : null,
+    updatedIso: Number.isFinite(updMs) ? new Date(updMs).toISOString() : null,
+  };
+}
+
+function normalizeUtDcRun(
+  rec: Record<string, unknown>,
+  run: { startH: number; endH: number; reasons: string[] },
+  shape: UtDcShape
+): DotEvent | null {
+  const geo = eventGeo(shape.geometry);
+  if (!geo) return null;
+  const name = str(rec.name);
+  const roadName = (name.match(/^([A-Za-z]{1,4}-?\d+[A-Za-z]?)/)?.[1] ?? "").replace(
+    /\s+/g,
+    ""
+  );
+  const reasonLabel = run.reasons.filter(Boolean).join(" / ") || "Poor conditions";
+  const windowText =
+    run.startH <= 0 ? `next ${run.endH} hours` : `in ${run.startH}–${run.endH} hours`;
+  /* Windows count from issuance — absolute bounds when the feed's
+   * lastUpdated parsed; nulls when it didn't (app shows no dates then). */
+  const startIso =
+    shape.baseMs != null ? new Date(shape.baseMs + run.startH * 3_600_000).toISOString() : null;
+  const endIso =
+    shape.baseMs != null ? new Date(shape.baseMs + run.endH * 3_600_000).toISOString() : null;
+  const id = str(rec.id) || str(rec.DT_RowId);
+
+  return {
+    id: `utdc:${id}:${run.startH}-${run.endH}`,
+    state: "utah",
+    publisher: "Utah DOT 511",
+    kind: "condition",
+    status: "active",
+    title: name || "Road condition forecast",
+    roadName,
+    direction: null,
+    description: `${reasonLabel} forecast ${windowText} — Utah DOT 511 driving conditions`,
+    restrictionsText: null,
+    lanesClosed: 0,
+    travelLanesClosed: null,
+    laneSummary: null,
+    workType: reasonLabel,
+    /* vehicleImpact slug drives app severity — keep the feed's own words
+     * ("patchy-ice", "snow-covered") so ice/snow slugs hit serious. */
+    vehicleImpact: reasonLabel.toLowerCase().replace(/\s+/g, "-").replace(/\//g, "-"),
+    startIso,
+    endIso,
+    updatedIso: shape.updatedIso,
+    point: geo.point,
+    bbox: geo.bbox,
+    geometry: geo.geometry,
+  };
+}
+
+/** All non-Green DrivingConditions runs on UT's 511 host → condition events. */
+async function fetchUtDrivingConditions(): Promise<DotEvent[]> {
+  const records = await fetchIbiList(UT_DC_HOST, UT_DC_COLLECTION);
+  const events: DotEvent[] = [];
+  for (const rec of records) {
+    const windows = utDcWindows(rec);
+    /* Group contiguous non-Green windows into runs — "0-3 + 3-6 both
+     * patchy ice" is one 6-hour hazard, not two. */
+    const runs: { startH: number; endH: number; reasons: string[] }[] = [];
+    let cur: { startH: number; endH: number; reasons: string[] } | null = null;
+    for (const w of windows) {
+      const bad = w.condition && w.condition !== "Green";
+      if (bad && cur && w.startH <= cur.endH) {
+        cur.endH = Math.max(cur.endH, w.endH);
+        if (w.reason && !cur.reasons.includes(w.reason)) cur.reasons.push(w.reason);
+      } else if (bad) {
+        cur = { startH: w.startH, endH: w.endH, reasons: w.reason ? [w.reason] : [] };
+        runs.push(cur);
+      } else {
+        cur = null;
+      }
+    }
+    if (!runs.length) continue;
+    /* DrivingConditions records carry DT_RowId, not id (unlike the event
+     * collections) — /map/data/ keys on the same value. */
+    const id = str(rec.id) || str(rec.DT_RowId);
+    if (!id) continue;
+    const shape = await fetchUtDcShape(id);
+    if (!shape) continue;
+    for (const run of runs) {
+      const ev = normalizeUtDcRun(rec, run, shape);
+      if (ev) events.push(ev);
+    }
+  }
+  return events;
+}
+
 const CUSTOM_FEEDS: CustomFeed[] = [
   {
     name: "ilwinter",
@@ -1209,6 +1442,34 @@ export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
       console.warn(`[dot-feeds] IBI host failed: ${host.host}`, err);
       feedStatus.push({
         name: `ibi-${host.tag}`,
+        source: "custom",
+        state: "failed",
+        events: 0,
+        error,
+      });
+    }
+  }
+
+  /* Utah driving-conditions forecast — separate feed status from ibi-ut
+   * so a conditions outage doesn't mask (or get masked by) the events feed. */
+  {
+    const before = events.length;
+    try {
+      const dcEvents = await fetchUtDrivingConditions();
+      for (const s of stateNamesOf("utah")) coveredStates.add(s);
+      events.push(...dcEvents);
+      feedStatus.push({
+        name: "utconditions",
+        source: "custom",
+        state: "ok",
+        events: events.length - before,
+      });
+    } catch (err) {
+      failed += 1;
+      const error = err instanceof Error ? err.message : String(err);
+      console.warn(`[dot-feeds] utah driving conditions failed`, err);
+      feedStatus.push({
+        name: "utconditions",
         source: "custom",
         state: "failed",
         events: 0,

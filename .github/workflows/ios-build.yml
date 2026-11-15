@@ -254,7 +254,8 @@ jobs:
             echo "Crash reports will stay minified. See docs/SENTRY_SETUP.md."
             exit 0
           fi
-          REL="stormpath@$(node -p 'require(\"./package.json\").version')+${{ github.run_number }}"
+          VER="$(node -p 'require("./package.json").version' 2>/dev/null || echo "0.0.0")"
+          REL="stormpath@${VER}+${{ github.run_number }}"
           # Warn-only: a bad org/project slug or expired token must not block
           # a TestFlight build — minified crash reports are the fallback.
           npx -y @sentry/cli@2.58.6 sourcemaps upload \

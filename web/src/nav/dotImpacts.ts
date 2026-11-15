@@ -102,7 +102,7 @@ function severityFor(ev: DotRoadEvent): RouteImpactSeverity {
   if (ev.kind === "condition") {
     if (/impassable/.test(impact)) return "avoid";
     if (/not-advised/.test(impact)) return "serious";
-    return /ice|completely|full|packed|snow-?pack/i.test(impact) ? "serious" : "caution";
+    return /ice|snow|frost|completely|full|packed/i.test(impact) ? "serious" : "caution";
   }
   return ev.kind === "construction" ? "caution" : "info";
 }

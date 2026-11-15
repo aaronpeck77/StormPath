@@ -31,7 +31,9 @@ ArcGIS org; Seasonal is the baseline so only Partially/Completely Covered,
 Travel Not Advised, and Impassable segments emit; carries the CARS
 "Reported" timestamp). Per-state
 condition feeds exist for roughly half the states — see DOT_SIGNUPS.md
-Travel-IQ + keyless sections.
+Travel-IQ + keyless sections. **UT forecast driving conditions live
+2026-11-15** (`utconditions` — IBI DrivingConditions, keyless; see IBI
+family note).
 
 ---
 
@@ -45,7 +47,7 @@ Travel-IQ + keyless sections.
 | Maryland | `mdot` + **MD winter conditions** | Statewide WZDx + CHART winter/ice/snow incident & closure reports (keyless JSON export). |
 | Ohio | `ohio` | OHGO — keyed, live. |
 | Texas | `austin` + `txdot_v4_2` | **Statewide live** — DriveTexas key landed 2026-11-10 (~1,800 events). Austin city feed also flows. Road codes decoded (`IH0030`→`I-30`, `BU0059G`→`Business US-59 G`). |
-| **Utah** | `ibi-ut` | **NEW 2026-11-15** — UDOT 511 (IBI platform, keyless): ~88 events — construction, incidents, closures w/ lane + detour text. First UT coverage. |
+| **Utah** | `ibi-ut` + `utconditions` | **NEW 2026-11-15** — UDOT 511 (IBI platform, keyless): ~88 events — construction, incidents, closures w/ lane + detour text. **Plus `utconditions`: forecast driving conditions** — named route segments × eight 3-hour windows to 24h (Condition + reason, WKT line geometry); only non-Green windows emit as `kind:"condition"`. First forecast-condition feed — first live capture: patchy ice on SR-190/SR-210 canyons. First UT coverage. |
 | **Wisconsin** | `wisdot` + `ibi-wi` | Statewide WZDx construction **+ IBI closures/incidents** — the 511 Closures list carries ~100 real full-closure events (ramp/mainline/local-road w/ detours) that WZDx doesn't publish. IBI Construction skipped (same work zones mirrored). |
 | **Alaska** | `ibi-ak` | **NEW 2026-11-15** — 511.alaska.gov (IBI, keyless): ~141 events — construction, incidents, closures. First AK coverage. |
 | **Georgia** | `ibi-ga` | **NEW 2026-11-15** — 511ga (IBI, keyless): ~99 events — construction, incidents, closures. Completes I-75/I-85 south corridor. No key needed after all. |
@@ -107,6 +109,12 @@ same work zones; their IBI Closures lists still add real full-closure
 events WZDx lacks. Geometry is point-only (map icons) —
 `/map/data/{layer}/{id}` has encoded polylines if line geometry is ever
 wanted.
+
+**Condition endpoints (probed 2026-11-15):** `/List/GetData/DrivingConditions`
++ `/List/RoadConditions` exist only on **UT** (forecast: 8× 3-hour windows
+per named segment, WKT geometry via `/map/data/`) and **NV** (RoadConditions,
+different schema — unverified). All other hosts 500. UT's is wired as the
+`utconditions` feed; NV's is a follow-up candidate.
 
 ## 🛠 CUSTOM — non-WZDx, needs a per-state adapter
 
