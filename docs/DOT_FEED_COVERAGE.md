@@ -35,7 +35,13 @@ Travel-IQ + keyless sections. **UT forecast driving conditions live
 2026-11-15** (`utconditions` — IBI DrivingConditions, keyless; see IBI
 family note) **+ NE Compass RWIS live 2026-11-15** (`necompass-rwis` —
 keyless C2C XML road-surface sensors for ME/NH/VT; Wet/Ice/Snow stations
-emit with pavement temps).
+emit with pavement temps) **+ Midwest winter aggregator live 2026-11-16**
+(`midwestwinter` — IowaDOT_SODA "Winter Road Conditions - Midwest Region"
+FeatureServer, keyless; plow-crew reports from eight state DOTs aggregated
+into one layer with line geometry + route names; server-side LIKE filter +
+48h freshness check; emits only for NE/KS/MN/ND/SD/WI — the six states
+without their own winter feed, so IL/MO dupes are excluded at the
+normalizer).
 
 ---
 

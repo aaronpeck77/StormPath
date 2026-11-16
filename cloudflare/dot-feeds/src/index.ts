@@ -674,6 +674,99 @@ function normalizeIowaWinter(feature: Record<string, unknown>): DotEvent | null 
   };
 }
 
+/** IowaDOT_SODA "Winter Road Conditions - Midwest Region" — one keyless
+ *  FeatureServer aggregating plow-crew reports from eight state DOTs
+ *  (IL, KS, MN, MO, NE, ND, SD, WI). Unlike the per-state feeds, this
+ *  layer's ROAD_CONDITION is an undocumented integer code (observed: 0/1)
+ *  — the reliable adverse signal is HEADLINE/DESCRIPTION text, same words
+ *  the historic layer uses ("partially covered with snow", "travel not
+ *  advised"). Baseline headlines ("Normal", "Seasonal…", "Clear") stay
+ *  silent. We only emit for states that lack their own winter feed —
+ *  IL/MO/WI reports would duplicate ilwinter/mowinter, and IA has
+ *  iawinter — so SOURCE is filtered to the six uncovered states. */
+const MIDWEST_WINTER_URL =
+  "https://services.arcgis.com/8lRhdTsQyJpO52F1/arcgis/rest/services/" +
+  "Midwest_Winter_Road_Conditions_View/FeatureServer/0/query" +
+  "?where=STATUS%20IN%20(%27ACTIVE-CURRENT%27%2C%27ACTIVE-STALE%27)%20AND%20(" +
+  "UPPER(HEADLINE)%20LIKE%20%27%25SNOW%25%27%20OR%20UPPER(HEADLINE)%20LIKE%20%27%25ICE%25%27%20OR%20UPPER(HEADLINE)%20LIKE%20%27%25FROST%25%27%20OR%20UPPER(HEADLINE)%20LIKE%20%27%25SLUSH%25%27%20OR%20UPPER(HEADLINE)%20LIKE%20%27%25COVERED%25%27%20OR%20UPPER(HEADLINE)%20LIKE%20%27%25ADVISED%25%27%20OR%20UPPER(HEADLINE)%20LIKE%20%27%25IMPASSABLE%25%27%20OR%20UPPER(HEADLINE)%20LIKE%20%27%25DRIFTING%25%27%20OR%20UPPER(HEADLINE)%20LIKE%20%27%25BLIZZARD%25%27%20OR%20UPPER(HEADLINE)%20LIKE%20%27%25WHITEOUT%25%27%20OR%20UPPER(HEADLINE)%20LIKE%20%27%25PACKED%25%27%20OR%20UPPER(HEADLINE)%20LIKE%20%27%25SLICK%25%27%20OR%20UPPER(HEADLINE)%20LIKE%20%27%25FOG%25%27%20OR%20" +
+  "UPPER(DESCRIPTION)%20LIKE%20%27%25SNOW%25%27%20OR%20UPPER(DESCRIPTION)%20LIKE%20%27%25ICE%25%27%20OR%20UPPER(DESCRIPTION)%20LIKE%20%27%25FROST%25%27%20OR%20UPPER(DESCRIPTION)%20LIKE%20%27%25SLUSH%25%27%20OR%20UPPER(DESCRIPTION)%20LIKE%20%27%25COVERED%25%27%20OR%20UPPER(DESCRIPTION)%20LIKE%20%27%25ADVISED%25%27%20OR%20UPPER(DESCRIPTION)%20LIKE%20%27%25IMPASSABLE%25%27%20OR%20UPPER(DESCRIPTION)%20LIKE%20%27%25DRIFTING%25%27%20OR%20UPPER(DESCRIPTION)%20LIKE%20%27%25BLIZZARD%25%27%20OR%20UPPER(DESCRIPTION)%20LIKE%20%27%25WHITEOUT%25%27%20OR%20UPPER(DESCRIPTION)%20LIKE%20%27%25PACKED%25%27%20OR%20UPPER(DESCRIPTION)%20LIKE%20%27%25SLICK%25%27%20OR%20UPPER(DESCRIPTION)%20LIKE%20%27%25FOG%25%27" +
+  ")" +
+  "&outFields=OBJECTID%2CSOURCE%2CROUTE_NAME%2CSEGMENT_NAME%2CHEADLINE" +
+  "%2CDESCRIPTION%2CROAD_CONDITION%2CSTATUS%2CREPORT_UPDATED" +
+  "&f=geojson&outSR=4326&resultRecordCount=2000";
+
+const MIDWEST_WINTER_STATES: Record<string, string> = {
+  "nebraska dot": "nebraska",
+  "kansas dot": "kansas",
+  "minnesota dot": "minnesota",
+  "north dakota dot": "north dakota",
+  "south dakota dot": "south dakota",
+  "wisconsin dot": "wisconsin",
+};
+
+const MIDWEST_ADVERSE =
+  /snow|ice|frost|slush|covered|advised|impassable|drifting|blizzard|whiteout|packed|slick|fog/i;
+
+function normalizeMidwestWinter(feature: Record<string, unknown>): DotEvent | null {
+  const props = asRecord(feature.properties);
+  const state = MIDWEST_WINTER_STATES[str(props.SOURCE).toLowerCase()];
+  if (!state) return null;
+  const headline = str(props.HEADLINE).replace(/\s+/g, " ").trim();
+  const description = str(props.DESCRIPTION).replace(/\s+/g, " ").trim();
+  const text = `${headline} ${description}`;
+  /* Seasonal/Normal/Clear are baseline — anything else with an adverse
+   * keyword is a real report. Reports older than 48h are treated as stale
+   * even if the layer still flags them ACTIVE-STALE. */
+  if (!MIDWEST_ADVERSE.test(text)) return null;
+  const updatedMs = Number(props.REPORT_UPDATED);
+  if (!Number.isFinite(updatedMs) || updatedMs <= 0) return null;
+  if (Date.now() - updatedMs > 48 * 3600_000) return null;
+  const geo = eventGeo(feature.geometry);
+  if (!geo) return null;
+
+  const roadName = prettifyRoadName(str(props.ROUTE_NAME));
+  const segment = str(props.SEGMENT_NAME).replace(/\s+/g, " ").trim();
+  const conditionLabel = (headline || description || "Winter condition")
+    .replace(/\s+/g, " ")
+    .trim();
+  const lc = conditionLabel.toLowerCase();
+  const impactSlug =
+    lc.includes("impassable") || lc.includes("not advised") || lc.includes("closed")
+      ? "impassable"
+      : lc.includes("completely covered") || lc.includes("fully")
+        ? "completely-covered"
+        : lc.includes("partially covered") || lc.includes("partly") || lc.includes("covered")
+          ? "partially-covered"
+          : conditionLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const sid = props.OBJECTID ?? props.SEGMENT_ID ?? feature.id;
+
+  return {
+    id: `midwestwinter:${sid != null ? String(sid) : Math.random().toString(36).slice(2, 10)}`,
+    state,
+    publisher: "State DOT winter report",
+    kind: "condition",
+    status: "active",
+    title: roadName || "Winter road condition",
+    roadName,
+    direction: null,
+    description:
+      `${conditionLabel} — ${str(props.SOURCE).replace(/\s*DOT$/i, "") || "DOT"} winter report` +
+      (segment ? ` · ${segment.slice(0, 160)}` : ""),
+    restrictionsText: null,
+    lanesClosed: 0,
+    travelLanesClosed: null,
+    laneSummary: null,
+    workType: conditionLabel,
+    vehicleImpact: impactSlug,
+    startIso: null,
+    endIso: null,
+    updatedIso: new Date(updatedMs).toISOString(),
+    point: geo.point,
+    bbox: geo.bbox,
+    geometry: geo.geometry,
+  };
+}
+
 /** Missouri DOT winter road conditions — MoDOT TravelerInformation ArcGIS
  *  MapServer layer 26 ("Winter Road Conditions"). Keyless; plow-reported
  *  polylines. ROAD_COND_CODE legend: CLEAR / MOSTLY CLEAR / PARTLY COVERED /
@@ -2089,6 +2182,16 @@ const CUSTOM_FEEDS: CustomFeed[] = [
     publisher: "Missouri DOT",
     url: MO_WINTER_URL,
     normalize: normalizeMissouriWinter,
+  },
+  /* Midwest winter aggregator — normalizer emits per-state events only for
+   * the six states without their own winter feed; coveredStates still marks
+   * all six since the service itself covers them. */
+  {
+    name: "midwestwinter",
+    state: "nebraska,kansas,minnesota,north dakota,south dakota,wisconsin",
+    publisher: "IowaDOT / state DOTs",
+    url: MIDWEST_WINTER_URL,
+    normalize: normalizeMidwestWinter,
   },
   {
     name: "mdchart-events",
