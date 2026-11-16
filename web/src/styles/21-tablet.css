@@ -1018,17 +1018,27 @@
    * ~390px screen — it overflows the panel and pushes the dock/toolbar below
    * the fold. Stack the maneuvers full-width (text wraps less → shorter box),
    * put the primary arrow over its message so the space under the arrow is
-   * used, and cap the card so it can never push the bottom buttons off. ── */
+   * used, and cap the card so it can never push the bottom buttons off.
+   * The collapse must not flex-shrink: it is the stack's only shrinkable item,
+   * so it was being squeezed below the card's real height and clipping "Then".
+   * 46vh + the tighter paddings below fit the full stacked card (~176px at
+   * 390px tall) with the dock's toast row still showing; the pin-bottom
+   * margin absorbs leftover space when no toasts are up. ── */
+  .panel-collapse:has(.ipad-panel-tbt-slot) {
+    flex-shrink: 0;
+  }
+
   .ipad-panel-tbt-slot:not(:empty) {
-    flex: 0 1 auto;
+    flex: 0 0 auto;
     min-height: 0;
-    max-height: 34vh;
+    max-height: 46vh;
+    padding: 6px 10px;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
 
   .ipad-panel-tbt-slot .top-guidance-bar--glanceable {
-    --turn-drive-pad-y: 7px;
+    --turn-drive-pad-y: 6px;
     --turn-drive-pad-x: 10px;
     --turn-drive-street: 1.02rem;
     --turn-drive-meta: 0.78rem;
@@ -1037,7 +1047,7 @@
     --turn-drive-then: 0.64rem;
     --turn-drive-next-meta: 0.7rem;
     --turn-drive-gap-col: 4px;
-    --turn-drive-gap-grid: 6px;
+    --turn-drive-gap-grid: 4px;
   }
 
   .ipad-panel-tbt-slot .top-guidance-bar--glanceable .turn-banner--split {
@@ -1063,8 +1073,15 @@
     min-height: 0;
     border-left: none;
     border-top: 2px solid rgba(255, 255, 255, 0.25);
-    padding: 7px 0 0;
+    padding: 5px 0 0;
     margin-top: 2px;
+  }
+
+  /* The taller TBT card needs ~16px back: cap the dock's toast/message row so
+   * a two-line toast can't push the bottom toolbar off a ~390px screen. The
+   * row already scrolls internally (overflow-y: auto). */
+  .app-shell.nav-fullmap .landscape-navigation-dock__messages {
+    max-height: 44px;
   }
 
   /* Miles-left at the outer edge beside the controls — right of Info on
