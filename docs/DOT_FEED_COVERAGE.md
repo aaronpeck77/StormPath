@@ -49,6 +49,43 @@ kept both since ne511 is the authoritative real-time source).
 
 ---
 
+## Data use & attribution (reviewed 2026-11-16)
+
+StormPath displays feed data in-app only — we do not republish raw
+feeds or resell access. Findings per source class:
+
+- **Caltrans CWWP2** — explicitly built for commercial/public reuse:
+  "real-time travel Information to be used by commercial, media
+  Information Service Providers (ISPs), agencies and the public…
+  There is no charge for the use of this data." Cleanest footing of
+  any source we use.
+- **WZDx registry feeds** — national open standard published by state
+  DOTs specifically for third-party consumption.
+- **State 511 sites (IBI, Iteris ATIS, Castle Rock)** — public-service
+  disclaimers ("as is", accuracy not guaranteed) but no reuse
+  prohibition found. SCDOT + MDT terms reviewed; standard disclaimers.
+- **ArcGIS Online public layers** (IowaDOT Midwest winter, TDOT
+  Smartway, etc.) — Esri requires **data attribution** displayed in
+  apps using ArcGIS content. Content owners retain rights; public =
+  openly accessible.
+- **Nebraska `ne511` caveat** — Castle Rock's *official* XML feed
+  requires a login via their request form. We instead read the public
+  GraphQL API that powers 511.nebraska.gov's own map — same data the
+  public sees, no auth. If NDOT objects, the clean path is requesting
+  the official feed login.
+
+**Action:** show a "Data sources" attribution line in the app's About /
+coverage sheet (draft below). This satisfies Esri's attribution
+requirement and is standard practice for nav apps.
+
+Draft attribution copy:
+
+> Road condition and construction data provided by state DOT 511
+> programs and the WZDx open data standard. Some layers via ArcGIS
+> Online (Esri). Data is provided "as is" by the publishing agencies.
+
+---
+
 ## ✅ LIVE (32 states/jurisdictions, ~42 feed sources)
 
 | State | Feed(s) | Coverage note |
