@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { LngLat } from "../nav/types";
+import type { RouteChangeOffer } from "../nav/routeConsent";
 import { MAX_VIA_STOPS, type TripStop } from "../nav/routeWaypoints";
 import { shouldShowManualOffRouteUi, shouldShowTrafficBypassUi } from "../nav/constants";
 import type { MapViewMode } from "./driveMapTypes";
@@ -234,6 +235,10 @@ type Props = {
   routing: boolean;
   onStayOnThisRoad: () => void;
   returnToOriginalRoute: () => void;
+  /** Highway-tier route-change consent card (docs/ROUTE_CONSENT.md). */
+  routeChangeOffer?: RouteChangeOffer | null;
+  onRouteChangeOfferKeep?: () => void;
+  onRouteChangeOfferReturn?: () => void;
   showTrafficBypassCta: boolean;
   bypassBusy: boolean;
   onTrafficBypassFromHere: () => void;
@@ -341,6 +346,9 @@ export function AppBottomChrome({
   routing,
   onStayOnThisRoad,
   returnToOriginalRoute,
+  routeChangeOffer = null,
+  onRouteChangeOfferKeep,
+  onRouteChangeOfferReturn,
   showTrafficBypassCta,
   bypassBusy,
   onTrafficBypassFromHere,
@@ -815,6 +823,9 @@ export function AppBottomChrome({
           offRouteOptionsBusy={routing}
           onStayOnThisRoad={shouldShowManualOffRouteUi() ? onStayOnThisRoad : undefined}
           onReturnToOriginalRoute={shouldShowManualOffRouteUi() ? returnToOriginalRoute : undefined}
+          routeChangeOffer={routeChangeOffer}
+          onRouteChangeOfferKeep={onRouteChangeOfferKeep}
+          onRouteChangeOfferReturn={onRouteChangeOfferReturn}
           showTrafficBypass={shouldShowTrafficBypassUi() && showTrafficBypassCta}
           bypassBusy={bypassBusy}
           onTrafficBypass={shouldShowTrafficBypassUi() ? onTrafficBypassFromHere : undefined}
