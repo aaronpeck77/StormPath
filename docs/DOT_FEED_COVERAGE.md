@@ -49,13 +49,13 @@ emit with pavement temps).
 | Maryland | `mdot` + **MD winter conditions** | Statewide WZDx + CHART winter/ice/snow incident & closure reports (keyless JSON export). |
 | Ohio | `ohio` | OHGO — keyed, live. |
 | Texas | `austin` + `txdot_v4_2` | **Statewide live** — DriveTexas key landed 2026-11-10 (~1,800 events). Austin city feed also flows. Road codes decoded (`IH0030`→`I-30`, `BU0059G`→`Business US-59 G`). |
-| **Utah** | `ibi-ut` + `utconditions` | **NEW 2026-11-15** — UDOT 511 (IBI platform, keyless): ~88 events — construction, incidents, closures w/ lane + detour text. **Plus `utconditions`: forecast driving conditions** — named route segments × eight 3-hour windows to 24h (Condition + reason, WKT line geometry); only non-Green windows emit as `kind:"condition"`. First forecast-condition feed — first live capture: patchy ice on SR-190/SR-210 canyons. First UT coverage. |
+| **Utah** | `ibi-ut` + `utconditions` | **NEW 2026-11-15** — UDOT 511 (IBI platform, keyless): ~88 events — construction, incidents, closures w/ lane + detour text. **Plus `utconditions`: forecast driving conditions** — named route segments × eight 3-hour windows to 24h (Condition + reason, WKT line geometry); only non-Green windows emit as `kind:"condition"`. First forecast-condition feed — first live capture: patchy ice on SR-190/SR-210 canyons. First UT coverage. **Plus `ibi-ut-rwis`** — 251-station WeatherStations feed (surface temp/precip/f friction); emits only freezing/wintry stations. |
 | **Wisconsin** | `wisdot` + `ibi-wi` | Statewide WZDx construction **+ IBI closures/incidents** — the 511 Closures list carries ~100 real full-closure events (ramp/mainline/local-road w/ detours) that WZDx doesn't publish. IBI Construction skipped (same work zones mirrored). |
-| **Alaska** | `ibi-ak` | **NEW 2026-11-15** — 511.alaska.gov (IBI, keyless): ~141 events — construction, incidents, closures. First AK coverage. |
+| **Alaska** | `ibi-ak` | **NEW 2026-11-15** — 511.alaska.gov (IBI, keyless): ~141 events — construction, incidents, closures. **Plus `ibi-ak-rwis`** — WeatherStations has no surface temp on AK, so it emits on freezing air temp / wintry precip only. First AK coverage. |
 | **Georgia** | `ibi-ga` | **NEW 2026-11-15** — 511ga (IBI, keyless): ~99 events — construction, incidents, closures. Completes I-75/I-85 south corridor. No key needed after all. |
-| Arizona | `mcdot` + `ibi-az` | Maricopa County WZDx (Phoenix metro) **+ ADOT 511 statewide** (IBI, keyless): ~178 events — construction, incidents, closures. Metro work zones may appear twice (different publishers, same state) — rural AZ is net-new. |
-| **Idaho** | `iddot` + `ibi-id` | Statewide WZDx construction + IBI incidents (thin — 1 event; ID has no Closures endpoint). IBI Construction skipped (mirrored). |
-| **Nevada** | `ibi-nv` | **NEW 2026-11-15** — 511.nv.gov (IBI, keyless): ~83 events — construction, incidents, closures. First NV coverage. |
+| Arizona | `mcdot` + `ibi-az` | Maricopa County WZDx (Phoenix metro) **+ ADOT 511 statewide** (IBI, keyless): ~178 events — construction, incidents, closures. Metro work zones may appear twice (different publishers, same state) — rural AZ is net-new. **Plus `ibi-az-rwis`** — WeatherStations feed emits only freezing pavement/air stations. |
+| **Idaho** | `iddot` + `ibi-id` | Statewide WZDx construction + IBI incidents (thin — 1 event; ID has no Closures endpoint). IBI Construction skipped (mirrored). **Plus `ibi-id-rwis`** — WeatherStations feed emits only freezing/wintry stations (1 live at probe time). |
+| **Nevada** | `ibi-nv` | **NEW 2026-11-15** — 511.nv.gov (IBI, keyless): ~83 events — construction, incidents, closures. **Plus `ibi-nv-rwis`** — WeatherStations feed (surface temp/precip; 46 of 192 stations carry surface sensors). First NV coverage. |
 | Indiana | `indot` | Statewide. |
 | Kansas | `kansas` | Statewide. |
 | Kentucky | `kytc` | Statewide. |
@@ -116,6 +116,16 @@ same work zones; their IBI Closures lists still add real full-closure
 events WZDx lacks. Geometry is point-only (map icons) —
 `/map/data/{layer}/{id}` has encoded polylines if line geometry is ever
 wanted.
+
+**WeatherStations RWIS (added 2026-11-15):** `List/GetData/WeatherStations`
++ `/map/mapIcons/WeatherStations` exist on **UT, NV, ID, AZ, AK** —
+pavement surface temp (°F), air temp, precip, friction per station,
+joined by `DT_RowId`. Wired as `ibi-{tag}-rwis` feeds: emit only
+surface ≤33°F, air ≤15°F (sensor-less hosts like AK), or wintry precip —
+dry stations stay silent. UT/NV/ID/AZ carry `surfaceTemperature`;
+AK emits on air temp/precip only. Probed and rejected: WI/GA/FL have
+no WeatherStations collection; `RoadConditions` exists on UT/NV but is
+geometry-less named segments (no coords) — skipped.
 
 **Condition endpoints (probed 2026-11-15):** `/List/GetData/DrivingConditions`
 + `/List/RoadConditions` exist only on **UT** (forecast: 8× 3-hour windows

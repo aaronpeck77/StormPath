@@ -83,12 +83,16 @@ export const DOT_COVERAGE_CAVEATS: readonly string[] = [
  * Keep in sync with CUSTOM_FEEDS + the dedicated condition feeds in
  * cloudflare/dot-feeds. */
 export const WINTER_CONDITION_STATES: readonly string[] = [
+  "alaska",
+  "arizona",
   "california",
+  "idaho",
   "illinois",
   "iowa",
   "maine",
   "maryland",
   "missouri",
+  "nevada",
   "new hampshire",
   "oregon",
   "utah",

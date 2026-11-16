@@ -836,14 +836,15 @@ const IBI_MAX_PAGES = 10;
  * non-JSON body = host shell/ outage (NY's 503) → throw so it shows as failed. */
 async function fetchIbiList(
   host: string,
-  collection: string
+  collection: string,
+  pageSize = IBI_PAGE
 ): Promise<Record<string, unknown>[]> {
   const base = host.startsWith("http") ? host : `https://${host}`;
   const out: Record<string, unknown>[] = [];
   for (let page = 0; page < IBI_MAX_PAGES; page++) {
     const body = new URLSearchParams({
-      start: String(page * IBI_PAGE),
-      length: String(IBI_PAGE),
+      start: String(page * pageSize),
+      length: String(pageSize),
     });
     const res = await fetch(`${base}/List/GetData/${collection}`, {
       method: "POST",
@@ -870,7 +871,7 @@ async function fetchIbiList(
     const data = asArray<Record<string, unknown>>(j.data);
     out.push(...data);
     const total = Number(j.recordsFiltered ?? j.recordsTotal ?? data.length);
-    if (data.length < IBI_PAGE || out.length >= total) break;
+    if (data.length < pageSize || out.length >= total) break;
   }
   return out;
 }
@@ -1061,6 +1062,106 @@ async function fetchIbiHostEvents(cfg: {
   }
   if (okCollections === 0 && firstError) throw firstError;
   return events;
+}
+
+/* ── IBI WeatherStations (RWIS) ─────────────────────────────────────────────
+ * Several IBI hosts expose a WeatherStations list + /map/mapIcons/
+ * WeatherStations points: pavement surface temp (°F), air temp, precip,
+ * friction. Probed 2026-11-15: UT/NV/ID/AZ carry surfaceTemperature;
+ * AK carries air temp + precip only (emits on ≤15°F air or active precip).
+ * Stations sleep when dry — emit only near/below freezing or wintry
+ * precip so the winter layer lights up in storms, not year-round. */
+const IBI_RWIS_HOSTS = [
+  { host: "prod-nv.ibi511.com", state: "nevada", tag: "nv" },
+  { host: "prod-ut.ibi511.com", state: "utah", tag: "ut" },
+  { host: "prod-id.ibi511.com", state: "idaho", tag: "id" },
+  { host: "prod-az.ibi511.com", state: "arizona", tag: "az" },
+  { host: "prod-ak.ibi511.com", state: "alaska", tag: "ak" },
+] as const;
+
+const IBI_PRECIP_NONE = new Set(["", "no precipitation", "unknown", "n/a", "none"]);
+
+function ibiTempF(v: unknown): number | null {
+  const n = parseFloat(str(v).replace(/[^\d.\-]/g, " ").trim().split(/\s+/)[0] ?? "");
+  return Number.isFinite(n) && n > -80 && n < 140 ? n : null;
+}
+
+function ibiRouteFromStationName(name: string): string {
+  const m = /^(I|US|SR|SH|US-|I-|SR-|STATE ROUTE|STATE HIGHWAY)\s*-?\s*(\d+[A-Z]?)\b/i.exec(name.trim());
+  if (!m) return "";
+  const prefix = m[1]!.toUpperCase().replace(/[\s-]+$/, "");
+  return `${prefix}-${m[2]}`;
+}
+
+async function fetchIbiWeatherStations(cfg: {
+  host: string;
+  state: string;
+  tag: string;
+}): Promise<DotEvent[]> {
+  const records = await fetchIbiList(cfg.host, "WeatherStations", 100);
+  if (!records.length) return [];
+  const icons = await fetchIbiIcons(cfg.host, "WeatherStations").catch(
+    () => new Map<string, [number, number]>()
+  );
+  const nowMs = Date.now();
+  const out: DotEvent[] = [];
+  for (const rec of records.slice(0, 600)) {
+    const id = str(rec.DT_RowId ?? rec.id);
+    const coord = icons.get(id);
+    if (!coord) continue;
+    const updMs = parseIbiDate(str(rec.lastUpdated));
+    if (updMs != null && nowMs - updMs > 6 * 3_600_000) continue;
+
+    const surfF = ibiTempF(rec.surfaceTemperature);
+    const airF = ibiTempF(rec.airTemperature);
+    const precipRaw = str(rec.precipitation).trim();
+    const precipActive = !IBI_PRECIP_NONE.has(precipRaw.toLowerCase());
+    const freezing = surfF != null && surfF <= 33;
+    const deepColdNoSurf = surfF == null && airF != null && airF <= 15;
+    const wintryPrecip = precipActive && (airF == null || airF <= 40);
+    if (!freezing && !deepColdNoSurf && !wintryPrecip) continue;
+
+    const name = str(rec.name ?? rec.filterAndOrderProperty1).trim();
+    const road = ibiRouteFromStationName(name);
+    const friction = str(rec.surfaceFriction).trim();
+    const point: [number, number] = coord;
+    const vehicleImpact =
+      surfF != null && surfF <= 32 ? "ice" : wintryPrecip ? "partially-covered" : "partially-covered";
+    const label =
+      surfF != null
+        ? `pavement ${Math.round(surfF)}°F`
+        : airF != null
+          ? `air ${Math.round(airF)}°F`
+          : "cold station";
+    out.push({
+      id: `ibi-${cfg.tag}-rwis:${id || `${point[0]},${point[1]}`}`,
+      state: cfg.state,
+      publisher: `${cfg.state === "nevada" ? "NDOT" : cfg.state === "utah" ? "UDOT" : cfg.state === "idaho" ? "ITD" : cfg.state === "arizona" ? "ADOT" : "ADOT&PF"} 511`,
+      kind: "condition",
+      status: "active",
+      title: [road, name && name !== road ? name : ""].filter(Boolean).join(" · ") || "Road weather station",
+      roadName: road,
+      direction: null,
+      description:
+        `At or near freezing — ${label}` +
+        (airF != null && surfF != null ? ` · air ${Math.round(airF)}°F` : "") +
+        (precipActive ? ` · ${precipRaw}` : "") +
+        (friction && !/^(good|dry|n\/a)$/i.test(friction) ? ` · surface ${friction.toLowerCase()}` : ""),
+      restrictionsText: null,
+      lanesClosed: 0,
+      travelLanesClosed: null,
+      laneSummary: null,
+      workType: freezing ? "Freezing road surface" : "Winter road condition",
+      vehicleImpact,
+      startIso: null,
+      endIso: null,
+      updatedIso: updMs != null ? new Date(updMs).toISOString() : null,
+      point,
+      bbox: [point[0], point[1], point[0], point[1]],
+      geometry: { type: "Point", coordinates: point },
+    });
+  }
+  return out;
 }
 
 /* ── Utah DOT 511 driving conditions ────────────────────────────────────────
@@ -2149,6 +2250,35 @@ export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
       console.warn(`[dot-feeds] IBI host failed: ${host.host}`, err);
       feedStatus.push({
         name: `ibi-${host.tag}`,
+        source: "custom",
+        state: "failed",
+        events: 0,
+        error,
+      });
+    }
+  }
+
+  /* IBI WeatherStations RWIS — pavement/air temps + precip per host.
+   * Separate feed status per state so one host's sensor outage doesn't
+   * mask the others (or the construction feeds above). */
+  for (const cfg of IBI_RWIS_HOSTS) {
+    const before = events.length;
+    try {
+      const rwisEvents = await fetchIbiWeatherStations(cfg);
+      for (const s of stateNamesOf(cfg.state)) coveredStates.add(s);
+      events.push(...rwisEvents);
+      feedStatus.push({
+        name: `ibi-${cfg.tag}-rwis`,
+        source: "custom",
+        state: "ok",
+        events: events.length - before,
+      });
+    } catch (err) {
+      failed += 1;
+      const error = err instanceof Error ? err.message : String(err);
+      console.warn(`[dot-feeds] IBI RWIS failed: ${cfg.host}`, err);
+      feedStatus.push({
+        name: `ibi-${cfg.tag}-rwis`,
         source: "custom",
         state: "failed",
         events: 0,
