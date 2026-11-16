@@ -825,6 +825,234 @@ function normalizeMissouriWinter(feature: Record<string, unknown>): DotEvent | n
   };
 }
 
+/* ── Nebraska 511 (Castle Rock CARS platform) ─────────────────────────────
+ * 511.nebraska.gov exposes a keyless GraphQL API — same Castle Rock stack
+ * as the Iowa/Indiana 511 apps. mapFeaturesQuery returns map collections
+ * per layer slug; Cluster collections embed every member event under
+ * features[].properties.clustered[] (full event objects, plain GeoJSON
+ * geometry), so one statewide query per slug captures metro-dense areas
+ * without tiling. Top-level Event line geometry arrives as a
+ * Google-encoded polyline string; Point coordinates and all cluster
+ * member geometry are plain arrays. */
+
+const NE511_GQL_URL = "https://511.nebraska.gov/api/graphql";
+const NE511_INPUT = {
+  north: 43.15,
+  south: 39.85,
+  east: -95.85,
+  west: -104.15,
+  zoom: 9,
+  nonClusterableUris: [] as string[],
+};
+
+const NE511_QUERY = `query($input: MapFeaturesArgs!){mapFeaturesQuery(input:$input){mapFeatures{uri title tooltip bbox __typename ... on Event {priority description beginTime{timestamp timezone} lastUpdated{timestamp timezone} delayDescription agencyAttribution{agencyName}} ... on Cluster {maxZoom features{properties}}}error{message type}}}`;
+
+/** Slug → event kind. winterDriving carries "Seasonal roadway conditions"
+ *  baselines for every state segment — the normalizer drops those like
+ *  the other plow-report feeds. */
+const NE511_LAYERS: { slug: string; kind: DotEvent["kind"] }[] = [
+  { slug: "constructionReports", kind: "construction" },
+  { slug: "roadReports", kind: "incident" },
+  { slug: "roadClosures", kind: "closure" },
+  { slug: "truckersReports", kind: "condition" },
+  { slug: "winterDriving", kind: "condition" },
+  { slug: "floodReports", kind: "condition" },
+  { slug: "wazeReports", kind: "incident" },
+];
+
+/** Google encoded polyline (precision 5) → [lng, lat] points. */
+function decodeGooglePolyline(encoded: string): [number, number][] {
+  const points: [number, number][] = [];
+  let i = 0, lat = 0, lng = 0;
+  const read = () => {
+    let result = 0, shift = 0, b: number;
+    do {
+      b = encoded.charCodeAt(i++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20 && i <= encoded.length);
+    return (result & 1) ? ~(result >> 1) : result >> 1;
+  };
+  while (i < encoded.length) {
+    lat += read();
+    lng += read();
+    points.push([lng / 1e5, lat / 1e5]);
+  }
+  return points;
+}
+
+/** Pull [lng,lat] coords out of a Castle Rock feature geometry — handles
+ *  encoded-polyline strings, position arrays, and nested coordinate arrays. */
+function ne511Coords(geom: unknown): [number, number][] {
+  const g = asRecord(geom);
+  const type = str(g.type);
+  const coords = g.coordinates;
+  if (typeof coords === "string") return decodeGooglePolyline(coords);
+  if (type === "Point" && Array.isArray(coords) && coords.length >= 2)
+    return [[Number(coords[0]), Number(coords[1])]];
+  if ((type === "LineString" || type === "MultiLineString") && Array.isArray(coords)) {
+    const flat: unknown[] = type === "LineString" ? coords : coords.flat(2);
+    const pts: [number, number][] = [];
+    for (let k = 0; k + 1 < flat.length; k += 2) {
+      const x = Number(flat[k]), y = Number(flat[k + 1]);
+      if (Number.isFinite(x) && Number.isFinite(y)) pts.push([x, y]);
+    }
+    return pts;
+  }
+  return [];
+}
+
+function normalizeNe511Event(
+  raw: Record<string, unknown>,
+  kind: DotEvent["kind"]
+): DotEvent | null {
+  const title = str(raw.title).replace(/\s+/g, " ").trim();
+  const uri = str(raw.uri);
+  const idPart = str(raw._id) || uri.replace(/^event\//, "");
+  if (!title || !idPart) return null;
+
+  /* "I-80: Construction work." → road "I-80", detail "Construction work." */
+  const colon = title.indexOf(":");
+  const roadRaw = colon > 0 ? title.slice(0, colon).trim() : "";
+  const detail = colon > 0 ? title.slice(colon + 1).trim() : title;
+  /* Winter baseline: "Seasonal roadway conditions" is every segment's
+   * default — only non-seasonal detail emits. */
+  if (/^seasonal\b/i.test(detail) || /^normal\b/i.test(detail)) return null;
+
+  /* Geometry: raw.features[] may hold several parts (point icon + line). */
+  const feats = asArray<Record<string, unknown>>(raw.features);
+  const allPts: [number, number][] = [];
+  for (const f of feats) {
+    for (const p of ne511Coords(f.geometry)) allPts.push(p);
+  }
+  if (!allPts.length) {
+    /* Fallback: cluster members sometimes carry only a bbox. */
+    const bb = raw.bbox;
+    if (Array.isArray(bb) && bb.length === 4) {
+      const cx = (Number(bb[0]) + Number(bb[2])) / 2;
+      const cy = (Number(bb[1]) + Number(bb[3])) / 2;
+      if (Number.isFinite(cx) && Number.isFinite(cy)) allPts.push([cx, cy]);
+    }
+  }
+  if (!allPts.length) return null;
+  const geom: GeoJSON.Geometry =
+    allPts.length > 1
+      ? { type: "LineString", coordinates: allPts }
+      : { type: "Point", coordinates: allPts[0]! };
+  const geo = eventGeo(geom);
+  if (!geo) return null;
+
+  const roadName = roadRaw ? prettifyRoadName(roadRaw) : "";
+  const descHtml = str(raw.description) || str(raw.tooltip);
+  const description = stripIbiHtml(descHtml).slice(0, 400);
+  const dirMatch = `${roadRaw} ${detail}`.match(/\b(NB|SB|EB|WB)\b/);
+  const direction = dirMatch ? dirMatch[1]! : null;
+
+  const laneText = `${description} ${str(raw.delayDescription)}`;
+  const laneN = laneText.match(/(\d+)\s*lane/i);
+  const allClosed = /all lanes|both directions.*closed|road closed|full closure/i.test(laneText);
+  let vehicleImpact: string | null = null;
+  let lanesClosed = 0;
+  if (kind === "closure" || allClosed) {
+    vehicleImpact = "all-lanes-closed";
+  } else if (laneN) {
+    vehicleImpact = "some-lanes-closed";
+    lanesClosed = Number(laneN[1]);
+  } else if (/closed|restriction/i.test(laneText)) {
+    vehicleImpact = "some-lanes-closed";
+  }
+  if (kind === "condition" && !vehicleImpact) {
+    vehicleImpact = detail.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || null;
+  }
+
+  const beginMs = Number(asRecord(raw.beginTime).timestamp);
+  const updMs = Number(asRecord(raw.lastUpdated).timestamp);
+  const agency = str(asRecord(asRecord(raw.agencyAttribution).agencyName));
+
+  return {
+    id: `ne511:${kind === "construction" ? "c" : kind === "closure" ? "x" : kind === "incident" ? "i" : "w"}:${idPart}`,
+    state: "nebraska",
+    publisher: agency || "Nebraska 511",
+    kind,
+    status: "active",
+    title: roadName ? `${roadName}: ${detail}` : detail || title,
+    roadName,
+    direction,
+    description: description || title,
+    restrictionsText: null,
+    lanesClosed,
+    travelLanesClosed: null,
+    laneSummary: null,
+    workType: kind === "condition" ? detail : null,
+    vehicleImpact,
+    startIso: Number.isFinite(beginMs) && beginMs > 0 ? new Date(beginMs).toISOString() : null,
+    endIso: null,
+    updatedIso: Number.isFinite(updMs) && updMs > 0 ? new Date(updMs).toISOString() : null,
+    point: geo.point,
+    bbox: geo.bbox,
+    geometry: geo.geometry,
+  };
+}
+
+async function fetchNebraska511(): Promise<DotEvent[]> {
+  const events: DotEvent[] = [];
+  const seen = new Set<string>();
+  const errors: string[] = [];
+  for (const layer of NE511_LAYERS) {
+    try {
+      const res = await fetch(NE511_GQL_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "StormPath-DOT-Feeds/1.0 (+https://stormpath.app)",
+          language: "en",
+        },
+        body: JSON.stringify({
+          query: NE511_QUERY,
+          variables: { input: { ...NE511_INPUT, layerSlugs: [layer.slug] } },
+        }),
+        signal: AbortSignal.timeout(FEED_TIMEOUT_MS),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      if (text.length > MAX_FEED_BYTES) throw new Error(`feed too large (${text.length} bytes)`);
+      const payload = asRecord(JSON.parse(text));
+      const gqlErrors = asArray(payload.errors);
+      if (gqlErrors.length) throw new Error(`GraphQL: ${str(asRecord(gqlErrors[0]).message) || "error"}`);
+      const collections = asArray<Record<string, unknown>>(
+        asRecord(asRecord(payload.data).mapFeaturesQuery).mapFeatures
+      );
+      for (const col of collections) {
+        if (str(col.__typename) === "Event") {
+          const ev = normalizeNe511Event(asRecord(col), layer.kind);
+          if (ev && !seen.has(ev.id)) {
+            seen.add(ev.id);
+            events.push(ev);
+          }
+        } else if (str(col.__typename) === "Cluster") {
+          for (const f of asArray<Record<string, unknown>>(col.features)) {
+            const clustered = asArray<unknown>(asRecord(f.properties).clustered);
+            for (const member of clustered) {
+              const ev = normalizeNe511Event(asRecord(member), layer.kind);
+              if (ev && !seen.has(ev.id)) {
+                seen.add(ev.id);
+                events.push(ev);
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`${layer.slug}: ${msg}`);
+      console.warn(`[dot-feeds] ne511 ${layer.slug} failed`, err);
+    }
+  }
+  /* All seven layers failing = feed down; partial failure still reports. */
+  if (errors.length === NE511_LAYERS.length) throw new Error(errors[0]);
+  return events;
+}
+
 /** Maryland CHART — keyless JSONP-turned-JSON export service. Winter-relevant
  *  events carry incidentTypes like "Weather Closure Winter Precipitation";
  *  the feed also carries ordinary incidents/closures, but MD's WZDx `mdot`
@@ -2444,6 +2672,28 @@ export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
         events: 0,
         error,
       });
+    }
+  }
+
+  /* Nebraska 511 — Castle Rock GraphQL, keyless. One feed status for all
+   * seven layer queries; per-layer failures are isolated inside. */
+  {
+    const before = events.length;
+    try {
+      const ne511Events = await fetchNebraska511();
+      for (const s of stateNamesOf("nebraska")) coveredStates.add(s);
+      events.push(...ne511Events);
+      feedStatus.push({
+        name: "ne511",
+        source: "custom",
+        state: "ok",
+        events: events.length - before,
+      });
+    } catch (err) {
+      failed += 1;
+      const error = err instanceof Error ? err.message : String(err);
+      console.warn(`[dot-feeds] Nebraska 511 failed`, err);
+      feedStatus.push({ name: "ne511", source: "custom", state: "failed", events: 0, error });
     }
   }
 

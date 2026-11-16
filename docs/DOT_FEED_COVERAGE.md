@@ -41,7 +41,11 @@ FeatureServer, keyless; plow-crew reports from eight state DOTs aggregated
 into one layer with line geometry + route names; server-side LIKE filter +
 48h freshness check; emits only for NE/KS/MN/ND/SD/WI — the six states
 without their own winter feed, so IL/MO dupes are excluded at the
-normalizer).
+normalizer) **+ Nebraska 511 winter live 2026-11-16** (`ne511` —
+Castle Rock GraphQL `winterDriving` layer; "Seasonal roadway
+conditions" baselines stay silent, covered/ice/adverse detail emits;
+Nebraska's own feed may overlap `midwestwinter` NE rows during storms —
+kept both since ne511 is the authoritative real-time source).
 
 ---
 
@@ -78,6 +82,7 @@ normalizer).
 | Delaware | `dedot` | Statewide (thin — 3 events). |
 | North Dakota | `nddot` | Statewide. |
 | South Dakota | `sddot` | Statewide. |
+| **Nebraska** | `ne511` + **NE winter conditions** | **NEW 2026-11-16** — 511.nebraska.gov Castle Rock GraphQL API (keyless, no signup): ~272 events — construction, incidents, closures, truck restrictions, winter road conditions, flooding. One `mapFeaturesQuery` per layer slug statewide; Cluster collections expand to full member events. Fills the I-80 gap between CO and IA. |
 | New Hampshire + Vermont + Maine | `necdot` + `necompass-rwis` | One regional New England WZDx feed covers all three **+ NE Compass RWIS road-surface sensors** (keyless C2C XML — essData; non-Dry/non-Unknown stations emit as `kind:"condition"` with pavement temps). |
 | Florida | `fdot` + `ibi-fl` | Partial WZDx **+ FL 511 incidents/closures** (IBI, keyless — Construction skipped as mirrored). |
 | Canada (QC) | `quebec` | Provincial feed — bonus coverage, not a state. |
