@@ -1,5 +1,6 @@
 import type { MapViewMode } from "./DriveMap";
 import type { LngLat } from "../nav/types";
+import type { RouteChangeOffer } from "../nav/routeConsent";
 import { useEffect, useMemo, useState } from "react";
 import {
   shouldShowManualOffRouteUi,
@@ -86,6 +87,12 @@ type Props = {
   onHazardBypassEnter?: () => void;
   onHazardBypassUndo?: () => void;
   onHazardBypassCancel?: () => void;
+  /** Highway-tier route-change consent (docs/ROUTE_CONSENT.md). The new route
+   *  is already guiding — this card only gates the return-to-original choice
+   *  and auto-dismisses on timeout. */
+  routeChangeOffer?: RouteChangeOffer | null;
+  onRouteChangeOfferKeep?: () => void;
+  onRouteChangeOfferReturn?: () => void;
 };
 
 export function BottomToolbar({
@@ -131,6 +138,9 @@ export function BottomToolbar({
   onHazardBypassEnter,
   onHazardBypassUndo,
   onHazardBypassCancel,
+  routeChangeOffer = null,
+  onRouteChangeOfferKeep,
+  onRouteChangeOfferReturn,
 }: Props) {
   const viewEntry = VIEW_CYCLE.find((v) => v.mode === viewMode) ?? VIEW_CYCLE[0]!;
   const cycleViewMode = () => {
@@ -235,6 +245,32 @@ export function BottomToolbar({
               onClick={onHazardBypassCancel}
             >
               Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {routeChangeOffer && onRouteChangeOfferKeep ? (
+        <div className="nav-bottom-off-route nav-bottom-off-route--offer" role="status">
+          <span className="nav-bottom-off-route__text">
+            Route changed — same destination.
+            {routeChangeOffer.rejoinsPrevious ? " New line rejoins your route ahead." : ""}
+          </span>
+          <div className="nav-bottom-off-route__actions">
+            {onRouteChangeOfferReturn ? (
+              <button
+                type="button"
+                className="nav-bottom-off-route__btn nav-bottom-off-route__btn--primary"
+                onClick={onRouteChangeOfferReturn}
+              >
+                Return to original
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="nav-bottom-off-route__btn"
+              onClick={onRouteChangeOfferKeep}
+            >
+              Keep new route
             </button>
           </div>
         </div>

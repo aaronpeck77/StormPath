@@ -1237,6 +1237,9 @@ export default function App() {
     detourRejoinDistanceLabel,
     stayOnThisRoad,
     returnToOriginalRoute,
+    rejoinPreviousCorridor,
+    routeChangeOffer,
+    dismissRouteChangeOffer,
     lastOffRouteSampleRef,
   } = offRouteNav;
 
@@ -3700,6 +3703,9 @@ export default function App() {
           routing={routing}
           onStayOnThisRoad={() => void stayOnThisRoad()}
           returnToOriginalRoute={returnToOriginalRoute}
+          routeChangeOffer={routeChangeOffer}
+          onRouteChangeOfferKeep={dismissRouteChangeOffer}
+          onRouteChangeOfferReturn={() => void rejoinPreviousCorridor()}
           showTrafficBypassCta={showTrafficBypassCta}
           bypassBusy={bypassBusy}
           onTrafficBypassFromHere={() => void handleTrafficBypassFromHere()}

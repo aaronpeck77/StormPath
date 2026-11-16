@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObjec
 import {
   formatDetourRejoinDistanceM,
   metersRemainingToRejoinOnLockedRoute,
+  pickLocalRejoinAlongM,
 } from "./detourRejoin";
 import {
   resolveDrivingRejoinContext,
@@ -64,10 +65,19 @@ import {
 } from "./rerouteOwner";
 import {
   bearingAlongRouteAhead,
+  closestPointOnPolyline,
   initialBearingDegrees,
   pointAtAlongMeters,
   polylineLengthMeters,
 } from "./routeGeometry";
+import {
+  classifyRouteChangeMateriality,
+  consentTierForContext,
+  proposedRejoinsPreviousCorridor,
+  ROUTE_CHANGE_OFFER_TIMEOUT_MS,
+  routeChangeUxFor,
+  type RouteChangeOffer,
+} from "./routeConsent";
 import {
   buildCumulativeDistances,
   buildCumulativeDistancesAsync,
@@ -141,8 +151,17 @@ export interface UseOffRouteNavigationDeps {
   onPersonalForkRef?: MutableRefObject<boolean>;
 }
 
-export type RecalcRouteFromHereFn = (opts?: { silent?: boolean }) => Promise<boolean>;
-export type StayOnThisRoadFn = (opts?: { silent?: boolean }) => Promise<boolean>;
+export type ReplanRouteOpts = {
+  silent?: boolean;
+  /** Driver picked "return to original" — suppress the consent offer; consent
+   *  was already given by the tap. */
+  driverInitiated?: boolean;
+  /** Through-point on the previous corridor — routes GPS→rejoin→dest so the
+   *  driver lands back on the line they locked. */
+  rejoinPoint?: LngLat;
+};
+export type RecalcRouteFromHereFn = (opts?: ReplanRouteOpts) => Promise<boolean>;
+export type StayOnThisRoadFn = (opts?: ReplanRouteOpts) => Promise<boolean>;
 export type ReturnToOriginalRouteFn = () => void;
 
 /** Off-route detection — soft-restarts the locked corridor from GPS when confirmed. */
@@ -242,6 +261,18 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   const lastAutoRerouteAttemptRef = useRef(0);
   /** Start of the current off-route episode — Core's grace window is measured from here. */
   const offRouteSinceMsRef = useRef<number | null>(null);
+  /* Route consent (docs/ROUTE_CONSENT.md): corridor the driver locked before
+   * the latest material change, plus the pending keep/return offer. The new
+   * route is already guiding — the offer only gates the *return* choice. */
+  const [routeChangeOffer, setRouteChangeOffer] = useState<RouteChangeOffer | null>(null);
+  const routeChangeOfferRef = useRef<RouteChangeOffer | null>(null);
+  routeChangeOfferRef.current = routeChangeOffer;
+  const routeChangeOfferTimerRef = useRef<number | null>(null);
+  const routeChangeOfferSeqRef = useRef(0);
+  const previousCorridorRef = useRef<{
+    geometry: LngLat[];
+    routeId: string | null;
+  } | null>(null);
 
   useEffect(() => {
     const g = guidanceRoute?.geometry;
@@ -344,6 +375,13 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     instantRoadClassRef.current = "unknown";
     drivingRejoinSurfaceAtRef.current = null;
     drivingRejoinModeRef.current = "manual";
+    if (routeChangeOfferTimerRef.current != null) {
+      window.clearTimeout(routeChangeOfferTimerRef.current);
+      routeChangeOfferTimerRef.current = null;
+    }
+    routeChangeOfferRef.current = null;
+    setRouteChangeOffer(null);
+    previousCorridorRef.current = null;
   }, []);
 
   const clearDetourGuidance = useCallback(() => {
@@ -357,6 +395,42 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       detourRejoinAlongM: 0,
     };
   }, []);
+
+  const dismissRouteChangeOffer = useCallback(() => {
+    if (routeChangeOfferTimerRef.current != null) {
+      window.clearTimeout(routeChangeOfferTimerRef.current);
+      routeChangeOfferTimerRef.current = null;
+    }
+    routeChangeOfferRef.current = null;
+    setRouteChangeOffer(null);
+  }, []);
+
+  /**
+   * Highway-tier consent: the replan already installed the fastest-from-here
+   * line, so the offer can never stall progress — timeout or "keep" simply
+   * leaves it running. "Return" replans through a rejoin point on the corridor
+   * the driver locked before the change.
+   */
+  const raiseRouteChangeOffer = useCallback(
+    (offer: Omit<RouteChangeOffer, "id" | "createdAtMs">) => {
+      if (routeChangeOfferTimerRef.current != null) {
+        window.clearTimeout(routeChangeOfferTimerRef.current);
+      }
+      const next: RouteChangeOffer = {
+        ...offer,
+        id: ++routeChangeOfferSeqRef.current,
+        createdAtMs: Date.now(),
+      };
+      routeChangeOfferRef.current = next;
+      setRouteChangeOffer(next);
+      routeChangeOfferTimerRef.current = window.setTimeout(() => {
+        routeChangeOfferTimerRef.current = null;
+        routeChangeOfferRef.current = null;
+        setRouteChangeOffer(null);
+      }, ROUTE_CHANGE_OFFER_TIMEOUT_MS);
+    },
+    []
+  );
 
   const prefetchHoldRejoinPreview = useCallback(async () => {
     /* Soft restart owns off-route recovery. Hold-preview B/C overlays left Rt/Mp
@@ -395,9 +469,22 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setOffRouteAwaitingDriverChoice(false);
 
     const epochAtStart = routeGraphEpochRef.current;
+    /* Corridor the driver locked before this replan — the consent classifier
+     * and the "return to original" offer both measure against it. */
+    const prevLockedRoute = planRef.current.routes.find(
+      (r) => r.id === lockedNavigationRouteIdRef.current
+    );
+    const prevCorridorGeometry = prevLockedRoute?.geometry?.length
+      ? prevLockedRoute.geometry
+      : guidanceRouteGeomRef.current?.length
+        ? guidanceRouteGeomRef.current
+        : null;
     try {
       const remainingVias = remainingViaStops(viaStops, activeViaIndex);
-      const viaCoords = remainingVias.map((s) => s.lngLat);
+      const viaCoords = [
+        ...(opts?.rejoinPoint ? [opts.rejoinPoint] : []),
+        ...remainingVias.map((s) => s.lngLat),
+      ];
       const bearingDeg = headingRef.current;
       const routeCap = isPlus ? 2 : 1;
       const fresh = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
@@ -432,6 +519,45 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       setFitTrigger((n) => n + 1);
       if (restartNativeNav) {
         void restartNativeNav();
+      }
+      /* Route consent (docs/ROUTE_CONSENT.md): the new line is already guiding.
+       * Tactical moves and city/town tiers stay notify-only (voice + hint);
+       * a material change on the highway raises the keep/return offer. A
+       * driver-initiated rejoin never re-asks — consent was the tap. */
+      if (!opts?.driverInitiated) {
+        const tier = consentTierForContext({
+          roadClass: drivingRejoinRoadClassRef.current,
+          rejoinMode: drivingRejoinModeRef.current,
+        });
+        const materiality = classifyRouteChangeMateriality({
+          proposedGeometry: primary.geometry,
+          previousGeometry: prevCorridorGeometry,
+        });
+        const ux = routeChangeUxFor({
+          materiality,
+          tier,
+          canReturnToPrevious: Boolean(prevCorridorGeometry?.length),
+        });
+        if (ux === "offer" && prevCorridorGeometry?.length) {
+          previousCorridorRef.current = {
+            geometry: prevCorridorGeometry,
+            routeId: prevLockedRoute?.id ?? null,
+          };
+          raiseRouteChangeOffer({
+            previousGeometry: prevCorridorGeometry,
+            newRouteId: primary.id,
+            rejoinsPrevious: proposedRejoinsPreviousCorridor({
+              proposedGeometry: primary.geometry,
+              previousGeometry: prevCorridorGeometry,
+            }),
+          });
+        } else {
+          previousCorridorRef.current = null;
+          dismissRouteChangeOffer();
+        }
+      } else {
+        previousCorridorRef.current = null;
+        dismissRouteChangeOffer();
       }
       const copy = offRouteReplanCopy({
         kind: lockedRouteKind(primary),
@@ -491,6 +617,8 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     settingVoiceGuidanceEnabled,
     guidanceRoute,
     planRef,
+    raiseRouteChangeOffer,
+    dismissRouteChangeOffer,
   ]);
 
   /** @deprecated Overlay rejoin removed — same as soft restart (new Go lock from GPS). */
@@ -505,6 +633,34 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     setOffRouteAwaitingDriverChoice(false);
     void softRestartRouteFromHere({ silent: false });
   }, [softRestartRouteFromHere]);
+
+  const rejoinPreviousCorridor = useCallback(async () => {
+    const prev = previousCorridorRef.current;
+    dismissRouteChangeOffer();
+    previousCorridorRef.current = null;
+    if (!prev?.geometry?.length || !userLngLat || !destLngLat) return false;
+    if (!navigationStartedRef.current || !mapboxToken) return false;
+
+    /* Rejoin point ahead on the corridor the driver locked — same pick the
+     * rejoin recovery uses, so "return" lands where the route still makes
+     * sense rather than U-turning to a point already passed. */
+    const snap = closestPointOnPolyline(userLngLat, prev.geometry);
+    const totalM = polylineLengthMeters(prev.geometry);
+    const alongM = pickLocalRejoinAlongM(snap.alongMeters, totalM, 0, {
+      speedMps: speedMpsRef.current ?? 0,
+      lateralM: snap.lateralMetersApprox,
+    });
+    const rejoinPoint = pointAtAlongMeters(prev.geometry, Math.min(alongM, totalM - 1));
+    return softRestartRouteFromHere({ silent: false, driverInitiated: true, rejoinPoint });
+  }, [
+    userLngLat,
+    destLngLat,
+    mapboxToken,
+    dismissRouteChangeOffer,
+    navigationStartedRef,
+    speedMpsRef,
+    softRestartRouteFromHere,
+  ]);
 
   const markRecoveryFailed = useCallback(() => {
     pollSessionRef.current = {
@@ -581,6 +737,14 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       viewModeRef,
     ]
   );
+
+  useEffect(() => {
+    return () => {
+      if (routeChangeOfferTimerRef.current != null) {
+        window.clearTimeout(routeChangeOfferTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     pollSessionRef.current = {
@@ -894,6 +1058,9 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     recalcRouteFromHere,
     stayOnThisRoad,
     returnToOriginalRoute,
+    rejoinPreviousCorridor,
+    routeChangeOffer,
+    dismissRouteChangeOffer,
     resetOffRouteNavigation,
     clearDetourGuidance,
     showOffRouteStatusBanner,

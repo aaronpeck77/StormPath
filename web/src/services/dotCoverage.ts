@@ -106,3 +106,15 @@ export const WINTER_CONDITION_STATES: readonly string[] = [
   "vermont",
   "wisconsin",
 ];
+
+/** States the audit marked as true dead ends — nothing public exists to
+ *  adapt (RI has no 511 program at all; WV publishes static GIS only).
+ *  See cloudflare/dot-feeds/.build/state-audit.md. Everything else without
+ *  a feed stays "no feed yet" — AL (ALDOT credential request pending),
+ *  WY (Trihydro SDX agreement route), CT/AR (license terms worth a
+ *  conversation) are all still open threads. Rendered as N/A on the
+ *  coverage map so users don't read silence as "feed coming soon". */
+export const DOT_UNAVAILABLE_STATES: readonly string[] = [
+  "rhode island",
+  "west virginia",
+];

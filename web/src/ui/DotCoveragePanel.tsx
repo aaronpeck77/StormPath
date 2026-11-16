@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   coveredUsStates,
   DOT_COVERAGE_CAVEATS,
+  DOT_UNAVAILABLE_STATES,
   dotStateDisplayName,
   fetchDotCoverageStates,
   uncoveredUsStates,
@@ -34,7 +35,9 @@ export function DotCoveragePanel() {
 
   if (!covered) return null;
   const coveredNames = coveredUsStates(covered).map(dotStateDisplayName);
-  const uncoveredNames = uncoveredUsStates(covered).map(dotStateDisplayName);
+  const uncoveredNames = uncoveredUsStates(covered);
+  const naNames = uncoveredNames.filter((s) => DOT_UNAVAILABLE_STATES.includes(s));
+  const pendingNames = uncoveredNames.filter((s) => !DOT_UNAVAILABLE_STATES.includes(s));
   if (!coveredNames.length) return null;
 
   return (
@@ -50,16 +53,23 @@ export function DotCoveragePanel() {
           const d = US_STATE_PATHS[name];
           if (!d) return null;
           const isLive = covered.has(name);
+          const isNA = !isLive && DOT_UNAVAILABLE_STATES.includes(name);
           return (
             <path
               key={name}
               d={d}
-              className={isLive ? "dotcov__state dotcov__state--live" : "dotcov__state"}
+              className={
+                isLive
+                  ? "dotcov__state dotcov__state--live"
+                  : isNA
+                    ? "dotcov__state dotcov__state--na"
+                    : "dotcov__state"
+              }
               fillRule="evenodd"
             >
               <title>
                 {dotStateDisplayName(name)}
-                {isLive ? " — live DOT feed" : " — no feed yet"}
+                {isLive ? " — live DOT feed" : isNA ? " — no public feed (N/A)" : " — no feed yet"}
                 {WINTER_CONDITION_STATES.includes(name) ? " · winter road conditions" : ""}
               </title>
             </path>
@@ -81,6 +91,23 @@ export function DotCoveragePanel() {
             </text>
           );
         })}
+        {DOT_UNAVAILABLE_STATES.map((name) => {
+          if (covered.has(name)) return null;
+          const c = US_STATE_CENTROIDS[name];
+          if (!c) return null;
+          return (
+            <text
+              key={name}
+              x={c[0]}
+              y={c[1]}
+              className="dotcov__na"
+              textAnchor="middle"
+              dominantBaseline="central"
+            >
+              N/A
+            </text>
+          );
+        })}
       </svg>
       <div className="dotcov__legend">
         <span className="dotcov__legend-item">
@@ -89,13 +116,20 @@ export function DotCoveragePanel() {
         <span className="dotcov__legend-item">
           <i className="dotcov__swatch" /> No feed yet
         </span>
+        <span className="dotcov__legend-item">
+          <i className="dotcov__swatch dotcov__swatch--na" /> N/A — no public feed
+        </span>
         <span className="dotcov__legend-item">❄ Winter road conditions</span>
       </div>
       <p className="about-sheet__p">
         Live DOT work-zone &amp; closure feeds in {coveredNames.length} states + DC.
-        {uncoveredNames.length
-          ? ` No feed yet in: ${uncoveredNames.join(", ")}.`
-          : " Every US state has a feed."}
+        {pendingNames.length
+          ? ` No feed yet in: ${pendingNames.map(dotStateDisplayName).join(", ")}.`
+          : ""}
+        {naNames.length
+          ? ` N/A (no public feed): ${naNames.map(dotStateDisplayName).join(", ")}.`
+          : ""}
+        {!pendingNames.length && !naNames.length ? " Every US state has a feed." : ""}
       </p>
       {DOT_COVERAGE_CAVEATS.map((c) => (
         <p key={c} className="about-sheet__p about-sheet__p--tight">
