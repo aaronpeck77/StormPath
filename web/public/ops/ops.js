@@ -431,7 +431,6 @@ const SECRET_KEY = "stormpath.ops.secret";
       }
 
       async function renderDotFeeds(dot) {
-        const base = (dot?.url || DOT_FEED_DEFAULT).replace(/\/+$/, "");
         const statsEl = document.getElementById("dotFeedsStats");
         const failEl = document.getElementById("dotFeedsFailed");
         const metaEl = document.getElementById("dotFeedsMeta");
@@ -439,9 +438,60 @@ const SECRET_KEY = "stormpath.ops.secret";
         const updatedEl = document.getElementById("dotFeedsUpdated");
         if (!statsEl || !mapEl) return;
 
+        const requestedBase = (dot?.url || "").replace(/\/+$/, "");
+        /* The summary's dotFeeds.url comes from Netlify env — if that's stale
+         * or an ad-blocker kills the configured host, fall back to the known
+         * worker URL before declaring the panel dead. */
+        const bases = [
+          ...new Set(
+            [requestedBase, DOT_FEED_DEFAULT].filter(Boolean)
+          ),
+        ];
+        let base = bases[0];
         let feedsPayload = null;
-        try {
-          feedsPayload = await fetchJson(`${base}/feeds`);
+        let lastErr = null;
+        for (const candidate of bases) {
+          try {
+            feedsPayload = await fetchJson(`${candidate}/feeds`);
+            base = candidate;
+            break;
+          } catch (e) {
+            lastErr = e instanceof Error ? e.message : String(e);
+          }
+        }
+        if (!feedsPayload) {
+          /* Both URLs failed — still try /health on the default for a
+           * last-ditch status read, then report the real error. */
+          try {
+            const h = await fetchJson(`${DOT_FEED_DEFAULT}/health`);
+            feedsPayload = {
+              ok: h.ok !== false,
+              events: h.events ?? null,
+              states: typeof h.states === "number" ? h.states : null,
+              ageSec: h.ageSec ?? null,
+              feedsTotal: h.feedsTotal ?? null,
+              feedsOk: h.feedsOk ?? null,
+              feedsSkipped: h.feedsSkipped ?? null,
+              feedsFailed: Array.isArray(h.feedsFailed) ? h.feedsFailed : [],
+              partial: true,
+            };
+            base = DOT_FEED_DEFAULT;
+            dotFeedsCache = { feeds: null, fetchedAt: null };
+          } catch {
+            feedsPayload = {
+              ok: false,
+              events: null,
+              states: null,
+              ageSec: null,
+              feedsTotal: null,
+              feedsOk: null,
+              feedsSkipped: null,
+              feedsFailed: [],
+              error: `unreachable at ${bases.join(" and ")} (${lastErr}) — if this is an ad-blocker, allow *.workers.dev`,
+            };
+            dotFeedsCache = { feeds: null, fetchedAt: null };
+          }
+        } else {
           dotFeedsCache = {
             feeds: feedsPayload.feeds || [],
             fetchedAt: feedsPayload.fetchedAt,
@@ -454,34 +504,6 @@ const SECRET_KEY = "stormpath.ops.secret";
            * worker answered; only an explicit error payload means down. */
           if (feedsPayload.ok == null)
             feedsPayload.ok = Array.isArray(feedsPayload.feeds);
-        } catch {
-          /* /feeds missing on an older worker — fall back to /health counts. */
-          try {
-            const h = await fetchJson(`${base}/health`);
-            dotFeedsCache = { feeds: null, fetchedAt: h.fetchedAt ?? null };
-            feedsPayload = {
-              ok: h.ok !== false,
-              events: h.events ?? null,
-              states: h.states ?? null,
-              ageSec: h.ageSec ?? null,
-              feedsTotal: h.feedsTotal ?? null,
-              feedsOk: h.feedsOk ?? null,
-              feedsSkipped: h.feedsSkipped ?? null,
-              feedsFailed: Array.isArray(h.feedsFailed) ? h.feedsFailed : [],
-            };
-          } catch (e) {
-            feedsPayload = {
-              ok: false,
-              events: null,
-              states: null,
-              ageSec: null,
-              feedsTotal: null,
-              feedsOk: null,
-              feedsSkipped: null,
-              feedsFailed: [],
-              error: e instanceof Error ? e.message : "unreachable",
-            };
-          }
         }
         const health = feedsPayload || {};
         const feedsList = dotFeedsCache.feeds || [];
