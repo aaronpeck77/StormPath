@@ -545,6 +545,10 @@ export function useNativeNavSession(opts: {
       nativeAbandonedRef.current = false;
       corridorAdoptedRef.current = false;
       firstRouteChangedRef.current = true;
+      /* Genuine trip end (true → false): bank this drive's dump and open a
+       * clean window so post-trip driving doesn't merge into its counters.
+       * resetDriveDiag archives first, then wipes — next Go resets anyway. */
+      if (prevNav === true) resetDriveDiag();
       if (!nativeStoppingRef.current && (startedForNavRef.current || nativeNavActive)) {
         void stopNative();
       }
