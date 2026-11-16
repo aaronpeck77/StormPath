@@ -49,7 +49,7 @@ kept both since ne511 is the authoritative real-time source).
 
 ---
 
-## ✅ LIVE (30 states/jurisdictions, ~40 feed sources)
+## ✅ LIVE (32 states/jurisdictions, ~42 feed sources)
 
 | State | Feed(s) | Coverage note |
 |---|---|---|
@@ -83,6 +83,8 @@ kept both since ne511 is the authoritative real-time source).
 | North Dakota | `nddot` | Statewide. |
 | South Dakota | `sddot` | Statewide. |
 | **Nebraska** | `ne511` + **NE winter conditions** | **NEW 2026-11-16** — 511.nebraska.gov Castle Rock GraphQL API (keyless, no signup): ~272 events — construction, incidents, closures, truck restrictions, winter road conditions, flooding. One `mapFeaturesQuery` per layer slug statewide; Cluster collections expand to full member events. Fills the I-80 gap between CO and IA. |
+| **Montana** | `iteris-mt` | **NEW 2026-11-16** — 511mt.net Iteris ATIS CDN GeoJSON (keyless, no signup): ~81 events — construction (25), incidents/warnings (12), vehicle restrictions (9), RWIS stations emitting only when pavement/air is freezing or precipitation is wintry (44 live at probe). I-90/I-15 corridor coverage. |
+| **South Carolina** | `iteris-sc` | **NEW 2026-11-16** — 511sc.org Iteris ATIS CDN GeoJSON (keyless): construction feed live (~5 events; I-77/I-95/I-26 work zones). Incident/weather/congestion files exist but were empty at probe — adapter re-checks every snapshot. |
 | New Hampshire + Vermont + Maine | `necdot` + `necompass-rwis` | One regional New England WZDx feed covers all three **+ NE Compass RWIS road-surface sensors** (keyless C2C XML — essData; non-Dry/non-Unknown stations emit as `kind:"condition"` with pavement temps). |
 | Florida | `fdot` + `ibi-fl` | Partial WZDx **+ FL 511 incidents/closures** (IBI, keyless — Construction skipped as mirrored). |
 | Canada (QC) | `quebec` | Provincial feed — bonus coverage, not a state. |

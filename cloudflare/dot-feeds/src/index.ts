@@ -1053,6 +1053,248 @@ async function fetchNebraska511(): Promise<DotEvent[]> {
   return events;
 }
 
+/* ── Iteris ATIS 511 CDNs (MT, SC) ────────────────────────────────────────
+ * Both states run Iteris' SafeTravel stack. Event data is keyless static
+ * GeoJSON on a state CDN: {st}.cdn.iteris-atis.com/geojson/icons/metadata/
+ * icons.{file}.geojson — Point features with route/dir/headline/report
+ * properties. MT adds restrictions (height/length/width limits — feeds
+ * the RV/truck vehicle-limit path via restrictionsText) and a full RWIS
+ * feed (90 stations with surface temps — emits only ≤33°F or wintry
+ * precip). SC's incident/weather files exist but are empty when roads
+ * are quiet — an empty FeatureCollection is honest "no events", not a
+ * failure. Detail endpoint icons/data/{event_id} exists but v1 uses the
+ * inline report fields to keep the snapshot to one request per file. */
+
+const ITERIS_FILES: Record<
+  string,
+  { file: string; kind: DotEvent["kind"]; label: string }[]
+> = {
+  mt: [
+    { file: "construction", kind: "construction", label: "Construction" },
+    { file: "events", kind: "incident", label: "Road event" },
+    { file: "restrictions", kind: "condition", label: "Vehicle restriction" },
+  ],
+  sc: [
+    { file: "construction", kind: "construction", label: "Construction" },
+    { file: "incident", kind: "incident", label: "Incident" },
+    { file: "weather", kind: "condition", label: "Weather" },
+    { file: "other_events", kind: "incident", label: "Road event" },
+  ],
+};
+
+const ITERIS_STATES: { tag: string; state: string; cdn: string }[] = [
+  { tag: "mt", state: "montana", cdn: "https://mt.cdn.iteris-atis.com" },
+  { tag: "sc", state: "south carolina", cdn: "https://sc.cdn.iteris-atis.com" },
+];
+
+const ITERIS_DIR: Record<string, string> = {
+  n: "NB", nb: "NB", s: "SB", sb: "SB", e: "EB", eb: "EB", w: "WB", wb: "WB",
+  b: "", both: "",
+};
+
+function iterisDir(raw: string): string | null {
+  const d = ITERIS_DIR[raw.trim().toLowerCase()];
+  return d ? d : null;
+}
+
+function normalizeIterisFeature(
+  f: Record<string, unknown>,
+  kind: DotEvent["kind"],
+  label: string,
+  state: string,
+  publisher: string,
+  tag: string
+): DotEvent | null {
+  const props = asRecord(f.properties);
+  const geom = asRecord(f.geometry);
+  const coords = geom.coordinates;
+  let point: [number, number] | null = null;
+  if (Array.isArray(coords) && coords.length >= 2) {
+    const x = Number(coords[0]), y = Number(coords[1]);
+    if (Number.isFinite(x) && Number.isFinite(y)) point = [x, y];
+  }
+  if (!point) return null;
+
+  const route = prettifyRoadName(str(props.route));
+  const headline = str(props.headline).replace(/\s+/g, " ").trim();
+  const locDesc = str(props.location_description).replace(/\s+/g, " ").trim();
+  const report = stripIbiHtml(str(props.report) || str(props.enhanced_report));
+  /* MT events carry a full "Rock Fall Warning until further notice…"
+   * report; prefer its first clause as the detail when headline is generic. */
+  const detail =
+    headline && !/^(warning|restriction|construction work|road event)$/i.test(headline)
+      ? headline
+      : (report.split(/[.<]/)[0] || headline || label).trim();
+  const title = route ? `${route}: ${detail}` : detail || label;
+  const description =
+    (report && report !== detail ? `${detail} — ${report}` : detail || locDesc || title)
+      .slice(0, 400);
+
+  /* Restrictions file: parse "Height Limit 15 feet" style limits into
+   * restrictionsText so the app's vehicle-limit warnings can use them. */
+  let restrictionsText: string | null = null;
+  if (kind === "condition" && /limit/i.test(report + locDesc)) {
+    const limits = [...`${report} ${locDesc}`.matchAll(
+      /(height|length|width|weight)[^,.<]{0,30}?limit[^0-9]{0,20}(\d+(?:\.\d+)?)\s*(ft|feet|lbs?|pounds|tons?)/gi
+    )].map((m) => `${m[1]![0]!.toUpperCase()}${m[1]!.slice(1).toLowerCase()} ${m[2]} ${m[3]}`);
+    restrictionsText = limits.length ? limits.join(" · ") : null;
+  }
+
+  const laneText = `${report} ${locDesc} ${headline}`;
+  const laneN = laneText.match(/(\d+)\s*lane/i);
+  const allClosed = /all lanes|road closed|full closure/i.test(laneText);
+  let vehicleImpact: string | null = null;
+  let lanesClosed = 0;
+  if (kind === "closure" || allClosed) vehicleImpact = "all-lanes-closed";
+  else if (laneN) {
+    vehicleImpact = "some-lanes-closed";
+    lanesClosed = Number(laneN[1]);
+  } else if (/closed|restriction/i.test(laneText)) vehicleImpact = "some-lanes-closed";
+
+  const updSec = Number(props.last_update);
+  const updIso =
+    Number.isFinite(updSec) && updSec > 1_000_000_000
+      ? new Date(updSec * 1000).toISOString()
+      : null;
+  const idPart = str(props.event_id) || str(f.id) || str(props.name) || `${point[0]},${point[1]}`;
+
+  return {
+    id: `iteris-${tag}:${kind === "construction" ? "c" : kind === "closure" ? "x" : kind === "incident" ? "i" : "w"}:${idPart}`,
+    state,
+    publisher,
+    kind,
+    status: "active",
+    title,
+    roadName: route,
+    direction: iterisDir(str(props.dir)),
+    description,
+    restrictionsText,
+    lanesClosed,
+    travelLanesClosed: null,
+    laneSummary: null,
+    workType: kind === "condition" ? label : null,
+    vehicleImpact,
+    startIso: null,
+    endIso: null,
+    updatedIso: updIso,
+    point,
+    bbox: [point[0], point[1], point[0], point[1]],
+    geometry: { type: "Point", coordinates: point },
+  };
+}
+
+/** MT RWIS — 118 stations; emit only meaningful winter signals:
+ *  surface temp ≤33°F, surface condition text, or wintry precip. Dry
+ *  stations and null sensors stay silent. */
+function normalizeIterisRwis(
+  f: Record<string, unknown>,
+  state: string,
+  publisher: string,
+  tag: string
+): DotEvent | null {
+  const props = asRecord(f.properties);
+  const geom = asRecord(f.geometry);
+  const coords = geom.coordinates;
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+  const point: [number, number] = [Number(coords[0]), Number(coords[1])];
+  if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) return null;
+
+  const surface = asArray<Record<string, unknown>>(props.surface)[0] ?? {};
+  const atmos = asArray<Record<string, unknown>>(props.atmos)[0] ?? {};
+  const surfTempF = Number(asRecord(surface.surface_temperature).value);
+  const surfCond = str(asRecord(surface.surface_condition).value);
+  const airTempF = Number(asRecord(atmos.air_temperature).value);
+  const precipType = str(asRecord(atmos.precip_type).value);
+  const name = str(props.name) || "RWIS station";
+  const route = prettifyRoadName(str(props.route));
+  const mrm = str(props.mrm);
+
+  const freezing = Number.isFinite(surfTempF) && surfTempF <= 33;
+  const freezingAir = !Number.isFinite(surfTempF) && Number.isFinite(airTempF) && airTempF <= 15;
+  const wintry = /snow|ice|sleet/i.test(`${surfCond} ${precipType}`);
+  const adverseCond = surfCond && !/^(dry|unknown|na|clear)$/i.test(surfCond);
+  if (!freezing && !freezingAir && !wintry && !adverseCond) return null;
+
+  const label =
+    surfCond && !/^(dry|unknown|na|clear)$/i.test(surfCond)
+      ? surfCond
+      : freezing
+        ? "Freezing pavement"
+        : wintry
+          ? `Wintry precipitation (${precipType})`
+          : "Near-freezing air temperature";
+  const temps =
+    (Number.isFinite(surfTempF) ? ` · pavement ${Math.round(surfTempF)}°F` : "") +
+    (Number.isFinite(airTempF) ? ` · air ${Math.round(airTempF)}°F` : "");
+  const updSec = Number(asRecord(atmos.observation_time).value);
+  const sid = str(props.id) || `${point[0]},${point[1]}`;
+
+  return {
+    id: `iteris-${tag}:rwis:${sid}`,
+    state,
+    publisher,
+    kind: "condition",
+    status: "active",
+    title: route ? `${route} RWIS` : "Road weather station",
+    roadName: route,
+    direction: null,
+    description: `${label} — ${name}${mrm ? ` (MM ${mrm})` : ""}${temps}`,
+    restrictionsText: null,
+    lanesClosed: 0,
+    travelLanesClosed: null,
+    laneSummary: null,
+    workType: label,
+    vehicleImpact: "freezing",
+    startIso: null,
+    endIso: null,
+    updatedIso:
+      Number.isFinite(updSec) && updSec > 1_000_000_000 ? new Date(updSec * 1000).toISOString() : null,
+    point,
+    bbox: [point[0], point[1], point[0], point[1]],
+    geometry: { type: "Point", coordinates: point },
+  };
+}
+
+async function fetchIterisAtis(cfg: (typeof ITERIS_STATES)[number]): Promise<DotEvent[]> {
+  const events: DotEvent[] = [];
+  const files = ITERIS_FILES[cfg.tag] ?? [];
+  const errors: string[] = [];
+  for (const spec of files) {
+    try {
+      const url = `${cfg.cdn}/geojson/icons/metadata/icons.${spec.file}.geojson`;
+      const data = (await fetchJson(url, FEED_TIMEOUT_MS)) as Record<string, unknown>;
+      for (const f of asArray<Record<string, unknown>>(data.features)) {
+        const ev = normalizeIterisFeature(
+          f, spec.kind, spec.label, cfg.state, "State DOT 511", cfg.tag
+        );
+        if (ev) events.push(ev);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`${spec.file}: ${msg}`);
+      console.warn(`[dot-feeds] iteris ${cfg.tag}/${spec.file} failed`, err);
+    }
+  }
+  /* MT RWIS rides along on the same CDN — only montana has the file. */
+  if (cfg.tag === "mt") {
+    try {
+      const url = `${cfg.cdn}/geojson/icons/metadata/icons.rwis.geojson`;
+      const data = (await fetchJson(url, FEED_TIMEOUT_MS)) as Record<string, unknown>;
+      for (const f of asArray<Record<string, unknown>>(data.features)) {
+        const ev = normalizeIterisRwis(f, cfg.state, "Montana DOT RWIS", cfg.tag);
+        if (ev) events.push(ev);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`rwis: ${msg}`);
+      console.warn(`[dot-feeds] iteris ${cfg.tag}/rwis failed`, err);
+    }
+  }
+  const total = files.length + (cfg.tag === "mt" ? 1 : 0);
+  if (errors.length === total) throw new Error(errors[0]);
+  return events;
+}
+
 /** Maryland CHART — keyless JSONP-turned-JSON export service. Winter-relevant
  *  events carry incidentTypes like "Weather Closure Winter Precipitation";
  *  the feed also carries ordinary incidents/closures, but MD's WZDx `mdot`
@@ -2694,6 +2936,34 @@ export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
       const error = err instanceof Error ? err.message : String(err);
       console.warn(`[dot-feeds] Nebraska 511 failed`, err);
       feedStatus.push({ name: "ne511", source: "custom", state: "failed", events: 0, error });
+    }
+  }
+
+  /* Iteris ATIS CDNs — MT + SC keyless GeoJSON (construction, events,
+   * restrictions; MT also RWIS). One status per state. */
+  for (const cfg of ITERIS_STATES) {
+    const before = events.length;
+    try {
+      const itEvents = await fetchIterisAtis(cfg);
+      for (const s of stateNamesOf(cfg.state)) coveredStates.add(s);
+      events.push(...itEvents);
+      feedStatus.push({
+        name: `iteris-${cfg.tag}`,
+        source: "custom",
+        state: "ok",
+        events: events.length - before,
+      });
+    } catch (err) {
+      failed += 1;
+      const error = err instanceof Error ? err.message : String(err);
+      console.warn(`[dot-feeds] Iteris ATIS failed: ${cfg.state}`, err);
+      feedStatus.push({
+        name: `iteris-${cfg.tag}`,
+        source: "custom",
+        state: "failed",
+        events: 0,
+        error,
+      });
     }
   }
 
