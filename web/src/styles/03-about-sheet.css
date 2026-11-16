@@ -892,6 +892,21 @@
   fill: #3fae7c;
 }
 
+.dotcov__state--na {
+  fill: rgba(100, 116, 139, 0.1);
+  stroke: rgba(255, 255, 255, 0.1);
+}
+
+.dotcov__na {
+  font-size: 19px;
+  font-weight: 700;
+  fill: #94a3b8;
+  paint-order: stroke;
+  stroke: #0a0b0d;
+  stroke-width: 6px;
+  pointer-events: none;
+}
+
 .dotcov__winter {
   font-size: 46px;
   fill: #bae6fd;
@@ -928,6 +943,10 @@
 .dotcov__swatch--live {
   background: #2f9e6b;
   border-color: rgba(255, 255, 255, 0.35);
+}
+
+.dotcov__swatch--na {
+  background: rgba(100, 116, 139, 0.25);
 }
 
 /* Saved drive dumps list (About → Saved drive dumps). */
