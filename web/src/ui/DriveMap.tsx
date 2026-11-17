@@ -411,7 +411,9 @@ export type Props = {
    */
   trafficBypassCompareHazardLngLat?: LngLat | null;
   /** Countdown "next" hazard beacon — pulsing marker synced with the drive hazard panel. */
-  nextHazardBeacon?: { lngLat: LngLat; label: string; color: string } | null;
+  nextHazardBeacon?: { lngLat: LngLat; label: string; color: string; id?: string } | null;
+  /** Beacon tap — opens the same hazard sheet as the ticker row. */
+  onNextHazardBeaconPress?: (id: string) => void;
   /** M along the primary leg for the compare hazard — tightens local fit ahead of the jam. */
   trafficBypassCompareHazardAlongMeters?: number | null;
   /** Toll preview frames the diverged toll corridor instead of the full trip. */
@@ -598,6 +600,7 @@ function DriveMapInner({
   trafficBypassCompareActive = false,
   trafficBypassCompareHazardLngLat = null,
   nextHazardBeacon = null,
+  onNextHazardBeaconPress,
   trafficBypassCompareHazardAlongMeters = null,
   trafficBypassCompareKind,
   rejoinCompareLockedRouteId = null,
@@ -643,6 +646,10 @@ function DriveMapInner({
   const dotEventMarkerMapRef = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLElement }>>(new Map());
   const onSearchPickMarkerClickRef = useRef(onSearchPickMarkerClick);
   onSearchPickMarkerClickRef.current = onSearchPickMarkerClick;
+  const nextHazardBeaconRef = useRef(nextHazardBeacon);
+  nextHazardBeaconRef.current = nextHazardBeacon;
+  const onNextHazardBeaconPressRef = useRef(onNextHazardBeaconPress);
+  onNextHazardBeaconPressRef.current = onNextHazardBeaconPress;
   const routeIdsRef = useRef<Set<string>>(new Set());
   /** Re-apply A/B/C route lines — shared by sync effect and map layer health watch. */
   const syncTripRoutesRef = useRef<() => boolean>(() => false);
@@ -3359,6 +3366,13 @@ function DriveMapInner({
       })
         .setLngLat(nextHazardBeacon.lngLat)
         .addTo(map);
+      const beaconEl = nextHazardBeaconMarkerRef.current.getElement();
+      beaconEl.setAttribute("role", "button");
+      beaconEl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = nextHazardBeaconRef.current?.id;
+        if (id) onNextHazardBeaconPressRef.current?.(id);
+      });
     } else {
       nextHazardBeaconMarkerRef.current.setLngLat(nextHazardBeacon.lngLat);
       const dot = nextHazardBeaconMarkerRef.current.getElement().querySelector<HTMLElement>(
@@ -5518,7 +5532,8 @@ function DriveMapInner({
     };
   }, [mapReady, searchPickMarkers, onSearchPickMarkerClick]);
 
-  /* State DOT/WZDx work-zone & closure dots — non-interactive, corridor-matched upstream. */
+  /* State DOT/WZDx work-zone & closure dots — tappable for the detail sheet,
+   * corridor-matched upstream. */
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;

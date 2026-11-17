@@ -3144,6 +3144,7 @@ export default function App() {
       lngLat: pointAtAlongMeters(geom, nextDriveHazard.startMeters),
       label: nextDriveHazard.label,
       color: timelineItemBandColor(nextDriveHazard),
+      id: nextDriveHazard.id,
     };
   }, [nextDriveHazard, guidanceRoute?.geometry]);
   const stormAdvisoryBarPropsWithNext = useMemo(
@@ -3151,8 +3152,12 @@ export default function App() {
     [stormAdvisoryBarProps, nextHazardId]
   );
   const driveMapPropsWithBeacon = useMemo(
-    () => ({ ...driveMapProps, nextHazardBeacon }),
-    [driveMapProps, nextHazardBeacon]
+    () => ({
+      ...driveMapProps,
+      nextHazardBeacon,
+      onNextHazardBeaconPress: handleHazardTickerPress,
+    }),
+    [driveMapProps, nextHazardBeacon, handleHazardTickerPress]
   );
 
   return (

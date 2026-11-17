@@ -38,11 +38,10 @@ export function makeBypassHazardEl(): HTMLDivElement {
   return wrap;
 }
 
-/** Pulsing beacon at the countdown "next" hazard — syncs the route line with the drive panel. */
+/** Pulsing beacon at the countdown "next" hazard — syncs the route line with the drive panel. Tappable. */
 export function makeNextHazardBeaconEl(color: string): HTMLDivElement {
   const wrap = document.createElement("div");
   wrap.className = "map-next-hazard-beacon";
-  wrap.setAttribute("aria-hidden", "true");
   const ring = document.createElement("span");
   ring.className = "map-next-hazard-beacon__pulse";
   ring.style.background = color;

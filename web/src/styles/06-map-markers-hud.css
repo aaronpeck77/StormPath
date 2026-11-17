@@ -1630,12 +1630,15 @@ button.drive-hazard-ticker--tap:active {
 }
 
 
-/* Countdown "next" hazard beacon — pulsing marker on the route line. */
+/* Countdown "next" hazard beacon — pulsing marker on the route line.
+ * Tappable: opens the hazard sheet. The wrap is a 36px hit area; the dot
+ * stays visually centered inside it. */
 .map-next-hazard-beacon {
   position: relative;
-  width: 20px;
-  height: 20px;
-  pointer-events: none;
+  width: 36px;
+  height: 36px;
+  pointer-events: auto;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1683,28 +1686,38 @@ button.drive-hazard-ticker--tap:active {
 
 /* State DOT/WZDx work-zone & closure markers — corridor-matched. Small
  * warning triangles (Bill, 584): reads as "hazard" at a glance without
- * becoming map clutter; tappable for the detail sheet. */
+ * becoming map clutter; tappable for the detail sheet.
+ * The element is a ~40px transparent hit area (thumb-friendly); the 15px
+ * triangle renders on ::before so the visual stays unchanged. */
 .map-dot-event {
-  width: 15px;
-  height: 15px;
-  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+  width: 40px;
+  height: 40px;
+  position: relative;
   pointer-events: auto;
   cursor: pointer;
 }
 
+.map-dot-event::before {
+  content: "";
+  position: absolute;
+  inset: 12.5px;
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+  background: var(--dot-event-color, #8b8d98);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}
+
 .map-dot-event--construction {
-  background: #f5a524;
+  --dot-event-color: #f5a524;
 }
 
 .map-dot-event--closure {
-  background: #e5484d;
+  --dot-event-color: #e5484d;
 }
 
 .map-dot-event--incident {
-  background: #f76b15;
+  --dot-event-color: #f76b15;
 }
 
 .map-dot-event--other {
-  background: #8b8d98;
+  --dot-event-color: #8b8d98;
 }
