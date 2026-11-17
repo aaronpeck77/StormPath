@@ -105,6 +105,7 @@ import {
   noteDriveDiagYou,
   setDriveDiagLiveLengthM,
   setDriveDiagRouteLengthM,
+  setDriveDiagWxDiag,
 } from "./nav/driveDiagnostics";
 import { routeDoublesBack, routeInitialHeadAwayLoop } from "./nav/routeDoublesBack";
 import {
@@ -2034,6 +2035,22 @@ export default function App() {
     tomorrowIoApiKey: env.tomorrowIoApiKey,
     openWeatherApiKey: env.openWeatherApiKey,
   });
+
+  /* Wx-graph diagnostics: the glance panel fails silently when the pipeline
+   * produces nothing, so record the enable/block/sample state into the drive
+   * dump — next drive tells us why instead of going blank. */
+  useEffect(() => {
+    const blk = (radarRefreshBlocked || routeForecastRefreshBlocked || "-").slice(0, 40);
+    setDriveDiagWxDiag(
+      `ready:${routeWeatherReady ? 1 : 0} tio:${navResourceBudget.tioRouteFetchEnabled ? 1 : 0} rad:${navResourceBudget.radarRouteSamplingEnabled ? 1 : 0} radarN:${radarMosaicSamples.length} blk:${blk}`
+    );
+  }, [
+    routeWeatherReady,
+    navResourceBudget,
+    radarMosaicSamples.length,
+    radarRefreshBlocked,
+    routeForecastRefreshBlocked,
+  ]);
 
   useTripSurfaceRecovery({
     appForeground,

@@ -103,6 +103,9 @@ export type DriveDiagSnapshot = {
   etaJumpSource: string;
   /** New line left a point, came back, and continued. */
   doubledBack: number;
+  /** Weather-pipeline state for the Wx graphs — set by App each render when
+   *  values change; empty until the pipeline reports. */
+  wxDiag: string;
 };
 
 export type ViewDroneSkip =
@@ -299,6 +302,7 @@ function emptySnapshot(): DriveDiagSnapshot {
     etaJumpWhere: "",
     etaJumpSource: "",
     doubledBack: 0,
+    wxDiag: "",
   };
 }
 
@@ -391,6 +395,7 @@ function applyParsed(parsed: Partial<DriveDiagSnapshot>): void {
     etaJumpWhere: typeof parsed.etaJumpWhere === "string" ? parsed.etaJumpWhere.slice(0, 8) : "",
     etaJumpSource: typeof parsed.etaJumpSource === "string" ? parsed.etaJumpSource.slice(0, 8) : "",
     doubledBack: asCount(parsed.doubledBack),
+    wxDiag: typeof parsed.wxDiag === "string" ? parsed.wxDiag.slice(0, 120) : "",
   };
 }
 
@@ -585,6 +590,15 @@ export function setDriveDiagPoseSource(source: string): void {
   if (source !== "core" && source !== "gps") return;
   if (state.poseSource === source) return;
   state.poseSource = source;
+  persistDriveDiagSoon();
+}
+
+/** Weather-pipeline snapshot for the Wx graphs — App writes it when the
+ *  pipeline's enable/block/sample state changes so a blank panel explains itself. */
+export function setDriveDiagWxDiag(line: string): void {
+  const next = line.trim().slice(0, 120);
+  if (state.wxDiag === next) return;
+  state.wxDiag = next;
   persistDriveDiagSoon();
 }
 
@@ -909,6 +923,7 @@ export function formatDriveDiagLines(
     }`,
     `Trail: ${snap.droneTrail || "none"}`,
     `Lean: ${snap.leanApplies} applies, max ${snap.leanMaxDeg}°, ${snap.leanDrops} drops`,
+    ...(snap.wxDiag ? [`Wx: ${snap.wxDiag}`] : []),
     `YOU: gps ${snap.youGps || "-"}, core ${snap.youCore || "-"}`,
     `ETA: ${
       snap.etaJumpMin > 0
