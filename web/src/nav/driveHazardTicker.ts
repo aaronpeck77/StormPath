@@ -42,9 +42,13 @@ export function driveHazardFeedActive(
   );
 }
 
-/** Phone countdown ticker only reports hazards inside ~5 mi — farther out is
- * noise on a glanceable strip. The iPad queue/panel stays uncapped. */
-export const DRIVE_TICKER_MAX_AHEAD_M = 5 * 1609.34;
+/** Phone countdown ticker arms ~1 mi out — closer is glanceable, farther is noise.
+ * The iPad queue/panel stays uncapped. */
+export const DRIVE_TICKER_COUNTDOWN_AHEAD_M = 1609.34;
+
+/** The countdown only arms after this much clear road behind the last hazard.
+ * Inside a bunched corridor the next hazard gets a flash mention instead. */
+export const DRIVE_TICKER_CLEAR_RUNUP_M = 3 * 1609.34;
 
 function collectHazardCandidates(
   input: DriveHazardTickerInput,
@@ -89,16 +93,41 @@ function hazardLabel(item: TimelineItem): string {
   return `${item.developingLater ? "Possible: " : ""}${item.label.trim()}`;
 }
 
+/** End position of the nearest hazard fully behind the driver, using the same
+ * eligibility rules as the countdown ticker (muted/info/expired don't count). */
+function lastHazardEndBehindM(input: DriveHazardTickerInput, nowMs: number): number | null {
+  const { userAlongMeters: along } = input;
+  let lastEnd: number | null = null;
+  for (const item of input.items) {
+    if (item.crossesRoute === false || item.coarsePreview || !item.label.trim() ||
+      !Number.isFinite(item.startMeters) || !Number.isFinite(item.endMeters) ||
+      item.startMeters < 0 || item.endMeters < item.startMeters ||
+      item.endMeters > along || item.stripMuted || item.etaStale || item.severity === "info") continue;
+    if (item.expiresIso) {
+      const expiry = Date.parse(item.expiresIso);
+      if (!Number.isFinite(expiry) || expiry <= nowMs) continue;
+    }
+    if (lastEnd == null || item.endMeters > lastEnd) lastEnd = item.endMeters;
+  }
+  return lastEnd;
+}
+
 export function selectDriveHazardTicker(input: DriveHazardTickerInput, nowMs = Date.now()) {
   const item = collectHazardCandidates(input, nowMs, {
-    maxAheadMeters: DRIVE_TICKER_MAX_AHEAD_M,
+    maxAheadMeters: DRIVE_TICKER_COUNTDOWN_AHEAD_M,
   })[0];
   if (!item) return null;
+  /* Bunched corridor: the last hazard ended less than CLEAR_RUNUP ago, so the
+   * next one only earns a flash mention — the countdown arms after a few
+   * clear miles. */
+  const lastEnd = lastHazardEndBehindM(input, nowMs);
+  const bunched = lastEnd != null && input.userAlongMeters - lastEnd < DRIVE_TICKER_CLEAR_RUNUP_M;
   return {
     id: item.id,
     label: hazardLabel(item),
     distanceLabel: hazardDistanceLabel(item, input.userAlongMeters, input.miles),
     color: timelineItemBandColor(item),
+    mode: bunched ? "flash" as const : "countdown" as const,
   };
 }
 

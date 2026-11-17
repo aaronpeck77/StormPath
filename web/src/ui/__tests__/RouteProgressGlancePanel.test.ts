@@ -26,7 +26,7 @@ describe("Route Info shared hazard links", () => {
 
   it("uses the exact hazard identity also selected by the Drive countdown", () => {
     const ticker = selectDriveHazardTicker({ items: timeline, isPlus: true, isOnline: true,
-      navigationStarted: true, viewMode: "drive", userAlongMeters: 0, metersToManeuver: 5000, miles: true });
+      navigationStarted: true, viewMode: "drive", userAlongMeters: 4000, metersToManeuver: 5000, miles: true });
     expect(ticker?.id).toBe(timeline[0]!.id);
     expect(render()).toContain(`hazard-${encodeURIComponent(ticker!.id)}`);
   });

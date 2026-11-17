@@ -8,7 +8,7 @@ import {
 import type { TimelineItem } from "../routeAheadSync";
 
 const hazard: TimelineItem = {
-  /* ~4 mi ahead of userAlongMeters — inside the phone ticker's ~5 mi gate. */
+  /* ~4 mi ahead of userAlongMeters — inside the iPad queue's uncapped window. */
   id: "storm", track: "nws", label: "Severe Thunderstorm Warning", severity: "serious",
   startMeters: 9665, endMeters: 20000, crossesRoute: true,
 };
@@ -17,20 +17,29 @@ const input: DriveHazardTickerInput = {
   viewMode: "drive", userAlongMeters: 3218.68, metersToManeuver: 10000, miles: true,
 };
 
+/* Phone countdown fixture — hazard ~0.5 mi ahead, inside the 1 mi window. */
+const nearHazard: TimelineItem = {
+  id: "storm", track: "nws", label: "Severe Thunderstorm Warning", severity: "serious",
+  startMeters: 4000, endMeters: 20000, crossesRoute: true,
+};
+const nearInput: DriveHazardTickerInput = { ...input, items: [nearHazard] };
+
 describe("Drive hazard countdown", () => {
   it("counts down along the route rather than straight-line distance", () => {
-    expect(selectDriveHazardTicker(input)?.distanceLabel).toBe("4.0 mi");
-    expect(selectDriveHazardTicker({ ...input, userAlongMeters: 6437.36 })?.distanceLabel).toBe("2.0 mi");
+    expect(selectDriveHazardTicker(nearInput)?.distanceLabel).toBe("0.5 mi");
+    expect(
+      selectDriveHazardTicker({ ...nearInput, userAlongMeters: 3700 })?.distanceLabel
+    ).toBe("0.2 mi");
   });
 
-  it("hides hazards beyond ~5 mi on the phone ticker", () => {
-    const beyond = {
-      ...hazard, startMeters: 3218.68 + 6 * 1609.34, endMeters: 20000,
-    };
-    expect(selectDriveHazardTicker({ ...input, items: [beyond] })).toBeNull();
-    /* The iPad queue/panel stays uncapped — same hazard still counts down there. */
+  it("arms the countdown only inside ~1 mi", () => {
+    const inside = { ...nearHazard, startMeters: 3218.68 + 0.9 * 1609.34 };
+    const outside = { ...nearHazard, startMeters: 3218.68 + 1.1 * 1609.34 };
+    expect(selectDriveHazardTicker({ ...nearInput, items: [inside] })?.mode).toBe("countdown");
+    expect(selectDriveHazardTicker({ ...nearInput, items: [outside] })).toBeNull();
+    /* The iPad queue/panel stays uncapped — same far hazard still counts down there. */
     expect(
-      selectDriveHazardQueue({ ...input, totalMeters: 30000, items: [beyond] })[0]?.id
+      selectDriveHazardQueue({ ...input, totalMeters: 30000, items: [outside] })[0]?.id
     ).toBe(hazard.id);
   });
 
@@ -40,18 +49,18 @@ describe("Drive hazard countdown", () => {
     { metersToManeuver: 500 }, { metersToManeuver: null },
     { userAlongMeters: NaN }, { metersToManeuver: NaN },
   ])("hides outside eligible Drive cruising: %j", (patch) => {
-    expect(selectDriveHazardTicker({ ...input, ...patch })).toBeNull();
+    expect(selectDriveHazardTicker({ ...nearInput, ...patch })).toBeNull();
   });
 
   it("shows an active hazard, then removes it after passing its end", () => {
-    expect(selectDriveHazardTicker({ ...input, userAlongMeters: 17000 })?.distanceLabel).toBe("Here now");
-    expect(selectDriveHazardTicker({ ...input, userAlongMeters: 20000 })).toBeNull();
+    expect(selectDriveHazardTicker({ ...nearInput, userAlongMeters: 17000 })?.distanceLabel).toBe("Here now");
+    expect(selectDriveHazardTicker({ ...nearInput, userAlongMeters: 20000 })).toBeNull();
   });
 
   it("chooses the closest hazard and severity breaks ties", () => {
-    const road: TimelineItem = { ...hazard, id: "road", track: "road", label: "Road closure", startMeters: 5000, endMeters: 6000 };
-    expect(selectDriveHazardTicker({ ...input, items: [hazard, road] })?.id).toBe("road");
-    expect(selectDriveHazardTicker({ ...input, items: [road, { ...road, id: "urgent", severity: "avoid" }] })?.id).toBe("urgent");
+    const road: TimelineItem = { ...nearHazard, id: "road", track: "road", label: "Road closure", startMeters: 3300, endMeters: 4000 };
+    expect(selectDriveHazardTicker({ ...nearInput, items: [nearHazard, road] })?.id).toBe("road");
+    expect(selectDriveHazardTicker({ ...nearInput, items: [road, { ...road, id: "urgent", severity: "avoid" }] })?.id).toBe("urgent");
   });
 
   it.each([
@@ -60,17 +69,56 @@ describe("Drive hazard countdown", () => {
     { endMeters: Infinity }, { startMeters: 21000 }, { label: " " },
     { expiresIso: "2000-01-01T00:00:00Z" }, { expiresIso: "invalid" },
   ])("excludes irrelevant, expired or invalid hazards: %j", (patch) => {
-    expect(selectDriveHazardTicker({ ...input, items: [{ ...hazard, ...patch }] })).toBeNull();
+    expect(selectDriveHazardTicker({ ...nearInput, items: [{ ...nearHazard, ...patch }] })).toBeNull();
   });
 
   it("uses kilometers where appropriate and qualifies developing hazards", () => {
-    const result = selectDriveHazardTicker({ ...input, miles: false, items: [{ ...hazard, developingLater: true }] });
-    expect(result?.distanceLabel).toBe("6.4 km");
+    const result = selectDriveHazardTicker({ ...nearInput, miles: false, items: [{ ...nearHazard, developingLater: true }] });
+    expect(result?.distanceLabel).toBe("0.8 km");
     expect(result?.label).toBe("Possible: Severe Thunderstorm Warning");
   });
 
   it("does not round an approaching hazard to zero miles", () => {
-    expect(selectDriveHazardTicker({ ...input, userAlongMeters: hazard.startMeters - 20 })?.distanceLabel).toBe("<0.1 mi");
+    expect(selectDriveHazardTicker({ ...nearInput, userAlongMeters: nearHazard.startMeters - 20 })?.distanceLabel).toBe("<0.1 mi");
+  });
+
+  it("flashes instead of counting down when the last hazard just ended", () => {
+    /* Hazard cluster: previous hazard ended ~0.1 mi behind — the next one is
+     * "right behind" it, so it earns a flash mention, not a countdown. */
+    const passed: TimelineItem = {
+      id: "passed", track: "road", label: "Work zone", severity: "caution",
+      startMeters: 2000, endMeters: 3100, crossesRoute: true,
+    };
+    const clustered = selectDriveHazardTicker({ ...nearInput, items: [passed, nearHazard] });
+    expect(clustered?.id).toBe("storm");
+    expect(clustered?.mode).toBe("flash");
+    /* A few clear miles behind → the same hazard counts down normally. */
+    const clear = selectDriveHazardTicker({
+      ...nearInput,
+      userAlongMeters: 15000,
+      items: [
+        { ...passed, startMeters: 8000, endMeters: 9000 },
+        { ...nearHazard, startMeters: 16000, endMeters: 17000 },
+      ],
+    });
+    expect(clear?.mode).toBe("countdown");
+  });
+
+  it("keeps flashing through a tight cluster, then counts down after clear miles", () => {
+    /* Two hazards ~0.3 mi apart: after passing the first, the second flashes
+     * because the clear run-up never reached a few miles. */
+    const first: TimelineItem = {
+      id: "first", track: "road", label: "Work zone", severity: "caution",
+      startMeters: 2000, endMeters: 3050, crossesRoute: true,
+    };
+    const second: TimelineItem = { ...nearHazard, id: "second", startMeters: 3600, endMeters: 3900 };
+    const flashed = selectDriveHazardTicker({ ...nearInput, items: [first, second], userAlongMeters: 3100 });
+    expect(flashed?.id).toBe("second");
+    expect(flashed?.mode).toBe("flash");
+    /* Muted/info hazards behind don't break the clear run-up. */
+    const mutedBehind: TimelineItem = { ...first, id: "muted", stripMuted: true, endMeters: 3090 };
+    const solo = selectDriveHazardTicker({ ...nearInput, items: [mutedBehind, second], userAlongMeters: 3100 });
+    expect(solo?.mode).toBe("countdown");
   });
 });
 

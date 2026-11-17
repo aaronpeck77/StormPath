@@ -741,6 +741,12 @@ button.drive-hazard-ticker--tap:active {
   filter: brightness(1.15);
 }
 
+/* "Coming next" flash inside a hazard cluster — same chip, slightly quieter
+ * so it reads as a mention rather than the running countdown. */
+.drive-hazard-ticker--flash {
+  opacity: 0.82;
+}
+
 .drive-hazard-ticker:has(.drive-hazard-ticker__actions) {
   flex-wrap: wrap;
 }

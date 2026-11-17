@@ -1,5 +1,9 @@
+import { useEffect, useState } from "react";
 import { selectDriveHazardTicker, type DriveHazardTickerInput } from "../nav/driveHazardTicker";
 import { LandscapeDockContent } from "./LandscapeNavigationDock";
+
+/** How long a "coming next" flash stays on screen inside a hazard cluster. */
+const FLASH_VISIBLE_MS = 6000;
 
 export function DriveHazardTicker(props: DriveHazardTickerInput & {
   bendHazardId?: string | null;
@@ -10,7 +14,16 @@ export function DriveHazardTicker(props: DriveHazardTickerInput & {
 }) {
   const { onPressHazard, bendHazardId, onBend, onDismissBend, ...input } = props;
   const hazard = selectDriveHazardTicker(input);
-  if (!hazard) return null;
+  const hazardId = hazard?.id ?? null;
+  const hazardMode = hazard?.mode ?? null;
+  const [flashDoneId, setFlashDoneId] = useState<string | null>(null);
+  useEffect(() => {
+    setFlashDoneId(null);
+    if (hazardMode !== "flash" || hazardId == null) return;
+    const t = window.setTimeout(() => setFlashDoneId(hazardId), FLASH_VISIBLE_MS);
+    return () => window.clearTimeout(t);
+  }, [hazardId, hazardMode]);
+  if (!hazard || (hazard.mode === "flash" && flashDoneId === hazard.id)) return null;
   const body = (
     <>
       <span className="drive-hazard-ticker__dot" style={{ backgroundColor: hazard.color }} aria-hidden="true" />
@@ -24,12 +37,13 @@ export function DriveHazardTicker(props: DriveHazardTickerInput & {
       ) : null}
     </>
   );
+  const flashClass = hazard.mode === "flash" ? " drive-hazard-ticker--flash" : "";
   return (
     <LandscapeDockContent active={props.navigationStarted}>
       {onPressHazard ? (
         <button
           type="button"
-          className="drive-hazard-ticker drive-hazard-ticker--tap"
+          className={`drive-hazard-ticker drive-hazard-ticker--tap${flashClass}`}
           role="region"
           aria-label={`Next route hazard: ${hazard.label} ${hazard.distanceLabel}`}
           onClick={() => onPressHazard(hazard.id)}
@@ -37,7 +51,7 @@ export function DriveHazardTicker(props: DriveHazardTickerInput & {
           {body}
         </button>
       ) : (
-        <div className="drive-hazard-ticker" role="region" aria-label="Next route hazard">
+        <div className={`drive-hazard-ticker${flashClass}`} role="region" aria-label="Next route hazard">
           {body}
         </div>
       )}
