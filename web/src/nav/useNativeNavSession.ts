@@ -115,9 +115,14 @@ export function useNativeNavSession(opts: {
    * Mid-trip emits are NEVER force-adopted (hard lock, Bill 564): agreeing
    * geometry refines silently; disagreement is rejected so DIY owns the
    * episode — rejoin the locked corridor or surface choices — instead of the
-   * car screen silently drawing Core's own pick.
+   * car screen silently drawing Core's own pick. Exception: a confirmed
+   * off-route episode (`offRouteConfirmedRef`) — Core's reroute is the
+   * recovery, so a candidate that reaches the driver force-adopts.
    */
-  onRouteGeometry: (geometry: LngLat[], opts?: { force?: boolean }) => boolean | void;
+  onRouteGeometry: (
+    geometry: LngLat[],
+    opts?: { force?: boolean; offRouteRecovery?: boolean }
+  ) => boolean | void;
   /** Optional: arrive / hard error — App may End trip. */
   onSessionEnded?: (reason: "arrived" | "cancelled" | "error", message?: string) => void;
   simulate?: boolean;
@@ -140,6 +145,13 @@ export function useNativeNavSession(opts: {
    * it changes mid-trip, Core restarts on the new target.
    */
   navTargetKey?: string;
+  /**
+   * Confirmed off-route latch owned by the DIY poll. While true, a mid-trip
+   * Core `routeChanged` that reaches the driver is the recovery itself — the
+   * same line CarPlay already navigates — so it force-adopts instead of being
+   * rejected for diverging from the corridor the driver just left.
+   */
+  offRouteConfirmedRef?: MutableRefObject<boolean>;
 }) {
   const {
     accessToken,
@@ -153,6 +165,7 @@ export function useNativeNavSession(opts: {
     guidanceLanguage = "en",
     routingPreferenceRef,
     navTargetKey,
+    offRouteConfirmedRef,
   } = opts;
   const voiceGuidanceEnabledRef = useRef(voiceGuidanceEnabled);
   voiceGuidanceEnabledRef.current = voiceGuidanceEnabled;
@@ -390,19 +403,36 @@ export function useNativeNavSession(opts: {
           if (geom.length < 2) return;
           const isFirst = firstRouteChangedRef.current;
           firstRouteChangedRef.current = false;
-          /* Hard lock: only the session-start emit may force (already off the
-           * lock). Every mid-trip emit goes through the agreement check — a
-           * divergent Core pick is rejected, never drawn. */
-          const force = nativeRouteChangedShouldForce({
-            isFirstRouteChanged: isFirst,
-            driverAlreadyOffLockedCorridor: shouldForceAdoptOffRouteNativeGeometry({
+          /* Confirmed off-route: Core's new corridor IS the recovery — the same
+           * line CarPlay navigates. Adopt it when it actually reaches the car;
+           * the agreement check below would always reject a real detour for
+           * diverging from the corridor the driver just left. Abandoned trips
+           * stay DIY-owned so the two systems never fight. */
+          const offRouteRecovery =
+            !isFirst &&
+            !nativeAbandonedRef.current &&
+            offRouteConfirmedRef?.current === true &&
+            shouldForceAdoptOffRouteNativeGeometry({
               candidate: geom,
               locked: coordsRef.current.lockedCorridor,
               userLngLat: coordsRef.current.userLngLat,
-            }),
-            driverPrefersAlternate: routingPreferenceRef?.current === "alternate",
-          });
-          const adopted = onRouteGeometryRef.current(geom, { force }) !== false;
+            });
+          /* Hard lock: only the session-start emit may force (already off the
+           * lock). Every mid-trip emit goes through the agreement check — a
+           * divergent Core pick is rejected, never drawn. */
+          const force = offRouteRecovery
+            ? true
+            : nativeRouteChangedShouldForce({
+                isFirstRouteChanged: isFirst,
+                driverAlreadyOffLockedCorridor: shouldForceAdoptOffRouteNativeGeometry({
+                  candidate: geom,
+                  locked: coordsRef.current.lockedCorridor,
+                  userLngLat: coordsRef.current.userLngLat,
+                }),
+                driverPrefersAlternate: routingPreferenceRef?.current === "alternate",
+              });
+          const adopted =
+            onRouteGeometryRef.current(geom, { force, offRouteRecovery }) !== false;
           if (!adopted) {
             /* Session-start fastest steal — keep Core alive so off-route can still reroute.
              * Mid-trip rejection is different: Core is now navigating a corridor we

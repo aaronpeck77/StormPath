@@ -337,6 +337,12 @@ export default function App() {
 
   const navGoStartedAtRef = useRef<number | null>(null);
   const navGoGeometryRef = useRef<LngLat[] | null>(null);
+  /** Confirmed off-route latch mirrored for the native session — while true, a
+   * mid-trip Core reroute that reaches the driver adopts as the recovery. */
+  const offRouteConfirmedRef = useRef(false);
+  /** Set each render to the off-route hook's notifyCoreRouteChange — defined
+   * below useNativeNavSession, so the route-geometry callback reaches it via ref. */
+  const offRouteConsentRef = useRef<((prev: LngLat[], next: LngLat[]) => void) | null>(null);
   /** Planned main at Go — kept even after committing a personal fork (for fork learning). */
   const navPlannedMainGeometryRef = useRef<LngLat[] | null>(null);
   /** Full step geometry for guidance math — separate from display-tier plan state. */
@@ -1021,7 +1027,7 @@ export default function App() {
    * mid-trip reroute). Never silently replace a chosen alternate with Core "fastest."
    */
   const onNativeRouteGeometry = useCallback(
-    (geometry: LngLat[], opts?: { force?: boolean }): boolean => {
+    (geometry: LngLat[], opts?: { force?: boolean; offRouteRecovery?: boolean }): boolean => {
       if (geometry.length < 2) return false;
       const user = userLngLatRef.current;
       if (
@@ -1061,6 +1067,10 @@ export default function App() {
         }
         return false;
       }
+      /* Off-route recovery adopt: keep the corridor we're leaving so the
+       * consent classifier can offer return-to-original on material changes. */
+      const prevGoGeom =
+        opts?.offRouteRecovery && force ? navGoGeometryRef.current : null;
       const adopted = adoptLockedRouteGeometry(geometry, { force });
       if (!adopted) return false;
       const lockedId =
@@ -1077,6 +1087,9 @@ export default function App() {
       );
       setRouteSlotOrder([lockedId]);
       setPreviewLegIndex(0);
+      if (prevGoGeom?.length) {
+        offRouteConsentRef.current?.(prevGoGeom, geometry);
+      }
       return true;
     },
     [
@@ -1124,6 +1137,7 @@ export default function App() {
      * sensible way on. The fastest/alternate choice is applied from here. */
     preferBackroads: false,
     routingPreferenceRef,
+    offRouteConfirmedRef,
   });
 
   /** After a mid-trip stop/destination replan lands: adopt the fresh locked
@@ -1223,7 +1237,9 @@ export default function App() {
     coreRerouteHealthRef,
     viewModeRef,
     onPersonalForkRef,
+    offRouteConfirmedRef,
   });
+  offRouteConsentRef.current = offRouteNav.notifyCoreRouteChange;
 
   const {
     showOffRouteStatusBanner,

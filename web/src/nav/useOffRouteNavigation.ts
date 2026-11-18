@@ -149,6 +149,13 @@ export interface UseOffRouteNavigationDeps {
    * rejoin / hold preview / drive-ahead replan toward the old highway leg.
    */
   onPersonalForkRef?: MutableRefObject<boolean>;
+  /**
+   * Mirror of the confirmed off-route latch for the native session hook — while
+   * true, a mid-trip Core `routeChanged` that reaches the driver is adopted as
+   * the recovery (same line CarPlay navigates) instead of rejected for
+   * diverging from the corridor the driver just left.
+   */
+  offRouteConfirmedRef?: MutableRefObject<boolean>;
 }
 
 export type ReplanRouteOpts = {
@@ -213,6 +220,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     coreRerouteHealthRef,
     viewModeRef,
     onPersonalForkRef,
+    offRouteConfirmedRef,
   } = deps;
 
   const [offRouteSevere, setOffRouteSevere] = useState(false);
@@ -316,6 +324,9 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       noteDriveDiagOffRoute(session.offRouteLatched);
       offRouteSinceMsRef.current = session.offRouteLatched ? Date.now() : null;
       offRouteLatchedRef.current = session.offRouteLatched;
+      /* Synchronous mirror for the native session's routeChanged listener —
+       * a render-lagged state value would miss the first reroute after latch. */
+      if (offRouteConfirmedRef) offRouteConfirmedRef.current = session.offRouteLatched;
       setOffRouteLatched(session.offRouteLatched);
     }
     setOffRouteRejoinAlongM((prev) =>
@@ -333,7 +344,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       autoRejoinGuidanceRouteIdRef.current = session.autoRejoinGuidanceRouteId;
       setAutoRejoinGuidanceRouteId(session.autoRejoinGuidanceRouteId);
     }
-  }, []);
+  }, [offRouteConfirmedRef]);
 
   const clearHoldRejoinPreview = useCallback(() => {
     const hadPreview = holdRejoinPreviewActiveRef.current;
@@ -353,6 +364,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     offRouteSevereRef.current = false;
     setOffRouteSevere(false);
     offRouteLatchedRef.current = false;
+    if (offRouteConfirmedRef) offRouteConfirmedRef.current = false;
     setOffRouteLatched(false);
     setOffRouteRejoinAlongM(0);
     offRouteRejoinAlongMRef.current = 0;
@@ -382,7 +394,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     routeChangeOfferRef.current = null;
     setRouteChangeOffer(null);
     previousCorridorRef.current = null;
-  }, []);
+  }, [offRouteConfirmedRef]);
 
   const clearDetourGuidance = useCallback(() => {
     setAutoRejoinGuidanceRouteId(null);
@@ -487,23 +499,36 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       ];
       const bearingDeg = headingRef.current;
       const routeCap = isPlus ? 2 : 1;
-      const fresh = await collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
-        via: viaCoords.length > 0 ? viaCoords : undefined,
-        maxRoutes: routeCap,
-        forwardFirst: true,
-        bearingDeg:
-          bearingDeg != null && Number.isFinite(bearingDeg) ? bearingDeg : undefined,
-        signal: fetchCtrl.signal,
-        stormAlerts: stormAlertsForRouting,
-        radarAvoidanceEnabled: isPlus && settingStormEnabled,
-      });
-      const nextRoutes = assignOffRouteReplanSlots(
-        fresh,
-        userLngLat,
-        bearingDeg,
-        routingPreferenceRef.current,
-        routeCap
-      );
+      const fetchVariants = (bearing: number | null) =>
+        collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
+          via: viaCoords.length > 0 ? viaCoords : undefined,
+          maxRoutes: routeCap,
+          forwardFirst: true,
+          bearingDeg:
+            bearing != null && Number.isFinite(bearing) ? bearing : undefined,
+          signal: fetchCtrl.signal,
+          stormAlerts: stormAlertsForRouting,
+          radarAvoidanceEnabled: isPlus && settingStormEnabled,
+        });
+      const pickSlots = (routes: NavRoute[], bearing: number | null) =>
+        assignOffRouteReplanSlots(
+          routes,
+          userLngLat,
+          bearing,
+          routingPreferenceRef.current,
+          routeCap
+        );
+      let nextRoutes = pickSlots(await fetchVariants(bearingDeg), bearingDeg);
+      if (
+        !nextRoutes.length &&
+        bearingDeg != null &&
+        Number.isFinite(bearingDeg)
+      ) {
+        /* `bearings=` is a hard Mapbox constraint — a stale or noisy GPS heading
+         * can exclude the only sane road and leave recovery with nothing.
+         * Retry once unconstrained; the forward/reverse filters still apply. */
+        nextRoutes = pickSlots(await fetchVariants(null), null);
+      }
       const primary = nextRoutes[0];
       if (!primary?.geometry?.length || epochAtStart !== routeGraphEpochRef.current) return false;
 
@@ -670,6 +695,73 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       offRouteRecoveryLastFailMs: Date.now(),
     };
   }, []);
+
+  /**
+   * Core delivered the off-route reroute and the app adopted it as the new
+   * lock. Run the same route-consent classification a DIY soft restart would —
+   * offer return-to-original on material highway changes, notify elsewhere —
+   * then clear the episode: the adopted line starts at the driver, so the next
+   * poll tick measures on-route on its own.
+   */
+  const notifyCoreRouteChange = useCallback(
+    (previousGeometry: LngLat[], newGeometry: LngLat[]) => {
+      if (!previousGeometry?.length || !newGeometry?.length) return;
+      applyPollSession(resetOffRoutePollSession(pollSessionRef.current));
+      offRouteRerouteFailStreakRef.current = 0;
+      const tier = consentTierForContext({
+        roadClass: drivingRejoinRoadClassRef.current,
+        rejoinMode: drivingRejoinModeRef.current,
+      });
+      const materiality = classifyRouteChangeMateriality({
+        proposedGeometry: newGeometry,
+        previousGeometry,
+      });
+      const ux = routeChangeUxFor({
+        materiality,
+        tier,
+        canReturnToPrevious: true,
+      });
+      if (ux === "offer") {
+        previousCorridorRef.current = {
+          geometry: previousGeometry,
+          routeId: lockedNavigationRouteIdRef.current,
+        };
+        raiseRouteChangeOffer({
+          previousGeometry,
+          newRouteId: lockedNavigationRouteIdRef.current ?? "",
+          rejoinsPrevious: proposedRejoinsPreviousCorridor({
+            proposedGeometry: newGeometry,
+            previousGeometry,
+          }),
+        });
+        return;
+      }
+      previousCorridorRef.current = null;
+      dismissRouteChangeOffer();
+      const locked = planRef.current.routes.find(
+        (r) => r.id === lockedNavigationRouteIdRef.current
+      );
+      const copy = offRouteReplanCopy({
+        kind: lockedRouteKind(locked),
+        silent: false,
+        hasAlternate: false,
+      });
+      speakNavigationAlert(copy.voice, settingVoiceGuidanceEnabled);
+      if (copy.hint) {
+        setTapHint(copy.hint);
+        window.setTimeout(() => setTapHint(null), 5000);
+      }
+    },
+    [
+      applyPollSession,
+      lockedNavigationRouteIdRef,
+      raiseRouteChangeOffer,
+      dismissRouteChangeOffer,
+      planRef,
+      settingVoiceGuidanceEnabled,
+      setTapHint,
+    ]
+  );
 
   const executeAutoRecovery = useCallback(
     async (_action: "rejoin" | "replan") => {
@@ -1059,6 +1151,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     stayOnThisRoad,
     returnToOriginalRoute,
     rejoinPreviousCorridor,
+    notifyCoreRouteChange,
     routeChangeOffer,
     dismissRouteChangeOffer,
     resetOffRouteNavigation,
