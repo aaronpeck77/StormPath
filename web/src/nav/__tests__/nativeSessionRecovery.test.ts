@@ -21,8 +21,9 @@ vi.mock("@stormpath/mapbox-navigation", () => ({ StormpathMapboxNavigation: {
   startActiveGuidance: async () => ({ ok: true }),
   stop: async () => undefined,
   setVoiceGuidance: async () => undefined,
+  setCarPlayAlternates: async () => ({ ok: true, count: 0 }),
 } }));
-vi.mock("../driveDiagnostics", () => ({ bumpDriveDiag: mock.bump, noteDriveDiagRouteLock: vi.fn(), resetDriveDiag: vi.fn() }));
+vi.mock("../driveDiagnostics", () => ({ bumpDriveDiag: mock.bump, noteDriveDiagRouteLock: vi.fn(), resetDriveDiag: vi.fn(), noteDriveDiagCarAlt: vi.fn(), noteDriveDiagNativeEnd: vi.fn(), noteDriveDiagNativeRestart: vi.fn(), noteDriveDiagNativeStart: vi.fn() }));
 vi.mock("../../monitoring/mapboxUsageMeter", () => ({ recordMapboxUsage: vi.fn() }));
 vi.mock("../offlineTripPacks", () => ({ downloadTripCorridor: vi.fn(), removeTripCorridor: vi.fn() }));
 
