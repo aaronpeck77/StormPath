@@ -23,7 +23,15 @@ import {
 import type { LngLat, RouteTurnStep } from "./types";
 import type { TripStop } from "./routeWaypoints";
 import type { NavigationPositionState } from "../hooks/useNavigationPosition";
-import { bumpDriveDiag, noteDriveDiagRouteLock, resetDriveDiag } from "./driveDiagnostics";
+import {
+  bumpDriveDiag,
+  noteDriveDiagCarAlt,
+  noteDriveDiagNativeEnd,
+  noteDriveDiagNativeRestart,
+  noteDriveDiagNativeStart,
+  noteDriveDiagRouteLock,
+  resetDriveDiag,
+} from "./driveDiagnostics";
 import { downloadTripCorridor, removeTripCorridor } from "./offlineTripPacks";
 import { useTripPlanStore } from "../state/tripPlanStore";
 import { createNativeDrivePoseHold } from "./nativeDrivePoseHold";
@@ -497,9 +505,11 @@ export function useNativeNavSession(opts: {
               });
             return;
           }
+          noteDriveDiagNativeEnd("arrived");
           void stopNative().then(() => onSessionEndedRef.current?.("arrived"));
         }),
         StormpathMapboxNavigation.addListener("cancelled", () => {
+          noteDriveDiagNativeEnd("cancelled");
           startedForNavRef.current = false;
           corridorAdoptedRef.current = false;
           setNativeNavActive(false);
@@ -509,6 +519,7 @@ export function useNativeNavSession(opts: {
           onSessionEndedRef.current?.("cancelled");
         }),
         StormpathMapboxNavigation.addListener("error", (e) => {
+          noteDriveDiagNativeEnd("error", e?.message);
           onSessionEndedRef.current?.("error", e?.message ?? "native guidance error");
         }),
       ]);
@@ -529,6 +540,7 @@ export function useNativeNavSession(opts: {
       recordMapboxUsage("navTrips");
       activeNavTargetKeyRef.current = navTargetKeyRef.current;
       setNativeNavActive(true);
+      noteDriveDiagNativeStart();
       /* Brain P2: kick the corridor pack download at Go so the dead-zone
        * stretch ahead already has map + nav tiles on disk. Fire-and-forget —
        * navigation starts now, the pack fills in behind it. Gated on the native
@@ -637,7 +649,9 @@ export function useNativeNavSession(opts: {
     try {
       await stopNative();
       startedForNavRef.current = true;
-      return await startNative();
+      const ok = await startNative();
+      noteDriveDiagNativeRestart(ok);
+      return ok;
     } finally {
       nativeRestartingRef.current = false;
     }
@@ -674,6 +688,7 @@ export function useNativeNavSession(opts: {
     if (!isNativeMapboxNavPlatform()) return;
     const lines =
       navigationStarted && nativeNavActive ? (carPlayAlternates ?? []) : [];
+    noteDriveDiagCarAlt(lines.length > 0);
     void StormpathMapboxNavigation.setCarPlayAlternates({
       lines: lines.map((l) => l.map(([a, b]) => [a, b] as [number, number])),
     }).catch(() => undefined);

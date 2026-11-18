@@ -106,6 +106,26 @@ export type DriveDiagSnapshot = {
   /** Weather-pipeline state for the Wx graphs — set by App each render when
    *  values change; empty until the pipeline reports. */
   wxDiag: string;
+  /** Core session lifecycle — "the route just stopped" leaves a mark here. */
+  nativeStarts: number;
+  nativeRestarts: number;
+  nativeRestartFails: number;
+  nativeEndReason: string;
+  /** Core geometry emits adopted into the lock vs rejected. rej>0 with ok=0
+   *  is the frozen-line failure mode from the Nov 17 field report. */
+  geomAdopted: number;
+  geomRejected: number;
+  geomRejectLast: string;
+  /** Always-two-routes lifecycle: option made / driver took it / passed its
+   *  fork / refresh came back empty (with last reason). */
+  altCreated: number;
+  altTaken: number;
+  altPassed: number;
+  altEmpty: number;
+  altEmptyLast: string;
+  /** CarPlay mirror: option-line pushes sent vs clears. */
+  carAltPush: number;
+  carAltClear: number;
 };
 
 export type ViewDroneSkip =
@@ -303,6 +323,20 @@ function emptySnapshot(): DriveDiagSnapshot {
     etaJumpSource: "",
     doubledBack: 0,
     wxDiag: "",
+    nativeStarts: 0,
+    nativeRestarts: 0,
+    nativeRestartFails: 0,
+    nativeEndReason: "",
+    geomAdopted: 0,
+    geomRejected: 0,
+    geomRejectLast: "",
+    altCreated: 0,
+    altTaken: 0,
+    altPassed: 0,
+    altEmpty: 0,
+    altEmptyLast: "",
+    carAltPush: 0,
+    carAltClear: 0,
   };
 }
 
@@ -395,6 +429,23 @@ function applyParsed(parsed: Partial<DriveDiagSnapshot>): void {
     etaJumpWhere: typeof parsed.etaJumpWhere === "string" ? parsed.etaJumpWhere.slice(0, 8) : "",
     etaJumpSource: typeof parsed.etaJumpSource === "string" ? parsed.etaJumpSource.slice(0, 8) : "",
     doubledBack: asCount(parsed.doubledBack),
+    nativeStarts: asCount(parsed.nativeStarts),
+    nativeRestarts: asCount(parsed.nativeRestarts),
+    nativeRestartFails: asCount(parsed.nativeRestartFails),
+    nativeEndReason:
+      typeof parsed.nativeEndReason === "string" ? parsed.nativeEndReason.slice(0, 40) : "",
+    geomAdopted: asCount(parsed.geomAdopted),
+    geomRejected: asCount(parsed.geomRejected),
+    geomRejectLast:
+      typeof parsed.geomRejectLast === "string" ? parsed.geomRejectLast.slice(0, 24) : "",
+    altCreated: asCount(parsed.altCreated),
+    altTaken: asCount(parsed.altTaken),
+    altPassed: asCount(parsed.altPassed),
+    altEmpty: asCount(parsed.altEmpty),
+    altEmptyLast:
+      typeof parsed.altEmptyLast === "string" ? parsed.altEmptyLast.slice(0, 24) : "",
+    carAltPush: asCount(parsed.carAltPush),
+    carAltClear: asCount(parsed.carAltClear),
     wxDiag: typeof parsed.wxDiag === "string" ? parsed.wxDiag.slice(0, 120) : "",
   };
 }
@@ -817,6 +868,59 @@ export function noteDriveDiagEta(
 }
 
 /** Caller already decided this line doubles back. Signature keeps one count per line. */
+/** Core guidance session started (Go / restart). */
+export function noteDriveDiagNativeStart(): void {
+  touchTripClock();
+  state.nativeStarts += 1;
+  persistDriveDiagSoon();
+}
+
+/** Mid-trip Core restart (promote / replan / refresh press). */
+export function noteDriveDiagNativeRestart(ok: boolean): void {
+  state.nativeRestarts += 1;
+  if (!ok) state.nativeRestartFails += 1;
+  persistDriveDiagSoon();
+}
+
+/** "The route just stopped" — last end reason with a short message head. */
+export function noteDriveDiagNativeEnd(reason: string, message?: string): void {
+  state.nativeEndReason = (reason + (message ? `:${message}` : "")).slice(0, 40);
+  persistDriveDiagSoon();
+}
+
+/** Core geometry emit → adopted into the lock or rejected as divergent. */
+export function noteDriveDiagGeom(ok: boolean, tag?: string): void {
+  if (ok) state.geomAdopted += 1;
+  else {
+    state.geomRejected += 1;
+    state.geomRejectLast = (tag ?? "?").slice(0, 24);
+  }
+  persistDriveDiagSoon();
+}
+
+/** Always-two-routes lifecycle: fresh option made, driver took it, passed
+ * its fork, or the refresh came back empty (reason kept, one line). */
+export function noteDriveDiagAlt(
+  kind: "created" | "taken" | "passed" | "empty",
+  reason?: string
+): void {
+  if (kind === "created") state.altCreated += 1;
+  else if (kind === "taken") state.altTaken += 1;
+  else if (kind === "passed") state.altPassed += 1;
+  else {
+    state.altEmpty += 1;
+    state.altEmptyLast = (reason ?? "?").slice(0, 24);
+  }
+  persistDriveDiagSoon();
+}
+
+/** CarPlay mirror: option-line polyline pushed down vs cleared. */
+export function noteDriveDiagCarAlt(hasLines: boolean): void {
+  if (hasLines) state.carAltPush += 1;
+  else state.carAltClear += 1;
+  persistDriveDiagSoon();
+}
+
 export function noteDriveDiagDoubledBack(signature: string): void {
   if (!signature || signature === lastDoubledSig) return;
   lastDoubledSig = signature;
@@ -930,6 +1034,14 @@ export function formatDriveDiagLines(
         ? `jump ${snap.etaJumpMin}min at ${snap.etaJumpWhere || "?"} (${snap.etaJumpSource || "?"})`
         : "steady"
     }`,
+    `Nav: Core ${snap.nativeStarts} start / ${snap.nativeRestarts} restart${
+      snap.nativeRestartFails ? ` (${snap.nativeRestartFails} fail)` : ""
+    }${snap.nativeEndReason ? ` / end ${snap.nativeEndReason}` : ""}, geom ok ${
+      snap.geomAdopted
+    } / rej ${snap.geomRejected}${snap.geomRejectLast ? ` (${snap.geomRejectLast})` : ""}`,
+    `Alt: ${snap.altCreated} new, ${snap.altTaken} taken, ${snap.altPassed} passed${
+      snap.altEmpty ? `, ${snap.altEmpty} empty${snap.altEmptyLast ? ` (${snap.altEmptyLast})` : ""}` : ""
+    }${snap.carAltPush || snap.carAltClear ? `, car ${snap.carAltPush} push / ${snap.carAltClear} clear` : ""}`,
   ];
   return lines;
 }

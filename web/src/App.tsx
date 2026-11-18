@@ -100,7 +100,9 @@ import { useProgressRailChrome } from "./nav/useProgressRailChrome";
 import { useRoutePickItems } from "./nav/buildRoutePickItems";
 import { useDriveEtaLabels } from "./nav/useDriveEtaLabels";
 import {
+  noteDriveDiagAlt,
   noteDriveDiagDoubledBack,
+  noteDriveDiagGeom,
   noteDriveDiagRouteLock,
   noteDriveDiagRoutePick,
   noteDriveDiagYou,
@@ -965,6 +967,7 @@ export default function App() {
        * force — otherwise alongM advances on the new line while the blue line stays
        * frozen on the old corridor (empty Drive line). */
       if (!shouldAdoptNativeRouteGeometry(next, goGeom, Boolean(opts?.force))) {
+        noteDriveDiagGeom(false, opts?.force ? "forced-rej" : "go-guard");
         if (import.meta.env.DEV) {
           console.info(
             "[nav] ignored Core route geometry — diverges from Go-locked corridor"
@@ -982,6 +985,7 @@ export default function App() {
       navGoGeometryRef.current = next;
       setGuidanceGeometryEpoch((n) => n + 1);
       if (apply.resetAlongHold) setAlongHoldResetKey((n) => n + 1);
+      noteDriveDiagGeom(true);
       return true;
     },
     []
@@ -1396,6 +1400,7 @@ export default function App() {
   /* Passed-turn release: once GPS is beyond where an unselected alternate
    * leaves the locked corridor, drop it and fetch a fresh option (Bill, 584). */
   const handleAlternatesReleased = useCallback(() => {
+    noteDriveDiagAlt("passed");
     void refreshAlternateRoutesOnly({ allowDuringDrive: true });
   }, [refreshAlternateRoutesOnly]);
   useAlternateRelease({
@@ -1414,6 +1419,7 @@ export default function App() {
   const handleNavigatingPromote = useCallback(
     (demotedRouteId: string | null) => {
       if (demotedRouteId) {
+        noteDriveDiagAlt("taken");
         setPlan((prev) => ({
           ...prev,
           routes: prev.routes.filter((r) => r.id !== demotedRouteId),

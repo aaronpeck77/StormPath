@@ -1,6 +1,7 @@
 import { useCallback, type MutableRefObject } from "react";
 import { navigationPrimaryRouteIdForMerge } from "./navigationRouteFocus";
 import { mergePlanPreservingPrimary } from "./mergePlanRoutes";
+import { noteDriveDiagAlt } from "./driveDiagnostics";
 import { buildMockTripBetween } from "./emptyTrip";
 import { collectMapboxRouteVariants } from "../services/mapboxDirectionsRouter";
 import { filterForwardRejoinRoutes } from "./detourRejoin";
@@ -120,11 +121,13 @@ export function useRefreshAlternateRoutes(
           /* Never offer U-turn / reverse stubs the driver already left behind. */
           const forward = filterForwardRejoinRoutes(fresh, userLngLat, headingDeg);
           if (forward.length === 0) {
+            noteDriveDiagAlt("empty", fresh.length === 0 ? "fetch-empty" : "all-filtered");
             if (opts?.anotherWay || opts?.allowDuringDrive) onNoAlternates?.();
             return;
           }
           if (epochAtStart !== routeGraphEpochRef.current) return;
           setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, forward));
+          noteDriveDiagAlt("created");
         } else {
           const mock = buildMockTripBetween(
             userLngLat,
@@ -133,13 +136,16 @@ export function useRefreshAlternateRoutes(
           );
           const forward = filterForwardRejoinRoutes(mock.routes, userLngLat, headingDeg);
           if (forward.length === 0) {
+            noteDriveDiagAlt("empty", "all-filtered");
             if (opts?.anotherWay || opts?.allowDuringDrive) onNoAlternates?.();
             return;
           }
           if (epochAtStart !== routeGraphEpochRef.current) return;
           setPlan((prev) => mergePlanPreservingPrimary(prev, primaryId, forward));
+          noteDriveDiagAlt("created");
         }
       } catch {
+        noteDriveDiagAlt("empty", "fetch-error");
         /* Offline / Mapbox errors — keep prior B/C */
       } finally {
         altRoutesRefreshInFlightRef.current = false;
