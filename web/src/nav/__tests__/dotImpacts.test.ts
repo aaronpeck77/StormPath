@@ -3,6 +3,11 @@ import {
   buildDotImpacts,
   reconcileDotMapboxImpacts,
 } from "../dotImpacts";
+import {
+  closestPointOnPolyline,
+  haversineMeters,
+  subsamplePolylineVertexBudget,
+} from "../routeGeometry";
 import type { DotRoadEvent } from "../../services/dotRoadEvents";
 import type { RouteImpact } from "../routeImpacts";
 import type { LngLat } from "../types";
@@ -220,6 +225,40 @@ describe("DOT event clustering", () => {
     expect(out).toHaveLength(1);
     expect(out[0]!.severity).toBe("serious");
     expect(out[0]!.detail).toContain("1 lane closed");
+  });
+});
+
+describe("long-route marker placement", () => {
+  /* Regression: matching used to project events onto a 1,200-vertex subsample
+   * of the route. On long routes the subsample's straight chords cut across
+   * curves, leaving markers floating on a line offset from the highway.
+   * Zigzag the route between kept vertices: a work zone on a dropped bend must
+   * still mark ON the drawn line, not on the chord through the woods. */
+  it("places the marker on the drawn line, not the subsample chord", () => {
+    const route: LngLat[] = [];
+    const n = 2400;
+    for (let i = 0; i < n; i++) {
+      const zig = i >= 1000 && i <= 1400 && i % 2 === 1 ? 0.0015 : 0;
+      route.push([-93.9 + i * 0.0005, 41.6 + zig]);
+    }
+    /* Use a zigzag vertex the subsample actually drops (i.e. on the chord). */
+    const kept = new Set(subsamplePolylineVertexBudget(route, 1200));
+    const peakIdx = route.findIndex(
+      (p, i) => i >= 1000 && i <= 1400 && !kept.has(p)
+    );
+    expect(peakIdx).toBeGreaterThan(0);
+    const peak = route[peakIdx]!;
+    const zone = makeEvent({
+      point: peak,
+      bbox: [peak[0] - 0.001, peak[1] - 0.001, peak[0] + 0.001, peak[1] + 0.001],
+      geometry: { type: "Point", coordinates: peak },
+    });
+    const out = buildDotImpacts([zone], route, 0);
+    expect(out).toHaveLength(1);
+    const i = out[0]!;
+    const lateral = closestPointOnPolyline(i.lngLat, route).lateralMetersApprox;
+    expect(lateral).toBeLessThan(10);
+    expect(haversineMeters(i.lngLat, peak)).toBeLessThan(50);
   });
 });
 

@@ -12,7 +12,9 @@ import type { LngLat } from "./types";
 import type { DotRoadEvent } from "../services/dotRoadEvents";
 import type { RouteImpact, RouteImpactSeverity } from "./routeImpacts";
 import {
+  buildCumulativeDistances,
   closestPointOnPolyline,
+  closestPointOnPolylineWindowed,
   haversineMeters,
   pointAtAlongMeters,
   subsamplePolylineVertexBudget,
@@ -25,6 +27,27 @@ const CORRIDOR_HALF_WIDTH_M = 260;
 const CENTROID_PREFILTER_M = 900;
 /** Route vertices used for matching — full geometries can be 10k+ points. */
 const MATCH_ROUTE_VERTICES = 1_200;
+/* Stage-3 refinement: re-project surviving samples on the FULL route geometry.
+ * The coarse match runs on a vertex-budgeted subsample whose straight chords cut
+ * across curvy road stretches — on long routes that left markers floating on a
+ * chord offset from the highway ("triangles over the woods"). The chord-vs-arc
+ * distance deficit accumulates over the whole route and can reach tens of km, so
+ * a fixed window can't find the true point — instead each coarse position is
+ * mapped to its chord segment, then to the exact arc interval that segment came
+ * from (the subsample's kept indices are deterministic). */
+const REFINE_MARGIN_M = 5_000;
+
+/** Indices the vertex-budget subsample keeps, mirroring subsamplePolylineVertexBudget. */
+function subsampleIndexMap(routeLen: number, maxVertices: number): number[] {
+  const last = routeLen - 1;
+  const out: number[] = [];
+  for (let i = 0; i < maxVertices; i++) {
+    const idx = Math.min(last, Math.round((i / (maxVertices - 1)) * last));
+    if (out.length && out[out.length - 1] === idx) continue;
+    out.push(idx);
+  }
+  return out;
+}
 /** Event geometry points evaluated per event (band extent). */
 const MAX_EVENT_SAMPLE_POINTS = 8;
 /** Hard cap on corridor matches — bounds every downstream memo. */
@@ -253,6 +276,30 @@ export function matchDotEventsToRoute(
 ): DotEventMatch[] {
   if (!events.length || routeGeometry.length < 2) return [];
   const matchGeom = subsamplePolylineVertexBudget(routeGeometry, MATCH_ROUTE_VERTICES);
+  const subsampled = matchGeom !== routeGeometry;
+  /* Refiner maps a coarse (subsample-basis) along-position to the exact arc
+   * interval of the full geometry its chord segment covers. Falls back to a
+   * full scan only if the index map fails to line up (duplicate vertices). */
+  let refine: ((p: LngLat, coarseAlongM: number) => { lngLat: LngLat; alongMeters: number; lateralMetersApprox: number }) | null = null;
+  if (subsampled) {
+    const keptIdx = subsampleIndexMap(routeGeometry.length, MATCH_ROUTE_VERTICES);
+    const aligned =
+      keptIdx.length === matchGeom.length &&
+      keptIdx.every((idx, j) => matchGeom[j] === routeGeometry[idx]);
+    const subCum = aligned ? buildCumulativeDistances(matchGeom) : null;
+    const fullCum = buildCumulativeDistances(routeGeometry);
+    refine = (p, coarseAlongM) => {
+      if (!subCum) return closestPointOnPolyline(p, routeGeometry);
+      let j = 0;
+      while (j < subCum.length - 2 && subCum[j + 1]! <= coarseAlongM) j++;
+      const fromM = Math.max(0, fullCum[keptIdx[j]!]! - REFINE_MARGIN_M);
+      const toM = fullCum[keptIdx[j + 1]!]! + REFINE_MARGIN_M;
+      const half = (toM - fromM) / 2 + 1;
+      return closestPointOnPolylineWindowed(
+        p, routeGeometry, fullCum, (fromM + toM) / 2, half, half
+      );
+    };
+  }
   const matches: DotEventMatch[] = [];
 
   for (const ev of events) {
@@ -260,17 +307,29 @@ export function matchDotEventsToRoute(
     const centroid = closestPointOnPolyline(ev.point as LngLat, matchGeom);
     if (centroid.lateralMetersApprox > CENTROID_PREFILTER_M) continue;
 
-    /* Stage 2 — refine with up to MAX_EVENT_SAMPLE_POINTS event vertices. */
+    /* Stage 2 — coarse match with up to MAX_EVENT_SAMPLE_POINTS event vertices. */
     const pts = geomToLngLats(ev.geometry);
     const samples = pts.length ? pts : [ev.point as LngLat];
+    const coarse = samples.map((p) => closestPointOnPolyline(p, matchGeom));
+    let coarseHit = false;
+    for (const c of coarse) {
+      if (c.lateralMetersApprox <= CORRIDOR_HALF_WIDTH_M && c.alongMeters >= 0) {
+        coarseHit = true;
+        break;
+      }
+    }
+    if (!coarseHit) continue;
+
+    /* Stage 3 — refine survivors on the full geometry (skipped when the route
+     * is short enough that the subsample IS the route). */
     let bestAlong = -1;
     let bestLngLat: LngLat = ev.point;
     let bestLat = Infinity;
     let minAlong = Infinity;
     let maxAlong = -Infinity;
 
-    for (const p of samples) {
-      const c = closestPointOnPolyline(p, matchGeom);
+    for (let i = 0; i < samples.length; i++) {
+      const c = refine ? refine(samples[i]!, coarse[i]!.alongMeters) : coarse[i]!;
       if (c.lateralMetersApprox < bestLat) {
         bestLat = c.lateralMetersApprox;
         bestAlong = c.alongMeters;
@@ -295,7 +354,7 @@ export function matchDotEventsToRoute(
     );
   }
 
-  const clustered = clusterDotMatches(matches, matchGeom);
+  const clustered = clusterDotMatches(matches, routeGeometry);
   if (clustered.length <= MAX_MATCHES) return clustered;
   /* Evenly thin across the route rather than dropping whole regions. */
   const sorted = [...clustered].sort((a, b) => a.alongMeters - b.alongMeters);
