@@ -25,6 +25,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setDrivePuckVisible", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setNativeMapVisible", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setRoadControls", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setCarPlayAlternates", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "armIdleExit", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelIdleExit", returnType: CAPPluginReturnPromise),
@@ -165,6 +166,30 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Phone → CarPlay mirror: the option line(s) the car's RT overview draws.
+    /// `lines` = array of [lng,lat] polylines; empty clears. The car screen never
+    /// selects — choice happens on the phone.
+    @objc func setCarPlayAlternates(_ call: CAPPluginCall) {
+        let rawLines = call.getArray("lines") ?? []
+        var lines: [[CLLocationCoordinate2D]] = []
+        for rawLine in rawLines {
+            guard let pairs = rawLine as? JSArray else { continue }
+            var coords: [CLLocationCoordinate2D] = []
+            coords.reserveCapacity(pairs.count)
+            for pair in pairs {
+                guard let p = pair as? JSArray, p.count >= 2,
+                      let lng = p[0] as? Double, let lat = p[1] as? Double
+                else { continue }
+                coords.append(CLLocationCoordinate2D(latitude: lat, longitude: lng))
+            }
+            if coords.count >= 2 { lines.append(coords) }
+        }
+        Task { @MainActor in
+            StormPathCarPlay.shared.setAlternates(lines)
+            call.resolve(["ok": true, "count": lines.count])
+        }
+    }
+
     @objc func setDrivePuckVisible(_ call: CAPPluginCall) {
         let visible = call.getBool("visible") ?? false
         Task { @MainActor [weak self] in
@@ -268,10 +293,10 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         // Off-route recovery is Core's job. Do not auto-swap a locked B for a faster highway.
         coreConfig.routingConfig.rerouteConfig.detectsReroute = true
         coreConfig.routingConfig.fasterRouteDetectionConfig = nil
-        /* Bill: the car screen keeps one forward option live — refresh Core's
-         * alternative detection on the phone's 120 s cadence instead of the
-         * 5-minute default. Passed forks drop out SDK-side either way. */
-        coreConfig.routingConfig.alternativeRoutesDetectionConfig?.refreshIntervalSeconds = 120
+        /* CarPlay mirrors the phone's option line via setCarPlayAlternates, so
+         * Core's own alternative detection would only burn Directions calls on
+         * a route set nobody is allowed to show. */
+        coreConfig.routingConfig.alternativeRoutesDetectionConfig = nil
         // Posted limit and incident road objects along the route. Enhanced ADAS data stays off.
         // Live incidents need a Mapbox graph id this app does not have, so that feed stays off.
         coreConfig.electronicHorizonConfig = ElectronicHorizonConfig(
@@ -451,13 +476,6 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     @MainActor
     private func bindObservers(mapboxNavigation: MapboxNavigation) {
         cancellables.removeAll()
-
-        /* CarPlay "Alt" button → Core alternative select on this session. */
-        StormPathCarPlay.shared.onSelectAlternativeRoute = { [weak self] index in
-            Task { @MainActor in
-                self?.navigationProvider?.mapboxNavigation.navigation().selectAlternativeRoute(at: index)
-            }
-        }
 
         mapboxNavigation.navigation().routeProgress
             .receive(on: DispatchQueue.main)
@@ -710,7 +728,6 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         let wasActive = sessionActive
         sessionActive = false
         StormPathCarPlay.shared.guidanceEnded(arrived: didEmitArrival)
-        StormPathCarPlay.shared.onSelectAlternativeRoute = nil
         coreEpoch += 1
         resetHorizon()
         cancellables.removeAll()
@@ -763,7 +780,6 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         let wasActive = sessionActive
         sessionActive = false
         StormPathCarPlay.shared.guidanceEnded(arrived: didEmitArrival)
-        StormPathCarPlay.shared.onSelectAlternativeRoute = nil
         coreEpoch += 1
         resetHorizon()
         cancellables.removeAll()

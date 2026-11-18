@@ -40,12 +40,10 @@ public final class StormPathCarPlay {
     private var lastHazardAlertAt: TimeInterval = 0
     private var followingStepIndex: Int?
     private var followingLegIndex: Int?
-    /// Plugin bridge — select a Core alternative on the live session by index.
-    var onSelectAlternativeRoute: ((Int) -> Void)?
-    /// Alternatives on the latest NavigationRoutes snapshot (forks already passed
-    /// are filtered out SDK-side, so this is always an option still ahead).
-    private var alternativeRouteCount = 0
-    private var alternativeCycleIndex = 0
+    /// Phone-pushed option-B polylines. The car mirrors the PHONE's choice —
+    /// Core's own alternative set is a different route list, so it stays hidden.
+    private var carPlayAltLines: [[CLLocationCoordinate2D]] = []
+    private var carPlayAltManager: PolylineAnnotationManager?
     /// Content signature of what the maneuver card currently shows. Rebuilding
     /// `upcomingManeuvers` slides a fresh panel in even when the visible copy is
     /// identical, so we only reassign when this changes.
@@ -74,10 +72,10 @@ public final class StormPathCarPlay {
             routeProgress: progressSubject.eraseToAnyPublisher(),
             navigationCameraType: .carPlay
         )
-        /* Bill: always the route you are on plus one option out in front.
-         * Core owns the alternative list (passed forks are filtered SDK-side).
-         */
-        map.showsAlternatives = true
+        /* Mirror rule: Drive shows only the placed route. The RT overview draws
+         * the PHONE's option line via annotations (setAlternates) — never Core's
+         * own alternative set, which would be a different line than the phone. */
+        map.showsAlternatives = false
         map.routeColor = UIColor(red: 0.22, green: 0.74, blue: 0.97, alpha: 1)
         map.routeCasingColor = UIColor(white: 0.05, alpha: 0.85)
         map.waypointColor = .systemRed
@@ -124,6 +122,7 @@ public final class StormPathCarPlay {
         }
         map.navigationCamera.update(cameraState: overview && guiding ? .overview : .following)
         controller.radar.setEnabled(overview && guiding)
+        drawCarPlayAlternates()
     }
 
     func disconnect() {
@@ -152,25 +151,21 @@ public final class StormPathCarPlay {
     func guidanceStarted(routes: NavigationRoutes) {
         guiding = true
         self.routes = routes
-        alternativeRouteCount = routes.alternativeRoutes.count
-        alternativeCycleIndex = 0
         idleLocation.stopUpdatingLocation()
         showRoutes()
         startTripIfNeeded()
+        drawCarPlayAlternates()
         mapController?.navigationMapView.navigationCamera.update(cameraState: overview ? .overview : .following)
         mapController?.radar.setEnabled(overview)
-        configureNavigationBar()
     }
 
     func routesChanged(_ routes: NavigationRoutes) {
         guard guiding else { return }
         self.routes = routes
-        alternativeRouteCount = routes.alternativeRoutes.count
         currentBanner = nil
         followingManeuverSignature = ""
         showRoutes()
         startTripIfNeeded()
-        configureNavigationBar()
     }
 
     func progressChanged(_ progress: RouteProgress, location: CLLocation) {
@@ -190,8 +185,8 @@ public final class StormPathCarPlay {
         mapController?.radar.setEnabled(false)
         configureNavigationBar()
         routes = nil
-        alternativeRouteCount = 0
-        alternativeCycleIndex = 0
+        carPlayAltLines = []
+        carPlayAltManager?.annotations = []
         progressSubject.send(nil)
         if let navigationSession {
             if arrived {
@@ -261,27 +256,17 @@ public final class StormPathCarPlay {
 
     private func configureNavigationBar() {
         guard let mapTemplate else { return }
-        var leading = [
+        mapTemplate.leadingNavigationBarButtons = [
             CPBarButton(title: overview ? "Drive" : "RT") { [weak self] _ in
                 guard let self else { return }
                 overview.toggle()
                 mapController?.navigationMapView.navigationCamera.update(cameraState: overview && guiding ? .overview : .following)
                 mapController?.radar.setEnabled(overview && guiding)
+                drawCarPlayAlternates()
                 configureNavigationBar()
             },
             CPBarButton(title: "Conditions") { [weak self] _ in self?.showConditions() },
         ]
-        /* Route B on the car screen: tap cycles Core's alternatives; the chosen
-         * one becomes mainRoute and a fresh option shows on the next routesChanged. */
-        if guiding && alternativeRouteCount > 0 {
-            leading.append(CPBarButton(title: "Alt") { [weak self] _ in
-                guard let self, self.alternativeRouteCount > 0 else { return }
-                let index = self.alternativeCycleIndex % self.alternativeRouteCount
-                self.alternativeCycleIndex += 1
-                self.onSelectAlternativeRoute?(index)
-            })
-        }
-        mapTemplate.leadingNavigationBarButtons = leading
         // Radar belongs to the route (RT) view only — in Drive it is noise.
         guard overview else {
             radarButton = nil
@@ -453,6 +438,7 @@ public final class StormPathCarPlay {
             guard let self else { return }
             overview = false
             mapController?.navigationMapView.navigationCamera.update(cameraState: .following)
+            drawCarPlayAlternates()
             configureNavigationBar()
         }
         recenter.image = Self.symbol("location.fill")
@@ -505,6 +491,31 @@ public final class StormPathCarPlay {
         guard let routes, let map = mapController?.navigationMapView else { return }
         map.show(routes, routeAnnotationKinds: [])
         mapController?.installHazardSpans(coords: routes.mainRoute.route.shape?.coordinates ?? [])
+    }
+
+    /// Phone -> car mirror: the option line the RT overview draws. Nothing on the
+    /// car screen is selectable — choosing happens on the phone.
+    func setAlternates(_ lines: [[CLLocationCoordinate2D]]) {
+        carPlayAltLines = lines
+        drawCarPlayAlternates()
+    }
+
+    private func drawCarPlayAlternates() {
+        let wantLines = guiding && overview && !carPlayAltLines.isEmpty
+        if !wantLines && carPlayAltManager == nil { return }
+        guard let map = mapController?.navigationMapView else { return }
+        if carPlayAltManager == nil {
+            carPlayAltManager = map.mapView.annotations.makePolylineAnnotationManager()
+        }
+        guard let mgr = carPlayAltManager else { return }
+        mgr.annotations = wantLines
+            ? carPlayAltLines.map { coords in
+                var ann = PolylineAnnotation(lineCoordinates: coords)
+                ann.lineColor = StyleColor(UIColor(white: 0.55, alpha: 0.85))
+                ann.lineWidth = 5
+                return ann
+            }
+            : []
     }
 
     private var destinationLabel: String {

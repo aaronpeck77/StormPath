@@ -1103,6 +1103,19 @@ export default function App() {
     ]
   );
 
+  /* CarPlay mirror: the phone's option-B polyline rides to the car's RT
+   * overview. Same line MP/RT draw — the car never shows Core's own
+   * alternative set and nothing on the car screen is selectable. */
+  const carPlayAlternateLines = useMemo((): LngLat[][] | null => {
+    if (!navigationStarted) return null;
+    const lockedId =
+      lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
+    const altId = orderedRouteIds.find((id) => id !== lockedId);
+    const alt = altId ? plan.routes.find((r) => r.id === altId) : null;
+    if (!alt || alt.geometry.length < 2) return null;
+    return [alt.geometry.map(([a, b]) => [a, b] as LngLat)];
+  }, [navigationStarted, orderedRouteIds, plan.routes]);
+
   const {
     nativeNavActive,
     position: nativeNavPosition,
@@ -1115,6 +1128,7 @@ export default function App() {
     coreRerouteHealthRef,
     horizonMph,
     horizonHazards,
+
   } = useNativeNavSession({
     accessToken: env.mapboxToken,
     navigationStarted,
@@ -1139,6 +1153,7 @@ export default function App() {
     preferBackroads: false,
     routingPreferenceRef,
     offRouteConfirmedRef,
+    carPlayAlternates: carPlayAlternateLines,
   });
 
   /** After a mid-trip stop/destination replan lands: adopt the fresh locked
@@ -1424,6 +1439,7 @@ export default function App() {
       routes: prev.routes.filter((r) => !drop.has(r.id)),
     }));
   }, [navigationStarted, plan.routes, orderedRouteIds, setPlan]);
+
 
   useEffect(() => {
     const n = orderedRouteIds.length;

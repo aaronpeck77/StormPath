@@ -129,6 +129,14 @@ export interface StormpathMapboxNavigationPlugin {
       kind: "traffic_signal" | "stop_sign" | "yield_sign" | "railway_crossing";
     }>;
   }): Promise<{ ok: boolean; count: number }>;
+  /**
+   * Phone → CarPlay mirror: the option line(s) drawn on the car's RT overview.
+   * `lines` = [lng,lat] polylines; empty array clears. The car screen never
+   * selects a route — choice happens on the phone.
+   */
+  setCarPlayAlternates(options: {
+    lines: [number, number][][];
+  }): Promise<{ ok: boolean; count: number }>;
   stop(): Promise<void>;
   /**
    * Quit the iOS process after this many milliseconds if it is still in the

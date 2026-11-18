@@ -126,6 +126,11 @@ export function useNativeNavSession(opts: {
   /** Optional: arrive / hard error — App may End trip. */
   onSessionEnded?: (reason: "arrived" | "cancelled" | "error", message?: string) => void;
   simulate?: boolean;
+  /**
+   * Phone → CarPlay mirror: the forward option line(s) drawn on the car's RT
+   * overview. Pass null/[] when no option exists. The car never selects.
+   */
+  carPlayAlternates?: LngLat[][] | null;
   /** Info → Voice prompts; must mute Mapbox RouteVoiceController when false. */
   voiceGuidanceEnabled?: boolean;
   /** Prefer no-interstate when the Go-locked leg is a preferred / slower alternate. */
@@ -166,6 +171,7 @@ export function useNativeNavSession(opts: {
     routingPreferenceRef,
     navTargetKey,
     offRouteConfirmedRef,
+    carPlayAlternates,
   } = opts;
   const voiceGuidanceEnabledRef = useRef(voiceGuidanceEnabled);
   voiceGuidanceEnabledRef.current = voiceGuidanceEnabled;
@@ -651,6 +657,28 @@ export function useNativeNavSession(opts: {
     if (!startedForNavRef.current && !nativeNavActive) return;
     void restartNative();
   }, [navigationStarted, nativeNavActive, navTargetKey, restartNative]);
+
+  /**
+   * CarPlay mirror: push the phone's own option line to the car screen. The
+   * SDK's alternative set stays hidden — it's a different route list and
+   * would draw a line the phone doesn't have. Empty clears the overlay.
+   */
+  const carPlayAltKey = (carPlayAlternates ?? [])
+    .map((l) =>
+      l.length
+        ? `${l.length}:${l[0]![0].toFixed(3)},${l[0]![1].toFixed(3)}:${l[l.length - 1]![0].toFixed(3)},${l[l.length - 1]![1].toFixed(3)}`
+        : "0"
+    )
+    .join("|");
+  useEffect(() => {
+    if (!isNativeMapboxNavPlatform()) return;
+    const lines =
+      navigationStarted && nativeNavActive ? (carPlayAlternates ?? []) : [];
+    void StormpathMapboxNavigation.setCarPlayAlternates({
+      lines: lines.map((l) => l.map(([a, b]) => [a, b] as [number, number])),
+    }).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigationStarted, nativeNavActive, carPlayAltKey]);
 
   return {
     nativeNavActive,
