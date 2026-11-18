@@ -54,12 +54,11 @@
 }
 
 .cp-companion__dest {
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 700;
+  line-height: 1.28;
   margin-bottom: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-line;
 }
 
 .cp-companion__stats {

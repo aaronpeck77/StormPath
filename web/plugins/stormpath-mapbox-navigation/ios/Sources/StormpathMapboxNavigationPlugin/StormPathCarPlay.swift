@@ -666,11 +666,11 @@ final class CarMapViewController: UIViewController, NavigationMapViewDelegate {
     func positionRouteBelowLabels() {
         guard let map = navigationMapView.mapView.mapboxMap else { return }
         /* Route must sit under POI icons/shields AND road labels — Bill (564)
-         * reported the line covering road signs. Prefer the lowest symbol layer
-         * we can identify; fall back to road-label, then leave SDK default. */
-        for anchor in ["poi-level", "road-label"] where map.layerExists(withId: anchor) {
+         * reported the line covering road signs; the fixed anchor ids missed
+         * this style's road-label layers entirely. Anchor to the style's own
+         * lowest symbol layer instead — same lookup the StormPath overlays use. */
+        if let anchor = map.style.allLayerIdentifiers.first(where: { $0.type == .symbol })?.id {
             navigationMapView.customRouteLineLayerPosition = .below(anchor)
-            return
         }
     }
 

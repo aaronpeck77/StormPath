@@ -1,5 +1,8 @@
 import { useMemo, type RefObject } from "react";
-import type { CarConditionsInput } from "../services/carSessionPublish";
+import {
+  formatCarDestinationAddress,
+  type CarConditionsInput,
+} from "../services/carSessionPublish";
 import { formatDistanceShort } from "../utils/formatDistance";
 import { formatMinutesAsHoursMinutes } from "./formatEta";
 import { SPEED_LIMIT_DISPLAY_ENABLED } from "../nav/postedSpeed";
@@ -159,7 +162,13 @@ export function CarPlayCompanionView(p: Props) {
       </header>
 
       <section className="cp-companion__eta">
-        <div className="cp-companion__dest">{p.destinationLabel || "Active trip"}</div>
+        <div className="cp-companion__dest">
+          {/* Envelope format: name / street / city, ST zip — same layout the
+           *  car screen asks for; falls back to the flat label. */}
+          {formatCarDestinationAddress(p.destinationLabel) ||
+            p.destinationLabel ||
+            "Active trip"}
+        </div>
         <div className="cp-companion__stats">
           <span>
             {p.etaMinutes != null
