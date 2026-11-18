@@ -80,7 +80,6 @@ import {
   selectNextDriveHazardItem,
   type DriveHazardQueueInput,
 } from "./nav/driveHazardTicker";
-import { timelineItemBandColor } from "./nav/timelineBandColors";
 import { routeImpactToRouteAlert } from "./nav/routeImpacts";
 import { useAlternateRelease } from "./nav/useAlternateRelease";
 import { extraNavigatingAlternateIds } from "./nav/mergePlanRoutes";
@@ -1839,8 +1838,11 @@ export default function App() {
     guidanceGeometryEpoch,
   ]);
 
+  /* "Your route" (learned/breadcrumb third route) parked — Bill wants exactly
+   * two routes on screen: the locked main + one forward option (Nov 18, 2026). */
+  const personalForkEnabled = false;
   const personalForkNav = usePersonalForkNav({
-    enabled: Boolean(payFrequentRoutes && learnEnabled),
+    enabled: Boolean(personalForkEnabled && payFrequentRoutes && learnEnabled),
     navigationStarted,
     viewMode,
     mainGeometry: personalForkMainGeometry,
@@ -1856,7 +1858,7 @@ export default function App() {
   const injectYourRouteIntoPlan = personalForkNav.injectYourRouteIntoPlan;
   const lastInjectedPlanKeyRef = useRef<string>("");
   useEffect(() => {
-    if (!payFrequentRoutes || !learnEnabled || navigationStarted) return;
+    if (!personalForkEnabled || !payFrequentRoutes || !learnEnabled || navigationStarted) return;
     if (!destLngLat || plan.routes.length < 1) return;
     if (plan.routes.some((r) => isPersonalForkRouteId(r.id))) return;
     const key = `${destLngLat[0].toFixed(4)},${destLngLat[1].toFixed(4)}|${plan.routes
@@ -1881,6 +1883,7 @@ export default function App() {
       setPlan(next);
     }
   }, [
+    personalForkEnabled,
     payFrequentRoutes,
     learnEnabled,
     navigationStarted,
@@ -3209,16 +3212,9 @@ export default function App() {
     [hazardQueueInput]
   );
   const nextHazardId = nextDriveHazard?.id ?? null;
-  const nextHazardBeacon = useMemo(() => {
-    const geom = guidanceRoute?.geometry;
-    if (!nextDriveHazard || !geom || geom.length < 2) return null;
-    return {
-      lngLat: pointAtAlongMeters(geom, nextDriveHazard.startMeters),
-      label: nextDriveHazard.label,
-      color: timelineItemBandColor(nextDriveHazard),
-      id: nextDriveHazard.id,
-    };
-  }, [nextDriveHazard, guidanceRoute?.geometry]);
+  /* Pulsing beacon retired — Bill: the on-line hazard triangle does the job;
+   * the flashing red dot read as something else entirely (Nov 18, 2026). */
+  const nextHazardBeacon = null;
   const stormAdvisoryBarPropsWithNext = useMemo(
     () => ({ ...stormAdvisoryBarProps, highlightedHazardId: nextHazardId }),
     [stormAdvisoryBarProps, nextHazardId]
