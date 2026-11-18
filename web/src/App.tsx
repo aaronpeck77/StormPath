@@ -83,6 +83,7 @@ import {
 import { timelineItemBandColor } from "./nav/timelineBandColors";
 import { routeImpactToRouteAlert } from "./nav/routeImpacts";
 import { useAlternateRelease } from "./nav/useAlternateRelease";
+import { extraNavigatingAlternateIds } from "./nav/mergePlanRoutes";
 import { fartherAlongMeters, stablePlanRoutesKey } from "./nav/tripNavDisplay";
 import { useTripNavDisplayHealth } from "./nav/useTripNavDisplayHealth";
 import { useTripSurfaceRecovery } from "./nav/useTripSurfaceRecovery";
@@ -1392,6 +1393,38 @@ export default function App() {
     onAlternatesReleased: handleAlternatesReleased,
   });
 
+  /* Promote mid-trip (Bill): the demoted corridor is stale behind-the-puck
+   * geometry — drop it and fetch a fresh option from the driver's position so
+   * the map always shows the route you're on plus one way around. */
+  const handleNavigatingPromote = useCallback(
+    (demotedRouteId: string | null) => {
+      if (demotedRouteId) {
+        setPlan((prev) => ({
+          ...prev,
+          routes: prev.routes.filter((r) => r.id !== demotedRouteId),
+        }));
+      }
+      void refreshAlternateRoutesOnly({ allowDuringDrive: true });
+    },
+    [refreshAlternateRoutesOnly, setPlan]
+  );
+
+  /* Nav keeps main + one option: drop extra slot alternates while navigating —
+   * a third line is clutter and its geometry goes stale behind the puck. */
+  useEffect(() => {
+    if (!navigationStarted) return;
+    const lockedId =
+      lockedNavigationRouteIdRef.current ?? orderedRouteIds[0] ?? null;
+    const drop = new Set(
+      extraNavigatingAlternateIds(plan.routes, lockedId, orderedRouteIds)
+    );
+    if (drop.size === 0) return;
+    setPlan((prev) => ({
+      ...prev,
+      routes: prev.routes.filter((r) => !drop.has(r.id)),
+    }));
+  }, [navigationStarted, plan.routes, orderedRouteIds, setPlan]);
+
   useEffect(() => {
     const n = orderedRouteIds.length;
     if (n === 0) return;
@@ -2676,6 +2709,7 @@ export default function App() {
       resetOffRouteNavigation,
       clearDetourGuidance,
       restartNative,
+      onNavigatingPromote: handleNavigatingPromote,
     });
 
   /* Stormy's action dispatch lives in `stormy/useStormyAct.ts` — voice replies

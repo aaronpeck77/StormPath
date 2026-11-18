@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  extraNavigatingAlternateIds,
   mergePlanPreservingPrimary,
   REJOIN_OVERLAY_ROUTE_ID,
   rejoinOverlaySlotIds,
@@ -78,5 +79,38 @@ describe("mergePlanPreservingPrimary", () => {
     expect(next.routes[0]?.id).toBe("r-a");
     expect(next.routes[0]?.geometry).toEqual(locked.geometry);
     expect(next.routes[1]?.id).toBe(REJOIN_OVERLAY_ROUTE_ID);
+  });
+});
+
+describe("extraNavigatingAlternateIds", () => {
+  it("keeps the first slot alternate and drops the rest", () => {
+    const routes = [route("r-a", "A"), route("r-b", "B"), route("r-c", "C")];
+    expect(extraNavigatingAlternateIds(routes, "r-a", ["r-a", "r-b", "r-c"])).toEqual(["r-c"]);
+  });
+
+  it("returns nothing for main + one option", () => {
+    const routes = [route("r-a", "A"), route("r-b", "B")];
+    expect(extraNavigatingAlternateIds(routes, "r-a", ["r-a", "r-b"])).toEqual([]);
+  });
+
+  it("follows slot order, not plan order", () => {
+    const routes = [route("r-a", "A"), route("r-c", "C"), route("r-b", "B")];
+    expect(extraNavigatingAlternateIds(routes, "r-a", ["r-a", "r-b", "r-c"])).toEqual(["r-c"]);
+  });
+
+  it("ignores routes outside the slot order (forks, rejoin stubs)", () => {
+    const routes = [
+      route("r-a", "A"),
+      route("r-b", "B"),
+      route("r-c", "C"),
+      route("fork:1", "Your route"),
+      route("r-rejoin", "Rejoin"),
+    ];
+    expect(extraNavigatingAlternateIds(routes, "r-a", ["r-a", "r-b", "r-c"])).toEqual(["r-c"]);
+  });
+
+  it("returns nothing without a locked route", () => {
+    const routes = [route("r-a", "A"), route("r-b", "B"), route("r-c", "C")];
+    expect(extraNavigatingAlternateIds(routes, null, ["r-a", "r-b", "r-c"])).toEqual([]);
   });
 });

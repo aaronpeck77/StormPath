@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveNavigatingRouteSelect } from "../navigatingRouteSelect";
+import {
+  demotedRouteIdForPromote,
+  resolveNavigatingRouteSelect,
+} from "../navigatingRouteSelect";
 
 describe("resolveNavigatingRouteSelect", () => {
   it("previews only while planning", () => {
@@ -75,5 +78,44 @@ describe("resolveNavigatingRouteSelect", () => {
         offRouteChoiceActive: true,
       })
     ).toEqual({ type: "preview" });
+  });
+});
+
+describe("demotedRouteIdForPromote", () => {
+  it("demotes the old lock when a different leg is promoted mid-trip", () => {
+    expect(
+      demotedRouteIdForPromote({
+        navigationStarted: true,
+        selectedId: "r-b",
+        lockedRouteId: "r-a",
+      })
+    ).toBe("r-a");
+  });
+
+  it("demotes nothing before Go or when re-picking the lock", () => {
+    expect(
+      demotedRouteIdForPromote({
+        navigationStarted: false,
+        selectedId: "r-b",
+        lockedRouteId: "r-a",
+      })
+    ).toBeNull();
+    expect(
+      demotedRouteIdForPromote({
+        navigationStarted: true,
+        selectedId: "r-a",
+        lockedRouteId: "r-a",
+      })
+    ).toBeNull();
+  });
+
+  it("demotes nothing when there is no locked leg", () => {
+    expect(
+      demotedRouteIdForPromote({
+        navigationStarted: true,
+        selectedId: "r-b",
+        lockedRouteId: null,
+      })
+    ).toBeNull();
   });
 });

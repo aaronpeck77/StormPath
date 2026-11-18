@@ -40,6 +40,12 @@ public final class StormPathCarPlay {
     private var lastHazardAlertAt: TimeInterval = 0
     private var followingStepIndex: Int?
     private var followingLegIndex: Int?
+    /// Plugin bridge — select a Core alternative on the live session by index.
+    var onSelectAlternativeRoute: ((Int) -> Void)?
+    /// Alternatives on the latest NavigationRoutes snapshot (forks already passed
+    /// are filtered out SDK-side, so this is always an option still ahead).
+    private var alternativeRouteCount = 0
+    private var alternativeCycleIndex = 0
     /// Content signature of what the maneuver card currently shows. Rebuilding
     /// `upcomingManeuvers` slides a fresh panel in even when the visible copy is
     /// identical, so we only reassign when this changes.
@@ -68,7 +74,10 @@ public final class StormPathCarPlay {
             routeProgress: progressSubject.eraseToAnyPublisher(),
             navigationCameraType: .carPlay
         )
-        map.showsAlternatives = false
+        /* Bill: always the route you are on plus one option out in front.
+         * Core owns the alternative list (passed forks are filtered SDK-side).
+         */
+        map.showsAlternatives = true
         map.routeColor = UIColor(red: 0.22, green: 0.74, blue: 0.97, alpha: 1)
         map.routeCasingColor = UIColor(white: 0.05, alpha: 0.85)
         map.waypointColor = .systemRed
@@ -143,20 +152,25 @@ public final class StormPathCarPlay {
     func guidanceStarted(routes: NavigationRoutes) {
         guiding = true
         self.routes = routes
+        alternativeRouteCount = routes.alternativeRoutes.count
+        alternativeCycleIndex = 0
         idleLocation.stopUpdatingLocation()
         showRoutes()
         startTripIfNeeded()
         mapController?.navigationMapView.navigationCamera.update(cameraState: overview ? .overview : .following)
         mapController?.radar.setEnabled(overview)
+        configureNavigationBar()
     }
 
     func routesChanged(_ routes: NavigationRoutes) {
         guard guiding else { return }
         self.routes = routes
+        alternativeRouteCount = routes.alternativeRoutes.count
         currentBanner = nil
         followingManeuverSignature = ""
         showRoutes()
         startTripIfNeeded()
+        configureNavigationBar()
     }
 
     func progressChanged(_ progress: RouteProgress, location: CLLocation) {
@@ -176,6 +190,8 @@ public final class StormPathCarPlay {
         mapController?.radar.setEnabled(false)
         configureNavigationBar()
         routes = nil
+        alternativeRouteCount = 0
+        alternativeCycleIndex = 0
         progressSubject.send(nil)
         if let navigationSession {
             if arrived {
@@ -245,7 +261,7 @@ public final class StormPathCarPlay {
 
     private func configureNavigationBar() {
         guard let mapTemplate else { return }
-        mapTemplate.leadingNavigationBarButtons = [
+        var leading = [
             CPBarButton(title: overview ? "Drive" : "RT") { [weak self] _ in
                 guard let self else { return }
                 overview.toggle()
@@ -255,6 +271,17 @@ public final class StormPathCarPlay {
             },
             CPBarButton(title: "Conditions") { [weak self] _ in self?.showConditions() },
         ]
+        /* Route B on the car screen: tap cycles Core's alternatives; the chosen
+         * one becomes mainRoute and a fresh option shows on the next routesChanged. */
+        if guiding && alternativeRouteCount > 0 {
+            leading.append(CPBarButton(title: "Alt") { [weak self] _ in
+                guard let self, self.alternativeRouteCount > 0 else { return }
+                let index = self.alternativeCycleIndex % self.alternativeRouteCount
+                self.alternativeCycleIndex += 1
+                self.onSelectAlternativeRoute?(index)
+            })
+        }
+        mapTemplate.leadingNavigationBarButtons = leading
         // Radar belongs to the route (RT) view only — in Drive it is noise.
         guard overview else {
             radarButton = nil

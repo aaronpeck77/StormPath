@@ -268,6 +268,10 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         // Off-route recovery is Core's job. Do not auto-swap a locked B for a faster highway.
         coreConfig.routingConfig.rerouteConfig.detectsReroute = true
         coreConfig.routingConfig.fasterRouteDetectionConfig = nil
+        /* Bill: the car screen keeps one forward option live — refresh Core's
+         * alternative detection on the phone's 120 s cadence instead of the
+         * 5-minute default. Passed forks drop out SDK-side either way. */
+        coreConfig.routingConfig.alternativeRoutesDetectionConfig?.refreshIntervalSeconds = 120
         // Posted limit and incident road objects along the route. Enhanced ADAS data stays off.
         // Live incidents need a Mapbox graph id this app does not have, so that feed stays off.
         coreConfig.electronicHorizonConfig = ElectronicHorizonConfig(
@@ -447,6 +451,13 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     @MainActor
     private func bindObservers(mapboxNavigation: MapboxNavigation) {
         cancellables.removeAll()
+
+        /* CarPlay "Alt" button → Core alternative select on this session. */
+        StormPathCarPlay.shared.onSelectAlternativeRoute = { [weak self] index in
+            Task { @MainActor in
+                self?.navigationProvider?.mapboxNavigation.navigation().selectAlternativeRoute(at: index)
+            }
+        }
 
         mapboxNavigation.navigation().routeProgress
             .receive(on: DispatchQueue.main)
@@ -699,6 +710,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         let wasActive = sessionActive
         sessionActive = false
         StormPathCarPlay.shared.guidanceEnded(arrived: didEmitArrival)
+        StormPathCarPlay.shared.onSelectAlternativeRoute = nil
         coreEpoch += 1
         resetHorizon()
         cancellables.removeAll()
@@ -751,6 +763,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         let wasActive = sessionActive
         sessionActive = false
         StormPathCarPlay.shared.guidanceEnded(arrived: didEmitArrival)
+        StormPathCarPlay.shared.onSelectAlternativeRoute = nil
         coreEpoch += 1
         resetHorizon()
         cancellables.removeAll()

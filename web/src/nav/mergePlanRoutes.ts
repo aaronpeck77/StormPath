@@ -37,3 +37,22 @@ export function mergePlanPreservingPrimary(
   }
   return { ...plan, routes };
 }
+
+/**
+ * While navigating the map shows the locked leg plus ONE forward option
+ * (Bill: "two routes all along the way — the one I'm on and one other").
+ * Returns ids of slot alternates beyond the first, in slot order; personal
+ * forks and overlay stubs that are not in `orderedRouteIds` are untouched.
+ */
+export function extraNavigatingAlternateIds(
+  routes: NavRoute[],
+  lockedId: string | null,
+  orderedRouteIds: string[]
+): string[] {
+  if (!lockedId) return [];
+  const orderIndex = new Map(orderedRouteIds.map((id, i) => [id, i]));
+  const alts = routes
+    .filter((r) => r.id !== lockedId && orderIndex.has(r.id))
+    .sort((a, b) => (orderIndex.get(a.id) ?? 99) - (orderIndex.get(b.id) ?? 99));
+  return alts.length <= 1 ? [] : alts.slice(1).map((r) => r.id);
+}

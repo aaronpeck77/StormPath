@@ -13,7 +13,7 @@ const items = buildRouteAheadTimeline({
 });
 const props: DriveHazardTickerInput = {
   items, isPlus: true, isOnline: true, navigationStarted: true, viewMode: "drive",
-  userAlongMeters: 3218.68, metersToManeuver: 5000, miles: true,
+  userAlongMeters: 8900, metersToManeuver: 5000, miles: true,
 };
 const render = (patch: Partial<DriveHazardTickerInput> = {}) =>
   renderToStaticMarkup(createElement(DriveHazardTicker, { ...props, ...patch }));
@@ -23,7 +23,7 @@ describe("DriveHazardTicker", () => {
     const html = render();
     expect(html).toContain("Next route hazard");
     expect(html).toContain("Tornado Warning");
-    expect(html).toContain("4.0 mi");
+    expect(html).toContain("0.5 mi");
     expect(html).not.toContain("aria-live");
   });
 

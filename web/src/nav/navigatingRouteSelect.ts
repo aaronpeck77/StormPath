@@ -43,3 +43,19 @@ export function resolveNavigatingRouteSelect(input: {
 
   return { type: "preview" };
 }
+
+/**
+ * Mid-trip promote: which leg does the driver give up? Only when navigation
+ * is live and the tap is a DIFFERENT leg than the lock — re-tapping the lock
+ * or previewing before Go demotes nothing. The demoted corridor is stale
+ * behind-the-puck geometry, so the caller drops it and fetches a fresh option.
+ */
+export function demotedRouteIdForPromote(input: {
+  navigationStarted: boolean;
+  selectedId: string;
+  lockedRouteId: string | null;
+}): string | null {
+  if (!input.navigationStarted) return null;
+  if (!input.lockedRouteId || input.selectedId === input.lockedRouteId) return null;
+  return input.lockedRouteId;
+}

@@ -11,7 +11,10 @@ import { routingPreferenceForLockedRoute, type RoutingPreference } from "./route
 import type { TripPlanState } from "../state/tripPlanStore";
 import { usePersonalForkNav } from "../hooks/usePersonalForkNav";
 import { isPersonalForkRouteId, PERSONAL_FORK_ROUTE_ID } from "../personalForks";
-import { resolveNavigatingRouteSelect } from "./navigatingRouteSelect";
+import {
+  demotedRouteIdForPromote,
+  resolveNavigatingRouteSelect,
+} from "./navigatingRouteSelect";
 import { slotOrderAfterSelect } from "./routeSlotOrder";
 
 /**
@@ -55,6 +58,10 @@ export function useRouteSelectionFlow(deps: {
   resetOffRouteNavigation: () => void;
   clearDetourGuidance: () => void;
   restartNative: () => void;
+  /** Fired when a promote swaps the locked leg mid-trip — the demoted corridor
+   *  is stale behind-the-puck geometry; the caller drops it and refreshes a
+   *  fresh option from the driver's current position. */
+  onNavigatingPromote?: (demotedRouteId: string | null) => void;
 }): {
   handlePromoteRouteToPrimary: (id: string) => void;
   handlePreviewRouteSelect: (id: string) => void;
@@ -88,11 +95,17 @@ export function useRouteSelectionFlow(deps: {
     resetOffRouteNavigation,
     clearDetourGuidance,
     restartNative,
+    onNavigatingPromote,
   } = deps;
 
   const handlePromoteRouteToPrimary = useCallback(
     (id: string) => {
       if (!plan.routes.some((r) => r.id === id)) return;
+      const demotedId = demotedRouteIdForPromote({
+        navigationStarted: navigationStartedRef.current,
+        selectedId: id,
+        lockedRouteId: lockedNavigationRouteIdRef.current,
+      });
       setRouteSlotOrder((prev) => slotOrderAfterSelect(prev.length ? prev : planRouteIds, id));
       setPreviewLegIndex(0);
       if (navigationStartedRef.current) {
@@ -103,8 +116,9 @@ export function useRouteSelectionFlow(deps: {
         onPersonalForkRef.current = isPersonalForkRouteId(id);
       }
       clearDetourGuidance();
+      if (demotedId) onNavigatingPromote?.(demotedId);
     },
-    [plan.routes, planRouteIds, clearDetourGuidance]
+    [plan.routes, planRouteIds, clearDetourGuidance, onNavigatingPromote]
   );
 
   const commitPersonalFork = useCallback(

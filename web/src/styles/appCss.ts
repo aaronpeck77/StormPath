@@ -29,5 +29,7 @@ export async function readAppCss(): Promise<string> {
     last = m.index + m[0].length;
   }
   out += manifest.slice(last);
-  return out;
+  /* Windows checkouts materialize CRLF — tests assert on rule text, not
+   * line endings, so normalize here rather than in every spec. */
+  return out.replace(/\r\n/g, "\n");
 }
