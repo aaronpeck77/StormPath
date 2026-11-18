@@ -114,7 +114,10 @@ describe("drive always-ahead thresholds", () => {
     expect(city.confirmTicks).toBe(2);
     expect(city.reanchorLateralM).toBeGreaterThan(DRIVE_AHEAD_OFF_ROUTE_ENTER_M);
     expect(city.reanchorLateralM).toBeLessThan(70);
-    expect(city.coreGraceMs).toBeLessThanOrEqual(1_500);
+    /* Floor is Core's real reroute latency (~2-4 s over LTE) — shorter means
+     * DIY wins every town off-route and pays a full Core restart per event. */
+    expect(city.coreGraceMs).toBeLessThanOrEqual(5_000);
+    expect(city.coreGraceMs).toBeGreaterThanOrEqual(2_000);
     expect(city.throttleMs).toBeLessThan(4_000);
     expect(highway.reanchorLateralM).toBe(DRIVE_REANCHOR_LATERAL_M);
     expect(highway.confirmTicks).toBe(DRIVE_AHEAD_CONFIRM_TICKS);

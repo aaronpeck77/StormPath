@@ -647,7 +647,7 @@ export function setDriveDiagPoseSource(source: string): void {
 /** Weather-pipeline snapshot for the Wx graphs — App writes it when the
  *  pipeline's enable/block/sample state changes so a blank panel explains itself. */
 export function setDriveDiagWxDiag(line: string): void {
-  const next = line.trim().slice(0, 120);
+  const next = line.trim().slice(0, 160);
   if (state.wxDiag === next) return;
   state.wxDiag = next;
   persistDriveDiagSoon();

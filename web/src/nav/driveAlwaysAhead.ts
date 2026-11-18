@@ -41,8 +41,10 @@ export const DRIVE_AHEAD_CONFIRM_TICKS_CITY = 2;
 export const DRIVE_REANCHOR_CITY_LATERAL_M = 28;
 /** Retry a missed city fetch before the driver reaches the next street. */
 export const DRIVE_AHEAD_REROUTE_THROTTLE_CITY_MS = 2_500;
-/** Core may already be rerouting. If it has not, plan from here. */
-export const CORE_REROUTE_GRACE_CITY_MS = 1_000;
+/* Core may already be rerouting — give it a window it can actually meet
+ * (~2-4 s over LTE). At 1 s DIY won every town off-route and paid a full Core
+ * restart per event (dumps: ~13 restarts/drive, ETA jumps, camera churn). */
+export const CORE_REROUTE_GRACE_CITY_MS = 4_000;
 /**
  * A real turn off the drawn line — not a curve or a lane change.
  * Plan forward immediately so the next intersection is still ahead.

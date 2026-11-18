@@ -14,8 +14,11 @@
 
 export type RerouteOwner = "core" | "diy";
 
-/** Core reports ~1/s. Quiet this long means it is not going to reroute for us. */
-export const CORE_NAV_STALE_MS = 6_000;
+/* Bridged progress events land every ~3-6 s on real drives (dumps: 0.18-0.33
+ * samples/s), slower during restart warmup — 6 s marked a healthy session dead
+ * and pushed recovery to DIY mid-drive. 10 s still catches a truly quiet Core
+ * within two poll ticks. */
+export const CORE_NAV_STALE_MS = 10_000;
 /**
  * How long Core gets to deliver its own `routeChanged` after a confirmed off-route
  * before DIY is allowed to plan. Mapbox usually reroutes in a couple of seconds;

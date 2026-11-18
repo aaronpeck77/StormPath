@@ -229,6 +229,7 @@ import { allowUsSpeedLimitGuess, roadUsesMiles } from "./utils/displayUnits";
 import { resolveGuidanceLanguage, weatherKitLanguageTag } from "./utils/guidanceLanguage";
 import { setMapboxSearchLanguage } from "./services/mapboxSearchBox";
 import { setWeatherKitLanguage } from "./services/weatherKitClient";
+import { isWeatherKitTokenBlocked } from "./services/weatherKitAuth";
 import { useRouteCompareActions } from "./state/useRouteCompareActions";
 import { useTripPlanStore } from "./state/tripPlanStore";
 import { useUiStore } from "./state/uiStore";
@@ -2116,7 +2117,7 @@ export default function App() {
   useEffect(() => {
     const blk = (radarRefreshBlocked || routeForecastRefreshBlocked || "-").slice(0, 40);
     setDriveDiagWxDiag(
-      `ready:${routeWeatherReady ? 1 : 0} tio:${navResourceBudget.tioRouteFetchEnabled ? 1 : 0} rad:${navResourceBudget.radarRouteSamplingEnabled ? 1 : 0} radarN:${radarMosaicSamples.length} blk:${blk}`
+      `ready:${routeWeatherReady ? 1 : 0} tio:${navResourceBudget.tioRouteFetchEnabled ? 1 : 0} pt:${navResourceBudget.tioPointFetchEnabled ? 1 : 0} fc:${tioRouteForecast?.intervals?.length ?? -1} mp:${tioMinutePrecip?.minutes?.length ?? -1} hr:${localHourlyForecast?.hours?.length ?? -1} rad:${navResourceBudget.radarRouteSamplingEnabled ? 1 : 0} radarN:${radarMosaicSamples.length} wk:${isWeatherKitTokenBlocked() ? 1 : 0} blk:${blk}`
     );
   }, [
     routeWeatherReady,
@@ -2124,6 +2125,9 @@ export default function App() {
     radarMosaicSamples.length,
     radarRefreshBlocked,
     routeForecastRefreshBlocked,
+    tioRouteForecast?.intervals?.length,
+    tioMinutePrecip?.minutes?.length,
+    localHourlyForecast?.hours?.length,
   ]);
 
   useTripSurfaceRecovery({
