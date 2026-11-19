@@ -1,4 +1,7 @@
-import { closestPointOnPolyline, pointAtAlongMeters, polylineLengthMeters } from "./routeGeometry";
+import { along } from "@turf/along";
+import { lineString, point } from "@turf/helpers";
+import { length as turfLength } from "@turf/length";
+import { nearestPointOnLine } from "@turf/nearest-point-on-line";
 import { routeGeometryAgreesWithLocked } from "./lockedRouteGeometryGuard";
 import type { DrivingRejoinMode, RoadNetworkClass } from "./drivingRejoinContext";
 import type { LngLat } from "./types";
@@ -80,17 +83,66 @@ export function proposedRejoinsPreviousCorridor(input: {
   if (proposedGeometry.length < 2 || previousGeometry.length < 2) return false;
   const maxLat = input.maxLateralM ?? REJOIN_AGREE_MAX_LATERAL_M;
   const minFrac = input.minFraction ?? REJOIN_AGREE_MIN_FRACTION;
-  const totalM = polylineLengthMeters(proposedGeometry);
+  const proposedLine = lineString(proposedGeometry.map((c) => [c[0], c[1]]));
+  const previousLine = lineString(previousGeometry.map((c) => [c[0], c[1]]));
+  const totalM = turfLength(proposedLine, { units: "meters" });
   if (totalM < 80) return false;
   const step = Math.max(REJOIN_SAMPLE_STEP_M, totalM / 40);
   let hits = 0;
   let checks = 0;
   for (let d = 0; d <= totalM; d += step) {
     checks++;
-    const pt = pointAtAlongMeters(proposedGeometry, d);
-    if (closestPointOnPolyline(pt, previousGeometry).lateralMetersApprox <= maxLat) hits++;
+    const pt = along(proposedLine, d, { units: "meters" });
+    const snap = nearestPointOnLine(previousLine, pt, { units: "meters" });
+    const lateralM = snap.properties?.dist ?? Number.POSITIVE_INFINITY;
+    if (lateralM <= maxLat) hits++;
   }
   return checks > 0 && hits / checks >= minFrac;
+}
+
+/**
+ * Driver-initiated deviation (docs/ROUTE_CONSENT.md): when the wheels leave
+ * the line, the route change is already consented — the keep/return offer
+ * stays quiet unless staying on the driver's pick costs meaningfully more
+ * than finishing the corridor they locked (the likely-accidental wrong
+ * turn the offer exists for).
+ *
+ * Compared on distance: Core reroutes arrive without an ETA field, and on
+ * a same-class corridor distance tracks time closely enough for a nag gate.
+ */
+export const DEVIATION_COSTLY_MIN_REMAINING_M = 2_400;
+export const DEVIATION_COSTLY_SLACK_M = 1_600;
+export const DEVIATION_COSTLY_RATIO = 0.12;
+
+export function deviationIsCostly(input: {
+  proposedGeometry: LngLat[];
+  previousGeometry: LngLat[] | null | undefined;
+  userLngLat: LngLat | null | undefined;
+}): boolean {
+  const prev = input.previousGeometry;
+  if (!prev || prev.length < 2 || input.proposedGeometry.length < 2) return false;
+  const prevLine = lineString(prev.map((c) => [c[0], c[1]]));
+  const nextLine = lineString(input.proposedGeometry.map((c) => [c[0], c[1]]));
+  const prevTotalM = turfLength(prevLine, { units: "meters" });
+  const nextM = turfLength(nextLine, { units: "meters" });
+
+  let prevRemainingM = prevTotalM;
+  const user = input.userLngLat;
+  if (user) {
+    const snap = nearestPointOnLine(prevLine, point([user[0], user[1]]), {
+      units: "meters",
+    });
+    const alongM = snap.properties?.location ?? 0;
+    prevRemainingM = Math.max(0, prevTotalM - alongM);
+  }
+
+  /* Almost there — the driver is arriving; a return offer is pointless. */
+  if (prevRemainingM < DEVIATION_COSTLY_MIN_REMAINING_M) return false;
+
+  return (
+    nextM >
+    prevRemainingM + Math.max(DEVIATION_COSTLY_SLACK_M, prevRemainingM * DEVIATION_COSTLY_RATIO)
+  );
 }
 
 /**

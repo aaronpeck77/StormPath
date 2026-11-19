@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyRouteChangeMateriality,
   consentTierForContext,
+  deviationIsCostly,
   proposedRejoinsPreviousCorridor,
   routeChangeUxFor,
   ROUTE_CHANGE_OFFER_TIMEOUT_MS,
@@ -106,6 +107,70 @@ describe("proposedRejoinsPreviousCorridor", () => {
       proposedRejoinsPreviousCorridor({
         proposedGeometry: parallelOffsetLine(),
         previousGeometry: straightLine(),
+      })
+    ).toBe(false);
+  });
+});
+
+describe("deviationIsCostly", () => {
+  /** ~1.5x the locked corridor's length — a real detour, not a shortcut. */
+  function longLine(): LngLat[] {
+    const pts: LngLat[] = [];
+    for (let i = 0; i <= 40; i++) {
+      pts.push([-96.0 + i * 0.03, 40.0]);
+    }
+    return pts;
+  }
+
+  it("treats a pick no longer than the remaining corridor as free", () => {
+    const prev = straightLine();
+    /* Same length as the corridor left — a parallel shortcut, not a cost. */
+    const proposed = parallelOffsetLine();
+    expect(
+      deviationIsCostly({
+        proposedGeometry: proposed,
+        previousGeometry: prev,
+        userLngLat: prev[0]!,
+      })
+    ).toBe(false);
+  });
+
+  it("flags a pick much longer than the remaining corridor", () => {
+    const prev = straightLine();
+    expect(
+      deviationIsCostly({
+        proposedGeometry: longLine(),
+        previousGeometry: prev,
+        userLngLat: prev[0]!,
+      })
+    ).toBe(true);
+  });
+
+  it("never nags when the driver is nearly at the destination", () => {
+    const prev = straightLine();
+    const nearEnd: LngLat = [-95.22, 40.0];
+    expect(
+      deviationIsCostly({
+        proposedGeometry: longLine(),
+        previousGeometry: prev,
+        userLngLat: nearEnd,
+      })
+    ).toBe(false);
+  });
+
+  it("treats a missing corridor or line as not costly — nothing to return to", () => {
+    expect(
+      deviationIsCostly({
+        proposedGeometry: straightLine(),
+        previousGeometry: null,
+        userLngLat: [-96.0, 40.0],
+      })
+    ).toBe(false);
+    expect(
+      deviationIsCostly({
+        proposedGeometry: [],
+        previousGeometry: straightLine(),
+        userLngLat: [-96.0, 40.0],
       })
     ).toBe(false);
   });

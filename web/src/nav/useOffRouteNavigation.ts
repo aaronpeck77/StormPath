@@ -73,6 +73,7 @@ import {
 import {
   classifyRouteChangeMateriality,
   consentTierForContext,
+  deviationIsCostly,
   proposedRejoinsPreviousCorridor,
   ROUTE_CHANGE_OFFER_TIMEOUT_MS,
   routeChangeUxFor,
@@ -563,7 +564,15 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           tier,
           canReturnToPrevious: Boolean(prevCorridorGeometry?.length),
         });
-        if (ux === "offer" && prevCorridorGeometry?.length) {
+        /* Driver-initiated deviation: the wheels already consented — the
+         * offer only earns the card when staying on the driver's pick costs
+         * meaningfully more than finishing the corridor they locked. */
+        const costly = deviationIsCostly({
+          proposedGeometry: primary.geometry,
+          previousGeometry: prevCorridorGeometry,
+          userLngLat,
+        });
+        if (ux === "offer" && costly && prevCorridorGeometry?.length) {
           previousCorridorRef.current = {
             geometry: prevCorridorGeometry,
             routeId: prevLockedRoute?.id ?? null,
@@ -721,7 +730,16 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         tier,
         canReturnToPrevious: true,
       });
-      if (ux === "offer") {
+      /* This path only runs after a confirmed off-route episode — the driver
+       * already consented by leaving the line. Keep the return offer for the
+       * deviation that actually costs them; a free or cheap choice is just
+       * "new route from here." */
+      const costly = deviationIsCostly({
+        proposedGeometry: newGeometry,
+        previousGeometry,
+        userLngLat: userLngLatRef.current,
+      });
+      if (ux === "offer" && costly) {
         previousCorridorRef.current = {
           geometry: previousGeometry,
           routeId: lockedNavigationRouteIdRef.current,
@@ -760,6 +778,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       planRef,
       settingVoiceGuidanceEnabled,
       setTapHint,
+      userLngLatRef,
     ]
   );
 

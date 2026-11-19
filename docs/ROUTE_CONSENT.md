@@ -11,9 +11,14 @@ in incumbent nav apps — we don't do it.
    How loudly we ask depends on context (below) — but a change is never
    invisible.
 2. **Exception — off-route / missed turn.** If the driver leaves the
-   route, auto-recalculate is allowed; recovery prefers getting them back
-   onto the same corridor (hold → rejoin → replan ladder) before planning
-   a different road.
+   route, auto-recalculate is allowed and the driver's pick is adopted
+   forward from where they are — a deliberate deviation *is* the consent
+   (Bill, 2026-11-19: "the map needs to handle shortcuts without getting
+   messed up"). The keep/return offer only earns the card when staying on
+   the driver's pick costs meaningfully more distance than finishing the
+   corridor they locked (`deviationIsCostly` in `nav/routeConsent.ts`) —
+   the likely-accidental wrong turn the offer exists for. Recovery no
+   longer prefers dragging the driver back onto the old corridor.
 3. **No-choice situations still inform.** Road closed, no alternative →
    alert and show. Consent applies to *choices*, not to warnings.
 4. **The offer can never stall progress.** Any approval UI is
@@ -29,10 +34,13 @@ Consent is **context-tiered**, because interaction cost differs wildly:
   voice alerts carry the "route changed" knowledge.
 - **Town / rural** — inform: "route line changed, same destination."
   Non-blocking notice (voice + transient hint).
-- **Highway / interstate** — offer: the RT view shows the change and
-  offers "Return to original route" vs keeping the new line. Times out
-  (~20 s) → keeps the fastest route already installed. "Return" replans
-  through a rejoin point ahead on the previous corridor.
+- **Highway / interstate** — offer *only when the change costs the driver*:
+  a driver-initiated deviation whose new line is not meaningfully longer
+  than the remaining corridor is adopted with notify only. When it is
+  costly, the RT view offers "Return to original route" vs keeping the
+  new line; it times out (~20 s) → keeps the fastest route already
+  installed. "Return" replans through a rejoin point ahead on the
+  previous corridor.
 - **Universal** — prefer keeping the driver on the chosen path before
   sending them down a different road.
 
