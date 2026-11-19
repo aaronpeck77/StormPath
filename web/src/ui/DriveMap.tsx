@@ -5588,6 +5588,9 @@ function DriveMapInner({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
+    /* Mid-nav the camera belongs to Rt/Mp/Dr logic — a multi-result pin fit
+     * here latched pickExploreHold and froze the camera until restart. */
+    if (navigationStartedRef.current) return;
     const markers = searchPickMarkers;
     if (!markers || markers.length < 2) return;
 

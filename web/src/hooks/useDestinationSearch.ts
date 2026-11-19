@@ -258,6 +258,8 @@ export function useDestinationSearch(deps: UseDestinationSearchDeps) {
           }
           setViaStops([...prev, { lngLat: end, label: pinLabel }]);
           setAddingViaStop(false);
+          setSearchPickHits(null);
+          searchPickQueryRef.current = null;
           await replanTrip(
             finalDest,
             useTripPlanStore.getState().destinationLabel.trim() || "Destination"
