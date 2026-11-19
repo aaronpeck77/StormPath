@@ -11,7 +11,24 @@ export type ActiveTripCacheEntry = {
   routeSlotOrder: string[];
   previewLegIndex: number;
   plan: TripPlan;
+  /** Straight-line meters driven this trip — restores progress after a WebView remount. */
+  tripOdometerM?: number;
 };
+
+/* Set when the boot restore brings back navigationStarted=true. The nav-session
+ * effect reads it to tell "the trip came back" from "the driver hit Go" — a
+ * remount must continue the drive's counters and odometer, not open a new dump. */
+let tripRestorePending = false;
+
+export function markTripRestorePending(): void {
+  tripRestorePending = true;
+}
+
+export function consumeTripRestorePending(): boolean {
+  const pending = tripRestorePending;
+  tripRestorePending = false;
+  return pending;
+}
 
 const DB_NAME = "stormpath-trip-cache";
 const DB_VERSION = 1;

@@ -2825,3 +2825,26 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 
+
+/* CarPlay owns turn-by-turn — the phone bar shows the mark, not a second,
+ * possibly disagreeing turn list (Nov 19 field report). */
+.nav-top-cluster .top-guidance-bar__carplay {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.nav-top-cluster .top-guidance-bar__carplay .turn-strip-idle__wordmark {
+  width: auto;
+  font-size: 0.95rem;
+}
+
+.nav-top-cluster .top-guidance-bar__carplay-note {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}

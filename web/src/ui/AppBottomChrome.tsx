@@ -142,6 +142,9 @@ type Props = {
   /* Dock mode branching */
   navigationStarted: boolean;
   viewMode: MapViewMode;
+  /** Advisory (hazard/weather) bar relocated into the bottom dock, rendered
+   *  directly above the MP/RT about/route-select row on phone. */
+  mpAdvisoryBar?: ReactNode;
 
   /* Mid-route destination change */
   onChangeDestination?: () => void;
@@ -273,6 +276,7 @@ export function AppBottomChrome({
   handleDiscardRecordingPath,
   navigationStarted,
   viewMode,
+  mpAdvisoryBar = null,
   onChangeDestination,
   isChangingDestination = false,
   driveMapBearingDeg,
@@ -731,6 +735,10 @@ export function AppBottomChrome({
                 {mpRouteSlot}
               </div>
             ) : (
+            <>
+            {/* Advisory (hazard/weather) lives here on phone MP/RT — directly
+             * above the about/route-select row, out of the top cluster's way. */}
+            {mpAdvisoryBar}
             <DockAboutRow
               stormyOn={talkOn}
               onOpenAbout={onOpenAbout}
@@ -748,6 +756,7 @@ export function AppBottomChrome({
             >
               {mpRouteSlot}
             </DockAboutRow>
+            </>
             )}
             {destSearchRow}
             </>

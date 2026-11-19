@@ -25,6 +25,7 @@ import type { TripStop } from "./routeWaypoints";
 import type { NavigationPositionState } from "../hooks/useNavigationPosition";
 import {
   bumpDriveDiag,
+  ensureDriveDiagStarted,
   noteDriveDiagCarAlt,
   noteDriveDiagNativeEnd,
   noteDriveDiagNativeRestart,
@@ -32,6 +33,7 @@ import {
   noteDriveDiagRouteLock,
   resetDriveDiag,
 } from "./driveDiagnostics";
+import { consumeTripRestorePending } from "../tripCache";
 import { downloadTripCorridor, removeTripCorridor } from "./offlineTripPacks";
 import { useTripPlanStore } from "../state/tripPlanStore";
 import { createNativeDrivePoseHold } from "./nativeDrivePoseHold";
@@ -604,12 +606,18 @@ export function useNativeNavSession(opts: {
     }
 
     /* Genuine Go (false → true). Core reconnect / WebView remount must keep the trip counters
-     * or About reads "0.6 s, all zeros" after a long drive. */
+     * or About reads "0.6 s, all zeros" after a long drive. The trip-cache restore marks
+     * itself — without that flag a remount looks exactly like a fresh Go and splits the
+     * drive dump in two (Nov 19 field report). */
     if (prevNav === false) {
-      resetDriveDiag();
-      /* The App effect notes the lock first, then this reset wipes it. Write it
-       * again or About never shows fastest vs no-interstate. */
-      noteDriveDiagRouteLock(preferBackroadsRef.current, true);
+      if (consumeTripRestorePending()) {
+        ensureDriveDiagStarted();
+      } else {
+        resetDriveDiag();
+        /* The App effect notes the lock first, then this reset wipes it. Write it
+         * again or About never shows fastest vs no-interstate. */
+        noteDriveDiagRouteLock(preferBackroadsRef.current, true);
+      }
     }
 
     if (nativeRestartingRef.current) return;

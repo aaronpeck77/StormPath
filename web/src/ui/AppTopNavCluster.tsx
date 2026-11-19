@@ -37,6 +37,8 @@ type Props = {
   /** Jam-hop strip — rendered inside the cluster so it gets sizing + pointer events. */
   jamHopSlot?: ReactNode;
   hazardTickerSlot?: ReactNode;
+  /** CarPlay owns turn-by-turn — the phone bar shows the mark instead. */
+  guidanceOnCarPlay?: boolean;
   showTrafficBypassCta: boolean;
   bypassBusy: boolean;
   setDemoApproachBannerOn: Dispatch<SetStateAction<boolean>>;
@@ -73,6 +75,7 @@ export function AppTopNavCluster({
   driveApproachBannerPick,
   jamHopSlot = null,
   hazardTickerSlot = null,
+  guidanceOnCarPlay = false,
   showTrafficBypassCta,
   bypassBusy,
   setDemoApproachBannerOn,
@@ -96,6 +99,7 @@ export function AppTopNavCluster({
               currentRoadRef={bannerCurrentRoadRef}
               travelingStepIndex={bannerTravelingStepIndex}
               glanceable={navigationStarted}
+              guidanceOnCarPlay={guidanceOnCarPlay}
             />
           </TabletLandscapePanelPortal>
           {hazardTickerSlot}

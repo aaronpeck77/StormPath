@@ -6,6 +6,7 @@ import {
   bumpDriveDiag,
   clearDriveDumps,
   driveDiagSnapshot,
+  ensureDriveDiagStarted,
   formatDriveDiagLines,
   hydrateDriveDiagFromJson,
   listDriveDumps,
@@ -116,6 +117,22 @@ describe("driveDiagnostics", () => {
     const snap = driveDiagSnapshot();
     expect(snap.coreSamples).toBe(0);
     expect(snap.startedAtMs).toBe(5_000);
+  });
+
+  /* WebView-remount restore: the trip came back, not a new Go — counters must
+   * survive and startedAtMs only fills when the rehydrated state lost it. */
+  it("ensureDriveDiagStarted keeps counters and only fills a missing start", () => {
+    bumpDriveDiag("coreSamples", 40);
+    ensureDriveDiagStarted(7_000);
+    let snap = driveDiagSnapshot();
+    expect(snap.coreSamples).toBe(40);
+    expect(snap.startedAtMs).toBe(1_000);
+
+    hydrateDriveDiagFromJson(JSON.stringify({ coreSamples: 12, startedAtMs: null }));
+    ensureDriveDiagStarted(8_000);
+    snap = driveDiagSnapshot();
+    expect(snap.coreSamples).toBe(12);
+    expect(snap.startedAtMs).toBe(8_000);
   });
 
   it("ignores a junk road-control count", () => {

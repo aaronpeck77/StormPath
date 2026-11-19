@@ -170,6 +170,8 @@ import { AppTopNavCluster } from "./ui/AppTopNavCluster";
 import { DriveHazardTicker } from "./ui/DriveHazardTicker";
 import { LandscapeHazardPanel } from "./ui/LandscapeHazardPanel";
 import { LandscapeInfoPip } from "./ui/LandscapeInfoPip";
+import { useTabletLandscape } from "./ui/LandscapeNavigationDock";
+import { StormAdvisoryBar } from "./ui/StormAdvisoryBar";
 import { CollapsiblePanelSection } from "./ui/CollapsiblePanelSection";
 
 import { Coachmarks } from "./ui/Coachmarks";
@@ -1762,13 +1764,19 @@ export default function App() {
   });
 
   /** iOS Core: banner uses Mapbox steps + progress so voice, line, and strip stay one route. */
-  const bannerTurnSteps =
-    guidanceLive && nativeNavActive && nativeTurnSteps.length > 0 ? nativeTurnSteps : turnSteps;
+  /* Core's stepIndex only means something against Core's own step list. When
+   * nativeTurnSteps is empty the banner falls back to the plan's steps (for a
+   * saved route, the recorded list — a different count entirely), and indexing
+   * it with Core's position clamps to the last step: "you've arrived" mid-trip
+   * (Nov 19 field report). */
+  const bannerUsesNativeSteps =
+    guidanceLive && nativeNavActive && nativeTurnSteps.length > 0;
+  const bannerTurnSteps = bannerUsesNativeSteps ? nativeTurnSteps : turnSteps;
 
   const hideWindowArrive = nativeNavActive && !coreWindowIsFinal;
 
   const bannerTurnIndex = useMemo(() => {
-    if (!guidanceLive || !nativeNavActive || !nativeNavGuidance || bannerTurnSteps.length === 0) {
+    if (!bannerUsesNativeSteps || !nativeNavGuidance || bannerTurnSteps.length === 0) {
       return diyBannerTurnIndex;
     }
     if (hideWindowArrive) {
@@ -1783,6 +1791,7 @@ export default function App() {
     if (next >= 0 && next < bannerTurnSteps.length) return next;
     return Math.max(0, Math.min(nativeNavGuidance.stepIndex, bannerTurnSteps.length - 1));
   }, [
+    bannerUsesNativeSteps,
     nativeNavActive,
     guidanceLive,
     nativeNavGuidance,
@@ -2504,6 +2513,14 @@ export default function App() {
     if (!(carPlayActive && navigationStarted)) setCarPlayMapPeek(false);
   }, [carPlayActive, navigationStarted]);
   const showCarPlayCompanion = carPlayActive && navigationStarted && !carPlayMapPeek;
+  /* Phone MP/RT: the advisory (hazard/weather) bar drops out of the top cluster
+   * into the bottom dock, directly above the route-select row — up top it
+   * covered the guidance stack (Nov 19 field report). iPad panel keeps it. */
+  const tabletLandscapeForDock = useTabletLandscape();
+  const advisoryBarInBottomDock =
+    navigationStarted &&
+    !tabletLandscapeForDock &&
+    (viewMode === "route" || viewMode === "topdown");
   const carPlayAdvisoryLine = pickAdvisoryVoiceLine({
     nextHazardAtEtaLine,
     driveRouteAheadLine,
@@ -3353,8 +3370,11 @@ export default function App() {
               personalForkOffer={personalForkNav.offer}
               onTakePersonalFork={() => commitPersonalFork()}
               onDismissPersonalFork={() => personalForkNav.dismissForTrip()}
-              showStormAdvisoryChrome={showStormAdvisoryChrome}
+              showStormAdvisoryChrome={
+                showStormAdvisoryChrome && !advisoryBarInBottomDock
+              }
               stormAdvisoryBarProps={stormAdvisoryBarPropsWithNext}
+              guidanceOnCarPlay={carPlayActive && navigationStarted}
               isPlus={isPlus}
               activityBusyLabel={activityBusyLabel}
               dockNote={
@@ -3572,6 +3592,11 @@ export default function App() {
         />
 
         <AppBottomChrome
+          mpAdvisoryBar={
+            advisoryBarInBottomDock && showStormAdvisoryChrome ? (
+              <StormAdvisoryBar {...stormAdvisoryBarPropsWithNext} />
+            ) : null
+          }
           handleTrafficBypassCompareSelect={handleTrafficBypassCompareSelect}
           handleTrafficBypassCompareConfirm={handleTrafficBypassCompareConfirm}
           handleTrafficBypassCompareCancel={handleTrafficBypassCompareCancel}

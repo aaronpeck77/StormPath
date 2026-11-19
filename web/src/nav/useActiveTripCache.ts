@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MutableRefObject, type RefObject } from "react";
+import { useEffect, useRef, useState, type MutableRefObject, type RefObject } from "react";
 import type { SearchSuggestion } from "../ui/SearchBar";
 import type { MapViewMode } from "../ui/driveMapTypes";
 import type { LngLat, TripPlan } from "./types";
@@ -9,10 +9,15 @@ import {
 import {
   clearActiveTripCache,
   loadActiveTripFromCache,
+  markTripRestorePending,
   MAX_TRIP_CACHE_AGE_MS,
   saveActiveTripToCache,
   isRestorableActiveTripEntry,
 } from "../tripCache";
+import {
+  readSessionOdometerMeters,
+  seedSessionOdometerMeters,
+} from "../hooks/useSessionOdometerMeters";
 
 /** Best-effort cap for IndexedDB writes while still capturing route refreshes. */
 export const TRIP_CACHE_MIN_SAVE_INTERVAL_MS = 20_000;
@@ -102,6 +107,15 @@ export function useActiveTripCache(deps: UseActiveTripCacheDeps): void {
   } = deps;
 
   const lastTripCacheSaveMsRef = useRef(0);
+  /* While driving, nothing in the save effect's deps changes — without a tick
+   * the snapshot stays at Go-time values and a mid-drive remount restores a
+   * zeroed odometer (the "2% there" field report). */
+  const [odometerTick, setOdometerTick] = useState(0);
+  useEffect(() => {
+    if (!navigationStarted) return;
+    const id = window.setInterval(() => setOdometerTick((n) => n + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, [navigationStarted]);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,6 +152,15 @@ export function useActiveTripCache(deps: UseActiveTripCacheDeps): void {
       setDestLngLat(entry.destLngLat);
       setDestinationLabel(entry.destinationLabel);
       setSearchText(entry.destinationLabel);
+      if (entry.navigationStarted) {
+        /* The nav-session effect can't tell this false→true flip from a real
+         * Go — flag it so drive counters continue instead of splitting the
+         * dump, and hand the odometer its pre-reload total back. */
+        markTripRestorePending();
+        if (typeof entry.tripOdometerM === "number") {
+          seedSessionOdometerMeters(entry.tripOdometerM);
+        }
+      }
       setNavigationStarted(entry.navigationStarted);
       if (entry.navigationStarted) {
         (lockedNavigationRouteIdRef as MutableRefObject<string | null>).current =
@@ -183,6 +206,7 @@ export function useActiveTripCache(deps: UseActiveTripCacheDeps): void {
       routeSlotOrder,
       previewLegIndex,
       plan,
+      tripOdometerM: readSessionOdometerMeters(),
     };
     const schedule =
       typeof requestIdleCallback !== "undefined"
@@ -200,6 +224,7 @@ export function useActiveTripCache(deps: UseActiveTripCacheDeps): void {
     return clear;
   }, [
     fitTrigger,
+    odometerTick,
     routeSlotOrderKey,
     previewLegIndex,
     destLngLat,

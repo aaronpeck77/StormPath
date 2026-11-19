@@ -20,6 +20,9 @@ type Props = {
   travelingStepIndex?: number | null;
   /** Drive mode: larger icon + type for at-a-glance reading. */
   glanceable?: boolean;
+  /** CarPlay is the guidance surface — phone shows the mark, not a second,
+   *  possibly disagreeing turn list (saved-route field report, Nov 19). */
+  guidanceOnCarPlay?: boolean;
 };
 
 export function TopGuidanceBar({
@@ -32,6 +35,7 @@ export function TopGuidanceBar({
   currentRoadRef = null,
   travelingStepIndex = null,
   glanceable = false,
+  guidanceOnCarPlay = false,
 }: Props) {
   /* Resolved once per mount — seasons don't shift mid-session, and the URL override (used for
    * preview / testing) is also stable for the page lifetime. Re-mounting the bar (e.g. on
@@ -43,7 +47,19 @@ export function TopGuidanceBar({
       role="region"
       aria-label="Turn-by-turn"
     >
-      {hasRoute ? (
+      {guidanceOnCarPlay ? (
+        <div
+          className="top-guidance-bar__carplay"
+          role="status"
+          aria-label="Guidance is on CarPlay"
+        >
+          <span className="turn-strip-idle__wordmark">
+            <span className="turn-strip-idle__storm">Storm</span>
+            <span className="turn-strip-idle__path">Path</span>
+          </span>
+          <span className="top-guidance-bar__carplay-note">Guidance on CarPlay</span>
+        </div>
+      ) : hasRoute ? (
         <TurnBanner
           visible
           steps={turnSteps}

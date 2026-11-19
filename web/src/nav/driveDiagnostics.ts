@@ -534,6 +534,14 @@ export function resetDriveDiag(nowMs: number = Date.now()): void {
   persistDriveDiagNow();
 }
 
+/** Restored mid-drive trip: keep the rehydrated counters, just make sure a
+ *  startedAtMs exists so the trip still archives if sessionStorage was lost. */
+export function ensureDriveDiagStarted(nowMs: number = Date.now()): void {
+  if (state.startedAtMs != null) return;
+  state.startedAtMs = nowMs;
+  persistDriveDiagNow();
+}
+
 /** Hot path: called from the Drive rAF loop, so this must stay an integer bump. */
 export function bumpDriveDiag(key: DriveDiagKey, by = 1): void {
   state[key] += by;
