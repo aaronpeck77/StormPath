@@ -104,7 +104,15 @@ public final class StormPathCarPlay {
         template.mapButtons = defaultMapButtons
         mapTemplate = template
         configureNavigationBar()
-        interfaceController.setRootTemplate(template, animated: false, completion: nil)
+        interfaceController.setRootTemplate(template, animated: false) { _, _ in
+            /* Once the template is on screen the window has its final bounds —
+             * push a layout pass so the map drawable fills the car display
+             * instead of whatever partial frame it connected with. */
+            Task { @MainActor in
+                controller.view.setNeedsLayout()
+                window.layoutIfNeeded()
+            }
+        }
         snapshotSubscription = NotificationCenter.default.publisher(for: Notification.Name("stormpath.car.updated"))
             .sink { [weak self] _ in
                 Task { @MainActor in self?.snapshotUpdated() }
@@ -475,7 +483,13 @@ public final class StormPathCarPlay {
         // left the streets unreadable in CarPlay's night mode.
         let raw = dark ? "mapbox://styles/mapbox/navigation-night-v1" : "mapbox://styles/mapbox/streets-v12"
         let map = controller.navigationMapView
-        if map.mapView.mapboxMap.styleURI?.rawValue == raw { return }
+        if map.mapView.mapboxMap.styleURI?.rawValue == raw {
+            /* Style already loaded (reconnect / trait no-op) — the route layer
+             * position still needs asserting or the SDK default can bury the
+             * blue line under the road stack. */
+            Task { @MainActor in controller.positionRouteBelowLabels() }
+            return
+        }
         let uri = StyleURI(rawValue: raw) ?? .streets
         map.mapView.mapboxMap.loadStyle(uri) { [weak self] _ in
             Task { @MainActor in
@@ -665,11 +679,23 @@ final class CarMapViewController: UIViewController, NavigationMapViewDelegate {
 
     func positionRouteBelowLabels() {
         guard let map = navigationMapView.mapView.mapboxMap else { return }
-        /* Route must sit under POI icons/shields AND road labels — Bill (564)
-         * reported the line covering road signs; the fixed anchor ids missed
-         * this style's road-label layers entirely. Anchor to the style's own
-         * lowest symbol layer instead — same lookup the StormPath overlays use. */
-        if let anchor = map.style.allLayerIdentifiers.first(where: { $0.type == .symbol })?.id {
+        /* Route must sit just above the road stack but under labels/POIs —
+         * Bill: "above the road but under everything else." The previous
+         * anchor (the style's lowest symbol layer) can sit BELOW the road
+         * lines — water/landcover labels render under pavement in both
+         * navigation-night and streets styles — which buried the blue line
+         * under the road. Anchor above the style's TOPMOST road line layer
+         * instead: every road/tunnel/bridge casing is below it, every label
+         * and symbol stays above it. */
+        let ids = map.style.allLayerIdentifiers
+        if let topRoad = ids.last(where: {
+            $0.type == .line
+                && ($0.id.localizedCaseInsensitiveContains("road")
+                    || $0.id.localizedCaseInsensitiveContains("tunnel")
+                    || $0.id.localizedCaseInsensitiveContains("bridge"))
+        })?.id {
+            navigationMapView.customRouteLineLayerPosition = .above(topRoad)
+        } else if let anchor = ids.first(where: { $0.type == .symbol })?.id {
             navigationMapView.customRouteLineLayerPosition = .below(anchor)
         }
     }
@@ -897,15 +923,28 @@ final class CarMapViewController: UIViewController, NavigationMapViewDelegate {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        navigationMapView.frame = view.bounds
-        navigationMapView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        /* CPWindow can connect while the car display still reports a partial
+         * frame — the map then renders with an empty right panel until some
+         * later layout pass (Bill: minimize+expand restores fullscreen).
+         * Constraints pin the map to every edge so each relayout resizes the
+         * Metal drawable; a frame set at a stale bounds cannot strand it. */
+        navigationMapView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(navigationMapView)
         speedLimitSign.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(speedLimitSign)
         NSLayoutConstraint.activate([
+            navigationMapView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            navigationMapView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            navigationMapView.topAnchor.constraint(equalTo: view.topAnchor),
+            navigationMapView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             speedLimitSign.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
             speedLimitSign.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
         ])
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        navigationMapView.viewportPadding = view.safeAreaInsets
     }
 
     override func viewSafeAreaInsetsDidChange() {

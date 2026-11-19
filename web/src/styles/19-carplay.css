@@ -206,10 +206,14 @@
 }
 
 /* Route/top-down + CarPlay peek: the return chip gets its own row above the
- * about-row so it can't squeeze the route-select control (Bill, 584). */
+ * about-row so it can't squeeze the route-select control (Bill, 584).
+ * width:100% is required — the parent column is align-items:flex-start, so
+ * without it the row shrink-wraps to the chip and justify-content:flex-end
+ * can't place it above the route select (Bill, build 610). */
 .nav-cp-return-row {
   display: flex;
   justify-content: flex-end;
+  width: 100%;
   padding: 0 4px 4px;
   pointer-events: auto;
 }

@@ -167,8 +167,12 @@ export function useSavedTripActions(deps: UseSavedTripActionsDeps) {
       setRouteError(null);
       setSuggestions([]);
       setViewMode("route");
-      setFitTrigger((n) => n + 1);
       setSavedDrawerOpen(false);
+      /* Defer the forced fit past the view transition — firing it in the same
+       * batch as setViewMode("route") lets the Mp→Rt handoff or a busy
+       * wait-camera hold the frame, and the saved path then stays zoomed way
+       * out instead of landing on the corridor like every other route fit. */
+      window.setTimeout(() => setFitTrigger((n) => n + 1), 300);
       setTapHint(
         reverse
           ? "Reversed path — follow the line toward the original start."

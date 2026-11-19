@@ -1,17 +1,24 @@
-﻿import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
-import { scrollHazardCard } from "./routeHazardLink";
+﻿import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { hazardIdsAtPosition, scrollHazardBand, scrollHazardCard } from "./routeHazardLink";
 import type { RouteChunkCalloutItem } from "../nav/routeProgressChunkList";
 import type { WxSample } from "../nav/routeChunkWeather";
 import type { RouteOutlookStep } from "../nav/routeForecastTimeline";
 import {
   buildRouteAheadGlanceCards,
+  timelineItemBandColor,
   timelineItemShowsOnRouteGraph,
   type RouteAheadGlanceCard,
   type RouteAheadRelevance,
 } from "../nav/routeAheadSync";
 import type { TimelineItem } from "./RouteHazardTimeline";
 import { RouteInfoLegend } from "./RouteInfoLegend";
-import { RouteVerticalTimeline } from "./RouteVerticalTimeline";
+import { RouteOutlookTimeline } from "./RouteOutlookTimeline";
+import { RouteRadarWindStrip } from "./RouteRadarWindStrip";
+import {
+  routePlotLeftPct,
+  routePlotWidthPct,
+} from "./routeAxisLayout";
+import { routeWindGraphVisible } from "../nav/windForecastCalib";
 
 type Props = {
   timeline: TimelineItem[];
@@ -56,9 +63,112 @@ const RELEVANCE_LABEL: Record<RouteAheadRelevance, string> = {
   clear: "Clearing",
 };
 
+const MIN_BAND_PCT = 1.4;
 const MAX_GLANCE_CARDS = 6;
 
+type HazardBandVisual = {
+  id: string;
+  track: TimelineItem["track"];
+  label: string;
+  left: number;
+  width: number;
+  color: string;
+  severity: TimelineItem["severity"];
+  nearby: boolean;
+  muted: boolean;
+};
+
+const HAZARD_RAIL_META: Record<
+  TimelineItem["track"],
+  { label: string; sublabelClass: string; railClass: string; bandClass: string }
+> = {
+  nws: {
+    label: "NWS",
+    sublabelClass: "rpgl__hazard-sublabel--nws",
+    railClass: "rpgl__hazard-rail--nws",
+    bandClass: "rpgl__band--nws",
+  },
+  radar: {
+    label: "Radar",
+    sublabelClass: "rpgl__hazard-sublabel--radar",
+    railClass: "rpgl__hazard-rail--radar",
+    bandClass: "rpgl__band--radar",
+  },
+  wind: {
+    label: "Wind",
+    sublabelClass: "rpgl__hazard-sublabel--wind",
+    railClass: "rpgl__hazard-rail--wind",
+    bandClass: "rpgl__band--wind",
+  },
+  forecast: {
+    label: "Forecast",
+    sublabelClass: "rpgl__hazard-sublabel--forecast",
+    railClass: "rpgl__hazard-rail--forecast",
+    bandClass: "rpgl__band--forecast",
+  },
+  road: {
+    label: "Road",
+    sublabelClass: "rpgl__hazard-sublabel--road",
+    railClass: "rpgl__hazard-rail--road",
+    bandClass: "rpgl__band--road",
+  },
+};
+
 const HAZARD_RAIL_ORDER: TimelineItem["track"][] = ["nws", "road"]; // radar → strata, wind → graph
+
+function HazardRailRow({ track, bands, selectedId, nextId, linkableIds, onSelect, bandRef, cardId }: {
+  track: TimelineItem["track"];
+  bands: HazardBandVisual[];
+  selectedId: string | null;
+  nextId?: string | null;
+  linkableIds: Set<string>;
+  onSelect: (ids: string[]) => void;
+  bandRef: (id: string, element: HTMLButtonElement | null) => void;
+  cardId: (id: string) => string;
+}) {
+  const meta = HAZARD_RAIL_META[track];
+  const emptyHint =
+    track === "nws" ? "No NWS on route"
+    : track === "road" ? "No road hazards"
+    : "Clear";
+  return (
+    <div className={`rpgl__layer rpgl__layer--${track} rpgl__hazard-row`}>
+      <span className={`rpgl__layer-label rpgl__hazard-sublabel ${meta.sublabelClass}`}>
+        {meta.label}
+      </span>
+      <div
+        className={`rpgl__layer-plot rpgl__hazard-rail ${meta.railClass}${bands.length ? "" : " rpgl__hazard-rail--empty"}`}
+      >
+        {bands.map((band) => (
+          <button
+            key={band.id}
+            type="button"
+            ref={(element) => bandRef(band.id, element)}
+            className={`rpgl__band ${meta.bandClass} rpgl__band--${band.severity}${band.id === nextId ? " rpgl__band--next" : ""}${band.nearby ? " rpgl__band--nearby" : ""}${band.muted ? " rpgl__band--muted" : ""}`}
+            style={{
+              left: `${band.left}%`,
+              width: `${band.width}%`,
+              backgroundColor: band.color,
+            }}
+            title={band.label}
+            aria-label={`Show details: ${band.label}`}
+            aria-controls={linkableIds.has(band.id) ? cardId(band.id) : undefined}
+            aria-pressed={selectedId === band.id}
+            disabled={!linkableIds.has(band.id)}
+            onClick={(event) => {
+              const rect = event.currentTarget.parentElement!.getBoundingClientRect();
+              const percent = event.detail && rect.width > 0 ? (event.clientX - rect.left) / rect.width * 100 : NaN;
+              onSelect(hazardIdsAtPosition(bands.filter((item) => linkableIds.has(item.id)), percent, band.id));
+            }}
+          />
+        ))}
+        {!bands.length ? (
+          <span className="rpgl__hazard-empty">{emptyHint}</span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 function GlanceCard({ card, scrollRef, selected, isNext = false, onSelect, id }: {
   card: RouteAheadGlanceCard;
@@ -183,21 +293,62 @@ export function RouteProgressGlancePanel({
     [timeline, totalMeters, userAlongMeters, planEtaMinutes, driveEtaMinutes]
   );
 
-  const hasGraphItems = useMemo(
-    () => timeline.some((item) => timelineItemShowsOnRouteGraph(item)),
-    [timeline]
+  const bandVisuals = useMemo((): HazardBandVisual[] => {
+    if (totalMeters <= 0) return [];
+    return timeline
+      .filter((item) => timelineItemShowsOnRouteGraph(item))
+      .map((item) => {
+        const startF = item.startMeters / totalMeters;
+        const endF = item.endMeters / totalMeters;
+        const passed = item.endMeters <= userAlongMeters;
+        return {
+          id: item.id,
+          track: item.track,
+          label: item.label,
+          left: routePlotLeftPct(startF),
+          width: Math.max(MIN_BAND_PCT, routePlotWidthPct(startF, endF)),
+          color: timelineItemBandColor(item),
+          severity: item.severity,
+          nearby: item.crossesRoute === false,
+          muted: Boolean(item.stripMuted) || passed,
+        };
+      });
+  }, [timeline, totalMeters, userAlongMeters]);
+
+  const bandsByTrack = useMemo(() => {
+    const map: Record<TimelineItem["track"], HazardBandVisual[]> = {
+      nws: [],
+      radar: [],
+      wind: [],
+      forecast: [],
+      road: [],
+    };
+    for (const band of bandVisuals) {
+      map[band.track].push(band);
+    }
+    return map;
+  }, [bandVisuals]);
+
+  const tickSteps = useMemo(
+    () => [...outlookSteps].sort((a, b) => a.fraction - b.fraction),
+    [outlookSteps]
   );
 
   const visibleCards = glanceCards;
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [choiceIds, setChoiceIds] = useState<string[]>([]);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const axisRef = useRef<HTMLDivElement | null>(null);
+  const chooserRef = useRef<HTMLDivElement | null>(null);
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
+  const bandRefs = useRef(new Map<string, HTMLButtonElement>());
   const prefix = useId();
   const cardId = (id: string) => `${prefix}-hazard-${encodeURIComponent(id)}`;
   const linkableIds = useMemo(() => new Set(glanceCards.map((card) => card.id)), [glanceCards]);
   const activeScrollCardId = visibleCards.find((card) => card.inside)?.id ?? null;
   const selectCard = (id: string) => {
     setSelectedId(id);
+    setChoiceIds([]);
     onHazardSelect?.(id);
     const panel = panelRef.current;
     const card = cardRefs.current.get(id);
@@ -212,7 +363,13 @@ export function RouteProgressGlancePanel({
   useEffect(() => {
     if (selectedId && !linkableIds.has(selectedId)) setSelectedId(null);
   }, [selectedId, linkableIds]);
-  const showAxis = outlookSteps.length > 0 || hasGraphItems || totalMeters > 0;
+  useEffect(() => {
+    if (choiceIds.length > 1 && panelRef.current && chooserRef.current) {
+      scrollHazardCard(panelRef.current, chooserRef.current);
+    }
+  }, [choiceIds]);
+  const driverLeftPct = routePlotLeftPct(userAlongT);
+  const showAxis = outlookSteps.length > 0 || bandVisuals.length > 0 || totalMeters > 0;
   /* Arrival forecast at the destination end of the route — the outlook's
    * last step is sampled at ETA, so its temp IS "when you get there". */
   const arrivalTempF = useMemo(() => {
@@ -232,30 +389,119 @@ export function RouteProgressGlancePanel({
       <RouteInfoLegend />
       {showAxis ? (
         <div className="rpgl__axis-pane">
-          <RouteVerticalTimeline
-            timeline={timeline}
-            outlookSteps={outlookSteps}
-            outlookSamples={outlookSamples}
-            radarSamples={radarSamples}
-            windPoints={windPoints}
-            gustLinePoints={gustLinePoints}
-            gustSpikePoints={gustSpikePoints}
-            totalMeters={totalMeters}
-            userAlongMeters={userAlongMeters}
-            userAlongT={userAlongT}
-            arrivalTempF={arrivalTempF}
-            stripTint={stripTint}
-            selectedId={selectedId}
-            nextHazardId={nextHazardId}
-            linkableIds={linkableIds}
-            cardId={cardId}
-            onBandSelect={selectCard}
-          />
-          {radarStatusNote ? (
-            <p className="rpgl__radar-status" role="status">
-              {radarStatusNote}
-            </p>
-          ) : null}
+          <div ref={axisRef} className="rpgl__axis-scroll" aria-label="Route outlook and hazards along your trip">
+            <div className="rpgl__axis-inner">
+              <div className="rpgl__sync-stack">
+                <div className="rpgl__sync-head">
+                  <span className="rpgl__sync-head-gutter" aria-hidden />
+                  <div className="rpgl__sync-head-plot">
+                    <span className="rpgl__sync-head-you">YOU</span>
+                    <span className="rpgl__sync-head-title">Along your route</span>
+                    <span className="rpgl__sync-head-dest">
+                      DEST
+                      {arrivalTempF != null ? ` · ${Math.round(arrivalTempF)}°` : ""}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="rpgl__sync-body">
+                  <div className="rpgl__driver-track">
+                    <div className="rpgl__sync-outlook">
+                      {outlookSteps.length > 0 ? (
+                        <RouteOutlookTimeline
+                          steps={outlookSteps}
+                          samples={outlookSamples}
+                          variant="synced"
+                          showDriverLine={false}
+                          showXTicks={false}
+                        />
+                      ) : (
+                        <div className="rpgl__outlook-wait" aria-hidden>
+                          <span className="rpgl__outlook-wait-title">Route outlook</span>
+                          <span className="rpgl__outlook-wait-hint">
+                            Temperature and precipitation are still loading. Tap Refresh above to
+                            fetch corridor weather again.
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {(radarSamples.length > 0 ||
+                      routeWindGraphVisible(windPoints, gustSpikePoints, gustLinePoints)) ? (
+                      <div className="rpgl__radar-strata">
+                        <RouteRadarWindStrip
+                          radarSamples={radarSamples}
+                          windPoints={windPoints}
+                          gustLinePoints={gustLinePoints}
+                          gustSpikePoints={gustSpikePoints}
+                          userAlongT={userAlongT}
+                        />
+                        {radarStatusNote ? (
+                          <p className="rpgl__radar-status" role="status">
+                            {radarStatusNote}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    <div className="rpgl__hazard-block">
+                      {HAZARD_RAIL_ORDER.map((track) => (
+                        <HazardRailRow key={track} track={track} bands={bandsByTrack[track]}
+                          selectedId={selectedId} nextId={nextHazardId} linkableIds={linkableIds} cardId={cardId}
+                          bandRef={(id, element) => { if (element) bandRefs.current.set(id, element); else bandRefs.current.delete(id); }}
+                          onSelect={(ids) => { if (ids.length === 1) selectCard(ids[0]!); else setChoiceIds(ids); }} />
+                      ))}
+                    </div>
+
+                    <div
+                      className="rpgl__driver-overlay"
+                      aria-hidden
+                      style={
+                        {
+                          "--rpgl-driver-left": `${driverLeftPct}%`,
+                          "--rpgl-driver-color": stripTint,
+                        } as CSSProperties
+                      }
+                    >
+                      <div className="rpgl__driver-vline" title="You are here" />
+                    </div>
+                  </div>
+
+                  {tickSteps.length > 0 ? (
+                    <div className="rpgl__sync-x-ticks" aria-hidden>
+                      {tickSteps.map((step) => (
+                        <div
+                          key={`tick-${step.key}`}
+                          className="rpgl__x-tick"
+                          style={{ left: `${routePlotLeftPct(step.fraction)}%` }}
+                          title={step.etaLabel ? `~${step.etaLabel} into trip` : undefined}
+                        >
+                          <span className="rpgl__x-label">{step.shortLabel}</span>
+                          {step.etaLabel &&
+                          !(step.fraction <= 0.001 && userAlongT > 0.05 && step.etaLabel === "Now") ? (
+                            <span className="rpgl__x-eta">{step.etaLabel}</span>
+                          ) : step.fraction <= 0.001 && userAlongT <= 0.05 ? (
+                            <span className="rpgl__x-eta">Now</span>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {choiceIds.length > 1 ? (
+        <div ref={chooserRef} className="rpgl__hazard-choices" role="group" aria-label="Overlapping hazards — choose details">
+          <span>Hazards at this spot:</span>
+          {visibleCards.filter((card) => choiceIds.includes(card.id)).map((card) => (
+            <button type="button" key={card.id} onClick={() => selectCard(card.id)}>
+              {TRACK_BADGE[card.track]} · {card.label} · {card.aheadLabel}
+            </button>
+          ))}
         </div>
       ) : null}
 
@@ -284,7 +530,16 @@ export function RouteProgressGlancePanel({
                   card={card}
                   id={cardId(card.id)} selected={selectedId === card.id} isNext={card.id === nextHazardId}
                   scrollRef={(element) => { if (element) cardRefs.current.set(card.id, element); else cardRefs.current.delete(card.id); }}
-                  onSelect={HAZARD_RAIL_ORDER.includes(card.track) ? () => selectCard(card.id) : undefined}
+                  onSelect={HAZARD_RAIL_ORDER.includes(card.track) ? () => {
+                    setSelectedId(card.id);
+                    setChoiceIds([]);
+                    const axis = axisRef.current;
+                    const band = bandRefs.current.get(card.id);
+                    if (axis && band) {
+                      scrollHazardBand(axis, band);
+                      panelRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                    }
+                  } : undefined}
                 />
               ))}
             </div>
