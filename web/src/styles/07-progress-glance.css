@@ -724,3 +724,200 @@
   margin-top: 0;
   min-height: 64px;
 }
+
+/* ── Vertical route timeline (RouteVerticalTimeline) ─────────────────────
+   True bottom→top axis: start at bottom, destination at top. Hazard lanes
+   flank a central spine; weather profiles share the same fraction axis. */
+.rvtl {
+  width: 100%;
+  height: min(56vh, 520px);
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+}
+
+.rvtl__plot {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 14px 2px 18px;
+}
+
+/* Hazard lanes */
+.rvtl__lane {
+  position: relative;
+  flex: 0 0 15%;
+  min-width: 34px;
+  display: flex;
+  flex-direction: column;
+}
+.rvtl__lane--right { order: 2; }
+.rvtl__lane-plot {
+  position: relative;
+  flex: 1 1 auto;
+  margin-top: 14px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.045);
+}
+.rvtl__lane-label {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--sp-text-dim, rgba(255, 255, 255, 0.55));
+  white-space: nowrap;
+}
+.rvtl__band {
+  position: absolute;
+  left: 12%;
+  width: 76%;
+  border: 0;
+  border-radius: 4px;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0.9;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.rvtl__band:hover { opacity: 1; }
+.rvtl__band:disabled { cursor: default; opacity: 0.3; }
+.rvtl__band:focus-visible { outline: 2px solid #fff; outline-offset: 1px; z-index: 3; }
+.rvtl__band--selected { outline: 2px solid #fff; outline-offset: 1px; z-index: 2; }
+.rvtl__band--next { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85); z-index: 1; }
+.rvtl__band--muted { opacity: 0.32; }
+.rvtl__band--nearby { opacity: 0.55; }
+
+/* Spine */
+.rvtl__spine-col {
+  position: relative;
+  flex: 0 0 10%;
+  min-width: 26px;
+  order: 1;
+}
+.rvtl__spine {
+  position: absolute;
+  left: 50%;
+  width: 3px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+}
+.rvtl__spine--done { bottom: 0; }
+.rvtl__spine--ahead {
+  top: 0;
+  background: rgba(255, 255, 255, 0.22);
+}
+.rvtl__you {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, 50%);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+}
+.rvtl__you-tag {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 700;
+  color: #0b1220;
+  padding: 2px 7px;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.rvtl__you::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--sp-route, #4da3ff);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+}
+
+/* Weather column */
+.rvtl__weather {
+  position: relative;
+  flex: 1 1 auto;
+  order: 3;
+  min-width: 0;
+  margin-top: 14px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+.rvtl__weather-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.rvtl__radar-fill {
+  fill: rgba(96, 150, 255, 0.28);
+  stroke: none;
+}
+.rvtl__precip-tick {
+  stroke: #58a6ff;
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+}
+.rvtl__temp-line {
+  fill: none;
+  stroke: #ffd166;
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+}
+.rvtl__wind-line {
+  fill: none;
+  stroke: #f5b544;
+  stroke-width: 1.4;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+.rvtl__you-tick {
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+.rvtl__weather-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px;
+  text-align: center;
+}
+.rvtl__weather-empty-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sp-text, rgba(255, 255, 255, 0.85));
+}
+.rvtl__weather-empty-hint {
+  font-size: 10px;
+  color: var(--sp-text-dim, rgba(255, 255, 255, 0.55));
+  line-height: 1.35;
+}
+
+/* Axis captions */
+.rvtl__caption {
+  position: absolute;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--sp-text-dim, rgba(255, 255, 255, 0.55));
+  white-space: nowrap;
+}
+.rvtl__caption--dest { right: 4px; }
+.rvtl__caption--start { left: 4px; }
