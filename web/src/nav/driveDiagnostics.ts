@@ -126,6 +126,11 @@ export type DriveDiagSnapshot = {
   /** CarPlay mirror: option-line pushes sent vs clears. */
   carAltPush: number;
   carAltClear: number;
+  /** Driver's-way recovery: stay-on-road fetch adopted as the lock vs
+   *  skipped (costly over fastest, or came back empty — reason in last). */
+  stayOnAdopted: number;
+  stayOnSkipped: number;
+  stayOnLast: string;
 };
 
 export type ViewDroneSkip =
@@ -337,6 +342,9 @@ function emptySnapshot(): DriveDiagSnapshot {
     altEmptyLast: "",
     carAltPush: 0,
     carAltClear: 0,
+    stayOnAdopted: 0,
+    stayOnSkipped: 0,
+    stayOnLast: "",
   };
 }
 
@@ -446,6 +454,10 @@ function applyParsed(parsed: Partial<DriveDiagSnapshot>): void {
       typeof parsed.altEmptyLast === "string" ? parsed.altEmptyLast.slice(0, 24) : "",
     carAltPush: asCount(parsed.carAltPush),
     carAltClear: asCount(parsed.carAltClear),
+    stayOnAdopted: asCount(parsed.stayOnAdopted),
+    stayOnSkipped: asCount(parsed.stayOnSkipped),
+    stayOnLast:
+      typeof parsed.stayOnLast === "string" ? parsed.stayOnLast.slice(0, 16) : "",
     wxDiag: typeof parsed.wxDiag === "string" ? parsed.wxDiag.slice(0, 120) : "",
   };
 }
@@ -921,6 +933,19 @@ export function noteDriveDiagCarAlt(hasLines: boolean): void {
   persistDriveDiagSoon();
 }
 
+/** Driver's-way recovery — did the stay-on-road fetch become the lock?
+ *  "costly" = existed but lost the ETA cap to fastest; "empty" = fetch gave
+ *  nothing usable; either way the next dump explains why the old fight
+ *  would have repeated if not adopted. */
+export function noteDriveDiagStayOn(outcome: "adopted" | "costly" | "empty"): void {
+  if (outcome === "adopted") state.stayOnAdopted += 1;
+  else {
+    state.stayOnSkipped += 1;
+    state.stayOnLast = outcome;
+  }
+  persistDriveDiagSoon();
+}
+
 export function noteDriveDiagDoubledBack(signature: string): void {
   if (!signature || signature === lastDoubledSig) return;
   lastDoubledSig = signature;
@@ -1038,7 +1063,11 @@ export function formatDriveDiagLines(
       snap.nativeRestartFails ? ` (${snap.nativeRestartFails} fail)` : ""
     }${snap.nativeEndReason ? ` / end ${snap.nativeEndReason}` : ""}, geom ok ${
       snap.geomAdopted
-    } / rej ${snap.geomRejected}${snap.geomRejectLast ? ` (${snap.geomRejectLast})` : ""}`,
+    } / rej ${snap.geomRejected}${snap.geomRejectLast ? ` (${snap.geomRejectLast})` : ""}${
+      snap.stayOnAdopted || snap.stayOnSkipped
+        ? `, stay ${snap.stayOnAdopted}ok/${snap.stayOnSkipped}no${snap.stayOnLast ? `(${snap.stayOnLast})` : ""}`
+        : ""
+    }`,
     `Alt: ${snap.altCreated} new, ${snap.altTaken} taken, ${snap.altPassed} passed${
       snap.altEmpty ? `, ${snap.altEmpty} empty${snap.altEmptyLast ? ` (${snap.altEmptyLast})` : ""}` : ""
     }${snap.carAltPush || snap.carAltClear ? `, car ${snap.carAltPush} push / ${snap.carAltClear} clear` : ""}`,

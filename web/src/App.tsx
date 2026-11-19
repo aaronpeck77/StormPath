@@ -1805,10 +1805,15 @@ export default function App() {
     guidanceLive && nativeNavActive && nativeNavGuidance?.instruction
       ? nativeNavGuidance.instruction
       : null;
+  /* While off-route and unrecovered the banner's frozen step instructs a
+   * maneuver that is already behind — it reads as "turn around." Say what
+   * is actually happening instead; the adopted line lifts the latch. */
   const bannerInstructionOverride =
-    hideWindowArrive && isArriveGuidanceInstruction(nativeInstruction)
-      ? continueAlongInstruction(nativeNavGuidance?.currentRoadName)
-      : nativeInstruction;
+    offRouteLatched && !autoRejoinGuidanceRouteId
+      ? "Off your route — finding a way forward"
+      : hideWindowArrive && isArriveGuidanceInstruction(nativeInstruction)
+        ? continueAlongInstruction(nativeNavGuidance?.currentRoadName)
+        : nativeInstruction;
 
   const bannerCurrentRoadName =
     guidanceLive && nativeNavActive

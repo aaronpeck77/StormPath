@@ -35,6 +35,7 @@ import {
   offRouteReplanSlotIds,
   planAfterOffRouteReplan,
 } from "./softRestartPlan";
+import { pickStayOnRoadRoute, stayOnCourseWaypoint } from "./stayOnCourse";
 import {
   OFF_ROUTE_POLL_MS,
   measureOffRouteLateral,
@@ -50,7 +51,11 @@ import {
   metersToCurrentStepEnd,
   turnStepAlongBounds,
 } from "./turnStepAlong";
-import { bumpDriveDiag, noteDriveDiagOffRoute } from "./driveDiagnostics";
+import {
+  bumpDriveDiag,
+  noteDriveDiagOffRoute,
+  noteDriveDiagStayOn,
+} from "./driveDiagnostics";
 import {
   createOffRoutePollSession,
   resetOffRoutePollSession,
@@ -167,6 +172,13 @@ export type ReplanRouteOpts = {
   /** Through-point on the previous corridor — routes GPS→rejoin→dest so the
    *  driver lands back on the line they locked. */
   rejoinPoint?: LngLat;
+  /**
+   * Driver's-way recovery: also race a "stay on the road I'm on" fetch —
+   * a via ~1 km ahead on the travel heading makes Directions follow the
+   * road being driven. Preferred within a few ETA minutes of fastest;
+   * a deliberate deviation should not be fought back to the old corridor.
+   */
+  preferDriverPath?: boolean;
 };
 export type RecalcRouteFromHereFn = (opts?: ReplanRouteOpts) => Promise<boolean>;
 export type StayOnThisRoadFn = (opts?: ReplanRouteOpts) => Promise<boolean>;
@@ -500,10 +512,14 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       ];
       const bearingDeg = headingRef.current;
       const routeCap = isPlus ? 2 : 1;
-      const fetchVariants = (bearing: number | null) =>
+      const fetchRoutes = (
+        vias: LngLat[] | undefined,
+        bearing: number | null,
+        maxRoutes: number
+      ) =>
         collectMapboxRouteVariants(mapboxToken, userLngLat, destLngLat, {
-          via: viaCoords.length > 0 ? viaCoords : undefined,
-          maxRoutes: routeCap,
+          via: vias && vias.length > 0 ? vias : undefined,
+          maxRoutes,
           forwardFirst: true,
           bearingDeg:
             bearing != null && Number.isFinite(bearing) ? bearing : undefined,
@@ -519,7 +535,27 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           routingPreferenceRef.current,
           routeCap
         );
-      let nextRoutes = pickSlots(await fetchVariants(bearingDeg), bearingDeg);
+      /* Driver's-way recovery: race a "stay on the road I'm on" fetch against
+       * fastest-from-here. A via ~1 km ahead on the travel heading makes
+       * Directions follow the road being driven instead of snapping back
+       * toward the corridor just left. Skipped when heading/speed is not
+       * trusted or a rejoin waypoint already owns the via slot. */
+      const stayVia =
+        opts?.preferDriverPath && !opts?.rejoinPoint
+          ? stayOnCourseWaypoint({
+              userLngLat,
+              headingDeg: bearingDeg,
+              speedMps: speedMpsRef.current,
+              destLngLat,
+            })
+          : null;
+      const [fastPool, stayPool] = await Promise.all([
+        fetchRoutes(viaCoords, bearingDeg, routeCap),
+        stayVia
+          ? fetchRoutes([stayVia, ...remainingVias.map((s) => s.lngLat)], bearingDeg, 1)
+          : Promise.resolve([] as NavRoute[]),
+      ]);
+      let nextRoutes = pickSlots(fastPool, bearingDeg);
       if (
         !nextRoutes.length &&
         bearingDeg != null &&
@@ -528,7 +564,28 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         /* `bearings=` is a hard Mapbox constraint — a stale or noisy GPS heading
          * can exclude the only sane road and leave recovery with nothing.
          * Retry once unconstrained; the forward/reverse filters still apply. */
-        nextRoutes = pickSlots(await fetchVariants(null), null);
+        nextRoutes = pickSlots(await fetchRoutes(viaCoords, null, routeCap), null);
+      }
+      const stayCandidate = pickSlots(stayPool, bearingDeg)[0];
+      const chosen = pickStayOnRoadRoute({
+        stayRoute: stayCandidate,
+        fastestRoute: nextRoutes[0],
+      });
+      const adoptedStayOn =
+        Boolean(stayCandidate?.geometry?.length) && chosen === stayCandidate;
+      if (adoptedStayOn) {
+        /* The road the driver is on becomes the locked line — the fastest
+         * answer stays as B so Route still shows what it would have picked. */
+        const mainId = nextRoutes[0]?.id ?? "r-a";
+        nextRoutes = [
+          { ...stayCandidate!, id: mainId, role: "balanced", label: "Your way" },
+          ...nextRoutes.filter((r) => r.id !== mainId).slice(0, routeCap - 1),
+        ];
+      }
+      if (stayVia) {
+        noteDriveDiagStayOn(
+          adoptedStayOn ? "adopted" : stayCandidate ? "costly" : "empty"
+        );
       }
       const primary = nextRoutes[0];
       if (!primary?.geometry?.length || epochAtStart !== routeGraphEpochRef.current) return false;
@@ -659,7 +716,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
   const recalcRouteFromHere = softRestartRouteFromHere;
 
   const stayOnThisRoad = useCallback<StayOnThisRoadFn>(
-    async (opts) => softRestartRouteFromHere(opts),
+    async (opts) => softRestartRouteFromHere({ ...opts, preferDriverPath: true }),
     [softRestartRouteFromHere]
   );
 
@@ -835,8 +892,13 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         offRouteChoiceOffered: true,
       };
 
-      /* Soft restart from GPS — same trip, new locked ahead line for Dr/Rt/Mp. */
-      const restarted = await softRestartRouteFromHere({ silent: true });
+      /* Soft restart from GPS — same trip, new locked ahead line for Dr/Rt/Mp.
+       * preferDriverPath races a stay-on-the-road-I'm-on fetch so a deliberate
+       * shortcut is adopted, not fought back toward the corridor just left. */
+      const restarted = await softRestartRouteFromHere({
+        silent: true,
+        preferDriverPath: true,
+      });
       if (!restarted) markRecoveryFailed();
     },
     [
