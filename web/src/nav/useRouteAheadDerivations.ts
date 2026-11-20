@@ -73,7 +73,7 @@ import { matchDotEventsToRoute, dotMatchesToImpacts, reconcileDotMapboxImpacts }
 import { applyDotTrafficBackup } from "./dotTrafficBackup";
 import type { DotRoadEvent } from "../services/dotRoadEvents";
 import { placeReferencePhrase, type RoutePlaceAnchor } from "./routePlaceReference";
-import { pointAtAlongMeters } from "./routeGeometry";
+import { haversineMeters, pointAtAlongMeters } from "./routeGeometry";
 import { useUiStore } from "../state/uiStore";
 import { useSettingsStore } from "../state/settingsStore";
 
@@ -835,19 +835,32 @@ export function useRouteAheadDerivations(
   const progressStripAlerts = useMemo(() => augmentAlertsForProgressStrip(routeAlerts), [routeAlerts]);
 
   const dotEventMarkers = useMemo(
-    () =>
-      routeImpactsForUi
+    () => {
+      const g = guidanceRoute?.geometry;
+      return routeImpactsForUi
         .filter((i) => i.source === "dot511")
-        .map((i) => ({
-          id: i.id,
-          lngLat: i.lngLat,
-          label: i.driverHeadline,
-          kind:
-            i.category === "closure" || i.category === "incident" || i.category === "construction"
-              ? i.category
-              : ("other" as const),
-        })),
-    [routeImpactsForUi]
+        .map((i) => {
+          let lngLat = i.lngLat;
+          /* Stale-match guard: a match computed on an old corridor keeps its
+           * snapped lngLat, rendering as a triangle on a phantom line. Re-derive
+           * the position from alongMeters on the CURRENT geometry; if the stored
+           * point drifts off its own along-position, trust the reprojection. */
+          if (g && g.length >= 2 && Number.isFinite(i.alongMeters)) {
+            const onGeom = pointAtAlongMeters(g, Math.max(0, i.alongMeters));
+            if (haversineMeters(lngLat, onGeom) > 500) lngLat = onGeom;
+          }
+          return {
+            id: i.id,
+            lngLat,
+            label: i.driverHeadline,
+            kind:
+              i.category === "closure" || i.category === "incident" || i.category === "construction"
+                ? i.category
+                : ("other" as const),
+          };
+        });
+    },
+    [routeImpactsForUi, guidanceRoute?.geometry]
   );
 
   return {

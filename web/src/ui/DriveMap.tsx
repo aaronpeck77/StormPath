@@ -5556,7 +5556,12 @@ function DriveMapInner({
     }
 
     for (const m of markers) {
-      if (existing.has(m.id) || !isValidLngLatPair(m.lngLat)) continue;
+      const prev = existing.get(m.id);
+      if (prev) {
+        if (isValidLngLatPair(m.lngLat)) prev.marker.setLngLat(m.lngLat);
+        continue;
+      }
+      if (!isValidLngLatPair(m.lngLat)) continue;
       const el = document.createElement("div");
       el.className = `map-dot-event map-dot-event--${m.kind ?? "other"}`;
       el.title = m.label;
