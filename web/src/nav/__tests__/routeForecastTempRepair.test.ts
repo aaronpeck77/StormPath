@@ -176,4 +176,49 @@ describe("ultra-long outlook pipeline (b616 field case)", () => {
     const temps = r.series.map((p) => p.tempF).filter((t) => t != null);
     expect(temps.length).toBeGreaterThan(2);
   });
+
+  it("E: moderate radar echo on route → precip bump survives the display floor", () => {
+    // WeatherKit slots all 0% POP, radar mosaic shows moderate echo at 70-90%
+    // along (raw 0.5/0.65 → display ~0.31/0.47 → radarPct ~16-29). Without
+    // precipIntensityMmh surviving resync, the display floor zeroes these —
+    // the "route through a storm, no precip line" field bug.
+    const r = runUltraLongBranch({
+      forecast: makeForecast(58),
+      radarSamples: [
+        { t: 0.7, intensity: 0.5 },
+        { t: 0.85, intensity: 0.65 },
+      ],
+    });
+    const maxPrecip = Math.max(...r.series.map((p) => p.precipPct));
+    expect(maxPrecip).toBeGreaterThan(15);
+    // Echo at t=0.7–0.85 must not smear phantom rain onto the route start.
+    expect(r.series[0]!.precipPct).toBe(0);
+  });
+
+  it("F: resync preserves precipIntensityMmh through the headline round-trip", () => {
+    const steps = [
+      {
+        key: "midway" as const,
+        shortLabel: "Mid",
+        fraction: 0.5,
+        tempF: 58,
+        conditions: "Rain on route",
+        precipPct: 40,
+        precipHint: 0.4,
+        precipIntensityMmh: 0.55,
+        etaLabel: null,
+        icon: "rain",
+        windGustMph: 22,
+      },
+    ];
+    const out = resyncRouteOutlookSteps(steps, {
+      totalMeters: TOTAL_M,
+      userAlongMeters: 0,
+      planEtaMinutes: PLAN_ETA,
+      driveEtaMinutes: null,
+    });
+    const mid = out.find((s) => Math.abs(s.fraction - 0.5) < 0.1);
+    expect(mid?.precipIntensityMmh).toBe(0.55);
+    expect(mid?.windGustMph).toBe(22);
+  });
 });

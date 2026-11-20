@@ -111,10 +111,10 @@ export function effectiveRoutePrecipDisplayPct(
   const c = conditions.toLowerCase();
   const mentionsPrecip = /rain|shower|drizzle|storm|thunder|snow|sleet|freezing|wintry|hail/.test(c);
 
-  if (precipIntensityMmh >= 0.5) return pct;
-  if (precipIntensityMmh >= 0.12) {
-    return pct >= 35 ? pct : Math.round(pct * 0.45);
-  }
+  /* Intensity means measurable rain is falling (provider slot or observed
+   * radar echo) — show its POP as-is; the floor exists for model-only
+   * "high chance, 0 mm" noise, not measured precip. */
+  if (precipIntensityMmh >= 0.12) return pct;
   if (pct >= 60 && mentionsPrecip) return pct;
   if (mentionsPrecip && pct >= 45) return Math.min(pct, 55);
   if (pct >= 50 && mentionsPrecip) return Math.round(pct * 0.6);
@@ -296,6 +296,7 @@ function stepsFromSamples(samples: WxSample[]): RouteOutlookStep[] {
       conditions: wx.conditions,
       precipPct: precip.precipPct,
       precipHint: precip.precipHint,
+      precipIntensityMmh: sample?.precipIntensityMmh,
       etaLabel: null,
       icon: wxIcon(wx.conditions, precip.precipHint),
       windGustMph: sample?.windGustMph ?? null,
@@ -478,15 +479,24 @@ export function buildOutlookFromStormAlongRoute(opts: {
       }
     }
 
+    let radarMm = 0;
     if (radarSamples.length) {
       const near = nearestRadarSample(radarSamples, fraction);
-      if (near) {
+      /* Sparse samples smear echo onto fractions nowhere near it — only apply
+       * radar within ~12% of the route or dry stretches draw phantom rain. */
+      if (near && Math.abs(near.t - fraction) <= 0.12) {
         const radarPct = radarIntensityToPrecipPct(near.intensity);
         if (radarPct > (precipPct ?? 0)) {
           precipPct = radarPct;
           if (conditions === "—") {
             conditions = radarPct >= 48 ? "Heavy rain on route" : "Rain on route";
           }
+        }
+        /* Observed echo — mark intensity so the display floor treats this as
+         * real precip on route, not a low-confidence model POP. */
+        const display = radarDisplayIntensity(near.intensity);
+        if (display >= RADAR_SOFT_THRESHOLD) {
+          radarMm = display >= RADAR_REROUTE_THRESHOLD ? 0.55 : 0.18;
         }
       }
     }
@@ -503,6 +513,7 @@ export function buildOutlookFromStormAlongRoute(opts: {
       conditions,
       precipPct: precip.precipPct,
       precipHint: precip.precipHint,
+      precipIntensityMmh: radarMm || undefined,
       etaLabel: null,
       icon: wxIcon(conditions, precip.precipHint),
     });
@@ -1039,13 +1050,28 @@ export function resyncRouteOutlookSteps(
   }
 ): RouteOutlookStep[] {
   if (!steps.length) return [];
-  return buildSyncedRouteOutlook({
+  const resynced = buildSyncedRouteOutlook({
     forecastHeadline: outlookHeadlineFromSteps(steps),
     samples: opts.samples,
     totalMeters: opts.totalMeters,
     userAlongMeters: opts.userAlongMeters,
     planEtaMinutes: opts.planEtaMinutes,
     driveEtaMinutes: opts.driveEtaMinutes ?? null,
+  });
+  /* The headline round-trip serializes temp/precip/conditions but not
+   * precipIntensityMmh or windGustMph — without restoring them, every resync
+   * resets intensity to 0 and the display floor zeroes moderate observed
+   * precip (e.g. radar-boosted storm cells). */
+  return resynced.map((step) => {
+    if (step.precipIntensityMmh != null && step.windGustMph != null) return step;
+    const src = steps.reduce((best, s) =>
+      Math.abs(s.fraction - step.fraction) < Math.abs(best.fraction - step.fraction) ? s : best
+    );
+    return {
+      ...step,
+      precipIntensityMmh: step.precipIntensityMmh ?? src.precipIntensityMmh,
+      windGustMph: step.windGustMph ?? src.windGustMph,
+    };
   });
 }
 
@@ -1075,6 +1101,9 @@ export function mergeRouteOutlookSteps(...groups: RouteOutlookStep[][]): RouteOu
         conditions: pickPrecip.conditions || prev.conditions,
         precipPct: pct > 0 ? pct : null,
         precipHint: hint,
+        precipIntensityMmh:
+          Math.max(prev.precipIntensityMmh ?? 0, step.precipIntensityMmh ?? 0) ||
+          undefined,
         windGustMph: step.windGustMph ?? prev.windGustMph ?? null,
         etaLabel: prev.etaLabel ?? step.etaLabel,
         alongMeters: prev.alongMeters ?? step.alongMeters,
