@@ -5,6 +5,7 @@ import type { CurrentNowcast } from "./openWeatherClient";
 import {
   buildTimelinesWaypointsForGeometry,
   pickRouteForecastFetchLocations,
+  repairRouteForecastTemps,
   routeForecastLocationKey,
   type MinutePrecipForecast,
   type PointHourlyForecast,
@@ -472,7 +473,9 @@ export async function fetchWeatherKitRouteForecast(
     };
   });
 
-  return { fetchedAt, intervals };
+  /* Provider slots that lack temperature can't be allowed to cache or render —
+   * wind on the same slot still draws while the Temp lane silently dies. */
+  return repairRouteForecastTemps({ fetchedAt, intervals });
 }
 
 function nearestLocationKey(

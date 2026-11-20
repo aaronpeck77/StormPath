@@ -1,5 +1,6 @@
 import type { LngLat } from "../nav/types";
 import type { RouteForecast } from "./tomorrowIo";
+import { repairRouteForecastTemps } from "./tomorrowIo";
 import { safeStorage } from "../storage/safeStorage";
 
 /* v2 — v1 entries can carry tempF:null on every interval: pre-b541659 builds
@@ -106,7 +107,9 @@ function acceptCachedForecast(
 ): RouteForecast | null {
   if (!forecast.intervals.length) return null;
   if (geometry?.length && !forecastCorridorMatchesDirection(forecast, geometry)) return null;
-  return forecast;
+  /* JSON round-trips turn NaN into null — borrow neighbor temps on read so a
+   * stale or provider-thin entry can't restore a forecast with a dead Temp lane. */
+  return repairRouteForecastTemps(forecast);
 }
 
 /**

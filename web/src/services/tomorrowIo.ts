@@ -275,6 +275,56 @@ export function routeForecastHasSignificantWeather(
   });
 }
 
+/**
+ * A provider slot can arrive without temperature (WeatherKit hour missing both
+ * `temperature` and `temperatureApparent`, or a NaN that JSON round-tripped to
+ * null in a cached forecast). Wind on the same interval still draws, which is
+ * how a silently dead Temp lane survives every downstream guard. Repair in
+ * place: fill non-finite tempF/feelsLikeF from the nearest interval that has
+ * one — the same "borrow from the nearest live cell" rule used for failed
+ * fetch locations. Returns the forecast unchanged when nothing needs repair.
+ */
+export function repairRouteForecastTemps(forecast: RouteForecast): RouteForecast {
+  const intervals = forecast.intervals;
+  const needsRepair = intervals.some(
+    (iv) => !Number.isFinite(iv.tempF) ||
+      (iv.feelsLikeF != null && !Number.isFinite(iv.feelsLikeF))
+  );
+  if (!needsRepair) return forecast;
+
+  const nearestFinite = (idx: number): number | null => {
+    for (let d = 1; d < intervals.length; d++) {
+      for (const nb of [intervals[idx - d], intervals[idx + d]]) {
+        if (!nb) continue;
+        if (Number.isFinite(nb.tempF)) return nb.tempF;
+        if (nb.feelsLikeF != null && Number.isFinite(nb.feelsLikeF)) {
+          return nb.feelsLikeF;
+        }
+      }
+    }
+    return null;
+  };
+
+  return {
+    ...forecast,
+    intervals: intervals.map((iv, idx) => {
+      if (Number.isFinite(iv.tempF)) {
+        if (iv.feelsLikeF == null || Number.isFinite(iv.feelsLikeF)) return iv;
+        return { ...iv, feelsLikeF: iv.tempF };
+      }
+      const borrowed = nearestFinite(idx);
+      const tempF = borrowed ?? (Number.isFinite(iv.feelsLikeF) ? iv.feelsLikeF! : NaN);
+      return {
+        ...iv,
+        tempF,
+        feelsLikeF: iv.feelsLikeF != null && Number.isFinite(iv.feelsLikeF)
+          ? iv.feelsLikeF
+          : tempF,
+      };
+    }),
+  };
+}
+
 // ── Minute precipitation forecast ────────────────────────────────────────────
 
 /**
@@ -677,7 +727,7 @@ async function fetchRouteForecastPolyline(
     }
     return intervalFromHourlyTimeline(wp, hourly);
   });
-  return { fetchedAt: Date.now(), intervals };
+  return repairRouteForecastTemps({ fetchedAt: Date.now(), intervals });
 }
 
 /**
@@ -772,7 +822,7 @@ export async function enrichRouteForecastConvective(
           : iv.weatherCode,
     };
   });
-  return { ...forecast, fetchedAt: Date.now(), intervals };
+  return repairRouteForecastTemps({ ...forecast, fetchedAt: Date.now(), intervals });
 }
 
 /**
@@ -853,7 +903,7 @@ export async function fetchRouteForecast(
     return intervalFromHourlyTimeline(wp, hourly);
   });
 
-  return { fetchedAt: Date.now(), intervals };
+  return repairRouteForecastTemps({ fetchedAt: Date.now(), intervals });
 }
 
 // ── Departure scan (raw hourly per location) ─────────────────────────────────
