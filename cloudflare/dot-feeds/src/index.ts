@@ -18,15 +18,29 @@
 
 const REGISTRY_URL =
   "https://data.transportation.gov/resource/69qe-yiui.json?$where=active=true&$limit=300";
+
+/* Registry rows we intentionally skip — the URL is dead or superseded by a
+ * custom adapter. nysdot's /api/wzdx now serves the site's HTML app shell;
+ * 511NY moved to the CARS 511x platform (fetchNysCarsEvents below). */
+const REGISTRY_DISABLED = new Set(["nysdot"]);
+
+/* Event types dropped per feed before the feature cap. FL publishes a
+ * "detour" record per diversion leg (~25k rows, ~17 per work zone) — the
+ * parent work-zone features carry the driver-facing impact. */
+const REGISTRY_TYPE_SKIP: Record<string, Set<string>> = {
+  fldot: new Set(["detour"]),
+};
 const SNAPSHOT_CACHE_URL = "https://stormpath-dot-feeds.internal/snapshot";
 const SNAPSHOT_KV_KEY = "snapshot";
 /** Keep events that ended recently or start within a week — route planning lookahead. */
 const WINDOW_PAST_MS = 12 * 3_600_000;
 const WINDOW_FUTURE_MS = 7 * 24 * 3_600_000;
 const FEED_TIMEOUT_MS = 12_000;
-/** Workers cap at 128 MB — parsed feeds are multi-MB each, so process in batches. */
+/** The snapshot builder only runs in the Node Action (the Worker just serves
+ * KV), so feed size is bounded by runner memory, not the old Worker 128 MB
+ * cap. FL's WZDx feed is ~99 MB decompressed. */
 const FEED_BATCH = 4;
-const MAX_FEED_BYTES = 15 * 1024 * 1024;
+const MAX_FEED_BYTES = 128 * 1024 * 1024;
 /** Cap retained geometry — some feeds attach full road centerlines per event.
  *  The app only ever samples 8 vertices per event (MAX_EVENT_SAMPLE_POINTS),
  *  so 20 is already generous; 50 was ~6× the usable detail and pushed the
@@ -2410,6 +2424,123 @@ async function fetchOdotRwis(env: FeedEnv, nowMs: number): Promise<DotEvent[]> {
  * LCS is filtered to mainline/conventional closures active now or starting
  * within 24 h — the files carry 7 days of planned work (~9.5k rows total)
  * that would flood the snapshot; near-term is what a driver needs. */
+
+/* ── NY 511x CARS platform ────────────────────────────────────────────────
+ * 511NY's old /api/wzdx registry URL now serves the site's HTML shell — the
+ * state migrated to Iteris CARS (api-511x-nysdot.carsprogram.org), same
+ * family as the IBI hosts above but with a different response shape.
+ * `events/map-features?eventClassifications=…` returns GeoJSON. TRANSCOM
+ * attribution carries NY + NJ + CT in one feed. Fetched per class so `kind`
+ * comes from the query, not icon-name guessing; ids dedupe across classes. */
+const NY_CARS_URL =
+  "https://api-511x-nysdot.carsprogram.org/events/map-features";
+const NY_CARS_CLASSES: readonly { cls: string; kind: DotEvent["kind"] }[] = [
+  { cls: "closures", kind: "closure" },
+  { cls: "incidents", kind: "incident" },
+  { cls: "construction", kind: "construction" },
+  { cls: "winterDriving", kind: "condition" },
+  { cls: "flooding", kind: "incident" },
+  { cls: "specialEvents", kind: "other" },
+];
+const NY_AGENCY_STATE: Record<string, string> = {
+  NYSDOT: "new york",
+  NJDOT: "new jersey",
+  CTDOT: "connecticut",
+};
+
+function nyCarsTimeMs(v: unknown): number | null {
+  const t = Number(asRecord(v).time);
+  return Number.isFinite(t) && t > 0 ? t : null;
+}
+
+function normalizeNyCarsEvent(
+  f: Record<string, unknown>,
+  kind: DotEvent["kind"],
+  nowMs: number
+): DotEvent | null {
+  const props = asRecord(f.properties);
+  const report = asRecord(props.eventReport);
+  const desc = asRecord(report.eventDescription);
+  const loc = asRecord(report.location);
+  const agency = str(asRecord(report.agencyAttribution).agencyName) || str(props.agency);
+  if (/waze/i.test(agency)) return null;
+  const primary = asRecord(loc.primaryPoint);
+  let lat = Number(primary.lat);
+  let lon = Number(primary.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    const b = asRecord(props.bounds);
+    lat = (Number(b.minLat) + Number(b.maxLat)) / 2;
+    lon = (Number(b.minLon) + Number(b.maxLon)) / 2;
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90) return null;
+  const startMs = nyCarsTimeMs(report.beginTime) ?? nyCarsTimeMs(props.startTime);
+  const endMs = nyCarsTimeMs(report.endTime);
+  if (endMs != null && endMs < nowMs - WINDOW_PAST_MS) return null;
+  if (startMs != null && startMs > nowMs + WINDOW_FUTURE_MS) return null;
+
+  const road = prettifyRoadName(str(props.route) || str(loc.routeDesignator));
+  const title = str(props.title) || str(desc.descriptionHeader) || "Road event";
+  const dirMatch = title.match(/\b(east|west|north|south)bound\b|\bboth directions\b/i);
+  const direction = dirMatch ? dirMatch[0].toLowerCase().replace(/bound$/, "bound") : null;
+  const brief = str(desc.descriptionBrief);
+  const full = stripIbiHtml(str(desc.descriptionFull) || str(props.description));
+  const b = asRecord(props.bounds);
+  const bbox: [number, number, number, number] = [
+    Number.isFinite(Number(b.minLon)) ? Number(b.minLon) : lon,
+    Number.isFinite(Number(b.minLat)) ? Number(b.minLat) : lat,
+    Number.isFinite(Number(b.maxLon)) ? Number(b.maxLon) : lon,
+    Number.isFinite(Number(b.maxLat)) ? Number(b.maxLat) : lat,
+  ];
+  const updatedMs = nyCarsTimeMs(asRecord(report.updateTime)) ?? (() => {
+    const u = Number(props.updated);
+    return Number.isFinite(u) && u > 0 ? u : null;
+  })();
+  return {
+    id: `nysdot:${str(props.id) || `${lon},${lat}`}`,
+    state: NY_AGENCY_STATE[agency] ?? "new york",
+    publisher: agency || "511NY",
+    kind,
+    status: startMs != null && startMs > nowMs ? "scheduled" : "active",
+    title,
+    roadName: road,
+    direction,
+    description: [brief, full].filter(Boolean).join(" — ") || title,
+    restrictionsText: null,
+    lanesClosed: 0,
+    travelLanesClosed: null,
+    laneSummary: null,
+    workType: null,
+    vehicleImpact: null,
+    startIso: startMs != null ? new Date(startMs).toISOString() : null,
+    endIso: endMs != null ? new Date(endMs).toISOString() : null,
+    updatedIso: updatedMs != null ? new Date(updatedMs).toISOString() : null,
+    point: [lon, lat],
+    bbox,
+    geometry: simplifiedGeometry(f.geometry),
+  };
+}
+
+async function fetchNysCarsEvents(nowMs: number): Promise<DotEvent[]> {
+  const seen = new Set<string>();
+  const events: DotEvent[] = [];
+  for (const { cls, kind } of NY_CARS_CLASSES) {
+    const fc = (await fetchJson(
+      `${NY_CARS_URL}?eventClassifications=${cls}`,
+      FEED_TIMEOUT_MS
+    )) as { features?: unknown };
+    for (const f of asArray<Record<string, unknown>>(fc.features)) {
+      const id = str(asRecord(f.properties).id);
+      if (!id || seen.has(id)) continue;
+      const ev = normalizeNyCarsEvent(f, kind, nowMs);
+      if (ev) {
+        seen.add(id);
+        events.push(ev);
+      }
+    }
+  }
+  return events.slice(0, MAX_FEATURES_PER_FEED);
+}
+
 const CALTRANS_DISTRICTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const CALTRANS_CC_DISTRICTS = [1, 2, 3, 6, 7, 8, 9, 10, 11];
 const CALTRANS_RWIS_DISTRICTS = [1, 2, 3, 6, 8, 9, 10];
@@ -2725,7 +2856,9 @@ const CUSTOM_FEEDS: CustomFeed[] = [
 export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
   const nowMs = Date.now();
   const registry = (await fetchJson(REGISTRY_URL, 15_000)) as RegistryRow[];
-  const rows = registry.filter((r) => feedUrlOf(r));
+  const rows = registry.filter(
+    (r) => feedUrlOf(r) && !REGISTRY_DISABLED.has(r.feedname ?? "")
+  );
 
   const events: DotEvent[] = [];
   const coveredStates = new Set<string>();
@@ -2776,7 +2909,16 @@ export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
           const list = fc.length
             ? fc
             : asArray<Record<string, unknown>>(feed.road_events);
-          const features = list.slice(0, MAX_FEATURES_PER_FEED);
+          const skipTypes = REGISTRY_TYPE_SKIP[feedName];
+          const kept = skipTypes?.size
+            ? list.filter(
+                (f) =>
+                  !skipTypes.has(
+                    str(coreOf(asRecord(f.properties)).event_type).toLowerCase()
+                  )
+              )
+            : list;
+          const features = kept.slice(0, MAX_FEATURES_PER_FEED);
           for (const f of features) {
             const ev = normalizeFeature(f, row, nowMs);
             if (ev) events.push(ev);
@@ -2847,6 +2989,36 @@ export async function buildSnapshot(env: FeedEnv): Promise<Snapshot> {
       console.warn(`[dot-feeds] IBI host failed: ${host.host}`, err);
       feedStatus.push({
         name: `ibi-${host.tag}`,
+        source: "custom",
+        state: "failed",
+        events: 0,
+        error,
+      });
+    }
+  }
+
+  /* 511NY moved to the CARS 511x platform — replaces the dead /api/wzdx
+   * registry row (skipped via REGISTRY_DISABLED). TRANSCOM attribution
+   * covers NY+NJ+CT, so this one feed restores three states. */
+  {
+    const before = events.length;
+    try {
+      const nyEvents = await fetchNysCarsEvents(nowMs);
+      for (const s of ["new york", "new jersey", "connecticut"])
+        coveredStates.add(s);
+      events.push(...nyEvents);
+      feedStatus.push({
+        name: "nysdot",
+        source: "custom",
+        state: "ok",
+        events: events.length - before,
+      });
+    } catch (err) {
+      failed += 1;
+      const error = err instanceof Error ? err.message : String(err);
+      console.warn("[dot-feeds] NY CARS feed failed", err);
+      feedStatus.push({
+        name: "nysdot",
         source: "custom",
         state: "failed",
         events: 0,

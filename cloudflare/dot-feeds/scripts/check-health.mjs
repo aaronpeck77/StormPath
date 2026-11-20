@@ -20,7 +20,9 @@ if (!url) {
   process.exit(1);
 }
 
-const KNOWN_FAILURES = new Set(["fldot", "nysdot"]);
+/* fldot (oversized payload → cap raised) and nysdot (dead /api/wzdx → CARS
+ * adapter) were repaired 2026-11-20 — back on the alert path. */
+const KNOWN_FAILURES = new Set();
 const MIN_EVENTS = 8_000;
 const MIN_STATES = 20;
 const MAX_AGE_SEC = 1_200;
