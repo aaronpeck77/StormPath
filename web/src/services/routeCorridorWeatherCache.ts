@@ -2,7 +2,10 @@ import type { LngLat } from "../nav/types";
 import type { RouteForecast } from "./tomorrowIo";
 import { safeStorage } from "../storage/safeStorage";
 
-const LS_ROUTE_FORECAST = "stormpath-route-corridor-forecast-v1";
+/* v2 — v1 entries can carry tempF:null on every interval: pre-b541659 builds
+ * cached forecasts where NaN temps JSON-serialized to null, and that poisoned
+ * cache restored wind/precip fine while silently killing the temp lane. */
+const LS_ROUTE_FORECAST = "stormpath-route-corridor-forecast-v2";
 const LS_ROUTE_OW_OVERLAY = "stormpath-route-ow-overlay-v1";
 const MAX_ROUTE_ENTRIES = 6;
 

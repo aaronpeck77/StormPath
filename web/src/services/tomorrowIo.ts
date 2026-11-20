@@ -711,9 +711,57 @@ export async function enrichRouteForecastConvective(
     const lightning = v.lightningFlashRateDensity;
     const hailP = v.hailProbability;
     const hailSize = v.hailSize;
-    if (lightning == null && hailP == null && hailSize == null) return iv;
+
+    /* Second-source backstop: the polyline call already fetched temps/wind —
+     * fill only fields the primary provider (e.g. WeatherKit) left non-finite,
+     * so one provider's missing slot can't blank a whole graph lane. */
+    const tioTempF = v.temperature != null && Number.isFinite(v.temperature)
+      ? (v.temperature * 9) / 5 + 32
+      : null;
+    const tioWindMph = v.windSpeed != null && Number.isFinite(v.windSpeed)
+      ? v.windSpeed * 2.23694
+      : null;
+    const tioGustMph =
+      v.windGust != null && Number.isFinite(v.windGust)
+        ? v.windGust * 2.23694
+        : tioWindMph;
+
+    const primaryComplete =
+      Number.isFinite(iv.tempF) &&
+      Number.isFinite(iv.feelsLikeF) &&
+      Number.isFinite(iv.precipProbability) &&
+      Number.isFinite(iv.precipIntensityMmh) &&
+      Number.isFinite(iv.windSpeedMph) &&
+      Number.isFinite(iv.windGustMph);
+    if (
+      lightning == null &&
+      hailP == null &&
+      hailSize == null &&
+      primaryComplete
+    ) {
+      return iv;
+    }
     return {
       ...iv,
+      tempF: Number.isFinite(iv.tempF) ? iv.tempF : (tioTempF ?? iv.tempF),
+      feelsLikeF: Number.isFinite(iv.feelsLikeF) ? iv.feelsLikeF : (tioTempF ?? iv.feelsLikeF),
+      precipProbability: Number.isFinite(iv.precipProbability)
+        ? iv.precipProbability
+        : (v.precipitationProbability ?? 0) / 100,
+      precipIntensityMmh: Number.isFinite(iv.precipIntensityMmh)
+        ? iv.precipIntensityMmh
+        : (v.precipitationIntensity ?? 0),
+      windSpeedMph: Number.isFinite(iv.windSpeedMph)
+        ? iv.windSpeedMph
+        : (tioWindMph ?? iv.windSpeedMph),
+      windGustMph: Number.isFinite(iv.windGustMph)
+        ? iv.windGustMph
+        : tioGustMph != null
+          ? calibratedWindGustMph(
+              Number.isFinite(iv.windSpeedMph) ? iv.windSpeedMph : tioGustMph,
+              tioGustMph
+            )
+          : iv.windGustMph,
       lightningFlashRate: lightning ?? iv.lightningFlashRate,
       hailProbability:
         hailP != null ? hailP / 100 : iv.hailProbability,
