@@ -64,8 +64,8 @@ function DockAboutRow({
   aboutRowClassName?: string;
   /** Render the inline route slot before Tools so it sits beside miles-left. */
   toolsAfterChildren?: boolean;
-  /** Slim row rendered directly above the stormy/route-select line (CarPlay
-   * map-peek return chip) — only used by the stormyOn layout. */
+  /** Slim row rendered directly above the route-select slot (CarPlay
+   * map-peek return chip). */
   routeRowAbove?: ReactNode;
   children?: ReactNode;
 }) {
@@ -100,11 +100,22 @@ function DockAboutRow({
         </div>
       );
     }
+    /* CarPlay map-peek chip rides directly above the route-select slot here
+     * too — as a standalone row over the whole about-row it floated a full
+     * stop/change stack above the picker (Bill, Nov 19). */
+    const childrenWithReturn = routeRowAbove ? (
+      <div className="nav-bottom-dock__cp-return-col">
+        <div className="nav-cp-return-row">{routeRowAbove}</div>
+        {children}
+      </div>
+    ) : (
+      children
+    );
     return (
       <div className={aboutRowClass}>
         {info}
-        {toolsAfterChildren ? children : tools}
-        {toolsAfterChildren ? tools : children}
+        {toolsAfterChildren ? childrenWithReturn : tools}
+        {toolsAfterChildren ? tools : childrenWithReturn}
       </div>
     );
   }
@@ -142,9 +153,6 @@ type Props = {
   /* Dock mode branching */
   navigationStarted: boolean;
   viewMode: MapViewMode;
-  /** Advisory (hazard/weather) bar relocated into the bottom dock, rendered
-   *  directly above the MP/RT about/route-select row on phone. */
-  mpAdvisoryBar?: ReactNode;
 
   /* Mid-route destination change */
   onChangeDestination?: () => void;
@@ -276,7 +284,6 @@ export function AppBottomChrome({
   handleDiscardRecordingPath,
   navigationStarted,
   viewMode,
-  mpAdvisoryBar = null,
   onChangeDestination,
   isChangingDestination = false,
   driveMapBearingDeg,
@@ -722,9 +729,9 @@ export function AppBottomChrome({
           ) : navigationStarted && (viewMode === "topdown" || viewMode === "route") ? (
             <>
             {/* CarPlay map-peek return sits directly above the route-select
-             * line via routeRowAbove; the standalone row is only the fallback
-             * for the no-Stormy layout where that slot isn't rendered. */}
-            {carPlayMapReturn && (!talkOn || tabletLandscape) ? (
+             * line via routeRowAbove; the standalone row is only the iPad
+             * fallback where that slot isn't rendered. */}
+            {carPlayMapReturn && tabletLandscape ? (
               <div className="nav-cp-return-row">{carPlayMapReturn}</div>
             ) : null}
             {tabletLandscape ? (
@@ -736,9 +743,6 @@ export function AppBottomChrome({
               </div>
             ) : (
             <>
-            {/* Advisory (hazard/weather) lives here on phone MP/RT — directly
-             * above the about/route-select row, out of the top cluster's way. */}
-            {mpAdvisoryBar}
             <DockAboutRow
               stormyOn={talkOn}
               onOpenAbout={onOpenAbout}

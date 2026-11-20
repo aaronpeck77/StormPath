@@ -170,8 +170,6 @@ import { AppTopNavCluster } from "./ui/AppTopNavCluster";
 import { DriveHazardTicker } from "./ui/DriveHazardTicker";
 import { LandscapeHazardPanel } from "./ui/LandscapeHazardPanel";
 import { LandscapeInfoPip } from "./ui/LandscapeInfoPip";
-import { useTabletLandscape } from "./ui/LandscapeNavigationDock";
-import { StormAdvisoryBar } from "./ui/StormAdvisoryBar";
 import { CollapsiblePanelSection } from "./ui/CollapsiblePanelSection";
 
 import { Coachmarks } from "./ui/Coachmarks";
@@ -2513,14 +2511,6 @@ export default function App() {
     if (!(carPlayActive && navigationStarted)) setCarPlayMapPeek(false);
   }, [carPlayActive, navigationStarted]);
   const showCarPlayCompanion = carPlayActive && navigationStarted && !carPlayMapPeek;
-  /* Phone MP/RT: the advisory (hazard/weather) bar drops out of the top cluster
-   * into the bottom dock, directly above the route-select row — up top it
-   * covered the guidance stack (Nov 19 field report). iPad panel keeps it. */
-  const tabletLandscapeForDock = useTabletLandscape();
-  const advisoryBarInBottomDock =
-    navigationStarted &&
-    !tabletLandscapeForDock &&
-    (viewMode === "route" || viewMode === "topdown");
   const carPlayAdvisoryLine = pickAdvisoryVoiceLine({
     nextHazardAtEtaLine,
     driveRouteAheadLine,
@@ -3370,9 +3360,7 @@ export default function App() {
               personalForkOffer={personalForkNav.offer}
               onTakePersonalFork={() => commitPersonalFork()}
               onDismissPersonalFork={() => personalForkNav.dismissForTrip()}
-              showStormAdvisoryChrome={
-                showStormAdvisoryChrome && !advisoryBarInBottomDock
-              }
+              showStormAdvisoryChrome={showStormAdvisoryChrome}
               stormAdvisoryBarProps={stormAdvisoryBarPropsWithNext}
               guidanceOnCarPlay={carPlayActive && navigationStarted}
               isPlus={isPlus}
@@ -3592,11 +3580,6 @@ export default function App() {
         />
 
         <AppBottomChrome
-          mpAdvisoryBar={
-            advisoryBarInBottomDock && showStormAdvisoryChrome ? (
-              <StormAdvisoryBar {...stormAdvisoryBarPropsWithNext} />
-            ) : null
-          }
           handleTrafficBypassCompareSelect={handleTrafficBypassCompareSelect}
           handleTrafficBypassCompareConfirm={handleTrafficBypassCompareConfirm}
           handleTrafficBypassCompareCancel={handleTrafficBypassCompareCancel}

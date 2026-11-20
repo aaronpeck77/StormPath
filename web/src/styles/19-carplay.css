@@ -218,6 +218,17 @@
   pointer-events: auto;
 }
 
+/* No-Stormy MP/RT dock: wraps the route-select slot so the return chip sits
+ * directly on top of it instead of floating above the whole about-row
+ * (Bill, Nov 19). */
+.nav-bottom-dock__cp-return-col {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: stretch;
+}
+
 /* Companion v2 — real progress rail + weather graph embedded in the page */
 .cp-companion__rail {
   margin: 0 -14px 12px;

@@ -1772,9 +1772,3 @@ html.route-info-open .route-progress-callout-panel--expanded {
   background: rgba(56, 189, 248, 0.12);
   animation: sp-hazard-next-pulse 1.8s ease-in-out infinite;
 }
-
-/* Phone MP/RT: advisory bar relocated into the bottom dock, directly above the
- * about/route-select row (Bill, Nov 19 field report). */
-.nav-bottom-dock .storm-advisory-bar-anchor {
-  margin: 0 0 6px;
-}
