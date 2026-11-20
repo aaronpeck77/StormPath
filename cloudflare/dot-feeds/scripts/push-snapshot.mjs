@@ -20,17 +20,28 @@ if (!url || !secret) {
 }
 
 const snap = await buildSnapshot(process.env);
-const res = await fetch(`${url}/ingest`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${secret}`,
-  },
-  body: JSON.stringify(snap),
-});
-const text = await res.text();
-if (!res.ok) {
-  console.error(`ingest failed: ${res.status} ${text}`);
-  process.exit(1);
+
+/* The Worker occasionally returns edge 5xx (1101 crashes, cold-start OOMs)
+ * that clear on retry — a single transient shouldn't red the whole run. */
+const body = JSON.stringify(snap);
+let res = null;
+let text = "";
+for (let attempt = 1; attempt <= 3; attempt++) {
+  res = await fetch(`${url}/ingest`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${secret}`,
+    },
+    body,
+  });
+  text = await res.text();
+  if (res.ok) break;
+  if (res.status < 500 || attempt === 3) {
+    console.error(`ingest failed: ${res.status} ${text}`);
+    process.exit(1);
+  }
+  console.warn(`ingest attempt ${attempt} got ${res.status} — retrying`);
+  await new Promise((r) => setTimeout(r, attempt * 5000));
 }
 console.log(`snapshot pushed: ${snap.events.length} events, ${snap.states.length} states covered`);
