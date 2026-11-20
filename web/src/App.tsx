@@ -2123,25 +2123,6 @@ export default function App() {
     openWeatherApiKey: env.openWeatherApiKey,
   });
 
-  /* Wx-graph diagnostics: the glance panel fails silently when the pipeline
-   * produces nothing, so record the enable/block/sample state into the drive
-   * dump — next drive tells us why instead of going blank. */
-  useEffect(() => {
-    const blk = (radarRefreshBlocked || routeForecastRefreshBlocked || "-").slice(0, 40);
-    setDriveDiagWxDiag(
-      `ready:${routeWeatherReady ? 1 : 0} tio:${navResourceBudget.tioRouteFetchEnabled ? 1 : 0} pt:${navResourceBudget.tioPointFetchEnabled ? 1 : 0} fc:${tioRouteForecast?.intervals?.length ?? -1} mp:${tioMinutePrecip?.minutes?.length ?? -1} hr:${localHourlyForecast?.hours?.length ?? -1} rad:${navResourceBudget.radarRouteSamplingEnabled ? 1 : 0} radarN:${radarMosaicSamples.length} wk:${isWeatherKitTokenBlocked() ? 1 : 0} blk:${blk}`
-    );
-  }, [
-    routeWeatherReady,
-    navResourceBudget,
-    radarMosaicSamples.length,
-    radarRefreshBlocked,
-    routeForecastRefreshBlocked,
-    tioRouteForecast?.intervals?.length,
-    tioMinutePrecip?.minutes?.length,
-    localHourlyForecast?.hours?.length,
-  ]);
-
   useTripSurfaceRecovery({
     appForeground,
     hasActiveTrip:
@@ -2473,6 +2454,38 @@ export default function App() {
       advisoryWeatherSyncEnabled: navResourceBudget.advisoryWeatherSyncEnabled,
       bumpTrafficRefresh,
     });
+
+  /* Wx-graph diagnostics: the glance panel fails silently when the pipeline
+   * produces nothing, so record the enable/block/sample state plus what the
+   * outlook actually contained into the drive dump — next drive tells us why
+   * a lane drew no line instead of going blank. */
+  useEffect(() => {
+    const blk = (radarRefreshBlocked || routeForecastRefreshBlocked || "-").slice(0, 40);
+    const outlookSteps = activeProgressCalloutPanel.outlookTimeline;
+    const outlookTempSteps = outlookSteps.filter((s) => Number.isFinite(s.tempF)).length;
+    const outlookPrecipMax = Math.max(
+      0,
+      ...outlookSteps.map((s) => s.precipPct ?? 0)
+    );
+    const outlookSamples = activeProgressCalloutPanel.outlookSamples;
+    const outlookSampleTemps = outlookSamples.filter((s) =>
+      /-?\d+\s*°F/.test(s.headline)
+    ).length;
+    setDriveDiagWxDiag(
+      `ready:${routeWeatherReady ? 1 : 0} tio:${navResourceBudget.tioRouteFetchEnabled ? 1 : 0} pt:${navResourceBudget.tioPointFetchEnabled ? 1 : 0} fc:${tioRouteForecast?.intervals?.length ?? -1} mp:${tioMinutePrecip?.minutes?.length ?? -1} hr:${localHourlyForecast?.hours?.length ?? -1} rad:${navResourceBudget.radarRouteSamplingEnabled ? 1 : 0} radarN:${radarMosaicSamples.length} wk:${isWeatherKitTokenBlocked() ? 1 : 0} blk:${blk} ol:${outlookSteps.length} tmp:${outlookTempSteps} pr:${Math.round(outlookPrecipMax)} os:${outlookSamples.length} ot:${outlookSampleTemps}`
+    );
+  }, [
+    routeWeatherReady,
+    navResourceBudget,
+    radarMosaicSamples.length,
+    radarRefreshBlocked,
+    routeForecastRefreshBlocked,
+    tioRouteForecast?.intervals?.length,
+    tioMinutePrecip?.minutes?.length,
+    localHourlyForecast?.hours?.length,
+    activeProgressCalloutPanel.outlookTimeline,
+    activeProgressCalloutPanel.outlookSamples,
+  ]);
 
   useCarSessionPublish({
     navigationStarted,
