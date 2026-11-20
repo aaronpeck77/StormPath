@@ -200,16 +200,16 @@ catalog: the "TARDIS 511" community project maps every state's feed type.
 
 | State | Why |
 |---|---|
-| Connecticut | CTroads license **forbids commercial use**. CARS events are public-domain — partial coverage possible via that feed only; verify before building. |
+| ~~Connecticut~~ | ✅ **LIVE 2026-11-20 via `nysdot`** — TRANSCOM attribution on NY's CARS 511x feed carries ~140 CTDOT events. CTroads' own license still forbids commercial use, but this data is NYSDOT-published. |
 | Arkansas | Data license **bans advertising** with it — conflicts with the ad-supported Basic tier. Would need Plus-only gating or a license conversation. |
 | ~~Alaska~~ | ✅ **LIVE 2026-11-15 via `ibi-ak`** — the IBI 511 platform had a proper JSON API after all; the "barely digital" assessment was wrong. |
-| New York | `nysdot` registry feed returns a JS app shell, not data — endpoint moved or never was a feed. Needs investigation; NY has a real 511 system so data exists somewhere. `prod-ny.ibi511.com` 503s — NY's 511 (511ny.org) is a different platform, needs its own survey. |
-| States with no feed at all | AL, AR, CT, RI, WV, WY — GA/AK/NV/UT came online via the IBI adapter 2026-11-15. The rest need the per-state survey to confirm what exists. |
+| ~~New York~~ | ✅ **LIVE 2026-11-20 via `nysdot` custom adapter** — NY migrated to Iteris CARS 511x (`api-511x-nysdot.carsprogram.org/events/map-features`). ~2,000 events: closures/incidents/construction/winterDriving/flooding/specialEvents, TRANSCOM attribution covers NY+NJ+CT. |
+| States with no feed at all | AL, AR, RI, WV, WY (+ LA — `prod-la.ibi511.com` DNS doesn't resolve) — GA/AK/NV/UT/CT/NY/FL came online via the IBI + CARS adapters 2026-11. The rest need the per-state survey to confirm what exists. |
 
 ## Dead / empty registered feeds (open, produce zero)
 
-- `nysdot` (NY) — returns HTML app shell, not GeoJSON.
-- `fldot` (FL) — second FL feed returns ~1.7 MB but parses to zero events (shape mismatch or genuinely empty). `fdot` covers FL partially.
+- ~~`nysdot` (NY)~~ — ✅ fixed 2026-11-20: registry row skipped (`REGISTRY_DISABLED`), CARS adapter keeps the `nysdot` feed name.
+- ~~`fldot` (FL)~~ — ✅ fixed 2026-11-20: feed is ~99 MB decompressed (26.8k features, ~25k of them per-leg "detour" records). Byte cap raised for the Node runner; `detour` filtered for fldot. ~1.7k real work-zone events flow.
 - `CivicLink_CrewCast` — community/Replit experiment, nothing flowing.
 
 ## Known nits
