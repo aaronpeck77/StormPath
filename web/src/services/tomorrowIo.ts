@@ -154,6 +154,8 @@ export type RouteHourlyInterval = {
 export type RouteForecast = {
   fetchedAt: number;
   intervals: RouteHourlyInterval[];
+  /** Interval slots the Open-Meteo backstop filled (0 = pure primary). */
+  openMeteoIntervals?: number;
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

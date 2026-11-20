@@ -2498,7 +2498,7 @@ export default function App() {
       ? 1
       : 0;
     setDriveDiagWxDiag(
-      `ready:${routeWeatherReady ? 1 : 0} tio:${navResourceBudget.tioRouteFetchEnabled ? 1 : 0} pt:${navResourceBudget.tioPointFetchEnabled ? 1 : 0} fc:${tioRouteForecast?.intervals?.length ?? -1} mp:${tioMinutePrecip?.minutes?.length ?? -1} hr:${localHourlyForecast?.hours?.length ?? -1} rad:${navResourceBudget.radarRouteSamplingEnabled ? 1 : 0} radarN:${radarMosaicSamples.length} wk:${isWeatherKitTokenBlocked() ? 1 : 0} blk:${blk} ol:${outlookSteps.length} tmp:${outlookTempSteps} pr:${Math.round(outlookPrecipMax)} os:${outlookSamples.length} ot:${outlookSampleTemps} an:${anchorTempF ?? -1} hd:${headlineTemp}`
+      `ready:${routeWeatherReady ? 1 : 0} tio:${navResourceBudget.tioRouteFetchEnabled ? 1 : 0} pt:${navResourceBudget.tioPointFetchEnabled ? 1 : 0} fc:${tioRouteForecast?.intervals?.length ?? -1} om:${tioRouteForecast?.openMeteoIntervals ?? 0} mp:${tioMinutePrecip?.minutes?.length ?? -1} hr:${localHourlyForecast?.hours?.length ?? -1} rad:${navResourceBudget.radarRouteSamplingEnabled ? 1 : 0} radarN:${radarMosaicSamples.length} wk:${isWeatherKitTokenBlocked() ? 1 : 0} blk:${blk} ol:${outlookSteps.length} tmp:${outlookTempSteps} pr:${Math.round(outlookPrecipMax)} os:${outlookSamples.length} ot:${outlookSampleTemps} an:${anchorTempF ?? -1} hd:${headlineTemp}`
     );
   }, [
     routeWeatherReady,

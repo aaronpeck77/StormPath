@@ -34,6 +34,11 @@ import {
   isWeatherKitTokenBlocked,
 } from "../services/weatherKit";
 import {
+  fetchOpenMeteoRouteForecast,
+  mergeOpenMeteoIntoRouteForecast,
+  routeForecastNeedsBackstop,
+} from "../services/openMeteoRouteForecast";
+import {
   QUOTA_NO_ROUTE_FORECAST_NOTE,
   corridorRouteSig,
   readRouteForecastCache,
@@ -496,23 +501,46 @@ export function useTomorrowRouteForecast(
     };
 
     const runFetch = async (): Promise<RouteForecast> => {
-      if (weatherKitEnabled) {
-        let f = await fetchWeatherKitRouteForecast(waypoints!, ac.signal, bypass);
-        if (
-          apiKey &&
-          routeGeometry?.length &&
-          !isTomorrowIoRateLimited() &&
-          !ac.signal.aborted
-        ) {
+      try {
+        let f: RouteForecast;
+        if (weatherKitEnabled) {
+          f = await fetchWeatherKitRouteForecast(waypoints!, ac.signal, bypass);
+          if (
+            apiKey &&
+            routeGeometry?.length &&
+            !isTomorrowIoRateLimited() &&
+            !ac.signal.aborted
+          ) {
+            try {
+              f = await enrichRouteForecastConvective(apiKey, routeGeometry, f, ac.signal);
+            } catch {
+              /* convective enrichment is optional */
+            }
+          }
+        } else {
+          f = await fetchRouteForecast(apiKey, waypoints!, ac.signal, tioOpts);
+        }
+        /* Open-Meteo backstop: primary came back with dead slots → fill them
+         * so Temp/Precip lanes always have forecast data to draw. */
+        if (!ac.signal.aborted && routeForecastNeedsBackstop(f)) {
           try {
-            f = await enrichRouteForecastConvective(apiKey, routeGeometry, f, ac.signal);
+            const om = await fetchOpenMeteoRouteForecast(waypoints!, ac.signal);
+            if (om?.intervals.length) f = mergeOpenMeteoIntoRouteForecast(f, om);
           } catch {
-            /* convective enrichment is optional */
+            /* backstop is best-effort — primary stands */
           }
         }
         return f;
+      } catch (primaryErr) {
+        /* Primary failed entirely — an Open-Meteo corridor beats "no data". */
+        try {
+          const om = await fetchOpenMeteoRouteForecast(waypoints!, ac.signal);
+          if (om?.intervals.length && !ac.signal.aborted) return om;
+        } catch {
+          /* fall through to the original error path */
+        }
+        throw primaryErr;
       }
-      return fetchRouteForecast(apiKey, waypoints!, ac.signal, tioOpts);
     };
 
     void runFetch()

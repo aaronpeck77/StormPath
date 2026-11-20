@@ -1,3 +1,10 @@
+import { booleanIntersects } from "@turf/boolean-intersects";
+import { buffer as turfBuffer } from "@turf/buffer";
+import {
+  lineString as turfLineString,
+  multiPolygon as turfMultiPolygon,
+  polygon as turfPolygon,
+} from "@turf/helpers";
 import type { LngLat } from "../nav/types";
 import {
   buildCumulativeDistances,
@@ -115,8 +122,106 @@ function polylineIntersectMaxSamples(totalM: number): number {
   return isLongTripRoute(totalM) ? POLYLINE_INTERSECT_MAX_SAMPLES_LONG : POLYLINE_INTERSECT_MAX_SAMPLES;
 }
 
+/* ── Turf helpers: exact line∩polygon + buffered-corridor checks ──────────
+ * The hand-rolled versions only test sample *points* — a warning polygon
+ * that clips the route between vertices is missed, and "near route" used
+ * bbox distance (a rectangle), not true lateral distance. Turf does the
+ * real geometry; sampled code stays as the degenerate-geometry fallback. */
+
+function turfLine(route: LngLat[]): GeoJSON.Feature<GeoJSON.LineString> | null {
+  try {
+    return turfLineString(route as GeoJSON.Position[]);
+  } catch {
+    return null;
+  }
+}
+
+function turfPoly(
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon
+): GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null {
+  try {
+    return geometry.type === "Polygon"
+      ? turfPolygon(geometry.coordinates)
+      : turfMultiPolygon(geometry.coordinates);
+  } catch {
+    return null;
+  }
+}
+
+function turfIntersects(
+  route: LngLat[],
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon
+): boolean | null {
+  const line = turfLine(route);
+  const poly = turfPoly(geometry);
+  if (!line || !poly) return null;
+  try {
+    return booleanIntersects(line, poly);
+  } catch {
+    return null;
+  }
+}
+
+/* Buffered corridor per (route array, bufferM) — a 45–85 km buffer costs a
+ * few ms, and filterAlertsAffectingRoute asks the same question for every
+ * alert, so cache on the shared subsampled array reference. */
+const corridorBufferCache = new WeakMap<
+  LngLat[],
+  Map<number, GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null>
+>();
+
+const CORRIDOR_BUFFER_VERTEX_CAP = 48;
+
+function bufferedRouteCorridor(
+  route: LngLat[],
+  bufferM: number
+): GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null {
+  let byRadius = corridorBufferCache.get(route);
+  if (!byRadius) {
+    byRadius = new Map();
+    corridorBufferCache.set(route, byRadius);
+  }
+  if (byRadius.has(bufferM)) return byRadius.get(bufferM) ?? null;
+  let feat: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null = null;
+  try {
+    /* At 45–85 km the offset curve doesn't need vertex precision — decimate
+     * first so buffer() stays cheap on long routes. */
+    const coarse =
+      route.length > CORRIDOR_BUFFER_VERTEX_CAP
+        ? subsamplePolylineVertexBudget(route, CORRIDOR_BUFFER_VERTEX_CAP)
+        : route;
+    const line = turfLine(coarse);
+    const out = line ? turfBuffer(line, bufferM, { units: "meters" }) : null;
+    feat =
+      out && (out.geometry.type === "Polygon" || out.geometry.type === "MultiPolygon")
+        ? (out as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>)
+        : null;
+  } catch {
+    feat = null;
+  }
+  byRadius.set(bufferM, feat);
+  return feat;
+}
+
+function routeWithinPolygonDistance(
+  route: LngLat[],
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon,
+  bufferM: number
+): boolean | null {
+  const corridor = bufferedRouteCorridor(route, bufferM);
+  const poly = turfPoly(geometry);
+  if (!corridor || !poly) return null;
+  try {
+    return booleanIntersects(corridor, poly);
+  } catch {
+    return null;
+  }
+}
+
 /**
- * True if any sample along the polyline lies inside the polygon (after bbox precheck).
+ * True if the route line intersects the polygon (after bbox precheck).
+ * Turf's booleanIntersects is exact — it catches polygons that clip the
+ * corridor between route vertices, which the old vertex-sampling missed.
  */
 export function polylineIntersectsPolygon(
   route: LngLat[],
@@ -129,6 +234,9 @@ export function polylineIntersectsPolygon(
   const pb = ringBbox(outer);
   const rb = polylineBbox(route);
   if (!pb || !rb || !bboxIntersects(rb, pb)) return false;
+
+  const exact = turfIntersects(route, geometry);
+  if (exact != null) return exact;
 
   const total = polylineLengthMeters(route);
   if (total < 50) {
@@ -193,6 +301,11 @@ export function polylineNearPolygon(
 ): boolean {
   if (route.length < 2) return false;
   if (polylineIntersectsPolygon(route, geometry)) return true;
+  /* Exact corridor distance: buffered route line ∩ polygon. Authoritative —
+     a polygon outside the band is genuinely farther than lateralBufferM,
+     unlike the old bbox-distance check which over-matched bbox corners. */
+  const within = routeWithinPolygonDistance(route, geometry, lateralBufferM);
+  if (within != null) return within;
   const pb = geometryBbox(geometry);
   const rb = polylineBbox(route);
   if (!pb || !rb) return false;
