@@ -63,6 +63,10 @@ export type ProgressCalloutPanel = {
   /** Gust envelope along the route (dashed line on the wind strip). */
   gustLinePoints: { t: number; mph: number }[];
   gustSpikePoints: { t: number; mph: number }[];
+  /** Resolved last-resort temp (nowcast → minute → hourly → headline → interval[0]). */
+  anchorTempF: number | null;
+  /** Forecast headline the outlook was built from — for Wx: dump diagnostics. */
+  wxHeadline: string;
 };
 
 export type UseProgressCalloutPanelDeps = {
@@ -208,6 +212,19 @@ export function useProgressCalloutPanel(
     const gustLinePoints = windFromForecast.gustLinePoints;
     const gustSpikePoints = windFromForecast.gustSpikePoints;
 
+    const wxHeadline =
+      guidanceSlice?.forecastHeadline?.trim() ||
+      corridorWeatherDetail ||
+      advisoryNowcastLine ||
+      "";
+    const routeOutlookAnchorTempF = resolveRouteOutlookAnchorTempF({
+      nowcastTempF: currentNowcast?.tempF,
+      minutePrecipTempF: tioMinutePrecip?.now?.tempF,
+      hourlyTempF: localHourlyForecast?.hours[0]?.tempF ?? null,
+      headline: wxHeadline,
+      tioRouteForecast,
+    });
+
     if (!g?.length) {
       return {
         routeWide: [],
@@ -219,6 +236,8 @@ export function useProgressCalloutPanel(
         windPoints,
         gustLinePoints,
         gustSpikePoints,
+        anchorTempF: routeOutlookAnchorTempF,
+        wxHeadline,
       };
     }
     const totalM = polylineLengthMeters(g);
@@ -233,6 +252,8 @@ export function useProgressCalloutPanel(
         windPoints,
         gustLinePoints,
         gustSpikePoints,
+        anchorTempF: routeOutlookAnchorTempF,
+        wxHeadline,
       };
     }
     const userAlongT =
@@ -243,18 +264,6 @@ export function useProgressCalloutPanel(
       tioRouteForecast && planEta && planEta > 0
         ? tomorrowForecastToWxSamples(tioRouteForecast, planEta)
         : [];
-    const wxHeadline =
-      guidanceSlice?.forecastHeadline?.trim() ||
-      corridorWeatherDetail ||
-      advisoryNowcastLine ||
-      "";
-    const routeOutlookAnchorTempF = resolveRouteOutlookAnchorTempF({
-      nowcastTempF: currentNowcast?.tempF,
-      minutePrecipTempF: tioMinutePrecip?.now?.tempF,
-      hourlyTempF: localHourlyForecast?.hours[0]?.tempF ?? null,
-      headline: wxHeadline,
-      tioRouteForecast,
-    });
 
     const stormOutlook =
       totalM > 0
@@ -347,6 +356,8 @@ export function useProgressCalloutPanel(
         windPoints,
         gustLinePoints,
         gustSpikePoints,
+        anchorTempF: routeOutlookAnchorTempF,
+        wxHeadline,
       };
     }
 
@@ -450,6 +461,8 @@ export function useProgressCalloutPanel(
         windPoints,
         gustLinePoints,
         gustSpikePoints,
+        anchorTempF: routeOutlookAnchorTempF,
+        wxHeadline,
       };
     }
 
@@ -497,6 +510,8 @@ export function useProgressCalloutPanel(
       windPoints,
       gustLinePoints,
       gustSpikePoints,
+      anchorTempF: routeOutlookAnchorTempF,
+      wxHeadline,
     };
   }, [
     navigationStarted,
@@ -543,6 +558,8 @@ export function useProgressCalloutPanel(
         gustSpikePoints: progressCalloutPanel.gustSpikePoints,
         userAlongT: progressCalloutPanel.userAlongT,
         stripTint: progressCalloutPanel.stripTint,
+        anchorTempF: progressCalloutPanel.anchorTempF,
+        wxHeadline: progressCalloutPanel.wxHeadline,
       };
 
   const routeAheadHealthRepairAtRef = useRef(0);

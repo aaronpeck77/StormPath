@@ -2471,8 +2471,14 @@ export default function App() {
     const outlookSampleTemps = outlookSamples.filter((s) =>
       /-?\d+\s*°F/.test(s.headline)
     ).length;
+    /* an:/hd: — if ol>0 but tmp:0 with an:-1 the empty temp lane means every
+     * anchor source was absent (gated fetches), not a merge bug. */
+    const anchorTempF = activeProgressCalloutPanel.anchorTempF;
+    const headlineTemp = /-?\d+\s*°F/.test(activeProgressCalloutPanel.wxHeadline)
+      ? 1
+      : 0;
     setDriveDiagWxDiag(
-      `ready:${routeWeatherReady ? 1 : 0} tio:${navResourceBudget.tioRouteFetchEnabled ? 1 : 0} pt:${navResourceBudget.tioPointFetchEnabled ? 1 : 0} fc:${tioRouteForecast?.intervals?.length ?? -1} mp:${tioMinutePrecip?.minutes?.length ?? -1} hr:${localHourlyForecast?.hours?.length ?? -1} rad:${navResourceBudget.radarRouteSamplingEnabled ? 1 : 0} radarN:${radarMosaicSamples.length} wk:${isWeatherKitTokenBlocked() ? 1 : 0} blk:${blk} ol:${outlookSteps.length} tmp:${outlookTempSteps} pr:${Math.round(outlookPrecipMax)} os:${outlookSamples.length} ot:${outlookSampleTemps}`
+      `ready:${routeWeatherReady ? 1 : 0} tio:${navResourceBudget.tioRouteFetchEnabled ? 1 : 0} pt:${navResourceBudget.tioPointFetchEnabled ? 1 : 0} fc:${tioRouteForecast?.intervals?.length ?? -1} mp:${tioMinutePrecip?.minutes?.length ?? -1} hr:${localHourlyForecast?.hours?.length ?? -1} rad:${navResourceBudget.radarRouteSamplingEnabled ? 1 : 0} radarN:${radarMosaicSamples.length} wk:${isWeatherKitTokenBlocked() ? 1 : 0} blk:${blk} ol:${outlookSteps.length} tmp:${outlookTempSteps} pr:${Math.round(outlookPrecipMax)} os:${outlookSamples.length} ot:${outlookSampleTemps} an:${anchorTempF ?? -1} hd:${headlineTemp}`
     );
   }, [
     routeWeatherReady,
@@ -2485,6 +2491,8 @@ export default function App() {
     localHourlyForecast?.hours?.length,
     activeProgressCalloutPanel.outlookTimeline,
     activeProgressCalloutPanel.outlookSamples,
+    activeProgressCalloutPanel.anchorTempF,
+    activeProgressCalloutPanel.wxHeadline,
   ]);
 
   useCarSessionPublish({

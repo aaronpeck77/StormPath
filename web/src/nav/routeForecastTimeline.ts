@@ -607,7 +607,7 @@ function enrichRouteOutlookTemperature(
   if (!tempStops.length) return steps;
 
   return steps.map((step) => {
-    if (step.tempF != null) return step;
+    if (step.tempF != null && Number.isFinite(step.tempF)) return step;
     const tempF =
       interpolateTempAtFraction(step.fraction, tempStops) ??
       (anchorTempF != null ? anchorTempF : null);
@@ -1017,7 +1017,8 @@ function outlookHeadlineFromSteps(steps: RouteOutlookStep[]): string {
     .sort((a, b) => a.fraction - b.fraction)
     .map((s) => {
       const label = KEY_TO_HEADLINE_LABEL[s.key] ?? s.shortLabel;
-      const temp = s.tempF != null ? `${s.tempF}°F ` : "";
+      const temp =
+        s.tempF != null && Number.isFinite(s.tempF) ? `${s.tempF}°F ` : "";
       const precip =
         s.precipPct != null && s.precipPct > 0 ? `${s.precipPct}% precip ` : "";
       const eta = s.etaLabel && s.etaLabel !== "Now" ? ` (in ~${s.etaLabel})` : "";
@@ -1070,7 +1071,7 @@ export function mergeRouteOutlookSteps(...groups: RouteOutlookStep[][]): RouteOu
       const pct = Math.max(precipA, precipB);
       merged.set(slotKey, {
         ...prev,
-        tempF: prev.tempF ?? step.tempF,
+        tempF: Number.isFinite(prev.tempF) ? prev.tempF : step.tempF ?? null,
         conditions: pickPrecip.conditions || prev.conditions,
         precipPct: pct > 0 ? pct : null,
         precipHint: hint,
