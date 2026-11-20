@@ -232,6 +232,13 @@
   stroke-width: 1;
 }
 
+/* Lane-alive flat trace when radar has no echo to draw (Bill, Nov 20). */
+.rrws__line--nodata {
+  stroke: rgba(56, 189, 248, 0.4);
+  stroke-width: 1.6;
+  stroke-dasharray: 5 4;
+}
+
 .rrws__axis-label {
   position: absolute;
   right: 0;

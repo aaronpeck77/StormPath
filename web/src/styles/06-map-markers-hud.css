@@ -1424,6 +1424,14 @@ button.drive-hazard-ticker--tap:active {
   stroke-width: 2;
 }
 
+/* Lane-alive marker when a metric has no data — a visible flat trace so an
+ * empty lane reads "working, nothing to show" instead of dead space (Bill). */
+.rotl__line--nodata {
+  stroke: rgba(148, 163, 184, 0.55);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+
 .rotl__line--wind {
   stroke: #f59e0b;
   stroke-width: 2;

@@ -207,6 +207,19 @@ export function RouteRadarWindStrip({
                 />
               </>
             )}
+            {!hasRadarTrace ? (
+              /* No radar samples at all — flat trace just above the baseline so
+               * the lane reads alive-but-empty even when wind is drawn below
+               * (Bill, Nov 20: wind showed, radar area looked dead). */
+              <line
+                x1={PAD_L}
+                y1={BASELINE_Y - 3}
+                x2={W - PAD_R}
+                y2={BASELINE_Y - 3}
+                className="rrws__line--nodata"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
             {isEmpty && !hasWind ? (
               <text
                 x={W / 2}

@@ -291,7 +291,18 @@ export function RouteOutlookTimeline({
                   style={{ stroke: `url(#${tempGradId})` }}
                   vectorEffect="non-scaling-stroke"
                 />
-              ) : null}
+              ) : (
+                /* No temp data — flat trace at mid-lane so the lane reads
+                 * alive-but-empty instead of blank (Bill, Nov 20). */
+                <line
+                  x1={pad.left}
+                  y1={pad.top + (h - pad.top - pad.bottom) / 2}
+                  x2={W - pad.right}
+                  y2={pad.top + (h - pad.top - pad.bottom) / 2}
+                  className="rotl__line rotl__line--nodata"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
             </svg>
             {tempNowF != null ? (
               <span className="rpgl__readout rpgl__readout--temp">
@@ -337,6 +348,18 @@ export function RouteOutlookTimeline({
                   vectorEffect="non-scaling-stroke"
                 />
               ) : null}
+              {syncPrecipPath ? null : (
+                /* No precip data — flat trace just above the baseline so the
+                 * lane reads alive-but-empty instead of blank (Bill, Nov 20). */
+                <line
+                  x1={pad.left}
+                  y1={h - pad.bottom - 4}
+                  x2={W - pad.right}
+                  y2={h - pad.bottom - 4}
+                  className="rotl__line rotl__line--nodata"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
             </svg>
             {precipType ? (
               <span

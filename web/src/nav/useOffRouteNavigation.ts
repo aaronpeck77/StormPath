@@ -36,6 +36,7 @@ import {
   planAfterOffRouteReplan,
 } from "./softRestartPlan";
 import { pickStayOnRoadRoute, stayOnCourseWaypoint } from "./stayOnCourse";
+import { isSavedRoutePlanId } from "./planFromSavedRoute";
 import {
   OFF_ROUTE_POLL_MS,
   measureOffRouteLateral,
@@ -506,8 +507,33 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
         : null;
     try {
       const remainingVias = remainingViaStops(viaStops, activeViaIndex);
+      /* A saved path is the driver's own corridor choice — recovery must hand
+       * back that road, never Directions' fastest (Bill, Nov 20: a saved
+       * work→home route kept getting replaced by the fastest line, 43 Core
+       * restarts of the map fighting between the two). Pin the replan through
+       * a point just ahead on the saved geometry so every candidate returns
+       * to the locked line — same rejoin pick "Return to original" uses. */
+      const savedPathLocked = Boolean(
+        prevLockedRoute && isSavedRoutePlanId(prevLockedRoute.id)
+      );
+      const savedRejoinPoint =
+        savedPathLocked && !opts?.rejoinPoint && prevCorridorGeometry?.length
+          ? (() => {
+              const snap = closestPointOnPolyline(userLngLat, prevCorridorGeometry);
+              const totalM = polylineLengthMeters(prevCorridorGeometry);
+              const alongM = pickLocalRejoinAlongM(snap.alongMeters, totalM, 0, {
+                speedMps: speedMpsRef.current ?? 0,
+                lateralM: snap.lateralMetersApprox,
+              });
+              return pointAtAlongMeters(
+                prevCorridorGeometry,
+                Math.min(alongM, totalM - 1)
+              );
+            })()
+          : null;
       const viaCoords = [
         ...(opts?.rejoinPoint ? [opts.rejoinPoint] : []),
+        ...(savedRejoinPoint ? [savedRejoinPoint] : []),
         ...remainingVias.map((s) => s.lngLat),
       ];
       const bearingDeg = headingRef.current;
@@ -541,7 +567,7 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
        * toward the corridor just left. Skipped when heading/speed is not
        * trusted or a rejoin waypoint already owns the via slot. */
       const stayVia =
-        opts?.preferDriverPath && !opts?.rejoinPoint
+        opts?.preferDriverPath && !opts?.rejoinPoint && !savedPathLocked
           ? stayOnCourseWaypoint({
               userLngLat,
               headingDeg: bearingDeg,
@@ -566,7 +592,26 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
          * Retry once unconstrained; the forward/reverse filters still apply. */
         nextRoutes = pickSlots(await fetchRoutes(viaCoords, null, routeCap), null);
       }
-      const stayCandidate = pickSlots(stayPool, bearingDeg)[0];
+      let stayCandidate = pickSlots(stayPool, bearingDeg)[0];
+      if (
+        !stayCandidate &&
+        stayVia &&
+        bearingDeg != null &&
+        Number.isFinite(bearingDeg)
+      ) {
+        /* Same escape as the fast pool — a noisy GPS heading makes the hard
+         * bearings= constraint exclude the road being driven, and with no
+         * retry the stay pool returned empty 41 times on one drive (Bill,
+         * Nov 20 dump) so every recovery fell back to fastest. */
+        stayCandidate = pickSlots(
+          await fetchRoutes(
+            [stayVia, ...remainingVias.map((s) => s.lngLat)],
+            null,
+            1
+          ),
+          null
+        )[0];
+      }
       const chosen = pickStayOnRoadRoute({
         stayRoute: stayCandidate,
         fastestRoute: nextRoutes[0],
@@ -589,8 +634,19 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       }
       const primary = nextRoutes[0];
       if (!primary?.geometry?.length || epochAtStart !== routeGraphEpochRef.current) return false;
+      if (savedPathLocked && prevLockedRoute) {
+        /* The adopted line rejoins the saved corridor — keep its saved-route
+         * id/label so the next recovery (and the Rt picker) still treats this
+         * as the driver's chosen path, not a fresh fastest swap. */
+        nextRoutes[0] = {
+          ...primary,
+          id: prevLockedRoute.id,
+          role: prevLockedRoute.role,
+          label: prevLockedRoute.label,
+        };
+      }
 
-      lockedNavigationRouteIdRef.current = primary.id;
+      lockedNavigationRouteIdRef.current = nextRoutes[0]!.id;
       setPlan((prev) => planAfterOffRouteReplan(prev, nextRoutes, routeCap));
       setRouteSlotOrder(() => offRouteReplanSlotIds(nextRoutes));
       setPreviewLegIndex(0);
@@ -629,7 +685,10 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           previousGeometry: prevCorridorGeometry,
           userLngLat,
         });
-        if (ux === "offer" && costly && prevCorridorGeometry?.length) {
+        /* A saved-path rejoin IS returning to the driver's chosen corridor —
+         * never raise a "Return to original" offer for the line we just
+         * pinned them back onto. */
+        if (ux === "offer" && costly && prevCorridorGeometry?.length && !savedPathLocked) {
           previousCorridorRef.current = {
             geometry: prevCorridorGeometry,
             routeId: prevLockedRoute?.id ?? null,

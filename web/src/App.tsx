@@ -119,9 +119,11 @@ import { isDriveOffRouteForwardFraming, lockedRouteShouldAvoidMotorway } from ".
 import {
   nativeGeometryApplyPolicy,
   rerouteAsksForTurnAlreadyMissed,
+  routeGeometryAgreesWithLocked,
   shouldAdoptNativeRouteGeometry,
   shouldReplaceGoPolylineOnNativeAdopt,
 } from "./nav/lockedRouteGeometryGuard";
+import { isSavedRoutePlanId } from "./nav/planFromSavedRoute";
 import { unifiedTrafficNarrative } from "./nav/trafficNarrative";
 import {
   TRAFFIC_BYPASS_ENABLED,
@@ -1071,6 +1073,24 @@ export default function App() {
           console.info("[nav] ignored Core reroute — turn is already too late");
         }
         return false;
+      }
+      /* Saved path locked: a divergent Core reroute would silently swap the
+       * driver's own corridor for Directions' fastest — the same steal the
+       * DIY recovery now pins against. Reject it so the episode abandons to
+       * DIY, which rejoins the saved geometry ahead (Bill, Nov 20: the map
+       * fought saved vs fastest back and forth for the whole drive). */
+      if (opts?.offRouteRecovery && force) {
+        const savedLockedId = lockedNavigationRouteIdRef.current;
+        const savedGoGeom =
+          savedLockedId && isSavedRoutePlanId(savedLockedId)
+            ? navGoGeometryRef.current
+            : null;
+        if (
+          savedGoGeom?.length &&
+          !routeGeometryAgreesWithLocked(geometry, savedGoGeom)
+        ) {
+          return false;
+        }
       }
       /* Off-route recovery adopt: keep the corridor we're leaving so the
        * consent classifier can offer return-to-original on material changes. */
