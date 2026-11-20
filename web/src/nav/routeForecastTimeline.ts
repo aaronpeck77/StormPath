@@ -1058,17 +1058,27 @@ export function resyncRouteOutlookSteps(
     planEtaMinutes: opts.planEtaMinutes,
     driveEtaMinutes: opts.driveEtaMinutes ?? null,
   });
-  /* The headline round-trip serializes temp/precip/conditions but not
-   * precipIntensityMmh or windGustMph — without restoring them, every resync
-   * resets intensity to 0 and the display floor zeroes moderate observed
-   * precip (e.g. radar-boosted storm cells). */
+  /* The headline round-trip serializes temp/precip/conditions but can drop
+   * numeric values the merge carried (interval-derived temps, mm intensity,
+   * gusts) — restore anything the re-parse lost from the nearest source step
+   * or every resync silently un-fills the lanes (Bill, Nov 20). */
   return resynced.map((step) => {
-    if (step.precipIntensityMmh != null && step.windGustMph != null) return step;
+    if (
+      step.tempF != null &&
+      step.precipPct != null &&
+      step.precipIntensityMmh != null &&
+      step.windGustMph != null
+    ) {
+      return step;
+    }
     const src = steps.reduce((best, s) =>
       Math.abs(s.fraction - step.fraction) < Math.abs(best.fraction - step.fraction) ? s : best
     );
     return {
       ...step,
+      tempF: step.tempF ?? src.tempF,
+      precipPct: step.precipPct ?? src.precipPct,
+      precipHint: step.precipHint > 0 ? step.precipHint : src.precipHint,
       precipIntensityMmh: step.precipIntensityMmh ?? src.precipIntensityMmh,
       windGustMph: step.windGustMph ?? src.windGustMph,
     };

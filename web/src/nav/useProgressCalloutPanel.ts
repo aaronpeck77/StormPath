@@ -316,9 +316,21 @@ export function useProgressCalloutPanel(
               })
             : [];
 
+      /* Numeric corridor stops — same TIO intervals the wind graph reads —
+       * fill temp/precip gaps the headline-parse path leaves (Bill, Nov 20). */
+      const tioNumericOutlook =
+        tioRouteForecast && planEta && planEta > 0
+          ? buildRouteOutlookFromTomorrowForecast(tioRouteForecast, planEta)
+          : [];
+
       let outlookTimeline = resyncRouteOutlookSteps(
         applyRadarOutlookBoost(
-          mergeRouteOutlookSteps(syncedOutlook, tioOutlook, stormOutlook),
+          mergeRouteOutlookSteps(
+            syncedOutlook,
+            tioOutlook,
+            tioNumericOutlook,
+            stormOutlook
+          ),
           radarMosaicSamples
         ),
         {
@@ -406,7 +418,12 @@ export function useProgressCalloutPanel(
           })
         : [];
 
-    const tioOutlookFallback =
+    /* Numeric corridor forecast stops — the same Tomorrow.io intervals the
+     * wind graph reads — merged unconditionally so Temp/Precip lanes get
+     * real per-fraction values instead of relying on headline-text parsing
+     * (Bill, Nov 20: "sample the forecasts along the route"). Earlier groups
+     * still win when they carry finite values; this fills the gaps. */
+    const tioNumericOutlook =
       tioRouteForecast && planEta && planEta > 0
         ? buildRouteOutlookFromTomorrowForecast(tioRouteForecast, planEta)
         : [];
@@ -417,7 +434,7 @@ export function useProgressCalloutPanel(
         mergeRouteOutlookSteps(
           syncedOutlook,
           tioOutlook,
-          tioOutlook.length === 0 ? tioOutlookFallback : [],
+          tioNumericOutlook,
           bundle.outlookTimeline,
           stormOutlook
         ),
