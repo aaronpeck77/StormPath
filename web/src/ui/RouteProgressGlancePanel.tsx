@@ -408,7 +408,8 @@ export function RouteProgressGlancePanel({
                       {outlookSteps.length > 0 ||
                       radarSamples.length > 0 ||
                       windPoints.length > 0 ||
-                      gustLinePoints.length > 0 ? (
+                      gustLinePoints.length > 0 ||
+                      gustSpikePoints.length > 0 ? (
                         <RouteWxLanes
                           steps={outlookSteps}
                           samples={outlookSamples}

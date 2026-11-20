@@ -58,6 +58,7 @@ function yPx(norm: number): number {
 /** Finite points only, sorted; a lone point is widened into a short stub. */
 function cleanPts(pts: Pt[]): Pt[] {
   const out = pts
+    .map((p) => ({ t: Number(p.t), v: Number(p.v) }))
     .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.v))
     .sort((a, b) => a.t - b.t);
   if (out.length === 1) {
@@ -217,13 +218,15 @@ export function RouteWxLanes({
   const windPts = useMemo(() => {
     const primary = gustLinePoints.length >= 2 ? gustLinePoints : windPoints;
     return cleanPts(
-      primary.filter((p) => p.mph > 0).map((p) => ({ t: p.t, v: p.mph }))
+      primary.filter((p) => Number(p.mph) > 0).map((p) => ({ t: p.t, v: p.mph }))
     );
   }, [gustLinePoints, windPoints]);
   const gustTicks = useMemo(
     () =>
       cleanPts(
-        gustSpikePoints.filter((p) => p.mph > 0).map((p) => ({ t: p.t, v: p.mph }))
+        gustSpikePoints
+          .filter((p) => Number(p.mph) > 0)
+          .map((p) => ({ t: p.t, v: p.mph }))
       ),
     [gustSpikePoints]
   );
