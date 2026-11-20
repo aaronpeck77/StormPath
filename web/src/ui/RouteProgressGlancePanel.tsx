@@ -12,13 +12,11 @@ import {
 } from "../nav/routeAheadSync";
 import type { TimelineItem } from "./RouteHazardTimeline";
 import { RouteInfoLegend } from "./RouteInfoLegend";
-import { RouteOutlookTimeline } from "./RouteOutlookTimeline";
-import { RouteRadarWindStrip } from "./RouteRadarWindStrip";
+import { RouteWxLanes } from "./RouteWxLanes";
 import {
   routePlotLeftPct,
   routePlotWidthPct,
 } from "./routeAxisLayout";
-import { routeWindGraphVisible } from "../nav/windForecastCalib";
 
 type Props = {
   timeline: TimelineItem[];
@@ -407,13 +405,18 @@ export function RouteProgressGlancePanel({
                 <div className="rpgl__sync-body">
                   <div className="rpgl__driver-track">
                     <div className="rpgl__sync-outlook">
-                      {outlookSteps.length > 0 ? (
-                        <RouteOutlookTimeline
+                      {outlookSteps.length > 0 ||
+                      radarSamples.length > 0 ||
+                      windPoints.length > 0 ||
+                      gustLinePoints.length > 0 ? (
+                        <RouteWxLanes
                           steps={outlookSteps}
                           samples={outlookSamples}
-                          variant="synced"
-                          showDriverLine={false}
-                          showXTicks={false}
+                          radarSamples={radarSamples}
+                          windPoints={windPoints}
+                          gustLinePoints={gustLinePoints}
+                          gustSpikePoints={gustSpikePoints}
+                          userAlongT={userAlongT}
                         />
                       ) : (
                         <div className="rpgl__outlook-wait" aria-hidden>
@@ -424,25 +427,12 @@ export function RouteProgressGlancePanel({
                           </span>
                         </div>
                       )}
+                      {radarStatusNote ? (
+                        <p className="rpgl__radar-status" role="status">
+                          {radarStatusNote}
+                        </p>
+                      ) : null}
                     </div>
-
-                    {(radarSamples.length > 0 ||
-                      routeWindGraphVisible(windPoints, gustSpikePoints, gustLinePoints)) ? (
-                      <div className="rpgl__radar-strata">
-                        <RouteRadarWindStrip
-                          radarSamples={radarSamples}
-                          windPoints={windPoints}
-                          gustLinePoints={gustLinePoints}
-                          gustSpikePoints={gustSpikePoints}
-                          userAlongT={userAlongT}
-                        />
-                        {radarStatusNote ? (
-                          <p className="rpgl__radar-status" role="status">
-                            {radarStatusNote}
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : null}
 
                     <div className="rpgl__hazard-block">
                       {HAZARD_RAIL_ORDER.map((track) => (
