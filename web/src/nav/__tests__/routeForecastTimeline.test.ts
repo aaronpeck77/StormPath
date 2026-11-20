@@ -440,3 +440,68 @@ describe("buildRouteOutlookSeries temp backfill", () => {
     expect(series.filter((p) => p.tempF != null).length).toBeGreaterThan(1);
   });
 });
+
+describe("corridor forecast temp gaps", () => {
+  const gappyForecast: RouteForecast = {
+    fetchedAt: Date.now(),
+    intervals: [
+      {
+        etaMinutes: 0,
+        lat: 42,
+        lng: -90,
+        tempF: 61,
+        precipIntensityMmh: 0,
+        precipProbability: 0,
+        windSpeedMph: 7,
+        windGustMph: 11,
+        weatherCode: 1000,
+        wetRoadMm: 0,
+      },
+      {
+        etaMinutes: 60,
+        lat: 42.1,
+        lng: -89,
+        /* WeatherKit can deliver an hourly slot without `temperature` —
+         * cToF(undefined) used to write NaN into every derived headline. */
+        tempF: NaN,
+        precipIntensityMmh: 0,
+        precipProbability: 0,
+        windSpeedMph: 9,
+        windGustMph: 14,
+        weatherCode: 1000,
+        wetRoadMm: 0,
+      },
+      {
+        etaMinutes: 120,
+        lat: 42.2,
+        lng: -88,
+        tempF: 57,
+        precipIntensityMmh: 0,
+        precipProbability: 0,
+        windSpeedMph: 10,
+        windGustMph: 16,
+        weatherCode: 1000,
+        wetRoadMm: 0,
+      },
+    ],
+  };
+
+  it("does not serialize NaN temps into sample headlines", () => {
+    const samples = tomorrowForecastToWxSamples(gappyForecast, 120);
+    expect(samples.every((s) => !s.headline.includes("NaN"))).toBe(true);
+    expect(samples[0]?.headline).toContain("61°F");
+    expect(samples[2]?.headline).toContain("57°F");
+  });
+
+  it("emits null step temps instead of NaN for gapped intervals", () => {
+    const steps = buildRouteOutlookFromTomorrowForecast(gappyForecast, 120);
+    expect(steps.every((s) => s.tempF === null || Number.isFinite(s.tempF))).toBe(true);
+  });
+
+  it("series rescues a NaN step temp from the nearest corridor sample", () => {
+    const steps = buildRouteOutlookFromTomorrowForecast(gappyForecast, 120);
+    const samples = tomorrowForecastToWxSamples(gappyForecast, 120);
+    const series = buildRouteOutlookSeries(steps, samples);
+    expect(series.every((p) => Number.isFinite(p.tempF))).toBe(true);
+  });
+});

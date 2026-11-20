@@ -357,7 +357,7 @@ export function buildRouteOutlookFromTomorrowForecast(
       key,
       shortLabel,
       fraction,
-      tempF: Math.round(iv.tempF),
+      tempF: Number.isFinite(iv.tempF) ? Math.round(iv.tempF) : null,
       conditions,
       precipPct: precipPct > 0 ? precipPct : null,
       precipHint,
@@ -1168,8 +1168,20 @@ function interpolateOutlookSeries(anchors: RouteOutlookPoint[], slices = 12): Ro
  * as the driver moves (not a stationary point forecast).
  */
 function tempFromNearestSample(samples: WxSample[], fraction: number): number | null {
-  const sample = nearestSample(samples, fraction);
-  return parseWxBody(sample?.headline ?? "").tempF;
+  /* Nearest sample *that carries a temp* — a gapped interval serializes without °F
+   * and would otherwise shadow the real readings beside it. */
+  let best: number | null = null;
+  let bestD = Number.POSITIVE_INFINITY;
+  for (const s of samples) {
+    const tempF = parseWxBody(s.headline).tempF;
+    if (tempF == null) continue;
+    const d = Math.abs(s.t - fraction);
+    if (d < bestD) {
+      bestD = d;
+      best = tempF;
+    }
+  }
+  return best;
 }
 
 export function buildRouteOutlookSeries(
@@ -1179,8 +1191,13 @@ export function buildRouteOutlookSeries(
   const anchors: RouteOutlookPoint[] = [];
 
   for (const step of steps) {
-    const tempF =
-      step.tempF ?? (samples?.length ? tempFromNearestSample(samples, step.fraction) : null);
+    /* ?? alone can't rescue a NaN step temp (forecast gaps propagate Math.round(NaN)
+     * through the merge) — treat non-finite as missing so the corridor sample fills it. */
+    const tempF = Number.isFinite(step.tempF)
+      ? step.tempF
+      : samples?.length
+        ? tempFromNearestSample(samples, step.fraction)
+        : null;
     anchors.push({
       fraction: step.fraction,
       tempF,

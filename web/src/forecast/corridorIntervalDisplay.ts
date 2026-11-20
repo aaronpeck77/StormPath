@@ -36,6 +36,9 @@ export function corridorWeatherHeadline(code: number): string {
 }
 
 export function formatCorridorTempLine(iv: RouteHourlyInterval): string {
+  /* A forecast gap must not serialize as "NaN°F" — downstream headline parsers
+   * would read no temp and the whole lane loses its nearest-sample rescue. */
+  if (!Number.isFinite(iv.tempF)) return "";
   const air = Math.round(iv.tempF);
   const feels = iv.feelsLikeF != null ? Math.round(iv.feelsLikeF) : null;
   if (feels != null && Math.abs(feels - air) >= FEELS_LIKE_DELTA_F) {

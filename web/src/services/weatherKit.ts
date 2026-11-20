@@ -437,11 +437,18 @@ export async function fetchWeatherKitRouteForecast(
     const rawGustMph = v.windGust != null ? kphToMph(v.windGust) : windSpeedMph;
     const feelsLikeF =
       v.temperatureApparent != null ? cToF(v.temperatureApparent) : undefined;
+    /* An hourly slot can arrive without `temperature` — fall back to apparent so
+     * cToF(undefined) doesn't write NaN into every downstream outlook step/headline. */
+    const tempF = Number.isFinite(v.temperature)
+      ? cToF(v.temperature)
+      : v.temperatureApparent != null && Number.isFinite(v.temperatureApparent)
+        ? cToF(v.temperatureApparent)
+        : NaN;
     return {
       etaMinutes: wp.etaMinutes,
       lat: wp.lat,
       lng: wp.lng,
-      tempF: cToF(v.temperature),
+      tempF,
       feelsLikeF,
       precipIntensityMmh: v.precipitationIntensity,
       precipProbability: v.precipitationProbability,
