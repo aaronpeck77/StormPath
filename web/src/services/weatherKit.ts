@@ -408,7 +408,10 @@ export async function fetchWeatherKitRouteForecast(
     { forecastStart: string; values: ReturnType<typeof mapHourlyValues> }[]
   >();
 
-  await Promise.all(
+  /* allSettled, not all: one dead location used to reject the whole corridor
+   * and silently fall back to the (possibly stale) cache. Failed cells keep an
+   * empty timeline and get the per-ETA fallback in nearestHourlyForEta. */
+  const results = await Promise.allSettled(
     fetchLocations.map(async (loc) => {
       const key = routeForecastLocationKey(loc.lat, loc.lng);
       const raw = await fetchWeatherKitAtPoint(
@@ -418,19 +421,28 @@ export async function fetchWeatherKitRouteForecast(
         signal,
         opts
       );
-      const fetchedAt = Date.now();
       const hours = (raw.forecastHourly?.hours ?? []).map((h) => ({
         forecastStart: h.forecastStart,
         values: mapHourlyValues(h),
       }));
-      timelinesByKey.set(key, hours.length ? hours : []);
-      void fetchedAt;
+      timelinesByKey.set(key, hours);
     })
   );
+  if (results.every((r) => r.status === "rejected")) {
+    throw results[0]?.reason ?? new Error("WeatherKit route forecast failed");
+  }
+
+  /* Waypoints near a failed cell borrow from the nearest location that did
+   * return hours — real corridor weather beats the flat synthetic fallback. */
+  const liveLocations = fetchLocations.filter((loc) => {
+    const key = routeForecastLocationKey(loc.lat, loc.lng);
+    return (timelinesByKey.get(key) ?? []).length > 0;
+  });
+  const matchLocations = liveLocations.length ? liveLocations : fetchLocations;
 
   const fetchedAt = Date.now();
   const intervals: RouteHourlyInterval[] = waypoints.map((wp) => {
-    const locKey = nearestLocationKey(wp, fetchLocations);
+    const locKey = nearestLocationKey(wp, matchLocations);
     const hourly = timelinesByKey.get(locKey) ?? [];
     const v = nearestHourlyForEta(hourly, wp.etaMinutes, fetchedAt);
     const windSpeedMph = kphToMph(v.windSpeed);
