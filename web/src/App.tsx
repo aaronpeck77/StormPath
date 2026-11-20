@@ -2259,6 +2259,7 @@ export default function App() {
     navigationStarted,
     advisoryPlusDetailOn,
     guidanceRoute,
+    drawnRouteGeometry: navigationGuidanceGeometry,
     nwsNavCorridorGeom,
     guidanceRouteLengthM,
     userAlongGuidanceM,

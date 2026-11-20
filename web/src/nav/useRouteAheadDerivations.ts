@@ -84,6 +84,11 @@ export type UseRouteAheadDerivationsDeps = {
   navigationStarted: boolean;
   advisoryPlusDetailOn: boolean;
   guidanceRoute: NavRoute | undefined;
+  /** Geometry the map actually paints (locked Core line during nav). DOT
+   * matching + marker positions must live on this — guidanceRoute.geometry
+   * can diverge after recovery/adoption swaps (Bill, Nov 20: triangles on a
+   * phantom corridor while the drawn line was right). */
+  drawnRouteGeometry?: LngLat[];
   nwsNavCorridorGeom: LngLat[] | undefined;
   guidanceRouteLengthM: number;
   userAlongGuidanceM: number;
@@ -188,6 +193,7 @@ export function useRouteAheadDerivations(
     navigationStarted,
     advisoryPlusDetailOn,
     guidanceRoute,
+    drawnRouteGeometry,
     nwsNavCorridorGeom,
     guidanceRouteLengthM,
     userAlongGuidanceM,
@@ -246,12 +252,20 @@ export function useRouteAheadDerivations(
    * NOT per GPS tick. On long routes with thousands of corridor events, doing
    * closest-point math inside the per-tick impacts memo froze the UI thread.
    */
+  /* Match/place on the drawn line — the plan route object can carry a stale
+   * or overlay geometry after recovery while nav keeps painting the locked
+   * corridor, which is how triangles end up on a phantom line. */
+  const matchGeom =
+    drawnRouteGeometry && drawnRouteGeometry.length >= 2
+      ? drawnRouteGeometry
+      : guidanceRoute?.geometry;
+
   const dotMatches = useMemo(
     () =>
-      dotFeed?.events.length && guidanceRoute?.geometry?.length
-        ? matchDotEventsToRoute(dotFeed.events, guidanceRoute.geometry)
+      dotFeed?.events.length && matchGeom?.length
+        ? matchDotEventsToRoute(dotFeed.events, matchGeom)
         : [],
-    [dotFeed?.events, guidanceRoute?.geometry]
+    [dotFeed?.events, matchGeom]
   );
   const placePhraseAt = useCallback(
     (alongM: number) => {
@@ -836,7 +850,7 @@ export function useRouteAheadDerivations(
 
   const dotEventMarkers = useMemo(
     () => {
-      const g = guidanceRoute?.geometry;
+      const g = matchGeom;
       return routeImpactsForUi
         .filter((i) => i.source === "dot511")
         .map((i) => {
@@ -860,7 +874,7 @@ export function useRouteAheadDerivations(
           };
         });
     },
-    [routeImpactsForUi, guidanceRoute?.geometry]
+    [routeImpactsForUi, matchGeom]
   );
 
   return {
