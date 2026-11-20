@@ -433,6 +433,28 @@ function normalizeFeature(
   };
 }
 
+/* Some state feeds emit repeated object members without commas (Caltrans
+ * serializes essTemperatureSensorEntry twice inside one table element).
+ * `}`/`]` followed by a `"key":` with no comma is never valid strict JSON,
+ * so inserting the comma can't corrupt a well-formed document — and this
+ * only runs after a normal parse already failed. */
+function repairJsonMissingCommas(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch (firstErr) {
+    const repaired = text.replace(
+      /([}\]])(\s*)"((?:[^"\\]|\\.)*)"(\s*:)/g,
+      '$1,$2"$3"$4'
+    );
+    if (repaired === text) throw firstErr;
+    try {
+      return JSON.parse(repaired);
+    } catch {
+      throw firstErr;
+    }
+  }
+}
+
 async function fetchJson(
   url: string,
   timeoutMs = FEED_TIMEOUT_MS,
@@ -466,7 +488,7 @@ async function fetchJson(
     buf.set(c, off);
     off += c.byteLength;
   }
-  return JSON.parse(new TextDecoder().decode(buf));
+  return repairJsonMissingCommas(new TextDecoder().decode(buf));
 }
 
 function isKeyed(row: RegistryRow): boolean {
@@ -2555,6 +2577,8 @@ function normalizeCaltransRwis(raw: Record<string, unknown>, nowMs: number): Dot
   if (updatedMs != null && nowMs - updatedMs > 3 * 3_600_000) return null;
   const data = (r.rwisData ?? {}) as Record<string, unknown>;
   const tenth = (v: unknown, max: number): number | null => {
+    /* Empty-string readings Number("")→0 — treat as no reading, not 0.0°C. */
+    if (v == null || v === "") return null;
     const n = Number(v);
     return Number.isFinite(n) && n > -1000 && n < max ? n / 10 : null;
   };
