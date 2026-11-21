@@ -2259,7 +2259,11 @@ export default function App() {
     navigationStarted,
     advisoryPlusDetailOn,
     guidanceRoute,
-    drawnRouteGeometry: navigationGuidanceGeometry,
+    drawnRouteGeometry:
+      lineFocusId === guidanceRouteId
+        ? navigationGuidanceGeometry
+        : plan.routes.find((r) => r.id === lineFocusId)?.geometry ??
+          navigationGuidanceGeometry,
     nwsNavCorridorGeom,
     guidanceRouteLengthM,
     userAlongGuidanceM,

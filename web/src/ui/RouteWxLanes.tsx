@@ -92,7 +92,10 @@ function Lane(props: {
   return (
     <div className={`rpgl__layer ${props.layerClass}`}>
       <span className={`rpgl__layer-label ${props.labelClass}`}>{props.label}</span>
-      <div className="rpgl__layer-plot">
+      {/* Span both grid tracks: the label is absolutely positioned so the
+       * plot would otherwise auto-place into the 0px label column and the
+       * SVG would render at zero width (invisible lanes, build 621). */}
+      <div className="rpgl__layer-plot" style={{ gridColumn: "1 / -1" }}>
         <svg
           viewBox={`0 0 ${W} ${H}`}
           preserveAspectRatio="none"
