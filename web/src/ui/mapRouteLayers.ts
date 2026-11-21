@@ -320,6 +320,13 @@ export type ApplyRoutesLayerOptions = {
   /** Auto rejoin: draw locked A faint behind green/orange temp guidance. */
   rejoinOverlayActive?: boolean;
   lockedRouteId?: string | null;
+  /**
+   * Out-param: filled with the exact coordinate array each route leg is
+   * painted with this pass (post display transform). DOT marker projection
+   * consumes this so marker positions come from the same object handed to
+   * the GeoJSON source — no second transform path can drift from the line.
+   */
+  paintedOut?: Map<string, LngLat[]>;
 };
 
 function routeCoordinatesForMap(route: NavRoute, opts?: ApplyRoutesLayerOptions): LngLat[] {
@@ -577,10 +584,12 @@ export function applyRoutesToMap(
       }
     }
 
+    const paintedCoords = routeCoordinatesForMap(route, opts);
+    opts?.paintedOut?.set(route.id, paintedCoords);
     const geojson: GeoJSON.Feature<GeoJSON.LineString> = {
       type: "Feature",
       properties: {},
-      geometry: { type: "LineString", coordinates: routeCoordinatesForMap(route, opts) },
+      geometry: { type: "LineString", coordinates: paintedCoords },
     };
 
     const lineId = `${id}-line`;

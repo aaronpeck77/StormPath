@@ -71,6 +71,8 @@ import {
   type RadarFrameHudMeta,
 } from "../services/radarMapPack";
 import { isRainViewerRateLimited, onRainViewerRateLimit, rainViewerRateLimitMsRemaining } from "../services/rainViewerTileFetch";
+import { nearestPointOnLine } from "@turf/nearest-point-on-line";
+import { lineString as turfLineString, point as turfPoint } from "@turf/helpers";
 import {
   applyRouteConditionHighlights,
   clearRouteConditionHighlights,
@@ -644,6 +646,16 @@ function DriveMapInner({
   onSavedClickRef.current = onSavedPlaceClick;
   const searchPickMarkerMapRef = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLButtonElement }>>(new Map());
   const dotEventMarkerMapRef = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLElement }>>(new Map());
+  /**
+   * Painted route coordinates captured inside applyRoutesToMap's own paint
+   * pass (paintedOut). DOT marker positions are projected from THIS object —
+   * the same array handed to the GeoJSON source — so markers cannot drift
+   * from the rendered line. paintedEpoch bumps each paint pass so the
+   * marker effect re-projects whenever the line is redrawn (slice slides,
+   * style reload, view switch).
+   */
+  const paintedRoutesRef = useRef<Map<string, LngLat[]>>(new Map());
+  const [paintedEpoch, setPaintedEpoch] = useState(0);
   const onSearchPickMarkerClickRef = useRef(onSearchPickMarkerClick);
   onSearchPickMarkerClickRef.current = onSearchPickMarkerClick;
   const nextHazardBeaconRef = useRef(nextHazardBeacon);
@@ -3410,6 +3422,7 @@ function DriveMapInner({
     /** When there are no routes, always try to strip trip line layers; retry if style is mid-transition. */
     const clearTripRouteLayers = () => {
       if (cancelled) return;
+      const painted = new Map<string, LngLat[]>();
       routeIdsRef.current = applyRoutesToMap(
         map,
         [],
@@ -3426,8 +3439,11 @@ function DriveMapInner({
           userAlongMeters: userAlongMetersRef.current,
           rejoinOverlayActive,
           lockedRouteId: rejoinCompareLockedRouteId,
+          paintedOut: painted,
         }
       );
+      paintedRoutesRef.current = painted;
+      setPaintedEpoch((e) => e + 1);
       liftTrafficThenRoutesThenHits(
         map,
         visibleRouteIdsForHitLayers([], lineFocusId, viewMode, false)
@@ -3472,6 +3488,7 @@ function DriveMapInner({
       }
       disarmStyleRetry();
 
+      const painted = new Map<string, LngLat[]>();
       routeIdsRef.current = applyRoutesToMap(
         map,
         routes,
@@ -3488,8 +3505,11 @@ function DriveMapInner({
           userAlongMeters: userAlongMetersRef.current,
           rejoinOverlayActive,
           lockedRouteId: rejoinCompareLockedRouteId,
+          paintedOut: painted,
         }
       );
+      paintedRoutesRef.current = painted;
+      setPaintedEpoch((e) => e + 1);
       liftTrafficThenRoutesThenHits(
         map,
         visibleRouteIdsForHitLayers(routes, lineFocusId, viewMode, false)
@@ -5532,16 +5552,40 @@ function DriveMapInner({
     };
   }, [mapReady, searchPickMarkers, onSearchPickMarkerClick]);
 
-  /* State DOT/WZDx work-zone & closure dots — tappable for the detail sheet,
-   * corridor-matched upstream. */
+  /* State DOT/WZDx work-zone & closure dots — tappable for the detail sheet.
+   * Positions are projected HERE from the painted coordinate array captured
+   * during the route paint pass (paintedRoutesRef) — the same object handed
+   * to the GeoJSON source. Runs after every paint (paintedEpoch) so markers
+   * re-project whenever the line is redrawn; events farther than 400m from
+   * the painted window are dropped instead of piling at the slice tail. */
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
     const existing = dotEventMarkerMapRef.current;
-    const markers = dotEventMarkers;
 
-    if (!markers?.length) {
+    const painted =
+      paintedRoutesRef.current.get(lineFocusId) ??
+      [...paintedRoutesRef.current.values()][0];
+    const paintedLine =
+      painted && painted.length >= 2 ? turfLineString(painted) : null;
+
+    /* Turf's geodesic nearest-point — reference implementation for this
+     * projection, replaces the hand-rolled equirectangular snap. */
+    const markers = paintedLine
+      ? (dotEventMarkers ?? []).flatMap((m) => {
+          if (!isValidLngLatPair(m.lngLat)) return [];
+          const snap = nearestPointOnLine(paintedLine, turfPoint(m.lngLat), {
+            units: "meters",
+          });
+          const lateralM = snap.properties?.dist ?? Number.POSITIVE_INFINITY;
+          if (lateralM > 400) return [];
+          const c = snap.geometry.coordinates;
+          return [{ ...m, lngLat: [c[0]!, c[1]!] as LngLat }];
+        })
+      : [];
+
+    if (!markers.length) {
       for (const { marker } of existing.values()) marker.remove();
       existing.clear();
       return;
@@ -5578,7 +5622,7 @@ function DriveMapInner({
         .addTo(map);
       existing.set(m.id, { marker, el });
     }
-  }, [mapReady, dotEventMarkers, onDotEventMarkerClick]);
+  }, [mapReady, dotEventMarkers, paintedEpoch, lineFocusId, onDotEventMarkerClick]);
 
   useEffect(() => {
     if (!mapReady) return;
