@@ -2,7 +2,11 @@ import { useDeferredValue, useMemo } from "react";
 import { buildMapAlongRouteAlerts } from "./buildMapAlongRouteAlerts";
 import { buildNwsAlertGeoJsonForMap } from "../weatherAlerts/buildNwsAlertGeoJsonForMap";
 import { buildDriveRouteAheadFromImpacts, type DriveAheadLine } from "./driveRouteAhead";
-import { pointAtAlongMeters, polylineLengthMeters } from "./routeGeometry";
+import {
+  closestPointOnPolyline,
+  pointAtAlongMeters,
+  polylineLengthMeters,
+} from "./routeGeometry";
 import { placeReferencePhrase, type RoutePlaceAnchor } from "./routePlaceReference";
 import { isNavMapLiteMode } from "../utils/dataSaver";
 import { PERSONAL_FORK_ROUTE_ID } from "../personalForks";
@@ -19,6 +23,8 @@ export type UseDriveMapOverlaysDeps = {
   driveMapRoutes: NavRoute[];
   navigationStarted: boolean;
   guidanceRouteId: string;
+  /** Route whose line is highlighted/inspected — markers snap to its painted geometry. */
+  lineFocusId?: string;
   viewMode: MapViewMode;
   personalForkPreviewGeometry: LngLat[] | null;
   guidanceIsPersonalFork: boolean;
@@ -58,6 +64,7 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
     driveMapRoutes,
     navigationStarted,
     guidanceRouteId,
+    lineFocusId,
     viewMode,
     personalForkPreviewGeometry,
     guidanceIsPersonalFork,
@@ -127,6 +134,35 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
     personalForkPreviewGeometry,
     guidanceIsPersonalFork,
   ]);
+
+  /**
+   * DOT hazard triangles — snap each impact onto the EXACT polyline the map
+   * paints (post-rewrite), not whichever geometry the match happened to run
+   * on. Bill, Nov 20 (build 621/622): markers derived from a different
+   * geometry frame kept landing on phantom corridors / in the Gulf.
+   * closestPointOnPolyline always returns a point ON this array, so a marker
+   * physically cannot float off the visible line — worst case it sits at the
+   * nearest painted point to its true corridor position.
+   */
+  const dotEventMarkersForMap = useMemo(() => {
+    const painted =
+      driveMapRoutesForMap.find((r) => r.id === lineFocusId)?.geometry ??
+      driveMapRoutesForMap.find((r) => r.id === guidanceRouteId)?.geometry;
+    if (!painted || painted.length < 2 || !routeImpactsForUi.length) return [];
+    return routeImpactsForUi
+      .filter((i) => i.source === "dot511")
+      .map((i) => ({
+        id: i.id,
+        lngLat: closestPointOnPolyline(i.lngLat, painted).lngLat,
+        label: i.driverHeadline,
+        kind:
+          i.category === "closure" ||
+          i.category === "incident" ||
+          i.category === "construction"
+            ? i.category
+            : ("other" as const),
+      }));
+  }, [driveMapRoutesForMap, routeImpactsForUi, lineFocusId, guidanceRouteId]);
 
   /**
    * Map line highlights — paint each corridor alert at its real along-route position.
@@ -231,6 +267,7 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
 
   return {
     driveMapRoutesForMap,
+    dotEventMarkersForMap,
     deferredNwsAlertGeoJsonForMap,
     navMapLiteMode,
     deferredRouteImpactsForUi,

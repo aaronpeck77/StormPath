@@ -2379,6 +2379,7 @@ export default function App() {
 
   const {
     driveMapRoutesForMap,
+    dotEventMarkersForMap,
     deferredNwsAlertGeoJsonForMap,
     navMapLiteMode,
     deferredRouteImpactsForUi,
@@ -2390,6 +2391,7 @@ export default function App() {
     driveMapRoutes,
     navigationStarted,
     guidanceRouteId,
+    lineFocusId,
     viewMode,
     personalForkPreviewGeometry: personalForkNav.previewGeometry,
     guidanceIsPersonalFork,
@@ -3158,7 +3160,7 @@ export default function App() {
       homePreloadBounds,
       searchPickMarkers: searchPickMarkersForMap,
       onSearchPickMarkerClick: handleSearchPickFromMap,
-      dotEventMarkers,
+      dotEventMarkers: dotEventMarkersForMap,
       onDotEventMarkerClick: onDotMarkerTap,
       progressRailVisible: showProgressRail,
       offRouteRejoinCompareActive: offRouteHoldPreviewActive || detourAutoActive,
