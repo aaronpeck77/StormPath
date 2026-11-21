@@ -240,7 +240,9 @@ export function applyRouteConditionHighlights(
   }
 
   if (!map.getSource(ROUTE_COND_HIGHLIGHT_SRC)) {
-    map.addSource(ROUTE_COND_HIGHLIGHT_SRC, { type: "geojson", data });
+    /* tolerance 0: halos snap to route along-positions; default per-tile
+     * simplification bends the rendered band off the corridor at low zoom. */
+    map.addSource(ROUTE_COND_HIGHLIGHT_SRC, { type: "geojson", data, tolerance: 0 });
     map.addLayer({
       id: ROUTE_COND_HIGHLIGHT_CASING,
       type: "line",
@@ -590,7 +592,12 @@ export function applyRoutesToMap(
     const hitWidth = routeHitWidthByZoom(lineWidth, lineWidthView);
     const lineAnchorBefore = firstBasemapSymbolLayerId(map);
     if (!map.getSource(id)) {
-      map.addSource(id, { type: "geojson", data: geojson });
+      /* tolerance 0: DOT markers snap to these exact coordinates, but
+       * geojson-vt simplifies per tile zoom — default 0.375 let the
+       * rendered chord cut corners away from its own vertices at low
+       * zoom while DOM markers held true position (Bill, "triangles
+       * float zoomed out, fall into place zoomed in", builds 621–624). */
+      map.addSource(id, { type: "geojson", data: geojson, tolerance: 0 });
       map.addLayer(
         {
           id: casingId,
