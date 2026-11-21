@@ -4,9 +4,13 @@ import { buildNwsAlertGeoJsonForMap } from "../weatherAlerts/buildNwsAlertGeoJso
 import { buildDriveRouteAheadFromImpacts, type DriveAheadLine } from "./driveRouteAhead";
 import {
   closestPointOnPolyline,
+  geometryForPlanningMapDisplay,
+  geometryForRouteOverviewDisplay,
   pointAtAlongMeters,
   polylineLengthMeters,
+  routeLineGeometryForDriveDisplay,
 } from "./routeGeometry";
+import { routeLineGeometryKind } from "./viewModeContract";
 import { placeReferencePhrase, type RoutePlaceAnchor } from "./routePlaceReference";
 import { isNavMapLiteMode } from "../utils/dataSaver";
 import { PERSONAL_FORK_ROUTE_ID } from "../personalForks";
@@ -145,24 +149,56 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
    * nearest painted point to its true corridor position.
    */
   const dotEventMarkersForMap = useMemo(() => {
+    const route =
+      driveMapRoutesForMap.find((r) => r.id === lineFocusId) ??
+      driveMapRoutesForMap.find((r) => r.id === guidanceRouteId);
+    if (!route?.geometry?.length || !routeImpactsForUi.length) return [];
+    /* Snap to the DISPLAY geometry the line layer actually paints —
+     * routeCoordinatesForMap decimates long routes to chords (planning) or
+     * slices an ahead window (drive), so markers on raw geometry float
+     * beside the painted line at low zoom and "fall into place" zoomed in
+     * (Bill, build 622, Nov 20). Events beyond the painted window project
+     * far off the end — the 400m lateral check hides them instead of
+     * piling them at the slice tail. */
+    const kind = routeLineGeometryKind(viewMode, navigationStarted, {
+      isOverviewPip: false,
+      userAlongMeters: userAlongGuidanceM ?? null,
+    });
     const painted =
-      driveMapRoutesForMap.find((r) => r.id === lineFocusId)?.geometry ??
-      driveMapRoutesForMap.find((r) => r.id === guidanceRouteId)?.geometry;
-    if (!painted || painted.length < 2 || !routeImpactsForUi.length) return [];
+      kind === "driveAhead"
+        ? routeLineGeometryForDriveDisplay(route.geometry, userAlongGuidanceM ?? 0)
+        : viewMode === "route" || viewMode === "topdown"
+          ? geometryForRouteOverviewDisplay(route.geometry)
+          : geometryForPlanningMapDisplay(route.geometry);
+    if (!painted || painted.length < 2) return [];
     return routeImpactsForUi
       .filter((i) => i.source === "dot511")
-      .map((i) => ({
-        id: i.id,
-        lngLat: closestPointOnPolyline(i.lngLat, painted).lngLat,
-        label: i.driverHeadline,
-        kind:
-          i.category === "closure" ||
-          i.category === "incident" ||
-          i.category === "construction"
-            ? i.category
-            : ("other" as const),
-      }));
-  }, [driveMapRoutesForMap, routeImpactsForUi, lineFocusId, guidanceRouteId]);
+      .flatMap((i) => {
+        const c = closestPointOnPolyline(i.lngLat, painted);
+        if (c.lateralMetersApprox > 400) return [];
+        return [
+          {
+            id: i.id,
+            lngLat: c.lngLat,
+            label: i.driverHeadline,
+            kind:
+              i.category === "closure" ||
+              i.category === "incident" ||
+              i.category === "construction"
+                ? i.category
+                : ("other" as const),
+          },
+        ];
+      });
+  }, [
+    driveMapRoutesForMap,
+    routeImpactsForUi,
+    lineFocusId,
+    guidanceRouteId,
+    viewMode,
+    navigationStarted,
+    userAlongGuidanceM,
+  ]);
 
   /**
    * Map line highlights — paint each corridor alert at its real along-route position.
