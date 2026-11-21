@@ -1,21 +1,17 @@
 /**
  * Route Info weather lanes — Temp / Precip / Radar / Wind.
  *
- * Ground-up replacement for the RouteOutlookTimeline + RouteRadarWindStrip
- * stack (Bill, Nov 20): the old stack's Temp lane stroked via
- * `style="stroke:url(#gradient)"` — url() inside a CSS style attribute fails
- * to resolve in the iOS WebView, so the lane emitted markup but painted
- * nothing while wind/radar (plain presentation attributes) drew fine.
+ * Canvas rebuild (Bill, Nov 20): the SVG stack emitted perfect markup but
+ * painted nothing on iOS — three fixes landed and lanes still showed empty
+ * while the dump proved data present (ol:5 tmp:5 pr:68). Canvas paints
+ * pixels imperatively: no DOM children, no stylesheet, no url(), no grid
+ * placement can hide a drawn line. Layout is fully inline so no external
+ * CSS can zero or hide a lane.
  *
- * Rules this component lives by:
- *  - Presentation attributes only (stroke=/fill=/strokeWidth on elements).
- *    No `style`, no `url(#id)`, no class-dependent data strokes — nothing in
- *    a stylesheet can kill a lane.
- *  - Non-finite values are filtered before pathing; a single finite point is
- *    expanded to a short segment; an empty lane gets a flat "no data" trace.
- *    A lane can never be silently blank.
+ * Self-instrumented: wxLanesDebug counts mounted lanes + painted points per
+ * lane; App appends `wl:` to the Wx: dump so a blank panel explains itself.
  */
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { WxSample } from "../nav/routeChunkWeather";
 import type { RouteOutlookStep } from "../nav/routeForecastTimeline";
 import { buildRouteOutlookSeries } from "../nav/routeForecastTimeline";
@@ -27,14 +23,10 @@ type Pt = { t: number; v: number };
 type WindPoint = { t: number; mph: number };
 type RadarSample = { t: number; intensity: number };
 
-const W = 400;
-const H = 36;
+const LANE_H = 34;
 const PAD_L = 6;
 const PAD_R = 6;
 const PAD_V = 4;
-const INNER_W = W - PAD_L - PAD_R;
-const INNER_H = H - PAD_V * 2;
-const BASE_Y = H - PAD_V;
 
 const C = {
   baseline: "rgba(148,163,184,0.35)",
@@ -48,11 +40,21 @@ const C = {
   gust: "#fb923c",
 };
 
-function xPx(t: number): number {
-  return PAD_L + Math.max(0, Math.min(1, t)) * INNER_W;
+/** Read by the Wx: dump in App — wl:mounts/temp/precip/radar/wind. */
+export const wxLanesDebug = {
+  mounts: 0,
+  temp: 0,
+  precip: 0,
+  radar: 0,
+  wind: 0,
+};
+
+function xPx(t: number, w: number): number {
+  return PAD_L + Math.max(0, Math.min(1, t)) * Math.max(0, w - PAD_L - PAD_R);
 }
-function yPx(norm: number): number {
-  return PAD_V + INNER_H * (1 - Math.max(0, Math.min(1, norm)));
+function yPx(norm: number, h: number): number {
+  const inner = h - PAD_V * 2;
+  return PAD_V + inner * (1 - Math.max(0, Math.min(1, norm)));
 }
 
 /** Finite points only, sorted; a lone point is widened into a short stub. */
@@ -71,67 +73,71 @@ function cleanPts(pts: Pt[]): Pt[] {
   return out;
 }
 
-function linePath(pts: Pt[], yFor: (v: number) => number): string {
-  return pts
-    .map((p, i) => `${i === 0 ? "M" : "L"}${xPx(p.t).toFixed(1)},${yFor(p.v).toFixed(1)}`)
-    .join(" ");
-}
-function areaPath(pts: Pt[], yFor: (v: number) => number): string {
-  const line = linePath(pts, yFor);
-  if (!line) return "";
-  return `${line} L${xPx(pts[pts.length - 1]!.t).toFixed(1)},${BASE_Y} L${xPx(pts[0]!.t).toFixed(1)},${BASE_Y} Z`;
+function paintBaseline(ctx: CanvasRenderingContext2D, w: number) {
+  ctx.strokeStyle = C.baseline;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(PAD_L, LANE_H - PAD_V);
+  ctx.lineTo(w - PAD_R, LANE_H - PAD_V);
+  ctx.stroke();
 }
 
-function Lane(props: {
-  label: string;
-  labelClass: string;
-  layerClass: string;
-  children: React.ReactNode;
-  readout?: React.ReactNode;
-}) {
-  return (
-    <div className={`rpgl__layer ${props.layerClass}`}>
-      <span className={`rpgl__layer-label ${props.labelClass}`}>{props.label}</span>
-      {/* Span both grid tracks: the label is absolutely positioned so the
-       * plot would otherwise auto-place into the 0px label column and the
-       * SVG would render at zero width (invisible lanes, build 621). */}
-      <div className="rpgl__layer-plot" style={{ gridColumn: "1 / -1" }}>
-        <svg
-          viewBox={`0 0 ${W} ${H}`}
-          preserveAspectRatio="none"
-          aria-hidden
-          style={{ display: "block", width: "100%", height: 34 }}
-        >
-          <line
-            x1={PAD_L}
-            y1={BASE_Y}
-            x2={W - PAD_R}
-            y2={BASE_Y}
-            stroke={C.baseline}
-            strokeWidth={1}
-            vectorEffect="non-scaling-stroke"
-          />
-          {props.children}
-        </svg>
-        {props.readout}
-      </div>
-    </div>
-  );
+function paintNodata(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  ctx.strokeStyle = C.nodata;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(PAD_L, h - PAD_V - 4);
+  ctx.lineTo(w - PAD_R, h - PAD_V - 4);
+  ctx.stroke();
+  ctx.setLineDash([]);
 }
 
-function NodataTrace({ y = BASE_Y - 4 }: { y?: number }) {
-  return (
-    <line
-      x1={PAD_L}
-      y1={y}
-      x2={W - PAD_R}
-      y2={y}
-      stroke={C.nodata}
-      strokeWidth={2}
-      strokeDasharray="6 4"
-      vectorEffect="non-scaling-stroke"
-    />
-  );
+function paintLine(
+  ctx: CanvasRenderingContext2D,
+  pts: Pt[],
+  w: number,
+  yFor: (v: number) => number,
+  stroke: string,
+  width: number,
+  dash?: number[]
+) {
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = width;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath();
+  pts.forEach((p, i) => {
+    const x = xPx(p.t, w);
+    const y = yFor(p.v);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  if (dash) ctx.setLineDash([]);
+}
+
+function paintArea(
+  ctx: CanvasRenderingContext2D,
+  pts: Pt[],
+  w: number,
+  h: number,
+  yFor: (v: number) => number,
+  fill: string
+) {
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  pts.forEach((p, i) => {
+    const x = xPx(p.t, w);
+    const y = yFor(p.v);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.lineTo(xPx(pts[pts.length - 1]!.t, w), h - PAD_V);
+  ctx.lineTo(xPx(pts[0]!.t, w), h - PAD_V);
+  ctx.closePath();
+  ctx.fill();
 }
 
 function valueAt(pts: Pt[], t: number): number | null {
@@ -149,6 +155,128 @@ function valueAt(pts: Pt[], t: number): number | null {
     }
   }
   return p[p.length - 1]!.v;
+}
+
+/* ── Lane: label chip + canvas. All styling inline — nothing in a stylesheet
+ *   can resize, hide, or reorder these boxes. */
+function Lane(props: {
+  label: string;
+  labelColor: string;
+  boxBg: string;
+  boxEdge: string;
+  paint: (ctx: CanvasRenderingContext2D, w: number, h: number) => void;
+  readout?: React.ReactNode;
+  debugKey: keyof typeof wxLanesDebug;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const paintRef = useRef(props.paint);
+  paintRef.current = props.paint;
+
+  useEffect(() => {
+    wxLanesDebug.mounts += 1;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const draw = () => {
+      const w = canvas.clientWidth || canvas.parentElement?.clientWidth || 0;
+      if (w < 8) return;
+      const dpr = window.devicePixelRatio || 1;
+      const pxW = Math.round(w * dpr);
+      const pxH = Math.round(LANE_H * dpr);
+      if (canvas.width !== pxW || canvas.height !== pxH) {
+        canvas.width = pxW;
+        canvas.height = pxH;
+      }
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, LANE_H);
+      paintRef.current(ctx, w, LANE_H);
+    };
+    draw();
+    const ro = new ResizeObserver(draw);
+    if (canvas.parentElement) ro.observe(canvas.parentElement);
+    ro.observe(canvas);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const w = canvas?.clientWidth || 0;
+    if (!canvas || w < 8) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(LANE_H * dpr);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, LANE_H);
+    props.paint(ctx, w, LANE_H);
+  });
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        padding: "3px 4px 3px 2px",
+        borderRadius: 7,
+        background: props.boxBg,
+        boxShadow: `inset 0 0 0 1px ${props.boxEdge}`,
+      }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          top: 3,
+          left: 6,
+          zIndex: 3,
+          padding: "1px 5px",
+          borderRadius: 4,
+          background: "rgba(2,6,23,0.72)",
+          color: props.labelColor,
+          fontSize: "0.56rem",
+          fontWeight: 850,
+          letterSpacing: "0.05em",
+          textTransform: "uppercase",
+          lineHeight: 1.3,
+          whiteSpace: "nowrap",
+          pointerEvents: "none",
+        }}
+      >
+        {props.label}
+      </span>
+      <canvas
+        ref={canvasRef}
+        aria-hidden
+        style={{ display: "block", width: "100%", height: LANE_H }}
+      />
+      {props.readout}
+    </div>
+  );
+}
+
+function Readout(props: { color: string; children: React.ReactNode }) {
+  return (
+    <span
+      style={{
+        position: "absolute",
+        top: 3,
+        right: 6,
+        zIndex: 3,
+        padding: "1px 6px",
+        borderRadius: 4,
+        background: "rgba(2,6,23,0.78)",
+        border: "1px solid rgba(148,163,184,0.25)",
+        color: props.color,
+        fontSize: "0.6rem",
+        fontWeight: 800,
+        fontVariantNumeric: "tabular-nums",
+        lineHeight: 1.5,
+        pointerEvents: "none",
+      }}
+    >
+      {props.children}
+    </span>
+  );
 }
 
 export type RouteWxLanesProps = {
@@ -170,10 +298,7 @@ export function RouteWxLanes({
   gustSpikePoints = [],
   userAlongT = 0,
 }: RouteWxLanesProps) {
-  const series = useMemo(
-    () => buildRouteOutlookSeries(steps, samples),
-    [steps, samples]
-  );
+  const series = useMemo(() => buildRouteOutlookSeries(steps, samples), [steps, samples]);
 
   const tempPts = useMemo(
     () => cleanPts(series.map((p) => ({ t: p.fraction, v: p.tempF ?? NaN }))),
@@ -181,11 +306,10 @@ export function RouteWxLanes({
   );
   const tempSpan = useMemo(() => {
     const vs = tempPts.map((p) => p.v);
-    const lo = Math.min(...vs) - 3;
-    const hi = Math.max(...vs) + 3;
+    const lo = vs.length ? Math.min(...vs) - 3 : 0;
+    const hi = vs.length ? Math.max(...vs) + 3 : 1;
     return { lo, hi: hi <= lo ? lo + 1 : hi };
   }, [tempPts]);
-  const tempY = (v: number) => yPx((v - tempSpan.lo) / (tempSpan.hi - tempSpan.lo));
 
   const precipPts = useMemo(
     () =>
@@ -197,13 +321,9 @@ export function RouteWxLanes({
     [series]
   );
   const precipMax = Math.max(40, ...precipPts.map((p) => p.v));
-  const precipY = (v: number) => yPx(v / precipMax);
 
   const radarPts = useMemo(() => {
-    const ds = radarSamples.map((s) => ({
-      t: s.t,
-      d: radarDisplayIntensity(s.intensity),
-    }));
+    const ds = radarSamples.map((s) => ({ t: s.t, d: radarDisplayIntensity(s.intensity) }));
     const max = Math.max(0, ...ds.map((x) => x.d));
     const ceil = Math.max(max * 1.08, RADAR_SOFT_THRESHOLD * 0.85, 0.12);
     const sorted = ds
@@ -234,123 +354,100 @@ export function RouteWxLanes({
     [gustSpikePoints]
   );
   const windMax = useMemo(
-    () =>
-      routeWindGraphScaleMph([
-        ...windPts.map((p) => p.v),
-        ...gustTicks.map((p) => p.v),
-      ]),
+    () => routeWindGraphScaleMph([...windPts.map((p) => p.v), ...gustTicks.map((p) => p.v)]),
     [windPts, gustTicks]
   );
-  const windY = (v: number) => yPx(v / windMax);
 
   const tempNow = valueAt(tempPts, userAlongT);
   const windNow = valueAt(windPts, userAlongT);
 
+  wxLanesDebug.temp = tempPts.length;
+  wxLanesDebug.precip = precipPts.length;
+  wxLanesDebug.radar = radarTrace.length;
+  wxLanesDebug.wind = windPts.length;
+
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <Lane
         label="Temp"
-        labelClass="rpgl__layer-label--temp"
-        layerClass="rpgl__layer--temp"
-        readout={
-          tempNow != null ? (
-            <span className="rpgl__readout rpgl__readout--temp">
-              {Math.round(tempNow)}°
-            </span>
-          ) : undefined
-        }
-      >
-        {tempPts.length ? (
-          <path
-            d={linePath(tempPts, tempY)}
-            fill="none"
-            stroke={C.temp}
-            strokeWidth={2.4}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        ) : (
-          <NodataTrace y={PAD_V + INNER_H / 2} />
-        )}
-      </Lane>
+        labelColor="#fdba74"
+        boxBg="rgba(251,146,60,0.07)"
+        boxEdge="rgba(251,146,60,0.2)"
+        debugKey="temp"
+        readout={tempNow != null ? <Readout color="#fdba74">{Math.round(tempNow)}°</Readout> : undefined}
+        paint={(ctx, w, h) => {
+          paintBaseline(ctx, w);
+          if (tempPts.length) {
+            const yFor = (v: number) => yPx((v - tempSpan.lo) / (tempSpan.hi - tempSpan.lo), h);
+            paintLine(ctx, tempPts, w, yFor, C.temp, 2.4);
+          } else {
+            paintNodata(ctx, w, h);
+          }
+        }}
+      />
 
-      <Lane label="Precip" labelClass="rpgl__layer-label--rain" layerClass="rpgl__layer--rain">
-        {precipPts.length ? (
-          <>
-            <path d={areaPath(precipPts, precipY)} fill={C.precipFill} stroke="none" />
-            <path
-              d={linePath(precipPts, precipY)}
-              fill="none"
-              stroke={C.precip}
-              strokeWidth={2.2}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
-            />
-          </>
-        ) : (
-          <NodataTrace />
-        )}
-      </Lane>
+      <Lane
+        label="Precip"
+        labelColor="#7dd3fc"
+        boxBg="rgba(56,189,248,0.07)"
+        boxEdge="rgba(56,189,248,0.22)"
+        debugKey="precip"
+        paint={(ctx, w, h) => {
+          paintBaseline(ctx, w);
+          if (precipPts.length) {
+            const yFor = (v: number) => yPx(v / precipMax, h);
+            paintArea(ctx, precipPts, w, h, yFor, C.precipFill);
+            paintLine(ctx, precipPts, w, yFor, C.precip, 2.2);
+          } else {
+            paintNodata(ctx, w, h);
+          }
+        }}
+      />
 
-      <Lane label="Radar" labelClass="rpgl__layer-label--radar" layerClass="rpgl__layer--radar">
-        {radarTrace.length >= 2 && radarPts.some((p) => p.v >= 0.04) ? (
-          <>
-            <path d={areaPath(radarTrace, yPx)} fill={C.radarFill} stroke="none" />
-            <path
-              d={linePath(radarTrace, yPx)}
-              fill="none"
-              stroke={C.radar}
-              strokeWidth={hasRadar ? 1.4 : 1.1}
-              strokeDasharray={hasRadar ? undefined : "3 2"}
-              vectorEffect="non-scaling-stroke"
-            />
-          </>
-        ) : (
-          <NodataTrace />
-        )}
-      </Lane>
+      <Lane
+        label="Radar"
+        labelColor="#7dd3fc"
+        boxBg="rgba(14,165,233,0.07)"
+        boxEdge="rgba(14,165,233,0.2)"
+        debugKey="radar"
+        paint={(ctx, w, h) => {
+          paintBaseline(ctx, w);
+          if (radarTrace.length >= 2 && radarPts.some((p) => p.v >= 0.04)) {
+            paintArea(ctx, radarTrace, w, h, (v) => yPx(v, h), C.radarFill);
+            paintLine(ctx, radarTrace, w, (v) => yPx(v, h), C.radar, hasRadar ? 1.4 : 1.1, hasRadar ? undefined : [3, 2]);
+          } else {
+            paintNodata(ctx, w, h);
+          }
+        }}
+      />
 
-      <Lane label="Wind" labelClass="rpgl__layer-label--wind" layerClass="rpgl__layer--wind"
-        readout={
-          windNow != null ? (
-            <span className="rpgl__readout rpgl__readout--wind">
-              {Math.round(windNow)} mph
-            </span>
-          ) : undefined
-        }
-      >
-        {windPts.length >= 2 ? (
-          <>
-            <path
-              d={linePath(windPts, windY)}
-              fill="none"
-              stroke={C.wind}
-              strokeWidth={2.2}
-              strokeDasharray="5 3"
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
-            />
-            {gustTicks.map((p, i) => (
-              <line
-                key={`g${i}`}
-                x1={xPx(p.t)}
-                y1={BASE_Y}
-                x2={xPx(p.t)}
-                y2={windY(p.v)}
-                stroke={C.gust}
-                strokeWidth={2}
-                strokeLinecap="round"
-                vectorEffect="non-scaling-stroke"
-              />
-            ))}
-          </>
-        ) : (
-          <NodataTrace />
-        )}
-      </Lane>
+      <Lane
+        label="Wind"
+        labelColor="#fbbf24"
+        boxBg="rgba(245,158,11,0.07)"
+        boxEdge="rgba(245,158,11,0.22)"
+        debugKey="wind"
+        readout={windNow != null ? <Readout color="#fbbf24">{Math.round(windNow)} mph</Readout> : undefined}
+        paint={(ctx, w, h) => {
+          paintBaseline(ctx, w);
+          if (windPts.length >= 2) {
+            const yFor = (v: number) => yPx(v / windMax, h);
+            paintLine(ctx, windPts, w, yFor, C.wind, 2.2, [5, 3]);
+            ctx.strokeStyle = C.gust;
+            ctx.lineWidth = 2;
+            ctx.lineCap = "round";
+            for (const p of gustTicks) {
+              const x = xPx(p.t, w);
+              ctx.beginPath();
+              ctx.moveTo(x, h - PAD_V);
+              ctx.lineTo(x, yFor(p.v));
+              ctx.stroke();
+            }
+          } else {
+            paintNodata(ctx, w, h);
+          }
+        }}
+      />
     </div>
   );
 }
