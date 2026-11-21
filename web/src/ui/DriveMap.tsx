@@ -73,6 +73,19 @@ import {
 import { isRainViewerRateLimited, onRainViewerRateLimit, rainViewerRateLimitMsRemaining } from "../services/rainViewerTileFetch";
 import { nearestPointOnLine } from "@turf/nearest-point-on-line";
 import { lineString as turfLineString, point as turfPoint } from "@turf/helpers";
+
+/** Read by the Mk: dump in App — which painted array fed marker projection,
+ *  whether the focused leg hit, and how many markers survived the 400m gate.
+ *  If a drive shows triangles while mk:resolved is 0, they're not ours. */
+export const dotMarkersDebug = {
+  paints: 0,
+  paintedId: "-",
+  verts: 0,
+  focusHit: 0,
+  input: 0,
+  resolved: 0,
+  medLatM: 0,
+};
 import {
   applyRouteConditionHighlights,
   clearRouteConditionHighlights,
@@ -110,6 +123,7 @@ import {
   noteDriveDiagCamLean,
   noteViewDroneWriteFail,
   setDriveDiagCamWriter,
+  setDriveDiagMkDiag,
   setDriveDiagPoseSource,
   setDriveDiagRoadControls,
 } from "../nav/driveDiagnostics";
@@ -3510,6 +3524,7 @@ function DriveMapInner({
       );
       paintedRoutesRef.current = painted;
       setPaintedEpoch((e) => e + 1);
+      dotMarkersDebug.paints += 1;
       liftTrafficThenRoutesThenHits(
         map,
         visibleRouteIdsForHitLayers(routes, lineFocusId, viewMode, false)
@@ -5564,12 +5579,12 @@ function DriveMapInner({
 
     const existing = dotEventMarkerMapRef.current;
 
-    const painted =
-      paintedRoutesRef.current.get(lineFocusId) ??
-      [...paintedRoutesRef.current.values()][0];
+    const fromFocus = paintedRoutesRef.current.get(lineFocusId);
+    const painted = fromFocus ?? [...paintedRoutesRef.current.values()][0];
     const paintedLine =
       painted && painted.length >= 2 ? turfLineString(painted) : null;
 
+    const lateralSamples: number[] = [];
     /* Turf's geodesic nearest-point — reference implementation for this
      * projection, replaces the hand-rolled equirectangular snap. */
     const markers = paintedLine
@@ -5580,10 +5595,26 @@ function DriveMapInner({
           });
           const lateralM = snap.properties?.dist ?? Number.POSITIVE_INFINITY;
           if (lateralM > 400) return [];
+          lateralSamples.push(lateralM);
           const c = snap.geometry.coordinates;
           return [{ ...m, lngLat: [c[0]!, c[1]!] as LngLat }];
         })
       : [];
+
+    dotMarkersDebug.paintedId = fromFocus
+      ? lineFocusId
+      : ([...paintedRoutesRef.current.keys()][0] ?? "-");
+    dotMarkersDebug.verts = painted?.length ?? 0;
+    dotMarkersDebug.focusHit = fromFocus ? 1 : 0;
+    dotMarkersDebug.input = dotEventMarkers?.length ?? 0;
+    dotMarkersDebug.resolved = markers.length;
+    lateralSamples.sort((a, b) => a - b);
+    dotMarkersDebug.medLatM = lateralSamples.length
+      ? Math.round(lateralSamples[Math.floor(lateralSamples.length / 2)]!)
+      : 0;
+    setDriveDiagMkDiag(
+      `${dotMarkersDebug.paintedId}:${dotMarkersDebug.verts} f${dotMarkersDebug.focusHit} ${dotMarkersDebug.resolved}/${dotMarkersDebug.input} m${dotMarkersDebug.medLatM} p${dotMarkersDebug.paints}`
+    );
 
     if (!markers.length) {
       for (const { marker } of existing.values()) marker.remove();

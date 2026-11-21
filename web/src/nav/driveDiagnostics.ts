@@ -106,6 +106,10 @@ export type DriveDiagSnapshot = {
   /** Weather-pipeline state for the Wx graphs — set by App each render when
    *  values change; empty until the pipeline reports. */
   wxDiag: string;
+  /** DOT marker projection state — which painted array fed positions,
+   *  focus hit, resolved/input counts, median lateral. Written by DriveMap's
+   *  marker effect each paint epoch. */
+  mkDiag: string;
   /** Core session lifecycle — "the route just stopped" leaves a mark here. */
   nativeStarts: number;
   nativeRestarts: number;
@@ -328,6 +332,7 @@ function emptySnapshot(): DriveDiagSnapshot {
     etaJumpSource: "",
     doubledBack: 0,
     wxDiag: "",
+    mkDiag: "",
     nativeStarts: 0,
     nativeRestarts: 0,
     nativeRestartFails: 0,
@@ -459,6 +464,7 @@ function applyParsed(parsed: Partial<DriveDiagSnapshot>): void {
     stayOnLast:
       typeof parsed.stayOnLast === "string" ? parsed.stayOnLast.slice(0, 16) : "",
     wxDiag: typeof parsed.wxDiag === "string" ? parsed.wxDiag.slice(0, 120) : "",
+    mkDiag: typeof parsed.mkDiag === "string" ? parsed.mkDiag.slice(0, 80) : "",
   };
 }
 
@@ -670,6 +676,15 @@ export function setDriveDiagWxDiag(line: string): void {
   const next = line.trim().slice(0, 160);
   if (state.wxDiag === next) return;
   state.wxDiag = next;
+  persistDriveDiagSoon();
+}
+
+/** DOT marker projection state — DriveMap's marker effect writes it each
+ *  paint epoch so floating-vs-on-line reports name the painted array used. */
+export function setDriveDiagMkDiag(line: string): void {
+  const next = line.trim().slice(0, 80);
+  if (state.mkDiag === next) return;
+  state.mkDiag = next;
   persistDriveDiagSoon();
 }
 
@@ -1061,6 +1076,7 @@ export function formatDriveDiagLines(
     `Trail: ${snap.droneTrail || "none"}`,
     `Lean: ${snap.leanApplies} applies, max ${snap.leanMaxDeg}°, ${snap.leanDrops} drops`,
     ...(snap.wxDiag ? [`Wx: ${snap.wxDiag}`] : []),
+    ...(snap.mkDiag ? [`Mk: ${snap.mkDiag}`] : []),
     `YOU: gps ${snap.youGps || "-"}, core ${snap.youCore || "-"}`,
     `ETA: ${
       snap.etaJumpMin > 0
