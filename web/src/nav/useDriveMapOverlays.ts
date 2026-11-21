@@ -160,13 +160,18 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
      * (Bill, build 622, Nov 20). Events beyond the painted window project
      * far off the end — the 400m lateral check hides them instead of
      * piling them at the slice tail. */
+    /* Along quantized to 2 km — the memo used to re-project every impact
+     * onto a 10–24k-vertex slice each GPS tick (~2.4M segment checks/sec,
+     * enough to stall a phone; build 623 crash). The window slides in
+     * steps; markers still land on the painted line. */
+    const alongQ = Math.round(Math.max(0, userAlongGuidanceM) / 2000) * 2000;
     const kind = routeLineGeometryKind(viewMode, navigationStarted, {
       isOverviewPip: false,
-      userAlongMeters: userAlongGuidanceM ?? null,
+      userAlongMeters: alongQ,
     });
     const painted =
       kind === "driveAhead"
-        ? routeLineGeometryForDriveDisplay(route.geometry, userAlongGuidanceM ?? 0)
+        ? routeLineGeometryForDriveDisplay(route.geometry, alongQ)
         : viewMode === "route" || viewMode === "topdown"
           ? geometryForRouteOverviewDisplay(route.geometry)
           : geometryForPlanningMapDisplay(route.geometry);
@@ -197,7 +202,7 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
     guidanceRouteId,
     viewMode,
     navigationStarted,
-    userAlongGuidanceM,
+    Math.round(Math.max(0, userAlongGuidanceM) / 2000),
   ]);
 
   /**
