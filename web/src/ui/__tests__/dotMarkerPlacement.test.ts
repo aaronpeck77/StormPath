@@ -23,7 +23,7 @@ describe("resolveDotMarkerPlacement", () => {
     const p = resolveDotMarkerPlacement(
       new Map([
         ["r-a", CORRIDOR],
-        ["r-b", STUB.map(([x, y]) => [x + 0.01, y]) as LngLat],
+        ["r-b", STUB.map(([x, y]) => [x + 0.01, y] as LngLat)],
       ]),
       events
     );
