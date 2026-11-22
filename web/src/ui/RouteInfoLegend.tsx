@@ -36,9 +36,10 @@ export function RouteInfoLegend() {
           sustained speed; gusts stay localized.
         </li>
         <li>
-          <strong>NWS / Road</strong> — Bands when National Weather Service warnings or Mapbox
-          traffic/closures overlap your path. Faded bands are nearby but not directly on the route
-          line.
+          <strong>NWS / Road</strong> — Bands when National Weather Service alerts or Mapbox
+          traffic/closures overlap your path. An empty NWS rail means the feed is live and nothing
+          qualifies (radar cells alone stay on the Radar lane). Faded bands are nearby but not on
+          the route line.
         </li>
         <li>
           <strong>Cards below</strong> — NWS warnings and road/traffic hazards ahead (with distance

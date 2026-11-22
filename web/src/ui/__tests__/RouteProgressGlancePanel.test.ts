@@ -46,4 +46,26 @@ describe("Route Info shared hazard links", () => {
     expect(html).toContain("rpgl__hazard-rail--nws");
     expect(html).toContain("rpgl__hazard-rail--road");
   });
+
+  it("shows a clear empty NWS hint, and mentions Radar when corridor echo exists", () => {
+    const empty = render([]);
+    expect(empty).toContain("Clear — no NWS alerts");
+    expect(empty).toContain("Clear — no road hazards");
+
+    const withRadar = renderToStaticMarkup(
+      createElement(RouteProgressGlancePanel, {
+        timeline: [],
+        routeWide: [],
+        outlookSteps: [],
+        fallbackSegments: [],
+        totalMeters: 50_000,
+        userAlongMeters: 0,
+        planEtaMinutes: 50,
+        userAlongT: 0,
+        stripTint: "#fff",
+        radarSamples: [{ t: 0.4, intensity: 0.55 }],
+      })
+    );
+    expect(withRadar).toContain("Radar has cells · no NWS alerts");
+  });
 });

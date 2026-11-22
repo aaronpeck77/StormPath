@@ -10,6 +10,8 @@ import {
   type RouteAheadGlanceCard,
   type RouteAheadRelevance,
 } from "../nav/routeAheadSync";
+import { RADAR_SOFT_THRESHOLD } from "../nav/constants";
+import { radarDisplayIntensity } from "../nav/radarReflectivityScale";
 import type { TimelineItem } from "./RouteHazardTimeline";
 import { RouteInfoLegend } from "./RouteInfoLegend";
 import { RouteWxLanes } from "./RouteWxLanes";
@@ -114,7 +116,7 @@ const HAZARD_RAIL_META: Record<
 
 const HAZARD_RAIL_ORDER: TimelineItem["track"][] = ["nws", "road"]; // radar → strata, wind → graph
 
-function HazardRailRow({ track, bands, selectedId, nextId, linkableIds, onSelect, bandRef, cardId }: {
+function HazardRailRow({ track, bands, selectedId, nextId, linkableIds, onSelect, bandRef, cardId, emptyHint }: {
   track: TimelineItem["track"];
   bands: HazardBandVisual[];
   selectedId: string | null;
@@ -123,12 +125,9 @@ function HazardRailRow({ track, bands, selectedId, nextId, linkableIds, onSelect
   onSelect: (ids: string[]) => void;
   bandRef: (id: string, element: HTMLButtonElement | null) => void;
   cardId: (id: string) => string;
+  emptyHint: string;
 }) {
   const meta = HAZARD_RAIL_META[track];
-  const emptyHint =
-    track === "nws" ? "No NWS on route"
-    : track === "road" ? "No road hazards"
-    : "Clear";
   return (
     <div className={`rpgl__layer rpgl__layer--${track} rpgl__hazard-row`}>
       <span className={`rpgl__layer-label rpgl__hazard-sublabel ${meta.sublabelClass}`}>
@@ -331,6 +330,19 @@ export function RouteProgressGlancePanel({
     return map;
   }, [bandVisuals]);
 
+  /** Empty NWS rail should read “checked, nothing qualifies” — not broken. */
+  const corridorHasRadarEcho = useMemo(
+    () =>
+      radarSamples.some(
+        (s) => radarDisplayIntensity(s.intensity) >= RADAR_SOFT_THRESHOLD
+      ),
+    [radarSamples]
+  );
+  const nwsEmptyHint = corridorHasRadarEcho
+    ? "Radar has cells · no NWS alerts"
+    : "Clear — no NWS alerts";
+  const roadEmptyHint = "Clear — no road hazards";
+
   const tickSteps = useMemo(
     () => [...outlookSteps].sort((a, b) => a.fraction - b.fraction),
     [outlookSteps]
@@ -443,6 +455,7 @@ export function RouteProgressGlancePanel({
                       {HAZARD_RAIL_ORDER.map((track) => (
                         <HazardRailRow key={track} track={track} bands={bandsByTrack[track]}
                           selectedId={selectedId} nextId={nextHazardId} linkableIds={linkableIds} cardId={cardId}
+                          emptyHint={track === "nws" ? nwsEmptyHint : roadEmptyHint}
                           bandRef={(id, element) => { if (element) bandRefs.current.set(id, element); else bandRefs.current.delete(id); }}
                           onSelect={(ids) => { if (ids.length === 1) selectCard(ids[0]!); else setChoiceIds(ids); }} />
                       ))}

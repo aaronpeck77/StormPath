@@ -161,8 +161,12 @@
   font-size: 0.5rem;
   font-weight: 650;
   letter-spacing: 0.03em;
-  color: rgba(148, 163, 184, 0.55);
+  color: rgba(148, 163, 184, 0.72);
   white-space: nowrap;
+  padding: 0 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .rpgl__sync-x-ticks {
