@@ -91,7 +91,13 @@
   width: 100%;
 }
 
-/* Hazard rails reuse .rpgl__layer; keep rail height compact */
+/* Hazard rails reuse .rpgl__layer; keep rail height compact.
+ * Plot must span the full layer — the label chip is absolute, so without
+ * this the rail collapses into the 0px label column and looks empty. */
+.rpgl__hazard-row .rpgl__layer-plot {
+  grid-column: 1 / -1;
+}
+
 .rpgl__hazard-rail {
   position: relative;
   width: 100%;

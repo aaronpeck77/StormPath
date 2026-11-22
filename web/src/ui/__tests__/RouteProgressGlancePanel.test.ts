@@ -36,4 +36,14 @@ describe("Route Info shared hazard links", () => {
     expect(html).not.toContain("aria-controls=");
     expect(html).toContain("disabled");
   });
+
+  it("spans NWS/Road rails across the full layer so bands are not zero-width", () => {
+    const html = render();
+    const railOpens = [...html.matchAll(/class="[^"]*rpgl__hazard-rail[^"]*"/g)];
+    expect(railOpens.length).toBeGreaterThanOrEqual(2);
+    /* Inline grid-column (and CSS twin) — label column is 0px on the synced stack. */
+    expect(html).toContain("grid-column:1 / -1");
+    expect(html).toContain("rpgl__hazard-rail--nws");
+    expect(html).toContain("rpgl__hazard-rail--road");
+  });
 });

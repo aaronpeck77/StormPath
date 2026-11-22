@@ -134,8 +134,12 @@ function HazardRailRow({ track, bands, selectedId, nextId, linkableIds, onSelect
       <span className={`rpgl__layer-label rpgl__hazard-sublabel ${meta.sublabelClass}`}>
         {meta.label}
       </span>
+      {/* Label is position:absolute — without spanning both grid tracks the
+       * plot auto-places into the collapsed 0px label column (--rpgl-track-label-w:0)
+       * and bands paint at zero width (same bug Wx lanes escaped by leaving the grid). */}
       <div
         className={`rpgl__layer-plot rpgl__hazard-rail ${meta.railClass}${bands.length ? "" : " rpgl__hazard-rail--empty"}`}
+        style={{ gridColumn: "1 / -1" }}
       >
         {bands.map((band) => (
           <button
