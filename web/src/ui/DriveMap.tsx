@@ -71,8 +71,7 @@ import {
   type RadarFrameHudMeta,
 } from "../services/radarMapPack";
 import { isRainViewerRateLimited, onRainViewerRateLimit, rainViewerRateLimitMsRemaining } from "../services/rainViewerTileFetch";
-import { nearestPointOnLine } from "@turf/nearest-point-on-line";
-import { lineString as turfLineString, point as turfPoint } from "@turf/helpers";
+import { resolveDotMarkerPlacement } from "./dotMarkerPlacement";
 
 /** Read by the Mk: dump in App — which painted array fed marker projection,
  *  whether the focused leg hit, and how many markers survived the 400m gate.
@@ -5579,73 +5578,25 @@ function DriveMapInner({
 
     const existing = dotEventMarkerMapRef.current;
 
-    /* Pick the painted leg by DATA FIT, not id. Every prior version chose
-     * the snap target by id (focused, locked, first) and ids kept diverging
-     * from what painted — preview legs, rejoin stubs, r-your-route. Probe a
-     * few events per leg; the corridor with the lowest median lateral wins —
-     * the events were matched to the guidance corridor, so the leg they
-     * belong to selects itself. r-your-route is a synthetic straight-line
-     * preview: never a candidate (Bill, build 627 vertical stack). */
-    const probes = (dotEventMarkers ?? [])
-      .filter((m) => isValidLngLatPair(m.lngLat))
-      .slice(0, 6);
-    let paintedId: string | null = null;
-    let paintedLine: ReturnType<typeof turfLineString> | null = null;
-    if (probes.length) {
-      let bestScore = Infinity;
-      for (const [id, coords] of paintedRoutesRef.current) {
-        if (id === "r-your-route" || coords.length < 2) continue;
-        const line = turfLineString(coords);
-        const lats = probes
-          .map(
-            (m) =>
-              nearestPointOnLine(line, turfPoint(m.lngLat), {
-                units: "meters",
-              }).properties?.dist ?? Number.POSITIVE_INFINITY
-          )
-          .sort((a, b) => a - b);
-        const med = lats[Math.floor(lats.length / 2)]!;
-        if (med < bestScore) {
-          bestScore = med;
-          paintedId = id;
-          paintedLine = line;
-        }
-      }
-      /* No corridor fits within 400m → events belong to a route that isn't
-       * painted — hide rather than weld markers to a wrong line. */
-      if (bestScore > 400) paintedLine = null;
-    }
-
-    const lateralSamples: number[] = [];
-    /* Turf's geodesic nearest-point — reference implementation for this
-     * projection, replaces the hand-rolled equirectangular snap. */
-    const markers = paintedLine
-      ? (dotEventMarkers ?? []).flatMap((m) => {
-          if (!isValidLngLatPair(m.lngLat)) return [];
-          const snap = nearestPointOnLine(paintedLine, turfPoint(m.lngLat), {
-            units: "meters",
-          });
-          const lateralM = snap.properties?.dist ?? Number.POSITIVE_INFINITY;
-          if (lateralM > 400) return [];
-          lateralSamples.push(lateralM);
-          const c = snap.geometry.coordinates;
-          return [{ ...m, lngLat: [c[0]!, c[1]!] as LngLat }];
-        })
-      : [];
+    /* Placement is owned by resolveDotMarkerPlacement — the rebuilt
+     * pipeline picks the painted leg by data fit (no ids), penalizes
+     * synthetic stubs, and drops events beyond the 400m window. */
+    const placement = resolveDotMarkerPlacement(
+      paintedRoutesRef.current,
+      dotEventMarkers
+    );
+    const markers = placement.markers;
 
     /* On miss, record which ids WERE painted so the dump names the
      * mismatching id set (e.g. focus=r-rejoin, painted=r-a+r-your-route). */
     dotMarkersDebug.paintedId =
-      paintedId ??
-      `[${[...paintedRoutesRef.current.keys()].slice(0, 3).join("+") || "none"}]`;
-    dotMarkersDebug.verts = paintedLine?.geometry.coordinates.length ?? 0;
-    dotMarkersDebug.focusHit = paintedId === lineFocusId ? 1 : 0;
+      placement.paintedId ??
+      `[${placement.candidates.slice(0, 3).join("+") || "none"}]`;
+    dotMarkersDebug.verts = placement.verts;
+    dotMarkersDebug.focusHit = placement.paintedId === lineFocusId ? 1 : 0;
     dotMarkersDebug.input = dotEventMarkers?.length ?? 0;
     dotMarkersDebug.resolved = markers.length;
-    lateralSamples.sort((a, b) => a - b);
-    dotMarkersDebug.medLatM = lateralSamples.length
-      ? Math.round(lateralSamples[Math.floor(lateralSamples.length / 2)]!)
-      : 0;
+    dotMarkersDebug.medLatM = Math.round(placement.fitMedM ?? 0);
     setDriveDiagMkDiag(
       `${dotMarkersDebug.paintedId}:${dotMarkersDebug.verts} f${dotMarkersDebug.focusHit} ${dotMarkersDebug.resolved}/${dotMarkersDebug.input} m${dotMarkersDebug.medLatM} p${dotMarkersDebug.paints}`
     );
