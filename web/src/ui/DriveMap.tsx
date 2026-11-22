@@ -72,6 +72,12 @@ import {
 } from "../services/radarMapPack";
 import { isRainViewerRateLimited, onRainViewerRateLimit, rainViewerRateLimitMsRemaining } from "../services/rainViewerTileFetch";
 import { resolveDotMarkerPlacement } from "./dotMarkerPlacement";
+import {
+  applyDotEventLayers,
+  DOT_EVENT_LAYER,
+  dotEventIdAtPoint,
+  removeDotEventLayers,
+} from "./mapDotEventLayers";
 
 /** Read by the Mk: dump in App — which painted array fed marker projection,
  *  whether the focused leg hit, and how many markers survived the 400m gate.
@@ -658,17 +664,18 @@ function DriveMapInner({
   const onSavedClickRef = useRef(onSavedPlaceClick);
   onSavedClickRef.current = onSavedPlaceClick;
   const searchPickMarkerMapRef = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLButtonElement }>>(new Map());
-  const dotEventMarkerMapRef = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLElement }>>(new Map());
   /**
    * Painted route coordinates captured inside applyRoutesToMap's own paint
-   * pass (paintedOut). DOT marker positions are projected from THIS object —
-   * the same array handed to the GeoJSON source — so markers cannot drift
-   * from the rendered line. paintedEpoch bumps each paint pass so the
-   * marker effect re-projects whenever the line is redrawn (slice slides,
-   * style reload, view switch).
+   * pass (paintedOut). DOT triangle positions are projected from THIS object —
+   * the same array handed to the GeoJSON source — then drawn as a GL symbol
+   * layer so they cannot drift from the WebGL route line at low zoom.
+   * paintedEpoch bumps each paint pass so the effect re-projects whenever
+   * the line is redrawn (slice slides, style reload, view switch).
    */
   const paintedRoutesRef = useRef<Map<string, LngLat[]>>(new Map());
   const [paintedEpoch, setPaintedEpoch] = useState(0);
+  const onDotEventMarkerClickRef = useRef(onDotEventMarkerClick);
+  onDotEventMarkerClickRef.current = onDotEventMarkerClick;
   const onSearchPickMarkerClickRef = useRef(onSearchPickMarkerClick);
   onSearchPickMarkerClickRef.current = onSearchPickMarkerClick;
   const nextHazardBeaconRef = useRef(nextHazardBeacon);
@@ -2057,6 +2064,7 @@ function DriveMapInner({
     const placeDestAtEvent = (point: mapboxgl.PointLike, lngLat: unknown) => {
       if (!allowDestinationPick) return;
       if (tapHitsRoute(point)) return;
+      if (dotEventIdAtPoint(map, point)) return;
       let poi = null;
       try {
         poi = selectablePoiAtPoint(map, point);
@@ -5566,20 +5574,13 @@ function DriveMapInner({
     };
   }, [mapReady, searchPickMarkers, onSearchPickMarkerClick]);
 
-  /* State DOT/WZDx work-zone & closure dots — tappable for the detail sheet.
-   * Positions are projected HERE from the painted coordinate array captured
-   * during the route paint pass (paintedRoutesRef) — the same object handed
-   * to the GeoJSON source. Runs after every paint (paintedEpoch) so markers
-   * re-project whenever the line is redrawn; events farther than 400m from
-   * the painted window are dropped instead of piling at the slice tail. */
+  /* State DOT/WZDx triangles — GL symbol layer (not HTML Markers). Positions
+   * come from the painted coordinate array; symbols share the WebGL path with
+   * the route line so they stay glued at every zoom. */
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
-    const existing = dotEventMarkerMapRef.current;
-
-    /* Placement prefers the focused painted leg so a leftover stub cannot
-     * host the triangles; falls back to fit + synthetic penalty. */
     const placement = resolveDotMarkerPlacement(
       paintedRoutesRef.current,
       dotEventMarkers,
@@ -5587,8 +5588,6 @@ function DriveMapInner({
     );
     const markers = placement.markers;
 
-    /* On miss, record which ids WERE painted so the dump names the
-     * mismatching id set (e.g. focus=r-rejoin, painted=r-a+r-your-route). */
     dotMarkersDebug.paintedId =
       placement.paintedId ??
       `[${placement.candidates.slice(0, 3).join("+") || "none"}]`;
@@ -5601,44 +5600,39 @@ function DriveMapInner({
       `${dotMarkersDebug.paintedId}:${dotMarkersDebug.verts} f${dotMarkersDebug.focusHit} ${dotMarkersDebug.resolved}/${dotMarkersDebug.input} m${dotMarkersDebug.medLatM} p${dotMarkersDebug.paints}`
     );
 
-    if (!markers.length) {
-      for (const { marker } of existing.values()) marker.remove();
-      existing.clear();
-      return;
+    applyDotEventLayers(map, markers);
+
+    const onDotClick = (e: mapboxgl.MapLayerMouseEvent) => {
+      const id = e.features?.[0]?.properties?.id;
+      if (typeof id !== "string" || !id) return;
+      e.originalEvent?.stopPropagation?.();
+      onDotEventMarkerClickRef.current?.(id);
+    };
+    if (map.getLayer(DOT_EVENT_LAYER)) {
+      map.on("click", DOT_EVENT_LAYER, onDotClick);
     }
 
-    const wantedIds = new Set(markers.map((m) => m.id));
-    for (const [id, { marker }] of existing) {
-      if (!wantedIds.has(id)) {
-        marker.remove();
-        existing.delete(id);
+    return () => {
+      if (map.getLayer(DOT_EVENT_LAYER)) {
+        map.off("click", DOT_EVENT_LAYER, onDotClick);
       }
-    }
+    };
+  }, [mapReady, dotEventMarkers, paintedEpoch, lineFocusId, rejoinCompareLockedRouteId]);
 
-    for (const m of markers) {
-      const prev = existing.get(m.id);
-      if (prev) {
-        if (isValidLngLatPair(m.lngLat)) prev.marker.setLngLat(m.lngLat);
-        continue;
-      }
-      if (!isValidLngLatPair(m.lngLat)) continue;
-      const el = document.createElement("div");
-      el.className = `map-dot-event map-dot-event--${m.kind ?? "other"}`;
-      el.title = m.label;
-      el.setAttribute("role", "button");
-      el.setAttribute("aria-label", m.label);
-      el.style.cursor = "pointer";
-      const markerId = m.id;
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
-        onDotEventMarkerClick?.(markerId);
-      });
-      const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
-        .setLngLat(m.lngLat)
-        .addTo(map);
-      existing.set(m.id, { marker, el });
-    }
-  }, [mapReady, dotEventMarkers, paintedEpoch, lineFocusId, rejoinCompareLockedRouteId, onDotEventMarkerClick]);
+  /* Style swaps drop custom images/sources — clear so the next paint rebuilds. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const onStyle = () => {
+      removeDotEventLayers(map);
+      setPaintedEpoch((e) => e + 1);
+    };
+    map.on("style.load", onStyle);
+    return () => {
+      map.off("style.load", onStyle);
+      removeDotEventLayers(map);
+    };
+  }, [mapReady]);
 
   useEffect(() => {
     if (!mapReady) return;

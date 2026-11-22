@@ -2,7 +2,11 @@
 
 Updated: 2026-11-22, morning, Forge. Floating construction-triangle fix is local only — not committed, not pushed. Latest section first.
 
-## Latest — 2026-11-22: Lock DOT triangles to the painted focus line (local, NOT pushed)
+## Latest — 2026-11-22: DOT triangles as GL symbols (local, NOT pushed)
+
+Bill: zoom in and triangles fall onto the blue line; zoom out and they drift off. HTML Markers vs WebGL route line. Replaced with a Mapbox symbol layer (`mapDotEventLayers.ts`) so icons share the route render path. Placement/alongMeters work stays. Verified: tsc clean; 236 files / 1537 tests. Not committed — wait for Bill.
+
+## Earlier — 2026-11-22: Lock DOT triangles to the painted focus line (pushed as 83a8ed3)
 
 Bill’s screenshot: real construction triangles stacked in a vertical column into Mexico while the blue route ran SD→IL. Same failure Devin named the Guatemala column — events matched onto a stale N–S corridor.
 

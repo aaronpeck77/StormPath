@@ -12,6 +12,8 @@ export function isStormPathOverlayLayerId(id: string): boolean {
   return (
     id.startsWith("route-") ||
     id.startsWith("pip-route-") ||
+    id.startsWith("stormpath-dot-") ||
+    id.startsWith("stormpath-road-controls") ||
     id.includes("rainviewer") ||
     id.startsWith("weather-alerts") ||
     id.startsWith("radar-storm-motion") ||

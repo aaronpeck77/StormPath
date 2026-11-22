@@ -11,6 +11,7 @@ describe("mapBasemapLayerAnchor", () => {
   it("skips StormPath overlays when naming overlay ids", () => {
     expect(isStormPathOverlayLayerId("route-r-a-line")).toBe(true);
     expect(isStormPathOverlayLayerId("mapbox-traffic-congestion-severe")).toBe(true);
+    expect(isStormPathOverlayLayerId("stormpath-dot-events-icons")).toBe(true);
     expect(isStormPathOverlayLayerId("road-label")).toBe(false);
   });
 
