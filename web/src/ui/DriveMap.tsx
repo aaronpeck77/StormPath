@@ -5579,8 +5579,17 @@ function DriveMapInner({
 
     const existing = dotEventMarkerMapRef.current;
 
-    const fromFocus = paintedRoutesRef.current.get(lineFocusId);
-    const painted = fromFocus ?? [...paintedRoutesRef.current.values()][0];
+    /* Focused leg first; the events were matched to the guidance corridor,
+     * so the painted LOCKED leg is the correct fallback — never an arbitrary
+     * first leg, which used to snap everything onto the r-your-route
+     * synthetic straight-line preview (Bill, build 627 vertical stack). */
+    const paintedId = paintedRoutesRef.current.has(lineFocusId)
+      ? lineFocusId
+      : rejoinCompareLockedRouteId &&
+          paintedRoutesRef.current.has(rejoinCompareLockedRouteId)
+        ? rejoinCompareLockedRouteId
+        : null;
+    const painted = paintedId ? paintedRoutesRef.current.get(paintedId) : undefined;
     const paintedLine =
       painted && painted.length >= 2 ? turfLineString(painted) : null;
 
@@ -5601,11 +5610,13 @@ function DriveMapInner({
         })
       : [];
 
-    dotMarkersDebug.paintedId = fromFocus
-      ? lineFocusId
-      : ([...paintedRoutesRef.current.keys()][0] ?? "-");
+    /* On miss, record which ids WERE painted so the dump names the
+     * mismatching id set (e.g. focus=r-rejoin, painted=r-a+r-your-route). */
+    dotMarkersDebug.paintedId =
+      paintedId ??
+      `[${[...paintedRoutesRef.current.keys()].slice(0, 3).join("+") || "none"}]`;
     dotMarkersDebug.verts = painted?.length ?? 0;
-    dotMarkersDebug.focusHit = fromFocus ? 1 : 0;
+    dotMarkersDebug.focusHit = paintedId === lineFocusId ? 1 : 0;
     dotMarkersDebug.input = dotEventMarkers?.length ?? 0;
     dotMarkersDebug.resolved = markers.length;
     lateralSamples.sort((a, b) => a - b);
@@ -5653,7 +5664,7 @@ function DriveMapInner({
         .addTo(map);
       existing.set(m.id, { marker, el });
     }
-  }, [mapReady, dotEventMarkers, paintedEpoch, lineFocusId, onDotEventMarkerClick]);
+  }, [mapReady, dotEventMarkers, paintedEpoch, lineFocusId, rejoinCompareLockedRouteId, onDotEventMarkerClick]);
 
   useEffect(() => {
     if (!mapReady) return;
