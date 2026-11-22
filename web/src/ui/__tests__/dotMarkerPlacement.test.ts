@@ -74,4 +74,35 @@ describe("resolveDotMarkerPlacement", () => {
     const p = resolveDotMarkerPlacement(new Map([["r-a", CORRIDOR]]), ev);
     expect(p.markers.map((m) => m.id)).toEqual(["near"]);
   });
+
+  it("prefers the focused painted leg over a closer synthetic stub", () => {
+    /* Events sit nearer the stub, but focus is the real corridor — the
+     * Guatemala leftover-stub case must not steal the triangles. */
+    const nearStub = [mk("e1", [-87.595, 41.605]), mk("e2", [-87.592, 41.605])];
+    const p = resolveDotMarkerPlacement(
+      new Map([
+        ["r-rejoin", STUB],
+        ["r-a", CORRIDOR],
+      ]),
+      nearStub,
+      "r-a"
+    );
+    expect(p.paintedId).toBe("r-a");
+  });
+
+  it("falls back to fit when the focused leg is too far", () => {
+    const farFocus: LngLat[] = [
+      [-90, 35],
+      [-89.9, 35],
+    ];
+    const p = resolveDotMarkerPlacement(
+      new Map([
+        ["r-a", farFocus],
+        ["r-b", CORRIDOR],
+      ]),
+      events,
+      "r-a"
+    );
+    expect(p.paintedId).toBe("r-b");
+  });
 });

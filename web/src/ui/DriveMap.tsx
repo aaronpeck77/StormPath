@@ -5578,12 +5578,12 @@ function DriveMapInner({
 
     const existing = dotEventMarkerMapRef.current;
 
-    /* Placement is owned by resolveDotMarkerPlacement — the rebuilt
-     * pipeline picks the painted leg by data fit (no ids), penalizes
-     * synthetic stubs, and drops events beyond the 400m window. */
+    /* Placement prefers the focused painted leg so a leftover stub cannot
+     * host the triangles; falls back to fit + synthetic penalty. */
     const placement = resolveDotMarkerPlacement(
       paintedRoutesRef.current,
-      dotEventMarkers
+      dotEventMarkers,
+      lineFocusId
     );
     const markers = placement.markers;
 

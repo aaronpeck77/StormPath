@@ -78,6 +78,10 @@ RV/truck apps (PC*Miler, CoPilot, RV LIFE, Roadtrippers) do this natively; consu
 
 ## P1 — Native-feel Drive
 
+### 2026-11-22 — Triangles only on the painted focus line
+
+Bill’s Guatemala column was real DOT events on a stale N–S match. Map markers now reproject from alongMeters onto the focus geom the map paints, and placement prefers that painted focus leg. Do not rebuild from this note.
+
 ### 2026-11-10 — Keyed DOT feeds: IL live via IDOT CWZ; worker_presence is a flagger signal worth chewing
 
 Bill's "no construction on my IL routes" turned out to be coverage, not matching: 14 of 42 active WZDx registry feeds need API keys and the worker skipped them all — IL, TX, OH, PA, VA, NC, MI, CA, MA, CO, NPS, OR. Shipped keyed-feed plumbing (`KEYED_FEEDS` map → wrangler secrets, query-param or header auth, CWZ camelCase→snake_case normalization, `road_events` fallback). Bill's IDOT CWZ key went live same-day: 336 IL events in the corridor query, every one with geometry; feed updates every 1 min. Two data quirks handled: `direction:"unknown"` (432/575 events) now normalizes to null so titles don't say "· unknown", and IDOT's `I080`-style codes display as `I-80` (S### state-route codes left raw — IDOT's internal scheme, unverified mapping). Chew for later: IDOT `worker_presence` objects mark flagging operations (`are_workers_present`, confidence, last-confirmed timestamp) — that's the "cones out / flagger ahead" signal Bill originally asked for, currently unused; also `beginning/ending_milepost` could give milepost-anchored descriptions instead of cross-street text. Remaining keyed feeds each need their own signup (TX api.drivetexas.org, OH publicapi.ohgo.com, etc. — URLs in `KEYED_FEEDS` comments); header-auth schemes for mdot/massdot/ncdot/ordot are best-guess until verified with real keys.

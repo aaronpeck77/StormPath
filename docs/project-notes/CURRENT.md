@@ -1,8 +1,22 @@
 # StormPath — current handoff
 
-Updated: 2026-11-05, Devin Desktop (local session; 564 drive feedback). Latest section first; it supersedes older build/next-step lines. This file update is LOCAL ONLY; not pushed.
+Updated: 2026-11-22, morning, Forge. Floating construction-triangle fix is local only — not committed, not pushed. Latest section first.
 
-## Latest — 2026-11-05: 564 drive-test batch + hard-lock Stage 1 + companion v2 (local, NOT pushed)
+## Latest — 2026-11-22: Lock DOT triangles to the painted focus line (local, NOT pushed)
+
+Bill’s screenshot: real construction triangles stacked in a vertical column into Mexico while the blue route ran SD→IL. Same failure Devin named the Guatemala column — events matched onto a stale N–S corridor.
+
+Forge was still on `1e078a3`; fast-forwarded to `origin/master` `4ce6bf4` (TestFlight **632**). Then hardened on top:
+
+- `nav/dotMarkerMap.ts` — map markers always `pointAtAlongMeters(focusGeom, alongMeters)`; never trust stale `impact.lngLat`.
+- `drawnRouteGeometry` via `focusGeometryForDotMatch` — same focus geometry the map paints (nav guidance when that slot is focused); never the uncleared nav ref alone.
+- `resolveDotMarkerPlacement` prefers the focused painted leg so a leftover stub cannot host the triangles.
+- Regression tests for alongMeters reproject + trip-A→trip-B Guatemala column.
+- Verified: `tsc --noEmit` clean; 235 files / 1531 tests passed (NWS live integration excluded).
+
+Do not push or cut TestFlight until Bill asks. Phone check after a build: triangles only on the blue line at overview and after Go; dump `Mk:` should show focus painted id and `f1`.
+
+## Earlier — 2026-11-05: 564 drive-test batch + hard-lock Stage 1 + companion v2 (local, NOT pushed)
 
 Bill drove build 564 all day and reported. His headline principle, now policy: **a route he accepts must never change silently** — deviate → guide back onto it; a better option only via a prompt he approves. His other asks answered below. All changes local, uncommitted→committed locally only; NOT pushed.
 

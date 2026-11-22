@@ -13,14 +13,10 @@ import type { LngLat } from "../nav/types";
  * - DOM markers cannot drift; the POSITIONS were wrong, not the renderer.
  * - Positions must come from the array the map paints — callers pass the
  *   paintedOut map captured inside applyRoutesToMap's own paint pass.
- * - Choosing the target leg by id always diverges from what paints
- *   (preview legs, rejoin stubs, compare picks, r-your-route). So no ids
- *   are consulted: the corridor the events were matched to selects itself
- *   by fit — lowest median lateral distance of probe events wins.
- * - Synthetic legs (rejoin stubs, fork previews) are straight lines that
- *   can out-fit a real corridor by luck — they get a fit penalty so a real
- *   route always wins when close, but they may still host markers when no
- *   real corridor is painted (a marker on a painted stub beats hiding).
+ * - When a focus leg is painted, prefer it over fit-across-all-legs so a
+ *   leftover rejoin stub / fork preview cannot outbid the blue Main line
+ *   (Guatemala column: probes from a stale match pick a N–S painted leftover).
+ * - Synthetic legs still get a fit penalty when focus is absent.
  * - Each event still needs its own 400 m gate: events beyond the painted
  *   drive-slice window must drop, not pile at the slice tail.
  */
@@ -73,9 +69,25 @@ function minLateralM(line: Feature<LineString>, pts: LngLat[]): number {
   return min;
 }
 
+function snapMarkersToLine(
+  line: Feature<LineString>,
+  inputs: DotMarkerInput[]
+): DotMarkerInput[] {
+  return inputs.flatMap((m) => {
+    const snap = nearestPointOnLine(line, point(m.lngLat), {
+      units: "meters",
+    });
+    const lateralM = snap.properties?.dist ?? Number.POSITIVE_INFINITY;
+    if (lateralM > MAX_LATERAL_M) return [];
+    const c = snap.geometry.coordinates;
+    return [{ ...m, lngLat: [c[0]!, c[1]!] as LngLat }];
+  });
+}
+
 export function resolveDotMarkerPlacement(
   paintedLegs: ReadonlyMap<string, LngLat[]>,
-  events: readonly DotMarkerInput[] | null | undefined
+  events: readonly DotMarkerInput[] | null | undefined,
+  focusId?: string | null
 ): DotMarkerPlacement {
   const legs = [...paintedLegs.entries()].filter(
     ([, coords]) => coords.length >= 2
@@ -87,6 +99,26 @@ export function resolveDotMarkerPlacement(
   }
 
   const probes = inputs.slice(0, PROBE_COUNT).map((m) => m.lngLat);
+  const focusKey = focusId?.trim() || null;
+  const focusCoords = focusKey ? paintedLegs.get(focusKey) : undefined;
+
+  /* Prefer the focused painted leg whenever it is on the map and within the
+   * lateral gate. Fit-across-all-legs only runs when focus is missing or
+   * too far (e.g. events still on a stale match before rematch settles). */
+  if (focusCoords && focusCoords.length >= 2) {
+    const focusLine = lineString(focusCoords);
+    const focusMed = minLateralM(focusLine, probes);
+    if (focusMed <= MAX_LATERAL_M) {
+      return {
+        markers: snapMarkersToLine(focusLine, inputs),
+        paintedId: focusKey,
+        verts: focusCoords.length,
+        fitMedM: focusMed,
+        candidates,
+      };
+    }
+  }
+
   let best: {
     id: string;
     line: Feature<LineString>;
@@ -112,18 +144,8 @@ export function resolveDotMarkerPlacement(
     };
   }
 
-  const markers = inputs.flatMap((m) => {
-    const snap = nearestPointOnLine(best.line, point(m.lngLat), {
-      units: "meters",
-    });
-    const lateralM = snap.properties?.dist ?? Number.POSITIVE_INFINITY;
-    if (lateralM > MAX_LATERAL_M) return [];
-    const c = snap.geometry.coordinates;
-    return [{ ...m, lngLat: [c[0]!, c[1]!] as LngLat }];
-  });
-
   return {
-    markers,
+    markers: snapMarkersToLine(best.line, inputs),
     paintedId: best.id,
     verts: best.line.geometry.coordinates.length,
     fitMedM: best.med,

@@ -162,6 +162,7 @@ import { AppStatusBanners } from "./ui/AppStatusBanners";
 import { useDemoBypassPlayback } from "./nav/useDemoBypassPlayback";
 import { useDriveApproachBanner } from "./nav/useDriveApproachBanner";
 import { useDriveMapOverlays } from "./nav/useDriveMapOverlays";
+import { focusGeometryForDotMatch } from "./nav/dotMarkerMap";
 import { useTrafficBypassFlow } from "./nav/useTrafficBypassFlow";
 import { useSavedTripActions, useRecordedSaveLabels } from "./hooks/useSavedTripActions";
 import { useAdvisoryInteractions } from "./hooks/useAdvisoryInteractions";
@@ -2267,15 +2268,17 @@ export default function App() {
     navigationStarted,
     advisoryPlusDetailOn,
     guidanceRoute,
-    /* DOT match anchor = the leg the map actually focuses. The old chain
-     * (lineFocusId→navGeom→??navGeom) could land on navigationGuidance-
-     * GeometryRef — a ref never cleared between trips — and match every
-     * corridor event onto a stale trip's polyline: real events (I-57 work
-     * zone) rendered as a phantom line of triangles down to Guatemala. */
-    drawnRouteGeometry:
-      plan.routes.find((r) => r.id === driveMapLineFocusId)?.geometry ??
-      plan.routes.find((r) => r.id === guidanceRouteId)?.geometry ??
-      plan.routes[0]?.geometry,
+    /* DOT match anchor = the same focus geometry the map paints. During nav
+     * that is Core/nav guidance for the guidance slot; otherwise the plan
+     * focus leg. Never the uncleared navigationGuidanceGeometryRef alone —
+     * that was the Guatemala triangle column. */
+    drawnRouteGeometry: focusGeometryForDotMatch({
+      navigationStarted,
+      focusId: driveMapLineFocusId,
+      guidanceRouteId,
+      navigationGuidanceGeometry,
+      planRoutes: plan.routes,
+    }),
     nwsNavCorridorGeom,
     guidanceRouteLengthM,
     userAlongGuidanceM,
@@ -2402,7 +2405,7 @@ export default function App() {
     driveMapRoutes,
     navigationStarted,
     guidanceRouteId,
-    lineFocusId,
+    lineFocusId: driveMapLineFocusId,
     viewMode,
     personalForkPreviewGeometry: personalForkNav.previewGeometry,
     guidanceIsPersonalFork,

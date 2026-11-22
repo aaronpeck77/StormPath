@@ -6,6 +6,7 @@ import { pointAtAlongMeters, polylineLengthMeters } from "./routeGeometry";
 import { placeReferencePhrase, type RoutePlaceAnchor } from "./routePlaceReference";
 import { isNavMapLiteMode } from "../utils/dataSaver";
 import { PERSONAL_FORK_ROUTE_ID } from "../personalForks";
+import { dotMarkersAlongFocusGeometry } from "./dotMarkerMap";
 import type { TimelineItem, RouteAheadStormBand } from "./routeAheadSync";
 import type { RouteAlert } from "./routeAlerts";
 import type { RouteImpact } from "./routeImpacts";
@@ -60,6 +61,7 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
     driveMapRoutes,
     navigationStarted,
     guidanceRouteId,
+    lineFocusId,
     viewMode,
     personalForkPreviewGeometry,
     guidanceIsPersonalFork,
@@ -131,31 +133,26 @@ export function useDriveMapOverlays(deps: UseDriveMapOverlaysDeps) {
   ]);
 
   /**
-   * DOT hazard triangles — emit raw event positions only. DriveMap projects
-   * each onto the painted coordinate array captured from applyRoutesToMap's
-   * own paint pass (paintedOut) in the same frame the line is drawn, so a
-   * marker physically cannot be positioned off the rendered line — there is
-   * no second transform to drift. (Rewrite after builds 621–625 kept
-   * floating zoomed-out: every snap here duplicated paint logic and could
-   * diverge from what the map actually drew.)
+   * DOT hazard triangles — re-project from alongMeters onto the focus leg the
+   * map is about to paint. Stored impact.lngLat can still point at a previous
+   * trip's corridor (Guatemala column); alongMeters + focus geom cannot.
+   * DriveMap then snaps these onto the exact paintedOut array.
    */
-  const dotEventMarkersForMap = useMemo(
-    () =>
-      routeImpactsForUi
-        .filter((i) => i.source === "dot511")
-        .map((i) => ({
-          id: i.id,
-          lngLat: i.lngLat,
-          label: i.driverHeadline,
-          kind:
-            i.category === "closure" ||
-            i.category === "incident" ||
-            i.category === "construction"
-              ? i.category
-              : ("other" as const),
-        })),
-    [routeImpactsForUi]
-  );
+  const dotEventMarkersForMap = useMemo(() => {
+    const focusId = lineFocusId ?? guidanceRouteId;
+    const focusGeom =
+      driveMapRoutesForMap.find((r) => r.id === focusId)?.geometry ??
+      (focusId === guidanceRouteId ? navigationGuidanceGeometry : undefined) ??
+      guidanceRoute?.geometry;
+    return dotMarkersAlongFocusGeometry(routeImpactsForUi, focusGeom);
+  }, [
+    routeImpactsForUi,
+    driveMapRoutesForMap,
+    lineFocusId,
+    guidanceRouteId,
+    navigationGuidanceGeometry,
+    guidanceRoute?.geometry,
+  ]);
 
   /**
    * Map line highlights — paint each corridor alert at its real along-route position.
