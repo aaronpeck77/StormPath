@@ -1531,6 +1531,13 @@ export default function App() {
 
   navigationMatchGeometryRef.current = navigationGuidanceGeometry ?? undefined;
 
+  /* The adopted-geometry ref is only meaningful inside a nav session — left
+   * set, a previous trip's corridor keeps satisfying the memo above and
+   * DOT/NWS matching drifts to a ghost route (the Guatemala-column bug). */
+  useEffect(() => {
+    if (!navigationStarted) navigationGuidanceGeometryRef.current = null;
+  }, [navigationStarted]);
+
   /** Longest planned leg — auto lean NWS fetch on cross-country trips (100+ mi). */
   const maxPlanRouteLengthM = useMemo(() => {
     let max = 0;
@@ -2260,11 +2267,15 @@ export default function App() {
     navigationStarted,
     advisoryPlusDetailOn,
     guidanceRoute,
+    /* DOT match anchor = the leg the map actually focuses. The old chain
+     * (lineFocusId→navGeom→??navGeom) could land on navigationGuidance-
+     * GeometryRef — a ref never cleared between trips — and match every
+     * corridor event onto a stale trip's polyline: real events (I-57 work
+     * zone) rendered as a phantom line of triangles down to Guatemala. */
     drawnRouteGeometry:
-      lineFocusId === guidanceRouteId
-        ? navigationGuidanceGeometry
-        : plan.routes.find((r) => r.id === lineFocusId)?.geometry ??
-          navigationGuidanceGeometry,
+      plan.routes.find((r) => r.id === driveMapLineFocusId)?.geometry ??
+      plan.routes.find((r) => r.id === guidanceRouteId)?.geometry ??
+      plan.routes[0]?.geometry,
     nwsNavCorridorGeom,
     guidanceRouteLengthM,
     userAlongGuidanceM,
