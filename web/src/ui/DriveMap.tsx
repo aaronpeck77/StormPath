@@ -5579,19 +5579,42 @@ function DriveMapInner({
 
     const existing = dotEventMarkerMapRef.current;
 
-    /* Focused leg first; the events were matched to the guidance corridor,
-     * so the painted LOCKED leg is the correct fallback — never an arbitrary
-     * first leg, which used to snap everything onto the r-your-route
-     * synthetic straight-line preview (Bill, build 627 vertical stack). */
-    const paintedId = paintedRoutesRef.current.has(lineFocusId)
-      ? lineFocusId
-      : rejoinCompareLockedRouteId &&
-          paintedRoutesRef.current.has(rejoinCompareLockedRouteId)
-        ? rejoinCompareLockedRouteId
-        : null;
-    const painted = paintedId ? paintedRoutesRef.current.get(paintedId) : undefined;
-    const paintedLine =
-      painted && painted.length >= 2 ? turfLineString(painted) : null;
+    /* Pick the painted leg by DATA FIT, not id. Every prior version chose
+     * the snap target by id (focused, locked, first) and ids kept diverging
+     * from what painted — preview legs, rejoin stubs, r-your-route. Probe a
+     * few events per leg; the corridor with the lowest median lateral wins —
+     * the events were matched to the guidance corridor, so the leg they
+     * belong to selects itself. r-your-route is a synthetic straight-line
+     * preview: never a candidate (Bill, build 627 vertical stack). */
+    const probes = (dotEventMarkers ?? [])
+      .filter((m) => isValidLngLatPair(m.lngLat))
+      .slice(0, 6);
+    let paintedId: string | null = null;
+    let paintedLine: ReturnType<typeof turfLineString> | null = null;
+    if (probes.length) {
+      let bestScore = Infinity;
+      for (const [id, coords] of paintedRoutesRef.current) {
+        if (id === "r-your-route" || coords.length < 2) continue;
+        const line = turfLineString(coords);
+        const lats = probes
+          .map(
+            (m) =>
+              nearestPointOnLine(line, turfPoint(m.lngLat), {
+                units: "meters",
+              }).properties?.dist ?? Number.POSITIVE_INFINITY
+          )
+          .sort((a, b) => a - b);
+        const med = lats[Math.floor(lats.length / 2)]!;
+        if (med < bestScore) {
+          bestScore = med;
+          paintedId = id;
+          paintedLine = line;
+        }
+      }
+      /* No corridor fits within 400m → events belong to a route that isn't
+       * painted — hide rather than weld markers to a wrong line. */
+      if (bestScore > 400) paintedLine = null;
+    }
 
     const lateralSamples: number[] = [];
     /* Turf's geodesic nearest-point — reference implementation for this
@@ -5615,7 +5638,7 @@ function DriveMapInner({
     dotMarkersDebug.paintedId =
       paintedId ??
       `[${[...paintedRoutesRef.current.keys()].slice(0, 3).join("+") || "none"}]`;
-    dotMarkersDebug.verts = painted?.length ?? 0;
+    dotMarkersDebug.verts = paintedLine?.geometry.coordinates.length ?? 0;
     dotMarkersDebug.focusHit = paintedId === lineFocusId ? 1 : 0;
     dotMarkersDebug.input = dotEventMarkers?.length ?? 0;
     dotMarkersDebug.resolved = markers.length;
