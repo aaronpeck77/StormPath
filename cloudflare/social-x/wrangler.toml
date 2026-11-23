@@ -1,0 +1,13 @@
+# StormPath X posting worker — deploy: npx wrangler deploy (from this folder)
+# Secrets: wrangler secret put X_API_KEY / X_API_SECRET / X_ACCESS_TOKEN /
+#          X_ACCESS_SECRET / SOCIAL_POST_KEY
+
+name = "stormpath-social-x"
+main = "src/index.ts"
+compatibility_date = "2024-06-01"
+
+# After deploy, URL is typically:
+#   https://stormpath-social-x.<your-subdomain>.workers.dev
+# Post a tweet:
+#   curl -X POST "$BASE/post" -H "x-social-key: $SOCIAL_POST_KEY" \
+#     -H "Content-Type: application/json" -d '{"text":"hello"}'
