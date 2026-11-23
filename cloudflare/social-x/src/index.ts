@@ -11,7 +11,7 @@
  * X credentials: OAuth 1.0a user-context via wrangler secrets.
  */
 
-import { BRAND_PNG_B64 } from "./brand";
+import { BRAND_PNG_B64, TITLE_PNG_B64, ALERT_PNG_B64, CLOSURE_PNG_B64 } from "./brand";
 import { decodePng, encodePng, composite, type RgbaImage } from "./pngCodec";
 
 export interface Env {
@@ -231,7 +231,9 @@ async function severeAlerts(): Promise<NwsFeature[]> {
 }
 
 /** Pick the state with the most severe alerts → focus the map there. */
-async function mapFocus(env: Env): Promise<{ geojson: object; hasContent: boolean }> {
+async function mapFocus(
+  env: Env
+): Promise<{ geojson: object; hasContent: boolean; hasPolys: boolean; hasPins: boolean }> {
   const alerts = await severeAlerts();
   const byState = new Map<string, NwsFeature[]>();
   for (const f of alerts) {
@@ -243,6 +245,7 @@ async function mapFocus(env: Env): Promise<{ geojson: object; hasContent: boolea
     [...byState.entries()].sort((a, b) => b[1].length - a[1].length)[0] ?? [];
 
   const features: object[] = [];
+  let hasPolys = false, hasPins = false;
   let bbox = [180, 90, -180, -90];
   const grow = (lng: number, lat: number) => {
     bbox[0] = Math.min(bbox[0], lng); bbox[1] = Math.min(bbox[1], lat);
@@ -268,6 +271,7 @@ async function mapFocus(env: Env): Promise<{ geojson: object; hasContent: boolea
         properties: { fill: "#ff7a1a", "fill-opacity": 0.18, stroke: "#ff7a1a", "stroke-width": 1.5 },
         geometry: { type: "Polygon", coordinates: rings },
       });
+      hasPolys = true;
       for (const ring of rings as number[][][])
         for (const [lng, lat] of ring) grow(lng, lat);
     }
@@ -291,11 +295,12 @@ async function mapFocus(env: Env): Promise<{ geojson: object; hasContent: boolea
         properties: { "marker-color": "#ff4d4d", "marker-size": "small" },
         geometry: { type: "Point", coordinates: [roundCoord(pt[0]), roundCoord(pt[1])] },
       });
+      hasPins = true;
       grow(pt[0], pt[1]);
     }
   } catch { /* image without closures is fine */ }
 
-  return { geojson: { type: "FeatureCollection", features }, hasContent: features.length > 0 };
+  return { geojson: { type: "FeatureCollection", features }, hasContent: features.length > 0, hasPolys, hasPins };
 }
 
 /** Google polyline encoding — Mapbox `path-` overlays use this; ~5x smaller
@@ -324,7 +329,7 @@ async function buildMapImage(
   env: Env
 ): Promise<{ png: ArrayBuffer | null; reason: string }> {
   if (!env.MAPBOX_TOKEN) return { png: null, reason: "no mapbox token" };
-  const { geojson, hasContent } = await mapFocus(env);
+  const { geojson, hasContent, hasPolys, hasPins } = await mapFocus(env);
   if (!hasContent) return { png: null, reason: "no features" };
 
   // Translate the FeatureCollection into compact overlay syntax:
@@ -359,15 +364,44 @@ async function buildMapImage(
       const bytes = Uint8Array.from(atob(BRAND_PNG_B64), (c) => c.charCodeAt(0));
       brandImg = await decodePng(bytes);
     }
-    // subtle dark pad behind the lockup for legibility over busy map areas
+    const darkPad = (w: number, h: number): RgbaImage => {
+      const p: RgbaImage = { w, h, data: new Uint8Array(w * h * 4) };
+      for (let i = 0; i < p.data.length; i += 4) {
+        p.data[i] = 11; p.data[i + 1] = 15; p.data[i + 2] = 20; p.data[i + 3] = 180;
+      }
+      return p;
+    };
+
+    // brand lockup bottom-left
     const pad = 10, bw = brandImg.w + pad * 2, bh = brandImg.h + pad * 2;
     const bx = 6, by = map.h - bh - 6;
-    const padImg: RgbaImage = { w: bw, h: bh, data: new Uint8Array(bw * bh * 4) };
-    for (let i = 0; i < padImg.data.length; i += 4) {
-      padImg.data[i] = 11; padImg.data[i + 1] = 15; padImg.data[i + 2] = 20; padImg.data[i + 3] = 180;
-    }
-    composite(map, padImg, bx, by);
+    composite(map, darkPad(bw, bh), bx, by);
     composite(map, brandImg, bx + pad, by + pad);
+
+    // title + legend top-left — chips only for content actually on the map
+    if (!sprites) {
+      const dec = (b64: string) =>
+        decodePng(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+      sprites = {
+        title: await dec(TITLE_PNG_B64),
+        alert: await dec(ALERT_PNG_B64),
+        closure: await dec(CLOSURE_PNG_B64),
+      };
+    }
+    const chips: RgbaImage[] = [
+      ...(hasPolys ? [sprites.alert] : []),
+      ...(hasPins ? [sprites.closure] : []),
+    ];
+    const legW = Math.max(sprites.title.w, ...chips.map((c) => c.w)) + 16;
+    const legH = sprites.title.h + 6 + chips.reduce((a, c) => a + c.h + 4, 0) + 8;
+    composite(map, darkPad(legW, legH), 6, 6);
+    composite(map, sprites.title, 14, 10);
+    let cy = 10 + sprites.title.h + 8;
+    for (const chip of chips) {
+      composite(map, chip, 14, cy);
+      cy += chip.h + 4;
+    }
+
     return { png: (await encodePng(map)).buffer as ArrayBuffer, reason: "ok" };
   } catch (e) {
     return { png: raw, reason: `brand composite failed: ${e}` };
@@ -375,6 +409,7 @@ async function buildMapImage(
 }
 
 let brandImg: RgbaImage | null = null;
+let sprites: { title: RgbaImage; alert: RgbaImage; closure: RgbaImage } | null = null;
 
 function usDate(): string {
   return new Date().toLocaleDateString("en-US", {
