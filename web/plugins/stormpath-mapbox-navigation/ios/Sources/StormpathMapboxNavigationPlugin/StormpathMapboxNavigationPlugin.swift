@@ -27,6 +27,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setRoadControls", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setCarPlayAlternates", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopOrphanedGuidance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "armIdleExit", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelIdleExit", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startTripPack", returnType: CAPPluginReturnPromise),
@@ -198,6 +199,25 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Phone reloaded and is not in a trip, but CarPlay is still guiding the
+    /// last Core route. End that session so the car cannot U-turn on its own.
+    @objc func stopOrphanedGuidance(_ call: CAPPluginCall) {
+        Task { @MainActor [weak self] in
+            guard let self else {
+                call.resolve(["stopped": false])
+                return
+            }
+            guard self.sessionActive, StormPathCarPlay.shared.isConnected else {
+                call.resolve(["stopped": false])
+                return
+            }
+            await self.withCoreMutex {
+                await self.softStopGuidance()
+            }
+            call.resolve(["stopped": true])
+        }
+    }
+
     @objc func stop(_ call: CAPPluginCall) {
         Task { @MainActor [weak self] in
             guard let self else {
@@ -290,8 +310,12 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         )
         // Tiles + routing graph along the trip so tunnels / dead zones keep following.
         coreConfig.predictiveCacheConfig = PredictiveCacheConfig()
-        // Off-route recovery is Core's job. Do not auto-swap a locked B for a faster highway.
-        coreConfig.routingConfig.rerouteConfig.detectsReroute = true
+        // Off-route recovery is Core's job on the phone and iPad. Do not auto-swap
+        // a locked B for a faster highway.
+        // CarPlay draws this session. Core's reroute rejoins the corridor it was
+        // given — the U-turn back to the original plan. The phone plans the
+        // forward line and restarts guidance, so Core must not reroute itself.
+        coreConfig.routingConfig.rerouteConfig.detectsReroute = !StormPathCarPlay.shared.isConnected
         coreConfig.routingConfig.fasterRouteDetectionConfig = nil
         /* CarPlay mirrors the phone's option line via setCarPlayAlternates, so
          * Core's own alternative detection would only burn Directions calls on

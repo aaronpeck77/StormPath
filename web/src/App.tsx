@@ -36,6 +36,7 @@ import { useNearbyPoiTip } from "./hooks/useNearbyPoiTip";
 import { useAdvisoryVoiceGuidance } from "./hooks/useAdvisoryVoiceGuidance";
 import { useCarSessionPublish } from "./hooks/useCarSessionPublish";
 import { useCarPlayActive } from "./hooks/useCarPlayActive";
+import { useCarPlaySessionPair } from "./hooks/useCarPlaySessionPair";
 import { useCarPlayHazardAlerts } from "./hooks/useCarPlayHazardAlerts";
 import { CarPlayCompanionView } from "./ui/CarPlayCompanionView";
 import { pickAdvisoryVoiceLine } from "./nav/advisoryVoice";
@@ -548,6 +549,8 @@ export default function App() {
   const setNavigationStarted = useTripPlanStore((s) => s.setNavigationStarted);
   const navigationStartedRef = useRef(navigationStarted);
   navigationStartedRef.current = navigationStarted;
+  /** Updated once CarPlay presence is known. Off-route recovery reads it. */
+  const carPlayConnectedRef = useRef(false);
   const userAlongGuidanceMRef = useRef(0);
   const guidanceRouteGeomRef = useRef<LngLat[] | null>(null);
   const guidanceRouteLengthMRef = useRef(0);
@@ -1280,6 +1283,7 @@ export default function App() {
     viewModeRef,
     onPersonalForkRef,
     offRouteConfirmedRef,
+    carPlayConnectedRef,
   });
   offRouteConsentRef.current = offRouteNav.notifyCoreRouteChange;
 
@@ -2568,6 +2572,7 @@ export default function App() {
    * detail view (hazards/forecast/progress) instead of a second map that can
    * disagree with the car screen. Toggling Map peeks at the map for the drive. */
   const carPlayActive = useCarPlayActive();
+  useCarPlaySessionPair(carPlayActive, navigationStarted, carPlayConnectedRef);
   const carPlayHazardTitles = useCarPlayHazardAlerts(carPlayActive, navigationStarted);
   const [carPlayMapPeek, setCarPlayMapPeek] = useState(false);
   useEffect(() => {

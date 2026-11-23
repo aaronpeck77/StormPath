@@ -20,6 +20,17 @@ function health(over: Partial<CoreRerouteHealth> = {}): CoreRerouteHealth {
 }
 
 describe("resolveRerouteOwner", () => {
+  it("lets the phone plan the forward line while CarPlay is connected", () => {
+    expect(
+      resolveRerouteOwner({
+        health: health({ lastRouteChangedAtMs: NOW - 1_000 }),
+        offRouteSinceMs: NOW - 1_000,
+        nowMs: NOW,
+        carPlayConnected: true,
+      })
+    ).toBe("diy");
+  });
+
   it("lets Core own the reroute while it is running", () => {
     const owner = resolveRerouteOwner({
       health: health(),

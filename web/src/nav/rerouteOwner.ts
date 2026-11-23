@@ -44,7 +44,14 @@ export function resolveRerouteOwner(input: {
   nowMs: number;
   staleMs?: number;
   graceMs?: number;
+  /**
+   * CarPlay is drawing Core's route. Core's own reroute rejoins the corridor
+   * it was given, which is the U-turn back to the original plan. The phone
+   * must plan the same forward line the iPad already uses.
+   */
+  carPlayConnected?: boolean;
 }): RerouteOwner {
+  if (input.carPlayConnected) return "diy";
   const h = input.health;
   if (!h || !h.active || h.abandoned) return "diy";
 

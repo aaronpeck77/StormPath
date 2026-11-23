@@ -139,6 +139,11 @@ export interface StormpathMapboxNavigationPlugin {
   }): Promise<{ ok: boolean; count: number }>;
   stop(): Promise<void>;
   /**
+   * End a CarPlay guidance session the phone is no longer in.
+   * No-op when Core is idle or CarPlay is not connected.
+   */
+  stopOrphanedGuidance(): Promise<{ stopped: boolean }>;
+  /**
    * Quit the iOS process after this many milliseconds if it is still in the
    * background. A drive must not call this.
    */
