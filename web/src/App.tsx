@@ -549,7 +549,7 @@ export default function App() {
   const setNavigationStarted = useTripPlanStore((s) => s.setNavigationStarted);
   const navigationStartedRef = useRef(navigationStarted);
   navigationStartedRef.current = navigationStarted;
-  /** Updated once CarPlay presence is known. Off-route recovery reads it. */
+  /** Updated once CarPlay presence is known (companion + orphan cleanup). */
   const carPlayConnectedRef = useRef(false);
   const userAlongGuidanceMRef = useRef(0);
   const guidanceRouteGeomRef = useRef<LngLat[] | null>(null);
@@ -1283,7 +1283,6 @@ export default function App() {
     viewModeRef,
     onPersonalForkRef,
     offRouteConfirmedRef,
-    carPlayConnectedRef,
   });
   offRouteConsentRef.current = offRouteNav.notifyCoreRouteChange;
 

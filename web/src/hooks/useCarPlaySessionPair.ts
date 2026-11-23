@@ -7,9 +7,8 @@ import { useTripPlanStore } from "../state/tripPlanStore";
 /**
  * Keep the phone and the car on one trip.
  *
- * While CarPlay is connected, the off-route poll reads `carPlayConnectedRef`
- * and plans the forward line itself. If the phone reloads out of the trip
- * and the car is still guiding, end that native session.
+ * Mirrors CarPlay presence into a ref for UI, and ends leftover car guidance
+ * when the phone reloads out of the trip.
  */
 export function useCarPlaySessionPair(
   carPlayActive: boolean,

@@ -42,10 +42,12 @@ public class StormpathCarSessionPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func carPlayConnected(_ call: CAPPluginCall) {
-        /* A live CPTemplateApplicationScene means the car screen is attached —
-         * the phone can then offer the companion view instead of a second map. */
-        let connected = UIApplication.shared.connectedScenes.contains { $0 is CPTemplateApplicationScene }
-        call.resolve(["connected": connected])
+        /* StormPathCarPlay writes sceneConnected on connect/disconnect. The
+         * scene-type scan alone missed the attached car on some phone builds,
+         * so the companion page never appeared while CarPlay still guided. */
+        let flagged = Self.defaults.bool(forKey: Self.prefix + "sceneConnected")
+        let sceneAlive = UIApplication.shared.connectedScenes.contains { $0 is CPTemplateApplicationScene }
+        call.resolve(["connected": flagged || sceneAlive])
     }
 
     /* The CarPlay scene drops the hazard titles it just announced into

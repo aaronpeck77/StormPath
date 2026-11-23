@@ -655,7 +655,9 @@ export function useNativeNavSession(opts: {
     nativeRestartingRef.current = true;
     nativeAbandonedRef.current = false;
     try {
-      await stopNative();
+      /* Do not soft-stop first. That ends the CarPlay trip card and looks like
+       * the phone crashed mid-drive. Swift startActiveGuidance hot-replaces an
+       * active session in place and updates the car route. */
       startedForNavRef.current = true;
       const ok = await startNative();
       noteDriveDiagNativeRestart(ok);
@@ -663,7 +665,7 @@ export function useNativeNavSession(opts: {
     } finally {
       nativeRestartingRef.current = false;
     }
-  }, [startNative, stopNative]);
+  }, [startNative]);
 
   /**
    * Mid-trip destination/stop edit: the running Core session still targets the

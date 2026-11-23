@@ -163,11 +163,6 @@ export interface UseOffRouteNavigationDeps {
    * diverging from the corridor the driver just left.
    */
   offRouteConfirmedRef?: MutableRefObject<boolean>;
-  /**
-   * True while a CarPlay scene is attached. Core must not rejoin the original
-   * corridor on the car; the phone plans the forward line instead.
-   */
-  carPlayConnectedRef?: MutableRefObject<boolean>;
 }
 
 export type ReplanRouteOpts = {
@@ -240,7 +235,6 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
     viewModeRef,
     onPersonalForkRef,
     offRouteConfirmedRef,
-    carPlayConnectedRef,
   } = deps;
 
   const [offRouteSevere, setOffRouteSevere] = useState(false);
@@ -945,7 +939,6 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
           offRouteSinceMs: offRouteSinceMsRef.current,
           nowMs: now,
           graceMs: pace.coreGraceMs,
-          carPlayConnected: carPlayConnectedRef?.current === true,
         });
         /* Far off the drawn line: do not wait for Core to drag the old corridor back. */
         if (lateralM < pace.reanchorLateralM && !diyMayPlanReroute(owner)) return;
@@ -974,7 +967,6 @@ export function useOffRouteNavigation(deps: UseOffRouteNavigationDeps) {
       altRoutesRefreshInFlightRef,
       coreRerouteHealthRef,
       viewModeRef,
-      carPlayConnectedRef,
     ]
   );
 

@@ -66,6 +66,9 @@ public final class StormPathCarPlay {
         self.interfaceController = interfaceController
         self.window = window
         isConnected = true
+        /* Phone companion polls a separate plugin — share the flag via defaults
+         * because CPTemplateApplicationScene is not always visible to that check. */
+        UserDefaults.standard.set(true, forKey: "stormpath.car.sceneConnected")
 
         let map = NavigationMapView(
             location: locationSubject.compactMap { $0 }.eraseToAnyPublisher(),
@@ -152,6 +155,7 @@ public final class StormPathCarPlay {
         interfaceController = nil
         window = nil
         isConnected = false
+        UserDefaults.standard.set(false, forKey: "stormpath.car.sceneConnected")
     }
 
     // MARK: Phone guidance

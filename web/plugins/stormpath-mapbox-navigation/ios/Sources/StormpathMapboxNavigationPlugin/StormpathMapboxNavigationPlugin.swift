@@ -73,6 +73,9 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     private var horizonReady = false
     /// Brain P2 — TileStore corridor + home-region packs (offline trip download).
     private let offlinePack = TripOfflinePack()
+    /// Mirrored into Core reroute options so a mid-trip refresh keeps the Go lock.
+    private var sessionPreferBackroads = false
+    private var sessionLanguage = ""
 
     @objc func isAvailable(_ call: CAPPluginCall) {
         call.resolve(["available": true])
@@ -310,12 +313,14 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         )
         // Tiles + routing graph along the trip so tunnels / dead zones keep following.
         coreConfig.predictiveCacheConfig = PredictiveCacheConfig()
-        // Off-route recovery is Core's job on the phone and iPad. Do not auto-swap
-        // a locked B for a faster highway.
-        // CarPlay draws this session. Core's reroute rejoins the corridor it was
-        // given — the U-turn back to the original plan. The phone plans the
-        // forward line and restarts guidance, so Core must not reroute itself.
-        coreConfig.routingConfig.rerouteConfig.detectsReroute = !StormPathCarPlay.shared.isConnected
+        // Off-route recovery is Core's job. Do not auto-swap a locked B for a faster highway.
+        // Core reroutes to the NEXT waypoint. Our silent shape points sit on the
+        // original corridor — that is the CarPlay U-turn Bill saw. Strip them so
+        // recovery is current location → real vias → destination (forward, like iPad).
+        coreConfig.routingConfig.rerouteConfig.detectsReroute = true
+        coreConfig.routingConfig.rerouteConfig.optionsCustomization = .init { [weak self] options in
+            self?.forwardOnlyRerouteOptions(options) ?? options
+        }
         coreConfig.routingConfig.fasterRouteDetectionConfig = nil
         /* CarPlay mirrors the phone's option line via setCarPlayAlternates, so
          * Core's own alternative detection would only burn Directions calls on
@@ -331,6 +336,31 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             enableEnhancedDataAlongEH: false
         )
         return coreConfig
+    }
+
+    /// Keep origin heading + real stops + destination. Drop silent corridor pins.
+    @MainActor
+    private func forwardOnlyRerouteOptions(_ options: NavigationRouteOptions) -> NavigationRouteOptions {
+        let waypoints = options.waypoints
+        guard waypoints.count >= 2 else { return options }
+        var kept: [Waypoint] = [waypoints[0]]
+        for wp in waypoints.dropFirst().dropLast() where wp.separatesLegs {
+            kept.append(wp)
+        }
+        kept.append(waypoints[waypoints.count - 1])
+        guard kept.count != waypoints.count else {
+            if sessionPreferBackroads {
+                options.roadClassesToAvoid = .motorway
+            }
+            return options
+        }
+        let next = NavigationRouteOptions(waypoints: kept)
+        applyInstructionLanguage(next, language: sessionLanguage)
+        if sessionPreferBackroads {
+            next.roadClassesToAvoid = .motorway
+        }
+        next.profileIdentifier = options.profileIdentifier
+        return next
     }
 
     @MainActor
@@ -351,6 +381,8 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             let key = routeKey(waypoints: incoming, preferBackroads: preferBackroads, language: language)
+            sessionPreferBackroads = preferBackroads
+            sessionLanguage = language
             if lastNavRoutes != nil, navigationProvider != nil, preparedRouteKey == key {
                 call.resolve(["ok": true, "prepared": true, "cached": true])
                 return
@@ -404,13 +436,19 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         await withCoreMutex {
             let key = routeKey(waypoints: incoming, preferBackroads: preferBackroads, language: language)
+            sessionPreferBackroads = preferBackroads
+            sessionLanguage = language
             let canReusePrepared = !sessionActive
                 && lastNavRoutes != nil
                 && navigationProvider != nil
                 && preparedRouteKey == key
                 && !simulate
+            /* Phone soft-restart / destination edit while CarPlay is guiding:
+             * keep the same provider and trip card. tearDown ends the car trip
+             * and looks like a crash/restart on the phone. */
+            let hotReplace = sessionActive && navigationProvider != nil && !simulate
 
-            if !canReusePrepared {
+            if !canReusePrepared && !hotReplace {
                 await tearDownSession(emitCancelled: false)
                 navigationProvider = MapboxNavigationProvider(
                     coreConfig: makeCoreConfig(accessToken: accessToken, simulate: simulate)
@@ -453,15 +491,21 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                 )
                 sessionActive = true
                 lastNavRoutes = navigationRoutes
-                StormPathCarPlay.shared.guidanceStarted(routes: navigationRoutes)
+                if hotReplace {
+                    StormPathCarPlay.shared.routesChanged(navigationRoutes)
+                } else {
+                    StormPathCarPlay.shared.guidanceStarted(routes: navigationRoutes)
+                }
                 preparedRouteKey = key
                 emitRouteGeometry(from: navigationRoutes)
                 if pendingNativeMapVisible {
                     applyNativeMapVisible(true)
                 }
-                call.resolve(["ok": true, "reused": canReusePrepared])
+                call.resolve(["ok": true, "reused": canReusePrepared, "replaced": hotReplace])
             } catch {
-                await tearDownSession(emitCancelled: false)
+                if !hotReplace {
+                    await tearDownSession(emitCancelled: false)
+                }
                 call.reject("Route request failed: \(error.localizedDescription)")
             }
         }
