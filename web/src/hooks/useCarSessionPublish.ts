@@ -1,7 +1,13 @@
 import { useEffect, useRef } from "react";
 import { pickAdvisoryVoiceLine } from "../nav/advisoryVoice";
 import type { DriveAheadLine } from "../nav/driveRouteAhead";
-import { buildCarConditions, formatCarDestinationAddress, publishCarSession, type CarConditionsInput } from "../services/carSessionPublish";
+import {
+  buildCarConditions,
+  formatCarDestinationAddress,
+  publishCarSession,
+  type CarConditionSection,
+  type CarConditionsInput,
+} from "../services/carSessionPublish";
 import { timelineItemBandColor } from "../nav/timelineBandColors";
 import { timelineItemShowsOnRouteGraph } from "../nav/routeAheadSync";
 import { getWebEnv } from "../config/env";
@@ -22,7 +28,7 @@ function carHazardSpansJson(items: CarConditionsInput["items"], totalMeters: num
         item.endMeters <= totalMeters + 1 &&
         (item.track === "road" ||
           (item.track === "nws" &&
-            WINTER_SPAN_RX.test(item.label) &&
+            WINTER_SPAN_RX.test(item.label ?? "") &&
             (item.severity === "serious" || item.severity === "avoid")))
     )
     .map((item) => ({
@@ -63,17 +69,26 @@ export function useCarSessionPublish(p: Params): void {
     if (!Capacitor.isNativePlatform()) return;
     const publish = () => {
       const { p: snapshot, advisory: line } = latest.current;
+      let conditions: CarConditionSection[] = [];
+      let hazardSpansJson = "[]";
+      try {
+        conditions = buildCarConditions(snapshot.conditions);
+        hazardSpansJson = carHazardSpansJson(
+          snapshot.conditions.items,
+          snapshot.conditions.totalMeters
+        );
+      } catch {
+        /* Bad timeline rows must not kill the CarPlay bridge / GO path. */
+        conditions = [];
+      }
       void publishCarSession({
         navigating: snapshot.navigationStarted,
         destinationLabel: snapshot.destinationLabel,
         destinationAddress: formatCarDestinationAddress(snapshot.destinationLabel),
         advisoryLine: line,
         maneuverLine: snapshot.maneuverLine ?? null,
-        conditions: buildCarConditions(snapshot.conditions),
-        hazardSpansJson: carHazardSpansJson(
-          snapshot.conditions.items,
-          snapshot.conditions.totalMeters
-        ),
+        conditions,
+        hazardSpansJson,
         radarTileBase: getWebEnv().rainViewerTileProxyUrl,
         puckColor: snapshot.puckColor,
         speedLimitMph: snapshot.speedLimitMph,

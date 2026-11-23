@@ -1,4 +1,4 @@
-import { useMemo, type RefObject } from "react";
+import { Component, useMemo, type ErrorInfo, type ReactNode, type RefObject } from "react";
 import {
   formatCarDestinationAddress,
   type CarConditionsInput,
@@ -10,6 +10,7 @@ import { formatRouteAlertTiming, isAlertExpired } from "../nav/routeAlertTiming"
 import type { LngLat, RouteTurnStep } from "../nav/types";
 import type { RouteAlert } from "../nav/routeAlerts";
 import type { RouteChunkCalloutItem } from "../nav/routeProgressChunkList";
+import { captureAppException } from "../monitoring/sentry";
 import type { WxSample } from "../nav/routeChunkWeather";
 import type { RouteOutlookStep } from "../nav/routeForecastTimeline";
 import type { TimelineItem } from "./RouteHazardTimeline";
@@ -92,12 +93,66 @@ function hazardLabelFromTitle(title: string): string {
 }
 
 /**
+ * Keep a companion paint bug from reaching the root ErrorBoundary (which
+ * clears the trip cache and reloads home — the flash Bill saw on GO).
+ */
+class CompanionSafeBoundary extends Component<
+  { children: ReactNode; onShowMap: () => void },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("CarPlay companion crash:", error, info.componentStack);
+    captureAppException(error, {
+      componentStack: info.componentStack,
+      source: "carplay_companion_boundary",
+    });
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="cp-companion" role="alert">
+          <header className="cp-companion__head">
+            <span className="cp-companion__badge">CarPlay driving</span>
+            <button type="button" className="cp-companion__mapbtn" onClick={this.props.onShowMap}>
+              Map
+            </button>
+          </header>
+          <section className="cp-companion__eta">
+            <div className="cp-companion__dest">Weather panel hiccuped</div>
+            <p className="cp-companion__advisory">
+              Trip is still running on CarPlay. Open Map for the phone view, or
+              leave this screen — guidance is not cancelled.
+            </p>
+          </section>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/**
  * Phone companion page shown while CarPlay is driving.
  * The car screen owns guidance; this page is the detail view — the real
  * progress rail strip, the route weather graph, and the same advisory
  * content the map view shows, so the two never disagree.
  */
 export function CarPlayCompanionView(p: Props) {
+  return (
+    <CompanionSafeBoundary onShowMap={p.onShowMap}>
+      <CarPlayCompanionBody {...p} />
+    </CompanionSafeBoundary>
+  );
+}
+
+function CarPlayCompanionBody(p: Props) {
   const r = p.rail;
   const total = Math.max(0, p.conditions.totalMeters);
   const railTotal = Math.max(0, r.railTotalMeters ?? total);
@@ -137,7 +192,7 @@ export function CarPlayCompanionView(p: Props) {
       const item = r.timeline.find(
         (t) =>
           !isAlertExpired(t.expiresIso) &&
-          t.label.trim().toLowerCase() === label.toLowerCase()
+          (t.label ?? "").trim().toLowerCase() === label.toLowerCase()
       );
       const timing = item
         ? formatRouteAlertTiming({

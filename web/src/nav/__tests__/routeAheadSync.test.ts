@@ -113,6 +113,22 @@ describe("buildRouteAheadGlanceCards", () => {
     expect(cards.map((c) => c.label)).toContain("Flash Flood Warning");
   });
 
+  it("tolerates a missing label without throwing (companion GlancePanel)", () => {
+    const broken = baseItem({
+      id: "nolabel",
+      detailLine: "Something on the road",
+    });
+    (broken as { label?: string }).label = undefined;
+    const cards = buildRouteAheadGlanceCards({
+      items: [broken],
+      totalMeters: 80_000,
+      userAlongMeters: 0,
+      planEtaMinutes: 90,
+    });
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.label).toBe("Hazard");
+  });
+
   it("merges clustered road zones into one short card without concatenating descriptions or Still on", () => {
     const raw: TimelineItem[] = [
       baseItem({ id: "r1", track: "road", severity: "caution", label: "Work zone", detailLine: null, startMeters: 100_000, endMeters: 101_000 }),

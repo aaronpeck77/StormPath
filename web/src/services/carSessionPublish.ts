@@ -36,7 +36,7 @@ export function buildCarConditions(p: CarConditionsInput): CarConditionSection[]
         planEtaMinutes: p.driveEtaMinutes, driveEtaMinutes: p.driveEtaMinutes,
       });
       return {
-        title: `${item.severity.toUpperCase()} · ${item.label}`,
+        title: `${(item.severity ?? "info").toUpperCase()} · ${item.label ?? "Hazard"}`,
         detail: [status, item.crossesRoute === false ? "Nearby — not crossing route" : null,
           timing.timingLine, item.etaStale ? "Likely over before you reach it" : null,
           item.coarsePreview ? "Distant outlook" : null,
@@ -45,7 +45,7 @@ export function buildCarConditions(p: CarConditionsInput): CarConditionSection[]
       };
     });
   const plusRequired = [{ title: "Plus feature", detail: "Route and local forecast details require Plus." }];
-  const outlook = p.outlook.filter((step) => step.fraction * p.totalMeters >= p.userAlongMeters)
+  const outlook = (p.outlook ?? []).filter((step) => step.fraction * p.totalMeters >= p.userAlongMeters)
     .map((step) => ({
       title: `${step.shortLabel}${step.etaLabel ? ` · ${step.etaLabel}` : ""}`,
       detail: [step.conditions, step.tempF == null ? null : `${Math.round(step.tempF)}°F`,
@@ -54,7 +54,7 @@ export function buildCarConditions(p: CarConditionsInput): CarConditionSection[]
     }));
   const now = Date.now();
   const local = (p.localForecast && now - p.localForecast.fetchedAt < 2 * 60 * 60_000
-    ? p.localForecast.hours : []).filter((hour) => Date.parse(hour.timeIso) + 60 * 60_000 > now)
+    ? (p.localForecast.hours ?? []) : []).filter((hour) => Date.parse(hour.timeIso) + 60 * 60_000 > now)
     .map((hour) => ({
       title: new Date(hour.timeIso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }),
       detail: `${hour.conditions} · ${Math.round(hour.tempF)}°F · Precipitation ${Math.round(hour.precipProbability * 100)}% · Wind ${Math.round(hour.windMph)} mph`,

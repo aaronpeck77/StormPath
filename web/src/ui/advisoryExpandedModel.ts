@@ -70,7 +70,7 @@ export function useAdvisoryExpandedModel(props: StormAdvisoryBarProps): Advisory
     nwsAtLocationAlerts,
     trafficDelayMinutes,
     onTrafficReroute,
-    roadDetailRows,
+    roadDetailRows = [],
     routeImpacts = null,
     routeAheadTimeline = null,
     stormStripBands = null,

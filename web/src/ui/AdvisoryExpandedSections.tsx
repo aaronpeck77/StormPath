@@ -40,7 +40,7 @@ export function AdvisoryExpandedSections({
     barExpanded,
     sessionOn,
     roadDetailEnabled,
-    roadDetailRows,
+    roadDetailRows = [],
     routeTotalMeters = 0,
     userAlongMeters = 0,
     planEtaMinutes = null,
@@ -100,8 +100,8 @@ export function AdvisoryExpandedSections({
       !basicNavAdvisoryMode &&
       (currentNowcast ||
         minutePrecipForecast ||
-        hourlyForecast?.hours.length ||
-        dailyForecast?.days.length ||
+        hourlyForecast?.hours?.length ||
+        dailyForecast?.days?.length ||
         localForecastNwsAlerts.length > 0 ||
         nwsForecastLoading ||
         basicForecastLoading) ? (
@@ -127,8 +127,8 @@ export function AdvisoryExpandedSections({
           {forecastAreaLabel &&
           (currentNowcast ||
             minutePrecipForecast ||
-            hourlyForecast?.hours.length ||
-            dailyForecast?.days.length ||
+            hourlyForecast?.hours?.length ||
+            dailyForecast?.days?.length ||
             localForecastNwsAlerts.length > 0 ||
             nwsForecastLoading ||
             basicForecastLoading) ? (

@@ -72,6 +72,29 @@ describe("CarPlay conditions snapshot", () => {
     expect(row.detail).toContain("80%");
     expect(row.detail).toContain("25 mph");
   });
+
+  it("survives missing severity, label, outlook, and hours (CarPlay GO companion path)", () => {
+    const broken = { ...hazard } as Record<string, unknown>;
+    delete broken.severity;
+    delete broken.label;
+    const sections = buildCarConditions({
+      ...base,
+      items: [broken as unknown as TimelineItem],
+      outlook: null as unknown as [],
+      localForecast: {
+        fetchedAt: Date.now(),
+        lat: 38,
+        lng: -90,
+        provider: "tomorrowIo" as const,
+        hours: undefined as unknown as [],
+      },
+    });
+    const row = sections.find((s) => s.title === "Route hazards")!.items[0]!;
+    expect(row.title).toMatch(/^INFO · Hazard$/i);
+    expect(sections.find((s) => s.title === "Route forecast")!.items[0]!.title).toBe(
+      "Forecast unavailable"
+    );
+  });
 });
 
 describe("CarPlay native bridge", () => {

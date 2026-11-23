@@ -140,7 +140,7 @@ export function AdvisoryLocalForecast({
     [dailyForecast?.days, hours]
   );
   const hasNow = Boolean(nowcast || minutePrecip?.now);
-  const hasNextHour = !isBasic && (Boolean(minutePrecip?.minutes.length) || hours.length > 0);
+  const hasNextHour = !isBasic && (Boolean(minutePrecip?.minutes?.length) || hours.length > 0);
   const hasDay = hours.length > 0;
   const hasMultiDay = !isBasic && days.length > 0;
   const showWeekSection =

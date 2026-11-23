@@ -1,10 +1,29 @@
 # StormPath — current handoff
 
-Updated: 2026-11-22, morning, Forge. Floating construction-triangle fix is local only — not committed, not pushed. Latest section first.
+Updated: 2026-11-23, evening, Forge. On `015ec17` + local CarPlay crash harden (not committed). Bill TF **639** + iPad dump 637. Latest section first.
 
-## Latest — 2026-11-22: DOT triangles as GL symbols (local, NOT pushed)
+## Latest — 2026-11-23: iPhone CarPlay GO → "Something went wrong" → home (local harden)
 
-Bill: zoom in and triangles fall onto the blue line; zoom out and they drift off. HTML Markers vs WebGL route line. Replaced with a Mapbox symbol layer (`mapDotEventLayers.ts`) so icons share the route render path. Placement/alongMeters work stays. Verified: tsc clean; 236 files / 1537 tests. Not committed — wait for Bill.
+Bill could not drive-test phone nav: CarPlay connect or GO-with-CarPlay flashes root ErrorBoundary, wipes trip, CarPlay never starts. iPad navigation dump (637) looks good.
+
+Local (uncommitted) harden aimed at companion first paint:
+- Null-safe `displayText`, advisory `hours`/`minutes`/`days` optional chaining, `roadDetailRows = []`
+- `buildCarConditions` severity/label/hours/outlook defaults; glance-card missing label
+- Companion-local ErrorBoundary so a weather-panel throw no longer clears the trip
+- `useCarPlaySessionPair` orphan stop only on nav→idle or boot idle (not every CarPlay connect while planning)
+- Publish path try/catch around conditions build
+
+Verify: tsc + targeted tests. **Do not push / TF until Bill asks.** After a TF with this fix: phone+CarPlay GO + connect mid-trip, then compare routing to the iPad dump.
+
+## Earlier — 2026-11-23: CarPlay off-route / forward recovery (TestFlight 639)
+
+Work PC pushed three commits; Forge fast-forwarded to `015ec17`.
+
+1. `84011b9` — Stop CarPlay U-turning back to the original plan when the driver leaves the corridor.
+2. `f0e86aa` — Keep CarPlay guiding while the phone recovers forward.
+3. `015ec17` — Swift plugin check fix (`RouteOptions` typing) so the IPA could ship.
+
+Also in tip: NWS/Road graph rail layout + empty-state copy (`67f691d`), DOT triangles as GL symbols (`59d2780`).
 
 ## Earlier — 2026-11-22: Lock DOT triangles to the painted focus line (pushed as 83a8ed3)
 

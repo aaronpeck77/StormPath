@@ -401,8 +401,9 @@ export function buildRouteAheadGlanceCards(opts: {
       : item.track === "wind" ? "Wind"
       : item.track === "forecast" ? "Forecast"
       : "Road";
+    const label = String(item.label ?? "").trim() || "Hazard";
     const detail = (item.detailLine ?? "").trim();
-    const tooltip = [`${trackLabel}: ${item.label}`, detail, timing.timingLine].filter(Boolean).join("\n\n");
+    const tooltip = [`${trackLabel}: ${label}`, detail, timing.timingLine].filter(Boolean).join("\n\n");
     const midM = (item.startMeters + item.endMeters) / 2;
     const alongPct = Math.round(Math.min(1, Math.max(0, midM / totalMeters)) * 100);
     const enterLabel = fmtMin(timing.enterMin);
@@ -417,12 +418,12 @@ export function buildRouteAheadGlanceCards(opts: {
     /* Road work zones carry multi-month end dates — "Still on" is noise there;
      * keep relevance for NWS alerts and road closures that actually end soon. */
     const relevance = item.track === "road" && rawRel === "active" ? null : rawRel;
-    const sameAsLabel = detail && item.label.toLowerCase().includes(detail.toLowerCase());
+    const sameAsLabel = detail && label.toLowerCase().includes(detail.toLowerCase());
 
     cards.push({
       id: item.id,
       track: item.track,
-      label: capGlanceLine(item.label, 58),
+      label: capGlanceLine(label, 58),
       severity: item.severity,
       color: timelineItemBandColor(item),
       startMeters: item.startMeters,

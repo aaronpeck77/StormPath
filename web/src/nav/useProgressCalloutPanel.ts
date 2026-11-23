@@ -220,7 +220,7 @@ export function useProgressCalloutPanel(
     const routeOutlookAnchorTempF = resolveRouteOutlookAnchorTempF({
       nowcastTempF: currentNowcast?.tempF,
       minutePrecipTempF: tioMinutePrecip?.now?.tempF,
-      hourlyTempF: localHourlyForecast?.hours[0]?.tempF ?? null,
+      hourlyTempF: localHourlyForecast?.hours?.[0]?.tempF ?? null,
       headline: wxHeadline,
       tioRouteForecast,
     });
@@ -555,7 +555,7 @@ export function useProgressCalloutPanel(
     advisoryNowcastLine,
     currentNowcast?.tempF,
     tioMinutePrecip?.now?.tempF,
-    localHourlyForecast?.hours[0]?.tempF,
+    localHourlyForecast?.hours?.[0]?.tempF,
     nwsAlertsAffectingActiveRoute,
   ]);
 
@@ -589,7 +589,7 @@ export function useProgressCalloutPanel(
   );
   const routeForecastHeadline = guidanceSlice?.forecastHeadline?.trim() ?? "";
   const hasWeatherSamples = Boolean(
-    tioRouteForecast?.intervals.length && (guidanceRoute?.baseEtaMinutes ?? 0) > 0
+    tioRouteForecast?.intervals?.length && (guidanceRoute?.baseEtaMinutes ?? 0) > 0
   );
 
   /** Route-hazard watchdog — progress strip and progress info panel stay fed from one pipeline. */
