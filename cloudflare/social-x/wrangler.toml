@@ -6,6 +6,17 @@ name = "stormpath-social-x"
 main = "src/index.ts"
 compatibility_date = "2024-06-01"
 
+# Daily forecast post — 13:00 UTC = 8am Eastern / 7am Central.
+[triggers]
+crons = ["0 13 * * *"]
+
+# Service binding: direct worker→worker call for the daily forecast's
+# closure data (public workers.dev fetches between same-account workers
+# are blocked — CF error 1042).
+[[services]]
+binding = "DOT_FEEDS"
+service = "stormpath-dot-feeds"
+
 # After deploy, URL is typically:
 #   https://stormpath-social-x.<your-subdomain>.workers.dev
 # Post a tweet:
