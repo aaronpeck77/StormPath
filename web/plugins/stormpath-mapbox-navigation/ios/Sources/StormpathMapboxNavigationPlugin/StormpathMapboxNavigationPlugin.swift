@@ -339,8 +339,10 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     /// Keep origin heading + real stops + destination. Drop silent corridor pins.
+    /// Mapbox's customization hook types this as `RouteOptions` (parent of
+    /// `NavigationRouteOptions`) — check 29 failed when we required the subclass.
     @MainActor
-    private func forwardOnlyRerouteOptions(_ options: NavigationRouteOptions) -> NavigationRouteOptions {
+    private func forwardOnlyRerouteOptions(_ options: RouteOptions) -> RouteOptions {
         let waypoints = options.waypoints
         guard waypoints.count >= 2 else { return options }
         var kept: [Waypoint] = [waypoints[0]]
