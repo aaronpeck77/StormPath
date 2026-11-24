@@ -6,6 +6,7 @@ import { stormpathFlavorGuardString } from "./config/buildFlavor";
 import { getWebEnv } from "./config/env";
 import "./index.css";
 import { captureAppException, initCrashReporting, installGlobalErrorHandlers } from "./monitoring/sentry";
+import { persistLastCrash } from "./monitoring/lastCrash";
 import { startMapboxUsageMeter } from "./monitoring/mapboxUsageMeter";
 import { reloadPersistedSettings } from "./state/settingsStore";
 import { hydrateSafeStorage } from "./storage/safeStorage";
@@ -17,18 +18,49 @@ void stormpathFlavorGuardString();
 
 const EB_RELOAD_AT_KEY = "sp_error_boundary_reload_at";
 const EB_RELOAD_LOOP_MS = 4_000;
+const EB_CRASH_BURST_KEY = "sp_error_boundary_crash_burst";
+const EB_CRASH_WINDOW_MS = 90_000;
+const EB_MAX_RELOADS_PER_BURST = 2;
 
-/** Wipe trip cache and reload home. Returns false if a reload just failed (loop guard). */
-function tryScheduleHomeReload(): boolean {
+/** Consecutive boundary crashes within a window — survives the reload. */
+function nextCrashBurstCount(nowMs: number): number {
+  try {
+    const raw = sessionStorage.getItem(EB_CRASH_BURST_KEY);
+    const prev = raw ? (JSON.parse(raw) as { count?: number; at?: number }) : null;
+    const count =
+      prev && Number.isFinite(prev.count) && Number.isFinite(prev.at) && nowMs - (prev.at as number) < EB_CRASH_WINDOW_MS
+        ? (prev.count as number) + 1
+        : 1;
+    sessionStorage.setItem(EB_CRASH_BURST_KEY, JSON.stringify({ count, at: nowMs }));
+    return count;
+  } catch {
+    return 1;
+  }
+}
+
+/**
+ * Reload after a boundary crash. First crash in a burst preserves the trip
+ * cache — remount-restore resumes the drive so a transient paint bug (e.g.
+ * the CarPlay handshake) can't wipe an active trip. A repeat crash within
+ * the window means the cached state itself may be poisoned, so it is cleared
+ * before reloading home. Returns false when the loop guard says stop.
+ */
+function tryScheduleHomeReload(nowMs: number): boolean {
   try {
     const prev = Number(sessionStorage.getItem(EB_RELOAD_AT_KEY) || "0");
-    const now = Date.now();
-    if (Number.isFinite(prev) && prev > 0 && now - prev < EB_RELOAD_LOOP_MS) {
+    if (Number.isFinite(prev) && prev > 0 && nowMs - prev < EB_RELOAD_LOOP_MS) {
       return false;
     }
-    sessionStorage.setItem(EB_RELOAD_AT_KEY, String(now));
+    sessionStorage.setItem(EB_RELOAD_AT_KEY, String(nowMs));
   } catch {
     /* private mode / storage blocked — still try reload once */
+  }
+  const burst = nextCrashBurstCount(nowMs);
+  if (burst > EB_MAX_RELOADS_PER_BURST) return false;
+  if (burst < EB_MAX_RELOADS_PER_BURST) {
+    /* First crash: keep the trip — restore decides if it is still valid. */
+    window.location.reload();
+    return true;
   }
   void clearActiveTripCache()
     .catch(() => undefined)
@@ -54,7 +86,11 @@ class ErrorBoundary extends Component<
       componentStack: info.componentStack,
       source: "react_error_boundary",
     });
-    if (!tryScheduleHomeReload()) {
+    persistLastCrash(error, {
+      componentStack: info.componentStack,
+      source: "react_error_boundary",
+    });
+    if (!tryScheduleHomeReload(Date.now())) {
       this.setState({ reloading: false });
     }
   }

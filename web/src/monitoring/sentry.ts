@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/react";
 import { Capacitor } from "@capacitor/core";
 import { stormpathSentryRelease } from "../appVersion";
+import { persistLastCrash } from "./lastCrash";
 
 let crashReportingActive = false;
 
@@ -62,5 +63,6 @@ export function installGlobalErrorHandlers(): void {
   if (typeof window === "undefined") return;
   window.addEventListener("unhandledrejection", (event) => {
     captureAppException(event.reason, { source: "unhandled_rejection" });
+    persistLastCrash(event.reason, { source: "unhandled_rejection" });
   });
 }

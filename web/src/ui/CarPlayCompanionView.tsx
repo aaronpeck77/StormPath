@@ -11,6 +11,7 @@ import type { LngLat, RouteTurnStep } from "../nav/types";
 import type { RouteAlert } from "../nav/routeAlerts";
 import type { RouteChunkCalloutItem } from "../nav/routeProgressChunkList";
 import { captureAppException } from "../monitoring/sentry";
+import { persistLastCrash } from "../monitoring/lastCrash";
 import type { WxSample } from "../nav/routeChunkWeather";
 import type { RouteOutlookStep } from "../nav/routeForecastTimeline";
 import type { TimelineItem } from "./RouteHazardTimeline";
@@ -109,6 +110,10 @@ class CompanionSafeBoundary extends Component<
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("CarPlay companion crash:", error, info.componentStack);
     captureAppException(error, {
+      componentStack: info.componentStack,
+      source: "carplay_companion_boundary",
+    });
+    persistLastCrash(error, {
       componentStack: info.componentStack,
       source: "carplay_companion_boundary",
     });

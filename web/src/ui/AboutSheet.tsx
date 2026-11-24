@@ -22,6 +22,7 @@ import {
 } from "../billing/subscriptionCopy";
 import { getWebEnv } from "../config/env";
 import { isCrashReportingEnabled } from "../monitoring/sentry";
+import { lastCrashDiagnosticsLines } from "../monitoring/lastCrash";
 import { stormpathVersionChipLabel, stormpathVersionLabel } from "../appVersion";
 import { stormpathBuildFlavor, stormpathFlavorChipLabel } from "../config/buildFlavor";
 import { safeStorage } from "../storage/safeStorage";
@@ -263,6 +264,7 @@ export function AboutSheet({
     `Route cache: ${getRouteCacheHitStats().hits} hits / ${getRouteCacheHitStats().misses} misses (${getRouteCacheStats().count} stored)`,
     offlineTileLine,
     `Service worker: ${typeof navigator !== "undefined" && "serviceWorker" in navigator ? "registered" : "n/a"}`,
+    ...lastCrashDiagnosticsLines(),
     ...driveDiagLines,
   ];
   const diagnosticsText = diagnosticsLines.join("\n");
