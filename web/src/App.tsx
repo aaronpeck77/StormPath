@@ -3399,6 +3399,7 @@ export default function App() {
           advisory={stormAdvisoryBarPropsWithNext}
           carAlertedHazardTitles={carPlayHazardTitles}
           useMiles={roadUsesMiles(effectiveUserLngLat)}
+          onEndTrip={handleStopAndClear}
         />
       ) : (
       <AppMapStage driveMapProps={driveMapPropsWithBeacon}>

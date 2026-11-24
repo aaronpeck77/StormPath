@@ -1,4 +1,4 @@
-import { Component, useMemo, type ErrorInfo, type ReactNode, type RefObject } from "react";
+import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode, type RefObject } from "react";
 import {
   formatCarDestinationAddress,
   type CarConditionsInput,
@@ -71,6 +71,10 @@ type Props = {
   /** "SEVERITY · label" titles the CarPlay scene announced — highlight these on the phone. */
   carAlertedHazardTitles: string[];
   useMiles: boolean;
+  /** Ends the trip on both screens (phone stop + orphan release kills the
+   * car session) while CarPlay itself stays connected — Audible etc. keep
+   * playing, the companion unmounts, and the phone map returns. */
+  onEndTrip: () => void;
 };
 
 const SEVERITY_DOT: Record<string, string> = {
@@ -97,7 +101,7 @@ function hazardLabelFromTitle(title: string): string {
  * clears the trip cache and reloads home — the flash Bill saw on GO).
  */
 class CompanionSafeBoundary extends Component<
-  { children: ReactNode },
+  { children: ReactNode; onEndTrip: () => void },
   { error: Error | null }
 > {
   state: { error: Error | null } = { error: null };
@@ -124,6 +128,13 @@ class CompanionSafeBoundary extends Component<
         <div className="cp-companion" role="alert">
           <header className="cp-companion__head">
             <span className="cp-companion__badge">CarPlay driving</span>
+            <button
+              type="button"
+              className="cp-companion__endbtn"
+              onClick={this.props.onEndTrip}
+            >
+              End route
+            </button>
           </header>
           <section className="cp-companion__eta">
             <div className="cp-companion__dest">Weather panel hiccuped</div>
@@ -154,7 +165,7 @@ class CompanionSafeBoundary extends Component<
  */
 export function CarPlayCompanionView(p: Props) {
   return (
-    <CompanionSafeBoundary>
+    <CompanionSafeBoundary onEndTrip={p.onEndTrip}>
       <CarPlayCompanionBody {...p} />
     </CompanionSafeBoundary>
   );
@@ -215,10 +226,38 @@ function CarPlayCompanionBody(p: Props) {
     });
   }, [p.carAlertedHazardTitles, r.timeline, p.conditions.userAlongMeters, total, r.planEtaMinutes, p.etaMinutes]);
 
+  /* Two-tap arm: one accidental brush at 70mph shouldn't kill the trip. */
+  const [endArmed, setEndArmed] = useState(false);
+  const endArmTimerRef = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (endArmTimerRef.current != null) window.clearTimeout(endArmTimerRef.current);
+    },
+    []
+  );
+  const onEndTap = () => {
+    if (endArmed) {
+      if (endArmTimerRef.current != null) window.clearTimeout(endArmTimerRef.current);
+      setEndArmed(false);
+      p.onEndTrip();
+      return;
+    }
+    setEndArmed(true);
+    if (endArmTimerRef.current != null) window.clearTimeout(endArmTimerRef.current);
+    endArmTimerRef.current = window.setTimeout(() => setEndArmed(false), 4_000);
+  };
+
   return (
     <div className="cp-companion" role="region" aria-label="CarPlay companion">
       <header className="cp-companion__head">
         <span className="cp-companion__badge">CarPlay driving</span>
+        <button
+          type="button"
+          className={`cp-companion__endbtn${endArmed ? " cp-companion__endbtn--armed" : ""}`}
+          onClick={onEndTap}
+        >
+          {endArmed ? "Tap again to end" : "End route"}
+        </button>
       </header>
 
       <section className="cp-companion__eta">

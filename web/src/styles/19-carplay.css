@@ -30,6 +30,24 @@
   border-radius: 999px;
 }
 
+.cp-companion__endbtn {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5edf7;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cp-companion__endbtn--armed {
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.6);
+  background: rgba(248, 113, 113, 0.14);
+}
+
 .cp-companion__retry {
   margin-top: 10px;
   font-size: 13px;
